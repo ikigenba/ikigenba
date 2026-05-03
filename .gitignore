@@ -12,3 +12,6 @@ override.tf.json
 *_override.tf.json
 .terraformrc
 terraform.rc
+
+# mgmt/ is a separate git repository with its own lifecycle
+mgmt/
