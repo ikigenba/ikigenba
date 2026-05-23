@@ -11,7 +11,7 @@ This directory contains the Terraform configuration for the AWS accounts you hav
 
 `mgmt` is the AWS Organizations management account; all other accounts are members. IAM Identity Center is enabled in `mgmt` and grants `AdministratorAccess` to the `Administrators` group on every member account. One `sso-session metaspot` covers every profile in `~/.aws/config`.
 
-**Adding a new account** (customer or otherwise) follows the same pattern as `ai`: a new entry in `mgmt/accounts.tf` (creates the AWS account + IIC assignment), a new `bootstrap/<name>/`, a new `<name>/` root with its `<name>.metaspot.org` zone, and a new NS delegation in `mgmt/delegations.tf`. Email convention: `mgreenly+<name>@gmail.com`. Bucket naming: `metaspot-<name>-{tfstate,backups}-<accountid>`. Default region: `us-east-2`.
+**Adding a new account** (customer or otherwise) follows the same pattern as `ai`: a new entry in `mgmt/accounts.tf` (creates the AWS account + IIC assignment), a new `bootstrap/<name>/`, a new `<name>/` root with its `<name>.metaspot.org` zone, and a new NS delegation in `mgmt/delegations.tf`. Email convention: `mgreenly+<name>@gmail.com`. Bucket naming: tfstate `metaspot-<name>-tfstate-<accountid>`, backups `<name>-metaspot-org-<accountid>`. Default region: `us-east-2`.
 
 ## SSH access
 
@@ -25,60 +25,91 @@ Example: `ssh -i ~/.ssh/id_ed25519_ai4mgreenly ec2-user@<public-ip>`
 
 ## Creating a server
 
-"Create a server" means: in the target account root (`prod/`, `ai/`, `sandbox/`, etc.), produce `<name>.tf` mirroring `prod/biz.tf` (the canonical reference). Each server lives in exactly one account and gets exactly one DNS name, `<name>.<account>.metaspot.org`. Do **not** ask how to build it, only the three questions below.
+"Create a server" means: in the target account root, produce `<account>.tf` per this spec. **One server per account.** The box is named after the account and answers on `<account>.metaspot.org` plus the wildcard `*.<account>.metaspot.org`. Multiple services can run on the box (each with a name unique on that box); nginx routes them by Host header (see Service layer). Do **not** ask how to build it, only the three questions below.
 
 - Own security group: ingress **80 + 443 from `0.0.0.0/0`** (public HTTP/HTTPS — port 80 is required for Let's Encrypt's HTTP-01 challenge and nginx's 80→443 redirect, see Service layer) and **22 from the admin IP only** (`216.173.146.119/32`, hardcoded per SG — update everywhere it appears when the IP changes). All egress. `name_prefix` (not `name`) + `lifecycle { create_before_destroy = true }` so a description/rule change replaces the SG without a `DependencyViolation` hang.
-- `aws_instance`: AL2023, `ami` pinned to the current fleet pin (latest `<account>/devlog` AMI entry). Reuse the shared `data.aws_vpc.default`, `data.aws_subnets.default`, `aws_key_pair.ai4mgreenly`, and the `aws_route53_zone.env` zone from `shared.tf` — one SSH key for the whole fleet. Explicit `root_block_device { volume_type = "gp3", volume_size = <N> }`. `user_data = templatefile("${path.module}/templates/metaspot-env.sh.tftpl", {...})` (see node-identity section), `user_data_replace_on_change = false`, and `lifecycle { ignore_changes = [ami, user_data] }`.
+- `aws_instance`: AL2023, `ami` pinned literally (resolve current via SSM `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64` once, then hardcode). Reuse the shared `data.aws_vpc.default`, `data.aws_subnets.default`, `aws_key_pair.ai4mgreenly`, and the `aws_route53_zone.env` zone from `shared.tf` — one SSH key for the whole fleet. Explicit `root_block_device { volume_type = "gp3", volume_size = <N> }`. `user_data = templatefile("${path.module}/../templates/metaspot-env.sh.tftpl", { ..., launcher_source = file("${path.module}/../templates/metaspot-launch") })` (see node-identity section), `user_data_replace_on_change = false`, and `lifecycle { ignore_changes = [ami, user_data] }`.
 - `aws_eip`.
-- A record `<name>.<account>.metaspot.org` → EIP (zone `aws_route53_zone.env`).
-- `aws_iam_role` + `aws_iam_instance_profile` (**always** — every server has a role), attached via `iam_instance_profile`. Always carries the `backups-rw` policy (see Backups); the `app-config` grant is added only if secrets = yes.
+- A record `<account>.metaspot.org` → EIP and a wildcard `*.<account>.metaspot.org` → EIP (zone `aws_route53_zone.env`).
+- `aws_iam_role` + `aws_iam_instance_profile` (**always** — every server has a role), attached via `iam_instance_profile`. Always carries two policies: bucket-wide `backups-rw` (see Backups) and the env-wide `app-config` SSM grant. Both are unconditional — the launcher (installed at first boot) requires the SSM grant to function, so it is part of the baseline, not optional.
 - `<name>_public_ip` and `<name>_ssh` outputs in `outputs.tf`.
-- A new dated `<account>/devlog/` entry.
 
-### The only three questions (use the defaults; ask nothing else)
+### The only two questions (use the defaults; ask nothing else)
 
-1. **Secrets in Parameter Store?** — default **yes**. The IAM role/profile always exists (for backups); "yes" adds the `app-config` grant to it, "no" omits it.
-2. **Instance size?** — default **`t3.micro`**.
-3. **Root volume size?** — default **10 GiB** (gp3).
+1. **Instance size?** — default **`t3.micro`**.
+2. **Root volume size?** — default **10 GiB** (gp3).
 
-### Node identity (`/etc/metaspot/env`)
+The old "secrets in Parameter Store?" question is gone: every server gets the env-wide `app-config` SSM grant unconditionally because the platform launcher requires it. Populate the JSON blob with per-app keys when an app needs secrets; leave it `{}` when none do. The grant is cheap; the uniformity is worth more than the rare exemption.
 
-Every server's `user_data` writes `/etc/metaspot/env` from `prod/templates/metaspot-env.sh.tftpl` — a flat `KEY=value` file (no `export`), both `source`-able from bash and valid as a systemd `EnvironmentFile=`. It carries **non-secret identity/topology only**, set per box:
+### Node identity and platform launcher (first-boot baseline)
 
-`METASPOT_ENV`, `METASPOT_NODE`, `METASPOT_FQDN`, `METASPOT_DNS_ZONE`, `METASPOT_AWS_ACCOUNT_ID`, `METASPOT_AWS_REGION`, `METASPOT_BACKUP_BUCKET`. The server's backup prefix is just `$METASPOT_NODE/` — not stored separately.
+Every server's `user_data` is rendered from the top-level `templates/metaspot-env.sh.tftpl` and does three things at first boot:
 
-No secrets (user_data is world-readable via IMDS); no public IP (Terraform dependency cycle, and it's available from IMDS at runtime) — fetch volatile facts from IMDS.
+1. **Writes `/etc/metaspot/env`** — a flat `KEY=value` file (no `export`), both `source`-able from bash and valid as a systemd `EnvironmentFile=`. **Non-secret identity/topology only**, set per box: `METASPOT_ENV`, `METASPOT_NODE`, `METASPOT_FQDN`, `METASPOT_DOMAIN`, `METASPOT_DNS_ZONE`, `METASPOT_AWS_ACCOUNT_ID`, `METASPOT_AWS_REGION`, `METASPOT_BACKUP_BUCKET`. `METASPOT_DOMAIN` is the customer subdomain (e.g. `acme.metaspot.org`) — `bin/setup` composes `<app>.${METASPOT_DOMAIN}` FQDNs from it.
+2. **Installs `/usr/local/bin/metaspot-launch`** (mode `0755`, root:root). Source lives at `templates/metaspot-launch` in the repo and is injected into the templatefile call via `launcher_source = file("${path.module}/../templates/metaspot-launch")`. The launcher is platform, not application — every app's systemd unit `ExecStart`s it; no app's `bin/setup` touches `/usr/local/bin/`.
+3. **Installs the launcher's runtime deps** — `dnf install -y awscli-2 jq` (AL2023 ships neither). Note the package name is `awscli-2`, not `aws-cli` (which doesn't exist on AL2023 and silently breaks the whole transaction under `-q`).
 
-`user_data` is the **first-boot baseline only**: cloud-init does not re-run it on reboot, and `ignore_changes = [user_data]` keeps a code change from ever force-replacing a live box — exactly the AMI-pin discipline. Consequence: changing the template does **not** update running boxes. Existing instances are brought into line by writing `/etc/metaspot/env` **out-of-band** (deterministic per box), never by reboot.
+No secrets in user_data (user_data is world-readable via IMDS); no public IP (Terraform dependency cycle, and it's available from IMDS at runtime) — fetch volatile facts from IMDS.
 
-### Backups (shared S3 bucket, prefix-isolated)
+`user_data` is the **first-boot baseline only**: cloud-init does not re-run it on reboot, and `ignore_changes = [user_data]` keeps a code change from ever force-replacing a live box — exactly the AMI-pin discipline. Consequence: changing the template (env vars or launcher) does **not** update running boxes. Existing instances are brought into line by writing `/etc/metaspot/env` and/or `/usr/local/bin/metaspot-launch` **out-of-band**, never by reboot.
 
-One per-account bucket `aws_s3_bucket.backups` in each account's `shared.tf`, named `metaspot-<account>-backups-<accountid>` (e.g. `metaspot-prod-backups-853624428511`): Block Public Access on, `BucketOwnerEnforced`, default **SSE-S3 (AES256)**, bucket policy denying non-TLS. No versioning.
+### Backups (per-account bucket, per-app prefix by convention)
 
-Every server writes only under its own key prefix `<node>/`. Isolation is enforced **per-server in `<name>.tf`** by the `backups-rw` `aws_iam_role_policy`: `s3:GetObject`/`PutObject`/`DeleteObject` on `<bucket>/<node>/*`, plus `s3:ListBucket` on the bucket **conditioned** with `s3:prefix = ["<node>/*"]`. There is **no** bucket-wide object grant anywhere — that, plus the prefix-conditioned list, is what makes one server unable to read or write another's.
+One bucket per account `aws_s3_bucket.backups` in each account's `shared.tf`, named `<account>-metaspot-org-<accountid>` (e.g. `acme-metaspot-org-417780655767`): Block Public Access on, `BucketOwnerEnforced`, default **SSE-S3 (AES256)**, bucket policy denying non-TLS. No versioning.
 
-This is **IAM isolation, not cryptographic isolation**: all prefixes share one SSE-S3 key. A per-server KMS CMK would add a backstop at ~$1/key/mo — deferred, same stance as the secrets layer.
+The instance role carries a single bucket-wide `backups-rw` grant in `<account>.tf`: `s3:GetObject`/`PutObject`/`DeleteObject`/`ListBucket` on the whole bucket. Per-app prefix isolation **is not IAM-enforced** — it can't be cleanly, since all apps on the box share the one instance role. Apps write under `<app>/` by **convention** so backups stay legible and so two apps on the same box don't clobber each other. It's all one customer on one box; the practical blast radius is itself.
+
+When an app needs to back up logically shared state (e.g. the whole `/etc/letsencrypt` tree, which holds certs for every app on the box), it captures the full tree under **its own `<app>/` prefix** rather than inventing a shared prefix — storage is cheap and each app's tarball stays self-sufficient for restore. The "per-app prefix is convention, not IAM" caveat still applies.
 
 ### Secrets / Parameter Store convention
 
-One generic, hostname-independent parameter per env: `/metaspot/<env>/app-config` (`SecureString`). Terraform owns only its *existence* (placeholder value, `lifecycle { ignore_changes = [value] }`); the content is never in Terraform state. Services populate and read it via a checked-in helper script against that hardcoded path — every box uses the same path; nothing derives from the DNS name.
+One generic, hostname-independent parameter per env: `/metaspot/<env>/app-config` (`SecureString`). Terraform owns only its *existence* (placeholder value `{}`, `lifecycle { ignore_changes = [value] }`); the content is never in Terraform state. Services populate and read it out-of-band; the launcher (see Service layer) handles read at startup.
 
-When secrets = yes, the server's `.tf` adds **only** an `aws_iam_role_policy` on its (always-present) role granting, on that single `app-config` ARN: `ssm:GetParameter` + `ssm:PutParameter`, plus `kms:Decrypt` + `kms:GenerateDataKey` scoped by `kms:ViaService = ssm.us-east-2.amazonaws.com`. No per-server parameter resource.
+The instance role's `app-config` policy grants, on that single parameter ARN: `ssm:GetParameter` + `ssm:PutParameter`, plus `kms:Decrypt` + `kms:GenerateDataKey` scoped by `kms:ViaService = ssm.us-east-2.amazonaws.com`. Unconditional — the launcher needs it. No per-server parameter resource.
 
-Accepted tradeoffs: any secrets-enabled box can read and overwrite the whole shared blob, so scripts must read-modify-write a single JSON key, not blind-overwrite.
+Accepted tradeoff: any box can read and overwrite the whole shared blob, so scripts must read-modify-write a single JSON key, not blind-overwrite.
 
 ### Service layer (the app on the box)
 
-How a deployed app is expected to sit on a server. **Per-app, not per-box** — a server may host more than one service. For an app `<app>`:
+How a deployed app sits on a server. **Per-app, not per-box** — a server may host multiple apps, each independently deployed. App names must be unique on a given box. For an app `<app>`:
 
-- **Layout.** Install root `/opt/<app>`; the app's data/work dirs nest under it. A dedicated **system user `<app>`** (`useradd --system --home-dir /opt/<app> --shell /usr/sbin/nologin`) owns its own tree. No login shell; never a shared user.
-- **Four scripts, shipped in the app repo, run from a workstation.** Every app exposes exactly this operational surface — nothing app-specific in the names:
-  - `bin/setup` — one-time, **idempotent** box prep, root via `ssh -t … sudo bash -s`: `dnf install` (incl. `aws-cli`, `jq`, `nginx`, `certbot`), the app user + dirs, the launcher, the systemd unit, the nginx vhost, Let's Encrypt issuance + auto-renew timer; `systemctl enable` but **does not start** (code arrives via `deploy`).
-  - `bin/deploy` — repeatable: build the artifact **off-box**, `rsync --rsync-path="sudo rsync"` it into place, append-only data sync, `chown` to `<app>`, `systemctl restart`, print status. The box never compiles anything.
-  - `bin/backup` — push the app's state to the shared backups bucket under **its own `$METASPOT_NODE/` prefix only** (bucket from `/etc/metaspot/env`'s `METASPOT_BACKUP_BUCKET`; the `backups-rw` grant is prefix-scoped — see Backups).
-  - `bin/restore` — pull that same prefix back. Symmetric with `backup`; IAM makes a box physically unable to touch another's prefix.
-- **systemd unit** `/etc/systemd/system/<app>.service`: `Type=simple`, `User=<app>`, `WorkingDirectory=/opt/<app>`, `ExecStart=/usr/local/bin/<app>-launch`, `Restart=on-failure`, `After`/`Wants=network-online.target`, `WantedBy=multi-user.target`, and `EnvironmentFile=/etc/metaspot/env` — **no leading `-`**: a missing identity file must fail the unit, not let it run misidentified. Logs: the app writes only to stdout/stderr → journald (`journalctl -u <app>`); no app-managed log files, no logrotate.
-- **Secrets: the launcher pattern, deliberately not systemd-native.** `/usr/local/bin/<app>-launch` runs as the app user (via the unit's `User=`) and on **every start**: fetches the shared `/metaspot/<env>/app-config` `SecureString` via the instance role (`aws ssm get-parameter --with-decryption`), `jq`s out this app's own JSON key, exports it, runs a **fail-fast smoke test** that the secret actually works, then `exec`s the binary. The secret exists only in the launched process's environment — never written to disk (not even tmpfs), never an `EnvironmentFile`, no `ExecStartPre` ordering. Rotation is "update the blob, `systemctl restart`". (`aws-cli`/`jq` are `bin/setup` packages; requires secrets = yes for the SSM grant.)
-- **TLS / web.** nginx terminates TLS on 443 and reverse-proxies to the app's loopback-only listener; certbot owns the 443 server block and the 80→443 redirect. **This is why the SG opens 80** — Let's Encrypt's HTTP-01 validator has no fixed CIDR. SSH stays admin-only; that is the kept security win.
+- **Layout.** Install root `/opt/<app>/`; data/work dirs nest under it. Dedicated system user `<app>` (`useradd --system --home-dir /opt/<app> --shell /usr/sbin/nologin`) owns its tree. No login shell, never shared.
+- **Entrypoint convention.** Every app exposes a single executable at `/opt/<app>/bin/run` regardless of runtime. Go ships the binary there. Node/Python ship a short shell wrapper that execs `node server.js` / `python -m app`. This is what makes the systemd unit identical across all apps — the runtime difference lives in the app, not the platform.
+- **Manifest (on-box, runtime).** Every app ships `etc/manifest.env` — flat `KEY=value`, sourceable from bash:
+  ```
+  PORT=8123
+  DEFAULT=false
+  ```
+  `PORT` is the loopback port the app listens on. `DEFAULT=true` means this app also answers on the bare `<account>.metaspot.org` (in addition to `<app>.<account>.metaspot.org`); **at most one app per box may set this**. Two defaults = nginx conflict, by design.
+- **Workstation routing (`etc/deploy.env`).** Sibling to `manifest.env` in the repo, but **workstation-only** — never shipped to the box. Sourced by every `bin/*` script before any `ssh`. Flat `KEY=value`, committed (non-secret routing). Required keys:
+  ```
+  ACCOUNT=<account-name>            # determines DOMAIN and HOST: <account>.metaspot.org
+  SSH_USER=ec2-user
+  SSH_KEY=~/.ssh/id_ed25519_ai4mgreenly
+  CERTBOT_EMAIL=<address>
+  ```
+  Scripts derive `DOMAIN="${ACCOUNT}.metaspot.org"` and `HOST="${HOST:-${ACCOUNT}.metaspot.org}"` from `ACCOUNT`. `HOST` is overridable via env for unusual targets but normally inferred. This convention is what lets the seven `bin/*` scripts be byte-identical across apps — all app- and account-specific routing lives in `deploy.env` (account) and `manifest.env` (app) plus the `${APP}` literal at the top of each script.
+- **Seven scripts, shipped in the app repo, run from a workstation — each script ssh's into the box itself.** That's why they exist as scripts rather than as "just use `systemctl`": the operational surface is the same seven verbs invoked locally, no manual ssh required. The runtime-specific work lives in `bin/build`; the other six are byte-identical across apps.
+  - `bin/build` (**per-app**) — produces `build/${APP}` as the deploy artifact. Go: `go build -o build/${APP} ./...`. Node: `npm run build` and place the bundle/entry at `build/${APP}`. Python: a thin wrapper script at `build/${APP}` that execs the interpreter. This is the **one** place runtime variation is allowed; everything else is generic. `build/` is gitignored.
+  - `bin/setup` — one-time, idempotent box prep (root via `ssh -t … sudo bash -s`): `dnf install` of the app's own runtime deps only (e.g. `nginx`, `certbot` for HTTP-fronted apps). The launcher's deps (`awscli-2`, `jq`) are already present from instance bootstrap — `bin/setup` does not install them. Then the app user + dirs, the systemd unit, the nginx vhost (if `etc/nginx.conf` is present), Let's Encrypt issuance (HTTP-01) + renewal timer; `systemctl enable` but does not start. The launcher is **not** touched — it's a platform binary already in place.
+  - `bin/deploy` — repeatable: calls `./bin/build`, `bin/stop`, `rsync --rsync-path="sudo rsync"` `build/${APP}` to `/opt/${APP}/bin/run`, `chown` to `${APP}:${APP}`, `bin/start`. The box never compiles. Brief downtime during rsync is accepted; if it ever matters, layer in an `error_page` maintenance fallback later.
+  - `bin/start` — `systemctl start ${APP}`.
+  - `bin/stop` — `systemctl stop ${APP}`. nginx (if present) will serve 502 until restarted; this is fine.
+  - `bin/backup` — push state to `s3://$METASPOT_BACKUP_BUCKET/${APP}/` by convention (the role's grant is bucket-wide; see Backups).
+  - `bin/restore` — symmetric pull from the same prefix.
+- **systemd unit, written by `bin/setup`.** Identical shape for every app — the entrypoint convention is what allows this:
+  ```
+  [Service]
+  Type=simple
+  User=<app>
+  WorkingDirectory=/opt/<app>
+  EnvironmentFile=/etc/metaspot/env
+  ExecStart=/usr/local/bin/metaspot-launch <app>
+  Restart=on-failure
+  ```
+  Plus `After=network-online.target`, `Wants=network-online.target`, `WantedBy=multi-user.target`. **No leading `-` on `EnvironmentFile=`** — a missing identity file must fail the unit, not let it run misidentified. Logs go stdout/stderr → journald; no app-managed log files.
+- **Secrets — shared launcher.** `/usr/local/bin/metaspot-launch <app>` is installed by **instance bootstrap** (see Node identity), not by any app's `bin/setup`. Apps just `ExecStart` it. On every start the launcher: sources `/etc/metaspot/env`, sources `/opt/<app>/etc/manifest.env` (non-secret defaults), fetches `/metaspot/<env>/app-config` via the instance role, extracts `.["<app>"]` from the JSON blob, exports each `KEY=value` (SSM wins over manifest on collision), then `exec`s `/opt/<app>/bin/run`. **Hard-fails** if SSM is unreachable, the grant is missing, or the parameter doesn't exist — an app expecting secrets must not silently start without them. Secret lives only in the launched process's environment — never on disk, never an `EnvironmentFile`. Rotation = update the blob, `systemctl restart <app>`. The SSM grant is part of the unconditional baseline role; apps with no secrets still go through the launcher (their `.["<app>"]` is just absent or `{}`).
+- **nginx — host-header routing.** Each app optionally ships `etc/nginx.conf` with placeholders (`__APP__`, `__DOMAIN__`, `__PORT__`). `bin/setup` substitutes from the manifest + `/etc/metaspot/env` and installs to `/etc/nginx/conf.d/<app>.conf`. The vhost listens on 443 with `server_name <app>.<domain>;` (and additionally `<domain>;` when `DEFAULT=true`) and `proxy_pass http://127.0.0.1:<port>;`. Apps without an `etc/nginx.conf` are reachable only locally — fine for workers/batch.
+- **TLS — per-service HTTP-01.** Each `bin/setup` issues a cert for `<app>.<domain>` (plus `<domain>` when `DEFAULT=true`) via one of two HTTP-01 methods: `certbot --nginx` (certbot rewrites the vhost to add the SSL block) or `certbot certonly --webroot -w /var/lib/letsencrypt` (vhost stays template-managed; setup installs an HTTP-only bootstrap vhost, runs certbot, then installs the final pre-written vhost referencing the now-existing cert paths). **The `--webroot` form is preferred when `etc/nginx.conf` is the source of truth** — `--nginx` mutates the file in place and breaks the "managed by `bin/setup` — do not hand-edit" invariant. Renewals work identically via a persisted `--deploy-hook "systemctl reload nginx"`. Per-service certs isolate renewal failures. Port 80 in the SG carries the challenge plus the 80→443 redirect.
 
-**Why this shape.** It generalises a proven `provision`/`deploy` split from an earlier prod service: renamed to the fixed `bin/{setup,deploy,backup,restore}` quartet so every app presents the same four verbs, and made **per-app** (not a fixed `/opt/app`) so one box can host several. The launcher was chosen over an `EnvironmentFile`/`ExecStartPre` or systemd-credentials approach because it keeps the secret off disk entirely and turns rotation into a restart — and it is the pattern already battle-tested in prod. `backup`/`restore` are first-class, not ad-hoc, because the prefix-isolated bucket only delivers its safety guarantee if every app uses it the same disciplined way.
+**Why this shape.** The fixed seven-verb surface (`build/setup/deploy/start/stop/backup/restore`) means every app on every box presents the same operational interface, invoked from a workstation with no manual ssh. Runtime variation is quarantined to `bin/build`; the other six are byte-identical across apps because `etc/deploy.env` (account routing) and `etc/manifest.env` (app config) absorb all the per-app/per-account differences. The `/opt/<app>/bin/run` convention pushes runtime variation into the build so the systemd unit can be identical platform-wide. The launcher pattern keeps secrets off disk and turns rotation into a restart. Host-header routing via a wildcard DNS record means shipping a new app needs zero Terraform change.

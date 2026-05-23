@@ -3,8 +3,28 @@ resource "aws_route53_zone" "env" {
   comment = "ai environment subdomain, delegated from metaspot.org in the mgmt account"
 }
 
+data "aws_vpc" "default" {
+  default = true
+}
+
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+  filter {
+    name   = "default-for-az"
+    values = ["true"]
+  }
+}
+
+resource "aws_key_pair" "ai4mgreenly" {
+  key_name   = "ai4mgreenly"
+  public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICrlK7XC7ym0s74i/nUce7aHcqV3khy8irgKVDj4yc5S claude@logic-refinery.com"
+}
+
 resource "aws_s3_bucket" "backups" {
-  bucket = "metaspot-ai-backups-417780655767"
+  bucket = "ai-metaspot-org-417780655767"
 }
 
 resource "aws_s3_bucket_public_access_block" "backups" {
