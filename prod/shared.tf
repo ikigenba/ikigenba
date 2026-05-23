@@ -41,11 +41,6 @@ resource "aws_route53_zone" "env" {
   comment = "prod environment subdomain, delegated from metaspot.org in the mgmt account"
 }
 
-resource "aws_route53_zone" "ai" {
-  name    = "ai.metaspot.org"
-  comment = "ai subdomain, delegated from metaspot.org in the mgmt account"
-}
-
 # --- Shared backups bucket ---
 #
 # One env-wide bucket. Each server writes only under its own key prefix

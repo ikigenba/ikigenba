@@ -1,12 +1,17 @@
 # metaspot
 
-This directory contains the Terraform configuration for the AWS accounts you have access to:
+This directory contains the Terraform configuration for the AWS accounts you have access to. The topology is symmetric: one directory per AWS account, profile name = directory name = the subdomain it owns.
 
-- `bootstrap/` — per-account state backend bootstrap (local state)
-- `test/` — `test` AWS account (213629091798), profile `test`
-- `prod/` — `prod` AWS account (853624428511), profile `prod`
+- `bootstrap/<name>/` — per-account state backend bootstrap (local state)
+- `mgmt/` — `mgmt` AWS account (132801647717), profile `mgmt`. Owns the apex `metaspot.org` zone, NS delegations to every child account, and the `aws_organizations_account` + IIC assignment resources for the org. No servers.
+- `prod/` — `prod` AWS account (853624428511), profile `prod`. Owns `prod.metaspot.org`.
+- `test/` — `test` AWS account (213629091798), profile `test`. Owns `test.metaspot.org`.
+- `sandbox/` — `sandbox` AWS account (654596473544), profile `sandbox`. Owns `sandbox.metaspot.org`.
+- `ai/` — `ai` AWS account (417780655767), profile `ai`. Owns `ai.metaspot.org`.
 
-The apex `metaspot.org` Route53 zone lives in a separate `mgmt` account; each env owns its own delegated subtree (`test.metaspot.org`, `prod.metaspot.org`).
+`mgmt` is the AWS Organizations management account; all other accounts are members. IAM Identity Center is enabled in `mgmt` and grants `AdministratorAccess` to the `Administrators` group on every member account. One `sso-session metaspot` covers every profile in `~/.aws/config`.
+
+**Adding a new account** (customer or otherwise) follows the same pattern as `ai`: a new entry in `mgmt/accounts.tf` (creates the AWS account + IIC assignment), a new `bootstrap/<name>/`, a new `<name>/` root with its `<name>.metaspot.org` zone, and a new NS delegation in `mgmt/delegations.tf`. Email convention: `mgreenly+<name>@gmail.com`. Bucket naming: `metaspot-<name>-{tfstate,backups}-<accountid>`. Default region: `us-east-2`.
 
 ## SSH access
 
@@ -20,20 +25,19 @@ Example: `ssh -i ~/.ssh/id_ed25519_ai4mgreenly ec2-user@<public-ip>`
 
 ## Creating a server
 
-"Create a server" (in `prod/`) means: produce `<name>.tf` mirroring `biz.tf` (the canonical reference) — do **not** ask how to build it, only the three questions below.
+"Create a server" means: in the target account root (`prod/`, `ai/`, `sandbox/`, etc.), produce `<name>.tf` mirroring `prod/biz.tf` (the canonical reference). Each server lives in exactly one account and gets exactly one DNS name, `<name>.<account>.metaspot.org`. Do **not** ask how to build it, only the three questions below.
 
 - Own security group: ingress **80 + 443 from `0.0.0.0/0`** (public HTTP/HTTPS — port 80 is required for Let's Encrypt's HTTP-01 challenge and nginx's 80→443 redirect, see Service layer) and **22 from the admin IP only** (`216.173.146.119/32`, hardcoded per SG — update everywhere it appears when the IP changes). All egress. `name_prefix` (not `name`) + `lifecycle { create_before_destroy = true }` so a description/rule change replaces the SG without a `DependencyViolation` hang.
-- `aws_instance`: AL2023, `ami` pinned to the current fleet pin (latest `prod/devlog` AMI entry). Reuse the shared `data.aws_vpc.default`, `data.aws_subnets.default`, `aws_key_pair.ai4mgreenly`, and the `aws_route53_zone.env` / `aws_route53_zone.ai` zones from `shared.tf` — one SSH key for the whole fleet. Explicit `root_block_device { volume_type = "gp3", volume_size = <N> }`. `user_data = templatefile("${path.module}/templates/metaspot-env.sh.tftpl", {...})` (see node-identity section), `user_data_replace_on_change = false`, and `lifecycle { ignore_changes = [ami, user_data] }`.
+- `aws_instance`: AL2023, `ami` pinned to the current fleet pin (latest `<account>/devlog` AMI entry). Reuse the shared `data.aws_vpc.default`, `data.aws_subnets.default`, `aws_key_pair.ai4mgreenly`, and the `aws_route53_zone.env` zone from `shared.tf` — one SSH key for the whole fleet. Explicit `root_block_device { volume_type = "gp3", volume_size = <N> }`. `user_data = templatefile("${path.module}/templates/metaspot-env.sh.tftpl", {...})` (see node-identity section), `user_data_replace_on_change = false`, and `lifecycle { ignore_changes = [ami, user_data] }`.
 - `aws_eip`.
-- A record `<name>.prod.metaspot.org` → EIP (canonical zone `aws_route53_zone.env`).
-- CNAME `<name>.ai.metaspot.org` → the A record (alias zone `aws_route53_zone.ai`).
+- A record `<name>.<account>.metaspot.org` → EIP (zone `aws_route53_zone.env`).
 - `aws_iam_role` + `aws_iam_instance_profile` (**always** — every server has a role), attached via `iam_instance_profile`. Always carries the `backups-rw` policy (see Backups); the `app-config` grant is added only if secrets = yes.
 - `<name>_public_ip` and `<name>_ssh` outputs in `outputs.tf`.
-- A new dated `prod/devlog/` entry.
+- A new dated `<account>/devlog/` entry.
 
 ### The only three questions (use the defaults; ask nothing else)
 
-1. **Secrets in Parameter Store?** — default **no**. The IAM role/profile always exists (for backups); "yes" only adds the `app-config` grant to it.
+1. **Secrets in Parameter Store?** — default **yes**. The IAM role/profile always exists (for backups); "yes" adds the `app-config` grant to it, "no" omits it.
 2. **Instance size?** — default **`t3.micro`**.
 3. **Root volume size?** — default **10 GiB** (gp3).
 
@@ -41,7 +45,7 @@ Example: `ssh -i ~/.ssh/id_ed25519_ai4mgreenly ec2-user@<public-ip>`
 
 Every server's `user_data` writes `/etc/metaspot/env` from `prod/templates/metaspot-env.sh.tftpl` — a flat `KEY=value` file (no `export`), both `source`-able from bash and valid as a systemd `EnvironmentFile=`. It carries **non-secret identity/topology only**, set per box:
 
-`METASPOT_ENV`, `METASPOT_NODE`, `METASPOT_FQDN`, `METASPOT_ALIAS_FQDN`, `METASPOT_DNS_ZONE`, `METASPOT_AI_ZONE`, `METASPOT_AWS_ACCOUNT_ID`, `METASPOT_AWS_REGION`, `METASPOT_BACKUP_BUCKET`. The server's backup prefix is just `$METASPOT_NODE/` — not stored separately.
+`METASPOT_ENV`, `METASPOT_NODE`, `METASPOT_FQDN`, `METASPOT_DNS_ZONE`, `METASPOT_AWS_ACCOUNT_ID`, `METASPOT_AWS_REGION`, `METASPOT_BACKUP_BUCKET`. The server's backup prefix is just `$METASPOT_NODE/` — not stored separately.
 
 No secrets (user_data is world-readable via IMDS); no public IP (Terraform dependency cycle, and it's available from IMDS at runtime) — fetch volatile facts from IMDS.
 
@@ -49,7 +53,7 @@ No secrets (user_data is world-readable via IMDS); no public IP (Terraform depen
 
 ### Backups (shared S3 bucket, prefix-isolated)
 
-One env-wide bucket `aws_s3_bucket.backups` in `shared.tf` (`metaspot-prod-backups-853624428511`): Block Public Access on, `BucketOwnerEnforced`, default **SSE-S3 (AES256)**, bucket policy denying non-TLS. No versioning.
+One per-account bucket `aws_s3_bucket.backups` in each account's `shared.tf`, named `metaspot-<account>-backups-<accountid>` (e.g. `metaspot-prod-backups-853624428511`): Block Public Access on, `BucketOwnerEnforced`, default **SSE-S3 (AES256)**, bucket policy denying non-TLS. No versioning.
 
 Every server writes only under its own key prefix `<node>/`. Isolation is enforced **per-server in `<name>.tf`** by the `backups-rw` `aws_iam_role_policy`: `s3:GetObject`/`PutObject`/`DeleteObject` on `<bucket>/<node>/*`, plus `s3:ListBucket` on the bucket **conditioned** with `s3:prefix = ["<node>/*"]`. There is **no** bucket-wide object grant anywhere — that, plus the prefix-conditioned list, is what makes one server unable to read or write another's.
 
