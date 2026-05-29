@@ -7,11 +7,12 @@ until all prerequisites below are met** — closing the account deletes its host
 zones and orphans any registration still inside it.
 
 Prerequisites / checklist:
-- [ ] All 4 `logic-refinery.*` registrations transferred into `mgmt`
-      (`.com` / `.io` / `.net` / `.tv`) — transfer lock cleared, `transfer` +
-      `accept` done. Verify via `route53domains list-domains --profile mgmt`.
-- [ ] `logic-refinery.io` / `.net` / `.tv` nameservers repointed to the `mgmt`
-      zones (like `.com` already is).
+- [x] All 4 `logic-refinery.*` registrations transferred into `mgmt`
+      (`.com` / `.io` / `.net` / `.tv`). DONE — `900253156012` now owns zero
+      registrations (`route53domains list-domains --profile lr-domain` => `[]`).
+- [x] `logic-refinery.io` / `.net` / `.tv` nameservers repointed to the `mgmt`
+      zones (`.com` was already done). All four confirmed pointing at their
+      `mgmt` zone nameservers.
 - [ ] 48h NS TTL window drained for every cut-over domain; confirm public
       resolvers serve only the new `mgmt` nameservers before deleting old zones.
 - [ ] The two external domains resolved (see section below) — re-hosted or
@@ -19,6 +20,8 @@ Prerequisites / checklist:
 - [ ] `space.logic-refinery.io` / `public.logic-refinery.io` confirmed
       discardable (already agreed: yes) and any real infra behind
       `space.*` (an ALB + EC2 `agent1`/`server`) confirmed already gone.
+- [ ] Delete the old hosted zones in `900253156012` (all 8) once the TTL has
+      drained — or just let account closure remove them.
 - [ ] Remove temp `metaspot-migrate` IAM role from `900253156012` and the
       `lr-domain` profile from `~/.aws/config`.
 - [ ] Then close the account: it is standalone (never joined the org), so close
