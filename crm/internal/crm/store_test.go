@@ -10,6 +10,10 @@ import (
 	"crm/internal/db"
 )
 
+// txAlias lets entity test files reference *sql.Tx without each importing
+// database/sql (withTx hands them one).
+type txAlias = sql.Tx
+
 // fixedClock is a deterministic, monotonically-increasing clock for tests so
 // updated_at ordering is stable and reproducible.
 type fixedClock struct{ t time.Time }
@@ -42,7 +46,7 @@ func newTestStore(t *testing.T) *Service {
 
 // withTx runs fn inside a transaction and commits it, failing the test on error.
 // Entity-store tests use it to exercise tx-passed hooks directly.
-func withTx(t *testing.T, s *Service, fn func(tx *sql.Tx)) {
+func withTx(t *testing.T, s *Service, fn func(tx *txAlias)) {
 	t.Helper()
 	tx, err := s.DB.BeginTx(context.Background(), nil)
 	if err != nil {
