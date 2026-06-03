@@ -1,5 +1,5 @@
 // Package mcp implements a minimal MCP transport for the /mcp endpoint and the
-// crm_* tool surface that wraps internal/contacts.
+// fixed six-verb crm_* tool surface (PLAN.md §2) that wraps internal/crm.
 //
 // The transport speaks JSON-RPC 2.0 over plain HTTP POST (no SSE/streaming),
 // responding with Content-Type: application/json. It carries NO token logic:
@@ -17,7 +17,7 @@ import (
 	"errors"
 	"net/http"
 
-	"crm/internal/contacts"
+	"crm/internal/crm"
 )
 
 // Identity is the authenticated caller, as told to us authoritatively by nginx
@@ -28,19 +28,19 @@ type Identity struct {
 }
 
 // Handler is the http.Handler for POST /mcp. It is constructed once at wiring
-// time with a non-nil contacts service and dispatches JSON-RPC methods.
+// time with a non-nil crm service and dispatches JSON-RPC methods.
 type Handler struct {
-	contacts *contacts.Service
+	svc *crm.Service
 }
 
-// NewHandler builds a Handler. The contacts service is required; a nil service
-// is a wiring error and panics at this seam rather than deferring a nil
-// dereference to first request.
-func NewHandler(c *contacts.Service) *Handler {
-	if c == nil {
-		panic("mcp: contacts service is required")
+// NewHandler builds a Handler. The crm service is required; a nil service is a
+// wiring error and panics at this seam rather than deferring a nil dereference to
+// first request.
+func NewHandler(s *crm.Service) *Handler {
+	if s == nil {
+		panic("mcp: crm service is required")
 	}
-	return &Handler{contacts: c}
+	return &Handler{svc: s}
 }
 
 // ServeHTTP dispatches a single JSON-RPC 2.0 request. Identity is read from the
@@ -116,19 +116,44 @@ func toolResultErr(msg string) map[string]any {
 	return map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": msg}}}
 }
 
-// translateContactsError maps a contacts package error to a structured
-// error string (R-CTNS-ERRC).
-func translateContactsError(err error) string {
+// errorEnvelope renders a crm domain error into the uniform, closed-vocabulary
+// error envelope (PLAN.md §4). Entities return typed sentinels; this is the
+// single sentinel→wire translation. The message is the entity's corrective text;
+// `field` and `existing_id` are surfaced when present.
+func errorEnvelope(err error) map[string]any {
+	e := map[string]any{}
+	var dup *crm.DuplicateError
+	var val *crm.ValidationError
 	switch {
-	case errors.Is(err, contacts.ErrNotFound):
-		return `{"error":{"code":"not_found","message":"contact not found"}}`
-	case errors.Is(err, contacts.ErrConflict):
-		return `{"error":{"code":"conflict","message":"` + err.Error() + `"}}`
-	case errors.Is(err, contacts.ErrValidation):
-		return `{"error":{"code":"validation","message":"` + err.Error() + `"}}`
-	case errors.Is(err, contacts.ErrNoPrimary):
-		return `{"error":{"code":"no_primary","message":"no primary defined"}}`
+	case errors.As(err, &dup):
+		e["code"] = "duplicate"
+		e["existing_id"] = dup.ExistingID
+		e["message"] = dup.Error()
+	case errors.As(err, &val):
+		e["code"] = "validation"
+		e["message"] = val.Error()
+		if val.Field != "" {
+			e["field"] = val.Field
+		}
+	case errors.Is(err, crm.ErrValidation):
+		e["code"] = "validation"
+		e["message"] = err.Error()
+	case errors.Is(err, crm.ErrNotFound):
+		e["code"] = "not_found"
+		e["message"] = err.Error()
+	case errors.Is(err, crm.ErrConflict):
+		e["code"] = "conflict"
+		e["message"] = err.Error()
 	default:
-		return `{"error":{"code":"internal","message":"internal error"}}`
+		e["code"] = "internal"
+		e["message"] = "internal error"
 	}
+	return map[string]any{"error": e}
+}
+
+// toolErr renders a domain error as a tool-call error result carrying the JSON
+// envelope text.
+func toolErr(err error) map[string]any {
+	b, _ := json.Marshal(errorEnvelope(err))
+	return toolResultErr(string(b))
 }

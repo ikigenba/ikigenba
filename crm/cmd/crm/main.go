@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"syscall"
 
-	"crm/internal/contacts"
+	"crm/internal/crm"
 	"crm/internal/db"
 	"crm/internal/logging"
 	"crm/internal/mcp"
@@ -128,9 +128,9 @@ func serve(ip string, port int, logLevel, resourceID, authServer, dbPath, genPat
 	}
 	go ob.StartRetention(ctx)
 
-	contactsSvc := contacts.NewService(conn)
-	contactsSvc.Outbox = ob
-	mcpHandler := mcp.NewHandler(contactsSvc)
+	crmSvc := crm.NewService(conn)
+	crmSvc.Outbox = ob
+	mcpHandler := mcp.NewHandler(crmSvc)
 
 	addr := net.JoinHostPort(ip, strconv.Itoa(port))
 	srv, err := server.New(server.Options{
