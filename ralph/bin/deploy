@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# bin/deploy — build off-box, ship the artifact + binary, restart.
+#
+# Ships TWO files: a wrapper (build/${APP}) and the real Go binary
+# (build/${APP}.bin) — see bin/build for why. Otherwise the standard
+# "stop -> rsync -> start" shape.
+#
+# Production state (/opt/ralph/data/ — ralph.db, sandboxes/, runs/) is created by
+# the app on first start and lives outside the deploy — deploy never touches it.
+# Requires the box scaffolding from bin/setup (app user, /opt/ralph tree, systemd
+# unit, nginx location fragment) to already exist, and the dashboard's apex setup
+# (server block, cert, /_authn) to have run first.
+#
+# REGISTERING ralph WITH THE DASHBOARD (one-time, easy to miss — do NOT skip):
+# A new MCP service must be added to the dashboard's authorization-server resource
+# list, which is hardcoded in dashboard/bin/build -> DASHBOARD_RESOURCES as a
+# comma-separated list of https://${METASPOT_DOMAIN}/srv/<svc>/mcp. Add
+#     https://${METASPOT_DOMAIN}/srv/ralph/mcp
+# there and REDEPLOY THE DASHBOARD (`dashboard/bin/deploy`). Until then,
+# /internal/authn returns "unknown service for original request URI" with NO
+# resource_metadata in the 401 challenge, so the MCP client can't discover the
+# PRM, omits the `resource` indicator, and the AS rejects authorize with
+# `invalid_target: resource is required` — connector OAuth for ralph cannot work.
+# (A dashboard restart briefly drops /internal/authn for the whole box — seconds.)
+# See ARCHITECTURE.md §8 "Registering with the dashboard".
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO"
+. etc/manifest.env
+. etc/deploy.env
+
+HOST="${HOST:-${ACCOUNT}.metaspot.org}"
+SSH_KEY="${SSH_KEY/#\~/$HOME}"
+
+echo ">> build"
+"./bin/build" >/dev/null
+WRAP="build/${APP}"
+BIN="build/${APP}.bin"
+[ -x "$WRAP" ] || { echo "!! bin/build did not produce ${WRAP}" >&2; exit 1; }
+[ -x "$BIN"  ] || { echo "!! bin/build did not produce ${BIN}"  >&2; exit 1; }
+
+echo ">> stop ${APP}"
+ssh -i "$SSH_KEY" "${SSH_USER}@${HOST}" "sudo systemctl stop ${APP} || true"
+
+echo ">> rsync ${WRAP} -> /opt/${APP}/bin/run"
+rsync -az --chmod=F755 \
+  -e "ssh -i ${SSH_KEY}" \
+  --rsync-path="sudo rsync" \
+  "$WRAP" "${SSH_USER}@${HOST}:/opt/${APP}/bin/run"
+
+echo ">> rsync ${BIN} -> /opt/${APP}/bin/${APP}.bin"
+rsync -az --chmod=F755 \
+  -e "ssh -i ${SSH_KEY}" \
+  --rsync-path="sudo rsync" \
+  "$BIN" "${SSH_USER}@${HOST}:/opt/${APP}/bin/${APP}.bin"
+
+echo ">> rsync etc/manifest.env -> /opt/${APP}/etc/manifest.env"
+rsync -az --chmod=F644 \
+  -e "ssh -i ${SSH_KEY}" \
+  --rsync-path="sudo rsync" \
+  "etc/manifest.env" "${SSH_USER}@${HOST}:/opt/${APP}/etc/manifest.env"
+
+echo ">> chown + start"
+ssh -i "$SSH_KEY" "${SSH_USER}@${HOST}" "sudo bash -s" <<REMOTE
+set -euo pipefail
+chown -R ${APP}:${APP} /opt/${APP}
+systemctl start ${APP}
+sleep 1
+systemctl is-active ${APP}
+REMOTE
+
+echo ">> deploy complete."

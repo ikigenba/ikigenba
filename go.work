@@ -12,4 +12,5 @@ use (
 	./eventplane
 	./ledger
 	./notify
+	./ralph
 )
