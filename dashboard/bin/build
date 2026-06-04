@@ -24,8 +24,12 @@ VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo d
 
 mkdir -p build
 
+# -buildvcs=false: this module is a subdirectory of the ikigai mono-repo, whose
+# .git lives at the (bare) repo root. Go's automatic VCS stamping walks up to
+# that root and runs git there, which fails (exit 128) and aborts the build. The
+# version is injected explicitly via -ldflags below, so the VCS stamp is redundant.
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+  go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=${VERSION}" \
     -o "build/${APP}.bin" ./cmd/dashboard
 
 cat > "build/${APP}" <<'WRAPPER'
@@ -36,10 +40,11 @@ set -euo pipefail
 # The dashboard is the apex app: its public origin is the bare account domain,
 # the exact redirect_uri origin Google sends the user back to.
 export DASHBOARD_PUBLIC_BASE_URL="https://${METASPOT_DOMAIN}"
-# Resource identifiers the AS mints tokens for — the nginx-fronted /srv/<svc>/mcp
-# mounts, same origin as the public base URL. Required by the serve command.
-# One entry per MCP service on the box: crm + the ledger skeleton + notify + ralph.
-export DASHBOARD_RESOURCES="https://${METASPOT_DOMAIN}/srv/crm/mcp,https://${METASPOT_DOMAIN}/srv/ledger/mcp,https://${METASPOT_DOMAIN}/srv/notify/mcp,https://${METASPOT_DOMAIN}/srv/ralph/mcp"
+# The dashboard DERIVES its AS resource list (one /srv/<svc>/mcp identifier per
+# MCP service) from the per-service manifests under this root at startup, so
+# registering a new MCP service is just a dashboard restart — no env edit needed.
+# /opt is the install root where each service drops etc/manifest.env.
+export DASHBOARD_MANIFEST_ROOT=/opt
 exec /opt/dashboard/bin/dashboard.bin serve \
   --ip 127.0.0.1 \
   --port "${PORT}" \
@@ -47,5 +52,12 @@ exec /opt/dashboard/bin/dashboard.bin serve \
 WRAPPER
 chmod 0755 "build/${APP}"
 
+# Bundle the shared, repo-root resolver so the on-box wrapper (/opt/${APP}/bin/run)
+# can resolve peer service addresses by name from their deploy manifests. bin/registry
+# is the single source of truth; every service ships a byte-identical copy.
+cp "$REPO/../bin/registry" "build/registry"
+chmod 0755 "build/registry"
+
 echo "build/${APP}"
 echo "build/${APP}.bin"
+echo "build/registry"

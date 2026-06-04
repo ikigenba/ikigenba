@@ -26,8 +26,12 @@ VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo d
 
 mkdir -p build
 
+# -buildvcs=false: this module is a subdirectory of the ikigai mono-repo, whose
+# .git lives at the (bare) repo root. Go's automatic VCS stamping walks up to
+# that root and runs git there, which fails (exit 128) and aborts the build. The
+# version is injected explicitly via -ldflags below, so the VCS stamp is redundant.
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+  go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=${VERSION}" \
     -o "build/${APP}.bin" ./cmd/notify
 
 cat > "build/${APP}" <<'WRAPPER'
@@ -41,11 +45,15 @@ set -euo pipefail
 export NOTIFY_RESOURCE_ID="https://${METASPOT_DOMAIN}/srv/notify/mcp"
 export NOTIFY_AUTH_SERVER="https://${METASPOT_DOMAIN}"
 export NOTIFY_DB_PATH=/opt/notify/data/notify.db
-# Event-plane consumer config. The feed is crm's loopback port — the event plane
-# bypasses nginx (event-protocol.md §2), so this is a direct 127.0.0.1 address.
+# Event-plane consumer config. Resolve crm's event-feed address BY NAME from the
+# on-box registry (the resolver is this wrapper's sibling at /opt/notify/bin/registry,
+# and crm's manifest is a peer under /opt — the resolver's default REGISTRY_ROOT) —
+# no hardcoded peer port. The feed is crm's loopback port: the event plane bypasses
+# nginx (event-protocol.md §2), so this is a direct 127.0.0.1 address. CRM_FEED_URL
+# is the upstream-named key (event-protocol.md §3).
 # NTFY_TOPIC / NTFY_API_KEY are NOT set here: they are app-config secrets already
 # in the environment.
-export NOTIFY_FEED_URL="http://127.0.0.1:3001/feed"
+export CRM_FEED_URL="$("$(dirname "$0")/registry" feed-url crm)"
 export NOTIFY_FROM="tail"
 export NOTIFY_NTFY_BASE_URL="https://ntfy.sh"
 exec /opt/notify/bin/notify.bin \
@@ -54,5 +62,12 @@ exec /opt/notify/bin/notify.bin \
 WRAPPER
 chmod 0755 "build/${APP}"
 
+# Bundle the shared, repo-root resolver so the on-box wrapper (/opt/${APP}/bin/run)
+# can resolve peer service addresses by name from their deploy manifests. bin/registry
+# is the single source of truth; every service ships a byte-identical copy.
+cp "$REPO/../bin/registry" "build/registry"
+chmod 0755 "build/registry"
+
 echo "build/${APP}"
 echo "build/${APP}.bin"
+echo "build/registry"

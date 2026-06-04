@@ -2,6 +2,9 @@
 // services that expose an MCP endpoint, so the suite plugin's connect skill can
 // wire up each one.
 //
+// Each reported Service carries its Name, Mount, loopback Port, and (for
+// event-plane producers) its Feed path.
+//
 // A service is included only when its manifest sets MCP=true. The dashboard (the
 // authorization server) is intentionally NOT special-cased out: its own manifest
 // simply omits MCP=true, so it never appears. If someone mistakenly adds MCP=true
@@ -17,9 +20,13 @@ import (
 
 // Service is one MCP-exposing service discovered on the box. The MCP resource URL
 // is not computed here: it needs the request host, which only the HTTP layer has.
+// Port is the loopback port the service binds; Feed is its event-plane feed path
+// (empty unless the service is a producer).
 type Service struct {
 	Name  string
 	Mount string
+	Port  string
+	Feed  string
 }
 
 // Read globs root/*/etc/manifest.env, parses each as simple shell KEY=value, and
@@ -40,7 +47,12 @@ func Read(root string) ([]Service, error) {
 		if env["MCP"] != "true" {
 			continue
 		}
-		services = append(services, Service{Name: env["APP"], Mount: env["MOUNT"]})
+		services = append(services, Service{
+			Name:  env["APP"],
+			Mount: env["MOUNT"],
+			Port:  env["PORT"],
+			Feed:  env["FEED"],
+		})
 	}
 	sort.Slice(services, func(i, j int) bool { return services[i].Name < services[j].Name })
 	return services, nil

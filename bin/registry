@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+#
+# registry — resolve service names to loopback addresses from deploy manifests.
+#
+# The per-service etc/manifest.env files ARE the registry: this script reads them
+# and answers name->address queries so ports/peer addresses need not be hardcoded.
+# Services always bind the loopback host (127.0.0.1) — that host is a constant
+# here, never stored per-service.
+#
+# Env:
+#   REGISTRY_ROOT  directory containing <name>/etc/manifest.env (default /opt)
+#
+# Subcommands:
+#   port <name>                   print PORT
+#   addr <name>                   print 127.0.0.1:<PORT>
+#   mount <name>                  print MOUNT
+#   feed-url <name>               print http://127.0.0.1:<PORT><FEED> (errors if no FEED)
+#   resource-url <domain> <name>  print https://<domain><MOUNT>mcp (errors if not MCP=true)
+#   list-mcp                      print names with MCP=true, one per line, sorted
+set -euo pipefail
+
+REGISTRY_ROOT="${REGISTRY_ROOT:-/opt}"
+readonly LOOPBACK="127.0.0.1"
+
+die() {
+	echo "registry: $*" >&2
+	exit 1
+}
+
+usage() {
+	cat >&2 <<'EOF'
+usage: registry <subcommand> [args]
+  port <name>                   print PORT
+  addr <name>                   print 127.0.0.1:<PORT>
+  mount <name>                  print MOUNT
+  feed-url <name>               print http://127.0.0.1:<PORT><FEED>
+  resource-url <domain> <name>  print https://<domain><MOUNT>mcp
+  list-mcp                      print names with MCP=true, sorted
+EOF
+	exit 1
+}
+
+manifest_path() {
+	echo "${REGISTRY_ROOT}/$1/etc/manifest.env"
+}
+
+# manifest_get <name> <key> — print the value of <key> from <name>'s manifest, or
+# nothing if the key is absent. Fails if the manifest file does not exist. Parse
+# rules mirror the Go parser: skip blank/'#' lines, split on the first '=', trim
+# whitespace from key and value, strip one pair of matching surrounding quotes.
+manifest_get() {
+	local name="$1" want="$2" path
+	path="$(manifest_path "$name")"
+	[ -f "$path" ] || die "no manifest for service '$name' ($path)"
+
+	local line key val
+	while IFS= read -r line || [ -n "$line" ]; do
+		# trim leading/trailing whitespace
+		line="${line#"${line%%[![:space:]]*}"}"
+		line="${line%"${line##*[![:space:]]}"}"
+		[ -z "$line" ] && continue
+		case "$line" in '#'*) continue ;; esac
+		[ "$line" = "${line#*=}" ] && continue # no '='
+		key="${line%%=*}"
+		val="${line#*=}"
+		key="${key#"${key%%[![:space:]]*}"}"
+		key="${key%"${key##*[![:space:]]}"}"
+		val="${val#"${val%%[![:space:]]*}"}"
+		val="${val%"${val##*[![:space:]]}"}"
+		# strip one pair of matching surrounding quotes
+		if [ "${#val}" -ge 2 ]; then
+			local first="${val:0:1}" last="${val: -1}"
+			if { [ "$first" = '"' ] && [ "$last" = '"' ]; } ||
+				{ [ "$first" = "'" ] && [ "$last" = "'" ]; }; then
+				val="${val:1:${#val}-2}"
+			fi
+		fi
+		if [ "$key" = "$want" ]; then
+			printf '%s\n' "$val"
+			return 0
+		fi
+	done <"$path"
+	return 1 # key absent
+}
+
+# require_field <name> <key> — print the value or die if absent/empty.
+require_field() {
+	local name="$1" key="$2" val
+	val="$(manifest_get "$name" "$key")" || die "service '$name' manifest missing required field $key"
+	[ -n "$val" ] || die "service '$name' manifest missing required field $key"
+	printf '%s\n' "$val"
+}
+
+cmd_port() {
+	[ $# -eq 1 ] || usage
+	require_field "$1" PORT
+}
+
+cmd_addr() {
+	[ $# -eq 1 ] || usage
+	local port
+	port="$(require_field "$1" PORT)"
+	printf '%s:%s\n' "$LOOPBACK" "$port"
+}
+
+cmd_mount() {
+	[ $# -eq 1 ] || usage
+	require_field "$1" MOUNT
+}
+
+cmd_feed_url() {
+	[ $# -eq 1 ] || usage
+	local name="$1" port feed
+	port="$(require_field "$name" PORT)"
+	feed="$(manifest_get "$name" FEED)" || die "service '$name' is not an event-plane producer (no FEED)"
+	[ -n "$feed" ] || die "service '$name' is not an event-plane producer (no FEED)"
+	printf 'http://%s:%s%s\n' "$LOOPBACK" "$port" "$feed"
+}
+
+cmd_resource_url() {
+	[ $# -eq 2 ] || usage
+	local domain="$1" name="$2" mcp mount
+	mcp="$(manifest_get "$name" MCP)" || die "service '$name' is not an MCP service (MCP!=true)"
+	[ "$mcp" = "true" ] || die "service '$name' is not an MCP service (MCP!=true)"
+	mount="$(require_field "$name" MOUNT)"
+	printf 'https://%s%smcp\n' "$domain" "$mount"
+}
+
+cmd_list_mcp() {
+	[ $# -eq 0 ] || usage
+	local path name mcp
+	for path in "$REGISTRY_ROOT"/*/etc/manifest.env; do
+		[ -f "$path" ] || continue
+		name="${path%/etc/manifest.env}"
+		name="${name##*/}"
+		mcp="$(manifest_get "$name" MCP)" || continue
+		[ "$mcp" = "true" ] && printf '%s\n' "$name"
+	done | sort
+}
+
+main() {
+	[ $# -ge 1 ] || usage
+	local sub="$1"
+	shift
+	case "$sub" in
+	port) cmd_port "$@" ;;
+	addr) cmd_addr "$@" ;;
+	mount) cmd_mount "$@" ;;
+	feed-url) cmd_feed_url "$@" ;;
+	resource-url) cmd_resource_url "$@" ;;
+	list-mcp) cmd_list_mcp "$@" ;;
+	*) usage ;;
+	esac
+}
+
+main "$@"

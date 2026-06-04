@@ -3,4 +3,19 @@
 # Unprivileged: all state (pid, logs, temp) stays under this directory.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo="$(cd "$here/.." && pwd)"
+
+# Regenerate the dev /srv/<svc>/ location fragments from each service's templated
+# etc/nginx.conf, substituting __PORT__ with the service's loopback PORT (the
+# canonical resolver is bin/registry, reading <svc>/etc/manifest.env). This is the
+# dev mirror of each service's bin/setup. Generated files are gitignored and
+# overwritten every run, so this stays idempotent.
+mkdir -p "$here/locations"
+for svc in crm ledger notify ralph; do
+	frag="$repo/$svc/etc/nginx.conf"
+	[ -f "$frag" ] || continue
+	port="$(REGISTRY_ROOT="$repo" "$repo/bin/registry" port "$svc")"
+	sed "s/__PORT__/${port}/g" "$frag" >"$here/locations/${svc}.conf"
+done
+
 exec /usr/sbin/nginx -p "$here" -c "$here/nginx.conf" -g 'daemon off;'

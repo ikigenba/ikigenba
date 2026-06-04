@@ -22,8 +22,8 @@ func writeManifest(t *testing.T, root, svc, contents string) {
 // manifest is skipped, and only the crm service (MCP=true) is returned.
 func TestReadKeepsOnlyMCP(t *testing.T) {
 	root := t.TempDir()
-	writeManifest(t, root, "dashboard", "APP=dashboard\nMOUNT=/\nDEFAULT=true\n")
-	writeManifest(t, root, "crm", "# crm service\nAPP=crm\nMOUNT=/srv/crm/\nMCP=true\n")
+	writeManifest(t, root, "dashboard", "APP=dashboard\nMOUNT=/\nDEFAULT=true\nPORT=3000\n")
+	writeManifest(t, root, "crm", "# crm service\nAPP=crm\nMOUNT=/srv/crm/\nPORT=3001\nMCP=true\nFEED=/feed\n")
 	writeManifest(t, root, "broken", "this is not = = valid\n\x00garbage")
 
 	got, err := Read(root)
@@ -38,5 +38,32 @@ func TestReadKeepsOnlyMCP(t *testing.T) {
 	}
 	if got[0].Mount != "/srv/crm/" {
 		t.Errorf("Mount = %q, want /srv/crm/", got[0].Mount)
+	}
+	if got[0].Port != "3001" {
+		t.Errorf("Port = %q, want 3001", got[0].Port)
+	}
+	if got[0].Feed != "/feed" {
+		t.Errorf("Feed = %q, want /feed", got[0].Feed)
+	}
+}
+
+// TestReadConsumerHasNoFeed: an MCP service without a FEED key (a consumer) is
+// listed with an empty Feed but a populated Port.
+func TestReadConsumerHasNoFeed(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, "notify", "APP=notify\nMOUNT=/srv/notify/\nPORT=3003\nMCP=true\nCONSUMES=crm\n")
+
+	got, err := Read(root)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d services, want 1: %+v", len(got), got)
+	}
+	if got[0].Port != "3003" {
+		t.Errorf("Port = %q, want 3003", got[0].Port)
+	}
+	if got[0].Feed != "" {
+		t.Errorf("Feed = %q, want empty", got[0].Feed)
 	}
 }

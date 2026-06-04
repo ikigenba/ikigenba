@@ -63,7 +63,7 @@ type config struct {
 	dbPath     string
 
 	// Event-plane consumer config.
-	feedURL string // crm's loopback feed (NOTIFY_FEED_URL)
+	feedURL string // crm's loopback feed (CRM_FEED_URL)
 	from    string // first-subscription choice: tail|earliest (NOTIFY_FROM)
 
 	// ntfy push config. ntfyBase is plain config (so tests/dev can point at a
@@ -116,9 +116,12 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) er
 		// SetMaxOpenConns(1) for single-writer discipline (the consumer is the only
 		// writer of feed_offset); we resolve the path here at the boundary.
 		dbPath: envOr(getenv, "NOTIFY_DB_PATH", "./tmp/notify.db"),
-		// NOTIFY_FEED_URL is crm's loopback feed (§3). The event plane bypasses
+		// CRM_FEED_URL is crm's loopback feed (§3). It is the upstream-named key
+		// (the producer is crm), resolved from crm's deploy manifest by the on-box
+		// registry resolver at start — not a hardcoded peer port (the dev fallback
+		// below is only for `go run`/tests without env). The event plane bypasses
 		// nginx (§2), so this is a direct 127.0.0.1 address.
-		feedURL: envOr(getenv, "NOTIFY_FEED_URL", "http://127.0.0.1:3001/feed"),
+		feedURL: envOr(getenv, "CRM_FEED_URL", "http://127.0.0.1:3001/feed"),
 		// NOTIFY_FROM is the first-subscription choice (§7.1); tail by default so a
 		// fresh notify only pushes for contacts created from now on.
 		from:      envOr(getenv, "NOTIFY_FROM", "tail"),

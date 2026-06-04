@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"dashboard/internal/db"
 	"dashboard/internal/googleidp"
 	"dashboard/internal/grantevents"
+	"dashboard/internal/inventory"
 	"dashboard/internal/logging"
 	"dashboard/internal/oauth"
 	"dashboard/internal/oauthstate"
@@ -112,7 +114,7 @@ func cmdServe(args []string, getenv func(string) string, stdout, stderr io.Write
 	// so a missing secret fails loudly here rather than as a downstream Google
 	// 400. CLIENT_SECRET isn't consumed until the code exchange, but login can't
 	// work without it, so its presence is required now too.
-	if err := requireEnv(getenv, "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_WORKSPACE_DOMAIN", "DASHBOARD_RESOURCES"); err != nil {
+	if err := requireEnv(getenv, "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_WORKSPACE_DOMAIN"); err != nil {
 		return err
 	}
 	creds := googleidp.Credentials{
@@ -120,16 +122,19 @@ func cmdServe(args []string, getenv func(string) string, stdout, stderr io.Write
 		ClientSecret:    getenv("GOOGLE_CLIENT_SECRET"),
 		WorkspaceDomain: getenv("GOOGLE_WORKSPACE_DOMAIN"),
 	}
-	// DASHBOARD_RESOURCES is the comma-separated set of resource identifiers (1..3)
-	// the authorization server mints tokens for; DASHBOARD_ADMINS is an optional
-	// comma-separated set of owner emails permitted to introspect any chain.
-	resources := splitList(getenv("DASHBOARD_RESOURCES"))
+	// DASHBOARD_ADMINS is an optional comma-separated set of owner emails
+	// permitted to introspect any chain.
 	admins := splitList(getenv("DASHBOARD_ADMINS"))
 	// publicBaseURL is the exact origin Google redirects back to and that the
 	// later code-exchange must resend verbatim; it must match the redirect URI
 	// registered in the Google Cloud console.
 	publicBaseURL := envOr(getenv, "DASHBOARD_PUBLIC_BASE_URL", "http://localhost:3000")
-	return serve(*dbPath, *ip, *port, *logLevel, creds, publicBaseURL, resources, admins, authnRateLimit, authnRateWindow, stdout, stderr)
+	// manifestRoot is the directory under which each service drops its
+	// etc/manifest.env (/opt on the box). The AS resource list is DERIVED from
+	// these manifests at startup, so registering a new MCP service is just a
+	// dashboard restart — no env edit + redeploy footgun.
+	manifestRoot := envOr(getenv, "DASHBOARD_MANIFEST_ROOT", "/opt")
+	return serve(*dbPath, *ip, *port, *logLevel, creds, publicBaseURL, manifestRoot, admins, authnRateLimit, authnRateWindow, stdout, stderr)
 }
 
 // cmdReset parses the reset subcommand's flags and wipes the database.
@@ -150,12 +155,28 @@ func cmdReset(args []string, getenv func(string) string, stdin io.Reader, stdout
 // serve runs the long-running HTTP server until interrupted. It opens the
 // database, builds the login + OAuth authorization-server collaborators over
 // that one handle, and hands them to the server.
-func serve(dbPath, ip string, port int, logLevel string, creds googleidp.Credentials, publicBaseURL string, resources, admins []string, authnRateLimit int, authnRateWindow time.Duration, stdout, stderr io.Writer) error {
+func serve(dbPath, ip string, port int, logLevel string, creds googleidp.Credentials, publicBaseURL, manifestRoot string, admins []string, authnRateLimit int, authnRateWindow time.Duration, stdout, stderr io.Writer) error {
 	level, err := logging.ParseLevel(logLevel)
 	if err != nil {
 		return err
 	}
 	logger := logging.New(level, stdout)
+
+	// Derive the AS resource list from the on-box service manifests at startup,
+	// via the same inventory package the runtime /services endpoint uses. Each
+	// MCP service's resource ID is <scheme>://<host><mount>mcp, built from the
+	// public base URL's origin so it is byte-identical to the IDs nginx fronts.
+	resources, err := deriveResources(manifestRoot, publicBaseURL)
+	if err != nil {
+		return err
+	}
+	if len(resources) == 0 {
+		// An authorization server with no resources can bind no token to any
+		// service — a hard misconfiguration, not a degraded mode. Fail loudly
+		// here rather than start an AS that rejects every authorize.
+		return fmt.Errorf("no MCP services found under manifest root %q: the authorization server has no resources to mint tokens for", manifestRoot)
+	}
+	logger.Info("derived AS resources from manifests", "manifest_root", manifestRoot, "count", len(resources))
 
 	addr := net.JoinHostPort(ip, strconv.Itoa(port))
 	idpProvider := googleidp.New(creds)
@@ -185,6 +206,7 @@ func serve(dbPath, ip string, port int, logLevel string, creds googleidp.Credent
 		OAuthTokens:     oauthTokens,
 		Audit:           auditLog,
 		Resources:       resources,
+		ManifestRoot:    manifestRoot,
 		Admins:          admins,
 		RateLimiter:     ratelimit.New(authnRateLimit, authnRateWindow),
 		GrantEvents:     grantevents.New(),
@@ -220,6 +242,30 @@ func requireEnv(getenv func(string) string, names ...string) error {
 		return fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+// deriveResources reads the per-service manifests under manifestRoot via the
+// inventory package and returns one MCP resource identifier per MCP service,
+// built as <scheme>://<host><mount>mcp from the public base URL's origin. The
+// list is sorted by service name (inventory.Read already sorts). A glob-level
+// failure or an unparseable publicBaseURL is fatal — the resource IDs must bind
+// to live tokens, so a misread root must not silently yield an empty AS.
+func deriveResources(manifestRoot, publicBaseURL string) ([]string, error) {
+	svcs, err := inventory.Read(manifestRoot)
+	if err != nil {
+		return nil, fmt.Errorf("reading service manifests under %q: %w", manifestRoot, err)
+	}
+	base, err := url.Parse(publicBaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parsing DASHBOARD_PUBLIC_BASE_URL %q: %w", publicBaseURL, err)
+	}
+	var resources []string
+	for _, s := range svcs {
+		// Mount carries its own leading+trailing slash (e.g. "/srv/crm/"), so
+		// "mcp" appends directly — matches mcpResourceURL semantics exactly.
+		resources = append(resources, base.Scheme+"://"+base.Host+s.Mount+"mcp")
+	}
+	return resources, nil
 }
 
 // splitList parses a comma-separated environment value into a slice, trimming

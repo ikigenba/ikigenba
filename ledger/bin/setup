@@ -27,8 +27,10 @@ SSH_KEY="${SSH_KEY/#\~/$HOME}"
 
 echo ">> setup: ${SSH_USER}@${HOST}  app=${APP}  mount=${MOUNT}  port=${PORT}  (service fragment only)"
 
-# The nginx location fragment is literal (no placeholders) — see etc/nginx.conf.
-FRAGMENT="$(cat etc/nginx.conf)"
+# Materialize the nginx location fragment, substituting __PORT__ with this
+# service's loopback PORT (sourced from etc/manifest.env above) — same convention
+# as the dashboard's apex block. See etc/nginx.conf.
+FRAGMENT="$(sed "s/__PORT__/${PORT}/g" etc/nginx.conf)"
 
 UNIT="$(cat <<EOF
 [Unit]

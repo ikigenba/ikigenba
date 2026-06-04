@@ -35,6 +35,14 @@ rsync -az --chmod=F755 \
   --rsync-path="sudo rsync" \
   "$WRAP" "${SSH_USER}@${HOST}:/opt/${APP}/bin/run"
 
+# Ship the bundled shared resolver alongside the run wrapper; the wrapper calls it
+# to resolve peer service addresses by name. Same transport/ownership as run above.
+echo ">> rsync build/registry -> /opt/${APP}/bin/registry"
+rsync -az --chmod=F755 \
+  -e "ssh -i ${SSH_KEY}" \
+  --rsync-path="sudo rsync" \
+  "build/registry" "${SSH_USER}@${HOST}:/opt/${APP}/bin/registry"
+
 echo ">> rsync ${BIN} -> /opt/${APP}/bin/${APP}.bin"
 rsync -az --chmod=F755 \
   -e "ssh -i ${SSH_KEY}" \

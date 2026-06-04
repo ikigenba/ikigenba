@@ -48,5 +48,12 @@ exec /opt/ledger/bin/ledger.bin \
 WRAPPER
 chmod 0755 "build/${APP}"
 
+# Bundle the shared, repo-root resolver so the on-box wrapper (/opt/${APP}/bin/run)
+# can resolve peer service addresses by name from their deploy manifests. bin/registry
+# is the single source of truth; every service ships a byte-identical copy.
+cp "$REPO/../bin/registry" "build/registry"
+chmod 0755 "build/registry"
+
 echo "build/${APP}"
 echo "build/${APP}.bin"
+echo "build/registry"
