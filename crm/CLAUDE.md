@@ -24,14 +24,54 @@ A loopback-only domain service. nginx (owned by the dashboard) terminates TLS,
 introspects every request via `auth_request` against the dashboard, and injects
 `X-Owner-Email` / `X-Client-Id`. This service **trusts those headers** and does
 no token validation of its own. nginx strips the `/srv/crm/` prefix, so internally
-your routes stay `/contacts`, `/mcp`, etc. Small business, ≤100 users: SQLite,
+your routes stay `/mcp`, `/whoami`, etc. Small business, ≤100 users: SQLite,
 single instance, is correct and deliberate.
+
+## The domain — a polymorphic CRM (5 entities, 6 verbs)
+
+The service is a real **sales CRM**, not an address book, and it is **MCP-only**
+(no REST domain routes). The full design is in `PLAN.md`; the shape:
+
+- **Five entities** (all ULID id, `created_at`/`updated_at`/`deleted_at` soft
+  delete; every read filters `deleted_at IS NULL`): **organization**, **contact**
+  (rich identity: emails/phones/tags, plus funnel fields `org_id`, `title`,
+  `lifecycle`), **deal** (participants as `contacts:[{id,role}]`; `status` is
+  **derived** from `stage`, never client-set), **task**, **interaction**
+  (append-only timeline).
+- **Six fixed MCP verbs** — the surface is a function of *verbs*, not entities:
+  `crm_search`, `crm_get`, `crm_save` (loose polymorphic upsert over org/contact/
+  deal/task), `crm_delete` (shallow soft-delete), `crm_log` (append an
+  interaction), `crm_whoami`. Adding entities/fields later must **not** add tools.
+- **`internal/crm/`** is the domain package, one file per entity (each a stateless
+  `<entity>Store` of pure-SQL methods on a Service-owned `*sql.Tx`), plus
+  `service.go` (the dispatcher seam) and `events.go`.
+- **`crm.Service` (`service.go`) is the dispatcher and the only boundary:** typed
+  decode of the loose `fields` JSON into `<Type>Input` → normalization (email
+  lowercase, phone→E.164 via `phonenumbers`, `display_name` derivation, label
+  validation) → vocabulary validation with corrective messages → rejects a
+  client-supplied deal `status` → **exact** dedup probe (contact by normalized
+  primary email; org by exact domain else exact name) returning a `duplicate`
+  error with `existing_id` unless `force:true` → FK liveness checks → entity Save.
+  It owns the tx; entities never own a transaction and never see `map[string]any`.
+- **Errors:** uniform envelope `{"error":{code,message,field?,existing_id?}}`,
+  closed vocabulary (`validation/not_found/duplicate/conflict`). Entities return
+  typed sentinels; the dispatcher renders the wire JSON (`errorEnvelope` in
+  `mcp.go`).
+- **Events (first wave, in code):** `contact.created`, `contact.updated`,
+  `contact.tagged`, `contact.untagged` (the last two derived from the declarative
+  tag diff — the newsletter audience) appended to the eventplane outbox on the
+  same tx as the write, `Ring()` after commit. Second-wave deal/interaction events
+  are documented intent only, deferred until a consumer exists.
 
 ## Keep / port from `../crm.bak`
 
-`contacts`, the `/contacts` REST handlers, the MCP tools and `/mcp` endpoint,
-`db` (+ migrations), and its own `audit` store (domain mutations, keyed by the
-header identity).
+The platform scaffolding (`db` + migration runner/WAL pragma, `ids`, `logging`,
+`server` routing/PRM/`requireIdentityHeaders`/whoami, the `mcp.go` JSON-RPC
+transport, the `/mcp` + `/feed` endpoints, eventplane wiring) and the audit store
+(domain mutations keyed by the header identity). The contact identity model
+(multi-email/phone normalization, primary discipline, `phonenumbers`) was ported
+into the new `internal/crm/` contact entity. The old contacts-only domain and its
+fine-grained tools were **replaced**, not ported.
 
 ## Delete entirely (these moved to `dashboard`)
 
@@ -48,9 +88,12 @@ of `ui/`. No login, no token store, no OAuth endpoints.
 - Serve one **unauthenticated** route: `/.well-known/oauth-protected-resource`
   (RFC 9728), composed from this service's resource id + the dashboard AS URL
   (both from env). It is the only route without auth.
-- Add a no-side-effect **`crm_whoami`** MCP tool returning the authenticated
-  owner email — the dashboard's connect skill uses it to verify the chain.
-- Rename the MCP tools `lr_crm_* -> crm_*` (drop the legacy `lr_` prefix).
+- **Redesigned the whole domain (greenfield).** The reference's contacts-only
+  address book and its ~12 fine-grained `lr_crm_*` tools were dropped and
+  replaced by the 5-entity CRM behind the fixed 6-verb polymorphic surface
+  (`crm_*`) described above. No REST `/contacts` routes exist or are added.
+- The no-side-effect **`crm_whoami`** tool returns the authenticated owner email —
+  the dashboard's connect skill uses it to verify the chain.
 
 ## nginx fragment (not a vhost)
 

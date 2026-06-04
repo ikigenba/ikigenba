@@ -1,8 +1,8 @@
 # CRM Redesign Plan — agent-first sales CRM over a polymorphic MCP surface
 
-Status: **approved design, decisions resolved, not yet built.** Build is driven
-by **sequential** subagents (no parallelism) against this plan. Scope is confined
-to the `crm/` folder.
+Status: **built.** All phases (0–5) complete; full suite green
+(`go build ./...` + `go test ./...`). Built by **sequential** subagents (no
+parallelism) against this plan. Scope is confined to the `crm/` folder.
 
 > This revision folds in the design-review decisions (2026-06-03). The earlier
 > draft's "ranked search," 5-way parallel fan-out, and open §10 questions have
@@ -345,8 +345,9 @@ undelete restores the relationship.
 ## 9. Build phases (all sequential — no parallelism)
 
 Dependency-ordered, **one agent at a time**, each gated before the next starts.
+**All phases (0–5) are complete** — every gate below passed.
 
-1. **Phase 0 — Foundation.** Write `002_crm.sql`; delete `internal/contacts/`;
+1. **[done] Phase 0 — Foundation.** Write `002_crm.sql`; delete `internal/contacts/`;
    scaffold `internal/crm/` with `types.go` (typed inputs, sentinels), `store.go`
    (tx helpers, shared scanning, **`newTestStore(t)`** — fresh migrated SQLite,
    `:memory:` with temp-file fallback if WAL/migrations complain), `service.go`
@@ -354,31 +355,31 @@ Dependency-ordered, **one agent at a time**, each gated before the next starts.
    rewire `cmd/crm/main.go` + `internal/mcp/mcp.go` to the new service so the tree
    **compiles** (empty behavior is fine). Gate: `go build ./...` green.
 
-2. **Phase 1 — Entities (sequential, in this order):**
+2. **[done] Phase 1 — Entities (sequential, in this order):**
    **organization → contact → deal → task → interaction.** Each agent reads the
    prior committed entity and conforms to the established pattern. One file each:
    struct, store CRUD against §5 schema, the typed `Save/Get/Search/Delete` (or
    `Log`) hooks. Gate per entity: package compiles; that entity's `*_test.go`
    round-trips its CRUD against a real DB via `newTestStore`.
 
-3. **Phase 2 — Integration.** Flesh out `service.go` (typed decode/normalize, type
+3. **[done] Phase 2 — Integration.** Flesh out `service.go` (typed decode/normalize, type
    routing, upsert, exact dedup probe, tx ownership, sentinel→envelope),
    `search.go` (cross-entity filtered/recency search + summaries). Gate:
    `service_test.go` round-trips each type through Save/Get/Search/Delete/Log,
    incl. the duplicate/`force` path and the soft-delete-orphan-filtering rule.
 
-4. **Phase 3 — Tool surface.** `internal/mcp/tools.go`: 6 descriptors with per-type
+4. **[done] Phase 3 — Tool surface.** `internal/mcp/tools.go`: 6 descriptors with per-type
    field docs in the descriptions, polymorphic dispatch, typed error translation,
    dedup/`force` handling. Gate: `tools_test.go` — `tools/list` shows exactly 6;
    `tools/call` exercises each verb + the error envelope.
 
-5. **Phase 4 — First-wave events + newsletter segment.** Wire
+5. **[done] Phase 4 — First-wave events + newsletter segment.** Wire
    `contact.created/updated` + `contact.tagged/untagged` (from the tag diff)
    through the atomic outbox. Gate: a tagged contact emits a segment event on
    `/feed`.
 
-6. **Phase 5 — Docs.** Update `crm/CLAUDE.md` to the new surface; set this plan's
-   status to "built."
+6. **[done] Phase 5 — Docs.** Update `crm/CLAUDE.md` to the new surface; set this
+   plan's status to "built."
 
 Verification throughout: `go build ./...`, `go test ./...`, then drive `/mcp`
 directly over loopback (services trust injected `X-Owner-Email`/`X-Client-Id`),
