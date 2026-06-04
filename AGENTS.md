@@ -118,6 +118,20 @@ module tree but no network/`go.work`.
 Never touches `/opt/<app>/data/<app>.db` — SQLite state is created on first start;
 **migrations run on start**.
 
+> **A migration is immutable once it has been applied to any live DB.** The
+> migration runner keys solely on the integer version: it applies versions not
+> yet recorded in `schema_migrations`, skips those already there, and refuses to
+> start if the DB carries a version the binary no longer embeds (downgrade
+> guard). So **editing the body of an already-applied migration in place is
+> silently ignored on existing DBs** — the new SQL only ever runs against a fresh
+> DB. Once a migration has shipped, treat it as frozen: every schema change is a
+> **new, higher-numbered, additive** migration (`ALTER`/`CREATE`, never a
+> re-`CREATE` of an existing table). Rewriting an applied migration is only safe
+> pre-production, and then only by resetting (backup + drop) every DB that ran
+> the old body. (This bit crm: `002_crm.sql` was rewritten greenfield-style after
+> the `ai` box had already applied the old v2, so the box needed a backup+reset
+> rather than a plain `bin/deploy`.)
+
 **`bin/setup`** — first-time, idempotent box prep for a service: creates the
 `--system` app user + `/opt/<app>` tree, writes & **enables (not starts)** the
 systemd unit (`ExecStart=/usr/local/bin/metaspot-launch <app>`), drops the nginx
