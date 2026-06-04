@@ -38,8 +38,8 @@ set -euo pipefail
 export DASHBOARD_PUBLIC_BASE_URL="https://${METASPOT_DOMAIN}"
 # Resource identifiers the AS mints tokens for — the nginx-fronted /srv/<svc>/mcp
 # mounts, same origin as the public base URL. Required by the serve command.
-# One entry per MCP service on the box (≤3): crm + the ledger skeleton + notify.
-export DASHBOARD_RESOURCES="https://${METASPOT_DOMAIN}/srv/crm/mcp,https://${METASPOT_DOMAIN}/srv/ledger/mcp,https://${METASPOT_DOMAIN}/srv/notify/mcp"
+# One entry per MCP service on the box: crm + the ledger skeleton + notify + ralph.
+export DASHBOARD_RESOURCES="https://${METASPOT_DOMAIN}/srv/crm/mcp,https://${METASPOT_DOMAIN}/srv/ledger/mcp,https://${METASPOT_DOMAIN}/srv/notify/mcp,https://${METASPOT_DOMAIN}/srv/ralph/mcp"
 exec /opt/dashboard/bin/dashboard.bin serve \
   --ip 127.0.0.1 \
   --port "${PORT}" \
