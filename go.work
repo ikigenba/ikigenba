@@ -9,6 +9,7 @@ go 1.26
 use (
 	./crm
 	./dashboard
+	./dropbox
 	./eventplane
 	./ledger
 	./notify
