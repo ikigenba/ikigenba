@@ -10,11 +10,12 @@ import (
 	"wiki/internal/store"
 )
 
-// toolDescriptors returns the wiki MCP surface. After Task 4.2 that is four
+// toolDescriptors returns the wiki MCP surface. After Task 5.1 that is five
 // verbs: wiki_whoami (the auth proof), wiki_ingest_text (the inline-bytes ingest
-// trigger), wiki_ingest_url (the service-fetches-a-URL ingest trigger), and
-// wiki_job_status (the async-job status read). wiki_search (5.1) lands in a later
-// phase. Schemas are hand-coded with per-field docs to improve LLM hinting.
+// trigger), wiki_ingest_url (the service-fetches-a-URL ingest trigger),
+// wiki_search (the synchronous BM25 read over curated whole pages), and
+// wiki_job_status (the async-job status read). Schemas are hand-coded with
+// per-field docs to improve LLM hinting.
 func toolDescriptors() []map[string]any {
 	return []map[string]any{
 		desc("wiki_whoami", "Return the authenticated caller's identity (owner email and client id) as established by the platform's auth gate. Takes no inputs; the end-to-end auth proof.", obj(map[string]any{})),
@@ -42,6 +43,15 @@ func toolDescriptors() []map[string]any {
 					"description": "Optional tags to stamp onto the document (provenance).",
 				},
 			}, "url")),
+		desc("wiki_search",
+			"Search your personal wiki and get back whole curated pages — your own pre-curated 'internet'. This is a fast, synchronous BM25 keyword search over the integrated pages (no agent, no LLM); call it freely while exploring. The collection's index page (the navigation entry point) is returned first when present, followed by the matching pages ranked best-first, each as a complete page (path, title, full markdown body, relevance score where higher = more relevant). A query with no matches still returns the index page.",
+			obj(map[string]any{
+				"query": strField("The search query (free text). Plain keywords work best; FTS5 operator punctuation is sanitized away."),
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Optional maximum number of ranked pages to return (default 10, capped at 50). The index page is always returned in addition and does not count against this limit.",
+				},
+			}, "query")),
 		desc("wiki_job_status",
 			"Read the status of an asynchronous wiki job (e.g. an ingest integration pass) by its job_id. Returns the lifecycle state (running|succeeded|failed|cancelled), start/end timestamps, any error, and token usage. Owner-scoped: you can only read your own jobs.",
 			obj(map[string]any{
@@ -97,6 +107,8 @@ func (h *Handler) dispatchTool(ctx context.Context, name string, args json.RawMe
 		return h.toolIngestText(ctx, args, id)
 	case "wiki_ingest_url":
 		return h.toolIngestURL(ctx, args, id)
+	case "wiki_search":
+		return h.toolSearch(ctx, args, id)
 	case "wiki_job_status":
 		return h.toolJobStatus(ctx, args, id)
 	default:
@@ -179,6 +191,89 @@ func (h *Handler) toolIngestURL(ctx context.Context, raw json.RawMessage, id Ide
 		"raw_path":    res.RawRelPath,
 		"already_had": res.AlreadyHad,
 	})
+}
+
+// ── search verb ─────────────────────────────────────────────────────────────
+
+// defaultSearchLimit / maxSearchLimit bound the number of ranked pages a single
+// wiki_search returns. The default keeps the response readable for the outer
+// agent; the cap prevents a caller asking for an unbounded page dump.
+const (
+	defaultSearchLimit = 10
+	maxSearchLimit     = 50
+)
+
+type searchArgs struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit"`
+}
+
+// searchResultPage is the JSON shape of one whole curated page in a wiki_search
+// result. Score is presented as "higher = more relevant" (we negate the raw
+// SQLite bm25 score at this edge, where more-negative is better); storage keeps
+// the raw value unchanged. The index page is surfaced with no score.
+type searchResultPage struct {
+	Path  string   `json:"path"`
+	Title string   `json:"title"`
+	Body  string   `json:"body"`
+	Score *float64 `json:"score,omitempty"`
+}
+
+// toolSearch is the SYNCHRONOUS wiki_search read: a direct BM25/FTS5 query over
+// the caller's curated pages — no agent, no LLM, no job. It resolves the owner
+// from the injected identity, runs the search against the default collection (no
+// collection arg per PLAN Decision 4), and returns whole curated pages: the
+// collection's index page first (the navigation entry point, present even on zero
+// hits if it exists), then the ranked matching pages. Scores are negated at this
+// edge so "higher = more relevant" for the reading client.
+func (h *Handler) toolSearch(ctx context.Context, raw json.RawMessage, id Identity) (map[string]any, error) {
+	if h.search == nil {
+		return nil, errors.New("search unavailable: this wiki has no search backend configured")
+	}
+	var a searchArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, errors.New("invalid arguments: " + err.Error())
+	}
+	if a.Query == "" {
+		return nil, errors.New("query is required and must be non-empty")
+	}
+	limit := a.Limit
+	if limit <= 0 {
+		limit = defaultSearchLimit
+	}
+	if limit > maxSearchLimit {
+		limit = maxSearchLimit
+	}
+
+	// The collection key is defaulted here (no collection arg per PLAN Decision 4).
+	// Unlike the filesystem store, internal/search does not self-normalize an empty
+	// collection, and the ingest integration pass indexes under store.DefaultCollection
+	// — so we must pass the same concrete key for the query filter to match.
+	res, err := h.search.Search(ctx, id.OwnerEmail, store.DefaultCollection, a.Query, limit)
+	if err != nil {
+		return nil, errors.New("search failed: " + err.Error())
+	}
+
+	out := map[string]any{
+		"query": a.Query,
+		"count": len(res.Hits),
+	}
+	// Index page first: the navigation entry point, surfaced even on zero hits.
+	if res.Index != nil {
+		out["index"] = searchResultPage{Path: res.Index.Path, Title: res.Index.Title, Body: res.Index.Body}
+	}
+	pages := make([]searchResultPage, 0, len(res.Hits))
+	for _, hit := range res.Hits {
+		relevance := -hit.Score // raw bm25: lower (more negative) is better → negate so higher = better.
+		pages = append(pages, searchResultPage{
+			Path:  hit.Path,
+			Title: hit.Title,
+			Body:  hit.Body,
+			Score: &relevance,
+		})
+	}
+	out["results"] = pages
+	return toolResultJSON(out)
 }
 
 type jobStatusArgs struct {

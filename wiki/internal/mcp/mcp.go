@@ -23,6 +23,7 @@ import (
 	"net/http"
 
 	"wiki/internal/ingest"
+	"wiki/internal/search"
 	"wiki/internal/store"
 )
 
@@ -49,20 +50,36 @@ type Ingester interface {
 	JobStatus(ctx context.Context, owner, collection, jobID string) (ingest.Status, error)
 }
 
+// Searcher is the MCP surface's dependency on the BM25 search backend (Task 5.1).
+// The handler holds the interface, not the concrete *search.BM25Index, so the
+// verb tests can drive a stub and main.go injects the real index. Search is a
+// SYNCHRONOUS read — no agent/LLM, no job — so it is a separate capability from
+// Ingester. Collection is always the default ("") — no collection arg on the
+// verbs yet (PLAN Decision 4); the search backend defaults an empty collection.
+type Searcher interface {
+	// Search runs a BM25 query over the (owner, collection) index and returns
+	// ranked whole pages plus the collection's index page. limit caps the hits
+	// (limit <= 0 selects an implementation default).
+	Search(ctx context.Context, owner, collection, query string, limit int) (search.Results, error)
+}
+
 // Handler is the http.Handler for POST /mcp. It dispatches JSON-RPC methods. It
-// holds the ingest core, which backs wiki_ingest_text and wiki_job_status; the
-// no-side-effect wiki_whoami needs no dependency. ingest may be nil when the
-// service boots without an ingest backend (e.g. ANTHROPIC_API_KEY absent) — the
-// ingest verbs then return a clear "ingest unavailable" tool-error while
-// wiki_whoami and tools/list keep working.
+// holds the ingest core (backs wiki_ingest_text/_url and wiki_job_status) and the
+// search index (backs wiki_search); the no-side-effect wiki_whoami needs no
+// dependency. ingest may be nil when the service boots without an ingest backend
+// (e.g. ANTHROPIC_API_KEY absent) — the ingest verbs then return a clear "ingest
+// unavailable" tool-error while wiki_whoami, wiki_search, and tools/list keep
+// working. search may be nil only in degenerate/test setups; the wiki_search verb
+// returns a clear "search unavailable" tool-error in that case.
 type Handler struct {
 	ingest Ingester
+	search Searcher
 }
 
 // NewHandler builds a Handler over the given ingest core (may be nil to run the
-// non-ingest surface only).
-func NewHandler(ing Ingester) *Handler {
-	return &Handler{ingest: ing}
+// non-ingest surface only) and search index (may be nil to disable wiki_search).
+func NewHandler(ing Ingester, srch Searcher) *Handler {
+	return &Handler{ingest: ing, search: srch}
 }
 
 // ServeHTTP dispatches a single JSON-RPC 2.0 request. Identity is read from the

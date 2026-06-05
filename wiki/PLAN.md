@@ -490,7 +490,12 @@ task's *Acceptance* has been verified by the orchestrator.
 - agentkit job-runner store seam — settle in **0.1**, prove in **1.2**.
 - modernc FTS5/`bm25()` viability — settle in **0.2**.
 - ingest/ask agent **model + cost ceiling** — confirm in **4.1**.
-- **lint cadence** (manual/scheduled/post-ingest) — left manual in **5.2**; revisit.
+- **lint cadence** (manual/scheduled/post-ingest) — **left manual in 5.2 (done)**:
+  lint ships as an internal `lint.Linter.Lint` trigger (NOT a public MCP verb; the
+  surface stays the five 5.1 verbs), wired in `cmd/wiki/main.go` and ready to
+  schedule. Cadence is still **open** — revisit in **Phase 7** (the scheduler /
+  post-ingest hook attaches at the `_ = linter` seam in main.go). See the package
+  doc in `wiki/internal/lint/agent.go` for the rationale + GOALS basis.
 - dropbox **event→bytes** mechanism (fetch-by-reference vs shared storage) — pins
   down in **6.1** from dropbox's real contract.
 - wiki as eventplane **producer** — deferred to **Phase 7**.

@@ -171,7 +171,7 @@ func (c *Core) Ingest(ctx context.Context, owner, collection string, content []b
 
 	rec := job.Record{
 		ID:        jobID,
-		FlightKey: flightKey(owner, collection),
+		FlightKey: FlightKey(owner, collection),
 		StartedAt: c.now(),
 	}
 	if _, err := runner.Spawn(rec, j); err != nil {
@@ -211,12 +211,21 @@ func (c *Core) IngestURL(ctx context.Context, owner, collection, rawURL string, 
 	return c.Ingest(ctx, owner, collection, markdown, meta)
 }
 
-// flightKey serializes integration passes per (owner, collection): two ingests
-// into the same wiki would have their integration agents racing on index.md /
-// log.md and the same touched pages, so we run them one at a time. Per-sha256
-// would let two passes into one collection clobber each other; per owner+
-// collection is the right granularity (the wiki is the shared mutable surface).
-func flightKey(owner, collection string) string {
+// FlightKey serializes WRITE passes over one (owner, collection) wiki. Two
+// ingests into the same wiki would have their integration agents racing on
+// index.md / log.md and the same touched pages, so we run them one at a time.
+// Per-sha256 would let two passes into one collection clobber each other; per
+// owner+collection is the right granularity (the wiki is the shared mutable
+// surface).
+//
+// The lint pass mutates the SAME surface (consolidates/merges/flags pages,
+// rewrites index.md, appends log.md), so it MUST share this key: a lint while an
+// ingest runs (or vice-versa) is rejected single-flight (job.ErrFlightInUse).
+// That is why this is exported — internal/lint reuses the exact same string so
+// only one write-pass runs per collection. The "ingest" literal prefix is kept
+// for backward-compatibility with already-running rows; it names the shared
+// write-pass family, not the ingest verb specifically.
+func FlightKey(owner, collection string) string {
 	return "ingest\x00" + owner + "\x00" + collection
 }
 
