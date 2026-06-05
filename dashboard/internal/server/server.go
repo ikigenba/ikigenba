@@ -1,9 +1,18 @@
-// Package server builds and runs the dashboard's HTTP server: routing, the
-// index page, static assets, security headers, and graceful shutdown.
+// Package server builds the dashboard's HTTP layer: the apex OAuth
+// authorization-server endpoints, /internal/authn introspection, the IAM index +
+// grants, the install landing, the service inventory, and static assets.
+//
+// The dashboard is the apex/DEFAULT app: it issues identity, it does not consume
+// it, so it owns its WHOLE route table and bypasses appkit/server's PRM +
+// identity-gate routes (the Apex bypass, PLAN §B1 map §3 risk 3). appkit owns the
+// outer chassis — the loopback *http.Server, graceful shutdown, request-id +
+// security-header middleware, the DB handle, and the fixed verbs — so this
+// package no longer carries a server bootstrap or a Run loop. Register hands the
+// dashboard's route table to appkit via Spec.Handlers; New is retained only so
+// the in-package tests can drive the same routes as a standalone *http.Server.
 package server
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -12,6 +21,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"appkit/server"
 
 	"dashboard/internal/audit"
 	"dashboard/internal/googleidp"
@@ -23,13 +34,8 @@ import (
 	"dashboard/ui"
 )
 
-// shutdownTimeout bounds how long Run waits for in-flight requests to finish
-// before forcing the server down.
-const shutdownTimeout = 10 * time.Second
-
-// Options configures the HTTP server.
+// Options configures the dashboard's HTTP layer.
 type Options struct {
-	Addr            string                     // listen address, e.g. "127.0.0.1:3000"
 	Logger          *slog.Logger               // structured logger (required)
 	IDPProvider     googleidp.Provider         // Google identity-provider seam (required for login)
 	PublicBaseURL   string                     // public origin, e.g. "https://ai.metaspot.org" (for the OAuth redirect URI)
@@ -68,7 +74,7 @@ type Options struct {
 // app holds the HTTP layer's dependencies. Handlers are methods on app, so new
 // collaborators (sessions, tokens, config) become struct fields rather than
 // ever-longer handler parameter lists. It is unexported: the package's public
-// surface is New/Run, not the struct.
+// surface is New/Register, not the struct.
 type app struct {
 	logger          *slog.Logger
 	tmpl            *template.Template
@@ -91,10 +97,11 @@ type app struct {
 	grantEvents  *grantevents.Bus
 }
 
-// New builds the HTTP server with its routes (index + static assets), security
-// headers, and pinned timeouts. Templates are parsed here so a broken template
-// fails startup loudly rather than at first request. It does not start listening.
-func New(opts Options) (*http.Server, error) {
+// newApp validates every required dependency at this wiring seam (so a
+// misconfigured boot fails loudly here rather than at first request) and parses
+// the templates once (a broken template fails startup, not a request). It builds
+// the app but does not stand up a server — Register/New mount its routes.
+func newApp(opts Options) (*app, error) {
 	if opts.Logger == nil {
 		return nil, errors.New("server: Logger is required")
 	}
@@ -159,7 +166,7 @@ func New(opts Options) (*http.Server, error) {
 		return nil, fmt.Errorf("static subtree: %w", err)
 	}
 
-	a := &app{
+	return &app{
 		logger:          opts.Logger,
 		tmpl:            tmpl,
 		static:          static,
@@ -178,43 +185,40 @@ func New(opts Options) (*http.Server, error) {
 		rateLimiter:     opts.RateLimiter,
 		manifestRoot:    manifestRoot,
 		grantEvents:     opts.GrantEvents,
-	}
+	}, nil
+}
 
-	srv := &http.Server{
-		Addr:              opts.Addr,
+// Register builds the dashboard's HTTP layer from opts and returns an
+// appkit.Spec.Handlers hook that mounts its complete apex route table on appkit's
+// server (via the Apex bypass — no PRM, no identity gate). The dashboard issues
+// identity, it does not consume it, so it owns the whole table. appkit applies
+// the security-header + request-id middleware around it.
+func Register(opts Options) (func(*server.Router) error, error) {
+	a, err := newApp(opts)
+	if err != nil {
+		return nil, err
+	}
+	return func(rt *server.Router) error {
+		a.register(rt)
+		return nil
+	}, nil
+}
+
+// New builds a standalone *http.Server over the dashboard's routes (security
+// headers + the apex route table). It exists for the in-package tests, which
+// drive the route table directly; production goes through Register + appkit. It
+// does not start listening.
+func New(opts Options) (*http.Server, error) {
+	a, err := newApp(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &http.Server{
+		Addr:              "127.0.0.1:0",
 		Handler:           a.routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
-	}
-	return srv, nil
-}
-
-// Run starts srv and blocks until ctx is cancelled, then shuts it down
-// gracefully within shutdownTimeout. A clean shutdown returns nil; a listen
-// failure returns that error.
-func Run(ctx context.Context, srv *http.Server, logger *slog.Logger) error {
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- srv.ListenAndServe()
-	}()
-
-	select {
-	case err := <-errCh:
-		// Server stopped on its own before any shutdown signal.
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
-	case <-ctx.Done():
-		logger.Info("shutdown initiated")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("graceful shutdown: %w", err)
-		}
-		logger.Info("shutdown complete")
-		return nil
-	}
+	}, nil
 }

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"database/sql"
 	"io"
 	"log/slog"
@@ -71,7 +70,6 @@ func newServerDeps(t *testing.T) serverDeps {
 // returned value (e.g. nil out one dep) to probe the constructor's guards.
 func (d serverDeps) opts() Options {
 	return Options{
-		Addr:            "127.0.0.1:0",
 		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		IDPProvider:     googleidp.NewStub(),
 		PublicBaseURL:   "https://ai.metaspot.org",
@@ -232,24 +230,5 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
-func TestRunGracefulShutdown(t *testing.T) {
-	srv := testServer(t)
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- Run(ctx, srv, logger) }()
-
-	// Give ListenAndServe a moment to bind, then signal shutdown.
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run returned error on graceful shutdown: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Run did not return within 2s of shutdown signal")
-	}
-}
+// The graceful-shutdown loop (Run) moved into appkit/server with the conversion
+// to the appkit contract — it is tested there (appkit/server.Run), no longer here.

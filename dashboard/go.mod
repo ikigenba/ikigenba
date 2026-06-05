@@ -3,6 +3,23 @@ module dashboard
 go 1.26
 
 require (
+	appkit v0.0.0
+	modernc.org/sqlite v1.50.1
+)
+
+// The shared chassis (appkit) and event-plane (eventplane) libraries are sibling
+// source trees, not published modules. go.work resolves them for local dev; these
+// committed replaces make the prod build deterministic with or without the
+// workspace (PLAN §1.6: never a versioned require for an in-repo library). The
+// dashboard is not an event-plane producer, but appkit's root package imports
+// eventplane/outbox, so this consumer needs the eventplane replace too — a replace
+// is honored only from the main module (PLAN §E5 note).
+replace appkit => ../appkit
+
+replace eventplane => ../eventplane
+
+require (
+	eventplane v0.0.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -12,5 +29,4 @@ require (
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.50.1 // indirect
 )

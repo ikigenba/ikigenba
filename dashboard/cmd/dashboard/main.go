@@ -1,26 +1,37 @@
+// Command dashboard is the apex/DEFAULT app of the metaspot suite: the OAuth
+// authorization server, IAM index, push, install landing, and service inventory.
+// It is the box's trust boundary — it ISSUES identity (it does not consume it),
+// so unlike the path-routed services it has no PRM document and no identity gate;
+// it owns its WHOLE apex route table through appkit's Apex bypass (Spec.Default).
+//
+// The uniform chassis — the fixed subcommands (serve/version/manifest/migrate/
+// backup/restore), config-from-env, the migration runner + downgrade guard, the
+// loopback HTTP server, graceful shutdown, and request-id/security middleware —
+// is owned by appkit. main.go declares only the dashboard's identity (the Spec)
+// and wires its domain surface (the apex AS/IAM/install/inventory route table,
+// its migrations, and its cert+S3 backup) through the Spec hooks.
+//
+// The AS resource list is DERIVED at startup from the per-service manifests under
+// DASHBOARD_MANIFEST_ROOT (/opt on the box) — registering a new MCP service is a
+// dashboard restart, never an env edit. DASHBOARD_RESOURCES is dead and gone.
 package main
 
 import (
-	"context"
-	"errors"
-	"flag"
 	"fmt"
-	"io"
-	"net"
 	"net/url"
 	"os"
-	"os/signal"
-	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
+	"appkit"
+	"appkit/config"
+
 	"dashboard/internal/audit"
+	"dashboard/internal/backup"
 	"dashboard/internal/db"
 	"dashboard/internal/googleidp"
 	"dashboard/internal/grantevents"
 	"dashboard/internal/inventory"
-	"dashboard/internal/logging"
 	"dashboard/internal/oauth"
 	"dashboard/internal/oauthstate"
 	"dashboard/internal/ratelimit"
@@ -28,92 +39,50 @@ import (
 	"dashboard/internal/session"
 )
 
-// version is the product version, overridden at build time via -ldflags.
-// It will move to internal/version once that package exists.
-var version = "dev"
-
 func main() {
-	if err := run(os.Args[1:], os.Getenv, os.Stdin, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, "dashboard:", err)
-		os.Exit(1)
-	}
+	appkit.Main(appkit.Spec{
+		App:        "dashboard",
+		Mount:      "/",  // apex
+		Default:    true, // DEFAULT=true → Apex bypass: no PRM, no identity gate
+		Port:       3000,
+		MCP:        false, // the AS is not itself an MCP resource; it omits MCP so inventory never self-lists
+		Migrations: db.FS,
+		// Handlers builds the dashboard's whole apex route table over appkit's
+		// shared, migrated DB handle and mounts it via the Apex bypass.
+		Handlers: registerRoutes,
+		// Backup/Restore fold the dashboard's divergent cert+S3+DB snapshot into the
+		// binary (the path-routed default SQLite snapshot is insufficient — the apex
+		// owns the one TLS cert too). They also honor optctl's local-snapshot
+		// contract (--out/--from) so install/rollback keep working unchanged.
+		Backup:  backup.Backup,
+		Restore: backup.Restore,
+	})
 }
 
-func run(args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) error {
-	// Global flagset: only flags valid before the command. Parsing stops at the
-	// first non-flag argument, which is the command. Per-command flags are
-	// parsed by each subcommand's own flagset from the args after the command.
-	global := flag.NewFlagSet("dashboard", flag.ContinueOnError)
-	global.SetOutput(stderr)
-	showVersion := global.Bool("version", false, "print version and exit")
-	global.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: dashboard [--version] <command> [command flags]\n")
-		fmt.Fprintf(stderr, "Commands:\n  serve   run the HTTP server\n  reset   wipe the local SQLite database\n")
-	}
-	if err := global.Parse(args); err != nil {
-		// -h/-help is a successful help request, not an error.
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return err
-	}
-	if *showVersion {
-		fmt.Fprintln(stdout, version)
-		return nil
+// registerRoutes is the Spec.Handlers hook. It reads the dashboard's env at the
+// composition root (creds, public origin, manifest root, admins, rate limits),
+// derives the AS resource list from the on-box service manifests, builds the
+// OAuth/IAM collaborators over appkit's shared DB handle, and returns the apex
+// route table for appkit to mount (Apex bypass — no PRM/identity gate).
+//
+// A missing required secret or an empty derived resource list is a hard boot
+// failure here (an AS with no resources can mint no token) — appkit propagates
+// the returned error and exits non-zero before listening.
+func registerRoutes(rt *appkit.Router) error {
+	getenv := os.Getenv
+	logger := rt.Logger()
+
+	conn := rt.DB()
+	if conn == nil {
+		return fmt.Errorf("dashboard: no DB handle on router")
 	}
 
-	cmd := global.Arg(0)
-	cmdArgs := global.Args()
-	if len(cmdArgs) > 0 {
-		cmdArgs = cmdArgs[1:]
-	}
-
-	switch cmd {
-	case "serve":
-		return cmdServe(cmdArgs, getenv, stdout, stderr)
-	case "reset":
-		return cmdReset(cmdArgs, getenv, stdin, stdout, stderr)
-	case "":
-		global.Usage()
-		return fmt.Errorf("no command given")
-	default:
-		global.Usage()
-		return fmt.Errorf("unknown command: %s", cmd)
-	}
-}
-
-// cmdServe parses the serve subcommand's flags and runs the server.
-func cmdServe(args []string, getenv func(string) string, stdout, stderr io.Writer) error {
-	portDef, err := envOrInt(getenv, "DASHBOARD_PORT", 3000)
-	if err != nil {
-		return err
-	}
-	// Per-token introspection rate limit applied by POST /internal/authn.
-	authnRateLimit, err := envOrInt(getenv, "DASHBOARD_AUTHN_RATE_LIMIT", 60)
-	if err != nil {
-		return err
-	}
-	authnRateWindow, err := envOrDuration(getenv, "DASHBOARD_AUTHN_RATE_WINDOW", 10*time.Second)
-	if err != nil {
-		return err
-	}
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	dbPath := fs.String("db", envOr(getenv, "DASHBOARD_DB", "./dashboard.db"), "SQLite database path (env: DASHBOARD_DB)")
-	ip := fs.String("ip", envOr(getenv, "DASHBOARD_IP", "127.0.0.1"), "listen address (env: DASHBOARD_IP)")
-	port := fs.Int("port", portDef, "listen port (env: DASHBOARD_PORT)")
-	logLevel := fs.String("log-level", envOr(getenv, "DASHBOARD_LOG_LEVEL", "info"), "log level: debug|info|warn|error (env: DASHBOARD_LOG_LEVEL)")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return err
-	}
 	// Google credentials are env-only, never flags: a client secret on a --flag
-	// would be visible in ps output and shell history. Required at the boundary
-	// so a missing secret fails loudly here rather than as a downstream Google
-	// 400. CLIENT_SECRET isn't consumed until the code exchange, but login can't
-	// work without it, so its presence is required now too.
+	// would be visible in ps output and shell history. Required at the boundary so
+	// a missing secret fails loudly here rather than as a downstream Google 400.
+	// CLIENT_SECRET isn't consumed until the code exchange, but login can't work
+	// without it, so its presence is required now too. Presence-checked only — the
+	// value is never read into a log (PLAN §2.8).
 	if err := requireEnv(getenv, "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_WORKSPACE_DOMAIN"); err != nil {
 		return err
 	}
@@ -122,85 +91,74 @@ func cmdServe(args []string, getenv func(string) string, stdout, stderr io.Write
 		ClientSecret:    getenv("GOOGLE_CLIENT_SECRET"),
 		WorkspaceDomain: getenv("GOOGLE_WORKSPACE_DOMAIN"),
 	}
-	// DASHBOARD_ADMINS is an optional comma-separated set of owner emails
-	// permitted to introspect any chain.
-	admins := splitList(getenv("DASHBOARD_ADMINS"))
-	// publicBaseURL is the exact origin Google redirects back to and that the
-	// later code-exchange must resend verbatim; it must match the redirect URI
-	// registered in the Google Cloud console.
-	publicBaseURL := envOr(getenv, "DASHBOARD_PUBLIC_BASE_URL", "http://localhost:3000")
-	// manifestRoot is the directory under which each service drops its
-	// etc/manifest.env (/opt on the box). The AS resource list is DERIVED from
-	// these manifests at startup, so registering a new MCP service is just a
-	// dashboard restart — no env edit + redeploy footgun.
-	manifestRoot := envOr(getenv, "DASHBOARD_MANIFEST_ROOT", "/opt")
-	return serve(*dbPath, *ip, *port, *logLevel, creds, publicBaseURL, manifestRoot, admins, authnRateLimit, authnRateWindow, stdout, stderr)
-}
 
-// cmdReset parses the reset subcommand's flags and wipes the database.
-func cmdReset(args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("reset", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	dbPath := fs.String("db", envOr(getenv, "DASHBOARD_DB", "./dashboard.db"), "SQLite database path (env: DASHBOARD_DB)")
-	yes := fs.Bool("yes", false, "skip confirmation prompt")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return err
-	}
-	return reset(*dbPath, *yes, stdin, stdout, stderr)
-}
-
-// serve runs the long-running HTTP server until interrupted. It opens the
-// database, builds the login + OAuth authorization-server collaborators over
-// that one handle, and hands them to the server.
-func serve(dbPath, ip string, port int, logLevel string, creds googleidp.Credentials, publicBaseURL, manifestRoot string, admins []string, authnRateLimit int, authnRateWindow time.Duration, stdout, stderr io.Writer) error {
-	level, err := logging.ParseLevel(logLevel)
+	// publicBaseURL is the exact origin Google redirects back to and that the later
+	// code-exchange must resend verbatim; it must match the redirect URI registered
+	// in the Google Cloud console. On the box bin-side this was composed from
+	// METASPOT_DOMAIN by the deleted run-wrapper; appkit's config composes the same
+	// AUTH_SERVER origin in-binary, so default to it and let DASHBOARD_PUBLIC_BASE_URL
+	// override for local dev.
+	cfg, err := config.Resolve("dashboard", "/", 3000, getenv)
 	if err != nil {
 		return err
 	}
-	logger := logging.New(level, stdout)
+	publicBaseURL := config.EnvOr(getenv, "DASHBOARD_PUBLIC_BASE_URL", cfg.AuthServer)
 
-	// Derive the AS resource list from the on-box service manifests at startup,
-	// via the same inventory package the runtime /services endpoint uses. Each
-	// MCP service's resource ID is <scheme>://<host><mount>mcp, built from the
-	// public base URL's origin so it is byte-identical to the IDs nginx fronts.
+	// DASHBOARD_ADMINS is an optional comma-separated set of owner emails permitted
+	// to introspect any chain.
+	admins := splitList(getenv("DASHBOARD_ADMINS"))
+
+	// manifestRoot is the directory under which each service drops its
+	// etc/manifest.env (/opt on the box). The AS resource list is DERIVED from these
+	// manifests at startup, so registering a new MCP service is just a dashboard
+	// restart — no env edit + redeploy footgun.
+	manifestRoot := config.EnvOr(getenv, "DASHBOARD_MANIFEST_ROOT", "/opt")
+
+	// Per-token introspection rate limit applied by POST /internal/authn.
+	authnRateLimit, err := config.EnvOrInt(getenv, "DASHBOARD_AUTHN_RATE_LIMIT", 60)
+	if err != nil {
+		return err
+	}
+	authnRateWindow, err := config.EnvOrDuration(getenv, "DASHBOARD_AUTHN_RATE_WINDOW", 10*time.Second)
+	if err != nil {
+		return err
+	}
+
+	// Derive the AS resource list from the on-box service manifests at startup, via
+	// the same inventory package the runtime /services endpoint uses. Each MCP
+	// service's resource ID is <scheme>://<host><mount>mcp, built from the public
+	// base URL's origin so it is byte-identical to the IDs nginx fronts.
 	resources, err := deriveResources(manifestRoot, publicBaseURL)
 	if err != nil {
 		return err
 	}
 	if len(resources) == 0 {
 		// An authorization server with no resources can bind no token to any
-		// service — a hard misconfiguration, not a degraded mode. Fail loudly
-		// here rather than start an AS that rejects every authorize.
+		// service — a hard misconfiguration, not a degraded mode. Fail loudly here
+		// rather than start an AS that rejects every authorize.
 		return fmt.Errorf("no MCP services found under manifest root %q: the authorization server has no resources to mint tokens for", manifestRoot)
 	}
 	logger.Info("derived AS resources from manifests", "manifest_root", manifestRoot, "count", len(resources))
 
-	addr := net.JoinHostPort(ip, strconv.Itoa(port))
-	idpProvider := googleidp.New(creds)
-	database, err := db.Open(dbPath)
-	if err != nil {
-		return err
-	}
-	handshakes := oauthstate.NewHandshakeStore(database, 5*time.Minute)
-	sessions := session.NewSessionStore(database)
-	// Token lifetimes follow the prior crm.bak deployment: short-lived access
-	// tokens, long-lived rotating refresh tokens, briefly-valid authorization codes.
-	oauthClients := oauth.NewClientStore(database)
-	oauthCodes := oauth.NewAuthCodeStore(database, 2*time.Minute)
-	oauthTokens := oauth.NewTokenStore(database, 30*time.Minute, 30*24*time.Hour)
-	auditLog := audit.New(database)
-	srv, err := server.New(server.Options{
-		Addr:            addr,
+	// Build the login + OAuth authorization-server collaborators over appkit's one
+	// shared, migrated DB handle. Token lifetimes follow the prior crm.bak
+	// deployment: short-lived access tokens, long-lived rotating refresh tokens,
+	// briefly-valid authorization codes.
+	handshakes := oauthstate.NewHandshakeStore(conn, 5*time.Minute)
+	sessions := session.NewSessionStore(conn)
+	oauthClients := oauth.NewClientStore(conn)
+	oauthCodes := oauth.NewAuthCodeStore(conn, 2*time.Minute)
+	oauthTokens := oauth.NewTokenStore(conn, 30*time.Minute, 30*24*time.Hour)
+	auditLog := audit.New(conn)
+
+	regHook, err := server.Register(server.Options{
 		Logger:          logger,
-		IDPProvider:     idpProvider,
+		IDPProvider:     googleidp.New(creds),
 		PublicBaseURL:   publicBaseURL,
 		Handshakes:      handshakes,
 		WorkspaceDomain: creds.WorkspaceDomain,
 		Sessions:        sessions,
-		DB:              database,
+		DB:              conn,
 		OAuthClients:    oauthClients,
 		OAuthCodes:      oauthCodes,
 		OAuthTokens:     oauthTokens,
@@ -214,17 +172,7 @@ func serve(dbPath, ip string, port int, logLevel string, creds googleidp.Credent
 	if err != nil {
 		return err
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	logger.Info("starting dashboard", "addr", addr, "version", version)
-	return server.Run(ctx, srv, logger)
-}
-
-// reset wipes the local SQLite database, prompting unless yes is set. Stubbed.
-func reset(dbPath string, yes bool, stdin io.Reader, stdout, stderr io.Writer) error {
-	panic("reset: not implemented")
+	return regHook(rt)
 }
 
 // requireEnv returns an error naming every listed variable that is unset or
@@ -261,8 +209,8 @@ func deriveResources(manifestRoot, publicBaseURL string) ([]string, error) {
 	}
 	var resources []string
 	for _, s := range svcs {
-		// Mount carries its own leading+trailing slash (e.g. "/srv/crm/"), so
-		// "mcp" appends directly — matches mcpResourceURL semantics exactly.
+		// Mount carries its own leading+trailing slash (e.g. "/srv/crm/"), so "mcp"
+		// appends directly — matches mcpResourceURL semantics exactly.
 		resources = append(resources, base.Scheme+"://"+base.Host+s.Mount+"mcp")
 	}
 	return resources, nil
@@ -279,41 +227,4 @@ func splitList(s string) []string {
 		}
 	}
 	return out
-}
-
-func envOr(getenv func(string) string, key, def string) string {
-	if v := getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-// envOrInt returns def when key is unset/empty, the parsed value when it holds
-// a valid integer, and an error naming the variable when it holds anything else
-// — a malformed override fails loudly rather than silently reverting to def.
-func envOrInt(getenv func(string) string, key string, def int) (int, error) {
-	v := getenv(key)
-	if v == "" {
-		return def, nil
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return 0, fmt.Errorf("%s: invalid integer %q", key, v)
-	}
-	return n, nil
-}
-
-// envOrDuration returns def when key is unset/empty, the parsed value when it
-// holds a valid Go duration (e.g. "10s", "1m"), and an error naming the
-// variable when it holds anything else.
-func envOrDuration(getenv func(string) string, key string, def time.Duration) (time.Duration, error) {
-	v := getenv(key)
-	if v == "" {
-		return def, nil
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		return 0, fmt.Errorf("%s: invalid duration %q", key, v)
-	}
-	return d, nil
 }

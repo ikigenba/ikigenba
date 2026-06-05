@@ -1,8 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"strings"
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -14,92 +15,95 @@ func envMap(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
 }
 
-// runArgs drives run with empty stdin and captured output.
-func runArgs(t *testing.T, getenv func(string) string, args ...string) (out, errOut string, err error) {
+// The fixed-verb dispatcher (serve/version/manifest/migrate/backup/restore) is
+// appkit's now and is tested in appkit; this file covers the dashboard-domain
+// helpers that stayed app-side: the AS resource derivation, the admin-list parse,
+// and the required-secret presence check.
+
+// writeManifest creates <root>/<svc>/etc/manifest.env with the given contents.
+func writeManifest(t *testing.T, root, svc, contents string) {
 	t.Helper()
-	var stdout, stderr bytes.Buffer
-	err = run(args, getenv, strings.NewReader(""), &stdout, &stderr)
-	return stdout.String(), stderr.String(), err
+	dir := filepath.Join(root, svc, "etc")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.env"), []byte(contents), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
 }
 
-func TestRunVersion(t *testing.T) {
-	out, _, err := runArgs(t, noEnv, "--version")
+// TestDeriveResources confirms the AS resource list is derived from the on-box
+// MCP manifests: one <origin><mount>mcp per MCP=true service, sorted by name, and
+// the dashboard's own (MCP-less) manifest never self-lists.
+func TestDeriveResources(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, "crm", "APP=crm\nMOUNT=/srv/crm/\nPORT=3001\nMCP=true\nFEED=/feed\n")
+	writeManifest(t, root, "ledger", "APP=ledger\nMOUNT=/srv/ledger/\nPORT=3002\nMCP=true\n")
+	// A consumer-only service with no MCP and the dashboard's own manifest must NOT
+	// appear in the resource list.
+	writeManifest(t, root, "notify", "APP=notify\nMOUNT=/srv/notify/\nPORT=3003\nCONSUMES=crm\n")
+	writeManifest(t, root, "dashboard", "APP=dashboard\nMOUNT=/\nDEFAULT=true\nPORT=3000\n")
+
+	got, err := deriveResources(root, "https://ai.metaspot.org")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("deriveResources: %v", err)
 	}
-	if strings.TrimSpace(out) != version {
-		t.Errorf("stdout = %q, want %q", strings.TrimSpace(out), version)
+	want := []string{
+		"https://ai.metaspot.org/srv/crm/mcp",
+		"https://ai.metaspot.org/srv/ledger/mcp",
 	}
-}
-
-func TestRunNoCommand(t *testing.T) {
-	_, _, err := runArgs(t, noEnv)
-	if err == nil {
-		t.Fatal("want error for missing command, got nil")
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("deriveResources = %v, want %v", got, want)
 	}
 }
 
-func TestRunUnknownCommand(t *testing.T) {
-	_, _, err := runArgs(t, noEnv, "bogus")
-	if err == nil || !strings.Contains(err.Error(), "unknown command") {
-		t.Fatalf("want unknown-command error, got %v", err)
+// TestDeriveResourcesEmpty: a manifest root with no MCP services yields an empty
+// list (main's caller turns that into a hard boot failure).
+func TestDeriveResourcesEmpty(t *testing.T) {
+	got, err := deriveResources(t.TempDir(), "https://ai.metaspot.org")
+	if err != nil {
+		t.Fatalf("deriveResources: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("deriveResources on empty root = %v, want empty", got)
 	}
 }
 
-// Flag separation: a flag must be rejected unless it belongs to the flagset
-// that should own it.
-func TestRunFlagSeparation(t *testing.T) {
+func TestSplitList(t *testing.T) {
 	cases := []struct {
-		name string
-		args []string
+		in   string
+		want []string
 	}{
-		{"global rejects serve flag", []string{"--port", "8080", "serve"}},
-		{"serve rejects global flag", []string{"serve", "--version"}},
-		{"reset rejects serve flag", []string{"reset", "--port", "9"}},
+		{"", nil},
+		{" , ,", nil},
+		{"a@x.com", []string{"a@x.com"}},
+		{" a@x.com , b@x.com ", []string{"a@x.com", "b@x.com"}},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, _, err := runArgs(t, noEnv, tc.args...); err == nil {
-				t.Errorf("want error for %v, got nil", tc.args)
-			}
-		})
-	}
-}
-
-// -h is a successful help request: usage to stderr, no error, exit 0.
-func TestRunHelpIsNotError(t *testing.T) {
-	for _, args := range [][]string{{"-h"}, {"serve", "-h"}, {"reset", "-h"}} {
-		if _, _, err := runArgs(t, noEnv, args...); err != nil {
-			t.Errorf("run(%v): help should not error, got %v", args, err)
+		if got := splitList(tc.in); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("splitList(%q) = %v, want %v", tc.in, got, tc.want)
 		}
 	}
 }
 
-// A malformed DASHBOARD_PORT fails loudly; an unset one falls back to the default.
-func TestServeBadPortEnv(t *testing.T) {
-	_, _, err := runArgs(t, envMap(map[string]string{"DASHBOARD_PORT": "abc"}), "serve")
-	if err == nil || !strings.Contains(err.Error(), "DASHBOARD_PORT") {
-		t.Fatalf("want DASHBOARD_PORT error, got %v", err)
+// TestRequireEnv reports every missing variable at once and passes when all are set.
+func TestRequireEnv(t *testing.T) {
+	if err := requireEnv(noEnv, "A", "B"); err == nil {
+		t.Fatal("want error when both vars are unset")
+	} else if got := err.Error(); !contains(got, "A") || !contains(got, "B") {
+		t.Errorf("error %q should name both A and B", got)
+	}
+	full := envMap(map[string]string{"A": "1", "B": "2"})
+	if err := requireEnv(full, "A", "B"); err != nil {
+		t.Errorf("want nil when all set, got %v", err)
 	}
 }
 
-func TestEnvOr(t *testing.T) {
-	if got := envOr(noEnv, "X", "def"); got != "def" {
-		t.Errorf("unset: got %q, want def", got)
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
 	}
-	if got := envOr(envMap(map[string]string{"X": "v"}), "X", "def"); got != "v" {
-		t.Errorf("set: got %q, want v", got)
-	}
-}
-
-func TestEnvOrInt(t *testing.T) {
-	if n, err := envOrInt(noEnv, "X", 3000); err != nil || n != 3000 {
-		t.Errorf("unset: got (%d, %v), want (3000, nil)", n, err)
-	}
-	if n, err := envOrInt(envMap(map[string]string{"X": "8080"}), "X", 3000); err != nil || n != 8080 {
-		t.Errorf("valid: got (%d, %v), want (8080, nil)", n, err)
-	}
-	if _, err := envOrInt(envMap(map[string]string{"X": "abc"}), "X", 3000); err == nil {
-		t.Error("invalid: want error, got nil")
-	}
+	return false
 }

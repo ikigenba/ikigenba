@@ -1,11 +1,20 @@
-// Package db opens the dashboard's SQLite database and applies its migrations.
+// Package db holds the dashboard's embedded migration set and a thin Open helper
+// for the domain stores and their tests. The SQLite handle pragmas and the
+// forward-only migration runner + downgrade guard are the uniform chassis half
+// and now live in appkit/db (PLAN §B / §E6) — this package keeps only what is
+// app-side: the dashboard's own *.sql files (embedded for Spec.Migrations).
+//
+// On the box, serve/migrate go through appkit.Spec.Migrations directly; Open
+// here (open + migrate, the old behavior the store tests rely on) delegates to
+// appkit/db so there is one Open + one runner implementation across every service.
 package db
 
 import (
+	"context"
 	"database/sql"
 	"embed"
-	"fmt"
-	"time"
+
+	"appkit/db"
 
 	_ "modernc.org/sqlite"
 )
@@ -13,112 +22,33 @@ import (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-// Open opens the SQLite database at path with the pragmas the dashboard relies
-// on (WAL journaling, enforced foreign keys, a 5s busy timeout), verifies the
-// connection, then applies any pending migrations. The pragmas are set in the
-// DSN so every pooled connection inherits them.
+// FS exposes the embedded migration set so cmd/dashboard can hand it to
+// appkit.Spec.Migrations (the binary is the source of truth for its own schema).
+var FS = migrationFiles
+
+// Open opens the dashboard's SQLite database with the chassis pragmas (WAL, FK,
+// single-writer) and applies any pending migrations, then returns the handle.
+// It delegates to appkit/db so there is one Open + one runner across every
+// service. The migrate-on-open keeps the prior behavior the domain store tests
+// depend on.
 func Open(path string) (*sql.DB, error) {
-	dsn := "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)&_pragma=journal_mode(wal)"
-	database, err := sql.Open("sqlite", dsn)
+	conn, err := db.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open sqlite %q: %w", path, err)
-	}
-	// One box, one writer: cap the pool at a single connection so concurrent
-	// writes serialize in Go rather than racing for the SQLite file lock.
-	database.SetMaxOpenConns(1)
-	if err := database.Ping(); err != nil {
-		database.Close()
-		return nil, fmt.Errorf("ping sqlite %q: %w", path, err)
-	}
-	if err := migrate(database); err != nil {
-		database.Close()
 		return nil, err
 	}
-	return database, nil
+	if err := Migrate(context.Background(), conn); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return conn, nil
 }
 
-// migrate applies every pending migration to database in filename order. Applied
-// migrations are recorded by name in schema_migrations, so each runs exactly
-// once across restarts. Embedded entries are already sorted by filename, and the
-// datetime prefix (YYYYMMDDHHMMSS_, e.g. 20260530122721_) fixes the order.
-func migrate(database *sql.DB) error {
-	if _, err := database.Exec(`
-		CREATE TABLE IF NOT EXISTS schema_migrations (
-			name       TEXT PRIMARY KEY,
-			applied_at TEXT NOT NULL
-		)`); err != nil {
-		return fmt.Errorf("create schema_migrations: %w", err)
-	}
-
-	appliedMigrations, err := loadAppliedMigrations(database)
+// Migrate applies the dashboard's embedded migrations against conn using appkit's
+// forward-only runner + downgrade guard.
+func Migrate(ctx context.Context, conn *sql.DB) error {
+	migs, err := db.LoadMigrations(migrationFiles, "migrations")
 	if err != nil {
 		return err
 	}
-
-	entries, err := migrationFiles.ReadDir("migrations")
-	if err != nil {
-		return fmt.Errorf("list migrations: %w", err)
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if appliedMigrations[name] {
-			continue
-		}
-		statements, err := migrationFiles.ReadFile("migrations/" + name)
-		if err != nil {
-			return fmt.Errorf("read migration %s: %w", name, err)
-		}
-		if err := applyMigration(database, name, string(statements)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// loadAppliedMigrations returns the set of migration names already recorded in
-// schema_migrations.
-func loadAppliedMigrations(database *sql.DB) (map[string]bool, error) {
-	rows, err := database.Query(`SELECT name FROM schema_migrations`)
-	if err != nil {
-		return nil, fmt.Errorf("read schema_migrations: %w", err)
-	}
-	defer rows.Close()
-
-	appliedMigrations := map[string]bool{}
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("scan schema_migrations: %w", err)
-		}
-		appliedMigrations[name] = true
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate schema_migrations: %w", err)
-	}
-	return appliedMigrations, nil
-}
-
-// applyMigration runs one migration's statements and records it in
-// schema_migrations, both inside a single transaction so a failure leaves no
-// half-applied schema and no orphan bookkeeping row.
-func applyMigration(database *sql.DB, name, statements string) error {
-	tx, err := database.Begin()
-	if err != nil {
-		return fmt.Errorf("begin migration %s: %w", name, err)
-	}
-	if _, err := tx.Exec(statements); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("apply migration %s: %w", name, err)
-	}
-	if _, err := tx.Exec(
-		`INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`,
-		name, time.Now().UTC().Format(time.RFC3339Nano),
-	); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("record migration %s: %w", name, err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit migration %s: %w", name, err)
-	}
-	return nil
+	return db.Migrate(ctx, conn, migs)
 }
