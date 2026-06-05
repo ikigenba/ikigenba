@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# bin/deploy — the ONE shared deploy wrapper for the whole ikigai suite
+# (PLAN §1.5). Replaces the per-service cloned */bin/deploy.
+#
+#   bin/deploy <app> [version]
+#
+# It is deliberately thin: it owns the OFF-BOX BUILD HALF only — there is NO
+# install logic on the laptop. After building it hands the single static artifact
+# to the box's `optctl install`, which owns the release-dir / atomic-swap /
+# migrate / restart / rollback machinery (PLAN §1.3–1.4).
+#
+# What it does:
+#   1. Source <app>/etc/deploy.env (ACCOUNT, SSH_USER, SSH_KEY; HOST defaults to
+#      ${ACCOUNT}.metaspot.org).
+#   2. Resolve the version:
+#        - explicit arg  -> the git ref  <app>/<version>
+#        - no arg        -> the latest   <app>/*  tag (sort -V | tail -1)
+#      The BARE release name handed to optctl strips the "<app>/" prefix.
+#   3. Build from the TAGGED COMMIT in a throwaway `git worktree` (PLAN §4 dec 4)
+#      so the build is reproducible and never disturbs the operator's tree.
+#      Build flags honor §2: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off
+#      -trimpath -buildvcs=false, ldflags stamping appkit.version/appkit.commit.
+#      The build runs INSIDE the worktree's <app>/ dir so the committed
+#      `replace appkit/eventplane/agentkit => ../...` directives resolve against
+#      the worktree's sibling lib trees (no network).
+#   4. scp the single artifact to the box /tmp, then
+#      ssh sudo optctl install <app> <bare-version> --artifact /tmp/<file>.
+#
+# --dry-run (or DRY_RUN=1) does the FULL build (producing the artifact) but PRINTS
+# the scp/ssh/optctl commands instead of running them, so the build half is fully
+# exercisable off-box while the box half stays gated (PLAN C3 / verified in D2).
+#
+# Honors §2: the box never compiles; -buildvcs=false is mandatory (the module is a
+# subdir of a bare mono-repo .git — Go's auto VCS stamp would abort); GOWORK=off so
+# the prod build is deterministic without the dev workspace; the in-repo lib source
+# trees come along in the worktree for the replace directives. Never reads or prints
+# secrets / the SSH key contents.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+bin/deploy — build a tagged ikigai service off-box and hand it to optctl on the box.
+
+Usage:
+  bin/deploy <app> [version]
+
+Arguments:
+  <app>        service to deploy (ledger, crm, dashboard, ...). Its
+               <app>/etc/deploy.env supplies ACCOUNT / SSH_USER / SSH_KEY / HOST.
+  [version]    release to build, e.g. v1.4.0. Resolves to the git tag <app>/<version>.
+               Omit to use the latest <app>/* tag (git tag --list '<app>/*' | sort -V).
+
+Flags:
+  -h, --help   show this help.
+  --dry-run    do the full off-box build (produce the artifact) but PRINT the
+               scp / ssh / optctl install commands instead of running them.
+               Equivalent to DRY_RUN=1.
+
+Environment:
+  DRY_RUN=1    same as --dry-run.
+
+What it does (PLAN §1.5):
+  source <app>/etc/deploy.env
+  -> resolve the <app>/<version> tag (default: latest <app>/* tag)
+  -> build from the tagged commit in a throwaway `git worktree`
+     (CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off -trimpath -buildvcs=false,
+      ldflags -X appkit.version=<bare-version> -X appkit.commit=<short-sha>[-dirty])
+  -> scp the single static artifact to the box /tmp
+  -> ssh sudo optctl install <app> <bare-version> --artifact /tmp/<file>
+
+There is NO install logic locally: optctl on the box owns release dirs, atomic
+swap, migrate, restart, and rollback.
+USAGE
+}
+
+# --- parse args -------------------------------------------------------------
+DRY_RUN="${DRY_RUN:-0}"
+APP=""
+VERSION=""
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)  usage; exit 0 ;;
+    --dry-run)  DRY_RUN=1 ;;
+    -*)         echo "!! unknown flag: $arg" >&2; usage >&2; exit 2 ;;
+    *)
+      if [ -z "$APP" ]; then APP="$arg"
+      elif [ -z "$VERSION" ]; then VERSION="$arg"
+      else echo "!! too many arguments: $arg" >&2; usage >&2; exit 2
+      fi
+      ;;
+  esac
+done
+
+[ -n "$APP" ] || { echo "!! missing <app>" >&2; usage >&2; exit 2; }
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO"
+
+[ -d "$APP" ] || { echo "!! no such service dir: ${APP}/" >&2; exit 1; }
+[ -f "${APP}/etc/deploy.env" ] || { echo "!! missing ${APP}/etc/deploy.env" >&2; exit 1; }
+
+# --- routing/auth config (non-secret) --------------------------------------
+# shellcheck source=/dev/null
+. "${APP}/etc/deploy.env"
+HOST="${HOST:-${ACCOUNT}.metaspot.org}"
+SSH_KEY="${SSH_KEY/#\~/$HOME}"   # expand a leading ~ ; contents are never read/printed
+: "${SSH_USER:?SSH_USER must be set in ${APP}/etc/deploy.env}"
+
+# --- resolve the version -> the <app>/<ver> tag ----------------------------
+if [ -n "$VERSION" ]; then
+  TAG="${APP}/${VERSION}"
+  if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+    echo "!! no such tag: ${TAG} (create it, or pass an existing ${APP}/* release)" >&2
+    exit 1
+  fi
+else
+  TAG="$(git tag --list "${APP}/*" | sort -V | tail -1)"
+  [ -n "$TAG" ] || {
+    echo "!! no ${APP}/* tags exist — tag a release first (e.g. git tag ${APP}/v0.1.0)" >&2
+    exit 1
+  }
+  VERSION="${TAG#"${APP}/"}"
+fi
+# The BARE release name handed to optctl / used in the box release dir strips the
+# "<app>/" prefix (PLAN §1.6): releases/<bare-version>/.
+BARE="${TAG#"${APP}/"}"
+
+# Co-stamp the SHA + dirty flag of the tagged commit (PLAN §1.6). -buildvcs=false
+# drops Go's auto VCS stamp, so we inject it via ldflags ourselves. The build is
+# from a clean detached worktree of the tag, so it is never "dirty"; the suffix is
+# kept for parity with F1's stamp shape and for builds from a working ref.
+SHA="$(git rev-parse --short "${TAG}^{commit}")"
+
+echo ">> ${APP}: tag ${TAG} -> release ${BARE} (commit ${SHA})"
+
+# --- throwaway worktree of the tagged commit -------------------------------
+WORKTREE="$(mktemp -d "${TMPDIR:-/tmp}/ikigai-deploy-${APP}.XXXXXX")"
+ARTIFACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ikigai-artifact-${APP}.XXXXXX")"
+ARTIFACT="${ARTIFACT_DIR}/${APP}"
+
+cleanup() {
+  # Remove the throwaway worktree on exit (success OR failure), then its dir.
+  git worktree remove --force "$WORKTREE" >/dev/null 2>&1 || rm -rf "$WORKTREE"
+  git worktree prune >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+echo ">> git worktree add --detach ${WORKTREE} ${TAG}"
+# mktemp created the dir; --detach onto an existing empty dir needs it gone first.
+rm -rf "$WORKTREE"
+git worktree add --detach "$WORKTREE" "$TAG" >/dev/null
+
+# --- build inside the worktree's <app>/ dir --------------------------------
+# Running inside <app>/ makes ./cmd/<app> and the `replace … => ../<lib>`
+# directives resolve against the worktree's sibling lib trees — no network, no
+# go.work (GOWORK=off). The artifact lands OUTSIDE the worktree so it survives
+# the worktree removal.
+LDFLAGS="-s -w -X appkit.version=${BARE} -X appkit.commit=${SHA}"
+echo ">> build ${APP} -> ${ARTIFACT}"
+(
+  cd "${WORKTREE}/${APP}"
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off \
+    go build -trimpath -buildvcs=false \
+      -ldflags "${LDFLAGS}" \
+      -o "${ARTIFACT}" "./cmd/${APP}"
+)
+[ -x "$ARTIFACT" ] || { echo "!! build did not produce ${ARTIFACT}" >&2; exit 1; }
+echo ">> built $(basename "$ARTIFACT") ($(du -h "$ARTIFACT" | cut -f1))"
+
+# --- hand off to optctl on the box (or print, in dry-run) ------------------
+REMOTE_ARTIFACT="/tmp/${APP}-${BARE}"
+SCP_CMD=(scp -i "$SSH_KEY" "$ARTIFACT" "${SSH_USER}@${HOST}:${REMOTE_ARTIFACT}")
+SSH_CMD=(ssh -i "$SSH_KEY" "${SSH_USER}@${HOST}"
+  "sudo optctl install ${APP} ${BARE} --artifact ${REMOTE_ARTIFACT}")
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo ">> DRY RUN — not shipping. The box half would run:"
+  echo "   ${SCP_CMD[*]}"
+  echo "   ${SSH_CMD[*]}"
+  echo ">> dry-run complete. Artifact: ${ARTIFACT}"
+  exit 0
+fi
+
+echo ">> scp ${APP} ${BARE} -> ${HOST}:${REMOTE_ARTIFACT}"
+"${SCP_CMD[@]}"
+
+echo ">> ssh sudo optctl install ${APP} ${BARE}"
+"${SSH_CMD[@]}"
+
+echo ">> deploy complete: ${APP} ${BARE} (${SHA})"
