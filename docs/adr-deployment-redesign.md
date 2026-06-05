@@ -220,6 +220,11 @@ defaults to the latest `<app>/*` tag.
 
 ### 6. Versioning
 
+> **Operator how-to:** the concrete tag→deploy procedure (cutting a tag, the
+> `git describe` resolution, the SHA+dirty co-stamp, the box release-dir prefix
+> strip) is written up step-by-step in
+> [`versioning-and-tagging.md`](./versioning-and-tagging.md).
+
 - **Independent per-service.** The suite has **no global version**.
 - Tags `<app>/vX.Y.Z` on the **one** mono-repo — a single shared tag namespace;
   the slash is a naming convention, not a directory boundary. A tag pins the

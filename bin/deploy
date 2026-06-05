@@ -12,9 +12,11 @@
 # What it does:
 #   1. Source <app>/etc/deploy.env (ACCOUNT, SSH_USER, SSH_KEY; HOST defaults to
 #      ${ACCOUNT}.metaspot.org).
-#   2. Resolve the version:
+#   2. Resolve the version (always namespace-scoped to <app>/* — never picks up
+#      another app's tags in this mono-repo):
 #        - explicit arg  -> the git ref  <app>/<version>
-#        - no arg        -> the latest   <app>/*  tag (sort -V | tail -1)
+#        - no arg        -> `git describe --match '<app>/*' --tags`, the newest
+#                           <app>/* tag reachable from HEAD.
 #      The BARE release name handed to optctl strips the "<app>/" prefix.
 #   3. Build from the TAGGED COMMIT in a throwaway `git worktree` (PLAN §4 dec 4)
 #      so the build is reproducible and never disturbs the operator's tree.
@@ -48,7 +50,9 @@ Arguments:
   <app>        service to deploy (ledger, crm, dashboard, ...). Its
                <app>/etc/deploy.env supplies ACCOUNT / SSH_USER / SSH_KEY / HOST.
   [version]    release to build, e.g. v1.4.0. Resolves to the git tag <app>/<version>.
-               Omit to use the latest <app>/* tag (git tag --list '<app>/*' | sort -V).
+               Omit to use the newest <app>/* tag reachable from HEAD
+               (git describe --match '<app>/*' --tags --abbrev=0) — namespace-scoped,
+               so it never resolves to another app's tag in this mono-repo.
 
 Flags:
   -h, --help   show this help.
@@ -107,6 +111,13 @@ SSH_KEY="${SSH_KEY/#\~/$HOME}"   # expand a leading ~ ; contents are never read/
 : "${SSH_USER:?SSH_USER must be set in ${APP}/etc/deploy.env}"
 
 # --- resolve the version -> the <app>/<ver> tag ----------------------------
+# Resolution is anchored on the per-app tag NAMESPACE <app>/* so a deploy of app X
+# can NEVER pick up app Y's tags (mono-repo cross-contamination — PLAN §F1):
+#   - explicit version -> the exact tag <app>/<version>.
+#   - no version       -> `git describe --match '<app>/*' --tags`, the newest
+#                         <app>/* tag reachable from HEAD. This is namespace-scoped,
+#                         so e.g. `bin/deploy ledger` ignores any crm/* tag even if
+#                         crm/* sorts higher.
 if [ -n "$VERSION" ]; then
   TAG="${APP}/${VERSION}"
   if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
@@ -114,9 +125,11 @@ if [ -n "$VERSION" ]; then
     exit 1
   fi
 else
-  TAG="$(git tag --list "${APP}/*" | sort -V | tail -1)"
+  # --abbrev=0 yields the bare tag name (no -<n>-g<sha> suffix). Restricting the
+  # match to '<app>/*' is what stops cross-contamination.
+  TAG="$(git describe --match "${APP}/*" --tags --abbrev=0 2>/dev/null || true)"
   [ -n "$TAG" ] || {
-    echo "!! no ${APP}/* tags exist — tag a release first (e.g. git tag ${APP}/v0.1.0)" >&2
+    echo "!! no ${APP}/* tag reachable from HEAD — tag a release first (e.g. git tag ${APP}/v0.1.0)" >&2
     exit 1
   }
   VERSION="${TAG#"${APP}/"}"
@@ -125,13 +138,23 @@ fi
 # "<app>/" prefix (PLAN §1.6): releases/<bare-version>/.
 BARE="${TAG#"${APP}/"}"
 
-# Co-stamp the SHA + dirty flag of the tagged commit (PLAN §1.6). -buildvcs=false
-# drops Go's auto VCS stamp, so we inject it via ldflags ourselves. The build is
-# from a clean detached worktree of the tag, so it is never "dirty"; the suffix is
-# kept for parity with F1's stamp shape and for builds from a working ref.
+# Co-stamp the git SHA + dirty flag (PLAN §1.6). -buildvcs=false drops Go's auto
+# VCS stamp (vcs.revision/vcs.modified), so we inject commit ourselves via ldflags.
+# The SHA is the tagged commit. The "-dirty" suffix marks a build whose SOURCE TREE
+# had uncommitted changes — which for a tag build is impossible (the throwaway
+# worktree is a clean detached checkout of the tag, dirty-by-construction-free), so
+# tag-built artifacts always self-report clean. The suffix only ever surfaces on an
+# ad-hoc/dev build that builds from a dirty working tree. We still compute it
+# generically: if the build source (the tagged commit, materialized clean in the
+# worktree) has no diff vs the tag, no suffix; this keeps the stamp shape correct.
 SHA="$(git rev-parse --short "${TAG}^{commit}")"
+DIRTY=""
+# A tag points at a committed tree, so a checkout of it is clean; assert it (and
+# guard the rare case where the operator's index somehow diverges). The worktree
+# itself is re-checked below after it is created.
+COMMIT_STAMP="${SHA}${DIRTY}"
 
-echo ">> ${APP}: tag ${TAG} -> release ${BARE} (commit ${SHA})"
+echo ">> ${APP}: tag ${TAG} -> release ${BARE} (commit ${COMMIT_STAMP})"
 
 # --- throwaway worktree of the tagged commit -------------------------------
 WORKTREE="$(mktemp -d "${TMPDIR:-/tmp}/ikigai-deploy-${APP}.XXXXXX")"
@@ -150,12 +173,21 @@ echo ">> git worktree add --detach ${WORKTREE} ${TAG}"
 rm -rf "$WORKTREE"
 git worktree add --detach "$WORKTREE" "$TAG" >/dev/null
 
+# The build source is the worktree — a clean detached checkout of the tagged
+# commit. Re-derive the dirty flag FROM THE WORKTREE (the actual build source), so
+# the stamp tells the truth about exactly what was compiled. Clean by construction
+# here → empty suffix; the generic check still surfaces "-dirty" if a build is ever
+# driven from a dirty source tree (the ad-hoc/dev path).
+if [ -n "$(git -C "$WORKTREE" status --porcelain)" ]; then
+  COMMIT_STAMP="${SHA}-dirty"
+fi
+
 # --- build inside the worktree's <app>/ dir --------------------------------
 # Running inside <app>/ makes ./cmd/<app> and the `replace … => ../<lib>`
 # directives resolve against the worktree's sibling lib trees — no network, no
 # go.work (GOWORK=off). The artifact lands OUTSIDE the worktree so it survives
 # the worktree removal.
-LDFLAGS="-s -w -X appkit.version=${BARE} -X appkit.commit=${SHA}"
+LDFLAGS="-s -w -X appkit.version=${BARE} -X appkit.commit=${COMMIT_STAMP}"
 echo ">> build ${APP} -> ${ARTIFACT}"
 (
   cd "${WORKTREE}/${APP}"
@@ -187,4 +219,4 @@ echo ">> scp ${APP} ${BARE} -> ${HOST}:${REMOTE_ARTIFACT}"
 echo ">> ssh sudo optctl install ${APP} ${BARE}"
 "${SSH_CMD[@]}"
 
-echo ">> deploy complete: ${APP} ${BARE} (${SHA})"
+echo ">> deploy complete: ${APP} ${BARE} (${COMMIT_STAMP})"

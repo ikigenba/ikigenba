@@ -13,11 +13,19 @@ import (
 // every MCP-exposing service on the box it emits a remove-then-add pair at user
 // scope, self-templated to the caller's host. The remove (`|| true`) makes a
 // re-run authoritative even though `claude mcp add` alone errors on a duplicate
-// name; `set -e` still aborts loudly on a real failure (missing claude, network).
+// name; `set -euo pipefail` still aborts loudly on a real failure (missing
+// claude, network).
+//
+// The script is bash with strict mode (`set -euo pipefail`): it is provably safe
+// under -u/pipefail because every value is baked in here as a literal (no shell
+// variable references → no unset-var risk) and the only tolerated failure (the
+// `claude mcp remove`) is guarded by an explicit `|| true` rather than relying on
+// lenient pipe behavior. The landing page already runs it via `| bash`, so bash
+// (not POSIX sh) is the correct interpreter for `pipefail`.
 func installScript(scheme, host string, svcs []inventory.Service) string {
 	var b strings.Builder
-	b.WriteString("#!/bin/sh\n")
-	b.WriteString("set -eu\n\n")
+	b.WriteString("#!/usr/bin/env bash\n")
+	b.WriteString("set -euo pipefail\n\n")
 	for _, s := range svcs {
 		resource := mcpResourceURL(scheme, host, s.Mount)
 		fmt.Fprintf(&b, "claude mcp remove --scope user %s >/dev/null 2>&1 || true\n", s.Name)
