@@ -1,195 +1,103 @@
 // Command ralph is the loopback-only domain service behind nginx. It trusts the
 // X-Owner-Email / X-Client-Id headers nginx injects after a successful
 // auth_request against the dashboard's authorization server, and performs no
-// token logic of its own. See internal/server for the auth contract.
+// token logic of its own.
 //
-// It boots the full chassis (config, db + migrations, logging, server) and the
-// ralph domain: the session store, per-session sandbox tree, async runner, and
-// the 11-tool MCP surface. On boot, after migration, it runs the runner's
-// crash-recovery sweep so runs left mid-flight by a previous process are marked
-// failed and their sessions returned to idle before serving.
+// The uniform chassis — the fixed subcommands (serve/version/manifest/migrate/
+// backup/restore), config-from-env, the migration runner + downgrade guard, the
+// loopback HTTP server + PRM + identity gate (ralph_whoami), and graceful
+// shutdown — is owned by appkit. main.go declares only ralph's identity (the
+// Spec) and wires its domain surface through the Handlers hook: the session
+// store, per-session sandbox tree, async runner, the boot-time crash-recovery
+// sweep, and the ralph_* MCP surface. RESOURCE_ID / AUTH_SERVER are composed
+// in-binary by appkit/config from METASPOT_DOMAIN + MOUNT (was the deleted
+// bin/build run-wrapper's job).
+//
+// ralph is an LLM service: it uses agentkit (the LLM engine + tool surface) for
+// the agent loop, kept strictly separate from appkit (the deploy/serve chassis).
+// It is neither an event-plane producer nor a consumer — no /feed, no consumer
+// loop, no background worker; the async runner is spawned per-run, not a
+// long-running task. Its only secret, ANTHROPIC_API_KEY, is read env-only inside
+// the runner/session domain at the point of use and never logged (§2.8).
 package main
 
 import (
 	"context"
-	"errors"
-	"flag"
 	"fmt"
-	"io"
-	"net"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"strconv"
-	"syscall"
 	"time"
 
+	"appkit"
+	"appkit/config"
+
 	"ralph/internal/db"
-	"ralph/internal/logging"
 	"ralph/internal/mcp"
 	"ralph/internal/runner"
 	"ralph/internal/sandbox"
-	"ralph/internal/server"
 	"ralph/internal/session"
 )
 
-// version is the product version, overridden at build time via -ldflags.
-var version = "dev"
-
 func main() {
-	if err := run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, "ralph:", err)
-		os.Exit(1)
-	}
+	appkit.Main(appkit.Spec{
+		App:        "ralph",
+		Mount:      "/srv/ralph/",
+		Port:       3004,
+		MCP:        true,
+		Migrations: db.FS,
+		// Handlers builds ralph's domain over appkit's shared single-writer DB
+		// handle, runs the boot-time crash-recovery sweep (after migrate, before
+		// serving), and mounts the ralph_* MCP surface gated behind nginx-injected
+		// identity. ralph is neither producer nor consumer, so there is no
+		// Producer/Workers hook — the async runner is spawned per-run by the
+		// session service, not run as a long-lived background worker.
+		Handlers: registerRoutes,
+	})
 }
 
-func run(args []string, getenv func(string) string, stdout, stderr io.Writer) error {
-	portDef, err := envOrInt(getenv, "RALPH_PORT", 3004)
+// registerRoutes wires ralph's domain on appkit's server. It is the seam where
+// the chassis (appkit) hands off to the domain: appkit has already resolved
+// config, opened, and migrated the shared single-writer DB before calling this.
+func registerRoutes(rt *appkit.Router) error {
+	conn := rt.DB()
+	if conn == nil {
+		return fmt.Errorf("ralph: no DB handle on router")
+	}
+
+	// RALPH_RUN_TTL bounds each run's wall-clock — the runaway-goroutine backstop
+	// (§5.3). Parsed as a Go duration (e.g. "30m", "2h"). Read here at the domain
+	// boundary, reusing appkit/config's env helper.
+	runTTL, err := config.EnvOrDuration(os.Getenv, "RALPH_RUN_TTL", 30*time.Minute)
 	if err != nil {
 		return err
 	}
 
-	fs := flag.NewFlagSet("ralph", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	showVersion := fs.Bool("version", false, "print version and exit")
-	// Bind 127.0.0.1 by default and in production: nginx is the only ingress
-	// and sets identity headers authoritatively. Binding a public interface
-	// would let anyone connect directly and spoof X-Owner-Email — a security
-	// defect. The flag exists only so tests/local runs can override deliberately.
-	ip := fs.String("ip", envOr(getenv, "RALPH_IP", "127.0.0.1"), "listen address — keep loopback (env: RALPH_IP)")
-	port := fs.Int("port", portDef, "listen port (env: RALPH_PORT)")
-	logLevel := fs.String("log-level", envOr(getenv, "RALPH_LOG_LEVEL", "info"), "log level: debug|info|warn|error (env: RALPH_LOG_LEVEL)")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return err
-	}
-	if *showVersion {
-		fmt.Fprintln(stdout, version)
-		return nil
-	}
-
-	// RALPH_RESOURCE_ID is this service's canonical resource identifier (must be
-	// byte-equal to the `resource` in the PRM doc and the dashboard's token
-	// binding). RALPH_AUTH_SERVER is the dashboard authorization-server base URL
-	// advertised to clients. Both have local-dev defaults; we resolve them here
-	// at the boundary so nothing deeper reads the environment.
-	resourceID := envOr(getenv, "RALPH_RESOURCE_ID", "http://localhost:8080/srv/ralph/mcp")
-	authServer := envOr(getenv, "RALPH_AUTH_SERVER", "http://localhost:8080")
-	// RALPH_DB_PATH is the SQLite database file. db.Open pins SetMaxOpenConns(1)
-	// for single-writer discipline; we resolve the path here at the boundary.
-	dbPath := envOr(getenv, "RALPH_DB_PATH", "./tmp/ralph.db")
-	// RALPH_RUN_TTL bounds each run's wall-clock — the runaway-goroutine
-	// backstop (§5.3). Parsed as a Go duration (e.g. "30m", "2h").
-	runTTL, err := envOrDuration(getenv, "RALPH_RUN_TTL", 30*time.Minute)
-	if err != nil {
-		return err
-	}
-
-	return serve(*ip, *port, *logLevel, resourceID, authServer, dbPath, runTTL, stdout)
-}
-
-// serve runs the long-running HTTP server until interrupted.
-func serve(ip string, port int, logLevel, resourceID, authServer, dbPath string, runTTL time.Duration, stdout io.Writer) error {
-	level, err := logging.ParseLevel(logLevel)
-	if err != nil {
-		return err
-	}
-	logger := logging.New(level, stdout)
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	// Ensure the db's parent directory exists before opening — the SQLite
-	// driver will not create it, and on a fresh box/dev tree it may not yet.
-	if dir := filepath.Dir(dbPath); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("create db dir %s: %w", dir, err)
-		}
-	}
-	conn, err := db.Open(dbPath)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	if err := db.Migrate(ctx, conn); err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
-
-	// Wire the session domain service: store + per-session sandbox tree + the
-	// run-logs base dir + the async runner. The data tree lives alongside the
-	// db file. The runner's TTL bounds each run's wall-clock.
+	// The session data tree (sandboxes + run logs) lives alongside the db file —
+	// the same RALPH_DB_PATH appkit resolved (default ./tmp/ralph.db; /opt/ralph/
+	// data/ralph.db on the box) — mirroring the on-box /opt/ralph/data layout.
+	dbPath := config.EnvOr(os.Getenv, "RALPH_DB_PATH", "./tmp/ralph.db")
 	dataDir := filepath.Join(filepath.Dir(dbPath), "data")
 	sb, err := sandbox.New(filepath.Join(dataDir, "sandboxes"))
 	if err != nil {
-		return fmt.Errorf("sandbox: %w", err)
+		return fmt.Errorf("ralph: sandbox: %w", err)
 	}
 	runsDir := filepath.Join(dataDir, "runs")
+
 	store := session.NewStore(conn)
 	run := runner.New(store, sb, runTTL)
 	svc := session.NewService(store, sb, runsDir, run)
 
-	// Crash-recovery sweep (§5.3): runs left 'running' by a previous process
-	// are orphaned — mark them failed and return their sessions to idle before
-	// serving, so the single-flight gate starts from a clean slate.
-	if swept, err := run.Recover(ctx); err != nil {
-		return fmt.Errorf("crash-recovery sweep: %w", err)
+	// Crash-recovery sweep (§5.3): runs left 'running' by a previous process are
+	// orphaned — mark them failed and return their sessions to idle before
+	// serving, so the single-flight gate starts clean. Runs after migrate (appkit
+	// migrated the shared conn before calling Handlers) and before the server
+	// begins listening.
+	if swept, err := run.Recover(context.Background()); err != nil {
+		return fmt.Errorf("ralph: crash-recovery sweep: %w", err)
 	} else if swept > 0 {
-		logger.Warn("crash-recovery: swept orphaned runs", "count", swept)
+		rt.Logger().Warn("crash-recovery: swept orphaned runs", "count", swept)
 	}
 
-	mcpHandler := mcp.NewHandler(svc)
-
-	addr := net.JoinHostPort(ip, strconv.Itoa(port))
-	srv, err := server.New(server.Options{
-		Addr:       addr,
-		Logger:     logger,
-		ResourceID: resourceID,
-		AuthServer: authServer,
-		MCP:        mcpHandler,
-	})
-	if err != nil {
-		return err
-	}
-
-	logger.Info("starting ralph", "addr", addr, "resource_id", resourceID, "auth_server", authServer, "db_path", dbPath, "version", version)
-	return server.Run(ctx, srv, logger)
-}
-
-func envOr(getenv func(string) string, key, def string) string {
-	if v := getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-// envOrInt returns def when key is unset/empty, the parsed value when it holds
-// a valid integer, and an error naming the variable otherwise — a malformed
-// override fails loudly rather than silently reverting to def.
-func envOrInt(getenv func(string) string, key string, def int) (int, error) {
-	v := getenv(key)
-	if v == "" {
-		return def, nil
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return 0, fmt.Errorf("%s: invalid integer %q", key, v)
-	}
-	return n, nil
-}
-
-// envOrDuration returns def when key is unset/empty, the parsed Go duration
-// when it holds a valid value, and an error naming the variable otherwise — a
-// malformed override fails loudly rather than silently reverting to def.
-func envOrDuration(getenv func(string) string, key string, def time.Duration) (time.Duration, error) {
-	v := getenv(key)
-	if v == "" {
-		return def, nil
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		return 0, fmt.Errorf("%s: invalid duration %q", key, v)
-	}
-	return d, nil
+	rt.Handle("POST /mcp", rt.RequireIdentity(mcp.NewHandler(svc)))
+	return nil
 }

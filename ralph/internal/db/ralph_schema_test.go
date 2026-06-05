@@ -24,12 +24,12 @@ func TestMigrate_CreatesRalphSchema(t *testing.T) {
 	}
 
 	for _, tbl := range []string{"sessions", "runs"} {
-		ok, err := tableExists(ctx, conn, tbl)
+		var name string
+		err := conn.QueryRowContext(ctx,
+			`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, tbl,
+		).Scan(&name)
 		if err != nil {
-			t.Fatalf("tableExists %s: %v", tbl, err)
-		}
-		if !ok {
-			t.Fatalf("table %q missing after migrate", tbl)
+			t.Fatalf("table %q missing after migrate: %v", tbl, err)
 		}
 	}
 

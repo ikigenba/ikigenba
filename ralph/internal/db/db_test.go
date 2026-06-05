@@ -84,17 +84,6 @@ func TestMigrate_RefusesDowngrade(t *testing.T) {
 	}
 }
 
-func TestLoadMigrations_Order(t *testing.T) {
-	migs, err := loadMigrations()
-	if err != nil {
-		t.Fatalf("loadMigrations: %v", err)
-	}
-	if len(migs) == 0 {
-		t.Fatal("no migrations embedded")
-	}
-	for i, m := range migs {
-		if m.version != i+1 {
-			t.Errorf("migration %d has version %d (gaps not yet allowed)", i, m.version)
-		}
-	}
-}
+// (TestLoadMigrations_Order removed: the migration loader/ordering + downgrade
+// runner moved to appkit/db, which owns its own tests for that mechanism. This
+// package now only embeds ralph's *.sql and delegates Open/Migrate.)
