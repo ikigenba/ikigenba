@@ -96,11 +96,18 @@ ntfy.sh is never contacted.
 
 ## Manifest / deploy
 
-`etc/manifest.env`: `APP=notify`, `MOUNT=/srv/notify/`, `DEFAULT=false`,
-`PORT=3003` (loopback), `MCP=true` (so the dashboard inventory lists it). Five
-`bin/*` scripts (build/start/stop/setup/deploy); the build wrapper exports the
-public consumer config (`NOTIFY_FEED_URL`, `NOTIFY_FROM`, `NOTIFY_NTFY_BASE_URL`)
-and leaves the ntfy secrets to app-config. No `plugin/` in this repo. notify is a
-consumer with no generation sidecar, so there is no `bin/restore` concern: a
-consumer restored from an older snapshot simply replays from its rolled-back
-cursor, and best-effort tolerates the duplicates (§11.1).
+notify is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract,
+`Consumes:["crm"]`, with the consumer loop run as an appkit `Worker`): `<app>`
+serve + the fixed `version`/`manifest`/`migrate`/`schema`/`backup`/`restore`
+verbs, no `run` wrapper. `etc/manifest.env` (`APP=notify`, `MOUNT=/srv/notify/`,
+`DEFAULT=false`, `PORT=3003`, `MCP=true` so the dashboard inventory lists it,
+`CONSUMES=crm`) is emitted by `notify manifest`; the public consumer config
+(`NOTIFY_FROM`, `NOTIFY_NTFY_BASE_URL`, the feed URL resolved by name via
+`bin/registry`) is read from env at the composition root, and the ntfy secrets
+flow via app-config only. Shipping is the shared repo-root `bin/deploy notify
+[version]` → `optctl install` (which regenerates the on-box manifest on every
+swap); provisioning is `optctl setup notify`. The only `bin/*` scripts notify
+still carries are `start`/`stop` (systemd control) and `secrets` (SSM seeding). No
+`plugin/` in this repo. notify is a consumer with no generation sidecar, so
+restore is trivial: a consumer restored from an older snapshot simply replays from
+its rolled-back cursor, and best-effort tolerates the duplicates (§11.1).

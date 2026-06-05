@@ -29,7 +29,7 @@ Two packages — the producer half (`outbox`) and the consumer half (`consumer`)
   `unintelligible-cursor`) from day one.
 - **Generation/epoch token** (§9.3): minted into a sidecar file *outside* the DB
   (so a file-level restore does not roll it back), embedded in every cursor, and
-  used for the connect-time `stale-epoch` rejection. The consumer's `bin/restore`
+  used for the connect-time `stale-epoch` rejection. A producer's `restore` verb
   deletes the sidecar so the next boot mints a fresh epoch.
 - **Retention** (§11.3): `StartRetention(ctx)` trims the outbox on a background
   timer (off the hot path) and reclaims space with `wal_checkpoint(TRUNCATE)` +

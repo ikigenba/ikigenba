@@ -109,14 +109,22 @@ loopback-only — the perimeter is nginx). Second-wave payloads (`transaction.re
 
 ## nginx fragment (not a vhost)
 
-This service's `bin/setup` writes only `/etc/nginx/conf.d/locations/ledger.conf`
-(its `location /srv/ledger/` + the PRM well-known location, per
+`optctl setup ledger` writes only `/etc/nginx/conf.d/locations/ledger.conf` (its
+`location /srv/ledger/` + the PRM well-known location, per
 `path-routing-architecture.md`) and reloads nginx. It does **not** install a
-server block and does **not** issue a TLS cert — the dashboard owns both. A dev
-mirror of this fragment lives at `../nginx/locations/ledger.conf`.
+server block and does **not** issue a TLS cert — the dashboard owns both (the
+box-global apex/cert pieces are `optctl init-box`). A dev mirror of this fragment
+lives at `../nginx/locations/ledger.conf`.
 
 ## Manifest / deploy
 
-`etc/manifest.env`: `APP=ledger`, `MOUNT=/srv/ledger/`, `DEFAULT=false`,
-`PORT=3002` (loopback), `MCP=true` (so the dashboard inventory lists it). Five
-`bin/*` scripts (build/start/stop/setup/deploy). No `plugin/` in this repo.
+ledger is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract):
+`<app>` serve + the fixed `version`/`manifest`/`migrate`/`schema`/`backup`/
+`restore` verbs, no `run` wrapper. `etc/manifest.env` (`APP=ledger`,
+`MOUNT=/srv/ledger/`, `DEFAULT=false`, `PORT=3002`, `MCP=true` so the dashboard
+inventory lists it) is emitted by `ledger manifest` — the binary owns its own
+identity, and `optctl install` regenerates the on-box copy on every swap. Shipping
+is the shared repo-root `bin/deploy ledger [version]` → `optctl install` (versioned
+release dir + atomic swap + rollback); provisioning is `optctl setup ledger`. The
+only `bin/*` scripts ledger still carries are `start`/`stop` (systemd control). No
+`plugin/` in this repo.

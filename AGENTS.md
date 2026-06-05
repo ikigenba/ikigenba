@@ -53,9 +53,11 @@ All of these are **subdirectories of this one repo**, except `marketplace`
 | **docs** | suite-level docs (the event-plane protocol/decision write-ups) | Markdown | — |
 | **marketplace** *(separate repo)* | plugin marketplace — delivers skills/commands (and Claude Code MCP config) to Claude clients; **not** an on-box service | GitHub-hosted (`mgreenly/marketplace`, public) | — |
 
-The Go modules (`crm`, `dashboard`, `eventplane`, `ledger`, `notify`) are wired
-together for local dev by the root `go.work`; production `bin/build` does **not**
-depend on it (see Deployments).
+The Go modules (`crm`, `dashboard`, `eventplane`, `ledger`, `notify`, plus
+`ralph`, `dropbox`, `wiki` and the shared libs `agentkit`/`appkit`) are wired
+together for local dev by the root `go.work`; the production build (the shared
+repo-root `bin/deploy`) forces `GOWORK=off` and does **not** depend on it (see
+Deployments).
 
 Each service exposes a no-side-effect `<svc>_whoami` MCP tool (proves the
 plugin → connector → dashboard OAuth → service chain end to end). Services keep
@@ -64,14 +66,26 @@ their own per-service audit store; the dashboard audits auth/token/grant events.
 ## Per-service conventions (from the metaspot Service layer)
 
 - Install root `/opt/<app>/`, dedicated `--system` user, single entrypoint
-  `/opt/<app>/bin/run`.
-- `bin/` script interface: services ship `build deploy setup start stop`; the
-  dashboard adds `backup restore secrets teardown` (and its named binary).
+  `/opt/<app>/bin/run` (a stable symlink → `current/<app>`, the active release's
+  binary).
+- **The app *is* one static binary** implementing the fixed appkit verb set
+  (`<app>` serve, `version`, `manifest`, `migrate`, `schema`, `backup`,
+  `restore`) — there is no per-service `bin/build`/`bin/deploy`/`bin/setup` clone
+  anymore. Building and shipping is the *shared* repo-root `bin/deploy <app>
+  [version]` → on-box `optctl`; provisioning is `optctl setup <app>` /
+  `optctl init-box` (see Deployments). The only `bin/*` scripts a service still
+  carries are operator-side glue with no optctl verb yet: `start`/`stop` (systemd
+  control), `secrets` (SSM seeding), and `teardown` (dashboard/ralph).
 - `etc/manifest.env` — flat `KEY=value`, carries `MOUNT=/srv/<svc>/` + `PORT`;
-  dashboard is `DEFAULT=true`.
+  dashboard is `DEFAULT=true`. **The binary is the source of truth: `<app>
+  manifest` emits it, and `optctl install` regenerates `/opt/<app>/etc/
+  manifest.env` from the new binary on every swap** (round-tripping the role keys
+  `FEED`/`CONSUMES` and any service config the dashboard + `bin/registry` read).
 - `etc/nginx.conf` — the service's `/srv/<svc>/` location fragment. The dashboard
-  owns the apex `server{}` block, the cert, and the `/_authn` hook; a service's
-  `bin/setup` only drops its fragment into `/etc/nginx/conf.d/locations/<svc>.conf`.
+  owns the apex `server{}` block, the cert, and the `/_authn` hook; `optctl setup
+  <app>` drops the service's fragment into
+  `/etc/nginx/conf.d/locations/<svc>.conf` (the box-global apex/cert/`/_authn`
+  pieces are `optctl init-box`).
 - Secrets via SSM `/metaspot/<env>/app-config` (never in Terraform/source).
 
 ## Local dev
@@ -84,39 +98,80 @@ each Go service on its loopback port, then `cd nginx && ./run`.
 ## Deployments (how to ship to the box)
 
 Production is the box at `<account>.metaspot.org` (first/only account: **ai**).
-**Deploy is rsync of built artifacts, not `git push`.** The repo has a GitHub
-remote (`origin` → `mgreenly/ikigai`) for version-control backup, but pushing there
-ships nothing to the box; shipping is the `bin/*` scripts below. Work the
-services in dependency order and verify on the box after each step.
+**Deploy ships one static binary into a versioned release dir, not `git push`
+and not an in-place overwrite.** The repo has a GitHub remote (`origin` →
+`mgreenly/ikigai`) for version-control backup, but pushing there ships nothing to
+the box; shipping is the shared `bin/deploy` wrapper + on-box `optctl` below. Work
+the services in dependency order and verify on the box after each step. The
+canonical description of this model is `docs/adr-deployment-redesign.md`.
 
-**The `bin/*` lifecycle, setup → teardown** (services ship a subset; the
-dashboard ships them all — see Per-service conventions): `setup` (one-time
-provision) · `secrets` (seed/rotate the SSM app-config key) · `build` (off-box
-artifacts) · `deploy` (ship + restart) · `start` / `stop` (systemd control) ·
-`backup` / `restore` (snapshot the SQLite state to the per-account bucket) ·
-`teardown` (remove the app from the box — reverse of `setup`). The detail below
-covers the deploy-critical ones.
+**The deploy model in one paragraph.** An ikigai app is **exactly one
+self-contained static `linux/amd64` Go binary** implementing the fixed appkit verb
+set: `<app>` (serve — the default), `version` (self-reports `<ver> (<sha>[-dirty]
+)`), `manifest` (emit this app's `manifest.env`), `migrate`, `schema`, `backup`,
+`restore`. There is **no `run` wrapper and no bundled `registry`** in the
+artifact. The uniform chassis (config-from-env, the migration runner + downgrade
+guard, the loopback server + PRM + identity gate, `/feed`, manifest emit/parse,
+the verb dispatcher) lives in the shared `appkit` library, consumed via a
+committed `replace appkit => ../appkit` (like `eventplane`/`agentkit`); **libs are
+never tagged.**
+
+**Build + ship is the *shared* repo-root `bin/deploy <app> [version]`.** It owns
+the off-box build half only: it builds the **tagged commit** (`<app>/vX.Y.Z`) in a
+throwaway `git worktree` (`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off
+-trimpath -buildvcs=false`, ldflags stamping `appkit.version`/`appkit.commit`),
+`scp`s the single artifact to the box `/tmp`, then runs `ssh sudo optctl install
+<app> <version> --artifact …`. No install logic runs on the laptop. With no
+version it builds the latest `<app>/*` tag.
+
+**`optctl` (on-box, `/usr/local/bin/optctl`, run via `sudo`) owns everything on
+the box** — release dirs, atomic swap, migrate, restart, rollback, prune, and
+box/app provisioning. Verbs: `install · rollback · prune · setup · init-box`
+(`backup`/`restore` are folded into each app binary as verbs; a standalone
+`optctl backup`/`restore` orchestration verb does **not** exist yet — see the gap
+note below). Layout on the box:
+
+```
+/opt/<app>/
+  releases/<version>/<app>      # the static binary for that version
+  current -> releases/<version> # ln -sfn = ATOMIC swap
+  bin/run -> ../current/<app>   # STABLE path metaspot-launch execs (unchanged)
+  etc/manifest.env              # regenerated by `<app> manifest` on every swap
+  data/<app>.db                 # state — NEVER touched by deploy
+```
+
+- **`optctl install <app> <ver> --artifact …`** — preflight (static? amd64?
+  `<app> version` matches the arg? `<app> manifest` parses?) → place into
+  `releases/<ver>/` → regenerate the stable `etc/manifest.env` from the new binary
+  → **back up the DB if the schema advances** → `migrate` → atomic swap `current`
+  → restart the unit → `is-active` → prune old releases. Never touches
+  `data/<app>.db` except to migrate/snapshot it; migrations are forward-only.
+- **`optctl rollback <app> [ver]`** — repoint `current` → the prior (or named)
+  release → restart. If the rolled-back-from release advanced the schema, it
+  **restores the pre-migration DB snapshot first** (the downgrade guard otherwise
+  refuses to boot the older binary).
+- **`optctl prune <app> [--keep N]`** — bound on-box release history; never
+  deletes `current` or its rollback predecessor.
+- **`optctl setup <app>`** — first-time per-app provisioning: the `--system` user,
+  the `/opt/<app>` tree, the enabled-not-started systemd unit
+  (`ExecStart=/usr/local/bin/metaspot-launch <app>`), the nginx fragment into
+  `/etc/nginx/conf.d/locations/<app>.conf` (`nginx -t` + reload). Required once
+  before a brand-new service's first `install`.
+- **`optctl init-box`** — one-time box-global substrate (nginx + certbot + the one
+  apex cert + renewal timer, the apex `server{}` block, `/_authn`, the
+  `conf.d/locations/` include dir). The box-global half the dashboard's old
+  overloaded `setup` used to bootstrap.
+
+The stable paths `/opt/<app>/bin/run` (a symlink into `current`) and
+`/opt/<app>/etc/manifest.env` (regenerated from the binary) stay valid at all
+times, including mid-swap — so the baked `metaspot-launch`, `bin/registry`, and
+the dashboard's manifest-derived resource list are all untouched.
 
 **Routing/auth config per service lives in `etc/deploy.env`** (non-secret):
 `ACCOUNT`, `SSH_USER` (`ec2-user`), `SSH_KEY` (`~/.ssh/id_ed25519_ai4mgreenly`);
 `HOST` defaults to `${ACCOUNT}.metaspot.org`. AWS = `--profile ${ACCOUNT} --region
 us-east-2`; SSM/secrets steps need a live SSO session (`aws sso login --profile
 ai` — interactive, the user runs it; the token expires).
-
-**`bin/build`** — off-box, deterministic. `CGO_ENABLED=0 GOOS=linux GOARCH=amd64`
-→ `build/<app>.bin` (the Go binary) **and** `build/<app>` (a shell wrapper that
-becomes `/opt/<app>/bin/run`; sets non-secret public config from `METASPOT_DOMAIN`
-and execs the binary on `127.0.0.1:$PORT`). Eventplane consumers carry a committed
-`replace eventplane => ../eventplane`, so the build needs the in-repo `eventplane/`
-module tree but no network/`go.work`.
-
-**`bin/deploy`** — `build` → `ssh systemctl stop` → rsync `build/<app>`→
-`/opt/<app>/bin/run`, `build/<app>.bin`→`/opt/<app>/bin/<app>.bin`,
-`etc/manifest.env`→`/opt/<app>/etc/`, → `chown` + `systemctl start` +
-`is-active`. **Assumes `bin/setup` already ran** and the dashboard's apex setup
-(server block, the one TLS cert, `/_authn`, `conf.d/locations/` dir) exists.
-Never touches `/opt/<app>/data/<app>.db` — SQLite state is created on first start;
-**migrations run on start**.
 
 > **A migration is immutable once it has been applied to any live DB.** The
 > migration runner keys solely on the integer version: it applies versions not
@@ -130,38 +185,57 @@ Never touches `/opt/<app>/data/<app>.db` — SQLite state is created on first st
 > pre-production, and then only by resetting (backup + drop) every DB that ran
 > the old body. (This bit crm: `002_crm.sql` was rewritten greenfield-style after
 > the `ai` box had already applied the old v2, so the box needed a backup+reset
-> rather than a plain `bin/deploy`.)
+> rather than a plain deploy.)
 
-**`bin/setup`** — first-time, idempotent box prep for a service: creates the
-`--system` app user + `/opt/<app>` tree, writes & **enables (not starts)** the
-systemd unit (`ExecStart=/usr/local/bin/metaspot-launch <app>`), drops the nginx
-fragment to `/etc/nginx/conf.d/locations/<app>.conf`, `nginx -t`, reload. Owns
-nothing global. Required once before a brand-new service's first `bin/deploy`.
+> **🚨 DASHBOARD MIGRATION-LEDGER CUTOVER LANDMINE — do NOT plain-`install` the
+> converted dashboard.** Adopting appkit's **integer-keyed** migration runner
+> renumbered the dashboard's migrations from their old **name/timestamp-keyed**
+> scheme (`schema_migrations.name`) to `NNN_*.sql` (+ a new
+> `001_schema_migrations.sql`). A *fresh* DB migrates correctly (verified, v5),
+> but the live `ai` box's `/opt/dashboard/data/dashboard.db` already applied the
+> OLD name-keyed ledger — the integer runner will not recognize it, so the new
+> binary will **not cleanly boot** against the existing DB. That DB holds the live
+> OAuth AS state (DCR clients, grants, IAM, web sessions), so a backup+reset is
+> **not** acceptable. The dashboard box cutover needs a **bespoke runbook** (not a
+> plain `optctl install`): back up the DB, then one-time rewrite the old name-keyed
+> ledger into `schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT)`
+> marking versions **1–5 already applied** (the data tables already exist
+> unchanged), so the new runner sees `applied=5` and applies nothing. Off-box code
+> is fine; this is purely the box-DB reconciliation. A dashboard cutover runbook is
+> the operator deliverable.
 
 **Secrets** — single SSM SecureString `/metaspot/<account>/app-config`: a JSON
 blob keyed per app. `metaspot-launch` extracts `.["<app>"]` at every start,
 exports each `KEY=value`, and **hard-fails if the key/param is missing** — so
-secrets must be seeded *before* first start. `bin/secrets` (dashboard, notify)
-does a **non-destructive read-modify-write of only its own key**, values pulled
-from `~/.secrets/<NAME>` (never read/printed; masked in the summary), siblings
+secrets must be seeded *before* first start. `bin/secrets` (operator-side, on the
+services that need it — dashboard, notify, dropbox, ralph, wiki) does a
+**non-destructive read-modify-write of only its own key**, values pulled from
+`~/.secrets/<NAME>` (never read/printed; masked in the summary), siblings
 preserved. The launcher injects them into the process env only — never on disk.
+(Secrets seeding has no `optctl` verb — it stays an operator-side script.)
 
-**Registering a new MCP service with the dashboard (easy to miss).** The
-dashboard AS resource list is hardcoded in **`dashboard/bin/build` →
-`DASHBOARD_RESOURCES`** (comma-separated `https://${METASPOT_DOMAIN}/srv/<svc>/mcp`).
-A new service **must** be added there, or `/internal/authn` returns *"unknown
-service for original request URI"* with **no `resource_metadata`** in the 401
-challenge → the MCP client can't discover the PRM → omits the `resource`
-indicator → the AS rejects authorize with `invalid_target: resource is required`.
-Fixing it means editing `bin/build` and **redeploying the dashboard** (a dashboard
-restart briefly drops `/internal/authn` for the *whole box* — seconds).
+**Registering a new MCP service with the dashboard is now automatic — no env
+edit.** The dashboard derives its OAuth-AS resource list at startup from the
+manifests under `/opt/*/etc/manifest.env` (those with `MCP=true`), via
+`DASHBOARD_MANIFEST_ROOT` (default `/opt`). `optctl install` regenerates the
+service's stable `etc/manifest.env` from its own binary on every swap, so adding a
+service is just deploying it (which lands its manifest) then **restarting the
+dashboard** so it re-reads the manifests. There is **no hardcoded resource list**
+to hand-edit — the old hardcoded-env-list-in-the-dashboard-build mechanism is
+**gone**. (A dashboard restart briefly drops `/internal/authn` for the whole box —
+seconds.) Until that restart, the new service's `/srv/<svc>/mcp` 401 omits
+`resource_metadata`.
 
 **Order to bring up a new consumer service (notify was the worked example):**
 1. seed secrets → `bin/secrets` (after SSO login),
 2. deploy any **producer it consumes first** (e.g. crm's `/feed`) so it's live,
-3. `bin/setup` (provision), 4. `bin/deploy` (ship + start),
-5. add to `DASHBOARD_RESOURCES` + redeploy dashboard,
-6. verify.
+3. `optctl setup <svc>` (provision) — `optctl init-box` first only on a brand-new
+   box,
+4. tag `<svc>/vX.Y.Z`, then `bin/deploy <svc> vX.Y.Z` (build off-box → `optctl
+   install` → migrate → atomic swap → start),
+5. restart the dashboard so it re-reads the manifests (picks up the new
+   `MCP=true` service automatically),
+6. verify (and on failure, `optctl rollback <svc>`).
 
 **Verify on the box:** `systemctl is-active <svc>`; `journalctl -u <svc>` for the
 boot/migration/consumer lines (note: best-effort paths like notify's push log

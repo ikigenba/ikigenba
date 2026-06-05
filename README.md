@@ -66,9 +66,12 @@ The intended development loop is:
 4. Let the new service expose its tools and join the event plane.
 
 The skeleton matters because it carries the dull parts: migrations, logging,
-MCP wiring, event producer and consumer support, deploy scripts, the nginx
-fragment, and the manifest. A new service should start with its place in the
-suite already settled, leaving the domain as the real work.
+MCP wiring, event producer and consumer support, the deploy contract, the nginx
+fragment, and the manifest. Concretely, a service is one static Go binary built on
+the shared `appkit` chassis; a single shared deploy wrapper builds it off-box from
+a tag and an on-box CLI installs it into a versioned release directory. A new
+service should start with its place in the suite already settled, leaving the
+domain as the real work.
 
 ## Two Communication Planes
 
@@ -133,10 +136,12 @@ the extra system states that make recovery procedures fragile. For customers who
 can accept short downtime, it is better to take it deliberately, take it often,
 and use it to rehearse the exact steps that matter during a real incident.
 
-The lifecycle verbs are part of the product contract:
-`build`, `deploy`, `start`, `stop`, `backup`, `restore`, and `teardown`.
-Backups are written and restored from. Restoring is a practiced motion, not a
-last resort.
+The lifecycle is part of the product contract. Each app binary self-implements
+`serve`, `version`, `manifest`, `migrate`, `backup`, and `restore`; the operator
+drives `deploy` (build a tagged release off-box and install it on the box),
+`start`/`stop`, and `teardown`. Deploys land in versioned release directories with
+an atomic swap and a one-command rollback. Backups are written and restored from.
+Restoring is a practiced motion, not a last resort.
 
 The goal is recovery the owner can reason about:
 
@@ -150,13 +155,18 @@ The goal is recovery the owner can reason about:
 
 metaspot is narrow on purpose. Every service can have the same anatomy:
 
-- a Go binary over SQLite, with embedded migrations and structured logs;
-- a dedicated system user and an `/opt/<service>` install root;
+- one static Go binary over SQLite, built on the shared `appkit` chassis, with
+  embedded migrations and structured logs;
+- a dedicated system user and an `/opt/<service>` install root with versioned
+  release directories;
 - a loopback HTTP server, with public routing handled by nginx;
 - MCP tools for the agent-facing surface;
 - producer and consumer roles built on the shared event library;
-- the same small set of `bin/*` lifecycle verbs;
-- a manifest and routing fragment that make deployment mechanical.
+- the same fixed set of binary subcommands (`serve`/`version`/`manifest`/
+  `migrate`/`backup`/`restore`), shipped by one shared deploy wrapper and the
+  on-box `optctl`;
+- a manifest the binary emits and a routing fragment that make deployment
+  mechanical.
 
 That sameness is where the speed comes from. Once the skeleton is right, local
 development, auth, deployment, operations, and the event model are already

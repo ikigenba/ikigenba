@@ -62,8 +62,9 @@ on its real DNS name (`ai.metaspot.org`) with real TLS.**
 - **Phase 0 (current): structural web app, no auth.** A plain Go web app with all
   the bits in the right structure — serves the index page + static assets, does
   structured logging. Chassis (config, SQLite+migrations, logging, server, CLI,
-  banner) + the full deploy spine (manifest/deploy env, seven `bin/*`, systemd
-  via the platform launcher, the apex nginx `server` block + HTTP-01 TLS). **No
+  banner) + the full deploy spine (manifest/deploy env, the appkit one-binary
+  contract shipped via the shared `bin/deploy` → `optctl install`, systemd via the
+  platform launcher, the apex nginx `server` block + HTTP-01 TLS). **No
   auth, no identity, no tokens.** Phase 0 is **fully deployed and serving the
   index over real TLS on `ai.metaspot.org` before Phase 1 begins** — the deploy
   architecture is proven before any auth complexity confounds it.
@@ -114,13 +115,36 @@ Build new:
 
 ## What it owns on the box (nginx + TLS)
 
-This app's `bin/setup` owns the **single apex `server` block**, the **one** apex
-TLS cert (HTTP-01 `--webroot`) + renewal, the ACME-challenge location, the
-`/_authn` internal location, and `include /etc/nginx/conf.d/locations/*.conf;`.
-Services only drop `location` fragments into that dir.
+The apex/box-global substrate the dashboard depends on is provisioned by `optctl
+init-box`: the **single apex `server` block**, the **one** apex TLS cert (HTTP-01
+`--webroot`) + renewal, the ACME-challenge location, the `/_authn` internal
+location, and `include /etc/nginx/conf.d/locations/*.conf;`. Services only drop
+`location` fragments into that dir (their own `optctl setup <svc>`).
 
 ## Manifest / deploy
 
-`etc/manifest.env`: `APP=dashboard`, `MOUNT=/`, `DEFAULT=true`, `PORT=3000`
-(loopback). Six/seven `bin/*` scripts per `AGENTS.md`. Drop everything
-`contacts`/`mcp-crm` from the port — that is the crm service's.
+The dashboard is one static appkit binary, the apex/`DEFAULT=true` case of the
+contract: `appkit.Main(appkit.Spec{… Default:true …})`, the fixed verbs plus its
+divergent `Backup`/`Restore` (the apex owns the TLS cert + S3 snapshot, folded
+into the binary at E6 — bare invocation = the operator cert+S3+DB snapshot;
+`--out`/`--from` = optctl's local install/rollback snapshot). `etc/manifest.env`
+(`APP=dashboard`, `MOUNT=/`, `DEFAULT=true`, `PORT=3000`, no `MCP`) is emitted by
+`dashboard manifest`. The dashboard **derives** its OAuth-AS resource list at
+startup from the on-box service manifests (`/opt/*/etc/manifest.env`, `MCP=true`,
+via `DASHBOARD_MANIFEST_ROOT`) — there is **no** hardcoded env resource list.
+Shipping is the shared repo-root `bin/deploy dashboard [version]` → `optctl
+install`; provisioning is `optctl init-box` (box-global) + `optctl setup
+dashboard` (per-app). The only `bin/*` scripts it still carries are `start`/`stop`
+(systemd control), `secrets` (SSM seeding), and `teardown` (box removal — no
+optctl verb yet). Drop everything `contacts`/`mcp-crm` from the port — that is the
+crm service's.
+
+> **🚨 Migration-ledger cutover landmine.** The dashboard's migrations were
+> renumbered name/timestamp-keyed → integer-keyed for the appkit runner. A fresh
+> DB migrates correctly, but the **live `ai` box** `/opt/dashboard/data/dashboard.db`
+> already applied the OLD name-keyed ledger and holds live OAuth AS state (DCR
+> clients, grants, IAM, sessions) — so it must **not** be plain-`optctl install`ed
+> and must **not** be backup+reset. The box cutover needs a bespoke,
+> data-preserving runbook that rewrites `schema_migrations` to mark versions 1–5
+> applied (data tables unchanged) before the new binary boots. See the landmine
+> block in the root `AGENTS.md` Deployments section.

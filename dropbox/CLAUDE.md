@@ -199,9 +199,10 @@ one silently corrupts the mirror or the event stream:
 
 ## nginx fragment (not a vhost)
 
-`bin/setup` writes only `/etc/nginx/conf.d/locations/dropbox.conf` (its
+`optctl setup dropbox` writes only `/etc/nginx/conf.d/locations/dropbox.conf` (its
 `location /srv/dropbox/` + the PRM well-known location) and reloads nginx — it
-installs no server block and issues no TLS cert (the dashboard owns both). An
+installs no server block and issues no TLS cert (the dashboard owns both, via
+`optctl init-box`). An
 exact-match `location = /srv/dropbox/content { return 404; }` is added as
 **optional defence-in-depth** — belt to the handler's braces — not the mechanism.
 A dev mirror of the fragment is **generated, not committed**: `nginx/run`
@@ -211,47 +212,44 @@ appears on the dev front door (:8080).
 
 ## Manifest / deploy
 
-`etc/manifest.env`: `APP=dropbox`, `MOUNT=/srv/dropbox/`, `DEFAULT=false`,
-`PORT=3005`, `MCP=true` (so the dashboard inventory lists it).
+dropbox is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract,
+producer + `Workers` sync engine): `<app>` serve + the fixed `version`/`manifest`/
+`migrate`/`schema`/`backup`/`restore` verbs, no `run` wrapper, no bundled
+`registry`. `etc/manifest.env` (`APP=dropbox`, `MOUNT=/srv/dropbox/`,
+`DEFAULT=false`, `PORT=3005`, `MCP=true` so the dashboard inventory lists it;
+producer, so it also round-trips `FEED=/feed` + the `OUTBOX_RETENTION_*` config)
+is emitted by `dropbox manifest` and regenerated on the box by `optctl install` on
+every swap. Shipping is the shared repo-root `bin/deploy dropbox [version]` →
+`optctl install`; provisioning is `optctl setup dropbox` (the `dropbox`
+`--system` user + `/opt/dropbox` tree — data `0750`, **mirror is a private subdir
+of data** — the enabled systemd unit, the nginx fragment).
 
-**Six `bin/*` scripts: `build deploy setup start stop secrets`** (ledger's five
-plus `secrets`). **No `bin/backup` / `bin/restore`** — see below.
-
-- **`bin/build`** — off-box, deterministic. The wrapper sets the non-secret public
-  `DROPBOX_*` config from `METASPOT_DOMAIN` and execs the binary on
-  `127.0.0.1:$PORT`; it also copies the shared `../bin/registry`. The
-  `LEDGER_*`→`DROPBOX_*` rename is surgical: the shared event-plane knobs
-  `OUTBOX_RETENTION_DAYS` / `OUTBOX_RETENTION_MAX_ROWS` keep their `OUTBOX_`
-  prefix — they are **not** `DROPBOX_*` and must not be swept.
-- **`bin/setup`** — creates the `dropbox` `--system` user + `/opt/dropbox` tree
-  (data `0750`, **mirror is a private subdir of data**), enables the systemd unit,
-  drops the nginx fragment.
 - **Secrets — dropbox HAS them (unlike ledger).** Three values reach the process
   env only: `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`. On
   the box they live in SSM `/metaspot/<account>/app-config` under the `dropbox`
-  key, injected by `metaspot-launch`. `bin/secrets` does a non-destructive
-  read-modify-write of **only** the `dropbox` key, pulling values from
-  `~/.secrets/DROPBOX_*` (masked summary, never printed; siblings preserved). In
-  dev, `.envrc` exports them from `~/.secrets/DROPBOX_*`.
-- **Non-secret config** (resolved at the `main.go` boundary): `DROPBOX_MIRROR_PATH`
-  (box `/opt/dropbox/data/mirror`, dev `./tmp/mirror`), `DROPBOX_DB_PATH`,
-  `DROPBOX_GENERATION_PATH`, `DROPBOX_RESOURCE_ID`, `DROPBOX_AUTH_SERVER`,
+  key, injected by `metaspot-launch`. `bin/secrets` (operator-side, no optctl verb)
+  does a non-destructive read-modify-write of **only** the `dropbox` key, pulling
+  values from `~/.secrets/DROPBOX_*` (masked summary, never printed; siblings
+  preserved). In dev, `.envrc` exports them from `~/.secrets/DROPBOX_*`.
+- **Non-secret config** (resolved in-binary at the composition root):
+  `DROPBOX_MIRROR_PATH` (box `/opt/dropbox/data/mirror`, dev `./tmp/mirror`),
+  `DROPBOX_DB_PATH`, `DROPBOX_GENERATION_PATH`, `RESOURCE_ID`/`AUTH_SERVER` (now
+  composed in-binary from `METASPOT_DOMAIN`+`MOUNT`, not a wrapper),
   `DROPBOX_LONGPOLL_TIMEOUT` (default 480), `DROPBOX_MAX_ENTRY_RETRIES` (default 5),
   `DROPBOX_APP_FOLDER_ROOT` (default `""` = app folder root). Plus the shared
   `OUTBOX_RETENTION_DAYS` / `OUTBOX_RETENTION_MAX_ROWS`.
 - **Dashboard registration — no code edit, derived from the manifest.** The
   dashboard derives its `/srv/<svc>/mcp` resource set at startup from each deployed
   service's `etc/manifest.env` (`MCP=true`), via `DASHBOARD_MANIFEST_ROOT=/opt`. So
-  registering dropbox is just `bin/deploy` (which lands
-  `/opt/dropbox/etc/manifest.env`) → **restart the dashboard** to re-read the
-  manifests. **No `dashboard/bin/build` edit.** (The root `CLAUDE.md`'s
-  "add to `DASHBOARD_RESOURCES`" note is itself stale on this point.) Until that
-  restart, the `/srv/dropbox/mcp` 401 challenge omits `resource_metadata`.
+  registering dropbox is just deploying it (which lands `/opt/dropbox/etc/
+  manifest.env`) → **restart the dashboard** to re-read the manifests. There is no
+  hardcoded resource list to edit. Until that restart, the `/srv/dropbox/mcp` 401
+  challenge omits `resource_metadata`.
 
 ## The no-backup decision (intentional)
 
-Unlike the dashboard, dropbox ships **no `bin/backup` / `bin/restore`** — by
-design. The mirror is a download-only replica and the SQLite state (cursor +
+dropbox declares no custom backup/restore hooks — by design. The mirror is a
+download-only replica and the SQLite state (cursor +
 `files` index) is **fully reconstructible from Dropbox, the source of truth**.
 Recovery on data loss is not a snapshot restore but: **wipe the DB + mirror,
 restart, re-bootstrap** — which re-enumerates the app folder and re-emits
