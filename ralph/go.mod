@@ -2,7 +2,12 @@ module ralph
 
 go 1.26
 
-require modernc.org/sqlite v1.50.1
+require (
+	agentkit v0.0.0
+	modernc.org/sqlite v1.50.1
+)
+
+replace agentkit => ../agentkit
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

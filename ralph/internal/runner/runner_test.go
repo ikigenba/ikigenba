@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"ralph/internal/db"
-	"ralph/internal/engine/provider"
+	"agentkit/provider"
 	"ralph/internal/ids"
 	"ralph/internal/sandbox"
 	"ralph/internal/session"

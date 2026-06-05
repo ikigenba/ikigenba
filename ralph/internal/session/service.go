@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"ralph/internal/engine/model"
+	"agentkit/model"
 	"ralph/internal/ids"
 	"ralph/internal/sandbox"
 )

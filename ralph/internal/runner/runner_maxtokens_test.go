@@ -3,7 +3,7 @@ package runner
 import (
 	"testing"
 
-	"ralph/internal/engine/model"
+	"agentkit/model"
 	"ralph/internal/session"
 )
 

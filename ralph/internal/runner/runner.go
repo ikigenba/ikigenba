@@ -20,12 +20,12 @@ import (
 	"sync"
 	"time"
 
-	"ralph/internal/engine/agent"
-	"ralph/internal/engine/model"
-	"ralph/internal/engine/provider"
-	"ralph/internal/engine/provider/anthropic"
-	"ralph/internal/engine/tools"
-	"ralph/internal/engine/wire"
+	"agentkit/agent"
+	"agentkit/model"
+	"agentkit/provider"
+	"agentkit/provider/anthropic"
+	"agentkit/tools"
+	"agentkit/wire"
 	"ralph/internal/sandbox"
 	"ralph/internal/session"
 )
