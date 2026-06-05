@@ -2,7 +2,11 @@ module wiki
 
 go 1.26
 
-require modernc.org/sqlite v1.50.1
+require (
+	agentkit v0.0.0-00010101000000-000000000000
+	golang.org/x/net v0.12.0
+	modernc.org/sqlite v1.50.1
+)
 
 // Shared sibling source trees, not published modules. go.work resolves them for
 // local dev; these committed replaces keep bin/build deterministic with or

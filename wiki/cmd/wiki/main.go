@@ -22,11 +22,18 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
+
+	"agentkit/provider"
+	"agentkit/provider/anthropic"
 
 	"wiki/internal/db"
+	"wiki/internal/ingest"
 	"wiki/internal/logging"
 	"wiki/internal/mcp"
+	"wiki/internal/search"
 	"wiki/internal/server"
+	"wiki/internal/store"
 )
 
 // version is the product version, overridden at build time via -ldflags.
@@ -77,12 +84,66 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) er
 	// for single-writer discipline; we resolve the path here at the boundary.
 	dbPath := envOr(getenv, "WIKI_DB_PATH", "./tmp/wiki.db")
 
-	return serve(*ip, *port, *logLevel, resourceID, authServer, dbPath, stdout)
+	// Ingest config (PLAN Decision 3 + Task 4.1). All read here at the boundary
+	// and threaded down; the inner ingest package is env-free.
+	//   WIKI_DATA_ROOT       — filesystem content store root (raw/ + page tree).
+	//   ANTHROPIC_API_KEY    — the ingest agent's credential (via SSM app-config
+	//                          on the box, .envrc in dev). Presence-checked, but
+	//                          its ABSENCE only disables ingest — the service still
+	//                          boots and serves wiki_whoami + tools/list.
+	//   WIKI_INGEST_MODEL    — ingest model (default claude-sonnet-4-6).
+	//   WIKI_INGEST_MAX_TOKENS — per-job output-token / cost ceiling.
+	//   WIKI_INGEST_JOB_TTL_SECONDS — per-run wall-clock TTL (0 = no deadline).
+	dataRoot := envOr(getenv, "WIKI_DATA_ROOT", "./tmp/data")
+	apiKey := getenv("ANTHROPIC_API_KEY")
+	ingestModel := envOr(getenv, "WIKI_INGEST_MODEL", ingest.DefaultModel)
+	maxTokens, err := envOrInt(getenv, "WIKI_INGEST_MAX_TOKENS", ingest.DefaultMaxTokens)
+	if err != nil {
+		return err
+	}
+	ttlSeconds, err := envOrInt(getenv, "WIKI_INGEST_JOB_TTL_SECONDS", 600)
+	if err != nil {
+		return err
+	}
+
+	cfg := serveConfig{
+		ip:          *ip,
+		port:        *port,
+		logLevel:    *logLevel,
+		resourceID:  resourceID,
+		authServer:  authServer,
+		dbPath:      dbPath,
+		dataRoot:    dataRoot,
+		apiKey:      apiKey,
+		ingestModel: ingestModel,
+		maxTokens:   maxTokens,
+		jobTTL:      time.Duration(ttlSeconds) * time.Second,
+	}
+	return serve(cfg, stdout)
 }
 
-// serve runs the long-running HTTP server until interrupted.
-func serve(ip string, port int, logLevel, resourceID, authServer, dbPath string, stdout io.Writer) error {
-	level, err := logging.ParseLevel(logLevel)
+// serveConfig is the resolved composition-root configuration. main reads it from
+// the environment at the boundary; serve assembles the dependency graph from it.
+type serveConfig struct {
+	ip          string
+	port        int
+	logLevel    string
+	resourceID  string
+	authServer  string
+	dbPath      string
+	dataRoot    string
+	apiKey      string
+	ingestModel string
+	maxTokens   int
+	jobTTL      time.Duration
+}
+
+// serve runs the long-running HTTP server until interrupted. It assembles the
+// dependency graph (store, search index, db + job store, the anthropic client
+// factory, the ingest core) from cfg and injects the ingest core into the MCP
+// handler. The inner packages never read the environment — config flows as args.
+func serve(cfg serveConfig, stdout io.Writer) error {
+	level, err := logging.ParseLevel(cfg.logLevel)
 	if err != nil {
 		return err
 	}
@@ -91,7 +152,7 @@ func serve(ip string, port int, logLevel, resourceID, authServer, dbPath string,
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	conn, err := db.Open(dbPath)
+	conn, err := db.Open(cfg.dbPath)
 	if err != nil {
 		return err
 	}
@@ -100,21 +161,62 @@ func serve(ip string, port int, logLevel, resourceID, authServer, dbPath string,
 		return fmt.Errorf("migrate: %w", err)
 	}
 
-	mcpHandler := mcp.NewHandler()
+	// Filesystem content store + BM25 search index (the index file lives under the
+	// store's per-collection .search/ slot).
+	st, err := store.New(cfg.dataRoot)
+	if err != nil {
+		return fmt.Errorf("store: %w", err)
+	}
+	idx := search.NewBM25Index(st.SearchIndexPath)
+	defer idx.Close()
 
-	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+	// Ingest core. The anthropic client factory closes over the API key + model
+	// resolved at this boundary; it is only invoked when a job actually runs, so a
+	// missing key disables ingest without blocking boot. We presence-check here and
+	// log a clear warning so the operator knows ingest is off (mirrors the suite's
+	// fail-loud-at-boot for secrets, softened to "degrade" per Task 4.1: the
+	// non-ingest surface must still come up).
+	var ingester mcp.Ingester
+	if cfg.apiKey == "" {
+		logger.Warn("ANTHROPIC_API_KEY is not set — ingest is DISABLED (wiki_whoami and tools/list still work); set it via SSM app-config (box) or .envrc (dev) to enable ingest")
+	} else {
+		newClient := func() (provider.Client, error) {
+			return anthropic.New(cfg.apiKey, cfg.ingestModel)
+		}
+		core := ingest.New(st, idx, conn, newClient, ingest.Config{
+			Model:     cfg.ingestModel,
+			MaxTokens: cfg.maxTokens,
+			JobTTL:    cfg.jobTTL,
+		})
+		// Boot-time crash recovery: flip any 'running' rows orphaned by a crash to
+		// 'failed' before serving (the runner's per-spawn nature means this is the
+		// one place the whole table is swept).
+		if n, err := core.Recover(ctx); err != nil {
+			return fmt.Errorf("ingest recover: %w", err)
+		} else if n > 0 {
+			logger.Warn("swept crash-orphaned ingest jobs at boot", "count", n)
+		}
+		ingester = core
+	}
+
+	mcpHandler := mcp.NewHandler(ingester)
+
+	addr := net.JoinHostPort(cfg.ip, strconv.Itoa(cfg.port))
 	srv, err := server.New(server.Options{
 		Addr:       addr,
 		Logger:     logger,
-		ResourceID: resourceID,
-		AuthServer: authServer,
+		ResourceID: cfg.resourceID,
+		AuthServer: cfg.authServer,
 		MCP:        mcpHandler,
 	})
 	if err != nil {
 		return err
 	}
 
-	logger.Info("starting wiki", "addr", addr, "resource_id", resourceID, "auth_server", authServer, "db_path", dbPath, "version", version)
+	logger.Info("starting wiki",
+		"addr", addr, "resource_id", cfg.resourceID, "auth_server", cfg.authServer,
+		"db_path", cfg.dbPath, "data_root", cfg.dataRoot,
+		"ingest_model", cfg.ingestModel, "ingest_enabled", cfg.apiKey != "", "version", version)
 	return server.Run(ctx, srv, logger)
 }
 

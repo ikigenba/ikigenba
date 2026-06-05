@@ -10,7 +10,10 @@ import (
 
 func newHandler(t *testing.T) *Handler {
 	t.Helper()
-	return NewHandler()
+	// nil ingest: the non-ingest surface (whoami, tools/list) works; the ingest
+	// verbs return an "ingest unavailable" tool-error, which the ingest-specific
+	// tests below assert against a stub.
+	return NewHandler(nil)
 }
 
 // rpc drives one JSON-RPC call through ServeHTTP and returns the decoded result
@@ -40,7 +43,8 @@ func rpc(t *testing.T, h *Handler, method, params string) map[string]any {
 }
 
 // callTool invokes tools/call and returns the decoded text payload plus the
-// isError flag.
+// isError flag. On an error result the text is a plain message (not JSON), so the
+// payload map carries it under "_text" rather than failing to decode.
 func callTool(t *testing.T, h *Handler, name, args string) (map[string]any, bool) {
 	t.Helper()
 	res := rpc(t, h, "tools/call", `{"name":"`+name+`","arguments":`+args+`}`)
@@ -52,23 +56,32 @@ func callTool(t *testing.T, h *Handler, name, args string) (map[string]any, bool
 	text := content[0].(map[string]any)["text"].(string)
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(text), &payload); err != nil {
-		t.Fatalf("%s: decode payload %q: %v", name, text, err)
+		// Error results carry a plain-text message; expose it without failing so
+		// callers asserting isErr can inspect it.
+		return map[string]any{"_text": text}, isErr
 	}
 	return payload, isErr
 }
 
-// TestToolsList_OnlyWhoami asserts the Phase-1 scaffold surface is exactly
-// wiki_whoami and nothing else.
-func TestToolsList_OnlyWhoami(t *testing.T) {
+// TestToolsList_Surface asserts the Task-4.2 surface is exactly wiki_whoami,
+// wiki_ingest_text, wiki_ingest_url, and wiki_job_status — and nothing else
+// (wiki_search is a later phase).
+func TestToolsList_Surface(t *testing.T) {
 	h := newHandler(t)
 	res := rpc(t, h, "tools/list", `{}`)
 	tools, _ := res["tools"].([]any)
-	if len(tools) != 1 {
-		t.Fatalf("tools/list returned %d tools, want 1", len(tools))
+	got := map[string]bool{}
+	for _, tl := range tools {
+		got[tl.(map[string]any)["name"].(string)] = true
 	}
-	name := tools[0].(map[string]any)["name"].(string)
-	if name != "wiki_whoami" {
-		t.Fatalf("tools/list = %q, want wiki_whoami", name)
+	want := []string{"wiki_whoami", "wiki_ingest_text", "wiki_ingest_url", "wiki_job_status"}
+	if len(got) != len(want) {
+		t.Fatalf("tools/list returned %d tools (%v), want %v", len(got), got, want)
+	}
+	for _, n := range want {
+		if !got[n] {
+			t.Fatalf("tools/list missing %q; got %v", n, got)
+		}
 	}
 }
 

@@ -18,8 +18,12 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+
+	"wiki/internal/ingest"
+	"wiki/internal/store"
 )
 
 // Identity is the authenticated caller, as told to us authoritatively by nginx
@@ -29,14 +33,36 @@ type Identity struct {
 	ClientID   string
 }
 
-// Handler is the http.Handler for POST /mcp. It dispatches JSON-RPC methods.
-// In Phase 1 it holds no domain dependencies — the only tool is the
-// no-side-effect wiki_whoami. Future domain services become fields here.
-type Handler struct{}
+// Ingester is the MCP surface's dependency on the ingest core (Task 4.1). The
+// handler holds the interface, not the concrete *ingest.Core, so the verb tests
+// can drive a stub and main.go injects the real core. Collection is always the
+// default ("") — no collection arg on the verbs yet (PLAN Decision 4).
+type Ingester interface {
+	// Ingest persists content to the immutable raw store and spawns the async
+	// integration job for owner; it returns the job id + raw outcome.
+	Ingest(ctx context.Context, owner, collection string, content []byte, meta store.RawMeta) (ingest.Result, error)
+	// IngestURL fetches url server-side, extracts HTML→markdown, then runs the same
+	// ingest pipeline as Ingest with source defaulted to the URL.
+	IngestURL(ctx context.Context, owner, collection, url string, meta store.RawMeta) (ingest.Result, error)
+	// JobStatus reads one job's owner-scoped status (ingest.ErrJobNotFound for a
+	// missing/foreign id).
+	JobStatus(ctx context.Context, owner, collection, jobID string) (ingest.Status, error)
+}
 
-// NewHandler builds a Handler.
-func NewHandler() *Handler {
-	return &Handler{}
+// Handler is the http.Handler for POST /mcp. It dispatches JSON-RPC methods. It
+// holds the ingest core, which backs wiki_ingest_text and wiki_job_status; the
+// no-side-effect wiki_whoami needs no dependency. ingest may be nil when the
+// service boots without an ingest backend (e.g. ANTHROPIC_API_KEY absent) — the
+// ingest verbs then return a clear "ingest unavailable" tool-error while
+// wiki_whoami and tools/list keep working.
+type Handler struct {
+	ingest Ingester
+}
+
+// NewHandler builds a Handler over the given ingest core (may be nil to run the
+// non-ingest surface only).
+func NewHandler(ing Ingester) *Handler {
+	return &Handler{ingest: ing}
 }
 
 // ServeHTTP dispatches a single JSON-RPC 2.0 request. Identity is read from the
@@ -64,7 +90,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "tools/list":
 		writeJSONRPCResult(w, req.ID, map[string]any{"tools": toolDescriptors()})
 	case "tools/call":
-		h.handleToolCall(w, req, id)
+		h.handleToolCall(r.Context(), w, req, id)
 	default:
 		writeJSONRPCError(w, req.ID, -32601, "method not found")
 	}

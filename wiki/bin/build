@@ -11,9 +11,10 @@
 #
 # metaspot-launch exec()s /opt/<app>/bin/run with no args (it has already sourced
 # /etc/metaspot/env and manifest.env, so METASPOT_DOMAIN and PORT are in the env).
-# In Phase 1 wiki has no secrets and no SSM app-config key — it trusts the
-# identity headers nginx injects, so the wrapper only sets non-secret public
-# config. (Phase 4 adds ANTHROPIC_API_KEY via SSM app-config + bin/secrets.)
+# Non-secret public config (resource/auth URLs, data root, ingest model + cost
+# ceiling) is set by the wrapper below. The ANTHROPIC_API_KEY secret is NOT set
+# here — metaspot-launch injects it from SSM app-config (seeded by bin/secrets);
+# its absence gracefully disables ingest (the service still serves wiki_whoami).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -43,6 +44,14 @@ set -euo pipefail
 export WIKI_RESOURCE_ID="https://${METASPOT_DOMAIN}/srv/wiki/mcp"
 export WIKI_AUTH_SERVER="https://${METASPOT_DOMAIN}"
 export WIKI_DB_PATH=/opt/wiki/data/wiki.db
+# The filesystem content store (immutable raw/ + the curated page tree + the
+# per-collection search index) lives under the app's data dir, beside the DB.
+export WIKI_DATA_ROOT=/opt/wiki/data/store
+# Ingest model + per-job cost ceiling come from etc/manifest.env (already sourced
+# by metaspot-launch); re-export with sane fallbacks so the wrapper is the single
+# place the on-box public ingest config is composed.
+export WIKI_INGEST_MODEL="${WIKI_INGEST_MODEL:-claude-sonnet-4-6}"
+export WIKI_INGEST_MAX_TOKENS="${WIKI_INGEST_MAX_TOKENS:-8192}"
 exec /opt/wiki/bin/wiki.bin \
   --ip 127.0.0.1 \
   --port "${PORT}"

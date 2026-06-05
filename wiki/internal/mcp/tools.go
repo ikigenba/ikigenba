@@ -1,19 +1,57 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+
+	"wiki/internal/ingest"
+	"wiki/internal/store"
 )
 
-// toolDescriptors returns the wiki MCP surface. In Phase 1 (Task 2.1 scaffold)
-// that is exactly one verb: wiki_whoami, the end-to-end auth proof. The ingest /
-// search verbs land in later phases. Schemas are hand-coded with per-field docs
-// to improve LLM hinting.
+// toolDescriptors returns the wiki MCP surface. After Task 4.2 that is four
+// verbs: wiki_whoami (the auth proof), wiki_ingest_text (the inline-bytes ingest
+// trigger), wiki_ingest_url (the service-fetches-a-URL ingest trigger), and
+// wiki_job_status (the async-job status read). wiki_search (5.1) lands in a later
+// phase. Schemas are hand-coded with per-field docs to improve LLM hinting.
 func toolDescriptors() []map[string]any {
 	return []map[string]any{
 		desc("wiki_whoami", "Return the authenticated caller's identity (owner email and client id) as established by the platform's auth gate. Takes no inputs; the end-to-end auth proof.", obj(map[string]any{})),
+		desc("wiki_ingest_text",
+			"Ingest inline text into your personal wiki. The bytes are stored immutably (sha256-keyed) and an asynchronous integration agent files them into curated, cross-linked pages. Returns a job_id you can poll with wiki_job_status. Provide provenance (title/source/tags) so the wiki can trace every page back to its origin.",
+			obj(map[string]any{
+				"content": strField("The raw text to ingest (the document body)."),
+				"title":   strField("Optional human title for this document (provenance)."),
+				"source":  strField("Optional origin of the text — a URL, a chat label, a filename (provenance)."),
+				"tags": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Optional tags to stamp onto the document (provenance).",
+				},
+			}, "content")),
+		desc("wiki_ingest_url",
+			"Ingest a web page into your personal wiki by URL. The service fetches the URL itself (http/https only) and extracts the page to markdown, then files it exactly like wiki_ingest_text: stored immutably (sha256-keyed) and integrated by an asynchronous agent into curated, cross-linked pages. The page's URL is recorded as the source. Returns a job_id you can poll with wiki_job_status.",
+			obj(map[string]any{
+				"url":   strField("The http/https URL to fetch and ingest."),
+				"title": strField("Optional human title; defaults to the page <title> or a URL-derived title (provenance)."),
+				"source": strField("Optional origin override; defaults to the URL itself (provenance)."),
+				"tags": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Optional tags to stamp onto the document (provenance).",
+				},
+			}, "url")),
+		desc("wiki_job_status",
+			"Read the status of an asynchronous wiki job (e.g. an ingest integration pass) by its job_id. Returns the lifecycle state (running|succeeded|failed|cancelled), start/end timestamps, any error, and token usage. Owner-scoped: you can only read your own jobs.",
+			obj(map[string]any{
+				"job_id": strField("The job id returned by wiki_ingest_text (or another async verb)."),
+			}, "job_id")),
 	}
+}
+
+func strField(desc string) map[string]any {
+	return map[string]any{"type": "string", "description": desc}
 }
 
 // ── schema helpers ──────────────────────────────────────────────────────────
@@ -37,13 +75,13 @@ type toolCallParams struct {
 	Arguments json.RawMessage `json:"arguments"`
 }
 
-func (h *Handler) handleToolCall(w http.ResponseWriter, req jsonRPCRequest, id Identity) {
+func (h *Handler) handleToolCall(ctx context.Context, w http.ResponseWriter, req jsonRPCRequest, id Identity) {
 	var p toolCallParams
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		writeJSONRPCError(w, req.ID, -32602, "invalid params")
 		return
 	}
-	res, err := dispatchTool(p.Name, id)
+	res, err := h.dispatchTool(ctx, p.Name, p.Arguments, id)
 	if err != nil {
 		writeJSONRPCResult(w, req.ID, toolResultErr(err.Error()))
 		return
@@ -51,13 +89,122 @@ func (h *Handler) handleToolCall(w http.ResponseWriter, req jsonRPCRequest, id I
 	writeJSONRPCResult(w, req.ID, res)
 }
 
-func dispatchTool(name string, id Identity) (map[string]any, error) {
+func (h *Handler) dispatchTool(ctx context.Context, name string, args json.RawMessage, id Identity) (map[string]any, error) {
 	switch name {
 	case "wiki_whoami":
 		return toolWhoami(id)
+	case "wiki_ingest_text":
+		return h.toolIngestText(ctx, args, id)
+	case "wiki_ingest_url":
+		return h.toolIngestURL(ctx, args, id)
+	case "wiki_job_status":
+		return h.toolJobStatus(ctx, args, id)
 	default:
 		return nil, errors.New("unknown tool: " + name)
 	}
+}
+
+// ── ingest verbs ──────────────────────────────────────────────────────────
+
+type ingestTextArgs struct {
+	Content string   `json:"content"`
+	Title   string   `json:"title"`
+	Source  string   `json:"source"`
+	Tags    []string `json:"tags"`
+}
+
+// toolIngestText drives the ingest core for the caller's owner. Collection is
+// always the default (no collection arg per PLAN Decision 4). It returns the job
+// id plus the raw-store outcome (sha256 + whether the bytes were already had).
+func (h *Handler) toolIngestText(ctx context.Context, raw json.RawMessage, id Identity) (map[string]any, error) {
+	if h.ingest == nil {
+		return nil, errors.New("ingest unavailable: this wiki has no ingest backend configured")
+	}
+	var a ingestTextArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, errors.New("invalid arguments: " + err.Error())
+	}
+	if a.Content == "" {
+		return nil, errors.New("content is required and must be non-empty")
+	}
+	res, err := h.ingest.Ingest(ctx, id.OwnerEmail, "" /* default collection */, []byte(a.Content), store.RawMeta{
+		Title:  a.Title,
+		Source: a.Source,
+		Tags:   a.Tags,
+	})
+	if err != nil {
+		return nil, errors.New("ingest failed: " + err.Error())
+	}
+	return toolResultJSON(map[string]any{
+		"job_id":      res.JobID,
+		"sha256":      res.Sha256,
+		"raw_path":    res.RawRelPath,
+		"already_had": res.AlreadyHad,
+	})
+}
+
+type ingestURLArgs struct {
+	URL    string   `json:"url"`
+	Title  string   `json:"title"`
+	Source string   `json:"source"`
+	Tags   []string `json:"tags"`
+}
+
+// toolIngestURL drives the URL ingest core for the caller's owner. The service
+// fetches the URL server-side and extracts HTML→markdown; the result feeds the
+// same async ingest pipeline as wiki_ingest_text, with source defaulted to the
+// URL. Collection is always the default (no collection arg per PLAN Decision 4).
+func (h *Handler) toolIngestURL(ctx context.Context, raw json.RawMessage, id Identity) (map[string]any, error) {
+	if h.ingest == nil {
+		return nil, errors.New("ingest unavailable: this wiki has no ingest backend configured")
+	}
+	var a ingestURLArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, errors.New("invalid arguments: " + err.Error())
+	}
+	if a.URL == "" {
+		return nil, errors.New("url is required and must be non-empty")
+	}
+	res, err := h.ingest.IngestURL(ctx, id.OwnerEmail, "" /* default collection */, a.URL, store.RawMeta{
+		Title:  a.Title,
+		Source: a.Source, // empty → core defaults it to the URL
+		Tags:   a.Tags,
+	})
+	if err != nil {
+		return nil, errors.New("ingest failed: " + err.Error())
+	}
+	return toolResultJSON(map[string]any{
+		"job_id":      res.JobID,
+		"sha256":      res.Sha256,
+		"raw_path":    res.RawRelPath,
+		"already_had": res.AlreadyHad,
+	})
+}
+
+type jobStatusArgs struct {
+	JobID string `json:"job_id"`
+}
+
+// toolJobStatus reads one job's owner-scoped status.
+func (h *Handler) toolJobStatus(ctx context.Context, raw json.RawMessage, id Identity) (map[string]any, error) {
+	if h.ingest == nil {
+		return nil, errors.New("ingest unavailable: this wiki has no ingest backend configured")
+	}
+	var a jobStatusArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, errors.New("invalid arguments: " + err.Error())
+	}
+	if a.JobID == "" {
+		return nil, errors.New("job_id is required")
+	}
+	st, err := h.ingest.JobStatus(ctx, id.OwnerEmail, "" /* default collection */, a.JobID)
+	if errors.Is(err, ingest.ErrJobNotFound) {
+		return nil, errors.New("no such job: " + a.JobID)
+	}
+	if err != nil {
+		return nil, errors.New("job status failed: " + err.Error())
+	}
+	return toolResultJSON(st)
 }
 
 // ── tool implementations ─────────────────────────────────────────────────
