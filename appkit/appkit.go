@@ -141,6 +141,26 @@ type Spec struct {
 	// producer's event payload builders stay app-side (PLAN §B1 map: appkit/feed is
 	// orchestration only; the domain owns the payload shape).
 	Producer func(ob *outbox.Outbox) error
+	// Workers are long-running background tasks appkit runs alongside the HTTP
+	// server for the whole serve lifecycle (E2's consumer seam, the mirror of the
+	// C1 producer seam). The canonical worker is an event-plane CONSUMER loop
+	// (eventplane/consumer.Run over an upstream named in Spec.Consumes), but any
+	// background task fits. Each worker is launched in its own goroutine on the
+	// serve context, which is the coupling the consumer model requires:
+	//   - a SIGTERM / clean shutdown cancels the serve context, so every worker's
+	//     ctx is cancelled and they unwind alongside the server;
+	//   - a worker that RETURNS (a structural fault — e.g. consumer.Run escaping on a
+	//     missing feed_offset table) cancels the serve context too, bringing the HTTP
+	//     server down so the process exits non-zero rather than lingering half-alive
+	//     (HTTP up / consumer dead — event-protocol.md decision 11);
+	//   - a TRANSPORT fault (the upstream producer is unreachable) is retried inside
+	//     the worker and never returns, so it never takes the server down.
+	// The first non-nil worker error becomes the serve verb's exit error. Workers
+	// run only on serve, not on the one-shot verbs (migrate/manifest/…). Nil/empty
+	// for services with no background task (crm, ledger). The consumer Config /
+	// Handler stay app-side: appkit owns the lifecycle, not the event semantics
+	// (PLAN §B1 map §3 risk 2 — appkit emits CONSUMES=, the loop is wired here).
+	Workers []func(ctx context.Context) error
 	// Backup overrides the backup verb (nil = appkit's default SQLite snapshot).
 	Backup func(ctx context.Context, req BackupReq) error
 	// Restore overrides the restore verb (nil = appkit's default SQLite restore).

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -145,8 +146,14 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 	}
 	logger := logging.New(level, stdout)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// A cancelable child of the signal context: a worker returning (a structural
+	// fault) cancels it to bring the server down too, and a signal-driven shutdown
+	// cancels it to unwind the workers — the consumer-fault-cancels-server coupling
+	// (event-protocol.md decision 11) lifted from notify/wiki into the chassis.
+	ctx, cancel := context.WithCancel(sigCtx)
+	defer cancel()
 
 	conn, err := db.Open(cfg.DBPath)
 	if err != nil {
@@ -221,7 +228,42 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 	logger.Info("starting "+spec.App,
 		"addr", addr, "resource_id", cfg.ResourceID, "auth_server", cfg.AuthServer,
 		"db_path", cfg.DBPath, "version", versionString())
-	return server.Run(ctx, srv, logger)
+	return runServerAndWorkers(ctx, cancel, srv, spec.Workers, logger)
+}
+
+// runServerAndWorkers runs the HTTP server and every Spec.Worker concurrently on
+// the shared serve context, returning the first non-nil termination error after
+// all of them have unwound. A worker that returns (a structural fault) or a
+// signal both cancel ctx, so the other subsystems tear down together — no
+// half-alive HTTP-up / consumer-dead state (event-protocol.md decision 11). When
+// there are no workers this collapses to server.Run.
+func runServerAndWorkers(ctx context.Context, cancel context.CancelFunc, srv *http.Server, workers []func(context.Context) error, logger *slog.Logger) error {
+	if len(workers) == 0 {
+		return server.Run(ctx, srv, logger)
+	}
+
+	errCh := make(chan error, len(workers)+1)
+	for _, w := range workers {
+		go func(w func(context.Context) error) {
+			err := w(ctx)
+			// A worker returning at all is a structural fault (a transport fault is
+			// retried inside the worker and never returns): cancel ctx so the server
+			// comes down too, then report.
+			cancel()
+			errCh <- err
+		}(w)
+	}
+	go func() {
+		errCh <- server.Run(ctx, srv, logger)
+	}()
+
+	var firstErr error
+	for i := 0; i < len(workers)+1; i++ {
+		if e := <-errCh; e != nil && firstErr == nil {
+			firstErr = e
+		}
+	}
+	return firstErr
 }
 
 // runBackup dispatches to Spec.Backup, or appkit's default SQLite snapshot.

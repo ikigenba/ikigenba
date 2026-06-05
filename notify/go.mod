@@ -3,17 +3,21 @@ module notify
 go 1.26
 
 require (
+	appkit v0.0.0
 	eventplane v0.0.0
 	modernc.org/sqlite v1.50.1
 )
 
-// The shared event-plane library is a sibling source tree, not a published
-// module. go.work resolves it for local dev; this committed replace makes
-// bin/build deterministic with or without the workspace. The ledger clone this
-// repo was duplicated from is eventplane-free, so both the require above and
-// this replace are ADDED here — notify is the first consumer of the library's
-// consumer half (decision 12).
+// The shared event-plane and chassis libraries are sibling source trees, not
+// published modules. go.work resolves them for local dev; these committed
+// replaces make the prod build deterministic with or without the workspace
+// (GOWORK=off). The ledger clone this repo was duplicated from is eventplane-free,
+// so both the require above and the eventplane replace are ADDED here — notify is
+// the first consumer of the library's consumer half (decision 12). appkit is the
+// uniform chassis the E-phase conversion folds notify onto (PLAN §1.2, §1.6).
 replace eventplane => ../eventplane
+
+replace appkit => ../appkit
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
