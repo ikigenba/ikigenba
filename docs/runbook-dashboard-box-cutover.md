@@ -189,54 +189,56 @@ ssh … 'ls -l /opt/dashboard/data/ || true'
 ### 3a. Create the release tag
 
 `bin/deploy` builds from a **git tag** named `dashboard/<version>` (F1 formalized
-tagging + ldflags). Tag the committed, converted `dashboard`.
+tagging + ldflags). Tag the committed, converted `dashboard`. Throughout this
+runbook `vX.Y.Z` is a placeholder — substitute the actual next free version
+(the first cutover shipped `v0.1.0`).
 
 ```
-git tag -a dashboard/v1.0.0 -m 'dashboard v1.0.0 — appkit/optctl cutover'
+git tag -a dashboard/vX.Y.Z -m 'dashboard vX.Y.Z — appkit/optctl cutover'
 git tag --list 'dashboard/*'
 ```
 
-- Expected: `git tag --list 'dashboard/*'` lists `dashboard/v1.0.0`. (Use the
-  next free version if `v1.0.0` already exists.)
-- Abort/restore: `git tag -d dashboard/v1.0.0` (local-only; nothing shipped).
+- Expected: `git tag --list 'dashboard/*'` lists the new `dashboard/vX.Y.Z` tag.
+  (Pick the next free version if it already exists.)
+- Abort/restore: `git tag -d dashboard/vX.Y.Z` (local-only; nothing shipped).
 
 ### 3b. Deploy it (real run)
 
-`bin/deploy <app> [version]` maps the bare `v1.0.0` to the tag
-`dashboard/v1.0.0`, builds in a throwaway detached worktree
+`bin/deploy <app> [version]` maps the bare `vX.Y.Z` to the tag
+`dashboard/vX.Y.Z`, builds in a throwaway detached worktree
 (`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off -trimpath -buildvcs=false`,
 ldflags-stamped), `scp`s the single artifact, then runs the box half:
-`ssh sudo optctl install dashboard v1.0.0 --artifact /tmp/dashboard-v1.0.0`.
+`ssh sudo optctl install dashboard vX.Y.Z --artifact /tmp/dashboard-vX.Y.Z`.
 
 ```
-bin/deploy dashboard v1.0.0
+bin/deploy dashboard vX.Y.Z
 ```
 
 - Expected (workstation side, the `>>` lines from `bin/deploy`):
   ```
-  >> dashboard: tag dashboard/v1.0.0 -> release v1.0.0 (commit <sha>)
-  >> git worktree add --detach <tmp> dashboard/v1.0.0
+  >> dashboard: tag dashboard/vX.Y.Z -> release vX.Y.Z (commit <sha>)
+  >> git worktree add --detach <tmp> dashboard/vX.Y.Z
   >> build dashboard -> <tmp-artifact>/dashboard
   >> built dashboard (<size>)
-  >> scp dashboard v1.0.0 -> ai.metaspot.org:/tmp/dashboard-v1.0.0
-  >> ssh sudo optctl install dashboard v1.0.0
+  >> scp dashboard vX.Y.Z -> ai.metaspot.org:/tmp/dashboard-vX.Y.Z
+  >> ssh sudo optctl install dashboard vX.Y.Z
   ```
 - Expected (box side — `optctl install` progress; the DB was reset in §2, so it
   is created during migrate and there is no pre-migration backup):
   ```
-  >> preflight dashboard v1.0.0
-  >> place artifact -> /opt/dashboard/releases/v1.0.0/dashboard
+  >> preflight dashboard vX.Y.Z
+  >> place artifact -> /opt/dashboard/releases/vX.Y.Z/dashboard
   >> regenerate /opt/dashboard/etc/manifest.env
   >> schema advances but no DB yet (fresh) — no backup
   >> migrate dashboard
-  >> atomic swap current -> releases/v1.0.0
+  >> atomic swap current -> releases/vX.Y.Z
   >> restart dashboard
-  >> installed dashboard v1.0.0
+  >> installed dashboard vX.Y.Z
   ```
-- Final `>> deploy complete: dashboard v1.0.0 (<sha>)` from the wrapper.
+- Final `>> deploy complete: dashboard vX.Y.Z (<sha>)` from the wrapper.
 - **Preflight gates** (from `preflight.go`, refuse a bad artifact before touching
   anything live): static `linux/amd64`, `dashboard version` self-report ==
-  `v1.0.0`, `dashboard manifest` parses (`APP=dashboard`, `MOUNT=/`,
+  `vX.Y.Z`, `dashboard manifest` parses (`APP=dashboard`, `MOUNT=/`,
   `DEFAULT=true`, no `MCP`). A failure here aborts with the live release
   untouched — but note the dashboard is **already stopped** and its DB reset, so
   on a preflight abort the box has no serving dashboard: fix and re-deploy
@@ -255,9 +257,9 @@ ssh … 'ls -l /opt/dashboard/current /opt/dashboard/bin/run; \
 ```
 
 - Expected:
-  - `current -> releases/v1.0.0` (a symlink).
+  - `current -> releases/vX.Y.Z` (a symlink).
   - `bin/run -> ../current/dashboard` (the STABLE path `metaspot-launch` execs).
-  - `releases/` contains `v1.0.0`.
+  - `releases/` contains `vX.Y.Z`.
   - `etc/manifest.env` is the regenerated manifest:
     `APP=dashboard … MOUNT=/ … DEFAULT=true … PORT=3000` (no `MCP`).
 
@@ -279,7 +281,7 @@ systemctl is-active dashboard
 ```
 /opt/dashboard/current/dashboard version
 ```
-- Expected: `v1.0.0 (<sha>)` — the version token MUST equal `v1.0.0` (the same
+- Expected: `vX.Y.Z (<sha>)` — the version token MUST equal `vX.Y.Z` (the same
   self-report `optctl` preflight asserts).
 
 **4c. Apex reachable over real TLS.**
@@ -380,7 +382,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://ai.metaspot.org/   # 200/302
 
 ## Cleanup (optional, after a successful cutover)
 
-Leave `dashboard` deployed (it is the live apex app) and the `dashboard/v1.0.0`
+Leave `dashboard` deployed (it is the live apex app) and the `dashboard/vX.Y.Z`
 tag in place. The throwaway `bin/deploy` worktree and `/tmp` artifacts are
 removed automatically (the wrapper's `trap cleanup EXIT`). The optional
 `/opt/dashboard/data/*.pre-cutover*` snapshot from §2a can be removed once you
