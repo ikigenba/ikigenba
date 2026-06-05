@@ -46,7 +46,7 @@ All of these are **subdirectories of this one repo**, except `marketplace`
 |---|---|---|---|
 | **dashboard** | apex/`DEFAULT` app: OAuth AS, IAM, push, install landing, service inventory | Go (`module dashboard`), SQLite (`dashboard.db`) | **3000** |
 | **crm** | path-routed service `/srv/crm/` — contacts domain + MCP; event-plane **producer** (`/feed` outbox) | Go (`module crm`), SQLite | **3001** |
-| **ledger** | path-routed service `/srv/ledger/` — skeleton (whoami-only, cloned from crm) | Go (`module ledger`) | **3002** |
+| **ledger** | path-routed service `/srv/ledger/` — double-entry bookkeeping (immutable journal, fixed 8-verb MCP) + event-plane **producer** (`/feed` outbox) | Go (`module ledger`), SQLite | **3002** |
 | **notify** | path-routed service `/srv/notify/` — event-plane **consumer** (push on crm's `/feed`); the worked example for bringing up a new consumer | Go (`module notify`) | **3003** |
 | **eventplane** | shared Go **library** — the event-plane producer/consumer plumbing, consumed via a committed `replace eventplane => ../eventplane` | Go (`module eventplane`) | — |
 | **nginx** | local-dev front door (:8080) mirroring the prod `/srv/<svc>/` routing | nginx conf + `run` script | — |
