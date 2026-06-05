@@ -25,7 +25,7 @@ That means you never speak the bookkeeper's dialect. You won't type an account n
 
 ### It's a real set of books
 
-This isn't a running tally of your bank balance. It's double-entry bookkeeping — the discipline a real accountant uses — so every change to your money is recorded as a small balanced entry with two sides: where the money came from and where it went. Buy a lift with bank money and the books note both that you own a lift and that the bank dropped. Bill a customer and they note both the income you earned and the promise to pay. You do none of that work; you say "we bought a hydraulic lift for eight thousand out of the bank," and the assistant writes both sides.
+This isn't a running tally of your bank balance. It's double-entry bookkeeping — the discipline a real accountant uses — so every change to your money is recorded as a small balanced entry with two sides: where the money came from and where it went. Buy a lift with money from the bank and the books note two things: you own a lift now, and your bank balance is lower by what it cost. Bill a customer and they note two more: the income you earned, and the customer's promise to pay. You do none of that work; you say "we bought a hydraulic lift for eight thousand out of the bank," and the assistant writes both sides.
 
 ### It keeps you honest
 
@@ -84,7 +84,7 @@ A set of books is a memory: a permanent, balanced record of everything that happ
 
 ### The one thing it writes: a balanced transaction
 
-A transaction is one thing that happened to your money, recorded with both sides showing. Every transaction has at least **two sides** (bookkeepers call them *postings*), because money comes from somewhere and goes somewhere. Moe's $450 sale has two: the till goes up $450, labor income goes up $450. Buying the lift has two: you own a lift now, the bank went down. The two sides always **balance** — add up every side of any transaction and it sums to **zero**. The ledger won't record one that doesn't.
+A transaction is one thing that happened to your money, recorded with both sides showing. Every transaction has at least **two sides** (bookkeepers call them *postings*), because money comes from somewhere and goes somewhere. Moe's $450 sale has two: the till goes up $450, labor income goes up $450. Buying the lift has two: you own a lift now, and your bank balance went down. The two sides always **balance** — add up every side of any transaction and it sums to **zero**. The ledger won't record one that doesn't.
 
 The two sides are what old-school bookkeeping calls **debit** and **credit**, and generations of people have been tortured remembering which is which. You won't: the assistant decides which side each account goes on. You say "Moe paid cash for the $450 job," and it works out that the till is the debit and the income is the credit, and that they net to zero. The signs are real and they matter; they're the assistant's job, not yours.
 
