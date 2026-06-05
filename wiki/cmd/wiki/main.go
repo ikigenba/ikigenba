@@ -27,6 +27,9 @@ import (
 	"agentkit/provider"
 	"agentkit/provider/anthropic"
 
+	"eventplane/consumer"
+
+	"wiki/internal/consume"
 	"wiki/internal/db"
 	"wiki/internal/ingest"
 	"wiki/internal/lint"
@@ -35,6 +38,15 @@ import (
 	"wiki/internal/search"
 	"wiki/internal/server"
 	"wiki/internal/store"
+)
+
+// The event-plane upstream wiki consumes and the stable id it presents on every
+// connect (event-protocol.md §7.1). Both are fixed constants — wiki consumes
+// exactly dropbox's file-lifecycle feed, and its X-Consumer-Id is the literal
+// "wiki". CONSUMES=dropbox in etc/manifest.env mirrors this for the registry.
+const (
+	upstreamSource = "dropbox"
+	consumerID     = "wiki"
 )
 
 // version is the product version, overridden at build time via -ldflags.
@@ -123,6 +135,26 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) er
 		return err
 	}
 
+	// Event-plane consumer config (Task 6.1). wiki is a notify-shaped consumer of
+	// dropbox's file-lifecycle feed for the hardcoded wiki/ingest folder.
+	//   DROPBOX_FEED_URL — dropbox's loopback /feed (the upstream-named key,
+	//                      event-protocol.md §3). On the box the bin/build wrapper
+	//                      resolves it BY NAME via `registry feed-url dropbox`; the
+	//                      dev default below is for `go run`/tests without env. An
+	//                      empty value DISABLES the consumer (graceful — the MCP
+	//                      surface still comes up).
+	//   WIKI_OWNER       — the box owner every wiki/ingest file is filed under.
+	//                      Dropbox is single-owner and its events carry no owner, so
+	//                      the owner is service config, not derived from the event.
+	//                      Empty also disables the consumer (it cannot file without
+	//                      an owner).
+	//   WIKI_CONSUMER_FROM — first-subscription choice (tail|earliest); tail by
+	//                      default so a fresh wiki does not re-ingest the whole
+	//                      folder backlog on first boot.
+	feedURL := envOr(getenv, "DROPBOX_FEED_URL", "http://127.0.0.1:3005/feed")
+	consumerOwner := getenv("WIKI_OWNER")
+	consumerFrom := envOr(getenv, "WIKI_CONSUMER_FROM", "tail")
+
 	cfg := serveConfig{
 		ip:            *ip,
 		port:          *port,
@@ -138,6 +170,9 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) er
 		lintModel:     lintModel,
 		lintMaxTokens: lintMaxTokens,
 		lintJobTTL:    time.Duration(lintTTLSeconds) * time.Second,
+		feedURL:       feedURL,
+		consumerOwner: consumerOwner,
+		consumerFrom:  consumerFrom,
 	}
 	return serve(cfg, stdout)
 }
@@ -159,6 +194,14 @@ type serveConfig struct {
 	lintModel     string
 	lintMaxTokens int
 	lintJobTTL    time.Duration
+
+	// Event-plane consumer (Task 6.1). feedURL is dropbox's loopback /feed;
+	// consumerOwner is the box owner every wiki/ingest file is filed under;
+	// consumerFrom is the first-subscription choice. An empty feedURL or
+	// consumerOwner disables the consumer (graceful).
+	feedURL       string
+	consumerOwner string
+	consumerFrom  string
 }
 
 // serve runs the long-running HTTP server until interrupted. It assembles the
@@ -172,8 +215,13 @@ func serve(cfg serveConfig, stdout io.Writer) error {
 	}
 	logger := logging.New(level, stdout)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// A cancelable child so a STRUCTURAL consumer fault (a missing feed_offset
+	// table — a deploy bug) can tear the server down too, mirroring notify: no
+	// half-alive (HTTP up / consumer dead) state (event-protocol.md decision 11).
+	ctx, cancel := context.WithCancel(sigCtx)
+	defer cancel()
 
 	conn, err := db.Open(cfg.dbPath)
 	if err != nil {
@@ -200,6 +248,7 @@ func serve(cfg serveConfig, stdout io.Writer) error {
 	// fail-loud-at-boot for secrets, softened to "degrade" per Task 4.1: the
 	// non-ingest surface must still come up).
 	var ingester mcp.Ingester
+	var ingestCore *ingest.Core // concrete core, also fed by the event-plane consumer (Task 6.1)
 	var linter *lint.Linter
 	if cfg.apiKey == "" {
 		logger.Warn("ANTHROPIC_API_KEY is not set — ingest is DISABLED (wiki_whoami and tools/list still work); set it via SSM app-config (box) or .envrc (dev) to enable ingest")
@@ -222,6 +271,7 @@ func serve(cfg serveConfig, stdout io.Writer) error {
 			logger.Warn("swept crash-orphaned ingest/lint jobs at boot", "count", n)
 		}
 		ingester = core
+		ingestCore = core
 
 		// Lint maintenance pass (Task 5.2): reuses the same agent/job machinery as
 		// ingest, sharing the single-writer DB, the wiki_jobs table, and ingest's
@@ -261,11 +311,74 @@ func serve(cfg serveConfig, stdout io.Writer) error {
 		return err
 	}
 
+	// Event-plane consumer (Task 6.1): wiki is a notify-shaped consumer of
+	// dropbox's file-lifecycle feed for the hardcoded wiki/ingest folder. It runs
+	// ONLY when ingest is enabled (it feeds the same ingest core — no core, nothing
+	// to file), a feed URL resolved, and a box owner is configured. Otherwise the
+	// service still boots and serves the MCP surface (graceful, mirroring the
+	// ingest-disabled path). The consumer feeds Core.Ingest, which spawns the async
+	// integration job, so it never blocks the MCP server.
+	consumerEnabled := ingestCore != nil && cfg.feedURL != "" && cfg.consumerOwner != ""
+	switch {
+	case ingestCore == nil:
+		logger.Warn("event-plane consumer DISABLED: ingest is off (no ANTHROPIC_API_KEY) — nothing to file dropbox events into")
+	case cfg.feedURL == "":
+		logger.Warn("event-plane consumer DISABLED: no DROPBOX_FEED_URL (the bin/build wrapper resolves it via `registry feed-url dropbox`)")
+	case cfg.consumerOwner == "":
+		logger.Warn("event-plane consumer DISABLED: no WIKI_OWNER (dropbox is single-owner; the box owner must be configured to file wiki/ingest events)")
+	}
+
 	logger.Info("starting wiki",
 		"addr", addr, "resource_id", cfg.resourceID, "auth_server", cfg.authServer,
 		"db_path", cfg.dbPath, "data_root", cfg.dataRoot,
-		"ingest_model", cfg.ingestModel, "ingest_enabled", cfg.apiKey != "", "version", version)
-	return server.Run(ctx, srv, logger)
+		"ingest_model", cfg.ingestModel, "ingest_enabled", cfg.apiKey != "",
+		"consumer_enabled", consumerEnabled, "feed_url", cfg.feedURL,
+		"consumer_owner", cfg.consumerOwner, "version", version)
+
+	if !consumerEnabled {
+		// No consumer: just run the HTTP server, as in earlier phases.
+		return server.Run(ctx, srv, logger)
+	}
+
+	// Run the server and the consumer concurrently. errCh collects both
+	// terminations; the first fatal error cancels ctx so the other unwinds. A
+	// structural consumer fault (decision 11) crashes the whole process rather than
+	// lingering HTTP-up / consumer-dead; a transport fault (dropbox down) is retried
+	// indefinitely inside the engine and never escapes Run.
+	consumerCfg := consumer.Config{
+		FeedURL:    cfg.feedURL,
+		From:       cfg.consumerFrom,
+		DB:         conn,
+		Source:     upstreamSource,
+		ConsumerID: consumerID,
+		Logger:     logger,
+	}
+	handler := consume.Handler(consume.Config{
+		Owner:    cfg.consumerOwner,
+		Ingester: ingestCore,
+		Logger:   logger,
+	})
+
+	errCh := make(chan error, 2)
+	go func() {
+		err := consumer.Run(ctx, consumerCfg, handler)
+		if err != nil {
+			err = fmt.Errorf("event-plane consumer: %w", err)
+		}
+		cancel() // bring the server down too — no half-alive state (decision 11)
+		errCh <- err
+	}()
+	go func() {
+		errCh <- server.Run(ctx, srv, logger)
+	}()
+
+	var firstErr error
+	for i := 0; i < 2; i++ {
+		if e := <-errCh; e != nil && firstErr == nil {
+			firstErr = e
+		}
+	}
+	return firstErr
 }
 
 func envOr(getenv func(string) string, key, def string) string {

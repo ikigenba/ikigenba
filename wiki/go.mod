@@ -4,14 +4,15 @@ go 1.26
 
 require (
 	agentkit v0.0.0-00010101000000-000000000000
+	eventplane v0.0.0
 	golang.org/x/net v0.12.0
 	modernc.org/sqlite v1.50.1
 )
 
 // Shared sibling source trees, not published modules. go.work resolves them for
 // local dev; these committed replaces keep bin/build deterministic with or
-// without the workspace. agentkit is not imported yet (it lands in Phase 4), but
-// the replace is declared now so the seam is ready.
+// without the workspace. eventplane is the event-plane library wiki consumes as a
+// dropbox file-lifecycle consumer (Task 6.1); agentkit is the agent machinery.
 replace eventplane => ../eventplane
 
 replace agentkit => ../agentkit

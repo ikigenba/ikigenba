@@ -96,8 +96,9 @@ func TestMigrate_AppliesWikiSchemaOnFreshDB(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	// Versions 1 and 2 must both be recorded on a fresh DB.
-	for _, v := range []int{1, 2} {
+	// Versions 1, 2 and 3 must all be recorded on a fresh DB (001→002→003; 003 is
+	// the event-plane consumer offset migration, Task 6.1).
+	for _, v := range []int{1, 2, 3} {
 		var got int
 		if err := conn.QueryRowContext(ctx,
 			`SELECT version FROM schema_migrations WHERE version=?`, v,
@@ -106,8 +107,9 @@ func TestMigrate_AppliesWikiSchemaOnFreshDB(t *testing.T) {
 		}
 	}
 
-	// The real 002 tables must exist (placeholder wiki_meta must be gone).
-	for _, table := range []string{"wiki_ingest", "wiki_jobs"} {
+	// The real 002 tables + the 003 feed_offset table must exist (placeholder
+	// wiki_meta must be gone).
+	for _, table := range []string{"wiki_ingest", "wiki_jobs", "feed_offset"} {
 		var name string
 		if err := conn.QueryRowContext(ctx,
 			`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table,
