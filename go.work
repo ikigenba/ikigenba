@@ -15,4 +15,5 @@ use (
 	./ledger
 	./notify
 	./ralph
+	./wiki
 )
