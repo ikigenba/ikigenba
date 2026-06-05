@@ -17,17 +17,35 @@ import (
 // real box uses root="/opt"; tests use a temp dir. The stable paths bin/run and
 // etc/manifest.env (PLAN §2.6) and the never-touched data/<app>.db (PLAN §2.7)
 // are computed here so every verb shares one definition.
+//
+// SysRoot is the parallel base for the box's SYSTEM-config tree (/etc/systemd,
+// /etc/nginx, /var/lib/letsencrypt). install/rollback/prune never touch it; the
+// D1 verbs init-box/setup write their config artifacts there (under SysRoot so a
+// test can byte-assert them against a temp dir). The box uses SysRoot="/"; tests
+// point it at a temp dir. Empty ⇒ "/".
 type Layout struct {
-	Root string // OPTCTL_ROOT, default "/opt"
-	App  string // service name
+	Root    string // OPTCTL_ROOT, default "/opt" — the /opt/<app> tree
+	SysRoot string // system-config base, default "/" — the /etc + /var tree
+	App     string // service name
 }
 
-// NewLayout builds the layout for app under root (root="" ⇒ "/opt").
+// NewLayout builds the layout for app under root (root="" ⇒ "/opt"), with the
+// system-config base defaulting to "/". Use NewLayoutSys to override SysRoot.
 func NewLayout(root, app string) Layout {
+	return NewLayoutSys(root, "", app)
+}
+
+// NewLayoutSys builds the layout for app under root (""⇒"/opt") and sysRoot
+// (""⇒"/"). Tests pass a temp dir for both so init-box/setup write their config
+// artifacts where the test can read them.
+func NewLayoutSys(root, sysRoot, app string) Layout {
 	if root == "" {
 		root = "/opt"
 	}
-	return Layout{Root: root, App: app}
+	if sysRoot == "" {
+		sysRoot = "/"
+	}
+	return Layout{Root: root, SysRoot: sysRoot, App: app}
 }
 
 // AppDir is /opt/<app> — the per-app install root.
@@ -94,4 +112,60 @@ func (l Layout) BackupsDir() string { return filepath.Join(l.AppDir(), "backups"
 // snapshot whose name matches the release it is rolling back FROM).
 func (l Layout) PreMigrationBackup(version string) string {
 	return filepath.Join(l.BackupsDir(), "pre-"+version+".db")
+}
+
+// ---- System-config paths (rooted at SysRoot; written by init-box / setup) ----
+
+// SystemdDir is <SysRoot>/etc/systemd/system — where unit files land.
+func (l Layout) SystemdDir() string {
+	return filepath.Join(l.SysRoot, "etc", "systemd", "system")
+}
+
+// UnitPath is <SysRoot>/etc/systemd/system/<app>.service — the per-app unit
+// setup writes (ExecStart=/usr/local/bin/metaspot-launch <app>, enabled not
+// started), byte-matching today's bin/setup heredoc.
+func (l Layout) UnitPath() string {
+	return filepath.Join(l.SystemdDir(), l.App+".service")
+}
+
+// RenewTimerPath / RenewServicePath are the certbot renewal timer+service
+// init-box writes (the apex cert renewal). A self-contained
+// metaspot-certbot-renew.{timer,service} pair, so the byte content is asserted
+// in tests rather than depending on a package-provided timer.
+func (l Layout) RenewTimerPath() string {
+	return filepath.Join(l.SystemdDir(), "metaspot-certbot-renew.timer")
+}
+
+func (l Layout) RenewServicePath() string {
+	return filepath.Join(l.SystemdDir(), "metaspot-certbot-renew.service")
+}
+
+// NginxConfDir is <SysRoot>/etc/nginx/conf.d — where the apex server block lands.
+func (l Layout) NginxConfDir() string {
+	return filepath.Join(l.SysRoot, "etc", "nginx", "conf.d")
+}
+
+// ApexBlockPath is <SysRoot>/etc/nginx/conf.d/<app>.conf — the apex server{}
+// block for the DEFAULT app (today dashboard/bin/setup writes /etc/nginx/conf.d/
+// dashboard.conf). init-box owns it; the app name is the DEFAULT app's name.
+func (l Layout) ApexBlockPath() string {
+	return filepath.Join(l.NginxConfDir(), l.App+".conf")
+}
+
+// LocationsDir is <SysRoot>/etc/nginx/conf.d/locations — the include dir the
+// per-app fragments drop into. init-box creates it; setup writes into it.
+func (l Layout) LocationsDir() string {
+	return filepath.Join(l.NginxConfDir(), "locations")
+}
+
+// FragmentPath is <SysRoot>/etc/nginx/conf.d/locations/<app>.conf — the per-app
+// location fragment setup drops, byte-matching today's bin/setup output.
+func (l Layout) FragmentPath() string {
+	return filepath.Join(l.LocationsDir(), l.App+".conf")
+}
+
+// LetsEncryptWebroot is <SysRoot>/var/lib/letsencrypt — the HTTP-01 webroot
+// init-box provisions for certbot.
+func (l Layout) LetsEncryptWebroot() string {
+	return filepath.Join(l.SysRoot, "var", "lib", "letsencrypt")
 }

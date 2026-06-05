@@ -17,10 +17,11 @@ const DefaultKeep = 3
 // two box-only seams. Construct with New; tests inject stub seams and a temp
 // root, the box uses RealSystem / RealRunner and OPTCTL_ROOT (default /opt).
 type Optctl struct {
-	Root   string    // OPTCTL_ROOT, "" ⇒ /opt
-	Keep   int       // releases prune retains (0 ⇒ DefaultKeep)
-	System System    // systemd restart / is-active seam
-	Runner AppRunner // app-binary verb seam
+	Root    string    // OPTCTL_ROOT, "" ⇒ /opt — the /opt/<app> tree
+	SysRoot string    // OPTCTL_SYSROOT, "" ⇒ / — the /etc + /var system-config tree
+	Keep    int       // releases prune retains (0 ⇒ DefaultKeep)
+	System  System    // systemd / provisioning seam
+	Runner  AppRunner // app-binary verb seam
 	// Out / Err are the human-readable progress streams (the verbs' data goes to
 	// the box, not here). Default os.Stdout / os.Stderr.
 	Out io.Writer
@@ -31,12 +32,13 @@ type Optctl struct {
 // uses this; tests construct the struct literally with stubs.
 func New(root string) *Optctl {
 	return &Optctl{
-		Root:   root,
-		Keep:   DefaultKeep,
-		System: RealSystem{},
-		Runner: RealRunner{},
-		Out:    os.Stdout,
-		Err:    os.Stderr,
+		Root:    root,
+		SysRoot: os.Getenv("OPTCTL_SYSROOT"),
+		Keep:    DefaultKeep,
+		System:  RealSystem{},
+		Runner:  RealRunner{},
+		Out:     os.Stdout,
+		Err:     os.Stderr,
 	}
 }
 
@@ -47,7 +49,7 @@ func (o *Optctl) keep() int {
 	return o.Keep
 }
 
-func (o *Optctl) layout(app string) Layout { return NewLayout(o.Root, app) }
+func (o *Optctl) layout(app string) Layout { return NewLayoutSys(o.Root, o.SysRoot, app) }
 
 func (o *Optctl) logf(format string, args ...any) {
 	w := o.Out

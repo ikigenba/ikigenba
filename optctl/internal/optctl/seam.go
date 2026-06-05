@@ -7,10 +7,17 @@ import (
 	"strings"
 )
 
-// System is the seam over the box-only platform: systemd unit control and the
-// is-active health gate. The real box wiring (C3/D1/D2) plugs in via RealSystem;
-// tests inject a stub so the whole package runs against a temp root with no
-// systemd. PLAN §C2: "Systemd/sudo calls behind a seam the tests stub."
+// System is the seam over the box-only platform: systemd unit control, the
+// is-active health gate, and the provisioning ops that init-box / setup invoke
+// (package install, user creation, unit enable, nginx validate/reload, certbot).
+// The real box wiring (C3/D1/D2) plugs in via RealSystem; tests inject a stub so
+// the whole package runs against a temp root with no systemd / no root.
+// PLAN §C2/§D1: "Systemd/sudo calls behind a seam the tests stub."
+//
+// The config artifacts these verbs emit (the systemd unit, the nginx apex block
+// + fragments, the renew timer) are WRITTEN to SysRoot-rooted paths by optctl
+// itself so tests can byte-assert them; only the IMPERATIVE box ops below go
+// through this seam, where tests record (but never execute) them.
 type System interface {
 	// Restart restarts the app's systemd unit (the box runs `systemctl restart
 	// <app>`). It is the cutover point after the atomic symlink swap.
@@ -19,6 +26,33 @@ type System interface {
 	// is-active <app>`). A non-nil error means the new release failed to come up
 	// and the operator's recovery is `optctl rollback`.
 	IsActive(ctx context.Context, app string) error
+
+	// InstallPackages installs the named OS packages (the box runs `dnf install
+	// -y <pkgs...>`). init-box installs nginx+certbot; setup installs the app's
+	// own runtime deps. Idempotent (dnf is a no-op when already present).
+	InstallPackages(ctx context.Context, pkgs ...string) error
+	// EnsureSystemUser creates the dedicated `--system` app user if absent (the
+	// box runs `useradd --system --home-dir /opt/<app> --shell /usr/sbin/nologin
+	// <app>`). Idempotent: a no-op when the user already exists.
+	EnsureSystemUser(ctx context.Context, app, homeDir string) error
+	// DaemonReload reloads systemd's unit cache after a unit file is written (the
+	// box runs `systemctl daemon-reload`).
+	DaemonReload(ctx context.Context) error
+	// EnableUnit enables a unit so it starts on boot WITHOUT starting it now (the
+	// box runs `systemctl enable <unit>`). setup enables the app unit
+	// enabled-not-started; init-box enables the renew timer with now=true.
+	EnableUnit(ctx context.Context, unit string, now bool) error
+	// NginxTest validates the nginx config (the box runs `nginx -t`). Called
+	// after writing the apex block / a location fragment, before reload.
+	NginxTest(ctx context.Context) error
+	// NginxReload reloads nginx (the box runs `systemctl reload nginx`), applying
+	// a freshly-written apex block or location fragment.
+	NginxReload(ctx context.Context) error
+	// ObtainCert obtains (or confirms) the apex TLS cert via certbot HTTP-01
+	// webroot (the box runs `certbot certonly --webroot …`). init-box only; a
+	// path-routed service never issues a cert. Idempotent: certbot reuses a live
+	// cert and never re-issues unnecessarily.
+	ObtainCert(ctx context.Context, domain, email, webroot string) error
 }
 
 // AppRunner is the seam over invoking the app binary's fixed verbs (version |
@@ -69,6 +103,59 @@ func (s RealSystem) IsActive(ctx context.Context, app string) error {
 		return fmt.Errorf("unit %s is not active: %s", app, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// run is the shared helper for the provisioning ops: exec a command, fold stderr
+// into the error on failure.
+func run(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func (s RealSystem) InstallPackages(ctx context.Context, pkgs ...string) error {
+	if len(pkgs) == 0 {
+		return nil
+	}
+	return run(ctx, "dnf", append([]string{"install", "-y"}, pkgs...)...)
+}
+
+func (s RealSystem) EnsureSystemUser(ctx context.Context, app, homeDir string) error {
+	// id <app> succeeds iff the user exists; useradd only when absent (idempotent,
+	// matching `id "$APP" &>/dev/null || useradd …` in the old bin/setup).
+	if err := exec.CommandContext(ctx, "id", app).Run(); err == nil {
+		return nil
+	}
+	return run(ctx, "useradd", "--system", "--home-dir", homeDir, "--shell", "/usr/sbin/nologin", app)
+}
+
+func (s RealSystem) DaemonReload(ctx context.Context) error {
+	return run(ctx, s.systemctl(), "daemon-reload")
+}
+
+func (s RealSystem) EnableUnit(ctx context.Context, unit string, now bool) error {
+	args := []string{"enable"}
+	if now {
+		args = append(args, "--now")
+	}
+	args = append(args, unit)
+	return run(ctx, s.systemctl(), args...)
+}
+
+func (s RealSystem) NginxTest(ctx context.Context) error {
+	return run(ctx, "nginx", "-t")
+}
+
+func (s RealSystem) NginxReload(ctx context.Context) error {
+	return run(ctx, s.systemctl(), "reload", "nginx")
+}
+
+func (s RealSystem) ObtainCert(ctx context.Context, domain, email, webroot string) error {
+	return run(ctx, "certbot", "certonly", "--webroot", "-w", webroot,
+		"-d", domain, "--non-interactive", "--agree-tos", "-m", email,
+		"--deploy-hook", "systemctl reload nginx")
 }
 
 // RealRunner execs the app binary directly. The binary reads its config from the

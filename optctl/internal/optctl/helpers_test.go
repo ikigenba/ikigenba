@@ -23,6 +23,64 @@ type stubSystem struct {
 	seenAtRestart  []string // current's target version observed at each restart
 	binExistsAtRun []bool   // whether current/<app> existed (complete release) at restart
 	app            string
+
+	// Provisioning-op recorder (D1): every privileged op init-box / setup invoke
+	// through the seam is recorded here (and never executed), so a test can assert
+	// the box ops were REQUESTED, in order, without root.
+	ops []string
+}
+
+func (s *stubSystem) record(op string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ops = append(s.ops, op)
+}
+
+func (s *stubSystem) InstallPackages(ctx context.Context, pkgs ...string) error {
+	s.record("install-packages:" + strings.Join(pkgs, ","))
+	return nil
+}
+
+func (s *stubSystem) EnsureSystemUser(ctx context.Context, app, homeDir string) error {
+	s.record("ensure-user:" + app + ":" + homeDir)
+	return nil
+}
+
+func (s *stubSystem) DaemonReload(ctx context.Context) error {
+	s.record("daemon-reload")
+	return nil
+}
+
+func (s *stubSystem) EnableUnit(ctx context.Context, unit string, now bool) error {
+	if now {
+		s.record("enable-now:" + unit)
+	} else {
+		s.record("enable:" + unit)
+	}
+	return nil
+}
+
+func (s *stubSystem) NginxTest(ctx context.Context) error {
+	s.record("nginx-test")
+	return nil
+}
+
+func (s *stubSystem) NginxReload(ctx context.Context) error {
+	s.record("nginx-reload")
+	return nil
+}
+
+func (s *stubSystem) ObtainCert(ctx context.Context, domain, email, webroot string) error {
+	s.record("obtain-cert:" + domain)
+	return nil
+}
+
+// opSeq returns the recorded provisioning ops as a single comma-joined string for
+// easy assertion.
+func (s *stubSystem) opSeq() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.ops...)
 }
 
 func (s *stubSystem) Restart(ctx context.Context, app string) error {

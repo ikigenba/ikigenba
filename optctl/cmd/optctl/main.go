@@ -1,12 +1,10 @@
-// Command optctl is the ikigai on-box platform CLI (PLAN §1.3). This C2 skeleton
-// implements the deploy-critical verbs install / rollback / prune over the
-// versioned release-dir + atomic-symlink layout (PLAN §1.4). It runs on the box
-// only (operators SSH in and run `sudo optctl …`); all filesystem ops are rooted
-// at OPTCTL_ROOT (default /opt) so the core is fully testable against a temp dir.
-//
-// The remaining verbs (backup / restore / setup / init-box) land in later plan
-// steps (D1 adds init-box / setup); this binary parses them as not-yet-implemented
-// so the CLI surface is discoverable.
+// Command optctl is the ikigai on-box platform CLI (PLAN §1.3). It implements the
+// deploy-critical verbs install / rollback / prune over the versioned release-dir
+// + atomic-symlink layout (PLAN §1.4) plus the box-provisioning verbs init-box
+// (box-global substrate) and setup (per-app provisioning) (PLAN §D1). It runs on
+// the box only (operators SSH in and run `sudo optctl …`); all filesystem ops are
+// rooted at OPTCTL_ROOT (default /opt) — and the system-config tree at
+// OPTCTL_SYSROOT (default /) — so the core is fully testable against temp dirs.
 package main
 
 import (
@@ -21,12 +19,20 @@ import (
 const usage = `optctl — ikigai on-box platform CLI
 
 usage:
+  optctl init-box --default-app <app> --domain <d> --port <n> \
+                  --apex-block <path> [--email <e>] [--skip-cert]
+                                                     box-global substrate (apex block, /_authn,
+                                                     conf.d/locations/, cert, renew timer)
+  optctl setup <app> [--port <n>] [--fragment <path>]
+                                                     per-app provisioning (user, /opt/<app> tree,
+                                                     systemd unit enabled-not-started, nginx fragment)
   optctl install <app> <version> --artifact <path>   ship a version live (atomic swap)
   optctl rollback <app> [version]                     repoint current to a prior release
   optctl prune <app> [--keep N]                       bound on-box release history
 
 env:
-  OPTCTL_ROOT   install base (default /opt) — every path is rooted here
+  OPTCTL_ROOT     install base (default /opt) — the /opt/<app> tree
+  OPTCTL_SYSROOT  system-config base (default /) — the /etc + /var tree
 `
 
 func main() {
@@ -41,6 +47,10 @@ func main() {
 
 	var err error
 	switch verb {
+	case "init-box":
+		err = cmdInitBox(ctx, root, args)
+	case "setup":
+		err = cmdSetup(ctx, root, args)
 	case "install":
 		err = cmdInstall(ctx, root, args)
 	case "rollback":
@@ -105,4 +115,54 @@ func cmdPrune(ctx context.Context, root string, args []string) error {
 	o := optctl.New(root)
 	o.Keep = *keep
 	return o.Prune(ctx, pos[0])
+}
+
+func cmdInitBox(ctx context.Context, root string, args []string) error {
+	fs := flag.NewFlagSet("init-box", flag.ContinueOnError)
+	defaultApp := fs.String("default-app", "dashboard", "the apex/DEFAULT app name")
+	domain := fs.String("domain", "", "apex domain, e.g. ai.metaspot.org (required)")
+	port := fs.Int("port", 3000, "the apex app's loopback port")
+	email := fs.String("email", "", "certbot email for HTTP-01 cert issuance")
+	apexBlock := fs.String("apex-block", "", "path to the apex nginx server block source (required)")
+	skipCert := fs.Bool("skip-cert", false, "do not issue a TLS cert (stage the block only)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *domain == "" {
+		return fmt.Errorf("init-box: --domain is required")
+	}
+	block, err := optctl.LoadApexBlockFile(*apexBlock)
+	if err != nil {
+		return err
+	}
+	return optctl.New(root).InitBox(ctx, optctl.InitBoxOptions{
+		DefaultApp: *defaultApp,
+		Domain:     *domain,
+		Port:       *port,
+		Email:      *email,
+		ApexBlock:  block,
+		SkipCert:   *skipCert,
+	})
+}
+
+func cmdSetup(ctx context.Context, root string, args []string) error {
+	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
+	port := fs.Int("port", 0, "the service's loopback port (substituted for __PORT__ in the fragment)")
+	fragment := fs.String("fragment", "", "path to the service's nginx location fragment source (omit for a worker)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	pos := fs.Args()
+	if len(pos) != 1 {
+		return fmt.Errorf("usage: optctl setup <app> [--port N] [--fragment <path>]")
+	}
+	frag, err := optctl.LoadFragmentFile(*fragment)
+	if err != nil {
+		return err
+	}
+	return optctl.New(root).Setup(ctx, optctl.SetupOptions{
+		App:      pos[0],
+		Port:     *port,
+		Fragment: frag,
+	})
 }
