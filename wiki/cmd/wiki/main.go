@@ -37,6 +37,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -320,7 +321,7 @@ func resolveDomainCfg(getenv func(string) string) (domainCfg, error) {
 		return domainCfg{}, err
 	}
 	return domainCfg{
-		dataRoot: envOr(getenv, "WIKI_DATA_ROOT", "./tmp/data"),
+		dataRoot: resolveDataRoot(getenv),
 		apiKey:   getenv("ANTHROPIC_API_KEY"), // SECRET — value never logged
 
 		ingestModel: envOr(getenv, "WIKI_INGEST_MODEL", ingest.DefaultModel),
@@ -366,6 +367,22 @@ func resolveConsumerCfg(getenv func(string) string) consumerCfg {
 func blockUntilDone(ctx context.Context) error {
 	<-ctx.Done()
 	return nil
+}
+
+// resolveDataRoot picks the filesystem content-store root. An explicit
+// WIKI_DATA_ROOT always wins. Otherwise it derives from the data dir: on the box
+// opsctl stamps WIKI_DB_PATH=/opt/wiki/data/wiki.db, so the store lands at
+// /opt/wiki/data/store (a writable subdir of data/, owned by the service user)
+// rather than the cwd-relative ./tmp default which is unwritable under /opt/wiki.
+// Falls back to the dev default ./tmp/data when neither env var is set.
+func resolveDataRoot(getenv func(string) string) string {
+	if v := getenv("WIKI_DATA_ROOT"); v != "" {
+		return v
+	}
+	if dbPath := getenv("WIKI_DB_PATH"); dbPath != "" {
+		return filepath.Join(filepath.Dir(dbPath), "store")
+	}
+	return "./tmp/data"
 }
 
 // envOr returns getenv(key) when non-empty, else def.
