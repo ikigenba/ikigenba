@@ -36,16 +36,3 @@ resource "aws_route53_record" "delegation_sandbox" {
     "ns-765.awsdns-31.net.",
   ]
 }
-
-resource "aws_route53_record" "delegation_ai" {
-  zone_id = aws_route53_zone.metaspot_org.zone_id
-  name    = "ai.metaspot.org"
-  type    = "NS"
-  ttl     = 300
-  records = [
-    "ns-1183.awsdns-19.org.",
-    "ns-2003.awsdns-58.co.uk.",
-    "ns-263.awsdns-32.com.",
-    "ns-602.awsdns-11.net.",
-  ]
-}
