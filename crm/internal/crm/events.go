@@ -21,6 +21,63 @@ import (
 // The outbox library wraps each opaque payload in the uniform envelope (source,
 // id, emit time, generation) at serialize time; crm only owns the payload shape.
 
+// The four first-wave event type strings, declared once and referenced at both
+// the emit sites and the reflection Registry so the two cannot drift (PLAN.md
+// §6; the reflection plan's single-source-of-truth rule).
+const (
+	eventContactCreated  = "contact.created"
+	eventContactUpdated  = "contact.updated"
+	eventContactTagged   = "contact.tagged"
+	eventContactUntagged = "contact.untagged"
+)
+
+// Events is the published-event Registry for the reflection tool and Append-time
+// validation (wired via Spec.Events). Each entry carries a filled-in Sample
+// instance of its real payload struct — the single source for both the reflected
+// JSON Schema and the worked example, so schema/example/wire shape can't diverge.
+var Events = outbox.Registry{
+	{
+		Type:        eventContactCreated,
+		Description: "A new contact was created. Carries the full self-describing contact snapshot (identity, funnel lifecycle, emails/phones, tags).",
+		Sample:      sampleContactSnapshot,
+	},
+	{
+		Type:        eventContactUpdated,
+		Description: "An existing contact changed. Carries the full post-update contact snapshot in the same shape as contact.created.",
+		Sample:      sampleContactSnapshot,
+	},
+	{
+		Type:        eventContactTagged,
+		Description: "A tag was added to a contact (a segment-membership gain, e.g. joining the newsletter audience). One event per added tag.",
+		Sample:      contactTagPayload{ContactID: "01J9Z2K7P3QC8M4R6T0V2X5YA", Tag: "newsletter"},
+	},
+	{
+		Type:        eventContactUntagged,
+		Description: "A tag was removed from a contact (a segment-membership loss). One event per removed tag.",
+		Sample:      contactTagPayload{ContactID: "01J9Z2K7P3QC8M4R6T0V2X5YA", Tag: "newsletter"},
+	},
+}
+
+// sampleContactSnapshot is a filled-in contactSnapshotPayload used as the
+// reflection Sample for contact.created / contact.updated.
+var sampleContactSnapshot = contactSnapshotPayload{
+	ID:          "01J9Z2K7P3QC8M4R6T0V2X5YA",
+	DisplayName: "Ada Lovelace",
+	GivenName:   strPtrVal("Ada"),
+	FamilyName:  strPtrVal("Lovelace"),
+	Title:       strPtrVal("Analyst"),
+	OrgID:       strPtrVal("01J9Z2M0000000000000000000"),
+	Lifecycle:   "lead",
+	Emails:      []contactEmailPayload{{Email: "ada@example.com", Label: strPtrVal("work"), Primary: true}},
+	Phones:      []contactPhonePayload{{Phone: "+15555550100", Label: strPtrVal("mobile"), Primary: true}},
+	Tags:        []string{"newsletter"},
+	CreatedAt:   "2026-06-03T12:00:00Z",
+	UpdatedAt:   "2026-06-03T12:00:00Z",
+}
+
+// strPtrVal returns a pointer to s — the sample-literal analogue of strPtr.
+func strPtrVal(s string) *string { return &s }
+
 // contactSnapshotPayload is the contact.created / contact.updated payload. Field
 // names are the wire contract. emails/phones use "primary" (not the storage
 // layer's is_primary), matching the prior contacts/events.go template, redone
@@ -74,21 +131,21 @@ func contactEvents(tx *sql.Tx, s Summary) ([]outbox.Event, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal contact snapshot payload: %w", err)
 	}
-	typ := "contact.updated"
+	typ := eventContactUpdated
 	if s.isCreate {
-		typ = "contact.created"
+		typ = eventContactCreated
 	}
 	events := []outbox.Event{{Type: typ, Payload: raw}}
 
 	for _, tag := range s.tagsAdded {
-		ev, err := contactTagEvent("contact.tagged", s.ID, tag)
+		ev, err := contactTagEvent(eventContactTagged, s.ID, tag)
 		if err != nil {
 			return nil, err
 		}
 		events = append(events, ev)
 	}
 	for _, tag := range s.tagsRemoved {
-		ev, err := contactTagEvent("contact.untagged", s.ID, tag)
+		ev, err := contactTagEvent(eventContactUntagged, s.ID, tag)
 		if err != nil {
 			return nil, err
 		}

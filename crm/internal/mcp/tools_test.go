@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,7 +39,7 @@ func newTestHandler(t *testing.T) *Handler {
 		tick = tick.Add(time.Millisecond)
 		return tick
 	}
-	return NewHandler(svc, testVersion, testService, nil)
+	return NewHandler(svc, testVersion, testService, nil, crm.Events, nil)
 }
 
 // jsonRPCResponse is the wire shape we decode tool responses out of. result is
@@ -163,8 +164,8 @@ func id(t *testing.T, m map[string]any) string {
 	return v
 }
 
-// TestToolsList asserts tools/list returns EXACTLY the six ikigenba_crm_* verbs
-// (count and names), each with the required descriptor keys.
+// TestToolsList asserts tools/list returns EXACTLY the seven ikigenba_crm_*
+// verbs (count and names), each with the required descriptor keys.
 func TestToolsList(t *testing.T) {
 	h := newTestHandler(t)
 	resp := rpc(t, h, "tools/list", nil)
@@ -183,6 +184,7 @@ func TestToolsList(t *testing.T) {
 	want := []string{
 		"ikigenba_crm_search", "ikigenba_crm_get", "ikigenba_crm_save",
 		"ikigenba_crm_delete", "ikigenba_crm_log", "ikigenba_crm_health",
+		"ikigenba_crm_reflection",
 	}
 	if len(result.Tools) != len(want) {
 		t.Fatalf("expected exactly %d tools, got %d: %+v", len(want), len(result.Tools), result.Tools)
@@ -431,5 +433,77 @@ func TestToolsCallErrorEnvelope(t *testing.T) {
 	})
 	if forcedID := id(t, forced); forcedID == firstID {
 		t.Fatalf("force should create a new contact, got same id %s", forcedID)
+	}
+}
+
+// TestToolsCallReflection covers the ikigenba_crm_reflection tool: the no-arg
+// index (the four published types, empty subscribes — crm is a producer), the
+// event_type detail (schema + example), and the corrective error for an unknown
+// type.
+func TestToolsCallReflection(t *testing.T) {
+	h := newTestHandler(t)
+
+	// No-arg → the index {publishes, subscribes}.
+	idx := callOK(t, h, "ikigenba_crm_reflection", map[string]any{})
+
+	publishes, ok := idx["publishes"].([]any)
+	if !ok {
+		t.Fatalf("reflection index missing publishes array: %+v", idx)
+	}
+	got := map[string]bool{}
+	for _, p := range publishes {
+		m := p.(map[string]any)
+		if m["description"] == "" {
+			t.Errorf("published type %v has empty description", m["type"])
+		}
+		got[m["type"].(string)] = true
+	}
+	for _, want := range []string{"contact.created", "contact.updated", "contact.tagged", "contact.untagged"} {
+		if !got[want] {
+			t.Errorf("reflection publishes missing %q: %+v", want, publishes)
+		}
+	}
+	if len(publishes) != 4 {
+		t.Fatalf("expected exactly 4 published types, got %d: %+v", len(publishes), publishes)
+	}
+
+	// crm is a producer: subscribes is present and empty.
+	subscribes, ok := idx["subscribes"].([]any)
+	if !ok {
+		t.Fatalf("reflection index missing subscribes array: %+v", idx)
+	}
+	if len(subscribes) != 0 {
+		t.Fatalf("expected empty subscribes for crm, got %+v", subscribes)
+	}
+
+	// event_type → the publish detail (schema + example).
+	detail := callOK(t, h, "ikigenba_crm_reflection", map[string]any{"event_type": "contact.created"})
+	if detail["type"] != "contact.created" {
+		t.Fatalf("detail type mismatch: %+v", detail)
+	}
+	if detail["description"] == "" {
+		t.Fatalf("detail missing description: %+v", detail)
+	}
+	sch, ok := detail["schema"].(map[string]any)
+	if !ok || sch["type"] != "object" {
+		t.Fatalf("detail schema not an object schema: %+v", detail["schema"])
+	}
+	if _, ok := sch["properties"].(map[string]any); !ok {
+		t.Fatalf("detail schema missing properties: %+v", sch)
+	}
+	if _, ok := detail["example"].(map[string]any); !ok {
+		t.Fatalf("detail missing example object: %+v", detail["example"])
+	}
+
+	// Unknown event_type → corrective error listing valid types.
+	badErr := callErr(t, h, "ikigenba_crm_reflection", map[string]any{"event_type": "contact.nope"})
+	if badErr["code"] != "unknown_event_type" {
+		t.Fatalf("expected unknown_event_type code, got %+v", badErr)
+	}
+	msg, _ := badErr["message"].(string)
+	for _, want := range []string{"contact.created", "contact.updated", "contact.tagged", "contact.untagged"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("corrective message missing valid type %q: %q", want, msg)
+		}
 	}
 }

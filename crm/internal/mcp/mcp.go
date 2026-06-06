@@ -20,6 +20,9 @@ import (
 	"net/http"
 
 	"crm/internal/crm"
+
+	"eventplane/consumer"
+	"eventplane/outbox"
 )
 
 // Identity is the authenticated caller, as told to us authoritatively by nginx
@@ -34,22 +37,34 @@ type Identity struct {
 // service, optional reporter) threaded from appkit's Router accessors, and
 // dispatches JSON-RPC methods.
 type Handler struct {
-	svc     *crm.Service
-	version string
-	service string
-	health  func(context.Context) (map[string]any, error)
+	svc           *crm.Service
+	version       string
+	service       string
+	health        func(context.Context) (map[string]any, error)
+	events        outbox.Registry
+	subscriptions func() []consumer.Subscription
 }
 
 // NewHandler builds a Handler. The crm service is required; a nil service is a
 // wiring error and panics at this seam rather than deferring a nil dereference to
 // first request. version/service/health populate the ikigenba_crm_health
 // envelope; health is the optional per-service reporter (nil → details is {}).
+// events is the published-event registry and subscriptions the live subscription
+// provider, both rendered by ikigenba_crm_reflection.
 func NewHandler(s *crm.Service, version, service string,
-	health func(context.Context) (map[string]any, error)) *Handler {
+	health func(context.Context) (map[string]any, error),
+	events outbox.Registry, subscriptions func() []consumer.Subscription) *Handler {
 	if s == nil {
 		panic("mcp: crm service is required")
 	}
-	return &Handler{svc: s, version: version, service: service, health: health}
+	return &Handler{
+		svc:           s,
+		version:       version,
+		service:       service,
+		health:        health,
+		events:        events,
+		subscriptions: subscriptions,
+	}
 }
 
 // ServeHTTP dispatches a single JSON-RPC 2.0 request. Identity is read from the

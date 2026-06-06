@@ -39,6 +39,7 @@ func main() {
 		MCP:        true,
 		Feed:       "/feed", // event-plane producer
 		Migrations: db.FS,
+		Events:     crm.Events, // published event types: reflection + Append validation
 		ManifestExtras: []appkit.ManifestKV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
@@ -53,7 +54,8 @@ func main() {
 			}
 			svc = crm.NewService(conn)
 			rt.Handle("POST /mcp", rt.RequireIdentity(
-				mcp.NewHandler(svc, rt.Version(), rt.Service(), rt.Health())))
+				mcp.NewHandler(svc, rt.Version(), rt.Service(), rt.Health(),
+					rt.Events(), rt.Subscriptions())))
 			return nil
 		},
 		// Producer fires after Handlers: inject the outbox so every committed
