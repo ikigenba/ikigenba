@@ -51,16 +51,17 @@ func reorderArgs(args []string, valueFlags map[string]bool) []string {
 	return append(flags, pos...)
 }
 
-// verb is one documented command: its name and the one-line synopsis shown in
-// the grouped --help and in `opsctl <verb> --help`. The verb's RUNNER lives in
-// the separate `runners` map (keyed by the same name) — kept apart so the
-// `groups` var initializer never references the runner funcs, which would form an
-// init cycle (groups → runStage → newFlagSet → groups). The help-coverage test
-// asserts the two stay in lockstep: every runner is documented, every documented
-// verb has a runner.
+// verb is one documented command. `synopsis` is the bare `opsctl <verb> …` usage
+// form printed both in the grouped --help and by `opsctl <verb> --help`; the verb
+// names are self-explanatory, so no separate one-line description is carried. The
+// verb's RUNNER lives in the separate `runners` map (keyed by the same name) —
+// kept apart so the `groups` var initializer never references the runner funcs,
+// which would form an init cycle (groups → runStage → newFlagSet → groups). The
+// help-coverage test asserts the two stay in lockstep: every runner is
+// documented, every documented verb has a runner.
 type verb struct {
 	name     string
-	synopsis string // one-line `opsctl <verb> …` form, shown in --help and grouped usage
+	synopsis string // bare `opsctl <verb> …` usage form, shown in grouped + per-verb --help
 }
 
 // group bundles verbs under a --help heading.
@@ -73,26 +74,34 @@ type group struct {
 // the grouped --help. Pure data (no funcs) so it stays init-cycle-free.
 var groups = []group{
 	{"Deploy lifecycle", []verb{
-		{"stage", "opsctl stage <app> <version> --artifact <path> [--force]   place a release (preflight + collision guard); NOT live; deletes the /tmp artifact"},
-		{"deploy", "opsctl deploy <app> <version>                              activate a staged release (atomic swap)"},
-		{"rollback", "opsctl rollback <app> [version]                           repoint current to a prior release"},
-		{"prune", "opsctl prune <app> [--keep N]                            bound on-box release history"},
+		{"stage", "opsctl stage <app> <version> --artifact <path> [--force]"},
+		{"deploy", "opsctl deploy <app> <version>"},
+		{"rollback", "opsctl rollback <app> [version]"},
+		{"prune", "opsctl prune <app> [--keep <n>]"},
 	}},
 	{"Inspect", []verb{
-		{"status", "opsctl status [app]                                       report app · version · sha · active (all installed apps if omitted)"},
-		{"releases", "opsctl releases <app>                                     list releases, marking current + predecessor"},
+		{"status", "opsctl status [app]"},
+		{"releases", "opsctl releases <app>"},
 	}},
 	{"Service control", []verb{
-		{"start", "opsctl start <app> [systemctl args…]                      systemctl start (extra args forwarded verbatim)"},
-		{"stop", "opsctl stop <app> [systemctl args…]                       systemctl stop (extra args forwarded verbatim)"},
-		{"restart", "opsctl restart <app> [systemctl args…]                    systemctl restart (extra args forwarded verbatim)"},
-		{"enable", "opsctl enable <app> [systemctl args…]                     systemctl enable (extra args forwarded verbatim)"},
-		{"disable", "opsctl disable <app> [systemctl args…]                    systemctl disable (extra args forwarded verbatim)"},
-		{"tail", "opsctl tail <app> [journalctl args…]                      stream the app's journal (journalctl -u <app> -f; extra args forwarded)"},
+		{"start", "opsctl start <app> [systemctl args…]"},
+		{"stop", "opsctl stop <app> [systemctl args…]"},
+		{"restart", "opsctl restart <app> [systemctl args…]"},
+		{"enable", "opsctl enable <app> [systemctl args…]"},
+		{"disable", "opsctl disable <app> [systemctl args…]"},
+		{"tail", "opsctl tail <app> [journalctl args…]"},
 	}},
 	{"Provisioning", []verb{
-		{"setup", "opsctl setup <app> [--port <n>] [--fragment <path>]       per-app provisioning (user, /opt/<app> tree, systemd unit enabled-not-started, nginx fragment)"},
-		{"init-box", "opsctl init-box --default-app <app> --domain <d> --port <n> --apex-block <path> [--email <e>] [--skip-cert]\n                                                            box-global substrate (apex block, /_authn, conf.d/locations/, cert, renew timer)"},
+		{"setup", "opsctl setup <app> [--port <n>] [--fragment <path>]"},
+		// One flag per line; line 1 is the verb + first flag, continuation lines
+		// align under --domain (16 cols = len("opsctl init-box "); the renderer
+		// prepends the 4-col group indent → column 20).
+		{"init-box", "opsctl init-box --domain <d>\n" +
+			"                --apex-block <path>\n" +
+			"                [--default-app <app>]\n" +
+			"                [--port <n>]\n" +
+			"                [--email <e>]\n" +
+			"                [--skip-cert]"},
 	}},
 }
 
@@ -119,8 +128,8 @@ var runners = map[string]runner{
 	"init-box": runInitBox,
 }
 
-// synopsisOf returns a verb's one-line synopsis from the doc registry.
-func synopsisOf(name string) (string, bool) {
+// synopsisOf returns a verb's usage form from the doc registry.
+func synopsisOf(name string) (form string, ok bool) {
 	for _, g := range groups {
 		for _, v := range g.verbs {
 			if v.name == name {
@@ -133,13 +142,27 @@ func synopsisOf(name string) (string, bool) {
 
 // usage renders the grouped top-level help from the verb registry plus the env
 // section. Building it from `groups` keeps help and dispatch from drifting.
+//
+// Layout: the verb names are self-explanatory, so each verb renders as just
+// "<indent><form>" (no trailing description, no trailing whitespace). A form may
+// span multiple physical lines (a long flag list wrapped onto continuation lines,
+// each carrying its own leading alignment), so every line is indented and width is
+// checked per physical line — every rendered line stays ≤100 columns (asserted by
+// the usage-width test).
+const helpIndent = 4 // leading spaces before each verb form
+
 func usage() string {
 	var b strings.Builder
 	b.WriteString("opsctl — ikigai on-box platform CLI\n\nusage:\n")
+	indent := strings.Repeat(" ", helpIndent)
 	for _, g := range groups {
 		fmt.Fprintf(&b, "\n  %s\n", g.title)
 		for _, v := range g.verbs {
-			fmt.Fprintf(&b, "    %s\n", v.synopsis)
+			// Just the form. A form may span multiple lines (long flag lists wrapped
+			// onto continuation lines); indent each so wrapped args align under the verb.
+			for _, line := range strings.Split(v.synopsis, "\n") {
+				fmt.Fprintf(&b, "%s%s\n", indent, line)
+			}
 		}
 	}
 	b.WriteString(`
@@ -186,8 +209,8 @@ func newFlagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.Usage = func() {
 		out := fs.Output()
-		if s, ok := synopsisOf(name); ok {
-			fmt.Fprintf(out, "%s\n", s)
+		if form, ok := synopsisOf(name); ok {
+			fmt.Fprintf(out, "%s\n", form)
 		} else {
 			fmt.Fprintf(out, "usage: opsctl %s\n", name)
 		}

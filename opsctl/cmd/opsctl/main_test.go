@@ -60,7 +60,7 @@ func TestEveryVerbHasSynopsis(t *testing.T) {
 			if !strings.HasPrefix(v.synopsis, "opsctl "+v.name) {
 				t.Errorf("verb %q synopsis does not start with 'opsctl %s': %q", v.name, v.name, v.synopsis)
 			}
-			if s, ok := synopsisOf(v.name); !ok || s != v.synopsis {
+			if form, ok := synopsisOf(v.name); !ok || form != v.synopsis {
 				t.Errorf("synopsisOf(%q) did not round-trip", v.name)
 			}
 		}
@@ -81,6 +81,16 @@ func TestUsageHasAllGroupTitles(t *testing.T) {
 	for _, want := range []string{"OPSCTL_ROOT", "OPSCTL_SYSROOT"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("usage() missing env var %q", want)
+		}
+	}
+}
+
+// TestUsageWidthCapped asserts every rendered line of the grouped --help is
+// ≤100 columns (runes), so the help stays readable in a standard terminal.
+func TestUsageWidthCapped(t *testing.T) {
+	for _, line := range strings.Split(usage(), "\n") {
+		if n := len([]rune(line)); n > 100 {
+			t.Errorf("usage() line exceeds 100 cols (%d): %q", n, line)
 		}
 	}
 }
