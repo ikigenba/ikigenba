@@ -120,6 +120,7 @@ SSH_KEY="${SSH_KEY/#\~/$HOME}"   # expand a leading ~ ; contents are never read/
 # source), not from any tag.
 SHA="$(git rev-parse --short HEAD)"
 COMMIT_STAMP="${SHA}"
+BRANCH="$(git branch --show-current || echo '(detached)')"
 
 echo ">> ${APP}: building current main (HEAD ${SHA})"
 
@@ -183,6 +184,8 @@ echo ">> build ${APP} -> ${ARTIFACT}"
 )
 [ -x "$ARTIFACT" ] || { echo "!! build did not produce ${ARTIFACT}" >&2; exit 1; }
 echo ">> built $(basename "$ARTIFACT") ($(du -h "$ARTIFACT" | cut -f1))"
+
+echo ">> SHIPPING ${APP} ${BARE}  (branch ${BRANCH}, commit ${COMMIT_STAMP}) -> ${HOST}"
 
 # --- hand off to opsctl on the box (or print, in dry-run) ------------------
 REMOTE_ARTIFACT="/tmp/${APP}-${BARE}"
