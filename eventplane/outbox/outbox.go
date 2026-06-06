@@ -50,6 +50,11 @@ type Options struct {
 	// Source is the emitting service name stamped into every envelope's
 	// "source" field (§8.3), e.g. "crm". Required.
 	Source string
+	// Registry, when non-empty, is the set of event types this producer may
+	// emit. Append rejects an event whose Type is not declared here (fail
+	// loudly), guaranteeing reflection lists everything emittable. Empty leaves
+	// Append unconstrained — today's behavior, so adoption is incremental.
+	Registry Registry
 	// DBPath is the SQLite database file, used only for the startup behavioural
 	// probe (§5.3), which opens its own connections to prove a second concurrent
 	// write transaction is refused. Empty or an in-memory DSN skips the probe
@@ -82,6 +87,7 @@ type Outbox struct {
 	retentionDays int
 	retentionRows int64
 	batchLimit    int
+	registry      Registry
 
 	mu   sync.Mutex
 	bell chan struct{} // closed-and-replaced on Ring; the broadcast doorbell (§4.3)
@@ -137,6 +143,7 @@ func New(db *sql.DB, opts Options) (*Outbox, error) {
 		retentionDays: days,
 		retentionRows: rows,
 		batchLimit:    defaultBatchLimit,
+		registry:      opts.Registry,
 		bell:          make(chan struct{}),
 	}, nil
 }
@@ -160,6 +167,10 @@ func (o *Outbox) Append(tx *sql.Tx, ev Event) error {
 	}
 	if ev.Type == "" {
 		return errors.New("outbox: event Type is required")
+	}
+	if len(o.registry) > 0 && !o.registry.has(ev.Type) {
+		return fmt.Errorf("outbox: event type %q is not in the registry; declared types: %s",
+			ev.Type, strings.Join(o.registry.types(), ", "))
 	}
 	eventID := newULID()
 	createdAt := o.now().UTC().Format(time.RFC3339Nano)
