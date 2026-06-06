@@ -28,7 +28,7 @@ func newHandler(t *testing.T) *Handler {
 	if err := db.Migrate(context.Background(), conn); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return NewHandler(ledger.NewService(conn), "test-version", "ledger", nil)
+	return NewHandler(ledger.NewService(conn), "test-version", "ledger", nil, ledger.Events, nil)
 }
 
 // rpc drives one JSON-RPC call through ServeHTTP and returns the decoded result
@@ -75,12 +75,12 @@ func callTool(t *testing.T, h *Handler, name, args string) (map[string]any, bool
 	return payload, isErr
 }
 
-func TestToolsList_HasEight(t *testing.T) {
+func TestToolsList_HasNine(t *testing.T) {
 	h := newHandler(t)
 	res := rpc(t, h, "tools/list", `{}`)
 	tools, _ := res["tools"].([]any)
-	if len(tools) != 8 {
-		t.Fatalf("tools/list returned %d tools, want 8", len(tools))
+	if len(tools) != 9 {
+		t.Fatalf("tools/list returned %d tools, want 9", len(tools))
 	}
 	names := map[string]bool{}
 	for _, tl := range tools {
@@ -89,11 +89,84 @@ func TestToolsList_HasEight(t *testing.T) {
 	for _, want := range []string{
 		"ikigenba_ledger_record", "ikigenba_ledger_reverse", "ikigenba_ledger_reconcile",
 		"ikigenba_ledger_balance", "ikigenba_ledger_register", "ikigenba_ledger_get",
-		"ikigenba_ledger_describe", "ikigenba_ledger_health",
+		"ikigenba_ledger_describe", "ikigenba_ledger_health", "ikigenba_ledger_reflection",
 	} {
 		if !names[want] {
 			t.Errorf("tools/list missing %s", want)
 		}
+	}
+}
+
+// TestReflection covers the ikigenba_ledger_reflection tool: the no-arg index
+// (the one published type, empty subscribes — ledger is a producer), the
+// event_type detail (schema + example), and the corrective error for an unknown
+// type.
+func TestReflection(t *testing.T) {
+	h := newHandler(t)
+
+	// No-arg → the index {publishes, subscribes}.
+	idx, isErr := callTool(t, h, "ikigenba_ledger_reflection", `{}`)
+	if isErr {
+		t.Fatalf("reflection index isError: %v", idx)
+	}
+	publishes, ok := idx["publishes"].([]any)
+	if !ok {
+		t.Fatalf("reflection index missing publishes array: %v", idx)
+	}
+	if len(publishes) != 1 {
+		t.Fatalf("expected exactly 1 published type, got %d: %v", len(publishes), publishes)
+	}
+	p := publishes[0].(map[string]any)
+	if p["type"] != "transaction.recorded" {
+		t.Errorf("published type = %v, want transaction.recorded", p["type"])
+	}
+	if p["description"] == "" {
+		t.Errorf("published type has empty description")
+	}
+
+	// ledger is a producer: subscribes is present and empty.
+	subscribes, ok := idx["subscribes"].([]any)
+	if !ok {
+		t.Fatalf("reflection index missing subscribes array: %v", idx)
+	}
+	if len(subscribes) != 0 {
+		t.Fatalf("expected empty subscribes for ledger, got %v", subscribes)
+	}
+
+	// event_type → the publish detail (schema + example).
+	detail, isErr := callTool(t, h, "ikigenba_ledger_reflection", `{"event_type":"transaction.recorded"}`)
+	if isErr {
+		t.Fatalf("reflection detail isError: %v", detail)
+	}
+	if detail["type"] != "transaction.recorded" {
+		t.Fatalf("detail type mismatch: %v", detail)
+	}
+	if detail["description"] == "" {
+		t.Fatalf("detail missing description: %v", detail)
+	}
+	sch, ok := detail["schema"].(map[string]any)
+	if !ok || sch["type"] != "object" {
+		t.Fatalf("detail schema not an object schema: %v", detail["schema"])
+	}
+	if _, ok := sch["properties"].(map[string]any); !ok {
+		t.Fatalf("detail schema missing properties: %v", sch)
+	}
+	if _, ok := detail["example"].(map[string]any); !ok {
+		t.Fatalf("detail missing example object: %v", detail["example"])
+	}
+
+	// Unknown event_type → corrective error listing valid types.
+	badErr, isErr := callTool(t, h, "ikigenba_ledger_reflection", `{"event_type":"transaction.nope"}`)
+	if !isErr {
+		t.Fatalf("expected error for unknown event_type, got %v", badErr)
+	}
+	em, _ := badErr["error"].(map[string]any)
+	if em == nil || em["code"] != "unknown_event_type" {
+		t.Fatalf("expected unknown_event_type code, got %v", badErr)
+	}
+	msg, _ := em["message"].(string)
+	if !strings.Contains(msg, "transaction.recorded") {
+		t.Errorf("corrective message missing valid type: %q", msg)
 	}
 }
 

@@ -12,6 +12,37 @@ import (
 // tools.go) so the event payload is the same shape the read API returns.
 const eventTimeFormat = "2006-01-02T15:04:05.000000000Z07:00"
 
+// eventTransactionRecorded is the one first-wave event type string, declared
+// once and referenced at both the emit site and the reflection Registry so the
+// two cannot drift (the reflection plan's single-source-of-truth rule).
+const eventTransactionRecorded = "transaction.recorded"
+
+// Events is the published-event Registry for the reflection tool and Append-time
+// validation (wired via Spec.Events). Each entry carries a filled-in Sample
+// instance of its real payload struct — the single source for both the reflected
+// JSON Schema and the worked example, so schema/example/wire shape can't diverge.
+var Events = outbox.Registry{
+	{
+		Type:        eventTransactionRecorded,
+		Description: "A balanced double-entry transaction was committed to the immutable journal (including a reversal mirror, whose reverses_id is non-null). Carries the whole transaction and its postings so a consumer can rebuild balances off the feed.",
+		Sample:      sampleTransactionRecorded,
+	},
+}
+
+// sampleTransactionRecorded is a filled-in transactionRecordedPayload used as the
+// reflection Sample for transaction.recorded.
+var sampleTransactionRecorded = transactionRecordedPayload{
+	ID:          "01J9Z2K7P3QC8M4R6T0V2X5YA",
+	Date:        "2026-06-01",
+	Description: "Acme — June hosting",
+	CreatedAt:   "2026-06-01T12:00:00.000000000Z",
+	ReversesID:  nil,
+	Postings: []postingPayload{
+		{ID: "01J9Z2K7P3QC8M4R6T0V2X5YB", Account: "Assets:Bank:Checking", AmountCents: 12000, Status: "pending", Ord: 0},
+		{ID: "01J9Z2K7P3QC8M4R6T0V2X5YC", Account: "Income:Sales", AmountCents: -12000, Status: "pending", Ord: 1},
+	},
+}
+
 // outboxProducer adapts the eventplane outbox to the Service's EventSink seam.
 // It is the concrete implementation of EventSink; the Service holds it as an
 // interface so the domain can run with emission disabled without importing the
@@ -88,5 +119,5 @@ func transactionRecordedEvent(t Transaction) (outbox.Event, error) {
 	if err != nil {
 		return outbox.Event{}, fmt.Errorf("marshal transaction.recorded payload: %w", err)
 	}
-	return outbox.Event{Type: "transaction.recorded", Payload: raw}, nil
+	return outbox.Event{Type: eventTransactionRecorded, Payload: raw}, nil
 }
