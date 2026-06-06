@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"strconv"

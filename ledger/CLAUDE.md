@@ -109,11 +109,11 @@ loopback-only — the perimeter is nginx). Second-wave payloads (`transaction.re
 
 ## nginx fragment (not a vhost)
 
-`optctl setup ledger` writes only `/etc/nginx/conf.d/locations/ledger.conf` (its
+`opsctl setup ledger` writes only `/etc/nginx/conf.d/locations/ledger.conf` (its
 `location /srv/ledger/` + the PRM well-known location, per
 `path-routing-architecture.md`) and reloads nginx. It does **not** install a
 server block and does **not** issue a TLS cert — the dashboard owns both (the
-box-global apex/cert pieces are `optctl init-box`). A dev mirror of this fragment
+box-global apex/cert pieces are `opsctl init-box`). A dev mirror of this fragment
 lives at `../nginx/locations/ledger.conf`.
 
 ## Manifest / deploy
@@ -123,10 +123,10 @@ ledger is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract
 `restore` verbs, no `run` wrapper. `etc/manifest.env` (`APP=ledger`,
 `MOUNT=/srv/ledger/`, `DEFAULT=false`, `PORT=3002`, `MCP=true` so the dashboard
 inventory lists it) is emitted by `ledger manifest` — the binary owns its own
-identity, and `optctl install` regenerates the on-box copy on every swap. Shipping
+identity, and `opsctl install` regenerates the on-box copy on every swap. Shipping
 is the shared repo-root `bin/deploy ledger` (no version arg; version is the
-committed `ledger/VERSION`, advanced by `bin/bump ledger <field>`) → `optctl
+committed `ledger/VERSION`, advanced by `bin/bump ledger <field>`) → `opsctl
 install` (versioned release dir + atomic swap + rollback); provisioning is
-`optctl setup ledger`. The
+`opsctl setup ledger`. The
 only `bin/*` scripts ledger still carries are `start`/`stop` (systemd control). No
 `plugin/` in this repo.

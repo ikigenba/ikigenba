@@ -9,7 +9,7 @@
 # Destroys live production state — always interactive, no --yes bypass. ralph is
 # stopped for the swap (so no in-flight run is writing the DB/folders), the data
 # dir is synced from S3, ownership/permissions are re-applied, and ralph is
-# restarted. Per the lifecycle, run restore AFTER `optctl setup ralph` and
+# restarted. Per the lifecycle, run restore AFTER `opsctl setup ralph` and
 # BEFORE the first `bin/deploy ralph <version>` on a rebuilt box.
 #
 # AWS via the box's instance role (region from /etc/metaspot/env). Invoking this

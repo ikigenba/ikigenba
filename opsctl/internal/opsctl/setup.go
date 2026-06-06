@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"context"
@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// SetupOptions parameterises `optctl setup <app>` — per-app provisioning (PLAN
+// SetupOptions parameterises `opsctl setup <app>` — per-app provisioning (PLAN
 // §D1, ADR "init-box vs setup"). It carries the non-secret routing/identity the
-// old per-service bin/setup sourced from etc/manifest.env so optctl can emit a
+// old per-service bin/setup sourced from etc/manifest.env so opsctl can emit a
 // byte-identical unit + nginx fragment.
 type SetupOptions struct {
 	App      string // service name (== systemd unit / fragment basename / app user)
@@ -37,7 +37,7 @@ type SetupOptions struct {
 //
 // The unit file and nginx fragment it emits byte-match what today's bin/setup
 // produces — the diff from the old behavior is only the init-box/setup split.
-func (o *Optctl) Setup(ctx context.Context, opts SetupOptions) error {
+func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 	if opts.App == "" {
 		return fmt.Errorf("setup: app is required")
 	}
@@ -47,7 +47,7 @@ func (o *Optctl) Setup(ctx context.Context, opts SetupOptions) error {
 	// init-box must have run first: the locations include dir is box-global and
 	// owned by init-box, mirroring the old service bin/setup precondition check.
 	if _, err := os.Stat(l.LocationsDir()); err != nil {
-		return fmt.Errorf("setup: %s missing — run `optctl init-box` first: %w", l.LocationsDir(), err)
+		return fmt.Errorf("setup: %s missing — run `opsctl init-box` first: %w", l.LocationsDir(), err)
 	}
 
 	// 1. App user (seam — never executed in tests).
@@ -97,7 +97,7 @@ func (o *Optctl) Setup(ctx context.Context, opts SetupOptions) error {
 		o.logf("no nginx fragment (worker/batch service)")
 	}
 
-	o.logf("setup complete for %s — next: optctl install %s <version>", app, app)
+	o.logf("setup complete for %s — next: opsctl install %s <version>", app, app)
 	return nil
 }
 

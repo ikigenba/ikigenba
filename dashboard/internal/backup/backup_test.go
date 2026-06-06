@@ -24,7 +24,7 @@ func freshDB(t *testing.T) string {
 	return path
 }
 
-// TestBackup_LocalSnapshotViaOut confirms the optctl contract: `backup --out
+// TestBackup_LocalSnapshotViaOut confirms the opsctl contract: `backup --out
 // <path>` produces a local VACUUM-INTO snapshot (the pre-migration backup
 // install/rollback rely on), NOT the S3 path. No bucket env is set, so reaching
 // the S3 branch would error — its absence proves the --out dispatch.

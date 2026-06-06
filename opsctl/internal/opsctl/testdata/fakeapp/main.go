@@ -1,7 +1,7 @@
 // fakeapp is a stand-in for a real appkit-converted service binary, used by
-// optctl's tests so no real service is needed (PLAN §C2: "tests provide a fake
+// opsctl's tests so no real service is needed (PLAN §C2: "tests provide a fake
 // app binary … no real service needed"). It implements exactly the fixed verbs
-// optctl drives — version, manifest, schema, migrate, backup, restore — over a
+// opsctl drives — version, manifest, schema, migrate, backup, restore — over a
 // trivial text-file "DB" so the schema-advance / backup / restore wiring is
 // exercised end to end.
 //

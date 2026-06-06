@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 )
 
 // Prune bounds the on-box release history: keep the N most recent releases
-// (Optctl.Keep, default DefaultKeep) plus, unconditionally, current's target and
+// (Opsctl.Keep, default DefaultKeep) plus, unconditionally, current's target and
 // the immediate predecessor rollback would target — then delete older
 // releases/<version>/ dirs. It NEVER deletes current or its predecessor, even if
 // N would otherwise drop them (PLAN §C2, ADR prune). Runs at the tail of install
@@ -16,7 +16,7 @@ import (
 // The matching pre-migration backup of a pruned release is removed too, so the
 // backups dir does not grow unbounded — but a backup for a still-kept release (in
 // particular current's predecessor, the live rollback target) is preserved.
-func (o *Optctl) Prune(ctx context.Context, app string) error {
+func (o *Opsctl) Prune(ctx context.Context, app string) error {
 	if app == "" {
 		return fmt.Errorf("prune: app is required")
 	}
@@ -54,9 +54,9 @@ func (o *Optctl) Prune(ctx context.Context, app string) error {
 }
 
 // keepSet computes the set of release versions prune must retain: the newest N
-// (Optctl.keep), plus current's target and the immediate predecessor (the live
+// (Opsctl.keep), plus current's target and the immediate predecessor (the live
 // rollback target) regardless of N. rels is sorted ascending by version.
-func (o *Optctl) keepSet(l Layout, rels []string, current string) map[string]bool {
+func (o *Opsctl) keepSet(l Layout, rels []string, current string) map[string]bool {
 	keep := map[string]bool{}
 	n := o.keep()
 

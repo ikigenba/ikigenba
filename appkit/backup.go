@@ -54,7 +54,7 @@ func defaultBackup(ctx context.Context, req BackupReq) error {
 // defaultRestore replaces the app's DB file with a snapshot produced by
 // defaultBackup (PLAN §B1 map §3 risk 1; overridable via Spec.Restore). It is a
 // file-level copy, so the caller must ensure the service is stopped first
-// (optctl rollback/install own that orchestration). The generation sidecar is
+// (opsctl rollback/install own that orchestration). The generation sidecar is
 // left untouched here — a producer that must re-mint its epoch on restore
 // supplies Spec.Restore (PLAN §B1 map §5).
 //

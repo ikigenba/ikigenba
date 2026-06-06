@@ -97,11 +97,11 @@ of `ui/`. No login, no token store, no OAuth endpoints.
 
 ## nginx fragment (not a vhost)
 
-`optctl setup crm` writes only `/etc/nginx/conf.d/locations/crm.conf` (its
+`opsctl setup crm` writes only `/etc/nginx/conf.d/locations/crm.conf` (its
 `location /srv/crm/` + the PRM well-known location, per
 `path-routing-architecture.md`) and reloads nginx. It does **not** install a
 server block and does **not** issue a TLS cert — the dashboard owns both (the
-box-global apex/cert pieces are `optctl init-box`).
+box-global apex/cert pieces are `opsctl init-box`).
 
 ## Manifest / deploy
 
@@ -110,15 +110,15 @@ crm is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract):
 `restore` verbs, no `run` wrapper. `etc/manifest.env` (`APP=crm`,
 `MOUNT=/srv/crm/`, `DEFAULT=false`, `PORT=3001`, `MCP=true`; producer, so it also
 round-trips `FEED` + the `OUTBOX_RETENTION_*` config) is emitted by `crm manifest`
-and regenerated on the box by `optctl install` on every swap. Shipping is the
+and regenerated on the box by `opsctl install` on every swap. Shipping is the
 shared repo-root `bin/deploy crm` (no version arg; version is the committed
-`crm/VERSION`, advanced by `bin/bump crm <field>`) → `optctl install`; provisioning is
-`optctl setup crm`. The only `bin/*` scripts crm still carries are `start`/`stop`
+`crm/VERSION`, advanced by `bin/bump crm <field>`) → `opsctl install`; provisioning is
+`opsctl setup crm`. The only `bin/*` scripts crm still carries are `start`/`stop`
 (systemd control), plus `backup`/`restore` (operator-side S3 tooling — see
 below). No `plugin/` in this repo. **Backup note:** the binary's `backup`/
-`restore` verbs give appkit's default local DB snapshot (used by `optctl
+`restore` verbs give appkit's default local DB snapshot (used by `opsctl
 install`/`rollback`); the richer operator S3-bucket workflow + event-plane epoch
 re-mint on restore is **not yet** folded into `Spec.Backup`, so crm **retains its
 `bin/backup`/`bin/restore` scripts operator-side** (the same category as
-`secrets`) until that fold-in (or an `optctl backup`/`restore` verb) lands — see
+`secrets`) until that fold-in (or an `opsctl backup`/`restore` verb) lands — see
 `AGENTS.md`.

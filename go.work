@@ -15,7 +15,7 @@ use (
 	./eventplane
 	./ledger
 	./notify
-	./optctl
+	./opsctl
 	./ralph
 	./wiki
 )

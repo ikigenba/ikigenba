@@ -52,7 +52,7 @@ func main() {
 		Handlers: registerRoutes,
 		// Backup/Restore fold the dashboard's divergent cert+S3+DB snapshot into the
 		// binary (the path-routed default SQLite snapshot is insufficient — the apex
-		// owns the one TLS cert too). They also honor optctl's local-snapshot
+		// owns the one TLS cert too). They also honor opsctl's local-snapshot
 		// contract (--out/--from) so install/rollback keep working unchanged.
 		Backup:  backup.Backup,
 		Restore: backup.Restore,

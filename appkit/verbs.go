@@ -86,7 +86,7 @@ func runMigrate(spec Spec, args []string, getenv func(string) string, stdout, st
 //
 //	applied=<N> embedded=<M>
 //
-// It is a read-only introspection seam for optctl: install compares applied<M to
+// It is a read-only introspection seam for opsctl: install compares applied<M to
 // decide whether a deploy advances the schema (→ back up the DB before migrate so
 // the matching rollback can restore it). It opens the DB read-only-ish (no
 // migration is run) and reports applied=0 when the DB file does not yet exist.

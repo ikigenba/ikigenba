@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"context"
@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-// newProvisioner builds an Optctl over temp OPTCTL_ROOT + OPTCTL_SYSROOT with the
+// newProvisioner builds an Opsctl over temp OPSCTL_ROOT + OPSCTL_SYSROOT with the
 // recording stub system, for the D1 init-box / setup verbs.
-func newProvisioner(t *testing.T, root, sysRoot string, sys *stubSystem) *Optctl {
+func newProvisioner(t *testing.T, root, sysRoot string, sys *stubSystem) *Opsctl {
 	t.Helper()
-	return &Optctl{
+	return &Opsctl{
 		Root:    root,
 		SysRoot: sysRoot,
 		Keep:    3,
@@ -66,7 +66,7 @@ func readRepoFile(t *testing.T, rel string) string {
 
 // initBox prepares a SysRoot so a subsequent setup finds conf.d/locations/. It is
 // the box-global precondition setup depends on.
-func runInitBox(t *testing.T, o *Optctl, apexSrc string) {
+func runInitBox(t *testing.T, o *Opsctl, apexSrc string) {
 	t.Helper()
 	if err := o.InitBox(context.Background(), InitBoxOptions{
 		DefaultApp: "dashboard",

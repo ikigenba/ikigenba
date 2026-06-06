@@ -164,7 +164,7 @@ metaspot is narrow on purpose. Every service can have the same anatomy:
 - producer and consumer roles built on the shared event library;
 - the same fixed set of binary subcommands (`serve`/`version`/`manifest`/
   `migrate`/`backup`/`restore`), shipped by one shared deploy wrapper and the
-  on-box `optctl`;
+  on-box `opsctl`;
 - a manifest the binary emits and a routing fragment that make deployment
   mechanical.
 

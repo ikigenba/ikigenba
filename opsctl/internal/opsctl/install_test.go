@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"context"
@@ -8,13 +8,13 @@ import (
 	"testing"
 )
 
-// newOptctl builds an Optctl over a temp root with the stub system and a fake
+// newOpsctl builds an Opsctl over a temp root with the stub system and a fake
 // runner carrying the given FAKE_* scenario env.
-func newOptctl(t *testing.T, root, app string, sys *stubSystem, base []string) *Optctl {
+func newOpsctl(t *testing.T, root, app string, sys *stubSystem, base []string) *Opsctl {
 	t.Helper()
 	sys.currentLink = NewLayout(root, app).CurrentLink()
 	sys.app = app
-	return &Optctl{
+	return &Opsctl{
 		Root:   root,
 		Keep:   3,
 		System: sys,
@@ -103,7 +103,7 @@ func resolveThroughStablePaths(t *testing.T, l Layout) {
 }
 
 // TestInstallInstallRollback is the C2 acceptance core: a full install, then a
-// second install, then a rollback, against a temp OPTCTL_ROOT — asserting the
+// second install, then a rollback, against a temp OPSCTL_ROOT — asserting the
 // atomic repoint, the stable paths staying valid throughout, that a no-schema-
 // change deploy never modifies the DB, and (in the schema-advance variant below)
 // that the backup/restore wires together.
@@ -114,7 +114,7 @@ func TestInstallInstallRollback_NoSchemaChange(t *testing.T) {
 	sys := &stubSystem{}
 
 	// First install: v1.0.0, embedded schema 2 (creates the DB at applied=2).
-	o := newOptctl(t, root, app, sys, fakeEnv(app, "v1.0.0", 2, ""))
+	o := newOpsctl(t, root, app, sys, fakeEnv(app, "v1.0.0", 2, ""))
 	art1 := stageArtifact(t, "ledger-v1.0.0")
 	if err := o.Install(context.Background(), app, "v1.0.0", art1); err != nil {
 		t.Fatalf("install v1.0.0: %v", err)
@@ -131,7 +131,7 @@ func TestInstallInstallRollback_NoSchemaChange(t *testing.T) {
 
 	// Second install: v1.1.0, SAME embedded schema 2 → no schema advance → the DB
 	// must NOT be modified and NO backup taken.
-	o2 := newOptctl(t, root, app, sys, fakeEnv(app, "v1.1.0", 2, ""))
+	o2 := newOpsctl(t, root, app, sys, fakeEnv(app, "v1.1.0", 2, ""))
 	art2 := stageArtifact(t, "ledger-v1.1.0")
 	if err := o2.Install(context.Background(), app, "v1.1.0", art2); err != nil {
 		t.Fatalf("install v1.1.0: %v", err)
@@ -183,7 +183,7 @@ func TestSchemaAdvance_BackupAndRollbackRestores(t *testing.T) {
 	sys := &stubSystem{}
 
 	// v1.0.0 — embedded schema 2, fresh DB → applied=2.
-	o1 := newOptctl(t, root, app, sys, fakeEnv(app, "v1.0.0", 2, ""))
+	o1 := newOpsctl(t, root, app, sys, fakeEnv(app, "v1.0.0", 2, ""))
 	if err := o1.Install(context.Background(), app, "v1.0.0", stageArtifact(t, "v1")); err != nil {
 		t.Fatalf("install v1.0.0: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestSchemaAdvance_BackupAndRollbackRestores(t *testing.T) {
 
 	// v2.0.0 — embedded schema 5 → schema ADVANCES (2 → 5). Install must back up the
 	// DB (named pre-v2.0.0.db) BEFORE migrating it forward to 5.
-	o2 := newOptctl(t, root, app, sys, fakeEnv(app, "v2.0.0", 5, ""))
+	o2 := newOpsctl(t, root, app, sys, fakeEnv(app, "v2.0.0", 5, ""))
 	if err := o2.Install(context.Background(), app, "v2.0.0", stageArtifact(t, "v2")); err != nil {
 		t.Fatalf("install v2.0.0: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestPreflight_Rejections(t *testing.T) {
 	sys := &stubSystem{}
 
 	// Version mismatch: artifact self-reports v9.9.9 but we install it as v1.0.0.
-	o := newOptctl(t, root, app, sys, fakeEnv(app, "v9.9.9", 1, ""))
+	o := newOpsctl(t, root, app, sys, fakeEnv(app, "v9.9.9", 1, ""))
 	err := o.Install(context.Background(), app, "v1.0.0", stageArtifact(t, "mismatch"))
 	if err == nil || !strings.Contains(err.Error(), "self-reports version") {
 		t.Fatalf("version-mismatch install err = %v, want a version-mismatch refusal", err)
@@ -247,7 +247,7 @@ func TestPreflight_Rejections(t *testing.T) {
 	if err := os.WriteFile(bad, []byte("#!/bin/sh\necho hi\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	o2 := newOptctl(t, root, app, sys, fakeEnv(app, "v1.0.0", 1, ""))
+	o2 := newOpsctl(t, root, app, sys, fakeEnv(app, "v1.0.0", 1, ""))
 	if err := o2.Install(context.Background(), app, "v1.0.0", bad); err == nil || !strings.Contains(err.Error(), "ELF") {
 		t.Fatalf("non-ELF install err = %v, want an ELF refusal", err)
 	}
@@ -271,7 +271,7 @@ func TestInstall_ConvertsLegacyBinRunFile(t *testing.T) {
 		t.Fatalf("seed legacy bin/run: %v", err)
 	}
 
-	o := newOptctl(t, root, app, sys, fakeEnv(app, "v0.1.0", 3, ""))
+	o := newOpsctl(t, root, app, sys, fakeEnv(app, "v0.1.0", 3, ""))
 	if err := o.Install(context.Background(), app, "v0.1.0", stageArtifact(t, "ledger-v0.1.0")); err != nil {
 		t.Fatalf("install over legacy bin/run: %v", err)
 	}
@@ -326,14 +326,14 @@ func TestStampDataPaths(t *testing.T) {
 // dedicated <app> user cannot write — crash-loop). The chown must request the
 // bare app name as BOTH owner and group (matching setup's EnsureSystemUser) and
 // target the data dir, on every install. The stub records (never executes) the
-// op, so no real system path is chowned under the temp OPTCTL_ROOT.
+// op, so no real system path is chowned under the temp OPSCTL_ROOT.
 func TestInstall_ChownsDataDirToAppUser(t *testing.T) {
 	root := t.TempDir()
 	app := "crm"
 	l := NewLayout(root, app)
 	sys := &stubSystem{}
 
-	o := newOptctl(t, root, app, sys, fakeEnv(app, "v1.0.0", 2, ""))
+	o := newOpsctl(t, root, app, sys, fakeEnv(app, "v1.0.0", 2, ""))
 	if err := o.Install(context.Background(), app, "v1.0.0", stageArtifact(t, "crm-v1.0.0")); err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestInstall_IsActiveFailure(t *testing.T) {
 	root := t.TempDir()
 	app := "ledger"
 	sys := &stubSystem{failIsActive: true}
-	o := newOptctl(t, root, app, sys, fakeEnv(app, "v1.0.0", 1, ""))
+	o := newOpsctl(t, root, app, sys, fakeEnv(app, "v1.0.0", 1, ""))
 	err := o.Install(context.Background(), app, "v1.0.0", stageArtifact(t, "v1"))
 	if err == nil || !strings.Contains(err.Error(), "did not come up") {
 		t.Fatalf("is-active failure err = %v, want a 'did not come up' error", err)

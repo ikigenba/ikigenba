@@ -72,20 +72,20 @@ their own per-service audit store; the dashboard audits auth/token/grant events.
   (`<app>` serve, `version`, `manifest`, `migrate`, `schema`, `backup`,
   `restore`) — there is no per-service `bin/build`/`bin/deploy`/`bin/setup` clone
   anymore. Building and shipping is the *shared* repo-root `bin/deploy <app>
-  [version]` → on-box `optctl`; provisioning is `optctl setup <app>` /
-  `optctl init-box` (see Deployments). The only `bin/*` scripts a service still
-  carries are operator-side glue with no optctl verb yet: `start`/`stop` (systemd
+  [version]` → on-box `opsctl`; provisioning is `opsctl setup <app>` /
+  `opsctl init-box` (see Deployments). The only `bin/*` scripts a service still
+  carries are operator-side glue with no opsctl verb yet: `start`/`stop` (systemd
   control), `secrets` (SSM seeding), and `teardown` (dashboard/ralph).
 - `etc/manifest.env` — flat `KEY=value`, carries `MOUNT=/srv/<svc>/` + `PORT`;
   dashboard is `DEFAULT=true`. **The binary is the source of truth: `<app>
-  manifest` emits it, and `optctl install` regenerates `/opt/<app>/etc/
+  manifest` emits it, and `opsctl install` regenerates `/opt/<app>/etc/
   manifest.env` from the new binary on every swap** (round-tripping the role keys
   `FEED`/`CONSUMES` and any service config the dashboard + `bin/registry` read).
 - `etc/nginx.conf` — the service's `/srv/<svc>/` location fragment. The dashboard
-  owns the apex `server{}` block, the cert, and the `/_authn` hook; `optctl setup
+  owns the apex `server{}` block, the cert, and the `/_authn` hook; `opsctl setup
   <app>` drops the service's fragment into
   `/etc/nginx/conf.d/locations/<svc>.conf` (the box-global apex/cert/`/_authn`
-  pieces are `optctl init-box`).
+  pieces are `opsctl init-box`).
 - Secrets via SSM `/metaspot/<env>/app-config` (never in Terraform/source).
 
 ## Local dev
@@ -101,7 +101,7 @@ Production is the box at `<account>.metaspot.org` (first/only account: **ai**).
 **Deploy ships one static binary into a versioned release dir, not `git push`
 and not an in-place overwrite.** The repo has a GitHub remote (`origin` →
 `mgreenly/ikigai`) for version-control backup, but pushing there ships nothing to
-the box; shipping is the shared `bin/deploy` wrapper + on-box `optctl` below. Work
+the box; shipping is the shared `bin/deploy` wrapper + on-box `opsctl` below. Work
 the services in dependency order and verify on the box after each step. The
 canonical description of this model is `docs/adr-deployment-redesign.md`.
 
@@ -122,7 +122,7 @@ SemVer number (e.g. `0.1.1`, no leading `v`), one line, the single source of
 truth. `bin/bump <app> <major|minor|patch>` advances it: it reads the file,
 increments the field, writes the new bare number back, makes a **path-limited**
 commit of only that file directly to `main`, then `git push origin main`. Libraries
-(`appkit`/`eventplane`/`agentkit`) and `optctl` are **not** versioned. **Git tags
+(`appkit`/`eventplane`/`agentkit`) and `opsctl` are **not** versioned. **Git tags
 are no longer the version mechanism** — no `git tag <app>/vX.Y.Z`, no
 `git describe`; any surviving release tags are vestigial and drive nothing. The
 version state lives in `main`'s commit history, made durable/immutable by branch
@@ -135,18 +135,18 @@ throwaway detached `git worktree` (`CGO_ENABLED=0 GOOS=linux GOARCH=amd64
 GOWORK=off -trimpath -buildvcs=false`, ldflags stamping
 `appkit.version`/`appkit.commit`), reads the version from **that worktree's**
 `<app>/VERSION` and prepends `v`, `scp`s the single artifact to the box `/tmp`,
-then runs `ssh sudo optctl install <app> v<version> --artifact …`. No install logic
+then runs `ssh sudo opsctl install <app> v<version> --artifact …`. No install logic
 runs on the laptop. The commit SHA stamped into the binary (`appkit.commit`) pins
 the app code and its committed `replace … => ../<lib>` library trees together —
 one commit = one reproducible build (the job a tag used to do). `-buildvcs=false`
 stays mandatory (the module is a subdir of a bare mono-repo `.git`, so Go's auto
 VCS stamp would abort) and `GOWORK=off` keeps the prod build deterministic.
 
-**`optctl` (on-box, `/usr/local/bin/optctl`, run via `sudo`) owns everything on
+**`opsctl` (on-box, `/usr/local/bin/opsctl`, run via `sudo`) owns everything on
 the box** — release dirs, atomic swap, migrate, restart, rollback, prune, and
 box/app provisioning. Verbs: `install · rollback · prune · setup · init-box`
 (`backup`/`restore` are folded into each app binary as verbs; a standalone
-`optctl backup`/`restore` orchestration verb does **not** exist yet — see the gap
+`opsctl backup`/`restore` orchestration verb does **not** exist yet — see the gap
 note below). Layout on the box:
 
 ```
@@ -158,24 +158,24 @@ note below). Layout on the box:
   data/<app>.db                 # state — NEVER touched by deploy
 ```
 
-- **`optctl install <app> <ver> --artifact …`** — preflight (static? amd64?
+- **`opsctl install <app> <ver> --artifact …`** — preflight (static? amd64?
   `<app> version` matches the arg? `<app> manifest` parses?) → place into
   `releases/<ver>/` → regenerate the stable `etc/manifest.env` from the new binary
   → **back up the DB if the schema advances** → `migrate` → atomic swap `current`
   → restart the unit → `is-active` → prune old releases. Never touches
   `data/<app>.db` except to migrate/snapshot it; migrations are forward-only.
-- **`optctl rollback <app> [ver]`** — repoint `current` → the prior (or named)
+- **`opsctl rollback <app> [ver]`** — repoint `current` → the prior (or named)
   release → restart. If the rolled-back-from release advanced the schema, it
   **restores the pre-migration DB snapshot first** (the downgrade guard otherwise
   refuses to boot the older binary).
-- **`optctl prune <app> [--keep N]`** — bound on-box release history; never
+- **`opsctl prune <app> [--keep N]`** — bound on-box release history; never
   deletes `current` or its rollback predecessor.
-- **`optctl setup <app>`** — first-time per-app provisioning: the `--system` user,
+- **`opsctl setup <app>`** — first-time per-app provisioning: the `--system` user,
   the `/opt/<app>` tree, the enabled-not-started systemd unit
   (`ExecStart=/usr/local/bin/metaspot-launch <app>`), the nginx fragment into
   `/etc/nginx/conf.d/locations/<app>.conf` (`nginx -t` + reload). Required once
   before a brand-new service's first `install`.
-- **`optctl init-box`** — one-time box-global substrate (nginx + certbot + the one
+- **`opsctl init-box`** — one-time box-global substrate (nginx + certbot + the one
   apex cert + renewal timer, the apex `server{}` block, `/_authn`, the
   `conf.d/locations/` include dir). The box-global half the dashboard's old
   overloaded `setup` used to bootstrap.
@@ -214,9 +214,9 @@ ai` — interactive, the user runs it; the token expires).
 > (`schema_migrations.name`) to `NNN_*.sql` (+ a new `001_schema_migrations.sql`).
 > A *fresh* DB migrates correctly (verified, v5); the live `ai` box's
 > `/opt/dashboard/data/dashboard.db` applied the OLD name-keyed ledger, which the
-> integer runner will not recognize — so a plain `optctl install` against the
+> integer runner will not recognize — so a plain `opsctl install` against the
 > **existing** DB would fail to boot. That is exactly why the cutover includes a
-> one-time DB reset: **stop → (optional backup) → drop/reset the DB → `optctl
+> one-time DB reset: **stop → (optional backup) → drop/reset the DB → `opsctl
 > install` (the fresh DB migrates clean to v5) → restart → verify**. Off-box code
 > needs no change; this is purely the box-DB reset. The operator deliverable is
 > `docs/runbook-dashboard-box-cutover.md`.
@@ -229,12 +229,12 @@ services that need it — dashboard, notify, dropbox, ralph, wiki) does a
 **non-destructive read-modify-write of only its own key**, values pulled from
 `~/.secrets/<NAME>` (never read/printed; masked in the summary), siblings
 preserved. The launcher injects them into the process env only — never on disk.
-(Secrets seeding has no `optctl` verb — it stays an operator-side script.)
+(Secrets seeding has no `opsctl` verb — it stays an operator-side script.)
 
 **Registering a new MCP service with the dashboard is now automatic — no env
 edit.** The dashboard derives its OAuth-AS resource list at startup from the
 manifests under `/opt/*/etc/manifest.env` (those with `MCP=true`), via
-`DASHBOARD_MANIFEST_ROOT` (default `/opt`). `optctl install` regenerates the
+`DASHBOARD_MANIFEST_ROOT` (default `/opt`). `opsctl install` regenerates the
 service's stable `etc/manifest.env` from its own binary on every swap, so adding a
 service is just deploying it (which lands its manifest) then **restarting the
 dashboard** so it re-reads the manifests. There is **no hardcoded resource list**
@@ -246,14 +246,14 @@ seconds.) Until that restart, the new service's `/srv/<svc>/mcp` 401 omits
 **Order to bring up a new consumer service (notify was the worked example):**
 1. seed secrets → `bin/secrets` (after SSO login),
 2. deploy any **producer it consumes first** (e.g. crm's `/feed`) so it's live,
-3. `optctl setup <svc>` (provision) — `optctl init-box` first only on a brand-new
+3. `opsctl setup <svc>` (provision) — `opsctl init-box` first only on a brand-new
    box,
 4. `bin/bump <svc> <major|minor|patch>` (advance the committed `<svc>/VERSION` on
-   `main`), then `bin/deploy <svc>` (build current `main` off-box → `optctl
+   `main`), then `bin/deploy <svc>` (build current `main` off-box → `opsctl
    install` → migrate → atomic swap → start),
 5. restart the dashboard so it re-reads the manifests (picks up the new
    `MCP=true` service automatically),
-6. verify (and on failure, `optctl rollback <svc>`).
+6. verify (and on failure, `opsctl rollback <svc>`).
 
 **Verify on the box:** `systemctl is-active <svc>`; `journalctl -u <svc>` for the
 boot/migration/consumer lines (note: best-effort paths like notify's push log

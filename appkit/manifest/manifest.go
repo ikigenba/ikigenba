@@ -3,7 +3,7 @@
 // source of truth for its own identity (PLAN §1.1): `<app> manifest` writes this
 // file, and the same KEY=value parser the two on-box readers use
 // (dashboard/internal/inventory + bin/registry) lives here so a self-read and
-// the optctl preflight share one implementation.
+// the opsctl preflight share one implementation.
 //
 // Comment policy (PLAN §B1 map §6): the emit is COMMENT-FREE and deterministic,
 // and the committed etc/manifest.env files are regenerated to match so

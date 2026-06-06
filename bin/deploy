@@ -6,7 +6,7 @@
 #
 # It is deliberately thin: it owns the OFF-BOX BUILD HALF only — there is NO
 # install logic on the laptop. After building it hands the single static artifact
-# to the box's `optctl install`, which owns the release-dir / atomic-swap /
+# to the box's `opsctl install`, which owns the release-dir / atomic-swap /
 # migrate / restart / rollback machinery (PLAN §1.3–1.4).
 #
 # The version is the committed file <app>/VERSION (a bare X.Y.Z) — git tags are NO
@@ -28,12 +28,12 @@
 #      `replace appkit/eventplane/agentkit => ../...` directives resolve against
 #      the worktree's sibling lib trees (no network).
 #   3. Read the version FROM THE WORKTREE'S <app>/VERSION (the actual build
-#      source), prepend "v" -> the BARE release name handed to optctl.
+#      source), prepend "v" -> the BARE release name handed to opsctl.
 #   4. scp the single artifact to the box /tmp, then
-#      ssh sudo optctl install <app> <bare-version> --artifact /tmp/<file>.
+#      ssh sudo opsctl install <app> <bare-version> --artifact /tmp/<file>.
 #
 # --dry-run (or DRY_RUN=1) does the FULL build (producing the artifact) but PRINTS
-# the scp/ssh/optctl commands instead of running them, so the build half is fully
+# the scp/ssh/opsctl commands instead of running them, so the build half is fully
 # exercisable off-box while the box half stays gated (PLAN C3 / verified in D2).
 #
 # Honors §2: the box never compiles; -buildvcs=false is mandatory (the module is a
@@ -45,7 +45,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-bin/deploy — build the current main of an ikigai service off-box and hand it to optctl on the box.
+bin/deploy — build the current main of an ikigai service off-box and hand it to opsctl on the box.
 
 Usage:
   bin/deploy <app>
@@ -61,7 +61,7 @@ as v<X.Y.Z>. Bump the file first with `bin/bump <app> <field>`.
 Flags:
   -h, --help   show this help.
   --dry-run    do the full off-box build (produce the artifact) but PRINT the
-               scp / ssh / optctl install commands instead of running them.
+               scp / ssh / opsctl install commands instead of running them.
                Equivalent to DRY_RUN=1.
 
 Environment:
@@ -74,9 +74,9 @@ What it does (PLAN §1.5):
       ldflags -X appkit.version=v<X.Y.Z> -X appkit.commit=<short-sha>[-dirty])
   -> read the version from the worktree's <app>/VERSION, ship as v<X.Y.Z>
   -> scp the single static artifact to the box /tmp
-  -> ssh sudo optctl install <app> v<X.Y.Z> --artifact /tmp/<file>
+  -> ssh sudo opsctl install <app> v<X.Y.Z> --artifact /tmp/<file>
 
-There is NO install logic locally: optctl on the box owns release dirs, atomic
+There is NO install logic locally: opsctl on the box owns release dirs, atomic
 swap, migrate, restart, and rollback.
 USAGE
 }
@@ -146,7 +146,7 @@ git worktree add --detach "$WORKTREE" HEAD >/dev/null
 # --- read the version FROM THE WORKTREE's <app>/VERSION ---------------------
 # Read the bare version from the actual build source (the worktree), strip
 # whitespace/newline, validate it is a bare X.Y.Z, then prepend "v" for the BARE
-# release name handed to optctl / used in the box release dir (releases/v<X.Y.Z>/)
+# release name handed to opsctl / used in the box release dir (releases/v<X.Y.Z>/)
 # and stamped into the binary — matching how the binary self-reports.
 VER="$(tr -d '[:space:]' < "$WORKTREE/$APP/VERSION")"
 if [[ ! "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -184,11 +184,11 @@ echo ">> build ${APP} -> ${ARTIFACT}"
 [ -x "$ARTIFACT" ] || { echo "!! build did not produce ${ARTIFACT}" >&2; exit 1; }
 echo ">> built $(basename "$ARTIFACT") ($(du -h "$ARTIFACT" | cut -f1))"
 
-# --- hand off to optctl on the box (or print, in dry-run) ------------------
+# --- hand off to opsctl on the box (or print, in dry-run) ------------------
 REMOTE_ARTIFACT="/tmp/${APP}-${BARE}"
 SCP_CMD=(scp -i "$SSH_KEY" "$ARTIFACT" "${SSH_USER}@${HOST}:${REMOTE_ARTIFACT}")
 SSH_CMD=(ssh -i "$SSH_KEY" "${SSH_USER}@${HOST}"
-  "sudo optctl install ${APP} ${BARE} --artifact ${REMOTE_ARTIFACT}")
+  "sudo opsctl install ${APP} ${BARE} --artifact ${REMOTE_ARTIFACT}")
 
 if [ "$DRY_RUN" = "1" ]; then
   echo ">> DRY RUN — not shipping. The box half would run:"
@@ -201,7 +201,7 @@ fi
 echo ">> scp ${APP} ${BARE} -> ${HOST}:${REMOTE_ARTIFACT}"
 "${SCP_CMD[@]}"
 
-echo ">> ssh sudo optctl install ${APP} ${BARE}"
+echo ">> ssh sudo opsctl install ${APP} ${BARE}"
 "${SSH_CMD[@]}"
 
 echo ">> deploy complete: ${APP} ${BARE} (${COMMIT_STAMP})"

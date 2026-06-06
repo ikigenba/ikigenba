@@ -14,7 +14,7 @@ bin/bump crm patch                # X.Y.Z -> X.Y.(Z+1); writes crm/VERSION, comm
 bin/bump crm minor                # X.Y.Z -> X.(Y+1).0
 bin/bump crm major                # X.Y.Z -> (X+1).0.0
 
-# 2. ship it (build current main off-box, hand the static binary to optctl):
+# 2. ship it (build current main off-box, hand the static binary to opsctl):
 bin/deploy crm                    # no version arg — builds HEAD, version from crm/VERSION
 ```
 
@@ -46,13 +46,13 @@ box can never lie about what's deployed.
   library trees together — one commit = one reproducible build. (This is the job a
   tag used to do; the commit does it now.)
 
-### Libraries and `optctl` are NEVER versioned
+### Libraries and `opsctl` are NEVER versioned
 
 `eventplane`, `agentkit`, and `appkit` are **in-repo sibling libraries consumed at
 HEAD** via a committed `replace <lib> => ../<lib>` + `require <lib> v0.0.0`
 (`agentkit` uses the zero-pseudo-version `v0.0.0-00010101000000-000000000000`;
 same mechanism). They carry **no `<lib>/VERSION` file** and get no version. The
-on-box platform CLI `optctl` is likewise unversioned. Only the seven deployable
+on-box platform CLI `opsctl` is likewise unversioned. Only the seven deployable
 services have a `VERSION` file — `bin/bump` refuses anything else.
 
 > **HARD RULE:** never convert an internal `replace` into a versioned `require`.
@@ -133,13 +133,13 @@ So: `<app> version` →
 ## The box release-dir naming
 
 `bin/deploy` prepends the `v` to the bare file version and hands that to
-`optctl install`, which names the on-box release dir accordingly:
+`opsctl install`, which names the on-box release dir accordingly:
 
 ```
-crm/VERSION = 1.4.0   →   bin/deploy crm   →   optctl install crm v1.4.0   →   /opt/crm/releases/v1.4.0/crm
+crm/VERSION = 1.4.0   →   bin/deploy crm   →   opsctl install crm v1.4.0   →   /opt/crm/releases/v1.4.0/crm
 ```
 
-`optctl` owns the release-dir / atomic-`current`-symlink / migrate / restart /
+`opsctl` owns the release-dir / atomic-`current`-symlink / migrate / restart /
 rollback machinery on the box (see the ADR §5 and `PLAN.md` §1.4). The laptop has
 **no install logic** — it only builds and hands off the single static artifact.
 
@@ -162,14 +162,14 @@ so the protected `main` is always the authoritative version state.)
    version yourself.
 3. **Ship it:** `bin/deploy <app>` (no version arg) — it builds current `main`
    (HEAD) and ships whatever `<app>/VERSION` holds on that commit. Use `--dry-run`
-   (or `DRY_RUN=1`) to do the full off-box build and print the `scp`/`ssh`/`optctl`
+   (or `DRY_RUN=1`) to do the full off-box build and print the `scp`/`ssh`/`opsctl`
    commands without shipping.
-4. **Verify on the box:** `optctl`'s install runs preflight (static? amd64?
+4. **Verify on the box:** `opsctl`'s install runs preflight (static? amd64?
    `<app> version` matches the version arg? `<app> manifest` parses?), backs up
    the DB if the schema advances, migrates, atomically swaps `current`, restarts,
    and confirms `is-active`. Confirm `<app> version` self-reports `v<the number you
    bumped to>`.
-5. **Roll back if needed:** `sudo optctl rollback <app>` repoints `current` to the
+5. **Roll back if needed:** `sudo opsctl rollback <app>` repoints `current` to the
    prior release (restoring the DB first if the rolled-back-from release advanced
    the schema — the forward-only migration runner's downgrade guard requires it).
    The box keeps prior release dirs, so rollback is on-box — you never need to

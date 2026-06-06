@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 // binary, its `version` self-report matches the <version> arg (the binary can't
 // lie about which version it is), and its `manifest` parses into a well-formed
 // manifest.env. Any failure aborts with the live release untouched.
-func (o *Optctl) preflight(ctx context.Context, artifact, app, version string) error {
+func (o *Opsctl) preflight(ctx context.Context, artifact, app, version string) error {
 	if err := checkStaticAMD64(artifact); err != nil {
 		return err
 	}

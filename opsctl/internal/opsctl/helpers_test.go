@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"context"
@@ -118,7 +118,7 @@ func (s *stubSystem) IsActive(ctx context.Context, app string) error {
 }
 
 // fakeRunner execs the compiled fakeapp binary, injecting a fixed base env (the
-// FAKE_* knobs that parameterise the scenario) plus optctl's per-verb env
+// FAKE_* knobs that parameterise the scenario) plus opsctl's per-verb env
 // overrides. It mirrors RealRunner but with a controllable base env so a test can
 // set the binary's self-reported version, embedded schema, and manifest body.
 type fakeRunner struct {
@@ -148,7 +148,7 @@ func (e *runErr) Error() string {
 }
 
 // buildFakeApp compiles testdata/fakeapp into a static linux/amd64 binary placed
-// at dst (the contract's required shape, so optctl's ELF preflight passes). It is
+// at dst (the contract's required shape, so opsctl's ELF preflight passes). It is
 // built once per test process and reused.
 var (
 	fakeOnce sync.Once
@@ -162,7 +162,7 @@ func compileFakeApp(t *testing.T) string {
 		dir := t.TempDir()
 		// t.TempDir is per-test; keep the built binary in the package's own temp so
 		// it survives across tests in this process.
-		out, err := os.MkdirTemp("", "optctl-fakeapp-*")
+		out, err := os.MkdirTemp("", "opsctl-fakeapp-*")
 		if err != nil {
 			fakeErr = err
 			return

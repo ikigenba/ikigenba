@@ -199,10 +199,10 @@ one silently corrupts the mirror or the event stream:
 
 ## nginx fragment (not a vhost)
 
-`optctl setup dropbox` writes only `/etc/nginx/conf.d/locations/dropbox.conf` (its
+`opsctl setup dropbox` writes only `/etc/nginx/conf.d/locations/dropbox.conf` (its
 `location /srv/dropbox/` + the PRM well-known location) and reloads nginx — it
 installs no server block and issues no TLS cert (the dashboard owns both, via
-`optctl init-box`). An
+`opsctl init-box`). An
 exact-match `location = /srv/dropbox/content { return 404; }` is added as
 **optional defence-in-depth** — belt to the handler's braces — not the mechanism.
 A dev mirror of the fragment is **generated, not committed**: `nginx/run`
@@ -218,17 +218,17 @@ producer + `Workers` sync engine): `<app>` serve + the fixed `version`/`manifest
 `registry`. `etc/manifest.env` (`APP=dropbox`, `MOUNT=/srv/dropbox/`,
 `DEFAULT=false`, `PORT=3005`, `MCP=true` so the dashboard inventory lists it;
 producer, so it also round-trips `FEED=/feed` + the `OUTBOX_RETENTION_*` config)
-is emitted by `dropbox manifest` and regenerated on the box by `optctl install` on
+is emitted by `dropbox manifest` and regenerated on the box by `opsctl install` on
 every swap. Shipping is the shared repo-root `bin/deploy dropbox` (no version arg;
 version is the committed `dropbox/VERSION`, advanced by `bin/bump dropbox <field>`)
-→ `optctl install`; provisioning is `optctl setup dropbox` (the `dropbox`
+→ `opsctl install`; provisioning is `opsctl setup dropbox` (the `dropbox`
 `--system` user + `/opt/dropbox` tree — data `0750`, **mirror is a private subdir
 of data** — the enabled systemd unit, the nginx fragment).
 
 - **Secrets — dropbox HAS them (unlike ledger).** Three values reach the process
   env only: `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`. On
   the box they live in SSM `/metaspot/<account>/app-config` under the `dropbox`
-  key, injected by `metaspot-launch`. `bin/secrets` (operator-side, no optctl verb)
+  key, injected by `metaspot-launch`. `bin/secrets` (operator-side, no opsctl verb)
   does a non-destructive read-modify-write of **only** the `dropbox` key, pulling
   values from `~/.secrets/DROPBOX_*` (masked summary, never printed; siblings
   preserved). In dev, `.envrc` exports them from `~/.secrets/DROPBOX_*`.

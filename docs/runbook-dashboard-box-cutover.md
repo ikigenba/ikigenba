@@ -1,4 +1,4 @@
-# Runbook (🔒 operator-gated) — cutover of `dashboard` to the appkit/optctl contract on the `ai` box
+# Runbook (🔒 operator-gated) — cutover of `dashboard` to the appkit/opsctl contract on the `ai` box
 
 **Status: PENDING the human operator.** No agent runs any of these commands —
 they SSH into the **live customer box** `ai`. This runbook cuts the converted
@@ -13,7 +13,7 @@ their old **name/timestamp-keyed** scheme (`schema_migrations.name`) to
 `NNN_*.sql` (+ a new `001_schema_migrations.sql`). A *fresh* DB migrates cleanly
 to v5 (verified, tests green). But the live `ai` box's
 `/opt/dashboard/data/dashboard.db` already applied the OLD name-keyed ledger,
-which the integer runner will **not** recognize — so a plain `optctl install`
+which the integer runner will **not** recognize — so a plain `opsctl install`
 against the existing DB would fail to boot. Per the **2026-06-05 directive that
 no databases need to be preserved**, the fix is simply to reset the DB before
 the install: the new binary then creates and migrates a fresh DB to v5. That is
@@ -21,7 +21,7 @@ the only difference from a normal `bin/deploy dashboard`.
 
 > **Cutover in one line:** stop → (optional backup) → drop/reset the DB →
 > `bin/deploy dashboard` (no version arg; off-box build of current `main` →
-> `optctl install`) → restart → verify. No bespoke `schema_migrations` rewrite,
+> `opsctl install`) → restart → verify. No bespoke `schema_migrations` rewrite,
 > no data preservation.
 
 ---
@@ -37,7 +37,7 @@ the only difference from a normal `bin/deploy dashboard`.
   `HOST` defaults to `${ACCOUNT}.metaspot.org`). Wherever this runbook says "on
   the box", prefix the command with `$SSH` or run it from an interactive `$SSH`
   shell.
-- `optctl` runs privileged on the box: always `sudo optctl …`.
+- `opsctl` runs privileged on the box: always `sudo opsctl …`.
 - **CAUTION — this is the live `ai` customer box.** The dashboard is the apex/
   `DEFAULT` app (:3000) and the box's sole trust boundary: while it is stopped,
   the box-wide `/internal/authn` is down, so every `/srv/<svc>/` request 401s.
@@ -73,13 +73,13 @@ ssh -i ~/.ssh/id_ed25519_ai4mgreenly ec2-user@ai.metaspot.org 'hostname; uptime'
 - Expected: the box's hostname and an uptime line, no password prompt.
 - `ai` is the first and **only** account. Abort/restore: none — read-only.
 
-**0c. Confirm `optctl` is already on the box.**
+**0c. Confirm `opsctl` is already on the box.**
 
 ```
-ssh … 'optctl --help | head -3'
+ssh … 'opsctl --help | head -3'
 ```
 
-- Expected: the usage banner starting `optctl — ikigai on-box platform CLI`.
+- Expected: the usage banner starting `opsctl — ikigai on-box platform CLI`.
   If absent, install it first (see runbook D2 §1: build off-box static
   `linux/amd64`, `scp` to `/tmp`, `sudo install -m 0755 …`). Abort/restore:
   read-only.
@@ -212,7 +212,7 @@ detached worktree
 (`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off -trimpath -buildvcs=false`,
 ldflags-stamped), reads the version from that worktree's `dashboard/VERSION`
 (→ `vX.Y.Z`), `scp`s the single artifact, then runs the box half:
-`ssh sudo optctl install dashboard vX.Y.Z --artifact /tmp/dashboard-vX.Y.Z`.
+`ssh sudo opsctl install dashboard vX.Y.Z --artifact /tmp/dashboard-vX.Y.Z`.
 
 ```
 bin/deploy dashboard
@@ -226,9 +226,9 @@ bin/deploy dashboard
   >> build dashboard -> <tmp-artifact>/dashboard
   >> built dashboard (<size>)
   >> scp dashboard vX.Y.Z -> ai.metaspot.org:/tmp/dashboard-vX.Y.Z
-  >> ssh sudo optctl install dashboard vX.Y.Z
+  >> ssh sudo opsctl install dashboard vX.Y.Z
   ```
-- Expected (box side — `optctl install` progress; the DB was reset in §2, so it
+- Expected (box side — `opsctl install` progress; the DB was reset in §2, so it
   is created during migrate and there is no pre-migration backup):
   ```
   >> preflight dashboard vX.Y.Z
@@ -250,7 +250,7 @@ bin/deploy dashboard
   promptly (recovery in §5).
 - **Abort/restore:** if `install` aborts before the atomic swap, nothing is
   repointed — re-run after fixing. If it swapped but the unit did not come up,
-  optctl prints `… did not come up (recover with: optctl rollback dashboard)` —
+  opsctl prints `… did not come up (recover with: opsctl rollback dashboard)` —
   but on this first new-layout install there is no prior new-layout release to
   roll back to, so recovery is fix-and-redeploy (see §5).
 
@@ -287,7 +287,7 @@ systemctl is-active dashboard
 /opt/dashboard/current/dashboard version
 ```
 - Expected: `vX.Y.Z (<sha>)` — the version token MUST equal `vX.Y.Z` (the same
-  self-report `optctl` preflight asserts).
+  self-report `opsctl` preflight asserts).
 
 **4c. Apex reachable over real TLS.**
 
@@ -355,7 +355,7 @@ strongest single check.
 
 ## 5. Rollback / recovery note
 
-`optctl rollback dashboard [version]` repoints `current` → the prior (or named)
+`opsctl rollback dashboard [version]` repoints `current` → the prior (or named)
 release and restarts. Because this cutover **advanced the schema from a fresh
 DB**, the downgrade-guard/snapshot behavior applies in principle (rolling back to
 a release that embeds fewer migrations would restore the pre-migration snapshot
@@ -370,7 +370,7 @@ dashboard` (the artifact is rebuildable from the committed `main` history).
   re-point `current` at the old release dir and restore the §2a snapshot — but
   under the no-preservation directive the forward fix (re-deploy) is preferred.
 - **On a later install** (a prior new-layout release exists):
-  `sudo optctl rollback dashboard` repoints to it and restarts; the data DB is
+  `sudo opsctl rollback dashboard` repoints to it and restarts; the data DB is
   only touched (snapshot/restore) if the rolled-back-from release advanced the
   schema.
 

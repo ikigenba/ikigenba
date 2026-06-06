@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-// InitBoxOptions parameterises `optctl init-box` — the box-GLOBAL substrate (PLAN
+// InitBoxOptions parameterises `opsctl init-box` — the box-GLOBAL substrate (PLAN
 // §D1, ADR "init-box vs setup"). It carries the apex routing the old
 // dashboard/bin/setup sourced from etc/manifest.env + etc/deploy.env so init-box
 // can emit a byte-identical apex server block.
@@ -40,7 +40,7 @@ type InitBoxOptions struct {
 // SysRoot-rooted paths so tests byte-assert them; the imperative box ops (package
 // install, nginx validate/reload, certbot, timer enable) go through the System
 // seam. It is idempotent and per-box, not per-app.
-func (o *Optctl) InitBox(ctx context.Context, opts InitBoxOptions) error {
+func (o *Opsctl) InitBox(ctx context.Context, opts InitBoxOptions) error {
 	if opts.DefaultApp == "" {
 		return fmt.Errorf("init-box: default app name is required")
 	}
@@ -112,7 +112,7 @@ func (o *Optctl) InitBox(ctx context.Context, opts InitBoxOptions) error {
 		return fmt.Errorf("init-box: enable renew timer: %w", err)
 	}
 
-	o.logf("init-box complete — next: optctl setup <app> per service")
+	o.logf("init-box complete — next: opsctl setup <app> per service")
 	return nil
 }
 

@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 //  4. restart + is-active.
 //
 // data/<app>.db is touched only by the explicit restore in step 2 (PLAN §2.7).
-func (o *Optctl) Rollback(ctx context.Context, app, target string) error {
+func (o *Opsctl) Rollback(ctx context.Context, app, target string) error {
 	if app == "" {
 		return fmt.Errorf("rollback: app is required")
 	}
@@ -87,7 +87,7 @@ func (o *Optctl) Rollback(ctx context.Context, app, target string) error {
 
 // currentVersion returns the version `current` points at (the basename of its
 // target), or "" if current does not exist.
-func (o *Optctl) currentVersion(l Layout) (string, error) {
+func (o *Opsctl) currentVersion(l Layout) (string, error) {
 	dst, err := os.Readlink(l.CurrentLink())
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -101,7 +101,7 @@ func (o *Optctl) currentVersion(l Layout) (string, error) {
 // priorRelease returns the release immediately preceding `from` in sorted order —
 // the default rollback target. It lists releases/, sorts by semantic version,
 // and picks the highest that is strictly less than `from`.
-func (o *Optctl) priorRelease(l Layout, from string) (string, error) {
+func (o *Opsctl) priorRelease(l Layout, from string) (string, error) {
 	rels, err := o.listReleases(l)
 	if err != nil {
 		return "", err
@@ -121,7 +121,7 @@ func (o *Optctl) priorRelease(l Layout, from string) (string, error) {
 
 // listReleases returns the version dir names under releases/, sorted ascending by
 // semantic version (so the last is the newest, and priorRelease can index back).
-func (o *Optctl) listReleases(l Layout) ([]string, error) {
+func (o *Opsctl) listReleases(l Layout) ([]string, error) {
 	entries, err := os.ReadDir(l.ReleasesDir())
 	if err != nil {
 		if os.IsNotExist(err) {

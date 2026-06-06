@@ -1,13 +1,13 @@
-// Package optctl is the on-box platform CLI's core: the install / rollback /
+// Package opsctl is the on-box platform CLI's core: the install / rollback /
 // prune verbs over the versioned release-dir + atomic-symlink layout (PLAN §1.4,
-// ADR "optctl — per-verb internals").
+// ADR "opsctl — per-verb internals").
 //
-// EVERY filesystem operation is rooted at a configurable base (OPTCTL_ROOT,
+// EVERY filesystem operation is rooted at a configurable base (OPSCTL_ROOT,
 // default /opt) so the whole package is testable against a temp dir with no real
 // box. The box-only bits — systemd restart / is-active, and subprocess
 // invocation of the app binary's fixed verbs (version|manifest|migrate|schema|
 // backup|restore) — sit behind the System and AppRunner seams the tests stub.
-package optctl
+package opsctl
 
 import (
 	"path/filepath"
@@ -24,7 +24,7 @@ import (
 // test can byte-assert them against a temp dir). The box uses SysRoot="/"; tests
 // point it at a temp dir. Empty ⇒ "/".
 type Layout struct {
-	Root    string // OPTCTL_ROOT, default "/opt" — the /opt/<app> tree
+	Root    string // OPSCTL_ROOT, default "/opt" — the /opt/<app> tree
 	SysRoot string // system-config base, default "/" — the /etc + /var tree
 	App     string // service name
 }

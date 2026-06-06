@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"context"
@@ -8,12 +8,12 @@ import (
 )
 
 // installSeq installs a sequence of versions (each with the same embedded schema,
-// so no backups complicate the release set) and returns the Optctl.
-func installSeq(t *testing.T, root, app string, sys *stubSystem, keep int, versions []string) *Optctl {
+// so no backups complicate the release set) and returns the Opsctl.
+func installSeq(t *testing.T, root, app string, sys *stubSystem, keep int, versions []string) *Opsctl {
 	t.Helper()
-	var o *Optctl
+	var o *Opsctl
 	for _, v := range versions {
-		o = newOptctl(t, root, app, sys, fakeEnv(app, v, 1, ""))
+		o = newOpsctl(t, root, app, sys, fakeEnv(app, v, 1, ""))
 		o.Keep = keep
 		if err := o.Install(context.Background(), app, v, stageArtifact(t, app+"-"+v)); err != nil {
 			t.Fatalf("install %s: %v", v, err)

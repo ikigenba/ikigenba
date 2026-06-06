@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 // PLAN §C2/§D1: "Systemd/sudo calls behind a seam the tests stub."
 //
 // The config artifacts these verbs emit (the systemd unit, the nginx apex block
-// + fragments, the renew timer) are WRITTEN to SysRoot-rooted paths by optctl
+// + fragments, the renew timer) are WRITTEN to SysRoot-rooted paths by opsctl
 // itself so tests can byte-assert them; only the IMPERATIVE box ops below go
 // through this seam, where tests record (but never execute) them.
 type System interface {
@@ -24,7 +24,7 @@ type System interface {
 	Restart(ctx context.Context, app string) error
 	// IsActive returns nil iff the unit is active (the box runs `systemctl
 	// is-active <app>`). A non-nil error means the new release failed to come up
-	// and the operator's recovery is `optctl rollback`.
+	// and the operator's recovery is `opsctl rollback`.
 	IsActive(ctx context.Context, app string) error
 
 	// InstallPackages installs the named OS packages (the box runs `dnf install
@@ -76,8 +76,8 @@ type AppRunner interface {
 	Run(ctx context.Context, binary, verb string, args []string, env []string) (stdout string, err error)
 }
 
-// RealSystem drives systemd via systemctl. On the box optctl runs privileged
-// (sudo optctl …) so systemctl needs no further escalation here.
+// RealSystem drives systemd via systemctl. On the box opsctl runs privileged
+// (sudo opsctl …) so systemctl needs no further escalation here.
 type RealSystem struct {
 	// Systemctl overrides the binary name/path (default "systemctl"); handy if a
 	// box wants an absolute path.

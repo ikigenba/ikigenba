@@ -7,10 +7,10 @@ green" is only satisfied once a human executes this runbook and pastes results
 back. Until then D2 stays unchecked in `PLAN.md` §6.
 
 This runbook proves the whole P1 design end-to-end on one real service: build a
-tagged `ledger` off-box, hand it to the new on-box `optctl`, verify it serves,
-roll it back, re-verify, and prune. It exercises `optctl setup`, `bin/deploy` →
-`optctl install`, `optctl rollback`, and `optctl prune` — the exact CLI surfaces
-in `optctl/cmd/optctl/main.go`, `optctl/internal/optctl/*`, and `bin/deploy`.
+tagged `ledger` off-box, hand it to the new on-box `opsctl`, verify it serves,
+roll it back, re-verify, and prune. It exercises `opsctl setup`, `bin/deploy` →
+`opsctl install`, `opsctl rollback`, and `opsctl prune` — the exact CLI surfaces
+in `opsctl/cmd/opsctl/main.go`, `opsctl/internal/opsctl/*`, and `bin/deploy`.
 
 ---
 
@@ -25,7 +25,7 @@ in `optctl/cmd/optctl/main.go`, `optctl/internal/optctl/*`, and `bin/deploy`.
   `HOST` defaults to `${ACCOUNT}.metaspot.org`). Wherever this runbook says "on
   the box", prefix the command with `$SSH` or run it from an interactive `$SSH`
   shell.
-- `optctl` runs privileged on the box: always `sudo optctl …`.
+- `opsctl` runs privileged on the box: always `sudo opsctl …`.
 - **CAUTION — this is the live `ai` customer box.** It already serves the
   dashboard (apex/`DEFAULT`, :3000), `crm` (:3001) and `notify` (:3003). `ledger`
   (:3002) is being brought up here for the first time under the *new* release-dir
@@ -76,20 +76,20 @@ ssh … 'systemctl is-active nginx dashboard; ls -d /etc/nginx/conf.d/locations'
 
 ---
 
-## 1. Build + push `optctl` to the box
+## 1. Build + push `opsctl` to the box
 
-`optctl` is a Go binary and **the box never compiles** (§2.1). Build it OFF-box,
+`opsctl` is a Go binary and **the box never compiles** (§2.1). Build it OFF-box,
 static, `linux/amd64`, then ship it.
 
-**1a. Build `optctl` off-box.**
+**1a. Build `opsctl` off-box.**
 
 ```
-( cd optctl && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off \
-    go build -trimpath -buildvcs=false -o /tmp/optctl ./cmd/optctl )
-file /tmp/optctl
+( cd opsctl && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off \
+    go build -trimpath -buildvcs=false -o /tmp/opsctl ./cmd/opsctl )
+file /tmp/opsctl
 ```
 
-- Expected: no build output; `file /tmp/optctl` reports
+- Expected: no build output; `file /tmp/opsctl` reports
   `ELF 64-bit LSB executable, x86-64, … statically linked …`.
 - Note the subshell `( cd … )` so your shell's cwd is unaffected.
 - Abort/restore: build failures are local only — nothing shipped. Fix and rerun.
@@ -97,40 +97,40 @@ file /tmp/optctl
 **1b. Ship it to the box and install it.**
 
 ```
-scp -i ~/.ssh/id_ed25519_ai4mgreenly /tmp/optctl ec2-user@ai.metaspot.org:/tmp/optctl
+scp -i ~/.ssh/id_ed25519_ai4mgreenly /tmp/opsctl ec2-user@ai.metaspot.org:/tmp/opsctl
 ssh -i ~/.ssh/id_ed25519_ai4mgreenly ec2-user@ai.metaspot.org \
-    'sudo install -m 0755 /tmp/optctl /usr/local/bin/optctl && optctl --help | head -3'
+    'sudo install -m 0755 /tmp/opsctl /usr/local/bin/opsctl && opsctl --help | head -3'
 ```
 
-- Expected: `scp` shows a 100% transfer; the `optctl --help` head prints the
-  usage banner starting `optctl — ikigai on-box platform CLI`.
-- Abort/restore: `optctl` is a standalone binary that does nothing until invoked;
+- Expected: `scp` shows a 100% transfer; the `opsctl --help` head prints the
+  usage banner starting `opsctl — ikigai on-box platform CLI`.
+- Abort/restore: `opsctl` is a standalone binary that does nothing until invoked;
   installing it touches no running service. To remove:
-  `ssh … 'sudo rm -f /usr/local/bin/optctl'`.
+  `ssh … 'sudo rm -f /usr/local/bin/opsctl'`.
 
 ---
 
-## 2. Provision `ledger` on the box (`optctl setup ledger`)
+## 2. Provision `ledger` on the box (`opsctl setup ledger`)
 
 ### init-box finding — DO NOT re-run `init-box` on this box
 
-`optctl init-box` provisions the **box-global apex substrate**: it (re)writes the
+`opsctl init-box` provisions the **box-global apex substrate**: it (re)writes the
 apex nginx `server{}` block at `/etc/nginx/conf.d/<default-app>.conf`, reloads
-nginx, and **re-runs certbot** for the apex cert (`optctl/internal/optctl/
+nginx, and **re-runs certbot** for the apex cert (`opsctl/internal/opsctl/
 initbox.go`). The `ai` box already serves the dashboard apex, so that substrate
 **already exists** (confirmed in step 0c). Re-running `init-box` would rewrite the
 live apex block and touch the cert for **no benefit** — and risks disturbing the
 trust boundary the whole box depends on.
 
-**Therefore: SKIP `init-box` entirely. `optctl setup ledger` is the only
+**Therefore: SKIP `init-box` entirely. `opsctl setup ledger` is the only
 provisioning this prototype needs.** `setup` checks that the box-global
 `conf.d/locations/` dir exists (created by the original dashboard provisioning)
 and fails fast if it does not — so it is safe and self-guarding.
 
 **2a. Stage `ledger`'s nginx fragment source on the box.**
 
-`optctl setup` reads the fragment SOURCE from a path you pass via `--fragment`
-(the operator stages it next to where `optctl` runs — carry-forward from D1). Copy
+`opsctl setup` reads the fragment SOURCE from a path you pass via `--fragment`
+(the operator stages it next to where `opsctl` runs — carry-forward from D1). Copy
 the committed `ledger/etc/nginx.conf` up:
 
 ```
@@ -143,10 +143,10 @@ scp -i ~/.ssh/id_ed25519_ai4mgreenly ledger/etc/nginx.conf \
 
 **2b. Run `setup`.**
 
-The real flag surface (from `optctl/cmd/optctl/main.go cmdSetup`) is:
+The real flag surface (from `opsctl/cmd/opsctl/main.go cmdSetup`) is:
 
 ```
-optctl setup <app> [--port N] [--fragment <path>]
+opsctl setup <app> [--port N] [--fragment <path>]
 ```
 
 `ledger` binds loopback **3002** (`ledger/etc/manifest.env PORT=3002`,
@@ -154,23 +154,23 @@ optctl setup <app> [--port N] [--fragment <path>]
 
 ```
 ssh -i ~/.ssh/id_ed25519_ai4mgreenly ec2-user@ai.metaspot.org \
-    'sudo optctl setup ledger --port 3002 --fragment /tmp/ledger-nginx.conf'
+    'sudo opsctl setup ledger --port 3002 --fragment /tmp/ledger-nginx.conf'
 ```
 
 - Expected (the `>>`-prefixed progress lines, in order, from
-  `optctl/internal/optctl/setup.go`):
+  `opsctl/internal/opsctl/setup.go`):
   ```
   >> ensure app user ledger (home /opt/ledger)
   >> create /opt/ledger tree
   >> write systemd unit /etc/systemd/system/ledger.service
   >> write nginx fragment /etc/nginx/conf.d/locations/ledger.conf
-  >> setup complete for ledger — next: optctl install ledger <version>
+  >> setup complete for ledger — next: opsctl install ledger <version>
   ```
 - `setup` **enables but does NOT start** the unit (there is no binary yet), creates
   the `--system` `ledger` user and the `/opt/ledger/{releases,bin,etc,data,backups}`
   tree, writes `ledger.service` (`ExecStart=/usr/local/bin/metaspot-launch ledger`),
   drops the `__PORT__`-substituted fragment, and runs `nginx -t` + reload.
-- If you see `setup: …/conf.d/locations missing — run optctl init-box first`: the
+- If you see `setup: …/conf.d/locations missing — run opsctl init-box first`: the
   box substrate is NOT what step 0c implied — STOP and reassess; do **not** run
   `init-box` against the live apex without a separate decision.
 - **Abort/restore** (setup is idempotent; to fully undo before any deploy):
@@ -212,7 +212,7 @@ The wrapper's surface (`bin/deploy`): `bin/deploy <app>` — **no version arg**.
 builds current `main` (HEAD) in a throwaway detached worktree, reads the version
 from that worktree's `ledger/VERSION` (here `0.1.0` → release `v0.1.0`), `scp`s the
 artifact, then runs the box half:
-`ssh sudo optctl install ledger v0.1.0 --artifact /tmp/ledger-v0.1.0`.
+`ssh sudo opsctl install ledger v0.1.0 --artifact /tmp/ledger-v0.1.0`.
 
 ```
 bin/deploy ledger
@@ -226,10 +226,10 @@ bin/deploy ledger
   >> build ledger -> <tmp-artifact>/ledger
   >> built ledger (<size>)
   >> scp ledger v0.1.0 -> ai.metaspot.org:/tmp/ledger-v0.1.0
-  >> ssh sudo optctl install ledger v0.1.0
+  >> ssh sudo opsctl install ledger v0.1.0
   ```
-- Expected (box side — `optctl install` progress, from
-  `optctl/internal/optctl/install.go`; first install so the DB is created during
+- Expected (box side — `opsctl install` progress, from
+  `opsctl/internal/opsctl/install.go`; first install so the DB is created during
   migrate and there is no pre-migration backup):
   ```
   >> preflight ledger v0.1.0
@@ -262,7 +262,7 @@ ssh … 'ls -l /opt/ledger/current /opt/ledger/bin/run; \
   the (empty) live release untouched.
 - **Abort/restore:** if `install` aborts mid-way, nothing is swapped (the swap is
   the last-but-two step); rerun after fixing. If `install` swapped but the unit
-  did not come up, optctl returns `… did not come up (recover with: optctl
+  did not come up, opsctl returns `… did not come up (recover with: opsctl
   rollback ledger)` — but there is no prior release to roll back to on a first
   install, so recovery is: fix the cause and re-deploy, or tear down per §2's
   Abort/restore (safe only because the DB is brand-new). The data DB is never
@@ -280,7 +280,7 @@ curl drives `/mcp` directly — `AGENTS.md` "Verify on the box").
 systemctl is-active ledger
 ```
 - Expected: `active`. Abort/restore: if not active, `journalctl -u ledger -n 50`
-  (see 4f); recover via `optctl rollback` only once a prior release exists (it does
+  (see 4f); recover via `opsctl rollback` only once a prior release exists (it does
   not yet) — otherwise fix + re-deploy.
 
 **4b. Loopback PRM → 200.**
@@ -319,7 +319,7 @@ curl -s -i https://ai.metaspot.org/srv/ledger/mcp | grep -i 'HTTP/\|WWW-Authenti
 /opt/ledger/current/ledger version
 ```
 - Expected: `v0.1.0 (<sha>)` — the version token MUST equal `v0.1.0` (this is the
-  same self-report `optctl` preflight asserts against the install arg).
+  same self-report `opsctl` preflight asserts against the install arg).
 
 **4f. Boot / migration lines in the journal.**
 ```
@@ -372,7 +372,7 @@ bin/deploy ledger
 > `applied=3 embedded=4`, logs `schema advances — backup … -> backups/pre-v0.1.1.db`,
 > and the §5c rollback first runs `ledger restore --from …/backups/pre-v0.1.1.db`
 > before the swap. That requires a real migration change in the `ledger` tree and a
-> fresh version bump — out of scope for the minimal mechanism proof, but the optctl code
+> fresh version bump — out of scope for the minimal mechanism proof, but the opsctl code
 > path is in place (`install.go` step 4, `rollback.go` step 2).
 
 ### 5b. (Confirm pre-rollback state)
@@ -384,13 +384,13 @@ readlink /opt/ledger/current      # releases/v0.1.1
 
 ### 5c. Roll back
 
-The surface (`optctl/cmd/optctl/main.go cmdRollback`): `optctl rollback <app>
+The surface (`opsctl/cmd/opsctl/main.go cmdRollback`): `opsctl rollback <app>
 [version]`. With no explicit version it targets the **immediately-prior** release
 (v0.1.0).
 
 ```
 ssh -i ~/.ssh/id_ed25519_ai4mgreenly ec2-user@ai.metaspot.org \
-    'sudo optctl rollback ledger'
+    'sudo opsctl rollback ledger'
 ```
 
 - Expected (from `rollback.go`; no DB restore line because v0.1.1 did not advance
@@ -401,7 +401,7 @@ ssh -i ~/.ssh/id_ed25519_ai4mgreenly ec2-user@ai.metaspot.org \
   >> rolled back ledger: v0.1.1 -> v0.1.0
   ```
 - **Abort/restore:** rollback is itself the recovery primitive. If it fails
-  `is-active` on the target, you can `sudo optctl rollback ledger v0.1.1` to repoint
+  `is-active` on the target, you can `sudo opsctl rollback ledger v0.1.1` to repoint
   forward to the known-good v0.1.1 (explicit target form), then investigate. The
   data DB is untouched here (no schema advance → no restore).
 
@@ -419,7 +419,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 ### 5e. Prune check
 
-The surface (`cmdPrune`): `optctl prune <app> [--keep N]`, default keep **3**
+The surface (`cmdPrune`): `opsctl prune <app> [--keep N]`, default keep **3**
 (`DefaultKeep`). The kept set is the **newest N** releases, *plus* — regardless of
 N — `current`'s target and `current`'s immediate predecessor (the live rollback
 target). With only two releases (`v0.1.0`, `v0.1.1`) and default keep=3, prune
@@ -431,11 +431,11 @@ on this box: the keep window's newest-1 is v0.1.1, and `current` (v0.1.0) is
 separately protected — both releases are retained. There is **no** non-protected
 release to drop in this state; observing a real deletion would need a third,
 older, non-current/non-predecessor release. (Real deletion behaviour is covered
-directly by optctl's prune unit tests; this step only re-confirms the
+directly by opsctl's prune unit tests; this step only re-confirms the
 never-over-prune property on the box.)
 
 ```
-ssh … 'sudo optctl prune ledger'                 # keep=3 default: no-op, prints nothing
+ssh … 'sudo opsctl prune ledger'                 # keep=3 default: no-op, prints nothing
 ssh … 'ls /opt/ledger/releases'                  # still v0.1.0 and v0.1.1
 ```
 - Expected: with default keep, `prune` prints no `>> prune release …` lines and
@@ -443,7 +443,7 @@ ssh … 'ls /opt/ledger/releases'                  # still v0.1.0 and v0.1.1
   call mostly confirms the kept count.)
 - Optional, to confirm the never-over-prune property explicitly:
   ```
-  ssh … 'sudo optctl prune ledger --keep 1'
+  ssh … 'sudo opsctl prune ledger --keep 1'
   ssh … 'ls /opt/ledger/releases'
   ```
   Expected: still a **no-op** — `prune` prints no `>> prune release …` lines and
@@ -452,7 +452,7 @@ ssh … 'ls /opt/ledger/releases'                  # still v0.1.0 and v0.1.1
   unconditionally), so neither is eligible to drop.
   - **Abort/restore:** prune deletes *non-current, non-predecessor* release dirs
     and their backups; it never touches `current`, the rollback target, or the
-    data DB. Rollback to a kept prior release stays on-box (`optctl rollback`), so
+    data DB. Rollback to a kept prior release stays on-box (`opsctl rollback`), so
     you never need to rebuild a past version off-box. If you pruned a release you
     wanted back, it is still rebuildable from git: `bin/deploy` builds current
     `main`, so land the desired `<app>/VERSION` on `main` (e.g. `bin/bump`) and
@@ -465,12 +465,12 @@ ssh … 'ls /opt/ledger/releases'                  # still v0.1.0 and v0.1.1
 
 | Step | Mutates | Recovery |
 |---|---|---|
-| 1b install optctl | `/usr/local/bin/optctl` | `sudo rm -f /usr/local/bin/optctl` (inert until invoked) |
-| 2b `optctl setup ledger` | user, `/opt/ledger` tree, unit, nginx fragment | disable unit + `rm` unit/fragment + `daemon-reload` + `nginx -t`/reload + `rm -rf /opt/ledger` (only pre-DB) — see §2b box block |
+| 1b install opsctl | `/usr/local/bin/opsctl` | `sudo rm -f /usr/local/bin/opsctl` (inert until invoked) |
+| 2b `opsctl setup ledger` | user, `/opt/ledger` tree, unit, nginx fragment | disable unit + `rm` unit/fragment + `daemon-reload` + `nginx -t`/reload + `rm -rf /opt/ledger` (only pre-DB) — see §2b box block |
 | 3b `bin/deploy` (v0.1.0, first install) | `releases/v0.1.0`, `current`, manifest, **creates** data DB on migrate | no prior release to roll back to; fix + re-deploy, or §2b teardown (DB is brand-new) |
-| 5a `bin/bump` + `bin/deploy` (v0.1.1) | `ledger/VERSION` 0.1.1 committed to `main`; box: `releases/v0.1.1`, repoints `current` | `sudo optctl rollback ledger` → back to v0.1.0 |
-| 5c `optctl rollback` | repoints `current` (+ DB restore only if FROM-release advanced schema) | `sudo optctl rollback ledger v0.1.1` to repoint forward to known-good |
-| 5e `optctl prune` | deletes old release dirs + their backups | re-`bin/deploy ledger` (rebuildable from the committed `main` history) |
+| 5a `bin/bump` + `bin/deploy` (v0.1.1) | `ledger/VERSION` 0.1.1 committed to `main`; box: `releases/v0.1.1`, repoints `current` | `sudo opsctl rollback ledger` → back to v0.1.0 |
+| 5c `opsctl rollback` | repoints `current` (+ DB restore only if FROM-release advanced schema) | `sudo opsctl rollback ledger v0.1.1` to repoint forward to known-good |
+| 5e `opsctl prune` | deletes old release dirs + their backups | re-`bin/deploy ledger` (rebuildable from the committed `main` history) |
 
 **Confirm the box is back to a serving state at the end** (regardless of where you
 stopped):
@@ -506,14 +506,14 @@ release dirs on the box are governed by prune.
   **not yet** produced (it is F1's job — `bin/deploy` builds from a clean detached
   worktree so the build is never dirty anyway). The version self-report
   checks in §4e/§5d assert the leading `vX.Y.Z` token only, which is what
-  `optctl` preflight also keys on — so this gap does not block the loop.
-- **No `optctl status`/`current`-reporting verb.** There is no
-  `optctl current ledger` or `optctl status` verb in the CLI; this runbook reads
+  `opsctl` preflight also keys on — so this gap does not block the loop.
+- **No `opsctl status`/`current`-reporting verb.** There is no
+  `opsctl current ledger` or `opsctl status` verb in the CLI; this runbook reads
   on-box state via `readlink /opt/ledger/current`, `ls /opt/ledger/releases`, and
   the binary's own `version` self-report instead. A reporting verb would make
   verification one command — candidate for a follow-up (and for the future
   operations-MCP in §1.3).
-- **No `optctl teardown` verb.** Undoing `setup` is done by hand (the §2b box
+- **No `opsctl teardown` verb.** Undoing `setup` is done by hand (the §2b box
   block). A `teardown <app>` verb (reverse of `setup`, refusing if a data DB
   exists) would make the abort path safer — follow-up, not a blocker for D2.
 - **Schema-advance rollback path is unexercised by the minimal drill.** The
@@ -521,4 +521,4 @@ release dirs on the box are governed by prune.
   `rollback.go` step 2) but the minimal v0.1.1 = same-commit drill does not trip
   them (`applied == embedded`). The optional extended drill in §5a notes how to
   exercise them once a real new migration lands; until then this is verified only
-  by optctl's temp-root unit tests, not on the box.
+  by opsctl's temp-root unit tests, not on the box.

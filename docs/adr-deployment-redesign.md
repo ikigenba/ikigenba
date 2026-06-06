@@ -4,7 +4,7 @@
 > architecture decision record for the ikigai suite's deploy story. It captures
 > the converged design (`PLAN.md` §1), the resolved open decisions (`PLAN.md`
 > §4), and the parts the plan flagged as sketch-only: the per-verb internals of
-> `optctl`, the exact `appkit.Spec` field set, and the `init-box` vs
+> `opsctl`, the exact `appkit.Spec` field set, and the `init-box` vs
 > `setup <app>` split. It is written in the house *context → decision →
 > consequences* shape of `docs/event-plane-decisions.md`.
 >
@@ -72,7 +72,7 @@ and secrets never land on the box or in a log.
 ## Decision
 
 Replace the model with a **uniform app contract** (`appkit`), an **on-box
-platform CLI** (`optctl`), **versioned release directories with atomic symlink
+platform CLI** (`opsctl`), **versioned release directories with atomic symlink
 swap and rollback**, **per-service committed `<app>/VERSION` files** (the version
 source of truth — superseding the originally-planned per-service `<app>/vX.Y.Z`
 tags), and a **single thin shared `deploy` wrapper** (plus its `bin/bump`
@@ -174,16 +174,16 @@ dashboard's manifest-derived resource list and its extra lifecycle verbs
 (`secrets`/`teardown`); wiki's `agentkit` ingest core. `appkit` provides the
 chassis; these remain the service's own code.
 
-### 3. `optctl` — the on-box platform CLI
+### 3. `opsctl` — the on-box platform CLI
 
-A single static Go binary at `/usr/local/bin/optctl`. **On-box only** — external
+A single static Go binary at `/usr/local/bin/opsctl`. **On-box only** — external
 callers SSH in and run it; there is *no* dual local/remote runner abstraction
-(rejected as YAGNI). It runs privileged via `sudo optctl …`. It is the substrate
+(rejected as YAGNI). It runs privileged via `sudo opsctl …`. It is the substrate
 the dashboard's future operations-MCP (deploy/backup/restore/health as MCP
 tools) will call.
 
-All of `optctl`'s filesystem operations are rooted at a **configurable base**
-(`OPTCTL_ROOT`, default `/opt`) so the whole CLI is testable against a temp dir
+All of `opsctl`'s filesystem operations are rooted at a **configurable base**
+(`OPSCTL_ROOT`, default `/opt`) so the whole CLI is testable against a temp dir
 with no real box. Systemd / `sudo` / nginx invocations sit behind a seam tests
 stub.
 
@@ -218,9 +218,9 @@ mid-swap.
 disturb the operator's working tree) → off-box `go build` (`CGO_ENABLED=0
 GOOS=linux GOARCH=amd64 -trimpath -buildvcs=false GOWORK=off`, ldflags version
 stamp) → read the version from **that worktree's** `<app>/VERSION` and prepend
-`v` → `scp` the single artifact to the box `/tmp` → `ssh sudo optctl install
+`v` → `scp` the single artifact to the box `/tmp` → `ssh sudo opsctl install
 <app> v<version> --artifact /tmp/…`. **No install logic runs on the laptop** —
-the box-side install is entirely `optctl`'s job.
+the box-side install is entirely `opsctl`'s job.
 
 The companion **`bin/bump <app> <major|minor|patch>`** is how the version is
 advanced: it reads `<app>/VERSION`, increments the requested SemVer field, writes
@@ -251,7 +251,7 @@ how-to is [`versioning.md`](./versioning.md).
   and ships that committed version. **Git tags are NOT the version mechanism**
   (no `git tag <app>/vX.Y.Z`, no `git describe`); the `v` is a deploy-time
   display prefix only.
-- **Libraries (`eventplane`, `agentkit`, `appkit`) and `optctl` are NOT
+- **Libraries (`eventplane`, `agentkit`, `appkit`) and `opsctl` are NOT
   versioned** — the libs are consumed at HEAD via `replace` + `require … v0.0.0`,
   carry no `VERSION` file. **HARD RULE: never convert an internal `replace` into a
   versioned `require`** (it drags in the proxy + subdir machinery this design
@@ -267,10 +267,10 @@ how-to is [`versioning.md`](./versioning.md).
   (build current `main`) + ldflags. GoReleaser / release-please only if/when
   GitHub Actions arrives.
 
-### `optctl` — per-verb internals
+### `opsctl` — per-verb internals
 
 All verbs operate over the §4 release-dir + atomic-symlink layout, rooted at
-`OPTCTL_ROOT` (default `/opt`). "Atomic swap" everywhere means `ln -sfn` of
+`OPSCTL_ROOT` (default `/opt`). "Atomic swap" everywhere means `ln -sfn` of
 `current` (a symlink rename, atomic on the same filesystem).
 
 **`install <app> <version> --artifact <path>`** — ship a new version live.
@@ -343,10 +343,10 @@ predecessor. Runs at the tail of `install`; also invocable standalone.
 
 The pre-redesign `bin/setup` (and the dashboard's overloaded variant) mixed two
 concerns: bringing up the box's shared substrate, and provisioning one app.
-`optctl` splits them cleanly so app provisioning never reaches for box-global
+`opsctl` splits them cleanly so app provisioning never reaches for box-global
 state and vice versa.
 
-**`optctl init-box` — box-global substrate, run once per box, owns global
+**`opsctl init-box` — box-global substrate, run once per box, owns global
 state.** Responsibilities:
 - nginx itself + certbot, obtaining the **one** TLS cert for the apex;
 - the apex `server{}` block, the `/_authn` introspection hook, and the
@@ -357,7 +357,7 @@ state.** Responsibilities:
 This is the substrate the dashboard's apex setup used to bootstrap. It is
 **idempotent** and owns the global pieces no single app should.
 
-**`optctl setup <app>` — per-app provisioning, run once per service, owns
+**`opsctl setup <app>` — per-app provisioning, run once per service, owns
 nothing global.** Responsibilities:
 - create the dedicated `--system` app user and the `/opt/<app>/` tree
   (`releases/`, `bin/`, `etc/`, `data/`);
@@ -383,7 +383,7 @@ file and nginx fragment it emits match what the old `bin/setup` produced.
 2. **`backup`/`restore`: folded into the binary** as fixed subcommands — the
    one-static-binary contract depends on it.
 3. **`metaspot-launch`: additive first** — leave the baked launcher untouched
-   (it is a load-bearing stable-path contract); add `optctl launch` later.
+   (it is a load-bearing stable-path contract); add `opsctl launch` later.
 4. **`deploy` build source: throwaway `git worktree`** — reproducible build
    without disturbing the working tree. (Originally a checkout of the *tagged*
    commit; in the implemented file model it is a detached checkout of **current
@@ -396,7 +396,7 @@ file and nginx fragment it emits match what the old `bin/setup` produced.
 
 - **P1 (this design):** operator ships builds of committed `main` into versioned
   release dirs — full versioning + rollback immediately, no new infra.
-- **P2 (later):** S3 artifacts bucket + box-pull (`optctl install --artifact
+- **P2 (later):** S3 artifacts bucket + box-pull (`opsctl install --artifact
   s3://…`, new IAM) — enables CI, multi-box, dashboard-initiated deploy.
 - **P3 (optional):** GitHub Actions builds+publishes on tag, box pulls. CI must
   be build-and-publish (box pulls), **never** inbound SSH (SSH is pinned to one
@@ -412,7 +412,7 @@ appliance ethos), git-pull-build on the box (the box never compiles), Nix
 
 **What gets better.**
 - **Rollback is real and atomic.** Two known-good release dirs side by side and
-  an `ln -sfn` cutover mean a failed start is one `optctl rollback` from the
+  an `ln -sfn` cutover mean a failed start is one `opsctl rollback` from the
   prior version, schema-aware (DB restored when the rolled-back-from release had
   advanced the schema).
 - **"What's deployed" is answerable two ways** — the self-reporting binary (the
@@ -420,7 +420,7 @@ appliance ethos), git-pull-build on the box (the box never compiles), Nix
   lives in `main`'s committed `<app>/VERSION` ledger (immutable under branch
   protection).
 - **One deploy path, not seven.** A single shared `bin/deploy` wrapper + one
-  `optctl` replace the seven cloned `bin/build`+`bin/deploy` stacks; the
+  `opsctl` replace the seven cloned `bin/build`+`bin/deploy` stacks; the
   artifact shrinks to one static binary (no wrapper, no bundled registry).
 - **The app's identity is owned by the app.** `<app> manifest` is the single
   source of truth; `install` regenerates `/opt/<app>/etc/manifest.env` from it on

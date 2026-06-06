@@ -8,17 +8,17 @@
 // pointer for each, count-based retention), matching what the prior operator-side
 // bin/backup did on the box — now running IN the binary, on the box, as the verb.
 //
-// Two callers, one verb. optctl's install/rollback drive `<app> backup --out
+// Two callers, one verb. opsctl's install/rollback drive `<app> backup --out
 // <path>` / `<app> restore --from <path>` for the pre-migration LOCAL DB snapshot
 // the downgrade-guard rollback story needs (PLAN §1.4, §2.5). The operator drives
 // the cert+S3 snapshot with no --out/--from. So these hooks dispatch on the flag:
 //
-//   - `--out <path>` present  → local VACUUM-INTO snapshot to <path> (optctl).
-//   - `--from <path>` present → local file restore from <path> (optctl).
+//   - `--out <path>` present  → local VACUUM-INTO snapshot to <path> (opsctl).
+//   - `--from <path>` present → local file restore from <path> (opsctl).
 //   - neither                 → the cert+S3+DB snapshot/restore (operator).
 //
 // The local branch is reimplemented here (appkit's default backup/restore are
-// unexported) so optctl's contract is preserved byte-for-byte.
+// unexported) so opsctl's contract is preserved byte-for-byte.
 //
 // SECRETS: this package reads only NON-secret config from the env
 // (METASPOT_BACKUP_BUCKET, METASPOT_AWS_REGION, METASPOT_DOMAIN). It never reads,
@@ -70,12 +70,12 @@ func Restore(ctx context.Context, req appkit.RestoreReq) error {
 	return s3Restore(ctx, req)
 }
 
-// --- optctl's local DB snapshot/restore (the --out/--from contract) ---
+// --- opsctl's local DB snapshot/restore (the --out/--from contract) ---
 
 // localSnapshot writes a transactionally consistent copy of dbPath to out using
-// VACUUM INTO (the same mechanism as appkit's default backup), so optctl's
+// VACUUM INTO (the same mechanism as appkit's default backup), so opsctl's
 // pre-migration backup keyed by version is identical in shape to every other
-// service's. A missing source DB is an error (optctl only calls this when the DB
+// service's. A missing source DB is an error (opsctl only calls this when the DB
 // exists).
 func localSnapshot(ctx context.Context, dbPath, out string, stdout io.Writer) error {
 	if _, err := os.Stat(dbPath); err != nil {
@@ -102,7 +102,7 @@ func localSnapshot(ctx context.Context, dbPath, out string, stdout io.Writer) er
 
 // localRestore replaces dbPath with the snapshot at from (atomic rename), then
 // drops any WAL/SHM sidecar so the restored snapshot is authoritative on next
-// open. The caller (optctl rollback) stops the unit first.
+// open. The caller (opsctl rollback) stops the unit first.
 func localRestore(dbPath, from string, stdout io.Writer) error {
 	if _, err := os.Stat(from); err != nil {
 		return fmt.Errorf("restore: snapshot %s: %w", from, err)
@@ -122,12 +122,12 @@ func localRestore(dbPath, from string, stdout io.Writer) error {
 // --- the operator's cert+S3+DB snapshot/restore ---
 
 // s3Backup snapshots the DB and the apex TLS cert to the per-app S3 prefix. It
-// runs on the box (as root, via `sudo optctl backup` in the new model), reads the
+// runs on the box (as root, via `sudo opsctl backup` in the new model), reads the
 // non-secret bucket/region/domain from the env, and shells out to `aws`/`tar` the
 // same way the prior bin/backup did — but in-binary, as the `backup` verb.
 //
 // DB consistency: the binary does NOT stop the unit (it runs as the app and can't
-// systemctl); the orchestrating optctl verb stops/starts around this call. The
+// systemctl); the orchestrating opsctl verb stops/starts around this call. The
 // VACUUM-INTO snapshot is itself consistent against a live WAL DB, so a copy is
 // safe even without a stop.
 func s3Backup(ctx context.Context, req appkit.BackupReq) error {
@@ -202,7 +202,7 @@ func s3Backup(ctx context.Context, req appkit.BackupReq) error {
 // s3Restore replaces the live DB from a snapshot in the bucket. It resolves the
 // newest snapshot via <app>/latest when no key arg is given (a bare key arg is
 // used as-is). A pre-restore snapshot of the current DB is pushed first. The
-// orchestrating optctl verb stops/starts the unit around this call.
+// orchestrating opsctl verb stops/starts the unit around this call.
 func s3Restore(ctx context.Context, req appkit.RestoreReq) error {
 	env, err := resolveEnv()
 	if err != nil {

@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"context"
@@ -25,7 +25,7 @@ import (
 //
 // data/<app>.db is NEVER overwritten by placement — only read/migrated/snapshotted
 // (PLAN §2.7). bin/run and etc/manifest.env stay valid throughout (PLAN §2.6).
-func (o *Optctl) Install(ctx context.Context, app, version, artifact string) error {
+func (o *Opsctl) Install(ctx context.Context, app, version, artifact string) error {
 	if app == "" || version == "" || artifact == "" {
 		return fmt.Errorf("install: app, version, and --artifact are all required")
 	}
@@ -55,7 +55,7 @@ func (o *Optctl) Install(ctx context.Context, app, version, artifact string) err
 	//    serving process's env (AGENTS.md "Service layer"), but it never sets the
 	//    on-box <APP>_DB_PATH/<APP>_GENERATION_PATH — so the serving binary would
 	//    otherwise fall back to the relative dev default and miss the real DB at
-	//    data/<app>.db. optctl is the on-box authority that owns the absolute /opt
+	//    data/<app>.db. opsctl is the on-box authority that owns the absolute /opt
 	//    paths (it already injects them for its own migrate/schema/backup verbs via
 	//    dbEnv), so it stamps them into the stable manifest here. Idempotent: the
 	//    keys are only appended if the binary's own manifest did not already carry
@@ -108,9 +108,9 @@ func (o *Optctl) Install(ctx context.Context, app, version, artifact string) err
 		return fmt.Errorf("install: migrate: %w", err)
 	}
 
-	// optctl runs privileged (sudo optctl …), so the root-run migrate above creates
+	// opsctl runs privileged (sudo opsctl …), so the root-run migrate above creates
 	// any FRESH DB (+ its -wal/-shm and the generation sidecar) owned root:root.
-	// The unit runs as the dedicated `<app>` system user (optctl setup's
+	// The unit runs as the dedicated `<app>` system user (opsctl setup's
 	// EnsureSystemUser → `useradd --system <app>`, which also makes the matching
 	// `<app>` group), so a root-owned DB leaves the service unable to take a write
 	// lock — e.g. crm's event-plane outbox single-writer probe (`BEGIN IMMEDIATE`)
@@ -143,7 +143,7 @@ func (o *Optctl) Install(ctx context.Context, app, version, artifact string) err
 		return fmt.Errorf("install: restart: %w", err)
 	}
 	if err := o.System.IsActive(ctx, app); err != nil {
-		return fmt.Errorf("install: %s did not come up (recover with: optctl rollback %s): %w", app, app, err)
+		return fmt.Errorf("install: %s did not come up (recover with: opsctl rollback %s): %w", app, app, err)
 	}
 
 	// 8. Prune old releases (never current's target / its predecessor).
@@ -191,7 +191,7 @@ func manifestHasKey(manifest, key string) bool {
 
 // schemaAdvances asks the binary (via the `schema` verb) whether this deploy
 // advances the DB schema: applied (live DB) < embedded (binary's max migration).
-func (o *Optctl) schemaAdvances(ctx context.Context, l Layout, binary string) (bool, error) {
+func (o *Opsctl) schemaAdvances(ctx context.Context, l Layout, binary string) (bool, error) {
 	out, err := o.Runner.Run(ctx, binary, "schema", nil, o.dbEnv(l))
 	if err != nil {
 		return false, fmt.Errorf("install: schema check: %w", err)

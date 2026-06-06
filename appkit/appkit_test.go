@@ -100,7 +100,7 @@ func TestDispatch_Schema(t *testing.T) {
 	env := map[string]string{"WIDGET_DB_PATH": dbPath}
 
 	// Before any DB exists: applied=0 (a brand-new app's first install), embedded
-	// = the binary's max migration. This is the schema-advance signal optctl reads.
+	// = the binary's max migration. This is the schema-advance signal opsctl reads.
 	code, out, errs := run(t, testSpec(), env, "schema")
 	if code != 0 {
 		t.Fatalf("schema (no db) exit = %d, stderr=%q", code, errs)

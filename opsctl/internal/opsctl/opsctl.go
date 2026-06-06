@@ -1,4 +1,4 @@
-package optctl
+package opsctl
 
 import (
 	"fmt"
@@ -13,12 +13,12 @@ import (
 // predecessor rollback would aim at are always kept regardless of N.
 const DefaultKeep = 3
 
-// Optctl binds the install/rollback/prune verbs to a configurable root and the
+// Opsctl binds the install/rollback/prune verbs to a configurable root and the
 // two box-only seams. Construct with New; tests inject stub seams and a temp
-// root, the box uses RealSystem / RealRunner and OPTCTL_ROOT (default /opt).
-type Optctl struct {
-	Root    string    // OPTCTL_ROOT, "" ⇒ /opt — the /opt/<app> tree
-	SysRoot string    // OPTCTL_SYSROOT, "" ⇒ / — the /etc + /var system-config tree
+// root, the box uses RealSystem / RealRunner and OPSCTL_ROOT (default /opt).
+type Opsctl struct {
+	Root    string    // OPSCTL_ROOT, "" ⇒ /opt — the /opt/<app> tree
+	SysRoot string    // OPSCTL_SYSROOT, "" ⇒ / — the /etc + /var system-config tree
 	Keep    int       // releases prune retains (0 ⇒ DefaultKeep)
 	System  System    // systemd / provisioning seam
 	Runner  AppRunner // app-binary verb seam
@@ -28,12 +28,12 @@ type Optctl struct {
 	Err io.Writer
 }
 
-// New builds an Optctl with the real box seams and the given root. cmd/optctl
+// New builds an Opsctl with the real box seams and the given root. cmd/opsctl
 // uses this; tests construct the struct literally with stubs.
-func New(root string) *Optctl {
-	return &Optctl{
+func New(root string) *Opsctl {
+	return &Opsctl{
 		Root:    root,
-		SysRoot: os.Getenv("OPTCTL_SYSROOT"),
+		SysRoot: os.Getenv("OPSCTL_SYSROOT"),
 		Keep:    DefaultKeep,
 		System:  RealSystem{},
 		Runner:  RealRunner{},
@@ -42,16 +42,16 @@ func New(root string) *Optctl {
 	}
 }
 
-func (o *Optctl) keep() int {
+func (o *Opsctl) keep() int {
 	if o.Keep <= 0 {
 		return DefaultKeep
 	}
 	return o.Keep
 }
 
-func (o *Optctl) layout(app string) Layout { return NewLayoutSys(o.Root, o.SysRoot, app) }
+func (o *Opsctl) layout(app string) Layout { return NewLayoutSys(o.Root, o.SysRoot, app) }
 
-func (o *Optctl) logf(format string, args ...any) {
+func (o *Opsctl) logf(format string, args ...any) {
 	w := o.Out
 	if w == nil {
 		w = os.Stdout
@@ -62,7 +62,7 @@ func (o *Optctl) logf(format string, args ...any) {
 // dbEnv returns the env overrides that point the app binary's verbs at the
 // stable on-box data paths (the binary reads <APP>_DB_PATH / <APP>_GENERATION_PATH
 // from the env per appkit/config). Used for schema|migrate|backup|restore.
-func (o *Optctl) dbEnv(l Layout) []string {
+func (o *Opsctl) dbEnv(l Layout) []string {
 	up := strings.ToUpper(l.App)
 	return []string{
 		up + "_DB_PATH=" + l.DBPath(),
