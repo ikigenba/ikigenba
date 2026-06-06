@@ -2,29 +2,33 @@
 # bin/deploy — the ONE shared deploy wrapper for the whole ikigai suite
 # (PLAN §1.5). Replaces the per-service cloned */bin/deploy.
 #
-#   bin/deploy <app> [version]
+#   bin/deploy <app>
 #
 # It is deliberately thin: it owns the OFF-BOX BUILD HALF only — there is NO
 # install logic on the laptop. After building it hands the single static artifact
 # to the box's `optctl install`, which owns the release-dir / atomic-swap /
 # migrate / restart / rollback machinery (PLAN §1.3–1.4).
 #
+# The version is the committed file <app>/VERSION (a bare X.Y.Z) — git tags are NO
+# LONGER the version mechanism. deploy always builds CURRENT main (HEAD); whatever
+# version is committed in <app>/VERSION on HEAD is what ships. There is no version
+# argument: bump the file with bin/bump first, then deploy builds that committed
+# state.
+#
 # What it does:
 #   1. Source <app>/etc/deploy.env (ACCOUNT, SSH_USER, SSH_KEY; HOST defaults to
 #      ${ACCOUNT}.metaspot.org).
-#   2. Resolve the version (always namespace-scoped to <app>/* — never picks up
-#      another app's tags in this mono-repo):
-#        - explicit arg  -> the git ref  <app>/<version>
-#        - no arg        -> `git describe --match '<app>/*' --tags`, the newest
-#                           <app>/* tag reachable from HEAD.
-#      The BARE release name handed to optctl strips the "<app>/" prefix.
-#   3. Build from the TAGGED COMMIT in a throwaway `git worktree` (PLAN §4 dec 4)
-#      so the build is reproducible and never disturbs the operator's tree.
+#   2. Build CURRENT main (HEAD) in a throwaway `git worktree` (PLAN §4 dec 4) so
+#      the build is reproducible, excludes any uncommitted working-tree edits, and
+#      never disturbs the operator's tree. The artifact reflects exactly what is
+#      committed on main — the point of the file-on-main version model.
 #      Build flags honor §2: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off
 #      -trimpath -buildvcs=false, ldflags stamping appkit.version/appkit.commit.
 #      The build runs INSIDE the worktree's <app>/ dir so the committed
 #      `replace appkit/eventplane/agentkit => ../...` directives resolve against
 #      the worktree's sibling lib trees (no network).
+#   3. Read the version FROM THE WORKTREE'S <app>/VERSION (the actual build
+#      source), prepend "v" -> the BARE release name handed to optctl.
 #   4. scp the single artifact to the box /tmp, then
 #      ssh sudo optctl install <app> <bare-version> --artifact /tmp/<file>.
 #
@@ -41,18 +45,18 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-bin/deploy — build a tagged ikigai service off-box and hand it to optctl on the box.
+bin/deploy — build the current main of an ikigai service off-box and hand it to optctl on the box.
 
 Usage:
-  bin/deploy <app> [version]
+  bin/deploy <app>
 
 Arguments:
   <app>        service to deploy (ledger, crm, dashboard, ...). Its
                <app>/etc/deploy.env supplies ACCOUNT / SSH_USER / SSH_KEY / HOST.
-  [version]    release to build, e.g. v1.4.0. Resolves to the git tag <app>/<version>.
-               Omit to use the newest <app>/* tag reachable from HEAD
-               (git describe --match '<app>/*' --tags --abbrev=0) — namespace-scoped,
-               so it never resolves to another app's tag in this mono-repo.
+
+There is no version argument. deploy builds CURRENT main (HEAD); the release
+version is read from the committed file <app>/VERSION (a bare X.Y.Z) and shipped
+as v<X.Y.Z>. Bump the file first with `bin/bump <app> <field>`.
 
 Flags:
   -h, --help   show this help.
@@ -65,12 +69,12 @@ Environment:
 
 What it does (PLAN §1.5):
   source <app>/etc/deploy.env
-  -> resolve the <app>/<version> tag (default: latest <app>/* tag)
-  -> build from the tagged commit in a throwaway `git worktree`
+  -> build CURRENT main (HEAD) in a throwaway `git worktree`
      (CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off -trimpath -buildvcs=false,
-      ldflags -X appkit.version=<bare-version> -X appkit.commit=<short-sha>[-dirty])
+      ldflags -X appkit.version=v<X.Y.Z> -X appkit.commit=<short-sha>[-dirty])
+  -> read the version from the worktree's <app>/VERSION, ship as v<X.Y.Z>
   -> scp the single static artifact to the box /tmp
-  -> ssh sudo optctl install <app> <bare-version> --artifact /tmp/<file>
+  -> ssh sudo optctl install <app> v<X.Y.Z> --artifact /tmp/<file>
 
 There is NO install logic locally: optctl on the box owns release dirs, atomic
 swap, migrate, restart, and rollback.
@@ -80,7 +84,6 @@ USAGE
 # --- parse args -------------------------------------------------------------
 DRY_RUN="${DRY_RUN:-0}"
 APP=""
-VERSION=""
 for arg in "$@"; do
   case "$arg" in
     -h|--help)  usage; exit 0 ;;
@@ -88,7 +91,6 @@ for arg in "$@"; do
     -*)         echo "!! unknown flag: $arg" >&2; usage >&2; exit 2 ;;
     *)
       if [ -z "$APP" ]; then APP="$arg"
-      elif [ -z "$VERSION" ]; then VERSION="$arg"
       else echo "!! too many arguments: $arg" >&2; usage >&2; exit 2
       fi
       ;;
@@ -102,6 +104,7 @@ cd "$REPO"
 
 [ -d "$APP" ] || { echo "!! no such service dir: ${APP}/" >&2; exit 1; }
 [ -f "${APP}/etc/deploy.env" ] || { echo "!! missing ${APP}/etc/deploy.env" >&2; exit 1; }
+[ -f "${APP}/VERSION" ] || { echo "!! missing ${APP}/VERSION (the committed version source of truth) — bump it with bin/bump first" >&2; exit 1; }
 
 # --- routing/auth config (non-secret) --------------------------------------
 # shellcheck source=/dev/null
@@ -110,53 +113,17 @@ HOST="${HOST:-${ACCOUNT}.metaspot.org}"
 SSH_KEY="${SSH_KEY/#\~/$HOME}"   # expand a leading ~ ; contents are never read/printed
 : "${SSH_USER:?SSH_USER must be set in ${APP}/etc/deploy.env}"
 
-# --- resolve the version -> the <app>/<ver> tag ----------------------------
-# Resolution is anchored on the per-app tag NAMESPACE <app>/* so a deploy of app X
-# can NEVER pick up app Y's tags (mono-repo cross-contamination — PLAN §F1):
-#   - explicit version -> the exact tag <app>/<version>.
-#   - no version       -> `git describe --match '<app>/*' --tags`, the newest
-#                         <app>/* tag reachable from HEAD. This is namespace-scoped,
-#                         so e.g. `bin/deploy ledger` ignores any crm/* tag even if
-#                         crm/* sorts higher.
-if [ -n "$VERSION" ]; then
-  TAG="${APP}/${VERSION}"
-  if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
-    echo "!! no such tag: ${TAG} (create it, or pass an existing ${APP}/* release)" >&2
-    exit 1
-  fi
-else
-  # --abbrev=0 yields the bare tag name (no -<n>-g<sha> suffix). Restricting the
-  # match to '<app>/*' is what stops cross-contamination.
-  TAG="$(git describe --match "${APP}/*" --tags --abbrev=0 2>/dev/null || true)"
-  [ -n "$TAG" ] || {
-    echo "!! no ${APP}/* tag reachable from HEAD — tag a release first (e.g. git tag ${APP}/v0.1.0)" >&2
-    exit 1
-  }
-  VERSION="${TAG#"${APP}/"}"
-fi
-# The BARE release name handed to optctl / used in the box release dir strips the
-# "<app>/" prefix (PLAN §1.6): releases/<bare-version>/.
-BARE="${TAG#"${APP}/"}"
+# --- resolve the build commit -> current main (HEAD) -----------------------
+# Git tags are NO LONGER the version mechanism. The build source is always the
+# current main tip (HEAD): whatever is committed on main is what ships. The
+# version itself is read below from the worktree's <app>/VERSION (the actual build
+# source), not from any tag.
+SHA="$(git rev-parse --short HEAD)"
+COMMIT_STAMP="${SHA}"
 
-# Co-stamp the git SHA + dirty flag (PLAN §1.6). -buildvcs=false drops Go's auto
-# VCS stamp (vcs.revision/vcs.modified), so we inject commit ourselves via ldflags.
-# The SHA is the tagged commit. The "-dirty" suffix marks a build whose SOURCE TREE
-# had uncommitted changes — which for a tag build is impossible (the throwaway
-# worktree is a clean detached checkout of the tag, dirty-by-construction-free), so
-# tag-built artifacts always self-report clean. The suffix only ever surfaces on an
-# ad-hoc/dev build that builds from a dirty working tree. We still compute it
-# generically: if the build source (the tagged commit, materialized clean in the
-# worktree) has no diff vs the tag, no suffix; this keeps the stamp shape correct.
-SHA="$(git rev-parse --short "${TAG}^{commit}")"
-DIRTY=""
-# A tag points at a committed tree, so a checkout of it is clean; assert it (and
-# guard the rare case where the operator's index somehow diverges). The worktree
-# itself is re-checked below after it is created.
-COMMIT_STAMP="${SHA}${DIRTY}"
+echo ">> ${APP}: building current main (HEAD ${SHA})"
 
-echo ">> ${APP}: tag ${TAG} -> release ${BARE} (commit ${COMMIT_STAMP})"
-
-# --- throwaway worktree of the tagged commit -------------------------------
+# --- throwaway worktree of HEAD --------------------------------------------
 WORKTREE="$(mktemp -d "${TMPDIR:-/tmp}/ikigai-deploy-${APP}.XXXXXX")"
 ARTIFACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ikigai-artifact-${APP}.XXXXXX")"
 ARTIFACT="${ARTIFACT_DIR}/${APP}"
@@ -168,16 +135,34 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo ">> git worktree add --detach ${WORKTREE} ${TAG}"
+echo ">> git worktree add --detach ${WORKTREE} HEAD"
 # mktemp created the dir; --detach onto an existing empty dir needs it gone first.
 rm -rf "$WORKTREE"
-git worktree add --detach "$WORKTREE" "$TAG" >/dev/null
+# Detached checkout of HEAD — this materializes exactly what is committed on main,
+# EXCLUDING any uncommitted edits in the operator's working tree. That guarantee
+# (artifact == committed main) is the whole point of the file-on-main model.
+git worktree add --detach "$WORKTREE" HEAD >/dev/null
 
-# The build source is the worktree — a clean detached checkout of the tagged
-# commit. Re-derive the dirty flag FROM THE WORKTREE (the actual build source), so
-# the stamp tells the truth about exactly what was compiled. Clean by construction
-# here → empty suffix; the generic check still surfaces "-dirty" if a build is ever
-# driven from a dirty source tree (the ad-hoc/dev path).
+# --- read the version FROM THE WORKTREE's <app>/VERSION ---------------------
+# Read the bare version from the actual build source (the worktree), strip
+# whitespace/newline, validate it is a bare X.Y.Z, then prepend "v" for the BARE
+# release name handed to optctl / used in the box release dir (releases/v<X.Y.Z>/)
+# and stamped into the binary — matching how the binary self-reports.
+VER="$(tr -d '[:space:]' < "$WORKTREE/$APP/VERSION")"
+if [[ ! "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "!! ${APP}/VERSION (in the build worktree) is not a bare X.Y.Z (got: '${VER}')" >&2
+  exit 1
+fi
+BARE="v$VER"
+
+echo ">> ${APP}: release ${BARE} (commit ${COMMIT_STAMP})"
+
+# The build source is the worktree — a detached checkout of HEAD. Re-derive the
+# dirty flag FROM THE WORKTREE (the actual build source), so the stamp tells the
+# truth about exactly what was compiled. Clean by construction for a HEAD checkout
+# with no uncommitted changes in the worktree (the normal case) → empty suffix;
+# the generic check still surfaces "-dirty" if a build is ever driven from a dirty
+# source tree.
 if [ -n "$(git -C "$WORKTREE" status --porcelain)" ]; then
   COMMIT_STAMP="${SHA}-dirty"
 fi

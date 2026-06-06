@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# bin/bump — advance the committed version of an ikigai service, without you having
+# to know its current version. The companion to bin/deploy: `bump` decides the
+# version (writes the committed <app>/VERSION file), `deploy` builds + ships it.
+# They stay separate steps — bumping never touches the live box.
+#
+#   bin/bump <app> <major|minor|patch> [--dry-run]
+#
+# The SINGLE SOURCE OF TRUTH for a service's version is the committed file
+# <app>/VERSION — a bare SemVer number (e.g. 0.1.2), one line. Git tags are NO
+# LONGER the version mechanism. bump reads that file, increments the requested
+# field per SemVer, writes the new bare number back, and commits ONLY that file
+# straight to main, then pushes:
+#
+#   patch  X.Y.Z -> X.Y.(Z+1)
+#   minor  X.Y.Z -> X.(Y+1).0
+#   major  X.Y.Z -> (X+1).0.0
+#
+# The file holds the BARE number (no leading "v"). The "v" prefix is a display /
+# release convention applied by bin/deploy (and shown in commit messages /
+# human-facing prints here), NOT something stored in the file — bump deals only in
+# bare numbers.
+#
+# Because version state is committed to main, bump enforces that it runs on main
+# and makes a PATH-LIMITED commit of just <app>/VERSION — unrelated working-tree
+# changes are never swept into the version commit. The commit is then pushed to
+# origin/main so the authoritative version state is shared.
+#
+# --dry-run  compute and print the next version / commit message WITHOUT writing
+#            the file, committing, or pushing (answers "what would the next patch
+#            be?").
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+bin/bump — advance a service's committed <app>/VERSION (reads the file, increments, commits to main).
+
+Usage:
+  bin/bump <app> <major|minor|patch> [--dry-run]
+
+Arguments:
+  <app>                  service to bump (ledger, crm, dashboard, ...). Must have an
+                         <app>/VERSION file (the committed source of truth).
+  <major|minor|patch>    which SemVer field to increment.
+
+Flags:
+  --dry-run    print the next version + commit message but write/commit/push NOTHING.
+  -h, --help   show this help.
+
+The current version is read from the committed file <app>/VERSION (a bare X.Y.Z, no
+leading "v"). Git tags are no longer the version mechanism. Unless --dry-run, bump
+writes the new bare version, commits ONLY that file to main, and pushes origin main.
+
+Next step after bumping:
+  bin/deploy <app>     # builds current main (HEAD); version comes from <app>/VERSION
+USAGE
+}
+
+# --- parse args -------------------------------------------------------------
+DRY_RUN=0
+APP=""
+PART=""
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)  usage; exit 0 ;;
+    --dry-run)  DRY_RUN=1 ;;
+    -*)         echo "!! unknown flag: $arg" >&2; usage >&2; exit 2 ;;
+    *)
+      if [ -z "$APP" ]; then APP="$arg"
+      elif [ -z "$PART" ]; then PART="$arg"
+      else echo "!! too many arguments: $arg" >&2; usage >&2; exit 2
+      fi
+      ;;
+  esac
+done
+
+[ -n "$APP" ]  || { echo "!! missing <app>" >&2; usage >&2; exit 2; }
+[ -n "$PART" ] || { echo "!! missing <major|minor|patch>" >&2; usage >&2; exit 2; }
+case "$PART" in
+  major|minor|patch) ;;
+  *) echo "!! bump field must be major, minor, or patch (got: $PART)" >&2; exit 2 ;;
+esac
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO"
+
+# Guard against typos bumping a non-existent / non-versioned service. A bumpable
+# service is a deployable one: it has both a <app>/ dir AND a committed VERSION
+# file (libraries — appkit/eventplane/agentkit — and optctl carry no VERSION and
+# are not versioned).
+VERSION_FILE="${APP}/VERSION"
+[ -d "$APP" ] || { echo "!! no such service dir: ${APP}/" >&2; exit 1; }
+[ -f "$VERSION_FILE" ] || {
+  echo "!! no ${VERSION_FILE} — ${APP} is not a versioned service (only the 7 deployable services carry a VERSION file)" >&2
+  exit 1
+}
+
+# --- enforce main -----------------------------------------------------------
+# Version state is committed directly to main (no PR branch), so bump refuses to
+# run anywhere else — otherwise the version commit would land on the wrong branch.
+BRANCH="$(git branch --show-current)"
+if [ "$BRANCH" != "main" ]; then
+  echo "!! bump must run on the main branch (currently on '${BRANCH}') — version state commits directly to main" >&2
+  exit 1
+fi
+
+# --- read the current version from the committed file ----------------------
+# Strip surrounding whitespace/newline; the file holds a single bare X.Y.Z.
+CUR_VER="$(tr -d '[:space:]' < "$VERSION_FILE")"
+if [[ ! "$CUR_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "!! ${VERSION_FILE} is not a bare X.Y.Z version (got: '${CUR_VER}') — fix it before bumping" >&2
+  exit 1
+fi
+IFS=. read -r X Y Z <<<"$CUR_VER"
+
+# --- increment the requested field -----------------------------------------
+case "$PART" in
+  major) X=$((X + 1)); Y=0; Z=0 ;;
+  minor) Y=$((Y + 1)); Z=0 ;;
+  patch) Z=$((Z + 1)) ;;
+esac
+NEW_VER="${X}.${Y}.${Z}"             # bare, as stored in the file
+COMMIT_MSG="${APP}: bump version to v${NEW_VER}"
+
+echo ">> ${APP}: ${CUR_VER} -> ${NEW_VER} (${PART})"
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo ">> DRY RUN — not writing/committing/pushing. Would:"
+  echo "   write ${NEW_VER} to ${VERSION_FILE}"
+  echo "   git commit -m \"${COMMIT_MSG}\" -- \"${VERSION_FILE}\""
+  echo "   would push origin main"
+  echo ">> next: bin/deploy ${APP}"
+  exit 0
+fi
+
+# --- write + path-limited commit + push ------------------------------------
+# Write the new BARE version, newline-terminated.
+printf '%s\n' "$NEW_VER" > "$VERSION_FILE"
+
+# Path-limited commit: `-- <pathspec>` stages+commits ONLY this file, so any
+# other unrelated edits in the working tree are never included in the version
+# commit. (No `git add` of the whole tree.)
+git commit -m "$COMMIT_MSG" -- "$VERSION_FILE"
+echo ">> committed ${VERSION_FILE} (v${NEW_VER}) at $(git rev-parse --short HEAD)"
+
+echo ">> git push origin main"
+git push origin main
+
+echo ">> next: bin/deploy ${APP}"
