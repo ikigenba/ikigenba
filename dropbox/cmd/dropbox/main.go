@@ -60,6 +60,7 @@ func main() {
 		MCP:        true,
 		Feed:       "/feed", // event-plane producer
 		Migrations: db.FS,
+		Events:     dropbox.Events, // published event types: reflection + Append validation
 		ManifestExtras: []appkit.ManifestKV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
@@ -152,7 +153,8 @@ func main() {
 			})
 
 			rt.Handle("POST /mcp", rt.RequireIdentity(
-				mcp.NewHandler(svc, rt.Version(), rt.Service(), rt.Health())))
+				mcp.NewHandler(svc, rt.Version(), rt.Service(), rt.Health(),
+					rt.Events(), rt.Subscriptions())))
 			// /content is unauthenticated + loopback-only (the handler self-guards),
 			// so it is registered verbatim, NOT behind RequireIdentity.
 			rt.Handle("GET /content", svc.ContentHandler())

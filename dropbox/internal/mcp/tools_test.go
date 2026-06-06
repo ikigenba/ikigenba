@@ -28,7 +28,7 @@ func newHandler(t *testing.T) *Handler {
 	if err := db.Migrate(context.Background(), conn); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return NewHandler(dropbox.NewService(conn), "v-test", "dropbox", nil)
+	return NewHandler(dropbox.NewService(conn), "v-test", "dropbox", nil, dropbox.Events, nil)
 }
 
 // rpc drives one JSON-RPC call through ServeHTTP and returns the decoded result
@@ -75,13 +75,10 @@ func callTool(t *testing.T, h *Handler, name, args string) (map[string]any, bool
 	return payload, isErr
 }
 
-func TestToolsList_HasExactlyOne(t *testing.T) {
+func TestToolsList(t *testing.T) {
 	h := newHandler(t)
 	res := rpc(t, h, "tools/list", `{}`)
 	tools, _ := res["tools"].([]any)
-	if len(tools) != 1 {
-		t.Fatalf("tools/list returned %d tools, want 1", len(tools))
-	}
 	names := map[string]bool{}
 	for _, tl := range tools {
 		names[tl.(map[string]any)["name"].(string)] = true
@@ -89,9 +86,91 @@ func TestToolsList_HasExactlyOne(t *testing.T) {
 	if !names["ikigenba_dropbox_health"] {
 		t.Errorf("tools/list missing ikigenba_dropbox_health (got %v)", names)
 	}
+	if !names["ikigenba_dropbox_reflection"] {
+		t.Errorf("tools/list missing ikigenba_dropbox_reflection (got %v)", names)
+	}
 	// whoami is folded away — it must not reappear.
 	if names["dropbox_whoami"] || names["ikigenba_dropbox_whoami"] {
 		t.Errorf("tools/list still advertises a whoami tool: %v", names)
+	}
+}
+
+// TestReflection covers the ikigenba_dropbox_reflection tool: the no-arg index
+// (the three published file.* types, empty subscribes — dropbox is a producer),
+// the event_type detail (schema + example), and the corrective error for an
+// unknown type.
+func TestReflection(t *testing.T) {
+	h := newHandler(t)
+
+	// No-arg → the index {publishes, subscribes}.
+	idx, isErr := callTool(t, h, "ikigenba_dropbox_reflection", `{}`)
+	if isErr {
+		t.Fatalf("reflection index isError: %v", idx)
+	}
+	publishes, ok := idx["publishes"].([]any)
+	if !ok {
+		t.Fatalf("reflection index missing publishes array: %v", idx)
+	}
+	got := map[string]bool{}
+	for _, pe := range publishes {
+		p := pe.(map[string]any)
+		got[p["type"].(string)] = true
+		if p["description"] == "" {
+			t.Errorf("published type %v has empty description", p["type"])
+		}
+	}
+	for _, want := range []string{"file.created", "file.modified", "file.deleted"} {
+		if !got[want] {
+			t.Errorf("publishes missing %q (got %v)", want, got)
+		}
+	}
+	if len(publishes) != 3 {
+		t.Errorf("expected exactly 3 published types, got %d: %v", len(publishes), publishes)
+	}
+
+	// dropbox is a producer: subscribes is present and empty.
+	subscribes, ok := idx["subscribes"].([]any)
+	if !ok {
+		t.Fatalf("reflection index missing subscribes array: %v", idx)
+	}
+	if len(subscribes) != 0 {
+		t.Fatalf("expected empty subscribes for dropbox, got %v", subscribes)
+	}
+
+	// event_type → the publish detail (schema + example).
+	detail, isErr := callTool(t, h, "ikigenba_dropbox_reflection", `{"event_type":"file.created"}`)
+	if isErr {
+		t.Fatalf("reflection detail isError: %v", detail)
+	}
+	if detail["type"] != "file.created" {
+		t.Fatalf("detail type mismatch: %v", detail)
+	}
+	if detail["description"] == "" {
+		t.Fatalf("detail missing description: %v", detail)
+	}
+	sch, ok := detail["schema"].(map[string]any)
+	if !ok || sch["type"] != "object" {
+		t.Fatalf("detail schema not an object schema: %v", detail["schema"])
+	}
+	if _, ok := sch["properties"].(map[string]any); !ok {
+		t.Fatalf("detail schema missing properties: %v", sch)
+	}
+	if _, ok := detail["example"].(map[string]any); !ok {
+		t.Fatalf("detail missing example object: %v", detail["example"])
+	}
+
+	// Unknown event_type → corrective error listing valid types.
+	badErr, isErr := callTool(t, h, "ikigenba_dropbox_reflection", `{"event_type":"file.nope"}`)
+	if !isErr {
+		t.Fatalf("expected error for unknown event_type, got %v", badErr)
+	}
+	em, _ := badErr["error"].(map[string]any)
+	if em == nil || em["code"] != "unknown_event_type" {
+		t.Fatalf("expected unknown_event_type code, got %v", badErr)
+	}
+	msg, _ := em["message"].(string)
+	if !strings.Contains(msg, "file.created") {
+		t.Errorf("corrective message missing valid type: %q", msg)
 	}
 }
 
@@ -151,7 +230,7 @@ func TestHealth_ReporterPopulatesDetails(t *testing.T) {
 			"failed_files":     info.FailedFiles,
 		}, nil
 	}
-	h := NewHandler(svc, "v-test", "dropbox", reporter)
+	h := NewHandler(svc, "v-test", "dropbox", reporter, dropbox.Events, nil)
 
 	p, isErr := callTool(t, h, "ikigenba_dropbox_health", `{}`)
 	if isErr {

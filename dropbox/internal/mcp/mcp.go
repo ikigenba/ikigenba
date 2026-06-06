@@ -27,6 +27,9 @@ import (
 	"net/http"
 
 	"dropbox/internal/dropbox"
+
+	"eventplane/consumer"
+	"eventplane/outbox"
 )
 
 // Identity is the authenticated caller, as told to us authoritatively by nginx
@@ -41,23 +44,34 @@ type Identity struct {
 // (version, service, optional reporter) threaded from appkit's Router accessors,
 // and dispatches JSON-RPC methods.
 type Handler struct {
-	svc     *dropbox.Service
-	version string
-	service string
-	health  func(context.Context) (map[string]any, error)
+	svc           *dropbox.Service
+	version       string
+	service       string
+	health        func(context.Context) (map[string]any, error)
+	events        outbox.Registry
+	subscriptions func() []consumer.Subscription
 }
 
 // NewHandler builds a Handler. The dropbox service is required; a nil service is
 // a wiring error and panics at this seam rather than deferring a nil dereference
 // to first request. version/service/health populate the ikigenba_dropbox_health
 // envelope; health is dropbox's per-service reporter (its mirror/disk telemetry
-// lands under details).
+// lands under details). events is the published-event registry and subscriptions
+// the live subscription provider, both rendered by ikigenba_dropbox_reflection.
 func NewHandler(svc *dropbox.Service, version, service string,
-	health func(context.Context) (map[string]any, error)) *Handler {
+	health func(context.Context) (map[string]any, error),
+	events outbox.Registry, subscriptions func() []consumer.Subscription) *Handler {
 	if svc == nil {
 		panic("mcp: dropbox service is required")
 	}
-	return &Handler{svc: svc, version: version, service: service, health: health}
+	return &Handler{
+		svc:           svc,
+		version:       version,
+		service:       service,
+		health:        health,
+		events:        events,
+		subscriptions: subscriptions,
+	}
 }
 
 // ServeHTTP dispatches a single JSON-RPC 2.0 request. Identity is read from the

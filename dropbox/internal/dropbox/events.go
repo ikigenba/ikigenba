@@ -29,6 +29,44 @@ const (
 	EventFileDeleted  = "file.deleted"
 )
 
+// Events is the published-event Registry for the reflection tool and Append-time
+// validation (wired via Spec.Events). Each entry carries a filled-in Sample
+// instance of its real payload struct (filePayload) — the single source for both
+// the reflected JSON Schema and the worked example, so schema/example/wire shape
+// can't diverge. All three events share the filePayload shape; only the `event`
+// discriminator and (for delete) the last-known field semantics differ.
+var Events = outbox.Registry{
+	{
+		Type:        EventFileCreated,
+		Description: "A path not previously in the mirror index now exists. Carries a REFERENCE to the bytes (content_url), never the bytes themselves — fetch current bytes over the loopback /content endpoint.",
+		Sample:      sampleFilePayload(EventFileCreated),
+	},
+	{
+		Type:        EventFileModified,
+		Description: "A known path's rev changed (includes a case-only rename). Carries the current rev/content_hash/size and a content_url reference to the bytes.",
+		Sample:      sampleFilePayload(EventFileModified),
+	},
+	{
+		Type:        EventFileDeleted,
+		Description: "A known path is gone; one event per indexed file removed (including every file beneath a deleted folder). Carries the file's LAST-KNOWN rev/content_hash/size, read before the in-tx delete.",
+		Sample:      sampleFilePayload(EventFileDeleted),
+	},
+}
+
+// sampleFilePayload is a filled-in filePayload used as the reflection Sample for
+// the file.* events. The `event` discriminator is set to the type being sampled.
+func sampleFilePayload(eventType string) filePayload {
+	return filePayload{
+		Event:       eventType,
+		Path:        "/notes/meeting.md",
+		Rev:         "0123456789abcdef0123456789",
+		ContentHash: "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca7",
+		Size:        4096,
+		ContentURL:  contentURL("http://127.0.0.1:3005", "/notes/meeting.md"),
+		OccurredAt:  "2026-06-03T12:00:00.000000000Z",
+	}
+}
+
 // eventTimeFormat matches the read API's timestamp rendering so the event
 // payload occurred_at is the same shape the rest of the suite renders.
 const eventTimeFormat = "2006-01-02T15:04:05.000000000Z07:00"
