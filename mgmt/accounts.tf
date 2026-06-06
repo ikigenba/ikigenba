@@ -20,6 +20,11 @@ locals {
       email = "mgreenly+ai@gmail.com"
       admin = true
     }
+    int = {
+      name  = "int"
+      email = "mgreenly+int@gmail.com"
+      admin = true
+    }
     example1_test = {
       name  = "example1"
       email = "mgreenly+test.example1@gmail.com"

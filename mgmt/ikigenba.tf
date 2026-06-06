@@ -21,3 +21,20 @@ resource "aws_route53_zone" "ikigenba_com" {
 resource "aws_route53_zone" "ikigenba_dev" {
   name = "ikigenba.dev"
 }
+
+# int.ikigenba.com — first customer (dogfooding) account under ikigenba.com.
+# NS delegation from the apex zone here in mgmt to the int/ account's own
+# int.ikigenba.com hosted zone. Values are the nameservers from the int/ root's
+# hosted_zone_name_servers output.
+resource "aws_route53_record" "delegation_int_ikigenba" {
+  zone_id = aws_route53_zone.ikigenba_com.zone_id
+  name    = "int.ikigenba.com"
+  type    = "NS"
+  ttl     = 300
+  records = [
+    "ns-1022.awsdns-63.net.",
+    "ns-1066.awsdns-05.org.",
+    "ns-1855.awsdns-39.co.uk.",
+    "ns-320.awsdns-40.com.",
+  ]
+}

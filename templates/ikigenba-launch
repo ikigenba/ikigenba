@@ -1,0 +1,55 @@
+#!/bin/bash
+# /usr/local/bin/ikigenba-launch <app>
+#
+# Platform launcher. Installed by instance bootstrap (see
+# templates/ikigenba-env.sh.tftpl), invoked by every app's systemd unit:
+#   ExecStart=/usr/local/bin/ikigenba-launch <app>
+#
+# Contract (see AGENTS.md "Service layer"):
+#   1. Source /etc/ikigenba/env for identity/region.
+#   2. Source /opt/<app>/etc/manifest.env (non-secret defaults: PORT, etc.).
+#   3. Fetch /ikigenba/${IKIGENBA_ENV}/app-config from SSM. Hard-fail on
+#      any error (missing grant, missing parameter, network) — apps that
+#      expect secrets must not silently start without them.
+#   4. Extract .["<app>"] from the JSON blob, export each KEY=value.
+#      SSM wins over manifest on key collision.
+#   5. exec /opt/<app>/bin/run. Secrets live only in this process's env;
+#      never written to disk.
+
+set -euo pipefail
+
+app="${1:?usage: ikigenba-launch <app>}"
+
+# 1. Identity / region.
+# shellcheck disable=SC1091
+source /etc/ikigenba/env
+
+# 2. Manifest defaults — sourced first so SSM can override on collision.
+manifest="/opt/${app}/etc/manifest.env"
+if [[ -f "$manifest" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$manifest"
+  set +a
+fi
+
+# 3. Fetch secrets blob. Hard-fail on any error.
+blob=$(aws ssm get-parameter \
+  --name "/ikigenba/${IKIGENBA_ENV}/app-config" \
+  --with-decryption \
+  --region "${IKIGENBA_AWS_REGION}" \
+  --query 'Parameter.Value' \
+  --output text)
+
+# 4. Extract this app's key and export each pair. jq emits shell-safe
+#    `export KEY=value` lines; eval imports them into this shell.
+assignments=$(jq -r --arg app "$app" '
+  (.[$app] // {})
+  | to_entries[]
+  | "export \(.key)=\(.value | @sh)"
+' <<<"$blob")
+
+eval "$assignments"
+
+# 5. Hand off to the app's entrypoint.
+exec "/opt/${app}/bin/run"

@@ -1,0 +1,33 @@
+#!/bin/bash
+# Managed by Terraform — the ikigenba "create a server" standard (AGENTS.md).
+# Runs once at first boot via cloud-init. This is the launch-time baseline;
+# existing boxes are updated out-of-band (cloud-init does not re-run on reboot),
+# same discipline as the AMI pin. Non-secret identity/topology only.
+set -euo pipefail
+
+# --- /etc/ikigenba/env -------------------------------------------------------
+install -d -m 0755 /etc/ikigenba
+cat > /etc/ikigenba/env <<'IKIGENBA_ENV_FILE'
+IKIGENBA_ENV=${env}
+IKIGENBA_NODE=${node}
+IKIGENBA_FQDN=${fqdn}
+IKIGENBA_DOMAIN=${domain}
+IKIGENBA_DNS_ZONE=${dns_zone}
+IKIGENBA_AWS_ACCOUNT_ID=${aws_account_id}
+IKIGENBA_AWS_REGION=${aws_region}
+IKIGENBA_BACKUP_BUCKET=${backup_bucket}
+IKIGENBA_ENV_FILE
+chmod 0644 /etc/ikigenba/env
+
+# --- /usr/local/bin/ikigenba-launch -----------------------------------------
+# Platform launcher; source lives in templates/ikigenba-launch in the repo.
+cat > /usr/local/bin/ikigenba-launch <<'IKIGENBA_LAUNCHER_EOF'
+${launcher_source}
+IKIGENBA_LAUNCHER_EOF
+chown root:root /usr/local/bin/ikigenba-launch
+chmod 0755 /usr/local/bin/ikigenba-launch
+
+# --- Launcher runtime dependencies ------------------------------------------
+# AL2023 ships neither AWS CLI nor jq by default; the launcher needs both.
+# Package names on AL2023 are awscli-2 and jq (NOT aws-cli — that doesn't exist).
+dnf install -y -q awscli-2 jq
