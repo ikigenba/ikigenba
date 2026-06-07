@@ -3,6 +3,7 @@ package appkit
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -145,6 +146,101 @@ func TestDispatch_BackupThenRestore(t *testing.T) {
 		t.Fatalf("post-restore migrate: exit %d, %q", code, errs)
 	} else if !strings.Contains(out, "version 2") {
 		t.Errorf("post-restore migrate output = %q", out)
+	}
+}
+
+// TestDispatch_RestoreReMintsEpoch is the regression test for
+// docs/bug-rollback-epoch-remint.md: a restore through the dispatch path must
+// re-mint the event-plane epoch by removing the <db>.generation sidecar, so a
+// post-restore boot mints a fresh generation and pre-restore consumer cursors
+// are rejected with stale-epoch instead of resuming onto reused seqs.
+func TestDispatch_RestoreReMintsEpoch(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "widget.db")
+	genPath := dbPath + ".generation"
+	env := map[string]string{"WIDGET_DB_PATH": dbPath}
+
+	// Establish a DB and a snapshot to restore from.
+	if code, _, errs := run(t, testSpec(), env, "migrate"); code != 0 {
+		t.Fatalf("setup migrate: exit %d, %q", code, errs)
+	}
+	backupPath := filepath.Join(dir, "snap.db")
+	if code, _, errs := run(t, testSpec(), env, "backup", "--out", backupPath); code != 0 {
+		t.Fatalf("backup: exit %d, %q", code, errs)
+	}
+
+	// Pre-seed the generation sidecar, as a live producer would carry.
+	if err := os.WriteFile(genPath, []byte("GEN_A\n"), 0o644); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+
+	code, out, errs := run(t, testSpec(), env, "restore", "--from", backupPath)
+	if code != 0 {
+		t.Fatalf("restore: exit %d, %q", code, errs)
+	}
+	if !strings.Contains(out, "re-minted event-plane epoch") {
+		t.Errorf("restore output = %q, want a re-mint line", out)
+	}
+	if _, err := os.Stat(genPath); !os.IsNotExist(err) {
+		t.Fatalf("generation sidecar still present after restore (stat err = %v); epoch not re-minted", err)
+	}
+}
+
+// TestDispatch_RestoreNoSidecar covers a non-producer (or never-booted producer)
+// where no generation sidecar exists: restore must still succeed (the absent
+// sidecar's ErrNotExist is ignored).
+func TestDispatch_RestoreNoSidecar(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "widget.db")
+	env := map[string]string{"WIDGET_DB_PATH": dbPath}
+
+	if code, _, errs := run(t, testSpec(), env, "migrate"); code != 0 {
+		t.Fatalf("setup migrate: exit %d, %q", code, errs)
+	}
+	backupPath := filepath.Join(dir, "snap.db")
+	if code, _, errs := run(t, testSpec(), env, "backup", "--out", backupPath); code != 0 {
+		t.Fatalf("backup: exit %d, %q", code, errs)
+	}
+
+	// No sidecar pre-seeded.
+	if code, _, errs := run(t, testSpec(), env, "restore", "--from", backupPath); code != 0 {
+		t.Fatalf("restore (no sidecar): exit %d, %q", code, errs)
+	}
+}
+
+// TestDispatch_RestoreOverrideStillReMints proves the chokepoint guarantee: even
+// when a Spec.Restore override fully replaces defaultRestore, the dispatcher
+// (runRestore) still removes the generation sidecar. The hook here only touches
+// the DB and returns nil; the re-mint is the verb's job, not the hook's.
+func TestDispatch_RestoreOverrideStillReMints(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "widget.db")
+	genPath := dbPath + ".generation"
+	env := map[string]string{"WIDGET_DB_PATH": dbPath}
+
+	if code, _, errs := run(t, testSpec(), env, "migrate"); code != 0 {
+		t.Fatalf("setup migrate: exit %d, %q", code, errs)
+	}
+	if err := os.WriteFile(genPath, []byte("GEN_A\n"), 0o644); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+
+	called := false
+	spec := testSpec()
+	spec.Restore = func(ctx context.Context, req RestoreReq) error {
+		called = true
+		// A trivial hook: touch the DB so the restore "did something", return nil.
+		return os.WriteFile(req.DBPath, []byte("restored"), 0o644)
+	}
+
+	if code, _, errs := run(t, spec, env, "restore"); code != 0 {
+		t.Fatalf("override restore: exit %d, %q", code, errs)
+	}
+	if !called {
+		t.Fatal("Spec.Restore override was not invoked")
+	}
+	if _, err := os.Stat(genPath); !os.IsNotExist(err) {
+		t.Fatalf("sidecar present after override restore (stat err = %v); dispatcher did not re-mint", err)
 	}
 }
 

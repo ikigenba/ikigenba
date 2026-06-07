@@ -300,9 +300,23 @@ func runRestore(spec Spec, args []string, getenv func(string) string, stdin io.R
 		Args: args, Stdout: stdout, Stderr: stderr,
 	}
 	if spec.Restore != nil {
-		return spec.Restore(context.Background(), req)
+		if err := spec.Restore(context.Background(), req); err != nil {
+			return err
+		}
+	} else if err := defaultRestore(context.Background(), req); err != nil {
+		return err
 	}
-	return defaultRestore(context.Background(), req)
+	// Any restore rewinds the outbox: re-mint the event-plane epoch so every
+	// pre-restore cursor is rejected with `stale-epoch` instead of silently
+	// resuming onto reused seqs (docs/bug-rollback-epoch-remint.md). Absent sidecar
+	// (non-producer) is a no-op.
+	if req.GenerationPath != "" {
+		if err := os.Remove(req.GenerationPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("restore: re-mint epoch (remove %s): %w", req.GenerationPath, err)
+		}
+		fmt.Fprintf(stdout, "re-minted event-plane epoch (removed %s)\n", req.GenerationPath)
+	}
+	return nil
 }
 
 // envKey builds the <APP>_<SUFFIX> env-var name for a flag's help text.

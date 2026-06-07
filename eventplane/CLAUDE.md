@@ -29,8 +29,10 @@ Two packages — the producer half (`outbox`) and the consumer half (`consumer`)
   `unintelligible-cursor`) from day one.
 - **Generation/epoch token** (§9.3): minted into a sidecar file *outside* the DB
   (so a file-level restore does not roll it back), embedded in every cursor, and
-  used for the connect-time `stale-epoch` rejection. A producer's `restore` verb
-  deletes the sidecar so the next boot mints a fresh epoch.
+  used for the connect-time `stale-epoch` rejection. Every appkit restore (the
+  binary `restore` verb / `opsctl rollback`) re-mints by deleting the sidecar at
+  the dispatch chokepoint, so the next boot mints a fresh epoch; the operator S3
+  `bin/restore` does the same for its out-of-band path.
 - **Retention** (§11.3): `StartRetention(ctx)` trims the outbox on a background
   timer (off the hot path) and reclaims space with `wal_checkpoint(TRUNCATE)` +
   `VACUUM`.

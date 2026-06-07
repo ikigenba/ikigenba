@@ -65,6 +65,15 @@ func main() {
 	case "restore":
 		from := flagVal(args, "--from", dbPath(app)+".backup")
 		copyFile(from, dbPath(app))
+		// Mirror appkit's real runRestore: re-mint the event-plane epoch by
+		// removing the generation sidecar so a post-restore boot mints a fresh
+		// generation. Tolerate its absence (a fresh/non-producer DB has none).
+		if g := genPath(app); g != "" {
+			if err := os.Remove(g); err != nil && !os.IsNotExist(err) {
+				fmt.Fprintln(os.Stderr, "fakeapp: remove generation:", err)
+				os.Exit(1)
+			}
+		}
 		fmt.Printf("restored %s from %s\n", app, from)
 	default:
 		fmt.Fprintf(os.Stderr, "fakeapp: unknown verb %q\n", verb)
@@ -86,6 +95,18 @@ func embedded() int {
 
 func dbPath(app string) string {
 	return env(strings.ToUpper(app)+"_DB_PATH", "")
+}
+
+// genPath locates the event-plane epoch sidecar exactly as appkit does: the
+// explicit <APP>_GENERATION_PATH, else <dbpath>.generation.
+func genPath(app string) string {
+	if g := os.Getenv(strings.ToUpper(app) + "_GENERATION_PATH"); g != "" {
+		return g
+	}
+	if p := dbPath(app); p != "" {
+		return p + ".generation"
+	}
+	return ""
 }
 
 func appliedVersion(app string) int {

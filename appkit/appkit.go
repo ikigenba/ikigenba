@@ -66,7 +66,9 @@ var Envelope = server.Envelope
 // BackupReq / RestoreReq carry the resolved paths a Backup/Restore hook needs.
 // The default verbs do a minimal consistent SQLite snapshot/restore of DBPath;
 // a service overrides Spec.Backup/Spec.Restore for richer behavior (the
-// dashboard's cert+S3 snapshot, a producer's generation-epoch re-mint).
+// dashboard's cert+S3 snapshot). The event-plane generation-epoch re-mint is
+// NOT a Spec.Restore responsibility: the restore verb (runRestore) re-mints
+// unconditionally after whichever hook runs (docs/bug-rollback-epoch-remint.md).
 type BackupReq struct {
 	App            string
 	DBPath         string

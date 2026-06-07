@@ -55,8 +55,10 @@ func defaultBackup(ctx context.Context, req BackupReq) error {
 // defaultBackup (PLAN §B1 map §3 risk 1; overridable via Spec.Restore). It is a
 // file-level copy, so the caller must ensure the service is stopped first
 // (opsctl rollback/install own that orchestration). The generation sidecar is
-// left untouched here — a producer that must re-mint its epoch on restore
-// supplies Spec.Restore (PLAN §B1 map §5).
+// not touched here on purpose: the restore dispatcher (runRestore in verbs.go)
+// owns the event-plane epoch re-mint for BOTH this default and any Spec.Restore
+// override, so the default leaves the sidecar to the verb (PLAN §B1 map §5;
+// docs/bug-rollback-epoch-remint.md).
 //
 // Usage: `<app> restore --from <snapshot>`.
 func defaultRestore(ctx context.Context, req RestoreReq) error {

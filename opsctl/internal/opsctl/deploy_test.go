@@ -187,7 +187,9 @@ func TestInstallInstallRollback_NoSchemaChange(t *testing.T) {
 // TestSchemaAdvance_BackupAndRollbackRestores proves the schema-aware path: a
 // schema-advancing install takes a pre-migration backup and migrates the DB
 // forward; a subsequent rollback restores the backup so the older binary's
-// downgrade guard would accept the DB.
+// downgrade guard would accept the DB. It also proves the rollback re-mints the
+// event-plane epoch: driving restore through the target binary removes the
+// <db>.generation sidecar end to end.
 func TestSchemaAdvance_BackupAndRollbackRestores(t *testing.T) {
 	root := t.TempDir()
 	app := "ledger"
@@ -223,6 +225,15 @@ func TestSchemaAdvance_BackupAndRollbackRestores(t *testing.T) {
 		t.Fatalf("applied after v2.0.0 = %d, want 5 (migrated forward)", applied)
 	}
 
+	// A live producer carries an event-plane generation sidecar next to the DB.
+	// Rolling back rewinds the DB, so the sidecar must be re-minted (removed) by
+	// driving restore through the target binary — prove the opsctl→binary→restore
+	// wiring does this end to end.
+	gen := l.GenerationPath()
+	if err := os.WriteFile(gen, []byte("epoch-before-rollback\n"), 0o644); err != nil {
+		t.Fatalf("seed generation sidecar: %v", err)
+	}
+
 	// Rollback to v1.0.0 — because v2.0.0 advanced the schema (its pre-migration
 	// backup exists), rollback must RESTORE the DB to applied=2 first, then swap.
 	if err := o2.Rollback(context.Background(), app, ""); err != nil {
@@ -233,6 +244,10 @@ func TestSchemaAdvance_BackupAndRollbackRestores(t *testing.T) {
 	}
 	if applied, _ := dbApplied(t, l); applied != 2 {
 		t.Fatalf("after rollback applied = %d, want 2 (DB restored from pre-migration backup)", applied)
+	}
+	// The sidecar must be gone: the restore re-minted the epoch.
+	if _, err := os.Stat(gen); !os.IsNotExist(err) {
+		t.Fatalf("generation sidecar still present after rollback (stat err = %v); epoch not re-minted", err)
 	}
 	resolveThroughStablePaths(t, l)
 }

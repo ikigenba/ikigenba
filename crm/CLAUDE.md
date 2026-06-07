@@ -119,8 +119,10 @@ deploy`; provisioning is `opsctl setup crm`. The only `bin/*` scripts crm still 
 (systemd control), plus `backup`/`restore` (operator-side S3 tooling — see
 below). No `plugin/` in this repo. **Backup note:** the binary's `backup`/
 `restore` verbs give appkit's default local DB snapshot (used by `opsctl
-deploy`/`rollback`); the richer operator S3-bucket workflow + event-plane epoch
-re-mint on restore is **not yet** folded into `Spec.Backup`, so crm **retains its
-`bin/backup`/`bin/restore` scripts operator-side** (the same category as
-`secrets`) until that fold-in (or an `opsctl backup`/`restore` verb) lands — see
-`AGENTS.md`.
+deploy`/`rollback`). Event-plane epoch re-mint on restore is now handled by
+appkit's default restore verb (it deletes the `<db>.generation` sidecar at the
+dispatch chokepoint), so `opsctl rollback`/`restore` are safe. What remains
+unfolded is only the operator **S3-bucket** backup/restore packaging, so crm
+**retains its `bin/backup`/`bin/restore` scripts operator-side** (the same
+category as `secrets`) for that S3 path until an `opsctl backup`/`restore` verb
+lands — see `AGENTS.md`.
