@@ -75,8 +75,8 @@ func TestSmoke_HandlerAgainstRealServiceAndDB(t *testing.T) {
 	}
 
 	// Production wiring: fire = RunByID, lookup = TriggersForEvent.
-	fire := func(ctx context.Context, id string) error {
-		_, err := svc.RunByID(ctx, id)
+	fire := func(ctx context.Context, id, triggerEvent, scheduledFor string) error {
+		_, err := svc.RunByID(ctx, id, triggerEvent, scheduledFor)
 		return err
 	}
 	h := Handler(fire, svc.TriggersForEvent, nil)

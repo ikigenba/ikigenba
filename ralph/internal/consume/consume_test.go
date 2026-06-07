@@ -22,18 +22,22 @@ func init() { retryDelay = 1 * time.Millisecond }
 type recorder struct {
 	mu      sync.Mutex
 	calls   map[string]int
-	errs    map[string]error // error to return for a session (nil = success)
-	failN   map[string]int   // fail the first N attempts for a session, then succeed
+	errs    map[string]error  // error to return for a session (nil = success)
+	failN   map[string]int    // fail the first N attempts for a session, then succeed
+	trigger map[string]string // last trigger_event a session was fired with
+	slot    map[string]string // last scheduled_for a session was fired with
 	wg      *sync.WaitGroup
 }
 
 func newRecorder() *recorder {
-	return &recorder{calls: map[string]int{}, errs: map[string]error{}, failN: map[string]int{}}
+	return &recorder{calls: map[string]int{}, errs: map[string]error{}, failN: map[string]int{}, trigger: map[string]string{}, slot: map[string]string{}}
 }
 
-func (r *recorder) fire(ctx context.Context, sessionID string) error {
+func (r *recorder) fire(ctx context.Context, sessionID, triggerEvent, scheduledFor string) error {
 	r.mu.Lock()
 	r.calls[sessionID]++
+	r.trigger[sessionID] = triggerEvent
+	r.slot[sessionID] = scheduledFor
 	n := r.calls[sessionID]
 	var err error
 	if fn, ok := r.failN[sessionID]; ok {
@@ -49,6 +53,12 @@ func (r *recorder) fire(ctx context.Context, sessionID string) error {
 		wg.Done()
 	}
 	return err
+}
+
+func (r *recorder) firedWith(sessionID string) (string, string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.trigger[sessionID], r.slot[sessionID]
 }
 
 func (r *recorder) count(sessionID string) int {
@@ -109,6 +119,31 @@ func TestHandler_FanOut(t *testing.T) {
 	}
 	if rec.count("s-c") != 0 {
 		t.Fatalf("non-matching session s-c should not fire; got %d", rec.count("s-c"))
+	}
+}
+
+// TestHandler_PlumbsTriggerContext: the cron event type and its scheduled_for
+// slot are carried into the fire call so they can become the outcome payload's
+// trigger_event / scheduled_for (event-triggering decisions §3).
+func TestHandler_PlumbsTriggerContext(t *testing.T) {
+	rec := newRecorder()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	rec.wg = &wg
+
+	h := Handler(rec.fire, staticLookup(trig("s-a", "cron.nightly")), nil)
+	slot := time.Now().UTC().Format(time.RFC3339)
+	if err := h(context.Background(), cronEvent(t, "nightly", slot)); err != nil {
+		t.Fatalf("handler returned non-nil: %v", err)
+	}
+	wg.Wait()
+
+	gotTrigger, gotSlot := rec.firedWith("s-a")
+	if gotTrigger != "cron.nightly" {
+		t.Fatalf("trigger_event not plumbed: got %q want cron.nightly", gotTrigger)
+	}
+	if gotSlot != slot {
+		t.Fatalf("scheduled_for not plumbed: got %q want %q", gotSlot, slot)
 	}
 }
 

@@ -50,7 +50,12 @@ var retryDelay = 2 * time.Second
 // wiring is session.Service.RunByID; tests inject a stub so no real Claude
 // session is ever created. A FireFunc returning session.ErrBusy means the
 // session is already running (the serialization guard) — not retried.
-type FireFunc func(ctx context.Context, sessionID string) error
+//
+// triggerEvent / scheduledFor are the cron event's type and matched slot; they
+// are carried through to the run so its terminal outcome event (run.succeeded /
+// run.failed) reports the trigger context that started it (event-triggering
+// decisions §3). A manual run carries empty strings instead.
+type FireFunc func(ctx context.Context, sessionID, triggerEvent, scheduledFor string) error
 
 // triggerLookup is the fan-out query seam: event type → matching triggers. The
 // production wiring is session.Store.TriggersForEvent.
@@ -128,8 +133,9 @@ func Handler(fire FireFunc, lookup triggerLookup, logger *slog.Logger) consumer.
 			}
 			// Each session's fire runs on its own goroutine so one session's
 			// fixed-delay retry never blocks the rest of the fan-out (and the
-			// handler returns promptly, never holding the cursor open).
-			go fireWithRetry(ctx, fire, t, ev.Type, logger)
+			// handler returns promptly, never holding the cursor open). The cron
+			// event type + matched slot ride through to the run's outcome payload.
+			go fireWithRetry(ctx, fire, t, ev.Type, p.ScheduledFor, logger)
 		}
 		return nil
 	}
@@ -140,13 +146,13 @@ func Handler(fire FireFunc, lookup triggerLookup, logger *slog.Logger) consumer.
 // already running — the serialization guard) is NOT retried: it is the intended
 // skip, logged at debug. A clean start ends the loop. After MaxAttempts the
 // fire is given up on, logged loudly — the next cron tick is the recovery.
-func fireWithRetry(ctx context.Context, fire FireFunc, t session.Trigger, eventType string, logger *slog.Logger) {
+func fireWithRetry(ctx context.Context, fire FireFunc, t session.Trigger, eventType, scheduledFor string, logger *slog.Logger) {
 	attempts := t.MaxAttempts
 	if attempts <= 0 {
 		attempts = session.DefaultMaxAttempts
 	}
 	for attempt := 1; attempt <= attempts; attempt++ {
-		err := fire(ctx, t.SessionID)
+		err := fire(ctx, t.SessionID, eventType, scheduledFor)
 		if err == nil {
 			logger.Info("consume: fired triggered run", "session", t.SessionID, "event", eventType, "attempt", attempt)
 			return

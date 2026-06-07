@@ -55,22 +55,27 @@ func TestService_RunByID_NoOwnerScopeAndSingleFlight(t *testing.T) {
 	svc, store, _, _ := newTestService(t)
 	sess := seedSession(t, store, "owner@example.com", StatusIdle)
 
-	run, err := svc.RunByID(ctx, sess.ID)
+	run, err := svc.RunByID(ctx, sess.ID, "cron.nightly", "2026-06-06T08:00:00Z")
 	if err != nil {
 		t.Fatalf("RunByID: %v", err)
 	}
 	if run.SessionID != sess.ID || run.Status != RunRunning {
 		t.Fatalf("unexpected run: %+v", run)
 	}
+	// The trigger context is carried in-memory on the Run for the runner's
+	// terminal write (the outcome payload).
+	if run.TriggerEvent != "cron.nightly" || run.ScheduledFor != "2026-06-06T08:00:00Z" {
+		t.Fatalf("trigger context not carried on run: %+v", run)
+	}
 
 	// fakeRunner does not auto-complete, so the session is still running →
 	// second RunByID is ErrBusy.
-	if _, err := svc.RunByID(ctx, sess.ID); !errors.Is(err, ErrBusy) {
+	if _, err := svc.RunByID(ctx, sess.ID, "", ""); !errors.Is(err, ErrBusy) {
 		t.Fatalf("expected ErrBusy on second RunByID, got %v", err)
 	}
 
 	// Unknown session → ErrNotFound.
-	if _, err := svc.RunByID(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.RunByID(ctx, "nope", "", ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound for unknown session, got %v", err)
 	}
 }

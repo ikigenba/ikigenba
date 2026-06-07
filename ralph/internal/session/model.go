@@ -58,6 +58,13 @@ type Session struct {
 
 // Run mirrors the runs table. Nullable columns (ended_at, usage_json, error)
 // are exposed as plain strings; "" means SQL NULL.
+//
+// TriggerEvent / ScheduledFor are NOT persisted columns — they are the trigger
+// context carried in-memory from the event-triggered fire path (the cron event
+// that started the run) through to the runner's terminal write, where they
+// become fields of the run.succeeded / run.failed outcome payload. Both are
+// empty for a manual (MCP-initiated) run, which is the documented
+// manual-run representation (event-triggering decisions §3 payload).
 type Run struct {
 	ID        string `json:"id"`
 	SessionID string `json:"session_id"`
@@ -67,6 +74,10 @@ type Run struct {
 	UsageJSON string `json:"usage_json,omitempty"`
 	Error     string `json:"error,omitempty"`
 	LogPath   string `json:"log_path"`
+
+	// Trigger context (in-memory only; not stored). Empty for a manual run.
+	TriggerEvent string `json:"-"`
+	ScheduledFor string `json:"-"`
 }
 
 // SessionDetail is a Session plus its latest run (nil if it has never run);

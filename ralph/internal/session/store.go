@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"eventplane/outbox"
 )
 
 // Store is the SQLite persistence for sessions and runs. All reads that take
@@ -14,6 +16,14 @@ import (
 type Store struct {
 	db  *sql.DB
 	now func() time.Time
+
+	// Outbox, when set, makes ralph an event-plane producer: FinishRun appends
+	// the run.succeeded / run.failed outcome event on the SAME transaction as the
+	// run's terminal-state write (event-triggering decisions §3 — at-most-once per
+	// run, atomic). nil in tests/builds that do not exercise the producer; the
+	// terminal write still commits, just without an event. Injected by the
+	// Producer hook in cmd/ralph after appkit constructs the outbox.
+	Outbox *outbox.Outbox
 }
 
 // NewStore wraps a migrated *sql.DB (the sessions/runs tables must exist).
@@ -196,6 +206,81 @@ func (s *Store) UpdateRunTerminal(ctx context.Context, runID, status, endedAt, u
 		return fmt.Errorf("session: update run terminal: %w", err)
 	}
 	return requireOne(res, "update run")
+}
+
+// FinishRunInput carries everything FinishRun needs to write a run's terminal
+// state and emit its outcome event atomically.
+type FinishRunInput struct {
+	RunID       string // the run being finished
+	SessionID   string // its session (flipped back to idle)
+	SessionName string // human-readable task name for the outcome payload
+	Status      string // terminal runs.status (succeeded|failed|cancelled)
+	EndedAt     string // terminal timestamp
+	UsageJSON   string // captured usage ("" → NULL)
+	ErrMsg      string // terminal error ("" → NULL; carried on run.failed)
+
+	// Trigger context for the outcome payload (the cron event + matched slot that
+	// started the run). Both empty for a manual run.
+	TriggerEvent string
+	ScheduledFor string
+}
+
+// FinishRun writes a run's terminal outcome and, when this Store is a producer
+// (Outbox set), Appends the matching run.succeeded / run.failed event — ALL in
+// ONE transaction (event-triggering decisions §3): the run's terminal-state
+// write and its outbox event commit together or not at all. If the Append fails
+// (e.g. an unregistered type slips through), the whole tx rolls back, so the run
+// is NOT marked terminal without its event — the at-most-once-per-run, atomic
+// invariant. Ring() fires AFTER a successful Commit (never inside the tx). A
+// cancelled run (or any non-outcome terminal state) writes the terminal row but
+// emits no event. With a nil Outbox the method is a pure terminal write.
+func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("session: finish run begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx,
+		`UPDATE runs SET status = ?, ended_at = ?, usage_json = ?, error = ? WHERE id = ?`,
+		in.Status, nullStr(in.EndedAt), nullStr(in.UsageJSON), nullStr(in.ErrMsg), in.RunID,
+	)
+	if err != nil {
+		return fmt.Errorf("session: finish run terminal: %w", err)
+	}
+	if err := requireOne(res, "finish run"); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?`,
+		StatusIdle, s.nowStr(), in.SessionID,
+	); err != nil {
+		return fmt.Errorf("session: finish run set status: %w", err)
+	}
+
+	emitted := false
+	if s.Outbox != nil {
+		ev, ok, err := outcomeEvent(in.Status, in.SessionID, in.SessionName, in.TriggerEvent, in.ScheduledFor, in.ErrMsg)
+		if err != nil {
+			return err
+		}
+		if ok {
+			// Append on the SAME tx as the terminal write — the atomicity invariant.
+			if err := s.Outbox.Append(tx, ev); err != nil {
+				return fmt.Errorf("session: finish run append outcome: %w", err)
+			}
+			emitted = true
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("session: finish run commit: %w", err)
+	}
+	// Ring AFTER commit: the row is not visible to feed readers until then.
+	if emitted {
+		s.Outbox.Ring()
+	}
+	return nil
 }
 
 // SweepRunning is crash recovery: every run left 'running' by a crash is

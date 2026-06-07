@@ -101,9 +101,24 @@ func (r *Runner) execute(sess session.Session, run session.Run) {
 	bg := context.Background()
 	endedAt := func() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 
+	// finish writes the run's terminal state AND (when the store is a producer)
+	// emits the run.succeeded / run.failed outcome event in ONE transaction
+	// (event-triggering decisions §3 — at-most-once per run, atomic). The trigger
+	// context (the cron event + matched slot that started this run) rides on the
+	// Run struct from the fire path; it is empty for a manual run. session_name is
+	// the session's human-readable task name.
 	finish := func(status, usageJSON, errMsg string) {
-		_ = r.store.UpdateRunTerminal(bg, run.ID, status, endedAt(), usageJSON, errMsg)
-		_ = r.store.SetSessionStatus(bg, sess.ID, session.StatusIdle)
+		_ = r.store.FinishRun(bg, session.FinishRunInput{
+			RunID:        run.ID,
+			SessionID:    sess.ID,
+			SessionName:  sess.Name,
+			Status:       status,
+			EndedAt:      endedAt(),
+			UsageJSON:    usageJSON,
+			ErrMsg:       errMsg,
+			TriggerEvent: run.TriggerEvent,
+			ScheduledFor: run.ScheduledFor,
+		})
 	}
 
 	// Open the run log for create/write/truncate.

@@ -230,7 +230,13 @@ func (s *Service) Run(ctx context.Context, ownerEmail, id string) (Run, error) {
 // which is how the per-session staleness/serialization guard rides on
 // session.status), inserts the run row, flips the session to running, and hands
 // off to the runner. ErrNotFound if the session is gone.
-func (s *Service) RunByID(ctx context.Context, id string) (Run, error) {
+//
+// triggerEvent / scheduledFor are the trigger context (the cron event type and
+// matched slot that fired this run); they are carried in-memory on the Run to
+// the runner's terminal write, where they populate the run.succeeded /
+// run.failed outcome payload (event-triggering decisions §3). Both empty for a
+// manual run (see Run, which passes "" / "").
+func (s *Service) RunByID(ctx context.Context, id, triggerEvent, scheduledFor string) (Run, error) {
 	sess, err := s.store.GetSessionByID(ctx, id)
 	if err != nil {
 		return Run{}, err
@@ -241,11 +247,13 @@ func (s *Service) RunByID(ctx context.Context, id string) (Run, error) {
 
 	runID := ids.NewULID()
 	run := Run{
-		ID:        runID,
-		SessionID: id,
-		Status:    RunRunning,
-		StartedAt: s.nowStr(),
-		LogPath:   filepath.Join(s.runsDir, id, runID+".jsonl"),
+		ID:           runID,
+		SessionID:    id,
+		Status:       RunRunning,
+		StartedAt:    s.nowStr(),
+		LogPath:      filepath.Join(s.runsDir, id, runID+".jsonl"),
+		TriggerEvent: triggerEvent,
+		ScheduledFor: scheduledFor,
 	}
 	if err := s.store.InsertRun(ctx, run); err != nil {
 		return Run{}, err

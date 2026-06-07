@@ -32,6 +32,7 @@ import (
 	"appkit/config"
 
 	"eventplane/consumer"
+	"eventplane/outbox"
 
 	"ralph/internal/consume"
 	"ralph/internal/db"
@@ -53,7 +54,14 @@ const (
 // svcRef carries the session service from the Handlers hook (where appkit has
 // opened + migrated the DB and built the domain) to the consumer Worker, which
 // runs strictly afterward. A package-level capture mirrors notify's `rt` capture.
-var svcRef *session.Service
+// storeRef is the same hand-off for the producer outbox: the Producer hook
+// (which runs AFTER Handlers, once appkit has constructed the outbox) injects it
+// onto the store so the runner's terminal write emits the outcome event on the
+// same tx (event-triggering decisions §3).
+var (
+	svcRef   *session.Service
+	storeRef *session.Store
+)
 
 func main() {
 	var rt *appkit.Router
@@ -73,6 +81,26 @@ func main() {
 		// cannot drift.
 		Subscriptions: func() []consumer.Subscription {
 			return []consumer.Subscription{consume.Subscription()}
+		},
+		// ralph is ALSO an event-plane PRODUCER of two STATIC outcome types
+		// (event-triggering decisions §3): run.succeeded / run.failed, emitted in
+		// the SAME tx as a run's terminal-state write. Feed mounts the /feed
+		// producer; Events is the static registry (NOT a dynamic Publishes provider
+		// — the outcome types are fixed at build time, unlike cron's cron.<name>);
+		// Producer injects the outbox onto the store; ManifestExtras round-trips the
+		// retention config like every other producer.
+		Feed:   "/feed",
+		Events: session.Events,
+		ManifestExtras: []appkit.ManifestKV{
+			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
+			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
+		},
+		Producer: func(ob *outbox.Outbox) error {
+			if storeRef == nil {
+				return fmt.Errorf("ralph: Producer called before Handlers built the Store")
+			}
+			storeRef.Outbox = ob
+			return nil
 		},
 		Migrations: db.FS,
 		// Handlers builds ralph's domain over appkit's shared single-writer DB
@@ -119,8 +147,8 @@ func runConsumer(ctx context.Context, rt *appkit.Router) error {
 		ConsumerID: consumerID,
 		Logger:     logger,
 	}
-	fire := func(ctx context.Context, sessionID string) error {
-		_, err := svcRef.RunByID(ctx, sessionID)
+	fire := func(ctx context.Context, sessionID, triggerEvent, scheduledFor string) error {
+		_, err := svcRef.RunByID(ctx, sessionID, triggerEvent, scheduledFor)
 		return err
 	}
 	lookup := svcRef.TriggersForEvent
@@ -162,8 +190,10 @@ func registerRoutes(rt *appkit.Router) error {
 	store := session.NewStore(conn)
 	run := runner.New(store, sb, runTTL)
 	svc := session.NewService(store, sb, runsDir, run)
-	// Capture the service for the consumer Worker (runs after Handlers).
+	// Capture the service for the consumer Worker and the store for the Producer
+	// hook (both run after Handlers; the Producer injects the outbox onto store).
 	svcRef = svc
+	storeRef = store
 
 	// Crash-recovery sweep (§5.3): runs left 'running' by a previous process are
 	// orphaned — mark them failed and return their sessions to idle before
