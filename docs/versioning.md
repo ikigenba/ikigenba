@@ -31,7 +31,7 @@ box can never lie about what's deployed.
 - **The source of truth is the committed file `<app>/VERSION`** — a bare SemVer
   number with **no** leading `v` (e.g. `0.1.1`), one line. Each of the seven
   deployable services carries one: `dashboard`, `crm`, `ledger`, `notify`,
-  `dropbox`, `agent`, `wiki`. There is **no global suite version**; each service
+  `dropbox`, `prompts`, `wiki`. There is **no global suite version**; each service
   versions independently.
 - **Git tags are NOT the version mechanism.** There is no `git tag <app>/vX.Y.Z`
   and no `git describe` lookup. The version state lives in `main`'s commit history

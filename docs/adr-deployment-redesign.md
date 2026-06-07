@@ -9,7 +9,7 @@
 > consequences* shape of `docs/event-plane-decisions.md`.
 >
 > **Scope.** The whole ikigai mono-repo's deploy/packaging/versioning model:
-> seven services (`dashboard`, `crm`, `ledger`, `notify`, `agent`, `dropbox`,
+> seven services (`dashboard`, `crm`, `ledger`, `notify`, `prompts`, `dropbox`,
 > `wiki`) and three never-tagged in-repo libraries (`eventplane`, `agentkit`,
 > and the new `appkit`). It does **not** change the event-plane wire protocol
 > (`docs/event-protocol.md`), the nginx auth contract, or any service's domain

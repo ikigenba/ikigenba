@@ -78,9 +78,9 @@ They are recommendations with reasoning, not edicts — veto and I'll re-shape.
    of agent's import paths (or the mono-repo won't compile) — that rewrite is
    done in the same task and is *not* the deeper retrofit. agent keeps its own
    `runner`/`session` for now. agentkit's generic async job-runner is built
-   fresh (informed by `agent/internal/runner`, behind a store interface) and
-   **wiki is its first consumer**; agent migrates onto it in a Later phase. This
-   matches GOALS: "wiki builds against it first; agent is retrofitted afterward."
+   fresh (informed by `prompts/internal/runner`, behind a store interface) and
+   **wiki is its first consumer**; prompts migrates onto it in a Later phase. This
+   matches GOALS: "wiki builds against it first; prompts is retrofitted afterward."
 
 3. **Ingest agent model + cost ceiling:** default to a mid-tier model
    (`claude-sonnet-4-6`) with a per-job token/cost ceiling read from manifest/
@@ -110,14 +110,14 @@ Output is design notes + tiny proofs, no production code.*
   **move-list** (every package/file that goes to `agentkit` vs stays in agent)
   and the **job-runner seam design**: the Go interface(s) by which a generic
   agentkit job-runner persists/loads run records and enforces single-flight +
-  crash-recovery, so both agent and wiki can supply their own store. Identify
+  crash-recovery, so both prompts and wiki can supply their own store. Identify
   anything that does NOT lift cleanly at the GOALS boundary and how to split it.
 - **Inputs:** `GOALS.md` (Architecture decisions → Seam); the structural map in
   this repo; `agent/internal/engine/agent/loop.go`,
   `agent/internal/engine/provider/anthropic/anthropic.go`,
-  `agent/internal/engine/tools/{tools.go,dispatch.go,confine.go}`,
-  `agent/internal/engine/{wire,model,schema,trace}`, `agent/internal/runner/runner.go`,
-  `agent/internal/session/{model,service,store}.go`, `agent/internal/sandbox/sandbox.go`.
+  `prompts/internal/engine/tools/{tools.go,dispatch.go,confine.go}`,
+  `prompts/internal/engine/{wire,model,schema,trace}`, `prompts/internal/runner/runner.go`,
+  `prompts/internal/session/{model,service,store}.go`, `prompts/internal/sandbox/sandbox.go`.
 - **Deliverables:** `wiki/notes/agentkit-extraction.md` — move-list table +
   the job-runner store interface (Go signatures) + risk notes (esp. runner↔
   session/store coupling, the two confinement copies).
@@ -147,7 +147,7 @@ Output is design notes + tiny proofs, no production code.*
 ## Phase 1 — Extract & harden `agentkit`
 
 *Goal: a tested, shared `agentkit` Go module that owns the generic agent
-machinery + a generic async job-runner. wiki will build against it. agent stays
+machinery + a generic async job-runner. wiki will build against it. prompts stays
 green throughout but is NOT yet retrofitted onto the new job-runner.*
 
 ### Task 1.1 — Move the generic engine into `agentkit`, rewire agent
@@ -172,9 +172,9 @@ green throughout but is NOT yet retrofitted onto the new job-runner.*
   generic async agent-job lifecycle from the Task 0.1 seam design: spawn a run
   (goroutine + context cancellation), poll/status, single-flight gate, and a
   crash-recovery sweep — all behind a **store interface** the consumer supplies
-  (run records, terminal updates, sweep-running). Do **not** wire it into agent.
-- **Inputs:** `wiki/notes/agentkit-extraction.md`; `agent/internal/runner/runner.go`
-  and `agent/internal/session/{service,store}.go` as the behavioral reference.
+  (run records, terminal updates, sweep-running). Do **not** wire it into prompts.
+- **Inputs:** `wiki/notes/agentkit-extraction.md`; `prompts/internal/runner/runner.go`
+  and `prompts/internal/session/{service,store}.go` as the behavioral reference.
 - **Deliverables:** `agentkit/job` package + an in-memory/stub store for tests.
 - **Acceptance:** Unit tests cover spawn → succeed, spawn → cancel, single-flight
   rejection, and crash-recovery sweep; `go test ./agentkit/...` passes. agent

@@ -11,7 +11,7 @@
 // (requireIdentityHeaders; PLAN §2.9).
 //
 // The server supports two shapes through one Router seam:
-//   - path-routed services (crm/ledger/notify/dropbox/wiki/agent) get the
+//   - path-routed services (crm/ledger/notify/dropbox/wiki/prompts) get the
 //     standard route table (PRM + ungated /health + gated MCP + optional /feed)
 //     plus any extra routes their Spec.Handlers register;
 //   - the dashboard apex supplies its WHOLE route table via Spec.Handlers,

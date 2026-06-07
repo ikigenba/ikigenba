@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# bin/restore — replace agent's live durable state from a backups-bucket
+# bin/restore — replace prompts' live durable state from a backups-bucket
 # snapshot. Symmetric with bin/backup: an `aws s3 sync` back from
 # s3://$IKIGENBA_BACKUP_BUCKET/<APP>/data/ into /opt/prompts/data/.
 #
-# Restores ALL of agent's durable state: the consistent prompts.db snapshot, the
+# Restores ALL of prompts' durable state: the consistent prompts.db snapshot, the
 # sandbox folders (data/sandboxes/), and the run logs (data/runs/).
 #
-# Destroys live production state — always interactive, no --yes bypass. agent is
+# Destroys live production state — always interactive, no --yes bypass. prompts is
 # stopped for the swap (so no in-flight run is writing the DB/folders), the data
-# dir is synced from S3, ownership/permissions are re-applied, and agent is
-# restarted. Per the lifecycle, run restore AFTER `opsctl setup agent` and
-# BEFORE the first `bin/ship agent` → `opsctl stage`/`deploy` on a rebuilt box.
+# dir is synced from S3, ownership/permissions are re-applied, and prompts is
+# restarted. Per the lifecycle, run restore AFTER `opsctl setup prompts` and
+# BEFORE the first `bin/ship prompts` → `opsctl stage`/`deploy` on a rebuilt box.
 #
 # AWS via the box's instance role (region from /etc/ikigenba/env). Invoking this
 # script does ssh to the box. (No deploy is performed in this phase — authored

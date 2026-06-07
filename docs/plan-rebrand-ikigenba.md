@@ -100,7 +100,7 @@ must be left alone (see §3c).
 - **Deploy config (the functional core):** `bin/ship` derives
   `HOST="${HOST:-${ACCOUNT}.metaspot.org}"` (line 130; comment at 21–22).
   Per-service `etc/deploy.env` (×7: dashboard, crm, ledger, notify, dropbox,
-  wiki, agent) set `ACCOUNT=ai` and `SSH_KEY=~/.ssh/id_ed25519_ai4mgreenly`.
+  wiki, prompts) set `ACCOUNT=ai` and `SSH_KEY=~/.ssh/id_ed25519_ai4mgreenly`.
 - **opsctl:** `--domain` flag help (`opsctl/cmd/opsctl/main.go:361`) and
   `initbox.go` / `provision_test.go` fixtures reference `ai.metaspot.org` / the
   `__DOMAIN__` template var.
@@ -126,10 +126,10 @@ blast radius in code is small — only **two real env-read sites**:
 A third **real** site (missed by the original inventory) is the per-app secret
 seeder — it composes the SSM path from the codename:
 
-- `*/bin/secrets` (×5: dashboard, dropbox, notify, agent, wiki) —
+- `*/bin/secrets` (×5: dashboard, dropbox, notify, prompts, wiki) —
   `PARAM="/metaspot/${ACCOUNT}/app-config"` → `/ikigenba/${ACCOUNT}/app-config`;
   also the `aws sso login --profile ai` header comments in `dropbox/bin/secrets`
-  and `agent/bin/secrets` → `int`. (The `ACCOUNT`/profile value itself already
+  and `prompts/bin/secrets` → `int`. (The `ACCOUNT`/profile value itself already
   flows from `etc/deploy.env`, handled in §3d.) **If this string isn't changed
   the launcher reads `/ikigenba/int/app-config` while `bin/secrets` writes
   `/metaspot/int/app-config` — the box boots with no secrets.**
@@ -364,7 +364,7 @@ The functional rename, committed to `main` and pushed when green.
 > - **Codename `METASPOT_*` → `IKIGENBA_*`** across appkit config, dashboard
 >   backup, opsctl templates/units, and the 5 `*/bin/secrets` SSM paths
 >   (`/metaspot/` → `/ikigenba/`). Extended beyond the §3b inventory to
->   `crm|agent/bin/{backup,restore}` and the host-deriving
+>   `crm|prompts/bin/{backup,restore}` and the host-deriving
 >   `bin/{start,stop,teardown}` scripts that read the same box env.
 > - **Brand/domain `metaspot.org` → `ikigenba.com`:** promoted the apex suffix to
 >   a new **`APEX_SUFFIX`** `deploy.env` var (default `ikigenba.com`) so no domain
@@ -421,9 +421,9 @@ Needs Phase A (box exists) **and** Phase B (renamed `opsctl`/`bin/secrets`).
 > - **`opsctl init-box --skip-cert`** (TLS deferred), then **`opsctl setup`** for
 >   all 7 services — units enabled-not-started, nginx fragments staged. Port map:
 >   dashboard **3000** (apex), crm **3001**, ledger **3002**, notify **3003**,
->   agent **3004**, dropbox **3005**, wiki **3006**.
+>   prompts **3004**, dropbox **3005**, wiki **3006**.
 > - **Seeded all 5 secret-bearing apps** into SSM `/ikigenba/int/app-config`
->   (final keys: dashboard, dropbox, notify, agent, wiki).
+>   (final keys: dashboard, dropbox, notify, prompts, wiki).
 >   `WIKI_OWNER = michaelgreenly@logic-refinery.com` (authoritative per §6
 >   Decision #2; passed as an env override — no `~/.secrets/WIKI_OWNER` file
 >   needed). Values originated locally; no migration from `ai`.
@@ -453,7 +453,7 @@ Gate: `ikigenba-launch` finds `.["<app>"]` for every service that needs secrets
 > pushed to `origin/main` (confirmed via `git ls-remote`).
 >
 > - **Deployed (services first, dashboard last):** crm **v0.2.2**, ledger
->   **v0.2.2**, notify **v0.2.2**, dropbox **v0.2.3**, agent **v0.2.1**, wiki
+>   **v0.2.2**, notify **v0.2.2**, dropbox **v0.2.3**, prompts **v0.2.1**, wiki
 >   **v0.2.2** — each `active`, `manifest.env` present — then dashboard
 >   **v0.1.1** (commit `226a888`) **last**, so it read every
 >   `/opt/*/etc/manifest.env` at startup.

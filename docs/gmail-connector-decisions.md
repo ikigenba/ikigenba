@@ -10,9 +10,9 @@ plan. Detailed planning happens in a follow-up session on top of these (a
 
 This work builds on the just-completed event-triggering effort
 (`event-triggering-decisions.md` / `-plan.md`, phases P1–P9): the fixed
-at-least-once consumer engine, the `cron` service, `agent` (formerly `ralph`),
-and `notify`. It reuses the event-plane **producer** primitives rather than
-adding new machinery.
+at-least-once consumer engine, the `cron` service, `prompts` (formerly `ralph`,
+then `agent`), and `notify`. It reuses the event-plane **producer** primitives
+rather than adding new machinery.
 
 Date of discussion: 2026-06-06 (revised 2026-06-07 — scope reduced to the
 connector + inbound-event producer, see "Scope" below; revised again 2026-06-07
@@ -30,7 +30,7 @@ emits events when mail changes. It is **producer-only** on the event plane — i
 consumes nothing.
 
 An earlier draft of this doc also covered an outbound, event-driven email path
-(an `agent` `notify_owner` tool emitting `notice.posted`, and `gmail` consuming
+(a `prompts` `notify_owner` tool emitting `notice.posted`, and `gmail` consuming
 that event to send mail, driven by a weekly-research cron example). **That whole
 outbound-reaction story is dropped** and recorded in "Deferred / out of scope".
 The MCP `send` / `draft` tools remain — sending is a normal mailbox operation —
@@ -52,10 +52,10 @@ but sending is **not** wired to any event.
   ```
 
 - **It generalizes the platform's trigger sources.** `cron` emits *time* events;
-  `gmail` emits *mail* events. A future `agent` session could be triggered by mail
-  via the same `session_triggers` seam — "run this agent when mail matching X
-  arrives" becomes possible for free later. Not in scope now, but it is the reason
-  the producer half matters.
+  `gmail` emits *mail* events. A future `prompts` session could be triggered by mail
+  via the same `session_triggers` seam — "run this `prompts` session when mail
+  matching X arrives" becomes possible for free later. Not in scope now, but it is
+  the reason the producer half matters.
 
 ---
 
@@ -71,7 +71,7 @@ but sending is **not** wired to any event.
   service is the template to mirror (token source, client, MCP surface, producer
   wiring, internal daemon).
 - **Two roles only: connector + producer.** It runs a producer (`/feed`) and an
-  internal poll daemon. It is **not** a consumer of `cron`, `agent`, or anything
+  internal poll daemon. It is **not** a consumer of `cron`, `prompts`, or anything
   else.
 
 ### Connector half (mirror `dropbox`)
@@ -228,13 +228,13 @@ Each maps to a History signal. Added messages are enriched with one
 2. **Deploy plumbing** — `opsctl setup gmail`, manifest, nginx fragments,
    `VERSION` / `go.work`, and the one-time token bootstrap.
 
-The `ralph` → `agent` rename already landed (reflected in the top-level
-CLAUDE.md). Decomposition into subagent-sized phases is the follow-up plan doc's
-job.
+The `ralph` → `agent` → `prompts` rename already landed (reflected in the
+top-level CLAUDE.md). Decomposition into subagent-sized phases is the follow-up
+plan doc's job.
 
 ### Deferred / out of scope
 
-- **Outbound, event-driven email** — the dropped story: an `agent` `notify_owner`
+- **Outbound, event-driven email** — the dropped story: a `prompts` `notify_owner`
   tool emitting `notice.posted`, `gmail` consuming `notice.posted` to send mail,
   and the weekly-research cron example that motivated it. Sending stays available
   as an MCP tool (`send` / `draft`) but is wired to no event. Its own future
@@ -243,7 +243,7 @@ job.
   tools directly (read / triage / delete mail mid-run, send directly). Its own
   future track (egress + auth from inside the sandbox is a large,
   security-sensitive change).
-- **Mail-triggered agent sessions** — wiring `gmail`'s `mail.received` into
+- **Mail-triggered `prompts` sessions** — wiring `gmail`'s `mail.received` into
   `session_triggers` so a session runs on incoming mail. The producer half makes
   it possible; not built this phase.
 - **Cron-consumed polling** — rejected in favor of the internal daemon (§1).

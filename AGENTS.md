@@ -37,17 +37,17 @@ specifics live in the folders below and in `docs/`.
 | **ledger** | Path-routed service `/srv/ledger/` — double-entry bookkeeping (immutable journal, fixed-verb MCP); event-plane **producer**. |
 | **notify** | Path-routed service `/srv/notify/` — event-plane **consumer** (push) and the worked example for bringing up a new consumer. |
 | **dropbox** | Path-routed service `/srv/dropbox/` — keeps a private local mirror in sync with a single Dropbox app folder; loopback daemon + event-plane **producer**. |
-| **agent** | Path-routed service `/srv/agent/` — runs sandboxed Claude agent sessions on the owner's behalf, exposed as MCP (design-stage). |
+| **prompts** | Path-routed service `/srv/prompts/` — runs sandboxed Claude agent sessions on the owner's behalf, exposed as MCP (design-stage). |
 | **wiki** | Path-routed service `/srv/wiki/` — knowledge base: ingest / search / ask (RAG) + MCP. |
 | **appkit** | Shared Go **chassis** library: config-from-env, migration runner + downgrade guard, loopback server, `/feed`, manifest emit/parse, the verb dispatcher (consumed via a committed `replace`). |
 | **eventplane** | Shared Go **library** — the event-plane producer/consumer plumbing (committed `replace`). |
-| **agentkit** | Shared Go **library** for the agent-backed services (agent/dropbox/wiki). |
+| **agentkit** | Shared Go **library** for the agent-backed services (prompts/dropbox/wiki). |
 | **opsctl** | The **on-box CLI** (Go) that owns every box-side operation — stage, deploy, rollback, prune, status, provisioning; built here and installed to `/usr/local/bin/opsctl`. |
 | **bin** | Shared repo-root **operator scripts** — the off-box build/version tooling (`ship`, `bump`, …). |
 | **nginx** | Local-dev front door on **:8080** mirroring the prod `/srv/<svc>/` routing (`./run`). |
 | **docs** | Suite-level docs: the deployment ADR, versioning how-to, runbooks, and the event-plane protocol write-ups. |
 
-The seven deployable apps are **dashboard, crm, ledger, notify, dropbox, agent,
+The seven deployable apps are **dashboard, crm, ledger, notify, dropbox, prompts,
 wiki**; `appkit`/`eventplane`/`agentkit` and `opsctl` are libraries/tooling and
 are **not** versioned. The root `go.work` wires the modules for local dev; the
 production build forces `GOWORK=off`.

@@ -354,7 +354,7 @@ text.
   `LEDGER_*`→`DROPBOX_*` rename in the wrapper is surgical: the shared event-plane
   knobs `OUTBOX_RETENTION_DAYS` / `OUTBOX_RETENTION_MAX_ROWS` (read in `main.go`)
   keep their `OUTBOX_` prefix — they are **not** `LEDGER_*` and must not be swept.
-- **No `bin/backup` / `bin/restore`.** Unlike the dashboard (and agent), dropbox
+- **No `bin/backup` / `bin/restore`.** Unlike the dashboard (and prompts), dropbox
   ships neither: the mirror is a download-only replica of Dropbox and the SQLite
   state (cursor + `files` index) is fully reconstructible by re-bootstrapping —
   **Dropbox is the source of truth.** Recovery on data loss is "delete the DB +
@@ -365,7 +365,7 @@ text.
   gated `/srv/dropbox/` block. The **dev mirror is generated, not committed** —
   `nginx/run` regenerates `nginx/locations/<svc>.conf` from each service's
   `etc/nginx.conf` on every run, iterating a **hardcoded service list**
-  (`for svc in crm ledger notify agent`); **`dropbox` must be added to that loop**
+  (`for svc in crm ledger notify prompts`); **`dropbox` must be added to that loop**
   or it never appears on the dev front door (:8080). Public protection of
   `/content` is the **handler's** identity-header check (§4), exactly as `/feed`
   is protected today (ledger ships **no** nginx block for `/feed`). An exact-match
@@ -494,10 +494,10 @@ Store, Mirror) compile green even though nothing calls them yet — the engine p
    - *Owns:* finalize `etc/{manifest.env,nginx.conf,deploy.env}`, the `bin/build`
      wrapper env (`DROPBOX_*` public config from `IKIGENBA_DOMAIN`; `OUTBOX_*`
      left alone), `bin/secrets` (read-modify-write only the `dropbox` key from
-     `~/.secrets/DROPBOX_*`, modeled on `notify`/`agent` `bin/secrets`), the
+     `~/.secrets/DROPBOX_*`, modeled on `notify`/`prompts` `bin/secrets`), the
      optional `/srv/dropbox/content`→404 nginx block, and confirm the `nginx/run`
      loop + `go.work` entries from Phase 0.
-   - *Context:* §9; `notify/bin/secrets`, `agent/bin/secrets`; `ledger/bin/{build,
+   - *Context:* §9; `notify/bin/secrets`, `prompts/bin/secrets`; `ledger/bin/{build,
      setup,deploy}`; `dashboard/bin/build` (the `DASHBOARD_MANIFEST_ROOT=/opt`
      derivation — **no edit needed there**, registration is a dashboard *restart*).
    - *Gate:* `nginx -t` passes in dev with the dropbox fragment present; `bin/build`

@@ -2,7 +2,7 @@
 
 A record of decisions made in a design discussion about giving the suite
 **scheduled / event-driven triggering** — concretely, a `cron` service that
-publishes named time events, `agent` running sessions in reaction to them, and
+publishes named time events, `prompts` running sessions in reaction to them, and
 `notify` announcing the outcome. This file records **decisions only**, not a
 plan. Detailed planning happens in future sessions on top of these.
 
@@ -12,7 +12,7 @@ amended** — doing so is future work.
 
 Date of discussion: 2026-06-06. **Revised 2026-06-06** in a follow-up planning
 session that turned these decisions into implementation detail and, in the
-process, **simplified agent** (dropping the durable-intent model for in-memory
+process, **simplified prompts** (dropping the durable-intent model for in-memory
 fire-and-run) and pinned the previously-open items (the consumer skip signal,
 the cron publishes seam, outcome event names). Revisions are marked inline.
 
@@ -25,8 +25,8 @@ the cron publishes seam, outcome event names). Revisions are marked inline.
   futures. Treat friction where an X doesn't fit cleanly as a signal about the
   structure, not something to paper over. The suite is primitive and will pivot;
   decisions here are expected to evolve.
-- **Originating gap.** Be able to create a scheduled research task in `agent`
-  (run periodically, synthesize, notify the owner), and be able to watch agent
+- **Originating gap.** Be able to create a scheduled research task in `prompts`
+  (run periodically, synthesize, notify the owner), and be able to watch prompts
   session logs live. This surfaced three missing pieces: durable triggering,
   outbound comms, and live log following.
 
@@ -74,7 +74,7 @@ the cron publishes seam, outcome event names). Revisions are marked inline.
 - **Engine-level dedup table stays deferred.** Consumers that need
   exactly-once-effect dedup in their **own domain state**, not via a generic
   engine dedup table. (Our work-bearing consumers are either idempotent — `wiki`
-  — or tolerate a rare duplicate effect — `agent`, per the in-memory model in
+  — or tolerate a rare duplicate effect — `prompts`, per the in-memory model in
   Section 3.)
 - **Handler audit is required as part of the fix:**
   - `notify` — poison → skip/advance; push effect stays best-effort (`nil`).
@@ -194,15 +194,15 @@ the cron publishes seam, outcome event names). Revisions are marked inline.
 
 ---
 
-## 3. `agent`: event-trigger processing
+## 3. `prompts`: event-trigger processing
 
-- **agent gains both roles** (it was neither producer nor consumer): it
+- **prompts gains both roles** (it was neither producer nor consumer): it
   **consumes** cron's feed and **produces** outcome events.
 - **A session declares an event trigger:** `event: cron.<name>`. This activates
-  agent's already-designed-but-deferred `trigger=event-subscribe` seam. The
-  session↔event linkage lives in **agent**, not in cron's payload. Multiple
+  prompts' already-designed-but-deferred `trigger=event-subscribe` seam. The
+  session↔event linkage lives in **prompts**, not in cron's payload. Multiple
   sessions may share one `cron.<name>`.
-- **agent consumes cron's feed via the fixed consumer engine** (Section 1).
+- **prompts consumes cron's feed via the fixed consumer engine** (Section 1).
 
 ### Trigger declaration
 
@@ -246,17 +246,17 @@ as over-built for the named gap.** The simpler model:
   **that occurrence is missed** — the next cron tick recovers. No sweep, no
   re-drive. On rare crash-replay a duplicate run is possible and tolerated.
   (`max_staleness` bounds how stale a replayed occurrence can be before it is
-  skipped instead.) This is the best-effort philosophy applied to agent; if
+  skipped instead.) This is the best-effort philosophy applied to prompts; if
   paying twice for an LLM run ever proves painful, a single dedup constraint can
   be added later.
 
 ### Outcome events
 
-- **agent emits two terminal events** (source = `agent`), each in the **same
+- **prompts emits two terminal events** (source = `prompts`), each in the **same
   transaction as the run's terminal state write** (at-most-once per run):
   - **`run.succeeded`** on success.
   - **`run.failed`** on terminal failure (so notify can announce failures too).
-  - *(Revised: `succeeded`, not `completed` — it matches agent's existing
+  - *(Revised: `succeeded`, not `completed` — it matches prompts' existing
     `runs.status` vocabulary `running|succeeded|failed|cancelled`. `run.*`, not
     `session.*` — the event is a run outcome, not a session lifecycle change.)*
 - **Two types, not one `run.finished` + a `status` field**, so a consumer can
@@ -265,12 +265,12 @@ as over-built for the named gap.** The simpler model:
   `{session_id, session_name, trigger_event, scheduled_for, error?}` — `status`
   is **dropped** (the type encodes it); `name`→`session_name` (the human-readable
   task name; the cron identity is already in `trigger_event`); `error` present
-  only on `run.failed`. The full report stays in agent (read via MCP); the
+  only on `run.failed`. The full report stays in prompts (read via MCP); the
   payload is widened in the future email phase.
-- **agent-as-producer wiring** mirrors crm/ledger: an `outbox.SchemaSQL`
-  migration in agent's DB, `Spec.Feed = "/feed"` + `Spec.Producer`, a **static**
+- **prompts-as-producer wiring** mirrors crm/ledger: an `outbox.SchemaSQL`
+  migration in prompts' DB, `Spec.Feed = "/feed"` + `Spec.Producer`, a **static**
   `Spec.Events` registry for the two compile-time-known types (not the live
-  `Publishes` provider — that is cron-only), and an nginx `/feed` fragment. agent
+  `Publishes` provider — that is cron-only), and an nginx `/feed` fragment. prompts
   is thus simultaneously a consumer (cron) and a producer (outcomes); appkit
   supports both roles plus `Workers` with no exclusivity assumption (verified).
 
@@ -278,12 +278,12 @@ as over-built for the named gap.** The simpler model:
 
 ## 4. `notify` (this phase only)
 
-- **Minimal extension only.** `notify` adds `agent` to `Consumes`
-  (`["crm", "agent"]`), subscribes to `run.succeeded` / `run.failed`, and fires
+- **Minimal extension only.** `notify` adds `prompts` to `Consumes`
+  (`["crm", "prompts"]`), subscribes to `run.succeeded` / `run.failed`, and fires
   its existing **best-effort ntfy push** for each, keeping its existing
   `crm/contact.created` push.
 - **Two upstreams = two consumer loops.** notify runs one `consumer.Run` worker
-  per upstream (crm, agent), each with its own `feed_offset` cursor row — not one
+  per upstream (crm, prompts), each with its own `feed_offset` cursor row — not one
   multiplexed connection.
 - **No email, no channel abstraction, no recipient routing, no delivery retry**
   in this phase.
@@ -297,13 +297,13 @@ as over-built for the named gap.** The simpler model:
 1. The event-plane consumer engine fix (Section 1) + the `notify`/`wiki` handler
    audit.
 2. The `cron` service (Section 2).
-3. agent event-trigger processing: consume cron, in-memory fire-and-run with
+3. prompts event-trigger processing: consume cron, in-memory fire-and-run with
    in-memory retry, produce outcome events (Section 3).
 4. The minimal `notify` push extension (Section 4).
 
 **Build order** (revised — agreed in planning): 1 → 2 → 3 → 4, in that sequence.
 Each step ships and is independently testable. The engine fix is the prerequisite
-for everything; cron must exist before agent can consume it; agent must emit
+for everything; cron must exist before prompts can consume it; prompts must emit
 outcomes before notify can push them.
 
 These four steps are decomposed into nine subagent-sized, strictly-sequential
@@ -319,14 +319,14 @@ this one remains the decision record.
   `event-protocol.md` §11.3 upgrade, keyed on the existing `X-Consumer-Id`).
   Postponed; the blunt time/row horizon stays for now.
 - **Engine-level dedup table** — consumers dedup in domain state instead.
-- **agent durable-intent machinery** — the `run_intents` occurrence table, the
+- **prompts durable-intent machinery** — the `run_intents` occurrence table, the
   occurrence-key dedup constraint, the drain worker, run-to-success durability,
   and the crash-recovery sweep (the original Section 3 "Option B"). Dropped in
   favor of in-memory fire-and-run; revisit only if a missed occurrence or a
   duplicate LLM run proves painful in practice.
 - **Live log viewer** — an operator-facing live follower (modeled on the prior
   `ralph-logs` project: glob-tail with rotation handling), adapted to the suite
-  (SSE rather than WebSocket; pretty-render agent's stream-json run logs rather
+  (SSE rather than WebSocket; pretty-render prompts' stream-json run logs rather
   than raw bytes). Independent track; not in this phase.
 - **Amending `event-protocol.md` / `event-plane-decisions.md`** to reflect the
   Section 1 correction (best-effort is a handler choice, not the engine model).

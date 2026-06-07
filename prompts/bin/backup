@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# bin/backup — snapshot agent's durable state to the per-account backup bucket
+# bin/backup — snapshot prompts' durable state to the per-account backup bucket
 # under the per-app prefix convention s3://$IKIGENBA_BACKUP_BUCKET/<APP>/.
 #
-# agent's durable state (all under /opt/prompts/data/) is three things:
+# prompts' durable state (all under /opt/prompts/data/) is three things:
 #   - prompts.db        the SQLite file (sessions + run history)
 #   - sandboxes/      the agents' persistent work folders (the actual work product)
 #   - runs/           the per-run stream-json output logs
@@ -13,7 +13,7 @@
 # The hot WAL-mode prompts.db is NOT consistent under a live sync, so we DO NOT sync
 # the hot file. Instead we take a consistent DB snapshot first (SQLite
 # `VACUUM INTO`, falling back to the `.backup` API) and sync THAT in place of the
-# hot prompts.db, alongside the folders. agent keeps running throughout — no stop.
+# hot prompts.db, alongside the folders. prompts keeps running throughout — no stop.
 #
 # AWS via the box's instance role (region from /etc/ikigenba/env). The control
 # leg is `aws s3 sync` run ON the box; a live SSO session is NOT required for the

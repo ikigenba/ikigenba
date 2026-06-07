@@ -179,7 +179,7 @@ Health:  spec.Health,
 ## Steps 2–7 — per-service MCP rebrand + `whoami` → `health` (one step per service, in this order)
 
 Each service is its **own step and its own subagent**. Run them **sequentially**
-(crm → ledger → notify → wiki → agent → dropbox) so the shared `tool()`/
+(crm → ledger → notify → wiki → prompts → dropbox) so the shared `tool()`/
 `toolPrefix` pattern is applied identically and any pattern correction in the
 first service propagates to the rest by example. Dropbox is **last** because it
 also folds two tools into one (Step 7 specifics).
@@ -202,7 +202,7 @@ names in descriptions, e.g. `mcp.go`, `describe.go`) and the package's
    func tool(verb string) string { return toolPrefix + verb }
    ```
 
-   `<svc>` ∈ {crm, ledger, notify, wiki, agent, dropbox}.
+   `<svc>` ∈ {crm, ledger, notify, wiki, prompts, dropbox}.
 
 2. **Descriptor list** — change each `desc("<svc>_<verb>", …)` to
    `desc(tool("<verb>"), …)`. The `<svc>_whoami` descriptor becomes
@@ -270,7 +270,7 @@ names in descriptions, e.g. `mcp.go`, `describe.go`) and the package's
    ```
 
    For services that have **no telemetry yet** (crm, ledger, notify, wiki,
-   agent), `Spec.Health` stays nil, so `rt.Health()` is nil and `details` renders
+   prompts), `Spec.Health` stays nil, so `rt.Health()` is nil and `details` renders
    `{}` on both transports — correct per §3. Do **not** invent telemetry for them
    in this pass.
 
@@ -283,8 +283,8 @@ names in descriptions, e.g. `mcp.go`, `describe.go`) and the package's
      branded names.
    - ledger: `call ledger_describe`, `like ledger_balance`, `ledger_balance +
      ledger_register` (tools.go + the `bad_root` message in mcp.go) → branded.
-   - agent: `agent_whoami proves the auth chain` (describe.go) → rewrite to
-     `ikigenba_agent_health proves the auth chain` (also reflects whoami→health).
+   - prompts: `agent_whoami proves the auth chain` (describe.go) → rewrite to
+     `ikigenba_prompts_health proves the auth chain` (also reflects whoami→health).
    - Re-grep after editing: `grep -rn '\b<svc>_[a-z]' <svc>/internal/mcp` should
      return only Go identifiers, never a bare tool name inside a string literal.
 
@@ -320,11 +320,11 @@ every ingest/ask description). Note wiki has several test files
 (`tools_test.go`, `ask_test.go`, `search_test.go`, `ingest_test.go`) — update tool
 names in all of them. `Spec.Health` nil.
 
-### Step 6 — agent
-Tools per `agent/internal/mcp/tools.go` (`whoami→health` + the `agent_session_*`
-set). Update `agent/internal/mcp/describe.go` prose (the `agent_whoami` mention)
+### Step 6 — prompts
+Tools per `prompts/internal/mcp/tools.go` (`whoami→health` + the `prompts_session_*`
+set). Update `prompts/internal/mcp/describe.go` prose (the `prompts_whoami` mention)
 and `mcp_test.go`. `Spec.Health` nil. **Also** Step 8 covers the broader
-`describe.go` prose pass — keep agent's describe edit here limited to the tool-name
+`describe.go` prose pass — keep prompts' describe edit here limited to the tool-name
 references; do the full prose read in Step 8.
 
 ### Step 7 — dropbox (fold two tools into one)
@@ -392,7 +392,7 @@ unaccounted-for live references.
 3. ledger
 4. notify
 5. wiki
-6. agent
+6. prompts
 7. dropbox (fold two → one; supplies the reporter)
 8. docs + closing grep
 

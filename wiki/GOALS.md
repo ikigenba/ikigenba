@@ -41,7 +41,7 @@ bookkeeping humans abandon; the human curates sources and asks questions.
 |---|---|
 | dir / Go module | `wiki/` — `module wiki` |
 | route | `/srv/wiki/` (stripped before proxy; internal routes stay `/mcp`, …) |
-| loopback port | **3006** (crm 3001, ledger 3002, notify 3003, agent 3004, dropbox 3005) |
+| loopback port | **3006** (crm 3001, ledger 3002, notify 3003, prompts 3004, dropbox 3005) |
 | manifest | `etc/manifest.env`: `MOUNT=/srv/wiki/`, `PORT=3006`, `MCP=true` |
 | trust | nginx introspects against dashboard `/internal/authn`; service trusts injected `X-Owner-Email` / `X-Client-Id` blindly; **owner-scoped** everywhere |
 | identity proof | `ikigenba_wiki_health` MCP tool |
@@ -67,9 +67,9 @@ the four cheap invariants that protect trust:
   extracted from `agent` into a shared Go module (`replace agentkit => ../agentkit`,
   the eventplane pattern), because **multiple future services will embed agents**,
   not just wiki. It is **extracted and hardened with tests**, not consumed as
-  agent-is-today. wiki builds against it first; agent is retrofitted onto it
-  afterward and inherits the tests. agent's current immaturity never blocks wiki.
-  - **Seam (to verify against `agent/internal/engine`):** `agentkit` owns the
+  prompts-is-today. wiki builds against it first; prompts is retrofitted onto it
+  afterward and inherits the tests. prompts' current immaturity never blocks wiki.
+  - **Seam (to verify against `prompts/internal/engine`):** `agentkit` owns the
     *generic* — Anthropic streaming client, the tool-use loop, base tools
     (bash/read/write/edit/grep/glob), sandbox path-confinement, the stream-json
     wire codec, the model registry, **and the async agent-job lifecycle**
