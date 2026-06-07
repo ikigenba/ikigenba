@@ -1,5 +1,7 @@
 # Build artifacts
 /build/
+# Stray bare binary from a module-root `go build` (never committed)
+/ralph
 
 # SQLite databases (runtime; default path is ./tmp/ralph.db)
 *.db
