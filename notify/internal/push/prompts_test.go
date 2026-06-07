@@ -21,19 +21,19 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// TestAgentHandlerPushesOnSucceeded asserts run.succeeded fires one best-effort
+// TestPromptsHandlerPushesOnSucceeded asserts run.succeeded fires one best-effort
 // push (Title "Run succeeded", body = session_name) and the handler returns nil so
-// the engine advances agent's cursor.
-func TestAgentHandlerPushesOnSucceeded(t *testing.T) {
+// the engine advances prompts's cursor.
+func TestPromptsHandlerPushesOnSucceeded(t *testing.T) {
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
-	h := push.AgentHandler(client, discard)
+	h := push.PromptsHandler(client, discard)
 
 	ev := consumer.Event{
 		Type:    "run.succeeded",
 		ID:      "01JRUNOK",
-		Source:  "agent",
+		Source:  "prompts",
 		Payload: json.RawMessage(`{"session_id":"s1","session_name":"nightly scan","trigger_event":"cron.nightly","scheduled_for":"2026-06-06T08:00:00Z"}`),
 	}
 	if err := h(context.Background(), ev); err != nil {
@@ -49,18 +49,18 @@ func TestAgentHandlerPushesOnSucceeded(t *testing.T) {
 	}
 }
 
-// TestAgentHandlerPushesOnFailed asserts run.failed fires one push (Title "Run
+// TestPromptsHandlerPushesOnFailed asserts run.failed fires one push (Title "Run
 // failed", body = session_name + error) and returns nil.
-func TestAgentHandlerPushesOnFailed(t *testing.T) {
+func TestPromptsHandlerPushesOnFailed(t *testing.T) {
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
-	h := push.AgentHandler(client, discard)
+	h := push.PromptsHandler(client, discard)
 
 	ev := consumer.Event{
 		Type:    "run.failed",
 		ID:      "01JRUNBAD",
-		Source:  "agent",
+		Source:  "prompts",
 		Payload: json.RawMessage(`{"session_id":"s1","session_name":"nightly scan","trigger_event":"cron.nightly","scheduled_for":"2026-06-06T08:00:00Z","error":"run TTL exceeded"}`),
 	}
 	if err := h(context.Background(), ev); err != nil {
@@ -76,19 +76,19 @@ func TestAgentHandlerPushesOnFailed(t *testing.T) {
 	}
 }
 
-// TestAgentHandlerMalformedPayloadSkips asserts an undecodable run outcome payload
+// TestPromptsHandlerMalformedPayloadSkips asserts an undecodable run outcome payload
 // is poison: the handler returns an ErrSkip-wrapped error (engine logs loud +
 // advances) and fires no push.
-func TestAgentHandlerMalformedPayloadSkips(t *testing.T) {
+func TestPromptsHandlerMalformedPayloadSkips(t *testing.T) {
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
-	h := push.AgentHandler(client, discard)
+	h := push.PromptsHandler(client, discard)
 
 	ev := consumer.Event{
 		Type:    "run.succeeded",
 		ID:      "01JRUNPOISON",
-		Source:  "agent",
+		Source:  "prompts",
 		Payload: json.RawMessage(`{"session_name": `), // truncated JSON
 	}
 	err := h(context.Background(), ev)
@@ -104,15 +104,15 @@ func TestAgentHandlerMalformedPayloadSkips(t *testing.T) {
 	}
 }
 
-// TestAgentHandlerNonMatchingTypeAdvances asserts a non run.* event returns nil
+// TestPromptsHandlerNonMatchingTypeAdvances asserts a non run.* event returns nil
 // (the engine advances; it is not ours) with no push.
-func TestAgentHandlerNonMatchingTypeAdvances(t *testing.T) {
+func TestPromptsHandlerNonMatchingTypeAdvances(t *testing.T) {
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
-	h := push.AgentHandler(client, discard)
+	h := push.PromptsHandler(client, discard)
 
-	ev := consumer.Event{Type: "run.cancelled", ID: "01JOTHER", Source: "agent", Payload: json.RawMessage(`{}`)}
+	ev := consumer.Event{Type: "run.cancelled", ID: "01JOTHER", Source: "prompts", Payload: json.RawMessage(`{}`)}
 	if err := h(context.Background(), ev); err != nil {
 		t.Fatalf("non-matching type returned %v, want nil", err)
 	}
@@ -122,11 +122,11 @@ func TestAgentHandlerNonMatchingTypeAdvances(t *testing.T) {
 	}
 }
 
-// TestAgentHandlerPushFailureReturnsNil asserts the best-effort contract under a
+// TestPromptsHandlerPushFailureReturnsNil asserts the best-effort contract under a
 // FAILING ntfy sink: a non-2xx (or dead) ntfy must NOT stall the feed — the
 // handler returns nil regardless of the push outcome (the push is detached and
 // swallows its failure).
-func TestAgentHandlerPushFailureReturnsNil(t *testing.T) {
+func TestPromptsHandlerPushFailureReturnsNil(t *testing.T) {
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	// A sink that always 500s — the push attempt is made and fails.
 	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -134,12 +134,12 @@ func TestAgentHandlerPushFailureReturnsNil(t *testing.T) {
 	}))
 	t.Cleanup(failing.Close)
 	client := push.NewClient(failing.URL, "topic", "tok", discard)
-	h := push.AgentHandler(client, discard)
+	h := push.PromptsHandler(client, discard)
 
 	ev := consumer.Event{
 		Type:    "run.failed",
 		ID:      "01JRUNFAIL",
-		Source:  "agent",
+		Source:  "prompts",
 		Payload: json.RawMessage(`{"session_id":"s1","session_name":"task","error":"boom"}`),
 	}
 	if err := h(context.Background(), ev); err != nil {
@@ -150,7 +150,7 @@ func TestAgentHandlerPushFailureReturnsNil(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 }
 
-// agentCursor reads the feed_offset cursor for a given source.
+// cursorFor reads the feed_offset cursor for a given source.
 func cursorFor(t *testing.T, db *sql.DB, source string) sql.NullString {
 	t.Helper()
 	var cur sql.NullString
@@ -163,8 +163,8 @@ func cursorFor(t *testing.T, db *sql.DB, source string) sql.NullString {
 
 // TestTwoFeedOffsetsAdvanceIndependently is the critical correctness check for P9:
 // two consumer.Run loops sharing ONE notify DB but keyed by different sources
-// ("crm" and "agent") advance their OWN feed_offset rows without ever clobbering
-// each other. The crm loop draining its feed must not move agent's cursor, and
+// ("crm" and "prompts") advance their OWN feed_offset rows without ever clobbering
+// each other. The crm loop draining its feed must not move prompts's cursor, and
 // vice versa.
 func TestTwoFeedOffsetsAdvanceIndependently(t *testing.T) {
 	dir := t.TempDir()
@@ -182,17 +182,17 @@ func TestTwoFeedOffsetsAdvanceIndependently(t *testing.T) {
 	crmFeed := httptest.NewServer(crmOb.FeedHandler())
 	t.Cleanup(crmFeed.Close)
 
-	// agent producer.
-	agentDB := openDB(t, filepath.Join(dir, "agent.db"), outbox.SchemaSQL)
-	agentOb, err := outbox.New(agentDB, outbox.Options{
-		Source: "agent", DBPath: filepath.Join(dir, "agent.db"),
-		GenerationPath: filepath.Join(dir, "agentgen"), Logger: discard,
+	// prompts producer.
+	promptsDB := openDB(t, filepath.Join(dir, "prompts.db"), outbox.SchemaSQL)
+	promptsOb, err := outbox.New(promptsDB, outbox.Options{
+		Source: "prompts", DBPath: filepath.Join(dir, "prompts.db"),
+		GenerationPath: filepath.Join(dir, "promptsgen"), Logger: discard,
 	})
 	if err != nil {
-		t.Fatalf("agent outbox.New: %v", err)
+		t.Fatalf("prompts outbox.New: %v", err)
 	}
-	agentFeed := httptest.NewServer(agentOb.FeedHandler())
-	t.Cleanup(agentFeed.Close)
+	promptsFeed := httptest.NewServer(promptsOb.FeedHandler())
+	t.Cleanup(promptsFeed.Close)
 
 	// ONE shared notify consumer DB (the real deployment: both loops, one DB).
 	cdb := openDB(t, filepath.Join(dir, "notify.db"), consumer.SchemaSQL)
@@ -202,7 +202,7 @@ func TestTwoFeedOffsetsAdvanceIndependently(t *testing.T) {
 
 	// Seed one event on each feed.
 	emit(t, crmOb, crmDB, "contact.created", `{"id":"c1","display_name":"Alice"}`)
-	emit(t, agentOb, agentDB, "run.succeeded", `{"session_id":"s1","session_name":"nightly"}`)
+	emit(t, promptsOb, promptsDB, "run.succeeded", `{"session_id":"s1","session_name":"nightly"}`)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 2)
@@ -214,9 +214,9 @@ func TestTwoFeedOffsetsAdvanceIndependently(t *testing.T) {
 	}()
 	go func() {
 		done <- consumer.Run(ctx, consumer.Config{
-			FeedURL: agentFeed.URL + "/feed", From: "earliest", DB: cdb,
-			Source: "agent", ConsumerID: "notify", Logger: discard,
-		}, push.AgentHandler(client, discard))
+			FeedURL: promptsFeed.URL + "/feed", From: "earliest", DB: cdb,
+			Source: "prompts", ConsumerID: "notify", Logger: discard,
+		}, push.PromptsHandler(client, discard))
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -229,28 +229,28 @@ func TestTwoFeedOffsetsAdvanceIndependently(t *testing.T) {
 
 	// Both cursors become non-null (each loop drained its own one event).
 	waitFor(t, "crm cursor set", func() bool { return cursorFor(t, cdb, "crm").Valid })
-	waitFor(t, "agent cursor set", func() bool { return cursorFor(t, cdb, "agent").Valid })
+	waitFor(t, "prompts cursor set", func() bool { return cursorFor(t, cdb, "prompts").Valid })
 	crm1 := cursorFor(t, cdb, "crm").String
-	agent1 := cursorFor(t, cdb, "agent").String
+	prompts1 := cursorFor(t, cdb, "prompts").String
 
-	// Advance ONLY the crm feed. agent's cursor must NOT move.
+	// Advance ONLY the crm feed. prompts's cursor must NOT move.
 	emit(t, crmOb, crmDB, "contact.created", `{"id":"c2","display_name":"Bob"}`)
 	waitFor(t, "crm cursor advances", func() bool {
 		c := cursorFor(t, cdb, "crm")
 		return c.Valid && c.String != crm1
 	})
-	if got := cursorFor(t, cdb, "agent"); !got.Valid || got.String != agent1 {
-		t.Fatalf("agent cursor moved when only crm advanced: %v (want %q)", got, agent1)
+	if got := cursorFor(t, cdb, "prompts"); !got.Valid || got.String != prompts1 {
+		t.Fatalf("prompts cursor moved when only crm advanced: %v (want %q)", got, prompts1)
 	}
 
-	// Now advance ONLY agent. crm's cursor must NOT move.
+	// Now advance ONLY prompts. crm's cursor must NOT move.
 	crm2 := cursorFor(t, cdb, "crm").String
-	emit(t, agentOb, agentDB, "run.failed", `{"session_id":"s1","session_name":"nightly","error":"boom"}`)
-	waitFor(t, "agent cursor advances", func() bool {
-		c := cursorFor(t, cdb, "agent")
-		return c.Valid && c.String != agent1
+	emit(t, promptsOb, promptsDB, "run.failed", `{"session_id":"s1","session_name":"nightly","error":"boom"}`)
+	waitFor(t, "prompts cursor advances", func() bool {
+		c := cursorFor(t, cdb, "prompts")
+		return c.Valid && c.String != prompts1
 	})
 	if got := cursorFor(t, cdb, "crm"); !got.Valid || got.String != crm2 {
-		t.Fatalf("crm cursor moved when only agent advanced: %v (want %q)", got, crm2)
+		t.Fatalf("crm cursor moved when only prompts advanced: %v (want %q)", got, crm2)
 	}
 }
