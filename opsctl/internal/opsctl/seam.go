@@ -54,6 +54,10 @@ type System interface {
 	// box runs `useradd --system --home-dir /opt/<app> --shell /usr/sbin/nologin
 	// <app>`). Idempotent: a no-op when the user already exists.
 	EnsureSystemUser(ctx context.Context, app, homeDir string) error
+	// DeleteSystemUser removes the dedicated app user (the box runs `userdel
+	// <app>`), the inverse of EnsureSystemUser invoked by teardown. Idempotent: a
+	// no-op when the user is already absent (a partially-torn-down box).
+	DeleteSystemUser(ctx context.Context, app string) error
 	// ChownTree recursively chowns path to owner:group (the box runs `chown -R
 	// <owner>:<group> <path>`). install uses it to hand the data dir back to the
 	// `<app>` service user after the root-run migrate, which would otherwise leave
@@ -198,6 +202,15 @@ func (s RealSystem) EnsureSystemUser(ctx context.Context, app, homeDir string) e
 		return nil
 	}
 	return run(ctx, "useradd", "--system", "--home-dir", homeDir, "--shell", "/usr/sbin/nologin", app)
+}
+
+func (s RealSystem) DeleteSystemUser(ctx context.Context, app string) error {
+	// id <app> succeeds iff the user exists; userdel only when present (idempotent,
+	// the inverse of EnsureSystemUser's `id || useradd`).
+	if err := exec.CommandContext(ctx, "id", app).Run(); err != nil {
+		return nil
+	}
+	return run(ctx, "userdel", app)
 }
 
 func (s RealSystem) ChownTree(ctx context.Context, owner, group, path string) error {

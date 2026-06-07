@@ -93,6 +93,7 @@ var groups = []group{
 	}},
 	{"Provisioning", []verb{
 		{"setup", "opsctl setup <app> [--port <n>] [--fragment <path>] [--defer-nginx]"},
+		{"teardown", "opsctl teardown <app> --force [--keep-user]"},
 		// One flag per line; line 1 is the verb + first flag, continuation lines
 		// align under --domain (16 cols = len("opsctl init-box "); the renderer
 		// prepends the 4-col group indent → column 20).
@@ -125,6 +126,7 @@ var runners = map[string]runner{
 	"disable":  runServiceControl,
 	"tail":     runTail,
 	"setup":    runSetup,
+	"teardown": runTeardown,
 	"init-box": runInitBox,
 }
 
@@ -406,6 +408,24 @@ func runSetup(ctx context.Context, root, name string, args []string) error {
 		Port:       *port,
 		Fragment:   frag,
 		DeferNginx: *deferNginx,
+	})
+}
+
+func runTeardown(ctx context.Context, root, name string, args []string) error {
+	fs := newFlagSet(name)
+	force := fs.Bool("force", false, "confirm the destructive removal (required)")
+	keepUser := fs.Bool("keep-user", false, "retain the dedicated --system app user")
+	if err := fs.Parse(reorderArgs(args, nil)); err != nil {
+		return helpErr(err)
+	}
+	pos := fs.Args()
+	if len(pos) != 1 {
+		return fmt.Errorf("usage: opsctl teardown <app> --force [--keep-user]")
+	}
+	return opsctl.New(root).Teardown(ctx, opsctl.TeardownOptions{
+		App:      pos[0],
+		Force:    *force,
+		KeepUser: *keepUser,
 	})
 }
 

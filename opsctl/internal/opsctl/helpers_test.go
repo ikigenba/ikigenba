@@ -48,6 +48,11 @@ func (s *stubSystem) EnsureSystemUser(ctx context.Context, app, homeDir string) 
 	return nil
 }
 
+func (s *stubSystem) DeleteSystemUser(ctx context.Context, app string) error {
+	s.record("delete-user:" + app)
+	return nil
+}
+
 func (s *stubSystem) ChownTree(ctx context.Context, owner, group, path string) error {
 	s.record("chown:" + owner + ":" + group + ":" + path)
 	return nil
