@@ -1,66 +1,78 @@
 # Gmail-Connector Decisions
 
 A record of decisions made in a design discussion about giving the suite an
-**owner-mailbox connector and an outbound email path** — concretely, a new
-`gmail` service that connects to the owner's Google account, **polls for mail
-changes on a cron schedule and emits them as events** (event-plane producer),
-and **sends mail in reaction to `notice.posted` events** the `agent` service
-emits. This file records **decisions only**, not a plan. Detailed planning
-happens in a follow-up session on top of these (a `gmail-connector-plan.md`,
-mirroring `event-triggering-plan.md`).
+**owner-mailbox connector** — concretely, a new `gmail` service that connects to
+the owner's Google account, exposes the **normal mailbox operations as MCP
+tools**, and **polls for mail changes on an internal interval and emits them as
+events** (event-plane producer). This file records **decisions only**, not a
+plan. Detailed planning happens in a follow-up session on top of these (a
+`gmail-connector-plan.md`, mirroring `event-triggering-plan.md`).
 
-This work builds directly on the just-completed event-triggering effort
+This work builds on the just-completed event-triggering effort
 (`event-triggering-decisions.md` / `-plan.md`, phases P1–P9): the fixed
-at-least-once consumer engine, the `cron` service, `agent` (formerly `ralph`)
-as a cron consumer + outcome producer, and `notify` as an outcome consumer. It
-reuses every one of those primitives rather than adding new machinery.
+at-least-once consumer engine, the `cron` service, `agent` (formerly `ralph`),
+and `notify`. It reuses the event-plane **producer** primitives rather than
+adding new machinery.
 
-Date of discussion: 2026-06-06.
+Date of discussion: 2026-06-06 (revised 2026-06-07 — scope reduced to the
+connector + inbound-event producer, see "Scope" below; revised again 2026-06-07
+during plan review — credential bootstrap reworked: dedicated GCP project +
+dedicated desktop OAuth client, publishing status **In production (unverified)**
+not Testing, and a self-writing consent CLI; see §2).
+
+---
+
+## Scope
+
+This effort is **only the `gmail` connector**: an OAuth-backed mailbox service
+with an MCP surface over the normal Gmail operations, plus a producer half that
+emits events when mail changes. It is **producer-only** on the event plane — it
+consumes nothing.
+
+An earlier draft of this doc also covered an outbound, event-driven email path
+(an `agent` `notify_owner` tool emitting `notice.posted`, and `gmail` consuming
+that event to send mail, driven by a weekly-research cron example). **That whole
+outbound-reaction story is dropped** and recorded in "Deferred / out of scope".
+The MCP `send` / `draft` tools remain — sending is a normal mailbox operation —
+but sending is **not** wired to any event.
 
 ---
 
 ## 0. Framing
 
 - **Drive from missing functionality** (same philosophy as the event-triggering
-  work). The originating gap: *"create a scheduled research session in `agent`
-  that runs Sunday morning and emails me its results."* That surfaced two missing
-  pieces — an agent way to emit **its own exact text** as an owner-facing message,
-  and an **outbound email** path — plus, on inspection, a third latent want: a
-  **first-class mailbox connector** the platform can both react to and act on.
-- **The end-to-end target:**
+  work). The gap: the platform has no first-class **mailbox connector** — nothing
+  it can read/operate through, and nothing that surfaces incoming mail as a fact
+  on the event plane.
+- **The target:**
 
   ```
-  cron.research-weekly ─▶ agent runs research ─▶ agent emits notice.posted ─▶ gmail sends email to owner
-  gmail (cron-polled)  ─▶ emits mail.received  ─▶ (future) agent sessions triggered by incoming mail
-  notify               ─▶ ntfy push on agent's run.succeeded / run.failed (unchanged)
+  gmail (internal-daemon polled) ─▶ emits mail.received / mail.sent / mail.deleted
+  owner (or future agent) ────────▶ operates the mailbox via gmail's MCP tools
   ```
 
-- **Two notification surfaces, deliberately distinct:**
-  - `notify` keeps its **best-effort ntfy pings** on run outcomes (`run.*`) — the
-    short "your run finished / failed" signal, including the failure case where
-    the agent never got to compose a message.
-  - `gmail` carries the **at-least-once full-text email** (`notice.posted`) — the
-    agent's actual report.
+- **It generalizes the platform's trigger sources.** `cron` emits *time* events;
+  `gmail` emits *mail* events. A future `agent` session could be triggered by mail
+  via the same `session_triggers` seam — "run this agent when mail matching X
+  arrives" becomes possible for free later. Not in scope now, but it is the reason
+  the producer half matters.
 
 ---
 
 ## 1. The `gmail` service
 
 - **New, dedicated, deployable service** (joining `cron` as a recent addition),
-  **not** folded into `notify`. The original idea of widening `notify` into a
-  full-mailbox sender was rejected once full read/send/delete access was in scope:
-  full mailbox access is its own domain, far larger than a push service needs.
+  **not** folded into `notify`. Full mailbox access is its own domain, far larger
+  than a push service needs.
 - **Structurally `dropbox`'s twin.** `dropbox` is *"an external-OAuth connector
   that keeps a local mirror in sync via a loopback daemon + event-plane
   producer."* `gmail` is the same shape pointed at Google mail: an external-OAuth
   connector that **polls the mailbox and emits change events**. The dropbox
   service is the template to mirror (token source, client, MCP surface, producer
-  wiring).
-- **It generalizes the platform's trigger sources.** `cron` emits *time* events;
-  `gmail` emits *mail* events. An `agent` session can be triggered by either via
-  the same `session_triggers` seam — so "run this agent when mail matching X
-  arrives" becomes possible for free later (not in scope now, but the reason the
-  producer half matters).
+  wiring, internal daemon).
+- **Two roles only: connector + producer.** It runs a producer (`/feed`) and an
+  internal poll daemon. It is **not** a consumer of `cron`, `agent`, or anything
+  else.
 
 ### Connector half (mirror `dropbox`)
 
@@ -73,177 +85,171 @@ Date of discussion: 2026-06-06.
   single `DROPBOX_REFRESH_TOKEN`, fitting the one-box-one-owner model. A
   `tokenSource` exchanges refresh → short-lived access token, caches it, and
   force-refreshes on a 401 (copy dropbox's `tokenSource` directly).
-- **MCP surface:** `list` / `read` / `send` / `trash` / `delete` message tools,
-  for the owner (and, under a future agent-as-MCP-client track, the agent).
+- **MCP surface — the full normal-mailbox set:**
+  - `list` — list/search messages; takes an optional Gmail `q` query
+    (`from:`, `subject:`, `is:unread`, …) with pagination. **`list` and `search`
+    are one tool** — Gmail's `messages.list` is the same call either way.
+  - `read` — full message: headers + body, plus **attachment metadata**
+    (filename, size, mime). Attachment *download* (base64 blobs through MCP) is
+    deferred.
+  - `thread` — read a whole thread.
+  - `send` — send an RFC-2822 message (base64url `messages.send`).
+  - `draft` — create a draft (distinct from `send`; included).
+  - `labels` — list available labels.
+  - `label` / `unlabel` — apply / remove a label on a message (covers
+    archive = remove `INBOX`, mark-read = remove `UNREAD`).
+  - `trash` — move to Trash (recoverable).
+  - `delete` — permanent delete.
+  - `reply` is **deferred** — it is `send` plus `In-Reply-To` / `References`
+    threading headers and a `threadId`; a thin helper to add later.
 
 ### Producer half — "emit events on changes"
 
 - **Change detection via the Gmail History API**, not real-time push.
   `users.history.list(startHistoryId=cursor)` returns `messagesAdded` /
-  `messagesDeleted` / label changes since the stored `historyId`. The service
-  holds **`historyId` as its sync cursor** — exactly analogous to `cron`'s
-  `last_slot` and a consumer's `feed_offset`.
-- **Per change, in one transaction:** `outbox.Append` the event **and** advance
-  the stored `historyId` (same atomic "emitted == recorded as emitted" pattern as
-  cron's tick worker). Producer wiring mirrors crm/ledger/cron: `outbox.SchemaSQL`
-  migration, `Spec.Feed = "/feed"` + `Spec.Producer`, **static** `Spec.Events`.
+  `messagesDeleted` / `labelsAdded` / `labelsRemoved` since the stored
+  `historyId`. The service holds **`historyId` as its sync cursor** — exactly
+  analogous to `cron`'s `last_slot` and a consumer's `feed_offset`.
+- **Per poll, in one transaction:** `outbox.Append` the derived events **and**
+  advance the stored `historyId` (same atomic "emitted == recorded as emitted"
+  pattern as cron's tick worker). Producer wiring mirrors crm/ledger/cron:
+  `outbox.SchemaSQL` migration, `Spec.Feed = "/feed"` + `Spec.Producer`,
+  **static** `Spec.Events`.
 - **No Cloud Pub/Sub / `users.watch`.** Real-time Gmail push needs a public
   webhook + a GCP broker, which directly contradicts the suite's operating bet
   ("no broker, accept scheduled downtime"). **Polling is the deliberate choice.**
-- **Accepted downtime trade-off** (same flavor as cron's no-catch-up): Gmail
-  retains history for only ~a week. If `gmail` is down longer than that, the
-  stored `historyId` goes stale and `history.list` returns 404 → the service does
-  a **full resync and misses per-message events for the gap**. This is the
-  best-effort philosophy applied to mail.
-- **Events emitted — start minimal.** `mail.received` first (payload
-  `{id, thread_id, from, subject, snippet, received_at}`). `mail.sent` /
-  `mail.deleted` are deferred until a consumer needs them.
 
-### Scheduled half — "run on schedules" (cron-consumed)
+#### Events emitted — three static types
 
-- **`gmail` consumes a `cron.<name>` tick and polls once per tick.** The poll
-  cadence is therefore **owner-tunable at runtime via the crontab** (`*/5 * * * *`,
-  hourly, etc.) with no redeploy. This is `cron`'s second consumer, proving the
-  primitive generalizes beyond `agent`.
-- Chosen over an internal interval daemon (the dropbox style) so scheduling stays
-  centralized in `cron` and tunable without a code change. The trade-off: if
-  `cron` is down, `gmail` stops polling — the same accept-downtime bet already
-  embraced everywhere; the next poll's History diff covers the gap.
+Each maps to a History signal. Added messages are enriched with one
+`messages.get` per message (fine at a single owner's volume — no batching).
+
+| Event | History signal | Detection rule | Payload |
+|---|---|---|---|
+| `mail.received` | `messagesAdded` | added message carries `INBOX` | `{id, thread_id, from, subject, snippet, received_at}` |
+| `mail.sent` | `messagesAdded` | added message carries `SENT` (not `INBOX`) | `{id, thread_id, to, subject, snippet, sent_at}` |
+| `mail.deleted` | `labelsAdded: TRASH` | message moved to Trash | `{id, thread_id, subject, deleted_at}` |
+
+- **`mail.sent` covers our own sends uniformly.** An MCP `send` shows up as a
+  `messagesAdded` + `SENT`, so it naturally emits `mail.sent` — same path as mail
+  sent from the Gmail UI. The `INBOX` filter keeps our sends out of
+  `mail.received`.
+- **`mail.deleted` fires on move-to-Trash, not permanent expunge.** Discarding
+  mail (the `labelsAdded: TRASH` moment) is the meaningful human signal; the
+  message still exists in Trash, so its payload is still fetchable. A later
+  permanent expunge of that same message (`messagesDeleted`) is **not** modeled
+  and emits nothing — an accepted asymmetry.
+
+### Scheduled half — internal interval daemon (mirror `dropbox`)
+
+- **An internal interval daemon polls once per interval.** Cadence is
+  config-from-env: **`GMAIL_POLL_INTERVAL`, default `60s`**. This mirrors
+  dropbox's self-contained daemon style.
+- **Chosen over a cron-consumed poll.** A cron tick would make cadence tunable
+  via the crontab without redeploy, but it adds a cross-service dependency (cron
+  down → no polling) and a consumer loop. With no outbound/event-reaction story
+  in scope, that justification fell away, so `gmail` stays a pure self-contained
+  connector exactly like dropbox. Re-tuning poll cadence is a redeploy, which a
+  single owner rarely needs.
 - A manual `sync_now` MCP tool (on-demand poll) is a cheap later add, not a
   decision to make now.
-- `gmail` is thus simultaneously a **consumer** of `cron` (poll trigger) and of
-  `agent` (`notice.posted`, §3) and a **producer** of `mail.*` — three roles on
-  one service. appkit supports multiple consumer loops + a producer with no
-  exclusivity assumption (already exercised: `notify` runs two consumer loops,
-  `agent` is consumer + producer).
+
+#### Cursor lifecycle
+
+- **Fresh boot** — no stored `historyId`: bootstrap the cursor from
+  `users.getProfile().historyId` and emit **nothing** for pre-existing mail. The
+  cursor starts "now"; the inbox is **not** backfilled into `mail.received`.
+- **Stale-cursor resync** — Gmail retains history for only ~a week. If `gmail` is
+  down longer than that, the stored `historyId` goes stale and `history.list`
+  returns 404. Treat this **identically to a fresh boot**: reset the cursor to
+  the current `getProfile().historyId`, emit nothing for the gap, log a warning.
+  This is the best-effort philosophy applied to mail (same flavor as cron's
+  no-catch-up) — never a backfill flood.
 
 ---
 
-## 2. `agent`: the "notify the owner with my own exact text" tool (Gap 1)
+## 2. OAuth / credential bootstrap
 
-- **A new agent-facing tool, `notify_owner(subject, body)`**, lets a running
-  session emit an owner-facing message **with the agent's exact text** — distinct
-  from the run-outcome events, which only carry the task name (the "agent saying
-  I'm done" signal). This is the explicitly-wanted capability: the agent *decides*
-  to send and controls *exactly what*, rather than the runner shipping whatever
-  the final assistant message happened to be.
-- **Mechanism = filesystem harvest, keeping `agentkit` pure** (chosen over
-  injecting a domain sink into `agentkit`'s `Dispatch`). The agent loop runs
-  in-process inside `agent`, but `agentkit`'s tools are deliberately pure,
-  filesystem-confined ops with no DB/outbox handle. So `notify_owner` **writes the
-  notice to a reserved sink inside the sandbox root** (e.g. `.outbox/notices.jsonl`);
-  after `agent.Run` returns, the runner reads that sink and `outbox.Append`s one
-  `notice.posted` event per notice — alongside the terminal `run.*` outcome Append
-  it already does. Zero change to `agentkit`'s `Dispatch` signature; `agentkit`
-  stays domain-free; `agent` remains the only thing touching its own DB.
-  - Trade-off: notices flush at **end-of-run** (batched), not the instant the tool
-    is called. Acceptable for a research report. (Real-time per-notice emission is
-    the rejected "inject a sink into Dispatch" option; revisit only if needed.)
-- **The agent stays sandboxed.** It gains no network egress and no MCP-client
-  reach to sibling services. Emitting an event is its only new outbound effect.
-
-### The `notice.posted` event
-
-- **New static event type, source = `agent`.** Kept separate from
-  `run.succeeded` / `run.failed` (not a widening of the outcome payload) so a
-  consumer filters at the type level: `notice.posted` → email; `run.*` → ntfy.
-- **Payload `{subject, body, session_id, session_name, trigger_event,
-  scheduled_for}`** — the agent's exact `subject`/`body` plus the run context.
-  Recipient is implicit (the box owner); no recipient routing this phase.
-- Wired as a second static entry in `agent`'s producer `Spec.Events` (the producer
-  role already exists from event-triggering P8).
-
----
-
-## 3. Delivery: event-driven, `gmail` consumes `notice.posted` (Gap 2)
-
-- **The agent emits, `gmail` sends** (the "(ii) event-driven" choice, taken over
-  "(i) agent-as-MCP-client"). `gmail` adds `agent` to its consumed sources and
-  subscribes to `notice.posted`; the handler sends the email via the Gmail API
-  (`users.messages.send`, a base64url RFC-2822 message), **from and to the owner's
-  own account**. So the research report lands in the owner's inbox (and Sent).
-- **At-least-once delivery, not best-effort.** Unlike the ntfy push, a Gmail send
-  failure returns a **plain error** from the handler → the fixed consumer engine
-  (P1) stalls and replays from the cursor. A weekly report is worth retrying; a
-  rare duplicate email on replay beats a silently-lost report. (A malformed
-  `notice.posted` payload is semantic poison → `consumer.ErrSkip`, as everywhere.)
-- **Why not (i) agent-as-MCP-client:** letting the sandboxed agent call sibling
-  services' MCP tools directly would collapse both gaps into nothing and is the
-  suite's eventual north star ("users connect an agent and work through tools") —
-  but it's a large, security-sensitive change (egress + auth from inside the
-  sandbox) that deserves its own design pass. (ii) ships the goal, stays uniform
-  with the event mesh, and doesn't foreclose (i) later.
+- **Three dedicated secrets, no reuse of `GOOGLE_*`:** `GMAIL_CLIENT_ID`,
+  `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN` (full `https://mail.google.com/`
+  scope). The `GOOGLE_CLIENT_ID`/`SECRET` used by `dashboard/internal/googleidp`
+  for "Sign in with Google" are **not** reused, and the
+  `~/.secrets/hal-google-oauth.json` credential (a different project's, without
+  the mail scope) is not reused either. The same isolation argument the dropbox
+  service applied to its refresh token applies here to the **whole client**:
+  explicit ownership, independent rotation, isolated blast radius. All three
+  follow the uniform secret pattern (one `.envrc` line each referencing
+  `~/.secrets/<NAME>`, read from the environment at the composition root).
+- **Dedicated GCP project + dedicated Desktop-type OAuth client.** A *separate*
+  GCP project hosts the consent screen and a new **Desktop ("installed app")**
+  OAuth client (which is the correct type for a CLI loopback consent and gets
+  implicit loopback-redirect support — no redirect URI to register). The
+  separate project is the isolation boundary that matters: the two project-wide
+  changes below (adding a restricted scope, flipping publishing status) cannot
+  touch the dashboard's production "Sign in with Google" client, which lives in
+  its own project.
+- **Publishing status "In production" (unverified), NOT "Testing".** The earlier
+  "keep it in Testing" decision was wrong on a critical point: Google **revokes
+  refresh tokens after 7 days** for apps in Testing status with External user
+  type — which would break the connector weekly and force recurring manual
+  re-consent. Production-status tokens are durable. Leaving the app **unverified**
+  still requires **no CASA assessment** — verification is only needed to *remove*
+  the one-time "unverified app" warning or to serve *other* users, neither of
+  which a single-owner box needs. So the original goal (no assessment) is met,
+  and the token no longer expires. The consent screen adds the
+  `https://mail.google.com/` scope. **Contingency:** if Google blocks the
+  restricted-scope consent on an unverified production app, stop and reconsider —
+  the heavyweight fallback (CASA verification) is a separate discussion.
+- **One-time consent flow via a self-writing CLI.** A small stdlib Go tool
+  (`gmail/cmd/consent`), run as a `! <command>` human-in-the-loop step, performs
+  the offline-access loopback auth-code exchange and **writes the refresh token
+  directly to `~/.secrets/GMAIL_REFRESH_TOKEN` (`0600`)**, printing only a masked
+  confirmation. It **never prints the token value** — so even though `!`-command
+  stdout lands in the agent transcript, the secret never enters the agent's
+  context (secrets skill). *(The earlier "prints the refresh token for the owner
+  to paste" wording contradicted that guarantee and is dropped.)*
+- **No metaspot / SES / DKIM / infrastructure change.** An earlier SES design
+  (its own domain identity, DKIM in the `int/` account, an `ses:SendEmail` IAM
+  policy) is fully dropped — operating the mailbox via Google needs none of it.
+  The only AWS touch is the **standard per-app SSM `app-config` secret seeding**
+  every service does (`bin/secrets` writing the `gmail` key under
+  `/ikigenba/<account>/app-config`); that is routine deploy plumbing, not an
+  infrastructure change.
 
 ---
 
-## 4. OAuth / credential bootstrap
+## 3. Sequencing and deferrals
 
-- **Mint a fresh, dedicated `GMAIL_REFRESH_TOKEN`** (full `https://mail.google.com/`
-  scope) — **not** reused from the existing `~/.secrets/hal-google-oauth.json`
-  (a different project's credential, near-certainly without the mail scope).
-  Explicit ownership, independent rotation, isolated blast radius; follows the
-  uniform secret pattern (one `.envrc` line referencing `~/.secrets/GMAIL_REFRESH_TOKEN`,
-  read from the environment at the composition root).
-- **Reuses the existing `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`** OAuth client
-  (already in `~/.secrets`, already used by `dashboard/internal/googleidp` for
-  "Sign in with Google"). The client's consent screen must have the full mail
-  scope added, with the owner as a **test user**.
-- **OAuth client stays in "Testing" publishing status.** A restricted scope
-  normally triggers Google's CASA security assessment — but **only to publish to
-  general users**. Single-tenant (owner is the only user, on their own box) means
-  Testing + owner-as-test-user uses the restricted scope with **no assessment** —
-  just a one-time scarier consent screen.
-- **One-time consent flow**, scripted as a `! <command>` human-in-the-loop step
-  (mirrors however dropbox's refresh token was obtained): an offline-access
-  consent that prints the refresh token for the owner to drop into
-  `~/.secrets/GMAIL_REFRESH_TOKEN`. The value never enters the agent's context.
-- **No metaspot / AWS / SES / DKIM change at all.** The earlier SES design (its
-  own domain identity, DKIM in the `int/` account, an `ses:SendEmail` IAM policy)
-  is fully dropped — sending *as the owner via Google* needs none of it.
+### Build order
 
----
+1. **The `gmail` service** — connector (`tokenSource` + MCP surface) +
+   History-API producer (three events) + internal poll daemon with cursor
+   lifecycle.
+2. **Deploy plumbing** — `opsctl setup gmail`, manifest, nginx fragments,
+   `VERSION` / `go.work`, and the one-time token bootstrap.
 
-## 5. The originating example, concretely
-
-- **cron schedule** `research-weekly` = **`0 10 * * 0`** — Sunday 05:00 US Central,
-  pinned UTC. cron evaluates in UTC (event-triggering decisions §2); 05:00 CDT =
-  10:00 UTC. **DST drift accepted:** fires 05:00 in summer (CDT), 04:00 in winter
-  (CST). A weekly digest does not need DST exactness; per-schedule timezone is the
-  documented future cron upgrade if it ever does.
-- **agent session** "weekly research" with trigger `cron.research-weekly`
-  (event-triggering `session_set_trigger`). On the tick it runs research,
-  synthesizes a report, and calls `notify_owner(subject, body)` with the report.
-- `agent` emits `notice.posted` → `gmail` consumes → emails the report to the
-  owner. If the run instead fails, `notify` still sends its ntfy `run.failed` ping.
-
----
-
-## 6. Sequencing and deferrals
-
-### Sequencing
-
-- **The `ralph` → `agent` rename lands FIRST, as its own isolated, mechanical
-  phase, before any of this work.** (Already reflected in the top-level CLAUDE.md.)
-  All gmail/notice work is designed against `agent` / `source: "agent"` from line
-  one — no freshly-written code retrofitted, and `notify`'s single `feed_offset`
-  cursor row keyed on the old source is migrated once by the rename, before
-  `gmail` becomes a second consumer of agent's feed.
-- **Build order:** (1) the `agent` `notify_owner` tool + `notice.posted` producer
-  event; (2) the `gmail` service — connector + History-API producer + cron-consumed
-  poll + `notice.posted`→send consumer; (3) deploy plumbing (`opsctl setup gmail`,
-  manifest, nginx fragments, `VERSION`/`go.work`) and the one-time token bootstrap.
-  Decomposition into subagent-sized phases is the follow-up plan doc's job.
+The `ralph` → `agent` rename already landed (reflected in the top-level
+CLAUDE.md). Decomposition into subagent-sized phases is the follow-up plan doc's
+job.
 
 ### Deferred / out of scope
 
-- **Agent-as-MCP-client** (the (i) path): the sandboxed agent calling sibling
-  services' MCP tools directly (read/triage/delete mail mid-run, send directly).
-  Its own future track.
+- **Outbound, event-driven email** — the dropped story: an `agent` `notify_owner`
+  tool emitting `notice.posted`, `gmail` consuming `notice.posted` to send mail,
+  and the weekly-research cron example that motivated it. Sending stays available
+  as an MCP tool (`send` / `draft`) but is wired to no event. Its own future
+  track if the platform wants event-driven outbound mail.
+- **Agent-as-MCP-client** — the sandboxed agent calling sibling services' MCP
+  tools directly (read / triage / delete mail mid-run, send directly). Its own
+  future track (egress + auth from inside the sandbox is a large,
+  security-sensitive change).
 - **Mail-triggered agent sessions** — wiring `gmail`'s `mail.received` into
   `session_triggers` so a session runs on incoming mail. The producer half makes
   it possible; not built this phase.
-- **`mail.sent` / `mail.deleted` events**, richer mail payloads, recipient routing
-  / multiple recipients, and any channel-abstraction beyond type→channel.
+- **Cron-consumed polling** — rejected in favor of the internal daemon (§1).
+- **`reply` MCP tool** and **attachment download** — cheap later adds.
+- **Permanent-expunge (`messagesDeleted`) events**, richer mail payloads,
+  recipient routing / multiple recipients, and any channel-abstraction.
 - **Per-user / multi-account Gmail** (a token store keyed by owner, the dashboard
   grants story) — single owner refresh-token secret for now.
 - **Real-time Gmail push** (`users.watch` + Pub/Sub) — rejected, see §1.
