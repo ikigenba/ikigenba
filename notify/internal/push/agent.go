@@ -9,12 +9,12 @@ import (
 	"eventplane/consumer"
 )
 
-// ralph is the upstream source ralph presents on its outbox envelopes (§8.3) and
+// agent is the upstream source agent presents on its outbox envelopes (§8.3) and
 // the key for notify's SECOND feed_offset row (the crm loop owns the "crm" row,
-// this loop owns the "ralph" row — independent cursors, never shared).
-const ralphSource = "ralph"
+// this loop owns the "agent" row — independent cursors, never shared).
+const agentSource = "agent"
 
-// Outcome event types ralph emits on its /feed (event-triggering decisions §3,
+// Outcome event types agent emits on its /feed (event-triggering decisions §3,
 // P8): a run finishing successfully or in terminal failure. notify pushes on
 // BOTH so the owner is told about failures too.
 const (
@@ -22,7 +22,7 @@ const (
 	eventRunFailed    = "run.failed"
 )
 
-// runOutcome is the slice of ralph's run.succeeded / run.failed payload
+// runOutcome is the slice of agent's run.succeeded / run.failed payload
 // (event-triggering decisions §3) that notify needs for the push: the
 // human-readable task name and, on a failure, the error string. The other fields
 // (session_id, trigger_event, scheduled_for) are decoded only to validate the
@@ -32,39 +32,39 @@ type runOutcome struct {
 	Error       string `json:"error"`
 }
 
-// RalphSubscriptions are notify's two declared in-edges on ralph's feed
+// AgentSubscriptions are notify's two declared in-edges on agent's feed
 // (event-triggering decisions §4): run.succeeded and run.failed. As with the crm
-// Subscription, these are the ONE source of truth — the ralph consumer Handler
+// Subscription, these are the ONE source of truth — the agent consumer Handler
 // matches each event against them and the reflection tool reports them via
 // Spec.Subscriptions, so the runtime filter and what reflection advertises cannot
 // drift (decision 10). The Handler field is left unset; the engine wiring uses
 // the Subscription only as a declared graph edge.
-func RalphSubscriptions() []consumer.Subscription {
+func AgentSubscriptions() []consumer.Subscription {
 	return []consumer.Subscription{
 		{
-			Source:      ralphSource,
+			Source:      agentSource,
 			Filter:      eventRunSucceeded,
-			Description: "fires a best-effort ntfy.sh push (Title \"Run succeeded\", body = session_name) when a ralph run finishes successfully",
+			Description: "fires a best-effort ntfy.sh push (Title \"Run succeeded\", body = session_name) when an agent run finishes successfully",
 		},
 		{
-			Source:      ralphSource,
+			Source:      agentSource,
 			Filter:      eventRunFailed,
-			Description: "fires a best-effort ntfy.sh push (Title \"Run failed\", body = session_name + error) when a ralph run terminates in failure",
+			Description: "fires a best-effort ntfy.sh push (Title \"Run failed\", body = session_name + error) when an agent run terminates in failure",
 		},
 	}
 }
 
-// RalphHandler returns the consumer.Handler notify hands to the ralph consumer
+// AgentHandler returns the consumer.Handler notify hands to the agent consumer
 // loop. It mirrors the crm Handler's classification exactly (event-triggering
 // decisions §1/§4): it runs the effect only for run.succeeded / run.failed
 // (consumer-side filtering, §7.3) and ignores every other type — the engine still
 // commits the cursor for those, so they do not re-arrive. A matched event fires
 // the push ASYNCHRONOUSLY in a detached, timeout-bound goroutine (decision 16) so
 // the handler returns immediately and the engine commits the cursor without
-// waiting; a slow or dead ntfy therefore never stalls ralph's feed (best-effort —
+// waiting; a slow or dead ntfy therefore never stalls agent's feed (best-effort —
 // a push failure is logged and dropped, never surfaced). A malformed payload is
 // semantic poison → ErrSkip (log loud + advance), never a stalling error.
-func RalphHandler(c *Client, logger *slog.Logger) consumer.Handler {
+func AgentHandler(c *Client, logger *slog.Logger) consumer.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}

@@ -39,13 +39,13 @@ import (
 
 // The event-plane upstreams notify consumes and the stable id it presents on
 // every connect (event-protocol.md §7.1; decision 10). All fixed constants —
-// notify consumes crm's feed AND ralph's feed (each on its own consumer.Run loop
+// notify consumes crm's feed AND agent's feed (each on its own consumer.Run loop
 // with its own feed_offset row, keyed by source), and its X-Consumer-Id is the
-// literal "notify" on both. CONSUMES=crm,ralph in etc/manifest.env mirrors these
+// literal "notify" on both. CONSUMES=crm,agent in etc/manifest.env mirrors these
 // for the registry.
 const (
 	crmSource   = "crm"
-	ralphSource = "ralph"
+	agentSource = "agent"
 	consumerID  = "notify"
 )
 
@@ -61,16 +61,16 @@ func main() {
 		Mount:      "/srv/notify/",
 		Port:       3003,
 		MCP:        true,
-		Consumes:   []string{crmSource, ralphSource}, // event-plane consumer → CONSUMES=crm,ralph
+		Consumes:   []string{crmSource, agentSource}, // event-plane consumer → CONSUMES=crm,agent
 		// Subscriptions is the LIVE provider the reflection tool reports (mirrors
 		// Spec.Health). notify is a static consumer, so it returns the fixed list of
 		// its declared in-edges — the SAME subscriptions the consumer Handlers match
-		// against (crm's contact.created plus ralph's run.succeeded / run.failed), so
+		// against (crm's contact.created plus agent's run.succeeded / run.failed), so
 		// the runtime filter and reflection cannot drift (decision 10). Spec.Consumes
 		// stays the separate build-time envelope.
 		Subscriptions: func() []consumer.Subscription {
 			subs := []consumer.Subscription{push.Subscription()}
-			return append(subs, push.RalphSubscriptions()...)
+			return append(subs, push.AgentSubscriptions()...)
 		},
 		Migrations: db.FS,
 		// Handlers mounts the ikigenba_notify_health MCP surface (gated behind
@@ -92,14 +92,14 @@ func main() {
 		// Two upstreams = TWO consumer loops (event-triggering decisions §4), each a
 		// separate appkit Worker driving its own long-lived SSE connection with its
 		// OWN feed_offset cursor row (keyed by source — they never read or write each
-		// other's cursor). The crm loop pushes on contact.created; the ralph loop
+		// other's cursor). The crm loop pushes on contact.created; the agent loop
 		// pushes on run.succeeded / run.failed. Both share the same DB + ntfy client.
 		Workers: []func(context.Context) error{
 			func(ctx context.Context) error {
 				return runConsumer(ctx, rt)
 			},
 			func(ctx context.Context) error {
-				return runRalphConsumer(ctx, rt)
+				return runAgentConsumer(ctx, rt)
 			},
 		},
 	})
@@ -135,14 +135,14 @@ func runConsumer(ctx context.Context, rt *appkit.Router) error {
 	return nil
 }
 
-// runRalphConsumer is notify's SECOND event-plane consumer worker — structurally
-// identical to runConsumer, only the upstream (ralph), the feed URL, and the
-// handler (ralph run-outcome push) differ. It owns the feed_offset row keyed by
-// source "ralph", entirely independent of the crm loop's "crm" row, so the two
+// runAgentConsumer is notify's SECOND event-plane consumer worker — structurally
+// identical to runConsumer, only the upstream (agent), the feed URL, and the
+// handler (agent run-outcome push) differ. It owns the feed_offset row keyed by
+// source "agent", entirely independent of the crm loop's "crm" row, so the two
 // cursors advance without ever clobbering each other (event-triggering decisions
 // §4). Best-effort push, no email/channels this phase. ctx cancellation → clean
 // shutdown (nil); a structural fault escapes as an error appkit propagates.
-func runRalphConsumer(ctx context.Context, rt *appkit.Router) error {
+func runAgentConsumer(ctx context.Context, rt *appkit.Router) error {
 	cfg, err := resolveConsumerCfg(os.Getenv)
 	if err != nil {
 		return err
@@ -150,17 +150,17 @@ func runRalphConsumer(ctx context.Context, rt *appkit.Router) error {
 	logger := rt.Logger()
 	pushClient := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, logger)
 	consumerCfg := consumer.Config{
-		FeedURL:    cfg.ralphFeedURL,
+		FeedURL:    cfg.agentFeedURL,
 		From:       cfg.from,
 		DB:         rt.DB(),
-		Source:     ralphSource,
+		Source:     agentSource,
 		ConsumerID: consumerID,
 		Logger:     logger,
 	}
-	logger.Info("starting notify ralph consumer",
-		"feed_url", cfg.ralphFeedURL, "from", cfg.from, "ntfy_base", cfg.ntfyBase)
-	if err := consumer.Run(ctx, consumerCfg, push.RalphHandler(pushClient, logger)); err != nil {
-		return fmt.Errorf("event-plane consumer (ralph): %w", err)
+	logger.Info("starting notify agent consumer",
+		"feed_url", cfg.agentFeedURL, "from", cfg.from, "ntfy_base", cfg.ntfyBase)
+	if err := consumer.Run(ctx, consumerCfg, push.AgentHandler(pushClient, logger)); err != nil {
+		return fmt.Errorf("event-plane consumer (agent): %w", err)
 	}
 	return nil
 }
@@ -172,7 +172,7 @@ func runRalphConsumer(ctx context.Context, rt *appkit.Router) error {
 // read from source.
 type consumerCfg struct {
 	feedURL      string // crm's loopback feed (CRM_FEED_URL)
-	ralphFeedURL string // ralph's loopback feed (RALPH_FEED_URL)
+	agentFeedURL string // agent's loopback feed (AGENT_FEED_URL)
 	from         string // first-subscription choice: tail|earliest (NOTIFY_FROM)
 
 	ntfyBase  string // NOTIFY_NTFY_BASE_URL — plain config (tests/dev point at a mock)
@@ -189,9 +189,9 @@ func resolveConsumerCfg(getenv func(string) string) (consumerCfg, error) {
 		// this is a direct 127.0.0.1 address; the dev fallback is only for
 		// `go run`/tests without env.
 		feedURL: envOr(getenv, "CRM_FEED_URL", "http://127.0.0.1:3001/feed"),
-		// RALPH_FEED_URL is ralph's loopback feed (port 3004), same loopback-direct
+		// AGENT_FEED_URL is agent's loopback feed (port 3004), same loopback-direct
 		// pattern as crm — the event plane bypasses nginx.
-		ralphFeedURL: envOr(getenv, "RALPH_FEED_URL", "http://127.0.0.1:3004/feed"),
+		agentFeedURL: envOr(getenv, "AGENT_FEED_URL", "http://127.0.0.1:3004/feed"),
 		// NOTIFY_FROM is the first-subscription choice; tail by default so a fresh
 		// notify only pushes for contacts created from now on.
 		from:      envOr(getenv, "NOTIFY_FROM", "tail"),
