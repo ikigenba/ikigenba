@@ -1,7 +1,7 @@
 package job_test
 
 // End-to-end agentkit wiring test (Task 1.3). It drives the full chain a
-// consumer (wiki's ingest, ralph's runner) relies on — agent loop → tool
+// consumer (wiki's ingest, agent's runner) relies on — agent loop → tool
 // dispatch → path confinement → job-runner completion — with NO network: the
 // provider is a deterministic stub that returns canned turns, never an HTTP
 // call. It is the reference for how wiki's Task 4.1 should wrap agent.Run inside
@@ -61,7 +61,7 @@ func (s *stubProvider) Stream(_ context.Context, _ provider.Request) (<-chan pro
 
 // agentJob is the unit of work the runner spawns: it runs the real agent loop
 // against the stub provider, confined to sandboxRoot, capturing the wire stream
-// so it can return a usage blob (mirroring ralph's runner.captureUsage and what
+// so it can return a usage blob (mirroring agent's runner.captureUsage and what
 // wiki's ingest job will do). This is the shape a wiki consumer's Job.Run takes.
 type agentJob struct {
 	client      provider.Client
@@ -82,7 +82,7 @@ func (j *agentJob) Run(ctx context.Context) (string, error) {
 }
 
 // captureUsage extracts the accounting blob from the last result event in the
-// wire stream — the same best-effort scan ralph's runner does and wiki's ingest
+// wire stream — the same best-effort scan agent's runner does and wiki's ingest
 // job will reuse to populate Record.UsageJSON.
 func captureUsage(streamed []byte) string {
 	var out json.RawMessage

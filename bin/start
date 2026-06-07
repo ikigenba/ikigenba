@@ -81,10 +81,10 @@ launch_notify() {
 	exec "$RUN_DIR/bin/notify" --port 3003
 }
 
-launch_ralph() {
-	source "$repo/ralph/.envrc"
-	export RALPH_DB_PATH="$RUN_DIR/ralph.db"
-	exec "$RUN_DIR/bin/ralph" --port 3004
+launch_agent() {
+	source "$repo/agent/.envrc"
+	export AGENT_DB_PATH="$RUN_DIR/agent.db"
+	exec "$RUN_DIR/bin/agent" --port 3004
 }
 
 launch_wiki() {
@@ -113,7 +113,7 @@ wait_port() {
 }
 
 echo ">> building services"
-for svc in dashboard crm ledger notify ralph wiki; do
+for svc in dashboard crm ledger notify agent wiki; do
 	build_svc "$svc"
 done
 
@@ -124,14 +124,14 @@ run_bg dashboard launch_dashboard
 run_bg crm launch_crm
 run_bg ledger launch_ledger
 run_bg notify launch_notify
-run_bg ralph launch_ralph
+run_bg agent launch_agent
 run_bg wiki launch_wiki
 run_bg nginx launch_nginx
 
 echo ">> waiting for listeners"
-declare -A PORTS=([dashboard]=3000 [crm]=3001 [ledger]=3002 [notify]=3003 [ralph]=3004 [wiki]=3006 [nginx]=8080)
+declare -A PORTS=([dashboard]=3000 [crm]=3001 [ledger]=3002 [notify]=3003 [agent]=3004 [wiki]=3006 [nginx]=8080)
 fail=0
-for name in dashboard crm ledger notify ralph wiki nginx; do
+for name in dashboard crm ledger notify agent wiki nginx; do
 	port="${PORTS[$name]}"
 	if ! running "$name"; then
 		echo "  ✗ $name exited — see tmp/$name.log"
@@ -149,8 +149,8 @@ done
 cat <<EOF
 
 Suite up. Front door: http://localhost:8080  (apex -> dashboard)
-  /srv/crm/    /srv/ledger/    /srv/notify/    /srv/ralph/    /srv/wiki/
-Loopback:  dashboard :3000  crm :3001  ledger :3002  notify :3003  ralph :3004  wiki :3006
+  /srv/crm/    /srv/ledger/    /srv/notify/    /srv/agent/    /srv/wiki/
+Loopback:  dashboard :3000  crm :3001  ledger :3002  notify :3003  agent :3004  wiki :3006
 Logs: tmp/<svc>.log   Stop: bin/stop   (bin/stop --clean also wipes tmp/ state)
 EOF
 

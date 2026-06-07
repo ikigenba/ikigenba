@@ -15,7 +15,7 @@
 
 ## 0. What "duplicated chassis" means here
 
-Five services (`crm`, `ledger`, `notify`, `dropbox`, `wiki`, `ralph`) carry a
+Five services (`crm`, `ledger`, `notify`, `dropbox`, `wiki`, `agent`) carry a
 **byte-for-byte (modulo rename) copy** of the same `internal/{server,db,mcp,
 logging,ids}` chassis and the same `cmd/<svc>/main.go` env-plumbing boilerplate.
 The dashboard carries a *richer, divergent* copy of the same shape (its own
@@ -85,7 +85,7 @@ strictly non-overlapping libraries. Neither imports the other.
   (+`provider/anthropic` — the provider-neutral client), `schema` (JSON-schema
   subset), `tools` (the agent's tool surface/confinement), `trace`, `wire`. It is
   prompt/tool/provider machinery. It knows nothing about ports, nginx, PRM,
-  manifests, or deploy. Used **only** by LLM services (`wiki`; future `ralph`).
+  manifests, or deploy. Used **only** by LLM services (`wiki`; future `agent`).
 
 **The proof of separation is `wiki`:** `wiki = appkit chassis + agentkit ingest
 core + eventplane consumer`. In wiki's `main.go` today, the chassis lines
@@ -222,7 +222,7 @@ stamped via `-ldflags -X appkit.version=… -X appkit.commit=…` per §F1 — t
 | **wiki** | The entire `agentkit` ingest/lint/ask core (`ingest.New`/`lint.New`/`ask.New`, `anthropic.New`, `core.Recover`, the job machinery), kept behind `replace agentkit => ../agentkit`; the non-secret `WIKI_INGEST_MODEL`/`WIKI_INGEST_MAX_TOKENS` (+ lint/ask variants) → declared in `Spec.ManifestExtras` **and** read via `Spec.Config`; the `ANTHROPIC_API_KEY` secret read at wiki's boundary (graceful-disable on absence), never composed in or logged; the **consumer** loop (`eventplane/consumer.Run` of dropbox's feed) + the server/consumer cancel-coupling. `CONSUMES=dropbox` is the only consumer footprint appkit emits. |
 | **dropbox** | The sync daemon (`internal/dropbox/*`, the longpoll goroutine), the private `/content` handler (registered via `Handlers`), the three `DROPBOX_*` secrets (read app-side), the non-secret `DROPBOX_LONGPOLL_TIMEOUT`/`DROPBOX_MAX_ENTRY_RETRIES`/etc (`ManifestExtras`). **Producer**: `Feed:"/feed"` ⇒ appkit mounts the outbox; the three `file.*` payload builders stay in `internal/dropbox/events.go`. **No** `backup`/`restore` by design (its state is reconstructible) — its `Spec.Backup`/`Restore` stay nil, but the verbs still exist (contract); a future call is a wipe+rebootstrap, not a snapshot. |
 | **notify** | The `internal/push` ntfy domain + `consumer.Handler`; the consumer loop + cancel-coupling; the `NTFY_*` secrets (read app-side, fail-loud at boot); `NOTIFY_FROM`/`NOTIFY_NTFY_BASE_URL` non-secret config. `CONSUMES=crm`. Not a producer (no `Feed`). |
-| **crm / ledger / ralph** | Their `internal/<domain>` + `internal/mcp` tool descriptors + their `002_<svc>.sql` migration. crm/ledger are **producers** (`Feed:"/feed"`, `OUTBOX_RETENTION_*` extras, producer `restore` re-mints the epoch). ralph is currently a health-skeleton (universal keys only). |
+| **crm / ledger / agent** | Their `internal/<domain>` + `internal/mcp` tool descriptors + their `002_<svc>.sql` migration. crm/ledger are **producers** (`Feed:"/feed"`, `OUTBOX_RETENTION_*` extras, producer `restore` re-mints the epoch). agent is currently a health-skeleton (universal keys only). |
 
 ### Producer `FEED` vs consumer `CONSUMES` (the role asymmetry, restated)
 
@@ -233,7 +233,7 @@ stamped via `-ldflags -X appkit.version=… -X appkit.commit=…` per §F1 — t
 - A **consumer** sets `Spec.Consumes` → appkit emits `CONSUMES=<names>` (purely
   documentary/registry metadata) and exposes the DB handle; the *service* wires
   `eventplane/consumer.Run`. The two keys are mutually independent (a service can
-  be neither, like ralph; never both today).
+  be neither, like agent; never both today).
 
 ---
 

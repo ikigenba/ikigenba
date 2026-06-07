@@ -73,14 +73,14 @@ They are recommendations with reasoning, not edicts — veto and I'll re-shape.
    since it's the one in hand and ralph-wikis already used it BM25-only.)
 
 2. **agentkit extraction is a *physical move* of the generic engine packages +
-   a *greenfield, tested* job-runner; ralph is retrofitted LATER.**
-   Moving `ralph/internal/engine/*` into `agentkit/` forces a mechanical rewrite
-   of ralph's import paths (or the mono-repo won't compile) — that rewrite is
-   done in the same task and is *not* the deeper retrofit. ralph keeps its own
+   a *greenfield, tested* job-runner; agent is retrofitted LATER.**
+   Moving `agent/internal/engine/*` into `agentkit/` forces a mechanical rewrite
+   of agent's import paths (or the mono-repo won't compile) — that rewrite is
+   done in the same task and is *not* the deeper retrofit. agent keeps its own
    `runner`/`session` for now. agentkit's generic async job-runner is built
-   fresh (informed by `ralph/internal/runner`, behind a store interface) and
-   **wiki is its first consumer**; ralph migrates onto it in a Later phase. This
-   matches GOALS: "wiki builds against it first; ralph is retrofitted afterward."
+   fresh (informed by `agent/internal/runner`, behind a store interface) and
+   **wiki is its first consumer**; agent migrates onto it in a Later phase. This
+   matches GOALS: "wiki builds against it first; agent is retrofitted afterward."
 
 3. **Ingest agent model + cost ceiling:** default to a mid-tier model
    (`claude-sonnet-4-6`) with a per-job token/cost ceiling read from manifest/
@@ -105,19 +105,19 @@ agentkit → scaffold → model/search → ingest → search/lint/demo/deploy). 
 Output is design notes + tiny proofs, no production code.*
 
 ### Task 0.1 — Verify the agentkit extraction seam
-- **Brief:** Read `ralph/internal/engine/**` and `ralph/internal/runner`,
-  `ralph/internal/session`, `ralph/internal/sandbox`. Produce a concrete
-  **move-list** (every package/file that goes to `agentkit` vs stays in ralph)
+- **Brief:** Read `agent/internal/engine/**` and `agent/internal/runner`,
+  `agent/internal/session`, `agent/internal/sandbox`. Produce a concrete
+  **move-list** (every package/file that goes to `agentkit` vs stays in agent)
   and the **job-runner seam design**: the Go interface(s) by which a generic
   agentkit job-runner persists/loads run records and enforces single-flight +
-  crash-recovery, so both ralph and wiki can supply their own store. Identify
+  crash-recovery, so both agent and wiki can supply their own store. Identify
   anything that does NOT lift cleanly at the GOALS boundary and how to split it.
 - **Inputs:** `GOALS.md` (Architecture decisions → Seam); the structural map in
-  this repo; `ralph/internal/engine/agent/loop.go`,
-  `ralph/internal/engine/provider/anthropic/anthropic.go`,
-  `ralph/internal/engine/tools/{tools.go,dispatch.go,confine.go}`,
-  `ralph/internal/engine/{wire,model,schema,trace}`, `ralph/internal/runner/runner.go`,
-  `ralph/internal/session/{model,service,store}.go`, `ralph/internal/sandbox/sandbox.go`.
+  this repo; `agent/internal/engine/agent/loop.go`,
+  `agent/internal/engine/provider/anthropic/anthropic.go`,
+  `agent/internal/engine/tools/{tools.go,dispatch.go,confine.go}`,
+  `agent/internal/engine/{wire,model,schema,trace}`, `agent/internal/runner/runner.go`,
+  `agent/internal/session/{model,service,store}.go`, `agent/internal/sandbox/sandbox.go`.
 - **Deliverables:** `wiki/notes/agentkit-extraction.md` — move-list table +
   the job-runner store interface (Go signatures) + risk notes (esp. runner↔
   session/store coupling, the two confinement copies).
@@ -147,24 +147,24 @@ Output is design notes + tiny proofs, no production code.*
 ## Phase 1 — Extract & harden `agentkit`
 
 *Goal: a tested, shared `agentkit` Go module that owns the generic agent
-machinery + a generic async job-runner. wiki will build against it. ralph stays
+machinery + a generic async job-runner. wiki will build against it. agent stays
 green throughout but is NOT yet retrofitted onto the new job-runner.*
 
-### Task 1.1 — Move the generic engine into `agentkit`, rewire ralph
+### Task 1.1 — Move the generic engine into `agentkit`, rewire agent
 - **Brief:** Create `agentkit/` (`module agentkit`, `go 1.26`). Move the generic
-  packages out of `ralph/internal/engine/**` per the Task 0.1 move-list:
+  packages out of `agent/internal/engine/**` per the Task 0.1 move-list:
   provider + anthropic client, tool-use loop (`agent`), base tools + dispatch +
   `confine`, `wire` codec, `model` registry, `schema`, `trace`, and the generic
-  framing prompt. Mechanically rewrite ralph's imports
-  (`ralph/internal/engine/...` → `agentkit/...`). Add `replace agentkit =>
-  ../agentkit` to `ralph/go.mod`; add `./agentkit` to root `go.work`.
+  framing prompt. Mechanically rewrite agent's imports
+  (`agent/internal/engine/...` → `agentkit/...`). Add `replace agentkit =>
+  ../agentkit` to `agent/go.mod`; add `./agentkit` to root `go.work`.
 - **Inputs:** `wiki/notes/agentkit-extraction.md`; the source packages named there.
-- **Deliverables:** new `agentkit/` module tree; ralph importing it.
-- **Acceptance:** `go build ./...` clean across the workspace; **ralph's existing
-  test suite passes unchanged** (`go test ./...` in ralph). No behavior change to
-  ralph.
+- **Deliverables:** new `agentkit/` module tree; agent importing it.
+- **Acceptance:** `go build ./...` clean across the workspace; **agent's existing
+  test suite passes unchanged** (`go test ./...` in agent). No behavior change to
+  agent.
 - **Notes:** This is a move + import-path rewrite only. Do NOT redesign anything
-  here. ralph's `runner`/`session`/`sandbox` stay put (its runner now imports
+  here. agent's `runner`/`session`/`sandbox` stay put (its runner now imports
   `agentkit/agent` instead of the in-tree path).
 
 ### Task 1.2 — Build agentkit's generic async job-runner
@@ -172,17 +172,17 @@ green throughout but is NOT yet retrofitted onto the new job-runner.*
   generic async agent-job lifecycle from the Task 0.1 seam design: spawn a run
   (goroutine + context cancellation), poll/status, single-flight gate, and a
   crash-recovery sweep — all behind a **store interface** the consumer supplies
-  (run records, terminal updates, sweep-running). Do **not** wire it into ralph.
-- **Inputs:** `wiki/notes/agentkit-extraction.md`; `ralph/internal/runner/runner.go`
-  and `ralph/internal/session/{service,store}.go` as the behavioral reference.
+  (run records, terminal updates, sweep-running). Do **not** wire it into agent.
+- **Inputs:** `wiki/notes/agentkit-extraction.md`; `agent/internal/runner/runner.go`
+  and `agent/internal/session/{service,store}.go` as the behavioral reference.
 - **Deliverables:** `agentkit/job` package + an in-memory/stub store for tests.
 - **Acceptance:** Unit tests cover spawn → succeed, spawn → cancel, single-flight
-  rejection, and crash-recovery sweep; `go test ./agentkit/...` passes. ralph
+  rejection, and crash-recovery sweep; `go test ./agentkit/...` passes. agent
   untouched and still green.
 
 ### Task 1.3 — Harden agentkit with tests
 - **Brief:** Fill coverage gaps so wiki inherits a tested foundation, not
-  ralph-as-today. Ensure the moved packages keep their ralph tests (moved along)
+  agent-as-today. Ensure the moved packages keep their agent tests (moved along)
   and add a small **end-to-end agentkit test** using a stub provider: a tiny
   agent job that uses a base tool (e.g. write a file in a confined sandbox) and
   drives the `agentkit/job` runner to completion.
@@ -268,7 +268,7 @@ owner-scoped and collection-keyed. No agent/ingest wiring yet.*
   carrying a `collection` column defaulted to `default`.
 - **Inputs:** `GOALS.md` (Data model & taxonomy, Philosophy, Ingest properties);
   `/home/mgreenly/projects/ralph-wikis` SCHEMA.md as a lightened reference;
-  `ralph/internal/sandbox/sandbox.go` + `agentkit` confinement for path safety.
+  `agent/internal/sandbox/sandbox.go` + `agentkit` confinement for path safety.
 - **Deliverables:** `wiki/internal/store/*.go` + tests; the schema doc (committed
   where the ingest agent will load it, e.g. `wiki/internal/store/schema/SCHEMA.md`
   or embedded); `internal/db/migrations/002_wiki.sql`.
@@ -454,8 +454,8 @@ compounding answers (`wiki_ask`).*
 Listed for the orchestrator's awareness; each becomes its own phase when pulled
 forward:
 
-- **ralph retrofit onto `agentkit/job`** — migrate ralph's bespoke `runner`/
-  session lifecycle onto agentkit's generic job-runner; ralph inherits the tests.
+- **agent retrofit onto `agentkit/job`** — migrate agent's bespoke `runner`/
+  session lifecycle onto agentkit's generic job-runner; agent inherits the tests.
 - **OS-level sandbox confinement** (landlock/namespaces) — replaces the draft Go
   path-checks; matters most for unattended dropbox-triggered ingest.
 - **Hybrid / vector search** — embeddings infra; additive swap behind the

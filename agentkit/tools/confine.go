@@ -12,7 +12,7 @@ import (
 // the leaf does not yet exist (write/edit create new files).
 //
 // When root is empty, p is returned unchanged (legacy/unconfined mode);
-// ralph always supplies a non-empty root, but the engine's own tests may
+// agent always supplies a non-empty root, but the engine's own tests may
 // run unconfined.
 //
 // On success it returns the cleaned absolute path, suitable to hand to

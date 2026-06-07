@@ -26,8 +26,8 @@ P1 ──▶ P2
                       └──────┴──▶ P7 ──▶ P8 ──▶ P9
 ```
 
-P1 is the prerequisite for everything. cron (P3–P6) must exist before ralph
-(P7–P8) can consume it; ralph must emit outcomes before notify (P9) can push
+P1 is the prerequisite for everything. cron (P3–P6) must exist before agent
+(P7–P8) can consume it; agent must emit outcomes before notify (P9) can push
 them. Executing the phases in numeric order satisfies every edge.
 
 ---
@@ -132,9 +132,9 @@ checks are on-box and may only be partially verifiable locally.)
 
 ---
 
-## Step 3 — `ralph` event-trigger processing
+## Step 3 — `agent` event-trigger processing
 
-### P7 — ralph triggers + consumer
+### P7 — agent triggers + consumer
 *Decisions §3 "Trigger declaration" + "Run model". Depends on P5/P6.*
 
 - `session_triggers` table (1:1, PK `session_id`; columns `trigger_event,
@@ -153,29 +153,29 @@ checks are on-box and may only be partially verifiable locally.)
 
 **Verify:** tests + local run reacting to a cron event.
 
-### P8 — ralph as producer (outcome events)
+### P8 — agent as producer (outcome events)
 *Decisions §3 "Outcome events". Depends on P7.*
 
-- Producer wiring mirroring crm/ledger: `outbox.SchemaSQL` migration in ralph's
+- Producer wiring mirroring crm/ledger: `outbox.SchemaSQL` migration in agent's
   DB, `Spec.Feed = "/feed"` + `Spec.Producer`, **static** `Spec.Events` for the
   two compile-time types, nginx `/feed` fragment.
-- Emit `run.succeeded` / `run.failed` (source `ralph`) in the **same tx as the
+- Emit `run.succeeded` / `run.failed` (source `agent`) in the **same tx as the
   run's terminal state write** (at-most-once per run). Payload
   `{session_id, session_name, trigger_event, scheduled_for, error?}` (`error`
   only on failed). Touches `runner`.
 
-**Verify:** tests + observe an outcome emit on ralph's `/feed`.
+**Verify:** tests + observe an outcome emit on agent's `/feed`.
 
 ---
 
 ## Step 4 — `notify` extension
 
-### P9 — notify push for ralph outcomes *(small)*
+### P9 — notify push for agent outcomes *(small)*
 *Decisions §4. Depends on P8.*
 
-- `Consumes: ["crm", "ralph"]`; subscribe `ralph/run.succeeded` +
-  `ralph/run.failed`; keep `crm/contact.created`.
-- **Two `consumer.Run` worker loops** (crm, ralph), each its own `feed_offset`
+- `Consumes: ["crm", "agent"]`; subscribe `agent/run.succeeded` +
+  `agent/run.failed`; keep `crm/contact.created`.
+- **Two `consumer.Run` worker loops** (crm, agent), each its own `feed_offset`
   cursor row — not one multiplexed connection.
 - Best-effort ntfy push for each outcome. No email / channels / routing / retry
   this phase.

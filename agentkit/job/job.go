@@ -17,8 +17,8 @@ import (
 	"time"
 )
 
-// Status is a run's lifecycle state. Mirrors ralph's session.Run* values so a
-// later ralph retrofit is a rename, not a remodel.
+// Status is a run's lifecycle state. Mirrors agent's session.Run* values so a
+// later agent retrofit is a rename, not a remodel.
 type Status string
 
 const (
@@ -32,7 +32,7 @@ const (
 func (s Status) Terminal() bool { return s != StatusRunning }
 
 // Record is the persisted shape of one run. The consumer's Store maps it to its
-// own table (ralph: runs; wiki: a job-record table from 002_wiki.sql). Generic
+// own table (agent: runs; wiki: a job-record table from 002_wiki.sql). Generic
 // fields only — no session/collection/owner columns here; the consumer carries
 // those in its own row and joins on ID / FlightKey.
 type Record struct {
@@ -48,7 +48,7 @@ type Record struct {
 // Store is the persistence seam the consumer implements over its own DB. All
 // methods are called by the Runner; the consumer never calls them directly. The
 // single-flight guarantee rests on Insert rejecting a duplicate FlightKey under
-// one serialized writer (ralph relies on SQLite's single connection; wiki
+// one serialized writer (agent relies on SQLite's single connection; wiki
 // inherits the same db.Open).
 type Store interface {
 	// Insert persists a new record in StatusRunning. It MUST fail (return a
@@ -59,7 +59,7 @@ type Store interface {
 	Insert(ctx context.Context, rec Record) error
 
 	// Load returns the record by id, or ErrNotFound if absent. Consumers layer
-	// owner-scoping on top (a foreign-owned id reads as ErrNotFound), as ralph's
+	// owner-scoping on top (a foreign-owned id reads as ErrNotFound), as agent's
 	// store already does.
 	Load(ctx context.Context, id string) (Record, error)
 
@@ -77,7 +77,7 @@ type Store interface {
 }
 
 // Job is the unit of work the consumer supplies for one run. Run executes the
-// agent (ralph: agent.Run over a session sandbox; wiki: the ingest integration
+// agent (agent: agent.Run over a session sandbox; wiki: the ingest integration
 // pass), honoring ctx for cancellation/TTL. It returns the usage blob to persist
 // and an error (nil = succeeded). The Runner classifies the terminal Status from
 // (ctx state, user-cancel, err). Job is an interface, not a func, so the

@@ -5,7 +5,7 @@ package agent
 // persistent sandbox folder so that tool-use fires in practice rather
 // than the model behaving as a plain chatbot. R-8PF6-I8FP.
 //
-// For ralph the final answer is free text, not JSON: the model's last
+// For the agent service the final answer is free text, not JSON: the model's last
 // assistant message is recorded verbatim as the run result. Deliverables
 // persist as files in the sandbox folder (the Ralph pattern).
 const FramingPrompt = "You are an autonomous agent working inside a single persistent folder. " +

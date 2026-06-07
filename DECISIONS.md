@@ -6,7 +6,7 @@ has not started.
 ## Context
 
 Two related goals, suite-wide across all services (dashboard, crm, ledger, notify,
-dropbox, ralph, wiki):
+dropbox, agent, wiki):
 
 1. **Rebrand the MCP tool surface** to the new top-level project name `ikigenba`.
    (`ikigenba` will eventually also become the deployment domain — `<svc>.ikigenba.com`
@@ -103,5 +103,5 @@ These cost **zero per-service plumbing**: appkit already owns the serve wiring
    cross-references; update `*_test.go`.
 3. **dropbox**: fold `whoami` into the single `ikigenba_dropbox_health`; telemetry under
    `details`.
-4. **ralph** `describe.go` prose; **docs** (runbooks, event-plane, extraction-map)
+4. **agent** `describe.go` prose; **docs** (runbooks, event-plane, extraction-map)
    references to `<svc>_whoami`.

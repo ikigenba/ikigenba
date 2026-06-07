@@ -278,13 +278,13 @@ func TestR_8PF6_I8FP_FramingPromptIsNonEmpty(t *testing.T) {
 	}
 }
 
-// R-GA6J-9O0I (ralph): the framing system prompt orients the model as
+// R-GA6J-9O0I (agent): the framing system prompt orients the model as
 // an autonomous agent confined to a single persistent folder whose
 // deliverables persist as files, with NO network access, and whose final
 // assistant message is recorded verbatim as the run result (free text —
 // no required JSON format). This replaces the original bare-JSON framing,
-// which no longer applies now that ralph runs in freeform terminal mode.
-func TestR_GA6J_9O0I_FramingPromptOrientsRalphAgent(t *testing.T) {
+// which no longer applies now that agent runs in freeform terminal mode.
+func TestR_GA6J_9O0I_FramingPromptOrientsAgent(t *testing.T) {
 	p := strings.ToLower(FramingPrompt)
 	if !strings.Contains(p, "folder") {
 		t.Error("FramingPrompt must describe the persistent folder (R-GA6J-9O0I)")

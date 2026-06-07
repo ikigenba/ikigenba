@@ -11,7 +11,7 @@ import (
 
 // sync.go is the sync engine (PLAN.md §2, the heart): a single background
 // goroutine running the longpoll → continue → apply loop. Its lifecycle is
-// modeled on ralph/internal/runner — started on boot, honoring context
+// modeled on agent/internal/runner — started on boot, honoring context
 // cancellation for a clean shutdown.
 //
 // The engine owns the cursor advance (per continue-page), the created/modified/

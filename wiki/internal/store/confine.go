@@ -40,7 +40,7 @@ func validateSegment(kind, seg string) error {
 
 // confine resolves relPath against root and returns the cleaned absolute path,
 // guaranteed to stay inside root, or an error. It mirrors the suite's standard
-// confinement (ralph/internal/sandbox, agentkit/tools): join, Clean, resolve
+// confinement (agent/internal/sandbox, agentkit/tools): join, Clean, resolve
 // symlinks on the longest existing ancestor (catching symlink escapes), then
 // verify containment with filepath.Rel. relPath "" or "." resolves to root.
 //

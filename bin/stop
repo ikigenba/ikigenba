@@ -21,7 +21,7 @@ if [ ! -d "$RUN_DIR" ]; then
 fi
 
 # Reverse of start order: front door first, then services.
-for name in nginx wiki ralph notify ledger crm dashboard; do
+for name in nginx wiki agent notify ledger crm dashboard; do
 	pf="$RUN_DIR/$name.pid"
 	[ -f "$pf" ] || continue
 	pid="$(cat "$pf")"
@@ -45,7 +45,7 @@ for name in nginx wiki ralph notify ledger crm dashboard; do
 done
 
 if [ "$clean" -eq 1 ]; then
-	# The whole tmp/ tree is dev state (binaries, logs, SQLite dbs, ralph's
+	# The whole tmp/ tree is dev state (binaries, logs, SQLite dbs, agent's
 	# sandboxes) — all gitignored and recreated by bin/start. Wipe it wholesale.
 	echo ">> cleaning dev state under tmp/"
 	rm -rf "$RUN_DIR"

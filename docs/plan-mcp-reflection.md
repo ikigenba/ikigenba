@@ -95,7 +95,7 @@ Schema is the natural descriptor.
 13. **Live provider, not a static slice** — because subscriptions can be **dynamic**.
     Mirror `Spec.Health`: `Spec.Subscriptions func() []consumer.Subscription`, called
     *at reflection time*, returning the current set. Static consumers return a fixed
-    list; a future dynamic consumer (e.g. ralph, where each session subscribes
+    list; a future dynamic consumer (e.g. agent, where each session subscribes
     uniquely) returns the union of its live sessions' subscriptions. Reflection then
     always reports the live graph with **no redesign** when dynamic subscription
     lands.
@@ -112,7 +112,7 @@ Schema is the natural descriptor.
 - **Not** full JSON Schema hardening / `$ref`-ing shared sub-objects — flat
   generated schema is sufficient for v1.
 - **Not** the dynamic-subscription machinery (runtime per-session feed open/close,
-  ralph sessions). Only the **provider abstraction** is built now so reflection is
+  agent sessions). Only the **provider abstraction** is built now so reflection is
   ready for it; the runtime machinery is deferred.
 
 ## Architecture
@@ -319,7 +319,7 @@ service touched yet.
   tool, `NewHandler` threading, `Spec.Events`.
 - *Tests + gate + commit* (`mcp-reflection: dropbox publish side`).
 
-Services with neither role (wiki, ralph, dashboard) get no reflection tool — until ralph
+Services with neither role (wiki, agent, dashboard) get no reflection tool — until agent
 grows dynamic subscription (future), at which point its provider returns the live
 per-session set with no reflection redesign.
 

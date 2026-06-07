@@ -31,7 +31,7 @@ bookkeeping humans abandon; the human curates sources and asks questions.
   Philosophy).
 - **`qmd`** (Go) — local markdown search: SQLite FTS5 **BM25** + optional
   vector + hybrid. CLI *and* MCP. Our search backend.
-- **`ralph/`** (this repo) — an agent-SDK MCP service: an in-house LLM agent loop
+- **`agent/`** (this repo) — an agent-SDK MCP service: an in-house LLM agent loop
   with confined bash + file tools in a per-session sandbox, kicked off by an MCP
   call, owner-scoped behind nginx auth. The chassis we extract `agentkit` from.
 
@@ -41,7 +41,7 @@ bookkeeping humans abandon; the human curates sources and asks questions.
 |---|---|
 | dir / Go module | `wiki/` — `module wiki` |
 | route | `/srv/wiki/` (stripped before proxy; internal routes stay `/mcp`, …) |
-| loopback port | **3006** (crm 3001, ledger 3002, notify 3003, ralph 3004, dropbox 3005) |
+| loopback port | **3006** (crm 3001, ledger 3002, notify 3003, agent 3004, dropbox 3005) |
 | manifest | `etc/manifest.env`: `MOUNT=/srv/wiki/`, `PORT=3006`, `MCP=true` |
 | trust | nginx introspects against dashboard `/internal/authn`; service trusts injected `X-Owner-Email` / `X-Client-Id` blindly; **owner-scoped** everywhere |
 | identity proof | `ikigenba_wiki_health` MCP tool |
@@ -64,12 +64,12 @@ the four cheap invariants that protect trust:
 ## Architecture decisions (the resolved forks)
 
 - **`agentkit` — a new foundational shared library.** The generic agent loop is
-  extracted from `ralph` into a shared Go module (`replace agentkit => ../agentkit`,
+  extracted from `agent` into a shared Go module (`replace agentkit => ../agentkit`,
   the eventplane pattern), because **multiple future services will embed agents**,
   not just wiki. It is **extracted and hardened with tests**, not consumed as
-  ralph-is-today. wiki builds against it first; ralph is retrofitted onto it
-  afterward and inherits the tests. ralph's current immaturity never blocks wiki.
-  - **Seam (to verify against `ralph/internal/engine`):** `agentkit` owns the
+  agent-is-today. wiki builds against it first; agent is retrofitted onto it
+  afterward and inherits the tests. agent's current immaturity never blocks wiki.
+  - **Seam (to verify against `agent/internal/engine`):** `agentkit` owns the
     *generic* — Anthropic streaming client, the tool-use loop, base tools
     (bash/read/write/edit/grep/glob), sandbox path-confinement, the stream-json
     wire codec, the model registry, **and the async agent-job lifecycle**
@@ -80,7 +80,7 @@ the four cheap invariants that protect trust:
   tool implementations. **Shelling out to an external `pi`/`claude` binary is a
   permanently closed path** — keeps the suite convention (one self-contained Go
   binary at `/opt/<app>`, calls the API directly, secrets via SSM app-config).
-- **Sandbox/OS-level confinement is a later phase.** Early stage keeps ralph's
+- **Sandbox/OS-level confinement is a later phase.** Early stage keeps agent's
   draft Go path-checks. (Noted: unattended ingest of dropped files will
   eventually want real OS-level confinement — landlock/namespaces — but not now.)
 
@@ -189,13 +189,13 @@ Later: `ikigenba_wiki_ask`, and whatever the dropbox consumer needs internally.
   file-back-in).
 - **Later.** OS-level sandbox confinement; hybrid/vector search (embeddings
   infra); many collections in the UX; interactive ingest checkpoint on the
-  direct path; ralph retrofit onto `agentkit`; reconsider any ralph-wikis rigor
+  direct path; agent retrofit onto `agentkit`; reconsider any ralph-wikis rigor
   (claims, contested ledger) if/when felt.
 
 ## Open / deferred questions
 
-- `agentkit` extraction boundary — **verify against `ralph/internal/engine`**
-  how cleanly the loop separates from ralph's session/run chassis (decides how
+- `agentkit` extraction boundary — **verify against `agent/internal/engine`**
+  how cleanly the loop separates from agent's session/run chassis (decides how
   much lifts cleanly vs. needs reshaping). Library name (`agentkit`) is a
   placeholder.
 - `qmd`: which fork (`tobi/qmd` per Karpathy vs `akhenakh/qmd` per ralph-wikis);

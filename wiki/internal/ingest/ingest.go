@@ -334,7 +334,7 @@ func (a storeAdapter) ReadPage(owner, collection, relPath string) ([]byte, error
 }
 
 // captureUsage extracts the accounting blob from the last result event in the
-// wire stream — the best-effort scan agentkit's e2e template uses and ralph's
+// wire stream — the best-effort scan agentkit's e2e template uses and agent's
 // runner does, reused here to populate Record.UsageJSON.
 func captureUsage(streamed []byte) string {
 	var out json.RawMessage
