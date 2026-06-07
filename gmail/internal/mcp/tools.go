@@ -2,12 +2,17 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"mime"
 	"net/http"
 	"strings"
 
 	"appkit"
+
+	gm "gmail/internal/gmail"
 
 	"eventplane/consumer"
 	"eventplane/outbox"
@@ -107,11 +112,13 @@ var Events = outbox.Registry{
 
 // ── tool descriptors ──────────────────────────────────────────────────────────
 
-// toolDescriptors returns the P1 STUB gmail surface: only the two chassis tools.
-// The full normal-mailbox tool set (list/read/thread/send/draft/labels/label/
-// unlabel/trash/delete) is added in P4. health is the end-to-end auth proof;
-// reflection self-describes the three mail.* events the producer will emit
-// (emission itself lands in P3).
+// toolDescriptors returns the full P4 gmail mailbox surface (decisions §1): the
+// normal-mailbox operations over the P2 client, plus the two chassis tools.
+// Read-only tools (list/read/thread/labels) only fetch; mutating tools
+// (send/draft/label/unlabel/trash/delete) change the mailbox. trash is
+// recoverable; delete is a PERMANENT expunge (the full-scope destructive verb).
+// Deferred and intentionally absent: reply, attachment download, sync_now
+// (decisions §3).
 func toolDescriptors() []map[string]any {
 	return []map[string]any{
 		desc(tool("health"),
@@ -122,6 +129,65 @@ func toolDescriptors() []map[string]any {
 			obj(map[string]any{
 				"event_type": descTyp("string", "optional; a published event type to fetch the schema+example detail for"),
 			})),
+
+		// ── read-only ──────────────────────────────────────────────────────
+		desc(tool("list"),
+			"List or SEARCH messages (one tool — Gmail's messages.list is the same call either way). Returns bare message pointers {id, thread_id} plus a next_page_token for pagination and a result_size_estimate. Use the 'read' tool to fetch a pointer's headers/body.",
+			obj(map[string]any{
+				"q":          descTyp("string", "optional Gmail search query (e.g. 'from:alice@example.com', 'subject:invoice', 'is:unread', 'after:2026/01/01'); empty lists recent messages"),
+				"page_token": descTyp("string", "optional pagination cursor from a prior call's next_page_token"),
+			})),
+		desc(tool("read"),
+			"Read a full message by id: its headers, snippet, label ids, and attachment METADATA (filename, size, mime_type) for each attachment part. Attachment blob download is not supported.",
+			obj(map[string]any{
+				"id": descTyp("string", "the message id (from list/search or an event payload)"),
+			}, "id")),
+		desc(tool("thread"),
+			"Read a whole thread by id: the thread's messages in order, each with headers, snippet, label ids, and attachment metadata.",
+			obj(map[string]any{
+				"id": descTyp("string", "the thread id (thread_id from a message or event payload)"),
+			}, "id")),
+		desc(tool("labels"),
+			"List the mailbox's available labels — system labels (INBOX, SENT, UNREAD, TRASH, …) and user labels — as {id, name, type}. Use a label id with label/unlabel. Takes no inputs.",
+			obj(map[string]any{})),
+
+		// ── mutating ───────────────────────────────────────────────────────
+		desc(tool("send"),
+			"Send an email. Composes an RFC-2822 message from the structured fields and sends it via Gmail. The send shows up as a mail.sent event on the next poll. Returns the created message {id, thread_id, label_ids}.",
+			obj(map[string]any{
+				"to":      descTyp("string", "recipient email address (To: header)"),
+				"subject": descTyp("string", "the Subject: header"),
+				"body":    descTyp("string", "the plain-text message body"),
+			}, "to", "subject", "body")),
+		desc(tool("draft"),
+			"Create a draft (does NOT send). Composes an RFC-2822 message from the structured fields and saves it as a Gmail draft. Returns the created draft {id, message:{id, thread_id}}.",
+			obj(map[string]any{
+				"to":      descTyp("string", "recipient email address (To: header)"),
+				"subject": descTyp("string", "the Subject: header"),
+				"body":    descTyp("string", "the plain-text message body"),
+			}, "to", "subject", "body")),
+		desc(tool("label"),
+			"Apply a label to a message (adds the label id). Covers mark-as-read in reverse via unlabel; to archive use unlabel with INBOX. Returns the updated message {id, label_ids}.",
+			obj(map[string]any{
+				"id":       descTyp("string", "the message id"),
+				"label_id": descTyp("string", "the label id to add (a system id like INBOX/UNREAD or a user label id from the labels tool)"),
+			}, "id", "label_id")),
+		desc(tool("unlabel"),
+			"Remove a label from a message (removes the label id). Remove INBOX to archive; remove UNREAD to mark read. Returns the updated message {id, label_ids}.",
+			obj(map[string]any{
+				"id":       descTyp("string", "the message id"),
+				"label_id": descTyp("string", "the label id to remove (e.g. INBOX to archive, UNREAD to mark read)"),
+			}, "id", "label_id")),
+		desc(tool("trash"),
+			"Move a message to Trash (RECOVERABLE). Emits a mail.deleted event on the next poll. Returns the updated message {id, label_ids}.",
+			obj(map[string]any{
+				"id": descTyp("string", "the message id to trash"),
+			}, "id")),
+		desc(tool("delete"),
+			"PERMANENTLY delete a message (NOT recoverable — bypasses Trash). This is the full-scope destructive operation; prefer trash unless permanent removal is intended. Returns {id, deleted:true}.",
+			obj(map[string]any{
+				"id": descTyp("string", "the message id to permanently delete"),
+			}, "id")),
 	}
 }
 
@@ -170,6 +236,26 @@ func (h *Handler) dispatchTool(ctx context.Context, name string, argsRaw json.Ra
 		return h.toolHealth(ctx, id)
 	case tool("reflection"):
 		return h.toolReflection(argsRaw)
+	case tool("list"):
+		return h.toolList(ctx, argsRaw)
+	case tool("read"):
+		return h.toolRead(ctx, argsRaw)
+	case tool("thread"):
+		return h.toolThread(ctx, argsRaw)
+	case tool("labels"):
+		return h.toolLabels(ctx)
+	case tool("send"):
+		return h.toolSend(ctx, argsRaw)
+	case tool("draft"):
+		return h.toolDraft(ctx, argsRaw)
+	case tool("label"):
+		return h.toolLabel(ctx, argsRaw)
+	case tool("unlabel"):
+		return h.toolUnlabel(ctx, argsRaw)
+	case tool("trash"):
+		return h.toolTrash(ctx, argsRaw)
+	case tool("delete"):
+		return h.toolDelete(ctx, argsRaw)
 	default:
 		return nil, errors.New("unknown tool: " + name)
 	}
@@ -256,6 +342,304 @@ func reflectionUnknownTypeError(e *outbox.UnknownEventTypeError) string {
 	}}
 	b, _ := json.Marshal(env)
 	return string(b)
+}
+
+// ── mailbox tool implementations (P4) ─────────────────────────────────────
+
+// toolList lists/searches messages (one tool over MessagesList — list and
+// search are the same Gmail call). Returns bare pointers + pagination.
+func (h *Handler) toolList(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+	var a struct {
+		Q         string `json:"q"`
+		PageToken string `json:"page_token"`
+	}
+	if err := decodeArgs(raw, &a); err != nil {
+		return nil, err
+	}
+	res, err := h.client.MessagesList(ctx, a.Q, a.PageToken)
+	if err != nil {
+		return toolResultErr(err.Error()), nil
+	}
+	msgs := make([]map[string]any, 0, len(res.Messages))
+	for _, m := range res.Messages {
+		msgs = append(msgs, map[string]any{"id": m.ID, "thread_id": m.ThreadID})
+	}
+	return toolResultJSON(map[string]any{
+		"messages":             msgs,
+		"next_page_token":      res.NextPageToken,
+		"result_size_estimate": res.ResultSizeEstimate,
+	})
+}
+
+// toolRead fetches a full message and renders headers + snippet + label ids +
+// attachment metadata (no blob download — decisions §1).
+func (h *Handler) toolRead(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+	var a struct {
+		ID string `json:"id"`
+	}
+	if err := decodeArgs(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.ID == "" {
+		return toolResultErr("id is required"), nil
+	}
+	m, err := h.client.MessageGet(ctx, a.ID, "full")
+	if err != nil {
+		return toolResultErr(err.Error()), nil
+	}
+	return toolResultJSON(renderMessage(m))
+}
+
+// toolThread reads a whole thread and renders each message.
+func (h *Handler) toolThread(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+	var a struct {
+		ID string `json:"id"`
+	}
+	if err := decodeArgs(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.ID == "" {
+		return toolResultErr("id is required"), nil
+	}
+	t, err := h.client.ThreadGet(ctx, a.ID)
+	if err != nil {
+		return toolResultErr(err.Error()), nil
+	}
+	msgs := make([]map[string]any, 0, len(t.Messages))
+	for _, m := range t.Messages {
+		msgs = append(msgs, renderMessage(m))
+	}
+	return toolResultJSON(map[string]any{
+		"id":       t.ID,
+		"snippet":  t.Snippet,
+		"messages": msgs,
+	})
+}
+
+// toolLabels lists the mailbox labels as {id, name, type}.
+func (h *Handler) toolLabels(ctx context.Context) (map[string]any, error) {
+	res, err := h.client.LabelsList(ctx)
+	if err != nil {
+		return toolResultErr(err.Error()), nil
+	}
+	labels := make([]map[string]any, 0, len(res.Labels))
+	for _, l := range res.Labels {
+		labels = append(labels, map[string]any{"id": l.ID, "name": l.Name, "type": l.Type})
+	}
+	return toolResultJSON(map[string]any{"labels": labels})
+}
+
+// toolSend composes an RFC-2822 message from {to, subject, body}, base64url-
+// encodes it, and sends it. The send surfaces as mail.sent on the next poll.
+func (h *Handler) toolSend(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+	to, subject, body, errRes := h.composeArgs(raw)
+	if errRes != nil {
+		return errRes, nil
+	}
+	rawMsg := buildRawMessage(to, subject, body)
+	m, err := h.client.MessagesSend(ctx, rawMsg)
+	if err != nil {
+		return toolResultErr(err.Error()), nil
+	}
+	return toolResultJSON(map[string]any{
+		"id":        m.ID,
+		"thread_id": m.ThreadID,
+		"label_ids": orEmpty(m.LabelIDs),
+	})
+}
+
+// toolDraft composes the same RFC-2822 message and saves it as a draft (does not
+// send — distinct from send, decisions §1).
+func (h *Handler) toolDraft(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+	to, subject, body, errRes := h.composeArgs(raw)
+	if errRes != nil {
+		return errRes, nil
+	}
+	rawMsg := buildRawMessage(to, subject, body)
+	d, err := h.client.DraftCreate(ctx, rawMsg)
+	if err != nil {
+		return toolResultErr(err.Error()), nil
+	}
+	return toolResultJSON(map[string]any{
+		"id": d.ID,
+		"message": map[string]any{
+			"id":        d.Message.ID,
+			"thread_id": d.Message.ThreadID,
+		},
+	})
+}
+
+// toolLabel applies a label id to a message (MessageModify add). Archive =
+// unlabel INBOX; mark-read = unlabel UNREAD (decisions §1).
+func (h *Handler) toolLabel(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+	return h.modifyLabel(ctx, raw, true)
+}
+
+// toolUnlabel removes a label id from a message (MessageModify remove).
+func (h *Handler) toolUnlabel(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+	return h.modifyLabel(ctx, raw, false)
+}
+
+// modifyLabel is the shared add/remove implementation behind label/unlabel.
+func (h *Handler) modifyLabel(ctx context.Context, raw json.RawMessage, add bool) (map[string]any, error) {
+	var a struct {
+		ID      string `json:"id"`
+		LabelID string `json:"label_id"`
+	}
+	if err := decodeArgs(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.ID == "" {
+		return toolResultErr("id is required"), nil
+	}
+	if a.LabelID == "" {
+		return toolResultErr("label_id is required"), nil
+	}
+	var m gm.Message
+	var err error
+	if add {
+		m, err = h.client.MessageModify(ctx, a.ID, []string{a.LabelID}, nil)
+	} else {
+		m, err = h.client.MessageModify(ctx, a.ID, nil, []string{a.LabelID})
+	}
+	if err != nil {
+		return toolResultErr(err.Error()), nil
+	}
+	return toolResultJSON(map[string]any{"id": m.ID, "label_ids": orEmpty(m.LabelIDs)})
+}
+
+// toolTrash moves a message to Trash (recoverable; emits mail.deleted next poll).
+func (h *Handler) toolTrash(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+	var a struct {
+		ID string `json:"id"`
+	}
+	if err := decodeArgs(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.ID == "" {
+		return toolResultErr("id is required"), nil
+	}
+	m, err := h.client.MessageTrash(ctx, a.ID)
+	if err != nil {
+		return toolResultErr(err.Error()), nil
+	}
+	return toolResultJSON(map[string]any{"id": m.ID, "label_ids": orEmpty(m.LabelIDs)})
+}
+
+// toolDelete PERMANENTLY deletes a message (not recoverable — decisions §1).
+func (h *Handler) toolDelete(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+	var a struct {
+		ID string `json:"id"`
+	}
+	if err := decodeArgs(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.ID == "" {
+		return toolResultErr("id is required"), nil
+	}
+	if err := h.client.MessageDelete(ctx, a.ID); err != nil {
+		return toolResultErr(err.Error()), nil
+	}
+	return toolResultJSON(map[string]any{"id": a.ID, "deleted": true})
+}
+
+// ── mailbox helpers ──────────────────────────────────────────────────────
+
+// decodeArgs unmarshals tool arguments into v, tolerating absent/empty params.
+func decodeArgs(raw json.RawMessage, v any) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	return json.Unmarshal(raw, v)
+}
+
+// composeArgs decodes + validates the shared {to, subject, body} send/draft
+// inputs. On a validation miss it returns a tool-error result (second return is
+// nil only when all three are present).
+func (h *Handler) composeArgs(raw json.RawMessage) (to, subject, body string, errRes map[string]any) {
+	var a struct {
+		To      string `json:"to"`
+		Subject string `json:"subject"`
+		Body    string `json:"body"`
+	}
+	if err := decodeArgs(raw, &a); err != nil {
+		return "", "", "", toolResultErr(err.Error())
+	}
+	if a.To == "" {
+		return "", "", "", toolResultErr("to is required")
+	}
+	if a.Subject == "" {
+		return "", "", "", toolResultErr("subject is required")
+	}
+	return a.To, a.Subject, a.Body, nil
+}
+
+// buildRawMessage assembles a minimal RFC-2822 message from structured fields
+// and base64url-encodes it for Gmail's messages.send / drafts.create {"raw"}.
+// The subject is RFC-2047 encoded-word wrapped so non-ASCII subjects survive;
+// the body is sent as UTF-8 text/plain. From is omitted — Gmail fills it with
+// the authenticated mailbox.
+func buildRawMessage(to, subject, body string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "To: %s\r\n", to)
+	fmt.Fprintf(&b, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", subject))
+	b.WriteString("MIME-Version: 1.0\r\n")
+	b.WriteString("Content-Type: text/plain; charset=\"UTF-8\"\r\n")
+	b.WriteString("\r\n")
+	b.WriteString(body)
+	return base64.URLEncoding.EncodeToString([]byte(b.String()))
+}
+
+// renderMessage projects a gmail.Message into the read/thread tool shape:
+// headers as a name→value map, snippet, label ids, and attachment metadata
+// (filename/size/mime — no blob).
+func renderMessage(m gm.Message) map[string]any {
+	headers := map[string]string{}
+	collectHeaders(m.Payload, headers)
+	atts := []map[string]any{}
+	collectAttachments(m.Payload, &atts)
+	return map[string]any{
+		"id":            m.ID,
+		"thread_id":     m.ThreadID,
+		"label_ids":     orEmpty(m.LabelIDs),
+		"snippet":       m.Snippet,
+		"internal_date": m.InternalDate,
+		"headers":       headers,
+		"attachments":   atts,
+	}
+}
+
+// collectHeaders flattens the top-level part's headers into name→value. Only the
+// top-level payload headers (To/From/Subject/Date/…) are surfaced.
+func collectHeaders(p gm.MessagePart, out map[string]string) {
+	for _, hdr := range p.Headers {
+		if _, seen := out[hdr.Name]; !seen {
+			out[hdr.Name] = hdr.Value
+		}
+	}
+}
+
+// collectAttachments walks the MIME tree and records every part that carries a
+// filename (an attachment) as {filename, size, mime_type} — metadata only.
+func collectAttachments(p gm.MessagePart, out *[]map[string]any) {
+	if p.Filename != "" {
+		*out = append(*out, map[string]any{
+			"filename":  p.Filename,
+			"size":      p.Body.Size,
+			"mime_type": p.MimeType,
+		})
+	}
+	for _, child := range p.Parts {
+		collectAttachments(child, out)
+	}
+}
+
+// orEmpty normalizes a nil string slice to an empty one for stable JSON output.
+func orEmpty(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 // ── shared helpers ──────────────────────────────────────────────────────

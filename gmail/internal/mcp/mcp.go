@@ -2,13 +2,14 @@
 // ikigenba_gmail_* tool surface.
 //
 // gmail is a connector + event-plane producer (gmail-connector-decisions §1).
-// This is the P1 STUB surface: it exposes only the two chassis tools —
-// ikigenba_gmail_health (the end-to-end auth proof + health envelope) and
-// ikigenba_gmail_reflection (self-describes the three mail.* events the producer
-// will emit). The full normal-mailbox tool set (list/read/thread/send/draft/
-// labels/label/unlabel/trash/delete) lands in P4; the producer that actually
-// emits the mail.* events lands in P3. The stub lets the binary serve and the
-// dashboard inventory list it (MCP=true) before either of those phases.
+// This is the P4 surface: the full normal-mailbox tool set over the P2 Gmail
+// client — list/read/thread/send/draft/labels/label/unlabel/trash/delete — plus
+// the two chassis tools, ikigenba_gmail_health (the end-to-end auth proof +
+// health envelope) and ikigenba_gmail_reflection (self-describes the three
+// mail.* events the producer emits). The producer that actually emits those
+// events lives in P3 (internal/gmail). Read-only tools (list/read/thread/labels)
+// only fetch; mutating tools (send/draft/label/unlabel/trash/delete) change the
+// mailbox — trash and delete are the full-scope destructive verbs.
 //
 // The transport speaks JSON-RPC 2.0 over plain HTTP POST (no SSE/streaming),
 // responding with Content-Type: application/json. It carries NO token logic:
@@ -26,6 +27,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	gm "gmail/internal/gmail"
+
 	"eventplane/consumer"
 	"eventplane/outbox"
 )
@@ -37,12 +40,29 @@ type Identity struct {
 	ClientID   string
 }
 
+// Client is the slice of the P2 Gmail REST client the MCP tool surface drives.
+// It is an interface (not the concrete *gmail.Client) so the tool handlers can
+// be unit-tested against a fake without any network. The concrete *gmail.Client
+// satisfies it directly.
+type Client interface {
+	MessagesList(ctx context.Context, q, pageToken string) (gm.MessagesListResult, error)
+	MessageGet(ctx context.Context, id, format string) (gm.Message, error)
+	ThreadGet(ctx context.Context, id string) (gm.Thread, error)
+	MessagesSend(ctx context.Context, raw string) (gm.Message, error)
+	DraftCreate(ctx context.Context, raw string) (gm.Draft, error)
+	LabelsList(ctx context.Context) (gm.LabelsListResult, error)
+	MessageModify(ctx context.Context, id string, add, remove []string) (gm.Message, error)
+	MessageTrash(ctx context.Context, id string) (gm.Message, error)
+	MessageDelete(ctx context.Context, id string) error
+}
+
 // Handler is the http.Handler for POST /mcp. It is constructed once at wiring
-// time with the health-envelope inputs (version, service, optional reporter) and
-// the event-graph inputs (events registry, subscriptions provider) threaded from
-// appkit's Router accessors, and dispatches JSON-RPC methods. The P1 stub holds
-// no domain service (gmail has none yet — that arrives in P2/P3).
+// time with the P2 Gmail client (the mailbox surface), the health-envelope
+// inputs (version, service, optional reporter), and the event-graph inputs
+// (events registry, subscriptions provider) threaded from appkit's Router
+// accessors, and dispatches JSON-RPC methods.
 type Handler struct {
+	client        Client
 	version       string
 	service       string
 	health        func(context.Context) (map[string]any, error)
@@ -50,20 +70,25 @@ type Handler struct {
 	subscriptions func() []consumer.Subscription
 }
 
-// NewHandler builds a Handler. version/service/health populate the
-// ikigenba_gmail_health envelope; health is gmail's optional per-service
-// reporter (nil in P1 — gmail has no telemetry yet). events is the
-// published-event registry and subscriptions the live subscription provider,
-// both rendered by ikigenba_gmail_reflection. A nil events registry falls back
-// to gmail's static mail.* registry so reflection always describes the producer
-// even before appkit threads Spec.Events.
-func NewHandler(version, service string,
+// NewHandler builds a Handler. client is the P2 Gmail client backing the full
+// mailbox tool set; a nil client is a wiring error and panics at this seam
+// rather than deferring a nil dereference to first request. version/service/
+// health populate the ikigenba_gmail_health envelope; health is gmail's optional
+// per-service reporter. events is the published-event registry and subscriptions
+// the live subscription provider, both rendered by ikigenba_gmail_reflection. A
+// nil events registry falls back to gmail's static mail.* registry so reflection
+// always describes the producer even before appkit threads Spec.Events.
+func NewHandler(client Client, version, service string,
 	health func(context.Context) (map[string]any, error),
 	events outbox.Registry, subscriptions func() []consumer.Subscription) *Handler {
+	if client == nil {
+		panic("mcp: gmail client is required")
+	}
 	if events == nil {
 		events = Events
 	}
 	return &Handler{
+		client:        client,
 		version:       version,
 		service:       service,
 		health:        health,

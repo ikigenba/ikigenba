@@ -13,11 +13,11 @@
 //
 // gmail is structurally dropbox's twin (decisions §1): an external-OAuth
 // connector with an MCP surface, an internal poll daemon, and an event-plane
-// producer half. This is P3: the History-API producer + poll daemon is wired
-// through Producer/Workers. The MCP surface is still the P1 STUB (health +
-// reflection); the full mailbox tool set lands in P4. The three GMAIL_* secrets
-// + GMAIL_POLL_INTERVAL are read here at gmail's own composition root via getenv
-// and never logged; appkit never touches them.
+// producer half. The History-API producer + poll daemon is wired through
+// Producer/Workers (P3); the full normal-mailbox MCP tool set over the P2 client
+// is wired through Handlers (P4). The three GMAIL_* secrets + GMAIL_POLL_INTERVAL
+// are read here at gmail's own composition root via getenv and never logged;
+// appkit never touches them.
 package main
 
 import (
@@ -59,11 +59,11 @@ func main() {
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
 		},
-		// Handlers mounts the P1 STUB MCP surface (health + reflection only) behind
-		// the nginx-injected identity gate, and builds the Gmail client + producer
-		// Engine over appkit's shared DB handle. The full mailbox tool set arrives in
-		// P4. The three GMAIL_* secrets + GMAIL_POLL_INTERVAL are read here at the
-		// boundary and passed into the client/engine — NEVER logged.
+		// Handlers builds the Gmail client + producer Engine over appkit's shared DB
+		// handle, then mounts the full normal-mailbox MCP surface (the P2 client wired
+		// into the P4 tool set) behind the nginx-injected identity gate. The three
+		// GMAIL_* secrets + GMAIL_POLL_INTERVAL are read here at the boundary and
+		// passed into the client/engine — NEVER logged.
 		Handlers: func(rt *appkit.Router) error {
 			conn := rt.DB()
 			if conn == nil {
@@ -91,7 +91,7 @@ func main() {
 			})
 
 			rt.Handle("POST /mcp", rt.RequireIdentity(
-				mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
+				mcp.NewHandler(client, rt.Version(), rt.Service(), rt.Health(),
 					rt.Events(), rt.Subscriptions())))
 			return nil
 		},

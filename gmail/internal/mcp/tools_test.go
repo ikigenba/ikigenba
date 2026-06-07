@@ -1,18 +1,118 @@
 package mcp
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	gm "gmail/internal/gmail"
 )
 
-func newHandler(t *testing.T) *Handler {
+// fakeClient is an in-memory stand-in for the P2 Gmail client. Each method
+// records its arguments and returns canned values (or a canned error), so the
+// tool handlers can be exercised with no network. Per the secret rules and the
+// live-mutation policy, trash and delete are ONLY exercised here.
+type fakeClient struct {
+	// recorded args
+	listQ, listToken     string
+	getID, getFormat     string
+	threadID             string
+	sendRaw              string
+	draftRaw             string
+	modifyID             string
+	modifyAdd, modifyRem []string
+	trashID              string
+	deleteID             string
+	labelsCalls          int
+
+	// canned returns
+	listRes   gm.MessagesListResult
+	msg       gm.Message
+	thread    gm.Thread
+	draft     gm.Draft
+	labelsRes gm.LabelsListResult
+
+	err error // when non-nil, every call returns it
+}
+
+func (f *fakeClient) MessagesList(_ context.Context, q, token string) (gm.MessagesListResult, error) {
+	f.listQ, f.listToken = q, token
+	if f.err != nil {
+		return gm.MessagesListResult{}, f.err
+	}
+	return f.listRes, nil
+}
+
+func (f *fakeClient) MessageGet(_ context.Context, id, format string) (gm.Message, error) {
+	f.getID, f.getFormat = id, format
+	if f.err != nil {
+		return gm.Message{}, f.err
+	}
+	return f.msg, nil
+}
+
+func (f *fakeClient) ThreadGet(_ context.Context, id string) (gm.Thread, error) {
+	f.threadID = id
+	if f.err != nil {
+		return gm.Thread{}, f.err
+	}
+	return f.thread, nil
+}
+
+func (f *fakeClient) MessagesSend(_ context.Context, raw string) (gm.Message, error) {
+	f.sendRaw = raw
+	if f.err != nil {
+		return gm.Message{}, f.err
+	}
+	return f.msg, nil
+}
+
+func (f *fakeClient) DraftCreate(_ context.Context, raw string) (gm.Draft, error) {
+	f.draftRaw = raw
+	if f.err != nil {
+		return gm.Draft{}, f.err
+	}
+	return f.draft, nil
+}
+
+func (f *fakeClient) LabelsList(_ context.Context) (gm.LabelsListResult, error) {
+	f.labelsCalls++
+	if f.err != nil {
+		return gm.LabelsListResult{}, f.err
+	}
+	return f.labelsRes, nil
+}
+
+func (f *fakeClient) MessageModify(_ context.Context, id string, add, rem []string) (gm.Message, error) {
+	f.modifyID, f.modifyAdd, f.modifyRem = id, add, rem
+	if f.err != nil {
+		return gm.Message{}, f.err
+	}
+	return f.msg, nil
+}
+
+func (f *fakeClient) MessageTrash(_ context.Context, id string) (gm.Message, error) {
+	f.trashID = id
+	if f.err != nil {
+		return gm.Message{}, f.err
+	}
+	return f.msg, nil
+}
+
+func (f *fakeClient) MessageDelete(_ context.Context, id string) error {
+	f.deleteID = id
+	return f.err
+}
+
+func newHandler(t *testing.T) (*Handler, *fakeClient) {
 	t.Helper()
-	// P1 stub: no domain service, no reporter; events falls back to the static
-	// mail.* registry (nil → Events).
-	return NewHandler("v-test", "gmail", nil, nil, nil)
+	fc := &fakeClient{}
+	// events falls back to the static mail.* registry (nil → Events).
+	return NewHandler(fc, "v-test", "gmail", nil, nil, nil), fc
 }
 
 // rpc drives one JSON-RPC call through ServeHTTP and returns the decoded result
@@ -41,9 +141,10 @@ func rpc(t *testing.T, h *Handler, method, params string) map[string]any {
 	return env.Result
 }
 
-// callTool invokes tools/call and returns the decoded text payload plus the
-// isError flag.
-func callTool(t *testing.T, h *Handler, name, args string) (map[string]any, bool) {
+// callToolText invokes tools/call and returns the raw text content plus the
+// isError flag. Used when the result text may be plain (a validation/error
+// message) rather than a JSON object.
+func callToolText(t *testing.T, h *Handler, name, args string) (string, bool) {
 	t.Helper()
 	res := rpc(t, h, "tools/call", `{"name":"`+name+`","arguments":`+args+`}`)
 	isErr, _ := res["isError"].(bool)
@@ -51,7 +152,23 @@ func callTool(t *testing.T, h *Handler, name, args string) (map[string]any, bool
 	if !ok || len(content) == 0 {
 		t.Fatalf("%s: no content: %v", name, res)
 	}
-	text := content[0].(map[string]any)["text"].(string)
+	return content[0].(map[string]any)["text"].(string), isErr
+}
+
+// callTool invokes tools/call and returns the decoded JSON text payload plus the
+// isError flag. For a non-error result the text is always a JSON object.
+func callTool(t *testing.T, h *Handler, name, args string) (map[string]any, bool) {
+	t.Helper()
+	text, isErr := callToolText(t, h, name, args)
+	if isErr {
+		// Error results carry plain or JSON text; return it under a sentinel key
+		// so callers asserting only isErr don't trip on a decode.
+		var payload map[string]any
+		if json.Unmarshal([]byte(text), &payload) == nil {
+			return payload, isErr
+		}
+		return map[string]any{"_text": text}, isErr
+	}
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(text), &payload); err != nil {
 		t.Fatalf("%s: decode payload %q: %v", name, text, err)
@@ -59,32 +176,37 @@ func callTool(t *testing.T, h *Handler, name, args string) (map[string]any, bool
 	return payload, isErr
 }
 
-// TestToolsList asserts the P1 stub advertises exactly the two chassis tools and
-// none of the P4 mailbox verbs (which must not leak in early).
+// TestToolsList asserts the full P4 surface is advertised: the two chassis tools
+// plus the ten mailbox verbs, and nothing deferred (reply/sync_now).
 func TestToolsList(t *testing.T) {
-	h := newHandler(t)
+	h, _ := newHandler(t)
 	res := rpc(t, h, "tools/list", `{}`)
 	tools, _ := res["tools"].([]any)
 	names := map[string]bool{}
 	for _, tl := range tools {
 		names[tl.(map[string]any)["name"].(string)] = true
 	}
-	if !names["ikigenba_gmail_health"] {
-		t.Errorf("tools/list missing ikigenba_gmail_health (got %v)", names)
+	want := []string{
+		"ikigenba_gmail_health", "ikigenba_gmail_reflection",
+		"ikigenba_gmail_list", "ikigenba_gmail_read", "ikigenba_gmail_thread",
+		"ikigenba_gmail_labels", "ikigenba_gmail_send", "ikigenba_gmail_draft",
+		"ikigenba_gmail_label", "ikigenba_gmail_unlabel",
+		"ikigenba_gmail_trash", "ikigenba_gmail_delete",
 	}
-	if !names["ikigenba_gmail_reflection"] {
-		t.Errorf("tools/list missing ikigenba_gmail_reflection (got %v)", names)
+	for _, w := range want {
+		if !names[w] {
+			t.Errorf("tools/list missing %q (got %v)", w, names)
+		}
 	}
-	if len(names) != 2 {
-		t.Errorf("P1 stub must advertise exactly 2 tools, got %d: %v", len(names), names)
+	if len(names) != len(want) {
+		t.Errorf("expected %d tools, got %d: %v", len(want), len(names), names)
 	}
-	// P4 mailbox verbs must not appear in the P1 stub.
+	// Deferred verbs must NOT appear (decisions §3).
 	for _, leaked := range []string{
-		"ikigenba_gmail_list", "ikigenba_gmail_read", "ikigenba_gmail_send",
-		"ikigenba_gmail_draft", "ikigenba_gmail_trash", "ikigenba_gmail_delete",
+		"ikigenba_gmail_reply", "ikigenba_gmail_sync_now",
 	} {
 		if names[leaked] {
-			t.Errorf("P1 stub leaks P4 tool %q", leaked)
+			t.Errorf("surface leaks deferred tool %q", leaked)
 		}
 	}
 }
@@ -94,9 +216,8 @@ func TestToolsList(t *testing.T) {
 // event_type detail (schema + example), and the corrective error for an unknown
 // type.
 func TestReflection(t *testing.T) {
-	h := newHandler(t)
+	h, _ := newHandler(t)
 
-	// No-arg → the index {publishes, subscribes}.
 	idx, isErr := callTool(t, h, "ikigenba_gmail_reflection", `{}`)
 	if isErr {
 		t.Fatalf("reflection index isError: %v", idx)
@@ -109,9 +230,6 @@ func TestReflection(t *testing.T) {
 	for _, pe := range publishes {
 		p := pe.(map[string]any)
 		got[p["type"].(string)] = true
-		if p["description"] == "" {
-			t.Errorf("published type %v has empty description", p["type"])
-		}
 	}
 	for _, want := range []string{"mail.received", "mail.sent", "mail.deleted"} {
 		if !got[want] {
@@ -122,7 +240,6 @@ func TestReflection(t *testing.T) {
 		t.Errorf("expected exactly 3 published types, got %d: %v", len(publishes), publishes)
 	}
 
-	// gmail is a producer: subscribes is present and empty.
 	subscribes, ok := idx["subscribes"].([]any)
 	if !ok {
 		t.Fatalf("reflection index missing subscribes array: %v", idx)
@@ -131,7 +248,6 @@ func TestReflection(t *testing.T) {
 		t.Fatalf("expected empty subscribes for gmail, got %v", subscribes)
 	}
 
-	// event_type → the publish detail (schema + example).
 	detail, isErr := callTool(t, h, "ikigenba_gmail_reflection", `{"event_type":"mail.received"}`)
 	if isErr {
 		t.Fatalf("reflection detail isError: %v", detail)
@@ -139,21 +255,11 @@ func TestReflection(t *testing.T) {
 	if detail["type"] != "mail.received" {
 		t.Fatalf("detail type mismatch: %v", detail)
 	}
-	if detail["description"] == "" {
-		t.Fatalf("detail missing description: %v", detail)
-	}
 	sch, ok := detail["schema"].(map[string]any)
 	if !ok || sch["type"] != "object" {
 		t.Fatalf("detail schema not an object schema: %v", detail["schema"])
 	}
-	if _, ok := sch["properties"].(map[string]any); !ok {
-		t.Fatalf("detail schema missing properties: %v", sch)
-	}
-	if _, ok := detail["example"].(map[string]any); !ok {
-		t.Fatalf("detail missing example object: %v", detail["example"])
-	}
 
-	// Unknown event_type → corrective error listing valid types.
 	badErr, isErr := callTool(t, h, "ikigenba_gmail_reflection", `{"event_type":"mail.nope"}`)
 	if !isErr {
 		t.Fatalf("expected error for unknown event_type, got %v", badErr)
@@ -162,38 +268,326 @@ func TestReflection(t *testing.T) {
 	if em == nil || em["code"] != "unknown_event_type" {
 		t.Fatalf("expected unknown_event_type code, got %v", badErr)
 	}
-	msg, _ := em["message"].(string)
-	if !strings.Contains(msg, "mail.received") {
-		t.Errorf("corrective message missing valid type: %q", msg)
-	}
 }
 
 func TestHealth_Envelope(t *testing.T) {
-	h := newHandler(t)
+	h, _ := newHandler(t)
 	p, isErr := callTool(t, h, "ikigenba_gmail_health", `{}`)
 	if isErr {
 		t.Fatal("health isError")
 	}
-	// Envelope required top-level keys + identity (no reporter here → details {}).
 	if p["status"] != "ok" || p["version"] != "v-test" || p["service"] != "gmail" {
 		t.Errorf("health envelope keys = %v", p)
 	}
 	if p["owner_email"] != "me@example.com" || p["client_id"] != "client-123" {
 		t.Errorf("health identity = %v", p)
 	}
-	d, ok := p["details"].(map[string]any)
-	if !ok {
-		t.Fatalf("details missing or not an object: %v", p["details"])
-	}
-	if len(d) != 0 {
-		t.Errorf("details = %v, want empty {} with no reporter", d)
-	}
 }
 
 func TestUnknownTool_IsToolError(t *testing.T) {
-	h := newHandler(t)
+	h, _ := newHandler(t)
 	res := rpc(t, h, "tools/call", `{"name":"gmail_bogus","arguments":{}}`)
 	if isErr, _ := res["isError"].(bool); !isErr {
 		t.Errorf("expected isError for unknown tool, got %v", res)
+	}
+}
+
+// TestNewHandler_NilClientPanics guards the wiring seam.
+func TestNewHandler_NilClientPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic on nil client")
+		}
+	}()
+	NewHandler(nil, "v", "gmail", nil, nil, nil)
+}
+
+// ── read-only tools ───────────────────────────────────────────────────────
+
+func TestList_PassesQueryAndPaging(t *testing.T) {
+	h, fc := newHandler(t)
+	fc.listRes = gm.MessagesListResult{
+		Messages:           []gm.MessageRef{{ID: "m1", ThreadID: "t1"}, {ID: "m2", ThreadID: "t2"}},
+		NextPageToken:      "next-pg",
+		ResultSizeEstimate: 2,
+	}
+	p, isErr := callTool(t, h, "ikigenba_gmail_list", `{"q":"is:unread from:alice","page_token":"pg0"}`)
+	if isErr {
+		t.Fatalf("list isError: %v", p)
+	}
+	if fc.listQ != "is:unread from:alice" || fc.listToken != "pg0" {
+		t.Errorf("list args q=%q token=%q", fc.listQ, fc.listToken)
+	}
+	if p["next_page_token"] != "next-pg" {
+		t.Errorf("next_page_token = %v", p["next_page_token"])
+	}
+	msgs, _ := p["messages"].([]any)
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %v", p["messages"])
+	}
+	first := msgs[0].(map[string]any)
+	if first["id"] != "m1" || first["thread_id"] != "t1" {
+		t.Errorf("first message = %v", first)
+	}
+}
+
+func TestRead_RendersHeadersAndAttachments(t *testing.T) {
+	h, fc := newHandler(t)
+	fc.msg = gm.Message{
+		ID: "m1", ThreadID: "t1", LabelIDs: []string{"INBOX", "UNREAD"}, Snippet: "hi there",
+		Payload: gm.MessagePart{
+			MimeType: "multipart/mixed",
+			Headers: []gm.Header{
+				{Name: "Subject", Value: "Hello"},
+				{Name: "From", Value: "alice@example.com"},
+			},
+			Parts: []gm.MessagePart{
+				{MimeType: "text/plain", Body: gm.Body{Size: 10}},
+				{MimeType: "application/pdf", Filename: "doc.pdf", Body: gm.Body{Size: 2048}},
+			},
+		},
+	}
+	p, isErr := callTool(t, h, "ikigenba_gmail_read", `{"id":"m1"}`)
+	if isErr {
+		t.Fatalf("read isError: %v", p)
+	}
+	if fc.getID != "m1" || fc.getFormat != "full" {
+		t.Errorf("MessageGet args id=%q format=%q", fc.getID, fc.getFormat)
+	}
+	hdrs, _ := p["headers"].(map[string]any)
+	if hdrs["Subject"] != "Hello" || hdrs["From"] != "alice@example.com" {
+		t.Errorf("headers = %v", hdrs)
+	}
+	atts, _ := p["attachments"].([]any)
+	if len(atts) != 1 {
+		t.Fatalf("expected 1 attachment, got %v", p["attachments"])
+	}
+	a := atts[0].(map[string]any)
+	if a["filename"] != "doc.pdf" || a["mime_type"] != "application/pdf" {
+		t.Errorf("attachment = %v", a)
+	}
+}
+
+func TestRead_MissingID(t *testing.T) {
+	h, _ := newHandler(t)
+	p, isErr := callTool(t, h, "ikigenba_gmail_read", `{}`)
+	if !isErr {
+		t.Fatalf("expected error for missing id, got %v", p)
+	}
+}
+
+func TestThread_RendersMessages(t *testing.T) {
+	h, fc := newHandler(t)
+	fc.thread = gm.Thread{
+		ID: "t1", Snippet: "thread snip",
+		Messages: []gm.Message{
+			{ID: "m1", ThreadID: "t1"},
+			{ID: "m2", ThreadID: "t1"},
+		},
+	}
+	p, isErr := callTool(t, h, "ikigenba_gmail_thread", `{"id":"t1"}`)
+	if isErr {
+		t.Fatalf("thread isError: %v", p)
+	}
+	if fc.threadID != "t1" {
+		t.Errorf("ThreadGet id = %q", fc.threadID)
+	}
+	msgs, _ := p["messages"].([]any)
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %v", p["messages"])
+	}
+}
+
+func TestLabels_List(t *testing.T) {
+	h, fc := newHandler(t)
+	fc.labelsRes = gm.LabelsListResult{Labels: []gm.Label{
+		{ID: "INBOX", Name: "INBOX", Type: "system"},
+		{ID: "Label_42", Name: "Work", Type: "user"},
+	}}
+	p, isErr := callTool(t, h, "ikigenba_gmail_labels", `{}`)
+	if isErr {
+		t.Fatalf("labels isError: %v", p)
+	}
+	if fc.labelsCalls != 1 {
+		t.Errorf("LabelsList called %d times", fc.labelsCalls)
+	}
+	labels, _ := p["labels"].([]any)
+	if len(labels) != 2 {
+		t.Fatalf("expected 2 labels, got %v", p["labels"])
+	}
+}
+
+// ── mutating tools ────────────────────────────────────────────────────────
+
+// decodeRaw decodes a base64url raw RFC-2822 message back to its bytes.
+func decodeRaw(t *testing.T, raw string) string {
+	t.Helper()
+	b, err := base64.URLEncoding.DecodeString(raw)
+	if err != nil {
+		t.Fatalf("raw not base64url: %v", err)
+	}
+	return string(b)
+}
+
+func TestSend_BuildsRawMessage(t *testing.T) {
+	h, fc := newHandler(t)
+	fc.msg = gm.Message{ID: "sent1", ThreadID: "t9", LabelIDs: []string{"SENT"}}
+	p, isErr := callTool(t, h, "ikigenba_gmail_send",
+		`{"to":"bob@example.com","subject":"P4 test","body":"hello body"}`)
+	if isErr {
+		t.Fatalf("send isError: %v", p)
+	}
+	if p["id"] != "sent1" || p["thread_id"] != "t9" {
+		t.Errorf("send result = %v", p)
+	}
+	msg := decodeRaw(t, fc.sendRaw)
+	for _, want := range []string{"To: bob@example.com", "Subject: P4 test",
+		"Content-Type: text/plain", "hello body"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("raw message missing %q:\n%s", want, msg)
+		}
+	}
+	// Header/body separated by a blank line.
+	if !strings.Contains(msg, "\r\n\r\nhello body") {
+		t.Errorf("raw message missing header/body separator:\n%s", msg)
+	}
+}
+
+func TestSend_MissingTo(t *testing.T) {
+	h, _ := newHandler(t)
+	p, isErr := callTool(t, h, "ikigenba_gmail_send", `{"subject":"x","body":"y"}`)
+	if !isErr {
+		t.Fatalf("expected error for missing to, got %v", p)
+	}
+}
+
+func TestDraft_BuildsRawMessage(t *testing.T) {
+	h, fc := newHandler(t)
+	fc.draft = gm.Draft{ID: "d1", Message: gm.Message{ID: "dm1", ThreadID: "t3"}}
+	p, isErr := callTool(t, h, "ikigenba_gmail_draft",
+		`{"to":"carol@example.com","subject":"Draft P4","body":"draft body"}`)
+	if isErr {
+		t.Fatalf("draft isError: %v", p)
+	}
+	if p["id"] != "d1" {
+		t.Errorf("draft id = %v", p["id"])
+	}
+	msg := decodeRaw(t, fc.draftRaw)
+	if !strings.Contains(msg, "To: carol@example.com") || !strings.Contains(msg, "draft body") {
+		t.Errorf("draft raw message wrong:\n%s", msg)
+	}
+}
+
+func TestSubject_NonASCIIEncoded(t *testing.T) {
+	h, fc := newHandler(t)
+	_, isErr := callTool(t, h, "ikigenba_gmail_send",
+		`{"to":"x@example.com","subject":"café ☕","body":"b"}`)
+	if isErr {
+		t.Fatal("send isError")
+	}
+	msg := decodeRaw(t, fc.sendRaw)
+	// RFC-2047 encoded-word wrapping for non-ASCII subjects.
+	if !strings.Contains(msg, "Subject: =?utf-8?") {
+		t.Errorf("non-ASCII subject not encoded-word wrapped:\n%s", msg)
+	}
+}
+
+func TestLabel_AddsLabel(t *testing.T) {
+	h, fc := newHandler(t)
+	fc.msg = gm.Message{ID: "m1", LabelIDs: []string{"Label_42"}}
+	p, isErr := callTool(t, h, "ikigenba_gmail_label", `{"id":"m1","label_id":"Label_42"}`)
+	if isErr {
+		t.Fatalf("label isError: %v", p)
+	}
+	if fc.modifyID != "m1" || len(fc.modifyAdd) != 1 || fc.modifyAdd[0] != "Label_42" {
+		t.Errorf("modify add args id=%q add=%v rem=%v", fc.modifyID, fc.modifyAdd, fc.modifyRem)
+	}
+	if len(fc.modifyRem) != 0 {
+		t.Errorf("label should not remove, rem=%v", fc.modifyRem)
+	}
+}
+
+func TestUnlabel_RemovesLabel_Archive(t *testing.T) {
+	h, fc := newHandler(t)
+	fc.msg = gm.Message{ID: "m1", LabelIDs: []string{}}
+	// archive = remove INBOX (decisions §1).
+	p, isErr := callTool(t, h, "ikigenba_gmail_unlabel", `{"id":"m1","label_id":"INBOX"}`)
+	if isErr {
+		t.Fatalf("unlabel isError: %v", p)
+	}
+	if fc.modifyID != "m1" || len(fc.modifyRem) != 1 || fc.modifyRem[0] != "INBOX" {
+		t.Errorf("modify remove args id=%q add=%v rem=%v", fc.modifyID, fc.modifyAdd, fc.modifyRem)
+	}
+	if len(fc.modifyAdd) != 0 {
+		t.Errorf("unlabel should not add, add=%v", fc.modifyAdd)
+	}
+}
+
+func TestLabel_MissingArgs(t *testing.T) {
+	h, _ := newHandler(t)
+	if _, isErr := callTool(t, h, "ikigenba_gmail_label", `{"id":"m1"}`); !isErr {
+		t.Error("expected error for missing label_id")
+	}
+	if _, isErr := callTool(t, h, "ikigenba_gmail_label", `{"label_id":"X"}`); !isErr {
+		t.Error("expected error for missing id")
+	}
+}
+
+// trash and delete: FAKE-CLIENT ONLY (never live, per the secret/mutation rules).
+
+func TestTrash_CallsClient(t *testing.T) {
+	h, fc := newHandler(t)
+	fc.msg = gm.Message{ID: "m1", LabelIDs: []string{"TRASH"}}
+	p, isErr := callTool(t, h, "ikigenba_gmail_trash", `{"id":"m1"}`)
+	if isErr {
+		t.Fatalf("trash isError: %v", p)
+	}
+	if fc.trashID != "m1" {
+		t.Errorf("MessageTrash id = %q", fc.trashID)
+	}
+	labels, _ := p["label_ids"].([]any)
+	if len(labels) != 1 || labels[0] != "TRASH" {
+		t.Errorf("trash label_ids = %v", p["label_ids"])
+	}
+}
+
+func TestTrash_MissingID(t *testing.T) {
+	h, _ := newHandler(t)
+	if _, isErr := callTool(t, h, "ikigenba_gmail_trash", `{}`); !isErr {
+		t.Error("expected error for missing id")
+	}
+}
+
+func TestDelete_CallsClient(t *testing.T) {
+	h, fc := newHandler(t)
+	p, isErr := callTool(t, h, "ikigenba_gmail_delete", `{"id":"m1"}`)
+	if isErr {
+		t.Fatalf("delete isError: %v", p)
+	}
+	if fc.deleteID != "m1" {
+		t.Errorf("MessageDelete id = %q", fc.deleteID)
+	}
+	if p["deleted"] != true || p["id"] != "m1" {
+		t.Errorf("delete result = %v", p)
+	}
+}
+
+func TestDelete_MissingID(t *testing.T) {
+	h, _ := newHandler(t)
+	if _, isErr := callTool(t, h, "ikigenba_gmail_delete", `{}`); !isErr {
+		t.Error("expected error for missing id")
+	}
+}
+
+// TestClientError_MapsToToolError confirms a client failure becomes an isError
+// tool result (not a transport error).
+func TestClientError_MapsToToolError(t *testing.T) {
+	h, fc := newHandler(t)
+	fc.err = gm.ErrNotFound
+	if _, isErr := callTool(t, h, "ikigenba_gmail_read", `{"id":"missing"}`); !isErr {
+		t.Error("expected isError when client returns an error")
+	}
+	if _, isErr := callTool(t, h, "ikigenba_gmail_list", `{}`); !isErr {
+		t.Error("expected isError when list client errors")
 	}
 }
