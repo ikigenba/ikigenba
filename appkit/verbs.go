@@ -211,6 +211,7 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 		Health:        spec.Health,
 		Events:        spec.Events,
 		Subscriptions: spec.Subscriptions,
+		Publishes:     spec.Publishes,
 		Feed:          feedH,
 		FeedPath:      spec.Feed,
 		Register:      spec.Handlers,

@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"appkit/server"
+
+	"eventplane/outbox"
 )
 
 const (
@@ -254,5 +256,93 @@ func TestApex_BypassesPRMAndOwnsRouteTable(t *testing.T) {
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/index", nil))
 	if rr.Code != http.StatusOK || rr.Body.String() != "apex" {
 		t.Errorf("apex /index = (%d, %q), want (200, apex)", rr.Code, rr.Body.String())
+	}
+}
+
+// TestRouter_PublishesPreferredOverEvents wires both the static Events and a live
+// Publishes provider, then exercises the precedence rule a producer's reflection
+// tool applies at the rt seam: rt.Publishes() is preferred when non-nil and only
+// then does the service fall back to rt.Events(). It also proves Publishes is the
+// LIVE provider (a second call after a mutation reports the new list).
+func TestRouter_PublishesPreferredOverEvents(t *testing.T) {
+	static := outbox.Registry{{Type: "contact.created", Description: "static"}}
+	dynamic := []outbox.EventType{{Type: "cron.foo", Description: "live"}}
+
+	var gotPreferred, gotFallback []string
+	_, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Events:     static,
+		Publishes:  func() outbox.Registry { return outbox.Registry(dynamic) },
+		Register: func(rt *server.Router) error {
+			// Precedence: prefer the live provider when set.
+			if pub := rt.Publishes(); pub != nil {
+				for _, et := range pub() {
+					gotPreferred = append(gotPreferred, et.Type)
+				}
+			} else {
+				for _, et := range rt.Events() {
+					gotPreferred = append(gotPreferred, et.Type)
+				}
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if len(gotPreferred) != 1 || gotPreferred[0] != "cron.foo" {
+		t.Fatalf("preferred publishes = %v, want [cron.foo] (Publishes wins over Events)", gotPreferred)
+	}
+
+	// Live: the provider reflects a runtime change.
+	dynamic = append(dynamic, outbox.EventType{Type: "cron.bar"})
+	_, err = server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Events:     static,
+		Publishes:  func() outbox.Registry { return outbox.Registry(dynamic) },
+		Register: func(rt *server.Router) error {
+			for _, et := range rt.Publishes()() {
+				gotFallback = append(gotFallback, et.Type)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if len(gotFallback) != 2 {
+		t.Fatalf("live publishes = %v, want 2 types after mutation", gotFallback)
+	}
+
+	// Backward compat: with no Publishes set, rt.Publishes() is nil and the
+	// service falls back to the static Events exactly as today.
+	var gotStatic []string
+	_, err = server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Events:     static,
+		Register: func(rt *server.Router) error {
+			if rt.Publishes() != nil {
+				t.Error("rt.Publishes() must be nil when Spec.Publishes unset")
+			}
+			for _, et := range rt.Events() {
+				gotStatic = append(gotStatic, et.Type)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if len(gotStatic) != 1 || gotStatic[0] != "contact.created" {
+		t.Fatalf("fallback events = %v, want [contact.created]", gotStatic)
 	}
 }

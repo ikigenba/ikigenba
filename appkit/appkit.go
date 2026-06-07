@@ -180,6 +180,17 @@ type Spec struct {
 	// service's emittable types are compile-time payload structs, so this is a
 	// static value, not a provider. Empty for non-producers.
 	Events outbox.Registry
+	// Publishes is the LIVE provider of what this service currently publishes,
+	// called at reflection time (mirrors Spec.Subscriptions, the consumer-side
+	// provider). When set it is PREFERRED over the static Events for the reflection
+	// tool's `publishes` half — exposed to the Register hook as rt.Publishes() — so
+	// a dynamic producer (cron, whose emittable cron.<name> types are computed at
+	// runtime from its crontab rows) reports its live types instead of a fixed
+	// compile-time list. nil for static producers (crm, ledger), which keep Events
+	// alone; appkit then falls back to Events exactly as today. Publishes does NOT
+	// feed Append-time validation — that boundary stays on Events (a dynamic
+	// producer that wants no per-emit registry guard simply leaves Events empty).
+	Publishes func() outbox.Registry
 	// Subscriptions is the LIVE provider of what this service currently listens to,
 	// called at reflection time (mirrors Spec.Health). It returns a fixed list for
 	// a static consumer and the live union for a future dynamic one, so reflection

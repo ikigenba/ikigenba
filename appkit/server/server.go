@@ -87,6 +87,12 @@ type Options struct {
 	// to the Register hook (rt.Subscriptions()) so the reflection tool reports the
 	// live in-edges (mirrors Health). nil for non-consumers.
 	Subscriptions func() []consumer.Subscription
+	// Publishes is the live provider of what this service currently publishes,
+	// exposed to the Register hook (rt.Publishes()) so the reflection tool's
+	// `publishes` half reports the live out-edges of a dynamic producer (mirrors
+	// Subscriptions). When set it is preferred over the static Events; nil for
+	// static producers, which keep rendering reflection from Events.
+	Publishes func() outbox.Registry
 
 	// DB is the shared single-writer SQLite handle appkit opened and migrated. It
 	// is exposed to the Register hook (rt.DB()) so a service builds its domain over
@@ -165,6 +171,14 @@ func (rt *Router) Events() outbox.Registry { return rt.app.events }
 // in-edges. Mirrors Health.
 func (rt *Router) Subscriptions() func() []consumer.Subscription { return rt.app.subscriptions }
 
+// Publishes returns the live provider of what this service currently publishes
+// (nil when unset), so the MCP reflection tool's `publishes` half can PREFER it
+// over the static Events for a dynamic producer (cron). The precedence is the
+// service's to apply at its reflection seam: call Publishes() when non-nil and
+// render its returned Registry; otherwise fall back to Events(). Mirrors
+// Subscriptions.
+func (rt *Router) Publishes() func() outbox.Registry { return rt.app.publishes }
+
 // appHandler holds the HTTP layer's auth dependencies. Methods on it implement
 // the PRM document, the identity gate, and health. Unexported: the package's
 // public surface is New/Run/Router.
@@ -177,6 +191,7 @@ type appHandler struct {
 	health        func(ctx context.Context) (map[string]any, error)
 	events        outbox.Registry
 	subscriptions func() []consumer.Subscription
+	publishes     func() outbox.Registry
 }
 
 // New builds the HTTP server with its routes, security headers, and pinned
@@ -205,6 +220,7 @@ func New(opts Options) (*http.Server, error) {
 		health:        opts.Health,
 		events:        opts.Events,
 		subscriptions: opts.Subscriptions,
+		publishes:     opts.Publishes,
 	}
 	mux := http.NewServeMux()
 	rt := &Router{mux: mux, app: a, logger: opts.Logger, resourceID: opts.ResourceID, authServer: opts.AuthServer, db: opts.DB}
