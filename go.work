@@ -15,6 +15,7 @@ use (
 	./dashboard
 	./dropbox
 	./eventplane
+	./gmail
 	./ledger
 	./notify
 	./opsctl

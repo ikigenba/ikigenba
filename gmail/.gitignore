@@ -1,0 +1,24 @@
+# Build artifacts
+/build/
+
+# Local-dev runtime state (dev DB, private mirror, logs — default ./tmp/)
+/tmp/
+
+# SQLite databases (runtime; default path is ./tmp/gmail.db)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Local environment
+.env
+.env.local
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
