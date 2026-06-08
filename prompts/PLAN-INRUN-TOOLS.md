@@ -1,6 +1,6 @@
 # Plan — prompts in-run suite tools (Surface 2)
 
-**Status:** plan only — no code yet. This is the implementation plan for giving the
+**Status:** implemented (commits `0827286..063bcda` on `prompts_mcp`). This is the implementation plan for giving the
 sandboxed Claude agent *inside a run* access to the other suite services' MCP
 tools (send email, read dropbox, post to the ledger, …). It is the continuation
 of "Surface 2 — the in-run toolset" carved out of scope in

@@ -380,12 +380,157 @@ repeatedly to attach several bindings.
 
 ---
 
-## 13. Deferred / known gaps
+## 13. Surface 2 — the in-run suite toolset
+
+§10 is **Surface 1**: the foreground `ikigenba_prompts_*` MCP tools an owner
+drives through nginx to manage prompts and runs. **Surface 2** is the other
+direction — the toolset the sandboxed Claude agent *inside* a run can reach. On
+top of the built-in, sandbox-confined tools (`read`/`bash`/`write`/`edit`/
+`glob`/`grep`, §9) the in-run agent is now also handed **the other suite
+services' MCP tools** — send email, post to the ledger, read dropbox, and so on —
+so a run can act across the whole suite *on behalf of the run's owner*. This is a
+distinct **MCP/tool plane**; it does not touch `CONSUMES` or any `/feed` wiring
+(the event plane, §7/§8), which is unchanged.
+
+The pieces are split by reuse: the generic seam lives in `agentkit`
+(`agentkit/agent.ToolSource` + the outbound `agentkit/mcpclient`), and the
+suite-specific policy lives in **`prompts/internal/suite`** (discovery, identity
+injection, self-exclusion).
+
+### Loopback mechanism
+
+Every suite service binds `127.0.0.1:<PORT>` and mounts a bare `POST /mcp` behind
+`requireIdentityHeaders` (appkit). nginx is "the trust boundary" only because it
+is the sole *public* ingress; the `/srv/<svc>/` prefix it strips applies to
+public ingress only, so on loopback the service answers at the bare `/mcp` path —
+`MOUNT` is irrelevant there. A co-resident process therefore reaches a peer
+directly. For each discovered peer, prompts connects to
+`http://127.0.0.1:<PORT>/mcp` and speaks **JSON-RPC 2.0 over HTTP POST**
+(`Content-Type: application/json`) — `tools/list`, then `tools/call`. There is
+**no SSE** and **no `initialize` handshake**: the suite handlers are stateless per
+request (identity comes from the headers on each call), so discovery and dispatch
+call the two methods directly. The client is `agentkit/mcpclient`; a peer that
+ever required `initialize` would simply be dropped at discovery.
+
+### Snapshot at spawn
+
+The service + tool set is **frozen once when the run starts** and fixed for the
+run's life — the same "pin inputs per run" rule the rest of the service follows
+(§2). The runner calls
+`suite.Discover(ctx, manifestRoot, run.OwnerEmail, run.PromptID)` in `execute`,
+before `agent.Run`. `Discover` reads the on-box per-service manifests via
+`appkit/inventory.Read(manifestRoot)` (which globs
+`<manifestRoot>/*/etc/manifest.env`, keeps the `MCP=true` services, and reads
+each `PORT`), then
+concurrently `tools/list`es each peer and builds an immutable name→descriptor +
+name→owning-client index. A service that comes up *after* spawn is not
+re-discovered mid-run; runs are short relative to deploy cadence.
+
+### Identity injection
+
+Discovery builds each peer's `mcpclient.Client` with two headers, sent on every
+request to that peer:
+
+| header | value | purpose |
+|---|---|---|
+| `X-Owner-Email` | the run's `owner_email` | the identity the peer acts as |
+| `X-Client-Id`   | `prompts:<prompt_id>`  | downstream audit attribution |
+
+`requireIdentityHeaders` trusts a non-empty `X-Owner-Email` **blindly** — no token
+logic, no authorization-server round-trip. So **prompts becomes a second trusted
+loopback identity-injector alongside nginx.** The injected owner is always the
+run's *own* `owner_email`, captured on `prompt.Run` when the owner created the
+prompt through nginx — legitimate delegation, not cross-owner escalation.
+
+### Self-exclusion
+
+The `prompts` service is dropped from discovery by name (`selfName ==
+"prompts"`), so a run is never handed prompts' own tools — no run-spawns-run
+recursion. Self-chaining stays an event-plane concern (§8).
+
+### Best-effort everywhere
+
+Nothing in this path can crash a run. A down, unreachable, or garbled peer is
+logged loud and **skipped** at discovery; `Discover` never returns an error and
+always returns a non-nil (possibly empty) `ToolSource`. A downstream `tools/call`
+that errors at the transport level or returns `isError` becomes an `is_error`
+`tool_result` block, not a Go error — the agent loop sees it and continues. A
+per-call client timeout (30s) is well under the run TTL (§6), so a wedged peer
+surfaces as an `is_error` result rather than a run-killing hang.
+
+### Wiring (the `agent.ToolSource` seam)
+
+`agentkit/agent.Run` takes an `agent.Options{… Tools ToolSource}`. When `Tools`
+is non-nil the loop appends the source's `Descriptors()` to `req.Tools` (so the
+model sees the built-ins **plus** the suite tools) and routes each `tool_use`
+block whose name the source `Owns` to the source's `Dispatch`; everything else
+falls through to the built-in `tools.Dispatch(ctx, sandboxRoot, …)`. Built-in
+tools have no service prefix (`read`/`bash`/…) and suite tools are service-
+prefixed (`ikigenba_<svc>_*`), so `Owns` is an exact-name membership test with no
+collisions. `prompts/internal/runner` builds the source at spawn via an injectable
+discover seam (so tests inject a fake) and passes it as `Options.Tools`;
+`buildRequest` keeps advertising only the built-in `tools.All()` — the suite tools
+are added by the agent loop from the `ToolSource`, the single source of truth.
+Suite tool calls flow through the same `dispatchTools` path as built-ins, so they
+land in the run's `output.jsonl` stream-json log and the tracer for free.
+
+### Config
+
+| env | default | meaning |
+|---|---|---|
+| `PROMPTS_MANIFEST_ROOT` | `/opt` | root globbed for `*/etc/manifest.env` to discover loopback MCP peers; the repo root in local dev. |
+
+Read at the composition root (`cmd/prompts/main.go`) and threaded into
+`runner.New`, then into `suite.Discover`. **No new secret.** Downstream
+credentials (e.g. gmail's per-owner Google grant) remain the *downstream*
+service's concern — prompts only asserts the identity header; the peer looks up
+that owner's grant.
+
+### Security note — a deliberate trust escalation
+
+This is a real, intentional expansion of a run's reach, and the design records it
+as such:
+
+- A run's **blast radius grows** from "its sandbox directory" to "anything the
+  run's owner can do across the suite" — driven by a non-deterministic agent.
+- prompts is now a **second loopback identity-injector** alongside nginx. This is
+  consistent with the existing model (loopback bind = the trust boundary,
+  everything co-resident is trusted) but it *is* an expansion of who injects
+  `X-Owner-Email`. The injected owner is always the run's own `owner_email`, so
+  this is delegation within one owner, never privilege escalation across owners.
+- Sandbox **path-confinement (§9) still governs the *file* tools** only; it does
+  **not** and cannot constrain the MCP tools, which reach real owner data in real
+  services by design.
+- **OS / network isolation of the sandbox remains the pre-existing deferred gap**
+  (§9, §14). This change *intentionally* grants the agent loopback access to
+  privileged peers, so any future bubblewrap/podman `--network` story must
+  **allowlist the loopback MCP ports** rather than cut all networking — see §14.
+
+### Known limitation — tool descriptions are dropped
+
+`mcpclient.Tool` parses `{name, description, inputSchema}` from each peer's
+`tools/list`, but the provider-neutral descriptor type `agentkit/provider.Tool`
+carries only **`Name` + `InputSchema`** — it has **no tool-level description
+field**. So a discovered suite tool is advertised to the model by **name + JSON
+input schema** (whose own per-property descriptions *do* carry through verbatim,
+since the schema round-trips as raw JSON), but the upstream tool-level prose
+description is **dropped** at the `provider.Tool` boundary. This is a current
+limitation, not a fundamental one — a fast-follow could fold the description into
+the schema, or extend `provider.Tool` with a description field.
+
+---
+
+## 14. Deferred / known gaps
 
 - **Self-consumption** (prompts → its own feed) — one-line fast-follow.
 - **Retention / GC** of run directories.
 - **Sandbox seeding / cross-run carry-over** — explicit non-goal.
 - **Sandbox isolation hardening** (bwrap/podman, network isolation) — likely
-  platform-level.
+  platform-level. Note this now interacts with Surface 2 (§13): the in-run agent
+  is *intentionally* granted loopback access to the suite's privileged MCP peers,
+  so a future `--network` story must **allowlist the loopback MCP ports** rather
+  than cut all networking — otherwise it would also sever the suite toolset.
+- **Per-prompt allow-list / deny-list** of suite services or tools — all-on today
+  (§13); an additive `config` field later.
 - **Push-to-owner delivery** / talking back into the calling conversation.
 </content>
