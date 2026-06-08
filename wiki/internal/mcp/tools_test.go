@@ -64,8 +64,8 @@ func callTool(t *testing.T, h *Handler, name, args string) (map[string]any, bool
 }
 
 // TestToolsList_Surface asserts the Task-6.2 surface is exactly
-// ikigenba_wiki_health, ikigenba_wiki_ingest_text, ikigenba_wiki_ingest_url,
-// ikigenba_wiki_search, ikigenba_wiki_ask, and ikigenba_wiki_job_status — and
+// health, ingest_text, ingest_url,
+// search, ask, and job_status — and
 // nothing else.
 func TestToolsList_Surface(t *testing.T) {
 	h := newHandler(t)
@@ -75,7 +75,7 @@ func TestToolsList_Surface(t *testing.T) {
 	for _, tl := range tools {
 		got[tl.(map[string]any)["name"].(string)] = true
 	}
-	want := []string{"ikigenba_wiki_health", "ikigenba_wiki_ingest_text", "ikigenba_wiki_ingest_url", "ikigenba_wiki_search", "ikigenba_wiki_ask", "ikigenba_wiki_job_status"}
+	want := []string{"health", "ingest_text", "ingest_url", "search", "ask", "job_status"}
 	if len(got) != len(want) {
 		t.Fatalf("tools/list returned %d tools (%v), want %v", len(got), got, want)
 	}
@@ -88,7 +88,7 @@ func TestToolsList_Surface(t *testing.T) {
 
 func TestHealth(t *testing.T) {
 	h := newHandler(t)
-	p, isErr := callTool(t, h, "ikigenba_wiki_health", `{}`)
+	p, isErr := callTool(t, h, "health", `{}`)
 	if isErr {
 		t.Fatal("health isError")
 	}
@@ -109,7 +109,7 @@ func TestHealth(t *testing.T) {
 
 func TestUnknownTool_IsToolError(t *testing.T) {
 	h := newHandler(t)
-	res := rpc(t, h, "tools/call", `{"name":"ikigenba_wiki_nope","arguments":{}}`)
+	res := rpc(t, h, "tools/call", `{"name":"nope","arguments":{}}`)
 	if isErr, _ := res["isError"].(bool); !isErr {
 		t.Fatalf("expected isError for unknown tool, got %v", res)
 	}

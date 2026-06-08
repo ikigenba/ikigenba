@@ -9,7 +9,7 @@ import (
 )
 
 // stubSearcher is a test double for the Searcher seam: it records the last call
-// and returns canned Results, proving the ikigenba_wiki_search verb wiring (arg parsing,
+// and returns canned Results, proving the search verb wiring (arg parsing,
 // owner threading, default-collection, result shaping) without a real FTS5
 // backend.
 type stubSearcher struct {
@@ -42,9 +42,9 @@ func TestSearch_Verb_Dispatch(t *testing.T) {
 	}}
 	h := NewHandler(nil, stub, nil, "1.2.3", "wiki", nil)
 
-	p, isErr := callTool(t, h, "ikigenba_wiki_search", `{"query":"otter","limit":5}`)
+	p, isErr := callTool(t, h, "search", `{"query":"otter","limit":5}`)
 	if isErr {
-		t.Fatalf("ikigenba_wiki_search returned isError: %v", p)
+		t.Fatalf("search returned isError: %v", p)
 	}
 
 	// Owner threaded from the injected identity; default ("") collection; limit passed.
@@ -108,9 +108,9 @@ func TestSearch_Verb_EmptyNoMatch(t *testing.T) {
 	}}
 	h := NewHandler(nil, stub, nil, "1.2.3", "wiki", nil)
 
-	p, isErr := callTool(t, h, "ikigenba_wiki_search", `{"query":"zzznotpresent"}`)
+	p, isErr := callTool(t, h, "search", `{"query":"zzznotpresent"}`)
 	if isErr {
-		t.Fatalf("ikigenba_wiki_search (no match) returned isError: %v", p)
+		t.Fatalf("search (no match) returned isError: %v", p)
 	}
 	if stub.gotLimit != defaultSearchLimit {
 		t.Fatalf("default limit = %d, want %d", stub.gotLimit, defaultSearchLimit)
@@ -129,17 +129,17 @@ func TestSearch_Verb_EmptyNoMatch(t *testing.T) {
 
 func TestSearch_Verb_RequiresQuery(t *testing.T) {
 	h := NewHandler(nil, &stubSearcher{}, nil, "1.2.3", "wiki", nil)
-	_, isErr := callTool(t, h, "ikigenba_wiki_search", `{"limit":5}`)
+	_, isErr := callTool(t, h, "search", `{"limit":5}`)
 	if !isErr {
-		t.Fatal("ikigenba_wiki_search with empty query should be a tool-error")
+		t.Fatal("search with empty query should be a tool-error")
 	}
 }
 
 func TestSearch_Verb_NilBackendUnavailable(t *testing.T) {
 	h := NewHandler(nil, nil, nil, "1.2.3", "wiki", nil)
-	_, isErr := callTool(t, h, "ikigenba_wiki_search", `{"query":"x"}`)
+	_, isErr := callTool(t, h, "search", `{"query":"x"}`)
 	if !isErr {
-		t.Fatal("ikigenba_wiki_search with nil backend should be a tool-error")
+		t.Fatal("search with nil backend should be a tool-error")
 	}
 }
 
@@ -163,7 +163,7 @@ func (a storeAdapter) ReadPage(owner, collection, relPath string) ([]byte, error
 	return a.s.ReadPage(owner, collection, relPath)
 }
 
-// TestSearch_Verb_OverRealIndex drives ikigenba_wiki_search end to end over the real
+// TestSearch_Verb_OverRealIndex drives search end to end over the real
 // BM25 backend (no stub): it files pages into the store exactly as the ingest
 // integration pass does, reindexes via internal/search, then asserts the verb
 // surfaces the filed page as a WHOLE page (body round-trips) and the index page.
@@ -194,9 +194,9 @@ func TestSearch_Verb_OverRealIndex(t *testing.T) {
 	}
 
 	h := NewHandler(nil, idx, nil, "1.2.3", "wiki", nil)
-	p, isErr := callTool(t, h, "ikigenba_wiki_search", `{"query":"otter"}`)
+	p, isErr := callTool(t, h, "search", `{"query":"otter"}`)
 	if isErr {
-		t.Fatalf("ikigenba_wiki_search returned isError: %v", p)
+		t.Fatalf("search returned isError: %v", p)
 	}
 
 	// Index page surfaced.

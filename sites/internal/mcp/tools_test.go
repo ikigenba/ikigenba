@@ -165,20 +165,20 @@ func TestToolsList(t *testing.T) {
 	}
 
 	want := []string{
-		"ikigenba_sites_health",
-		"ikigenba_sites_describe",
-		"ikigenba_sites_create",
-		"ikigenba_sites_list",
-		"ikigenba_sites_delete",
-		"ikigenba_sites_mkdir",
-		"ikigenba_sites_publish",
-		"ikigenba_sites_unpublish",
-		"ikigenba_sites_file_write",
-		"ikigenba_sites_file_read",
-		"ikigenba_sites_file_edit",
-		"ikigenba_sites_file_glob",
-		"ikigenba_sites_file_grep",
-		"ikigenba_sites_file_list",
+		"health",
+		"describe",
+		"create",
+		"list",
+		"delete",
+		"mkdir",
+		"publish",
+		"unpublish",
+		"file_write",
+		"file_read",
+		"file_edit",
+		"file_glob",
+		"file_grep",
+		"file_list",
 	}
 	for _, name := range want {
 		if !got[name] {
@@ -194,7 +194,7 @@ func TestToolsList(t *testing.T) {
 // envelope keys.
 func TestHealth(t *testing.T) {
 	h, _ := newTestHandler(t)
-	env := callOK(t, h, "ikigenba_sites_health", map[string]any{})
+	env := callOK(t, h, "health", map[string]any{})
 	if env["owner_email"] != testOwner {
 		t.Errorf("owner_email = %v, want %v", env["owner_email"], testOwner)
 	}
@@ -211,7 +211,7 @@ func TestHealth(t *testing.T) {
 func TestCreateThenList(t *testing.T) {
 	h, root := newTestHandler(t)
 
-	created := callOK(t, h, "ikigenba_sites_create", map[string]any{"name": "demo"})
+	created := callOK(t, h, "create", map[string]any{"name": "demo"})
 	if created["name"] != "demo" {
 		t.Fatalf("create returned %+v", created)
 	}
@@ -228,7 +228,7 @@ func TestCreateThenList(t *testing.T) {
 		t.Fatalf("working dir not created at %s: %v", wd, err)
 	}
 
-	listed := callOK(t, h, "ikigenba_sites_list", map[string]any{})
+	listed := callOK(t, h, "list", map[string]any{})
 	arr, ok := listed["sites"].([]any)
 	if !ok || len(arr) != 1 {
 		t.Fatalf("list should show one site: %+v", listed)
@@ -242,7 +242,7 @@ func TestCreateThenList(t *testing.T) {
 // transport error) with the stable code.
 func TestCreateBadSlug(t *testing.T) {
 	h, _ := newTestHandler(t)
-	e := callErr(t, h, "ikigenba_sites_create", map[string]any{"name": "Bad Slug!"})
+	e := callErr(t, h, "create", map[string]any{"name": "Bad Slug!"})
 	if e["code"] != "invalid_slug" {
 		t.Fatalf("expected invalid_slug, got %+v", e)
 	}
@@ -252,9 +252,9 @@ func TestCreateBadSlug(t *testing.T) {
 // symlink lifecycle.
 func TestPublishUnpublish(t *testing.T) {
 	h, root := newTestHandler(t)
-	callOK(t, h, "ikigenba_sites_create", map[string]any{"name": "demo"})
+	callOK(t, h, "create", map[string]any{"name": "demo"})
 
-	pub := callOK(t, h, "ikigenba_sites_publish", map[string]any{"name": "demo", "tier": "public"})
+	pub := callOK(t, h, "publish", map[string]any{"name": "demo", "tier": "public"})
 	if pub["tier"] != "public" {
 		t.Fatalf("publish returned %+v", pub)
 	}
@@ -267,12 +267,12 @@ func TestPublishUnpublish(t *testing.T) {
 	}
 
 	// Re-publishing to the private tier switches the url to the private tier.
-	pvt := callOK(t, h, "ikigenba_sites_publish", map[string]any{"name": "demo", "tier": "private"})
+	pvt := callOK(t, h, "publish", map[string]any{"name": "demo", "tier": "private"})
 	if want := testBaseURL + "private/demo/"; pvt["url"] != want {
 		t.Errorf("private publish url = %v, want %v", pvt["url"], want)
 	}
 
-	unpub := callOK(t, h, "ikigenba_sites_unpublish", map[string]any{"name": "demo"})
+	unpub := callOK(t, h, "unpublish", map[string]any{"name": "demo"})
 	// Unpublish clears the tier, so the would-be url falls back to public.
 	if want := testBaseURL + "public/demo/"; unpub["url"] != want {
 		t.Errorf("unpublish url = %v, want %v", unpub["url"], want)
@@ -282,7 +282,7 @@ func TestPublishUnpublish(t *testing.T) {
 	}
 
 	// invalid tier → clean error.
-	e := callErr(t, h, "ikigenba_sites_publish", map[string]any{"name": "demo", "tier": "secret"})
+	e := callErr(t, h, "publish", map[string]any{"name": "demo", "tier": "secret"})
 	if e["code"] != "invalid_tier" {
 		t.Fatalf("expected invalid_tier, got %+v", e)
 	}
@@ -291,10 +291,10 @@ func TestPublishUnpublish(t *testing.T) {
 // TestDelete covers the unpublish → remove working tree → drop row ordering.
 func TestDelete(t *testing.T) {
 	h, root := newTestHandler(t)
-	callOK(t, h, "ikigenba_sites_create", map[string]any{"name": "demo"})
-	callOK(t, h, "ikigenba_sites_publish", map[string]any{"name": "demo", "tier": "private"})
+	callOK(t, h, "create", map[string]any{"name": "demo"})
+	callOK(t, h, "publish", map[string]any{"name": "demo", "tier": "private"})
 
-	del := callOK(t, h, "ikigenba_sites_delete", map[string]any{"name": "demo"})
+	del := callOK(t, h, "delete", map[string]any{"name": "demo"})
 	if del["deleted"] != "demo" {
 		t.Fatalf("delete returned %+v", del)
 	}
@@ -304,7 +304,7 @@ func TestDelete(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(root, sites.ServedSeg, sites.PrivateSeg, "demo")); !os.IsNotExist(err) {
 		t.Errorf("served link should be removed: %v", err)
 	}
-	listed := callOK(t, h, "ikigenba_sites_list", map[string]any{})
+	listed := callOK(t, h, "list", map[string]any{})
 	if arr, _ := listed["sites"].([]any); len(arr) != 0 {
 		t.Errorf("list should be empty after delete: %+v", listed)
 	}
@@ -313,18 +313,18 @@ func TestDelete(t *testing.T) {
 // TestMkdirConfinement covers a valid nested mkdir and rejects an escape.
 func TestMkdirConfinement(t *testing.T) {
 	h, root := newTestHandler(t)
-	callOK(t, h, "ikigenba_sites_create", map[string]any{"name": "demo"})
+	callOK(t, h, "create", map[string]any{"name": "demo"})
 
-	callOK(t, h, "ikigenba_sites_mkdir", map[string]any{"name": "demo", "path": "a/b/c"})
+	callOK(t, h, "mkdir", map[string]any{"name": "demo", "path": "a/b/c"})
 	if fi, err := os.Stat(filepath.Join(root, sites.WorkingSeg, "demo", "a", "b", "c")); err != nil || !fi.IsDir() {
 		t.Fatalf("nested dir not created: %v", err)
 	}
 
-	e := callErr(t, h, "ikigenba_sites_mkdir", map[string]any{"name": "demo", "path": "../../escape"})
+	e := callErr(t, h, "mkdir", map[string]any{"name": "demo", "path": "../../escape"})
 	if e["code"] != "path_escapes_working_dir" {
 		t.Fatalf("expected path_escapes_working_dir, got %+v", e)
 	}
-	e2 := callErr(t, h, "ikigenba_sites_mkdir", map[string]any{"name": "demo", "path": "/etc/evil"})
+	e2 := callErr(t, h, "mkdir", map[string]any{"name": "demo", "path": "/etc/evil"})
 	if e2["code"] != "path_escapes_working_dir" {
 		t.Fatalf("expected path_escapes_working_dir for absolute, got %+v", e2)
 	}

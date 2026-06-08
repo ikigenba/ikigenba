@@ -1,11 +1,11 @@
 // Package mcp implements a minimal MCP transport for the /mcp endpoint and the
-// ikigenba_gmail_* tool surface.
+// * tool surface.
 //
 // gmail is a connector + event-plane producer (gmail-connector-decisions §1).
 // This is the P4 surface: the full normal-mailbox tool set over the P2 Gmail
 // client — list/read/thread/send/draft/labels/label/unlabel/trash/delete — plus
-// the two chassis tools, ikigenba_gmail_health (the end-to-end auth proof +
-// health envelope) and ikigenba_gmail_reflection (self-describes the three
+// the two chassis tools, health (the end-to-end auth proof +
+// health envelope) and reflection (self-describes the three
 // mail.* events the producer emits). The producer that actually emits those
 // events lives in P3 (internal/gmail). Read-only tools (list/read/thread/labels)
 // only fetch; mutating tools (send/draft/label/unlabel/trash/delete) change the
@@ -73,9 +73,9 @@ type Handler struct {
 // NewHandler builds a Handler. client is the P2 Gmail client backing the full
 // mailbox tool set; a nil client is a wiring error and panics at this seam
 // rather than deferring a nil dereference to first request. version/service/
-// health populate the ikigenba_gmail_health envelope; health is gmail's optional
+// health populate the health envelope; health is gmail's optional
 // per-service reporter. events is the published-event registry and subscriptions
-// the live subscription provider, both rendered by ikigenba_gmail_reflection. A
+// the live subscription provider, both rendered by reflection. A
 // nil events registry falls back to gmail's static mail.* registry so reflection
 // always describes the producer even before appkit threads Spec.Events.
 func NewHandler(client Client, version, service string,

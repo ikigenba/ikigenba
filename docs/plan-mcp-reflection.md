@@ -1,5 +1,8 @@
 # Plan — `ikigenba_<svc>_reflection`: event-graph self-description over MCP
 
+> *Historical: the tool is now the bare `reflection` (and wrapped
+> `mcp__ikigenba_<svc>__reflection`) — see `docs/adr-mcp-tool-bare-names.md`.*
+
 ## Context
 
 The suite is meant to be a **space people connect agents to**, where those agents can

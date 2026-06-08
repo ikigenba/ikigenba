@@ -187,11 +187,11 @@ func TestToolsList(t *testing.T) {
 		names[tl.(map[string]any)["name"].(string)] = true
 	}
 	want := []string{
-		"ikigenba_gmail_health", "ikigenba_gmail_reflection",
-		"ikigenba_gmail_list", "ikigenba_gmail_read", "ikigenba_gmail_thread",
-		"ikigenba_gmail_labels", "ikigenba_gmail_send", "ikigenba_gmail_draft",
-		"ikigenba_gmail_label", "ikigenba_gmail_unlabel",
-		"ikigenba_gmail_trash", "ikigenba_gmail_delete",
+		"health", "reflection",
+		"list", "read", "thread",
+		"labels", "send", "draft",
+		"label", "unlabel",
+		"trash", "delete",
 	}
 	for _, w := range want {
 		if !names[w] {
@@ -203,7 +203,7 @@ func TestToolsList(t *testing.T) {
 	}
 	// Deferred verbs must NOT appear (decisions §3).
 	for _, leaked := range []string{
-		"ikigenba_gmail_reply", "ikigenba_gmail_sync_now",
+		"reply", "sync_now",
 	} {
 		if names[leaked] {
 			t.Errorf("surface leaks deferred tool %q", leaked)
@@ -211,14 +211,14 @@ func TestToolsList(t *testing.T) {
 	}
 }
 
-// TestReflection covers the ikigenba_gmail_reflection tool: the no-arg index (the
+// TestReflection covers the reflection tool: the no-arg index (the
 // three published mail.* types, empty subscribes — gmail is a producer), the
 // event_type detail (schema + example), and the corrective error for an unknown
 // type.
 func TestReflection(t *testing.T) {
 	h, _ := newHandler(t)
 
-	idx, isErr := callTool(t, h, "ikigenba_gmail_reflection", `{}`)
+	idx, isErr := callTool(t, h, "reflection", `{}`)
 	if isErr {
 		t.Fatalf("reflection index isError: %v", idx)
 	}
@@ -248,7 +248,7 @@ func TestReflection(t *testing.T) {
 		t.Fatalf("expected empty subscribes for gmail, got %v", subscribes)
 	}
 
-	detail, isErr := callTool(t, h, "ikigenba_gmail_reflection", `{"event_type":"mail.received"}`)
+	detail, isErr := callTool(t, h, "reflection", `{"event_type":"mail.received"}`)
 	if isErr {
 		t.Fatalf("reflection detail isError: %v", detail)
 	}
@@ -260,7 +260,7 @@ func TestReflection(t *testing.T) {
 		t.Fatalf("detail schema not an object schema: %v", detail["schema"])
 	}
 
-	badErr, isErr := callTool(t, h, "ikigenba_gmail_reflection", `{"event_type":"mail.nope"}`)
+	badErr, isErr := callTool(t, h, "reflection", `{"event_type":"mail.nope"}`)
 	if !isErr {
 		t.Fatalf("expected error for unknown event_type, got %v", badErr)
 	}
@@ -272,7 +272,7 @@ func TestReflection(t *testing.T) {
 
 func TestHealth_Envelope(t *testing.T) {
 	h, _ := newHandler(t)
-	p, isErr := callTool(t, h, "ikigenba_gmail_health", `{}`)
+	p, isErr := callTool(t, h, "health", `{}`)
 	if isErr {
 		t.Fatal("health isError")
 	}
@@ -311,7 +311,7 @@ func TestList_PassesQueryAndPaging(t *testing.T) {
 		NextPageToken:      "next-pg",
 		ResultSizeEstimate: 2,
 	}
-	p, isErr := callTool(t, h, "ikigenba_gmail_list", `{"q":"is:unread from:alice","page_token":"pg0"}`)
+	p, isErr := callTool(t, h, "list", `{"q":"is:unread from:alice","page_token":"pg0"}`)
 	if isErr {
 		t.Fatalf("list isError: %v", p)
 	}
@@ -347,7 +347,7 @@ func TestRead_RendersHeadersAndAttachments(t *testing.T) {
 			},
 		},
 	}
-	p, isErr := callTool(t, h, "ikigenba_gmail_read", `{"id":"m1"}`)
+	p, isErr := callTool(t, h, "read", `{"id":"m1"}`)
 	if isErr {
 		t.Fatalf("read isError: %v", p)
 	}
@@ -370,7 +370,7 @@ func TestRead_RendersHeadersAndAttachments(t *testing.T) {
 
 func TestRead_MissingID(t *testing.T) {
 	h, _ := newHandler(t)
-	p, isErr := callTool(t, h, "ikigenba_gmail_read", `{}`)
+	p, isErr := callTool(t, h, "read", `{}`)
 	if !isErr {
 		t.Fatalf("expected error for missing id, got %v", p)
 	}
@@ -385,7 +385,7 @@ func TestThread_RendersMessages(t *testing.T) {
 			{ID: "m2", ThreadID: "t1"},
 		},
 	}
-	p, isErr := callTool(t, h, "ikigenba_gmail_thread", `{"id":"t1"}`)
+	p, isErr := callTool(t, h, "thread", `{"id":"t1"}`)
 	if isErr {
 		t.Fatalf("thread isError: %v", p)
 	}
@@ -404,7 +404,7 @@ func TestLabels_List(t *testing.T) {
 		{ID: "INBOX", Name: "INBOX", Type: "system"},
 		{ID: "Label_42", Name: "Work", Type: "user"},
 	}}
-	p, isErr := callTool(t, h, "ikigenba_gmail_labels", `{}`)
+	p, isErr := callTool(t, h, "labels", `{}`)
 	if isErr {
 		t.Fatalf("labels isError: %v", p)
 	}
@@ -432,7 +432,7 @@ func decodeRaw(t *testing.T, raw string) string {
 func TestSend_BuildsRawMessage(t *testing.T) {
 	h, fc := newHandler(t)
 	fc.msg = gm.Message{ID: "sent1", ThreadID: "t9", LabelIDs: []string{"SENT"}}
-	p, isErr := callTool(t, h, "ikigenba_gmail_send",
+	p, isErr := callTool(t, h, "send",
 		`{"to":"bob@example.com","subject":"P4 test","body":"hello body"}`)
 	if isErr {
 		t.Fatalf("send isError: %v", p)
@@ -455,7 +455,7 @@ func TestSend_BuildsRawMessage(t *testing.T) {
 
 func TestSend_MissingTo(t *testing.T) {
 	h, _ := newHandler(t)
-	p, isErr := callTool(t, h, "ikigenba_gmail_send", `{"subject":"x","body":"y"}`)
+	p, isErr := callTool(t, h, "send", `{"subject":"x","body":"y"}`)
 	if !isErr {
 		t.Fatalf("expected error for missing to, got %v", p)
 	}
@@ -464,7 +464,7 @@ func TestSend_MissingTo(t *testing.T) {
 func TestDraft_BuildsRawMessage(t *testing.T) {
 	h, fc := newHandler(t)
 	fc.draft = gm.Draft{ID: "d1", Message: gm.Message{ID: "dm1", ThreadID: "t3"}}
-	p, isErr := callTool(t, h, "ikigenba_gmail_draft",
+	p, isErr := callTool(t, h, "draft",
 		`{"to":"carol@example.com","subject":"Draft P4","body":"draft body"}`)
 	if isErr {
 		t.Fatalf("draft isError: %v", p)
@@ -480,7 +480,7 @@ func TestDraft_BuildsRawMessage(t *testing.T) {
 
 func TestSubject_NonASCIIEncoded(t *testing.T) {
 	h, fc := newHandler(t)
-	_, isErr := callTool(t, h, "ikigenba_gmail_send",
+	_, isErr := callTool(t, h, "send",
 		`{"to":"x@example.com","subject":"café ☕","body":"b"}`)
 	if isErr {
 		t.Fatal("send isError")
@@ -495,7 +495,7 @@ func TestSubject_NonASCIIEncoded(t *testing.T) {
 func TestLabel_AddsLabel(t *testing.T) {
 	h, fc := newHandler(t)
 	fc.msg = gm.Message{ID: "m1", LabelIDs: []string{"Label_42"}}
-	p, isErr := callTool(t, h, "ikigenba_gmail_label", `{"id":"m1","label_id":"Label_42"}`)
+	p, isErr := callTool(t, h, "label", `{"id":"m1","label_id":"Label_42"}`)
 	if isErr {
 		t.Fatalf("label isError: %v", p)
 	}
@@ -511,7 +511,7 @@ func TestUnlabel_RemovesLabel_Archive(t *testing.T) {
 	h, fc := newHandler(t)
 	fc.msg = gm.Message{ID: "m1", LabelIDs: []string{}}
 	// archive = remove INBOX (decisions §1).
-	p, isErr := callTool(t, h, "ikigenba_gmail_unlabel", `{"id":"m1","label_id":"INBOX"}`)
+	p, isErr := callTool(t, h, "unlabel", `{"id":"m1","label_id":"INBOX"}`)
 	if isErr {
 		t.Fatalf("unlabel isError: %v", p)
 	}
@@ -525,10 +525,10 @@ func TestUnlabel_RemovesLabel_Archive(t *testing.T) {
 
 func TestLabel_MissingArgs(t *testing.T) {
 	h, _ := newHandler(t)
-	if _, isErr := callTool(t, h, "ikigenba_gmail_label", `{"id":"m1"}`); !isErr {
+	if _, isErr := callTool(t, h, "label", `{"id":"m1"}`); !isErr {
 		t.Error("expected error for missing label_id")
 	}
-	if _, isErr := callTool(t, h, "ikigenba_gmail_label", `{"label_id":"X"}`); !isErr {
+	if _, isErr := callTool(t, h, "label", `{"label_id":"X"}`); !isErr {
 		t.Error("expected error for missing id")
 	}
 }
@@ -538,7 +538,7 @@ func TestLabel_MissingArgs(t *testing.T) {
 func TestTrash_CallsClient(t *testing.T) {
 	h, fc := newHandler(t)
 	fc.msg = gm.Message{ID: "m1", LabelIDs: []string{"TRASH"}}
-	p, isErr := callTool(t, h, "ikigenba_gmail_trash", `{"id":"m1"}`)
+	p, isErr := callTool(t, h, "trash", `{"id":"m1"}`)
 	if isErr {
 		t.Fatalf("trash isError: %v", p)
 	}
@@ -553,14 +553,14 @@ func TestTrash_CallsClient(t *testing.T) {
 
 func TestTrash_MissingID(t *testing.T) {
 	h, _ := newHandler(t)
-	if _, isErr := callTool(t, h, "ikigenba_gmail_trash", `{}`); !isErr {
+	if _, isErr := callTool(t, h, "trash", `{}`); !isErr {
 		t.Error("expected error for missing id")
 	}
 }
 
 func TestDelete_CallsClient(t *testing.T) {
 	h, fc := newHandler(t)
-	p, isErr := callTool(t, h, "ikigenba_gmail_delete", `{"id":"m1"}`)
+	p, isErr := callTool(t, h, "delete", `{"id":"m1"}`)
 	if isErr {
 		t.Fatalf("delete isError: %v", p)
 	}
@@ -574,7 +574,7 @@ func TestDelete_CallsClient(t *testing.T) {
 
 func TestDelete_MissingID(t *testing.T) {
 	h, _ := newHandler(t)
-	if _, isErr := callTool(t, h, "ikigenba_gmail_delete", `{}`); !isErr {
+	if _, isErr := callTool(t, h, "delete", `{}`); !isErr {
 		t.Error("expected error for missing id")
 	}
 }
@@ -584,10 +584,10 @@ func TestDelete_MissingID(t *testing.T) {
 func TestClientError_MapsToToolError(t *testing.T) {
 	h, fc := newHandler(t)
 	fc.err = gm.ErrNotFound
-	if _, isErr := callTool(t, h, "ikigenba_gmail_read", `{"id":"missing"}`); !isErr {
+	if _, isErr := callTool(t, h, "read", `{"id":"missing"}`); !isErr {
 		t.Error("expected isError when client returns an error")
 	}
-	if _, isErr := callTool(t, h, "ikigenba_gmail_list", `{}`); !isErr {
+	if _, isErr := callTool(t, h, "list", `{}`); !isErr {
 		t.Error("expected isError when list client errors")
 	}
 }

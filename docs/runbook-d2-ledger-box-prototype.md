@@ -333,6 +333,7 @@ journalctl -u ledger -n 50 --no-pager
 > Optional deeper auth proof (not required for the loop, mirrors the notify
 > worked example): a connector OAuth round-trip from a Claude client + the
 > `ikigenba_ledger_health` MCP tool. Out of scope for the install/rollback mechanism proof.
+> *(The tool is now the bare `health` — see `docs/adr-mcp-tool-bare-names.md`.)*
 
 ---
 

@@ -1,5 +1,5 @@
 // Package mcp implements a minimal MCP transport for the /mcp endpoint and the
-// fixed six-verb ikigenba_crm_* tool surface (PLAN.md §2) that wraps
+// fixed six-verb tool surface (PLAN.md §2) that wraps
 // internal/crm.
 //
 // The transport speaks JSON-RPC 2.0 over plain HTTP POST (no SSE/streaming),
@@ -47,10 +47,10 @@ type Handler struct {
 
 // NewHandler builds a Handler. The crm service is required; a nil service is a
 // wiring error and panics at this seam rather than deferring a nil dereference to
-// first request. version/service/health populate the ikigenba_crm_health
+// first request. version/service/health populate the health
 // envelope; health is the optional per-service reporter (nil → details is {}).
 // events is the published-event registry and subscriptions the live subscription
-// provider, both rendered by ikigenba_crm_reflection.
+// provider, both rendered by reflection.
 func NewHandler(s *crm.Service, version, service string,
 	health func(context.Context) (map[string]any, error),
 	events outbox.Registry, subscriptions func() []consumer.Subscription) *Handler {

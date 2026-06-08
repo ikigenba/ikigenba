@@ -15,14 +15,14 @@ import (
 
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name
 // ikigenba + the service name; HTTP route paths are NOT branded.
-const toolPrefix = "ikigenba_notify_"
+const toolPrefix = ""
 
 // tool returns the branded, fully-qualified MCP tool name. Used by BOTH
 // toolDescriptors and dispatchTool so the two sites cannot drift.
 func tool(verb string) string { return toolPrefix + verb }
 
-// toolDescriptors returns the ikigenba_notify_* tool set. For the skeleton this
-// is just ikigenba_notify_health; real notify tools are added to this list and to
+// toolDescriptors returns the notify tool set. For the skeleton this
+// is just health; real notify tools are added to this list and to
 // dispatchTool as the domain is built out. Schemas are hand-coded; a full JSON
 // Schema isn't required by MCP clients but improves the LLM hinting.
 func toolDescriptors() []map[string]any {
@@ -109,7 +109,7 @@ func (h *Handler) toolHealth(ctx context.Context, id Identity) (map[string]any, 
 }
 
 // toolReflection self-describes notify's edges in the event graph (the
-// ikigenba_<svc>_reflection tool). No event_type → the index {publishes,
+// reflection tool). No event_type → the index {publishes,
 // subscribes}; notify is a consumer, so publishes is empty and subscribes lists
 // its one crm/contact.created in-edge. With event_type → that published type's
 // detail; against notify's empty registry every type is unknown, so it returns

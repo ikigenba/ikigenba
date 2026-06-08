@@ -4,6 +4,9 @@ The phased build plan for the `gmail` owner-mailbox connector. **Decisions** are
 recorded in `docs/gmail-connector-decisions.md`; this file turns those decisions
 into a sequence of **subagent-sized phases**.
 
+> *Historical: the `ikigenba_gmail_` MCP tool-name prefix this plan references was
+> later dropped for bare verbs — see `docs/adr-mcp-tool-bare-names.md`.*
+
 > **Note — credential bootstrap was reworked in the 2026-06-07 plan review** and
 > `decisions §2` has been updated to match: a **dedicated GCP project**, a
 > **dedicated desktop OAuth client** (`GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`,

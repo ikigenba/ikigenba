@@ -1,5 +1,8 @@
 # Execution plan — MCP rebrand (`ikigenba_*`) + `whoami` → `health`
 
+> *Historical: the `ikigenba_<svc>_<verb>` tool-name prefix introduced here was
+> later dropped for bare verbs — see `docs/adr-mcp-tool-bare-names.md`.*
+
 Derived from `DECISIONS.md`. This is the **sequential** implementation plan: each
 step is a self-contained unit a single subagent can execute end-to-end, and the
 steps run **in order** — every step assumes its predecessors have landed and

@@ -8,7 +8,7 @@
 // backup/restore), config-from-env, the migration runner + downgrade guard, the
 // loopback HTTP server + PRM + identity gate, and the /feed producer mount — is
 // owned by appkit. main.go declares only dropbox's identity (the Spec) and wires
-// its domain surface (the dropbox_* MCP tools, the private /content route, the
+// its domain surface (the bare MCP tools, the private /content route, the
 // file.* producer, and the background sync engine) through the Spec hooks.
 // RESOURCE_ID / AUTH_SERVER are composed in-binary by appkit/config from
 // IKIGENBA_DOMAIN + MOUNT (was the deleted bin/build run-wrapper's job).
@@ -70,7 +70,7 @@ func main() {
 		// Unlike the other five services, dropbox has real telemetry, so it
 		// supplies a reporter: appkit calls it to populate the `details` object of
 		// the shared health envelope on BOTH the ungated HTTP /health route and the
-		// gated ikigenba_dropbox_health MCP tool, so the two cannot diverge. The
+		// gated health MCP tool, so the two cannot diverge. The
 		// source is svc.Health (the same data the old dropbox_health tool used) —
 		// only its mirror/disk telemetry goes under details; identity is NOT
 		// included here (the MCP tool adds owner_email/client_id; HTTP carries

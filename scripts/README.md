@@ -253,31 +253,31 @@ Payload:
 ## MCP tool surface (draft 1)
 
 **Identity / discovery**
-- `ikigenba_scripts_health` — chassis proof; `{status, version, service, owner_email, client_id, details}` where `details` carries the runtime contract.
-- `ikigenba_scripts_describe` — service overview + the authoring contract (runtime, event delivery, output capture rules).
+- `health` — chassis proof; `{status, version, service, owner_email, client_id, details}` where `details` carries the runtime contract.
+- `describe` — service overview + the authoring contract (runtime, event delivery, output capture rules).
 
 **Script lifecycle**
-- `ikigenba_scripts_create` — `{name?, body, config?}` → `{script_id}`.
-- `ikigenba_scripts_list` — owner's scripts, each with `running_count`, `last_run`.
-- `ikigenba_scripts_get` — `{script_id}` → full detail incl. `body`, `running_count`, `last_run`.
-- `ikigenba_scripts_update` — `{script_id, name?, body?, config?}`.
-- `ikigenba_scripts_delete` — `{script_id}` → `{ok}`. **Tombstone:** removes the
+- `create` — `{name?, body, config?}` → `{script_id}`.
+- `list` — owner's scripts, each with `running_count`, `last_run`.
+- `get` — `{script_id}` → full detail incl. `body`, `running_count`, `last_run`.
+- `update` — `{script_id, name?, body?, config?}`.
+- `delete` — `{script_id}` → `{ok}`. **Tombstone:** removes the
   script row and its triggers; runs + their on-disk artifacts survive as history.
 
 **Triggers**
-- `ikigenba_scripts_set_trigger` — `{script_id, source, event_filter}`; validated against known producers.
-- `ikigenba_scripts_clear_trigger` — `{script_id, source, event_filter}`.
+- `set_trigger` — `{script_id, source, event_filter}`; validated against known producers.
+- `clear_trigger` — `{script_id, source, event_filter}`.
 
 **Run (on demand)**
-- `ikigenba_scripts_run` — `{script_id}` → `{run_id, status:"running", started_at}`. Always accepted.
+- `run` — `{script_id}` → `{run_id, status:"running", started_at}`. Always accepted.
 
 **Run instances (observe + control)**
-- `ikigenba_scripts_run_list` — `{script_id?, status?}` → live roster with `elapsed_secs`, trigger.
-- `ikigenba_scripts_run_get` — `{run_id}` → status, exit_code, times, `elapsed_secs`, trigger.
-- `ikigenba_scripts_run_output` — `{run_id, stream?, offset?, limit?}` → stdout/stderr by line range, tailable.
-- `ikigenba_scripts_run_cancel` — `{run_id}` → status `cancelled` (no event).
-- `ikigenba_scripts_run_fs_list` — `{run_id, subpath?}` → the run dir's file tree.
-- `ikigenba_scripts_run_fs_read` — `{run_id, path, offset?, limit?}` → a file in the run dir.
+- `run_list` — `{script_id?, status?}` → live roster with `elapsed_secs`, trigger.
+- `run_get` — `{run_id}` → status, exit_code, times, `elapsed_secs`, trigger.
+- `run_output` — `{run_id, stream?, offset?, limit?}` → stdout/stderr by line range, tailable.
+- `run_cancel` — `{run_id}` → status `cancelled` (no event).
+- `run_fs_list` — `{run_id, subpath?}` → the run dir's file tree.
+- `run_fs_read` — `{run_id, path, offset?, limit?}` → a file in the run dir.
 
 ## Deferred (explicitly later)
 
@@ -297,7 +297,7 @@ Payload:
 
 **Reuses (clone/borrow):**
 - ikigenba **chassis** from `../agent` / `../ledger` (loopback bind, nginx
-  fragment, identity gate, PRM doc, `ikigenba_<svc>_health`, `bin/*` lifecycle,
+  fragment, identity gate, PRM doc, the `health` MCP tool, `bin/*` lifecycle,
   SQLite + migrations, MCP JSON-RPC).
 - **runner / trigger / consumer / outcome** shapes from `../agent` (the single
   service that already does triggers + completion events) — adapted from

@@ -1,7 +1,7 @@
 // Package mcp implements a minimal MCP transport for the /mcp endpoint and the
-// ikigenba_ledger_* tool surface.
+// ledger tool surface.
 //
-// The health tool, ikigenba_ledger_health, is the end-to-end auth proof. The
+// The health tool, health, is the end-to-end auth proof. The
 // ledger domain tools are wired to a domain service the same way crm wires
 // internal/contacts.
 //
@@ -50,10 +50,10 @@ type Handler struct {
 
 // NewHandler builds a Handler. The ledger service is required; a nil service is
 // a wiring error and panics at this seam rather than deferring a nil dereference
-// to first request. version/service/health populate the ikigenba_ledger_health
+// to first request. version/service/health populate the health
 // envelope; health is the optional per-service reporter (nil → details is {}).
 // events is the published-event registry and subscriptions the live subscription
-// provider, both rendered by ikigenba_ledger_reflection.
+// provider, both rendered by reflection.
 func NewHandler(svc *ledger.Service, version, service string,
 	health func(context.Context) (map[string]any, error),
 	events outbox.Registry, subscriptions func() []consumer.Subscription) *Handler {
@@ -145,14 +145,14 @@ func toolResultErr(msg string) map[string]any {
 
 // translateLedgerError maps a ledger domain/validation sentinel to the
 // structured wire error the tool surface returns — the same sentinel→wire
-// pattern crm uses. bad_root points the agent at ikigenba_ledger_describe so it
+// pattern crm uses. bad_root points the agent at describe so it
 // can discover the five typed roots.
 func translateLedgerError(err error) string {
 	switch {
 	case errors.Is(err, ledger.ErrUnbalanced):
 		return `{"error":{"code":"unbalanced","message":"` + jsonEscape(err.Error()) + `"}}`
 	case errors.Is(err, ledger.ErrBadRoot):
-		return `{"error":{"code":"bad_root","message":"account root must be one of Assets, Liabilities, Equity, Income (alias Revenue), Expenses — call ikigenba_ledger_describe"}}`
+		return `{"error":{"code":"bad_root","message":"account root must be one of Assets, Liabilities, Equity, Income (alias Revenue), Expenses — call describe"}}`
 	case errors.Is(err, ledger.ErrAlreadyReversed):
 		return `{"error":{"code":"already_reversed","message":"transaction already has a reversal; reverse its mirror instead"}}`
 	case errors.Is(err, ledger.ErrNotFound):

@@ -14,25 +14,25 @@ import (
 
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name
 // ikigenba + the service name; HTTP route paths are NOT branded.
-const toolPrefix = "ikigenba_wiki_"
+const toolPrefix = ""
 
 // tool returns the branded, fully-qualified MCP tool name. Used by BOTH
 // toolDescriptors and dispatchTool so the two sites cannot drift.
 func tool(verb string) string { return toolPrefix + verb }
 
 // toolDescriptors returns the wiki MCP surface. After Task 6.2 that is six verbs:
-// ikigenba_wiki_health (the auth proof + diagnostics), ikigenba_wiki_ingest_text
-// (the inline-bytes ingest trigger), ikigenba_wiki_ingest_url (the
-// service-fetches-a-URL ingest trigger), ikigenba_wiki_search (the synchronous
-// BM25 read over curated whole pages), ikigenba_wiki_ask (the agentic, async
+// health (the auth proof + diagnostics), ingest_text
+// (the inline-bytes ingest trigger), ingest_url (the
+// service-fetches-a-URL ingest trigger), search (the synchronous
+// BM25 read over curated whole pages), ask (the agentic, async
 // synthesis read that returns a cited answer and files it back as a synthesis
-// page), and ikigenba_wiki_job_status (the async-job status read). Schemas are
+// page), and job_status (the async-job status read). Schemas are
 // hand-coded with per-field docs to improve LLM hinting.
 func toolDescriptors() []map[string]any {
 	return []map[string]any{
 		desc(tool("health"), "Health + diagnostics for the wiki service. Returns the fixed envelope (status, version, service, details) plus the authenticated caller's identity (owner_email, client_id) as established by the platform's auth gate — the end-to-end auth-chain proof. Takes no inputs.", obj(map[string]any{})),
 		desc(tool("ingest_text"),
-			"Ingest inline text into your personal wiki. The bytes are stored immutably (sha256-keyed) and an asynchronous integration agent files them into curated, cross-linked pages. Returns a job_id you can poll with ikigenba_wiki_job_status. Provide provenance (title/source/tags) so the wiki can trace every page back to its origin.",
+			"Ingest inline text into your personal wiki. The bytes are stored immutably (sha256-keyed) and an asynchronous integration agent files them into curated, cross-linked pages. Returns a job_id you can poll with job_status. Provide provenance (title/source/tags) so the wiki can trace every page back to its origin.",
 			obj(map[string]any{
 				"content": strField("The raw text to ingest (the document body)."),
 				"title":   strField("Optional human title for this document (provenance)."),
@@ -44,7 +44,7 @@ func toolDescriptors() []map[string]any {
 				},
 			}, "content")),
 		desc(tool("ingest_url"),
-			"Ingest a web page into your personal wiki by URL. The service fetches the URL itself (http/https only) and extracts the page to markdown, then files it exactly like ikigenba_wiki_ingest_text: stored immutably (sha256-keyed) and integrated by an asynchronous agent into curated, cross-linked pages. The page's URL is recorded as the source. Returns a job_id you can poll with ikigenba_wiki_job_status.",
+			"Ingest a web page into your personal wiki by URL. The service fetches the URL itself (http/https only) and extracts the page to markdown, then files it exactly like ingest_text: stored immutably (sha256-keyed) and integrated by an asynchronous agent into curated, cross-linked pages. The page's URL is recorded as the source. Returns a job_id you can poll with job_status.",
 			obj(map[string]any{
 				"url":   strField("The http/https URL to fetch and ingest."),
 				"title": strField("Optional human title; defaults to the page <title> or a URL-derived title (provenance)."),
@@ -65,14 +65,14 @@ func toolDescriptors() []map[string]any {
 				},
 			}, "query")),
 		desc(tool("ask"),
-			"Ask your personal wiki a question and get a synthesized, cited answer. Unlike ikigenba_wiki_search (a fast keyword read), this runs an asynchronous agent that navigates your wiki index-first, reads the relevant curated pages, and composes a direct answer citing the pages it used — then files that answer back as a synthesis page so future questions compound (subsequent ikigenba_wiki_search calls will find it). Returns a job_id to poll with ikigenba_wiki_job_status; when the job succeeds, the cited synthesis page is searchable. Answers are drawn ONLY from what your wiki already contains. Prefer ikigenba_wiki_search for quick lookups; use ikigenba_wiki_ask when you want a digested answer.",
+			"Ask your personal wiki a question and get a synthesized, cited answer. Unlike search (a fast keyword read), this runs an asynchronous agent that navigates your wiki index-first, reads the relevant curated pages, and composes a direct answer citing the pages it used — then files that answer back as a synthesis page so future questions compound (subsequent search calls will find it). Returns a job_id to poll with job_status; when the job succeeds, the cited synthesis page is searchable. Answers are drawn ONLY from what your wiki already contains. Prefer search for quick lookups; use ask when you want a digested answer.",
 			obj(map[string]any{
 				"question": strField("The question to answer from your wiki (free text)."),
 			}, "question")),
 		desc(tool("job_status"),
-			"Read the status of an asynchronous wiki job (e.g. an ingest integration pass or an ikigenba_wiki_ask synthesis) by its job_id. Returns the lifecycle state (running|succeeded|failed|cancelled), start/end timestamps, any error, and token usage. Owner-scoped: you can only read your own jobs.",
+			"Read the status of an asynchronous wiki job (e.g. an ingest integration pass or an ask synthesis) by its job_id. Returns the lifecycle state (running|succeeded|failed|cancelled), start/end timestamps, any error, and token usage. Owner-scoped: you can only read your own jobs.",
 			obj(map[string]any{
-				"job_id": strField("The job id returned by ikigenba_wiki_ingest_text, ikigenba_wiki_ask, or another async verb."),
+				"job_id": strField("The job id returned by ingest_text, ask, or another async verb."),
 			}, "job_id")),
 	}
 }

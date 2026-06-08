@@ -58,6 +58,7 @@ func Discover(ctx context.Context, manifestRoot, owner, promptID string) agent.T
 	src := &source{
 		tools: map[string]provider.Tool{},
 		owner: map[string]*mcpclient.Client{},
+		verb:  map[string]string{},
 	}
 
 	services, err := inventory.Read(manifestRoot)
@@ -112,33 +113,52 @@ func Discover(ctx context.Context, manifestRoot, owner, promptID string) agent.T
 	}
 	wg.Wait()
 
-	// Build the index name -> (tool, owning client). Names are service-prefixed
-	// (ikigenba_<svc>_*) so cross-peer collisions are structurally impossible; if
-	// one ever appears, log loud and keep the first rather than silently shadow.
+	// Build the index qualified-name -> (tool, owning client, bare verb). Peers now
+	// register BARE verbs (per docs/adr-mcp-tool-bare-names.md), so the same verb
+	// (health, reflection, …) is exposed by every service and is NOT unique across
+	// peers. The suite layer re-qualifies each bare verb back to ikigenba_<svc>_<verb>
+	// using the owning service's name, restoring the globally-unique flat namespace
+	// the in-run agent saw before the rename. The dup guard below therefore only
+	// fires on a genuine WITHIN-service duplicate (the same service listing one verb
+	// twice) — log loud and keep the first rather than silently shadow.
 	for _, l := range listings {
 		for _, t := range l.tools {
-			if _, dup := src.owner[t.Name]; dup {
-				slog.Error("suite discovery: duplicate tool name across peers, keeping first",
-					"tool", t.Name, "service", l.svc.Name)
+			qualified := qualify(l.svc.Name, t.Name)
+			if _, dup := src.owner[qualified]; dup {
+				slog.Error("suite discovery: duplicate tool name within service, keeping first",
+					"tool", qualified, "service", l.svc.Name)
 				continue
 			}
-			src.tools[t.Name] = provider.Tool{
-				Name:        t.Name,
+			src.tools[qualified] = provider.Tool{
+				Name:        qualified,
 				InputSchema: t.InputSchema,
 			}
-			src.owner[t.Name] = l.client
+			src.owner[qualified] = l.client
+			src.verb[qualified] = t.Name
 		}
 	}
 
 	return src
 }
 
+// qualify reconstructs the service-qualified tool name ikigenba_<svc>_<verb> that
+// peers used to register before the bare-verb rename (docs/adr-mcp-tool-bare-names.md).
+// svc is the owning service's manifest APP name (the <svc> segment of the old
+// prefix), verb is the bare verb the peer now registers.
+func qualify(svc, verb string) string {
+	return "ikigenba_" + svc + "_" + verb
+}
+
 // source is the concrete agent.ToolSource returned by Discover. It holds the
-// snapshot taken at run spawn: a name->descriptor map and a name->owning-client
-// index. It is read-only after construction and safe for concurrent dispatch.
+// snapshot taken at run spawn, all keyed on the service-qualified tool name
+// (ikigenba_<svc>_<verb>) the in-run agent sees: a qualified-name->descriptor map,
+// a qualified-name->owning-client index, and a qualified-name->bare-verb map used
+// to translate back to the name the peer actually registered at dispatch time. It
+// is read-only after construction and safe for concurrent dispatch.
 type source struct {
 	tools map[string]provider.Tool
 	owner map[string]*mcpclient.Client
+	verb  map[string]string
 }
 
 // Descriptors returns the provider-neutral advertisement for every discovered
@@ -172,7 +192,11 @@ func (s *source) Dispatch(ctx context.Context, name string, input json.RawMessag
 		return errBlock(fmt.Sprintf("suite: no peer owns tool %q", name)), nil
 	}
 
-	text, isError, err := client.CallTool(ctx, name, input)
+	// The index is keyed on the service-qualified name the agent sees, but the peer
+	// only answers to the BARE verb it registered (docs/adr-mcp-tool-bare-names.md);
+	// translate back before the outbound tools/call.
+	bare := s.verb[name]
+	text, isError, err := client.CallTool(ctx, bare, input)
 	if err != nil {
 		// Transport / JSON-RPC failure: surface the message as an is_error result.
 		return errBlock(fmt.Sprintf("suite: tool %q failed: %v", name, err)), nil

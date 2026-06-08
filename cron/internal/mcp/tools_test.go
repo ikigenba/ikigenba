@@ -70,7 +70,7 @@ func call(t *testing.T, h *Handler, name string, args map[string]any) (map[strin
 func TestCreate_RejectsBadExpr(t *testing.T) {
 	h, store := newHandler(t)
 
-	payload, isErr := call(t, h, "ikigenba_cron_create", map[string]any{
+	payload, isErr := call(t, h, "create", map[string]any{
 		"name": "broken", "expr": "0 99 * * *", // hour 99 out of range
 	})
 	if !isErr {
@@ -95,7 +95,7 @@ func TestCreate_RejectsBadExpr(t *testing.T) {
 // TestCreate_WrongFieldCount also fails at the boundary.
 func TestCreate_WrongFieldCount(t *testing.T) {
 	h, _ := newHandler(t)
-	payload, isErr := call(t, h, "ikigenba_cron_create", map[string]any{
+	payload, isErr := call(t, h, "create", map[string]any{
 		"name": "short", "expr": "* * *",
 	})
 	if !isErr {
@@ -107,13 +107,13 @@ func TestCreate_WrongFieldCount(t *testing.T) {
 // type appears in reflection.
 func TestCreateThenListGet(t *testing.T) {
 	h, _ := newHandler(t)
-	if _, isErr := call(t, h, "ikigenba_cron_create", map[string]any{
+	if _, isErr := call(t, h, "create", map[string]any{
 		"name": "nightly", "expr": "0 3 * * *",
 	}); isErr {
 		t.Fatalf("valid create should succeed")
 	}
 
-	list, isErr := call(t, h, "ikigenba_cron_list", map[string]any{})
+	list, isErr := call(t, h, "list", map[string]any{})
 	if isErr {
 		t.Fatalf("list errored")
 	}
@@ -122,7 +122,7 @@ func TestCreateThenListGet(t *testing.T) {
 		t.Fatalf("want 1 item, got %v", list)
 	}
 
-	refl, isErr := call(t, h, "ikigenba_cron_reflection", map[string]any{})
+	refl, isErr := call(t, h, "reflection", map[string]any{})
 	if isErr {
 		t.Fatalf("reflection errored")
 	}

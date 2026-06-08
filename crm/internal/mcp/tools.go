@@ -17,13 +17,13 @@ import (
 
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name
 // ikigenba + the service name; HTTP route paths are NOT branded.
-const toolPrefix = "ikigenba_crm_"
+const toolPrefix = ""
 
 // tool returns the branded, fully-qualified MCP tool name. Used by BOTH
 // toolDescriptors and dispatchTool so the two sites cannot drift.
 func tool(verb string) string { return toolPrefix + verb }
 
-// toolDescriptors returns the fixed six-verb ikigenba_crm_* surface (PLAN.md
+// toolDescriptors returns the fixed six-verb tool surface (PLAN.md
 // §2). Tool count is a function of verbs, not entities: adding an entity type
 // later adds fields, never tools.
 //
@@ -59,7 +59,7 @@ func toolDescriptors() []map[string]any {
 				"id":   typ("string"),
 			}, "type", "id")),
 		desc(tool("log"),
-			"Append an interaction to a subject's timeline (the most frequent CRM write). 'subject_id' is the id of the contact, organization, or deal the interaction is about (resolved automatically). 'kind' is one of note|call|email|meeting. 'occurred_at' is optional (RFC3339; defaults to now). Append-only — to correct an entry, delete it (ikigenba_crm_delete type:interaction) and log a new one.",
+			"Append an interaction to a subject's timeline (the most frequent CRM write). 'subject_id' is the id of the contact, organization, or deal the interaction is about (resolved automatically). 'kind' is one of note|call|email|meeting. 'occurred_at' is optional (RFC3339; defaults to now). Append-only — to correct an entry, delete it (delete type:interaction) and log a new one.",
 			obj(map[string]any{
 				"subject_id":  typ("string"),
 				"kind":        enumTyp("string", "note", "call", "email", "meeting"),
@@ -87,7 +87,7 @@ Fields by type:
 - deal: name (required on create), org_id, stage (lead|qualified|proposal|negotiation|won|lost; default lead), amount_cents (integer), currency (default USD), close_date (RFC3339 date), contacts [{id,role}] participants. Note: a deal's status (open|won|lost) is derived from stage and is read-only — do not set it.
 - task: title (required on create), status (open|done; default open), due_at, done_at, contact_id, org_id, deal_id (optional subject). Complete a task with fields:{status:"done"}.
 
-Interactions are not saved here — use ikigenba_crm_log.`
+Interactions are not saved here — use log.`
 
 func desc(name, description string, schema map[string]any) map[string]any {
 	return map[string]any{"name": name, "description": description, "inputSchema": schema}

@@ -1,5 +1,5 @@
 // Package mcp implements a minimal MCP transport for the /mcp endpoint and the
-// crontab CRUD tool surface (ikigenba_cron_*) over internal/crontab. It mirrors
+// crontab CRUD tool surface (bare verbs) over internal/crontab. It mirrors
 // crm/ledger's transport exactly (JSON-RPC 2.0 over plain HTTP POST, no
 // SSE/streaming) and carries NO token logic: nginx introspects every request and
 // injects X-Owner-Email / X-Client-Id authoritatively before forwarding, and the
@@ -38,9 +38,9 @@ type Handler struct {
 
 // NewHandler builds a Handler. The store is required; a nil store is a wiring
 // error and panics at this seam. version/service/health populate the
-// ikigenba_cron_health envelope. publishes is the LIVE published-type provider
+// health envelope. publishes is the LIVE published-type provider
 // (the dynamic cron.<name> set, read from the crontab) rendered by
-// ikigenba_cron_reflection; subscriptions is nil (cron is a producer only).
+// reflection; subscriptions is nil (cron is a producer only).
 func NewHandler(s *crontab.Store, version, service string,
 	health func(context.Context) (map[string]any, error),
 	publishes func() outbox.Registry, subscriptions func() []consumer.Subscription) *Handler {

@@ -5,6 +5,9 @@ and no implementation yet** — the plan will be written in a later session with
 full context. This document is the phase-1 reference: the settled external scheme
 and execution model.
 
+> *Historical: the `ikigenba_prompts_` MCP tool-name prefix used throughout was
+> later dropped for bare verbs — see `docs/adr-mcp-tool-bare-names.md`.*
+
 It supersedes the earlier proposal `/mnt/projects/empty/ikigenba_prompts-rename-handoff.md`
 (written without access to the code). Where they differ, this document wins — see
 "Relationship to the prior proposal" at the end.

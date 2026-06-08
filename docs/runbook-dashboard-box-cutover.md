@@ -357,9 +357,9 @@ journalctl -u dashboard -n 80 --no-pager
 plugin → connector → dashboard OAuth → service chain: add a connector for one
 service from a Claude client, complete the OAuth round-trip (the dashboard mints
 its own opaque token; nginx introspects + injects identity), and call that
-service's `ikigenba_<svc>_health` MCP tool — gated, so it echoes the caller's
+service's `health` MCP tool — gated, so it echoes the caller's
 `owner_email`/`client_id` (the auth-chain proof, alongside the shared
-`status`/`version`/`service`/`details` envelope). A clean `ikigenba_<svc>_health`
+`status`/`version`/`service`/`details` envelope). A clean `health`
 proves the cut-over dashboard is a working OAuth AS end-to-end. Out of scope for
 the mechanism proof, but the strongest single check.
 

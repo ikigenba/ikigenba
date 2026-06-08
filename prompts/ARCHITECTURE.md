@@ -318,7 +318,8 @@ requirement is a `python3` interpreter on the box's `PATH`.
 
 ## 10. MCP tool surface (16 tools)
 
-Prefix `ikigenba_prompts_`. **Airtight key rule:** keyed by `prompt_id` → bare
+Tool names are bare verbs (no service prefix; see
+`docs/adr-mcp-tool-bare-names.md`). **Airtight key rule:** keyed by `prompt_id` → bare
 verb; keyed by `run_id` → `run_*`. The wire field for the user-role prompt is
 **`user_prompt`**. There is no `session_` subprefix.
 
@@ -382,7 +383,7 @@ repeatedly to attach several bindings.
 
 ## 13. Surface 2 — the in-run suite toolset
 
-§10 is **Surface 1**: the foreground `ikigenba_prompts_*` MCP tools an owner
+§10 is **Surface 1**: the foreground prompts MCP tools (bare verbs) an owner
 drives through nginx to manage prompts and runs. **Surface 2** is the other
 direction — the toolset the sandboxed Claude agent *inside* a run can reach. On
 top of the built-in, sandbox-confined tools (`read`/`bash`/`write`/`edit`/
@@ -464,10 +465,17 @@ surfaces as an `is_error` result rather than a run-killing hang.
 is non-nil the loop appends the source's `Descriptors()` to `req.Tools` (so the
 model sees the built-ins **plus** the suite tools) and routes each `tool_use`
 block whose name the source `Owns` to the source's `Dispatch`; everything else
-falls through to the built-in `tools.Dispatch(ctx, sandboxRoot, …)`. Built-in
-tools have no service prefix (`read`/`bash`/…) and suite tools are service-
-prefixed (`ikigenba_<svc>_*`), so `Owns` is an exact-name membership test with no
-collisions. `prompts/internal/runner` builds the source at spawn via an injectable
+falls through to the built-in `tools.Dispatch(ctx, sandboxRoot, …)`. Peers now
+register **bare verbs** (`health`, `reflection`, `list`, …; see
+`docs/adr-mcp-tool-bare-names.md`), so the same verb is exposed by many services
+and is no longer unique across peers. To keep the in-run flat namespace
+collision-free, the suite layer **re-qualifies** each discovered bare verb back to
+`ikigenba_<svc>_<verb>` (using the owning service's manifest `APP` name) and keys
+its dispatch index — and the advertised `provider.Tool.Name` — on that qualified
+name; at dispatch it translates the qualified name back to the bare verb the peer
+actually answers to before `tools/call`. Built-in tools have no prefix
+(`read`/`bash`/…), so `Owns` stays an exact-name membership test with no
+collisions against the built-ins. `prompts/internal/runner` builds the source at spawn via an injectable
 discover seam (so tests inject a fake) and passes it as `Options.Tools`;
 `buildRequest` keeps advertising only the built-in `tools.All()` — the suite tools
 are added by the agent loop from the `ToolSource`, the single source of truth.

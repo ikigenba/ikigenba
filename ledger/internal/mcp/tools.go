@@ -23,7 +23,7 @@ const timeFormat = "2006-01-02T15:04:05.000000000Z07:00"
 
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name
 // ikigenba + the service name; HTTP route paths are NOT branded.
-const toolPrefix = "ikigenba_ledger_"
+const toolPrefix = ""
 
 // tool returns the branded, fully-qualified MCP tool name. Used by BOTH
 // toolDescriptors and dispatchTool so the two sites cannot drift.
@@ -42,7 +42,7 @@ func toolDescriptors() []map[string]any {
 				"description": typd("string", "payee / memo"),
 				"status":      enumd("default reconciliation status for postings that omit their own (defaults to pending)", ledger.StatusPending, ledger.StatusCleared, ledger.StatusReconciled),
 				"postings": array(obj(map[string]any{
-					"account":      typd("string", "colon-path, e.g. Assets:Bank:Checking; root must be Assets|Liabilities|Equity|Income(alias Revenue)|Expenses — call ikigenba_ledger_describe to see the live chart"),
+					"account":      typd("string", "colon-path, e.g. Assets:Bank:Checking; root must be Assets|Liabilities|Equity|Income(alias Revenue)|Expenses — call describe to see the live chart"),
 					"amount_cents": typd("integer", "signed minor units in USD cents (debit +, credit −); omit on at most one posting to receive the balancing residual"),
 					"status":       enumd("this posting's reconciliation status; overrides the transaction default", ledger.StatusPending, ledger.StatusCleared, ledger.StatusReconciled),
 				}, "account")),
@@ -73,7 +73,7 @@ func toolDescriptors() []map[string]any {
 			})),
 
 		desc(tool("register"),
-			"The `reg` report — matched postings in chronological order with a running total. Customer statements, account history, search, and the list verb. Raw signed amounts like ikigenba_ledger_balance.",
+			"The `reg` report — matched postings in chronological order with a running total. Customer statements, account history, search, and the list verb. Raw signed amounts like balance.",
 			obj(map[string]any{
 				"query":  typd("string", "case-insensitive substring matched against the full account path; omit for every posting"),
 				"period": periodSchema(),
@@ -83,7 +83,7 @@ func toolDescriptors() []map[string]any {
 		desc(tool("get"), "Fetch one transaction in full: all postings, per-posting status, ord, and reversal links.", obj(map[string]any{"id": typd("string", "the transaction id")}, "id")),
 
 		desc(tool("describe"),
-			"Discovery — the first call any agent should make. Returns the five typed roots (with normal balance and which statement they feed), the money unit (USD cents), the reconciliation states and their meaning, the live emergent account tree, and recipes for producing a balance sheet / P&L / customer statement from ikigenba_ledger_balance + ikigenba_ledger_register. Takes no inputs.",
+			"Discovery — the first call any agent should make. Returns the five typed roots (with normal balance and which statement they feed), the money unit (USD cents), the reconciliation states and their meaning, the live emergent account tree, and recipes for producing a balance sheet / P&L / customer statement from balance + register. Takes no inputs.",
 			obj(map[string]any{})),
 
 		desc(tool("health"), "Health + diagnostics for the ledger service. Returns the fixed envelope (status, version, service, details) plus the authenticated caller's identity (owner_email, client_id) as established by the platform's auth gate — the end-to-end auth-chain proof. Takes no inputs.", obj(map[string]any{})),

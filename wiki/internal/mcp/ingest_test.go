@@ -47,7 +47,7 @@ func TestIngestText_Verb(t *testing.T) {
 	stub := &stubIngester{result: ingest.Result{JobID: "job-xyz", Sha256: "abc123", RawRelPath: "raw/abc123.md", AlreadyHad: false}}
 	h := NewHandler(stub, nil, nil, "1.2.3", "wiki", nil)
 
-	p, isErr := callTool(t, h, "ikigenba_wiki_ingest_text",
+	p, isErr := callTool(t, h, "ingest_text",
 		`{"content":"record this","title":"T","source":"chat","tags":["a","b"]}`)
 	if isErr {
 		t.Fatalf("ingest_text returned isError: %v", p)
@@ -68,7 +68,7 @@ func TestIngestText_Verb(t *testing.T) {
 
 func TestIngestText_RequiresContent(t *testing.T) {
 	h := NewHandler(&stubIngester{}, nil, nil, "1.2.3", "wiki", nil)
-	_, isErr := callTool(t, h, "ikigenba_wiki_ingest_text", `{"title":"no body"}`)
+	_, isErr := callTool(t, h, "ingest_text", `{"title":"no body"}`)
 	if !isErr {
 		t.Fatal("ingest_text with empty content should be a tool-error")
 	}
@@ -76,7 +76,7 @@ func TestIngestText_RequiresContent(t *testing.T) {
 
 func TestIngestText_NilCoreUnavailable(t *testing.T) {
 	h := NewHandler(nil, nil, nil, "1.2.3", "wiki", nil)
-	_, isErr := callTool(t, h, "ikigenba_wiki_ingest_text", `{"content":"x"}`)
+	_, isErr := callTool(t, h, "ingest_text", `{"content":"x"}`)
 	if !isErr {
 		t.Fatal("ingest_text with nil core should be a tool-error")
 	}
@@ -86,7 +86,7 @@ func TestIngestURL_Verb(t *testing.T) {
 	stub := &stubIngester{result: ingest.Result{JobID: "job-url", Sha256: "def456", RawRelPath: "raw/def456.md", AlreadyHad: false}}
 	h := NewHandler(stub, nil, nil, "1.2.3", "wiki", nil)
 
-	p, isErr := callTool(t, h, "ikigenba_wiki_ingest_url",
+	p, isErr := callTool(t, h, "ingest_url",
 		`{"url":"https://example.com/page","tags":["web"]}`)
 	if isErr {
 		t.Fatalf("ingest_url returned isError: %v", p)
@@ -107,7 +107,7 @@ func TestIngestURL_Verb(t *testing.T) {
 
 func TestIngestURL_RequiresURL(t *testing.T) {
 	h := NewHandler(&stubIngester{}, nil, nil, "1.2.3", "wiki", nil)
-	_, isErr := callTool(t, h, "ikigenba_wiki_ingest_url", `{"title":"no url"}`)
+	_, isErr := callTool(t, h, "ingest_url", `{"title":"no url"}`)
 	if !isErr {
 		t.Fatal("ingest_url with empty url should be a tool-error")
 	}
@@ -115,7 +115,7 @@ func TestIngestURL_RequiresURL(t *testing.T) {
 
 func TestIngestURL_NilCoreUnavailable(t *testing.T) {
 	h := NewHandler(nil, nil, nil, "1.2.3", "wiki", nil)
-	_, isErr := callTool(t, h, "ikigenba_wiki_ingest_url", `{"url":"https://example.com"}`)
+	_, isErr := callTool(t, h, "ingest_url", `{"url":"https://example.com"}`)
 	if !isErr {
 		t.Fatal("ingest_url with nil core should be a tool-error")
 	}
@@ -124,7 +124,7 @@ func TestIngestURL_NilCoreUnavailable(t *testing.T) {
 func TestJobStatus_Verb(t *testing.T) {
 	stub := &stubIngester{status: ingest.Status{Status: "succeeded", Terminal: true, StartedAt: "2026-06-04T00:00:00Z"}}
 	h := NewHandler(stub, nil, nil, "1.2.3", "wiki", nil)
-	p, isErr := callTool(t, h, "ikigenba_wiki_job_status", `{"job_id":"job-xyz"}`)
+	p, isErr := callTool(t, h, "job_status", `{"job_id":"job-xyz"}`)
 	if isErr {
 		t.Fatalf("job_status isError: %v", p)
 	}
@@ -136,7 +136,7 @@ func TestJobStatus_Verb(t *testing.T) {
 func TestJobStatus_NotFound(t *testing.T) {
 	stub := &stubIngester{statusErr: ingest.ErrJobNotFound}
 	h := NewHandler(stub, nil, nil, "1.2.3", "wiki", nil)
-	_, isErr := callTool(t, h, "ikigenba_wiki_job_status", `{"job_id":"ghost"}`)
+	_, isErr := callTool(t, h, "job_status", `{"job_id":"ghost"}`)
 	if !isErr {
 		t.Fatal("job_status for unknown id should be a tool-error")
 	}

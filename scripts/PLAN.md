@@ -6,6 +6,10 @@ completing one phase. Phases are sized for a single subagent and partitioned so
 that agents in the same wave **own disjoint files** and never coordinate at
 runtime — they coordinate only through the **frozen contracts in Part A**.
 
+> *Historical: the `ikigenba_scripts_` MCP tool-name prefix this plan carries was
+> later dropped for bare verbs (`toolPrefix = ""`) — see
+> `docs/adr-mcp-tool-bare-names.md`.*
+
 How to read this:
 - **Part 0** — drift corrections the whole build depends on. Read first.
 - **Part A** — the frozen shared contracts (data model, signatures, payloads,

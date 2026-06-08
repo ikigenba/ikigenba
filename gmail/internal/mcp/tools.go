@@ -20,7 +20,7 @@ import (
 
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name
 // ikigenba + the service name; HTTP route paths are NOT branded.
-const toolPrefix = "ikigenba_gmail_"
+const toolPrefix = ""
 
 // tool returns the branded, fully-qualified MCP tool name. Used by BOTH
 // toolDescriptors and dispatchTool so the two sites cannot drift.

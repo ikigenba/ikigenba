@@ -1,10 +1,10 @@
 // Package mcp implements a minimal MCP transport for the /mcp endpoint and the
-// ikigenba_dropbox_* tool surface.
+// dropbox MCP tool surface.
 //
 // dropbox is a daemon + event-plane producer (PLAN.md): its service-side surface
 // is read-only, so MCP is thin and exists only for the end-to-end auth proof and
 // the dashboard inventory (MCP=true). There is exactly one tool,
-// ikigenba_dropbox_health (DECISIONS §7): it renders the shared health envelope
+// health (DECISIONS §7): it renders the shared health envelope
 // (status/version/service/details) plus the caller's identity, with dropbox's
 // mirror/disk telemetry under details, supplied by the Spec.Health reporter. The
 // former dropbox_whoami probe and the separate dropbox_health tool are folded
@@ -54,10 +54,10 @@ type Handler struct {
 
 // NewHandler builds a Handler. The dropbox service is required; a nil service is
 // a wiring error and panics at this seam rather than deferring a nil dereference
-// to first request. version/service/health populate the ikigenba_dropbox_health
+// to first request. version/service/health populate the health
 // envelope; health is dropbox's per-service reporter (its mirror/disk telemetry
 // lands under details). events is the published-event registry and subscriptions
-// the live subscription provider, both rendered by ikigenba_dropbox_reflection.
+// the live subscription provider, both rendered by reflection.
 func NewHandler(svc *dropbox.Service, version, service string,
 	health func(context.Context) (map[string]any, error),
 	events outbox.Registry, subscriptions func() []consumer.Subscription) *Handler {

@@ -15,7 +15,7 @@ import (
 
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name
 // ikigenba + the service name; HTTP route paths are NOT branded.
-const toolPrefix = "ikigenba_dropbox_"
+const toolPrefix = ""
 
 // tool returns the branded, fully-qualified MCP tool name. Used by BOTH
 // toolDescriptors and dispatchTool so the two sites cannot drift.
@@ -24,7 +24,7 @@ func tool(verb string) string { return toolPrefix + verb }
 // toolDescriptors returns the single-tool dropbox surface (DECISIONS §7).
 // dropbox is a daemon: the service side is read-only, so there are no write
 // verbs. The former dropbox_whoami identity probe and the richer dropbox_health
-// status tool have been folded into the one branded ikigenba_dropbox_health
+// status tool have been folded into the one branded health
 // tool — its sync/mirror telemetry lives under the envelope's details, supplied
 // by dropbox's Spec.Health reporter. Takes no inputs.
 func toolDescriptors() []map[string]any {

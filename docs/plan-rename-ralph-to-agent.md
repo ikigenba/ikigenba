@@ -4,6 +4,9 @@
 **Branch:** create a worktree `rename-ralph-to-agent` off `main` (sibling under `/mnt/projects/ikigai/`)
 **Audience:** an implementing subagent with no prior context. Read this whole file first.
 
+> *Historical: the `ikigenba_<svc>_` MCP tool-name prefix this plan carried was
+> later dropped for bare verbs — see `docs/adr-mcp-tool-bare-names.md`.*
+
 ---
 
 ## 1. Background — what is being renamed

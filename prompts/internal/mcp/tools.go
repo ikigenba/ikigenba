@@ -14,12 +14,12 @@ import (
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name
 // `ikigenba` plus the service name, defined once and used in BOTH the descriptor
 // list and the dispatch switch so the two sites cannot drift.
-const toolPrefix = "ikigenba_prompts_"
+const toolPrefix = ""
 
 // tool returns the branded MCP tool name for a verb.
 func tool(verb string) string { return toolPrefix + verb }
 
-// toolDescriptors returns the full ikigenba_prompts_* tool set (A8). The surface
+// toolDescriptors returns the full * tool set (A8). The surface
 // splits on the addressing key: prompt-addressed operations are BARE verbs keyed
 // by prompt_id; run-addressed operations live under the run_* namespace keyed by
 // run_id. Each maps to a prompt.Service method in dispatchTool. Schemas are

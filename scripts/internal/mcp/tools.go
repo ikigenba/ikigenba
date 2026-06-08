@@ -14,12 +14,12 @@ import (
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name
 // `ikigenba` plus the service name, defined once and used in BOTH the descriptor
 // list and the dispatch switch so the two sites cannot drift.
-const toolPrefix = "ikigenba_scripts_"
+const toolPrefix = ""
 
 // tool returns the branded MCP tool name for a verb.
 func tool(verb string) string { return toolPrefix + verb }
 
-// toolDescriptors returns the full 16-tool ikigenba_scripts_* surface (PLAN.md
+// toolDescriptors returns the full 16-tool surface (PLAN.md
 // §A10 / ARCHITECTURE.md §6): health + describe + script CRUD + triggers + run
 // lifecycle + run-scoped fs readers. Each maps to a script.Service method in
 // dispatchTool.

@@ -1,7 +1,7 @@
 // Package mcp implements a minimal MCP transport for the /mcp endpoint and the
-// ikigenba_prompts_* tool surface.
+// * tool surface.
 //
-// This is the skeleton prompts service: the only tool is ikigenba_prompts_health, the
+// This is the skeleton prompts service: the only tool is health, the
 // end-to-end auth proof. Real prompts domain tools are added here later, wired to
 // a domain service the same way crm wires internal/contacts.
 //
@@ -73,7 +73,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// connection. The depth lives in the prompts_describe tool, paid
 			// only when an agent actually calls it.
 			"instructions": "Prompts runs sandboxed Claude agent sessions on your behalf. " +
-				"If you haven't used prompts before, call ikigenba_prompts_describe first — it explains " +
+				"If you haven't used prompts before, call describe first — it explains " +
 				"what a session is, the create→run→poll→read lifecycle, and the output " +
 				"format — then use the other tools.",
 		})

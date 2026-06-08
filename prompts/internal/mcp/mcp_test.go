@@ -142,22 +142,22 @@ func TestToolsListReturns16(t *testing.T) {
 	}
 	sort.Strings(got)
 	want := []string{
-		"ikigenba_prompts_clear_trigger",
-		"ikigenba_prompts_create",
-		"ikigenba_prompts_delete",
-		"ikigenba_prompts_describe",
-		"ikigenba_prompts_get",
-		"ikigenba_prompts_health",
-		"ikigenba_prompts_list",
-		"ikigenba_prompts_run",
-		"ikigenba_prompts_run_cancel",
-		"ikigenba_prompts_run_fs_list",
-		"ikigenba_prompts_run_fs_read",
-		"ikigenba_prompts_run_get",
-		"ikigenba_prompts_run_list",
-		"ikigenba_prompts_run_output",
-		"ikigenba_prompts_set_trigger",
-		"ikigenba_prompts_update",
+		"clear_trigger",
+		"create",
+		"delete",
+		"describe",
+		"get",
+		"health",
+		"list",
+		"run",
+		"run_cancel",
+		"run_fs_list",
+		"run_fs_read",
+		"run_get",
+		"run_list",
+		"run_output",
+		"set_trigger",
+		"update",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("name count mismatch: %v", got)
@@ -174,7 +174,7 @@ func TestToolsListReturns16(t *testing.T) {
 func TestSetAndClearTrigger(t *testing.T) {
 	h, _ := newTestHandler(t)
 
-	created := call(t, h, "ikigenba_prompts_create", map[string]any{
+	created := call(t, h, "create", map[string]any{
 		"user_prompt": "hi",
 		"config":      map[string]any{"model": "haiku"},
 	})
@@ -185,7 +185,7 @@ func TestSetAndClearTrigger(t *testing.T) {
 		t.Fatalf("decode create: %v", err)
 	}
 
-	set := call(t, h, "ikigenba_prompts_set_trigger", map[string]any{
+	set := call(t, h, "set_trigger", map[string]any{
 		"prompt_id":    cv.PromptID,
 		"source":       "dropbox",
 		"event_filter": "file.created",
@@ -206,7 +206,7 @@ func TestSetAndClearTrigger(t *testing.T) {
 	}
 
 	// An unknown source is rejected (validation).
-	bad := call(t, h, "ikigenba_prompts_set_trigger", map[string]any{
+	bad := call(t, h, "set_trigger", map[string]any{
 		"prompt_id":    cv.PromptID,
 		"source":       "nope",
 		"event_filter": "x",
@@ -215,7 +215,7 @@ func TestSetAndClearTrigger(t *testing.T) {
 		t.Fatalf("set_trigger with unknown source must return isError, got %+v", bad)
 	}
 
-	cleared := call(t, h, "ikigenba_prompts_clear_trigger", map[string]any{
+	cleared := call(t, h, "clear_trigger", map[string]any{
 		"prompt_id":    cv.PromptID,
 		"source":       "dropbox",
 		"event_filter": "file.created",
@@ -227,19 +227,19 @@ func TestSetAndClearTrigger(t *testing.T) {
 
 func TestDescribe(t *testing.T) {
 	h, _ := newTestHandler(t)
-	res := call(t, h, "ikigenba_prompts_describe", nil)
+	res := call(t, h, "describe", nil)
 	if isError(res) {
-		t.Fatalf("ikigenba_prompts_describe returned isError: %+v", res)
+		t.Fatalf("describe returned isError: %+v", res)
 	}
 	txt := resultText(t, res)
 	if len(txt) == 0 {
-		t.Fatal("ikigenba_prompts_describe returned empty text")
+		t.Fatal("describe returned empty text")
 	}
 	// Sanity: it should actually describe the lifecycle entry points, not just
 	// be non-empty.
-	for _, want := range []string{"prompt", "ikigenba_prompts_create", "ikigenba_prompts_run"} {
+	for _, want := range []string{"prompt", "create", "run"} {
 		if !strings.Contains(txt, want) {
-			t.Fatalf("ikigenba_prompts_describe text missing %q:\n%s", want, txt)
+			t.Fatalf("describe text missing %q:\n%s", want, txt)
 		}
 	}
 }
@@ -259,14 +259,14 @@ func TestInitializeIncludesInstructions(t *testing.T) {
 	if resp.Result.Instructions == "" {
 		t.Fatal("initialize result missing instructions")
 	}
-	if !strings.Contains(resp.Result.Instructions, "ikigenba_prompts_describe") {
+	if !strings.Contains(resp.Result.Instructions, "describe") {
 		t.Fatalf("instructions should point at prompts_describe, got: %q", resp.Result.Instructions)
 	}
 }
 
 func TestHealth(t *testing.T) {
 	h, _ := newTestHandler(t)
-	res := call(t, h, "ikigenba_prompts_health", nil)
+	res := call(t, h, "health", nil)
 	var out struct {
 		Status     string         `json:"status"`
 		Version    string         `json:"version"`
@@ -292,7 +292,7 @@ func TestHealth(t *testing.T) {
 
 func createPrompt(t *testing.T, h *Handler) string {
 	t.Helper()
-	res := call(t, h, "ikigenba_prompts_create", map[string]any{
+	res := call(t, h, "create", map[string]any{
 		"user_prompt": "do a thing",
 		"config":      map[string]any{"model": "haiku"},
 		"name":        "test",
@@ -315,7 +315,7 @@ func TestDispatchRoundtrip(t *testing.T) {
 	id := createPrompt(t, h)
 
 	// get returns it, no last_run.
-	getRes := call(t, h, "ikigenba_prompts_get", map[string]any{"prompt_id": id})
+	getRes := call(t, h, "get", map[string]any{"prompt_id": id})
 	var detail prompt.PromptDetail
 	if err := json.Unmarshal([]byte(resultText(t, getRes)), &detail); err != nil {
 		t.Fatalf("decode get: %v", err)
@@ -325,7 +325,7 @@ func TestDispatchRoundtrip(t *testing.T) {
 	}
 
 	// list includes it.
-	listRes := call(t, h, "ikigenba_prompts_list", nil)
+	listRes := call(t, h, "list", nil)
 	var listOut struct {
 		Prompts []prompt.Prompt `json:"prompts"`
 	}
@@ -337,7 +337,7 @@ func TestDispatchRoundtrip(t *testing.T) {
 	}
 
 	// run returns a run_id + running status.
-	runRes := call(t, h, "ikigenba_prompts_run", map[string]any{"prompt_id": id})
+	runRes := call(t, h, "run", map[string]any{"prompt_id": id})
 	var runOut struct {
 		RunID  string `json:"run_id"`
 		Status string `json:"status"`
@@ -351,7 +351,7 @@ func TestDispatchRoundtrip(t *testing.T) {
 	runID := runOut.RunID
 
 	// run_get reflects the run by run_id.
-	rgRes := call(t, h, "ikigenba_prompts_run_get", map[string]any{"run_id": runID})
+	rgRes := call(t, h, "run_get", map[string]any{"run_id": runID})
 	var run prompt.Run
 	if err := json.Unmarshal([]byte(resultText(t, rgRes)), &run); err != nil {
 		t.Fatalf("decode run_get: %v", err)
@@ -361,7 +361,7 @@ func TestDispatchRoundtrip(t *testing.T) {
 	}
 
 	// run_list shows the run under the prompt.
-	rlRes := call(t, h, "ikigenba_prompts_run_list", map[string]any{"prompt_id": id})
+	rlRes := call(t, h, "run_list", map[string]any{"prompt_id": id})
 	var rlOut struct {
 		Runs []prompt.Run `json:"runs"`
 	}
@@ -373,7 +373,7 @@ func TestDispatchRoundtrip(t *testing.T) {
 	}
 
 	// run_fs_list on the now-created (empty) run sandbox returns [].
-	fsRes := call(t, h, "ikigenba_prompts_run_fs_list", map[string]any{"run_id": runID})
+	fsRes := call(t, h, "run_fs_list", map[string]any{"run_id": runID})
 	var fsOut struct {
 		Entries []sandbox.Entry `json:"entries"`
 	}
@@ -388,7 +388,7 @@ func TestDispatchRoundtrip(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sb.Root(runID), "hello.txt"), []byte("line one\nline two\n"), 0o644); err != nil {
 		t.Fatalf("write sandbox file: %v", err)
 	}
-	readRes := call(t, h, "ikigenba_prompts_run_fs_read", map[string]any{"run_id": runID, "path": "hello.txt"})
+	readRes := call(t, h, "run_fs_read", map[string]any{"run_id": runID, "path": "hello.txt"})
 	if got := resultText(t, readRes); got != "line one\nline two\n" {
 		t.Fatalf("run_fs_read: got %q", got)
 	}
@@ -398,7 +398,7 @@ func TestErrorMapping(t *testing.T) {
 	h, _ := newTestHandler(t)
 
 	// unknown id -> isError (not found).
-	res := call(t, h, "ikigenba_prompts_get", map[string]any{"prompt_id": "nope"})
+	res := call(t, h, "get", map[string]any{"prompt_id": "nope"})
 	if !isError(res) {
 		t.Fatalf("get unknown: want isError, got %+v", res)
 	}
@@ -407,28 +407,28 @@ func TestErrorMapping(t *testing.T) {
 
 	// run is always accepted now (full concurrency, no single-flight): two runs
 	// of the same prompt both succeed.
-	if r := call(t, h, "ikigenba_prompts_run", map[string]any{"prompt_id": id}); isError(r) {
+	if r := call(t, h, "run", map[string]any{"prompt_id": id}); isError(r) {
 		t.Fatalf("first run: unexpected isError %+v", r)
 	}
-	if r := call(t, h, "ikigenba_prompts_run", map[string]any{"prompt_id": id}); isError(r) {
+	if r := call(t, h, "run", map[string]any{"prompt_id": id}); isError(r) {
 		t.Fatalf("second run: want success, got isError %+v", r)
 	}
 
 	// update/delete are always allowed now (no ErrRunning), even with runs live.
-	upd := call(t, h, "ikigenba_prompts_update", map[string]any{
+	upd := call(t, h, "update", map[string]any{
 		"prompt_id": id, "user_prompt": "x", "config": map[string]any{"model": "haiku"},
 	})
 	if isError(upd) {
 		t.Fatalf("update while running: want success, got isError %+v", upd)
 	}
-	del := call(t, h, "ikigenba_prompts_delete", map[string]any{"prompt_id": id})
+	del := call(t, h, "delete", map[string]any{"prompt_id": id})
 	if isError(del) {
 		t.Fatalf("delete while running: want success, got isError %+v", del)
 	}
 
 	// Re-create + run for the path-escape check (the prior prompt was deleted).
 	id = createPrompt(t, h)
-	runRes := call(t, h, "ikigenba_prompts_run", map[string]any{"prompt_id": id})
+	runRes := call(t, h, "run", map[string]any{"prompt_id": id})
 	if isError(runRes) {
 		t.Fatalf("run for escape check: unexpected isError %+v", runRes)
 	}
@@ -439,7 +439,7 @@ func TestErrorMapping(t *testing.T) {
 		t.Fatalf("decode run for escape: %v", err)
 	}
 	// run_fs_read path escape -> isError.
-	esc := call(t, h, "ikigenba_prompts_run_fs_read", map[string]any{"run_id": runOut.RunID, "path": "../escape"})
+	esc := call(t, h, "run_fs_read", map[string]any{"run_id": runOut.RunID, "path": "../escape"})
 	if !isError(esc) {
 		t.Fatalf("run_fs_read escape: want isError, got %+v", esc)
 	}

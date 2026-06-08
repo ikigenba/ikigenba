@@ -154,7 +154,8 @@ overview.
 
 ## MCP tool surface (16 tools)
 
-Prefix `ikigenba_prompts_`. **Airtight key rule:** keyed by `prompt_id` → bare
+Tool names are bare verbs (no service prefix; see
+`docs/adr-mcp-tool-bare-names.md`). **Airtight key rule:** keyed by `prompt_id` → bare
 verb; keyed by `run_id` → `run_*`. The wire field for the user-role prompt is
 **`user_prompt`**.
 

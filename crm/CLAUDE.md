@@ -39,10 +39,10 @@ The service is a real **sales CRM**, not an address book, and it is **MCP-only**
   **derived** from `stage`, never client-set), **task**, **interaction**
   (append-only timeline).
 - **Six fixed MCP verbs** — the surface is a function of *verbs*, not entities:
-  `ikigenba_crm_search`, `ikigenba_crm_get`, `ikigenba_crm_save` (loose
-  polymorphic upsert over org/contact/deal/task), `ikigenba_crm_delete` (shallow
-  soft-delete), `ikigenba_crm_log` (append an interaction),
-  `ikigenba_crm_health`. Adding entities/fields later must **not** add tools.
+  `search`, `get`, `save` (loose
+  polymorphic upsert over org/contact/deal/task), `delete` (shallow
+  soft-delete), `log` (append an interaction),
+  `health`. Adding entities/fields later must **not** add tools.
 - **`internal/crm/`** is the domain package, one file per entity (each a stateless
   `<entity>Store` of pure-SQL methods on a Service-owned `*sql.Tx`), plus
   `service.go` (the dispatcher seam) and `events.go`.
@@ -92,8 +92,9 @@ of `ui/`. No login, no token store, no OAuth endpoints.
 - **Redesigned the whole domain (greenfield).** The reference's contacts-only
   address book and its ~12 fine-grained `lr_crm_*` tools were dropped and
   replaced by the 5-entity CRM behind the fixed 6-verb polymorphic surface
-  (`ikigenba_crm_*`) described above. No REST `/contacts` routes exist or are added.
-- The no-side-effect **`ikigenba_crm_health`** tool returns the shared health
+  (the bare-verb tools `search`/`get`/`save`/`delete`/`log`/`health`) described
+  above. No REST `/contacts` routes exist or are added.
+- The no-side-effect **`health`** tool returns the shared health
   envelope plus the authenticated owner email / client id — the dashboard's
   connect skill uses it to verify the chain.
 

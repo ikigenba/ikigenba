@@ -83,19 +83,19 @@ func TestToolsList(t *testing.T) {
 	for _, tl := range tools {
 		names[tl.(map[string]any)["name"].(string)] = true
 	}
-	if !names["ikigenba_dropbox_health"] {
-		t.Errorf("tools/list missing ikigenba_dropbox_health (got %v)", names)
+	if !names["health"] {
+		t.Errorf("tools/list missing health (got %v)", names)
 	}
-	if !names["ikigenba_dropbox_reflection"] {
-		t.Errorf("tools/list missing ikigenba_dropbox_reflection (got %v)", names)
+	if !names["reflection"] {
+		t.Errorf("tools/list missing reflection (got %v)", names)
 	}
 	// whoami is folded away — it must not reappear.
-	if names["dropbox_whoami"] || names["ikigenba_dropbox_whoami"] {
+	if names["whoami"] || names["dropbox_whoami"] {
 		t.Errorf("tools/list still advertises a whoami tool: %v", names)
 	}
 }
 
-// TestReflection covers the ikigenba_dropbox_reflection tool: the no-arg index
+// TestReflection covers the reflection tool: the no-arg index
 // (the three published file.* types, empty subscribes — dropbox is a producer),
 // the event_type detail (schema + example), and the corrective error for an
 // unknown type.
@@ -103,7 +103,7 @@ func TestReflection(t *testing.T) {
 	h := newHandler(t)
 
 	// No-arg → the index {publishes, subscribes}.
-	idx, isErr := callTool(t, h, "ikigenba_dropbox_reflection", `{}`)
+	idx, isErr := callTool(t, h, "reflection", `{}`)
 	if isErr {
 		t.Fatalf("reflection index isError: %v", idx)
 	}
@@ -138,7 +138,7 @@ func TestReflection(t *testing.T) {
 	}
 
 	// event_type → the publish detail (schema + example).
-	detail, isErr := callTool(t, h, "ikigenba_dropbox_reflection", `{"event_type":"file.created"}`)
+	detail, isErr := callTool(t, h, "reflection", `{"event_type":"file.created"}`)
 	if isErr {
 		t.Fatalf("reflection detail isError: %v", detail)
 	}
@@ -160,7 +160,7 @@ func TestReflection(t *testing.T) {
 	}
 
 	// Unknown event_type → corrective error listing valid types.
-	badErr, isErr := callTool(t, h, "ikigenba_dropbox_reflection", `{"event_type":"file.nope"}`)
+	badErr, isErr := callTool(t, h, "reflection", `{"event_type":"file.nope"}`)
 	if !isErr {
 		t.Fatalf("expected error for unknown event_type, got %v", badErr)
 	}
@@ -176,7 +176,7 @@ func TestReflection(t *testing.T) {
 
 func TestHealth_Envelope(t *testing.T) {
 	h := newHandler(t)
-	p, isErr := callTool(t, h, "ikigenba_dropbox_health", `{}`)
+	p, isErr := callTool(t, h, "health", `{}`)
 	if isErr {
 		t.Fatal("health isError")
 	}
@@ -232,7 +232,7 @@ func TestHealth_ReporterPopulatesDetails(t *testing.T) {
 	}
 	h := NewHandler(svc, "v-test", "dropbox", reporter, dropbox.Events, nil)
 
-	p, isErr := callTool(t, h, "ikigenba_dropbox_health", `{}`)
+	p, isErr := callTool(t, h, "health", `{}`)
 	if isErr {
 		t.Fatal("health isError")
 	}

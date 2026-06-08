@@ -39,7 +39,7 @@ Small business, ≤100 users: SQLite, single instance, is correct and deliberate
 
 **Books are global to the box** — one set of books per instance; no owner/tenant
 column on transactions/postings. `Identity` (the injected headers) is consulted
-only by `ikigenba_ledger_health`, matching crm and the single-tenant model.
+only by `health`, matching crm and the single-tenant model.
 
 ## The MCP surface (8 fixed verbs)
 
@@ -52,24 +52,24 @@ the only guardrail being that the top-level root must be one of five known types
 alias + case-fold canonicalization so the tree can't fork. Money is integer cents,
 single-currency USD. See `PLAN.md` §2–4 for the full contract.
 
-- **`ikigenba_ledger_record`** — record one immutable double-entry transaction (≥2 postings
+- **`record`** — record one immutable double-entry transaction (≥2 postings
   that must balance to zero; at most one posting may elide its amount and receive
   the balancing residual; optional per-posting/txn status and array ordering).
-- **`ikigenba_ledger_reverse`** — the correction primitive: post the sign-flipped mirror of
+- **`reverse`** — the correction primitive: post the sign-flipped mirror of
   an existing transaction, linked both ways (`reverses_id`/`reversed_by_id`); the
   mirror's legs reset to `pending`. Double-reversal is guarded.
-- **`ikigenba_ledger_reconcile`** — the *only* mutation of existing rows: free status
+- **`reconcile`** — the *only* mutation of existing rows: free status
   transitions among `pending`/`cleared`/`reconciled`, idempotent, all-or-nothing.
-- **`ikigenba_ledger_balance`** — account balances with depth roll-up across the typed
+- **`balance`** — account balances with depth roll-up across the typed
   account tree; no args = the whole live chart. Raw signed sums (ledger-cli style).
-- **`ikigenba_ledger_register`** — the running-total register for matched accounts over a
+- **`register`** — the running-total register for matched accounts over a
   period; also the list verb.
-- **`ikigenba_ledger_get`** — fetch one transaction in full (postings, per-posting status,
+- **`get`** — fetch one transaction in full (postings, per-posting status,
   ord, reversal links).
-- **`ikigenba_ledger_describe`** — static introspection (the five typed roots + normal
+- **`describe`** — static introspection (the five typed roots + normal
   balances, statuses, recipes) merged with the live account tree. The first call
   an agent should make.
-- **`ikigenba_ledger_health`** — the shared health envelope (status/version/
+- **`health`** — the shared health envelope (status/version/
   service/details) plus the authenticated caller's identity (owner email +
   client id); the end-to-end auth proof.
 
@@ -103,7 +103,7 @@ Producer-only. The outbox shares ledger's single SQLite writer; the event is
 appended on the **same transaction** as the journal write, and `Ring()` fires
 after commit. **Every committed transaction emits exactly one
 `transaction.recorded`** through one shared insert helper — including a
-`ikigenba_ledger_reverse` mirror (its payload carries `reverses_id` so a consumer can tell
+`reverse` mirror (its payload carries `reverses_id` so a consumer can tell
 it's a correction). `cmd/ledger/main.go` wires the `outbox` and injects it into
 `ledger.Service`; the SSE handler is mounted at `GET /feed` (unauthenticated,
 loopback-only — the perimeter is nginx). Second-wave payloads (`transaction.reversed`,

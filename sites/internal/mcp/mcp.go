@@ -1,5 +1,5 @@
 // Package mcp implements a minimal MCP transport for the /mcp endpoint and the
-// ikigenba_sites_* tool surface.
+// * tool surface.
 //
 // sites hosts static websites: an owner creates a slug, edits its working tree
 // through the file tools, and publishes it to a tier (public/private) which the
@@ -56,7 +56,7 @@ type Handler struct {
 // (trailing slash), composed at the wiring root from the server's ResourceID; the
 // tools append "<tier>/<name>/" to it so every rendered site carries its serving
 // URL and an agent never has to guess the host. version/service/health populate
-// the ikigenba_sites_health envelope; health is the optional per-service reporter
+// the health envelope; health is the optional per-service reporter
 // (nil → details is {}).
 func NewHandler(store *sites.Store, layout sites.Layout, version, service, baseURL string,
 	health func(context.Context) (map[string]any, error)) *Handler {

@@ -161,8 +161,8 @@ func tool(name string) map[string]any {
 // contributes no tools.
 func TestSelfExcluded(t *testing.T) {
 	root := t.TempDir()
-	self := newPeer(t, []map[string]any{tool("ikigenba_prompts_run")}, "", false)
-	crm := newPeer(t, []map[string]any{tool("ikigenba_crm_list")}, "ok", false)
+	self := newPeer(t, []map[string]any{tool("run")}, "", false)
+	crm := newPeer(t, []map[string]any{tool("list")}, "ok", false)
 	writeManifest(t, root, "prompts", portOf(t, self.srv.URL))
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
@@ -186,7 +186,7 @@ func TestSelfExcluded(t *testing.T) {
 // discovery still succeeds with the live peer's tools.
 func TestDownPeerSkipped(t *testing.T) {
 	root := t.TempDir()
-	live := newPeer(t, []map[string]any{tool("ikigenba_crm_list")}, "ok", false)
+	live := newPeer(t, []map[string]any{tool("list")}, "ok", false)
 	writeManifest(t, root, "crm", portOf(t, live.srv.URL))
 	writeManifest(t, root, "ledger", freeClosedPort(t)) // dead
 
@@ -204,7 +204,7 @@ func TestDownPeerSkipped(t *testing.T) {
 // (prompts:<promptID>) on the tools/list request.
 func TestIdentityHeaders(t *testing.T) {
 	root := t.TempDir()
-	crm := newPeer(t, []map[string]any{tool("ikigenba_crm_list")}, "ok", false)
+	crm := newPeer(t, []map[string]any{tool("list")}, "ok", false)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
 	Discover(context.Background(), root, "alice@example.com", "p_abc")
@@ -223,8 +223,8 @@ func TestIdentityHeaders(t *testing.T) {
 // correct peer and flattens the success result into a non-error block.
 func TestDispatchRoutesToOwningPeer(t *testing.T) {
 	root := t.TempDir()
-	crm := newPeer(t, []map[string]any{tool("ikigenba_crm_list")}, "crm-result", false)
-	ledger := newPeer(t, []map[string]any{tool("ikigenba_ledger_post")}, "ledger-result", false)
+	crm := newPeer(t, []map[string]any{tool("list")}, "crm-result", false)
+	ledger := newPeer(t, []map[string]any{tool("post")}, "ledger-result", false)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 	writeManifest(t, root, "ledger", portOf(t, ledger.srv.URL))
 
@@ -255,11 +255,100 @@ func TestDispatchRoutesToOwningPeer(t *testing.T) {
 	ledger.mu.Lock()
 	ledgerCalls := append([]string(nil), ledger.calledNames...)
 	ledger.mu.Unlock()
-	if len(crmCalls) != 1 || crmCalls[0] != "ikigenba_crm_list" {
-		t.Errorf("crm calledNames = %v, want [ikigenba_crm_list]", crmCalls)
+	if len(crmCalls) != 1 || crmCalls[0] != "list" {
+		t.Errorf("crm calledNames = %v, want [list] (peer answers to the bare verb)", crmCalls)
 	}
 	if len(ledgerCalls) != 0 {
 		t.Errorf("ledger calledNames = %v, want none", ledgerCalls)
+	}
+}
+
+// TestSharedBareVerbReQualifiedPerService: peers now register BARE verbs, so two
+// different services both expose the same verb (here `health`). The suite layer
+// must re-qualify each to ikigenba_<svc>_<verb> so BOTH remain reachable under
+// distinct advertised names, and Dispatch must route each to the correct peer —
+// verified via the bare verb each peer's tools/call actually received. This is the
+// regression guard for the silent cross-peer shadowing the bare-verb rename caused.
+func TestSharedBareVerbReQualifiedPerService(t *testing.T) {
+	root := t.TempDir()
+	crm := newPeer(t, []map[string]any{tool("health")}, "crm-health", false)
+	ledger := newPeer(t, []map[string]any{tool("health")}, "ledger-health", false)
+	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
+	writeManifest(t, root, "ledger", portOf(t, ledger.srv.URL))
+
+	src := Discover(context.Background(), root, "owner@example.com", "p_123")
+
+	// Both services' health tools survive under distinct service-qualified names.
+	if !src.Owns("ikigenba_crm_health") {
+		t.Error("crm health tool was shadowed; want ikigenba_crm_health owned")
+	}
+	if !src.Owns("ikigenba_ledger_health") {
+		t.Error("ledger health tool was shadowed; want ikigenba_ledger_health owned")
+	}
+	if got := len(src.Descriptors()); got != 2 {
+		t.Errorf("Descriptors len = %d, want 2 (both health tools advertised)", got)
+	}
+	names := map[string]bool{}
+	for _, d := range src.Descriptors() {
+		names[d.Name] = true
+	}
+	if !names["ikigenba_crm_health"] || !names["ikigenba_ledger_health"] {
+		t.Errorf("advertised names = %v, want both ikigenba_crm_health and ikigenba_ledger_health", names)
+	}
+
+	// Dispatch each qualified name to its own peer; each peer receives the BARE verb.
+	crmBlock, err := src.Dispatch(context.Background(), "ikigenba_crm_health", nil)
+	if err != nil {
+		t.Fatalf("crm Dispatch Go error: %v", err)
+	}
+	ledgerBlock, err := src.Dispatch(context.Background(), "ikigenba_ledger_health", nil)
+	if err != nil {
+		t.Fatalf("ledger Dispatch Go error: %v", err)
+	}
+
+	var crmContent, ledgerContent string
+	if err := json.Unmarshal(crmBlock.Content, &crmContent); err != nil {
+		t.Fatalf("unmarshal crm content: %v", err)
+	}
+	if err := json.Unmarshal(ledgerBlock.Content, &ledgerContent); err != nil {
+		t.Fatalf("unmarshal ledger content: %v", err)
+	}
+	if crmContent != "crm-health" {
+		t.Errorf("crm content = %q, want crm-health (routed to wrong peer)", crmContent)
+	}
+	if ledgerContent != "ledger-health" {
+		t.Errorf("ledger content = %q, want ledger-health (routed to wrong peer)", ledgerContent)
+	}
+
+	crm.mu.Lock()
+	crmCalls := append([]string(nil), crm.calledNames...)
+	crm.mu.Unlock()
+	ledger.mu.Lock()
+	ledgerCalls := append([]string(nil), ledger.calledNames...)
+	ledger.mu.Unlock()
+	if len(crmCalls) != 1 || crmCalls[0] != "health" {
+		t.Errorf("crm calledNames = %v, want [health] (bare verb)", crmCalls)
+	}
+	if len(ledgerCalls) != 1 || ledgerCalls[0] != "health" {
+		t.Errorf("ledger calledNames = %v, want [health] (bare verb)", ledgerCalls)
+	}
+}
+
+// TestWithinServiceDuplicateKeepsFirst: the dup guard still fires for a genuine
+// within-service duplicate — one service listing the same bare verb twice yields a
+// single advertised tool (first wins), not a panic or a double entry.
+func TestWithinServiceDuplicateKeepsFirst(t *testing.T) {
+	root := t.TempDir()
+	crm := newPeer(t, []map[string]any{tool("health"), tool("health")}, "ok", false)
+	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
+
+	src := Discover(context.Background(), root, "owner@example.com", "p_123")
+
+	if !src.Owns("ikigenba_crm_health") {
+		t.Error("want ikigenba_crm_health owned")
+	}
+	if got := len(src.Descriptors()); got != 1 {
+		t.Errorf("Descriptors len = %d, want 1 (within-service duplicate collapsed)", got)
 	}
 }
 
@@ -267,7 +356,7 @@ func TestDispatchRoutesToOwningPeer(t *testing.T) {
 // block with a nil Go error.
 func TestDispatchDownstreamIsError(t *testing.T) {
 	root := t.TempDir()
-	crm := newPeer(t, []map[string]any{tool("ikigenba_crm_list")}, "boom", true)
+	crm := newPeer(t, []map[string]any{tool("list")}, "boom", true)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
 	src := Discover(context.Background(), root, "owner@example.com", "p_123")
@@ -292,7 +381,7 @@ func TestDispatchDownstreamIsError(t *testing.T) {
 // discovery yields an is_error block with a nil Go error (never run-crashing).
 func TestDispatchTransportFailureIsError(t *testing.T) {
 	root := t.TempDir()
-	crm := newPeer(t, []map[string]any{tool("ikigenba_crm_list")}, "ok", false)
+	crm := newPeer(t, []map[string]any{tool("list")}, "ok", false)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
 	src := Discover(context.Background(), root, "owner@example.com", "p_123")

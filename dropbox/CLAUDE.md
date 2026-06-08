@@ -43,7 +43,7 @@ of its own. nginx strips the `/srv/dropbox/` prefix, so internal routes stay bar
 
 **Single box, single account.** One Dropbox app folder, one owner; no
 owner/tenant column. `Identity` (the injected headers) is consulted only by
-the single `ikigenba_dropbox_health` tool. Per-user OAuth is explicitly out of scope —
+the single `health` tool. Per-user OAuth is explicitly out of scope —
 a folder-sync daemon has one folder.
 
 ## The daemon + producer model
@@ -81,7 +81,7 @@ The service side is read-only; there are no write verbs. MCP is thin and exists
 for the auth proof + the dashboard inventory (`MCP=true`). The former pair of
 identity/health probes are **folded into one** branded tool (DECISIONS §7).
 
-- **`ikigenba_dropbox_health`** — `()` renders the shared health envelope
+- **`health`** — `()` renders the shared health envelope
   (`status`/`version`/`service`/`details`) **plus** the authenticated caller's
   identity (`owner_email`/`client_id`, the end-to-end auth proof). dropbox's disk
   telemetry lives under `details`, supplied by its `Spec.Health` reporter:
@@ -121,7 +121,7 @@ Same chassis layering as ledger/crm (one file per concern within one package;
   - `content.go` — the loopback `GET /content` handler.
   - `health.go` — `HealthInfo` assembly.
 - **`internal/mcp`** — JSON-RPC 2.0 transport. `tools.go` holds the single
-  `ikigenba_dropbox_health` descriptor, dispatches into `dropbox.Service`
+  `health` descriptor, dispatches into `dropbox.Service`
   (`Health`), translates sentinels to tool-error text. `mcp.go` is the transport,
   unchanged.
 - **`internal/server`** — routing, the RFC 9728 protected-resource metadata

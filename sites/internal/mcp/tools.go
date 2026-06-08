@@ -16,13 +16,13 @@ import (
 
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name
 // ikigenba + the service name; HTTP route paths are NOT branded.
-const toolPrefix = "ikigenba_sites_"
+const toolPrefix = ""
 
 // tool returns the branded, fully-qualified MCP tool name. Used by BOTH
 // toolDescriptors and dispatchTool so the two sites cannot drift.
 func tool(verb string) string { return toolPrefix + verb }
 
-// toolDescriptors returns the ikigenba_sites_* lifecycle tool set: the two
+// toolDescriptors returns the * lifecycle tool set: the two
 // chassis tools (health, describe) plus the registry/publish lifecycle verbs.
 // The five file tools (write/read/edit/glob/grep) are a later phase and append
 // to this list (and to dispatchTool) — keep this slice append-friendly. Schemas

@@ -97,7 +97,7 @@ func main() {
 		// graph over appkit's shared DB handle (rt.DB()) and mounts the MCP surface.
 		// The agentkit provider is constructed here (client factory closing over the
 		// env-only ANTHROPIC_API_KEY); an absent key disables the agent verbs but the
-		// service still serves ikigenba_wiki_health / ikigenba_wiki_search / tools/list.
+		// service still serves health / search / tools/list.
 		Handlers: func(r *appkit.Router) error {
 			rt = r
 			core, h, err := buildDomain(r)
@@ -154,9 +154,9 @@ func buildDomain(rt *appkit.Router) (*ingest.Core, *mcp.Handler, error) {
 
 	// The agentkit provider is built here, behind the env-only secret. We
 	// presence-check the key (NEVER its value) and degrade loudly when absent: the
-	// non-agent surface (ikigenba_wiki_health, ikigenba_wiki_search, tools/list) must still come up.
+	// non-agent surface (health, search, tools/list) must still come up.
 	if cfg.apiKey == "" {
-		logger.Warn("ANTHROPIC_API_KEY is not set — ingest and ask are DISABLED (ikigenba_wiki_health, ikigenba_wiki_search, and tools/list still work); set it via app-config (box) or .envrc (dev) to enable the agent verbs")
+		logger.Warn("ANTHROPIC_API_KEY is not set — ingest and ask are DISABLED (health, search, and tools/list still work); set it via app-config (box) or .envrc (dev) to enable the agent verbs")
 	} else {
 		// The agentkit anthropic client factory: it closes over the env-only API key
 		// and the ingest model resolved at this boundary. It is only invoked when a

@@ -29,7 +29,7 @@ health-only skeleton.
 
 Rename points: module `agent`→`scripts`, `cmd/agent`→`cmd/scripts`, env prefix
 `AGENT_`→`SCRIPTS_`, port `3004`→**`3009`**, mount `/srv/agent/`→`/srv/scripts/`,
-tool prefix `ikigenba_agent_`→`ikigenba_scripts_`, db `agent.db`→`scripts.db`,
+tool prefix now empty (bare verbs, `docs/adr-mcp-tool-bare-names.md`), db `agent.db`→`scripts.db`,
 app user / `/opt/agent` / systemd unit → `scripts`.
 
 ---
@@ -44,7 +44,7 @@ scripts/
 └── internal/
     ├── db/   ids/   logging/   server/    # chassis, ~verbatim from agent
     ├── mcp/                               # chassis, EXTENDED: Handler{ svc *script.Service }
-    │                                      #   toolPrefix "ikigenba_scripts_"; 16 tools (§7)
+    │                                      #   toolPrefix "" (bare verbs); 16 tools (§7)
     ├── script/        # NEW — the domain
     │     ├── model.go #   Script, Run, Config, status enums
     │     ├── store.go #   SQLite queries (scripts + runs + script_triggers)
@@ -77,7 +77,8 @@ No `sandbox/` package (no persistent per-script folder) and no `engine/` package
   domain migration + the eventplane outbox/feed_offset migrations (§4).
 - **`internal/ids`** — ULID generation (script ids, run ids).
 - **`internal/mcp`** — JSON-RPC 2.0 dispatch. `Handler{ svc *script.Service }`;
-  `toolPrefix = "ikigenba_scripts_"`; `toolDescriptors()` lists the §7 tools;
+  `toolPrefix = ""` (bare-verb tool names; see
+  `docs/adr-mcp-tool-bare-names.md`); `toolDescriptors()` lists the §7 tools;
   `dispatchTool` routes each name to a `Service` method.
 
 ---
@@ -240,22 +241,22 @@ contract.
 
 | MCP tool | Service entry |
 |---|---|
-| `ikigenba_scripts_health` | (chassis) — `details` = runtime contract |
-| `ikigenba_scripts_describe` | (chassis) — overview + authoring contract |
-| `ikigenba_scripts_create` | `Service.Create` |
-| `ikigenba_scripts_list` | `Service.List` (+ `running_count`, `last_run`) |
-| `ikigenba_scripts_get` | `Service.Get` |
-| `ikigenba_scripts_update` | `Service.Update` |
-| `ikigenba_scripts_delete` | `Service.Delete` |
-| `ikigenba_scripts_set_trigger` | `Service.SetTrigger` (validated) |
-| `ikigenba_scripts_clear_trigger` | `Service.ClearTrigger` |
-| `ikigenba_scripts_run` | `Service.Run` → `{run_id, ...}` |
-| `ikigenba_scripts_run_list` | `Service.RunList` |
-| `ikigenba_scripts_run_get` | `Service.RunGet` (+ `elapsed_secs`) |
-| `ikigenba_scripts_run_output` | `Service.RunOutput` (stdout/stderr, tailable) |
-| `ikigenba_scripts_run_cancel` | `Service.RunCancel` → runner cancel-by-run_id |
-| `ikigenba_scripts_run_fs_list` | `Service.RunFsList` — list the run's persisted dir tree |
-| `ikigenba_scripts_run_fs_read` | `Service.RunFsRead` — read a file in the run dir |
+| `health` | (chassis) — `details` = runtime contract |
+| `describe` | (chassis) — overview + authoring contract |
+| `create` | `Service.Create` |
+| `list` | `Service.List` (+ `running_count`, `last_run`) |
+| `get` | `Service.Get` |
+| `update` | `Service.Update` |
+| `delete` | `Service.Delete` |
+| `set_trigger` | `Service.SetTrigger` (validated) |
+| `clear_trigger` | `Service.ClearTrigger` |
+| `run` | `Service.Run` → `{run_id, ...}` |
+| `run_list` | `Service.RunList` |
+| `run_get` | `Service.RunGet` (+ `elapsed_secs`) |
+| `run_output` | `Service.RunOutput` (stdout/stderr, tailable) |
+| `run_cancel` | `Service.RunCancel` → runner cancel-by-run_id |
+| `run_fs_list` | `Service.RunFsList` — list the run's persisted dir tree |
+| `run_fs_read` | `Service.RunFsRead` — read a file in the run dir |
 
 The runtime contract in `health.details` / `describe` is **static declared**
 strings (`python_version`, `bash_version`, `network`, `packages`), not probed.
@@ -296,19 +297,19 @@ re-reads manifests.
 ## 8. End-to-end flows
 
 **Manual run:**
-1. `ikigenba_scripts_create {name, body}` → `Service.Create` → `{script_id}`.
-2. `ikigenba_scripts_run {script_id}` → insert run (`running`, empty trigger ctx)
+1. `create {name, body}` → `Service.Create` → `{script_id}`.
+2. `run {script_id}` → insert run (`running`, empty trigger ctx)
    → `runner.Spawn(run, emptyInput)` → `{run_id, "running", started_at}`.
 3. goroutine: materialize body+config into `runs/<run_id>/` → `python3` (stdin
    empty, `$EVENT_JSON={}`, `cmd.Dir` = the run dir) → stream stdout/stderr to
    logs → exit → record terminal status → emit
    `scripts.succeeded`/`scripts.failed` (8 KB tails) → run dir persists.
-4. `ikigenba_scripts_run_output {run_id}` → tail the logs;
-   `ikigenba_scripts_run_fs_list`/`run_fs_read` → inspect files the run wrote.
-   `ikigenba_scripts_run_get` → status/exit_code/elapsed.
+4. `run_output {run_id}` → tail the logs;
+   `run_fs_list`/`run_fs_read` → inspect files the run wrote.
+   `run_get` → status/exit_code/elapsed.
 
 **Event-triggered run (the glue case):**
-1. `ikigenba_scripts_set_trigger {script_id, source:"crm", event_filter:"contact.created"}`
+1. `set_trigger {script_id, source:"crm", event_filter:"contact.created"}`
    — validated, inserted.
 2. crm emits `contact.created` → scripts' crm consumer loop handler →
    `ScriptsForEvent("crm","contact.created")` → `RunForEvent(...)` per subscribed

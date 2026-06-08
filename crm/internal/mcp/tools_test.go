@@ -164,7 +164,7 @@ func id(t *testing.T, m map[string]any) string {
 	return v
 }
 
-// TestToolsList asserts tools/list returns EXACTLY the seven ikigenba_crm_*
+// TestToolsList asserts tools/list returns EXACTLY the seven *
 // verbs (count and names), each with the required descriptor keys.
 func TestToolsList(t *testing.T) {
 	h := newTestHandler(t)
@@ -182,9 +182,9 @@ func TestToolsList(t *testing.T) {
 	}
 
 	want := []string{
-		"ikigenba_crm_search", "ikigenba_crm_get", "ikigenba_crm_save",
-		"ikigenba_crm_delete", "ikigenba_crm_log", "ikigenba_crm_health",
-		"ikigenba_crm_reflection",
+		"search", "get", "save",
+		"delete", "log", "health",
+		"reflection",
 	}
 	if len(result.Tools) != len(want) {
 		t.Fatalf("expected exactly %d tools, got %d: %+v", len(want), len(result.Tools), result.Tools)
@@ -212,8 +212,8 @@ func TestToolsList(t *testing.T) {
 func TestToolsCallVerbs(t *testing.T) {
 	h := newTestHandler(t)
 
-	// ikigenba_crm_health — the gated health envelope plus identity, no inputs.
-	health := callOK(t, h, "ikigenba_crm_health", map[string]any{})
+	// health — the gated health envelope plus identity, no inputs.
+	health := callOK(t, h, "health", map[string]any{})
 	if health["status"] != "ok" {
 		t.Fatalf("health status not ok: %+v", health)
 	}
@@ -233,7 +233,7 @@ func TestToolsCallVerbs(t *testing.T) {
 	}
 
 	// crm_save — one of each type. Assert the success summary envelope.
-	org := callOK(t, h, "ikigenba_crm_save", map[string]any{
+	org := callOK(t, h, "save", map[string]any{
 		"type":   "organization",
 		"fields": map[string]any{"name": "Acme", "domain": "acme.com"},
 	})
@@ -242,7 +242,7 @@ func TestToolsCallVerbs(t *testing.T) {
 	}
 	orgID := id(t, org)
 
-	contact := callOK(t, h, "ikigenba_crm_save", map[string]any{
+	contact := callOK(t, h, "save", map[string]any{
 		"type": "contact",
 		"fields": map[string]any{
 			"display_name": "Bob",
@@ -255,7 +255,7 @@ func TestToolsCallVerbs(t *testing.T) {
 	}
 	contactID := id(t, contact)
 
-	deal := callOK(t, h, "ikigenba_crm_save", map[string]any{
+	deal := callOK(t, h, "save", map[string]any{
 		"type": "deal",
 		"fields": map[string]any{
 			"name":     "Acme Renewal",
@@ -269,7 +269,7 @@ func TestToolsCallVerbs(t *testing.T) {
 	}
 	dealID := id(t, deal)
 
-	task := callOK(t, h, "ikigenba_crm_save", map[string]any{
+	task := callOK(t, h, "save", map[string]any{
 		"type":   "task",
 		"fields": map[string]any{"title": "Follow up", "contact_id": contactID},
 	})
@@ -279,7 +279,7 @@ func TestToolsCallVerbs(t *testing.T) {
 	taskID := id(t, task)
 
 	// crm_get — fetch the contact card; assert self fields + attached relations.
-	card := callOK(t, h, "ikigenba_crm_get", map[string]any{"id": contactID})
+	card := callOK(t, h, "get", map[string]any{"id": contactID})
 	if card["type"] != "contact" || card["display_name"] != "Bob" {
 		t.Fatalf("contact card self fields: %+v", card)
 	}
@@ -296,7 +296,7 @@ func TestToolsCallVerbs(t *testing.T) {
 	}
 
 	// crm_log — append an interaction against the contact subject.
-	logged := callOK(t, h, "ikigenba_crm_log", map[string]any{
+	logged := callOK(t, h, "log", map[string]any{
 		"subject_id": contactID,
 		"kind":       "call",
 		"body":       "Discussed renewal.",
@@ -307,19 +307,19 @@ func TestToolsCallVerbs(t *testing.T) {
 	interactionID := id(t, logged)
 
 	// The interaction shows up on the contact card's recent interactions.
-	card = callOK(t, h, "ikigenba_crm_get", map[string]any{"id": contactID})
+	card = callOK(t, h, "get", map[string]any{"id": contactID})
 	ints, ok := card["recent_interactions"].([]any)
 	if !ok || len(ints) != 1 {
 		t.Fatalf("expected one recent interaction, got %v", card["recent_interactions"])
 	}
 
 	// crm_search — unscoped finds entities; scoped + query narrows.
-	searchAll := callOK(t, h, "ikigenba_crm_search", map[string]any{})
+	searchAll := callOK(t, h, "search", map[string]any{})
 	items, ok := searchAll["items"].([]any)
 	if !ok || len(items) == 0 {
 		t.Fatalf("unscoped search returned nothing: %+v", searchAll)
 	}
-	orgHits := callOK(t, h, "ikigenba_crm_search", map[string]any{"type": "organization", "query": "acme"})
+	orgHits := callOK(t, h, "search", map[string]any{"type": "organization", "query": "acme"})
 	hits, ok := orgHits["items"].([]any)
 	if !ok || len(hits) != 1 {
 		t.Fatalf("scoped org search: %+v", orgHits)
@@ -328,7 +328,7 @@ func TestToolsCallVerbs(t *testing.T) {
 		t.Fatalf("scoped org search wrong hit: %+v", first)
 	}
 	// Search scoped to interactions by subject_id filter.
-	intHits := callOK(t, h, "ikigenba_crm_search", map[string]any{
+	intHits := callOK(t, h, "search", map[string]any{
 		"type":    "interaction",
 		"filters": map[string]any{"subject_id": contactID},
 	})
@@ -337,11 +337,11 @@ func TestToolsCallVerbs(t *testing.T) {
 	}
 
 	// crm_delete — delete the deal; subsequent get errors not_found.
-	delOK := callOK(t, h, "ikigenba_crm_delete", map[string]any{"type": "deal", "id": dealID})
+	delOK := callOK(t, h, "delete", map[string]any{"type": "deal", "id": dealID})
 	if delOK["ok"] != true {
 		t.Fatalf("delete ok envelope: %+v", delOK)
 	}
-	notFound := callErr(t, h, "ikigenba_crm_get", map[string]any{"id": dealID})
+	notFound := callErr(t, h, "get", map[string]any{"id": dealID})
 	if notFound["code"] != "not_found" {
 		t.Fatalf("expected not_found after delete, got %+v", notFound)
 	}
@@ -354,7 +354,7 @@ func TestToolsCallVerbs(t *testing.T) {
 		{"contact", contactID},
 		{"organization", orgID},
 	} {
-		if r := callOK(t, h, "ikigenba_crm_delete", map[string]any{"type": d.typ, "id": d.did}); r["ok"] != true {
+		if r := callOK(t, h, "delete", map[string]any{"type": d.typ, "id": d.did}); r["ok"] != true {
 			t.Fatalf("delete %s: %+v", d.typ, r)
 		}
 	}
@@ -368,7 +368,7 @@ func TestToolsCallErrorEnvelope(t *testing.T) {
 	h := newTestHandler(t)
 
 	// Validation: a deal with a client-supplied (derived) status is rejected.
-	val := callErr(t, h, "ikigenba_crm_save", map[string]any{
+	val := callErr(t, h, "save", map[string]any{
 		"type":   "deal",
 		"fields": map[string]any{"name": "Big Deal", "status": "won"},
 	})
@@ -383,20 +383,20 @@ func TestToolsCallErrorEnvelope(t *testing.T) {
 	}
 
 	// Validation: unknown save type.
-	badType := callErr(t, h, "ikigenba_crm_save", map[string]any{"type": "widget"})
+	badType := callErr(t, h, "save", map[string]any{"type": "widget"})
 	if badType["code"] != "validation" {
 		t.Fatalf("expected validation for unknown type, got %+v", badType)
 	}
 
 	// not_found: get a bogus id.
-	nf := callErr(t, h, "ikigenba_crm_get", map[string]any{"id": "01GHOSTGHOSTGHOSTGHOSTGHOST"})
+	nf := callErr(t, h, "get", map[string]any{"id": "01GHOSTGHOSTGHOSTGHOSTGHOST"})
 	if nf["code"] != "not_found" {
 		t.Fatalf("expected not_found, got %+v", nf)
 	}
 
 	// Duplicate: create a contact, then create another with the same primary
 	// email → duplicate envelope carrying existing_id.
-	first := callOK(t, h, "ikigenba_crm_save", map[string]any{
+	first := callOK(t, h, "save", map[string]any{
 		"type": "contact",
 		"fields": map[string]any{
 			"display_name": "Bob",
@@ -405,7 +405,7 @@ func TestToolsCallErrorEnvelope(t *testing.T) {
 	})
 	firstID := id(t, first)
 
-	dup := callErr(t, h, "ikigenba_crm_save", map[string]any{
+	dup := callErr(t, h, "save", map[string]any{
 		"type": "contact",
 		"fields": map[string]any{
 			"display_name": "Robert",
@@ -423,7 +423,7 @@ func TestToolsCallErrorEnvelope(t *testing.T) {
 	}
 
 	// force:true on the same call now succeeds and creates a distinct contact.
-	forced := callOK(t, h, "ikigenba_crm_save", map[string]any{
+	forced := callOK(t, h, "save", map[string]any{
 		"type":  "contact",
 		"force": true,
 		"fields": map[string]any{
@@ -436,7 +436,7 @@ func TestToolsCallErrorEnvelope(t *testing.T) {
 	}
 }
 
-// TestToolsCallReflection covers the ikigenba_crm_reflection tool: the no-arg
+// TestToolsCallReflection covers the reflection tool: the no-arg
 // index (the four published types, empty subscribes — crm is a producer), the
 // event_type detail (schema + example), and the corrective error for an unknown
 // type.
@@ -444,7 +444,7 @@ func TestToolsCallReflection(t *testing.T) {
 	h := newTestHandler(t)
 
 	// No-arg → the index {publishes, subscribes}.
-	idx := callOK(t, h, "ikigenba_crm_reflection", map[string]any{})
+	idx := callOK(t, h, "reflection", map[string]any{})
 
 	publishes, ok := idx["publishes"].([]any)
 	if !ok {
@@ -477,7 +477,7 @@ func TestToolsCallReflection(t *testing.T) {
 	}
 
 	// event_type → the publish detail (schema + example).
-	detail := callOK(t, h, "ikigenba_crm_reflection", map[string]any{"event_type": "contact.created"})
+	detail := callOK(t, h, "reflection", map[string]any{"event_type": "contact.created"})
 	if detail["type"] != "contact.created" {
 		t.Fatalf("detail type mismatch: %+v", detail)
 	}
@@ -496,7 +496,7 @@ func TestToolsCallReflection(t *testing.T) {
 	}
 
 	// Unknown event_type → corrective error listing valid types.
-	badErr := callErr(t, h, "ikigenba_crm_reflection", map[string]any{"event_type": "contact.nope"})
+	badErr := callErr(t, h, "reflection", map[string]any{"event_type": "contact.nope"})
 	if badErr["code"] != "unknown_event_type" {
 		t.Fatalf("expected unknown_event_type code, got %+v", badErr)
 	}

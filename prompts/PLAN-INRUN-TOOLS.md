@@ -7,6 +7,10 @@ of "Surface 2 — the in-run toolset" carved out of scope in
 `REDESIGN-DECISIONS.md`; that doc covered Surface 1 (the foreground
 `ikigenba_prompts_*` tools) and explicitly deferred this.
 
+> *Historical: suite tool names are now bare verbs, not service-prefixed
+> (`ikigenba_<svc>_*`) — see `docs/adr-mcp-tool-bare-names.md`. The cross-peer
+> ownership/collision reasoning below assumes the old prefixed names.*
+
 Companion docs: `ARCHITECTURE.md` (how the code is shaped today),
 `REDESIGN-DECISIONS.md` (the prompt/run model), suite `CLAUDE.md` (the trust
 boundary, manifests, deploy).

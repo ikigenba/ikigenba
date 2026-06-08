@@ -1,9 +1,9 @@
 package mcp
 
 // describeText is the on-demand deep overview returned by the
-// ikigenba_scripts_describe tool. It is intentionally NOT loaded into the
+// describe tool. It is intentionally NOT loaded into the
 // initialize `instructions` field (which every client pays on every connection)
-// — callers load it only when they choose to call ikigenba_scripts_describe.
+// — callers load it only when they choose to call describe.
 //
 // Source of truth for the concepts below is README.md / ARCHITECTURE.md in this
 // module; this is a concise restatement, not a substitute.
@@ -24,19 +24,19 @@ RUNTIME CONTRACT
   (no third-party packages day-one).
 
 LIFECYCLE
-  1. ikigenba_scripts_create {name, body}        -> {script_id}
-  2. ikigenba_scripts_run {script_id}            -> starts a run, returns {run_id}
-  3. poll ikigenba_scripts_run_get {run_id}      -> status until succeeded|failed|cancelled
-  4. ikigenba_scripts_run_output {run_id}        -> stdout/stderr logs
-  5. ikigenba_scripts_run_fs_list / ikigenba_scripts_run_fs_read -> files the run wrote
+  1. create {name, body}        -> {script_id}
+  2. run {script_id}            -> starts a run, returns {run_id}
+  3. poll run_get {run_id}      -> status until succeeded|failed|cancelled
+  4. run_output {run_id}        -> stdout/stderr logs
+  5. run_fs_list / run_fs_read -> files the run wrote
 
 TRIGGERS
-  ikigenba_scripts_set_trigger {script_id, source, event_filter} binds the script
+  set_trigger {script_id, source, event_filter} binds the script
   to a producer (cron|crm|ledger|dropbox|prompts|scripts). On a matching event a
   run starts automatically. Completion emits scripts.succeeded / scripts.failed
   on this service's own /feed, so scripts can chain off each other.
 
-ikigenba_scripts_health proves the auth chain and reports the runtime contract.`
+health proves the auth chain and reports the runtime contract.`
 
 // toolDescribe returns the on-demand overview. Takes no inputs.
 func toolDescribe() (map[string]any, error) {

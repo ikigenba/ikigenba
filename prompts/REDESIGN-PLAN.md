@@ -5,6 +5,9 @@ document is the **why** and the ratified external scheme; this is the **how**:
 the frozen target contracts plus a strictly-sequential phase chain to transform
 the existing code into them.
 
+> *Historical: the `ikigenba_prompts_` MCP tool-name prefix used throughout was
+> later dropped for bare verbs — see `docs/adr-mcp-tool-bare-names.md`.*
+
 > This **supersedes** `PLAN.md` (the original "run-once slice" build plan that
 > produced the current code). `PLAN.md` is kept for history; do not execute it.
 

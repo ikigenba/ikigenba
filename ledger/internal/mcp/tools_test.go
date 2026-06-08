@@ -87,9 +87,9 @@ func TestToolsList_HasNine(t *testing.T) {
 		names[tl.(map[string]any)["name"].(string)] = true
 	}
 	for _, want := range []string{
-		"ikigenba_ledger_record", "ikigenba_ledger_reverse", "ikigenba_ledger_reconcile",
-		"ikigenba_ledger_balance", "ikigenba_ledger_register", "ikigenba_ledger_get",
-		"ikigenba_ledger_describe", "ikigenba_ledger_health", "ikigenba_ledger_reflection",
+		"record", "reverse", "reconcile",
+		"balance", "register", "get",
+		"describe", "health", "reflection",
 	} {
 		if !names[want] {
 			t.Errorf("tools/list missing %s", want)
@@ -97,7 +97,7 @@ func TestToolsList_HasNine(t *testing.T) {
 	}
 }
 
-// TestReflection covers the ikigenba_ledger_reflection tool: the no-arg index
+// TestReflection covers the reflection tool: the no-arg index
 // (the one published type, empty subscribes — ledger is a producer), the
 // event_type detail (schema + example), and the corrective error for an unknown
 // type.
@@ -105,7 +105,7 @@ func TestReflection(t *testing.T) {
 	h := newHandler(t)
 
 	// No-arg → the index {publishes, subscribes}.
-	idx, isErr := callTool(t, h, "ikigenba_ledger_reflection", `{}`)
+	idx, isErr := callTool(t, h, "reflection", `{}`)
 	if isErr {
 		t.Fatalf("reflection index isError: %v", idx)
 	}
@@ -134,7 +134,7 @@ func TestReflection(t *testing.T) {
 	}
 
 	// event_type → the publish detail (schema + example).
-	detail, isErr := callTool(t, h, "ikigenba_ledger_reflection", `{"event_type":"transaction.recorded"}`)
+	detail, isErr := callTool(t, h, "reflection", `{"event_type":"transaction.recorded"}`)
 	if isErr {
 		t.Fatalf("reflection detail isError: %v", detail)
 	}
@@ -156,7 +156,7 @@ func TestReflection(t *testing.T) {
 	}
 
 	// Unknown event_type → corrective error listing valid types.
-	badErr, isErr := callTool(t, h, "ikigenba_ledger_reflection", `{"event_type":"transaction.nope"}`)
+	badErr, isErr := callTool(t, h, "reflection", `{"event_type":"transaction.nope"}`)
 	if !isErr {
 		t.Fatalf("expected error for unknown event_type, got %v", badErr)
 	}
@@ -172,7 +172,7 @@ func TestReflection(t *testing.T) {
 
 func TestHealth(t *testing.T) {
 	h := newHandler(t)
-	p, isErr := callTool(t, h, "ikigenba_ledger_health", `{}`)
+	p, isErr := callTool(t, h, "health", `{}`)
 	if isErr {
 		t.Fatal("health isError")
 	}
@@ -192,13 +192,13 @@ func TestRecordGetReverseReconcile_EndToEnd(t *testing.T) {
 	h := newHandler(t)
 
 	// describe first (the recommended first call).
-	d, _ := callTool(t, h, "ikigenba_ledger_describe", `{}`)
+	d, _ := callTool(t, h, "describe", `{}`)
 	if roots, _ := d["roots"].([]any); len(roots) != 5 {
 		t.Fatalf("describe roots = %v", d["roots"])
 	}
 
 	// record with an elided residual.
-	rec, isErr := callTool(t, h, "ikigenba_ledger_record", `{
+	rec, isErr := callTool(t, h, "record", `{
 		"date":"2026-06-01","description":"Acme — June hosting",
 		"postings":[
 			{"account":"Assets:Receivable:Acme","amount_cents":5000},
@@ -223,13 +223,13 @@ func TestRecordGetReverseReconcile_EndToEnd(t *testing.T) {
 	bankPosting := postings[0].(map[string]any)["id"].(string)
 
 	// get round-trips.
-	got, _ := callTool(t, h, "ikigenba_ledger_get", `{"id":"`+txnID+`"}`)
+	got, _ := callTool(t, h, "get", `{"id":"`+txnID+`"}`)
 	if got["id"] != txnID {
 		t.Errorf("get id = %v", got["id"])
 	}
 
 	// reconcile the first leg to cleared.
-	rc, isErr := callTool(t, h, "ikigenba_ledger_reconcile", `{"posting_ids":["`+bankPosting+`"],"status":"cleared"}`)
+	rc, isErr := callTool(t, h, "reconcile", `{"posting_ids":["`+bankPosting+`"],"status":"cleared"}`)
 	if isErr {
 		t.Fatalf("reconcile isError: %v", rc)
 	}
@@ -239,19 +239,19 @@ func TestRecordGetReverseReconcile_EndToEnd(t *testing.T) {
 	}
 
 	// balance: whole ledger sums to zero.
-	bal, _ := callTool(t, h, "ikigenba_ledger_balance", `{}`)
+	bal, _ := callTool(t, h, "balance", `{}`)
 	if bal["total"].(float64) != 0 {
 		t.Errorf("whole-ledger total = %v, want 0", bal["total"])
 	}
 
 	// register for the customer.
-	reg, _ := callTool(t, h, "ikigenba_ledger_register", `{"query":"Assets:Receivable:Acme"}`)
+	reg, _ := callTool(t, h, "register", `{"query":"Assets:Receivable:Acme"}`)
 	if lines := reg["lines"].([]any); len(lines) != 1 {
 		t.Errorf("register lines = %v", lines)
 	}
 
 	// reverse the transaction.
-	rev, isErr := callTool(t, h, "ikigenba_ledger_reverse", `{"id":"`+txnID+`"}`)
+	rev, isErr := callTool(t, h, "reverse", `{"id":"`+txnID+`"}`)
 	if isErr {
 		t.Fatalf("reverse isError: %v", rev)
 	}
@@ -259,7 +259,7 @@ func TestRecordGetReverseReconcile_EndToEnd(t *testing.T) {
 		t.Errorf("reverse reverses_id = %v", rev["reverses_id"])
 	}
 	// Double reverse blocked.
-	_, isErr = callTool(t, h, "ikigenba_ledger_reverse", `{"id":"`+txnID+`"}`)
+	_, isErr = callTool(t, h, "reverse", `{"id":"`+txnID+`"}`)
 	if !isErr {
 		t.Error("expected already_reversed error on double reverse")
 	}
@@ -269,31 +269,31 @@ func TestRecord_ErrorsSurfaceAsToolErrors(t *testing.T) {
 	h := newHandler(t)
 
 	// Unknown root → bad_root.
-	p, isErr := callTool(t, h, "ikigenba_ledger_record", `{"date":"2026-06-01","description":"x","postings":[{"account":"Bogus:Acct","amount_cents":1},{"account":"Assets:Bank","amount_cents":-1}]}`)
+	p, isErr := callTool(t, h, "record", `{"date":"2026-06-01","description":"x","postings":[{"account":"Bogus:Acct","amount_cents":1},{"account":"Assets:Bank","amount_cents":-1}]}`)
 	if !isErr || errCode(p) != "bad_root" {
 		t.Errorf("bad root: isErr=%v payload=%v", isErr, p)
 	}
 
 	// Unbalanced explicit postings → unbalanced.
-	p, isErr = callTool(t, h, "ikigenba_ledger_record", `{"date":"2026-06-01","description":"x","postings":[{"account":"Assets:Bank","amount_cents":5000},{"account":"Income:Hosting","amount_cents":-4000}]}`)
+	p, isErr = callTool(t, h, "record", `{"date":"2026-06-01","description":"x","postings":[{"account":"Assets:Bank","amount_cents":5000},{"account":"Income:Hosting","amount_cents":-4000}]}`)
 	if !isErr || errCode(p) != "unbalanced" {
 		t.Errorf("unbalanced: isErr=%v payload=%v", isErr, p)
 	}
 
 	// Fewer than two postings → validation.
-	p, isErr = callTool(t, h, "ikigenba_ledger_record", `{"date":"2026-06-01","description":"x","postings":[{"account":"Assets:Bank","amount_cents":0}]}`)
+	p, isErr = callTool(t, h, "record", `{"date":"2026-06-01","description":"x","postings":[{"account":"Assets:Bank","amount_cents":0}]}`)
 	if !isErr || errCode(p) != "validation" {
 		t.Errorf("one-posting: isErr=%v payload=%v", isErr, p)
 	}
 
 	// Bad date → validation.
-	p, isErr = callTool(t, h, "ikigenba_ledger_record", `{"date":"2026-6-1","description":"x","postings":[{"account":"Assets:Bank","amount_cents":1},{"account":"Income:Hosting","amount_cents":-1}]}`)
+	p, isErr = callTool(t, h, "record", `{"date":"2026-6-1","description":"x","postings":[{"account":"Assets:Bank","amount_cents":1},{"account":"Income:Hosting","amount_cents":-1}]}`)
 	if !isErr || errCode(p) != "validation" {
 		t.Errorf("bad date: isErr=%v payload=%v", isErr, p)
 	}
 
 	// Get of a missing id → not_found.
-	p, isErr = callTool(t, h, "ikigenba_ledger_get", `{"id":"NOPE"}`)
+	p, isErr = callTool(t, h, "get", `{"id":"NOPE"}`)
 	if !isErr || errCode(p) != "not_found" {
 		t.Errorf("not_found: isErr=%v payload=%v", isErr, p)
 	}
@@ -305,12 +305,12 @@ func TestBalance_PeriodBucketAndRange(t *testing.T) {
 	mustRecord(t, h, `{"date":"2026-07-15","description":"july","postings":[{"account":"Expenses:Office","amount_cents":2000},{"account":"Assets:Bank","amount_cents":-2000}]}`)
 
 	// Bucket "2026-06" → only June's 1000.
-	bal, _ := callTool(t, h, "ikigenba_ledger_balance", `{"query":"Expenses","period":"2026-06"}`)
+	bal, _ := callTool(t, h, "balance", `{"query":"Expenses","period":"2026-06"}`)
 	if total := bal["total"].(float64); total != 1000 {
 		t.Errorf("June expenses total = %v, want 1000", total)
 	}
 	// Range covering both months.
-	bal, _ = callTool(t, h, "ikigenba_ledger_balance", `{"query":"Expenses","period":{"from":"2026-06-01","to":"2026-07-31"}}`)
+	bal, _ = callTool(t, h, "balance", `{"query":"Expenses","period":{"from":"2026-06-01","to":"2026-07-31"}}`)
 	if total := bal["total"].(float64); total != 3000 {
 		t.Errorf("range expenses total = %v, want 3000", total)
 	}
@@ -318,7 +318,7 @@ func TestBalance_PeriodBucketAndRange(t *testing.T) {
 
 func mustRecord(t *testing.T, h *Handler, args string) {
 	t.Helper()
-	if _, isErr := callTool(t, h, "ikigenba_ledger_record", args); isErr {
+	if _, isErr := callTool(t, h, "record", args); isErr {
 		t.Fatalf("record failed: %s", args)
 	}
 }

@@ -1,5 +1,5 @@
 // Package mcp implements a minimal MCP transport for the /mcp endpoint and the
-// ikigenba_scripts_* tool surface.
+// * tool surface.
 //
 // The handler routes tools/call to the injected script.Service the same way crm
 // wires internal/contacts. It carries NO token logic.
@@ -71,7 +71,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// connection. The depth lives in the scripts_describe tool, paid
 			// only when an agent actually calls it.
 			"instructions": "Scripts runs Python scripts on your behalf, manually or on an event trigger. " +
-				"If you haven't used scripts before, call ikigenba_scripts_describe first — it explains " +
+				"If you haven't used scripts before, call describe first — it explains " +
 				"what a script is, the create→run→poll→read lifecycle, triggers, and the " +
 				"runtime contract — then use the other tools.",
 		})

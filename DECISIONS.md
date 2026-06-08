@@ -3,6 +3,9 @@
 Captured from the design discussion. These are the agreed decisions; implementation
 has not started.
 
+> *Superseded in part: the `ikigenba_<svc>_<verb>` tool-name prefix introduced here
+> was later dropped in favour of bare verbs — see `docs/adr-mcp-tool-bare-names.md`.*
+
 ## Context
 
 Two related goals, suite-wide across all services (dashboard, crm, ledger, notify,

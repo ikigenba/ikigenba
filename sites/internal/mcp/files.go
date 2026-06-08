@@ -16,7 +16,7 @@ import (
 )
 
 // The five file tools bridge the MCP surface to agentkit's jailed file tools.
-// Each MCP file tool (ikigenba_sites_file_write/file_read/file_edit/file_glob/file_grep) maps to an
+// Each MCP file tool (file_write/file_read/file_edit/file_glob/file_grep) maps to an
 // agentkit canonical tool (Write/Read/Edit/Glob/Grep) executed against a
 // per-site sandbox root = layout.WorkingDir(site). Confinement is NOT
 // reimplemented here: agentkit/tools.Dispatch confines every path argument
@@ -42,7 +42,7 @@ func agentkitSchemas() map[string]json.RawMessage {
 
 // fileToolDescriptor builds an MCP descriptor for one file tool: the agentkit
 // InputSchema for agentName, augmented with a required "site" string property,
-// branded under the verb's ikigenba_sites_ name.
+// branded under the verb's  name.
 func fileToolDescriptor(verb, agentName, description string) map[string]any {
 	schema := withSiteProperty(agentkitSchemas()[agentName])
 	return desc(tool(verb), description, schema)
@@ -166,7 +166,7 @@ func (h *Handler) toolFileList(ctx context.Context, raw json.RawMessage) (map[st
 	return toolResultJSON(map[string]any{"site": a.Site, "files": files})
 }
 
-// toolFileWrite is the NATIVE handler for ikigenba_sites_file_write. Unlike the
+// toolFileWrite is the NATIVE handler for file_write. Unlike the
 // other four file tools, write is not bridged through agentkit: agentkit's Write
 // has no append mode and silently drops unknown fields, so the "append" flag
 // could not survive the bridge. It writes (truncate by default, append when

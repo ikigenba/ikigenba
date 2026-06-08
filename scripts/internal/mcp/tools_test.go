@@ -127,8 +127,8 @@ func isError(res map[string]any) bool {
 	return v
 }
 
-// TestToolsListReturns16 asserts the exact 16-tool surface, every name carrying
-// the ikigenba_scripts_ prefix, with the run-scoped run_fs_* readers present and
+// TestToolsListReturns16 asserts the exact 16-tool surface, every name a bare
+// verb, with the run-scoped run_fs_* readers present and
 // NO bare fs_list / fs_read.
 func TestToolsListReturns16(t *testing.T) {
 	h, _, _ := newTestHandler(t)
@@ -151,31 +151,28 @@ func TestToolsListReturns16(t *testing.T) {
 	got := make([]string, 0, 16)
 	for _, tl := range resp.Result.Tools {
 		got = append(got, tl.Name)
-		if !strings.HasPrefix(tl.Name, "ikigenba_scripts_") {
-			t.Fatalf("tool %q is missing the ikigenba_scripts_ prefix", tl.Name)
-		}
-		if tl.Name == "ikigenba_scripts_fs_list" || tl.Name == "ikigenba_scripts_fs_read" {
+		if tl.Name == "fs_list" || tl.Name == "fs_read" {
 			t.Fatalf("found bare fs reader %q: must be run-scoped run_fs_*", tl.Name)
 		}
 	}
 	sort.Strings(got)
 	want := []string{
-		"ikigenba_scripts_clear_trigger",
-		"ikigenba_scripts_create",
-		"ikigenba_scripts_delete",
-		"ikigenba_scripts_describe",
-		"ikigenba_scripts_get",
-		"ikigenba_scripts_health",
-		"ikigenba_scripts_list",
-		"ikigenba_scripts_run",
-		"ikigenba_scripts_run_cancel",
-		"ikigenba_scripts_run_fs_list",
-		"ikigenba_scripts_run_fs_read",
-		"ikigenba_scripts_run_get",
-		"ikigenba_scripts_run_list",
-		"ikigenba_scripts_run_output",
-		"ikigenba_scripts_set_trigger",
-		"ikigenba_scripts_update",
+		"clear_trigger",
+		"create",
+		"delete",
+		"describe",
+		"get",
+		"health",
+		"list",
+		"run",
+		"run_cancel",
+		"run_fs_list",
+		"run_fs_read",
+		"run_get",
+		"run_list",
+		"run_output",
+		"set_trigger",
+		"update",
 	}
 	for i := range want {
 		if got[i] != want[i] {
@@ -429,7 +426,7 @@ func TestDescribeNonEmpty(t *testing.T) {
 	if len(txt) == 0 {
 		t.Fatal("describe returned empty text")
 	}
-	for _, want := range []string{"script", "ikigenba_scripts_create", "ikigenba_scripts_run"} {
+	for _, want := range []string{"script", "create", "run"} {
 		if !strings.Contains(txt, want) {
 			t.Fatalf("describe missing %q:\n%s", want, txt)
 		}

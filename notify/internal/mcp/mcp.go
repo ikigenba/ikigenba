@@ -1,7 +1,7 @@
 // Package mcp implements a minimal MCP transport for the /mcp endpoint and the
-// ikigenba_notify_* tool surface.
+// notify tool surface.
 //
-// This is the skeleton notify service: the only tool is ikigenba_notify_health,
+// This is the skeleton notify service: the only tool is health,
 // the end-to-end auth proof. Real notify domain tools are added here later, wired
 // to a domain service the same way crm wires internal/contacts.
 //
@@ -46,10 +46,10 @@ type Handler struct {
 }
 
 // NewHandler builds a Handler. version/service/health populate the
-// ikigenba_notify_health envelope; health is the optional per-service reporter
+// health envelope; health is the optional per-service reporter
 // (nil → details is {}). events is the published-event registry (empty for
 // notify, a consumer-only service) and subscriptions the live subscription
-// provider, both rendered by ikigenba_notify_reflection.
+// provider, both rendered by reflection.
 func NewHandler(version, service string,
 	health func(context.Context) (map[string]any, error),
 	events outbox.Registry, subscriptions func() []consumer.Subscription) *Handler {

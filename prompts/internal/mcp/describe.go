@@ -1,9 +1,9 @@
 package mcp
 
-// describeText is the on-demand deep overview returned by the ikigenba_prompts_describe
+// describeText is the on-demand deep overview returned by the describe
 // tool. It is intentionally NOT loaded into the initialize `instructions`
 // field (which every client pays on every connection) — callers load it only
-// when they choose to call ikigenba_prompts_describe, conserving context for callers that
+// when they choose to call describe, conserving context for callers that
 // already know the surface.
 //
 // Source of truth for the concepts below is README.md / ARCHITECTURE.md in this
@@ -35,45 +35,45 @@ ADDRESSING — TWO KEYS
   readable even after the prompt is deleted.
 
 LIFECYCLE
-  1. ikigenba_prompts_create {user_prompt, config} -> {prompt_id}
-  2. ikigenba_prompts_run {prompt_id}              -> {run_id, status:"running", started_at}
-  3. poll ikigenba_prompts_run_get {run_id}        -> watch status until it is
+  1. create {user_prompt, config} -> {prompt_id}
+  2. run {prompt_id}              -> {run_id, status:"running", started_at}
+  3. poll run_get {run_id}        -> watch status until it is
      succeeded | failed | cancelled
-  4. ikigenba_prompts_run_output {run_id}          -> the run's narrated log
-  5. ikigenba_prompts_run_fs_list / ikigenba_prompts_run_fs_read {run_id} -> the files the agent wrote
+  4. run_output {run_id}          -> the run's narrated log
+  5. run_fs_list / run_fs_read {run_id} -> the files the agent wrote
 
 OUTPUT FORMAT
-- ikigenba_prompts_run_output returns a run's log as append-only stream-json:
+- run_output returns a run's log as append-only stream-json:
   one JSON event per line (the agent's turn-by-turn event stream). offset is
   1-based; limit caps lines — tail a long run by advancing offset.
 - The *answer* is usually a file in the run's sandbox (e.g. report.md), not the
-  agent's final message — read it with ikigenba_prompts_run_fs_read.
+  agent's final message — read it with run_fs_read.
 
 TRIGGERS — MULTI-SOURCE
 - A prompt can be wired to event triggers so it runs automatically. Each trigger
   is one (source, event_filter) binding; a prompt may hold several across several
   upstream producers (cron|crm|ledger|dropbox|scripts). Attach with
-  ikigenba_prompts_set_trigger, remove with ikigenba_prompts_clear_trigger, or
-  pass an inline "triggers" array to ikigenba_prompts_create.
+  set_trigger, remove with clear_trigger, or
+  pass an inline "triggers" array to create.
 
 DELETE
-- ikigenba_prompts_delete is a tombstone: it removes the prompt and its triggers
+- delete is a tombstone: it removes the prompt and its triggers
   but leaves its runs and their on-disk artifacts in place — those stay readable
   by run_id via run_get / run_output / run_fs_*.
 
 WORKED EXAMPLE
-  ikigenba_prompts_create {"user_prompt":"Summarize X into report.md",
+  create {"user_prompt":"Summarize X into report.md",
                            "config":{"model":"claude-sonnet-4-6","effort":"low"}}
     -> {"prompt_id":"P"}
-  ikigenba_prompts_run {"prompt_id":"P"}            -> {"run_id":"R","status":"running",...}
-  ikigenba_prompts_run_get {"run_id":"R"}           # repeat until status=="succeeded"
-  ikigenba_prompts_run_fs_list {"run_id":"R"}                    # -> report.md
-  ikigenba_prompts_run_fs_read {"run_id":"R","path":"report.md"}
+  run {"prompt_id":"P"}            -> {"run_id":"R","status":"running",...}
+  run_get {"run_id":"R"}           # repeat until status=="succeeded"
+  run_fs_list {"run_id":"R"}                    # -> report.md
+  run_fs_read {"run_id":"R","path":"report.md"}
 
 CONFIG
   model is required (e.g. claude-sonnet-4-6 / claude-haiku-4-5, or aliases
   opus|sonnet|haiku); optional effort (low|medium|high|xhigh|max, model-
-  dependent), max_tokens, temperature. ikigenba_prompts_health proves the auth chain.`
+  dependent), max_tokens, temperature. health proves the auth chain.`
 
 // toolDescribe returns the on-demand overview. Takes no inputs.
 func toolDescribe() (map[string]any, error) {

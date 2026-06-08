@@ -132,7 +132,7 @@ func payloadText(tr toolResult) string {
 	return tr.Content[0].Text
 }
 
-// TestToolsList asserts tools/list includes ikigenba_notify_reflection alongside
+// TestToolsList asserts tools/list includes reflection alongside
 // the health tool, each with the required descriptor keys.
 func TestToolsList(t *testing.T) {
 	h := newTestHandler()
@@ -159,21 +159,21 @@ func TestToolsList(t *testing.T) {
 			t.Errorf("tool %q inputSchema is not an object schema: %v", tool.Name, tool.InputSchema)
 		}
 	}
-	for _, name := range []string{"ikigenba_notify_health", "ikigenba_notify_reflection"} {
+	for _, name := range []string{"health", "reflection"} {
 		if !got[name] {
 			t.Errorf("missing expected tool %q: %+v", name, result.Tools)
 		}
 	}
 }
 
-// TestToolsCallReflection covers ikigenba_notify_reflection: the no-arg index
+// TestToolsCallReflection covers reflection: the no-arg index
 // shows empty publishes (notify produces nothing) and exactly one subscribes
 // in-edge (crm/contact.created) with no Handler leaked; an event_type arg against
 // the empty registry returns the corrective error with an empty valid list.
 func TestToolsCallReflection(t *testing.T) {
 	h := newTestHandler()
 
-	idx := callOK(t, h, "ikigenba_notify_reflection", map[string]any{})
+	idx := callOK(t, h, "reflection", map[string]any{})
 
 	// notify is a consumer: publishes is present and empty.
 	publishes, ok := idx["publishes"].([]any)
@@ -211,7 +211,7 @@ func TestToolsCallReflection(t *testing.T) {
 
 	// An event_type arg against the empty registry → corrective error with an
 	// empty valid-type list.
-	badErr := callErr(t, h, "ikigenba_notify_reflection", map[string]any{"event_type": "contact.created"})
+	badErr := callErr(t, h, "reflection", map[string]any{"event_type": "contact.created"})
 	if badErr["code"] != "unknown_event_type" {
 		t.Fatalf("expected unknown_event_type code, got %+v", badErr)
 	}

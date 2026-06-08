@@ -5,11 +5,11 @@
 //
 // The uniform chassis — the fixed subcommands (serve/version/manifest/migrate/
 // backup/restore), config-from-env, the migration runner + downgrade guard, the
-// loopback HTTP server + PRM + identity gate (ikigenba_prompts_health), and graceful
+// loopback HTTP server + PRM + identity gate (health), and graceful
 // shutdown — is owned by appkit. main.go declares only prompts' identity (the
 // Spec) and wires its domain surface through the Handlers hook: the prompt
 // store, per-prompt sandbox tree, async runner, the boot-time crash-recovery
-// sweep, and the prompts_* MCP surface. RESOURCE_ID / AUTH_SERVER are composed
+// sweep, and the bare MCP surface. RESOURCE_ID / AUTH_SERVER are composed
 // in-binary by appkit/config from IKIGENBA_DOMAIN + MOUNT (was the deleted
 // bin/build run-wrapper's job).
 //
