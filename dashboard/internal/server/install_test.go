@@ -42,6 +42,10 @@ func TestMcpInstalls(t *testing.T) {
 	if crm.Cards[1].Name != "Codex" {
 		t.Errorf("second card = %q, want Codex", crm.Cards[1].Name)
 	}
+	wantCodexInstall := `\codex mcp add ikigenba_crm --url https://int.ikigenba.com/srv/crm/mcp`
+	if crm.Cards[1].InstallCommand != wantCodexInstall {
+		t.Errorf("Codex install = %q, want %q", crm.Cards[1].InstallCommand, wantCodexInstall)
+	}
 }
 
 // TestIndexConnectBlock: the logged-in index renders the "Connect an MCP client"

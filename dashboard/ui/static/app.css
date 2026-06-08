@@ -85,6 +85,16 @@ button:hover, .signin-link:hover { border-color: var(--accent); }
   margin: 0;
 }
 
+/* The two labeled install one-pasters (Claude Code / Codex) on the landing. */
+.connect-choice {
+  margin-top: 1rem;
+}
+
+.connect-choice h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+}
+
 /* --- Phase 2 components (grants + install) — dormant until their markup lands --- */
 
 .agents-block, .install-block {

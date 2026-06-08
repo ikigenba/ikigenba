@@ -23,7 +23,8 @@ func (a *app) register(mux muxer) {
 	mux.Handle("GET /oauth/google/callback", a.handleCallback())
 	mux.Handle("POST /logout", a.handleLogout())
 	mux.Handle("GET /services", a.handleInventory())
-	mux.Handle("GET /install", a.handleInstall())
+	mux.Handle("GET /install/claude", a.handleInstall(claudeAgent))
+	mux.Handle("GET /install/codex", a.handleInstall(codexAgent))
 	mux.Handle("GET /static/", a.staticHandler())
 
 	// Live-grants block on the logged-in index: session-authenticated (not

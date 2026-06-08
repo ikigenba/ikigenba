@@ -38,8 +38,15 @@
         <p>This box is online. Sign in to manage its services.</p>
         <section class="connect-agent" aria-label="Connect your coding agent">
           <h3>Connect your coding agent</h3>
-          <p>Paste this into your terminal — or into Claude Code — to wire this box's MCP services into your install:</p>
-          <pre class="connect-command"><code>curl -fsSL {{.Scheme}}://{{.Host}}/install | bash</code></pre>
+          <p>Paste the line for your agent into its terminal to wire this box's MCP services into your install:</p>
+          <div class="connect-choice">
+            <h4>Claude Code</h4>
+            <pre class="connect-command"><code>curl -fsSL {{.Scheme}}://{{.Host}}/install/claude | bash</code></pre>
+          </div>
+          <div class="connect-choice">
+            <h4>Codex</h4>
+            <pre class="connect-command"><code>curl -fsSL {{.Scheme}}://{{.Host}}/install/codex | bash</code></pre>
+          </div>
         </section>
       </section>
     {{end}}

@@ -74,7 +74,7 @@ func installCardsFor(name, resource string) []installCard {
 		},
 		{
 			Name:           "Codex",
-			InstallCommand: `\codex mcp add --transport http ` + name + ` ` + resource,
+			InstallCommand: `\codex mcp add ` + name + ` --url ` + resource,
 			RemoveCommand:  `\codex mcp remove ` + name,
 		},
 	}
