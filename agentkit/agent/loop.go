@@ -30,6 +30,42 @@ import (
 // times before surfacing an iteration error.
 const maxStructuredAttempts = 3
 
+// Options carries the optional, behavior-shaping parameters for Run.
+// The zero value reproduces the historical defaults: freeform terminal
+// mode (no schema), an unconfined sandbox, no tracing, and built-in
+// tools only.
+type Options struct {
+	// Schema constrains the terminal result's structured_output. A nil
+	// Schema selects freeform terminal mode (the assistant's raw final
+	// text becomes the result), which is the unchanged default.
+	Schema *schema.Schema
+	// SandboxRoot confines file-touching tool dispatch to a directory
+	// subtree. An empty string leaves dispatch unconfined.
+	SandboxRoot string
+	// Tracer receives trace events for every tool dispatch. A nil
+	// Tracer disables tracing.
+	Tracer *trace.Tracer
+	// Tools supplies a caller-provided source of additional tools. A
+	// nil Tools restricts the run to the built-in tool set. Advertising
+	// and dispatch wiring for this field is intentionally deferred to a
+	// later phase; Run does not consult it.
+	Tools ToolSource
+}
+
+// ToolSource is a caller-provided source of additional tools the agent
+// may advertise and dispatch. It is declared so Options can carry one;
+// Run does not consult it in this phase.
+type ToolSource interface {
+	// Descriptors returns the provider-neutral advertisements for every
+	// tool this source owns.
+	Descriptors() []provider.Tool
+	// Owns reports whether the named tool is dispatched by this source.
+	Owns(name string) bool
+	// Dispatch executes the named tool with the given input and returns
+	// the resulting tool_result block.
+	Dispatch(ctx context.Context, name string, input json.RawMessage) (wire.ToolResultBlock, error)
+}
+
 // Run executes one iteration. It calls client.Stream, emits an
 // assistant event for the turn, and on a non-tool stop reason emits a
 // result event whose structured_output is parsed from the assistant's
@@ -60,7 +96,10 @@ const maxStructuredAttempts = 3
 // accumulated token usage; the terminal result event carries these
 // values in num_turns, duration_ms, total_cost_usd, usage, and
 // modelUsage.
-func Run(ctx context.Context, client provider.Client, sess *wire.Session, req provider.Request, sch *schema.Schema, sandboxRoot string, tracer *trace.Tracer) error {
+func Run(ctx context.Context, client provider.Client, sess *wire.Session, req provider.Request, opts Options) error {
+	sch := opts.Schema
+	sandboxRoot := opts.SandboxRoot
+	tracer := opts.Tracer
 	startTime := time.Now()
 	var lastErr error
 	attempt := 0

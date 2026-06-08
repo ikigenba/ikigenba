@@ -299,7 +299,7 @@ func (j *integrationJob) Run(ctx context.Context) (string, error) {
 	}
 
 	sess := wire.NewSession(&j.stream)
-	if err := agent.Run(ctx, client, sess, req, nil /* freeform */, j.sandboxRoot, nil /* no tracer */); err != nil {
+	if err := agent.Run(ctx, client, sess, req, agent.Options{SandboxRoot: j.sandboxRoot}); err != nil {
 		return captureUsage(j.stream.Bytes()), fmt.Errorf("ingest job: agent run: %w", err)
 	}
 

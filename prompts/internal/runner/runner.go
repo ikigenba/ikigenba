@@ -181,7 +181,7 @@ func (r *Runner) execute(run prompt.Run) {
 	req := buildRequest(cfg, string(userPromptBytes), string(systemPromptBytes), resolved)
 	sandboxRoot := r.sandbox.Root(run.ID)
 
-	runErr := agent.Run(ctx, client, wireSess, req, nil, sandboxRoot, nil)
+	runErr := agent.Run(ctx, client, wireSess, req, agent.Options{SandboxRoot: sandboxRoot})
 
 	// Classify the terminal status: explicit user cancel wins over TTL, TTL
 	// over an engine error, and a clean return is success.

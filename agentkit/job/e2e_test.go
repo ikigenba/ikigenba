@@ -75,7 +75,7 @@ type agentJob struct {
 
 func (j *agentJob) Run(ctx context.Context) (string, error) {
 	sess := wire.NewSession(&j.stream)
-	if err := agent.Run(ctx, j.client, sess, j.req, nil /* freeform */, j.sandboxRoot, nil); err != nil {
+	if err := agent.Run(ctx, j.client, sess, j.req, agent.Options{SandboxRoot: j.sandboxRoot}); err != nil {
 		return "", err
 	}
 	return captureUsage(j.stream.Bytes()), nil

@@ -59,7 +59,7 @@ func TestR_VJBZ_S578_IterationEmitsOneResultMatchingSchema(t *testing.T) {
 	var out bytes.Buffer
 	sess := wire.NewSession(&out)
 
-	if err := Run(context.Background(), client, sess, provider.Request{}, sch, "", nil); err != nil {
+	if err := Run(context.Background(), client, sess, provider.Request{}, Options{Schema: sch}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -180,7 +180,7 @@ func TestR_WFWM_BKWX_AgentRetriesOnValidationFailure(t *testing.T) {
 		var out bytes.Buffer
 		sess := wire.NewSession(&out)
 
-		if err := Run(context.Background(), client, sess, provider.Request{}, sch, "", nil); err != nil {
+		if err := Run(context.Background(), client, sess, provider.Request{}, Options{Schema: sch}); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 		if client.calls != 3 {
@@ -237,7 +237,7 @@ func TestR_WFWM_BKWX_AgentRetriesOnValidationFailure(t *testing.T) {
 		var out bytes.Buffer
 		sess := wire.NewSession(&out)
 
-		if err := Run(context.Background(), client, sess, provider.Request{}, sch, "", nil); err != nil {
+		if err := Run(context.Background(), client, sess, provider.Request{}, Options{Schema: sch}); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 		if client.calls != maxStructuredAttempts {
@@ -345,7 +345,7 @@ func TestR_8293_8LCI_ToolRoundTripDispatchesToolsAndContinues(t *testing.T) {
 
 	var out bytes.Buffer
 	sess := wire.NewSession(&out)
-	if err := Run(context.Background(), client, sess, provider.Request{}, sch, "", nil); err != nil {
+	if err := Run(context.Background(), client, sess, provider.Request{}, Options{Schema: sch}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if client.calls != 2 {
@@ -473,7 +473,7 @@ func TestR_DPI6_73NQ_BashSidecarInUserEvent(t *testing.T) {
 
 	var out bytes.Buffer
 	sess := wire.NewSession(&out)
-	if err := Run(context.Background(), client, sess, provider.Request{}, nil, "", nil); err != nil {
+	if err := Run(context.Background(), client, sess, provider.Request{}, Options{}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -552,7 +552,7 @@ func TestR_YSX3_4AE9_BackendUsagePopulatesResultEvent(t *testing.T) {
 	var out bytes.Buffer
 	sess := wire.NewSession(&out)
 	req := provider.Request{Model: "claude-haiku-4-5"}
-	if err := Run(context.Background(), client, sess, req, sch, "", nil); err != nil {
+	if err := Run(context.Background(), client, sess, req, Options{Schema: sch}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -633,7 +633,7 @@ func TestR_FPG8_RKEP_EmptyThinkingBlocksFilteredFromStdout(t *testing.T) {
 
 		var out bytes.Buffer
 		sess := wire.NewSession(&out)
-		if err := Run(context.Background(), client, sess, provider.Request{}, nil, "", nil); err != nil {
+		if err := Run(context.Background(), client, sess, provider.Request{}, Options{}); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 
@@ -666,7 +666,7 @@ func TestR_FPG8_RKEP_EmptyThinkingBlocksFilteredFromStdout(t *testing.T) {
 
 		var out bytes.Buffer
 		sess := wire.NewSession(&out)
-		if err := Run(context.Background(), client, sess, provider.Request{}, nil, "", nil); err != nil {
+		if err := Run(context.Background(), client, sess, provider.Request{}, Options{}); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 
@@ -735,7 +735,7 @@ func TestR_EW6N_L2M1_OneUserEventPerToolResult(t *testing.T) {
 
 	var out bytes.Buffer
 	sess := wire.NewSession(&out)
-	if err := Run(context.Background(), client, sess, provider.Request{}, nil, "", nil); err != nil {
+	if err := Run(context.Background(), client, sess, provider.Request{}, Options{}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if client.calls != 2 {
@@ -888,7 +888,7 @@ func TestR_XQHM_7TKL_ResponseSchemaForwardedOnEveryStreamCall(t *testing.T) {
 	sess := wire.NewSession(&out)
 	req := provider.Request{ResponseSchema: rawSchema}
 
-	if err := Run(context.Background(), client, sess, req, nil, "", nil); err != nil {
+	if err := Run(context.Background(), client, sess, req, Options{}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if client.calls != 2 {
@@ -916,7 +916,7 @@ func TestFreeformStopEmitsRawText(t *testing.T) {
 
 	var out bytes.Buffer
 	sess := wire.NewSession(&out)
-	if err := Run(context.Background(), client, sess, provider.Request{}, nil, "", nil); err != nil {
+	if err := Run(context.Background(), client, sess, provider.Request{}, Options{}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -960,7 +960,7 @@ func TestFreeformStopAllowsEmptyText(t *testing.T) {
 
 	var out bytes.Buffer
 	sess := wire.NewSession(&out)
-	if err := Run(context.Background(), client, sess, provider.Request{}, nil, "", nil); err != nil {
+	if err := Run(context.Background(), client, sess, provider.Request{}, Options{}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
