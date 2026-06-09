@@ -468,3 +468,91 @@ func TestServiceRunOutputAndFs(t *testing.T) {
 		t.Fatalf("foreign RunFsList: want ErrNotFound, got %v", err)
 	}
 }
+
+// --- Import (Dropbox → scripts) ---
+
+// stubFetcher is a ContentFetcher returning canned bytes/err, so Import is
+// exercised with no live dropbox or network.
+type stubFetcher struct {
+	data []byte
+	err  error
+}
+
+func (f stubFetcher) Fetch(ctx context.Context, path string) ([]byte, error) {
+	return f.data, f.err
+}
+
+// TestImportHappyAndIdempotent: a first import writes a row with the body and a
+// basename-derived name; a second import of the SAME path updates that same row
+// (same script_id, new body) with no duplicate.
+func TestImportHappyAndIdempotent(t *testing.T) {
+	svc, store, _, _ := newTestService(t)
+	ctx := context.Background()
+	svc.Fetcher = stubFetcher{data: []byte("print('v1')\n")}
+
+	sc, err := svc.Import(ctx, ownerA, "/scripts/nightly.py", "")
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if sc.Name != "nightly.py" {
+		t.Fatalf("name not derived from basename: %q", sc.Name)
+	}
+	if sc.Body != "print('v1')\n" {
+		t.Fatalf("body: %q", sc.Body)
+	}
+	if sc.SourcePath != "/scripts/nightly.py" {
+		t.Fatalf("source_path: %q", sc.SourcePath)
+	}
+	if sc.Config.Interpreter != "python3" {
+		t.Fatalf("config not defaulted: %+v", sc.Config)
+	}
+
+	// Re-import the same path with new bytes → same id, updated body, no dup.
+	svc.Fetcher = stubFetcher{data: []byte("print('v2')\n")}
+	sc2, err := svc.Import(ctx, ownerA, "/scripts/nightly.py", "")
+	if err != nil {
+		t.Fatalf("re-Import: %v", err)
+	}
+	if sc2.ID != sc.ID {
+		t.Fatalf("re-import created a new row: %q != %q", sc2.ID, sc.ID)
+	}
+	if sc2.Body != "print('v2')\n" {
+		t.Fatalf("re-import did not update body: %q", sc2.Body)
+	}
+	list, err := store.ListScripts(ctx, ownerA)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("expected exactly one row after re-import: len=%d err=%v", len(list), err)
+	}
+}
+
+// TestImportRejectsNonUTF8 asserts a binary blob is rejected as ErrValidation.
+func TestImportRejectsNonUTF8(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	svc.Fetcher = stubFetcher{data: []byte{0xff, 0xfe, 0x00}}
+	if _, err := svc.Import(context.Background(), ownerA, "/scripts/blob.bin", ""); !errors.Is(err, ErrValidation) {
+		t.Fatalf("non-UTF-8: want ErrValidation, got %v", err)
+	}
+}
+
+// TestImportRejectsTooLarge asserts a body over 1 MiB is rejected as ErrValidation.
+func TestImportRejectsTooLarge(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	big := make([]byte, (1<<20)+1)
+	for i := range big {
+		big[i] = 'a'
+	}
+	svc.Fetcher = stubFetcher{data: big}
+	if _, err := svc.Import(context.Background(), ownerA, "/scripts/huge.py", ""); !errors.Is(err, ErrValidation) {
+		t.Fatalf("too-large: want ErrValidation, got %v", err)
+	}
+}
+
+// TestImportRejectsEmptySourcePath asserts a missing source_path is ErrValidation
+// (before any fetch).
+func TestImportRejectsEmptySourcePath(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	svc.Fetcher = stubFetcher{data: []byte("x")}
+	if _, err := svc.Import(context.Background(), ownerA, "  ", ""); !errors.Is(err, ErrValidation) {
+		t.Fatalf("empty source_path: want ErrValidation, got %v", err)
+	}
+}

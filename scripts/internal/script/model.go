@@ -27,7 +27,12 @@ type Config struct {
 type Script struct {
 	ID, OwnerEmail, Name, Body string
 	Config                     Config
-	CreatedAt, UpdatedAt       string
+	// SourcePath is the originating Dropbox mirror path for an import-managed
+	// script ("" ⇒ SQL NULL, the hand-authored case). Re-importing the same
+	// path upserts the same row (the partial unique index on
+	// (owner_email, source_path) enforces it).
+	SourcePath           string
+	CreatedAt, UpdatedAt string
 }
 
 type Run struct {

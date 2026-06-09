@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"scripts/internal/ids"
 )
@@ -28,6 +30,11 @@ type Service struct {
 	runner  Runner
 	dataDir string // runs dir root: a run's persisted tree is <dataDir>/<run_id>/
 	now     func() time.Time
+	// Fetcher reads bytes from the dropbox mirror over loopback for Import. It is
+	// field-injected at the composition root (cmd/scripts sets svc.Fetcher), not a
+	// NewService parameter, so every existing NewService call site and test stays
+	// untouched. nil unless wired (only Import uses it).
+	Fetcher ContentFetcher
 }
 
 // NewService wires the store, the runs dir root, and the runner.
@@ -96,6 +103,40 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Scr
 		return Script{}, err
 	}
 	return sc, nil
+}
+
+// maxImportBytes caps an imported script body at 1 MiB — a source file above
+// that is almost certainly a mistake (ADR "Asserted defaults").
+const maxImportBytes = 1 << 20
+
+// Import adopts a Dropbox-mirrored file as a script. It fetches the current
+// mirror bytes over loopback, requires valid UTF-8 text under 1 MiB (a binary
+// blob is not Python source), derives the name from the path when none is given,
+// and upserts on (owner, source_path): re-importing the same path updates the
+// same script instead of creating a duplicate. Direction is strictly
+// Dropbox → scripts; nothing writes back. See docs/adr-dropbox-import-sync.md.
+func (s *Service) Import(ctx context.Context, owner, sourcePath, name string) (Script, error) {
+	if strings.TrimSpace(sourcePath) == "" {
+		return Script{}, fmt.Errorf("%w: source_path is required", ErrValidation)
+	}
+	data, err := s.Fetcher.Fetch(ctx, sourcePath)
+	if err != nil {
+		return Script{}, err
+	}
+	if !utf8.Valid(data) {
+		return Script{}, fmt.Errorf("%w: %q is not valid UTF-8 text (a script body must be text)", ErrValidation, sourcePath)
+	}
+	if len(data) > maxImportBytes {
+		return Script{}, fmt.Errorf("%w: %q is %d bytes, over the 1 MiB import limit", ErrValidation, sourcePath, len(data))
+	}
+	if name == "" {
+		name = path.Base(sourcePath)
+	}
+	// Default the config exactly as Create does — an imported script must be
+	// runnable. Config is left as-is on re-import (the upsert refreshes body+name
+	// only), so this default only takes effect on the first import.
+	cfg := Config{Interpreter: "python3"}
+	return s.store.UpsertScriptBySource(ctx, owner, sourcePath, name, string(data), cfg, s.nowStr())
 }
 
 // Update applies the optional Name/Body/Config pointers (nil = leave as-is) and

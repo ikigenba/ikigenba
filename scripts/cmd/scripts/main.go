@@ -192,6 +192,12 @@ func registerRoutes(rt *appkit.Router) error {
 	store := script.NewStore(conn)
 	run := runner.New(store, dataDir, runTTL)
 	svc := script.NewService(store, runsDir, run)
+	// Wire the dropbox loopback client for the import verb. DROPBOX_BASE_URL is
+	// env-only (the loopback-URL-via-env shape notify uses for *_FEED_URL); the
+	// default works for the standard on-box loopback layout. Field-injected after
+	// NewService so existing construction stays untouched.
+	dropboxBase := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", "http://127.0.0.1:3005")
+	svc.Fetcher = script.NewHTTPFetcher(dropboxBase)
 	// Capture the service for the consumer Workers and the store for the Producer
 	// hook (both run after Handlers; the Producer injects the outbox onto store).
 	svcRef = svc

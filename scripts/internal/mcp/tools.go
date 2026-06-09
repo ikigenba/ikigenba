@@ -35,6 +35,11 @@ func toolDescriptors() []map[string]any {
 			"config": configSchema(),
 		}, "name", "body")),
 
+		desc(tool("import"), "Import a Dropbox-mirrored file as a script. 'source_path' is the file's path in the dropbox mirror (e.g. \"/scripts/nightly.py\"). Fetches the current mirror bytes over loopback, requires valid UTF-8 text under 1 MiB, and upserts on source_path: re-importing the same path updates the same script instead of creating a duplicate. 'name' defaults to the file's basename. Returns {script_id, name}.", obj(map[string]any{
+			"source_path": typ("string"),
+			"name":        typ("string"),
+		}, "source_path")),
+
 		desc(tool("list"), "List the caller's scripts, each with its derived running_count and last_run.", obj(map[string]any{})),
 
 		desc(tool("get"), "Get one of the caller's scripts, including running_count and last_run.", obj(map[string]any{
@@ -209,6 +214,20 @@ func (h *Handler) dispatchTool(ctx context.Context, name string, id Identity, ar
 			return nil, err
 		}
 		return toolResultJSON(map[string]any{"script_id": sc.ID})
+
+	case tool("import"):
+		var in struct {
+			SourcePath string `json:"source_path"`
+			Name       string `json:"name"`
+		}
+		if err := parseArgs(args, &in); err != nil {
+			return nil, err
+		}
+		sc, err := svc.Import(ctx, owner, in.SourcePath, in.Name)
+		if err != nil {
+			return nil, err
+		}
+		return toolResultJSON(map[string]any{"script_id": sc.ID, "name": sc.Name})
 
 	case tool("list"):
 		scripts, err := svc.List(ctx, owner)

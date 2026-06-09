@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -72,6 +73,58 @@ func newTestHandler(t *testing.T) (*Handler, *fakeRunner, string) {
 	return NewHandler(svc, "1.2.3", "scripts", nil), fr, runsDir
 }
 
+// fakeFetcher is a script.ContentFetcher returning canned bytes, so the import
+// dispatch is exercised with no live dropbox / network.
+type fakeFetcher struct {
+	data []byte
+	err  error
+}
+
+func (f fakeFetcher) Fetch(ctx context.Context, path string) ([]byte, error) {
+	return f.data, f.err
+}
+
+// newTestHandlerWithFetcher wires a handler whose Service has its Fetcher set to
+// the given fake, for the import verb dispatch test.
+func newTestHandlerWithFetcher(t *testing.T, f script.ContentFetcher) *Handler {
+	t.Helper()
+	ctx := t.Context()
+	conn, err := db.Open(filepath.Join(t.TempDir(), "scripts.db"))
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	if err := db.Migrate(ctx, conn); err != nil {
+		t.Fatalf("db.Migrate: %v", err)
+	}
+	svc := script.NewService(script.NewStore(conn), t.TempDir(), &fakeRunner{})
+	svc.Fetcher = f
+	return NewHandler(svc, "1.2.3", "scripts", nil)
+}
+
+// TestImportDispatch asserts the import verb routes to the service and returns
+// {script_id, name}, deriving the name from the source path basename.
+func TestImportDispatch(t *testing.T) {
+	h := newTestHandlerWithFetcher(t, fakeFetcher{data: []byte("print('hi')\n")})
+	res := call(t, h, tool("import"), map[string]any{"source_path": "/scripts/nightly.py"})
+	if isError(res) {
+		t.Fatalf("import returned isError: %+v", res)
+	}
+	var out struct {
+		ScriptID string `json:"script_id"`
+		Name     string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, res)), &out); err != nil {
+		t.Fatalf("decode import: %v", err)
+	}
+	if out.ScriptID == "" {
+		t.Fatalf("import: empty script_id")
+	}
+	if out.Name != "nightly.py" {
+		t.Fatalf("import: name not derived from basename: %q", out.Name)
+	}
+}
+
 // call drives one tools/call over ServeHTTP and returns the decoded result.
 func call(t *testing.T, h *Handler, tool string, args map[string]any) map[string]any {
 	t.Helper()
@@ -127,10 +180,10 @@ func isError(res map[string]any) bool {
 	return v
 }
 
-// TestToolsListReturns16 asserts the exact 16-tool surface, every name a bare
+// TestToolsListReturns17 asserts the exact 17-tool surface, every name a bare
 // verb, with the run-scoped run_fs_* readers present and
 // NO bare fs_list / fs_read.
-func TestToolsListReturns16(t *testing.T) {
+func TestToolsListReturns17(t *testing.T) {
 	h, _, _ := newTestHandler(t)
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	rr := do(t, h, body)
@@ -145,10 +198,10 @@ func TestToolsListReturns16(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(resp.Result.Tools) != 16 {
-		t.Fatalf("want 16 tools, got %d", len(resp.Result.Tools))
+	if len(resp.Result.Tools) != 17 {
+		t.Fatalf("want 17 tools, got %d", len(resp.Result.Tools))
 	}
-	got := make([]string, 0, 16)
+	got := make([]string, 0, 17)
 	for _, tl := range resp.Result.Tools {
 		got = append(got, tl.Name)
 		if tl.Name == "fs_list" || tl.Name == "fs_read" {
@@ -163,6 +216,7 @@ func TestToolsListReturns16(t *testing.T) {
 		"describe",
 		"get",
 		"health",
+		"import",
 		"list",
 		"run",
 		"run_cancel",

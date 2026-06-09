@@ -128,6 +128,59 @@ func TestScriptCRUDAndOwnerScope(t *testing.T) {
 	}
 }
 
+// TestSourcePathRoundTrip asserts an import-managed script's source_path
+// survives insert→get→list, and that UpdateScript does NOT clobber it (a
+// hand-edit via the normal update tool must leave the import binding intact).
+func TestSourcePathRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := nowStr()
+	sc := Script{
+		ID:         ids.NewULID(),
+		OwnerEmail: ownerA,
+		Name:       "nightly",
+		Body:       "print('hi')",
+		Config:     Config{Interpreter: "python3"},
+		SourcePath: "/scripts/nightly.py",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	if err := s.InsertScript(ctx, sc); err != nil {
+		t.Fatalf("InsertScript: %v", err)
+	}
+	got, err := s.GetScript(ctx, ownerA, sc.ID)
+	if err != nil {
+		t.Fatalf("GetScript: %v", err)
+	}
+	if got.SourcePath != "/scripts/nightly.py" {
+		t.Fatalf("source_path round-trip: got %q", got.SourcePath)
+	}
+	list, err := s.ListScripts(ctx, ownerA)
+	if err != nil || len(list) != 1 || list[0].SourcePath != "/scripts/nightly.py" {
+		t.Fatalf("ListScripts source_path: %+v err=%v", list, err)
+	}
+
+	// UpdateScript leaves source_path untouched even though Script carries "".
+	upd := got
+	upd.SourcePath = ""
+	upd.Body = "print('bye')"
+	upd.UpdatedAt = nowStr()
+	if err := s.UpdateScript(ctx, ownerA, upd); err != nil {
+		t.Fatalf("UpdateScript: %v", err)
+	}
+	got, _ = s.GetScript(ctx, ownerA, sc.ID)
+	if got.SourcePath != "/scripts/nightly.py" {
+		t.Fatalf("UpdateScript clobbered source_path: got %q", got.SourcePath)
+	}
+
+	// A hand-authored script (NULL source_path) reads back as "".
+	hand := seedScript(t, s, ownerB)
+	got, _ = s.GetScript(ctx, ownerB, hand.ID)
+	if got.SourcePath != "" {
+		t.Fatalf("hand-authored source_path: want \"\", got %q", got.SourcePath)
+	}
+}
+
 func TestScriptForRunUnscoped(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

@@ -8,6 +8,8 @@ import (
 	"fmt"
 
 	"eventplane/outbox"
+
+	"scripts/internal/ids"
 )
 
 // Store is the SQLite persistence for scripts, runs, and triggers. All reads
@@ -54,9 +56,9 @@ func (s *Store) InsertScript(ctx context.Context, sc Script) error {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO scripts (id, owner_email, name, body, config_json, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		sc.ID, sc.OwnerEmail, nullStr(sc.Name), sc.Body, cfg, sc.CreatedAt, sc.UpdatedAt,
+		`INSERT INTO scripts (id, owner_email, name, body, config_json, source_path, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		sc.ID, sc.OwnerEmail, nullStr(sc.Name), sc.Body, cfg, nullStr(sc.SourcePath), sc.CreatedAt, sc.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("script: insert: %w", err)
@@ -64,9 +66,40 @@ func (s *Store) InsertScript(ctx context.Context, sc Script) error {
 	return nil
 }
 
+// UpsertScriptBySource inserts an import-managed script or, when one already
+// exists for (owner_email, source_path), updates it in place — refreshing
+// name/body/updated_at only and leaving config_json as-is (a re-import is a
+// content pull, not a config change). The partial unique index
+// idx_scripts_source backs the ON CONFLICT target, making idempotency a schema
+// invariant rather than a convention. Returns the resolved script (its id is the
+// freshly-generated ULID on insert, or the existing row's id on update via
+// RETURNING). config is the value used only on the INSERT arm.
+func (s *Store) UpsertScriptBySource(ctx context.Context, owner, sourcePath, name, body string, config Config, now string) (Script, error) {
+	cfg, err := marshalConfig(config)
+	if err != nil {
+		return Script{}, err
+	}
+	id := ids.NewULID()
+	var resolvedID string
+	err = s.db.QueryRowContext(ctx,
+		`INSERT INTO scripts (id, owner_email, name, body, config_json, source_path, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(owner_email, source_path) WHERE source_path IS NOT NULL DO UPDATE SET
+		     name = excluded.name, body = excluded.body, updated_at = excluded.updated_at
+		 RETURNING id`,
+		id, owner, nullStr(name), body, cfg, sourcePath, now, now,
+	).Scan(&resolvedID)
+	if err != nil {
+		return Script{}, fmt.Errorf("script: upsert by source: %w", err)
+	}
+	// Read the resolved row back so the caller (and its result) reflects exactly
+	// what landed (config is the pre-existing one on an update).
+	return s.GetScript(ctx, owner, resolvedID)
+}
+
 func (s *Store) GetScript(ctx context.Context, owner, id string) (Script, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, owner_email, name, body, config_json, created_at, updated_at
+		`SELECT id, owner_email, name, body, config_json, source_path, created_at, updated_at
 		   FROM scripts WHERE id = ? AND owner_email = ?`,
 		id, owner,
 	)
@@ -80,7 +113,7 @@ func (s *Store) GetScript(ctx context.Context, owner, id string) (Script, error)
 // run as failed).
 func (s *Store) ScriptForRun(ctx context.Context, scriptID string) (Script, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, owner_email, name, body, config_json, created_at, updated_at
+		`SELECT id, owner_email, name, body, config_json, source_path, created_at, updated_at
 		   FROM scripts WHERE id = ?`,
 		scriptID,
 	)
@@ -159,7 +192,7 @@ func (s *Store) DeleteScript(ctx context.Context, owner, id string) error {
 
 func (s *Store) ListScripts(ctx context.Context, owner string) ([]Script, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, owner_email, name, body, config_json, created_at, updated_at
+		`SELECT id, owner_email, name, body, config_json, source_path, created_at, updated_at
 		   FROM scripts WHERE owner_email = ? ORDER BY created_at DESC, id DESC`,
 		owner,
 	)
@@ -496,9 +529,10 @@ func scanScript(sc scanner) (Script, error) {
 		out     Script
 		name    sql.NullString
 		cfgJSON string
+		srcPath sql.NullString
 	)
 	err := sc.Scan(
-		&out.ID, &out.OwnerEmail, &name, &out.Body, &cfgJSON, &out.CreatedAt, &out.UpdatedAt,
+		&out.ID, &out.OwnerEmail, &name, &out.Body, &cfgJSON, &srcPath, &out.CreatedAt, &out.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Script{}, ErrNotFound
@@ -507,6 +541,7 @@ func scanScript(sc scanner) (Script, error) {
 		return Script{}, fmt.Errorf("script: scan: %w", err)
 	}
 	out.Name = name.String
+	out.SourcePath = srcPath.String
 	cfg, err := unmarshalConfig(cfgJSON)
 	if err != nil {
 		return Script{}, err
