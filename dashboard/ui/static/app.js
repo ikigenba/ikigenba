@@ -24,35 +24,3 @@
     }
   });
 })();
-
-// "Connect an MCP client" block: the dropdown selects which service the install
-// snippets target. We render one .mcp-instructions card-set per service into the
-// DOM (all but the first hidden) and toggle visibility here — no round-trip.
-(() => {
-  const select = document.getElementById("mcp-select");
-  if (!select) return;
-  const sets = document.querySelectorAll(".mcp-instructions");
-  select.addEventListener("change", () => {
-    for (const set of sets) set.hidden = set.dataset.mcp !== select.value;
-  });
-})();
-
-// Copy buttons on the install snippets: copy the preceding <pre> snippet to the
-// clipboard and flash "Copied". The install block is static (not re-rendered by
-// the grants SSE), so binding once at load is sufficient.
-(() => {
-  for (const btn of document.querySelectorAll(".copy-btn")) {
-    btn.addEventListener("click", async () => {
-      const snippet = btn.previousElementSibling;
-      if (!snippet) return;
-      try {
-        await navigator.clipboard.writeText(snippet.innerText);
-        const label = btn.textContent;
-        btn.textContent = "Copied";
-        setTimeout(() => { btn.textContent = label; }, 1200);
-      } catch (_) {
-        // Clipboard denied/unavailable — leave the button label unchanged.
-      }
-    });
-  }
-})();

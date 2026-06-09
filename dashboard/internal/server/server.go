@@ -160,8 +160,6 @@ func newApp(opts Options) (*app, error) {
 	tmpl, err := template.ParseFS(ui.Files,
 		"html/index.html",
 		"html/partials/grants_block.tmpl",
-		"html/partials/install_block.tmpl",
-		"html/partials/install_card.tmpl",
 		"html/partials/pat_block.tmpl",
 		"html/partials/pat_created.tmpl",
 	)

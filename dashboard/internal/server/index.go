@@ -20,7 +20,7 @@ type indexData struct {
 	Owner    string
 	Grants   []grantRow
 	PATs     []patRow
-	Installs []mcpInstall
+	Services []serviceRow
 }
 
 // handleIndex renders the index template. It is identity-aware: a valid
@@ -67,13 +67,14 @@ func (a *app) handleIndex() http.HandlerFunc {
 				data.PATs = patRowsFromPATs(pats)
 			}
 
-			// The "Connect an MCP client" block: per-service install snippets the
-			// owner picks between with a dropdown. Non-fatal like the grants list —
-			// a manifest read failure drops the block, never 500s the page.
+			// The LIST table: the box's MCP services as name/url rows, the raw
+			// reference for manual entry into any other MCP client. Non-fatal like
+			// the grants list — a manifest read failure drops the table, never 500s
+			// the page.
 			if svcs, err := inventory.Read(a.manifestRoot); err != nil {
 				a.logger.Error("index.read_inventory", "err", err)
 			} else {
-				data.Installs = mcpInstalls(requestScheme(r), r.Host, svcs)
+				data.Services = serviceRows(requestScheme(r), r.Host, svcs)
 			}
 		}
 

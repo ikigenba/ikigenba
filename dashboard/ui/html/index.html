@@ -25,13 +25,6 @@
   <main class="content-block">
     {{if .Owner}}
       <p>Signed in to the dashboard for <strong>{{.Host}}</strong>.</p>
-      <section class="grants">
-        <h2>Connected MCP clients</h2>
-        <div id="grants-block" data-stream="/grants/stream" data-fragment="/grants/fragment">
-          {{template "grants_block" .Grants}}
-        </div>
-      </section>
-      {{template "install_block" .Installs}}
       <section class="pats">
         <h2>Personal access tokens</h2>
         <p class="pats-intro">Mint a long-lived token to connect an agent without the browser sign-in flow. One token reaches every service you can. The secret is shown once at creation.</p>
@@ -41,22 +34,44 @@
         </form>
         {{template "pat_block" .PATs}}
       </section>
+      <section class="grants">
+        <h2>Connected MCP clients</h2>
+        <div id="grants-block" data-stream="/grants/stream" data-fragment="/grants/fragment">
+          {{template "grants_block" .Grants}}
+        </div>
+      </section>
+      <section class="connect-agent" aria-label="Connect your coding agent">
+        <h2>Connect your coding agent</h2>
+        <p>Paste the line for your agent into its terminal to wire this box's MCP services into your install:</p>
+        <div class="connect-choice">
+          <h4>Claude Code</h4>
+          <pre class="connect-command"><code>curl -fsSL {{.Scheme}}://{{.Host}}/install/claude | bash</code></pre>
+        </div>
+        <div class="connect-choice">
+          <h4>Codex</h4>
+          <pre class="connect-command"><code>curl -fsSL {{.Scheme}}://{{.Host}}/install/codex | bash</code></pre>
+        </div>
+      </section>
+      {{if .Services}}
+      <section class="services" aria-label="MCP services">
+        <h2>All MCP services</h2>
+        <p>The raw reference — name and URL for manually wiring each service into any other MCP client:</p>
+        <table class="services-table">
+          <thead>
+            <tr><th>name</th><th>url</th></tr>
+          </thead>
+          <tbody>
+            {{range .Services}}
+            <tr><td>{{.Name}}</td><td>{{.URL}}</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </section>
+      {{end}}
     {{else}}
       <section class="landing">
         <h2>{{.Host}}</h2>
         <p>This box is online. Sign in to manage its services.</p>
-        <section class="connect-agent" aria-label="Connect your coding agent">
-          <h3>Connect your coding agent</h3>
-          <p>Paste the line for your agent into its terminal to wire this box's MCP services into your install:</p>
-          <div class="connect-choice">
-            <h4>Claude Code</h4>
-            <pre class="connect-command"><code>curl -fsSL {{.Scheme}}://{{.Host}}/install/claude | bash</code></pre>
-          </div>
-          <div class="connect-choice">
-            <h4>Codex</h4>
-            <pre class="connect-command"><code>curl -fsSL {{.Scheme}}://{{.Host}}/install/codex | bash</code></pre>
-          </div>
-        </section>
       </section>
     {{end}}
   </main>

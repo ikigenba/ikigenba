@@ -39,9 +39,13 @@ func TestInstallScript(t *testing.T) {
 		"#!/usr/bin/env bash",
 		"set -euo pipefail",
 		"claude mcp remove --scope user ikigenba_crm >/dev/null 2>&1 || true",
-		"claude mcp add --scope user --transport http ikigenba_crm https://int.ikigenba.com/srv/crm/mcp",
+		"claude mcp add --scope user --transport http ikigenba_crm https://int.ikigenba.com/srv/crm/mcp --header 'Authorization: Bearer ${IKIGENBA_TOKEN}'",
 		"claude mcp remove --scope user ikigenba_ledger >/dev/null 2>&1 || true",
-		"claude mcp add --scope user --transport http ikigenba_ledger https://int.ikigenba.com/srv/ledger/mcp",
+		"claude mcp add --scope user --transport http ikigenba_ledger https://int.ikigenba.com/srv/ledger/mcp --header 'Authorization: Bearer ${IKIGENBA_TOKEN}'",
+		// Missing-token guard (progressive-discovery moment).
+		`if [ -z "${IKIGENBA_TOKEN:-}" ]; then`,
+		"exit 1",
+		`export IKIGENBA_TOKEN=`,
 	}
 	for _, want := range wantLines {
 		if !strings.Contains(body, want) {
@@ -87,10 +91,14 @@ func TestInstallScriptCodex(t *testing.T) {
 		"#!/usr/bin/env bash",
 		"set -euo pipefail",
 		"codex mcp remove ikigenba_crm >/dev/null 2>&1 || true",
-		"codex mcp add ikigenba_crm --url https://int.ikigenba.com/srv/crm/mcp",
+		"codex mcp add ikigenba_crm --url https://int.ikigenba.com/srv/crm/mcp --bearer-token-env-var IKIGENBA_TOKEN",
 		"codex mcp remove ikigenba_ledger >/dev/null 2>&1 || true",
-		"codex mcp add ikigenba_ledger --url https://int.ikigenba.com/srv/ledger/mcp",
+		"codex mcp add ikigenba_ledger --url https://int.ikigenba.com/srv/ledger/mcp --bearer-token-env-var IKIGENBA_TOKEN",
 		"Restart Codex",
+		// Missing-token guard (progressive-discovery moment).
+		`if [ -z "${IKIGENBA_TOKEN:-}" ]; then`,
+		"exit 1",
+		`export IKIGENBA_TOKEN=`,
 	}
 	for _, want := range wantLines {
 		if !strings.Contains(body, want) {

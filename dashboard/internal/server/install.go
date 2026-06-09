@@ -1,35 +1,16 @@
 package server
 
-// This file builds the "Connect an MCP client" view shown on the logged-in
-// index: for each MCP-exposing service on the box (from the inventory manifests)
-// a set of per-client install/remove snippets. The index page picks which
-// service the snippets target via a dropdown; the snippet markup itself is the
-// crm reference's install_card, unchanged.
+// This file builds the name/url service rows for the LIST table shown at the
+// bottom of the logged-in index: the raw reference (local MCP name + resource
+// URL) for manually wiring this box's MCP services into any MCP client. The
+// scheme/host helpers it carries are shared with install_script.go so the
+// served one-paste install scripts and the table can't drift.
 
 import (
 	"net/http"
 
 	"appkit/inventory"
 )
-
-// installCard is one client's install/removal command pair (e.g. Claude Code),
-// rendered by the install_card partial. The command strings are NOT pre-escaped;
-// the template renders them through html/template's contextual auto-escaping.
-type installCard struct {
-	Name           string
-	InstallCommand string
-	RemoveCommand  string
-}
-
-// mcpInstall is one MCP service the dropdown can target: a stable ID (the
-// service name, used as the <option> value and the card-set's data-mcp key), a
-// display Name, and the per-client cards whose commands point at this service's
-// resource URL.
-type mcpInstall struct {
-	ID    string
-	Name  string
-	Cards []installCard
-}
 
 // requestScheme resolves the external scheme for a request behind nginx: the
 // front door terminates TLS and forwards X-Forwarded-Proto, so trust it and
@@ -60,36 +41,23 @@ func mcpLocalName(svc string) string {
 	return "ikigenba_" + svc
 }
 
-// installCardsFor returns the per-client connect snippets for one service. name
-// is the local MCP registration handle (mcpLocalName: "ikigenba_<svc>"); resource
-// is its MCP endpoint URL. The leading backslash on each command bypasses any
-// shell alias named claude/codex so the real binary runs — kept from the crm
-// reference verbatim.
-func installCardsFor(name, resource string) []installCard {
-	return []installCard{
-		{
-			Name:           "Claude Code",
-			InstallCommand: `\claude mcp add --transport http ` + name + ` ` + resource,
-			RemoveCommand:  `\claude mcp remove ` + name,
-		},
-		{
-			Name:           "Codex",
-			InstallCommand: `\codex mcp add ` + name + ` --url ` + resource,
-			RemoveCommand:  `\codex mcp remove ` + name,
-		},
-	}
+// serviceRow is one row in the index's LIST table: the local MCP registration
+// handle (Name) and the service's resource URL (URL).
+type serviceRow struct {
+	Name string
+	URL  string
 }
 
-// mcpInstalls turns the box's MCP-exposing services into the index's connect
-// view: one mcpInstall per service, ordered as inventory returns them (by name).
-func mcpInstalls(scheme, host string, svcs []inventory.Service) []mcpInstall {
-	out := make([]mcpInstall, 0, len(svcs))
+// serviceRows turns the box's MCP-exposing services into the index LIST table:
+// one row per service, ordered as inventory returns them (by name). Name is the
+// local registration handle (mcpLocalName: "ikigenba_<svc>"); URL is the
+// self-templated MCP resource URL (mcpResourceURL).
+func serviceRows(scheme, host string, svcs []inventory.Service) []serviceRow {
+	out := make([]serviceRow, 0, len(svcs))
 	for _, s := range svcs {
-		resource := mcpResourceURL(scheme, host, s.Mount)
-		out = append(out, mcpInstall{
-			ID:    s.Name,
-			Name:  s.Name,
-			Cards: installCardsFor(mcpLocalName(s.Name), resource),
+		out = append(out, serviceRow{
+			Name: mcpLocalName(s.Name),
+			URL:  mcpResourceURL(scheme, host, s.Mount),
 		})
 	}
 	return out
