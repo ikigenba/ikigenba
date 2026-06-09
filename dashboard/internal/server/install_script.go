@@ -44,12 +44,15 @@ var codexAgent = agent{
 
 // installScript builds the bash script served at GET /install/<agent> — the
 // target of the landing page's `curl -fsSL https://<host>/install/<agent> | bash`
-// one-paste. For every MCP-exposing service on the box it emits a remove-then-add
-// pair (at user scope for the agents that have one), self-templated to the
-// caller's host, using the command shapes the chosen agent descriptor supplies.
-// The remove (`|| true`) makes a re-run authoritative even though `mcp add` alone
-// errors on a duplicate name; `set -euo pipefail` still aborts loudly on a real
-// failure (missing CLI, network).
+// one-paste. It opens with an `Installing N MCP` banner, then for every
+// MCP-exposing service on the box it emits a remove-then-add pair (at user scope
+// for the agents that have one), self-templated to the caller's host, using the
+// command shapes the chosen agent descriptor supplies. Each `mcp add` is wrapped
+// in an `if` that swallows its output and prints a single 🟢/🔴 status line, and
+// a final `N of N successfully installed.` summarises the run. The remove
+// (`|| true`) makes a re-run authoritative even though `mcp add` alone errors on
+// a duplicate name; the `if` around the add means a failed add reports 🔴 and the
+// run continues rather than aborting under `set -e`.
 //
 // The script is bash with strict mode (`set -euo pipefail`) and is still
 // strict-mode safe. It references one shell variable — the bearer token env var
@@ -57,10 +60,10 @@ var codexAgent = agent{
 // `-u`-safe `${IKIGENBA_TOKEN:-}` default-empty form, and the agent `mcp add`
 // lines pass the `${IKIGENBA_TOKEN}` reference single-quoted so bash does not
 // expand it (the agent expands it at runtime — nothing secret is written into
-// the script or the agent config). The only tolerated failure (the `mcp remove`)
-// is guarded by an explicit `|| true` rather than relying on lenient pipe
-// behavior. The landing page already runs it via `| bash`, so bash (not POSIX
-// sh) is the correct interpreter for `pipefail`.
+// the script or the agent config). The tolerated failures (the `mcp remove`, a
+// failing `mcp add`) are caught explicitly (`|| true`, the `if`) rather than
+// relying on lenient pipe behavior. The landing page already runs it via
+// `| bash`, so bash (not POSIX sh) is the correct interpreter for `pipefail`.
 func installScript(ag agent, scheme, host string, svcs []inventory.Service) string {
 	var b strings.Builder
 	b.WriteString("#!/usr/bin/env bash\n")
@@ -78,12 +81,21 @@ func installScript(ag agent, scheme, host string, svcs []inventory.Service) stri
 	b.WriteString("  echo \"  3. Open a new terminal (or: source ~/.bashrc), then re-run this installer.\" >&2\n")
 	b.WriteString("  exit 1\n")
 	b.WriteString("fi\n\n")
+
+	fmt.Fprintf(&b, "echo \"Installing %d MCP\"\n\n", len(svcs))
+	b.WriteString("ok=0\n")
 	for _, s := range svcs {
 		resource := mcpResourceURL(scheme, host, s.Mount)
 		name := mcpLocalName(s.Name)
 		b.WriteString(ag.removeLine(name) + "\n")
-		b.WriteString(ag.addLine(name, resource) + "\n\n")
+		b.WriteString("if " + ag.addLine(name, resource) + " >/dev/null 2>&1; then\n")
+		fmt.Fprintf(&b, "  echo \"🟢 %s\"\n", name)
+		b.WriteString("  ok=$((ok + 1))\n")
+		b.WriteString("else\n")
+		fmt.Fprintf(&b, "  echo \"🔴 %s\"\n", name)
+		b.WriteString("fi\n\n")
 	}
+	fmt.Fprintf(&b, "echo \"${ok} of %d successfully installed.\"\n", len(svcs))
 	fmt.Fprintf(&b, "echo \"Done. Restart %s for the new MCP servers to load.\"\n", ag.label)
 	return b.String()
 }

@@ -38,10 +38,14 @@ func TestInstallScript(t *testing.T) {
 	wantLines := []string{
 		"#!/usr/bin/env bash",
 		"set -euo pipefail",
+		"echo \"Installing 2 MCP\"",
 		"claude mcp remove --scope user ikigenba_crm >/dev/null 2>&1 || true",
-		"claude mcp add --scope user --transport http ikigenba_crm https://int.ikigenba.com/srv/crm/mcp --header 'Authorization: Bearer ${IKIGENBA_TOKEN}'",
+		"if claude mcp add --scope user --transport http ikigenba_crm https://int.ikigenba.com/srv/crm/mcp --header 'Authorization: Bearer ${IKIGENBA_TOKEN}' >/dev/null 2>&1; then",
+		"echo \"🟢 ikigenba_crm\"",
+		"echo \"🔴 ikigenba_crm\"",
 		"claude mcp remove --scope user ikigenba_ledger >/dev/null 2>&1 || true",
-		"claude mcp add --scope user --transport http ikigenba_ledger https://int.ikigenba.com/srv/ledger/mcp --header 'Authorization: Bearer ${IKIGENBA_TOKEN}'",
+		"if claude mcp add --scope user --transport http ikigenba_ledger https://int.ikigenba.com/srv/ledger/mcp --header 'Authorization: Bearer ${IKIGENBA_TOKEN}' >/dev/null 2>&1; then",
+		"echo \"${ok} of 2 successfully installed.\"",
 		// Missing-token guard (progressive-discovery moment).
 		`if [ -z "${IKIGENBA_TOKEN:-}" ]; then`,
 		"exit 1",
@@ -90,10 +94,14 @@ func TestInstallScriptCodex(t *testing.T) {
 	wantLines := []string{
 		"#!/usr/bin/env bash",
 		"set -euo pipefail",
+		"echo \"Installing 2 MCP\"",
 		"codex mcp remove ikigenba_crm >/dev/null 2>&1 || true",
-		"codex mcp add ikigenba_crm --url https://int.ikigenba.com/srv/crm/mcp --bearer-token-env-var IKIGENBA_TOKEN",
+		"if codex mcp add ikigenba_crm --url https://int.ikigenba.com/srv/crm/mcp --bearer-token-env-var IKIGENBA_TOKEN >/dev/null 2>&1; then",
+		"echo \"🟢 ikigenba_crm\"",
+		"echo \"🔴 ikigenba_crm\"",
 		"codex mcp remove ikigenba_ledger >/dev/null 2>&1 || true",
-		"codex mcp add ikigenba_ledger --url https://int.ikigenba.com/srv/ledger/mcp --bearer-token-env-var IKIGENBA_TOKEN",
+		"if codex mcp add ikigenba_ledger --url https://int.ikigenba.com/srv/ledger/mcp --bearer-token-env-var IKIGENBA_TOKEN >/dev/null 2>&1; then",
+		"echo \"${ok} of 2 successfully installed.\"",
 		"Restart Codex",
 		// Missing-token guard (progressive-discovery moment).
 		`if [ -z "${IKIGENBA_TOKEN:-}" ]; then`,
