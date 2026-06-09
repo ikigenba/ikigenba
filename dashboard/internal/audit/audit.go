@@ -44,6 +44,10 @@ const (
 	EventAuthnAllow EventType = "authn.allow"
 	EventAuthnDeny  EventType = "authn.deny"
 
+	// Personal access tokens.
+	EventPATCreated EventType = "pat.created"
+	EventPATRevoked EventType = "pat.revoked"
+
 	// Admin commands.
 	EventAdminAuditPrune EventType = "admin.audit.prune"
 	EventAdminPurge      EventType = "admin.purge"

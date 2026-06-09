@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"dashboard/internal/audit"
+	"dashboard/internal/pat"
 )
 
 // handleAuthn is the auth_request introspection endpoint. Its checks run in a
@@ -81,7 +82,15 @@ func (a *app) handleAuthn() http.HandlerFunc {
 			return
 		}
 
-		// (d) Validate the access token.
+		// (d) Validate the bearer. The prefix forks the path: ms_pat_ tokens are
+		// personal access tokens (cross-service, no chain), handled separately
+		// below; everything else (ms_oat_ and any malformed bearer) takes the
+		// OAuth ValidateAccess path, preserving today's behavior.
+		if strings.HasPrefix(tok, pat.Prefix) {
+			a.handleAuthnPAT(w, r, tok, boundResource, prmURL)
+			return
+		}
+
 		vt, err := a.oauthTokens.ValidateAccess(r.Context(), tok)
 		if err != nil {
 			writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
@@ -153,6 +162,77 @@ func (a *app) handleAuthn() http.HandlerFunc {
 		})
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+// handleAuthnPAT runs the PAT branch of the introspection pipeline, picking up
+// after (c) bearer extraction for a ms_pat_ credential. It validates the PAT
+// (the (d) equivalent), then deliberately SKIPS (e) resource binding — a PAT is
+// cross-service by definition and is bound to no single resource (ADR §D2) —
+// and runs (f) workspace, (g) rate limit, and (h) emit headers exactly as the
+// OAuth path does, except (h) OMITS X-Chain-Id: a PAT has no chain (ADR §D5).
+func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundResource, prmURL string) {
+	// (d) Validate the PAT.
+	p, err := a.pats.ValidatePAT(r.Context(), tok)
+	if err != nil {
+		writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
+			oauthError:       "invalid_token",
+			description:      err.Error(),
+			resourceMetadata: prmURL,
+		})
+		a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "invalid_pat", "detail": err.Error()}})
+		return
+	}
+
+	// (e) Resource binding is SKIPPED for PATs (cross-service; no single bound
+	// resource).
+
+	clientID := "pat:" + p.PublicID
+
+	// (f) Workspace: the PAT owner identity must be inside the configured domain.
+	if !ownerInWorkspace(p.OwnerEmail, a.workspaceDomain) {
+		writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
+			oauthError:       "invalid_token",
+			description:      "owner identity outside configured workspace",
+			resourceMetadata: prmURL,
+		})
+		a.auditAuthnDeny(r, audit.Event{
+			OwnerEmail: p.OwnerEmail, ClientID: clientID,
+			Details: map[string]any{"reason": "workspace_mismatch", "kind": "pat"},
+		})
+		return
+	}
+
+	// (g) Rate limit — keyed on the PAT's internal id, same shape as the OAuth
+	// token-id key.
+	dec := a.rateLimiter.Decide(p.ID)
+	if !dec.Allowed {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Retry-After", retryAfterSeconds(a.rateLimiter.Window()))
+		w.WriteHeader(http.StatusTooManyRequests)
+		ip, ua := audit.FromRequest(r)
+		_ = a.audit.Write(r.Context(), audit.Event{
+			Type:       audit.EventRateLimitHit,
+			OwnerEmail: p.OwnerEmail, ClientID: clientID,
+			IP: ip, UserAgent: ua,
+			Details: map[string]any{"surface": "authn", "token_id": p.ID, "kind": "pat", "window_count": dec.WindowCount},
+		})
+		return
+	}
+
+	// (h) Allow: emit identity headers per ADR §D5. X-Chain-Id is deliberately
+	// NOT set — a PAT has no chain.
+	w.Header().Set("X-Owner-Email", p.OwnerEmail)
+	w.Header().Set("X-Client-Id", clientID)
+	w.Header().Set("X-Token-Id", p.ID)
+	w.Header().Set("Cache-Control", "no-store")
+	ip, ua := audit.FromRequest(r)
+	_ = a.audit.Write(r.Context(), audit.Event{
+		Type:       audit.EventAuthnAllow,
+		OwnerEmail: p.OwnerEmail, ClientID: clientID,
+		IP: ip, UserAgent: ua,
+		Details: map[string]any{"token_id": p.ID, "kind": "pat", "resource": boundResource},
+	})
+	w.WriteHeader(http.StatusOK)
 }
 
 // resourceForOriginalURI maps a forwarded X-Original-URI (nginx's $request_uri)

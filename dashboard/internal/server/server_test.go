@@ -17,6 +17,7 @@ import (
 	"dashboard/internal/grantevents"
 	"dashboard/internal/oauth"
 	"dashboard/internal/oauthstate"
+	"dashboard/internal/pat"
 	"dashboard/internal/ratelimit"
 	"dashboard/internal/session"
 )
@@ -40,6 +41,7 @@ type serverDeps struct {
 	clients    *oauth.ClientStore
 	codes      *oauth.AuthCodeStore
 	tokens     *oauth.TokenStore
+	pats       *pat.Store
 	audit      *audit.Log
 	grants     *grantevents.Bus
 }
@@ -61,6 +63,7 @@ func newServerDeps(t *testing.T) serverDeps {
 		clients:    oauth.NewClientStore(database),
 		codes:      oauth.NewAuthCodeStore(database, 10*time.Minute),
 		tokens:     oauth.NewTokenStore(database, 60*time.Minute, 14*24*time.Hour),
+		pats:       pat.NewStore(database),
 		audit:      audit.New(database),
 		grants:     grantevents.New(),
 	}
@@ -80,6 +83,7 @@ func (d serverDeps) opts() Options {
 		OAuthClients:    d.clients,
 		OAuthCodes:      d.codes,
 		OAuthTokens:     d.tokens,
+		PATs:            d.pats,
 		Audit:           d.audit,
 		Resources:       []string{testResource},
 		RateLimiter:     ratelimit.New(60, 10*time.Second),
@@ -172,6 +176,7 @@ func TestNewRequiresDependencies(t *testing.T) {
 		"OAuthClients":    func(o *Options) { o.OAuthClients = nil },
 		"OAuthCodes":      func(o *Options) { o.OAuthCodes = nil },
 		"OAuthTokens":     func(o *Options) { o.OAuthTokens = nil },
+		"PATs":            func(o *Options) { o.PATs = nil },
 		"Audit":           func(o *Options) { o.Audit = nil },
 		"Resources":       func(o *Options) { o.Resources = nil },
 		"RateLimiter":     func(o *Options) { o.RateLimiter = nil },

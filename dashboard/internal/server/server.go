@@ -29,6 +29,7 @@ import (
 	"dashboard/internal/grantevents"
 	"dashboard/internal/oauth"
 	"dashboard/internal/oauthstate"
+	"dashboard/internal/pat"
 	"dashboard/internal/ratelimit"
 	"dashboard/internal/session"
 	"dashboard/ui"
@@ -48,6 +49,7 @@ type Options struct {
 	OAuthClients *oauth.ClientStore   // DCR client registrations
 	OAuthCodes   *oauth.AuthCodeStore // short-lived authorization codes
 	OAuthTokens  *oauth.TokenStore    // chains, access tokens, refresh tokens
+	PATs         *pat.Store           // personal access tokens (cross-service bearer)
 	Audit        *audit.Log           // security-audit log
 
 	// Resources is the configured set of resource identifiers (one or more) the
@@ -89,6 +91,7 @@ type app struct {
 	oauthClients *oauth.ClientStore
 	oauthCodes   *oauth.AuthCodeStore
 	oauthTokens  *oauth.TokenStore
+	pats         *pat.Store
 	audit        *audit.Log
 	resources    []string
 	admins       []string
@@ -128,6 +131,9 @@ func newApp(opts Options) (*app, error) {
 	}
 	if opts.OAuthTokens == nil {
 		return nil, errors.New("server: OAuthTokens is required")
+	}
+	if opts.PATs == nil {
+		return nil, errors.New("server: PATs is required")
 	}
 	if opts.Audit == nil {
 		return nil, errors.New("server: Audit is required")
@@ -179,6 +185,7 @@ func newApp(opts Options) (*app, error) {
 		oauthClients:    opts.OAuthClients,
 		oauthCodes:      opts.OAuthCodes,
 		oauthTokens:     opts.OAuthTokens,
+		pats:            opts.PATs,
 		audit:           opts.Audit,
 		resources:       opts.Resources,
 		admins:          opts.Admins,

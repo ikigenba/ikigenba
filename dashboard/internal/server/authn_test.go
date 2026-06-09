@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"dashboard/internal/oauth"
+	"dashboard/internal/pat"
 	"dashboard/internal/ratelimit"
 )
 
@@ -240,6 +241,143 @@ func TestAuthnRateLimited(t *testing.T) {
 	// A limit of 1 per minute: the first request passes, the second is over.
 	h := authnServer(t, d, ratelimit.New(1, time.Minute))
 	tok := mintAccessToken(t, d, "owner@metaspot.org", testResource)
+	headers := map[string]string{
+		"Authorization":  "Bearer " + tok,
+		"X-Original-URI": "/srv/crm/mcp",
+	}
+
+	if rec := doAuthn(h, headers); rec.Code != http.StatusOK {
+		t.Fatalf("first request status = %d, want 200", rec.Code)
+	}
+	rec := doAuthn(h, headers)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request status = %d, want 429", rec.Code)
+	}
+	if ra := rec.Header().Get("Retry-After"); ra != "60" {
+		t.Errorf("Retry-After = %q, want 60", ra)
+	}
+}
+
+// secondResource is a second configured resource used by the PAT tests to prove
+// a single PAT authenticates across more than one service (cross-service by
+// definition — it is bound to no single resource).
+const secondResource = "https://int.ikigenba.com/srv/notes/mcp"
+
+const wantPRMNotes = "https://int.ikigenba.com/srv/notes/.well-known/oauth-protected-resource"
+
+// twoResourceServer builds a server configured with both testResource (crm) and
+// secondResource (notes), so PAT tests can address two different services.
+func twoResourceServer(t *testing.T, d serverDeps, limiter *ratelimit.Limiter) http.Handler {
+	t.Helper()
+	opts := d.opts()
+	opts.Resources = []string{testResource, secondResource}
+	if limiter != nil {
+		opts.RateLimiter = limiter
+	}
+	srv, err := New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return srv.Handler
+}
+
+// mintPAT creates a PAT directly through the store and returns its plaintext.
+func mintPAT(t *testing.T, d serverDeps, ownerEmail string) (plaintext string, p pat.PAT) {
+	t.Helper()
+	plaintext, p, err := d.pats.Create(context.Background(), ownerEmail, "test pat")
+	if err != nil {
+		t.Fatalf("pats.Create: %v", err)
+	}
+	return plaintext, p
+}
+
+// TestAuthnPATValidCrossService proves one PAT authenticates against two
+// different services, and that the identity headers match ADR §D5 (notably
+// X-Client-Id = pat:<public_id> and NO X-Chain-Id).
+func TestAuthnPATValidCrossService(t *testing.T) {
+	d := newServerDeps(t)
+	h := twoResourceServer(t, d, nil)
+	tok, p := mintPAT(t, d, "owner@metaspot.org")
+
+	for _, uri := range []string{"/srv/crm/mcp", "/srv/notes/mcp"} {
+		rec := doAuthn(h, map[string]string{
+			"Authorization":  "Bearer " + tok,
+			"X-Original-URI": uri,
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("uri %s: status = %d, want 200; WWW-Authenticate=%q", uri, rec.Code, rec.Header().Get("WWW-Authenticate"))
+		}
+		if got := rec.Header().Get("X-Owner-Email"); got != "owner@metaspot.org" {
+			t.Errorf("uri %s: X-Owner-Email = %q, want owner@metaspot.org", uri, got)
+		}
+		if got, want := rec.Header().Get("X-Client-Id"), "pat:"+p.PublicID; got != want {
+			t.Errorf("uri %s: X-Client-Id = %q, want %q", uri, got, want)
+		}
+		if got := rec.Header().Get("X-Token-Id"); got != p.ID {
+			t.Errorf("uri %s: X-Token-Id = %q, want %q", uri, got, p.ID)
+		}
+		// ADR §D5: a PAT has no chain — X-Chain-Id must be absent.
+		if got := rec.Header().Get("X-Chain-Id"); got != "" {
+			t.Errorf("uri %s: X-Chain-Id = %q, want absent for PAT", uri, got)
+		}
+	}
+}
+
+// TestAuthnPATRevoked: a revoked PAT is rejected with a 401 invalid_token,
+// carrying the addressed service's resource_metadata.
+func TestAuthnPATRevoked(t *testing.T) {
+	d := newServerDeps(t)
+	h := twoResourceServer(t, d, nil)
+	tok, p := mintPAT(t, d, "owner@metaspot.org")
+	if err := d.pats.Revoke(context.Background(), p.ID); err != nil {
+		t.Fatalf("Revoke: %v", err)
+	}
+
+	rec := doAuthn(h, map[string]string{
+		"Authorization":  "Bearer " + tok,
+		"X-Original-URI": "/srv/crm/mcp",
+	})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	wa := rec.Header().Get("WWW-Authenticate")
+	if !strings.Contains(wa, `error="invalid_token"`) {
+		t.Errorf("WWW-Authenticate = %q, want error=invalid_token", wa)
+	}
+	if !strings.Contains(wa, `resource_metadata="`+wantPRM+`"`) {
+		t.Errorf("WWW-Authenticate = %q, want resource_metadata=%q", wa, wantPRM)
+	}
+}
+
+// TestAuthnPATOwnerOutsideWorkspace: the (f) workspace check is retained for
+// PATs — an owner outside the configured domain is rejected.
+func TestAuthnPATOwnerOutsideWorkspace(t *testing.T) {
+	d := newServerDeps(t)
+	h := twoResourceServer(t, d, nil)
+	tok, _ := mintPAT(t, d, "owner@evil.example")
+
+	rec := doAuthn(h, map[string]string{
+		"Authorization":  "Bearer " + tok,
+		"X-Original-URI": "/srv/notes/mcp",
+	})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	wa := rec.Header().Get("WWW-Authenticate")
+	if !strings.Contains(wa, `error="invalid_token"`) {
+		t.Errorf("WWW-Authenticate = %q, want error=invalid_token", wa)
+	}
+	if !strings.Contains(wa, `resource_metadata="`+wantPRMNotes+`"`) {
+		t.Errorf("WWW-Authenticate = %q, want resource_metadata=%q", wa, wantPRMNotes)
+	}
+}
+
+// TestAuthnPATRateLimited: the (g) rate limit is retained for PATs, keyed on the
+// PAT's internal id.
+func TestAuthnPATRateLimited(t *testing.T) {
+	d := newServerDeps(t)
+	h := twoResourceServer(t, d, ratelimit.New(1, time.Minute))
+	tok, _ := mintPAT(t, d, "owner@metaspot.org")
 	headers := map[string]string{
 		"Authorization":  "Bearer " + tok,
 		"X-Original-URI": "/srv/crm/mcp",

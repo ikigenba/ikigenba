@@ -34,6 +34,7 @@ import (
 	"dashboard/internal/grantevents"
 	"dashboard/internal/oauth"
 	"dashboard/internal/oauthstate"
+	"dashboard/internal/pat"
 	"dashboard/internal/ratelimit"
 	"dashboard/internal/server"
 	"dashboard/internal/session"
@@ -149,6 +150,7 @@ func registerRoutes(rt *appkit.Router) error {
 	oauthClients := oauth.NewClientStore(conn)
 	oauthCodes := oauth.NewAuthCodeStore(conn, 2*time.Minute)
 	oauthTokens := oauth.NewTokenStore(conn, 30*time.Minute, 30*24*time.Hour)
+	pats := pat.NewStore(conn)
 	auditLog := audit.New(conn)
 
 	regHook, err := server.Register(server.Options{
@@ -162,6 +164,7 @@ func registerRoutes(rt *appkit.Router) error {
 		OAuthClients:    oauthClients,
 		OAuthCodes:      oauthCodes,
 		OAuthTokens:     oauthTokens,
+		PATs:            pats,
 		Audit:           auditLog,
 		Resources:       resources,
 		ManifestRoot:    manifestRoot,
