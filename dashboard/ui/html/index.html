@@ -9,7 +9,7 @@
 </head>
 <body>
   <header class="banner">
-    <h1>ikigenba</h1>
+    <h1>Ikigenba</h1>
     <nav class="identity-action-stack">
       {{if .Owner}}
         <span class="signed-in-email">{{.Owner}}</span>
@@ -24,10 +24,9 @@
 
   <main class="content-block">
     {{if .Owner}}
-      <p>Signed in to the dashboard for <strong>{{.Host}}</strong>.</p>
       <section class="pats">
-        <h2>Personal access tokens</h2>
-        <p class="pats-intro">Mint a long-lived token to connect an agent without the browser sign-in flow. One token reaches every service you can. The secret is shown once at creation.</p>
+        <h2>Personal Access Tokens</h2>
+        <p class="pats-intro">Mint a long lived token to authenticate agents.</p>
         <form method="POST" action="/pat" class="pat-create">
           <input type="text" name="label" maxlength="48" placeholder="Label (e.g. Codex on laptop)" aria-label="Token label" required>
           <button type="submit">Create</button>
@@ -35,13 +34,13 @@
         {{template "pat_block" .PATs}}
       </section>
       <section class="grants">
-        <h2>Connected MCP clients</h2>
+        <h2>Connected MCP Clients</h2>
         <div id="grants-block" data-stream="/grants/stream" data-fragment="/grants/fragment">
           {{template "grants_block" .Grants}}
         </div>
       </section>
       <section class="connect-agent" aria-label="Connect your coding agent">
-        <h2>Connect your coding agent</h2>
+        <h2>Connect Your Coding Agent</h2>
         <p>Paste the line for your agent into its terminal to wire this box's MCP services into your install:</p>
         <div class="connect-choice">
           <h4>Claude Code</h4>
@@ -54,8 +53,7 @@
       </section>
       {{if .Services}}
       <section class="services" aria-label="MCP services">
-        <h2>All MCP services</h2>
-        <p>The raw reference — name and URL for manually wiring each service into any other MCP client:</p>
+        <h2>All MCP Services</h2>
         <table class="services-table">
           <thead>
             <tr><th>name</th><th>url</th></tr>
@@ -68,16 +66,11 @@
         </table>
       </section>
       {{end}}
-    {{else}}
-      <section class="landing">
-        <h2>{{.Host}}</h2>
-        <p>This box is online. Sign in to manage its services.</p>
-      </section>
     {{end}}
   </main>
 
   <footer class="site-footer">
-    <small>ikigenba &middot; {{.Host}}</small>
+    <small>{{.Host}}</small>
   </footer>
 </body>
 </html>

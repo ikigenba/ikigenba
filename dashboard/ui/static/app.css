@@ -75,16 +75,6 @@ button:hover, .signin-link:hover { border-color: var(--accent); }
   padding: 0 2rem;
 }
 
-.landing h2 {
-  font-size: 1.4rem;
-  margin: 0 0 0.5rem;
-}
-
-.landing p {
-  color: var(--muted);
-  margin: 0;
-}
-
 /* The two labeled install one-pasters (Claude Code / Codex) on the landing. */
 .connect-choice {
   margin-top: 1rem;
@@ -128,8 +118,11 @@ button:hover, .signin-link:hover { border-color: var(--accent); }
   background: var(--card);
 }
 
-/* Live-grants block on the logged-in index. */
-.grants h2 {
+/* Section titles on the logged-in index — uniform size with a gap before each. */
+.pats h2,
+.grants h2,
+.connect-agent h2,
+.services h2 {
   font-size: 1.1rem;
   margin: 1.5rem 0 1rem;
 }
@@ -165,12 +158,6 @@ button:hover, .signin-link:hover { border-color: var(--accent); }
   background: var(--card);
 }
 
-/* "Connect your coding agent" block on the logged-in index. */
-.connect-agent h2 {
-  font-size: 1.1rem;
-  margin: 1.5rem 0 1rem;
-}
-
 /* The bottom LIST table: the box's MCP services as raw name/url rows. */
 .services-table {
   width: 100%;
@@ -193,11 +180,6 @@ button:hover, .signin-link:hover { border-color: var(--accent); }
 
 /* Personal access tokens block on the logged-in index. Styled like the
    live-grants list (D9). */
-.pats h2 {
-  font-size: 1.1rem;
-  margin: 1.5rem 0 1rem;
-}
-
 .pats-intro {
   color: var(--muted);
   font-size: 0.9rem;
