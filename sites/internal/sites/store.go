@@ -47,11 +47,14 @@ var (
 )
 
 // Site mirrors one `sites` row. PublishedAt is nil until first published.
+// SourcePath records the originating Dropbox subtree for a sync-managed site
+// (empty ⇒ SQL NULL ⇒ hand-authored / not import-managed; ADR Decision 2).
 type Site struct {
 	Name        string
 	Tier        string
 	Published   bool
 	PublishedAt *time.Time
+	SourcePath  string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -78,6 +81,13 @@ func NewStore(db *sql.DB) *Store {
 func NewStoreWithLayout(db *sql.DB, layout Layout) *Store {
 	return &Store{db: db, Layout: layout, Now: time.Now}
 }
+
+// ValidateSlug exposes the slug grammar + reserved-name guard for callers that
+// must pre-check a slug before a create attempt (the `sync` verb derives a slug
+// from a source-path basename and wants a clean validation error rather than a
+// raw create failure). It is the exported twin of validateName and returns the
+// same ErrInvalidSlug / ErrReservedName sentinels.
+func ValidateSlug(name string) error { return validateName(name) }
 
 // validateName runs the slug grammar then the reserved-name guard. It returns
 // ErrInvalidSlug or ErrReservedName (wrapped with the offending value).
@@ -116,9 +126,11 @@ func (s *Store) Create(ctx context.Context, name string) (Site, error) {
 	}
 	now := s.Now().UTC()
 	ts := fmtTime(now)
+	// source_path is inserted NULL: a freshly created site is hand-authored until
+	// a sync stamps it via SetSourcePath.
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sites (name, tier, published, published_at, created_at, updated_at)
-		 VALUES (?, '', 0, NULL, ?, ?)`,
+		`INSERT INTO sites (name, tier, published, published_at, source_path, created_at, updated_at)
+		 VALUES (?, '', 0, NULL, NULL, ?, ?)`,
 		name, ts, ts)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") ||
@@ -139,7 +151,7 @@ func (s *Store) Create(ctx context.Context, name string) (Site, error) {
 // Get fetches one site by name. Returns ErrNotFound when absent.
 func (s *Store) Get(ctx context.Context, name string) (Site, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT name, tier, published, published_at, created_at, updated_at
+		`SELECT name, tier, published, published_at, source_path, created_at, updated_at
 		 FROM sites WHERE name = ?`, name)
 	site, err := scanSite(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -154,7 +166,7 @@ func (s *Store) Get(ctx context.Context, name string) (Site, error) {
 // List returns every site ordered by name (deterministic).
 func (s *Store) List(ctx context.Context) ([]Site, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT name, tier, published, published_at, created_at, updated_at
+		`SELECT name, tier, published, published_at, source_path, created_at, updated_at
 		 FROM sites ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list sites: %w", err)
@@ -191,6 +203,28 @@ func (s *Store) Delete(ctx context.Context, name string) error {
 	return nil
 }
 
+// SetSourcePath stamps the originating Dropbox subtree on an existing site row
+// (and bumps updated_at). The sites `sync` verb calls this after create-or-reuse
+// to mark the site import-managed and record its provenance. Returns ErrNotFound
+// when no such row.
+func (s *Store) SetSourcePath(ctx context.Context, name, sourcePath string) error {
+	ts := fmtTime(s.Now().UTC())
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE sites SET source_path = ?, updated_at = ? WHERE name = ?`,
+		sourcePath, ts, name)
+	if err != nil {
+		return fmt.Errorf("set source_path %q: %w", name, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set source_path %q: %w", name, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: %q", ErrNotFound, name)
+	}
+	return nil
+}
+
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -203,8 +237,9 @@ func scanSite(sc rowScanner) (Site, error) {
 		name, tier, createdAt, updatedAt string
 		published                        int64
 		publishedAt                      sql.NullString
+		sourcePath                       sql.NullString
 	)
-	if err := sc.Scan(&name, &tier, &published, &publishedAt, &createdAt, &updatedAt); err != nil {
+	if err := sc.Scan(&name, &tier, &published, &publishedAt, &sourcePath, &createdAt, &updatedAt); err != nil {
 		return Site{}, err
 	}
 	site := Site{
@@ -217,6 +252,10 @@ func scanSite(sc rowScanner) (Site, error) {
 	if publishedAt.Valid {
 		t := parseTime(publishedAt.String)
 		site.PublishedAt = &t
+	}
+	// NULL source_path (hand-authored) reads back as the empty string.
+	if sourcePath.Valid {
+		site.SourcePath = sourcePath.String
 	}
 	return site, nil
 }

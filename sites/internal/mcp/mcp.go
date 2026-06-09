@@ -46,7 +46,20 @@ type Handler struct {
 	service string
 	baseURL string
 	health  func(context.Context) (map[string]any, error)
+	// client is the dropbox loopback mirror seam the `sync` verb enumerates and
+	// fetches through. It is a settable field rather than a NewHandler parameter
+	// so every existing call site/test that builds a Handler stays untouched (the
+	// composition root in cmd/sites sets it; tests inject a fake). A nil client
+	// means sync is unwired — toolSync guards against it rather than panicking.
+	client sites.MirrorClient
 }
+
+// SetMirrorClient injects the dropbox loopback client the `sync` verb uses to
+// enumerate (/list) and fetch (/content) a mirror subtree. Set once at the
+// composition root after NewHandler; field-injected (not a constructor param) so
+// the many existing NewHandler call sites and tests need no change (ADR
+// dropbox-import-sync; plan cross-cutting decision 1).
+func (h *Handler) SetMirrorClient(c sites.MirrorClient) { h.client = c }
 
 // NewHandler builds a Handler. store is the sites registry/publish service; a nil
 // store is a wiring error and panics at this seam rather than deferring a nil

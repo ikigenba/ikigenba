@@ -52,6 +52,10 @@ func toolDescriptors() []map[string]any {
 		desc(tool("unpublish"), "Unpublish a site: drop its served link and flip it back to unpublished. Safe to call on an already-unpublished site.", obj(map[string]any{
 			"name": descTyp("string", "the site slug to unpublish"),
 		}, "name")),
+		desc(tool("sync"), "Sync a Dropbox-mirrored subtree into a static site's working tree. 'source_path' is the mirror folder to sync from (e.g. \"/sites/marketing\"); 'slug' names the target site and defaults to the source_path basename when that is a valid slug, else it is required. Creates the site if absent, then reconciles its working tree to match the subtree: every upstream file is (over)written and every working file absent upstream is deleted (the subtree owns the tree). Does NOT publish — call publish(tier) once to expose it; an already-published site updates live. Returns {slug, written, deleted}.", obj(map[string]any{
+			"source_path": descTyp("string", "the mirror folder path to sync from"),
+			"slug":        descTyp("string", "target site slug; defaults to the source_path basename"),
+		}, "source_path")),
 		// ── file tools (agentkit bridge) ────────────────────────────────
 		// Each tool's inputSchema is agentkit's InputSchema for the underlying
 		// jailed tool plus a required "site" property naming the sandbox root.
@@ -130,6 +134,8 @@ func (h *Handler) dispatchTool(ctx context.Context, name string, argsRaw json.Ra
 		return h.toolPublish(ctx, argsRaw)
 	case tool("unpublish"):
 		return h.toolUnpublish(ctx, argsRaw)
+	case tool("sync"):
+		return h.toolSync(ctx, argsRaw)
 	case tool("file_write"):
 		return h.toolFileWrite(ctx, argsRaw)
 	case tool("file_read"):

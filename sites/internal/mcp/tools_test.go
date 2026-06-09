@@ -173,6 +173,7 @@ func TestToolsList(t *testing.T) {
 		"mkdir",
 		"publish",
 		"unpublish",
+		"sync",
 		"file_write",
 		"file_read",
 		"file_edit",
