@@ -60,7 +60,11 @@ the right key, so `ssh int` and the deploy scripts connect with the correct
 identity automatically — no `-i` flag needed.
 
 Deploy ships one static binary into a versioned release dir — **not** `git push`
-and **not** an in-place overwrite. Four steps:
+and **not** an in-place overwrite. Run **both `bin/bump` and `bin/ship` from the
+`/mnt/projects/ikigai/main` worktree** — `bin/ship` builds the standing
+worktree's HEAD, so invoking it from a feature worktree would build that
+branch's possibly-stale tree. `bin/ship` now refuses to run off `main` and exits
+with an error. Four steps:
 
 1. **`bin/bump <app> <major|minor|patch>`** — advance the committed bare-SemVer
    `<app>/VERSION` on `main` (the single source of truth) and push it. Skip if

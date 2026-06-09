@@ -138,7 +138,11 @@ SSH_KEY="${SSH_KEY/#\~/$HOME}"   # expand a leading ~ ; contents are never read/
 # source), not from any tag.
 SHA="$(git rev-parse --short HEAD)"
 COMMIT_STAMP="${SHA}"
-BRANCH="$(git branch --show-current || echo '(detached)')"
+BRANCH="$(git branch --show-current)"
+if [ "$BRANCH" != "main" ]; then
+  echo "!! ship must run from the main worktree (currently on '${BRANCH}') — it builds the standing worktree's HEAD, and deploys ship committed main" >&2
+  exit 1
+fi
 
 echo ">> ${APP}: building current main (HEAD ${SHA})"
 

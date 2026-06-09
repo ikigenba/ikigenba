@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -269,6 +270,15 @@ func New(opts Options) (*http.Server, error) {
 // gracefully within shutdownTimeout. A clean shutdown returns nil; a listen
 // failure returns that error.
 func Run(ctx context.Context, srv *http.Server, logger *slog.Logger) error {
+	// Long-lived handlers (the SSE /feed stream) park on their request context.
+	// http.Server.Shutdown does NOT cancel in-flight request contexts, so without
+	// this they block Shutdown until shutdownTimeout, exiting 1 on every swap.
+	// Derive request contexts from a cancelable base and cancel it at shutdown so
+	// parked handlers return promptly and Shutdown drains cleanly.
+	baseCtx, cancelBase := context.WithCancel(context.Background())
+	defer cancelBase()
+	srv.BaseContext = func(net.Listener) context.Context { return baseCtx }
+
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- srv.ListenAndServe()
@@ -282,6 +292,7 @@ func Run(ctx context.Context, srv *http.Server, logger *slog.Logger) error {
 		return err
 	case <-ctx.Done():
 		logger.Info("shutdown initiated")
+		cancelBase() // release parked long-lived (/feed) handlers so Shutdown drains promptly
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {

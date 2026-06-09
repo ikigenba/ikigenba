@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"appkit/server"
 
@@ -225,6 +227,97 @@ func TestRouter_UnauthenticatedRoute(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("/open status = %d, want 200 unauthenticated", rr.Code)
 	}
+}
+
+// TestRun_ReleasesParkedHandlerOnShutdown proves Run cancels in-flight request
+// contexts at shutdown (via srv.BaseContext) so a long-lived handler parked on
+// r.Context().Done() (the SSE /feed shape) returns promptly. Without that, the
+// parked handler would block srv.Shutdown for the full shutdownTimeout (10s) and
+// Run would return a deadline error; here Run must return nil well within ~2s.
+func TestRun_ReleasesParkedHandlerOnShutdown(t *testing.T) {
+	started := make(chan struct{})
+	srv, err := server.New(server.Options{
+		Addr:       freeAddr(t),
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Version:    testVersion,
+		Service:    testService,
+		Register: func(rt *server.Router) error {
+			// A parked long-lived handler simulating the SSE /feed stream: it
+			// signals it is in-flight, then blocks on its request context until
+			// shutdown cancels it.
+			rt.HandleFunc("GET /park", func(w http.ResponseWriter, r *http.Request) {
+				close(started)
+				<-r.Context().Done()
+			})
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- server.Run(ctx, srv, discardLogger())
+	}()
+
+	// Issue the parking request in its own goroutine: it will not return until
+	// shutdown releases the handler. Poll the dial since the server may take a
+	// moment to come up.
+	url := "http://" + srv.Addr + "/park"
+	go func() {
+		client := &http.Client{}
+		for i := 0; i < 50; i++ {
+			req, _ := http.NewRequest(http.MethodGet, url, nil)
+			resp, err := client.Do(req)
+			if err == nil {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+
+	// Confirm the request is genuinely in-flight before cancelling.
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("parked handler never started; request did not reach the server")
+	}
+
+	cancel()
+
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("Run returned %v, want nil (parked handler not released?)", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return within 2s; parked handler blocked Shutdown to shutdownTimeout")
+	}
+}
+
+// freeAddr reserves an ephemeral loopback port and returns its address. Run
+// calls srv.ListenAndServe(), which takes srv.Addr (not a pre-made listener), so
+// the test grabs a free port by opening and closing a listener and reusing the
+// addr.
+func freeAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve ephemeral port: %v", err)
+	}
+	addr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close reservation listener: %v", err)
+	}
+	return addr
 }
 
 func TestApex_BypassesPRMAndOwnsRouteTable(t *testing.T) {
