@@ -86,8 +86,8 @@ A brand-new service needs `opsctl setup <app>` first (and `opsctl init-box` once
 per box). After deploying a new MCP service, restart the dashboard so it
 re-reads the manifests.
 
-The full deploy model is `docs/adr-deployment-redesign.md`; versioning is
-`docs/versioning.md`; per-service details live under each service's own
+The full deploy model is `docs/archive/adr-deployment-redesign.md`; versioning is
+`docs/archive/versioning.md`; per-service details live under each service's own
 directory and `CLAUDE.md`.
 
 ## Migrations — timestamped and immutable
@@ -108,4 +108,22 @@ and tracked individually in `schema_migrations`. Two hard rules:
   Change schema by adding a *new* migration. `bin/check-migrations` enforces
   both rules in CI (no duplicate versions, no edits to existing files).
 
-See `docs/adr-migration-timestamps.md`.
+## Designing and planning work
+
+This is our process for designing and planning a piece of work before we build
+it. The full convention lives in **`docs/README.md`** — read it before starting
+a new feature. In short: each piece of work moves through paired documents in
+`docs/` that share one slug — **`<slug>-design.md`** (the how + decisions) then
+**`<slug>-plan.md`** (ordered phases, each sized for one subagent, run
+sequentially), after which a coordinator reads the plan in full and `/finish`es
+it.
+
+Two optional document types extend the pair:
+
+- **`<slug>-research.md`** — when we do research *before* design, it lands here
+  and feeds the design doc.
+- **`<slug>-verification.md`** — an occasional special-case doc describing a
+  post-work verification step, for work that warrants explicit validation after
+  it's built.
+
+See `docs/archive/adr-migration-timestamps.md`.
