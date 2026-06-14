@@ -838,7 +838,7 @@ partial that a green mocked DB test carries into the immutable foundation.
 
 ---
 
-## [ ] P2 — Service scaffold + config-injection seam
+## [x] P2 — Service scaffold + config-injection seam
 
 *Design §1, §10. Establishes the chassis and the config discipline every later
 phase plugs into.*
