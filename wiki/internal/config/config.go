@@ -125,6 +125,12 @@ type Config struct {
 	// at the call site — fed to integrate.NewResolver.
 	CandidateLimit int
 
+	// MatchExcerptChars is WIKI_MATCH_EXCERPT_CHARS (default 600): the number of
+	// leading page-body characters included in each candidate's match excerpt
+	// (design §4.3). It is an eval-harness knob (obligation 2) — a tunable, never a
+	// constant at the call site — fed to integrate's manifest assembler.
+	MatchExcerptChars int
+
 	// LLM is the per-call-site injection seam (design §10).
 	LLM LLM
 	// Embed is the embeddings model/dims (P11's vector lane).
@@ -152,6 +158,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		IntegrationWorkers: envInt(getenv, "WIKI_INTEGRATION_WORKERS", 4),
 		RunAttemptsMax:     envInt(getenv, "WIKI_RUN_ATTEMPTS_MAX", 5),
 		CandidateLimit:     envInt(getenv, "WIKI_CANDIDATE_LIMIT", 5),
+		MatchExcerptChars:  envInt(getenv, "WIKI_MATCH_EXCERPT_CHARS", 600),
 		Embed: Embed{
 			Model: envStr(getenv, "WIKI_EMBED_MODEL", "text-embedding-3-large"),
 			Dims:  envInt(getenv, "WIKI_EMBED_DIMS", 1024),
@@ -162,7 +169,7 @@ func Load(getenv func(string) string) (*Config, error) {
 	// config-default prompt. A site whose owning phase has not yet landed uses the
 	// shared placeholder; a landed site (extract, P6a) passes its real default.
 	cfg.LLM.Extract = loadSite(getenv, "extract", "WIKI_EXTRACT", "claude-sonnet-4-6", "medium", DefaultExtractPrompt)
-	cfg.LLM.Match = loadSite(getenv, "match", "WIKI_MATCH", "claude-haiku-4-5", "", placeholderPrompt)
+	cfg.LLM.Match = loadSite(getenv, "match", "WIKI_MATCH", "claude-haiku-4-5", "", DefaultMatchPrompt)
 	cfg.LLM.Merge = loadSite(getenv, "merge", "WIKI_MERGE", "claude-sonnet-4-6", "high", placeholderPrompt)
 	cfg.LLM.Compile = loadSite(getenv, "compile", "WIKI_COMPILE", "claude-sonnet-4-6", "medium", placeholderPrompt)
 	cfg.LLM.Ask = loadSite(getenv, "ask", "WIKI_ASK", "claude-sonnet-4-6", "medium", placeholderPrompt)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // Store is the registry's read surface over the subjects/aliases/pages tables
@@ -75,6 +76,94 @@ type Candidate struct {
 	Type Type
 	// CanonicalName is the subject's chosen display name.
 	CanonicalName string
+}
+
+// Excerpt is the per-candidate evidence the match step (P6b2) judges (design
+// §4.3): the subject's canonical name, its FULL alias list (the surface forms the
+// registry knows it by), and the first WIKI_MATCH_EXCERPT_CHARS of its page body.
+// Aliases are stored normalized (the lookup key) — the human-readable forms are
+// lost on the write path — so Excerpt returns the normalized alias keys, which is
+// exactly what an identity judgment needs (the same key space resolution matched
+// on). A subject with no page row yields an empty Body.
+type Excerpt struct {
+	// SubjectID is the candidate subject's id.
+	SubjectID string
+	// CanonicalName is the subject's chosen display name (subjects.canonical_name).
+	CanonicalName string
+	// Aliases is the full set of normalized alias keys for the subject.
+	Aliases []string
+	// Body is the first `chars` bytes of the page body (UTF-8 truncated on a rune
+	// boundary), empty if the subject has no page yet.
+	Body string
+}
+
+// ReadExcerpt builds the match excerpt for one candidate subject (design §4.3):
+// canonical name + full alias list + the first `chars` of the page body. The body
+// excerpt length is the config-injected WIKI_MATCH_EXCERPT_CHARS (eval-harness
+// knob, obligation 2) the caller owns — Store never hard-codes it. A non-positive
+// `chars` yields an empty body (the caller's config guard normally prevents that).
+// It is read-only: match judges a plan; the commit (P7a) applies it.
+func (s *Store) ReadExcerpt(ctx context.Context, subjectID string, chars int) (Excerpt, error) {
+	ex := Excerpt{SubjectID: subjectID}
+
+	// Canonical name from subjects (always present for a real id).
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT canonical_name FROM subjects WHERE id = ?`, subjectID,
+	).Scan(&ex.CanonicalName); err != nil {
+		if err == sql.ErrNoRows {
+			return ex, fmt.Errorf("page: read excerpt: subject %q not found", subjectID)
+		}
+		return ex, fmt.Errorf("page: read excerpt name: %w", err)
+	}
+
+	// Full alias list (normalized keys), stable order for determinism.
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT norm FROM aliases WHERE subject_id = ? ORDER BY norm`, subjectID)
+	if err != nil {
+		return ex, fmt.Errorf("page: read excerpt aliases: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return ex, fmt.Errorf("page: read excerpt alias scan: %w", err)
+		}
+		ex.Aliases = append(ex.Aliases, a)
+	}
+	if err := rows.Err(); err != nil {
+		return ex, err
+	}
+
+	// Page body, truncated to the configured excerpt length. A subject may have no
+	// page yet (a just-minted collision id with no body) — that is not an error.
+	var body string
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT body FROM pages WHERE subject = ?`, subjectID,
+	).Scan(&body); err != nil {
+		if err != sql.ErrNoRows {
+			return ex, fmt.Errorf("page: read excerpt body: %w", err)
+		}
+		body = ""
+	}
+	ex.Body = truncateRunes(body, chars)
+	return ex, nil
+}
+
+// truncateRunes returns the first n bytes worth of s, cut on a rune boundary so a
+// multibyte character is never split. A non-positive n yields "".
+func truncateRunes(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if len(s) <= n {
+		return s
+	}
+	// Back up to the start of the rune that straddles n.
+	end := n
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end]
 }
 
 // Candidates runs the two FTS5 queries of design §4.3's zero-ids arm, both scoped

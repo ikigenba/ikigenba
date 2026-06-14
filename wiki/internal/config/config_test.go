@@ -31,12 +31,19 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Embed.Model != "text-embedding-3-large" {
 		t.Errorf("Embed.Model = %q", cfg.Embed.Model)
 	}
-	// Sites whose owning phase has not yet landed carry a placeholder prompt;
-	// extract (P6a) now carries its real config-default prompt.
+	if cfg.MatchExcerptChars != 600 {
+		t.Errorf("MatchExcerptChars = %d, want 600", cfg.MatchExcerptChars)
+	}
+	// Sites whose owning phase has not yet landed carry a placeholder prompt; a
+	// landed site carries its real config-default prompt (extract — P6a; match — P6b2).
+	realDefaults := map[string]string{
+		"extract": DefaultExtractPrompt,
+		"match":   DefaultMatchPrompt,
+	}
 	for _, s := range cfg.LLM.sites() {
-		if s.Name == "extract" {
-			if s.Prompt != DefaultExtractPrompt {
-				t.Errorf("extract: prompt should default to DefaultExtractPrompt, got %q", s.Prompt)
+		if want, ok := realDefaults[s.Name]; ok {
+			if s.Prompt != want {
+				t.Errorf("site %q: prompt should default to its real config-default, got %q", s.Name, s.Prompt)
 			}
 		} else if s.Prompt != placeholderPrompt {
 			t.Errorf("site %q: prompt should default to placeholder, got %q", s.Name, s.Prompt)
@@ -55,6 +62,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 		"WIKI_EXTRACT_MODEL":       "gpt-5.5",
 		"WIKI_EXTRACT_EFFORT":      "high",
 		"WIKI_INTEGRATION_WORKERS": "8",
+		"WIKI_MATCH_EXCERPT_CHARS": "1200",
 	}))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -70,6 +78,9 @@ func TestLoadEnvOverrides(t *testing.T) {
 	}
 	if cfg.IntegrationWorkers != 8 {
 		t.Errorf("workers not overridden: %d", cfg.IntegrationWorkers)
+	}
+	if cfg.MatchExcerptChars != 1200 {
+		t.Errorf("MatchExcerptChars not overridden: %d", cfg.MatchExcerptChars)
 	}
 }
 

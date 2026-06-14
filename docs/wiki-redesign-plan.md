@@ -1147,7 +1147,7 @@ seam are each present and individually tested before the phase closes.
 
 ---
 
-## [ ] P6b2 — Document pass: match + the manifest (manifest out)
+## [x] P6b2 — Document pass: match + the manifest (manifest out)
 
 *Design §4.3, §4.1 (registry), §10. **No new resolution mechanics** — P6b's arms
 already produce the shortlist. This phase lands the **match LLM call**, its real
