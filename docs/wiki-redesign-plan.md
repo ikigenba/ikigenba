@@ -1455,7 +1455,7 @@ to a page.
 
 ---
 
-## [ ] P9a — Lint: `lint-dups` + the shared lint plumbing
+## [x] P9a — Lint: `lint-dups` + the shared lint plumbing
 
 *Design §6 (and §6.1 already gated in P7b). The first lint job, and the home of
 the `dup_flags` helper + `jobs`-config + `lint_run` plumbing every later lint job

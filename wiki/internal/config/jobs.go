@@ -83,6 +83,20 @@ func (j Jobs) DigestEntries() []Job {
 	return out
 }
 
+// LintEntries returns just the lint entries (the maintenance jobs the worker's
+// cron map binds to a lint integrator; design §6). Symmetric with DigestEntries;
+// lint entries carry no selector, so the cron fan-out simply runs each bound lint
+// job. The lint plumbing (P9a) and the later lint jobs (P9b/P9c) register here.
+func (j Jobs) LintEntries() []Job {
+	var out []Job
+	for _, e := range j.Entries {
+		if e.Kind == JobLint {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // scheduleName strips the "cron." trigger prefix to the bare schedule name the
 // worker matches against a "cron:<name>" inbox row's source. A trigger that is not
 // a cron trigger yields "" (it binds no cron schedule).

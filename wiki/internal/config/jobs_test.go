@@ -93,3 +93,21 @@ func TestDigestEntriesFiltersLint(t *testing.T) {
 		}
 	}
 }
+
+// TestLintEntriesFiltersDigest: LintEntries returns only lint entries (no
+// selector), and the lint entry's trigger is bound by the cron fan-out so a
+// cron.weekly tick runs it (the shared lint plumbing, P9a).
+func TestLintEntriesFiltersDigest(t *testing.T) {
+	l := twoDigests().LintEntries()
+	if len(l) != 1 || l[0].Name != "lint-dups" {
+		t.Fatalf("lint entries = %+v, want just lint-dups", l)
+	}
+	if len(l[0].SourcePrefixes) != 0 {
+		t.Errorf("a lint entry must carry no selector: %+v", l[0])
+	}
+	// The lint entry participates in the cron fan-out like any other job.
+	b := twoDigests().Bindings()
+	if got := b["weekly"]; len(got) != 1 || got[0] != "lint-dups" {
+		t.Errorf("weekly bindings = %v, want [lint-dups]", got)
+	}
+}

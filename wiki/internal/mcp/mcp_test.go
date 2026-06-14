@@ -16,7 +16,7 @@ import (
 func newTestHandler() *Handler {
 	return NewHandler("1", "wiki",
 		func(ctx context.Context) (map[string]any, error) { return map[string]any{"ok": true}, nil },
-		events.Registry, nil, nil)
+		events.Registry, nil, nil, nil)
 }
 
 // fakeIngester is a stand-in Ingester for the front-door dispatch tests.
@@ -45,7 +45,7 @@ func (f *fakeIngester) StatusAny(_ context.Context, id string) (any, error) {
 func newHandlerWithIngest(in Ingester) *Handler {
 	return NewHandler("1", "wiki",
 		func(ctx context.Context) (map[string]any, error) { return map[string]any{"ok": true}, nil },
-		events.Registry, nil, in)
+		events.Registry, nil, in, nil)
 }
 
 func rpc(t *testing.T, h *Handler, body string) map[string]any {
@@ -117,7 +117,7 @@ func TestReflectionLive(t *testing.T) {
 // (isError) until their owning phases land.
 func TestDomainToolsStubbed(t *testing.T) {
 	h := newTestHandler()
-	for _, name := range []string{"ingest_text", "ingest_url", "status", "search", "ask", "timeline"} {
+	for _, name := range []string{"ingest_text", "ingest_url", "status", "search", "ask", "timeline", "lint_run"} {
 		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + name + `","arguments":{}}}`
 		out := rpc(t, h, body)
 		result := out["result"].(map[string]any)

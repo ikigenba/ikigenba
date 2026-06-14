@@ -45,6 +45,7 @@ type Handler struct {
 	events        outbox.Registry
 	subscriptions func() []consumer.Subscription
 	ingest        Ingester
+	lint          LintRunner
 }
 
 // Ingester is the interactive ingest front-door surface the MCP write doors
@@ -57,15 +58,26 @@ type Ingester interface {
 	StatusAny(ctx context.Context, id string) (any, error)
 }
 
+// LintRunner is the on-demand lint trigger surface the lint_run verb dispatches to
+// (design §6: "lint_run(job) is just another front door that Accepts a trigger
+// row"). LintRun Accepts a trigger row for the named job and returns its inbox id;
+// the worker selects and runs the job asynchronously. A nil LintRunner leaves
+// lint_run a not-implemented stub (the scaffold shape before the lint trigger is
+// wired).
+type LintRunner interface {
+	LintRun(ctx context.Context, owner, job string) (inbox.Receipt, error)
+}
+
 // NewHandler builds a Handler. version/service/health populate the health
 // envelope; health is the optional per-service reporter (nil → details is {}).
 // events is the published-event registry and subscriptions the live subscription
 // provider, both rendered by reflection. ingest is the interactive write/status
-// surface (nil → the write doors stay not-implemented stubs).
+// surface (nil → the write doors stay not-implemented stubs); lint is the
+// on-demand lint trigger surface (nil → lint_run stays a stub).
 func NewHandler(version, service string,
 	health func(context.Context) (map[string]any, error),
 	events outbox.Registry, subscriptions func() []consumer.Subscription,
-	ingest Ingester) *Handler {
+	ingest Ingester, lint LintRunner) *Handler {
 	return &Handler{
 		version:       version,
 		service:       service,
@@ -73,6 +85,7 @@ func NewHandler(version, service string,
 		events:        events,
 		subscriptions: subscriptions,
 		ingest:        ingest,
+		lint:          lint,
 	}
 }
 
@@ -131,6 +144,8 @@ func (h *Handler) dispatchTool(ctx context.Context, name string, argsRaw json.Ra
 		return h.toolIngestURL(ctx, argsRaw, id)
 	case "status":
 		return h.toolStatus(ctx, argsRaw)
+	case "lint_run":
+		return h.toolLintRun(ctx, argsRaw, id)
 	case "search", "ask", "timeline":
 		// Read-side tools land on the read side (P10).
 		return toolResultErr("not implemented: " + name + " (scaffold)"), nil
@@ -230,6 +245,30 @@ func (h *Handler) toolStatus(ctx context.Context, raw json.RawMessage) (map[stri
 		return toolResultErr(err.Error()), nil
 	}
 	return toolResultJSON(st)
+}
+
+// toolLintRun is the lint_run verb (design §6): Accept a trigger row for the named
+// lint job so a worker runs it now. It returns the trigger row's inbox id (a
+// receipt, not a result — the job runs asynchronously). An unknown job name is
+// surfaced as the LintRunner's error.
+func (h *Handler) toolLintRun(ctx context.Context, raw json.RawMessage, id Identity) (map[string]any, error) {
+	if h.lint == nil {
+		return toolResultErr("lint not wired"), nil
+	}
+	var a struct {
+		Job string `json:"job"`
+	}
+	if err := unmarshalArgs(raw, &a); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(a.Job) == "" {
+		return toolResultErr("lint_run: 'job' is required"), nil
+	}
+	rec, err := h.lint.LintRun(ctx, id.OwnerEmail, a.Job)
+	if err != nil {
+		return toolResultErr(err.Error()), nil
+	}
+	return toolResultJSON(map[string]any{"id": rec.ID, "job": a.Job})
 }
 
 // receiptResult renders the MCP receipt contract: inbox id + sha256 + dup flag.

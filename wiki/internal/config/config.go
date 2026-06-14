@@ -173,8 +173,8 @@ func Load(getenv func(string) string) (*Config, error) {
 	cfg.LLM.Merge = loadSite(getenv, "merge", "WIKI_MERGE", "claude-sonnet-4-6", "high", DefaultMergePrompt)
 	cfg.LLM.Compile = loadSite(getenv, "compile", "WIKI_COMPILE", "claude-sonnet-4-6", "medium", DefaultCompilePrompt)
 	cfg.LLM.Ask = loadSite(getenv, "ask", "WIKI_ASK", "claude-sonnet-4-6", "medium", placeholderPrompt)
-	cfg.LLM.LintDupJudge = loadSite(getenv, "lint_dup_judge", "WIKI_LINT_DUP", "claude-sonnet-4-6", "medium", placeholderPrompt)
-	cfg.LLM.LintFold = loadSite(getenv, "lint_fold", "WIKI_LINT_FOLD", "claude-sonnet-4-6", "medium", placeholderPrompt)
+	cfg.LLM.LintDupJudge = loadSite(getenv, "lint_dup_judge", "WIKI_LINT_DUP", "claude-sonnet-4-6", "medium", DefaultLintDupJudgePrompt)
+	cfg.LLM.LintFold = loadSite(getenv, "lint_fold", "WIKI_LINT_FOLD", "claude-sonnet-4-6", "high", DefaultLintFoldPrompt)
 	cfg.LLM.LintStale = loadSite(getenv, "lint_stale", "WIKI_LINT_STALE", "claude-sonnet-4-6", "medium", placeholderPrompt)
 
 	if err := cfg.LLM.Validate(); err != nil {

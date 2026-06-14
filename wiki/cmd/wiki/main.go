@@ -118,7 +118,7 @@ func main() {
 
 			rt.Handle("POST /mcp", rt.RequireIdentity(
 				mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
-					rt.Events(), rt.Subscriptions(), ingestSvc)))
+					rt.Events(), rt.Subscriptions(), ingestSvc, nil)))
 			return nil
 		},
 		// Producer fires after Handlers: inject the constructed outbox into the
