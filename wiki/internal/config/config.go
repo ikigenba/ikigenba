@@ -101,6 +101,29 @@ type Embed struct {
 	Dims  int    // configurable output dimensionality
 }
 
+// Retrieval is the hybrid-retriever (P11, design §9.3) configuration: the RRF
+// fusion constant and the per-call-site vector-lane switches. Every value here
+// is an eval-harness knob (obligation 2) — a tunable, never a constant at the
+// call site — so the harness can measure lexical-only vs hybrid recall lift per
+// site. The vector lane defaults OFF everywhere (FTS5-first, design §9.3): it is
+// turned on per site only when measurement shows lift.
+type Retrieval struct {
+	// RRFk is WIKI_RRF_K (default 60): the Reciprocal Rank Fusion constant the
+	// two-lane fuse uses (score contribution 1/(k+rank)). Design §9.3 ("k=60").
+	RRFk int
+	// LaneIn is WIKI_RETRIEVAL_LANE_IN (default 50): the per-lane top-N pulled into
+	// the fuse from each of the BM25 and vector lanes (design §9.3 "top ~50/lane in").
+	LaneIn int
+
+	// VectorSearch / VectorCandidates / VectorSweep independently switch the vector
+	// lane on for the three call sites (design §9.3: "Vector lane independently
+	// switchable per call site, on only when measurement shows lift"). All default
+	// OFF (lexical-only) until Part II's sweep shows the lane earns its cost.
+	VectorSearch     bool // WIKI_VECTOR_SEARCH — the search verb / ask's search tool
+	VectorCandidates bool // WIKI_VECTOR_CANDIDATES — resolution's candidates lane (P6b)
+	VectorSweep      bool // WIKI_VECTOR_SWEEP — lint-sweep's candidate lane (P9b)
+}
+
 // Config is wiki's whole service configuration, built at the serve boundary.
 type Config struct {
 	// Owner is WIKI_OWNER — the box owner autonomously-ingested dropbox files are
@@ -158,6 +181,9 @@ type Config struct {
 	LLM LLM
 	// Embed is the embeddings model/dims (P11's vector lane).
 	Embed Embed
+	// Retrieval is the hybrid-retriever config (P11): RRF k, per-lane in-count, and
+	// the per-call-site vector-lane switches.
+	Retrieval Retrieval
 }
 
 // defaults are the placeholder triples P2 ships. Each call-site phase replaces
@@ -191,6 +217,13 @@ func Load(getenv func(string) string) (*Config, error) {
 		Embed: Embed{
 			Model: envStr(getenv, "WIKI_EMBED_MODEL", "text-embedding-3-large"),
 			Dims:  envInt(getenv, "WIKI_EMBED_DIMS", 1024),
+		},
+		Retrieval: Retrieval{
+			RRFk:             envInt(getenv, "WIKI_RRF_K", 60),
+			LaneIn:           envInt(getenv, "WIKI_RETRIEVAL_LANE_IN", 50),
+			VectorSearch:     envBool(getenv, "WIKI_VECTOR_SEARCH", false),
+			VectorCandidates: envBool(getenv, "WIKI_VECTOR_CANDIDATES", false),
+			VectorSweep:      envBool(getenv, "WIKI_VECTOR_SWEEP", false),
 		},
 	}
 
@@ -229,6 +262,20 @@ func envStr(getenv func(string) string, key, def string) string {
 		return v
 	}
 	return def
+}
+
+// envBool reads a boolean knob: "1"/"true"/"yes"/"on" (case-insensitive) → true,
+// "0"/"false"/"no"/"off" → false, anything else (incl. empty) → def.
+func envBool(getenv func(string) string, key string, def bool) bool {
+	v := strings.ToLower(strings.TrimSpace(getenv(key)))
+	switch v {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return def
+	}
 }
 
 func envInt(getenv func(string) string, key string, def int) int {

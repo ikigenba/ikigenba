@@ -28,6 +28,34 @@ func (r storeRetriever) Search(ctx context.Context, query string, limit int) ([]
 	return r.store.SearchPages(ctx, query, limit)
 }
 
+// hybridSearcher is the hybrid retriever's search-lane signature (the P11
+// index.Retriever, narrowed): a two-lane search with an explicit vector-lane
+// switch. The read side passes the search site's switch, fixed at construction.
+type hybridSearcher interface {
+	Search(ctx context.Context, query string, limit int, useVector bool) ([]page.WholePage, error)
+}
+
+// hybridRetriever adapts the P11 hybrid retriever (index.Retriever) to the read
+// side's Retriever interface, pinning the SEARCH call site's vector-lane switch
+// (WIKI_VECTOR_SEARCH). The search verb / ask's search tool thus fuse the vector
+// lane only when that site's switch is on; the candidates and lint-sweep sites
+// carry their own switches at their own call sites (design §9.3).
+type hybridRetriever struct {
+	idx       hybridSearcher
+	useVector bool
+}
+
+// NewHybridRetriever builds the read-side retriever over the P11 hybrid index,
+// pinning the search site's vector-lane switch. Behind the SAME Retriever
+// interface as the lexical lane — the search verb and ask are unchanged.
+func NewHybridRetriever(idx hybridSearcher, useVector bool) Retriever {
+	return hybridRetriever{idx: idx, useVector: useVector}
+}
+
+func (r hybridRetriever) Search(ctx context.Context, query string, limit int) ([]page.WholePage, error) {
+	return r.idx.Search(ctx, query, limit, r.useVector)
+}
+
 // SearchLimits is the search verb's limit contract (design §9.3): a default and a
 // hard cap. Resolve clamps a caller-supplied limit into [1, Cap], defaulting a
 // non-positive value to Default.

@@ -20,6 +20,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"wiki/internal/db"
 	"wiki/internal/events"
 	"wiki/internal/inbox"
+	"wiki/internal/index"
 	"wiki/internal/ingest"
 	"wiki/internal/llm"
 	"wiki/internal/mcp"
@@ -38,6 +40,8 @@ import (
 	"wiki/internal/producer"
 	"wiki/internal/read"
 
+	"agentkit/embed"
+	embedopenai "agentkit/embed/openai"
 	"agentkit/model"
 	"agentkit/provider/anthropic"
 	"agentkit/provider/openai"
@@ -57,10 +61,11 @@ func main() {
 	// writer, and the producer. The workers run strictly after the server is built,
 	// so the captures are always set by the time they execute.
 	var (
-		rt   *appkit.Router
-		cfg  *config.Config
-		box  *inbox.Store
-		prod *producer.Producer
+		rt      *appkit.Router
+		cfg     *config.Config
+		box     *inbox.Store
+		prod    *producer.Producer
+		catchup *index.Catchup
 	)
 
 	appkit.Main(appkit.Spec{
@@ -128,7 +133,38 @@ func main() {
 			// retriever, the search/timeline verbs, and the hosted-ask agent over the
 			// config-injected ask triple + server-side budget. Strictly read-only.
 			pageStore := page.NewStore(rt.DB())
-			readSvc := read.NewService(pageStore, read.NewStoreRetriever(pageStore),
+
+			// The embedding lane (P11, design §9.3): an OpenAI embedder, presence-gated
+			// at OPENAI_API_KEY exactly like the chat clients — an absent key yields a
+			// nil embedder, the hybrid retriever degrades to lexical-only, and the
+			// catch-up worker becomes a no-op (it never starts an embed call). The
+			// hybrid retriever slots behind the SAME read Retriever interface; the
+			// search site's vector-lane switch is pinned here.
+			var embedder embed.Embedder
+			if ec, eerr := embedopenai.New(os.Getenv("OPENAI_API_KEY")); eerr == nil {
+				ec.SetLogger(rt.Logger().With(slog.String("call_site", "embed")))
+				embedder = ec
+			} else {
+				rt.Logger().Info("wiki embeddings disabled (no OPENAI_API_KEY; lexical-only)")
+			}
+			hybrid := index.New(index.Options{
+				Store:    pageStore,
+				Embedder: embedder,
+				Model:    cfg.Embed.Model,
+				Dims:     cfg.Embed.Dims,
+				RRFk:     cfg.Retrieval.RRFk,
+				LaneIn:   cfg.Retrieval.LaneIn,
+			})
+			catchup = index.NewCatchup(index.CatchupOptions{
+				Store:    pageStore,
+				Embedder: embedder,
+				Model:    cfg.Embed.Model,
+				Dims:     cfg.Embed.Dims,
+				Logger:   rt.Logger(),
+			})
+
+			readSvc := read.NewService(pageStore,
+				read.NewHybridRetriever(hybrid, cfg.Retrieval.VectorSearch),
 				read.SearchLimits{Default: cfg.SearchLimitDefault, Cap: cfg.SearchLimitCap})
 			askWrapper := llm.New(clientFactory(os.Getenv), rt.Logger())
 			askStore := read.NewAskStore(rt.DB())
@@ -169,6 +205,9 @@ func main() {
 			func(ctx context.Context) error { return runDropboxConsumer(ctx, rt, box, prod) },
 			func(ctx context.Context) error { return runCRMConsumer(ctx, rt, box, prod) },
 			func(ctx context.Context) error { return runLedgerConsumer(ctx, rt, box, prod) },
+			// The async catch-up embedder (P11, design §9.3): keeps page_vectors
+			// current off the integration commit. A no-op when no embedder is wired.
+			func(ctx context.Context) error { return catchup.Run(ctx) },
 		},
 	})
 }

@@ -1605,7 +1605,7 @@ returns whole-page hits, registry-first.
 
 ---
 
-## [ ] P11 — The embedding lane: hybrid retriever
+## [x] P11 — The embedding lane: hybrid retriever
 
 *Design §9.3. Designed now, sequenced last — FTS5-first was build ordering only.
 Slots behind the retriever interface P10 already consumes.*
