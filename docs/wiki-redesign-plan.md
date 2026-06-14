@@ -834,10 +834,15 @@ P1 has already `git rm`ed the legacy `wiki/` Go tree, so `internal/` starts
   triple (enablement obligation 1).
 - **The call-site registry**: a documented, single-source list of the ten
   inference sites (extract, match, compile, merge, dup judge, canonical-name
-  pick, ask, candidates, search, sweep), each naming its injected-config triple
-  and its callable entry point. Sites are added to it as their phases land; P2
-  establishes the registry and the convention so "every site is harness-callable"
-  is a checklist by the end, not a retrofit.
+  pick, ask, candidates, search, sweep). The registry is a **superset** of the
+  eight config-injected sites above: each config-injected site names its own
+  injected-config triple and callable entry point, while the canonical-name pick
+  and the three retrieval lanes (candidates, search, sweep) are tracked as
+  scoreable sites with **no triple of their own** — canonical-name pick rides the
+  dup-judge call's triple and entry point (it is a field of the dup-judge output,
+  design §6), and the retrieval lanes are zero-LLM. Sites are added to it as their
+  phases land; P2 establishes the registry and the convention so "every site is
+  harness-callable" is a checklist by the end, not a retrofit.
 - MCP server skeleton (`internal/mcp`): register the tool surface
   (`ingest_text`, `ingest_url`, a status verb, `search`, `ask`, `timeline`) as
   stubs returning not-implemented; the `reflection` + `health` tools live.
@@ -1429,8 +1434,10 @@ and fold config-default prompts are non-placeholder (§6, both tool-less calls);
 judge parser schema-validates a committed, hand-authored, schema-faithful response fixture into
 the ternary `merge | dismiss | can't-tell-yet` verdict, and the fold parser into a
 body + `superseded` list (§6.1). Deterministic, key-independent.
-**Eval hook:** the dup judge and the canonical-name pick registered as
-harness-callable sites (obligation 1); the judge's ternary verdict
+**Eval hook:** the dup judge registered as a harness-callable site (obligation 1),
+with the canonical-name pick scored as its own dimension off the dup-judge call's
+canonical-name output field — not a separate registered call site (the surviving id
+is mechanical, §6); the judge's ternary verdict
 (`merge | dismiss | can't-tell-yet`) preserved verbatim, not collapsed
 (obligation 3); `dup_flags` retained as a golden source (obligation 4).
 **Integration test:** real dup judge on a blunt obviously-same and

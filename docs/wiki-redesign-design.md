@@ -570,7 +570,9 @@ the page versions examined into `judged_version_a/_b`, and the work-list query
 skips open rows where neither page's `version` advanced past the stamp — new
 evidence is the only license to re-judge). Subject-merge mechanics: the
 **older ULID wins** mechanically (the judge picks only the canonical *name*,
-never the surviving id); the loser is hard-deleted in one transaction (repoint
+never the surviving id — and that name is a field of the dup-judge call's
+structured output, not a separate LLM call); the loser is hard-deleted in one
+transaction (repoint
 aliases → winner; rewrite open `dup_flags`; fold loser's prose into winner's
 page; delete loser's page + subjects row; set winner's `canonical_name`, mark
 the dup row `merged`). No `merged_into` tombstone — `dup_flags` is the audit
@@ -887,7 +889,12 @@ This is a hard constraint on the implementation, stated so the out-of-band
 evaluation engine can drive tuning later: **every LLM call site takes its
 prompt, model, and effort from injected config, never from constants.** The
 call sites are extract, match, merge, compile, ask, and the three lint LLM
-calls (the dup judge, the fold, the stale repair). None may hard-code a prompt
+calls (the dup judge, the fold, the stale repair). The canonical-name pick and
+the three retrieval lanes are **not** among these — the canonical name is a
+field the dup-judge call emits (the surviving id is chosen mechanically by
+older-ULID-wins, §6), and the retrieval lanes carry no LLM in-lane; both are
+scoreable by the eval harness but are not separate config-injected call sites.
+None may hard-code a prompt
 string, a model id, or an effort/budget setting; all three are supplied by
 configuration resolved at the composition root and threaded to the call site.
 The evaluation engine itself has **zero CI/CD role** and is **not** a
