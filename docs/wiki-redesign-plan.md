@@ -1,5 +1,13 @@
 # Plan — wiki redesign: a prose-pages knowledge service
 
+> **Locked build-time decision (P1) — digest claimable unit: Framing 2.** The
+> claimable unit for the digest pass is a single **`(cron-row, entry)` pair**, not
+> the whole cron row. This keeps the selection critical section uniform (one
+> claim = one job to run), makes the cron-row stamp a pure completion-time join
+> with **no leave-pending-if-locked-out** special case, and removes that special
+> case from the spine — which matters most because P4 is built before any digest
+> exists (design §11, plan P1).
+
 The phased build plan for the wiki rewrite. The **how and the decisions** live
 in `docs/wiki-redesign-design.md` (the source of truth — read it first, in full);
 the full rationale behind any decision is in `docs/wiki-redesign-decisions.md`.
@@ -734,7 +742,7 @@ computation and the caller's pre-bound `call_site`; a nil logger emits nothing;
 an Anthropic request with effort sends adaptive-thinking on the wire; **all
 agent-backed services still build.**
 
-## [ ] P1 — Decisions lock + consolidated schema
+## [x] P1 — Decisions lock + consolidated schema
 
 *Design §12 (the authoritative schema final), plus §2.2, §4.1, §4.5, §5, §6, §7,
 §9.2, §9.3, §11. The prerequisite for everything; resolves the open schema/fork

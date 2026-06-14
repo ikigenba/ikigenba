@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	appkitdb "appkit/db"
@@ -11,6 +13,55 @@ import (
 func tempDB(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "test.db")
+}
+
+func tableExists(t *testing.T, ctx context.Context, conn *sql.DB, name string) bool {
+	t.Helper()
+	var got string
+	err := conn.QueryRowContext(ctx,
+		`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&got)
+	if err == sql.ErrNoRows {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("tableExists(%q): %v", name, err)
+	}
+	return got == name
+}
+
+func indexExists(t *testing.T, ctx context.Context, conn *sql.DB, name string) bool {
+	t.Helper()
+	var got string
+	err := conn.QueryRowContext(ctx,
+		`SELECT name FROM sqlite_master WHERE type='index' AND name=?`, name).Scan(&got)
+	if err == sql.ErrNoRows {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("indexExists(%q): %v", name, err)
+	}
+	return got == name
+}
+
+func tableColumns(t *testing.T, ctx context.Context, conn *sql.DB, table string) []string {
+	t.Helper()
+	rows, err := conn.QueryContext(ctx, `SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		t.Fatalf("pragma_table_info(%q): %v", table, err)
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("scan column name: %v", err)
+		}
+		cols = append(cols, name)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows.Err: %v", err)
+	}
+	return cols
 }
 
 func TestOpenAndMigrate(t *testing.T) {
@@ -75,7 +126,7 @@ func TestMigrate_RefusesDowngrade(t *testing.T) {
 	// Simulate a future migration having run against this DB.
 	if _, err := conn.ExecContext(ctx,
 		`INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`,
-		999, "2099-01-01T00:00:00Z",
+		99999999999999, "2099-01-01T00:00:00Z",
 	); err != nil {
 		t.Fatalf("inject future version: %v", err)
 	}
@@ -86,103 +137,134 @@ func TestMigrate_RefusesDowngrade(t *testing.T) {
 	}
 }
 
-func TestMigrate_AppliesWikiSchemaOnFreshDB(t *testing.T) {
+// TestDropLegacy_TablesGone asserts the drop-legacy migration (design §12.1)
+// removes the dead wiki-specific tables (002_wiki.sql replays forward then this
+// migration drops them) while PRESERVING the library-owned feed_offset cursor
+// store the consume side still depends on.
+func TestDropLegacy_TablesGone(t *testing.T) {
 	ctx := context.Background()
 	conn, err := Open(tempDB(t))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	defer conn.Close()
-
 	if err := Migrate(ctx, conn); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	// Versions 1, 2 and 3 must all be recorded on a fresh DB (001→002→003; 003 is
-	// the event-plane consumer offset migration, Task 6.1).
-	for _, v := range []int{1, 2, 3} {
-		var got int
-		if err := conn.QueryRowContext(ctx,
-			`SELECT version FROM schema_migrations WHERE version=?`, v,
-		).Scan(&got); err != nil {
-			t.Fatalf("schema_migrations missing version %d: %v", v, err)
+	for _, table := range []string{"wiki_ingest", "wiki_jobs"} {
+		if tableExists(t, ctx, conn, table) {
+			t.Errorf("legacy table %q should be dropped by the drop-legacy migration, but it still exists", table)
 		}
 	}
-
-	// The real 002 tables + the 003 feed_offset table must exist (placeholder
-	// wiki_meta must be gone).
-	for _, table := range []string{"wiki_ingest", "wiki_jobs", "feed_offset"} {
-		var name string
-		if err := conn.QueryRowContext(ctx,
-			`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table,
-		).Scan(&name); err != nil {
-			t.Fatalf("expected table %q after migrate: %v", table, err)
+	// feed_offset (consumer cursor, library-owned) and outbox (producer) both survive.
+	for _, table := range []string{"feed_offset", "outbox"} {
+		if !tableExists(t, ctx, conn, table) {
+			t.Errorf("table %q must exist after migrate (feed_offset preserved, outbox added)", table)
 		}
-	}
-
-	// The job-record columns must back agentkit/job.Record + owner + collection.
-	wantCols := map[string]bool{
-		"id": false, "flight_key": false, "status": false, "started_at": false,
-		"ended_at": false, "usage_json": false, "error": false,
-		"owner": false, "collection": false,
-	}
-	rows, err := conn.QueryContext(ctx, `PRAGMA table_info(wiki_jobs)`)
-	if err != nil {
-		t.Fatalf("pragma table_info: %v", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dflt any
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			t.Fatalf("scan table_info: %v", err)
-		}
-		if _, ok := wantCols[name]; ok {
-			wantCols[name] = true
-		}
-	}
-	for col, present := range wantCols {
-		if !present {
-			t.Errorf("wiki_jobs missing required column %q", col)
-		}
-	}
-
-	// The single-flight gate: a running row blocks a second running row for the
-	// same flight_key, but a terminal row does not.
-	ins := `INSERT INTO wiki_jobs (id, flight_key, status, started_at, owner) VALUES (?,?,?,?,?)`
-	if _, err := conn.ExecContext(ctx, ins, "j1", "k", "running", "t0", "alice"); err != nil {
-		t.Fatalf("insert running job: %v", err)
-	}
-	if _, err := conn.ExecContext(ctx, ins, "j2", "k", "running", "t0", "alice"); err == nil {
-		t.Fatal("expected single-flight rejection for second running job on same key")
-	}
-	if _, err := conn.ExecContext(ctx,
-		`UPDATE wiki_jobs SET status='succeeded' WHERE id='j1'`); err != nil {
-		t.Fatalf("terminalize j1: %v", err)
-	}
-	if _, err := conn.ExecContext(ctx, ins, "j3", "k", "running", "t0", "alice"); err != nil {
-		t.Fatalf("a key should run again after its prior run is terminal: %v", err)
-	}
-
-	// wiki_ingest enforces idempotent provenance: same (owner, collection, sha256).
-	insIng := `INSERT INTO wiki_ingest (id, owner, sha256, raw_path, ingested_at) VALUES (?,?,?,?,?)`
-	if _, err := conn.ExecContext(ctx, insIng, "i1", "alice", "abc", "raw/abc.md", "t0"); err != nil {
-		t.Fatalf("insert ingest: %v", err)
-	}
-	if _, err := conn.ExecContext(ctx, insIng, "i2", "alice", "abc", "raw/abc.md", "t0"); err == nil {
-		t.Fatal("expected UNIQUE rejection for duplicate (owner, collection, sha256)")
 	}
 }
 
-// TestLoadMigrations_Order guards that wiki's embedded migration set (now applied
-// through appkit's shared forward-only runner) is well-formed: versions parse,
-// are unique, and sort into strictly ascending order. Contiguity (no gaps) is
-// NOT required — new migrations use sparse 14-digit timestamps
-// (docs/adr-migration-timestamps.md). The runner mechanism itself is tested in
-// appkit/db; this asserts only that wiki's *.sql, exposed via FS for
-// Spec.Migrations, parse and order correctly.
+// TestSchema_MatchesDesign12 is the §12 schema test. The expectations below are
+// transcribed from design §12.2 — the EXTERNAL authoritative spec — so an
+// omission cannot hide in both the DDL and this test (the test is checked against
+// §12, not against the migration's own reading). It asserts every §12.2
+// application table, its columns, and the named indexes/constraints §12 pins.
+func TestSchema_MatchesDesign12(t *testing.T) {
+	ctx := context.Background()
+	conn, err := Open(tempDB(t))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer conn.Close()
+	if err := Migrate(ctx, conn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	// Every §12.2 application table + pages_fts must exist.
+	wantTables := []string{
+		"inbox", "subjects", "aliases", "pages", "pages_fts",
+		"runs", "dup_flags", "stale_notes", "page_vectors", "asks",
+	}
+	for _, tbl := range wantTables {
+		if !tableExists(t, ctx, conn, tbl) {
+			t.Errorf("§12 table %q missing after migrate", tbl)
+		}
+	}
+
+	// Column sets, transcribed column-for-column from §12.2.
+	wantCols := map[string][]string{
+		"inbox": {
+			"id", "owner", "kind", "source", "sha256", "size", "mime",
+			"content", "blob", "title", "tags", "received_at", "integrated_by",
+			"ineligible_until", "dead_at", "requeued_at",
+		},
+		"subjects": {"id", "type", "kind", "canonical_name", "created_by_run", "occurred_at"},
+		"aliases":  {"type", "norm", "subject_id"},
+		"pages":    {"subject", "title", "body", "version"},
+		"runs": {
+			"id", "job", "caused_by", "status", "started_at",
+			"finished_at", "usage", "conflicts", "error",
+		},
+		"dup_flags":   {"subject_a", "subject_b", "status", "judged_version_a", "judged_version_b", "run_id"},
+		"stale_notes": {"id", "subject", "note", "cites", "run_id", "status"},
+		"page_vectors": {"subject", "embedded_version", "model", "vector"},
+		"asks":        {"id", "owner", "question", "status", "started_at", "finished_at", "usage", "error"},
+	}
+	for tbl, cols := range wantCols {
+		got := tableColumns(t, ctx, conn, tbl)
+		want := append([]string(nil), cols...)
+		sort.Strings(got)
+		sort.Strings(want)
+		if len(got) != len(want) {
+			t.Errorf("table %q: column count mismatch\n got: %v\nwant: %v", tbl, got, want)
+			continue
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("table %q: column set mismatch\n got: %v\nwant: %v", tbl, got, want)
+				break
+			}
+		}
+	}
+
+	// Named indexes §12.2 pins.
+	for _, idx := range []string{"inbox_integrated_by", "inbox_sha256", "runs_caused_by"} {
+		if !indexExists(t, ctx, conn, idx) {
+			t.Errorf("§12 index %q missing", idx)
+		}
+	}
+
+	// dup_flags UNIQUE(subject_a, subject_b) + CHECK(subject_a < subject_b):
+	// a mis-ordered or duplicate insert is rejected.
+	if _, err := conn.ExecContext(ctx,
+		`INSERT INTO dup_flags (subject_a, subject_b) VALUES (?, ?)`, "AAA", "BBB"); err != nil {
+		t.Fatalf("first dup_flags insert: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx,
+		`INSERT INTO dup_flags (subject_a, subject_b) VALUES (?, ?)`, "AAA", "BBB"); err == nil {
+		t.Error("expected UNIQUE(subject_a, subject_b) to reject a duplicate pair")
+	}
+	if _, err := conn.ExecContext(ctx,
+		`INSERT INTO dup_flags (subject_a, subject_b) VALUES (?, ?)`, "ZZZ", "AAA"); err == nil {
+		t.Error("expected CHECK(subject_a < subject_b) to reject a mis-ordered pair")
+	}
+
+	// aliases UNIQUE(type, norm): the duplicate-mint guard.
+	if _, err := conn.ExecContext(ctx,
+		`INSERT INTO aliases (type, norm, subject_id) VALUES (?,?,?)`, "entity", "acme", "s1"); err != nil {
+		t.Fatalf("first alias insert: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx,
+		`INSERT INTO aliases (type, norm, subject_id) VALUES (?,?,?)`, "entity", "acme", "s2"); err == nil {
+		t.Error("expected UNIQUE(type, norm) to reject a duplicate (type, norm)")
+	}
+}
+
+// TestLoadMigrations_Order guards that wiki's embedded migration set is
+// well-formed: versions parse, are unique, and sort into strictly ascending
+// order. Contiguity (no gaps) is NOT required — new migrations use sparse
+// 14-digit timestamps (docs/adr-migration-timestamps.md).
 func TestLoadMigrations_Order(t *testing.T) {
 	migs, err := appkitdb.LoadMigrations(FS, "migrations")
 	if err != nil {
