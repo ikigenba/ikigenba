@@ -1843,7 +1843,7 @@ entirely from cache (zero paid calls).
 > schema change, out of P13's rig scope. Anthropic — the pinned production model
 > — runs clean.
 
-## [ ] P14 — The scorer library
+## [x] P14 — The scorer library
 
 *Research doc piece 2. Four kinds cover all ten sites; every scorer reports the
 **dangerous direction separately** (the research's asymmetry principle).*
