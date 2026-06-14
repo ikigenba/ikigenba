@@ -99,6 +99,11 @@ a minimal one). Its fields, each tagged with the consumer that reads it:
   `WHERE subject=? AND version=?` guard.
 - **re-run-merge-for-one-page handle** — the second thing P7b's conflict loop
   needs (read by P7b; §3).
+- **`dup_pairs[]`** — candidate duplicate subject pairs to flag, each in canonical
+  order (smaller ULID first): the pairs resolve's many-ids arm surfaces (P6b) and
+  match's side channel reports (P6b2), **assembled into the manifest by P6b2** (the
+  manifest producer) and **read by P7a's end-of-run transaction**, which inserts
+  them into `dup_flags` via `FlagDup` (§3, §4.3, §4.5; eval obligation 3).
 
 Two rules bind every phase, mirroring *Schema canonicity*:
 
@@ -1077,7 +1082,10 @@ P7a–P7b2.*
   pinned type** but is filled at merge-read time (P7a), not here — P6b2 leaves it
   unset, per P4's field obligations. P6b2 is the type's first real producer; its
   in-memory, never-persisted nature (the run id is its durable identity) is P4's
-  contract.
+  contract. **P6b2 also records the manifest's `dup_pairs`** — match's
+  candidate-pair side channel plus any many-ids pairs handed up from P6b, each in
+  canonical order — the field P7a's commit reads to write `dup_flags` (per the
+  *Manifest canonicity* enumeration).
 
 **Touches:** `wiki/internal/{integrate,page,llm,config}/`.
 **Verify:** match binary contract; manifest assembled correctly from P6b's
@@ -1122,7 +1130,8 @@ fills its real default," and merge's real default is P7a2's job.*
   corral contradictions with both sides + citations). Tools: read + write pages
   only.
 - **The one end-of-run transaction**, made real: updated/created pages + registry
-  inserts + `dup_flags` + the run row + `integrated_by` (and `occurred_at`
+  inserts + `dup_flags` (inserted from the manifest's `dup_pairs` via `FlagDup`,
+  canonical order) + the run row + `integrated_by` (and `occurred_at`
   first-writer-wins from the manifest). Zero mid-run partial writes. This fills
   the generic end-of-run transaction wrapper P4 built and tested with stubs — now
   writing real pages/registry. **Merge records the base `version` it read for
