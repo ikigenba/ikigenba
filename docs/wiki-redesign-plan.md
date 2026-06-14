@@ -532,15 +532,39 @@ is verifiable before any real integrator does.*
   concrete):
   - **`Manifest`** — the in-memory work order, **never persisted** (the run id is
     its durable identity): extracted/compiled `subjects[]`, each annotated with
-    its resolved subject_id + target page, plus a **generalized `{text, cites[]}`
-    claim shape** (the document pass fills `cites` with the one inbox row id;
-    compile fills per-claim cites — §4.3, §5). Defined **empty-capable** so a stub
-    can emit a minimal one.
+    its resolved subject_id + target page, a **per-page base `version` slot** (the
+    `pages.version` the page was read at — design §3: "the manifest records the
+    version merge read"; populated at merge-read time in P7a, consumed by P7b's
+    optimistic-commit `WHERE subject=? AND version=?` guard — pinned **now** so
+    P7b reads an existing field instead of reshaping the frozen contract), plus a
+    **generalized `{text, cites[]}` claim shape** (the document pass fills `cites`
+    with the one inbox row id; compile fills per-claim cites — §4.3, §5). Defined
+    **empty-capable** so a stub can emit a minimal one (the stub fills the version
+    slot with a dummy value to round-trip it — see Verify).
   - **`Integrator`** — the interface the document-pass stub, the cron/no-op stub,
     the real document pass (P7a), and the real compile (P8) **all** satisfy:
     claim → run → produce a `Manifest`. The shared resolve→merge→commit pipeline
     and the end-of-run transaction consume a `Manifest`, never integrator-specific
     data — which is exactly what lets merge "not tell which integrator ran" (P8).
+  - **Manifest field obligations (the §12-style canonicity rule for the seam).**
+    The `Manifest` is pinned here against an explicit enumeration of *every field
+    each downstream consumer reads* — transcribed from the design, not whittled to
+    the stub's minimal needs — so no field a later consumer needs is discovered
+    only after the contract is frozen (the failure this split is built to prevent:
+    P7b, the densest cold-start unit, silently reshaping a spine type):
+    - **P6b** (first real producer): resolved subject_id, target page, claims.
+    - **P7a** (merge + commit): the write-set pages, the `{text, cites[]}` claims,
+      `occurred_at` (first-writer-wins, §4.1), merge's `superseded` source, and
+      the point that **populates the per-page base `version`** at merge-read time.
+    - **P7b** (optimistic commit): **reads the per-page base `version`** (design
+      §3) plus a re-run-merge-for-one-page handle — the two things the conflict
+      loop needs.
+    - **P8** (compile): per-claim `cites` (the generalized claim shape carries
+      these).
+
+    Any field a later phase finds missing is added **here first** (and the
+    producers updated), exactly as a schema gap is added to §12 first — the seam
+    and its consumers never diverge.
 - `internal/run`: the `runs` lifecycle — insert `running` before execution (the
   one write outside the commit); the **generic end-of-run transaction wrapper**
   that **takes a `Manifest` and** atomically writes the run's terminal
@@ -559,9 +583,10 @@ is verifiable before any real integrator does.*
 cron-before-document priority; crash between claim and commit leaves the row
 **pending** and restart re-selects it; boot sweep marks orphans `crashed`;
 selection stays oldest-first (no starvation). The stub integrators **implement
-the `Integrator` interface and round-trip a minimal `Manifest`** through the
-end-of-run transaction — the swap-boundary is a tested property *here*, not
-deferred to P7a. Concurrency tests.
+the `Integrator` interface and round-trip a `Manifest` that carries every field
+obligation above — including a populated per-page base `version` slot** through
+the end-of-run transaction, so the seam's *completeness* (not merely its
+existence) is a tested property *here*, not a P7b-time audit. Concurrency tests.
 
 ---
 
@@ -650,8 +675,11 @@ Consumes P6a's extracted `subjects[]`; merge/commit close it in P7a/P7b.*
 - **Manifest**: populate the `Manifest` type **pinned in P4** (don't redefine it)
   — every extracted subject annotated with its resolved subject_id + target page
   + claims; the document pass fills the generalized `{text, cites[]}` claim shape
-  with the one inbox row id. P6b is the type's first real producer; its in-memory,
-  never-persisted nature (the run id is its durable identity) is P4's contract.
+  with the one inbox row id. The **per-page base `version` slot is part of the
+  pinned type** but is filled at merge-read time (P7a), not here — P6b leaves it
+  unset, per P4's field obligations. P6b is the type's first real producer; its
+  in-memory, never-persisted nature (the run id is its durable identity) is P4's
+  contract.
 
 **Touches:** `wiki/internal/{integrate,page,llm,config}/`.
 **Verify:** resolve's three arms (one/many/zero ids) deterministic; match binary
@@ -686,9 +714,11 @@ monolithic P7 so each half fits one cold-start context.*
   inserts + `dup_flags` + the run row + `integrated_by` (and `occurred_at`
   first-writer-wins from the manifest). Zero mid-run partial writes. This fills
   the generic end-of-run transaction wrapper P4 built and tested with stubs — now
-  writing real pages/registry. `version` is bumped per write, but the
-  **conflict-handling `WHERE`-guard and the conflict loops are P7b**: P7a is the
-  single-writer happy path.
+  writing real pages/registry. **Merge records the base `version` it read for
+  each page into the manifest's per-page version slot** (the value P7b's guard
+  will consume — design §3's "the version merge read"); `version` is bumped per
+  write, but the **conflict-handling `WHERE`-guard and the conflict loops are
+  P7b**: P7a is the single-writer happy path.
 - **`stale_notes` writer hook**: when merge touches a read-only neighbor page it
   contradicts, it appends a `stale_notes` row (with `cites`) **in its existing
   commit** (design §6). This is the producer side `lint-stale` (P9c) consumes —
@@ -699,9 +729,11 @@ monolithic P7 so each half fits one cold-start context.*
 
 **Touches:** `wiki/internal/{integrate,page,run}/`.
 **Verify:** full `ingest_text` → pages happy path (mocked LLM); the stub→real
-swap leaves the spine green (P4's concurrency tests still pass); a `stale_notes`
-row is appended when merge contradicts a neighbor; provenance chain (answer-less:
-page cites inbox id → `ReadPayload`). End-to-end test through the spine.
+swap leaves the spine green (P4's concurrency tests still pass); the manifest's
+per-page base `version` slot is populated with the value merge read (so P7b's
+guard has it); a `stale_notes` row is appended when merge contradicts a neighbor;
+provenance chain (answer-less: page cites inbox id → `ReadPayload`). End-to-end
+test through the spine.
 **Eval hook:** merge registered as a harness-callable site (obligation 1); two of
 merge's mechanical invariants — write-set conformance and claim-cite presence —
 exposed as the deterministic pass/fail the harness scores (obligation 5; the
@@ -721,11 +753,13 @@ the N-worker pool: the two conflict types, the bounded retry, and the
 citation-preservation gate. Split from the old P7 so the intricate concurrency
 machinery is its own cold-start unit on top of a working merge+commit.*
 
-- **Optimistic commit**: the commit guarded by `WHERE subject=? AND version=?`;
-  zero rows → conflict → roll back, re-read, **re-run merge only** for that page,
-  recommit. **Duplicate-subject minting** caught by `UNIQUE(type, norm)` → roll
-  back → **restart at resolve** for the colliding subject only (never
-  re-extract).
+- **Optimistic commit**: the commit guarded by `WHERE subject=? AND version=?`
+  — the version read from **the manifest's per-page base-`version` slot (pinned
+  in P4, populated by merge in P7a)**, so P7b consumes an existing field and
+  reshapes nothing; zero rows → conflict → roll back, re-read, **re-run merge
+  only** for that page, recommit. **Duplicate-subject minting** caught by
+  `UNIQUE(type, norm)` → roll back → **restart at resolve** for the colliding
+  subject only (never re-extract).
 - **Conflict loop** (shared by both conflict types): cap **3 commit attempts**
   then fail naming **conflict-retry exhaustion**; `conflicts` counted on `runs`;
   post-exhaustion re-selection delayed via `ineligible_until` (P5).
