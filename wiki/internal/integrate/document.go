@@ -101,3 +101,24 @@ func (d *Document) Integrate(ctx context.Context, unit Unit) (*Manifest, error) 
 
 	return manifest, nil
 }
+
+// ReMerge re-runs the MERGE STAGE ONLY for an existing manifest after an
+// optimistic-commit conflict (design §3: "re-run merge only for that page" — the
+// lost-update arm, P7b). Extract and resolve outputs cannot go stale — claims and
+// identities don't change because another run committed a page; only the prose
+// does — so the conflict loop re-enters merge alone, never extract/resolve. Merge
+// re-reads each target page's CURRENT version into the manifest's per-page
+// BaseVersion slot (so the next commit's version guard checks against the fresh
+// value) and re-folds against the fresh page bodies. The subjectID names the page
+// that conflicted; the whole merge stage re-runs (the merge prompt operates over
+// the manifest), which is a faithful superset of "that page only" — it re-reads the
+// fresh version for the conflicting page and never re-extracts or re-resolves.
+//
+// It is exposed so the worker's conflict loop (internal/worker) can re-merge an
+// integrator-agnostically without the run/commit layer importing the merge stage.
+func (d *Document) ReMerge(ctx context.Context, m *Manifest, subjectID string) error {
+	if _, err := d.merger.Merge(ctx, m); err != nil {
+		return fmt.Errorf("document: re-merge after conflict (subject %q): %w", subjectID, err)
+	}
+	return nil
+}

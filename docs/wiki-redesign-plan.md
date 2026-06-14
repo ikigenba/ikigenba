@@ -1322,7 +1322,7 @@ subject + alias exist. Structure only — never whether the prose is *good*.
 
 ---
 
-## [ ] P7b — Document pass: optimistic commit + the lost-update loop + the §6.1 gate
+## [x] P7b — Document pass: optimistic commit + the lost-update loop + the §6.1 gate
 
 *Design §3 (optimistic commit / the lost-update conflict), §6.1. Hardens P7a's
 commit for the N-worker pool with the **page-update** race: the version-guarded

@@ -19,6 +19,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -47,6 +48,35 @@ const defaultAttemptsMax = 5
 // avgRunFloor is the floor on the recent average run duration used in the backoff
 // formula (design §7): `avg_run_duration` from recent runs, floored at 60s.
 const avgRunFloor = 60 * time.Second
+
+// MaxCommitAttempts is the conflict-loop bound (design §3): cap 3 commit attempts
+// per run, then fail cleanly naming conflict-retry exhaustion. This is a SECOND,
+// distinct budget from the run-level WIKI_RUN_ATTEMPTS_MAX (N runs per causing
+// row): 3 commit attempts INSIDE one run vs. N runs across the row's lifetime.
+// Both the lost-update arm (P7b) and the duplicate-mint arm (P7b2) share it.
+const MaxCommitAttempts = 3
+
+// ConflictError is an optimistic-commit conflict surfaced by Commit (design §3):
+// the version-guarded page update affected zero rows because a concurrent run
+// advanced the page past the base version merge read (the LOST-UPDATE race). It
+// names the conflicting subject so the conflict loop (runClaim) re-runs merge for
+// THAT page only — no diagnosis step, the failing statement identifies the page —
+// and recommits. The transaction was already rolled back when this is returned.
+type ConflictError struct {
+	// Subject is the subject id of the page whose version guard failed — the one
+	// page the conflict loop re-merges (the others' merge output is unaffected).
+	Subject string
+}
+
+func (e *ConflictError) Error() string {
+	return fmt.Sprintf("run: optimistic-commit conflict on subject %q (lost update)", e.Subject)
+}
+
+// ErrConflictRetryExhausted is the clean failure when the conflict loop hits
+// MaxCommitAttempts (design §3): distinct from the run-level retry budget, but the
+// run still fails and the row's failure policy applies (the error string names
+// conflict-retry exhaustion for the human; §7 counts it toward the threshold).
+var ErrConflictRetryExhausted = fmt.Errorf("run: conflict-retry exhaustion (%d commit attempts)", MaxCommitAttempts)
 
 // Outbox is the eventplane producer surface the failure path needs: append an
 // event onto an existing transaction (so the dead-letter event commits atomically
@@ -84,9 +114,19 @@ type rowDeadLetteredPayload struct {
 type Pages interface {
 	EnsureSubject(ctx context.Context, tx *sql.Tx, subj page.Subject, createdByRun string) error
 	InsertAlias(ctx context.Context, tx *sql.Tx, a page.Alias) error
-	UpsertPage(ctx context.Context, tx *sql.Tx, subject, title, body string) error
+	// UpsertPage writes a page guarded by the manifest's per-page base version (the
+	// optimistic-commit guard, design §3): a stale base version yields
+	// page.ErrVersionConflict, which Commit surfaces as a *ConflictError naming the
+	// subject so the conflict loop re-runs merge for that page only (P7b).
+	UpsertPage(ctx context.Context, tx *sql.Tx, subject, title, body string, baseVersion int) error
 	FlagDup(ctx context.Context, tx *sql.Tx, a, b string) error
 	InsertStaleNote(ctx context.Context, tx *sql.Tx, id, subject, note, cites, runID string) error
+	// ReadPageTx returns a page's current title/body ON THE COMMIT'S *sql.Tx
+	// (ok=false if it has none yet) — the OLD body the §6.1 citation-preservation
+	// gate diffs against the merged body (P7b). It MUST run on the same tx as the
+	// guarded upsert: a read on a separate *sql.DB connection while this write tx
+	// holds SQLite's write lock deadlocks until busy_timeout.
+	ReadPageTx(ctx context.Context, tx *sql.Tx, subject string) (title, body string, ok bool, err error)
 }
 
 // Store owns the runs table on db. Constructed once at the composition root; the
@@ -273,7 +313,31 @@ func (s *Store) applyManifest(ctx context.Context, tx *sql.Tx, runID string, m *
 		// The page: write merge's rewritten prose body + title, keeping pages_fts in
 		// sync (the §4.5 external-content sync, per-page, no triggers).
 		if subj.TargetPage != "" {
-			if err := s.pages.UpsertPage(ctx, tx, subj.TargetPage, subj.PageTitle, subj.PageBody); err != nil {
+			// §6.1 citation-preservation gate (P7b): the OLD body's citations minus the
+			// NEW body's must EXACTLY equal merge's declared `superseded`. Undeclared
+			// loss = paraphrased-away evidence = a failed call (the transaction never
+			// commits — returning here rolls it back via the deferred Rollback). The gate
+			// runs against the page's CURRENT body; a concurrent write that changes it is
+			// caught by the version guard below, which re-merges against the fresh body.
+			oldTitle, oldBody, existed, err := s.pages.ReadPageTx(ctx, tx, subj.TargetPage)
+			_ = oldTitle
+			if err != nil {
+				return fmt.Errorf("run: read old page for §6.1 gate %q: %w", subj.TargetPage, err)
+			}
+			if existed {
+				if err := checkCitationPreservation(oldBody, subj.PageBody, subj.Superseded); err != nil {
+					return fmt.Errorf("run: %w", err)
+				}
+			}
+			// Version-guarded upsert (design §3): a stale base version (a concurrent run
+			// advanced the page) yields page.ErrVersionConflict, which we surface as a
+			// *ConflictError naming the subject so the conflict loop re-merges THAT page
+			// only and recommits (P7b's lost-update arm). The transaction is rolled back
+			// by the deferred Rollback when this returns.
+			if err := s.pages.UpsertPage(ctx, tx, subj.TargetPage, subj.PageTitle, subj.PageBody, subj.BaseVersion); err != nil {
+				if errors.Is(err, page.ErrVersionConflict) {
+					return &ConflictError{Subject: subj.SubjectID}
+				}
 				return fmt.Errorf("run: %w", err)
 			}
 		}
@@ -318,6 +382,19 @@ func (s *Store) Fail(ctx context.Context, runID, causedBy string, runErr error) 
 	}
 	if err := s.applyFailurePolicy(ctx, causedBy, msg); err != nil {
 		return fmt.Errorf("run: apply failure policy: %w", err)
+	}
+	return nil
+}
+
+// CountConflict bumps runs.conflicts for one run (design §3): each optimistic-commit
+// collision the conflict loop handles is recorded on the run, so "is the pool
+// creating problems" is a query, not archaeology. It is a plain UPDATE (no
+// transaction) called between conflict-loop attempts, before the re-merge.
+func (s *Store) CountConflict(ctx context.Context, runID string) error {
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE runs SET conflicts = conflicts + 1 WHERE id = ?`, runID,
+	); err != nil {
+		return fmt.Errorf("run: count conflict: %w", err)
 	}
 	return nil
 }

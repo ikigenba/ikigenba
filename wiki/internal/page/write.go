@@ -3,8 +3,18 @@ package page
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 )
+
+// ErrVersionConflict is the optimistic-commit conflict (design §3): a page update
+// guarded by WHERE subject=? AND version=? affected zero rows because another run
+// committed a newer version of the page between merge's read and this commit (the
+// LOST-UPDATE race). The end-of-run transaction rolls back and the conflict loop
+// (P7b) re-runs merge for that page only against the fresh version, then recommits.
+// It is a sentinel so the commit can distinguish a genuine concurrency conflict
+// (retry) from a real write error (fail).
+var ErrVersionConflict = errors.New("page: optimistic-commit version conflict")
 
 // The write half of the registry/pages layer (design §4.5): the operations the
 // end-of-run transaction (P7a, internal/run) applies inside ONE SQLite
@@ -74,10 +84,16 @@ func (s *Store) InsertAlias(ctx context.Context, tx *sql.Tx, a Alias) error {
 //     DELETE … WHERE rowid would re-read the already-updated content row and strip
 //     the wrong tokens, silently diverging the index), then re-inserts the new row.
 //
-// version is bumped on every write (the optimistic-commit guard — §3); the
-// conflict-handling WHERE guard and the conflict loops are P7b/P7b2. UpsertPage is
-// the single-writer happy path: it reads the OLD row, upserts, and syncs FTS.
-func (s *Store) UpsertPage(ctx context.Context, tx *sql.Tx, subject, title, body string) error {
+// version is the OPTIMISTIC-COMMIT guard (design §3): baseVersion is the value
+// merge read for this page (the manifest's per-page BaseVersion slot — P7a records
+// it, P7b consumes it). The UPDATE is guarded by WHERE subject=? AND version=? and
+// bumps version+1; zero rows affected means another run committed a newer version
+// in the gap (the LOST-UPDATE race) → UpsertPage returns ErrVersionConflict and the
+// caller's conflict loop (P7b) re-runs merge for this page only and recommits. A
+// CREATED page has no prior version to guard (its conflict is a duplicate-mint,
+// caught by the registry UNIQUE — P7b2 — not here). UpsertPage reads the OLD row,
+// upserts under the guard, and syncs FTS — all on the commit's *sql.Tx.
+func (s *Store) UpsertPage(ctx context.Context, tx *sql.Tx, subject, title, body string, baseVersion int) error {
 	// Read the OLD row (title, body, rowid) BEFORE the update, so the FTS 'delete'
 	// strips exactly the tokens the index currently holds.
 	var oldTitle, oldBody string
@@ -93,21 +109,29 @@ func (s *Store) UpsertPage(ctx context.Context, tx *sql.Tx, subject, title, body
 	}
 
 	if existed {
-		// Delete the OLD FTS content at the page's rowid with the OLD values, THEN
-		// update the page row, THEN re-insert the NEW FTS content. Order matters:
-		// the 'delete' must see the OLD column values, which is why it precedes the
-		// UPDATE (design §4.5).
+		// Guard the UPDATE on the base version merge read (design §3): zero rows means
+		// a concurrent run advanced the page past baseVersion → ErrVersionConflict. We
+		// do this UPDATE FIRST (before touching FTS), so a conflict short-circuits with
+		// no FTS side effect to undo within this (about-to-roll-back) transaction.
+		res, err := tx.ExecContext(ctx,
+			`UPDATE pages SET title = ?, body = ?, version = version + 1
+			  WHERE subject = ? AND version = ?`,
+			title, body, subject, baseVersion,
+		)
+		if err != nil {
+			return fmt.Errorf("page: update page %q: %w", subject, err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return fmt.Errorf("page: %q: %w", subject, ErrVersionConflict)
+		}
+		// The guarded UPDATE succeeded; now sync FTS: delete the OLD content at the
+		// page's rowid with the OLD values, then re-insert the NEW content (design
+		// §4.5). The 'delete' uses the OLD title/body captured before the UPDATE.
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO pages_fts(pages_fts, rowid, title, body) VALUES ('delete', ?, ?, ?)`,
 			rowid, oldTitle, oldBody,
 		); err != nil {
 			return fmt.Errorf("page: fts delete old %q: %w", subject, err)
-		}
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE pages SET title = ?, body = ?, version = version + 1 WHERE subject = ?`,
-			title, body, subject,
-		); err != nil {
-			return fmt.Errorf("page: update page %q: %w", subject, err)
 		}
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO pages_fts(rowid, title, body) VALUES (?, ?, ?)`,
@@ -137,6 +161,26 @@ func (s *Store) UpsertPage(ctx context.Context, tx *sql.Tx, subject, title, body
 		return fmt.Errorf("page: fts insert new %q: %w", subject, err)
 	}
 	return nil
+}
+
+// ReadPageTx returns a page's current title/body ON THE COMMIT'S *sql.Tx (ok=false
+// if the page has none yet). The §6.1 citation-preservation gate (P7b) reads the
+// OLD body this way — INSIDE the end-of-run transaction — rather than via the
+// DB-level ReadPage: a read on a separate *sql.DB connection while this write tx
+// holds SQLite's write lock deadlocks until busy_timeout (the write tx never
+// commits while the read connection waits, and vice versa). Reading on the same tx
+// sees the page as the guarded UPDATE will, with no second connection.
+func (s *Store) ReadPageTx(ctx context.Context, tx *sql.Tx, subject string) (title, body string, ok bool, err error) {
+	e := tx.QueryRowContext(ctx,
+		`SELECT title, body FROM pages WHERE subject = ?`, subject,
+	).Scan(&title, &body)
+	if e == sql.ErrNoRows {
+		return "", "", false, nil
+	}
+	if e != nil {
+		return "", "", false, fmt.Errorf("page: read page (tx) %q: %w", subject, e)
+	}
+	return title, body, true, nil
 }
 
 // FlagDup inserts one candidate-duplicate pair in canonical order (smaller ULID

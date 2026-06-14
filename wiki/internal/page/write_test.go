@@ -39,7 +39,7 @@ func TestUpsertPageCreateSyncsFTS(t *testing.T) {
 	insertSubject(t, conn, "subj-1", TypeEntity, "Acme")
 
 	withTx(t, conn, func(tx *sql.Tx) {
-		if err := s.UpsertPage(context.Background(), tx, "subj-1", "Acme", "Acme builds anvils [01HX]"); err != nil {
+		if err := s.UpsertPage(context.Background(), tx, "subj-1", "Acme", "Acme builds anvils [01HX]", 0); err != nil {
 			t.Fatalf("upsert create: %v", err)
 		}
 	})
@@ -63,12 +63,13 @@ func TestUpsertPageUpdateSyncsFTS(t *testing.T) {
 	insertSubject(t, conn, "subj-1", TypeEntity, "Acme")
 
 	withTx(t, conn, func(tx *sql.Tx) {
-		if err := s.UpsertPage(context.Background(), tx, "subj-1", "Acme", "Acme builds anvils"); err != nil {
+		if err := s.UpsertPage(context.Background(), tx, "subj-1", "Acme", "Acme builds anvils", 0); err != nil {
 			t.Fatalf("upsert create: %v", err)
 		}
 	})
 	withTx(t, conn, func(tx *sql.Tx) {
-		if err := s.UpsertPage(context.Background(), tx, "subj-1", "Acme", "Acme builds rockets"); err != nil {
+		// Base version 0 (what the create left) — the guarded update succeeds and bumps.
+		if err := s.UpsertPage(context.Background(), tx, "subj-1", "Acme", "Acme builds rockets", 0); err != nil {
 			t.Fatalf("upsert update: %v", err)
 		}
 	})

@@ -21,12 +21,14 @@ package worker
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
 	"wiki/internal/integrate"
+	"wiki/internal/run"
 )
 
 // Runs is the runs-lifecycle surface the pool depends on (run.Store's Begin /
@@ -38,6 +40,19 @@ type Runs interface {
 	Fail(ctx context.Context, runID, causedBy string, runErr error) error
 	StampCron(ctx context.Context, runID, cronRowID string, boundJobs []string) (bool, error)
 	SweepOrphans(ctx context.Context) (int64, error)
+	// CountConflict bumps runs.conflicts when the conflict loop handles an
+	// optimistic-commit collision (design §3, P7b).
+	CountConflict(ctx context.Context, runID string) error
+}
+
+// ReMerger is the optional capability an integrator implements to support the
+// optimistic-commit conflict loop (design §3, P7b): re-run the MERGE STAGE ONLY for
+// the conflicting subject against the fresh page version, never re-extracting or
+// re-resolving. The document pass (*integrate.Document) satisfies it; an integrator
+// that does not (e.g. a stub or a no-op cron run) makes a commit conflict a clean,
+// non-retryable failure — which is correct, since such a run has no merge to re-run.
+type ReMerger interface {
+	ReMerge(ctx context.Context, m *integrate.Manifest, subjectID string) error
 }
 
 // Pool is the worker pool. It owns the in-flight set + its mutex/Cond, the runs
@@ -436,7 +451,9 @@ func (p *Pool) runClaim(ctx context.Context, c claim) {
 	// Document/event rows are stamped inside the commit; cron entries defer the
 	// inbox stamp to StampCron (the commit still writes the terminal `succeeded`).
 	stampInbox := !c.isCron
-	if err := p.runs.Commit(ctx, runID, c.unit.CausedBy, m, stampInbox); err != nil {
+	if err := p.commitWithConflictLoop(ctx, runID, c, m, stampInbox); err != nil {
+		// The conflict loop already marked the run failed (clean) on exhaustion or a
+		// non-retryable commit error; just log. A successful commit returns nil.
 		if p.log != nil {
 			p.log.Error("worker: commit", slog.String("job", job), slog.String("err", err.Error()))
 		}
@@ -446,6 +463,69 @@ func (p *Pool) runClaim(ctx context.Context, c claim) {
 	if c.isCron {
 		if _, err := p.runs.StampCron(ctx, runID, c.cronRowID, c.boundJobs); err != nil && p.log != nil {
 			p.log.Error("worker: cron completion stamp", slog.String("err", err.Error()))
+		}
+	}
+}
+
+// commitWithConflictLoop runs the end-of-run commit under the optimistic-commit
+// conflict loop (design §3, P7b). On the happy path it is one Commit call. On a
+// *run.ConflictError (the lost-update race: a concurrent run advanced a page past
+// the base version merge read) it: counts the conflict on the run, re-runs MERGE
+// ONLY for the conflicting subject against the fresh page version (re-reading the
+// base version), and recommits — bounded to run.MaxCommitAttempts. On exhaustion it
+// fails the run cleanly naming conflict-retry exhaustion (the row stays pending; its
+// failure policy applies — §7). The in-run retries are UNSPACED (each re-merge is a
+// minutes-long call, already jittered by natural latency — §3); post-exhaustion
+// re-selection delay is the failure policy's ineligible_until, applied by Fail.
+//
+// An integrator that cannot re-merge (no ReMerger — a stub/no-op run) makes a
+// conflict a clean, non-retryable failure: such a run has no merge to re-run, so
+// retrying would loop forever on the same stale manifest.
+func (p *Pool) commitWithConflictLoop(ctx context.Context, runID string, c claim, m *integrate.Manifest, stampInbox bool) error {
+	remerger, canReMerge := c.integ.(ReMerger)
+
+	for attempt := 1; ; attempt++ {
+		err := p.runs.Commit(ctx, runID, c.unit.CausedBy, m, stampInbox)
+		if err == nil {
+			return nil // committed
+		}
+
+		var conflict *run.ConflictError
+		if !errors.As(err, &conflict) {
+			// A real (non-conflict) commit error: fail the run cleanly so the row's
+			// policy applies, and surface it.
+			if ferr := p.runs.Fail(ctx, runID, c.unit.CausedBy, err); ferr != nil && p.log != nil {
+				p.log.Error("worker: mark failed after commit error", slog.String("err", ferr.Error()))
+			}
+			return err
+		}
+
+		// An optimistic-commit conflict (lost update). Record it on the run.
+		if cerr := p.runs.CountConflict(ctx, runID); cerr != nil && p.log != nil {
+			p.log.Error("worker: count conflict", slog.String("err", cerr.Error()))
+		}
+
+		// Bound: cap MaxCommitAttempts, then fail naming conflict-retry exhaustion.
+		if attempt >= run.MaxCommitAttempts || !canReMerge {
+			failErr := run.ErrConflictRetryExhausted
+			if !canReMerge {
+				failErr = fmt.Errorf("%w (integrator cannot re-merge)", err)
+			}
+			if ferr := p.runs.Fail(ctx, runID, c.unit.CausedBy, failErr); ferr != nil && p.log != nil {
+				p.log.Error("worker: mark failed after conflict exhaustion", slog.String("err", ferr.Error()))
+			}
+			return failErr
+		}
+
+		// Re-run merge ONLY for the conflicting subject (re-reads the fresh base
+		// version into the manifest; never re-extracts or re-resolves — §3). The
+		// re-merge re-derives PageBody/Title/Superseded, so the §6.1 gate on the next
+		// attempt runs against the re-run's FRESH superseded, not the stale original.
+		if rmErr := remerger.ReMerge(ctx, m, conflict.Subject); rmErr != nil {
+			if ferr := p.runs.Fail(ctx, runID, c.unit.CausedBy, rmErr); ferr != nil && p.log != nil {
+				p.log.Error("worker: mark failed after re-merge error", slog.String("err", ferr.Error()))
+			}
+			return rmErr
 		}
 	}
 }
