@@ -219,16 +219,25 @@ Rules that keep it honest:
   and those mocked tests pass, so an integrator with a placeholder prompt (prompts
   are deferred config defaults — "Open items") can reach "all green" while its
   live `(prompt, model, effort)` triple has never once produced parseable,
-  schema-valid output. To close that gap the orchestrator (or the coordinator)
-  **runs the accumulated tier, with keys present, at three checkpoints**: after
-  **P6a** (the first LLM site — extract — lands; catches an unparseable-JSON /
-  wrong-model-id / mis-shaped-schema failure at the *first* site that has one,
-  ~5 phases before P11 and while the fix is one prompt), after **P7a** (the first
-  full document-pass slice — extract + match + merge live), and after **P11** (the
-  full pipeline). A **red checkpoint pauses the march for investigation** — this
-  is an explicit orchestrator stop-and-look, **not** a hard CI/deploy gate (the
-  advisory, non-gating stance above is unchanged for the same
-  nondeterminism-and-cost reasons). The checkpoints are *when the already-built
+  schema-valid output. To close that gap, three phases each **own a checkpoint as
+  a line item in their `Verify` block** (not free-floating orchestrator prose)
+  that **runs the accumulated tier, with keys present**: **P6a** (the first LLM
+  site — extract — lands; catches an unparseable-JSON / wrong-model-id /
+  mis-shaped-schema failure at the *first* site that has one, ~5 phases before P11
+  and while the fix is one prompt), **P7a** (the first full document-pass slice —
+  extract + match + merge live), and **P11** (the full pipeline). Pinning the
+  checkpoint to a phase's `Verify` — the gate `/finish` actually enforces when it
+  closes a phase — is deliberate: addressed only to "the orchestrator," the run
+  would never fire, because `/finish`'s orchestrator works *phases* and "does not
+  do the hands-on work itself" (`docs/README.md`). A **red checkpoint pauses the
+  march for investigation** — an explicit stop-and-look, **not** a hard CI/deploy
+  gate (the advisory, non-gating stance above is unchanged for the same
+  nondeterminism-and-cost reasons). And because the `/finish` environment may lack
+  `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` or the network, an unrunnable checkpoint
+  **emits a visible `INTEGRATION CHECKPOINT SKIPPED — no keys` line rather than
+  passing as if it ran** — so a skipped checkpoint is a recorded fact the
+  coordinator sees, never an unnoticed absence (the "built then never read" hole
+  this whole tier exists to avoid). The checkpoints are *when the already-built
   signal is read*, nothing more.
 
 Like the enablement obligations, this adds **no new phases** — it grows one slice
@@ -665,6 +674,14 @@ extract-output data contract (§4.2) so each half carries one hard prompt.*
 **Verify:** extract goldens with a mocked LLM; `normalize` unit tests; extract
 emits schema-valid `subjects[]` (the §4.2 contract / the P6b seam). No resolution,
 no writes to pages yet.
+**Checkpoint (phase-owned, the first of three):** run the accumulated integration
+tier (`go test -tags=integration ./wiki/...`, keys present) — extract is the first
+live LLM site, so this is the earliest a wrong/renamed model id, an effort level
+the model rejects, or an unparseable-JSON / mis-shaped-schema prompt can surface.
+A **red run pauses the march** for investigation (advisory, not a deploy gate). If
+`ANTHROPIC_API_KEY`/`OPENAI_API_KEY` or the network are absent, emit a visible
+`INTEGRATION CHECKPOINT SKIPPED — no keys` line — **never pass as if it ran**.
+This rides the phase's `Verify` so `/finish` triggers it when closing P6a.
 **Eval hook:** extract registered as a harness-callable site (obligation 1);
 extract output is reachable as a golden alongside its source document
 (obligation 4).
@@ -753,6 +770,13 @@ per-page base `version` slot is populated with the value merge read (so P7b's
 guard has it); a `stale_notes` row is appended when merge contradicts a neighbor;
 provenance chain (answer-less: page cites inbox id → `ReadPayload`). End-to-end
 test through the spine.
+**Checkpoint (phase-owned, the second of three):** run the accumulated integration
+tier (`go test -tags=integration ./wiki/...`, keys present) — this is the first
+full document-pass slice, so extract + match + merge now run their live triples
+end-to-end (page row + matching `[inbox-id]` citation on real output). A **red run
+pauses the march** for investigation (advisory, not a deploy gate). Absent
+keys/network → emit a visible `INTEGRATION CHECKPOINT SKIPPED — no keys` line,
+**never a silent pass**. Rides the phase's `Verify` so `/finish` fires it.
 **Eval hook:** merge registered as a harness-callable site (obligation 1); two of
 merge's mechanical invariants — write-set conformance and claim-cite presence —
 exposed as the deterministic pass/fail the harness scores (obligation 5; the
@@ -1010,6 +1034,14 @@ goroutine, `wiki/internal/db/` (page_vectors).
 **Verify:** brute-force cosine correctness; catch-up work-list (missing / stale /
 wrong-model); RRF fusion ranking; per-call-site lane switch; absent-key and
 read-failure both fall back to lexical; model-mismatch rows excluded from reads.
+**Checkpoint (phase-owned, the third and final):** run the accumulated integration
+tier (`go test -tags=integration ./wiki/...`, keys present) over the **full Part I
+pipeline** — every live call site (extract, match, merge, compile, the lint judges,
+ask, the embed round-trip) now exercised end-to-end on its pinned triple. A **red
+run pauses the march** for investigation (advisory, not a deploy gate). Absent
+keys/network → emit a visible `INTEGRATION CHECKPOINT SKIPPED — no keys` line,
+**never a silent pass**. Rides the phase's `Verify` so `/finish` fires it; this
+closes the standing tier.
 **Eval hook:** RRF `k`, `WIKI_EMBED_MODEL`/`WIKI_EMBED_DIMS`, and the per-lane
 thresholds are config the harness sweeps (obligation 2); the per-call-site lane
 switch is exactly the "lexical-only vs hybrid, per site, scored" deliverable the
