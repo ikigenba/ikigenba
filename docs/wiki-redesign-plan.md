@@ -73,9 +73,10 @@ chat    lib     a-eff   (stubs) policy  doors                       +match  │
                                                                             │
     ┌───────────────────────────────────────────────────────────────────────┘
     ▼
-   P7a ──▶ P7b ──▶ P8 ──▶ P9a ──▶ P9b ──▶ P9c ──▶ P10 ──▶ P11 ──┐
-   merge  commit  digest dups    sweep   stale   read    embed  │
-   +store +conflict                                             ▼
+   P7a ──▶ P7b ──▶ P8 ──▶ P9a ──▶ P9b ──▶ P9c ──▶ P10 ──▶ P11 ──▶ P11k ──┐
+   merge  commit  digest dups    sweep   stale   read    embed   keyed   │
+   +store +conflict                                              gate    │
+   (P11k: keys-REQUIRED, HALT-not-SKIP — the Part-I exit gate)           ▼
 Part II — the evaluation harness     P12 ──▶ P13 ──▶ P14 ──▶ P15 ──▶ P16
                                      design  rig    scorers  test    sweep
                                      lock                    sets    +report
@@ -108,8 +109,11 @@ concurrency + the two conflict loops + the §6.1 gate). P8 reuses P6b–P7's
 resolve→merge→commit.
 P9a lands the shared lint plumbing P9b/P9c reuse; P9c consumes the `stale_notes`
 P7a's merge writes. P10's read side needs pages to exist (P7+). P11 (the embedding lane) is designed now but
-**sequenced last** — FTS5-first is build ordering only (design §9.3). **Part II
-starts only after P11**: every inference site must exist and be harness-callable
+**sequenced last** — FTS5-first is build ordering only (design §9.3). **P11k** then
+gates the Part-I→Part-II boundary: the keyed validation phase that discharges the
+Part-I exit obligation (the three integration checkpoints each green at least once)
+before any harness exists. **Part II starts only after P11k**: every inference site
+must exist, be harness-callable, **and** have been proven live — not mock-only —
 before the harness that scores them can be built (research doc's
 production-code-path principle). P12 resolves the eval design before any harness
 code is written, the way P1 resolves the digest fork.
@@ -274,9 +278,13 @@ The plan hard-gates (a) and leaves (b) advisory, via two mechanisms:
    above a length floor, and carrying the structural sections the design pins for
    that site (extract's six §4.2, match's five §4.3, merge's six §4.4, compile's
    six-with-four-deltas §5, ask's six §9.2, and the lint judge / fold / stale-repair
-   prompts §6); and (a-ii) the site **parses and schema-validates a committed
-   recorded real-model response fixture** (a response captured once and frozen), so
-   parser/schema drift is caught offline too. Both halves are mockable and offline,
+   prompts §6); and (a-ii) the site **parses and schema-validates a committed,
+   hand-authored, schema-faithful response fixture** (always present — no key, no
+   network), so the parser + schema are exercised offline too. (A hand-authored
+   fixture is exactly as good for the *structural* check, the only thing an offline
+   test can assert; the **recorded** real-model fixture — which can only come from a
+   live keyed call — refreshes this stub in **P11k**, where parser/schema drift is
+   then also checked against real output.) Both halves are mockable and offline,
    so they run in the **unit gate `/finish` actually enforces** — converting "a
    placeholder rode a green unit gate to P11" from an un-gated advisory skip into a
    **deterministic phase failure**. It is pinned in each phase's `Verify` for the
@@ -284,19 +292,29 @@ The plan hard-gates (a) and leaves (b) advisory, via two mechanisms:
    never fires (see *Integration testing*). It deliberately does **not** assert
    (b) — whether the live model chokes stays the integration tier's advisory call.
 
-2. **The three integration checkpoints become a Part-I exit obligation.** A
-   `SKIPPED` checkpoint is no longer a silently-acceptable terminal state: each of
-   **P6a / P7a / P11**'s checkpoint must have **at least one recorded non-skipped
-   green run** (on a keyed box, run on demand) before **Part II (P12)** begins.
-   This keeps the per-phase tier advisory (no nondeterministic hard gate — the
-   stance of *Integration testing* is unchanged) while forbidding "every real-model
-   check went dark" from counting as a **successfully executed Part I**. Pinned at
-   the P11→P12 boundary (P11's checkpoint and the Part II preamble) so it is
-   enforced, not free-floating.
+2. **The three integration checkpoints become a Part-I exit obligation, owned by an
+   explicit phase.** A `SKIPPED` checkpoint is no longer a silently-acceptable
+   terminal state: each of **P6a / P7a / P11**'s checkpoint must have **at least one
+   recorded non-skipped green run** before **Part II (P12)** begins. But this run is
+   a **keyed, live-model action**, and the `/finish` orchestrator works *phases* and
+   "does not do the hands-on work itself" (`docs/README.md`) — so a free-floating
+   "run it on a keyed box on demand" precondition has no one in the march to fire it
+   (the same trap the checkpoints' `Verify`-pinning avoids, see *Integration
+   testing*). It is therefore discharged by a dedicated phase, **P11k** (the keyed
+   Part-I validation gate, below), run on a keyed box at the P11→P12 boundary, which
+   is **keys-REQUIRED and HALT-not-SKIP**: absent keys/network it **stops the march
+   and surfaces to the human** rather than marking Part I done. This keeps the
+   per-phase tier advisory (no nondeterministic hard gate — the stance of
+   *Integration testing* is unchanged) while forbidding "every real-model check went
+   dark" from counting as a **successfully executed Part I**. Pinned at the P11→P12
+   boundary (P11k, P11's checkpoint, and the Part II preamble) so it is enforced,
+   not free-floating.
 
-Like the rules above, this adds **no new phases** — mechanism 1 grows one `Verify`
-line at a time inside the call-site phases that already exist (P6a, P6b, P7a, P8,
-P9a, P9c, P10); mechanism 2 is a single exit check at the Part-I boundary.
+Mechanism 1 grows one `Verify` line at a time inside the call-site phases that
+already exist (P6a, P6b, P7a, P8, P9a, P9c, P10) and adds **no new phase**;
+mechanism 2 adds exactly **one** phase — **P11k**, the keyed Part-I validation gate
+at the P11→P12 boundary — the single keyed, live-model step the otherwise-phase-only
+`/finish` march needs an explicit owner for.
 
 ---
 
@@ -726,7 +744,7 @@ emits schema-valid `subjects[]` (the §4.2 contract / the P6b seam). No resoluti
 no writes to pages yet.
 **Prompt gate (standing, offline — see *Prompt-default validation*):** the extract
 config-default prompt is non-placeholder and carries its six §4.2 sections; the
-extract parser schema-validates a committed recorded real-model response fixture
+extract parser schema-validates a committed, hand-authored, schema-faithful response fixture
 into `subjects[]`. Deterministic unit assertions that fail the phase if the prompt
 is a stub — independent of keys, so they hold even when the checkpoint below skips.
 **Checkpoint (phase-owned, the first of three):** run the accumulated integration
@@ -777,7 +795,7 @@ Consumes P6a's extracted `subjects[]`; merge/commit close it in P7a/P7b.*
 contract; manifest assembled correctly. No writes to pages yet.
 **Prompt gate (standing, offline — see *Prompt-default validation*):** the match
 config-default prompt is non-placeholder and carries its five §4.3 sections; the
-match parser schema-validates a committed recorded real-model response fixture into
+match parser schema-validates a committed, hand-authored, schema-faithful response fixture into
 the binary `same(id) | no_match` verdict plus the `dup_pairs` side-channel.
 Deterministic, key-independent.
 **Eval hook:** match and the candidates retrieval lane registered as
@@ -833,7 +851,7 @@ test through the spine.
 **Prompt gate (standing, offline — see *Prompt-default validation*):** the merge
 config-default prompt is non-placeholder and carries its six §4.4 sections,
 including the `superseded` obligation (§6.1); merge's output parser schema-validates
-a committed recorded real-model response fixture into a page-write + `superseded`
+a committed, hand-authored, schema-faithful response fixture into a page-write + `superseded`
 list. Deterministic, key-independent — holds even when the checkpoint below skips.
 **Checkpoint (phase-owned, the second of three):** run the accumulated integration
 tier (`go test -tags=integration ./wiki/...`, keys present) — this is the first
@@ -926,8 +944,9 @@ all bound runs succeeded; partition-overlap refusal at boot; batch failure
 leaves the cron row pending.
 **Prompt gate (standing, offline — see *Prompt-default validation*):** the compile
 config-default prompt is non-placeholder and carries extract's six-section skeleton
-with its four §5 deltas; the compile parser schema-validates a committed recorded
-real-model response fixture into `subjects[]` with per-claim `cites` + `occurred_at`.
+with its four §5 deltas; the compile parser schema-validates a committed,
+hand-authored, schema-faithful response fixture into `subjects[]` with per-claim
+`cites` + `occurred_at`.
 Deterministic, key-independent.
 **Eval hook:** compile registered as a harness-callable site (obligation 1) and
 emits per-claim `cites` + `occurred_at` as distinct, scorable outputs (the
@@ -973,7 +992,7 @@ skips until a version advances; one transaction per pair; `lint_run` `Accept`s a
 trigger row. Per-job tests.
 **Prompt gate (standing, offline — see *Prompt-default validation*):** the dup-judge
 and fold config-default prompts are non-placeholder (§6, both tool-less calls); the
-judge parser schema-validates a committed recorded real-model response fixture into
+judge parser schema-validates a committed, hand-authored, schema-faithful response fixture into
 the ternary `merge | dismiss | can't-tell-yet` verdict, and the fold parser into a
 body + `superseded` list (§6.1). Deterministic, key-independent.
 **Eval hook:** the dup judge and the canonical-name pick registered as
@@ -1026,8 +1045,8 @@ the rewritten page passes the §6.1 gate; each note's disposition is recorded.
 Per-job test (mocked LLM).
 **Prompt gate (standing, offline — see *Prompt-default validation*):** the
 stale-repair config-default prompt is non-placeholder (§6, one tool-less call per
-subject); its parser schema-validates a committed recorded real-model response
-fixture into a rewritten page + per-note disposition + `superseded` list (§6.1).
+subject); its parser schema-validates a committed, hand-authored, schema-faithful
+response fixture into a rewritten page + per-note disposition + `superseded` list (§6.1).
 Deterministic, key-independent — holds even when the integration test below skips.
 **Eval hook:** the stale-repair call takes its `(prompt, model, effort)` from
 injected config (design §10 — it is a call site, though not one of the ten
@@ -1073,7 +1092,7 @@ ask happy path (mocked inner agent) returns page-cited answer; "wiki has nothing
 on this" over fabrication; asks lifecycle + orphan sweep.
 **Prompt gate (standing, offline — see *Prompt-default validation*):** the ask
 config-default prompt is non-placeholder and carries its six §9.2 sections; the ask
-answer parser schema-validates a committed recorded real-model response fixture into
+answer parser schema-validates a committed, hand-authored, schema-faithful response fixture into
 the page-level citation contract (§9.2). Deterministic, key-independent. (search /
 timeline are zero-LLM — no prompt gate.)
 **Eval hook:** ask and the search retrieval lane registered as harness-callable
@@ -1130,8 +1149,11 @@ closes the standing tier.
 **Part-I exit obligation (see *Prompt-default validation*):** this checkpoint and
 the P6a/P7a checkpoints must each have **at least one recorded non-skipped green
 run** before Part II (P12) begins; an all-`SKIPPED` history leaves Part I
-**not-done**, not done-green. (The offline prompt gates above hold regardless; this
-obligation is the live-model half the checkpoints, when skipped, defer.)
+**not-done**, not done-green. That keyed run is **not** performed inside this phase
+(it may be keyless here, hence the `SKIPPED` line above): it is discharged by the
+dedicated **P11k** gate below, which a keyed box runs at the P11→P12 boundary. (The
+offline prompt gates above hold regardless; this obligation is the live-model half
+the checkpoints, when skipped, defer to P11k.)
 **Eval hook:** RRF `k`, `WIKI_EMBED_MODEL`/`WIKI_EMBED_DIMS`, and the per-lane
 thresholds are config the harness sweeps (obligation 2); the per-call-site lane
 switch is exactly the "lexical-only vs hybrid, per site, scored" deliverable the
@@ -1146,6 +1168,49 @@ now has an end-to-end real-model liveness check.
 
 ---
 
+## P11k — Keyed Part-I validation gate (keys required)
+
+*The single keyed, live-model step the otherwise-phase-only `/finish` march needs an
+explicit owner for (see *Prompt-default validation*, mechanism 2). It ships no new
+product code; it discharges the **Part-I exit obligation** and refreshes the
+recorded fixtures the offline prompt gates stub. Run on a keyed box. This is the one
+phase that **must not** be marked done while skipped — every other real-model check
+in the plan is advisory and skip-on-no-keys; this one is the hard Part-I exit, a
+human handoff rather than an autonomous step.*
+
+- **Run the three accumulated integration checkpoints to green.** `go test
+  -tags=integration ./wiki/...` with `ANTHROPIC_API_KEY` + `OPENAI_API_KEY` and the
+  network present, exercising every live call site (extract, match, merge, compile,
+  the lint judges, ask, the embed round-trip) end-to-end on its pinned `(prompt,
+  model, effort)` triple. This produces the **recorded non-skipped green run** the
+  P6a / P7a / P11 checkpoints each owe the exit obligation.
+- **Capture and commit the recorded real-model fixtures.** For every call-site
+  prompt gate (P6a extract, P6b match, P7a merge, P8 compile, P9a judge + fold, P9c
+  stale repair, P10 ask), capture one real-model response from the live triple and
+  commit it, **replacing the hand-authored stub fixture** the offline gate shipped
+  with. From here on the offline (a-ii) parser/schema test runs against *real*
+  output, so parser/schema drift is caught offline too — closing the half a
+  hand-authored stub cannot.
+- **keys-REQUIRED, HALT-not-SKIP.** Unlike the per-phase checkpoints (advisory,
+  skip-on-no-keys), this gate is the Part-I exit. If `ANTHROPIC_API_KEY` /
+  `OPENAI_API_KEY` or the network are **absent it does not pass** — it **halts the
+  march and surfaces to the human** with a visible `PART-I EXIT GATE BLOCKED — no
+  keys` line, because an all-`SKIPPED` history is exactly the "every real-model
+  check went dark" state the exit obligation forbids. A **red** run likewise blocks
+  P12 (Part II would otherwise score call sites proven only by mocks). This is the
+  one place the plan trades the advisory stance for a hard stop, and it is a human
+  handoff, **never** a CI/deploy gate.
+
+**Touches:** committed integration-test fixtures under `wiki/` (the recorded
+real-model responses); no product code.
+**Verify:** all three checkpoints (P6a / P7a / P11 slices) recorded green on a keyed
+box; every call-site prompt gate's fixture replaced with a recorded real-model
+response and its offline (a-ii) test re-green against it; the gate halts visibly
+when keys/network are absent rather than passing. **This phase, uniquely, is not
+"done" while skipped.**
+
+---
+
 # Part II — the evaluation harness
 
 The offline tool of `docs/wiki-evaluation-research.md`: a runner that sweeps
@@ -1153,11 +1218,11 @@ The offline tool of `docs/wiki-evaluation-research.md`: a runner that sweeps
 sites (Part I's enablement makes this possible) and produces a per-generation
 comparison table of score + cost + latency, with the dangerous-direction error
 surfaced separately. It is a measurement tool — never CI, never a deploy gate.
-These phases start only after P11 (every site exists and is harness-callable) **and
-only after the Part-I exit obligation is met** — the three integration checkpoints
-(P6a / P7a / P11) each have at least one recorded non-skipped green run (see
-*Prompt-default validation*), so no call site reaches Part II having been validated
-only by mocks.
+These phases start only after **P11k** (every site exists and is harness-callable,
+**and** the Part-I exit obligation is met) — the three integration checkpoints
+(P6a / P7a / P11) each have at least one recorded non-skipped green run, captured by
+the P11k keyed gate (see *Prompt-default validation*), so no call site reaches Part
+II having been validated only by mocks.
 
 ## P12 — Eval design lock
 
