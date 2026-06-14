@@ -248,6 +248,56 @@ closes rather than being bolted on at the end — and the three checkpoints abov
 (after P6a, P7a, P11) are where the `/finish` march actually *runs* that signal,
 so a hollow integrator can't ride a green unit gate all the way to P11 unnoticed.
 
+## Prompt-default validation (a standing gate)
+
+The integration tier above is the only mechanism that runs a real model against a
+real prompt — and it is **advisory and skip-on-no-keys** by construction (its
+checkpoints emit `INTEGRATION CHECKPOINT SKIPPED — no keys` and the phase still
+passes). That leaves a gap the tier was meant to close but cannot when `/finish`
+runs without keys: a call-site phase reaches "all green" on a **placeholder
+prompt** (prompts are deferred config defaults — "Open items"), because from P6a
+on the unit gate mocks every LLM. Two failure modes hide in that gap, and they
+are **not** the same:
+
+- **(a) the prompt is structurally absent** — empty, a stub, or missing the
+  sections the design pins for that site. This is **deterministic and detectable
+  offline, with no key.**
+- **(b) a real prompt makes a real model emit unparseable / mis-shaped output.**
+  This is **nondeterministic and needs a live call** — correctly the advisory
+  integration tier's job.
+
+The plan hard-gates (a) and leaves (b) advisory, via two mechanisms:
+
+1. **A deterministic, offline prompt-default gate, phase-owned in each call-site
+   phase's `Verify`.** With no key or network it asserts, as an ordinary unit
+   test: (a-i) the site's config-default prompt is **non-placeholder** — present,
+   above a length floor, and carrying the structural sections the design pins for
+   that site (extract's six §4.2, match's five §4.3, merge's six §4.4, compile's
+   six-with-four-deltas §5, ask's six §9.2, and the lint judge / fold / stale-repair
+   prompts §6); and (a-ii) the site **parses and schema-validates a committed
+   recorded real-model response fixture** (a response captured once and frozen), so
+   parser/schema drift is caught offline too. Both halves are mockable and offline,
+   so they run in the **unit gate `/finish` actually enforces** — converting "a
+   placeholder rode a green unit gate to P11" from an un-gated advisory skip into a
+   **deterministic phase failure**. It is pinned in each phase's `Verify` for the
+   same reason the checkpoints are: a rule addressed only to "the orchestrator"
+   never fires (see *Integration testing*). It deliberately does **not** assert
+   (b) — whether the live model chokes stays the integration tier's advisory call.
+
+2. **The three integration checkpoints become a Part-I exit obligation.** A
+   `SKIPPED` checkpoint is no longer a silently-acceptable terminal state: each of
+   **P6a / P7a / P11**'s checkpoint must have **at least one recorded non-skipped
+   green run** (on a keyed box, run on demand) before **Part II (P12)** begins.
+   This keeps the per-phase tier advisory (no nondeterministic hard gate — the
+   stance of *Integration testing* is unchanged) while forbidding "every real-model
+   check went dark" from counting as a **successfully executed Part I**. Pinned at
+   the P11→P12 boundary (P11's checkpoint and the Part II preamble) so it is
+   enforced, not free-floating.
+
+Like the rules above, this adds **no new phases** — mechanism 1 grows one `Verify`
+line at a time inside the call-site phases that already exist (P6a, P6b, P7a, P8,
+P9a, P9c, P10); mechanism 2 is a single exit check at the Part-I boundary.
+
 ---
 
 ## P0a — agentkit OpenAI chat backend (Responses API)
@@ -674,6 +724,11 @@ extract-output data contract (§4.2) so each half carries one hard prompt.*
 **Verify:** extract goldens with a mocked LLM; `normalize` unit tests; extract
 emits schema-valid `subjects[]` (the §4.2 contract / the P6b seam). No resolution,
 no writes to pages yet.
+**Prompt gate (standing, offline — see *Prompt-default validation*):** the extract
+config-default prompt is non-placeholder and carries its six §4.2 sections; the
+extract parser schema-validates a committed recorded real-model response fixture
+into `subjects[]`. Deterministic unit assertions that fail the phase if the prompt
+is a stub — independent of keys, so they hold even when the checkpoint below skips.
 **Checkpoint (phase-owned, the first of three):** run the accumulated integration
 tier (`go test -tags=integration ./wiki/...`, keys present) — extract is the first
 live LLM site, so this is the earliest a wrong/renamed model id, an effort level
@@ -720,6 +775,11 @@ Consumes P6a's extracted `subjects[]`; merge/commit close it in P7a/P7b.*
 **Touches:** `wiki/internal/{integrate,page,llm,config}/`.
 **Verify:** resolve's three arms (one/many/zero ids) deterministic; match binary
 contract; manifest assembled correctly. No writes to pages yet.
+**Prompt gate (standing, offline — see *Prompt-default validation*):** the match
+config-default prompt is non-placeholder and carries its five §4.3 sections; the
+match parser schema-validates a committed recorded real-model response fixture into
+the binary `same(id) | no_match` verdict plus the `dup_pairs` side-channel.
+Deterministic, key-independent.
 **Eval hook:** match and the candidates retrieval lane registered as
 harness-callable sites (obligation 1); `WIKI_MATCH_EXCERPT_CHARS` and the
 candidate FTS thresholds are config (obligation 2); match returns its verdict
@@ -770,6 +830,11 @@ per-page base `version` slot is populated with the value merge read (so P7b's
 guard has it); a `stale_notes` row is appended when merge contradicts a neighbor;
 provenance chain (answer-less: page cites inbox id → `ReadPayload`). End-to-end
 test through the spine.
+**Prompt gate (standing, offline — see *Prompt-default validation*):** the merge
+config-default prompt is non-placeholder and carries its six §4.4 sections,
+including the `superseded` obligation (§6.1); merge's output parser schema-validates
+a committed recorded real-model response fixture into a page-write + `superseded`
+list. Deterministic, key-independent — holds even when the checkpoint below skips.
 **Checkpoint (phase-owned, the second of three):** run the accumulated integration
 tier (`go test -tags=integration ./wiki/...`, keys present) — this is the first
 full document-pass slice, so extract + match + merge now run their live triples
@@ -859,6 +924,11 @@ from P4 replaced.
 digest(s); compile goldens; completion-time join stamps the cron row only when
 all bound runs succeeded; partition-overlap refusal at boot; batch failure
 leaves the cron row pending.
+**Prompt gate (standing, offline — see *Prompt-default validation*):** the compile
+config-default prompt is non-placeholder and carries extract's six-section skeleton
+with its four §5 deltas; the compile parser schema-validates a committed recorded
+real-model response fixture into `subjects[]` with per-claim `cites` + `occurred_at`.
+Deterministic, key-independent.
 **Eval hook:** compile registered as a harness-callable site (obligation 1) and
 emits per-claim `cites` + `occurred_at` as distinct, scorable outputs (the
 citation-mis-attribution risk the harness measures — obligation 3).
@@ -901,6 +971,11 @@ context.*
 de-dups; subject-merge hard-delete leaves no dangling loser id; can't-tell-yet
 skips until a version advances; one transaction per pair; `lint_run` `Accept`s a
 trigger row. Per-job tests.
+**Prompt gate (standing, offline — see *Prompt-default validation*):** the dup-judge
+and fold config-default prompts are non-placeholder (§6, both tool-less calls); the
+judge parser schema-validates a committed recorded real-model response fixture into
+the ternary `merge | dismiss | can't-tell-yet` verdict, and the fold parser into a
+body + `superseded` list (§6.1). Deterministic, key-independent.
 **Eval hook:** the dup judge and the canonical-name pick registered as
 harness-callable sites (obligation 1); the judge's ternary verdict
 (`merge | dismiss | can't-tell-yet`) preserved verbatim, not collapsed
@@ -949,6 +1024,11 @@ P9a's jobs plumbing and P7a's writer hook.*
 **Verify:** stale repair consumes open notes; one transaction per subject;
 the rewritten page passes the §6.1 gate; each note's disposition is recorded.
 Per-job test (mocked LLM).
+**Prompt gate (standing, offline — see *Prompt-default validation*):** the
+stale-repair config-default prompt is non-placeholder (§6, one tool-less call per
+subject); its parser schema-validates a committed recorded real-model response
+fixture into a rewritten page + per-note disposition + `superseded` list (§6.1).
+Deterministic, key-independent — holds even when the integration test below skips.
 **Eval hook:** the stale-repair call takes its `(prompt, model, effort)` from
 injected config (design §10 — it is a call site, though not one of the ten
 scored registry sites); its rewritten-page output inherits merge's mechanical
@@ -991,6 +1071,11 @@ lexical-only for now). Needs pages (P7+).*
 **Verify:** search registry-first + whole-page contract; timeline window query;
 ask happy path (mocked inner agent) returns page-cited answer; "wiki has nothing
 on this" over fabrication; asks lifecycle + orphan sweep.
+**Prompt gate (standing, offline — see *Prompt-default validation*):** the ask
+config-default prompt is non-placeholder and carries its six §9.2 sections; the ask
+answer parser schema-validates a committed recorded real-model response fixture into
+the page-level citation contract (§9.2). Deterministic, key-independent. (search /
+timeline are zero-LLM — no prompt gate.)
 **Eval hook:** ask and the search retrieval lane registered as harness-callable
 sites (obligation 1); the ask turn/token/wall-clock budget is config
 (obligation 2); `asks.question` + answer + citations stored as the free real-data
@@ -1042,6 +1127,11 @@ run pauses the march** for investigation (advisory, not a deploy gate). Absent
 keys/network → emit a visible `INTEGRATION CHECKPOINT SKIPPED — no keys` line,
 **never a silent pass**. Rides the phase's `Verify` so `/finish` fires it; this
 closes the standing tier.
+**Part-I exit obligation (see *Prompt-default validation*):** this checkpoint and
+the P6a/P7a checkpoints must each have **at least one recorded non-skipped green
+run** before Part II (P12) begins; an all-`SKIPPED` history leaves Part I
+**not-done**, not done-green. (The offline prompt gates above hold regardless; this
+obligation is the live-model half the checkpoints, when skipped, defer.)
 **Eval hook:** RRF `k`, `WIKI_EMBED_MODEL`/`WIKI_EMBED_DIMS`, and the per-lane
 thresholds are config the harness sweeps (obligation 2); the per-call-site lane
 switch is exactly the "lexical-only vs hybrid, per site, scored" deliverable the
@@ -1063,7 +1153,11 @@ The offline tool of `docs/wiki-evaluation-research.md`: a runner that sweeps
 sites (Part I's enablement makes this possible) and produces a per-generation
 comparison table of score + cost + latency, with the dangerous-direction error
 surfaced separately. It is a measurement tool — never CI, never a deploy gate.
-These phases start only after P11 (every site exists and is harness-callable).
+These phases start only after P11 (every site exists and is harness-callable) **and
+only after the Part-I exit obligation is met** — the three integration checkpoints
+(P6a / P7a / P11) each have at least one recorded non-skipped green run (see
+*Prompt-default validation*), so no call site reaches Part II having been validated
+only by mocks.
 
 ## P12 — Eval design lock
 
