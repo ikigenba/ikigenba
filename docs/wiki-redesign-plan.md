@@ -129,6 +129,8 @@ load-bearing: **P6b, P6b2, P7a, P7a2, P7b, P7b2, P8**.
 
 ```
 Part I — the wiki service
+P0 (preflight: ANTHROPIC_API_KEY + OPENAI_API_KEY present — HALT-not-SKIP, the entry mirror of P11k)
+ ▼
 P0a ──▶ P0b ──▶ P0c ──▶ P1 ──▶ P2 ──▶ P3 ──▶ P4 ──▶ P5 ──▶ P6a ──▶ P6b ──▶ P6b2 ──┐
 oai     embed   cost+   schema scaffold ingest spine failure extract resolve  match │
 chat    lib     a-eff   (stubs) policy  doors                       +cands  +manifest│
@@ -164,7 +166,10 @@ Part II — the evaluation harness     P12 ──▶ P13 ──▶ P14 ──▶
 > (`lint-sweep`, zero-LLM) **/ P9c** (`lint-stale`). The chain is otherwise
 > unchanged — sub-letters keep every downstream edge intact.
 
-Numeric order satisfies every edge. P0a–P0c (the shared-library work) underpin
+**P0 precedes everything** — a deterministic, offline preflight that HALTs the
+march before P0a if either key is absent (see *Keys present before the march*),
+so the live-model checkpoints fire at their designed points instead of skipping.
+Numeric order then satisfies every edge. P0a–P0c (the shared-library work) underpin
 every LLM call site (P2's wrapper) and the embedding lane (P11), and let Part II
 sweep OpenAI models. P0b (embeddings) is P11's only hard dependency and P0a
 (OpenAI chat) is what Part II's OpenAI sweep needs, so both could be resequenced
@@ -410,6 +415,54 @@ one prompt." One `OPENAI_API_KEY` covers OpenAI chat **and** embeddings (one key
 both endpoints — design §9.3); there is no separate embeddings key. These are the
 **local/dev** credentials that run the march and the keyed P11k gate; the **box**
 credentials are seeded separately by `wiki/bin/secrets` in the deploy phase (P11d).
+
+This precondition is **enforced by a phase, not left to operator memory** — the
+free-floating-prose trap mechanism 2 already named ("a free-floating … precondition
+has no one in the march to fire it"), here applied to the *entry* the way P11k
+applied it to the *exit*. **P0** (below) is the first thing the `/finish` march runs:
+a deterministic, offline presence check that **HALTs before P0a if either key is
+absent**. So "keys are wired" is verified by the march itself at phase 0 — a keyless
+run fails immediately at zero cost rather than silently skipping every checkpoint and
+only surfacing at the P11k big-bang ~24 phases later.
+
+---
+
+## P0 — Preflight: both keys present (the entry HALT gate)
+
+*The single deterministic, offline gate that makes the standing precondition above
+**enforced by the march itself**. It is the **entry mirror of P11k**: where P11k is
+the keys-REQUIRED / HALT-not-SKIP **exit** gate at the P11→P12 boundary, P0 is the
+keys-REQUIRED / HALT-not-SKIP **entry** gate before P0a. Run by the `/finish`
+orchestrator as the very first step — like reading the plan, this is an orchestrator
+preflight, not delegated worker code. It ships no product code and makes **no
+network / live call**: presence only; live-triple validity stays the checkpoints'
+(P6a / P7a2 / P11) and P11k's job.*
+
+- **Assert both keys are present** in the march environment — `ANTHROPIC_API_KEY`
+  **and** `OPENAI_API_KEY` set and non-empty (one `OPENAI_API_KEY` covers OpenAI
+  chat **and** embeddings — design §9.3 / the precondition above). A bare presence
+  test (`test -n "$ANTHROPIC_API_KEY" && test -n "$OPENAI_API_KEY"`), never a
+  provider call.
+- **HALT-not-SKIP on absence.** If either key is absent the gate **does not pass**
+  — it **halts the march and surfaces to the human** with a visible
+  `PRE-MARCH KEY GATE BLOCKED — no keys` line, and **P0a is not dispatched**. This
+  is deliberately the *opposite* of the per-phase checkpoints' advisory
+  skip-on-no-keys stance: those are mid-march signals, but the one precondition they
+  all depend on is checked **once, hard, up front** — so a keyless run fails at
+  phase 0 (cost: nothing) instead of skipping every checkpoint and only halting at
+  P11k ~24 phases later (cost: the whole march's early-warning value).
+- **Presence, not validity.** P0 proves the keys are *wired*, which is all an
+  offline deterministic gate can prove; whether a live model accepts the pinned
+  `(prompt, model, effort)` triple is the advisory checkpoints' and P11k's job. P0
+  exists so those checkpoints **fire at their designed points instead of skipping** —
+  it guarantees their one shared precondition before any phase spends work.
+
+**Touches:** nothing — an orchestrator-run environment gate; no files, no code.
+**Verify:** with both keys present the gate passes and the march proceeds to P0a;
+with either key absent the march halts **before P0a** with the visible
+`PRE-MARCH KEY GATE BLOCKED — no keys` line and surfaces to the human; the check
+makes no network call (presence only). **This gate, like P11k, is never "done" while
+skipped.**
 
 ---
 
