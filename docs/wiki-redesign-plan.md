@@ -155,7 +155,18 @@ Two rules bind every phase, mirroring *Schema canonicity*:
 This exists for the same reason *Schema canonicity* does: a P4 self-check written
 from P4's own reading cannot catch a field P4 itself omitted — this enumeration is
 the **external spec** that both the `Manifest` type and P4's completeness test are
-checked against, exactly what §12 is for the schema.
+checked against, exactly what §12 is for the schema. So that check must be
+**enumeration-derived, not hand-authored**: P4's completeness test is a single
+**table-driven** test whose cases *are this enumeration* — one row per field above,
+paired with its declared consumer — asserting, by reflection over the Go type, that
+**every** named field is present, and failing the phase if any is absent. This is the
+in-memory mirror of what `bin/check-migrations` + the §12 schema test do for the DDL:
+a field-presence assertion against the authoritative list. It is **distinct from** the
+stub's round-trip test (which proves a *populated* `Manifest` survives the end-of-run
+transaction but, by construction, can **never** catch a field absent from both the
+type and the stub — the stub does not populate what the type lacks). Without the
+table-driven check an omitted field rides a green round-trip all the way to P7b — the
+"no additive escape hatch" failure above, surfacing at its least-recoverable point.
 
 ## Phase-budget re-check (a standing rule)
 
@@ -216,9 +227,18 @@ orchestrator" never fires (see *Integration testing*).
 
 This adds **no new phase** and no new mechanism the orchestrator doesn't already
 run; it only makes "done" mean *complete*, not merely *green*. The phases that carry
-the line are the **immutable foundation (P1)** and the spine integrators where a
-partial commit is both likely and load-bearing: **P1, P6b, P6b2, P7a, P7a2, P7b,
-P7b2, P8**. **P1 belongs on this list for the strongest reason of all:** its
+the line are the **immutable foundation (P1)**, the **frozen swap-boundary contract
+(P4)**, and the spine integrators where a partial commit is both likely and
+load-bearing: **P1, P4, P6b, P6b2, P7a, P7a2, P7b, P7b2, P8**. **P4 belongs for the
+same structural reason P1 does:** it freezes the `Manifest` — the seam's §12 — and a
+`Manifest` field omitted at P4 has, unlike a schema gap, **no additive escape hatch**
+(*Manifest canonicity*): it is not recoverable forward but forces editing the
+committed type and every producer across the strictly-sequential phases built on the
+frozen shape. A green round-trip test cannot catch it (the stub never populates a
+field the type lacks), so only a boundary checklist forces the coordinator to confirm
+the **enumeration-derived completeness test covers every field** in the *Manifest
+canonicity* enumeration before P4 closes — exactly as P1's checklist confirms every
+§12 table. **P1 belongs on this list for the strongest reason of all:** its
 artifacts are *immutable* (the §12 schema, transcribed into committed migrations),
 so a partial commit there — a cold-start subagent that runs out after transcribing
 seven of nine tables, or that omits the `outbox` byte-identity test — is recoverable
@@ -971,12 +991,28 @@ is verifiable before any real integrator does.*
 cron-before-document priority; crash between claim and commit leaves the row
 **pending** and restart re-selects it; boot sweep marks orphans `crashed`;
 selection stays oldest-first (no starvation). The stub integrators **implement
-the `Integrator` interface and round-trip a `Manifest` that carries every field
-named in the *Manifest canonicity* standing rule (the external spec, not P4's own
-reading) — including a populated per-page base `version` slot** through the
-end-of-run transaction, so the seam's *completeness* (not merely its existence) is
-a tested property *here*, checked against the canonical contract, not a P7b-time
+the `Integrator` interface and round-trip a populated `Manifest`** — including a
+populated per-page base `version` slot — through the end-of-run transaction (the
+*round-trip* test: a populated manifest survives the commit). **Separately, a
+table-driven `Manifest`-completeness test asserts the seam's *completeness* against
+the canonical contract:** its cases are the *Manifest canonicity* enumeration
+verbatim — one per field, paired with its declared consumer — and it fails the phase
+if any named field is absent from the Go type (checked against the **external spec**,
+not P4's own reading; the in-memory mirror of the §12 schema test). The round-trip
+test alone **cannot** catch an omitted field — the stub never populates a field the
+type lacks — so *completeness* is the table-driven test's job *here*, not a P7b-time
 audit. Concurrency tests.
+**Deliverable gate (boundary — see *Phase completion is a checklist, not a green gate*):**
+P4 freezes the load-bearing swap-boundary contract, so — not merely that the suite is
+green — the coordinator confirms before closing the phase: (1) the `Manifest` Go type
+and the `Integrator` interface exist; (2) the **table-driven `Manifest`-completeness
+test** is present and its cases cover **every** field in the *Manifest canonicity*
+enumeration with its declared consumer (a missing case is a missing assertion — the
+exact omission this gate exists to make loud); (3) the stub integrators round-trip a
+fully-populated `Manifest` — including the per-page base `version` slot — through the
+generic end-of-run transaction; (4) the claim-once + boot-sweep concurrency properties
+hold. A field absent from the enumeration's coverage is a **loud failure at this
+boundary**, never a silent gap that surfaces at P7b with no additive escape hatch.
 
 ---
 
