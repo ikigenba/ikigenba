@@ -151,16 +151,17 @@ func Load(getenv func(string) string) (*Config, error) {
 		},
 	}
 
-	// Each site: name, env-prefix, provisional model+effort default. The prompt
-	// default is the shared placeholder until the owning phase fills it.
-	cfg.LLM.Extract = loadSite(getenv, "extract", "WIKI_EXTRACT", "claude-sonnet-4-6", "medium")
-	cfg.LLM.Match = loadSite(getenv, "match", "WIKI_MATCH", "claude-haiku-4-5", "")
-	cfg.LLM.Merge = loadSite(getenv, "merge", "WIKI_MERGE", "claude-sonnet-4-6", "high")
-	cfg.LLM.Compile = loadSite(getenv, "compile", "WIKI_COMPILE", "claude-sonnet-4-6", "medium")
-	cfg.LLM.Ask = loadSite(getenv, "ask", "WIKI_ASK", "claude-sonnet-4-6", "medium")
-	cfg.LLM.LintDupJudge = loadSite(getenv, "lint_dup_judge", "WIKI_LINT_DUP", "claude-sonnet-4-6", "medium")
-	cfg.LLM.LintFold = loadSite(getenv, "lint_fold", "WIKI_LINT_FOLD", "claude-sonnet-4-6", "medium")
-	cfg.LLM.LintStale = loadSite(getenv, "lint_stale", "WIKI_LINT_STALE", "claude-sonnet-4-6", "medium")
+	// Each site: name, env-prefix, provisional model+effort default, and the
+	// config-default prompt. A site whose owning phase has not yet landed uses the
+	// shared placeholder; a landed site (extract, P6a) passes its real default.
+	cfg.LLM.Extract = loadSite(getenv, "extract", "WIKI_EXTRACT", "claude-sonnet-4-6", "medium", DefaultExtractPrompt)
+	cfg.LLM.Match = loadSite(getenv, "match", "WIKI_MATCH", "claude-haiku-4-5", "", placeholderPrompt)
+	cfg.LLM.Merge = loadSite(getenv, "merge", "WIKI_MERGE", "claude-sonnet-4-6", "high", placeholderPrompt)
+	cfg.LLM.Compile = loadSite(getenv, "compile", "WIKI_COMPILE", "claude-sonnet-4-6", "medium", placeholderPrompt)
+	cfg.LLM.Ask = loadSite(getenv, "ask", "WIKI_ASK", "claude-sonnet-4-6", "medium", placeholderPrompt)
+	cfg.LLM.LintDupJudge = loadSite(getenv, "lint_dup_judge", "WIKI_LINT_DUP", "claude-sonnet-4-6", "medium", placeholderPrompt)
+	cfg.LLM.LintFold = loadSite(getenv, "lint_fold", "WIKI_LINT_FOLD", "claude-sonnet-4-6", "medium", placeholderPrompt)
+	cfg.LLM.LintStale = loadSite(getenv, "lint_stale", "WIKI_LINT_STALE", "claude-sonnet-4-6", "medium", placeholderPrompt)
 
 	if err := cfg.LLM.Validate(); err != nil {
 		return nil, err
@@ -169,11 +170,12 @@ func Load(getenv func(string) string) (*Config, error) {
 }
 
 // loadSite resolves one call site's triple from its WIKI_<PREFIX>_{PROMPT,MODEL,
-// EFFORT} keys, falling back to the provisional defaults.
-func loadSite(getenv func(string) string, name, prefix, defModel, defEffort string) CallSite {
+// EFFORT} keys, falling back to the provisional model/effort defaults and the
+// per-site config-default prompt (the placeholder until the owning phase lands).
+func loadSite(getenv func(string) string, name, prefix, defModel, defEffort, defPrompt string) CallSite {
 	return CallSite{
 		Name:   name,
-		Prompt: envStr(getenv, prefix+"_PROMPT", placeholderPrompt),
+		Prompt: envStr(getenv, prefix+"_PROMPT", defPrompt),
 		Model:  envStr(getenv, prefix+"_MODEL", defModel),
 		Effort: envStr(getenv, prefix+"_EFFORT", defEffort),
 	}

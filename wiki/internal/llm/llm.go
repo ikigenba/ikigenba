@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"agentkit/model"
 	"agentkit/provider"
@@ -37,6 +38,16 @@ var ErrNotWired = errors.New("llm: provider client not wired (scaffold seam)")
 // Client is the minimal provider streaming surface the wrapper drives. It is
 // satisfied by every agentkit backend (anthropic, openai) and by test fakes.
 type Client = provider.Client
+
+// loggerSetter is the optional accounting hook a backend may expose (the
+// anthropic/openai Client.SetLogger of P0c). The wrapper binds per-call
+// attribution (call_site, run_id) onto the logger and attaches it so the backend
+// emits exactly one usage/cost record per request, attributed to the site. A
+// backend (or test fake) that does not implement it simply emits no accounting
+// line — the wrapper never requires it.
+type loggerSetter interface {
+	SetLogger(*slog.Logger)
+}
 
 // ClientFactory resolves a model id to a streaming Client. The composition root
 // supplies it; it dispatches claude-* → anthropic, gpt-* → openai (the P0a
@@ -63,7 +74,19 @@ func New(factory ClientFactory, logger *slog.Logger) *Wrapper {
 // a provider.Request. This is the load-bearing config-injection step: model and
 // effort come from the CallSite, never from a constant. Exported via Request for
 // the harness and for per-site phases that assemble the request.
+//
+// MaxTokens is resolved from the model's registry-pinned maximum output tokens
+// (falling back to the backend's own conservative cap when the model is unknown).
+// This is required, not cosmetic: Anthropic enables extended thinking from
+// req.Effort (P0c) with a token budget, and rejects any request whose max_tokens
+// does not exceed that budget — so leaving MaxTokens at zero made every
+// effort-bearing site (extract runs at "medium") get rejected by the backend's
+// 4096 fallback, which is below the medium thinking budget.
 func (w *Wrapper) buildRequest(site config.CallSite, schema json.RawMessage, msgs []provider.Message, tools []provider.Tool) provider.Request {
+	var maxTokens int
+	if r, err := model.Resolve(site.Model); err == nil {
+		maxTokens = model.ModelContext(r).MaxOutputTokens
+	}
 	return provider.Request{
 		Model:          site.Model,
 		Effort:         site.Effort,
@@ -71,6 +94,7 @@ func (w *Wrapper) buildRequest(site config.CallSite, schema json.RawMessage, msg
 		Messages:       msgs,
 		Tools:          tools,
 		ResponseSchema: schema,
+		MaxTokens:      maxTokens,
 	}
 }
 
@@ -102,16 +126,64 @@ type StructuredResult struct {
 	Parsed json.RawMessage
 }
 
-// Structured runs one structured generation for a single-shot call site (extract,
-// match, merge, compile, the lint judges). P2 wires the request-building and
-// client-resolution seam; the streaming/parse/validate body lands in the owning
-// call-site phase. Returns ErrNotWired until a factory is configured.
+// Structured runs one structured generation for a single-shot, tool-less call
+// site (extract, match, merge, compile, the lint judges). It resolves the site's
+// model to a provider (config-injected, never a constant), drives the stream to
+// completion, and returns the assistant's verbatim text alongside it as a
+// json.RawMessage for the caller to parse + schema-validate. The model and effort
+// come entirely from the injected CallSite — the harness sweeps the site by
+// swapping the triple (obligation 1).
+//
+// Returns ErrNotWired until a factory is configured (the scaffold state). The
+// per-call accounting line (P0c) is bound here: the wrapper attaches a logger
+// pre-bound with the site name (and any caller attribution already on w.logger)
+// so the backend emits one usage/cost record attributed to this site.
 func (w *Wrapper) Structured(ctx context.Context, site config.CallSite, schema json.RawMessage, msgs []provider.Message) (*StructuredResult, error) {
-	if _, err := w.resolveClient(site); err != nil {
+	client, err := w.resolveClient(site)
+	if err != nil {
 		return nil, err
 	}
-	// Streaming + parse/validate body is filled by the owning call-site phase.
-	return nil, ErrNotWired
+	w.bindAccounting(client, site)
+
+	req := w.buildRequest(site, schema, msgs, nil)
+	events, err := client.Stream(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var text strings.Builder
+	for ev := range events {
+		switch e := ev.(type) {
+		case provider.EventTextDelta:
+			text.WriteString(e.Text)
+		case provider.EventDone:
+			// terminal; usage/cost is logged by the backend.
+		}
+		// Thinking, tool-use, and usage events are ignored for a tool-less
+		// structured call — the structured payload arrives as assistant text.
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	raw := strings.TrimSpace(text.String())
+	return &StructuredResult{Raw: raw, Parsed: json.RawMessage(raw)}, nil
+}
+
+// bindAccounting attaches the per-call accounting logger to a backend that
+// supports it (P0c). The site name is bound as call_site; a nil base logger
+// leaves the backend's sink nil (a no-op). A backend that does not implement
+// loggerSetter is left untouched.
+func (w *Wrapper) bindAccounting(client Client, site config.CallSite) {
+	ls, ok := client.(loggerSetter)
+	if !ok {
+		return
+	}
+	if w.logger == nil {
+		ls.SetLogger(nil)
+		return
+	}
+	ls.SetLogger(w.logger.With(slog.String("call_site", site.Name)))
 }
 
 // Agent runs a tool-using agent loop for the ask call site. P2 wires the seam;

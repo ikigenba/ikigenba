@@ -23,9 +23,9 @@ func TestManifestCompleteness(t *testing.T) {
 	// (struct-zero-value, "Field.Path", declared consumer) — verbatim from the
 	// Manifest canonicity enumeration.
 	cases := []struct {
-		root      any
-		field     string
-		consumer  string
+		root     any
+		field    string
+		consumer string
 	}{
 		// subjects[], addressable by subject_id — extract/compile emit; merge/commit read.
 		{Manifest{}, "Subjects", "spine / end-of-run transaction (the addressable subjects)"},

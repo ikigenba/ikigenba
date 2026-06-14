@@ -1058,7 +1058,7 @@ crashed orphans count one attempt. Time-driven tests with an injected clock.
 
 ---
 
-## [ ] P6a — Document pass: registry primitives + extract (manifest input)
+## [x] P6a — Document pass: registry primitives + extract (manifest input)
 
 *Design §4.2, §4.1 (registry). The first real integrator's front half: the page
 registry, the `normalize` function, and the extract call. Resolve and candidates

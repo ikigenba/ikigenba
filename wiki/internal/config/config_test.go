@@ -31,9 +31,14 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Embed.Model != "text-embedding-3-large" {
 		t.Errorf("Embed.Model = %q", cfg.Embed.Model)
 	}
-	// Every site carries a placeholder prompt at scaffold time.
+	// Sites whose owning phase has not yet landed carry a placeholder prompt;
+	// extract (P6a) now carries its real config-default prompt.
 	for _, s := range cfg.LLM.sites() {
-		if s.Prompt != placeholderPrompt {
+		if s.Name == "extract" {
+			if s.Prompt != DefaultExtractPrompt {
+				t.Errorf("extract: prompt should default to DefaultExtractPrompt, got %q", s.Prompt)
+			}
+		} else if s.Prompt != placeholderPrompt {
 			t.Errorf("site %q: prompt should default to placeholder, got %q", s.Name, s.Prompt)
 		}
 		if s.Model == "" {
