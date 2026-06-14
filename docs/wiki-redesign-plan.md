@@ -22,6 +22,12 @@ This file turns that design into a sequence of **subagent-sized phases**.
 > generators, and report on top. The harness is a measurement tool — it never
 > gates a deploy or fails a build (research doc, "What this is *not*").
 
+> **Local credentials.** `wiki/.envrc` already exports both
+> `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` (resolved from `~/.secrets/` via
+> direnv). If a phase needs to run live inference or embeddings locally, the keys
+> are there — `direnv allow` in `wiki/` and they are in the environment; no need
+> to source or set them by hand.
+
 ## Sizing principle
 
 Each phase is one coherent unit a single subagent can complete from a cold start
@@ -554,7 +560,7 @@ only surfacing at the P11k big-bang ~24 phases later.
 
 ---
 
-## P0 — Preflight: both keys present (the entry HALT gate)
+## [x] P0 — Preflight: both keys present (the entry HALT gate)
 
 *The single deterministic, offline gate that makes the standing precondition above
 **enforced by the march itself**. It is the **entry mirror of P11k**: where P11k is
@@ -593,7 +599,7 @@ skipped.**
 
 ---
 
-## P0a — agentkit OpenAI chat backend (Responses API)
+## [ ] P0a — agentkit OpenAI chat backend (Responses API)
 
 *Shared-library expansion; the deepest chat prerequisite. A near-mechanical
 **port** of the proven backend in the sibling repo `/mnt/projects/ikigai-cli`
@@ -646,7 +652,7 @@ key, fully offline); structured-output, effort, and error-mapping cases mirror
 the ikigai-cli tests; **all agent-backed services still build** (prompts,
 dropbox, wiki) — the reason this seam is isolated.
 
-## P0b — agentkit embeddings client (`agentkit/embed`)
+## [ ] P0b — agentkit embeddings client (`agentkit/embed`)
 
 *Shared-library expansion; a **net-new** capability with no prior art
 (`/mnt/projects/ikigai-cli` has no embeddings). Embeddings are **not** a generation call,
@@ -682,7 +688,7 @@ response over an `httptest` server** (offline, no live key); an absent key is a
 clean construction refusal, not a panic; **all agent-backed services still
 build.**
 
-## P0c — Per-call usage/cost logging + Anthropic effort parity
+## [ ] P0c — Per-call usage/cost logging + Anthropic effort parity
 
 *Shared-library cross-cutting slice. Makes the AI library emit **one jsonl line
 per API call** (chat and embed, every backend) into the app's structured log,
@@ -728,7 +734,7 @@ computation and the caller's pre-bound `call_site`; a nil logger emits nothing;
 an Anthropic request with effort sends adaptive-thinking on the wire; **all
 agent-backed services still build.**
 
-## P1 — Decisions lock + consolidated schema
+## [ ] P1 — Decisions lock + consolidated schema
 
 *Design §12 (the authoritative schema final), plus §2.2, §4.1, §4.5, §5, §6, §7,
 §9.2, §9.3, §11. The prerequisite for everything; resolves the open schema/fork
@@ -824,7 +830,7 @@ partial that a green mocked DB test carries into the immutable foundation.
 
 ---
 
-## P2 — Service scaffold + config-injection seam
+## [ ] P2 — Service scaffold + config-injection seam
 
 *Design §1, §10. Establishes the chassis and the config discipline every later
 phase plugs into.*
@@ -887,7 +893,7 @@ without it (obligations 1–2). A trivial test swaps the triple on a stub site.
 
 ---
 
-## P3 — The ingest side: `Accept`, the inbox, front doors
+## [ ] P3 — The ingest side: `Accept`, the inbox, front doors
 
 *Design §2.1, §2.2, §8. The whole write path, no integration yet.*
 
@@ -918,7 +924,7 @@ only post-`Accept`; crash before integration loses nothing. Unit + table tests.
 
 ---
 
-## P4 — The dispatcher-free worker spine (stubbed integrators)
+## [ ] P4 — The dispatcher-free worker spine (stubbed integrators)
 
 *Design §3, §4.5 (runs lifecycle). The seam-forcing phase: the spine exists and
 is verifiable before any real integrator does.*
@@ -1016,7 +1022,7 @@ boundary**, never a silent gap that surfaces at P7b with no additive escape hatc
 
 ---
 
-## P5 — Failure policy: bounded retries + dead-letter
+## [ ] P5 — Failure policy: bounded retries + dead-letter
 
 *Design §7, §8. Completes the spine's resilience story on top of P4's stubs.*
 
@@ -1044,7 +1050,7 @@ crashed orphans count one attempt. Time-driven tests with an injected clock.
 
 ---
 
-## P6a — Document pass: registry primitives + extract (manifest input)
+## [ ] P6a — Document pass: registry primitives + extract (manifest input)
 
 *Design §4.2, §4.1 (registry). The first real integrator's front half: the page
 registry, the `normalize` function, and the extract call. Resolve and candidates
@@ -1097,7 +1103,7 @@ yet — the commit lands in P7a.
 
 ---
 
-## P6b — Document pass: resolve + candidates (the mechanical resolution half)
+## [ ] P6b — Document pass: resolve + candidates (the mechanical resolution half)
 
 *Design §4.3, §4.1 (registry). The first real integrator's **mechanical**
 resolution arms and the candidate-retrieval step — **zero LLM, fully
@@ -1133,7 +1139,7 @@ seam are each present and individually tested before the phase closes.
 
 ---
 
-## P6b2 — Document pass: match + the manifest (manifest out)
+## [ ] P6b2 — Document pass: match + the manifest (manifest out)
 
 *Design §4.3, §4.1 (registry), §10. **No new resolution mechanics** — P6b's arms
 already produce the shortlist. This phase lands the **match LLM call**, its real
@@ -1180,7 +1186,7 @@ in P7a.
 
 ---
 
-## P7a — Document pass: merge core + the plain end-of-run commit (happy path)
+## [ ] P7a — Document pass: merge core + the plain end-of-run commit (happy path)
 
 *Design §4.4, §4.5, §6 (the `stale_notes` writer). Closes the document-pass
 loop — the airtight transaction the whole spine was built for — on the
@@ -1250,7 +1256,7 @@ the phase closes.
 
 ---
 
-## P7a2 — Document pass: the real merge prompt + its validation surface
+## [ ] P7a2 — Document pass: the real merge prompt + its validation surface
 
 *Design §4.4, §6.1, §10. **No new spine behavior** — P7a's merge already runs and
 commits. This phase writes merge's **real config-default prompt** — the system's
@@ -1300,7 +1306,7 @@ subject + alias exist. Structure only — never whether the prose is *good*.
 
 ---
 
-## P7b — Document pass: optimistic commit + the lost-update loop + the §6.1 gate
+## [ ] P7b — Document pass: optimistic commit + the lost-update loop + the §6.1 gate
 
 *Design §3 (optimistic commit / the lost-update conflict), §6.1. Hardens P7a's
 commit for the N-worker pool with the **page-update** race: the version-guarded
@@ -1345,7 +1351,7 @@ pinned triple). Structure only.
 
 ---
 
-## P7b2 — Document pass: the duplicate-mint conflict
+## [ ] P7b2 — Document pass: the duplicate-mint conflict
 
 *Design §3 (the duplicate-subject-minting conflict). **No new commit core** —
 P7b's optimistic commit and the conflict-loop bound already run. This phase adds
@@ -1378,7 +1384,7 @@ onto it. Structure only.
 
 ---
 
-## P8 — Digest pass: compile + the jobs config + digest concurrency
+## [ ] P8 — Digest pass: compile + the jobs config + digest concurrency
 
 *Design §5, §3 (cron rows as durable batch authorization), §6 (jobs config). The
 first reuse of the shared resolve→merge→commit pipeline.*
@@ -1433,7 +1439,7 @@ to a page.
 
 ---
 
-## P9a — Lint: `lint-dups` + the shared lint plumbing
+## [ ] P9a — Lint: `lint-dups` + the shared lint plumbing
 
 *Design §6 (and §6.1 already gated in P7b). The first lint job, and the home of
 the `dup_flags` helper + `jobs`-config + `lint_run` plumbing every later lint job
@@ -1483,7 +1489,7 @@ passes the §6.1 citation gate. Blunt pairs only — subtle identity stays Part 
 
 ---
 
-## P9b — Lint: `lint-sweep` (semantic duplicate sweep, zero-LLM)
+## [ ] P9b — Lint: `lint-sweep` (semantic duplicate sweep, zero-LLM)
 
 *Design §6. The proactive walker that flags duplicates built from disjoint
 streams (Bob-from-email vs Robert-from-CRM). Depends on P9a's `FlagDup` + jobs
@@ -1504,7 +1510,7 @@ slice (it has no live call site).*
 
 ---
 
-## P9c — Lint: `lint-stale` (staleness repair)
+## [ ] P9c — Lint: `lint-stale` (staleness repair)
 
 *Design §6, §6.1. Consumes the `stale_notes` rows P7a's merge writes. Depends on
 P9a's jobs plumbing and P7a's writer hook.*
@@ -1535,7 +1541,7 @@ Structure only.
 
 ---
 
-## P10 — The read side: ask + search + timeline
+## [ ] P10 — The read side: ask + search + timeline
 
 *Design §9.1, §9.2 (tools 1–5; `related` deferred), §9.3 (search verb contract,
 lexical-only for now). Needs pages (P7+).*
@@ -1583,7 +1589,7 @@ returns whole-page hits, registry-first.
 
 ---
 
-## P11 — The embedding lane: hybrid retriever
+## [ ] P11 — The embedding lane: hybrid retriever
 
 *Design §9.3. Designed now, sequenced last — FTS5-first was build ordering only.
 Slots behind the retriever interface P10 already consumes.*
@@ -1645,7 +1651,7 @@ now has an end-to-end real-model liveness check.
 
 ---
 
-## P11k — Keyed Part-I validation gate (keys required)
+## [ ] P11k — Keyed Part-I validation gate (keys required)
 
 *The single keyed, live-model step the otherwise-phase-only `/finish` march needs an
 explicit owner for (see *Prompt-default validation*, mechanism 2). It ships no new
@@ -1688,7 +1694,7 @@ when keys/network are absent rather than passing. **This phase, uniquely, is not
 
 ---
 
-## P11d — First production deploy to `int`
+## [ ] P11d — First production deploy to `int`
 
 *The wiki rewrite goes live. A keyed, box-side human step like P11k — **not** a
 `/finish`-autonomous phase (it ssh-es to the box and runs `opsctl`). Placed at the
@@ -1745,7 +1751,7 @@ II having been validated only by mocks. With **P11d** the service is now live on
 documents and real `asks` rows as they accrue (enablement obligation 4), not
 synthetic data alone.
 
-## P12 — Eval design lock
+## [ ] P12 — Eval design lock
 
 *Research doc "Open questions for the design doc." A plan executes a settled
 design; the research fixes the *what* and *shape* but leaves six questions open.
@@ -1779,7 +1785,7 @@ Resolve and record:
 `(case_id, site, generation, failure_tag, input, gold)` and the four scorer
 kinds are pinned; reviewed in full before P13.
 
-## P13 — The rig
+## [ ] P13 — The rig
 
 *Research doc §"High-level plan" piece 1. Build once, prove with one site.*
 
@@ -1801,7 +1807,7 @@ kinds are pinned; reviewed in full before P13.
 (incl. an OpenAI model via P0a), writes the table, and reproduces a second run
 entirely from cache (zero paid calls).
 
-## P14 — The scorer library
+## [ ] P14 — The scorer library
 
 *Research doc piece 2. Four kinds cover all ten sites; every scorer reports the
 **dangerous direction separately** (the research's asymmetry principle).*
@@ -1830,7 +1836,7 @@ entirely from cache (zero paid calls).
 **Verify:** each scorer against hand-built known-good/known-bad inputs;
 dangerous-direction rates reported separately, never lumped into accuracy.
 
-## P15 — Per-site test sets / generators
+## [ ] P15 — Per-site test sets / generators
 
 *Research doc piece 3. One generator per site producing versioned
 `(dataset + prompt)` bundles (generations); shared corpora are the structural
@@ -1856,7 +1862,7 @@ saving.*
 **Verify:** a gen-1 bundle exists for every site; the adversarial pass ran; the
 harness loads a bundle by name; the shared corpora feed their multiple consumers.
 
-## P16 — The sweep + report
+## [ ] P16 — The sweep + report
 
 *Research doc piece 4. The product: the table that turns scores into a decision —
 and licenses the config defaults Part I deferred.*
@@ -1883,7 +1889,7 @@ and licenses the config defaults Part I deferred.*
 dangerous-direction errors present per config; a worked "pick a config" example;
 re-running re-scores from cache without new paid calls.
 
-## P16d — Re-deploy `int` with the tuned config
+## [ ] P16d — Re-deploy `int` with the tuned config
 
 *The closing step of the feedback loop: ship the config defaults P16's report
 chose. A keyed, box-side human step, identical in mechanics to P11d — only the
