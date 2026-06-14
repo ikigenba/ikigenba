@@ -13,7 +13,7 @@ This file turns that design into a sequence of **subagent-sized phases**.
 > **OpenAI** chat backend (P0a, ported from `/mnt/projects/ikigai-cli`), an **embeddings**
 > lane (P0b), and **per-call cost logging** plus Anthropic effort parity (P0c) —
 > all prerequisites the rest of the build assumes. **Part II (P12–P16)** builds the offline **evaluation
-> harness** described in `docs/wiki-evaluation-research.md` — the tool that
+> harness** described in `docs/wiki-redesign-research.md` — the tool that
 > sweeps `model × effort × prompt` per inference site and scores the results.
 > Part II depends on Part I:
 > the harness scores the *production* call sites, so it cannot exist until they
@@ -288,7 +288,7 @@ call wrapper shared by every call site).
 
 ## Eval-engine enablement (a cross-cutting requirement)
 
-`docs/wiki-evaluation-research.md` builds an offline harness that sweeps
+`docs/wiki-redesign-research.md` builds an offline harness that sweeps
 `{model} × {effort} × {prompt}` per inference site and scores the results. Its
 foundational principle — **evaluate the production code path, never a
 reimplementation** — is a constraint on *this* build. The harness (Part II)
@@ -1638,7 +1638,7 @@ is `ssh int sudo opsctl rollback wiki`.
 
 # Part II — the evaluation harness
 
-The offline tool of `docs/wiki-evaluation-research.md`: a runner that sweeps
+The offline tool of `docs/wiki-redesign-research.md`: a runner that sweeps
 `{generation} → {prompt, data} × {model} × {effort}` over the **real** call
 sites (Part I's enablement makes this possible) and produces a per-generation
 comparison table of score + cost + latency, with the dangerous-direction error

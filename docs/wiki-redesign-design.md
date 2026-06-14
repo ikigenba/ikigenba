@@ -10,8 +10,8 @@
 > rewrite, nothing is preserved.
 >
 > Prior-art context for the read side lives in
-> `docs/wiki-prior-art-research.md`. The out-of-band evaluation engine
-> (`docs/wiki-evaluation-research.md`) is **not** part of this design and is
+> `docs/wiki-redesign-prior-art.md`. The out-of-band evaluation engine
+> (`docs/wiki-redesign-research.md`) is **not** part of this design and is
 > **not** a CI/CD precondition; its only footprint here is the
 > config-injection constraint stated in "LLM call-site discipline."
 
@@ -756,7 +756,7 @@ serves both surfaces). The tool list *is* the write-license enforcement
 (read-only by construction). No list-all/browse tool.
 
 **Cross-subject and temporal-span queries** (the query classes per-subject
-prose answers worst, per `wiki-prior-art-research.md`) are answered by **views
+prose answers worst, per `wiki-redesign-prior-art.md`) are answered by **views
 rendered on demand over the registry, never stored derived knowledge** (the
 journal/index rejection pattern). `timeline(from, to)` is **built now** (event
 subjects whose `occurred_at` falls in the window; ISO-8601 prefix args,

@@ -17,7 +17,7 @@
 > pages, `index.md`, size cap / no chunking, transcripts, `owner`,
 > eventplane producer — all settled), and the **cross-subject/temporal
 > response** to the prior-art study (`timeline` + goldens-gated
-> `related`, settled — see `docs/wiki-prior-art-research.md`).
+> `related`, settled — see `docs/wiki-redesign-prior-art.md`).
 > Remaining open: schema finals, eval harness, exact prompts, exact
 > models, config defaults.
 >
@@ -2096,7 +2096,7 @@ Rationale:
 ### Cross-subject and temporal-span queries — registry views as ask tools (locked)
 
 **The weakness, named:** the prior-art study
-(`docs/wiki-prior-art-research.md`) identified cross-subject thematic
+(`docs/wiki-redesign-prior-art.md`) identified cross-subject thematic
 questions ("what are the themes") and temporal-span questions ("what
 changed between March and May") as the query classes per-subject prose
 pages answer worst — they are why GraphRAG built stored community
