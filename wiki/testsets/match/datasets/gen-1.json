@@ -1,0 +1,69 @@
+[
+  {
+    "case_id": "match-0001",
+    "site": "match",
+    "generation": 1,
+    "failure_tag": "blunt_same",
+    "input": {
+      "incoming": {
+        "type": "entity",
+        "kind": "org",
+        "name": "Apple Inc.",
+        "aliases": ["Apple"],
+        "claims": [
+          { "text": "Apple Inc. is a technology company based in Cupertino.", "cites": ["01HXBLUNTINBOX0000000000001"] }
+        ]
+      },
+      "candidates": [
+        {
+          "subject_id": "01HXCANDIDATEAPPLEINC000001",
+          "type": "entity",
+          "canonical_name": "Apple Inc.",
+          "aliases": ["apple", "apple inc"],
+          "body": "Apple Inc. is a technology company headquartered in Cupertino, California. Tim Cook is its chief executive officer."
+        },
+        {
+          "subject_id": "01HXCANDIDATEAPPLEREC000002",
+          "type": "entity",
+          "canonical_name": "Apple Records",
+          "aliases": ["apple records"],
+          "body": "Apple Records is a record label founded by the Beatles in 1968 in London."
+        }
+      ]
+    },
+    "gold": {
+      "same": "01HXCANDIDATEAPPLEINC000001",
+      "dup_pairs": []
+    }
+  },
+  {
+    "case_id": "match-0002",
+    "site": "match",
+    "generation": 1,
+    "failure_tag": "identical_name_diff_thing",
+    "input": {
+      "incoming": {
+        "type": "entity",
+        "kind": "org",
+        "name": "Apple Records",
+        "aliases": [],
+        "claims": [
+          { "text": "Apple Records is the Beatles' record label.", "cites": ["01HXBLUNTINBOX0000000000002"] }
+        ]
+      },
+      "candidates": [
+        {
+          "subject_id": "01HXCANDIDATEAPPLEINC000001",
+          "type": "entity",
+          "canonical_name": "Apple Inc.",
+          "aliases": ["apple", "apple inc"],
+          "body": "Apple Inc. is a technology company headquartered in Cupertino, California."
+        }
+      ]
+    },
+    "gold": {
+      "same": "",
+      "dup_pairs": []
+    }
+  }
+]

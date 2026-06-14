@@ -1801,7 +1801,7 @@ Resolve and record:
 `(case_id, site, generation, failure_tag, input, gold)` and the four scorer
 kinds are pinned; reviewed in full before P13.
 
-## [ ] P13 — The rig
+## [x] P13 — The rig
 
 *Research doc §"High-level plan" piece 1. Build once, prove with one site.*
 
@@ -1822,6 +1822,26 @@ kinds are pinned; reviewed in full before P13.
 **Verify:** the rig runs Match over a tiny fixture, sweeps `model × effort`
 (incl. an OpenAI model via P0a), writes the table, and reproduces a second run
 entirely from cache (zero paid calls).
+
+> **P13 done (2026-06-14).** Rig lives at `wiki/cmd/wiki-eval` + `wiki/internal/eval`
+> (inside the wiki module so it can import the module-internal real call sites —
+> Go forbids reaching `internal/` from a sibling module; the eval-design's
+> "standalone Go main in the suite, off-box, not a `go test` target" intent is
+> met). Dataset loader (`(case_id, site, generation, failure_tag, input, gold)`),
+> content-hash output cache `(dataset, case, prompt, model, effort)`, the runner
+> injecting triples into the **real** `integrate.Matcher.Match` (production code
+> path, cost+latency pulled off P0c's accounting record via a capture `slog`
+> handler), and the per-generation `config × metric` table. Proven LIVE: swept
+> `claude-haiku-4-5` + `claude-sonnet-4-6:high` over `testsets/match` and a second
+> run served entirely from cache (0 paid calls). **Finding for Part I:** a live
+> `gpt-5.5` sweep point is REJECTED — OpenAI's strict structured-output mode
+> requires every `properties` key to appear in `required`, but `MatchSchema`
+> (P6b2, `wiki/internal/integrate/match_schema.go`) leaves `verdict.same` /
+> `verdict.no_match` optional (the binary XOR). This is a real Part-I schema gap
+> the integration tier exists to surface; fixing it (make the wire schema
+> OpenAI-strict-compatible while ParseMatch keeps enforcing the XOR) is a P6b2/
+> schema change, out of P13's rig scope. Anthropic — the pinned production model
+> — runs clean.
 
 ## [ ] P14 — The scorer library
 
