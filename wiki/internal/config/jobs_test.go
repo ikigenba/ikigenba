@@ -135,4 +135,18 @@ func TestStandardLintEntriesRegistersSweep(t *testing.T) {
 	if scheduleName(sweep.Trigger) == "" {
 		t.Fatalf("lint-sweep must bind a cron schedule, got trigger %q", sweep.Trigger)
 	}
+
+	// lint-stale (P9c) is registered as a no-selector lint entry bound to a cron.
+	var stale *Job
+	for i := range entries {
+		if entries[i].Name == "lint-stale" {
+			stale = &entries[i]
+		}
+	}
+	if stale == nil {
+		t.Fatal("lint-stale not registered in StandardLintEntries")
+	}
+	if scheduleName(stale.Trigger) == "" {
+		t.Fatalf("lint-stale must bind a cron schedule, got trigger %q", stale.Trigger)
+	}
 }

@@ -103,12 +103,13 @@ func (j Jobs) LintEntries() []Job {
 // key the lint package's *JobName constants mirror) to its cron trigger. The names
 // are kept as literals here (config has no dependency on internal/lint) and must
 // stay in sync with the lint package's job-name constants. A lint job appears here
-// only once its job code exists: lint-dups (P9a) and lint-sweep (P9b) are
-// registered; lint-stale registers when P9c lands.
+// only once its job code exists: lint-dups (P9a), lint-sweep (P9b), and
+// lint-stale (P9c) are registered.
 func StandardLintEntries() []Job {
 	return []Job{
 		{Name: "lint-dups", Kind: JobLint, Trigger: "cron.weekly"},
 		{Name: "lint-sweep", Kind: JobLint, Trigger: "cron.monthly"},
+		{Name: "lint-stale", Kind: JobLint, Trigger: "cron.weekly"},
 	}
 }
 

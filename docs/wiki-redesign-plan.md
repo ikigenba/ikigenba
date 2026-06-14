@@ -1526,7 +1526,7 @@ slice (it has no live call site).*
 
 ---
 
-## [ ] P9c — Lint: `lint-stale` (staleness repair)
+## [x] P9c — Lint: `lint-stale` (staleness repair)
 
 *Design §6, §6.1. Consumes the `stale_notes` rows P7a's merge writes. Depends on
 P9a's jobs plumbing and P7a's writer hook.*

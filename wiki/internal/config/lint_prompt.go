@@ -108,3 +108,63 @@ Page B body: "ACME Corporation makes industrial hardware. [01HY...]"
 canonical name: "Acme Corporation"
 Output:
 {"title": "Acme Corporation", "body": "Acme Corporation, also known as Acme Corp, is a hardware manufacturer founded in 1990 that makes industrial hardware. [01HX...] [01HY...]", "superseded": []}`
+
+// DefaultLintStalePrompt is the config-default prompt for the stale-repair call
+// site (design §6, §6.1, P9c). lint-stale works the stale_notes side channel the
+// document-pass merge and the dup fold append: a note flags that a page CONTRADICTS
+// newer evidence but defers the rewrite. This is ONE tool-less call per subject
+// batching all that subject's open notes — page + notes + cited evidence in; the
+// rewritten page + one disposition per note out. It inherits the §6.1
+// citation-preservation obligation (the rewrite may not silently drop a citation
+// the old page carried). The six `## N` markers are load-bearing for the offline
+// prompt-default gate.
+const DefaultLintStalePrompt = `You repair a knowledge-base page that newer evidence has made stale. You are
+given the page's current prose plus a batch of staleness notes, each naming a
+contradiction and citing the new evidence that establishes the correction.
+Return ONLY JSON matching the provided schema — no prose outside the JSON.
+
+## 1. Task framing — repair, don't rewrite from scratch
+Start from the existing page and fold in each note's correction. Preserve every
+fact the page already states that the notes do NOT contradict; change only what
+the notes show to be stale. Do not invent facts neither the page nor the cited
+evidence states.
+
+## 2. Repair discipline — prose, not a ledger
+Write flowing prose, never a bullet list. Where a note corrects a fact, update
+the sentence and cite the new evidence; where the old and new genuinely
+CONFLICT and you cannot resolve which holds, keep both with their citations in a
+clearly marked "Conflicting accounts" section rather than silently dropping one.
+The first paragraph must still state the subject's identity and the names it is
+known by (so a later match can recover the page from its lead).
+
+## 3. Citation preservation — declare every dropped citation (superseded)
+Every inline [inbox-id] citation present in the current page body must survive
+into the repaired body OR be listed in "superseded" with nothing dropped
+silently. A citation is evidence; paraphrasing it away without declaring it is a
+failed repair. At commit a set difference (old citations − new citations) must
+equal your declared superseded list exactly. Fold in each note's cited evidence
+ids too. If you drop none, emit an empty list.
+
+## 4. Per-note disposition — account for every note
+For EACH note you were given, return exactly one disposition keyed by its note
+id: "repaired" if you folded its correction into the page, or "dismissed" if the
+note no longer applies (the page already reflects it, or the contradiction has
+since been resolved elsewhere). Every open note must get a disposition; an
+un-dispositioned note stays open and is re-worked on the next run.
+
+## 5. Batching — one coherent page from many notes
+The notes for a subject arrive together so the page stays internally coherent
+after all corrections, not rewritten once per note. Merge overlapping notes
+rather than applying them mechanically in sequence; the result is one page, not a
+changelog.
+
+## 6. Output schema and example
+Return a single JSON object: {"title": "<page title>", "body": "<repaired prose
+page>", "superseded": ["<dropped inbox id>", ...], "dispositions": [{"note_id":
+"<note id>", "status": "repaired" | "dismissed"}, ...]}.
+
+Worked example.
+Current page: "Initech is an independent software company. [01HX...]"
+Note 01HNOTE1: "Globex acquired Initech in 2021." cites [01HY...]
+Output:
+{"title": "Initech", "body": "Initech is a software company that was acquired by Globex in 2021. [01HX...] [01HY...]", "superseded": [], "dispositions": [{"note_id": "01HNOTE1", "status": "repaired"}]}`
