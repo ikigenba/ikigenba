@@ -1922,7 +1922,7 @@ harness loads a bundle by name; the shared corpora feed their multiple consumers
 > would un-gate `related` (design §9.2) are seeded as the ask `contradiction_surface`
 > case; un-gating `related` remains P16's measured decision.
 
-## [ ] P16 — The sweep + report
+## [x] P16 — The sweep + report
 
 *Research doc piece 4. The product: the table that turns scores into a decision —
 and licenses the config defaults Part I deferred.*
@@ -1948,6 +1948,35 @@ and licenses the config defaults Part I deferred.*
 **Verify:** an end-to-end sweep on gen-1 produces the report; cost/latency and
 dangerous-direction errors present per config; a worked "pick a config" example;
 re-running re-scores from cache without new paid calls.
+
+> **P16 done (2026-06-14).** The sweep + report lands as `wiki/internal/eval/report.go`
+> (+ `report_test.go`) and a `--report` mode on `cmd/wiki-eval`. `BuildReport` scores
+> every raw `CaseResult` through the P14 scorers, aggregates per `(model, effort)`
+> config, and renders the eval-design **q6 table verbatim**: one row per config (NEVER
+> a single composite rank), the **dangerous-direction axis beside the headline, never
+> folded in**, cost (total + per-case mean) + latency (mean + p95) + coverage, captioned
+> with the generation, sorted by headline with the tie band grouped (the safer-of-band
+> floated up by ascending dangerous total then cost). The **question-5 saturation rule**
+> (ceiling ≥ 0.95 AND top-k spread ≤ 0.02 with dangerous axes indistinguishable, knobs
+> configurable) is evaluated and printed as a `SATURATED — mint gen-N+1` advisory — a
+> reported decision, never an auto-action. The **retrieval side-by-side** (lexical-only
+> vs hybrid, recall lift vs cost — research §8–10) is its own table with a licensing
+> verdict; today the harness has one wired retriever (the swept lane = "lexical"), so
+> the hybrid column is the honest empty baseline until P11's vector adapter is wired,
+> at which point `BuildRetrievalMode` scores both modes. The **feedback loop** is the
+> `ChosenConfig` record — the picked `(prompt, model, effort)` + deferred knobs + the
+> human's ranking rationale, the line P16d turns into a Part-I config default; nothing
+> auto-promotes. **Proven LIVE end-to-end:** swept `claude-haiku-4-5` over the match
+> gen-1 bundle (5 cases, real `integrate.Matcher.Match` call site) → full report
+> (headline 1.000, all dangerous axes 0, cost+latency present, SATURATED advisory fired,
+> a worked pick-a-config record), and a **second run re-scored entirely from cache (0
+> paid calls)**. The deterministic report surface (aggregation, dangerous-separation,
+> saturation both-halves, side-by-side lift/verdict, chosen-config render) is unit-tested
+> offline. **Scope note:** the live sweep is wired only for the match site (P13's
+> truthful adapter boundary — the other nine real call-site adapters are not yet built);
+> the report renderer + sweep driver are site-general and proven on the wired site, the
+> same proof discipline P13/P15 used. Un-gating `related` (design §9.2) remains a
+> human's measured call once its ask goldens run.
 
 ## [ ] P16d — Re-deploy `int` with the tuned config
 
