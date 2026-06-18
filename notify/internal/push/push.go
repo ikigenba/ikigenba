@@ -22,6 +22,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,32 +63,69 @@ func NewClient(baseURL, topic, token string, logger *slog.Logger) *Client {
 	}
 }
 
-// Send fires one best-effort ntfy push (§11.2): POST <base>/<topic> with the
-// message as the request body, the Title header, and Authorization: Bearer
-// <token>. A non-2xx response or a transport error is logged at WARN and dropped
-// — never retried, never surfaced. The topic and token are never logged.
-func (c *Client) Send(ctx context.Context, title, message string) {
+// Notification is a single ntfy push assembled by the MCP send verb
+// (plan-notify-mcp-send.md §2). Message is the body; the rest are optional.
+// Priority is the ntfy numeric priority (1..5; 0 means unset → the header is
+// omitted and ntfy applies its default). Tags is a list of ntfy tags (known emoji
+// shortcodes render as leading emoji, others as text labels); Click is an
+// absolute URL opened when the owner taps the notification.
+type Notification struct {
+	Message  string
+	Title    string
+	Priority int
+	Tags     []string
+	Click    string
+}
+
+// Publish sends ONE notification synchronously and returns the real outcome — the
+// MCP send verb's hop (plan-notify-mcp-send.md §4). Unlike Send (the consumer's
+// best-effort, fire-and-forget hop) it returns an error on a transport failure or
+// a non-2xx response, so the caller learns whether the push landed. A nil return
+// means ntfy ACCEPTED the publish, not that the owner saw it. The topic and token
+// are never logged or surfaced in the returned error.
+func (c *Client) Publish(ctx context.Context, n Notification) error {
 	url := c.base + "/" + c.topic
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(message))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(n.Message))
 	if err != nil {
-		c.log.Warn("push: build request failed", "err", err)
-		return
+		return fmt.Errorf("push: build request: %w", err)
 	}
-	req.Header.Set("Title", title)
+	if n.Title != "" {
+		req.Header.Set("Title", n.Title)
+	}
+	if n.Priority != 0 {
+		req.Header.Set("Priority", strconv.Itoa(n.Priority))
+	}
+	if len(n.Tags) > 0 {
+		req.Header.Set("Tags", strings.Join(n.Tags, ","))
+	}
+	if n.Click != "" {
+		req.Header.Set("Click", n.Click)
+	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		// Best-effort: a failed external call is simply lost (§11.2).
-		c.log.Warn("push: ntfy request failed (dropped)", "err", err)
-		return
+		return fmt.Errorf("push: ntfy request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body) //nolint:errcheck // drain to allow connection reuse
 	if resp.StatusCode/100 != 2 {
-		c.log.Warn("push: ntfy returned non-2xx (dropped)", "status", resp.StatusCode)
+		return fmt.Errorf("push: ntfy returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// Send fires one best-effort ntfy push (§11.2) for the CONSUMER path: POST
+// <base>/<topic> with the message body and Title header. It delegates to Publish
+// so there is a single ntfy-POST code path, then logs-and-drops any error — a
+// failed external call is simply lost, never retried, never surfaced (§11.2). The
+// topic and token are never logged.
+func (c *Client) Send(ctx context.Context, title, message string) {
+	if err := c.Publish(ctx, Notification{Title: title, Message: message}); err != nil {
+		// Best-effort: a failed external call is simply lost (§11.2).
+		c.log.Warn("push: ntfy send failed (dropped)", "err", err)
 		return
 	}
 	c.log.Debug("push: sent", "title", title)

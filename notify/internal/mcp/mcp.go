@@ -23,6 +23,8 @@ import (
 
 	"eventplane/consumer"
 	"eventplane/outbox"
+
+	"notify/internal/push"
 )
 
 // Identity is the authenticated caller, as told to us authoritatively by nginx
@@ -34,31 +36,41 @@ type Identity struct {
 
 // Handler is the http.Handler for POST /mcp. It is constructed at wiring time
 // with the health-envelope inputs (version, service, optional reporter) threaded
-// from appkit's Router accessors, and dispatches JSON-RPC methods. notify holds
-// no MCP-side domain service; its domain runs in the background consumer loop,
-// not over MCP.
+// from appkit's Router accessors plus the push client backing the send verb, and
+// dispatches JSON-RPC methods. notify holds no MCP-side domain *store*; its
+// reactive domain runs in the background consumer loop, while the proactive send
+// verb publishes through the same push client (plan-notify-mcp-send.md §7).
 type Handler struct {
 	version       string
 	service       string
 	health        func(context.Context) (map[string]any, error)
 	events        outbox.Registry
 	subscriptions func() []consumer.Subscription
+	push          *push.Client
 }
 
 // NewHandler builds a Handler. version/service/health populate the
 // health envelope; health is the optional per-service reporter
 // (nil → details is {}). events is the published-event registry (empty for
 // notify, a consumer-only service) and subscriptions the live subscription
-// provider, both rendered by reflection.
+// provider, both rendered by reflection. push is the ntfy client backing the
+// send verb; following crm's non-nil-service discipline a nil push client is a
+// wiring error and panics here rather than deferring a nil dereference to the
+// first send.
 func NewHandler(version, service string,
 	health func(context.Context) (map[string]any, error),
-	events outbox.Registry, subscriptions func() []consumer.Subscription) *Handler {
+	events outbox.Registry, subscriptions func() []consumer.Subscription,
+	pushClient *push.Client) *Handler {
+	if pushClient == nil {
+		panic("mcp: push client is required")
+	}
 	return &Handler{
 		version:       version,
 		service:       service,
 		health:        health,
 		events:        events,
 		subscriptions: subscriptions,
+		push:          pushClient,
 	}
 }
 
@@ -80,9 +92,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"protocolVersion": "2025-03-26",
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "Notify", "version": "1"},
-			"instructions": "Event-plane consumer that pushes a notification for each " +
-				"subscribed event. Check health for status and reflection for what it " +
-				"subscribes to.",
+			"instructions": "Push notifications to the owner's device. Call send to push a " +
+				"notification proactively. notify is also an event-plane consumer that pushes " +
+				"automatically for each subscribed event — check health for status and reflection " +
+				"for what it subscribes to.",
 		})
 	case "notifications/initialized":
 		// fire-and-forget notification — no response per JSON-RPC.

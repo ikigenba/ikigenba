@@ -3,6 +3,8 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,14 +22,28 @@ const (
 	testService  = "notify"
 )
 
-// newTestHandler builds a notify Handler with the consumer-only wiring: no domain
-// service, an EMPTY published-event registry (notify produces nothing), and the
-// live subscription provider returning notify's one declared in-edge — the same
-// push.Subscription() the consumer Handler matches against.
+// discardLogger is a slog.Logger that drops every line (push must never log a
+// secret; tests don't need the output either).
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewJSONHandler(io.Discard, nil))
+}
+
+// newTestHandler builds a notify Handler with the consumer-only wiring plus a
+// push client whose base URL is unreachable (the read-only tests never call
+// send). It has an EMPTY published-event registry (notify produces nothing) and
+// the live subscription provider returning notify's one declared in-edge — the
+// same push.Subscription() the consumer Handler matches against.
 func newTestHandler() *Handler {
+	return newHandlerWithClient(push.NewClient("http://127.0.0.1:1", "topic", "tok", discardLogger()))
+}
+
+// newHandlerWithClient builds a notify Handler around a specific push client so a
+// send test can point it at a mock ntfy server.
+func newHandlerWithClient(c *push.Client) *Handler {
 	return NewHandler(testVersion, testService, nil,
 		outbox.Registry{},
-		func() []consumer.Subscription { return []consumer.Subscription{push.Subscription()} })
+		func() []consumer.Subscription { return []consumer.Subscription{push.Subscription()} },
+		c)
 }
 
 type jsonRPCResponse struct {
@@ -159,7 +175,7 @@ func TestToolsList(t *testing.T) {
 			t.Errorf("tool %q inputSchema is not an object schema: %v", tool.Name, tool.InputSchema)
 		}
 	}
-	for _, name := range []string{"health", "reflection"} {
+	for _, name := range []string{"send", "health", "reflection"} {
 		if !got[name] {
 			t.Errorf("missing expected tool %q: %+v", name, result.Tools)
 		}

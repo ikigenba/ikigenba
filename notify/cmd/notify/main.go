@@ -57,11 +57,11 @@ func main() {
 	var rt *appkit.Router
 
 	appkit.Main(appkit.Spec{
-		App:        "notify",
-		Mount:      "/srv/notify/",
-		Port:       3003,
-		MCP:        true,
-		Consumes:   []string{crmSource, promptsSource}, // event-plane consumer → CONSUMES=crm,prompts
+		App:      "notify",
+		Mount:    "/srv/notify/",
+		Port:     3003,
+		MCP:      true,
+		Consumes: []string{crmSource, promptsSource}, // event-plane consumer → CONSUMES=crm,prompts
 		// Subscriptions is the LIVE provider the reflection tool reports (mirrors
 		// Spec.Health). notify is a static consumer, so it returns the fixed list of
 		// its declared in-edges — the SAME subscriptions the consumer Handlers match
@@ -78,9 +78,18 @@ func main() {
 		// can reach the shared DB handle and logger.
 		Handlers: func(r *appkit.Router) error {
 			rt = r
+			// The MCP send verb publishes through a push client built here at the
+			// composition root, reusing the same ntfy config (base/topic/token) the
+			// consumer loops resolve — resolveConsumerCfg fails loudly if a secret is
+			// absent, so a misconfigured deploy never silently disables send.
+			cfg, err := resolveConsumerCfg(os.Getenv)
+			if err != nil {
+				return err
+			}
+			pushClient := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, rt.Logger())
 			rt.Handle("POST /mcp", rt.RequireIdentity(
 				mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
-					rt.Events(), rt.Subscriptions())))
+					rt.Events(), rt.Subscriptions(), pushClient)))
 			return nil
 		},
 		// Workers carries notify's event-plane consumer loop. appkit launches it on
