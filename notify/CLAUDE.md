@@ -6,9 +6,15 @@ The **notify** service for the ikigenba single-tenant suite. A pure MCP API with
 
 notify is the suite's **first event-plane consumer**. It was duplicated from
 `../ledger` (the health-only chassis skeleton) and given a domain: it subscribes
-to crm's east/west event feed and fires a best-effort ntfy.sh push for every
-contact created. The MCP `health` tool is retained as the
-north/south auth proof; the real work happens in the background consumer loop.
+to crm's and prompts's east/west event feeds and fires a best-effort ntfy.sh push
+in reaction (every contact created; every prompts run that succeeds or fails).
+
+notify has **two faces on ntfy**. The east/west consumer loop is *reactive* —
+best-effort pushes driven by events. The north/south MCP surface is *proactive*:
+the **`send`** tool lets a connected agent push a notification to the owner's
+device on demand (see `../../docs/plan-notify-mcp-send.md`). Alongside `send`, the
+chassis `health` tool is the north/south auth proof and `reflection` self-describes
+notify's event-graph edges.
 
 **Read the decisions first — do not re-derive them:**
 
@@ -29,8 +35,8 @@ If anything here conflicts with those docs, the docs win — and flag the confli
 - **North/south (external, owner-facing).** nginx terminates TLS, introspects
   every request via `auth_request` against the dashboard, strips the
   `/srv/notify/` prefix, and injects `X-Owner-Email` / `X-Client-Id`. notify
-  trusts those headers and does NO token logic. Surface: `POST /mcp`
-  (`health`) and the unauthenticated RFC 9728 PRM doc. notify is a
+  trusts those headers and does NO token logic. Surface: `POST /mcp` (`send`,
+  `health`, `reflection`) and the unauthenticated RFC 9728 PRM doc. notify is a
   consumer, **not** a producer — it serves **no** `/feed` endpoint, and its nginx
   fragment (`etc/nginx.conf`, dev mirror `../nginx/locations/notify.conf`) has no
   feed block.
@@ -77,12 +83,19 @@ so tests point it at a mock.
 
 - **`internal/push`** — the domain: the ntfy `Client` and the `consumer.Handler`
   that filters and pushes. Mirrors how crm's `internal/contacts` owns the producer
-  domain.
+  domain. `Client.Send` is the consumer's best-effort, fire-and-forget hop;
+  `Client.Publish(ctx, Notification) error` is the synchronous hop behind the MCP
+  `send` verb (`Send` delegates to it, so there is one ntfy-POST code path).
 - **`internal/db`** — SQLite open (WAL, FK, single-writer) + migration runner.
   `001_schema_migrations`, then `002_feed_offset` which applies
   `consumer.SchemaSQL` verbatim (asserted by `migrations_feed_offset_test.go`).
-- **`internal/mcp`, `internal/server`, `internal/logging`, `internal/ids`** — the
-  carried-over chassis (health, PRM, identity gate, security headers, request ids).
+- **`internal/mcp`** — the JSON-RPC `/mcp` transport and notify's tool surface:
+  the `send` write verb (validates args → `push.Client.Publish` → `{ok:true}` or a
+  closed-vocab `validation`/`upstream` error envelope) plus the chassis `health`
+  and `reflection` tools. The handler holds a `*push.Client` built at the
+  composition root.
+- **`internal/server`, `internal/logging`, `internal/ids`** — the carried-over
+  chassis (PRM, identity gate, security headers, request ids).
 
 ## Tests
 
@@ -91,8 +104,11 @@ guards that `002_feed_offset.sql` stays byte-identical to `consumer.SchemaSQL`.
 The §13c e2e (`internal/push`) wires the **real** `outbox.FeedHandler` to a
 consumer whose handler points at a **mock** ntfy server, and asserts a
 `contact.created` yields exactly one correctly-shaped POST while a
-non-`contact.created` event yields none but still advances the cursor. Real
-ntfy.sh is never contacted.
+non-`contact.created` event yields none but still advances the cursor. The
+`internal/mcp` send tests (`send_test.go`) drive `tools/call` against a **mock**
+ntfy and assert the header mapping (priority→1..5, tags join, click), that
+validation rejects (no POST fired) and that an `upstream` failure never leaks the
+topic or token. Real ntfy.sh is never contacted.
 
 ## Manifest / deploy
 
