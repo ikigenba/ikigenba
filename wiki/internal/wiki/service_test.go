@@ -1,0 +1,218 @@
+package wiki
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"wiki/internal/extract"
+)
+
+func TestIngestReturnsJobIDFromPendingInsertWithoutExtraction(t *testing.T) {
+	// R-M8RN-87WV
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	fixed := time.Date(2026, 6, 20, 20, 30, 0, 0, time.UTC)
+	extractor := &recordingExtractor{}
+	svc := NewService(conn, extractor, &recordingCompiler{}, func() time.Time { return fixed })
+	svc.newID = sequenceIDs("job-1")
+
+	jobID, err := svc.Ingest(ctx, " owner@example.com ", "Acme Robotics opened a lab.", " Lab notes ", []string{"robotics"})
+	if err != nil {
+		t.Fatalf("Ingest returned error: %v", err)
+	}
+	if jobID != "job-1" {
+		t.Fatalf("jobID = %q, want job-1", jobID)
+	}
+	if extractor.calls != 0 {
+		t.Fatalf("extractor calls = %d, want 0 on request path", extractor.calls)
+	}
+
+	status, err := svc.JobStatus(ctx, jobID)
+	if err != nil {
+		t.Fatalf("JobStatus: %v", err)
+	}
+	if status.Status != JobPending {
+		t.Fatalf("status = %q, want pending", status.Status)
+	}
+	if !status.ReceivedAt.Equal(fixed) {
+		t.Fatalf("received_at = %v, want %v", status.ReceivedAt, fixed)
+	}
+	if status.StartedAt != nil || status.FinishedAt != nil || len(status.Subjects) != 0 {
+		t.Fatalf("status = %+v, want pending job without worker fields or subjects", status)
+	}
+}
+
+func TestProcessNextMarksFailedJobStatusOnExtractError(t *testing.T) {
+	// R-MG31-IUD1
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	times := sequenceTimes(
+		time.Date(2026, 6, 20, 20, 31, 0, 0, time.UTC),
+		time.Date(2026, 6, 20, 20, 31, 1, 0, time.UTC),
+		time.Date(2026, 6, 20, 20, 31, 2, 0, time.UTC),
+	)
+	svc := NewService(conn, &recordingExtractor{err: errors.New("extract exploded")}, &recordingCompiler{}, times)
+	svc.newID = sequenceIDs("job-1")
+
+	jobID, err := svc.Ingest(ctx, "owner@example.com", "bad source", "Bad source", nil)
+	if err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	processed, err := svc.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("ProcessNext returned error: %v", err)
+	}
+	if !processed {
+		t.Fatal("ProcessNext processed = false, want true for pending job")
+	}
+
+	status, err := svc.JobStatus(ctx, jobID)
+	if err != nil {
+		t.Fatalf("JobStatus: %v", err)
+	}
+	if status.Status != JobFailed {
+		t.Fatalf("status = %q, want failed", status.Status)
+	}
+	if status.StartedAt == nil || status.FinishedAt == nil {
+		t.Fatalf("status = %+v, want started and finished timestamps", status)
+	}
+	if !strings.Contains(status.Error, "extract exploded") {
+		t.Fatalf("error = %q, want extract failure", status.Error)
+	}
+	if len(status.Subjects) != 0 {
+		t.Fatalf("subjects = %#v, want none on failed extract", status.Subjects)
+	}
+}
+
+func TestProcessNextReusesSubjectAndRecompilesFromCompleteClaims(t *testing.T) {
+	// R-MDN8-RAVN
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	extractor := &recordingExtractor{batches: [][]extract.ExtractedSubject{
+		{{
+			Type:   "entity",
+			Kind:   "company",
+			Name:   "Acme Robotics",
+			Claims: []string{"Acme Robotics opened a Tulsa lab."},
+		}},
+		{{
+			Type:   "entity",
+			Kind:   "company",
+			Name:   " ACME   ROBOTICS ",
+			Claims: []string{"Acme Robotics hired Mira Patel."},
+		}},
+	}}
+	compiler := &recordingCompiler{}
+	svc := NewService(conn, extractor, compiler, sequenceTimes(
+		time.Date(2026, 6, 20, 20, 32, 0, 0, time.UTC),
+		time.Date(2026, 6, 20, 20, 32, 1, 0, time.UTC),
+		time.Date(2026, 6, 20, 20, 32, 2, 0, time.UTC),
+		time.Date(2026, 6, 20, 20, 32, 3, 0, time.UTC),
+		time.Date(2026, 6, 20, 20, 32, 4, 0, time.UTC),
+		time.Date(2026, 6, 20, 20, 32, 5, 0, time.UTC),
+	))
+	svc.newID = sequenceIDs("job-1", "subject-1", "claim-1", "job-2", "claim-2")
+
+	if _, err := svc.Ingest(ctx, "owner@example.com", "source one", "One", nil); err != nil {
+		t.Fatalf("first Ingest: %v", err)
+	}
+	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
+		t.Fatalf("first ProcessNext = %v/%v, want true/nil", processed, err)
+	}
+	if _, err := svc.Ingest(ctx, "owner@example.com", "source two", "Two", nil); err != nil {
+		t.Fatalf("second Ingest: %v", err)
+	}
+	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
+		t.Fatalf("second ProcessNext = %v/%v, want true/nil", processed, err)
+	}
+
+	if len(compiler.claimSets) != 2 {
+		t.Fatalf("compile calls = %d, want 2", len(compiler.claimSets))
+	}
+	secondClaims := compiler.claimSets[1]
+	if len(secondClaims) != 2 {
+		t.Fatalf("second compile claims = %#v, want complete two-claim set", secondClaims)
+	}
+	if secondClaims[0].Body != "Acme Robotics opened a Tulsa lab." ||
+		secondClaims[1].Body != "Acme Robotics hired Mira Patel." {
+		t.Fatalf("second compile claims = %#v, want original plus new claim", secondClaims)
+	}
+
+	page, err := NewPageStore(conn).Get(ctx, "subject-1")
+	if err != nil {
+		t.Fatalf("Get page: %v", err)
+	}
+	if !strings.Contains(page.Body, "Acme Robotics hired Mira Patel.") {
+		t.Fatalf("page body = %q, want recompiled body with latest claim", page.Body)
+	}
+}
+
+type recordingExtractor struct {
+	calls   int
+	err     error
+	headers []extract.DocumentHeader
+	texts   []string
+	batches [][]extract.ExtractedSubject
+}
+
+func (e *recordingExtractor) Extract(_ context.Context, h extract.DocumentHeader, text string) ([]extract.ExtractedSubject, error) {
+	e.calls++
+	e.headers = append(e.headers, h)
+	e.texts = append(e.texts, text)
+	if e.err != nil {
+		return nil, e.err
+	}
+	if len(e.batches) == 0 {
+		return nil, nil
+	}
+	out := e.batches[0]
+	e.batches = e.batches[1:]
+	return out, nil
+}
+
+type recordingCompiler struct {
+	claimSets [][]Claim
+}
+
+func (c *recordingCompiler) Compile(_ context.Context, subject Subject, claims []Claim) (string, string, error) {
+	copied := append([]Claim(nil), claims...)
+	c.claimSets = append(c.claimSets, copied)
+	var bodies []string
+	for _, claim := range claims {
+		bodies = append(bodies, claim.Body)
+	}
+	return subject.Name, strings.Join(bodies, "\n"), nil
+}
+
+func sequenceIDs(ids ...string) func() string {
+	i := 0
+	return func() string {
+		if i >= len(ids) {
+			return "extra-id"
+		}
+		id := ids[i]
+		i++
+		return id
+	}
+}
+
+func sequenceTimes(times ...time.Time) func() time.Time {
+	i := 0
+	return func() time.Time {
+		if i >= len(times) {
+			return times[len(times)-1]
+		}
+		t := times[i]
+		i++
+		return t
+	}
+}

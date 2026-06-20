@@ -6,8 +6,32 @@ import "context"
 // Task is a unit of background work.
 type Task func(context.Context) error
 
-// Run is the Phase 01 worker lifecycle hook. Later phases attach queue work here.
-func Run(ctx context.Context) error {
-	<-ctx.Done()
-	return nil
+// Service is the ingest queue surface consumed by the single worker.
+type Service interface {
+	ProcessNext(ctx context.Context) (bool, error)
+	Wait(ctx context.Context) error
+}
+
+// Run processes pending ingest jobs with one worker loop.
+func Run(ctx context.Context, services ...Service) error {
+	if len(services) == 0 || services[0] == nil {
+		<-ctx.Done()
+		return nil
+	}
+	svc := services[0]
+	for {
+		processed, err := svc.ProcessNext(ctx)
+		if err != nil {
+			return err
+		}
+		if processed {
+			continue
+		}
+		if err := svc.Wait(ctx); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+	}
 }

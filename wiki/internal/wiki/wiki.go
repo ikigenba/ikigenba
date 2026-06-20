@@ -81,7 +81,9 @@ func Spec() appkit.Spec {
 				mcp.NewHandler(rt.Version(), rt.Service(), rt.Health())))
 			return nil
 		},
-		Workers: []func(ctx context.Context) error{worker.Run},
+		Workers: []func(ctx context.Context) error{
+			func(ctx context.Context) error { return worker.Run(ctx) },
+		},
 	}
 }
 

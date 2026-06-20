@@ -2,8 +2,12 @@ package wiki
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"strings"
+	"time"
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
@@ -35,8 +39,28 @@ type Page struct {
 
 // Job is a phase-1 wiki data-model job.
 type Job struct {
-	ID     string
-	Status string
+	ID         string
+	Owner      string
+	SourceText string
+	Title      string
+	Tags       []string
+	SourceHash string
+	Status     string
+	ReceivedAt time.Time
+	StartedAt  time.Time
+	FinishedAt time.Time
+	Error      string
+}
+
+// JobStatus is the inspectable state of an ingest job.
+type JobStatus struct {
+	ID         string
+	Status     string
+	ReceivedAt time.Time
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+	Error      string
+	Subjects   []string
 }
 
 func normalize(name string) string {
@@ -73,12 +97,154 @@ func (s *JobStore) Save(ctx context.Context, job Job) error {
 	return err
 }
 
+func (s *JobStore) InsertIngest(ctx context.Context, job Job) error {
+	tags, err := json.Marshal(job.Tags)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO jobs (
+			id, owner, source_text, title, tags, source_hash, status, received_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		job.ID,
+		job.Owner,
+		job.SourceText,
+		job.Title,
+		string(tags),
+		hashText(job.SourceText),
+		job.Status,
+		formatTime(job.ReceivedAt),
+	)
+	return err
+}
+
 func (s *JobStore) Get(ctx context.Context, id string) (Job, error) {
 	var job Job
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, status FROM jobs WHERE id = ?`, id).
 		Scan(&job.ID, &job.Status)
 	return job, err
+}
+
+func (s *JobStore) ClaimPending(ctx context.Context, startedAt time.Time) (Job, bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Job{}, false, err
+	}
+	defer tx.Rollback()
+
+	job, err := scanJob(tx.QueryRowContext(ctx, `
+		SELECT id, owner, source_text, title, tags, source_hash, status,
+		       received_at, started_at, finished_at, error
+		FROM jobs
+		WHERE status = 'pending'
+		ORDER BY received_at, id
+		LIMIT 1`))
+	if err == sql.ErrNoRows {
+		return Job{}, false, nil
+	}
+	if err != nil {
+		return Job{}, false, err
+	}
+	res, err := tx.ExecContext(ctx,
+		`UPDATE jobs SET status = 'working', started_at = ? WHERE id = ? AND status = 'pending'`,
+		formatTime(startedAt), job.ID)
+	if err != nil {
+		return Job{}, false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return Job{}, false, err
+	}
+	if n == 0 {
+		return Job{}, false, tx.Commit()
+	}
+	if err := tx.Commit(); err != nil {
+		return Job{}, false, err
+	}
+	job.Status = "working"
+	job.StartedAt = startedAt
+	return job, true, nil
+}
+
+func (s *JobStore) Finish(ctx context.Context, id, status string, finishedAt time.Time, jobErr string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ?`,
+		status, formatTime(finishedAt), jobErr, id)
+	return err
+}
+
+func (s *JobStore) Status(ctx context.Context, id string) (JobStatus, error) {
+	job, err := scanJob(s.db.QueryRowContext(ctx, `
+		SELECT id, owner, source_text, title, tags, source_hash, status,
+		       received_at, started_at, finished_at, error
+		FROM jobs
+		WHERE id = ?`, id))
+	if err != nil {
+		return JobStatus{}, err
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT subject_id FROM claims WHERE job_id = ? ORDER BY subject_id`, id)
+	if err != nil {
+		return JobStatus{}, err
+	}
+	defer rows.Close()
+
+	var subjects []string
+	for rows.Next() {
+		var subjectID string
+		if err := rows.Scan(&subjectID); err != nil {
+			return JobStatus{}, err
+		}
+		subjects = append(subjects, subjectID)
+	}
+	if err := rows.Err(); err != nil {
+		return JobStatus{}, err
+	}
+
+	return JobStatus{
+		ID:         job.ID,
+		Status:     job.Status,
+		ReceivedAt: job.ReceivedAt,
+		StartedAt:  timePtr(job.StartedAt),
+		FinishedAt: timePtr(job.FinishedAt),
+		Error:      job.Error,
+		Subjects:   subjects,
+	}, nil
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanJob(row rowScanner) (Job, error) {
+	var job Job
+	var tagsJSON, receivedAt, startedAt, finishedAt string
+	if err := row.Scan(
+		&job.ID,
+		&job.Owner,
+		&job.SourceText,
+		&job.Title,
+		&tagsJSON,
+		&job.SourceHash,
+		&job.Status,
+		&receivedAt,
+		&startedAt,
+		&finishedAt,
+		&job.Error,
+	); err != nil {
+		return Job{}, err
+	}
+	if strings.TrimSpace(tagsJSON) != "" {
+		if err := json.Unmarshal([]byte(tagsJSON), &job.Tags); err != nil {
+			return Job{}, err
+		}
+	}
+	job.ReceivedAt = parseStoredTime(receivedAt)
+	job.StartedAt = parseStoredTime(startedAt)
+	job.FinishedAt = parseStoredTime(finishedAt)
+	return job, nil
 }
 
 // SubjectStore persists canonical subjects.
@@ -124,6 +290,36 @@ func (s *ClaimStore) Save(ctx context.Context, claim Claim) error {
 		`INSERT INTO claims (id, subject_id, job_id, body) VALUES (?, ?, ?, ?)`,
 		claim.ID, claim.SubjectID, claim.JobID, claim.Body)
 	return err
+}
+
+func hashText(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
+}
+
+func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339Nano)
+}
+
+func parseStoredTime(s string) time.Time {
+	if strings.TrimSpace(s) == "" {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+func timePtr(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }
 
 func (s *ClaimStore) ListBySubject(ctx context.Context, subjectID string) ([]Claim, error) {
