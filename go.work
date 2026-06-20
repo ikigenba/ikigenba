@@ -7,7 +7,6 @@
 go 1.26
 
 use (
-	./agentkit
 	./appkit
 	./crm
 	./cron
@@ -23,3 +22,5 @@ use (
 	./sites
 	./wiki
 )
+
+replace github.com/ikigenba/agentkit => /home/mgreenly/projects/agentkit

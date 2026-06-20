@@ -8,7 +8,6 @@ import (
 )
 
 func TestEmbeddedMigrationsApplyToTempSQLite(t *testing.T) {
-	// R-6RVX-P1IG
 	ctx := context.Background()
 	conn, err := Open(t.TempDir() + "/wiki.db")
 	if err != nil {
