@@ -163,6 +163,34 @@ func TestJSONRetriesWithCorrectivePromptOnValidationFailure(t *testing.T) {
 	}
 }
 
+func TestJSONRetriesWithCorrectivePromptOnMalformedJSON(t *testing.T) {
+	// R-JCEE-GQ1E
+	prov := &scriptedProvider{responses: []string{
+		`not-json`,
+		`{"title":"parsed","count":7}`,
+	}}
+	site := CallSite{Model: "json-model", MaxParseRetries: 1}
+
+	got, err := JSON(context.Background(), New(prov, nil), site, "make parseable json", nilJSONFixture)
+	if err != nil {
+		t.Fatalf("JSON returned error: %v", err)
+	}
+	if got.Title != "parsed" || got.Count != 7 {
+		t.Fatalf("JSON result = %#v, want retry response", got)
+	}
+	if len(prov.requests) != 2 {
+		t.Fatalf("requests len = %d, want initial plus retry", len(prov.requests))
+	}
+	texts := requestTexts(prov.requests[1])
+	if len(texts) != 3 {
+		t.Fatalf("retry conversation texts = %#v, want original user, malformed assistant, corrective user", texts)
+	}
+	corrective := texts[len(texts)-1]
+	if !strings.Contains(corrective, "previous response") || !strings.Contains(corrective, "invalid character") || !strings.Contains(corrective, "make parseable json") {
+		t.Fatalf("corrective prompt = %q, want parse note, JSON error, and original request", corrective)
+	}
+}
+
 func TestJSONReturnsErrorAfterRetryBudgetWithoutSilentZero(t *testing.T) {
 	// R-JCEE-GQ1E
 	prov := &scriptedProvider{responses: []string{`not-json`, `also-not-json`}}
