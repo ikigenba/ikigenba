@@ -298,6 +298,23 @@ func TestJSONReturnsErrorAfterRetryBudgetWithoutSilentZero(t *testing.T) {
 	}
 }
 
+func TestJSONDoesNotRetryWhenRetryBudgetIsZero(t *testing.T) {
+	// R-JCEE-GQ1E
+	prov := &scriptedProvider{responses: []string{`not-json`, `{"title":"unused","count":9}`}}
+	site := CallSite{Model: "json-model", MaxParseRetries: 0}
+
+	got, err := JSON(context.Background(), New(prov, nil), site, "make json", nilJSONFixture)
+	if err == nil {
+		t.Fatal("JSON returned nil error with zero retries after malformed response")
+	}
+	if got != (jsonFixture{}) {
+		t.Fatalf("JSON result = %#v, want zero value on parse error", got)
+	}
+	if len(prov.requests) != 1 {
+		t.Fatalf("requests len = %d, want exactly one attempt with zero retry budget", len(prov.requests))
+	}
+}
+
 func TestJSONBuildsFreshConversationForEachCall(t *testing.T) {
 	// R-JDMA-UHS3
 	prov := &scriptedProvider{responses: []string{
