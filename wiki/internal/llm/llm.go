@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 
 	agentkit "github.com/ikigenba/agentkit"
@@ -31,7 +32,7 @@ func New(prov agentkit.Provider, log io.Writer) *Client {
 type CallSite struct {
 	Model           string
 	Temperature     *float64
-	Reasoning       agentkit.ReasoningValue
+	Reasoning       any
 	System          string
 	MaxParseRetries int
 }
@@ -81,16 +82,17 @@ func (c *Client) Converse(site CallSite, tools []agentkit.Tool) *agentkit.Conver
 	if c == nil {
 		return &agentkit.Conversation{}
 	}
+	gen := agentkit.GenSettings{
+		Temperature: site.Temperature,
+	}
+	setReasoning(&gen, site.Reasoning)
 	return &agentkit.Conversation{
 		Provider: c.prov,
 		Model:    site.Model,
 		System:   site.System,
 		Log:      c.log,
-		Gen: agentkit.GenSettings{
-			Temperature: site.Temperature,
-			Reasoning:   site.Reasoning,
-		},
-		Tools: append([]agentkit.Tool(nil), tools...),
+		Gen:      gen,
+		Tools:    append([]agentkit.Tool(nil), tools...),
 	}
 }
 
@@ -116,6 +118,22 @@ func agentkitText(message agentkit.Message) string {
 		}
 	}
 	return b.String()
+}
+
+func setReasoning(gen *agentkit.GenSettings, reasoning any) {
+	if gen == nil || reasoning == nil {
+		return
+	}
+
+	field := reflect.ValueOf(gen).Elem().FieldByName("Reasoning")
+	value := reflect.ValueOf(reasoning)
+	if value.Type().AssignableTo(field.Type()) {
+		field.Set(value)
+		return
+	}
+	if value.Type().ConvertibleTo(field.Type()) {
+		field.Set(value.Convert(field.Type()))
+	}
 }
 
 func stripCodeFence(text string) string {
