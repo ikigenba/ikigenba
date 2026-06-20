@@ -45,3 +45,43 @@ func TestHealthToolReturnsAppkitEnvelope(t *testing.T) {
 		t.Fatalf("status = %v, want ok", env["status"])
 	}
 }
+
+func TestInitializeAdvertisesWikiMCPServer(t *testing.T) {
+	// R-6RVX-P1IG
+	h := NewHandler("test-version", "wiki", nil)
+	body := bytes.NewBufferString(`{"jsonrpc":"2.0","id":"init","method":"initialize"}`)
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", body))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Result struct {
+			ProtocolVersion string `json:"protocolVersion"`
+			Capabilities    struct {
+				Tools map[string]any `json:"tools"`
+			} `json:"capabilities"`
+			ServerInfo struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"serverInfo"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("response JSON: %v", err)
+	}
+	if got.Result.ProtocolVersion != "2025-03-26" {
+		t.Fatalf("protocolVersion = %q, want 2025-03-26", got.Result.ProtocolVersion)
+	}
+	if got.Result.Capabilities.Tools == nil {
+		t.Fatal("capabilities.tools is nil")
+	}
+	if got.Result.ServerInfo.Name != "Wiki" {
+		t.Fatalf("serverInfo.name = %q, want Wiki", got.Result.ServerInfo.Name)
+	}
+	if got.Result.ServerInfo.Version != "test-version" {
+		t.Fatalf("serverInfo.version = %q, want test-version", got.Result.ServerInfo.Version)
+	}
+}
