@@ -1,316 +1,304 @@
 # wiki evaluation — design
 
-> **What this fixes.** `docs/wiki-redesign-research.md` settled *what* the wiki
-> evaluation must measure (the ten inference sites), the *shape* of every
-> evaluation (`f(prompt, model, effort, input) → output`, scored against a
-> dataset, swept per generation), and the four reusable scorer kinds. It then
-> left **six questions open** for the design (its "Open questions for the design
-> doc"). This document resolves those six and pins the two artifacts the plan's
-> P12 `Verify` requires — the **dataset record format** and the **four scorer
-> kinds** — so Part II (P13–P16) executes a settled design, the way
-> `wiki-redesign-design.md` settled Part I. It is the design half of the
-> design→plan pair (`docs/README.md`); the plan half is the Part II phases
-> (P13–P16) already in `docs/wiki-redesign-plan.md`.
+> **What this fixes.** This is a **corrected** lock. The prior version of this
+> document (2026-06-14) carried three assumptions from the research doc straight
+> into the build that turned out to be wrong, and they were never surfaced
+> sharply enough to be reviewed before P13–P16 were built against them:
 >
-> **What this is *not*** (carried verbatim from the research doc, because it
-> governs every decision below): the harness is **not a test harness in the CI
-> sense, not a build gate, not a deploy gate**. Every score is an input to a human
-> decision, never an automated pass/fail. Nothing here may fire `go test ./...`
-> red, gate a `/finish` phase, or block a deploy. The integration tier
-> (`wiki-redesign-plan.md`, *Integration testing*) is the only thing that runs
-> real models inside the build, and it is itself advisory.
+> 1. **Ten "sites."** It treated the three zero-LLM retrieval lanes
+>    (`candidates`, `search`, `sweep`) and the `canonical_name` sub-field as
+>    first-class evaluation sites alongside the real call sites. They are not:
+>    if no `(model, effort)` can change the result, there is no triple to specify
+>    and nothing for *this* harness to test. The eval is **100% about testing the
+>    LLM call sites.** Retrieval quality is a real concern, but it is a different
+>    measurement with different inputs (recall over retrieval knobs) and does not
+>    belong here.
+> 2. **The "bundle" coupling.** It fused the dataset and the prompt into a single
+>    on-disk "bundle = generation" artifact and made the prompt a committed file
+>    rather than a runtime input. The four inputs to an evaluation —
+>    **prompt, dataset, model, effort** — are independent and must all be
+>    specifiable at run time. The versioning/caching machinery belongs *under*
+>    that interface, not in front of it.
+> 3. **A single accuracy number, and a "four scorer kinds" taxonomy.** The real
+>    per-site unit is a single comparison function whose mechanics are hidden
+>    inside it; the only thing that varies between sites is the **schema of what
+>    it is handed**. And a single percentage hides the asymmetry that matters
+>    most (a contradiction is not a worse recall miss — it is a different,
+>    dangerous failure), so the dangerous direction stays a **separate** number.
 >
-> **Status.** Locked (2026-06-14). Resolves the research doc's six open questions;
-> pins the dataset format and scorer kinds. The remaining concrete file layout,
-> loader code, and per-site generators are P13–P16's build work, constrained by
-> what is fixed here.
+> This document supersedes the prior lock in full. The build under
+> `wiki/cmd/wiki-eval` + `wiki/internal/eval` reflects the *old* design and is to
+> be reworked to this one (one site is wired today: `match`).
+>
+> **What this is *not*** (unchanged, and it still governs every decision below):
+> the harness is **not a CI test harness, not a build gate, not a deploy gate.**
+> Every score is an input to a human decision, never an automated pass/fail.
+> Nothing here may fire `go test ./...` red, gate a `/finish` phase, or block a
+> deploy. The standing integration tier (`wiki-redesign-plan.md`, *Integration
+> testing*) is the only thing that runs real models inside the build, and it too
+> is advisory.
+>
+> **Status.** Locked (corrected, 2026-06-14).
 
-## The two pinned artifacts (the P12 `Verify` gate)
+## The sites — exactly the eight LLM call sites
 
-Before the six decisions, the two shapes everything else references — fixed here
-so P13's loader and P14's scorers are written against one contract, not
-re-derived.
+The discriminator is mechanical: **a site belongs in this eval iff changing the
+model or the effort could change its result.** That is exactly the set of call
+sites that carry a `(prompt, model, effort)` triple — which is exactly the
+`config.LLM.*` call-site list. There are eight:
 
-### Dataset record format
+| site | call seam | output schema (the `actual`) |
+|---|---|---|
+| `extract` | `Structured` | `ExtractSchema` |
+| `match` | `Structured` | `MatchSchema` |
+| `compile` | `Structured` | `CompileSchema` |
+| `merge` | `Structured` | `MergeSchema` |
+| `dup_judge` | `Structured` | `JudgeSchema` |
+| `fold` | `Structured` | `FoldSchema` |
+| `stale` | `Structured` | `StaleSchema` |
+| `ask` | `Agent` (tool loop) | `AnswerSchema` |
 
-A test set's dataset is a list of **cases**, each one record with exactly these
-fields (the research doc's `(case_id, site, generation, failure_tag, input,
-gold)`, made concrete):
+**Explicitly excluded**, with the reason:
+
+- `candidates`, `search`, `sweep` — pure FTS/BM25/vector retrieval. No model
+  call; `(model, effort)` cannot move the number. Retrieval recall is a separate
+  evaluation (its inputs are `k`, FTS thresholds, RRF `k`, the embed model/dims,
+  and whether the vector lane is on) and is **out of scope for this harness.**
+- `canonical_name` — not a call. It is a field of the `dup_judge` output; the
+  only model that affects it is `dup_judge`'s, already covered.
+
+Seven of the eight share the identical single-shot seam
+`Structured(cfg, schema, msgs) → json`. `ask` is the lone exception: it is an
+agent loop (five read tools, a turn/token/wall-clock budget) whose **final**
+message is parsed as `AnswerSchema`. It needs its own thin runner; its output is
+still scored by the same contract below.
+
+## The four independent inputs
+
+An evaluation run is parameterised by four independent values, **all specifiable
+at run time** (e.g. as `wiki-eval` flags):
+
+| input | what it is | why independent |
+|---|---|---|
+| **prompt** | the system/framing prompt for the site | you iterate the prompt against a fixed dataset |
+| **dataset** | the set of `(input, gold)` cases | you harden the data against a fixed prompt |
+| **model** | the provider model id | a sweep axis |
+| **effort** | the reasoning-effort level | a sweep axis |
+
+It must be valid to vary **any one alone** — most importantly the prompt, against
+a fixed dataset, to see whether the change moves the score. "Production" is just
+one pinned `(prompt, model, effort)`; the harness runs the *same* call-site
+function with a different one.
+
+The prompt is a value, not a buried file. Caching keys on the content hashes of
+`(dataset, prompt, model, effort)` so an unchanged combination re-scores for
+free — but that cache is an implementation detail beneath the four-input
+interface, **not** a "bundle" artifact the user must author to run.
+
+`generation` survives as a *labelling* dimension on a dataset (cases carry a
+1-based generation; a later, harder generation stands beside the first, never
+replacing it — saturated generations are kept, never deleted). It is not a
+coupling of prompt and data.
+
+## The one eval-function shape
+
+Per site there is exactly one function. Its mechanics (exact compare vs.
+LLM-graded claim verification) are **hidden inside it**; from the harness's view
+every site is the same signature:
+
+```go
+type Verdict struct {
+    Percentage float64            // [0,1] headline: recall / accuracy
+    Dangerous  map[string]float64 // named dangerous-direction rates, NEVER folded into Percentage
+}
+
+func eval_<site>(ctx context.Context, judge Judge, actual, gold json.RawMessage) Verdict
+```
+
+- `actual` — the call site's real output, in its existing output schema.
+- `gold` — the authored reference. **`gold` is a correctness *spec*, not a sample
+  output:** for the claim sites it is a flat list of facts that must be present,
+  not a second copy of the output shape. Its schema is the only thing that
+  differs between sites, and it is defined per site below.
+- `judge` — the held-out LLM judge (below). Always passed; discrete sites ignore
+  it.
+- The return separates the headline from the dangerous axis. A single percentage
+  is forbidden, because "95% with one false-merge" must read as worse than "90%
+  clean," and a blended number inverts that.
+
+### Two internal mechanics
+
+**Discrete compare (no judge).** When the output is a discrete decision (an id,
+an enum, a set of ids) there is one right answer; the function parses both sides
+and compares directly. Deterministic, free, key-free.
+
+**Grounded claim verification (judge required).** When the output asserts facts
+in text, there is no string equality — a correct answer is phrased differently
+every time, and similarity (lexical or embedding) cannot tell agreement from
+contradiction (negation barely moves a vector; at the atomic-claim level that is
+*maximal*, not minimal). So we do **not** compare two texts. We keep the gold as
+an authored, 100%-accurate claim list and probe the output with each claim:
+
+- **Recall (ternary, per gold claim):** the judge answers **affirms /
+  contradicts / silent** for "does the output assert this fact?"
+  - affirms → recall hit
+  - silent → recall miss (counts against `Percentage`; recoverable)
+  - contradicts → the dangerous case (`Dangerous{contradiction}`)
+  Ternary, not binary, so a contradiction is never scored as a mere miss. This is
+  also what makes the metric immune to negation: you are verifying a fixed claim
+  against a passage, the one question whose answer flips on "not."
+- **Fabrication (text → list):** a separate pass asks which assertions in the
+  output are *not* supported by the gold list → `Dangerous{fabrication}`. This is
+  the inherently harder, lower-confidence direction (it requires enumerating the
+  output's assertions and has a granularity question), so it runs on a judge
+  panel and its number is treated as softer than recall.
+
+The only irreducible LLM step is **per-claim verification** — one fact vs. one
+passage — which is the most reliable, most stable judge task there is (run a
+panel, take majority). Embeddings have one safe job: a **shortlist/blocking**
+step (find which gold claim a candidate assertion is nearest to, to cut the
+judge cross-product) — never the agreement/contradiction decision.
+
+## Per-site `gold` schemas
+
+`actual` is fixed (the eight output schemas). Only `gold` is authored. Citation
+validity is **folded into `gold`** (the case's resolvable ids), so the signature
+needs no third "source" argument.
+
+### Discrete sites
+
+**match** — actual `{verdict:{same?,no_match?}, dup_pairs:[{a,b}]}`
+```json
+gold: { "verdict": {"same":"<subject_id>"} | {"no_match": true},
+        "dup_pairs": [ {"a":"<id>","b":"<id>"} ] }
+```
+exact verdict compare; `Dangerous{false_merge}` when actual names a `same` where
+gold is `no_match` or names the wrong id; dup_pairs scored as a set.
+
+**dup_judge** — actual `{verdict: merge|dismiss|cant_tell, canonical_name?}`
+```json
+gold: { "verdict": "merge"|"dismiss"|"cant_tell" }
+```
+exact verdict; `Dangerous{false_merge}` when actual=merge, gold=dismiss.
+
+### Claim-verification sites
+
+**extract** — actual `{subjects:[{type,kind,name,aliases,claims:[{text}]}]}`
+```json
+gold: { "subjects": [
+          { "name":"...", "type":"entity|event|concept",
+            "claims_required":[ "<atomic fact that must be extracted>", ... ] } ] }
+```
+match gold subject → actual subject by name/alias; per `claims_required` →
+affirm/contradict/silent (recall); unsupported actual claims → fabrication.
+`Dangerous{over_extract, wrong_subject, contradiction}`.
+
+**compile** — actual like extract, claims carry `cites`
+```json
+gold: { "subjects": [
+          { "name":"...", "type":"...",
+            "claims_required":[ {"text":"<fact>", "cites_required":["<inbox_id>", ...]} ] } ],
+        "valid_cites": [ "<inbox_id>", ... ] }
+```
+extract's checks + each required claim's cites present; every actual cite ∈
+`valid_cites`. `Dangerous{fabrication, cite_loss, bogus_citation, contradiction}`.
+
+**merge** — actual `{pages:[{subject,title,body,superseded?}], stale_notes?}`
+```json
+gold: { "subject":"...",
+        "claims_required":[ "<fact the merged body must still assert>", ... ],
+        "superseded_expected":[ "<id>", ... ] }
+```
+per `claims_required` → affirm/contradict/silent over `body` (recall = no fact
+lost); compare `superseded`. `Dangerous{fact_loss, contradiction}`.
+
+**fold** (lint) — actual `{title, body, superseded}`
+```json
+gold: { "title_expected":"...",
+        "claims_required":[ "<fact from EITHER source page that must survive>", ... ],
+        "superseded_expected":[ "<loser id>" ] }
+```
+required-claim recall over `body`. `Dangerous{fact_loss}`.
+
+**stale** (lint, mixed) — actual `{title, body, superseded, dispositions:[{note_id,status}]}`
+```json
+gold: { "dispositions_expected":[ {"note_id":"...","status":"repaired"|"dismissed"} ],
+        "claims_required":[ "<fact the repaired body must reflect>", ... ] }
+```
+exact per-`note_id` disposition compare (discrete) **+** required-claim recall
+over `body` (judged). `Dangerous{wrong_disposition, fact_loss}`.
+
+**ask** — actual `{answer, citations:[{subject,title}], found}`
+```json
+gold (answerable):   { "answerable": true,
+                       "claims_required":[ "<fact the answer must state>", ... ],
+                       "cites_required":[ "<subject_id>", ... ],
+                       "valid_cites":  [ "<subject_id>", ... ] }
+gold (unanswerable): { "answerable": false }
+```
+if `answerable:false` → require `actual.found==false`, else
+`Dangerous{fabrication}=1`. If answerable → required-claim recall over `answer`
++ `cites_required` ⊆ actual citations + every actual citation ∈ `valid_cites` +
+unsupported claims = fabrication.
+`Dangerous{fabrication, contradiction, missing_citation, bogus_citation}`.
+
+## The dataset record
+
+A dataset is a list of cases:
 
 | field | type | meaning |
 |---|---|---|
-| `case_id` | string | Stable unique id within the dataset (e.g. `match-0007`). Survives across generations so a case can be tracked / refreshed. |
-| `site` | string | The inference site this case exercises — one of the ten registry names (`extract`, `match`, `compile`, `merge`, `dup_judge`, `canonical_name`, `ask`, `candidates`, `search`, `sweep`). Ties the case to a scorer kind. |
-| `generation` | int | Which numbered generation of this site's test set the case belongs to (1-based). The outer sweep dimension. |
-| `failure_tag` | string | The dangerous-direction behaviour the case stresses (e.g. `false_merge`, `over_extract`, `fabrication`, `identical_name_diff_thing`, `zero_overlap_synonym`). Free-form but drawn from a per-site enumerated vocabulary; lets a scorer slice the dangerous axis by stressor. **Not** a difficulty label (research: harder = later generation, never a per-case stamp). |
-| `input` | object | The exact input the **real** call-site function consumes — site-shaped (a document for extract; an incoming subject + shortlist for match; a manifest for merge; a question + synthetic-wiki id for ask; …). Stored verbatim so the harness feeds prod the byte-identical input. |
-| `gold` | object | The reference the scorer aligns against — site-shaped (the gold `subjects[]` for extract; `same(id)`/`no_match` + expected `dup_pairs` for match; the rubric expectations + must-survive cite ids for merge; the gold answer + supporting pages + abstention flag for ask; the gold relevant-page set for retrieval). |
+| `case_id` | string | stable id within the dataset (e.g. `match-0007`); survives across generations |
+| `site` | string | one of the **eight** site names; ties the case to its `eval_<site>` |
+| `generation` | int | 1-based label; later = harder; saturated generations kept, never deleted |
+| `failure_tag` | string | the dangerous behaviour stressed (`false_merge`, `over_extract`, `fabrication`, `contradiction`, …), from a per-site vocabulary; slices the dangerous axis. **Not** a difficulty label |
+| `input` | object | the exact, byte-identical input the real call site consumes (site-shaped, `json.RawMessage`) |
+| `gold` | object | the correctness spec above (site-shaped, `json.RawMessage`) |
 
-Serialized as JSON (one file per `(dataset)` artifact; see *Test-set storage*
-below). The `input`/`gold` objects are intentionally `site`-polymorphic — the
-loader returns them as `json.RawMessage` and each scorer unmarshals into its own
-typed shape, so adding a site never reshapes the record.
+The loader returns `input`/`gold` as `json.RawMessage`; each `eval_<site>`
+unmarshals its own shapes, so adding a site never reshapes the record.
 
-### The four scorer kinds
+## Judge-model independence (unchanged)
 
-Every one of the ten sites maps to exactly one of four scorer kinds (research
-doc piece 2; this is the P14 build surface). Each kind reports the
-**dangerous-direction error as a named separate axis**, never lumped into one
-accuracy number — the research doc's asymmetry principle is a structural
-requirement on the scorer interface, not a per-scorer choice.
+The judge used inside claim-verification is a **single fixed model, held out of
+the run's sweep** — it is never one of the models being scored, so a model can't
+grade itself. Subjective criteria use a **panel of N samples**, majority
+aggregated. The judge is **injected** (`Judge` interface), so the mechanical
+(discrete) scorer surface stays unit-testable offline with a stub that
+deterministically abstains — no key, no network in `go test`.
 
-1. **Set-alignment** — `extract`, `compile`. Align predicted↔gold subjects;
-   report **subject precision and recall separately** (over-extraction is the
-   dangerous axis, its own counter), type accuracy on matched subjects, claim
-   recall (fuzzy / LLM-judged), self-containedness. `compile` adds compression
-   ratio, per-claim citation precision/recall, and `occurred_at` accuracy.
-2. **Asymmetric confusion** — `match`, `dup_judge`. Binary (match) / ternary
-   (dup judge) confusion with **false-merge** named separately (and false-split
-   for match; false-dismiss + a `can't-tell-yet`-when-evidence-present laziness
-   metric for dup judge). The `dup_pairs` side-channel scored as its own recall
-   number (research obligation 3 — the side-channel is a *distinct* output, never
-   folded into the verdict).
-3. **Recall@k + RRF** — `candidates`, `search`, `sweep`. recall@k for candidates
-   (recall is king — a miss mints a permanent dup), a ranking metric for search,
-   pair-discovery recall for sweep; the lexical-only-vs-hybrid side-by-side with
-   embed model/dims, per-lane thresholds, and RRF `k` as sweep axes.
-4. **Mechanical-checks + rubric-judge-panel** — `merge`, `ask`. The deterministic
-   invariants Part I already exposes (merge: the §6.1 citation-preservation gate,
-   write-set conformance, claim-cite presence — reused for free; ask: citation
-   faithfulness as a mechanical "does the cited page exist + contain the span"
-   check) **plus** a rubric LLM-judge panel for the subjective criteria (merge:
-   lead-identity, woven-not-ledgered, contradictions-corralled, no-loss,
-   no-hallucination; ask: answer correctness, abstention correctness on the gap
-   set — **fabrication rate is the headline** — contradiction-surfacing, with
-   retrieval failure decomposed from synthesis failure).
+## Saturation (unchanged)
 
-`canonical_name` (site 6, low stakes) is scored as a thin **agreement-with-
-convention** check — a degenerate asymmetric-confusion case — and rides the same
-kind-2 plumbing rather than warranting a fifth kind.
+A generation is **saturated** — a signal to mint the next, harder one, never an
+auto-action — when the headline ceiling is high (≥ 0.95) **and** the top
+configurations are indistinguishable (headline spread ≤ 0.02) **with the
+dangerous axes also indistinguishable**. Reported as an advisory line beside the
+table; thresholds configurable; the human decides.
 
----
+## Decision presentation (unchanged in spirit)
 
-## The six resolved questions
+The report is one row per configuration — **never** a single composite rank —
+with the headline, the **dangerous axis beside it (never folded in)**, cost
+(total + per-case), and latency (mean + p95), always captioned with the
+generation. Sorted by headline with the tie band grouped and the
+safer-of-the-band (lower dangerous total, then lower cost) floated up. The
+report is the input to a human's pick of the per-site `(prompt, model, effort)`
+default; nothing auto-promotes.
 
-### 1 — Golden authorship vs real-data harvest
+## What the build must change
 
-**Decision: synthetic-first authorship is the spine for every site; real data is
-an *additive anchor*, never the seed.** The mix is set per site by what real data
-the system actually produces (enablement obligation 4), but the *rule* is
-uniform: real data **validates and augments** a synthetic generation — it never
-seeds the generator, because a generator seeded from production output inherits
-production's blind spots (the exact false-merges and missed candidates we are
-trying to surface would never appear as gold).
+The current `wiki/internal/eval` + `wiki/cmd/wiki-eval` implement the superseded
+design (bundle abstraction, ten-site registry, `match`-only adapter, single
+table). To this design:
 
-Per-site mix:
-
-| site | synthetic | real-data anchor |
-|---|---|---|
-| extract | primary (authored docs w/ gold subject+claim sets) | ingested documents on `int` + their captured extract output (obligation 4) become an additional *unlabeled* corpus for spot-checking recall; a human confirms a sample of golds. |
-| match / dup judge / candidates / sweep | primary (one shared synthetic identity corpus) | the `dup_flags` + dup side-channel rows captured in prod (obligation 4) supply real positive pairs to add to later generations. |
-| compile | primary (authored event piles) | real `outbox`/digest output, if any, validates compression behaviour; not a generator seed. |
-| merge | primary (manifests built directly, skipping extract) | none needed — merge's inputs are internal. |
-| ask | primary (a fixed synthetic wiki + question set) | the **`asks` table is a first-class golden source** (obligation 4): real questions + their answers/citations become validation cases and feed the *answerable* slice of later generations. Still validates, never seeds — gold answers are re-confirmed by a human/judge, not trusted from prod. |
-| canonical_name | primary (thin preference set) | none. |
-
-**Why the asymmetry "validate, don't seed":** the redesign's whole polarity is
-catching the dangerous direction (false-merge, fabrication, over-extraction).
-Those are precisely the cases prod gets *wrong*, so they are absent from prod's
-"gold." A synthetic generator authors the trap deliberately; real data then
-confirms the synthetic distribution resembles reality and contributes additional
-*blunt* positives for the regression floor.
-
-### 2 — Judge-model independence
-
-**Decision: the judge model is a single, fixed, held-out model — never a model
-under test in the same run.** The two sites that need an LLM-judge (merge's
-rubric panel, ask's answer-correctness + the fuzzy/LLM-judged claim recall in
-set-alignment) use a judge pinned by config and **excluded from that run's sweep
-axis**, so a model can never grade its own output (self-preference is the named
-failure).
-
-- **Independence is enforced structurally, not by honour:** the harness asserts
-  at run start that the configured judge model id is **not** in the run's
-  model-sweep set for any judged site, and refuses the run (a config error, not a
-  silent skip) if it is. This makes "the judge isn't under test" a checked
-  invariant rather than operator discipline.
-- **The pin (provisional, P16 may revise):** the model registry currently carries
-  three chat models — `claude-haiku-4-5`, `claude-sonnet-4-6`, `gpt-5.5`
-  (`agentkit/model/registry.go`). The production call sites under test pin
-  `claude-sonnet-4-6` and (extract may sweep) `gpt-5.5`. **The judge is
-  `gpt-5.5` when the swept role uses Anthropic models, and `claude-sonnet-4-6`
-  when the swept role includes `gpt-5.5`** — i.e. the judge is always drawn from a
-  *different provider family than the role under evaluation*, the strongest
-  cross-family guard against self-preference available in the current registry.
-  Where a single run sweeps both families for one role, the judge is the
-  registry's strongest model held out of *that* role's axis; if no held-out
-  strong model exists for a role, the harness reports the constraint rather than
-  judging with an in-sweep model. (When a fourth, deliberately-judge-only model
-  is added to the registry it supersedes this and the cross-family rule is
-  dropped — recorded as the cleaner end state.)
-- **Panel size:** subjective rubric criteria (merge's woven-not-ledgered,
-  lead-identity, contradictions-corralled; ask's answer correctness) are scored
-  by a **panel of 3 judge samples**, aggregated by majority for binary criteria
-  and median for graded ones. Deterministic mechanical checks (citation
-  preservation, write-set conformance, claim-cite presence) are **single-shot, no
-  panel** — they are not judgments. Panel size is itself a config knob the report
-  can revisit if 3 proves noisy; 3 is the smallest odd panel that breaks ties.
-
-### 3 — Test-set storage & identity
-
-**Decision: a test set is a named, versioned, on-disk bundle of two independently
-versioned artifacts — a `dataset` and a `prompt` — and a run pins the exact
-bundle it used by content hash, so a result stays attributable after the set is
-superseded.**
-
-Layout (committed under the harness's tree — location fixed by question 4):
-
-```
-testsets/
-  <site>/
-    datasets/
-      gen-1.json          # the dataset records (the record format above)
-      gen-2.json          # a later, harder generation — stands beside gen-1
-    prompts/
-      v1.txt              # a candidate prompt artifact
-      v2.txt
-    bundles/
-      gen-1.json          # {dataset: "datasets/gen-1.json", prompt: "prompts/v1.txt"}
-      gen-1-promptv2.json # same data, candidate prompt — a distinct bundle
-```
-
-- **A bundle names one dataset + one prompt.** Minting a new test set is swapping
-  either: a harder dataset against the same prompt (the saturation escape hatch)
-  or a candidate prompt against the same dataset (prompt iteration). Both are
-  first-class, both produce a new bundle, neither edits an old one.
-- **Saturated generations are kept, never deleted** (research doc) — `gen-1.json`
-  stays as a regression floor when `gen-2.json` does the discriminating.
-- **Run-to-bundle pinning is by content hash.** A run record stores the
-  bundle's name **and** the SHA-256 of (dataset file bytes + prompt file bytes).
-  So even if a bundle file is later edited in place, an old run's results remain
-  unambiguously attributable to the exact `(data, prompt)` it scored. The hash is
-  also the cache key's prompt/data component (question 4).
-- **The production prompt is just a prompt artifact** — `prompts/vN.txt` may *be*
-  the pinned production default for that site (a symlink/copy from
-  `wiki/internal/config`'s default), so "evaluate production" and "evaluate a
-  candidate" are the same operation against different bundles (research doc's
-  reconciliation with the production-code-path principle). The harness reads the
-  prompt from the bundle and injects it into the real call site via config — it
-  never forks the call-site code.
-
-### 4 — Where the harness lives & cost control
-
-**Decision: the harness is a standalone Go command under `bin/`, built from the
-suite repo, not an `opsctl` verb and not a `go test` target.**
-
-- **Not `opsctl`:** `opsctl` is the on-box operator CLI for box operations
-  (`CLAUDE.md`); the harness is an off-box developer/analysis tool that makes paid
-  provider calls and produces reports — wrong tenant.
-- **Not a `go test` target:** `go test ./...` is the trustworthy, free, offline,
-  deterministic **phase gate** — the harness is paid, networked, and
-  nondeterministic by nature, and the research doc forbids it from gating
-  anything. Putting it behind `go test` would either pollute the gate or require a
-  build tag that hides it; a plain command is honest about what it is.
-- **It lives at `bin/wiki-eval`** (a small Go `main` in the suite, wired into
-  `go.work` for local dev), importing Part I's **call-site registry** (P2) to
-  reach the real call-site functions. It takes a site, a bundle name, a model ×
-  effort sweep spec, and a judge pin; it writes the results table.
-
-**Output caching is load-bearing, not an optimization** (the sweep is a cartesian
-product of paid calls; a re-score with a changed scorer must cost zero provider
-calls):
-
-- **Cache key:** `(test-set-bundle-hash, case_id, prompt-hash, model, effort)` —
-  exactly the research doc's `(test-set, case, prompt, model, effort)`, with
-  test-set and prompt resolved to their content hashes (question 3) so a bundle
-  edit correctly misses the cache. The prompt hash is folded in even though it is
-  part of the bundle, so a prompt-only swap re-runs only what changed.
-- **Cache value:** the **raw call-site output** plus its captured cost + latency —
-  *not* the score. Scoring runs over the cached raw output, so changing a scorer
-  (P14 iteration) re-scores for free. This is the property the `Verify` of P13/P16
-  asserts ("reproduces a second run entirely from cache, zero paid calls").
-- **Cache store:** a content-addressed directory (`~/.cache/wiki-eval/` or
-  repo-local `.wiki-eval-cache/`, gitignored), one file per key. It is a pure
-  memoization layer — deleting it only costs money, never correctness.
-
-### 5 — Saturation detection
-
-**Decision: a generation is declared *saturated* when the top configs cluster at
-the ceiling with no separation — operationalized as a two-part rule, reported by
-the harness, decided by a human.**
-
-A generation is **saturated** when **both** hold over the run's config set:
-
-1. **Ceiling:** the best config's headline score for that site is `≥ 0.95` of the
-   achievable maximum (per-site headline: subject F1 for extract/compile;
-   1 − false-merge-rate for match/dup; recall@k for retrieval; the rubric mean
-   for merge; 1 − fabrication-rate for ask).
-2. **No separation:** the spread between the best and the *k*-th config
-   (`k = min(3, n_configs)`) is `≤ 0.02` on that headline **and** their
-   dangerous-direction error rates are statistically indistinguishable (all zero,
-   or within one case of each other on the dangerous axis).
-
-When both fire, the harness prints a **`SATURATED — mint gen-N+1`** advisory in
-the report; it does **not** auto-generate anything (research doc: a triggered
-decision, not a vibe, but still a human's call). The thresholds (`0.95`, `0.02`,
-`k`) are config knobs so a site with intrinsically noisier judging can loosen
-them. Saturation is always evaluated **within one generation** — a config acing
-gen-1 while gen-2 still separates is the designed steady state, not saturation of
-the site.
-
-### 6 — Decision presentation
-
-**Decision: a run renders one row per config and never a single lumped rank — the
-dangerous-direction error, cost, and latency sit *beside* the headline score, so
-the tradeoff the decision turns on is always visible.**
-
-The report is a table, **always captioned with the generation it scored**
-(`gen-N`), one row per `(model, effort)` config, with columns:
-
-| column group | columns |
-|---|---|
-| config | model, effort, role (for per-role sweeps), prompt-version |
-| headline | the site's primary score |
-| **dangerous axis** (always separate) | the named dangerous-direction rate — false-merge-rate, over-extraction count, fabrication-rate, false-dismiss-rate — per the site's scorer kind |
-| cost | total USD for the config's cases + per-case mean (from P0c's per-call `cost_usd` accounting) |
-| latency | mean + p95 ms per call (from P0c's `duration_ms`) |
-| coverage | n cases scored / n cached |
-
-Presentation rules that bind P16's renderer:
-
-- **No single composite rank.** The table never collapses these columns into one
-  number; ranking the rows is the human's job, and the table exists so they rank
-  on the axis they care about (a 95%-with-one-false-merge config must be visibly
-  worse than a 90%-with-none config — research doc's worked example).
-- **Sort default is the headline, but the dangerous axis is a tiebreak the
-  renderer surfaces** — rows within `≤ 0.02` headline are visually grouped so a
-  human compares their dangerous/cost/latency directly.
-- **The retrieval side-by-side is its own table** (lexical-only vs hybrid per call
-  site: recall lift vs cost) — the deliverable that licenses or declines the
-  vector lane at each site (research §8–10).
-- **The chosen config is recorded back as Part I's config default** (the
-  feedback loop): the report names, per site, the `(prompt, model, effort)` a
-  human picked, and P16d ships them. The report documents that this — a human
-  reading the matrix — *is* how defaults get set; nothing auto-promotes.
-
----
-
-## What P13–P16 inherit from this lock
-
-- **P13 (the rig)** builds the loader against the record format above, the runner
-  against Part I's call-site registry, the `config × metric` table reported per
-  generation, and the content-hash-keyed output cache from question 4. It proves
-  the rig on **Match** (the shared identity corpus's headline consumer).
-- **P14 (the scorers)** builds exactly the four kinds above, each reporting its
-  dangerous axis separately, reusing Part I's deterministic invariant checks
-  (§6.1 gate, write-set conformance, claim-cite presence) for the merge mechanical
-  half.
-- **P15 (test sets)** builds one generator per site emitting bundles in the
-  storage layout of question 3, sharing the identity corpus across
-  match/dup/candidates/sweep and the synthetic wiki across ask/search,
-  LLM-authoring goldens then running the adversarial verification pass, anchoring
-  against real data per question 1's validate-don't-seed rule.
-- **P16 (sweep + report)** runs the full `generation → {prompt,data} × model ×
-  effort` matrix (incl. OpenAI via P0a), renders the report per question 6,
-  applies the saturation rule of question 5, and closes the feedback loop into
-  Part I's config defaults (shipped by P16d).
+1. Replace the bundle/`-bundle` interface with four independent inputs
+   (`-prompt`, `-dataset`, `-model`, `-effort`); keep content-hash caching
+   beneath it.
+2. Drop `candidates`/`search`/`sweep`/`canonical_name` as sites; reduce the
+   registry to the eight call sites.
+3. Replace the scorer-kinds taxonomy with one `eval_<site>(ctx, judge, actual,
+   gold) → Verdict` per site, mechanics internal.
+4. Author the per-site `gold` schemas above; golds are `claims_required` lists
+   (+ folded `valid_cites`) for the claim sites, discrete specs otherwise.
+5. Build the seven `Structured`-seam sites on one generic runner; give `ask` its
+   own agent-loop runner. Today only `match` runs end-to-end.
