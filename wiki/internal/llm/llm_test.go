@@ -50,6 +50,28 @@ func TestConverseBuildsFreshConfiguredConversation(t *testing.T) {
 	}
 }
 
+func TestConverseSnapshotsToolSlice(t *testing.T) {
+	// R-JDMA-UHS3
+	client := New(&scriptedProvider{}, nil)
+	lookup := agentkit.RawTool("lookup", "Lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+		return "lookup", nil
+	})
+	replace := agentkit.RawTool("replace", "Replace", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+		return "replace", nil
+	})
+
+	tools := []agentkit.Tool{lookup}
+	conv := client.Converse(CallSite{Model: "json-model"}, tools)
+	tools[0] = replace
+
+	if len(conv.Tools) != 1 {
+		t.Fatalf("conversation tools len = %d, want 1", len(conv.Tools))
+	}
+	if conv.Tools[0].Name() != "lookup" {
+		t.Fatalf("conversation tool = %q, want snapshot of original lookup tool", conv.Tools[0].Name())
+	}
+}
+
 func TestStripCodeFence(t *testing.T) {
 	// R-J8QP-BETB
 	tests := []struct {
