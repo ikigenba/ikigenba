@@ -89,7 +89,6 @@ func TestStripCodeFence(t *testing.T) {
 
 func TestJSONSendsToollessGenerationAndValidates(t *testing.T) {
 	// R-J9YL-P6K0
-	// R-JEU7-89IS
 	temp := 0.0
 	prov := &scriptedProvider{responses: []string{"```json\n{\"title\":\"ok\",\"count\":2}\n```"}}
 	site := CallSite{
@@ -127,6 +126,39 @@ func TestJSONSendsToollessGenerationAndValidates(t *testing.T) {
 	}
 	if texts := requestTexts(req); len(texts) != 1 || texts[0] != "make json" {
 		t.Fatalf("request texts = %#v, want original prompt only", texts)
+	}
+}
+
+func TestJSONCarriesCallSiteConfiguration(t *testing.T) {
+	// R-JEU7-89IS
+	temp := 0.75
+	prov := &scriptedProvider{responses: []string{`{"title":"configured","count":9}`}}
+	site := CallSite{
+		Model:       "configured-model",
+		Temperature: &temp,
+		Reasoning:   agentkit.Level("medium"),
+		System:      "configured system",
+	}
+
+	got, err := JSON(context.Background(), New(prov, nil), site, "make configured json", nilJSONFixture)
+	if err != nil {
+		t.Fatalf("JSON returned error: %v", err)
+	}
+	if got.Title != "configured" || got.Count != 9 {
+		t.Fatalf("JSON result = %#v, want configured response", got)
+	}
+	if len(prov.requests) != 1 {
+		t.Fatalf("requests len = %d, want 1", len(prov.requests))
+	}
+	req := prov.requests[0]
+	if req.Model != site.Model || req.System != site.System {
+		t.Fatalf("request config = %#v, want callsite model and system", req)
+	}
+	if req.Gen.Temperature == nil || *req.Gen.Temperature != temp {
+		t.Fatalf("temperature = %v, want %v", req.Gen.Temperature, temp)
+	}
+	if level, ok := req.Gen.Reasoning.Level(); !ok || level != "medium" {
+		t.Fatalf("reasoning level = %q/%v, want medium/true", level, ok)
 	}
 }
 
