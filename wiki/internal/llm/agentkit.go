@@ -1,19 +1,24 @@
 package llm
 
-import agentkit "github.com/ikigenba/agentkit"
+import (
+	"io"
+
+	agentkit "github.com/ikigenba/agentkit"
+)
 
 // AgentKitProvider is the production provider boundary supplied at composition.
 type AgentKitProvider = agentkit.Provider
 
 // Client is the production LLM client shell shared by wiki services.
 type Client struct {
-	provider AgentKitProvider
-	model    string
+	prov  AgentKitProvider
+	log   io.Writer
+	model string
 }
 
 // NewClient records the provider and model selected at the composition root.
 func NewClient(provider AgentKitProvider, model string) *Client {
-	return &Client{provider: provider, model: model}
+	return &Client{prov: provider, model: model}
 }
 
 // Model reports the configured model id.
@@ -29,7 +34,7 @@ func (c *Client) Provider() AgentKitProvider {
 	if c == nil {
 		return nil
 	}
-	return c.provider
+	return c.prov
 }
 
 // ToAgentKit converts the narrow wiki prompt shape to AgentKit messages.

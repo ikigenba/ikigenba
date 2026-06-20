@@ -1,0 +1,216 @@
+package llm
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+
+	agentkit "github.com/ikigenba/agentkit"
+)
+
+func TestConverseBuildsFreshConfiguredConversation(t *testing.T) {
+	// R-J8QP-BETB
+	var log bytes.Buffer
+	prov := &scriptedProvider{}
+	client := New(prov, &log)
+	temp := 0.25
+	site := CallSite{
+		Model:       "model-a",
+		Temperature: &temp,
+		Reasoning:   agentkit.Level("low"),
+		System:      "system prompt",
+	}
+	tool := agentkit.RawTool("lookup", "Lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+		return "ok", nil
+	})
+
+	first := client.Converse(site, []agentkit.Tool{tool})
+	second := client.Converse(site, nil)
+
+	if first == second {
+		t.Fatal("Converse returned the same conversation twice")
+	}
+	if first.Provider != prov || first.Model != site.Model || first.System != site.System || first.Log != &log {
+		t.Fatalf("conversation config = %#v, want shared provider, model, system, and log", first)
+	}
+	if first.Gen.Temperature == nil || *first.Gen.Temperature != temp {
+		t.Fatalf("temperature = %v, want %v", first.Gen.Temperature, temp)
+	}
+	if level, ok := first.Gen.Reasoning.Level(); !ok || level != "low" {
+		t.Fatalf("reasoning level = %q/%v, want low/true", level, ok)
+	}
+	if len(first.Tools) != 1 || first.Tools[0].Name() != "lookup" {
+		t.Fatalf("tools = %#v, want lookup tool", first.Tools)
+	}
+	if len(second.Tools) != 0 || len(first.History) != 0 || len(second.History) != 0 {
+		t.Fatalf("fresh conversations should start without unrelated tools/history: first=%#v second=%#v", first, second)
+	}
+}
+
+func TestJSONSendsToollessGenerationAndValidates(t *testing.T) {
+	// R-J9YL-P6K0
+	temp := 0.0
+	prov := &scriptedProvider{responses: []string{`{"title":"ok","count":2}`}}
+	site := CallSite{
+		Model:       "json-model",
+		Temperature: &temp,
+		Reasoning:   agentkit.DisableReasoning(),
+		System:      "json only",
+	}
+	got, err := JSON(context.Background(), New(prov, nil), site, "make json", func(v *jsonFixture) error {
+		if v.Title == "" {
+			return errors.New("title required")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("JSON returned error: %v", err)
+	}
+	if got.Title != "ok" || got.Count != 2 {
+		t.Fatalf("JSON result = %#v, want parsed response", got)
+	}
+	if len(prov.requests) != 1 {
+		t.Fatalf("requests len = %d, want 1", len(prov.requests))
+	}
+	req := prov.requests[0]
+	if req.Model != site.Model || req.System != site.System || len(req.Tools) != 0 {
+		t.Fatalf("request config = %#v, want model/system and no tools", req)
+	}
+	if req.Gen.Temperature == nil || *req.Gen.Temperature != temp || !req.Gen.Reasoning.Disabled() {
+		t.Fatalf("gen settings = %#v, want pinned temperature and disabled reasoning", req.Gen)
+	}
+	if texts := requestTexts(req); len(texts) != 1 || texts[0] != "make json" {
+		t.Fatalf("request texts = %#v, want original prompt only", texts)
+	}
+}
+
+func TestJSONStripsMarkdownCodeFence(t *testing.T) {
+	// R-JCEE-GQ1E
+	prov := &scriptedProvider{responses: []string{"```json\n{\"title\":\"fenced\",\"count\":3}\n```"}}
+
+	got, err := JSON(context.Background(), New(prov, nil), CallSite{Model: "json-model"}, "make fenced json", nilJSONFixture)
+	if err != nil {
+		t.Fatalf("JSON returned error: %v", err)
+	}
+	if got.Title != "fenced" || got.Count != 3 {
+		t.Fatalf("JSON result = %#v, want fenced JSON decoded", got)
+	}
+}
+
+func TestJSONRetriesWithCorrectivePromptOnValidationFailure(t *testing.T) {
+	// R-JDMA-UHS3
+	prov := &scriptedProvider{responses: []string{
+		`{"title":"","count":1}`,
+		`{"title":"fixed","count":4}`,
+	}}
+	site := CallSite{Model: "json-model", MaxParseRetries: 1}
+
+	got, err := JSON(context.Background(), New(prov, nil), site, "make validated json", func(v *jsonFixture) error {
+		if v.Title == "" {
+			return errors.New("title required")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("JSON returned error: %v", err)
+	}
+	if got.Title != "fixed" || got.Count != 4 {
+		t.Fatalf("JSON result = %#v, want retry response", got)
+	}
+	if len(prov.requests) != 2 {
+		t.Fatalf("requests len = %d, want initial plus retry", len(prov.requests))
+	}
+	texts := requestTexts(prov.requests[1])
+	if len(texts) != 3 {
+		t.Fatalf("retry conversation texts = %#v, want original user, failed assistant, corrective user", texts)
+	}
+	corrective := texts[len(texts)-1]
+	if !strings.Contains(corrective, "previous response") || !strings.Contains(corrective, "title required") || !strings.Contains(corrective, "make validated json") {
+		t.Fatalf("corrective prompt = %q, want parse note, validation error, and original request", corrective)
+	}
+}
+
+func TestJSONReturnsErrorAfterRetryBudgetWithoutSilentZero(t *testing.T) {
+	// R-JEU7-89IS
+	prov := &scriptedProvider{responses: []string{`not-json`, `also-not-json`}}
+	site := CallSite{Model: "json-model", MaxParseRetries: 1}
+
+	got, err := JSON(context.Background(), New(prov, nil), site, "make json", nilJSONFixture)
+	if err == nil {
+		t.Fatal("JSON returned nil error after exhausting parse retries")
+	}
+	if got != (jsonFixture{}) {
+		t.Fatalf("JSON result = %#v, want zero value on error", got)
+	}
+	if len(prov.requests) != 2 {
+		t.Fatalf("requests len = %d, want initial plus one retry", len(prov.requests))
+	}
+	if !strings.Contains(err.Error(), "2 attempt") {
+		t.Fatalf("error = %v, want retry count context", err)
+	}
+}
+
+type jsonFixture struct {
+	Title string `json:"title"`
+	Count int    `json:"count"`
+}
+
+func nilJSONFixture(*jsonFixture) error {
+	return nil
+}
+
+type scriptedProvider struct {
+	responses []string
+	requests  []agentkit.Request
+}
+
+func (p *scriptedProvider) RoundTrip(_ context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+	p.requests = append(p.requests, cloneRequest(req))
+	text := `{}`
+	if len(p.responses) > 0 {
+		text = p.responses[0]
+		p.responses = p.responses[1:]
+	}
+	return agentkit.NewRoundTrip(
+		agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: text}}},
+		agentkit.FinishStop,
+		agentkit.Usage{InputUncached: 1, Output: 1, Total: 2},
+		nil,
+		nil,
+	)
+}
+
+func (p *scriptedProvider) Name() string {
+	return "scripted"
+}
+
+func (p *scriptedProvider) Pricing(string) (agentkit.Pricing, bool) {
+	return agentkit.Pricing{Tiers: []agentkit.RateTier{{MinInputTokens: 0}}}, true
+}
+
+func cloneRequest(req *agentkit.Request) agentkit.Request {
+	if req == nil {
+		return agentkit.Request{}
+	}
+	return agentkit.Request{
+		Model:    req.Model,
+		System:   req.System,
+		Messages: append([]agentkit.Message(nil), req.Messages...),
+		Tools:    append([]agentkit.Tool(nil), req.Tools...),
+		Gen:      req.Gen,
+	}
+}
+
+func requestTexts(req agentkit.Request) []string {
+	var out []string
+	for _, msg := range req.Messages {
+		text := agentkitText(msg)
+		if text != "" {
+			out = append(out, text)
+		}
+	}
+	return out
+}
