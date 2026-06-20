@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	agentkit "github.com/ikigenba/agentkit"
 )
@@ -136,6 +137,28 @@ func TestJSONSendsToollessGenerationAndValidates(t *testing.T) {
 	}
 	if texts := requestTexts(req); len(texts) != 1 || texts[0] != "make json" {
 		t.Fatalf("request texts = %#v, want original prompt only", texts)
+	}
+}
+
+func TestJSONUsesRequestContextDeadline(t *testing.T) {
+	// R-J9YL-P6K0
+	prov := &scriptedProvider{responses: []string{`{"title":"deadline","count":3}`}}
+	deadline := time.Now().Add(time.Minute).Round(0)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+
+	got, err := JSON(ctx, New(prov, nil), CallSite{Model: "json-model"}, "make json", nilJSONFixture)
+	if err != nil {
+		t.Fatalf("JSON returned error: %v", err)
+	}
+	if got.Title != "deadline" || got.Count != 3 {
+		t.Fatalf("JSON result = %#v, want parsed response", got)
+	}
+	if len(prov.deadlines) != 1 {
+		t.Fatalf("provider deadlines len = %d, want 1", len(prov.deadlines))
+	}
+	if !prov.deadlines[0].Equal(deadline) {
+		t.Fatalf("provider deadline = %v, want request deadline %v", prov.deadlines[0], deadline)
 	}
 }
 
@@ -298,10 +321,14 @@ func nilJSONFixture(*jsonFixture) error {
 type scriptedProvider struct {
 	responses []string
 	requests  []agentkit.Request
+	deadlines []time.Time
 }
 
-func (p *scriptedProvider) RoundTrip(_ context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+func (p *scriptedProvider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	p.requests = append(p.requests, cloneRequest(req))
+	if deadline, ok := ctx.Deadline(); ok {
+		p.deadlines = append(p.deadlines, deadline)
+	}
 	text := `{}`
 	if len(p.responses) > 0 {
 		text = p.responses[0]
