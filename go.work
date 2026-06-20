@@ -21,5 +21,5 @@ use (
 	./prompts
 	./scripts
 	./sites
-	./wiki.bak
+	./wiki
 )
