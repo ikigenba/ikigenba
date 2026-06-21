@@ -12,7 +12,6 @@ import (
 )
 
 func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
-	// R-VYU0-BPAX
 	prov := &scriptedProvider{responses: []string{`{
 		"subjects": [
 			{
@@ -42,6 +41,10 @@ func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 	if got[0].Type != "entity" || got[0].Kind != "company" || got[0].Name != "Acme Robotics" {
 		t.Fatalf("subject = %#v, want decoded extracted entity", got[0])
 	}
+	// R-W19T-38SB
+	if got[0].OccurredAt != "" {
+		t.Fatalf("occurred_at = %q, want honest empty date when source states no defining date", got[0].OccurredAt)
+	}
 	if len(got[0].Claims) != 1 || got[0].Claims[0] != "Acme Robotics opened a research lab in Tulsa." {
 		t.Fatalf("claims = %#v, want decoded claims", got[0].Claims)
 	}
@@ -64,7 +67,6 @@ func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 }
 
 func TestExtractRejectsInvalidSubjectTypesAndEmptyClaims(t *testing.T) {
-	// R-W01W-PH1M
 	tests := []struct {
 		name     string
 		response string
@@ -72,6 +74,7 @@ func TestExtractRejectsInvalidSubjectTypesAndEmptyClaims(t *testing.T) {
 	}{
 		{
 			name: "invalid type",
+			// R-VYU0-BPAX
 			response: `{"subjects":[{
 				"type":"place",
 				"kind":"city",
@@ -113,8 +116,31 @@ func TestExtractRejectsInvalidSubjectTypesAndEmptyClaims(t *testing.T) {
 	}
 }
 
-func TestExtractValidatesEventOccurredAtOnly(t *testing.T) {
-	// R-W19T-38SB
+func TestExtractRetainsNonEventOccurredAt(t *testing.T) {
+	// R-XJBY-H8JZ
+	prov := &scriptedProvider{responses: []string{`{"subjects":[{
+		"type":"entity",
+		"kind":"company",
+		"name":"Acme Robotics",
+		"occurred_at":"2026-06",
+		"claims":["Acme Robotics was founded in June 2026."]
+	}]}`}}
+	extractor := New(llm.New(prov, nil), llm.CallSite{Model: "extract-model"})
+
+	got, err := extractor.Extract(context.Background(), validHeader(), "Acme Robotics was founded in June 2026.")
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("subjects len = %d, want 1", len(got))
+	}
+	if got[0].Type != "entity" || got[0].OccurredAt != "2026-06" {
+		t.Fatalf("subject = %#v, want entity occurred_at retained exactly", got[0])
+	}
+}
+
+func TestExtractValidatesOccurredAtOnEverySubjectType(t *testing.T) {
+	// R-XKJU-V0AO
 	tests := []struct {
 		name      string
 		subject   string
@@ -142,12 +168,43 @@ func TestExtractValidatesEventOccurredAtOnly(t *testing.T) {
 			wantError: true,
 		},
 		{
-			name: "entity rejects occurred at",
+			name: "event rejects empty occurred at",
+			subject: `{
+				"type":"event",
+				"kind":"launch",
+				"name":"Acme Robotics lab opening",
+				"occurred_at":"",
+				"claims":["Acme Robotics opened a research lab on June 20, 2026."]
+			}`,
+			wantError: true,
+		},
+		{
+			name: "entity accepts ISO year prefix",
 			subject: `{
 				"type":"entity",
 				"kind":"company",
 				"name":"Acme Robotics",
 				"occurred_at":"2026",
+				"claims":["Acme Robotics opened a research lab."]
+			}`,
+		},
+		{
+			name: "concept accepts ISO year month prefix",
+			subject: `{
+				"type":"concept",
+				"kind":"method",
+				"name":"claim extraction",
+				"occurred_at":"2026-06",
+				"claims":["Claim extraction was documented in June 2026."]
+			}`,
+		},
+		{
+			name: "entity rejects non ISO prefix",
+			subject: `{
+				"type":"entity",
+				"kind":"company",
+				"name":"Acme Robotics",
+				"occurred_at":"June 2026",
 				"claims":["Acme Robotics opened a research lab."]
 			}`,
 			wantError: true,
@@ -172,10 +229,50 @@ func TestExtractValidatesEventOccurredAtOnly(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Extract returned error: %v", err)
 			}
-			if len(got) != 1 || got[0].OccurredAt != "2026-06-20" {
-				t.Fatalf("subjects = %#v, want event with ISO occurred_at", got)
+			if len(got) != 1 {
+				t.Fatalf("subjects = %#v, want one subject", got)
+			}
+			if got[0].OccurredAt == "" || !isISOPrefix(got[0].OccurredAt) {
+				t.Fatalf("subjects = %#v, want valid ISO occurred_at retained", got)
 			}
 		})
+	}
+}
+
+func TestExtractRepromptsAfterOccurredAtValidationFailure(t *testing.T) {
+	// R-XKJU-V0AO
+	prov := &scriptedProvider{responses: []string{
+		`{"subjects":[{
+			"type":"entity",
+			"kind":"company",
+			"name":"Acme Robotics",
+			"occurred_at":"June 2026",
+			"claims":["Acme Robotics opened a research lab."]
+		}]}`,
+		`{"subjects":[{
+			"type":"entity",
+			"kind":"company",
+			"name":"Acme Robotics",
+			"occurred_at":"2026",
+			"claims":["Acme Robotics opened a research lab."]
+		}]}`,
+	}}
+	extractor := New(llm.New(prov, nil), llm.CallSite{Model: "extract-model", MaxParseRetries: 1})
+
+	got, err := extractor.Extract(context.Background(), validHeader(), "Acme Robotics opened a research lab in 2026.")
+	if err != nil {
+		t.Fatalf("Extract returned error after retry: %v", err)
+	}
+	if len(got) != 1 || got[0].OccurredAt != "2026" {
+		t.Fatalf("subjects = %#v, want corrected ISO occurred_at after retry", got)
+	}
+	if len(prov.requests) != 2 {
+		t.Fatalf("requests len = %d, want validation failure to trigger one re-prompt", len(prov.requests))
+	}
+	corrective := requestTexts(prov.requests[1])
+	correctiveText := strings.Join(corrective, "\n")
+	if !strings.Contains(correctiveText, "previous response") || !strings.Contains(correctiveText, "occurred_at must be an ISO-8601 prefix") {
+		t.Fatalf("corrective prompt = %#v, want validation error in re-prompt", corrective)
 	}
 }
 

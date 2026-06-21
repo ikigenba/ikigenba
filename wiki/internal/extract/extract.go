@@ -101,12 +101,12 @@ func validateSubject(i int, s ExtractedSubject) error {
 	if strings.TrimSpace(s.Name) == "" {
 		return fmt.Errorf("subjects[%d].name required", i)
 	}
-	if s.Type == "event" {
-		if !isISOPrefix(s.OccurredAt) {
-			return fmt.Errorf("subjects[%d].occurred_at must be an ISO-8601 prefix for events", i)
+	if s.OccurredAt == "" {
+		if s.Type == "event" {
+			return fmt.Errorf("subjects[%d].occurred_at required for events", i)
 		}
-	} else if strings.TrimSpace(s.OccurredAt) != "" {
-		return fmt.Errorf("subjects[%d].occurred_at must be empty unless type is event", i)
+	} else if !isISOPrefix(s.OccurredAt) {
+		return fmt.Errorf("subjects[%d].occurred_at must be an ISO-8601 prefix", i)
 	}
 	if len(s.Claims) == 0 {
 		return fmt.Errorf("subjects[%d].claims required", i)
