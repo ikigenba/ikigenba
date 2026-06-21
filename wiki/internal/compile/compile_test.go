@@ -31,6 +31,15 @@ func TestCompileRendersSubjectIdentityAndCompleteClaimSet(t *testing.T) {
 
 	prompt := onlyPrompt(t, prov, 0)
 	for _, want := range []string{
+		"Compile one wiki page from the subject identity and complete claim set below.",
+		"Use only the subject identity and claims",
+		"do not use previous pages, prior page bodies, source documents, or unstated facts",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt %q does not contain compile boundary %q", prompt, want)
+		}
+	}
+	for _, want := range []string{
 		"id: subj-acme",
 		"name: Acme Robotics",
 		"norm_name: acme robotics",
