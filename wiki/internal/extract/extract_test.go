@@ -254,6 +254,17 @@ func TestExtractValidatesOccurredAtOnEverySubjectType(t *testing.T) {
 			}`,
 			wantError: true,
 		},
+		{
+			name: "concept rejects non ISO prefix",
+			subject: `{
+				"type":"concept",
+				"kind":"method",
+				"name":"claim extraction",
+				"occurred_at":"Summer 2026",
+				"claims":["Claim extraction was documented in summer 2026."]
+			}`,
+			wantError: true,
+		},
 	}
 
 	for _, tt := range tests {
