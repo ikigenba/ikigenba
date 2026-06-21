@@ -16,6 +16,9 @@
 /data/
 /tmp/
 
+# Build loop ephemeral brief (created by gather, deleted by verify; never committed)
+/docs/brief.md
+
 # Local environment
 .env
 .env.local
