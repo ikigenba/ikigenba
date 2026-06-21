@@ -156,6 +156,51 @@ func TestProcessNextReusesSubjectAndRecompilesFromCompleteClaims(t *testing.T) {
 	}
 }
 
+func TestServiceListsSubjectsAndReadsClaimsAndPagesBySubject(t *testing.T) {
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	svc := NewService(conn, nil, nil, nil)
+	subjects := NewSubjectStore(conn)
+	claims := NewClaimStore(conn)
+	pages := NewPageStore(conn)
+	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Acme Robotics", Type: "entity"}); err != nil {
+		t.Fatalf("Save subject-1: %v", err)
+	}
+	if err := subjects.Save(ctx, Subject{ID: "subject-2", Name: "Acme Launch", Type: "event"}); err != nil {
+		t.Fatalf("Save subject-2: %v", err)
+	}
+	if err := claims.Save(ctx, Claim{ID: "claim-1", SubjectID: "subject-1", JobID: "job-1", Body: "Acme Robotics opened a lab."}); err != nil {
+		t.Fatalf("Save claim: %v", err)
+	}
+	if err := pages.Upsert(ctx, Page{ID: "page-1", SubjectID: "subject-1", Title: "Acme Robotics", Body: "Acme Robotics opened a lab."}); err != nil {
+		t.Fatalf("Upsert page: %v", err)
+	}
+
+	gotSubjects, err := svc.Subjects(ctx, "entity", "robot")
+	if err != nil {
+		t.Fatalf("Subjects: %v", err)
+	}
+	if len(gotSubjects) != 1 || gotSubjects[0].ID != "subject-1" {
+		t.Fatalf("Subjects = %+v, want subject-1 only", gotSubjects)
+	}
+	gotClaims, err := svc.ClaimsBySubject(ctx, "subject-1")
+	if err != nil {
+		t.Fatalf("ClaimsBySubject: %v", err)
+	}
+	if len(gotClaims) != 1 || gotClaims[0].ID != "claim-1" {
+		t.Fatalf("ClaimsBySubject = %+v, want claim-1", gotClaims)
+	}
+	gotPage, err := svc.PageBySubject(ctx, "subject-1")
+	if err != nil {
+		t.Fatalf("PageBySubject: %v", err)
+	}
+	if gotPage.ID != "page-1" || gotPage.Title != "Acme Robotics" {
+		t.Fatalf("PageBySubject = %+v, want page-1", gotPage)
+	}
+}
+
 type recordingExtractor struct {
 	calls   int
 	err     error

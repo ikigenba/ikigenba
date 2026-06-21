@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -16,7 +17,7 @@ import (
 
 func TestHealthToolReturnsAppkitEnvelope(t *testing.T) {
 	h := NewHandler("test-version", "wiki", nil)
-	body := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ikigenba_wiki_health"}}`)
+	body := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"health"}}`)
 	rec := httptest.NewRecorder()
 
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", body))
@@ -98,6 +99,9 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 		WithIngestService(&capturingWiki{}),
 		WithJobStatusService(&capturingWiki{}),
 		WithAskFunc((&capturingAsker{}).Ask),
+		WithSubjectsService(&capturingWiki{}),
+		WithClaimsService(&capturingWiki{}),
+		WithPageService(&capturingWiki{}),
 	))
 	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"list","method":"tools/list"}`, "owner@example.com")
 
@@ -115,20 +119,121 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 	decodeJSON(t, rec.Body.Bytes(), &got)
 	names := map[string]bool{}
 	for _, tool := range got.Result.Tools {
+		if names[tool.Name] {
+			t.Fatalf("tools/list duplicated %s", tool.Name)
+		}
 		names[tool.Name] = true
 		if tool.InputSchema["type"] != "object" {
 			t.Fatalf("%s schema type = %v, want object", tool.Name, tool.InputSchema["type"])
 		}
 	}
-	for _, name := range []string{
-		"ikigenba_wiki_health",
-		"ikigenba_wiki_ingest_text",
-		"ikigenba_wiki_job_status",
-		"ikigenba_wiki_ask",
-	} {
+	want := map[string]bool{
+		"ingest":     true,
+		"status":     true,
+		"ask":        true,
+		"subjects":   true,
+		"claims":     true,
+		"page":       true,
+		"health":     true,
+		"reflection": true,
+	}
+	if len(names) != len(want) {
+		t.Fatalf("tools/list names = %#v, want exact %#v", names, want)
+	}
+	for name := range want {
 		if !names[name] {
 			t.Fatalf("tools/list missing %s in %#v", name, names)
 		}
+	}
+	for name := range names {
+		if !want[name] {
+			t.Fatalf("tools/list included unexpected %s in %#v", name, names)
+		}
+	}
+}
+
+func TestReflectionToolReturnsEmptyEventEdges(t *testing.T) {
+	h := gatedHandler(t, NewHandler("test-version", "wiki", nil))
+	rec := callMCP(t, h, `{
+		"jsonrpc":"2.0",
+		"id":"reflection",
+		"method":"tools/call",
+		"params":{"name":"reflection","arguments":{}}
+	}`, "owner@example.com")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Publishes  []string `json:"publishes"`
+		Subscribes []string `json:"subscribes"`
+	}
+	decodeToolText(t, rec.Body.Bytes(), &body)
+	if len(body.Publishes) != 0 || len(body.Subscribes) != 0 {
+		t.Fatalf("reflection = %#v, want empty publishes/subscribes", body)
+	}
+}
+
+func TestUnknownReadsReturnCleanNotFoundResults(t *testing.T) {
+	wiki := &capturingWiki{
+		statusErr: sql.ErrNoRows,
+		claimsErr: sql.ErrNoRows,
+		pageErr:   sql.ErrNoRows,
+	}
+	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+		WithJobStatusService(wiki),
+		WithClaimsService(wiki),
+		WithPageService(wiki),
+	))
+	for _, tc := range []struct {
+		name string
+		body string
+		kind string
+		id   string
+	}{
+		{
+			name: "status",
+			body: `{"jsonrpc":"2.0","id":"status","method":"tools/call","params":{"name":"status","arguments":{"job_id":"job-missing"}}}`,
+			kind: "job",
+			id:   "job-missing",
+		},
+		{
+			name: "claims",
+			body: `{"jsonrpc":"2.0","id":"claims","method":"tools/call","params":{"name":"claims","arguments":{"subject_id":"subject-missing"}}}`,
+			kind: "subject",
+			id:   "subject-missing",
+		},
+		{
+			name: "page",
+			body: `{"jsonrpc":"2.0","id":"page","method":"tools/call","params":{"name":"page","arguments":{"subject_id":"subject-missing"}}}`,
+			kind: "subject",
+			id:   "subject-missing",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := callMCP(t, h, tc.body, "owner@example.com")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", rec.Code)
+			}
+			var body struct {
+				Found bool   `json:"found"`
+				Kind  string `json:"kind"`
+				ID    string `json:"id"`
+			}
+			decodeToolText(t, rec.Body.Bytes(), &body)
+			if body.Found || body.Kind != tc.kind || body.ID != tc.id {
+				t.Fatalf("not found = %#v, want %s %s found=false", body, tc.kind, tc.id)
+			}
+			var raw struct {
+				Result struct {
+					IsError bool `json:"isError"`
+				} `json:"result"`
+			}
+			decodeJSON(t, rec.Body.Bytes(), &raw)
+			if raw.Result.IsError {
+				t.Fatal("result isError = true, want clean not-found result")
+			}
+		})
 	}
 }
 
@@ -141,7 +246,7 @@ func TestIngestToolUsesAuthenticatedIdentity(t *testing.T) {
 		"id":"ingest",
 		"method":"tools/call",
 		"params":{
-			"name":"ikigenba_wiki_ingest_text",
+			"name":"ingest",
 			"arguments":{"text":"source text","title":"Source","tags":["one","two"]}
 		}
 	}`, "owner@example.com")
@@ -183,7 +288,7 @@ func TestJobStatusToolReturnsDomainStatus(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"status",
 		"method":"tools/call",
-		"params":{"name":"ikigenba_wiki_job_status","arguments":{"job_id":"job-123"}}
+		"params":{"name":"status","arguments":{"job_id":"job-123"}}
 	}`, "owner@example.com")
 
 	if rec.Code != http.StatusOK {
@@ -218,7 +323,7 @@ func TestAskToolUsesAuthenticatedIdentity(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"ask",
 		"method":"tools/call",
-		"params":{"name":"ikigenba_wiki_ask","arguments":{"question":"Who wrote it?"}}
+		"params":{"name":"ask","arguments":{"question":"Who wrote it?"}}
 	}`, "owner@example.com")
 
 	if rec.Code != http.StatusOK {
@@ -266,6 +371,12 @@ type capturingWiki struct {
 	ingestTags  []string
 	statusJobID string
 	status      jobStatus
+	statusErr   error
+	claims      []claim
+	claimsErr   error
+	page        page
+	pageErr     error
+	subjects    []subject
 }
 
 func (w *capturingWiki) Ingest(_ context.Context, owner, text, title string, tags []string) (string, error) {
@@ -281,7 +392,28 @@ func (w *capturingWiki) Ingest(_ context.Context, owner, text, title string, tag
 
 func (w *capturingWiki) JobStatus(_ context.Context, jobID string) (jobStatus, error) {
 	w.statusJobID = jobID
+	if w.statusErr != nil {
+		return jobStatus{}, w.statusErr
+	}
 	return w.status, nil
+}
+
+func (w *capturingWiki) Subjects(_ context.Context, _, _ string) ([]subject, error) {
+	return w.subjects, nil
+}
+
+func (w *capturingWiki) ClaimsBySubject(_ context.Context, _ string) ([]claim, error) {
+	if w.claimsErr != nil {
+		return nil, w.claimsErr
+	}
+	return w.claims, nil
+}
+
+func (w *capturingWiki) PageBySubject(_ context.Context, _ string) (page, error) {
+	if w.pageErr != nil {
+		return page{}, w.pageErr
+	}
+	return w.page, nil
 }
 
 type jobStatus struct {
@@ -292,6 +424,25 @@ type jobStatus struct {
 	FinishedAt *time.Time
 	Error      string
 	Subjects   []string
+}
+
+type subject struct {
+	ID   string
+	Name string
+	Type string
+}
+
+type claim struct {
+	ID        string
+	SubjectID string
+	Body      string
+}
+
+type page struct {
+	ID        string
+	SubjectID string
+	Title     string
+	Body      string
 }
 
 type answer struct {

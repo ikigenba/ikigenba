@@ -276,6 +276,39 @@ func (s *SubjectStore) GetByNormName(ctx context.Context, name string) (Subject,
 	return subject, err
 }
 
+func (s *SubjectStore) Get(ctx context.Context, id string) (Subject, error) {
+	var subject Subject
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, name, norm_name, type FROM subjects WHERE id = ?`, id).
+		Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type)
+	return subject, err
+}
+
+func (s *SubjectStore) List(ctx context.Context, typ, nameContains string) ([]Subject, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, name, norm_name, type
+		FROM subjects
+		WHERE (? = '' OR type = ?)
+		  AND (? = '' OR norm_name LIKE '%' || ? || '%')
+		ORDER BY name, id`,
+		strings.TrimSpace(typ), strings.TrimSpace(typ),
+		normalize(nameContains), normalize(nameContains))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var subjects []Subject
+	for rows.Next() {
+		var subject Subject
+		if err := rows.Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type); err != nil {
+			return nil, err
+		}
+		subjects = append(subjects, subject)
+	}
+	return subjects, rows.Err()
+}
+
 // ClaimStore persists extracted claims.
 type ClaimStore struct {
 	db *sql.DB
@@ -406,6 +439,18 @@ func (s *PageStore) Get(ctx context.Context, id string) (Page, error) {
 	var page Page
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, subject_id, title, body FROM pages WHERE id = ?`, id).
+		Scan(&page.ID, &page.SubjectID, &page.Title, &page.Body)
+	return page, err
+}
+
+func (s *PageStore) GetBySubject(ctx context.Context, subjectID string) (Page, error) {
+	var page Page
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, subject_id, title, body
+		FROM pages
+		WHERE subject_id = ?
+		ORDER BY id
+		LIMIT 1`, subjectID).
 		Scan(&page.ID, &page.SubjectID, &page.Title, &page.Body)
 	return page, err
 }

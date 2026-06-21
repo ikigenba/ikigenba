@@ -3,7 +3,9 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,12 +15,15 @@ import (
 
 // Handler serves a small MCP-compatible JSON-RPC endpoint for Phase 01.
 type Handler struct {
-	version string
-	service string
-	health  func(context.Context) (map[string]any, error)
-	ingest  func(context.Context, string, string, string, []string) (string, error)
-	status  func(context.Context, string) (any, error)
-	ask     func(context.Context, string, string) (any, error)
+	version  string
+	service  string
+	health   func(context.Context) (map[string]any, error)
+	ingest   func(context.Context, string, string, string, []string) (string, error)
+	status   func(context.Context, string) (any, error)
+	ask      func(context.Context, string, string) (any, error)
+	subjects func(context.Context, string, string) (any, error)
+	claims   func(context.Context, string) (any, error)
+	page     func(context.Context, string) (any, error)
 }
 
 type ingestService interface {
@@ -27,6 +32,18 @@ type ingestService interface {
 
 type jobStatusFunc[T any] interface {
 	JobStatus(ctx context.Context, jobID string) (T, error)
+}
+
+type subjectsFunc[T any] interface {
+	Subjects(ctx context.Context, typ, nameContains string) (T, error)
+}
+
+type claimsFunc[T any] interface {
+	ClaimsBySubject(ctx context.Context, subjectID string) (T, error)
+}
+
+type pageFunc[T any] interface {
+	PageBySubject(ctx context.Context, subjectID string) (T, error)
 }
 
 // Option configures optional MCP tools backed by wiki domain services.
@@ -47,6 +64,39 @@ func WithJobStatusService[T any](s jobStatusFunc[T]) Option {
 		if s != nil {
 			h.status = func(ctx context.Context, jobID string) (any, error) {
 				return s.JobStatus(ctx, jobID)
+			}
+		}
+	}
+}
+
+// WithSubjectsService enables the registry-list subjects tool.
+func WithSubjectsService[T any](s subjectsFunc[T]) Option {
+	return func(h *Handler) {
+		if s != nil {
+			h.subjects = func(ctx context.Context, typ, nameContains string) (any, error) {
+				return s.Subjects(ctx, typ, nameContains)
+			}
+		}
+	}
+}
+
+// WithClaimsService enables the claims-by-subject tool.
+func WithClaimsService[T any](s claimsFunc[T]) Option {
+	return func(h *Handler) {
+		if s != nil {
+			h.claims = func(ctx context.Context, subjectID string) (any, error) {
+				return s.ClaimsBySubject(ctx, subjectID)
+			}
+		}
+	}
+}
+
+// WithPageService enables the page-by-subject tool.
+func WithPageService[T any](s pageFunc[T]) Option {
+	return func(h *Handler) {
+		if s != nil {
+			h.page = func(ctx context.Context, subjectID string) (any, error) {
+				return s.PageBySubject(ctx, subjectID)
 			}
 		}
 	}
@@ -107,14 +157,22 @@ func (h *Handler) handleToolCall(ctx context.Context, w http.ResponseWriter, req
 		return
 	}
 	switch params.Name {
-	case "ikigenba_wiki_health":
-		h.handleHealthCall(ctx, w, req)
-	case "ikigenba_wiki_ingest_text":
+	case "ingest":
 		h.handleIngestCall(ctx, w, req, params.Arguments)
-	case "ikigenba_wiki_job_status":
+	case "status":
 		h.handleJobStatusCall(ctx, w, req, params.Arguments)
-	case "ikigenba_wiki_ask":
+	case "ask":
 		h.handleAskCall(ctx, w, req, params.Arguments)
+	case "subjects":
+		h.handleSubjectsCall(ctx, w, req, params.Arguments)
+	case "claims":
+		h.handleClaimsCall(ctx, w, req, params.Arguments)
+	case "page":
+		h.handlePageCall(ctx, w, req, params.Arguments)
+	case "health":
+		h.handleHealthCall(ctx, w, req)
+	case "reflection":
+		h.handleReflectionCall(w, req)
 	default:
 		writeResult(w, req.ID, toolError("unknown tool"))
 		return
@@ -188,6 +246,10 @@ func (h *Handler) handleJobStatusCall(ctx context.Context, w http.ResponseWriter
 		return
 	}
 	status, err := h.status(ctx, args.JobID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSONTextResult(w, req.ID, notFound("job", args.JobID))
+		return
+	}
 	if err != nil {
 		writeResult(w, req.ID, toolError(err.Error()))
 		return
@@ -224,8 +286,92 @@ func (h *Handler) handleAskCall(ctx context.Context, w http.ResponseWriter, req 
 	writeJSONTextResult(w, req.ID, answer)
 }
 
+func (h *Handler) handleSubjectsCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+	if h.subjects == nil {
+		writeResult(w, req.ID, toolError("subjects tool is not configured"))
+		return
+	}
+	var args struct {
+		Type string `json:"type"`
+		Name string `json:"name"`
+	}
+	if err := decodeArgs(raw, &args); err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	subjects, err := h.subjects(ctx, args.Type, args.Name)
+	if err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	writeJSONTextResult(w, req.ID, subjects)
+}
+
+func (h *Handler) handleClaimsCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+	if h.claims == nil {
+		writeResult(w, req.ID, toolError("claims tool is not configured"))
+		return
+	}
+	var args struct {
+		SubjectID string `json:"subject_id"`
+	}
+	if err := decodeArgs(raw, &args); err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	if strings.TrimSpace(args.SubjectID) == "" {
+		writeResult(w, req.ID, toolError("subject_id is required"))
+		return
+	}
+	claims, err := h.claims(ctx, args.SubjectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSONTextResult(w, req.ID, notFound("subject", args.SubjectID))
+		return
+	}
+	if err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	writeJSONTextResult(w, req.ID, claims)
+}
+
+func (h *Handler) handlePageCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+	if h.page == nil {
+		writeResult(w, req.ID, toolError("page tool is not configured"))
+		return
+	}
+	var args struct {
+		SubjectID string `json:"subject_id"`
+	}
+	if err := decodeArgs(raw, &args); err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	if strings.TrimSpace(args.SubjectID) == "" {
+		writeResult(w, req.ID, toolError("subject_id is required"))
+		return
+	}
+	page, err := h.page(ctx, args.SubjectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSONTextResult(w, req.ID, notFound("subject", args.SubjectID))
+		return
+	}
+	if err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	writeJSONTextResult(w, req.ID, page)
+}
+
+func (h *Handler) handleReflectionCall(w http.ResponseWriter, req request) {
+	writeJSONTextResult(w, req.ID, map[string][]string{
+		"publishes":  {},
+		"subscribes": {},
+	})
+}
+
 func (h *Handler) tools() []map[string]any {
-	tools := []map[string]any{healthTool()}
+	tools := []map[string]any{healthTool(), reflectionTool()}
 	if h.ingest != nil {
 		tools = append(tools, ingestTool())
 	}
@@ -235,13 +381,34 @@ func (h *Handler) tools() []map[string]any {
 	if h.ask != nil {
 		tools = append(tools, askTool())
 	}
+	if h.subjects != nil {
+		tools = append(tools, subjectsTool())
+	}
+	if h.claims != nil {
+		tools = append(tools, claimsTool())
+	}
+	if h.page != nil {
+		tools = append(tools, pageTool())
+	}
 	return tools
 }
 
 func healthTool() map[string]any {
 	return map[string]any{
-		"name":        "ikigenba_wiki_health",
+		"name":        "health",
 		"description": "Report wiki service health.",
+		"inputSchema": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties":           map[string]any{},
+		},
+	}
+}
+
+func reflectionTool() map[string]any {
+	return map[string]any{
+		"name":        "reflection",
+		"description": "Report wiki service event-plane publications and subscriptions.",
 		"inputSchema": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -252,7 +419,7 @@ func healthTool() map[string]any {
 
 func ingestTool() map[string]any {
 	return map[string]any{
-		"name":        "ikigenba_wiki_ingest_text",
+		"name":        "ingest",
 		"description": "Queue source text for wiki ingestion.",
 		"inputSchema": objectSchema(map[string]any{
 			"text":  map[string]any{"type": "string"},
@@ -264,7 +431,7 @@ func ingestTool() map[string]any {
 
 func jobStatusTool() map[string]any {
 	return map[string]any{
-		"name":        "ikigenba_wiki_job_status",
+		"name":        "status",
 		"description": "Return the status of a wiki ingest job.",
 		"inputSchema": objectSchema(map[string]any{
 			"job_id": map[string]any{"type": "string"},
@@ -274,11 +441,42 @@ func jobStatusTool() map[string]any {
 
 func askTool() map[string]any {
 	return map[string]any{
-		"name":        "ikigenba_wiki_ask",
+		"name":        "ask",
 		"description": "Answer a question using the authenticated owner's wiki.",
 		"inputSchema": objectSchema(map[string]any{
 			"question": map[string]any{"type": "string"},
 		}, []string{"question"}),
+	}
+}
+
+func subjectsTool() map[string]any {
+	return map[string]any{
+		"name":        "subjects",
+		"description": "List wiki registry subjects, optionally filtered by type and name substring.",
+		"inputSchema": objectSchema(map[string]any{
+			"type": map[string]any{"type": "string"},
+			"name": map[string]any{"type": "string"},
+		}, nil),
+	}
+}
+
+func claimsTool() map[string]any {
+	return map[string]any{
+		"name":        "claims",
+		"description": "Return claims attached to a wiki subject.",
+		"inputSchema": objectSchema(map[string]any{
+			"subject_id": map[string]any{"type": "string"},
+		}, []string{"subject_id"}),
+	}
+}
+
+func pageTool() map[string]any {
+	return map[string]any{
+		"name":        "page",
+		"description": "Return the compiled wiki page for a subject.",
+		"inputSchema": objectSchema(map[string]any{
+			"subject_id": map[string]any{"type": "string"},
+		}, []string{"subject_id"}),
 	}
 }
 
@@ -288,6 +486,14 @@ func objectSchema(properties map[string]any, required []string) map[string]any {
 		"additionalProperties": false,
 		"properties":           properties,
 		"required":             required,
+	}
+}
+
+func notFound(kind, id string) map[string]any {
+	return map[string]any{
+		"found": false,
+		"kind":  kind,
+		"id":    id,
 	}
 }
 

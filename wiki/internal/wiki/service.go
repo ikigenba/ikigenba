@@ -92,6 +92,33 @@ func (s *Service) JobStatus(ctx context.Context, jobID string) (JobStatus, error
 	return s.jobs.Status(ctx, jobID)
 }
 
+// Subjects lists registry subjects, optionally filtered by type and name substring.
+func (s *Service) Subjects(ctx context.Context, typ, nameContains string) ([]Subject, error) {
+	if s == nil {
+		return nil, fmt.Errorf("wiki: nil service")
+	}
+	return s.subjects.List(ctx, typ, nameContains)
+}
+
+// ClaimsBySubject returns the stored claims for an existing subject.
+func (s *Service) ClaimsBySubject(ctx context.Context, subjectID string) ([]Claim, error) {
+	if s == nil {
+		return nil, fmt.Errorf("wiki: nil service")
+	}
+	if _, err := s.subjects.Get(ctx, strings.TrimSpace(subjectID)); err != nil {
+		return nil, err
+	}
+	return s.claims.ListBySubject(ctx, strings.TrimSpace(subjectID))
+}
+
+// PageBySubject returns the compiled page for an existing subject.
+func (s *Service) PageBySubject(ctx context.Context, subjectID string) (Page, error) {
+	if s == nil {
+		return Page{}, fmt.Errorf("wiki: nil service")
+	}
+	return s.pages.GetBySubject(ctx, strings.TrimSpace(subjectID))
+}
+
 // ProcessNext integrates one pending job, if any.
 func (s *Service) ProcessNext(ctx context.Context) (bool, error) {
 	if s == nil {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"appkit"
 	agentkit "github.com/ikigenba/agentkit"
@@ -77,8 +78,15 @@ func Spec() appkit.Spec {
 			if rt.DB() == nil {
 				return fmt.Errorf("wiki: no DB handle on router")
 			}
+			svc := NewService(rt.DB(), nil, nil, time.Now)
 			rt.Handle("POST /mcp", rt.RequireIdentity(
-				mcp.NewHandler(rt.Version(), rt.Service(), rt.Health())))
+				mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
+					mcp.WithIngestService(svc),
+					mcp.WithJobStatusService(svc),
+					mcp.WithSubjectsService(svc),
+					mcp.WithClaimsService(svc),
+					mcp.WithPageService(svc),
+				)))
 			return nil
 		},
 		Workers: []func(ctx context.Context) error{
