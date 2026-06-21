@@ -269,10 +269,11 @@ func TestServiceCreateAndUpdatePreserveValidatedProvider(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-test")
 	svc, _, _, _ := newTestService(t)
 	ctx := context.Background()
+	temp := 0.7
 
 	created, err := svc.Create(ctx, ownerA, CreateInput{
 		UserPrompt: "p",
-		Config:     Config{Provider: "google", Model: testGoogleModel},
+		Config:     Config{Provider: "google", Model: testGoogleModel, Temperature: &temp},
 	})
 	if err != nil {
 		t.Fatalf("Create google config: %v", err)
@@ -290,6 +291,20 @@ func TestServiceCreateAndUpdatePreserveValidatedProvider(t *testing.T) {
 	}
 	if updated.Config.Provider != "openai" || updated.Config.Model != testOpenAIModel {
 		t.Fatalf("updated config = %+v, want openai/%s", updated.Config, testOpenAIModel)
+	}
+	got, err := svc.Get(ctx, ownerA, created.ID)
+	if err != nil {
+		t.Fatalf("Get updated prompt: %v", err)
+	}
+	if got.Config.Temperature != nil {
+		t.Fatalf("updated config retained omitted temperature: %+v", got.Config)
+	}
+	b, err := json.Marshal(got.Config)
+	if err != nil {
+		t.Fatalf("Marshal updated config: %v", err)
+	}
+	if strings.Contains(string(b), "temperature") {
+		t.Fatalf("updated config JSON retained omitted temperature: %s", b)
 	}
 }
 

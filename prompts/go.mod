@@ -6,6 +6,7 @@ require (
 	agentkit v0.0.0
 	appkit v0.0.0
 	eventplane v0.0.0
+	github.com/ikigenba/agentkit v0.1.0
 	modernc.org/sqlite v1.50.1
 )
 
