@@ -2,6 +2,7 @@ package compile
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -81,6 +82,9 @@ func TestDefaultCallSiteUsesDeterministicReasoningOffSettings(t *testing.T) {
 	}
 	if site.Temperature == nil || *site.Temperature != 0 {
 		t.Fatalf("temperature = %#v, want 0", site.Temperature)
+	}
+	if !reflect.DeepEqual(site.Reasoning, llm.DisableReasoning()) {
+		t.Fatalf("reasoning = %#v, want disabled", site.Reasoning)
 	}
 
 	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics operates a Tulsa research lab."}`}}
