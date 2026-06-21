@@ -59,6 +59,7 @@ func renderPrompt(h DocumentHeader, text string) string {
 	b.WriteString("Extract subjects and claims from the source text.\n")
 	b.WriteString("Return JSON with shape {\"subjects\":[{\"type\":\"entity|event|concept\",\"kind\":\"...\",\"name\":\"...\",\"occurred_at\":\"...\",\"claims\":[\"...\"]}]}.\n")
 	b.WriteString("Use only the source text and document header; do not infer unstated facts.\n")
+	b.WriteString("occurred_at is required for events, optional for entities and concepts, and must be an ISO-8601 prefix (YYYY, YYYY-MM, or YYYY-MM-DD) when present.\n")
 	b.WriteString("Claims must be short, self-contained prose statements with no pronouns.\n\n")
 	b.WriteString("Document header:\n")
 	writeHeaderLine(&b, "source", h.Source)

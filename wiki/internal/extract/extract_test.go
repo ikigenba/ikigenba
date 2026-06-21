@@ -55,6 +55,7 @@ func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 		"title: Tulsa robotics notes",
 		"tags: robotics, tulsa",
 		"received on: 2026-06-20",
+		"occurred_at is required for events, optional for entities and concepts",
 		"Acme Robotics opened a research lab in Tulsa.",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -136,6 +137,50 @@ func TestExtractRetainsNonEventOccurredAt(t *testing.T) {
 	}
 	if got[0].Type != "entity" || got[0].OccurredAt != "2026-06" {
 		t.Fatalf("subject = %#v, want entity occurred_at retained exactly", got[0])
+	}
+}
+
+func TestExtractGaryGygaxDocumentAcceptsEntityYears(t *testing.T) {
+	// R-XJBY-H8JZ
+	prov := &scriptedProvider{responses: []string{`{"subjects":[
+		{
+			"type":"entity",
+			"kind":"person",
+			"name":"Gary Gygax",
+			"occurred_at":"1938",
+			"claims":["Gary Gygax was born in 1938."]
+		},
+		{
+			"type":"entity",
+			"kind":"company",
+			"name":"TSR",
+			"occurred_at":"1973",
+			"claims":["TSR was founded in 1973."]
+		},
+		{
+			"type":"entity",
+			"kind":"game",
+			"name":"Dungeons & Dragons",
+			"occurred_at":"1974",
+			"claims":["Dungeons & Dragons was first published in 1974."]
+		}
+	]}`}}
+	extractor := New(llm.New(prov, nil), llm.CallSite{Model: "extract-model"})
+
+	got, err := extractor.Extract(context.Background(), validHeader(), "Gary Gygax was born in 1938. TSR was founded in 1973. Dungeons & Dragons was first published in 1974.")
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("subjects = %#v, want three extracted Gary Gygax subjects", got)
+	}
+	for _, subject := range got {
+		if subject.Type != "entity" {
+			t.Fatalf("subject = %#v, want only entities", subject)
+		}
+		if subject.OccurredAt == "" || !isISOPrefix(subject.OccurredAt) {
+			t.Fatalf("subject = %#v, want entity year retained as an ISO prefix", subject)
+		}
 	}
 }
 
