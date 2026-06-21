@@ -75,9 +75,58 @@ func TestConfigJSONCarriesRetryLoopAndProviderTuning(t *testing.T) {
 	assertJSONField(t, got, "base_url", "https://example.test/zai")
 }
 
+func TestConfigJSONOmitsUnsetOptionalFieldsAndPreservesExplicitValues(t *testing.T) {
+	// R-JTBA-4RDB
+	// R-JUJ6-IJ40
+	// R-JZES-1M2S
+	temp := 0.0
+	topP := 0.0
+	budget := 0
+	thinking := false
+	cfg := Config{
+		Provider:       "anthropic",
+		Model:          "claude-sonnet-4-6",
+		Temperature:    &temp,
+		TopP:           &topP,
+		ThinkingBudget: &budget,
+		Thinking:       &thinking,
+	}
+
+	var got map[string]any
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	assertJSONField(t, got, "temperature", 0.0)
+	assertJSONField(t, got, "top_p", 0.0)
+	assertJSONField(t, got, "thinking_budget", float64(0))
+	assertJSONField(t, got, "thinking", false)
+	assertJSONFieldAbsent(t, got, "max_tokens")
+	assertJSONFieldAbsent(t, got, "effort")
+	assertJSONFieldAbsent(t, got, "thinking_level")
+	assertJSONFieldAbsent(t, got, "max_attempts")
+	assertJSONFieldAbsent(t, got, "base_delay")
+	assertJSONFieldAbsent(t, got, "max_delay")
+	assertJSONFieldAbsent(t, got, "max_elapsed")
+	assertJSONFieldAbsent(t, got, "ignore_retry_after")
+	assertJSONFieldAbsent(t, got, "tool_loop_limit")
+	assertJSONFieldAbsent(t, got, "base_url")
+}
+
 func assertJSONField(t *testing.T, got map[string]any, key string, want any) {
 	t.Helper()
 	if got[key] != want {
 		t.Fatalf("%s = %#v, want %#v (json: %#v)", key, got[key], want, got)
+	}
+}
+
+func assertJSONFieldAbsent(t *testing.T, got map[string]any, key string) {
+	t.Helper()
+	if _, ok := got[key]; ok {
+		t.Fatalf("%s present in json: %#v", key, got)
 	}
 }
