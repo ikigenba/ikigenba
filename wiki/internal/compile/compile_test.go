@@ -174,7 +174,8 @@ func TestCompileDeterministicallyEnforcesRuneCap(t *testing.T) {
 	// R-FWOT-NRHN
 	body := strings.Repeat("é", PageCharCap+7)
 	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"` + body + `"}`}}
-	compiler := New(llm.New(prov, nil), llm.CallSite{Model: "compile-model"}, nil)
+	site := DefaultCallSite("compile-model")
+	compiler := New(llm.New(prov, nil), site, nil)
 	compiler.maxTighten = 0
 
 	_, got, err := compiler.Compile(context.Background(), acmeSubject(), acmeClaims())
@@ -186,6 +187,16 @@ func TestCompileDeterministicallyEnforcesRuneCap(t *testing.T) {
 	}
 	if got != strings.Repeat("é", PageCharCap) {
 		t.Fatalf("body was not truncated on rune boundaries")
+	}
+	if len(prov.requests) != 1 {
+		t.Fatalf("requests len = %d, want 1", len(prov.requests))
+	}
+	req := prov.requests[0]
+	if req.Model != site.Model {
+		t.Fatalf("request model = %q, want %q", req.Model, site.Model)
+	}
+	if req.Gen.Temperature == nil || *req.Gen.Temperature != 0 || !req.Gen.Reasoning.Disabled() {
+		t.Fatalf("gen settings = %#v, want default temperature 0 and disabled reasoning", req.Gen)
 	}
 }
 
