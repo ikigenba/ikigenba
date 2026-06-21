@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -137,7 +138,10 @@ func TestBuildCompilerUsesDefaultCompileCallSite(t *testing.T) {
 	if wantSite.Temperature == nil {
 		t.Fatal("compile.DefaultCallSite temperature is nil, want deterministic temperature")
 	}
-	if req.Gen.Temperature == nil || *req.Gen.Temperature != *wantSite.Temperature || !req.Gen.Reasoning.Disabled() {
+	if !reflect.DeepEqual(wantSite.Reasoning, llm.DisableReasoning()) {
+		t.Fatalf("compile.DefaultCallSite reasoning = %#v, want llm.DisableReasoning()", wantSite.Reasoning)
+	}
+	if req.Gen.Temperature == nil || *req.Gen.Temperature != *wantSite.Temperature || !reflect.DeepEqual(req.Gen.Reasoning, agentkit.DisableReasoning()) {
 		t.Fatalf("gen settings = %#v, want compile.DefaultCallSite temperature %v and disabled reasoning", req.Gen, *wantSite.Temperature)
 	}
 }
