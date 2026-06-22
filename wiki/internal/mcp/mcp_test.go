@@ -412,6 +412,79 @@ func TestAskToolUsesAuthenticatedIdentity(t *testing.T) {
 	}
 }
 
+func TestAskToolUsesPhase17InputAndResultShape(t *testing.T) {
+	// R-6A8D-0RK9
+	asker := &capturingAsker{answer: answer{
+		Found: true,
+		Text:  "Ada wrote the note.",
+		Citations: []citation{{
+			Subject: "subject-ada",
+			Title:   "Ada",
+		}},
+	}}
+	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithAskFunc(asker.Ask)))
+	listRec := callMCP(t, h, `{"jsonrpc":"2.0","id":"list","method":"tools/list"}`, "owner@example.com")
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("tools/list status = %d, want 200", listRec.Code)
+	}
+	var list struct {
+		Result struct {
+			Tools []struct {
+				Name        string         `json:"name"`
+				InputSchema map[string]any `json:"inputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	decodeJSON(t, listRec.Body.Bytes(), &list)
+	foundAskSchema := false
+	for _, tool := range list.Result.Tools {
+		if tool.Name != "ask" {
+			continue
+		}
+		foundAskSchema = true
+		required, ok := tool.InputSchema["required"].([]any)
+		if !ok || len(required) != 1 || required[0] != "question" {
+			t.Fatalf("ask required = %#v, want [question]", tool.InputSchema["required"])
+		}
+		properties, ok := tool.InputSchema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("ask properties = %T, want object", tool.InputSchema["properties"])
+		}
+		question, ok := properties["question"].(map[string]any)
+		if !ok || question["type"] != "string" {
+			t.Fatalf("ask question schema = %#v, want string property", properties["question"])
+		}
+	}
+	if !foundAskSchema {
+		t.Fatal("tools/list missing ask schema")
+	}
+
+	rec := callMCP(t, h, `{
+		"jsonrpc":"2.0",
+		"id":"ask",
+		"method":"tools/call",
+		"params":{"name":"ask","arguments":{"question":"Who wrote it?"}}
+	}`, "owner@example.com")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ask status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Found     bool   `json:"found"`
+		Answer    string `json:"answer"`
+		Citations []struct {
+			Subject string `json:"subject"`
+			Title   string `json:"title"`
+		} `json:"citations"`
+	}
+	decodeToolText(t, rec.Body.Bytes(), &body)
+	if !body.Found || body.Answer != "Ada wrote the note." {
+		t.Fatalf("ask body = %#v, want found answer text", body)
+	}
+	if len(body.Citations) != 1 || body.Citations[0].Subject != "subject-ada" || body.Citations[0].Title != "Ada" {
+		t.Fatalf("ask citations = %#v, want subject/title citation", body.Citations)
+	}
+}
+
 func TestMCPToolsAreBehindRequireIdentity(t *testing.T) {
 	// R-MZLQ-34IK
 	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithIngestService(&capturingWiki{})))
