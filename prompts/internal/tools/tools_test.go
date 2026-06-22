@@ -82,6 +82,38 @@ func TestAllThreadsSandboxRootPerCall(t *testing.T) {
 		t.Fatalf("read from rootB = %q, want bravo", gotB)
 	}
 
+	callTool(t, ctx, findTool(t, toolsA, nameEdit), map[string]any{
+		"file_path":   "same.txt",
+		"old_string":  "alpha",
+		"new_string":  "charlie",
+		"replace_all": false,
+	})
+	assertFileContent(t, filepath.Join(rootA, "same.txt"), "charlie")
+	assertFileContent(t, filepath.Join(rootB, "same.txt"), "bravo")
+
+	callTool(t, ctx, findTool(t, toolsA, nameWrite), map[string]any{
+		"file_path": "nested/match.txt",
+		"content":   "needle\n",
+	})
+	gotGlob := mustStringSlice(t, callTool(t, ctx, findTool(t, toolsA, nameGlob), map[string]any{
+		"path":    "nested",
+		"pattern": "*.txt",
+	}))
+	if !reflect.DeepEqual(gotGlob, []string{"match.txt"}) {
+		t.Fatalf("Glob in rootA nested dir = %v, want [match.txt]", gotGlob)
+	}
+	gotGrep := mustStringSlice(t, callTool(t, ctx, findTool(t, toolsA, nameGrep), map[string]any{
+		"path":    "nested",
+		"glob":    "*.txt",
+		"pattern": "needle",
+	}))
+	if !reflect.DeepEqual(gotGrep, []string{"match.txt:1:needle"}) {
+		t.Fatalf("Grep in rootA nested dir = %v, want [match.txt:1:needle]", gotGrep)
+	}
+	if _, err := os.Stat(filepath.Join(rootB, "nested", "match.txt")); !os.IsNotExist(err) {
+		t.Fatalf("rootA nested write appeared in rootB: %v", err)
+	}
+
 	pwd := strings.TrimSpace(callTool(t, ctx, findTool(t, toolsA, nameBash), map[string]any{"command": "pwd"}))
 	if pwd != filepath.Clean(rootA) {
 		t.Fatalf("Bash pwd = %q, want sandbox root %q", pwd, filepath.Clean(rootA))
@@ -140,6 +172,15 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 		t.Fatalf("json.Marshal: %v", err)
 	}
 	return b
+}
+
+func mustStringSlice(t *testing.T, raw string) []string {
+	t.Helper()
+	var got []string
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("json.Unmarshal(%q): %v", raw, err)
+	}
+	return got
 }
 
 func assertFileContent(t *testing.T, path, want string) {
