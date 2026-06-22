@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"wiki/internal/extract"
+	"wiki/internal/page"
 )
 
 func TestIngestReturnsJobIDFromPendingInsertWithoutExtraction(t *testing.T) {
@@ -487,7 +488,7 @@ func TestRerunReplacesJobClaimsAndRecompilesPage(t *testing.T) {
 		t.Fatalf("second ProcessNext = %v/%v, want true/nil", processed, err)
 	}
 
-	claims, err := NewClaimStore(conn).ListBySubject(ctx, "subject-1")
+	claims, _, err := NewClaimStore(conn).ListBySubject(ctx, "subject-1", page.Params{})
 	if err != nil {
 		t.Fatalf("ListBySubject: %v", err)
 	}
@@ -558,7 +559,7 @@ func TestRerunRefreshesSubjectsDroppedByNewExtraction(t *testing.T) {
 		t.Fatalf("rerun ProcessNext = %v/%v, want true/nil", processed, err)
 	}
 
-	betaClaims, err := NewClaimStore(conn).ListBySubject(ctx, "subject-beta")
+	betaClaims, _, err := NewClaimStore(conn).ListBySubject(ctx, "subject-beta", page.Params{})
 	if err != nil {
 		t.Fatalf("ListBySubject beta: %v", err)
 	}

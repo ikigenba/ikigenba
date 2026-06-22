@@ -9,6 +9,7 @@ import (
 
 	"wiki/internal/db"
 	"wiki/internal/llm"
+	"wiki/internal/page"
 )
 
 func TestNormalizePipeline(t *testing.T) {
@@ -140,7 +141,7 @@ func TestDomainStoresPersistPhaseOneModel(t *testing.T) {
 		t.Fatalf("subject = %+v, want subject-1 with normalized name cafe noir", subject)
 	}
 
-	gotClaims, err := claims.ListBySubject(ctx, "subject-1")
+	gotClaims, _, err := claims.ListBySubject(ctx, "subject-1", page.Params{})
 	if err != nil {
 		t.Fatalf("ListBySubject: %v", err)
 	}
@@ -214,6 +215,179 @@ func TestLLMCallStorePersistsProviderCallFootprint(t *testing.T) {
 	got.EndedAt = parseStoredTime(endedRaw)
 	if got != rec {
 		t.Fatalf("stored record = %+v, want %+v", got, rec)
+	}
+}
+
+func TestSubjectStoreCursorPaginationWalksRowsExactlyOnceInKeyOrder(t *testing.T) {
+	// R-17C5-VP2I
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subjects := NewSubjectStore(conn)
+	for _, subject := range []Subject{
+		{ID: "subject-2", Name: "Alpha", Type: "entity"},
+		{ID: "subject-1", Name: "Alpha", NormName: "alpha one", Type: "entity"},
+		{ID: "subject-3", Name: "Beta", Type: "event"},
+		{ID: "subject-4", Name: "Gamma", Type: "concept"},
+		{ID: "subject-5", Name: "Omega", Type: "entity"},
+	} {
+		if err := subjects.Save(ctx, subject); err != nil {
+			t.Fatalf("Save %s: %v", subject.ID, err)
+		}
+	}
+
+	var got []string
+	params := page.Params{Limit: 2}
+	for pageNum := 0; ; pageNum++ {
+		batch, next, err := subjects.List(ctx, "", "", params)
+		if err != nil {
+			t.Fatalf("List page %d: %v", pageNum, err)
+		}
+		for _, subject := range batch {
+			got = append(got, subject.ID)
+		}
+		switch pageNum {
+		case 0, 1:
+			if next == "" {
+				t.Fatalf("page %d next cursor is empty before final page", pageNum)
+			}
+		case 2:
+			if next != "" {
+				t.Fatalf("final page next cursor = %q, want empty", next)
+			}
+		}
+		if next == "" {
+			break
+		}
+		params.Cursor = next
+	}
+
+	want := []string{"subject-1", "subject-2", "subject-3", "subject-4", "subject-5"}
+	if len(got) != len(want) {
+		t.Fatalf("walked ids = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("walked ids = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestListFiltersApplyBeforePaging(t *testing.T) {
+	// R-18K2-9GT7
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	t1 := time.Date(2026, 6, 22, 8, 0, 0, 0, time.UTC)
+	t2 := t1.Add(time.Minute)
+	t3 := t2.Add(time.Minute)
+	t4 := t3.Add(time.Minute)
+	jobs := NewJobStore(conn)
+	for _, job := range []Job{
+		{ID: "job-pending", Status: JobPending, ReceivedAt: t1},
+		{ID: "job-done-1", Status: JobDone, ReceivedAt: t2},
+		{ID: "job-done-2", Status: JobDone, ReceivedAt: t3},
+		{ID: "job-late", Status: JobDone, ReceivedAt: t4},
+	} {
+		if err := jobs.InsertIngest(ctx, job); err != nil {
+			t.Fatalf("InsertIngest %s: %v", job.ID, err)
+		}
+	}
+	gotJobs, next, err := jobs.ListJobs(ctx, JobFilter{Status: JobDone, Since: t2, Until: t3}, page.Params{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	}
+	if next != "" || len(gotJobs) != 2 || gotJobs[0].ID != "job-done-1" || gotJobs[1].ID != "job-done-2" {
+		t.Fatalf("ListJobs = %+v, next %q; want two filtered done jobs in time range", gotJobs, next)
+	}
+
+	subjects := NewSubjectStore(conn)
+	for _, subject := range []Subject{
+		{ID: "subject-robot", Name: "Acme Robot Lab", Type: "entity"},
+		{ID: "subject-event", Name: "Acme Robot Launch", Type: "event"},
+		{ID: "subject-other", Name: "Zed Archives", Type: "entity"},
+	} {
+		if err := subjects.Save(ctx, subject); err != nil {
+			t.Fatalf("Save subject %s: %v", subject.ID, err)
+		}
+	}
+	gotSubjects, next, err := subjects.List(ctx, "entity", "robot", page.Params{Limit: 1})
+	if err != nil {
+		t.Fatalf("Subject List: %v", err)
+	}
+	if next != "" || len(gotSubjects) != 1 || gotSubjects[0].ID != "subject-robot" {
+		t.Fatalf("Subject List = %+v, next %q; want only matching entity robot subject", gotSubjects, next)
+	}
+
+	claims := NewClaimStore(conn)
+	for _, claim := range []Claim{
+		{ID: "claim-1", SubjectID: "subject-robot", JobID: "job-done-1", Body: "Robot lab opened."},
+		{ID: "claim-2", SubjectID: "subject-event", JobID: "job-done-1", Body: "Robot launch happened."},
+		{ID: "claim-3", SubjectID: "subject-robot", JobID: "job-done-2", Body: "Robot lab expanded."},
+	} {
+		if err := claims.Save(ctx, claim); err != nil {
+			t.Fatalf("Save claim %s: %v", claim.ID, err)
+		}
+	}
+	var gotClaimIDs []string
+	claimParams := page.Params{Limit: 1}
+	for {
+		gotClaims, next, err := claims.ListBySubject(ctx, "subject-robot", claimParams)
+		if err != nil {
+			t.Fatalf("ListBySubject: %v", err)
+		}
+		for _, claim := range gotClaims {
+			gotClaimIDs = append(gotClaimIDs, claim.ID)
+		}
+		if next == "" {
+			break
+		}
+		claimParams.Cursor = next
+	}
+	if len(gotClaimIDs) != 2 || gotClaimIDs[0] != "claim-1" || gotClaimIDs[1] != "claim-3" {
+		t.Fatalf("ListBySubject walked %v, want only subject-robot claims", gotClaimIDs)
+	}
+
+	calls := NewLLMCallStore(conn)
+	for _, rec := range []CallRecord{
+		{ID: "call-1", Stage: "compile", JobID: "job-done-1", Attempt: 1, Provider: "test", Model: "m", StartedAt: t1, EndedAt: t1},
+		{ID: "call-2", Stage: "extract", JobID: "job-done-1", Attempt: 1, Provider: "test", Model: "m", StartedAt: t2, EndedAt: t2},
+		{ID: "call-3", Stage: "extract", JobID: "job-done-2", Attempt: 1, Provider: "test", Model: "m", StartedAt: t3, EndedAt: t3},
+		{ID: "call-4", Stage: "extract", JobID: "job-done-1", Attempt: 1, Provider: "test", Model: "m", StartedAt: t4, EndedAt: t4},
+	} {
+		if err := calls.Record(ctx, rec); err != nil {
+			t.Fatalf("Record %s: %v", rec.ID, err)
+		}
+	}
+	gotCalls, next, err := calls.List(ctx, LLMCallFilter{JobID: "job-done-1", Stage: "extract", Since: t2, Until: t3}, page.Params{Limit: 10})
+	if err != nil {
+		t.Fatalf("LLMCall List: %v", err)
+	}
+	if next != "" || len(gotCalls) != 1 || gotCalls[0].ID != "call-2" {
+		t.Fatalf("LLMCall List = %+v, next %q; want only job/stage/time filtered call-2", gotCalls, next)
+	}
+}
+
+func TestListMethodsRejectUndecodableCursor(t *testing.T) {
+	// R-1DFN-SJRZ
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	params := page.Params{Limit: 1, Cursor: "not a cursor"}
+	if _, _, err := NewJobStore(conn).ListJobs(ctx, JobFilter{}, params); !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("ListJobs err = %v, want ErrInvalidCursor", err)
+	}
+	if _, _, err := NewSubjectStore(conn).List(ctx, "", "", params); !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("Subject List err = %v, want ErrInvalidCursor", err)
+	}
+	if _, _, err := NewClaimStore(conn).ListBySubject(ctx, "subject-1", params); !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("ListBySubject err = %v, want ErrInvalidCursor", err)
+	}
+	if _, _, err := NewLLMCallStore(conn).List(ctx, LLMCallFilter{}, params); !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("LLMCall List err = %v, want ErrInvalidCursor", err)
 	}
 }
 

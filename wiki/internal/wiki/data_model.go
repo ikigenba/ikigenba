@@ -12,6 +12,8 @@ import (
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
+
+	"wiki/internal/page"
 )
 
 // Subject is a canonical entity, event, or concept in the wiki.
@@ -26,6 +28,7 @@ var (
 	ErrSubjectNotFound = errors.New("wiki: subject not found")
 	ErrAmbiguousPath   = errors.New("wiki: ambiguous subject path")
 	ErrJobNotTerminal  = errors.New("wiki: job is not terminal")
+	ErrInvalidCursor   = errors.New("wiki: invalid cursor")
 )
 
 // Path is the public type/slug identifier for a subject.
@@ -340,6 +343,57 @@ func (s *JobStore) Status(ctx context.Context, id string) (JobStatus, error) {
 	}, nil
 }
 
+type JobFilter struct {
+	Status       string
+	Since, Until time.Time
+}
+
+func (s *JobStore) ListJobs(ctx context.Context, f JobFilter, p page.Params) ([]Job, string, error) {
+	cursor, err := decodeCursor(p.Cursor, 2)
+	if err != nil {
+		return nil, "", err
+	}
+	limit := p.ResolvedLimit()
+	status := strings.TrimSpace(f.Status)
+	since := formatTime(f.Since)
+	until := formatTime(f.Until)
+	args := []any{status, status, since, since, until, until}
+	query := `
+		SELECT id, owner, source_text, title, tags, source_hash, status,
+		       received_at, started_at, finished_at, error
+		FROM jobs
+		WHERE (? = '' OR status = ?)
+		  AND (? = '' OR received_at >= ?)
+		  AND (? = '' OR received_at <= ?)`
+	if len(cursor) > 0 {
+		query += `
+		  AND (received_at > ? OR (received_at = ? AND id > ?))`
+		args = append(args, cursor[0], cursor[0], cursor[1])
+	}
+	query += `
+		ORDER BY received_at, id
+		LIMIT ?`
+	args = append(args, limit+1)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var jobs []Job
+	for rows.Next() {
+		job, err := scanJob(rows)
+		if err != nil {
+			return nil, "", err
+		}
+		jobs = append(jobs, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	return pageJobs(jobs, limit), nextJobCursor(jobs, limit), nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -458,17 +512,32 @@ func (s *SubjectStore) GetByPath(ctx context.Context, path string) (Subject, err
 	}
 }
 
-func (s *SubjectStore) List(ctx context.Context, typ, nameContains string) ([]Subject, error) {
-	rows, err := s.db.QueryContext(ctx, `
+func (s *SubjectStore) List(ctx context.Context, typ, nameContains string, p page.Params) ([]Subject, string, error) {
+	cursor, err := decodeCursor(p.Cursor, 2)
+	if err != nil {
+		return nil, "", err
+	}
+	limit := p.ResolvedLimit()
+	typ = strings.TrimSpace(typ)
+	nameContains = normalize(nameContains)
+	args := []any{typ, typ, nameContains, nameContains}
+	query := `
 		SELECT id, name, norm_name, type
 		FROM subjects
 		WHERE (? = '' OR type = ?)
-		  AND (? = '' OR norm_name LIKE '%' || ? || '%')
-		ORDER BY name, id`,
-		strings.TrimSpace(typ), strings.TrimSpace(typ),
-		normalize(nameContains), normalize(nameContains))
+		  AND (? = '' OR norm_name LIKE '%' || ? || '%')`
+	if len(cursor) > 0 {
+		query += `
+		  AND (name > ? OR (name = ? AND id > ?))`
+		args = append(args, cursor[0], cursor[0], cursor[1])
+	}
+	query += `
+		ORDER BY name, id
+		LIMIT ?`
+	args = append(args, limit+1)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 
@@ -476,11 +545,14 @@ func (s *SubjectStore) List(ctx context.Context, typ, nameContains string) ([]Su
 	for rows.Next() {
 		var subject Subject
 		if err := rows.Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		subjects = append(subjects, subject)
 	}
-	return subjects, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	return pageSubjects(subjects, limit), nextSubjectCursor(subjects, limit), nil
 }
 
 // ClaimStore persists extracted claims.
@@ -554,12 +626,23 @@ func timePtr(t time.Time) *time.Time {
 	return &t
 }
 
-func (s *ClaimStore) ListBySubject(ctx context.Context, subjectID string) ([]Claim, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, subject_id, job_id, body FROM claims WHERE subject_id = ? ORDER BY id`,
-		subjectID)
+func (s *ClaimStore) ListBySubject(ctx context.Context, subjectID string, p page.Params) ([]Claim, string, error) {
+	cursor, err := decodeCursor(p.Cursor, 1)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	limit := p.ResolvedLimit()
+	args := []any{subjectID}
+	query := `SELECT id, subject_id, job_id, body FROM claims WHERE subject_id = ?`
+	if len(cursor) > 0 {
+		query += ` AND id > ?`
+		args = append(args, cursor[0])
+	}
+	query += ` ORDER BY id LIMIT ?`
+	args = append(args, limit+1)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
 	}
 	defer rows.Close()
 
@@ -567,11 +650,14 @@ func (s *ClaimStore) ListBySubject(ctx context.Context, subjectID string) ([]Cla
 	for rows.Next() {
 		var claim Claim
 		if err := rows.Scan(&claim.ID, &claim.SubjectID, &claim.JobID, &claim.Body); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		claims = append(claims, claim)
 	}
-	return claims, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	return pageClaims(claims, limit), nextClaimCursor(claims, limit), nil
 }
 
 // PageStore persists pages.

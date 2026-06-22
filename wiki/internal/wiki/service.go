@@ -12,6 +12,7 @@ import (
 
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/page"
 )
 
 const (
@@ -141,7 +142,7 @@ func (s *Service) Subjects(ctx context.Context, typ, nameContains string) ([]Sub
 	if s == nil {
 		return nil, fmt.Errorf("wiki: nil service")
 	}
-	return s.subjects.List(ctx, typ, nameContains)
+	return listAllSubjects(ctx, s.subjects, typ, nameContains)
 }
 
 // ClaimsBySubject returns the stored claims for an existing subject.
@@ -152,7 +153,7 @@ func (s *Service) ClaimsBySubject(ctx context.Context, subjectID string) ([]Clai
 	if _, err := s.subjects.Get(ctx, strings.TrimSpace(subjectID)); err != nil {
 		return nil, err
 	}
-	return s.claims.ListBySubject(ctx, strings.TrimSpace(subjectID))
+	return listAllClaims(ctx, s.claims, strings.TrimSpace(subjectID))
 }
 
 // PageBySubject returns the compiled page for an existing subject.
@@ -251,7 +252,7 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 		}
 	}
 	for _, subject := range affected {
-		subjectClaims, err := claims.ListBySubject(ctx, subject.ID)
+		subjectClaims, err := listAllClaims(ctx, claims, subject.ID)
 		if err != nil {
 			return err
 		}
@@ -275,6 +276,38 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 		}
 	}
 	return tx.Commit()
+}
+
+func listAllSubjects(ctx context.Context, store *SubjectStore, typ, nameContains string) ([]Subject, error) {
+	var out []Subject
+	params := page.Params{Limit: page.MaxLimit}
+	for {
+		subjects, next, err := store.List(ctx, typ, nameContains, params)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, subjects...)
+		if next == "" {
+			return out, nil
+		}
+		params.Cursor = next
+	}
+}
+
+func listAllClaims(ctx context.Context, store *ClaimStore, subjectID string) ([]Claim, error) {
+	var out []Claim
+	params := page.Params{Limit: page.MaxLimit}
+	for {
+		claims, next, err := store.ListBySubject(ctx, subjectID, params)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, claims...)
+		if next == "" {
+			return out, nil
+		}
+		params.Cursor = next
+	}
 }
 
 func (s *Service) affectedSubjects(ctx context.Context, subjects *SubjectStore, claims *ClaimStore, jobID string) (map[string]Subject, error) {

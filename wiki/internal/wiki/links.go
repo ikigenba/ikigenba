@@ -100,7 +100,7 @@ func (s *Service) PageWithLinks(ctx context.Context, subjectID string) (LinkedPa
 	if err != nil {
 		return LinkedPage{}, err
 	}
-	subjects, err := s.subjects.List(ctx, "", "")
+	subjects, err := listAllSubjects(ctx, s.subjects, "", "")
 	if err != nil {
 		return LinkedPage{}, err
 	}
