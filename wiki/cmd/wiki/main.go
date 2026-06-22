@@ -14,7 +14,6 @@ import (
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	"wiki/internal/mcp"
-	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
 	"wiki/internal/worker"
 )
@@ -43,11 +42,7 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 		extractor := extract.New(cfg.LLM, extract.DefaultCallSite(cfg.ModelID))
 		compiler := buildCompiler(cfg)
 		svc = wiki.NewService(db, extractor, compiler, time.Now)
-		retriever := retrieve.NewService(db, retrieve.NewKeyword(db), retrieve.SearchLimits{
-			Default: cfg.SearchDefault,
-			Cap:     cfg.SearchCap,
-		})
-		asker := ask.New(retriever, wiki.NewPageStore(db), nil, cfg.LLM, llm.CallSite{Model: cfg.ModelID}, 0, 0)
+		asker := ask.New(wiki.NewSubjectStore(db), wiki.NewPageStore(db), cfg.LLM, llm.CallSite{Model: cfg.ModelID}, llm.CallSite{Model: cfg.ModelID})
 		rt.Handle("POST /mcp", rt.RequireIdentity(
 			mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
 				mcp.WithIngestService(svc),

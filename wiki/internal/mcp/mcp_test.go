@@ -377,7 +377,6 @@ func TestAskToolUsesAuthenticatedIdentity(t *testing.T) {
 			Subject: "subject-1",
 			Title:   "Ada",
 		}},
-		Sources: []string{"job-123"},
 	}}
 	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithAskFunc(asker.Ask)))
 	rec := callMCP(t, h, `{
@@ -396,9 +395,16 @@ func TestAskToolUsesAuthenticatedIdentity(t *testing.T) {
 	if asker.question != "Who wrote it?" {
 		t.Fatalf("ask question = %q, want forwarded question", asker.question)
 	}
-	var body answer
+	var body struct {
+		Found     bool   `json:"found"`
+		Answer    string `json:"answer"`
+		Citations []struct {
+			Subject string `json:"subject"`
+			Title   string `json:"title"`
+		} `json:"citations"`
+	}
 	decodeToolText(t, rec.Body.Bytes(), &body)
-	if !body.Found || body.Text != "Ada wrote the note." {
+	if !body.Found || body.Answer != "Ada wrote the note." {
 		t.Fatalf("answer = %#v, want found Ada answer", body)
 	}
 	if len(body.Citations) != 1 || body.Citations[0].Subject != "subject-1" {
@@ -510,7 +516,6 @@ type answer struct {
 	Found     bool
 	Text      string
 	Citations []citation
-	Sources   []string
 }
 
 type citation struct {

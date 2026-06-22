@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"appkit"
@@ -103,11 +104,11 @@ func WithPageService[T any](s pageFunc[T]) Option {
 }
 
 // WithAskFunc enables the grounded ask tool.
-func WithAskFunc[T any](ask func(context.Context, string, string) (T, error)) Option {
+func WithAskFunc[T any](fn func(context.Context, string, string) (T, error)) Option {
 	return func(h *Handler) {
-		if ask != nil {
+		if fn != nil {
 			h.ask = func(ctx context.Context, owner, question string) (any, error) {
-				return ask(ctx, owner, question)
+				return fn(ctx, owner, question)
 			}
 		}
 	}
@@ -283,7 +284,7 @@ func (h *Handler) handleAskCall(ctx context.Context, w http.ResponseWriter, req 
 		writeResult(w, req.ID, toolError(err.Error()))
 		return
 	}
-	writeJSONTextResult(w, req.ID, answer)
+	writeJSONTextResult(w, req.ID, askToolResult(answer))
 }
 
 func (h *Handler) handleSubjectsCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
@@ -447,6 +448,62 @@ func askTool() map[string]any {
 			"question": map[string]any{"type": "string"},
 		}, []string{"question"}),
 	}
+}
+
+func askToolResult(answer any) map[string]any {
+	found, text, sourceCitations := answerFields(answer)
+	citations := make([]map[string]string, 0, sourceCitations.Len())
+	for i := 0; i < sourceCitations.Len(); i++ {
+		citation := indirect(sourceCitations.Index(i))
+		citations = append(citations, map[string]string{
+			"subject": stringField(citation, "Subject"),
+			"title":   stringField(citation, "Title"),
+		})
+	}
+	return map[string]any{
+		"found":     found,
+		"answer":    text,
+		"citations": citations,
+	}
+}
+
+func answerFields(answer any) (bool, string, reflect.Value) {
+	v := indirect(reflect.ValueOf(answer))
+	if !v.IsValid() || v.Kind() != reflect.Struct {
+		return false, "", reflect.ValueOf([]any{})
+	}
+	return boolField(v, "Found"), stringField(v, "Text"), sliceField(v, "Citations")
+}
+
+func indirect(v reflect.Value) reflect.Value {
+	for v.IsValid() && (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) {
+		if v.IsNil() {
+			return reflect.Value{}
+		}
+		v = v.Elem()
+	}
+	return v
+}
+
+func boolField(v reflect.Value, name string) bool {
+	field := v.FieldByName(name)
+	return field.IsValid() && field.Kind() == reflect.Bool && field.Bool()
+}
+
+func stringField(v reflect.Value, name string) string {
+	field := v.FieldByName(name)
+	if !field.IsValid() || field.Kind() != reflect.String {
+		return ""
+	}
+	return field.String()
+}
+
+func sliceField(v reflect.Value, name string) reflect.Value {
+	field := v.FieldByName(name)
+	if !field.IsValid() || field.Kind() != reflect.Slice {
+		return reflect.ValueOf([]any{})
+	}
+	return field
 }
 
 func subjectsTool() map[string]any {
