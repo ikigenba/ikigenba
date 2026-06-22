@@ -26,6 +26,8 @@ Phase 1 does this and only this:
 - **See ingest progress.** Report which ingests are pending, working, or done.
 - **Ask.** Answer a natural-language question **agentically**: extract the subjects the question names, resolve each to a wiki subject by **exact normalized name**, read the pages of the subjects that resolve, and synthesize a cited answer from those pages — drawing only on ingested wiki content. When the question names several subjects, it gathers every one that resolves and uses each (**best-effort partial**); when none of the named subjects resolve, it answers that the wiki holds nothing on the question.
 - **Inspect.** List the subjects (with filtering), view a subject's raw claims, and view a subject's page.
+- **Link pages together.** Each page surfaces the other subjects it points to and the subjects that point to it, so you can move from one subject to a related one without searching again. A link exists when a subject's name appears on another subject's page, matched by **exact normalized name** (the same match `ask` uses) — nothing fuzzy. Links go **both ways**: a page shows what it mentions and what mentions it.
+- **Refer to subjects by readable name.** Wherever the wiki names a subject — in a listing, a citation, a link, or a lookup — it uses a human-readable `type/slug` path (for example `entity/acme-corp`), and accepts that same path when you ask for a subject. The wiki never shows the user an internal id.
 - **Report liveness.** Standard health, and a reflection that is **empty** (the wiki is connected to no event plane in phase 1).
 
 Phase 1 deliberately does **nothing else**. In particular it does not:
@@ -36,7 +38,7 @@ Phase 1 deliberately does **nothing else**. In particular it does not:
 - find an answer by searching the **words inside pages**, or by meaning — `ask` finds pages **only** by extracting and resolving the subjects the question names. If the answer lives in a page whose subject the question does not name (asking "who created Dungeons & Dragons?" when there is no "Dungeons & Dragons" subject, only a Gygax page that says so), `ask` will not find it and answers that the wiki holds nothing. Keyword and semantic / vector retrieval over page bodies are **later releases**;
 - consult a subject's **raw claims or original source text** when answering — `ask` synthesizes from the compiled **pages** only; drilling into the raw record to recover what a page's compression lost is a later release;
 - structure pages differently by kind — every page uses one generic shape, though each subject does carry its **type**;
-- draw links between pages;
+- reconcile a link across differently-named subjects — links and `type/slug` lookups resolve by the **same** exact-normalized name match, so a page that refers to a subject by a variant or partial name draws no link until aliases / fuzzy matching arrive in a later release;
 - expose a `rebuild` verb (a thin follow-on will re-trigger exactly what ingest already does);
 - ingest anything but text (no URL or file ingest);
 - let `ask` write anything back — to persist an answer, the user ingests that answer's text through the normal front door.
@@ -47,6 +49,7 @@ These are promised values the design must honor verbatim and never re-declare:
 
 - **Page size cap: 12,000 characters.** No subject page exceeds this; the cap is what forces a page to stay a compressed summary rather than grow into an append-log.
 - **Subject types are a closed set: `entity`, `event`, `concept`.** Every subject carries exactly one. (The finer per-kind subtype is not a structuring contract in phase 1.)
+- **A subject's public name is its `type/slug` path.** The user-facing identifier for every subject is its type plus a slug of its normalized name (for example `entity/acme-corp`). This path is the only subject identifier the wiki ever shows or accepts; internal ids are never exposed.
 - **`ask` is strictly read-only — permanently, not just in phase 1.** It never creates or modifies any wiki content under any circumstance.
 
 ## What we promise (user-facing behavior)
@@ -55,8 +58,10 @@ These are promised values the design must honor verbatim and never re-declare:
 - **Ingest progress is visible.** Using that handle (or a listing), you can see an ingest move from pending → working → done.
 - **Knowledge compounds per subject.** Once an ingest completes, each subject the text concerned has a page reflecting its claims. Feed the wiki a second piece of text about the same subject and that subject's page is updated — you get one evolving page per subject, not a pile of duplicates.
 - **The raw record is permanent and inspectable.** The original text and the claims extracted from it remain retrievable after the page is built — pages are lossy, the source is not.
-- **You can look inside.** You can list the subjects the wiki knows (filtered), and for any subject view its raw claims and its current page.
-- **Ask works like an agent.** Ask a question and the wiki identifies the subjects your question names, reads the pages for the ones it actually has, and gives back an answer synthesized from those pages, with citations to them. If your question names several subjects, it answers from every one it has a page for — it does not fail just because one named subject was never ingested.
+- **You can look inside.** You can list the subjects the wiki knows (filtered), and for any subject view its raw claims and its current page. Everywhere a subject appears, it appears by its readable `type/slug` name, and you can ask for any subject by that same name.
+- **Pages are navigable.** When you read a page, it tells you which subjects it points to and which subjects point to it, each by its readable name. You can follow any of those names straight to that subject's page — no separate search.
+- **You never see internal ids.** Every subject the wiki hands back is named by its `type/slug` path; the opaque internal id is never shown.
+- **Ask works like an agent.** Ask a question and the wiki identifies the subjects your question names, reads the pages for the ones it actually has, and gives back an answer synthesized from those pages, with citations to them by their readable name. If your question names several subjects, it answers from every one it has a page for — it does not fail just because one named subject was never ingested.
 - **Ask is grounded and honest.** The answer draws **only** on the pages it read. If none of the subjects your question names are in the wiki, it says so plainly — it never fabricates from the model's general knowledge, and a "nothing here" means no subject you named has a page, not that a word-match missed.
 - **Ask never changes anything.** Asking is purely a read; to keep an answer, you ingest it.
 - **Standard liveness.** Health reports the service is up; reflection reports that the wiki publishes and subscribes to nothing.
@@ -68,10 +73,13 @@ Each item is a result the user can confirm against the running service:
 - I can ingest a block of text and get a job handle back without waiting for the text to be processed.
 - I can watch that ingest go from pending/working to done.
 - After it completes, I can list the subjects extracted from that text.
-- For any of those subjects, I can view both its raw claims and its generated page.
+- For any of those subjects, I can view both its raw claims and its generated page, and I refer to the subject by its readable `type/slug` name rather than an internal id.
+- Every subject the wiki shows me — in a listing, a page, a link, or a citation — is named by its readable `type/slug` path, and I never see an internal id.
+- When I read a page, I can see which subjects it points to and which subjects point to it, and I can follow any of those names to that subject's page.
+- A page lists another subject as a link exactly when that subject's name appears on it; a subject the page does not name by its exact (normalized) name produces no link.
 - Ingesting a second piece of text that mentions the same subject (by the same name) updates that subject's existing page instead of creating a duplicate.
 - The original raw text and its extracted claims are still retrievable after the page has been built.
-- I can ask a question that names a subject the wiki has a page for, and get a cited answer synthesized from that page — drawn only from what I've ingested.
+- I can ask a question that names a subject the wiki has a page for, and get a cited answer synthesized from that page — drawn only from what I've ingested, cited by readable name.
 - I can ask a question that names several subjects; the wiki answers from every one it has a page for, and does not fail just because one of the named subjects was never ingested.
 - Asking a question whose named subjects are *none* of them in the wiki returns an explicit "nothing here," not a made-up answer.
 - Nothing I do through `ask` changes any subject, claim, or page.
