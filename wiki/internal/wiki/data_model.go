@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 	"unicode"
@@ -19,6 +20,33 @@ type Subject struct {
 	Name     string
 	NormName string
 	Type     string
+}
+
+var (
+	ErrSubjectNotFound = errors.New("wiki: subject not found")
+	ErrAmbiguousPath   = errors.New("wiki: ambiguous subject path")
+)
+
+// Path is the public type/slug identifier for a subject.
+func Path(s Subject) string {
+	return s.Type + "/" + slug(s.NormName)
+}
+
+func slug(normName string) string {
+	var b strings.Builder
+	hyphen := true
+	for _, r := range normName {
+		if r == '/' || unicode.IsSpace(r) {
+			if !hyphen {
+				b.WriteByte('-')
+				hyphen = true
+			}
+			continue
+		}
+		b.WriteRune(r)
+		hyphen = false
+	}
+	return strings.TrimSuffix(b.String(), "-")
 }
 
 // Claim is an extracted statement about a subject.
@@ -282,6 +310,48 @@ func (s *SubjectStore) Get(ctx context.Context, id string) (Subject, error) {
 		`SELECT id, name, norm_name, type FROM subjects WHERE id = ?`, id).
 		Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type)
 	return subject, err
+}
+
+func (s *SubjectStore) GetByPath(ctx context.Context, path string) (Subject, error) {
+	typ, wantSlug, ok := strings.Cut(path, "/")
+	if !ok || typ == "" || wantSlug == "" {
+		return Subject{}, ErrSubjectNotFound
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, norm_name, type FROM subjects WHERE type = ? ORDER BY id`,
+		typ)
+	if err != nil {
+		return Subject{}, err
+	}
+	defer rows.Close()
+
+	var found Subject
+	matches := 0
+	for rows.Next() {
+		var subject Subject
+		if err := rows.Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type); err != nil {
+			return Subject{}, err
+		}
+		if slug(subject.NormName) != wantSlug {
+			continue
+		}
+		matches++
+		if matches == 1 {
+			found = subject
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return Subject{}, err
+	}
+	switch matches {
+	case 0:
+		return Subject{}, ErrSubjectNotFound
+	case 1:
+		return found, nil
+	default:
+		return Subject{}, ErrAmbiguousPath
+	}
 }
 
 func (s *SubjectStore) List(ctx context.Context, typ, nameContains string) ([]Subject, error) {

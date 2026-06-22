@@ -3,6 +3,7 @@ package wiki
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
 	"wiki/internal/db"
@@ -19,6 +20,81 @@ func TestNormalizePipeline(t *testing.T) {
 		if got := normalize(in); got != want {
 			t.Fatalf("normalize(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestSubjectPathUsesTypeAndPathSafeSlug(t *testing.T) {
+	// R-ZO9U-QOT8
+	tests := map[string]string{
+		Path(Subject{Type: "entity", NormName: "cafe noir"}):         "entity/cafe-noir",
+		Path(Subject{Type: "event", NormName: " / alpha / beta// "}): "event/alpha-beta",
+		Path(Subject{Type: "concept", NormName: "東京 / 京都"}):          "concept/東京-京都",
+		Path(Subject{Type: "entity", NormName: "Camel Case"}):        "entity/Camel-Case",
+	}
+	for got, want := range tests {
+		if got != want {
+			t.Fatalf("Path(...) = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestSubjectStoreGetByPathFindsExactTypeSlug(t *testing.T) {
+	// R-ZQPN-I8AM
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subjects := NewSubjectStore(conn)
+	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Acme Robotics", Type: "entity"}); err != nil {
+		t.Fatalf("Save subject-1: %v", err)
+	}
+	if err := subjects.Save(ctx, Subject{ID: "subject-2", Name: "Tulsa Launch", Type: "event"}); err != nil {
+		t.Fatalf("Save subject-2: %v", err)
+	}
+
+	got, err := subjects.GetByPath(ctx, "entity/acme-robotics")
+	if err != nil {
+		t.Fatalf("GetByPath: %v", err)
+	}
+	if got.ID != "subject-1" || got.Type != "entity" || Path(got) != "entity/acme-robotics" {
+		t.Fatalf("GetByPath returned %+v, want subject-1 at entity/acme-robotics", got)
+	}
+}
+
+func TestSubjectStoreGetByPathRejectsFuzzyAndAliasMatches(t *testing.T) {
+	// R-ZRXJ-W01B
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subjects := NewSubjectStore(conn)
+	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Acme Robotics", Type: "entity"}); err != nil {
+		t.Fatalf("Save subject: %v", err)
+	}
+
+	for _, path := range []string{"entity/acme-robot", "concept/acme-robotics", "entity/acme robotics"} {
+		if got, err := subjects.GetByPath(ctx, path); !errors.Is(err, ErrSubjectNotFound) {
+			t.Fatalf("GetByPath(%q) = %+v, %v; want ErrSubjectNotFound", path, got, err)
+		}
+	}
+}
+
+func TestSubjectStoreGetByPathFailsOnAmbiguousSlug(t *testing.T) {
+	// R-ZT5G-9RS0
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subjects := NewSubjectStore(conn)
+	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Alpha Beta", NormName: "alpha beta", Type: "entity"}); err != nil {
+		t.Fatalf("Save subject-1: %v", err)
+	}
+	if err := subjects.Save(ctx, Subject{ID: "subject-2", Name: "Alpha/Beta", NormName: "alpha/beta", Type: "entity"}); err != nil {
+		t.Fatalf("Save subject-2: %v", err)
+	}
+
+	if got, err := subjects.GetByPath(ctx, "entity/alpha-beta"); !errors.Is(err, ErrAmbiguousPath) {
+		t.Fatalf("GetByPath returned %+v, %v; want ErrAmbiguousPath", got, err)
 	}
 }
 
