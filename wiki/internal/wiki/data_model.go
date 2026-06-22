@@ -297,6 +297,12 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
+type sqlStore interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 func scanJob(row rowScanner) (Job, error) {
 	var job Job
 	var tagsJSON, receivedAt, startedAt, finishedAt string
@@ -328,10 +334,10 @@ func scanJob(row rowScanner) (Job, error) {
 
 // SubjectStore persists canonical subjects.
 type SubjectStore struct {
-	db *sql.DB
+	db sqlStore
 }
 
-func NewSubjectStore(db *sql.DB) *SubjectStore {
+func NewSubjectStore(db sqlStore) *SubjectStore {
 	return &SubjectStore{db: db}
 }
 
@@ -432,10 +438,10 @@ func (s *SubjectStore) List(ctx context.Context, typ, nameContains string) ([]Su
 
 // ClaimStore persists extracted claims.
 type ClaimStore struct {
-	db *sql.DB
+	db sqlStore
 }
 
-func NewClaimStore(db *sql.DB) *ClaimStore {
+func NewClaimStore(db sqlStore) *ClaimStore {
 	return &ClaimStore{db: db}
 }
 
@@ -498,32 +504,23 @@ func (s *ClaimStore) ListBySubject(ctx context.Context, subjectID string) ([]Cla
 
 // PageStore persists pages.
 type PageStore struct {
-	db *sql.DB
+	db sqlStore
 }
 
-func NewPageStore(db *sql.DB) *PageStore {
+func NewPageStore(db sqlStore) *PageStore {
 	return &PageStore{db: db}
 }
 
 func (s *PageStore) Upsert(ctx context.Context, page Page) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO pages (id, subject_id, title, body)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			subject_id = excluded.subject_id,
 			title = excluded.title,
 			body = excluded.body`,
-		page.ID, page.SubjectID, page.Title, page.Body); err != nil {
-		return err
-	}
-
-	return tx.Commit()
+		page.ID, page.SubjectID, page.Title, page.Body)
+	return err
 }
 
 func (s *PageStore) Get(ctx context.Context, id string) (Page, error) {

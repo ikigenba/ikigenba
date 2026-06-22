@@ -342,6 +342,52 @@ func TestAbortWorkingJobIsNotOverwrittenByWorkerFinish(t *testing.T) {
 	}
 }
 
+func TestProcessNextRollsBackIntegratedRowsWhenCompileFails(t *testing.T) {
+	// R-0W0M-EGX2
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	extractor := &recordingExtractor{batches: [][]extract.ExtractedSubject{{
+		{
+			Type:   "entity",
+			Kind:   "company",
+			Name:   "Acme Robotics",
+			Claims: []string{"Acme Robotics opened a Tulsa lab."},
+		},
+	}}}
+	compiler := &recordingCompiler{err: errors.New("compile exploded")}
+	svc := NewService(conn, extractor, compiler, sequenceTimes(
+		time.Date(2026, 6, 22, 8, 3, 0, 0, time.UTC),
+		time.Date(2026, 6, 22, 8, 3, 1, 0, time.UTC),
+		time.Date(2026, 6, 22, 8, 3, 2, 0, time.UTC),
+	))
+	svc.newID = sequenceIDs("job-1", "subject-1", "claim-1")
+
+	jobID, err := svc.Ingest(ctx, "owner@example.com", "Acme Robotics opened a lab.", "Lab", nil)
+	if err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	processed, err := svc.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("ProcessNext: %v", err)
+	}
+	if !processed {
+		t.Fatal("ProcessNext processed = false, want true")
+	}
+
+	status, err := svc.JobStatus(ctx, jobID)
+	if err != nil {
+		t.Fatalf("JobStatus: %v", err)
+	}
+	if status.Status != JobFailed || !strings.Contains(status.Error, "compile exploded") {
+		t.Fatalf("status = %+v, want failed with compile error", status)
+	}
+	assertTableCount(t, ctx, conn, "subjects", 0)
+	assertTableCount(t, ctx, conn, "claims", 0)
+	assertTableCount(t, ctx, conn, "pages", 0)
+}
+
 func TestServiceListsSubjectsAndReadsClaimsAndPagesBySubject(t *testing.T) {
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
@@ -427,11 +473,15 @@ func (e *blockingExtractor) Extract(ctx context.Context, _ extract.DocumentHeade
 
 type recordingCompiler struct {
 	claimSets [][]Claim
+	err       error
 }
 
 func (c *recordingCompiler) Compile(_ context.Context, subject Subject, claims []Claim) (string, string, error) {
 	copied := append([]Claim(nil), claims...)
 	c.claimSets = append(c.claimSets, copied)
+	if c.err != nil {
+		return "", "", c.err
+	}
 	var bodies []string
 	for _, claim := range claims {
 		bodies = append(bodies, claim.Body)
@@ -480,5 +530,19 @@ func assertNoPagesFTS(t *testing.T, ctx context.Context, conn interface {
 	}
 	if count != 0 {
 		t.Fatalf("pages_fts table count = %d, want 0", count)
+	}
+}
+
+func assertTableCount(t *testing.T, ctx context.Context, conn interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, table string, want int) {
+	t.Helper()
+
+	var got int
+	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&got); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	if got != want {
+		t.Fatalf("%s count = %d, want %d", table, got, want)
 	}
 }

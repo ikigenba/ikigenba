@@ -190,13 +190,23 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 	if err != nil {
 		return err
 	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	subjects := NewSubjectStore(tx)
+	claims := NewClaimStore(tx)
+	pages := NewPageStore(tx)
 	for _, item := range extracted {
-		subject, err := s.subjectFor(ctx, item)
+		subject, err := s.subjectFor(ctx, subjects, item)
 		if err != nil {
 			return err
 		}
 		for _, body := range item.Claims {
-			if err := s.claims.Save(ctx, Claim{
+			if err := claims.Save(ctx, Claim{
 				ID:        s.newID(),
 				SubjectID: subject.ID,
 				JobID:     job.ID,
@@ -205,15 +215,15 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 				return err
 			}
 		}
-		claims, err := s.claims.ListBySubject(ctx, subject.ID)
+		subjectClaims, err := claims.ListBySubject(ctx, subject.ID)
 		if err != nil {
 			return err
 		}
-		title, body, err := s.compiler.Compile(ctx, subject, claims)
+		title, body, err := s.compiler.Compile(ctx, subject, subjectClaims)
 		if err != nil {
 			return err
 		}
-		if err := s.pages.Upsert(ctx, Page{
+		if err := pages.Upsert(ctx, Page{
 			ID:        subject.ID,
 			SubjectID: subject.ID,
 			Title:     title,
@@ -222,11 +232,11 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
-func (s *Service) subjectFor(ctx context.Context, item extract.ExtractedSubject) (Subject, error) {
-	subject, err := s.subjects.GetByNormName(ctx, item.Name)
+func (s *Service) subjectFor(ctx context.Context, subjects *SubjectStore, item extract.ExtractedSubject) (Subject, error) {
+	subject, err := subjects.GetByNormName(ctx, item.Name)
 	if err == nil {
 		return subject, nil
 	}
@@ -239,7 +249,7 @@ func (s *Service) subjectFor(ctx context.Context, item extract.ExtractedSubject)
 		NormName: normalize(item.Name),
 		Type:     item.Type,
 	}
-	if err := s.subjects.Save(ctx, subject); err != nil {
+	if err := subjects.Save(ctx, subject); err != nil {
 		return Subject{}, err
 	}
 	return subject, nil
