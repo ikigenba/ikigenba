@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestPhaseTwoDataModelSchema(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 
-	for _, table := range []string{"jobs", "subjects", "claims", "pages", "pages_fts"} {
+	for _, table := range []string{"jobs", "subjects", "claims", "pages"} {
 		var name string
 		err := conn.QueryRowContext(ctx,
 			`SELECT name FROM sqlite_master WHERE name = ?`, table,
@@ -75,15 +76,6 @@ func TestPhaseTwoDataModelSchema(t *testing.T) {
 		if err != nil {
 			t.Fatalf("index %s was not created: %v", index, err)
 		}
-	}
-	var ftsSQL string
-	if err := conn.QueryRowContext(ctx,
-		`SELECT sql FROM sqlite_master WHERE name = 'pages_fts'`).
-		Scan(&ftsSQL); err != nil {
-		t.Fatalf("read pages_fts SQL: %v", err)
-	}
-	if !strings.Contains(ftsSQL, "content='pages'") {
-		t.Fatalf("pages_fts SQL = %q, want external content='pages'", ftsSQL)
 	}
 	for _, table := range []string{"jobs", "subjects", "claims", "pages"} {
 		rows, err := conn.QueryContext(ctx, `PRAGMA foreign_key_list(`+table+`)`)
@@ -115,5 +107,62 @@ func TestPhaseTwoDataModelSchema(t *testing.T) {
 		`INSERT INTO pages (id, subject_id, title, body) VALUES ('p1', 's1', 'Too Long', ?)`,
 		strings.Repeat("x", 12001)); err == nil {
 		t.Fatal("oversized page body insert succeeded, want CHECK failure")
+	}
+}
+
+func TestPhase18MigrationsDropPagesFTSAndRecordMigration(t *testing.T) {
+	// R-PH8Z-YHNX
+	ctx := context.Background()
+	conn, err := Open(t.TempDir() + "/wiki.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer conn.Close()
+
+	migs, err := appdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	var dropVersion int
+	for _, mig := range migs {
+		if strings.Contains(mig.Name, "drop_pages_fts") {
+			dropVersion = mig.Version
+			break
+		}
+	}
+	if dropVersion == 0 {
+		t.Fatal("drop_pages_fts migration not found in embedded migrations")
+	}
+
+	if err := appdb.Migrate(ctx, conn, migs); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	var tableCount int
+	if err := conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'pages_fts'`).
+		Scan(&tableCount); err != nil {
+		t.Fatalf("count pages_fts table: %v", err)
+	}
+	if tableCount != 0 {
+		t.Fatalf("pages_fts table count = %d, want 0 after drop migration", tableCount)
+	}
+
+	var recorded int
+	if err := conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, dropVersion).
+		Scan(&recorded); err != nil {
+		t.Fatalf("count recorded drop migration: %v", err)
+	}
+	if recorded != 1 {
+		t.Fatalf("drop migration records = %d, want 1", recorded)
+	}
+
+	original, err := os.ReadFile("migrations/20260620185852_phase_02_data_model.sql")
+	if err != nil {
+		t.Fatalf("read original phase-02 migration: %v", err)
+	}
+	if !strings.Contains(string(original), "CREATE VIRTUAL TABLE pages_fts") {
+		t.Fatal("original phase-02 migration no longer contains the pages_fts create statement")
 	}
 }

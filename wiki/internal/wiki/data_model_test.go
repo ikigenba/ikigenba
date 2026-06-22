@@ -79,48 +79,6 @@ func TestDomainStoresPersistPhaseOneModel(t *testing.T) {
 	}
 }
 
-func TestPageStoreSynchronizesExternalContentFTS(t *testing.T) {
-	// R-7WB5-5RHD
-	ctx := context.Background()
-	conn := migratedDB(t, ctx)
-	defer conn.Close()
-
-	subjects := NewSubjectStore(conn)
-	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Subject", Type: "concept"}); err != nil {
-		t.Fatalf("Save subject: %v", err)
-	}
-
-	pages := NewPageStore(conn)
-	if err := pages.Upsert(ctx, Page{ID: "page-1", SubjectID: "subject-1", Title: "First", Body: "alpha only"}); err != nil {
-		t.Fatalf("initial Upsert: %v", err)
-	}
-	alpha, err := pages.Search(ctx, "alpha", 10)
-	if err != nil {
-		t.Fatalf("Search alpha: %v", err)
-	}
-	if len(alpha) != 1 || alpha[0].ID != "page-1" {
-		t.Fatalf("Search alpha = %+v, want page-1 before update", alpha)
-	}
-
-	if err := pages.Upsert(ctx, Page{ID: "page-1", SubjectID: "subject-1", Title: "Second", Body: "beta only"}); err != nil {
-		t.Fatalf("update Upsert: %v", err)
-	}
-	alpha, err = pages.Search(ctx, "alpha", 10)
-	if err != nil {
-		t.Fatalf("Search old alpha: %v", err)
-	}
-	if len(alpha) != 0 {
-		t.Fatalf("Search alpha after update = %+v, want no stale FTS rows", alpha)
-	}
-	beta, err := pages.Search(ctx, "beta", 10)
-	if err != nil {
-		t.Fatalf("Search beta: %v", err)
-	}
-	if len(beta) != 1 || beta[0].ID != "page-1" || beta[0].Title != "Second" {
-		t.Fatalf("Search beta = %+v, want updated page-1", beta)
-	}
-}
-
 func migratedDB(t *testing.T, ctx context.Context) *sql.DB {
 	t.Helper()
 

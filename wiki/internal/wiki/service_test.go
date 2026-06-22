@@ -2,6 +2,7 @@ package wiki
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -156,6 +157,58 @@ func TestProcessNextReusesSubjectAndRecompilesFromCompleteClaims(t *testing.T) {
 	}
 }
 
+func TestProcessNextCommitsPageWithoutPagesFTS(t *testing.T) {
+	// R-PIGW-C9EM
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	assertNoPagesFTS(t, ctx, conn)
+
+	extractor := &recordingExtractor{batches: [][]extract.ExtractedSubject{{
+		{
+			Type:   "entity",
+			Kind:   "company",
+			Name:   "Acme Robotics",
+			Claims: []string{"Acme Robotics opened a Tulsa lab."},
+		},
+	}}}
+	compiler := &recordingCompiler{}
+	svc := NewService(conn, extractor, compiler, sequenceTimes(
+		time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC),
+		time.Date(2026, 6, 21, 10, 0, 1, 0, time.UTC),
+		time.Date(2026, 6, 21, 10, 0, 2, 0, time.UTC),
+	))
+	svc.newID = sequenceIDs("job-1", "subject-1", "claim-1")
+
+	jobID, err := svc.Ingest(ctx, "owner@example.com", "Acme Robotics opened a Tulsa lab.", "Tulsa lab", nil)
+	if err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	processed, err := svc.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("ProcessNext: %v", err)
+	}
+	if !processed {
+		t.Fatal("ProcessNext processed = false, want true")
+	}
+
+	status, err := svc.JobStatus(ctx, jobID)
+	if err != nil {
+		t.Fatalf("JobStatus: %v", err)
+	}
+	if status.Status != JobDone || len(status.Subjects) != 1 || status.Subjects[0] != "subject-1" {
+		t.Fatalf("status = %+v, want done with subject-1", status)
+	}
+	page, err := NewPageStore(conn).Get(ctx, "subject-1")
+	if err != nil {
+		t.Fatalf("Get page: %v", err)
+	}
+	if page.Title != "Acme Robotics" || !strings.Contains(page.Body, "Tulsa lab") {
+		t.Fatalf("page = %+v, want compiled Tulsa page", page)
+	}
+	assertNoPagesFTS(t, ctx, conn)
+}
+
 func TestServiceListsSubjectsAndReadsClaimsAndPagesBySubject(t *testing.T) {
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
@@ -259,5 +312,21 @@ func sequenceTimes(times ...time.Time) func() time.Time {
 		t := times[i]
 		i++
 		return t
+	}
+}
+
+func assertNoPagesFTS(t *testing.T, ctx context.Context, conn interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}) {
+	t.Helper()
+
+	var count int
+	if err := conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'pages_fts'`).
+		Scan(&count); err != nil {
+		t.Fatalf("count pages_fts table: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("pages_fts table count = %d, want 0", count)
 	}
 }

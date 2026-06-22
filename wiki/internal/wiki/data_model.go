@@ -375,7 +375,7 @@ func (s *ClaimStore) ListBySubject(ctx context.Context, subjectID string) ([]Cla
 	return claims, rows.Err()
 }
 
-// PageStore persists pages and synchronizes their external-content FTS rows.
+// PageStore persists pages.
 type PageStore struct {
 	db *sql.DB
 }
@@ -391,24 +391,6 @@ func (s *PageStore) Upsert(ctx context.Context, page Page) error {
 	}
 	defer tx.Rollback()
 
-	var oldRowID int64
-	var oldTitle, oldBody string
-	err = tx.QueryRowContext(ctx,
-		`SELECT rowid, title, body FROM pages WHERE id = ?`,
-		page.ID).
-		Scan(&oldRowID, &oldTitle, &oldBody)
-	switch {
-	case err == nil:
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO pages_fts (pages_fts, rowid, title, body) VALUES ('delete', ?, ?, ?)`,
-			oldRowID, oldTitle, oldBody); err != nil {
-			return err
-		}
-	case err == sql.ErrNoRows:
-	default:
-		return err
-	}
-
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO pages (id, subject_id, title, body)
 		VALUES (?, ?, ?, ?)
@@ -420,18 +402,6 @@ func (s *PageStore) Upsert(ctx context.Context, page Page) error {
 		return err
 	}
 
-	var rowID int64
-	if err := tx.QueryRowContext(ctx,
-		`SELECT rowid FROM pages WHERE id = ?`,
-		page.ID).
-		Scan(&rowID); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO pages_fts (rowid, title, body) VALUES (?, ?, ?)`,
-		rowID, page.Title, page.Body); err != nil {
-		return err
-	}
 	return tx.Commit()
 }
 
@@ -453,29 +423,4 @@ func (s *PageStore) GetBySubject(ctx context.Context, subjectID string) (Page, e
 		LIMIT 1`, subjectID).
 		Scan(&page.ID, &page.SubjectID, &page.Title, &page.Body)
 	return page, err
-}
-
-func (s *PageStore) Search(ctx context.Context, query string, limit int) ([]Page, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT p.id, p.subject_id, p.title, p.body
-		FROM pages_fts
-		JOIN pages AS p ON p.rowid = pages_fts.rowid
-		WHERE pages_fts MATCH ?
-		ORDER BY rank
-		LIMIT ?`,
-		query, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var pages []Page
-	for rows.Next() {
-		var page Page
-		if err := rows.Scan(&page.ID, &page.SubjectID, &page.Title, &page.Body); err != nil {
-			return nil, err
-		}
-		pages = append(pages, page)
-	}
-	return pages, rows.Err()
 }
