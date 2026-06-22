@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -219,64 +220,178 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 		return err
 	}
 
+	plan, err := s.planIntegration(ctx, job, extracted)
+	if err != nil {
+		return err
+	}
+
 	tx, err := s.write.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
+	var status string
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM jobs WHERE id = ?`, job.ID).Scan(&status); err != nil {
+		return err
+	}
+	if status != JobWorking {
+		return nil
+	}
+
 	subjects := NewSubjectStore(tx)
 	claims := NewClaimStore(tx)
 	pages := NewPageStore(tx)
-	affected, err := s.affectedSubjects(ctx, subjects, claims, job.ID)
-	if err != nil {
-		return err
-	}
 	if err := claims.DeleteByJob(ctx, job.ID); err != nil {
 		return err
 	}
-	for _, item := range extracted {
-		subject, err := s.subjectFor(ctx, subjects, item)
-		if err != nil {
+	for _, subject := range plan.newSubjects {
+		if err := subjects.Save(ctx, subject); err != nil {
 			return err
-		}
-		affected[subject.ID] = subject
-		for _, body := range item.Claims {
-			if err := claims.Save(ctx, Claim{
-				ID:        s.newID(),
-				SubjectID: subject.ID,
-				JobID:     job.ID,
-				Body:      strings.TrimSpace(body),
-			}); err != nil {
-				return err
-			}
 		}
 	}
-	for _, subject := range affected {
-		subjectClaims, err := listAllClaims(ctx, claims, subject.ID)
-		if err != nil {
+	for _, claim := range plan.claims {
+		if err := claims.Save(ctx, claim); err != nil {
 			return err
 		}
-		if len(subjectClaims) == 0 {
-			if err := pages.DeleteBySubject(ctx, subject.ID); err != nil {
+	}
+	for _, page := range plan.pages {
+		if page.delete {
+			if err := pages.DeleteBySubject(ctx, page.subjectID); err != nil {
 				return err
 			}
 			continue
 		}
-		title, body, err := s.compiler.Compile(ctx, subject, subjectClaims)
-		if err != nil {
-			return err
-		}
 		if err := pages.Upsert(ctx, Page{
-			ID:        subject.ID,
-			SubjectID: subject.ID,
-			Title:     title,
-			Body:      body,
+			ID:        page.subjectID,
+			SubjectID: page.subjectID,
+			Title:     page.title,
+			Body:      page.body,
 		}); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+type integrationPlan struct {
+	newSubjects []Subject
+	claims      []Claim
+	pages       []plannedPage
+}
+
+type plannedPage struct {
+	subjectID string
+	title     string
+	body      string
+	delete    bool
+}
+
+func (s *Service) planIntegration(ctx context.Context, job Job, extracted []extract.ExtractedSubject) (integrationPlan, error) {
+	affected, err := s.affectedSubjects(ctx, s.subjects, s.claims, job.ID)
+	if err != nil {
+		return integrationPlan{}, err
+	}
+
+	knownByNorm := map[string]Subject{}
+	newByNorm := map[string]bool{}
+	claimsBySubject := map[string][]Claim{}
+	var plan integrationPlan
+	for _, item := range extracted {
+		subject, isNew, err := s.plannedSubject(ctx, knownByNorm, item)
+		if err != nil {
+			return integrationPlan{}, err
+		}
+		if isNew && !newByNorm[subject.NormName] {
+			plan.newSubjects = append(plan.newSubjects, subject)
+			newByNorm[subject.NormName] = true
+		}
+		affected[subject.ID] = subject
+		for _, body := range item.Claims {
+			claim := Claim{
+				ID:        s.newID(),
+				SubjectID: subject.ID,
+				JobID:     job.ID,
+				Body:      strings.TrimSpace(body),
+			}
+			plan.claims = append(plan.claims, claim)
+			claimsBySubject[subject.ID] = append(claimsBySubject[subject.ID], claim)
+		}
+	}
+
+	affectedSubjects := sortedSubjects(affected)
+	for _, subject := range affectedSubjects {
+		subjectClaims, err := s.plannedClaims(ctx, job.ID, subject.ID, claimsBySubject[subject.ID])
+		if err != nil {
+			return integrationPlan{}, err
+		}
+		if len(subjectClaims) == 0 {
+			plan.pages = append(plan.pages, plannedPage{subjectID: subject.ID, delete: true})
+			continue
+		}
+		title, body, err := s.compiler.Compile(ctx, subject, subjectClaims)
+		if err != nil {
+			return integrationPlan{}, err
+		}
+		plan.pages = append(plan.pages, plannedPage{
+			subjectID: subject.ID,
+			title:     title,
+			body:      body,
+		})
+	}
+	return plan, nil
+}
+
+func (s *Service) plannedSubject(ctx context.Context, known map[string]Subject, item extract.ExtractedSubject) (Subject, bool, error) {
+	normName := normalize(item.Name)
+	if subject, ok := known[normName]; ok {
+		return subject, false, nil
+	}
+	subject, err := s.subjects.GetByNormName(ctx, item.Name)
+	if err == nil {
+		known[normName] = subject
+		return subject, false, nil
+	}
+	if err != sql.ErrNoRows {
+		return Subject{}, false, err
+	}
+	subject = Subject{
+		ID:       s.newID(),
+		Name:     strings.TrimSpace(item.Name),
+		NormName: normName,
+		Type:     item.Type,
+	}
+	known[normName] = subject
+	return subject, true, nil
+}
+
+func (s *Service) plannedClaims(ctx context.Context, jobID, subjectID string, newClaims []Claim) ([]Claim, error) {
+	claims, err := listAllClaims(ctx, s.claims, subjectID)
+	if err != nil {
+		return nil, err
+	}
+	out := claims[:0]
+	for _, claim := range claims {
+		if claim.JobID != jobID {
+			out = append(out, claim)
+		}
+	}
+	out = append(out, newClaims...)
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
+func sortedSubjects(subjects map[string]Subject) []Subject {
+	out := make([]Subject, 0, len(subjects))
+	for _, subject := range subjects {
+		out = append(out, subject)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+	return out
 }
 
 func listAllSubjects(ctx context.Context, store *SubjectStore, typ, nameContains string) ([]Subject, error) {
@@ -325,26 +440,6 @@ func (s *Service) affectedSubjects(ctx context.Context, subjects *SubjectStore, 
 		affected[subject.ID] = subject
 	}
 	return affected, nil
-}
-
-func (s *Service) subjectFor(ctx context.Context, subjects *SubjectStore, item extract.ExtractedSubject) (Subject, error) {
-	subject, err := subjects.GetByNormName(ctx, item.Name)
-	if err == nil {
-		return subject, nil
-	}
-	if err != sql.ErrNoRows {
-		return Subject{}, err
-	}
-	subject = Subject{
-		ID:       s.newID(),
-		Name:     strings.TrimSpace(item.Name),
-		NormName: normalize(item.Name),
-		Type:     item.Type,
-	}
-	if err := subjects.Save(ctx, subject); err != nil {
-		return Subject{}, err
-	}
-	return subject, nil
 }
 
 func (s *Service) registerJobCancel(jobID string, cancel context.CancelFunc) *jobCancel {
