@@ -49,12 +49,18 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 			subjects: wiki.NewSubjectStore(db),
 			service:  svc,
 		}
+		subjectService := publicSubjectService{service: svc}
+		claimService := pathClaimService{
+			subjects: wiki.NewSubjectStore(db),
+			service:  svc,
+		}
+		statusService := publicStatusService{service: svc}
 		rt.Handle("POST /mcp", rt.RequireIdentity(
 			mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
 				mcp.WithIngestService(svc),
-				mcp.WithJobStatusService(svc),
-				mcp.WithSubjectsService(svc),
-				mcp.WithClaimsService(svc),
+				mcp.WithJobStatusService(statusService),
+				mcp.WithSubjectsService(subjectService),
+				mcp.WithClaimsService(claimService),
 				mcp.WithPagePathService(pageService),
 				mcp.WithAskFunc(asker.Ask),
 			)))
@@ -66,25 +72,137 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 	return spec
 }
 
+type publicSubject struct {
+	Path string
+	Name string
+	Type string
+}
+
+type publicClaim struct {
+	Path string
+	Body string
+}
+
+type publicPage struct {
+	Path  string
+	Title string
+	Body  string
+}
+
+type publicJobStatus struct {
+	ID         string
+	Status     string
+	ReceivedAt time.Time
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+	Error      string
+	Subjects   []string
+}
+
+type publicSubjectService struct {
+	service *wiki.Service
+}
+
+func (s publicSubjectService) Subjects(ctx context.Context, typ, nameContains string) ([]publicSubject, error) {
+	subjects, err := s.service.Subjects(ctx, typ, nameContains)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]publicSubject, 0, len(subjects))
+	for _, subject := range subjects {
+		out = append(out, publicSubject{
+			Path: wiki.Path(subject),
+			Name: subject.Name,
+			Type: subject.Type,
+		})
+	}
+	return out, nil
+}
+
+type pathClaimService struct {
+	subjects *wiki.SubjectStore
+	service  *wiki.Service
+}
+
+func (s pathClaimService) ClaimsBySubject(ctx context.Context, path string) ([]publicClaim, error) {
+	subject, err := s.subjects.GetByPath(ctx, path)
+	if errors.Is(err, wiki.ErrSubjectNotFound) {
+		return nil, sql.ErrNoRows
+	}
+	if err != nil {
+		return nil, err
+	}
+	claims, err := s.service.ClaimsBySubject(ctx, subject.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]publicClaim, 0, len(claims))
+	for _, claim := range claims {
+		out = append(out, publicClaim{
+			Path: wiki.Path(subject),
+			Body: claim.Body,
+		})
+	}
+	return out, nil
+}
+
+type publicStatusService struct {
+	service *wiki.Service
+}
+
+func (s publicStatusService) JobStatus(ctx context.Context, jobID string) (publicJobStatus, error) {
+	status, err := s.service.JobStatus(ctx, jobID)
+	if err != nil {
+		return publicJobStatus{}, err
+	}
+	subjects, err := s.service.Subjects(ctx, "", "")
+	if err != nil {
+		return publicJobStatus{}, err
+	}
+	paths := make(map[string]string, len(subjects))
+	for _, subject := range subjects {
+		paths[subject.ID] = wiki.Path(subject)
+	}
+	publicSubjects := make([]string, 0, len(status.Subjects))
+	for _, subjectID := range status.Subjects {
+		if path, ok := paths[subjectID]; ok {
+			publicSubjects = append(publicSubjects, path)
+		}
+	}
+	return publicJobStatus{
+		ID:         status.ID,
+		Status:     status.Status,
+		ReceivedAt: status.ReceivedAt,
+		StartedAt:  status.StartedAt,
+		FinishedAt: status.FinishedAt,
+		Error:      status.Error,
+		Subjects:   publicSubjects,
+	}, nil
+}
+
 type pathPageService struct {
 	subjects *wiki.SubjectStore
 	service  *wiki.Service
 }
 
-func (s pathPageService) PageByPath(ctx context.Context, path string) (wiki.Page, error) {
+func (s pathPageService) PageByPath(ctx context.Context, path string) (publicPage, error) {
 	subject, err := s.subjects.GetByPath(ctx, path)
 	if errors.Is(err, wiki.ErrSubjectNotFound) {
-		return wiki.Page{}, sql.ErrNoRows
+		return publicPage{}, sql.ErrNoRows
 	}
 	if err != nil {
-		return wiki.Page{}, err
+		return publicPage{}, err
 	}
 	page, err := s.service.PageWithLinks(ctx, subject.ID)
 	if err != nil {
-		return wiki.Page{}, err
+		return publicPage{}, err
 	}
 	page.Body = wiki.RenderFooter(page.Body, page.Mentions, page.MentionedBy)
-	return page.Page, nil
+	return publicPage{
+		Path:  wiki.Path(subject),
+		Title: page.Title,
+		Body:  page.Body,
+	}, nil
 }
 
 func buildCompiler(cfg wiki.Config) *compile.Compiler {

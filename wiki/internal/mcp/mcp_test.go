@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -260,9 +261,9 @@ func TestUnknownReadsReturnCleanNotFoundResults(t *testing.T) {
 		},
 		{
 			name: "claims",
-			body: `{"jsonrpc":"2.0","id":"claims","method":"tools/call","params":{"name":"claims","arguments":{"subject_id":"subject-missing"}}}`,
+			body: `{"jsonrpc":"2.0","id":"claims","method":"tools/call","params":{"name":"claims","arguments":{"path":"entity/missing"}}}`,
 			kind: "subject",
-			id:   "subject-missing",
+			id:   "entity/missing",
 		},
 		{
 			name: "page",
@@ -428,10 +429,147 @@ func TestPageToolUsesTypeSlugPath(t *testing.T) {
 	if wiki.pagePath != "entity/acme-robotics" {
 		t.Fatalf("page path = %q, want type/slug path", wiki.pagePath)
 	}
-	var body page
+	var body struct {
+		Path  string `json:"path"`
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
 	decodeToolText(t, rec.Body.Bytes(), &body)
-	if body.ID != "page-1" || body.Title != "Acme Robotics" {
+	if body.Path != "entity/acme-robotics" || body.Title != "Acme Robotics" {
 		t.Fatalf("page body = %#v, want returned page", body)
+	}
+}
+
+func TestReadToolsSerializePublicPathsWithoutSubjectIDs(t *testing.T) {
+	// R-03GW-PX5K
+	internalSubjectID := "01HZX4Q0SUBJECTULID00000001"
+	wiki := &capturingWiki{
+		status: jobStatus{
+			ID:       "job-123",
+			Status:   "done",
+			Subjects: []string{"entity/acme-robotics"},
+		},
+		subjects: []subject{{
+			ID:       internalSubjectID,
+			Name:     "Acme Robotics",
+			NormName: "acme robotics",
+			Type:     "entity",
+		}},
+		claims: []claim{{
+			ID:        "claim-1",
+			SubjectID: internalSubjectID,
+			Body:      "Acme Robotics runs a Tulsa lab.",
+		}},
+		page: page{
+			ID:        "page-1",
+			SubjectID: internalSubjectID,
+			Title:     "Acme Robotics",
+			Body:      "Acme Robotics overview.",
+		},
+	}
+	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+		WithJobStatusService(wiki),
+		WithSubjectsService(wiki),
+		WithClaimsService(wiki),
+		WithPagePathService(wiki),
+	))
+
+	for _, tc := range []struct {
+		name    string
+		request string
+		check   func(t *testing.T, text string)
+	}{
+		{
+			name: "status",
+			request: `{"jsonrpc":"2.0","id":"status","method":"tools/call","params":{
+				"name":"status","arguments":{"job_id":"job-123"}
+			}}`,
+			check: func(t *testing.T, text string) {
+				t.Helper()
+				var body struct {
+					JobID    string   `json:"job_id"`
+					Status   string   `json:"status"`
+					Subjects []string `json:"subjects"`
+				}
+				decodeJSON(t, []byte(text), &body)
+				if body.JobID != "job-123" || body.Status != "done" {
+					t.Fatalf("status body = %#v, want job/status fields", body)
+				}
+				if len(body.Subjects) != 1 || body.Subjects[0] != "entity/acme-robotics" {
+					t.Fatalf("status subjects = %#v, want public path", body.Subjects)
+				}
+			},
+		},
+		{
+			name: "subjects",
+			request: `{"jsonrpc":"2.0","id":"subjects","method":"tools/call","params":{
+				"name":"subjects","arguments":{"type":"entity","name":"acme"}
+			}}`,
+			check: func(t *testing.T, text string) {
+				t.Helper()
+				var body []struct {
+					Path string `json:"path"`
+					Name string `json:"name"`
+					Type string `json:"type"`
+				}
+				decodeJSON(t, []byte(text), &body)
+				if len(body) != 1 || body[0].Path != "entity/acme-robotics" || body[0].Name != "Acme Robotics" || body[0].Type != "entity" {
+					t.Fatalf("subjects body = %#v, want public path/name/type", body)
+				}
+			},
+		},
+		{
+			name: "claims",
+			request: `{"jsonrpc":"2.0","id":"claims","method":"tools/call","params":{
+				"name":"claims","arguments":{"path":"entity/acme-robotics"}
+			}}`,
+			check: func(t *testing.T, text string) {
+				t.Helper()
+				var body []struct {
+					Path string `json:"path"`
+					Body string `json:"body"`
+				}
+				decodeJSON(t, []byte(text), &body)
+				if len(body) != 1 || body[0].Path != "entity/acme-robotics" || body[0].Body != "Acme Robotics runs a Tulsa lab." {
+					t.Fatalf("claims body = %#v, want public path/body", body)
+				}
+			},
+		},
+		{
+			name: "page",
+			request: `{"jsonrpc":"2.0","id":"page","method":"tools/call","params":{
+				"name":"page","arguments":{"path":"entity/acme-robotics"}
+			}}`,
+			check: func(t *testing.T, text string) {
+				t.Helper()
+				var body struct {
+					Path  string `json:"path"`
+					Title string `json:"title"`
+					Body  string `json:"body"`
+				}
+				decodeJSON(t, []byte(text), &body)
+				if body.Path != "entity/acme-robotics" || body.Title != "Acme Robotics" || body.Body != "Acme Robotics overview." {
+					t.Fatalf("page body = %#v, want public path/title/body", body)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := callMCP(t, h, tc.request, "owner@example.com")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+			}
+			text := toolTextString(t, rec.Body.Bytes())
+			if !strings.Contains(text, "entity/acme-robotics") {
+				t.Fatalf("tool text = %s, want public path", text)
+			}
+			for _, forbidden := range []string{internalSubjectID, "SubjectID", "subject_id", "NormName", "norm_name"} {
+				if strings.Contains(text, forbidden) {
+					t.Fatalf("tool text = %s, leaked %q", text, forbidden)
+				}
+			}
+			tc.check(t, text)
+		})
 	}
 }
 
@@ -668,19 +806,20 @@ func (w *capturingWiki) PageByPath(_ context.Context, path string) (page, error)
 }
 
 type jobStatus struct {
-	ID         string
-	Status     string
-	ReceivedAt time.Time
-	StartedAt  *time.Time
-	FinishedAt *time.Time
-	Error      string
-	Subjects   []string
+	ID         string     `json:"job_id"`
+	Status     string     `json:"status"`
+	ReceivedAt time.Time  `json:"received_at"`
+	StartedAt  *time.Time `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
+	Error      string     `json:"error"`
+	Subjects   []string   `json:"subjects"`
 }
 
 type subject struct {
-	ID   string
-	Name string
-	Type string
+	ID       string
+	Name     string
+	NormName string
+	Type     string
 }
 
 type claim struct {
@@ -750,6 +889,11 @@ func callMCP(t *testing.T, h http.Handler, body, owner string) *httptest.Respons
 
 func decodeToolText(t *testing.T, raw []byte, dst any) {
 	t.Helper()
+	decodeJSON(t, []byte(toolTextString(t, raw)), dst)
+}
+
+func toolTextString(t *testing.T, raw []byte) string {
+	t.Helper()
 	var got struct {
 		Result struct {
 			Content []struct {
@@ -761,7 +905,7 @@ func decodeToolText(t *testing.T, raw []byte, dst any) {
 	if len(got.Result.Content) != 1 {
 		t.Fatalf("content len = %d, want 1", len(got.Result.Content))
 	}
-	decodeJSON(t, []byte(got.Result.Content[0].Text), dst)
+	return got.Result.Content[0].Text
 }
 
 func decodeJSON(t *testing.T, raw []byte, dst any) {

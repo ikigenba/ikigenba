@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"unicode"
 
 	"appkit"
 )
@@ -270,7 +271,7 @@ func (h *Handler) handleJobStatusCall(ctx context.Context, w http.ResponseWriter
 		writeResult(w, req.ID, toolError(err.Error()))
 		return
 	}
-	writeJSONTextResult(w, req.ID, status)
+	writeJSONTextResult(w, req.ID, publicStatusResult(status))
 }
 
 func (h *Handler) handleAskCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
@@ -320,7 +321,7 @@ func (h *Handler) handleSubjectsCall(ctx context.Context, w http.ResponseWriter,
 		writeResult(w, req.ID, toolError(err.Error()))
 		return
 	}
-	writeJSONTextResult(w, req.ID, subjects)
+	writeJSONTextResult(w, req.ID, publicSubjectsResult(subjects))
 }
 
 func (h *Handler) handleClaimsCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
@@ -329,26 +330,26 @@ func (h *Handler) handleClaimsCall(ctx context.Context, w http.ResponseWriter, r
 		return
 	}
 	var args struct {
-		SubjectID string `json:"subject_id"`
+		Path string `json:"path"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		writeResult(w, req.ID, toolError(err.Error()))
 		return
 	}
-	if strings.TrimSpace(args.SubjectID) == "" {
-		writeResult(w, req.ID, toolError("subject_id is required"))
+	if strings.TrimSpace(args.Path) == "" {
+		writeResult(w, req.ID, toolError("path is required"))
 		return
 	}
-	claims, err := h.claims(ctx, args.SubjectID)
+	claims, err := h.claims(ctx, args.Path)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeJSONTextResult(w, req.ID, notFound("subject", args.SubjectID))
+		writeJSONTextResult(w, req.ID, notFound("subject", args.Path))
 		return
 	}
 	if err != nil {
 		writeResult(w, req.ID, toolError(err.Error()))
 		return
 	}
-	writeJSONTextResult(w, req.ID, claims)
+	writeJSONTextResult(w, req.ID, publicClaimsResult(claims, args.Path))
 }
 
 func (h *Handler) handlePageCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
@@ -376,7 +377,7 @@ func (h *Handler) handlePageCall(ctx context.Context, w http.ResponseWriter, req
 		writeResult(w, req.ID, toolError(err.Error()))
 		return
 	}
-	writeJSONTextResult(w, req.ID, page)
+	writeJSONTextResult(w, req.ID, publicPageResult(page, args.Path))
 }
 
 func (h *Handler) handleReflectionCall(w http.ResponseWriter, req request) {
@@ -535,10 +536,10 @@ func subjectsTool() map[string]any {
 func claimsTool() map[string]any {
 	return map[string]any{
 		"name":        "claims",
-		"description": "Return claims attached to a wiki subject.",
+		"description": "Return claims attached to a wiki subject path.",
 		"inputSchema": objectSchema(map[string]any{
-			"subject_id": map[string]any{"type": "string"},
-		}, []string{"subject_id"}),
+			"path": map[string]any{"type": "string"},
+		}, []string{"path"}),
 	}
 }
 
@@ -562,6 +563,138 @@ func objectSchema(properties map[string]any, required []string) map[string]any {
 		schema["required"] = required
 	}
 	return schema
+}
+
+func publicStatusResult(status any) map[string]any {
+	v := indirect(reflect.ValueOf(status))
+	if !v.IsValid() || v.Kind() != reflect.Struct {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"job_id":      stringField(v, "ID"),
+		"status":      stringField(v, "Status"),
+		"received_at": interfaceField(v, "ReceivedAt"),
+		"started_at":  interfaceField(v, "StartedAt"),
+		"finished_at": interfaceField(v, "FinishedAt"),
+		"error":       stringField(v, "Error"),
+		"subjects":    stringSliceField(v, "Subjects"),
+	}
+}
+
+func publicSubjectsResult(subjects any) []map[string]string {
+	values := sliceValue(reflect.ValueOf(subjects))
+	out := make([]map[string]string, 0, values.Len())
+	for i := 0; i < values.Len(); i++ {
+		subject := indirect(values.Index(i))
+		if !subject.IsValid() || subject.Kind() != reflect.Struct {
+			continue
+		}
+		out = append(out, map[string]string{
+			"path": pathField(subject),
+			"name": stringField(subject, "Name"),
+			"type": stringField(subject, "Type"),
+		})
+	}
+	return out
+}
+
+func publicClaimsResult(claims any, path string) []map[string]string {
+	values := sliceValue(reflect.ValueOf(claims))
+	out := make([]map[string]string, 0, values.Len())
+	for i := 0; i < values.Len(); i++ {
+		claim := indirect(values.Index(i))
+		if !claim.IsValid() || claim.Kind() != reflect.Struct {
+			continue
+		}
+		claimPath := stringField(claim, "Path")
+		if claimPath == "" {
+			claimPath = strings.TrimSpace(path)
+		}
+		out = append(out, map[string]string{
+			"path": claimPath,
+			"body": stringField(claim, "Body"),
+		})
+	}
+	return out
+}
+
+func publicPageResult(page any, path string) map[string]string {
+	v := indirect(reflect.ValueOf(page))
+	if !v.IsValid() || v.Kind() != reflect.Struct {
+		return map[string]string{}
+	}
+	pagePath := stringField(v, "Path")
+	if pagePath == "" {
+		pagePath = strings.TrimSpace(path)
+	}
+	return map[string]string{
+		"path":  pagePath,
+		"title": stringField(v, "Title"),
+		"body":  stringField(v, "Body"),
+	}
+}
+
+func pathField(v reflect.Value) string {
+	if path := stringField(v, "Path"); path != "" {
+		return path
+	}
+	typ := stringField(v, "Type")
+	normName := stringField(v, "NormName")
+	if typ == "" || normName == "" {
+		return ""
+	}
+	return typ + "/" + slug(normName)
+}
+
+func slug(normName string) string {
+	var b strings.Builder
+	hyphen := true
+	for _, r := range normName {
+		if r == '/' || unicode.IsSpace(r) {
+			if !hyphen {
+				b.WriteByte('-')
+				hyphen = true
+			}
+			continue
+		}
+		b.WriteRune(r)
+		hyphen = false
+	}
+	return strings.TrimSuffix(b.String(), "-")
+}
+
+func interfaceField(v reflect.Value, name string) any {
+	field := v.FieldByName(name)
+	if !field.IsValid() || !field.CanInterface() {
+		return nil
+	}
+	if (field.Kind() == reflect.Pointer || field.Kind() == reflect.Interface) && field.IsNil() {
+		return nil
+	}
+	return field.Interface()
+}
+
+func stringSliceField(v reflect.Value, name string) []string {
+	field := v.FieldByName(name)
+	if !field.IsValid() || field.Kind() != reflect.Slice {
+		return nil
+	}
+	out := make([]string, 0, field.Len())
+	for i := 0; i < field.Len(); i++ {
+		item := field.Index(i)
+		if item.Kind() == reflect.String {
+			out = append(out, item.String())
+		}
+	}
+	return out
+}
+
+func sliceValue(v reflect.Value) reflect.Value {
+	v = indirect(v)
+	if !v.IsValid() || v.Kind() != reflect.Slice {
+		return reflect.ValueOf([]any{})
+	}
+	return v
 }
 
 func notFound(kind, id string) map[string]any {

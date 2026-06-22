@@ -21,6 +21,7 @@ import (
 	"wiki/internal/compile"
 	"wiki/internal/db"
 	"wiki/internal/llm"
+	"wiki/internal/mcp"
 	"wiki/internal/wiki"
 )
 
@@ -167,9 +168,13 @@ func TestBuildSpecPageToolReturnsRenderedFooter(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	var body wiki.Page
+	var body struct {
+		Path  string `json:"path"`
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
 	decodeMCPToolText(t, rec.Body.Bytes(), &body)
-	if body.ID != "page-acme" || body.Title != "Acme Robotics" {
+	if body.Path != "entity/acme-robotics" || body.Title != "Acme Robotics" {
 		t.Fatalf("page = %#v, want Acme page", body)
 	}
 	for _, want := range []string{
@@ -182,6 +187,134 @@ func TestBuildSpecPageToolReturnsRenderedFooter(t *testing.T) {
 		if !strings.Contains(body.Body, want) {
 			t.Fatalf("page body:\n%s\nmissing %q", body.Body, want)
 		}
+	}
+}
+
+func TestBuildSpecReadToolsReturnPublicPathsWithoutSubjectIDs(t *testing.T) {
+	// R-03GW-PX5K
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	internalSubjectID := "01HZX4Q0SUBJECTULID00000001"
+
+	if err := wiki.NewSubjectStore(conn).Save(ctx, wiki.Subject{
+		ID:       internalSubjectID,
+		Name:     "Acme Robotics",
+		NormName: "acme robotics",
+		Type:     "entity",
+	}); err != nil {
+		t.Fatalf("Save subject: %v", err)
+	}
+	if err := wiki.NewJobStore(conn).InsertIngest(ctx, wiki.Job{
+		ID:         "job-123",
+		Owner:      "owner@example.com",
+		SourceText: "source",
+		Status:     wiki.JobDone,
+		ReceivedAt: time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("InsertIngest: %v", err)
+	}
+	if err := wiki.NewClaimStore(conn).Save(ctx, wiki.Claim{
+		ID:        "claim-1",
+		SubjectID: internalSubjectID,
+		JobID:     "job-123",
+		Body:      "Acme Robotics runs a Tulsa lab.",
+	}); err != nil {
+		t.Fatalf("Save claim: %v", err)
+	}
+	if err := wiki.NewPageStore(conn).Upsert(ctx, wiki.Page{
+		ID:        internalSubjectID,
+		SubjectID: internalSubjectID,
+		Title:     "Acme Robotics",
+		Body:      "Acme Robotics overview.",
+	}); err != nil {
+		t.Fatalf("Upsert page: %v", err)
+	}
+
+	spec := buildSpec(wiki.Config{ModelID: "test-model"})
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		ResourceID: "https://int.ikigenba.com/srv/wiki/mcp",
+		AuthServer: "https://int.ikigenba.com",
+		Version:    "test-version",
+		Service:    "wiki",
+		Register:   spec.Handlers,
+		DB:         conn,
+	})
+	if err != nil {
+		t.Fatalf("server.New: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		request string
+	}{
+		{
+			name:    "status",
+			request: `{"jsonrpc":"2.0","id":"status","method":"tools/call","params":{"name":"status","arguments":{"job_id":"job-123"}}}`,
+		},
+		{
+			name:    "subjects",
+			request: `{"jsonrpc":"2.0","id":"subjects","method":"tools/call","params":{"name":"subjects","arguments":{"type":"entity","name":"acme"}}}`,
+		},
+		{
+			name:    "claims",
+			request: `{"jsonrpc":"2.0","id":"claims","method":"tools/call","params":{"name":"claims","arguments":{"path":"entity/acme-robotics"}}}`,
+		},
+		{
+			name:    "page",
+			request: `{"jsonrpc":"2.0","id":"page","method":"tools/call","params":{"name":"page","arguments":{"path":"entity/acme-robotics"}}}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			text := mcpToolCallText(t, srv.Handler, tc.request)
+			if !strings.Contains(text, "entity/acme-robotics") {
+				t.Fatalf("tool text = %s, want public path", text)
+			}
+			for _, forbidden := range []string{internalSubjectID, "SubjectID", "subject_id", "NormName", "norm_name"} {
+				if strings.Contains(text, forbidden) {
+					t.Fatalf("tool text = %s, leaked %q", text, forbidden)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildSpecMatchesDirectMCPToolSurface(t *testing.T) {
+	// R-04HB-QM7T
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	spec := buildSpec(wiki.Config{ModelID: "test-model"})
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		ResourceID: "https://int.ikigenba.com/srv/wiki/mcp",
+		AuthServer: "https://int.ikigenba.com",
+		Version:    "test-version",
+		Service:    "wiki",
+		Register:   spec.Handlers,
+		DB:         conn,
+	})
+	if err != nil {
+		t.Fatalf("server.New: %v", err)
+	}
+
+	direct := mcp.NewHandler("test-version", "wiki", nil,
+		mcp.WithIngestService(surfaceWiki{}),
+		mcp.WithJobStatusService(surfaceWiki{}),
+		mcp.WithAskFunc(surfaceAsk),
+		mcp.WithSubjectsService(surfaceWiki{}),
+		mcp.WithClaimsService(surfaceWiki{}),
+		mcp.WithPagePathService(surfaceWiki{}),
+	)
+
+	composedTools := mcpToolSurface(t, srv.Handler, true)
+	directTools := mcpToolSurface(t, direct, false)
+	if !reflect.DeepEqual(composedTools, directTools) {
+		t.Fatalf("tool surface mismatch\ncomposed=%#v\ndirect=%#v", composedTools, directTools)
 	}
 }
 
@@ -237,6 +370,26 @@ func TestBuildCompilerUsesDefaultCompileCallSite(t *testing.T) {
 
 func decodeMCPToolText(t *testing.T, raw []byte, dst any) {
 	t.Helper()
+	if err := json.Unmarshal([]byte(mcpToolText(t, raw)), dst); err != nil {
+		t.Fatalf("decode MCP tool text: %v", err)
+	}
+}
+
+func mcpToolCallText(t *testing.T, h http.Handler, body string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("X-Owner-Email", "owner@example.com")
+	req.Header.Set("X-Client-Id", "client-1")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tools/call status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	return mcpToolText(t, rec.Body.Bytes())
+}
+
+func mcpToolText(t *testing.T, raw []byte) string {
+	t.Helper()
 	var got struct {
 		Result struct {
 			Content []struct {
@@ -250,9 +403,36 @@ func decodeMCPToolText(t *testing.T, raw []byte, dst any) {
 	if len(got.Result.Content) != 1 {
 		t.Fatalf("content len = %d, want 1", len(got.Result.Content))
 	}
-	if err := json.Unmarshal([]byte(got.Result.Content[0].Text), dst); err != nil {
-		t.Fatalf("decode MCP tool text %s: %v", got.Result.Content[0].Text, err)
+	return got.Result.Content[0].Text
+}
+
+func mcpToolSurface(t *testing.T, h http.Handler, authenticated bool) []struct {
+	Name        string         `json:"name"`
+	InputSchema map[string]any `json:"inputSchema"`
+} {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":"list","method":"tools/list"}`))
+	if authenticated {
+		req.Header.Set("X-Owner-Email", "owner@example.com")
+		req.Header.Set("X-Client-Id", "client-1")
 	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tools/list status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Result struct {
+			Tools []struct {
+				Name        string         `json:"name"`
+				InputSchema map[string]any `json:"inputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode tools/list response: %v", err)
+	}
+	return got.Result.Tools
 }
 
 func withoutAnthropicKey(env []string) []string {
@@ -282,6 +462,43 @@ func migratedDB(t *testing.T, ctx context.Context) *sql.DB {
 type capturingProvider struct {
 	responses []string
 	requests  []agentkit.Request
+}
+
+type surfaceWiki struct{}
+
+func (surfaceWiki) Ingest(context.Context, string, string, string, []string) (string, error) {
+	return "", nil
+}
+
+func (surfaceWiki) JobStatus(context.Context, string) (publicJobStatus, error) {
+	return publicJobStatus{}, nil
+}
+
+func (surfaceWiki) Subjects(context.Context, string, string) ([]publicSubject, error) {
+	return nil, nil
+}
+
+func (surfaceWiki) ClaimsBySubject(context.Context, string) ([]publicClaim, error) {
+	return nil, nil
+}
+
+func (surfaceWiki) PageByPath(context.Context, string) (publicPage, error) {
+	return publicPage{}, nil
+}
+
+func surfaceAsk(context.Context, string, string) (askSurfaceAnswer, error) {
+	return askSurfaceAnswer{}, nil
+}
+
+type askSurfaceAnswer struct {
+	Found     bool
+	Text      string
+	Citations []askSurfaceCitation
+}
+
+type askSurfaceCitation struct {
+	Path  string
+	Title string
 }
 
 func (p *capturingProvider) RoundTrip(_ context.Context, req *agentkit.Request) *agentkit.RoundTrip {
