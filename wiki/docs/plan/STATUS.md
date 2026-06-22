@@ -29,4 +29,4 @@ Phase 18 ✅ realizes D8, D3, D4 — remove the keyword retrieval lane: delete `
 Phase 19 ✅ realizes D11 — subject addressing: derived `type/slug` path (`slug`/`Path`) + `SubjectStore.GetByPath` forward-compare resolution with `ErrSubjectNotFound`/`ErrAmbiguousPath`, no new column or migration
 Phase 20 ✅ realizes D12 — page links read-time: `Mentions` whole-word exact-normalized detection, `Service.PageWithLinks` outbound+inbound projection, and `RenderFooter` markdown footer; no table, no write-path change
 Phase 21 ✅ realizes D9 — `ask` citations carry the `type/slug` path (mapped from the validated subject) instead of the internal subject id; `Citation` becomes `{Path,Title}`
-Phase 22 ⬜ realizes D10 — MCP path I/O: `page`/`claims` accept a path via `GetByPath`, `subjects`/`status`/page/ask-citations emit paths, the `page` body carries the D12 footer, ambiguous path → clean tool error (still eight verbs)
+Phase 22 ✅ realizes D10 — MCP path I/O: `page`/`claims` accept a path via `GetByPath`, `subjects`/`status`/page/ask-citations emit paths, the `page` body carries the D12 footer, ambiguous path → clean tool error (still eight verbs)
