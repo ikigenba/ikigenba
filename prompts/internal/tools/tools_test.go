@@ -145,6 +145,46 @@ func TestAllThreadsSandboxRootPerCall(t *testing.T) {
 	}
 }
 
+func TestAllRejectsSymlinkEscapes(t *testing.T) {
+	// R-K1UK-T5K6
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("classified\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile outside secret: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "outside")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	builtins := All(root)
+	expectEscapeError(t, findTool(t, builtins, nameRead), map[string]any{
+		"file_path": "outside/secret.txt",
+	})
+	expectEscapeError(t, findTool(t, builtins, nameWrite), map[string]any{
+		"file_path": "outside/new.txt",
+		"content":   "leaked",
+	})
+	expectEscapeError(t, findTool(t, builtins, nameGlob), map[string]any{
+		"path":    "outside",
+		"pattern": "*.txt",
+	})
+	expectEscapeError(t, findTool(t, builtins, nameGrep), map[string]any{
+		"path":    "outside",
+		"pattern": "classified",
+	})
+	expectEscapeError(t, findTool(t, builtins, nameEdit), map[string]any{
+		"file_path":   "outside/secret.txt",
+		"old_string":  "classified",
+		"new_string":  "published",
+		"replace_all": false,
+	})
+
+	if _, err := os.Stat(filepath.Join(outside, "new.txt")); !os.IsNotExist(err) {
+		t.Fatalf("write through sandbox symlink created outside file: %v", err)
+	}
+	assertFileContent(t, filepath.Join(outside, "secret.txt"), "classified\n")
+}
+
 func findTool(t *testing.T, tools []agentkit.Tool, name string) agentkit.Tool {
 	t.Helper()
 	for _, tool := range tools {
@@ -163,6 +203,17 @@ func callTool(t *testing.T, ctx context.Context, tool agentkit.Tool, input map[s
 		t.Fatalf("%s.Call(%v): %v", tool.Name(), input, err)
 	}
 	return out
+}
+
+func expectEscapeError(t *testing.T, tool agentkit.Tool, input map[string]any) {
+	t.Helper()
+	_, err := tool.Call(context.Background(), mustJSON(t, input))
+	if err == nil {
+		t.Fatalf("%s.Call(%v) returned nil error", tool.Name(), input)
+	}
+	if !strings.Contains(err.Error(), "escapes sandbox") {
+		t.Fatalf("%s.Call(%v) error = %v, want escapes sandbox", tool.Name(), input, err)
+	}
 }
 
 func mustJSON(t *testing.T, v any) json.RawMessage {
