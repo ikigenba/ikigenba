@@ -34,7 +34,7 @@ Built in `internal/llm` (the bulk) plus the two stage defaults:
 - `extract.DefaultCallSite` and `compile.DefaultCallSite` each carry a non-zero
   `MaxTokens` generously above their realistic output (extract well above a
   per-document extraction, e.g. ~16384; compile above the 12,000-char page cap
-  plus overhead, e.g. ~8192) — the exact integers are tunable headroom, the
+  plus overhead, e.g. ~16384) — the exact integers are tunable headroom, the
   contract is "generously above realistic output." The composition root already
   builds the extractor/compiler from these defaults (Phase 14/15), so no further
   wiring change is needed.
