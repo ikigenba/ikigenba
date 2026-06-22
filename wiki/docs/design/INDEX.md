@@ -16,6 +16,10 @@ Each Decision maps to its `docs/design/DNN.md`; every `R-XXXX-XXXX` id maps to i
 - D10 → `docs/design/D10.md` — The MCP tool surface (`internal/mcp`) + identity — owns R-MUQ4-K1JS, R-MVY0-XTAH, R-MX5X-BL16, R-MYDT-PCRV, R-MZLQ-34IK, R-N4KO-2WTZ, R-01OQ-Y5YV, R-02WN-BXPK, R-044J-PPG9, R-03GW-PX5K, R-04HB-QM7T
 - D11 → `docs/design/D11.md` — Subject addressing: the `type/slug` public path — owns R-ZO9U-QOT8, R-ZQPN-I8AM, R-ZRXJ-W01B, R-ZT5G-9RS0
 - D12 → `docs/design/D12.md` — Page links: read-time mention detection + markdown footer — owns R-ZUDC-NJIP, R-ZVL9-1B9E, R-ZWT5-F303, R-ZY11-SUQS, R-ZZ8Y-6MHH, R-00GU-KE86
+- D13 → `docs/design/D13.md` — The LLM-call footprint: `llm_calls` table + recorder seam — owns R-VNS0-1Z85, R-VOZW-FQYU, R-VRFP-7AG8, R-VSNL-L26X, R-VTVH-YTXM, R-VV3E-CLOB
+- D14 → `docs/design/D14.md` — Job lifecycle & control: `aborted`, abort, re-run, atomic integrate — owns R-0SCX-95OZ, R-0TKT-MXFO, R-0USQ-0P6D, R-0W0M-EGX2, R-0X8I-S8NR, R-0YGF-60EG, R-0ZOB-JS55, R-10W7-XJVU
+- D15 → `docs/design/D15.md` — Cursor pagination: the contract + the list seams — owns R-17C5-VP2I, R-18K2-9GT7, R-19RY-N8JW, R-1C7R-ES1A, R-1DFN-SJRZ
+- D16 → `docs/design/D16.md` — MCP surface expansion: control & footprint verbs + paginated lists — owns R-37NS-BRXR, R-38VO-PJOG, R-3A3L-3BF5, R-3BBH-H35U, R-3CJD-UUWJ, R-3EZ6-MEDX, R-3G73-064M
 
 ## Verification ids → Decision
 
@@ -26,6 +30,26 @@ Each Decision maps to its `docs/design/DNN.md`; every `R-XXXX-XXXX` id maps to i
 - R-044J-PPG9 → D10 → `docs/design/D10.md`
 - R-04HB-QM7T → D10 → `docs/design/D10.md`
 - R-05CG-3H6Y → D9 → `docs/design/D09.md`
+- R-0SCX-95OZ → D14 → `docs/design/D14.md`
+- R-0TKT-MXFO → D14 → `docs/design/D14.md`
+- R-0USQ-0P6D → D14 → `docs/design/D14.md`
+- R-0W0M-EGX2 → D14 → `docs/design/D14.md`
+- R-0X8I-S8NR → D14 → `docs/design/D14.md`
+- R-0YGF-60EG → D14 → `docs/design/D14.md`
+- R-0ZOB-JS55 → D14 → `docs/design/D14.md`
+- R-10W7-XJVU → D14 → `docs/design/D14.md`
+- R-17C5-VP2I → D15 → `docs/design/D15.md`
+- R-18K2-9GT7 → D15 → `docs/design/D15.md`
+- R-19RY-N8JW → D15 → `docs/design/D15.md`
+- R-1C7R-ES1A → D15 → `docs/design/D15.md`
+- R-1DFN-SJRZ → D15 → `docs/design/D15.md`
+- R-37NS-BRXR → D16 → `docs/design/D16.md`
+- R-38VO-PJOG → D16 → `docs/design/D16.md`
+- R-3A3L-3BF5 → D16 → `docs/design/D16.md`
+- R-3BBH-H35U → D16 → `docs/design/D16.md`
+- R-3CJD-UUWJ → D16 → `docs/design/D16.md`
+- R-3EZ6-MEDX → D16 → `docs/design/D16.md`
+- R-3G73-064M → D16 → `docs/design/D16.md`
 - R-4BCC-0EHJ → D5 → `docs/design/D05.md`
 - R-4CK8-E688 → D6 → `docs/design/D06.md`
 - R-4DS4-RXYX → D7 → `docs/design/D07.md`
@@ -69,6 +93,12 @@ Each Decision maps to its `docs/design/DNN.md`; every `R-XXXX-XXXX` id maps to i
 - R-N4KO-2WTZ → D10 → `docs/design/D10.md`
 - R-PH8Z-YHNX → D8 → `docs/design/D08.md`
 - R-PIGW-C9EM → D8 → `docs/design/D08.md`
+- R-VNS0-1Z85 → D13 → `docs/design/D13.md`
+- R-VOZW-FQYU → D13 → `docs/design/D13.md`
+- R-VRFP-7AG8 → D13 → `docs/design/D13.md`
+- R-VSNL-L26X → D13 → `docs/design/D13.md`
+- R-VTVH-YTXM → D13 → `docs/design/D13.md`
+- R-VV3E-CLOB → D13 → `docs/design/D13.md`
 - R-VYU0-BPAX → D6 → `docs/design/D06.md`
 - R-W19T-38SB → D6 → `docs/design/D06.md`
 - R-W2HP-H0J0 → D6 → `docs/design/D06.md`
