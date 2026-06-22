@@ -10,45 +10,93 @@ import (
 	"testing"
 	"time"
 
-	"agentkit/provider"
 	"prompts/internal/db"
 	"prompts/internal/ids"
 	"prompts/internal/prompt"
 	"prompts/internal/sandbox"
 
-	published "github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit"
 )
 
-// fakeClient is a provider.Client whose Stream returns a pre-canned sequence
-// of events. If block is true, Stream emits nothing and instead blocks until
-// the context is cancelled, then closes the channel — modelling a hung run.
-type fakeClient struct {
-	events []provider.Event
-	block  bool
+// fakeProvider implements agentkit.Provider with a pre-canned one-turn
+// response. If block is true, RoundTrip waits for the context to finish before
+// returning, modelling a hung provider call without any network dependency.
+type fakeProvider struct {
+	block bool
+
+	mu       sync.Mutex
+	requests []*agentkit.Request
 }
 
-func (f *fakeClient) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
-	ch := make(chan provider.Event)
-	go func() {
-		defer close(ch)
-		if f.block {
-			<-ctx.Done()
-			return
+func (f *fakeProvider) Name() string { return "fake" }
+
+func (f *fakeProvider) Pricing(model string) (agentkit.Pricing, bool) {
+	return agentkit.Pricing{Tiers: []agentkit.RateTier{{InputUncached: 1, Output: 1}}}, true
+}
+
+func (f *fakeProvider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+	f.mu.Lock()
+	f.requests = append(f.requests, req)
+	f.mu.Unlock()
+
+	if f.block {
+		<-ctx.Done()
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, ctx.Err())
+	}
+	return agentkit.NewRoundTrip(
+		agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: "all done"}}},
+		agentkit.FinishStop,
+		agentkit.Usage{InputUncached: 12, Output: 7, Total: 19},
+		nil,
+		nil,
+	)
+}
+
+func (f *fakeProvider) requestCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.requests)
+}
+
+func (f *fakeProvider) lastRequest() *agentkit.Request {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.requests) == 0 {
+		return nil
+	}
+	return f.requests[len(f.requests)-1]
+}
+
+func TestBuildProviderUsesInjectedEnvironment(t *testing.T) {
+	// R-K5I9-YGS9
+	cfg := prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"}
+	var lookedUp []string
+	prov, err := buildProvider(cfg, func(key string) string {
+		lookedUp = append(lookedUp, key)
+		if key == "ANTHROPIC_API_KEY" {
+			return "test-key"
 		}
-		for _, ev := range f.events {
-			select {
-			case ch <- ev:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	return ch, nil
+		return ""
+	})
+	if err != nil {
+		t.Fatalf("buildProvider: %v", err)
+	}
+	if prov == nil {
+		t.Fatalf("buildProvider returned nil provider")
+	}
+	if got, want := strings.Join(lookedUp, ","), "ANTHROPIC_API_KEY"; got != want {
+		t.Fatalf("getenv keys = %q, want %q", got, want)
+	}
+
+	_, err = buildProvider(cfg, func(string) string { return "" })
+	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
+		t.Fatalf("missing key error = %v, want ANTHROPIC_API_KEY failure", err)
+	}
 }
 
 // newTestRunner builds a Runner backed by a real temp store + sandbox, with
-// the client factory replaced by one that always returns fc.
-func newTestRunner(t *testing.T, ttl time.Duration, fc provider.Client) (*Runner, *prompt.Store) {
+// the provider factory replaced by one that always returns fp.
+func newTestRunner(t *testing.T, ttl time.Duration, fp agentkit.Provider) (*Runner, *prompt.Store) {
 	t.Helper()
 	ctx := context.Background()
 	conn, err := db.Open(filepath.Join(t.TempDir(), "prompts.db"))
@@ -67,7 +115,7 @@ func newTestRunner(t *testing.T, ttl time.Duration, fc provider.Client) (*Runner
 	}
 
 	r := New(store, sb, ttl, t.TempDir())
-	r.newClient = func(apiKey, model string) (provider.Client, error) { return fc, nil }
+	r.buildProvider = func(prompt.Config, func(string) string) (agentkit.Provider, error) { return fp, nil }
 	return r, store
 }
 
@@ -154,13 +202,10 @@ func waitRun(t *testing.T, store *prompt.Store, sessionID string) prompt.Run {
 }
 
 func TestSpawn_TerminalSuccess(t *testing.T) {
-	fc := &fakeClient{events: []provider.Event{
-		provider.EventTextDelta{Text: "all done"},
-		provider.EventUsage{InputTokens: 12, OutputTokens: 7},
-		provider.EventDone{StopReason: "end_turn"},
-	}}
+	// R-K7Y2-Q09N
+	fp := &fakeProvider{}
 	runsDir := t.TempDir()
-	r, store := newTestRunner(t, time.Minute, fc)
+	r, store := newTestRunner(t, time.Minute, fp)
 	sess, run := seedRunning(t, store, r.sandbox, runsDir)
 
 	r.Spawn(run)
@@ -184,14 +229,49 @@ func TestSpawn_TerminalSuccess(t *testing.T) {
 	if !strings.Contains(logStr, "all done") {
 		t.Fatalf("log missing emitted assistant text: %s", logStr)
 	}
-	if !strings.Contains(logStr, `"type":"result"`) {
-		t.Fatalf("log missing result event: %s", logStr)
+	if !strings.Contains(logStr, `"type":"message"`) {
+		t.Fatalf("log missing message event: %s", logStr)
 	}
 	if got.UsageJSON == "" {
 		t.Fatalf("usage_json empty; want captured usage")
 	}
 	if !strings.Contains(got.UsageJSON, "usage") {
 		t.Fatalf("usage_json = %q, want usage totals", got.UsageJSON)
+	}
+	if fp.requestCount() != 1 {
+		t.Fatalf("provider RoundTrip calls = %d, want 1", fp.requestCount())
+	}
+}
+
+func TestSpawn_UsesInjectedProviderFactoryWithoutLiveEnvironment(t *testing.T) {
+	// R-K6Q6-C8IY
+	fp := &fakeProvider{}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	sess, run := seedRunning(t, store, r.sandbox, runsDir)
+
+	var called bool
+	var gotCfg prompt.Config
+	r.buildProvider = func(cfg prompt.Config, getenv func(string) string) (agentkit.Provider, error) {
+		called = true
+		gotCfg = cfg
+		return fp, nil
+	}
+
+	r.Spawn(run)
+	got := waitRun(t, store, sess.ID)
+
+	if !called {
+		t.Fatalf("injected buildProvider was not called")
+	}
+	if gotCfg.Provider != "anthropic" || gotCfg.Model != "claude-haiku-4-5" {
+		t.Fatalf("buildProvider cfg = %+v, want pinned run config", gotCfg)
+	}
+	if got.Status != prompt.RunSucceeded {
+		t.Fatalf("run status = %q, want succeeded (error=%q)", got.Status, got.Error)
+	}
+	if fp.requestCount() != 1 {
+		t.Fatalf("provider RoundTrip calls = %d, want 1", fp.requestCount())
 	}
 }
 
@@ -201,12 +281,10 @@ func TestSpawn_TerminalSuccess(t *testing.T) {
 // engine (the run completes successfully with the fake source wired). It reuses
 // the fake-client seam so no real Anthropic call is made.
 func TestSpawn_DiscoversSuiteTools(t *testing.T) {
-	fc := &fakeClient{events: []provider.Event{
-		provider.EventTextDelta{Text: "ok"},
-		provider.EventDone{StopReason: "end_turn"},
-	}}
+	// R-K95Z-3S0C
+	fp := &fakeProvider{}
 	runsDir := t.TempDir()
-	r, store := newTestRunner(t, time.Minute, fc)
+	r, store := newTestRunner(t, time.Minute, fp)
 	sess, run := seedRunning(t, store, r.sandbox, runsDir)
 
 	var (
@@ -215,13 +293,17 @@ func TestSpawn_DiscoversSuiteTools(t *testing.T) {
 		gotOwner    string
 		gotPromptID string
 	)
-	r.discover = func(ctx context.Context, owner, promptID string) []published.Tool {
+	r.discover = func(ctx context.Context, owner, promptID string) []agentkit.Tool {
 		mu.Lock()
 		calls++
 		gotOwner = owner
 		gotPromptID = promptID
 		mu.Unlock()
-		return []published.Tool{}
+		return []agentkit.Tool{
+			agentkit.RawTool("suite_lookup", "suite lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+				return "ok", nil
+			}),
+		}
 	}
 
 	r.Spawn(run)
@@ -241,6 +323,20 @@ func TestSpawn_DiscoversSuiteTools(t *testing.T) {
 	}
 	if gotPromptID != run.PromptID {
 		t.Fatalf("discover promptID = %q, want %q", gotPromptID, run.PromptID)
+	}
+	req := fp.lastRequest()
+	if req == nil {
+		t.Fatalf("fake provider saw no request")
+	}
+	var found bool
+	for _, tool := range req.Tools {
+		if tool.Name() == "suite_lookup" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("provider request tools did not include discovered suite tool")
 	}
 }
 
@@ -274,9 +370,9 @@ func TestNew_DefaultDiscoverWired(t *testing.T) {
 }
 
 func TestCancel(t *testing.T) {
-	fc := &fakeClient{block: true}
+	fp := &fakeProvider{block: true}
 	runsDir := t.TempDir()
-	r, store := newTestRunner(t, time.Minute, fc)
+	r, store := newTestRunner(t, time.Minute, fp)
 	sess, run := seedRunning(t, store, r.sandbox, runsDir)
 
 	r.Spawn(run)
@@ -311,9 +407,9 @@ func TestCancel(t *testing.T) {
 }
 
 func TestTTLFires(t *testing.T) {
-	fc := &fakeClient{block: true}
+	fp := &fakeProvider{block: true}
 	runsDir := t.TempDir()
-	r, store := newTestRunner(t, 50*time.Millisecond, fc)
+	r, store := newTestRunner(t, 50*time.Millisecond, fp)
 	sess, run := seedRunning(t, store, r.sandbox, runsDir)
 
 	r.Spawn(run)
@@ -328,9 +424,9 @@ func TestTTLFires(t *testing.T) {
 }
 
 func TestRecover(t *testing.T) {
-	fc := &fakeClient{} // unused; Recover does not run the engine
+	fp := &fakeProvider{} // unused; Recover does not run the engine
 	runsDir := t.TempDir()
-	r, store := newTestRunner(t, time.Minute, fc)
+	r, store := newTestRunner(t, time.Minute, fp)
 	// Seed a running session+run but never spawn it — it is an orphan.
 	sess, _ := seedRunning(t, store, r.sandbox, runsDir)
 

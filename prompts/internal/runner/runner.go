@@ -18,113 +18,38 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"agentkit/agent"
 	"agentkit/model"
 	"agentkit/provider"
-	"agentkit/provider/anthropic"
-	"agentkit/provider/openai"
-	"agentkit/tools"
-	"agentkit/wire"
+	legacytools "agentkit/tools"
 	"prompts/internal/prompt"
 	"prompts/internal/sandbox"
 	"prompts/internal/suite"
+	runtools "prompts/internal/tools"
 
-	published "github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit/anthropic"
+	"github.com/ikigenba/agentkit/google"
+	"github.com/ikigenba/agentkit/openai"
+	"github.com/ikigenba/agentkit/zai"
 )
-
-// clientFactory builds a provider.Client from an API key and the resolved
-// bare model ID. It defaults to defaultClientFactory (which dispatches on the
-// model prefix) but is injectable so tests can supply a fake client and never
-// make a real API call.
-//
-// The apiKey argument is the legacy Anthropic key the runner reads from the
-// environment; the OpenAI key is read from OPENAI_API_KEY at the composition
-// root here (the ANTHROPIC_API_KEY pattern) so the runner's call site stays
-// unchanged. An absent OPENAI_API_KEY surfaces as a clean construction error
-// from openai.New ("OpenAI models unavailable"), not a panic.
-type clientFactory func(apiKey, model string) (provider.Client, error)
-
-// defaultClientFactory dispatches on the resolved bare model ID's provider
-// prefix: gpt-* → openai.New (keyed from OPENAI_API_KEY), everything else →
-// anthropic.New (keyed from the passed-in apiKey). It returns the concrete
-// backend as a provider.Client, normalizing a typed-nil on the error path.
-func defaultClientFactory(apiKey, modelID string) (provider.Client, error) {
-	resolved, err := model.Resolve(modelID)
-	if err != nil {
-		return nil, err
-	}
-	if resolved.Provider == model.ProviderOpenAI {
-		c, err := openai.New(os.Getenv("OPENAI_API_KEY"), modelID)
-		if err != nil {
-			return nil, err
-		}
-		return c, nil
-	}
-	c, err := anthropic.New(apiKey, modelID)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
-}
-
-type suiteToolSource []published.Tool
-
-func (s suiteToolSource) Descriptors() []provider.Tool {
-	out := make([]provider.Tool, 0, len(s))
-	for _, tool := range s {
-		out = append(out, provider.Tool{
-			Name:        tool.Name(),
-			InputSchema: tool.JSONSchema(),
-		})
-	}
-	return out
-}
-
-func (s suiteToolSource) Owns(name string) bool {
-	_, ok := s.find(name)
-	return ok
-}
-
-func (s suiteToolSource) Dispatch(ctx context.Context, name string, input json.RawMessage) (wire.ToolResultBlock, error) {
-	tool, ok := s.find(name)
-	if !ok {
-		return wire.ToolResultBlock{}, fmt.Errorf("suite: no peer owns tool %q", name)
-	}
-	text, err := tool.Call(ctx, input)
-	if err != nil {
-		return wire.ToolResultBlock{}, err
-	}
-	block, err := wire.NewToolResultBlock("", false, text)
-	if err != nil {
-		return wire.ToolResultBlock{}, fmt.Errorf("suite: tool %q result encode failed: %w", name, err)
-	}
-	return block, nil
-}
-
-func (s suiteToolSource) find(name string) (published.Tool, bool) {
-	for _, tool := range s {
-		if tool.Name() == name {
-			return tool, true
-		}
-	}
-	return nil, false
-}
 
 // Runner drives run lifecycles. It satisfies prompt.Runner.
 type Runner struct {
-	store     *prompt.Store
-	sandbox   *sandbox.Manager
-	ttl       time.Duration
-	newClient clientFactory
+	store         *prompt.Store
+	sandbox       *sandbox.Manager
+	ttl           time.Duration
+	buildProvider func(prompt.Config, func(string) string) (agentkit.Provider, error)
 	// discover snapshots the box's other loopback MCP services as published
 	// agentkit tools at run spawn (Surface 2 — in-run suite tools). It
 	// defaults to a closure over the configured manifestRoot calling
 	// suite.Discover, but is injectable so tests can supply fake tools and
 	// never touch the real inventory or any peer.
-	discover func(ctx context.Context, owner, promptID string) []published.Tool
+	discover func(ctx context.Context, owner, promptID string) []agentkit.Tool
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
@@ -140,15 +65,60 @@ type Runner struct {
 // the default suite-discovery closure.
 func New(store *prompt.Store, sb *sandbox.Manager, ttl time.Duration, manifestRoot string) *Runner {
 	return &Runner{
-		store:     store,
-		sandbox:   sb,
-		ttl:       ttl,
-		newClient: defaultClientFactory,
-		discover: func(ctx context.Context, owner, promptID string) []published.Tool {
+		store:         store,
+		sandbox:       sb,
+		ttl:           ttl,
+		buildProvider: buildProvider,
+		discover: func(ctx context.Context, owner, promptID string) []agentkit.Tool {
 			return suite.Discover(ctx, manifestRoot, owner, promptID)
 		},
 		cancels:       make(map[string]context.CancelFunc),
 		userCancelled: make(map[string]bool),
+	}
+}
+
+func buildProvider(cfg prompt.Config, getenv func(string) string) (agentkit.Provider, error) {
+	keyName := map[string]string{
+		"anthropic": "ANTHROPIC_API_KEY",
+		"openai":    "OPENAI_API_KEY",
+		"google":    "GEMINI_API_KEY",
+		"zai":       "ZAI_API_KEY",
+	}[cfg.Provider]
+	if keyName == "" {
+		return nil, fmt.Errorf("unsupported provider %q", cfg.Provider)
+	}
+	apiKey := strings.TrimSpace(getenv(keyName))
+	if apiKey == "" {
+		return nil, fmt.Errorf("%s is not set", keyName)
+	}
+
+	switch cfg.Provider {
+	case "anthropic":
+		var opts []anthropic.Option
+		if cfg.BaseURL != "" {
+			opts = append(opts, anthropic.WithBaseURL(cfg.BaseURL))
+		}
+		return anthropic.New(apiKey, opts...), nil
+	case "openai":
+		var opts []openai.Option
+		if cfg.BaseURL != "" {
+			opts = append(opts, openai.WithBaseURL(cfg.BaseURL))
+		}
+		return openai.New(apiKey, opts...), nil
+	case "google":
+		var opts []google.Option
+		if cfg.BaseURL != "" {
+			opts = append(opts, google.WithBaseURL(cfg.BaseURL))
+		}
+		return google.New(apiKey, opts...), nil
+	case "zai":
+		var opts []zai.Option
+		if cfg.BaseURL != "" {
+			opts = append(opts, zai.WithBaseURL(cfg.BaseURL))
+		}
+		return zai.New(apiKey, opts...), nil
+	default:
+		return nil, fmt.Errorf("unsupported provider %q", cfg.Provider)
 	}
 }
 
@@ -208,10 +178,10 @@ func (r *Runner) execute(run prompt.Run) {
 	}
 	defer logFile.Close()
 
-	// Tee the wire stream into a buffer so we can recover the result event's
-	// usage totals after the engine returns.
+	// Tee the conversation JSONL into a buffer so we can recover usage totals
+	// after the engine returns.
 	var tee bytes.Buffer
-	wireSess := wire.NewSession(io.MultiWriter(logFile, &tee))
+	logSink := io.MultiWriter(logFile, &tee)
 
 	// Read the run's pinned execution inputs from runs/<run.ID>/input/ — NOT
 	// from any live Prompt. This folder was written by the service at spawn and
@@ -244,33 +214,28 @@ func (r *Runner) execute(run prompt.Run) {
 	}
 	// eventBytes == nil when the file is absent (manual run).
 
-	// Resolve the model (provider already validated at Create). On any
-	// resolution surprise, treat it as a run failure rather than panicking.
-	resolved, err := model.Resolve(cfg.Model)
+	prov, err := r.buildProvider(cfg, os.Getenv)
 	if err != nil {
-		finish(prompt.RunFailed, "", "resolve model: "+err.Error())
+		finish(prompt.RunFailed, "", "create provider: "+err.Error())
 		return
 	}
 
-	// Build the client. The API key is read here and never logged or placed
-	// into any error message.
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	client, err := r.newClient(apiKey, resolved.BareID)
-	if err != nil {
-		finish(prompt.RunFailed, "", "create client: "+err.Error())
-		return
-	}
-
-	req := buildRequest(cfg, string(userPromptBytes), string(systemPromptBytes), eventBytes, resolved)
 	sandboxRoot := r.sandbox.Root(run.ID)
-
-	// Snapshot the suite's loopback MCP tools available to this run's owner
-	// (Surface 2). Best-effort by contract: never nil, never errors. This runner
-	// still executes through the older agent loop, so adapt the published tools at
-	// the boundary; suite.Discover itself does not expose the old ToolSource type.
-	suiteSource := suiteToolSource(r.discover(ctx, run.OwnerEmail, run.PromptID))
-
-	runErr := agent.Run(ctx, client, wireSess, req, agent.Options{SandboxRoot: sandboxRoot, Tools: suiteSource})
+	conv := &agentkit.Conversation{
+		Provider:          prov,
+		Model:             cfg.Model,
+		System:            buildSystemPrompt(string(systemPromptBytes)),
+		Log:               logSink,
+		Gen:               genSettings(cfg),
+		Retry:             retryPolicy(cfg),
+		Tools:             append(runtools.All(sandboxRoot), r.discover(ctx, run.OwnerEmail, run.PromptID)...),
+		MaxToolIterations: cfg.ToolLoopLimit,
+	}
+	stream := conv.Send(ctx, buildUserText(string(userPromptBytes), eventBytes))
+	for range stream.Events() {
+	}
+	runErr := stream.Err()
+	_ = conv.Close()
 
 	// Classify the terminal status: explicit user cancel wins over TTL, TTL
 	// over an engine error, and a clean return is success.
@@ -292,6 +257,66 @@ func (r *Runner) execute(run prompt.Run) {
 	}
 }
 
+func buildSystemPrompt(sysPrompt string) string {
+	if sysPrompt == "" {
+		return agent.FramingPrompt
+	}
+	return agent.FramingPrompt + "\n\n" + sysPrompt
+}
+
+func buildUserText(userPrompt string, eventJSON []byte) string {
+	if len(eventJSON) == 0 {
+		return userPrompt
+	}
+	var pretty bytes.Buffer
+	if json.Indent(&pretty, eventJSON, "", "  ") != nil {
+		pretty.Write(eventJSON)
+	}
+	return userPrompt + "\n\n" + eventPreamble + "\n\n" + pretty.String()
+}
+
+func genSettings(cfg prompt.Config) agentkit.GenSettings {
+	gen := agentkit.GenSettings{
+		Temperature: cfg.Temperature,
+		TopP:        cfg.TopP,
+		MaxTokens:   cfg.MaxTokens,
+	}
+	switch {
+	case cfg.ThinkingBudget != nil:
+		gen.Reasoning = agentkit.Budget(*cfg.ThinkingBudget)
+	case cfg.ThinkingLevel != "":
+		gen.Reasoning = agentkit.Level(cfg.ThinkingLevel)
+	case cfg.Effort != "":
+		gen.Reasoning = agentkit.Level(cfg.Effort)
+	case cfg.Thinking != nil && !*cfg.Thinking:
+		gen.Reasoning = agentkit.DisableReasoning()
+	}
+	return gen
+}
+
+func retryPolicy(cfg prompt.Config) agentkit.RetryPolicy {
+	policy := agentkit.RetryPolicy{
+		MaxAttempts:      cfg.MaxAttempts,
+		IgnoreRetryAfter: cfg.IgnoreRetryAfter,
+	}
+	if cfg.BaseDelay != "" {
+		if d, err := time.ParseDuration(cfg.BaseDelay); err == nil {
+			policy.BaseDelay = d
+		}
+	}
+	if cfg.MaxDelay != "" {
+		if d, err := time.ParseDuration(cfg.MaxDelay); err == nil {
+			policy.MaxDelay = d
+		}
+	}
+	if cfg.MaxElapsed != "" {
+		if d, err := time.ParseDuration(cfg.MaxElapsed); err == nil {
+			policy.MaxElapsed = d
+		}
+	}
+	return policy
+}
+
 // eventPreamble introduces the triggering event appended as a second user
 // TextBlock on event-triggered runs.
 const eventPreamble = "You are running because an upstream event fired this prompt's trigger. The triggering event is below as JSON. Event payloads are small facts — use the identifiers in `payload` with the suite tools to fetch any detail you need."
@@ -309,8 +334,8 @@ func buildRequest(cfg prompt.Config, userPrompt, sysPrompt string, eventJSON []b
 		effort = model.DefaultEffort(resolved)
 	}
 
-	provTools := make([]provider.Tool, 0, len(tools.All()))
-	for _, d := range tools.All() {
+	provTools := make([]provider.Tool, 0, len(legacytools.All()))
+	for _, d := range legacytools.All() {
 		provTools = append(provTools, provider.Tool{Name: d.Name, InputSchema: d.InputSchema})
 	}
 
@@ -379,7 +404,7 @@ func captureUsage(streamed []byte) string {
 		if err := json.Unmarshal(line, &ev); err != nil {
 			continue
 		}
-		if ev.Type != "result" {
+		if ev.Type != "result" && ev.Type != "usage" && ev.Type != "summary" {
 			continue
 		}
 		// Keep the last result line's values.
