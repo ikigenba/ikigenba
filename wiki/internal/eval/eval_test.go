@@ -272,6 +272,254 @@ func TestRunFeedsCaseToProductionExtractor(t *testing.T) {
 	}
 }
 
+func TestScorePartitionsSubjectsByTypeAndNormalizedName(t *testing.T) {
+	// R-DRME-T4FA
+	prov := &capturingProvider{responses: []string{`{
+		"covered":[{"gold":"Cafe Noir opened a Tulsa lab.","predicted":"The Tulsa lab was opened by Cafe Noir."}],
+		"missed":[],
+		"extra":[]
+	}`}}
+	j := NewJudge(llm.New(prov, nil), DefaultJudgeCallSite())
+	c := Case{
+		Name:       "subject-partition",
+		Difficulty: "easy",
+		Gold: []GoldSubject{
+			{Type: "entity", Name: "Café   Noir", Claims: []string{"Cafe Noir opened a Tulsa lab."}},
+			{Type: "event", Name: "Lab opening", Claims: []string{"The lab opening happened in Tulsa."}},
+		},
+	}
+	predicted := []extract.ExtractedSubject{
+		{Type: "entity", Kind: "company", Name: "cafe noir", Claims: []string{"The Tulsa lab was opened by Cafe Noir."}},
+		{Type: "concept", Kind: "topic", Name: "Café Noir", Claims: []string{"Cafe Noir is discussed as a concept."}},
+	}
+
+	got, err := Score(context.Background(), j, c, predicted)
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+	if !reflect.DeepEqual(got.Subjects.Found, []string{"entity/cafe-noir"}) {
+		t.Fatalf("found = %#v, want normalized entity match", got.Subjects.Found)
+	}
+	if !reflect.DeepEqual(got.Subjects.Missed, []string{"event/lab-opening"}) {
+		t.Fatalf("missed = %#v, want unmatched gold event", got.Subjects.Missed)
+	}
+	if !reflect.DeepEqual(got.Subjects.Hallucinated, []string{"concept/cafe-noir"}) {
+		t.Fatalf("hallucinated = %#v, want same normalized name with different type to stay separate", got.Subjects.Hallucinated)
+	}
+	if got.Claims != (ClaimScore{Covered: 1, Missed: 1, Extra: 1}) {
+		t.Fatalf("claims = %#v, want matched claim plus unmatched missed/extra claims", got.Claims)
+	}
+}
+
+func TestScoreCallsJudgeForMatchedSubjectAndUsesVerdict(t *testing.T) {
+	// R-DSUB-6W5Z
+	prov := &capturingProvider{responses: []string{`{
+		"covered":[{"gold":"Acme Robotics opened a lab in Tulsa.","predicted":"The Tulsa facility was opened by Acme Robotics."}],
+		"missed":[],
+		"extra":[]
+	}`}}
+	rec := &recordingRecorder{}
+	site := DefaultJudgeCallSite()
+	j := NewJudge(llm.New(prov, nil, rec), site)
+	c := Case{
+		Name:       "judge-call",
+		Difficulty: "medium",
+		Gold: []GoldSubject{{
+			Type:   "entity",
+			Name:   "Acme Robotics",
+			Claims: []string{"Acme Robotics opened a lab in Tulsa."},
+		}},
+	}
+	predicted := []extract.ExtractedSubject{{
+		Type:   "entity",
+		Kind:   "company",
+		Name:   "acme robotics",
+		Claims: []string{"The Tulsa facility was opened by Acme Robotics."},
+	}}
+
+	got, err := Score(context.Background(), j, c, predicted)
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+	if got.Claims != (ClaimScore{Covered: 1}) {
+		t.Fatalf("claims = %#v, want scripted judge verdict to mark different wording covered", got.Claims)
+	}
+	if len(prov.requests) != 1 {
+		t.Fatalf("requests len = %d, want one judge llm.JSON call for matched subject", len(prov.requests))
+	}
+	if len(rec.records) != 1 || rec.records[0].Stage != "judge" {
+		t.Fatalf("records = %#v, want one Stage judge call record", rec.records)
+	}
+	req := prov.requests[0]
+	if req.Model != site.Model || req.Gen.MaxTokens != site.MaxTokens {
+		t.Fatalf("request model/max_tokens = %q/%d, want %q/%d", req.Model, req.Gen.MaxTokens, site.Model, site.MaxTokens)
+	}
+	prompt := onlyRequestText(t, req)
+	for _, wantText := range []string{
+		"entity/acme-robotics",
+		"Acme Robotics opened a lab in Tulsa.",
+		"The Tulsa facility was opened by Acme Robotics.",
+	} {
+		if !strings.Contains(prompt, wantText) {
+			t.Fatalf("prompt %q does not contain %q", prompt, wantText)
+		}
+	}
+}
+
+func TestScoreSkipsJudgeForUnmatchedSubjectsAndClassifiesClaims(t *testing.T) {
+	// R-DU27-KNWO
+	prov := &capturingProvider{}
+	j := NewJudge(llm.New(prov, nil), DefaultJudgeCallSite())
+	c := Case{
+		Name:       "unmatched",
+		Difficulty: "hard",
+		Gold: []GoldSubject{{
+			Type: "entity",
+			Name: "Acme Robotics",
+			Claims: []string{
+				"Acme Robotics opened a Tulsa lab.",
+				"Acme Robotics hired robotics engineers.",
+			},
+		}},
+	}
+	predicted := []extract.ExtractedSubject{{
+		Type:   "concept",
+		Kind:   "topic",
+		Name:   "Tulsa robotics",
+		Claims: []string{"Tulsa robotics attracted investor interest."},
+	}}
+
+	got, err := Score(context.Background(), j, c, predicted)
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+	if len(prov.requests) != 0 {
+		t.Fatalf("requests len = %d, want no judge call for unmatched subjects", len(prov.requests))
+	}
+	if !reflect.DeepEqual(got.Subjects.Missed, []string{"entity/acme-robotics"}) {
+		t.Fatalf("missed = %#v, want unmatched gold subject", got.Subjects.Missed)
+	}
+	if !reflect.DeepEqual(got.Subjects.Hallucinated, []string{"concept/tulsa-robotics"}) {
+		t.Fatalf("hallucinated = %#v, want unmatched predicted subject", got.Subjects.Hallucinated)
+	}
+	if got.Claims != (ClaimScore{Missed: 2, Extra: 1}) {
+		t.Fatalf("claims = %#v, want unmatched gold claims missed and predicted claims extra", got.Claims)
+	}
+}
+
+func TestScoreErrorsAfterBoundedMalformedOrOutOfRangeJudgeVerdicts(t *testing.T) {
+	// R-DVA3-YFND
+	prov := &capturingProvider{responses: []string{
+		`not json`,
+		`{"covered":[{"gold":"not a gold claim","predicted":"Predicted claim."}],"missed":[],"extra":[]}`,
+		`{"covered":[],"missed":["Gold claim."],"extra":["not a predicted claim"]}`,
+	}}
+	site := DefaultJudgeCallSite()
+	site.MaxParseRetries = 2
+	j := NewJudge(llm.New(prov, nil), site)
+	c := Case{
+		Name:       "bad-verdict",
+		Difficulty: "easy",
+		Gold: []GoldSubject{{
+			Type:   "entity",
+			Name:   "Acme Robotics",
+			Claims: []string{"Gold claim."},
+		}},
+	}
+	predicted := []extract.ExtractedSubject{{
+		Type:   "entity",
+		Kind:   "company",
+		Name:   "Acme Robotics",
+		Claims: []string{"Predicted claim."},
+	}}
+
+	got, err := Score(context.Background(), j, c, predicted)
+	if err == nil {
+		t.Fatalf("Score returned nil error and result %#v", got)
+	}
+	if !strings.Contains(err.Error(), "after 3 attempt") {
+		t.Fatalf("error = %v, want bounded retry failure", err)
+	}
+	if len(prov.requests) != 3 {
+		t.Fatalf("requests len = %d, want MaxParseRetries+1 attempts", len(prov.requests))
+	}
+	if !strings.Contains(requestTexts(prov.requests[1]), "previous response could not be parsed") {
+		t.Fatalf("second prompt = %q, want corrective re-prompt", requestTexts(prov.requests[1]))
+	}
+}
+
+func TestDefaultJudgeCallSiteUsesPinnedOpusDeterministicSettings(t *testing.T) {
+	// R-DWI0-C7E2
+	site := DefaultJudgeCallSite()
+	if site.Stage != "judge" {
+		t.Fatalf("stage = %q, want judge", site.Stage)
+	}
+	if site.Model != "claude-opus-4-8" {
+		t.Fatalf("model = %q, want Opus 4.8", site.Model)
+	}
+	if site.Temperature == nil || *site.Temperature != 0 {
+		t.Fatalf("temperature = %v, want pinned 0", site.Temperature)
+	}
+	if site.MaxTokens < 16384 {
+		t.Fatalf("max tokens = %d, want at least 16384", site.MaxTokens)
+	}
+	if site.MaxParseRetries != 2 {
+		t.Fatalf("max parse retries = %d, want 2", site.MaxParseRetries)
+	}
+	if !reflect.DeepEqual(site.Reasoning, agentkit.Level("low")) {
+		t.Fatalf("reasoning = %#v, want low level", site.Reasoning)
+	}
+}
+
+func TestAggregateComputesOverallAndPerDifficultyMetrics(t *testing.T) {
+	// R-DXPW-PZ4R
+	got := Aggregate([]CaseResult{
+		{
+			Difficulty: "easy",
+			Subjects: SubjectScore{
+				Found:        []string{"entity/a", "entity/b"},
+				Missed:       []string{"entity/c"},
+				Hallucinated: []string{"entity/d"},
+			},
+			Claims: ClaimScore{Covered: 3, Missed: 1, Extra: 2},
+		},
+		{
+			Difficulty: "hard",
+			Subjects: SubjectScore{
+				Found:  []string{"event/e"},
+				Missed: []string{"event/f", "event/g"},
+			},
+			Claims: ClaimScore{Covered: 1, Missed: 3},
+		},
+		{
+			Difficulty: "easy",
+			Subjects: SubjectScore{
+				Found:        []string{"concept/h"},
+				Hallucinated: []string{"concept/i"},
+			},
+			Claims: ClaimScore{Covered: 2, Extra: 1},
+		},
+	})
+
+	assertMetrics(t, "overall subjects", got.Overall.Subjects, Metrics{Precision: 4.0 / 6.0, Recall: 4.0 / 7.0})
+	assertMetrics(t, "overall claims", got.Overall.Claims, Metrics{Precision: 6.0 / 9.0, Recall: 6.0 / 10.0})
+	if got.Overall.Cases != 3 {
+		t.Fatalf("overall cases = %d, want 3", got.Overall.Cases)
+	}
+	easy := got.ByDifficulty["easy"]
+	assertMetrics(t, "easy subjects", easy.Subjects, Metrics{Precision: 3.0 / 5.0, Recall: 3.0 / 4.0})
+	assertMetrics(t, "easy claims", easy.Claims, Metrics{Precision: 5.0 / 8.0, Recall: 5.0 / 6.0})
+	if easy.Cases != 2 {
+		t.Fatalf("easy cases = %d, want 2", easy.Cases)
+	}
+	hard := got.ByDifficulty["hard"]
+	assertMetrics(t, "hard subjects", hard.Subjects, Metrics{Precision: 1, Recall: 1.0 / 3.0})
+	assertMetrics(t, "hard claims", hard.Claims, Metrics{Precision: 1, Recall: 1.0 / 4.0})
+	if hard.Cases != 1 {
+		t.Fatalf("hard cases = %d, want 1", hard.Cases)
+	}
+}
+
 func writeCase(t *testing.T, name, text, gold string) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), name)
@@ -379,4 +627,36 @@ func onlyRequestText(t *testing.T, req agentkit.Request) string {
 		t.Fatalf("request texts = %#v, want one user prompt", out)
 	}
 	return out[0]
+}
+
+func requestTexts(req agentkit.Request) string {
+	var out []string
+	for _, msg := range req.Messages {
+		var b strings.Builder
+		for _, block := range msg.Blocks {
+			if text, ok := block.(agentkit.TextBlock); ok {
+				b.WriteString(text.Text)
+			}
+		}
+		if b.Len() > 0 {
+			out = append(out, b.String())
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+type recordingRecorder struct {
+	records []llm.CallRecord
+}
+
+func (r *recordingRecorder) Record(_ context.Context, rec llm.CallRecord) error {
+	r.records = append(r.records, rec)
+	return nil
+}
+
+func assertMetrics(t *testing.T, name string, got, want Metrics) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("%s = %#v, want %#v", name, got, want)
+	}
 }

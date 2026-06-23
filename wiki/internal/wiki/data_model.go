@@ -108,6 +108,11 @@ func normalize(name string) string {
 	return stripDiacritics(s)
 }
 
+// Normalize returns the canonical subject-name form used for wiki identity.
+func Normalize(name string) string {
+	return normalize(name)
+}
+
 func stripDiacritics(s string) string {
 	var b strings.Builder
 	for _, r := range norm.NFD.String(s) {

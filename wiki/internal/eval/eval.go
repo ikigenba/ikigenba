@@ -7,10 +7,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	agentkit "github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit/anthropic"
+
 	"wiki/internal/extract"
+	"wiki/internal/llm"
+	wikidomain "wiki/internal/wiki"
 )
 
 // Case is one extract evaluation fixture.
@@ -27,6 +33,176 @@ type GoldSubject struct {
 	Type   string
 	Name   string
 	Claims []string
+}
+
+// SubjectScore partitions predicted subjects against the gold subject set.
+type SubjectScore struct {
+	Found        []string
+	Missed       []string
+	Hallucinated []string
+}
+
+// Judge runs eval-only claim scoring through a pinned LLM call site.
+type Judge struct {
+	c    *llm.Client
+	site llm.CallSite
+}
+
+// NewJudge builds a claim judge from an injected LLM client and call site.
+func NewJudge(c *llm.Client, site llm.CallSite) *Judge {
+	return &Judge{c: c, site: site}
+}
+
+// DefaultJudgeCallSite returns the pinned reference yardstick for eval scoring.
+func DefaultJudgeCallSite() llm.CallSite {
+	temp := 0.0
+	return llm.CallSite{
+		Stage:           "judge",
+		Model:           anthropic.ModelOpus48,
+		Temperature:     &temp,
+		Reasoning:       agentkit.Level("low"),
+		MaxTokens:       16384,
+		MaxParseRetries: 2,
+	}
+}
+
+// ClaimScore totals claim verdicts.
+type ClaimScore struct {
+	Covered int
+	Missed  int
+	Extra   int
+}
+
+// ClaimMatch records one predicted claim judged to cover a gold claim.
+type ClaimMatch struct {
+	Gold      string
+	Predicted string
+}
+
+// SubjectClaimResult keeps per-subject claim text for human review.
+type SubjectClaimResult struct {
+	Subject string
+	Covered []ClaimMatch
+	Missed  []string
+	Extra   []string
+}
+
+// CaseResult is the score for one eval case.
+type CaseResult struct {
+	Case       string
+	Difficulty string
+	Subjects   SubjectScore
+	Claims     ClaimScore
+	ClaimText  []SubjectClaimResult
+}
+
+// Metrics carries precision and recall for one subject or claim partition.
+type Metrics struct {
+	Precision float64
+	Recall    float64
+}
+
+// Totals aggregates case results overall and by difficulty.
+type Totals struct {
+	Overall struct {
+		Subjects Metrics
+		Claims   Metrics
+		Cases    int
+	}
+	ByDifficulty map[string]struct {
+		Subjects Metrics
+		Claims   Metrics
+		Cases    int
+	}
+}
+
+// Score partitions subjects and asks the judge to score claims for matched subjects.
+func Score(ctx context.Context, j *Judge, c Case, predicted []extract.ExtractedSubject) (CaseResult, error) {
+	goldByID := make(map[string]GoldSubject, len(c.Gold))
+	predictedByID := make(map[string]extract.ExtractedSubject, len(predicted))
+	for _, subject := range c.Gold {
+		goldByID[subjectID(subject.Type, subject.Name)] = subject
+	}
+	for _, subject := range predicted {
+		predictedByID[subjectID(subject.Type, subject.Name)] = subject
+	}
+
+	result := CaseResult{
+		Case:       c.Name,
+		Difficulty: c.Difficulty,
+	}
+	ids := unionSubjectIDs(goldByID, predictedByID)
+	for _, id := range ids {
+		gold, inGold := goldByID[id]
+		pred, inPredicted := predictedByID[id]
+		switch {
+		case inGold && inPredicted:
+			result.Subjects.Found = append(result.Subjects.Found, id)
+			detail, err := judgeClaims(ctx, j, id, gold.Claims, pred.Claims)
+			if err != nil {
+				return CaseResult{}, err
+			}
+			result.Claims.Covered += len(detail.Covered)
+			result.Claims.Missed += len(detail.Missed)
+			result.Claims.Extra += len(detail.Extra)
+			result.ClaimText = append(result.ClaimText, detail)
+		case inGold:
+			result.Subjects.Missed = append(result.Subjects.Missed, id)
+			result.Claims.Missed += len(gold.Claims)
+			result.ClaimText = append(result.ClaimText, SubjectClaimResult{
+				Subject: id,
+				Missed:  append([]string(nil), gold.Claims...),
+			})
+		case inPredicted:
+			result.Subjects.Hallucinated = append(result.Subjects.Hallucinated, id)
+			result.Claims.Extra += len(pred.Claims)
+			result.ClaimText = append(result.ClaimText, SubjectClaimResult{
+				Subject: id,
+				Extra:   append([]string(nil), pred.Claims...),
+			})
+		}
+	}
+	return result, nil
+}
+
+// Aggregate rolls case scores into overall and per-difficulty precision/recall.
+func Aggregate(results []CaseResult) Totals {
+	type counts struct {
+		cases               int
+		subjectFound        int
+		subjectMissed       int
+		subjectHallucinated int
+		claimCovered        int
+		claimMissed         int
+		claimExtra          int
+	}
+	var overall counts
+	byDifficulty := make(map[string]counts)
+	for _, result := range results {
+		add := counts{
+			cases:               1,
+			subjectFound:        len(result.Subjects.Found),
+			subjectMissed:       len(result.Subjects.Missed),
+			subjectHallucinated: len(result.Subjects.Hallucinated),
+			claimCovered:        result.Claims.Covered,
+			claimMissed:         result.Claims.Missed,
+			claimExtra:          result.Claims.Extra,
+		}
+		overall = addCounts(overall, add)
+		byDifficulty[result.Difficulty] = addCounts(byDifficulty[result.Difficulty], add)
+	}
+
+	var totals Totals
+	totals.Overall = bucketFromCounts(overall)
+	totals.ByDifficulty = make(map[string]struct {
+		Subjects Metrics
+		Claims   Metrics
+		Cases    int
+	}, len(byDifficulty))
+	for difficulty, counts := range byDifficulty {
+		totals.ByDifficulty[difficulty] = bucketFromCounts(counts)
+	}
+	return totals
 }
 
 // LoadCase parses and validates document.txt and gold.json from dir.
@@ -96,6 +272,205 @@ func LoadDataset(root string) ([]Case, error) {
 // Run executes production extract over a loaded case.
 func Run(ctx context.Context, ex *extract.Extractor, c Case) ([]extract.ExtractedSubject, error) {
 	return ex.Extract(ctx, c.Header, c.Text)
+}
+
+func subjectID(subjectType, name string) string {
+	return wikidomain.Path(wikidomain.Subject{
+		Type:     subjectType,
+		NormName: wikidomain.Normalize(name),
+	})
+}
+
+func unionSubjectIDs(gold map[string]GoldSubject, predicted map[string]extract.ExtractedSubject) []string {
+	seen := make(map[string]struct{}, len(gold)+len(predicted))
+	for id := range gold {
+		seen[id] = struct{}{}
+	}
+	for id := range predicted {
+		seen[id] = struct{}{}
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func judgeClaims(ctx context.Context, j *Judge, subject string, goldClaims, predictedClaims []string) (SubjectClaimResult, error) {
+	if j == nil {
+		return SubjectClaimResult{}, fmt.Errorf("eval judge: nil judge")
+	}
+	verdict, err := llm.JSON[judgeVerdict](ctx, j.c, j.site, renderJudgePrompt(subject, goldClaims, predictedClaims), validateJudgeVerdict(goldClaims, predictedClaims))
+	if err != nil {
+		return SubjectClaimResult{}, err
+	}
+	detail := SubjectClaimResult{
+		Subject: subject,
+		Missed:  append([]string(nil), verdict.Missed...),
+		Extra:   append([]string(nil), verdict.Extra...),
+	}
+	for _, covered := range verdict.Covered {
+		detail.Covered = append(detail.Covered, ClaimMatch{
+			Gold:      covered.Gold,
+			Predicted: covered.Predicted,
+		})
+	}
+	return detail, nil
+}
+
+type judgeVerdict struct {
+	Covered []judgeCovered `json:"covered"`
+	Missed  []string       `json:"missed"`
+	Extra   []string       `json:"extra"`
+}
+
+type judgeCovered struct {
+	Gold      string `json:"gold"`
+	Predicted string `json:"predicted"`
+}
+
+func renderJudgePrompt(subject string, goldClaims, predictedClaims []string) string {
+	type payload struct {
+		Subject         string   `json:"subject"`
+		GoldClaims      []string `json:"gold_claims"`
+		PredictedClaims []string `json:"predicted_claims"`
+	}
+	raw, _ := json.MarshalIndent(payload{
+		Subject:         subject,
+		GoldClaims:      goldClaims,
+		PredictedClaims: predictedClaims,
+	}, "", "  ")
+	return "Judge whether predicted claims cover gold claims for one matched subject.\n" +
+		"Return JSON with shape {\"covered\":[{\"gold\":\"...\",\"predicted\":\"...\"}],\"missed\":[\"...\"],\"extra\":[\"...\"]}.\n" +
+		"Use exact claim strings from the supplied arrays.\n\n" +
+		string(raw)
+}
+
+func validateJudgeVerdict(goldClaims, predictedClaims []string) func(*judgeVerdict) error {
+	return func(v *judgeVerdict) error {
+		if v == nil {
+			return fmt.Errorf("verdict required")
+		}
+		goldSet := stringSet(goldClaims)
+		predictedSet := stringSet(predictedClaims)
+		seenGold := make(map[string]string, len(goldClaims))
+		seenPredicted := make(map[string]string, len(predictedClaims))
+		for i, covered := range v.Covered {
+			if _, ok := goldSet[covered.Gold]; !ok {
+				return fmt.Errorf("covered[%d].gold is not a gold claim", i)
+			}
+			if _, ok := predictedSet[covered.Predicted]; !ok {
+				return fmt.Errorf("covered[%d].predicted is not a predicted claim", i)
+			}
+			if prev, ok := seenGold[covered.Gold]; ok {
+				return fmt.Errorf("gold claim appears in both %s and covered[%d]", prev, i)
+			}
+			seenGold[covered.Gold] = fmt.Sprintf("covered[%d]", i)
+			if prev, ok := seenPredicted[covered.Predicted]; ok {
+				return fmt.Errorf("predicted claim appears in both %s and covered[%d]", prev, i)
+			}
+			seenPredicted[covered.Predicted] = fmt.Sprintf("covered[%d]", i)
+		}
+		for i, missed := range v.Missed {
+			if _, ok := goldSet[missed]; !ok {
+				return fmt.Errorf("missed[%d] is not a gold claim", i)
+			}
+			if prev, ok := seenGold[missed]; ok {
+				return fmt.Errorf("gold claim appears in both %s and missed[%d]", prev, i)
+			}
+			seenGold[missed] = fmt.Sprintf("missed[%d]", i)
+		}
+		for i, extra := range v.Extra {
+			if _, ok := predictedSet[extra]; !ok {
+				return fmt.Errorf("extra[%d] is not a predicted claim", i)
+			}
+			if prev, ok := seenPredicted[extra]; ok {
+				return fmt.Errorf("predicted claim appears in both %s and extra[%d]", prev, i)
+			}
+			seenPredicted[extra] = fmt.Sprintf("extra[%d]", i)
+		}
+		if len(seenGold) != len(goldSet) {
+			return fmt.Errorf("verdict must classify every gold claim")
+		}
+		if len(seenPredicted) != len(predictedSet) {
+			return fmt.Errorf("verdict must classify every predicted claim")
+		}
+		return nil
+	}
+}
+
+func stringSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
+}
+
+func addCounts(a, b struct {
+	cases               int
+	subjectFound        int
+	subjectMissed       int
+	subjectHallucinated int
+	claimCovered        int
+	claimMissed         int
+	claimExtra          int
+}) struct {
+	cases               int
+	subjectFound        int
+	subjectMissed       int
+	subjectHallucinated int
+	claimCovered        int
+	claimMissed         int
+	claimExtra          int
+} {
+	a.cases += b.cases
+	a.subjectFound += b.subjectFound
+	a.subjectMissed += b.subjectMissed
+	a.subjectHallucinated += b.subjectHallucinated
+	a.claimCovered += b.claimCovered
+	a.claimMissed += b.claimMissed
+	a.claimExtra += b.claimExtra
+	return a
+}
+
+func bucketFromCounts(c struct {
+	cases               int
+	subjectFound        int
+	subjectMissed       int
+	subjectHallucinated int
+	claimCovered        int
+	claimMissed         int
+	claimExtra          int
+}) struct {
+	Subjects Metrics
+	Claims   Metrics
+	Cases    int
+} {
+	return struct {
+		Subjects Metrics
+		Claims   Metrics
+		Cases    int
+	}{
+		Subjects: metrics(c.subjectFound, c.subjectHallucinated, c.subjectMissed),
+		Claims:   metrics(c.claimCovered, c.claimExtra, c.claimMissed),
+		Cases:    c.cases,
+	}
+}
+
+func metrics(found, extra, missed int) Metrics {
+	return Metrics{
+		Precision: ratio(found, found+extra),
+		Recall:    ratio(found, found+missed),
+	}
+}
+
+func ratio(n, d int) float64 {
+	if d == 0 {
+		return 0
+	}
+	return float64(n) / float64(d)
 }
 
 type goldFile struct {
