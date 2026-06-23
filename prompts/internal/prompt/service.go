@@ -12,7 +12,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"agentkit/model"
+	"github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit/anthropic"
+	"github.com/ikigenba/agentkit/google"
+	"github.com/ikigenba/agentkit/openai"
+	"github.com/ikigenba/agentkit/zai"
 	"prompts/internal/ids"
 	"prompts/internal/sandbox"
 )
@@ -91,13 +95,6 @@ var providerEnvVars = map[string]string{
 	"zai":       "ZAI_API_KEY",
 }
 
-var zaiModels = map[string]struct{}{
-	"glm-5.2": {},
-	"glm-5.1": {},
-	"glm-4.7": {},
-	"glm-4.6": {},
-}
-
 // validateConfig enforces the provider/model/key contract for the stored
 // config. getenv is injected so tests can validate the key contract without
 // mutating process-wide environment.
@@ -106,7 +103,8 @@ func validateConfig(c Config, getenv func(string) string) error {
 	if !ok {
 		return validationErrf("invalid config: provider %q is not supported", c.Provider)
 	}
-	if !providerModelSupported(c.Provider, c.Model) {
+	provider := providerRegistry(c.Provider)
+	if _, ok := provider.Pricing(c.Model); !ok {
 		return validationErrf("invalid config: provider %q does not support model %q", c.Provider, c.Model)
 	}
 	if getenv(envVar) == "" {
@@ -115,22 +113,22 @@ func validateConfig(c Config, getenv func(string) string) error {
 	return nil
 }
 
-func providerModelSupported(provider, modelID string) bool {
-	if provider == "zai" {
-		_, ok := zaiModels[modelID]
-		return ok
+func providerRegistry(name string) agentkit.Provider {
+	switch name {
+	case "anthropic":
+		return anthropic.New("")
+	case "openai":
+		return openai.New("")
+	case "google":
+		return google.New("")
+	case "zai":
+		return zai.New("")
+	default:
+		panic("providerRegistry called with unsupported provider")
 	}
-	resolved, err := model.Resolve(modelID)
-	if err != nil || string(resolved.Provider) != provider {
-		return false
-	}
-	if resolved.BareID != strings.TrimSpace(modelID) {
-		return false
-	}
-	return model.Validate(resolved) == nil
 }
 
-func withDefaultProvider(c Config) Config {
+func applyProviderDefault(c Config) Config {
 	if c.Provider == "" {
 		c.Provider = "anthropic"
 	}
@@ -141,7 +139,7 @@ func withDefaultProvider(c Config) Config {
 // created here — it is per-run, created at Run time keyed by run_id.
 // Config.Provider is validated against the configured model and preserved.
 func (s *Service) Create(ctx context.Context, ownerEmail string, in CreateInput) (Prompt, error) {
-	cfg := withDefaultProvider(in.Config)
+	cfg := applyProviderDefault(in.Config)
 	if err := validateConfig(cfg, os.Getenv); err != nil {
 		return Prompt{}, err
 	}
@@ -187,10 +185,9 @@ const maxImportBytes = 1 << 20
 // importDefaultModel is the model an imported prompt's config defaults to. A
 // prompt is multi-field but a file is one blob, so import maps the file body →
 // user_prompt and leaves the other fields at sane defaults (ADR Decision 5). The
-// config must still validate — Create/validateConfig requires the model to
-// resolve to an Anthropic model, so an empty config would reject — therefore we
-// seed the canonical Sonnet id (the same model the describe doc shows as the
-// example config) so an imported prompt is immediately runnable.
+// config must still validate, so import seeds an explicit provider and the
+// canonical Sonnet id (the same model the describe doc shows as the example
+// config) so an imported prompt is immediately runnable.
 const importDefaultModel = "claude-sonnet-4-6"
 
 // Import adopts a Dropbox-mirrored file as a prompt. It fetches the current
@@ -220,10 +217,9 @@ func (s *Service) Import(ctx context.Context, owner, sourcePath, name string) (P
 	if name == "" {
 		name = path.Base(sourcePath)
 	}
-	// Seed a valid default config so the imported prompt is runnable. Provider is
-	// normalized to anthropic, exactly as Create does. Config is left as-is on a
-	// re-import (the upsert refreshes name + user_prompt only), so this default
-	// only takes effect on the first import.
+	// Seed a valid default config so the imported prompt is runnable. Config is
+	// left as-is on a re-import (the upsert refreshes name + user_prompt only), so
+	// this default only takes effect on the first import.
 	cfg := Config{Provider: "anthropic", Model: importDefaultModel}
 	return s.store.UpsertPromptBySource(ctx, owner, sourcePath, name, string(data), cfg, s.nowStr())
 }
@@ -276,7 +272,7 @@ func (s *Service) Update(ctx context.Context, ownerEmail, id string, in UpdateIn
 	if err != nil {
 		return Prompt{}, err
 	}
-	cfg := withDefaultProvider(in.Config)
+	cfg := applyProviderDefault(in.Config)
 	if err := validateConfig(cfg, os.Getenv); err != nil {
 		return Prompt{}, err
 	}
