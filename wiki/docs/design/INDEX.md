@@ -25,7 +25,8 @@ Each Decision maps to its `docs/design/DNN.md`; every `R-XXXX-XXXX` id maps to i
 - D19 → `docs/design/D19.md` — Per-call-site configuration in production (retire the single global model) — owns R-GGIG-AN7W, R-GHQC-OEYL, R-GIY9-26PA, R-GK65-FYFZ, R-GLE1-TQ6O
 - D20 → `docs/design/D20.md` — The extract evaluation harness (`internal/eval`): dataset + runner — owns R-VXAT-MMTX, R-VYIQ-0EKM, R-VZQM-E6BB, R-W26F-5PSP
 - D21 → `docs/design/D21.md` — The judge call site + scoring semantics — owns R-DRME-T4FA, R-DSUB-6W5Z, R-DU27-KNWO, R-DVA3-YFND, R-DWI0-C7E2, R-DXPW-PZ4R
-- D22 → `docs/design/D22.md` — The `cmd/eval-extract` binary + the shipped gold case — owns R-34NV-WDIP, R-35VS-A59E, R-373O-NX03, R-38BL-1OQS, R-39JH-FGHH, R-3ARD-T886, R-ME5L-HXJ3
+- D22 → `docs/design/D22.md` — The `cmd/eval-extract` binary + the shipped gold cases — owns R-34NV-WDIP, R-35VS-A59E, R-373O-NX03, R-38BL-1OQS, R-39JH-FGHH, R-3ARD-T886, R-8PSN-NDRQ, R-ME5L-HXJ3
+- D23 → `docs/design/D23.md` — The human scorecard is itemized (diff-style), not count-only — owns R-8KX2-4ASY, R-8M4Y-I2JN, R-8NCU-VUAC, R-8OKR-9M11
 
 ## Verification ids → Decision
 
@@ -79,6 +80,11 @@ Each Decision maps to its `docs/design/DNN.md`; every `R-XXXX-XXXX` id maps to i
 - R-7TVC-E7ZZ → D3 → `docs/design/D03.md`
 - R-7V38-RZQO → D3 → `docs/design/D03.md`
 - R-7WB5-5RHD → D3 → `docs/design/D03.md`
+- R-8KX2-4ASY → D23 → `docs/design/D23.md`
+- R-8M4Y-I2JN → D23 → `docs/design/D23.md`
+- R-8NCU-VUAC → D23 → `docs/design/D23.md`
+- R-8OKR-9M11 → D23 → `docs/design/D23.md`
+- R-8PSN-NDRQ → D22 → `docs/design/D22.md`
 - R-DRME-T4FA → D21 → `docs/design/D21.md`
 - R-DSUB-6W5Z → D21 → `docs/design/D21.md`
 - R-DU27-KNWO → D21 → `docs/design/D21.md`
