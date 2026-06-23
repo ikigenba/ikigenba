@@ -27,6 +27,7 @@ Each Decision maps to its `docs/design/DNN.md`; every `R-XXXX-XXXX` id maps to i
 - D21 → `docs/design/D21.md` — The judge call site + scoring semantics — owns R-DRME-T4FA, R-DSUB-6W5Z, R-DU27-KNWO, R-DVA3-YFND, R-DWI0-C7E2, R-DXPW-PZ4R
 - D22 → `docs/design/D22.md` — The `cmd/eval-extract` binary + the shipped gold cases — owns R-34NV-WDIP, R-35VS-A59E, R-373O-NX03, R-38BL-1OQS, R-39JH-FGHH, R-3ARD-T886, R-8PSN-NDRQ, R-ME5L-HXJ3
 - D23 → `docs/design/D23.md` — The human scorecard is itemized (diff-style), not count-only — owns R-8KX2-4ASY, R-8M4Y-I2JN, R-8NCU-VUAC, R-8OKR-9M11
+- D24 → `docs/design/D24.md` — An overridable extract prompt for the eval (default = the baked-in production prompt) — owns R-ODAP-34N6, R-OEIL-GWDV, R-OFQH-UO4K, R-OGYE-8FV9
 
 ## Verification ids → Decision
 
@@ -129,6 +130,10 @@ Each Decision maps to its `docs/design/DNN.md`; every `R-XXXX-XXXX` id maps to i
 - R-MYDT-PCRV → D10 → `docs/design/D10.md`
 - R-MZLQ-34IK → D10 → `docs/design/D10.md`
 - R-N4KO-2WTZ → D10 → `docs/design/D10.md`
+- R-ODAP-34N6 → D24 → `docs/design/D24.md`
+- R-OEIL-GWDV → D24 → `docs/design/D24.md`
+- R-OFQH-UO4K → D24 → `docs/design/D24.md`
+- R-OGYE-8FV9 → D24 → `docs/design/D24.md`
 - R-PH8Z-YHNX → D8 → `docs/design/D08.md`
 - R-PIGW-C9EM → D8 → `docs/design/D08.md`
 - R-VNS0-1Z85 → D13 → `docs/design/D13.md`
