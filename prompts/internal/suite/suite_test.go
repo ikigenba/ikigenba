@@ -392,11 +392,11 @@ func TestDispatchDownstreamIsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Call returned nil error, want error for downstream isError")
 	}
-	if out != "boom" {
-		t.Errorf("Call output = %q, want boom", out)
+	if out != "" {
+		t.Errorf("Call output = %q, want empty output for downstream isError", out)
 	}
-	if !strings.Contains(err.Error(), "boom") {
-		t.Errorf("Call error = %q, want it to include downstream text", err.Error())
+	if err.Error() != "boom" {
+		t.Errorf("Call error = %q, want exact downstream text", err.Error())
 	}
 }
 
@@ -414,8 +414,15 @@ func TestDispatchTransportFailureIsError(t *testing.T) {
 	}
 	crm.srv.Close() // kill the peer after the snapshot
 
-	if _, err := tool.Call(context.Background(), nil); err == nil {
+	out, err := tool.Call(context.Background(), nil)
+	if err == nil {
 		t.Fatal("Call returned nil error, want transport error")
+	}
+	if out != "" {
+		t.Errorf("Call output = %q, want empty output on transport error", out)
+	}
+	if !strings.Contains(err.Error(), "suite: tool ikigenba_crm_list failed:") {
+		t.Errorf("Call error = %q, want suite tool failure prefix", err.Error())
 	}
 }
 

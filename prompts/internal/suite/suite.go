@@ -14,6 +14,7 @@ package suite
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -123,10 +124,10 @@ func Discover(ctx context.Context, manifestRoot, owner, promptID string) []agent
 			tools = append(tools, agentkit.RawTool(qualified, t.Description, t.InputSchema, func(ctx context.Context, input json.RawMessage) (string, error) {
 				text, isError, err := client.CallTool(ctx, bare, input)
 				if err != nil {
-					return "", fmt.Errorf("suite: tool %q failed: %w", qualified, err)
+					return "", errors.New("suite: tool " + qualified + " failed: " + err.Error())
 				}
 				if isError {
-					return text, fmt.Errorf("suite: tool %q returned error: %s", qualified, text)
+					return "", errors.New(text)
 				}
 				return text, nil
 			}))
