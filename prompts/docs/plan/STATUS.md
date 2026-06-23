@@ -8,3 +8,4 @@ Phase 03 ✅ realizes D9 — MCP schema expansion
 Phase 04 ✅ realizes D5 — Built-in tools package
 Phase 05 ✅ realizes D6 — Suite discovery rewrite
 Phase 06 ✅ realizes D1, D4, D7 — Module swap, provider factory, and runner rewrite
+Phase 07 ✅ realizes D6 (completion) — Vendor MCP client; cut suite.go off local agentkit
