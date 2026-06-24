@@ -39,6 +39,7 @@ type Handler struct {
 // JobFilter is a paginated MCP job-list filter.
 type JobFilter struct {
 	Statuses     []string
+	Kinds        []string
 	Since, Until time.Time
 }
 
@@ -779,6 +780,7 @@ func jobsTool() map[string]any {
 		"description": "List wiki ingest jobs with cursor pagination.",
 		"inputSchema": listSchema(map[string]any{
 			"status": jobStatusArraySchema(),
+			"kind":   jobKindArraySchema(),
 			"since":  map[string]any{"type": "string"},
 			"until":  map[string]any{"type": "string"},
 		}),
@@ -791,6 +793,7 @@ func jobsCountTool() map[string]any {
 		"description": "Count wiki ingest jobs matching the supplied filters.",
 		"inputSchema": objectSchema(map[string]any{
 			"status": jobStatusArraySchema(),
+			"kind":   jobKindArraySchema(),
 			"since":  map[string]any{"type": "string"},
 			"until":  map[string]any{"type": "string"},
 		}, nil),
@@ -1008,9 +1011,61 @@ func validJobStatus(value string) bool {
 	return false
 }
 
+var validJobKinds = []string{"ingest", "merge"}
+
+type jobKindArgs []string
+
+func (k *jobKindArgs) UnmarshalJSON(raw []byte) error {
+	if string(raw) == "null" {
+		*k = nil
+		return nil
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return fmt.Errorf("kind must be an array of strings")
+		}
+		values = []string{value}
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if !validJobKind(value) {
+			return fmt.Errorf("kind must be one of %s", strings.Join(validJobKinds, ", "))
+		}
+		out = append(out, value)
+	}
+	*k = out
+	return nil
+}
+
+func validJobKind(value string) bool {
+	for _, valid := range validJobKinds {
+		if value == valid {
+			return true
+		}
+	}
+	return false
+}
+
+func jobKindArraySchema() map[string]any {
+	return map[string]any{
+		"type": "array",
+		"items": map[string]any{
+			"type": "string",
+			"enum": validJobKinds,
+		},
+	}
+}
+
 func decodeJobsArgs(raw json.RawMessage, withPaging bool) (JobFilter, int, string, error) {
 	var args struct {
 		Status jobStatusArgs `json:"status"`
+		Kind   jobKindArgs   `json:"kind"`
 		Since  string        `json:"since"`
 		Until  string        `json:"until"`
 		Limit  int           `json:"limit"`
@@ -1033,7 +1088,11 @@ func decodeJobsArgs(raw json.RawMessage, withPaging bool) (JobFilter, int, strin
 			return JobFilter{}, 0, "", fmt.Errorf("cursor is invalid")
 		}
 	}
-	return JobFilter{Statuses: []string(args.Status), Since: since, Until: until}, args.Limit, cursor, nil
+	kinds := []string(args.Kind)
+	if len(kinds) == 0 {
+		kinds = []string{"ingest"}
+	}
+	return JobFilter{Statuses: []string(args.Status), Kinds: kinds, Since: since, Until: until}, args.Limit, cursor, nil
 }
 
 func parseOptionalTime(s string) (time.Time, error) {

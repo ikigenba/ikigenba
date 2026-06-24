@@ -398,6 +398,7 @@ func (s *JobStore) Status(ctx context.Context, id string) (JobStatus, error) {
 
 type JobFilter struct {
 	Statuses     []string
+	Kinds        []string
 	Since, Until time.Time
 }
 
@@ -464,6 +465,17 @@ func appendJobFilter(query string, args []any, f JobFilter) (string, []any) {
 			args = append(args, status)
 		}
 	}
+	kinds := normalizedJobKinds(f.Kinds)
+	if len(kinds) == 1 {
+		switch kinds[0] {
+		case "ingest":
+			query += `
+		  AND NOT EXISTS (SELECT 1 FROM subject_merges WHERE subject_merges.job_id = jobs.id)`
+		case "merge":
+			query += `
+		  AND EXISTS (SELECT 1 FROM subject_merges WHERE subject_merges.job_id = jobs.id)`
+		}
+	}
 	if since := formatTime(f.Since); since != "" {
 		query += `
 		  AND received_at >= ?`
@@ -475,6 +487,20 @@ func appendJobFilter(query string, args []any, f JobFilter) (string, []any) {
 		args = append(args, until)
 	}
 	return query, args
+}
+
+func normalizedJobKinds(kinds []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, kind := range kinds {
+		kind = strings.TrimSpace(kind)
+		if kind == "" || seen[kind] {
+			continue
+		}
+		seen[kind] = true
+		out = append(out, kind)
+	}
+	return out
 }
 
 func normalizedStatuses(statuses []string) []string {

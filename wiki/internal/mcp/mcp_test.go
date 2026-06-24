@@ -900,6 +900,76 @@ func TestJobsCountUsesSameFiltersAsJobsAndReturnsOnlyCount(t *testing.T) {
 	}
 }
 
+func TestJobsKindFilterDefaultsToIngestAndAcceptsMerge(t *testing.T) {
+	// R-DWDM-RVA7
+	// R-DYTF-JERL
+	wiki := &capturingWiki{jobCount: 1}
+	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+		WithJobListService(wiki),
+		WithJobsCountService(wiki),
+	))
+
+	jobsRec := callMCP(t, h, `{"jsonrpc":"2.0","id":"jobs","method":"tools/call","params":{"name":"jobs","arguments":{}}}`, "owner@example.com")
+	if jobsRec.Code != http.StatusOK {
+		t.Fatalf("jobs status = %d, want 200", jobsRec.Code)
+	}
+	if len(wiki.jobFilter.Kinds) != 1 || wiki.jobFilter.Kinds[0] != "ingest" {
+		t.Fatalf("jobs kind filter = %#v, want default ingest", wiki.jobFilter.Kinds)
+	}
+
+	countRec := callMCP(t, h, `{"jsonrpc":"2.0","id":"count","method":"tools/call","params":{"name":"jobs_count","arguments":{"kind":["merge"]}}}`, "owner@example.com")
+	if countRec.Code != http.StatusOK {
+		t.Fatalf("jobs_count status = %d, want 200", countRec.Code)
+	}
+	if len(wiki.jobCountFilter.Kinds) != 1 || wiki.jobCountFilter.Kinds[0] != "merge" {
+		t.Fatalf("jobs_count kind filter = %#v, want merge", wiki.jobCountFilter.Kinds)
+	}
+}
+
+func TestJobsKindSchemaPublishesEnumAndRejectsUnknownKind(t *testing.T) {
+	// R-E01B-X6IA
+	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+		WithJobListService(&capturingWiki{}),
+		WithJobsCountService(&capturingWiki{}),
+	))
+	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"list","method":"tools/list"}`, "owner@example.com")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tools/list status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Result struct {
+			Tools []struct {
+				Name        string         `json:"name"`
+				InputSchema map[string]any `json:"inputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &got)
+	for _, name := range []string{"jobs", "jobs_count"} {
+		schema := toolSchema(t, got.Result.Tools, name)
+		properties := schema["properties"].(map[string]any)
+		kind := properties["kind"].(map[string]any)
+		items := kind["items"].(map[string]any)
+		enum := items["enum"].([]any)
+		if kind["type"] != "array" || len(enum) != 2 {
+			t.Fatalf("%s kind schema = %#v, want array enum of two kinds", name, kind)
+		}
+		for _, want := range []string{"ingest", "merge"} {
+			if !containsJSONValue(enum, want) {
+				t.Fatalf("%s kind enum = %#v, missing %s", name, enum, want)
+			}
+		}
+	}
+
+	for _, name := range []string{"jobs", "jobs_count"} {
+		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"bad","method":"tools/call","params":{"name":"`+name+`","arguments":{"kind":["compact"]}}}`, "owner@example.com")
+		text := toolTextString(t, rec.Body.Bytes())
+		if !strings.Contains(text, "kind must be one of ingest, merge") {
+			t.Fatalf("%s error = %q, want valid kind set", name, text)
+		}
+	}
+}
+
 func TestJobsStatusSchemaPublishesEnumAndRejectsUnknownStatus(t *testing.T) {
 	// R-Y4EH-RVMV
 	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,

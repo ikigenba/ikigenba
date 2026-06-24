@@ -443,6 +443,55 @@ func TestListJobsStatusesMatchAnyAndEmptyMeansAll(t *testing.T) {
 	}
 }
 
+func TestListAndCountJobsFilterByKind(t *testing.T) {
+	// R-E198-AY8Z
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	base := time.Date(2026, 6, 24, 9, 0, 0, 0, time.UTC)
+	jobs := NewJobStore(conn)
+	for i, job := range []Job{
+		{ID: "job-ingest", Status: JobDone, ReceivedAt: base},
+		{ID: "job-merge", Status: JobPending, ReceivedAt: base.Add(time.Minute)},
+	} {
+		job.ReceivedAt = base.Add(time.Duration(i) * time.Minute)
+		if err := jobs.InsertIngest(ctx, job); err != nil {
+			t.Fatalf("InsertIngest %s: %v", job.ID, err)
+		}
+	}
+	if err := NewSubjectMergeStore(conn).Save(ctx, SubjectMerge{
+		JobID:         "job-merge",
+		FromSubjectID: "subject-from",
+		ToSubjectID:   "subject-to",
+	}); err != nil {
+		t.Fatalf("Save subject merge: %v", err)
+	}
+
+	got, next, err := jobs.ListJobs(ctx, JobFilter{Kinds: []string{"merge"}}, page.Params{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListJobs merge: %v", err)
+	}
+	if next != "" || !sameStrings(jobIDs(got), []string{"job-merge"}) {
+		t.Fatalf("ListJobs merge ids = %v, next %q; want only merge job", jobIDs(got), next)
+	}
+	count, err := jobs.CountJobs(ctx, JobFilter{Kinds: []string{"merge"}})
+	if err != nil {
+		t.Fatalf("CountJobs merge: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("CountJobs merge = %d, want 1", count)
+	}
+
+	got, next, err = jobs.ListJobs(ctx, JobFilter{Kinds: []string{"ingest"}}, page.Params{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListJobs ingest: %v", err)
+	}
+	if next != "" || !sameStrings(jobIDs(got), []string{"job-ingest"}) {
+		t.Fatalf("ListJobs ingest ids = %v, next %q; want only non-merge ingest job", jobIDs(got), next)
+	}
+}
+
 func TestCountJobsMatchesFilteredListCountWithoutPaging(t *testing.T) {
 	// R-Y1YP-0C5H
 	ctx := context.Background()
