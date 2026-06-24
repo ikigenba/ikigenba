@@ -1031,6 +1031,9 @@ func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
 		if wiki.mergeFrom != "" || wiki.mergeTo != "" {
 			t.Fatalf("merge called with %q -> %q, want no enqueue after resolve failure", wiki.mergeFrom, wiki.mergeTo)
 		}
+		if wiki.pathLookups["entity/missing"] != 1 || wiki.pathLookups["entity/new-name"] != 0 {
+			t.Fatalf("path lookups = %#v, want failed from path resolved once and to path not resolved", wiki.pathLookups)
+		}
 	})
 
 	t.Run("same id", func(t *testing.T) {
@@ -1074,6 +1077,9 @@ func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
 		}
 		if wiki.mergeFrom != "subject-old" || wiki.mergeTo != "subject-new" {
 			t.Fatalf("merge ids = %q -> %q, want resolved ids forwarded before enqueue error", wiki.mergeFrom, wiki.mergeTo)
+		}
+		if wiki.pathLookups["entity/old-name"] != 1 || wiki.pathLookups["entity/new-name"] != 1 {
+			t.Fatalf("path lookups = %#v, want each path resolved once before enqueue error", wiki.pathLookups)
 		}
 	})
 }
