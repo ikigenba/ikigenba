@@ -48,7 +48,7 @@ func TestServeFailsLoudWhenAnthropicKeyMissing(t *testing.T) {
 	}
 }
 
-func TestBuildSpecWiresThirteenMCPTools(t *testing.T) {
+func TestBuildSpecWiresFifteenMCPTools(t *testing.T) {
 	// R-MUQ4-K1JS
 	// R-3G73-064M
 	ctx := context.Background()
@@ -96,7 +96,7 @@ func TestBuildSpecWiresThirteenMCPTools(t *testing.T) {
 	for _, tool := range got.Result.Tools {
 		names[tool.Name] = true
 	}
-	want := []string{"ingest", "status", "abort", "rerun", "jobs", "jobs_count", "ask", "subjects", "claims", "page", "llm_calls", "health", "reflection"}
+	want := []string{"ingest", "status", "abort", "rerun", "jobs", "jobs_count", "merge", "merges", "ask", "subjects", "claims", "page", "llm_calls", "health", "reflection"}
 	if len(names) != len(want) {
 		t.Fatalf("tool names = %#v, want exact %v", names, want)
 	}
@@ -315,6 +315,8 @@ func TestBuildSpecMatchesDirectMCPToolSurface(t *testing.T) {
 		mcp.WithJobRerunService(surfaceWiki{}),
 		mcp.WithJobListService(surfaceWiki{}),
 		mcp.WithJobsCountService(surfaceWiki{}),
+		mcp.WithMergeService(surfaceWiki{}, surfaceWiki{}),
+		mcp.WithMergeListService(surfaceWiki{}),
 		mcp.WithAskFunc(surfaceAsk),
 		mcp.WithSubjectListService(surfaceWiki{}),
 		mcp.WithClaimListService(surfaceWiki{}),
@@ -501,6 +503,18 @@ func (surfaceWiki) ListJobs(context.Context, mcp.JobFilter, paging.Params) ([]wi
 
 func (surfaceWiki) CountJobs(context.Context, mcp.JobFilter) (int, error) {
 	return 1, nil
+}
+
+func (surfaceWiki) GetByPath(context.Context, string) (wiki.Subject, error) {
+	return wiki.Subject{ID: "subject-1", Name: "Acme", NormName: "acme", Type: "entity"}, nil
+}
+
+func (surfaceWiki) MergeSubjects(context.Context, string, string) (string, error) {
+	return "job-merge", nil
+}
+
+func (surfaceWiki) ListMerges(context.Context, paging.Params) ([]wiki.Alias, string, error) {
+	return []wiki.Alias{{NormName: "old acme", SubjectID: "subject-1", Name: "Old Acme", CreatedBy: "owner@example.com", CreatedAt: "2026-06-24T12:00:00Z"}}, "", nil
 }
 
 func (surfaceWiki) Subjects(context.Context, string, string) ([]publicSubject, error) {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"appkit"
 	"appkit/server"
 
 	paging "wiki/internal/page"
@@ -105,6 +107,8 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 		WithJobRerunService(&capturingWiki{}),
 		WithJobListService(&capturingWiki{}),
 		WithJobsCountService(&capturingWiki{}),
+		WithMergeService(&capturingWiki{}, &capturingWiki{}),
+		WithMergeListService(&capturingWiki{}),
 		WithAskFunc((&capturingAsker{}).Ask),
 		WithSubjectListService(&capturingWiki{}),
 		WithClaimListService(&capturingWiki{}),
@@ -142,6 +146,8 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 		"rerun":      true,
 		"jobs":       true,
 		"jobs_count": true,
+		"merge":      true,
+		"merges":     true,
 		"ask":        true,
 		"subjects":   true,
 		"claims":     true,
@@ -175,6 +181,8 @@ func TestToolsListInputSchemasUseValidRequiredFields(t *testing.T) {
 		WithJobRerunService(&capturingWiki{}),
 		WithJobListService(&capturingWiki{}),
 		WithJobsCountService(&capturingWiki{}),
+		WithMergeService(&capturingWiki{}, &capturingWiki{}),
+		WithMergeListService(&capturingWiki{}),
 		WithAskFunc((&capturingAsker{}).Ask),
 		WithSubjectListService(&capturingWiki{}),
 		WithClaimListService(&capturingWiki{}),
@@ -199,7 +207,7 @@ func TestToolsListInputSchemasUseValidRequiredFields(t *testing.T) {
 		t.Fatal("tools/list returned no tools")
 	}
 	seenSubjects := false
-	optionalOnly := map[string]bool{"jobs": false, "jobs_count": false, "llm_calls": false}
+	optionalOnly := map[string]bool{"jobs": false, "jobs_count": false, "merges": false, "llm_calls": false}
 	for _, tool := range got.Result.Tools {
 		if tool.InputSchema["type"] != "object" {
 			t.Fatalf("%s schema type = %v, want object", tool.Name, tool.InputSchema["type"])
@@ -970,6 +978,125 @@ func TestJobsKindSchemaPublishesEnumAndRejectsUnknownKind(t *testing.T) {
 	}
 }
 
+func TestMergeToolResolvesPathsOnceAndQueuesJob(t *testing.T) {
+	// R-E2H4-OPZO
+	wiki := &capturingWiki{
+		ingestID: "job-merge",
+		pathSubjects: map[string]subject{
+			"entity/old-name": {ID: "subject-old"},
+			"entity/new-name": {ID: "subject-new"},
+		},
+	}
+	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithMergeService(wiki, wiki)))
+
+	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/old-name","to":"entity/new-name"}}}`, "owner@example.com")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("merge status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		JobID string `json:"job_id"`
+	}
+	decodeToolText(t, rec.Body.Bytes(), &body)
+	if body.JobID != "job-merge" {
+		t.Fatalf("job_id = %q, want job-merge", body.JobID)
+	}
+	if wiki.mergeFrom != "subject-old" || wiki.mergeTo != "subject-new" {
+		t.Fatalf("merge ids = %q -> %q, want subject-old -> subject-new", wiki.mergeFrom, wiki.mergeTo)
+	}
+	if wiki.pathLookups["entity/old-name"] != 1 || wiki.pathLookups["entity/new-name"] != 1 {
+		t.Fatalf("path lookups = %#v, want each path resolved once", wiki.pathLookups)
+	}
+	if wiki.mergeOwner != "owner@example.com" {
+		t.Fatalf("merge owner = %q, want authenticated owner", wiki.mergeOwner)
+	}
+}
+
+func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
+	// R-E3P1-2HQD
+	t.Run("resolve", func(t *testing.T) {
+		wiki := &capturingWiki{
+			pathSubjects: map[string]subject{"entity/new-name": {ID: "subject-new"}},
+			pathErrs:     map[string]error{"entity/missing": sql.ErrNoRows},
+		}
+		h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithMergeService(wiki, wiki)))
+
+		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/missing","to":"entity/new-name"}}}`, "owner@example.com")
+
+		var body map[string]any
+		decodeToolText(t, rec.Body.Bytes(), &body)
+		if body["found"] != false || body["kind"] != "subject" || body["id"] != "entity/missing" {
+			t.Fatalf("resolve error body = %#v, want subject not-found for missing path", body)
+		}
+		if wiki.mergeFrom != "" || wiki.mergeTo != "" {
+			t.Fatalf("merge called with %q -> %q, want no enqueue after resolve failure", wiki.mergeFrom, wiki.mergeTo)
+		}
+	})
+
+	t.Run("enqueue", func(t *testing.T) {
+		wiki := &capturingWiki{
+			pathSubjects: map[string]subject{
+				"entity/old-name": {ID: "subject-old"},
+				"entity/new-name": {ID: "subject-new"},
+			},
+			mergeErr: errors.New("merge queue unavailable"),
+		}
+		h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithMergeService(wiki, wiki)))
+
+		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/old-name","to":"entity/new-name"}}}`, "owner@example.com")
+
+		text := toolTextString(t, rec.Body.Bytes())
+		if !strings.Contains(text, "merge queue unavailable") {
+			t.Fatalf("enqueue error = %q, want merge queue unavailable", text)
+		}
+		if wiki.mergeFrom != "subject-old" || wiki.mergeTo != "subject-new" {
+			t.Fatalf("merge ids = %q -> %q, want resolved ids forwarded before enqueue error", wiki.mergeFrom, wiki.mergeTo)
+		}
+	})
+}
+
+func TestMergesToolReturnsAuditPage(t *testing.T) {
+	// R-E4WX-G9H2
+	wiki := &capturingWiki{
+		merges: []alias{{
+			NormName:  "old name",
+			SubjectID: "subject-new",
+			Name:      "Old Name",
+			CreatedBy: "owner@example.com",
+			CreatedAt: "2026-06-24T12:00:00Z",
+		}},
+		mergesNext: "next-token",
+	}
+	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithMergeListService(wiki)))
+	cursor := paging.EncodeCursor("2026-06-24T12:00:00Z", "old name")
+
+	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merges","method":"tools/call","params":{"name":"merges","arguments":{"limit":1,"cursor":"`+cursor+`"}}}`, "owner@example.com")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("merges status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Merges []struct {
+			NormName  string `json:"norm_name"`
+			SubjectID string `json:"subject_id"`
+			Name      string `json:"name"`
+			CreatedBy string `json:"created_by"`
+			CreatedAt string `json:"created_at"`
+		} `json:"merges"`
+		Next string `json:"next_cursor"`
+	}
+	decodeToolText(t, rec.Body.Bytes(), &body)
+	if len(body.Merges) != 1 || body.Merges[0].NormName != "old name" || body.Merges[0].SubjectID != "subject-new" || body.Merges[0].CreatedBy != "owner@example.com" {
+		t.Fatalf("merges body = %#v, want audit alias row", body)
+	}
+	if body.Next != "next-token" {
+		t.Fatalf("next cursor = %q, want next-token", body.Next)
+	}
+	if wiki.mergesPage.Limit != 1 || wiki.mergesPage.Cursor != cursor {
+		t.Fatalf("merges paging = %#v, want forwarded limit/cursor", wiki.mergesPage)
+	}
+}
+
 func TestJobsStatusSchemaPublishesEnumAndRejectsUnknownStatus(t *testing.T) {
 	// R-Y4EH-RVMV
 	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
@@ -1224,6 +1351,16 @@ type capturingWiki struct {
 	jobNext        string
 	jobCount       int
 	jobCountFilter JobFilter
+	pathSubjects   map[string]subject
+	pathErrs       map[string]error
+	pathLookups    map[string]int
+	mergeFrom      string
+	mergeTo        string
+	mergeOwner     string
+	mergeErr       error
+	merges         []alias
+	mergesPage     paging.Params
+	mergesNext     string
 	claims         []claim
 	claimsErr      error
 	claimsSubject  string
@@ -1277,6 +1414,40 @@ func (w *capturingWiki) ListJobs(_ context.Context, f JobFilter, p paging.Params
 func (w *capturingWiki) CountJobs(_ context.Context, f JobFilter) (int, error) {
 	w.jobCountFilter = f
 	return w.jobCount, nil
+}
+
+func (w *capturingWiki) GetByPath(_ context.Context, path string) (subject, error) {
+	if w.pathLookups == nil {
+		w.pathLookups = map[string]int{}
+	}
+	w.pathLookups[path]++
+	if err := w.pathErrs[path]; err != nil {
+		return subject{}, err
+	}
+	if subject, ok := w.pathSubjects[path]; ok {
+		return subject, nil
+	}
+	return subject{}, sql.ErrNoRows
+}
+
+func (w *capturingWiki) MergeSubjects(ctx context.Context, fromSubjectID, toSubjectID string) (string, error) {
+	w.mergeFrom = fromSubjectID
+	w.mergeTo = toSubjectID
+	if id, ok := appkit.IdentityFrom(ctx); ok {
+		w.mergeOwner = id.OwnerEmail
+	}
+	if w.mergeErr != nil {
+		return "", w.mergeErr
+	}
+	if w.ingestID == "" {
+		return "job-merge", nil
+	}
+	return w.ingestID, nil
+}
+
+func (w *capturingWiki) ListMerges(_ context.Context, p paging.Params) ([]alias, string, error) {
+	w.mergesPage = p
+	return w.merges, w.mergesNext, nil
 }
 
 func (w *capturingWiki) Subjects(_ context.Context, _, _ string) ([]subject, error) {
@@ -1344,6 +1515,14 @@ type jobStatus struct {
 	FinishedAt *time.Time `json:"finished_at"`
 	Error      string     `json:"error"`
 	Subjects   []string   `json:"subjects"`
+}
+
+type alias struct {
+	NormName  string
+	SubjectID string
+	Name      string
+	CreatedBy string
+	CreatedAt string
 }
 
 type subject struct {

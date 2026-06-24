@@ -29,6 +29,9 @@ type Handler struct {
 	rerun     func(context.Context, string) (any, error)
 	jobs      func(context.Context, JobFilter, paging.Params) (any, string, error)
 	jobsCount func(context.Context, JobFilter) (int, error)
+	resolve   func(context.Context, string) (any, error)
+	merge     func(context.Context, string, string) (string, error)
+	merges    func(context.Context, paging.Params) (any, string, error)
 	ask       func(context.Context, string, string) (any, error)
 	subjects  func(context.Context, string, string, paging.Params) (any, string, error)
 	claims    func(context.Context, string, paging.Params) (any, string, error)
@@ -71,6 +74,18 @@ type jobListFunc[T any] interface {
 
 type jobsCountFunc interface {
 	CountJobs(ctx context.Context, f JobFilter) (int, error)
+}
+
+type subjectPathFunc[T any] interface {
+	GetByPath(ctx context.Context, path string) (T, error)
+}
+
+type mergeFunc interface {
+	MergeSubjects(ctx context.Context, fromSubjectID, toSubjectID string) (string, error)
+}
+
+type mergeListFunc[T any] interface {
+	ListMerges(ctx context.Context, p paging.Params) (T, string, error)
 }
 
 type subjectsFunc[T any] interface {
@@ -167,6 +182,31 @@ func WithJobsCountService(s jobsCountFunc) Option {
 	return func(h *Handler) {
 		if s != nil {
 			h.jobsCount = s.CountJobs
+		}
+	}
+}
+
+// WithMergeService enables the merge tool.
+func WithMergeService[T any](resolver subjectPathFunc[T], s mergeFunc) Option {
+	return func(h *Handler) {
+		if resolver != nil {
+			h.resolve = func(ctx context.Context, path string) (any, error) {
+				return resolver.GetByPath(ctx, path)
+			}
+		}
+		if s != nil {
+			h.merge = s.MergeSubjects
+		}
+	}
+}
+
+// WithMergeListService enables the paginated merges audit tool.
+func WithMergeListService[T any](s mergeListFunc[T]) Option {
+	return func(h *Handler) {
+		if s != nil {
+			h.merges = func(ctx context.Context, p paging.Params) (any, string, error) {
+				return s.ListMerges(ctx, p)
+			}
 		}
 	}
 }
@@ -332,6 +372,10 @@ func (h *Handler) handleToolCall(ctx context.Context, w http.ResponseWriter, req
 		h.handleJobsCall(ctx, w, req, params.Arguments)
 	case "jobs_count":
 		h.handleJobsCountCall(ctx, w, req, params.Arguments)
+	case "merge":
+		h.handleMergeCall(ctx, w, req, params.Arguments)
+	case "merges":
+		h.handleMergesCall(ctx, w, req, params.Arguments)
 	case "ask":
 		h.handleAskCall(ctx, w, req, params.Arguments)
 	case "subjects":
@@ -506,6 +550,86 @@ func (h *Handler) handleJobsCountCall(ctx context.Context, w http.ResponseWriter
 		return
 	}
 	writeJSONTextResult(w, req.ID, map[string]int{"count": count})
+}
+
+func (h *Handler) handleMergeCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+	if h.resolve == nil || h.merge == nil {
+		writeResult(w, req.ID, toolError("merge tool is not configured"))
+		return
+	}
+	if _, ok := appkit.IdentityFrom(ctx); !ok {
+		writeResult(w, req.ID, toolError("missing authenticated identity"))
+		return
+	}
+	var args struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := decodeArgs(raw, &args); err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	fromPath := strings.TrimSpace(args.From)
+	toPath := strings.TrimSpace(args.To)
+	if fromPath == "" {
+		writeResult(w, req.ID, toolError("from is required"))
+		return
+	}
+	if toPath == "" {
+		writeResult(w, req.ID, toolError("to is required"))
+		return
+	}
+	from, err := h.resolve(ctx, fromPath)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSONTextResult(w, req.ID, notFound("subject", fromPath))
+		return
+	}
+	if err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	to, err := h.resolve(ctx, toPath)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSONTextResult(w, req.ID, notFound("subject", toPath))
+		return
+	}
+	if err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	jobID, err := h.merge(ctx, stringField(indirect(reflect.ValueOf(from)), "ID"), stringField(indirect(reflect.ValueOf(to)), "ID"))
+	if err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	writeJSONTextResult(w, req.ID, map[string]string{"job_id": jobID})
+}
+
+func (h *Handler) handleMergesCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+	if h.merges == nil {
+		writeResult(w, req.ID, toolError("merges tool is not configured"))
+		return
+	}
+	var args struct {
+		Limit  int    `json:"limit"`
+		Cursor string `json:"cursor"`
+	}
+	if err := decodeArgs(raw, &args); err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	if strings.TrimSpace(args.Cursor) != "" {
+		if _, ok := paging.DecodeCursor(args.Cursor); !ok {
+			writeResult(w, req.ID, toolError("cursor is invalid"))
+			return
+		}
+	}
+	merges, next, err := h.merges(ctx, paging.Params{Limit: args.Limit, Cursor: args.Cursor})
+	if err != nil {
+		writeResult(w, req.ID, toolError(err.Error()))
+		return
+	}
+	writeJSONTextResult(w, req.ID, pagedResult("merges", publicMergesResult(merges), next))
 }
 
 func (h *Handler) handleAskCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
@@ -690,6 +814,12 @@ func (h *Handler) tools() []map[string]any {
 	if h.jobsCount != nil {
 		tools = append(tools, jobsCountTool())
 	}
+	if h.resolve != nil && h.merge != nil {
+		tools = append(tools, mergeTool())
+	}
+	if h.merges != nil {
+		tools = append(tools, mergesTool())
+	}
 	if h.ask != nil {
 		tools = append(tools, askTool())
 	}
@@ -797,6 +927,25 @@ func jobsCountTool() map[string]any {
 			"since":  map[string]any{"type": "string"},
 			"until":  map[string]any{"type": "string"},
 		}, nil),
+	}
+}
+
+func mergeTool() map[string]any {
+	return map[string]any{
+		"name":        "merge",
+		"description": "Queue a subject merge job from one subject path into another.",
+		"inputSchema": objectSchema(map[string]any{
+			"from": map[string]any{"type": "string"},
+			"to":   map[string]any{"type": "string"},
+		}, []string{"from", "to"}),
+	}
+}
+
+func mergesTool() map[string]any {
+	return map[string]any{
+		"name":        "merges",
+		"description": "List subject merge aliases with cursor pagination.",
+		"inputSchema": listSchema(map[string]any{}),
 	}
 }
 
@@ -1165,6 +1314,25 @@ func publicJobsResult(jobs any) []map[string]any {
 			"started_at":  interfaceField(job, "StartedAt"),
 			"finished_at": interfaceField(job, "FinishedAt"),
 			"error":       stringField(job, "Error"),
+		})
+	}
+	return out
+}
+
+func publicMergesResult(merges any) []map[string]string {
+	values := sliceValue(reflect.ValueOf(merges))
+	out := make([]map[string]string, 0, values.Len())
+	for i := 0; i < values.Len(); i++ {
+		merge := indirect(values.Index(i))
+		if !merge.IsValid() || merge.Kind() != reflect.Struct {
+			continue
+		}
+		out = append(out, map[string]string{
+			"norm_name":  stringField(merge, "NormName"),
+			"subject_id": stringField(merge, "SubjectID"),
+			"name":       stringField(merge, "Name"),
+			"created_by": stringField(merge, "CreatedBy"),
+			"created_at": stringField(merge, "CreatedAt"),
 		})
 	}
 	return out

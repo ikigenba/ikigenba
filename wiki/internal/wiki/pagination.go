@@ -57,6 +57,21 @@ func nextClaimCursor(claims []Claim, limit int) string {
 	return page.EncodeCursor(claims[limit-1].ID)
 }
 
+func pageAliases(aliases []Alias, limit int) []Alias {
+	if len(aliases) > limit {
+		return aliases[:limit]
+	}
+	return aliases
+}
+
+func nextAliasCursor(aliases []Alias, limit int) string {
+	if len(aliases) <= limit {
+		return ""
+	}
+	last := aliases[limit-1]
+	return page.EncodeCursor(last.CreatedAt, last.NormName)
+}
+
 func pageCalls(calls []CallRecord, limit int) []CallRecord {
 	if len(calls) > limit {
 		return calls[:limit]

@@ -75,7 +75,9 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 			subjects: wiki.NewSubjectStore(read),
 			claims:   wiki.NewClaimStore(read),
 		}
+		mergeResolver := mergePathResolver{subjects: wiki.NewSubjectStore(read)}
 		jobs := wiki.NewJobStore(conns)
+		aliases := wiki.NewAliasStore(read)
 		statusService := publicStatusService{service: svc}
 		rt.Handle("POST /mcp", rt.RequireIdentity(
 			mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
@@ -85,6 +87,8 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 				mcp.WithJobRerunService(svc),
 				mcp.WithJobListService(jobListService{jobs: jobs}),
 				mcp.WithJobsCountService(jobCountService{jobs: jobs}),
+				mcp.WithMergeService(mergeResolver, svc),
+				mcp.WithMergeListService(aliases),
 				mcp.WithSubjectListService(subjectService),
 				mcp.WithClaimListService(claimService),
 				mcp.WithPagePathService(pageService),
@@ -165,6 +169,18 @@ func (s llmCallListService) List(ctx context.Context, f mcp.LLMCallFilter, p pag
 		Since: f.Since,
 		Until: f.Until,
 	}, p)
+}
+
+type mergePathResolver struct {
+	subjects *wiki.SubjectStore
+}
+
+func (r mergePathResolver) GetByPath(ctx context.Context, path string) (wiki.Subject, error) {
+	subject, err := r.subjects.GetByPath(ctx, path)
+	if errors.Is(err, wiki.ErrSubjectNotFound) {
+		return wiki.Subject{}, sql.ErrNoRows
+	}
+	return subject, err
 }
 
 type publicSubjectService struct {

@@ -115,6 +115,53 @@ func TestAliasStorePersistsLookupAndRepointsSubjects(t *testing.T) {
 	}
 }
 
+func TestAliasStoreListMergesReturnsNewestAuditPage(t *testing.T) {
+	// R-E4WX-G9H2
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subjects := NewSubjectStore(conn)
+	for _, subject := range []Subject{
+		{ID: "subject-one", Name: "Current One", Type: "entity"},
+		{ID: "subject-two", Name: "Current Two", Type: "entity"},
+		{ID: "subject-three", Name: "Current Three", Type: "entity"},
+	} {
+		if err := subjects.Save(ctx, subject); err != nil {
+			t.Fatalf("Save %s: %v", subject.ID, err)
+		}
+	}
+	aliases := NewAliasStore(conn)
+	for _, al := range []Alias{
+		{Name: "Old One", SubjectID: "subject-one", CreatedBy: "owner-a@example.com", CreatedAt: "2026-06-24T12:00:00Z"},
+		{Name: "Old Two", SubjectID: "subject-two", CreatedBy: "owner-b@example.com", CreatedAt: "2026-06-24T12:02:00Z"},
+		{Name: "Old Three", SubjectID: "subject-three", CreatedBy: "owner-c@example.com", CreatedAt: "2026-06-24T12:01:00Z"},
+	} {
+		if err := aliases.Insert(ctx, al); err != nil {
+			t.Fatalf("Insert %s: %v", al.Name, err)
+		}
+	}
+
+	first, next, err := aliases.ListMerges(ctx, page.Params{Limit: 2})
+	if err != nil {
+		t.Fatalf("ListMerges first page: %v", err)
+	}
+	if !sameStrings(aliasNames(first), []string{"Old Two", "Old Three"}) || next == "" {
+		t.Fatalf("first page aliases = %v, next %q; want newest two plus cursor", aliasNames(first), next)
+	}
+	if first[0].SubjectID != "subject-two" || first[0].CreatedBy != "owner-b@example.com" {
+		t.Fatalf("first merge row = %+v, want audit metadata for newest alias", first[0])
+	}
+
+	second, next, err := aliases.ListMerges(ctx, page.Params{Limit: 2, Cursor: next})
+	if err != nil {
+		t.Fatalf("ListMerges second page: %v", err)
+	}
+	if next != "" || !sameStrings(aliasNames(second), []string{"Old One"}) {
+		t.Fatalf("second page aliases = %v, next %q; want remaining alias only", aliasNames(second), next)
+	}
+}
+
 func TestResolverPrefersSubjectsThenAliasesAndReportsNotFound(t *testing.T) {
 	// R-BLL1-6YSM
 	// R-BMSX-KQJB
@@ -227,4 +274,12 @@ func TestProcessNextAppliesAliasedNameToSurvivorSubject(t *testing.T) {
 
 func pageParamsAll() page.Params {
 	return page.Params{Limit: page.MaxLimit}
+}
+
+func aliasNames(aliases []Alias) []string {
+	names := make([]string, 0, len(aliases))
+	for _, al := range aliases {
+		names = append(names, al.Name)
+	}
+	return names
 }

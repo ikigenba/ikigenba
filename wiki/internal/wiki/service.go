@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"appkit"
 	"appkit/logging"
 
 	"wiki/internal/extract"
@@ -121,11 +122,15 @@ func (s *Service) MergeSubjects(ctx context.Context, fromSubjectID, toSubjectID 
 	defer tx.Rollback()
 
 	receivedAt := s.now()
+	owner := ""
+	if id, ok := appkit.IdentityFrom(ctx); ok {
+		owner = strings.TrimSpace(id.OwnerEmail)
+	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO jobs (
 			id, owner, source_text, title, tags, source_hash, status, received_at
-		) VALUES (?, '', '', 'subject merge', '[]', ?, ?, ?)`,
-		jobID, hashText(""), JobPending, formatTime(receivedAt))
+		) VALUES (?, ?, '', 'subject merge', '[]', ?, ?, ?)`,
+		jobID, owner, hashText(""), JobPending, formatTime(receivedAt))
 	if err != nil {
 		return "", err
 	}

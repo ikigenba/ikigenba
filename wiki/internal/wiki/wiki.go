@@ -3,6 +3,8 @@ package wiki
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -61,6 +63,8 @@ func Spec() appkit.Spec {
 				mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
 					mcp.WithIngestService(svc),
 					mcp.WithJobStatusService(svc),
+					mcp.WithMergeService(specMergePathResolver{subjects: NewSubjectStore(read)}, svc),
+					mcp.WithMergeListService(NewAliasStore(read)),
 					mcp.WithSubjectsService(svc),
 					mcp.WithClaimsService(svc),
 					mcp.WithPageService(svc),
@@ -82,6 +86,18 @@ func Main() {
 		}
 	}
 	appkit.Main(Spec())
+}
+
+type specMergePathResolver struct {
+	subjects *SubjectStore
+}
+
+func (r specMergePathResolver) GetByPath(ctx context.Context, path string) (Subject, error) {
+	subject, err := r.subjects.GetByPath(ctx, path)
+	if errors.Is(err, ErrSubjectNotFound) {
+		return Subject{}, sql.ErrNoRows
+	}
+	return subject, err
 }
 
 func serveCommand(args []string) bool {
