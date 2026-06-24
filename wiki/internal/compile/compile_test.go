@@ -43,7 +43,7 @@ func TestCompileRendersSubjectIdentityAndCompleteClaimSet(t *testing.T) {
 	for _, want := range []string{
 		"id: subj-acme",
 		"name: Acme Robotics",
-		"norm_name: acme robotics",
+		"norm_name: acme-robotics",
 		"type: entity",
 		"[claim-001] Acme Robotics opened a research lab in Tulsa.",
 		"[claim-002] Mira Patel leads Acme Robotics' Tulsa lab.",
@@ -248,7 +248,7 @@ func TestCompileDeterministicallyEnforcesRuneCap(t *testing.T) {
 }
 
 func acmeSubject() wiki.Subject {
-	return wiki.Subject{ID: "subj-acme", Name: "Acme Robotics", NormName: "acme robotics", Type: "entity"}
+	return wiki.Subject{ID: "subj-acme", Name: "Acme Robotics", NormName: "acme-robotics", Type: "entity"}
 }
 
 func acmeClaims() []wiki.Claim {

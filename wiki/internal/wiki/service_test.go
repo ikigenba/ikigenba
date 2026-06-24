@@ -168,7 +168,7 @@ func TestProcessNextCompilesFromSubjectIdentityAndClaimsOnly(t *testing.T) {
 	if err := NewSubjectStore(conn).Save(ctx, Subject{
 		ID:       "subject-1",
 		Name:     "Acme Robotics",
-		NormName: normalize("Acme Robotics"),
+		NormName: Normalize("Acme Robotics"),
 		Type:     "entity",
 	}); err != nil {
 		t.Fatalf("Save subject: %v", err)

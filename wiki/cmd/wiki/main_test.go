@@ -116,8 +116,8 @@ func TestBuildSpecPageToolReturnsRenderedFooter(t *testing.T) {
 	subjects := wiki.NewSubjectStore(conn)
 	pages := wiki.NewPageStore(conn)
 	for _, subject := range []wiki.Subject{
-		{ID: internalSubjectID, Name: "Acme Robotics", NormName: "acme robotics", Type: "entity"},
-		{ID: "subject-tulsa", Name: "Tulsa Launch", NormName: "tulsa launch", Type: "event"},
+		{ID: internalSubjectID, Name: "Acme Robotics", NormName: "acme-robotics", Type: "entity"},
+		{ID: "subject-tulsa", Name: "Tulsa Launch", NormName: "tulsa-launch", Type: "event"},
 	} {
 		if err := subjects.Save(ctx, subject); err != nil {
 			t.Fatalf("Save subject %s: %v", subject.ID, err)
@@ -206,7 +206,7 @@ func TestBuildSpecReadToolsReturnPublicPathsWithoutSubjectIDs(t *testing.T) {
 	if err := wiki.NewSubjectStore(conn).Save(ctx, wiki.Subject{
 		ID:       internalSubjectID,
 		Name:     "Acme Robotics",
-		NormName: "acme robotics",
+		NormName: "acme-robotics",
 		Type:     "entity",
 	}); err != nil {
 		t.Fatalf("Save subject: %v", err)
@@ -345,7 +345,7 @@ func TestBuildCompilerUsesDefaultCompileCallSite(t *testing.T) {
 	title, body, err := compiler.Compile(context.Background(), wiki.Subject{
 		ID:       "subject-acme",
 		Name:     "Acme Robotics",
-		NormName: "acme robotics",
+		NormName: "acme-robotics",
 		Type:     "entity",
 	}, []wiki.Claim{
 		{ID: "claim-001", SubjectID: "subject-acme", Body: "Acme Robotics runs a Tulsa lab."},

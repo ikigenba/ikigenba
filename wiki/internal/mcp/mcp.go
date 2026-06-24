@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strings"
 	"time"
-	"unicode"
 
 	"appkit"
 
@@ -278,7 +277,7 @@ func WithPageService[T any](s pageFunc[T]) Option {
 	}
 }
 
-// WithPagePathService enables the page tool from a public type/slug path service.
+// WithPagePathService enables the page tool from a public type/norm_name path service.
 func WithPagePathService[T any](s pageByPathFunc[T]) Option {
 	return func(h *Handler) {
 		if s != nil {
@@ -597,7 +596,13 @@ func (h *Handler) handleMergeCall(ctx context.Context, w http.ResponseWriter, re
 		writeResult(w, req.ID, toolError(err.Error()))
 		return
 	}
-	jobID, err := h.merge(ctx, stringField(indirect(reflect.ValueOf(from)), "ID"), stringField(indirect(reflect.ValueOf(to)), "ID"))
+	fromID := stringField(indirect(reflect.ValueOf(from)), "ID")
+	toID := stringField(indirect(reflect.ValueOf(to)), "ID")
+	if fromID == toID {
+		writeResult(w, req.ID, toolError("from and to resolve to the same subject"))
+		return
+	}
+	jobID, err := h.merge(ctx, fromID, toID)
 	if err != nil {
 		writeResult(w, req.ID, toolError(err.Error()))
 		return
@@ -1433,24 +1438,7 @@ func pathField(v reflect.Value) string {
 	if typ == "" || normName == "" {
 		return ""
 	}
-	return typ + "/" + slug(normName)
-}
-
-func slug(normName string) string {
-	var b strings.Builder
-	hyphen := true
-	for _, r := range normName {
-		if r == '/' || unicode.IsSpace(r) {
-			if !hyphen {
-				b.WriteByte('-')
-				hyphen = true
-			}
-			continue
-		}
-		b.WriteRune(r)
-		hyphen = false
-	}
-	return strings.TrimSuffix(b.String(), "-")
+	return typ + "/" + normName
 }
 
 func interfaceField(v reflect.Value, name string) any {

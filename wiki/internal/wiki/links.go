@@ -29,10 +29,7 @@ func Mentions(body string, others []Subject) []Subject {
 	normalizedBody := normalize(body)
 	var out []Subject
 	for _, subject := range others {
-		normName := subject.NormName
-		if normName == "" {
-			normName = normalize(subject.Name)
-		}
+		normName := normalize(subject.Name)
 		if normName == "" {
 			continue
 		}

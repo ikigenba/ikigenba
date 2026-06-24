@@ -565,7 +565,7 @@ func finishDoneInTx(ctx context.Context, tx *sql.Tx, jobID string, finishedAt ti
 }
 
 func (s *Service) plannedSubject(ctx context.Context, known map[string]Subject, item extract.ExtractedSubject) (Subject, bool, error) {
-	normName := normalize(item.Name)
+	normName := Normalize(item.Name)
 	if subject, ok := known[normName]; ok {
 		return subject, false, nil
 	}

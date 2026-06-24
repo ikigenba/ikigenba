@@ -408,7 +408,7 @@ func TestJobStatusToolReturnsDomainStatus(t *testing.T) {
 	}
 }
 
-func TestPageToolUsesTypeSlugPath(t *testing.T) {
+func TestPageToolUsesTypeNormNamePath(t *testing.T) {
 	// R-01OQ-Y5YV
 	wiki := &capturingWiki{page: page{
 		ID:        "page-1",
@@ -468,7 +468,7 @@ func TestPageToolUsesTypeSlugPath(t *testing.T) {
 		t.Fatalf("page status = %d, want 200", rec.Code)
 	}
 	if wiki.pagePath != "entity/acme-robotics" {
-		t.Fatalf("page path = %q, want type/slug path", wiki.pagePath)
+		t.Fatalf("page path = %q, want type/norm_name path", wiki.pagePath)
 	}
 	var body struct {
 		Subject string `json:"subject"`
@@ -493,7 +493,7 @@ func TestReadToolsSerializePublicPathsWithoutSubjectIDs(t *testing.T) {
 		subjects: []subject{{
 			ID:       internalSubjectID,
 			Name:     "Acme Robotics",
-			NormName: "acme robotics",
+			NormName: "acme-robotics",
 			Type:     "entity",
 		}},
 		claims: []claim{{
@@ -935,7 +935,6 @@ func TestJobsKindFilterDefaultsToIngestAndAcceptsMerge(t *testing.T) {
 }
 
 func TestJobsKindSchemaPublishesEnumAndRejectsUnknownKind(t *testing.T) {
-	// R-E01B-X6IA
 	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
 		WithJobListService(&capturingWiki{}),
 		WithJobsCountService(&capturingWiki{}),
@@ -1013,6 +1012,7 @@ func TestMergeToolResolvesPathsOnceAndQueuesJob(t *testing.T) {
 }
 
 func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
+	// R-E01B-X6IA
 	// R-E3P1-2HQD
 	t.Run("resolve", func(t *testing.T) {
 		wiki := &capturingWiki{
@@ -1030,6 +1030,29 @@ func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
 		}
 		if wiki.mergeFrom != "" || wiki.mergeTo != "" {
 			t.Fatalf("merge called with %q -> %q, want no enqueue after resolve failure", wiki.mergeFrom, wiki.mergeTo)
+		}
+	})
+
+	t.Run("same id", func(t *testing.T) {
+		wiki := &capturingWiki{
+			pathSubjects: map[string]subject{
+				"entity/current-name": {ID: "subject-same"},
+				"entity/old-name":     {ID: "subject-same"},
+			},
+		}
+		h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithMergeService(wiki, wiki)))
+
+		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/old-name","to":"entity/current-name"}}}`, "owner@example.com")
+
+		text := toolTextString(t, rec.Body.Bytes())
+		if !strings.Contains(text, "same subject") {
+			t.Fatalf("same-id error = %q, want same subject", text)
+		}
+		if wiki.mergeFrom != "" || wiki.mergeTo != "" {
+			t.Fatalf("merge called with %q -> %q, want no enqueue for same-id merge", wiki.mergeFrom, wiki.mergeTo)
+		}
+		if wiki.pathLookups["entity/old-name"] != 1 || wiki.pathLookups["entity/current-name"] != 1 {
+			t.Fatalf("path lookups = %#v, want both paths resolved once", wiki.pathLookups)
 		}
 	})
 
@@ -1193,7 +1216,7 @@ func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 		jobNext: "job-next",
 		subjects: []subject{{
 			Name:     "Acme Robotics",
-			NormName: "acme robotics",
+			NormName: "acme-robotics",
 			Type:     "entity",
 			HasPage:  true,
 		}},

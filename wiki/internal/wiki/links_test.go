@@ -9,8 +9,8 @@ import (
 func TestMentionsFindsWholeNormalizedSubjectNames(t *testing.T) {
 	// R-ZUDC-NJIP
 	others := []Subject{
-		{ID: "subject-1", Name: "Cafe Noir", NormName: "cafe noir", Type: "entity"},
-		{ID: "subject-2", Name: "Tulsa Launch", NormName: "tulsa launch", Type: "event"},
+		{ID: "subject-1", Name: "Cafe Noir", NormName: "cafe-noir", Type: "entity"},
+		{ID: "subject-2", Name: "Tulsa Launch", NormName: "tulsa-launch", Type: "event"},
 	}
 
 	got := Mentions("CAFE\u0301 NOIR announced plans after the meeting.", others)
@@ -24,7 +24,7 @@ func TestMentionsRequiresAlphanumericBoundaries(t *testing.T) {
 	// R-ZVL9-1B9E
 	others := []Subject{
 		{ID: "subject-1", Name: "Cat", NormName: "cat", Type: "entity"},
-		{ID: "subject-2", Name: "Category Theory", NormName: "category theory", Type: "concept"},
+		{ID: "subject-2", Name: "Category Theory", NormName: "category-theory", Type: "concept"},
 	}
 
 	got := Mentions("The category theory note mentions a cat, but not concatenate.", others)

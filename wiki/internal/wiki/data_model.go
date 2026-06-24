@@ -27,31 +27,13 @@ type Subject struct {
 
 var (
 	ErrSubjectNotFound = errors.New("wiki: subject not found")
-	ErrAmbiguousPath   = errors.New("wiki: ambiguous subject path")
 	ErrJobNotTerminal  = errors.New("wiki: job is not terminal")
 	ErrInvalidCursor   = errors.New("wiki: invalid cursor")
 )
 
-// Path is the public type/slug identifier for a subject.
+// Path is the public type/norm_name identifier for a subject.
 func Path(s Subject) string {
-	return s.Type + "/" + slug(s.NormName)
-}
-
-func slug(normName string) string {
-	var b strings.Builder
-	hyphen := true
-	for _, r := range normName {
-		if r == '/' || unicode.IsSpace(r) {
-			if !hyphen {
-				b.WriteByte('-')
-				hyphen = true
-			}
-			continue
-		}
-		b.WriteRune(r)
-		hyphen = false
-	}
-	return strings.TrimSuffix(b.String(), "-")
+	return s.Type + "/" + s.NormName
 }
 
 // Claim is an extracted statement about a subject.
@@ -590,7 +572,7 @@ func NewSubjectStore(db sqlStore) *SubjectStore {
 func (s *SubjectStore) Save(ctx context.Context, subject Subject) error {
 	normName := subject.NormName
 	if normName == "" {
-		normName = normalize(subject.Name)
+		normName = Normalize(subject.Name)
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO subjects (id, name, norm_name, type) VALUES (?, ?, ?, ?)`,
@@ -602,7 +584,7 @@ func (s *SubjectStore) GetByNormName(ctx context.Context, name string) (Subject,
 	var subject Subject
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, name, norm_name, type FROM subjects WHERE norm_name = ?`,
-		normalize(name)).
+		Normalize(name)).
 		Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type)
 	return subject, err
 }
@@ -621,45 +603,26 @@ func (s *SubjectStore) Delete(ctx context.Context, id string) error {
 }
 
 func (s *SubjectStore) GetByPath(ctx context.Context, path string) (Subject, error) {
-	typ, wantSlug, ok := strings.Cut(path, "/")
-	if !ok || typ == "" || wantSlug == "" {
+	typ, token, ok := strings.Cut(path, "/")
+	if !ok || typ == "" || token == "" {
 		return Subject{}, ErrSubjectNotFound
 	}
 
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, norm_name, type FROM subjects WHERE type = ? ORDER BY id`,
-		typ)
+	var subject Subject
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, name, norm_name, type FROM subjects WHERE norm_name = ?`,
+		token).
+		Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Subject{}, ErrSubjectNotFound
+	}
 	if err != nil {
 		return Subject{}, err
 	}
-	defer rows.Close()
-
-	var found Subject
-	matches := 0
-	for rows.Next() {
-		var subject Subject
-		if err := rows.Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type); err != nil {
-			return Subject{}, err
-		}
-		if slug(subject.NormName) != wantSlug {
-			continue
-		}
-		matches++
-		if matches == 1 {
-			found = subject
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return Subject{}, err
-	}
-	switch matches {
-	case 0:
+	if subject.Type != typ {
 		return Subject{}, ErrSubjectNotFound
-	case 1:
-		return found, nil
-	default:
-		return Subject{}, ErrAmbiguousPath
 	}
+	return subject, nil
 }
 
 func (s *SubjectStore) List(ctx context.Context, typ, nameContains string, p page.Params) ([]Subject, string, error) {
@@ -669,7 +632,7 @@ func (s *SubjectStore) List(ctx context.Context, typ, nameContains string, p pag
 	}
 	limit := p.ResolvedLimit()
 	typ = strings.TrimSpace(typ)
-	nameContains = normalize(nameContains)
+	nameContains = Normalize(nameContains)
 	args := []any{typ, typ, nameContains, nameContains}
 	query := `
 		SELECT id, name, norm_name, type

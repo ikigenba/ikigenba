@@ -89,13 +89,12 @@ func TestNormalizeReturnsEmptyForContentFreeInput(t *testing.T) {
 	}
 }
 
-func TestSubjectPathUsesTypeAndPathSafeSlug(t *testing.T) {
-	// R-ZO9U-QOT8
+func TestSubjectPathUsesTypeAndNormNameWithoutTransform(t *testing.T) {
+	// R-DRX6-PWSW
 	tests := map[string]string{
-		Path(Subject{Type: "entity", NormName: "cafe noir"}):         "entity/cafe-noir",
-		Path(Subject{Type: "event", NormName: " / alpha / beta// "}): "event/alpha-beta",
-		Path(Subject{Type: "concept", NormName: "東京 / 京都"}):          "concept/東京-京都",
-		Path(Subject{Type: "entity", NormName: "Camel Case"}):        "entity/Camel-Case",
+		Path(Subject{Type: "entity", NormName: "cafe-noir"}):   "entity/cafe-noir",
+		Path(Subject{Type: "event", NormName: "alpha/beta"}):   "event/alpha/beta",
+		Path(Subject{Type: "concept", NormName: "Camel Case"}): "concept/Camel Case",
 	}
 	for got, want := range tests {
 		if got != want {
@@ -104,17 +103,17 @@ func TestSubjectPathUsesTypeAndPathSafeSlug(t *testing.T) {
 	}
 }
 
-func TestSubjectStoreGetByPathFindsExactTypeSlug(t *testing.T) {
-	// R-ZQPN-I8AM
+func TestSubjectStoreGetByPathFindsExactTypeAndNormName(t *testing.T) {
+	// R-DT53-3OJL
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
 
 	subjects := NewSubjectStore(conn)
-	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Acme Robotics", Type: "entity"}); err != nil {
+	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Acme Robotics", NormName: "acme-robotics", Type: "entity"}); err != nil {
 		t.Fatalf("Save subject-1: %v", err)
 	}
-	if err := subjects.Save(ctx, Subject{ID: "subject-2", Name: "Tulsa Launch", Type: "event"}); err != nil {
+	if err := subjects.Save(ctx, Subject{ID: "subject-2", Name: "Tulsa Launch", NormName: "tulsa-launch", Type: "event"}); err != nil {
 		t.Fatalf("Save subject-2: %v", err)
 	}
 
@@ -125,42 +124,52 @@ func TestSubjectStoreGetByPathFindsExactTypeSlug(t *testing.T) {
 	if got.ID != "subject-1" || got.Type != "entity" || Path(got) != "entity/acme-robotics" {
 		t.Fatalf("GetByPath returned %+v, want subject-1 at entity/acme-robotics", got)
 	}
+
+	if got, err := subjects.GetByPath(ctx, "entity/acme robotics"); !errors.Is(err, ErrSubjectNotFound) {
+		t.Fatalf("GetByPath with transformed token returned %+v, %v; want ErrSubjectNotFound", got, err)
+	}
 }
 
-func TestSubjectStoreGetByPathRejectsFuzzyAndAliasMatches(t *testing.T) {
-	// R-ZRXJ-W01B
+func TestSubjectStoreGetByPathRejectsEmptyMissingFuzzyAndWrongType(t *testing.T) {
+	// R-DUCZ-HGAA
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
 
 	subjects := NewSubjectStore(conn)
-	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Acme Robotics", Type: "entity"}); err != nil {
+	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Acme Robotics", NormName: "acme-robotics", Type: "entity"}); err != nil {
 		t.Fatalf("Save subject: %v", err)
 	}
 
-	for _, path := range []string{"entity/acme-robot", "concept/acme-robotics", "entity/acme robotics"} {
+	for _, path := range []string{"", "entity/", "/acme-robotics", "entity/acme-robot", "concept/acme-robotics", "entity/acme robotics"} {
 		if got, err := subjects.GetByPath(ctx, path); !errors.Is(err, ErrSubjectNotFound) {
 			t.Fatalf("GetByPath(%q) = %+v, %v; want ErrSubjectNotFound", path, got, err)
 		}
 	}
 }
 
-func TestSubjectStoreGetByPathFailsOnAmbiguousSlug(t *testing.T) {
-	// R-ZT5G-9RS0
+func TestSubjectStoreGetByPathUsesUniqueTokenBeforeCheckingType(t *testing.T) {
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
 
 	subjects := NewSubjectStore(conn)
-	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Alpha Beta", NormName: "alpha beta", Type: "entity"}); err != nil {
+	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Alpha Beta", NormName: "alpha-beta", Type: "entity"}); err != nil {
 		t.Fatalf("Save subject-1: %v", err)
 	}
-	if err := subjects.Save(ctx, Subject{ID: "subject-2", Name: "Alpha/Beta", NormName: "alpha/beta", Type: "entity"}); err != nil {
+	if err := subjects.Save(ctx, Subject{ID: "subject-2", Name: "Alpha Gamma", NormName: "alpha-gamma", Type: "event"}); err != nil {
 		t.Fatalf("Save subject-2: %v", err)
 	}
 
-	if got, err := subjects.GetByPath(ctx, "entity/alpha-beta"); !errors.Is(err, ErrAmbiguousPath) {
-		t.Fatalf("GetByPath returned %+v, %v; want ErrAmbiguousPath", got, err)
+	got, err := subjects.GetByPath(ctx, "entity/alpha-beta")
+	if err != nil {
+		t.Fatalf("GetByPath entity/alpha-beta: %v", err)
+	}
+	if got.ID != "subject-1" {
+		t.Fatalf("GetByPath entity/alpha-beta = %+v, want subject-1", got)
+	}
+	if got, err := subjects.GetByPath(ctx, "entity/alpha-gamma"); !errors.Is(err, ErrSubjectNotFound) {
+		t.Fatalf("GetByPath entity/alpha-gamma = %+v, %v; want ErrSubjectNotFound", got, err)
 	}
 }
 
@@ -200,8 +209,8 @@ func TestDomainStoresPersistPhaseOneModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByNormName: %v", err)
 	}
-	if subject.ID != "subject-1" || subject.NormName != "cafe noir" {
-		t.Fatalf("subject = %+v, want subject-1 with normalized name cafe noir", subject)
+	if subject.ID != "subject-1" || subject.NormName != "cafe-noir" {
+		t.Fatalf("subject = %+v, want subject-1 with normalized name cafe-noir", subject)
 	}
 
 	gotClaims, _, err := claims.ListBySubject(ctx, "subject-1", page.Params{})
@@ -290,7 +299,7 @@ func TestSubjectStoreCursorPaginationWalksRowsExactlyOnceInKeyOrder(t *testing.T
 	subjects := NewSubjectStore(conn)
 	for _, subject := range []Subject{
 		{ID: "subject-2", Name: "Alpha", Type: "entity"},
-		{ID: "subject-1", Name: "Alpha", NormName: "alpha one", Type: "entity"},
+		{ID: "subject-1", Name: "Alpha", NormName: "alpha-one", Type: "entity"},
 		{ID: "subject-3", Name: "Beta", Type: "event"},
 		{ID: "subject-4", Name: "Gamma", Type: "concept"},
 		{ID: "subject-5", Name: "Omega", Type: "entity"},
