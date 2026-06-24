@@ -54,4 +54,4 @@ Phase 43 ✅ realizes D26 — the merge work item & execution: `jobs.kind` + car
 Phase 44 ✅ realizes D27, D16 — merge MCP surface: `merge` (fire-and-return) + `merges` (aliases audit) verbs to a fifteen-verb surface, `AliasStore.ListMerges`, and the `jobs`/`jobs_count` `kind` filter (default-ingest, fail-loud)
 Phase 45 ✅ realizes D3 — Rewrite Normalize to the [a-z0-9-] transform
 Phase 46 ✅ realizes D11, D10, D27 — Identity == path token: Path/GetByPath direct, delete slug + the now-impossible ErrAmbiguousPath
-Phase 47 ⬜ realizes D28 — Blackhole empty-normalization content at the ingest boundary
+Phase 47 ✅ realizes D28 — Blackhole empty-normalization content at the ingest boundary
