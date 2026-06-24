@@ -46,6 +46,7 @@ type Service struct {
 	write     *sql.DB
 	jobs      *JobStore
 	subjects  *SubjectStore
+	aliases   *AliasStore
 	resolver  *Resolver
 	claims    *ClaimStore
 	pages     *PageStore
@@ -74,6 +75,7 @@ func NewService(db any, extractor Extractor, compiler Compiler, now func() time.
 		write:     c.Write,
 		jobs:      NewJobStore(c),
 		subjects:  NewSubjectStore(c.Read),
+		aliases:   NewAliasStore(c.Read),
 		resolver:  NewResolver(c.Read),
 		claims:    NewClaimStore(c.Read),
 		pages:     NewPageStore(c.Read),

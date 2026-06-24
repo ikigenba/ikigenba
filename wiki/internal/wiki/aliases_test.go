@@ -115,6 +115,46 @@ func TestAliasStorePersistsLookupAndRepointsSubjects(t *testing.T) {
 	}
 }
 
+func TestAliasStoreListAllReturnsEveryAliasForProjection(t *testing.T) {
+	// R-1XX5-QDCY
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subjects := NewSubjectStore(conn)
+	for _, subject := range []Subject{
+		{ID: "subject-one", Name: "Current One", Type: "entity"},
+		{ID: "subject-two", Name: "Current Two", Type: "event"},
+	} {
+		if err := subjects.Save(ctx, subject); err != nil {
+			t.Fatalf("Save %s: %v", subject.ID, err)
+		}
+	}
+	aliases := NewAliasStore(conn)
+	for _, al := range []Alias{
+		{Name: "Former Two", SubjectID: "subject-two", CreatedBy: "owner@example.com", CreatedAt: "2026-06-24T12:01:00Z"},
+		{Name: "Former One", SubjectID: "subject-one", CreatedBy: "owner@example.com", CreatedAt: "2026-06-24T12:00:00Z"},
+	} {
+		if err := aliases.Insert(ctx, al); err != nil {
+			t.Fatalf("Insert %s: %v", al.Name, err)
+		}
+	}
+
+	got, err := aliases.ListAll(ctx)
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListAll returned %+v, want two aliases", got)
+	}
+	if got[0].NormName != "former-one" || got[0].SubjectID != "subject-one" {
+		t.Fatalf("first alias = %+v, want former-one for subject-one", got[0])
+	}
+	if got[1].NormName != "former-two" || got[1].SubjectID != "subject-two" {
+		t.Fatalf("second alias = %+v, want former-two for subject-two", got[1])
+	}
+}
+
 func TestAliasStoreListMergesReturnsNewestAuditPage(t *testing.T) {
 	// R-E4WX-G9H2
 	ctx := context.Background()

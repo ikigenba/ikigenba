@@ -83,13 +83,6 @@ type RerunResult struct {
 	Status   string
 }
 
-func normalize(name string) string {
-	s := norm.NFKC.String(name)
-	s = strings.ToLower(s)
-	s = strings.Join(strings.Fields(s), " ")
-	return stripDiacritics(s)
-}
-
 // Normalize returns the public path-safe subject-name form.
 func Normalize(name string) string {
 	s := stripDiacritics(strings.ToLower(norm.NFKC.String(name)))

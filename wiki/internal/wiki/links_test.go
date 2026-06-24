@@ -8,9 +8,15 @@ import (
 
 func TestMentionsFindsWholeNormalizedSubjectNames(t *testing.T) {
 	// R-ZUDC-NJIP
-	others := []Subject{
-		{ID: "subject-1", Name: "Cafe Noir", NormName: "cafe-noir", Type: "entity"},
-		{ID: "subject-2", Name: "Tulsa Launch", NormName: "tulsa-launch", Type: "event"},
+	others := []SubjectKeys{
+		{
+			Subject: Subject{ID: "subject-1", Name: "Cafe Noir", NormName: "cafe-noir", Type: "entity"},
+			Keys:    []string{"cafe-noir"},
+		},
+		{
+			Subject: Subject{ID: "subject-2", Name: "Tulsa Launch", NormName: "tulsa-launch", Type: "event"},
+			Keys:    []string{"tulsa-launch"},
+		},
 	}
 
 	got := Mentions("CAFE\u0301 NOIR announced plans after the meeting.", others)
@@ -22,15 +28,37 @@ func TestMentionsFindsWholeNormalizedSubjectNames(t *testing.T) {
 
 func TestMentionsRequiresAlphanumericBoundaries(t *testing.T) {
 	// R-ZVL9-1B9E
-	others := []Subject{
-		{ID: "subject-1", Name: "Cat", NormName: "cat", Type: "entity"},
-		{ID: "subject-2", Name: "Category Theory", NormName: "category-theory", Type: "concept"},
+	others := []SubjectKeys{
+		{
+			Subject: Subject{ID: "subject-1", Name: "Cat", NormName: "cat", Type: "entity"},
+			Keys:    []string{"cat"},
+		},
+		{
+			Subject: Subject{ID: "subject-2", Name: "Category Theory", NormName: "category-theory", Type: "concept"},
+			Keys:    []string{"category-theory"},
+		},
 	}
 
 	got := Mentions("The category theory note mentions a cat, but not concatenate.", others)
 
 	if len(got) != 2 || got[0].ID != "subject-1" || got[1].ID != "subject-2" {
 		t.Fatalf("Mentions returned %+v, want cat as whole word and category theory phrase", got)
+	}
+}
+
+func TestMentionsReturnsCanonicalSubjectForAliasKeys(t *testing.T) {
+	// R-1WP9-CLM9
+	others := []SubjectKeys{
+		{
+			Subject: Subject{ID: "subject-1", Name: "Current Initiative", NormName: "current-initiative", Type: "concept"},
+			Keys:    []string{"current-initiative", "project-lumen"},
+		},
+	}
+
+	got := Mentions("The update only named Project Lumen.", others)
+
+	if len(got) != 1 || got[0].ID != "subject-1" || got[0].Name != "Current Initiative" {
+		t.Fatalf("Mentions returned %+v, want canonical Current Initiative from alias key", got)
 	}
 }
 
@@ -122,6 +150,59 @@ func TestPageWithLinksProjectsInboundFromPagedSubjectsOnly(t *testing.T) {
 	}
 	if len(got.MentionedBy) != 1 || got.MentionedBy[0] != (Ref{Path: "event/tulsa-launch", Name: "Tulsa Launch"}) {
 		t.Fatalf("MentionedBy = %+v, want only paged Tulsa Launch ref", got.MentionedBy)
+	}
+}
+
+func TestPageWithLinksProjectsAliasAwareInboundAndOutbound(t *testing.T) {
+	// R-1Z52-453N
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	svc := NewService(conn, nil, nil, nil)
+	subjects := NewSubjectStore(conn)
+	pages := NewPageStore(conn)
+	aliases := NewAliasStore(conn)
+
+	saveSubject(t, ctx, subjects, Subject{ID: "subject-1", Name: "Acme Robotics", Type: "entity"})
+	saveSubject(t, ctx, subjects, Subject{ID: "subject-2", Name: "Current Initiative", Type: "concept"})
+	if err := aliases.Insert(ctx, Alias{
+		Name:      "Former Lab",
+		SubjectID: "subject-1",
+		CreatedBy: "owner@example.com",
+		CreatedAt: "2026-06-24T12:00:00Z",
+	}); err != nil {
+		t.Fatalf("Insert alias for subject-1: %v", err)
+	}
+	if err := aliases.Insert(ctx, Alias{
+		Name:      "Project Lumen",
+		SubjectID: "subject-2",
+		CreatedBy: "owner@example.com",
+		CreatedAt: "2026-06-24T12:01:00Z",
+	}); err != nil {
+		t.Fatalf("Insert alias for subject-2: %v", err)
+	}
+	upsertPage(t, ctx, pages, Page{
+		ID:        "page-1",
+		SubjectID: "subject-1",
+		Title:     "Acme Robotics",
+		Body:      "Former Lab announced Project Lumen.",
+	})
+	upsertPage(t, ctx, pages, Page{
+		ID:        "page-2",
+		SubjectID: "subject-2",
+		Title:     "Current Initiative",
+		Body:      "Current Initiative depends on Former Lab.",
+	})
+
+	got, err := svc.PageWithLinks(ctx, "subject-1")
+	if err != nil {
+		t.Fatalf("PageWithLinks: %v", err)
+	}
+	if len(got.Mentions) != 1 || got.Mentions[0] != (Ref{Path: "concept/current-initiative", Name: "Current Initiative"}) {
+		t.Fatalf("Mentions = %+v, want canonical Current Initiative ref from alias", got.Mentions)
+	}
+	if len(got.MentionedBy) != 1 || got.MentionedBy[0] != (Ref{Path: "concept/current-initiative", Name: "Current Initiative"}) {
+		t.Fatalf("MentionedBy = %+v, want canonical Current Initiative ref from alias", got.MentionedBy)
 	}
 }
 

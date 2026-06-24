@@ -23,18 +23,26 @@ type LinkedPage struct {
 	MentionedBy []Ref
 }
 
+// SubjectKeys is a subject plus every normalized name that resolves to it.
+type SubjectKeys struct {
+	Subject
+	Keys []string
+}
+
 // Mentions returns every subject whose normalized name appears as a whole
 // alphanumeric-bounded phrase in body.
-func Mentions(body string, others []Subject) []Subject {
-	normalizedBody := normalize(body)
+func Mentions(body string, others []SubjectKeys) []Subject {
+	normalizedBody := Normalize(body)
 	var out []Subject
-	for _, subject := range others {
-		normName := normalize(subject.Name)
-		if normName == "" {
-			continue
-		}
-		if containsWholePhrase(normalizedBody, normName) {
-			out = append(out, subject)
+	for _, subjectKeys := range others {
+		for _, key := range subjectKeys.Keys {
+			if key == "" {
+				continue
+			}
+			if containsWholePhrase(normalizedBody, key) {
+				out = append(out, subjectKeys.Subject)
+				break
+			}
 		}
 	}
 	return out
@@ -101,11 +109,17 @@ func (s *Service) PageWithLinks(ctx context.Context, subjectID string) (LinkedPa
 	if err != nil {
 		return LinkedPage{}, err
 	}
+	aliases, err := s.aliases.ListAll(ctx)
+	if err != nil {
+		return LinkedPage{}, err
+	}
 
-	var others []Subject
-	for _, candidate := range subjects {
-		if candidate.ID != subject.ID {
-			others = append(others, candidate)
+	subjectKeys := subjectKeysFor(subjects, aliases)
+	thisKeys := subjectKeys[subject.ID]
+	var others []SubjectKeys
+	for _, candidateKeys := range subjectKeys {
+		if candidateKeys.ID != subject.ID {
+			others = append(others, candidateKeys)
 		}
 	}
 
@@ -121,11 +135,42 @@ func (s *Service) PageWithLinks(ctx context.Context, subjectID string) (LinkedPa
 		if err != nil {
 			return LinkedPage{}, err
 		}
-		if len(Mentions(otherPage.Body, []Subject{subject})) > 0 {
-			linked.MentionedBy = append(linked.MentionedBy, refFor(other))
+		if len(Mentions(otherPage.Body, []SubjectKeys{thisKeys})) > 0 {
+			linked.MentionedBy = append(linked.MentionedBy, refFor(other.Subject))
 		}
 	}
+	linked.MentionedBy = canonicalRefs(linked.MentionedBy)
 	return linked, nil
+}
+
+func subjectKeysFor(subjects []Subject, aliases []Alias) map[string]SubjectKeys {
+	byID := make(map[string]SubjectKeys, len(subjects))
+	for _, subject := range subjects {
+		keys := appendNormalizedKey(nil, subject.NormName)
+		byID[subject.ID] = SubjectKeys{Subject: subject, Keys: keys}
+	}
+	for _, alias := range aliases {
+		subjectKeys, ok := byID[alias.SubjectID]
+		if !ok {
+			continue
+		}
+		subjectKeys.Keys = appendNormalizedKey(subjectKeys.Keys, alias.NormName)
+		byID[alias.SubjectID] = subjectKeys
+	}
+	return byID
+}
+
+func appendNormalizedKey(keys []string, key string) []string {
+	key = Normalize(key)
+	if key == "" {
+		return keys
+	}
+	for _, existing := range keys {
+		if existing == key {
+			return keys
+		}
+	}
+	return append(keys, key)
 }
 
 func refsFor(subjects []Subject) []Ref {

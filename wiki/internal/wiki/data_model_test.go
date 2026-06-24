@@ -15,13 +15,13 @@ import (
 func TestNormalizePipeline(t *testing.T) {
 	// R-7TVC-E7ZZ
 	tests := map[string]string{
-		"  Café\u0301\tNOIR  ": "cafe noir",
+		"  Café\u0301\tNOIR  ": "cafe-noir",
 		"\u212bngström":        "angstrom",
-		"ＡＬＰＨＡ   Beta":         "alpha beta",
+		"ＡＬＰＨＡ   Beta":         "alpha-beta",
 	}
 	for in, want := range tests {
-		if got := normalize(in); got != want {
-			t.Fatalf("normalize(%q) = %q, want %q", in, got, want)
+		if got := Normalize(in); got != want {
+			t.Fatalf("Normalize(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
