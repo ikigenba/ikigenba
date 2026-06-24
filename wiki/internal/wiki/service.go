@@ -448,7 +448,8 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.subjects.Get(ctx, merge.FromSubjectID); errors.Is(err, sql.ErrNoRows) {
+	loser, err := s.subjects.Get(ctx, merge.FromSubjectID)
+	if errors.Is(err, sql.ErrNoRows) {
 		return s.finishStaleMerge(ctx, job.ID)
 	} else if err != nil {
 		return err
@@ -486,7 +487,8 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	} else if err != nil {
 		return err
 	}
-	if _, err := subjects.Get(ctx, merge.FromSubjectID); errors.Is(err, sql.ErrNoRows) {
+	loser, err = subjects.Get(ctx, merge.FromSubjectID)
+	if errors.Is(err, sql.ErrNoRows) {
 		return finishDoneInTx(ctx, tx, job.ID, s.now())
 	} else if err != nil {
 		return err
@@ -498,6 +500,19 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 		return err
 	}
 	if err := aliases.RepointSubject(ctx, merge.FromSubjectID, merge.ToSubjectID); err != nil {
+		return err
+	}
+	if _, err := aliases.GetByNormName(ctx, loser.Name); errors.Is(err, sql.ErrNoRows) {
+		if err := aliases.Insert(ctx, Alias{
+			NormName:  Normalize(loser.Name),
+			SubjectID: merge.ToSubjectID,
+			Name:      loser.Name,
+			CreatedBy: job.Owner,
+			CreatedAt: formatTime(s.now()),
+		}); err != nil {
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
 	if err := subjects.Delete(ctx, merge.FromSubjectID); err != nil {

@@ -99,7 +99,7 @@ func TestAliasStorePersistsLookupAndRepointsSubjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByNormName: %v", err)
 	}
-	if got.NormName != "cafe former" || got.SubjectID != "subject-old" || got.Name != "  Café   Former  " {
+	if got.NormName != "cafe-former" || got.SubjectID != "subject-old" || got.Name != "  Café   Former  " {
 		t.Fatalf("alias = %+v, want normalized lookup pointing at subject-old", got)
 	}
 

@@ -32,7 +32,7 @@ func (a *AliasStore) Insert(ctx context.Context, al Alias) error {
 	_, err := a.db.ExecContext(ctx, `
 		INSERT INTO aliases (norm_name, subject_id, name, created_by, created_at)
 		VALUES (?, ?, ?, ?, ?)`,
-		normalize(normName), al.SubjectID, al.Name, al.CreatedBy, al.CreatedAt)
+		Normalize(normName), al.SubjectID, al.Name, al.CreatedBy, al.CreatedAt)
 	return err
 }
 
@@ -48,9 +48,30 @@ func (a *AliasStore) GetByNormName(ctx context.Context, normName string) (Alias,
 		SELECT norm_name, subject_id, name, created_by, created_at
 		FROM aliases
 		WHERE norm_name = ?`,
-		normalize(normName)).
+		Normalize(normName)).
 		Scan(&al.NormName, &al.SubjectID, &al.Name, &al.CreatedBy, &al.CreatedAt)
 	return al, err
+}
+
+func (a *AliasStore) ListAll(ctx context.Context) ([]Alias, error) {
+	rows, err := a.db.QueryContext(ctx, `
+		SELECT norm_name, subject_id, name, created_by, created_at
+		FROM aliases
+		ORDER BY norm_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var aliases []Alias
+	for rows.Next() {
+		var al Alias
+		if err := rows.Scan(&al.NormName, &al.SubjectID, &al.Name, &al.CreatedBy, &al.CreatedAt); err != nil {
+			return nil, err
+		}
+		aliases = append(aliases, al)
+	}
+	return aliases, rows.Err()
 }
 
 func (a *AliasStore) ListMerges(ctx context.Context, p page.Params) ([]Alias, string, error) {

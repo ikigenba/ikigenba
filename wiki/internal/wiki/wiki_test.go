@@ -171,6 +171,65 @@ func TestProcessNextCreatesSiblingWhenContentFreeNameSkipped(t *testing.T) {
 	}
 }
 
+func TestMergeMintsForwardRoutingAliasForLoserName(t *testing.T) {
+	// R-HUDR-AWS9
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subjects := NewSubjectStore(conn)
+	if err := subjects.Save(ctx, Subject{ID: "subject-winner", Name: "Winner Subject", Type: "entity"}); err != nil {
+		t.Fatalf("Save winner: %v", err)
+	}
+	if err := subjects.Save(ctx, Subject{ID: "subject-loser", Name: "Loser Subject", Type: "entity"}); err != nil {
+		t.Fatalf("Save loser: %v", err)
+	}
+
+	svc := NewService(conn, nil, &recordingCompiler{}, sequenceTimes(
+		time.Date(2026, 6, 24, 10, 0, 0, 0, time.UTC),
+		time.Date(2026, 6, 24, 10, 0, 1, 0, time.UTC),
+		time.Date(2026, 6, 24, 10, 0, 2, 0, time.UTC),
+		time.Date(2026, 6, 24, 10, 0, 3, 0, time.UTC),
+	))
+	svc.newID = sequenceIDs("job-merge")
+	jobID, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	if err != nil {
+		t.Fatalf("MergeSubjects: %v", err)
+	}
+	processed, err := svc.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("ProcessNext: %v", err)
+	}
+	if !processed {
+		t.Fatal("ProcessNext processed = false, want true")
+	}
+	status, err := svc.JobStatus(ctx, jobID)
+	if err != nil {
+		t.Fatalf("JobStatus: %v", err)
+	}
+	if status.Status != JobDone {
+		t.Fatalf("status = %q, want done", status.Status)
+	}
+
+	got, err := NewResolver(conn).ResolveByName(ctx, "Loser Subject")
+	if err != nil {
+		t.Fatalf("ResolveByName loser name: %v", err)
+	}
+	if got.ID != "subject-winner" || got.Name != "Winner Subject" {
+		t.Fatalf("resolved subject = %+v, want winner", got)
+	}
+
+	var aliasSubject string
+	if err := conn.QueryRowContext(ctx,
+		`SELECT subject_id FROM aliases WHERE norm_name = ?`, Normalize("Loser Subject")).
+		Scan(&aliasSubject); err != nil {
+		t.Fatalf("lookup normalized loser alias: %v", err)
+	}
+	if aliasSubject != "subject-winner" {
+		t.Fatalf("alias subject = %q, want subject-winner", aliasSubject)
+	}
+}
+
 func TestSpecDeclaresServedMCPService(t *testing.T) {
 	spec := Spec()
 	if spec.App != "wiki" {
