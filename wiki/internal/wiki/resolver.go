@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 )
 
 // Resolver resolves a raw subject name through canonical subjects and aliases.
@@ -39,6 +40,36 @@ func (r *Resolver) ResolveByName(ctx context.Context, name string) (Subject, err
 	}
 
 	alias, err := r.aliases.GetByNormName(ctx, name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Subject{}, ErrSubjectNotFound
+	}
+	if err != nil {
+		return Subject{}, err
+	}
+	subject, err = r.subjects.Get(ctx, alias.SubjectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Subject{}, ErrSubjectNotFound
+	}
+	return subject, err
+}
+
+func (r *Resolver) ResolveByPath(ctx context.Context, path string) (Subject, error) {
+	if r == nil {
+		return Subject{}, ErrSubjectNotFound
+	}
+	subject, err := r.subjects.GetByPath(ctx, path)
+	if err == nil {
+		return subject, nil
+	}
+	if !errors.Is(err, ErrSubjectNotFound) {
+		return Subject{}, err
+	}
+
+	_, token, ok := strings.Cut(path, "/")
+	if !ok || token == "" {
+		return Subject{}, ErrSubjectNotFound
+	}
+	alias, err := r.aliases.GetByNormName(ctx, token)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subject{}, ErrSubjectNotFound
 	}

@@ -287,6 +287,106 @@ func TestBuildSpecReadToolsReturnPublicPathsWithoutSubjectIDs(t *testing.T) {
 	}
 }
 
+func TestPathReadServicesResolveFoldedAndSurvivorPathsIdentically(t *testing.T) {
+	// R-AL5R-PL1P
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	survivor := wiki.Subject{
+		ID:   "subject-survivor",
+		Name: "Winner Widget",
+		Type: "entity",
+	}
+	if err := wiki.NewSubjectStore(conn).Save(ctx, survivor); err != nil {
+		t.Fatalf("Save survivor: %v", err)
+	}
+	if err := wiki.NewAliasStore(conn).Insert(ctx, wiki.Alias{
+		Name:      "Folded Widget",
+		SubjectID: survivor.ID,
+		CreatedBy: "owner@example.com",
+		CreatedAt: "2026-06-24T12:00:00Z",
+	}); err != nil {
+		t.Fatalf("Insert alias: %v", err)
+	}
+	if err := wiki.NewJobStore(conn).InsertIngest(ctx, wiki.Job{
+		ID:         "job-1",
+		Owner:      "owner@example.com",
+		SourceText: "source",
+		Status:     wiki.JobDone,
+		ReceivedAt: time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("InsertIngest: %v", err)
+	}
+	if err := wiki.NewClaimStore(conn).Save(ctx, wiki.Claim{
+		ID:        "claim-1",
+		SubjectID: survivor.ID,
+		JobID:     "job-1",
+		Body:      "Winner Widget shipped the release.",
+	}); err != nil {
+		t.Fatalf("Save claim: %v", err)
+	}
+	if err := wiki.NewPageStore(conn).Upsert(ctx, wiki.Page{
+		ID:        "page-survivor",
+		SubjectID: survivor.ID,
+		Title:     "Winner Widget",
+		Body:      "Winner Widget overview.",
+	}); err != nil {
+		t.Fatalf("Upsert page: %v", err)
+	}
+
+	resolver := wiki.NewResolver(conn)
+	folded, err := resolver.ResolveByPath(ctx, "entity/folded-widget")
+	if err != nil {
+		t.Fatalf("ResolveByPath folded: %v", err)
+	}
+	current, err := resolver.ResolveByPath(ctx, "entity/winner-widget")
+	if err != nil {
+		t.Fatalf("ResolveByPath survivor: %v", err)
+	}
+	if folded.ID != survivor.ID || current.ID != survivor.ID {
+		t.Fatalf("resolved folded=%+v survivor=%+v, want same survivor", folded, current)
+	}
+
+	pageService := pathPageService{
+		resolver: resolver,
+		service:  wiki.NewService(conn, nil, nil, time.Now),
+	}
+	foldedPage, err := pageService.PageByPath(ctx, "entity/folded-widget")
+	if err != nil {
+		t.Fatalf("PageByPath folded: %v", err)
+	}
+	currentPage, err := pageService.PageByPath(ctx, "entity/winner-widget")
+	if err != nil {
+		t.Fatalf("PageByPath survivor: %v", err)
+	}
+	if !reflect.DeepEqual(foldedPage, currentPage) {
+		t.Fatalf("folded page = %#v, survivor page = %#v; want byte-identical projection", foldedPage, currentPage)
+	}
+	if foldedPage.Path != "entity/winner-widget" || foldedPage.Title != "Winner Widget" || !strings.Contains(foldedPage.Body, "Winner Widget overview.") {
+		t.Fatalf("folded page = %#v, want survivor public page shape", foldedPage)
+	}
+
+	claimService := pathClaimService{
+		resolver: resolver,
+		claims:   wiki.NewClaimStore(conn),
+	}
+	foldedClaims, foldedNext, err := claimService.ListBySubject(ctx, "entity/folded-widget", paging.Params{})
+	if err != nil {
+		t.Fatalf("ListBySubject folded: %v", err)
+	}
+	currentClaims, currentNext, err := claimService.ListBySubject(ctx, "entity/winner-widget", paging.Params{})
+	if err != nil {
+		t.Fatalf("ListBySubject survivor: %v", err)
+	}
+	if foldedNext != currentNext || !reflect.DeepEqual(foldedClaims, currentClaims) {
+		t.Fatalf("folded claims = %#v/%q, survivor claims = %#v/%q; want same survivor claims", foldedClaims, foldedNext, currentClaims, currentNext)
+	}
+	if len(foldedClaims) != 1 || foldedClaims[0].ID != "claim-1" || foldedClaims[0].Text != "Winner Widget shipped the release." {
+		t.Fatalf("folded claims = %#v, want survivor claim projection", foldedClaims)
+	}
+}
+
 func TestBuildSpecMatchesDirectMCPToolSurface(t *testing.T) {
 	// R-04HB-QM7T
 	ctx := context.Background()

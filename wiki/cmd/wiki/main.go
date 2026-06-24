@@ -64,7 +64,7 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 			cfg.CallSites.AskSynthesis,
 		)
 		pageService := pathPageService{
-			subjects: wiki.NewSubjectStore(read),
+			resolver: wiki.NewResolver(read),
 			service:  svc,
 		}
 		subjectService := publicSubjectService{
@@ -72,7 +72,7 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 			pages:    wiki.NewPageStore(read),
 		}
 		claimService := pathClaimService{
-			subjects: wiki.NewSubjectStore(read),
+			resolver: wiki.NewResolver(read),
 			claims:   wiki.NewClaimStore(read),
 		}
 		mergeResolver := mergePathResolver{subjects: wiki.NewSubjectStore(read)}
@@ -210,12 +210,12 @@ func (s publicSubjectService) List(ctx context.Context, typ, nameContains string
 }
 
 type pathClaimService struct {
-	subjects *wiki.SubjectStore
+	resolver *wiki.Resolver
 	claims   *wiki.ClaimStore
 }
 
 func (s pathClaimService) ListBySubject(ctx context.Context, path string, p page.Params) ([]publicClaim, string, error) {
-	subject, err := s.subjects.GetByPath(ctx, path)
+	subject, err := s.resolver.ResolveByPath(ctx, path)
 	if errors.Is(err, wiki.ErrSubjectNotFound) {
 		return nil, "", sql.ErrNoRows
 	}
@@ -272,12 +272,12 @@ func (s publicStatusService) JobStatus(ctx context.Context, jobID string) (publi
 }
 
 type pathPageService struct {
-	subjects *wiki.SubjectStore
+	resolver *wiki.Resolver
 	service  *wiki.Service
 }
 
 func (s pathPageService) PageByPath(ctx context.Context, path string) (publicPage, error) {
-	subject, err := s.subjects.GetByPath(ctx, path)
+	subject, err := s.resolver.ResolveByPath(ctx, path)
 	if errors.Is(err, wiki.ErrSubjectNotFound) {
 		return publicPage{}, sql.ErrNoRows
 	}
