@@ -3,7 +3,7 @@
 You are the **gather** step of the wiki build loop, invoked in a fresh, isolated
 context. You are the **only** step that reads the big docs (plan, design,
 product). Your single job is to pick the next unstarted phase and distill it into
-a tiny, self-contained `wiki/docs/brief.md` that the later steps consume without
+a tiny, self-contained `project/prompts/brief.md` that the later steps consume without
 ever opening design or plan.
 
 You write **no code**, run **no tests**, and **commit nothing**. The brief is
@@ -16,7 +16,7 @@ All paths below are relative to the repository root (your working directory).
 1. **Find the next phase.** Run:
 
    ```
-   grep -nE '^Phase .* ⬜' wiki/docs/plan/STATUS.md | head -1
+   grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
    - **No match** (every phase is `✅`): the build is complete. Write nothing,
@@ -25,14 +25,14 @@ All paths below are relative to the repository root (your working directory).
    - **A match**: note its zero-padded phase number `NN` and the Decision ids it
      `realizes` (from the same line).
 
-2. **Read exactly that one phase body** — `wiki/docs/plan/phase-NN.md`. It names
+2. **Read exactly that one phase body** — `project/plan/phase-NN.md`. It names
    the package(s)/files to build, the realized Decision(s), and a **Done when:**
    list of `R-XXXX-XXXX` ids (or a structural phase with no ids).
 
 3. **Resolve the Decision file(s).** For each Decision the phase realizes, look it
-   up in the manifest `wiki/docs/design/INDEX.md` to get its
-   `wiki/docs/design/DNN.md` path, and read **only** those Decision files. To
-   resolve a single id, `grep -n R-XXXX-XXXX wiki/docs/design/INDEX.md`.
+   up in the manifest `project/design/INDEX.md` to get its
+   `project/design/DNN.md` path, and read **only** those Decision files. To
+   resolve a single id, `grep -n R-XXXX-XXXX project/design/INDEX.md`.
 
 4. **Determine the ids to cover** — the Verification ids the phase's **Done when:**
    list assigns to it (normally all of the realized Decisions' ids; honor any
@@ -44,10 +44,10 @@ All paths below are relative to the repository root (your working directory).
    brief — so `build` and `verify` never need to open a design file. Include only
    signatures, not internals.
 
-6. **Write `wiki/docs/brief.md`** to the exact schema below (overwrite any
+6. **Write `project/prompts/brief.md`** to the exact schema below (overwrite any
    existing brief). Then return **`NEXT`**.
 
-## The `wiki/docs/brief.md` schema (emit exactly this shape)
+## The `project/prompts/brief.md` schema (emit exactly this shape)
 
 ```
 # Brief — Phase NN: <one-line objective>
@@ -55,7 +55,7 @@ All paths below are relative to the repository root (your working directory).
 phase: NN
 realizes: D<n>[, D<m>]
 decision_files:
-  - wiki/docs/design/D0n.md
+  - project/design/D0n.md
 
 ## Ids to cover
 R-XXXX-XXXX
@@ -95,9 +95,9 @@ R-YYYY-YYYY
 
 ## Boundaries
 
-- Read only: `wiki/docs/plan/STATUS.md`, the one `wiki/docs/plan/phase-NN.md`,
-  `wiki/docs/design/INDEX.md`, the realized `wiki/docs/design/DNN.md`, and (if
-  needed for intent) `wiki/docs/product.md`. Read no other phase or Decision file.
+- Read only: `project/plan/STATUS.md`, the one `project/plan/phase-NN.md`,
+  `project/design/INDEX.md`, the realized `project/design/DNN.md`, and (if
+  needed for intent) `project/product/product.md`. Read no other phase or Decision file.
 - Never build, test, or commit. The brief is the only file you write.
 - If `STATUS.md` shows no `⬜` phase, return `DONE` — do not write a brief.
 

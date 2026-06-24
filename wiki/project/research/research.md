@@ -1,13 +1,13 @@
 # wiki — Research
 
 **Status: informational, non-contractual.** This doc feeds the author of
-`wiki/docs/design.md` and nothing downstream consumes it (the autonomous build
+`project/design/design.md` and nothing downstream consumes it (the autonomous build
 reads only product, design, plan). It records options, prior art, constraints,
 and recommendations gathered before design. It is a single coherent statement of
 current research — edited in place as the goal evolves, never appended to.
 
 Scope: **phase 1** of the wiki (the thin proving slice defined in
-`wiki/docs/product.md`): `ingest(text)` async → extract subjects+claims → compile
+`project/product/product.md`): `ingest(text)` async → extract subjects+claims → compile
 per-subject pages → `ask` (grounded, cited, honest-empty) over keyword search,
 plus `status`, inspect tools, `health`, empty `reflection`.
 

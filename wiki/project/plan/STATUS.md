@@ -3,8 +3,8 @@
 This is the **manifest**: one line per phase in build order, and the **only**
 place a phase's status marker lives. Each phase line begins with the literal word
 `Phase` and carries `✅` (done) or `⬜` (not started). The build loop finds its
-next unit of work with `grep -nE '^Phase .* ⬜' docs/plan/STATUS.md | head -1`,
-reads only that phase's `docs/plan/phase-NN.md`, builds it, and on completion
+next unit of work with `grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1`,
+reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 flips that one marker. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
@@ -58,3 +58,4 @@ Phase 47 ✅ realizes D28 — Blackhole empty-normalization content at the inges
 Phase 48 ✅ realizes D26, D25 — Merge mints the forward-routing alias (loser name → winner) and AliasStore keys on the one Normalize
 Phase 49 ✅ realizes D12, D25 — Alias-aware read-time link projection (SubjectKeys, ListAll, PageWithLinks both directions, canonical render) and the final normalize() collapse
 Phase 50 ✅ realizes D29 — Alias-aware path entry for the read lookups: new `Resolver.ResolveByPath` (GetByPath then token-only alias fallback, single hop), adopted by `page`/`claims` so a folded-away path forwards to the survivor's canonical page/claims; `GetByPath` and the merge resolvers stay subjects-only
+Phase 51 ⬜ realizes D13 — Widen the `llm_calls` stage CHECK to the current closed set (`extract`/`compile`/`ask-subject`/`ask-synthesis`/`judge`, `ask` retired) via a forward rebuild migration, fixing the stale pre-D19 CHECK that broke `ask`/`judge` at record time, plus the real-SQLite regression guard the original migration lacked

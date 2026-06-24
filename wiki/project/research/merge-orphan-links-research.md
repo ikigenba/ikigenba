@@ -98,7 +98,7 @@ page, then in one write-tx deletes the loser's page, `claims.RepointSubject`,
 
 **Missing:** it never calls `aliases.Insert(...)` to create the
 `normalize(loser.name) → winner` record. The design **mandates** this:
-`docs/design/D26.md` Phase C step 6 ("Insert the forward-routing alias
+`project/design/D26.md` Phase C step 6 ("Insert the forward-routing alias
 `normalize(loser.name) → winner`"), verified by **R-NGVA-LS02**. So this is a
 **straight implementation bug against an existing, in-scope Decision** — not a
 deferred feature.

@@ -1,7 +1,7 @@
 # build — advance the current phase by one bounded increment
 
 You are the **build** step of the wiki build loop, invoked in a fresh, isolated
-context. You read **only** `wiki/docs/brief.md` — never the plan, design, or
+context. You read **only** `project/prompts/brief.md` — never the plan, design, or
 product docs. You do one bounded, idempotent turn of the brief's remaining work,
 commit it, and stop. You do **not** decide whether the phase is complete and you
 do **not** touch the status marker or the brief.
@@ -10,7 +10,7 @@ All paths below are relative to the repository root (your working directory).
 
 ## Procedure
 
-1. **Read the brief** — `wiki/docs/brief.md`. If it is missing or empty, there is
+1. **Read the brief** — `project/prompts/brief.md`. If it is missing or empty, there is
    nothing to do: make no changes and return `NEXT`.
 
 2. **See what already exists** (the brief is the whole spec; don't re-derive it
@@ -56,7 +56,7 @@ All paths below are relative to the repository root (your working directory).
    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
    ```
 
-   Do **not** stage or commit `wiki/docs/brief.md` (it is gitignored). Then return
+   Do **not** stage or commit `project/prompts/brief.md` (it is gitignored). Then return
    `NEXT`.
 
 ## Project conventions (inlined — do not open design to recover these)
@@ -90,11 +90,11 @@ All paths below are relative to the repository root (your working directory).
 
 ## Boundaries
 
-- Never read `wiki/docs/plan/*`, `wiki/docs/design/*`, or `wiki/docs/product.md`.
+- Never read `project/plan/*`, `project/design/*`, or `project/product/product.md`.
   The brief is your only source.
-- Never edit `wiki/docs/plan/STATUS.md` or flip a `⬜`/`✅` marker — that is
+- Never edit `project/plan/STATUS.md` or flip a `⬜`/`✅` marker — that is
   verify's job alone.
-- Never delete or edit `wiki/docs/brief.md`.
+- Never delete or edit `project/prompts/brief.md`.
 - Never return `DONE` or `CONTINUE`. You always return `NEXT`.
 
 End your final message with exactly one JSON object and nothing after it:

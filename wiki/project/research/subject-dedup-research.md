@@ -8,7 +8,7 @@ Status: research (feeds a design doc). Scope: manual, owner-approved subject de-
 
 ### Why "personal wiki" was wrong
 
-The repo and several design docs call this a "personal wiki" and wave away cost ("fine for a personal wiki", `docs/design/D07.md:19`). **That framing is empirically false and it poisoned the prior research pass.** The measured evidence:
+The repo and several design docs call this a "personal wiki" and wave away cost ("fine for a personal wiki", `project/design/D07.md:19`). **That framing is empirically false and it poisoned the prior research pass.** The measured evidence:
 
 - The live wiki holds **256 subjects produced from ~4 source documents** (paged via `mcp__ikigenba_wiki__subjects`: 100+100+56, then empty cursor) — roughly **64 subjects/document**.
 - That 256 is **after** `normalize()` (`internal/wiki/data_model.go:104-114`: NFKC-fold → lowercase → single-space → diacritic-strip) already collapsed case/diacritic/whitespace variants. So 64/doc is the *irreducible, dup-prone residual* — exactly the input dedup operates on, not the raw mention count.

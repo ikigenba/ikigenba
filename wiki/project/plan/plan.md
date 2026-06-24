@@ -1,13 +1,13 @@
 # wiki — Plan
 
-**Authority: construction order and history.** This document and the `docs/plan/`
+**Authority: construction order and history.** This document and the `project/plan/`
 directory it heads own the **build order** of the wiki and the **record of what
 has been built**. The plan is **append-only**: completed phases are never
 rewritten or deleted, so the plan doubles as the construction history. To extend
-the work, update the product (`docs/product.md`) and design (`docs/design.md` +
-`docs/design/`) **in place** to stay authoritative for the current state, then
-**append** a new phase here — a new `docs/plan/phase-NN.md` body file plus a new
-line in `docs/plan/STATUS.md`. Never edit a finished phase except to flip its
+the work, update the product (`project/product/product.md`) and design (`project/design/design.md` +
+`project/design/`) **in place** to stay authoritative for the current state, then
+**append** a new phase here — a new `project/plan/phase-NN.md` body file plus a new
+line in `project/plan/STATUS.md`. Never edit a finished phase except to flip its
 status marker in `STATUS.md`.
 
 **One phase = one package = one accumulating context.** Each phase is a single
@@ -29,19 +29,19 @@ ids assigned to it) is covered by a clearly-named test and the suite is green.
 `go vet ./...`, `gofmt -l .` (no output), `go test ./...`, and
 `bin/check-migrations wiki` all succeed with zero failures. "Covered" means each
 listed id has a genuine test exercising the behavior that Decision's Verification
-list describes — see each `docs/design/DNN.md` Verification section for what the
+list describes — see each `project/design/DNN.md` Verification section for what the
 id requires.
 
 ## Layout
 
 The plan is physically split so the build loop reads only what it needs:
 
-- `docs/plan/STATUS.md` — the manifest: one line per phase in build order, and
+- `project/plan/STATUS.md` — the manifest: one line per phase in build order, and
   the **only** home of status markers (`✅` done / `⬜` not started).
-- `docs/plan/phase-NN.md` — one body file per phase (zero-padded: `phase-01.md`,
+- `project/plan/phase-NN.md` — one body file per phase (zero-padded: `phase-01.md`,
   `phase-02.md`, …; a sub-phase keeps its suffix, e.g. `phase-07a.md`). A phase
   body carries **no** status token — status lives only in `STATUS.md`.
-- `docs/plan.md` — this file: the static, invariant rules above. It lists no
+- `project/plan/plan.md` — this file: the static, invariant rules above. It lists no
   phases and carries no status, so it never grows with the project.
 
 **Append-only, restated for this layout:** never rewrite or delete a

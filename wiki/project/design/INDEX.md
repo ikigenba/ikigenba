@@ -1,0 +1,215 @@
+# wiki — Design Index
+
+Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps to its Decision/file. Resolve an id by grepping this index (or the Decision files directly). Regenerate this manifest whenever a Decision is added or its Verification ids change.
+
+## Decisions
+
+- D1 → `project/design/D01.md` — Dependency on the external agentkit (the prod-build wiring) — owns R-MV3L-QS7I, R-MWBI-4JY7
+- D2 → `project/design/D02.md` — Service skeleton: package layout, Spec wiring, and the config/secret composition root — owns R-6RVX-P1IG
+- D3 → `project/design/D03.md` — The phase-1 data model — owns R-7SNG-0G9A, R-7TVC-E7ZZ, R-7V38-RZQO, R-7WB5-5RHD, R-RU0J-77HX, R-RV8F-KZ8M, R-RXO8-CIQ0, R-RYW4-QAGP, R-S041-427E, R-S1BX-HTY3, R-S2JT-VLOS
+- D4 → `project/design/D04.md` — The ingest pipeline and worker — owns R-M8RN-87WV, R-M9ZJ-LZNK, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MDN8-RAVN, R-MG31-IUD1
+- D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): shared Provider, fresh Conversation per call, json-mode helper — owns R-J8QP-BETB, R-4BCC-0EHJ, R-J9YL-P6K0, R-JCEE-GQ1E, R-JDMA-UHS3, R-JEU7-89IS
+- D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-W2HP-H0J0, R-4CK8-E688
+- D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-FWOT-NRHN, R-4DS4-RXYX
+- D8 → `project/design/D08.md` — No retrieval lane this release: keyword search removed, hybrid deferred — owns R-PH8Z-YHNX, R-PIGW-C9EM
+- D9 → `project/design/D09.md` — `ask` (`internal/ask`): subject-extraction pipeline, grounded/cited/honest-empty — owns R-644V-3WUS, R-65CR-HOLH, R-66KN-VGC6, R-67SK-982V, R-5UPD-VVNA, R-5VXA-9NDZ, R-690G-MZTK, R-5X56-NF4O, R-6A8D-0RK9, R-05CG-3H6Y
+- D10 → `project/design/D10.md` — The MCP tool surface (`internal/mcp`) + identity — owns R-MUQ4-K1JS, R-MVY0-XTAH, R-MX5X-BL16, R-MYDT-PCRV, R-MZLQ-34IK, R-N4KO-2WTZ, R-01OQ-Y5YV, R-02WN-BXPK, R-044J-PPG9, R-03GW-PX5K, R-04HB-QM7T
+- D11 → `project/design/D11.md` — Subject addressing: the public path == identity (`type/norm_name`) — owns R-DRX6-PWSW, R-DT53-3OJL, R-DUCZ-HGAA
+- D12 → `project/design/D12.md` — Page links: read-time mention detection + markdown footer (alias-aware) — owns R-ZUDC-NJIP, R-ZVL9-1B9E, R-ZWT5-F303, R-ZY11-SUQS, R-ZZ8Y-6MHH, R-00GU-KE86, R-1WP9-CLM9, R-1XX5-QDCY, R-1Z52-453N
+- D13 → `project/design/D13.md` — The LLM-call footprint: `llm_calls` table + recorder seam — owns R-VNS0-1Z85, R-VOZW-FQYU, R-VRFP-7AG8, R-VSNL-L26X, R-VTVH-YTXM, R-VV3E-CLOB, R-EMWV-6RK5, R-EO4R-KJAU
+- D14 → `project/design/D14.md` — Job lifecycle & control: `aborted`, abort, re-run, and atomic integrate — owns R-0SCX-95OZ, R-0TKT-MXFO, R-0USQ-0P6D, R-0W0M-EGX2, R-0X8I-S8NR, R-0YGF-60EG, R-0ZOB-JS55, R-10W7-XJVU
+- D15 → `project/design/D15.md` — Cursor pagination: the contract + the list seams — owns R-17C5-VP2I, R-18K2-9GT7, R-XYAZ-V0XE, R-XZIW-8SO3, R-Y1YP-0C5H, R-19RY-N8JW, R-1C7R-ES1A, R-1DFN-SJRZ
+- D16 → `project/design/D16.md` — MCP surface expansion: control & footprint verbs + paginated lists — owns R-37NS-BRXR, R-Y36L-E3W6, R-Y4EH-RVMV, R-38VO-PJOG, R-3A3L-3BF5, R-3BBH-H35U, R-3CJD-UUWJ, R-3EZ6-MEDX, R-3G73-064M, R-E4WX-G9H2
+- D17 → `project/design/D17.md` — DB concurrency: a single-writer handle + a concurrent read pool (reads never blocked) — owns R-FUCC-IT4M, R-FVK8-WKVB, R-FWS5-ACM0, R-FY01-O4CP
+- D18 → `project/design/D18.md` — Output-token budget & honest truncation handling — owns R-MSKH-GPX5, R-MTSD-UHNU, R-MV0A-89EJ, R-MW86-M158
+- D19 → `project/design/D19.md` — Per-call-site configuration in production (retire the single global model) — owns R-GGIG-AN7W, R-GHQC-OEYL, R-GIY9-26PA, R-GK65-FYFZ, R-GLE1-TQ6O
+- D20 → `project/design/D20.md` — The extract evaluation harness (`internal/eval`): dataset + runner — owns R-VXAT-MMTX, R-VYIQ-0EKM, R-VZQM-E6BB, R-W26F-5PSP
+- D21 → `project/design/D21.md` — The judge call site + scoring semantics (`internal/eval`) — owns R-DRME-T4FA, R-DSUB-6W5Z, R-DU27-KNWO, R-DVA3-YFND, R-DWI0-C7E2, R-DXPW-PZ4R
+- D22 → `project/design/D22.md` — The `cmd/eval-extract` binary + the shipped gold case — owns R-34NV-WDIP, R-35VS-A59E, R-373O-NX03, R-38BL-1OQS, R-39JH-FGHH, R-3ARD-T886, R-8PSN-NDRQ, R-ME5L-HXJ3
+- D23 → `project/design/D23.md` — The human scorecard is itemized (diff-style), not count-only — owns R-8KX2-4ASY, R-8M4Y-I2JN, R-8NCU-VUAC, R-8OKR-9M11
+- D24 → `project/design/D24.md` — An overridable extract prompt for the eval (default = the baked-in production prompt) — owns R-ODAP-34N6, R-OEIL-GWDV, R-OFQH-UO4K, R-OGYE-8FV9
+- D25 → `project/design/D25.md` — Aliases table & name resolution — owns R-BGPF-NVTU, R-BHXC-1NKJ, R-BJ58-FFB8, R-BKD4-T71X, R-BLL1-6YSM, R-BMSX-KQJB, R-BO0T-YIA0, R-BP8Q-CA0P
+- D26 → `project/design/D26.md` — The merge work item & execution — owns R-NEFH-U8IO, R-NFNE-809D, R-NGVA-LS02, R-NI36-ZJQR, R-NJB3-DBHG, R-NKIZ-R385, R-NLQW-4UYU, R-NMYS-IMPJ, R-NPEL-A66X, R-HUDR-AWS9
+- D27 → `project/design/D27.md` — Merge MCP surface (`merge` + `merges`) — owns R-DWDM-RVA7, R-DYTF-JERL, R-E01B-X6IA, R-E198-AY8Z, R-E2H4-OPZO, R-E3P1-2HQD
+- D28 → `project/design/D28.md` — Blackhole empty-normalization content — owns R-Z5JL-2IBS, R-Z6RH-GA2H, R-Z7ZD-U1T6
+- D29 → `project/design/D29.md` — Alias-aware path entry for the read lookups (`page`/`claims`) — owns R-AF1X-PG7K, R-AG2Y-PH8L, R-AH3Z-PJ9M, R-AL5R-PL1P
+
+## Verification ids → Decision
+
+- R-00GU-KE86 → D12 → `project/design/D12.md`
+- R-01OQ-Y5YV → D10 → `project/design/D10.md`
+- R-02WN-BXPK → D10 → `project/design/D10.md`
+- R-03GW-PX5K → D10 → `project/design/D10.md`
+- R-044J-PPG9 → D10 → `project/design/D10.md`
+- R-04HB-QM7T → D10 → `project/design/D10.md`
+- R-05CG-3H6Y → D9 → `project/design/D09.md`
+- R-0SCX-95OZ → D14 → `project/design/D14.md`
+- R-0TKT-MXFO → D14 → `project/design/D14.md`
+- R-0USQ-0P6D → D14 → `project/design/D14.md`
+- R-0W0M-EGX2 → D14 → `project/design/D14.md`
+- R-0X8I-S8NR → D14 → `project/design/D14.md`
+- R-0YGF-60EG → D14 → `project/design/D14.md`
+- R-0ZOB-JS55 → D14 → `project/design/D14.md`
+- R-10W7-XJVU → D14 → `project/design/D14.md`
+- R-17C5-VP2I → D15 → `project/design/D15.md`
+- R-18K2-9GT7 → D15 → `project/design/D15.md`
+- R-19RY-N8JW → D15 → `project/design/D15.md`
+- R-1C7R-ES1A → D15 → `project/design/D15.md`
+- R-1DFN-SJRZ → D15 → `project/design/D15.md`
+- R-1WP9-CLM9 → D12 → `project/design/D12.md`
+- R-1XX5-QDCY → D12 → `project/design/D12.md`
+- R-1Z52-453N → D12 → `project/design/D12.md`
+- R-34NV-WDIP → D22 → `project/design/D22.md`
+- R-35VS-A59E → D22 → `project/design/D22.md`
+- R-373O-NX03 → D22 → `project/design/D22.md`
+- R-37NS-BRXR → D16 → `project/design/D16.md`
+- R-38BL-1OQS → D22 → `project/design/D22.md`
+- R-38VO-PJOG → D16 → `project/design/D16.md`
+- R-39JH-FGHH → D22 → `project/design/D22.md`
+- R-3A3L-3BF5 → D16 → `project/design/D16.md`
+- R-3ARD-T886 → D22 → `project/design/D22.md`
+- R-3BBH-H35U → D16 → `project/design/D16.md`
+- R-3CJD-UUWJ → D16 → `project/design/D16.md`
+- R-3EZ6-MEDX → D16 → `project/design/D16.md`
+- R-3G73-064M → D16 → `project/design/D16.md`
+- R-4BCC-0EHJ → D5 → `project/design/D05.md`
+- R-4CK8-E688 → D6 → `project/design/D06.md`
+- R-4DS4-RXYX → D7 → `project/design/D07.md`
+- R-5UPD-VVNA → D9 → `project/design/D09.md`
+- R-5VXA-9NDZ → D9 → `project/design/D09.md`
+- R-5X56-NF4O → D9 → `project/design/D09.md`
+- R-644V-3WUS → D9 → `project/design/D09.md`
+- R-65CR-HOLH → D9 → `project/design/D09.md`
+- R-66KN-VGC6 → D9 → `project/design/D09.md`
+- R-67SK-982V → D9 → `project/design/D09.md`
+- R-690G-MZTK → D9 → `project/design/D09.md`
+- R-6A8D-0RK9 → D9 → `project/design/D09.md`
+- R-6RVX-P1IG → D2 → `project/design/D02.md`
+- R-7SNG-0G9A → D3 → `project/design/D03.md`
+- R-7TVC-E7ZZ → D3 → `project/design/D03.md`
+- R-7V38-RZQO → D3 → `project/design/D03.md`
+- R-7WB5-5RHD → D3 → `project/design/D03.md`
+- R-8KX2-4ASY → D23 → `project/design/D23.md`
+- R-8M4Y-I2JN → D23 → `project/design/D23.md`
+- R-8NCU-VUAC → D23 → `project/design/D23.md`
+- R-8OKR-9M11 → D23 → `project/design/D23.md`
+- R-8PSN-NDRQ → D22 → `project/design/D22.md`
+- R-AF1X-PG7K → D29 → `project/design/D29.md`
+- R-AG2Y-PH8L → D29 → `project/design/D29.md`
+- R-AH3Z-PJ9M → D29 → `project/design/D29.md`
+- R-AL5R-PL1P → D29 → `project/design/D29.md`
+- R-BGPF-NVTU → D25 → `project/design/D25.md`
+- R-BHXC-1NKJ → D25 → `project/design/D25.md`
+- R-BJ58-FFB8 → D25 → `project/design/D25.md`
+- R-BKD4-T71X → D25 → `project/design/D25.md`
+- R-BLL1-6YSM → D25 → `project/design/D25.md`
+- R-BMSX-KQJB → D25 → `project/design/D25.md`
+- R-BO0T-YIA0 → D25 → `project/design/D25.md`
+- R-BP8Q-CA0P → D25 → `project/design/D25.md`
+- R-DRME-T4FA → D21 → `project/design/D21.md`
+- R-DRX6-PWSW → D11 → `project/design/D11.md`
+- R-DSUB-6W5Z → D21 → `project/design/D21.md`
+- R-DT53-3OJL → D11 → `project/design/D11.md`
+- R-DU27-KNWO → D21 → `project/design/D21.md`
+- R-DUCZ-HGAA → D11 → `project/design/D11.md`
+- R-DVA3-YFND → D21 → `project/design/D21.md`
+- R-DWDM-RVA7 → D27 → `project/design/D27.md`
+- R-DWI0-C7E2 → D21 → `project/design/D21.md`
+- R-DXPW-PZ4R → D21 → `project/design/D21.md`
+- R-DYTF-JERL → D27 → `project/design/D27.md`
+- R-E01B-X6IA → D27 → `project/design/D27.md`
+- R-E198-AY8Z → D27 → `project/design/D27.md`
+- R-E2H4-OPZO → D27 → `project/design/D27.md`
+- R-E3P1-2HQD → D27 → `project/design/D27.md`
+- R-E4WX-G9H2 → D16 → `project/design/D16.md`
+- R-EMWV-6RK5 → D13 → `project/design/D13.md`
+- R-EO4R-KJAU → D13 → `project/design/D13.md`
+- R-FQLB-QWS6 → D7 → `project/design/D07.md`
+- R-FT14-IG9K → D7 → `project/design/D07.md`
+- R-FU90-W809 → D7 → `project/design/D07.md`
+- R-FUCC-IT4M → D17 → `project/design/D17.md`
+- R-FVGX-9ZQY → D7 → `project/design/D07.md`
+- R-FVK8-WKVB → D17 → `project/design/D17.md`
+- R-FWOT-NRHN → D7 → `project/design/D07.md`
+- R-FWS5-ACM0 → D17 → `project/design/D17.md`
+- R-FY01-O4CP → D17 → `project/design/D17.md`
+- R-GGIG-AN7W → D19 → `project/design/D19.md`
+- R-GHQC-OEYL → D19 → `project/design/D19.md`
+- R-GIY9-26PA → D19 → `project/design/D19.md`
+- R-GK65-FYFZ → D19 → `project/design/D19.md`
+- R-GLE1-TQ6O → D19 → `project/design/D19.md`
+- R-HUDR-AWS9 → D26 → `project/design/D26.md`
+- R-J8QP-BETB → D5 → `project/design/D05.md`
+- R-J9YL-P6K0 → D5 → `project/design/D05.md`
+- R-JCEE-GQ1E → D5 → `project/design/D05.md`
+- R-JDMA-UHS3 → D5 → `project/design/D05.md`
+- R-JEU7-89IS → D5 → `project/design/D05.md`
+- R-M8RN-87WV → D4 → `project/design/D04.md`
+- R-M9ZJ-LZNK → D4 → `project/design/D04.md`
+- R-MB7F-ZRE9 → D4 → `project/design/D04.md`
+- R-MCFC-DJ4Y → D4 → `project/design/D04.md`
+- R-MDN8-RAVN → D4 → `project/design/D04.md`
+- R-ME5L-HXJ3 → D22 → `project/design/D22.md`
+- R-MG31-IUD1 → D4 → `project/design/D04.md`
+- R-MSKH-GPX5 → D18 → `project/design/D18.md`
+- R-MTSD-UHNU → D18 → `project/design/D18.md`
+- R-MUQ4-K1JS → D10 → `project/design/D10.md`
+- R-MV0A-89EJ → D18 → `project/design/D18.md`
+- R-MV3L-QS7I → D1 → `project/design/D01.md`
+- R-MVY0-XTAH → D10 → `project/design/D10.md`
+- R-MW86-M158 → D18 → `project/design/D18.md`
+- R-MWBI-4JY7 → D1 → `project/design/D01.md`
+- R-MX5X-BL16 → D10 → `project/design/D10.md`
+- R-MYDT-PCRV → D10 → `project/design/D10.md`
+- R-MZLQ-34IK → D10 → `project/design/D10.md`
+- R-N4KO-2WTZ → D10 → `project/design/D10.md`
+- R-NEFH-U8IO → D26 → `project/design/D26.md`
+- R-NFNE-809D → D26 → `project/design/D26.md`
+- R-NGVA-LS02 → D26 → `project/design/D26.md`
+- R-NI36-ZJQR → D26 → `project/design/D26.md`
+- R-NJB3-DBHG → D26 → `project/design/D26.md`
+- R-NKIZ-R385 → D26 → `project/design/D26.md`
+- R-NLQW-4UYU → D26 → `project/design/D26.md`
+- R-NMYS-IMPJ → D26 → `project/design/D26.md`
+- R-NPEL-A66X → D26 → `project/design/D26.md`
+- R-ODAP-34N6 → D24 → `project/design/D24.md`
+- R-OEIL-GWDV → D24 → `project/design/D24.md`
+- R-OFQH-UO4K → D24 → `project/design/D24.md`
+- R-OGYE-8FV9 → D24 → `project/design/D24.md`
+- R-PH8Z-YHNX → D8 → `project/design/D08.md`
+- R-PIGW-C9EM → D8 → `project/design/D08.md`
+- R-RU0J-77HX → D3 → `project/design/D03.md`
+- R-RV8F-KZ8M → D3 → `project/design/D03.md`
+- R-RXO8-CIQ0 → D3 → `project/design/D03.md`
+- R-RYW4-QAGP → D3 → `project/design/D03.md`
+- R-S041-427E → D3 → `project/design/D03.md`
+- R-S1BX-HTY3 → D3 → `project/design/D03.md`
+- R-S2JT-VLOS → D3 → `project/design/D03.md`
+- R-VNS0-1Z85 → D13 → `project/design/D13.md`
+- R-VOZW-FQYU → D13 → `project/design/D13.md`
+- R-VRFP-7AG8 → D13 → `project/design/D13.md`
+- R-VSNL-L26X → D13 → `project/design/D13.md`
+- R-VTVH-YTXM → D13 → `project/design/D13.md`
+- R-VV3E-CLOB → D13 → `project/design/D13.md`
+- R-VXAT-MMTX → D20 → `project/design/D20.md`
+- R-VYIQ-0EKM → D20 → `project/design/D20.md`
+- R-VYU0-BPAX → D6 → `project/design/D06.md`
+- R-VZQM-E6BB → D20 → `project/design/D20.md`
+- R-W19T-38SB → D6 → `project/design/D06.md`
+- R-W26F-5PSP → D20 → `project/design/D20.md`
+- R-W2HP-H0J0 → D6 → `project/design/D06.md`
+- R-XJBY-H8JZ → D6 → `project/design/D06.md`
+- R-XKJU-V0AO → D6 → `project/design/D06.md`
+- R-XYAZ-V0XE → D15 → `project/design/D15.md`
+- R-XZIW-8SO3 → D15 → `project/design/D15.md`
+- R-Y1YP-0C5H → D15 → `project/design/D15.md`
+- R-Y36L-E3W6 → D16 → `project/design/D16.md`
+- R-Y4EH-RVMV → D16 → `project/design/D16.md`
+- R-Z5JL-2IBS → D28 → `project/design/D28.md`
+- R-Z6RH-GA2H → D28 → `project/design/D28.md`
+- R-Z7ZD-U1T6 → D28 → `project/design/D28.md`
+- R-ZUDC-NJIP → D12 → `project/design/D12.md`
+- R-ZVL9-1B9E → D12 → `project/design/D12.md`
+- R-ZWT5-F303 → D12 → `project/design/D12.md`
+- R-ZY11-SUQS → D12 → `project/design/D12.md`
+- R-ZZ8Y-6MHH → D12 → `project/design/D12.md`

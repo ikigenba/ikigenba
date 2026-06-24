@@ -59,7 +59,7 @@ This is a **mono-repo**, and even when you're started at the repo root you are
 the entire unit of work. Stay inside it. **Everything that belongs to that unit
 of work lives under that subfolder** — its code, its schema
 (`<svc>/internal/db/migrations/`), its `.envrc`/`CLAUDE.md`, **and its docs,
-including the design/plan/ralph workspace (`<svc>/docs/`)**. Do not create or
+including the design/plan/ralph workspace (`<svc>/project/`)**. Do not create or
 edit files at the repo root for work that belongs to a service; the root
 `docs/` is suite-level only.
 
