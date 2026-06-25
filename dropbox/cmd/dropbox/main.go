@@ -36,6 +36,7 @@ import (
 	"dropbox/internal/db"
 	"dropbox/internal/dropbox"
 	"dropbox/internal/mcp"
+	"dropbox/internal/web"
 
 	"eventplane/outbox"
 )
@@ -166,6 +167,10 @@ func main() {
 				MaxEntryRetries: maxEntryRetries,
 			})
 
+			// Landing page and assets are human web UI; nginx owns the session
+			// gate, so the in-process handlers stay ungated.
+			rt.Handle("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
+			rt.Handle("GET /static/", web.StaticHandler())
 			rt.Handle("POST /mcp", rt.RequireIdentity(
 				mcp.NewHandler(svc, rt.Version(), rt.Service(), rt.Health(),
 					rt.Events(), rt.Subscriptions())))
