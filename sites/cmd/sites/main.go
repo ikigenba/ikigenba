@@ -10,11 +10,13 @@
 // the Spec hooks. RESOURCE_ID / AUTH_SERVER are composed in-binary by
 // appkit/config from IKIGENBA_DOMAIN + MOUNT.
 //
-// sites is a pure MCP service: it publishes nothing to the event plane, so the
-// Feed / Producer / Workers / Events hooks are deliberately omitted. Handlers
-// mounts the ikigenba_sites_* MCP surface (POST /mcp) behind appkit's
-// nginx-injected identity gate; the domain store + layout are built from the
-// shared DB handle and SITES_ROOT at this composition root.
+// sites is not an event-plane producer: it publishes nothing to the event plane,
+// so the Feed / Producer / Workers / Events hooks are deliberately omitted.
+// Handlers serves a human web landing page at the bare mount root /srv/sites/,
+// gated by the dashboard session, alongside the ikigenba_sites_* MCP surface
+// (POST /mcp) behind appkit's nginx-injected identity gate; the domain store +
+// layout are built from the shared DB handle and SITES_ROOT at this composition
+// root.
 package main
 
 import (
