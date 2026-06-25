@@ -19,8 +19,8 @@ Design's responsibility ends at minting. How coverage is measured, what counts a
 
 ## Layout
 
-`docs/design/INDEX.md` is the manifest: each Decision maps to its `DNN.md` file, and every `R-XXXX-XXXX` id maps back to its Decision and file.
+`project/design/INDEX.md` is the manifest: each Decision maps to its `DNN.md` file, and every `R-XXXX-XXXX` id maps back to its Decision and file.
 
-`docs/design/DNN.md` — one self-contained file per Decision (zero-padded), referenced in prose and the plan as `D<N>`.
+`project/design/DNN.md` — one self-contained file per Decision (zero-padded), referenced in prose and the plan as `D<N>`.
 
 This spine holds only the cross-cutting facts above. Rewritten in place when decisions change; history lives in the plan.

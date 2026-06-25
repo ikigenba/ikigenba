@@ -14,7 +14,7 @@ All paths below are relative to the repository root (your working directory).
 
 ## Procedure
 
-1. **Read the brief** — `prompts/docs/brief.md`. If it is missing or empty, there
+1. **Read the brief** — `project/prompts/brief.md`. If it is missing or empty, there
    is nothing to verify: return `NEXT` (do not delete anything that isn't there).
    Note the phase number `NN` and its **Ids to cover**.
 
@@ -47,12 +47,12 @@ All paths below are relative to the repository root (your working directory).
 
 4. **Decide:**
    - **Pass** (suite fully green **and** every id genuinely covered): flip **only
-     this phase's** marker in `prompts/docs/plan/STATUS.md` from `⬜` to `✅` —
+     this phase's** marker in `project/plan/STATUS.md` from `⬜` to `✅` —
      change nothing else on that line, no other line — and commit just that
      one-line flip:
 
      ```
-     git add prompts/docs/plan/STATUS.md
+     git add project/plan/STATUS.md
      git commit -m "prompts Phase NN: verified green — mark ✅
 
      Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
@@ -64,7 +64,7 @@ All paths below are relative to the repository root (your working directory).
 5. **Always, as the final step**, delete the brief so the next cycle re-gathers:
 
    ```
-   rm -f prompts/docs/brief.md
+   rm -f project/prompts/brief.md
    ```
 
    Then return `NEXT`.
@@ -75,8 +75,8 @@ All paths below are relative to the repository root (your working directory).
   there's a gap, you leave it for the next build turn.
 - Never flip a marker on anything short of a fully green suite **and** full,
   genuine id coverage.
-- Never read the big docs (`prompts/docs/plan/*` beyond the one `STATUS.md` line
-  you flip, `prompts/docs/design/*`, `prompts/docs/product.md`) to re-derive the
+- Never read the big docs (`project/plan/*` beyond the one `STATUS.md` line
+  you flip, `project/design/*`, `project/product.md`) to re-derive the
   checklist — the brief **is** the checklist.
 - Flip at most one marker per invocation (the current phase's).
 - Never return `DONE` or `CONTINUE`. You always return `NEXT`.
