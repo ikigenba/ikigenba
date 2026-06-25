@@ -105,18 +105,25 @@ func TestLandingHTMLReferencesOwnEmbeddedStaticPath(t *testing.T) {
 	}
 }
 
-func TestStaticHandlerServesSpaceGroteskFont(t *testing.T) {
+func TestStaticHandlerServesEmbeddedFonts(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", StaticHandler())
 
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/fonts/space-grotesk.woff2", nil))
-
 	// R-ASST-7M2S
-	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "font/woff2" {
-		t.Fatalf("GET font returned status %d Content-Type %q", rec.Code, rec.Header().Get("Content-Type"))
-	}
-	if rec.Body.Len() == 0 {
-		t.Fatal("font response body is empty")
+	for _, font := range []string{
+		"space-grotesk.woff2",
+		"ibm-plex-sans.woff2",
+		"ibm-plex-mono-400.woff2",
+		"ibm-plex-mono-500.woff2",
+	} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/fonts/"+font, nil))
+
+		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "font/woff2" {
+			t.Fatalf("GET %s returned status %d Content-Type %q", font, rec.Code, rec.Header().Get("Content-Type"))
+		}
+		if rec.Body.Len() == 0 {
+			t.Fatalf("GET %s returned an empty body", font)
+		}
 	}
 }
