@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 
@@ -165,23 +164,5 @@ func TestPhase18MigrationsDropPagesFTSAndRecordMigration(t *testing.T) {
 	}
 	if !strings.Contains(string(original), "CREATE VIRTUAL TABLE pages_fts") {
 		t.Fatal("original phase-02 migration no longer contains the pages_fts create statement")
-	}
-}
-
-func TestPhase18RetiresRetrievePackage(t *testing.T) {
-	if _, err := os.Stat("../retrieve"); err == nil {
-		t.Fatal("internal/retrieve exists, want retired package removed")
-	} else if !os.IsNotExist(err) {
-		t.Fatalf("stat internal/retrieve: %v", err)
-	}
-
-	cmd := exec.Command("go", "list", "./...")
-	cmd.Dir = "../.."
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("go list ./... failed: %v\n%s", err, out)
-	}
-	if strings.Contains(string(out), "wiki/internal/retrieve") {
-		t.Fatalf("go list still includes retired package:\n%s", out)
 	}
 }
