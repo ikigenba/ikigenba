@@ -32,7 +32,7 @@ type Citation struct {
 	Title string
 }
 
-// Asker is the read-only subject-extraction question-answering service.
+// Asker is the read-only question-answering service.
 type Asker struct {
 	subjects    *wiki.SubjectStore
 	resolver    *wiki.Resolver
@@ -54,7 +54,7 @@ func New(subjects *wiki.SubjectStore, pages *wiki.PageStore, c *llm.Client, extr
 	}
 }
 
-// DefaultSubjectCallSite returns the production ask subject-extraction settings.
+// DefaultSubjectCallSite returns the production ask subject-analysis settings.
 func DefaultSubjectCallSite() llm.CallSite {
 	return llm.CallSite{
 		Stage:     "ask-subject",
@@ -72,7 +72,7 @@ func DefaultSynthesisCallSite() llm.CallSite {
 	}
 }
 
-// Ask answers a question by extracting subject names, resolving exact subjects,
+// Ask answers a question by analyzing it, resolving exact prepared sub-queries,
 // reading their pages, and synthesizing only from those page bodies.
 func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error) {
 	_ = owner
@@ -83,12 +83,12 @@ func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error)
 		return Answer{}, fmt.Errorf("ask: nil llm client")
 	}
 
-	extracted, err := llm.JSON[extractResult](ctx, a.c, a.extractSite, extractPrompt(question), nil)
+	analysis, err := Analyze(ctx, a.c, a.extractSite, question)
 	if err != nil {
 		return Answer{}, err
 	}
 
-	pages, err := a.gatherPages(ctx, extracted.Subjects)
+	pages, err := a.gatherPages(ctx, analysis.SubQueries)
 	if err != nil {
 		return Answer{}, err
 	}
@@ -118,10 +118,6 @@ func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error)
 
 func honestEmpty() Answer {
 	return Answer{Found: false, Text: honestEmptyText}
-}
-
-type extractResult struct {
-	Subjects []string `json:"subjects"`
 }
 
 type answerResult struct {
@@ -184,11 +180,6 @@ func (a *Asker) gatherPages(ctx context.Context, names []string) ([]pageContext,
 		})
 	}
 	return out, nil
-}
-
-func extractPrompt(question string) string {
-	return "Extract the subject names explicitly named in the question. " +
-		"Return only JSON with a subjects array of strings.\n\nQuestion: " + question
 }
 
 func synthPrompt(question string, pages []pageContext) string {

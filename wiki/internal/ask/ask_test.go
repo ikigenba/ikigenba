@@ -30,7 +30,7 @@ func TestAskRunsExtractionThenSynthesizesFromResolvedSubjectPages(t *testing.T) 
 		Body:      "Café Noir keeps the deployment checklist.",
 	})
 	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"subjects":["  cafe noir  "]}`),
+		textRoundTrip(`{"sub_queries":["  cafe noir  "]}`),
 		textRoundTrip(`{
 			"found": true,
 			"text": "Café Noir keeps the deployment checklist.",
@@ -100,6 +100,131 @@ func TestDefaultAskCallSitesUseSeparateReasoningLowStages(t *testing.T) {
 	}
 }
 
+func TestAnalyzeRunsOneAskSubjectCallAndParsesQueryAnalysis(t *testing.T) {
+	// R-QB7A-Z95U
+	prov := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{
+			"sub_queries": ["Ada release", "Grace scheduler"],
+			"keywords": ["release", "scheduler"],
+			"aliases": ["G. Hopper"]
+		}`),
+	}}
+	site := llm.CallSite{Stage: "ask-subject", Model: "analysis-model", System: "analysis system", MaxTokens: 123}
+
+	got, err := Analyze(context.Background(), llm.New(prov, nil), site, "How did Ada and Grace handle the release?")
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	want := wiki.QueryAnalysis{
+		SubQueries: []string{"Ada release", "Grace scheduler"},
+		Keywords:   []string{"release", "scheduler"},
+		Aliases:    []string{"G. Hopper"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Analyze = %+v, want %+v", got, want)
+	}
+	if len(prov.requests) != 1 {
+		t.Fatalf("provider requests = %d, want one analysis call", len(prov.requests))
+	}
+	req := prov.requests[0]
+	if req.Model != "analysis-model" || req.System != "analysis system" || req.Gen.MaxTokens != 123 {
+		t.Fatalf("request = model %q system %q max_tokens %d, want injected call site", req.Model, req.System, req.Gen.MaxTokens)
+	}
+	if len(req.Tools) != 0 {
+		t.Fatalf("analysis tools = %#v, want tool-less JSON call", req.Tools)
+	}
+	prompt := requestText(req)
+	for _, want := range []string{"sub_queries", "keywords", "aliases", "How did Ada and Grace handle the release?"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("analysis prompt = %q, want %q", prompt, want)
+		}
+	}
+}
+
+func TestAnalyzeNormalizesAndCapsPreparedQuestion(t *testing.T) {
+	// R-QCF7-D0WJ
+	prov := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{
+			"sub_queries": ["  Ada  ", "", "Grace", "ada", "Linus", "Margaret", "Katherine"],
+			"keywords": [" release ", "", "Release", "scheduler"],
+			"aliases": [" G. Hopper ", "g. hopper", "", "Amazing Grace"]
+		}`),
+	}}
+
+	got, err := Analyze(context.Background(), llm.New(prov, nil), testExtractSite(), "question")
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if want := []string{"Ada", "Grace", "Linus", "Margaret"}; !reflect.DeepEqual(got.SubQueries, want) {
+		t.Fatalf("sub_queries = %#v, want trimmed unique values capped to %#v", got.SubQueries, want)
+	}
+	if want := []string{"release", "scheduler"}; !reflect.DeepEqual(got.Keywords, want) {
+		t.Fatalf("keywords = %#v, want %#v", got.Keywords, want)
+	}
+	if want := []string{"G. Hopper", "Amazing Grace"}; !reflect.DeepEqual(got.Aliases, want) {
+		t.Fatalf("aliases = %#v, want %#v", got.Aliases, want)
+	}
+}
+
+func TestAskUsesAnalyzedSubQueriesForPageResolution(t *testing.T) {
+	// R-QDN3-QSN8
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
+		ID:        "page-ada",
+		SubjectID: "subject-ada",
+		Title:     "Ada",
+		Body:      "Ada owns the release notes.",
+	})
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-grace", Name: "Grace", Type: "entity"}, wiki.Page{
+		ID:        "page-grace",
+		SubjectID: "subject-grace",
+		Title:     "Grace",
+		Body:      "Grace owns the scheduler.",
+	})
+	prov := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{
+			"sub_queries": ["Ada", "Grace"],
+			"keywords": ["release notes", "scheduler"],
+			"aliases": ["Amazing Grace"]
+		}`),
+		textRoundTrip(`{
+			"found": true,
+			"text": "Ada owns the release notes and Grace owns the scheduler.",
+			"citations": [
+				{"subject":"subject-ada","title":"Ada"},
+				{"subject":"subject-grace","title":"Grace"}
+			]
+		}`),
+	}}
+
+	got, err := New(wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+		Ask(ctx, "owner@example.com", "What do Ada and Grace own?")
+	if err != nil {
+		t.Fatalf("Ask returned error: %v", err)
+	}
+	if !got.Found || got.Text != "Ada owns the release notes and Grace owns the scheduler." {
+		t.Fatalf("Ask = %+v, want synthesized answer from analyzed subqueries", got)
+	}
+	if len(got.Citations) != 2 {
+		t.Fatalf("citations = %+v, want both analyzed subjects cited", got.Citations)
+	}
+	if len(prov.requests) != 2 {
+		t.Fatalf("provider requests = %d, want analysis then synthesis", len(prov.requests))
+	}
+	analysisText := requestText(prov.requests[0])
+	if !strings.Contains(analysisText, "sub_queries") || strings.Contains(analysisText, "subjects array") {
+		t.Fatalf("analysis prompt = %q, want prepared query analysis prompt", analysisText)
+	}
+	synthText := requestText(prov.requests[1])
+	for _, want := range []string{"Ada owns the release notes.", "Grace owns the scheduler."} {
+		if !strings.Contains(synthText, want) {
+			t.Fatalf("synth prompt = %q, want page body %q", synthText, want)
+		}
+	}
+}
+
 func TestAskBestEffortGathersEveryResolvedSubjectPage(t *testing.T) {
 	// R-66KN-VGC6
 	ctx := context.Background()
@@ -118,7 +243,7 @@ func TestAskBestEffortGathersEveryResolvedSubjectPage(t *testing.T) {
 		Body:      "Grace owns the scheduler.",
 	})
 	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"subjects":["Ada","Missing Person","Grace"]}`),
+		textRoundTrip(`{"sub_queries":["Ada","Missing Person","Grace"]}`),
 		textRoundTrip(`{
 			"found": true,
 			"text": "Ada owns the parser and Grace owns the scheduler.",
@@ -169,7 +294,7 @@ func TestAskGathersSurvivorPageForExtractedAlias(t *testing.T) {
 		t.Fatalf("Insert alias: %v", err)
 	}
 	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"subjects":["Former Name"]}`),
+		textRoundTrip(`{"sub_queries":["Former Name"]}`),
 		textRoundTrip(`{
 			"found": true,
 			"text": "Current Name owns the canonical page.",
@@ -200,7 +325,7 @@ func TestAskReturnsHonestEmptyWhenNoExtractedSubjectResolves(t *testing.T) {
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
 	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"subjects":["Unknown One","Unknown Two"]}`),
+		textRoundTrip(`{"sub_queries":["Unknown One","Unknown Two"]}`),
 		textRoundTrip(`{"found":true,"text":"should not be used","citations":[]}`),
 	}}
 
@@ -213,7 +338,7 @@ func TestAskReturnsHonestEmptyWhenNoExtractedSubjectResolves(t *testing.T) {
 		t.Fatalf("Ask = %+v, want honest empty answer", got)
 	}
 	if len(prov.requests) != 1 {
-		t.Fatalf("provider requests = %d, want extraction only with no synthesis", len(prov.requests))
+		t.Fatalf("provider requests = %d, want analysis only with no synthesis", len(prov.requests))
 	}
 }
 
@@ -239,7 +364,7 @@ func TestAskSynthesisUsesOnlyGatheredPageBodies(t *testing.T) {
 		t.Fatalf("Save claim: %v", err)
 	}
 	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"subjects":["Ada"]}`),
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{
 			"found": true,
 			"text": "Ada approved the release.",
@@ -283,7 +408,7 @@ func TestAskRejectsUngroundedSynthesisCitations(t *testing.T) {
 		Body:      "Ada wrote the note.",
 	})
 	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"subjects":["Ada"]}`),
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{
 			"found": true,
 			"text": "Grace wrote it.",
@@ -402,7 +527,7 @@ func TestAskParsesDecoratedJSONResponses(t *testing.T) {
 		Citations: []answerCitation{{Subject: "subject-ada", Title: "Ada"}},
 	})
 	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip("```json\n{\"subjects\":[\"Ada\"]}\n```"),
+		textRoundTrip("```json\n{\"sub_queries\":[\"Ada\"]}\n```"),
 		textRoundTrip("Here is the answer:\n" + string(answer)),
 	}}
 
