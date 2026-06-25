@@ -20,6 +20,7 @@ import (
 	"wiki/internal/mcp"
 	"wiki/internal/page"
 	"wiki/internal/retrieve"
+	"wiki/internal/web"
 	"wiki/internal/wiki"
 	"wiki/internal/worker"
 )
@@ -108,6 +109,8 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 		jobs := wiki.NewJobStore(conns)
 		aliases := wiki.NewAliasStore(read)
 		statusService := publicStatusService{service: svc}
+		rt.HandleFunc("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
+		rt.Handle("GET /static/", web.StaticHandler())
 		rt.Handle("POST /mcp", rt.RequireIdentity(
 			mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
 				mcp.WithIngestService(svc),

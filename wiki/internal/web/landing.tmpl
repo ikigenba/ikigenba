@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Service}} service</title>
+  <link rel="stylesheet" href="/static/tokens.css">
+</head>
+<body>
+  <main class="landing-shell">
+    <section class="landing-panel" aria-labelledby="landing-title">
+      <p class="eyebrow">Carbon landing</p>
+      <h1 id="landing-title">{{.Service}}</h1>
+      <p class="summary">A private wiki service for finding, compiling, and asking over maintained knowledge.</p>
+      <dl class="meta">
+        <div>
+          <dt>Service</dt>
+          <dd>{{.Service}}</dd>
+        </div>
+        <div>
+          <dt>Version</dt>
+          <dd>{{.Version}}</dd>
+        </div>
+      </dl>
+    </section>
+  </main>
+</body>
+</html>
