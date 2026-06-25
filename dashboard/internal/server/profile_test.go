@@ -26,6 +26,12 @@ func TestProfileRouteRendersSignedInPage(t *testing.T) {
 	if !strings.Contains(body, "<h1>Profile</h1>") {
 		t.Errorf("profile page missing heading:\n%s", body)
 	}
+	if !strings.Contains(body, `href="/static/tokens.css"`) {
+		t.Errorf("profile page missing Carbon tokens stylesheet:\n%s", body)
+	}
+	if !strings.Contains(body, `href="/static/app.css"`) {
+		t.Errorf("profile page missing app stylesheet:\n%s", body)
+	}
 	if !strings.Contains(body, `action="/pat"`) {
 		t.Errorf("profile page missing PAT form:\n%s", body)
 	}
