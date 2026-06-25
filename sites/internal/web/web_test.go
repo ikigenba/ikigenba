@@ -76,6 +76,19 @@ func TestStaticHandlerServesTokensCSS(t *testing.T) {
 	if !strings.Contains(body, `url("/srv/sites/static/fonts/space-grotesk.woff2")`) {
 		t.Fatalf("tokens.css does not point at embedded service font path: %q", body)
 	}
+	for _, want := range []string{
+		"--color-background:",
+		"--space-4: 4px;",
+		"--type-display-size: 56px;",
+		"--type-display-line: 1.04;",
+		"--type-label-size: 12px;",
+		"--type-label-weight: 500;",
+		"border-radius: var(--radius-tight);",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("tokens.css missing Carbon landing token %q in: %q", want, body)
+		}
+	}
 }
 
 func TestLandingHTMLReferencesOwnEmbeddedStaticPath(t *testing.T) {
