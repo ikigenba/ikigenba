@@ -27,6 +27,7 @@ import (
 	"sites/internal/db"
 	"sites/internal/mcp"
 	"sites/internal/sites"
+	"sites/internal/web"
 )
 
 func main() {
@@ -56,6 +57,8 @@ func main() {
 			// decision 2). The client derives <base>/list and <base>/content.
 			base := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", "http://127.0.0.1:3005")
 			handler.SetMirrorClient(sites.NewMirrorClient(base))
+			rt.Handle("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
+			rt.Handle("GET /static/", web.StaticHandler())
 			rt.Handle("POST /mcp", rt.RequireIdentity(handler))
 			return nil
 		},
