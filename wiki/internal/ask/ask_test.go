@@ -12,68 +12,331 @@ import (
 
 	"wiki/internal/db"
 	"wiki/internal/llm"
+	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
 )
 
-func TestAskRunsExtractionThenSynthesizesFromResolvedSubjectPages(t *testing.T) {
-	// R-644V-3WUS
-	// R-65CR-HOLH
+func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) {
+	// R-BAFW-D24P
 	// R-6A8D-0RK9
 	// R-05CG-3H6Y
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
-	savePage(t, ctx, conn, wiki.Subject{ID: "subject-cafe", Name: "Café Noir", Type: "entity"}, wiki.Page{
-		ID:        "page-cafe",
-		SubjectID: "subject-cafe",
-		Title:     "Café Noir",
-		Body:      "Café Noir keeps the deployment checklist.",
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
+		ID:        "page-ada",
+		SubjectID: "subject-ada",
+		Title:     "Ada",
+		Body:      "Ada body should not be sent to synthesis.",
 	})
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-grace", Name: "Grace", Type: "entity"}, wiki.Page{
+		ID:        "page-grace",
+		SubjectID: "subject-grace",
+		Title:     "Grace",
+		Body:      "Grace owns the scheduler.",
+	})
+	search := &scriptedSearch{result: retrieve.Result{
+		Hits:     []retrieve.Hit{{PageID: "subject-grace", Path: "entity/grace", Title: "Grace"}},
+		TopDense: 0.72,
+	}}
 	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"sub_queries":["  cafe noir  "]}`),
+		textRoundTrip(`{
+			"sub_queries": ["Ada"],
+			"keywords": ["scheduler"],
+			"aliases": ["Amazing Grace"]
+		}`),
 		textRoundTrip(`{
 			"found": true,
-			"text": "Café Noir keeps the deployment checklist.",
-			"citations": [{"subject":"subject-cafe","title":"Café Noir"}]
+			"text": "Grace owns the scheduler.",
+			"citations": [{"path":"entity/grace","title":"Grace"}]
 		}`),
 	}}
-	extractSite := llm.CallSite{Model: "extract-model", System: "extract system"}
-	synthSite := llm.CallSite{Model: "synth-model", System: "synth system"}
 
-	got, err := New(wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), extractSite, synthSite).
-		Ask(ctx, "owner@example.com", "Where is Café Noir's checklist?")
+	got, err := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+		Ask(ctx, "owner@example.com", "Who owns the scheduler?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
 	}
-	if !got.Found || got.Text != "Café Noir keeps the deployment checklist." {
+	if !got.Found || got.Text != "Grace owns the scheduler." {
 		t.Fatalf("Ask = %+v, want synthesized found answer", got)
 	}
-	if want := []Citation{{Path: "entity/cafe-noir", Title: "Café Noir"}}; !reflect.DeepEqual(got.Citations, want) {
+	if want := []Citation{{Path: "entity/grace", Title: "Grace"}}; !reflect.DeepEqual(got.Citations, want) {
 		t.Fatalf("citations = %+v, want %+v", got.Citations, want)
 	}
 	citationsJSON, err := json.Marshal(got.Citations)
 	if err != nil {
 		t.Fatalf("Marshal citations: %v", err)
 	}
-	if strings.Contains(string(citationsJSON), "subject-cafe") {
+	if strings.Contains(string(citationsJSON), "subject-grace") {
 		t.Fatalf("citations JSON = %s, want no internal subject id", citationsJSON)
 	}
+	if len(search.calls) != 1 {
+		t.Fatalf("SearchAnalyzed calls = %d, want 1", len(search.calls))
+	}
+	if want := (wiki.QueryAnalysis{SubQueries: []string{"Ada"}, Keywords: []string{"scheduler"}, Aliases: []string{"Amazing Grace"}}); !reflect.DeepEqual(search.calls[0].qa, want) {
+		t.Fatalf("SearchAnalyzed qa = %+v, want %+v", search.calls[0].qa, want)
+	}
+	if search.calls[0].limits.Limit != defaultFinalK {
+		t.Fatalf("SearchAnalyzed limit = %d, want default finalK %d", search.calls[0].limits.Limit, defaultFinalK)
+	}
 	if len(prov.requests) != 2 {
-		t.Fatalf("provider requests = %d, want extract then synth", len(prov.requests))
-	}
-	if prov.requests[0].Model != "extract-model" || prov.requests[0].System != "extract system" {
-		t.Fatalf("extract request model/system = %q/%q", prov.requests[0].Model, prov.requests[0].System)
-	}
-	if prov.requests[1].Model != "synth-model" || prov.requests[1].System != "synth system" {
-		t.Fatalf("synth request model/system = %q/%q", prov.requests[1].Model, prov.requests[1].System)
-	}
-	extractText := requestText(prov.requests[0])
-	if !strings.Contains(extractText, "Where is Café Noir's checklist?") {
-		t.Fatalf("extract prompt = %q, want original question", extractText)
+		t.Fatalf("provider requests = %d, want analysis then synthesis", len(prov.requests))
 	}
 	synthText := requestText(prov.requests[1])
-	if !strings.Contains(synthText, "subject-cafe") || !strings.Contains(synthText, "Café Noir keeps the deployment checklist.") {
-		t.Fatalf("synth prompt = %q, want resolved page context", synthText)
+	if !strings.Contains(synthText, "Grace owns the scheduler.") {
+		t.Fatalf("synth prompt = %q, want retrieved Grace page body", synthText)
+	}
+	if strings.Contains(synthText, "Ada body should not be sent") || strings.Contains(synthText, "subject-grace") {
+		t.Fatalf("synth prompt = %q, want retrieved public page context without exact-name or internal-id grounding", synthText)
+	}
+}
+
+func TestAskHonestEmptyFloorSkipsSynthesisUnlessPinnedOrDenseEnough(t *testing.T) {
+	// R-BBNS-QTVE
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
+		ID:        "page-ada",
+		SubjectID: "subject-ada",
+		Title:     "Ada",
+		Body:      "Ada wrote the note.",
+	})
+
+	lowSearch := &scriptedSearch{result: retrieve.Result{
+		Hits:     []retrieve.Hit{{PageID: "subject-ada", Path: "entity/ada", Title: "Ada"}},
+		TopDense: 0.29,
+		Pinned:   false,
+	}}
+	lowProv := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
+		textRoundTrip(`{"found":true,"text":"should not run","citations":[{"path":"entity/ada","title":"Ada"}]}`),
+	}}
+	got, err := New(lowSearch, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(lowProv, nil), testExtractSite(), testSynthSite()).
+		Ask(ctx, "owner@example.com", "Who wrote the note?")
+	if err != nil {
+		t.Fatalf("Ask below floor returned error: %v", err)
+	}
+	if got.Found || got.Text != honestEmptyText || len(got.Citations) != 0 {
+		t.Fatalf("Ask below floor = %+v, want honest-empty answer", got)
+	}
+	if len(lowProv.requests) != 1 {
+		t.Fatalf("provider requests below floor = %d, want analysis only", len(lowProv.requests))
+	}
+
+	pinnedSearch := &scriptedSearch{result: retrieve.Result{
+		Hits:     []retrieve.Hit{{PageID: "subject-ada", Path: "entity/ada", Title: "Ada"}},
+		TopDense: 0.01,
+		Pinned:   true,
+	}}
+	pinnedProv := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
+		textRoundTrip(`{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`),
+	}}
+	got, err = New(pinnedSearch, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(pinnedProv, nil), testExtractSite(), testSynthSite()).
+		Ask(ctx, "owner@example.com", "Who wrote the note?")
+	if err != nil {
+		t.Fatalf("Ask pinned returned error: %v", err)
+	}
+	if !got.Found || got.Text != "Ada wrote the note." {
+		t.Fatalf("Ask pinned = %+v, want synthesis despite low dense score", got)
+	}
+	if len(pinnedProv.requests) != 2 {
+		t.Fatalf("provider requests pinned = %d, want analysis and synthesis", len(pinnedProv.requests))
+	}
+}
+
+func TestAskRelevanceFloorIsConfigurableThreshold(t *testing.T) {
+	// R-BCVP-4LM3
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
+		ID:        "page-ada",
+		SubjectID: "subject-ada",
+		Title:     "Ada",
+		Body:      "Ada wrote the note.",
+	})
+	result := retrieve.Result{
+		Hits:     []retrieve.Hit{{PageID: "subject-ada", Path: "entity/ada", Title: "Ada"}},
+		TopDense: 0.42,
+	}
+
+	highProv := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
+		textRoundTrip(`{"found":true,"text":"should not run","citations":[{"path":"entity/ada","title":"Ada"}]}`),
+	}}
+	got, err := New(&scriptedSearch{result: result}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(highProv, nil), testExtractSite(), testSynthSite(), WithRelevanceFloor(0.50)).
+		Ask(ctx, "owner@example.com", "Who wrote the note?")
+	if err != nil {
+		t.Fatalf("Ask high floor returned error: %v", err)
+	}
+	if got.Found || len(highProv.requests) != 1 {
+		t.Fatalf("high floor Ask = %+v with %d provider requests, want honest-empty before synthesis", got, len(highProv.requests))
+	}
+
+	lowProv := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
+		textRoundTrip(`{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`),
+	}}
+	got, err = New(&scriptedSearch{result: result}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(lowProv, nil), testExtractSite(), testSynthSite(), WithRelevanceFloor(0.40)).
+		Ask(ctx, "owner@example.com", "Who wrote the note?")
+	if err != nil {
+		t.Fatalf("Ask low floor returned error: %v", err)
+	}
+	if !got.Found || len(lowProv.requests) != 2 {
+		t.Fatalf("low floor Ask = %+v with %d provider requests, want synthesis", got, len(lowProv.requests))
+	}
+}
+
+func TestAskDowngradesFoundAnswerWithoutGroundedCitations(t *testing.T) {
+	// R-5UPD-VVNA
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
+		ID:        "page-ada",
+		SubjectID: "subject-ada",
+		Title:     "Ada",
+		Body:      "Ada wrote the note.",
+	})
+	prov := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
+		textRoundTrip(`{"found":true,"text":"Ada wrote the note.","citations":[]}`),
+	}}
+
+	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+		Ask(ctx, "owner@example.com", "Who wrote the note?")
+	if err != nil {
+		t.Fatalf("Ask returned error: %v", err)
+	}
+	if got.Found || got.Text != honestEmptyText || len(got.Citations) != 0 {
+		t.Fatalf("Ask = %+v, want found-without-citations downgraded to honest-empty", got)
+	}
+}
+
+func TestAskDropsCitationsOutsideRetrievedPages(t *testing.T) {
+	// R-5VXA-9NDZ
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
+		ID:        "page-ada",
+		SubjectID: "subject-ada",
+		Title:     "Ada",
+		Body:      "Ada wrote the note.",
+	})
+	prov := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
+		textRoundTrip(`{
+			"found": true,
+			"text": "Ada wrote the note.",
+			"citations": [
+				{"path":"entity/grace","title":"Grace"},
+				{"path":"entity/ada","title":"Ada"}
+			]
+		}`),
+	}}
+
+	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+		Ask(ctx, "owner@example.com", "Who wrote the note?")
+	if err != nil {
+		t.Fatalf("Ask returned error: %v", err)
+	}
+	if want := []Citation{{Path: "entity/ada", Title: "Ada"}}; !reflect.DeepEqual(got.Citations, want) {
+		t.Fatalf("citations = %+v, want only retrieved citation %+v", got.Citations, want)
+	}
+}
+
+func TestAskSynthesisUsesOnlyRetrievedPageBodies(t *testing.T) {
+	// R-690G-MZTK
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
+		ID:        "page-ada",
+		SubjectID: "subject-ada",
+		Title:     "Ada",
+		Body:      "Compiled page body says Ada approved the release.",
+	})
+	if err := wiki.NewClaimStore(conn).Save(ctx, wiki.Claim{
+		ID:        "claim-raw",
+		SubjectID: "subject-ada",
+		JobID:     "job-secret",
+		Body:      "RAW CLAIM TEXT SHOULD NOT REACH SYNTHESIS",
+	}); err != nil {
+		t.Fatalf("Save claim: %v", err)
+	}
+	prov := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
+		textRoundTrip(`{
+			"found": true,
+			"text": "Ada approved the release.",
+			"citations": [{"path":"entity/ada","title":"Ada"}]
+		}`),
+	}}
+
+	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+		Ask(ctx, "owner@example.com", "Who approved the release?")
+	if err != nil {
+		t.Fatalf("Ask returned error: %v", err)
+	}
+	if !got.Found || got.Text != "Ada approved the release." {
+		t.Fatalf("Ask = %+v, want page-grounded answer", got)
+	}
+	for i, req := range prov.requests {
+		if len(req.Tools) != 0 {
+			t.Fatalf("request %d tools = %#v, want tool-less ask pipeline", i, req.Tools)
+		}
+	}
+	synthText := requestText(prov.requests[1])
+	if !strings.Contains(synthText, "Compiled page body says Ada approved the release.") {
+		t.Fatalf("synth prompt = %q, want compiled page body", synthText)
+	}
+	for _, forbidden := range []string{"RAW CLAIM TEXT SHOULD NOT REACH SYNTHESIS", "job-secret", "read_source", "claims"} {
+		if strings.Contains(synthText, forbidden) {
+			t.Fatalf("synth prompt = %q, want no %q", synthText, forbidden)
+		}
+	}
+}
+
+func TestAskDoesNotWriteOnHonestEmptyOrParseFailure(t *testing.T) {
+	// R-5X56-NF4O
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
+		ID:        "page-ada",
+		SubjectID: "subject-ada",
+		Title:     "Ada",
+		Body:      "Ada wrote the note.",
+	})
+
+	before := totalChanges(t, conn)
+	emptyProv := &askProvider{responses: []*agentkit.RoundTrip{textRoundTrip(`{"sub_queries":["Ada"]}`)}}
+	got, err := New(&scriptedSearch{result: retrieve.Result{Hits: []retrieve.Hit{{PageID: "subject-ada"}}, TopDense: 0.01}}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(emptyProv, nil), testExtractSite(), testSynthSite()).
+		Ask(ctx, "owner@example.com", "Who wrote the note?")
+	if err != nil {
+		t.Fatalf("honest-empty Ask returned error: %v", err)
+	}
+	if got.Found {
+		t.Fatalf("honest-empty Ask = %+v, want not found", got)
+	}
+	if after := totalChanges(t, conn); after != before {
+		t.Fatalf("total_changes after honest-empty = %d, want unchanged %d", after, before)
+	}
+
+	parseProv := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
+		textRoundTrip(`not json`),
+	}}
+	_, err = New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(parseProv, nil), testExtractSite(), testSynthSite()).
+		Ask(ctx, "owner@example.com", "Who wrote the note?")
+	if err == nil {
+		t.Fatal("parse-failure Ask error = nil, want error")
+	}
+	if after := totalChanges(t, conn); after != before {
+		t.Fatalf("total_changes after parse failure = %d, want unchanged %d", after, before)
 	}
 }
 
@@ -166,238 +429,7 @@ func TestAnalyzeNormalizesAndCapsPreparedQuestion(t *testing.T) {
 	}
 }
 
-func TestAskUsesAnalyzedSubQueriesForPageResolution(t *testing.T) {
-	// R-QDN3-QSN8
-	ctx := context.Background()
-	conn := migratedDB(t, ctx)
-	defer conn.Close()
-	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
-		ID:        "page-ada",
-		SubjectID: "subject-ada",
-		Title:     "Ada",
-		Body:      "Ada owns the release notes.",
-	})
-	savePage(t, ctx, conn, wiki.Subject{ID: "subject-grace", Name: "Grace", Type: "entity"}, wiki.Page{
-		ID:        "page-grace",
-		SubjectID: "subject-grace",
-		Title:     "Grace",
-		Body:      "Grace owns the scheduler.",
-	})
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{
-			"sub_queries": ["Ada", "Grace"],
-			"keywords": ["release notes", "scheduler"],
-			"aliases": ["Amazing Grace"]
-		}`),
-		textRoundTrip(`{
-			"found": true,
-			"text": "Ada owns the release notes and Grace owns the scheduler.",
-			"citations": [
-				{"subject":"subject-ada","title":"Ada"},
-				{"subject":"subject-grace","title":"Grace"}
-			]
-		}`),
-	}}
-
-	got, err := New(wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "What do Ada and Grace own?")
-	if err != nil {
-		t.Fatalf("Ask returned error: %v", err)
-	}
-	if !got.Found || got.Text != "Ada owns the release notes and Grace owns the scheduler." {
-		t.Fatalf("Ask = %+v, want synthesized answer from analyzed subqueries", got)
-	}
-	if len(got.Citations) != 2 {
-		t.Fatalf("citations = %+v, want both analyzed subjects cited", got.Citations)
-	}
-	if len(prov.requests) != 2 {
-		t.Fatalf("provider requests = %d, want analysis then synthesis", len(prov.requests))
-	}
-	analysisText := requestText(prov.requests[0])
-	if !strings.Contains(analysisText, "sub_queries") || strings.Contains(analysisText, "subjects array") {
-		t.Fatalf("analysis prompt = %q, want prepared query analysis prompt", analysisText)
-	}
-	synthText := requestText(prov.requests[1])
-	for _, want := range []string{"Ada owns the release notes.", "Grace owns the scheduler."} {
-		if !strings.Contains(synthText, want) {
-			t.Fatalf("synth prompt = %q, want page body %q", synthText, want)
-		}
-	}
-}
-
-func TestAskBestEffortGathersEveryResolvedSubjectPage(t *testing.T) {
-	// R-66KN-VGC6
-	ctx := context.Background()
-	conn := migratedDB(t, ctx)
-	defer conn.Close()
-	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
-		ID:        "page-ada",
-		SubjectID: "subject-ada",
-		Title:     "Ada",
-		Body:      "Ada owns the parser.",
-	})
-	savePage(t, ctx, conn, wiki.Subject{ID: "subject-grace", Name: "Grace", Type: "entity"}, wiki.Page{
-		ID:        "page-grace",
-		SubjectID: "subject-grace",
-		Title:     "Grace",
-		Body:      "Grace owns the scheduler.",
-	})
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"sub_queries":["Ada","Missing Person","Grace"]}`),
-		textRoundTrip(`{
-			"found": true,
-			"text": "Ada owns the parser and Grace owns the scheduler.",
-			"citations": [
-				{"subject":"subject-ada","title":"Ada"},
-				{"subject":"subject-grace","title":"Grace"}
-			]
-		}`),
-	}}
-
-	got, err := New(wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "What do Ada, Missing Person, and Grace own?")
-	if err != nil {
-		t.Fatalf("Ask returned error: %v", err)
-	}
-	if !got.Found || len(got.Citations) != 2 {
-		t.Fatalf("Ask = %+v, want answer from two resolved subjects", got)
-	}
-	synthText := requestText(prov.requests[1])
-	for _, want := range []string{"Ada owns the parser.", "Grace owns the scheduler."} {
-		if !strings.Contains(synthText, want) {
-			t.Fatalf("synth prompt = %q, want %q", synthText, want)
-		}
-	}
-	pagesJSON := synthText[strings.Index(synthText, "Pages: "):]
-	if strings.Contains(pagesJSON, `"Missing Person"`) {
-		t.Fatalf("synth pages = %q, want unresolved subject omitted", pagesJSON)
-	}
-}
-
-func TestAskGathersSurvivorPageForExtractedAlias(t *testing.T) {
-	// R-BP8Q-CA0P
-	ctx := context.Background()
-	conn := migratedDB(t, ctx)
-	defer conn.Close()
-	savePage(t, ctx, conn, wiki.Subject{ID: "subject-current", Name: "Current Name", Type: "entity"}, wiki.Page{
-		ID:        "page-current",
-		SubjectID: "subject-current",
-		Title:     "Current Name",
-		Body:      "Current Name owns the canonical page.",
-	})
-	if err := wiki.NewAliasStore(conn).Insert(ctx, wiki.Alias{
-		Name:      "Former Name",
-		SubjectID: "subject-current",
-		CreatedBy: "owner@example.com",
-		CreatedAt: "2026-06-23T12:00:00Z",
-	}); err != nil {
-		t.Fatalf("Insert alias: %v", err)
-	}
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"sub_queries":["Former Name"]}`),
-		textRoundTrip(`{
-			"found": true,
-			"text": "Current Name owns the canonical page.",
-			"citations": [{"subject":"subject-current","title":"Current Name"}]
-		}`),
-	}}
-
-	got, err := New(wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "What does Former Name own?")
-	if err != nil {
-		t.Fatalf("Ask returned error: %v", err)
-	}
-	if !got.Found || got.Text != "Current Name owns the canonical page." {
-		t.Fatalf("Ask = %+v, want answer from survivor page", got)
-	}
-	if want := []Citation{{Path: "entity/current-name", Title: "Current Name"}}; !reflect.DeepEqual(got.Citations, want) {
-		t.Fatalf("citations = %+v, want %+v", got.Citations, want)
-	}
-	synthText := requestText(prov.requests[1])
-	if !strings.Contains(synthText, "subject-current") || strings.Contains(synthText, "Former Name owns") {
-		t.Fatalf("synth prompt = %q, want survivor page context only", synthText)
-	}
-}
-
-func TestAskReturnsHonestEmptyWhenNoExtractedSubjectResolves(t *testing.T) {
-	// R-67SK-982V
-	ctx := context.Background()
-	conn := migratedDB(t, ctx)
-	defer conn.Close()
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"sub_queries":["Unknown One","Unknown Two"]}`),
-		textRoundTrip(`{"found":true,"text":"should not be used","citations":[]}`),
-	}}
-
-	got, err := New(wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "What happened to Unknown One?")
-	if err != nil {
-		t.Fatalf("Ask returned error: %v", err)
-	}
-	if got.Found || got.Text != honestEmptyText || len(got.Citations) != 0 {
-		t.Fatalf("Ask = %+v, want honest empty answer", got)
-	}
-	if len(prov.requests) != 1 {
-		t.Fatalf("provider requests = %d, want analysis only with no synthesis", len(prov.requests))
-	}
-}
-
-func TestAskSynthesisUsesOnlyGatheredPageBodies(t *testing.T) {
-	// R-5UPD-VVNA
-	// R-690G-MZTK
-	// R-5X56-NF4O
-	ctx := context.Background()
-	conn := migratedDB(t, ctx)
-	defer conn.Close()
-	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
-		ID:        "page-ada",
-		SubjectID: "subject-ada",
-		Title:     "Ada",
-		Body:      "Compiled page body says Ada approved the release.",
-	})
-	if err := wiki.NewClaimStore(conn).Save(ctx, wiki.Claim{
-		ID:        "claim-raw",
-		SubjectID: "subject-ada",
-		JobID:     "job-secret",
-		Body:      "RAW CLAIM TEXT SHOULD NOT REACH SYNTHESIS",
-	}); err != nil {
-		t.Fatalf("Save claim: %v", err)
-	}
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"sub_queries":["Ada"]}`),
-		textRoundTrip(`{
-			"found": true,
-			"text": "Ada approved the release.",
-			"citations": [{"subject":"subject-ada","title":"Ada"}]
-		}`),
-	}}
-
-	got, err := New(wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "Who approved the release?")
-	if err != nil {
-		t.Fatalf("Ask returned error: %v", err)
-	}
-	if !got.Found || got.Text != "Ada approved the release." {
-		t.Fatalf("Ask = %+v, want page-grounded answer", got)
-	}
-	for i, req := range prov.requests {
-		if len(req.Tools) != 0 {
-			t.Fatalf("request %d tools = %#v, want tool-less ask pipeline", i, req.Tools)
-		}
-	}
-	synthText := requestText(prov.requests[1])
-	if !strings.Contains(synthText, "Compiled page body says Ada approved the release.") {
-		t.Fatalf("synth prompt = %q, want compiled page body", synthText)
-	}
-	for _, forbidden := range []string{"RAW CLAIM TEXT SHOULD NOT REACH SYNTHESIS", "job-secret", "read_source"} {
-		if strings.Contains(synthText, forbidden) {
-			t.Fatalf("synth prompt = %q, want no %q", synthText, forbidden)
-		}
-	}
-}
-
-func TestAskRejectsUngroundedSynthesisCitations(t *testing.T) {
-	// R-5VXA-9NDZ
+func TestAskParsesDecoratedJSONResponses(t *testing.T) {
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -407,19 +439,23 @@ func TestAskRejectsUngroundedSynthesisCitations(t *testing.T) {
 		Title:     "Ada",
 		Body:      "Ada wrote the note.",
 	})
+	answer, _ := json.Marshal(answerResult{
+		Found:     true,
+		Text:      "Ada wrote the note.",
+		Citations: []Citation{{Path: "entity/ada", Title: "Ada"}},
+	})
 	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip(`{"sub_queries":["Ada"]}`),
-		textRoundTrip(`{
-			"found": true,
-			"text": "Grace wrote it.",
-			"citations": [{"subject":"subject-grace","title":"Grace"}]
-		}`),
+		textRoundTrip("```json\n{\"sub_queries\":[\"Ada\"]}\n```"),
+		textRoundTrip("Here is the answer:\n" + string(answer)),
 	}}
 
-	_, err := New(wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
-	if err == nil || !strings.Contains(err.Error(), "citation not in gathered pages") {
-		t.Fatalf("Ask error = %v, want ungrounded citation error", err)
+	if err != nil {
+		t.Fatalf("Ask returned error: %v", err)
+	}
+	if !got.Found || got.Text != "Ada wrote the note." {
+		t.Fatalf("Ask = %+v, want found answer from decorated JSON", got)
 	}
 }
 
@@ -448,12 +484,45 @@ func savePage(t *testing.T, ctx context.Context, conn *sql.DB, subject wiki.Subj
 	}
 }
 
+func totalChanges(t *testing.T, conn *sql.DB) int {
+	t.Helper()
+
+	var changes int
+	if err := conn.QueryRow(`SELECT total_changes()`).Scan(&changes); err != nil {
+		t.Fatalf("total_changes: %v", err)
+	}
+	return changes
+}
+
+func oneHitSearch(subjectID string, topDense float64) *scriptedSearch {
+	return &scriptedSearch{result: retrieve.Result{
+		Hits:     []retrieve.Hit{{PageID: subjectID}},
+		TopDense: topDense,
+	}}
+}
+
 func testExtractSite() llm.CallSite {
 	return llm.CallSite{Model: "extract-model"}
 }
 
 func testSynthSite() llm.CallSite {
 	return llm.CallSite{Model: "synth-model"}
+}
+
+type scriptedSearch struct {
+	result retrieve.Result
+	err    error
+	calls  []searchCall
+}
+
+type searchCall struct {
+	qa     any
+	limits retrieve.SearchLimits
+}
+
+func (s *scriptedSearch) SearchAnalyzed(_ context.Context, qa any, limits retrieve.SearchLimits) (retrieve.Result, error) {
+	s.calls = append(s.calls, searchCall{qa: qa, limits: limits})
+	return s.result, s.err
 }
 
 type askProvider struct {
@@ -509,34 +578,4 @@ func requestText(req agentkit.Request) string {
 		}
 	}
 	return b.String()
-}
-
-func TestAskParsesDecoratedJSONResponses(t *testing.T) {
-	ctx := context.Background()
-	conn := migratedDB(t, ctx)
-	defer conn.Close()
-	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
-		ID:        "page-ada",
-		SubjectID: "subject-ada",
-		Title:     "Ada",
-		Body:      "Ada wrote the note.",
-	})
-	answer, _ := json.Marshal(answerResult{
-		Found:     true,
-		Text:      "Ada wrote the note.",
-		Citations: []answerCitation{{Subject: "subject-ada", Title: "Ada"}},
-	})
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
-		textRoundTrip("```json\n{\"sub_queries\":[\"Ada\"]}\n```"),
-		textRoundTrip("Here is the answer:\n" + string(answer)),
-	}}
-
-	got, err := New(wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "Who wrote the note?")
-	if err != nil {
-		t.Fatalf("Ask returned error: %v", err)
-	}
-	if !got.Found || got.Text != "Ada wrote the note." {
-		t.Fatalf("Ask = %+v, want found answer from decorated JSON", got)
-	}
 }

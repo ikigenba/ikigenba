@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"appkit"
+	agentkit "github.com/ikigenba/agentkit"
 
 	"wiki/internal/ask"
 	"wiki/internal/compile"
@@ -18,6 +19,7 @@ import (
 	"wiki/internal/llm"
 	"wiki/internal/mcp"
 	"wiki/internal/page"
+	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
 	"wiki/internal/worker"
 )
@@ -53,10 +55,34 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 		}
 		conns := wiki.Conns{Read: read, Write: write}
 		llmClient := cfg.LLM.WithRecorder(wiki.NewLLMCallStore(conns)).WithClock(time.Now)
+		vectorCache := retrieve.NewVectorCache()
+		cacheEntries, err := wiki.LoadVectorCacheEntries(context.Background(), conns)
+		if err != nil {
+			return err
+		}
+		vectorCache.Replace(retrieveCacheEntries(cacheEntries))
+		embedder := &agentkit.Embedder{
+			Provider:   cfg.EmbedSite.Provider,
+			Model:      cfg.EmbedSite.Model,
+			Dimensions: cfg.EmbedSite.Dims,
+		}
 		extractor := extract.New(llmClient, cfg.CallSites.Extract)
 		compiler := buildCompiler(cfg, llmClient)
-		svc = wiki.NewService(conns, extractor, compiler, time.Now)
+		svc = wiki.NewService(conns, extractor, compiler, time.Now,
+			wiki.WithPageEmbedder(cfg.EmbedSite.Model, embedder),
+			wiki.WithVectorCacheUpdater(func(subjectID, title string, vec []float32) {
+				vectorCache.Upsert(retrieve.VectorEntry{SubjectID: subjectID, Title: title, Vec: vec})
+			}),
+		)
+		search := retrieve.NewHybridRetriever(
+			retrieve.NewKeywordRetriever(read),
+			retrieve.NewVectorRetriever(queryEmbedder(embedder), vectorCache),
+			wiki.NewResolver(read),
+			wiki.NewPageStore(read),
+			retrieve.FusionConfig{FinalK: cfg.SearchDefault},
+		)
 		asker := ask.New(
+			search,
 			wiki.NewSubjectStore(read),
 			wiki.NewPageStore(read),
 			llmClient,
@@ -101,6 +127,38 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 		func(ctx context.Context) error { return worker.Run(ctx, svc) },
 	}
 	return spec
+}
+
+func retrieveCacheEntries(entries []wiki.VectorCacheEntry) []retrieve.VectorEntry {
+	out := make([]retrieve.VectorEntry, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, retrieve.VectorEntry{
+			SubjectID: entry.SubjectID,
+			Title:     entry.Title,
+			Vec:       entry.Vec,
+		})
+	}
+	return out
+}
+
+func queryEmbedder(embedder *agentkit.Embedder) func(context.Context, string) ([]float32, error) {
+	return func(ctx context.Context, text string) ([]float32, error) {
+		result, err := embedder.Embed(ctx, []string{text}, agentkit.InputQuery)
+		if err != nil {
+			return nil, err
+		}
+		if result == nil || len(result.Vectors) != 1 {
+			return nil, fmt.Errorf("wiki: query embedder returned %d vectors, want 1", vectorCount(result))
+		}
+		return append([]float32(nil), result.Vectors[0]...), nil
+	}
+}
+
+func vectorCount(result *agentkit.EmbedResult) int {
+	if result == nil {
+		return 0
+	}
+	return len(result.Vectors)
 }
 
 type publicSubject struct {
