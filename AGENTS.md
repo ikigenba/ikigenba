@@ -83,6 +83,20 @@ the root, not per-service:
 - **`bin/stop`** tears the whole stack back down; **`bin/stop --clean`** also
   wipes the `tmp/` dev state (binaries, logs, SQLite dbs).
 
+> ⚠️ **You may only stop services you started from the worktree you are working
+> in.** The suite binds shared host ports (`:3000`–`:3011`, `:8080`), so a suite
+> launched from a *different* worktree or clone can be occupying them. Stopping
+> services — `bin/stop`, `kill`/`pkill`, freeing a port, or anything that
+> terminates a process — is permitted **only** for the stack this worktree's own
+> `bin/start` launched. **Any** action against a process you did not start from
+> this worktree — including one merely holding a port you want (e.g. a stale
+> nginx on `:8080`) — requires **explicit, specific operator approval first**.
+> When a needed port is occupied by something this worktree didn't start, do
+> **not** kill it to clear the way: identify the owning process (`ss -ltnp`,
+> check the binary path), **stop, and surface it** — name the process and the
+> owning directory and ask how to proceed. "It's in my way" is never permission;
+> a port conflict is a question for the operator, not an obstacle to bulldoze.
+
 With the suite up, you should normally have the local **`ikigenba_<svc>` MCP
 tools** available and reachable against the running services. If those tools are
 missing from your toolset, or a service's `health` check fails, **complain
