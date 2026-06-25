@@ -73,7 +73,7 @@ func TestStaticHandlerServesTokensAndFonts(t *testing.T) {
 		path        string
 		contentType string
 	}{
-		{path: "/static/tokens.css", contentType: "text/css"},
+		{path: "/static/tokens.css", contentType: "text/css; charset=utf-8"},
 		{path: "/static/fonts/space-grotesk.woff2", contentType: "font/woff2"},
 		{path: "/static/fonts/ibm-plex-sans.woff2", contentType: "font/woff2"},
 		{path: "/static/fonts/ibm-plex-mono-400.woff2", contentType: "font/woff2"},
@@ -90,8 +90,8 @@ func TestStaticHandlerServesTokensAndFonts(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 			}
-			if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, tc.contentType) {
-				t.Fatalf("Content-Type = %q, want prefix %q", got, tc.contentType)
+			if got := rec.Header().Get("Content-Type"); got != tc.contentType {
+				t.Fatalf("Content-Type = %q, want %q", got, tc.contentType)
 			}
 			if rec.Body.Len() == 0 {
 				t.Fatal("body is empty")
