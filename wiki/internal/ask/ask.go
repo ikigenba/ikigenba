@@ -149,7 +149,7 @@ func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error)
 		return Answer{}, err
 	}
 	normalizeAnswer(&result)
-	if !result.Found {
+	if !result.Found || result.Text == "" {
 		return honestEmpty(), nil
 	}
 	citations := filterCitations(result.Citations, pages)

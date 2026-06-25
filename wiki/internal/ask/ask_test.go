@@ -215,6 +215,31 @@ func TestAskDowngradesFoundAnswerWithoutGroundedCitations(t *testing.T) {
 	}
 }
 
+func TestAskDowngradesFoundAnswerWithoutText(t *testing.T) {
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
+		ID:        "page-ada",
+		SubjectID: "subject-ada",
+		Title:     "Ada",
+		Body:      "Ada wrote the note.",
+	})
+	prov := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
+		textRoundTrip(`{"found":true,"text":"   ","citations":[{"path":"entity/ada","title":"Ada"}]}`),
+	}}
+
+	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+		Ask(ctx, "owner@example.com", "Who wrote the note?")
+	if err != nil {
+		t.Fatalf("Ask returned error: %v", err)
+	}
+	if got.Found || got.Text != honestEmptyText || len(got.Citations) != 0 {
+		t.Fatalf("Ask = %+v, want empty answer text downgraded to honest-empty", got)
+	}
+}
+
 func TestAskDropsCitationsOutsideRetrievedPages(t *testing.T) {
 	// R-5VXA-9NDZ
 	ctx := context.Background()
