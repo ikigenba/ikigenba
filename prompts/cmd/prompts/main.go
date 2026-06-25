@@ -24,6 +24,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,7 @@ import (
 	"prompts/internal/prompt"
 	"prompts/internal/runner"
 	"prompts/internal/sandbox"
+	"prompts/internal/web"
 )
 
 // consumerID is the stable id prompts presents on every consumer connect
@@ -188,6 +190,9 @@ func fromEnv(source string) string {
 // the chassis (appkit) hands off to the domain: appkit has already resolved
 // config, opened, and migrated the shared single-writer DB before calling this.
 func registerRoutes(rt *appkit.Router) error {
+	rt.HandleFunc("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
+	rt.Handle("GET /static/", http.StripPrefix("/static/", web.StaticHandler()))
+
 	conn := rt.DB()
 	if conn == nil {
 		return fmt.Errorf("prompts: no DB handle on router")

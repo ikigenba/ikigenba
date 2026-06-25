@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{.Service}} {{.Version}}</title>
+    <link rel="stylesheet" href="/static/tokens.css">
+    <style>
+      @font-face {
+        font-family: "Space Grotesk";
+        src: url("/static/fonts/space-grotesk.woff2") format("woff2");
+        font-weight: 600 700;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: "IBM Plex Mono";
+        src: url("/static/fonts/ibm-plex-mono-500.woff2") format("woff2");
+        font-weight: 500;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: "IBM Plex Sans";
+        src: url("/static/fonts/ibm-plex-sans.woff2") format("woff2");
+        font-weight: 400 600;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: var(--space-8);
+        color: var(--color-text);
+        background:
+          linear-gradient(var(--color-border), var(--color-border)) 50% 0 / 1px 100% no-repeat,
+          var(--color-bg);
+        font-family: var(--font-body);
+      }
+
+      main {
+        width: min(100%, 448px);
+        border: var(--border-width) solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .accent {
+        height: var(--space-1);
+        background: var(--color-accent);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+      }
+
+      .content {
+        padding: var(--space-12);
+      }
+
+      h1 {
+        margin: 0;
+        color: var(--color-text);
+        font-family: var(--font-display);
+        font-size: clamp(40px, 9vw, var(--text-display-size));
+        font-weight: var(--text-display-weight);
+        line-height: var(--text-display-lh);
+        letter-spacing: 0;
+      }
+
+      .version {
+        display: inline-block;
+        margin-top: var(--space-6);
+        padding: var(--space-2) var(--space-3);
+        border: var(--border-width) solid var(--color-border-strong);
+        border-radius: var(--radius);
+        color: var(--color-text-muted);
+        background: var(--color-bg);
+        font-family: var(--font-mono);
+        font-size: var(--text-label-size);
+        font-weight: var(--text-label-weight);
+        line-height: var(--text-label-lh);
+      }
+
+      @media (max-width: 520px) {
+        body {
+          padding: var(--space-4);
+        }
+
+        .content {
+          padding: var(--space-8);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main aria-label="{{.Service}} service">
+      <div class="accent"></div>
+      <section class="content">
+        <h1>{{.Service}}</h1>
+        <div class="version">{{.Version}}</div>
+      </section>
+    </main>
+  </body>
+</html>
