@@ -14,7 +14,7 @@ mkdir -p "$here/locations"
 # nginx.conf puts all scratch paths (client_body/proxy/fastcgi/uwsgi/scgi) under
 # tmp/; nginx won't create the parent itself, so ensure it exists.
 mkdir -p "$here/tmp"
-for svc in crm cron dropbox gmail ledger notify prompts scripts sites wiki; do
+for svc in crm cron dropbox gmail ledger notify prompts scripts sites webhooks wiki; do
 	frag="$repo/$svc/etc/nginx.conf"
 	[ -f "$frag" ] || continue
 	port="$(REGISTRY_ROOT="$repo" "$repo/bin/registry" port "$svc")"
