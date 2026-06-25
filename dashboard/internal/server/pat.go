@@ -2,7 +2,7 @@ package server
 
 // This file implements the logged-in index page's "personal access tokens"
 // (PAT) feature: owner-minted, cross-service opaque bearer tokens the signed-in
-// user creates, copies once, lists, and revokes from the apex page.
+// user creates, copies once, lists, and revokes from the profile page.
 //
 //	POST /pat                     mint a PAT; renders the show-once confirmation.
 //	POST /pat/{public_id}/revoke  web revocation of one PAT.
@@ -12,7 +12,7 @@ package server
 // never the internal PK. Same-origin is enforced on both state-changing routes,
 // mirroring handleGrantRevoke. Unlike grants, PATs have no SSE live-stream: a
 // PAT row only changes through an explicit create/revoke the user performs here,
-// so the list is rendered inline in handleIndex (ADR §D9).
+// so the list is rendered inline in handleProfile.
 
 import (
 	"bytes"
@@ -78,7 +78,7 @@ func (a *app) handlePATCreate() http.HandlerFunc {
 // State-changing, so same-origin is enforced. A PAT that is missing, not owned
 // by the caller, or already revoked is reported indistinguishably as not-found
 // (a signed-in user must not be able to probe other owners' public_ids). On
-// success it redirects to /, where the re-rendered list reflects the change.
+// success it redirects to /profile, where the re-rendered list reflects the change.
 func (a *app) handlePATRevoke() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !sameOrigin(r, a.publicBaseURL) {
@@ -105,7 +105,7 @@ func (a *app) handlePATRevoke() http.HandlerFunc {
 			IP: r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"),
 			Details: map[string]any{"public_id": p.PublicID},
 		})
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, "/profile", http.StatusSeeOther)
 	}
 }
 

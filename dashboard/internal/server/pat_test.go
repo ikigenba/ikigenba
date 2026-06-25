@@ -71,6 +71,13 @@ func TestPATCreateShowsSecretOnce(t *testing.T) {
 	if got := strings.Count(body, "ms_pat_"); got != 1 {
 		t.Errorf("ms_pat_ secret appears %d times in confirmation, want 1:\n%s", got, body)
 	}
+	// R-DB08-PATX
+	if !strings.Contains(body, `href="/profile" class="btn btn-secondary">Done</a>`) {
+		t.Errorf("confirmation does not link back to profile:\n%s", body)
+	}
+	if strings.Contains(body, `href="/" class="btn btn-secondary">Done</a>`) {
+		t.Errorf("confirmation still links back to index:\n%s", body)
+	}
 }
 
 // TestPATCreateEmptyLabel: an empty (whitespace) label is rejected 400 and no
@@ -157,8 +164,8 @@ func mintPATWithLabel(t *testing.T, deps serverDeps, owner, label string) string
 	return p.PublicID
 }
 
-// TestPATRevoke: a same-origin POST revokes the PAT; the index no longer lists
-// it.
+// TestPATRevoke: a same-origin POST revokes the PAT, redirects back to the
+// profile page, and removes it from the owner's active list.
 func TestPATRevoke(t *testing.T) {
 	srv, deps := patTestServer(t)
 	const owner = "owner@metaspot.org"
@@ -170,11 +177,12 @@ func TestPATRevoke(t *testing.T) {
 			"Cookie": cookie.Name + "=" + cookie.Value,
 			"Origin": "https://int.ikigenba.com",
 		})
+	// R-DB07-PATR
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("revoke status = %d, want 303", rec.Code)
 	}
-	if loc := rec.Header().Get("Location"); loc != "/" {
-		t.Errorf("Location = %q, want /", loc)
+	if loc := rec.Header().Get("Location"); loc != "/profile" {
+		t.Errorf("Location = %q, want /profile", loc)
 	}
 	pats, _ := deps.pats.ListByOwner(context.Background(), owner)
 	if len(pats) != 0 {
@@ -231,9 +239,9 @@ func TestPATRevokeAlreadyRevoked(t *testing.T) {
 	}
 }
 
-// TestIndexListsPAT: the signed-in index renders the owner's active PAT (its
-// label appears, with a revoke form).
-func TestIndexListsPAT(t *testing.T) {
+// TestIndexOmitsPATManagement: the signed-in index no longer renders PAT
+// management, even when the owner has an active token.
+func TestIndexOmitsPATManagement(t *testing.T) {
 	srv, deps := patTestServer(t)
 	const owner = "owner@metaspot.org"
 	cookie := mintSession(t, deps, owner)
@@ -245,10 +253,10 @@ func TestIndexListsPAT(t *testing.T) {
 		t.Fatalf("index status = %d, want 200", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "Codex on laptop") {
-		t.Errorf("index missing PAT label:\n%s", body)
+	if strings.Contains(body, `action="/pat"`) {
+		t.Errorf("index still renders PAT create form:\n%s", body)
 	}
-	if !strings.Contains(body, "/pat/") || !strings.Contains(body, "/revoke") {
-		t.Errorf("index missing PAT revoke form")
+	if strings.Contains(body, "Codex on laptop") {
+		t.Errorf("index still renders PAT list:\n%s", body)
 	}
 }

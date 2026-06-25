@@ -21,20 +21,6 @@
   </header>
 
   <main class="page">
-    <section class="section">
-      <div class="section-head">
-        <h2>Personal access tokens</h2>
-        <span class="rule"></span>
-      </div>
-      <p class="section-intro">Mint a long-lived token to authenticate agents that connect directly.</p>
-      <form method="POST" action="/pat" class="create-form">
-        <input class="input" type="text" name="label" maxlength="48"
-               placeholder="Label (e.g. Codex on laptop)" aria-label="Token label" required>
-        <button type="submit" class="btn btn-primary">Create</button>
-      </form>
-      {{template "pat_block" .PATs}}
-    </section>
-
     <section class="section grants">
       <div class="section-head">
         <h2>Connected MCP clients</h2>

@@ -60,6 +60,42 @@ func TestProfileUsesLiveSessionOwner(t *testing.T) {
 	}
 }
 
+func TestProfileOwnsPATManagementAndIndexOmitsIt(t *testing.T) {
+	srv, deps := patTestServer(t)
+	const owner = "owner@metaspot.org"
+	cookie := mintSession(t, deps, owner)
+	publicID := mintPATWithLabel(t, deps, owner, "Codex on laptop")
+	headers := map[string]string{"Cookie": cookie.Name + "=" + cookie.Value}
+
+	profile := do(t, srv, "GET", "https://int.ikigenba.com/profile", headers)
+	if profile.Code != http.StatusOK {
+		t.Fatalf("profile status = %d, want 200", profile.Code)
+	}
+	profileBody := profile.Body.String()
+	// R-DB06-PATM
+	if !strings.Contains(profileBody, `action="/pat"`) {
+		t.Errorf("profile page missing PAT create form:\n%s", profileBody)
+	}
+	if !strings.Contains(profileBody, "Codex on laptop") {
+		t.Errorf("profile page missing PAT label:\n%s", profileBody)
+	}
+	if !strings.Contains(profileBody, `/pat/`+publicID+`/revoke`) {
+		t.Errorf("profile page missing PAT revoke form for %s:\n%s", publicID, profileBody)
+	}
+
+	index := do(t, srv, "GET", "https://int.ikigenba.com/", headers)
+	if index.Code != http.StatusOK {
+		t.Fatalf("index status = %d, want 200", index.Code)
+	}
+	indexBody := index.Body.String()
+	if strings.Contains(indexBody, `action="/pat"`) {
+		t.Errorf("logged-in index still renders PAT create form:\n%s", indexBody)
+	}
+	if strings.Contains(indexBody, "Codex on laptop") {
+		t.Errorf("logged-in index still renders PAT list:\n%s", indexBody)
+	}
+}
+
 func TestProfileRedirectsSignedOutToIndex(t *testing.T) {
 	srv := testServer(t)
 

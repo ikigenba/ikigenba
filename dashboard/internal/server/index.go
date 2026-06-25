@@ -19,7 +19,6 @@ type indexData struct {
 	Scheme   string
 	Owner    string
 	Grants   []grantRow
-	PATs     []patRow
 	Services []serviceRow
 }
 
@@ -55,16 +54,6 @@ func (a *app) handleIndex() http.HandlerFunc {
 				a.logger.Error("index.list_grants", "err", err)
 			} else {
 				data.Grants = grantRowsFromChains(chains)
-			}
-
-			// The signed-in user's active personal access tokens, rendered inline
-			// (no SSE — they only change through explicit create/revoke here).
-			// Non-fatal like the grants list — a transient list failure drops the
-			// PAT list, never 500s the page.
-			if pats, err := a.pats.ListByOwner(r.Context(), data.Owner); err != nil {
-				a.logger.Error("index.list_pats", "err", err)
-			} else {
-				data.PATs = patRowsFromPATs(pats)
 			}
 
 			// The LIST table: the box's MCP services as name/url rows, the raw
