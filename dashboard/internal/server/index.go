@@ -18,7 +18,6 @@ type indexData struct {
 	Host     string
 	Scheme   string
 	Owner    string
-	Grants   []grantRow
 	Services []serviceRow
 }
 
@@ -44,22 +43,10 @@ func (a *app) handleIndex() http.HandlerFunc {
 				a.logger.Error("index.session_lookup", "err", lerr)
 			}
 		}
-		// Render the signed-in user's live grants inline so the first paint
-		// already shows current state; the SSE client keeps it fresh after.
 		if data.Owner != "" {
-			chains, err := a.oauthTokens.ListChainsByOwner(r.Context(), data.Owner)
-			if err != nil {
-				// Non-fatal: render the page without the grants list rather than
-				// 500 the whole index over a transient list failure.
-				a.logger.Error("index.list_grants", "err", err)
-			} else {
-				data.Grants = grantRowsFromChains(chains)
-			}
-
 			// The LIST table: the box's MCP services as name/url rows, the raw
-			// reference for manual entry into any other MCP client. Non-fatal like
-			// the grants list — a manifest read failure drops the table, never 500s
-			// the page.
+			// reference for manual entry into any other MCP client. A manifest read
+			// failure drops the table, never 500s the page.
 			if svcs, err := inventory.Read(a.manifestRoot); err != nil {
 				a.logger.Error("index.read_inventory", "err", err)
 			} else {

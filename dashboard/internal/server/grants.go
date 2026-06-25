@@ -1,6 +1,6 @@
 package server
 
-// This file implements the logged-in index page's "live grants" feature: the
+// This file implements the profile page's "live grants" feature: the
 // list of the signed-in user's MCP token grants (OAuth chains), kept fresh over
 // Server-Sent Events, with per-grant revocation.
 //
@@ -138,7 +138,7 @@ func (a *app) handleGrantsFragment() http.HandlerFunc {
 // handleGrantRevoke revokes one of the signed-in user's grants by public_id.
 // State-changing, so same-origin is enforced. A chain that is missing, not
 // owned by the caller, or already revoked is reported indistinguishably as
-// not-found. On success it publishes a grant-change notify and redirects to /.
+// not-found. On success it publishes a grant-change notify and redirects to /profile.
 func (a *app) handleGrantRevoke() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !sameOrigin(r, a.publicBaseURL) {
@@ -168,7 +168,7 @@ func (a *app) handleGrantRevoke() http.HandlerFunc {
 			Details: map[string]any{"trigger": "user_revoke"},
 		})
 		a.grantEvents.Publish(owner)
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, "/profile", http.StatusSeeOther)
 	}
 }
 

@@ -136,8 +136,8 @@ func TestGrantRevoke(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("revoke status = %d, want 303", rec.Code)
 	}
-	if loc := rec.Header().Get("Location"); loc != "/" {
-		t.Errorf("Location = %q, want /", loc)
+	if loc := rec.Header().Get("Location"); loc != "/profile" {
+		t.Errorf("Location = %q, want /profile", loc)
 	}
 
 	frag := do(t, srv, "GET", "https://int.ikigenba.com/grants/fragment",

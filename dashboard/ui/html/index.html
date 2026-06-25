@@ -13,6 +13,7 @@
   <header class="banner">
     <p class="wordmark">ikigenba</p>
     <nav class="identity">
+      <a href="/profile" class="btn btn-secondary btn-sm">Profile</a>
       <span class="owner">{{.Owner}}</span>
       <form method="POST" action="/logout">
         <button type="submit" class="btn btn-danger-ghost btn-sm">Sign out</button>
@@ -21,17 +22,6 @@
   </header>
 
   <main class="page">
-    <section class="section grants">
-      <div class="section-head">
-        <h2>Connected MCP clients</h2>
-        <span class="rule"></span>
-        <span class="live-dot" id="grants-live" title="Updates in real time">live</span>
-      </div>
-      <div id="grants-block" data-stream="/grants/stream" data-fragment="/grants/fragment">
-        {{template "grants_block" .Grants}}
-      </div>
-    </section>
-
     <section class="section connect-agent" aria-label="Connect your coding agent">
       <div class="section-head">
         <h2>Connect your agent</h2>
