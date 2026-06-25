@@ -38,6 +38,7 @@ import (
 	"scripts/internal/mcp"
 	"scripts/internal/runner"
 	"scripts/internal/script"
+	"scripts/internal/web"
 )
 
 // consumerID is the stable id scripts presents on every consumer connect
@@ -212,6 +213,8 @@ func registerRoutes(rt *appkit.Router) error {
 		rt.Logger().Warn("crash-recovery: swept orphaned runs", "count", swept)
 	}
 
+	rt.Handle("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
+	rt.Handle("GET /static/", web.StaticHandler())
 	rt.Handle("POST /mcp", rt.RequireIdentity(mcp.NewHandler(svc, rt.Version(), rt.Service(), rt.Health())))
 	return nil
 }
