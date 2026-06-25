@@ -35,3 +35,6 @@
 
 # --- wiki build-loop ephemeral brief (gather creates, verify deletes; never committed) ---
 /wiki/project/prompts/brief.md
+
+# --- webhooks build-loop ephemeral brief (gather creates, verify deletes; never committed) ---
+/webhooks/project/prompts/brief.md
