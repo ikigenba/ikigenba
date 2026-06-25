@@ -48,6 +48,33 @@ func TestIndexLoggedOut(t *testing.T) {
 	}
 }
 
+func TestIndexLoggedOutKeepsLandingOnly(t *testing.T) {
+	srv := testServer(t)
+
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	// R-DB02-LND7
+	if !strings.Contains(body, `href="/login"`) {
+		t.Errorf("logged-out landing missing sign-in link:\n%s", body)
+	}
+	if strings.Contains(body, googleidp.StubIdentity.Email) {
+		t.Errorf("logged-out landing leaked owner email:\n%s", body)
+	}
+	if strings.Contains(body, `action="/pat"`) {
+		t.Errorf("logged-out landing exposed PAT form:\n%s", body)
+	}
+	if strings.Contains(body, `id="grants-block"`) {
+		t.Errorf("logged-out landing exposed grants block:\n%s", body)
+	}
+	if strings.Contains(body, `href="/profile"`) {
+		t.Errorf("logged-out landing exposed profile control:\n%s", body)
+	}
+}
+
 // TestIndexDeadCookie: a present-but-invalid cookie (here, unknown) renders
 // logged-out and clears the cookie so the browser stops resending a value that
 // can never redeem.
