@@ -280,6 +280,43 @@ a:hover { text-decoration: underline; }
   max-width: 420px; margin: 0;
 }
 
+.name-origin {
+  width: 100%;
+  max-width: 420px;
+  padding-top: var(--space-6);
+  border-top: var(--border-width) solid var(--color-border);
+  text-align: left;
+}
+.name-origin .name-origin-lede {
+  margin: 0;
+  max-width: none;
+  color: var(--color-text);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-lh);
+}
+.name-origin .name-origin-lede b {
+  font-weight: 600;
+}
+.name-origin-roots {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-4) 0 0;
+}
+.name-origin-roots dt {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.name-origin-roots dt span[lang="ja"] {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+.name-origin-roots dd {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-lh);
+}
+
 /* ---- Show-once token page ---------------------------------------------- */
 .token-reveal { margin-top: var(--space-8); }
 .token-reveal h1 {

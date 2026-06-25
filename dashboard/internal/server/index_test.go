@@ -48,6 +48,69 @@ func TestIndexLoggedOut(t *testing.T) {
 	}
 }
 
+func TestIndexLoggedOutShowsNameOriginColophon(t *testing.T) {
+	srv := testServer(t)
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`<aside class="name-origin" aria-label="What ikigenba means">`,
+		`<p class="name-origin-lede"><b>ikigenba</b> — where your livelihood actually gets done.</p>`,
+		`<dt>ikigai <span lang="ja">生き甲斐</span></dt>`,
+		`<dd>&ldquo;reason for being&rdquo; — the work worth doing; for you, your business.</dd>`,
+		`<dt>genba <span lang="ja">現場</span></dt>`,
+		`<dd>&ldquo;the actual place&rdquo; — the shop floor where value is really created.</dd>`,
+	} {
+		// R-DB17-ORIG
+		if !strings.Contains(body, want) {
+			t.Errorf("logged-out index missing name-origin content %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestIndexLoggedOutKeepsSigninCopy(t *testing.T) {
+	srv := testServer(t)
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`<p class="wordmark" style="font-family: var(--font-display); font-size: var(--text-h3-size); font-weight: var(--text-h3-weight); margin: 0;">ikigenba</p>`,
+		`<h1>Your account's control plane</h1>`,
+		`<p>Sign in to manage access tokens, connected agents, and the box's MCP services.</p>`,
+		`<a href="/login" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>`,
+	} {
+		// R-DB18-KEEP
+		if !strings.Contains(body, want) {
+			t.Errorf("logged-out index no longer keeps sign-in copy %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestIndexLoggedInOmitsNameOriginColophon(t *testing.T) {
+	srv := testServer(t)
+	sess := liveSession(t, srv)
+
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/", map[string]string{"Cookie": sess.Name + "=" + sess.Value})
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	// R-DB19-LAND
+	if strings.Contains(body, `class="name-origin"`) {
+		t.Errorf("logged-in index includes logged-out name-origin colophon:\n%s", body)
+	}
+	if !strings.Contains(body, googleidp.StubIdentity.Email) {
+		t.Errorf("logged-in index missing owner email %q:\n%s", googleidp.StubIdentity.Email, body)
+	}
+}
+
 func TestIndexLoggedOutKeepsLandingOnly(t *testing.T) {
 	srv := testServer(t)
 
