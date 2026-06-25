@@ -43,23 +43,26 @@ type Compiler interface {
 
 // Service coordinates ingest jobs and the single background integration worker.
 type Service struct {
-	write      *sql.DB
-	jobs       *JobStore
-	subjects   *SubjectStore
-	aliases    *AliasStore
-	resolver   *Resolver
-	claims     *ClaimStore
-	pages      *PageStore
-	embeddings *EmbeddingStore
-	merges     *SubjectMergeStore
-	extractor  Extractor
-	compiler   Compiler
-	now        func() time.Time
-	newID      func() string
-	wake       chan struct{}
-	mu         sync.Mutex
-	cancels    map[string]*jobCancel
-	mergeMu    sync.Mutex
+	write        *sql.DB
+	jobs         *JobStore
+	subjects     *SubjectStore
+	aliases      *AliasStore
+	resolver     *Resolver
+	claims       *ClaimStore
+	pages        *PageStore
+	embeddings   *EmbeddingStore
+	merges       *SubjectMergeStore
+	pageEmbedder PageEmbedder
+	embedModel   string
+	vectorCache  vectorCache
+	extractor    Extractor
+	compiler     Compiler
+	now          func() time.Time
+	newID        func() string
+	wake         chan struct{}
+	mu           sync.Mutex
+	cancels      map[string]*jobCancel
+	mergeMu      sync.Mutex
 }
 
 type jobCancel struct {
@@ -67,12 +70,12 @@ type jobCancel struct {
 }
 
 // NewService builds the ingest service over wiki's read/write SQLite handles.
-func NewService(db any, extractor Extractor, compiler Compiler, now func() time.Time) *Service {
+func NewService(db any, extractor Extractor, compiler Compiler, now func() time.Time, opts ...ServiceOption) *Service {
 	if now == nil {
 		now = time.Now
 	}
 	c := mustConns(db)
-	return &Service{
+	s := &Service{
 		write:      c.Write,
 		jobs:       NewJobStore(c),
 		subjects:   NewSubjectStore(c.Read),
@@ -89,6 +92,12 @@ func NewService(db any, extractor Extractor, compiler Compiler, now func() time.
 		wake:       make(chan struct{}, 1),
 		cancels:    map[string]*jobCancel{},
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
+	}
+	return s
 }
 
 // Ingest records a pending job and returns immediately with its handle.
@@ -313,6 +322,7 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 	subjects := NewSubjectStore(tx)
 	claims := NewClaimStore(tx)
 	pages := NewPageStore(tx)
+	var pagesToEmbed []Page
 	if err := claims.DeleteByJob(ctx, job.ID); err != nil {
 		return err
 	}
@@ -333,14 +343,16 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 			}
 			continue
 		}
-		if err := pages.Upsert(ctx, Page{
+		page := Page{
 			ID:        page.subjectID,
 			SubjectID: page.subjectID,
 			Title:     page.title,
 			Body:      page.body,
-		}); err != nil {
+		}
+		if err := pages.Upsert(ctx, page); err != nil {
 			return err
 		}
+		pagesToEmbed = append(pagesToEmbed, page)
 	}
 	res, err := tx.ExecContext(ctx,
 		`UPDATE jobs SET status = ?, finished_at = ?, error = '' WHERE id = ? AND status = ?`,
@@ -355,7 +367,15 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 	if n == 0 {
 		return nil
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	for _, page := range pagesToEmbed {
+		if err := s.embedAndStore(ctx, page); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type integrationPlan struct {
