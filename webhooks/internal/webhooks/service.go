@@ -6,6 +6,7 @@
 package webhooks
 
 import (
+	"context"
 	"database/sql"
 	"time"
 
@@ -43,4 +44,20 @@ func NewService(conn *sql.DB, clock Clock) *Service {
 		db:    conn,
 		clock: clock,
 	}
+}
+
+// List returns exactly the webhooks owned by owner, ordered by name. It is a thin
+// owner-scoped wrapper over Store.ListByOwner so the unexported store stays
+// private to package webhooks while the MCP handler reaches owner-scoped reads
+// through the Service alone.
+func (s *Service) List(ctx context.Context, owner string) ([]db.Webhook, error) {
+	return s.store.ListByOwner(ctx, owner)
+}
+
+// Delete removes owner's webhook by name, owner-scoped. deleted reports whether a
+// row was actually removed; another owner's webhook is left untouched and deleted
+// is false. Thin wrapper over Store.Delete for the same encapsulation reason as
+// List.
+func (s *Service) Delete(ctx context.Context, owner, name string) (deleted bool, err error) {
+	return s.store.Delete(ctx, owner, name)
 }
