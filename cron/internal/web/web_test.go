@@ -12,8 +12,6 @@ import (
 )
 
 func TestLandingHandlerRendersEmbeddedPage(t *testing.T) {
-	// R-LAND-3C9K
-	// R-LAND-5E2L
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
@@ -21,21 +19,42 @@ func TestLandingHandlerRendersEmbeddedPage(t *testing.T) {
 
 	res := rec.Result()
 	body := rec.Body.String()
+	// R-LAND-3C9K
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusOK)
 	}
-	if got := res.Header.Get("Content-Type"); got != "text/html; charset=utf-8" {
-		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
+	// R-LAND-5E2L
+	if !strings.Contains(body, "cron-test") {
+		t.Fatalf("landing body does not contain service name %q:\n%s", "cron-test", body)
 	}
-	for _, want := range []string{"cron-test", "v1.2.3", "/static/tokens.css"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("landing body does not contain %q:\n%s", want, body)
-		}
+}
+
+func TestLandingHandlerReflectsInjectedVersion(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	LandingHandler("cron", "9.9.9-test").ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	// R-LAND-7G4M
+	if !strings.Contains(body, "9.9.9-test") {
+		t.Fatalf("landing body does not contain injected version %q:\n%s", "9.9.9-test", body)
+	}
+}
+
+func TestLandingHandlerSetsHTMLContentType(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	LandingHandler("cron", "test").ServeHTTP(rec, req)
+
+	// R-LAND-9J6N
+	if got := rec.Result().Header.Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
 	}
 }
 
 func TestLandingHandlerRejectsNonRootAndNonGetRequests(t *testing.T) {
-	// R-LAND-7G4M
 	for _, tc := range []struct {
 		name   string
 		method string
@@ -59,7 +78,6 @@ func TestLandingHandlerRejectsNonRootAndNonGetRequests(t *testing.T) {
 }
 
 func TestLandingTemplateUsesOnlyEmbeddedLocalAssets(t *testing.T) {
-	// R-LAND-9J6N
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
@@ -67,41 +85,55 @@ func TestLandingTemplateUsesOnlyEmbeddedLocalAssets(t *testing.T) {
 
 	body := rec.Body.String()
 	for _, disallowed := range []string{"https://", "http://", "//fonts.googleapis.com", "dashboard"} {
+		// R-ASST-5X9Y
 		if strings.Contains(body, disallowed) {
 			t.Fatalf("landing body contains runtime external asset reference %q:\n%s", disallowed, body)
 		}
 	}
-	if !strings.Contains(body, `href="/static/tokens.css"`) {
-		t.Fatalf("landing body does not link embedded tokens.css:\n%s", body)
+	for _, want := range []string{`href="/static/tokens.css"`, "/static/"} {
+		// R-ASST-5X9Y
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing body does not contain %q:\n%s", want, body)
+		}
 	}
 }
 
 func TestServeMuxRootRouteIsExactAndUngated(t *testing.T) {
-	// R-ROUT-2P8Q
-	// R-ROUT-4R1S
-	// R-ROUT-6T3U
 	mux := http.NewServeMux()
-	mux.Handle("GET /{$}", LandingHandler("cron", "test"))
+	mux.Handle("GET /{$}", LandingHandler("cron", "route-version"))
 	mux.Handle("POST /mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-MCP-Stub", "reached")
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
 	root := httptest.NewRecorder()
 	mux.ServeHTTP(root, httptest.NewRequest(http.MethodGet, "/", nil))
+	rootBody := root.Body.String()
+	// R-ROUT-2P8Q
 	if root.Result().StatusCode != http.StatusOK {
 		t.Fatalf("GET / status = %d, want %d", root.Result().StatusCode, http.StatusOK)
+	}
+	// R-ROUT-2P8Q
+	if !strings.Contains(rootBody, "cron") || !strings.Contains(rootBody, "route-version") {
+		t.Fatalf("GET / did not dispatch to landing handler:\n%s", rootBody)
 	}
 
 	mcp := httptest.NewRecorder()
 	mux.ServeHTTP(mcp, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	// R-ROUT-4R1S
 	if mcp.Result().StatusCode != http.StatusNoContent {
 		t.Fatalf("POST /mcp status = %d, want %d", mcp.Result().StatusCode, http.StatusNoContent)
 	}
+	// R-ROUT-4R1S
+	if got := mcp.Result().Header.Get("X-MCP-Stub"); got != "reached" {
+		t.Fatalf("POST /mcp did not reach stub handler: X-MCP-Stub = %q", got)
+	}
 
 	other := httptest.NewRecorder()
-	mux.ServeHTTP(other, httptest.NewRequest(http.MethodGet, "/mcp", nil))
-	if other.Result().StatusCode == http.StatusOK {
-		t.Fatalf("GET /mcp unexpectedly returned OK; root route is shadowing another path")
+	mux.ServeHTTP(other, httptest.NewRequest(http.MethodGet, "/nope", nil))
+	// R-ROUT-6T3U
+	if other.Result().StatusCode == http.StatusOK || strings.Contains(other.Body.String(), "route-version") {
+		t.Fatalf("GET /nope returned landing page: status=%d body=\n%s", other.Result().StatusCode, other.Body.String())
 	}
 }
 
@@ -131,12 +163,10 @@ func TestCompositionRootMountsLandingWithoutIdentityWrapper(t *testing.T) {
 }
 
 func TestStaticAssetsServeEmbeddedCarbonFiles(t *testing.T) {
-	// R-ASST-3V7W
-	// R-ASST-5X9Y
-	// R-ASST-7Z2A
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", StaticHandler())
 
+	// R-ASST-3V7W
 	css := requestAsset(t, mux, "/static/tokens.css", "text/css; charset=utf-8")
 	for _, want := range []string{
 		"@font-face",
@@ -150,6 +180,7 @@ func TestStaticAssetsServeEmbeddedCarbonFiles(t *testing.T) {
 		}
 	}
 	for _, disallowed := range []string{"https://", "http://", "fonts.googleapis.com", "dashboard"} {
+		// R-ASST-5X9Y
 		if strings.Contains(css, disallowed) {
 			t.Fatalf("tokens.css contains runtime external asset reference %q:\n%s", disallowed, css)
 		}
@@ -161,6 +192,7 @@ func TestStaticAssetsServeEmbeddedCarbonFiles(t *testing.T) {
 		"/static/fonts/ibm-plex-mono-400.woff2",
 		"/static/fonts/ibm-plex-mono-500.woff2",
 	} {
+		// R-ASST-7Z2A
 		body := requestAsset(t, mux, path, "font/woff2")
 		if !strings.HasPrefix(body, "wOF2") {
 			t.Fatalf("%s is not a woff2 payload", path)
