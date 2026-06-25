@@ -1,0 +1,54 @@
+# webhooks — Design Index
+
+Each Decision maps to its `DNN.md`; every `R-XXXX-XXXX` id maps to its
+Decision/file. To resolve an id, grep this index (or the Decision files
+directly). Regenerate this manifest whenever a Decision is added or its
+Verification ids change.
+
+## Decisions
+
+- D1 → `project/design/D01.md` — Service skeleton, seams & composition root — R-IC14-FKIK, R-ID90-TC99
+- D2 → `project/design/D02.md` — Data model & migrations — R-SZ8I-R4EY, R-T0GF-4W5N, R-T1OB-INWC, R-T2W7-WFN1
+- D3 → `project/design/D03.md` — Webhook identity & secret lifecycle — R-37GT-C05G, R-38OP-PRW5, R-39WM-3JMU, R-3CCE-V348, R-3DKB-8UUX, R-3ES7-MMLM
+- D4 → `project/design/D04.md` — Public ingress endpoint (/in/<name>) — R-7ISQ-ZZCF, R-7K0N-DR34, R-7L8J-RITT, R-7MGG-5AKI, R-7NOC-J2B7
+- D5 → `project/design/D05.md` — Event production (durable-before-ack) — R-GTUZ-AIGW, R-GV2V-OA7L, R-GWAS-21YA, R-GXIO-FTOZ, R-GYQK-TLFO
+- D6 → `project/design/D06.md` — MCP tool surface (the four owner tools) — R-5Z8J-Y0YP, R-60GG-BSPE, R-61OC-PKG3, R-62W9-3C6S, R-6445-H3XH, R-65C1-UVO6
+- D7 → `project/design/D07.md` — nginx location fragment (three tiers) — R-OD12-3CVG, R-OE8Y-H4M5, R-OFGU-UWCU, R-OGOR-8O3J
+- D8 → `project/design/D08.md` — Test strategy, harness & dev-onboarding — R-UELV-YLA4, R-UFTS-CD0T
+
+## Verification ids → Decision
+
+- R-IC14-FKIK → D1 — `project/design/D01.md`
+- R-ID90-TC99 → D1 — `project/design/D01.md`
+- R-SZ8I-R4EY → D2 — `project/design/D02.md`
+- R-T0GF-4W5N → D2 — `project/design/D02.md`
+- R-T1OB-INWC → D2 — `project/design/D02.md`
+- R-T2W7-WFN1 → D2 — `project/design/D02.md`
+- R-37GT-C05G → D3 — `project/design/D03.md`
+- R-38OP-PRW5 → D3 — `project/design/D03.md`
+- R-39WM-3JMU → D3 — `project/design/D03.md`
+- R-3CCE-V348 → D3 — `project/design/D03.md`
+- R-3DKB-8UUX → D3 — `project/design/D03.md`
+- R-3ES7-MMLM → D3 — `project/design/D03.md`
+- R-7ISQ-ZZCF → D4 — `project/design/D04.md`
+- R-7K0N-DR34 → D4 — `project/design/D04.md`
+- R-7L8J-RITT → D4 — `project/design/D04.md`
+- R-7MGG-5AKI → D4 — `project/design/D04.md`
+- R-7NOC-J2B7 → D4 — `project/design/D04.md`
+- R-GTUZ-AIGW → D5 — `project/design/D05.md`
+- R-GV2V-OA7L → D5 — `project/design/D05.md`
+- R-GWAS-21YA → D5 — `project/design/D05.md`
+- R-GXIO-FTOZ → D5 — `project/design/D05.md`
+- R-GYQK-TLFO → D5 — `project/design/D05.md`
+- R-5Z8J-Y0YP → D6 — `project/design/D06.md`
+- R-60GG-BSPE → D6 — `project/design/D06.md`
+- R-61OC-PKG3 → D6 — `project/design/D06.md`
+- R-62W9-3C6S → D6 — `project/design/D06.md`
+- R-6445-H3XH → D6 — `project/design/D06.md`
+- R-65C1-UVO6 → D6 — `project/design/D06.md`
+- R-OD12-3CVG → D7 — `project/design/D07.md`
+- R-OE8Y-H4M5 → D7 — `project/design/D07.md`
+- R-OFGU-UWCU → D7 — `project/design/D07.md`
+- R-OGOR-8O3J → D7 — `project/design/D07.md`
+- R-UELV-YLA4 → D8 — `project/design/D08.md`
+- R-UFTS-CD0T → D8 — `project/design/D08.md`
