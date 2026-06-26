@@ -1,7 +1,10 @@
 # notify
 
-The **notify** service for the ikigenba single-tenant suite. A pure MCP API with
-**no UI** and **no token logic**, deployed at `<account>.ikigenba.com/srv/notify/`
+The **notify** service for the ikigenba single-tenant suite. It serves an **MCP
+surface for agents** (`send`/`health`/`reflection`, bearer-gated) **and a human
+web landing page** (dashboard-session-cookie-gated) under `/srv/notify/`, plus its
+east/west event-plane consumer loops; it still runs **no token logic** — nginx
+remains the sole trust boundary. Deployed at `<account>.ikigenba.com/srv/notify/`
 (e.g. `int.ikigenba.com/srv/notify/`). First demo account: **int**.
 
 notify is the suite's **first event-plane consumer**. It was duplicated from
@@ -36,7 +39,8 @@ If anything here conflicts with those docs, the docs win — and flag the confli
   every request via `auth_request` against the dashboard, strips the
   `/srv/notify/` prefix, and injects `X-Owner-Email` / `X-Client-Id`. notify
   trusts those headers and does NO token logic. Surface: `POST /mcp` (`send`,
-  `health`, `reflection`) and the unauthenticated RFC 9728 PRM doc. notify is a
+  `health`, `reflection`), a dashboard-session-cookie-gated human web **landing
+  page**, and the unauthenticated RFC 9728 PRM doc. notify is a
   consumer, **not** a producer — it serves **no** `/feed` endpoint, and its nginx
   fragment (`etc/nginx.conf`, dev mirror `../nginx/locations/notify.conf`) has no
   feed block.
