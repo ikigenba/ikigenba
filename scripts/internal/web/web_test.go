@@ -61,6 +61,37 @@ func TestLandingHandlerLinksOnlyAppLocalStaticAssets(t *testing.T) {
 	}
 }
 
+func TestLandingHandlerRendersHomeLinkToDashboardApex(t *testing.T) {
+	// R-HOME-8R2V
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	LandingHandler("scripts", "dev").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `<body>`+"\n"+`  <a class="home" href="/">Home</a>`) {
+		t.Fatalf("landing HTML does not put the Home link first in the body:\n%s", body)
+	}
+	if count := strings.Count(body, `href="/"`); count != 1 {
+		t.Fatalf(`href="/" count = %d, want exactly one dashboard-apex link:\n%s`, count, body)
+	}
+	for _, want := range []string{
+		`.home {`,
+		`top: var(--space-6);`,
+		`left: var(--space-6);`,
+		`.home:hover,`,
+		`.home:focus-visible {`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing HTML missing home style %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestLandingHandlerUsesCronCanonicalStructureForScripts(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
