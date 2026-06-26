@@ -74,4 +74,4 @@ Phase 63 ✅ realizes D39 — the landing page: a new `internal/web` package (em
 Phase 64 ✅ realizes D39 — nginx fragment (structural): add the exact-match session-gated `location = /srv/wiki/` (`auth_request /_session-authn`, `proxy_pass …/`) to `wiki/etc/nginx.conf` beside the unchanged `/_authn` prefix and PRM exact-match; verified by a named fragment check (no R-ids)
 Phase 65 ✅ realizes D39 — docs purge (structural): remove the now-false "no UI" assertion from `wiki/AGENTS.md`/`CLAUDE.md` and state the landing-page truth (human web page, session-gated; "no token logic" stays true); verified by a named docs check (no R-ids)
 Phase 66 ✅ realizes D40 — conform the landing page (landing.tmpl + tokens) to the cron canonical template; per-service data only; structural content check
-Phase 67 ⬜ realizes D41 — add the top-left Home link to the dashboard landing page; covers R-HOME-3U5Y
+Phase 67 ✅ realizes D41 — add the top-left Home link to the dashboard landing page; covers R-HOME-3U5Y
