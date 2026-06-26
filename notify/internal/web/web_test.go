@@ -48,6 +48,32 @@ func TestLandingContentTypeIsHTML(t *testing.T) {
 	}
 }
 
+func TestLandingIncludesHomeLinkToDashboardApex(t *testing.T) {
+	// R-HOME-5N7S — GET / renders a top-left Home anchor to the dashboard apex.
+	rec := httptest.NewRecorder()
+	LandingHandler("notify", "v1.2.3").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `<a class="home" href="/">Home</a>`) {
+		t.Fatalf("body does not render Home link to apex: %s", body)
+	}
+	if strings.Index(body, `<a class="home" href="/">Home</a>`) > strings.Index(body, "<main>") {
+		t.Fatalf("Home link is not before main: %s", body)
+	}
+	for _, want := range []string{
+		".home {",
+		"position: absolute;",
+		"top: var(--space-6);",
+		"left: var(--space-6);",
+		".home:hover,\n    .home:focus-visible",
+		"color: var(--color-text);",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing Home link style %q: %s", want, body)
+		}
+	}
+}
+
 // composedMux mirrors how cmd/notify/main.go wires the landing handler beside
 // the MCP mount: exact-match GET /{$} for the root, POST /mcp for the API.
 func composedMux(mcp http.Handler) *http.ServeMux {
