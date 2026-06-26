@@ -221,6 +221,55 @@ func (s *Service) Subjects(ctx context.Context, typ, nameContains string) ([]Sub
 	return listAllSubjects(ctx, s.subjects, typ, nameContains)
 }
 
+// Orphans returns subjects with no inbound mentions from any other page.
+func (s *Service) Orphans(ctx context.Context) ([]Subject, error) {
+	if s == nil {
+		return nil, fmt.Errorf("wiki: nil service")
+	}
+	subjects, err := listAllSubjects(ctx, s.subjects, "", "")
+	if err != nil {
+		return nil, err
+	}
+	aliases, err := s.aliases.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pages, err := listAllPages(ctx, s.pages)
+	if err != nil {
+		return nil, err
+	}
+
+	subjectKeysByID := subjectKeysFor(subjects, aliases)
+	subjectKeys := make([]SubjectKeys, 0, len(subjectKeysByID))
+	for _, keys := range subjectKeysByID {
+		subjectKeys = append(subjectKeys, keys)
+	}
+	sort.Slice(subjectKeys, func(i, j int) bool {
+		return Path(subjectKeys[i].Subject) < Path(subjectKeys[j].Subject)
+	})
+
+	referenced := map[string]bool{}
+	for _, page := range pages {
+		for _, subject := range Mentions(page.Body, subjectKeys) {
+			if subject.ID == page.SubjectID {
+				continue
+			}
+			referenced[subject.ID] = true
+		}
+	}
+
+	orphans := make([]Subject, 0, len(subjects))
+	for _, subject := range subjects {
+		if !referenced[subject.ID] {
+			orphans = append(orphans, subject)
+		}
+	}
+	sort.Slice(orphans, func(i, j int) bool {
+		return Path(orphans[i]) < Path(orphans[j])
+	})
+	return orphans, nil
+}
+
 // ClaimsBySubject returns the stored claims for an existing subject.
 func (s *Service) ClaimsBySubject(ctx context.Context, subjectID string) ([]Claim, error) {
 	if s == nil {
@@ -711,6 +760,27 @@ func listAllClaims(ctx context.Context, store *ClaimStore, subjectID string) ([]
 		}
 		params.Cursor = next
 	}
+}
+
+func listAllPages(ctx context.Context, store *PageStore) ([]Page, error) {
+	rows, err := store.db.QueryContext(ctx, `
+		SELECT id, subject_id, title, body
+		FROM pages
+		ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pages []Page
+	for rows.Next() {
+		var page Page
+		if err := rows.Scan(&page.ID, &page.SubjectID, &page.Title, &page.Body); err != nil {
+			return nil, err
+		}
+		pages = append(pages, page)
+	}
+	return pages, rows.Err()
 }
 
 func (s *Service) affectedSubjects(ctx context.Context, subjects *SubjectStore, claims *ClaimStore, jobID string) (map[string]Subject, error) {
