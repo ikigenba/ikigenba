@@ -9,7 +9,9 @@
 // shutdown — is owned by appkit. main.go declares only prompts' identity (the
 // Spec) and wires its domain surface through the Handlers hook: the prompt
 // store, per-prompt sandbox tree, async runner, the boot-time crash-recovery
-// sweep, and the bare MCP surface. RESOURCE_ID / AUTH_SERVER are composed
+// sweep, the bare MCP surface, and the session-gated human landing page (service
+// name + version, Carbon-styled) served ungated in-process at the mount root.
+// RESOURCE_ID / AUTH_SERVER are composed
 // in-binary by appkit/config from IKIGENBA_DOMAIN + MOUNT (was the deleted
 // bin/build run-wrapper's job).
 //
