@@ -1,14 +1,10 @@
 package web
 
 import (
-	"embed"
 	"html/template"
 	"io/fs"
 	"net/http"
 )
-
-//go:embed landing.tmpl static
-var content embed.FS
 
 var landing = template.Must(template.ParseFS(content, "landing.tmpl"))
 
