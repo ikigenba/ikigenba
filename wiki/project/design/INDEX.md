@@ -47,10 +47,12 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D41 → `project/design/D41.md` — A top-left Home link to the dashboard landing page — owns R-HOME-3U5Y
 - D42 → `project/design/D42.md` — Web read surface: foundation (routes, base-href, package shape, seam injection) — owns R-WC29-XALJ, R-WDA6-B2C8, R-WFPZ-2LTM, R-WGXV-GDKB
 - D43 → `project/design/D43.md` — The home / reset page (search box + orphan index + name/version footer) — owns R-OMRY-L9O8, R-ONZU-Z1EX, R-OP7R-CT5M
-- D44 → `project/design/D44.md` — The ask result page (`?q=`) + the `MentionsIn` seam — owns R-ARN9-5YPS, R-ASV5-JQGH, R-AU31-XI76, R-AVAY-B9XV, R-AWIU-P1OK, R-AXQR-2TF9
-- D45 → `project/design/D45.md` — The subject page (`/subject/{type}/{slug}`): prose + outbound/inbound footer, alias-aware, styled 404 — owns R-PH2F-47LB, R-PIAB-HZC0, R-PJI7-VR2P, R-PKQ4-9ITE, R-PLY0-NAK3, R-PN5X-12AS, R-PODT-EU1H
+- D44 → `project/design/D44.md` — The ask result page (`?q=`) + the `MentionsIn` seam — owns R-ARN9-5YPS, R-ASV5-JQGH, R-AU31-XI76, R-AVAY-B9XV, R-AWIU-P1OK, R-AXQR-2TF9, R-NPVU-26CX
+- D45 → `project/design/D45.md` — The subject page (`/subject/{type}/{slug}`): prose + outbound/inbound footer, alias-aware, styled 404 — owns R-PH2F-47LB, R-PIAB-HZC0, R-PJI7-VR2P, R-PKQ4-9ITE, R-PLY0-NAK3, R-PODT-EU1H, R-NONX-OEM8
 - D46 → `project/design/D46.md` — The orphan index: subjects with zero inbound mentions (read-time, single-pass) — owns R-QSR2-AFAD, R-QTYY-O712, R-QV6V-1YRR, R-QWER-FQIG
 - D47 → `project/design/D47.md` — nginx: session-gate the whole human surface (root + `/subject/` + `/static/`) — none (structural; config — proven by a named-fragment check phase)
+- D48 → `project/design/D48.md` — The markdown → sanitized-HTML rendering seam (`internal/markdown`, goldmark + bluemonday) — owns R-SS0J-U7PG, R-ST8G-7ZG5, R-SUGC-LR6U, R-SVO8-ZIXJ, R-SWW5-DAO8, R-SY41-R2EX, R-SZBY-4U5M, R-T0JU-ILWB, R-T1RQ-WDN0, R-T2ZN-A5DP
+- D49 → `project/design/D49.md` — Token-based CSS for the rendered markdown element set (the `.prose` container) — owns R-9EPS-LWWY, R-9FXO-ZONN
 
 ## Verification ids → Decision
 
@@ -126,6 +128,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-8NCU-VUAC → D23 → `project/design/D23.md`
 - R-8OKR-9M11 → D23 → `project/design/D23.md`
 - R-8PSN-NDRQ → D22 → `project/design/D22.md`
+- R-9EPS-LWWY → D49 → `project/design/D49.md`
+- R-9FXO-ZONN → D49 → `project/design/D49.md`
 - R-9OCK-FJK1 → D30 → `project/design/D30.md`
 - R-9PKG-TBAQ → D30 → `project/design/D30.md`
 - R-9QSD-731F → D30 → `project/design/D30.md`
@@ -228,7 +232,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-NKIZ-R385 → D26 → `project/design/D26.md`
 - R-NLQW-4UYU → D26 → `project/design/D26.md`
 - R-NMYS-IMPJ → D26 → `project/design/D26.md`
+- R-NONX-OEM8 → D45 → `project/design/D45.md`
 - R-NPEL-A66X → D26 → `project/design/D26.md`
+- R-NPVU-26CX → D44 → `project/design/D44.md`
 - R-NWE2-CUPE → D37 → `project/design/D37.md`
 - R-ODAP-34N6 → D24 → `project/design/D24.md`
 - R-OEIL-GWDV → D24 → `project/design/D24.md`
@@ -242,7 +248,6 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-PJI7-VR2P → D45 → `project/design/D45.md`
 - R-PKQ4-9ITE → D45 → `project/design/D45.md`
 - R-PLY0-NAK3 → D45 → `project/design/D45.md`
-- R-PN5X-12AS → D45 → `project/design/D45.md`
 - R-PODT-EU1H → D45 → `project/design/D45.md`
 - R-Q8RI-7POG → D33 → `project/design/D33.md`
 - R-Q9ZE-LHF5 → D33 → `project/design/D33.md`
@@ -261,6 +266,16 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-S1BX-HTY3 → D3 → `project/design/D03.md`
 - R-S2JT-VLOS → D3 → `project/design/D03.md`
 - R-SIFE-Z88I → D37 → `project/design/D37.md`
+- R-SS0J-U7PG → D48 → `project/design/D48.md`
+- R-ST8G-7ZG5 → D48 → `project/design/D48.md`
+- R-SUGC-LR6U → D48 → `project/design/D48.md`
+- R-SVO8-ZIXJ → D48 → `project/design/D48.md`
+- R-SWW5-DAO8 → D48 → `project/design/D48.md`
+- R-SY41-R2EX → D48 → `project/design/D48.md`
+- R-SZBY-4U5M → D48 → `project/design/D48.md`
+- R-T0JU-ILWB → D48 → `project/design/D48.md`
+- R-T1RQ-WDN0 → D48 → `project/design/D48.md`
+- R-T2ZN-A5DP → D48 → `project/design/D48.md`
 - R-VNS0-1Z85 → D13 → `project/design/D13.md`
 - R-VOZW-FQYU → D13 → `project/design/D13.md`
 - R-VRFP-7AG8 → D13 → `project/design/D13.md`
