@@ -49,6 +49,30 @@ func TestLandingMarkupLinksEmbeddedTokens(t *testing.T) {
 	}
 }
 
+func TestLandingMarkupIncludesHomeLink(t *testing.T) {
+	res := httptest.NewRecorder()
+	LandingHandler("ledger", "1.2.3").ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := res.Body.String()
+
+	// R-HOME-4M6R
+	for _, want := range []string{
+		`<a class="home" href="/">Home</a>`,
+		".home {",
+		"position: absolute",
+		"top: var(--space-6)",
+		"left: var(--space-6)",
+		".home:hover,",
+		".home:focus-visible",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing markup missing Home link content %q in body: %s", want, body)
+		}
+	}
+	if strings.Contains(body, ">Dashboard</a>") {
+		t.Fatalf("landing markup used Dashboard link text instead of Home: %s", body)
+	}
+}
+
 func TestLandingMarkupAppliesCarbonTypeScale(t *testing.T) {
 	res := httptest.NewRecorder()
 	LandingHandler("ledger", "1.2.3").ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
