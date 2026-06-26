@@ -3,9 +3,9 @@
 The **wiki** service for the ikigenba single-tenant suite — a knowledge base
 (ingest / search / ask-RAG) exposed as **MCP**, deployed at
 `<account>.ikigenba.com/srv/wiki/`. Loopback-only domain service over SQLite
-that serves its MCP surface alongside a session-gated human **landing page**
-(service name + version, Carbon-styled) at the mount root, and runs no token
-logic; nginx (owned by the dashboard) is the trust boundary.
+that serves its MCP surface alongside a session-gated human **read surface** for
+search and subject pages at the mount root, and runs no token logic; nginx
+(owned by the dashboard) is the trust boundary.
 See the repo-root `CLAUDE.md` for the suite-wide picture and the deploy model.
 
 ## Designing / planning / building work — this service has a live build loop
