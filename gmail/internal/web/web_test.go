@@ -19,8 +19,11 @@ func TestLandingHandlerReturnsHTMLStatusAndContentType(t *testing.T) {
 	if got, want := rec.Header().Get("Content-Type"), "text/html; charset=utf-8"; got != want {
 		t.Fatalf("Content-Type = %q, want %q", got, want)
 	}
-	if !strings.Contains(rec.Body.String(), "<h1>gmail is available.</h1>") {
+	if !strings.Contains(rec.Body.String(), `<h1 id="page-title">gmail</h1>`) {
 		t.Fatalf("body did not contain rendered service heading:\n%s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `<dd><code>POST /mcp</code></dd>`) {
+		t.Fatalf("body did not contain MCP API detail:\n%s", rec.Body.String())
 	}
 }
 
@@ -40,14 +43,36 @@ func TestLandingHandlerEscapesServiceAndVersion(t *testing.T) {
 	}
 }
 
+func TestLandingHandlerRendersCanonicalGmailCopy(t *testing.T) {
+	rec := httptest.NewRecorder()
+	LandingHandler("gmail", "v-test").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := rec.Body.String()
+
+	for _, want := range []string{
+		`<title>gmail · gmail</title>`,
+		`<div class="eyebrow">Gmail connector</div>`,
+		`<p>Gmail connects the owner's mailbox to the suite and publishes typed message events to the event plane.</p>`,
+		`<dt>Service</dt>`,
+		`<dd>gmail</dd>`,
+		`<dt>Version</dt>`,
+		`<dd class="version">v-test</dd>`,
+		`<dt>API</dt>`,
+		`<dd><code>POST /mcp</code></dd>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing canonical landing fragment %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestLandingTemplateLinksEmbeddedTokens(t *testing.T) {
 	// R-LAND-7J2N
 	rec := httptest.NewRecorder()
 	LandingHandler("gmail", "v-test").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	body := rec.Body.String()
 
-	if !strings.Contains(body, `href="/srv/gmail/static/tokens.css"`) {
-		t.Fatalf("landing page did not link embedded tokens.css through the service mount:\n%s", body)
+	if !strings.Contains(body, `href="/static/tokens.css"`) {
+		t.Fatalf("landing page did not link embedded tokens.css through the static route:\n%s", body)
 	}
 	if strings.Contains(body, "dashboard") || strings.Contains(body, "http://") || strings.Contains(body, "https://") {
 		t.Fatalf("landing page should not fetch assets from another runtime origin:\n%s", body)
@@ -155,10 +180,10 @@ func TestStaticTokensReferenceVendoredFontsWithoutRemoteOrigins(t *testing.T) {
 	body := rec.Body.String()
 
 	for _, want := range []string{
-		`/srv/gmail/static/fonts/space-grotesk.woff2`,
-		`/srv/gmail/static/fonts/ibm-plex-sans.woff2`,
-		`/srv/gmail/static/fonts/ibm-plex-mono-400.woff2`,
-		`/srv/gmail/static/fonts/ibm-plex-mono-500.woff2`,
+		`/static/fonts/space-grotesk.woff2`,
+		`/static/fonts/ibm-plex-sans.woff2`,
+		`/static/fonts/ibm-plex-mono-400.woff2`,
+		`/static/fonts/ibm-plex-mono-500.woff2`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("tokens.css missing embedded font path %q:\n%s", want, body)
