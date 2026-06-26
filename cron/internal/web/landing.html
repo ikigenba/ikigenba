@@ -41,6 +41,24 @@
       color: var(--color-text-muted);
     }
 
+    .home {
+      position: absolute;
+      top: var(--space-6);
+      left: var(--space-6);
+      font-family: var(--font-mono);
+      font-size: var(--text-label-size);
+      line-height: var(--text-label-lh);
+      font-weight: var(--text-label-weight);
+      text-transform: uppercase;
+      color: var(--color-text-muted);
+      text-decoration: none;
+    }
+
+    .home:hover,
+    .home:focus-visible {
+      color: var(--color-text);
+    }
+
     h1 {
       margin: var(--space-3) 0 0;
       font-family: var(--font-display);
@@ -109,6 +127,7 @@
   </style>
 </head>
 <body>
+  <a class="home" href="/">Home</a>
   <main>
     <section aria-labelledby="page-title">
       <div class="eyebrow">Scheduled event emitter</div>

@@ -54,6 +54,34 @@ func TestLandingHandlerSetsHTMLContentType(t *testing.T) {
 	}
 }
 
+func TestLandingHandlerRendersHomeLinkToApex(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	LandingHandler("cron", "test").ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	// R-HOME-2K4P
+	if !strings.Contains(body, `<a class="home" href="/">Home</a>`) {
+		t.Fatalf("landing body does not contain the home apex link:\n%s", body)
+	}
+	if strings.Index(body, `<a class="home" href="/">Home</a>`) > strings.Index(body, "<main>") {
+		t.Fatalf("home link does not appear before main:\n%s", body)
+	}
+	for _, want := range []string{
+		".home {",
+		"position: absolute;",
+		"top: var(--space-6);",
+		"left: var(--space-6);",
+		".home:hover,",
+		".home:focus-visible",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing body does not contain home style %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestLandingHandlerRejectsNonRootAndNonGetRequests(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
