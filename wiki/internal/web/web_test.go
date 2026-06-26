@@ -63,6 +63,30 @@ func TestLandingHandlerUsesCanonicalWikiLandingCopy(t *testing.T) {
 	}
 }
 
+func TestLandingHandlerRendersDashboardHomeLink(t *testing.T) {
+	// R-HOME-3U5Y
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	LandingHandler("wiki", "v-test")(rec, req)
+
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, body)
+	}
+	for _, want := range []string{
+		`<a class="home" href="/">Home</a>`,
+		`.home {`,
+		`position: absolute;`,
+		`top: var(--space-6);`,
+		`left: var(--space-6);`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestLandingHandlerUsesEmbeddedCarbonAssets(t *testing.T) {
 	// R-LAND-CARB
 	if _, err := fs.Stat(assets, "static/tokens.css"); err != nil {
