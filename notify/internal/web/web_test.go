@@ -28,6 +28,17 @@ func TestLandingHandlerRendersServiceVersionAndHTML(t *testing.T) {
 	if !strings.Contains(body, "<dd>v1.2.3</dd>") {
 		t.Fatalf("body does not render version: %s", body)
 	}
+	for _, want := range []string{
+		`width: min(var(--layout-max-width), calc(100% - var(--space-12)))`,
+		`font-size: var(--text-display-size)`,
+		`font-weight: var(--text-display-weight)`,
+		`font-size: var(--text-label-size)`,
+		`border: var(--border-width) solid var(--color-border)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing body missing Carbon token usage %q: %s", want, body)
+		}
+	}
 }
 
 func TestLandingHandlerEscapesInjectedStrings(t *testing.T) {
