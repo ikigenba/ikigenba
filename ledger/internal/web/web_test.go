@@ -30,7 +30,7 @@ func TestLandingHandlerEscapesServiceAndVersion(t *testing.T) {
 	if !strings.Contains(body, "ledger &lt;service&gt;") {
 		t.Fatalf("rendered body did not contain escaped service name: %s", body)
 	}
-	if !strings.Contains(body, "Version v1&amp;2") {
+	if !strings.Contains(body, ">v1&amp;2<") {
 		t.Fatalf("rendered body did not contain escaped version: %s", body)
 	}
 }
@@ -41,7 +41,7 @@ func TestLandingMarkupLinksEmbeddedTokens(t *testing.T) {
 	body := res.Body.String()
 
 	// R-LAND-7G2H
-	if !strings.Contains(body, `href="/srv/ledger/static/tokens.css"`) {
+	if !strings.Contains(body, `href="/static/tokens.css"`) {
 		t.Fatalf("landing markup does not link embedded tokens.css: %s", body)
 	}
 	if strings.Contains(body, "fonts.googleapis.com") || strings.Contains(body, "dashboard") {
@@ -56,12 +56,13 @@ func TestLandingMarkupAppliesCarbonTypeScale(t *testing.T) {
 
 	// R-LAND-9J4K
 	for _, want := range []string{
-		"width: min(100%, var(--layout-max-width))",
+		"width: min(100% - 32px, 960px)",
 		"font-family: var(--font-display)",
-		"font-size: var(--text-display-size)",
+		"font-size: clamp(40px, 8vw, var(--text-display-size))",
 		"line-height: var(--text-display-lh)",
 		"font-family: var(--font-mono)",
 		"font-size: var(--text-label-size)",
+		"<code>POST /mcp</code>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("landing markup missing Carbon styling %q in body: %s", want, body)
@@ -121,8 +122,8 @@ func TestTokensCSSDefinesSelfHostedFonts(t *testing.T) {
 		"font-family: 'Space Grotesk'",
 		"font-family: 'IBM Plex Sans'",
 		"font-family: 'IBM Plex Mono'",
-		`url("/srv/ledger/static/fonts/space-grotesk.woff2")`,
-		`url("/srv/ledger/static/fonts/ibm-plex-mono-500.woff2")`,
+		`url('/static/fonts/space-grotesk.woff2')`,
+		`url('/static/fonts/ibm-plex-mono-500.woff2')`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("tokens.css missing %q", want)
