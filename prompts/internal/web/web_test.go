@@ -65,6 +65,27 @@ func TestLandingHandlerRendersCanonicalPromptsLanding(t *testing.T) {
 	}
 }
 
+func TestLandingHandlerRendersHomeLinkToDashboardApex(t *testing.T) {
+	// R-HOME-2T4X
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	LandingHandler("prompts", "v15-test")(rec, req)
+
+	body := rec.Body.String()
+	for _, want := range []string{
+		`<a class="home" href="/">Home</a>`,
+		".home {",
+		"position: absolute;",
+		"top: var(--space-6);",
+		"left: var(--space-6);",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestLandingAssetsAreEmbeddedAndServed(t *testing.T) {
 	// R-LAND-CARB
 	if _, err := content.ReadFile("static/tokens.css"); err != nil {
