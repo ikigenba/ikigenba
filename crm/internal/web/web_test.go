@@ -75,6 +75,30 @@ func TestLandingHandlerUsesCanonicalServiceLayout(t *testing.T) {
 	}
 }
 
+func TestLandingHandlerRendersHomeLinkToDashboardApex(t *testing.T) {
+	// R-HOME-3L5Q
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	LandingHandler("crm", "dev").ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	for _, want := range []string{
+		`<a class="home" href="/">Home</a>`,
+		`.home {`,
+		`position: absolute;`,
+		`top: var(--space-6);`,
+		`left: var(--space-6);`,
+		`.home:hover,`,
+		`.home:focus-visible {`,
+		`color: var(--color-text);`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing HTML missing home link content %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestStaticHandlerServesTokensAndFonts(t *testing.T) {
 	// R-ASST-2B8C
 	// R-ASST-4D1E
