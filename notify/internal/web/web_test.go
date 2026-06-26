@@ -200,7 +200,7 @@ func TestTokensCSSUsesEmbeddedNotifyFontURLs(t *testing.T) {
 		"ibm-plex-mono-400.woff2",
 		"ibm-plex-mono-500.woff2",
 	} {
-		want := "/srv/notify/static/fonts/" + font
+		want := "/static/fonts/" + font
 		if !strings.Contains(css, want) {
 			t.Fatalf("tokens.css missing embedded font URL %q", want)
 		}
