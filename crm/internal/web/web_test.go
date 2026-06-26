@@ -25,7 +25,7 @@ func TestLandingHandlerRendersHTMLWithServiceAndVersion(t *testing.T) {
 
 	body := rec.Body.String()
 	if count := strings.Count(body, "crm-test"); count != 3 {
-		t.Fatalf("service name count = %d, want 3 in title, aria label, and heading\n%s", count, body)
+		t.Fatalf("service name count = %d, want 3 in title, heading, and details\n%s", count, body)
 	}
 	if count := strings.Count(body, "v9.8.7"); count != 1 {
 		t.Fatalf("version count = %d, want 1\n%s", count, body)
@@ -51,7 +51,7 @@ func TestLandingHandlerLinksOnlyAppLocalStaticAssets(t *testing.T) {
 	}
 }
 
-func TestLandingHandlerUsesCarbonCardTypographyClasses(t *testing.T) {
+func TestLandingHandlerUsesCanonicalServiceLayout(t *testing.T) {
 	// R-LAND-8P5S
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -59,7 +59,16 @@ func TestLandingHandlerUsesCarbonCardTypographyClasses(t *testing.T) {
 	LandingHandler("crm", "dev").ServeHTTP(rec, req)
 
 	body := rec.Body.String()
-	for _, want := range []string{`class="shell"`, `class="card"`, "<h1>crm</h1>", `class="version"`} {
+	for _, want := range []string{
+		`<main>`,
+		`<section aria-labelledby="page-title">`,
+		`<div class="eyebrow">Contacts CRM</div>`,
+		`<h1 id="page-title">crm</h1>`,
+		`Crm keeps contacts, organizations, and deals in SQLite and publishes typed contact events to the event plane.`,
+		`<dl aria-label="Service details">`,
+		`<dd><code>POST /mcp</code></dd>`,
+		`class="version"`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("landing HTML missing %q:\n%s", want, body)
 		}
@@ -110,12 +119,12 @@ func TestTokensCSSDeclaresEmbeddedFontFaces(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		`@font-face`,
-		`url("/static/fonts/space-grotesk.woff2")`,
-		`url("/static/fonts/ibm-plex-sans.woff2")`,
-		`url("/static/fonts/ibm-plex-mono-400.woff2")`,
-		`url("/static/fonts/ibm-plex-mono-500.woff2")`,
-		`font-family: "Space Grotesk"`,
-		`font-family: "IBM Plex Mono"`,
+		`url('/static/fonts/space-grotesk.woff2')`,
+		`url('/static/fonts/ibm-plex-sans.woff2')`,
+		`url('/static/fonts/ibm-plex-mono-400.woff2')`,
+		`url('/static/fonts/ibm-plex-mono-500.woff2')`,
+		`font-family: 'Space Grotesk'`,
+		`font-family: 'IBM Plex Mono'`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("tokens.css missing %q:\n%s", want, body)
@@ -143,7 +152,7 @@ func TestExactRootRouteDoesNotShadowMCPOrUnknownPaths(t *testing.T) {
 
 	root := httptest.NewRecorder()
 	mux.ServeHTTP(root, httptest.NewRequest(http.MethodGet, "/", nil))
-	if root.Code != http.StatusOK || !strings.Contains(root.Body.String(), "<h1>crm</h1>") {
+	if root.Code != http.StatusOK || !strings.Contains(root.Body.String(), `<h1 id="page-title">crm</h1>`) {
 		t.Fatalf("root did not dispatch landing handler: status=%d body=%q", root.Code, root.Body.String())
 	}
 
@@ -168,7 +177,7 @@ func TestExactRootRouteDoesNotShadowMCPOrUnknownPaths(t *testing.T) {
 			if rec.Code != http.StatusOK || rec.Body.String() != tc.body {
 				t.Fatalf("GET %s = status %d body %q, want stub handler body %q", tc.path, rec.Code, rec.Body.String(), tc.body)
 			}
-			if strings.Contains(rec.Body.String(), "<h1>crm</h1>") {
+			if strings.Contains(rec.Body.String(), `<h1 id="page-title">crm</h1>`) {
 				t.Fatalf("GET %s returned landing page: status=%d body=%q", tc.path, rec.Code, rec.Body.String())
 			}
 		})
@@ -176,7 +185,7 @@ func TestExactRootRouteDoesNotShadowMCPOrUnknownPaths(t *testing.T) {
 
 	nope := httptest.NewRecorder()
 	mux.ServeHTTP(nope, httptest.NewRequest(http.MethodGet, "/nope", nil))
-	if nope.Code == http.StatusOK && strings.Contains(nope.Body.String(), "<h1>crm</h1>") {
+	if nope.Code == http.StatusOK && strings.Contains(nope.Body.String(), `<h1 id="page-title">crm</h1>`) {
 		t.Fatalf("GET /nope returned landing page: status=%d body=%q", nope.Code, nope.Body.String())
 	}
 	if nope.Code != http.StatusNotFound {
