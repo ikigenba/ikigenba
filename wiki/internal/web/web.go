@@ -13,12 +13,15 @@ import (
 	"wiki/internal/ask"
 )
 
-//go:embed layout.tmpl home.tmpl static/tokens.css static/fonts/*.woff2
+//go:embed layout.tmpl home.tmpl subject.tmpl static/tokens.css static/fonts/*.woff2
 var assets embed.FS
 
-var pageTemplates = template.Must(template.ParseFS(assets, "layout.tmpl", "home.tmpl"))
+var (
+	homeTemplates    = template.Must(template.ParseFS(assets, "layout.tmpl", "home.tmpl"))
+	subjectTemplates = template.Must(template.ParseFS(assets, "layout.tmpl", "subject.tmpl"))
+)
 
-var ErrNotFound = errors.New("web: not found")
+var ErrNotFound = errors.New("web: subject not found")
 
 // Asker answers a question for the owner supplied by the front door.
 type Asker interface {
@@ -48,9 +51,11 @@ type Ref struct {
 
 // SubjectView is the rendered public page shape consumed by subject routes.
 type SubjectView struct {
-	Path  string
-	Title string
-	Body  string
+	Path     string
+	Title    string
+	Body     string
+	Outbound []Ref
+	Inbound  []Ref
 }
 
 // Option injects an external dependency seam.
@@ -106,6 +111,7 @@ type pageData struct {
 	Cites    []Ref
 	Mentions []Ref
 	Orphans  []Ref
+	Subject  SubjectView
 }
 
 // NewHandler builds the read-surface mux.
@@ -117,6 +123,7 @@ func NewHandler(service, version, mount string, opts ...Option) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", h.home)
+	mux.HandleFunc("GET /subject/{type}/{slug}", h.subject)
 	mux.Handle("GET /static/", StaticHandler())
 	return mux
 }
@@ -139,7 +146,7 @@ func (h *handler) home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := pageTemplates.ExecuteTemplate(w, "home", pageData{
+	if err := homeTemplates.ExecuteTemplate(w, "home", pageData{
 		Service: h.service,
 		Version: h.version,
 		Mount:   h.mount,
@@ -181,7 +188,7 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, question string) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := pageTemplates.ExecuteTemplate(w, "home", pageData{
+	if err := homeTemplates.ExecuteTemplate(w, "home", pageData{
 		Service:  h.service,
 		Version:  h.version,
 		Mount:    h.mount,
@@ -192,6 +199,45 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, question string) {
 		Mentions: mentions,
 	}); err != nil {
 		http.Error(w, "render ask page", http.StatusInternalServerError)
+	}
+}
+
+func (h *handler) subject(w http.ResponseWriter, r *http.Request) {
+	if h.pages == nil {
+		http.Error(w, "find subject page", http.StatusNotImplemented)
+		return
+	}
+	path := r.PathValue("type") + "/" + r.PathValue("slug")
+	subject, err := h.pages.PageByPath(r.Context(), path)
+	if errors.Is(err, ErrNotFound) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		if renderErr := subjectTemplates.ExecuteTemplate(w, "subject", pageData{
+			Service: h.service,
+			Version: h.version,
+			Mount:   h.mount,
+			Subject: SubjectView{
+				Title: "Subject not found",
+				Body:  "No page exists for this subject.",
+			},
+		}); renderErr != nil {
+			http.Error(w, "render subject page", http.StatusInternalServerError)
+		}
+		return
+	}
+	if err != nil {
+		http.Error(w, "find subject page", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := subjectTemplates.ExecuteTemplate(w, "subject", pageData{
+		Service: h.service,
+		Version: h.version,
+		Mount:   h.mount,
+		Subject: subject,
+	}); err != nil {
+		http.Error(w, "render subject page", http.StatusInternalServerError)
 	}
 }
 

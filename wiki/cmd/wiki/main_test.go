@@ -27,6 +27,7 @@ import (
 	"wiki/internal/llm"
 	"wiki/internal/mcp"
 	paging "wiki/internal/page"
+	"wiki/internal/web"
 	"wiki/internal/wiki"
 )
 
@@ -388,6 +389,71 @@ func TestPathReadServicesResolveFoldedAndSurvivorPathsIdentically(t *testing.T) 
 	}
 	if len(foldedClaims) != 1 || foldedClaims[0].ID != "claim-1" || foldedClaims[0].Text != "Winner Widget shipped the release." {
 		t.Fatalf("folded claims = %#v, want survivor claim projection", foldedClaims)
+	}
+}
+
+func TestSubjectHandlerWithRealPathPageServiceResolvesAliasInboundLinks(t *testing.T) {
+	// R-PODT-EU1H
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subjects := wiki.NewSubjectStore(conn)
+	for _, subject := range []wiki.Subject{
+		{ID: "subject-w", Name: "Giorgio Vasari", Type: "entity"},
+		{ID: "subject-f", Name: "Florence Workshop", Type: "entity"},
+	} {
+		if err := subjects.Save(ctx, subject); err != nil {
+			t.Fatalf("Save subject %s: %v", subject.ID, err)
+		}
+	}
+	if err := wiki.NewAliasStore(conn).Insert(ctx, wiki.Alias{
+		Name:      "Vasari",
+		SubjectID: "subject-w",
+		CreatedBy: "owner@example.com",
+		CreatedAt: "2026-06-24T12:00:00Z",
+	}); err != nil {
+		t.Fatalf("Insert alias: %v", err)
+	}
+	pages := wiki.NewPageStore(conn)
+	for _, page := range []wiki.Page{
+		{ID: "page-w", SubjectID: "subject-w", Title: "Giorgio Vasari", Body: "Giorgio Vasari documented Renaissance artists."},
+		{ID: "page-f", SubjectID: "subject-f", Title: "Florence Workshop", Body: "The workshop cited Vasari in its notes."},
+	} {
+		if err := pages.Upsert(ctx, page); err != nil {
+			t.Fatalf("Upsert page %s: %v", page.ID, err)
+		}
+	}
+
+	pageService := pathPageService{
+		resolver: wiki.NewResolver(conn),
+		service:  wiki.NewService(conn, nil, nil, time.Now),
+	}
+	handler := web.NewHandler("wiki", "v-test", "/srv/wiki/", web.WithPageFinder(pageService))
+	folded := httptest.NewRecorder()
+	handler.ServeHTTP(folded, httptest.NewRequest(http.MethodGet, "/subject/entity/vasari", nil))
+	current := httptest.NewRecorder()
+	handler.ServeHTTP(current, httptest.NewRequest(http.MethodGet, "/subject/entity/giorgio-vasari", nil))
+
+	if folded.Code != http.StatusOK {
+		t.Fatalf("folded status = %d, want 200; body=%s", folded.Code, folded.Body.String())
+	}
+	if current.Code != http.StatusOK {
+		t.Fatalf("current status = %d, want 200; body=%s", current.Code, current.Body.String())
+	}
+	if folded.Body.String() != current.Body.String() {
+		t.Fatalf("folded body differs from current body:\nfolded=%s\ncurrent=%s", folded.Body.String(), current.Body.String())
+	}
+	body := folded.Body.String()
+	for _, want := range []string{
+		"<h1>Giorgio Vasari</h1>",
+		"<p>Giorgio Vasari documented Renaissance artists.</p>",
+		`<nav aria-label="Mentioned by">`,
+		`<a href="subject/entity/florence-workshop">Florence Workshop</a>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("folded subject page missing %q: %s", want, body)
+		}
 	}
 }
 

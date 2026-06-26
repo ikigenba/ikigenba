@@ -47,6 +47,19 @@ func (s *stubMentioner) MentionsIn(_ context.Context, text string) ([]Ref, error
 	return s.refs, nil
 }
 
+type stubPageFinder struct {
+	view   SubjectView
+	err    error
+	called int
+	paths  []string
+}
+
+func (s *stubPageFinder) PageByPath(_ context.Context, path string) (SubjectView, error) {
+	s.called++
+	s.paths = append(s.paths, path)
+	return s.view, s.err
+}
+
 func TestHomeHandlerServesExactRootHTML(t *testing.T) {
 	// R-LAND-PG01
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -355,5 +368,217 @@ func TestHomeHandlerIsAvailableWithoutIdentityHeaders(t *testing.T) {
 	}
 	if req.Header.Get("X-Owner-Email") != "" || req.Header.Get("Authorization") != "" {
 		t.Fatal("test request unexpectedly carried identity or bearer headers")
+	}
+}
+
+func TestSubjectMuxDispatchesOnlyTwoSegmentSubjectPaths(t *testing.T) {
+	// R-WC29-XALJ
+	finder := &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}}
+	mux := NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(finder))
+
+	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid subject status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if finder.called != 1 {
+		t.Fatalf("PageByPath calls after valid subject = %d, want 1", finder.called)
+	}
+
+	for _, path := range []string{"/subject/onlyoneseg", "/mcp", "/health", "/feed", "/static/x"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code == http.StatusOK {
+			t.Fatalf("%s status = 200, want non-OK from mux/static miss", path)
+		}
+	}
+	if finder.called != 1 {
+		t.Fatalf("PageByPath calls after unrelated paths = %d, want still 1", finder.called)
+	}
+}
+
+func TestSubjectHandlerCallsPageFinderWithPublicPathOnce(t *testing.T) {
+	// R-WGXV-GDKB
+	finder := &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}}
+	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	rec := httptest.NewRecorder()
+
+	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if finder.called != 1 || len(finder.paths) != 1 || finder.paths[0] != "entity/acme-corp" {
+		t.Fatalf("PageByPath calls=%d paths=%v, want exactly entity/acme-corp once", finder.called, finder.paths)
+	}
+}
+
+func TestSubjectHandlerRendersTitleAndBody(t *testing.T) {
+	// R-PH2F-47LB
+	finder := &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}}
+	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	rec := httptest.NewRecorder()
+
+	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	for _, want := range []string{"<h1>Acme Corp</h1>", "<p>Acme makes widgets.</p>"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("subject page missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestSubjectHandlerRendersMentionsBeforeMentionedBy(t *testing.T) {
+	// R-PIAB-HZC0
+	finder := &stubPageFinder{view: SubjectView{
+		Title: "Acme Corp",
+		Body:  "Acme makes widgets.",
+		Outbound: []Ref{
+			{Href: "subject/entity/beta", Name: "Beta"},
+		},
+		Inbound: []Ref{
+			{Href: "subject/event/deal-q3", Name: "Deal Q3"},
+		},
+	}}
+	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	rec := httptest.NewRecorder()
+
+	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	mentionsAt := strings.Index(body, `<nav aria-label="Mentions">`)
+	mentionedByAt := strings.Index(body, `<nav aria-label="Mentioned by">`)
+	if mentionsAt < 0 || mentionedByAt < 0 || mentionsAt > mentionedByAt {
+		t.Fatalf("subject page did not render Mentions before Mentioned by: %s", body)
+	}
+	for _, want := range []string{
+		`<a href="subject/entity/beta">Beta</a>`,
+		`<a href="subject/event/deal-q3">Deal Q3</a>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("subject page missing link %q: %s", want, body)
+		}
+	}
+}
+
+func TestSubjectHandlerOmitsEmptyLinkSections(t *testing.T) {
+	// R-PJI7-VR2P
+	for _, tc := range []struct {
+		name           string
+		view           SubjectView
+		forbiddenLabel string
+	}{
+		{
+			name: "outbound only",
+			view: SubjectView{
+				Title:    "Acme Corp",
+				Body:     "Acme makes widgets.",
+				Outbound: []Ref{{Href: "subject/entity/beta", Name: "Beta"}},
+			},
+			forbiddenLabel: `<nav aria-label="Mentioned by">`,
+		},
+		{
+			name: "inbound only",
+			view: SubjectView{
+				Title:   "Acme Corp",
+				Body:    "Acme makes widgets.",
+				Inbound: []Ref{{Href: "subject/event/deal-q3", Name: "Deal Q3"}},
+			},
+			forbiddenLabel: `<nav aria-label="Mentions">`,
+		},
+		{
+			name:           "no links",
+			view:           SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."},
+			forbiddenLabel: `<nav aria-label=`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+			rec := httptest.NewRecorder()
+
+			NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{view: tc.view})).ServeHTTP(rec, req)
+
+			body := rec.Body.String()
+			if !strings.Contains(body, "<p>Acme makes widgets.</p>") {
+				t.Fatalf("subject page missing prose: %s", body)
+			}
+			if strings.Contains(body, tc.forbiddenLabel) {
+				t.Fatalf("subject page rendered forbidden empty section %q: %s", tc.forbiddenLabel, body)
+			}
+		})
+	}
+}
+
+func TestSubjectHandlerLinksAskAnotherQuestionOnFoundAndNotFound(t *testing.T) {
+	// R-PKQ4-9ITE
+	for _, tc := range []struct {
+		name   string
+		finder *stubPageFinder
+	}{
+		{
+			name:   "found",
+			finder: &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}},
+		},
+		{
+			name:   "not found",
+			finder: &stubPageFinder{err: ErrNotFound},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+			rec := httptest.NewRecorder()
+
+			NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(tc.finder)).ServeHTTP(rec, req)
+
+			if !strings.Contains(rec.Body.String(), `<a href="">Ask another question</a>`) {
+				t.Fatalf("subject page missing ask-another link to base: %s", rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestSubjectHandlerRendersNotFoundHTMLShell(t *testing.T) {
+	// R-PLY0-NAK3
+	req := httptest.NewRequest(http.MethodGet, "/subject/entity/missing", nil)
+	rec := httptest.NewRecorder()
+
+	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{err: ErrNotFound})).ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body=%s", rec.Code, body)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
+	}
+	for _, want := range []string{"<!doctype html>", `<base href="/srv/wiki/">`, "Subject not found", "<footer>wiki v-test</footer>"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("not-found page missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "404 page not found") {
+		t.Fatalf("not-found page used plaintext default body: %s", body)
+	}
+}
+
+func TestSubjectHandlerEscapesBodyHTML(t *testing.T) {
+	// R-PN5X-12AS
+	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	rec := httptest.NewRecorder()
+
+	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{
+		view: SubjectView{Title: "Acme Corp", Body: "<script>x</script>"},
+	})).ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "&lt;script&gt;x&lt;/script&gt;") {
+		t.Fatalf("subject page missing escaped script body: %s", body)
+	}
+	if strings.Contains(body, "<script>x</script>") {
+		t.Fatalf("subject page rendered raw script body: %s", body)
 	}
 }

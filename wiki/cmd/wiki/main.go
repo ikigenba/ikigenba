@@ -93,9 +93,15 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 			cfg.CallSites.AskSubject,
 			cfg.CallSites.AskSynthesis,
 		)
-		pageService := pathPageService{
+		webPageService := pathPageService{
 			resolver: wiki.NewResolver(read),
 			service:  svc,
+		}
+		pageService := pathPageService{
+			resolver:     wiki.NewResolver(read),
+			service:      svc,
+			renderFooter: true,
+			notFound:     sql.ErrNoRows,
 		}
 		subjectService := publicSubjectService{
 			subjects: wiki.NewSubjectStore(read),
@@ -113,7 +119,7 @@ func buildSpec(cfg wiki.Config) appkit.Spec {
 			web.WithOrphanLister(orphanAdapter{svc: svc}),
 			web.WithAsker(asker),
 			web.WithMentioner(mentionAdapter{svc: svc}),
-			web.WithPageFinder(pageService),
+			web.WithPageFinder(webPageService),
 		))
 		rt.Handle("POST /mcp", rt.RequireIdentity(
 			mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
@@ -383,28 +389,56 @@ func (s publicStatusService) JobStatus(ctx context.Context, jobID string) (publi
 }
 
 type pathPageService struct {
-	resolver *wiki.Resolver
-	service  *wiki.Service
+	resolver     *wiki.Resolver
+	service      *wiki.Service
+	renderFooter bool
+	notFound     error
 }
 
 func (s pathPageService) PageByPath(ctx context.Context, path string) (web.SubjectView, error) {
 	subject, err := s.resolver.ResolveByPath(ctx, path)
 	if errors.Is(err, wiki.ErrSubjectNotFound) {
-		return web.SubjectView{}, sql.ErrNoRows
+		return web.SubjectView{}, s.notFoundErr()
 	}
 	if err != nil {
 		return web.SubjectView{}, err
 	}
 	page, err := s.service.PageWithLinks(ctx, subject.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return web.SubjectView{}, s.notFoundErr()
+	}
 	if err != nil {
 		return web.SubjectView{}, err
 	}
-	page.Body = wiki.RenderFooter(page.Body, page.Mentions, page.MentionedBy)
+	body := page.Body
+	if s.renderFooter {
+		body = wiki.RenderFooter(body, page.Mentions, page.MentionedBy)
+	}
 	return web.SubjectView{
-		Path:  wiki.Path(subject),
-		Title: page.Title,
-		Body:  page.Body,
+		Path:     wiki.Path(subject),
+		Title:    page.Title,
+		Body:     body,
+		Outbound: webRefs(page.Mentions),
+		Inbound:  webRefs(page.MentionedBy),
 	}, nil
+}
+
+func (s pathPageService) notFoundErr() error {
+	if s.notFound != nil {
+		return s.notFound
+	}
+	return web.ErrNotFound
+}
+
+func webRefs(refs []wiki.Ref) []web.Ref {
+	out := make([]web.Ref, 0, len(refs))
+	for _, ref := range refs {
+		out = append(out, web.Ref{
+			Href: "subject/" + ref.Path,
+			Name: ref.Name,
+		})
+	}
+	return out
 }
 
 func buildCompiler(cfg wiki.Config, c *llm.Client) *compile.Compiler {
