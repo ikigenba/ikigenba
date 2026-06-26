@@ -42,9 +42,15 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D36 → `project/design/D36.md` — Preparing the question: one analysis call — owns R-QB7A-Z95U, R-QCF7-D0WJ, R-QDN3-QSN8
 - D37 → `project/design/D37.md` — Wire the recording embedder at the composition root (close the D34 gap) — owns R-LFOY-L6TZ, R-SIFE-Z88I, R-JEC4-3M6O, R-NWE2-CUPE
 - D38 → `project/design/D38.md` — Keep the meaning lane consistent across a merge (close the D35 merge gap) — owns R-MRG8-K2WP, R-LP5Q-9XTD, R-EV2H-6RKN, R-FM7A-D0SZ, R-WS3C-J4QB
-- D39 → `project/design/D39.md` — The landing page: a session-gated human web surface (`GET /{$}`) — owns R-LAND-PG01, R-LAND-NMVR, R-LAND-CARB, R-LAND-ROOT, R-LAND-UNGT
+- D39 → `project/design/D39.md` — The human web surface: gating, embedded assets, and the exact-root mount — owns R-LAND-PG01, R-LAND-NMVR, R-LAND-CARB, R-LAND-ROOT, R-LAND-UNGT
 - D40 → `project/design/D40.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
 - D41 → `project/design/D41.md` — A top-left Home link to the dashboard landing page — owns R-HOME-3U5Y
+- D42 → `project/design/D42.md` — Web read surface: foundation (routes, base-href, package shape, seam injection) — owns R-WC29-XALJ, R-WDA6-B2C8, R-WFPZ-2LTM, R-WGXV-GDKB
+- D43 → `project/design/D43.md` — The home / reset page (search box + orphan index + name/version footer) — owns R-OMRY-L9O8, R-ONZU-Z1EX, R-OP7R-CT5M
+- D44 → `project/design/D44.md` — The ask result page (`?q=`) + the `MentionsIn` seam — owns R-ARN9-5YPS, R-ASV5-JQGH, R-AU31-XI76, R-AVAY-B9XV, R-AWIU-P1OK, R-AXQR-2TF9
+- D45 → `project/design/D45.md` — The subject page (`/subject/{type}/{slug}`): prose + outbound/inbound footer, alias-aware, styled 404 — owns R-PH2F-47LB, R-PIAB-HZC0, R-PJI7-VR2P, R-PKQ4-9ITE, R-PLY0-NAK3, R-PN5X-12AS, R-PODT-EU1H
+- D46 → `project/design/D46.md` — The orphan index: subjects with zero inbound mentions (read-time, single-pass) — owns R-QSR2-AFAD, R-QTYY-O712, R-QV6V-1YRR, R-QWER-FQIG
+- D47 → `project/design/D47.md` — nginx: session-gate the whole human surface (root + `/subject/` + `/static/`) — none (structural; config — proven by a named-fragment check phase)
 
 ## Verification ids → Decision
 
@@ -128,6 +134,12 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-AG2Y-PH8L → D29 → `project/design/D29.md`
 - R-AH3Z-PJ9M → D29 → `project/design/D29.md`
 - R-AL5R-PL1P → D29 → `project/design/D29.md`
+- R-ARN9-5YPS → D44 → `project/design/D44.md`
+- R-ASV5-JQGH → D44 → `project/design/D44.md`
+- R-AU31-XI76 → D44 → `project/design/D44.md`
+- R-AVAY-B9XV → D44 → `project/design/D44.md`
+- R-AWIU-P1OK → D44 → `project/design/D44.md`
+- R-AXQR-2TF9 → D44 → `project/design/D44.md`
 - R-BAFW-D24P → D9 → `project/design/D09.md`
 - R-BBNS-QTVE → D9 → `project/design/D09.md`
 - R-BCVP-4LM3 → D9 → `project/design/D09.md`
@@ -173,6 +185,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-GIY9-26PA → D19 → `project/design/D19.md`
 - R-GK65-FYFZ → D19 → `project/design/D19.md`
 - R-GLE1-TQ6O → D19 → `project/design/D19.md`
+- R-HOME-3U5Y → D41 → `project/design/D41.md`
 - R-HUDR-AWS9 → D26 → `project/design/D26.md`
 - R-J8QP-BETB → D5 → `project/design/D05.md`
 - R-J9YL-P6K0 → D5 → `project/design/D05.md`
@@ -221,11 +234,25 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-OEIL-GWDV → D24 → `project/design/D24.md`
 - R-OFQH-UO4K → D24 → `project/design/D24.md`
 - R-OGYE-8FV9 → D24 → `project/design/D24.md`
+- R-OMRY-L9O8 → D43 → `project/design/D43.md`
+- R-ONZU-Z1EX → D43 → `project/design/D43.md`
+- R-OP7R-CT5M → D43 → `project/design/D43.md`
+- R-PH2F-47LB → D45 → `project/design/D45.md`
+- R-PIAB-HZC0 → D45 → `project/design/D45.md`
+- R-PJI7-VR2P → D45 → `project/design/D45.md`
+- R-PKQ4-9ITE → D45 → `project/design/D45.md`
+- R-PLY0-NAK3 → D45 → `project/design/D45.md`
+- R-PN5X-12AS → D45 → `project/design/D45.md`
+- R-PODT-EU1H → D45 → `project/design/D45.md`
 - R-Q8RI-7POG → D33 → `project/design/D33.md`
 - R-Q9ZE-LHF5 → D33 → `project/design/D33.md`
 - R-QB7A-Z95U → D36 → `project/design/D36.md`
 - R-QCF7-D0WJ → D36 → `project/design/D36.md`
 - R-QDN3-QSN8 → D36 → `project/design/D36.md`
+- R-QSR2-AFAD → D46 → `project/design/D46.md`
+- R-QTYY-O712 → D46 → `project/design/D46.md`
+- R-QV6V-1YRR → D46 → `project/design/D46.md`
+- R-QWER-FQIG → D46 → `project/design/D46.md`
 - R-RU0J-77HX → D3 → `project/design/D03.md`
 - R-RV8F-KZ8M → D3 → `project/design/D03.md`
 - R-RXO8-CIQ0 → D3 → `project/design/D03.md`
@@ -247,6 +274,10 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-W19T-38SB → D6 → `project/design/D06.md`
 - R-W26F-5PSP → D20 → `project/design/D20.md`
 - R-W2HP-H0J0 → D6 → `project/design/D06.md`
+- R-WC29-XALJ → D42 → `project/design/D42.md`
+- R-WDA6-B2C8 → D42 → `project/design/D42.md`
+- R-WFPZ-2LTM → D42 → `project/design/D42.md`
+- R-WGXV-GDKB → D42 → `project/design/D42.md`
 - R-WS3C-J4QB → D38 → `project/design/D38.md`
 - R-XJBY-H8JZ → D6 → `project/design/D06.md`
 - R-XKJU-V0AO → D6 → `project/design/D06.md`
@@ -268,4 +299,3 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ZWT5-F303 → D12 → `project/design/D12.md`
 - R-ZY11-SUQS → D12 → `project/design/D12.md`
 - R-ZZ8Y-6MHH → D12 → `project/design/D12.md`
-- R-HOME-3U5Y → D41 → `project/design/D41.md`
