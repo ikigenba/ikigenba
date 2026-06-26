@@ -30,6 +30,28 @@ func TestLandingHandlerRendersServiceVersionAndContentType(t *testing.T) {
 	}
 }
 
+func TestLandingHandlerRendersTopLeftHomeLink(t *testing.T) {
+	rec := httptest.NewRecorder()
+	LandingHandler("dropbox", "home-test").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := rec.Body.String()
+
+	// R-HOME-6P8T
+	if !strings.Contains(body, `<a class="home" href="/">Home</a>`) {
+		t.Fatalf("body does not contain dashboard apex Home link: %q", body)
+	}
+	for _, want := range []string{
+		".home {",
+		"position: absolute;",
+		"top: var(--space-6);",
+		"left: var(--space-6);",
+		".home:hover,\n    .home:focus-visible {",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body does not contain home link style %q: %q", want, body)
+		}
+	}
+}
+
 func TestExactRootRouteDispatchesWithoutShadowingSiblings(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("GET /{$}", LandingHandler("dropbox", "1.2.3"))
