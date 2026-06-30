@@ -18,6 +18,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D10 | project/design/D10.md | The landing page: a session-gated human web surface (`GET /{$}`) | R-LAND-PG01, R-LAND-NMVR, R-LAND-CARB, R-LAND-ROOT, R-LAND-UNGT |
 | D11 | project/design/D11.md | Conform the landing page to the cron canonical template | none — structural |
 | D12 | project/design/D12.md | A top-left Home link to the dashboard landing page | R-HOME-2T4X |
+| D13 | project/design/D13.md | Self-serve the landing page's fonts and eliminate the FOUT | R-DFKP-IVZU, R-DGSL-WNQJ, R-DI0I-AFH8, R-DJ8E-O77X, R-DKGB-1YYM |
 
 ## Verification ids → Decision
 
@@ -47,3 +48,8 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-LAND-ROOT | D10 | project/design/D10.md |
 | R-LAND-UNGT | D10 | project/design/D10.md |
 | R-HOME-2T4X | D12 | project/design/D12.md |
+| R-DFKP-IVZU | D13 | project/design/D13.md |
+| R-DGSL-WNQJ | D13 | project/design/D13.md |
+| R-DI0I-AFH8 | D13 | project/design/D13.md |
+| R-DJ8E-O77X | D13 | project/design/D13.md |
+| R-DKGB-1YYM | D13 | project/design/D13.md |

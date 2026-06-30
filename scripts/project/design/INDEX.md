@@ -11,6 +11,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D5 → `project/design/D05.md` — Docs state current truth: state the landing-page surface in scripts's doctrine — none (structural; docs-only)
 - D6 → `project/design/D06.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-8R2V
+- D8 → `project/design/D08.md` — Self-serve the landing page's fonts and eliminate the FOUT (relative stylesheet link + `font-display: optional` + self-served `src` + `<head>` preload + session-gated nginx `/srv/scripts/static/`) — owns R-M59W-5CAW, R-M6HS-J41L, R-M8XL-ANIZ, R-MA5H-OF9O, R-MBDE-270D
 
 ## Verification ids → Decision
 
@@ -21,6 +22,11 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-LAND-3T9H → D1 → `project/design/D01.md`
 - R-LAND-7Q3D → D1 → `project/design/D01.md`
 - R-LAND-9R5F → D1 → `project/design/D01.md`
+- R-M59W-5CAW → D8 → `project/design/D08.md`
+- R-M6HS-J41L → D8 → `project/design/D08.md`
+- R-M8XL-ANIZ → D8 → `project/design/D08.md`
+- R-MA5H-OF9O → D8 → `project/design/D08.md`
+- R-MBDE-270D → D8 → `project/design/D08.md`
 - R-NGNX-2A5Q → D4 → `project/design/D04.md`
 - R-NGNX-4B7R → D4 → `project/design/D04.md`
 - R-NGNX-6C9S → D4 → `project/design/D04.md`

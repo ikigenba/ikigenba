@@ -13,3 +13,4 @@ Phase 02 ✅ realizes D4 — nginx fragment: add the exact-match session-gated `
 Phase 03 ✅ realizes D5 — purge the stale "no UI" line from `dropbox/CLAUDE.md` and state the landing-page truth (structural; docs-only)
 Phase 04 ✅ realizes D6 — conform the landing page (markup + tokens) to the cron canonical template; per-service data only (eyebrow + description + title); structural content check
 Phase 05 ✅ realizes D7 — add the top-left Home link to the dashboard landing page; covers R-HOME-6P8T
+Phase 06 ⬜ realizes D8 — self-serve the landing fonts and eliminate the FOUT: relativize the `tokens.css` link, `font-display: swap`→`optional` + self-served `src` in tokens.css, preload display+body fonts with `crossorigin`, and add the session-gated nginx `location /srv/dropbox/static/`; covers R-LQXL-095Q, R-LS5H-E0WF, R-LTDD-RSN4, R-LULA-5KDT, R-LVT6-JC4I

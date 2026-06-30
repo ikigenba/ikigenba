@@ -11,6 +11,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D5 → `project/design/D05.md` — Docs state current truth: purge the stale "no UI" line — none (structural; docs-only)
 - D6 → `project/design/D06.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-4M6R
+- D8 → `project/design/D08.md` — Self-serve the landing page's fonts and eliminate the FOUT (relative stylesheet link + `font-display: optional` + self-served `src` + `<head>` preload + session-gated nginx `/srv/ledger/static/`) — owns R-7AW0-4QF8, R-7DBS-W9WM, R-7EJP-A1NB, R-7FRL-NTE0, R-7GZI-1L4P
 
 ## Verification ids → Decision
 
@@ -28,4 +29,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-2M6N → D2 → `project/design/D02.md`
 - R-ROUT-4P8Q → D2 → `project/design/D02.md`
 - R-ROUT-6R1S → D2 → `project/design/D02.md`
+- R-7AW0-4QF8 → D8 → `project/design/D08.md`
+- R-7DBS-W9WM → D8 → `project/design/D08.md`
+- R-7EJP-A1NB → D8 → `project/design/D08.md`
+- R-7FRL-NTE0 → D8 → `project/design/D08.md`
+- R-7GZI-1L4P → D8 → `project/design/D08.md`
 - R-HOME-4M6R → D7 → `project/design/D07.md`

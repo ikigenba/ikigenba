@@ -14,3 +14,4 @@ Phase 03 ✅ realizes D4 — move OAuth grant management (live block + SSE + rev
 Phase 04 ✅ realizes D5 — landing composition: link each service name to `/srv/<svc>/`, link the owner email to `/profile`, keep sign-out and install instructions on the landing
 Phase 05 ✅ realizes D6 — purge the stale "single hybrid page / don't split" rule from `dashboard/AGENTS.md` and state the three-page truth
 Phase 06 ⬜ realizes D7 — login composition: keep the control-plane tagline + sign-in CTA verbatim and add a name-origin colophon below the CTA on the logged-out `/` that explains the ikigenba portmanteau as a name + its two subcomponents (ikigai, genba)
+Phase 07 ⬜ realizes D8 — eliminate the web-font FOUT: switch the four @font-face blocks in tokens.css to font-display: optional and preload the display + body fonts (crossorigin) in both head-bearing templates (index.html, profile.html); apex src already origin-correct; covers R-P97M-GIJ1, R-PAFI-UA9Q, R-PBNF-820F

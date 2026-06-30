@@ -53,6 +53,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D47 → `project/design/D47.md` — nginx: session-gate the whole human surface (root + `/subject/` + `/static/`) — none (structural; config — proven by a named-fragment check phase)
 - D48 → `project/design/D48.md` — The markdown → sanitized-HTML rendering seam (`internal/markdown`, goldmark + bluemonday) — owns R-SS0J-U7PG, R-ST8G-7ZG5, R-SUGC-LR6U, R-SVO8-ZIXJ, R-SWW5-DAO8, R-SY41-R2EX, R-SZBY-4U5M, R-T0JU-ILWB, R-T1RQ-WDN0, R-T2ZN-A5DP
 - D49 → `project/design/D49.md` — Token-based CSS for the rendered markdown element set (the `.prose` container) — owns R-9EPS-LWWY, R-9FXO-ZONN
+- D50 → `project/design/D50.md` — Eliminate the web-font FOUT (`font-display: optional` + self-served fonts + `<head>` preload) — owns R-KFVF-EMEO, R-KH3B-SE5D, R-KIB8-65W2, R-KJJ4-JXMR
 
 ## Verification ids → Decision
 
@@ -197,6 +198,10 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-JDMA-UHS3 → D5 → `project/design/D05.md`
 - R-JEC4-3M6O → D37 → `project/design/D37.md`
 - R-JEU7-89IS → D5 → `project/design/D05.md`
+- R-KFVF-EMEO → D50 → `project/design/D50.md`
+- R-KH3B-SE5D → D50 → `project/design/D50.md`
+- R-KIB8-65W2 → D50 → `project/design/D50.md`
+- R-KJJ4-JXMR → D50 → `project/design/D50.md`
 - R-LAND-CARB → D39 → `project/design/D39.md`
 - R-LAND-NMVR → D39 → `project/design/D39.md`
 - R-LAND-PG01 → D39 → `project/design/D39.md`

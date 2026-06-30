@@ -10,6 +10,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/cron/` location — owns R-NGNX-3B6C, R-NGNX-5D8E, R-NGNX-7F1G, R-NGNX-9H3J
 - D5 → `project/design/D05.md` — Docs state current truth: state the landing-page truth in cron's doctrine — none (structural; docs-only)
 - D6 → `project/design/D06.md` — A top-left Home link to the dashboard landing page — owns R-HOME-2K4P
+- D7 → `project/design/D07.md` — Self-serve the landing page's fonts and eliminate the FOUT (relative stylesheet link + `font-display: optional` + self-served `src` + `<head>` preload + session-gated nginx `/srv/cron/static/`) — owns R-21DE-LOX3, R-22LA-ZGNS, R-23T7-D8EH, R-2513-R056, R-2690-4RVV
 
 ## Verification ids → Decision
 
@@ -27,4 +28,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-2P8Q → D2 → `project/design/D02.md`
 - R-ROUT-4R1S → D2 → `project/design/D02.md`
 - R-ROUT-6T3U → D2 → `project/design/D02.md`
+- R-21DE-LOX3 → D7 → `project/design/D07.md`
+- R-22LA-ZGNS → D7 → `project/design/D07.md`
+- R-23T7-D8EH → D7 → `project/design/D07.md`
+- R-2513-R056 → D7 → `project/design/D07.md`
+- R-2690-4RVV → D7 → `project/design/D07.md`
 - R-HOME-2K4P → D6 → `project/design/D06.md`
