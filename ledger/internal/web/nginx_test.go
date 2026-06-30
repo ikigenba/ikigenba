@@ -84,3 +84,33 @@ func TestNginxFragmentRetainsBearerAndBootstrapLocations(t *testing.T) {
 		t.Fatalf("PRM bootstrap location missing expected proxy_pass: %s", prm)
 	}
 }
+
+func TestNginxStaticLocationIsSessionGated(t *testing.T) {
+	conf := readNginxFragment(t)
+
+	landing := nginxLocationBlock(t, conf, "location = /srv/ledger/")
+	static := nginxLocationBlock(t, conf, "location /srv/ledger/static/")
+	prefix := nginxLocationBlock(t, conf, "location /srv/ledger/")
+	reemit := nginxLocationBlock(t, conf, "location @ledger_authn_500")
+	prm := nginxLocationBlock(t, conf, "location = /srv/ledger/.well-known/oauth-protected-resource")
+
+	// R-7GZI-1L4P
+	if !strings.Contains(static, "auth_request /_session-authn;") {
+		t.Fatalf("static location missing session auth_request: %s", static)
+	}
+	if !strings.Contains(static, "proxy_pass http://127.0.0.1:__PORT__/static/;") {
+		t.Fatalf("static location missing upstream static proxy_pass: %s", static)
+	}
+	if !strings.Contains(landing, "proxy_pass http://127.0.0.1:__PORT__/;") {
+		t.Fatalf("exact landing location changed: %s", landing)
+	}
+	if !strings.Contains(prefix, "auth_request /_authn;") {
+		t.Fatalf("bearer prefix location changed: %s", prefix)
+	}
+	if !strings.Contains(prm, "proxy_pass http://127.0.0.1:__PORT__/.well-known/oauth-protected-resource;") {
+		t.Fatalf("PRM bootstrap location changed: %s", prm)
+	}
+	if !strings.Contains(reemit, "return 429;") || !strings.Contains(reemit, "return 500;") {
+		t.Fatalf("authn 500 re-emit location changed: %s", reemit)
+	}
+}
