@@ -611,6 +611,7 @@ func TestRestoreReplacesStateByteForByteAndClearsCacheGeneration(t *testing.T) {
 
 func TestRestoreRecreatesCacheAsEmptyDirectory(t *testing.T) {
 	// R-WP3M-PO1V
+	// R-XXXX-XXXX
 	root := t.TempDir()
 	l := NewLayout(root, "ledger")
 	writeStateFile(t, l, "ledger.db", "old")
