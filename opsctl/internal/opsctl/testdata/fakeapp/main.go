@@ -53,7 +53,7 @@ func main() {
 	case "migrate":
 		// Idempotent like the real appkit runner: only write when there are pending
 		// (higher-numbered) migrations. A no-op migrate must NOT touch the DB file,
-		// so a no-schema-change deploy leaves data/<app>.db byte- and mtime-identical.
+		// so a no-schema-change deploy leaves state/<app>.db byte- and mtime-identical.
 		if embedded() > appliedVersion(app) {
 			writeDB(app, embedded())
 		}

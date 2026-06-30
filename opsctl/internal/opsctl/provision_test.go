@@ -344,7 +344,7 @@ func TestSetup_PathRoutedService(t *testing.T) {
 // tree, setup must create the SEPARATE world-readable www/ tree (working/,
 // public/, private/, and the www/ root) at mode 0755 and
 // `chown -R sites:sites` the www root, so nginx (www-data) can traverse+read it
-// (the stock data/ is 0750 and untraversable). The WWWDirs are derived per-app
+// (the stock state/ is 0750 and untraversable). The WWWDirs are derived per-app
 // via WWWDirsFor, so `opsctl setup sites` provisions them with no operator flag.
 func TestSetup_WWWTree(t *testing.T) {
 	// R-4LKF-FB23

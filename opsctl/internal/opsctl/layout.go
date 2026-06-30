@@ -111,7 +111,7 @@ func (l Layout) GenerationPath() string {
 }
 
 // WWWDir is /opt/<app>/state/www — the SEPARATE world-readable static tree the sites
-// service serves from (default SITES_ROOT). Unlike data/ (0750), this whole
+// service serves from (default SITES_ROOT). Unlike state/ (0750), this whole
 // subtree is 0755 owned by <app>:<app> so nginx (www-data) can traverse+read it.
 // Only apps that opt in (sites) get this tree; setup creates none otherwise.
 func (l Layout) WWWDir() string { return filepath.Join(l.StateDir(), "www") }

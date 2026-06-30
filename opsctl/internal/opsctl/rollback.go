@@ -22,7 +22,7 @@ import (
 //  3. atomic swap bin/run → the target binary.
 //  4. restart + is-active.
 //
-// data/<app>.db is touched only by the explicit restore in step 2 (PLAN §2.7).
+// state/<app>.db is touched only by the explicit restore in step 2 (PLAN §2.7).
 func (o *Opsctl) Rollback(ctx context.Context, app, target string) error {
 	if app == "" {
 		return fmt.Errorf("rollback: app is required")

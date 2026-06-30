@@ -390,7 +390,7 @@ func TestStampDataPaths(t *testing.T) {
 // migrate, run as root, creates a fresh DB owned root:root, which the unit's
 // dedicated <app> user cannot write — crash-loop). The chown must request the
 // bare app name as BOTH owner and group (matching setup's EnsureSystemUser) and
-// target the data dir, on every install. The stub records (never executes) the
+// target the state dir, on every install. The stub records (never executes) the
 // op, so no real system path is chowned under the temp OPSCTL_ROOT.
 func TestInstall_ChownsStateDirToAppUser(t *testing.T) {
 	root := t.TempDir()

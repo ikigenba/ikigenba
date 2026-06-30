@@ -60,7 +60,7 @@ type System interface {
 	// no-op when the user is already absent (a partially-torn-down box).
 	DeleteSystemUser(ctx context.Context, app string) error
 	// ChownTree recursively chowns path to owner:group (the box runs `chown -R
-	// <owner>:<group> <path>`). install uses it to hand the data dir back to the
+	// <owner>:<group> <path>`). install uses it to hand the state dir back to the
 	// `<app>` service user after the root-run migrate, which would otherwise leave
 	// a freshly-created DB (+ -wal/-shm + generation file) owned root:root and
 	// crash-loop the unit (the service user cannot take a write lock). Idempotent.

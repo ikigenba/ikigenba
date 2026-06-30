@@ -13,7 +13,7 @@ const apexApp = "dashboard"
 
 // TeardownOptions parameterises `opsctl teardown <app>` — the inverse of Setup.
 // It cleanly decommissions a path-routed service from the box, undoing setup's
-// four provisioning steps in REVERSE order. The DB under /opt/<app>/data is
+// four provisioning steps in REVERSE order. The DB under /opt/<app>/state is
 // discarded with the rest of the tree (teardown is a removal, not a backup).
 type TeardownOptions struct {
 	App      string // service name (== systemd unit / fragment basename / app user)
@@ -97,7 +97,7 @@ func (o *Opsctl) Teardown(ctx context.Context, opts TeardownOptions) error {
 	}
 
 	// 4. Remove the /opt/<app> tree (inverse of setup step 2). The DB lives under
-	//    data/ and is discarded with the tree — a teardown abandons the service's
+	//    state/ and is discarded with the tree — a teardown abandons the service's
 	//    state by design (PLAN §3: box migration uses a fresh DB).
 	o.logf("remove /opt/%s tree", app)
 	if err := os.RemoveAll(l.AppDir()); err != nil {

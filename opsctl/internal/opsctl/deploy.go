@@ -16,7 +16,7 @@ import (
 //  2. SHA collision guard against any already-placed libexec/<app>-<version>.
 //  3. place the artifact into libexec/<app>-<version>.
 //
-// The stable etc/manifest.env and the live `current` symlink are NEVER touched by
+// The stable etc/manifest.env and the live `bin/run` symlink are NEVER touched by
 // stage — those change only at Deploy (the cutover), so a staged-but-not-deployed
 // release is invisible to the running unit and the dashboard's manifest derivation.
 //
@@ -102,15 +102,15 @@ func (o *Opsctl) Stage(ctx context.Context, app, version, artifact string, force
 //
 //  3. regenerate etc/manifest.env via `<new binary> manifest` (the STABLE path the
 //     dashboard derivation + bin/registry read).
-//  4. back up data/<app>.db IF the schema will advance (applied < embedded), keyed
+//  4. back up state/<app>.db IF the schema will advance (applied < embedded), keyed
 //     by <version> so the matching rollback can restore it.
 //  5. migrate (forward-only).
-//  6. chown the data tree back to the <app> service user.
+//  6. chown the state tree back to the <app> service user.
 //  7. atomic swap bin/run → libexec/<app>-<version>.
 //  8. restart the unit + is-active, then prune old releases.
 //
 // It refuses early if the release was never staged (libexec/<app>-<version> is
-// absent) so the manifest/schema/migrate execs never fail opaquely. data/<app>.db
+// absent) so the manifest/schema/migrate execs never fail opaquely. state/<app>.db
 // is NEVER overwritten — only read/migrated/snapshotted (PLAN §2.7). bin/run and
 // etc/manifest.env stay valid throughout (PLAN §2.6).
 func (o *Opsctl) Deploy(ctx context.Context, app, version string) error {
@@ -137,7 +137,7 @@ func (o *Opsctl) Deploy(ctx context.Context, app, version string) error {
 	//    serving process's env (AGENTS.md "Service layer"), but it never sets the
 	//    on-box <APP>_DB_PATH/<APP>_GENERATION_PATH — so the serving binary would
 	//    otherwise fall back to the relative dev default and miss the real DB at
-	//    data/<app>.db. opsctl is the on-box authority that owns the absolute /opt
+	//    state/<app>.db. opsctl is the on-box authority that owns the absolute /opt
 	//    paths (it already injects them for its own migrate/schema/backup verbs via
 	//    dbEnv), so it stamps them into the stable manifest here. Idempotent: the
 	//    keys are only appended if the binary's own manifest did not already carry
@@ -179,7 +179,7 @@ func (o *Opsctl) Deploy(ctx context.Context, app, version string) error {
 	}
 
 	// 5. Migrate (forward-only). Idempotent: applies only unapplied higher versions.
-	//    Ensure data/ exists so the app can create data/<app>.db on first migrate
+	//    Ensure state/ exists so the app can create state/<app>.db on first migrate
 	//    (setup creates this tree on the box; deploy self-heals it). Creating the
 	//    directory never touches an existing DB file (PLAN §2.7).
 	if err := os.MkdirAll(l.StateDir(), 0o755); err != nil {
@@ -196,7 +196,7 @@ func (o *Opsctl) Deploy(ctx context.Context, app, version string) error {
 	// EnsureSystemUser → `useradd --system <app>`, which also makes the matching
 	// `<app>` group), so a root-owned DB leaves the service unable to take a write
 	// lock — e.g. crm's event-plane outbox single-writer probe (`BEGIN IMMEDIATE`)
-	// fails and the unit crash-loops. Hand the whole data tree back to <app>:<app>
+	// fails and the unit crash-loops. Hand the whole state tree back to <app>:<app>
 	// before the swap/restart. Unconditional + idempotent on every deploy: it also
 	// reclaims root-owned -wal/-shm files migrate may create against an EXISTING DB.
 	// The user/group is the bare app name to match setup exactly (EnsureSystemUser).
@@ -234,7 +234,7 @@ func (o *Opsctl) Deploy(ctx context.Context, app, version string) error {
 // stampDataPaths ensures the regenerated manifest carries the absolute on-box
 // state paths the SERVING process needs (<APP>_DB_PATH, <APP>_GENERATION_PATH).
 // ikigenba-launch exports every manifest key into the app's env, so stamping
-// them here is what points `<app> serve` at data/<app>.db instead of appkit's
+// them here is what points `<app> serve` at state/<app>.db instead of appkit's
 // relative dev default. A key already present in the binary's own manifest output
 // is left untouched (the binary wins); missing keys are appended. The result
 // always ends with exactly one trailing newline.

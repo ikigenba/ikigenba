@@ -6,8 +6,8 @@ import (
 	"os"
 )
 
-// Releases lists an app's on-box release history — releases/<version>/ ascending
-// by semantic version — marking which one is live (`current` points at it) and
+// Releases lists an app's on-box release history — libexec/<app>-<version> ascending
+// by semantic version — marking which one is live (`bin/run` points at it) and
 // which is its immediate predecessor (the default rollback target). It is
 // read-only.
 //
