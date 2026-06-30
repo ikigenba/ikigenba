@@ -11,7 +11,7 @@ We deploy to **`int.ikigenba.com`** (the first and only account, `int`). Your
 the right key, so `ssh int` and the deploy scripts connect with the correct
 identity automatically — no `-i` flag needed.
 
-Deploy ships one static binary into a versioned release dir — **not** `git push`
+Deploy ships one static binary into a versioned `libexec/` slot — **not** `git push`
 and **not** an in-place overwrite. Run **both `bin/bump` and `bin/ship` from the
 standing `main` worktree** (`git worktree list` shows it — do not hard-code the
 path; the repo has been renamed before). `bin/ship` builds that worktree's HEAD,
@@ -41,7 +41,7 @@ since what's live. Two facts make this checkable:
 
 > ⚠️ **If the code changed but the VERSION did not, you MUST `bin/bump` before
 > staging.** Releases are immutable: `opsctl stage` will refuse to overwrite an
-> existing `releases/<ver>/` with a different binary (the SHA-collision guard).
+> existing `libexec/<app>-<ver>` with a different binary (the SHA-collision guard).
 > Bump first, then ship the new version.
 
 Skip apps whose only diff is docs (`project/`, `*.md`) or a transitive-only
@@ -75,11 +75,11 @@ Apps with no `bin/secrets` (crm, ledger, cron, scripts, sites) need no seeding.
    to the box `/tmp`, then **prints the two box commands and stops** — it makes
    no other change on the box.
 3. **`ssh int sudo opsctl stage <app> v<ver> --artifact /tmp/<app>-v<ver>`** —
-   preflight + SHA-collision guard, place the binary into `releases/<ver>/`, and
+   preflight + SHA-collision guard, place the binary into `libexec/<app>-<ver>`, and
    delete the `/tmp` artifact on success. Stages a release without making it live.
 4. **`ssh int sudo opsctl deploy <app> v<ver>`** — regenerate `etc/manifest.env`
    from the new binary, back up the DB if the schema advances, `migrate`, atomic
-   swap `current`, restart the unit, and prune old releases.
+   swap `bin/run`, restart the unit, and prune old releases.
 
 **Order across apps:** deploy the **services first and the dashboard last**. The
 dashboard re-derives its authorization-server resources from *every* service

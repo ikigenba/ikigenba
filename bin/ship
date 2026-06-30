@@ -24,8 +24,8 @@
 #   2. Add a throwaway detached `git worktree` of HEAD and read the version core
 #      FROM THE WORKTREE'S <app>/VERSION (the actual build source), then append
 #      +<sha> build metadata for the built commit.
-#   3. EARLY EXISTENCE CHECK: ssh `test -e /opt/<app>/releases/v<ver>+<sha>` — if the
-#      release already exists on the box, refuse unless --force. This runs AFTER
+#   3. EARLY EXISTENCE CHECK: ssh `test -e /opt/<app>/libexec/<app>-v<ver>+<sha>` — if
+#      the binary already exists on the box, refuse unless --force. This runs AFTER
 #      the cheap worktree add + VERSION read but BEFORE the expensive compile, so
 #      a forgotten bin/bump fails before the build.
 #   4. Build CURRENT main (HEAD) inside the worktree's <app>/ dir (PLAN §4 dec 4)
@@ -71,7 +71,7 @@ stops.
 
 Flags:
   -h, --help   show this help.
-  --force      ship even if /opt/<app>/releases/v<ver> already exists on the box
+  --force      ship even if /opt/<app>/libexec/<app>-v<ver> already exists on the box
                (otherwise ship refuses, so a forgotten bin/bump fails early).
   --dry-run    do the full off-box build (produce the artifact) but PRINT the
                existence-check / scp commands instead of running them.
@@ -83,7 +83,7 @@ Environment:
 What it does:
   source <app>/etc/deploy.env
   -> add a throwaway detached `git worktree` of HEAD, read v<X.Y.Z> from its <app>/VERSION
-  -> early existence check: ssh test -e /opt/<app>/releases/v<X.Y.Z>+<sha> (refuse unless --force)
+  -> early existence check: ssh test -e /opt/<app>/libexec/<app>-v<X.Y.Z>+<sha> (refuse unless --force)
   -> build CURRENT main (HEAD) in the worktree
      (CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off -trimpath -buildvcs=false,
       ldflags -X appkit.version=v<X.Y.Z>+<sha>)
@@ -195,24 +195,24 @@ ARTIFACT="${LIBEXEC_DIR}/${APP}-${FULL_VERSION}"
 echo ">> ${APP}: release ${FULL_VERSION}"
 
 # --- early existence check (cheap, BEFORE the expensive compile) ------------
-# Refuse if /opt/<app>/releases/v<ver> already exists on the box, unless --force.
+# Refuse if /opt/<app>/libexec/<app>-v<ver> already exists on the box, unless --force.
 # This catches a forgotten `bin/bump` (re-shipping an already-present version)
 # before paying for the build. It runs after the cheap worktree add + VERSION
 # read (which is where <ver> comes from) but before the compile. ec2-user can
-# `test -e` /opt/<app>/releases at 0755; fall back to `sudo test -e` if not.
-REMOTE_RELEASE="/opt/${APP}/releases/${FULL_VERSION}"
+# `test -e` /opt/<app>/libexec at 0755; fall back to `sudo test -e` if not.
+REMOTE_BINARY="/opt/${APP}/libexec/${APP}-${FULL_VERSION}"
 EXISTS_CMD=(ssh -i "$SSH_KEY" "${SSH_USER}@${HOST}"
-  "test -e ${REMOTE_RELEASE} || sudo test -e ${REMOTE_RELEASE}")
+  "test -e ${REMOTE_BINARY} || sudo test -e ${REMOTE_BINARY}")
 
 if [ "$DRY_RUN" = "1" ]; then
   echo ">> DRY RUN — not checking the box. The existence check would run:"
   echo "   ${EXISTS_CMD[*]}"
 elif [ "$FORCE" = "1" ]; then
-  echo ">> --force: skipping the box existence check for ${REMOTE_RELEASE}"
+  echo ">> --force: skipping the box existence check for ${REMOTE_BINARY}"
 else
-  echo ">> checking the box: ${REMOTE_RELEASE} must not already exist"
+  echo ">> checking the box: ${REMOTE_BINARY} must not already exist"
   if "${EXISTS_CMD[@]}" 2>/dev/null; then
-    echo "!! ${REMOTE_RELEASE} already exists on ${HOST} — did you forget 'bin/bump ${APP}'?" >&2
+    echo "!! ${REMOTE_BINARY} already exists on ${HOST} — did you forget 'bin/bump ${APP}'?" >&2
     echo "!! re-ship this exact version with --force (the box stage's collision guard still applies)." >&2
     exit 1
   fi
