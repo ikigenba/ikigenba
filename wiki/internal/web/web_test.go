@@ -60,6 +60,28 @@ func (s *stubPageFinder) PageByPath(_ context.Context, path string) (SubjectView
 	return s.view, s.err
 }
 
+func readAsset(t *testing.T, name string) string {
+	t.Helper()
+
+	b, err := fs.ReadFile(assets, name)
+	if err != nil {
+		t.Fatalf("read embedded asset %s: %v", name, err)
+	}
+	return string(b)
+}
+
+func readSurfaceBody(t *testing.T, path string, opts ...Option) string {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rec := httptest.NewRecorder()
+	NewHandler("wiki", "v-test", "/srv/wiki/", opts...).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s status = %d, want 200; body=%s", path, rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
+}
+
 func TestHomeHandlerServesExactRootHTML(t *testing.T) {
 	// R-LAND-PG01
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -358,13 +380,6 @@ func TestHomeHandlerUsesEmbeddedCarbonAssets(t *testing.T) {
 	if _, err := fs.Stat(assets, "static/tokens.css"); err != nil {
 		t.Fatalf("embedded tokens.css missing: %v", err)
 	}
-	fonts, err := fs.Glob(assets, "static/fonts/*.woff2")
-	if err != nil {
-		t.Fatalf("glob fonts: %v", err)
-	}
-	if len(fonts) == 0 {
-		t.Fatal("embedded woff2 fonts missing")
-	}
 
 	pageReq := httptest.NewRequest(http.MethodGet, "/", nil)
 	pageRec := httptest.NewRecorder()
@@ -385,6 +400,84 @@ func TestHomeHandlerUsesEmbeddedCarbonAssets(t *testing.T) {
 	}
 	if !strings.Contains(cssRec.Body.String(), "--color-accent") {
 		t.Fatalf("tokens.css does not contain Carbon token: %s", cssRec.Body.String())
+	}
+}
+
+func TestTokensCSSDoesNotDeclareWebFonts(t *testing.T) {
+	// R-KFVF-EMEO
+	css := readAsset(t, "static/tokens.css")
+
+	for _, forbidden := range []string{"@font-face", "url(", ".woff2", "static/fonts"} {
+		if strings.Contains(css, forbidden) {
+			t.Fatalf("tokens.css contains web-font fetch surface %q: %s", forbidden, css)
+		}
+	}
+}
+
+func TestTokensCSSUsesSystemFontAliases(t *testing.T) {
+	// R-KH3B-SE5D
+	css := readAsset(t, "static/tokens.css")
+
+	for _, want := range []string{
+		`--font-display: system-ui, -apple-system`,
+		`--font-body:    system-ui, -apple-system`,
+		`--font-mono:    ui-monospace`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("tokens.css missing system font alias %q: %s", want, css)
+		}
+	}
+	for _, forbidden := range []string{"Space Grotesk", "IBM Plex Sans", "IBM Plex Mono"} {
+		if strings.Contains(css, forbidden) {
+			t.Fatalf("tokens.css still names vendored font family %q: %s", forbidden, css)
+		}
+	}
+}
+
+func TestReadLayoutDoesNotEmitFontResourceHints(t *testing.T) {
+	// R-KIB8-65W2
+	body := readSurfaceBody(t, "/")
+
+	if got := strings.Count(body, `href="static/tokens.css"`); got != 1 {
+		t.Fatalf("tokens.css link count = %d, want 1; body=%s", got, body)
+	}
+	for _, forbidden := range []string{`rel="preload"`, `rel="preconnect"`, `as="font"`, "static/fonts", ".woff2"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("read layout contains font resource hint/reference %q: %s", forbidden, body)
+		}
+	}
+}
+
+func TestReadSurfacesUseSystemFontFallbacks(t *testing.T) {
+	// R-KJJ4-JXMR
+	bodies := map[string]string{
+		"home": readSurfaceBody(t, "/"),
+		"ask": readSurfaceBody(t, "/?q=widgets", WithAsker(&stubAsker{answer: ask.Answer{
+			Found: true,
+			Text:  "Acme makes widgets.",
+		}})),
+		"subject": readSurfaceBody(t, "/subject/entity/acme-corp", WithPageFinder(&stubPageFinder{
+			view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."},
+		})),
+	}
+
+	for name, body := range bodies {
+		for _, want := range []string{
+			`--read-font-body: system-ui, -apple-system`,
+			`--read-font-mono: ui-monospace`,
+			`font-family: var(--font-body, var(--read-font-body))`,
+			`font-family: var(--font-display, var(--read-font-body))`,
+			`font-family: var(--font-mono, var(--read-font-mono))`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s read surface missing system fallback %q: %s", name, want, body)
+			}
+		}
+		for _, forbidden := range []string{"Space Grotesk", "IBM Plex Sans", "IBM Plex Mono", "static/fonts", ".woff2"} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("%s read surface contains vendored font reference %q: %s", name, forbidden, body)
+			}
+		}
 	}
 }
 
