@@ -142,17 +142,55 @@ func TestStaticTokensCSSServedWithCSSContentType(t *testing.T) {
 }
 
 func TestLandingReferencesOnlyLocalStaticAssets(t *testing.T) {
-	// R-ASST-5L2V — rendered HTML references notify's own /static/ asset path and no cross-service/dashboard URL.
+	// R-ASST-5L2V — rendered HTML references notify's own static asset path and no cross-service/dashboard URL.
+	// R-8M7T-A9VB — GET / renders the stylesheet document-relative, not origin-absolute.
 	rec := httptest.NewRecorder()
 	LandingHandler("notify", "v1.2.3").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	body := rec.Body.String()
-	if !strings.Contains(body, "/static/tokens.css") {
-		t.Fatalf("landing body does not reference its own /static/ asset path: %s", body)
+	if !strings.Contains(body, `href="static/tokens.css"`) {
+		t.Fatalf("landing body does not reference its own document-relative static asset path: %s", body)
+	}
+	if strings.Contains(body, `href="/static/tokens.css"`) {
+		t.Fatalf("landing body references origin-absolute static asset path: %s", body)
 	}
 	for _, forbidden := range []string{"http://", "https://", "dashboard"} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("landing body references a cross-service/external asset URL %q: %s", forbidden, body)
+		}
+	}
+}
+
+func TestLandingPreloadsAboveTheFoldFonts(t *testing.T) {
+	// R-8NFP-O1M0 — GET / preloads above-the-fold fonts with document-relative hrefs matching @font-face src targets.
+	rec := httptest.NewRecorder()
+	LandingHandler("notify", "v1.2.3").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	body := rec.Body.String()
+	headEnd := strings.Index(body, "</head>")
+	if headEnd < 0 {
+		t.Fatalf("landing body missing </head>: %s", body)
+	}
+	head := body[:headEnd]
+	for _, font := range []string{"space-grotesk.woff2", "ibm-plex-sans.woff2"} {
+		want := `<link rel="preload" as="font" type="font/woff2" crossorigin
+        href="static/fonts/` + font + `">`
+		if !strings.Contains(head, want) {
+			t.Fatalf("landing head missing preload %q:\n%s", want, head)
+		}
+		if strings.Contains(head, `href="/static/fonts/`+font+`"`) {
+			t.Fatalf("landing head preloads %s with origin-absolute href:\n%s", font, head)
+		}
+	}
+
+	b, err := staticFiles.ReadFile("static/tokens.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(b)
+	for _, font := range []string{"space-grotesk.woff2", "ibm-plex-sans.woff2"} {
+		if !strings.Contains(css, `url('fonts/`+font+`')`) {
+			t.Fatalf("tokens.css missing @font-face src target for preloaded font %s", font)
 		}
 	}
 }
@@ -214,22 +252,46 @@ func TestStaticHandlerRejectsNonStaticPathsAndMethods(t *testing.T) {
 	}
 }
 
-func TestTokensCSSUsesEmbeddedNotifyFontURLs(t *testing.T) {
-	b, err := staticFiles.ReadFile("static/tokens.css")
-	if err != nil {
-		t.Fatal(err)
+func servedTokensCSS(t *testing.T) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	StaticHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /static/tokens.css status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	css := string(b)
+	return rec.Body.String()
+}
+
+func TestTokensCSSUsesEmbeddedNotifyFontURLs(t *testing.T) {
+	// R-8KZW-WI4M — served tokens.css uses document-relative embedded font URLs, never origin-absolute /static/fonts URLs.
+	css := servedTokensCSS(t)
+	if strings.Contains(css, "url('/static/fonts/") {
+		t.Fatalf("tokens.css contains origin-absolute static font URL: %s", css)
+	}
 	for _, font := range []string{
 		"space-grotesk.woff2",
 		"ibm-plex-sans.woff2",
 		"ibm-plex-mono-400.woff2",
 		"ibm-plex-mono-500.woff2",
 	} {
-		want := "/static/fonts/" + font
+		want := "url('fonts/" + font + "')"
 		if !strings.Contains(css, want) {
 			t.Fatalf("tokens.css missing embedded font URL %q", want)
 		}
+	}
+}
+
+func TestTokensCSSUsesOptionalFontDisplay(t *testing.T) {
+	// R-8JS0-IQDX — every @font-face block in served tokens.css uses optional display and no block uses swap.
+	css := servedTokensCSS(t)
+	if strings.Contains(css, "font-display: swap") {
+		t.Fatalf("tokens.css still contains font-display: swap: %s", css)
+	}
+	if got := strings.Count(css, "font-display: optional"); got != 4 {
+		t.Fatalf("font-display: optional count = %d, want 4", got)
+	}
+	if got := strings.Count(css, "@font-face"); got != 4 {
+		t.Fatalf("@font-face block count = %d, want 4", got)
 	}
 }
 

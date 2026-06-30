@@ -19,10 +19,9 @@ func readFragment(t *testing.T) string {
 	return string(b)
 }
 
-// exactMatchBlock returns the body of the exact-match `location = /srv/notify/ {`
-// block (up to its closing brace at column 0), or "" if absent.
-func exactMatchBlock(frag string) string {
-	const marker = "location = /srv/notify/ {"
+// locationBlock returns the body of a location block (up to its closing brace at
+// column 0), or "" if absent.
+func locationBlock(frag, marker string) string {
 	i := strings.Index(frag, marker)
 	if i < 0 {
 		return ""
@@ -32,6 +31,10 @@ func exactMatchBlock(frag string) string {
 		return rest[:end]
 	}
 	return rest
+}
+
+func exactMatchBlock(frag string) string {
+	return locationBlock(frag, "location = /srv/notify/ {")
 }
 
 func TestNginxHasExactMatchLandingLocation(t *testing.T) {
@@ -89,5 +92,35 @@ func TestNginxPreExistingLocationsSurvive(t *testing.T) {
 	}
 	if !strings.Contains(frag, "location = /srv/notify/.well-known/oauth-protected-resource {") {
 		t.Error("PRM bootstrap location missing")
+	}
+}
+
+func TestNginxSessionGatesStaticAssets(t *testing.T) {
+	// R-8ONM-1TCP — static assets are session-gated while existing landing, bearer, PRM, and rate-limit locations remain.
+	frag := readFragment(t)
+	block := locationBlock(frag, "location /srv/notify/static/ {")
+	if block == "" {
+		t.Fatal("static asset `location /srv/notify/static/ {` block not found")
+	}
+	for _, want := range []string{
+		"auth_request /_session-authn;",
+		"proxy_pass http://127.0.0.1:__PORT__/static/;",
+		"proxy_set_header Host $host;",
+		"proxy_set_header X-Forwarded-Proto $scheme;",
+		"proxy_http_version 1.1;",
+	} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("static asset block missing %q:\n%s", want, block)
+		}
+	}
+	for _, want := range []string{
+		"location = /srv/notify/ {",
+		"location /srv/notify/ {",
+		"location = /srv/notify/.well-known/oauth-protected-resource {",
+		"location @notify_authn_500 {",
+	} {
+		if !strings.Contains(frag, want) {
+			t.Fatalf("pre-existing nginx location %q missing", want)
+		}
 	}
 }
