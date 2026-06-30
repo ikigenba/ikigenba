@@ -64,6 +64,35 @@ func TestNginxPreExistingLocationsRemain(t *testing.T) {
 	}
 }
 
+func TestNginxStaticLocationUsesSessionAuthAndEmbeddedStaticUpstream(t *testing.T) {
+	conf := readNginxConfig(t)
+	static := nginxLocationBlock(t, conf, "location /srv/dropbox/static/ {")
+
+	// R-LVT6-JC4I
+	for _, want := range []string{
+		"auth_request /_session-authn;",
+		"proxy_pass http://127.0.0.1:__PORT__/static/;",
+		"proxy_set_header Host $host;",
+		"proxy_set_header X-Forwarded-Proto $scheme;",
+		"proxy_http_version 1.1;",
+	} {
+		if !strings.Contains(static, want) {
+			t.Fatalf("static location missing %q:\n%s", want, static)
+		}
+	}
+	for _, want := range []string{
+		"location = /srv/dropbox/ {",
+		"location /srv/dropbox/ {",
+		"location = /srv/dropbox/content {\n    return 404;\n}",
+		"location = /srv/dropbox/.well-known/oauth-protected-resource {",
+		"location @dropbox_authn_500 {",
+	} {
+		if !strings.Contains(conf, want) {
+			t.Fatalf("nginx config missing pre-existing location %q", want)
+		}
+	}
+}
+
 func readNginxConfig(t *testing.T) string {
 	t.Helper()
 

@@ -98,7 +98,7 @@ func TestStaticHandlerServesTokensCSS(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "text/css; charset=utf-8" {
 		t.Fatalf("GET /static/tokens.css returned status %d Content-Type %q", rec.Code, rec.Header().Get("Content-Type"))
 	}
-	if !strings.Contains(body, `url('/static/fonts/space-grotesk.woff2')`) {
+	if !strings.Contains(body, `url('fonts/space-grotesk.woff2')`) {
 		t.Fatalf("tokens.css does not point at embedded service font path: %q", body)
 	}
 	for _, want := range []string{
@@ -121,11 +121,96 @@ func TestLandingHTMLReferencesOwnEmbeddedStaticPath(t *testing.T) {
 	body := rec.Body.String()
 
 	// R-ASST-5K8L
-	if !strings.Contains(body, `/static/tokens.css`) {
+	if !strings.Contains(body, `static/tokens.css`) {
 		t.Fatalf("landing HTML does not reference embedded static path: %q", body)
 	}
 	if strings.Contains(body, "/srv/") || strings.Contains(body, "dashboard") || strings.Contains(body, "://") {
 		t.Fatalf("landing HTML references a cross-service or remote asset URL: %q", body)
+	}
+}
+
+func TestTokensCSSUsesOptionalFontDisplay(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("GET /static/", StaticHandler())
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil))
+	body := rec.Body.String()
+
+	// R-LQXL-095Q
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /static/tokens.css returned status %d", rec.Code)
+	}
+	if strings.Contains(body, "font-display: swap") {
+		t.Fatalf("tokens.css still contains font-display: swap: %q", body)
+	}
+	if got := strings.Count(body, "font-display: optional;"); got != strings.Count(body, "@font-face") || got != 4 {
+		t.Fatalf("tokens.css has %d optional font-display declarations for %d @font-face blocks, want 4 each:\n%s", got, strings.Count(body, "@font-face"), body)
+	}
+}
+
+func TestTokensCSSUsesDocumentRelativeFontURLs(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("GET /static/", StaticHandler())
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil))
+	body := rec.Body.String()
+
+	// R-LS5H-E0WF
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /static/tokens.css returned status %d", rec.Code)
+	}
+	if strings.Contains(body, `url('/static/fonts/`) {
+		t.Fatalf("tokens.css still contains origin-absolute font URLs: %q", body)
+	}
+	for _, want := range []string{
+		`url('fonts/space-grotesk.woff2')`,
+		`url('fonts/ibm-plex-sans.woff2')`,
+		`url('fonts/ibm-plex-mono-400.woff2')`,
+		`url('fonts/ibm-plex-mono-500.woff2')`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("tokens.css missing document-relative font URL %q in: %q", want, body)
+		}
+	}
+}
+
+func TestLandingHTMLUsesDocumentRelativeStylesheet(t *testing.T) {
+	rec := httptest.NewRecorder()
+	LandingHandler("dropbox", "asset-test").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := rec.Body.String()
+
+	// R-LTDD-RSN4
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / returned status %d", rec.Code)
+	}
+	if !strings.Contains(body, `href="static/tokens.css"`) {
+		t.Fatalf("landing HTML missing document-relative stylesheet href: %q", body)
+	}
+	if strings.Contains(body, `href="/static/tokens.css"`) {
+		t.Fatalf("landing HTML still contains origin-absolute stylesheet href: %q", body)
+	}
+}
+
+func TestLandingHTMLPreloadsDocumentRelativeFonts(t *testing.T) {
+	rec := httptest.NewRecorder()
+	LandingHandler("dropbox", "asset-test").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := rec.Body.String()
+	head := htmlHead(t, body)
+
+	// R-LULA-5KDT
+	for _, font := range []string{
+		"space-grotesk.woff2",
+		"ibm-plex-sans.woff2",
+	} {
+		want := `<link rel="preload" as="font" type="font/woff2" crossorigin href="static/fonts/` + font + `">`
+		if !strings.Contains(head, want) {
+			t.Fatalf("landing HTML head missing font preload %q in: %q", want, head)
+		}
+		if strings.Contains(head, `href="/static/fonts/`+font+`"`) {
+			t.Fatalf("landing HTML head contains origin-absolute preload href for %s: %q", font, head)
+		}
 	}
 }
 
@@ -150,4 +235,15 @@ func TestStaticHandlerServesEmbeddedFonts(t *testing.T) {
 			t.Fatalf("GET %s returned an empty body", font)
 		}
 	}
+}
+
+func htmlHead(t *testing.T, body string) string {
+	t.Helper()
+
+	start := strings.Index(body, "<head>")
+	end := strings.Index(body, "</head>")
+	if start < 0 || end < 0 || end < start {
+		t.Fatalf("landing HTML does not contain a complete head: %q", body)
+	}
+	return body[start : end+len("</head>")]
 }
