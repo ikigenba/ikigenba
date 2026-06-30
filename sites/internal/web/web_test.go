@@ -146,6 +146,10 @@ func TestLandingHTMLPreloadsSelfHostedFonts(t *testing.T) {
 	body := rec.Body.String()
 	head := htmlHead(t, body)
 
+	static := httptest.NewRecorder()
+	StaticHandler().ServeHTTP(static, httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil))
+	css := static.Body.String()
+
 	// R-65XE-DFW8
 	for _, font := range []string{
 		"space-grotesk.woff2",
@@ -158,6 +162,9 @@ func TestLandingHTMLPreloadsSelfHostedFonts(t *testing.T) {
 		}
 		if strings.Contains(head, `href="/static/fonts/`+font+`"`) {
 			t.Fatalf("landing HTML head references origin-absolute preload for %s in: %q", font, head)
+		}
+		if !strings.Contains(css, `url('fonts/`+font+`')`) {
+			t.Fatalf("tokens.css does not contain matching @font-face source for %s in: %q", font, css)
 		}
 	}
 }
