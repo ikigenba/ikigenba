@@ -58,6 +58,41 @@ func TestNginxExistingServiceLocationsSurvive(t *testing.T) {
 	}
 }
 
+func TestNginxStaticLocationIsSessionGatedAndProxiesStaticHandler(t *testing.T) {
+	conf := readNginxConfig(t)
+	block := nginxLocationBlock(t, conf, "location /srv/crm/static/ {")
+
+	// R-SWNU-U5QA
+	for _, want := range []string{
+		"auth_request /_session-authn;",
+		"proxy_pass http://127.0.0.1:__PORT__/static/;",
+		"proxy_set_header Host $host;",
+		"proxy_set_header X-Forwarded-Proto $scheme;",
+		"proxy_http_version 1.1;",
+	} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("static location missing %q:\n%s", want, block)
+		}
+	}
+	if strings.Contains(block, "auth_request /_authn;") {
+		t.Fatalf("static location is bearer-gated instead of session-gated:\n%s", block)
+	}
+
+	if landing := nginxLocationBlock(t, conf, "location = /srv/crm/ {"); !strings.Contains(landing, "auth_request /_session-authn;") {
+		t.Fatalf("landing exact location changed unexpectedly:\n%s", landing)
+	}
+	if prefix := nginxLocationBlock(t, conf, "location /srv/crm/ {"); !strings.Contains(prefix, "auth_request /_authn;") {
+		t.Fatalf("bearer prefix location changed unexpectedly:\n%s", prefix)
+	}
+	if !strings.Contains(conf, "location = /srv/crm/feed { return 404; }") {
+		t.Fatalf("feed denial location changed unexpectedly:\n%s", conf)
+	}
+	prm := nginxLocationBlock(t, conf, "location = /srv/crm/.well-known/oauth-protected-resource {")
+	if strings.Contains(prm, "auth_request") {
+		t.Fatalf("PRM bootstrap location changed unexpectedly:\n%s", prm)
+	}
+}
+
 func readNginxConfig(t *testing.T) string {
 	t.Helper()
 	src, err := os.ReadFile("../../etc/nginx.conf")

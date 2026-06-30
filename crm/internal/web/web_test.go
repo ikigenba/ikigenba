@@ -35,18 +35,42 @@ func TestLandingHandlerRendersHTMLWithServiceAndVersion(t *testing.T) {
 func TestLandingHandlerLinksOnlyAppLocalStaticAssets(t *testing.T) {
 	// R-LAND-4M9Q
 	// R-LAND-6N3R
+	// R-SU82-2M8W
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
 	LandingHandler("crm", "dev").ServeHTTP(rec, req)
 
 	body := rec.Body.String()
-	if !strings.Contains(body, `href="/static/tokens.css"`) {
+	if !strings.Contains(body, `href="static/tokens.css"`) {
 		t.Fatalf("landing HTML did not link local tokens.css:\n%s", body)
 	}
-	for _, forbidden := range []string{"dashboard", "/srv/dashboard", "https://", "http://"} {
+	for _, forbidden := range []string{`href="/static/tokens.css"`, "dashboard", "/srv/dashboard", "https://", "http://"} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("landing HTML contains forbidden cross-service asset reference %q:\n%s", forbidden, body)
+		}
+	}
+}
+
+func TestLandingHandlerPreloadsSelfServedFontFiles(t *testing.T) {
+	// R-SVFY-GDZL
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	LandingHandler("crm", "dev").ServeHTTP(rec, req)
+
+	head := htmlHead(t, rec.Body.String())
+	for _, font := range []string{"space-grotesk.woff2", "ibm-plex-sans.woff2"} {
+		preload := `<link rel="preload" as="font" type="font/woff2" crossorigin href="static/fonts/` + font + `">`
+		if !strings.Contains(head, preload) {
+			t.Fatalf("landing head missing font preload %q:\n%s", preload, head)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil)
+		rec := httptest.NewRecorder()
+		StaticHandler().ServeHTTP(rec, req)
+		if !strings.Contains(rec.Body.String(), `url('fonts/`+font+`')`) {
+			t.Fatalf("tokens.css does not use matching self-served URL for %s:\n%s", font, rec.Body.String())
 		}
 	}
 }
@@ -135,6 +159,7 @@ func TestStaticHandlerServesTokensAndFonts(t *testing.T) {
 
 func TestTokensCSSDeclaresEmbeddedFontFaces(t *testing.T) {
 	// R-ASST-6F3G
+	// R-ST05-OUI7
 	req := httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil)
 	rec := httptest.NewRecorder()
 
@@ -143,16 +168,35 @@ func TestTokensCSSDeclaresEmbeddedFontFaces(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		`@font-face`,
-		`url('/static/fonts/space-grotesk.woff2')`,
-		`url('/static/fonts/ibm-plex-sans.woff2')`,
-		`url('/static/fonts/ibm-plex-mono-400.woff2')`,
-		`url('/static/fonts/ibm-plex-mono-500.woff2')`,
+		`url('fonts/space-grotesk.woff2')`,
+		`url('fonts/ibm-plex-sans.woff2')`,
+		`url('fonts/ibm-plex-mono-400.woff2')`,
+		`url('fonts/ibm-plex-mono-500.woff2')`,
 		`font-family: 'Space Grotesk'`,
 		`font-family: 'IBM Plex Mono'`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("tokens.css missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, `url('/static/fonts/`) {
+		t.Fatalf("tokens.css still contains origin-absolute font URL:\n%s", body)
+	}
+}
+
+func TestTokensCSSUsesOptionalFontDisplayForEveryFontFace(t *testing.T) {
+	// R-SRS9-B2RI
+	req := httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil)
+	rec := httptest.NewRecorder()
+
+	StaticHandler().ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if strings.Contains(body, "font-display: swap") {
+		t.Fatalf("tokens.css still contains font-display swap:\n%s", body)
+	}
+	if faces, optional := strings.Count(body, "@font-face"), strings.Count(body, "font-display: optional"); optional != faces {
+		t.Fatalf("font-display optional count = %d, want one for each of %d @font-face blocks:\n%s", optional, faces, body)
 	}
 }
 
@@ -251,4 +295,17 @@ func lineContaining(t *testing.T, text, needle string) string {
 	}
 	t.Fatalf("no line contains %q", needle)
 	return ""
+}
+
+func htmlHead(t *testing.T, body string) string {
+	t.Helper()
+	start := strings.Index(body, "<head>")
+	if start == -1 {
+		t.Fatalf("HTML missing head opener:\n%s", body)
+	}
+	end := strings.Index(body[start:], "</head>")
+	if end == -1 {
+		t.Fatalf("HTML missing head closer:\n%s", body)
+	}
+	return body[start : start+end+len("</head>")]
 }
