@@ -1,13 +1,12 @@
 # Suite on-box layout, versioning & backup/restore — Design
 
 **Authority: shape and its proof.** This directory owns *how* the on-box install
-tree, the versioned-binary deploy mechanism, the SemVer 2.0 version contract, and
-the per-service backup/restore are built, and *how each behavior is proven*. The
-product owns the *why* and the user-facing promises (no `project/product/product.md`
-exists yet — the converged intent is summarized in each Decision's prose, to be
-back-filled into a product doc later). Design uses the suite's contractual
-constants (service names, the `IKIGENBA_*` env names, the event-protocol epoch
-rules) **by value** but does not own them. This is the **single, current**
+tree, the versioned-binary stage/deploy/rollback orchestration, the SemVer 2.0
+version contract, the env/manifest contract, and the per-service backup/restore are
+built, and *how each behavior is proven*. The product
+(`project/product/README.md`) owns the *why* and the user-facing promises. Design
+uses the suite's contractual constants (service names, the `IKIGENBA_*` env names,
+the event-protocol epoch rules) **by value** but does not own them. This is the **single, current**
 statement of the architecture: when a decision changes, its `DNN.md` is rewritten
 in place — decisions are never stacked. History of how it got here lives in the
 plan.
@@ -73,7 +72,7 @@ Decision it realizes:
   added or its Verification ids change.
 - `project/design/DNN.md` — one self-contained file per Decision (zero-padded
   `D01.md`, `D02.md`, …; referenced in prose and the plan as `D<N>`).
-- `project/design/design.md` — this spine: cross-cutting facts only, no
+- `project/design/README.md` — this spine: cross-cutting facts only, no
   per-Decision detail.
 
 Design is **rewritten in place**, not append-only (history lives in the plan): a
@@ -82,9 +81,20 @@ Decision adds a `DNN.md` and an INDEX entry.
 
 ## Resolved design questions (rationale trail)
 
-Three questions were debated during authoring and are now settled inside the
+Several questions were debated during authoring and are now settled inside the
 Decisions; recorded here so the *why* survives:
 
+- **Manifest authored, not generated; data paths composed from `IKIGENBA_ROOT`**
+  (D11). `manifest.env` is config the binary *reads*, so it is authored + shipped
+  verbatim — the `manifest` verb and the per-deploy on-box regeneration/stamp step
+  are deleted. The box data paths compose in-binary from one box-global
+  `IKIGENBA_ROOT` (mirroring `IKIGENBA_DOMAIN`), keeping the committed manifest
+  portable, with a fail-loud guard when production is half-configured
+  (`IKIGENBA_DOMAIN` set, `IKIGENBA_ROOT` unset).
+- **Rollback selects a backup by recency (`-N`), not a release ledger** (D07/D10).
+  Each S3 snapshot key embeds its producing version, so `rollback -N` reads the
+  recovery target straight from S3 (nightly snapshots included) — no second source
+  of truth to keep in sync.
 - **Apex TLS cert → backed up/restored** (D07 cert stream). Reissue does not scale
   for mass recovery: Let's Encrypt rate limits are per **registered domain** and
   the whole fleet shares `ikigenba.com`, so a fleet rebuild that reissued would
