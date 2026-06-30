@@ -54,16 +54,17 @@ func TestLandingHandlerRendersHTMLWithServiceAndVersion(t *testing.T) {
 
 func TestLandingHandlerLinksOnlyAppLocalStaticAssets(t *testing.T) {
 	// R-ASST-7Y1N
+	// R-M8XL-ANIZ
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
 	LandingHandler("scripts", "dev").ServeHTTP(rec, req)
 
 	body := rec.Body.String()
-	if !strings.Contains(body, `href="/static/tokens.css"`) {
-		t.Fatalf("landing HTML did not link local tokens.css:\n%s", body)
+	if !strings.Contains(body, `href="static/tokens.css"`) {
+		t.Fatalf("landing HTML did not link document-relative tokens.css:\n%s", body)
 	}
-	for _, forbidden := range []string{"dashboard", "/srv/dashboard", "https://", "http://"} {
+	for _, forbidden := range []string{`href="/static/tokens.css"`, "dashboard", "/srv/dashboard", "https://", "http://"} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("landing HTML contains forbidden cross-service asset reference %q:\n%s", forbidden, body)
 		}
@@ -110,7 +111,7 @@ func TestLandingHandlerUsesCronCanonicalStructureForScripts(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		`<title>scripts · scripts</title>`,
-		`<link rel="stylesheet" href="/static/tokens.css">`,
+		`<link rel="stylesheet" href="static/tokens.css">`,
 		`<a class="home" href="/">Home</a>`,
 		`<section aria-labelledby="page-title">`,
 		`<div class="eyebrow">Script runner</div>`,
@@ -167,6 +168,8 @@ func TestStaticHandlerServesTokensAndFonts(t *testing.T) {
 }
 
 func TestTokensCSSDeclaresEmbeddedFontFaces(t *testing.T) {
+	// R-M59W-5CAW
+	// R-M6HS-J41L
 	req := httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil)
 	rec := httptest.NewRecorder()
 
@@ -175,15 +178,52 @@ func TestTokensCSSDeclaresEmbeddedFontFaces(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		`@font-face`,
-		`url('/static/fonts/space-grotesk.woff2')`,
-		`url('/static/fonts/ibm-plex-sans.woff2')`,
-		`url('/static/fonts/ibm-plex-mono-400.woff2')`,
-		`url('/static/fonts/ibm-plex-mono-500.woff2')`,
+		`url('fonts/space-grotesk.woff2')`,
+		`url('fonts/ibm-plex-sans.woff2')`,
+		`url('fonts/ibm-plex-mono-400.woff2')`,
+		`url('fonts/ibm-plex-mono-500.woff2')`,
 		`font-family: 'Space Grotesk'`,
 		`font-family: 'IBM Plex Mono'`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("tokens.css missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "font-display: swap") {
+		t.Fatalf("tokens.css must not use font-display: swap:\n%s", body)
+	}
+	if strings.Contains(body, "url('/static/fonts/") {
+		t.Fatalf("tokens.css must not use origin-absolute font URLs:\n%s", body)
+	}
+	if fontFaces := strings.Count(body, "@font-face"); fontFaces != strings.Count(body, "font-display: optional") {
+		t.Fatalf("font-display: optional count must match @font-face count in:\n%s", body)
+	}
+}
+
+func TestLandingHandlerPreloadsDocumentRelativeDisplayFonts(t *testing.T) {
+	// R-MA5H-OF9O
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	LandingHandler("scripts", "dev").ServeHTTP(rec, req)
+	cssReq := httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil)
+	cssRec := httptest.NewRecorder()
+	StaticHandler().ServeHTTP(cssRec, cssReq)
+
+	body := rec.Body.String()
+	css := cssRec.Body.String()
+	for _, font := range []string{"space-grotesk.woff2", "ibm-plex-sans.woff2"} {
+		want := `<link rel="preload" as="font" type="font/woff2" crossorigin href="static/fonts/` + font + `">`
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing HTML missing document-relative preload %q:\n%s", want, body)
+		}
+		if !strings.Contains(css, `url('fonts/`+font+`')`) {
+			t.Fatalf("tokens.css no longer contains matching @font-face src for %s", font)
+		}
+	}
+	for _, forbidden := range []string{`href="/static/fonts/space-grotesk.woff2"`, `href="/static/fonts/ibm-plex-sans.woff2"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("landing HTML contains origin-absolute font preload %q:\n%s", forbidden, body)
 		}
 	}
 }

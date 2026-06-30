@@ -26,6 +26,9 @@ var exactMatchLanding = regexp.MustCompile(`(?m)^location = /srv/scripts/ \{`)
 // (no `= `).
 var prefixGated = regexp.MustCompile(`(?m)^location /srv/scripts/ \{`)
 
+// staticLocation matches the session-gated static assets prefix.
+var staticLocation = regexp.MustCompile(`(?m)^location /srv/scripts/static/ \{`)
+
 func TestNginxExactMatchLandingLocationPresent(t *testing.T) {
 	// R-NGNX-2A5Q — the file contains an exact-match `location = /srv/scripts/ {`
 	// block, distinct from the prefix `location /srv/scripts/ {`.
@@ -54,6 +57,21 @@ func landingBlock(t *testing.T, conf string) string {
 	end := strings.Index(rest, "\n}")
 	if end < 0 {
 		t.Fatalf("could not find end of exact-match landing block")
+	}
+	return rest[:end+2]
+}
+
+// staticBlock returns the body of the `location /srv/scripts/static/ {` block.
+func staticBlock(t *testing.T, conf string) string {
+	t.Helper()
+	loc := staticLocation.FindStringIndex(conf)
+	if loc == nil {
+		t.Fatalf("static assets block not found")
+	}
+	rest := conf[loc[0]:]
+	end := strings.Index(rest, "\n}")
+	if end < 0 {
+		t.Fatalf("could not find end of static assets block")
 	}
 	return rest[:end+2]
 }
@@ -98,6 +116,36 @@ func TestNginxPreExistingLocationsSurvive(t *testing.T) {
 	}
 	if !strings.Contains(conf, "location = /srv/scripts/feed { return 404; }") {
 		t.Fatalf("feed 404 location must remain present")
+	}
+	if !strings.Contains(conf, "location = /srv/scripts/.well-known/oauth-protected-resource {") {
+		t.Fatalf("PRM bootstrap location must remain present")
+	}
+}
+
+func TestNginxStaticAssetsLocationSessionGated(t *testing.T) {
+	// R-MBDE-270D
+	conf := readNginxConf(t)
+	block := staticBlock(t, conf)
+
+	for _, want := range []string{
+		"auth_request /_session-authn;",
+		"proxy_pass http://127.0.0.1:__PORT__/static/;",
+		"proxy_set_header Host $host;",
+		"proxy_set_header X-Forwarded-Proto $scheme;",
+		"proxy_http_version 1.1;",
+	} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("static assets block missing %q:\n%s", want, block)
+		}
+	}
+	if !exactMatchLanding.MatchString(conf) {
+		t.Fatalf("exact landing location must remain present")
+	}
+	if !prefixGated.MatchString(conf) || !strings.Contains(conf, "error_page 500 = @prompts_authn_500;") {
+		t.Fatalf("bearer-gated prefix and rate-limit handling must remain present")
+	}
+	if !strings.Contains(conf, "location = /srv/scripts/feed { return 404; }") {
+		t.Fatalf("feed denial location must remain present")
 	}
 	if !strings.Contains(conf, "location = /srv/scripts/.well-known/oauth-protected-resource {") {
 		t.Fatalf("PRM bootstrap location must remain present")
