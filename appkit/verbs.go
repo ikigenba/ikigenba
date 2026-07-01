@@ -19,6 +19,7 @@ import (
 	"appkit/db"
 	"appkit/feed"
 	"appkit/logging"
+	"appkit/manifest"
 	"appkit/server"
 
 	"eventplane/outbox"
@@ -27,6 +28,34 @@ import (
 // loadMigrations reads the app's embedded migration set via the db runner.
 func loadMigrations(spec Spec) ([]db.Migration, error) {
 	return db.LoadMigrations(spec.Migrations, spec.migrationsDir())
+}
+
+// runManifest emits the portable service manifest from Spec alone. It is
+// intentionally independent of config.Resolve so deploy preflight can inspect a
+// staged binary before any on-box env or filesystem state exists.
+func runManifest(spec Spec, args []string, stdout, stderr io.Writer) error {
+	if err := parseSimpleFlags(spec.App+" manifest", args, stderr); err != nil {
+		return err
+	}
+	fmt.Fprint(stdout, manifest.Emit(manifestFields(spec)))
+	return nil
+}
+
+func manifestFields(spec Spec) manifest.Fields {
+	extras := make([]manifest.KV, 0, len(spec.ManifestExtras))
+	for _, kv := range spec.ManifestExtras {
+		extras = append(extras, manifest.KV{Key: kv.Key, Value: kv.Value})
+	}
+	return manifest.Fields{
+		App:      spec.App,
+		Mount:    spec.Mount,
+		Default:  spec.Default,
+		Port:     spec.Port,
+		MCP:      spec.MCP,
+		Feed:     spec.Feed,
+		Consumes: spec.Consumes,
+		Extras:   extras,
+	}
 }
 
 // runMigrate applies pending migrations against the app's DB and exits. It is

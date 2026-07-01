@@ -83,6 +83,7 @@ func TestDispatch_ReducedVerbSetAndManifestLibrary(t *testing.T) {
 	}{
 		{name: "serve", args: []string{"serve"}, env: map[string]string{"WIDGET_DB_PATH": dbPath, "WIDGET_LOG_LEVEL": "screaming"}, wantCode: 1, wantStderr: "invalid log level"},
 		{name: "version", args: []string{"version"}, wantCode: 0},
+		{name: "manifest", args: []string{"manifest"}, wantCode: 0},
 		{name: "migrate", args: []string{"migrate"}, env: map[string]string{"WIDGET_DB_PATH": dbPath}, wantCode: 0},
 		{name: "schema", args: []string{"schema"}, env: map[string]string{"WIDGET_DB_PATH": dbPath}, wantCode: 0},
 	}
@@ -101,15 +102,7 @@ func TestDispatch_ReducedVerbSetAndManifestLibrary(t *testing.T) {
 		})
 	}
 
-	code, _, errs := run(t, testSpec(), nil, "manifest")
-	if code != 2 {
-		t.Fatalf("manifest exit = %d, want unknown-command exit 2", code)
-	}
-	if !strings.Contains(errs, `unknown command "manifest"`) || !strings.Contains(errs, "want serve|version|migrate|schema") {
-		t.Fatalf("manifest stderr = %q, want unknown-command message naming reduced verb set", errs)
-	}
-
-	got := manifest.Emit(manifest.Fields{
+	want := manifest.Emit(manifest.Fields{
 		App:     "widget",
 		Mount:   "/srv/widget/",
 		Port:    3099,
@@ -118,9 +111,12 @@ func TestDispatch_ReducedVerbSetAndManifestLibrary(t *testing.T) {
 		Extras:  []manifest.KV{{Key: "OUTBOX_RETENTION_DAYS", Value: "7"}},
 		Default: false,
 	})
-	want := "APP=widget\nMOUNT=/srv/widget/\nDEFAULT=false\nPORT=3099\nMCP=true\nFEED=/feed\nOUTBOX_RETENTION_DAYS=7\n"
-	if got != want {
-		t.Fatalf("manifest.Emit\n got: %q\nwant: %q", got, want)
+	code, out, errs := run(t, testSpec(), nil, "manifest")
+	if code != 0 {
+		t.Fatalf("manifest exit = %d, want 0; stderr=%q", code, errs)
+	}
+	if out != want {
+		t.Fatalf("manifest dispatch\n got: %q\nwant: %q", out, want)
 	}
 }
 
@@ -171,7 +167,7 @@ func TestDispatch_BackupRestoreRemovedAndSpecHasNoHooks(t *testing.T) {
 		if code != 2 {
 			t.Fatalf("%s exit = %d, want unknown-command exit 2", verb, code)
 		}
-		if !strings.Contains(errs, `unknown command "`+verb+`"`) || !strings.Contains(errs, "want serve|version|migrate|schema") {
+		if !strings.Contains(errs, `unknown command "`+verb+`"`) || !strings.Contains(errs, "want serve|version|manifest|migrate|schema") {
 			t.Fatalf("%s stderr = %q, want unknown-command message naming reduced verb set", verb, errs)
 		}
 	}
@@ -189,7 +185,7 @@ func TestDispatch_UnknownCommand(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("unknown command exit = %d, want 2", code)
 	}
-	if !strings.Contains(errs, "unknown command") || !strings.Contains(errs, "want serve|version|migrate|schema") {
+	if !strings.Contains(errs, "unknown command") || !strings.Contains(errs, "want serve|version|manifest|migrate|schema") {
 		t.Errorf("stderr = %q, want an unknown-command message with reduced verb set", errs)
 	}
 }

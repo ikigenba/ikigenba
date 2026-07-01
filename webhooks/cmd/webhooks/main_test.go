@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -80,21 +79,19 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	}
 }
 
-func TestManifestVerbRejectedByReducedAppkitDispatch(t *testing.T) {
+func TestManifestVerbEmitsCommittedManifest(t *testing.T) {
 	bin := buildBinary(t)
 
 	out, err := exec.Command(bin, "manifest").CombinedOutput()
-	if err == nil {
-		t.Fatalf("manifest command succeeded, want reduced appkit dispatch rejection\n%s", out)
+	if err != nil {
+		t.Fatalf("manifest command: %v\n%s", err, out)
 	}
-	got := string(out)
-	for _, want := range []string{
-		`webhooks: unknown command "manifest"`,
-		"serve|version|migrate|schema",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("webhooks manifest rejection missing %q\n--- output ---\n%s", want, got)
-		}
+	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest.env: %v", err)
+	}
+	if string(out) != string(committed) {
+		t.Fatalf("manifest command != committed etc/manifest.env\n--- command ---\n%s\n--- committed ---\n%s", out, committed)
 	}
 }
 

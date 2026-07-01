@@ -217,12 +217,14 @@ func dispatch(spec Spec, args []string, getenv func(string) string, stdin io.Rea
 		err = runServe(spec, rest, getenv, stdout, stderr)
 	case "version":
 		fmt.Fprintf(stdout, "%s\n", versionString())
+	case "manifest":
+		err = runManifest(spec, rest, stdout, stderr)
 	case "migrate":
 		err = runMigrate(spec, rest, getenv, stdout, stderr)
 	case "schema":
 		err = runSchema(spec, rest, getenv, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "%s: unknown command %q (want serve|version|migrate|schema)\n", spec.App, cmd)
+		fmt.Fprintf(stderr, "%s: unknown command %q (want serve|version|manifest|migrate|schema)\n", spec.App, cmd)
 		return 2
 	}
 	if err != nil {
