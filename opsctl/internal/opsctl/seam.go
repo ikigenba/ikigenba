@@ -55,6 +55,10 @@ type System interface {
 	// box runs `useradd --system --home-dir /opt/<app> --shell /usr/sbin/nologin
 	// <app>`). Idempotent: a no-op when the user already exists.
 	EnsureSystemUser(ctx context.Context, app, homeDir string) error
+	// EnsureSystemGroup creates a system group if absent (the box runs
+	// `groupadd --system <group>`). Idempotent: a no-op when the group already
+	// exists.
+	EnsureSystemGroup(ctx context.Context, group string) error
 	// DeleteSystemUser removes the dedicated app user (the box runs `userdel
 	// <app>`), the inverse of EnsureSystemUser invoked by teardown. Idempotent: a
 	// no-op when the user is already absent (a partially-torn-down box).
@@ -215,6 +219,15 @@ func (s RealSystem) EnsureSystemUser(ctx context.Context, app, homeDir string) e
 		return nil
 	}
 	return run(ctx, "useradd", "--system", "--home-dir", homeDir, "--shell", "/usr/sbin/nologin", app)
+}
+
+func (s RealSystem) EnsureSystemGroup(ctx context.Context, group string) error {
+	// getent group <group> succeeds iff the group exists; groupadd only when
+	// absent, matching EnsureSystemUser's idempotent shape.
+	if err := exec.CommandContext(ctx, "getent", "group", group).Run(); err == nil {
+		return nil
+	}
+	return run(ctx, "groupadd", "--system", group)
 }
 
 func (s RealSystem) DeleteSystemUser(ctx context.Context, app string) error {

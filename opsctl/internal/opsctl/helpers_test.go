@@ -48,6 +48,11 @@ func (s *stubSystem) EnsureSystemUser(ctx context.Context, app, homeDir string) 
 	return nil
 }
 
+func (s *stubSystem) EnsureSystemGroup(ctx context.Context, group string) error {
+	s.record("ensure-group:" + group)
+	return nil
+}
+
 func (s *stubSystem) DeleteSystemUser(ctx context.Context, app string) error {
 	s.record("delete-user:" + app)
 	return nil

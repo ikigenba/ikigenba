@@ -1,28 +1,20 @@
 package opsctl
 
 import (
-	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 // R-VCF3-PLWD
-// R-4LKF-FB23
-func TestSetupNginxFragmentServesPublicDirectlyAndPrivateBehindAuth(t *testing.T) {
+func TestShippedNginxFragmentServesPublicDirectlyAndPrivateBehindAuth(t *testing.T) {
 	const app = "svc"
-	o, _, l := newSetupTestOpsctl(t, app)
+	l := NewLayout("/opt", app)
 
-	if err := o.Setup(context.Background(), SetupOptions{
-		App:  app,
-		Port: 3104,
-	}); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-
-	b, err := os.ReadFile(l.FragmentPath())
+	b, err := os.ReadFile(filepath.Join("testdata", "d01-state-www-nginx.conf"))
 	if err != nil {
-		t.Fatalf("read fragment: %v", err)
+		t.Fatalf("read shipped fragment fixture: %v", err)
 	}
 	fragment := string(b)
 	public := locationBlock(t, fragment, "/srv/"+app+"/public/")

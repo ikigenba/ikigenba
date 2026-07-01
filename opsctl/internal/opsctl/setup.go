@@ -51,7 +51,7 @@ type SetupOptions struct {
 // the old bin/setup split out from the box-global init-box (PLAN §D1):
 //
 //  1. create the dedicated --system app user (seam; idempotent),
-//  2. create the /opt/<app> tree (libexec/ bin/ etc/ state/ cache/ backups/),
+//  2. create the /opt/<app> tree (libexec/ bin/ etc/ share/ state/ cache/),
 //  3. write + enable-NOT-start the systemd unit
 //     (ExecStart=/usr/local/bin/ikigenba-launch <app>),
 //  4. drop the service's nginx fragment into conf.d/locations/<app>.conf (with
@@ -101,8 +101,11 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 		// app-owned state dir is traverse-only for non-owners, the DB exists with
 		// service-private group-readable bits, and the web subtree is group-readable
 		// by nginx's web group.
+		if err := o.System.EnsureSystemGroup(ctx, "web"); err != nil {
+			return fmt.Errorf("setup: ensure web group: %w", err)
+		}
 		if err := mkdirAll755(
-			l.AppDir(), l.BinDir(), l.EtcDir(), l.LibexecDir(), l.CacheDir(), l.BackupsDir(),
+			l.AppDir(), l.BinDir(), l.EtcDir(), l.LibexecDir(), l.CacheDir(), l.shareDir(),
 		); err != nil {
 			return fmt.Errorf("setup: create app tree: %w", err)
 		}
@@ -165,17 +168,12 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 		return fmt.Errorf("setup: enable unit: %w", err)
 	}
 
-	// 4. nginx location fragment — substitute __PORT__ for legacy source
-	// fragments, or generate the state/www public-private split for the new
-	// install tree when a routed service has no committed source fragment.
-	frag := ""
-	switch {
-	case opts.Fragment != "":
-		frag = renderFragment(opts.Fragment, opts.Port)
-	case opts.Port > 0:
-		frag = stateWWWFragment(l, opts.Port)
-	}
-	if frag != "" {
+	// 4. nginx location fragment. Legacy fragment-driven setup still writes the
+	// rendered fragment file. The D01 no-fragment setup installs a stable system
+	// symlink to the active release's nginx.conf; the target is intentionally
+	// dangling until the first deploy creates etc/current.
+	if opts.Fragment != "" {
+		frag := renderFragment(opts.Fragment, opts.Port)
 		o.logf("write nginx fragment %s", l.FragmentPath())
 		if err := writeFileAtomic(l.FragmentPath(), []byte(frag), 0o644); err != nil {
 			return fmt.Errorf("setup: write fragment: %w", err)
@@ -191,7 +189,13 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 			}
 		}
 	} else {
-		o.logf("no nginx fragment (worker/batch service)")
+		o.logf("link nginx fragment %s -> %s", l.FragmentPath(), l.ActiveNginxConf())
+		if err := os.Remove(l.FragmentPath()); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("setup: replace fragment link: %w", err)
+		}
+		if err := os.Symlink(l.ActiveNginxConf(), l.FragmentPath()); err != nil {
+			return fmt.Errorf("setup: link fragment: %w", err)
+		}
 	}
 
 	o.logf("setup complete for %s — next: opsctl stage %s <version> --artifact …, then opsctl deploy %s <version>", app, app, app)

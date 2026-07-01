@@ -44,20 +44,26 @@ func TestSetupMaterializesInstallTreeWithPermissionsAndOwnership(t *testing.T) {
 	}
 
 	for _, dir := range []string{
+		l.AppDir(),
 		l.StateDir(),
+		l.WWWDir(),
 		l.CacheDir(),
 		l.LibexecDir(),
 		l.BinDir(),
 		l.EtcDir(),
-		l.BackupsDir(),
+		l.shareDir(),
 	} {
 		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 			t.Fatalf("directory %s not materialized: %v", dir, err)
 		}
 	}
+	if _, err := os.Stat(l.BackupsDir()); !os.IsNotExist(err) {
+		t.Fatalf("setup created backups dir %s, want absent (err=%v)", l.BackupsDir(), err)
+	}
 
 	assertMode(t, l.StateDir(), 0o711)
 	assertMode(t, l.DBPath(), 0o640)
+	assertMode(t, l.WWWDir(), 0o750)
 	assertMode(t, l.WWWPublicDir(), 0o750)
 	assertMode(t, l.WWWPrivateDir(), 0o750)
 
@@ -69,11 +75,44 @@ func TestSetupMaterializesInstallTreeWithPermissionsAndOwnership(t *testing.T) {
 		"chown:" + app + ":" + app + ":" + l.StateDir(),
 		"chown:" + app + ":" + app + ":" + l.DBPath(),
 		"chown:" + app + ":web:" + l.WWWDir(),
+		"ensure-group:web",
 	}
 	for _, want := range wantOps {
 		if !hasOp(sys.opSeq(), want) {
 			t.Fatalf("setup ownership ops = %v, missing %q", sys.opSeq(), want)
 		}
+	}
+
+	owners := ownershipPlan(sys.opSeq())
+	for _, rootOwned := range []string{l.EtcDir(), l.shareDir()} {
+		if got := ownerForPath(owners, rootOwned); got != (ownerGroup{}) {
+			t.Fatalf("%s was handed to %s:%s through Owner seam, want root-owned", rootOwned, got.owner, got.group)
+		}
+	}
+}
+
+// R-LHY1-6IS8
+func TestSetupCreatesStableNginxSymlinkToActiveConfig(t *testing.T) {
+	const app = "svc"
+	o, _, l := newSetupTestOpsctl(t, app)
+
+	if err := o.Setup(context.Background(), SetupOptions{App: app}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	fi, err := os.Lstat(l.FragmentPath())
+	if err != nil {
+		t.Fatalf("lstat fragment symlink: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("%s mode = %v, want symlink", l.FragmentPath(), fi.Mode())
+	}
+	target, err := os.Readlink(l.FragmentPath())
+	if err != nil {
+		t.Fatalf("readlink fragment symlink: %v", err)
+	}
+	if target != l.ActiveNginxConf() {
+		t.Fatalf("fragment symlink target = %q, want %q", target, l.ActiveNginxConf())
 	}
 }
 
@@ -89,10 +128,12 @@ func TestSetupPermissionModelAllowsWebGroupOnlyForWWW(t *testing.T) {
 	owners := ownershipPlan(sys.opSeq())
 	web := unixSubject{user: "nginx", groups: map[string]bool{"web": true}}
 
-	if !web.canList(statMode(t, l.WWWPublicDir()), ownerForPath(owners, l.WWWPublicDir())) {
+	if !web.canRead(statMode(t, l.WWWPublicDir()), ownerForPath(owners, l.WWWPublicDir())) ||
+		!web.canList(statMode(t, l.WWWPublicDir()), ownerForPath(owners, l.WWWPublicDir())) {
 		t.Fatalf("web group cannot read/list public www dir under modeled Unix mode/owner semantics")
 	}
-	if !web.canList(statMode(t, l.WWWPrivateDir()), ownerForPath(owners, l.WWWPrivateDir())) {
+	if !web.canRead(statMode(t, l.WWWPrivateDir()), ownerForPath(owners, l.WWWPrivateDir())) ||
+		!web.canList(statMode(t, l.WWWPrivateDir()), ownerForPath(owners, l.WWWPrivateDir())) {
 		t.Fatalf("web group cannot read/list private www dir under modeled Unix mode/owner semantics")
 	}
 	if web.canRead(statMode(t, l.DBPath()), ownerForPath(owners, l.DBPath())) {
