@@ -172,21 +172,22 @@ func TestCompositionRootMountsLandingWithoutIdentityWrapper(t *testing.T) {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	source, err := os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "cmd", "cron", "main.go"))
+	sourcePath := filepath.Join(filepath.Dir(file), "..", "cronapp", "spec.go")
+	source, err := os.ReadFile(sourcePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	main := string(source)
+	compositionRoot := string(source)
 	want := `rt.Handle("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))`
-	if !strings.Contains(main, want) {
-		t.Fatalf("main.go does not mount the landing handler with %q", want)
+	if !strings.Contains(compositionRoot, want) {
+		t.Fatalf("%s does not mount the landing handler with %q", sourcePath, want)
 	}
-	if strings.Contains(main, `RequireIdentity(web.LandingHandler`) {
+	if strings.Contains(compositionRoot, `RequireIdentity(web.LandingHandler`) {
 		t.Fatal("landing handler is wrapped with RequireIdentity")
 	}
-	if !strings.Contains(main, `rt.Handle("POST /mcp", rt.RequireIdentity(`) {
-		t.Fatal("main.go no longer gates POST /mcp with RequireIdentity")
+	if !strings.Contains(compositionRoot, `rt.Handle("POST /mcp", rt.RequireIdentity(`) {
+		t.Fatalf("%s no longer gates POST /mcp with RequireIdentity", sourcePath)
 	}
 }
 
