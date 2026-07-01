@@ -53,7 +53,7 @@ lines, so the anchored grep matches only phase lines.
 - Phase 40  ✅  realizes D8, D11   — adopt cron into the new layout
 - Phase 41  ✅  realizes D8, D11   — adopt gmail into the new layout
 - Phase 42  ✅  realizes D8, D11   — adopt scripts into the new layout (classify runs/)
-- Phase 43  ⬜  realizes D8, D11   — adopt sites into the new layout (relocate www/, repoint nginx)
+- Phase 43  ✅  realizes D8, D11   — adopt sites into the new layout (relocate www/, repoint nginx)
 - Phase 44  ⬜  realizes D8, D11   — adopt webhooks into the new layout
 - Phase 45  ⬜  realizes D8        — live-box one-time converter delta
 - Phase 46  ⬜  realizes —         — rewrite deploy.md for the new model (docs)
