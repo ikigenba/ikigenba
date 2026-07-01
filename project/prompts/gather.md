@@ -1,6 +1,6 @@
 ---
-harness: zai
-model: glm-5.2
+harness: claude
+model: claude-sonnet-5
 ---
 # gather — author the phase brief (the only big-doc reader)
 
