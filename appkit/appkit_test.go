@@ -10,12 +10,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"appkit/internal/testmigrations"
+	"appkit/manifest"
 )
 
 // testSpec is a producer-shaped spec over the shared test migrations, used to
@@ -69,24 +71,56 @@ func TestDispatch_VersionFlagAlias(t *testing.T) {
 	}
 }
 
-func TestDispatch_Manifest_ByteForm(t *testing.T) {
-	code, out, _ := run(t, testSpec(), nil, "manifest")
-	if code != 0 {
-		t.Fatalf("manifest exit = %d, want 0", code)
+func TestDispatch_ReducedVerbSetAndManifestLibrary(t *testing.T) {
+	// R-8EMY-A004
+	dbPath := filepath.Join(t.TempDir(), "widget.db")
+	recognized := []struct {
+		name       string
+		args       []string
+		env        map[string]string
+		wantCode   int
+		wantStderr string
+	}{
+		{name: "serve", args: []string{"serve"}, env: map[string]string{"WIDGET_DB_PATH": dbPath, "WIDGET_LOG_LEVEL": "screaming"}, wantCode: 1, wantStderr: "invalid log level"},
+		{name: "version", args: []string{"version"}, wantCode: 0},
+		{name: "migrate", args: []string{"migrate"}, env: map[string]string{"WIDGET_DB_PATH": dbPath}, wantCode: 0},
+		{name: "schema", args: []string{"schema"}, env: map[string]string{"WIDGET_DB_PATH": dbPath}, wantCode: 0},
 	}
-	want := "APP=widget\nMOUNT=/srv/widget/\nDEFAULT=false\nPORT=3099\nMCP=true\nFEED=/feed\n" +
-		"OUTBOX_RETENTION_DAYS=7\n"
-	if out != want {
-		t.Fatalf("manifest emit\n got: %q\nwant: %q", out, want)
+	for _, tc := range recognized {
+		t.Run(tc.name, func(t *testing.T) {
+			code, _, errs := run(t, testSpec(), tc.env, tc.args...)
+			if code != tc.wantCode {
+				t.Fatalf("%s exit = %d, want %d; stderr=%q", tc.name, code, tc.wantCode, errs)
+			}
+			if tc.wantStderr != "" && !strings.Contains(errs, tc.wantStderr) {
+				t.Fatalf("%s stderr = %q, want %q", tc.name, errs, tc.wantStderr)
+			}
+			if strings.Contains(errs, "unknown command") {
+				t.Fatalf("%s was not accepted by dispatch: %q", tc.name, errs)
+			}
+		})
 	}
-}
 
-func TestDispatch_Manifest_Consumer(t *testing.T) {
-	spec := Spec{App: "notify", Mount: "/srv/notify/", Port: 3003, MCP: true, Consumes: []string{"crm"}, Migrations: testmigrations.FS}
-	_, out, _ := run(t, spec, nil, "manifest")
-	want := "APP=notify\nMOUNT=/srv/notify/\nDEFAULT=false\nPORT=3003\nMCP=true\nCONSUMES=crm\n"
-	if out != want {
-		t.Fatalf("consumer manifest\n got: %q\nwant: %q", out, want)
+	code, _, errs := run(t, testSpec(), nil, "manifest")
+	if code != 2 {
+		t.Fatalf("manifest exit = %d, want unknown-command exit 2", code)
+	}
+	if !strings.Contains(errs, `unknown command "manifest"`) || !strings.Contains(errs, "want serve|version|migrate|schema") {
+		t.Fatalf("manifest stderr = %q, want unknown-command message naming reduced verb set", errs)
+	}
+
+	got := manifest.Emit(manifest.Fields{
+		App:     "widget",
+		Mount:   "/srv/widget/",
+		Port:    3099,
+		MCP:     true,
+		Feed:    "/feed",
+		Extras:  []manifest.KV{{Key: "OUTBOX_RETENTION_DAYS", Value: "7"}},
+		Default: false,
+	})
+	want := "APP=widget\nMOUNT=/srv/widget/\nDEFAULT=false\nPORT=3099\nMCP=true\nFEED=/feed\nOUTBOX_RETENTION_DAYS=7\n"
+	if got != want {
+		t.Fatalf("manifest.Emit\n got: %q\nwant: %q", got, want)
 	}
 }
 
@@ -130,142 +164,23 @@ func TestDispatch_Schema(t *testing.T) {
 	}
 }
 
-func TestDispatch_BackupThenRestore(t *testing.T) {
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "widget.db")
-	env := map[string]string{"WIDGET_DB_PATH": dbPath}
-
-	// Establish a DB first.
-	if code, _, errs := run(t, testSpec(), env, "migrate"); code != 0 {
-		t.Fatalf("setup migrate: exit %d, %q", code, errs)
-	}
-	backupPath := filepath.Join(dir, "snap.db")
-	if code, _, errs := run(t, testSpec(), env, "backup", "--out", backupPath); code != 0 {
-		t.Fatalf("backup: exit %d, %q", code, errs)
-	}
-	if code, out, errs := run(t, testSpec(), env, "restore", "--from", backupPath); code != 0 {
-		t.Fatalf("restore: exit %d, %q", code, errs)
-	} else if !strings.Contains(out, "restored widget") {
-		t.Errorf("restore output = %q", out)
-	}
-	// The restored DB must still be a valid migrated DB.
-	if code, out, errs := run(t, testSpec(), env, "migrate"); code != 0 {
-		t.Fatalf("post-restore migrate: exit %d, %q", code, errs)
-	} else if !strings.Contains(out, "version 2") {
-		t.Errorf("post-restore migrate output = %q", out)
-	}
-}
-
-// TestDispatch_RestoreReMintsEpoch is the regression test for
-// docs/bug-rollback-epoch-remint.md: a restore through the dispatch path must
-// re-mint the event-plane epoch by removing the <db>.generation sidecar, so a
-// post-restore boot mints a fresh generation and pre-restore consumer cursors
-// are rejected with stale-epoch instead of resuming onto reused seqs.
-func TestDispatch_RestoreReMintsEpoch(t *testing.T) {
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "widget.db")
-	genPath := dbPath + ".generation"
-	env := map[string]string{"WIDGET_DB_PATH": dbPath}
-
-	// Establish a DB and a snapshot to restore from.
-	if code, _, errs := run(t, testSpec(), env, "migrate"); code != 0 {
-		t.Fatalf("setup migrate: exit %d, %q", code, errs)
-	}
-	backupPath := filepath.Join(dir, "snap.db")
-	if code, _, errs := run(t, testSpec(), env, "backup", "--out", backupPath); code != 0 {
-		t.Fatalf("backup: exit %d, %q", code, errs)
-	}
-
-	// Pre-seed the generation sidecar, as a live producer would carry.
-	if err := os.WriteFile(genPath, []byte("GEN_A\n"), 0o644); err != nil {
-		t.Fatalf("seed sidecar: %v", err)
-	}
-
-	code, out, errs := run(t, testSpec(), env, "restore", "--from", backupPath)
-	if code != 0 {
-		t.Fatalf("restore: exit %d, %q", code, errs)
-	}
-	if !strings.Contains(out, "re-minted event-plane epoch") {
-		t.Errorf("restore output = %q, want a re-mint line", out)
-	}
-	if _, err := os.Stat(genPath); !os.IsNotExist(err) {
-		t.Fatalf("generation sidecar still present after restore (stat err = %v); epoch not re-minted", err)
-	}
-}
-
-// TestDispatch_RestoreNoSidecar covers a non-producer (or never-booted producer)
-// where no generation sidecar exists: restore must still succeed (the absent
-// sidecar's ErrNotExist is ignored).
-func TestDispatch_RestoreNoSidecar(t *testing.T) {
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "widget.db")
-	env := map[string]string{"WIDGET_DB_PATH": dbPath}
-
-	if code, _, errs := run(t, testSpec(), env, "migrate"); code != 0 {
-		t.Fatalf("setup migrate: exit %d, %q", code, errs)
-	}
-	backupPath := filepath.Join(dir, "snap.db")
-	if code, _, errs := run(t, testSpec(), env, "backup", "--out", backupPath); code != 0 {
-		t.Fatalf("backup: exit %d, %q", code, errs)
-	}
-
-	// No sidecar pre-seeded.
-	if code, _, errs := run(t, testSpec(), env, "restore", "--from", backupPath); code != 0 {
-		t.Fatalf("restore (no sidecar): exit %d, %q", code, errs)
-	}
-}
-
-// TestDispatch_RestoreOverrideStillReMints proves the chokepoint guarantee: even
-// when a Spec.Restore override fully replaces defaultRestore, the dispatcher
-// (runRestore) still removes the generation sidecar. The hook here only touches
-// the DB and returns nil; the re-mint is the verb's job, not the hook's.
-func TestDispatch_RestoreOverrideStillReMints(t *testing.T) {
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "widget.db")
-	genPath := dbPath + ".generation"
-	env := map[string]string{"WIDGET_DB_PATH": dbPath}
-
-	if code, _, errs := run(t, testSpec(), env, "migrate"); code != 0 {
-		t.Fatalf("setup migrate: exit %d, %q", code, errs)
-	}
-	if err := os.WriteFile(genPath, []byte("GEN_A\n"), 0o644); err != nil {
-		t.Fatalf("seed sidecar: %v", err)
-	}
-
-	called := false
-	spec := testSpec()
-	spec.Restore = func(ctx context.Context, req RestoreReq) error {
-		called = true
-		// A trivial hook: touch the DB so the restore "did something", return nil.
-		return os.WriteFile(req.DBPath, []byte("restored"), 0o644)
-	}
-
-	if code, _, errs := run(t, spec, env, "restore"); code != 0 {
-		t.Fatalf("override restore: exit %d, %q", code, errs)
-	}
-	if !called {
-		t.Fatal("Spec.Restore override was not invoked")
-	}
-	if _, err := os.Stat(genPath); !os.IsNotExist(err) {
-		t.Fatalf("sidecar present after override restore (stat err = %v); dispatcher did not re-mint", err)
-	}
-}
-
-func TestDispatch_DefaultBackupOverride(t *testing.T) {
-	called := false
-	spec := testSpec()
-	spec.Backup = func(ctx context.Context, req BackupReq) error {
-		called = true
-		if req.App != "widget" {
-			t.Errorf("backup req App = %q", req.App)
+func TestDispatch_BackupRestoreRemovedAndSpecHasNoHooks(t *testing.T) {
+	// R-QQNU-T5M7
+	for _, verb := range []string{"backup", "restore"} {
+		code, _, errs := run(t, testSpec(), nil, verb)
+		if code != 2 {
+			t.Fatalf("%s exit = %d, want unknown-command exit 2", verb, code)
 		}
-		return nil
+		if !strings.Contains(errs, `unknown command "`+verb+`"`) || !strings.Contains(errs, "want serve|version|migrate|schema") {
+			t.Fatalf("%s stderr = %q, want unknown-command message naming reduced verb set", verb, errs)
+		}
 	}
-	if code, _, errs := run(t, spec, nil, "backup"); code != 0 {
-		t.Fatalf("override backup exit %d, %q", code, errs)
-	}
-	if !called {
-		t.Error("Spec.Backup override was not invoked")
+
+	specType := reflect.TypeOf(Spec{})
+	for _, field := range []string{"Backup", "Restore"} {
+		if _, ok := specType.FieldByName(field); ok {
+			t.Fatalf("Spec still exposes removed field %s", field)
+		}
 	}
 }
 
@@ -274,8 +189,8 @@ func TestDispatch_UnknownCommand(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("unknown command exit = %d, want 2", code)
 	}
-	if !strings.Contains(errs, "unknown command") {
-		t.Errorf("stderr = %q, want an unknown-command message", errs)
+	if !strings.Contains(errs, "unknown command") || !strings.Contains(errs, "want serve|version|migrate|schema") {
+		t.Errorf("stderr = %q, want an unknown-command message with reduced verb set", errs)
 	}
 }
 

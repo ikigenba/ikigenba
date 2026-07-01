@@ -19,31 +19,10 @@ import (
 	"appkit/db"
 	"appkit/feed"
 	"appkit/logging"
-	"appkit/manifest"
 	"appkit/server"
 
 	"eventplane/outbox"
 )
-
-// emitManifest renders the app's full manifest.env from its Spec, comment-free
-// and in fixed order, so `<app> manifest` byte-equals the committed
-// etc/manifest.env (PLAN §B1 map §6).
-func emitManifest(spec Spec) string {
-	extras := make([]manifest.KV, len(spec.ManifestExtras))
-	for i, kv := range spec.ManifestExtras {
-		extras[i] = manifest.KV{Key: kv.Key, Value: kv.Value}
-	}
-	return manifest.Emit(manifest.Fields{
-		App:      spec.App,
-		Mount:    spec.Mount,
-		Default:  spec.Default,
-		Port:     spec.Port,
-		MCP:      spec.MCP,
-		Feed:     spec.Feed,
-		Consumes: spec.Consumes,
-		Extras:   extras,
-	})
-}
 
 // loadMigrations reads the app's embedded migration set via the db runner.
 func loadMigrations(spec Spec) ([]db.Migration, error) {
@@ -271,52 +250,6 @@ func runServerAndWorkers(ctx context.Context, cancel context.CancelFunc, srv *ht
 		}
 	}
 	return firstErr
-}
-
-// runBackup dispatches to Spec.Backup, or appkit's default SQLite snapshot.
-func runBackup(spec Spec, args []string, getenv func(string) string, stdout, stderr io.Writer) error {
-	cfg, err := config.Resolve(spec.App, spec.Mount, spec.Port, getenv)
-	if err != nil {
-		return err
-	}
-	req := BackupReq{
-		App: spec.App, DBPath: cfg.DBPath, GenerationPath: cfg.GenerationPath,
-		Args: args, Stdout: stdout, Stderr: stderr,
-	}
-	if spec.Backup != nil {
-		return spec.Backup(context.Background(), req)
-	}
-	return defaultBackup(context.Background(), req)
-}
-
-// runRestore dispatches to Spec.Restore, or appkit's default SQLite restore.
-func runRestore(spec Spec, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) error {
-	cfg, err := config.Resolve(spec.App, spec.Mount, spec.Port, getenv)
-	if err != nil {
-		return err
-	}
-	req := RestoreReq{
-		App: spec.App, DBPath: cfg.DBPath, GenerationPath: cfg.GenerationPath,
-		Args: args, Stdout: stdout, Stderr: stderr,
-	}
-	if spec.Restore != nil {
-		if err := spec.Restore(context.Background(), req); err != nil {
-			return err
-		}
-	} else if err := defaultRestore(context.Background(), req); err != nil {
-		return err
-	}
-	// Any restore rewinds the outbox: re-mint the event-plane epoch so every
-	// pre-restore cursor is rejected with `stale-epoch` instead of silently
-	// resuming onto reused seqs (docs/bug-rollback-epoch-remint.md). Absent sidecar
-	// (non-producer) is a no-op.
-	if req.GenerationPath != "" {
-		if err := os.Remove(req.GenerationPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("restore: re-mint epoch (remove %s): %w", req.GenerationPath, err)
-		}
-		fmt.Fprintf(stdout, "re-minted event-plane epoch (removed %s)\n", req.GenerationPath)
-	}
-	return nil
 }
 
 // envKey builds the <APP>_<SUFFIX> env-var name for a flag's help text.

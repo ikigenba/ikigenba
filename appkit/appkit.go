@@ -63,35 +63,9 @@ var IdentityFrom = server.IdentityFrom
 // without importing appkit/server directly (DECISIONS §4).
 var Envelope = server.Envelope
 
-// BackupReq / RestoreReq carry the resolved paths a Backup/Restore hook needs.
-// The default verbs do a minimal consistent SQLite snapshot/restore of DBPath;
-// a service overrides Spec.Backup/Spec.Restore for richer behavior (the
-// dashboard's cert+S3 snapshot). The event-plane generation-epoch re-mint is
-// NOT a Spec.Restore responsibility: the restore verb (runRestore) re-mints
-// unconditionally after whichever hook runs (docs/bug-rollback-epoch-remint.md).
-type BackupReq struct {
-	App            string
-	DBPath         string
-	GenerationPath string
-	Args           []string // extra args after the verb
-	Stdout         io.Writer
-	Stderr         io.Writer
-}
-
-// RestoreReq mirrors BackupReq for the restore verb.
-type RestoreReq struct {
-	App            string
-	DBPath         string
-	GenerationPath string
-	Args           []string
-	Stdout         io.Writer
-	Stderr         io.Writer
-}
-
 // Spec is the entire contract of a suite app — "a suite app is exactly this"
 // (PLAN §1.1). main.go declares one and passes it to Main. The chassis half is
-// appkit's; the domain half plugs in through Handlers / Config / Migrations /
-// Backup / Restore.
+// appkit's; the domain half plugs in through Handlers / Config / Migrations.
 type Spec struct {
 	// App is the service name ("ledger"). Drives manifest APP, the DB filename,
 	// the install root, log identity, and the env-var prefix (<APP>_PORT, …).
@@ -165,7 +139,7 @@ type Spec struct {
 	//   - a TRANSPORT fault (the upstream producer is unreachable) is retried inside
 	//     the worker and never returns, so it never takes the server down.
 	// The first non-nil worker error becomes the serve verb's exit error. Workers
-	// run only on serve, not on the one-shot verbs (migrate/manifest/…). Nil/empty
+	// run only on serve, not on the one-shot verbs (migrate/schema). Nil/empty
 	// for services with no background task (crm, ledger). The consumer Config /
 	// Handler stay app-side: appkit owns the lifecycle, not the event semantics
 	// (PLAN §B1 map §3 risk 2 — appkit emits CONSUMES=, the loop is wired here).
@@ -198,10 +172,6 @@ type Spec struct {
 	// a static consumer and the live union for a future dynamic one, so reflection
 	// always reports the live in-edges with no redesign. nil for non-consumers.
 	Subscriptions func() []consumer.Subscription
-	// Backup overrides the backup verb (nil = appkit's default SQLite snapshot).
-	Backup func(ctx context.Context, req BackupReq) error
-	// Restore overrides the restore verb (nil = appkit's default SQLite restore).
-	Restore func(ctx context.Context, req RestoreReq) error
 }
 
 func (s Spec) migrationsDir() string {
@@ -247,18 +217,12 @@ func dispatch(spec Spec, args []string, getenv func(string) string, stdin io.Rea
 		err = runServe(spec, rest, getenv, stdout, stderr)
 	case "version":
 		fmt.Fprintf(stdout, "%s\n", versionString())
-	case "manifest":
-		fmt.Fprint(stdout, emitManifest(spec))
 	case "migrate":
 		err = runMigrate(spec, rest, getenv, stdout, stderr)
 	case "schema":
 		err = runSchema(spec, rest, getenv, stdout, stderr)
-	case "backup":
-		err = runBackup(spec, rest, getenv, stdout, stderr)
-	case "restore":
-		err = runRestore(spec, rest, getenv, stdin, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "%s: unknown command %q (want serve|version|manifest|migrate|schema|backup|restore)\n", spec.App, cmd)
+		fmt.Fprintf(stderr, "%s: unknown command %q (want serve|version|migrate|schema)\n", spec.App, cmd)
 		return 2
 	}
 	if err != nil {

@@ -4,12 +4,12 @@
 // so unlike the path-routed services it has no PRM document and no identity gate;
 // it owns its WHOLE apex route table through appkit's Apex bypass (Spec.Default).
 //
-// The uniform chassis — the fixed subcommands (serve/version/manifest/migrate/
-// backup/restore), config-from-env, the migration runner + downgrade guard, the
+// The uniform chassis — the fixed subcommands (serve/version/migrate/schema),
+// config-from-env, the migration runner + downgrade guard, the
 // loopback HTTP server, graceful shutdown, and request-id/security middleware —
 // is owned by appkit. main.go declares only the dashboard's identity (the Spec)
 // and wires its domain surface (the apex AS/IAM/install/inventory route table,
-// its migrations, and its cert+S3 backup) through the Spec hooks.
+// and its migrations) through the Spec hooks.
 //
 // The AS resource list is DERIVED at startup from the per-service manifests under
 // DASHBOARD_MANIFEST_ROOT (/opt on the box) — registering a new MCP service is a
@@ -30,7 +30,6 @@ import (
 	"appkit/inventory"
 
 	"dashboard/internal/audit"
-	"dashboard/internal/backup"
 	"dashboard/internal/db"
 	"dashboard/internal/googleidp"
 	"dashboard/internal/grantevents"
@@ -53,12 +52,6 @@ func main() {
 		// Handlers builds the dashboard's whole apex route table over appkit's
 		// shared, migrated DB handle and mounts it via the Apex bypass.
 		Handlers: registerRoutes,
-		// Backup/Restore fold the dashboard's divergent cert+S3+DB snapshot into the
-		// binary (the path-routed default SQLite snapshot is insufficient — the apex
-		// owns the one TLS cert too). They also honor opsctl's local-snapshot
-		// contract (--out/--from) so install/rollback keep working unchanged.
-		Backup:  backup.Backup,
-		Restore: backup.Restore,
 	})
 }
 
