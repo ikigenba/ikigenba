@@ -77,9 +77,6 @@ var (
 )
 
 func main() {
-	setDefaultEnv("SCRIPTS_DB_PATH", filepath.Join("state", "scripts.db"))
-	setDefaultEnv("SCRIPTS_GENERATION_PATH", filepath.Join("cache", "scripts.db.generation"))
-
 	var rt *appkit.Router
 
 	// One worker per upstream — the notify multi-cursor pattern. Each closes over
@@ -92,7 +89,17 @@ func main() {
 		})
 	}
 
-	appkit.Main(appkit.Spec{
+	spec := scriptsSpec()
+	spec.Handlers = func(r *appkit.Router) error {
+		rt = r
+		return registerRoutes(r)
+	}
+	spec.Workers = workers
+	appkit.Main(spec)
+}
+
+func scriptsSpec() appkit.Spec {
+	return appkit.Spec{
 		App:   "scripts",
 		Mount: "/srv/scripts/",
 		Port:  3009,
@@ -125,19 +132,7 @@ func main() {
 			return nil
 		},
 		Migrations: db.FS,
-		Handlers: func(r *appkit.Router) error {
-			rt = r
-			return registerRoutes(r)
-		},
-		Workers: workers,
-	})
-}
-
-func setDefaultEnv(key, value string) {
-	if os.Getenv(key) != "" {
-		return
 	}
-	_ = os.Setenv(key, value)
 }
 
 // runConsumer drives eventplane/consumer.Run over one upstream's /feed until ctx
@@ -193,17 +188,17 @@ func registerRoutes(rt *appkit.Router) error {
 		return err
 	}
 
-	// State is durable; runs are rebuildable execution trees. With the default
-	// on-box layout, SCRIPTS_DB_PATH=/opt/scripts/state/scripts.db and run dirs
-	// live at /opt/scripts/runs/<run_id>/ so backup/restore keeps only state/.
-	dbPath := config.EnvOr(os.Getenv, "SCRIPTS_DB_PATH", filepath.Join("state", "scripts.db"))
-	rootDir := filepath.Dir(filepath.Dir(dbPath))
-	if rootDir == "" {
-		rootDir = "."
+	// State is durable; runs are rebuildable execution trees. appkit has already
+	// resolved the DB and generation paths; re-resolve the same env contract here
+	// so IKIGENBA_ROOT places runs at <root>/scripts/runs without path stamping.
+	cfg, err := config.Resolve("scripts", "/srv/scripts/", 3009, os.Getenv)
+	if err != nil {
+		return err
 	}
+	rootDir := scriptsRuntimeRoot(cfg.DBPath, cfg.GenerationPath, os.Getenv)
 	runsDir := filepath.Join(rootDir, "runs")
-	if err := os.MkdirAll(runsDir, 0o700); err != nil {
-		return fmt.Errorf("scripts: create runs dir: %w", err)
+	if err := recreateRunsDir(runsDir); err != nil {
+		return err
 	}
 
 	store := script.NewStore(conn)
@@ -232,5 +227,33 @@ func registerRoutes(rt *appkit.Router) error {
 	rt.Handle("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
 	rt.Handle("GET /static/", web.StaticHandler())
 	rt.Handle("POST /mcp", rt.RequireIdentity(mcp.NewHandler(svc, rt.Version(), rt.Service(), rt.Health())))
+	return nil
+}
+
+func scriptsRuntimeRoot(dbPath, generationPath string, getenv func(string) string) string {
+	if strings.TrimSpace(getenv("IKIGENBA_ROOT")) != "" || strings.TrimSpace(getenv("SCRIPTS_DB_PATH")) != "" {
+		rootDir := filepath.Dir(filepath.Dir(dbPath))
+		if rootDir == "" {
+			return "."
+		}
+		return rootDir
+	}
+	cacheDir := filepath.Dir(generationPath)
+	if cacheDir == "" {
+		return "."
+	}
+	return cacheDir
+}
+
+func recreateRunsDir(runsDir string) error {
+	if runsDir == "" || runsDir == "." || runsDir == string(os.PathSeparator) {
+		return fmt.Errorf("scripts: invalid runs dir %q", runsDir)
+	}
+	if err := os.RemoveAll(runsDir); err != nil {
+		return fmt.Errorf("scripts: recreate runs dir: remove %s: %w", runsDir, err)
+	}
+	if err := os.MkdirAll(runsDir, 0o700); err != nil {
+		return fmt.Errorf("scripts: recreate runs dir: mkdir %s: %w", runsDir, err)
+	}
 	return nil
 }

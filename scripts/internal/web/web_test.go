@@ -323,11 +323,10 @@ func TestCompositionRootAdoptsNewScriptsLayout(t *testing.T) {
 	main := string(src)
 
 	for _, want := range []string{
-		`setDefaultEnv("SCRIPTS_DB_PATH", filepath.Join("state", "scripts.db"))`,
-		`setDefaultEnv("SCRIPTS_GENERATION_PATH", filepath.Join("cache", "scripts.db.generation"))`,
-		`dbPath := config.EnvOr(os.Getenv, "SCRIPTS_DB_PATH", filepath.Join("state", "scripts.db"))`,
+		`cfg, err := config.Resolve("scripts", "/srv/scripts/", 3009, os.Getenv)`,
+		`rootDir := scriptsRuntimeRoot(cfg.DBPath, cfg.GenerationPath, os.Getenv)`,
 		`runsDir := filepath.Join(rootDir, "runs")`,
-		`os.MkdirAll(runsDir, 0o700)`,
+		`recreateRunsDir(runsDir)`,
 		`run := runner.New(store, rootDir, runTTL)`,
 		`svc := script.NewService(store, runsDir, run)`,
 	} {
@@ -343,12 +342,12 @@ func TestCompositionRootAdoptsNewScriptsLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{
-		"SCRIPTS_DB_PATH=state/scripts.db\n",
-		"SCRIPTS_GENERATION_PATH=cache/scripts.db.generation\n",
+	for _, forbidden := range []string{
+		"SCRIPTS_DB_PATH=",
+		"SCRIPTS_GENERATION_PATH=",
 	} {
-		if !strings.Contains(string(manifest), want) {
-			t.Fatalf("manifest.env missing exported unit env %q", want)
+		if strings.Contains(string(manifest), forbidden) {
+			t.Fatalf("manifest.env contains runtime path env %q", forbidden)
 		}
 	}
 }
