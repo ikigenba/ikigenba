@@ -9,8 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"appkit/manifest"
 )
 
 // buildBinary compiles the real cmd/webhooks binary to a temp path and returns it.
@@ -37,24 +40,29 @@ func freePort(t *testing.T) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
-// R-IC14-FKIK — the real binary's `manifest` verb byte-equals the committed
+// R-IC14-FKIK — the exported manifest library byte-equals the committed
 // etc/manifest.env, and that file declares the exact webhooks identity (a wrong
 // port/flag/extra or key reordering must fail here).
-func TestManifestVerbByteEqualsCommittedFile(t *testing.T) {
-	bin := buildBinary(t)
-
-	got, err := exec.Command(bin, "manifest").Output()
-	if err != nil {
-		t.Fatalf("run manifest verb: %v", err)
-	}
-
+func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
+	got := manifest.Emit(manifest.Fields{
+		App:     "webhooks",
+		Mount:   "/srv/webhooks/",
+		Default: false,
+		Port:    3011,
+		MCP:     true,
+		Feed:    "/feed",
+		Extras: []manifest.KV{
+			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
+			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
+		},
+	})
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
 	if err != nil {
 		t.Fatalf("read committed manifest.env: %v", err)
 	}
 
-	if string(got) != string(committed) {
-		t.Fatalf("manifest verb stdout != committed etc/manifest.env\n--- verb ---\n%s\n--- committed ---\n%s", got, committed)
+	if got != string(committed) {
+		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
 	}
 
 	// The committed manifest must declare webhooks's identity in the sibling field
@@ -69,6 +77,24 @@ func TestManifestVerbByteEqualsCommittedFile(t *testing.T) {
 		"OUTBOX_RETENTION_MAX_ROWS=1000000\n"
 	if string(committed) != want {
 		t.Fatalf("committed manifest.env:\n%s\nwant:\n%s", committed, want)
+	}
+}
+
+func TestManifestVerbRejectedByReducedAppkitDispatch(t *testing.T) {
+	bin := buildBinary(t)
+
+	out, err := exec.Command(bin, "manifest").CombinedOutput()
+	if err == nil {
+		t.Fatalf("manifest command succeeded, want reduced appkit dispatch rejection\n%s", out)
+	}
+	got := string(out)
+	for _, want := range []string{
+		`webhooks: unknown command "manifest"`,
+		"serve|version|migrate|schema",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("webhooks manifest rejection missing %q\n--- output ---\n%s", want, got)
+		}
 	}
 }
 
