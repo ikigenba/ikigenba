@@ -42,7 +42,7 @@ lines, so the anchored grep matches only phase lines.
 - Phase 29  ✅  realizes D10, D2   — opsctl deploy: three-symlink swap, unconditional backup, no manifest regen
 - Phase 30  ✅  realizes D10, D2   — opsctl rollback: recover by S3 backup recency (-N)
 - Phase 31  ✅  realizes D11, D7   — appkit verb-set reduction (drop manifest/backup/restore)
-- Phase 32  ⬜  realizes D4        — ship produces the versioned release bundle
+- Phase 32  ✅  realizes D4        — ship produces the versioned release bundle
 - Phase 33  ⬜  realizes D8, D11   — adopt dashboard into the new layout
 - Phase 34  ⬜  realizes D8, D11   — adopt crm into the new layout
 - Phase 35  ⬜  realizes D8, D11   — adopt ledger into the new layout
