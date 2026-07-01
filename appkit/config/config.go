@@ -40,6 +40,10 @@ type Config struct {
 func Resolve(app, mount string, defaultPort int, getenv func(string) string) (Config, error) {
 	up := strings.ToUpper(app)
 
+	if strings.TrimSpace(getenv("IKIGENBA_DOMAIN")) != "" && strings.TrimSpace(getenv("IKIGENBA_ROOT")) == "" {
+		return Config{}, fmt.Errorf("IKIGENBA_ROOT is required when IKIGENBA_DOMAIN is set")
+	}
+
 	port, err := EnvOrInt(getenv, up+"_PORT", defaultPort)
 	if err != nil {
 		return Config{}, err
@@ -49,8 +53,7 @@ func Resolve(app, mount string, defaultPort int, getenv func(string) string) (Co
 
 	dbPathKey := up + "_DB_PATH"
 	genPathKey := up + "_GENERATION_PATH"
-	dbPath := EnvOr(getenv, dbPathKey, "./tmp/"+app+".db")
-	genPath := EnvOr(getenv, genPathKey, dbPath+".generation")
+	dbPath, genPath := composeDataPaths(getenv, up, app)
 	if getenv(dbPathKey) != "" {
 		if err := ensureParentDir(dbPath, 0o750); err != nil {
 			return Config{}, fmt.Errorf("%s: %w", dbPathKey, err)
@@ -90,6 +93,25 @@ func composeURLs(getenv func(string) string, up, mount string) (resourceID, auth
 	resourceID = EnvOr(getenv, up+"_RESOURCE_ID", resourceID)
 	authServer = EnvOr(getenv, up+"_AUTH_SERVER", authServer)
 	return resourceID, authServer
+}
+
+// composeDataPaths composes DB and generation sidecar paths from IKIGENBA_ROOT,
+// with explicit per-app env overrides winning over composed defaults.
+func composeDataPaths(getenv func(string) string, up, app string) (db, gen string) {
+	root := strings.TrimSpace(getenv("IKIGENBA_ROOT"))
+	if root != "" {
+		db = filepath.Join(root, app, "state", app+".db")
+		gen = filepath.Join(root, app, "cache", app+".db.generation")
+	} else {
+		db = "./tmp/" + app + ".db"
+		gen = "./tmp/" + app + ".db.generation"
+	}
+	if override := getenv(up + "_DB_PATH"); override != "" {
+		db = override
+		gen = db + ".generation"
+	}
+	gen = EnvOr(getenv, up+"_GENERATION_PATH", gen)
+	return db, gen
 }
 
 // EnvOr returns getenv(key) when non-empty, else def.

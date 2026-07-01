@@ -1,11 +1,9 @@
-package config_test
+package config
 
 import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"appkit/config"
 )
 
 // envFunc returns a getenv backed by a map.
@@ -14,8 +12,9 @@ func envFunc(m map[string]string) func(string) string {
 }
 
 func TestResolve_ComposesURLsFromDomain(t *testing.T) {
-	cfg, err := config.Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
+	cfg, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
 		"IKIGENBA_DOMAIN": "int.ikigenba.com",
+		"IKIGENBA_ROOT":   "/opt",
 	}))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -35,7 +34,7 @@ func TestResolve_ComposesURLsFromDomain(t *testing.T) {
 }
 
 func TestResolve_LocalhostDefaults(t *testing.T) {
-	cfg, err := config.Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{}))
+	cfg, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{}))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -49,12 +48,15 @@ func TestResolve_LocalhostDefaults(t *testing.T) {
 
 func TestResolve_ExplicitOverrideWins(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "var", "data", "ledger.db")
-	cfg, err := config.Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
-		"IKIGENBA_DOMAIN":    "int.ikigenba.com",
-		"LEDGER_RESOURCE_ID": "https://override.example/srv/ledger/mcp",
-		"LEDGER_AUTH_SERVER": "https://override.example",
-		"LEDGER_PORT":        "9999",
-		"LEDGER_DB_PATH":     dbPath,
+	genPath := filepath.Join(t.TempDir(), "var", "cache", "ledger.db.generation")
+	cfg, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
+		"IKIGENBA_DOMAIN":        "int.ikigenba.com",
+		"IKIGENBA_ROOT":          "/opt",
+		"LEDGER_RESOURCE_ID":     "https://override.example/srv/ledger/mcp",
+		"LEDGER_AUTH_SERVER":     "https://override.example",
+		"LEDGER_PORT":            "9999",
+		"LEDGER_DB_PATH":         dbPath,
+		"LEDGER_GENERATION_PATH": genPath,
 	}))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -71,20 +73,63 @@ func TestResolve_ExplicitOverrideWins(t *testing.T) {
 	if cfg.DBPath != dbPath {
 		t.Errorf("DBPath = %q, want explicit", cfg.DBPath)
 	}
-	if want := dbPath + ".generation"; cfg.GenerationPath != want {
-		t.Errorf("GenerationPath = %q, want %q (derived from DBPath)", cfg.GenerationPath, want)
+	if cfg.GenerationPath != genPath {
+		t.Errorf("GenerationPath = %q, want explicit", cfg.GenerationPath)
 	}
 }
 
-func TestResolve_UnitStateCachePathsAreIndependent(t *testing.T) {
-	// R-485J-7TWG
-	root := t.TempDir()
-	dbPath := filepath.Join(root, "opt", "ledger", "state", "ledger.db")
-	genPath := filepath.Join(root, "opt", "ledger", "cache", "ledger.db.generation")
+func TestComposeDataPaths_RootOverridesAndDevDefaults(t *testing.T) {
+	// R-8FUU-NRQT
+	t.Run("production root", func(t *testing.T) {
+		dbPath, genPath := composeDataPaths(envFunc(map[string]string{
+			"IKIGENBA_ROOT": "/opt",
+		}), "LEDGER", "ledger")
 
-	cfg, err := config.Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
-		"LEDGER_DB_PATH":         dbPath,
-		"LEDGER_GENERATION_PATH": genPath,
+		if want := filepath.Join("/opt", "ledger", "state", "ledger.db"); dbPath != want {
+			t.Fatalf("dbPath = %q, want %q", dbPath, want)
+		}
+		if want := filepath.Join("/opt", "ledger", "cache", "ledger.db.generation"); genPath != want {
+			t.Fatalf("genPath = %q, want %q", genPath, want)
+		}
+	})
+
+	t.Run("explicit overrides", func(t *testing.T) {
+		dbOverride := filepath.Join(t.TempDir(), "custom", "ledger.db")
+		genOverride := filepath.Join(t.TempDir(), "custom", "ledger.db.generation")
+		dbPath, genPath := composeDataPaths(envFunc(map[string]string{
+			"IKIGENBA_ROOT":          "/opt",
+			"LEDGER_DB_PATH":         dbOverride,
+			"LEDGER_GENERATION_PATH": genOverride,
+		}), "LEDGER", "ledger")
+
+		if dbPath != dbOverride {
+			t.Fatalf("dbPath = %q, want explicit %q", dbPath, dbOverride)
+		}
+		if genPath != genOverride {
+			t.Fatalf("genPath = %q, want explicit %q", genPath, genOverride)
+		}
+	})
+
+	t.Run("dev defaults", func(t *testing.T) {
+		dbPath, genPath := composeDataPaths(envFunc(map[string]string{}), "LEDGER", "ledger")
+
+		if want := "./tmp/ledger.db"; dbPath != want {
+			t.Fatalf("dbPath = %q, want %q", dbPath, want)
+		}
+		if want := "./tmp/ledger.db.generation"; genPath != want {
+			t.Fatalf("genPath = %q, want %q", genPath, want)
+		}
+	})
+}
+
+func TestResolve_ProductionStateCachePathsAreIndependent(t *testing.T) {
+	// R-485J-7TWG
+	root := filepath.Join(t.TempDir(), "opt")
+	dbPath := filepath.Join(root, "ledger", "state", "ledger.db")
+	genPath := filepath.Join(root, "ledger", "cache", "ledger.db.generation")
+
+	cfg, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
+		"IKIGENBA_ROOT": root,
 	}))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -106,9 +151,23 @@ func TestResolve_UnitStateCachePathsAreIndependent(t *testing.T) {
 	}
 }
 
-func TestResolve_ApexMount(t *testing.T) {
-	cfg, err := config.Resolve("dashboard", "/", 3000, envFunc(map[string]string{
+func TestResolve_DomainWithoutRootFailsLoudly(t *testing.T) {
+	// R-8H2R-1JHI
+	cfg, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
 		"IKIGENBA_DOMAIN": "int.ikigenba.com",
+	}))
+	if err == nil {
+		t.Fatal("Resolve returned nil error when IKIGENBA_DOMAIN was set without IKIGENBA_ROOT")
+	}
+	if cfg.DBPath == "./tmp/ledger.db" {
+		t.Fatalf("Resolve silently used dev DBPath %q", cfg.DBPath)
+	}
+}
+
+func TestResolve_ApexMount(t *testing.T) {
+	cfg, err := Resolve("dashboard", "/", 3000, envFunc(map[string]string{
+		"IKIGENBA_DOMAIN": "int.ikigenba.com",
+		"IKIGENBA_ROOT":   "/opt",
 	}))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -119,7 +178,7 @@ func TestResolve_ApexMount(t *testing.T) {
 }
 
 func TestResolve_BadPortErrors(t *testing.T) {
-	_, err := config.Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
+	_, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
 		"LEDGER_PORT": "not-a-number",
 	}))
 	if err == nil {
@@ -129,26 +188,26 @@ func TestResolve_BadPortErrors(t *testing.T) {
 
 func TestEnvOrInt(t *testing.T) {
 	get := envFunc(map[string]string{"A": "42", "B": "oops"})
-	if v, err := config.EnvOrInt(get, "A", 7); err != nil || v != 42 {
+	if v, err := EnvOrInt(get, "A", 7); err != nil || v != 42 {
 		t.Errorf("A: got (%d, %v), want (42, nil)", v, err)
 	}
-	if v, err := config.EnvOrInt(get, "MISSING", 7); err != nil || v != 7 {
+	if v, err := EnvOrInt(get, "MISSING", 7); err != nil || v != 7 {
 		t.Errorf("MISSING: got (%d, %v), want (7, nil)", v, err)
 	}
-	if _, err := config.EnvOrInt(get, "B", 7); err == nil {
+	if _, err := EnvOrInt(get, "B", 7); err == nil {
 		t.Error("B: expected error for malformed int")
 	}
 }
 
 func TestEnvOrDuration(t *testing.T) {
 	get := envFunc(map[string]string{"D": "5s", "E": "nope"})
-	if v, err := config.EnvOrDuration(get, "D", time.Second); err != nil || v != 5*time.Second {
+	if v, err := EnvOrDuration(get, "D", time.Second); err != nil || v != 5*time.Second {
 		t.Errorf("D: got (%v, %v), want (5s, nil)", v, err)
 	}
-	if v, err := config.EnvOrDuration(get, "MISSING", time.Second); err != nil || v != time.Second {
+	if v, err := EnvOrDuration(get, "MISSING", time.Second); err != nil || v != time.Second {
 		t.Errorf("MISSING: got (%v, %v), want (1s, nil)", v, err)
 	}
-	if _, err := config.EnvOrDuration(get, "E", time.Second); err == nil {
+	if _, err := EnvOrDuration(get, "E", time.Second); err == nil {
 		t.Error("E: expected error for malformed duration")
 	}
 }
