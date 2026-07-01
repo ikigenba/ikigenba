@@ -368,13 +368,3 @@ a:hover { text-decoration: underline; }
 .alert .body { font-size: var(--text-small-size); color: var(--color-text-muted); }
 
 .token-done { margin-top: var(--space-6); }
-
-/* ---- Footer ------------------------------------------------------------ */
-.site-footer {
-  margin-top: var(--space-16);
-  padding-top: var(--space-6);
-  border-top: var(--border-width) solid var(--color-border);
-  text-align: center;
-  font-family: var(--font-mono); font-size: var(--text-label-size);
-  color: var(--color-text-subtle);
-}

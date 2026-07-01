@@ -125,10 +125,6 @@ func TestIndex(t *testing.T) {
 	if !strings.Contains(body, "ikigenba") {
 		t.Errorf("body missing product name:\n%s", body)
 	}
-	// Host self-templating: the request host appears in the page.
-	if !strings.Contains(body, "int.ikigenba.com") {
-		t.Errorf("body missing request host:\n%s", body)
-	}
 }
 
 func TestIndexEscapesHost(t *testing.T) {

@@ -152,16 +152,42 @@ func TestIndexLoggedOutKeepsSigninCopy(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	body := rec.Body.String()
+	wall := signinWallMain(t, body)
 	for _, want := range []string{
 		`<p class="wordmark" style="font-family: var(--font-display); font-size: var(--text-h3-size); font-weight: var(--text-h3-weight); margin: 0;">ikigenba</p>`,
-		`<h1>Your account's control plane</h1>`,
-		`<p>Sign in to access your services.</p>`,
+		`<h1>Sign in to access your services.</h1>`,
 		`<a href="/login" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>`,
 	} {
 		// R-DB18-KEEP
 		if !strings.Contains(body, want) {
 			t.Errorf("logged-out index no longer keeps sign-in copy %q:\n%s", want, body)
 		}
+	}
+	if got := strings.Count(wall, `<h1>Sign in to access your services.</h1>`); got != 1 {
+		t.Errorf("sign-in heading count = %d, want 1:\n%s", got, wall)
+	}
+	for _, stale := range []string{
+		`Your account's control plane`,
+		`<p>Sign in to access your services.</p>`,
+		`tokens`,
+		`agents`,
+		`MCP`,
+	} {
+		if strings.Contains(wall, stale) {
+			t.Errorf("sign-in wall still contains stale descriptive copy %q:\n%s", stale, wall)
+		}
+	}
+	for _, want := range []string{
+		`<p class="wordmark"`,
+		`<p class="name-origin-lede">`,
+		`<p class="name-origin-say">`,
+	} {
+		if !strings.Contains(wall, want) {
+			t.Errorf("sign-in wall missing allowed paragraph %q:\n%s", want, wall)
+		}
+	}
+	if got := strings.Count(wall, "<p"); got != 3 {
+		t.Errorf("sign-in wall paragraph count = %d, want wordmark plus name-origin lede and say:\n%s", got, wall)
 	}
 }
 
