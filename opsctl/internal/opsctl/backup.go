@@ -71,13 +71,20 @@ func (o *Opsctl) backupState(ctx context.Context, app string) (err error) {
 	if err := createStateArchive(ctx, l, archive); err != nil {
 		return err
 	}
+	version, err := o.currentVersion(l)
+	if err != nil {
+		return err
+	}
+	if version == "" {
+		return fmt.Errorf("backup: current version unavailable: %s does not exist", l.RunLink())
+	}
 	f, err := os.Open(archive)
 	if err != nil {
 		return fmt.Errorf("backup: open archive: %w", err)
 	}
 	defer f.Close()
 
-	key := snapshotKey(app, time.Now().UTC())
+	key := snapshotKey(app, version, time.Now().UTC())
 	if err := store.Put(ctx, key, f); err != nil {
 		return err
 	}
@@ -151,9 +158,6 @@ func (o *Opsctl) Restore(ctx context.Context, app, key string, confirm io.Reader
 	}
 	defer os.RemoveAll(work)
 
-	if err := putPreRestore(ctx, store, l, app, work); err != nil {
-		return err
-	}
 	archive := filepath.Join(work, "restore.tar")
 	out, err := os.Create(archive)
 	if err != nil {
@@ -232,22 +236,6 @@ func createCertArchive(ctx context.Context, l Layout, dst string) error {
 		return fmt.Errorf("backup: tar cert: %w", err)
 	}
 	return nil
-}
-
-func putPreRestore(ctx context.Context, store ObjectStore, l Layout, app, work string) error {
-	if _, err := os.Stat(l.StateDir()); err != nil {
-		return fmt.Errorf("restore: pre-restore state dir %s: %w", l.StateDir(), err)
-	}
-	archive := filepath.Join(work, "pre-restore.tar")
-	if err := createStateArchive(ctx, l, archive); err != nil {
-		return err
-	}
-	f, err := os.Open(archive)
-	if err != nil {
-		return fmt.Errorf("restore: open pre-restore archive: %w", err)
-	}
-	defer f.Close()
-	return store.Put(ctx, preRestoreKey(app, time.Now().UTC()), f)
 }
 
 func restoreLatestCert(ctx context.Context, store ObjectStore, l Layout, work string) error {
@@ -363,7 +351,7 @@ func pruneBackups(ctx context.Context, store ObjectStore, app string) error {
 	return nil
 }
 
-func snapshotPrefix(app string) string { return app + "/snapshots/" }
+func snapshotPrefix(app string) string { return app + "/" + app + "-" }
 func latestKey(app string) string      { return app + "/latest" }
 func certPrefix(app string) string     { return app + "/cert/" }
 func certLatestKey(app string) string  { return certPrefix(app) + "latest" }
@@ -372,16 +360,12 @@ func letsEncryptRoot(l Layout) string {
 	return filepath.Join(l.SysRoot, "etc", "letsencrypt")
 }
 
-func snapshotKey(app string, t time.Time) string {
-	return snapshotPrefix(app) + t.Format("20060102T150405.000000000Z") + ".tar"
+func snapshotKey(app, version string, t time.Time) string {
+	return snapshotPrefix(app) + version + "." + t.Format("20060102T150405.000000000Z") + ".tar.gz"
 }
 
 func certSnapshotKey(app string, t time.Time) string {
 	return certPrefix(app) + t.Format("20060102T150405.000000000Z") + ".tar"
-}
-
-func preRestoreKey(app string, t time.Time) string {
-	return app + "/pre-restore/" + t.Format("20060102T150405.000000000Z") + ".tar"
 }
 
 func execTar(ctx context.Context, name string, args ...string) error {

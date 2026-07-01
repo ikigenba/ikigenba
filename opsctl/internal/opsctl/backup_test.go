@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeStore struct {
@@ -265,6 +266,7 @@ func TestBackupArchiveContainsOnlyStateDirectory(t *testing.T) {
 	// R-4HWQ-9ZU0
 	root := t.TempDir()
 	l := NewLayout(root, "ledger")
+	writeRunLink(t, l)
 	writeStateFile(t, l, "ledger.db", "db")
 	writeStateFile(t, l, "nested/data.txt", "state data")
 	if err := os.MkdirAll(l.CacheDir(), 0o755); err != nil {
@@ -298,11 +300,45 @@ func TestBackupArchiveContainsOnlyStateDirectory(t *testing.T) {
 	}
 }
 
+func TestBackupSnapshotKeyEmbedsProducingVersion(t *testing.T) {
+	// R-82FY-GAL6
+	root := t.TempDir()
+	l := NewLayout(root, "ledger")
+	writeRunLink(t, l)
+	writeStateFile(t, l, "ledger.db", "db")
+
+	store := newFakeStore()
+	if err := testOps(root, &stubSystem{}, store).Backup(context.Background(), "ledger"); err != nil {
+		t.Fatalf("Backup: %v", err)
+	}
+
+	key, archive := snapshotObject(t, store)
+	const prefix = "ledger/ledger-v1.0.0."
+	const suffix = ".tar.gz"
+	if !strings.HasPrefix(key, prefix) || !strings.HasSuffix(key, suffix) {
+		t.Fatalf("snapshot key = %q, want %s<UTC>%s", key, prefix, suffix)
+	}
+	stamp := strings.TrimSuffix(strings.TrimPrefix(key, prefix), suffix)
+	if _, err := time.Parse("20060102T150405.000000000Z", stamp); err != nil {
+		t.Fatalf("snapshot key timestamp = %q, want UTC timestamp: %v", stamp, err)
+	}
+	if key == "ledger/snapshots/"+stamp+".tar" || key == "ledger/"+stamp+".tar.gz" {
+		t.Fatalf("snapshot key %q did not embed producing version", key)
+	}
+	if latest := strings.TrimSpace(string(store.data[latestKey("ledger")])); latest != key {
+		t.Fatalf("latest = %q, want %q", latest, key)
+	}
+	if got := tarFile(t, archive, "state/ledger.db"); got != "db" {
+		t.Fatalf("archive ledger db = %q, want db", got)
+	}
+}
+
 func TestBackupDashboardWritesIndependentCertObjectAndLatest(t *testing.T) {
 	// R-TAOX-5LKS
 	root := t.TempDir()
 	sysRoot := t.TempDir()
 	l := NewLayoutSys(root, sysRoot, "dashboard")
+	writeRunLink(t, l)
 	writeStateFile(t, l, "dashboard.db", "state bytes")
 	privateKey := "PRIVATE-KEY-MATERIAL-SHOULD-STAY-OPAQUE"
 	writeCertFile(t, l, "archive/int.example.com/privkey1.pem", privateKey)
@@ -415,14 +451,14 @@ func TestBackupAllContinuesAfterOneServiceFailsAndStillBacksUpCert(t *testing.T)
 	}
 }
 
-func TestBackupRetentionKeepsThirtySnapshotsWithoutPruningLatestOrPreRestore(t *testing.T) {
-	// R-4J4M-NRKP
+func TestBackupRetentionKeepsThirtySnapshotsWithoutPruningLatestOrLegacyPreRestore(t *testing.T) {
 	root := t.TempDir()
 	l := NewLayout(root, "ledger")
+	writeRunLink(t, l)
 	writeStateFile(t, l, "ledger.db", "db")
 	store := newFakeStore()
 	for i := 0; i < 31; i++ {
-		store.data[fmt.Sprintf("%s20000101T0000%02d.000000000Z.tar", snapshotPrefix("ledger"), i)] = []byte("old")
+		store.data[fmt.Sprintf("%sv1.0.0.20000101T0000%02d.000000000Z.tar.gz", snapshotPrefix("ledger"), i)] = []byte("old")
 	}
 	store.data[latestKey("ledger")] = []byte("do-not-prune")
 	store.data["ledger/pre-restore/20000101T000000.000000000Z.tar"] = []byte("safety")
@@ -443,6 +479,44 @@ func TestBackupRetentionKeepsThirtySnapshotsWithoutPruningLatestOrPreRestore(t *
 		if _, ok := store.data[key]; !ok {
 			t.Fatalf("%s was pruned", key)
 		}
+	}
+}
+
+func TestRestoreRequiresConfirmationAndDoesNotWritePreRestoreSnapshot(t *testing.T) {
+	// R-4J4M-NRKP
+	root := t.TempDir()
+	l := NewLayout(root, "ledger")
+	writeStateFile(t, l, "ledger.db", "old")
+	store := newFakeStore()
+	snapshot := snapshotPrefix("ledger") + "v1.0.0.20000101T000000.000000000Z.tar.gz"
+	store.data[snapshot] = makeArchive(t, t.TempDir(), "ledger", map[string]string{"ledger.db": "new"})
+	store.data[latestKey("ledger")] = []byte(snapshot + "\n")
+
+	if err := testOps(root, &stubSystem{}, store).Restore(context.Background(), "ledger", "", nil); err == nil {
+		t.Fatal("Restore without interactive confirmation succeeded")
+	}
+	if got := tarFile(t, store.data[snapshot], "state/ledger.db"); got != "new" {
+		t.Fatalf("stored snapshot db = %q, want new", got)
+	}
+	if got, err := os.ReadFile(l.DBPath()); err != nil || string(got) != "old" {
+		t.Fatalf("live db after refused restore = %q, %v; want old", got, err)
+	}
+
+	var events []string
+	store.events = &events
+	if err := testOps(root, &stubSystem{}, store).Restore(context.Background(), "ledger", "", strings.NewReader("ledger\n")); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("restore wrote object store events = %v, want none", events)
+	}
+	for key := range store.data {
+		if strings.Contains(key, "/pre-restore/") {
+			t.Fatalf("restore left pre-restore object %q", key)
+		}
+	}
+	if got, err := os.ReadFile(l.DBPath()); err != nil || string(got) != "new" {
+		t.Fatalf("live db after confirmed restore = %q, %v; want new", got, err)
 	}
 }
 
@@ -526,33 +600,6 @@ func TestRestoreDashboardRestoresCertLatestIndependentOfStateSnapshotWithoutIssu
 	}
 	if logs := out.String() + errOut.String(); strings.Contains(logs, privateKey) {
 		t.Fatalf("restore output leaked private key material: %q", logs)
-	}
-}
-
-func TestRestoreWritesPreRestoreSnapshotBeforeReplacingState(t *testing.T) {
-	// R-46XM-U25R
-	root := t.TempDir()
-	l := NewLayout(root, "ledger")
-	writeStateFile(t, l, "ledger.db", "old")
-	store := newFakeStore()
-	snapshot := snapshotPrefix("ledger") + "snapshot.tar"
-	store.data[snapshot] = makeArchive(t, t.TempDir(), "ledger", map[string]string{"ledger.db": "new"})
-	store.data[latestKey("ledger")] = []byte(snapshot + "\n")
-
-	if err := testOps(root, &stubSystem{}, store).Restore(context.Background(), "ledger", "", strings.NewReader("ledger\n")); err != nil {
-		t.Fatalf("Restore: %v", err)
-	}
-	var preKeys []string
-	for key := range store.data {
-		if strings.HasPrefix(key, "ledger/pre-restore/") {
-			preKeys = append(preKeys, key)
-		}
-	}
-	if len(preKeys) != 1 {
-		t.Fatalf("pre-restore snapshot count = %d, want 1: %v", len(preKeys), preKeys)
-	}
-	if got := tarFile(t, store.data[preKeys[0]], "state/ledger.db"); got != "old" {
-		t.Fatalf("pre-restore db = %q, want old", got)
 	}
 }
 
