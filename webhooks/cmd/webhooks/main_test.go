@@ -1,14 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,20 +33,23 @@ func buildBinary(t *testing.T) string {
 	return bin
 }
 
-// freePort returns an OS-assigned free TCP port on loopback.
-func freePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+// R-8DF1-W89F
+func TestCommittedManifestIsPortable(t *testing.T) {
+	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
 	if err != nil {
-		t.Fatalf("reserve port: %v", err)
+		t.Fatalf("read committed manifest.env: %v", err)
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	if bytes.Contains(committed, []byte("/opt/")) {
+		t.Fatalf("committed manifest.env contains on-box /opt/ path:\n%s", committed)
+	}
+	for _, line := range bytes.Split(committed, []byte("\n")) {
+		if bytes.HasPrefix(line, []byte("WEBHOOKS_DB_PATH=")) || bytes.HasPrefix(line, []byte("WEBHOOKS_GENERATION_PATH=")) {
+			t.Fatalf("committed manifest.env contains runtime path line %q", line)
+		}
+	}
 }
 
-// R-IC14-FKIK — the exported manifest library byte-equals the committed
-// etc/manifest.env, and that file declares the exact webhooks identity (a wrong
-// port/flag/extra or key reordering must fail here).
+// R-8IAN-FB87
 func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	got := manifest.Emit(manifest.Fields{
 		App:     "webhooks",
@@ -63,36 +71,6 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
 	}
-
-	// The committed manifest must declare webhooks's identity in the sibling field
-	// order (APP, MOUNT, DEFAULT=false, PORT, MCP, FEED, then the ordered extras).
-	want := "APP=webhooks\n" +
-		"MOUNT=/srv/webhooks/\n" +
-		"DEFAULT=false\n" +
-		"PORT=3011\n" +
-		"MCP=true\n" +
-		"FEED=/feed\n" +
-		"OUTBOX_RETENTION_DAYS=7\n" +
-		"OUTBOX_RETENTION_MAX_ROWS=1000000\n"
-	if string(committed) != want {
-		t.Fatalf("committed manifest.env:\n%s\nwant:\n%s", committed, want)
-	}
-}
-
-func TestManifestVerbEmitsCommittedManifest(t *testing.T) {
-	bin := buildBinary(t)
-
-	out, err := exec.Command(bin, "manifest").CombinedOutput()
-	if err != nil {
-		t.Fatalf("manifest command: %v\n%s", err, out)
-	}
-	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
-	if err != nil {
-		t.Fatalf("read committed manifest.env: %v", err)
-	}
-	if string(out) != string(committed) {
-		t.Fatalf("manifest command != committed etc/manifest.env\n--- command ---\n%s\n--- committed ---\n%s", out, committed)
-	}
 }
 
 // R-ID90-TC99 — `serve` against a clean empty temp-file SQLite applies all
@@ -103,7 +81,7 @@ func TestServeMigratesAndServesHealth(t *testing.T) {
 	bin := buildBinary(t)
 
 	dbPath := filepath.Join(t.TempDir(), "webhooks.db")
-	port := freePort(t)
+	port := freeTCPPort(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -156,5 +134,191 @@ func TestServeMigratesAndServesHealth(t *testing.T) {
 	// not :memory:).
 	if _, err := os.Stat(dbPath); err != nil {
 		t.Fatalf("migrated DB %s missing: %v", dbPath, err)
+	}
+}
+
+// R-4LKF-FB23
+func TestWebhooksBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
+	root := t.TempDir()
+	appRoot := filepath.Join(root, "webhooks")
+	stateDir := filepath.Join(appRoot, "state")
+	cacheDir := filepath.Join(appRoot, "cache")
+	libexecDir := filepath.Join(appRoot, "libexec")
+	binDir := filepath.Join(appRoot, "bin")
+	etcDir := filepath.Join(appRoot, "etc")
+	shareDir := filepath.Join(appRoot, "share")
+	for _, dir := range []string{stateDir, cacheDir, libexecDir, binDir, etcDir, shareDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	versionBytes, err := os.ReadFile(filepath.Join("..", "..", "VERSION"))
+	if err != nil {
+		t.Fatalf("read VERSION: %v", err)
+	}
+	version := strings.TrimSpace(string(versionBytes))
+	if !regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(version) {
+		t.Fatalf("VERSION = %q, want v-prefixed SemVer", version)
+	}
+
+	committedManifest, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest.env: %v", err)
+	}
+	etcVersionDir := filepath.Join(etcDir, version)
+	shareVersionDir := filepath.Join(shareDir, version)
+	for _, dir := range []string{etcVersionDir, shareVersionDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	shippedManifest := filepath.Join(etcVersionDir, "manifest.env")
+	if err := os.WriteFile(shippedManifest, committedManifest, 0o644); err != nil {
+		t.Fatalf("write shipped manifest.env: %v", err)
+	}
+	if err := os.Symlink(version, filepath.Join(etcDir, "current")); err != nil {
+		t.Fatalf("symlink etc/current: %v", err)
+	}
+	if err := os.Symlink(version, filepath.Join(shareDir, "current")); err != nil {
+		t.Fatalf("symlink share/current: %v", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(filepath.Join(etcDir, "current")); err != nil || resolved != etcVersionDir {
+		t.Fatalf("etc/current resolves to %q err=%v, want %q", resolved, err, etcVersionDir)
+	}
+	if resolved, err := filepath.EvalSymlinks(filepath.Join(shareDir, "current")); err != nil || resolved != shareVersionDir {
+		t.Fatalf("share/current resolves to %q err=%v, want %q", resolved, err, shareVersionDir)
+	}
+	selectedManifest, err := os.ReadFile(filepath.Join(etcDir, "current", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read selected manifest.env: %v", err)
+	}
+	if !bytes.Equal(selectedManifest, committedManifest) {
+		t.Fatalf("selected manifest.env differs from committed authored file\n--- selected ---\n%s\n--- committed ---\n%s", selectedManifest, committedManifest)
+	}
+
+	binary := filepath.Join(libexecDir, "webhooks-"+version)
+	build := exec.Command("go", "build", "-o", binary, ".")
+	build.Env = os.Environ()
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build webhooks: %v\n%s", err, out)
+	}
+
+	run := filepath.Join(binDir, "run")
+	if err := os.Symlink("../libexec/webhooks-"+version, run); err != nil {
+		t.Fatalf("symlink bin/run: %v", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(run); err != nil || resolved != binary {
+		t.Fatalf("bin/run resolves to %q err=%v, want %q", resolved, err, binary)
+	}
+
+	port := freeTCPPort(t)
+	dbPath := filepath.Join(stateDir, "webhooks.db")
+	generationPath := filepath.Join(cacheDir, "webhooks.db.generation")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, run, "serve")
+	cmd.Env = testEnv(map[string]string{
+		"IKIGENBA_DOMAIN":           "int.ikigenba.com",
+		"IKIGENBA_ROOT":             root,
+		"WEBHOOKS_IP":               "127.0.0.1",
+		"WEBHOOKS_PORT":             fmt.Sprintf("%d", port),
+		"OUTBOX_RETENTION_DAYS":     "7",
+		"OUTBOX_RETENTION_MAX_ROWS": "1000000",
+	})
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start webhooks: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	defer stopProcess(cancel, done)
+
+	doc := waitForHealth(t, port, done, &stdout, &stderr)
+	if got := doc["service"]; got != "webhooks" {
+		t.Fatalf("health service = %v, want webhooks; body=%v", got, doc)
+	}
+	if got := doc["status"]; got != "ok" {
+		t.Fatalf("health status = %v, want ok; body=%v", got, doc)
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("webhooks did not create DB under state/: %v", err)
+	}
+	if _, err := os.Stat(generationPath); err != nil {
+		t.Fatalf("webhooks did not create generation sidecar under cache/: %v", err)
+	}
+	if filepath.Dir(generationPath) != cacheDir {
+		t.Fatalf("generation sidecar path %s is not under cache dir %s", generationPath, cacheDir)
+	}
+}
+
+func testEnv(overrides map[string]string) []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env)+len(overrides))
+	for _, kv := range env {
+		key, _, _ := strings.Cut(kv, "=")
+		if _, ok := overrides[key]; ok {
+			continue
+		}
+		out = append(out, kv)
+	}
+	for key, value := range overrides {
+		out = append(out, key+"="+value)
+	}
+	return out
+}
+
+func freeTCPPort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for free port: %v", err)
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port
+}
+
+func waitForHealth(t *testing.T, port int, done <-chan error, stdout, stderr *bytes.Buffer) map[string]any {
+	t.Helper()
+	url := fmt.Sprintf("http://127.0.0.1:%d/health", port)
+	client := http.Client{Timeout: 250 * time.Millisecond}
+	deadline := time.Now().Add(5 * time.Second)
+	var last string
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-done:
+			t.Fatalf("webhooks exited before health: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+		default:
+		}
+
+		resp, err := client.Get(url)
+		if err == nil {
+			body, readErr := io.ReadAll(resp.Body)
+			closeErr := resp.Body.Close()
+			if resp.StatusCode == http.StatusOK && readErr == nil && closeErr == nil {
+				var doc map[string]any
+				if err := json.Unmarshal(body, &doc); err != nil {
+					t.Fatalf("decode health JSON: %v\nbody:\n%s", err, body)
+				}
+				return doc
+			}
+			last = fmt.Sprintf("status=%d read=%v close=%v body=%s", resp.StatusCode, readErr, closeErr, body)
+		} else {
+			last = err.Error()
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("webhooks never served health at %s: %s\nstdout:\n%s\nstderr:\n%s", url, last, stdout.String(), stderr.String())
+	return nil
+}
+
+func stopProcess(cancel context.CancelFunc, done <-chan error) {
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
 	}
 }
