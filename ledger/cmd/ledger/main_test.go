@@ -15,7 +15,49 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"appkit/manifest"
 )
+
+// R-8DF1-W89F
+func TestCommittedManifestIsPortable(t *testing.T) {
+	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest.env: %v", err)
+	}
+	if bytes.Contains(committed, []byte("/opt/")) {
+		t.Fatalf("committed manifest.env contains on-box /opt/ path:\n%s", committed)
+	}
+	for _, line := range bytes.Split(committed, []byte("\n")) {
+		if bytes.HasPrefix(line, []byte("LEDGER_DB_PATH=")) || bytes.HasPrefix(line, []byte("LEDGER_GENERATION_PATH=")) {
+			t.Fatalf("committed manifest.env contains runtime path line %q", line)
+		}
+	}
+}
+
+// R-8IAN-FB87
+func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
+	got := manifest.Emit(manifest.Fields{
+		App:     "ledger",
+		Mount:   "/srv/ledger/",
+		Default: false,
+		Port:    3002,
+		MCP:     true,
+		Feed:    "/feed",
+		Extras: []manifest.KV{
+			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
+			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
+		},
+	})
+	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest.env: %v", err)
+	}
+
+	if got != string(committed) {
+		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
+	}
+}
 
 // R-4LKF-FB23
 func TestLedgerBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
@@ -26,7 +68,8 @@ func TestLedgerBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	libexecDir := filepath.Join(appRoot, "libexec")
 	binDir := filepath.Join(appRoot, "bin")
 	etcDir := filepath.Join(appRoot, "etc")
-	for _, dir := range []string{stateDir, cacheDir, libexecDir, binDir, etcDir} {
+	shareDir := filepath.Join(appRoot, "share")
+	for _, dir := range []string{stateDir, cacheDir, libexecDir, binDir, etcDir, shareDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
@@ -39,6 +82,41 @@ func TestLedgerBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	version := strings.TrimSpace(string(versionBytes))
 	if !regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(version) {
 		t.Fatalf("VERSION = %q, want v-prefixed SemVer", version)
+	}
+
+	committedManifest, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest.env: %v", err)
+	}
+	etcVersionDir := filepath.Join(etcDir, version)
+	shareVersionDir := filepath.Join(shareDir, version)
+	for _, dir := range []string{etcVersionDir, shareVersionDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	shippedManifest := filepath.Join(etcVersionDir, "manifest.env")
+	if err := os.WriteFile(shippedManifest, committedManifest, 0o644); err != nil {
+		t.Fatalf("write shipped manifest.env: %v", err)
+	}
+	if err := os.Symlink(version, filepath.Join(etcDir, "current")); err != nil {
+		t.Fatalf("symlink etc/current: %v", err)
+	}
+	if err := os.Symlink(version, filepath.Join(shareDir, "current")); err != nil {
+		t.Fatalf("symlink share/current: %v", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(filepath.Join(etcDir, "current")); err != nil || resolved != etcVersionDir {
+		t.Fatalf("etc/current resolves to %q err=%v, want %q", resolved, err, etcVersionDir)
+	}
+	if resolved, err := filepath.EvalSymlinks(filepath.Join(shareDir, "current")); err != nil || resolved != shareVersionDir {
+		t.Fatalf("share/current resolves to %q err=%v, want %q", resolved, err, shareVersionDir)
+	}
+	selectedManifest, err := os.ReadFile(filepath.Join(etcDir, "current", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read selected manifest.env: %v", err)
+	}
+	if !bytes.Equal(selectedManifest, committedManifest) {
+		t.Fatalf("selected manifest.env differs from committed authored file\n--- selected ---\n%s\n--- committed ---\n%s", selectedManifest, committedManifest)
 	}
 
 	binary := filepath.Join(libexecDir, "ledger-"+version)
