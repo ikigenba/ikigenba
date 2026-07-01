@@ -13,7 +13,7 @@ Verification ids change.
 - D4 → `project/design/D04.md` — OAuth grant management moves to the profile page — owns R-DB09-GRNT, R-DB10-GRVK, R-DB11-GRNX
 - D5 → `project/design/D05.md` — Landing composition: service-name links, email→profile nav, sign-out — owns R-DB12-LINK, R-DB13-MAIL, R-DB14-SOUT, R-DB15-INST
 - D6 → `project/design/D06.md` — Purge the stale "single hybrid page / don't split" doc rule — owns R-DB16-DOCS
-- D7 → `project/design/D07.md` — Login composition: control-plane tagline kept; name-origin colophon below the CTA that explains the portmanteau as a name + its two subcomponents — owns R-DB17-ORIG, R-DB18-KEEP, R-DB19-LAND
+- D7 → `project/design/D07.md` — Login composition: control-plane tagline kept; name-origin colophon below the CTA that explains the portmanteau as a name + its two subcomponents + a pronunciation guide at its foot — owns R-DB17-ORIG, R-DB18-KEEP, R-DB19-LAND, R-O7K1-XEN7
 - D8 → `project/design/D08.md` — Eliminate the web-font FOUT (font-display: optional + font preload; apex src already origin-correct) — owns R-P97M-GIJ1, R-PAFI-UA9Q, R-PBNF-820F
 
 ## Verification ids → Decision
@@ -37,6 +37,7 @@ Verification ids change.
 - R-DB17-ORIG → D7 → `project/design/D07.md`
 - R-DB18-KEEP → D7 → `project/design/D07.md`
 - R-DB19-LAND → D7 → `project/design/D07.md`
+- R-O7K1-XEN7 → D7 → `project/design/D07.md`
 - R-P97M-GIJ1 → D8 → `project/design/D08.md`
 - R-PAFI-UA9Q → D8 → `project/design/D08.md`
 - R-PBNF-820F → D8 → `project/design/D08.md`
