@@ -21,6 +21,9 @@ func TestConvertOldLayoutMovesLiveServiceToStateCacheLibexecAndIsIdempotent(t *t
 	writeFile(t, filepath.Join(oldData, app+".db-shm"), []byte("shm bytes"), 0o640)
 	writeFile(t, filepath.Join(oldData, app+".db.generation"), []byte("42"), 0o640)
 	writeFile(t, filepath.Join(oldRelease, app), []byte("#!/bin/sh\necho ledger\n"), 0o755)
+	writeFile(t, l.ManifestPath(), []byte("PORT=9000\n"), 0o640)
+	writeFile(t, filepath.Join(l.EtcDir(), "nginx.conf"), []byte("location /ledger/ {}\n"), 0o640)
+	writeFile(t, filepath.Join(l.BackupsDir(), "old.db"), []byte("old backup"), 0o640)
 	if err := os.Symlink(filepath.Join("releases", version), filepath.Join(l.AppDir(), "current")); err != nil {
 		t.Fatalf("symlink current: %v", err)
 	}
@@ -34,14 +37,14 @@ func TestConvertOldLayoutMovesLiveServiceToStateCacheLibexecAndIsIdempotent(t *t
 	assertFileBytes(t, filepath.Join(l.StateDir(), app+".db-shm"), []byte("shm bytes"))
 	assertFileBytes(t, l.GenerationPath(), []byte("42"))
 	assertFileBytes(t, l.LibexecBinary(version), []byte("#!/bin/sh\necho ledger\n"))
+	assertFileBytes(t, l.ManifestFile(version), []byte("PORT=9000\n"))
+	assertFileBytes(t, l.NginxConfFile(version), []byte("location /ledger/ {}\n"))
 	assertExecutable(t, l.LibexecBinary(version))
-	resolved, err := filepath.EvalSymlinks(l.RunLink())
-	if err != nil {
-		t.Fatalf("eval bin/run: %v", err)
-	}
-	if resolved != l.LibexecBinary(version) {
-		t.Fatalf("bin/run resolves to %q, want %q", resolved, l.LibexecBinary(version))
-	}
+	assertSymlinkResolves(t, l.RunLink(), l.LibexecBinary(version))
+	assertSymlinkResolves(t, l.EtcCurrentLink(), l.EtcVersionDir(version))
+	assertSymlinkResolves(t, l.ShareCurrentLink(), l.ShareVersionDir(version))
+	assertMissing(t, oldData)
+	assertMissing(t, l.BackupsDir())
 
 	if err := o.ConvertOldLayout(context.Background(), app); err != nil {
 		t.Fatalf("ConvertOldLayout second run: %v", err)
@@ -51,6 +54,13 @@ func TestConvertOldLayoutMovesLiveServiceToStateCacheLibexecAndIsIdempotent(t *t
 	assertFileBytes(t, filepath.Join(l.StateDir(), app+".db-shm"), []byte("shm bytes"))
 	assertFileBytes(t, l.GenerationPath(), []byte("42"))
 	assertFileBytes(t, l.LibexecBinary(version), []byte("#!/bin/sh\necho ledger\n"))
+	assertFileBytes(t, l.ManifestFile(version), []byte("PORT=9000\n"))
+	assertFileBytes(t, l.NginxConfFile(version), []byte("location /ledger/ {}\n"))
+	assertSymlinkResolves(t, l.RunLink(), l.LibexecBinary(version))
+	assertSymlinkResolves(t, l.EtcCurrentLink(), l.EtcVersionDir(version))
+	assertSymlinkResolves(t, l.ShareCurrentLink(), l.ShareVersionDir(version))
+	assertMissing(t, oldData)
+	assertMissing(t, l.BackupsDir())
 }
 
 func TestConvertOldLayoutCompletesHalfConvertedTreeWithoutDroppingData(t *testing.T) {
@@ -67,6 +77,11 @@ func TestConvertOldLayoutCompletesHalfConvertedTreeWithoutDroppingData(t *testin
 	writeFile(t, filepath.Join(oldData, app+".db.generation"), []byte("remaining generation"), 0o640)
 	writeFile(t, l.LibexecBinary(version), []byte("binary already moved"), 0o755)
 	writeFile(t, filepath.Join(oldRelease, app), []byte("binary already moved"), 0o755)
+	writeFile(t, l.ManifestFile(version), []byte("manifest already moved\n"), 0o640)
+	writeFile(t, l.ManifestPath(), []byte("manifest already moved\n"), 0o640)
+	writeFile(t, l.NginxConfFile(version), []byte("nginx already moved\n"), 0o640)
+	writeFile(t, filepath.Join(l.EtcDir(), "nginx.conf"), []byte("nginx already moved\n"), 0o640)
+	writeFile(t, filepath.Join(l.BackupsDir(), "old.db"), []byte("old backup"), 0o640)
 	if err := os.Symlink(filepath.Join("releases", version), filepath.Join(l.AppDir(), "current")); err != nil {
 		t.Fatalf("symlink current: %v", err)
 	}
@@ -78,13 +93,13 @@ func TestConvertOldLayoutCompletesHalfConvertedTreeWithoutDroppingData(t *testin
 	assertFileBytes(t, filepath.Join(l.StateDir(), app+".db-wal"), []byte("remaining wal"))
 	assertFileBytes(t, l.GenerationPath(), []byte("remaining generation"))
 	assertFileBytes(t, l.LibexecBinary(version), []byte("binary already moved"))
-	resolved, err := filepath.EvalSymlinks(l.RunLink())
-	if err != nil {
-		t.Fatalf("eval bin/run: %v", err)
-	}
-	if resolved != l.LibexecBinary(version) {
-		t.Fatalf("bin/run resolves to %q, want %q", resolved, l.LibexecBinary(version))
-	}
+	assertFileBytes(t, l.ManifestFile(version), []byte("manifest already moved\n"))
+	assertFileBytes(t, l.NginxConfFile(version), []byte("nginx already moved\n"))
+	assertSymlinkResolves(t, l.RunLink(), l.LibexecBinary(version))
+	assertSymlinkResolves(t, l.EtcCurrentLink(), l.EtcVersionDir(version))
+	assertSymlinkResolves(t, l.ShareCurrentLink(), l.ShareVersionDir(version))
+	assertMissing(t, oldData)
+	assertMissing(t, l.BackupsDir())
 }
 
 func writeFile(t *testing.T, path string, contents []byte, mode os.FileMode) {
@@ -116,5 +131,12 @@ func assertExecutable(t *testing.T, path string) {
 	}
 	if fi.Mode().Perm()&0o111 == 0 {
 		t.Fatalf("%s mode %v is not executable", path, fi.Mode().Perm())
+	}
+}
+
+func assertMissing(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("%s exists, want absent (err=%v)", path, err)
 	}
 }

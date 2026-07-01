@@ -55,9 +55,52 @@ func (o *Opsctl) ConvertOldLayout(ctx context.Context, app string) error {
 		if err := atomicSwap(l.RunLink(), filepath.Join("..", "libexec", app+"-"+version)); err != nil {
 			return fmt.Errorf("convert: point bin/run: %w", err)
 		}
+		if err := moveIfPresent(l.ManifestPath(), l.ManifestFile(version)); err != nil {
+			return fmt.Errorf("convert: move manifest: %w", err)
+		}
+		if err := moveIfPresent(filepath.Join(l.EtcDir(), "nginx.conf"), l.NginxConfFile(version)); err != nil {
+			return fmt.Errorf("convert: move nginx config: %w", err)
+		}
+		if err := ensureSymlink(l.EtcCurrentLink(), version); err != nil {
+			return fmt.Errorf("convert: point etc/current: %w", err)
+		}
+		if err := os.MkdirAll(l.ShareVersionDir(version), 0o755); err != nil {
+			return fmt.Errorf("convert: mkdir share version: %w", err)
+		}
+		if err := ensureSymlink(l.ShareCurrentLink(), version); err != nil {
+			return fmt.Errorf("convert: point share/current: %w", err)
+		}
+	}
+
+	if err := removeEmptyDirIfPresent(oldData); err != nil {
+		return fmt.Errorf("convert: remove old data dir: %w", err)
+	}
+	if err := removeLegacyBackupsDir(l.BackupsDir()); err != nil {
+		return fmt.Errorf("convert: remove old backups dir: %w", err)
 	}
 
 	return ctx.Err()
+}
+
+func removeEmptyDirIfPresent(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func removeLegacyBackupsDir(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", path)
+	}
+	return os.RemoveAll(path)
 }
 
 func legacyLiveBinary(l Layout) (version, binary string, err error) {
