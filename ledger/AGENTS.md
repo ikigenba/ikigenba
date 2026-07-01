@@ -119,8 +119,8 @@ lives at `../nginx/locations/ledger.conf`.
 ## Manifest / deploy
 
 ledger is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract):
-`<app>` serve + the fixed `version`/`manifest`/`migrate`/`schema`/`backup`/
-`restore` verbs, no `run` wrapper. `etc/manifest.env` (`APP=ledger`,
+`<app>` serve + the fixed `version`/`manifest`/`migrate`/`schema`
+verbs, no `run` wrapper. `etc/manifest.env` (`APP=ledger`,
 `MOUNT=/srv/ledger/`, `DEFAULT=false`, `PORT=3002`, `MCP=true` so the dashboard
 inventory lists it) is emitted by `ledger manifest` — the binary owns its own
 identity, and `opsctl deploy` regenerates the on-box copy on every swap. Shipping

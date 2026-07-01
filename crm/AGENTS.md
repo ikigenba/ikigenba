@@ -106,19 +106,17 @@ box-global apex/cert pieces are `opsctl init-box`).
 ## Manifest / deploy
 
 crm is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract):
-`<app>` serve + the fixed `version`/`manifest`/`migrate`/`schema`/`backup`/
-`restore` verbs, no `run` wrapper. `etc/manifest.env` (`APP=crm`,
+`<app>` serve + the fixed `version`/`manifest`/`migrate`/`schema`
+verbs, no `run` wrapper. `etc/manifest.env` (`APP=crm`,
 `MOUNT=/srv/crm/`, `DEFAULT=false`, `PORT=3001`, `MCP=true`; producer, so it also
 round-trips `FEED` + the `OUTBOX_RETENTION_*` config) is emitted by `crm manifest`
 and regenerated on the box by `opsctl deploy` on every swap. Shipping is the
 shared repo-root `bin/ship crm` (no version arg; version is the committed
 `crm/VERSION`, advanced by `bin/bump crm <field>`) → `opsctl stage` + `opsctl
 deploy`; provisioning is `opsctl setup crm`. The only `bin/*` scripts crm carries are `start`/`stop`
-(systemd control). No `plugin/` in this repo. **Backup note:** the binary's `backup`/
-`restore` verbs give appkit's default local DB snapshot (used by `opsctl
-deploy`/`rollback`). Event-plane epoch re-mint on restore is now handled by
-appkit's default restore verb (it deletes the `<db>.generation` sidecar at the
-dispatch chokepoint), so `opsctl rollback`/`restore` are safe. Operator
-**S3-bucket** backup/restore is owned by **opsctl** (`opsctl backup crm` /
-`opsctl restore crm`, D07) — the former per-service `bin/backup`/`bin/restore`
-S3 scripts are retired and removed.
+(systemd control). No `plugin/` in this repo. **Backup note:** the binary has no
+`backup`/`restore` verbs — backup/restore are box-level **opsctl** operations.
+`opsctl backup crm` / `opsctl restore crm` tar `state/` to S3 (D07); restore
+re-mints the event-plane epoch by deleting the `<db>.generation` sidecar, and
+`opsctl rollback` restores an S3 snapshot by recency. The former per-service
+`bin/backup`/`bin/restore` S3 scripts are retired and removed.

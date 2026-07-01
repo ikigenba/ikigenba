@@ -118,10 +118,11 @@ location, and `include /etc/nginx/conf.d/locations/*.conf;`. Services only drop
 ## Manifest / deploy
 
 The dashboard is one static appkit binary, the apex/`DEFAULT=true` case of the
-contract: `appkit.Main(appkit.Spec{… Default:true …})`, the fixed verbs plus its
-divergent `Backup`/`Restore` (the apex owns the TLS cert + S3 snapshot, folded
-into the binary at E6 — bare invocation = the operator cert+S3+DB snapshot;
-`--out`/`--from` = opsctl's local install/rollback snapshot). `etc/manifest.env`
+contract: `appkit.Main(appkit.Spec{… Default:true …})`, the fixed verbs
+(`serve`/`version`/`manifest`/`migrate`/`schema`). Backup and restore are no
+longer binary verbs — they are box-level `opsctl` operations (S3 snapshot of
+`state/`); for the apex, `opsctl backup` additionally captures the TLS cert tree
+as a separate stream. `etc/manifest.env`
 (`APP=dashboard`, `MOUNT=/`, `DEFAULT=true`, `PORT=3000`, no `MCP`) is emitted by
 `dashboard manifest`. The dashboard **derives** its OAuth-AS resource list at
 startup from the on-box service manifests (`/opt/*/etc/manifest.env`, `MCP=true`,
@@ -137,7 +138,7 @@ crm service's.
 > **Cutover = reset + deploy (no DB preservation).** The dashboard's migrations
 > were renumbered name/timestamp-keyed → integer-keyed for the appkit runner. A
 > fresh DB migrates correctly, but the **live `ai` box**
-> `/opt/dashboard/data/dashboard.db` applied the OLD name-keyed ledger, which the
+> `/opt/dashboard/state/dashboard.db` applied the OLD name-keyed ledger, which the
 > integer runner will not recognize — so a plain `opsctl deploy` against the
 > existing DB would fail to boot. Per the 2026-06-05 directive **no databases need
 > to be preserved**, the cutover therefore just resets the DB: **stop → (optional

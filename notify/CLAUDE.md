@@ -115,7 +115,7 @@ topic or token. Real ntfy.sh is never contacted.
 
 notify is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract,
 `Consumes:["crm"]`, with the consumer loop run as an appkit `Worker`): `<app>`
-serve + the fixed `version`/`manifest`/`migrate`/`schema`/`backup`/`restore`
+serve + the fixed `version`/`manifest`/`migrate`/`schema`
 verbs, no `run` wrapper. `etc/manifest.env` (`APP=notify`, `MOUNT=/srv/notify/`,
 `DEFAULT=false`, `PORT=3003`, `MCP=true` so the dashboard inventory lists it,
 `CONSUMES=crm`) is emitted by `notify manifest`; the public consumer config

@@ -4,7 +4,7 @@
 // token logic of its own. See appkit/server for the auth contract.
 //
 // notify is the suite's first event-plane CONSUMER. The uniform chassis — the
-// fixed subcommands (serve/version/manifest/migrate/backup/restore), config-
+// fixed subcommands (serve/version/manifest/migrate/schema), config-
 // from-env, the migration runner + downgrade guard, the loopback HTTP server +
 // PRM + identity gate, and the serve lifecycle — is owned by appkit. main.go
 // declares only notify's identity (the Spec) and wires its domain surface: the

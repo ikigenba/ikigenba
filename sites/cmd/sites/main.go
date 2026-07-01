@@ -4,7 +4,7 @@
 // token logic of its own. See appkit/server for the auth contract.
 //
 // The uniform chassis — the fixed subcommands (serve/version/manifest/migrate/
-// backup/restore), config-from-env, the migration runner + downgrade guard, and
+// schema), config-from-env, the migration runner + downgrade guard, and
 // the loopback HTTP server + PRM + identity gate — is owned by appkit. main.go
 // declares only sites's identity (the Spec) and wires its domain surface through
 // the Spec hooks. RESOURCE_ID / AUTH_SERVER are composed in-binary by

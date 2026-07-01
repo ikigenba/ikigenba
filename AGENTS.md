@@ -18,9 +18,10 @@ The operating bet is that business software which can accept short, scheduled
 downtime gets to be cheaper, simpler, and easier to recover — no cluster, no
 broker, no zero-downtime machinery. Every app is **one static `linux/amd64` Go
 binary** built on the shared `appkit` chassis over SQLite, implementing a fixed
-verb set (`serve`/`version`/`manifest`/`migrate`/`backup`/`restore`); deploys
+verb set (`serve`/`version`/`manifest`/`migrate`/`schema`); deploys
 land in versioned release directories with an atomic swap and one-command
-rollback. Services don't call each other as private API chains — they publish
+rollback. Backup and restore are **not** binary verbs — they are box-level
+operations owned by `opsctl` (S3 snapshots of `state/`). Services don't call each other as private API chains — they publish
 facts to an append-only outbox and consume each other's `/feed` over SSE (the
 event plane). The **infrastructure** (Terraform for the `int.ikigenba.com` box —
 AWS accounts, DNS, the box itself) is managed separately in `~/projects/metaspot`
@@ -42,6 +43,7 @@ in the folders below and in `docs/`.
 | **gmail** | Path-routed service `/srv/gmail/` — loopback Gmail connector + MCP; event-plane **producer**. |
 | **scripts** | Path-routed service `/srv/scripts/` — runs deterministic Python scripts wired to suite events; event-plane **consumer** + **producer** (completion events). |
 | **sites** | Path-routed service `/srv/sites/` — loopback static-website host (file-backed) + MCP. |
+| **webhooks** | Path-routed service `/srv/webhooks/` — loopback inbound-webhook receiver: owner-facing MCP (create/list/delete/rotate) plus a public `POST /in/<name>` ingress self-guarded by a per-webhook secret; event-plane **producer** (`/feed` outbox). |
 | **appkit** | Shared Go **chassis** library: config-from-env, migration runner + downgrade guard, loopback server, `/feed`, manifest emit/parse, the verb dispatcher (consumed via a committed `replace`). |
 | **eventplane** | Shared Go **library** — the event-plane producer/consumer plumbing (committed `replace`). |
 | **agentkit** | Shared Go **library** for the agent-backed services (prompts/dropbox/wiki). |
@@ -50,8 +52,8 @@ in the folders below and in `docs/`.
 | **nginx** | Local-dev front door on **:8080** mirroring the prod `/srv/<svc>/` routing (`./run`). |
 | **docs** | Suite-level docs: the deployment ADR, versioning how-to, runbooks, and the event-plane protocol write-ups. |
 
-The eleven deployable apps are **dashboard, crm, ledger, notify, dropbox,
-prompts, wiki, cron, gmail, scripts, sites**; `appkit`/`eventplane`/`agentkit`
+The twelve deployable apps are **dashboard, crm, ledger, notify, dropbox,
+prompts, wiki, cron, gmail, scripts, sites, webhooks**; `appkit`/`eventplane`/`agentkit`
 and `opsctl` are libraries/tooling and are **not** versioned. The root `go.work` wires the modules for local dev; the
 production build forces `GOWORK=off`.
 

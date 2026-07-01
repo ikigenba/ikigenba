@@ -239,7 +239,7 @@ appears on the dev front door (:8080).
 
 dropbox is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract,
 producer + `Workers` sync engine): `<app>` serve + the fixed `version`/`manifest`/
-`migrate`/`schema`/`backup`/`restore` verbs, no `run` wrapper, no bundled
+`migrate`/`schema` verbs, no `run` wrapper, no bundled
 `registry`. `etc/manifest.env` (`APP=dropbox`, `MOUNT=/srv/dropbox/`,
 `DEFAULT=false`, `PORT=3005`, `MCP=true` so the dashboard inventory lists it;
 producer, so it also round-trips `FEED=/feed` + the `OUTBOX_RETENTION_*` config)

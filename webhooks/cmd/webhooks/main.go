@@ -10,7 +10,7 @@
 // per-webhook secret and is mounted bare (not behind RequireIdentity).
 //
 // The uniform chassis — the fixed subcommands (serve/version/manifest/migrate/
-// backup/restore), config-from-env, the migration runner + downgrade guard, the
+// schema), config-from-env, the migration runner + downgrade guard, the
 // loopback HTTP server + PRM + identity gate, and the /feed producer mount — is
 // owned by appkit. main.go declares only webhooks's identity (the Spec) and wires
 // its domain surface (the ikigenba_webhooks_* MCP tools, the public ingress, and

@@ -4,7 +4,7 @@
 // token logic of its own.
 //
 // The uniform chassis — the fixed subcommands (serve/version/manifest/migrate/
-// backup/restore), config-from-env, the migration runner + downgrade guard, the
+// schema), config-from-env, the migration runner + downgrade guard, the
 // loopback HTTP server + PRM + identity gate (health), and graceful
 // shutdown — is owned by appkit. main.go declares only prompts' identity (the
 // Spec) and wires its domain surface through the Handlers hook: the prompt

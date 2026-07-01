@@ -137,9 +137,9 @@ can accept short downtime, it is better to take it deliberately, take it often,
 and use it to rehearse the exact steps that matter during a real incident.
 
 The lifecycle is part of the product contract. Each app binary self-implements
-`serve`, `version`, `manifest`, `migrate`, `backup`, and `restore`; the operator
+`serve`, `version`, `manifest`, `migrate`, and `schema`; the operator
 drives `deploy` (build a tagged release off-box and install it on the box),
-`start`/`stop`, and `teardown`. Deploys land in versioned release directories with
+`backup`/`restore` (box-level, owned by `opsctl`), `start`/`stop`, and `teardown`. Deploys land in versioned release directories with
 an atomic swap and a one-command rollback. Backups are written and restored from.
 Restoring is a practiced motion, not a last resort.
 
@@ -163,7 +163,7 @@ ikigenba is narrow on purpose. Every service can have the same anatomy:
 - MCP tools for the agent-facing surface;
 - producer and consumer roles built on the shared event library;
 - the same fixed set of binary subcommands (`serve`/`version`/`manifest`/
-  `migrate`/`backup`/`restore`), shipped by one shared deploy wrapper and the
+  `migrate`/`schema`), shipped by one shared deploy wrapper and the
   on-box `opsctl`;
 - a manifest the binary emits and a routing fragment that make deployment
   mechanical.

@@ -1,11 +1,10 @@
 # App layout — the `/opt/<service>/` tree
 
-> **Status: normative target.** This doc defines the canonical on-box folder
-> schema every deployable app obeys. Some of it is already how the box works;
-> some is the target we are bringing the tooling into compliance with over a
-> series of sessions. Current gaps are listed under
-> [Open divergences](#open-divergences) — that section is the compliance
-> backlog, not a description of steady state.
+> **Status: normative — code is in compliance.** This doc defines the canonical
+> on-box folder schema every deployable app obeys, and `opsctl` now implements it
+> (the versioned bundle + three-symlink swap). The one remaining gap is the
+> permission model; it is listed under
+> [Open divergences](#open-divergences).
 >
 > Authoritative implementation of the paths: `opsctl/internal/opsctl/layout.go`.
 > When code and this doc disagree, that is a divergence to fix, not a license to
@@ -57,23 +56,31 @@ The fixed top-level set every app has is **`bin/ libexec/ etc/ share/ state/
 cache/ backups/`**. (`state/www/` is a state subtree used only by
 file-serving services.)
 
+The active release is selected by **three symlinks repointed atomically on every
+deploy** — `bin/run`, `etc/current`, and `share/current` — so the binary, its
+config, and its static assets all cut over together (and roll back together).
+
 ```
 /opt/<service>/
 ├── bin/
-│   └── run            -> ../libexec/<service>-<version>   (stable exec target; atomic swap)
+│   └── run                -> ../libexec/<service>-<version>   (stable exec target; atomic swap #1)
 ├── libexec/
-│   └── <service>-<version>                                (versioned binaries; N kept, pruned)
+│   └── <service>-<version>                                    (versioned binaries; N kept, pruned)
 ├── etc/
-│   ├── manifest.env                                       (GENERATED on box from the binary)
-│   └── nginx.conf                                         (SHIPPED; target — see divergences)
-├── share/                                                 (SHIPPED read-only resources; target)
+│   ├── <version>/
+│   │   ├── manifest.env                                       (SHIPPED in the bundle; authored in-repo)
+│   │   └── nginx.conf                                         (SHIPPED in the bundle)
+│   ├── current            -> <version>                        (active config; atomic swap #2)
+│   └── manifest.env                                           (stable path the dashboard inventory reads)
+├── share/
+│   ├── <version>/                                             (SHIPPED read-only resources)
+│   └── current            -> <version>                        (active assets; atomic swap #3)
 ├── state/
-│   ├── <service>.db (+ -wal/-shm)                         (the app database)
-│   └── www/{working,public,private}                      (file-serving services only)
+│   ├── <service>.db (+ -wal/-shm)                             (the app database)
+│   └── www/{working,public,private}                          (file-serving services only)
 ├── cache/
-│   └── <service>.db.generation                            (event-plane epoch sidecar)
-└── backups/
-    └── pre-<version>.db                                   (local pre-migration snapshots)
+│   └── <service>.db.generation                                (event-plane epoch sidecar)
+└── backups/                                                   (vestigial — see divergences; not the S3 backup)
 ```
 
 ### Per-folder reference
@@ -82,42 +89,44 @@ file-serving services.)
 |---|---|---|---|---|
 | `bin/run` | `/usr/bin` entry | shipped | Symlink → active `libexec/<service>-<version>`. The launcher execs this stable path; deploy/rollback atomically repoint it. | root |
 | `libexec/<service>-<version>` | `/usr/libexec` | shipped | One immutable versioned binary. Multiple kept; `prune` deletes old ones (and their matching `backups/pre-*.db`). | root |
-| `etc/manifest.env` | `/etc` | config | `KEY=val`, **regenerated every deploy** by running `<binary> manifest` and stamping abs `*_DB_PATH`/`*_GENERATION_PATH`. Derived ⇒ rolls back for free (re-run the old binary). The launcher sources it. | root `0644` |
-| `etc/nginx.conf` | `/etc` | config (shipped) | The service's nginx location fragment, **shipped in the artifact** and installed at deploy. *Target* — today it is applied manually at `setup` time. | root |
-| `share/` | `/usr/share` | shipped | Read-only resources the app **reads** at runtime (assets, templates, data files). The app never writes here. Empty today; defined so future shipped files have a home without changing the delivery mechanism. | root |
+| `etc/<version>/manifest.env` | `/etc` | config (shipped) | `KEY=val`, **authored in-repo** (`<service>/etc/manifest.env`) and **shipped in the deploy bundle** — no on-box `manifest` verb runs. Selected by `etc/current`; the launcher sources `etc/current/manifest.env`. The dashboard inventory reads the stable `etc/manifest.env` path. | root `0644` |
+| `etc/<version>/nginx.conf` | `/etc` | config (shipped) | The service's nginx location fragment, **shipped in the bundle** and applied on every deploy via `etc/current` (nginx reload). Rolls back with the release. | root |
+| `share/<version>/` | `/usr/share` | shipped | Read-only resources the app **reads** at runtime (assets, templates, data files). The app never writes here. Shipped in the bundle; selected by `share/current`. Empty for services that ship none. | root |
 | `state/<service>.db` | `/var/lib` | local | The app DB. **Never overwritten by deploy** except the explicit pre-migration snapshot; `migrate` runs forward-only against it. The one thing that must survive a reinstall. | `<service>:<service>` |
 | `state/www/{working,public,private}` | `/var/lib` | local | File-serving services' served tree: drafts → publish symlinks → private surface. Under `state/`, so it **is** in the backup. nginx (`www-data`) reads it. | see [Permissions](#permissions) |
 | `cache/<service>.db.generation` | `/var/cache` | local | Transient derived data (event-plane epoch). **Not backed up; wiped and re-minted on restore.** Safe to delete anytime. | `<service>:<service>` |
-| `backups/pre-<version>.db` | `/var/backups` | local | **Local** pre-migration DB snapshot keyed by the FROM-version; rollback restores it. Pruned with its release. Not part of the S3 backup. | root |
+| `backups/` | `/var/backups` | local | **Vestigial.** The per-binary pre-migration DB snapshot (`pre-<version>.db`) is no longer written — backup/restore/rollback are now box-level `opsctl` S3 operations. `setup` may still create the dir and `prune` still cleans it, but nothing populates it. Not part of the S3 backup. | root |
 
 ## Delivery
 
-- **Today:** `bin/ship` builds one static binary and `scp`s it to the box `/tmp`;
-  `opsctl stage` places it at `libexec/<service>-<version>`. Only the binary
-  travels; `etc/nginx.conf` is applied separately, by hand, at `setup`.
-- **Target:** the unit of delivery is **one versioned `tar.gz` bundle** carrying
-  the shipped tiers — the binary plus `etc/`-bound config (`nginx.conf`) plus
-  anything in `share/`. `stage` unpacks it; `deploy` activates it. One atomic,
-  versioned, extensible artifact: adding a `share/` file later needs no change to
-  the transfer mechanism. The bundle is retained per version so a rollback
-  re-applies the **matching** config/`share/`, the same way `libexec/` already
-  keeps old binaries.
+The unit of delivery is **one versioned `tar.gz` bundle** carrying the shipped
+tiers — the binary, the `etc/`-bound config (`manifest.env` + `nginx.conf`), and
+anything in `share/`. `bin/ship` builds current `main` and copies the bundle to
+the box `/tmp`; `opsctl stage` unpacks it into the versioned slots
+(`libexec/<service>-<version>`, `etc/<version>/`, `share/<version>/`); `opsctl
+deploy` activates it with the three-symlink swap. One atomic, versioned,
+extensible artifact: adding a `share/` file later needs no change to the
+transfer mechanism. Each version's bundle is retained so a rollback re-applies
+the **matching** binary/config/`share/` together.
 
 ## Backup / restore policy
 
-Derived entirely from the tiers — there are two layered mechanisms:
+Derived entirely from the tiers, and owned entirely by **`opsctl`** at the box
+level — there is **no per-binary `backup`/`restore` verb** (those were removed
+from the appkit chassis; the binary's verb set is
+`serve`/`version`/`manifest`/`migrate`/`schema`).
 
-- **`opsctl backup` / `opsctl restore`** (box-level, S3 — the reference): tars
-  **`state/` only** → `s3://<bucket>/<app>/snapshots/<ts>.tar`, keeps 30, writes
-  an `<app>/latest` pointer. **Restore** stops the unit, snapshots current
-  `state/` to `pre-restore/` first, then wipes `state/`+`cache/`, untars
-  `state/`, and recreates an **empty** `cache/`. It never touches `bin/`,
-  `libexec/`, `etc/`, or `backups/` — they're reproducible from the artifact. The
-  apex/dashboard additionally backs up the TLS cert tree as a separate stream.
-- **`<binary> backup` / `<binary> restore`** (per-binary, single DB): `VACUUM
-  INTO` for a consistent snapshot; used by `deploy` to write `backups/pre-<version>.db`
-  and by `rollback` to restore it. Any restore re-mints the event-plane epoch by
-  removing the `cache/` generation sidecar.
+- **`opsctl backup`** tars **`state/` only** → `s3://<bucket>/<app>/snapshots/<ts>.tar`,
+  keeps 30, writes an `<app>/latest` pointer. The apex/dashboard additionally
+  backs up the TLS cert tree as a separate stream.
+- **`opsctl restore`** stops the unit, wipes `state/`+`cache/`, untars `state/`,
+  and recreates an **empty** `cache/` (re-minting the event-plane epoch). It
+  never touches `bin/`, `libexec/`, `etc/`, or `share/` — they're reproducible
+  from the retained bundle.
+- **`opsctl deploy`** takes an unconditional pre-deploy S3 backup (skipped only
+  on the first-ever deploy, when there is no live release to capture) before
+  migrating. **`opsctl rollback`** restores an S3 snapshot selected by recency
+  (`-N` for the Nth most recent) — not a local pre-migration DB file.
 
 The rule, stated once: **`state/` is the backup. `cache/` is reset. The shipped
 and config tiers are reproducible and are not in the backup.**
@@ -155,28 +164,26 @@ rooted at `/`:
 
 ## Open divergences
 
-The compliance backlog — where current code/docs do not yet meet this schema:
+The compliance backlog — where current code does not yet meet this schema.
 
-1. **`share/` does not exist yet.** No app creates or ships it. Add it to the
-   `setup` tree and the delivery bundle.
-2. **Delivery is single-binary, not a bundle.** `bin/ship` ships only the binary;
-   there is no `tar.gz`, no shipped `etc/nginx.conf`, no `share/`. The whole
-   "shipped tier travels together and rolls back by version" model is the target.
-3. **`etc/nginx.conf` is not shipped or deploy-installed.** Today the fragment is
-   applied by hand at `setup` and never re-applied on deploy, so a fragment change
-   ships silently un-applied (the original motivation —
-   `opsctl/project/research/deploy-nginx-fragment-research.md`). Folds into the
-   bundle work above.
-4. **Permissions disagree across four sources.** `setup.go`'s worker branch
+**Still open:**
+
+1. **Permissions disagree across sources.** `setup.go`'s worker branch
    (`state/` `0711`, `state/www` `0750 <service>:web`) vs its routed/sites branch
    (`state/www` `0755 <service>:<service>`) vs `layout.go`'s comment vs `D01`
    (`state/` `0711`, cache/backups `0750`). No two fully agree, and the installed
    mode depends on whether the app passes an nginx fragment. **Reconcile to one
    model** (the `web`-group scheme is the `D01`-blessed intent) in a dedicated
    session and make `setup` apply it uniformly.
-5. **Stale `data/` references** (old layout, pre-`state/`): `deploy.md:125`
-   (the fresh-start `mv` command — would fail) and `dashboard/AGENTS.md:147`.
-   Fix to `state/<service>.db`.
+
+**Resolved (code has caught up to this schema):**
+
+- **The `tar.gz` bundle delivery** is implemented — `bin/ship` builds a versioned
+  bundle; `stage` unpacks binary + `etc/<version>/` + `share/<version>/`; `deploy`
+  activates it with the three-symlink swap. (Former divergences #1 `share/`, #2
+  bundle delivery, #3 shipped/deploy-installed `nginx.conf`.)
+- **Stale `data/` references** fixed to `state/<service>.db` in `deploy.md` and
+  `dashboard/AGENTS.md`.
 
 ## Related docs
 
