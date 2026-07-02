@@ -37,7 +37,13 @@ func (o *Opsctl) Stage(ctx context.Context, app, version, artifact string, force
 	}
 	l := o.layout(app)
 
-	tmp, err := os.MkdirTemp("", "opsctl-stage-*")
+	// Stage into a temp dir on the SAME filesystem as the install root: the tiers
+	// below are placed with os.Rename, which fails cross-device (EXDEV) when the
+	// default temp dir (/tmp, often tmpfs) differs from OPSCTL_ROOT (/opt).
+	if err := os.MkdirAll(l.Root, 0o755); err != nil {
+		return fmt.Errorf("stage: ensure root dir %s: %w", l.Root, err)
+	}
+	tmp, err := os.MkdirTemp(l.Root, "opsctl-stage-*")
 	if err != nil {
 		return fmt.Errorf("stage: create temp dir: %w", err)
 	}
