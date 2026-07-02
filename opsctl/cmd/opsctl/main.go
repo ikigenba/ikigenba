@@ -136,6 +136,8 @@ var runners = map[string]runner{
 	"init-box": runInitBox,
 }
 
+const boxEnvFile = "/etc/ikigenba/env"
+
 // synopsisOf returns a verb's usage form from the doc registry.
 func synopsisOf(name string) (form string, ok bool) {
 	for _, g := range groups {
@@ -184,6 +186,10 @@ Run 'opsctl <verb> --help' for a verb's flags.
 }
 
 func main() {
+	if err := opsctl.LoadEnvFile(boxEnvFile); err != nil {
+		fmt.Fprintf(os.Stderr, "opsctl: load %s: %v\n", boxEnvFile, err)
+		os.Exit(1)
+	}
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage())
 		os.Exit(2)
