@@ -15,10 +15,10 @@
   <header class="banner">
     <p class="wordmark">ikigenba</p>
     <nav class="identity">
-      <a href="/profile">{{.Owner}}</a>
       <form method="POST" action="/logout">
         <button type="submit" class="btn btn-danger-ghost btn-sm">Sign out</button>
       </form>
+      <a href="/profile" class="avatar" aria-label="Profile — {{.Owner}}" title="{{.Owner}}">{{.OwnerInitial}}</a>
     </nav>
   </header>
 

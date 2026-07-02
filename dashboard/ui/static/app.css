@@ -54,13 +54,27 @@ a:hover { text-decoration: underline; }
   gap: var(--space-4);
 }
 
-.identity .owner {
-  font-family: var(--font-mono);
+.identity form { margin: 0; }
+
+.identity .avatar {
+  background: var(--color-accent);
+  border-radius: var(--radius-pill);
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent-fg);
+  font-family: var(--font-display);
   font-size: var(--text-small-size);
-  color: var(--color-text-muted);
+  font-weight: 600;
+  text-decoration: none;
+  flex-shrink: 0;
 }
 
-.identity form { margin: 0; }
+.identity .avatar:focus-visible {
+  box-shadow: 0 0 0 3px var(--color-accent-weak);
+}
 
 /* ---- Buttons ----------------------------------------------------------- */
 .btn {

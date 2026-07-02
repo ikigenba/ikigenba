@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"net/http"
+	"unicode"
+	"unicode/utf8"
 
 	"appkit/inventory"
 
@@ -15,10 +17,11 @@ import (
 // int.ikigenba.com). Owner is the signed-in user's email, or "" when logged out;
 // the template branches on it ({{if .Owner}}).
 type indexData struct {
-	Host     string
-	Scheme   string
-	Owner    string
-	Services []serviceRow
+	Host         string
+	Scheme       string
+	Owner        string
+	OwnerInitial string
+	Services     []serviceRow
 }
 
 // handleIndex renders the index template. It is identity-aware: a valid
@@ -44,6 +47,8 @@ func (a *app) handleIndex() http.HandlerFunc {
 			}
 		}
 		if data.Owner != "" {
+			data.OwnerInitial = ownerInitial(data.Owner)
+
 			// The LIST table: the box's MCP services as name/url rows, the raw
 			// reference for manual entry into any other MCP client. A manifest read
 			// failure drops the table, never 500s the page.
@@ -64,4 +69,12 @@ func (a *app) handleIndex() http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(buf.Bytes())
 	}
+}
+
+func ownerInitial(email string) string {
+	r, size := utf8.DecodeRuneInString(email)
+	if r == utf8.RuneError && size <= 1 {
+		return "?"
+	}
+	return string(unicode.ToUpper(r))
 }

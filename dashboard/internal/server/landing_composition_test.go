@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"unicode"
+	"unicode/utf8"
 
 	"dashboard/internal/googleidp"
 )
@@ -48,13 +50,50 @@ func TestLandingServiceNameLinksToMount(t *testing.T) {
 	}
 }
 
-func TestLandingOwnerEmailLinksToProfile(t *testing.T) {
+func TestLandingProfileAvatarLinksToProfile(t *testing.T) {
 	body := signedInLanding(t, landingServerWithCRM(t))
 
-	want := `<a href="/profile">` + googleidp.StubIdentity.Email + `</a>`
-	// R-DB13-MAIL
-	if !strings.Contains(body, want) {
-		t.Errorf("owner email is not linked to profile; want %q in:\n%s", want, body)
+	email := googleidp.StubIdentity.Email
+	r, _ := utf8.DecodeRuneInString(email)
+	initial := string(unicode.ToUpper(r))
+	avatar := `<a href="/profile" class="avatar"`
+	signOut := `<form method="POST" action="/logout">`
+
+	// R-XO4W-LKAI
+	if !strings.Contains(body, avatar) {
+		t.Errorf("profile avatar link is missing; want %q in:\n%s", avatar, body)
+	}
+	if !strings.Contains(body, `>`+initial+`</a>`) {
+		t.Errorf("profile avatar does not render owner initial %q:\n%s", initial, body)
+	}
+	if !strings.Contains(body, `title="`+email+`"`) {
+		t.Errorf("profile avatar title does not carry owner email %q:\n%s", email, body)
+	}
+	if !strings.Contains(body, `aria-label="Profile — `+email+`"`) {
+		t.Errorf("profile avatar aria-label does not carry owner email %q:\n%s", email, body)
+	}
+	if old := `<a href="/profile">` + email + `</a>`; strings.Contains(body, old) {
+		t.Errorf("owner email is still rendered as visible profile link %q:\n%s", old, body)
+	}
+
+	signOutAt := strings.Index(body, signOut)
+	avatarAt := strings.Index(body, avatar)
+	if signOutAt < 0 || avatarAt < 0 || signOutAt >= avatarAt {
+		t.Errorf("sign-out should precede the profile avatar; signOutAt=%d avatarAt=%d:\n%s", signOutAt, avatarAt, body)
+	}
+}
+
+func TestLoggedOutLandingHidesProfileLink(t *testing.T) {
+	srv := landingServerWithCRM(t)
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/", map[string]string{
+		"X-Forwarded-Proto": "https",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	if strings.Contains(rec.Body.String(), `href="/profile"`) {
+		t.Errorf("logged-out landing exposes profile link:\n%s", rec.Body.String())
 	}
 }
 
