@@ -112,11 +112,6 @@ func (l Layout) ActiveManifest() string {
 	return filepath.Join(l.EtcCurrentLink(), "manifest.env")
 }
 
-// ManifestPath is the legacy pre-versioned /opt/<app>/etc/manifest.env location.
-// It is kept only so ConvertOldLayout can move or remove old artifacts; active
-// readers use ActiveManifest.
-func (l Layout) ManifestPath() string { return filepath.Join(l.EtcDir(), "manifest.env") }
-
 func (l Layout) shareDir() string { return filepath.Join(l.AppDir(), "share") }
 
 // ShareVersionDir is /opt/<app>/share/<version> — the retained per-version

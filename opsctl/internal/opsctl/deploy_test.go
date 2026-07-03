@@ -503,7 +503,7 @@ func TestDeploySequenceSwapsReloadsRestartsAndPrunesWithoutManifestVerb(t *testi
 
 	stageOnly(t, o3, app, "v1.2.0", stageArtifact(t, "ledger-v1.2.0"))
 	events = nil
-	if err := os.WriteFile(l.ManifestPath(), []byte("legacy-stable-manifest\n"), 0o644); err != nil {
+	if err := os.WriteFile(legacyManifestPath(l), []byte("legacy-stable-manifest\n"), 0o644); err != nil {
 		t.Fatalf("seed stable manifest: %v", err)
 	}
 	if err := o3.Deploy(context.Background(), app, "v1.2.0"); err != nil {
@@ -527,7 +527,7 @@ func TestDeploySequenceSwapsReloadsRestartsAndPrunesWithoutManifestVerb(t *testi
 		}
 		last = idx
 	}
-	if b, err := os.ReadFile(l.ManifestPath()); err != nil {
+	if b, err := os.ReadFile(legacyManifestPath(l)); err != nil {
 		t.Fatalf("read seeded stable manifest: %v", err)
 	} else if string(b) != "legacy-stable-manifest\n" {
 		t.Fatalf("stable manifest changed to %q", string(b))

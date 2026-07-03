@@ -21,7 +21,7 @@ func TestConvertOldLayoutMovesLiveServiceToStateCacheLibexecAndIsIdempotent(t *t
 	writeFile(t, filepath.Join(oldData, app+".db-shm"), []byte("shm bytes"), 0o640)
 	writeFile(t, filepath.Join(oldData, app+".db.generation"), []byte("42"), 0o640)
 	writeFile(t, filepath.Join(oldRelease, app), []byte("#!/bin/sh\necho ledger\n"), 0o755)
-	writeFile(t, l.ManifestPath(), []byte("PORT=9000\n"), 0o640)
+	writeFile(t, legacyManifestPath(l), []byte("PORT=9000\n"), 0o640)
 	writeFile(t, filepath.Join(l.EtcDir(), "nginx.conf"), []byte("location /ledger/ {}\n"), 0o640)
 	writeFile(t, filepath.Join(l.BackupsDir(), "old.db"), []byte("old backup"), 0o640)
 	if err := os.Symlink(filepath.Join("releases", version), filepath.Join(l.AppDir(), "current")); err != nil {
@@ -78,7 +78,7 @@ func TestConvertOldLayoutCompletesHalfConvertedTreeWithoutDroppingData(t *testin
 	writeFile(t, l.LibexecBinary(version), []byte("binary already moved"), 0o755)
 	writeFile(t, filepath.Join(oldRelease, app), []byte("binary already moved"), 0o755)
 	writeFile(t, l.ManifestFile(version), []byte("manifest already moved\n"), 0o640)
-	writeFile(t, l.ManifestPath(), []byte("manifest already moved\n"), 0o640)
+	writeFile(t, legacyManifestPath(l), []byte("manifest already moved\n"), 0o640)
 	writeFile(t, l.NginxConfFile(version), []byte("nginx already moved\n"), 0o640)
 	writeFile(t, filepath.Join(l.EtcDir(), "nginx.conf"), []byte("nginx already moved\n"), 0o640)
 	writeFile(t, filepath.Join(l.BackupsDir(), "old.db"), []byte("old backup"), 0o640)
@@ -111,7 +111,7 @@ func TestConvertOldLayoutRemovesLegacyManifestSymlink(t *testing.T) {
 
 	writeFile(t, filepath.Join(oldRelease, app), []byte("#!/bin/sh\necho crm\n"), 0o755)
 	writeFile(t, l.ManifestFile(version), []byte("PORT=3100\n"), 0o640)
-	if err := os.Symlink(filepath.Join("current", "manifest.env"), l.ManifestPath()); err != nil {
+	if err := os.Symlink(filepath.Join("current", "manifest.env"), legacyManifestPath(l)); err != nil {
 		t.Fatalf("symlink legacy manifest bridge: %v", err)
 	}
 	if err := os.Symlink(filepath.Join("releases", version), filepath.Join(l.AppDir(), "current")); err != nil {
@@ -123,7 +123,7 @@ func TestConvertOldLayoutRemovesLegacyManifestSymlink(t *testing.T) {
 	}
 
 	assertFileBytes(t, l.ManifestFile(version), []byte("PORT=3100\n"))
-	assertMissing(t, l.ManifestPath())
+	assertMissing(t, legacyManifestPath(l))
 	assertSymlinkResolves(t, l.EtcCurrentLink(), l.EtcVersionDir(version))
 }
 
