@@ -22,7 +22,7 @@ import (
 // reorderArgs moves flag tokens ahead of positional tokens so the standard
 // flag package — which stops scanning at the first non-flag token — accepts
 // flags written AFTER positionals (e.g. `opsctl stage ledger v0.1.0
-// --artifact X`, the form bin/ship emits, and `opsctl setup ledger --port N`).
+// --artifact X`, the form bin/ship emits, and `opsctl setup ledger --fragment F`).
 // A bare `--` terminates flag scanning: everything after it is positional and is
 // passed through verbatim. A flag that takes a separate value is detected by the
 // known set of value-taking flags so the value token is not mistaken for a
@@ -95,7 +95,7 @@ var groups = []group{
 	}},
 	{"Provisioning", []verb{
 		{"setup", "opsctl setup <app> [--default]\n" +
-			"                [--port <n>] [--fragment <path>] [--defer-nginx] [--packages <p1,p2>]"},
+			"                [--fragment <path>] [--defer-nginx] [--packages <p1,p2>]"},
 		{"teardown", "opsctl teardown <app> --force [--keep-user]"},
 		{"convert", "opsctl convert <app>"},
 		// One flag per line; line 1 is the verb + first flag, continuation lines
@@ -104,7 +104,6 @@ var groups = []group{
 		{"init-box", "opsctl init-box --domain <d>\n" +
 			"                --apex-block <path>\n" +
 			"                [--default-app <app>]\n" +
-			"                [--port <n>]\n" +
 			"                [--email <e>]\n" +
 			"                [--skip-cert]"},
 	}},
@@ -414,12 +413,11 @@ func runInitBox(ctx context.Context, root, name string, args []string) error {
 	fs := newFlagSet(name)
 	defaultApp := fs.String("default-app", "dashboard", "the apex/DEFAULT app name")
 	domain := fs.String("domain", "", "apex domain, e.g. int.ikigenba.com (required)")
-	port := fs.Int("port", 3000, "the apex app's loopback port")
 	email := fs.String("email", "", "certbot email for HTTP-01 cert issuance")
 	apexBlock := fs.String("apex-block", "", "path to the apex nginx server block source (required)")
 	skipCert := fs.Bool("skip-cert", false, "do not issue a TLS cert (stage the block only)")
 	if err := fs.Parse(reorderArgs(args, map[string]bool{
-		"default-app": true, "domain": true, "port": true, "email": true, "apex-block": true,
+		"default-app": true, "domain": true, "email": true, "apex-block": true,
 	})); err != nil {
 		return helpErr(err)
 	}
@@ -433,7 +431,6 @@ func runInitBox(ctx context.Context, root, name string, args []string) error {
 	return opsctl.New(root).InitBox(ctx, opsctl.InitBoxOptions{
 		DefaultApp: *defaultApp,
 		Domain:     *domain,
-		Port:       *port,
 		Email:      *email,
 		ApexBlock:  block,
 		SkipCert:   *skipCert,
@@ -443,16 +440,15 @@ func runInitBox(ctx context.Context, root, name string, args []string) error {
 func runSetup(ctx context.Context, root, name string, args []string) error {
 	fs := newFlagSet(name)
 	isDefault := fs.Bool("default", false, "provision the apex/DEFAULT app without a locations fragment")
-	port := fs.Int("port", 0, "the service's loopback port (substituted for __PORT__ in the fragment)")
 	fragment := fs.String("fragment", "", "path to the service's nginx location fragment source (omit for a worker)")
 	deferNginx := fs.Bool("defer-nginx", false, "stage the fragment but skip nginx -t/reload (greenfield box with no apex cert yet)")
 	packages := fs.String("packages", "", "comma-separated OS packages to install for the service (e.g. python3.11)")
-	if err := fs.Parse(reorderArgs(args, map[string]bool{"port": true, "fragment": true, "packages": true})); err != nil {
+	if err := fs.Parse(reorderArgs(args, map[string]bool{"fragment": true, "packages": true})); err != nil {
 		return helpErr(err)
 	}
 	pos := fs.Args()
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: opsctl setup <app> [--default] [--port N] [--fragment <path>] [--defer-nginx] [--packages p1,p2]")
+		return fmt.Errorf("usage: opsctl setup <app> [--default] [--fragment <path>] [--defer-nginx] [--packages p1,p2]")
 	}
 	frag, err := opsctl.LoadFragmentFile(*fragment)
 	if err != nil {
@@ -460,7 +456,6 @@ func runSetup(ctx context.Context, root, name string, args []string) error {
 	}
 	return opsctl.New(root).Setup(ctx, opsctl.SetupOptions{
 		App:        pos[0],
-		Port:       *port,
 		Fragment:   frag,
 		IsDefault:  *isDefault,
 		DeferNginx: *deferNginx,

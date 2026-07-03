@@ -12,14 +12,13 @@ import (
 // can emit a byte-identical apex server block.
 type InitBoxOptions struct {
 	// DefaultApp is the apex/DEFAULT app's name (today "dashboard"). The apex
-	// server block lands at conf.d/<DefaultApp>.conf and the apex app's loopback
-	// port is what /_authn proxies to.
+	// server block lands at conf.d/<DefaultApp>.conf; the apex app's loopback port
+	// is a literal in that block (its fixed registry port).
 	DefaultApp string
 	Domain     string // apex domain (e.g. int.ikigenba.com) — __DOMAIN__ in the block
-	Port       int    // the apex app's loopback PORT — __PORT__ in the block
 	Email      string // CERTBOT_EMAIL — for HTTP-01 cert issuance
 	ApexBlock  string // the apex nginx server{} SOURCE (committed dashboard
-	// etc/nginx.conf, with __DOMAIN__/__PORT__ placeholders).
+	// etc/nginx.conf, with the __DOMAIN__ placeholder).
 	// SkipCert short-circuits the certbot call (the box ops are still recorded);
 	// init-box is otherwise idempotent and certbot reuses a live cert.
 	SkipCert bool
@@ -67,7 +66,7 @@ func (o *Opsctl) InitBox(ctx context.Context, opts InitBoxOptions) error {
 
 	// 3. The apex server block (carries /_authn + the locations include).
 	o.logf("write apex nginx block %s", l.ApexBlockPath())
-	block := renderApexBlock(opts.ApexBlock, opts.Domain, opts.Port)
+	block := renderApexBlock(opts.ApexBlock, opts.Domain)
 	if err := writeFileAtomic(l.ApexBlockPath(), []byte(block), 0o644); err != nil {
 		return fmt.Errorf("init-box: write apex block: %w", err)
 	}

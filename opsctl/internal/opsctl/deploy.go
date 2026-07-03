@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -361,15 +360,11 @@ func (o *Opsctl) installApexBlockIfDefault(ctx context.Context, l Layout) error 
 	if domain == "" {
 		return fmt.Errorf("deploy: DEFAULT=true requires IKIGENBA_DOMAIN")
 	}
-	port, err := strconv.Atoi(strings.TrimSpace(manifest["PORT"]))
-	if err != nil {
-		return fmt.Errorf("deploy: DEFAULT=true requires numeric PORT: %w", err)
-	}
 	src, err := os.ReadFile(l.ActiveNginxConf())
 	if err != nil {
 		return fmt.Errorf("deploy: read active nginx config: %w", err)
 	}
-	block := renderApexBlock(string(src), domain, port)
+	block := renderApexBlock(string(src), domain)
 	o.logf("write apex nginx block %s", l.ApexBlockPath())
 	if err := writeFileAtomic(l.ApexBlockPath(), []byte(block), 0o644); err != nil {
 		return fmt.Errorf("deploy: write apex nginx block: %w", err)

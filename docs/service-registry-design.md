@@ -90,9 +90,9 @@ No separate custom block is warranted.
 
 ### Seed assignments
 
-`dashboard` is fixed at `3000`: it is the apex `DEFAULT` app and `opsctl --port`
-already defaults to 3000, so it must not move. The remaining seed order within
-each block is frozen as listed here.
+`dashboard` is fixed at `3000`: it is the apex `DEFAULT` app whose loopback port
+is the literal `3000` in its committed nginx source, so it must not move. The
+remaining seed order within each block is frozen as listed here.
 
 | Port | Service | | Port | Service | | Port | Service |
 |---|---|---|---|---|---|---|---|

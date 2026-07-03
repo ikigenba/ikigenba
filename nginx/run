@@ -5,11 +5,11 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
-# Regenerate the dev /srv/<svc>/ location fragments from each service's templated
-# etc/nginx.conf, substituting __PORT__ with the service's loopback PORT (the
-# canonical resolver is bin/registry, reading <svc>/etc/manifest.env). This is the
-# dev mirror of each service's bin/setup. Generated files are gitignored and
-# overwritten every run, so this stays idempotent.
+# Regenerate the dev /srv/<svc>/ location fragments from each service's
+# etc/nginx.conf. The fragments carry their loopback port as a literal (fixed by
+# the registry), so this just copies them verbatim — the dev mirror of each
+# service's opsctl setup. Generated files are gitignored and overwritten every
+# run, so this stays idempotent.
 mkdir -p "$here/locations"
 # nginx.conf puts all scratch paths (client_body/proxy/fastcgi/uwsgi/scgi) under
 # tmp/; nginx won't create the parent itself, so ensure it exists.
@@ -17,8 +17,7 @@ mkdir -p "$here/tmp"
 for svc in crm cron dropbox gmail ledger notify prompts scripts sites webhooks wiki; do
 	frag="$repo/$svc/etc/nginx.conf"
 	[ -f "$frag" ] || continue
-	port="$(REGISTRY_ROOT="$repo" "$repo/bin/registry" port "$svc")"
-	sed "s/__PORT__/${port}/g" "$frag" >"$here/locations/${svc}.conf"
+	cp "$frag" "$here/locations/${svc}.conf"
 done
 
 exec /usr/sbin/nginx -p "$here" -c "$here/nginx.conf" -g 'daemon off;'

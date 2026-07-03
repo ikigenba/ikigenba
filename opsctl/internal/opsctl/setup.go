@@ -14,10 +14,10 @@ import (
 // byte-identical unit + nginx fragment.
 type SetupOptions struct {
 	App      string // service name (== systemd unit / fragment basename / app user)
-	Port     int    // loopback PORT — substituted for __PORT__ in the fragment
-	Fragment string // the service's nginx location fragment SOURCE (with __PORT__
-	// placeholders), exactly the committed etc/nginx.conf body. Empty ⇒ a service
-	// with no public route (worker/batch) — no fragment is dropped.
+	Fragment string // the service's nginx location fragment SOURCE — exactly the
+	// committed etc/nginx.conf body (its loopback port is a literal, fixed by the
+	// registry). Empty ⇒ a service with no public route (worker/batch) — no
+	// fragment is dropped.
 	IsDefault bool // true for the apex/DEFAULT app whose nginx block is init-box/deploy-owned.
 
 	// WWWDirs are extra directories (absolute paths) to create at mode 0755 and
@@ -55,8 +55,8 @@ type SetupOptions struct {
 //  2. create the /opt/<app> tree (libexec/ bin/ etc/ share/ state/ cache/),
 //  3. write + enable-NOT-start the systemd unit
 //     (ExecStart=/usr/local/bin/ikigenba-launch <app>),
-//  4. drop the service's nginx fragment into conf.d/locations/<app>.conf (with
-//     __PORT__ substituted), then nginx -t + reload.
+//  4. drop the service's nginx fragment into conf.d/locations/<app>.conf
+//     verbatim (its loopback port is already a literal), then nginx -t + reload.
 //
 // It assumes init-box already ran (conf.d/locations/ exists, the apex block +
 // cert are in place). The config artifacts (the unit, the fragment) are WRITTEN
@@ -193,7 +193,7 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 	if opts.IsDefault {
 		o.logf("default app: apex block is owned by init-box/deploy; no nginx conf.d artifact written")
 	} else if opts.Fragment != "" {
-		frag := renderFragment(opts.Fragment, opts.Port)
+		frag := renderFragment(opts.Fragment)
 		o.logf("write nginx fragment %s", l.FragmentPath())
 		if err := writeFileAtomic(l.FragmentPath(), []byte(frag), 0o644); err != nil {
 			return fmt.Errorf("setup: write fragment: %w", err)
@@ -275,17 +275,16 @@ func ensureFileMode(path string, mode os.FileMode) error {
 	return os.Chmod(path, mode)
 }
 
-// renderFragment substitutes __PORT__ with the loopback port, exactly as the old
-// bin/setup did: FRAGMENT="$(sed "s/__PORT__/${PORT}/g" etc/nginx.conf)" then
-// `printf '%s\n'`. Command substitution strips the source's trailing newline and
-// printf re-adds exactly one, so the on-box bytes are the substituted body with a
-// single trailing newline — reproduced here with TrimRight + "\n".
-func renderFragment(src string, port int) string {
-	body := strings.ReplaceAll(src, "__PORT__", fmt.Sprintf("%d", port))
-	return strings.TrimRight(body, "\n") + "\n"
+// renderFragment normalizes a fragment source to a single trailing newline. The
+// fragment's loopback port is already a literal (fixed by the registry), so no
+// substitution happens; this only reproduces the old bin/setup byte behavior
+// (command substitution stripped the trailing newline, `printf '%s\n'` re-added
+// exactly one) with TrimRight + "\n".
+func renderFragment(src string) string {
+	return strings.TrimRight(src, "\n") + "\n"
 }
 
-func stateWWWFragment(l Layout, port int) string {
+func stateWWWFragment(l Layout) string {
 	return fmt.Sprintf(`location /srv/%[1]s/public/ {
     alias %[2]s/;
 }

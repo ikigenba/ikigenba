@@ -10,10 +10,10 @@ import (
 // setupForTeardown provisions a path-routed service (ledger) so a subsequent
 // teardown has a real /opt/<app> tree, unit, and fragment to remove. It returns
 // the layout and resets the op recorder so the test asserts only teardown's ops.
-func setupForTeardown(t *testing.T, o *Opsctl, sys *stubSystem, app string, port int, fragSrc string) Layout {
+func setupForTeardown(t *testing.T, o *Opsctl, sys *stubSystem, app string, fragSrc string) Layout {
 	t.Helper()
 	runInitBox(t, o, readRepoFile(t, "../../../dashboard/etc/nginx.conf"))
-	if err := o.Setup(context.Background(), SetupOptions{App: app, Port: port, Fragment: fragSrc}); err != nil {
+	if err := o.Setup(context.Background(), SetupOptions{App: app, Fragment: fragSrc}); err != nil {
 		t.Fatalf("setup %s: %v", app, err)
 	}
 	sys.ops = nil // assert only teardown's ops
@@ -31,7 +31,7 @@ func TestTeardown_PathRoutedService(t *testing.T) {
 
 	app := "ledger"
 	fragSrc := readRepoFile(t, "../../../ledger/etc/nginx.conf")
-	l := setupForTeardown(t, o, sys, app, 3002, fragSrc)
+	l := setupForTeardown(t, o, sys, app, fragSrc)
 
 	if err := o.Teardown(context.Background(), TeardownOptions{App: app, Force: true}); err != nil {
 		t.Fatalf("teardown ledger: %v", err)
@@ -73,7 +73,7 @@ func TestTeardown_KeepUser(t *testing.T) {
 
 	app := "ledger"
 	fragSrc := readRepoFile(t, "../../../ledger/etc/nginx.conf")
-	l := setupForTeardown(t, o, sys, app, 3002, fragSrc)
+	l := setupForTeardown(t, o, sys, app, fragSrc)
 
 	if err := o.Teardown(context.Background(), TeardownOptions{App: app, Force: true, KeepUser: true}); err != nil {
 		t.Fatalf("teardown --keep-user: %v", err)
@@ -130,7 +130,7 @@ func TestTeardown_RequiresForce(t *testing.T) {
 	sysRoot := t.TempDir()
 	sys := &stubSystem{}
 	o := newProvisioner(t, root, sysRoot, sys)
-	setupForTeardown(t, o, sys, "ledger", 3002, readRepoFile(t, "../../../ledger/etc/nginx.conf"))
+	setupForTeardown(t, o, sys, "ledger", readRepoFile(t, "../../../ledger/etc/nginx.conf"))
 
 	err := o.Teardown(context.Background(), TeardownOptions{App: "ledger"})
 	if err == nil || !strings.Contains(err.Error(), "--force") {

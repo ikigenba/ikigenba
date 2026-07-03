@@ -70,7 +70,6 @@ func runInitBox(t *testing.T, o *Opsctl, apexSrc string) {
 	if err := o.InitBox(context.Background(), InitBoxOptions{
 		DefaultApp: "dashboard",
 		Domain:     "int.ikigenba.com",
-		Port:       3000,
 		Email:      "ops@example.com",
 		ApexBlock:  apexSrc,
 		SkipCert:   false,
@@ -99,11 +98,10 @@ func TestInitBox_WritesApexSubstrate(t *testing.T) {
 		t.Fatalf("conf.d/locations/ not created: %v", err)
 	}
 
-	// The apex block byte-matches the committed nginx.conf with __DOMAIN__/__PORT__
-	// substituted (the old dashboard/bin/setup output, modulo the split).
+	// The apex block byte-matches the committed nginx.conf with __DOMAIN__
+	// substituted (the loopback port is already a literal in the source).
 	wantApex := shellSubst(apexSrc, map[string]string{
 		"__DOMAIN__": "int.ikigenba.com",
-		"__PORT__":   "3000",
 	})
 	gotApex := readRepoFile(t, l.ApexBlockPath())
 	if gotApex != wantApex {
@@ -162,7 +160,6 @@ func TestInitBoxWritesNightlyBackupTimerInChicagoTime(t *testing.T) {
 	if err := o.InitBox(context.Background(), InitBoxOptions{
 		DefaultApp: "dashboard",
 		Domain:     "int.ikigenba.com",
-		Port:       3000,
 		ApexBlock:  readRepoFile(t, "../../../dashboard/etc/nginx.conf"),
 		SkipCert:   true,
 	}); err != nil {
@@ -210,7 +207,7 @@ func TestInitBox_SkipCert(t *testing.T) {
 	apexSrc := readRepoFile(t, "../../../dashboard/etc/nginx.conf")
 
 	if err := o.InitBox(context.Background(), InitBoxOptions{
-		DefaultApp: "dashboard", Domain: "int.ikigenba.com", Port: 3000,
+		DefaultApp: "dashboard", Domain: "int.ikigenba.com",
 		ApexBlock: apexSrc, SkipCert: true,
 	}); err != nil {
 		t.Fatalf("init-box --skip-cert: %v", err)
@@ -245,7 +242,7 @@ func TestInitBox_CertExists(t *testing.T) {
 	apexSrc := readRepoFile(t, "../../../dashboard/etc/nginx.conf")
 
 	if err := o.InitBox(context.Background(), InitBoxOptions{
-		DefaultApp: "dashboard", Domain: "int.ikigenba.com", Port: 3000,
+		DefaultApp: "dashboard", Domain: "int.ikigenba.com",
 		Email: "ops@example.com", ApexBlock: apexSrc, SkipCert: false,
 	}); err != nil {
 		t.Fatalf("init-box (cert exists): %v", err)
@@ -286,7 +283,7 @@ func TestSetup_PathRoutedService(t *testing.T) {
 	app := "ledger"
 	fragSrc := readRepoFile(t, "../../../ledger/etc/nginx.conf")
 	if err := o.Setup(context.Background(), SetupOptions{
-		App: app, Port: 3002, Fragment: fragSrc,
+		App: app, Fragment: fragSrc,
 	}); err != nil {
 		t.Fatalf("setup ledger: %v", err)
 	}
@@ -298,8 +295,9 @@ func TestSetup_PathRoutedService(t *testing.T) {
 		t.Fatalf("ledger unit mismatch:\n--- got ---\n%q\n--- want ---\n%q", got, expectedUnit(app))
 	}
 
-	// nginx fragment byte-matches the committed etc/nginx.conf with __PORT__ → 3002.
-	wantFrag := shellSubst(fragSrc, map[string]string{"__PORT__": "3002"})
+	// nginx fragment byte-matches the committed etc/nginx.conf verbatim (its
+	// loopback port is already a literal — setup does no substitution).
+	wantFrag := shellSubst(fragSrc, nil)
 	if got := readRepoFile(t, l.FragmentPath()); got != wantFrag {
 		t.Fatalf("ledger fragment mismatch:\n--- got ---\n%q\n--- want ---\n%q", got, wantFrag)
 	}
@@ -358,7 +356,7 @@ func TestSetup_WWWTree(t *testing.T) {
 	app := "sites"
 	fragSrc := readRepoFile(t, "../../../ledger/etc/nginx.conf") // any path-routed fragment
 	if err := o.Setup(context.Background(), SetupOptions{
-		App: app, Port: 3010, Fragment: fragSrc,
+		App: app, Fragment: fragSrc,
 		WWWDirs: WWWDirsFor(root, app),
 	}); err != nil {
 		t.Fatalf("setup sites: %v", err)
@@ -409,7 +407,7 @@ func TestSetup_InstallsPackages(t *testing.T) {
 	app := "scripts"
 	fragSrc := readRepoFile(t, "../../../scripts/etc/nginx.conf")
 	if err := o.Setup(context.Background(), SetupOptions{
-		App: app, Port: 3009, Fragment: fragSrc, Packages: []string{"python3.11"},
+		App: app, Fragment: fragSrc, Packages: []string{"python3.11"},
 	}); err != nil {
 		t.Fatalf("setup scripts --packages python3.11: %v", err)
 	}
@@ -453,7 +451,7 @@ func TestWWWDirsFor_OnlySites(t *testing.T) {
 // R-4LKF-FB23
 func TestStateWWWFragmentServesPublicAndSessionGatesPrivate(t *testing.T) {
 	l := NewLayout("/opt", "sites")
-	frag := stateWWWFragment(l, 3010)
+	frag := stateWWWFragment(l)
 	public := nginxLocationBlockForOpsctlTest(t, frag, "location /srv/sites/public/")
 	private := nginxLocationBlockForOpsctlTest(t, frag, "location /srv/sites/private/")
 
@@ -509,7 +507,7 @@ func TestSetup_NoWWWTreeForOtherApps(t *testing.T) {
 
 	app := "ledger"
 	if err := o.Setup(context.Background(), SetupOptions{
-		App: app, Port: 3002,
+		App:      app,
 		Fragment: readRepoFile(t, "../../../ledger/etc/nginx.conf"),
 		WWWDirs:  WWWDirsFor(root, app), // nil for ledger
 	}); err != nil {

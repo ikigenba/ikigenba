@@ -136,8 +136,8 @@ Run this sequence per app:
    `bin/run`, `etc/current`, and `share/current` atomically, reloads the nginx fragment through `etc/current`,
    restarts the unit, and prunes retained versions. For the **DEFAULT/apex app**
    (dashboard), deploy also re-renders the apex block from the just-swapped
-   `etc/current/nginx.conf` (substituting `IKIGENBA_DOMAIN` and the manifest
-   `PORT`) into `/etc/nginx/conf.d/<app>.conf` and validates it with `nginx -t`
+   `etc/current/nginx.conf` (substituting `IKIGENBA_DOMAIN`; the loopback port is
+   already a literal) into `/etc/nginx/conf.d/<app>.conf` and validates it with `nginx -t`
    **before** the reload — so apex routing moves atomically with the binary. A
    normal service has no apex block; its `/srv/<svc>/` fragment re-applies through
    the `etc/current` symlink alone.

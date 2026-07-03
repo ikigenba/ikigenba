@@ -33,14 +33,14 @@ WantedBy=multi-user.target
 }
 
 // renderApexBlock renders the apex nginx server{} block init-box writes. It takes
-// the committed dashboard etc/nginx.conf SOURCE (with __DOMAIN__/__PORT__
-// placeholders) and substitutes them, exactly as the old dashboard/bin/setup did
-// (sed -e s/__DOMAIN__/…/g -e s/__PORT__/…/g then `printf '%s\n'`). The block
-// carries the /_authn introspection hook and the
-// `include /etc/nginx/conf.d/locations/*.conf;` of the per-app fragment dir.
-func renderApexBlock(src, domain string, port int) string {
+// the committed dashboard etc/nginx.conf SOURCE (with the __DOMAIN__ placeholder;
+// the loopback port is already a literal, fixed by the registry) and substitutes
+// the domain, then normalizes to a single trailing newline (the old
+// `sed s/__DOMAIN__/…/g` + `printf '%s\n'`). The block carries the /_authn
+// introspection hook and the `include /etc/nginx/conf.d/locations/*.conf;` of the
+// per-app fragment dir.
+func renderApexBlock(src, domain string) string {
 	body := strings.ReplaceAll(src, "__DOMAIN__", domain)
-	body = strings.ReplaceAll(body, "__PORT__", fmt.Sprintf("%d", port))
 	return strings.TrimRight(body, "\n") + "\n"
 }
 

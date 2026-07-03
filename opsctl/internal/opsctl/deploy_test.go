@@ -552,7 +552,7 @@ func TestDeployDefaultRendersInstallsAndTestsApexBlock(t *testing.T) {
 	o.SysRoot = sysRoot
 
 	manifest := "APP=dashboard\nDEFAULT=true\nPORT=4310\n"
-	nginxSrc := "server {\n    server_name __DOMAIN__;\n    proxy_pass http://127.0.0.1:__PORT__;\n}\n"
+	nginxSrc := "server {\n    server_name __DOMAIN__;\n    proxy_pass http://127.0.0.1:4310;\n}\n"
 	stageReleaseWithConfig(t, o, l, app, version, manifest, nginxSrc)
 
 	if err := o.Deploy(context.Background(), app, version); err != nil {
@@ -563,7 +563,7 @@ func TestDeployDefaultRendersInstallsAndTestsApexBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read apex block: %v", err)
 	}
-	if want := renderApexBlock(nginxSrc, "example.test", 4310); string(got) != want {
+	if want := renderApexBlock(nginxSrc, "example.test"); string(got) != want {
 		t.Fatalf("apex block = %q, want %q", got, want)
 	}
 	ops := sys.opSeq()
@@ -590,7 +590,7 @@ func TestDeployDefaultReadsApexDomainFromEnvironmentNotManifest(t *testing.T) {
 	o.SysRoot = sysRoot
 
 	manifest := "APP=dashboard\nDEFAULT=true\nMOUNT=/dashboard\nPORT=4310\n"
-	nginxSrc := "server_name __DOMAIN__; proxy_pass http://127.0.0.1:__PORT__;\n"
+	nginxSrc := "server_name __DOMAIN__; proxy_pass http://127.0.0.1:4310;\n"
 	stageReleaseWithConfig(t, o, l, app, version, manifest, nginxSrc)
 
 	if err := o.Deploy(context.Background(), app, version); err != nil {
@@ -622,7 +622,7 @@ func TestDeployDefaultRequiresDomainBeforeInstallingOrReloading(t *testing.T) {
 	o.SysRoot = sysRoot
 
 	manifest := "APP=dashboard\nDEFAULT=true\nPORT=4310\n"
-	nginxSrc := "server_name __DOMAIN__; proxy_pass http://127.0.0.1:__PORT__;\n"
+	nginxSrc := "server_name __DOMAIN__; proxy_pass http://127.0.0.1:4310;\n"
 	stageReleaseWithConfig(t, o, l, app, version, manifest, nginxSrc)
 	if err := os.MkdirAll(filepath.Dir(l.ApexBlockPath()), 0o755); err != nil {
 		t.Fatalf("create apex dir: %v", err)
@@ -682,7 +682,7 @@ func TestDeployDefaultNginxTestFailureStopsBeforeReloadOrRestart(t *testing.T) {
 	}
 
 	manifest := "APP=dashboard\nDEFAULT=true\nPORT=4310\n"
-	nginxSrc := "server_name __DOMAIN__; proxy_pass http://127.0.0.1:__PORT__;\n"
+	nginxSrc := "server_name __DOMAIN__; proxy_pass http://127.0.0.1:4310;\n"
 	stageReleaseWithConfig(t, o, l, app, version, manifest, nginxSrc)
 
 	err := o.Deploy(context.Background(), app, version)
@@ -884,8 +884,8 @@ func TestNotifySetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 		Err:     io.Discard,
 	}
 
-	fragment := "location /srv/notify/ {\n    proxy_pass http://127.0.0.1:__PORT__;\n}\n"
-	if err := o.Setup(context.Background(), SetupOptions{App: app, Port: 3003, Fragment: fragment}); err != nil {
+	fragment := "location /srv/notify/ {\n    proxy_pass http://127.0.0.1:3201;\n}\n"
+	if err := o.Setup(context.Background(), SetupOptions{App: app, Fragment: fragment}); err != nil {
 		t.Fatalf("setup notify: %v", err)
 	}
 
@@ -957,8 +957,8 @@ func TestDropboxSetupDeployBootsHealthWithStateCacheAndMirrorPaths(t *testing.T)
 		Err:     io.Discard,
 	}
 
-	fragment := "location /srv/dropbox/ {\n    proxy_pass http://127.0.0.1:__PORT__;\n}\n"
-	if err := o.Setup(context.Background(), SetupOptions{App: app, Port: 3005, Fragment: fragment}); err != nil {
+	fragment := "location /srv/dropbox/ {\n    proxy_pass http://127.0.0.1:3200;\n}\n"
+	if err := o.Setup(context.Background(), SetupOptions{App: app, Fragment: fragment}); err != nil {
 		t.Fatalf("setup dropbox: %v", err)
 	}
 
@@ -1051,8 +1051,8 @@ func TestPromptsSetupDeployBootsHealthWithStateSandboxesAndCacheRuns(t *testing.
 		Err:     io.Discard,
 	}
 
-	fragment := "location /srv/prompts/ {\n    proxy_pass http://127.0.0.1:__PORT__;\n}\n"
-	if err := o.Setup(context.Background(), SetupOptions{App: app, Port: 3004, Fragment: fragment}); err != nil {
+	fragment := "location /srv/prompts/ {\n    proxy_pass http://127.0.0.1:3002;\n}\n"
+	if err := o.Setup(context.Background(), SetupOptions{App: app, Fragment: fragment}); err != nil {
 		t.Fatalf("setup prompts: %v", err)
 	}
 
@@ -1152,8 +1152,8 @@ func TestWikiSetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 		Err:     io.Discard,
 	}
 
-	fragment := "location /srv/wiki/ {\n    proxy_pass http://127.0.0.1:__PORT__;\n}\n"
-	if err := o.Setup(context.Background(), SetupOptions{App: app, Port: 3006, Fragment: fragment}); err != nil {
+	fragment := "location /srv/wiki/ {\n    proxy_pass http://127.0.0.1:3001;\n}\n"
+	if err := o.Setup(context.Background(), SetupOptions{App: app, Fragment: fragment}); err != nil {
 		t.Fatalf("setup wiki: %v", err)
 	}
 
@@ -1237,8 +1237,8 @@ func TestCronSetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 		Err:     io.Discard,
 	}
 
-	fragment := "location /srv/cron/ {\n    proxy_pass http://127.0.0.1:__PORT__;\n}\n"
-	if err := o.Setup(context.Background(), SetupOptions{App: app, Port: 3007, Fragment: fragment}); err != nil {
+	fragment := "location /srv/cron/ {\n    proxy_pass http://127.0.0.1:3005;\n}\n"
+	if err := o.Setup(context.Background(), SetupOptions{App: app, Fragment: fragment}); err != nil {
 		t.Fatalf("setup cron: %v", err)
 	}
 
@@ -1313,8 +1313,8 @@ func TestGmailSetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 		Err:     io.Discard,
 	}
 
-	fragment := "location /srv/gmail/ {\n    proxy_pass http://127.0.0.1:__PORT__;\n}\n"
-	if err := o.Setup(context.Background(), SetupOptions{App: app, Port: 3008, Fragment: fragment}); err != nil {
+	fragment := "location /srv/gmail/ {\n    proxy_pass http://127.0.0.1:3202;\n}\n"
+	if err := o.Setup(context.Background(), SetupOptions{App: app, Fragment: fragment}); err != nil {
 		t.Fatalf("setup gmail: %v", err)
 	}
 
@@ -1397,8 +1397,7 @@ func TestSitesSetupDeployBootsHealthWithStateWWWPaths(t *testing.T) {
 	}
 
 	if err := o.Setup(context.Background(), SetupOptions{
-		App:  app,
-		Port: 3010,
+		App: app,
 		Fragment: readRepoFile(t,
 			"../../../sites/etc/nginx.conf"),
 		WWWDirs: WWWDirsFor(root, app),

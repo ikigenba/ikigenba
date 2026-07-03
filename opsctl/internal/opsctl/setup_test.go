@@ -31,8 +31,7 @@ func TestSetupRejectsDefaultWithFragmentBeforeProvisioning(t *testing.T) {
 
 	err := o.Setup(context.Background(), SetupOptions{
 		App:       app,
-		Port:      3000,
-		Fragment:  "location / { proxy_pass http://127.0.0.1:__PORT__; }\n",
+		Fragment:  "location / { proxy_pass http://127.0.0.1:3000; }\n",
 		IsDefault: true,
 	})
 	if err == nil {
@@ -330,8 +329,8 @@ func TestWebhooksSetupDeployBootsHealthWithStateCacheAndLibexecPaths(t *testing.
 		Err:     io.Discard,
 	}
 
-	fragment := "location /srv/webhooks/ {\n    proxy_pass http://127.0.0.1:__PORT__;\n}\n"
-	if err := o.Setup(context.Background(), SetupOptions{App: app, Port: 3011, Fragment: fragment}); err != nil {
+	fragment := "location /srv/webhooks/ {\n    proxy_pass http://127.0.0.1:3006;\n}\n"
+	if err := o.Setup(context.Background(), SetupOptions{App: app, Fragment: fragment}); err != nil {
 		t.Fatalf("setup webhooks: %v", err)
 	}
 
