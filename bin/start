@@ -18,7 +18,45 @@ repo="$(cd "$here/.." && pwd)"
 RUN_DIR="$repo/tmp"
 MANIFEST_ROOT="$RUN_DIR/opt"
 SERVICES=(dashboard crm ledger notify prompts wiki dropbox cron gmail scripts sites webhooks)
+PORT_OFFSET="${APPKIT_PORT_OFFSET:-0}"
 mkdir -p "$RUN_DIR/bin"
+
+case "$PORT_OFFSET" in
+	'' | *[!0-9]*)
+		echo "APPKIT_PORT_OFFSET must be a non-negative integer" >&2
+		exit 2
+		;;
+esac
+
+port() {
+	echo "$(($1 + PORT_OFFSET))"
+}
+
+rewrite_loopback_ports() {
+	local src="$1" dst="$2" base
+	local sed_expr=()
+
+	for base in 3000 3100 3101 3201 3002 3001 3200 3005 3202 3003 3004 3006 8080; do
+		sed_expr+=(-e "s/127\\.0\\.0\\.1:$base/127.0.0.1:$(port "$base")/g")
+		sed_expr+=(-e "s/localhost:$base/localhost:$(port "$base")/g")
+	done
+
+	sed "${sed_expr[@]}" "$src" >"$dst"
+}
+
+registry_feed_url() {
+	REGISTRY_ROOT="$MANIFEST_ROOT" "$repo/bin/registry" feed-url "$1"
+}
+
+export_feed_urls() {
+	local prefix="$1" src upper
+	shift
+
+	for src in "$@"; do
+		upper="${src^^}"
+		export "${prefix}_${upper}_FEED_URL=$(registry_feed_url "$src")"
+	done
+}
 
 # stage_manifest_root — build the local runtime manifest root that matches the
 # production /opt shape: <svc>/etc/<version>/manifest.env plus current -> version.
@@ -38,7 +76,22 @@ stage_manifest_root() {
 
 		dst="$MANIFEST_ROOT/$svc/etc/$version"
 		mkdir -p "$dst"
-		cp "$src" "$dst/manifest.env"
+		if [ "$PORT_OFFSET" -eq 0 ]; then
+			cp "$src" "$dst/manifest.env"
+		else
+			awk -v off="$PORT_OFFSET" '
+				BEGIN { FS = OFS = "=" }
+				$1 ~ /^[[:space:]]*PORT[[:space:]]*$/ {
+					val = $2
+					gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)
+					if (val ~ /^[0-9]+$/) {
+						print $1, val + off
+						next
+					}
+				}
+				{ print }
+			' "$src" >"$dst/manifest.env"
+		fi
 		ln -s "$version" "$MANIFEST_ROOT/$svc/etc/current"
 	done
 }
@@ -92,19 +145,20 @@ launch_dashboard() {
 	# staged runtime root under tmp/opt.
 	source "$repo/dashboard/.envrc"
 	export DASHBOARD_DB_PATH="$RUN_DIR/dashboard.db"
+	export DASHBOARD_PUBLIC_BASE_URL="http://localhost:$(port 8080)"
 	export DASHBOARD_MANIFEST_ROOT="$MANIFEST_ROOT"
 	export REGISTRY_ROOT="$MANIFEST_ROOT"
-	exec "$RUN_DIR/bin/dashboard" serve --port 3000
+	exec "$RUN_DIR/bin/dashboard" serve --port "$(port 3000)"
 }
 
 launch_crm() {
 	export CRM_DB_PATH="$RUN_DIR/crm.db"
-	exec "$RUN_DIR/bin/crm" serve --port 3100
+	exec "$RUN_DIR/bin/crm" serve --port "$(port 3100)"
 }
 
 launch_ledger() {
 	export LEDGER_DB_PATH="$RUN_DIR/ledger.db"
-	exec "$RUN_DIR/bin/ledger" serve --port 3101
+	exec "$RUN_DIR/bin/ledger" serve --port "$(port 3101)"
 }
 
 launch_notify() {
@@ -114,21 +168,23 @@ launch_notify() {
 	source "$repo/notify/.envrc"
 	export NOTIFY_DB_PATH="$RUN_DIR/notify.db"
 	export REGISTRY_ROOT="$MANIFEST_ROOT"
-	export CRM_FEED_URL="$("$repo/bin/registry" feed-url crm)"
-	exec "$RUN_DIR/bin/notify" serve --port 3201
+	export CRM_FEED_URL="$(registry_feed_url crm)"
+	export PROMPTS_FEED_URL="$(registry_feed_url prompts)"
+	exec "$RUN_DIR/bin/notify" serve --port "$(port 3201)"
 }
 
 launch_prompts() {
 	source "$repo/prompts/.envrc"
 	export PROMPTS_DB_PATH="$RUN_DIR/prompts.db"
-	exec "$RUN_DIR/bin/prompts" serve --port 3002
+	export_feed_urls PROMPTS cron crm ledger dropbox scripts prompts
+	exec "$RUN_DIR/bin/prompts" serve --port "$(port 3002)"
 }
 
 launch_wiki() {
 	# wiki/.envrc supplies ANTHROPIC_API_KEY (from ~/.secrets) for ingest + ask.
 	source "$repo/wiki/.envrc"
 	export WIKI_DB_PATH="$RUN_DIR/wiki.db"
-	exec "$RUN_DIR/bin/wiki" serve --port 3001
+	exec "$RUN_DIR/bin/wiki" serve --port "$(port 3001)"
 }
 
 launch_dropbox() {
@@ -137,21 +193,21 @@ launch_dropbox() {
 	source "$repo/dropbox/.envrc"
 	export DROPBOX_DB_PATH="$RUN_DIR/dropbox.db"
 	export DROPBOX_MIRROR_PATH="$RUN_DIR/dropbox-mirror"
-	exec "$RUN_DIR/bin/dropbox" serve --port 3200
+	exec "$RUN_DIR/bin/dropbox" serve --port "$(port 3200)"
 }
 
 launch_cron() {
 	# cron holds no secret and needs no extra config.
 	export CRON_DB_PATH="$RUN_DIR/cron.db"
 	export CRON_GENERATION_PATH="$RUN_DIR/cron.db.generation"
-	exec "$RUN_DIR/bin/cron" serve --port 3005
+	exec "$RUN_DIR/bin/cron" serve --port "$(port 3005)"
 }
 
 launch_gmail() {
 	# gmail/.envrc supplies GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN (from ~/.secrets).
 	source "$repo/gmail/.envrc"
 	export GMAIL_DB_PATH="$RUN_DIR/gmail.db"
-	exec "$RUN_DIR/bin/gmail" serve --port 3202
+	exec "$RUN_DIR/bin/gmail" serve --port "$(port 3202)"
 }
 
 launch_scripts() {
@@ -159,7 +215,8 @@ launch_scripts() {
 	# SCRIPTS_<SRC>_FEED_URL values default to the loopback /feed of each peer.
 	source "$repo/scripts/.envrc"
 	export SCRIPTS_DB_PATH="$RUN_DIR/scripts.db"
-	exec "$RUN_DIR/bin/scripts" serve --port 3003
+	export_feed_urls SCRIPTS cron crm ledger dropbox prompts
+	exec "$RUN_DIR/bin/scripts" serve --port "$(port 3003)"
 }
 
 launch_sites() {
@@ -167,21 +224,39 @@ launch_sites() {
 	export SITES_DB_PATH="$RUN_DIR/sites.db"
 	export SITES_ROOT="$RUN_DIR/sites-root"
 	mkdir -p "$SITES_ROOT"
-	exec "$RUN_DIR/bin/sites" serve --port 3004
+	exec "$RUN_DIR/bin/sites" serve --port "$(port 3004)"
 }
 
 launch_webhooks() {
 	# webhooks holds no secret; the public /in/ ingress self-guards on per-webhook
 	# secrets. DB under tmp/ so it's wiped with bin/stop --clean.
 	export WEBHOOKS_DB_PATH="$RUN_DIR/webhooks.db"
-	exec "$RUN_DIR/bin/webhooks" serve --port 3006
+	exec "$RUN_DIR/bin/webhooks" serve --port "$(port 3006)"
 }
 
 launch_nginx() {
 	# nginx/run regenerates the dev /srv/<svc>/ fragments (via bin/registry) and
 	# execs nginx with `daemon off`, so the tracked PID is the nginx master.
 	export REGISTRY_ROOT="$MANIFEST_ROOT"
-	exec "$repo/nginx/run"
+	if [ "$PORT_OFFSET" -eq 0 ]; then
+		exec "$repo/nginx/run"
+	fi
+
+	local prefix="$RUN_DIR/nginx" svc
+	mkdir -p "$prefix/locations" "$prefix/tmp"
+	rewrite_loopback_ports "$repo/nginx/nginx.conf" "$prefix/nginx.conf"
+	sed -i \
+		-e "s/listen      8080;/listen      $(port 8080);/" \
+		-e "s/listen      \\[::\\]:8080;/listen      [::]:$(port 8080);/" \
+		"$prefix/nginx.conf"
+
+	for svc in crm cron dropbox gmail ledger notify prompts scripts sites webhooks wiki; do
+		frag="$repo/$svc/etc/nginx.conf"
+		[ -f "$frag" ] || continue
+		rewrite_loopback_ports "$frag" "$prefix/locations/${svc}.conf"
+	done
+
+	exec /usr/sbin/nginx -p "$prefix" -c "$prefix/nginx.conf" -g 'daemon off;'
 }
 
 # wait_port <port> — best-effort readiness probe: true once <port> accepts a
@@ -224,7 +299,7 @@ run_bg notify launch_notify
 run_bg nginx launch_nginx
 
 echo ">> waiting for listeners"
-declare -A PORTS=([dashboard]=3000 [crm]=3100 [ledger]=3101 [notify]=3201 [prompts]=3002 [dropbox]=3200 [wiki]=3001 [cron]=3005 [gmail]=3202 [scripts]=3003 [sites]=3004 [webhooks]=3006 [nginx]=8080)
+declare -A PORTS=([dashboard]="$(port 3000)" [crm]="$(port 3100)" [ledger]="$(port 3101)" [notify]="$(port 3201)" [prompts]="$(port 3002)" [dropbox]="$(port 3200)" [wiki]="$(port 3001)" [cron]="$(port 3005)" [gmail]="$(port 3202)" [scripts]="$(port 3003)" [sites]="$(port 3004)" [webhooks]="$(port 3006)" [nginx]="$(port 8080)")
 fail=0
 for name in dashboard crm ledger notify prompts dropbox cron gmail scripts sites webhooks wiki nginx; do
 	port="${PORTS[$name]}"
@@ -243,10 +318,10 @@ done
 
 cat <<EOF
 
-Suite up. Front door: http://localhost:8080  (apex -> dashboard)
+Suite up. Front door: http://localhost:$(port 8080)  (apex -> dashboard)
   /srv/crm/  /srv/ledger/  /srv/notify/  /srv/prompts/  /srv/dropbox/  /srv/cron/  /srv/gmail/  /srv/scripts/  /srv/sites/  /srv/webhooks/  /srv/wiki/
-Loopback:  dashboard :3000  crm :3100  ledger :3101  notify :3201  prompts :3002
-           dropbox :3200  wiki :3001  cron :3005  gmail :3202  scripts :3003  sites :3004  webhooks :3006
+Loopback:  dashboard :$(port 3000)  crm :$(port 3100)  ledger :$(port 3101)  notify :$(port 3201)  prompts :$(port 3002)
+           dropbox :$(port 3200)  wiki :$(port 3001)  cron :$(port 3005)  gmail :$(port 3202)  scripts :$(port 3003)  sites :$(port 3004)  webhooks :$(port 3006)
 Logs: tmp/<svc>.log   Stop: bin/stop   (bin/stop --clean also wipes tmp/ state)
 EOF
 

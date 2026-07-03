@@ -14,11 +14,25 @@ RUN_DIR_REAL="$(realpath -m "$RUN_DIR")"
 
 SERVICES=(dashboard crm ledger notify prompts wiki dropbox cron gmail scripts sites webhooks)
 MCP_SERVICES=(crm ledger notify prompts wiki dropbox cron gmail scripts sites webhooks)
-PORTS=(3000 3100 3101 3201 3002 3001 3200 3005 3202 3003 3004 3006 8080)
-SERVICE_PORTS=(dashboard:3000 crm:3100 ledger:3101 notify:3201 prompts:3002 wiki:3001 dropbox:3200 cron:3005 gmail:3202 scripts:3003 sites:3004 webhooks:3006 nginx:8080)
+BASE_PORTS=(3000 3100 3101 3201 3002 3001 3200 3005 3202 3003 3004 3006 8080)
+BASE_SERVICE_PORTS=(dashboard:3000 crm:3100 ledger:3101 notify:3201 prompts:3002 wiki:3001 dropbox:3200 cron:3005 gmail:3202 scripts:3003 sites:3004 webhooks:3006 nginx:8080)
+PORT_OFFSET="${APPKIT_PORT_OFFSET:-0}"
+PORT_OFFSET_EXPLICIT=0
+[ "${APPKIT_PORT_OFFSET+x}" = x ] && PORT_OFFSET_EXPLICIT=1
 
 fails=0
 started=0
+
+case "$PORT_OFFSET" in
+	'' | *[!0-9]*)
+		echo "FAIL - APPKIT_PORT_OFFSET must be a non-negative integer"
+		exit 1
+		;;
+esac
+
+port() {
+	echo "$(($1 + PORT_OFFSET))"
+}
 
 cleanup() {
 	if [ "$started" -eq 1 ]; then
@@ -105,12 +119,12 @@ tracked_stack_running() {
 }
 
 recover_worktree_pidfiles() {
-	local spec name port pid recovered=1
+	local spec name base pid recovered=1
 
-	for spec in "${SERVICE_PORTS[@]}"; do
+	for spec in "${BASE_SERVICE_PORTS[@]}"; do
 		name="${spec%%:*}"
-		port="${spec##*:}"
-		pid="$(worktree_pid_for_port "$port" || true)"
+		base="${spec##*:}"
+		pid="$(worktree_pid_for_port "$(port "$base")" || true)"
 		[ -n "$pid" ] || continue
 
 		mkdir -p "$RUN_DIR"
@@ -132,6 +146,36 @@ assert_ok() {
 	fi
 }
 
+chosen_ports_available() {
+	local base
+	for base in "${BASE_PORTS[@]}"; do
+		if port_open "$(port "$base")"; then
+			return 1
+		fi
+	done
+	return 0
+}
+
+choose_port_offset() {
+	local offset base busy
+
+	for offset in 10000 11000 12000 13000 14000 15000 16000 17000 18000 19000 20000; do
+		busy=0
+		for base in "${BASE_PORTS[@]}"; do
+			if port_open "$((base + offset))"; then
+				busy=1
+				break
+			fi
+		done
+		if [ "$busy" -eq 0 ]; then
+			PORT_OFFSET="$offset"
+			return 0
+		fi
+	done
+
+	return 1
+}
+
 assert_contains() {
 	local label="$1" needle="$2" haystack="$3"
 	if [[ "$haystack" == *"$needle"* ]]; then
@@ -147,17 +191,36 @@ if tracked_stack_running; then
 	"$HERE/stop" --clean
 fi
 
-for port in "${PORTS[@]}"; do
-	if port_open "$port"; then
-		echo "FAIL - port :$port is already in use by another worktree; not stopping it"
-		port_owners "$port" | sed 's/^/       /'
-		port_owner_details "$port"
+if ! chosen_ports_available; then
+	if [ "$PORT_OFFSET_EXPLICIT" -eq 1 ]; then
+		for base in "${BASE_PORTS[@]}"; do
+			candidate="$(port "$base")"
+			if port_open "$candidate"; then
+				echo "FAIL - port :$candidate is already in use by another worktree; not stopping it"
+				port_owners "$candidate" | sed 's/^/       /'
+				port_owner_details "$candidate"
+			fi
+		done
 		exit 1
 	fi
-done
+
+	for base in "${BASE_PORTS[@]}"; do
+		if port_open "$base"; then
+			echo "ok   - default port :$base is already in use by another worktree; not stopping it"
+			port_owners "$base" | sed 's/^/       /'
+			port_owner_details "$base"
+		fi
+	done
+	if choose_port_offset; then
+		echo "ok   - using APPKIT_PORT_OFFSET=$PORT_OFFSET for this worktree smoke"
+	else
+		echo "FAIL - no free alternate port block found for this worktree smoke"
+		exit 1
+	fi
+fi
 
 started=1
-if ! "$HERE/start"; then
+if ! APPKIT_PORT_OFFSET="$PORT_OFFSET" "$HERE/start"; then
 	echo "FAIL - bin/start exited non-zero"
 	exit 1
 fi
@@ -183,7 +246,7 @@ else
 	fails=$((fails + 1))
 fi
 
-services_json="$(curl -fsS http://127.0.0.1:3000/services 2>/dev/null || true)"
+services_json="$(curl -fsS "http://127.0.0.1:$(port 3000)/services" 2>/dev/null || true)"
 for svc in "${MCP_SERVICES[@]}"; do
 	assert_contains "/services lists $svc" "\"name\":\"$svc\"" "$services_json"
 done
