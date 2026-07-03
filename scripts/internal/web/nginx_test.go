@@ -92,14 +92,11 @@ func TestNginxLandingGatedBySessionAuthnNotBearer(t *testing.T) {
 
 func TestNginxLandingProxiesToLoopbackRoot(t *testing.T) {
 	// R-NGNX-6C9S — the exact-match landing block proxies to the loopback upstream
-	// root with a trailing slash, and keeps __PORT__ templated (no hardcoded 3009).
+	// root with a trailing slash using scripts' shipped loopback port.
 	conf := readNginxConf(t)
 	block := landingBlock(t, conf)
-	if !strings.Contains(block, "proxy_pass http://127.0.0.1:__PORT__/;") {
-		t.Fatalf("landing block must proxy_pass to `http://127.0.0.1:__PORT__/;`, got:\n%s", block)
-	}
-	if strings.Contains(block, "127.0.0.1:3009") {
-		t.Fatalf("landing block must keep __PORT__ templated, not hardcode 3009, got:\n%s", block)
+	if !strings.Contains(block, "proxy_pass http://127.0.0.1:3009/;") {
+		t.Fatalf("landing block must proxy_pass to `http://127.0.0.1:3009/;`, got:\n%s", block)
 	}
 }
 
@@ -129,7 +126,7 @@ func TestNginxStaticAssetsLocationSessionGated(t *testing.T) {
 
 	for _, want := range []string{
 		"auth_request /_session-authn;",
-		"proxy_pass http://127.0.0.1:__PORT__/static/;",
+		"proxy_pass http://127.0.0.1:3009/static/;",
 		"proxy_set_header Host $host;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 		"proxy_http_version 1.1;",
