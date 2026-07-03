@@ -134,11 +134,12 @@ func portOf(t *testing.T, rawURL string) string {
 	return u.Port()
 }
 
-// writeManifest creates <root>/<svc>/etc/manifest.env with an MCP=true manifest
-// pointing at the given port.
+// writeManifest creates <root>/<svc>/etc/current/manifest.env with an MCP=true
+// manifest pointing at the given port, matching the on-box layout readers
+// resolve through the current symlink.
 func writeManifest(t *testing.T, root, svc, port string) {
 	t.Helper()
-	dir := filepath.Join(root, svc, "etc")
+	dir := filepath.Join(root, svc, "etc", "current")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", dir, err)
 	}
