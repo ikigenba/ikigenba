@@ -78,6 +78,7 @@ assert_fails "feed-url on non-producer (notify)" "$REGISTRY" feed-url notify
 assert_fails "resource-url on non-MCP (dashboard)" "$REGISTRY" resource-url int.ikigenba.com dashboard
 assert_fails "port on missing service" "$REGISTRY" port nope
 assert_fails "port on service missing PORT" "$REGISTRY" port noport
+# R-YSVR-SL00
 assert_fails "addr ignores sibling-manifest-only service" "$REGISTRY" addr legacy
 assert_fails "feed-url ignores sibling-manifest-only service" "$REGISTRY" feed-url legacy
 assert_fails "resource-url ignores sibling-manifest-only service" "$REGISTRY" resource-url int.ikigenba.com legacy

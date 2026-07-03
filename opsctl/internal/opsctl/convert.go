@@ -55,7 +55,7 @@ func (o *Opsctl) ConvertOldLayout(ctx context.Context, app string) error {
 		if err := atomicSwap(l.RunLink(), filepath.Join("..", "libexec", app+"-"+version)); err != nil {
 			return fmt.Errorf("convert: point bin/run: %w", err)
 		}
-		if err := moveIfPresent(l.ManifestPath(), l.ManifestFile(version)); err != nil {
+		if err := moveLegacyManifestIfPresent(l.ManifestPath(), l.ManifestFile(version)); err != nil {
 			return fmt.Errorf("convert: move manifest: %w", err)
 		}
 		if err := moveIfPresent(filepath.Join(l.EtcDir(), "nginx.conf"), l.NginxConfFile(version)); err != nil {
@@ -211,6 +211,20 @@ func moveIfPresent(src, dst string) error {
 		return os.RemoveAll(src)
 	}
 	return os.Remove(src)
+}
+
+func moveLegacyManifestIfPresent(src, dst string) error {
+	info, err := os.Lstat(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return os.Remove(src)
+	}
+	return moveIfPresent(src, dst)
 }
 
 func sameFileContents(a, b string) (bool, error) {

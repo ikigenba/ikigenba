@@ -52,6 +52,7 @@ func pointCurrent(t *testing.T, root, svc, version string) {
 }
 
 // R-YO06-9I18
+// R-YSVR-SL00
 func TestReadUsesCurrentManifestNotSiblingManifest(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "crm", "APP=crm\nMOUNT=/srv/crm/\nPORT=3100\nMCP=true\n")

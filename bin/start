@@ -58,14 +58,15 @@ export_feed_urls() {
 	done
 }
 
-# stage_manifest_root — build the local runtime manifest root that matches the
-# production /opt shape: <svc>/etc/<version>/manifest.env plus current -> version.
+# stage_manifest_root — build the local runtime manifest root with per-version
+# manifests plus current -> version, matching the production /opt shape.
 stage_manifest_root() {
-	local svc version src dst
+	local svc version src_dir src dst
 
 	rm -rf "$MANIFEST_ROOT"
 	for svc in "${SERVICES[@]}"; do
-		src="$repo/$svc/etc/manifest.env"
+		src_dir="$repo/$svc/etc"
+		src="$src_dir/manifest.env"
 		[ -f "$src" ] || continue
 
 		version="dev"

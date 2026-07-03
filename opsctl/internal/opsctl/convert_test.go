@@ -102,6 +102,31 @@ func TestConvertOldLayoutCompletesHalfConvertedTreeWithoutDroppingData(t *testin
 	assertMissing(t, l.BackupsDir())
 }
 
+func TestConvertOldLayoutRemovesLegacyManifestSymlink(t *testing.T) {
+	root := t.TempDir()
+	app := "crm"
+	version := "v2.1.0"
+	l := NewLayout(root, app)
+	oldRelease := filepath.Join(l.AppDir(), "releases", version)
+
+	writeFile(t, filepath.Join(oldRelease, app), []byte("#!/bin/sh\necho crm\n"), 0o755)
+	writeFile(t, l.ManifestFile(version), []byte("PORT=3100\n"), 0o640)
+	if err := os.Symlink(filepath.Join("current", "manifest.env"), l.ManifestPath()); err != nil {
+		t.Fatalf("symlink legacy manifest bridge: %v", err)
+	}
+	if err := os.Symlink(filepath.Join("releases", version), filepath.Join(l.AppDir(), "current")); err != nil {
+		t.Fatalf("symlink current: %v", err)
+	}
+
+	if err := (&Opsctl{Root: root}).ConvertOldLayout(context.Background(), app); err != nil {
+		t.Fatalf("ConvertOldLayout: %v", err)
+	}
+
+	assertFileBytes(t, l.ManifestFile(version), []byte("PORT=3100\n"))
+	assertMissing(t, l.ManifestPath())
+	assertSymlinkResolves(t, l.EtcCurrentLink(), l.EtcVersionDir(version))
+}
+
 func writeFile(t *testing.T, path string, contents []byte, mode os.FileMode) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
