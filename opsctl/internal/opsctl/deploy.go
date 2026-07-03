@@ -357,7 +357,7 @@ func (o *Opsctl) installApexBlockIfDefault(ctx context.Context, l Layout) error 
 		return nil
 	}
 
-	domain := strings.TrimSpace(manifest["IKIGENBA_DOMAIN"])
+	domain := strings.TrimSpace(os.Getenv("IKIGENBA_DOMAIN"))
 	if domain == "" {
 		return fmt.Errorf("deploy: DEFAULT=true requires IKIGENBA_DOMAIN")
 	}

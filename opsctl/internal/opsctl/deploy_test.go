@@ -541,16 +541,17 @@ func TestDeploySequenceSwapsReloadsRestartsAndPrunesWithoutManifestVerb(t *testi
 
 func TestDeployDefaultRendersInstallsAndTestsApexBlock(t *testing.T) {
 	// R-MSOP-5MDA
+	t.Setenv("IKIGENBA_DOMAIN", "example.test")
 	root := t.TempDir()
 	sysRoot := t.TempDir()
 	app := "dashboard"
 	version := "v1.2.3"
 	l := NewLayoutSys(root, sysRoot, app)
 	sys := &stubSystem{}
-	o := newOpsctl(t, root, app, sys, fakeEnv(app, version, 1, "APP="+app+"\nDEFAULT=true\nIKIGENBA_DOMAIN=example.test\nPORT=4310\n"))
+	o := newOpsctl(t, root, app, sys, fakeEnv(app, version, 1, "APP="+app+"\nDEFAULT=true\nPORT=4310\n"))
 	o.SysRoot = sysRoot
 
-	manifest := "APP=dashboard\nDEFAULT=true\nIKIGENBA_DOMAIN=example.test\nPORT=4310\n"
+	manifest := "APP=dashboard\nDEFAULT=true\nPORT=4310\n"
 	nginxSrc := "server {\n    server_name __DOMAIN__;\n    proxy_pass http://127.0.0.1:__PORT__;\n}\n"
 	stageReleaseWithConfig(t, o, l, app, version, manifest, nginxSrc)
 
@@ -576,8 +577,41 @@ func TestDeployDefaultRendersInstallsAndTestsApexBlock(t *testing.T) {
 	}
 }
 
+func TestDeployDefaultReadsApexDomainFromEnvironmentNotManifest(t *testing.T) {
+	// R-CNPY-3Z4Y
+	t.Setenv("IKIGENBA_DOMAIN", "env-domain.test")
+	root := t.TempDir()
+	sysRoot := t.TempDir()
+	app := "dashboard"
+	version := "v1.2.3"
+	l := NewLayoutSys(root, sysRoot, app)
+	sys := &stubSystem{}
+	o := newOpsctl(t, root, app, sys, fakeEnv(app, version, 1, "APP="+app+"\nDEFAULT=true\nPORT=4310\n"))
+	o.SysRoot = sysRoot
+
+	manifest := "APP=dashboard\nDEFAULT=true\nMOUNT=/dashboard\nPORT=4310\n"
+	nginxSrc := "server_name __DOMAIN__; proxy_pass http://127.0.0.1:__PORT__;\n"
+	stageReleaseWithConfig(t, o, l, app, version, manifest, nginxSrc)
+
+	if err := o.Deploy(context.Background(), app, version); err != nil {
+		t.Fatalf("deploy default app without manifest domain: %v", err)
+	}
+	got, err := os.ReadFile(l.ApexBlockPath())
+	if err != nil {
+		t.Fatalf("read apex block: %v", err)
+	}
+	block := string(got)
+	if !strings.Contains(block, "env-domain.test") {
+		t.Fatalf("apex block = %q, want env domain", block)
+	}
+	if strings.Contains(block, "__DOMAIN__") {
+		t.Fatalf("apex block kept domain placeholder: %q", block)
+	}
+}
+
 func TestDeployDefaultRequiresDomainBeforeInstallingOrReloading(t *testing.T) {
 	// R-MTWL-JE3Z
+	t.Setenv("IKIGENBA_DOMAIN", "")
 	root := t.TempDir()
 	sysRoot := t.TempDir()
 	app := "dashboard"
@@ -590,13 +624,22 @@ func TestDeployDefaultRequiresDomainBeforeInstallingOrReloading(t *testing.T) {
 	manifest := "APP=dashboard\nDEFAULT=true\nPORT=4310\n"
 	nginxSrc := "server_name __DOMAIN__; proxy_pass http://127.0.0.1:__PORT__;\n"
 	stageReleaseWithConfig(t, o, l, app, version, manifest, nginxSrc)
+	if err := os.MkdirAll(filepath.Dir(l.ApexBlockPath()), 0o755); err != nil {
+		t.Fatalf("create apex dir: %v", err)
+	}
+	const existingApexBlock = "existing apex block\n"
+	if err := os.WriteFile(l.ApexBlockPath(), []byte(existingApexBlock), 0o644); err != nil {
+		t.Fatalf("seed apex block: %v", err)
+	}
 
 	err := o.Deploy(context.Background(), app, version)
 	if err == nil || !strings.Contains(err.Error(), "IKIGENBA_DOMAIN") {
 		t.Fatalf("deploy err = %v, want IKIGENBA_DOMAIN refusal", err)
 	}
-	if _, statErr := os.Stat(l.ApexBlockPath()); !os.IsNotExist(statErr) {
-		t.Fatalf("apex block stat err = %v, want not installed", statErr)
+	if got, readErr := os.ReadFile(l.ApexBlockPath()); readErr != nil {
+		t.Fatalf("read apex block after refusal: %v", readErr)
+	} else if string(got) != existingApexBlock {
+		t.Fatalf("apex block changed to %q, want %q", got, existingApexBlock)
 	}
 	ops := sys.opSeq()
 	for _, forbidden := range []string{"nginx-test", "nginx-reload"} {
@@ -620,6 +663,7 @@ func (s nginxTestFailSystem) NginxTest(ctx context.Context) error {
 
 func TestDeployDefaultNginxTestFailureStopsBeforeReloadOrRestart(t *testing.T) {
 	// R-MV4H-X5UO
+	t.Setenv("IKIGENBA_DOMAIN", "example.test")
 	root := t.TempDir()
 	sysRoot := t.TempDir()
 	app := "dashboard"
@@ -631,13 +675,13 @@ func TestDeployDefaultNginxTestFailureStopsBeforeReloadOrRestart(t *testing.T) {
 		SysRoot: sysRoot,
 		Keep:    3,
 		System:  nginxTestFailSystem{stubSystem: baseSys},
-		Runner:  fakeRunner{baseEnv: fakeEnv(app, version, 1, "APP="+app+"\nDEFAULT=true\nIKIGENBA_DOMAIN=example.test\nPORT=4310\n")},
+		Runner:  fakeRunner{baseEnv: fakeEnv(app, version, 1, "APP="+app+"\nDEFAULT=true\nPORT=4310\n")},
 		Store:   newFakeStore(),
 		Out:     &strings.Builder{},
 		Err:     &strings.Builder{},
 	}
 
-	manifest := "APP=dashboard\nDEFAULT=true\nIKIGENBA_DOMAIN=example.test\nPORT=4310\n"
+	manifest := "APP=dashboard\nDEFAULT=true\nPORT=4310\n"
 	nginxSrc := "server_name __DOMAIN__; proxy_pass http://127.0.0.1:__PORT__;\n"
 	stageReleaseWithConfig(t, o, l, app, version, manifest, nginxSrc)
 
