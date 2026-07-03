@@ -94,7 +94,8 @@ var groups = []group{
 		{"tail", "opsctl tail <app> [journalctl args…]"},
 	}},
 	{"Provisioning", []verb{
-		{"setup", "opsctl setup <app> [--port <n>] [--fragment <path>] [--defer-nginx] [--packages <p1,p2>]"},
+		{"setup", "opsctl setup <app> [--default]\n" +
+			"                [--port <n>] [--fragment <path>] [--defer-nginx] [--packages <p1,p2>]"},
 		{"teardown", "opsctl teardown <app> --force [--keep-user]"},
 		{"convert", "opsctl convert <app>"},
 		// One flag per line; line 1 is the verb + first flag, continuation lines
@@ -441,6 +442,7 @@ func runInitBox(ctx context.Context, root, name string, args []string) error {
 
 func runSetup(ctx context.Context, root, name string, args []string) error {
 	fs := newFlagSet(name)
+	isDefault := fs.Bool("default", false, "provision the apex/DEFAULT app without a locations fragment")
 	port := fs.Int("port", 0, "the service's loopback port (substituted for __PORT__ in the fragment)")
 	fragment := fs.String("fragment", "", "path to the service's nginx location fragment source (omit for a worker)")
 	deferNginx := fs.Bool("defer-nginx", false, "stage the fragment but skip nginx -t/reload (greenfield box with no apex cert yet)")
@@ -450,7 +452,7 @@ func runSetup(ctx context.Context, root, name string, args []string) error {
 	}
 	pos := fs.Args()
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: opsctl setup <app> [--port N] [--fragment <path>] [--defer-nginx] [--packages p1,p2]")
+		return fmt.Errorf("usage: opsctl setup <app> [--default] [--port N] [--fragment <path>] [--defer-nginx] [--packages p1,p2]")
 	}
 	frag, err := opsctl.LoadFragmentFile(*fragment)
 	if err != nil {
@@ -460,6 +462,7 @@ func runSetup(ctx context.Context, root, name string, args []string) error {
 		App:        pos[0],
 		Port:       *port,
 		Fragment:   frag,
+		IsDefault:  *isDefault,
 		DeferNginx: *deferNginx,
 		// Derived per-app: sites gets its world-readable www/ tree automatically
 		// (no operator flag); every other app gets none.

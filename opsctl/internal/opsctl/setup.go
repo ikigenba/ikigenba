@@ -18,6 +18,7 @@ type SetupOptions struct {
 	Fragment string // the service's nginx location fragment SOURCE (with __PORT__
 	// placeholders), exactly the committed etc/nginx.conf body. Empty ⇒ a service
 	// with no public route (worker/batch) — no fragment is dropped.
+	IsDefault bool // true for the apex/DEFAULT app whose nginx block is init-box/deploy-owned.
 
 	// WWWDirs are extra directories (absolute paths) to create at mode 0755 and
 	// hand to the app user via `chown -R <app>:<app>` on the www ROOT. They back
@@ -68,13 +69,18 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 	if opts.App == "" {
 		return fmt.Errorf("setup: app is required")
 	}
+	if opts.IsDefault && opts.Fragment != "" {
+		return fmt.Errorf("setup: --default cannot be combined with --fragment")
+	}
 	app := opts.App
 	l := o.layout(app)
 
 	// init-box must have run first: the locations include dir is box-global and
 	// owned by init-box, mirroring the old service bin/setup precondition check.
-	if _, err := os.Stat(l.LocationsDir()); err != nil {
-		return fmt.Errorf("setup: %s missing — run `opsctl init-box` first: %w", l.LocationsDir(), err)
+	if !opts.IsDefault {
+		if _, err := os.Stat(l.LocationsDir()); err != nil {
+			return fmt.Errorf("setup: %s missing — run `opsctl init-box` first: %w", l.LocationsDir(), err)
+		}
 	}
 
 	// 0. OS packages the service declares it needs (e.g. scripts → python3.11).
@@ -96,7 +102,19 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 
 	// 2. The /opt/<app> tree.
 	o.logf("create /opt/%s tree", app)
-	if opts.Fragment == "" {
+	if opts.IsDefault {
+		// The DEFAULT app owns the apex route through init-box/deploy, not a
+		// per-app location fragment. It gets the normal service tree and unit but
+		// no worker state/www tree and no nginx web group.
+		if err := mkdirAll755(
+			l.AppDir(), l.BinDir(), l.EtcDir(), l.LibexecDir(), l.CacheDir(), l.BackupsDir(),
+		); err != nil {
+			return fmt.Errorf("setup: create app tree: %w", err)
+		}
+		if err := mkdirAllMode(0o750, l.StateDir()); err != nil {
+			return fmt.Errorf("setup: create state dir: %w", err)
+		}
+	} else if opts.Fragment == "" {
 		// Worker/no-route services use the current state/cache/libexec layout. The
 		// app-owned state dir is traverse-only for non-owners, the DB exists with
 		// service-private group-readable bits, and the web subtree is group-readable
@@ -172,7 +190,9 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 	// rendered fragment file. The D01 no-fragment setup installs a stable system
 	// symlink to the active release's nginx.conf; the target is intentionally
 	// dangling until the first deploy creates etc/current.
-	if opts.Fragment != "" {
+	if opts.IsDefault {
+		o.logf("default app: apex block is owned by init-box/deploy; no nginx conf.d artifact written")
+	} else if opts.Fragment != "" {
 		frag := renderFragment(opts.Fragment, opts.Port)
 		o.logf("write nginx fragment %s", l.FragmentPath())
 		if err := writeFileAtomic(l.FragmentPath(), []byte(frag), 0o644); err != nil {

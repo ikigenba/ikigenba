@@ -14,6 +14,43 @@ import (
 	"time"
 )
 
+// R-CIUC-KW66
+func TestSetupRejectsDefaultWithFragmentBeforeProvisioning(t *testing.T) {
+	const app = "dashboard"
+	root := t.TempDir()
+	sysRoot := t.TempDir()
+	sys := &stubSystem{}
+	o := &Opsctl{
+		Root:    root,
+		SysRoot: sysRoot,
+		System:  sys,
+		Out:     io.Discard,
+		Err:     io.Discard,
+	}
+	l := NewLayoutSys(root, sysRoot, app)
+
+	err := o.Setup(context.Background(), SetupOptions{
+		App:       app,
+		Port:      3000,
+		Fragment:  "location / { proxy_pass http://127.0.0.1:__PORT__; }\n",
+		IsDefault: true,
+	})
+	if err == nil {
+		t.Fatal("setup accepted --default with --fragment, want refusal")
+	}
+	if got := err.Error(); !strings.Contains(got, "--default") || !strings.Contains(got, "--fragment") {
+		t.Fatalf("error = %q, want both --default and --fragment named", got)
+	}
+	if got := sys.opSeq(); len(got) != 0 {
+		t.Fatalf("setup performed privileged ops before refusing: %v", got)
+	}
+	for _, path := range []string{l.AppDir(), l.UnitPath(), l.FragmentPath(), l.ApexBlockPath()} {
+		if _, statErr := os.Lstat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("%s exists after refused setup, want absent (err=%v)", path, statErr)
+		}
+	}
+}
+
 func newSetupTestOpsctl(t *testing.T, app string) (*Opsctl, *stubSystem, Layout) {
 	t.Helper()
 
@@ -32,6 +69,94 @@ func newSetupTestOpsctl(t *testing.T, app string) (*Opsctl, *stubSystem, Layout)
 		t.Fatalf("create locations dir: %v", err)
 	}
 	return o, sys, l
+}
+
+// R-CK28-YNWV
+func TestSetupDefaultCreatesAppTreeAndEnabledUnitWithoutWorkerWebGroup(t *testing.T) {
+	const app = "dashboard"
+	o, sys, l := newSetupTestOpsctl(t, app)
+
+	if err := o.Setup(context.Background(), SetupOptions{App: app, IsDefault: true}); err != nil {
+		t.Fatalf("setup default: %v", err)
+	}
+
+	for _, dir := range []string{
+		l.AppDir(),
+		l.BinDir(),
+		l.EtcDir(),
+		l.LibexecDir(),
+		l.CacheDir(),
+		l.BackupsDir(),
+		l.StateDir(),
+	} {
+		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+			t.Fatalf("default tree dir %s not materialized: %v", dir, err)
+		}
+	}
+	assertMode(t, l.StateDir(), 0o750)
+	if _, err := os.Stat(l.WWWDir()); !os.IsNotExist(err) {
+		t.Fatalf("default setup created worker www dir %s, want absent (err=%v)", l.WWWDir(), err)
+	}
+	if _, err := os.Stat(l.DBPath()); !os.IsNotExist(err) {
+		t.Fatalf("default setup created worker db %s, want absent (err=%v)", l.DBPath(), err)
+	}
+	if got := readRepoFile(t, l.UnitPath()); got != expectedUnit(app) {
+		t.Fatalf("default unit mismatch:\n--- got ---\n%q\n--- want ---\n%q", got, expectedUnit(app))
+	}
+
+	for _, op := range sys.opSeq() {
+		if op == "ensure-group:web" {
+			t.Fatalf("default setup requested web group: %v", sys.opSeq())
+		}
+		if strings.HasPrefix(op, "chown:"+app+":web:") {
+			t.Fatalf("default setup requested worker web ownership: %v", sys.opSeq())
+		}
+	}
+	wantOps := []string{
+		"ensure-user:" + app + ":" + l.AppDir(),
+		"daemon-reload",
+		"enable:" + app + ".service",
+	}
+	if got := sys.opSeq(); strings.Join(got, "|") != strings.Join(wantOps, "|") {
+		t.Fatalf("default setup ops = %v, want %v", got, wantOps)
+	}
+}
+
+// R-CLA5-CFNK
+func TestSetupDefaultWritesNoNginxConfDArtifacts(t *testing.T) {
+	const app = "dashboard"
+	root := t.TempDir()
+	sysRoot := t.TempDir()
+	sys := &stubSystem{}
+	var out strings.Builder
+	o := &Opsctl{
+		Root:    root,
+		SysRoot: sysRoot,
+		System:  sys,
+		Out:     &out,
+		Err:     io.Discard,
+	}
+	l := NewLayoutSys(root, sysRoot, app)
+
+	if err := o.Setup(context.Background(), SetupOptions{App: app, IsDefault: true}); err != nil {
+		t.Fatalf("setup default: %v", err)
+	}
+
+	for _, path := range []string{l.FragmentPath(), l.ApexBlockPath()} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("default setup wrote nginx artifact %s, want absent (err=%v)", path, err)
+		}
+	}
+	if _, err := os.Lstat(l.NginxConfDir()); !os.IsNotExist(err) {
+		t.Fatalf("default setup created nginx conf.d %s, want absent (err=%v)", l.NginxConfDir(), err)
+	}
+	log := out.String()
+	if !strings.Contains(log, "apex block") || !strings.Contains(log, "init-box/deploy") {
+		t.Fatalf("default setup log = %q, want apex block ownership by init-box/deploy", log)
+	}
+	if hasOp(sys.opSeq(), "nginx-test") || hasOp(sys.opSeq(), "nginx-reload") {
+		t.Fatalf("default setup touched nginx through seam: %v", sys.opSeq())
+	}
 }
 
 // R-3SAU-8T9F
@@ -87,6 +212,40 @@ func TestSetupMaterializesInstallTreeWithPermissionsAndOwnership(t *testing.T) {
 	for _, rootOwned := range []string{l.EtcDir(), l.shareDir()} {
 		if got := ownerForPath(owners, rootOwned); got != (ownerGroup{}) {
 			t.Fatalf("%s was handed to %s:%s through Owner seam, want root-owned", rootOwned, got.owner, got.group)
+		}
+	}
+}
+
+// R-CMI1-Q7E9
+func TestSetupWorkerNoFragmentStillCreatesFragmentSymlinkAndWebGroup(t *testing.T) {
+	const app = "worker"
+	o, sys, l := newSetupTestOpsctl(t, app)
+
+	if err := o.Setup(context.Background(), SetupOptions{App: app}); err != nil {
+		t.Fatalf("setup worker: %v", err)
+	}
+
+	fi, err := os.Lstat(l.FragmentPath())
+	if err != nil {
+		t.Fatalf("lstat worker fragment symlink: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("%s mode = %v, want symlink", l.FragmentPath(), fi.Mode())
+	}
+	if target, err := os.Readlink(l.FragmentPath()); err != nil || target != l.ActiveNginxConf() {
+		t.Fatalf("worker fragment symlink target = %q, err=%v; want %q", target, err, l.ActiveNginxConf())
+	}
+	for _, dir := range []string{l.WWWDir(), l.WWWPublicDir(), l.WWWPrivateDir()} {
+		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+			t.Fatalf("worker www dir %s not materialized: %v", dir, err)
+		}
+	}
+	for _, want := range []string{
+		"ensure-group:web",
+		"chown:" + app + ":web:" + l.WWWDir(),
+	} {
+		if !hasOp(sys.opSeq(), want) {
+			t.Fatalf("worker setup ops = %v, missing %q", sys.opSeq(), want)
 		}
 	}
 }
