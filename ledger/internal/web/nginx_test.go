@@ -61,7 +61,7 @@ func TestNginxLandingLocationIsExactSessionGatedRoot(t *testing.T) {
 	}
 
 	// R-NGNX-6F8G
-	if !strings.Contains(landing, "proxy_pass http://127.0.0.1:__PORT__/;") {
+	if !strings.Contains(landing, "proxy_pass http://127.0.0.1:3101/;") {
 		t.Fatalf("landing location does not proxy to upstream root with trailing slash: %s", landing)
 	}
 }
@@ -80,7 +80,7 @@ func TestNginxFragmentRetainsBearerAndBootstrapLocations(t *testing.T) {
 	if !strings.Contains(reemit, "return 429;") || !strings.Contains(reemit, "return 500;") {
 		t.Fatalf("authn 500 re-emit location missing expected returns: %s", reemit)
 	}
-	if !strings.Contains(prm, "proxy_pass http://127.0.0.1:__PORT__/.well-known/oauth-protected-resource;") {
+	if !strings.Contains(prm, "proxy_pass http://127.0.0.1:3101/.well-known/oauth-protected-resource;") {
 		t.Fatalf("PRM bootstrap location missing expected proxy_pass: %s", prm)
 	}
 }
@@ -98,16 +98,16 @@ func TestNginxStaticLocationIsSessionGated(t *testing.T) {
 	if !strings.Contains(static, "auth_request /_session-authn;") {
 		t.Fatalf("static location missing session auth_request: %s", static)
 	}
-	if !strings.Contains(static, "proxy_pass http://127.0.0.1:__PORT__/static/;") {
+	if !strings.Contains(static, "proxy_pass http://127.0.0.1:3101/static/;") {
 		t.Fatalf("static location missing upstream static proxy_pass: %s", static)
 	}
-	if !strings.Contains(landing, "proxy_pass http://127.0.0.1:__PORT__/;") {
+	if !strings.Contains(landing, "proxy_pass http://127.0.0.1:3101/;") {
 		t.Fatalf("exact landing location changed: %s", landing)
 	}
 	if !strings.Contains(prefix, "auth_request /_authn;") {
 		t.Fatalf("bearer prefix location changed: %s", prefix)
 	}
-	if !strings.Contains(prm, "proxy_pass http://127.0.0.1:__PORT__/.well-known/oauth-protected-resource;") {
+	if !strings.Contains(prm, "proxy_pass http://127.0.0.1:3101/.well-known/oauth-protected-resource;") {
 		t.Fatalf("PRM bootstrap location changed: %s", prm)
 	}
 	if !strings.Contains(reemit, "return 429;") || !strings.Contains(reemit, "return 500;") {

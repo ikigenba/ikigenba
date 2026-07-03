@@ -46,18 +46,18 @@ trap 'rm -rf "$ROOT"' EXIT
 export REGISTRY_ROOT="$ROOT"
 
 # producer with FEED + MCP, quoted value to exercise quote-stripping
-write_manifest "$ROOT" crm $'# crm producer\nAPP=crm\nMOUNT="/srv/crm/"\nPORT=3001\nMCP=true\nFEED=/feed'
+write_manifest "$ROOT" crm $'# crm producer\nAPP=crm\nMOUNT="/srv/crm/"\nPORT=3100\nMCP=true\nFEED=/feed'
 # consumer with MCP + CONSUMES, no FEED
-write_manifest "$ROOT" notify $'APP=notify\nMOUNT=/srv/notify/\nPORT=3003\nMCP=true\nCONSUMES=crm'
+write_manifest "$ROOT" notify $'APP=notify\nMOUNT=/srv/notify/\nPORT=3201\nMCP=true\nCONSUMES=crm'
 # plain non-MCP service
 write_manifest "$ROOT" dashboard $'APP=dashboard\nMOUNT=/\nDEFAULT=true\nPORT=3000'
 # service missing PORT
 write_manifest "$ROOT" noport $'APP=noport\nMOUNT=/srv/noport/\nMCP=true'
 
-assert_eq "port crm" "3001" "$("$REGISTRY" port crm)"
-assert_eq "addr crm" "127.0.0.1:3001" "$("$REGISTRY" addr crm)"
+assert_eq "port crm" "3100" "$("$REGISTRY" port crm)"
+assert_eq "addr crm" "127.0.0.1:3100" "$("$REGISTRY" addr crm)"
 assert_eq "mount crm (quote-stripped)" "/srv/crm/" "$("$REGISTRY" mount crm)"
-assert_eq "feed-url crm" "http://127.0.0.1:3001/feed" "$("$REGISTRY" feed-url crm)"
+assert_eq "feed-url crm" "http://127.0.0.1:3100/feed" "$("$REGISTRY" feed-url crm)"
 assert_eq "resource-url crm" "https://int.ikigenba.com/srv/crm/mcp" "$("$REGISTRY" resource-url int.ikigenba.com crm)"
 assert_eq "mount dashboard" "/" "$("$REGISTRY" mount dashboard)"
 # noport also has MCP=true, so it is listed too (list-mcp keys only on MCP=true).

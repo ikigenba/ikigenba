@@ -108,7 +108,7 @@ box-global apex/cert pieces are `opsctl init-box`).
 crm is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract):
 `<app>` serve + the fixed `version`/`manifest`/`migrate`/`schema`
 verbs, no `run` wrapper. `etc/manifest.env` (`APP=crm`,
-`MOUNT=/srv/crm/`, `DEFAULT=false`, `PORT=3001`, `MCP=true`; producer, so it also
+`MOUNT=/srv/crm/`, `DEFAULT=false`, `PORT=3100`, `MCP=true`; producer, so it also
 round-trips `FEED` + the `OUTBOX_RETENTION_*` config) is emitted by `crm manifest`
 and regenerated on the box by `opsctl deploy` on every swap. Shipping is the
 shared repo-root `bin/ship crm` (no version arg; version is the committed

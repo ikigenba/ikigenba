@@ -41,7 +41,7 @@ const shutdownTimeout = 10 * time.Second
 
 // Options configures the HTTP server.
 type Options struct {
-	Addr       string       // listen address, e.g. "127.0.0.1:3002" (required)
+	Addr       string       // listen address, e.g. "127.0.0.1:3101" (required)
 	Logger     *slog.Logger // structured logger (required)
 	ResourceID string       // this service's canonical resource id (required unless Apex)
 	AuthServer string       // the dashboard authorization-server base URL (required unless Apex)

@@ -70,7 +70,7 @@ func webhooksSpec() appkit.Spec {
 	return appkit.Spec{
 		App:        "webhooks",
 		Mount:      "/srv/webhooks/",
-		Port:       3011,
+		Port:       3006,
 		MCP:        true,
 		Feed:       "/feed", // event-plane producer
 		Migrations: db.FS,

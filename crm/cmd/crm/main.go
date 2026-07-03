@@ -36,7 +36,7 @@ func main() {
 	appkit.Main(appkit.Spec{
 		App:        "crm",
 		Mount:      "/srv/crm/",
-		Port:       3001,
+		Port:       3100,
 		MCP:        true,
 		Feed:       "/feed", // event-plane producer
 		Migrations: db.FS,

@@ -32,7 +32,7 @@ location = /srv/prompts/ {
 ```
 
 `__PORT__` stays the templated placeholder (substituted from `etc/manifest.env`,
-`PORT=3004`, at install time, like the rest of the fragment) — do **not**
+`PORT=3002`, at install time, like the rest of the fragment) — do **not**
 hard-code the port. The session gate is `/_session-authn` (the cookie audience),
 **not** `/_authn` (the bearer audience). This matches `sites/etc/nginx.conf`'s
 private-tier pattern.

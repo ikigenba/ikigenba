@@ -37,7 +37,7 @@ func main() {
 	appkit.Main(appkit.Spec{
 		App:        "ledger",
 		Mount:      "/srv/ledger/",
-		Port:       3002,
+		Port:       3101,
 		MCP:        true,
 		Feed:       "/feed", // event-plane producer
 		Migrations: db.FS,

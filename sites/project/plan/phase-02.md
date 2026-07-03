@@ -36,8 +36,8 @@ private tier), so this reuses an already-present gate.
   }
   ```
 
-  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3010`
-    at install time) — do **not** hardcode `3010`.
+  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3004`
+    at install time) — do **not** hardcode `3004`.
   - The block is **added**, not substituted for anything: the existing
     `location = /srv/sites/.well-known/oauth-protected-resource` PRM bootstrap, the
     bearer-gated `location = /srv/sites/mcp { auth_request /_authn; … }` (with its

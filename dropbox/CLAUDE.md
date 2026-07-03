@@ -27,7 +27,7 @@ A service's connector skills live in the `dashboard`'s `plugin/`, not here.
 
 ## What this app is
 
-A loopback-only domain service on **port 3005**, mounted at **`/srv/dropbox/`**.
+A loopback-only domain service on **port 3200**, mounted at **`/srv/dropbox/`**.
 It serves the **MCP surface for agents** alongside a session-cookie-gated
 **human web landing page** under that mount. nginx (owned by the dashboard)
 terminates TLS, introspects every `/srv/dropbox/` request via `auth_request`
@@ -164,7 +164,7 @@ Same chassis layering as ledger/crm (one file per concern within one package;
 
 Producer-only. Payload is a **reference, never bytes** (consumers fetch via
 `/content`): `event`, literal `path`, `rev`, `content_hash`, `size`, a
-**URL-encoded** `content_url` (`http://127.0.0.1:3005/content?path=…`), and
+**URL-encoded** `content_url` (`http://127.0.0.1:3200/content?path=…`), and
 `occurred_at`.
 
 - **`file.created`** — a path not previously in the index now exists.
@@ -241,7 +241,7 @@ dropbox is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contrac
 producer + `Workers` sync engine): `<app>` serve + the fixed `version`/`manifest`/
 `migrate`/`schema` verbs, no `run` wrapper, no bundled
 `registry`. `etc/manifest.env` (`APP=dropbox`, `MOUNT=/srv/dropbox/`,
-`DEFAULT=false`, `PORT=3005`, `MCP=true` so the dashboard inventory lists it;
+`DEFAULT=false`, `PORT=3200`, `MCP=true` so the dashboard inventory lists it;
 producer, so it also round-trips `FEED=/feed` + the `OUTBOX_RETENTION_*` config)
 is emitted by `dropbox manifest` and regenerated on the box by `opsctl deploy` on
 every swap. Shipping is the shared repo-root `bin/ship dropbox` (no version arg;

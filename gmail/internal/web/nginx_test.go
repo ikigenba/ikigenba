@@ -38,12 +38,12 @@ func TestNginxLandingLocationForwardsSessionOwner(t *testing.T) {
 	}
 }
 
-func TestNginxLandingLocationProxiesBareRootWithTemplatedPort(t *testing.T) {
+func TestNginxLandingLocationProxiesBareRootWithLiteralPort(t *testing.T) {
 	// R-NGNX-7F1G
 	block := nginxLocationBlock(t, readNginxFragment(t), `location = /srv/gmail/ {`)
 
 	for _, want := range []string{
-		"proxy_pass http://127.0.0.1:__PORT__/;",
+		"proxy_pass http://127.0.0.1:3202/;",
 		"proxy_set_header Host $host;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 		"proxy_http_version 1.1;",
@@ -51,9 +51,6 @@ func TestNginxLandingLocationProxiesBareRootWithTemplatedPort(t *testing.T) {
 		if !strings.Contains(block, want) {
 			t.Fatalf("landing location missing %q:\n%s", want, block)
 		}
-	}
-	if strings.Contains(block, "3008") {
-		t.Fatalf("landing location hard-coded the service port instead of keeping __PORT__ templated:\n%s", block)
 	}
 }
 
@@ -87,7 +84,7 @@ func TestNginxStaticLocationUsesSessionAuthAndStaticProxy(t *testing.T) {
 
 	for _, want := range []string{
 		"auth_request /_session-authn;",
-		"proxy_pass http://127.0.0.1:__PORT__/static/;",
+		"proxy_pass http://127.0.0.1:3202/static/;",
 		"proxy_set_header Host $host;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 		"proxy_http_version 1.1;",

@@ -12,7 +12,7 @@ func TestEmit_ServiceWithFeedAndExtras(t *testing.T) {
 	got := manifest.Emit(manifest.Fields{
 		App:   "crm",
 		Mount: "/srv/crm/",
-		Port:  3001,
+		Port:  3100,
 		MCP:   true,
 		Feed:  "/feed",
 		Extras: []manifest.KV{
@@ -24,7 +24,7 @@ func TestEmit_ServiceWithFeedAndExtras(t *testing.T) {
 	want := "APP=crm\n" +
 		"MOUNT=/srv/crm/\n" +
 		"DEFAULT=false\n" +
-		"PORT=3001\n" +
+		"PORT=3100\n" +
 		"MCP=true\n" +
 		"FEED=/feed\n" +
 		"OUTBOX_RETENTION_DAYS=7\n" +
@@ -36,14 +36,14 @@ func TestEmit_ServiceWithFeedAndExtras(t *testing.T) {
 
 func TestEmit_ConsumerCommaJoined(t *testing.T) {
 	got := manifest.Emit(manifest.Fields{
-		App: "wiki", Mount: "/srv/wiki/", Port: 3006, MCP: true,
+		App: "wiki", Mount: "/srv/wiki/", Port: 3001, MCP: true,
 		Consumes: []string{"dropbox", "crm"},
 		Extras: []manifest.KV{
 			{Key: "WIKI_INGEST_MODEL", Value: "claude-sonnet-4-6"},
 			{Key: "WIKI_INGEST_MAX_TOKENS", Value: "8192"},
 		},
 	})
-	want := "APP=wiki\nMOUNT=/srv/wiki/\nDEFAULT=false\nPORT=3006\nMCP=true\n" +
+	want := "APP=wiki\nMOUNT=/srv/wiki/\nDEFAULT=false\nPORT=3001\nMCP=true\n" +
 		"CONSUMES=dropbox,crm\n" +
 		"WIKI_INGEST_MODEL=claude-sonnet-4-6\nWIKI_INGEST_MAX_TOKENS=8192\n"
 	if got != want {
@@ -66,7 +66,7 @@ func TestEmit_ApexOmitsMCP(t *testing.T) {
 
 func TestParse_RoundTripsEmit(t *testing.T) {
 	f := manifest.Fields{
-		App: "ledger", Mount: "/srv/ledger/", Port: 3002, MCP: true, Feed: "/feed",
+		App: "ledger", Mount: "/srv/ledger/", Port: 3101, MCP: true, Feed: "/feed",
 		Extras: []manifest.KV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 		},
@@ -77,7 +77,7 @@ func TestParse_RoundTripsEmit(t *testing.T) {
 	}
 	want := map[string]string{
 		"APP": "ledger", "MOUNT": "/srv/ledger/", "DEFAULT": "false",
-		"PORT": "3002", "MCP": "true", "FEED": "/feed",
+		"PORT": "3101", "MCP": "true", "FEED": "/feed",
 		"OUTBOX_RETENTION_DAYS": "7",
 	}
 	if !reflect.DeepEqual(kv, want) {

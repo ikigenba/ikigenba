@@ -53,7 +53,7 @@ Shared facts every Decision leans on:
   dependency** — it uses only the standard library (`net/http`, `embed`,
   `html/template` or `text/template`) and the appkit chassis.
 - **The chassis owns the server.** cron is `appkit.Main(appkit.Spec{…})`:
-  `App:"cron"`, `Mount:"/srv/cron/"`, `Port:3007`, `MCP:true`, `Feed:"/feed"`
+  `App:"cron"`, `Mount:"/srv/cron/"`, `Port:3005`, `MCP:true`, `Feed:"/feed"`
   (event-plane producer). The fixed verbs (`serve`/`version`/`manifest`/`migrate`
   /`backup`/`restore`), config-from-env, the loopback HTTP server + PRM +
   identity gate, and the `/feed` producer mount are appkit's. main.go declares

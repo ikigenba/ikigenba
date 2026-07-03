@@ -31,8 +31,8 @@ PRM bootstrap untouched.
   }
   ```
 
-  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3005`
-    at install time) — do **not** hardcode `3005`.
+  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3200`
+    at install time) — do **not** hardcode `3200`.
   - The block is **added**, not substituted for anything: the existing
     `location /srv/dropbox/ { auth_request /_authn; … }` bearer prefix (with its
     `$authn_status`/`error_page 500 = @dropbox_authn_500` rate-limit re-emit), the

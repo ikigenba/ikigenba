@@ -72,12 +72,12 @@ launch_dashboard() {
 
 launch_crm() {
 	export CRM_DB_PATH="$RUN_DIR/crm.db"
-	exec "$RUN_DIR/bin/crm" serve --port 3001
+	exec "$RUN_DIR/bin/crm" serve --port 3100
 }
 
 launch_ledger() {
 	export LEDGER_DB_PATH="$RUN_DIR/ledger.db"
-	exec "$RUN_DIR/bin/ledger" serve --port 3002
+	exec "$RUN_DIR/bin/ledger" serve --port 3101
 }
 
 launch_notify() {
@@ -85,20 +85,20 @@ launch_notify() {
 	# bin/registry against the repo-root manifests.
 	source "$repo/notify/.envrc"
 	export NOTIFY_DB_PATH="$RUN_DIR/notify.db"
-	exec "$RUN_DIR/bin/notify" serve --port 3003
+	exec "$RUN_DIR/bin/notify" serve --port 3201
 }
 
 launch_prompts() {
 	source "$repo/prompts/.envrc"
 	export PROMPTS_DB_PATH="$RUN_DIR/prompts.db"
-	exec "$RUN_DIR/bin/prompts" serve --port 3004
+	exec "$RUN_DIR/bin/prompts" serve --port 3002
 }
 
 launch_wiki() {
 	# wiki/.envrc supplies ANTHROPIC_API_KEY (from ~/.secrets) for ingest + ask.
 	source "$repo/wiki/.envrc"
 	export WIKI_DB_PATH="$RUN_DIR/wiki.db"
-	exec "$RUN_DIR/bin/wiki" serve --port 3006
+	exec "$RUN_DIR/bin/wiki" serve --port 3001
 }
 
 launch_dropbox() {
@@ -107,21 +107,21 @@ launch_dropbox() {
 	source "$repo/dropbox/.envrc"
 	export DROPBOX_DB_PATH="$RUN_DIR/dropbox.db"
 	export DROPBOX_MIRROR_PATH="$RUN_DIR/dropbox-mirror"
-	exec "$RUN_DIR/bin/dropbox" serve --port 3005
+	exec "$RUN_DIR/bin/dropbox" serve --port 3200
 }
 
 launch_cron() {
 	# cron holds no secret and needs no extra config.
 	export CRON_DB_PATH="$RUN_DIR/cron.db"
 	export CRON_GENERATION_PATH="$RUN_DIR/cron.db.generation"
-	exec "$RUN_DIR/bin/cron" serve --port 3007
+	exec "$RUN_DIR/bin/cron" serve --port 3005
 }
 
 launch_gmail() {
 	# gmail/.envrc supplies GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN (from ~/.secrets).
 	source "$repo/gmail/.envrc"
 	export GMAIL_DB_PATH="$RUN_DIR/gmail.db"
-	exec "$RUN_DIR/bin/gmail" serve --port 3008
+	exec "$RUN_DIR/bin/gmail" serve --port 3202
 }
 
 launch_scripts() {
@@ -129,7 +129,7 @@ launch_scripts() {
 	# SCRIPTS_<SRC>_FEED_URL values default to the loopback /feed of each peer.
 	source "$repo/scripts/.envrc"
 	export SCRIPTS_DB_PATH="$RUN_DIR/scripts.db"
-	exec "$RUN_DIR/bin/scripts" serve --port 3009
+	exec "$RUN_DIR/bin/scripts" serve --port 3003
 }
 
 launch_sites() {
@@ -137,14 +137,14 @@ launch_sites() {
 	export SITES_DB_PATH="$RUN_DIR/sites.db"
 	export SITES_ROOT="$RUN_DIR/sites-root"
 	mkdir -p "$SITES_ROOT"
-	exec "$RUN_DIR/bin/sites" serve --port 3010
+	exec "$RUN_DIR/bin/sites" serve --port 3004
 }
 
 launch_webhooks() {
 	# webhooks holds no secret; the public /in/ ingress self-guards on per-webhook
 	# secrets. DB under tmp/ so it's wiped with bin/stop --clean.
 	export WEBHOOKS_DB_PATH="$RUN_DIR/webhooks.db"
-	exec "$RUN_DIR/bin/webhooks" serve --port 3011
+	exec "$RUN_DIR/bin/webhooks" serve --port 3006
 }
 
 launch_nginx() {
@@ -190,7 +190,7 @@ run_bg notify launch_notify
 run_bg nginx launch_nginx
 
 echo ">> waiting for listeners"
-declare -A PORTS=([dashboard]=3000 [crm]=3001 [ledger]=3002 [notify]=3003 [prompts]=3004 [dropbox]=3005 [wiki]=3006 [cron]=3007 [gmail]=3008 [scripts]=3009 [sites]=3010 [webhooks]=3011 [nginx]=8080)
+declare -A PORTS=([dashboard]=3000 [crm]=3100 [ledger]=3101 [notify]=3201 [prompts]=3002 [dropbox]=3200 [wiki]=3001 [cron]=3005 [gmail]=3202 [scripts]=3003 [sites]=3004 [webhooks]=3006 [nginx]=8080)
 fail=0
 for name in dashboard crm ledger notify prompts dropbox cron gmail scripts sites webhooks wiki nginx; do
 	port="${PORTS[$name]}"
@@ -211,8 +211,8 @@ cat <<EOF
 
 Suite up. Front door: http://localhost:8080  (apex -> dashboard)
   /srv/crm/  /srv/ledger/  /srv/notify/  /srv/prompts/  /srv/dropbox/  /srv/cron/  /srv/gmail/  /srv/scripts/  /srv/sites/  /srv/webhooks/  /srv/wiki/
-Loopback:  dashboard :3000  crm :3001  ledger :3002  notify :3003  prompts :3004
-           dropbox :3005  wiki :3006  cron :3007  gmail :3008  scripts :3009  sites :3010  webhooks :3011
+Loopback:  dashboard :3000  crm :3100  ledger :3101  notify :3201  prompts :3002
+           dropbox :3200  wiki :3001  cron :3005  gmail :3202  scripts :3003  sites :3004  webhooks :3006
 Logs: tmp/<svc>.log   Stop: bin/stop   (bin/stop --clean also wipes tmp/ state)
 EOF
 

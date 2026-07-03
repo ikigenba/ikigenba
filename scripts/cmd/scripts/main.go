@@ -51,7 +51,7 @@ const consumerID = "scripts"
 // etc/manifest.env mirrors this for the registry.
 //
 // TODO(self-chaining, §A12): add "scripts" pointed at the local /feed
-// (SCRIPTS_SCRIPTS_FEED_URL default http://127.0.0.1:3009/feed) for
+// (SCRIPTS_SCRIPTS_FEED_URL default http://127.0.0.1:3003/feed) for
 // scripts.succeeded/failed chaining once trivial.
 var sources = []string{"cron", "crm", "ledger", "dropbox", "prompts"}
 
@@ -59,11 +59,11 @@ var sources = []string{"cron", "crm", "ledger", "dropbox", "prompts"}
 // plane bypasses nginx, so these are direct 127.0.0.1 addresses; production
 // composes the real SCRIPTS_<SRC>_FEED_URL via the deploy wrapper.
 var feedDefaults = map[string]string{
-	"cron":    "http://127.0.0.1:3007/feed",
-	"crm":     "http://127.0.0.1:3001/feed",
-	"ledger":  "http://127.0.0.1:3002/feed",
-	"dropbox": "http://127.0.0.1:3005/feed",
-	"prompts": "http://127.0.0.1:3004/feed",
+	"cron":    "http://127.0.0.1:3005/feed",
+	"crm":     "http://127.0.0.1:3100/feed",
+	"ledger":  "http://127.0.0.1:3101/feed",
+	"dropbox": "http://127.0.0.1:3200/feed",
+	"prompts": "http://127.0.0.1:3002/feed",
 }
 
 // svcRef carries the script service from the Handlers hook (where appkit has
@@ -102,7 +102,7 @@ func scriptsSpec() appkit.Spec {
 	return appkit.Spec{
 		App:   "scripts",
 		Mount: "/srv/scripts/",
-		Port:  3009,
+		Port:  3003,
 		MCP:   true,
 		// Multi-upstream CONSUMER: CONSUMES mirrors `sources` for the registry.
 		Consumes: sources,
@@ -191,7 +191,7 @@ func registerRoutes(rt *appkit.Router) error {
 	// State is durable; runs are rebuildable execution trees. appkit has already
 	// resolved the DB and generation paths; re-resolve the same env contract here
 	// so runs can live under the service-owned cache directory.
-	cfg, err := config.Resolve("scripts", "/srv/scripts/", 3009, os.Getenv)
+	cfg, err := config.Resolve("scripts", "/srv/scripts/", 3003, os.Getenv)
 	if err != nil {
 		return err
 	}
@@ -208,7 +208,7 @@ func registerRoutes(rt *appkit.Router) error {
 	// env-only (the loopback-URL-via-env shape notify uses for *_FEED_URL); the
 	// default works for the standard on-box loopback layout. Field-injected after
 	// NewService so existing construction stays untouched.
-	dropboxBase := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", "http://127.0.0.1:3005")
+	dropboxBase := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", "http://127.0.0.1:3200")
 	svc.Fetcher = script.NewHTTPFetcher(dropboxBase)
 	// Capture the service for the consumer Workers and the store for the Producer
 	// hook (both run after Handlers; the Producer injects the outbox onto store).

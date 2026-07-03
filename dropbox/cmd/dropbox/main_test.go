@@ -41,7 +41,7 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		App:     "dropbox",
 		Mount:   "/srv/dropbox/",
 		Default: false,
-		Port:    3005,
+		Port:    3200,
 		MCP:     true,
 		Feed:    "/feed",
 		Extras: []manifest.KV{

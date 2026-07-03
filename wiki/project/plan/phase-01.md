@@ -21,7 +21,7 @@ serves on the appkit chassis — failing loud at startup when the secret is abse
   `ANTHROPIC_API_KEY` once via `getenv` and **fails loud at startup if it is
   unset or empty** (crash, never serve degraded), constructs the shared agentkit
   Provider and an `internal/llm.Client` shell holding it, and declares
-  `appkit.Spec{App:"wiki", Mount:"/srv/wiki/", Port:3006, MCP:true, ...}` with
+  `appkit.Spec{App:"wiki", Mount:"/srv/wiki/", Port:3001, MCP:true, ...}` with
   all event-plane fields empty and `ManifestExtras` for the non-secret knobs
   (model id, worker concurrency, search default/cap). Secret injection is wired
   via `wiki/.envrc` (`source_up` + `export ANTHROPIC_API_KEY="$(cat ~/.secrets/ANTHROPIC_API_KEY)"`).

@@ -70,13 +70,13 @@ func TestNginxExactMatchUsesSessionAuthn(t *testing.T) {
 
 func TestNginxExactMatchProxiesToLoopbackRoot(t *testing.T) {
 	// R-NGNX-7Q1Z — the exact-match block proxies to the loopback upstream root
-	// with a trailing slash (the PORT stays templated as __PORT__).
+	// with a trailing slash (the literal loopback port 3201).
 	block := exactMatchBlock(readFragment(t))
 	if block == "" {
 		t.Fatal("exact-match `location = /srv/notify/ {` block not found")
 	}
-	if !strings.Contains(block, "proxy_pass http://127.0.0.1:__PORT__/;") {
-		t.Errorf("exact-match block missing `proxy_pass http://127.0.0.1:__PORT__/;`:\n%s", block)
+	if !strings.Contains(block, "proxy_pass http://127.0.0.1:3201/;") {
+		t.Errorf("exact-match block missing `proxy_pass http://127.0.0.1:3201/;`:\n%s", block)
 	}
 }
 
@@ -104,7 +104,7 @@ func TestNginxSessionGatesStaticAssets(t *testing.T) {
 	}
 	for _, want := range []string{
 		"auth_request /_session-authn;",
-		"proxy_pass http://127.0.0.1:__PORT__/static/;",
+		"proxy_pass http://127.0.0.1:3201/static/;",
 		"proxy_set_header Host $host;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 		"proxy_http_version 1.1;",

@@ -29,5 +29,5 @@ the system `/etc/nginx` is untouched.
 
     localhost:8080/                                          -> dashboard 127.0.0.1:3000
     localhost:8080/_authn                                    -> dashboard 127.0.0.1:3000/internal/authn  (internal)
-    localhost:8080/srv/crm/.well-known/oauth-protected-resource -> crm 127.0.0.1:3001  (unauthenticated PRM bootstrap)
-    localhost:8080/srv/crm/...                               -> auth_request /_authn -> crm 127.0.0.1:3001
+    localhost:8080/srv/crm/.well-known/oauth-protected-resource -> crm 127.0.0.1:3100  (unauthenticated PRM bootstrap)
+    localhost:8080/srv/crm/...                               -> auth_request /_authn -> crm 127.0.0.1:3100

@@ -31,8 +31,8 @@ untouched.
   }
   ```
 
-  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3002`
-    at install time) — do **not** hardcode `3002`.
+  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3101`
+    at install time) — do **not** hardcode `3101`.
   - The block is **added**, not substituted for anything: the existing
     `location /srv/ledger/ { auth_request /_authn; … }` bearer prefix (with its
     `error_page 500 = @ledger_authn_500` rate-limit re-emit), the

@@ -30,8 +30,8 @@ bearer-gated prefix, the `/feed` 404, and the PRM bootstrap untouched.
   }
   ```
 
-  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3001`
-    at install time) — do **not** hardcode `3001`.
+  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3100`
+    at install time) — do **not** hardcode `3100`.
   - The block is **added**, not substituted for anything: the existing
     `location /srv/crm/ { auth_request /_authn; … }` bearer prefix (with its
     `@crm_authn_500` rate-limit re-emit), the `location = /srv/crm/feed { return

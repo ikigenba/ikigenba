@@ -53,7 +53,7 @@ Shared facts every Decision leans on:
   dependency** — it uses only the standard library (`net/http`, `embed`,
   `html/template` or `text/template`) and the appkit chassis.
 - **The chassis owns the server.** gmail is `appkit.Main(appkit.Spec{…})`:
-  `App:"gmail"`, `Mount:"/srv/gmail/"`, `Port:3008`, `MCP:true`, `Feed:"/feed"`
+  `App:"gmail"`, `Mount:"/srv/gmail/"`, `Port:3202`, `MCP:true`, `Feed:"/feed"`
   (event-plane producer). The fixed verbs (`serve`/`version`/`manifest`/`migrate`
   /`backup`/`restore`), config-from-env, the loopback HTTP server + PRM +
   identity gate, and the `/feed` mount are appkit's. main.go declares gmail's

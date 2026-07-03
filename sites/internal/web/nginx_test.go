@@ -30,7 +30,7 @@ func TestNginxFragmentGatesAndProxiesLandingRoot(t *testing.T) {
 	}
 
 	// R-NGNX-7T1X
-	if !strings.Contains(block, "proxy_pass http://127.0.0.1:__PORT__/;") {
+	if !strings.Contains(block, "proxy_pass http://127.0.0.1:3004/;") {
 		t.Fatalf("landing root block does not proxy to the templated upstream root:\n%s", block)
 	}
 	if strings.Contains(block, "alias ") {
@@ -61,7 +61,7 @@ func TestNginxFragmentPreservesExistingLocations(t *testing.T) {
 	if !strings.Contains(private, "auth_request /_session-authn;") {
 		t.Fatalf("private static tier does not preserve session auth_request:\n%s", private)
 	}
-	if !strings.Contains(landing, "proxy_pass http://127.0.0.1:__PORT__/;") {
+	if !strings.Contains(landing, "proxy_pass http://127.0.0.1:3004/;") {
 		t.Fatalf("landing root block does not preserve upstream root proxy:\n%s", landing)
 	}
 	if !strings.Contains(authn500, "return 429;") || !strings.Contains(authn500, "return 500;") {
@@ -77,7 +77,7 @@ func TestNginxFragmentGatesAndProxiesLandingStaticAssets(t *testing.T) {
 	if !strings.Contains(block, "auth_request /_session-authn;") {
 		t.Fatalf("landing static block does not use dashboard session auth:\n%s", block)
 	}
-	if !strings.Contains(block, "proxy_pass http://127.0.0.1:__PORT__/static/;") {
+	if !strings.Contains(block, "proxy_pass http://127.0.0.1:3004/static/;") {
 		t.Fatalf("landing static block does not proxy to the templated static upstream:\n%s", block)
 	}
 	if strings.Contains(block, "alias ") {

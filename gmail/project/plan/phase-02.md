@@ -30,8 +30,8 @@ bearer-gated prefix, the `/feed` 404, and the PRM bootstrap untouched.
   }
   ```
 
-  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3008`
-    at install time) — do **not** hardcode `3008`.
+  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3202`
+    at install time) — do **not** hardcode `3202`.
   - The block is **added**, not substituted for anything: the existing
     `location /srv/gmail/ { auth_request /_authn; … }` bearer prefix (with its
     `@gmail_authn_500` rate-limit re-emit), the `location = /srv/gmail/feed { return

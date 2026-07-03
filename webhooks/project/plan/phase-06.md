@@ -6,7 +6,7 @@ Wire everything built so far into a single deployable binary. With the inner
 packages (`internal/db`, the `webhooks` domain package, `internal/mcp`) all in
 place, write `cmd/webhooks/main.go` as the composition root: one
 `appkit.Main(appkit.Spec{…})` call declaring `App: "webhooks"`,
-`Mount: "/srv/webhooks/"`, `Port: 3011`, `MCP: true`, `Feed: "/feed"`,
+`Mount: "/srv/webhooks/"`, `Port: 3006`, `MCP: true`, `Feed: "/feed"`,
 `Migrations: db.FS`, `Events: webhooks.Events`, the `ManifestExtras`
 (`OUTBOX_RETENTION_DAYS=7`, `OUTBOX_RETENTION_MAX_ROWS=1000000`), a `Handlers` hook
 that builds the `Service` and mounts the two routes —
@@ -17,7 +17,7 @@ no `Spec.Workers`) and uses appkit's default backup/restore (no overrides).
 
 Add the committed `etc/manifest.env` (and `etc/deploy.env`) plus the `Makefile`.
 `etc/manifest.env` must declare `APP=webhooks`, `MOUNT=/srv/webhooks/`,
-`PORT=3011`, `MCP=true`, `FEED=/feed`, and the manifest extras, such that the
+`PORT=3006`, `MCP=true`, `FEED=/feed`, and the manifest extras, such that the
 real binary's `manifest` verb byte-equals the committed file.
 
 End state: `cd webhooks && go build ./... && go vet ./... && go test ./...` green

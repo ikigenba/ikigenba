@@ -95,8 +95,8 @@ func TestNginxLandingProxiesToLoopbackRoot(t *testing.T) {
 	// root with a trailing slash using scripts' shipped loopback port.
 	conf := readNginxConf(t)
 	block := landingBlock(t, conf)
-	if !strings.Contains(block, "proxy_pass http://127.0.0.1:3009/;") {
-		t.Fatalf("landing block must proxy_pass to `http://127.0.0.1:3009/;`, got:\n%s", block)
+	if !strings.Contains(block, "proxy_pass http://127.0.0.1:3003/;") {
+		t.Fatalf("landing block must proxy_pass to `http://127.0.0.1:3003/;`, got:\n%s", block)
 	}
 }
 
@@ -126,7 +126,7 @@ func TestNginxStaticAssetsLocationSessionGated(t *testing.T) {
 
 	for _, want := range []string{
 		"auth_request /_session-authn;",
-		"proxy_pass http://127.0.0.1:3009/static/;",
+		"proxy_pass http://127.0.0.1:3003/static/;",
 		"proxy_set_header Host $host;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 		"proxy_http_version 1.1;",

@@ -30,8 +30,8 @@ existing bearer-gated prefix, the `/feed` 404, and the PRM bootstrap untouched.
   }
   ```
 
-  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3009`
-    at install time) — do **not** hardcode `3009`.
+  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3003`
+    at install time) — do **not** hardcode `3003`.
   - The block is **added**, not substituted for anything: the existing
     `location /srv/scripts/ { auth_request /_authn; … }` bearer prefix (with its
     `@prompts_authn_500` rate-limit re-emit), the `location = /srv/scripts/feed {

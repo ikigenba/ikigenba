@@ -31,7 +31,7 @@ func TestNginxLandingLocationIsExactSessionGated(t *testing.T) {
 	}
 
 	// R-NGNX-7F1G
-	if !strings.Contains(exact, "proxy_pass http://127.0.0.1:__PORT__/;") {
+	if !strings.Contains(exact, "proxy_pass http://127.0.0.1:3005/;") {
 		t.Fatalf("exact landing block does not proxy to upstream root with trailing slash:\n%s", exact)
 	}
 }
@@ -70,7 +70,7 @@ func TestNginxStaticLocationIsSessionGatedAndProxiesToStaticHandler(t *testing.T
 
 	for _, want := range []string{
 		"auth_request /_session-authn;",
-		"proxy_pass http://127.0.0.1:__PORT__/static/;",
+		"proxy_pass http://127.0.0.1:3005/static/;",
 		"proxy_set_header Host $host;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 		"proxy_http_version 1.1;",

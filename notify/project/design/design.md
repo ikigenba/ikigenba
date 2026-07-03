@@ -52,7 +52,7 @@ Shared facts every Decision leans on:
   dependency** — it uses only the standard library (`net/http`, `embed`,
   `html/template` or `text/template`) and the appkit chassis.
 - **The chassis owns the server.** notify is `appkit.Main(appkit.Spec{…})`:
-  `App:"notify"`, `Mount:"/srv/notify/"`, `Port:3003`, `MCP:true`,
+  `App:"notify"`, `Mount:"/srv/notify/"`, `Port:3201`, `MCP:true`,
   `Consumes:[]string{"crm","prompts"}` (event-plane **consumer** — it subscribes
   to crm's and prompts's feeds and serves **no** `/feed` of its own). The fixed
   verbs (`serve`/`version`/`manifest`/`migrate`/`backup`/`restore`),

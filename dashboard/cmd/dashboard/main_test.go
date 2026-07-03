@@ -82,11 +82,11 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 // the dashboard's own (MCP-less) manifest never self-lists.
 func TestDeriveResources(t *testing.T) {
 	root := t.TempDir()
-	writeManifest(t, root, "crm", "APP=crm\nMOUNT=/srv/crm/\nPORT=3001\nMCP=true\nFEED=/feed\n")
-	writeManifest(t, root, "ledger", "APP=ledger\nMOUNT=/srv/ledger/\nPORT=3002\nMCP=true\n")
+	writeManifest(t, root, "crm", "APP=crm\nMOUNT=/srv/crm/\nPORT=3100\nMCP=true\nFEED=/feed\n")
+	writeManifest(t, root, "ledger", "APP=ledger\nMOUNT=/srv/ledger/\nPORT=3101\nMCP=true\n")
 	// A consumer-only service with no MCP and the dashboard's own manifest must NOT
 	// appear in the resource list.
-	writeManifest(t, root, "notify", "APP=notify\nMOUNT=/srv/notify/\nPORT=3003\nCONSUMES=crm\n")
+	writeManifest(t, root, "notify", "APP=notify\nMOUNT=/srv/notify/\nPORT=3201\nCONSUMES=crm\n")
 	writeManifest(t, root, "dashboard", "APP=dashboard\nMOUNT=/\nDEFAULT=true\nPORT=3000\n")
 
 	got, err := deriveResources(root, "https://int.ikigenba.com")
@@ -159,7 +159,7 @@ func TestDashboardBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	}
 
 	writeManifest(t, root, "dashboard", "APP=dashboard\nMOUNT=/\nDEFAULT=true\nPORT=3000\n")
-	writeManifest(t, root, "crm", "APP=crm\nMOUNT=/srv/crm/\nPORT=3001\nMCP=true\n")
+	writeManifest(t, root, "crm", "APP=crm\nMOUNT=/srv/crm/\nPORT=3100\nMCP=true\n")
 
 	binary := filepath.Join(libexecDir, "dashboard-vtest")
 	build := exec.Command("go", "build", "-o", binary, ".")

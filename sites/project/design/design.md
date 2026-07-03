@@ -53,7 +53,7 @@ Shared facts every Decision leans on:
   standard library (`net/http`, `embed`, `html/template` or `text/template`) and
   the appkit chassis.
 - **The chassis owns the server.** sites is `appkit.Main(appkit.Spec{…})`:
-  `App:"sites"`, `Mount:"/srv/sites/"`, `Port:3010`, `MCP:true`,
+  `App:"sites"`, `Mount:"/srv/sites/"`, `Port:3004`, `MCP:true`,
   `Migrations:db.FS`. sites is **not** an event-plane producer — the
   `Feed`/`Producer`/`Workers`/`Events` hooks are deliberately omitted (no `/feed`).
   The fixed verbs (`serve`/`version`/`manifest`/`migrate`/`backup`/`restore`),

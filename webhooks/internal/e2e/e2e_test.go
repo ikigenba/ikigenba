@@ -30,7 +30,7 @@ import (
 
 const (
 	frontDoor   = "http://localhost:8080"
-	loopback    = "http://127.0.0.1:3011"
+	loopback    = "http://127.0.0.1:3006"
 	frontDoorTo = 2 * time.Second
 )
 
@@ -162,13 +162,13 @@ func TestFeedShieldedFromPublicMount(t *testing.T) {
 }
 
 // R-UELV-YLA4 — webhooks is wired into bin/start/bin/stop/go.work and actually
-// launched: the running process on :3011 answers GET /health with 200 (the
+// launched: the running process on :3006 answers GET /health with 200 (the
 // appkit chassis serves /health on the loopback port).
 func TestServiceLaunchedHealthOK(t *testing.T) {
 	url := loopback + "/health"
 	resp, err := noRedirectClient().Get(url)
 	if err != nil {
-		t.Fatalf("GET %s — webhooks not launched on :3011? bring the suite up with ../../../bin/start: %v", url, err)
+		t.Fatalf("GET %s — webhooks not launched on :3006? bring the suite up with ../../../bin/start: %v", url, err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

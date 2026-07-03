@@ -16,7 +16,7 @@ plus the catch-all `return 404`.
 
 Apply the **dev-harness edits** (design D8 — the only legitimate repo-root
 touches): add `./webhooks` to `go.work`'s `use(…)`; add `webhooks` to `bin/start`
-(build list, a `launch_webhooks` exporting `WEBHOOKS_DB_PATH` on `:3011`, the
+(build list, a `launch_webhooks` exporting `WEBHOOKS_DB_PATH` on `:3006`, the
 PORTS map, the wait-for list); add `webhooks` to `bin/stop`; add `webhooks` to the
 `nginx/run` fragment `__PORT__`-substitution loop.
 
@@ -36,7 +36,7 @@ genuine test against the real harness and the suite is green —
   /srv/webhooks/.well-known/oauth-protected-resource` → `200` with no token;
 - R-OGOR-8O3J — through `:8080`, `GET /srv/webhooks/feed` → `404`;
 - R-UELV-YLA4 — with the harness edits, `bin/start` builds and launches `webhooks`
-  on `:3011` and the process answers `/health` with `200`; `bin/stop` stops it;
+  on `:3006` and the process answers `/health` with `200`; `bin/stop` stops it;
 - R-UFTS-CD0T — with the suite up, the dashboard's service inventory / authorization-
   server resource list includes the webhooks MCP resource (`…/srv/webhooks/mcp`),
   discovered from the committed `etc/manifest.env` (`MCP=true`).

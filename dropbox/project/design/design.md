@@ -53,7 +53,7 @@ Shared facts every Decision leans on:
   dependency** — it uses only the standard library (`net/http`, `embed`,
   `html/template` or `text/template`) and the appkit chassis.
 - **The chassis owns the server.** dropbox is `appkit.Main(appkit.Spec{…})`:
-  `App:"dropbox"`, `Mount:"/srv/dropbox/"`, `Port:3005`, `MCP:true`,
+  `App:"dropbox"`, `Mount:"/srv/dropbox/"`, `Port:3200`, `MCP:true`,
   `Feed:"/feed"` (event-plane producer), plus its `Migrations`, `Events`,
   `ManifestExtras`, a `Health` reporter, a `Producer` hook, and a `Workers` hook
   (the background sync engine). The fixed verbs

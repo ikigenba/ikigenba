@@ -258,21 +258,21 @@ do not.)
 
 ## 6. Onboarding checklist + port
 
-**Port — verified directly from manifests:** `3000` dashboard, `3001` crm,
-`3002` ledger, `3003` notify, `3004` prompts, `3005` dropbox, `3006` wiki,
-`3007` cron, `3008` gmail, `3009` scripts, `3010` sites. **`3011` is the first
+**Port — verified directly from manifests:** `3000` dashboard, `3100` crm,
+`3101` ledger, `3201` notify, `3002` prompts, `3200` dropbox, `3001` wiki,
+`3005` cron, `3202` gmail, `3003` scripts, `3004` sites. **`3006` is the first
 free port → recommended for webhooks.**
 
 **Dev harness edits (root files — the only legitimate root touches):**
 - `go.work` — add `./webhooks` to the `use (…)` block (alphabetical).
 - `bin/start` — add `webhooks` to the build list; add a `launch_webhooks` (export
-  `WEBHOOKS_DB_PATH`, source `.envrc` if present, run on `:3011`); add to the
+  `WEBHOOKS_DB_PATH`, source `.envrc` if present, run on `:3006`); add to the
   PORTS map + wait-for list.
 - `bin/stop` — add `webhooks` to the shutdown list (reverse order).
 - `nginx/run` — add `webhooks` to the fragment-generation loop.
 
 **Service-local files:** §3 layout + `etc/manifest.env`
-(`APP/MOUNT=/srv/webhooks//DEFAULT=false/PORT=3011/MCP=true/FEED=/feed` +
+(`APP/MOUNT=/srv/webhooks//DEFAULT=false/PORT=3006/MCP=true/FEED=/feed` +
 outbox retention extras), `etc/nginx.conf` (§1 three-tier), `etc/deploy.env`,
 `VERSION=0.1.0`.
 
@@ -306,7 +306,7 @@ References: `bin/start`, `bin/stop`, `nginx/run`, `bin/registry`, `bin/ship`,
   rest; show-once; rotation replaces the hash, name/URL unchanged.
 - **Name** → `ids.New()` (128-bit base32) by default; allow a user-chosen name but
   treat it as routing/obscurity only (secret is the boundary).
-- **Port** → `3011`.
+- **Port** → `3006`.
 - **Schema** → a `webhooks` table (id, name unique, owner_email, secret_hash,
   created_at, last_triggered_at?) + the standard outbox table.
 

@@ -42,7 +42,7 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		App:      "prompts",
 		Mount:    "/srv/prompts/",
 		Default:  false,
-		Port:     3004,
+		Port:     3002,
 		MCP:      true,
 		Feed:     "/feed",
 		Consumes: []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts"},

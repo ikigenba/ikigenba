@@ -12,7 +12,7 @@ func envFunc(m map[string]string) func(string) string {
 }
 
 func TestResolve_ComposesURLsFromDomain(t *testing.T) {
-	cfg, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
+	cfg, err := Resolve("ledger", "/srv/ledger/", 3101, envFunc(map[string]string{
 		"IKIGENBA_DOMAIN": "int.ikigenba.com",
 		"IKIGENBA_ROOT":   "/opt",
 	}))
@@ -25,8 +25,8 @@ func TestResolve_ComposesURLsFromDomain(t *testing.T) {
 	if want := "https://int.ikigenba.com"; cfg.AuthServer != want {
 		t.Errorf("AuthServer = %q, want %q", cfg.AuthServer, want)
 	}
-	if cfg.Port != 3002 {
-		t.Errorf("Port = %d, want default 3002", cfg.Port)
+	if cfg.Port != 3101 {
+		t.Errorf("Port = %d, want default 3101", cfg.Port)
 	}
 	if cfg.IP != "127.0.0.1" {
 		t.Errorf("IP = %q, want loopback default", cfg.IP)
@@ -34,7 +34,7 @@ func TestResolve_ComposesURLsFromDomain(t *testing.T) {
 }
 
 func TestResolve_LocalhostDefaults(t *testing.T) {
-	cfg, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{}))
+	cfg, err := Resolve("ledger", "/srv/ledger/", 3101, envFunc(map[string]string{}))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestResolve_LocalhostDefaults(t *testing.T) {
 func TestResolve_ExplicitOverrideWins(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "var", "data", "ledger.db")
 	genPath := filepath.Join(t.TempDir(), "var", "cache", "ledger.db.generation")
-	cfg, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
+	cfg, err := Resolve("ledger", "/srv/ledger/", 3101, envFunc(map[string]string{
 		"IKIGENBA_DOMAIN":        "int.ikigenba.com",
 		"IKIGENBA_ROOT":          "/opt",
 		"LEDGER_RESOURCE_ID":     "https://override.example/srv/ledger/mcp",
@@ -128,7 +128,7 @@ func TestResolve_ProductionStateCachePathsAreIndependent(t *testing.T) {
 	dbPath := filepath.Join(root, "ledger", "state", "ledger.db")
 	genPath := filepath.Join(root, "ledger", "cache", "ledger.db.generation")
 
-	cfg, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
+	cfg, err := Resolve("ledger", "/srv/ledger/", 3101, envFunc(map[string]string{
 		"IKIGENBA_ROOT": root,
 	}))
 	if err != nil {
@@ -153,7 +153,7 @@ func TestResolve_ProductionStateCachePathsAreIndependent(t *testing.T) {
 
 func TestResolve_DomainWithoutRootFailsLoudly(t *testing.T) {
 	// R-8H2R-1JHI
-	cfg, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
+	cfg, err := Resolve("ledger", "/srv/ledger/", 3101, envFunc(map[string]string{
 		"IKIGENBA_DOMAIN": "int.ikigenba.com",
 	}))
 	if err == nil {
@@ -167,7 +167,7 @@ func TestResolve_DomainWithoutRootFailsLoudly(t *testing.T) {
 func TestResolve_DomainWithoutRootAllowsExplicitDataPaths(t *testing.T) {
 	dbPath := filepath.Join("state", "ledger.db")
 	genPath := filepath.Join("cache", "ledger.db.generation")
-	cfg, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
+	cfg, err := Resolve("ledger", "/srv/ledger/", 3101, envFunc(map[string]string{
 		"IKIGENBA_DOMAIN":        "int.ikigenba.com",
 		"LEDGER_DB_PATH":         dbPath,
 		"LEDGER_GENERATION_PATH": genPath,
@@ -197,7 +197,7 @@ func TestResolve_ApexMount(t *testing.T) {
 }
 
 func TestResolve_BadPortErrors(t *testing.T) {
-	_, err := Resolve("ledger", "/srv/ledger/", 3002, envFunc(map[string]string{
+	_, err := Resolve("ledger", "/srv/ledger/", 3101, envFunc(map[string]string{
 		"LEDGER_PORT": "not-a-number",
 	}))
 	if err == nil {

@@ -39,7 +39,7 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		App:     "crm",
 		Mount:   "/srv/crm/",
 		Default: false,
-		Port:    3001,
+		Port:    3100,
 		MCP:     true,
 		Feed:    "/feed",
 		Extras: []manifest.KV{

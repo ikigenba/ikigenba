@@ -55,7 +55,7 @@ const consumerID = "prompts"
 // CONSUMES=cron,crm,ledger,dropbox,scripts,prompts in etc/manifest.env mirrors
 // this for the registry. The final "prompts" entry is self-chaining (A12): a
 // consumer loop pointed at prompts' OWN /feed (PROMPTS_PROMPTS_FEED_URL default
-// http://127.0.0.1:3004/feed) so a prompt can fire on another prompt's
+// http://127.0.0.1:3002/feed) so a prompt can fire on another prompt's
 // run.succeeded/run.failed.
 var sources = []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts"}
 
@@ -63,12 +63,12 @@ var sources = []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts"}
 // bypasses nginx, so these are direct 127.0.0.1 addresses; production composes
 // the real PROMPTS_<SRC>_FEED_URL via env.
 var feedDefaults = map[string]string{
-	"cron":    "http://127.0.0.1:3007/feed",
-	"crm":     "http://127.0.0.1:3001/feed",
-	"ledger":  "http://127.0.0.1:3002/feed",
-	"dropbox": "http://127.0.0.1:3005/feed",
-	"scripts": "http://127.0.0.1:3009/feed",
-	"prompts": "http://127.0.0.1:3004/feed", // self-chaining: prompts' OWN /feed (A12)
+	"cron":    "http://127.0.0.1:3005/feed",
+	"crm":     "http://127.0.0.1:3100/feed",
+	"ledger":  "http://127.0.0.1:3101/feed",
+	"dropbox": "http://127.0.0.1:3200/feed",
+	"scripts": "http://127.0.0.1:3003/feed",
+	"prompts": "http://127.0.0.1:3002/feed", // self-chaining: prompts' OWN /feed (A12)
 }
 
 // svcRef carries the prompt service from the Handlers hook (where appkit has
@@ -99,7 +99,7 @@ func main() {
 	appkit.Main(appkit.Spec{
 		App:   "prompts",
 		Mount: "/srv/prompts/",
-		Port:  3004,
+		Port:  3002,
 		MCP:   true,
 		// Multi-upstream CONSUMER: CONSUMES mirrors `sources` for the registry.
 		Consumes: sources,
@@ -234,7 +234,7 @@ func registerRoutes(rt *appkit.Router) error {
 	// Wire the dropbox loopback content fetcher for the import verb. DROPBOX_BASE_URL
 	// is env-only (default the standard loopback layout), the same loopback-URL-via-env
 	// shape notify uses for its feed URLs. Field-injected so NewService stays unchanged.
-	dropboxBase := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", "http://127.0.0.1:3005")
+	dropboxBase := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", "http://127.0.0.1:3200")
 	svc.Fetcher = prompt.NewHTTPFetcher(dropboxBase)
 	// Capture the service for the consumer Worker and the store for the Producer
 	// hook (both run after Handlers; the Producer injects the outbox onto store).

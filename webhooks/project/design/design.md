@@ -43,7 +43,7 @@ history of how it got here lives in the plan, not here.
   immutable SQL applied forward-only by the appkit runner. New migrations are
   created with `bin/new-migration webhooks <name>` (timestamped); numbers are
   never hand-picked and committed migrations are never edited.
-- **Loopback port:** `3011` (first free port; verified against all
+- **Loopback port:** `3006` (first free port; verified against all
   `*/etc/manifest.env`).
 - **Time / IO:** time enters the domain through a `Clock` seam; tests inject a
   deterministic clock. The DB handle is the appkit-owned single-writer

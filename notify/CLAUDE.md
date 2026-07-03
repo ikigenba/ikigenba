@@ -43,7 +43,7 @@ If anything here conflicts with those docs, the docs win — and flag the confli
   feed block.
 - **East/west (internal, service-to-service).** A background goroutine runs
   `eventplane/consumer.Run`, holding one long-lived SSE connection to crm's
-  `http://127.0.0.1:3001/feed` (loopback-direct — the event plane bypasses nginx,
+  `http://127.0.0.1:3100/feed` (loopback-direct — the event plane bypasses nginx,
   §2). It is unauthenticated and loopback-only by construction.
 
 ## What the consumer does
@@ -117,7 +117,7 @@ notify is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract
 `Consumes:["crm"]`, with the consumer loop run as an appkit `Worker`): `<app>`
 serve + the fixed `version`/`manifest`/`migrate`/`schema`
 verbs, no `run` wrapper. `etc/manifest.env` (`APP=notify`, `MOUNT=/srv/notify/`,
-`DEFAULT=false`, `PORT=3003`, `MCP=true` so the dashboard inventory lists it,
+`DEFAULT=false`, `PORT=3201`, `MCP=true` so the dashboard inventory lists it,
 `CONSUMES=crm`) is emitted by `notify manifest`; the public consumer config
 (`NOTIFY_FROM`, `NOTIFY_NTFY_BASE_URL`, the feed URL resolved by name via
 `bin/registry`) is read from env at the composition root, and the ntfy secrets

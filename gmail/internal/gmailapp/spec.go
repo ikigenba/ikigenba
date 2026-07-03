@@ -31,7 +31,7 @@ func Spec() appkit.Spec {
 	return appkit.Spec{
 		App:        "gmail",
 		Mount:      "/srv/gmail/",
-		Port:       3008,
+		Port:       3202,
 		MCP:        true,
 		Feed:       "/feed", // event-plane producer
 		Migrations: db.FS,

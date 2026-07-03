@@ -52,7 +52,7 @@ Shared facts every Decision leans on:
   dependency** — it uses only the standard library (`net/http`, `embed`,
   `html/template` or `text/template`) and the appkit chassis.
 - **The chassis owns the server.** ledger is `appkit.Main(appkit.Spec{…})`:
-  `App:"ledger"`, `Mount:"/srv/ledger/"`, `Port:3002`, `MCP:true`, `Feed:"/feed"`
+  `App:"ledger"`, `Mount:"/srv/ledger/"`, `Port:3101`, `MCP:true`, `Feed:"/feed"`
   (event-plane producer). The fixed verbs (`serve`/`version`/`manifest`/`migrate`
   /`backup`/`restore`), config-from-env, the loopback HTTP server + PRM +
   identity gate, and the `/feed` mount are appkit's. main.go declares ledger's

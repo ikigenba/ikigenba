@@ -33,7 +33,7 @@ func TestNginxLandingLocationIsExactMatchAndSessionGated(t *testing.T) {
 	}
 
 	// R-NGNX-6M9N
-	if !strings.Contains(block, "proxy_pass http://127.0.0.1:__PORT__/;") {
+	if !strings.Contains(block, "proxy_pass http://127.0.0.1:3100/;") {
 		t.Fatalf("landing location does not proxy to upstream root with trailing slash:\n%s", block)
 	}
 }
@@ -53,7 +53,7 @@ func TestNginxExistingServiceLocationsSurvive(t *testing.T) {
 	if strings.Contains(prm, "auth_request") {
 		t.Fatalf("PRM bootstrap location unexpectedly gated:\n%s", prm)
 	}
-	if !strings.Contains(prm, "proxy_pass http://127.0.0.1:__PORT__/.well-known/oauth-protected-resource;") {
+	if !strings.Contains(prm, "proxy_pass http://127.0.0.1:3100/.well-known/oauth-protected-resource;") {
 		t.Fatalf("PRM bootstrap location missing upstream proxy_pass:\n%s", prm)
 	}
 }
@@ -65,7 +65,7 @@ func TestNginxStaticLocationIsSessionGatedAndProxiesStaticHandler(t *testing.T) 
 	// R-SWNU-U5QA
 	for _, want := range []string{
 		"auth_request /_session-authn;",
-		"proxy_pass http://127.0.0.1:__PORT__/static/;",
+		"proxy_pass http://127.0.0.1:3100/static/;",
 		"proxy_set_header Host $host;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 		"proxy_http_version 1.1;",

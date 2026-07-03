@@ -97,7 +97,7 @@ var ErrSkip = errors.New("consumer: skip event")
 // everything else has a safe default.
 type Config struct {
 	// FeedURL is the upstream producer's feed address (§3), e.g.
-	// "http://127.0.0.1:3001/feed". Loopback-direct: the event plane bypasses
+	// "http://127.0.0.1:3100/feed". Loopback-direct: the event plane bypasses
 	// nginx (§2). Required.
 	FeedURL string
 	// From is the first-subscription choice (§7.1): "tail" (default) or

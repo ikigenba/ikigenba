@@ -56,7 +56,7 @@ type httpMirrorClient struct {
 }
 
 // NewMirrorClient builds a MirrorClient against base (e.g.
-// "http://127.0.0.1:3005"); it derives <base>/list and <base>/content.
+// "http://127.0.0.1:3200"); it derives <base>/list and <base>/content.
 func NewMirrorClient(base string) MirrorClient {
 	return &httpMirrorClient{base: strings.TrimRight(base, "/"), hc: http.DefaultClient}
 }

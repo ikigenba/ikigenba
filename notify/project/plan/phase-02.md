@@ -31,8 +31,8 @@ fragment has no `/feed` block to preserve.)
   }
   ```
 
-  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3003`
-    at install time) — do **not** hardcode `3003`.
+  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3201`
+    at install time) — do **not** hardcode `3201`.
   - The block is **added**, not substituted for anything: the existing
     `location /srv/notify/ { auth_request /_authn; … }` bearer prefix (with its
     `@notify_authn_500` rate-limit re-emit) and the

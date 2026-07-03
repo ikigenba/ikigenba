@@ -26,7 +26,7 @@ func Spec() appkit.Spec {
 	return appkit.Spec{
 		App:        "cron",
 		Mount:      "/srv/cron/",
-		Port:       3007,
+		Port:       3005,
 		MCP:        true,
 		Feed:       "/feed",
 		Migrations: db.FS,

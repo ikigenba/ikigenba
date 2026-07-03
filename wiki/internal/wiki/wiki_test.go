@@ -295,8 +295,8 @@ func TestSpecDeclaresServedMCPService(t *testing.T) {
 	if spec.Mount != "/srv/wiki/" {
 		t.Fatalf("Mount = %q, want /srv/wiki/", spec.Mount)
 	}
-	if spec.Port != 3006 {
-		t.Fatalf("Port = %d, want 3006", spec.Port)
+	if spec.Port != 3001 {
+		t.Fatalf("Port = %d, want 3001", spec.Port)
 	}
 	if !spec.MCP {
 		t.Fatal("MCP = false, want true")

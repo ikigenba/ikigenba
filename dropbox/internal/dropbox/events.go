@@ -62,7 +62,7 @@ func sampleFilePayload(eventType string) filePayload {
 		Rev:         "0123456789abcdef0123456789",
 		ContentHash: "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca7",
 		Size:        4096,
-		ContentURL:  contentURL("http://127.0.0.1:3005", "/notes/meeting.md"),
+		ContentURL:  contentURL("http://127.0.0.1:3200", "/notes/meeting.md"),
 		OccurredAt:  "2026-06-03T12:00:00.000000000Z",
 	}
 }
@@ -146,7 +146,7 @@ type outboxProducer struct {
 
 // NewOutboxProducer wraps an eventplane outbox as an EventSink. contentBase is
 // the scheme+host(+port) the loopback /content route lives at (e.g.
-// "http://127.0.0.1:3005"); the builders append "/content?path=...". main wires
+// "http://127.0.0.1:3200"); the builders append "/content?path=...". main wires
 // the result onto Service.Outbox to make the service an event-plane producer.
 func NewOutboxProducer(ob *outbox.Outbox, contentBase string) EventSink {
 	return &outboxProducer{ob: ob, contentBase: contentBase}

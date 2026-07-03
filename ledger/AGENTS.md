@@ -121,7 +121,7 @@ lives at `../nginx/locations/ledger.conf`.
 ledger is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract):
 `<app>` serve + the fixed `version`/`manifest`/`migrate`/`schema`
 verbs, no `run` wrapper. `etc/manifest.env` (`APP=ledger`,
-`MOUNT=/srv/ledger/`, `DEFAULT=false`, `PORT=3002`, `MCP=true` so the dashboard
+`MOUNT=/srv/ledger/`, `DEFAULT=false`, `PORT=3101`, `MCP=true` so the dashboard
 inventory lists it) is emitted by `ledger manifest` — the binary owns its own
 identity, and `opsctl deploy` regenerates the on-box copy on every swap. Shipping
 is the shared repo-root `bin/ship ledger` (no version arg; version is the

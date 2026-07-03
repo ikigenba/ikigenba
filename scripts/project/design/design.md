@@ -53,7 +53,7 @@ Shared facts every Decision leans on:
   dependency** — it uses only the standard library (`net/http`, `embed`,
   `html/template` or `text/template`) and the appkit chassis.
 - **The chassis owns the server.** scripts is `appkit.Main(appkit.Spec{…})`:
-  `App:"scripts"`, `Mount:"/srv/scripts/"`, `Port:3009`, `MCP:true`,
+  `App:"scripts"`, `Mount:"/srv/scripts/"`, `Port:3003`, `MCP:true`,
   `Feed:"/feed"` (event-plane **producer** of `scripts.succeeded`/`scripts.failed`),
   `Consumes:[]string{"cron","crm","ledger","dropbox","prompts"}` (multi-upstream
   **consumer**), plus the consumer `Workers` and the `Producer` outbox hook. The

@@ -41,7 +41,7 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		App:     "ledger",
 		Mount:   "/srv/ledger/",
 		Default: false,
-		Port:    3002,
+		Port:    3101,
 		MCP:     true,
 		Feed:    "/feed",
 		Extras: []manifest.KV{

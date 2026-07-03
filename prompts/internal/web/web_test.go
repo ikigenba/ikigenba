@@ -218,7 +218,7 @@ func TestNginxStaticLocationUsesSessionAuth(t *testing.T) {
 	// R-DKGB-1YYM
 	for _, want := range []string{
 		"auth_request /_session-authn;",
-		"proxy_pass http://127.0.0.1:__PORT__/static/;",
+		"proxy_pass http://127.0.0.1:3002/static/;",
 	} {
 		if !strings.Contains(block, want) {
 			t.Fatalf("static location missing %q:\n%s", want, block)

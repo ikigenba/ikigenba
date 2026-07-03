@@ -30,8 +30,8 @@ bearer-gated prefix, the `/feed` 404, and the PRM bootstrap untouched.
   }
   ```
 
-  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3007`
-    at install time) — do **not** hardcode `3007`.
+  - `__PORT__` stays templated (substituted from `etc/manifest.env` `PORT=3005`
+    at install time) — do **not** hardcode `3005`.
   - The block is **added**, not substituted for anything: the existing
     `location /srv/cron/ { auth_request /_authn; … }` bearer prefix (with its
     `$cron_owner`/`$cron_client` capture and `@cron_authn_500` rate-limit re-emit),

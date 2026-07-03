@@ -323,7 +323,7 @@ func TestCompositionRootAdoptsNewScriptsLayout(t *testing.T) {
 	main := string(src)
 
 	for _, want := range []string{
-		`cfg, err := config.Resolve("scripts", "/srv/scripts/", 3009, os.Getenv)`,
+		`cfg, err := config.Resolve("scripts", "/srv/scripts/", 3003, os.Getenv)`,
 		`rootDir := scriptsRuntimeRoot(cfg.GenerationPath)`,
 		`runsDir := filepath.Join(rootDir, "runs")`,
 		`recreateRunsDir(runsDir)`,

@@ -21,7 +21,7 @@ import (
 const (
 	App   = "wiki"
 	Mount = "/srv/wiki/"
-	Port  = 3006
+	Port  = 3001
 
 	ModelID           = anthropic.ModelSonnet46
 	WorkerConcurrency = 1

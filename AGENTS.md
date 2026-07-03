@@ -85,7 +85,7 @@ the root, not per-service:
   wipes the `tmp/` dev state (binaries, logs, SQLite dbs).
 
 > ⚠️ **You may only stop services you started from the worktree you are working
-> in.** The suite binds shared host ports (`:3000`–`:3011`, `:8080`), so a suite
+> in.** The suite binds shared host ports (`:3000`–`:3006`, `:8080`), so a suite
 > launched from a *different* worktree or clone can be occupying them. Stopping
 > services — `bin/stop`, `kill`/`pkill`, freeing a port, or anything that
 > terminates a process — is permitted **only** for the stack this worktree's own
