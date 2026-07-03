@@ -30,12 +30,12 @@ type Service struct {
 	Feed  string
 }
 
-// Read globs root/*/etc/manifest.env, parses each as simple shell KEY=value via
-// appkit/manifest.Parse, and returns the services whose manifest sets MCP=true
-// (sorted by Name). A single unreadable or garbled manifest is skipped, not
-// fatal; the only returned error is a glob-level failure.
+// Read globs root/*/etc/current/manifest.env, parses each as simple shell
+// KEY=value via appkit/manifest.Parse, and returns the services whose manifest
+// sets MCP=true (sorted by Name). A single unreadable or garbled manifest is
+// skipped, not fatal; the only returned error is a glob-level failure.
 func Read(root string) ([]Service, error) {
-	matches, err := filepath.Glob(filepath.Join(root, "*", "etc", "manifest.env"))
+	matches, err := filepath.Glob(filepath.Join(root, "*", "etc", "current", "manifest.env"))
 	if err != nil {
 		return nil, err
 	}

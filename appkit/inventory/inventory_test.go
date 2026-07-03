@@ -6,15 +6,91 @@ import (
 	"testing"
 )
 
-// writeManifest creates <root>/<svc>/etc/manifest.env with the given contents.
+// writeManifest creates <root>/<svc>/etc/current/manifest.env with the given contents.
 func writeManifest(t *testing.T, root, svc, contents string) {
+	t.Helper()
+	dir := filepath.Join(root, svc, "etc", "current")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.env"), []byte(contents), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+}
+
+func writeSiblingManifest(t *testing.T, root, svc, contents string) {
 	t.Helper()
 	dir := filepath.Join(root, svc, "etc")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", dir, err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "manifest.env"), []byte(contents), 0o644); err != nil {
-		t.Fatalf("write manifest: %v", err)
+		t.Fatalf("write sibling manifest: %v", err)
+	}
+}
+
+func writeVersionManifest(t *testing.T, root, svc, version, contents string) {
+	t.Helper()
+	dir := filepath.Join(root, svc, "etc", version)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.env"), []byte(contents), 0o644); err != nil {
+		t.Fatalf("write version manifest: %v", err)
+	}
+}
+
+func pointCurrent(t *testing.T, root, svc, version string) {
+	t.Helper()
+	link := filepath.Join(root, svc, "etc", "current")
+	if err := os.Remove(link); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove current: %v", err)
+	}
+	if err := os.Symlink(version, link); err != nil {
+		t.Fatalf("symlink current to %s: %v", version, err)
+	}
+}
+
+// R-YO06-9I18
+func TestReadUsesCurrentManifestNotSiblingManifest(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, "crm", "APP=crm\nMOUNT=/srv/crm/\nPORT=3100\nMCP=true\n")
+	writeSiblingManifest(t, root, "ledger", "APP=ledger\nMOUNT=/srv/ledger/\nPORT=3101\nMCP=true\n")
+
+	got, err := Read(root)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d services, want 1: %+v", len(got), got)
+	}
+	if got[0].Name != "crm" {
+		t.Errorf("Name = %q, want crm", got[0].Name)
+	}
+}
+
+// R-YP82-N9RX
+func TestReadFollowsRepointedCurrentSymlink(t *testing.T) {
+	root := t.TempDir()
+	writeVersionManifest(t, root, "crm", "verA", "APP=crm\nMOUNT=/srv/crm/\nPORT=3100\nMCP=true\n")
+	writeVersionManifest(t, root, "crm", "verB", "APP=crm\nMOUNT=/srv/crm/\nPORT=3100\nMCP=false\n")
+	pointCurrent(t, root, "crm", "verA")
+
+	got, err := Read(root)
+	if err != nil {
+		t.Fatalf("Read verA: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "crm" {
+		t.Fatalf("Read verA = %+v, want crm listed", got)
+	}
+
+	pointCurrent(t, root, "crm", "verB")
+	got, err = Read(root)
+	if err != nil {
+		t.Fatalf("Read verB: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("Read verB = %+v, want no services", got)
 	}
 }
 

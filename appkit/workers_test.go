@@ -42,7 +42,9 @@ func TestWorkers_RunAndCancelOnShutdown(t *testing.T) {
 	srv := newServeTestServer(t)
 
 	done := make(chan error, 1)
-	go func() { done <- runServerAndWorkers(ctx, cancel, srv, []func(context.Context) error{worker}, discardLogger()) }()
+	go func() {
+		done <- runServerAndWorkers(ctx, cancel, srv, []func(context.Context) error{worker}, discardLogger())
+	}()
 
 	// Give the worker + server a moment to start, then trigger a clean shutdown.
 	waitFor(t, func() bool { return started.Load() }, "worker did not start")
@@ -76,7 +78,9 @@ func TestWorkers_ErrorBringsServerDown(t *testing.T) {
 	srv := newServeTestServer(t)
 
 	done := make(chan error, 1)
-	go func() { done <- runServerAndWorkers(ctx, cancel, srv, []func(context.Context) error{worker}, discardLogger()) }()
+	go func() {
+		done <- runServerAndWorkers(ctx, cancel, srv, []func(context.Context) error{worker}, discardLogger())
+	}()
 
 	select {
 	case err := <-done:
@@ -104,7 +108,9 @@ func TestWorkers_TransportFaultDoesNotKillServer(t *testing.T) {
 	srv := newServeTestServer(t)
 
 	done := make(chan error, 1)
-	go func() { done <- runServerAndWorkers(ctx, cancel, srv, []func(context.Context) error{worker}, discardLogger()) }()
+	go func() {
+		done <- runServerAndWorkers(ctx, cancel, srv, []func(context.Context) error{worker}, discardLogger())
+	}()
 
 	// The serve loop must still be running after a grace period (the worker never
 	// returned, so nothing cancelled ctx).
