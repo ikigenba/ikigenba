@@ -9,6 +9,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 RUN_DIR="$REPO/tmp"
 MANIFEST_ROOT="$RUN_DIR/opt"
+REPO_REAL="$(realpath -m "$REPO")"
+RUN_DIR_REAL="$(realpath -m "$RUN_DIR")"
 
 SERVICES=(dashboard crm ledger notify prompts wiki dropbox cron gmail scripts sites webhooks)
 MCP_SERVICES=(crm ledger notify prompts wiki dropbox cron gmail scripts sites webhooks)
@@ -41,10 +43,43 @@ pid_cmdline() {
 	tr '\0' ' ' <"/proc/$1/cmdline" 2>/dev/null || true
 }
 
+proc_link_real() {
+	local target
+	target="$(readlink "/proc/$1/$2" 2>/dev/null || true)"
+	target="${target% (deleted)}"
+	[ -n "$target" ] && realpath -m "$target"
+}
+
+path_under() {
+	local path="$1" root="$2"
+	[[ "$path" == "$root" ]] || [[ "$path" == "$root/"* ]]
+}
+
+port_owner_details() {
+	local port="$1" pid cmd exe cwd
+	while read -r pid; do
+		[ -n "$pid" ] || continue
+		cmd="$(pid_cmdline "$pid")"
+		exe="$(proc_link_real "$pid" exe)"
+		cwd="$(proc_link_real "$pid" cwd)"
+		echo "       pid=$pid exe=$exe cwd=$cwd cmd=$cmd"
+	done < <(port_pids "$port")
+}
+
 pid_from_this_worktree() {
-	local pid="$1" cmd
+	local pid="$1" cmd exe cwd
 	cmd="$(pid_cmdline "$pid")"
-	[[ "$cmd" == "$RUN_DIR/bin/"* ]] || [[ "$cmd" == *" $RUN_DIR/bin/"* ]] || [[ "$cmd" == *"$REPO/nginx"* ]]
+	exe="$(proc_link_real "$pid" exe)"
+	cwd="$(proc_link_real "$pid" cwd)"
+
+	path_under "$exe" "$RUN_DIR_REAL/bin" ||
+		[[ "$cmd" == "$RUN_DIR/bin/"* ]] ||
+		[[ "$cmd" == *" $RUN_DIR/bin/"* ]] ||
+		[[ "$cmd" == "$RUN_DIR_REAL/bin/"* ]] ||
+		[[ "$cmd" == *" $RUN_DIR_REAL/bin/"* ]] ||
+		[[ "$cmd" == *"$REPO/nginx"* ]] ||
+		[[ "$cmd" == *"$REPO_REAL/nginx"* ]] ||
+		{ [[ "$cmd" == nginx:* ]] && path_under "$cwd" "$REPO_REAL"; }
 }
 
 worktree_pid_for_port() {
@@ -116,6 +151,7 @@ for port in "${PORTS[@]}"; do
 	if port_open "$port"; then
 		echo "FAIL - port :$port is already in use by another worktree; not stopping it"
 		port_owners "$port" | sed 's/^/       /'
+		port_owner_details "$port"
 		exit 1
 	fi
 done
