@@ -51,8 +51,10 @@ the reference. Remaining stale references to the OLD flat-bin model (e.g. the
 
 ## Applied so far (2026-07-03)
 
-A first cleanup batch has been applied and the resolved findings are marked
-`✅ **DONE**` inline in the per-folder reports. What landed:
+Cleanup has been applied in batches; resolved findings are marked `✅ **DONE**`
+(or `⏸️ DEFERRED` / `✅ REVIEWED — no change`) inline in the per-folder reports.
+
+### Batch 1 — registry/deploy loose ends + greenlit fixes
 
 - **All 7 stale registry parentheticals** removed from the `etc/nginx.conf`
   fragments (crm, cron, dropbox, gmail, notify, prompts, wiki).
@@ -70,15 +72,43 @@ A first cleanup batch has been applied and the resolved findings are marked
 - **`docs/README.md` pointer removed** from root `AGENTS.md`/`CLAUDE.md` (the
   file stays intentionally absent; the "In short:" convention summary was kept).
 
+### Batch 2 — seven reports fully cleared
+
+Commits `095e87f` → `ed01841`. This batch closed out **design, appkit, project,
+opsctl, eventplane, nginx, and bin** (registry and agentkit had no findings):
+
+- **`project/README.md` scaffold sweep (suite-wide).** Per operator directive to
+  treat every service as fully built, removed the `Status: scaffold` blockquote
+  from 11 READMEs and stripped the `docs/` referral + not-yet-built framing
+  (`(once it exists)`, `generated once a design and plan exist`) from all 12.
+  `opsctl` kept its accurate `Status: active` block, minus the `docs/` pointer.
+- **Dead `design-bible.html` source-of-truth pointer** repointed: 11 service
+  `tokens.css` copies → `design/tokens.css`; dead clauses dropped from
+  `design/carbon.md` and `design/tokens.css` (that folder is the source).
+- **appkit manifest on-box path** corrected to `/opt/<app>/etc/current/manifest.env`
+  (the retired sibling path); committed source-tree `etc/manifest.env` refs left.
+- **project registry non-goal deleted** — `registry/` is built/adopted/deployed,
+  so the "no designed-but-unbuilt service registry" bullet is overtaken.
+- **opsctl rollback usage strings** → `<app> [-N]` (explicit version is rejected
+  by the code; recovery is `-N` snapshot recency).
+- **eventplane** dead `ikigai/` codename → mono-repo/root `go.work`; the "binary
+  `restore` verb"/`bin/restore` wording corrected to the real trigger
+  (`opsctl restore`/`opsctl rollback` clearing the `*.generation` sidecar).
+- **nginx** dead `~/projects/nginx` path, obsolete "Phase 2b" phrasing, and the
+  incomplete Map (added `/_session-authn`) fixed; `run`'s hardcoded service list
+  deferred as registry-adoption work.
+- **bin** findings confirmed **moot** (already resolved by the `docs/archive`
+  deletion and the migration-script purge) — report-only update, no code change.
+
 ## What is NOT done
 
-- **Most per-folder findings are still open** — the batch above covered the two
-  named migrations' loose ends plus the greenlit `notes/` / verb-set / bin
-  fixes. Unmarked bullets (contradictory `Status: scaffold` READMEs, stale
+- **Many per-folder findings are still open** across `docs`, `crm`, `ledger`,
+  `dropbox`, `prompts`, `scripts`, `notify`, `webhooks`, and `dashboard`: stale
   `internal/server`/`internal/logging` package layouts, `CLAUDE.md` Consumes
   drift, stale Makefile "deploy spine" comments, the `bin/teardown` flat-layout
   scripts, remaining scripts `notes/` refs in `product.md`/`D05.md`/`loops/`/
-  `main.go`, etc.) are still valid work.
+  `main.go`, and the `docs/service-registry-design.md` "table lives in appkit"
+  supersession. Still valid work.
 - **registry adoption is only partial.** Only prompts/scripts/notify/sites
   import registry so far. Other services still hardcode their own port literal;
   broader adoption is separate future work, not stale info to scrub.
