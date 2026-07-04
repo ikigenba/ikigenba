@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 
 	"appkit"
 	"appkit/manifest"
+	"registry"
 )
 
 // R-8DF1-W89F
@@ -57,6 +59,73 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
+	}
+}
+
+// R-7K2P-QN4D
+func TestSitesSpecUsesRegistryPort(t *testing.T) {
+	if got, want := sitesSpec().Port, registry.MustPort("sites"); got != want {
+		t.Fatalf("sitesSpec().Port = %d, want registry.MustPort(%q) = %d", got, "sites", want)
+	}
+}
+
+// R-7L9F-XW3H
+func TestGoSourcesUseRegistryForLoopbackPorts(t *testing.T) {
+	root := filepath.Join("..", "..")
+	standalonePort := regexp.MustCompile(`(^|[^A-Za-z0-9_])3004([^A-Za-z0-9_]|$)`)
+	var offenders []string
+
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		text := string(content)
+		if strings.Contains(text, "127.0.0.1:30") || standalonePort.MatchString(text) {
+			rel, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				rel = path
+			}
+			offenders = append(offenders, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk Go sources under module root: %v", err)
+	}
+	if len(offenders) > 0 {
+		t.Fatalf("Go sources still contain hardcoded sites loopback port literals: %s", strings.Join(offenders, ", "))
+	}
+}
+
+// R-7M4C-BV8J
+func TestDropboxRegistryBaseURL(t *testing.T) {
+	if got, want := registry.BaseURL("dropbox"), "http://127.0.0.1:3200"; got != want {
+		t.Fatalf("registry.BaseURL(%q) = %q, want %q", "dropbox", got, want)
+	}
+}
+
+// R-7N6R-TZ2Q
+func TestGoModRequiresAndReplacesRegistry(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	text := string(content)
+	requireRegistry := regexp.MustCompile(`(?m)^\s*registry\s+v0\.0\.0\s*$`)
+	replaceRegistry := regexp.MustCompile(`(?m)^replace\s+registry\s+=>\s+\.\./registry\s*$`)
+	if !requireRegistry.MatchString(text) {
+		t.Fatalf("go.mod is missing require registry v0.0.0")
+	}
+	if !replaceRegistry.MatchString(text) {
+		t.Fatalf("go.mod is missing replace registry => ../registry")
 	}
 }
 
