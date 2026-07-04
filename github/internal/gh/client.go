@@ -28,6 +28,44 @@ type Client struct {
 	http *http.Client
 }
 
+// Config is the GitHub App configuration needed to build a client.
+type Config struct {
+	AppID      string
+	Org        string
+	PrivateKey string
+}
+
+// ConfigFromEnv reads the GitHub App configuration from the supplied getenv.
+func ConfigFromEnv(getenv func(string) string) Config {
+	org := getenv("IKIGENBA_GITHUB_ORG")
+	if org == "" {
+		org = "ikigenba"
+	}
+	return Config{
+		AppID:      getenv("IKIGENBA_APP_ID"),
+		Org:        org,
+		PrivateKey: getenv("IKIGENBA_APP_PRIVATE_KEY"),
+	}
+}
+
+// NewClient builds a GitHub REST client backed by a GitHub App token source.
+func NewClient(cfg Config, httpClient *http.Client) (*Client, error) {
+	key, err := parseAppPrivateKey(cfg.PrivateKey)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Org == "" {
+		cfg.Org = "ikigenba"
+	}
+	ts := &tokenSource{
+		appID:      cfg.AppID,
+		org:        cfg.Org,
+		signer:     key,
+		httpClient: httpClient,
+	}
+	return &Client{org: cfg.Org, ts: ts, http: httpClient}, nil
+}
+
 // Repo is the repository shape exposed by the tool surface.
 type Repo struct {
 	Name          string `json:"name"`
