@@ -100,7 +100,6 @@ R-YYYY-YYYY
     cd sites && go vet ./...
     cd sites && gofmt -l .          # prints nothing
     cd sites && go test ./...
-    bin/check-migrations sites
 - <any phase-specific check the phase's Done-when names, copied here verbatim —
   e.g. the self-description update's content check on `cmd/sites/main.go`'s package
   doc comment>

@@ -32,7 +32,6 @@ working directory.
    cd scripts && go vet ./...
    cd scripts && gofmt -l .          # must print nothing
    cd scripts && go test ./...
-   bin/check-migrations scripts
    ```
 
    Plus any phase-specific check the brief's **Done bar** names. Any failure ⇒

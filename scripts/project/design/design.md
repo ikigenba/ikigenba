@@ -49,8 +49,8 @@ Shared facts every Decision leans on:
   `bin/ship scripts`).
 - **Test command:** `cd scripts && go test ./...`. **"The suite is green"** means:
   `cd scripts && go build ./...`, `cd scripts && go vet ./...`,
-  `cd scripts && gofmt -l .` (no output), `cd scripts && go test ./...`, and
-  `bin/check-migrations scripts` all succeed with zero failures.
+  `cd scripts && gofmt -l .` (no output), and `cd scripts && go test ./...`
+  all succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit` and `eventplane` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,

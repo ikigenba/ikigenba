@@ -41,7 +41,7 @@ history of how it got here lives in the plan, not here.
   injected clock.
 - **DB / migrations:** schema lives in `internal/db/migrations/` as ordered,
   immutable SQL applied forward-only by the appkit runner. New migrations are
-  created with `bin/new-migration webhooks <name>` (timestamped); numbers are
+  created with `bin/create-migration webhooks <name>` (timestamped); numbers are
   never hand-picked and committed migrations are never edited.
 - **Loopback port:** `3006` (first free port; verified against all
   `*/etc/manifest.env`).

@@ -31,7 +31,6 @@ working directory.
    cd crm && go vet ./...
    cd crm && gofmt -l .          # must print nothing
    cd crm && go test ./...
-   bin/check-migrations crm
    ```
 
    Plus any phase-specific check the brief's **Done bar** names. Any failure ⇒

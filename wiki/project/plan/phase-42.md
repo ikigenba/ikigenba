@@ -6,7 +6,7 @@ The wiki gains the durable forward-routing record a merge leaves behind, and a s
 
 In `internal/wiki`:
 
-- A new timestamped migration creates the `aliases` table — `norm_name TEXT NOT NULL UNIQUE`, `subject_id TEXT NOT NULL REFERENCES subjects(id) ON DELETE RESTRICT` (the schema's **first** foreign key — deliberate, per D25), `name`, `created_by`, `created_at` (RFC3339Nano), plus the `aliases_subject` index. Authored via `bin/new-migration wiki create_aliases`.
+- A new timestamped migration creates the `aliases` table — `norm_name TEXT NOT NULL UNIQUE`, `subject_id TEXT NOT NULL REFERENCES subjects(id) ON DELETE RESTRICT` (the schema's **first** foreign key — deliberate, per D25), `name`, `created_by`, `created_at` (RFC3339Nano), plus the `aliases_subject` index. Authored via `bin/create-migration wiki create_aliases`.
 - `AliasStore` (constructed over the `sqlStore` handle like the other stores) with `Insert`, `RepointSubject(from, to)`, and `GetByNormName`.
 - A `Resolver` (`NewResolver(db)`) whose `ResolveByName(ctx, name)` is **subjects-first, then a single alias hop**: live subject → return it; else alias → load the survivor via `Get(subject_id)`; else `ErrSubjectNotFound`. Single-hop is correct by construction (the FK + the merge's eager repoint guarantee every alias names a live, non-aliased survivor) — no chain-following, no cycle logic.
 

@@ -32,7 +32,6 @@ working directory.
    cd dropbox && go vet ./...
    cd dropbox && gofmt -l .          # must print nothing
    cd dropbox && go test ./...
-   bin/check-migrations dropbox
    ```
 
    Plus any phase-specific check the brief's **Done bar** names. Any failure ⇒

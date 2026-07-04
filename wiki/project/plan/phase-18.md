@@ -23,7 +23,7 @@ drop, so the commit path never references a table that no longer exists.
   - The `search default/cap` config knobs leave `wiki.Config`, and their
     `ManifestExtras` entries leave `cmd/wiki/main.go`.
 - `internal/db/migrations`: a new forward migration created via
-  `bin/new-migration wiki drop_pages_fts` issues `DROP TABLE pages_fts;`. The
+  `bin/create-migration wiki drop_pages_fts` issues `DROP TABLE pages_fts;`. The
   original `CREATE VIRTUAL TABLE pages_fts` migration is unchanged.
 - Tests that referenced `pages_fts` or `PageStore.Search` (the `internal/db` and
   `internal/wiki` page-search/FTS-sync tests) are removed or rewritten to the

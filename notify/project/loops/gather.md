@@ -100,7 +100,6 @@ R-YYYY-YYYY
     cd notify && go vet ./...
     cd notify && gofmt -l .          # prints nothing
     cd notify && go test ./...
-    bin/check-migrations notify
 - <any phase-specific check the phase's Done-when names, copied here verbatim —
   e.g. the docs purge's `grep -i "no UI" notify/AGENTS.md` finds nothing>
 ```

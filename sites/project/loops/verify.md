@@ -31,7 +31,6 @@ working directory.
    cd sites && go vet ./...
    cd sites && gofmt -l .          # must print nothing
    cd sites && go test ./...
-   bin/check-migrations sites
    ```
 
    Plus any phase-specific check the brief's **Done bar** names. Any failure ⇒

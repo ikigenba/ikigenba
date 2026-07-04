@@ -19,7 +19,7 @@ the corrected closed set, plus the regression guard the original migration lacke
 **End state.**
 
 - `internal/db/migrations/<ts>_widen_llm_calls_stage.sql` — a new forward migration
-  (generated with `bin/new-migration wiki widen_llm_calls_stage`; **never** hand-name
+  (generated with `bin/create-migration wiki widen_llm_calls_stage`; **never** hand-name
   the version) that rebuilds `llm_calls` to carry
   `CHECK (stage IN ('extract','compile','ask-subject','ask-synthesis','judge'))` —
   the exact set every `CallSite` emits, with the retired `ask` label **deliberately

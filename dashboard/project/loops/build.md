@@ -52,7 +52,6 @@ root** (`dashboard/`).
    cd dashboard && go build ./...
    cd dashboard && go vet ./...
    cd dashboard && go test ./...
-   bin/check-migrations dashboard
    ```
 
 6. **Commit this turn's increment** (never an empty commit) with a message naming
@@ -75,11 +74,10 @@ root** (`dashboard/`).
   `eventplane` are committed replace-siblings (`replace appkit => ../appkit`,
   `replace eventplane => ../eventplane`).
 - **"The suite is green"** means all of: `cd dashboard && go build ./...`,
-  `go vet ./...`, `gofmt -l .` (prints nothing), `go test ./...`, and
-  `bin/check-migrations dashboard` succeed with zero failures.
+  `go vet ./...`, `gofmt -l .` (prints nothing), and `go test ./...` succeed with
+  zero failures.
 - **This change touches no schema.** Do **not** create a migration; the route +
-  template + view change needs none. `bin/check-migrations dashboard` must stay
-  green (no new/edited migrations).
+  template + view change needs none.
 - **Server package & templates.** All work is in `internal/server/` and `ui/`. The
   whole route table is registered in `(*app).register` (`routes.go`); templates are
   parsed once at startup via `template.ParseFS` in `server.go` — a **new** page

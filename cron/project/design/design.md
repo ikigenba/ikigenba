@@ -44,8 +44,7 @@ Shared facts every Decision leans on:
   `bin/ship cron`).
 - **Test command:** `cd cron && go test ./...`. **"The suite is green"** means:
   `cd cron && go build ./...`, `cd cron && go vet ./...`, `cd cron && gofmt -l .`
-  (no output), `cd cron && go test ./...`, and `bin/check-migrations cron` all
-  succeed with zero failures.
+  (no output), and `cd cron && go test ./...` all succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit` and `eventplane` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,

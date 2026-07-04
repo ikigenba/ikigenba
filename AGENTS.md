@@ -131,7 +131,7 @@ Each service owns its schema as ordered SQL files under
 and tracked individually in `schema_migrations`. Two hard rules:
 
 - **Never hand-pick a migration number, and never write one by hand.** Run
-  `bin/new-migration <service> <name>`; it stamps a UTC timestamp version
+  `bin/create-migration <service> <name>`; it stamps a UTC timestamp version
   (`YYYYMMDDHHMMSS_name.sql`). Timestamps are why two agents on two branches
   don't collide — sequential integers did, and the clash only surfaced at
   deploy. (Legacy `NNN_*.sql` files predate this and stay frozen; they sort
@@ -139,8 +139,7 @@ and tracked individually in `schema_migrations`. Two hard rules:
 - **Never modify or delete a committed migration.** Once a migration is on
   `main` it is immutable — the runner keys on its version and will silently skip
   an edited body, so the change reaches new databases but not existing ones.
-  Change schema by adding a *new* migration. `bin/check-migrations` enforces
-  both rules in CI (no duplicate versions, no edits to existing files).
+  Change schema by adding a *new* migration.
 
 ## Designing and planning work
 
@@ -158,5 +157,3 @@ Two optional document types extend the pair:
 - **`<slug>-verification.md`** — an occasional special-case doc describing a
   post-work verification step, for work that warrants explicit validation after
   it's built.
-
-See `docs/archive/adr-migration-timestamps.md`.

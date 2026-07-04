@@ -56,9 +56,8 @@ any status marker. Default to making progress; do not ask questions.
   but for the loop, correctness is proven by the green gate below, not a release
   build.
 - **The green gate — "the suite is green" means `bin/test` exits 0.** From the
-  repo root, `bin/test` runs fail-fast: (1) `bin/check-migrations`, (2) the
-  repo-root shell tests `bin/*.test.sh`, (3) `go test ./...` across every
-  workspace module.
+  repo root, `bin/test` runs fail-fast: (1) the repo-root shell tests
+  `bin/*.test.sh`, (2) `go test ./...` across every workspace module.
 - **Test placement (enforce this).** Unit tests are **co-located** with the code
   they exercise — a package-local `*_test.go` named for the behavior. Shell-tool
   behavior (`bump`, `ship`, …) is tested by its **sibling `bin/<name>.test.sh`**.

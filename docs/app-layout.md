@@ -192,5 +192,3 @@ The compliance backlog — where current code does not yet meet this schema.
 - `deploy.md` (operator deploy workflow).
 - `opsctl/project/research/deploy-nginx-fragment-research.md` (the deploy/nginx
   gap that started this).
-- Superseded: `docs/archive/adr-deployment-redesign.md`,
-  `docs/archive/versioning.md` (predate the `state/`+`cache/` split).

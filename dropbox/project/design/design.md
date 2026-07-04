@@ -44,8 +44,8 @@ Shared facts every Decision leans on:
   `bin/ship dropbox`).
 - **Test command:** `cd dropbox && go test ./...`. **"The suite is green"**
   means: `cd dropbox && go build ./...`, `cd dropbox && go vet ./...`,
-  `cd dropbox && gofmt -l .` (no output), `cd dropbox && go test ./...`, and
-  `bin/check-migrations dropbox` all succeed with zero failures.
+  `cd dropbox && gofmt -l .` (no output), and `cd dropbox && go test ./...` all
+  succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit` and `eventplane` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,

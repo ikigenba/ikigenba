@@ -60,8 +60,8 @@ working directory.
    ```
 
    Plus any phase-specific check the brief's **Done bar** names (e.g.
-   `bin/check-migrations sites`, or Phase 3's content check that the package doc
-   comment now mentions the landing page).
+   Phase 3's content check that the package doc comment now mentions the landing
+   page).
 
 5. **Commit this turn's increment** (never an empty commit) with a message naming
    the phase, and the repo trailer:
@@ -85,10 +85,9 @@ working directory.
   only.
 - **"The suite is green"** means all of: `cd sites && go build ./...`,
   `cd sites && go vet ./...`, `cd sites && gofmt -l .` (prints nothing),
-  `cd sites && go test ./...`, and `bin/check-migrations sites` succeed with zero
-  failures.
+  and `cd sites && go test ./...` succeed with zero failures.
 - **No schema change for the landing page.** It touches no SQLite and adds **no**
-  migration. (Never hand-author a migration version anyway — `bin/new-migration
+  migration. (Never hand-author a migration version anyway — `bin/create-migration
   sites <name>` — but this work needs none.)
 - **Determinism / seams:** the landing handler is pure over its two string inputs
   (`service`, `version`), injected at the composition root from

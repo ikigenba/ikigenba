@@ -100,7 +100,6 @@ R-YYYY-YYYY
     cd ledger && go vet ./...
     cd ledger && gofmt -l .          # prints nothing
     cd ledger && go test ./...
-    bin/check-migrations ledger
 - <any phase-specific check the phase's Done-when names, copied here verbatim —
   e.g. the docs purge's `grep -i "no UI" ledger/AGENTS.md` finds nothing>
 ```

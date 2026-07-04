@@ -137,8 +137,7 @@ authoritative reference for this. Use crm/ledger.
 
 References: `eventplane/outbox/outbox.go` (Append/Ring/New), `.../feed.go`
 (envelope), `.../cursor.go`, `.../schema.go`; `crm/internal/crm/service.go`,
-`.../events.go`; `appkit/feed/feed.go`; `docs/archive/event-protocol.md`
-(§4 producer, §8 wire, §9 cursor, §11 delivery/retention).
+`.../events.go`; `appkit/feed/feed.go`.
 
 ---
 
@@ -165,7 +164,7 @@ on SIGTERM.
 cmd/webhooks/main.go                    # Spec{} + appkit.Main
 internal/db/db.go                       # //go:embed migrations/*.sql; FS + test helpers
 internal/db/migrations/001_schema_migrations.sql   # appkit-shared tracking table (copy)
-internal/db/migrations/0002…_webhooks.sql          # domain schema (timestamped; bin/new-migration)
+internal/db/migrations/0002…_webhooks.sql          # domain schema (timestamped; bin/create-migration)
 internal/db/migrations/0003…_outbox.sql            # outbox table (copy crm's; producer)
 internal/webhooks/service.go            # domain + secret/name logic, Outbox field
 internal/webhooks/events.go             # event registry + payload builder
@@ -177,7 +176,7 @@ go.mod                                  # replace appkit=>../appkit, eventplane=
 Makefile, VERSION (0.1.0), .gitignore, .envrc (only if secrets)
 ```
 Note: legacy `001_*` integer prefixes coexist with new timestamped migrations;
-use `bin/new-migration webhooks <name>` for new ones (never hand-pick numbers).
+use `bin/create-migration webhooks <name>` for new ones (never hand-pick numbers).
 `001_schema_migrations.sql` is copied verbatim from an existing service.
 
 References: `appkit/appkit.go`, `appkit/verbs.go`, `appkit/config/config.go`,
@@ -286,7 +285,7 @@ stamped) → on box `opsctl setup webhooks` (first time) → `opsctl stage` →
 `opsctl deploy`. Reference scaffold commit: gmail's "P1 scaffold" (`a203b6d`).
 
 References: `bin/start`, `bin/stop`, `nginx/run`, `bin/registry`, `bin/ship`,
-`bin/bump`, `bin/new-migration`, `opsctl/internal/opsctl/{setup,layout,templates}.go`,
+`bin/bump`, `bin/create-migration`, `opsctl/internal/opsctl/{setup,layout,templates}.go`,
 `appkit/inventory/inventory.go`, `go.work`.
 
 ---

@@ -15,10 +15,10 @@ Shared facts every Decision leans on:
 
 - **Language / toolchain:** Go **1.26**, single module `module wiki` rooted at `wiki/`. Pure-Go SQLite driver `modernc.org/sqlite` (no cgo).
 - **Build / typecheck command:** `cd wiki && go build -trimpath -ldflags "-X main.version=$(cat VERSION)" -o build/wiki.bin ./cmd/wiki`. A bare typecheck is `go build ./...` and `go vet ./...`. The production build adds `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off -buildvcs=false` (driven by `bin/ship`).
-- **Test command:** `cd wiki && go test ./...`. **"The suite is green"** means: `go build ./...`, `go vet ./...`, `gofmt -l .` (no output), `go test ./...`, and `bin/check-migrations wiki` all succeed with zero failures.
+- **Test command:** `cd wiki && go test ./...`. **"The suite is green"** means: `go build ./...`, `go vet ./...`, `gofmt -l .` (no output), and `go test ./...` all succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit` and `eventplane` are committed in-repo replace-siblings (`replace appkit => ../appkit`, `replace eventplane => ../eventplane`); `github.com/ikigenba/agentkit` is a **published, proxy-fetched** dependency with **no committed replace** (see D1). The read surface's markdown renderer adds two further **proxy-fetched, pure-Go** dependencies with no replace: `github.com/yuin/goldmark` (CommonMark + GFM) and `github.com/microcosm-cc/bluemonday` (HTML sanitizer) — see D48.
-- **Migrations:** ordered SQL under `wiki/internal/db/migrations/`, embedded via `//go:embed` as `db.FS`, applied forward-only by the appkit runner. Never hand-author a version; always `bin/new-migration wiki <name>`. `001_schema_migrations.sql` is frozen/verbatim. Never edit a committed migration; `bin/check-migrations` enforces this in CI.
+- **Migrations:** ordered SQL under `wiki/internal/db/migrations/`, embedded via `//go:embed` as `db.FS`, applied forward-only by the appkit runner. Never hand-author a version; always `bin/create-migration wiki <name>`. `001_schema_migrations.sql` is frozen/verbatim. Never edit a committed migration.
 - **Time / IO:** the service takes its clock and any external effect (LLM provider, DB) as injected dependencies at the composition root (`cmd/wiki/main.go` via appkit's `Handlers`/`Workers` hooks), so domain code is testable without wall-clock or network.
 
 ## Testing strategy

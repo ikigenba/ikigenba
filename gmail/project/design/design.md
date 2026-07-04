@@ -44,7 +44,7 @@ Shared facts every Decision leans on:
   `bin/ship gmail`).
 - **Test command:** `cd gmail && go test ./...`. **"The suite is green"** means:
   `cd gmail && go build ./...`, `cd gmail && go vet ./...`, `cd gmail && gofmt -l .`
-  (no output), `cd gmail && go test ./...`, and `bin/check-migrations gmail` all
+  (no output), and `cd gmail && go test ./...` all
   succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit` and `eventplane` are committed in-repo

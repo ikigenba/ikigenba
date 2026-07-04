@@ -42,8 +42,7 @@ All paths below are relative to the repository root (your working directory).
    cd prompts && go test ./...
    ```
 
-   Plus any phase-specific check the brief's **Done bar** names (e.g.
-   `bin/check-migrations prompts` once migrations exist in the phase).
+   Plus any phase-specific check the brief's **Done bar** names.
 
 5. **Commit this turn's increment** (never an empty commit) with a message naming
    the phase, and the repo trailer:
@@ -66,11 +65,11 @@ All paths below are relative to the repository root (your working directory).
   by Phase 06).
 - **"The suite is green"** means all of: `cd prompts && go build ./...`,
   `cd prompts && go vet ./...`, `cd prompts && gofmt -l .` (prints nothing),
-  `cd prompts && go test ./...`, and `bin/check-migrations prompts` succeed with
+  and `cd prompts && go test ./...` succeed with
   zero failures.
 - **Migrations:** ordered SQL under `prompts/internal/db/migrations/`. **Never
   hand-author a version number** — create one with
-  `bin/new-migration prompts <name>`. Never edit a committed migration.
+  `bin/create-migration prompts <name>`. Never edit a committed migration.
 - **Test seams:** `validateConfig` accepts `getenv func(string) string` so tests
   inject a fake environment without touching process env vars. `Runner` has
   injectable `buildProvider func(prompt.Config, func(string) string) (agentkit.Provider, error)`

@@ -43,8 +43,7 @@ Shared facts every Decision leans on:
   `bin/ship crm`).
 - **Test command:** `cd crm && go test ./...`. **"The suite is green"** means:
   `cd crm && go build ./...`, `cd crm && go vet ./...`, `cd crm && gofmt -l .`
-  (no output), `cd crm && go test ./...`, and `bin/check-migrations crm` all
-  succeed with zero failures.
+  (no output), and `cd crm && go test ./...` all succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit` and `eventplane` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,

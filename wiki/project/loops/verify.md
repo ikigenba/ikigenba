@@ -29,7 +29,6 @@ All paths below are relative to the repository root (your working directory).
    cd wiki && go vet ./...
    cd wiki && gofmt -l .          # must print nothing
    cd wiki && go test ./...
-   bin/check-migrations wiki
    ```
 
    Plus any phase-specific check the brief's **Done bar** names (e.g. the

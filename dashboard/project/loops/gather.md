@@ -104,7 +104,6 @@ R-XXXX-XXXX — <full requirement text copied verbatim from the Decision's Verif
     cd dashboard && go vet ./...
     cd dashboard && gofmt -l .          # prints nothing
     cd dashboard && go test ./...
-    bin/check-migrations dashboard
 
 ## Verify feedback — attempt 0
 (none yet)

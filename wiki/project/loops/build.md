@@ -47,8 +47,7 @@ All paths below are relative to the repository root (your working directory).
    ```
 
    Plus any phase-specific check the brief's **Done bar** names (e.g. the
-   production-shaped build, or `bin/check-migrations wiki` once migrations
-   exist).
+   production-shaped build).
 
 5. **Commit this turn's increment** (never an empty commit) with a message naming
    the phase, and the repo trailer:
@@ -71,11 +70,10 @@ All paths below are relative to the repository root (your working directory).
   dependency with no `replace` in `wiki/go.mod`.
 - **"The suite is green"** means all of: `cd wiki && go build ./...`,
   `cd wiki && go vet ./...`, `cd wiki && gofmt -l .` (prints nothing),
-  `cd wiki && go test ./...`, and `bin/check-migrations wiki` succeed with zero
-  failures.
+  and `cd wiki && go test ./...` succeed with zero failures.
 - **Migrations:** ordered SQL under `wiki/internal/db/migrations/`, embedded via
   `//go:embed` as `db.FS`. **Never hand-author a version number** — create one
-  with `bin/new-migration wiki <name>`. Never edit a committed migration.
+  with `bin/create-migration wiki <name>`. Never edit a committed migration.
 - **Determinism / seams:** the clock and every external effect (LLM provider, DB)
   are injected at the composition root (`cmd/wiki/main.go`), so domain code is
   tested with a fixed clock and no network. **The LLM is always mocked in tests**

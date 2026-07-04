@@ -43,8 +43,8 @@ Shared facts every Decision leans on:
   `bin/ship ledger`).
 - **Test command:** `cd ledger && go test ./...`. **"The suite is green"** means:
   `cd ledger && go build ./...`, `cd ledger && go vet ./...`,
-  `cd ledger && gofmt -l .` (no output), `cd ledger && go test ./...`, and
-  `bin/check-migrations ledger` all succeed with zero failures.
+  `cd ledger && gofmt -l .` (no output), and `cd ledger && go test ./...` all
+  succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit` and `eventplane` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,

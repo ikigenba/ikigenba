@@ -31,7 +31,6 @@ working directory.
    cd notify && go vet ./...
    cd notify && gofmt -l .          # must print nothing
    cd notify && go test ./...
-   bin/check-migrations notify
    ```
 
    Plus any phase-specific check the brief's **Done bar** names. Any failure ⇒

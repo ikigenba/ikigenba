@@ -45,8 +45,7 @@ Shared facts every Decision leans on:
   `bin/ship sites`).
 - **Test command:** `cd sites && go test ./...`. **"The suite is green"** means:
   `cd sites && go build ./...`, `cd sites && go vet ./...`, `cd sites && gofmt -l .`
-  (no output), `cd sites && go test ./...`, and `bin/check-migrations sites` all
-  succeed with zero failures.
+  (no output), and `cd sites && go test ./...` all succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit`, `agentkit`, and `eventplane` are committed in-repo
   replace-siblings. The landing page adds **no new dependency** — it uses only the

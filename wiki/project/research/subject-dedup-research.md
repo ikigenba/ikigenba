@@ -140,7 +140,7 @@ Compares are CPU-microseconds; each surviving pair is one network LLM round-trip
 
 ### BLOCKER prerequisite (must be the feature's first phase)
 
-`llm_calls.stage` has `CHECK (stage IN ('extract','compile','ask'))` (`20260622071935_llm_calls.sql:8`, confirmed). The production recorder is wired (`cmd/wiki/main.go:55`), so a `stage='dedup_judge'` INSERT **fails the CHECK loudly** on every judge call. Ship a timestamped migration (`bin/new-migration wiki widen_llm_calls_stage`) widening the CHECK to include `'dedup_judge'` before any judge runs.
+`llm_calls.stage` has `CHECK (stage IN ('extract','compile','ask'))` (`20260622071935_llm_calls.sql:8`, confirmed). The production recorder is wired (`cmd/wiki/main.go:55`), so a `stage='dedup_judge'` INSERT **fails the CHECK loudly** on every judge call. Ship a timestamped migration (`bin/create-migration wiki widen_llm_calls_stage`) widening the CHECK to include `'dedup_judge'` before any judge runs.
 
 ### Steady-state vs backfill execution modes
 
@@ -251,7 +251,7 @@ The race mitigation rests entirely on merges executing on the *same single gorou
 
 The **delete-loser-before-alias-insert order is load-bearing**: `subjects.norm_name` UNIQUE and `aliases.norm_name` UNIQUE share the same value; inserting the alias first is a UNIQUE violation. (Net-new store methods to size in the plan: `SubjectStore.Delete`, `ClaimStore.RepointSubject`, and the entire `AliasStore` — `Insert`/`RepointSubject`/`GetByNormName`.)
 
-### The aliases schema (one timestamped migration: `bin/new-migration wiki create_aliases`)
+### The aliases schema (one timestamped migration: `bin/create-migration wiki create_aliases`)
 
 No FOREIGN KEY; UNIQUE/CHECK only; TEXT ULID-friendly ids; closed-set fields validated in Go:
 

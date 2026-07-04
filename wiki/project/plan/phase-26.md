@@ -12,7 +12,7 @@ Make every unbounded listing return a bounded page plus an opaque cursor, with f
   - `SubjectStore.List(ctx, typ, nameContains, page.Params)` — **reshaped** to paginated; order `name, id`.
   - `ClaimStore.ListBySubject(ctx, subjectID, page.Params)` — **reshaped**; order `id`.
   - `LLMCallStore.List(ctx, LLMCallFilter{JobID, Stage, Since, Until}, page.Params)` — order `started_at, id`.
-- A new migration (`bin/new-migration wiki`) adds the `subjects (name, id)` index backing the subjects ordering; the `jobs_pending_received`, `claims_subject`, and Phase-24 `llm_calls_*` indexes back the others.
+- A new migration (`bin/create-migration wiki`) adds the `subjects (name, id)` index backing the subjects ordering; the `jobs_pending_received`, `claims_subject`, and Phase-24 `llm_calls_*` indexes back the others.
 - The `Service` wrappers and the existing composition-root MCP adapters are updated just enough to **keep the suite green** under the reshaped `SubjectStore.List` / `ClaimStore.ListBySubject` signatures; the real `{items, next_cursor}` MCP envelopes and the new list verbs land in Phase 27 (until then those verbs may serve the first page).
 
 **Done when:**

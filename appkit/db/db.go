@@ -13,7 +13,7 @@
 //
 //   - New migrations use a generated 14-digit UTC timestamp,
 //     YYYYMMDDHHMMSS_name.sql (e.g. 20260607143022_add_widgets.sql), produced by
-//     bin/new-migration — never hand-picked. Timestamps make cross-branch
+//     bin/create-migration — never hand-picked. Timestamps make cross-branch
 //     collisions astronomically unlikely.
 //   - Legacy migrations use a hand-picked sequential integer, NNN_name.sql
 //     (001_…, 002_…). These are frozen: never renumbered, never edited.

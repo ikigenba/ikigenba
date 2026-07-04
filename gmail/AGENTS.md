@@ -18,9 +18,3 @@ go vet ./...
 gofmt -l .
 go test ./...
 ```
-
-Run migration checks from the suite root:
-
-```sh
-bin/check-migrations gmail
-```

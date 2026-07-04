@@ -60,9 +60,8 @@ working directory.
    cd scripts && go test ./...
    ```
 
-   Plus any phase-specific check the brief's **Done bar** names (e.g.
-   `bin/check-migrations scripts`, or the docs phase's
-   `grep -i "no UI" scripts/project/notes/*.md` finding nothing).
+   Plus any phase-specific check the brief's **Done bar** names (e.g. the docs
+   phase's `grep -i "no UI" scripts/project/notes/*.md` finding nothing).
 
 5. **Commit this turn's increment** (never an empty commit) with a message naming
    the phase, and the repo trailer:
@@ -85,11 +84,10 @@ working directory.
   standard library (`net/http`, `embed`, `html/template`) + the appkit chassis
   only.
 - **"The suite is green"** means all of: `cd scripts && go build ./...`,
-  `cd scripts && go vet ./...`, `cd scripts && gofmt -l .` (prints nothing),
-  `cd scripts && go test ./...`, and `bin/check-migrations scripts` succeed with
-  zero failures.
+  `cd scripts && go vet ./...`, `cd scripts && gofmt -l .` (prints nothing), and
+  `cd scripts && go test ./...` succeed with zero failures.
 - **No schema change for the landing page.** It touches no SQLite and adds **no**
-  migration. (Never hand-author a migration version anyway — `bin/new-migration
+  migration. (Never hand-author a migration version anyway — `bin/create-migration
   scripts <name>` — but this work needs none.)
 - **Determinism / seams:** the landing handler is pure over its two string inputs
   (`service`, `version`), injected at the composition root from

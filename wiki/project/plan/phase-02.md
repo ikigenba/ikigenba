@@ -13,7 +13,7 @@ every later stage has a real, constraint-enforcing persistence seam to build on.
   `CHECK(subjects.type IN ('entity','event','concept'))`, and
   `CHECK(length(pages.body) <= 12000)`, plus the documented (comment-only, no
   `FOREIGN KEY`) relationships and the `jobs_status`/`claims_subject`/`claims_job`
-  indexes. Migrations are created with `bin/new-migration wiki <name>` (never a
+  indexes. Migrations are created with `bin/create-migration wiki <name>` (never a
   hand-authored version), embedded via `//go:embed` as `db.FS`, and applied by
   the appkit runner.
 - `internal/wiki/`: the domain types (`Subject`, `Claim`, `Page`, `Job`), the

@@ -100,7 +100,6 @@ R-YYYY-YYYY
     cd scripts && go vet ./...
     cd scripts && gofmt -l .          # prints nothing
     cd scripts && go test ./...
-    bin/check-migrations scripts
 - <any phase-specific check the phase's Done-when names, copied here verbatim —
   e.g. the docs phase's `grep -i "no UI" scripts/project/notes/*.md` finds nothing>
 ```

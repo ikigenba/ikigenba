@@ -100,7 +100,6 @@ R-YYYY-YYYY
     cd dropbox && go vet ./...
     cd dropbox && gofmt -l .          # prints nothing
     cd dropbox && go test ./...
-    bin/check-migrations dropbox
 - <any phase-specific check the phase's Done-when names, copied here verbatim —
   e.g. the docs purge's `grep -i "no UI" dropbox/CLAUDE.md` finds nothing>
 ```

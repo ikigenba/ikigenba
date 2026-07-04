@@ -35,8 +35,8 @@ Shared facts every Decision leans on:
   mode locally). A release artifact is built static for `linux/amd64` with
   `GOWORK=off`.
 - **Test command — the green gate.** `bin/test` from the repo root. It runs, fail-fast:
-  (1) `bin/check-migrations`, (2) the repo-root shell tests `bin/*.test.sh`,
-  (3) `go test ./...` across every workspace module. **"The suite is green"
+  (1) the repo-root shell tests `bin/*.test.sh`, (2) `go test ./...` across
+  every workspace module. **"The suite is green"
   means `bin/test` exits 0.** Shell tooling (`bump`, `ship`) is tested by a
   sibling `bin/<name>.test.sh`; opsctl/appkit behavior is tested by `go test`.
 - **New dependency.** `golang.org/x/mod/semver` (added to `opsctl/go.mod`) is the

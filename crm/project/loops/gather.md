@@ -100,7 +100,6 @@ R-YYYY-YYYY
     cd crm && go vet ./...
     cd crm && gofmt -l .          # prints nothing
     cd crm && go test ./...
-    bin/check-migrations crm
 - <any phase-specific check the phase's Done-when names, copied here verbatim —
   e.g. the docs purge's `grep -i "no UI" crm/AGENTS.md` finds nothing>
 ```

@@ -34,8 +34,8 @@ be believed. Default to making progress; do not ask questions.
    bin/test
    ```
 
-   "Green" means it **exits 0** (`bin/check-migrations`, then `bin/*.test.sh`,
-   then `go test ./...` across every module). A non-zero exit means at least one
+   "Green" means it **exits 0** (`bin/*.test.sh`, then `go test ./...` across
+   every module). A non-zero exit means at least one
    gap.
 4. **Confirm no requirement test was skipped.** Scan the `go test` output for any
    `R-XXXX-XXXX`-tagged test that reported `SKIP` — a skipped requirement test

@@ -60,8 +60,7 @@ working directory.
    ```
 
    Plus any phase-specific check the brief's **Done bar** names (e.g.
-   `bin/check-migrations gmail`, or the docs purge's `grep -i "no UI" gmail/AGENTS.md`
-   finding nothing).
+   the docs purge's `grep -i "no UI" gmail/AGENTS.md` finding nothing).
 
 5. **Commit this turn's increment** (never an empty commit) with a message naming
    the phase, and the repo trailer:
@@ -84,10 +83,10 @@ working directory.
   (`net/http`, `embed`, `html/template`) + the appkit chassis only.
 - **"The suite is green"** means all of: `cd gmail && go build ./...`,
   `cd gmail && go vet ./...`, `cd gmail && gofmt -l .` (prints nothing),
-  `cd gmail && go test ./...`, and `bin/check-migrations gmail` succeed with zero
+  and `cd gmail && go test ./...` succeed with zero
   failures.
 - **No schema change for the landing page.** It touches no SQLite and adds **no**
-  migration. (Never hand-author a migration version anyway — `bin/new-migration
+  migration. (Never hand-author a migration version anyway — `bin/create-migration
   gmail <name>` — but this work needs none.)
 - **Determinism / seams:** the landing handler is pure over its two string inputs
   (`service`, `version`), injected at the composition root from

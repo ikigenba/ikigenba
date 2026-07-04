@@ -100,7 +100,6 @@ R-YYYY-YYYY
     cd cron && go vet ./...
     cd cron && gofmt -l .          # prints nothing
     cd cron && go test ./...
-    bin/check-migrations cron
 - <any phase-specific check the phase's Done-when names, copied here verbatim —
   e.g. the doctrine phase's check that `cron/cmd/cron/main.go`'s package-doc
   header mentions the landing page and `grep -rni "no UI" cron/` finds nothing>

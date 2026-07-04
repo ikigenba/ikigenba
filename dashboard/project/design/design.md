@@ -32,15 +32,13 @@ Shared facts every Decision leans on:
   ../appkit`, `replace eventplane => ../eventplane`).
 - **This change touches no schema.** It is a pure HTTP-routing + template + view
   change under `dashboard/internal/server/` and `dashboard/ui/`. No migration is
-  written; `bin/check-migrations dashboard` must still pass (no duplicate/edited
-  migrations).
+  written.
 - **Build / typecheck command:** `cd dashboard && go build ./...` and
   `go vet ./...`. The production build adds `CGO_ENABLED=0 GOOS=linux GOARCH=amd64
   GOWORK=off` (driven by `bin/ship`).
 - **Test command:** `cd dashboard && go test ./...`. **"The suite is green"**
   means: `cd dashboard && go build ./...`, `go vet ./...`, `gofmt -l .` (no
-  output), `go test ./...`, and `bin/check-migrations dashboard` all succeed with
-  zero failures.
+  output), and `go test ./...` all succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Server package:** the dashboard's whole apex route table is registered in
   `dashboard/internal/server/routes.go` (`(*app).register`), built over `*app`

@@ -22,8 +22,8 @@ Decision's Verification ids it carries.
 **Done bar.** A phase is **done** when every Verification id (`R-XXXX-XXXX`) of the
 design Decision(s) it realizes — or the explicit slice of those ids assigned to it
 — is covered by a clearly-named test, and the suite is green. "Green" is defined
-by design's *Conventions*: **`bin/test` exits 0** (`bin/check-migrations`, then the
-repo-root `bin/*.test.sh`, then `go test ./...` across every workspace module).
+by design's *Conventions*: **`bin/test` exits 0** (the repo-root `bin/*.test.sh`,
+then `go test ./...` across every workspace module).
 "Covered" is defined by each Decision's **Verification** list — the concrete
 behavior the id names, proven on the substrate that id specifies (a real
 filesystem/S3/eventplane substrate is exercised for real, never only a fake).

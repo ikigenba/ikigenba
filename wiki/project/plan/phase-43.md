@@ -6,7 +6,7 @@ A merge runs as a work item on the **same single worker goroutine** as `integrat
 
 In `internal/wiki`:
 
-- A new timestamped migration extends `jobs`: `ADD COLUMN kind TEXT NOT NULL DEFAULT 'ingest' CHECK (kind IN ('ingest','merge'))`, plus FK-free carrier columns `merge_winner_id`/`merge_loser_id` (the loser is deleted, so a FK there would block the merge). Authored via `bin/new-migration wiki merge_jobs`. A merge job reuses the `jobs` row with empty `source_text`/`sha256` and the two carriers populated.
+- A new timestamped migration extends `jobs`: `ADD COLUMN kind TEXT NOT NULL DEFAULT 'ingest' CHECK (kind IN ('ingest','merge'))`, plus FK-free carrier columns `merge_winner_id`/`merge_loser_id` (the loser is deleted, so a FK there would block the merge). Authored via `bin/create-migration wiki merge_jobs`. A merge job reuses the `jobs` row with empty `source_text`/`sha256` and the two carriers populated.
 - Net-new store methods: `SubjectStore.Delete(id)` and `ClaimStore.RepointSubject(from, to)`.
 - `mergeSubjects(ctx, job)` in three phases mirroring `integrate`: **A** resolve winner+loser by PK (`Get`, not `GetByPath`), validate both exist and differ, end `failed` with a clear reason on a stale/already-folded side; **B** union both claim sets and `Compile(ctx, winner, combined)` with **no tx held**; **C** one tx on the write handle with tx-bound stores, in strict order — repoint claims → upsert winner page → delete loser page → **repoint the loser's inbound aliases onto the winner** (before the delete, so the `ON DELETE RESTRICT` FK permits it) → delete loser subject → insert the `normalize(loser.name) → winner` alias → guarded `status='done' WHERE status='working'` → commit; any error rolls back entirely.
 

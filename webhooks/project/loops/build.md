@@ -25,7 +25,7 @@ id-tagged tests, run the suite, and commit. You **do not** decide completeness a
 3. **Build the named package(s).** Implement exactly the `files to touch` in the
    brief, consuming dependencies **only** through the brief's copied interface
    signatures. Honor the suite conventions below. For any *new* (non-bootstrap)
-   migration use `../bin/new-migration webhooks <name>` — never hand-pick a
+   migration use `../bin/create-migration webhooks <name>` — never hand-pick a
    migration number; the bootstrap trio (`001_schema_migrations.sql`,
    `002_webhooks.sql`, `003_outbox.sql`) is the one fixed integer-prefixed set.
 

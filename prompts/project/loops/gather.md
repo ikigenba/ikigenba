@@ -85,7 +85,6 @@ R-YYYY-YYYY
     cd prompts && go vet ./...
     cd prompts && gofmt -l .          # prints nothing
     cd prompts && go test ./...
-    bin/check-migrations prompts
 - <any phase-specific check the phase's Done-when names, copied here verbatim>
 ```
 

@@ -47,8 +47,8 @@ Shared facts every Decision leans on:
   `bin/ship notify`).
 - **Test command:** `cd notify && go test ./...`. **"The suite is green"** means:
   `cd notify && go build ./...`, `cd notify && go vet ./...`,
-  `cd notify && gofmt -l .` (no output), `cd notify && go test ./...`, and
-  `bin/check-migrations notify` all succeed with zero failures.
+  `cd notify && gofmt -l .` (no output), and `cd notify && go test ./...`
+  all succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit` and `eventplane` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,

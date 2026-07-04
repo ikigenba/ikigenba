@@ -59,10 +59,9 @@ working directory.
    cd cron && go test ./...
    ```
 
-   Plus any phase-specific check the brief's **Done bar** names (e.g.
-   `bin/check-migrations cron`, or the doctrine phase's check that
-   `cron/cmd/cron/main.go`'s header mentions the landing page and
-   `grep -rni "no UI" cron/` finds nothing).
+   Plus any phase-specific check the brief's **Done bar** names (e.g. the
+   doctrine phase's check that `cron/cmd/cron/main.go`'s header mentions the
+   landing page and `grep -rni "no UI" cron/` finds nothing).
 
 5. **Commit this turn's increment** (never an empty commit) with a message naming
    the phase, and the repo trailer:
@@ -85,10 +84,9 @@ working directory.
   (`net/http`, `embed`, `html/template`) + the appkit chassis only.
 - **"The suite is green"** means all of: `cd cron && go build ./...`,
   `cd cron && go vet ./...`, `cd cron && gofmt -l .` (prints nothing),
-  `cd cron && go test ./...`, and `bin/check-migrations cron` succeed with zero
-  failures.
+  and `cd cron && go test ./...` succeed with zero failures.
 - **No schema change for the landing page.** It touches no SQLite and adds **no**
-  migration. (Never hand-author a migration version anyway — `bin/new-migration
+  migration. (Never hand-author a migration version anyway — `bin/create-migration
   cron <name>` — but this work needs none.)
 - **Determinism / seams:** the landing handler is pure over its two string inputs
   (`service`, `version`), injected at the composition root from

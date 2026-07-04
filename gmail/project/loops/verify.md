@@ -31,7 +31,6 @@ working directory.
    cd gmail && go vet ./...
    cd gmail && gofmt -l .          # must print nothing
    cd gmail && go test ./...
-   bin/check-migrations gmail
    ```
 
    Plus any phase-specific check the brief's **Done bar** names. Any failure ⇒

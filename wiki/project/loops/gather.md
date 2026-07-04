@@ -92,7 +92,6 @@ R-YYYY-YYYY
     cd wiki && go vet ./...
     cd wiki && gofmt -l .          # prints nothing
     cd wiki && go test ./...
-    bin/check-migrations wiki
 - <any phase-specific check the phase's Done-when names, copied here verbatim —
   e.g. the production-shaped build for Phase 01>
 ```

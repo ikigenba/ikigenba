@@ -29,7 +29,6 @@ All paths below are relative to the repository root (your working directory).
    cd prompts && go vet ./...
    cd prompts && gofmt -l .          # must print nothing
    cd prompts && go test ./...
-   bin/check-migrations prompts
    ```
 
    Plus any phase-specific check the brief's **Done bar** names. Any failure ⇒

@@ -59,8 +59,7 @@ working directory.
    ```
 
    Plus any phase-specific check the brief's **Done bar** names (e.g.
-   `bin/check-migrations crm`, or the docs purge's `grep -i "no UI" crm/AGENTS.md`
-   finding nothing).
+   the docs purge's `grep -i "no UI" crm/AGENTS.md` finding nothing).
 
 5. **Commit this turn's increment** (never an empty commit) with a message naming
    the phase, and the repo trailer:
@@ -83,10 +82,9 @@ working directory.
   (`net/http`, `embed`, `html/template`) + the appkit chassis only.
 - **"The suite is green"** means all of: `cd crm && go build ./...`,
   `cd crm && go vet ./...`, `cd crm && gofmt -l .` (prints nothing),
-  `cd crm && go test ./...`, and `bin/check-migrations crm` succeed with zero
-  failures.
+  and `cd crm && go test ./...` succeed with zero failures.
 - **No schema change for the landing page.** It touches no SQLite and adds **no**
-  migration. (Never hand-author a migration version anyway — `bin/new-migration
+  migration. (Never hand-author a migration version anyway — `bin/create-migration
   crm <name>` — but this work needs none.)
 - **Determinism / seams:** the landing handler is pure over its two string inputs
   (`service`, `version`), injected at the composition root from

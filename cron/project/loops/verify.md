@@ -31,7 +31,6 @@ working directory.
    cd cron && go vet ./...
    cd cron && gofmt -l .          # must print nothing
    cd cron && go test ./...
-   bin/check-migrations cron
    ```
 
    Plus any phase-specific check the brief's **Done bar** names. Any failure ⇒

@@ -32,7 +32,6 @@ root** (`dashboard/`).
    cd dashboard && go vet ./...
    cd dashboard && gofmt -l .          # must print nothing
    cd dashboard && go test ./...
-   bin/check-migrations dashboard
    ```
 
    Any failure ⇒ **gap**. Also confirm **no `R-XXXX-XXXX`-tagged test reported

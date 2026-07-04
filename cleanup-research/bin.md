@@ -18,10 +18,10 @@ Both named migrations are CLEAN in `bin/`:
 - bin/test:15 — references `docs/plan-migration-timestamps.md`; now at `docs/archive/plan-migration-timestamps.md` (dead path)
 - bin/check-migrations:7 — references `docs/adr-migration-timestamps.md` (dead path; now under docs/archive/)
 - bin/check-migrations:27 — references `docs/adr-migration-timestamps.md` and `docs/plan-migration-timestamps.md` (both dead paths; now under docs/archive/)
-- bin/new-migration:13 — references `docs/adr-migration-timestamps.md` (dead path)
-- bin/new-migration:46 — references `docs/adr-migration-timestamps.md` (dead path)
-- bin/new-migration:101 — references `docs/adr-migration-timestamps.md` (dead path)
-- bin/new-migration:120 — references `docs/adr-migration-timestamps.md` (dead path)
+- bin/create-migration:13 — references `docs/adr-migration-timestamps.md` (dead path)
+- bin/create-migration:46 — references `docs/adr-migration-timestamps.md` (dead path)
+- bin/create-migration:101 — references `docs/adr-migration-timestamps.md` (dead path)
+- bin/create-migration:120 — references `docs/adr-migration-timestamps.md` (dead path)
 
 (CLAUDE.md itself points at the moved location `docs/archive/adr-migration-timestamps.md`, confirming these bin/ references are stale.)
 

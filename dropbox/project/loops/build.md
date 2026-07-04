@@ -58,9 +58,8 @@ working directory.
    cd dropbox && go test ./...
    ```
 
-   Plus any phase-specific check the brief's **Done bar** names (e.g.
-   `bin/check-migrations dropbox`, or the docs purge's
-   `grep -i "no UI" dropbox/CLAUDE.md` finding nothing).
+   Plus any phase-specific check the brief's **Done bar** names (e.g. the docs
+   purge's `grep -i "no UI" dropbox/CLAUDE.md` finding nothing).
 
 5. **Commit this turn's increment** (never an empty commit) with a message naming
    the phase, and the repo trailer:
@@ -84,10 +83,9 @@ working directory.
   only.
 - **"The suite is green"** means all of: `cd dropbox && go build ./...`,
   `cd dropbox && go vet ./...`, `cd dropbox && gofmt -l .` (prints nothing),
-  `cd dropbox && go test ./...`, and `bin/check-migrations dropbox` succeed with
-  zero failures.
+  and `cd dropbox && go test ./...` succeed with zero failures.
 - **No schema change for the landing page.** It touches no SQLite and adds **no**
-  migration. (Never hand-author a migration version anyway — `bin/new-migration
+  migration. (Never hand-author a migration version anyway — `bin/create-migration
   dropbox <name>` — but this work needs none.)
 - **Determinism / seams:** the landing handler is pure over its two string inputs
   (`service`, `version`), injected at the composition root from

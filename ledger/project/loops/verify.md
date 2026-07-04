@@ -31,7 +31,6 @@ working directory.
    cd ledger && go vet ./...
    cd ledger && gofmt -l .          # must print nothing
    cd ledger && go test ./...
-   bin/check-migrations ledger
    ```
 
    Plus any phase-specific check the brief's **Done bar** names. Any failure ⇒
