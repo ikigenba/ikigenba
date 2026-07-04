@@ -76,7 +76,7 @@ var groups = []group{
 	{"Deploy lifecycle", []verb{
 		{"stage", "opsctl stage <app> <version> --artifact <path> [--force]"},
 		{"deploy", "opsctl deploy <app> <version>"},
-		{"rollback", "opsctl rollback <app> [version]"},
+		{"rollback", "opsctl rollback <app> [-N]"},
 		{"prune", "opsctl prune <app> [--keep <n>]"},
 		{"backup", "opsctl backup <app>|--all"},
 		{"restore", "opsctl restore <app> [snapshot-key]"},
@@ -275,7 +275,7 @@ func runRollback(ctx context.Context, root, name string, args []string) error {
 	}
 	pos := fs.Args()
 	if len(pos) < 1 || len(pos) > 2 {
-		return fmt.Errorf("usage: opsctl rollback <app> [version]")
+		return fmt.Errorf("usage: opsctl rollback <app> [-N]")
 	}
 	target := ""
 	if len(pos) == 2 {
