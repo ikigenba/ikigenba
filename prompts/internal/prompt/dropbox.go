@@ -25,13 +25,13 @@ type ContentFetcher interface {
 // httpFetcher fetches over loopback HTTP from dropbox's read-only GET /content
 // route (the loopback twin of the MCP get tool — streamed, un-base64'd, uncapped).
 type httpFetcher struct {
-	base string       // DROPBOX_BASE_URL, e.g. http://127.0.0.1:3200
+	base string       // DROPBOX_BASE_URL, defaulted by main from the shared registry
 	hc   *http.Client // shared client
 }
 
 // NewHTTPFetcher builds a ContentFetcher that fetches from <base>/content. base
-// is DROPBOX_BASE_URL (default http://127.0.0.1:3200), read at main's composition
-// root.
+// is DROPBOX_BASE_URL (defaulted from the shared registry), read at main's
+// composition root.
 func NewHTTPFetcher(base string) ContentFetcher {
 	return &httpFetcher{base: base, hc: http.DefaultClient}
 }

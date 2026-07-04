@@ -45,6 +45,8 @@ import (
 	"prompts/internal/runner"
 	"prompts/internal/sandbox"
 	"prompts/internal/web"
+
+	"registry"
 )
 
 // consumerID is the stable id prompts presents on every consumer connect
@@ -54,22 +56,21 @@ const consumerID = "prompts"
 // sources is the resolved upstream producers prompts consumes (A11).
 // CONSUMES=cron,crm,ledger,dropbox,scripts,prompts in etc/manifest.env mirrors
 // this for the registry. The final "prompts" entry is self-chaining (A12): a
-// consumer loop pointed at prompts' OWN /feed (PROMPTS_PROMPTS_FEED_URL default
-// http://127.0.0.1:3002/feed) so a prompt can fire on another prompt's
+// consumer loop pointed at prompts' OWN /feed (PROMPTS_PROMPTS_FEED_URL defaults
+// through the shared registry) so a prompt can fire on another prompt's
 // run.succeeded/run.failed.
 var sources = []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts"}
 
-// feedDefaults is each upstream's loopback dev fallback (A11). The event plane
-// bypasses nginx, so these are direct 127.0.0.1 addresses; production composes
-// the real PROMPTS_<SRC>_FEED_URL via env.
-var feedDefaults = map[string]string{
-	"cron":    "http://127.0.0.1:3005/feed",
-	"crm":     "http://127.0.0.1:3100/feed",
-	"ledger":  "http://127.0.0.1:3101/feed",
-	"dropbox": "http://127.0.0.1:3200/feed",
-	"scripts": "http://127.0.0.1:3003/feed",
-	"prompts": "http://127.0.0.1:3002/feed", // self-chaining: prompts' OWN /feed (A12)
-}
+// feedDefaults is each upstream's registry-sourced loopback dev fallback (A11).
+// The event plane bypasses nginx; production can still override each
+// PROMPTS_<SRC>_FEED_URL via env.
+var feedDefaults = func() map[string]string {
+	m := make(map[string]string, len(sources))
+	for _, src := range sources {
+		m[src] = registry.BaseURL(src) + "/feed"
+	}
+	return m
+}()
 
 // svcRef carries the prompt service from the Handlers hook (where appkit has
 // opened + migrated the DB and built the domain) to the consumer Worker, which
@@ -99,7 +100,7 @@ func main() {
 	appkit.Main(appkit.Spec{
 		App:   "prompts",
 		Mount: "/srv/prompts/",
-		Port:  3002,
+		Port:  registry.MustPort("prompts"),
 		MCP:   true,
 		// Multi-upstream CONSUMER: CONSUMES mirrors `sources` for the registry.
 		Consumes: sources,
@@ -232,9 +233,10 @@ func registerRoutes(rt *appkit.Router) error {
 	run := runner.New(store, sb, runTTL, manifestRoot)
 	svc := prompt.NewService(store, sb, runsDir, run)
 	// Wire the dropbox loopback content fetcher for the import verb. DROPBOX_BASE_URL
-	// is env-only (default the standard loopback layout), the same loopback-URL-via-env
-	// shape notify uses for its feed URLs. Field-injected so NewService stays unchanged.
-	dropboxBase := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", "http://127.0.0.1:3200")
+	// is env-only (defaulting through the shared registry), the same
+	// loopback-URL-via-env shape notify uses for its feed URLs. Field-injected so
+	// NewService stays unchanged.
+	dropboxBase := dropboxBaseURL(os.Getenv)
 	svc.Fetcher = prompt.NewHTTPFetcher(dropboxBase)
 	// Capture the service for the consumer Worker and the store for the Producer
 	// hook (both run after Handlers; the Producer injects the outbox onto store).
@@ -253,6 +255,10 @@ func registerRoutes(rt *appkit.Router) error {
 
 	rt.Handle("POST /mcp", rt.RequireIdentity(mcp.NewHandler(svc, rt.Version(), rt.Service(), rt.Health())))
 	return nil
+}
+
+func dropboxBaseURL(getenv func(string) string) string {
+	return config.EnvOr(getenv, "DROPBOX_BASE_URL", registry.BaseURL("dropbox"))
 }
 
 func recreateRunsDir(runsDir string) error {

@@ -36,6 +36,8 @@ import (
 	"notify/internal/mcp"
 	"notify/internal/push"
 	"notify/internal/web"
+
+	"registry"
 )
 
 // The event-plane upstreams notify consumes and the stable id it presents on
@@ -60,7 +62,7 @@ func main() {
 	appkit.Main(appkit.Spec{
 		App:      "notify",
 		Mount:    "/srv/notify/",
-		Port:     3201,
+		Port:     registry.MustPort("notify"),
 		MCP:      true,
 		Consumes: []string{crmSource, promptsSource}, // event-plane consumer → CONSUMES=crm,prompts
 		// Subscriptions is the LIVE provider the reflection tool reports (mirrors
@@ -200,10 +202,10 @@ func resolveConsumerCfg(getenv func(string) string) (consumerCfg, error) {
 		// CRM_FEED_URL is crm's loopback feed. The event plane bypasses nginx, so
 		// this is a direct 127.0.0.1 address; the dev fallback is only for
 		// `go run`/tests without env.
-		feedURL: envOr(getenv, "CRM_FEED_URL", "http://127.0.0.1:3100/feed"),
+		feedURL: envOr(getenv, "CRM_FEED_URL", registry.BaseURL("crm")+"/feed"),
 		// PROMPTS_FEED_URL is prompts's loopback feed (port 3002), same loopback-direct
 		// pattern as crm — the event plane bypasses nginx.
-		promptsFeedURL: envOr(getenv, "PROMPTS_FEED_URL", "http://127.0.0.1:3002/feed"),
+		promptsFeedURL: envOr(getenv, "PROMPTS_FEED_URL", registry.BaseURL("prompts")+"/feed"),
 		// NOTIFY_FROM is the first-subscription choice; tail by default so a fresh
 		// notify only pushes for contacts created from now on.
 		from:      envOr(getenv, "NOTIFY_FROM", "tail"),

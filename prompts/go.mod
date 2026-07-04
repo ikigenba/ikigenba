@@ -8,6 +8,7 @@ require (
 	github.com/ikigenba/agentkit v0.1.1
 	golang.org/x/mod v0.34.0
 	modernc.org/sqlite v1.50.1
+	registry v0.0.0
 )
 
 replace appkit => ../appkit
@@ -17,6 +18,8 @@ replace appkit => ../appkit
 // committed replace (a sibling source tree, never tagged) keeps the build
 // deterministic under GOWORK=off.
 replace eventplane => ../eventplane
+
+replace registry => ../registry
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect

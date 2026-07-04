@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"net"
 	"net/http"
@@ -18,6 +21,7 @@ import (
 	"time"
 
 	"appkit/manifest"
+	"registry"
 )
 
 // R-8DF1-W89F
@@ -42,7 +46,7 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		App:      "notify",
 		Mount:    "/srv/notify/",
 		Default:  false,
-		Port:     3201,
+		Port:     registry.MustPort("notify"),
 		MCP:      true,
 		Consumes: []string{"crm", "prompts"},
 	})
@@ -187,6 +191,74 @@ func TestNotifyBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	}
 }
 
+func TestResolveConsumerCfgDefaultsCRMFeedURLFromRegistry(t *testing.T) {
+	// R-RGCF-4B2L
+	cfg, err := resolveConsumerCfg(testGetenv(map[string]string{
+		"NTFY_TOPIC":   "notify-test",
+		"NTFY_API_KEY": "notify-test-token",
+	}))
+	if err != nil {
+		t.Fatalf("resolveConsumerCfg: %v", err)
+	}
+
+	want := registry.BaseURL("crm") + "/feed"
+	if cfg.feedURL != want {
+		t.Fatalf("feedURL = %q, want %q", cfg.feedURL, want)
+	}
+	if cfg.feedURL != "http://127.0.0.1:3100/feed" {
+		t.Fatalf("feedURL = %q, want registry's stable crm loopback feed", cfg.feedURL)
+	}
+}
+
+func TestResolveConsumerCfgDefaultsPromptsFeedURLFromRegistry(t *testing.T) {
+	// R-RGPF-4C3M
+	cfg, err := resolveConsumerCfg(testGetenv(map[string]string{
+		"NTFY_TOPIC":   "notify-test",
+		"NTFY_API_KEY": "notify-test-token",
+	}))
+	if err != nil {
+		t.Fatalf("resolveConsumerCfg: %v", err)
+	}
+
+	want := registry.BaseURL("prompts") + "/feed"
+	if cfg.promptsFeedURL != want {
+		t.Fatalf("promptsFeedURL = %q, want %q", cfg.promptsFeedURL, want)
+	}
+	if cfg.promptsFeedURL != "http://127.0.0.1:3002/feed" {
+		t.Fatalf("promptsFeedURL = %q, want registry's stable prompts loopback feed", cfg.promptsFeedURL)
+	}
+}
+
+func TestResolveConsumerCfgFeedURLOverridesWinOverRegistryDefaults(t *testing.T) {
+	// R-RGEO-4D4N
+	cfg, err := resolveConsumerCfg(testGetenv(map[string]string{
+		"CRM_FEED_URL":     "http://crm.example.test/custom-feed",
+		"PROMPTS_FEED_URL": "http://prompts.example.test/custom-feed",
+		"NTFY_TOPIC":       "notify-test",
+		"NTFY_API_KEY":     "notify-test-token",
+	}))
+	if err != nil {
+		t.Fatalf("resolveConsumerCfg: %v", err)
+	}
+
+	if cfg.feedURL != "http://crm.example.test/custom-feed" {
+		t.Fatalf("feedURL = %q, want CRM_FEED_URL override", cfg.feedURL)
+	}
+	if cfg.promptsFeedURL != "http://prompts.example.test/custom-feed" {
+		t.Fatalf("promptsFeedURL = %q, want PROMPTS_FEED_URL override", cfg.promptsFeedURL)
+	}
+}
+
+func TestSpecPortComesFromRegistryNotifyPort(t *testing.T) {
+	// R-RGSP-4A1K
+	if got := registry.MustPort("notify"); got != 3201 {
+		t.Fatalf("registry.MustPort(%q) = %d, want 3201", "notify", got)
+	}
+	if !specPortIsRegistryMustPort(t, filepath.Join("main.go"), "notify") {
+		t.Fatalf("appkit.Spec Port is not registry.MustPort(%q)", "notify")
+	}
+}
+
 func newIdleFeedServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -203,6 +275,71 @@ func newIdleFeedServer(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+func testGetenv(values map[string]string) func(string) string {
+	return func(key string) string {
+		return values[key]
+	}
+}
+
+func specPortIsRegistryMustPort(t *testing.T, path, service string) bool {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, nil, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+
+	found := false
+	ast.Inspect(file, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok || !selectorIs(call.Fun, "appkit", "Main") || len(call.Args) != 1 {
+			return true
+		}
+		lit, ok := call.Args[0].(*ast.CompositeLit)
+		if !ok || !selectorIs(lit.Type, "appkit", "Spec") {
+			return true
+		}
+		for _, elt := range lit.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok || identName(kv.Key) != "Port" {
+				continue
+			}
+			found = registryMustPortCall(kv.Value, service)
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+func registryMustPortCall(expr ast.Expr, service string) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok || !selectorIs(call.Fun, "registry", "MustPort") || len(call.Args) != 1 {
+		return false
+	}
+	arg, ok := call.Args[0].(*ast.BasicLit)
+	return ok && arg.Kind == token.STRING && arg.Value == fmt.Sprintf("%q", service)
+}
+
+func selectorIs(expr ast.Expr, pkg, name string) bool {
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	return identName(sel.X) == pkg && sel.Sel.Name == name
+}
+
+func identName(expr ast.Expr) string {
+	ident, ok := expr.(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	return ident.Name
 }
 
 func testEnv(overrides map[string]string) []string {
