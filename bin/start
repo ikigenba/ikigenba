@@ -17,7 +17,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 RUN_DIR="$repo/tmp"
 MANIFEST_ROOT="$RUN_DIR/opt"
-SERVICES=(dashboard crm ledger notify prompts wiki dropbox cron gmail scripts sites webhooks)
+SERVICES=(dashboard crm ledger notify prompts wiki dropbox cron gmail github scripts sites webhooks)
 PORT_OFFSET="${APPKIT_PORT_OFFSET:-0}"
 mkdir -p "$RUN_DIR/bin"
 
@@ -36,7 +36,7 @@ rewrite_loopback_ports() {
 	local src="$1" dst="$2" base
 	local sed_expr=()
 
-	for base in 3000 3100 3101 3201 3002 3001 3200 3005 3202 3003 3004 3006 8080; do
+	for base in 3000 3100 3101 3201 3002 3001 3200 3005 3202 3203 3003 3004 3006 8080; do
 		sed_expr+=(-e "s/127\\.0\\.0\\.1:$base/127.0.0.1:$(port "$base")/g")
 		sed_expr+=(-e "s/localhost:$base/localhost:$(port "$base")/g")
 	done
@@ -211,6 +211,15 @@ launch_gmail() {
 	exec "$RUN_DIR/bin/gmail" serve --port "$(port 3202)"
 }
 
+launch_github() {
+	# github/.envrc supplies IKIGENBA_APP_ID/PRIVATE_KEY/GITHUB_ORG (from
+	# ~/.secrets) for the GitHub App installation-token flow. Stateless connector:
+	# chassis DB only, no event plane.
+	source "$repo/github/.envrc"
+	export GITHUB_DB_PATH="$RUN_DIR/github.db"
+	exec "$RUN_DIR/bin/github" serve --port "$(port 3203)"
+}
+
 launch_scripts() {
 	# scripts holds no secret; it's a multi-upstream event-plane consumer whose
 	# SCRIPTS_<SRC>_FEED_URL values default to the loopback /feed of each peer.
@@ -251,7 +260,7 @@ launch_nginx() {
 		-e "s/listen      \\[::\\]:8080;/listen      [::]:$(port 8080);/" \
 		"$prefix/nginx.conf"
 
-	for svc in crm cron dropbox gmail ledger notify prompts scripts sites webhooks wiki; do
+	for svc in crm cron dropbox gmail github ledger notify prompts scripts sites webhooks wiki; do
 		frag="$repo/$svc/etc/nginx.conf"
 		[ -f "$frag" ] || continue
 		rewrite_loopback_ports "$frag" "$prefix/locations/${svc}.conf"
@@ -291,6 +300,7 @@ run_bg ledger launch_ledger
 run_bg dropbox launch_dropbox
 run_bg cron launch_cron
 run_bg gmail launch_gmail
+run_bg github launch_github
 run_bg prompts launch_prompts
 run_bg scripts launch_scripts
 run_bg sites launch_sites
@@ -300,9 +310,9 @@ run_bg notify launch_notify
 run_bg nginx launch_nginx
 
 echo ">> waiting for listeners"
-declare -A PORTS=([dashboard]="$(port 3000)" [crm]="$(port 3100)" [ledger]="$(port 3101)" [notify]="$(port 3201)" [prompts]="$(port 3002)" [dropbox]="$(port 3200)" [wiki]="$(port 3001)" [cron]="$(port 3005)" [gmail]="$(port 3202)" [scripts]="$(port 3003)" [sites]="$(port 3004)" [webhooks]="$(port 3006)" [nginx]="$(port 8080)")
+declare -A PORTS=([dashboard]="$(port 3000)" [crm]="$(port 3100)" [ledger]="$(port 3101)" [notify]="$(port 3201)" [prompts]="$(port 3002)" [dropbox]="$(port 3200)" [wiki]="$(port 3001)" [cron]="$(port 3005)" [gmail]="$(port 3202)" [github]="$(port 3203)" [scripts]="$(port 3003)" [sites]="$(port 3004)" [webhooks]="$(port 3006)" [nginx]="$(port 8080)")
 fail=0
-for name in dashboard crm ledger notify prompts dropbox cron gmail scripts sites webhooks wiki nginx; do
+for name in dashboard crm ledger notify prompts dropbox cron gmail github scripts sites webhooks wiki nginx; do
 	port="${PORTS[$name]}"
 	if ! running "$name"; then
 		echo "  ✗ $name exited — see tmp/$name.log"
@@ -320,9 +330,9 @@ done
 cat <<EOF
 
 Suite up. Front door: http://localhost:$(port 8080)  (apex -> dashboard)
-  /srv/crm/  /srv/ledger/  /srv/notify/  /srv/prompts/  /srv/dropbox/  /srv/cron/  /srv/gmail/  /srv/scripts/  /srv/sites/  /srv/webhooks/  /srv/wiki/
+  /srv/crm/  /srv/ledger/  /srv/notify/  /srv/prompts/  /srv/dropbox/  /srv/cron/  /srv/gmail/  /srv/github/  /srv/scripts/  /srv/sites/  /srv/webhooks/  /srv/wiki/
 Loopback:  dashboard :$(port 3000)  crm :$(port 3100)  ledger :$(port 3101)  notify :$(port 3201)  prompts :$(port 3002)
-           dropbox :$(port 3200)  wiki :$(port 3001)  cron :$(port 3005)  gmail :$(port 3202)  scripts :$(port 3003)  sites :$(port 3004)  webhooks :$(port 3006)
+           dropbox :$(port 3200)  wiki :$(port 3001)  cron :$(port 3005)  gmail :$(port 3202)  github :$(port 3203)  scripts :$(port 3003)  sites :$(port 3004)  webhooks :$(port 3006)
 Logs: tmp/<svc>.log   Stop: bin/stop   (bin/stop --clean also wipes tmp/ state)
 EOF
 

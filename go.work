@@ -13,6 +13,7 @@ use (
 	./dashboard
 	./dropbox
 	./eventplane
+	./github
 	./gmail
 	./ledger
 	./notify
