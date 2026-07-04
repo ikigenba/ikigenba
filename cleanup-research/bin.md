@@ -14,21 +14,24 @@ Both named migrations are CLEAN in `bin/`:
   source-of-truth claim that contradicts registry. (See Notes.)
 
 ## Other stale info
-- bin/test:13 — references `docs/adr-migration-timestamps.md`; file now lives at `docs/archive/adr-migration-timestamps.md` (dead path)
-- bin/test:15 — references `docs/plan-migration-timestamps.md`; now at `docs/archive/plan-migration-timestamps.md` (dead path)
-- bin/check-migrations:7 — references `docs/adr-migration-timestamps.md` (dead path; now under docs/archive/)
-- bin/check-migrations:27 — references `docs/adr-migration-timestamps.md` and `docs/plan-migration-timestamps.md` (both dead paths; now under docs/archive/)
-- bin/create-migration:13 — references `docs/adr-migration-timestamps.md` (dead path)
-- bin/create-migration:46 — references `docs/adr-migration-timestamps.md` (dead path)
-- bin/create-migration:101 — references `docs/adr-migration-timestamps.md` (dead path)
-- bin/create-migration:120 — references `docs/adr-migration-timestamps.md` (dead path)
 
-(CLAUDE.md itself points at the moved location `docs/archive/adr-migration-timestamps.md`, confirming these bin/ references are stale.)
+✅ **ALL RESOLVED 2026-07-03 (moot by prior deletion).** Re-checked against the
+current tree: every finding below is gone. `docs/archive/` was deleted wholesale
+(commit 84099d3), `bin/test` and `bin/check-migrations` no longer exist, and the
+surviving `bin/create-migration` (renamed from `new-migration`) now carries **no**
+`migration-timestamps` references at all (`grep -rn migration-timestamps bin/` →
+none). Nothing to fix here.
+
+- ~~bin/test:13 — references `docs/adr-migration-timestamps.md`~~ (file `bin/test` deleted)
+- ~~bin/test:15 — references `docs/plan-migration-timestamps.md`~~ (file `bin/test` deleted)
+- ~~bin/check-migrations:7 — references `docs/adr-migration-timestamps.md`~~ (script purged, 84099d3)
+- ~~bin/check-migrations:27 — references both migration-timestamps docs~~ (script purged, 84099d3)
+- ~~bin/create-migration:13/46/101/120 — reference `docs/adr-migration-timestamps.md`~~ (refs no longer present in the file)
 
 ## Notes
-- Top-level `registry/` currently contains only an in-design project workspace
-  (`registry/project/` with design/plan docs, no built artifact). The
-  registry-as-source-of-truth migration appears not yet landed, so `bin/registry`
-  and the hardcoded SERVICES arrays in `bin/start:20` / `bin/live-smoke.test.sh:15`
-  are still the working mechanism — flagged only as a future tension, not confirmed
-  stale.
+- **Updated 2026-07-03:** top-level `registry/` is now a built Go module (not just
+  a design workspace), so the framing below is itself outdated. But `bin/registry`
+  and the hardcoded SERVICES array in `bin/start` remain the working shell-side
+  mechanism; having those `.sh` orchestrators consume the Go `registry` module is
+  **registry-adoption work, deferred** (same call as nginx/run) — not a stale-info
+  scrub. `bin/live-smoke.test.sh` no longer exists. Left as-is.
