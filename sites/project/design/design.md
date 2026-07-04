@@ -51,10 +51,14 @@ Shared facts every Decision leans on:
 - **Module wiring:** `appkit`, `agentkit`, and `eventplane` are committed in-repo
   replace-siblings. The landing page adds **no new dependency** — it uses only the
   standard library (`net/http`, `embed`, `html/template` or `text/template`) and
-  the appkit chassis.
+  the appkit chassis. **D9** adds one further committed replace-sibling,
+  `registry` (`replace registry => ../registry`), the suite's zero-dependency
+  leaf `name → port` table — used at the composition root to resolve sites's own
+  port and the dropbox mirror address by name instead of by literal.
 - **The chassis owns the server.** sites is `appkit.Main(appkit.Spec{…})`:
-  `App:"sites"`, `Mount:"/srv/sites/"`, `Port:3004`, `MCP:true`,
-  `Migrations:db.FS`. sites is **not** an event-plane producer — the
+  `App:"sites"`, `Mount:"/srv/sites/"`, `Port:registry.MustPort("sites")` (== 3004,
+  resolved by name through the shared `registry` — D9, no longer a literal),
+  `MCP:true`, `Migrations:db.FS`. sites is **not** an event-plane producer — the
   `Feed`/`Producer`/`Workers`/`Events` hooks are deliberately omitted (no `/feed`).
   The fixed verbs (`serve`/`version`/`manifest`/`migrate`/`backup`/`restore`),
   config-from-env, the loopback HTTP server + PRM + identity gate are appkit's.

@@ -170,3 +170,27 @@ Each is a result the viewer or operator can confirm against the running service:
 - Opening a published-site path under `/srv/sites/public/…` or
   `/srv/sites/private/…` still serves the static file from disk, and `/health`
   still responds — the landing page shadowed none of them.
+
+## Addendum — registry adoption (internal address resolution)
+
+A separate, cross-cutting change (beyond the landing page) removes the
+loopback **port literals** sites hardcodes in its Go composition root. Today
+sites writes its **own** port (`3004`) and the **dropbox** mirror address
+(`http://127.0.0.1:3200`) as literals — the same numbers duplicated across the
+suite, which drift silently and only surface at deploy. sites now resolves both
+**by name** through the shared, authoritative `registry` table (the suite's
+single `name → port` source of truth), asked once at startup.
+
+This is purely internal and **behavior-preserving**: sites still answers on the
+same port and still reaches dropbox at the same address; every user-facing
+promise above is unchanged, and the existing `SITES_PORT` / `DROPBOX_BASE_URL`
+env overrides still take precedence. The promise it adds is operational, not
+user-facing:
+
+- **sites's loopback addresses cannot silently drift.** The port sites answers on
+  and the dropbox address it fetches through come from the one authoritative
+  registry, not a literal that can fall out of step with the rest of the suite.
+
+The nginx front-door fragment (`etc/nginx.conf`) keeps its literal port — nginx
+reads that config directly and cannot consult a Go library, so converting it is
+out of scope here.
