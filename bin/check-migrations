@@ -4,7 +4,7 @@
 #   bin/check-migrations [service ...]
 #
 # Scans selected <service>/internal/db/migrations/ directories in the repo and enforces
-# the three rules of docs/adr-migration-timestamps.md, failing CI (non-zero exit
+# the three migration rules below, failing CI (non-zero exit
 # with a precise message naming the offending file) on any violation:
 #
 #   1. Naming      — every *.sql file starts with a numeric prefix then '_': it is
@@ -23,8 +23,6 @@
 # The naming and uniqueness checks always run. The immutability check is guarded:
 # if no upstream ref is resolvable (fresh clone, or on main with nothing to diff)
 # it has nothing to compare and passes, without aborting the other checks.
-#
-# See docs/adr-migration-timestamps.md and docs/plan-migration-timestamps.md.
 set -euo pipefail
 
 usage() {
