@@ -21,13 +21,14 @@ the system `/etc/nginx` is untouched.
 
     nginx.conf     full config (main/events/http) — :8080, plain http
     locations/     per-service fragments (mirrors prod conf.d/locations/);
-                   crm.conf etc. drop here in Phase 2b
+                   crm.conf etc. regenerated here by ./run
     logs/          access.log, error.log
     tmp/           nginx scratch (temp paths)
 
-## Map (Phase 2b — enforcement landed)
+## Map
 
     localhost:8080/                                          -> dashboard 127.0.0.1:3000
-    localhost:8080/_authn                                    -> dashboard 127.0.0.1:3000/internal/authn  (internal)
+    localhost:8080/_authn                                    -> dashboard 127.0.0.1:3000/internal/authn  (internal, bearer)
+    localhost:8080/_session-authn                            -> dashboard 127.0.0.1:3000/internal/session-authn  (internal, cookie; sites PRIVATE tier)
     localhost:8080/srv/crm/.well-known/oauth-protected-resource -> crm 127.0.0.1:3100  (unauthenticated PRM bootstrap)
     localhost:8080/srv/crm/...                               -> auth_request /_authn -> crm 127.0.0.1:3100
