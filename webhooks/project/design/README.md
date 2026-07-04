@@ -48,6 +48,15 @@ history of how it got here lives in the plan, not here.
 - **Time / IO:** time enters the domain through a `Clock` seam; tests inject a
   deterministic clock. The DB handle is the appkit-owned single-writer
   `*sql.DB` (`rt.DB()`); the producer outbox shares it.
+- **Human landing page:** the mount root serves one minimal HTML landing page
+  (service name + version) on the suite **Carbon** design system, byte-conformed
+  to the **cron canonical** template (`cron/internal/web/landing.html` +
+  `static/tokens.css` + woff2 fonts). webhooks embeds its **own** copy of the
+  template and assets under `internal/web/` — no shared handler, no runtime
+  dependency on the dashboard's assets. Only per-service data (eyebrow,
+  description line, `{{.Service}}`/`{{.Version}}`) differs from the canonical.
+  The page is served ungated in-process; the browser-session gate lives in the
+  nginx fragment (D7).
 
 ## Layout
 
@@ -59,7 +68,7 @@ Decision a phase realizes:
   added or its Verification ids change.
 - `project/design/DNN.md` — one self-contained file per Decision (zero-padded
   `D01.md`, `D02.md`, …; referenced in prose and the plan as `D<N>`).
-- `project/design/design.md` — this spine: static cross-cutting facts only, no
+- `project/design/README.md` — this spine: static cross-cutting facts only, no
   per-Decision detail.
 
 Design is **rewritten in place**, not append-only (history lives in the plan): a

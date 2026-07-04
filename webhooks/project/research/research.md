@@ -3,8 +3,9 @@
 **Non-contractual.** This doc informs the *author* before design. The autonomous
 build reads only product, design, and plan — never this file. Nothing downstream
 consumes it. It records options, prior art, constraints, and recommendations
-gathered from the codebase so `design.md` can be written with confidence. Where
-this doc and a future `design.md` disagree, **design wins** — design is the sole
+gathered from the codebase so the design spine (`design/README.md`) can be
+written with confidence. Where this doc and the design spine disagree, **design
+wins** — design is the sole
 authority for *how*. Findings here were gathered by parallel codebase exploration
 and may contain illustrative (non-verbatim) snippets; treat cited code as a
 pointer, not gospel, and re-read the file before relying on an exact line.

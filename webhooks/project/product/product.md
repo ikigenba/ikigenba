@@ -3,7 +3,7 @@
 **Authority: intent.** This doc owns *why* the webhooks service exists, *for
 whom*, what is in and out of scope, and the user-facing promises — stated once,
 in outcome terms. It does **not** state mechanism, exact paths, formats, exit
-codes, schemas, or test assertions; those belong to `project/design/design.md`.
+codes, schemas, or test assertions; those belong to `project/design/README.md`.
 Where the two could overlap (observable behavior), product states the *promise*
 and design states the *exact, checkable proof* of that promise. This boundary is
 load-bearing and keeps product, design, and plan from restating each other.
@@ -55,6 +55,9 @@ webhooks **does**:
 - **Require a secret on every trigger** — an unguessable name is defense in
   depth, never the security boundary.
 - Enforce an **upper bound on accepted payload size**, rejecting anything larger.
+- Serve a minimal human **landing page** at the mount root — showing the service
+  name and the running version on the suite's design system, gated by the
+  dashboard browser session — the same uniform page every suite app now serves.
 
 webhooks does **nothing else**. In particular, for this version it deliberately
 excludes:
@@ -70,8 +73,13 @@ excludes:
   no paused state. Delete-and-recreate (which changes the name) is the workaround.
 - **Account-shared webhooks.** A webhook belongs to the single user who created
   it; there is no notion of a webhook shared across an account's users.
-- **Any UI or token logic of its own.** Like every suite service it runs no
-  screens; owner management is MCP-only and suite identity is established upstream.
+- **Any management UI or token logic of its own.** Owner management is MCP-only
+  and suite identity is established upstream; the service runs no token logic of
+  its own. It does serve the one minimal landing page above (service name +
+  version, gated by the dashboard browser session), like every other suite app,
+  but that page performs **no** management action, exposes **no** webhook data,
+  and carries no interactive control — creating, listing, rotating, and deleting
+  webhooks stays MCP-only.
 
 ## Contractual constants
 
@@ -109,6 +117,12 @@ limit are **not** product constants — design declares them.
   its URL are rejected as if it never existed.
 - **Owners see only their own.** Listing returns the calling owner's webhooks and
   no one else's.
+- **A logged-in human who opens the mount sees a real page.** A logged-in
+  dashboard user who opens `/srv/webhooks/` in a browser sees the service name
+  and the running version on the suite's design system, not a raw proxy error or
+  a blank page; a browser with no dashboard session is refused. Agents are
+  unaffected — the bearer-gated `/mcp`, the PRM well-known, `/health`, the public
+  `/in/` ingress, and the loopback `/feed` behave exactly as before.
 
 ## Success criteria (outcomes)
 
@@ -130,3 +144,8 @@ limit are **not** product constants — design declares them.
   produces no event.
 - Listing webhooks returns exactly the calling owner's webhooks and none created
   by another user.
+- A logged-in dashboard user opening `<account>.ikigenba.com/srv/webhooks/` sees
+  a page showing the service name `webhooks` and the running version; a browser
+  with no dashboard session is refused rather than shown the page; and the
+  public `/in/` ingress, the bearer-gated `/mcp`, and the shielded `/feed`
+  behave exactly as before the page existed.

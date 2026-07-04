@@ -32,7 +32,7 @@ realized by the phase named in `STATUS.md`.
 A phase is **done** when every Verification item — each `R-XXXX-XXXX` id — in the
 design Decision(s) it realizes (or the slice of those ids assigned to it) is
 covered by a clearly-named test and the suite is green. "Green" is defined in
-design's *Conventions* (`project/design/design.md`): `cd webhooks` and then
+design's *Conventions* (`project/design/README.md`): `cd webhooks` and then
 `go build ./...`, `go vet ./...`, and `go test ./...` all exit 0 with no
 failures, with tests run against real temp-file SQLite and a deterministic
 injected clock — never a mocked store or outbox. "Covered" means what each
@@ -52,7 +52,7 @@ phase it is working on, never the whole history:
 - `project/plan/phase-NN.md` — one body file per phase, zero-padded (`phase-01.md`,
   `phase-02.md`, …; a sub-phase keeps its suffix, e.g. `phase-07a.md`). The body
   carries **no** status token.
-- `project/plan/plan.md` — this file: the static, invariant rules. It lists no
+- `project/plan/README.md` — this file: the static, invariant rules. It lists no
   phases and carries no status, so it never grows with the project.
 
 Append-only, restated for this layout: never rewrite or delete a `phase-NN.md`,
