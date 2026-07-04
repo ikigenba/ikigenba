@@ -6,6 +6,7 @@ require (
 	appkit v0.0.0
 	eventplane v0.0.0
 	modernc.org/sqlite v1.50.1
+	registry v0.0.0
 )
 
 replace appkit => ../appkit
@@ -16,6 +17,8 @@ replace appkit => ../appkit
 // sibling source tree, never tagged) keeps the build deterministic under
 // GOWORK=off.
 replace eventplane => ../eventplane
+
+replace registry => ../registry
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

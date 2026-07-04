@@ -1,10 +1,13 @@
 package web
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
+
+	"registry"
 )
 
 // readNginxConf loads the on-disk nginx fragment relative to this test.
@@ -95,8 +98,9 @@ func TestNginxLandingProxiesToLoopbackRoot(t *testing.T) {
 	// root with a trailing slash using scripts' shipped loopback port.
 	conf := readNginxConf(t)
 	block := landingBlock(t, conf)
-	if !strings.Contains(block, "proxy_pass http://127.0.0.1:3003/;") {
-		t.Fatalf("landing block must proxy_pass to `http://127.0.0.1:3003/;`, got:\n%s", block)
+	want := fmt.Sprintf("proxy_pass http://127.0.0.1:%d/;", registry.MustPort("scripts"))
+	if !strings.Contains(block, want) {
+		t.Fatalf("landing block must proxy_pass to `%s`, got:\n%s", want, block)
 	}
 }
 
@@ -126,7 +130,7 @@ func TestNginxStaticAssetsLocationSessionGated(t *testing.T) {
 
 	for _, want := range []string{
 		"auth_request /_session-authn;",
-		"proxy_pass http://127.0.0.1:3003/static/;",
+		fmt.Sprintf("proxy_pass http://127.0.0.1:%d/static/;", registry.MustPort("scripts")),
 		"proxy_set_header Host $host;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 		"proxy_http_version 1.1;",

@@ -33,6 +33,8 @@ import (
 	"eventplane/consumer"
 	"eventplane/outbox"
 
+	"registry"
+
 	"scripts/internal/consume"
 	"scripts/internal/db"
 	"scripts/internal/mcp"
@@ -51,19 +53,15 @@ const consumerID = "scripts"
 // etc/manifest.env mirrors this for the registry.
 //
 // TODO(self-chaining, §A12): add "scripts" pointed at the local /feed
-// (SCRIPTS_SCRIPTS_FEED_URL default http://127.0.0.1:3003/feed) for
-// scripts.succeeded/failed chaining once trivial.
+// (SCRIPTS_SCRIPTS_FEED_URL default registry.BaseURL("scripts") + "/feed")
+// for scripts.succeeded/failed chaining once trivial.
 var sources = []string{"cron", "crm", "ledger", "dropbox", "prompts"}
 
-// feedDefaults is each upstream's loopback dev fallback (PLAN.md §A11). The event
-// plane bypasses nginx, so these are direct 127.0.0.1 addresses; production
-// composes the real SCRIPTS_<SRC>_FEED_URL via the deploy wrapper.
-var feedDefaults = map[string]string{
-	"cron":    "http://127.0.0.1:3005/feed",
-	"crm":     "http://127.0.0.1:3100/feed",
-	"ledger":  "http://127.0.0.1:3101/feed",
-	"dropbox": "http://127.0.0.1:3200/feed",
-	"prompts": "http://127.0.0.1:3002/feed",
+// feedDefault is a source's loopback dev fallback: the registry-owned address
+// plus the /feed route. The event plane bypasses nginx, so this is a direct
+// 127.0.0.1 address; production overrides it via SCRIPTS_<SRC>_FEED_URL.
+func feedDefault(source string) string {
+	return registry.BaseURL(source) + "/feed"
 }
 
 // svcRef carries the script service from the Handlers hook (where appkit has
@@ -102,7 +100,7 @@ func scriptsSpec() appkit.Spec {
 	return appkit.Spec{
 		App:   "scripts",
 		Mount: "/srv/scripts/",
-		Port:  3003,
+		Port:  registry.MustPort("scripts"),
 		MCP:   true,
 		// Multi-upstream CONSUMER: CONSUMES mirrors `sources` for the registry.
 		Consumes: sources,
@@ -141,7 +139,7 @@ func scriptsSpec() appkit.Spec {
 // feed (always returns nil/ErrSkip).
 func runConsumer(ctx context.Context, rt *appkit.Router, source string) error {
 	logger := rt.Logger()
-	feedURL := config.EnvOr(os.Getenv, feedURLEnv(source), feedDefaults[source])
+	feedURL := config.EnvOr(os.Getenv, feedURLEnv(source), feedDefault(source))
 	from := config.EnvOr(os.Getenv, fromEnv(source), "tail")
 
 	cfg := consumer.Config{
@@ -191,7 +189,7 @@ func registerRoutes(rt *appkit.Router) error {
 	// State is durable; runs are rebuildable execution trees. appkit has already
 	// resolved the DB and generation paths; re-resolve the same env contract here
 	// so runs can live under the service-owned cache directory.
-	cfg, err := config.Resolve("scripts", "/srv/scripts/", 3003, os.Getenv)
+	cfg, err := config.Resolve("scripts", "/srv/scripts/", registry.MustPort("scripts"), os.Getenv)
 	if err != nil {
 		return err
 	}
@@ -208,7 +206,7 @@ func registerRoutes(rt *appkit.Router) error {
 	// env-only (the loopback-URL-via-env shape notify uses for *_FEED_URL); the
 	// default works for the standard on-box loopback layout. Field-injected after
 	// NewService so existing construction stays untouched.
-	dropboxBase := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", "http://127.0.0.1:3200")
+	dropboxBase := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", registry.BaseURL("dropbox"))
 	svc.Fetcher = script.NewHTTPFetcher(dropboxBase)
 	// Capture the service for the consumer Workers and the store for the Producer
 	// hook (both run after Handlers; the Producer injects the outbox onto store).

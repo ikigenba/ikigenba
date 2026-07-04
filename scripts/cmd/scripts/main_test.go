@@ -19,6 +19,8 @@ import (
 
 	"appkit"
 	"appkit/manifest"
+
+	"registry"
 )
 
 // R-8DF1-W89F
@@ -72,6 +74,130 @@ func TestScriptsRuntimeRootUsesGenerationParentCacheDir(t *testing.T) {
 	}
 	if got == filepath.Join(root, "scripts") {
 		t.Fatalf("scriptsRuntimeRoot returned app root %q; runs must live under cache", got)
+	}
+}
+
+func TestScriptsSpecUsesRegistryPort(t *testing.T) {
+	// R-RGST-SELF
+	spec := scriptsSpec()
+	if spec.Port != registry.MustPort("scripts") {
+		t.Fatalf("scriptsSpec port = %d, want registry scripts port %d", spec.Port, registry.MustPort("scripts"))
+	}
+	if spec.Port != 3003 {
+		t.Fatalf("scriptsSpec port = %d, want behavior-preserving port 3003", spec.Port)
+	}
+
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	main := string(src)
+	if !strings.Contains(main, `cfg, err := config.Resolve("scripts", "/srv/scripts/", registry.MustPort("scripts"), os.Getenv)`) {
+		t.Fatalf("main.go does not pass registry.MustPort(\"scripts\") to config.Resolve")
+	}
+	if strings.Contains(main, `Port:  3003`) || strings.Contains(main, `Port: 3003`) {
+		t.Fatalf("main.go still contains a bare scripts port literal in scriptsSpec")
+	}
+}
+
+func TestFeedDefaultUsesRegistryBaseURLs(t *testing.T) {
+	// R-RGST-PEER
+	for _, tc := range []struct {
+		source string
+		want   string
+	}{
+		{source: "cron", want: "http://127.0.0.1:3005/feed"},
+		{source: "crm", want: "http://127.0.0.1:3100/feed"},
+		{source: "ledger", want: "http://127.0.0.1:3101/feed"},
+		{source: "dropbox", want: "http://127.0.0.1:3200/feed"},
+		{source: "prompts", want: "http://127.0.0.1:3002/feed"},
+	} {
+		t.Run(tc.source, func(t *testing.T) {
+			if got := feedDefault(tc.source); got != tc.want {
+				t.Fatalf("feedDefault(%q) = %q, want %q", tc.source, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDropboxFallbackUsesRegistryBaseURL(t *testing.T) {
+	// R-RGST-DBOX
+	if got := registry.BaseURL("dropbox"); got != "http://127.0.0.1:3200" {
+		t.Fatalf("registry.BaseURL(dropbox) = %q, want http://127.0.0.1:3200", got)
+	}
+
+	mainSrc, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	main := string(mainSrc)
+	if !strings.Contains(main, `dropboxBase := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", registry.BaseURL("dropbox"))`) {
+		t.Fatalf("main.go does not use registry.BaseURL(\"dropbox\") as DROPBOX_BASE_URL fallback")
+	}
+
+	dropboxSrc, err := os.ReadFile(filepath.Join("..", "..", "internal", "script", "dropbox.go"))
+	if err != nil {
+		t.Fatalf("read dropbox.go: %v", err)
+	}
+	for name, src := range map[string]string{
+		"main.go":    main,
+		"dropbox.go": string(dropboxSrc),
+	} {
+		if strings.Contains(src, `"http://127.0.0.1:3200"`) {
+			t.Fatalf("%s still contains a quoted dropbox loopback literal", name)
+		}
+	}
+}
+
+func TestNonTestGoFilesDoNotPinLoopbackPorts(t *testing.T) {
+	// R-RGST-NLIT
+	moduleRoot := filepath.Join("..", "..")
+	loopbackPort := regexp.MustCompile(`127\.0\.0\.1:3\d\d\d`)
+	standaloneScriptsPort := regexp.MustCompile(`\b3003\b`)
+
+	err := filepath.WalkDir(moduleRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if loopbackPort.Match(src) {
+			t.Errorf("%s contains a hard-coded loopback registry port", path)
+		}
+		if standaloneScriptsPort.Match(src) {
+			t.Errorf("%s contains a standalone scripts port token", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk scripts module: %v", err)
+	}
+}
+
+func TestGoModRequiresRegistrySiblingModule(t *testing.T) {
+	// R-RGST-GMOD
+	src, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	goMod := string(src)
+	if !regexp.MustCompile(`(?m)^\s*registry v0\.0\.0$`).MatchString(goMod) {
+		t.Fatalf("go.mod does not require registry v0.0.0:\n%s", goMod)
+	}
+	if !strings.Contains(goMod, "\nreplace registry => ../registry\n") {
+		t.Fatalf("go.mod missing exact registry replace directive")
 	}
 }
 
