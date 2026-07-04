@@ -251,6 +251,9 @@ func TestResolveConsumerCfgFeedURLOverridesWinOverRegistryDefaults(t *testing.T)
 
 func TestSpecPortComesFromRegistryNotifyPort(t *testing.T) {
 	// R-RGSP-4A1K
+	if got, ok := registry.Port("notify"); !ok || got != 3201 {
+		t.Fatalf("registry.Port(%q) = %d, %v, want 3201, true", "notify", got, ok)
+	}
 	if got := registry.MustPort("notify"); got != 3201 {
 		t.Fatalf("registry.MustPort(%q) = %d, want 3201", "notify", got)
 	}
