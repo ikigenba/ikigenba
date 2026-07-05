@@ -9,44 +9,6 @@ This is a greenfield repo. **Read the decisions first — do not re-derive them:
 - `../crm.bak/` — the prior fused crm+dashboard codebase. **Reference only**, do
   not depend on it. It is ~80% dashboard already; port from it.
 
-## Scope — bounded breadth, production depth (read this before every decision)
-
-**This round is a fully-hardened, production-grade demonstration of a chosen set
-of capabilities.** It is not a final product, but it is **not** a throwaway and
-**not** a happy-path sketch. The discipline is: **cut breadth, never depth.**
-
-Two jobs: (1) prove the architecture works end to end, and (2) serve as the
-**reference template** for when we rebuild the next version (which may or may not
-become the production target). A sloppy demo fails both — you can't trust a proof
-that only works on the happy path, and you can't template from cut corners.
-
-- **Production-grade on everything in scope.** Every capability we choose to
-  demonstrate is built to ship: full error handling, the security/auth hardening
-  the docs require, input validation, audit, sane failure behavior, tests. Treat
-  the in-scope surface as if it were going to production, because the *next* team
-  will copy it. Do **not** cut quality to save time — cut scope instead.
-- **Bounded breadth — only the selected capabilities.** We demonstrate a
-  deliberately chosen set and **do not expand past it.** No feature, endpoint, or
-  abstraction that isn't part of the selected demonstration, however tempting.
-  Breadth is fixed; depth is full.
-- **Three services or fewer, ever.** This box hosts ≤3 services for the life of
-  the demo. Do **not** design, abstract, or hedge for "many services." A literal
-  list of 3, hardened, beats a generic registry. If a design only pays off past 3
-  services, it is out of scope here — that's breadth we don't buy.
-- **No "what it looks like at product scale."** Skip speculative extensibility
-  entirely. The next version is a fresh build informed by this template, not an
-  evolution of it. Generality for futures this demo won't exercise is waste —
-  but that is about *breadth*, never an excuse to under-harden what is in scope.
-- **Keep the apex `/` to three production-grade pages.** Logged-out users see
-  the login page. Logged-in users land on the home page with connect-your-agent
-  install instructions and the clickable service list. Clicking the owner's
-  email opens the session-gated profile page; personal-access-token and OAuth
-  grant management live there, not on the landing page.
-
-Default posture: **narrow what you build; harden everything you build.** When in
-doubt about *scope*, do less. When in doubt about *quality on something in scope*,
-do it properly.
-
 ## Build phases
 
 We build in phases — see `project/notes/phases.md`. Each phase is bounded-breadth /

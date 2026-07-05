@@ -6,11 +6,11 @@ only. Mechanism, route tables, template structure, redirect codes, and test
 assertions live in `project/design/design.md`. Where the two touch observable
 behavior, product states the *promise* and design states the *exact, checkable
 proof*. This product doc scopes the dashboard's web-surface reshape: splitting the
-single hybrid apex page into three purpose-built pages, and enriching the
-logged-out login page with a brief, diminished explanation of the **ikigenba**
-name. It does not re-state the
-dashboard's whole product (identity, OAuth AS, push, inventory) — only the web
-surface this change reshapes.
+single hybrid apex page into purpose-built pages, enriching the logged-out login
+page with a brief, diminished explanation of the **ikigenba** name, and adding an
+owner-only **telemetry** page that graphs the box's resource health over the last
+day. It does not re-state the dashboard's whole product (identity, OAuth AS, push,
+inventory) — only the web surface this change reshapes.
 
 ## Problem
 
@@ -52,6 +52,11 @@ page, and turn the service list into real navigation:
   also tells a first-time visitor what **ikigenba** means — a quiet, diminished
   colophon beneath the control-plane tagline and the sign-in button. It orients;
   it adds no new control.
+- A new **telemetry page** (`/telemetry`) becomes the owner's **at-a-glance box
+  health view**: how much memory and disk the box has free, and how much memory
+  and disk each service is consuming, each drawn as a graph of the **last 24
+  hours**. It is reached from a tile on the landing page and is for watching the
+  box, not managing it — it carries no controls, only graphs.
 
 The dashboard is the **apex** app, so unlike the other services this page is not a
 generic name+version card — the dashboard's logged-in landing **is** its web home.
@@ -70,11 +75,17 @@ v1 landing.
 
 This change does exactly this and only this:
 
-- **Three pages, one of them new.** Keep the logged-out `/` login page as the
+- **Four pages, two of them new.** Keep the logged-out `/` login page as the
   sign-in page — its only function — and add to it a **diminished name-origin
   colophon** explaining the ikigenba name, below the tagline and the sign-in
   button. Keep the logged-in `/` as the **home/landing** page. Add a **profile**
-  page at a new session-gated route.
+  page and a **telemetry** page, each at its own new session-gated route.
+- **Telemetry = watch the box.** The telemetry page graphs, over the **last 24
+  hours**, the box's **free memory** and **free disk**, and **each service's
+  memory usage and disk usage**. It refreshes about once a minute while open, is
+  reached from a tile on the landing page, and is gated to the signed-in owner. It
+  shows the most recent day only and starts empty after a restart; it carries no
+  controls.
 - **Landing = connect + navigate.** The logged-in home keeps the **install
   instructions** and the **service list**, shows the owner's email at the top, and
   carries **sign-out**. Each service in the list is a **link** to that service's
@@ -92,17 +103,23 @@ This change does exactly this and only this:
 It deliberately does **nothing else** — in particular it does not: add new
 account-management capabilities (the PAT and grant features are **moved, not
 changed**); change how login, OAuth, push, or inventory work; add per-resource
-authorization to the profile page beyond "signed-in owner"; introduce new HTTP
-APIs or MCP verbs; restyle off the Carbon system already in use; or give the
+authorization to the profile or telemetry page beyond "signed-in owner";
+introduce new MCP verbs; give the telemetry page any control (it only shows
+graphs); persist telemetry history across restarts or alert on it; or give the
 dashboard a generic name+version landing card (its home page is its landing).
 
 ## Contractual constants
 
 Promised values the design must honor verbatim and never re-declare:
 
-- **There are exactly three human pages on the apex:** the **login** page
-  (logged-out `/`), the **landing/home** page (logged-in `/`), and the **profile**
-  page (the new session-gated route). No fourth page is added by this change.
+- **The apex serves these human pages:** the **login** page (logged-out `/`), the
+  **landing/home** page (logged-in `/`), the **profile** page (session-gated
+  route), and the **telemetry** page (session-gated route). The profile and
+  telemetry pages are the two session-gated routes added by this change.
+- **The telemetry page graphs the last 24 hours of box health and nothing else.**
+  It shows free memory, free disk, and per-service memory and disk usage; it is
+  gated to the signed-in owner, refreshes about once a minute, and carries no
+  controls. Its history is the most recent day and does not survive a restart.
 - **The login page keeps its control-plane tagline and sign-in control verbatim,**
   and carries the name-origin colophon **only** in its logged-out form — the
   colophon never appears on the logged-in landing/home page, and adds no new
@@ -135,6 +152,12 @@ Promised values the design must honor verbatim and never re-declare:
 - **No capability is lost in the move.** Every token and grant action that worked
   on the old hybrid page works on the profile page, identically — only its
   location changed.
+- **You can watch the box's health on the telemetry page.** From the landing you
+  open a telemetry page that graphs, over the last 24 hours, how much memory and
+  disk the box has free and how much memory and disk each service is using. The
+  graphs advance about once a minute while the page is open. Like the profile
+  page, it is yours alone — signed out, you are sent back to the login page. It
+  shows only the most recent day and begins empty after a restart.
 
 ## Success criteria (outcomes)
 
@@ -157,6 +180,13 @@ Each is a result the owner can confirm against the running dashboard:
 - Visiting the profile route while signed out does not reveal account controls; I
   am returned to the login page.
 - Sign-out is available from the home page.
-- After this change the dashboard's docs describe three pages (login, landing,
-  profile) and no longer claim the apex is a single hybrid page that must not be
-  split.
+- The home page shows a tile that opens the telemetry page.
+- Visiting `/telemetry` while signed in shows graphs of the box's free memory and
+  free disk over the last 24 hours, and of each service's memory and disk usage
+  over the last 24 hours; the graphs advance about once a minute while the page
+  stays open.
+- Visiting the telemetry route while signed out does not reveal the graphs; I am
+  returned to the login page.
+- After this change the dashboard's docs describe the login, landing, profile, and
+  telemetry pages, and no longer claim the apex is a single hybrid page that must
+  not be split or capped at three pages.
