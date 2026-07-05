@@ -32,6 +32,7 @@ import (
 	"dashboard/internal/pat"
 	"dashboard/internal/ratelimit"
 	"dashboard/internal/session"
+	"dashboard/internal/telemetry"
 	"dashboard/ui"
 )
 
@@ -71,6 +72,9 @@ type Options struct {
 	// <name>/etc/manifest.env, read by the /services inventory endpoint.
 	// Defaults to "/opt" when empty.
 	ManifestRoot string
+	// Telemetry is the in-memory sample store populated by the collector worker.
+	// It is optional until the chart routes render the collected samples.
+	Telemetry *telemetry.Store
 }
 
 // app holds the HTTP layer's dependencies. Handlers are methods on app, so new
@@ -97,6 +101,7 @@ type app struct {
 	admins       []string
 	rateLimiter  *ratelimit.Limiter
 	manifestRoot string
+	telemetry    *telemetry.Store
 	grantEvents  *grantevents.Bus
 }
 
@@ -192,6 +197,7 @@ func newApp(opts Options) (*app, error) {
 		admins:          opts.Admins,
 		rateLimiter:     opts.RateLimiter,
 		manifestRoot:    manifestRoot,
+		telemetry:       opts.Telemetry,
 		grantEvents:     opts.GrantEvents,
 	}, nil
 }

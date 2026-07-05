@@ -17,6 +17,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -39,9 +40,13 @@ import (
 	"dashboard/internal/ratelimit"
 	"dashboard/internal/server"
 	"dashboard/internal/session"
+	"dashboard/internal/telemetry"
 )
 
 func main() {
+	var rt *appkit.Router
+	store := telemetry.NewStore()
+	manifestRoot := config.EnvOr(os.Getenv, "DASHBOARD_MANIFEST_ROOT", "/opt")
 	appkit.Main(appkit.Spec{
 		App:        "dashboard",
 		Mount:      "/",  // apex
@@ -51,7 +56,18 @@ func main() {
 		Migrations: db.FS,
 		// Handlers builds the dashboard's whole apex route table over appkit's
 		// shared, migrated DB handle and mounts it via the Apex bypass.
-		Handlers: registerRoutes,
+		Handlers: func(r *appkit.Router) error {
+			rt = r
+			return registerRoutes(rt, store, manifestRoot)
+		},
+		Workers: []func(context.Context) error{
+			func(ctx context.Context) error {
+				if rt == nil {
+					return fmt.Errorf("dashboard: routes not registered before telemetry worker started")
+				}
+				return telemetry.Run(ctx, store, telemetry.Config{ManifestRoot: manifestRoot}, rt.Logger())
+			},
+		},
 	})
 }
 
@@ -64,7 +80,7 @@ func main() {
 // A missing required secret or an empty derived resource list is a hard boot
 // failure here (an AS with no resources can mint no token) — appkit propagates
 // the returned error and exits non-zero before listening.
-func registerRoutes(rt *appkit.Router) error {
+func registerRoutes(rt *appkit.Router, telemetryStore *telemetry.Store, manifestRoot string) error {
 	getenv := os.Getenv
 	logger := rt.Logger()
 
@@ -110,7 +126,9 @@ func registerRoutes(rt *appkit.Router) error {
 	// etc/manifest.env (/opt on the box). The AS resource list is DERIVED from these
 	// manifests at startup, so registering a new MCP service is just a dashboard
 	// restart — no env edit + redeploy footgun.
-	manifestRoot := config.EnvOr(getenv, "DASHBOARD_MANIFEST_ROOT", "/opt")
+	if manifestRoot == "" {
+		manifestRoot = config.EnvOr(getenv, "DASHBOARD_MANIFEST_ROOT", "/opt")
+	}
 
 	// Per-token introspection rate limit applied by POST /internal/authn.
 	authnRateLimit, err := config.EnvOrInt(getenv, "DASHBOARD_AUTHN_RATE_LIMIT", 120)
@@ -165,6 +183,7 @@ func registerRoutes(rt *appkit.Router) error {
 		Audit:           auditLog,
 		Resources:       resources,
 		ManifestRoot:    manifestRoot,
+		Telemetry:       telemetryStore,
 		Admins:          admins,
 		RateLimiter:     ratelimit.New(authnRateLimit, authnRateWindow),
 		GrantEvents:     grantevents.New(),
