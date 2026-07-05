@@ -66,6 +66,13 @@ producer's job, not opsctl's.
   routing cannot be made valid, or a value it needs (such as the box's apex
   domain) is absent, the deploy stops loudly with the previous routing left in
   effect, rather than cutting over to broken routing.
+- **A service's files served straight off disk stay reachable through the front
+  door across a box's whole lifecycle.** When a service publishes files for the
+  front door to serve directly from disk, provisioning makes the front door able
+  to read them, and no later routine box operation — deploying that service,
+  restoring it from a snapshot — silently revokes that access. The operator does
+  not deploy a service only to find its already-published pages have gone
+  unreachable, with the deploy having reported success.
 
 ## Success criteria (outcomes)
 
@@ -84,3 +91,8 @@ producer's job, not opsctl's.
   that would not validate — or a deploy missing a value that routing needs, like
   the apex domain — aborts with the running routing untouched and a message
   naming the problem.
+- For a service that serves files straight off disk, a page that is reachable
+  through the front door before a routine box operation is still reachable after
+  it: provisioning grants the front door read access, and deploying or restoring
+  that service leaves that access intact — a published page that returned success
+  before the operation still does after it, with no manual repair.

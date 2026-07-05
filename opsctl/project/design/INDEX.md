@@ -12,6 +12,10 @@ Verification ids change.
 - D3 → `project/design/D03.md` — opsctl loads the box env file at startup — owns `R-6AIE-QTDC`, `R-6BQB-4L41`, `R-6CY7-ICUQ`, `R-6FE0-9WC4`
 - D4 → `project/design/D04.md` — `opsctl deploy` renders and installs the apex block for the DEFAULT app — owns `R-MSOP-5MDA`, `R-MTWL-JE3Z`, `R-MV4H-X5UO`, `R-MXKA-OPC2`, `R-CNPY-3Z4Y`, `R-MYS7-2H2R`
 - D5 → `project/design/D05.md` — `opsctl setup` provisions the DEFAULT app without a locations fragment — owns `R-CIUC-KW66`, `R-CK28-YNWV`, `R-CLA5-CFNK`, `R-CMI1-Q7E9`
+- D6 → `project/design/D06.md` — init-box creates the `web` group and makes nginx a member — owns `R-AQMT-9M04`, `R-ARUP-NDQT`
+- D7 → `project/design/D07.md` — setup provisions the served `www` tree as `<app>:web`, setgid, via one `ensureWWWPerms` helper — owns `R-AT2M-15HI`, `R-AUAI-EX87`
+- D8 → `project/design/D08.md` — deploy re-asserts the served-tree `web` invariant after the state-ownership chown — owns `R-AVIE-SOYW`, `R-AWQB-6GPL`, `R-AXY7-K8GA`
+- D9 → `project/design/D09.md` — restore re-asserts the served-tree `web` invariant after replacing state — owns `R-AZ63-Y06Z`, `R-B0E0-BRXO`
 
 ## Verification ids → Decision
 
@@ -21,6 +25,15 @@ Verification ids change.
 - R-6BQB-4L41 → D3 — `project/design/D03.md`
 - R-6CY7-ICUQ → D3 — `project/design/D03.md`
 - R-6FE0-9WC4 → D3 — `project/design/D03.md`
+- R-AQMT-9M04 → D6 — `project/design/D06.md`
+- R-ARUP-NDQT → D6 — `project/design/D06.md`
+- R-AT2M-15HI → D7 — `project/design/D07.md`
+- R-AUAI-EX87 → D7 — `project/design/D07.md`
+- R-AVIE-SOYW → D8 — `project/design/D08.md`
+- R-AWQB-6GPL → D8 — `project/design/D08.md`
+- R-AXY7-K8GA → D8 — `project/design/D08.md`
+- R-AZ63-Y06Z → D9 — `project/design/D09.md`
+- R-B0E0-BRXO → D9 — `project/design/D09.md`
 - R-CIUC-KW66 → D5 — `project/design/D05.md`
 - R-CK28-YNWV → D5 — `project/design/D05.md`
 - R-CLA5-CFNK → D5 — `project/design/D05.md`
