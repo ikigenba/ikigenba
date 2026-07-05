@@ -99,13 +99,76 @@ func TestFileGrep(t *testing.T) {
 	call(t, h, "file_write", map[string]any{"site": "demo", "file_path": "needle.txt", "content": "find-this-string"})
 
 	g := call(t, h, "file_grep", map[string]any{
-		"site": "demo", "pattern": "find-this-string", "output_mode": "files_with_matches",
+		"site": "demo", "pattern": "find-this-string",
 	})
 	if g.IsError {
 		t.Fatalf("grep returned error: %s", payloadText(g))
 	}
 	if !strings.Contains(payloadText(g), "needle.txt") {
 		t.Fatalf("grep did not find the match: %q", payloadText(g))
+	}
+}
+
+func TestNativeFileToolsReturnRequiredShapes(t *testing.T) {
+	h, _ := fileToolsHandler(t)
+
+	callOK(t, h, "file_write", map[string]any{"site": "demo", "file_path": "one.txt", "content": "alpha\nneedle here\nneedle again\n"})
+	callOK(t, h, "file_write", map[string]any{"site": "demo", "file_path": "two.html", "content": "<h1>needle</h1>"})
+
+	// R-0I2N-AQOJ
+	read := call(t, h, "file_read", map[string]any{"site": "demo", "file_path": "one.txt", "offset": 2, "limit": 1})
+	if read.IsError {
+		t.Fatalf("file_read returned error: %s", payloadText(read))
+	}
+	if len(read.Content) != 1 || read.Content[0].Type != "text" || read.Content[0].Text != "needle here\n" {
+		t.Fatalf("file_read should return file content as a text block, got %+v", read.Content)
+	}
+
+	glob := callOK(t, h, "file_glob", map[string]any{"site": "demo", "pattern": "*.txt"})
+	globMatches, ok := glob["matches"].([]any)
+	if !ok {
+		t.Fatalf("file_glob matches is not an array: %+v", glob)
+	}
+	if len(globMatches) != 1 || globMatches[0] != "one.txt" {
+		t.Fatalf("file_glob matches = %+v, want [one.txt]", globMatches)
+	}
+
+	grep := callOK(t, h, "file_grep", map[string]any{"site": "demo", "pattern": "needle here", "path": "one.txt"})
+	grepMatches, ok := grep["matches"].([]any)
+	if !ok || len(grepMatches) != 1 {
+		t.Fatalf("file_grep matches should be a one-element array: %+v", grep)
+	}
+	match, ok := grepMatches[0].(map[string]any)
+	if !ok {
+		t.Fatalf("file_grep match is not an object: %+v", grepMatches[0])
+	}
+	if match["path"] != "one.txt" || match["line"] != float64(2) || match["text"] != "needle here" {
+		t.Fatalf("file_grep match = %+v, want path/line/text for one.txt:2", match)
+	}
+
+	edit := callOK(t, h, "file_edit", map[string]any{
+		"site": "demo", "file_path": "one.txt", "old_string": "needle", "new_string": "pin", "replace_all": true,
+	})
+	if edit["edited"] != "one.txt" || edit["site"] != "demo" || edit["replaced"] != float64(2) {
+		t.Fatalf("file_edit payload = %+v, want edited/site/replaced", edit)
+	}
+	after := call(t, h, "file_read", map[string]any{"site": "demo", "file_path": "one.txt"})
+	if after.IsError || !strings.Contains(payloadText(after), "pin here") || strings.Contains(payloadText(after), "needle") {
+		t.Fatalf("file_edit did not update content as expected: error=%v text=%q", after.IsError, payloadText(after))
+	}
+}
+
+func TestFileReadAndListTraversalReturnPathEscapeCode(t *testing.T) {
+	h, _ := fileToolsHandler(t)
+
+	// R-0JAJ-OIF8
+	readErr := callErr(t, h, "file_read", map[string]any{"site": "demo", "file_path": "../../../etc/passwd"})
+	if readErr["code"] != "path_escapes_working_dir" {
+		t.Fatalf("file_read escape code = %+v, want path_escapes_working_dir", readErr)
+	}
+	listErr := callErr(t, h, "file_list", map[string]any{"site": "demo", "path": "/etc"})
+	if listErr["code"] != "path_escapes_working_dir" {
+		t.Fatalf("file_list escape code = %+v, want path_escapes_working_dir", listErr)
 	}
 }
 

@@ -3,7 +3,6 @@ module sites
 go 1.26
 
 require (
-	agentkit v0.0.0
 	appkit v0.0.0
 	modernc.org/sqlite v1.50.1
 	registry v0.0.0
@@ -30,7 +29,5 @@ require (
 replace appkit => ../appkit
 
 replace eventplane => ../eventplane
-
-replace agentkit => ../agentkit
 
 replace registry => ../registry

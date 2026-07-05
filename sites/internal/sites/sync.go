@@ -12,14 +12,14 @@ package sites
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
+
+	sitefiles "sites/internal/files"
 )
 
 // MirrorFile is one entry from the dropbox loopback /list route. Hash is the
@@ -144,24 +144,6 @@ func (c *httpMirrorClient) Fetch(ctx context.Context, path string) ([]byte, erro
 	return body, nil
 }
 
-// confineUnder resolves rel against root and verifies the result stays inside
-// root, defending against escapes via absolute paths or '..'. Replicated from
-// the unexported confinePath in package mcp (files.go / tools.go) — that helper
-// is package-private there, so the same confinement logic is mirrored here
-// rather than exported across the package boundary. Rejects absolute rel and any
-// rel whose cleaned join escapes root.
-func confineUnder(root, rel string) (string, error) {
-	if filepath.IsAbs(rel) {
-		return "", errors.New("path must be relative to the working dir: " + rel)
-	}
-	abs := filepath.Clean(filepath.Join(root, rel))
-	r, err := filepath.Rel(filepath.Clean(root), abs)
-	if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(os.PathSeparator)) {
-		return "", errors.New("path escapes the working dir: " + rel)
-	}
-	return abs, nil
-}
-
 // Reconcile mutates workingDir in place to match `desired` (the subtree files,
 // keyed by their path RELATIVE to source_path, with already-fetched bytes as the
 // value): it (over)writes every desired file and deletes every working file
@@ -182,15 +164,13 @@ func confineUnder(root, rel string) (string, error) {
 func Reconcile(workingDir string, desired map[string][]byte, existingRel []string) (written, deleted int, err error) {
 	// Confine and write every desired file. Confinement happens first for the
 	// whole step so an escape attempt fails loudly before any bytes hit disk.
-	for rel, data := range desired {
-		abs, cerr := confineUnder(workingDir, rel)
-		if cerr != nil {
+	for rel := range desired {
+		if _, cerr := sitefiles.ConfinePath(workingDir, rel); cerr != nil {
 			return written, deleted, cerr
 		}
-		if mderr := os.MkdirAll(filepath.Dir(abs), 0o755); mderr != nil {
-			return written, deleted, fmt.Errorf("reconcile mkdir %q: %w", rel, mderr)
-		}
-		if werr := os.WriteFile(abs, data, 0o644); werr != nil {
+	}
+	for rel, data := range desired {
+		if werr := sitefiles.Write(workingDir, rel, string(data), false); werr != nil {
 			return written, deleted, fmt.Errorf("reconcile write %q: %w", rel, werr)
 		}
 		written++
@@ -201,7 +181,7 @@ func Reconcile(workingDir string, desired map[string][]byte, existingRel []strin
 		if _, keep := desired[rel]; keep {
 			continue
 		}
-		abs, cerr := confineUnder(workingDir, rel)
+		abs, cerr := sitefiles.ConfinePath(workingDir, rel)
 		if cerr != nil {
 			return written, deleted, cerr
 		}

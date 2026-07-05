@@ -6,11 +6,10 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"appkit"
 
+	sitefiles "sites/internal/files"
 	"sites/internal/sites"
 )
 
@@ -56,19 +55,37 @@ func toolDescriptors() []map[string]any {
 			"source_path": descTyp("string", "the mirror folder path to sync from"),
 			"slug":        descTyp("string", "target site slug; defaults to the source_path basename"),
 		}, "source_path")),
-		// ── file tools (agentkit bridge) ────────────────────────────────
-		// Each tool's inputSchema is agentkit's InputSchema for the underlying
-		// jailed tool plus a required "site" property naming the sandbox root.
+		// ── file tools ──────────────────────────────────────────────────
 		desc(tool("file_write"), "Write content to file_path inside the site's working tree. Creates parent dirs; overwrites by default, or appends when append:true.", obj(map[string]any{
 			"site":      descTyp("string", "site slug whose working dir is the sandbox root"),
 			"file_path": descTyp("string", "path relative to the site's working root (confined; absolute and '..' rejected)"),
 			"content":   descTyp("string", "the bytes to write"),
 			"append":    descTyp("boolean", "append to the file instead of overwriting; creates the file if missing (default false)"),
 		}, "site", "file_path", "content")),
-		fileToolDescriptor("file_read", "Read", "Read a file inside a site's working tree. 'site' selects the sandbox root; 'file_path' is relative to it and confined to it. Optional offset/limit page large files."),
-		fileToolDescriptor("file_edit", "Edit", "Edit a file inside a site's working tree by replacing 'old_string' with 'new_string'. 'site' selects the sandbox root; 'file_path' is relative to it and confined to it. Set 'replace_all' to replace every occurrence."),
-		fileToolDescriptor("file_glob", "Glob", "Glob for files inside a site's working tree. 'site' selects the sandbox root; 'path' (if given) is relative to it and confined to it, defaulting to the working root."),
-		fileToolDescriptor("file_grep", "Grep", "Grep file contents inside a site's working tree. 'site' selects the sandbox root; 'path' (if given) is relative to it and confined to it, defaulting to the working root."),
+		desc(tool("file_read"), "Read a file inside a site's working tree. Optional offset/limit page large files.", obj(map[string]any{
+			"site":      descTyp("string", "site slug whose working dir is the sandbox root"),
+			"file_path": descTyp("string", "path relative to the site's working root (confined; absolute and '..' rejected)"),
+			"offset":    descTyp("number", "1-based line offset to start reading from"),
+			"limit":     descTyp("number", "maximum number of lines to return"),
+		}, "site", "file_path")),
+		desc(tool("file_edit"), "Edit a file inside a site's working tree by replacing old_string with new_string.", obj(map[string]any{
+			"site":        descTyp("string", "site slug whose working dir is the sandbox root"),
+			"file_path":   descTyp("string", "path relative to the site's working root (confined; absolute and '..' rejected)"),
+			"old_string":  descTyp("string", "existing text to replace"),
+			"new_string":  descTyp("string", "replacement text"),
+			"replace_all": descTyp("boolean", "replace every occurrence instead of only the first"),
+		}, "site", "file_path", "old_string", "new_string")),
+		desc(tool("file_glob"), "Glob for files inside a site's working tree.", obj(map[string]any{
+			"site":    descTyp("string", "site slug whose working dir is the sandbox root"),
+			"pattern": descTyp("string", "glob pattern to match"),
+			"path":    descTyp("string", "optional directory path relative to the site's working root"),
+		}, "site", "pattern")),
+		desc(tool("file_grep"), "Grep file contents inside a site's working tree.", obj(map[string]any{
+			"site":    descTyp("string", "site slug whose working dir is the sandbox root"),
+			"pattern": descTyp("string", "regular expression to search for"),
+			"path":    descTyp("string", "optional file or directory path relative to the site's working root"),
+			"glob":    descTyp("string", "optional filename glob filter"),
+		}, "site", "pattern")),
 		desc(tool("file_list"), "List every regular file under the site's working tree with its size and md5, for reconciliation against local files. 'path' optionally scopes the walk; returned paths are relative to the working root.", obj(map[string]any{
 			"site": descTyp("string", "site slug whose working dir is the sandbox root"),
 			"path": descTyp("string", "optional subdirectory (relative to the working root) to scope the walk"),
@@ -139,13 +156,13 @@ func (h *Handler) dispatchTool(ctx context.Context, name string, argsRaw json.Ra
 	case tool("file_write"):
 		return h.toolFileWrite(ctx, argsRaw)
 	case tool("file_read"):
-		return h.toolFile(ctx, "Read", argsRaw)
+		return h.toolFileRead(ctx, argsRaw)
 	case tool("file_edit"):
-		return h.toolFile(ctx, "Edit", argsRaw)
+		return h.toolFileEdit(ctx, argsRaw)
 	case tool("file_glob"):
-		return h.toolFile(ctx, "Glob", argsRaw)
+		return h.toolFileGlob(ctx, argsRaw)
 	case tool("file_grep"):
-		return h.toolFile(ctx, "Grep", argsRaw)
+		return h.toolFileGrep(ctx, argsRaw)
 	case tool("file_list"):
 		return h.toolFileList(ctx, argsRaw)
 	default:
@@ -256,11 +273,8 @@ func (h *Handler) toolDelete(ctx context.Context, raw json.RawMessage) (map[stri
 }
 
 // toolMkdir creates a directory (and parents) confined to the site's working
-// tree. The path is attacker-controlled, so it is confined with confinePath
-// (replicated from agentkit/tools/confine.go — the agentkit dependency is added
-// in the file-tool phase that needs the full bridge; here a minimal replica
-// avoids pulling it in early). The site need not exist in the registry for mkdir
-// to confine, but the working root must resolve under SITES_ROOT.
+// tree. The path is attacker-controlled, so confinement is delegated to
+// internal/files.
 func (h *Handler) toolMkdir(raw json.RawMessage) (map[string]any, error) {
 	var a struct {
 		Name string `json:"name"`
@@ -270,11 +284,10 @@ func (h *Handler) toolMkdir(raw json.RawMessage) (map[string]any, error) {
 		return nil, err
 	}
 	root := h.layout.WorkingDir(a.Name)
-	confined, err := confinePath(root, a.Path)
-	if err != nil {
-		return errResultMsg("path_escapes_working_dir", err.Error()), nil
-	}
-	if err := os.MkdirAll(confined, 0o755); err != nil {
+	if err := sitefiles.Mkdir(root, a.Path); err != nil {
+		if errors.Is(err, sitefiles.ErrEscapes) {
+			return errResultMsg("path_escapes_working_dir", err.Error()), nil
+		}
 		return errResultMsg("mkdir", err.Error()), nil
 	}
 	return toolResultJSON(map[string]any{"created": a.Path, "site": a.Name})
@@ -316,25 +329,6 @@ func (h *Handler) toolUnpublish(ctx context.Context, raw json.RawMessage) (map[s
 		return nil, err
 	}
 	return toolResultJSON(h.renderSite(site))
-}
-
-// ── confinement ─────────────────────────────────────────────────────────────
-
-// confinePath resolves p against root and verifies the result stays inside root,
-// defending against escapes via absolute paths or '..'. Replicated minimally from
-// agentkit/tools/confine.go (which keeps confinePath unexported); the file-tool
-// phase will route through agentkit's bridge directly. Rejects absolute p and any
-// p whose cleaned join escapes root.
-func confinePath(root, p string) (string, error) {
-	if filepath.IsAbs(p) {
-		return "", errors.New("path must be relative to the working dir: " + p)
-	}
-	abs := filepath.Clean(filepath.Join(root, p))
-	rel, err := filepath.Rel(filepath.Clean(root), abs)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return "", errors.New("path escapes the working dir: " + p)
-	}
-	return abs, nil
 }
 
 // ── shared helpers ──────────────────────────────────────────────────────────

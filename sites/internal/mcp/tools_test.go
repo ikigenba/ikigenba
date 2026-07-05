@@ -4,10 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 
 	"sites/internal/db"
@@ -136,6 +141,73 @@ func payloadText(tr toolResult) string {
 	return tr.Content[0].Text
 }
 
+func moduleRoot(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+}
+
+func TestNoAgentkitImportsRemain(t *testing.T) {
+	root := moduleRoot(t)
+	fset := token.NewFileSet()
+
+	// R-0FMU-J775
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "vendor":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" {
+			return nil
+		}
+		file, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, imp := range file.Imports {
+			importPath, err := strconv.Unquote(imp.Path.Value)
+			if err != nil {
+				return err
+			}
+			if importPath == "agentkit" || strings.HasPrefix(importPath, "agentkit/") {
+				t.Errorf("%s imports %q", path, importPath)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan go imports: %v", err)
+	}
+}
+
+func TestGoModHasNoAgentkitWiring(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "go.mod"))
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	lines := strings.Split(string(raw), "\n")
+
+	// R-0GUQ-WYXU
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "agentkit ") || strings.HasPrefix(trimmed, "require agentkit ") {
+			t.Fatalf("go.mod still contains an agentkit require line: %q", line)
+		}
+		if strings.HasPrefix(trimmed, "replace agentkit =>") {
+			t.Fatalf("go.mod still contains an agentkit replace line: %q", line)
+		}
+	}
+}
+
 // TestToolsList asserts tools/list returns exactly the lifecycle set with the
 // correct prefixed names and well-formed descriptors.
 func TestToolsList(t *testing.T) {
@@ -181,9 +253,17 @@ func TestToolsList(t *testing.T) {
 		"file_grep",
 		"file_list",
 	}
+	wantSet := map[string]bool{}
 	for _, name := range want {
+		wantSet[name] = true
 		if !got[name] {
 			t.Errorf("missing expected tool %q: %+v", name, result.Tools)
+		}
+	}
+	// R-0KIG-2A5X
+	for name := range got {
+		if !wantSet[name] {
+			t.Errorf("unexpected tool %q: %+v", name, result.Tools)
 		}
 	}
 	if len(result.Tools) != len(want) {
