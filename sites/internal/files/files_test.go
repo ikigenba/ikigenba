@@ -1,0 +1,344 @@
+package files
+
+import (
+	"crypto/md5"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"testing"
+)
+
+func TestConfinePathResolvesAndRejectsEscapes(t *testing.T) {
+	root := t.TempDir()
+	insideDir := filepath.Join(root, "inside")
+	if err := os.Mkdir(insideDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(insideDir, filepath.Join(root, "inside-link")); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "outside-link")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ConfinePath(root, "inside-link/new.txt")
+	if err != nil {
+		t.Fatalf("ConfinePath inside symlink: %v", err)
+	}
+	want := filepath.Join(insideDir, "new.txt")
+	if got != want {
+		t.Fatalf("ConfinePath resolved path = %q, want %q", got, want)
+	}
+	absoluteInside := filepath.Join(root, "absolute.txt")
+	got, err = ConfinePath(root, absoluteInside)
+	if err != nil {
+		t.Fatalf("ConfinePath absolute inside: %v", err)
+	}
+	if got != absoluteInside {
+		t.Fatalf("ConfinePath absolute inside = %q, want %q", got, absoluteInside)
+	}
+
+	// R-027Y-BQ1I
+	for _, path := range []string{"../escape.txt", filepath.Join(root, "outside-link", "escape.txt"), filepath.Join(outside, "escape.txt")} {
+		_, err := ConfinePath(root, path)
+		if !errors.Is(err, ErrEscapes) {
+			t.Fatalf("ConfinePath(%q) error = %v, want ErrEscapes", path, err)
+		}
+	}
+}
+
+func TestWriteCreatesParentsTruncatesAndAppends(t *testing.T) {
+	root := t.TempDir()
+
+	// R-03FU-PHS7
+	if err := Write(root, "nested/page.txt", "first", false); err != nil {
+		t.Fatalf("Write create: %v", err)
+	}
+	if err := Write(root, "nested/page.txt", " second", true); err != nil {
+		t.Fatalf("Write append: %v", err)
+	}
+	if err := Write(root, "nested/page.txt", "last", false); err != nil {
+		t.Fatalf("Write truncate: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(root, "nested/page.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "last" {
+		t.Fatalf("written content = %q, want truncate to last write", got)
+	}
+	if err := Write(root, "nested/page.txt", "+tail", true); err != nil {
+		t.Fatalf("Write second append: %v", err)
+	}
+	got, err = os.ReadFile(filepath.Join(root, "nested/page.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "last+tail" {
+		t.Fatalf("appended content = %q, want last+tail", got)
+	}
+}
+
+func TestReadWholeFileAndLineWindow(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "page.txt"), []byte("one\ntwo\nthree\nfour\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// R-04NR-39IW
+	whole, err := Read(root, "page.txt", 0, 0)
+	if err != nil {
+		t.Fatalf("Read whole: %v", err)
+	}
+	if whole != "one\ntwo\nthree\nfour\n" {
+		t.Fatalf("whole read = %q", whole)
+	}
+	window, err := Read(root, "page.txt", 2, 2)
+	if err != nil {
+		t.Fatalf("Read window: %v", err)
+	}
+	if window != "two\nthree\n" {
+		t.Fatalf("window read = %q, want %q", window, "two\nthree\n")
+	}
+}
+
+func TestEditReplacesFirstAllAndErrorsWithoutWrite(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "page.txt")
+	if err := os.WriteFile(path, []byte("alpha beta beta"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// R-05VN-H19L
+	replaced, err := Edit(root, "page.txt", "beta", "gamma", false)
+	if err != nil {
+		t.Fatalf("Edit first: %v", err)
+	}
+	if replaced != 1 {
+		t.Fatalf("first replace count = %d, want 1", replaced)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "alpha gamma beta" {
+		t.Fatalf("first edit content = %q", got)
+	}
+	replaced, err = Edit(root, "page.txt", "a", "A", true)
+	if err != nil {
+		t.Fatalf("Edit all: %v", err)
+	}
+	if replaced != 5 {
+		t.Fatalf("replace all count = %d, want 5", replaced)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Edit(root, "page.txt", "missing", "x", false); err == nil {
+		t.Fatal("Edit missing old string succeeded, want error")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("missing edit wrote file: before %q after %q", before, after)
+	}
+}
+
+func TestGlobReturnsSearchBaseRelativeMatches(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"assets/a.css", "assets/b.css", "assets/c.txt"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(root, "assets", "outside")); err != nil {
+		t.Fatal(err)
+	}
+
+	// R-073J-UT0A
+	got, err := Glob(root, "*.css", "assets")
+	if err != nil {
+		t.Fatalf("Glob: %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"a.css", "b.css"}) {
+		t.Fatalf("Glob matches = %#v, want a.css and b.css relative to assets", got)
+	}
+}
+
+func TestGrepReturnsTypedRootRelativeMatches(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "content"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "content", "page.txt"), []byte("first\nneedle here\nlast\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "content", "skip.md"), []byte("needle elsewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// R-08BG-8KQZ
+	got, err := Grep(root, "needle", "content", "*.txt")
+	if err != nil {
+		t.Fatalf("Grep: %v", err)
+	}
+	want := []Match{{Path: "content/page.txt", Line: 2, Text: "needle here"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Grep matches = %#v, want %#v", got, want)
+	}
+
+	// R-0D71-RNPR
+	var typed []Match = got
+	if len(typed) != 1 || typed[0].Text == "" {
+		t.Fatalf("Grep returned unusable typed matches: %#v", typed)
+	}
+}
+
+func TestListReturnsRootRelativeRegularFilesWithHashesAndScope(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"index.html":     "<h1>hi</h1>",
+		"assets/site.js": "console.log('hi')",
+	}
+	for path, content := range files {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, path), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(root, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// R-09JC-MCHO
+	got, err := List(root, "")
+	if err != nil {
+		t.Fatalf("List root: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("List root returned %d files: %#v", len(got), got)
+	}
+	byPath := map[string]FileInfo{}
+	for _, file := range got {
+		byPath[file.Path] = file
+	}
+	for path, content := range files {
+		info, ok := byPath[path]
+		if !ok {
+			t.Fatalf("List missing %s in %#v", path, got)
+		}
+		if info.Size != int64(len(content)) {
+			t.Fatalf("%s size = %d, want %d", path, info.Size, len(content))
+		}
+		if info.Md5 != fmt.Sprintf("%x", md5.Sum([]byte(content))) {
+			t.Fatalf("%s md5 = %s", path, info.Md5)
+		}
+	}
+	scoped, err := List(root, "assets")
+	if err != nil {
+		t.Fatalf("List scoped: %v", err)
+	}
+	if len(scoped) != 1 || scoped[0].Path != "assets/site.js" {
+		t.Fatalf("scoped List = %#v, want assets/site.js only", scoped)
+	}
+
+	// R-0D71-RNPR
+	var typed []FileInfo = scoped
+	if len(typed) != 1 || typed[0].Md5 == "" {
+		t.Fatalf("List returned unusable typed file info: %#v", typed)
+	}
+}
+
+func TestMkdirCreatesNestedDirectoriesAndRejectsEscapes(t *testing.T) {
+	root := t.TempDir()
+
+	// R-0AR9-048D
+	if err := Mkdir(root, "a/b/c"); err != nil {
+		t.Fatalf("Mkdir nested: %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "a", "b", "c")); err != nil || !info.IsDir() {
+		t.Fatalf("nested directory not created: info=%v err=%v", info, err)
+	}
+	if err := Mkdir(root, "../escape"); !errors.Is(err, ErrEscapes) {
+		t.Fatalf("Mkdir escape error = %v, want ErrEscapes", err)
+	}
+}
+
+func TestOperationsShareErrEscapesConfinement(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "page.txt"), []byte("needle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	escape := t.TempDir()
+	if err := os.Symlink(escape, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+
+	// R-0EEY-5FGG
+	checks := []struct {
+		name string
+		err  error
+	}{
+		{"Read", errOnly(Read(root, "escape/read.txt", 0, 0))},
+		{"Write", Write(root, "escape/write.txt", "x", false)},
+		{"Edit", editErr(Edit(root, "escape/edit.txt", "x", "y", false))},
+		{"Glob", errOnlyStrings(Glob(root, "*.txt", "escape"))},
+		{"Grep", errOnlyMatches(Grep(root, "needle", "escape", ""))},
+		{"List", errOnlyFileInfos(List(root, "escape"))},
+		{"Mkdir", Mkdir(root, "escape/dir")},
+	}
+	for _, check := range checks {
+		if !errors.Is(check.err, ErrEscapes) {
+			t.Fatalf("%s escape error = %v, want ErrEscapes", check.name, check.err)
+		}
+	}
+}
+
+func TestGlobReturnsTypedStrings(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// R-0D71-RNPR
+	got, err := Glob(root, "*.txt", "")
+	if err != nil {
+		t.Fatalf("Glob: %v", err)
+	}
+	var typed []string = got
+	if !slices.Equal(typed, []string{"a.txt"}) {
+		t.Fatalf("Glob typed strings = %#v, want a.txt", typed)
+	}
+}
+
+func errOnly(_ string, err error) error {
+	return err
+}
+
+func errOnlyStrings(_ []string, err error) error {
+	return err
+}
+
+func errOnlyMatches(_ []Match, err error) error {
+	return err
+}
+
+func errOnlyFileInfos(_ []FileInfo, err error) error {
+	return err
+}
+
+func editErr(_ int, err error) error {
+	return err
+}
