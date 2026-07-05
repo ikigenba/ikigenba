@@ -136,6 +136,8 @@ func TestInitBox_WritesApexSubstrate(t *testing.T) {
 	// and nginx cannot validate without it.
 	wantOps := []string{
 		"install-packages:nginx,certbot",
+		"ensure-group:web",
+		"add-user-to-group:nginx:web",
 		"obtain-cert-standalone:int.ikigenba.com",
 		"nginx-test",
 		"enable-now:nginx",
@@ -217,6 +219,8 @@ func TestInitBox_SkipCert(t *testing.T) {
 	// no nginx validate/start and no cert — those wait for the cert to exist.
 	wantOps := []string{
 		"install-packages:nginx,certbot",
+		"ensure-group:web",
+		"add-user-to-group:nginx:web",
 		"daemon-reload",
 		"enable-now:ikigenba-certbot-renew.timer",
 		"enable-now:ikigenba-backup.timer",
@@ -252,6 +256,8 @@ func TestInitBox_CertExists(t *testing.T) {
 	// obtain-cert that reconciles the renewal config (no re-issue, cert is live).
 	wantOps := []string{
 		"install-packages:nginx,certbot",
+		"ensure-group:web",
+		"add-user-to-group:nginx:web",
 		"nginx-test",
 		"enable-now:nginx",
 		"nginx-reload",

@@ -63,6 +63,11 @@ func (s *stubSystem) EnsureSystemGroup(ctx context.Context, group string) error 
 	return nil
 }
 
+func (s *stubSystem) AddUserToGroup(ctx context.Context, user, group string) error {
+	s.record("add-user-to-group:" + user + ":" + group)
+	return nil
+}
+
 func (s *stubSystem) DeleteSystemUser(ctx context.Context, app string) error {
 	s.record("delete-user:" + app)
 	return nil

@@ -59,6 +59,10 @@ type System interface {
 	// `groupadd --system <group>`). Idempotent: a no-op when the group already
 	// exists.
 	EnsureSystemGroup(ctx context.Context, group string) error
+	// AddUserToGroup adds an existing user to a supplementary group (the box runs
+	// `usermod -aG <group> <user>`). Idempotent: a no-op when the user is already
+	// a member of the group.
+	AddUserToGroup(ctx context.Context, user, group string) error
 	// DeleteSystemUser removes the dedicated app user (the box runs `userdel
 	// <app>`), the inverse of EnsureSystemUser invoked by teardown. Idempotent: a
 	// no-op when the user is already absent (a partially-torn-down box).
@@ -228,6 +232,18 @@ func (s RealSystem) EnsureSystemGroup(ctx context.Context, group string) error {
 		return nil
 	}
 	return run(ctx, "groupadd", "--system", group)
+}
+
+func (s RealSystem) AddUserToGroup(ctx context.Context, user, group string) error {
+	cmd := exec.CommandContext(ctx, "id", "-nG", user)
+	if out, err := cmd.Output(); err == nil {
+		for _, existing := range strings.Fields(string(out)) {
+			if existing == group {
+				return nil
+			}
+		}
+	}
+	return run(ctx, "usermod", "-aG", group, user)
 }
 
 func (s RealSystem) DeleteSystemUser(ctx context.Context, app string) error {
