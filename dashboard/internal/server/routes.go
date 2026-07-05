@@ -26,6 +26,8 @@ func (a *app) register(mux muxer) {
 	mux.Handle("GET /services", a.handleInventory())
 	mux.Handle("GET /install/claude", a.handleInstall(claudeAgent))
 	mux.Handle("GET /install/codex", a.handleInstall(codexAgent))
+	mux.Handle("GET /telemetry", a.handleTelemetry())
+	mux.Handle("GET /telemetry/fragment", a.handleTelemetryFragment())
 	mux.Handle("GET /static/", a.staticHandler())
 
 	// Live-grants block on the logged-in index: session-authenticated (not

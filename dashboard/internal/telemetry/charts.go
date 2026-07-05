@@ -58,6 +58,49 @@ type orderedSeries struct {
 	latest int64
 }
 
+// ChartView is the rendered telemetry chart set consumed by the server
+// templates. The chart builders stay in this package so their geometry and HTML
+// escaping remain tested in one place.
+type ChartView struct {
+	SystemMemory  template.HTML
+	SystemDisk    template.HTML
+	ServiceMemory template.HTML
+	ServiceDisk   template.HTML
+}
+
+// NewChartView converts a store snapshot into the four SVG charts rendered by
+// the telemetry page and refresh fragment.
+func NewChartView(snapshot Snapshot) ChartView {
+	serviceMemory, memoryOrder := serviceSeries(snapshot.Series, ".mem")
+	serviceDisk, diskOrder := serviceSeries(snapshot.Series, ".disk")
+	return ChartView{
+		SystemMemory:  heroChart("System memory available", snapshot.Series[SeriesSystemMem], snapshot.TotalMem),
+		SystemDisk:    heroChart("System disk free", snapshot.Series[SeriesSystemDisk], snapshot.TotalDisk),
+		ServiceMemory: stackedChart("Service memory", serviceMemory, memoryOrder),
+		ServiceDisk:   stackedChart("Service disk", serviceDisk, diskOrder),
+	}
+}
+
+func serviceSeries(series map[string][]Sample, suffix string) (map[string][]Sample, []string) {
+	out := make(map[string][]Sample)
+	for key, samples := range series {
+		if !strings.HasPrefix(key, "service.") || !strings.HasSuffix(key, suffix) {
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(key, "service."), suffix)
+		if name == "" {
+			continue
+		}
+		out[name] = samples
+	}
+	order := make([]string, 0, len(out))
+	for name := range out {
+		order = append(order, name)
+	}
+	sort.Strings(order)
+	return out, order
+}
+
 func humanBytes(n int64) string {
 	if n == 0 {
 		return "0 B"

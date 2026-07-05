@@ -35,7 +35,31 @@
   });
 })();
 
-// --- 2. Copy-to-clipboard ------------------------------------------------
+// --- 2. Telemetry block poll ---------------------------------------------
+// The telemetry collector samples once per minute. Refresh the HTML fragment on
+// that cadence and keep the stale charts when a poll fails.
+(() => {
+  const block = document.getElementById("telemetry-block");
+  if (!block) return;
+
+  const fragURL = block.dataset.fragment;
+  if (!fragURL) return;
+
+  const refreshTelemetry = async () => {
+    try {
+      const res = await fetch(fragURL, { credentials: "same-origin" });
+      if (res.ok) {
+        block.innerHTML = await res.text();
+      }
+    } catch (_) {
+      // Leave the stale block in place; the next interval will try again.
+    }
+  };
+
+  setInterval(refreshTelemetry, 60000);
+})();
+
+// --- 3. Copy-to-clipboard ------------------------------------------------
 // Every .copy-btn lives next to a <code>. Clicking it copies that code's text
 // and briefly confirms. Falls back to a hidden-textarea + execCommand when the
 // async Clipboard API is unavailable (e.g. plain-http localhost without a

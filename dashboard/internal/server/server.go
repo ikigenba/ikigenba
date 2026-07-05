@@ -165,9 +165,11 @@ func newApp(opts Options) (*app, error) {
 	tmpl, err := template.ParseFS(ui.Files,
 		"html/index.html",
 		"html/profile.html",
+		"html/telemetry.html",
 		"html/partials/grants_block.tmpl",
 		"html/partials/pat_block.tmpl",
 		"html/partials/pat_created.tmpl",
+		"html/partials/telemetry_charts.tmpl",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
