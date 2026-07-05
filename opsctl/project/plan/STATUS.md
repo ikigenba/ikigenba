@@ -17,4 +17,4 @@ grep matches only phase lines.
 - Phase 07 ✅ realizes R-AQMT-9M04 (R-ARUP-NDQT live-box, operator-verified out-of-loop) — init-box creates the `web` group and adds nginx to it
 - Phase 08 ✅ realizes R-AT2M-15HI, R-AUAI-EX87 — setup provisions the served `www` tree as `<app>:web`, setgid, via `ensureWWWPerms`
 - Phase 09 ✅ realizes R-AVIE-SOYW, R-AWQB-6GPL (R-AXY7-K8GA live-box, operator-verified out-of-loop) — deploy re-asserts the served-tree `web` invariant after the state chown
-- Phase 10 ⬜ realizes R-AZ63-Y06Z (R-B0E0-BRXO live-box, operator-verified out-of-loop) — restore re-asserts the served-tree `web` invariant after replacing state
+- Phase 10 ✅ realizes R-AZ63-Y06Z (R-B0E0-BRXO live-box, operator-verified out-of-loop) — restore re-asserts the served-tree `web` invariant after replacing state
