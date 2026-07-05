@@ -720,3 +720,38 @@ func TestRestoreChownsCacheToServiceUser(t *testing.T) {
 		t.Fatalf("restore ops = %v, want %q", sys.opSeq(), want)
 	}
 }
+
+func TestRestoreReassertsServedTreeInvariantBeforeRestart(t *testing.T) {
+	// R-AZ63-Y06Z
+	root := t.TempDir()
+	l := NewLayout(root, "sites")
+	writeStateFile(t, l, "old.txt", "old")
+	store := newFakeStore()
+	snapshot := snapshotPrefix("sites") + "snapshot.tar"
+	store.data[snapshot] = makeArchive(t, t.TempDir(), "sites", map[string]string{
+		"sites.db":              "new",
+		"www/public/index.html": "hi",
+	})
+
+	sys := &stubSystem{}
+	if err := testOps(root, sys, store).Restore(context.Background(), "sites", snapshot, strings.NewReader("sites\n")); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(l.WWWPublicDir(), "index.html")); err != nil {
+		t.Fatalf("restored www public file missing: %v", err)
+	}
+	wantOps := []string{
+		"systemctl:stop sites",
+		"chown:sites:sites:" + l.CacheDir(),
+		"chown:sites:web:" + l.WWWRoot(),
+		"chmod:2750:" + l.WWWRoot(),
+		"chmod:2750:" + l.WWWWorkingDir(),
+		"chmod:2750:" + l.WWWPublicDir(),
+		"chmod:2750:" + l.WWWPrivateDir(),
+		"systemctl:start sites",
+	}
+	if got := sys.opSeq(); strings.Join(got, "|") != strings.Join(wantOps, "|") {
+		t.Fatalf("restore ops = %v, want %v", got, wantOps)
+	}
+}
