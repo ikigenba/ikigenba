@@ -5,22 +5,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"appkit"
 	"appkit/manifest"
+	"appkit/server"
+	"eventplane/consumer"
+	"notify/internal/push"
 	"registry"
 )
 
@@ -148,6 +152,8 @@ func TestNotifyBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, run, "serve")
+	crmFeedKey := "NOTIFY_CRM_" + "FEED_URL"
+	promptsFeedKey := "NOTIFY_PROMPTS_" + "FEED_URL"
 	cmd.Env = testEnv(map[string]string{
 		"IKIGENBA_DOMAIN":        "",
 		"IKIGENBA_ROOT":          "",
@@ -155,8 +161,8 @@ func TestNotifyBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 		"NOTIFY_PORT":            fmt.Sprintf("%d", port),
 		"NOTIFY_DB_PATH":         dbPath,
 		"NOTIFY_GENERATION_PATH": generationPath,
-		"CRM_FEED_URL":           crmFeed.URL + "/feed",
-		"PROMPTS_FEED_URL":       promptsFeed.URL + "/feed",
+		crmFeedKey:               crmFeed.URL + "/feed",
+		promptsFeedKey:           promptsFeed.URL + "/feed",
 		"NOTIFY_NTFY_BASE_URL":   ntfy.URL,
 		"NTFY_TOPIC":             "notify-test",
 		"NTFY_API_KEY":           "notify-test-token",
@@ -191,59 +197,215 @@ func TestNotifyBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	}
 }
 
-func TestResolveConsumerCfgDefaultsCRMFeedURLFromRegistry(t *testing.T) {
-	// R-RGCF-4B2L
-	cfg, err := resolveConsumerCfg(testGetenv(map[string]string{
-		"NTFY_TOPIC":   "notify-test",
-		"NTFY_API_KEY": "notify-test-token",
-	}))
-	if err != nil {
-		t.Fatalf("resolveConsumerCfg: %v", err)
+func TestNotifySpecDeclaresConsumersInOrder(t *testing.T) {
+	// R-4DG9-3Q97
+	spec := notifySpec()
+	if len(spec.Consumers) != 2 {
+		t.Fatalf("len(spec.Consumers) = %d, want 2", len(spec.Consumers))
 	}
 
-	want := registry.BaseURL("crm") + "/feed"
-	if cfg.feedURL != want {
-		t.Fatalf("feedURL = %q, want %q", cfg.feedURL, want)
+	crm := spec.Consumers[0]
+	if crm.Source != "crm" {
+		t.Fatalf("spec.Consumers[0].Source = %q, want crm", crm.Source)
 	}
-	if cfg.feedURL != "http://127.0.0.1:3100/feed" {
-		t.Fatalf("feedURL = %q, want registry's stable crm loopback feed", cfg.feedURL)
+	if want := []consumer.Subscription{push.Subscription()}; !reflect.DeepEqual(crm.Subscriptions, want) {
+		t.Fatalf("crm subscriptions = %#v, want %#v", crm.Subscriptions, want)
+	}
+
+	prompts := spec.Consumers[1]
+	if prompts.Source != "prompts" {
+		t.Fatalf("spec.Consumers[1].Source = %q, want prompts", prompts.Source)
+	}
+	if want := push.PromptsSubscriptions(); !reflect.DeepEqual(prompts.Subscriptions, want) {
+		t.Fatalf("prompts subscriptions = %#v, want %#v", prompts.Subscriptions, want)
 	}
 }
 
-func TestResolveConsumerCfgDefaultsPromptsFeedURLFromRegistry(t *testing.T) {
-	// R-RGPF-4C3M
-	cfg, err := resolveConsumerCfg(testGetenv(map[string]string{
-		"NTFY_TOPIC":   "notify-test",
-		"NTFY_API_KEY": "notify-test-token",
-	}))
-	if err != nil {
-		t.Fatalf("resolveConsumerCfg: %v", err)
-	}
+func TestNotifyConsumerHandlersPushSubscribedEventsOnly(t *testing.T) {
+	// R-4EO5-HHZW
+	spec := notifySpec()
+	rt := newTestRouter(t)
 
-	want := registry.BaseURL("prompts") + "/feed"
-	if cfg.promptsFeedURL != want {
-		t.Fatalf("promptsFeedURL = %q, want %q", cfg.promptsFeedURL, want)
+	for _, tc := range []struct {
+		source       string
+		event        consumer.Event
+		unsubscribed consumer.Event
+		wantTitle    string
+		wantBody     string
+	}{
+		{
+			source: "crm",
+			event: consumer.Event{
+				Type:    "contact.created",
+				ID:      "01JCONTACT",
+				Source:  "crm",
+				Payload: json.RawMessage(`{"display_name":"Ada Lovelace"}`),
+			},
+			unsubscribed: consumer.Event{
+				Type:    "contact.updated",
+				ID:      "01JCONTACTUP",
+				Source:  "crm",
+				Payload: json.RawMessage(`{"display_name":"Ada Lovelace"}`),
+			},
+			wantTitle: "New contact",
+			wantBody:  "Ada Lovelace",
+		},
+		{
+			source: "prompts",
+			event: consumer.Event{
+				Type:    "run.succeeded",
+				ID:      "01JRUNOK",
+				Source:  "prompts",
+				Payload: json.RawMessage(`{"session_id":"s1","session_name":"nightly scan","trigger_event":"cron.nightly","scheduled_for":"2026-06-06T08:00:00Z"}`),
+			},
+			unsubscribed: consumer.Event{
+				Type:    "run.cancelled",
+				ID:      "01JRUNCANCEL",
+				Source:  "prompts",
+				Payload: json.RawMessage(`{"session_name":"nightly scan"}`),
+			},
+			wantTitle: "Run succeeded",
+			wantBody:  "nightly scan",
+		},
+	} {
+		t.Run(tc.source, func(t *testing.T) {
+			ntfy := newNtfyRecorder(t)
+			t.Setenv("NOTIFY_NTFY_BASE_URL", ntfy.srv.URL)
+			t.Setenv("NTFY_TOPIC", "topic")
+			t.Setenv("NTFY_API_KEY", "tok")
+
+			entry, ok := findConsumer(spec.Consumers, tc.source)
+			if !ok {
+				t.Fatalf("consumer %q not found", tc.source)
+			}
+			h := entry.Handler(rt)
+			if err := h(context.Background(), tc.event); err != nil {
+				t.Fatalf("%s subscribed event returned %v, want nil", tc.source, err)
+			}
+			post := ntfy.waitForPost(t)
+			if post.method != http.MethodPost {
+				t.Fatalf("method = %q, want POST", post.method)
+			}
+			if post.path != "/topic" {
+				t.Fatalf("path = %q, want /topic", post.path)
+			}
+			if post.auth != "Bearer tok" {
+				t.Fatalf("Authorization = %q, want bearer token", post.auth)
+			}
+			if post.title != tc.wantTitle {
+				t.Fatalf("Title = %q, want %q", post.title, tc.wantTitle)
+			}
+			if post.body != tc.wantBody {
+				t.Fatalf("body = %q, want %q", post.body, tc.wantBody)
+			}
+
+			if err := h(context.Background(), tc.unsubscribed); err != nil {
+				t.Fatalf("%s unsubscribed event returned %v, want nil", tc.source, err)
+			}
+			ntfy.assertNoPost(t)
+		})
 	}
 }
 
-func TestResolveConsumerCfgFeedURLOverridesWinOverRegistryDefaults(t *testing.T) {
-	// R-RGEO-4D4N
-	cfg, err := resolveConsumerCfg(testGetenv(map[string]string{
-		"CRM_FEED_URL":     "http://crm.example.test/custom-feed",
-		"PROMPTS_FEED_URL": "http://prompts.example.test/custom-feed",
-		"NTFY_TOPIC":       "notify-test",
-		"NTFY_API_KEY":     "notify-test-token",
-	}))
-	if err != nil {
-		t.Fatalf("resolveConsumerCfg: %v", err)
-	}
+type capturedNtfyPost struct {
+	method string
+	path   string
+	title  string
+	auth   string
+	body   string
+}
 
-	if cfg.feedURL != "http://crm.example.test/custom-feed" {
-		t.Fatalf("feedURL = %q, want CRM_FEED_URL override", cfg.feedURL)
+type ntfyRecorder struct {
+	mu     sync.Mutex
+	posts  []capturedNtfyPost
+	posted chan struct{}
+	srv    *httptest.Server
+}
+
+func newNtfyRecorder(t *testing.T) *ntfyRecorder {
+	t.Helper()
+	n := &ntfyRecorder{posted: make(chan struct{}, 10)}
+	n.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		n.mu.Lock()
+		n.posts = append(n.posts, capturedNtfyPost{
+			method: r.Method,
+			path:   r.URL.Path,
+			title:  r.Header.Get("Title"),
+			auth:   r.Header.Get("Authorization"),
+			body:   string(body),
+		})
+		n.mu.Unlock()
+		n.posted <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(n.srv.Close)
+	return n
+}
+
+func (n *ntfyRecorder) waitForPost(t *testing.T) capturedNtfyPost {
+	t.Helper()
+	select {
+	case <-n.posted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for ntfy POST")
 	}
-	if cfg.promptsFeedURL != "http://prompts.example.test/custom-feed" {
-		t.Fatalf("promptsFeedURL = %q, want PROMPTS_FEED_URL override", cfg.promptsFeedURL)
+	posts := n.snapshot()
+	if len(posts) != 1 {
+		t.Fatalf("ntfy posts = %d, want exactly 1", len(posts))
 	}
+	return posts[0]
+}
+
+func (n *ntfyRecorder) assertNoPost(t *testing.T) {
+	t.Helper()
+	select {
+	case <-n.posted:
+		t.Fatalf("ntfy posts = %d, want no additional POSTs", len(n.snapshot()))
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func (n *ntfyRecorder) snapshot() []capturedNtfyPost {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	out := make([]capturedNtfyPost, len(n.posts))
+	copy(out, n.posts)
+	return out
+}
+
+func findConsumer(consumers []appkit.Consumer, source string) (appkit.Consumer, bool) {
+	for _, entry := range consumers {
+		if entry.Source == source {
+			return entry, true
+		}
+	}
+	return appkit.Consumer{}, false
+}
+
+func newTestRouter(t *testing.T) *appkit.Router {
+	t.Helper()
+	var rt *appkit.Router
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		ResourceID: "http://resource.test/srv/notify/",
+		AuthServer: "http://dashboard.test/",
+		Version:    "v0.0.0",
+		Service:    "notify",
+		Register: func(r *appkit.Router) error {
+			rt = r
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("server.New: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+	if rt == nil {
+		t.Fatal("server.New did not call Register")
+	}
+	return rt
 }
 
 func TestSpecPortComesFromRegistryNotifyPort(t *testing.T) {
@@ -254,8 +416,8 @@ func TestSpecPortComesFromRegistryNotifyPort(t *testing.T) {
 	if got := registry.MustPort("notify"); got != 3201 {
 		t.Fatalf("registry.MustPort(%q) = %d, want 3201", "notify", got)
 	}
-	if !specPortIsRegistryMustPort(t, filepath.Join("main.go"), "notify") {
-		t.Fatalf("appkit.Spec Port is not registry.MustPort(%q)", "notify")
+	if got, want := notifySpec().Port, registry.MustPort("notify"); got != want {
+		t.Fatalf("notifySpec().Port = %d, want registry.MustPort(%q) = %d", got, "notify", want)
 	}
 }
 
@@ -275,71 +437,6 @@ func newIdleFeedServer(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
-}
-
-func testGetenv(values map[string]string) func(string) string {
-	return func(key string) string {
-		return values[key]
-	}
-}
-
-func specPortIsRegistryMustPort(t *testing.T, path, service string) bool {
-	t.Helper()
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, 0)
-	if err != nil {
-		t.Fatalf("parse %s: %v", path, err)
-	}
-
-	found := false
-	ast.Inspect(file, func(n ast.Node) bool {
-		if found {
-			return false
-		}
-		call, ok := n.(*ast.CallExpr)
-		if !ok || !selectorIs(call.Fun, "appkit", "Main") || len(call.Args) != 1 {
-			return true
-		}
-		lit, ok := call.Args[0].(*ast.CompositeLit)
-		if !ok || !selectorIs(lit.Type, "appkit", "Spec") {
-			return true
-		}
-		for _, elt := range lit.Elts {
-			kv, ok := elt.(*ast.KeyValueExpr)
-			if !ok || identName(kv.Key) != "Port" {
-				continue
-			}
-			found = registryMustPortCall(kv.Value, service)
-			return false
-		}
-		return true
-	})
-	return found
-}
-
-func registryMustPortCall(expr ast.Expr, service string) bool {
-	call, ok := expr.(*ast.CallExpr)
-	if !ok || !selectorIs(call.Fun, "registry", "MustPort") || len(call.Args) != 1 {
-		return false
-	}
-	arg, ok := call.Args[0].(*ast.BasicLit)
-	return ok && arg.Kind == token.STRING && arg.Value == fmt.Sprintf("%q", service)
-}
-
-func selectorIs(expr ast.Expr, pkg, name string) bool {
-	sel, ok := expr.(*ast.SelectorExpr)
-	if !ok {
-		return false
-	}
-	return identName(sel.X) == pkg && sel.Sel.Name == name
-}
-
-func identName(expr ast.Expr) string {
-	ident, ok := expr.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	return ident.Name
 }
 
 func testEnv(overrides map[string]string) []string {

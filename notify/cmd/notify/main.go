@@ -8,10 +8,8 @@
 // from-env, the migration runner + downgrade guard, the loopback HTTP server +
 // PRM + identity gate, and the serve lifecycle — is owned by appkit. main.go
 // declares only notify's identity (the Spec) and wires its domain surface: the
-// health MCP tool and, through the appkit Workers seam, the background
-// event-plane consumer loop (eventplane/consumer) that subscribes to crm's
-// east/west /feed and fires a best-effort ntfy.sh push (internal/push) on every
-// contact.created.
+// health MCP tool and the event-plane consumer entries that subscribe to crm and
+// prompts feeds and fire best-effort ntfy.sh pushes (internal/push).
 //
 // The HTTP server and the consumer worker share appkit's serve context: a
 // SIGTERM cancels both; a STRUCTURAL consumer fault (consumer.Run escaping on a
@@ -23,9 +21,7 @@
 package main
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"os"
 
 	"appkit"
@@ -40,184 +36,88 @@ import (
 	"registry"
 )
 
-// The event-plane upstreams notify consumes and the stable id it presents on
-// every connect (event-protocol.md §7.1; decision 10). All fixed constants —
-// notify consumes crm's feed AND prompts's feed (each on its own consumer.Run loop
-// with its own feed_offset row, keyed by source), and its X-Consumer-Id is the
-// literal "notify" on both. CONSUMES=crm,prompts in etc/manifest.env mirrors these
-// for the registry.
-const (
-	crmSource     = "crm"
-	promptsSource = "prompts"
-	consumerID    = "notify"
-)
-
 func main() {
-	// rt is captured by the Handlers hook (which appkit runs after it opens +
-	// migrates the shared single-writer DB) so the consumer worker can read the DB
-	// handle and the server's logger. The worker runs strictly after the server is
-	// built, so the capture is always set by the time it executes.
-	var rt *appkit.Router
+	appkit.Main(notifySpec())
+}
 
-	appkit.Main(appkit.Spec{
-		App:      "notify",
-		Mount:    "/srv/notify/",
-		Port:     registry.MustPort("notify"),
-		MCP:      true,
-		Consumes: []string{crmSource, promptsSource}, // event-plane consumer → CONSUMES=crm,prompts
-		// Subscriptions is the LIVE provider the reflection tool reports (mirrors
-		// Spec.Health). notify is a static consumer, so it returns the fixed list of
-		// its declared in-edges — the SAME subscriptions the consumer Handlers match
-		// against (crm's contact.created plus prompts's run.succeeded / run.failed), so
-		// the runtime filter and reflection cannot drift (decision 10). Spec.Consumes
-		// stays the separate build-time envelope.
-		Subscriptions: func() []consumer.Subscription {
-			subs := []consumer.Subscription{push.Subscription()}
-			return append(subs, push.PromptsSubscriptions()...)
+func notifySpec() appkit.Spec {
+	return appkit.Spec{
+		App:   "notify",
+		Mount: "/srv/notify/",
+		Port:  registry.MustPort("notify"),
+		MCP:   true,
+		Consumers: []appkit.Consumer{
+			{
+				Source:        "crm",
+				Subscriptions: []consumer.Subscription{push.Subscription()},
+				Handler: func(rt *appkit.Router) consumer.Handler {
+					cfg, err := mustNtfyCfg(os.Getenv)
+					if err != nil {
+						panic(err)
+					}
+					client := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, rt.Logger())
+					return push.Handler(client, rt.Logger())
+				},
+			},
+			{
+				Source:        "prompts",
+				Subscriptions: push.PromptsSubscriptions(),
+				Handler: func(rt *appkit.Router) consumer.Handler {
+					cfg, err := mustNtfyCfg(os.Getenv)
+					if err != nil {
+						panic(err)
+					}
+					client := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, rt.Logger())
+					return push.PromptsHandler(client, rt.Logger())
+				},
+			},
 		},
 		Migrations: db.FS,
 		// Handlers mounts the health MCP surface (gated behind
-		// nginx-injected identity) and records the Router so the consumer worker below
-		// can reach the shared DB handle and logger.
+		// nginx-injected identity) plus notify's landing/static routes.
 		Handlers: func(r *appkit.Router) error {
-			rt = r
 			// The MCP send verb publishes through a push client built here at the
 			// composition root, reusing the same ntfy config (base/topic/token) the
-			// consumer loops resolve — resolveConsumerCfg fails loudly if a secret is
-			// absent, so a misconfigured deploy never silently disables send.
-			cfg, err := resolveConsumerCfg(os.Getenv)
+			// consumer entries resolve. mustNtfyCfg fails loudly if a secret is absent,
+			// so a misconfigured deploy never silently disables send.
+			cfg, err := mustNtfyCfg(os.Getenv)
 			if err != nil {
 				return err
 			}
-			pushClient := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, rt.Logger())
-			rt.Handle("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
-			rt.Handle("GET /static/", web.StaticHandler())
-			rt.Handle("POST /mcp", rt.RequireIdentity(
-				mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
-					rt.Events(), rt.Subscriptions(), pushClient)))
+			pushClient := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, r.Logger())
+			r.Handle("GET /{$}", web.LandingHandler(r.Service(), r.Version()))
+			r.Handle("GET /static/", web.StaticHandler())
+			r.Handle("POST /mcp", r.RequireIdentity(
+				mcp.NewHandler(r.Version(), r.Service(), r.Health(),
+					r.Events(), r.Subscriptions(), pushClient)))
 			return nil
 		},
-		// Workers carries notify's event-plane consumer loop. appkit launches it on
-		// the serve context alongside the HTTP server (the Workers seam, E2). The
-		// consumer Config + push Handler stay app-side — appkit owns the lifecycle,
-		// not the event semantics. The ntfy secrets are read at notify's own
-		// composition root (resolveConsumerCfg → os.Getenv); appkit never reads or
-		// logs a secret (§2.8).
-		// Two upstreams = TWO consumer loops (event-triggering decisions §4), each a
-		// separate appkit Worker driving its own long-lived SSE connection with its
-		// OWN feed_offset cursor row (keyed by source — they never read or write each
-		// other's cursor). The crm loop pushes on contact.created; the prompts loop
-		// pushes on run.succeeded / run.failed. Both share the same DB + ntfy client.
-		Workers: []func(context.Context) error{
-			func(ctx context.Context) error {
-				return runConsumer(ctx, rt)
-			},
-			func(ctx context.Context) error {
-				return runPromptsConsumer(ctx, rt)
-			},
-		},
-	})
+	}
 }
 
-// runConsumer is the event-plane consumer worker. It resolves the consumer +
-// ntfy config from the environment (failing loudly if a required secret is
-// absent), then drives eventplane/consumer.Run over crm's /feed until ctx is
-// cancelled (clean shutdown → nil) or a structural fault escapes (→ error, which
-// appkit propagates to cancel the server too — decision 11).
-func runConsumer(ctx context.Context, rt *appkit.Router) error {
-	cfg, err := resolveConsumerCfg(os.Getenv)
-	if err != nil {
-		return err
-	}
-	logger := rt.Logger()
-	pushClient := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, logger)
-	consumerCfg := consumer.Config{
-		FeedURL:    cfg.feedURL,
-		From:       cfg.from,
-		DB:         rt.DB(),
-		Source:     crmSource,
-		ConsumerID: consumerID,
-		Logger:     logger,
-	}
-	// NOTE: ntfy topic/token are deliberately omitted from any log line — they are
-	// secrets (§2.8). feed_url/from are safe non-secret config.
-	logger.Info("starting notify crm consumer",
-		"feed_url", cfg.feedURL, "from", cfg.from, "ntfy_base", cfg.ntfyBase)
-	if err := consumer.Run(ctx, consumerCfg, push.Handler(pushClient, logger)); err != nil {
-		return fmt.Errorf("event-plane consumer (crm): %w", err)
-	}
-	return nil
-}
-
-// runPromptsConsumer is notify's SECOND event-plane consumer worker — structurally
-// identical to runConsumer, only the upstream (prompts), the feed URL, and the
-// handler (prompts run-outcome push) differ. It owns the feed_offset row keyed by
-// source "prompts", entirely independent of the crm loop's "crm" row, so the two
-// cursors advance without ever clobbering each other (event-triggering decisions
-// §4). Best-effort push, no email/channels this phase. ctx cancellation → clean
-// shutdown (nil); a structural fault escapes as an error appkit propagates.
-func runPromptsConsumer(ctx context.Context, rt *appkit.Router) error {
-	cfg, err := resolveConsumerCfg(os.Getenv)
-	if err != nil {
-		return err
-	}
-	logger := rt.Logger()
-	pushClient := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, logger)
-	consumerCfg := consumer.Config{
-		FeedURL:    cfg.promptsFeedURL,
-		From:       cfg.from,
-		DB:         rt.DB(),
-		Source:     promptsSource,
-		ConsumerID: consumerID,
-		Logger:     logger,
-	}
-	logger.Info("starting notify prompts consumer",
-		"feed_url", cfg.promptsFeedURL, "from", cfg.from, "ntfy_base", cfg.ntfyBase)
-	if err := consumer.Run(ctx, consumerCfg, push.PromptsHandler(pushClient, logger)); err != nil {
-		return fmt.Errorf("event-plane consumer (prompts): %w", err)
-	}
-	return nil
-}
-
-// consumerCfg is notify's event-plane + ntfy push configuration, read once at the
-// composition root. The plain config (feed URL, first-subscription choice, ntfy
-// base) carries dev fallbacks; the ntfy topic and token are deployment SECRETS
-// injected via the environment (.envrc locally; app-config in prod) and never
-// read from source.
-type consumerCfg struct {
-	feedURL        string // crm's loopback feed (CRM_FEED_URL)
-	promptsFeedURL string // prompts's loopback feed (PROMPTS_FEED_URL)
-	from           string // first-subscription choice: tail|earliest (NOTIFY_FROM)
-
+// ntfyCfg is notify's push configuration, read once at the composition root. The
+// ntfy base carries a dev fallback; topic and token are deployment SECRETS
+// injected via the environment (.envrc locally; app-config in prod).
+type ntfyCfg struct {
 	ntfyBase  string // NOTIFY_NTFY_BASE_URL — plain config (tests/dev point at a mock)
 	ntfyTopic string // NTFY_TOPIC — SECRET
 	ntfyToken string // NTFY_API_KEY — SECRET
 }
 
-// resolveConsumerCfg reads notify's consumer/push config from the environment and
-// fails loudly if a required secret is absent — the push hop cannot work without
-// its topic and key, and silently degrading would hide a misconfigured deploy.
-func resolveConsumerCfg(getenv func(string) string) (consumerCfg, error) {
-	cfg := consumerCfg{
-		// CRM_FEED_URL is crm's loopback feed. The event plane bypasses nginx, so
-		// this is a direct 127.0.0.1 address; the dev fallback is only for
-		// `go run`/tests without env.
-		feedURL: envOr(getenv, "CRM_FEED_URL", registry.BaseURL("crm")+"/feed"),
-		// PROMPTS_FEED_URL is prompts's loopback feed (port 3002), same loopback-direct
-		// pattern as crm — the event plane bypasses nginx.
-		promptsFeedURL: envOr(getenv, "PROMPTS_FEED_URL", registry.BaseURL("prompts")+"/feed"),
-		// NOTIFY_FROM is the first-subscription choice; tail by default so a fresh
-		// notify only pushes for contacts created from now on.
-		from:      envOr(getenv, "NOTIFY_FROM", "tail"),
+// mustNtfyCfg reads notify's push config from the environment and fails loudly if
+// a required secret is absent — the push hop cannot work without its topic and
+// key, and silently degrading would hide a misconfigured deploy.
+func mustNtfyCfg(getenv func(string) string) (ntfyCfg, error) {
+	cfg := ntfyCfg{
 		ntfyBase:  envOr(getenv, "NOTIFY_NTFY_BASE_URL", "https://ntfy.sh"),
 		ntfyTopic: getenv("NTFY_TOPIC"),
 		ntfyToken: getenv("NTFY_API_KEY"),
 	}
 	if cfg.ntfyTopic == "" {
-		return consumerCfg{}, errors.New("NTFY_TOPIC is required (inject via .envrc from ~/.secrets/NTFY_TOPIC)")
+		return ntfyCfg{}, errors.New("NTFY_TOPIC is required (inject via .envrc from ~/.secrets/NTFY_TOPIC)")
 	}
 	if cfg.ntfyToken == "" {
-		return consumerCfg{}, errors.New("NTFY_API_KEY is required (inject via .envrc from ~/.secrets/NTFY_API_KEY)")
+		return ntfyCfg{}, errors.New("NTFY_API_KEY is required (inject via .envrc from ~/.secrets/NTFY_API_KEY)")
 	}
 	return cfg, nil
 }

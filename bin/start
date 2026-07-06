@@ -164,14 +164,12 @@ launch_ledger() {
 }
 
 launch_notify() {
-	# notify/.envrc supplies NTFY_* secrets and resolves CRM_FEED_URL by name via
-	# bin/registry. Re-resolve through the staged runtime root so dev matches the
-	# box's etc/current manifest layout.
+	# notify/.envrc supplies NTFY_* secrets. Resolve feed URLs through the staged
+	# runtime root so dev matches the box's etc/current manifest layout.
 	source "$repo/notify/.envrc"
 	export NOTIFY_DB_PATH="$RUN_DIR/notify.db"
 	export REGISTRY_ROOT="$MANIFEST_ROOT"
-	export CRM_FEED_URL="$(registry_feed_url crm)"
-	export PROMPTS_FEED_URL="$(registry_feed_url prompts)"
+	export_feed_urls NOTIFY crm prompts
 	exec "$RUN_DIR/bin/notify" serve --port "$(port 3201)"
 }
 
