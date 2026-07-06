@@ -8,11 +8,14 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"appkit/server"
+	"appkit/web"
 
 	"eventplane/outbox"
 )
@@ -26,6 +29,16 @@ const (
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewJSONHandler(io.Discard, nil))
+}
+
+func writeWWWFile(t *testing.T, path, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }
 
 // newStandardServer builds a path-routed service server whose Register hook
@@ -226,6 +239,118 @@ func TestRouter_UnauthenticatedRoute(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("/open status = %d, want 200 unauthenticated", rr.Code)
+	}
+}
+
+// R-M7NY-4UKZ
+func TestNew_WWWMountsStaticWithoutServiceRegistration(t *testing.T) {
+	root := t.TempDir()
+	writeWWWFile(t, filepath.Join(root, "static", "tokens.css"), ":root { --accent: #0a7; }\n")
+	site, err := web.Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Version:    testVersion,
+		Service:    testService,
+		WWW:        site,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil))
+	res := rr.Result()
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("StatusCode = %d, want 200", res.StatusCode)
+	}
+	if got := res.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/css") {
+		t.Fatalf("Content-Type = %q, want text/css", got)
+	}
+	if got := rr.Body.String(); got != ":root { --accent: #0a7; }\n" {
+		t.Fatalf("body = %q, want css file bytes", got)
+	}
+}
+
+// R-MA3Q-WE2D
+func TestRouter_WWWRendersServiceOwnedPageRoute(t *testing.T) {
+	root := t.TempDir()
+	writeWWWFile(t, filepath.Join(root, "landing.html"), `hello {{.Service}}`)
+	site, err := web.Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Version:    testVersion,
+		Service:    testService,
+		WWW:        site,
+		Register: func(rt *server.Router) error {
+			if rt.WWW() == nil {
+				t.Fatal("rt.WWW() = nil, want loaded site")
+			}
+			rt.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+				if err := rt.WWW().Render(w, "landing.html", map[string]string{"Service": rt.Service()}); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+			})
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+	res := rr.Result()
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("StatusCode = %d, want 200; body=%q", res.StatusCode, rr.Body.String())
+	}
+	if got := res.Header.Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
+	}
+	if got := rr.Body.String(); got != "hello "+testService {
+		t.Fatalf("body = %q, want rendered landing page", got)
+	}
+}
+
+// R-MBBN-A5T2
+func TestNew_WithoutWWWHasNoStaticRouteAndNilAccessor(t *testing.T) {
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Version:    testVersion,
+		Service:    testService,
+		Register: func(rt *server.Router) error {
+			if rt.WWW() != nil {
+				t.Fatalf("rt.WWW() = %#v, want nil", rt.WWW())
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/static/anything", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("StatusCode = %d, want 404", rr.Code)
 	}
 }
 

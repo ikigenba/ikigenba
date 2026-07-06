@@ -21,6 +21,7 @@ import (
 	"appkit/logging"
 	"appkit/manifest"
 	"appkit/server"
+	"appkit/web"
 
 	"eventplane/outbox"
 )
@@ -137,6 +138,13 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 	if err != nil {
 		return err
 	}
+	var site *web.Site
+	if spec.WWW {
+		site, err = web.Load(cfg.WWWPath)
+		if err != nil {
+			return fmt.Errorf("load www %s: %w", cfg.WWWPath, err)
+		}
+	}
 
 	// serve flags override env (env already applied as the default in Resolve).
 	fs := flag.NewFlagSet(spec.App+" serve", flag.ContinueOnError)
@@ -223,6 +231,7 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 		Events:        spec.Events,
 		Subscriptions: spec.Subscriptions,
 		Publishes:     spec.Publishes,
+		WWW:           site,
 		Feed:          feedH,
 		FeedPath:      spec.Feed,
 		Register:      spec.Handlers,

@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"appkit/logging"
+	"appkit/web"
 
 	"eventplane/consumer"
 	"eventplane/outbox"
@@ -94,6 +95,10 @@ type Options struct {
 	// Subscriptions). When set it is preferred over the static Events; nil for
 	// static producers, which keep rendering reflection from Events.
 	Publishes func() outbox.Registry
+	// WWW is the loaded web site for services that opt into chassis web assets.
+	// When set on a non-apex server, New mounts GET /static/ automatically and
+	// exposes the Site through Router.WWW() for service-owned page routes.
+	WWW *web.Site
 
 	// DB is the shared single-writer SQLite handle appkit opened and migrated. It
 	// is exposed to the Register hook (rt.DB()) so a service builds its domain over
@@ -180,6 +185,10 @@ func (rt *Router) Subscriptions() func() []consumer.Subscription { return rt.app
 // Subscriptions.
 func (rt *Router) Publishes() func() outbox.Registry { return rt.app.publishes }
 
+// WWW returns the loaded web site for services that opt into chassis web assets.
+// It is nil when Spec.WWW is unset, so unconverted services keep their old shape.
+func (rt *Router) WWW() *web.Site { return rt.app.www }
+
 // appHandler holds the HTTP layer's auth dependencies. Methods on it implement
 // the PRM document, the identity gate, and health. Unexported: the package's
 // public surface is New/Run/Router.
@@ -193,6 +202,7 @@ type appHandler struct {
 	events        outbox.Registry
 	subscriptions func() []consumer.Subscription
 	publishes     func() outbox.Registry
+	www           *web.Site
 }
 
 // New builds the HTTP server with its routes, security headers, and pinned
@@ -222,6 +232,7 @@ func New(opts Options) (*http.Server, error) {
 		events:        opts.Events,
 		subscriptions: opts.Subscriptions,
 		publishes:     opts.Publishes,
+		www:           opts.WWW,
 	}
 	mux := http.NewServeMux()
 	rt := &Router{mux: mux, app: a, logger: opts.Logger, resourceID: opts.ResourceID, authServer: opts.AuthServer, db: opts.DB}
@@ -246,6 +257,9 @@ func New(opts Options) (*http.Server, error) {
 				fp = "/feed"
 			}
 			mux.Handle("GET "+fp, opts.Feed)
+		}
+		if opts.WWW != nil {
+			mux.Handle("GET /static/", opts.WWW.Static())
 		}
 	}
 

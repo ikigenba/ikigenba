@@ -107,6 +107,11 @@ type Spec struct {
 	// lives here, untouched by the chassis. May be nil (a server with only the
 	// uniform routes).
 	Handlers func(*Router) error
+	// WWW declares that this service serves web pages/assets from config WWWPath.
+	// When true, serve loads the site at startup, mounts GET /static/ for path
+	// routed services, and exposes the loaded site through Router.WWW() so
+	// Handlers can render service-owned pages. False changes nothing.
+	WWW bool
 	// Config is the service-side composition-root hook: it reads ManifestExtras
 	// non-secret config AND the service's secrets (ANTHROPIC_API_KEY, DROPBOX_*,
 	// NTFY_*) from env and returns the service's own config object. Keeping the

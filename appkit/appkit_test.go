@@ -214,6 +214,34 @@ func TestDispatch_ServeRejectsBadLogLevel(t *testing.T) {
 	}
 }
 
+func TestDispatch_ServeWithWWWFailsOnMissingRoot(t *testing.T) {
+	// R-M8VU-IMBO
+	root := t.TempDir()
+	missingWWW := filepath.Join(root, "share", "www")
+	dbPath := filepath.Join(root, "state", "widget.db")
+	genPath := filepath.Join(root, "cache", "widget.db.generation")
+	spec := testSpec()
+	spec.WWW = true
+
+	code, _, errs := run(t, spec, map[string]string{
+		"WIDGET_WWW_PATH":        missingWWW,
+		"WIDGET_DB_PATH":         dbPath,
+		"WIDGET_GENERATION_PATH": genPath,
+	}, "serve")
+	if code != 1 {
+		t.Fatalf("serve missing www exit = %d, want 1; stderr=%q", code, errs)
+	}
+	if !strings.Contains(errs, missingWWW) {
+		t.Fatalf("stderr = %q, want it to name missing www root %q", errs, missingWWW)
+	}
+	if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
+		t.Fatalf("db file exists after missing www failure (stat err=%v), want serve to fail before boot", err)
+	}
+	if _, err := os.Stat(genPath); !os.IsNotExist(err) {
+		t.Fatalf("generation file exists after missing www failure (stat err=%v), want serve to fail before boot", err)
+	}
+}
+
 func TestServiceBinaryBoot_ReconstructsCacheAndGenerationOnBoot(t *testing.T) {
 	// R-4E91-4OLX
 	root := t.TempDir()
