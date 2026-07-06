@@ -5,8 +5,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"appkit"
 	"appkit/server"
@@ -212,7 +214,15 @@ func (h *Handler) toolReflection(args json.RawMessage) (map[string]any, error) {
 		events = h.publishes()
 	}
 	if p.EventType != "" {
-		return jsonResultFrom(events.Detail(p.EventType))
+		detail, err := events.Detail(p.EventType)
+		if err != nil {
+			var unknown *outbox.UnknownEventTypeError
+			if errors.As(err, &unknown) {
+				return ErrorResult(fmt.Sprintf("unknown event_type %q; known types: %s", unknown.Type, strings.Join(unknown.Valid, ", "))), nil
+			}
+			return nil, err
+		}
+		return JSONResult(detail)
 	}
 	return JSONResult(map[string]any{
 		"publishes":  events.Index(),
