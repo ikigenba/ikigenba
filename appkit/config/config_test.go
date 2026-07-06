@@ -183,6 +183,54 @@ func TestResolve_DomainWithoutRootAllowsExplicitDataPaths(t *testing.T) {
 	}
 }
 
+func TestResolve_ComposesWWWPath(t *testing.T) {
+	dataDir := t.TempDir()
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			// R-LWOU-OWWQ
+			name: "production root uses shipped share current tier",
+			env: map[string]string{
+				"IKIGENBA_DOMAIN":     "int.ikigenba.com",
+				"IKIGENBA_ROOT":       "/opt",
+				"CRM_DB_PATH":         filepath.Join(dataDir, "state", "crm.db"),
+				"CRM_GENERATION_PATH": filepath.Join(dataDir, "cache", "crm.db.generation"),
+			},
+			want: filepath.Join("/opt", "crm", "share", "current", "www"),
+		},
+		{
+			// R-LXWR-2ONF
+			name: "dev default uses service share www",
+			env:  map[string]string{},
+			want: "./share/www",
+		},
+		{
+			// R-LZ4N-GGE4
+			name: "explicit override wins over production root",
+			env: map[string]string{
+				"IKIGENBA_ROOT": "/opt",
+				"CRM_WWW_PATH":  "/somewhere/else",
+			},
+			want: "/somewhere/else",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Resolve("crm", "/srv/crm/", 3001, envFunc(tt.env))
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if cfg.WWWPath != tt.want {
+				t.Fatalf("WWWPath = %q, want %q", cfg.WWWPath, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolve_ApexMount(t *testing.T) {
 	cfg, err := Resolve("dashboard", "/", 3000, envFunc(map[string]string{
 		"IKIGENBA_DOMAIN": "int.ikigenba.com",

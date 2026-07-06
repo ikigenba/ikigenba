@@ -27,6 +27,7 @@ type Config struct {
 	AuthServer     string // dashboard AS base URL, composed from IKIGENBA_DOMAIN
 	DBPath         string // SQLite file (env <APP>_DB_PATH)
 	GenerationPath string // event-plane epoch sidecar (env <APP>_GENERATION_PATH)
+	WWWPath        string // web-asset root (env <APP>_WWW_PATH)
 }
 
 // Resolve reads the universal env contract for the named app. mount is the app's
@@ -55,6 +56,7 @@ func Resolve(app, mount string, defaultPort int, getenv func(string) string) (Co
 	resourceID, authServer := composeURLs(getenv, up, mount)
 
 	dbPath, genPath := composeDataPaths(getenv, up, app)
+	wwwPath := composeWWWPath(getenv, up, app)
 	if getenv(dbPathKey) != "" {
 		if err := ensureParentDir(dbPath, 0o750); err != nil {
 			return Config{}, fmt.Errorf("%s: %w", dbPathKey, err)
@@ -74,6 +76,7 @@ func Resolve(app, mount string, defaultPort int, getenv func(string) string) (Co
 		AuthServer:     authServer,
 		DBPath:         dbPath,
 		GenerationPath: genPath,
+		WWWPath:        wwwPath,
 	}, nil
 }
 
@@ -113,6 +116,17 @@ func composeDataPaths(getenv func(string) string, up, app string) (db, gen strin
 	}
 	gen = EnvOr(getenv, up+"_GENERATION_PATH", gen)
 	return db, gen
+}
+
+// composeWWWPath composes the service web-asset root from IKIGENBA_ROOT, with an
+// explicit per-app env override winning over the composed default.
+func composeWWWPath(getenv func(string) string, up, app string) string {
+	root := strings.TrimSpace(getenv("IKIGENBA_ROOT"))
+	www := "./share/www"
+	if root != "" {
+		www = filepath.Join(root, app, "share", "current", "www")
+	}
+	return EnvOr(getenv, up+"_WWW_PATH", www)
 }
 
 // EnvOr returns getenv(key) when non-empty, else def.
