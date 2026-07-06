@@ -1,8 +1,9 @@
-# notify — Plan (landing page)
+# notify — Plan
 
 **Authority: construction order and history.** This document and the
-`project/plan/` directory it heads own the **build order** of the notify landing
-page and the **record of what has been built**. The plan is **append-only**:
+`project/plan/` directory it heads own the **build order** of notify's
+ralph-governed work and the **record of what has been built**. The plan is
+**append-only**:
 completed phases are never rewritten or deleted, so the plan doubles as the
 construction history. To extend the work, update the product
 (`project/product/product.md`) and design (`project/design/design.md` +

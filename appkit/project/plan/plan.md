@@ -72,3 +72,18 @@ Sequenced so crm never drops out mid-change:
 Until this runs, the mid-investigation bridge symlink `/opt/crm/etc/manifest.env`
 stays on the box on purpose — removing it before the `current` reader ships would
 re-hide crm.
+
+**Registry replace mirror (D10, operator-applied).** Phase 10 makes appkit
+require the in-repo `registry` module. A dependency's `replace` directives are
+not transitive, so every module that requires appkit must carry its own
+`replace registry => ../registry` (plus the `require registry v0.0.0` Go adds
+on tidy) — exactly as the `eventplane` require already forced on all of them.
+notify, prompts, scripts, and sites already carry it; the remaining consumers
+of appkit (crm, cron, dashboard, dropbox, github, gmail, ledger, webhooks,
+wiki) need the one-line addition before their next `GOWORK=off` build
+(`bin/ship`) will succeed. This is a mechanical sweep across sibling modules
+appkit phases must not edit, applied by the operator (or each service's own
+workspace) alongside landing Phase 10. Check:
+`grep -L "replace registry" */go.mod` from the repo root lists only modules
+that do not require appkit (`eventplane`, `registry`, and `opsctl` if it stays
+appkit-free).

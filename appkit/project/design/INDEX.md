@@ -16,9 +16,17 @@ Verification ids change.
 - D7 → `project/design/D07.md` — Chassis integration: `Spec.WWW`, the auto-mounted static route, `Router.WWW()` — owns R-M7NY-4UKZ, R-M8VU-IMBO, R-MA3Q-WE2D, R-MBBN-A5T2
 - D8 → `project/design/D08.md` — The `appkit/mcp` JSON-RPC transport over a declared tool table — owns R-MCJJ-NXJR, R-MDRG-1PAG, R-MEZC-FH15, R-MG78-T8RU, R-MHF5-70IJ, R-MIN1-KS98, R-MJUX-YJZX
 - D9 → `project/design/D09.md` — Chassis-owned standard tools: `health` and `reflection` — owns R-ML2U-CBQM, R-MMAQ-Q3HB, R-MNIN-3V80, R-MOQJ-HMYP
+- D10 → `project/design/D10.md` — Chassis-owned consumer loops: `Spec.Consumers` — owns R-4199-A0U9, R-42H5-NSKY, R-44WY-FC2C, R-464U-T3T1, R-47CR-6VJQ, R-48KN-KNAF, R-49SJ-YF14
 
 ## Verification ids → Decision
 
+- R-4199-A0U9 → D10 → `project/design/D10.md`
+- R-42H5-NSKY → D10 → `project/design/D10.md`
+- R-44WY-FC2C → D10 → `project/design/D10.md`
+- R-464U-T3T1 → D10 → `project/design/D10.md`
+- R-47CR-6VJQ → D10 → `project/design/D10.md`
+- R-48KN-KNAF → D10 → `project/design/D10.md`
+- R-49SJ-YF14 → D10 → `project/design/D10.md`
 - R-LWOU-OWWQ → D5 → `project/design/D05.md`
 - R-LXWR-2ONF → D5 → `project/design/D05.md`
 - R-LZ4N-GGE4 → D5 → `project/design/D05.md`

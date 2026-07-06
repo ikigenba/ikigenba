@@ -16,8 +16,13 @@ service carries its own copy-pasted JSON-RPC MCP transport (~180 near-identical
 lines each), its own landing/static handler harness with small accidental
 divergences (double prefix-stripping here, a combined handler there), its own
 duplicated `health` and `reflection` tools, and its own embedded HTML/CSS/font
-assets baked into the binary. A fix or improvement to any of this common surface
-must be re-made twelve times, and each re-make is a chance for more drift.
+assets baked into the binary. Consumer services additionally hand-write the
+same event-plane loop wiring per upstream — near-identical composition-root
+blocks that resolve a feed address, assemble the loop, and repeat the same
+declaration in three places that must manually agree — and that wiring has
+already drifted between services. A fix or improvement to any of this common
+surface must be re-made twelve times, and each re-make is a chance for more
+drift.
 Embedding the web assets also puts UI files in the wrong place operationally:
 they are invisible on the box, cannot be inspected or diffed in a release
 directory, and cost a full rebuild in local dev for a one-line HTML tweak.
@@ -27,12 +32,13 @@ directory, and cost a full rebuild in local dev for a one-line HTML tweak.
 appkit is the shared chassis library every suite service is built on. It owns
 the uniform half of a service — the fixed verbs, config-from-env, migrations,
 the loopback HTTP server, the event-plane mounts — so that a service's own code
-is only its domain. This unit of work extends that ownership to two more
+is only its domain. This unit of work extends that ownership to three more
 surfaces that were never legitimately per-service: the **web serving machinery**
 (pages rendered from an on-disk, release-shipped asset root instead of embedded
-files) and the **MCP transport with its standard tools** (the JSON-RPC plumbing
+files), the **MCP transport with its standard tools** (the JSON-RPC plumbing
 plus `health` and `reflection`, leaving services to declare only their domain
-tools).
+tools), and the **event-plane consumer loops** (a consumer declares its
+upstreams and what to do with their events; the chassis runs the loops).
 
 ## Users
 
@@ -53,13 +59,15 @@ This work adds to appkit: resolution of a per-service on-disk web-asset root
 (shipped in the release, with a local-dev equivalent and a per-service
 override), page templating and static-asset serving from that root, automatic
 mounting of the static route for services that opt in, a reusable MCP transport,
-and chassis-owned `health` and `reflection` MCP tools. Nothing else: appkit
-still knows nothing about LLMs, tools-of-agents, or any service's domain; it
-still never reads secrets; migrations stay embedded in each service binary;
-the event-plane producer/consumer split is unchanged; per-service *pages* (which
-routes exist beyond static, what data they render) remain service-owned. The
-outbox migration SQL and a shared consumer-worker constructor are deliberately
-out of scope for this round.
+chassis-owned `health` and `reflection` MCP tools, and chassis-run event-plane
+consumer loops driven by a per-service declaration of upstreams and handlers.
+Nothing else: appkit still knows nothing about LLMs, tools-of-agents, or any
+service's domain; it still never reads secrets; migrations stay embedded in
+each service binary; the event-plane producer/consumer *split* and the wire
+protocol are unchanged (what an event means, and what a consumer does with it,
+stay service-owned); per-service *pages* (which routes exist beyond static,
+what data they render) remain service-owned. The outbox migration SQL is
+deliberately out of scope for this round.
 
 ## What we promise (user-facing behavior)
 
@@ -80,6 +88,12 @@ out of scope for this round.
   declares its tool names, descriptions, schemas, and handlers; the chassis
   speaks the protocol, threads the caller identity, and answers `health` and
   `reflection` identically across every service.
+- **A consumer service is a declaration, not a wiring exercise.** A service
+  that consumes other services' events states which upstreams it follows and
+  what to do with each event; the chassis finds each upstream, runs the loops,
+  keeps each upstream's place independently across restarts, and reports the
+  same subscriptions everywhere they're visible. A contradictory declaration
+  refuses to start with a clear error rather than guessing.
 - **Nothing changes for services that haven't opted in.** All current services
   build and run byte-for-byte-equivalent behavior until they adopt the new
   surfaces.
@@ -96,5 +110,10 @@ out of scope for this round.
 - A service converted to the chassis MCP transport presents the same tool list
   and tool behaviors it did before, including `health` and `reflection`, while
   its own MCP code has shrunk to a declaration of its domain tools.
+- A consumer service converted to the declared form consumes the same events
+  from the same upstreams it did before, resuming where it left off after a
+  restart, while its own consumer code has shrunk to the declaration and the
+  per-event handlers.
 - Every unconverted service in the suite still builds and passes its tests with
-  no source change.
+  no source change (allowing only the one-line build-graph mirror every
+  chassis sibling dependency already requires of consuming modules).

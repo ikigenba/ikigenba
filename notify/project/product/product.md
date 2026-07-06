@@ -2,7 +2,7 @@
 
 **Authority: intent.** This document owns *why* notify serves a web landing
 page, *for whom*, what is in and out of scope, and what we **promise** the viewer
-— in outcome terms only. Mechanism (the handler, the embedded template, the
+— in outcome terms only. Mechanism (the handler, the page template, the
 Carbon tokens, the nginx fragment, the route pattern) and its checkable proof
 live in `project/design/design.md`. Where the two touch observable behavior,
 product states the *promise* and design states the *exact, checkable form*; that
@@ -16,16 +16,17 @@ boundary keeps product, design, and plan from overlapping.
 > it states the uniform v1 starting point precisely — retargeted to notify.
 
 > **Second concern in this backlog (no user-facing shift).** notify's design/plan
-> (D9–D10, phases 7–8) also carry a separate, **behavior-preserving** change:
-> notify resolves its own listen port and its crm/prompts feed URLs through the
-> shared `registry` address table **by name**, instead of the hardcoded
-> `127.0.0.1:30xx` literals it carries today. The resolved values are identical to
-> the current literals, so **no promise or outcome in this document changes** — a
-> viewer, an operator, and an MCP client all see exactly what they see now. The
-> only outcome is internal correctness/operability: the port is written down once
-> (in `registry`), so a renumber can no longer drift silently and reach deploy.
-> This is noted here only so the product doc does not appear to contradict a
-> Decision in the same backlog; it adds no user-facing promise of its own.
+> also carry **behavior-preserving** internal changes: notify resolves its own
+> listen port through the shared `registry` address table **by name** (D9–D10),
+> and its consumer loops, web serving, and MCP transport run through the shared
+> appkit chassis (D11–D14) — notify declares its upstreams, its page, and its
+> `send` tool; the chassis does the rest. Every resolved value and every wire
+> behavior is identical to before, so **no promise or outcome in this document
+> changes** — a viewer, an operator, and an MCP client all see exactly what they
+> see now. The only outcome is internal correctness/operability: shared facts
+> are written down once, so drift can no longer reach deploy silently. This is
+> noted here only so the product doc does not appear to contradict a Decision in
+> the same backlog; it adds no user-facing promise of its own.
 
 ## Problem
 
@@ -53,9 +54,9 @@ viewer's **dashboard browser session** (the login cookie), not by a bearer
 token — because a browser cannot present a bearer token, and because a
 name-and-version page warrants only a coarse "are you a logged-in user of this
 box" check, never a per-resource authorization. The page proves the service is
-deployed, reachable, and on-system, and it establishes the seam (handler +
-embedded template + embedded design assets) that every later notify web page
-grows from.
+deployed, reachable, and on-system, and it establishes the seam (a page
+template + design assets in notify's own asset tree) that every later notify
+web page grows from.
 
 ## Users
 
@@ -86,8 +87,8 @@ The notify landing page does this and only this:
   monochrome neutrals, blue `#2563EB` as the only signal color, the Space
   Grotesk / IBM Plex Sans / IBM Plex Mono type pairing, the 4px spacing grid. A
   simple centered card: service name in display type, version as a mono label.
-- **Carry its own design assets** — notify embeds its **own** copy of the Carbon
-  `tokens.css` and the woff2 fonts under its static directory and serves them
+- **Carry its own design assets** — notify carries its **own** copy of the
+  Carbon `tokens.css` and the woff2 fonts in its own asset tree and serves them
   from its own mount; it does not depend on the dashboard's assets at runtime.
 - **Gate humans by the dashboard session cookie** — the page (and any future
   notify web page) is reachable only by a viewer whose `dashboard_session` cookie
@@ -123,11 +124,11 @@ Promised values the design must honor verbatim and never re-declare:
 - **v1 content is exactly: service name + running version.** No more. The values
   come from what the chassis already exposes (`rt.Service()` / `rt.Version()`);
   the page adds no new data source.
-- **Each app owns its own landing page.** There is no shared landing handler;
-  notify's page code, template, and embedded assets live under `notify/`.
+- **Each app owns its own landing page.** There is no shared landing page;
+  notify's page content, template, and assets live under `notify/`.
 - **The visual system is Carbon.** `design/carbon.md` (rules) +
   `design/tokens.css` (tokens) + `design/example.html` (reference) are the source
-  of truth; notify embeds its own copy of the tokens and fonts.
+  of truth; notify carries its own copy of the tokens and fonts.
 
 ## What we promise (user-facing behavior)
 
@@ -159,7 +160,7 @@ Each is a result the viewer or operator can confirm against the running service:
   with `401`, not shown the page.
 - The version shown on the page matches the version the deployed binary reports.
 - The page's fonts and colors match the suite design system (Carbon), and the
-  page loads its own embedded `tokens.css` and fonts, not the dashboard's.
+  page loads its own `tokens.css` and fonts, not the dashboard's.
 - An MCP client still discovers the AS via the PRM well-known and calls the
   bearer-gated `/mcp` exactly as before; the landing page changed nothing for it.
 - The bearer-gated `/srv/notify/mcp` still requires a token and `/health` still

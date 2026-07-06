@@ -8,19 +8,23 @@ form** of those promises and never re-declares the why. This design is the
 **single current** statement, rewritten in place (stale decisions removed, not
 stacked); the history of how it got here lives in the plan.
 
-> **Scope.** This design covers two threads:
+> **Scope.** This design covers three threads:
 >
 > 1. **The manifest read-path** (D1–D4, built): every manifest reader resolves
 >    *through* the per-app `etc/current` deploy symlink; the local dev layout
 >    mirrors the box; the stable sibling path is retired.
-> 2. **The uniform service chassis surfaces** (D5–D9, active): the on-disk
+> 2. **The uniform service chassis surfaces** (D5–D9, built): the on-disk
 >    web-asset root (config resolution D5, the `appkit/web` package D6, the
 >    chassis integration D7) and the chassis MCP surface (the JSON-RPC
 >    transport D8, the standard `health`/`reflection` tools D9).
+> 3. **Chassis-owned consumer loops** (D10, active): the declared
+>    `Spec.Consumers` table from which the chassis derives the manifest
+>    `CONSUMES=`, the reflection subscriptions, and the running
+>    `eventplane/consumer` loops — feed-URL/`From` env resolution included.
 >
 > appkit's other pre-existing surfaces — the verb dispatcher, migrations, the
 > loopback server's PRM/health/feed routes, the producer/worker seams — are
-> settled prior art this design extends and does **not** reopen. Every D5–D9
+> settled prior art this design extends and does **not** reopen. Every D5–D10
 > change is **additive**: a service that sets none of the new Spec fields and
 > imports none of the new packages compiles and behaves exactly as before.
 
@@ -51,7 +55,13 @@ Shared facts every Decision leans on:
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Dependencies:** the D5–D9 packages use only the standard library plus the
   existing in-repo `eventplane` sibling (already a committed require/replace in
-  `appkit/go.mod`). No new third-party dependency.
+  `appkit/go.mod`). D10 adds one more **in-repo** replace-sibling, `registry`
+  (`require registry v0.0.0` + `replace registry => ../registry`) — the static
+  leaf address table. No new third-party dependency. Because a dependency's
+  `replace` directives are not transitive, every module requiring appkit must
+  mirror the registry replace (exactly as `eventplane` already forced); the
+  sweep over the services that don't yet carry it is an operator step in
+  `project/plan/plan.md`, not appkit-phase work.
 - **Testing substrate:** all D5–D9 behavior is provable in-process —
   `net/http/httptest` for HTTP, `t.TempDir()` for on-disk asset roots, injected
   `getenv` maps for config. A `t.TempDir()` tree is a real filesystem, so the
@@ -68,12 +78,12 @@ Shared facts every Decision leans on:
   boundary-crossing collaborator of this chassis work, verified by its shell
   test or a live `bin/start` smoke, **not** by the appkit Go suite. Phases that
   touch them are called out explicitly in the plan.
-- **Additivity guard (D5–D9):** none of the new Spec fields, Router accessors,
+- **Additivity guard (D5–D10):** none of the new Spec fields, Router accessors,
   or packages may change the behavior of a Spec that doesn't use them. The
   pre-existing appkit test suite passing unchanged is the standing proof.
 - **This design touches no schema and no `opsctl` code.**
 
-## Testing strategy (D5–D9)
+## Testing strategy (D5–D10)
 
 - **`appkit/config`** is pure over its injected `getenv`; www-root resolution is
   table-tested exactly like the existing DB-path composition.
@@ -89,6 +99,13 @@ Shared facts every Decision leans on:
   table whose handlers record their inputs. The standard tools are driven
   through the same seam with real `outbox.Registry` / `consumer.Subscription`
   values.
+- **Consumer loops (D10)** split the same way `appkit/config` and the server
+  do: env resolution is pure and table-tested over injected `getenv` maps; the
+  loop itself is proven end-to-end against a **real** SSE feed served by
+  `httptest` over a **real** `t.TempDir()` SQLite database, because cursor
+  independence and delivery ordering are exactly the claims a stub cannot
+  falsify. The manifest/reflection derivations reuse the existing manifest-emit
+  and mcp-seam harnesses.
 
 ## Layout
 
@@ -107,6 +124,11 @@ root) and `appkit/mcp` (the JSON-RPC MCP transport + standard tools). It extends
 two existing seams: `appkit/config` (www-root resolution) and the root
 `appkit`/`appkit/server` pair (the `Spec.WWW` field, site loading at serve, the
 auto-mounted static route, the `Router.WWW()` accessor).
+
+**Consumer seam (D10).** No new package: the `Consumer` type and `Consumers`
+Spec field live in the root `appkit` package beside `Workers`; the
+feed-URL/`From` env resolution extends `appkit/config`; the manifest and
+reflection derivations extend the existing emit/tool paths.
 
 Design is rewritten in place, not append-only (history lives in the plan): a
 changed Decision is rewritten in its `DNN.md` and `INDEX.md` is regenerated; a new
