@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-sonnet-5
+---
 # gather — author the phase brief
 
 You run in a **fresh, isolated context** from the service root `appkit/` (the

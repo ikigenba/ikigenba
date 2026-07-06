@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-opus-4-8
+---
 # verify — the independent gate
 
 You run in a **fresh, isolated context** from the service root `appkit/` (the

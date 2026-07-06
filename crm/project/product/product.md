@@ -76,8 +76,8 @@ agent reads over MCP.
 
 **Landing page.** crm serves one page at the mount root: a `GET` of the bare
 `/srv/crm/` root returns an HTML page showing the service name (`crm`) and the
-running version, styled with the **Carbon** design system, carrying its **own**
-embedded `tokens.css` and fonts, gated by the dashboard session cookie (an
+running version, styled with the **Carbon** design system, serving its **own**
+`tokens.css` and fonts, gated by the dashboard session cookie (an
 unauthenticated browser gets `401`). It does nothing else in v1 — no per-resource
 authorization, no domain data on the page, no interactive control, and it shares
 no handler with any other service.
@@ -119,8 +119,8 @@ Promised values the design must honor verbatim and never re-declare:
   source.
 - **Each app owns its own landing page** — no shared landing handler; crm's page
   code, template, and assets live under `crm/`.
-- **The visual system is Carbon** — the suite tokens/fonts; crm embeds its own
-  copy.
+- **The visual system is Carbon** — the suite tokens/fonts; crm ships and serves
+  its own copy.
 - **The MCP surface is self-sufficient** — a connecting agent can discover and
   correctly use crm from the crm MCP connection alone, with **no external skill**.
 - **Discovery describes; it does not change behavior** — the entity model, the
@@ -138,8 +138,8 @@ Promised values the design must honor verbatim and never re-declare:
 - **A browser that is not logged in is refused** — `401`, because the page is
   gated by the dashboard session cookie.
 - **The page looks like the rest of the suite** — same fonts, palette, single
-  blue signal color, and spacing grid; it loads its **own** embedded assets, not
-  the dashboard's.
+  blue signal color, and spacing grid; it loads its **own** assets, not the
+  dashboard's.
 - **The version on the page is the version actually running** — the operator can
   confirm a deploy or rollback in a browser.
 
@@ -170,8 +170,8 @@ running service:
 - As a browser with no dashboard session I open `/srv/crm/` and am refused with
   `401`, not shown the page.
 - The version shown on the page matches the version the deployed binary reports.
-- The page loads its own embedded `tokens.css` and fonts, and its fonts and colors
-  match the suite design system.
+- The page loads its own `tokens.css` and fonts, and its fonts and colors match
+  the suite design system.
 - With **only crm connected and no external skill installed**, an agent asked to
   work with contacts / companies / deals routes to crm and completes a basic
   create → find → log flow.

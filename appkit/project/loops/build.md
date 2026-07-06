@@ -1,3 +1,7 @@
+---
+harness: codex
+model: gpt-5.5
+---
 # build — implement the phase from the brief
 
 You run in a **fresh, isolated context** from the service root `appkit/` (the

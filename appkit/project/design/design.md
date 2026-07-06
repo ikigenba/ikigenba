@@ -1,24 +1,28 @@
-# appkit — Design (manifest read-path: one indirection through `current`)
+# appkit — Design
 
 **Authority: shape and its proof.** This document and the `project/design/`
-directory it heads own *how* the manifest read-path is shaped and *how each
-behavior is proven*. The product (`project/product/product.md`) owns the *why* and
-the user-facing promises; design states the **exact, checkable form** of those
-promises and never re-declares the why. (No `product.md` exists yet for appkit;
-the why is carried by reference: services deployed to the box were vanishing from
-the dashboard's service list because manifest readers read a *sibling* file next
-to the deploy `current` symlink instead of reading *through* it, so a freshly
-set-up service — crm — that never got the unmaintained sibling was silently
-dropped.) This design is the **single current** statement, rewritten in place
-(stale decisions removed, not stacked); the history of how it got here lives in
-the plan.
+directory it heads own *how* appkit's ralph-governed surfaces are shaped and
+*how each behavior is proven*. The product (`project/product/product.md`) owns
+the *why* and the user-facing promises; design states the **exact, checkable
+form** of those promises and never re-declares the why. This design is the
+**single current** statement, rewritten in place (stale decisions removed, not
+stacked); the history of how it got here lives in the plan.
 
-This design is scoped narrowly: move every manifest reader onto the single
-per-app `etc/current` deploy symlink (D1–D2), make the local dev runtime layout
-mirror the box so one code path serves both (D3), and retire the now-dead stable
-sibling path plus its hand-placed artifacts (D4). It deliberately makes **no**
-`opsctl` change: the box already publishes `etc/current/manifest.env`, so reading
-through `current` makes prod correct with no deploy-tool edit.
+> **Scope.** This design covers two threads:
+>
+> 1. **The manifest read-path** (D1–D4, built): every manifest reader resolves
+>    *through* the per-app `etc/current` deploy symlink; the local dev layout
+>    mirrors the box; the stable sibling path is retired.
+> 2. **The uniform service chassis surfaces** (D5–D9, active): the on-disk
+>    web-asset root (config resolution D5, the `appkit/web` package D6, the
+>    chassis integration D7) and the chassis MCP surface (the JSON-RPC
+>    transport D8, the standard `health`/`reflection` tools D9).
+>
+> appkit's other pre-existing surfaces — the verb dispatcher, migrations, the
+> loopback server's PRM/health/feed routes, the producer/worker seams — are
+> settled prior art this design extends and does **not** reopen. Every D5–D9
+> change is **additive**: a service that sets none of the new Spec fields and
+> imports none of the new packages compiles and behaves exactly as before.
 
 ## Requirement ids
 
@@ -37,23 +41,54 @@ through `current` makes prod correct with no deploy-tool edit.
 Shared facts every Decision leans on:
 
 - **Language / toolchain:** Go **1.26**, single module `module appkit` rooted at
-  `appkit/`. The manifest reader is `appkit/inventory` over `appkit/manifest`
-  (the shared `KEY=value` parser); both are consumed by the dashboard via a
-  committed `replace appkit => ../appkit`.
+  `appkit/`. Consumed by every service via a committed
+  `replace appkit => ../appkit`; never tagged.
 - **Build / typecheck command:** `cd appkit && go build ./...` and `go vet ./...`.
   The isolated-module check (mirroring the production build) adds `GOWORK=off`.
 - **Test command:** `cd appkit && go test ./...`. **"The suite is green"** means
   `go build ./...`, `go vet ./...`, `gofmt -l .` (no output), and `go test ./...`
   all succeed with zero failures, from `appkit/`.
-- **Cross-module collaborators (outside `appkit/`).** Two readers and the local
-  launcher are not Go and not under `appkit/`: the repo-root shell scripts
-  `bin/registry` and `bin/start`. They conform to the same contract and are
-  verified by `bin/registry.test.sh` and a live `bin/start` smoke, **not** by the
-  appkit Go suite. Phases that touch them (D2, D3, D4) are called out in the plan
-  as crossing the `appkit/` boundary; they are part of this one layout-parity fix,
-  not appkit-package work.
-- **This change touches no schema and no `opsctl` code.** The box's deploy layout
-  is unchanged; only how readers address it changes.
+- **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
+- **Dependencies:** the D5–D9 packages use only the standard library plus the
+  existing in-repo `eventplane` sibling (already a committed require/replace in
+  `appkit/go.mod`). No new third-party dependency.
+- **Testing substrate:** all D5–D9 behavior is provable in-process —
+  `net/http/httptest` for HTTP, `t.TempDir()` for on-disk asset roots, injected
+  `getenv` maps for config. A `t.TempDir()` tree is a real filesystem, so the
+  web-root load/serve/missing-root claims are exercised against the substrate
+  that can falsify them — no mocks stand in for the disk.
+- **The on-box layout is a fixed external contract.** `bin/ship` bundles a
+  service's `<svc>/share/` directory into `share/<version>/`, and `opsctl`
+  swaps the `share/current` symlink atomically on deploy/rollback;
+  `IKIGENBA_ROOT` roots the `/opt/<app>/` tree. appkit *consumes* these facts
+  (D5 composes paths from them); it does not define or change them.
+- **Cross-module collaborators (outside `appkit/`).** The repo-root shell
+  scripts `bin/registry` and `bin/start` are not Go and not under `appkit/`;
+  where a Decision names one (D2–D4 historically, D7's dev wiring) it is a
+  boundary-crossing collaborator of this chassis work, verified by its shell
+  test or a live `bin/start` smoke, **not** by the appkit Go suite. Phases that
+  touch them are called out explicitly in the plan.
+- **Additivity guard (D5–D9):** none of the new Spec fields, Router accessors,
+  or packages may change the behavior of a Spec that doesn't use them. The
+  pre-existing appkit test suite passing unchanged is the standing proof.
+- **This design touches no schema and no `opsctl` code.**
+
+## Testing strategy (D5–D9)
+
+- **`appkit/config`** is pure over its injected `getenv`; www-root resolution is
+  table-tested exactly like the existing DB-path composition.
+- **`appkit/web`** is tested against real temporary directories: tests write
+  template and asset files into `t.TempDir()`, load them, and drive the returned
+  handlers with `httptest`. Failure paths (missing root, missing template) are
+  real filesystem states.
+- **Server integration (D7)** is tested at the `server.New` seam the existing
+  server tests use: build `server.Options` with and without a loaded site, and
+  assert route presence/absence and served bytes through the real mux.
+- **`appkit/mcp`** is tested through the real `ServeHTTP` JSON-RPC seam — the
+  same harness style every service's `tools_test.go` uses — with a test tool
+  table whose handlers record their inputs. The standard tools are driven
+  through the same seam with real `outbox.Registry` / `consumer.Subscription`
+  values.
 
 ## Layout
 
@@ -65,6 +100,13 @@ Decision a phase realizes:
 - `project/design/DNN.md` — one self-contained file per Decision (zero-padded
   `D01.md`, …; referenced in prose and the plan as `D<N>`).
 - `project/design/design.md` — this spine: static cross-cutting facts only.
+
+**New packages (D5–D9).** This work adds two packages to the module:
+`appkit/web` (template loading + rendering + static serving over an on-disk
+root) and `appkit/mcp` (the JSON-RPC MCP transport + standard tools). It extends
+two existing seams: `appkit/config` (www-root resolution) and the root
+`appkit`/`appkit/server` pair (the `Spec.WWW` field, site loading at serve, the
+auto-mounted static route, the `Router.WWW()` accessor).
 
 Design is rewritten in place, not append-only (history lives in the plan): a
 changed Decision is rewritten in its `DNN.md` and `INDEX.md` is regenerated; a new
