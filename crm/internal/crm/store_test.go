@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	appkitdb "appkit/db"
+
 	"crm/internal/db"
 )
 
@@ -30,12 +32,16 @@ func (c *fixedClock) now() time.Time {
 func newTestStore(t *testing.T) *Service {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "crm_test.db")
-	conn, err := db.Open(path)
+	conn, err := appkitdb.Open(path)
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(context.Background(), conn); err != nil {
+	migs, err := appkitdb.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if err := appkitdb.Migrate(context.Background(), conn, migs); err != nil {
 		t.Fatalf("migrate test db: %v", err)
 	}
 	clk := &fixedClock{t: time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)}

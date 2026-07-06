@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"crm/internal/ids"
+	"appkit/logging"
 )
 
 // contactStore is the SQL-only data layer for contacts and their owned children
@@ -31,7 +31,7 @@ func contactInsert(tx *sql.Tx, in ContactInput, now time.Time) (Summary, error) 
 	if in.DisplayName == nil || strings.TrimSpace(*in.DisplayName) == "" {
 		return Summary{}, invalid("display_name", "a contact needs at least one of display_name, given_name/family_name, or a primary email")
 	}
-	id := ids.NewULID()
+	id := logging.NewULID()
 	ts := fmtTime(now)
 	lifecycle := "lead"
 	if in.Lifecycle != nil {
@@ -171,7 +171,7 @@ func reconcileEmails(tx *sql.Tx, contactID string, desired []EmailInput, now tim
 		if _, err := tx.Exec(`
 			INSERT INTO contact_emails (id, contact_id, email, label, is_primary, created_at, deleted_at)
 			VALUES (?, ?, ?, ?, 0, ?, NULL)`,
-			ids.NewULID(), contactID, e.Email, nullStr(e.Label), fmtTime(now)); err != nil {
+			logging.NewULID(), contactID, e.Email, nullStr(e.Label), fmtTime(now)); err != nil {
 			return mapUniqueErr(err, "email")
 		}
 	}
@@ -205,7 +205,7 @@ func reconcilePhones(tx *sql.Tx, contactID string, desired []PhoneInput, now tim
 		if _, err := tx.Exec(`
 			INSERT INTO contact_phones (id, contact_id, phone, label, is_primary, created_at, deleted_at)
 			VALUES (?, ?, ?, ?, 0, ?, NULL)`,
-			ids.NewULID(), contactID, p.Phone, nullStr(p.Label), fmtTime(now)); err != nil {
+			logging.NewULID(), contactID, p.Phone, nullStr(p.Label), fmtTime(now)); err != nil {
 			return mapUniqueErr(err, "phone")
 		}
 	}
@@ -237,7 +237,7 @@ func reconcileTags(tx *sql.Tx, contactID string, desired []string, now time.Time
 		}
 		if _, err := tx.Exec(`
 			INSERT INTO contact_tags (id, contact_id, tag, created_at, deleted_at) VALUES (?, ?, ?, ?, NULL)`,
-			ids.NewULID(), contactID, tag, fmtTime(now)); err != nil {
+			logging.NewULID(), contactID, tag, fmtTime(now)); err != nil {
 			return nil, nil, mapUniqueErr(err, "tag")
 		}
 		added = append(added, tag)

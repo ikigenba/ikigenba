@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"crm/internal/ids"
+	"appkit/logging"
 )
 
 // dealStore is the SQL-only data layer for deals and their participants
@@ -31,7 +31,7 @@ func dealInsert(tx *sql.Tx, in DealInput, now time.Time) (Summary, error) {
 	if in.Name == nil || strings.TrimSpace(*in.Name) == "" {
 		return Summary{}, invalid("name", "deal name is required")
 	}
-	id := ids.NewULID()
+	id := logging.NewULID()
 	ts := fmtTime(now)
 	stage := "lead"
 	if in.Stage != nil {
@@ -149,7 +149,7 @@ func reconcileParticipants(tx *sql.Tx, dealID string, desired []DealContactInput
 		if _, err := tx.Exec(`
 			INSERT INTO deal_contacts (id, deal_id, contact_id, role, created_at, deleted_at)
 			VALUES (?, ?, ?, ?, ?, NULL)`,
-			ids.NewULID(), dealID, c.ID, nullStr(c.Role), fmtTime(now)); err != nil {
+			logging.NewULID(), dealID, c.ID, nullStr(c.Role), fmtTime(now)); err != nil {
 			return mapUniqueErr(err, "participant")
 		}
 	}

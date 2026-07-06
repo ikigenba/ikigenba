@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"crm/internal/ids"
+	"appkit/logging"
 )
 
 // organizationStore is the SQL-only data layer for the organizations table.
@@ -27,7 +27,7 @@ func orgInsert(tx *sql.Tx, in OrganizationInput, now time.Time) (Summary, error)
 	if in.Name == nil || strings.TrimSpace(*in.Name) == "" {
 		return Summary{}, invalid("name", "organization name is required")
 	}
-	id := ids.NewULID()
+	id := logging.NewULID()
 	ts := fmtTime(now)
 	_, err := tx.Exec(
 		`INSERT INTO organizations (id, name, domain, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, NULL)`,

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"crm/internal/ids"
+	"appkit/logging"
 )
 
 // taskStore is the SQL-only data layer for the tasks table. A task is a simple
@@ -31,7 +31,7 @@ func taskInsert(tx *sql.Tx, in TaskInput, now time.Time) (Summary, error) {
 	if in.Title == nil || strings.TrimSpace(*in.Title) == "" {
 		return Summary{}, invalid("title", "task title is required")
 	}
-	id := ids.NewULID()
+	id := logging.NewULID()
 	ts := fmtTime(now)
 	status := "open"
 	if in.Status != nil {

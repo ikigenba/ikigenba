@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"crm/internal/ids"
+	"appkit/logging"
 )
 
 // interactionStore is the SQL-only data layer for the append-only interactions
@@ -21,7 +21,7 @@ type interactionStore struct{}
 // Insert appends one interaction. The dispatcher resolves the subject_id to
 // exactly one of contactID/orgID/dealID (by probe-by-id) before calling.
 func (interactionStore) Insert(tx *sql.Tx, kind, body string, occurredAt time.Time, contactID, orgID, dealID *string, now time.Time) (Summary, error) {
-	id := ids.NewULID()
+	id := logging.NewULID()
 	ts := fmtTime(now)
 	occurred := fmtTime(occurredAt)
 	_, err := tx.Exec(`
