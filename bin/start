@@ -168,6 +168,7 @@ launch_notify() {
 	# runtime root so dev matches the box's etc/current manifest layout.
 	source "$repo/notify/.envrc"
 	export NOTIFY_DB_PATH="$RUN_DIR/notify.db"
+	export NOTIFY_WWW_PATH="$repo/notify/share/www"
 	export REGISTRY_ROOT="$MANIFEST_ROOT"
 	export_feed_urls NOTIFY crm prompts
 	exec "$RUN_DIR/bin/notify" serve --port "$(port 3201)"
