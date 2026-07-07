@@ -1,5 +1,7 @@
 package mcp
 
+import appkitmcp "appkit/mcp"
+
 // describeText is the on-demand deep overview returned by the describe
 // tool. It is intentionally NOT loaded into the initialize `instructions`
 // field (which every client pays on every connection) — callers load it only
@@ -87,5 +89,5 @@ CONFIG
 
 // toolDescribe returns the on-demand overview. Takes no inputs.
 func toolDescribe() (map[string]any, error) {
-	return toolResultText(describeText), nil
+	return appkitmcp.TextResult(describeText), nil
 }

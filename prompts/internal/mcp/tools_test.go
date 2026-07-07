@@ -118,9 +118,13 @@ func inputConfigSchema(t *testing.T, toolName string) map[string]any {
 
 func findToolDescriptor(t *testing.T, name string) map[string]any {
 	t.Helper()
-	for _, desc := range toolDescriptors() {
-		if desc["name"] == name {
-			return desc
+	for _, tool := range Tools(nil) {
+		if tool.Name == name {
+			return map[string]any{
+				"name":        tool.Name,
+				"description": tool.Description,
+				"inputSchema": tool.InputSchema,
+			}
 		}
 	}
 	t.Fatalf("tool descriptor %q not found", name)

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +15,12 @@ import (
 	"sync"
 	"testing"
 
+	appkitmcp "appkit/mcp"
+	"appkit/server"
+
+	"eventplane/consumer"
+
+	"prompts/internal/consume"
 	"prompts/internal/db"
 	"prompts/internal/prompt"
 	"prompts/internal/sandbox"
@@ -38,7 +46,9 @@ const (
 	clientID   = "client-123"
 )
 
-func newTestHandler(t *testing.T) (*Handler, *sandbox.Manager) {
+var testSources = []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts"}
+
+func newTestHandler(t *testing.T) (http.Handler, *sandbox.Manager, *prompt.Service) {
 	t.Helper()
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	ctx := t.Context()
@@ -60,11 +70,37 @@ func newTestHandler(t *testing.T) (*Handler, *sandbox.Manager) {
 	}
 	store := prompt.NewStore(conn)
 	svc := prompt.NewService(store, sb, runsDir, &fakeRunner{})
-	return NewHandler(svc, "1.2.3", "prompts", nil), sb
+	var handler http.Handler
+	_, err = server.New(server.Options{
+		Addr:    "127.0.0.1:0",
+		Apex:    true,
+		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Version: "1.2.3",
+		Service: "prompts",
+		Events:  prompt.Events,
+		Subscriptions: func() []consumer.Subscription {
+			return consume.Subscriptions(testSources)
+		},
+		Register: func(rt *server.Router) error {
+			h, err := NewHandler(svc, rt)
+			if err != nil {
+				return err
+			}
+			handler = rt.RequireIdentity(h)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("server.New: %v", err)
+	}
+	if handler == nil {
+		t.Fatal("server.New did not build MCP handler")
+	}
+	return handler, sb, svc
 }
 
 // call drives one tools/call over ServeHTTP and returns the decoded result.
-func call(t *testing.T, h *Handler, tool string, args map[string]any) map[string]any {
+func call(t *testing.T, h http.Handler, tool string, args map[string]any) map[string]any {
 	t.Helper()
 	argsJSON, _ := json.Marshal(args)
 	body, _ := json.Marshal(map[string]any{
@@ -93,7 +129,7 @@ func call(t *testing.T, h *Handler, tool string, args map[string]any) map[string
 	return resp.Result
 }
 
-func do(t *testing.T, h *Handler, body []byte) *httptest.ResponseRecorder {
+func do(t *testing.T, h http.Handler, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	req.Header.Set("X-Owner-Email", ownerEmail)
@@ -119,8 +155,40 @@ func isError(res map[string]any) bool {
 	return v
 }
 
-func TestToolsListReturns17(t *testing.T) {
-	h, _ := newTestHandler(t)
+func stringField(t *testing.T, m map[string]any, key string) string {
+	t.Helper()
+	v, ok := m[key].(string)
+	if !ok {
+		t.Fatalf("%s has type %T: %#v", key, m[key], m[key])
+	}
+	return v
+}
+
+func assertNoHandlerKey(t *testing.T, m map[string]any) {
+	t.Helper()
+	if _, ok := m["handler"]; ok {
+		t.Fatalf("reflection leaked handler key: %#v", m)
+	}
+	if _, ok := m["Handler"]; ok {
+		t.Fatalf("reflection leaked Handler key: %#v", m)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestToolsListThroughAssembledHandlerReturnsDomainPlusChassisTools(t *testing.T) {
+	// R-DKQP-QZ3Q
+	h, _, _ := newTestHandler(t)
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	rr := do(t, h, body)
 
@@ -134,10 +202,10 @@ func TestToolsListReturns17(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(resp.Result.Tools) != 17 {
-		t.Fatalf("want 17 tools, got %d", len(resp.Result.Tools))
+	if len(resp.Result.Tools) != 18 {
+		t.Fatalf("want 18 tools, got %d", len(resp.Result.Tools))
 	}
-	got := make([]string, 0, 17)
+	got := make([]string, 0, 18)
 	for _, tl := range resp.Result.Tools {
 		got = append(got, tl.Name)
 	}
@@ -151,6 +219,7 @@ func TestToolsListReturns17(t *testing.T) {
 		"health",
 		"import",
 		"list",
+		"reflection",
 		"run",
 		"run_cancel",
 		"run_fs_list",
@@ -169,12 +238,54 @@ func TestToolsListReturns17(t *testing.T) {
 			t.Fatalf("tool names mismatch:\n got %v\nwant %v", got, want)
 		}
 	}
+
+	withReserved := append(Tools(nil), appkitmcp.Tool{Name: "health"})
+	if _, err := appkitmcp.New(appkitmcp.Options{Tools: withReserved}); err == nil {
+		t.Fatal("appkit MCP New accepted a domain-declared reserved health tool")
+	}
+}
+
+func TestReflectionThroughAssembledHandlerReportsPromptsEventGraph(t *testing.T) {
+	// R-DLYM-4QUF
+	h, _, _ := newTestHandler(t)
+	res := call(t, h, "reflection", nil)
+	if isError(res) {
+		t.Fatalf("reflection returned isError: %+v", res)
+	}
+	var out struct {
+		Publishes  []map[string]any `json:"publishes"`
+		Subscribes []map[string]any `json:"subscribes"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, res)), &out); err != nil {
+		t.Fatalf("decode reflection: %v", err)
+	}
+	gotPublishes := make([]string, 0, len(out.Publishes))
+	for _, pub := range out.Publishes {
+		assertNoHandlerKey(t, pub)
+		gotPublishes = append(gotPublishes, stringField(t, pub, "type"))
+	}
+	wantPublishes := []string{"run.succeeded", "run.failed"}
+	if !equalStrings(gotPublishes, wantPublishes) {
+		t.Fatalf("publishes = %v, want %v", gotPublishes, wantPublishes)
+	}
+	if len(out.Subscribes) != len(testSources) {
+		t.Fatalf("subscribes count = %d, want %d: %+v", len(out.Subscribes), len(testSources), out.Subscribes)
+	}
+	for i, sub := range out.Subscribes {
+		assertNoHandlerKey(t, sub)
+		if got := stringField(t, sub, "source"); got != testSources[i] {
+			t.Fatalf("subscribes[%d].source = %q, want %q", i, got, testSources[i])
+		}
+		if got := stringField(t, sub, "filter"); got != "*" {
+			t.Fatalf("subscribes[%d].filter = %q, want *", i, got)
+		}
+	}
 }
 
 // TestSetAndClearTrigger drives the two new MCP tools end-to-end: create a
 // session, set a trigger (defaults applied), then clear it.
 func TestSetAndClearTrigger(t *testing.T) {
-	h, _ := newTestHandler(t)
+	h, _, _ := newTestHandler(t)
 
 	created := call(t, h, "create", map[string]any{
 		"user_prompt": "hi",
@@ -228,7 +339,7 @@ func TestSetAndClearTrigger(t *testing.T) {
 }
 
 func TestDescribe(t *testing.T) {
-	h, _ := newTestHandler(t)
+	h, _, _ := newTestHandler(t)
 	res := call(t, h, "describe", nil)
 	if isError(res) {
 		t.Fatalf("describe returned isError: %+v", res)
@@ -247,7 +358,7 @@ func TestDescribe(t *testing.T) {
 }
 
 func TestInitializeIncludesInstructions(t *testing.T) {
-	h, _ := newTestHandler(t)
+	h, _, _ := newTestHandler(t)
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize"})
 	rr := do(t, h, body)
 	var resp struct {
@@ -267,7 +378,7 @@ func TestInitializeIncludesInstructions(t *testing.T) {
 }
 
 func TestHealth(t *testing.T) {
-	h, _ := newTestHandler(t)
+	h, _, _ := newTestHandler(t)
 	res := call(t, h, "health", nil)
 	var out struct {
 		Status     string         `json:"status"`
@@ -292,7 +403,7 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-func createPrompt(t *testing.T, h *Handler) string {
+func createPrompt(t *testing.T, h http.Handler) string {
 	t.Helper()
 	res := call(t, h, "create", map[string]any{
 		"user_prompt": "do a thing",
@@ -312,7 +423,7 @@ func createPrompt(t *testing.T, h *Handler) string {
 }
 
 func TestDispatchRoundtrip(t *testing.T) {
-	h, sb := newTestHandler(t)
+	h, sb, _ := newTestHandler(t)
 
 	id := createPrompt(t, h)
 
@@ -405,8 +516,8 @@ func (f stubFetcher) Fetch(ctx context.Context, path string) ([]byte, error) { r
 // TestDispatchImport proves the import verb routes to svc.Import and returns
 // {prompt_id, name}, with the file body adopted as the prompt's user_prompt.
 func TestDispatchImport(t *testing.T) {
-	h, _ := newTestHandler(t)
-	h.svc.Fetcher = stubFetcher{data: []byte("draft the weekly update\n")}
+	h, _, svc := newTestHandler(t)
+	svc.Fetcher = stubFetcher{data: []byte("draft the weekly update\n")}
 
 	res := call(t, h, "import", map[string]any{"source_path": "/prompts/weekly.md"})
 	if isError(res) {
@@ -435,7 +546,7 @@ func TestDispatchImport(t *testing.T) {
 }
 
 func TestErrorMapping(t *testing.T) {
-	h, _ := newTestHandler(t)
+	h, _, _ := newTestHandler(t)
 
 	// unknown id -> isError (not found).
 	res := call(t, h, "get", map[string]any{"prompt_id": "nope"})

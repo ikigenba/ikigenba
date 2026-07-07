@@ -205,7 +205,11 @@ func registerRoutes(rt *appkit.Router) error {
 		rt.Logger().Warn("crash-recovery: swept orphaned runs", "count", swept)
 	}
 
-	rt.Handle("POST /mcp", rt.RequireIdentity(mcp.NewHandler(svc, rt.Version(), rt.Service(), rt.Health())))
+	handler, err := mcp.NewHandler(svc, rt)
+	if err != nil {
+		return err
+	}
+	rt.Handle("POST /mcp", rt.RequireIdentity(handler))
 	return nil
 }
 
