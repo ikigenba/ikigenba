@@ -19,15 +19,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"appkit"
+	"appkit/web"
 
 	"cron/internal/crontab"
 	"cron/internal/db"
 	"cron/internal/event"
 	"cron/internal/mcp"
 	"cron/internal/tick"
-	"cron/internal/web"
 
 	"eventplane/outbox"
 )
@@ -45,6 +46,7 @@ func cronSpec() appkit.Spec {
 		Mount:      "/srv/cron/",
 		Port:       3005,
 		MCP:        true,
+		WWW:        true,
 		Feed:       "/feed",
 		Migrations: db.FS,
 		Publishes: func() outbox.Registry {
@@ -63,8 +65,7 @@ func cronSpec() appkit.Spec {
 				return fmt.Errorf("cron: no DB handle on router")
 			}
 			store = crontab.NewStore(conn)
-			rt.Handle("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
-			rt.Handle("GET /static/", web.StaticHandler())
+			rt.Handle("GET /{$}", landingHandler(rt.WWW(), rt.Service(), rt.Version()))
 			rt.Handle("POST /mcp", rt.RequireIdentity(
 				mcp.NewHandler(store, rt.Version(), rt.Service(), rt.Health(),
 					rt.Publishes(), rt.Subscriptions())))
@@ -86,4 +87,15 @@ func cronSpec() appkit.Spec {
 			},
 		},
 	}
+}
+
+func landingHandler(site *web.Site, service, version string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = site.Render(w, "landing.html",
+			struct{ Service, Version string }{service, version})
+	})
 }

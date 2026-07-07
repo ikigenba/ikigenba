@@ -203,6 +203,7 @@ launch_cron() {
 	# cron holds no secret and needs no extra config.
 	export CRON_DB_PATH="$RUN_DIR/cron.db"
 	export CRON_GENERATION_PATH="$RUN_DIR/cron.db.generation"
+	export CRON_WWW_PATH="$repo/cron/share/www"
 	exec "$RUN_DIR/bin/cron" serve --port "$(port 3005)"
 }
 
