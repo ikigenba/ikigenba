@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"appkit"
@@ -43,57 +42,19 @@ import (
 	"scripts/internal/web"
 )
 
-// consumerID is the stable id scripts presents on every consumer connect
-// (event-protocol.md §7.1) — the literal "scripts" across all its upstream
-// loops.
-const consumerID = "scripts"
-
-// sources is the five resolved upstream producers scripts consumes day-one
-// (PLAN.md §A4/§A11). CONSUMES=cron,crm,ledger,dropbox,prompts in
-// etc/manifest.env mirrors this for the registry.
-//
-// TODO(self-chaining, §A12): add "scripts" pointed at the local /feed
-// (SCRIPTS_SCRIPTS_FEED_URL default registry.BaseURL("scripts") + "/feed")
-// for scripts.succeeded/failed chaining once trivial.
-var sources = []string{"cron", "crm", "ledger", "dropbox", "prompts"}
-
-// feedDefault is a source's loopback dev fallback: the registry-owned address
-// plus the /feed route. The event plane bypasses nginx, so this is a direct
-// 127.0.0.1 address; production overrides it via SCRIPTS_<SRC>_FEED_URL.
-func feedDefault(source string) string {
-	return registry.BaseURL(source) + "/feed"
-}
-
 // svcRef carries the script service from the Handlers hook (where appkit has
-// opened + migrated the DB and built the domain) to the consumer Workers, which
-// run strictly afterward. storeRef is the same hand-off for the producer outbox:
-// the Producer hook (which runs AFTER Handlers) injects it onto the store so the
-// runner's terminal write emits the completion event on the same tx.
+// opened + migrated the DB and built the domain) to the consumer handler
+// factories, which run strictly afterward. storeRef is the same hand-off for the
+// producer outbox: the Producer hook (which runs AFTER Handlers) injects it onto
+// the store so the runner's terminal write emits the completion event on the
+// same tx.
 var (
 	svcRef   *script.Service
 	storeRef *script.Store
 )
 
 func main() {
-	var rt *appkit.Router
-
-	// One worker per upstream — the notify multi-cursor pattern. Each closes over
-	// its own source so it reads SCRIPTS_<SRC>_FEED_URL with its own cursor.
-	workers := make([]func(context.Context) error, 0, len(sources))
-	for _, src := range sources {
-		src := src
-		workers = append(workers, func(ctx context.Context) error {
-			return runConsumer(ctx, rt, src)
-		})
-	}
-
-	spec := scriptsSpec()
-	spec.Handlers = func(r *appkit.Router) error {
-		rt = r
-		return registerRoutes(r)
-	}
-	spec.Workers = workers
-	appkit.Main(spec)
+	appkit.Main(scriptsSpec())
 }
 
 func scriptsSpec() appkit.Spec {
@@ -102,13 +63,12 @@ func scriptsSpec() appkit.Spec {
 		Mount: "/srv/scripts/",
 		Port:  registry.MustPort("scripts"),
 		MCP:   true,
-		// Multi-upstream CONSUMER: CONSUMES mirrors `sources` for the registry.
-		Consumes: sources,
-		// Subscriptions is the LIVE provider the reflection tool reports — the
-		// SAME consume.Subscriptions(sources) the consumer Handlers match against,
-		// so runtime filter and reflection cannot drift.
-		Subscriptions: func() []consumer.Subscription {
-			return consume.Subscriptions(sources)
+		Consumers: []appkit.Consumer{
+			scriptsConsumerEntry("cron"),
+			scriptsConsumerEntry("crm"),
+			scriptsConsumerEntry("ledger"),
+			scriptsConsumerEntry("dropbox"),
+			scriptsConsumerEntry("prompts"),
 		},
 		// PRODUCER of two STATIC completion types (scripts.succeeded /
 		// scripts.failed), emitted in the SAME tx as a run's terminal write. Feed
@@ -130,45 +90,26 @@ func scriptsSpec() appkit.Spec {
 			return nil
 		},
 		Migrations: db.FS,
+		Handlers:   registerRoutes,
 	}
 }
 
-// runConsumer drives eventplane/consumer.Run over one upstream's /feed until ctx
-// is cancelled (clean shutdown → nil) or a structural fault escapes (→ error,
-// which appkit propagates). The handler is fire-and-run: it never stalls the
-// feed (always returns nil/ErrSkip).
-func runConsumer(ctx context.Context, rt *appkit.Router, source string) error {
-	logger := rt.Logger()
-	feedURL := config.EnvOr(os.Getenv, feedURLEnv(source), feedDefault(source))
-	from := config.EnvOr(os.Getenv, fromEnv(source), "tail")
-
-	cfg := consumer.Config{
-		FeedURL:    feedURL,
-		From:       from,
-		DB:         rt.DB(),
-		Source:     source,
-		ConsumerID: consumerID,
-		Logger:     logger,
-	}
-	fire := func(ctx context.Context, scriptID, src, evType, eventID string, payload []byte) error {
-		return svcRef.RunForEvent(ctx, scriptID, src, evType, eventID, payload)
-	}
-	lookup := svcRef.ScriptsForEvent
-	logger.Info("starting scripts consumer", "source", source, "feed_url", feedURL, "from", from)
-	if err := consumer.Run(ctx, cfg, consume.Handler(fire, lookup, source, logger)); err != nil {
-		return fmt.Errorf("event-plane consumer (%s): %w", source, err)
-	}
-	return nil
+func scriptsConsumerEntry(source string) appkit.Consumer {
+	var entry appkit.Consumer
+	entry.Source = source
+	entry.Subscriptions = consume.Subscriptions([]string{source})
+	entry.Handler = scriptsConsumer(source)
+	return entry
 }
 
-// feedURLEnv / fromEnv build the per-upstream env var names (SCRIPTS_<SRC>_FEED_URL
-// / SCRIPTS_<SRC>_FROM).
-func feedURLEnv(source string) string {
-	return "SCRIPTS_" + strings.ToUpper(source) + "_FEED_URL"
-}
-
-func fromEnv(source string) string {
-	return "SCRIPTS_" + strings.ToUpper(source) + "_FROM"
+// scriptsConsumer is the per-upstream handler factory. The chassis calls it with
+// the finished Router AFTER Handlers (and Producer) have run, so svcRef — the
+// domain Service that registerRoutes built — is populated. Each loop fans that
+// upstream's events to matching scripts (consume.Handler is unchanged).
+func scriptsConsumer(source string) func(*appkit.Router) consumer.Handler {
+	return func(rt *appkit.Router) consumer.Handler {
+		return consume.Handler(svcRef.RunForEvent, svcRef.ScriptsForEvent, source, rt.Logger())
+	}
 }
 
 // registerRoutes wires scripts' domain on appkit's server. appkit has already

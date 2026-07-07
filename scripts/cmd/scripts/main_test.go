@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -19,8 +22,14 @@ import (
 
 	"appkit"
 	"appkit/manifest"
+	"appkit/server"
 
+	"eventplane/consumer"
 	"registry"
+
+	"scripts/internal/consume"
+	scriptsdb "scripts/internal/db"
+	"scripts/internal/script"
 )
 
 // R-8DF1-W89F
@@ -49,7 +58,7 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		Port:     spec.Port,
 		MCP:      spec.MCP,
 		Feed:     spec.Feed,
-		Consumes: spec.Consumes,
+		Consumes: consumesFromConsumers(spec.Consumers),
 		Extras:   manifestExtras(spec.ManifestExtras),
 	})
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
@@ -97,26 +106,6 @@ func TestScriptsSpecUsesRegistryPort(t *testing.T) {
 	}
 	if strings.Contains(main, `Port:  3003`) || strings.Contains(main, `Port: 3003`) {
 		t.Fatalf("main.go still contains a bare scripts port literal in scriptsSpec")
-	}
-}
-
-func TestFeedDefaultUsesRegistryBaseURLs(t *testing.T) {
-	// R-RGST-PEER
-	for _, tc := range []struct {
-		source string
-		want   string
-	}{
-		{source: "cron", want: "http://127.0.0.1:3005/feed"},
-		{source: "crm", want: "http://127.0.0.1:3100/feed"},
-		{source: "ledger", want: "http://127.0.0.1:3101/feed"},
-		{source: "dropbox", want: "http://127.0.0.1:3200/feed"},
-		{source: "prompts", want: "http://127.0.0.1:3002/feed"},
-	} {
-		t.Run(tc.source, func(t *testing.T) {
-			if got := feedDefault(tc.source); got != tc.want {
-				t.Fatalf("feedDefault(%q) = %q, want %q", tc.source, got, tc.want)
-			}
-		})
 	}
 }
 
@@ -199,6 +188,85 @@ func TestGoModRequiresRegistrySiblingModule(t *testing.T) {
 	if !strings.Contains(goMod, "\nreplace registry => ../registry\n") {
 		t.Fatalf("go.mod missing exact registry replace directive")
 	}
+}
+
+func TestScriptsSpecDeclaresConsumersWithoutLegacyFields(t *testing.T) {
+	// R-8WN1-0VQI
+	spec := scriptsSpec()
+	wantSources := []string{"cron", "crm", "ledger", "dropbox", "prompts"}
+	if got := consumesFromConsumers(spec.Consumers); !reflect.DeepEqual(got, wantSources) {
+		t.Fatalf("consumer sources = %v, want %v", got, wantSources)
+	}
+	for _, entry := range spec.Consumers {
+		want := consume.Subscriptions([]string{entry.Source})
+		if !reflect.DeepEqual(entry.Subscriptions, want) {
+			t.Fatalf("%s subscriptions = %#v, want %#v", entry.Source, entry.Subscriptions, want)
+		}
+		if entry.Handler == nil {
+			t.Fatalf("%s Handler is nil", entry.Source)
+		}
+	}
+	if spec.Consumes != nil {
+		t.Fatalf("legacy spec.Consumes = %v, want nil", spec.Consumes)
+	}
+	if spec.Subscriptions != nil {
+		t.Fatalf("legacy spec.Subscriptions is set, want nil")
+	}
+}
+
+func TestScriptsConsumerFactoryFansOutAndSkipsMalformedEvents(t *testing.T) {
+	// R-8XUX-ENH7
+	ctx := context.Background()
+	svc, runner := newConsumerTestService(t)
+	oldSvc := svcRef
+	svcRef = svc
+	t.Cleanup(func() { svcRef = oldSvc })
+
+	sc, err := svc.Create(ctx, "owner@example.com", script.CreateInput{Name: "crm hook", Body: "print(1)"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := svc.SetTrigger(ctx, "owner@example.com", sc.ID, "crm", "contact.*"); err != nil {
+		t.Fatalf("SetTrigger: %v", err)
+	}
+
+	rt := newConsumerTestRouter(t)
+	var factory func(*appkit.Router) consumer.Handler
+	for _, entry := range scriptsSpec().Consumers {
+		if entry.Source == "crm" {
+			factory = entry.Handler
+			break
+		}
+	}
+	if factory == nil {
+		t.Fatal("scriptsSpec has no crm consumer handler factory")
+	}
+	handler := factory(rt)
+
+	payload := []byte(`{"contact_id":"c1"}`)
+	ev := consumer.Event{Source: "crm", Type: "contact.created", ID: "evt-1", Payload: payload}
+	if err := handler(ctx, ev); err != nil {
+		t.Fatalf("well-formed event returned %v, want nil", err)
+	}
+	spawn := runner.awaitSpawn(t)
+	if spawn.run.ScriptID != sc.ID {
+		t.Fatalf("spawn script id = %q, want %q", spawn.run.ScriptID, sc.ID)
+	}
+	if spawn.run.TriggerSource != "crm" || spawn.run.TriggerType != "contact.created" || spawn.run.TriggerEventID != "evt-1" {
+		t.Fatalf("spawn trigger fields = %+v, want crm/contact.created/evt-1", spawn.run)
+	}
+	if string(spawn.input) != string(payload) {
+		t.Fatalf("spawn input = %s, want %s", spawn.input, payload)
+	}
+
+	err = handler(ctx, consumer.Event{Source: "crm", Type: "", ID: "", Payload: []byte(`{}`)})
+	if err == nil {
+		t.Fatal("malformed event returned nil, want ErrSkip-wrapped error")
+	}
+	if !errors.Is(err, consumer.ErrSkip) {
+		t.Fatalf("malformed event error = %v, want errors.Is ErrSkip", err)
+	}
+	runner.assertNoSpawn(t)
 }
 
 // R-4LKF-FB23
@@ -285,14 +353,25 @@ func TestScriptsBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 		t.Fatalf("bin/run resolves to %q err=%v, want %q", resolved, err, binary)
 	}
 
-	feedServers := make(map[string]*httptest.Server)
-	for _, source := range sources {
-		feedServers[source] = newIdleFeedServer(t)
-	}
 	dropbox := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(dropbox.Close)
-
 	port := freeTCPPort(t)
+	feedServers := make(map[string]*httptest.Server)
+	env := map[string]string{
+		"IKIGENBA_DOMAIN":           "int.ikigenba.com",
+		"IKIGENBA_ROOT":             root,
+		"SCRIPTS_IP":                "127.0.0.1",
+		"SCRIPTS_PORT":              fmt.Sprintf("%d", port),
+		"DROPBOX_BASE_URL":          dropbox.URL,
+		"OUTBOX_RETENTION_DAYS":     "7",
+		"OUTBOX_RETENTION_MAX_ROWS": "1000000",
+	}
+	for _, entry := range scriptsSpec().Consumers {
+		source := entry.Source
+		feedServers[source] = newIdleFeedServer(t)
+		env["SCRIPTS_"+strings.ToUpper(source)+"_FEED_URL"] = feedServers[source].URL + "/feed"
+	}
+
 	dbPath := filepath.Join(stateDir, "scripts.db")
 	generationPath := filepath.Join(cacheDir, "scripts.db.generation")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -300,20 +379,7 @@ func TestScriptsBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, run, "serve")
-	cmd.Env = testEnv(map[string]string{
-		"IKIGENBA_DOMAIN":           "int.ikigenba.com",
-		"IKIGENBA_ROOT":             root,
-		"SCRIPTS_IP":                "127.0.0.1",
-		"SCRIPTS_PORT":              fmt.Sprintf("%d", port),
-		"SCRIPTS_CRON_FEED_URL":     feedServers["cron"].URL + "/feed",
-		"SCRIPTS_CRM_FEED_URL":      feedServers["crm"].URL + "/feed",
-		"SCRIPTS_LEDGER_FEED_URL":   feedServers["ledger"].URL + "/feed",
-		"SCRIPTS_DROPBOX_FEED_URL":  feedServers["dropbox"].URL + "/feed",
-		"SCRIPTS_PROMPTS_FEED_URL":  feedServers["prompts"].URL + "/feed",
-		"DROPBOX_BASE_URL":          dropbox.URL,
-		"OUTBOX_RETENTION_DAYS":     "7",
-		"OUTBOX_RETENTION_MAX_ROWS": "1000000",
-	})
+	cmd.Env = testEnv(env)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -358,6 +424,88 @@ func manifestExtras(in []appkit.ManifestKV) []manifest.KV {
 		out = append(out, manifest.KV{Key: kv.Key, Value: kv.Value})
 	}
 	return out
+}
+
+func consumesFromConsumers(in []appkit.Consumer) []string {
+	out := make([]string, 0, len(in))
+	for _, entry := range in {
+		out = append(out, entry.Source)
+	}
+	return out
+}
+
+type consumerTestRunner struct {
+	spawns chan consumerTestSpawn
+}
+
+type consumerTestSpawn struct {
+	run   script.Run
+	input []byte
+}
+
+func (r *consumerTestRunner) Spawn(run script.Run, input []byte) {
+	r.spawns <- consumerTestSpawn{run: run, input: append([]byte(nil), input...)}
+}
+
+func (r *consumerTestRunner) Cancel(runID string) bool { return false }
+
+func (r *consumerTestRunner) awaitSpawn(t *testing.T) consumerTestSpawn {
+	t.Helper()
+	select {
+	case spawn := <-r.spawns:
+		return spawn
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for consumer-triggered run spawn")
+		return consumerTestSpawn{}
+	}
+}
+
+func (r *consumerTestRunner) assertNoSpawn(t *testing.T) {
+	t.Helper()
+	select {
+	case spawn := <-r.spawns:
+		t.Fatalf("unexpected spawn for malformed event: %+v", spawn.run)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func newConsumerTestService(t *testing.T) (*script.Service, *consumerTestRunner) {
+	t.Helper()
+	ctx := context.Background()
+	conn, err := scriptsdb.Open(filepath.Join(t.TempDir(), "scripts.db"))
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	if err := scriptsdb.Migrate(ctx, conn); err != nil {
+		t.Fatalf("db.Migrate: %v", err)
+	}
+	runner := &consumerTestRunner{spawns: make(chan consumerTestSpawn, 2)}
+	return script.NewService(script.NewStore(conn), t.TempDir(), runner), runner
+}
+
+func newConsumerTestRouter(t *testing.T) *appkit.Router {
+	t.Helper()
+	var rt *appkit.Router
+	_, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		ResourceID: "https://int.ikigenba.com/srv/scripts/",
+		AuthServer: "https://int.ikigenba.com/",
+		Version:    "test",
+		Service:    "scripts",
+		Register: func(r *appkit.Router) error {
+			rt = r
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("server.New: %v", err)
+	}
+	if rt == nil {
+		t.Fatal("server.New did not call Register")
+	}
+	return rt
 }
 
 func newIdleFeedServer(t *testing.T) *httptest.Server {
