@@ -18,6 +18,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D12 → `project/design/D12.md` — Web surface from `share/www` through the chassis (de-embed; `Spec.WWW`, delete `internal/web`) — owns R-MTM5-0PXH, R-MUU1-EHO6
 - D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the tool table — owns R-MW1X-S9EV
 - D14 → `project/design/D14.md` — Delete the chassis shims: `internal/ids` and the `internal/db` wrappers — none (structural)
+- D15 → `project/design/D15.md` — Adopt `registry`: resolve crm's own loopback port by name at the composition root (`registry.MustPort("crm")`) — owns R-X04D-MBGE
+- D16 → `project/design/D16.md` — Prove no `127.0.0.1:30xx` literal survives (source-scan guard) and re-point the manifest/nginx tests at `registry` so a renumber fails a crm test — owns R-X1CA-0373, R-X2K6-DUXS
 
 ## Verification ids → Decision
 
@@ -51,3 +53,6 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-SU82-2M8W → D8 → `project/design/D08.md`
 - R-SVFY-GDZL → D8 → `project/design/D08.md`
 - R-SWNU-U5QA → D8 → `project/design/D08.md`
+- R-X04D-MBGE → D15 → `project/design/D15.md`
+- R-X1CA-0373 → D16 → `project/design/D16.md`
+- R-X2K6-DUXS → D16 → `project/design/D16.md`

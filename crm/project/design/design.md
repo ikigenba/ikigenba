@@ -51,15 +51,18 @@ Shared facts every Decision leans on:
   `cd crm && go build ./...`, `cd crm && go vet ./...`, `cd crm && gofmt -l .`
   (no output), and `cd crm && go test ./...` all succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
-- **Module wiring:** `appkit` and `eventplane` are committed in-repo
+- **Module wiring:** `appkit`, `eventplane`, and `registry` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,
-  `replace eventplane => ../eventplane`). The web and MCP surfaces add **no
-  third-party dependency** — they use the standard library and the appkit
-  chassis (`appkit/web`, `appkit/mcp`).
+  `replace eventplane => ../eventplane`, `replace registry => ../registry`). The
+  web and MCP surfaces add **no third-party dependency** — they use the standard
+  library and the appkit chassis (`appkit/web`, `appkit/mcp`). Since D15 crm
+  resolves its own loopback port by name through `registry`
+  (`registry.MustPort("crm")`) instead of a bare literal.
 - **The chassis owns the server — and, since D12/D13, the web mechanism and the
   MCP transport.** crm is `appkit.Main(appkit.Spec{…})`: `App:"crm"`,
-  `Mount:"/srv/crm/"`, `Port:3100`, `MCP:true`, `Feed:"/feed"` (event-plane
-  producer), `WWW:true` (web assets from the on-disk www root). The fixed verbs
+  `Mount:"/srv/crm/"`, `Port:registry.MustPort("crm")` (== `3100`; D15),
+  `MCP:true`, `Feed:"/feed"` (event-plane producer), `WWW:true` (web assets from
+  the on-disk www root). The fixed verbs
   (`serve`/`version`/`manifest`/`migrate`/`schema`), config-from-env, the
   loopback HTTP server + PRM + identity gate, the `/feed` mount, the
   **auto-mounted `GET /static/`**, and the JSON-RPC `/mcp` plumbing with the
