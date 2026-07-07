@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"registry"
 )
 
 func TestNginxLandingLocationIsExactMatch(t *testing.T) {
@@ -37,7 +39,8 @@ func TestNginxLandingLocationProxiesToUpstreamRoot(t *testing.T) {
 	landing := nginxLocationBlock(t, conf, "location = /srv/dropbox/ {")
 
 	// R-NGNX-6T8U
-	if !strings.Contains(landing, "proxy_pass http://127.0.0.1:3200/;") {
+	// R-QMW4-G94S
+	if !strings.Contains(landing, "proxy_pass "+registry.BaseURL("dropbox")+"/;") {
 		t.Fatalf("landing block does not proxy to loopback upstream root with trailing slash:\n%s", landing)
 	}
 }
@@ -69,9 +72,10 @@ func TestNginxStaticLocationUsesSessionAuthAndEmbeddedStaticUpstream(t *testing.
 	static := nginxLocationBlock(t, conf, "location /srv/dropbox/static/ {")
 
 	// R-LVT6-JC4I
+	// R-QMW4-G94S
 	for _, want := range []string{
 		"auth_request /_session-authn;",
-		"proxy_pass http://127.0.0.1:3200/static/;",
+		"proxy_pass " + registry.BaseURL("dropbox") + "/static/;",
 		"proxy_set_header Host $host;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 		"proxy_http_version 1.1;",

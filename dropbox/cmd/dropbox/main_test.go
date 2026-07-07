@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"appkit/manifest"
+	"registry"
 )
 
 // R-8DF1-W89F
@@ -36,12 +37,13 @@ func TestCommittedManifestIsPortable(t *testing.T) {
 }
 
 // R-8IAN-FB87
+// R-QMW4-G94S
 func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	got := manifest.Emit(manifest.Fields{
 		App:     "dropbox",
 		Mount:   "/srv/dropbox/",
 		Default: false,
-		Port:    3200,
+		Port:    registry.MustPort("dropbox"),
 		MCP:     true,
 		Feed:    "/feed",
 		Extras: []manifest.KV{
