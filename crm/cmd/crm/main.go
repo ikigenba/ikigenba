@@ -23,6 +23,7 @@ import (
 	"crm/internal/mcp"
 
 	"eventplane/outbox"
+	"registry"
 )
 
 func main() {
@@ -36,7 +37,7 @@ func main() {
 	appkit.Main(appkit.Spec{
 		App:        "crm",
 		Mount:      "/srv/crm/",
-		Port:       3100,
+		Port:       registry.MustPort("crm"), // R-X04D-MBGE: phase 12 guards manifest drift for the resolved port.
 		MCP:        true,
 		WWW:        true,
 		Feed:       "/feed", // event-plane producer

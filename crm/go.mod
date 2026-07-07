@@ -7,15 +7,19 @@ require (
 	eventplane v0.0.0
 	github.com/nyaruka/phonenumbers v1.7.5
 	modernc.org/sqlite v1.50.1
+	registry v0.0.0
 )
 
-// The shared chassis (appkit) and event-plane (eventplane) libraries are sibling
-// source trees, not published modules. go.work resolves them for local dev; these
-// committed replaces make the prod build deterministic with or without the
-// workspace (PLAN §1.6: never a versioned require for an in-repo library).
+// The shared chassis (appkit), event-plane (eventplane), and registry libraries
+// are sibling source trees, not published modules. go.work resolves them for
+// local dev; these committed replaces make the prod build deterministic with or
+// without the workspace (PLAN §1.6: never a versioned require for an in-repo
+// library).
 replace appkit => ../appkit
 
 replace eventplane => ../eventplane
+
+replace registry => ../registry
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
