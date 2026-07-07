@@ -250,6 +250,22 @@ func TestGlobDoubleStarKeepsSegmentAndBaseBoundaries(t *testing.T) {
 	}
 }
 
+func TestGlobRecursiveDoubleStarPreservesNestedSearchBase(t *testing.T) {
+	root := globRecursiveFixture(t)
+
+	// R-40X5-6S7E
+	got, err := Glob(root, "**/*.css", "assets/css")
+	if err != nil {
+		t.Fatalf("Glob nested scoped css: %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"style.css"}) {
+		t.Fatalf("Glob nested scoped css = %#v", got)
+	}
+	if _, err := Glob(root, "../**/*.css", "assets/css"); !errors.Is(err, ErrEscapes) {
+		t.Fatalf("Glob nested scoped escaping pattern error = %v, want ErrEscapes", err)
+	}
+}
+
 func TestGlobRepeatedDoubleStarKeepsSingleBaseRelativeMatches(t *testing.T) {
 	root := globRecursiveFixture(t)
 
