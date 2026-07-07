@@ -518,6 +518,28 @@ func TestGlobSegmentPatternsUseFilepathMatchSemantics(t *testing.T) {
 	}
 }
 
+func TestGlobRecursiveDoubleStarKeepsFilenameWildcardsWithinSegments(t *testing.T) {
+	root := globRecursiveFixture(t)
+
+	// R-3ZP8-T0GP
+	recursive, err := Glob(root, "**/*.c?s", "")
+	if err != nil {
+		t.Fatalf("Glob recursive css wildcard: %v", err)
+	}
+	if !reflect.DeepEqual(recursive, []string{"a.css", "assets/css/style.css", "deep/a/b/c.css"}) {
+		t.Fatalf("Glob recursive css wildcard = %#v", recursive)
+	}
+
+	// R-40X5-6S7E
+	direct, err := Glob(root, "*.c?s", "")
+	if err != nil {
+		t.Fatalf("Glob direct css wildcard: %v", err)
+	}
+	if !reflect.DeepEqual(direct, []string{"a.css"}) {
+		t.Fatalf("Glob direct css wildcard = %#v", direct)
+	}
+}
+
 func TestGlobPrefixedStarDoesNotCrossSlash(t *testing.T) {
 	root := globRecursiveFixture(t)
 
