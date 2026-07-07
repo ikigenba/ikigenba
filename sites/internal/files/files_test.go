@@ -532,6 +532,41 @@ func TestGlobRecursiveDoubleStarDoesNotFollowSymlinks(t *testing.T) {
 	}
 }
 
+func TestGlobRecursiveDoubleStarReturnsOnlyRegularFiles(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"assets/fake.css", "assets/css"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{"a.css", "assets/css/style.css"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, path), []byte(path), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// R-3ZP8-T0GP
+	recursive, err := Glob(root, "**/*.css", "")
+	if err != nil {
+		t.Fatalf("Glob recursive regular files: %v", err)
+	}
+	if !reflect.DeepEqual(recursive, []string{"a.css", "assets/css/style.css"}) {
+		t.Fatalf("Glob recursive regular files = %#v", recursive)
+	}
+
+	// R-40X5-6S7E
+	scopedDirect, err := Glob(root, "*.css", "assets")
+	if err != nil {
+		t.Fatalf("Glob scoped direct regular files: %v", err)
+	}
+	if scopedDirect == nil || len(scopedDirect) != 0 {
+		t.Fatalf("Glob scoped direct regular files = %#v, want empty non-nil slice", scopedDirect)
+	}
+}
+
 func TestGlobLiteralSymlinkPatternIsNotFollowed(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "real"), 0o755); err != nil {
