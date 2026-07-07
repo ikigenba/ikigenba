@@ -18,6 +18,7 @@ import (
 
 	"appkit/manifest"
 	appweb "appkit/web"
+	"registry"
 )
 
 // R-8DF1-W89F
@@ -42,9 +43,10 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		App:     "crm",
 		Mount:   "/srv/crm/",
 		Default: false,
-		Port:    3100,
-		MCP:     true,
-		Feed:    "/feed",
+		// R-X2K6-DUXS
+		Port: registry.MustPort("crm"),
+		MCP:  true,
+		Feed: "/feed",
 		Extras: []manifest.KV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
@@ -474,7 +476,8 @@ func TestNginxLandingLocationIsExactMatchAndSessionGated(t *testing.T) {
 	}
 
 	// R-NGNX-6M9N
-	if !strings.Contains(block, "proxy_pass http://127.0.0.1:3100/;") {
+	// R-X2K6-DUXS
+	if !strings.Contains(block, "proxy_pass "+registry.BaseURL("crm")+"/;") {
 		t.Fatalf("landing location does not proxy to upstream root with trailing slash:\n%s", block)
 	}
 }
@@ -494,7 +497,8 @@ func TestNginxExistingServiceLocationsSurvive(t *testing.T) {
 	if strings.Contains(prm, "auth_request") {
 		t.Fatalf("PRM bootstrap location unexpectedly gated:\n%s", prm)
 	}
-	if !strings.Contains(prm, "proxy_pass http://127.0.0.1:3100/.well-known/oauth-protected-resource;") {
+	// R-X2K6-DUXS
+	if !strings.Contains(prm, "proxy_pass "+registry.BaseURL("crm")+"/.well-known/oauth-protected-resource;") {
 		t.Fatalf("PRM bootstrap location missing upstream proxy_pass:\n%s", prm)
 	}
 }
@@ -506,7 +510,8 @@ func TestNginxStaticLocationIsSessionGatedAndProxiesStaticHandler(t *testing.T) 
 	// R-SWNU-U5QA
 	for _, want := range []string{
 		"auth_request /_session-authn;",
-		"proxy_pass http://127.0.0.1:3100/static/;",
+		// R-X2K6-DUXS
+		"proxy_pass " + registry.BaseURL("crm") + "/static/;",
 		"proxy_set_header Host $host;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 		"proxy_http_version 1.1;",
