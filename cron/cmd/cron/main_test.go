@@ -18,8 +18,6 @@ import (
 
 	"appkit"
 	"appkit/manifest"
-
-	"cron/internal/cronapp"
 )
 
 // R-8DF1-W89F
@@ -40,7 +38,7 @@ func TestCommittedManifestIsPortable(t *testing.T) {
 
 // R-8IAN-FB87
 func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
-	spec := cronapp.Spec()
+	spec := cronSpec()
 	got := manifest.Emit(manifest.Fields{
 		App:      spec.App,
 		Mount:    spec.Mount,

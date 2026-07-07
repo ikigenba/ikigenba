@@ -172,7 +172,7 @@ func TestCompositionRootMountsLandingWithoutIdentityWrapper(t *testing.T) {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	sourcePath := filepath.Join(filepath.Dir(file), "..", "cronapp", "spec.go")
+	sourcePath := filepath.Join(filepath.Dir(file), "..", "..", "cmd", "cron", "main.go")
 	source, err := os.ReadFile(sourcePath)
 	if err != nil {
 		t.Fatal(err)
