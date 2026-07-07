@@ -200,6 +200,13 @@ func TestGlobRecursiveDoubleStarMatchesAllDepths(t *testing.T) {
 	if !reflect.DeepEqual(assets, []string{"assets/css/style.css", "assets/js/app.js"}) {
 		t.Fatalf("Glob recursive assets = %#v", assets)
 	}
+	prefixedDeep, err := Glob(root, "deep/**/c.css", "")
+	if err != nil {
+		t.Fatalf("Glob prefixed deep recursive css: %v", err)
+	}
+	if !reflect.DeepEqual(prefixedDeep, []string{"deep/a/b/c.css"}) {
+		t.Fatalf("Glob prefixed deep recursive css = %#v", prefixedDeep)
+	}
 	all, err := Glob(root, "**", "")
 	if err != nil {
 		t.Fatalf("Glob all: %v", err)
