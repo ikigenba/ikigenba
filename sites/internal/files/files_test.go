@@ -606,6 +606,32 @@ func TestGlobAbsolutePatternInsideSearchBaseReturnsBaseRelativeMatches(t *testin
 	}
 }
 
+func TestGlobAbsoluteRecursivePatternPreservesScopedBaseLevelMatches(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{
+		"assets/app.css",
+		"assets/css/style.css",
+		"outside.css",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, path), []byte(path), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// R-3ZP8-T0GP
+	// R-40X5-6S7E
+	got, err := Glob(root, filepath.Join(root, "assets", "**", "*.css"), "assets")
+	if err != nil {
+		t.Fatalf("Glob absolute scoped recursive css: %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"app.css", "css/style.css"}) {
+		t.Fatalf("Glob absolute scoped recursive css = %#v", got)
+	}
+}
+
 func TestGlobRejectsPatternsResolvingOutsideSearchBase(t *testing.T) {
 	root := globRecursiveFixture(t)
 	outside := t.TempDir()
