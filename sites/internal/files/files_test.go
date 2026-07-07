@@ -227,6 +227,13 @@ func TestGlobDoubleStarKeepsSegmentAndBaseBoundaries(t *testing.T) {
 	if !reflect.DeepEqual(scopedCSS, []string{"css/style.css"}) {
 		t.Fatalf("Glob scoped css = %#v", scopedCSS)
 	}
+	scopedAll, err := Glob(root, "**", "assets")
+	if err != nil {
+		t.Fatalf("Glob scoped all: %v", err)
+	}
+	if !reflect.DeepEqual(scopedAll, []string{"css/style.css", "js/app.js"}) {
+		t.Fatalf("Glob scoped all = %#v", scopedAll)
+	}
 	missing, err := Glob(root, "**/*.md", "")
 	if err != nil {
 		t.Fatalf("Glob missing: %v", err)
