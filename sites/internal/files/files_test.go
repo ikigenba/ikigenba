@@ -243,6 +243,40 @@ func TestGlobDoubleStarKeepsSegmentAndBaseBoundaries(t *testing.T) {
 	}
 }
 
+func TestGlobDoubleStarMatchesZeroSegmentsAfterPrefix(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{
+		"assets/app.css",
+		"assets/css/style.css",
+		"assets/js/app.js",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, path), []byte(path), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// R-3ZP8-T0GP
+	prefixed, err := Glob(root, "assets/**/*.css", "")
+	if err != nil {
+		t.Fatalf("Glob prefixed recursive css: %v", err)
+	}
+	if !reflect.DeepEqual(prefixed, []string{"assets/app.css", "assets/css/style.css"}) {
+		t.Fatalf("Glob prefixed recursive css = %#v", prefixed)
+	}
+
+	// R-40X5-6S7E
+	scoped, err := Glob(root, "**/*.css", "assets")
+	if err != nil {
+		t.Fatalf("Glob scoped recursive css: %v", err)
+	}
+	if !reflect.DeepEqual(scoped, []string{"app.css", "css/style.css"}) {
+		t.Fatalf("Glob scoped recursive css = %#v", scoped)
+	}
+}
+
 func TestGlobSegmentPatternsUseFilepathMatchSemantics(t *testing.T) {
 	root := globRecursiveFixture(t)
 
