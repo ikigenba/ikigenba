@@ -55,6 +55,7 @@ func TestCommittedManifestIsPortable(t *testing.T) {
 
 // R-8IAN-FB87
 func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
+	// R-JFR5-MJW9
 	spec := wiki.Spec()
 	got := manifest.Emit(manifest.Fields{
 		App:      spec.App,

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"registry"
+
 	"wiki/internal/extract"
 	"wiki/internal/retrieve"
 )
@@ -288,6 +290,7 @@ func TestLoadVectorCacheEntriesLoadsStoredPageEmbeddings(t *testing.T) {
 }
 
 func TestSpecDeclaresServedMCPService(t *testing.T) {
+	// R-JDBC-V0EV
 	spec := Spec()
 	if spec.App != "wiki" {
 		t.Fatalf("App = %q, want wiki", spec.App)
@@ -295,8 +298,8 @@ func TestSpecDeclaresServedMCPService(t *testing.T) {
 	if spec.Mount != "/srv/wiki/" {
 		t.Fatalf("Mount = %q, want /srv/wiki/", spec.Mount)
 	}
-	if spec.Port != 3001 {
-		t.Fatalf("Port = %d, want 3001", spec.Port)
+	if want := registry.MustPort("wiki"); spec.Port != want {
+		t.Fatalf("Port = %d, want registry wiki port %d", spec.Port, want)
 	}
 	if !spec.MCP {
 		t.Fatal("MCP = false, want true")

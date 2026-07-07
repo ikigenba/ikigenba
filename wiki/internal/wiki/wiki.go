@@ -12,6 +12,7 @@ import (
 
 	"appkit"
 	"github.com/ikigenba/agentkit/anthropic"
+	"registry"
 
 	"wiki/internal/db"
 	"wiki/internal/mcp"
@@ -21,7 +22,6 @@ import (
 const (
 	App   = "wiki"
 	Mount = "/srv/wiki/"
-	Port  = 3001
 
 	ModelID           = anthropic.ModelSonnet46
 	WorkerConcurrency = 1
@@ -34,7 +34,7 @@ func Spec() appkit.Spec {
 	return appkit.Spec{
 		App:   App,
 		Mount: Mount,
-		Port:  Port,
+		Port:  registry.MustPort("wiki"),
 		MCP:   true,
 		ManifestExtras: []appkit.ManifestKV{
 			{Key: "MODEL_ID", Value: ModelID},

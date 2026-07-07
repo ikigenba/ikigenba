@@ -9,6 +9,7 @@ require (
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/text v0.38.0
 	modernc.org/sqlite v1.50.1
+	registry v0.0.0
 )
 
 require (
@@ -35,3 +36,5 @@ require (
 replace appkit => ../appkit
 
 replace eventplane => ../eventplane
+
+replace registry => ../registry

@@ -27,7 +27,7 @@ func TestModuleWiringPinsPublishedAgentkitWithoutModuleReplace(t *testing.T) {
 	for _, match := range replaces {
 		got[match[1]] = match[2]
 	}
-	want := map[string]string{"appkit": "../appkit", "eventplane": "../eventplane"}
+	want := map[string]string{"appkit": "../appkit", "eventplane": "../eventplane", "registry": "../registry"}
 	if len(got) != len(want) {
 		t.Fatalf("go.mod replace count = %d, want %d: %#v", len(got), len(want), got)
 	}
