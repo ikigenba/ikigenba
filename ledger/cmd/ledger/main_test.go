@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"appkit/manifest"
+	"registry"
 )
 
 // R-8DF1-W89F
@@ -36,14 +37,17 @@ func TestCommittedManifestIsPortable(t *testing.T) {
 }
 
 // R-8IAN-FB87
+// R-4WLS-RJH6
+// R-4VDW-DRQH
 func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	got := manifest.Emit(manifest.Fields{
 		App:     "ledger",
 		Mount:   "/srv/ledger/",
 		Default: false,
-		Port:    3101,
-		MCP:     true,
-		Feed:    "/feed",
+		// This delegates the otherwise-inline appkit.Spec port proof to the same registry lookup.
+		Port: registry.MustPort("ledger"),
+		MCP:  true,
+		Feed: "/feed",
 		Extras: []manifest.KV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},

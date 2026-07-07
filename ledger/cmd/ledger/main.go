@@ -24,6 +24,7 @@ import (
 	"ledger/internal/web"
 
 	"eventplane/outbox"
+	"registry"
 )
 
 func main() {
@@ -37,7 +38,7 @@ func main() {
 	appkit.Main(appkit.Spec{
 		App:        "ledger",
 		Mount:      "/srv/ledger/",
-		Port:       3101,
+		Port:       registry.MustPort("ledger"),
 		MCP:        true,
 		Feed:       "/feed", // event-plane producer
 		Migrations: db.FS,
