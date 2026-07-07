@@ -135,6 +135,16 @@ func Glob(root, pattern, path string) ([]string, error) {
 	if err := validateSlashPattern(relPattern); err != nil {
 		return nil, err
 	}
+	info, err := os.Stat(base)
+	if errors.Is(err, fs.ErrNotExist) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return []string{}, nil
+	}
 
 	out := []string{}
 	err = filepath.WalkDir(base, func(path string, d fs.DirEntry, walkErr error) error {

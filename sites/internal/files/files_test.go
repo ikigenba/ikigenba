@@ -513,6 +513,29 @@ func TestGlobRejectsMalformedPatternWithoutWalkingMatches(t *testing.T) {
 	}
 }
 
+func TestGlobReturnsEmptyForNonDirectorySearchBase(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("text"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// R-40X5-6S7E
+	missing, err := Glob(root, "**/*.css", "missing")
+	if err != nil {
+		t.Fatalf("Glob missing base: %v", err)
+	}
+	if missing == nil || len(missing) != 0 {
+		t.Fatalf("Glob missing base = %#v, want empty non-nil slice", missing)
+	}
+	fileBase, err := Glob(root, "**", "file.txt")
+	if err != nil {
+		t.Fatalf("Glob file base: %v", err)
+	}
+	if fileBase == nil || len(fileBase) != 0 {
+		t.Fatalf("Glob file base = %#v, want empty non-nil slice", fileBase)
+	}
+}
+
 func TestGrepReturnsTypedRootRelativeMatches(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "content"), 0o755); err != nil {
