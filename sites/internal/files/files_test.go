@@ -250,6 +250,40 @@ func TestGlobDoubleStarKeepsSegmentAndBaseBoundaries(t *testing.T) {
 	}
 }
 
+func TestGlobScopedDoubleStarMatchesBaseAndNestedFiles(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{
+		"assets/app.css",
+		"assets/css/style.css",
+		"assets/js/app.js",
+		"outside.css",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, path), []byte(path), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// R-3ZP8-T0GP
+	// R-40X5-6S7E
+	recursive, err := Glob(root, "**/*.css", "assets")
+	if err != nil {
+		t.Fatalf("Glob scoped recursive css: %v", err)
+	}
+	if !reflect.DeepEqual(recursive, []string{"app.css", "css/style.css"}) {
+		t.Fatalf("Glob scoped recursive css = %#v", recursive)
+	}
+	direct, err := Glob(root, "*.css", "assets")
+	if err != nil {
+		t.Fatalf("Glob scoped direct css: %v", err)
+	}
+	if !reflect.DeepEqual(direct, []string{"app.css"}) {
+		t.Fatalf("Glob scoped direct css = %#v", direct)
+	}
+}
+
 func TestGlobRecursiveDoubleStarReturnsSortedSlashRelativeMatches(t *testing.T) {
 	root := t.TempDir()
 	for _, path := range []string{
