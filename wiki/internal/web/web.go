@@ -1,25 +1,17 @@
-// Package web serves the unauthenticated wiki read surface and embedded assets.
+// Package web serves the unauthenticated wiki read surface.
 package web
 
 import (
 	"context"
-	"embed"
 	"errors"
 	"html/template"
-	"io/fs"
 	"net/http"
 	"strings"
 
+	appkitweb "appkit/web"
+
 	"wiki/internal/ask"
 	"wiki/internal/markdown"
-)
-
-//go:embed layout.tmpl home.tmpl subject.tmpl static/tokens.css static/fonts/*.woff2
-var assets embed.FS
-
-var (
-	homeTemplates    = template.Must(template.ParseFS(assets, "layout.tmpl", "home.tmpl"))
-	subjectTemplates = template.Must(template.ParseFS(assets, "layout.tmpl", "subject.tmpl"))
 )
 
 var ErrNotFound = errors.New("web: subject not found")
@@ -94,6 +86,7 @@ type handler struct {
 	service string
 	version string
 	mount   string
+	site    *appkitweb.Site
 
 	asker    Asker
 	pages    PageFinder
@@ -118,8 +111,8 @@ type pageData struct {
 }
 
 // NewHandler builds the read-surface mux.
-func NewHandler(service, version, mount string, opts ...Option) http.Handler {
-	h := &handler{service: service, version: version, mount: normalizeMount(mount)}
+func NewHandler(service, version, mount string, site *appkitweb.Site, opts ...Option) http.Handler {
+	h := &handler{service: service, version: version, mount: normalizeMount(mount), site: site}
 	for _, opt := range opts {
 		opt(h)
 	}
@@ -127,7 +120,6 @@ func NewHandler(service, version, mount string, opts ...Option) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", h.home)
 	mux.HandleFunc("GET /subject/{type}/{slug}", h.subject)
-	mux.Handle("GET /static/", StaticHandler())
 	return mux
 }
 
@@ -148,8 +140,7 @@ func (h *handler) home(w http.ResponseWriter, r *http.Request) {
 		orphans = refs
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := homeTemplates.ExecuteTemplate(w, "home", pageData{
+	if err := h.site.Render(w, "home", pageData{
 		Service: h.service,
 		Version: h.version,
 		Mount:   h.mount,
@@ -190,8 +181,7 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, question string) {
 		mentions = refs
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := homeTemplates.ExecuteTemplate(w, "home", pageData{
+	if err := h.site.Render(w, "home", pageData{
 		Service:    h.service,
 		Version:    h.version,
 		Mount:      h.mount,
@@ -216,7 +206,7 @@ func (h *handler) subject(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, ErrNotFound) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
-		if renderErr := subjectTemplates.ExecuteTemplate(w, "subject", pageData{
+		if renderErr := h.site.Render(w, "subject", pageData{
 			Service: h.service,
 			Version: h.version,
 			Mount:   h.mount,
@@ -235,8 +225,7 @@ func (h *handler) subject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := subjectTemplates.ExecuteTemplate(w, "subject", pageData{
+	if err := h.site.Render(w, "subject", pageData{
 		Service:     h.service,
 		Version:     h.version,
 		Mount:       h.mount,
@@ -244,14 +233,6 @@ func (h *handler) subject(w http.ResponseWriter, r *http.Request) {
 		SubjectHTML: markdown.Render(subject.Body),
 	}); err != nil {
 		http.Error(w, "render subject page", http.StatusInternalServerError)
-	}
-}
-
-// LandingHandler returns the exact-root home page.
-func LandingHandler(service, version string) http.HandlerFunc {
-	h := NewHandler(service, version, "/")
-	return func(w http.ResponseWriter, r *http.Request) {
-		h.ServeHTTP(w, r)
 	}
 }
 
@@ -263,13 +244,4 @@ func normalizeMount(mount string) string {
 		return mount + "/"
 	}
 	return mount
-}
-
-// StaticHandler serves the embedded read-surface assets below /static/.
-func StaticHandler() http.Handler {
-	static, err := fs.Sub(assets, "static")
-	if err != nil {
-		panic(err)
-	}
-	return http.StripPrefix("/static/", http.FileServer(http.FS(static)))
 }

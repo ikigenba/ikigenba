@@ -41,6 +41,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 		Mount: wiki.Mount,
 		Port:  registry.MustPort("wiki"),
 		MCP:   true,
+		WWW:   true,
 		ManifestExtras: []appkit.ManifestKV{
 			{Key: "MODEL_ID", Value: wiki.ModelID},
 			{Key: "WORKER_CONCURRENCY", Value: strconv.Itoa(wiki.WorkerConcurrency)},
@@ -129,7 +130,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			jobs := wiki.NewJobStore(conns)
 			aliases := wiki.NewAliasStore(read)
 			statusService := publicStatusService{service: svc}
-			rt.Handle("/", web.NewHandler(rt.Service(), rt.Version(), wiki.Mount,
+			rt.Handle("/", web.NewHandler(rt.Service(), rt.Version(), wiki.Mount, rt.WWW(),
 				web.WithOrphanLister(orphanAdapter{svc: svc}),
 				web.WithAsker(asker),
 				web.WithMentioner(mentionAdapter{svc: svc}),

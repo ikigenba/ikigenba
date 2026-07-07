@@ -24,6 +24,7 @@ import (
 	"appkit"
 	"appkit/manifest"
 	"appkit/server"
+	appkitweb "appkit/web"
 	agentkit "github.com/ikigenba/agentkit"
 	"registry"
 
@@ -37,6 +38,16 @@ import (
 	"wiki/internal/web"
 	"wiki/internal/wiki"
 )
+
+func testWWWRoot(t *testing.T) string {
+	t.Helper()
+
+	root, err := filepath.Abs(filepath.Join("..", "..", "share", "www"))
+	if err != nil {
+		t.Fatalf("resolve test www root: %v", err)
+	}
+	return root
+}
 
 // R-8DF1-W89F
 func TestCommittedManifestIsPortable(t *testing.T) {
@@ -140,6 +151,9 @@ func TestWikiBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
+	if err := os.CopyFS(filepath.Join(shareVersionDir, "www"), os.DirFS(testWWWRoot(t))); err != nil {
+		t.Fatalf("copy www fixture: %v", err)
+	}
 	shippedManifest := filepath.Join(etcVersionDir, "manifest.env")
 	if err := os.WriteFile(shippedManifest, committedManifest, 0o644); err != nil {
 		t.Fatalf("write shipped manifest.env: %v", err)
@@ -235,6 +249,7 @@ func TestServeFailsLoudWhenAnthropicKeyMissing(t *testing.T) {
 			"IKIGENBA_ROOT":        root,
 			"WIKI_DB_PATH":         filepath.Join(root, "wiki.db"),
 			"WIKI_GENERATION_PATH": filepath.Join(root, "wiki.db.generation"),
+			"WIKI_WWW_PATH":        testWWWRoot(t),
 			"WIKI_IP":              "127.0.0.1",
 			"WIKI_PORT":            fmt.Sprintf("%d", freeTCPPort(t)),
 			"OPENAI_API_KEY":       "test-openai-key",
@@ -629,7 +644,11 @@ func TestSubjectHandlerWithRealPathPageServiceResolvesAliasInboundLinks(t *testi
 		resolver: wiki.NewResolver(conn),
 		service:  wiki.NewService(conn, nil, nil, time.Now),
 	}
-	handler := web.NewHandler("wiki", "v-test", "/srv/wiki/", web.WithPageFinder(pageService))
+	site, err := appkitweb.Load(testWWWRoot(t))
+	if err != nil {
+		t.Fatalf("load test site: %v", err)
+	}
+	handler := web.NewHandler("wiki", "v-test", "/srv/wiki/", site, web.WithPageFinder(pageService))
 	folded := httptest.NewRecorder()
 	handler.ServeHTTP(folded, httptest.NewRequest(http.MethodGet, "/subject/entity/vasari", nil))
 	current := httptest.NewRecorder()

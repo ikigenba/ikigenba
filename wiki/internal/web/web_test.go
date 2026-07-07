@@ -2,11 +2,14 @@ package web
 
 import (
 	"context"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	appkitweb "appkit/web"
 
 	"wiki/internal/ask"
 )
@@ -63,11 +66,30 @@ func (s *stubPageFinder) PageByPath(_ context.Context, path string) (SubjectView
 func readAsset(t *testing.T, name string) string {
 	t.Helper()
 
-	b, err := fs.ReadFile(assets, name)
+	b, err := os.ReadFile(filepath.Join(testWWWPath(), name))
 	if err != nil {
-		t.Fatalf("read embedded asset %s: %v", name, err)
+		t.Fatalf("read www asset %s: %v", name, err)
 	}
 	return string(b)
+}
+
+func testWWWPath() string {
+	return filepath.Join("..", "..", "share", "www")
+}
+
+func loadTestSite(t *testing.T) *appkitweb.Site {
+	t.Helper()
+
+	site, err := appkitweb.Load(testWWWPath())
+	if err != nil {
+		t.Fatalf("load test site: %v", err)
+	}
+	return site
+}
+
+func newTestHandler(t *testing.T, service, version, mount string, opts ...Option) http.Handler {
+	t.Helper()
+	return NewHandler(service, version, mount, loadTestSite(t), opts...)
 }
 
 func readSurfaceBody(t *testing.T, path string, opts ...Option) string {
@@ -75,7 +97,7 @@ func readSurfaceBody(t *testing.T, path string, opts ...Option) string {
 
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	rec := httptest.NewRecorder()
-	NewHandler("wiki", "v-test", "/srv/wiki/", opts...).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", opts...).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%s status = %d, want 200; body=%s", path, rec.Code, rec.Body.String())
 	}
@@ -87,7 +109,7 @@ func TestHomeHandlerServesExactRootHTML(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
@@ -107,7 +129,7 @@ func TestHomeHandlerRendersInjectedNameAndVersionInFooter(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler(service, version, "/srv/wiki/").ServeHTTP(rec, req)
+	newTestHandler(t, service, version, "/srv/wiki/").ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "<footer>"+service+" "+version+"</footer>") {
@@ -120,7 +142,7 @@ func TestHomeHandlerRendersInjectedMountBase(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/zzz/").ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/zzz/").ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
@@ -135,7 +157,7 @@ func TestHomeHandlerRendersSearchFormTargetingBase(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `<base href="/srv/wiki/">`) {
@@ -159,7 +181,7 @@ func TestAskHandlerCallsAskerWithQuestionAndOwner(t *testing.T) {
 	req.Header.Set("X-Owner-Email", "owner@example.com")
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
@@ -184,7 +206,7 @@ func TestAskHandlerRendersAnswerAndCitationsAsSubjectLinks(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/?q=scheduler", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	for _, want := range []string{
@@ -207,7 +229,7 @@ func TestAskHandlerRendersMarkdownAnswerHTML(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/?q=widgets", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "<strong>Acme</strong>") {
@@ -231,7 +253,7 @@ func TestAskHandlerRendersMentionedSubjectsFromAnswerText(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/?q=tools", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithMentioner(mentioner)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithMentioner(mentioner)).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if mentioner.called != 1 || mentioner.text != "Acme Corp uses the Widget." {
@@ -256,7 +278,7 @@ func TestAskHandlerRendersHonestEmptyWithoutCitationNav(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/?q=unknown", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "The wiki holds nothing on that question.") {
@@ -276,7 +298,7 @@ func TestAskHandlerOmitsMentionSectionWhenAnswerMentionsAreEmpty(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/?q=unknown", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithMentioner(&stubMentioner{})).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithMentioner(&stubMentioner{})).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "No known subject is named here.") {
@@ -293,7 +315,7 @@ func TestBlankQueryKeepsHomePageOnOrphanSeam(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/?q=+++", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithOrphanLister(lister)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithOrphanLister(lister)).ServeHTTP(rec, req)
 
 	if asker.called != 0 {
 		t.Fatalf("Ask calls = %d, want blank q to stay on home page", asker.called)
@@ -315,7 +337,7 @@ func TestAskAndSubjectPagesWrapRenderedBodiesInProse(t *testing.T) {
 	askReq := httptest.NewRequest(http.MethodGet, "/?q=widgets", nil)
 	askRec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(askRec, askReq)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(askRec, askReq)
 
 	if !strings.Contains(askRec.Body.String(), `<div class="prose"><p>Acme makes widgets.</p>`) {
 		t.Fatalf("ask page missing prose wrapper around rendered answer: %s", askRec.Body.String())
@@ -325,7 +347,7 @@ func TestAskAndSubjectPagesWrapRenderedBodiesInProse(t *testing.T) {
 	subjectReq := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
 	subjectRec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(subjectRec, subjectReq)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(subjectRec, subjectReq)
 
 	if !strings.Contains(subjectRec.Body.String(), `<div class="prose"><p>Acme makes widgets.</p>`) {
 		t.Fatalf("subject page missing prose wrapper around rendered body: %s", subjectRec.Body.String())
@@ -341,7 +363,7 @@ func TestHomeHandlerRendersOrphansAsMountRelativeLinksInOrder(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithOrphanLister(lister)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithOrphanLister(lister)).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if lister.called != 1 {
@@ -364,7 +386,7 @@ func TestHomeHandlerOmitsOrphanSectionWhenEmpty(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithOrphanLister(&stubOrphanLister{})).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithOrphanLister(&stubOrphanLister{})).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `<form action="" method="get" role="search">`) {
@@ -375,20 +397,92 @@ func TestHomeHandlerOmitsOrphanSectionWhenEmpty(t *testing.T) {
 	}
 }
 
-func TestHomeHandlerUsesEmbeddedCarbonAssets(t *testing.T) {
+func TestLoadedSiteRendersHomeThroughHandler(t *testing.T) {
+	// R-JGZ2-0BMY
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	newTestHandler(t, "wiki-surface", "v79-home", "/srv/wiki/").ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("home status = %d, want 200; body=%s", rec.Code, body)
+	}
+	if !strings.Contains(body, "<footer>wiki-surface v79-home</footer>") {
+		t.Fatalf("home page missing injected service/version footer: %s", body)
+	}
+	if !strings.Contains(body, `<form action="" method="get" role="search">`) {
+		t.Fatalf("home page missing search form: %s", body)
+	}
+}
+
+func TestLoadedSiteRendersDistinctSubjectPageThroughHandler(t *testing.T) {
+	// R-JI6Y-E3DN
+	finder := &stubPageFinder{view: SubjectView{
+		Title: "Acme Corp",
+		Body:  "Acme makes widgets.",
+		Outbound: []Ref{
+			{Href: "subject/entity/beta", Name: "Beta"},
+		},
+		Inbound: []Ref{
+			{Href: "subject/event/deal-q3", Name: "Deal Q3"},
+		},
+	}}
+	subjectReq := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	subjectRec := httptest.NewRecorder()
+
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(subjectRec, subjectReq)
+	home := readSurfaceBody(t, "/")
+	subject := subjectRec.Body.String()
+	if subjectRec.Code != http.StatusOK {
+		t.Fatalf("subject status = %d, want 200; body=%s", subjectRec.Code, subject)
+	}
+	for _, want := range []string{
+		`<article aria-label="Subject page">`,
+		"<h1>Acme Corp</h1>",
+		`<div class="prose"><p>Acme makes widgets.</p>`,
+		`<nav aria-label="Mentions">`,
+		`<a href="subject/entity/beta">Beta</a>`,
+		`<nav aria-label="Mentioned by">`,
+		`<a href="subject/event/deal-q3">Deal Q3</a>`,
+	} {
+		if !strings.Contains(subject, want) {
+			t.Fatalf("subject page missing %q: %s", want, subject)
+		}
+	}
+	if strings.Contains(subject, `<form action="" method="get" role="search">`) || subject == home {
+		t.Fatalf("subject page was not distinct from home:\nsubject=%s\nhome=%s", subject, home)
+	}
+}
+
+func TestHomeHandlerUsesCarbonAssets(t *testing.T) {
 	// R-LAND-CARB
-	if _, err := fs.Stat(assets, "static/tokens.css"); err != nil {
-		t.Fatalf("embedded tokens.css missing: %v", err)
+	if _, err := os.Stat(filepath.Join(testWWWPath(), "static", "tokens.css")); err != nil {
+		t.Fatalf("www tokens.css missing: %v", err)
 	}
 
 	pageReq := httptest.NewRequest(http.MethodGet, "/", nil)
 	pageRec := httptest.NewRecorder()
-	NewHandler("wiki", "v-test", "/srv/wiki/").ServeHTTP(pageRec, pageReq)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(pageRec, pageReq)
 	if !strings.Contains(pageRec.Body.String(), `href="static/tokens.css"`) {
 		t.Fatalf("home page does not reference tokens.css through base-relative href: %s", pageRec.Body.String())
 	}
+}
 
-	mux := NewHandler("wiki", "v-test", "/srv/wiki/")
+func TestChassisStaticServesLoadedSiteAssets(t *testing.T) {
+	// R-JJEU-RV4C
+	site := loadTestSite(t)
+	mux := http.NewServeMux()
+	mux.Handle("GET /static/", site.Static())
+
+	wikiMux := newTestHandler(t, "wiki", "v-test", "/srv/wiki/")
+	wikiStaticReq := httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil)
+	wikiStaticRec := httptest.NewRecorder()
+	wikiMux.ServeHTTP(wikiStaticRec, wikiStaticReq)
+	if wikiStaticRec.Code == http.StatusOK {
+		t.Fatalf("wiki-side mux served /static/tokens.css; want chassis-only static mount")
+	}
+
 	cssReq := httptest.NewRequest(http.MethodGet, "/static/tokens.css", nil)
 	cssRec := httptest.NewRecorder()
 	mux.ServeHTTP(cssRec, cssReq)
@@ -400,6 +494,16 @@ func TestHomeHandlerUsesEmbeddedCarbonAssets(t *testing.T) {
 	}
 	if !strings.Contains(cssRec.Body.String(), "--color-accent") {
 		t.Fatalf("tokens.css does not contain Carbon token: %s", cssRec.Body.String())
+	}
+
+	fontReq := httptest.NewRequest(http.MethodGet, "/static/fonts/space-grotesk.woff2", nil)
+	fontRec := httptest.NewRecorder()
+	mux.ServeHTTP(fontRec, fontReq)
+	if fontRec.Code != http.StatusOK {
+		t.Fatalf("space-grotesk.woff2 status = %d, want 200; body=%s", fontRec.Code, fontRec.Body.String())
+	}
+	if got := fontRec.Header().Get("Content-Type"); got != "font/woff2" {
+		t.Fatalf("space-grotesk.woff2 Content-Type = %q, want font/woff2", got)
 	}
 }
 
@@ -483,7 +587,7 @@ func TestReadSurfacesUseSystemFontFallbacks(t *testing.T) {
 
 func TestHomeMuxDoesNotServeRootPageForOtherPaths(t *testing.T) {
 	// R-LAND-ROOT
-	mux := NewHandler("wiki", "v-test", "/srv/wiki/")
+	mux := newTestHandler(t, "wiki", "v-test", "/srv/wiki/")
 
 	for _, path := range []string{"/health", "/mcp", "/nope"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -500,7 +604,7 @@ func TestHomeHandlerIsAvailableWithoutIdentityHeaders(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 without identity headers; body=%s", rec.Code, rec.Body.String())
@@ -513,7 +617,7 @@ func TestHomeHandlerIsAvailableWithoutIdentityHeaders(t *testing.T) {
 func TestSubjectMuxDispatchesOnlyTwoSegmentSubjectPaths(t *testing.T) {
 	// R-WC29-XALJ
 	finder := &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}}
-	mux := NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(finder))
+	mux := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder))
 
 	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
@@ -545,7 +649,7 @@ func TestSubjectHandlerCallsPageFinderWithPublicPathOnce(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
@@ -561,7 +665,7 @@ func TestSubjectHandlerRendersTitleAndBody(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	for _, want := range []string{"<h1>Acme Corp</h1>", "<p>Acme makes widgets.</p>"} {
@@ -580,7 +684,7 @@ func TestSubjectHandlerRendersMarkdownBodyHTML(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	for _, want := range []string{"<h2", "<strong>widgets</strong>"} {
@@ -598,7 +702,7 @@ func TestSubjectHandlerRendersFoundHTMLShell(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{
 		view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."},
 	})).ServeHTTP(rec, req)
 
@@ -631,7 +735,7 @@ func TestSubjectHandlerRendersMentionsBeforeMentionedBy(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	mentionsAt := strings.Index(body, `<nav aria-label="Mentions">`)
@@ -684,7 +788,7 @@ func TestSubjectHandlerOmitsEmptyLinkSections(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
 			rec := httptest.NewRecorder()
 
-			NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{view: tc.view})).ServeHTTP(rec, req)
+			newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{view: tc.view})).ServeHTTP(rec, req)
 
 			body := rec.Body.String()
 			if !strings.Contains(body, "<p>Acme makes widgets.</p>") {
@@ -716,7 +820,7 @@ func TestSubjectHandlerLinksAskAnotherQuestionOnFoundAndNotFound(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
 			rec := httptest.NewRecorder()
 
-			NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(tc.finder)).ServeHTTP(rec, req)
+			newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(tc.finder)).ServeHTTP(rec, req)
 
 			if !strings.Contains(rec.Body.String(), `<a href="">Ask another question</a>`) {
 				t.Fatalf("subject page missing ask-another link to base: %s", rec.Body.String())
@@ -730,7 +834,7 @@ func TestSubjectHandlerRendersNotFoundHTMLShell(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/subject/entity/missing", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{err: ErrNotFound})).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{err: ErrNotFound})).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if rec.Code != http.StatusNotFound {
@@ -754,7 +858,7 @@ func TestLayoutProseStylesMarkdownElementsWithTokens(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	NewHandler("wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
 
 	styleStart := strings.Index(rec.Body.String(), "<style>")
 	styleEnd := strings.Index(rec.Body.String(), "</style>")

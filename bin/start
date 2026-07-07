@@ -187,6 +187,7 @@ launch_wiki() {
 	# wiki/.envrc supplies ANTHROPIC_API_KEY (from ~/.secrets) for ingest + ask.
 	source "$repo/wiki/.envrc"
 	export WIKI_DB_PATH="$RUN_DIR/wiki.db"
+	export WIKI_WWW_PATH="$repo/wiki/share/www"
 	exec "$RUN_DIR/bin/wiki" serve --port "$(port 3001)"
 }
 

@@ -1,6 +1,4 @@
-{{define "home"}}{{template "layout" .}}{{end}}
-
-{{define "main"}}
+{{define "home"}}{{template "head" .}}
 <h1>{{.Service}}</h1>
 <form action="" method="get" role="search">
   <input type="text" name="q" aria-label="Search wiki" value="{{.Query}}">
@@ -34,4 +32,4 @@
 </nav>
 {{end}}
 {{end}}
-{{end}}
+{{template "foot" .}}{{end}}

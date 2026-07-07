@@ -1,6 +1,4 @@
-{{define "subject"}}{{template "layout" .}}{{end}}
-
-{{define "main"}}
+{{define "subject"}}{{template "head" .}}
 <article aria-label="Subject page">
   <h1>{{.Subject.Title}}</h1>
   <div class="prose">{{.SubjectHTML}}</div>
@@ -22,4 +20,4 @@
 </nav>
 {{end}}
 <a href="">Ask another question</a>
-{{end}}
+{{template "foot" .}}{{end}}
