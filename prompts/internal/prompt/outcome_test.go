@@ -4,12 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"path/filepath"
 	"testing"
 
 	"eventplane/outbox"
 
-	"prompts/internal/db"
 	"prompts/internal/ids"
 )
 
@@ -20,14 +18,7 @@ import (
 func newProducerStore(t *testing.T) (*Store, *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
-	conn, err := db.Open(filepath.Join(t.TempDir(), "prompts.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(ctx, conn); err != nil {
-		t.Fatalf("db.Migrate: %v", err)
-	}
+	conn := openMigratedTestDB(t, ctx)
 	// DBPath empty → skip the §5.3 concurrency probe (single shared handle).
 	ob, err := outbox.New(conn, outbox.Options{Source: "prompts", Registry: Events})
 	if err != nil {

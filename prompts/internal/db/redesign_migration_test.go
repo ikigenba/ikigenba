@@ -17,7 +17,7 @@ import (
 // tombstone (no-cascade) delete semantics.
 func TestMigrate006_UpgradesOldSchemaPreservingData(t *testing.T) {
 	ctx := context.Background()
-	conn, err := Open(tempDB(t))
+	conn, err := appkitdb.Open(tempDB(t))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestMigrate006_UpgradesOldSchemaPreservingData(t *testing.T) {
 	}
 
 	// 3. Apply the FULL set (now including version 6) — the in-place upgrade.
-	if err := Migrate(ctx, conn); err != nil {
+	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
 		t.Fatalf("full migrate (incl. v6): %v", err)
 	}
 

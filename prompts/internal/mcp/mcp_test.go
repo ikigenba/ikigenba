@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 
+	appkitdb "appkit/db"
 	appkitmcp "appkit/mcp"
 	"appkit/server"
 
@@ -53,13 +54,17 @@ func newTestHandler(t *testing.T) (http.Handler, *sandbox.Manager, *prompt.Servi
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	ctx := t.Context()
 
-	conn, err := db.Open(filepath.Join(t.TempDir(), "prompts.db"))
+	conn, err := appkitdb.Open(filepath.Join(t.TempDir(), "prompts.db"))
 	if err != nil {
-		t.Fatalf("db.Open: %v", err)
+		t.Fatalf("appkitdb.Open: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(ctx, conn); err != nil {
-		t.Fatalf("db.Migrate: %v", err)
+	migs, err := appkitdb.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("appkitdb.LoadMigrations: %v", err)
+	}
+	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
+		t.Fatalf("appkitdb.Migrate: %v", err)
 	}
 	// The sandbox Manager is rooted at the runs dir (A2): a run's sandbox is
 	// runs/<run_id>/sandbox, sharing the run directory with output.jsonl.

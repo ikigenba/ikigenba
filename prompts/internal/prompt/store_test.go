@@ -2,25 +2,37 @@ package prompt
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
+
+	appkitdb "appkit/db"
 
 	"prompts/internal/db"
 	"prompts/internal/ids"
 )
 
-func newTestStore(t *testing.T) *Store {
+func openMigratedTestDB(t *testing.T, ctx context.Context) *sql.DB {
 	t.Helper()
-	ctx := context.Background()
-	conn, err := db.Open(filepath.Join(t.TempDir(), "prompts.db"))
+	conn, err := appkitdb.Open(filepath.Join(t.TempDir(), "prompts.db"))
 	if err != nil {
-		t.Fatalf("db.Open: %v", err)
+		t.Fatalf("appkitdb.Open: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(ctx, conn); err != nil {
-		t.Fatalf("db.Migrate: %v", err)
+	migs, err := appkitdb.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("appkitdb.LoadMigrations: %v", err)
 	}
+	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
+		t.Fatalf("appkitdb.Migrate: %v", err)
+	}
+	return conn
+}
+
+func newTestStore(t *testing.T) *Store {
+	t.Helper()
+	conn := openMigratedTestDB(t, context.Background())
 	return NewStore(conn)
 }
 

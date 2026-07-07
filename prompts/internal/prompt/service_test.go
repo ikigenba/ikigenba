@@ -10,7 +10,6 @@ import (
 	"sync"
 	"testing"
 
-	"prompts/internal/db"
 	"prompts/internal/sandbox"
 )
 
@@ -46,14 +45,7 @@ func newTestService(t *testing.T) (*Service, *Store, *sandbox.Manager, string) {
 	t.Helper()
 	ctx := context.Background()
 
-	conn, err := db.Open(filepath.Join(t.TempDir(), "prompts.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(ctx, conn); err != nil {
-		t.Fatalf("db.Migrate: %v", err)
-	}
+	conn := openMigratedTestDB(t, ctx)
 
 	root := t.TempDir()
 	runsDir := filepath.Join(root, "cache", "runs")
@@ -165,14 +157,7 @@ func TestRunUsesDurableSandboxAndRecreatedRunsDir(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	ctx := context.Background()
 
-	conn, err := db.Open(filepath.Join(t.TempDir(), "prompts.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(ctx, conn); err != nil {
-		t.Fatalf("db.Migrate: %v", err)
-	}
+	conn := openMigratedTestDB(t, ctx)
 
 	root := t.TempDir()
 	stateSandboxes := filepath.Join(root, "state", "sandboxes")

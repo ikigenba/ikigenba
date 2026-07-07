@@ -13,7 +13,7 @@ import (
 func TestMigrateBackfillsProviderFromCanonicalModelIDs(t *testing.T) {
 	// R-KBLR-VBHQ
 	ctx := context.Background()
-	conn, err := Open(":memory:")
+	conn, err := appkitdb.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open in-memory db: %v", err)
 	}
@@ -25,7 +25,11 @@ func TestMigrateBackfillsProviderFromCanonicalModelIDs(t *testing.T) {
 	insertPromptConfig(t, ctx, conn, "google", `{"model":"gemini-3.1-pro-preview"}`)
 	insertPromptConfig(t, ctx, conn, "zai", `{"model":"glm-5.2"}`)
 
-	if err := Migrate(ctx, conn); err != nil {
+	migs, err := appkitdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
 		t.Fatalf("migrate backfill: %v", err)
 	}
 
@@ -42,7 +46,7 @@ func TestMigrateBackfillsProviderFromCanonicalModelIDs(t *testing.T) {
 func TestMigrateCanonicalizesLegacyModelAliases(t *testing.T) {
 	// R-KCTO-938F
 	ctx := context.Background()
-	conn, err := Open(":memory:")
+	conn, err := appkitdb.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open in-memory db: %v", err)
 	}
@@ -53,7 +57,11 @@ func TestMigrateCanonicalizesLegacyModelAliases(t *testing.T) {
 	insertPromptConfig(t, ctx, conn, "haiku", `{"provider":"anthropic","model":"haiku"}`)
 	insertPromptConfig(t, ctx, conn, "pro", `{"model":"pro"}`)
 
-	if err := Migrate(ctx, conn); err != nil {
+	migs, err := appkitdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
 		t.Fatalf("migrate backfill: %v", err)
 	}
 

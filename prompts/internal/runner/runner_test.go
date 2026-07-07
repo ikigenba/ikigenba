@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	appkitdb "appkit/db"
+
 	"prompts/internal/db"
 	"prompts/internal/ids"
 	"prompts/internal/prompt"
@@ -99,13 +101,17 @@ func TestBuildProviderUsesInjectedEnvironment(t *testing.T) {
 func newTestRunner(t *testing.T, ttl time.Duration, fp agentkit.Provider) (*Runner, *prompt.Store) {
 	t.Helper()
 	ctx := context.Background()
-	conn, err := db.Open(filepath.Join(t.TempDir(), "prompts.db"))
+	conn, err := appkitdb.Open(filepath.Join(t.TempDir(), "prompts.db"))
 	if err != nil {
-		t.Fatalf("db.Open: %v", err)
+		t.Fatalf("appkitdb.Open: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(ctx, conn); err != nil {
-		t.Fatalf("db.Migrate: %v", err)
+	migs, err := appkitdb.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("appkitdb.LoadMigrations: %v", err)
+	}
+	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
+		t.Fatalf("appkitdb.Migrate: %v", err)
 	}
 	store := prompt.NewStore(conn)
 
@@ -347,13 +353,17 @@ func TestSpawn_DiscoversSuiteTools(t *testing.T) {
 // real peers.
 func TestNew_DefaultDiscoverWired(t *testing.T) {
 	ctx := context.Background()
-	conn, err := db.Open(filepath.Join(t.TempDir(), "prompts.db"))
+	conn, err := appkitdb.Open(filepath.Join(t.TempDir(), "prompts.db"))
 	if err != nil {
-		t.Fatalf("db.Open: %v", err)
+		t.Fatalf("appkitdb.Open: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(ctx, conn); err != nil {
-		t.Fatalf("db.Migrate: %v", err)
+	migs, err := appkitdb.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("appkitdb.LoadMigrations: %v", err)
+	}
+	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
+		t.Fatalf("appkitdb.Migrate: %v", err)
 	}
 	sb, err := sandbox.New(filepath.Join(t.TempDir(), "sandboxes"))
 	if err != nil {

@@ -3,23 +3,29 @@ package db
 import (
 	"context"
 	"testing"
+
+	appkitdb "appkit/db"
 )
 
 // TestMigrate_CreatesPromptsSchema verifies 002_prompts.sql lands the prompts
 // and runs tables (and the run index) on a fresh DB, idempotently.
 func TestMigrate_CreatesPromptsSchema(t *testing.T) {
 	ctx := context.Background()
-	conn, err := Open(tempDB(t))
+	conn, err := appkitdb.Open(tempDB(t))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	defer conn.Close()
+	migs, err := appkitdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
 
 	// Migrate twice to confirm idempotency of the full set including 002.
-	if err := Migrate(ctx, conn); err != nil {
+	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
 		t.Fatalf("first migrate: %v", err)
 	}
-	if err := Migrate(ctx, conn); err != nil {
+	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
 

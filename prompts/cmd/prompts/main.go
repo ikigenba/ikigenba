@@ -1,26 +1,28 @@
 // Command prompts is the loopback-only domain service behind nginx. It trusts the
 // X-Owner-Email / X-Client-Id headers nginx injects after a successful
 // auth_request against the dashboard's authorization server, and performs no
-// token logic of its own.
+// token logic of its own; nginx is the trust boundary.
 //
 // The uniform chassis — the fixed subcommands (serve/version/manifest/migrate/
 // schema), config-from-env, the migration runner + downgrade guard, the
-// loopback HTTP server + PRM + identity gate (health), and graceful
+// loopback HTTP server + PRM + identity gate (health/reflection), and graceful
 // shutdown — is owned by appkit. main.go declares only prompts' identity (the
 // Spec) and wires its domain surface through the Handlers hook: the prompt
 // store, per-prompt sandbox tree, async runner, the boot-time crash-recovery
-// sweep, the bare MCP surface, and the session-gated human landing page (service
-// name + version, Carbon-styled) served ungated in-process at the mount root.
-// RESOURCE_ID / AUTH_SERVER are composed
-// in-binary by appkit/config from IKIGENBA_DOMAIN + MOUNT (was the deleted
-// bin/build run-wrapper's job).
+// sweep, the appkit/mcp tool table (internal/mcp declares the sixteen domain
+// tools; the chassis serves the transport plus health/reflection), and the
+// share/www landing surface through Spec.WWW and rt.WWW() (nginx-gated at the
+// edge, ungated in-process at the mount root). RESOURCE_ID / AUTH_SERVER are
+// composed in-binary by appkit/config from IKIGENBA_DOMAIN + MOUNT.
 //
 // prompts is an LLM service: it uses agentkit (the LLM engine + tool surface) for
 // the agent loop, kept strictly separate from appkit (the deploy/serve chassis).
-// It is neither an event-plane producer nor a consumer — no /feed, no consumer
-// loop, no background worker; the async runner is spawned per-run, not a
-// long-running task. Its only secret, ANTHROPIC_API_KEY, is read env-only inside
-// the runner/prompt domain at the point of use and never logged (§2.8).
+// It is also an event-plane producer (Feed: "/feed", emitting run.succeeded and
+// run.failed via the outbox on the run's terminal write) and a consumer of six
+// upstreams (cron, crm, ledger, dropbox, scripts, and its own feed for
+// self-chaining) declared as Spec.Consumers and run by the chassis. Its only
+// secret, ANTHROPIC_API_KEY, is read env-only inside the runner/prompt domain at
+// the point of use and never logged (§2.8).
 package main
 
 import (

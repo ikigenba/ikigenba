@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"appkit"
+	appkitdb "appkit/db"
 	"appkit/server"
 
 	"eventplane/consumer"
@@ -58,13 +59,17 @@ func TestPromptsSpecConsumerHandlerRunsMatchingPromptOnly(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	ctx := context.Background()
 
-	conn, err := db.Open(filepath.Join(t.TempDir(), "prompts.db"))
+	conn, err := appkitdb.Open(filepath.Join(t.TempDir(), "prompts.db"))
 	if err != nil {
-		t.Fatalf("db.Open: %v", err)
+		t.Fatalf("appkitdb.Open: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	if err := db.Migrate(ctx, conn); err != nil {
-		t.Fatalf("db.Migrate: %v", err)
+	migs, err := appkitdb.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("appkitdb.LoadMigrations: %v", err)
+	}
+	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
+		t.Fatalf("appkitdb.Migrate: %v", err)
 	}
 
 	runsDir := t.TempDir()
