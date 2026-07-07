@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"registry"
-
 	"wiki/internal/extract"
 	"wiki/internal/retrieve"
 )
@@ -286,32 +284,6 @@ func TestLoadVectorCacheEntriesLoadsStoredPageEmbeddings(t *testing.T) {
 	}
 	if got.Hits[0].PageID != "subject-a" || got.Hits[0].Title != "Alpha Lab" || got.Hits[0].Score != 1 {
 		t.Fatalf("hit = %+v, want hydrated Alpha page vector", got.Hits[0])
-	}
-}
-
-func TestSpecDeclaresServedMCPService(t *testing.T) {
-	// R-JDBC-V0EV
-	spec := Spec()
-	if spec.App != "wiki" {
-		t.Fatalf("App = %q, want wiki", spec.App)
-	}
-	if spec.Mount != "/srv/wiki/" {
-		t.Fatalf("Mount = %q, want /srv/wiki/", spec.Mount)
-	}
-	if want := registry.MustPort("wiki"); spec.Port != want {
-		t.Fatalf("Port = %d, want registry wiki port %d", spec.Port, want)
-	}
-	if !spec.MCP {
-		t.Fatal("MCP = false, want true")
-	}
-	if spec.Handlers == nil {
-		t.Fatal("Handlers is nil; service would not mount /mcp")
-	}
-	if spec.Config == nil {
-		t.Fatal("Config is nil; service would not read LLM configuration")
-	}
-	if len(spec.Workers) != 1 {
-		t.Fatalf("Workers len = %d, want 1", len(spec.Workers))
 	}
 }
 

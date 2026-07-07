@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"appkit"
 	agentkit "github.com/ikigenba/agentkit"
+	"registry"
 
 	"wiki/internal/ask"
 	"wiki/internal/compile"
@@ -26,123 +28,135 @@ import (
 )
 
 func main() {
-	spec := wiki.Spec()
-	if serveCommand(os.Args[1:]) {
-		cfg, err := wiki.NewConfig(os.Getenv)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "wiki: %v\n", err)
-			os.Exit(1)
-		}
-		spec = buildSpec(cfg)
-	}
-	appkit.Main(spec)
+	appkit.Main(newSpec(wiki.NewConfig))
 }
 
-func buildSpec(cfg wiki.Config) appkit.Spec {
-	spec := wiki.Spec()
+type configLoader func(func(string) string) (wiki.Config, error)
+
+func newSpec(loadConfig configLoader) appkit.Spec {
 	var svc *wiki.Service
-	spec.Handlers = func(rt *appkit.Router) error {
-		if rt.DB() == nil {
-			return fmt.Errorf("wiki: no DB handle on router")
-		}
-		write := rt.DB()
-		dbPath, err := db.Path(context.Background(), write)
-		if err != nil {
-			return err
-		}
-		read, err := db.OpenRead(dbPath)
-		if err != nil {
-			return err
-		}
-		conns := wiki.Conns{Read: read, Write: write}
-		llmClient := cfg.LLM.WithRecorder(wiki.NewLLMCallStore(conns)).WithClock(time.Now)
-		vectorCache := retrieve.NewVectorCache()
-		cacheEntries, err := wiki.LoadVectorCacheEntries(context.Background(), conns)
-		if err != nil {
-			return err
-		}
-		vectorCache.Replace(retrieveCacheEntries(cacheEntries))
-		embedder := &agentkit.Embedder{
-			Provider:   cfg.EmbedSite.Provider,
-			Model:      cfg.EmbedSite.Model,
-			Dimensions: cfg.EmbedSite.Dims,
-		}
-		callRecorder := wiki.NewLLMCallStore(conns)
-		pageEmbedder, queryEmbedding := recordingEmbedders(embedder, callRecorder, cfg.EmbedSite)
-		extractor := extract.New(llmClient, cfg.CallSites.Extract)
-		compiler := buildCompiler(cfg, llmClient)
-		svc = wiki.NewService(conns, extractor, compiler, time.Now,
-			wiki.WithPageEmbedder(cfg.EmbedSite.Model, pageEmbedder),
-			wiki.WithVectorCacheUpdater(func(subjectID, title string, vec []float32) {
-				vectorCache.Upsert(retrieve.VectorEntry{SubjectID: subjectID, Title: title, Vec: vec})
-			}),
-			wiki.WithVectorCacheRemover(vectorCache.Remove),
-		)
-		search := retrieve.NewHybridRetriever(
-			retrieve.NewKeywordRetriever(read),
-			retrieve.NewVectorRetriever(queryEmbedder(queryEmbedding), vectorCache),
-			wiki.NewResolver(read),
-			wiki.NewPageStore(read),
-			retrieve.FusionConfig{FinalK: cfg.SearchDefault},
-		)
-		asker := ask.New(
-			search,
-			wiki.NewSubjectStore(read),
-			wiki.NewPageStore(read),
-			llmClient,
-			cfg.CallSites.AskSubject,
-			cfg.CallSites.AskSynthesis,
-		)
-		webPageService := pathPageService{
-			resolver: wiki.NewResolver(read),
-			service:  svc,
-		}
-		pageService := pathPageService{
-			resolver:     wiki.NewResolver(read),
-			service:      svc,
-			renderFooter: true,
-			notFound:     sql.ErrNoRows,
-		}
-		subjectService := publicSubjectService{
-			subjects: wiki.NewSubjectStore(read),
-			pages:    wiki.NewPageStore(read),
-		}
-		claimService := pathClaimService{
-			resolver: wiki.NewResolver(read),
-			claims:   wiki.NewClaimStore(read),
-		}
-		mergeResolver := mergePathResolver{subjects: wiki.NewSubjectStore(read)}
-		jobs := wiki.NewJobStore(conns)
-		aliases := wiki.NewAliasStore(read)
-		statusService := publicStatusService{service: svc}
-		rt.Handle("/", web.NewHandler(rt.Service(), rt.Version(), wiki.Mount,
-			web.WithOrphanLister(orphanAdapter{svc: svc}),
-			web.WithAsker(asker),
-			web.WithMentioner(mentionAdapter{svc: svc}),
-			web.WithPageFinder(webPageService),
-		))
-		rt.Handle("POST /mcp", rt.RequireIdentity(
-			mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
-				mcp.WithIngestService(svc),
-				mcp.WithJobStatusService(statusService),
-				mcp.WithJobAbortService(svc),
-				mcp.WithJobRerunService(svc),
-				mcp.WithJobListService(jobListService{jobs: jobs}),
-				mcp.WithJobsCountService(jobCountService{jobs: jobs}),
-				mcp.WithMergeService(mergeResolver, svc),
-				mcp.WithMergeListService(aliases),
-				mcp.WithSubjectListService(subjectService),
-				mcp.WithClaimListService(claimService),
-				mcp.WithPagePathService(pageService),
-				mcp.WithLLMCallListService(llmCallListService{calls: wiki.NewLLMCallStore(conns)}),
-				mcp.WithAskFunc(asker.Ask),
-			)))
-		return nil
+
+	return appkit.Spec{
+		App:   wiki.App,
+		Mount: wiki.Mount,
+		Port:  registry.MustPort("wiki"),
+		MCP:   true,
+		ManifestExtras: []appkit.ManifestKV{
+			{Key: "MODEL_ID", Value: wiki.ModelID},
+			{Key: "WORKER_CONCURRENCY", Value: strconv.Itoa(wiki.WorkerConcurrency)},
+			{Key: "SEARCH_DEFAULT", Value: strconv.Itoa(wiki.SearchDefault)},
+			{Key: "SEARCH_CAP", Value: strconv.Itoa(wiki.SearchCap)},
+		},
+		Migrations: db.FS,
+		Config: func(getenv func(string) string) (any, error) {
+			return loadConfig(getenv)
+		},
+		Handlers: func(rt *appkit.Router) error {
+			cfg, err := loadConfig(os.Getenv)
+			if err != nil {
+				return fmt.Errorf("wiki: %w", err)
+			}
+			if rt.DB() == nil {
+				return fmt.Errorf("wiki: no DB handle on router")
+			}
+			write := rt.DB()
+			dbPath, err := db.Path(context.Background(), write)
+			if err != nil {
+				return err
+			}
+			read, err := db.OpenRead(dbPath)
+			if err != nil {
+				return err
+			}
+			conns := wiki.Conns{Read: read, Write: write}
+			llmClient := cfg.LLM.WithRecorder(wiki.NewLLMCallStore(conns)).WithClock(time.Now)
+			vectorCache := retrieve.NewVectorCache()
+			cacheEntries, err := wiki.LoadVectorCacheEntries(context.Background(), conns)
+			if err != nil {
+				return err
+			}
+			vectorCache.Replace(retrieveCacheEntries(cacheEntries))
+			embedder := &agentkit.Embedder{
+				Provider:   cfg.EmbedSite.Provider,
+				Model:      cfg.EmbedSite.Model,
+				Dimensions: cfg.EmbedSite.Dims,
+			}
+			callRecorder := wiki.NewLLMCallStore(conns)
+			pageEmbedder, queryEmbedding := recordingEmbedders(embedder, callRecorder, cfg.EmbedSite)
+			extractor := extract.New(llmClient, cfg.CallSites.Extract)
+			compiler := buildCompiler(cfg, llmClient)
+			svc = wiki.NewService(conns, extractor, compiler, time.Now,
+				wiki.WithPageEmbedder(cfg.EmbedSite.Model, pageEmbedder),
+				wiki.WithVectorCacheUpdater(func(subjectID, title string, vec []float32) {
+					vectorCache.Upsert(retrieve.VectorEntry{SubjectID: subjectID, Title: title, Vec: vec})
+				}),
+				wiki.WithVectorCacheRemover(vectorCache.Remove),
+			)
+			search := retrieve.NewHybridRetriever(
+				retrieve.NewKeywordRetriever(read),
+				retrieve.NewVectorRetriever(queryEmbedder(queryEmbedding), vectorCache),
+				wiki.NewResolver(read),
+				wiki.NewPageStore(read),
+				retrieve.FusionConfig{FinalK: cfg.SearchDefault},
+			)
+			asker := ask.New(
+				search,
+				wiki.NewSubjectStore(read),
+				wiki.NewPageStore(read),
+				llmClient,
+				cfg.CallSites.AskSubject,
+				cfg.CallSites.AskSynthesis,
+			)
+			webPageService := pathPageService{
+				resolver: wiki.NewResolver(read),
+				service:  svc,
+			}
+			pageService := pathPageService{
+				resolver:     wiki.NewResolver(read),
+				service:      svc,
+				renderFooter: true,
+				notFound:     sql.ErrNoRows,
+			}
+			subjectService := publicSubjectService{
+				subjects: wiki.NewSubjectStore(read),
+				pages:    wiki.NewPageStore(read),
+			}
+			claimService := pathClaimService{
+				resolver: wiki.NewResolver(read),
+				claims:   wiki.NewClaimStore(read),
+			}
+			mergeResolver := mergePathResolver{subjects: wiki.NewSubjectStore(read)}
+			jobs := wiki.NewJobStore(conns)
+			aliases := wiki.NewAliasStore(read)
+			statusService := publicStatusService{service: svc}
+			rt.Handle("/", web.NewHandler(rt.Service(), rt.Version(), wiki.Mount,
+				web.WithOrphanLister(orphanAdapter{svc: svc}),
+				web.WithAsker(asker),
+				web.WithMentioner(mentionAdapter{svc: svc}),
+				web.WithPageFinder(webPageService),
+			))
+			rt.Handle("POST /mcp", rt.RequireIdentity(
+				mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
+					mcp.WithIngestService(svc),
+					mcp.WithJobStatusService(statusService),
+					mcp.WithJobAbortService(svc),
+					mcp.WithJobRerunService(svc),
+					mcp.WithJobListService(jobListService{jobs: jobs}),
+					mcp.WithJobsCountService(jobCountService{jobs: jobs}),
+					mcp.WithMergeService(mergeResolver, svc),
+					mcp.WithMergeListService(aliases),
+					mcp.WithSubjectListService(subjectService),
+					mcp.WithClaimListService(claimService),
+					mcp.WithPagePathService(pageService),
+					mcp.WithLLMCallListService(llmCallListService{calls: wiki.NewLLMCallStore(conns)}),
+					mcp.WithAskFunc(asker.Ask),
+				)))
+			return nil
+		},
+		Workers: []func(ctx context.Context) error{
+			func(ctx context.Context) error { return worker.Run(ctx, svc) },
+		},
 	}
-	spec.Workers = []func(ctx context.Context) error{
-		func(ctx context.Context) error { return worker.Run(ctx, svc) },
-	}
-	return spec
 }
 
 func recordingEmbedders(inner wiki.PageEmbedder, recorder llm.Recorder, site wiki.EmbedSite) (page, query wiki.PageEmbedder) {
@@ -443,11 +457,4 @@ func webRefs(refs []wiki.Ref) []web.Ref {
 
 func buildCompiler(cfg wiki.Config, c *llm.Client) *compile.Compiler {
 	return compile.New(c, cfg.CallSites.Compile, nil)
-}
-
-func serveCommand(args []string) bool {
-	if len(args) == 0 {
-		return true
-	}
-	return args[0] == "serve"
 }

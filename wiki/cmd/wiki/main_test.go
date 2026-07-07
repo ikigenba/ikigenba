@@ -25,6 +25,7 @@ import (
 	"appkit/manifest"
 	"appkit/server"
 	agentkit "github.com/ikigenba/agentkit"
+	"registry"
 
 	"wiki/internal/ask"
 	"wiki/internal/compile"
@@ -56,7 +57,7 @@ func TestCommittedManifestIsPortable(t *testing.T) {
 // R-8IAN-FB87
 func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	// R-JFR5-MJW9
-	spec := wiki.Spec()
+	spec := newSpec(wiki.NewConfig)
 	got := manifest.Emit(manifest.Fields{
 		App:      spec.App,
 		Mount:    spec.Mount,
@@ -74,6 +75,32 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
+	}
+}
+
+func TestSpecDeclaresServedMCPService(t *testing.T) {
+	// R-JDBC-V0EV
+	spec := newSpec(wiki.NewConfig)
+	if spec.App != "wiki" {
+		t.Fatalf("App = %q, want wiki", spec.App)
+	}
+	if spec.Mount != "/srv/wiki/" {
+		t.Fatalf("Mount = %q, want /srv/wiki/", spec.Mount)
+	}
+	if want := registry.MustPort("wiki"); spec.Port != want {
+		t.Fatalf("Port = %d, want registry wiki port %d", spec.Port, want)
+	}
+	if !spec.MCP {
+		t.Fatal("MCP = false, want true")
+	}
+	if spec.Handlers == nil {
+		t.Fatal("Handlers is nil; service would not mount /mcp")
+	}
+	if spec.Config == nil {
+		t.Fatal("Config is nil; service would not read LLM configuration")
+	}
+	if len(spec.Workers) != 1 {
+		t.Fatalf("Workers len = %d, want 1", len(spec.Workers))
 	}
 }
 
@@ -202,8 +229,17 @@ func TestServeFailsLoudWhenAnthropicKeyMissing(t *testing.T) {
 		defer cancel()
 
 		cmd := exec.CommandContext(ctx, "go", "run", ".", "serve")
-		cmd.Env = withoutAnthropicKey(os.Environ())
-		cmd.Env = append(cmd.Env, "ANTHROPIC_API_KEY="+value)
+		root := t.TempDir()
+		cmd.Env = testEnv(map[string]string{
+			"IKIGENBA_DOMAIN":      "int.ikigenba.com",
+			"IKIGENBA_ROOT":        root,
+			"WIKI_DB_PATH":         filepath.Join(root, "wiki.db"),
+			"WIKI_GENERATION_PATH": filepath.Join(root, "wiki.db.generation"),
+			"WIKI_IP":              "127.0.0.1",
+			"WIKI_PORT":            fmt.Sprintf("%d", freeTCPPort(t)),
+			"OPENAI_API_KEY":       "test-openai-key",
+			"ANTHROPIC_API_KEY":    value,
+		})
 		out, err := cmd.CombinedOutput()
 		if ctx.Err() == context.DeadlineExceeded {
 			t.Fatal("serve did not fail before startup timeout")
@@ -224,10 +260,10 @@ func TestBuildSpecWiresFifteenMCPTools(t *testing.T) {
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
 
-	spec := buildSpec(wiki.Config{
+	spec := newSpec(staticConfig(wiki.Config{
 		SearchDefault: 8,
 		SearchCap:     32,
-	})
+	}))
 	srv, err := server.New(server.Options{
 		Addr:       "127.0.0.1:0",
 		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
@@ -311,7 +347,7 @@ func TestBuildSpecPageToolReturnsRenderedFooter(t *testing.T) {
 		}
 	}
 
-	spec := buildSpec(wiki.Config{})
+	spec := newSpec(staticConfig(wiki.Config{}))
 	srv, err := server.New(server.Options{
 		Addr:       "127.0.0.1:0",
 		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
@@ -406,7 +442,7 @@ func TestBuildSpecReadToolsReturnPublicPathsWithoutSubjectIDs(t *testing.T) {
 		t.Fatalf("Upsert page: %v", err)
 	}
 
-	spec := buildSpec(wiki.Config{})
+	spec := newSpec(staticConfig(wiki.Config{}))
 	srv, err := server.New(server.Options{
 		Addr:       "127.0.0.1:0",
 		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
@@ -627,7 +663,7 @@ func TestBuildSpecMatchesDirectMCPToolSurface(t *testing.T) {
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
 
-	spec := buildSpec(wiki.Config{})
+	spec := newSpec(staticConfig(wiki.Config{}))
 	srv, err := server.New(server.Options{
 		Addr:       "127.0.0.1:0",
 		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
@@ -687,7 +723,7 @@ func TestBuildSpecRecordsPageEmbeddingCalls(t *testing.T) {
 	extractSite.Model = "extract-model"
 	compileSite := compile.DefaultCallSite()
 	compileSite.Model = "compile-model"
-	spec := buildSpec(wiki.Config{
+	spec := newSpec(staticConfig(wiki.Config{
 		CallSites: wiki.CallSites{
 			Extract: extractSite,
 			Compile: compileSite,
@@ -698,7 +734,7 @@ func TestBuildSpecRecordsPageEmbeddingCalls(t *testing.T) {
 			Provider: embeds,
 		},
 		LLM: llm.New(prov, nil),
-	})
+	}))
 	h := buildSpecTestHandler(t, conn, spec)
 	stopWorker, workerErr := startBuildSpecWorker(t, ctx, spec.Workers[0])
 	defer stopWorker()
@@ -772,7 +808,7 @@ func TestBuildSpecMergeRemovesLoserVectorFromLiveCache(t *testing.T) {
 	askSubjectSite.Model = "merge-ask-subject-model"
 	askSynthesisSite := ask.DefaultSynthesisCallSite()
 	askSynthesisSite.Model = "merge-ask-synthesis-model"
-	spec := buildSpec(wiki.Config{
+	spec := newSpec(staticConfig(wiki.Config{
 		CallSites: wiki.CallSites{
 			Compile:      compileSite,
 			AskSubject:   askSubjectSite,
@@ -785,7 +821,7 @@ func TestBuildSpecMergeRemovesLoserVectorFromLiveCache(t *testing.T) {
 		},
 		SearchDefault: 1,
 		LLM:           llm.New(prov, nil),
-	})
+	}))
 	h := buildSpecTestHandler(t, conn, spec)
 	stopWorker, workerErr := startBuildSpecWorker(t, ctx, spec.Workers[0])
 	defer stopWorker()
@@ -866,7 +902,7 @@ func TestBuildSpecRecordsQueryEmbeddingCalls(t *testing.T) {
 	askSubjectSite.Model = "ask-subject-model"
 	askSynthesisSite := ask.DefaultSynthesisCallSite()
 	askSynthesisSite.Model = "ask-synthesis-model"
-	spec := buildSpec(wiki.Config{
+	spec := newSpec(staticConfig(wiki.Config{
 		CallSites: wiki.CallSites{
 			AskSubject:   askSubjectSite,
 			AskSynthesis: askSynthesisSite,
@@ -878,7 +914,7 @@ func TestBuildSpecRecordsQueryEmbeddingCalls(t *testing.T) {
 		},
 		SearchDefault: 8,
 		LLM:           llm.New(prov, nil),
-	})
+	}))
 	h := buildSpecTestHandler(t, conn, spec)
 
 	var answer struct {
@@ -1048,6 +1084,12 @@ func withoutAnthropicKey(env []string) []string {
 		out = append(out, kv)
 	}
 	return out
+}
+
+func staticConfig(cfg wiki.Config) configLoader {
+	return func(func(string) string) (wiki.Config, error) {
+		return cfg, nil
+	}
 }
 
 func migratedDB(t *testing.T, ctx context.Context) *sql.DB {
