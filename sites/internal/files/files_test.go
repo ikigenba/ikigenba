@@ -382,6 +382,22 @@ func TestGlobRejectsEscapingPatterns(t *testing.T) {
 	}
 }
 
+func TestGlobRejectsPatternsResolvingOutsideSearchBase(t *testing.T) {
+	root := globRecursiveFixture(t)
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "leak.css"), []byte("leak"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "assets", "outside")); err != nil {
+		t.Fatal(err)
+	}
+
+	// R-40X5-6S7E
+	if _, err := Glob(root, "outside/*.css", "assets"); !errors.Is(err, ErrEscapes) {
+		t.Fatalf("Glob symlinked escaping pattern error = %v, want ErrEscapes", err)
+	}
+}
+
 func TestGlobRejectsMalformedPatternWithoutWalkingMatches(t *testing.T) {
 	root := t.TempDir()
 
