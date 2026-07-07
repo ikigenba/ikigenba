@@ -21,7 +21,7 @@ import (
 )
 
 func TestHealthToolReturnsAppkitEnvelope(t *testing.T) {
-	h := NewHandler("test-version", "wiki", nil)
+	h := newTestHandler(t)
 	body := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"health"}}`)
 	rec := httptest.NewRecorder()
 
@@ -60,7 +60,7 @@ func TestHealthToolReturnsAppkitEnvelope(t *testing.T) {
 
 func TestInitializeAdvertisesWikiMCPServer(t *testing.T) {
 	// R-6RVX-P1IG
-	h := NewHandler("test-version", "wiki", nil)
+	h := newTestHandler(t)
 	body := bytes.NewBufferString(`{"jsonrpc":"2.0","id":"init","method":"initialize"}`)
 	rec := httptest.NewRecorder()
 
@@ -79,6 +79,7 @@ func TestInitializeAdvertisesWikiMCPServer(t *testing.T) {
 				Name    string `json:"name"`
 				Version string `json:"version"`
 			} `json:"serverInfo"`
+			Instructions string `json:"instructions"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
@@ -90,17 +91,21 @@ func TestInitializeAdvertisesWikiMCPServer(t *testing.T) {
 	if got.Result.Capabilities.Tools == nil {
 		t.Fatal("capabilities.tools is nil")
 	}
-	if got.Result.ServerInfo.Name != "Wiki" {
-		t.Fatalf("serverInfo.name = %q, want Wiki", got.Result.ServerInfo.Name)
+	if got.Result.ServerInfo.Name != "wiki" {
+		t.Fatalf("serverInfo.name = %q, want wiki", got.Result.ServerInfo.Name)
 	}
 	if got.Result.ServerInfo.Version != "test-version" {
 		t.Fatalf("serverInfo.version = %q, want test-version", got.Result.ServerInfo.Version)
 	}
+	if got.Result.Instructions != Instructions {
+		t.Fatalf("instructions = %q, want pinned wiki instructions", got.Result.Instructions)
+	}
 }
 
 func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
+	// R-JKMR-5MV1
 	// R-MUQ4-K1JS
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+	h := gatedHandler(t, newTestHandler(t,
 		WithIngestService(&capturingWiki{}),
 		WithJobStatusService(&capturingWiki{}),
 		WithJobAbortService(&capturingWiki{}),
@@ -174,7 +179,7 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 func TestToolsListInputSchemasUseValidRequiredFields(t *testing.T) {
 	// R-N4KO-2WTZ
 	// R-3G73-064M
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+	h := gatedHandler(t, newTestHandler(t,
 		WithIngestService(&capturingWiki{}),
 		WithJobStatusService(&capturingWiki{}),
 		WithJobAbortService(&capturingWiki{}),
@@ -254,7 +259,7 @@ func TestToolsListInputSchemasUseValidRequiredFields(t *testing.T) {
 }
 
 func TestReflectionToolReturnsEmptyEventEdges(t *testing.T) {
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil))
+	h := gatedHandler(t, newTestHandler(t))
 	rec := callMCP(t, h, `{
 		"jsonrpc":"2.0",
 		"id":"reflection",
@@ -281,7 +286,7 @@ func TestUnknownReadsReturnCleanNotFoundResults(t *testing.T) {
 		claimsErr: sql.ErrNoRows,
 		pageErr:   sql.ErrNoRows,
 	}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+	h := gatedHandler(t, newTestHandler(t,
 		WithJobStatusService(wiki),
 		WithClaimsService(wiki),
 		WithPagePathService(wiki),
@@ -341,7 +346,7 @@ func TestUnknownReadsReturnCleanNotFoundResults(t *testing.T) {
 func TestIngestToolUsesAuthenticatedIdentity(t *testing.T) {
 	// R-MVY0-XTAH
 	wiki := &capturingWiki{ingestID: "job-123"}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithIngestService(wiki)))
+	h := gatedHandler(t, newTestHandler(t, WithIngestService(wiki)))
 	rec := callMCP(t, h, `{
 		"jsonrpc":"2.0",
 		"id":"ingest",
@@ -384,7 +389,7 @@ func TestJobStatusToolReturnsDomainStatus(t *testing.T) {
 		FinishedAt: &finished,
 		Subjects:   []string{"subject-1"},
 	}}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithJobStatusService(wiki)))
+	h := gatedHandler(t, newTestHandler(t, WithJobStatusService(wiki)))
 	rec := callMCP(t, h, `{
 		"jsonrpc":"2.0",
 		"id":"status",
@@ -416,7 +421,7 @@ func TestPageToolUsesTypeNormNamePath(t *testing.T) {
 		Title:     "Acme Robotics",
 		Body:      "Acme Robotics overview.",
 	}}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithPagePathService(wiki)))
+	h := gatedHandler(t, newTestHandler(t, WithPagePathService(wiki)))
 	listRec := callMCP(t, h, `{"jsonrpc":"2.0","id":"list","method":"tools/list"}`, "owner@example.com")
 	if listRec.Code != http.StatusOK {
 		t.Fatalf("tools/list status = %d, want 200", listRec.Code)
@@ -509,7 +514,7 @@ func TestReadToolsSerializePublicPathsWithoutSubjectIDs(t *testing.T) {
 			Body:      "Acme Robotics overview.",
 		},
 	}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+	h := gatedHandler(t, newTestHandler(t,
 		WithJobStatusService(wiki),
 		WithSubjectsService(wiki),
 		WithClaimsService(wiki),
@@ -646,7 +651,7 @@ func TestAskToolUsesAuthenticatedIdentity(t *testing.T) {
 			Title: "Ada",
 		}},
 	}}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithAskFunc(asker.Ask)))
+	h := gatedHandler(t, newTestHandler(t, WithAskFunc(asker.Ask)))
 	rec := callMCP(t, h, `{
 		"jsonrpc":"2.0",
 		"id":"ask",
@@ -690,7 +695,7 @@ func TestAskToolReturnsPathTitleCitations(t *testing.T) {
 			Title: "Ada Lovelace",
 		}},
 	}}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithAskFunc(asker.Ask)))
+	h := gatedHandler(t, newTestHandler(t, WithAskFunc(asker.Ask)))
 	rec := callMCP(t, h, `{
 		"jsonrpc":"2.0",
 		"id":"ask",
@@ -732,7 +737,7 @@ func TestAskToolUsesPhase17InputAndResultShape(t *testing.T) {
 			Title: "Ada",
 		}},
 	}}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithAskFunc(asker.Ask)))
+	h := gatedHandler(t, newTestHandler(t, WithAskFunc(asker.Ask)))
 	listRec := callMCP(t, h, `{"jsonrpc":"2.0","id":"list","method":"tools/list"}`, "owner@example.com")
 	if listRec.Code != http.StatusOK {
 		t.Fatalf("tools/list status = %d, want 200", listRec.Code)
@@ -801,7 +806,7 @@ func TestJobControlToolsCallDomainServices(t *testing.T) {
 		abortResult: abortResult{Aborted: true, Status: "aborted"},
 		rerunResult: rerunResult{Requeued: true, Status: "pending"},
 	}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+	h := gatedHandler(t, newTestHandler(t,
 		WithJobAbortService(wiki),
 		WithJobRerunService(wiki),
 	))
@@ -860,7 +865,7 @@ func TestJobsCountUsesSameFiltersAsJobsAndReturnsOnlyCount(t *testing.T) {
 		},
 		jobCount: 2,
 	}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+	h := gatedHandler(t, newTestHandler(t,
 		WithJobListService(wiki),
 		WithJobsCountService(wiki),
 	))
@@ -912,7 +917,7 @@ func TestJobsKindFilterDefaultsToIngestAndAcceptsMerge(t *testing.T) {
 	// R-DWDM-RVA7
 	// R-DYTF-JERL
 	wiki := &capturingWiki{jobCount: 1}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+	h := gatedHandler(t, newTestHandler(t,
 		WithJobListService(wiki),
 		WithJobsCountService(wiki),
 	))
@@ -935,7 +940,7 @@ func TestJobsKindFilterDefaultsToIngestAndAcceptsMerge(t *testing.T) {
 }
 
 func TestJobsKindSchemaPublishesEnumAndRejectsUnknownKind(t *testing.T) {
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+	h := gatedHandler(t, newTestHandler(t,
 		WithJobListService(&capturingWiki{}),
 		WithJobsCountService(&capturingWiki{}),
 	))
@@ -986,7 +991,7 @@ func TestMergeToolResolvesPathsOnceAndQueuesJob(t *testing.T) {
 			"entity/new-name": {ID: "subject-new"},
 		},
 	}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithMergeService(wiki, wiki)))
+	h := gatedHandler(t, newTestHandler(t, WithMergeService(wiki, wiki)))
 
 	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/old-name","to":"entity/new-name"}}}`, "owner@example.com")
 
@@ -1019,7 +1024,7 @@ func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
 			pathSubjects: map[string]subject{"entity/new-name": {ID: "subject-new"}},
 			pathErrs:     map[string]error{"entity/missing": sql.ErrNoRows},
 		}
-		h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithMergeService(wiki, wiki)))
+		h := gatedHandler(t, newTestHandler(t, WithMergeService(wiki, wiki)))
 
 		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/missing","to":"entity/new-name"}}}`, "owner@example.com")
 
@@ -1043,7 +1048,7 @@ func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
 				"entity/old-name":     {ID: "subject-same"},
 			},
 		}
-		h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithMergeService(wiki, wiki)))
+		h := gatedHandler(t, newTestHandler(t, WithMergeService(wiki, wiki)))
 
 		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/old-name","to":"entity/current-name"}}}`, "owner@example.com")
 
@@ -1067,7 +1072,7 @@ func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
 			},
 			mergeErr: errors.New("merge queue unavailable"),
 		}
-		h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithMergeService(wiki, wiki)))
+		h := gatedHandler(t, newTestHandler(t, WithMergeService(wiki, wiki)))
 
 		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/old-name","to":"entity/new-name"}}}`, "owner@example.com")
 
@@ -1096,7 +1101,7 @@ func TestMergesToolReturnsAuditPage(t *testing.T) {
 		}},
 		mergesNext: "next-token",
 	}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithMergeListService(wiki)))
+	h := gatedHandler(t, newTestHandler(t, WithMergeListService(wiki)))
 	cursor := paging.EncodeCursor("2026-06-24T12:00:00Z", "old name")
 
 	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merges","method":"tools/call","params":{"name":"merges","arguments":{"limit":1,"cursor":"`+cursor+`"}}}`, "owner@example.com")
@@ -1128,7 +1133,7 @@ func TestMergesToolReturnsAuditPage(t *testing.T) {
 
 func TestJobsStatusSchemaPublishesEnumAndRejectsUnknownStatus(t *testing.T) {
 	// R-Y4EH-RVMV
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+	h := gatedHandler(t, newTestHandler(t,
 		WithJobListService(&capturingWiki{}),
 		WithJobsCountService(&capturingWiki{}),
 	))
@@ -1172,7 +1177,7 @@ func TestJobsStatusSchemaPublishesEnumAndRejectsUnknownStatus(t *testing.T) {
 
 func TestJobsRejectMalformedTimeAndCursorFilters(t *testing.T) {
 	// R-3EZ6-MEDX
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithJobListService(&capturingWiki{})))
+	h := gatedHandler(t, newTestHandler(t, WithJobListService(&capturingWiki{})))
 	for _, tc := range []struct {
 		name string
 		body string
@@ -1247,7 +1252,7 @@ func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 		}},
 		next: "call-next",
 	}
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil,
+	h := gatedHandler(t, newTestHandler(t,
 		WithJobListService(wiki),
 		WithSubjectListService(wiki),
 		WithClaimListService(wiki),
@@ -1345,7 +1350,7 @@ func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 
 func TestMCPToolsAreBehindRequireIdentity(t *testing.T) {
 	// R-MZLQ-34IK
-	h := gatedHandler(t, NewHandler("test-version", "wiki", nil, WithIngestService(&capturingWiki{})))
+	h := gatedHandler(t, newTestHandler(t, WithIngestService(&capturingWiki{})))
 	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"list","method":"tools/list"}`, "")
 
 	if rec.Code != http.StatusUnauthorized {
@@ -1626,6 +1631,31 @@ func (a *capturingAsker) Ask(_ context.Context, owner, question string) (answer,
 	a.owner = owner
 	a.question = question
 	return a.answer, nil
+}
+
+func newTestHandler(t *testing.T, opts ...Option) http.Handler {
+	t.Helper()
+	var h http.Handler
+	_, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		ResourceID: "https://int.ikigenba.com/srv/wiki/mcp",
+		AuthServer: "https://int.ikigenba.com",
+		Version:    "test-version",
+		Service:    "wiki",
+		Register: func(rt *appkit.Router) error {
+			var err error
+			h, err = NewHandler(rt, opts...)
+			return err
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	if h == nil {
+		t.Fatal("NewHandler returned nil handler")
+	}
+	return h
 }
 
 func gatedHandler(t *testing.T, mcp http.Handler) http.Handler {

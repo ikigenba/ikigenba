@@ -697,21 +697,40 @@ func TestBuildSpecMatchesDirectMCPToolSurface(t *testing.T) {
 		t.Fatalf("server.New: %v", err)
 	}
 
-	direct := mcp.NewHandler("test-version", "wiki", nil,
-		mcp.WithIngestService(surfaceWiki{}),
-		mcp.WithJobStatusService(surfaceWiki{}),
-		mcp.WithJobAbortService(surfaceWiki{}),
-		mcp.WithJobRerunService(surfaceWiki{}),
-		mcp.WithJobListService(surfaceWiki{}),
-		mcp.WithJobsCountService(surfaceWiki{}),
-		mcp.WithMergeService(surfaceWiki{}, surfaceWiki{}),
-		mcp.WithMergeListService(surfaceWiki{}),
-		mcp.WithAskFunc(surfaceAsk),
-		mcp.WithSubjectListService(surfaceWiki{}),
-		mcp.WithClaimListService(surfaceWiki{}),
-		mcp.WithPagePathService(surfaceWiki{}),
-		mcp.WithLLMCallListService(surfaceCalls{}),
-	)
+	var direct http.Handler
+	_, err = server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		ResourceID: "https://int.ikigenba.com/srv/wiki/mcp",
+		AuthServer: "https://int.ikigenba.com",
+		Version:    "test-version",
+		Service:    "wiki",
+		Register: func(rt *appkit.Router) error {
+			var err error
+			direct, err = mcp.NewHandler(rt,
+				mcp.WithIngestService(surfaceWiki{}),
+				mcp.WithJobStatusService(surfaceWiki{}),
+				mcp.WithJobAbortService(surfaceWiki{}),
+				mcp.WithJobRerunService(surfaceWiki{}),
+				mcp.WithJobListService(surfaceWiki{}),
+				mcp.WithJobsCountService(surfaceWiki{}),
+				mcp.WithMergeService(surfaceWiki{}, surfaceWiki{}),
+				mcp.WithMergeListService(surfaceWiki{}),
+				mcp.WithAskFunc(surfaceAsk),
+				mcp.WithSubjectListService(surfaceWiki{}),
+				mcp.WithClaimListService(surfaceWiki{}),
+				mcp.WithPagePathService(surfaceWiki{}),
+				mcp.WithLLMCallListService(surfaceCalls{}),
+			)
+			return err
+		},
+	})
+	if err != nil {
+		t.Fatalf("direct mcp.NewHandler: %v", err)
+	}
+	if direct == nil {
+		t.Fatal("direct mcp.NewHandler returned nil")
+	}
 
 	composedTools := mcpToolSurface(t, srv.Handler, true)
 	directTools := mcpToolSurface(t, direct, false)

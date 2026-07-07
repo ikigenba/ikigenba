@@ -136,22 +136,25 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 				web.WithMentioner(mentionAdapter{svc: svc}),
 				web.WithPageFinder(webPageService),
 			))
-			rt.Handle("POST /mcp", rt.RequireIdentity(
-				mcp.NewHandler(rt.Version(), rt.Service(), rt.Health(),
-					mcp.WithIngestService(svc),
-					mcp.WithJobStatusService(statusService),
-					mcp.WithJobAbortService(svc),
-					mcp.WithJobRerunService(svc),
-					mcp.WithJobListService(jobListService{jobs: jobs}),
-					mcp.WithJobsCountService(jobCountService{jobs: jobs}),
-					mcp.WithMergeService(mergeResolver, svc),
-					mcp.WithMergeListService(aliases),
-					mcp.WithSubjectListService(subjectService),
-					mcp.WithClaimListService(claimService),
-					mcp.WithPagePathService(pageService),
-					mcp.WithLLMCallListService(llmCallListService{calls: wiki.NewLLMCallStore(conns)}),
-					mcp.WithAskFunc(asker.Ask),
-				)))
+			mcpHandler, err := mcp.NewHandler(rt,
+				mcp.WithIngestService(svc),
+				mcp.WithJobStatusService(statusService),
+				mcp.WithJobAbortService(svc),
+				mcp.WithJobRerunService(svc),
+				mcp.WithJobListService(jobListService{jobs: jobs}),
+				mcp.WithJobsCountService(jobCountService{jobs: jobs}),
+				mcp.WithMergeService(mergeResolver, svc),
+				mcp.WithMergeListService(aliases),
+				mcp.WithSubjectListService(subjectService),
+				mcp.WithClaimListService(claimService),
+				mcp.WithPagePathService(pageService),
+				mcp.WithLLMCallListService(llmCallListService{calls: wiki.NewLLMCallStore(conns)}),
+				mcp.WithAskFunc(asker.Ask),
+			)
+			if err != nil {
+				return err
+			}
+			rt.Handle("POST /mcp", rt.RequireIdentity(mcpHandler))
 			return nil
 		},
 		Workers: []func(ctx context.Context) error{

@@ -1,4 +1,4 @@
-// Package mcp implements wiki's initial JSON-RPC MCP smoke surface.
+// Package mcp implements wiki's domain MCP tools over the appkit transport.
 package mcp
 
 import (
@@ -13,15 +13,16 @@ import (
 	"time"
 
 	"appkit"
+	appkitmcp "appkit/mcp"
+	"appkit/server"
 
 	paging "wiki/internal/page"
 )
 
-// Handler serves a small MCP-compatible JSON-RPC endpoint for Phase 01.
+const Instructions = "wiki is a knowledge base built from ingested source text. Call ingest to queue text for extraction; the pipeline distills subjects (entity/event/concept) and claims and compiles a cited page per subject. Use ask for a grounded, cited answer over the owner's wiki; subjects, claims, and page to read the compiled knowledge by type/slug path; jobs and status to track ingestion; and merge to fold a duplicate subject into another. health and reflection report service status and the event graph."
+
+// Handler holds configured wiki domain tool dependencies.
 type Handler struct {
-	version   string
-	service   string
-	health    func(context.Context) (map[string]any, error)
 	ingest    func(context.Context, string, string, string, []string) (string, error)
 	status    func(context.Context, string) (any, error)
 	abort     func(context.Context, string) (any, error)
@@ -315,114 +316,85 @@ func WithAskFunc[T any](fn func(context.Context, string, string) (T, error)) Opt
 	}
 }
 
-// NewHandler builds the MCP handler from appkit's route-time service metadata.
-func NewHandler(version, service string, health func(context.Context) (map[string]any, error), opts ...Option) *Handler {
-	h := &Handler{version: version, service: service, health: health}
+// Tools returns wiki's configured domain MCP tools. Chassis health and
+// reflection are supplied by appkit/mcp and are not declared here.
+func Tools(opts ...Option) []appkitmcp.Tool {
+	h := &Handler{}
 	for _, opt := range opts {
 		opt(h)
 	}
-	return h
+	tools := []appkitmcp.Tool{}
+	if h.ingest != nil {
+		tools = append(tools, domainTool(ingestTool(), h.handleIngestCall))
+	}
+	if h.status != nil {
+		tools = append(tools, domainTool(jobStatusTool(), h.handleJobStatusCall))
+	}
+	if h.abort != nil {
+		tools = append(tools, domainTool(jobAbortTool(), h.handleJobAbortCall))
+	}
+	if h.rerun != nil {
+		tools = append(tools, domainTool(jobRerunTool(), h.handleJobRerunCall))
+	}
+	if h.jobs != nil {
+		tools = append(tools, domainTool(jobsTool(), h.handleJobsCall))
+	}
+	if h.jobsCount != nil {
+		tools = append(tools, domainTool(jobsCountTool(), h.handleJobsCountCall))
+	}
+	if h.resolve != nil && h.merge != nil {
+		tools = append(tools, domainTool(mergeTool(), h.handleMergeCall))
+	}
+	if h.merges != nil {
+		tools = append(tools, domainTool(mergesTool(), h.handleMergesCall))
+	}
+	if h.ask != nil {
+		tools = append(tools, domainTool(askTool(), h.handleAskCall))
+	}
+	if h.subjects != nil {
+		tools = append(tools, domainTool(subjectsTool(), h.handleSubjectsCall))
+	}
+	if h.claims != nil {
+		tools = append(tools, domainTool(claimsTool(), h.handleClaimsCall))
+	}
+	if h.page != nil {
+		tools = append(tools, domainTool(pageTool(), h.handlePageCall))
+	}
+	if h.calls != nil {
+		tools = append(tools, domainTool(llmCallsTool(), h.handleLLMCallsCall))
+	}
+	return tools
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var req request
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, nil, -32700, "parse error")
-		return
-	}
-
-	switch req.Method {
-	case "initialize":
-		writeResult(w, req.ID, map[string]any{
-			"protocolVersion": "2025-03-26",
-			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "Wiki", "version": h.version},
-		})
-	case "notifications/initialized":
-		w.WriteHeader(http.StatusAccepted)
-	case "tools/list":
-		writeResult(w, req.ID, map[string]any{"tools": h.tools()})
-	case "tools/call":
-		h.handleToolCall(r.Context(), w, req)
-	default:
-		writeError(w, req.ID, -32601, "method not found")
-	}
+// NewHandler builds the MCP handler from appkit's route-time service metadata.
+func NewHandler(rt *appkit.Router, opts ...Option) (http.Handler, error) {
+	return appkitmcp.New(appkitmcp.Options{
+		Service:       rt.Service(),
+		Version:       rt.Version(),
+		Instructions:  Instructions,
+		Tools:         Tools(opts...),
+		Health:        rt.Health(),
+		Events:        rt.Events(),
+		Publishes:     rt.Publishes(),
+		Subscriptions: rt.Subscriptions(),
+	})
 }
 
-func (h *Handler) handleToolCall(ctx context.Context, w http.ResponseWriter, req request) {
-	var params struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		writeError(w, req.ID, -32602, "invalid params")
-		return
-	}
-	switch params.Name {
-	case "ingest":
-		h.handleIngestCall(ctx, w, req, params.Arguments)
-	case "status":
-		h.handleJobStatusCall(ctx, w, req, params.Arguments)
-	case "abort":
-		h.handleJobAbortCall(ctx, w, req, params.Arguments)
-	case "rerun":
-		h.handleJobRerunCall(ctx, w, req, params.Arguments)
-	case "jobs":
-		h.handleJobsCall(ctx, w, req, params.Arguments)
-	case "jobs_count":
-		h.handleJobsCountCall(ctx, w, req, params.Arguments)
-	case "merge":
-		h.handleMergeCall(ctx, w, req, params.Arguments)
-	case "merges":
-		h.handleMergesCall(ctx, w, req, params.Arguments)
-	case "ask":
-		h.handleAskCall(ctx, w, req, params.Arguments)
-	case "subjects":
-		h.handleSubjectsCall(ctx, w, req, params.Arguments)
-	case "claims":
-		h.handleClaimsCall(ctx, w, req, params.Arguments)
-	case "page":
-		h.handlePageCall(ctx, w, req, params.Arguments)
-	case "llm_calls":
-		h.handleLLMCallsCall(ctx, w, req, params.Arguments)
-	case "health":
-		h.handleHealthCall(ctx, w, req)
-	case "reflection":
-		h.handleReflectionCall(w, req)
-	default:
-		writeResult(w, req.ID, toolError("unknown tool"))
-		return
+func domainTool(desc map[string]any, handler func(context.Context, json.RawMessage, server.Identity) (map[string]any, error)) appkitmcp.Tool {
+	return appkitmcp.Tool{
+		Name:        desc["name"].(string),
+		Description: desc["description"].(string),
+		InputSchema: desc["inputSchema"].(map[string]any),
+		Handler:     handler,
 	}
 }
 
-func (h *Handler) handleHealthCall(ctx context.Context, w http.ResponseWriter, req request) {
-	details := map[string]any{}
-	if h.health != nil {
-		d, err := h.health(ctx)
-		if err != nil {
-			details = map[string]any{"error": err.Error()}
-		} else if d != nil {
-			details = d
-		}
-	}
-	env := appkit.Envelope(h.version, h.service, details)
-	b, err := json.Marshal(env)
-	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
-	}
-	writeResult(w, req.ID, toolText(string(b)))
-}
-
-func (h *Handler) handleIngestCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleIngestCall(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	if h.ingest == nil {
-		writeResult(w, req.ID, toolError("ingest tool is not configured"))
-		return
+		return toolError("ingest tool is not configured"), nil
 	}
-	id, ok := appkit.IdentityFrom(ctx)
-	if !ok {
-		writeResult(w, req.ID, toolError("missing authenticated identity"))
-		return
+	if strings.TrimSpace(id.OwnerEmail) == "" {
+		return toolError("missing authenticated identity"), nil
 	}
 	var args struct {
 		Text  string   `json:"text"`
@@ -430,246 +402,204 @@ func (h *Handler) handleIngestCall(ctx context.Context, w http.ResponseWriter, r
 		Tags  []string `json:"tags"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	if strings.TrimSpace(args.Text) == "" {
-		writeResult(w, req.ID, toolError("text is required"))
-		return
+		return toolError("text is required"), nil
 	}
 	jobID, err := h.ingest(ctx, id.OwnerEmail, args.Text, args.Title, args.Tags)
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, map[string]string{"job_id": jobID})
+	return appkitmcp.JSONResult(map[string]string{"job_id": jobID})
 }
 
-func (h *Handler) handleJobStatusCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleJobStatusCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 	if h.status == nil {
-		writeResult(w, req.ID, toolError("job_status tool is not configured"))
-		return
+		return toolError("job_status tool is not configured"), nil
 	}
 	var args struct {
 		JobID string `json:"job_id"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	if strings.TrimSpace(args.JobID) == "" {
-		writeResult(w, req.ID, toolError("job_id is required"))
-		return
+		return toolError("job_id is required"), nil
 	}
 	status, err := h.status(ctx, args.JobID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeJSONTextResult(w, req.ID, notFound("job", args.JobID))
-		return
+		return appkitmcp.JSONResult(notFound("job", args.JobID))
 	}
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, publicStatusResult(status))
+	return appkitmcp.JSONResult(publicStatusResult(status))
 }
 
-func (h *Handler) handleJobAbortCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleJobAbortCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 	if h.abort == nil {
-		writeResult(w, req.ID, toolError("abort tool is not configured"))
-		return
+		return toolError("abort tool is not configured"), nil
 	}
-	args, ok := decodeJobIDArgs(w, req, raw)
-	if !ok {
-		return
+	args, err := decodeJobIDArgs(raw)
+	if err != nil {
+		return toolError(err.Error()), nil
 	}
 	result, err := h.abort(ctx, args.JobID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeJSONTextResult(w, req.ID, notFound("job", args.JobID))
-		return
+		return appkitmcp.JSONResult(notFound("job", args.JobID))
 	}
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, publicAbortResult(result))
+	return appkitmcp.JSONResult(publicAbortResult(result))
 }
 
-func (h *Handler) handleJobRerunCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleJobRerunCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 	if h.rerun == nil {
-		writeResult(w, req.ID, toolError("rerun tool is not configured"))
-		return
+		return toolError("rerun tool is not configured"), nil
 	}
-	args, ok := decodeJobIDArgs(w, req, raw)
-	if !ok {
-		return
+	args, err := decodeJobIDArgs(raw)
+	if err != nil {
+		return toolError(err.Error()), nil
 	}
 	result, err := h.rerun(ctx, args.JobID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeJSONTextResult(w, req.ID, notFound("job", args.JobID))
-		return
+		return appkitmcp.JSONResult(notFound("job", args.JobID))
 	}
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, publicRerunResult(result))
+	return appkitmcp.JSONResult(publicRerunResult(result))
 }
 
-func (h *Handler) handleJobsCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleJobsCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 	if h.jobs == nil {
-		writeResult(w, req.ID, toolError("jobs tool is not configured"))
-		return
+		return toolError("jobs tool is not configured"), nil
 	}
 	filter, limit, cursor, err := decodeJobsArgs(raw, true)
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	jobs, next, err := h.jobs(ctx, filter, paging.Params{Limit: limit, Cursor: cursor})
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, pagedResult("jobs", publicJobsResult(jobs), next))
+	return appkitmcp.JSONResult(pagedResult("jobs", publicJobsResult(jobs), next))
 }
 
-func (h *Handler) handleJobsCountCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleJobsCountCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 	if h.jobsCount == nil {
-		writeResult(w, req.ID, toolError("jobs_count tool is not configured"))
-		return
+		return toolError("jobs_count tool is not configured"), nil
 	}
 	filter, _, _, err := decodeJobsArgs(raw, false)
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	count, err := h.jobsCount(ctx, filter)
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, map[string]int{"count": count})
+	return appkitmcp.JSONResult(map[string]int{"count": count})
 }
 
-func (h *Handler) handleMergeCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleMergeCall(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	if h.resolve == nil || h.merge == nil {
-		writeResult(w, req.ID, toolError("merge tool is not configured"))
-		return
+		return toolError("merge tool is not configured"), nil
 	}
-	if _, ok := appkit.IdentityFrom(ctx); !ok {
-		writeResult(w, req.ID, toolError("missing authenticated identity"))
-		return
+	if strings.TrimSpace(id.OwnerEmail) == "" {
+		return toolError("missing authenticated identity"), nil
 	}
 	var args struct {
 		From string `json:"from"`
 		To   string `json:"to"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	fromPath := strings.TrimSpace(args.From)
 	toPath := strings.TrimSpace(args.To)
 	if fromPath == "" {
-		writeResult(w, req.ID, toolError("from is required"))
-		return
+		return toolError("from is required"), nil
 	}
 	if toPath == "" {
-		writeResult(w, req.ID, toolError("to is required"))
-		return
+		return toolError("to is required"), nil
 	}
 	from, err := h.resolve(ctx, fromPath)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeJSONTextResult(w, req.ID, notFound("subject", fromPath))
-		return
+		return appkitmcp.JSONResult(notFound("subject", fromPath))
 	}
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	to, err := h.resolve(ctx, toPath)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeJSONTextResult(w, req.ID, notFound("subject", toPath))
-		return
+		return appkitmcp.JSONResult(notFound("subject", toPath))
 	}
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	fromID := stringField(indirect(reflect.ValueOf(from)), "ID")
 	toID := stringField(indirect(reflect.ValueOf(to)), "ID")
 	if fromID == toID {
-		writeResult(w, req.ID, toolError("from and to resolve to the same subject"))
-		return
+		return toolError("from and to resolve to the same subject"), nil
 	}
 	jobID, err := h.merge(ctx, fromID, toID)
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, map[string]string{"job_id": jobID})
+	return appkitmcp.JSONResult(map[string]string{"job_id": jobID})
 }
 
-func (h *Handler) handleMergesCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleMergesCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 	if h.merges == nil {
-		writeResult(w, req.ID, toolError("merges tool is not configured"))
-		return
+		return toolError("merges tool is not configured"), nil
 	}
 	var args struct {
 		Limit  int    `json:"limit"`
 		Cursor string `json:"cursor"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	if strings.TrimSpace(args.Cursor) != "" {
 		if _, ok := paging.DecodeCursor(args.Cursor); !ok {
-			writeResult(w, req.ID, toolError("cursor is invalid"))
-			return
+			return toolError("cursor is invalid"), nil
 		}
 	}
 	merges, next, err := h.merges(ctx, paging.Params{Limit: args.Limit, Cursor: args.Cursor})
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, pagedResult("merges", publicMergesResult(merges), next))
+	return appkitmcp.JSONResult(pagedResult("merges", publicMergesResult(merges), next))
 }
 
-func (h *Handler) handleAskCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleAskCall(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	if h.ask == nil {
-		writeResult(w, req.ID, toolError("ask tool is not configured"))
-		return
+		return toolError("ask tool is not configured"), nil
 	}
-	id, ok := appkit.IdentityFrom(ctx)
-	if !ok {
-		writeResult(w, req.ID, toolError("missing authenticated identity"))
-		return
+	if strings.TrimSpace(id.OwnerEmail) == "" {
+		return toolError("missing authenticated identity"), nil
 	}
 	var args struct {
 		Question string `json:"question"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	if strings.TrimSpace(args.Question) == "" {
-		writeResult(w, req.ID, toolError("question is required"))
-		return
+		return toolError("question is required"), nil
 	}
 	answer, err := h.ask(ctx, id.OwnerEmail, args.Question)
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, askToolResult(answer))
+	return appkitmcp.JSONResult(askToolResult(answer))
 }
 
-func (h *Handler) handleSubjectsCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleSubjectsCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 	if h.subjects == nil {
-		writeResult(w, req.ID, toolError("subjects tool is not configured"))
-		return
+		return toolError("subjects tool is not configured"), nil
 	}
 	var args struct {
 		Type   string `json:"type"`
@@ -678,21 +608,18 @@ func (h *Handler) handleSubjectsCall(ctx context.Context, w http.ResponseWriter,
 		Cursor string `json:"cursor"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	subjects, next, err := h.subjects(ctx, args.Type, args.Name, paging.Params{Limit: args.Limit, Cursor: args.Cursor})
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, pagedResult("subjects", publicSubjectsResult(subjects), next))
+	return appkitmcp.JSONResult(pagedResult("subjects", publicSubjectsResult(subjects), next))
 }
 
-func (h *Handler) handleClaimsCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleClaimsCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 	if h.claims == nil {
-		writeResult(w, req.ID, toolError("claims tool is not configured"))
-		return
+		return toolError("claims tool is not configured"), nil
 	}
 	var args struct {
 		Subject string `json:"subject"`
@@ -701,66 +628,56 @@ func (h *Handler) handleClaimsCall(ctx context.Context, w http.ResponseWriter, r
 		Cursor  string `json:"cursor"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	subject := strings.TrimSpace(args.Subject)
 	if subject == "" {
 		subject = strings.TrimSpace(args.Path)
 	}
 	if subject == "" {
-		writeResult(w, req.ID, toolError("subject is required"))
-		return
+		return toolError("subject is required"), nil
 	}
 	claims, next, err := h.claims(ctx, subject, paging.Params{Limit: args.Limit, Cursor: args.Cursor})
 	if errors.Is(err, sql.ErrNoRows) {
-		writeJSONTextResult(w, req.ID, notFound("subject", subject))
-		return
+		return appkitmcp.JSONResult(notFound("subject", subject))
 	}
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, pagedResult("claims", publicClaimsResult(claims), next))
+	return appkitmcp.JSONResult(pagedResult("claims", publicClaimsResult(claims), next))
 }
 
-func (h *Handler) handlePageCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handlePageCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 	if h.page == nil {
-		writeResult(w, req.ID, toolError("page tool is not configured"))
-		return
+		return toolError("page tool is not configured"), nil
 	}
 	var args struct {
 		Subject string `json:"subject"`
 		Path    string `json:"path"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	subject := strings.TrimSpace(args.Subject)
 	if subject == "" {
 		subject = strings.TrimSpace(args.Path)
 	}
 	if subject == "" {
-		writeResult(w, req.ID, toolError("subject is required"))
-		return
+		return toolError("subject is required"), nil
 	}
 	page, err := h.page(ctx, subject)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeJSONTextResult(w, req.ID, notFound("subject", subject))
-		return
+		return appkitmcp.JSONResult(notFound("subject", subject))
 	}
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, publicPageResult(page, subject))
+	return appkitmcp.JSONResult(publicPageResult(page, subject))
 }
 
-func (h *Handler) handleLLMCallsCall(ctx context.Context, w http.ResponseWriter, req request, raw json.RawMessage) {
+func (h *Handler) handleLLMCallsCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 	if h.calls == nil {
-		writeResult(w, req.ID, toolError("llm_calls tool is not configured"))
-		return
+		return toolError("llm_calls tool is not configured"), nil
 	}
 	var args struct {
 		JobID  string `json:"job_id"`
@@ -771,100 +688,21 @@ func (h *Handler) handleLLMCallsCall(ctx context.Context, w http.ResponseWriter,
 		Cursor string `json:"cursor"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
 	since, err := parseOptionalTime(args.Since)
 	if err != nil {
-		writeResult(w, req.ID, toolError("since must be RFC3339"))
-		return
+		return toolError("since must be RFC3339"), nil
 	}
 	until, err := parseOptionalTime(args.Until)
 	if err != nil {
-		writeResult(w, req.ID, toolError("until must be RFC3339"))
-		return
+		return toolError("until must be RFC3339"), nil
 	}
 	calls, next, err := h.calls(ctx, LLMCallFilter{JobID: args.JobID, Stage: args.Stage, Since: since, Until: until}, paging.Params{Limit: args.Limit, Cursor: args.Cursor})
 	if err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return
+		return toolError(err.Error()), nil
 	}
-	writeJSONTextResult(w, req.ID, pagedResult("llm_calls", publicLLMCallsResult(calls), next))
-}
-
-func (h *Handler) handleReflectionCall(w http.ResponseWriter, req request) {
-	writeJSONTextResult(w, req.ID, map[string][]string{
-		"publishes":  {},
-		"subscribes": {},
-	})
-}
-
-func (h *Handler) tools() []map[string]any {
-	tools := []map[string]any{healthTool(), reflectionTool()}
-	if h.ingest != nil {
-		tools = append(tools, ingestTool())
-	}
-	if h.status != nil {
-		tools = append(tools, jobStatusTool())
-	}
-	if h.abort != nil {
-		tools = append(tools, jobAbortTool())
-	}
-	if h.rerun != nil {
-		tools = append(tools, jobRerunTool())
-	}
-	if h.jobs != nil {
-		tools = append(tools, jobsTool())
-	}
-	if h.jobsCount != nil {
-		tools = append(tools, jobsCountTool())
-	}
-	if h.resolve != nil && h.merge != nil {
-		tools = append(tools, mergeTool())
-	}
-	if h.merges != nil {
-		tools = append(tools, mergesTool())
-	}
-	if h.ask != nil {
-		tools = append(tools, askTool())
-	}
-	if h.subjects != nil {
-		tools = append(tools, subjectsTool())
-	}
-	if h.claims != nil {
-		tools = append(tools, claimsTool())
-	}
-	if h.page != nil {
-		tools = append(tools, pageTool())
-	}
-	if h.calls != nil {
-		tools = append(tools, llmCallsTool())
-	}
-	return tools
-}
-
-func healthTool() map[string]any {
-	return map[string]any{
-		"name":        "health",
-		"description": "Report wiki service health.",
-		"inputSchema": map[string]any{
-			"type":                 "object",
-			"additionalProperties": false,
-			"properties":           map[string]any{},
-		},
-	}
-}
-
-func reflectionTool() map[string]any {
-	return map[string]any{
-		"name":        "reflection",
-		"description": "Report wiki service event-plane publications and subscriptions.",
-		"inputSchema": map[string]any{
-			"type":                 "object",
-			"additionalProperties": false,
-			"properties":           map[string]any{},
-		},
-	}
+	return appkitmcp.JSONResult(pagedResult("llm_calls", publicLLMCallsResult(calls), next))
 }
 
 func ingestTool() map[string]any {
@@ -1111,17 +949,15 @@ type jobIDArgs struct {
 	JobID string `json:"job_id"`
 }
 
-func decodeJobIDArgs(w http.ResponseWriter, req request, raw json.RawMessage) (jobIDArgs, bool) {
+func decodeJobIDArgs(raw json.RawMessage) (jobIDArgs, error) {
 	var args jobIDArgs
 	if err := decodeArgs(raw, &args); err != nil {
-		writeResult(w, req.ID, toolError(err.Error()))
-		return args, false
+		return args, err
 	}
 	if strings.TrimSpace(args.JobID) == "" {
-		writeResult(w, req.ID, toolError("job_id is required"))
-		return args, false
+		return args, fmt.Errorf("job_id is required")
 	}
-	return args, true
+	return args, nil
 }
 
 var validJobStatuses = []string{"pending", "working", "done", "failed", "aborted"}
@@ -1483,12 +1319,6 @@ func notFound(kind, id string) map[string]any {
 	}
 }
 
-type request struct {
-	ID     json.RawMessage `json:"id,omitempty"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params,omitempty"`
-}
-
 func decodeArgs(raw json.RawMessage, dst any) error {
 	if len(raw) == 0 {
 		raw = []byte(`{}`)
@@ -1499,47 +1329,6 @@ func decodeArgs(raw json.RawMessage, dst any) error {
 	return nil
 }
 
-func writeResult(w http.ResponseWriter, id json.RawMessage, result any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"jsonrpc": "2.0",
-		"id":      idOrNull(id),
-		"result":  result,
-	})
-}
-
-func writeError(w http.ResponseWriter, id json.RawMessage, code int, msg string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"jsonrpc": "2.0",
-		"id":      idOrNull(id),
-		"error":   map[string]any{"code": code, "message": msg},
-	})
-}
-
-func idOrNull(id json.RawMessage) any {
-	if len(id) == 0 {
-		return nil
-	}
-	return id
-}
-
-func toolText(text string) map[string]any {
-	return map[string]any{"content": []map[string]string{{"type": "text", "text": text}}}
-}
-
-func writeJSONTextResult(w http.ResponseWriter, id json.RawMessage, value any) {
-	b, err := json.Marshal(value)
-	if err != nil {
-		writeResult(w, id, toolError(err.Error()))
-		return
-	}
-	writeResult(w, id, toolText(string(b)))
-}
-
 func toolError(text string) map[string]any {
-	return map[string]any{
-		"isError": true,
-		"content": []map[string]string{{"type": "text", "text": text}},
-	}
+	return appkitmcp.ErrorResult(text)
 }
