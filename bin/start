@@ -229,6 +229,7 @@ launch_scripts() {
 	# SCRIPTS_<SRC>_FEED_URL values default to the loopback /feed of each peer.
 	source "$repo/scripts/.envrc"
 	export SCRIPTS_DB_PATH="$RUN_DIR/scripts.db"
+	export SCRIPTS_WWW_PATH="$repo/scripts/share/www"
 	export_feed_urls SCRIPTS cron crm ledger dropbox prompts
 	exec "$RUN_DIR/bin/scripts" serve --port "$(port 3003)"
 }

@@ -22,6 +22,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -39,7 +40,6 @@ import (
 	"scripts/internal/mcp"
 	"scripts/internal/runner"
 	"scripts/internal/script"
-	"scripts/internal/web"
 )
 
 // svcRef carries the script service from the Handlers hook (where appkit has
@@ -76,6 +76,7 @@ func scriptsSpec() appkit.Spec {
 		// onto the store; ManifestExtras round-trips retention config.
 		Feed:   "/feed",
 		Events: script.Events,
+		WWW:    true,
 		// CONSUMES is emitted by appkit from Spec.Consumes (above), so it is NOT
 		// repeated here.
 		ManifestExtras: []appkit.ManifestKV{
@@ -163,8 +164,9 @@ func registerRoutes(rt *appkit.Router) error {
 		rt.Logger().Warn("crash-recovery: swept orphaned runs", "count", swept)
 	}
 
-	rt.Handle("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
-	rt.Handle("GET /static/", web.StaticHandler())
+	rt.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = rt.WWW().Render(w, "landing.html", struct{ Service, Version string }{rt.Service(), rt.Version()})
+	}))
 	rt.Handle("POST /mcp", rt.RequireIdentity(mcp.NewHandler(svc, rt.Version(), rt.Service(), rt.Health())))
 	return nil
 }
