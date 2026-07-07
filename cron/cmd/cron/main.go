@@ -66,9 +66,11 @@ func cronSpec() appkit.Spec {
 			}
 			store = crontab.NewStore(conn)
 			rt.Handle("GET /{$}", landingHandler(rt.WWW(), rt.Service(), rt.Version()))
-			rt.Handle("POST /mcp", rt.RequireIdentity(
-				mcp.NewHandler(store, rt.Version(), rt.Service(), rt.Health(),
-					rt.Publishes(), rt.Subscriptions())))
+			mcpHandler, err := mcp.NewHandler(store, rt)
+			if err != nil {
+				return err
+			}
+			rt.Handle("POST /mcp", rt.RequireIdentity(mcpHandler))
 			return nil
 		},
 		Producer: func(ob *outbox.Outbox) error {
