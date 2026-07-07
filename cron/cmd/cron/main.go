@@ -31,6 +31,7 @@ import (
 	"cron/internal/tick"
 
 	"eventplane/outbox"
+	"registry"
 )
 
 func main() {
@@ -44,7 +45,7 @@ func cronSpec() appkit.Spec {
 	return appkit.Spec{
 		App:        "cron",
 		Mount:      "/srv/cron/",
-		Port:       3005,
+		Port:       registry.MustPort("cron"),
 		MCP:        true,
 		WWW:        true,
 		Feed:       "/feed",

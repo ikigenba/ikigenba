@@ -8,6 +8,8 @@ require (
 	modernc.org/sqlite v1.50.1
 )
 
+require registry v0.0.0
+
 // The shared chassis (appkit) and event-plane (eventplane) libraries are sibling
 // source trees, not published modules. go.work resolves them for local dev; these
 // committed replaces make the prod build deterministic with or without the
@@ -15,6 +17,8 @@ require (
 replace appkit => ../appkit
 
 replace eventplane => ../eventplane
+
+replace registry => ../registry
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

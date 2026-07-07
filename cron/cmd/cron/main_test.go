@@ -20,6 +20,7 @@ import (
 	"appkit"
 	"appkit/manifest"
 	appweb "appkit/web"
+	"registry"
 )
 
 // R-8DF1-W89F
@@ -57,7 +58,42 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	}
 
 	if got != string(committed) {
+		// R-LVQ8-CF18
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
+	}
+}
+
+func TestCronSpecPortComesFromRegistry(t *testing.T) {
+	// R-LTAF-KVJU
+	if got, want := cronSpec().Port, registry.MustPort("cron"); got != want {
+		t.Fatalf("cronSpec().Port = %d, want registry.MustPort(%q) = %d", got, "cron", want)
+	}
+}
+
+func TestNoHardcodedLoopbackPortLiteralInSource(t *testing.T) {
+	moduleRoot := filepath.Join("..", "..")
+	self := filepath.Clean(filepath.Join(moduleRoot, "cmd", "cron", "main_test.go"))
+	needle := "127.0.0.1:" + "30"
+
+	err := filepath.Walk(moduleRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || filepath.Ext(path) != ".go" || filepath.Clean(path) == self {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		// R-LUIB-YNAJ
+		if bytes.Contains(body, []byte(needle)) {
+			t.Fatalf("%s contains hardcoded loopback port prefix %q", path, needle)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk Go source under %s: %v", moduleRoot, err)
 	}
 }
 
@@ -549,7 +585,8 @@ func TestNginxLandingLocationIsExactSessionGated(t *testing.T) {
 	}
 
 	// R-NGNX-7F1G
-	if !strings.Contains(exact, "proxy_pass http://127.0.0.1:3005/;") {
+	// R-LVQ8-CF18
+	if !strings.Contains(exact, "proxy_pass "+registry.BaseURL("cron")+"/;") {
 		t.Fatalf("exact landing block does not proxy to upstream root with trailing slash:\n%s", exact)
 	}
 }
@@ -588,12 +625,13 @@ func TestNginxStaticLocationIsSessionGatedAndProxiesToStaticHandler(t *testing.T
 
 	for _, want := range []string{
 		"auth_request /_session-authn;",
-		"proxy_pass http://127.0.0.1:3005/static/;",
+		"proxy_pass " + registry.BaseURL("cron") + "/static/;",
 		"proxy_set_header Host $host;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 		"proxy_http_version 1.1;",
 	} {
 		// R-2690-4RVV
+		// R-LVQ8-CF18
 		if !strings.Contains(static, want) {
 			t.Fatalf("static location block does not contain %q:\n%s", want, static)
 		}
