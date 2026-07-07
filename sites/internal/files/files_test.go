@@ -799,6 +799,15 @@ func TestGlobRejectsMalformedPatternWithoutWalkingMatches(t *testing.T) {
 	}
 }
 
+func TestGlobRejectsMalformedSegmentsBesideDoubleStar(t *testing.T) {
+	root := globRecursiveFixture(t)
+
+	// R-40X5-6S7E
+	if _, err := Glob(root, "**/[", ""); err == nil {
+		t.Fatal("Glob malformed recursive segment succeeded, want error")
+	}
+}
+
 func TestGlobReturnsEmptyForNonDirectorySearchBase(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("text"), 0o644); err != nil {
