@@ -17,6 +17,7 @@ import (
 	"gmail/internal/web"
 
 	"eventplane/outbox"
+	"registry"
 )
 
 // Spec returns the production-shaped appkit service declaration.
@@ -31,7 +32,7 @@ func Spec() appkit.Spec {
 	return appkit.Spec{
 		App:        "gmail",
 		Mount:      "/srv/gmail/",
-		Port:       3202,
+		Port:       registry.MustPort("gmail"),
 		MCP:        true,
 		Feed:       "/feed", // event-plane producer
 		Migrations: db.FS,

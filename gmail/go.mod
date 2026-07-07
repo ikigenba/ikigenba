@@ -6,6 +6,7 @@ require (
 	appkit v0.0.0
 	eventplane v0.0.0
 	modernc.org/sqlite v1.50.1
+	registry v0.0.0
 )
 
 require (
@@ -28,3 +29,5 @@ require (
 replace appkit => ../appkit
 
 replace eventplane => ../eventplane
+
+replace registry => ../registry

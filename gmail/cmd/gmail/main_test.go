@@ -20,6 +20,7 @@ import (
 	"appkit/manifest"
 
 	"gmail/internal/gmailapp"
+	"registry"
 )
 
 // R-8DF1-W89F
@@ -58,6 +59,18 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
+	}
+}
+
+// R-9QEG-KF05
+func TestSpecPortComesFromRegistry(t *testing.T) {
+	spec := gmailapp.Spec()
+	want := registry.MustPort("gmail")
+	if want != 3202 {
+		t.Fatalf("registry.MustPort(%q) = %d, want committed gmail port 3202", "gmail", want)
+	}
+	if spec.Port != want {
+		t.Fatalf("Spec().Port = %d, want registry.MustPort(%q) = %d", spec.Port, "gmail", want)
 	}
 }
 
