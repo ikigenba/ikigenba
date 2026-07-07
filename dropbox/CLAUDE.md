@@ -27,7 +27,9 @@ A service's connector skills live in the `dashboard`'s `plugin/`, not here.
 
 ## What this app is
 
-A loopback-only domain service on **port 3200**, mounted at **`/srv/dropbox/`**.
+A loopback-only domain service mounted at **`/srv/dropbox/`**; the composition
+root resolves its loopback port by name with `registry.MustPort("dropbox")`
+(the registry value is 3200).
 It serves the **MCP surface for agents** alongside a session-cookie-gated
 **human web landing page** under that mount. nginx (owned by the dashboard)
 terminates TLS, introspects every `/srv/dropbox/` request via `auth_request`
@@ -118,8 +120,10 @@ Same chassis layering as ledger/crm (one file per concern within one package;
 `internal/mcp/tools.go` is the sole MCP dispatcher).
 
 - **`cmd/dropbox/main.go`** — reads the three secrets + non-secret paths/knobs
-  from env, builds the `tokenSource`, opens the db, wires the `outbox` producer,
-  starts the sync goroutine, mounts `/content`.
+  from env, resolves the service port with `registry.MustPort("dropbox")`, builds
+  the `tokenSource`, opens the db through appkit, wires the `outbox` producer,
+  starts the sync goroutine, mounts `/content`, and hands `share/www` to the
+  chassis through `Spec.WWW`.
 - **`internal/dropbox/`** — the domain package:
   - `types.go` — shared structs (`FileMeta`, delta entries, `HealthInfo`), error
     sentinels.
@@ -141,21 +145,20 @@ Same chassis layering as ledger/crm (one file per concern within one package;
     seam (lets the engine run with emission disabled in unit tests, like ledger).
   - `content.go` — the loopback `GET /content` handler.
   - `health.go` — `HealthInfo` assembly.
-- **`internal/mcp`** — JSON-RPC 2.0 transport. `tools.go` holds the four tool
-  descriptors (`health`, `reflection`, `list`, `get`), dispatches into
-  `dropbox.Service` (`Health`/`List`/`Content`), and translates sentinels to
-  tool-error text. `mcp.go` is the transport.
-- **`internal/server`** — routing, the RFC 9728 protected-resource metadata
-  document, `requireIdentityHeaders`, the ungated `/health` route, the
-  unauthenticated `GET /feed` and `GET /content` routes, security headers,
-  graceful shutdown.
-- **`internal/db`** — SQLite open (WAL, FK, single-writer) + embedded migration
-  runner. Migrations: `001_schema_migrations` (chassis, byte-identical),
+- **`internal/mcp`** — declares `Instructions` plus the two domain tools (`list`,
+  `get`) as an `appkit/mcp` tool table assembled by `NewHandler`. `health` and
+  `reflection` are chassis-standard tools, so the surface is still four tools,
+  two chassis-owned.
+- **`internal/db`** — appkit owns SQLite open plus the forward-only migration
+  runner through `Spec.Migrations`; this package keeps only the embedded `*.sql`
+  set and the load plus `003_outbox.sql` byte-equality guards. Migrations:
+  `001_schema_migrations` (chassis, byte-identical),
   `002_dropbox.sql` (`sync_state` single-row cursor table; `files` per-path index
   with `path_lower` + nullable `error`), `003_outbox.sql` (byte-identical to
   `outbox.SchemaSQL`, with the equality test).
-- **`internal/logging`, `internal/ids`** — structured slog + request-id, ULID,
-  carried unchanged.
+- **`share/www/`** — the human landing page and its `static/` assets ship on
+  disk, are loaded through `Spec.WWW`, and are served by the chassis via
+  `rt.WWW()` plus the auto-mounted `GET /static/` route.
 - **`eventplane`** — the shared outbox library, consumed via a committed
   `replace eventplane => ../eventplane` (so the build needs the in-repo
   `eventplane/` tree but no network/`go.work`).
@@ -241,7 +244,7 @@ dropbox is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contrac
 producer + `Workers` sync engine): `<app>` serve + the fixed `version`/`manifest`/
 `migrate`/`schema` verbs, no `run` wrapper, no bundled
 `registry`. `etc/manifest.env` (`APP=dropbox`, `MOUNT=/srv/dropbox/`,
-`DEFAULT=false`, `PORT=3200`, `MCP=true` so the dashboard inventory lists it;
+`DEFAULT=false`, `PORT` from `registry.MustPort("dropbox")`, `MCP=true` so the dashboard inventory lists it;
 producer, so it also round-trips `FEED=/feed` + the `OUTBOX_RETENTION_*` config)
 is emitted by `dropbox manifest` and regenerated on the box by `opsctl deploy` on
 every swap. Shipping is the shared repo-root `bin/ship dropbox` (no version arg;

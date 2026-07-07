@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 
+	appkitdatabase "appkit/db"
+
 	"dropbox/internal/db"
 
 	_ "modernc.org/sqlite"
@@ -21,10 +23,18 @@ func openStoreDB(t *testing.T) *sql.DB {
 	}
 	conn.SetMaxOpenConns(1)
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(context.Background(), conn); err != nil {
+	if err := migrateDropbox(context.Background(), conn); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return conn
+}
+
+func migrateDropbox(ctx context.Context, conn *sql.DB) error {
+	migs, err := appkitdatabase.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		return err
+	}
+	return appkitdatabase.Migrate(ctx, conn, migs)
 }
 
 // withTx runs fn inside a single tx and commits, the way the engine composes

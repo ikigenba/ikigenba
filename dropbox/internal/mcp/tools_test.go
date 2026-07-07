@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	appkitdatabase "appkit/db"
 	"appkit/server"
 
 	"dropbox/internal/db"
@@ -34,10 +35,18 @@ func newHandler(t *testing.T) http.Handler {
 		t.Fatalf("fk: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(context.Background(), conn); err != nil {
+	if err := migrateDropbox(context.Background(), conn); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return newHandlerWithService(t, dropbox.NewService(conn), nil)
+}
+
+func migrateDropbox(ctx context.Context, conn *sql.DB) error {
+	migs, err := appkitdatabase.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		return err
+	}
+	return appkitdatabase.Migrate(ctx, conn, migs)
 }
 
 func newHandlerWithService(t testing.TB, svc *dropbox.Service, health func(context.Context) (map[string]any, error)) http.Handler {
@@ -264,7 +273,7 @@ func TestHealth_ReporterPopulatesDetails(t *testing.T) {
 	}
 	conn.SetMaxOpenConns(1)
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(context.Background(), conn); err != nil {
+	if err := migrateDropbox(context.Background(), conn); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	mirror, err := dropbox.NewMirror(t.TempDir())
@@ -330,7 +339,7 @@ func newMirrorHandler(t *testing.T) (http.Handler, *dropbox.Service) {
 	}
 	conn.SetMaxOpenConns(1)
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(context.Background(), conn); err != nil {
+	if err := migrateDropbox(context.Background(), conn); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	mirror, err := dropbox.NewMirror(t.TempDir())
