@@ -250,6 +250,28 @@ func TestGlobDoubleStarKeepsSegmentAndBaseBoundaries(t *testing.T) {
 	}
 }
 
+func TestGlobRepeatedDoubleStarKeepsSingleBaseRelativeMatches(t *testing.T) {
+	root := globRecursiveFixture(t)
+
+	// R-3ZP8-T0GP
+	css, err := Glob(root, "**/**/*.css", "")
+	if err != nil {
+		t.Fatalf("Glob repeated recursive css: %v", err)
+	}
+	if !reflect.DeepEqual(css, []string{"a.css", "assets/css/style.css", "deep/a/b/c.css"}) {
+		t.Fatalf("Glob repeated recursive css = %#v", css)
+	}
+
+	// R-40X5-6S7E
+	scoped, err := Glob(root, "**/**", "assets")
+	if err != nil {
+		t.Fatalf("Glob repeated recursive scoped assets: %v", err)
+	}
+	if !reflect.DeepEqual(scoped, []string{"css/style.css", "js/app.js"}) {
+		t.Fatalf("Glob repeated recursive scoped assets = %#v", scoped)
+	}
+}
+
 func TestGlobDoubleStarMatchesZeroSegmentsWithinScopedBase(t *testing.T) {
 	root := t.TempDir()
 	for _, path := range []string{

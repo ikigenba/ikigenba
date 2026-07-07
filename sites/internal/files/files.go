@@ -237,26 +237,52 @@ func validateSlashPattern(pattern string) error {
 }
 
 func matchPatternSegments(pattern, path []string) (bool, error) {
-	if len(pattern) == 0 {
-		return len(path) == 0, nil
+	type state struct {
+		pattern int
+		path    int
 	}
-	if pattern[0] == "**" {
-		for i := 0; i <= len(path); i++ {
-			ok, err := matchPatternSegments(pattern[1:], path[i:])
-			if err != nil || ok {
-				return ok, err
+	type result struct {
+		ok  bool
+		err error
+	}
+
+	memo := map[state]result{}
+	var match func(patternIndex, pathIndex int) (bool, error)
+	match = func(patternIndex, pathIndex int) (bool, error) {
+		key := state{pattern: patternIndex, path: pathIndex}
+		if cached, ok := memo[key]; ok {
+			return cached.ok, cached.err
+		}
+
+		var res result
+		switch {
+		case patternIndex == len(pattern):
+			res.ok = pathIndex == len(path)
+		case pattern[patternIndex] == "**":
+			for i := pathIndex; i <= len(path); i++ {
+				ok, err := match(patternIndex+1, i)
+				if err != nil || ok {
+					res = result{ok: ok, err: err}
+					break
+				}
+			}
+		case pathIndex == len(path):
+			res.ok = false
+		default:
+			ok, err := filepath.Match(pattern[patternIndex], path[pathIndex])
+			if err != nil || !ok {
+				res = result{ok: ok, err: err}
+			} else {
+				ok, err = match(patternIndex+1, pathIndex+1)
+				res = result{ok: ok, err: err}
 			}
 		}
-		return false, nil
+
+		memo[key] = res
+		return res.ok, res.err
 	}
-	if len(path) == 0 {
-		return false, nil
-	}
-	ok, err := filepath.Match(pattern[0], path[0])
-	if err != nil || !ok {
-		return ok, err
-	}
-	return matchPatternSegments(pattern[1:], path[1:])
+
+	return match(0, 0)
 }
 
 func Grep(root, pattern, path, glob string) ([]Match, error) {
