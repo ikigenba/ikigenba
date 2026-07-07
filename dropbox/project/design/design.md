@@ -12,12 +12,27 @@ current statement of the landing-page architecture — it is rewritten in place 
 stay true (stale decisions are removed, not stacked); the history of how it got
 here lives in the plan.
 
-> **Scope.** This design covers **only** dropbox's web landing page and the seam
-> it establishes. The existing dropbox domain (the mirror-sync engine, the
-> four-tool MCP surface, the `/feed` outbox producer, the loopback
-> `/content`/`/list` byte routes, the migrations) is owned elsewhere
-> (`dropbox/CLAUDE.md`) and is untouched. No
-> schema changes: the landing page adds **no migration**.
+> **Scope.** This design's Decisions cover three threads:
+>
+> 1. **The web landing page** (D1–D8, built; substrate moved by D11): the page's
+>    content, route, session gate, canonical markup, and self-served assets —
+>    now rendered from the on-disk `share/www` tree through the chassis.
+> 2. **Registry adoption** (D9–D10, active): dropbox resolves its **own**
+>    loopback address by name (the listen port, the `/content` base default, and
+>    the reflection example origin), with source-scan and deploy-artifact drift
+>    guards.
+> 3. **The chassis conversion** (D11–D13, active): the web surface through
+>    `Spec.WWW`, the MCP surface through `appkit/mcp`, and the leftover
+>    `internal/db` shim deleted — all behavior-preserving. appkit's
+>    `Spec.WWW` / `appkit/web` / `appkit/mcp` surfaces (appkit design D5–D9) are
+>    fixed external contracts consumed through the committed
+>    `replace appkit => ../appkit`.
+>
+> The rest of the dropbox domain (the mirror-sync engine and its load-bearing
+> correctness rules, the `/feed` outbox producer, the loopback `/content`/`/list`
+> byte routes, the `list`/`get` domain-tool behaviors, the migrations) is owned
+> elsewhere (`dropbox/CLAUDE.md`) and its behavior is untouched. **No schema
+> changes: no Decision here adds a migration.**
 
 ## Requirement ids
 
@@ -47,22 +62,26 @@ Shared facts every Decision leans on:
   `cd dropbox && gofmt -l .` (no output), and `cd dropbox && go test ./...` all
   succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
-- **Module wiring:** `appkit` and `eventplane` are committed in-repo
+- **Module wiring:** `appkit`, `eventplane`, and `registry` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,
-  `replace eventplane => ../eventplane`). The landing page adds **no new
-  dependency** — it uses only the standard library (`net/http`, `embed`,
-  `html/template` or `text/template`) and the appkit chassis.
+  `replace eventplane => ../eventplane`, `replace registry => ../registry`; the
+  `registry` require+replace is added by D9). The repo-root `go.work` and the
+  sibling modules themselves are external preconditions owned outside `dropbox/`.
+  The web surface adds **no other** new dependency — the page mechanism is the
+  chassis (`appkit/web`), the MCP transport is the chassis (`appkit/mcp`).
 - **The chassis owns the server.** dropbox is `appkit.Main(appkit.Spec{…})`:
-  `App:"dropbox"`, `Mount:"/srv/dropbox/"`, `Port:3200`, `MCP:true`,
-  `Feed:"/feed"` (event-plane producer), plus its `Migrations`, `Events`,
-  `ManifestExtras`, a `Health` reporter, a `Producer` hook, and a `Workers` hook
-  (the background sync engine). The fixed verbs
-  (`serve`/`version`/`manifest`/`migrate`/`schema`), config-from-env,
-  the loopback HTTP server + PRM + identity gate, and the `/feed` mount are
-  appkit's. main.go declares dropbox's identity (the Spec) and wires its surface
-  through the Spec hooks. The landing route is wired through the existing
-  **`Spec.Handlers`** hook, beside the `POST /mcp` mount and the loopback
-  `GET /content` / `GET /list` mounts.
+  `App:"dropbox"`, `Mount:"/srv/dropbox/"`, `Port:registry.MustPort("dropbox")`
+  (== `3200`; D9), `MCP:true`, `WWW:true` (D11), `Feed:"/feed"` (event-plane
+  producer), plus its `Migrations`, `Events`, `ManifestExtras`, a `Health`
+  reporter, a `Producer` hook, and a `Workers` hook (the background sync engine).
+  The fixed verbs (`serve`/`version`/`manifest`/`migrate`/`schema`),
+  config-from-env, the loopback HTTP server + PRM + identity gate, the www-site
+  load + static mount, the MCP transport with the standard `health`/`reflection`
+  tools, and the `/feed` mount are appkit's. main.go declares dropbox's identity
+  (the Spec) and wires its surface through the Spec hooks: the landing route
+  (rendered via `rt.WWW()`) and the `POST /mcp` mount (assembled by
+  `internal/mcp.NewHandler`) are wired through the **`Spec.Handlers`** hook,
+  beside the loopback `GET /content` / `GET /list` byte mounts.
 - **nginx is the sole trust boundary.** dropbox runs no token logic. nginx
   introspects every `/srv/dropbox/` request against the dashboard and forwards to
   the loopback service. The landing page's gate is therefore an **nginx** concern
@@ -82,36 +101,40 @@ Shared facts every Decision leans on:
 Testing is part of the architecture, not an afterthought. The cross-cutting
 approach every Decision's Verification list assumes:
 
-- **The landing handler is tested in-process with `net/http/httptest`.** The
-  handler is a plain `http.HandlerFunc` built from the service name and version
-  strings the chassis already exposes (`rt.Service()`, `rt.Version()`); its tests
-  construct it directly with fixed name/version values and drive it with
-  `httptest.NewRequest` / `httptest.NewRecorder`, asserting status, body
-  substrings (name, version), and `Content-Type`. **No test makes a network call
-  and no test needs a running suite** — the handler is pure over its two string
-  inputs and its embedded assets.
+- **The landing page is tested over the shipped tree.** After D11, tests in
+  `cmd/dropbox` load the repo-real `dropbox/share/www` via `appkit/web` (a
+  relative path from the package dir) and drive the landing handler and the
+  chassis static mount with `net/http/httptest`, asserting status, body
+  substrings (name, version, asset links), and content types. The files under
+  test are the exact files that ship. **No test makes a network call and no test
+  needs a running suite.**
 - **The route mux is tested as wired.** The `GET /{$}` exact-root pattern is
   proven against an `http.ServeMux` configured the way the composition root
   configures it, asserting that the bare root path is served by the landing
   handler while a non-root path under the mux is **not** captured by `{$}`
   (Go 1.22+ pattern semantics: `{$}` matches only the exact path).
-- **Embedded assets are real bytes.** The Carbon `tokens.css` and the woff2 fonts
-  are embedded via `//go:embed` and served by the same handler/mux; tests assert
-  the embedded `tokens.css` is served with a CSS content type and that the
-  template references the app's **own** embedded asset path (not a cross-service
-  URL).
+- **The MCP surface is tested through the assembled chassis handler.** After D12,
+  the `internal/mcp` tests build `NewHandler(svc, rt)` over a domain
+  `dropbox.Service` (through a `server.New`/`Register` seam, the crm/notify
+  pattern) and drive `tools/list`/`tools/call` through the real `appkit/mcp`
+  `ServeHTTP` seam, keeping the pre-conversion `list`/`get` behavioral assertions
+  (path scoping, cursor pagination, the 25 MiB `too_large` cap, the rev-pin
+  conflict, base64 bodies, the sentinel→code error envelope). The four-tool
+  partition (`list`/`get` declared + chassis `health`/`reflection`) is asserted
+  at the same seam.
 - **The nginx fragment is proven by content assertion.** The session-gate
   fragment is config, not Go, so its behavior is pinned by a test that reads
   `dropbox/etc/nginx.conf` from disk and asserts the exact-match `= /srv/dropbox/`
   location exists, uses `auth_request /_session-authn` (not `/_authn`), and
-  proxies to the loopback upstream root — while the pre-existing bearer-gated
+  proxies to the **`registry`-derived** loopback upstream root
+  (`registry.BaseURL("dropbox")`, per D10) — while the pre-existing bearer-gated
   `/srv/dropbox/` prefix, its `@dropbox_authn_500` re-emit, the
   `= /srv/dropbox/content` 404, and the PRM well-known location remain. This is a
-  genuine assertion over the shipped artifact, runnable in the same
-  `go test ./...`.
-- **Determinism.** The handler takes its name/version as plain string arguments
-  (injected at the composition root from `rt.Service()`/`rt.Version()`), so its
-  output is fully determined by its inputs — no clock, no network, no DB.
+  genuine assertion over the shipped artifact; after D11 it lives in `cmd/dropbox`.
+- **Determinism.** The landing handler takes its name/version as plain string
+  arguments (injected at the composition root from `rt.Service()`/`rt.Version()`)
+  and the MCP tools take an injected Service, so their web/MCP tests have no
+  clock, no network, and no external DB.
 
 ## Layout
 
@@ -126,12 +149,19 @@ Decision it realizes:
   sorted `R-id → Decision/file` reverse map. It is the grep target for resolving
   an id.
 
-**New package.** The landing page introduces one new package,
-`dropbox/internal/web/` — the handler, the embedded `*.html` template, and the
-embedded `static/` design assets (`tokens.css` + the woff2 fonts). This keeps the
-web surface in one place, parallel to the existing `internal/dropbox`,
-`internal/db`, `internal/mcp` packages, and is the seam every later dropbox web
-page grows from.
+**Package shape after D9–D13.** dropbox carries `internal/dropbox` (the sync
+engine, store, mirror, service, events, `/content`/`/list` handlers — untouched),
+`internal/db` (embedded migrations + the load and `003_outbox.sql` byte-equality
+guards only; the `Open`/`Migrate` wrappers deleted by D13), and `internal/mcp`
+(the `list`+`get` domain-tool table over `appkit/mcp`, plus `Instructions` and
+`NewHandler` — D12). There is **no** `internal/web` (deleted by D11 — the landing
+template and `static/` assets live in `share/www/`, the mechanism in `appkit/web`).
+The landing page and the woff2/token assets ship on disk under `dropbox/share/www/`,
+loaded through `Spec.WWW`. The composition root (`cmd/dropbox/main.go`) is the
+Spec plus the landing handler (over `rt.WWW()`), the `POST /mcp` mount (over
+`internal/mcp.NewHandler`), the `/content`/`/list` mounts, and the sync-engine
+wiring — with the listen port, content-base default, and reflection example
+origin all resolved from `registry` (D9).
 
 Design is **rewritten in place**, not append-only (history lives in the plan): a
 changed Decision is rewritten in its `DNN.md` and `INDEX.md` is regenerated; a

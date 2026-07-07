@@ -12,26 +12,38 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D6 → `project/design/D06.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-6P8T
 - D8 → `project/design/D08.md` — Self-serve the landing page's fonts and eliminate the FOUT (relative stylesheet link + `font-display: optional` + self-served `src` + `<head>` preload + session-gated nginx `/srv/dropbox/static/`) — owns R-LQXL-095Q, R-LS5H-E0WF, R-LTDD-RSN4, R-LULA-5KDT, R-LVT6-JC4I
+- D9 → `project/design/D09.md` — Adopt `registry`: resolve dropbox's own loopback address by name (Spec.Port, content-base default, reflection example origin) — owns R-QJ8F-AXWP, R-QKGB-OPNE
+- D10 → `project/design/D10.md` — Source-scan guard (no `127.0.0.1:30xx` literal) + deploy-artifact drift guard (manifest + nginx agree with `registry`) — owns R-QLO8-2HE3, R-QMW4-G94S
+- D11 → `project/design/D11.md` — Web surface from `share/www` through the chassis (`Spec.WWW`, `rt.WWW()`; delete `internal/web`) — owns R-QO40-U0VH, R-QPBX-7SM6
+- D12 → `project/design/D12.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the `list`+`get` tool table; health/reflection chassis-registered — owns R-QQJT-LKCV
+- D13 → `project/design/D13.md` — Delete the `internal/db` `Open`/`Migrate` shim (embed + guards remain) and true up `dropbox/CLAUDE.md` — none (structural; shim deletion + doc truth)
 
 ## Verification ids → Decision
 
 - R-ASST-3H6J → D3 → `project/design/D03.md`
 - R-ASST-5K8L → D3 → `project/design/D03.md`
 - R-ASST-7M1N → D3 → `project/design/D03.md`
+- R-HOME-6P8T → D7 → `project/design/D07.md`
 - R-LAND-3C9X → D1 → `project/design/D01.md`
 - R-LAND-5E2Y → D1 → `project/design/D01.md`
 - R-LAND-7G4Z → D1 → `project/design/D01.md`
 - R-LAND-9J6A → D1 → `project/design/D01.md`
-- R-NGNX-2P4Q → D4 → `project/design/D04.md`
-- R-NGNX-4R6S → D4 → `project/design/D04.md`
-- R-NGNX-6T8U → D4 → `project/design/D04.md`
-- R-NGNX-8V1W → D4 → `project/design/D04.md`
-- R-ROUT-2B5C → D2 → `project/design/D02.md`
-- R-ROUT-4D7E → D2 → `project/design/D02.md`
-- R-ROUT-6F9G → D2 → `project/design/D02.md`
 - R-LQXL-095Q → D8 → `project/design/D08.md`
 - R-LS5H-E0WF → D8 → `project/design/D08.md`
 - R-LTDD-RSN4 → D8 → `project/design/D08.md`
 - R-LULA-5KDT → D8 → `project/design/D08.md`
 - R-LVT6-JC4I → D8 → `project/design/D08.md`
-- R-HOME-6P8T → D7 → `project/design/D07.md`
+- R-NGNX-2P4Q → D4 → `project/design/D04.md`
+- R-NGNX-4R6S → D4 → `project/design/D04.md`
+- R-NGNX-6T8U → D4 → `project/design/D04.md`
+- R-NGNX-8V1W → D4 → `project/design/D04.md`
+- R-QJ8F-AXWP → D9 → `project/design/D09.md`
+- R-QKGB-OPNE → D9 → `project/design/D09.md`
+- R-QLO8-2HE3 → D10 → `project/design/D10.md`
+- R-QMW4-G94S → D10 → `project/design/D10.md`
+- R-QO40-U0VH → D11 → `project/design/D11.md`
+- R-QPBX-7SM6 → D11 → `project/design/D11.md`
+- R-QQJT-LKCV → D12 → `project/design/D12.md`
+- R-ROUT-2B5C → D2 → `project/design/D02.md`
+- R-ROUT-4D7E → D2 → `project/design/D02.md`
+- R-ROUT-6F9G → D2 → `project/design/D02.md`
