@@ -250,6 +250,33 @@ func TestGlobDoubleStarKeepsSegmentAndBaseBoundaries(t *testing.T) {
 	}
 }
 
+func TestGlobRecursiveDoubleStarReturnsSortedSlashRelativeMatches(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{
+		"zeta.css",
+		"assets/z.css",
+		"assets/css/a.css",
+		"alpha.css",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, path), []byte(path), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// R-3ZP8-T0GP
+	got, err := Glob(root, "**/*.css", "")
+	if err != nil {
+		t.Fatalf("Glob recursive css: %v", err)
+	}
+	want := []string{"alpha.css", "assets/css/a.css", "assets/z.css", "zeta.css"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Glob recursive sorted slash-relative css = %#v, want %#v", got, want)
+	}
+}
+
 func TestGlobRecursiveDoubleStarPreservesNestedSearchBase(t *testing.T) {
 	root := globRecursiveFixture(t)
 
