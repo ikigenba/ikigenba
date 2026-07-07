@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"testing"
 
+	appdb "appkit/db"
 	agentkit "github.com/ikigenba/agentkit"
 
-	"wiki/internal/db"
+	wikidb "wiki/internal/db"
 	wikidomain "wiki/internal/wiki"
 )
 
@@ -17,11 +18,16 @@ import (
 func migratedWikiDB(t *testing.T, ctx context.Context) *sql.DB {
 	t.Helper()
 
-	conn, err := db.Open(t.TempDir() + "/wiki.db")
+	conn, err := appdb.Open(t.TempDir() + "/wiki.db")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := db.Migrate(ctx, conn); err != nil {
+	migs, err := appdb.LoadMigrations(wikidb.FS, "migrations")
+	if err != nil {
+		conn.Close()
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	if err := appdb.Migrate(ctx, conn, migs); err != nil {
 		conn.Close()
 		t.Fatalf("Migrate: %v", err)
 	}
@@ -35,15 +41,20 @@ func migratedConns(t *testing.T, ctx context.Context) (wikidomain.Conns, func())
 	t.Helper()
 
 	path := t.TempDir() + "/wiki.db"
-	write, err := db.Open(path)
+	write, err := appdb.Open(path)
 	if err != nil {
 		t.Fatalf("Open writer: %v", err)
 	}
-	if err := db.Migrate(ctx, write); err != nil {
+	migs, err := appdb.LoadMigrations(wikidb.FS, "migrations")
+	if err != nil {
+		write.Close()
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	if err := appdb.Migrate(ctx, write, migs); err != nil {
 		write.Close()
 		t.Fatalf("Migrate: %v", err)
 	}
-	read, err := db.OpenRead(path)
+	read, err := wikidb.OpenRead(path)
 	if err != nil {
 		write.Close()
 		t.Fatalf("OpenRead: %v", err)

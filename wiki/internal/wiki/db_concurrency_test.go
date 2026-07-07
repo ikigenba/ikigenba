@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	appdb "appkit/db"
 	wikidb "wiki/internal/db"
 )
 
@@ -178,11 +179,16 @@ func migratedConcurrentConns(t *testing.T, ctx context.Context) (Conns, func()) 
 	t.Helper()
 
 	path := t.TempDir() + "/wiki.db"
-	write, err := wikidb.Open(path)
+	write, err := appdb.Open(path)
 	if err != nil {
 		t.Fatalf("Open writer: %v", err)
 	}
-	if err := wikidb.Migrate(ctx, write); err != nil {
+	migs, err := appdb.LoadMigrations(wikidb.FS, "migrations")
+	if err != nil {
+		write.Close()
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	if err := appdb.Migrate(ctx, write, migs); err != nil {
 		write.Close()
 		t.Fatalf("Migrate: %v", err)
 	}

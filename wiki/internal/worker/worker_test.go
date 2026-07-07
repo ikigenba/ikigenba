@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
+	appdb "appkit/db"
 	agentkit "github.com/ikigenba/agentkit"
 
 	"wiki/internal/compile"
-	"wiki/internal/db"
+	wikidb "wiki/internal/db"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	wikidomain "wiki/internal/wiki"
@@ -231,11 +232,16 @@ func TestRunAbortWorkingJobCancelsProviderAndPreservesAbortedStatus(t *testing.T
 func migratedDB(t *testing.T, ctx context.Context) *sql.DB {
 	t.Helper()
 
-	conn, err := db.Open(t.TempDir() + "/wiki.db")
+	conn, err := appdb.Open(t.TempDir() + "/wiki.db")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := db.Migrate(ctx, conn); err != nil {
+	migs, err := appdb.LoadMigrations(wikidb.FS, "migrations")
+	if err != nil {
+		conn.Close()
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	if err := appdb.Migrate(ctx, conn, migs); err != nil {
 		conn.Close()
 		t.Fatalf("Migrate: %v", err)
 	}

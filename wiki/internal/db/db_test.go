@@ -10,7 +10,7 @@ import (
 
 func TestEmbeddedMigrationsApplyToTempSQLite(t *testing.T) {
 	ctx := context.Background()
-	conn, err := Open(t.TempDir() + "/wiki.db")
+	conn, err := appdb.Open(t.TempDir() + "/wiki.db")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -48,13 +48,17 @@ func TestEmbeddedMigrationsApplyToTempSQLite(t *testing.T) {
 func TestPhaseTwoDataModelSchema(t *testing.T) {
 	// R-7SNG-0G9A
 	ctx := context.Background()
-	conn, err := Open(t.TempDir() + "/wiki.db")
+	conn, err := appdb.Open(t.TempDir() + "/wiki.db")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	defer conn.Close()
 
-	if err := Migrate(ctx, conn); err != nil {
+	migs, err := appdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	if err := appdb.Migrate(ctx, conn, migs); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
 
@@ -112,7 +116,7 @@ func TestPhaseTwoDataModelSchema(t *testing.T) {
 func TestMigrationsCreatePagesFTSExternalContentAndBackfill(t *testing.T) {
 	// R-203P-F1ET
 	ctx := context.Background()
-	conn, err := Open(t.TempDir() + "/wiki.db")
+	conn, err := appdb.Open(t.TempDir() + "/wiki.db")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

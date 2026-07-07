@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	appdb "appkit/db"
 	agentkit "github.com/ikigenba/agentkit"
 
-	"wiki/internal/db"
+	wikidb "wiki/internal/db"
 	"wiki/internal/extract"
 )
 
@@ -306,15 +307,20 @@ func migratedEmbeddingConns(t *testing.T, ctx context.Context) (Conns, func()) {
 	t.Helper()
 
 	path := t.TempDir() + "/wiki.db"
-	write, err := db.Open(path)
+	write, err := appdb.Open(path)
 	if err != nil {
 		t.Fatalf("Open writer: %v", err)
 	}
-	if err := db.Migrate(ctx, write); err != nil {
+	migs, err := appdb.LoadMigrations(wikidb.FS, "migrations")
+	if err != nil {
+		write.Close()
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	if err := appdb.Migrate(ctx, write, migs); err != nil {
 		write.Close()
 		t.Fatalf("Migrate: %v", err)
 	}
-	read, err := db.OpenRead(path)
+	read, err := wikidb.OpenRead(path)
 	if err != nil {
 		write.Close()
 		t.Fatalf("OpenRead: %v", err)
