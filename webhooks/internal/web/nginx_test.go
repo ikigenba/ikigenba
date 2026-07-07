@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"registry"
 )
 
 func TestNginxLandingLocationIsSessionGatedExactMatch(t *testing.T) {
@@ -28,7 +30,8 @@ func TestNginxLandingLocationIsSessionGatedExactMatch(t *testing.T) {
 	if !strings.Contains(block, "proxy_set_header X-Owner-Email "+sessionOwner+";") {
 		t.Fatalf("landing location does not forward captured session owner %s:\n%s", sessionOwner, block)
 	}
-	if !strings.Contains(block, "proxy_pass http://127.0.0.1:3006/;") {
+	// R-0FNQ-0XSK
+	if !strings.Contains(block, "proxy_pass "+registry.BaseURL("webhooks")+"/;") {
 		t.Fatalf("landing location does not proxy to upstream root with trailing slash:\n%s", block)
 	}
 }
@@ -44,7 +47,8 @@ func TestNginxStaticLocationIsSessionGatedAndStripsMount(t *testing.T) {
 	if strings.Contains(block, "auth_request /_authn;") {
 		t.Fatalf("static location uses bearer auth instead of session auth:\n%s", block)
 	}
-	if !strings.Contains(block, "proxy_pass http://127.0.0.1:3006/static/;") {
+	// R-0FNQ-0XSK
+	if !strings.Contains(block, "proxy_pass "+registry.BaseURL("webhooks")+"/static/;") {
 		t.Fatalf("static location does not proxy to upstream static with trailing slash:\n%s", block)
 	}
 }

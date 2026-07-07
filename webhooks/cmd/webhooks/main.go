@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"appkit"
+	"registry"
 
 	"webhooks/internal/db"
 	"webhooks/internal/mcp"
@@ -73,7 +74,7 @@ func webhooksSpec() appkit.Spec {
 	return appkit.Spec{
 		App:        "webhooks",
 		Mount:      "/srv/webhooks/",
-		Port:       3006,
+		Port:       registry.MustPort("webhooks"),
 		MCP:        true,
 		Feed:       "/feed", // event-plane producer
 		Migrations: db.FS,

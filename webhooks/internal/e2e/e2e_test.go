@@ -26,13 +26,16 @@ import (
 
 	"webhooks/internal/db"
 	"webhooks/internal/webhooks"
+
+	"registry"
 )
 
 const (
 	frontDoor   = "http://localhost:8080"
-	loopback    = "http://127.0.0.1:3006"
 	frontDoorTo = 2 * time.Second
 )
+
+var loopback = registry.BaseURL("webhooks")
 
 // requireFrontDoor fails (does NOT skip) when the nginx front door on :8080 is
 // unreachable. The D7 done bar is explicit: an all-skipped e2e layer because
@@ -161,7 +164,8 @@ func TestFeedShieldedFromPublicMount(t *testing.T) {
 	}
 }
 
-// R-UELV-YLA4 — webhooks is wired into bin/start/bin/stop/go.work and actually
+// R-UELV-YLA4
+// R-0FNQ-0XSK — webhooks is wired into bin/start/bin/stop/go.work and actually
 // launched: the running process on :3006 answers GET /health with 200 (the
 // appkit chassis serves /health on the loopback port).
 func TestServiceLaunchedHealthOK(t *testing.T) {

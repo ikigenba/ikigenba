@@ -51,6 +51,8 @@ func TestCommittedManifestIsPortable(t *testing.T) {
 }
 
 // R-8IAN-FB87
+// R-0D7X-9EB6
+// R-0FNQ-0XSK
 func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	spec := webhooksSpec()
 	got := manifest.Emit(manifest.Fields{
