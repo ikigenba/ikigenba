@@ -284,6 +284,31 @@ func TestGlobDoubleStarMatchesZeroSegmentsAfterPrefix(t *testing.T) {
 	}
 }
 
+func TestGlobDoubleStarMatchesZeroSegmentsBetweenLiterals(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{
+		"assets/style.css",
+		"assets/nested/style.css",
+		"assets/nested/app.css",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, path), []byte(path), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// R-3ZP8-T0GP
+	got, err := Glob(root, "assets/**/style.css", "")
+	if err != nil {
+		t.Fatalf("Glob recursive literal css: %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"assets/nested/style.css", "assets/style.css"}) {
+		t.Fatalf("Glob recursive literal css = %#v", got)
+	}
+}
+
 func TestGlobSegmentPatternsUseFilepathMatchSemantics(t *testing.T) {
 	root := globRecursiveFixture(t)
 
