@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	chassis "appkit/db"
 	"eventplane/outbox"
 
 	"webhooks/internal/db"
@@ -22,13 +23,17 @@ import (
 func newRecordFixture(t *testing.T, wh db.Webhook) (svc *Service, dbPath string, now time.Time) {
 	t.Helper()
 	dbPath = filepath.Join(t.TempDir(), "webhooks.db")
-	conn, err := db.Open(dbPath)
+	conn, err := chassis.Open(dbPath)
 	if err != nil {
-		t.Fatalf("db.Open: %v", err)
+		t.Fatalf("chassis.Open: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(context.Background(), conn); err != nil {
-		t.Fatalf("db.Migrate: %v", err)
+	migs, err := chassis.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("chassis.LoadMigrations: %v", err)
+	}
+	if err := chassis.Migrate(context.Background(), conn, migs); err != nil {
+		t.Fatalf("chassis.Migrate: %v", err)
 	}
 	now = time.Date(2026, 6, 25, 12, 0, 0, 123456789, time.UTC)
 	clk := fixedClock{t: now}
@@ -136,7 +141,7 @@ func TestRecord_DurableAcrossReopen(t *testing.T) {
 		t.Fatalf("Record: %v", err)
 	}
 
-	fresh, err := db.Open(dbPath)
+	fresh, err := chassis.Open(dbPath)
 	if err != nil {
 		t.Fatalf("reopen db: %v", err)
 	}
@@ -182,13 +187,17 @@ func TestEvents_RegistryGatesAppend(t *testing.T) {
 	}
 
 	dbPath := filepath.Join(t.TempDir(), "webhooks.db")
-	conn, err := db.Open(dbPath)
+	conn, err := chassis.Open(dbPath)
 	if err != nil {
-		t.Fatalf("db.Open: %v", err)
+		t.Fatalf("chassis.Open: %v", err)
 	}
 	defer conn.Close()
-	if err := db.Migrate(context.Background(), conn); err != nil {
-		t.Fatalf("db.Migrate: %v", err)
+	migs, err := chassis.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("chassis.LoadMigrations: %v", err)
+	}
+	if err := chassis.Migrate(context.Background(), conn, migs); err != nil {
+		t.Fatalf("chassis.Migrate: %v", err)
 	}
 	ob, err := outbox.New(conn, outbox.Options{Source: "webhooks", Registry: Events})
 	if err != nil {

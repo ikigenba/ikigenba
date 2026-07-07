@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	chassis "appkit/db"
 	"appkit/server"
 
 	"eventplane/outbox"
@@ -46,12 +47,16 @@ func (c fixedClock) Now() time.Time { return c.t }
 func newTestHandler(t *testing.T) (http.Handler, *webhooks.Service) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "webhooks_test.db")
-	conn, err := db.Open(path)
+	conn, err := chassis.Open(path)
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(context.Background(), conn); err != nil {
+	migs, err := chassis.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("load test migrations: %v", err)
+	}
+	if err := chassis.Migrate(context.Background(), conn, migs); err != nil {
 		t.Fatalf("migrate test db: %v", err)
 	}
 	clk := fixedClock{t: time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)}

@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	chassis "appkit/db"
 	"webhooks/internal/db"
 	"webhooks/internal/webhooks"
 
@@ -79,11 +80,18 @@ func noRedirectClient() *http.Client {
 func TestIngressTierAcceptsBearerWithoutOAuth(t *testing.T) {
 	requireFrontDoor(t)
 
-	conn, err := db.Open(webhooksDBPath(t))
+	conn, err := chassis.Open(webhooksDBPath(t))
 	if err != nil {
 		t.Fatalf("open running webhooks db: %v", err)
 	}
 	defer conn.Close()
+	migs, err := chassis.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("load running webhooks migrations: %v", err)
+	}
+	if err := chassis.Migrate(context.Background(), conn, migs); err != nil {
+		t.Fatalf("migrate running webhooks db: %v", err)
+	}
 
 	svc := webhooks.NewService(conn, webhooks.RealClock{})
 	name := fmt.Sprintf("e2e-ingress-%d", time.Now().UnixNano())

@@ -1,6 +1,6 @@
 // Command webhooks is the loopback-only inbound-webhook service behind nginx. The
-// owner-facing MCP surface (create / list / delete / rotate) is reached through
-// the front-door auth chain — nginx introspects each /srv/webhooks/ request via
+// owner-facing MCP surface is the appkit/mcp tool table reached through the
+// front-door auth chain: nginx introspects each /srv/webhooks/ request via
 // auth_request against the dashboard's authorization server and injects
 // X-Owner-Email / X-Client-Id authoritatively, so the MCP handler runs behind the
 // chassis identity gate and performs no token logic of its own.
@@ -13,8 +13,8 @@
 // schema), config-from-env, the migration runner + downgrade guard, the
 // loopback HTTP server + PRM + identity gate, and the /feed producer mount — is
 // owned by appkit. main.go declares only webhooks's identity (the Spec) and wires
-// its domain surface (the ikigenba_webhooks_* MCP tools, the public ingress, and
-// the webhook.received producer) through the Spec hooks.
+// its domain surface (the appkit/mcp tools, the share/www web surface, the public
+// ingress, and the webhook.received producer) through the Spec hooks.
 package main
 
 import (
@@ -32,7 +32,9 @@ import (
 	"eventplane/outbox"
 )
 
-func main() {
+func main() { appkit.Main(webhooksSpec()) }
+
+func webhooksSpec() appkit.Spec {
 	// The domain Service is built once and shared by the route hook (which mounts
 	// the gated MCP surface and the bare public ingress over it) and the producer-
 	// injection hook (which attaches the outbox so webhook.received appends append
@@ -40,39 +42,6 @@ func main() {
 	// after Handlers when webhooks is a producer (Spec.Feed != "").
 	var svc *webhooks.Service
 
-	spec := webhooksSpec()
-	// Handlers builds the domain Service over the chassis's shared single-writer
-	// DB handle and mounts both surfaces: the ikigenba_webhooks_* MCP tools gated
-	// behind nginx-injected identity, and the public ingress reached bare.
-	spec.Handlers = func(rt *appkit.Router) error {
-		conn := rt.DB()
-		if conn == nil {
-			return fmt.Errorf("webhooks: no DB handle on router")
-		}
-		svc = webhooks.NewService(conn, webhooks.RealClock{})
-		handler, err := mcp.NewHandler(svc, rt)
-		if err != nil {
-			return err
-		}
-		rt.Handle("POST /mcp", rt.RequireIdentity(handler))
-		rt.Handle("/in/", webhooks.NewIngressHandler(svc, rt.Logger()))
-		rt.Handle("GET /{$}", landingHandler(rt.WWW(), rt.Service(), rt.Version()))
-		return nil
-	}
-	// Producer fires after Handlers: inject the outbox so every committed inbound
-	// webhook emits its webhook.received event on the same tx.
-	spec.Producer = func(ob *outbox.Outbox) error {
-		if svc == nil {
-			return fmt.Errorf("webhooks: Producer called before Handlers built the Service")
-		}
-		svc.Outbox = ob
-		return nil
-	}
-
-	appkit.Main(spec)
-}
-
-func webhooksSpec() appkit.Spec {
 	return appkit.Spec{
 		App:        "webhooks",
 		Mount:      "/srv/webhooks/",
@@ -85,6 +54,33 @@ func webhooksSpec() appkit.Spec {
 		ManifestExtras: []appkit.ManifestKV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
+		},
+		// Handlers builds the domain Service over the chassis's shared
+		// single-writer DB handle and mounts both surfaces: the MCP tools gated
+		// behind nginx-injected identity, and the public ingress reached bare.
+		Handlers: func(rt *appkit.Router) error {
+			conn := rt.DB()
+			if conn == nil {
+				return fmt.Errorf("webhooks: no DB handle on router")
+			}
+			svc = webhooks.NewService(conn, webhooks.RealClock{})
+			handler, err := mcp.NewHandler(svc, rt)
+			if err != nil {
+				return err
+			}
+			rt.Handle("POST /mcp", rt.RequireIdentity(handler))
+			rt.Handle("/in/", webhooks.NewIngressHandler(svc, rt.Logger()))
+			rt.Handle("GET /{$}", landingHandler(rt.WWW(), rt.Service(), rt.Version()))
+			return nil
+		},
+		// Producer fires after Handlers: inject the outbox so every committed
+		// inbound webhook emits its webhook.received event on the same tx.
+		Producer: func(ob *outbox.Outbox) error {
+			if svc == nil {
+				return fmt.Errorf("webhooks: Producer called before Handlers built the Service")
+			}
+			svc.Outbox = ob
+			return nil
 		},
 	}
 }

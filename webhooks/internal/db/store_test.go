@@ -5,18 +5,24 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	chassis "appkit/db"
 )
 
 // newTestStore stands up a real temp-file SQLite database (never :memory:),
 // migrates it forward-only through the embedded set, and returns a Store over it.
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	conn, err := Open(filepath.Join(t.TempDir(), "webhooks.db"))
+	conn, err := chassis.Open(filepath.Join(t.TempDir(), "webhooks.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := Migrate(context.Background(), conn); err != nil {
+	migs, err := chassis.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if err := chassis.Migrate(context.Background(), conn, migs); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return NewStore(conn)
