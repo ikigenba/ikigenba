@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"appkit/manifest"
+	appweb "appkit/web"
 	"registry"
 )
 
@@ -179,6 +181,7 @@ func TestDropboxBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 		"DROPBOX_APP_SECRET":      "",
 		"DROPBOX_REFRESH_TOKEN":   "",
 		"DROPBOX_APP_FOLDER_ROOT": "",
+		"DROPBOX_WWW_PATH":        wwwRoot(t),
 	})
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -218,6 +221,455 @@ func TestDropboxBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 		t.Fatalf("dropbox did not create mirror under state/: %v", err)
 	} else if !info.IsDir() {
 		t.Fatalf("mirror path %s is not a directory", mirrorPath)
+	}
+}
+
+func TestWWWSiteLoadsRealShareTree(t *testing.T) {
+	root := wwwRoot(t)
+	if strings.Contains(root, "internal/web") {
+		t.Fatalf("WWW root %q points at deleted internal web package", root)
+	}
+
+	site := loadWWW(t)
+	rec := httptest.NewRecorder()
+	// R-QO40-U0VH
+	if err := site.Render(rec, "landing.html", landingData("dropbox-real", "v1.2.3")); err != nil {
+		t.Fatalf("render landing.html from share/www: %v", err)
+	}
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "<title>dropbox-real") {
+		t.Fatalf("share/www landing render = status %d body:\n%s", rec.Code, rec.Body.String())
+	}
+
+	for _, rel := range []string{
+		"landing.html",
+		filepath.Join("static", "tokens.css"),
+		filepath.Join("static", "fonts", "space-grotesk.woff2"),
+		filepath.Join("static", "fonts", "ibm-plex-sans.woff2"),
+		filepath.Join("static", "fonts", "ibm-plex-mono-400.woff2"),
+		filepath.Join("static", "fonts", "ibm-plex-mono-500.woff2"),
+	} {
+		info, err := os.Stat(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatalf("share/www missing %s: %v", rel, err)
+		}
+		if info.IsDir() || info.Size() == 0 {
+			t.Fatalf("share/www/%s is not a non-empty file: dir=%v size=%d", rel, info.IsDir(), info.Size())
+		}
+	}
+}
+
+func TestWWWStaticServesThroughChassisSiteOnly(t *testing.T) {
+	site := loadWWW(t)
+	cases := []struct {
+		path        string
+		contentType string
+	}{
+		{path: "/static/tokens.css", contentType: "text/css; charset=utf-8"},
+		{path: "/static/fonts/space-grotesk.woff2", contentType: "font/woff2"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+
+			site.Static().ServeHTTP(rec, req)
+
+			// R-QPBX-7SM6
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+			if got := rec.Header().Get("Content-Type"); got != tc.contentType {
+				t.Fatalf("Content-Type = %q, want %q", got, tc.contentType)
+			}
+			if rec.Body.Len() == 0 {
+				t.Fatal("body is empty")
+			}
+		})
+	}
+
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := string(src)
+	for _, forbidden := range []string{`web.StaticHandler`, `rt.Handle("GET /static/"`} {
+		if strings.Contains(main, forbidden) {
+			t.Fatalf("cmd/dropbox/main.go still contains dropbox-side static handler %q", forbidden)
+		}
+	}
+}
+
+func TestWWWSiteRendersLandingWithServiceAndVersion(t *testing.T) {
+	rec := renderLanding(t, "dropbox-test", "v9.8.7")
+
+	// R-LAND-3C9X
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	// R-LAND-9J6A
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
+	}
+
+	body := rec.Body.String()
+	// R-LAND-5E2Y
+	if count := strings.Count(body, "dropbox-test"); count != 3 {
+		t.Fatalf("service name count = %d, want 3 in title, heading, and details\n%s", count, body)
+	}
+	// R-LAND-7G4Z
+	if count := strings.Count(body, "v9.8.7"); count != 1 {
+		t.Fatalf("version count = %d, want 1\n%s", count, body)
+	}
+}
+
+func TestWWWSiteUsesCanonicalServiceLayout(t *testing.T) {
+	rec := renderLanding(t, "dropbox", "dev")
+	body := rec.Body.String()
+
+	for _, want := range []string{
+		`<main>`,
+		`<a class="home" href="/">Home</a>`,
+		`<section aria-labelledby="page-title">`,
+		`<div class="eyebrow">Dropbox mirror</div>`,
+		`<h1 id="page-title">dropbox</h1>`,
+		`Dropbox keeps a private local mirror in sync with one Dropbox app folder and publishes change events to the event plane.`,
+		`<dl aria-label="Service details">`,
+		`<dd><code>POST /mcp</code></dd>`,
+		`class="version"`,
+	} {
+		// R-HOME-6P8T
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing HTML missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestWWWSiteLinksOnlyAppLocalStaticAssets(t *testing.T) {
+	rec := renderLanding(t, "dropbox", "dev")
+	body := rec.Body.String()
+
+	// R-LQXL-095Q
+	if !strings.Contains(body, `href="static/tokens.css"`) {
+		t.Fatalf("landing HTML did not link local tokens.css:\n%s", body)
+	}
+	for _, forbidden := range []string{`href="/static/tokens.css"`, "dashboard", "/srv/dashboard", "https://", "http://"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("landing HTML contains forbidden cross-service asset reference %q:\n%s", forbidden, body)
+		}
+	}
+}
+
+func TestWWWSitePreloadsSelfServedFontFiles(t *testing.T) {
+	rec := renderLanding(t, "dropbox", "dev")
+	head := htmlHead(t, rec.Body.String())
+	tokens := readWWWStatic(t, "/static/tokens.css")
+
+	// R-LULA-5KDT
+	for _, font := range []string{"space-grotesk.woff2", "ibm-plex-sans.woff2"} {
+		preload := `<link rel="preload" as="font" type="font/woff2" crossorigin href="static/fonts/` + font + `">`
+		if !strings.Contains(head, preload) {
+			t.Fatalf("landing head missing font preload %q:\n%s", preload, head)
+		}
+		if !strings.Contains(tokens, `url('fonts/`+font+`')`) {
+			t.Fatalf("tokens.css does not use matching self-served URL for %s:\n%s", font, tokens)
+		}
+	}
+}
+
+func TestWWWStaticServesTokensAndFonts(t *testing.T) {
+	site := loadWWW(t)
+	cases := []struct {
+		path        string
+		contentType string
+	}{
+		{path: "/static/tokens.css", contentType: "text/css; charset=utf-8"},
+		{path: "/static/fonts/space-grotesk.woff2", contentType: "font/woff2"},
+		{path: "/static/fonts/ibm-plex-sans.woff2", contentType: "font/woff2"},
+		{path: "/static/fonts/ibm-plex-mono-400.woff2", contentType: "font/woff2"},
+		{path: "/static/fonts/ibm-plex-mono-500.woff2", contentType: "font/woff2"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+
+			site.Static().ServeHTTP(rec, req)
+
+			// R-ASST-3H6J
+			// R-ASST-5K8L
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+			if got := rec.Header().Get("Content-Type"); got != tc.contentType {
+				t.Fatalf("Content-Type = %q, want %q", got, tc.contentType)
+			}
+			if rec.Body.Len() == 0 {
+				t.Fatal("body is empty")
+			}
+		})
+	}
+}
+
+func TestWWWTokensCSSDeclaresFontFaces(t *testing.T) {
+	body := readWWWStatic(t, "/static/tokens.css")
+
+	// R-ASST-7M1N
+	for _, want := range []string{
+		`@font-face`,
+		`url('fonts/space-grotesk.woff2')`,
+		`url('fonts/ibm-plex-sans.woff2')`,
+		`url('fonts/ibm-plex-mono-400.woff2')`,
+		`url('fonts/ibm-plex-mono-500.woff2')`,
+		`font-family: 'Space Grotesk'`,
+		`font-family: 'IBM Plex Sans'`,
+		`font-family: 'IBM Plex Mono'`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("tokens.css missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestWWWTokensCSSUsesOptionalFontDisplayForEveryFontFace(t *testing.T) {
+	body := readWWWStatic(t, "/static/tokens.css")
+
+	// R-LS5H-E0WF
+	if strings.Contains(body, "font-display: swap") {
+		t.Fatalf("tokens.css still contains font-display swap:\n%s", body)
+	}
+	if faces, optional := strings.Count(body, "@font-face"), strings.Count(body, "font-display: optional;"); optional != faces || faces != 4 {
+		t.Fatalf("font-display optional count = %d, want one for each of %d @font-face blocks and 4 total:\n%s", optional, faces, body)
+	}
+}
+
+func TestWWWTokensCSSUsesSelfServedFontURLs(t *testing.T) {
+	body := readWWWStatic(t, "/static/tokens.css")
+
+	// R-LTDD-RSN4
+	if strings.Contains(body, `url('/static/fonts/`) {
+		t.Fatalf("tokens.css still contains origin-absolute font URL:\n%s", body)
+	}
+	for _, want := range []string{
+		`url('fonts/space-grotesk.woff2')`,
+		`url('fonts/ibm-plex-sans.woff2')`,
+		`url('fonts/ibm-plex-mono-400.woff2')`,
+		`url('fonts/ibm-plex-mono-500.woff2')`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("tokens.css missing self-served font URL %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestExactRootRouteDoesNotShadowMCPOrUnknownPaths(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("GET /{$}", landingHandler(loadWWW(t), "dropbox", "dev"))
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "health")
+	})
+	mux.HandleFunc("GET /feed", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "feed")
+	})
+	mux.HandleFunc("GET /.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "prm")
+	})
+	mux.HandleFunc("GET /content", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "content")
+	})
+	mux.HandleFunc("GET /list", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "list")
+	})
+	mux.HandleFunc("POST /mcp", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "mcp")
+	})
+
+	root := httptest.NewRecorder()
+	mux.ServeHTTP(root, httptest.NewRequest(http.MethodGet, "/", nil))
+	// R-ROUT-2B5C
+	if root.Code != http.StatusOK || !strings.Contains(root.Body.String(), `<h1 id="page-title">dropbox</h1>`) {
+		t.Fatalf("root did not dispatch landing handler: status=%d body=%q", root.Code, root.Body.String())
+	}
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodPost, path: "/mcp", body: "mcp"},
+		{method: http.MethodGet, path: "/health", body: "health"},
+		{method: http.MethodGet, path: "/feed", body: "feed"},
+		{method: http.MethodGet, path: "/.well-known/oauth-protected-resource", body: "prm"},
+		{method: http.MethodGet, path: "/content", body: "content"},
+		{method: http.MethodGet, path: "/list", body: "list"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+
+			// R-ROUT-4D7E
+			if rec.Code != http.StatusOK || rec.Body.String() != tc.body {
+				t.Fatalf("%s %s = status %d body %q, want stub handler body %q", tc.method, tc.path, rec.Code, rec.Body.String(), tc.body)
+			}
+			if strings.Contains(rec.Body.String(), `<h1 id="page-title">dropbox</h1>`) {
+				t.Fatalf("%s %s returned landing page: status=%d body=%q", tc.method, tc.path, rec.Code, rec.Body.String())
+			}
+		})
+	}
+
+	nope := httptest.NewRecorder()
+	mux.ServeHTTP(nope, httptest.NewRequest(http.MethodGet, "/nope", nil))
+	// R-ROUT-6F9G
+	if nope.Code != http.StatusNotFound {
+		t.Fatalf("GET /nope status = %d, want %d", nope.Code, http.StatusNotFound)
+	}
+	if strings.Contains(nope.Body.String(), `<h1 id="page-title">dropbox</h1>`) {
+		t.Fatalf("GET /nope returned landing page: status=%d body=%q", nope.Code, nope.Body.String())
+	}
+}
+
+func TestCompositionRootEnablesChassisWWWAndKeepsDomainWiring(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := string(src)
+
+	for _, want := range []string{
+		`WWW:        true,`,
+		`rt.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {`,
+		`rt.WWW().Render(w, "landing.html", struct {`,
+		`Service string`,
+		`Version string`,
+		`rt.Handle("POST /mcp", rt.RequireIdentity(`,
+		`rt.Handle("GET /content", svc.ContentHandler())`,
+		`rt.Handle("GET /list", svc.ListHandler())`,
+	} {
+		if !strings.Contains(main, want) {
+			t.Fatalf("cmd/dropbox/main.go missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`"dropbox/internal/web"`,
+		`rt.Handle("GET /static/"`,
+		`web.LandingHandler`,
+		`web.StaticHandler`,
+	} {
+		if strings.Contains(main, forbidden) {
+			t.Fatalf("cmd/dropbox/main.go still contains %q", forbidden)
+		}
+	}
+
+	landingLine := lineContaining(t, main, `rt.Handle("GET /{$}"`)
+	if strings.Contains(landingLine, "RequireIdentity") {
+		t.Fatalf("landing route is identity-gated: %s", landingLine)
+	}
+}
+
+func TestNoDropboxWebEmbedsRemainOutsideExistingEmbeddedPackages(t *testing.T) {
+	needle := "go:" + "embed"
+	for _, root := range []string{"../../cmd", "../../internal"} {
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				if path == "../../internal/db" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if filepath.Ext(path) != ".go" {
+				return nil
+			}
+			src, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if strings.Contains(string(src), needle) {
+				t.Fatalf("%s still contains %s", path, needle)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("scan %s: %v", root, err)
+		}
+	}
+}
+
+func TestNginxLandingLocationIsExactMatchAndSessionGated(t *testing.T) {
+	conf := readNginxConfig(t)
+	block := nginxLocationBlock(t, conf, "location = /srv/dropbox/ {")
+	prefix := nginxLocationBlock(t, conf, "location /srv/dropbox/ {")
+
+	// R-NGNX-2P4Q
+	if block == prefix || !strings.HasPrefix(block, "location = /srv/dropbox/ {") || !strings.HasPrefix(prefix, "location /srv/dropbox/ {") {
+		t.Fatalf("landing exact-match block is not distinct from prefix block:\nlanding:\n%s\nprefix:\n%s", block, prefix)
+	}
+	// R-NGNX-4R6S
+	if !strings.Contains(block, "auth_request /_session-authn;") || strings.Contains(block, "auth_request /_authn;") {
+		t.Fatalf("landing block auth_request is not session-gated only:\n%s", block)
+	}
+	if !strings.Contains(block, "auth_request_set $dropbox_session_owner $upstream_http_x_owner_email;") ||
+		!strings.Contains(block, "proxy_set_header X-Owner-Email $dropbox_session_owner;") {
+		t.Fatalf("landing block does not propagate session owner identity:\n%s", block)
+	}
+	// R-NGNX-6T8U
+	if !strings.Contains(block, "proxy_pass "+registry.BaseURL("dropbox")+"/;") {
+		t.Fatalf("landing block does not proxy to loopback upstream root with trailing slash:\n%s", block)
+	}
+}
+
+func TestNginxExistingServiceLocationsSurvive(t *testing.T) {
+	conf := readNginxConfig(t)
+	prefix := nginxLocationBlock(t, conf, "location /srv/dropbox/ {")
+
+	// R-NGNX-8V1W
+	for _, want := range []string{
+		"location = /srv/dropbox/.well-known/oauth-protected-resource {",
+		"location = /srv/dropbox/content {",
+		"location @dropbox_authn_500 {",
+	} {
+		if !strings.Contains(conf, want) {
+			t.Fatalf("nginx config missing pre-existing location %q", want)
+		}
+	}
+	if !strings.Contains(conf, "location = /srv/dropbox/content {\n    return 404;\n}") {
+		t.Fatalf("nginx config content defence-in-depth location does not return 404")
+	}
+	if !strings.Contains(prefix, "auth_request /_authn;") {
+		t.Fatalf("bearer-gated prefix block is missing auth_request /_authn:\n%s", prefix)
+	}
+}
+
+func TestNginxStaticLocationIsSessionGatedAndProxiesStaticHandler(t *testing.T) {
+	conf := readNginxConfig(t)
+	static := nginxLocationBlock(t, conf, "location /srv/dropbox/static/ {")
+
+	for _, want := range []string{
+		"auth_request /_session-authn;",
+		"proxy_pass " + registry.BaseURL("dropbox") + "/static/;",
+		"proxy_set_header Host $host;",
+		"proxy_set_header X-Forwarded-Proto $scheme;",
+		"proxy_http_version 1.1;",
+	} {
+		// R-LVT6-JC4I
+		// R-QMW4-G94S
+		if !strings.Contains(static, want) {
+			t.Fatalf("static location missing %q:\n%s", want, static)
+		}
+	}
+	for _, want := range []string{
+		"location = /srv/dropbox/ {",
+		"location /srv/dropbox/ {",
+		"location = /srv/dropbox/content {\n    return 404;\n}",
+		"location = /srv/dropbox/.well-known/oauth-protected-resource {",
+		"location @dropbox_authn_500 {",
+	} {
+		if !strings.Contains(conf, want) {
+			t.Fatalf("nginx config missing pre-existing location %q", want)
+		}
 	}
 }
 
@@ -287,4 +739,114 @@ func stopProcess(cancel context.CancelFunc, done <-chan error) {
 	case <-done:
 	case <-time.After(time.Second):
 	}
+}
+
+func loadWWW(t *testing.T) *appweb.Site {
+	t.Helper()
+	site, err := appweb.Load(wwwRoot(t))
+	if err != nil {
+		t.Fatalf("load share/www: %v", err)
+	}
+	return site
+}
+
+func wwwRoot(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.Abs(filepath.Join("..", "..", "share", "www"))
+	if err != nil {
+		t.Fatalf("resolve share/www: %v", err)
+	}
+	return root
+}
+
+func renderLanding(t *testing.T, service, version string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	if err := loadWWW(t).Render(rec, "landing.html", landingData(service, version)); err != nil {
+		t.Fatalf("render landing.html: %v", err)
+	}
+	return rec
+}
+
+func landingHandler(site *appweb.Site, service, version string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := site.Render(w, "landing.html", landingData(service, version)); err != nil {
+			http.Error(w, "template error", http.StatusInternalServerError)
+		}
+	})
+}
+
+func landingData(service, version string) struct {
+	Service string
+	Version string
+} {
+	return struct {
+		Service string
+		Version string
+	}{
+		Service: service,
+		Version: version,
+	}
+}
+
+func readWWWStatic(t *testing.T, path string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rec := httptest.NewRecorder()
+	loadWWW(t).Static().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s status = %d, want %d\n%s", path, rec.Code, http.StatusOK, rec.Body.String())
+	}
+	return rec.Body.String()
+}
+
+func lineContaining(t *testing.T, text, needle string) string {
+	t.Helper()
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, needle) {
+			return line
+		}
+	}
+	t.Fatalf("no line contains %q", needle)
+	return ""
+}
+
+func htmlHead(t *testing.T, body string) string {
+	t.Helper()
+	start := strings.Index(body, "<head>")
+	if start == -1 {
+		t.Fatalf("HTML missing head opener:\n%s", body)
+	}
+	end := strings.Index(body[start:], "</head>")
+	if end == -1 {
+		t.Fatalf("HTML missing head closer:\n%s", body)
+	}
+	return body[start : start+end+len("</head>")]
+}
+
+func readNginxConfig(t *testing.T) string {
+	t.Helper()
+	src, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(src)
+}
+
+func nginxLocationBlock(t *testing.T, conf, opener string) string {
+	t.Helper()
+	start := strings.Index(conf, opener)
+	if start == -1 {
+		t.Fatalf("nginx config missing %q", opener)
+	}
+	bodyStart := start + len(opener)
+	endRel := strings.Index(conf[bodyStart:], "\n}")
+	if endRel == -1 {
+		t.Fatalf("nginx config location %q has no closing brace", opener)
+	}
+	return conf[start : bodyStart+endRel+len("\n}")]
 }

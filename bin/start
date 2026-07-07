@@ -195,6 +195,7 @@ launch_dropbox() {
 	source "$repo/dropbox/.envrc"
 	export DROPBOX_DB_PATH="$RUN_DIR/dropbox.db"
 	export DROPBOX_MIRROR_PATH="$RUN_DIR/dropbox-mirror"
+	export DROPBOX_WWW_PATH="$repo/dropbox/share/www"
 	exec "$RUN_DIR/bin/dropbox" serve --port "$(port 3200)"
 }
 

@@ -26,6 +26,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -36,7 +37,6 @@ import (
 	"dropbox/internal/db"
 	"dropbox/internal/dropbox"
 	"dropbox/internal/mcp"
-	"dropbox/internal/web"
 
 	"eventplane/outbox"
 	"registry"
@@ -61,6 +61,7 @@ func main() {
 		Mount:      "/srv/dropbox/",
 		Port:       registry.MustPort("dropbox"),
 		MCP:        true,
+		WWW:        true,
 		Feed:       "/feed", // event-plane producer
 		Migrations: db.FS,
 		Events:     dropbox.Events, // published event types: reflection + Append validation
@@ -163,8 +164,21 @@ func main() {
 
 			// Landing page and assets are human web UI; nginx owns the session
 			// gate, so the in-process handlers stay ungated.
-			rt.Handle("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
-			rt.Handle("GET /static/", web.StaticHandler())
+			rt.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/" {
+					http.NotFound(w, r)
+					return
+				}
+				if err := rt.WWW().Render(w, "landing.html", struct {
+					Service string
+					Version string
+				}{
+					Service: rt.Service(),
+					Version: rt.Version(),
+				}); err != nil {
+					http.Error(w, "template error", http.StatusInternalServerError)
+				}
+			}))
 			rt.Handle("POST /mcp", rt.RequireIdentity(
 				mcp.NewHandler(svc, rt.Version(), rt.Service(), rt.Health(),
 					rt.Events(), rt.Subscriptions())))
