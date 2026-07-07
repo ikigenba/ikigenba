@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	appkitdb "appkit/db"
+
 	"ledger/internal/db"
 
 	_ "modernc.org/sqlite"
@@ -22,7 +24,11 @@ func openDB(t *testing.T) *sql.DB {
 		t.Fatalf("fk pragma: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := db.Migrate(context.Background(), conn); err != nil {
+	migs, err := appkitdb.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if err := appkitdb.Migrate(context.Background(), conn, migs); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return conn

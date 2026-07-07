@@ -10,11 +10,13 @@ deployment path: `<account>.ikigenba.com/srv/ledger/` (e.g.
 A real **double-entry bookkeeping** service for personal and small-business use,
 modeled conceptually on [ledger-cli](https://ledger-cli.org/): an **immutable
 journal** of balanced transactions, with every report a query over postings. The
-surface is a **fixed set of eight verbs** (it does not grow as features are
-added — see `project/design/design.md`) over a single write entity, the transaction. It is an
-event-plane **producer** (emits `transaction.recorded` to an outbox at `GET
-/feed`, mirroring `../crm`). The chassis (auth, nginx, deploy, transport) is the
-same production-grade crm chassis, renamed.
+domain surface is a **fixed set of seven verbs** (it does not grow as features
+are added — see `project/design/design.md`) over a single write entity, the
+transaction. The chassis adds standard `health` and `reflection` tools, for nine
+tools on the wire. It is an event-plane **producer** (emits
+`transaction.recorded` to an outbox at `GET /feed`, mirroring `../crm`). The
+chassis (auth, nginx, deploy, transport) is the same production-grade crm
+chassis, renamed.
 
 **Read the decisions first — do not re-derive them:**
 
@@ -39,7 +41,7 @@ Small business, ≤100 users: SQLite, single instance, is correct and deliberate
 column on transactions/postings. `Identity` (the injected headers) is consulted
 only by `health`, matching crm and the single-tenant model.
 
-## The MCP surface (8 fixed verbs)
+## The MCP surface (7 domain verbs)
 
 There is **one write entity — the transaction** (a set of balanced postings); the
 surface area is reads. The journal is **immutable** (transactions are never
@@ -48,7 +50,9 @@ spring into existence on first posting to a colon-path (`Assets:Bank:Checking`),
 the only guardrail being that the top-level root must be one of five known types
 (`Assets`, `Liabilities`, `Equity`, `Income` [alias `Revenue`], `Expenses`), with
 alias + case-fold canonicalization so the tree can't fork. Money is integer cents,
-single-currency USD. See `project/design/design.md` for the full contract.
+single-currency USD. The domain surface is seven verbs; `health` and
+`reflection` are chassis-supplied standard tools, for nine tools on the wire.
+See `project/design/design.md` for the full contract.
 
 - **`record`** — record one immutable double-entry transaction (≥2 postings
   that must balance to zero; at most one posting may elide its amount and receive
@@ -67,10 +71,6 @@ single-currency USD. See `project/design/design.md` for the full contract.
 - **`describe`** — static introspection (the five typed roots + normal
   balances, statuses, recipes) merged with the live account tree. The first call
   an agent should make.
-- **`health`** — the shared health envelope (status/version/
-  service/details) plus the authenticated caller's identity (owner email +
-  client id); the end-to-end auth proof.
-
 ## Domain layout
 
 - **`internal/ledger/`** — the domain package, one file per concern within a single
@@ -79,21 +79,23 @@ single-currency USD. See `project/design/design.md` for the full contract.
   `Service` type — owns transactions, the balance invariant, and event emission),
   `transaction.go` (record + get), `reverse.go`, `reconcile.go`, `balance.go`,
   `register.go`, `describe.go`, `events.go` (event payloads/builders).
-- **`internal/mcp`** — JSON-RPC 2.0 MCP transport. `tools.go` holds the 8
-  descriptors and is the **sole** dispatcher + arg-validation/normalization site
-  (account canonicalization, date parsing, elision well-formedness), translating
-  typed sentinels (`unbalanced`, `bad_root`, `validation`, `not_found`,
-  `already_reversed`) to MCP tool-error text. `mcp.go` is the transport, unchanged.
-- **`internal/server`** — routing, the unauthenticated RFC 9728 protected-resource
-  metadata document, the `requireIdentityHeaders` gate, the ungated `/health` route, the
-  unauthenticated `GET /feed` event handler, security headers, graceful shutdown.
-- **`internal/db`** — SQLite open (WAL, FK, single-writer) + embedded migration
-  runner. Migrations: `001_schema_migrations` (chassis), `002_ledger.sql`
-  (`transactions` + `postings`; no accounts table — accounts are `SELECT DISTINCT
-  account FROM postings`), `003_outbox.sql` (byte-identical to `outbox.SchemaSQL`,
-  with a test asserting that equality).
-- **`internal/logging`, `internal/ids`** — structured slog + request-id middleware,
-  ULID generation. Carried from the chassis unchanged.
+- **`internal/mcp`** — the seven-domain-tool declaration over the `appkit/mcp`
+  chassis transport. `tools.go` holds `Instructions` and `Tools(svc)` and is
+  the **sole** dispatcher + arg-validation/normalization site (account
+  canonicalization, date parsing, elision well-formedness), translating typed
+  sentinels (`unbalanced`, `bad_root`, `validation`, `not_found`,
+  `already_reversed`) to MCP tool-error text. `mcp.go` exposes `NewHandler`.
+  The transport and the `health`/`reflection` tools are chassis-owned.
+- **`internal/db`** — the embedded migration set (`FS`) plus the load and
+  outbox-DDL byte-equality guards (`migrations_load_test.go`,
+  `migrations_outbox_test.go`). SQLite open and the migration runner are
+  `appkit/db` through `Spec.Migrations`. Migrations: `001_schema_migrations`
+  (chassis), `002_ledger.sql` (`transactions` + `postings`; no accounts table —
+  accounts are `SELECT DISTINCT account FROM postings`), `003_outbox.sql`
+  (byte-identical to `outbox.SchemaSQL`, with a test asserting that equality).
+- **`internal/ids`** — ULID generation.
+- **`share/www`** — the human web surface served through `Spec.WWW` / `rt.WWW()`;
+  the chassis static mount serves `/static/`.
 
 ## Events (event-plane producer)
 
@@ -122,11 +124,12 @@ ledger is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract
 `<app>` serve + the fixed `version`/`manifest`/`migrate`/`schema`
 verbs, no `run` wrapper. `etc/manifest.env` (`APP=ledger`,
 `MOUNT=/srv/ledger/`, `DEFAULT=false`, `PORT=3101`, `MCP=true` so the dashboard
-inventory lists it) is emitted by `ledger manifest` — the binary owns its own
-identity, and `opsctl deploy` regenerates the on-box copy on every swap. Shipping
-is the shared repo-root `bin/ship ledger` (no version arg; version is the
-committed `ledger/VERSION`, advanced by `bin/bump ledger <field>`) → `opsctl
-stage` + `opsctl deploy` (versioned release dir + atomic swap + rollback);
-provisioning is `opsctl setup ledger`. The
-only `bin/*` scripts ledger still carries are `start`/`stop` (systemd control). No
-`plugin/` in this repo.
+inventory lists it) is emitted by `ledger manifest`; the runtime port is
+resolved via `registry.MustPort("ledger")`, with the manifest's literal port
+guarded by a registry-derived test. The binary owns its own identity, and
+`opsctl deploy` regenerates the on-box copy on every swap. Shipping is the shared
+repo-root `bin/ship ledger` (no version arg; version is the committed
+`ledger/VERSION`, advanced by `bin/bump ledger <field>`) → `opsctl stage` +
+`opsctl deploy` (versioned release dir + atomic swap + rollback); provisioning is
+`opsctl setup ledger`. The only `bin/*` scripts ledger still carries are
+`start`/`stop` (systemd control). No `plugin/` in this repo.
