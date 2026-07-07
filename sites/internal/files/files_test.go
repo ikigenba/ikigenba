@@ -457,6 +457,28 @@ func TestGlobSegmentPatternsUseFilepathMatchSemantics(t *testing.T) {
 	}
 }
 
+func TestGlobPrefixedStarDoesNotCrossSlash(t *testing.T) {
+	root := globRecursiveFixture(t)
+
+	// R-40X5-6S7E
+	direct, err := Glob(root, "assets/*.js", "")
+	if err != nil {
+		t.Fatalf("Glob direct prefixed js: %v", err)
+	}
+	if direct == nil || len(direct) != 0 {
+		t.Fatalf("Glob direct prefixed js = %#v, want empty non-nil slice", direct)
+	}
+
+	// R-3ZP8-T0GP
+	recursive, err := Glob(root, "assets/**/*.js", "")
+	if err != nil {
+		t.Fatalf("Glob recursive prefixed js: %v", err)
+	}
+	if !reflect.DeepEqual(recursive, []string{"assets/js/app.js"}) {
+		t.Fatalf("Glob recursive prefixed js = %#v", recursive)
+	}
+}
+
 func TestGlobRecursiveDoubleStarCombinesWithFilenameWildcards(t *testing.T) {
 	root := globRecursiveFixture(t)
 
