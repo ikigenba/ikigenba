@@ -307,6 +307,10 @@ func TestGlobRejectsEscapingPatterns(t *testing.T) {
 	if _, err := Glob(root, "../*.css", "assets"); !errors.Is(err, ErrEscapes) {
 		t.Fatalf("Glob escaping pattern error = %v, want ErrEscapes", err)
 	}
+	// R-40X5-6S7E
+	if _, err := Glob(root, filepath.Join(root, "a.css"), "assets"); !errors.Is(err, ErrEscapes) {
+		t.Fatalf("Glob absolute pattern outside search base error = %v, want ErrEscapes", err)
+	}
 	if _, err := Glob(root, "**/*.css", "../"); !errors.Is(err, ErrEscapes) {
 		t.Fatalf("Glob escaping path error = %v, want ErrEscapes", err)
 	}
