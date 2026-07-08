@@ -14,7 +14,7 @@ Design's responsibility ends at minting. How coverage is measured, what counts a
 - **Build**: `go build ./...` run from the `prompts/` directory. Passes when all packages compile without error.
 - **Test**: `go test ./...` run from the `prompts/` directory. "The suite is green" means every test passes and no race detector violations appear (`-race` is implicit in CI).
 - **Formatting**: `gofmt -l .` emits no output.
-- **Published agentkit**: `github.com/ikigenba/agentkit v0.1.0` — the external dependency that replaces the local `./agentkit` module for `prompts` only.
+- **Published agentkit**: `github.com/ikigenba/agentkit v0.2.0` — the external dependency (currently pinned at `v0.1.1`; D19 bumps to `v0.2.0`, the release carrying the deferred-tools API — research §2). The `v0.2.0` tag is an **external precondition** owned by the agentkit repo (its phase 48); local dev resolves agentkit via the repo-root `go.work` replace and does not wait on it, but the production build (`GOWORK=off`) does.
 - **Local chassis modules**: `appkit` and `eventplane` remain as committed `replace` directives in `prompts/go.mod`; they are out of scope for this migration.
 - **Shared `registry` module**: adopted by D14 as a third committed `replace registry => ../registry` (plus `require registry v0.0.0`) in `prompts/go.mod`, wired exactly like `eventplane`. It is a zero-dependency leaf that turns a service **name** into its loopback port / base URL from one authoritative table. The `registry` module itself and the repo-root `go.work use ./registry` entry are **external preconditions** owned outside `prompts/` and assumed satisfied; no phase here creates or edits them.
 
