@@ -45,7 +45,7 @@ const clientIDPrefix = "prompts:"
 // remaining peer's tools, attaching the run's identity headers. Best-effort:
 // unreachable or garbled peers are logged and skipped; it never returns an error
 // and never panics, always returning a non-nil slice (possibly empty).
-func Discover(ctx context.Context, manifestRoot, owner, promptID string) []agentkit.Tool {
+func Discover(ctx context.Context, manifestRoot, owner, promptID string) []agentkit.DeferredToolGroup {
 	headers := map[string]string{
 		"X-Owner-Email": owner,
 		"X-Client-Id":   clientIDPrefix + promptID,
@@ -57,7 +57,7 @@ func Discover(ctx context.Context, manifestRoot, owner, promptID string) []agent
 		// empty slice rather than failing the run.
 		slog.Error("suite discovery: inventory read failed, no suite tools",
 			"manifest_root", manifestRoot, "err", err)
-		return []agentkit.Tool{}
+		return []agentkit.DeferredToolGroup{}
 	}
 
 	// Concurrently list tools from every non-self peer. Each peer's result lands
@@ -66,6 +66,7 @@ func Discover(ctx context.Context, manifestRoot, owner, promptID string) []agent
 		svc    inventory.Service
 		client *mcpclient.Client
 		tools  []mcpclient.Tool
+		blurb  string
 	}
 
 	var (
@@ -87,19 +88,45 @@ func Discover(ctx context.Context, manifestRoot, owner, promptID string) []agent
 		client := mcpclient.New(endpoint, headers, perCallTimeout)
 
 		wg.Add(1)
-		go func(svc inventory.Service, client *mcpclient.Client) {
+		go func(svc inventory.Service, endpoint string, client *mcpclient.Client) {
 			defer wg.Done()
-			tools, lerr := client.ListTools(ctx)
-			if lerr != nil {
+
+			var (
+				tools   []mcpclient.Tool
+				listErr error
+				blurb   string
+				initErr error
+				peerWG  sync.WaitGroup
+			)
+			peerWG.Add(2)
+			go func() {
+				defer peerWG.Done()
+				tools, listErr = client.ListTools(ctx)
+			}()
+			go func() {
+				defer peerWG.Done()
+				blurb, initErr = client.Initialize(ctx)
+			}()
+			peerWG.Wait()
+
+			if listErr != nil {
 				// A down or garbled peer must not break discovery: log loud, skip it.
 				slog.Error("suite discovery: tools/list failed, skipping peer",
-					"service", svc.Name, "endpoint", endpoint, "err", lerr)
+					"service", svc.Name, "endpoint", endpoint, "err", listErr)
 				return
 			}
+			if initErr != nil {
+				slog.Error("suite discovery: initialize failed, using empty blurb",
+					"service", svc.Name, "endpoint", endpoint, "err", initErr)
+				blurb = ""
+			} else if blurb == "" {
+				slog.Error("suite discovery: initialize returned empty instructions, using empty blurb",
+					"service", svc.Name, "endpoint", endpoint)
+			}
 			mu.Lock()
-			listings = append(listings, listing{svc: svc, client: client, tools: tools})
+			listings = append(listings, listing{svc: svc, client: client, tools: tools, blurb: blurb})
 			mu.Unlock()
-		}(svc, client)
+		}(svc, endpoint, client)
 	}
 	wg.Wait()
 
@@ -108,9 +135,14 @@ func Discover(ctx context.Context, manifestRoot, owner, promptID string) []agent
 	// peers. The suite layer re-qualifies each bare verb back to ikigenba_<svc>_<verb>
 	// using the owning service's name. The duplicate guard below therefore only
 	// fires on a genuine within-service duplicate.
-	tools := make([]agentkit.Tool, 0)
-	seen := map[string]bool{}
+	groups := make([]agentkit.DeferredToolGroup, 0, len(listings))
 	for _, l := range listings {
+		group := agentkit.DeferredToolGroup{
+			Name:  l.svc.Name,
+			Blurb: l.blurb,
+			Tools: make([]agentkit.Tool, 0, len(l.tools)),
+		}
+		seen := map[string]bool{}
 		for _, t := range l.tools {
 			qualified := qualify(l.svc.Name, t.Name)
 			if seen[qualified] {
@@ -121,7 +153,7 @@ func Discover(ctx context.Context, manifestRoot, owner, promptID string) []agent
 			seen[qualified] = true
 			client := l.client
 			bare := t.Name
-			tools = append(tools, agentkit.RawTool(qualified, t.Description, t.InputSchema, func(ctx context.Context, input json.RawMessage) (string, error) {
+			group.Tools = append(group.Tools, agentkit.RawTool(qualified, t.Description, t.InputSchema, func(ctx context.Context, input json.RawMessage) (string, error) {
 				text, isError, err := client.CallTool(ctx, bare, input)
 				if err != nil {
 					return "", errors.New("suite: tool " + qualified + " failed: " + err.Error())
@@ -132,9 +164,10 @@ func Discover(ctx context.Context, manifestRoot, owner, promptID string) []agent
 				return text, nil
 			}))
 		}
+		groups = append(groups, group)
 	}
 
-	return tools
+	return groups
 }
 
 // qualify reconstructs the service-qualified tool name ikigenba_<svc>_<verb> that

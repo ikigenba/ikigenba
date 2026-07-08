@@ -40,12 +40,12 @@ type Runner struct {
 	sandbox       *sandbox.Manager
 	ttl           time.Duration
 	buildProvider func(prompt.Config, func(string) string) (agentkit.Provider, error)
-	// discover snapshots the box's other loopback MCP services as published
-	// agentkit tools at run spawn (Surface 2 — in-run suite tools). It
+	// discover snapshots the box's other loopback MCP services as deferred
+	// agentkit tool groups at run spawn (Surface 2 — in-run suite tools). It
 	// defaults to a closure over the configured manifestRoot calling
-	// suite.Discover, but is injectable so tests can supply fake tools and
+	// suite.Discover, but is injectable so tests can supply fake groups and
 	// never touch the real inventory or any peer.
-	discover func(ctx context.Context, owner, promptID string) []agentkit.Tool
+	discover func(ctx context.Context, owner, promptID string) []agentkit.DeferredToolGroup
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
@@ -65,7 +65,7 @@ func New(store *prompt.Store, sb *sandbox.Manager, ttl time.Duration, manifestRo
 		sandbox:       sb,
 		ttl:           ttl,
 		buildProvider: buildProvider,
-		discover: func(ctx context.Context, owner, promptID string) []agentkit.Tool {
+		discover: func(ctx context.Context, owner, promptID string) []agentkit.DeferredToolGroup {
 			return suite.Discover(ctx, manifestRoot, owner, promptID)
 		},
 		cancels:       make(map[string]context.CancelFunc),
@@ -224,7 +224,8 @@ func (r *Runner) execute(run prompt.Run) {
 		Log:               logSink,
 		Gen:               genSettings(cfg),
 		Retry:             retryPolicy(cfg),
-		Tools:             append(runtools.All(sandboxRoot), r.discover(ctx, run.OwnerEmail, run.PromptID)...),
+		Tools:             runtools.All(sandboxRoot),
+		DeferredTools:     r.discover(ctx, run.OwnerEmail, run.PromptID),
 		MaxToolIterations: cfg.ToolLoopLimit,
 	}
 	stream := conv.Send(ctx, buildUserText(string(userPromptBytes), eventBytes))

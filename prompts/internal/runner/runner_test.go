@@ -281,9 +281,9 @@ func TestSpawn_UsesInjectedProviderFactoryWithoutLiveEnvironment(t *testing.T) {
 	}
 }
 
-// TestSpawn_DiscoversSuiteTools asserts the runner builds an in-run suite
-// ToolSource at spawn via the injectable discover seam, calling it with the
-// run's OwnerEmail/PromptID, and that the resulting source is threaded into the
+// TestSpawn_DiscoversSuiteTools asserts the runner builds in-run suite deferred
+// tool groups at spawn via the injectable discover seam, calling it with the
+// run's OwnerEmail/PromptID, and that the resulting catalog is threaded into the
 // engine (the run completes successfully with the fake source wired). It reuses
 // the fake-client seam so no real Anthropic call is made.
 func TestSpawn_DiscoversSuiteTools(t *testing.T) {
@@ -299,17 +299,21 @@ func TestSpawn_DiscoversSuiteTools(t *testing.T) {
 		gotOwner    string
 		gotPromptID string
 	)
-	r.discover = func(ctx context.Context, owner, promptID string) []agentkit.Tool {
+	r.discover = func(ctx context.Context, owner, promptID string) []agentkit.DeferredToolGroup {
 		mu.Lock()
 		calls++
 		gotOwner = owner
 		gotPromptID = promptID
 		mu.Unlock()
-		return []agentkit.Tool{
-			agentkit.RawTool("suite_lookup", "suite lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
-				return "ok", nil
-			}),
-		}
+		return []agentkit.DeferredToolGroup{{
+			Name:  "suite",
+			Blurb: "suite tools",
+			Tools: []agentkit.Tool{
+				agentkit.RawTool("suite_lookup", "suite lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+					return "ok", nil
+				}),
+			},
+		}}
 	}
 
 	r.Spawn(run)
@@ -334,22 +338,30 @@ func TestSpawn_DiscoversSuiteTools(t *testing.T) {
 	if req == nil {
 		t.Fatalf("fake provider saw no request")
 	}
-	var found bool
+	var foundLoader bool
+	var foundSuiteLookup bool
 	for _, tool := range req.Tools {
-		if tool.Name() == "suite_lookup" {
-			found = true
-			break
+		switch tool.Name() {
+		case "load_tools":
+			foundLoader = strings.Contains(tool.Description(), "suite") &&
+				strings.Contains(tool.Description(), "suite tools") &&
+				strings.Contains(tool.Description(), "suite_lookup")
+		case "suite_lookup":
+			foundSuiteLookup = true
 		}
 	}
-	if !found {
-		t.Fatalf("provider request tools did not include discovered suite tool")
+	if !foundLoader {
+		t.Fatalf("provider request tools did not include load_tools catalog for discovered suite group")
+	}
+	if foundSuiteLookup {
+		t.Fatalf("provider request included deferred suite_lookup eagerly")
 	}
 }
 
 // TestNew_DefaultDiscoverWired confirms the default construction (no seam
 // override) installs a working discover closure over the configured
 // manifestRoot — a smoke assertion that the default path is wired and returns a
-// non-nil tool slice (suite.Discover's best-effort contract) without standing up
+// non-nil group slice (suite.Discover's best-effort contract) without standing up
 // real peers.
 func TestNew_DefaultDiscoverWired(t *testing.T) {
 	ctx := context.Background()
@@ -374,8 +386,8 @@ func TestNew_DefaultDiscoverWired(t *testing.T) {
 	if r.discover == nil {
 		t.Fatalf("New left discover seam nil")
 	}
-	if tools := r.discover(ctx, "owner@example.com", "p_123"); tools == nil {
-		t.Fatalf("default discover returned nil tool slice; want non-nil (best-effort contract)")
+	if groups := r.discover(ctx, "owner@example.com", "p_123"); groups == nil {
+		t.Fatalf("default discover returned nil group slice; want non-nil (best-effort contract)")
 	}
 }
 

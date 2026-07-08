@@ -39,13 +39,15 @@ type peer struct {
 
 	tools    []map[string]any // tools/list payload
 	listErr  bool             // tools/list returns a JSON-RPC error
+	initText string           // instructions returned by initialize
+	initErr  bool             // initialize returns a JSON-RPC error
 	callText string           // text returned by tools/call
 	callErr  bool             // isError returned by tools/call
 }
 
 func newPeer(t *testing.T, tools []map[string]any, callText string, callErr bool) *peer {
 	t.Helper()
-	p := &peer{tools: tools, callText: callText, callErr: callErr}
+	p := &peer{tools: tools, initText: "peer instructions", callText: callText, callErr: callErr}
 	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/mcp" {
 			http.Error(w, "not found", http.StatusNotFound)
@@ -73,6 +75,12 @@ func newPeer(t *testing.T, tools []map[string]any, callText string, callErr bool
 				return
 			}
 			writeResult(t, w, req.ID, map[string]any{"tools": p.tools})
+		case "initialize":
+			if p.initErr {
+				writeError(t, w, req.ID, -32000, "initialize failed")
+				return
+			}
+			writeResult(t, w, req.ID, map[string]any{"instructions": p.initText})
 		case "tools/call":
 			var params struct {
 				Name      string          `json:"name"`
@@ -101,6 +109,13 @@ func newListErrorPeer(t *testing.T) *peer {
 	t.Helper()
 	p := newPeer(t, nil, "", false)
 	p.listErr = true
+	return p
+}
+
+func newPeerWithInstructions(t *testing.T, tools []map[string]any, instructions string) *peer {
+	t.Helper()
+	p := newPeer(t, tools, "ok", false)
+	p.initText = instructions
 	return p
 }
 
@@ -157,18 +172,37 @@ func tool(name string) map[string]any {
 	}
 }
 
-func hasTool(tools []agentkit.Tool, name string) bool {
-	_, ok := findTool(tools, name)
+func hasTool(groups []agentkit.DeferredToolGroup, name string) bool {
+	_, ok := findTool(groups, name)
 	return ok
 }
 
-func findTool(tools []agentkit.Tool, name string) (agentkit.Tool, bool) {
-	for _, tool := range tools {
-		if tool.Name() == name {
-			return tool, true
+func findTool(groups []agentkit.DeferredToolGroup, name string) (agentkit.Tool, bool) {
+	for _, group := range groups {
+		for _, tool := range group.Tools {
+			if tool.Name() == name {
+				return tool, true
+			}
 		}
 	}
 	return nil, false
+}
+
+func findGroup(groups []agentkit.DeferredToolGroup, name string) (agentkit.DeferredToolGroup, bool) {
+	for _, group := range groups {
+		if group.Name == name {
+			return group, true
+		}
+	}
+	return agentkit.DeferredToolGroup{}, false
+}
+
+func countTools(groups []agentkit.DeferredToolGroup) int {
+	var count int
+	for _, group := range groups {
+		count += len(group.Tools)
+	}
+	return count
 }
 
 func assertJSONEqual(t *testing.T, got json.RawMessage, want any) {
@@ -191,12 +225,12 @@ func TestSelfExcluded(t *testing.T) {
 	writeManifest(t, root, "prompts", portOf(t, self.srv.URL))
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
-	tools := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
 
-	if hasTool(tools, "ikigenba_prompts_run") {
+	if hasTool(groups, "ikigenba_prompts_run") {
 		t.Error("self tool should not be owned")
 	}
-	if !hasTool(tools, "ikigenba_crm_list") {
+	if !hasTool(groups, "ikigenba_crm_list") {
 		t.Error("crm tool should be owned")
 	}
 	self.mu.Lock()
@@ -217,16 +251,16 @@ func TestToolsListErrorPeerSkipped(t *testing.T) {
 	writeManifest(t, root, "crm", portOf(t, live.srv.URL))
 	writeManifest(t, root, "ledger", portOf(t, bad.srv.URL))
 
-	tools := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
 
-	if !hasTool(tools, "ikigenba_crm_list") {
+	if !hasTool(groups, "ikigenba_crm_list") {
 		t.Error("live peer's tool missing; list-error peer broke discovery")
 	}
-	if hasTool(tools, "ikigenba_ledger_list") {
-		t.Error("list-error peer contributed a tool; want it skipped")
+	if _, ok := findGroup(groups, "ledger"); ok {
+		t.Error("list-error peer contributed a group; want it skipped")
 	}
-	if got := len(tools); got != 1 {
-		t.Errorf("Discover returned %d tools, want 1 (list-error peer must contribute nothing)", got)
+	if got := len(groups); got != 1 {
+		t.Errorf("Discover returned %d groups, want 1 (list-error peer must contribute nothing)", got)
 	}
 }
 
@@ -265,12 +299,19 @@ func TestReachablePeerYieldsQualifiedToolAndDispatches(t *testing.T) {
 	}}, "crm-result", false)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
-	tools := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
 
-	if got := len(tools); got != 1 {
-		t.Fatalf("Discover returned %d tools, want exactly 1", got)
+	if got := len(groups); got != 1 {
+		t.Fatalf("Discover returned %d groups, want exactly 1", got)
 	}
-	got := tools[0]
+	group := groups[0]
+	if group.Name != "crm" {
+		t.Fatalf("group name = %q, want crm", group.Name)
+	}
+	if got := len(group.Tools); got != 1 {
+		t.Fatalf("group has %d tools, want exactly 1", got)
+	}
+	got := group.Tools[0]
 	if got.Name() != "ikigenba_crm_list" {
 		t.Fatalf("tool name = %q, want ikigenba_crm_list", got.Name())
 	}
@@ -295,6 +336,78 @@ func TestReachablePeerYieldsQualifiedToolAndDispatches(t *testing.T) {
 	}
 }
 
+// TestInitializeFailureOrEmptyKeepsGroupWithEmptyBlurb: initialize is advisory;
+// a peer whose tools/list succeeds still contributes its group when initialize
+// fails or publishes no instructions.
+func TestInitializeFailureOrEmptyKeepsGroupWithEmptyBlurb(t *testing.T) {
+	// R-9KVL-5RCR
+	root := t.TempDir()
+	failing := newPeer(t, []map[string]any{tool("list")}, "ok", false)
+	failing.initErr = true
+	empty := newPeerWithInstructions(t, []map[string]any{tool("search")}, "")
+	writeManifest(t, root, "crm", portOf(t, failing.srv.URL))
+	writeManifest(t, root, "ledger", portOf(t, empty.srv.URL))
+
+	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+
+	crm, ok := findGroup(groups, "crm")
+	if !ok {
+		t.Fatalf("crm group missing; initialize failure should not exclude successful tools/list")
+	}
+	if crm.Blurb != "" {
+		t.Fatalf("crm blurb = %q, want empty after initialize failure", crm.Blurb)
+	}
+	if got := len(crm.Tools); got != 1 {
+		t.Fatalf("crm group has %d tools, want 1", got)
+	}
+	ledger, ok := findGroup(groups, "ledger")
+	if !ok {
+		t.Fatalf("ledger group missing; empty initialize should not exclude successful tools/list")
+	}
+	if ledger.Blurb != "" {
+		t.Fatalf("ledger blurb = %q, want empty after empty initialize", ledger.Blurb)
+	}
+	if got := len(ledger.Tools); got != 1 {
+		t.Fatalf("ledger group has %d tools, want 1", got)
+	}
+}
+
+// TestInventoryBuildsOneGroupPerReachableNonSelfPeer: discovery excludes
+// prompts and preserves each reachable peer's service name and initialize
+// instructions as the deferred group catalog.
+func TestInventoryBuildsOneGroupPerReachableNonSelfPeer(t *testing.T) {
+	// R-9M3H-JJ3G
+	root := t.TempDir()
+	self := newPeerWithInstructions(t, []map[string]any{tool("run")}, "self instructions")
+	crm := newPeerWithInstructions(t, []map[string]any{tool("list")}, "CRM instructions")
+	ledger := newPeerWithInstructions(t, []map[string]any{tool("search")}, "Ledger instructions")
+	writeManifest(t, root, "prompts", portOf(t, self.srv.URL))
+	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
+	writeManifest(t, root, "ledger", portOf(t, ledger.srv.URL))
+
+	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+
+	if got := len(groups); got != 2 {
+		t.Fatalf("Discover returned %d groups, want exactly 2 non-self peers", got)
+	}
+	if _, ok := findGroup(groups, "prompts"); ok {
+		t.Fatalf("self prompts group should be excluded")
+	}
+	wantBlurbs := map[string]string{"crm": "CRM instructions", "ledger": "Ledger instructions"}
+	for name, want := range wantBlurbs {
+		group, ok := findGroup(groups, name)
+		if !ok {
+			t.Fatalf("group %q missing", name)
+		}
+		if group.Blurb != want {
+			t.Fatalf("group %q blurb = %q, want %q", name, group.Blurb, want)
+		}
+		if group.Name != name {
+			t.Fatalf("group Name = %q, want %q", group.Name, name)
+		}
+	}
+}
+
 // TestSharedBareVerbReQualifiedPerService: peers now register BARE verbs, so two
 // different services both expose the same verb (here `health`). The suite layer
 // must re-qualify each to ikigenba_<svc>_<verb> so BOTH remain reachable under
@@ -306,23 +419,25 @@ func TestSharedBareVerbReQualifiedPerService(t *testing.T) {
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 	writeManifest(t, root, "ledger", portOf(t, ledger.srv.URL))
 
-	tools := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
 
 	// Both services' health tools survive under distinct service-qualified names.
-	crmTool, ok := findTool(tools, "ikigenba_crm_health")
+	crmTool, ok := findTool(groups, "ikigenba_crm_health")
 	if !ok {
 		t.Error("crm health tool was shadowed; want ikigenba_crm_health owned")
 	}
-	ledgerTool, ok := findTool(tools, "ikigenba_ledger_health")
+	ledgerTool, ok := findTool(groups, "ikigenba_ledger_health")
 	if !ok {
 		t.Error("ledger health tool was shadowed; want ikigenba_ledger_health owned")
 	}
-	if got := len(tools); got != 2 {
+	if got := countTools(groups); got != 2 {
 		t.Errorf("Discover returned %d tools, want 2 (both health tools advertised)", got)
 	}
 	names := map[string]bool{}
-	for _, tool := range tools {
-		names[tool.Name()] = true
+	for _, group := range groups {
+		for _, tool := range group.Tools {
+			names[tool.Name()] = true
+		}
 	}
 	if !names["ikigenba_crm_health"] || !names["ikigenba_ledger_health"] {
 		t.Errorf("advertised names = %v, want both ikigenba_crm_health and ikigenba_ledger_health", names)
@@ -366,12 +481,12 @@ func TestWithinServiceDuplicateKeepsFirst(t *testing.T) {
 	crm := newPeer(t, []map[string]any{tool("health"), tool("health")}, "ok", false)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
-	tools := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
 
-	if !hasTool(tools, "ikigenba_crm_health") {
+	if !hasTool(groups, "ikigenba_crm_health") {
 		t.Error("want ikigenba_crm_health owned")
 	}
-	if got := len(tools); got != 1 {
+	if got := countTools(groups); got != 1 {
 		t.Errorf("Discover returned %d tools, want 1 (within-service duplicate collapsed)", got)
 	}
 }
@@ -383,8 +498,8 @@ func TestDispatchDownstreamIsError(t *testing.T) {
 	crm := newPeer(t, []map[string]any{tool("list")}, "boom", true)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
-	tools := Discover(context.Background(), root, "owner@example.com", "p_123")
-	tool, ok := findTool(tools, "ikigenba_crm_list")
+	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+	tool, ok := findTool(groups, "ikigenba_crm_list")
 	if !ok {
 		t.Fatal("missing ikigenba_crm_list")
 	}
@@ -408,8 +523,8 @@ func TestDispatchTransportFailureIsError(t *testing.T) {
 	crm := newPeer(t, []map[string]any{tool("list")}, "ok", false)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
-	tools := Discover(context.Background(), root, "owner@example.com", "p_123")
-	tool, ok := findTool(tools, "ikigenba_crm_list")
+	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+	tool, ok := findTool(groups, "ikigenba_crm_list")
 	if !ok {
 		t.Fatal("missing ikigenba_crm_list")
 	}
@@ -433,11 +548,11 @@ func TestInventoryErrorEmptySource(t *testing.T) {
 	// An unclosed '[' in the root makes inventory.Read's filepath.Glob return a
 	// bad-pattern error, exercising the inventory-error branch (not the empty
 	// match path).
-	tools := Discover(context.Background(), "bad[root", "owner@example.com", "p_123")
-	if tools == nil {
+	groups := Discover(context.Background(), "bad[root", "owner@example.com", "p_123")
+	if groups == nil {
 		t.Fatal("Discover returned nil, want a non-nil empty slice")
 	}
-	if got := len(tools); got != 0 {
-		t.Errorf("Discover returned %d tools, want 0", got)
+	if got := len(groups); got != 0 {
+		t.Errorf("Discover returned %d groups, want 0", got)
 	}
 }

@@ -51,6 +51,33 @@ type Tool struct {
 	InputSchema json.RawMessage
 }
 
+// Initialize calls JSON-RPC initialize and returns the server-level
+// instructions string. Servers may omit instructions; that is treated as an
+// empty string, not an error.
+func (c *Client) Initialize(ctx context.Context) (string, error) {
+	params := struct {
+		ProtocolVersion string         `json:"protocolVersion"`
+		Capabilities    map[string]any `json:"capabilities"`
+		ClientInfo      struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+		} `json:"clientInfo"`
+	}{
+		ProtocolVersion: "2024-11-05",
+		Capabilities:    map[string]any{},
+	}
+	params.ClientInfo.Name = "prompts"
+	params.ClientInfo.Version = "0.0.0"
+
+	var out struct {
+		Instructions string `json:"instructions"`
+	}
+	if err := c.call(ctx, "initialize", params, &out); err != nil {
+		return "", err
+	}
+	return out.Instructions, nil
+}
+
 // ListTools calls JSON-RPC tools/list and parses result tools into descriptors.
 func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
 	var out struct {
