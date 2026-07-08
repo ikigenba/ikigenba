@@ -9,7 +9,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D3 → `project/design/D03.md` — Embedded Carbon design assets (sites's own copy) — owns R-ASST-3H7N, R-ASST-5K9Q, R-ASST-7M2S
 - D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/sites/` landing root beside the existing static tiers — owns R-NGNX-3P6T, R-NGNX-5R8V, R-NGNX-7T1X, R-NGNX-9W4Z
 - D5 → `project/design/D05.md` — Docs state current truth: state the standardized landing card in sites's self-description (no "no UI" claim to purge) — none (structural; docs-only)
-- D6 → `project/design/D06.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
+- D6 → `project/design/D06.md` — Landing page layout (sites-specific; supersedes the cron-canonical conformance) — owns R-WKGI-FVFJ, R-WLOE-TN68
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-9S3W
 - D8 → `project/design/D08.md` — Self-serve the landing page's fonts and eliminate the FOUT (relative stylesheet link + `font-display: optional` + self-served `src` + `<head>` preload + session-gated nginx `/srv/sites/static/`) — owns R-629P-84O5, R-63HL-LWEU, R-64PH-ZO5J, R-65XE-DFW8, R-675A-R7MX
 - D9 → `project/design/D09.md` — Resolve sites's own port and the dropbox mirror address by name through the shared `registry` (import + startup resolve at the composition root + committed `go.mod` replace; behavior-preserving) — owns R-7K2P-QN4D, R-7L9F-XW3H, R-7M4C-BV8J, R-7N6R-TZ2Q
@@ -22,7 +22,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D16 → `project/design/D16.md` — Filesystem layout: files live at the served path `SITES_ROOT/<public|private>/<slug>`; delete the working tree and symlink indirection (`Layout.SiteDir`/`SiteBase`/`Move`; `publish.go` removed) — owns R-QV1H-JU04, R-QW9D-XLQT, R-QYP6-P587
 - D17 → `project/design/D17.md` — In-process static serving of hosted sites (`internal/serve`): index-mapping, no-listing, confined, trailing-slash redirect; mounted ungated at `GET /public/` and `GET /private/` — owns R-QZX3-2WYW, R-R14Z-GOPL, R-R2CV-UGGA, R-R3KS-886Z, R-R4SO-LZXO, R-R60K-ZROD
 - D18 → `project/design/D18.md` — nginx fragment proxies the public/private tiers to the process (no `alias`; private keeps `/_session-authn`; nginx reads no state off disk) — owns R-R78H-DJF2, R-R8GD-RB5R, R-R9OA-52WG
-- D19 → `project/design/D19.md` — The landing page lists the sites that exist (live-rendered from `store.List`; slug/public-private/creator/created-at; empty-state safe) — owns R-RAW6-IUN5, R-RC42-WMDU
+- D19 → `project/design/D19.md` — The landing page lists the sites that exist (live-rendered from `store.List`; slug-as-link/public-private/creator/created-at; empty-state safe) — owns R-RAW6-IUN5, R-RC42-WMDU, R-WMWB-7EWX
 - D20 → `project/design/D20.md` — MCP surface: drop publish/unpublish, add `set_visibility`, thread `created_by` from Identity, serve the live folder via `SiteDir` (file tools/sync/delete retargeted) — owns R-RDBZ-AE4J, R-RFRS-1XLX, R-RGZO-FPCM, R-RI7K-TH3B, R-RJFH-78U0
 
 ## Verification ids → Decision
@@ -95,3 +95,6 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-RGZO-FPCM → D20 → `project/design/D20.md`
 - R-RI7K-TH3B → D20 → `project/design/D20.md`
 - R-RJFH-78U0 → D20 → `project/design/D20.md`
+- R-WKGI-FVFJ → D6 → `project/design/D06.md`
+- R-WLOE-TN68 → D6 → `project/design/D06.md`
+- R-WMWB-7EWX → D19 → `project/design/D19.md`

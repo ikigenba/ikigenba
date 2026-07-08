@@ -129,7 +129,8 @@ Promised values the design must honor verbatim and never re-declare:
   goes away.
 - **The landing page lists the sites that exist** — a logged-in human opening the
   bare `/srv/sites/` sees the running version and a row per site showing its slug,
-  whether it is public or private, who created it, and when.
+  whether it is public or private, who created it, and when. Each slug is a link
+  that opens that site.
 - **A browser with no dashboard session is refused the landing page** — `401`,
   not the page.
 - **Agents are unaffected in how they connect** — the bearer-gated `/mcp`, the
@@ -154,7 +155,8 @@ service:
 - I delete a site and its URL stops serving its files.
 - As a logged-in dashboard user I open `<account>.ikigenba.com/srv/sites/` and see
   a Carbon-styled page showing the running version and a row for each site with
-  its slug, public/private status, creator, and creation time.
+  its slug, public/private status, creator, and creation time; clicking a slug
+  opens that site.
 - As a browser with no dashboard session I open `/srv/sites/` and am refused with
   `401`.
 - Every path served under `/srv/sites/…` is served by the sites process — nginx
