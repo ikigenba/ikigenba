@@ -112,21 +112,26 @@ func parseTime(s string) time.Time {
 	return t
 }
 
-// Create validates the slug + reserved guard, then inserts a fresh private row.
-// created_at/updated_at are set to now (UTC).
+// Create validates the slug + reserved guard, then inserts a fresh row at the
+// caller-chosen visibility; there is no store-side default. created_at/updated_at
+// are set to now (UTC).
 // Returns ErrExists if the name is already taken.
-func (s *Store) Create(ctx context.Context, name, createdBy string) (Site, error) {
+func (s *Store) Create(ctx context.Context, name, createdBy string, public bool) (Site, error) {
 	if err := validateName(name); err != nil {
 		return Site{}, err
 	}
 	now := s.Now().UTC()
 	ts := fmtTime(now)
+	publicInt := 0
+	if public {
+		publicInt = 1
+	}
 	// source_path is inserted NULL: a freshly created site is hand-authored until
 	// a sync stamps it via SetSourcePath.
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO sites (name, source_path, public, created_by, created_at, updated_at)
-		 VALUES (?, NULL, 0, ?, ?, ?)`,
-		name, createdBy, ts, ts)
+		 VALUES (?, NULL, ?, ?, ?, ?)`,
+		name, publicInt, createdBy, ts, ts)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") ||
 			strings.Contains(err.Error(), "PRIMARY KEY") {
@@ -136,7 +141,7 @@ func (s *Store) Create(ctx context.Context, name, createdBy string) (Site, error
 	}
 	return Site{
 		Name:      name,
-		Public:    false,
+		Public:    public,
 		CreatedBy: createdBy,
 		CreatedAt: parseTime(ts),
 		UpdatedAt: parseTime(ts),

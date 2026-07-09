@@ -377,6 +377,36 @@ func TestCreateThenList(t *testing.T) {
 	}
 }
 
+func TestCreateHonorsRequestedVisibility(t *testing.T) {
+	h, _ := newTestHandler(t)
+
+	// R-554R-3MBC
+	publicSite := callOK(t, h, "create", map[string]any{"name": "public-demo", "public": true})
+	if publicSite["public"] != true {
+		t.Fatalf("public create returned public = %v, want true", publicSite["public"])
+	}
+	if want := testBaseURL + "public/public-demo/"; publicSite["url"] != want {
+		t.Fatalf("public create url = %v, want %v", publicSite["url"], want)
+	}
+	if fi, err := os.Stat(h.layout.SiteDir(true, "public-demo")); err != nil || !fi.IsDir() {
+		t.Fatalf("public dir not created: %v", err)
+	}
+	if _, err := os.Stat(h.layout.SiteDir(false, "public-demo")); !os.IsNotExist(err) {
+		t.Fatalf("private dir should not exist for public create: %v", err)
+	}
+
+	privateSite := callOK(t, h, "create", map[string]any{"name": "private-demo"})
+	if privateSite["public"] != false {
+		t.Fatalf("private create returned public = %v, want false", privateSite["public"])
+	}
+	if want := testBaseURL + "private/private-demo/"; privateSite["url"] != want {
+		t.Fatalf("private create url = %v, want %v", privateSite["url"], want)
+	}
+	if fi, err := os.Stat(h.layout.SiteDir(false, "private-demo")); err != nil || !fi.IsDir() {
+		t.Fatalf("private dir not created: %v", err)
+	}
+}
+
 // TestCreateBadSlug asserts an invalid slug yields an MCP error result (not a
 // transport error) with the stable code.
 func TestCreateBadSlug(t *testing.T) {

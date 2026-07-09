@@ -39,8 +39,9 @@ func Tools(store *sites.Store, layout sites.Layout, baseURL string, mirror sites
 		desc(tool("describe"), "Self-describe the sites service: how to host a static website. The lifecycle is create a private site (a slug), edit its files, set visibility public/private, and delete it. Returns the concept overview and the lifecycle tool list. Takes no inputs.", obj(map[string]any{}), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 			return h.toolDescribe()
 		}),
-		desc(tool("create"), "Create a new private site owned by the authenticated caller. 'name' is the slug (1-63 chars, lowercase alphanumeric + hyphen, must start alphanumeric); reserved names are rejected. Inserts the registry row and creates its empty private directory. Returns the created site.", obj(map[string]any{
-			"name": descTyp("string", "the site slug (lowercase alnum + hyphen, 1-63 chars)"),
+		desc(tool("create"), "Create a new site owned by the authenticated caller at the requested visibility. 'name' is the slug (1-63 chars, lowercase alphanumeric + hyphen, must start alphanumeric); reserved names are rejected. 'public' is optional and defaults false. Inserts the registry row and creates its empty current-visibility directory. Returns the created site.", obj(map[string]any{
+			"name":   descTyp("string", "the site slug (lowercase alnum + hyphen, 1-63 chars)"),
+			"public": descTyp("boolean", "true for public, false or omitted for private"),
 		}, "name"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 			return h.toolCreate(ctx, args, id)
 		}),
@@ -64,7 +65,7 @@ func Tools(store *sites.Store, layout sites.Layout, baseURL string, mirror sites
 		}, "name", "public"), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 			return h.toolSetVisibility(ctx, args)
 		}),
-		desc(tool("sync"), "Sync a Dropbox-mirrored subtree into a static site's current public/private directory. 'source_path' is the mirror folder to sync from (e.g. \"/sites/marketing\"); 'slug' names the target site and defaults to the source_path basename when that is a valid slug, else it is required. Creates the site if absent as private, then reconciles its current site directory to match the subtree: every upstream file is (over)written and every site file absent upstream is deleted. Visibility is unchanged. Returns {slug, written, deleted}.", obj(map[string]any{
+		desc(tool("sync"), "Sync a Dropbox-mirrored subtree into an existing static site's current public/private directory. 'source_path' is the mirror folder to sync from (e.g. \"/sites/marketing\"); 'slug' names the target site and defaults to the source_path basename when that is a valid slug, else it is required. Returns not_found if the site does not already exist. For an existing site, reconciles its current site directory to match the subtree: every upstream file is (over)written and every site file absent upstream is deleted. Visibility is unchanged. Returns {slug, written, deleted}.", obj(map[string]any{
 			"source_path": descTyp("string", "the mirror folder path to sync from"),
 			"slug":        descTyp("string", "target site slug; defaults to the source_path basename"),
 		}, "source_path"), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
@@ -156,19 +157,20 @@ func (h *toolHandlers) toolDescribe() (map[string]any, error) {
 }
 
 // toolCreate validates the slug (via Store.Create), inserts the row, then
-// creates the private site directory.
+// creates the site directory at the requested visibility.
 func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	var a struct {
-		Name string `json:"name"`
+		Name   string `json:"name"`
+		Public bool   `json:"public"`
 	}
 	if err := unmarshalArgs(raw, &a); err != nil {
 		return nil, err
 	}
-	site, err := h.store.Create(ctx, a.Name, id.OwnerEmail)
+	site, err := h.store.Create(ctx, a.Name, id.OwnerEmail, a.Public)
 	if err != nil {
 		return errResult(err), nil
 	}
-	if err := os.MkdirAll(h.layout.SiteDir(false, a.Name), 0o755); err != nil {
+	if err := os.MkdirAll(h.layout.SiteDir(a.Public, a.Name), 0o755); err != nil {
 		return errResultMsg("create_site_dir", err.Error()), nil
 	}
 	return appkitmcp.JSONResult(h.renderSite(site))

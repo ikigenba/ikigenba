@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -52,45 +53,30 @@ func readWorking(t *testing.T, h *testHandler, slug, rel string) string {
 	return string(b)
 }
 
-// TestSyncNewSlug: syncing to an absent slug creates the row + private site
-// directory, writes every upstream file (keyed relative to source_path), reports
-// the right counts, and keeps the site private.
-func TestSyncNewSlug(t *testing.T) {
+func TestSyncAbsentSlugReturnsNotFound(t *testing.T) {
 	h, _ := newTestHandler(t, &fakeMirror{files: map[string][]byte{
 		"/sites/marketing/index.html":   []byte("<h1>home</h1>"),
 		"/sites/marketing/css/app.css":  []byte("body{}"),
 		"/sites/marketing/img/logo.png": {0x89, 0x50, 0x4e, 0x47}, // binary-safe
 	}})
 
-	out := callOK(t, h, tool("sync"), map[string]any{"source_path": "/sites/marketing"})
-	if out["slug"] != "marketing" {
-		t.Fatalf("slug = %v, want marketing", out["slug"])
+	// R-56CN-HE21
+	env := callErr(t, h, tool("sync"), map[string]any{"source_path": "/sites/marketing"})
+	if env["code"] != "not_found" {
+		t.Fatalf("error code = %v, want not_found", env["code"])
 	}
-	if got := out["written"]; got != float64(3) {
-		t.Fatalf("written = %v, want 3", got)
+	if _, err := h.store.Get(context.Background(), "marketing"); !errors.Is(err, sites.ErrNotFound) {
+		t.Fatalf("get marketing after failed sync err = %v, want ErrNotFound", err)
 	}
-	if got := out["deleted"]; got != float64(0) {
-		t.Fatalf("deleted = %v, want 0", got)
+	listed := callOK(t, h, tool("list"), map[string]any{})
+	if arr, _ := listed["sites"].([]any); len(arr) != 0 {
+		t.Fatalf("list after failed sync = %+v, want empty", listed)
 	}
-
-	// Files landed relative to source_path.
-	if readWorking(t, h, "marketing", "index.html") != "<h1>home</h1>" {
-		t.Fatal("index.html content mismatch")
+	if _, err := os.Stat(h.layout.SiteDir(true, "marketing")); !os.IsNotExist(err) {
+		t.Fatalf("public dir should not exist after failed sync: %v", err)
 	}
-	if readWorking(t, h, "marketing", "css/app.css") != "body{}" {
-		t.Fatal("css/app.css content mismatch")
-	}
-
-	// Row exists and is stamped with the source path, and remains private.
-	site, err := h.store.Get(context.Background(), "marketing")
-	if err != nil {
-		t.Fatalf("get marketing: %v", err)
-	}
-	if site.SourcePath != "/sites/marketing" {
-		t.Fatalf("source_path = %q, want /sites/marketing", site.SourcePath)
-	}
-	if site.Public {
-		t.Fatal("sync must not make a new site public")
+	if _, err := os.Stat(h.layout.SiteDir(false, "marketing")); !os.IsNotExist(err) {
+		t.Fatalf("private dir should not exist after failed sync: %v", err)
 	}
 }
 
@@ -103,6 +89,7 @@ func TestSyncExistingReconciles(t *testing.T) {
 	}}
 	h, _ := newTestHandler(t, mirror)
 
+	callOK(t, h, tool("create"), map[string]any{"name": "blog"})
 	if out := callOK(t, h, tool("sync"), map[string]any{"source_path": "/site", "slug": "blog"}); out["written"] != float64(2) {
 		t.Fatalf("first sync written = %v, want 2", out["written"])
 	}
@@ -134,10 +121,12 @@ func TestSyncExistingReconciles(t *testing.T) {
 // basename with no explicit slug is a validation error.
 func TestSyncSlugDerivation(t *testing.T) {
 	h, _ := newTestHandler(t, &fakeMirror{files: map[string][]byte{
-		"/x/Marketing Site/index.html": []byte("x"),
+		"/projects/good-slug/index.html": []byte("ok"),
+		"/x/Marketing Site/index.html":   []byte("x"),
 	}})
 
 	// Valid basename derives.
+	callOK(t, h, tool("create"), map[string]any{"name": "good-slug"})
 	out := callOK(t, h, tool("sync"), map[string]any{"source_path": "/projects/good-slug"})
 	if out["slug"] != "good-slug" {
 		t.Fatalf("derived slug = %v, want good-slug", out["slug"])
@@ -168,20 +157,21 @@ func TestSyncPublicSiteUsesPublicDirectory(t *testing.T) {
 	}}
 	h, _ := newTestHandler(t, mirror)
 
-	callOK(t, h, tool("sync"), map[string]any{"source_path": "/feed", "slug": "live"})
-	callOK(t, h, tool("set_visibility"), map[string]any{"name": "live", "public": true})
+	callOK(t, h, tool("create"), map[string]any{"name": "live", "public": true})
 
-	// Re-sync with new bytes; a public site must reconcile in its public dir.
-	mirror.files = map[string][]byte{"/feed/index.html": []byte("v2")}
-	callOK(t, h, tool("sync"), map[string]any{"source_path": "/feed", "slug": "live"})
+	// R-56CN-HE21
+	out := callOK(t, h, tool("sync"), map[string]any{"source_path": "/feed", "slug": "live"})
+	if out["written"] != float64(1) {
+		t.Fatalf("sync written = %v, want 1", out["written"])
+	}
 
 	publicPath := filepath.Join(h.layout.SiteDir(true, "live"), "index.html")
 	b, err := os.ReadFile(publicPath)
 	if err != nil {
 		t.Fatalf("read public file: %v", err)
 	}
-	if string(b) != "v2" {
-		t.Fatalf("public content = %q, want v2", b)
+	if string(b) != "v1" {
+		t.Fatalf("public content = %q, want v1", b)
 	}
 	after, err := h.store.Get(context.Background(), "live")
 	if err != nil {

@@ -44,7 +44,7 @@ func TestCRUDRoundtrip(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	a, err := s.Create(ctx, "alpha", "")
+	a, err := s.Create(ctx, "alpha", "", false)
 	if err != nil {
 		t.Fatalf("create alpha: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestCRUDRoundtrip(t *testing.T) {
 		t.Fatalf("create alpha: timestamps unset %+v", a)
 	}
 
-	if _, err := s.Create(ctx, "bravo", ""); err != nil {
+	if _, err := s.Create(ctx, "bravo", "", false); err != nil {
 		t.Fatalf("create bravo: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestSlugReject(t *testing.T) {
 	}
 	for _, tc := range bad {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := s.Create(ctx, tc.slug, "")
+			_, err := s.Create(ctx, tc.slug, "", false)
 			if !errors.Is(err, ErrInvalidSlug) {
 				t.Fatalf("create %q: want ErrInvalidSlug, got %v", tc.slug, err)
 			}
@@ -128,7 +128,7 @@ func TestReservedNameReject(t *testing.T) {
 
 	for _, name := range []string{"mcp", ".well-known"} {
 		t.Run(name, func(t *testing.T) {
-			_, err := s.Create(ctx, name, "")
+			_, err := s.Create(ctx, name, "", false)
 			if !errors.Is(err, ErrReservedName) {
 				t.Fatalf("create %q: want ErrReservedName, got %v", name, err)
 			}
@@ -140,10 +140,10 @@ func TestCreateDuplicate(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	if _, err := s.Create(ctx, "dup", ""); err != nil {
+	if _, err := s.Create(ctx, "dup", "", false); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
-	_, err := s.Create(ctx, "dup", "")
+	_, err := s.Create(ctx, "dup", "", false)
 	if !errors.Is(err, ErrExists) {
 		t.Fatalf("duplicate create: want ErrExists, got %v", err)
 	}
@@ -165,7 +165,7 @@ func TestCreatePersistsCreatedByAndDefaultsPrivate(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	created, err := s.Create(ctx, "creator-site", "user-123")
+	created, err := s.Create(ctx, "creator-site", "user-123", false)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -201,6 +201,43 @@ func TestCreatePersistsCreatedByAndDefaultsPrivate(t *testing.T) {
 	}
 	if list[0].Public {
 		t.Fatalf("List Public = true, want false")
+	}
+
+	publicCreated, err := s.Create(ctx, "public-creator-site", "user-456", true)
+	if err != nil {
+		t.Fatalf("create public: %v", err)
+	}
+	// R-QSLO-SAIQ
+	if !publicCreated.Public {
+		t.Fatalf("Create public Public = false, want true")
+	}
+	publicGot, err := s.Get(ctx, "public-creator-site")
+	if err != nil {
+		t.Fatalf("get public: %v", err)
+	}
+	if !publicGot.Public {
+		t.Fatalf("Get public Public = false, want true")
+	}
+
+	list, err = s.List(ctx)
+	if err != nil {
+		t.Fatalf("list after public create: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("list len = %d, want 2", len(list))
+	}
+	byName := map[string]Site{}
+	for _, site := range list {
+		byName[site.Name] = site
+	}
+	if byName["creator-site"].CreatedBy != "user-123" {
+		t.Fatalf("List creator-site CreatedBy = %q, want %q", byName["creator-site"].CreatedBy, "user-123")
+	}
+	if byName["creator-site"].Public {
+		t.Fatalf("List creator-site Public = true, want false")
+	}
+	if !byName["public-creator-site"].Public {
+		t.Fatalf("List public-creator-site Public = false, want true")
 	}
 
 	for _, column := range []string{"public", "created_by"} {
@@ -253,7 +290,7 @@ func TestSetVisibilityPersistsAndAdvancesUpdatedAt(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	site, err := s.Create(ctx, "visibility", "")
+	site, err := s.Create(ctx, "visibility", "", false)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

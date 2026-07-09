@@ -3,17 +3,16 @@ package mcp
 // sync.go wires the `sync` verb: it ties together the pieces Phase 6 built —
 // the dropbox loopback MirrorClient (enumerate /list + fetch /content) and the
 // pure sites.Reconcile routine — behind the MCP surface. sync adopts a Dropbox
-// mirror subtree as a site's current public/private directory: create-or-reuse
-// the site row + tree, enumerate the subtree, overwrite every upstream file and
-// delete every site file absent upstream (the subtree owns the tree). It leaves
-// visibility unchanged.
+// mirror subtree for an existing site's current public/private directory:
+// enumerate the subtree, overwrite every upstream file and delete every site
+// file absent upstream (the subtree owns the tree). It leaves visibility
+// unchanged.
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -26,10 +25,10 @@ import (
 // toolSync reconciles a dropbox mirror subtree into a site's current directory. It
 // requires source_path; slug defaults to the source_path basename (and must be
 // a valid slug, else the caller must pass slug explicitly — ADR "Slug
-// derivation"). The flow: validate → create-or-reuse the row + tree (row first,
-// then dir, matching toolCreate) → stamp source_path → enumerate upstream →
-// fetch each file's bytes keyed by its path relative to source_path → walk the
-// current site directory for the existing path set → Reconcile.
+// derivation"). The flow: validate → load the existing row → stamp source_path
+// → enumerate upstream → fetch each file's bytes keyed by its path relative to
+// source_path → walk the current site directory for the existing path set →
+// Reconcile.
 func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
 	var a struct {
 		SourcePath string `json:"source_path"`
@@ -64,25 +63,13 @@ func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage) (map[s
 		return errResult(err), nil
 	}
 
-	// Create-or-reuse: if the site is absent, create the row then its private dir
-	// (row-then-dir order, matching toolCreate). A present site is reused as-is.
 	site, err := h.store.Get(ctx, slug)
 	if err != nil {
-		if !errors.Is(err, sites.ErrNotFound) {
-			return errResult(err), nil
-		}
-		created, cerr := h.store.Create(ctx, slug, "")
-		if cerr != nil {
-			return errResult(cerr), nil
-		}
-		site = created
-		if mderr := os.MkdirAll(h.layout.SiteDir(false, slug), 0o755); mderr != nil {
-			return errResultMsg("create_site_dir", mderr.Error()), nil
-		}
+		return errResult(err), nil
 	}
 	// Stamp the originating subtree on the row (marks the site import-managed and
-	// records provenance — ADR Decision 2). Done after create-or-reuse so it
-	// applies to a reused site too (the subtree may have moved).
+	// records provenance — ADR Decision 2). It applies to an existing site whose
+	// subtree may have moved.
 	if err := h.store.SetSourcePath(ctx, slug, a.SourcePath); err != nil {
 		return errResult(err), nil
 	}
