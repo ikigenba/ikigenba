@@ -11,7 +11,7 @@ import (
 func TestModuleAgentkitDependencyIsPublishedOnly(t *testing.T) {
 	const (
 		published = "github.com/ikigenba/agentkit"
-		version   = "v0.2.0"
+		version   = "v0.2.1"
 	)
 
 	data, err := os.ReadFile("go.mod")

@@ -418,6 +418,35 @@ func TestSpawn_SystemFramesDeferredToolsWithoutServiceEnumeration(t *testing.T) 
 	}
 }
 
+func TestSpawn_SystemFramesDeferredToolGroupNameLoading(t *testing.T) {
+	// R-A69O-ATWI
+	fp := &fakeProvider{}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	_, run := seedRunning(t, store, r.sandbox, runsDir)
+	r.discover = func(context.Context, string, string) []agentkit.DeferredToolGroup {
+		return []agentkit.DeferredToolGroup{{
+			Name: "crm",
+			Tools: []agentkit.Tool{
+				agentkit.RawTool("ikigenba_crm_lookup", "Lookup CRM records.", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+					return "ok", nil
+				}),
+			},
+		}}
+	}
+
+	r.execute(run)
+
+	req := fp.request(0)
+	if req == nil {
+		t.Fatalf("fake provider saw no first request")
+	}
+	want := "call `load_tools` with tool names — or a service's name to load all of its tools — to make them callable"
+	if !strings.Contains(req.System, want) {
+		t.Fatalf("system prompt = %q, want group-name loading guidance %q", req.System, want)
+	}
+}
+
 func TestExecute_LoadsAndCallsDeferredSuiteTool(t *testing.T) {
 	// R-9PR6-OUBJ
 	const toolName = "ikigenba_crm_lookup"
