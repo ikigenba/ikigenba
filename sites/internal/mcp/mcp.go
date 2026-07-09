@@ -13,8 +13,12 @@ import (
 )
 
 // Instructions describes sites's MCP surface to clients during initialize.
-const Instructions = "Host static websites behind the front door. Call describe " +
-	"first for the create→edit→set_visibility lifecycle."
+const Instructions = "Host small static websites on this box — web pages, " +
+	"landing pages, marketing or docs sites, hand-written HTML/CSS/JS — each " +
+	"served at its own URL, either public (anyone) or private (logged-in " +
+	"dashboard users). Create a site, write its files, and set it public or " +
+	"private; edits are live immediately, no publish step. Call guide for the " +
+	"site model and worked examples."
 
 // NewHandler builds the POST /mcp handler from the appkit Router seam. The
 // shared transport owns JSON-RPC, health, and reflection; sites declares only

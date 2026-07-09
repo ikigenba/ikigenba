@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"os"
@@ -28,6 +29,9 @@ type toolHandlers struct {
 	mirror  sites.MirrorClient
 }
 
+//go:embed guide.md
+var guideDoc string
+
 // Tools returns sites's service-owned MCP tool declarations. The shared appkit
 // MCP transport prepends the chassis health and reflection tools.
 func Tools(store *sites.Store, layout sites.Layout, baseURL string, mirror sites.MirrorClient) []appkitmcp.Tool {
@@ -36,10 +40,13 @@ func Tools(store *sites.Store, layout sites.Layout, baseURL string, mirror sites
 	}
 	h := &toolHandlers{store: store, layout: layout, baseURL: baseURL, mirror: mirror}
 	return []appkitmcp.Tool{
-		desc(tool("describe"), "Self-describe the sites service: how to host a static website. The lifecycle is create a private site (a slug), edit its files, set visibility public/private, and delete it. Returns the concept overview and the lifecycle tool list. Takes no inputs.", obj(map[string]any{}), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
-			return h.toolDescribe()
-		}),
-		desc(tool("create"), "Create a new site owned by the authenticated caller at the requested visibility. 'name' is the slug (1-63 chars, lowercase alphanumeric + hyphen, must start alphanumeric); reserved names are rejected. 'public' is optional and defaults false. Inserts the registry row and creates its empty current-visibility directory. Returns the created site.", obj(map[string]any{
+		desc(tool("guide"), "Return the sites usage guide — the site model, slug and "+
+			"confinement rules, and worked basic/advanced examples (create a public page in "+
+			"one call, import from Dropbox). Read once before your first create.",
+			obj(map[string]any{}), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
+				return appkitmcp.TextResult(guideDoc), nil
+			}),
+		desc(tool("create"), "Create a static website/site owned by the authenticated caller at the requested visibility. 'name' is the slug (1-63 chars, lowercase alphanumeric + hyphen, must start alphanumeric); reserved names are rejected. 'public' is optional and defaults false. Inserts the registry row and creates its empty current-visibility directory. Returns the created site.", obj(map[string]any{
 			"name":   descTyp("string", "the site slug (lowercase alnum + hyphen, 1-63 chars)"),
 			"public": descTyp("boolean", "true for public, false or omitted for private"),
 		}, "name"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
@@ -65,7 +72,7 @@ func Tools(store *sites.Store, layout sites.Layout, baseURL string, mirror sites
 		}, "name", "public"), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 			return h.toolSetVisibility(ctx, args)
 		}),
-		desc(tool("sync"), "Sync a Dropbox-mirrored subtree into an existing static site's current public/private directory. 'source_path' is the mirror folder to sync from (e.g. \"/sites/marketing\"); 'slug' names the target site and defaults to the source_path basename when that is a valid slug, else it is required. Returns not_found if the site does not already exist. For an existing site, reconciles its current site directory to match the subtree: every upstream file is (over)written and every site file absent upstream is deleted. Visibility is unchanged. Returns {slug, written, deleted}.", obj(map[string]any{
+		desc(tool("sync"), "Import a static website/site from a Dropbox-mirrored folder into an existing site's current public/private directory. 'source_path' is the mirror folder to sync from (e.g. \"/sites/marketing\"); 'slug' names the target site and defaults to the source_path basename when that is a valid slug, else it is required. Returns not_found if the site does not already exist. For an existing site, reconciles its current site directory to match the subtree: every upstream file is (over)written and every site file absent upstream is deleted. Visibility is unchanged. Returns {slug, written, deleted}.", obj(map[string]any{
 			"source_path": descTyp("string", "the mirror folder path to sync from"),
 			"slug":        descTyp("string", "target site slug; defaults to the source_path basename"),
 		}, "source_path"), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
@@ -134,26 +141,6 @@ func obj(props map[string]any, required ...string) map[string]any {
 
 func descTyp(t, description string) map[string]any {
 	return map[string]any{"type": t, "description": description}
-}
-
-// toolDescribe is the self-describing tool: it explains what sites does and the
-// lifecycle of hosting a static website, so an agent connecting for the first
-// time can orient without out-of-band docs.
-func (h *toolHandlers) toolDescribe() (map[string]any, error) {
-	return appkitmcp.JSONResult(map[string]any{
-		"service": "sites",
-		"summary": "Host static websites. Each site is a slug with a public/private visibility flag, creator provenance, and files under its current visibility directory.",
-		"lifecycle": []string{
-			"create - register a private slug for the authenticated creator",
-			"edit the current site directory with the file tools (file_read/file_write/file_edit/file_glob/file_grep/file_list)",
-			"mkdir - create parent directories inside the current site directory",
-			"set_visibility - move the site between private and public",
-			"delete - remove the current site directory and drop the row",
-		},
-		"visibility": []string{sites.PrivateSeg, sites.PublicSeg},
-		"serves_at":  h.baseURL + "<public|private>/<name>/",
-		"note":       "Every site carries its front-door URL as \"url\" (returned by create/list/set_visibility); it follows the site's public/private visibility.",
-	})
 }
 
 // toolCreate validates the slug (via Store.Create), inserts the row, then

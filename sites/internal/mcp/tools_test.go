@@ -266,7 +266,7 @@ func TestToolsList(t *testing.T) {
 	want := []string{
 		"health",
 		"reflection",
-		"describe",
+		"guide",
 		"create",
 		"list",
 		"delete",
@@ -300,6 +300,147 @@ func TestToolsList(t *testing.T) {
 	// R-RDBZ-AE4J
 	if got["publish"] || got["unpublish"] {
 		t.Fatalf("tools/list must not expose publish/unpublish after the visibility switch: %+v", result.Tools)
+	}
+}
+
+func TestGuideReplacesDescribeAndReturnsText(t *testing.T) {
+	h, _ := newTestHandler(t)
+	resp := rpc(t, h, "tools/list", nil)
+
+	var result struct {
+		Tools []struct {
+			Name        string         `json:"name"`
+			Description string         `json:"description"`
+			InputSchema map[string]any `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("decode tools/list: %v", err)
+	}
+
+	var guide *struct {
+		Name        string         `json:"name"`
+		Description string         `json:"description"`
+		InputSchema map[string]any `json:"inputSchema"`
+	}
+	for i := range result.Tools {
+		switch result.Tools[i].Name {
+		case "guide":
+			guide = &result.Tools[i]
+		case "describe":
+			t.Fatalf("tools/list still exposes describe: %+v", result.Tools)
+		}
+	}
+	if guide == nil {
+		t.Fatalf("tools/list missing guide: %+v", result.Tools)
+	}
+	if guide.InputSchema["type"] != "object" {
+		t.Fatalf("guide input schema type = %v, want object: %+v", guide.InputSchema["type"], guide.InputSchema)
+	}
+	if _, ok := guide.InputSchema["required"]; ok {
+		t.Fatalf("guide input schema must not have required: %+v", guide.InputSchema)
+	}
+
+	callResp := rpc(t, h, "tools/call", map[string]any{"name": "guide"})
+	var tr toolResult
+	if err := json.Unmarshal(callResp.Result, &tr); err != nil {
+		t.Fatalf("decode guide tool result: %v (result=%s)", err, callResp.Result)
+	}
+	// R-57KJ-V5SQ
+	if tr.IsError {
+		t.Fatalf("guide returned an error envelope: %s", payloadText(tr))
+	}
+	if len(tr.Content) != 1 || tr.Content[0].Type != "text" || strings.TrimSpace(tr.Content[0].Text) == "" {
+		t.Fatalf("guide returned invalid content block: %+v", tr.Content)
+	}
+}
+
+func TestGuideDocDocumentsModelExamplesAndErrors(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "internal", "mcp", "guide.md"))
+	if err != nil {
+		t.Fatalf("read guide.md: %v", err)
+	}
+	if guideDoc != string(raw) {
+		t.Fatal("embedded guideDoc does not match internal/mcp/guide.md")
+	}
+
+	// R-58SG-8XJF
+	assertContains(t, guideDoc, "`create` is the only way a site comes into being")
+	assertContains(t, guideDoc, "returns `not_found` otherwise")
+	assertContains(t, guideDoc, `create(name:"launch", public:true)`)
+	assertContains(t, guideDoc, "path_escapes_working_dir")
+	createIdx := strings.Index(guideDoc, `create(name:"marketing")`)
+	syncIdx := strings.Index(guideDoc, `sync(source_path:"/sites/marketing")`)
+	if createIdx < 0 || syncIdx < 0 || createIdx > syncIdx {
+		t.Fatalf("Dropbox flow must show create before sync; create index=%d sync index=%d", createIdx, syncIdx)
+	}
+}
+
+func TestInstructionsRouteToGuideWithoutDescribe(t *testing.T) {
+	// R-5A0C-MPA4
+	assertContains(t, Instructions, "website")
+	assertContains(t, Instructions, "guide")
+	if strings.Contains(Instructions, "describe") {
+		t.Fatalf("Instructions must not mention describe: %q", Instructions)
+	}
+}
+
+func TestOnlyInstructionsAndGuideDescriptionReferenceGuide(t *testing.T) {
+	if !strings.Contains(Instructions, "guide") {
+		t.Fatalf("Instructions must reference guide: %q", Instructions)
+	}
+
+	tools := Tools(newTestHandlerStore(t), sites.NewLayout(t.TempDir()), testBaseURL, nil)
+	foundGuide := false
+	for _, tl := range tools {
+		if tl.Name == "guide" {
+			foundGuide = true
+			if tl.Description == "" {
+				t.Fatal("guide Description is empty")
+			}
+			continue
+		}
+		if strings.Contains(tl.Description, "guide") {
+			t.Fatalf("non-guide tool %q Description contains guide: %q", tl.Name, tl.Description)
+		}
+	}
+	// R-5B89-0H0T
+	if !foundGuide {
+		t.Fatal("Tools table missing guide")
+	}
+}
+
+func TestSyncDescriptionNamesDropboxWithoutPublishOrDeploy(t *testing.T) {
+	tools := Tools(newTestHandlerStore(t), sites.NewLayout(t.TempDir()), testBaseURL, nil)
+	var syncDesc string
+	for _, tl := range tools {
+		if tl.Name == "sync" {
+			syncDesc = tl.Description
+			break
+		}
+	}
+	if syncDesc == "" {
+		t.Fatal("Tools table missing sync")
+	}
+
+	// R-5CG5-E8RI
+	assertContains(t, syncDesc, "Dropbox")
+	lower := strings.ToLower(syncDesc)
+	if strings.Contains(lower, "publish") || strings.Contains(lower, "deploy") {
+		t.Fatalf("sync Description must not mention publish or deploy: %q", syncDesc)
+	}
+}
+
+func newTestHandlerStore(t *testing.T) *sites.Store {
+	t.Helper()
+	h, _ := newTestHandler(t)
+	return h.store
+}
+
+func assertContains(t *testing.T, got, want string) {
+	t.Helper()
+	if !strings.Contains(got, want) {
+		t.Fatalf("expected %q to contain %q", got, want)
 	}
 }
 
