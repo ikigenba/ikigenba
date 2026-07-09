@@ -746,9 +746,7 @@ func TestRestoreReassertsServedTreeInvariantBeforeRestart(t *testing.T) {
 		"chown:sites:sites:" + l.CacheDir(),
 		"chown:sites:web:" + l.WWWRoot(),
 		"chmod:2750:" + l.WWWRoot(),
-		"chmod:2750:" + l.WWWWorkingDir(),
 		"chmod:2750:" + l.WWWPublicDir(),
-		"chmod:2750:" + l.WWWPrivateDir(),
 		"systemctl:start sites",
 	}
 	if got := sys.opSeq(); strings.Join(got, "|") != strings.Join(wantOps, "|") {

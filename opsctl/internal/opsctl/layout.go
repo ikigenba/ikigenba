@@ -155,10 +155,7 @@ func (l Layout) WWWDir() string { return filepath.Join(l.StateDir(), "www") }
 
 func (l Layout) WWWRoot() string { return l.WWWDir() }
 
-// WWWWorkingDir is /opt/<app>/state/www/working — draft site trees authored via MCP.
-func (l Layout) WWWWorkingDir() string { return filepath.Join(l.WWWRoot(), "working") }
-
-// WWWPublicDir is /opt/<app>/state/www/public — publish symlinks → working trees.
+// WWWPublicDir is /opt/<app>/state/www/public — the public served surface.
 func (l Layout) WWWPublicDir() string {
 	return filepath.Join(l.WWWDir(), "public")
 }

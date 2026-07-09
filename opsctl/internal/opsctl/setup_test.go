@@ -247,7 +247,7 @@ func TestSetupWorkerNoFragmentStillCreatesFragmentSymlinkWithoutWebGroup(t *test
 	}
 }
 
-func TestSetupServedTreeUsesWebGroupSetgidPerms(t *testing.T) {
+func TestSetupCreatesOnlyPublicAndPrivateServedTiers(t *testing.T) {
 	const app = "sites"
 	o, sys, l := newSetupTestOpsctl(t, app)
 
@@ -262,17 +262,21 @@ func TestSetupServedTreeUsesWebGroupSetgidPerms(t *testing.T) {
 	}
 
 	// R-AT2M-15HI
-	for _, dir := range []string{l.WWWRoot(), l.WWWWorkingDir(), l.WWWPublicDir(), l.WWWPrivateDir()} {
+	// R-QFXB-VARQ
+	for _, dir := range []string{l.WWWRoot(), l.WWWPublicDir(), l.WWWPrivateDir()} {
 		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 			t.Fatalf("served www dir %s not created: %v", dir, err)
 		}
 		assertMode(t, dir, 0o750)
 	}
+	working := filepath.Join(l.WWWRoot(), "working")
+	if _, err := os.Stat(working); !os.IsNotExist(err) {
+		t.Fatalf("legacy working dir %s exists or stat failed unexpectedly: %v", working, err)
+	}
 	wantOps := []string{
 		"ensure-user:" + app + ":" + l.AppDir(),
 		"chown:" + app + ":web:" + l.WWWRoot(),
 		"chmod:2750:" + l.WWWRoot(),
-		"chmod:2750:" + l.WWWWorkingDir(),
 		"chmod:2750:" + l.WWWPublicDir(),
 		"chmod:2750:" + l.WWWPrivateDir(),
 		"daemon-reload",

@@ -22,8 +22,8 @@ type SetupOptions struct {
 
 	// WWWDirs are extra directories (absolute paths) to create at mode 0750 and
 	// hand to the app user plus web group via `chown -R <app>:web` on the www
-	// ROOT. They back the sites service's SEPARATE state/www tree (working/,
-	// public/, private/): the stock per-app state/ is 0750 <app>:<app> so nginx
+	// ROOT. They back the sites service's SEPARATE state/www tree (public/ and
+	// private/): the stock per-app state/ is 0750 <app>:<app> so nginx
 	// cannot traverse it, so sites serves from this web-group tree instead.
 	// Apps that need no static tree (every app but sites) pass none — and
 	// then setup creates no www dir at all, leaving their behavior unchanged. The
@@ -215,7 +215,7 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 // root, or nil for apps that need no static tree. Only `sites` opts in: it serves
 // from a SEPARATE world-readable www/ tree (the stock state/ is 0750 <app>:<app>,
 // untraversable by nginx's www-data). The dirs are ordered parent-first so a
-// single mkdir pass suffices: www/ → working/ → public/ → private/.
+// single mkdir pass suffices: www/ → public/ → private/.
 // The command layer calls this to populate SetupOptions.WWWDirs, so the tree is
 // derived per-app — `opsctl setup sites …` provisions it with no operator flag.
 func WWWDirsFor(root, app string) []string {
@@ -225,7 +225,6 @@ func WWWDirsFor(root, app string) []string {
 	l := NewLayout(root, app)
 	return []string{
 		l.WWWRoot(),
-		l.WWWWorkingDir(),
 		l.WWWPublicDir(),
 		l.WWWPrivateDir(),
 	}

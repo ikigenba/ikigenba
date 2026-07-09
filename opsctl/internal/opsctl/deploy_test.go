@@ -852,7 +852,7 @@ func TestDeployRestoresServedTreePermsAfterStateChown(t *testing.T) {
 	sys := &stubSystem{}
 	o := newOpsctl(t, root, app, sys, fakeEnv(app, version, 1, "APP="+app+"\n"))
 
-	for _, dir := range []string{l.WWWRoot(), l.WWWWorkingDir(), l.WWWPublicDir(), l.WWWPrivateDir()} {
+	for _, dir := range []string{l.WWWRoot(), l.WWWPublicDir(), l.WWWPrivateDir()} {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			t.Fatalf("create www dir %s: %v", dir, err)
 		}
@@ -877,7 +877,7 @@ func TestDeployRestoresServedTreePermsAfterStateChown(t *testing.T) {
 	if wwwIdx <= stateIdx {
 		t.Fatalf("served-tree chown index %d must be after state chown index %d in %v", wwwIdx, stateIdx, ops)
 	}
-	for _, dir := range []string{l.WWWRoot(), l.WWWWorkingDir(), l.WWWPublicDir(), l.WWWPrivateDir()} {
+	for _, dir := range []string{l.WWWRoot(), l.WWWPublicDir(), l.WWWPrivateDir()} {
 		chmod := "chmod:2750:" + dir
 		chmodIdx := eventIndex(ops, chmod)
 		if chmodIdx == -1 {
@@ -886,6 +886,29 @@ func TestDeployRestoresServedTreePermsAfterStateChown(t *testing.T) {
 		if chmodIdx <= stateIdx {
 			t.Fatalf("served-tree chmod %q index %d must be after state chown index %d in %v", chmod, chmodIdx, stateIdx, ops)
 		}
+	}
+}
+
+func TestEnsureWWWPermsSkipsAbsentTiersAndLegacyWorking(t *testing.T) {
+	// R-QEPF-HJ11
+	root := t.TempDir()
+	l := NewLayout(root, "sites")
+	if err := os.MkdirAll(filepath.Join(l.WWWRoot(), "working"), 0o750); err != nil {
+		t.Fatalf("create legacy working dir: %v", err)
+	}
+	sys := &stubSystem{}
+	o := newOpsctl(t, root, "sites", sys, nil)
+
+	if err := o.ensureWWWPerms(context.Background(), "sites", l); err != nil {
+		t.Fatalf("ensureWWWPerms with absent tiers: %v", err)
+	}
+
+	want := []string{
+		"chown:sites:web:" + l.WWWRoot(),
+		"chmod:2750:" + l.WWWRoot(),
+	}
+	if got := sys.opSeq(); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("ensureWWWPerms ops = %v, want only existing non-legacy dirs %v", got, want)
 	}
 }
 
@@ -1484,7 +1507,6 @@ func TestSitesSetupDeployBootsHealthWithStateWWWPaths(t *testing.T) {
 	}
 	for _, dir := range []string{
 		l.WWWRoot(),
-		l.WWWWorkingDir(),
 		l.WWWPublicDir(),
 		l.WWWPrivateDir(),
 	} {

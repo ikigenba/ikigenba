@@ -3,6 +3,7 @@ package opsctl
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -345,8 +346,8 @@ func TestSetup_PathRoutedService(t *testing.T) {
 }
 
 // TestSetup_WWWTree provisions the sites service: in addition to the standard
-// tree, setup must create the SEPARATE web-group www/ tree (working/, public/,
-// private/, and the www/ root) at mode 0750, `chown -R sites:web` the www root,
+// tree, setup must create the SEPARATE web-group www/ tree (public/, private/,
+// and the www/ root) at mode 0750, `chown -R sites:web` the www root,
 // and setgid the tier dirs. The WWWDirs are derived per-app via WWWDirsFor, so
 // `opsctl setup sites` provisions them with no operator flag.
 func TestSetup_WWWTree(t *testing.T) {
@@ -369,9 +370,9 @@ func TestSetup_WWWTree(t *testing.T) {
 
 	l := NewLayoutSys(root, sysRoot, app)
 
-	// The four served/working dirs plus the www/ root all exist at exactly 0750.
+	// The public and private served dirs plus the www/ root exist at exactly 0750.
 	for _, dir := range []string{
-		l.WWWRoot(), l.WWWWorkingDir(), l.WWWPublicDir(), l.WWWPrivateDir(),
+		l.WWWRoot(), l.WWWPublicDir(), l.WWWPrivateDir(),
 	} {
 		fi, err := os.Stat(dir)
 		if err != nil || !fi.IsDir() {
@@ -381,6 +382,9 @@ func TestSetup_WWWTree(t *testing.T) {
 			t.Errorf("www dir %s perm = %o, want 0750", dir, fi.Mode().Perm())
 		}
 	}
+	if _, err := os.Stat(filepath.Join(l.WWWRoot(), "working")); !os.IsNotExist(err) {
+		t.Fatalf("legacy working dir was created: %v", err)
+	}
 
 	// The www ROOT was handed to the sites user and web group via a recursive
 	// chown through the seam, then each tier dir was setgid.
@@ -388,7 +392,6 @@ func TestSetup_WWWTree(t *testing.T) {
 		"ensure-user:sites:" + l.AppDir(),
 		"chown:sites:web:" + l.WWWRoot(),
 		"chmod:2750:" + l.WWWRoot(),
-		"chmod:2750:" + l.WWWWorkingDir(),
 		"chmod:2750:" + l.WWWPublicDir(),
 		"chmod:2750:" + l.WWWPrivateDir(),
 		"daemon-reload",
@@ -436,7 +439,7 @@ func TestSetup_InstallsPackages(t *testing.T) {
 }
 
 // TestWWWDirsFor_OnlySites asserts the www tree is derived per-app: sites gets
-// the four-dir tree, every other app gets none — so non-sites setup creates no
+// the three-dir tree, every other app gets none — so non-sites setup creates no
 // www dir (no regression). Pairs with the ledger setup test, which never sees a
 // www dir or a chown op.
 func TestWWWDirsFor_OnlySites(t *testing.T) {
@@ -447,7 +450,6 @@ func TestWWWDirsFor_OnlySites(t *testing.T) {
 	got := WWWDirsFor("/opt", "sites")
 	want := []string{
 		"/opt/sites/state/www",
-		"/opt/sites/state/www/working",
 		"/opt/sites/state/www/public",
 		"/opt/sites/state/www/private",
 	}
