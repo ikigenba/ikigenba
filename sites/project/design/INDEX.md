@@ -16,14 +16,15 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D10 → `project/design/D10.md` — `internal/files`: confined filesystem operations as native Go (ports the confined Read/Edit/Glob/Grep/Write/List/Mkdir + symlink-resolving ConfinePath; no agentkit, no JSON, no agent framing) — owns R-027Y-BQ1I, R-03FU-PHS7, R-04NR-39IW, R-05VN-H19L, R-073J-UT0A, R-08BG-8KQZ, R-3ZP8-T0GP, R-40X5-6S7E, R-09JC-MCHO, R-0AR9-048D, R-0D71-RNPR, R-0EEY-5FGG
 - D11 → `project/design/D11.md` — Rewire the MCP file tools onto `internal/files` and drop `agentkit` (delete the bridge, hand-write the four schemas, cleaner structured results, typed confinement envelope, remove the `go.mod` require+replace; surface-preserving) — owns R-0FMU-J775, R-0GUQ-WYXU, R-0I2N-AQOJ, R-0JAJ-OIF8, R-0KIG-2A5X
 - D12 → `project/design/D12.md` — Web surface from `share/www` through the chassis (de-embed via `Spec.WWW`): move `landing.html` + `static/` to `sites/share/www`, render at `GET /{$}` via `rt.WWW()`, delete `internal/web` and the service-side `/static/` mount (chassis auto-mounts it); rewrites the mechanism of D1/D2/D3/D6/D7/D8 — owns R-0SF5-VPQF, R-0TN2-9HH4
-- D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the fourteen-domain-tool table; delete the local JSON-RPC transport + local `health`; chassis supplies `health`/`reflection` (sites gains `reflection`, empty graph); mirror client becomes a constructor param; supersedes D11's R-0KIG-2A5X (16-tool set) — owns R-0UUY-N97T, R-P21E-0285
+- D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the domain-tool table; delete the local JSON-RPC transport + local `health`; chassis supplies `health`/`reflection` (sites gains `reflection`, empty graph); mirror client becomes a constructor param; supersedes D11's R-0KIG-2A5X (15-tool set) — owns R-0UUY-N97T, R-P21E-0285
 - D14 → `project/design/D14.md` — Delete the `internal/db` `Open`/`Migrate` shim (keep only the embedded `FS` + load guard; test harnesses call `appkit/db` directly), normalize the composition root (relocate the `Handlers` closure inside `sitesSpec()`; no post-construction `.Handlers` mutation; keep the builder), and true up `AGENTS.md` if present — none (structural; shim deletion + composition-root normalization + doc truth)
-- D15 → `project/design/D15.md` — Data model: a `public` boolean and `created_by`, retiring the publish lifecycle (`tier`/`published`/`published_at` dropped; two immutable migrations; `Store.Create(name, createdBy)` + `SetVisibility`) — owns R-QRDS-EIS1, R-QSLO-SAIQ, R-QTTL-629F, R-QQ5W-0R1C
+- D15 → `project/design/D15.md` — Data model: a `public` boolean and `created_by`, retiring the publish lifecycle (`tier`/`published`/`published_at` dropped; two immutable migrations; `Store.Create(name, createdBy, public)` persists the requested visibility + `SetVisibility`) — owns R-QRDS-EIS1, R-QSLO-SAIQ, R-QTTL-629F, R-QQ5W-0R1C
 - D16 → `project/design/D16.md` — Filesystem layout: files live at the served path `SITES_ROOT/<public|private>/<slug>`; delete the working tree and symlink indirection (`Layout.SiteDir`/`SiteBase`/`Move`; `publish.go` removed) — owns R-QV1H-JU04, R-QW9D-XLQT, R-QYP6-P587
 - D17 → `project/design/D17.md` — In-process static serving of hosted sites (`internal/serve`): index-mapping, no-listing, confined, trailing-slash redirect; mounted ungated at `GET /public/` and `GET /private/` — owns R-QZX3-2WYW, R-R14Z-GOPL, R-R2CV-UGGA, R-R3KS-886Z, R-R4SO-LZXO, R-R60K-ZROD
 - D18 → `project/design/D18.md` — nginx fragment proxies the public/private tiers to the process (no `alias`; private keeps `/_session-authn`; nginx reads no state off disk) — owns R-R78H-DJF2, R-R8GD-RB5R, R-R9OA-52WG
 - D19 → `project/design/D19.md` — The landing page lists the sites that exist (live-rendered from `store.List`; slug-as-link/public-private/creator/created-at; empty-state safe) — owns R-RAW6-IUN5, R-RC42-WMDU, R-WMWB-7EWX
-- D20 → `project/design/D20.md` — MCP surface: drop publish/unpublish, add `set_visibility`, thread `created_by` from Identity, serve the live folder via `SiteDir` (file tools/sync/delete retargeted) — owns R-RDBZ-AE4J, R-RFRS-1XLX, R-RGZO-FPCM, R-RI7K-TH3B, R-RJFH-78U0
+- D20 → `project/design/D20.md` — MCP surface: drop publish/unpublish, add `set_visibility`, thread `created_by` from Identity, serve the live folder via `SiteDir` (file tools/sync/delete retargeted), `create(name, public?)` births at the chosen visibility in one insert (default private), and `sync` requires an already-created site (no create-or-reuse) — owns R-RDBZ-AE4J, R-RFRS-1XLX, R-RGZO-FPCM, R-RI7K-TH3B, R-RJFH-78U0, R-554R-3MBC, R-56CN-HE21
+- D21 → `project/design/D21.md` — MCP self-discovery convention: rewrite the Tier-0 `instructions` with routing vocabulary + a guide pointer, replace `describe` with a read-only embedded `guide` tool (worked examples), keyword-forward the `create`/`sync` descriptions (sync avoids publish/deploy wording); reference the guide in exactly two channels — owns R-57KJ-V5SQ, R-58SG-8XJF, R-5A0C-MPA4, R-5B89-0H0T, R-5CG5-E8RI
 
 ## Verification ids → Decision
 
@@ -95,6 +96,13 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-RGZO-FPCM → D20 → `project/design/D20.md`
 - R-RI7K-TH3B → D20 → `project/design/D20.md`
 - R-RJFH-78U0 → D20 → `project/design/D20.md`
+- R-554R-3MBC → D20 → `project/design/D20.md`
+- R-56CN-HE21 → D20 → `project/design/D20.md`
+- R-57KJ-V5SQ → D21 → `project/design/D21.md`
+- R-58SG-8XJF → D21 → `project/design/D21.md`
+- R-5A0C-MPA4 → D21 → `project/design/D21.md`
+- R-5B89-0H0T → D21 → `project/design/D21.md`
+- R-5CG5-E8RI → D21 → `project/design/D21.md`
 - R-WKGI-FVFJ → D6 → `project/design/D06.md`
 - R-WLOE-TN68 → D6 → `project/design/D06.md`
 - R-WMWB-7EWX → D19 → `project/design/D19.md`

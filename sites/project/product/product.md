@@ -70,18 +70,25 @@ sites does this and only this:
 - **Serve site bytes in-process.** The sites process serves the files for both
   visibilities from its own loopback server; nginx proxies to it and never reads
   the site files off disk itself.
-- **Manage sites over MCP.** Create a site, edit its files with the file tools,
-  flip it public↔private, and delete it — through the `ikigenba_sites_*` tools.
-  Content edits are **immediately live** (there is no working-copy/publish
-  indirection).
+- **Manage sites over MCP.** Create a site — private by default, or public in a
+  single step — edit its files with the file tools, flip it public↔private, and
+  delete it, through the `ikigenba_sites_*` tools. Content edits are
+  **immediately live** (there is no working-copy/publish indirection).
 - **Record who and when.** Each site records the owner who created it and the
-  creation time, surfaced by the tools and on the landing page.
+  creation time, surfaced by the tools and on the landing page. Because `create`
+  is the only way a site comes into being, **every site has a real creator** —
+  there are no anonymously-imported sites.
 - **Serve a landing page at the bare mount root.** A dynamic, session-gated page
   showing the service version and the list of existing sites (slug, visibility,
   creator, created-at), styled with the suite's Carbon design system.
+- **Describe itself to a connecting agent.** The MCP surface is self-describing:
+  its connection instructions name what sites is for in everyday words and point
+  at a `guide` tool that returns the site model and worked examples, so an agent
+  can discover and drive sites from the connection alone, with no external skill.
 - **Import from a Dropbox mirror.** The `sync` tool reconciles a Dropbox-mirrored
-  subtree into a site's files (unchanged behavior; it now writes directly into
-  the site's served folder rather than a separate working tree).
+  subtree into an **already-created** site's files (the site must be created
+  first; `sync` never brings a site into being). It writes directly into the
+  site's served folder and leaves the site's visibility unchanged.
 
 It deliberately does **nothing else**. In particular it does not: keep any
 publish/unpublish lifecycle, working tree, or served-symlink tree; let nginx
@@ -98,7 +105,8 @@ Promised values the design must honor verbatim and never re-declare:
   dashboard user).
 - **A site that exists is served.** There is no publish step and no unpublished
   state: creating a site and putting files in it makes it live; deleting it takes
-  it offline. Flipping public↔private is the only visibility control.
+  it offline. Choosing public/private at create, and flipping it thereafter, are
+  the only visibility controls.
 - **sites serves every byte under its mount.** For any path under
   `/srv/sites/…`, the bytes come from the sites process — nginx proxies, it does
   not serve site files off disk.
@@ -117,7 +125,14 @@ Promised values the design must honor verbatim and never re-declare:
 
 - **Creating a site and adding files makes it live** — with no separate publish
   step. The owner creates a slug, writes files into it, and the site is served at
-  its URL immediately.
+  its URL immediately. A site is **private by default**; the owner may instead
+  create it **public in a single call** when it should be world-visible from the
+  start.
+- **An agent can learn sites from the connection alone** — on connecting, the
+  instructions say what sites is for in the words a user actually uses, and a
+  `guide` tool returns the site model, the rules, and worked examples (including
+  creating a public page in one call and importing from Dropbox). No external
+  skill or doc is needed to route work to sites or to drive its tools.
 - **Public sites are served to anyone; private sites only to a logged-in user.**
   Opening a public site's path returns its files with no login; opening a private
   site's path without a dashboard session is refused with `401`.
@@ -134,8 +149,10 @@ Promised values the design must honor verbatim and never re-declare:
 - **A browser with no dashboard session is refused the landing page** — `401`,
   not the page.
 - **Agents are unaffected in how they connect** — the bearer-gated `/mcp`, the
-  PRM well-known, and `/health` behave as before; only the *tools* change (no
-  `publish`/`unpublish`; visibility is a flag).
+  PRM well-known, and `/health` behave as before. The *tools* evolve: `create`
+  takes an optional public flag, `sync` requires the site to already exist, and
+  the self-description tool is `guide` (returning worked examples) rather than
+  `describe`.
 - **The version on the page is the version actually running** — so the operator
   can confirm a deploy in a browser.
 
@@ -146,6 +163,14 @@ service:
 
 - As the owner I create a site, write an `index.html` into it, and immediately
   fetch its URL and get that page — with no publish step.
+- As the owner I create a site **public in one call**, and a request with no
+  dashboard session is immediately served its page; a site I create with no
+  visibility flag is private and returns `401` to that same session-less request.
+- As an agent I call `sync` for a site that does not exist yet and get a clear
+  "not found — create it first" refusal, not a silently-created site.
+- As an agent connecting to sites for the first time I can tell what it is for,
+  and by calling `guide` I get worked examples that let me create and publish a
+  site without any external instructions.
 - A site I set **public** is served to a request with no dashboard session; a site
   I set **private** returns `401` to a request with no session and its files to a
   request with a valid session.
