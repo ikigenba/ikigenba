@@ -55,14 +55,6 @@ type System interface {
 	// box runs `useradd --system --home-dir /opt/<app> --shell /usr/sbin/nologin
 	// <app>`). Idempotent: a no-op when the user already exists.
 	EnsureSystemUser(ctx context.Context, app, homeDir string) error
-	// EnsureSystemGroup creates a system group if absent (the box runs
-	// `groupadd --system <group>`). Idempotent: a no-op when the group already
-	// exists.
-	EnsureSystemGroup(ctx context.Context, group string) error
-	// AddUserToGroup adds an existing user to a supplementary group (the box runs
-	// `usermod -aG <group> <user>`). Idempotent: a no-op when the user is already
-	// a member of the group.
-	AddUserToGroup(ctx context.Context, user, group string) error
 	// DeleteSystemUser removes the dedicated app user (the box runs `userdel
 	// <app>`), the inverse of EnsureSystemUser invoked by teardown. Idempotent: a
 	// no-op when the user is already absent (a partially-torn-down box).
@@ -73,9 +65,6 @@ type System interface {
 	// a freshly-created DB (+ -wal/-shm + generation file) owned root:root and
 	// crash-loop the unit (the service user cannot take a write lock). Idempotent.
 	ChownTree(ctx context.Context, owner, group, path string) error
-	// Chmod sets path's mode (the box runs `chmod`). setup uses it to set setgid
-	// on served-tree tier dirs so new entries inherit the web group.
-	Chmod(ctx context.Context, path string, mode os.FileMode) error
 	// DaemonReload reloads systemd's unit cache after a unit file is written (the
 	// box runs `systemctl daemon-reload`).
 	DaemonReload(ctx context.Context) error
@@ -228,27 +217,6 @@ func (s RealSystem) EnsureSystemUser(ctx context.Context, app, homeDir string) e
 	return run(ctx, "useradd", "--system", "--home-dir", homeDir, "--shell", "/usr/sbin/nologin", app)
 }
 
-func (s RealSystem) EnsureSystemGroup(ctx context.Context, group string) error {
-	// getent group <group> succeeds iff the group exists; groupadd only when
-	// absent, matching EnsureSystemUser's idempotent shape.
-	if err := exec.CommandContext(ctx, "getent", "group", group).Run(); err == nil {
-		return nil
-	}
-	return run(ctx, "groupadd", "--system", group)
-}
-
-func (s RealSystem) AddUserToGroup(ctx context.Context, user, group string) error {
-	cmd := exec.CommandContext(ctx, "id", "-nG", user)
-	if out, err := cmd.Output(); err == nil {
-		for _, existing := range strings.Fields(string(out)) {
-			if existing == group {
-				return nil
-			}
-		}
-	}
-	return run(ctx, "usermod", "-aG", group, user)
-}
-
 func (s RealSystem) DeleteSystemUser(ctx context.Context, app string) error {
 	// id <app> succeeds iff the user exists; userdel only when present (idempotent,
 	// the inverse of EnsureSystemUser's `id || useradd`).
@@ -260,10 +228,6 @@ func (s RealSystem) DeleteSystemUser(ctx context.Context, app string) error {
 
 func (s RealSystem) ChownTree(ctx context.Context, owner, group, path string) error {
 	return run(ctx, "chown", "-R", owner+":"+group, path)
-}
-
-func (s RealSystem) Chmod(ctx context.Context, path string, mode os.FileMode) error {
-	return run(ctx, "chmod", fmt.Sprintf("%04o", mode), path)
 }
 
 func (s RealSystem) DaemonReload(ctx context.Context) error {

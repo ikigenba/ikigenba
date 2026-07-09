@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -59,16 +58,6 @@ func (s *stubSystem) EnsureSystemUser(ctx context.Context, app, homeDir string) 
 	return nil
 }
 
-func (s *stubSystem) EnsureSystemGroup(ctx context.Context, group string) error {
-	s.record("ensure-group:" + group)
-	return nil
-}
-
-func (s *stubSystem) AddUserToGroup(ctx context.Context, user, group string) error {
-	s.record("add-user-to-group:" + user + ":" + group)
-	return nil
-}
-
 func (s *stubSystem) DeleteSystemUser(ctx context.Context, app string) error {
 	s.record("delete-user:" + app)
 	return nil
@@ -76,11 +65,6 @@ func (s *stubSystem) DeleteSystemUser(ctx context.Context, app string) error {
 
 func (s *stubSystem) ChownTree(ctx context.Context, owner, group, path string) error {
 	s.record("chown:" + owner + ":" + group + ":" + path)
-	return nil
-}
-
-func (s *stubSystem) Chmod(ctx context.Context, path string, mode os.FileMode) error {
-	s.record("chmod:" + strconv.FormatUint(uint64(mode), 8) + ":" + path)
 	return nil
 }
 

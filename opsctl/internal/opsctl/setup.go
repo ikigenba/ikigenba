@@ -268,18 +268,6 @@ func renderFragment(src string) string {
 	return strings.TrimRight(src, "\n") + "\n"
 }
 
-func stateWWWFragment(l Layout) string {
-	return fmt.Sprintf(`location /srv/%[1]s/public/ {
-    alias %[2]s/;
-}
-
-location /srv/%[1]s/private/ {
-    auth_request /_session-authn;
-    alias %[3]s/;
-}
-`, l.App, l.WWWPublicDir(), l.WWWPrivateDir())
-}
-
 // LoadFragmentFile reads a fragment source file (the committed etc/nginx.conf) for
 // the CLI path; on the box the operator stages it next to the binary. An empty
 // path yields an empty fragment (a worker/batch service with no public route).
