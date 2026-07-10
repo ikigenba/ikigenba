@@ -193,7 +193,12 @@ func main() {
 			// file's bytes; /list is its enumeration twin (the loopback peer-walk
 			// route sites' `sync` consumes, ADR-import-sync §3).
 			rt.Handle("GET /content", svc.ContentHandler())
+			rt.Handle("PUT /content", svc.WriteHandler())
+			rt.Handle("DELETE /content", svc.WriteHandler())
+			rt.Handle("POST /mkdir", svc.MkdirHandler())
+			rt.Handle("POST /move", svc.MoveHandler())
 			rt.Handle("GET /list", svc.ListHandler())
+			rt.Handle("GET /stat", svc.StatHandler())
 			return nil
 		},
 		// Producer fires after Handlers: wrap the outbox with the content base so

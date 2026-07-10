@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 )
@@ -118,6 +119,192 @@ func (s *Service) Stat(path string) (Entry, error) {
 		return Entry{}, err
 	}
 	return Entry{Path: d.Path, Kind: KindDir, UpdatedAt: d.UpdatedAt, PathLower: d.PathLower}, nil
+}
+
+// Write durably stores src in the local mirror, then atomically updates the
+// index, appends its lifecycle event, and queues the asynchronous Dropbox push.
+// Local writes have no Dropbox revision yet, so rev remains empty until the
+// uploader receives Dropbox's authoritative revision.
+func (s *Service) Write(ctx context.Context, path string, src io.Reader, clientID string) (FileRow, error) {
+	if err := s.validateWritePath(path); err != nil {
+		return FileRow{}, err
+	}
+	hash, size, err := s.Mirror.WriteFrom(path, src)
+	if err != nil {
+		return FileRow{}, mutationError(err)
+	}
+	var row FileRow
+	created := false
+	now := s.now()
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		current, getErr := s.Store.GetFile(tx, path)
+		if errors.Is(getErr, ErrNotFound) {
+			created = true
+		} else if getErr != nil {
+			return getErr
+		} else {
+			row.Rev = current.Rev
+		}
+		if err := s.upsertDirParents(tx, path); err != nil {
+			return err
+		}
+		if err := s.Store.UpsertFile(tx, path, row.Rev, hash, size, now); err != nil {
+			return err
+		}
+		row = FileRow{Path: path, Rev: row.Rev, ContentHash: hash, Size: size, UpdatedAt: now, PathLower: foldPath(path)}
+		typeName := EventFileModified
+		if created {
+			typeName = EventFileCreated
+		}
+		if err := s.appendEvent(tx, FileEvent{Type: typeName, Path: path, Rev: row.Rev, ContentHash: hash, Size: size, OccurredAt: now, Origin: clientID}); err != nil {
+			return err
+		}
+		return s.Store.EnqueueUpload(tx, localUpload(path, "put", sql.NullString{}, clientID, now))
+	})
+	if err != nil {
+		return FileRow{}, err
+	}
+	s.ring()
+	return row, nil
+}
+
+// Mkdir creates and indexes a directory and queues its asynchronous creation.
+func (s *Service) Mkdir(ctx context.Context, path, clientID string) error {
+	if err := s.validateWritePath(path); err != nil {
+		return err
+	}
+	if err := s.Mirror.Mkdir(path); err != nil {
+		return mutationError(err)
+	}
+	now := s.now()
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := s.upsertDirParents(tx, path); err != nil {
+			return err
+		}
+		if err := s.Store.UpsertDir(tx, path); err != nil {
+			return err
+		}
+		return s.Store.EnqueueUpload(tx, localUpload(path, "mkdir", sql.NullString{}, clientID, now))
+	})
+}
+
+// Delete removes a file or directory tree. It is idempotent: an absent index
+// entry produces neither an event nor an upload request.
+func (s *Service) Delete(ctx context.Context, path, clientID string) (removed int, err error) {
+	if err := s.validateWritePath(path); err != nil {
+		return 0, err
+	}
+	if err := s.Mirror.RemoveTree(path); err != nil {
+		return 0, mutationError(err)
+	}
+	var deleted []FileRow
+	changed := false
+	now := s.now()
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		var dirs []string
+		deleted, err = s.Store.ListFiles(tx, foldPath(path), "", int(^uint(0)>>1))
+		if err != nil {
+			return err
+		}
+		_, dirs, err = s.Store.DeleteDirSubtree(tx, path)
+		if err != nil {
+			return err
+		}
+		changed = len(deleted) > 0 || len(dirs) > 0
+		for _, row := range deleted {
+			if err := s.appendEvent(tx, FileEvent{Type: EventFileDeleted, Path: row.Path, Rev: row.Rev, ContentHash: row.ContentHash, Size: row.Size, OccurredAt: now, Origin: clientID}); err != nil {
+				return err
+			}
+		}
+		if !changed {
+			return nil
+		}
+		return s.Store.EnqueueUpload(tx, localUpload(path, "delete", sql.NullString{}, clientID, now))
+	})
+	if err != nil {
+		return 0, err
+	}
+	if len(deleted) > 0 {
+		s.ring()
+	}
+	return len(deleted), nil
+}
+
+// Move relocates a file or directory in the mirror and atomically reflects the
+// path-keyed deletion and creation events in the index.
+func (s *Service) Move(ctx context.Context, from, to, clientID string) error {
+	if err := s.validateWritePath(from); err != nil {
+		return err
+	}
+	if err := s.validateWritePath(to); err != nil {
+		return err
+	}
+	if err := s.Mirror.Rename(from, to); err != nil {
+		return mutationError(err)
+	}
+	now := s.now()
+	var moved []FileRow
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		if file, getErr := s.Store.GetFile(tx, from); getErr == nil {
+			moved = []FileRow{file}
+			if err := s.Store.DeleteFile(tx, from); err != nil {
+				return err
+			}
+			if err := s.upsertDirParents(tx, to); err != nil {
+				return err
+			}
+			if err := s.Store.UpsertFile(tx, to, file.Rev, file.ContentHash, file.Size, now); err != nil {
+				return err
+			}
+		} else if errors.Is(getErr, ErrNotFound) {
+			files, listErr := s.Store.ListFiles(tx, foldPath(from), "", int(^uint(0)>>1))
+			if listErr != nil {
+				return listErr
+			}
+			if err := s.Store.RenameDirSubtree(tx, from, to); err != nil {
+				return err
+			}
+			moved = files
+		} else {
+			return getErr
+		}
+		for _, file := range moved {
+			if err := s.appendEvent(tx, FileEvent{Type: EventFileDeleted, Path: file.Path, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
+				return err
+			}
+			newPath := to + file.Path[len(from):]
+			if err := s.appendEvent(tx, FileEvent{Type: EventFileCreated, Path: newPath, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
+				return err
+			}
+		}
+		return s.Store.EnqueueUpload(tx, localUpload(from, "move", sql.NullString{String: to, Valid: true}, clientID, now))
+	})
+	if err != nil {
+		return err
+	}
+	if len(moved) > 0 {
+		s.ring()
+	}
+	return nil
+}
+
+func (s *Service) validateWritePath(path string) error {
+	if path == "" || path == "/" {
+		return fmt.Errorf("%w: path is required", ErrValidation)
+	}
+	_, err := s.Mirror.resolve(path)
+	return mutationError(err)
+}
+
+func mutationError(err error) error {
+	if err != nil && errors.Is(err, ErrPathEscape) {
+		return fmt.Errorf("%w: %w", ErrValidation, err)
+	}
+	return err
+}
+
+func localUpload(path, op string, dest sql.NullString, clientID, now string) UploadQueueRow {
+	return UploadQueueRow{Path: path, Op: op, Dest: dest, Origin: sql.NullString{String: clientID, Valid: clientID != ""}, EnqueuedAt: now, NextAttemptAt: now}
 }
 
 func (s *Service) upsertDirParents(tx *sql.Tx, path string) error {
