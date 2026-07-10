@@ -55,6 +55,13 @@ var hostNotifyVar = "https://notify.dropboxapi.com"
 // concatenated, and that concatenation is SHA-256'd and hex-encoded.
 const contentHashBlockSize = 4 * 1024 * 1024
 
+// uploadSimpleLimit is Dropbox's maximum size for the one-request upload API.
+// Larger files must use an upload session.
+const uploadSimpleLimit int64 = 150 * 1024 * 1024
+
+// uploadChunkSize bounds the memory retained while streaming an upload session.
+const uploadChunkSize = 8 * 1024 * 1024
+
 // Longpoll timeout policy (§2). Dropbox blocks for up to LongpollTimeoutSeconds
 // (max 480) plus up to ~90s of random jitter, so the longpoll HTTP client needs
 // a wall-clock budget comfortably above 480+90.
@@ -281,6 +288,116 @@ func (c *Client) statusError(status int, body []byte) error {
 		return fmt.Errorf("dropbox: status %d: %s", status, strings.TrimSpace(ae.Summary))
 	}
 	return fmt.Errorf("dropbox: status %d: %s", status, strings.TrimSpace(string(body)))
+}
+
+// contentUpload posts bytes to a Dropbox content endpoint. Upload bodies are
+// streams, so unlike rpcCall they cannot be replayed after a 401; acquire the
+// bearer before consuming the reader and let the caller retry with a fresh
+// reader if Dropbox rejects it.
+func (c *Client) contentUpload(ctx context.Context, path string, arg any, body io.Reader, out any) error {
+	argJSON, err := json.Marshal(arg)
+	if err != nil {
+		return err
+	}
+	tok, err := c.token.token(ctx, false)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, hostContent+path, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Dropbox-API-Arg", httpHeaderSafeJSON(argJSON))
+
+	resp, err := c.rpc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	response, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		return c.statusError(resp.StatusCode, response)
+	}
+	if out != nil {
+		if err := json.Unmarshal(response, out); err != nil {
+			return fmt.Errorf("dropbox: decode %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// Upload writes src to path using Dropbox's overwrite conflict policy. Files
+// over 150 MiB are streamed through an upload session in bounded chunks.
+func (c *Client) Upload(ctx context.Context, path string, src io.Reader, size int64) (string, error) {
+	if size < 0 {
+		return "", fmt.Errorf("dropbox upload: negative size %d", size)
+	}
+	commit := map[string]any{"path": path, "mode": "overwrite", "autorename": false, "mute": false}
+	var metadata struct {
+		Rev string `json:"rev"`
+	}
+	if size <= uploadSimpleLimit {
+		if err := c.contentUpload(ctx, "/2/files/upload", commit, io.LimitReader(src, size), &metadata); err != nil {
+			return "", fmt.Errorf("dropbox upload: %w", err)
+		}
+		return metadata.Rev, nil
+	}
+
+	buf := make([]byte, uploadChunkSize)
+	first := int64(uploadChunkSize)
+	if first > size {
+		first = size
+	}
+	if _, err := io.ReadFull(src, buf[:first]); err != nil {
+		return "", fmt.Errorf("dropbox upload: read first chunk: %w", err)
+	}
+	var start struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := c.contentUpload(ctx, "/2/files/upload_session/start", map[string]bool{"close": false}, bytes.NewReader(buf[:first]), &start); err != nil {
+		return "", fmt.Errorf("dropbox upload session start: %w", err)
+	}
+	if start.SessionID == "" {
+		return "", fmt.Errorf("dropbox upload session start: empty session_id")
+	}
+
+	for offset := first; offset < size; {
+		n := int64(uploadChunkSize)
+		if remaining := size - offset; n > remaining {
+			n = remaining
+		}
+		if _, err := io.ReadFull(src, buf[:n]); err != nil {
+			return "", fmt.Errorf("dropbox upload session: read chunk at %d: %w", offset, err)
+		}
+		cursor := map[string]any{"session_id": start.SessionID, "offset": offset}
+		if offset+n == size {
+			finish := map[string]any{"cursor": cursor, "commit": commit}
+			if err := c.contentUpload(ctx, "/2/files/upload_session/finish", finish, bytes.NewReader(buf[:n]), &metadata); err != nil {
+				return "", fmt.Errorf("dropbox upload session finish: %w", err)
+			}
+		} else if err := c.contentUpload(ctx, "/2/files/upload_session/append_v2", map[string]any{"cursor": cursor, "close": false}, bytes.NewReader(buf[:n]), nil); err != nil {
+			return "", fmt.Errorf("dropbox upload session append: %w", err)
+		}
+		offset += n
+	}
+	return metadata.Rev, nil
+}
+
+// CreateFolder creates path in the app folder.
+func (c *Client) CreateFolder(ctx context.Context, path string) error {
+	return c.rpcCall(ctx, hostRPC, "/2/files/create_folder_v2", map[string]any{"path": path, "autorename": false}, nil)
+}
+
+// DeletePath removes path from the app folder.
+func (c *Client) DeletePath(ctx context.Context, path string) error {
+	return c.rpcCall(ctx, hostRPC, "/2/files/delete_v2", map[string]string{"path": path}, nil)
+}
+
+// Move relocates from to in the app folder without creating a conflict copy.
+func (c *Client) Move(ctx context.Context, from, to string) error {
+	return c.rpcCall(ctx, hostRPC, "/2/files/move_v2", map[string]any{"from_path": from, "to_path": to, "autorename": false}, nil)
 }
 
 // ---------------------------------------------------------------------------

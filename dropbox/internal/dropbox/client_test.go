@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,6 +24,98 @@ func TestContentHashEmpty(t *testing.T) {
 	if got := ContentHash([]byte{}); got != want {
 		t.Fatalf("empty-slice content hash = %s, want %s", got, want)
 	}
+}
+
+// R-KJE9-UC77
+// TestUploadUsesOverwriteAndSessionChunks drives both upload paths over a
+// hermetic fake, asserting the simple commit and the session request sequence.
+func TestUploadUsesOverwriteAndSessionChunks(t *testing.T) {
+	type call struct {
+		path string
+		arg  map[string]any
+		body int64
+	}
+	var calls []call
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth2/token" {
+			json.NewEncoder(w).Encode(map[string]any{"access_token": "ACCESS", "expires_in": 14400})
+			return
+		}
+		arg := map[string]any{}
+		if err := json.Unmarshal([]byte(r.Header.Get("Dropbox-API-Arg")), &arg); err != nil {
+			t.Errorf("decode Dropbox-API-Arg: %v", err)
+		}
+		body, err := io.Copy(io.Discard, r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+		}
+		calls = append(calls, call{path: r.URL.Path, arg: arg, body: body})
+		switch r.URL.Path {
+		case "/2/files/upload":
+			json.NewEncoder(w).Encode(map[string]any{"rev": "small-rev"})
+		case "/2/files/upload_session/start":
+			json.NewEncoder(w).Encode(map[string]any{"session_id": "session-1"})
+		case "/2/files/upload_session/append_v2":
+			w.WriteHeader(http.StatusOK)
+		case "/2/files/upload_session/finish":
+			json.NewEncoder(w).Encode(map[string]any{"rev": "large-rev"})
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv)
+	if rev, err := c.Upload(context.Background(), "/small.txt", strings.NewReader("small"), 5); err != nil || rev != "small-rev" {
+		t.Fatalf("small Upload = %q, %v; want small-rev, nil", rev, err)
+	}
+	largeSize := uploadSimpleLimit + 1
+	if rev, err := c.Upload(context.Background(), "/large.bin", &repeatingReader{}, largeSize); err != nil || rev != "large-rev" {
+		t.Fatalf("large Upload = %q, %v; want large-rev, nil", rev, err)
+	}
+	if len(calls) < 4 {
+		t.Fatalf("upload calls = %d, want simple plus session calls", len(calls))
+	}
+	if got := calls[0]; got.path != "/2/files/upload" || got.arg["mode"] != "overwrite" || got.arg["path"] != "/small.txt" || got.body != 5 {
+		t.Fatalf("simple upload = %+v, want overwrite /small.txt with 5 bytes", got)
+	}
+	var start, appendCall, finish *call
+	for i := range calls[1:] {
+		got := &calls[i+1]
+		switch got.path {
+		case "/2/files/upload_session/start":
+			start = got
+		case "/2/files/upload_session/append_v2":
+			appendCall = got
+		case "/2/files/upload_session/finish":
+			finish = got
+		}
+	}
+	if start == nil || appendCall == nil || finish == nil {
+		t.Fatalf("session calls missing: start=%v append=%v finish=%v", start != nil, appendCall != nil, finish != nil)
+	}
+	var sessionBytes int64
+	for _, got := range calls[1:] {
+		sessionBytes += got.body
+	}
+	if start.body != uploadChunkSize || appendCall.body != uploadChunkSize || finish.body <= 0 || finish.body > uploadChunkSize || sessionBytes != largeSize {
+		t.Fatalf("session chunks = start:%d append:%d finish:%d total:%d, want bounded %d-byte chunks totalling %d", start.body, appendCall.body, finish.body, sessionBytes, uploadChunkSize, largeSize)
+	}
+	commit, ok := finish.arg["commit"].(map[string]any)
+	if !ok || commit["mode"] != "overwrite" || commit["path"] != "/large.bin" {
+		t.Fatalf("finish commit = %#v, want overwrite /large.bin", finish.arg["commit"])
+	}
+}
+
+// repeatingReader supplies deterministic bytes without allocating the >150 MiB
+// source needed to drive the upload-session path.
+type repeatingReader struct{}
+
+func (*repeatingReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = byte(i)
+	}
+	return len(p), nil
 }
 
 // TestContentHashSingleBlock: for data smaller than one 4 MiB block, the result
