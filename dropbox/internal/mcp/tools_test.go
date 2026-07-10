@@ -129,11 +129,12 @@ func callTool(t *testing.T, h http.Handler, name, args string) (map[string]any, 
 
 func TestToolsListComposesDropboxToolsWithChassisTools(t *testing.T) {
 	// R-QQJT-LKCV
+	// R-KRXK-IQE2
 	h := newHandler(t)
 	res := rpc(t, h, "tools/list", `{}`)
 	tools, _ := res["tools"].([]any)
-	if len(tools) != 4 {
-		t.Fatalf("tools/list returned %d tools, want exactly 4: %v", len(tools), tools)
+	if len(tools) != 8 {
+		t.Fatalf("tools/list returned %d tools, want exactly 8: %v", len(tools), tools)
 	}
 	names := map[string]bool{}
 	for _, tl := range tools {
@@ -151,14 +152,14 @@ func TestToolsListComposesDropboxToolsWithChassisTools(t *testing.T) {
 			t.Errorf("tool %q inputSchema is not an object schema: %v", name, tool["inputSchema"])
 		}
 	}
-	for _, want := range []string{"health", "reflection", "list", "get"} {
+	for _, want := range []string{"health", "reflection", "list", "get", "put", "mkdir", "delete", "move"} {
 		if !names[want] {
 			t.Errorf("tools/list missing %q (got %v)", want, names)
 		}
 	}
 	for name := range names {
 		switch name {
-		case "health", "reflection", "list", "get":
+		case "health", "reflection", "list", "get", "put", "mkdir", "delete", "move":
 		default:
 			t.Errorf("unexpected tool %q in tools/list: %v", name, names)
 		}
@@ -543,6 +544,91 @@ func TestGet_MissingPath(t *testing.T) {
 	em := p["error"].(map[string]any)
 	if em["code"] != "validation" {
 		t.Errorf("code = %v, want validation", em["code"])
+	}
+}
+
+func TestPut_WritesBase64BytesEnqueuesUploadAndRejectsOversize(t *testing.T) {
+	// R-KT5G-WI4R
+	h, svc := newMirrorHandler(t)
+	body := []byte("MCP writes these exact bytes\n")
+	put, isErr := callTool(t, h, "put", `{"path":"/notes/from-mcp.txt","content_base64":"`+base64.StdEncoding.EncodeToString(body)+`"}`)
+	if isErr {
+		t.Fatalf("put isError: %v", put)
+	}
+	if put["path"] != "/notes/from-mcp.txt" || put["size"] != float64(len(body)) {
+		t.Fatalf("put result = %v, want canonical path and size", put)
+	}
+	got, isErr := callTool(t, h, "get", `{"path":"/notes/from-mcp.txt"}`)
+	if isErr {
+		t.Fatalf("get after put isError: %v", got)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(got["content_base64"].(string))
+	if err != nil || string(decoded) != string(body) {
+		t.Fatalf("get after put bytes = %q, %v; want %q", decoded, err, body)
+	}
+	var op, origin string
+	if err := svc.DB.QueryRow(`SELECT op, origin FROM upload_queue WHERE path = ?`, "/notes/from-mcp.txt").Scan(&op, &origin); err != nil {
+		t.Fatalf("uploaded write not queued: %v", err)
+	}
+	if op != "put" || origin != "client-123" {
+		t.Errorf("upload queue = op=%q origin=%q, want put/client-123", op, origin)
+	}
+
+	overstated := base64.StdEncoding.EncodeToString(make([]byte, maxGetBytes+1))
+	tooLarge, isErr := callTool(t, h, "put", `{"path":"/too-large.bin","content_base64":"`+overstated+`"}`)
+	if !isErr {
+		t.Fatalf("oversize put should be an error: %v", tooLarge)
+	}
+	if code := tooLarge["error"].(map[string]any)["code"]; code != "too_large" {
+		t.Errorf("oversize put code = %v, want too_large", code)
+	}
+}
+
+func TestMkdirDeleteMove_HaveLoopbackWriteSemanticsAndErrorEnvelope(t *testing.T) {
+	// R-KUDD-A9VG
+	h, _ := newMirrorHandler(t)
+	if out, isErr := callTool(t, h, "mkdir", `{"path":"/work/nested"}`); isErr || out["path"] != "/work/nested" {
+		t.Fatalf("mkdir result = %v, isError=%t", out, isErr)
+	}
+	listed, isErr := callTool(t, h, "list", `{"path":"/work"}`)
+	if isErr {
+		t.Fatalf("list after mkdir isError: %v", listed)
+	}
+	foundDir := false
+	for _, entry := range listed["files"].([]any) {
+		item := entry.(map[string]any)
+		if item["path"] == "/work/nested" && item["kind"] == "dir" {
+			foundDir = true
+		}
+	}
+	if !foundDir {
+		t.Fatalf("mkdir directory not listable: %v", listed)
+	}
+	for _, path := range []string{"/work/nested/a.txt", "/work/nested/deeper/b.txt"} {
+		if _, isErr := callTool(t, h, "put", `{"path":"`+path+`","content_base64":"eA=="}`); isErr {
+			t.Fatalf("seed put %s failed", path)
+		}
+	}
+	if out, isErr := callTool(t, h, "move", `{"from":"/work/nested/a.txt","to":"/work/nested/moved.txt"}`); isErr || out["to"] != "/work/nested/moved.txt" {
+		t.Fatalf("move result = %v, isError=%t", out, isErr)
+	}
+	if _, isErr := callTool(t, h, "get", `{"path":"/work/nested/moved.txt"}`); isErr {
+		t.Fatal("moved file cannot be fetched")
+	}
+	deleted, isErr := callTool(t, h, "delete", `{"path":"/work"}`)
+	if isErr || deleted["removed"].(float64) != 2 {
+		t.Fatalf("recursive delete result = %v, isError=%t; want two files", deleted, isErr)
+	}
+	remaining, isErr := callTool(t, h, "list", `{"path":"/work"}`)
+	if isErr || len(remaining["files"].([]any)) != 0 {
+		t.Fatalf("recursive delete left entries: %v, isError=%t", remaining, isErr)
+	}
+	bad, isErr := callTool(t, h, "move", `{"from":"../escape","to":"/safe"}`)
+	if !isErr {
+		t.Fatalf("invalid move should be an error: %v", bad)
+	}
+	if code := bad["error"].(map[string]any)["code"]; code != "validation" {
+		t.Errorf("invalid move code = %v, want validation", code)
 	}
 }
 

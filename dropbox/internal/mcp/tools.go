@@ -1,11 +1,13 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 
 	appkitmcp "appkit/mcp"
 	"appkit/server"
@@ -59,6 +61,48 @@ func Tools(svc *dropbox.Service) []appkitmcp.Tool {
 			}, "path"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolGet(ctx, args)
+			},
+		},
+		{
+			Name:        tool("put"),
+			Description: "Create or replace one small file in the local Dropbox mirror. 'path' and standard-base64 'content_base64' are required. Decoded content is capped at 25 MiB; use PUT /content for larger files.",
+			InputSchema: obj(map[string]any{
+				"path":           descTyp("string", "required; destination file path."),
+				"content_base64": descTyp("string", "required; standard base64 file bytes, limited to 25 MiB decoded."),
+			}, "path", "content_base64"),
+			Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+				return h.toolPut(ctx, args, id.ClientID)
+			},
+		},
+		{
+			Name:        tool("mkdir"),
+			Description: "Create a directory in the local Dropbox mirror.",
+			InputSchema: obj(map[string]any{
+				"path": descTyp("string", "required; directory path to create."),
+			}, "path"),
+			Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+				return h.toolMkdir(ctx, args, id.ClientID)
+			},
+		},
+		{
+			Name:        tool("delete"),
+			Description: "Delete a file or directory tree from the local Dropbox mirror. Directory deletes are recursive and absent paths are idempotent.",
+			InputSchema: obj(map[string]any{
+				"path": descTyp("string", "required; file or directory path to delete."),
+			}, "path"),
+			Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+				return h.toolDelete(ctx, args, id.ClientID)
+			},
+		},
+		{
+			Name:        tool("move"),
+			Description: "Move a file or directory in the local Dropbox mirror in one operation.",
+			InputSchema: obj(map[string]any{
+				"from": descTyp("string", "required; existing file or directory path."),
+				"to":   descTyp("string", "required; destination path."),
+			}, "from", "to"),
+			Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+				return h.toolMove(ctx, args, id.ClientID)
 			},
 		},
 	}
@@ -175,6 +219,89 @@ func (h *toolHandlers) toolGet(ctx context.Context, raw json.RawMessage) (map[st
 		"updated_at":     row.UpdatedAt,
 		"content_base64": base64.StdEncoding.EncodeToString(data),
 	})
+}
+
+// toolPut decodes a bounded small-file body then delegates the mutation to the
+// same Service.Write seam used by the loopback content route.
+func (h *toolHandlers) toolPut(ctx context.Context, raw json.RawMessage, clientID string) (map[string]any, error) {
+	var a struct {
+		Path          string `json:"path"`
+		ContentBase64 string `json:"content_base64"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.Path == "" || a.ContentBase64 == "" {
+		return toolErr(dropbox.ErrValidation), nil
+	}
+	decoded, err := io.ReadAll(io.LimitReader(base64.NewDecoder(base64.StdEncoding, strings.NewReader(a.ContentBase64)), maxGetBytes+1))
+	if err != nil {
+		return toolErr(dropbox.ErrValidation), nil
+	}
+	if int64(len(decoded)) > maxGetBytes {
+		return appkitmcp.ErrorResult(toolErrorJSON("too_large",
+			"file is larger than the 25 MiB put limit; upload it via /content instead")), nil
+	}
+	row, err := h.svc.Write(ctx, a.Path, bytes.NewReader(decoded), clientID)
+	if err != nil {
+		return toolErr(err), nil
+	}
+	return appkitmcp.JSONResult(map[string]any{
+		"path":         row.Path,
+		"size":         row.Size,
+		"content_hash": row.ContentHash,
+		"rev":          row.Rev,
+	})
+}
+
+func (h *toolHandlers) toolMkdir(ctx context.Context, raw json.RawMessage, clientID string) (map[string]any, error) {
+	var a struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.Path == "" {
+		return toolErr(dropbox.ErrValidation), nil
+	}
+	if err := h.svc.Mkdir(ctx, a.Path, clientID); err != nil {
+		return toolErr(err), nil
+	}
+	return appkitmcp.JSONResult(map[string]any{"path": a.Path})
+}
+
+func (h *toolHandlers) toolDelete(ctx context.Context, raw json.RawMessage, clientID string) (map[string]any, error) {
+	var a struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.Path == "" {
+		return toolErr(dropbox.ErrValidation), nil
+	}
+	removed, err := h.svc.Delete(ctx, a.Path, clientID)
+	if err != nil {
+		return toolErr(err), nil
+	}
+	return appkitmcp.JSONResult(map[string]any{"removed": removed})
+}
+
+func (h *toolHandlers) toolMove(ctx context.Context, raw json.RawMessage, clientID string) (map[string]any, error) {
+	var a struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.From == "" || a.To == "" {
+		return toolErr(dropbox.ErrValidation), nil
+	}
+	if err := h.svc.Move(ctx, a.From, a.To, clientID); err != nil {
+		return toolErr(err), nil
+	}
+	return appkitmcp.JSONResult(map[string]any{"from": a.From, "to": a.To})
 }
 
 // toolErr maps a domain sentinel to the shared tool-error envelope
