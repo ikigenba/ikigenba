@@ -258,6 +258,136 @@ func TestMentionsInResolvesAliasKeysToCanonicalSubject(t *testing.T) {
 	}
 }
 
+func TestLinkFirstMentionsProjectsEligibleFirstOccurrences(t *testing.T) {
+	base := "https://acct.ikigenba.com/srv/wiki/subject/"
+	vasari := SubjectKeys{Subject: Subject{ID: "W", Name: "Giorgio Vasari", NormName: "giorgio-vasari", Type: "entity"}, Keys: []string{"giorgio-vasari", "vasari"}}
+	cat := SubjectKeys{Subject: Subject{ID: "cat", Name: "Cat", NormName: "cat", Type: "entity"}, Keys: []string{"cat"}}
+	short := SubjectKeys{Subject: Subject{ID: "short", Name: "New York", NormName: "new-york", Type: "entity"}, Keys: []string{"new-york"}}
+	long := SubjectKeys{Subject: Subject{ID: "long", Name: "New York City", NormName: "new-york-city", Type: "entity"}, Keys: []string{"new-york-city"}}
+
+	for _, test := range []struct {
+		name       string
+		body       string
+		others     []SubjectKeys
+		excludeID  string
+		want       string
+		wantOffset *FirstMention
+	}{
+		{
+			// R-82BY-EKDH
+			name:   "links only the first occurrence of a subject",
+			body:   "Giorgio Vasari met Giorgio Vasari and Giorgio Vasari.",
+			others: []SubjectKeys{vasari},
+			want:   "[Giorgio Vasari](https://acct.ikigenba.com/srv/wiki/subject/entity/giorgio-vasari) met Giorgio Vasari and Giorgio Vasari.",
+		},
+		{
+			// R-83JU-SC46
+			name:       "preserves the possessive surface run",
+			body:       "Vasari's fresco",
+			others:     []SubjectKeys{vasari},
+			want:       "[Vasari](https://acct.ikigenba.com/srv/wiki/subject/entity/giorgio-vasari)'s fresco",
+			wantOffset: &FirstMention{Start: 0, End: len("Vasari"), Subject: vasari.Subject},
+		},
+		{
+			// R-84RR-63UV
+			name:   "resolves an alias run to the canonical path",
+			body:   "Vasari painted it.",
+			others: []SubjectKeys{vasari},
+			want:   "[Vasari](https://acct.ikigenba.com/srv/wiki/subject/entity/giorgio-vasari) painted it.",
+		},
+		{
+			// R-877J-XNC9
+			name:   "skips code fences code spans and existing links without consuming the occurrence",
+			body:   "`Vasari`\n```\nVasari\n```\n[Vasari](x) then Vasari\n",
+			others: []SubjectKeys{vasari},
+			want:   "`Vasari`\n```\nVasari\n```\n[Vasari](x) then [Vasari](https://acct.ikigenba.com/srv/wiki/subject/entity/giorgio-vasari)\n",
+		},
+		{
+			// R-88FG-BF2Y
+			name:   "uses leftmost then longest overlap deterministically",
+			body:   "New York City then New York.",
+			others: []SubjectKeys{short, long},
+			want:   "[New York City](https://acct.ikigenba.com/srv/wiki/subject/entity/new-york-city) then [New York](https://acct.ikigenba.com/srv/wiki/subject/entity/new-york).",
+		},
+		{
+			// R-89NC-P6TN
+			name:      "excludes the requested subject only",
+			body:      "Giorgio Vasari met a cat.",
+			others:    []SubjectKeys{vasari, cat},
+			excludeID: "W",
+			want:      "Giorgio Vasari met a [cat](https://acct.ikigenba.com/srv/wiki/subject/entity/cat).",
+		},
+		{
+			// R-8AV9-2YKC
+			name:   "requires a whole hyphen or edge bounded run",
+			body:   "category has no standalone match",
+			others: []SubjectKeys{cat},
+			want:   "category has no standalone match",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := LinkFirstMentions(test.body, test.others, base, test.excludeID)
+			if got != test.want {
+				t.Fatalf("LinkFirstMentions() = %q, want %q", got, test.want)
+			}
+			if test.wantOffset != nil {
+				mentions := firstMentionCandidates(test.body, test.others, test.excludeID)
+				if len(mentions) == 0 || mentions[0] != *test.wantOffset {
+					t.Fatalf("first positional mention = %+v, want %+v", mentions, *test.wantOffset)
+				}
+			}
+		})
+	}
+
+	// R-88FG-BF2Y
+	forward := LinkFirstMentions("New York City then New York.", []SubjectKeys{short, long}, base, "")
+	reversed := LinkFirstMentions("New York City then New York.", []SubjectKeys{long, short}, base, "")
+	if forward != reversed {
+		t.Fatalf("LinkFirstMentions depends on input order: forward %q, reversed %q", forward, reversed)
+	}
+}
+
+func TestLinkFirstMentionsLeavesOnlySkippedOccurrencesUntouched(t *testing.T) {
+	// R-877J-XNC9
+	vasari := SubjectKeys{Subject: Subject{ID: "W", Name: "Giorgio Vasari", NormName: "giorgio-vasari", Type: "entity"}, Keys: []string{"vasari"}}
+	body := "`Vasari` [Vasari](x) <https://example.test/Vasari> https://example.test/Vasari"
+	if got := LinkFirstMentions(body, []SubjectKeys{vasari}, "https://base/", ""); got != body {
+		t.Fatalf("LinkFirstMentions() = %q, want skipped-only body unchanged %q", got, body)
+	}
+}
+
+func TestServiceLinkifyMentionsLoadsAliasesAndComposesAbsoluteBase(t *testing.T) {
+	// R-8C35-GQB1
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	svc := NewService(conn, nil, nil, nil)
+	subjects := NewSubjectStore(conn)
+	aliases := NewAliasStore(conn)
+	vasari := Subject{ID: "W", Name: "Giorgio Vasari", Type: "entity"}
+	saveSubject(t, ctx, subjects, vasari)
+	base := "https://acct.ikigenba.com/srv/wiki/subject/"
+
+	withoutAlias, err := svc.LinkifyMentions(ctx, "Vasari painted it.", base, "")
+	if err != nil {
+		t.Fatalf("LinkifyMentions without alias: %v", err)
+	}
+	if withoutAlias != "Vasari painted it." {
+		t.Fatalf("LinkifyMentions without alias = %q, want unchanged text", withoutAlias)
+	}
+	if err := aliases.Insert(ctx, Alias{Name: "Vasari", SubjectID: "W", CreatedBy: "owner@example.com", CreatedAt: "2026-07-10T00:00:00Z"}); err != nil {
+		t.Fatalf("Insert alias: %v", err)
+	}
+	got, err := svc.LinkifyMentions(ctx, "Vasari painted it.", base, "")
+	if err != nil {
+		t.Fatalf("LinkifyMentions with alias: %v", err)
+	}
+	want := "[Vasari](https://acct.ikigenba.com/srv/wiki/subject/entity/giorgio-vasari) painted it."
+	if got != want {
+		t.Fatalf("LinkifyMentions() = %q, want %q", got, want)
+	}
+}
+
 func TestMentionsInOrdersAndDedupesWebRefs(t *testing.T) {
 	// R-AXQR-2TF9
 	ctx := context.Background()

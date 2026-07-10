@@ -8,6 +8,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Ref is a markdown link target for another wiki subject.
@@ -27,6 +29,13 @@ type LinkedPage struct {
 type SubjectKeys struct {
 	Subject
 	Keys []string
+}
+
+// FirstMention is an eligible surface occurrence of a canonical subject.
+// Start and End are byte offsets into the original markdown body.
+type FirstMention struct {
+	Start, End int
+	Subject    Subject
 }
 
 // Mentions returns every subject whose normalized name appears as a whole
@@ -89,6 +98,220 @@ func phraseBoundaryAfter(s string, index int) bool {
 
 func isAlphaNumeric(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// LinkFirstMentions links the first eligible surface occurrence of each
+// canonical subject. It deliberately works on markdown text rather than a
+// rendered document so every read surface can share the same projection.
+func LinkFirstMentions(body string, others []SubjectKeys, base, excludeID string) string {
+	candidates := firstMentionCandidates(body, others, excludeID)
+	if len(candidates) == 0 {
+		return body
+	}
+
+	placed := make([]FirstMention, 0, len(candidates))
+	linked := make(map[string]bool, len(candidates))
+	for _, candidate := range candidates {
+		if linked[candidate.Subject.ID] || overlapsAny(candidate, placed) {
+			continue
+		}
+		placed = append(placed, candidate)
+		linked[candidate.Subject.ID] = true
+	}
+	if len(placed) == 0 {
+		return body
+	}
+	sort.Slice(placed, func(i, j int) bool { return placed[i].Start < placed[j].Start })
+
+	var out strings.Builder
+	out.Grow(len(body) + len(placed)*len(base))
+	offset := 0
+	for _, mention := range placed {
+		out.WriteString(body[offset:mention.Start])
+		out.WriteByte('[')
+		out.WriteString(body[mention.Start:mention.End])
+		out.WriteString("](")
+		out.WriteString(base)
+		out.WriteString(Path(mention.Subject))
+		out.WriteByte(')')
+		offset = mention.End
+	}
+	out.WriteString(body[offset:])
+	return out.String()
+}
+
+func firstMentionCandidates(body string, others []SubjectKeys, excludeID string) []FirstMention {
+	normalized, offsets := normalizedOffsets(body)
+	skipped := markdownSkipRegions(body)
+	var candidates []FirstMention
+	seen := make(map[string]struct{})
+	for _, subjectKeys := range others {
+		if subjectKeys.ID == "" || subjectKeys.ID == excludeID {
+			continue
+		}
+		for _, key := range subjectKeys.Keys {
+			key = Normalize(key)
+			if key == "" {
+				continue
+			}
+			for offset := 0; offset <= len(normalized)-len(key); {
+				i := strings.Index(normalized[offset:], key)
+				if i < 0 {
+					break
+				}
+				start := offset + i
+				end := start + len(key)
+				if phraseBoundaryBefore(normalized, start) && phraseBoundaryAfter(normalized, end) {
+					mention := FirstMention{Start: offsets[start].start, End: offsets[end-1].end, Subject: subjectKeys.Subject}
+					candidateKey := fmt.Sprintf("%d:%d:%s", mention.Start, mention.End, mention.Subject.ID)
+					if !overlapsAny(mention, skipped) {
+						if _, ok := seen[candidateKey]; !ok {
+							candidates = append(candidates, mention)
+							seen[candidateKey] = struct{}{}
+						}
+					}
+				}
+				offset = start + 1
+			}
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].Start != candidates[j].Start {
+			return candidates[i].Start < candidates[j].Start
+		}
+		if candidates[i].End != candidates[j].End {
+			return candidates[i].End > candidates[j].End
+		}
+		return candidates[i].Subject.ID < candidates[j].Subject.ID
+	})
+	return candidates
+}
+
+type byteOffset struct{ start, end int }
+
+// normalizedOffsets is Normalize with a source span for every normalized byte.
+func normalizedOffsets(body string) (string, []byteOffset) {
+	var normalized strings.Builder
+	var offsets []byteOffset
+	hyphen := true
+	for start, r := range body {
+		end := start + utf8.RuneLen(r)
+		part := stripDiacritics(strings.ToLower(norm.NFKC.String(string(r))))
+		for _, normalizedRune := range part {
+			if normalizedRune >= 'a' && normalizedRune <= 'z' || normalizedRune >= '0' && normalizedRune <= '9' {
+				text := string(normalizedRune)
+				normalized.WriteString(text)
+				for range []byte(text) {
+					offsets = append(offsets, byteOffset{start: start, end: end})
+				}
+				hyphen = false
+				continue
+			}
+			if !hyphen {
+				normalized.WriteByte('-')
+				offsets = append(offsets, byteOffset{start: start, end: end})
+				hyphen = true
+			}
+		}
+	}
+	if hyphen && normalized.Len() > 0 {
+		text := normalized.String()
+		return strings.TrimSuffix(text, "-"), offsets[:len(offsets)-1]
+	}
+	return normalized.String(), offsets
+}
+
+func overlapsAny(mention FirstMention, regions []FirstMention) bool {
+	for _, region := range regions {
+		if mention.Start < region.End && region.Start < mention.End {
+			return true
+		}
+	}
+	return false
+}
+
+func markdownSkipRegions(body string) []FirstMention {
+	var regions []FirstMention
+	for lineStart := 0; lineStart < len(body); {
+		lineEnd := strings.IndexByte(body[lineStart:], '\n')
+		if lineEnd < 0 {
+			lineEnd = len(body)
+		} else {
+			lineEnd += lineStart + 1
+		}
+		line := body[lineStart:lineEnd]
+		trimmed := strings.TrimLeft(line, " \t")
+		if len(trimmed) >= 3 && (strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")) {
+			fence := trimmed[:3]
+			end := lineEnd
+			for end < len(body) {
+				nextEnd := strings.IndexByte(body[end:], '\n')
+				if nextEnd < 0 {
+					nextEnd = len(body)
+				} else {
+					nextEnd += end + 1
+				}
+				if strings.HasPrefix(strings.TrimLeft(body[end:nextEnd], " \t"), fence) {
+					end = nextEnd
+					break
+				}
+				end = nextEnd
+			}
+			regions = append(regions, FirstMention{Start: lineStart, End: end})
+			lineStart = end
+			continue
+		}
+		lineStart = lineEnd
+	}
+	for i := 0; i < len(body); i++ {
+		if body[i] == '`' {
+			end := strings.IndexByte(body[i+1:], '`')
+			if end >= 0 {
+				end += i + 2
+				regions = append(regions, FirstMention{Start: i, End: end})
+				i = end - 1
+			}
+			continue
+		}
+		if body[i] == '[' {
+			if closeText := strings.IndexByte(body[i+1:], ']'); closeText >= 0 {
+				closeText += i + 1
+				if closeText+1 < len(body) && body[closeText+1] == '(' {
+					if closeURL := strings.IndexByte(body[closeText+2:], ')'); closeURL >= 0 {
+						end := closeText + 3 + closeURL
+						regions = append(regions, FirstMention{Start: i, End: end})
+						i = end - 1
+					}
+				}
+			}
+		}
+	}
+	for i := 0; i < len(body); {
+		start := urlStart(body, i)
+		if start < 0 {
+			i++
+			continue
+		}
+		end := start
+		for end < len(body) && !unicode.IsSpace(rune(body[end])) && body[end] != '<' && body[end] != '>' {
+			end++
+		}
+		regions = append(regions, FirstMention{Start: start, End: end})
+		i = end
+	}
+	return regions
+}
+
+func urlStart(body string, i int) int {
+	if i > 0 && isAlphaNumeric(rune(body[i-1])) {
+		return -1
+	}
+	for _, scheme := range []string{"http://", "https://", "mailto:"} {
+		if strings.HasPrefix(body[i:], scheme) {
+			return i
+		}
+	}
+	return -1
 }
 
 // PageWithLinks returns a stored page plus read-time outbound and inbound links.
@@ -163,6 +386,29 @@ func (s *Service) MentionsIn(ctx context.Context, text string) ([]Ref, error) {
 		subjectKeys = append(subjectKeys, keys)
 	}
 	return refsFor(Mentions(text, subjectKeys)), nil
+}
+
+// LinkifyMentions loads the current canonical subjects and aliases before
+// applying the shared, read-time markdown projection.
+func (s *Service) LinkifyMentions(ctx context.Context, text, base, excludeID string) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("wiki: nil service")
+	}
+	subjects, err := listAllSubjects(ctx, s.subjects, "", "")
+	if err != nil {
+		return "", err
+	}
+	aliases, err := s.aliases.ListAll(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	byID := subjectKeysFor(subjects, aliases)
+	others := make([]SubjectKeys, 0, len(byID))
+	for _, keys := range byID {
+		others = append(others, keys)
+	}
+	return LinkFirstMentions(text, others, base, excludeID), nil
 }
 
 func subjectKeysFor(subjects []Subject, aliases []Alias) map[string]SubjectKeys {
