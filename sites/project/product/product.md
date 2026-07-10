@@ -83,8 +83,9 @@ sites does this and only this:
   creator, created-at), styled with the suite's Carbon design system. The list is
   **browsable in the page**: a fuzzy search box filters by slug, the name /
   created / creator columns sort (click a header to change direction), results
-  **paginate past ten** rows, and a single control clears the filter and ordering
-  back to the default view.
+  **paginate past ten** rows, a single control clears the filter and ordering
+  back to the default view, and each row carries a one-click control that copies
+  that site's full URL to the clipboard.
 - **Describe itself to a connecting agent.** The MCP surface is self-describing:
   its connection instructions name what sites is for in everyday words and point
   at a `guide` tool that returns the site model and worked examples, so an agent
@@ -168,6 +169,11 @@ Promised values the design must honor verbatim and never re-declare:
   sorting, and paging happen **instantly in the browser** with no page reload;
   the default view is newest-first. This is a convenience for the human viewer —
   it changes nothing an agent sees over MCP.
+- **Copying a site's URL from the listing is one click.** Each row carries a copy
+  control that places that site's full URL — the same address the slug links to —
+  onto the clipboard, ready to paste, so the viewer never has to hand-select the
+  link. Like the other in-browser conveniences it is a viewer aid only, present
+  when JavaScript is on, and changes nothing an agent sees over MCP.
 
 ## Success criteria (outcomes)
 
@@ -208,9 +214,13 @@ service:
   through ten at a time; with ten or fewer, no pager appears.
 - As a logged-in user I click **Clear** and the search box empties, the ordering
   returns to newest-first, and I am back on the first page.
+- As a logged-in user I click a row's **copy** control and that site's full URL —
+  the same address its slug links to — is on my clipboard, ready to paste, with a
+  brief "Copied" confirmation.
 - As a logged-in user with JavaScript disabled I still see the complete list of
-  sites (unfiltered, unsorted controls absent) — the page degrades to the plain
-  listing rather than showing a broken search box.
+  sites (unfiltered, the search / sort / pager / copy controls absent) — the page
+  degrades to the plain listing rather than showing broken or dead controls; the
+  slug links still open each site so its URL can be copied by hand.
 - Every path served under `/srv/sites/…` is served by the sites process — nginx
   holds no `alias` and reads no site files off disk.
 - An MCP client still discovers the AS via the PRM well-known and calls the

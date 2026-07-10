@@ -142,6 +142,20 @@ and tracked individually in `schema_migrations`. Two hard rules:
   an edited body, so the change reaches new databases but not existing ones.
   Change schema by adding a *new* migration.
 
+## Source changes go through the spec, not the editor
+
+> ⚠️ **A service with a `project/` tree is spec-governed: its source is produced
+> only by its build loop from `project/design` + `project/plan`.** Do **not**
+> hand-edit a governed service's code, templates, styles, migrations, or config
+> directly — not even a one-line "obvious" fix. Make the change by amending the
+> spec (`$open-spec` → `$seal-spec`) and letting the loop build it; a stray
+> manual edit desyncs the code from the spec that is its single source of truth.
+>
+> The **only** exception is an explicit operator instruction to edit a **named
+> file** directly. A broad ask ("fix the styling", "make it match the design")
+> is a **spec change**, never license to hand-edit source. If you're unsure
+> which one a task is, **ask before writing.**
+
 ## Designing and planning work
 
 This is our process for designing and planning a piece of work before we build

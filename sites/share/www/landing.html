@@ -105,6 +105,88 @@
       align-items: center;
     }
 
+    .input {
+      flex: 1;
+      min-width: 0;
+      height: var(--control-h-md);
+      padding: 0 var(--space-3);
+      font-family: var(--font-body);
+      font-size: var(--text-body-size);
+      color: var(--color-text);
+      background: var(--color-bg);
+      border: var(--border-width) solid var(--color-border-strong);
+      border-radius: var(--radius);
+      transition: border-color var(--duration-fast) var(--ease-standard),
+                  box-shadow var(--duration-fast) var(--ease-standard);
+    }
+
+    .input::placeholder {
+      color: var(--color-text-subtle);
+    }
+
+    .input:focus {
+      outline: none;
+      border-color: var(--color-accent);
+      box-shadow: 0 0 0 3px var(--color-accent-weak);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+      height: var(--control-h-md);
+      padding: 0 var(--space-4);
+      font-family: var(--font-body);
+      font-size: var(--text-body-size);
+      font-weight: 600;
+      border-radius: var(--radius);
+      border: var(--border-width) solid transparent;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background var(--duration-fast) var(--ease-standard),
+                  border-color var(--duration-fast) var(--ease-standard),
+                  transform var(--duration-fast) var(--ease-standard);
+    }
+
+    .btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--color-accent-weak);
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .btn-secondary {
+      background: var(--color-surface);
+      color: var(--color-text);
+      border-color: var(--color-border-strong);
+    }
+
+    .btn-secondary:hover {
+      background: var(--color-surface-2);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--color-text-muted);
+    }
+
+    .btn-ghost:hover {
+      background: var(--color-surface-2);
+      color: var(--color-text);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn:disabled:active {
+      transform: none;
+    }
+
     .site-table {
       width: 100%;
       border-collapse: collapse;
@@ -221,8 +303,8 @@
     </section>
 
     <div class="controls js-only" hidden>
-      <input type="search" id="site-search" aria-label="Search sites">
-      <button type="button" id="site-clear">Clear</button>
+      <input type="search" class="input" id="site-search" aria-label="Search sites" placeholder="Search sites">
+      <button type="button" class="btn btn-ghost" id="site-clear">Clear</button>
     </div>
     <section class="sites">
       <script type="application/json" id="sites-data">{{if .SitesData}}{{.SitesData}}{{else}}[]{{end}}</script>
@@ -249,9 +331,9 @@
       </table>
       <p class="no-match js-only" hidden>No sites match.</p>
       <div class="pager js-only" hidden>
-        <button type="button" id="pager-prev">Prev</button>
+        <button type="button" class="btn btn-secondary" id="pager-prev">Prev</button>
         <span id="pager-label">Page 1 of 1</span>
-        <button type="button" id="pager-next">Next</button>
+        <button type="button" class="btn btn-secondary" id="pager-next">Next</button>
       </div>
       {{else}}
       <p class="empty">No sites have been created yet.</p>

@@ -63,6 +63,43 @@ TCP/websocket to a Chrome process it spawns itself.
 - The ralph build loop runs on this box; the deploy box never runs the test
   suite; there is no CI. Every environment that runs `go test ./...` has Chrome.
 
+## The suite copy-button pattern (prior art to replicate)
+
+The dashboard's logged-in page already ships a **copy-to-clipboard button** for
+each MCP service's URL. sites replicates this pattern for its per-row copy-URL
+control (D6/D22). It is captured here as ground truth so the design cites the
+*pattern*, not a `dashboard/` file — the scope boundary forbids sites depending
+on a sibling module, so sites owns its own byte-for-byte copy (exactly as
+`tokens.css` is a per-service vendored copy, not a shared runtime dep). The
+pattern, observed on the dashboard (`2026-07-10`), is:
+
+- **Markup.** `<button type="button" class="copy-btn" aria-label="Copy … URL">`
+  containing an inline copy-icon `<svg class="icon" …>` (two overlapping
+  rounded rectangles — the conventional "copy" glyph, `viewBox="0 0 24 24"`,
+  `stroke="currentColor"`, `fill="none"`) followed by
+  `<span class="copy-label">Copy</span>`. The URL to copy sits in the same row —
+  on the dashboard a sibling `<code>`; sites, having no `<code>`, exposes the
+  URL on the button itself (a data attribute) since its rows are rebuilt by the
+  controller.
+- **Behaviour (JS).** On click: copy the URL text via
+  `navigator.clipboard.writeText(text)` when `navigator.clipboard` exists **and**
+  `window.isSecureContext`; otherwise fall back to a hidden `<textarea>` +
+  `document.execCommand("copy")` (covers plain-http localhost without a secure
+  context). On success, add `is-copied` to the button and swap the label to
+  `Copied`, then revert both after ~1600 ms. A denied/unavailable clipboard is
+  swallowed (the user can select manually).
+- **CSS.** `.copy-btn` (icon-plus-label affordance, `--icon-sm` icon, hover /
+  focus-visible / `.is-copied` accent states) and `.copy-label`, all built from
+  the shared Carbon token custom properties — no bespoke values. sites rebuilds
+  these rules in its own `share/www` from its own `tokens.css`.
+- **Secure-context / clipboard-permission facts.** `navigator.clipboard` is
+  available on `http://127.0.0.1` and `http://localhost` (both are secure
+  contexts by spec), so the async path — not the `execCommand` fallback — is the
+  one exercised by an `httptest` server (which listens on `127.0.0.1`). Reading
+  the clipboard back in headless Chrome (chromedp) requires granting the browser
+  context clipboard permission via the DevTools `Browser.grantPermissions`
+  (`clipboardReadWrite`) before `navigator.clipboard.readText()` will resolve.
+
 ## Alternatives evaluated and not chosen
 
 - **Playwright (node).** Would drag a second-language toolchain into a pure-Go
