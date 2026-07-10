@@ -13,7 +13,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-FWOT-NRHN, R-4DS4-RXYX
 - D8 → `project/design/D08.md` — Search returns: hybrid retrieval over pages, behind one seam — none (structural)
 - D9 → `project/design/D09.md` — `ask` (`internal/ask`): hybrid-retrieval pipeline, grounded/cited/honest-empty — owns R-5UPD-VVNA, R-5VXA-9NDZ, R-690G-MZTK, R-5X56-NF4O, R-6A8D-0RK9, R-05CG-3H6Y, R-BAFW-D24P, R-BBNS-QTVE, R-BCVP-4LM3
-- D10 → `project/design/D10.md` — The MCP tool surface (`internal/mcp`) + identity — owns R-MUQ4-K1JS, R-MVY0-XTAH, R-MX5X-BL16, R-MYDT-PCRV, R-MZLQ-34IK, R-N4KO-2WTZ, R-01OQ-Y5YV, R-02WN-BXPK, R-044J-PPG9, R-03GW-PX5K, R-04HB-QM7T
+- D10 → `project/design/D10.md` — The MCP tool surface (`internal/mcp`) + identity — owns R-MUQ4-K1JS, R-MVY0-XTAH, R-MX5X-BL16, R-MYDT-PCRV, R-MZLQ-34IK, R-N4KO-2WTZ, R-01OQ-Y5YV, R-02WN-BXPK, R-044J-PPG9, R-03GW-PX5K, R-04HB-QM7T, R-8DB1-UI1Q, R-8EIY-89SF
 - D11 → `project/design/D11.md` — Subject addressing: the public path == identity (`type/norm_name`) — owns R-DRX6-PWSW, R-DT53-3OJL, R-DUCZ-HGAA
 - D12 → `project/design/D12.md` — Page links: read-time mention detection + markdown footer (alias-aware) — owns R-ZUDC-NJIP, R-ZVL9-1B9E, R-ZWT5-F303, R-ZY11-SUQS, R-ZZ8Y-6MHH, R-00GU-KE86, R-1WP9-CLM9, R-1XX5-QDCY, R-1Z52-453N
 - D13 → `project/design/D13.md` — The LLM-call footprint: `llm_calls` table + recorder seam — owns R-VNS0-1Z85, R-VOZW-FQYU, R-VRFP-7AG8, R-VSNL-L26X, R-VTVH-YTXM, R-VV3E-CLOB, R-EMWV-6RK5, R-EO4R-KJAU
@@ -47,8 +47,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D41 → `project/design/D41.md` — A top-left Home link to the dashboard landing page — owns R-HOME-3U5Y
 - D42 → `project/design/D42.md` — Web read surface: foundation (routes, base-href, package shape, seam injection) — owns R-WC29-XALJ, R-WDA6-B2C8, R-WFPZ-2LTM, R-WGXV-GDKB
 - D43 → `project/design/D43.md` — The home / reset page (search box + orphan index + name/version footer) — owns R-OMRY-L9O8, R-ONZU-Z1EX, R-OP7R-CT5M
-- D44 → `project/design/D44.md` — The ask result page (`?q=`) + the `MentionsIn` seam — owns R-ARN9-5YPS, R-ASV5-JQGH, R-AU31-XI76, R-AVAY-B9XV, R-AWIU-P1OK, R-AXQR-2TF9, R-NPVU-26CX
-- D45 → `project/design/D45.md` — The subject page (`/subject/{type}/{slug}`): prose + outbound/inbound footer, alias-aware, styled 404 — owns R-PH2F-47LB, R-PIAB-HZC0, R-PJI7-VR2P, R-PKQ4-9ITE, R-PLY0-NAK3, R-PODT-EU1H, R-NONX-OEM8
+- D44 → `project/design/D44.md` — The ask result page (`?q=`) + the `MentionsIn` seam — owns R-ARN9-5YPS, R-ASV5-JQGH, R-AU31-XI76, R-AVAY-B9XV, R-AWIU-P1OK, R-AXQR-2TF9, R-NPVU-26CX, R-8FQU-M1J4
+- D45 → `project/design/D45.md` — The subject page (`/subject/{type}/{slug}`): prose + outbound/inbound footer, alias-aware, styled 404 — owns R-PH2F-47LB, R-PIAB-HZC0, R-PJI7-VR2P, R-PKQ4-9ITE, R-PLY0-NAK3, R-PODT-EU1H, R-NONX-OEM8, R-8GYQ-ZT9T
 - D46 → `project/design/D46.md` — The orphan index: subjects with zero inbound mentions (read-time, single-pass) — owns R-QSR2-AFAD, R-QTYY-O712, R-QV6V-1YRR, R-QWER-FQIG
 - D47 → `project/design/D47.md` — nginx: session-gate the whole human surface (root + `/subject/` + `/static/`) — none (structural; config — proven by a named-fragment check phase)
 - D48 → `project/design/D48.md` — The markdown → sanitized-HTML rendering seam (`internal/markdown`, goldmark + bluemonday) — owns R-SS0J-U7PG, R-ST8G-7ZG5, R-SUGC-LR6U, R-SVO8-ZIXJ, R-SWW5-DAO8, R-SY41-R2EX, R-SZBY-4U5M, R-T0JU-ILWB, R-T1RQ-WDN0, R-T2ZN-A5DP
@@ -61,6 +61,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D55 → `project/design/D55.md` — Delete the `internal/db` chassis shim (keep the read handle) and true up the docs — none (structural)
 - D56 → `project/design/D56.md` — `ask` MCP citations are fully-qualified front-door URLs — owns R-Y7OR-PH1I, R-HOJB-ZR3T, R-YA4K-H0IW
 - D57 → `project/design/D57.md` — Adopt the MCP self-discovery convention: instructions, lean tool descriptions, a `guide` tool — owns R-YDS9-MBQZ, R-YF06-03HO, R-YG82-DV8D, R-YHFY-RMZ2, R-YINV-5EPR
+- D58 → `project/design/D58.md` — Inline first-occurrence subject links: the positional matcher + markdown-safe linkifier (`internal/wiki`) — owns R-82BY-EKDH, R-83JU-SC46, R-84RR-63UV, R-877J-XNC9, R-88FG-BF2Y, R-89NC-P6TN, R-8AV9-2YKC, R-8C35-GQB1
+- D59 → `project/design/D59.md` — Every user-facing subject link is a fully-qualified front-door URL (retire the web-relative rule) — owns R-8I6N-DL0I, R-8JEJ-RCR7
 
 ## Verification ids → Decision
 
@@ -131,6 +133,20 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-7TVC-E7ZZ → D3 → `project/design/D03.md`
 - R-7V38-RZQO → D3 → `project/design/D03.md`
 - R-7WB5-5RHD → D3 → `project/design/D03.md`
+- R-82BY-EKDH → D58 → `project/design/D58.md`
+- R-83JU-SC46 → D58 → `project/design/D58.md`
+- R-84RR-63UV → D58 → `project/design/D58.md`
+- R-877J-XNC9 → D58 → `project/design/D58.md`
+- R-88FG-BF2Y → D58 → `project/design/D58.md`
+- R-89NC-P6TN → D58 → `project/design/D58.md`
+- R-8AV9-2YKC → D58 → `project/design/D58.md`
+- R-8C35-GQB1 → D58 → `project/design/D58.md`
+- R-8DB1-UI1Q → D10 → `project/design/D10.md`
+- R-8EIY-89SF → D10 → `project/design/D10.md`
+- R-8FQU-M1J4 → D44 → `project/design/D44.md`
+- R-8GYQ-ZT9T → D45 → `project/design/D45.md`
+- R-8I6N-DL0I → D59 → `project/design/D59.md`
+- R-8JEJ-RCR7 → D59 → `project/design/D59.md`
 - R-8KX2-4ASY → D23 → `project/design/D23.md`
 - R-8M4Y-I2JN → D23 → `project/design/D23.md`
 - R-8NCU-VUAC → D23 → `project/design/D23.md`
