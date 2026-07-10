@@ -88,10 +88,13 @@ func main() {
 				return nil, err
 			}
 			return map[string]any{
-				"mirror_bytes":     info.MirrorBytes,
-				"disk_free_bytes":  info.DiskFreeBytes,
-				"disk_total_bytes": info.DiskTotalBytes,
-				"failed_files":     info.FailedFiles,
+				"mirror_bytes":               info.MirrorBytes,
+				"disk_free_bytes":            info.DiskFreeBytes,
+				"disk_total_bytes":           info.DiskTotalBytes,
+				"failed_files":               info.FailedFiles,
+				"pending_uploads":            info.PendingUploads,
+				"failed_uploads":             info.FailedUploads,
+				"oldest_pending_age_seconds": info.OldestPendingAgeSeconds,
 			}, nil
 		},
 		// Handlers builds dropbox's domain Service + sync engine over appkit's shared
@@ -216,6 +219,12 @@ func main() {
 					return fmt.Errorf("dropbox: Workers ran before Handlers built the engine")
 				}
 				return engine.Run(ctx)
+			},
+			func(ctx context.Context) error {
+				if svc == nil {
+					return fmt.Errorf("dropbox: Workers ran before Handlers built the Service")
+				}
+				return svc.RunUploader(ctx)
 			},
 		},
 	})

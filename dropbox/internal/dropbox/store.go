@@ -135,14 +135,17 @@ func (Store) ClearUpload(tx *sql.Tx, path string) error {
 }
 
 // FailUpload retains a failed request, increments its retry count, and moves its
-// backoff gate. The uploader can later mark poison rows failed without dropping
-// them; this method deliberately keeps ordinary failures pending.
-func (Store) FailUpload(tx *sql.Tx, path string, errMsg string, nextAttemptAt string) error {
+// backoff gate. Poisoned requests remain in the queue but stop being due.
+func (Store) FailUpload(tx *sql.Tx, path string, errMsg string, nextAttemptAt string, poisoned bool) error {
+	state := "pending"
+	if poisoned {
+		state = "failed"
+	}
 	if _, err := tx.Exec(`
 		UPDATE upload_queue
-		SET attempts = attempts + 1, next_attempt_at = ?, last_error = ?
+		SET attempts = attempts + 1, next_attempt_at = ?, last_error = ?, state = ?
 		WHERE path = ?
-	`, nextAttemptAt, errMsg, path); err != nil {
+	`, nextAttemptAt, errMsg, state, path); err != nil {
 		return fmt.Errorf("fail upload: %w", err)
 	}
 	return nil

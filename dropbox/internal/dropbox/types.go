@@ -112,4 +112,8 @@ type HealthInfo struct {
 	DiskFreeBytes  uint64
 	DiskTotalBytes uint64
 	FailedFiles    int
+	PendingUploads int
+	FailedUploads  int
+	// OldestPendingAgeSeconds is zero when no upload is pending.
+	OldestPendingAgeSeconds int64
 }

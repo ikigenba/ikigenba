@@ -3,6 +3,7 @@ package dropbox
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 // Health returns the dropbox_health payload (PLAN.md §3): the caller's identity
@@ -30,6 +31,18 @@ func (s *Service) Health(ownerEmail, clientID string) (HealthInfo, error) {
 			if n, e := s.Store.FailedFiles(tx); e == nil {
 				info.FailedFiles = n
 			}
+			if backlog, e := s.Store.UploadBacklog(tx); e == nil {
+				info.PendingUploads = backlog.Pending
+				info.FailedUploads = backlog.Failed
+				if backlog.OldestPendingAt.Valid {
+					if oldest, parseErr := time.Parse(time.RFC3339Nano, backlog.OldestPendingAt.String); parseErr == nil {
+						age := s.nowTime().Sub(oldest)
+						if age > 0 {
+							info.OldestPendingAgeSeconds = int64(age.Seconds())
+						}
+					}
+				}
+			}
 			_ = tx.Rollback()
 		}
 	}
@@ -42,4 +55,11 @@ func (s *Service) Health(ownerEmail, clientID string) (HealthInfo, error) {
 	}
 
 	return info, nil
+}
+
+func (s *Service) nowTime() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
 }
