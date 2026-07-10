@@ -17,9 +17,16 @@ import (
 	"time"
 
 	"appkit"
+	appdb "appkit/db"
 	"appkit/server"
+	agentkit "github.com/ikigenba/agentkit"
 
+	"wiki/internal/ask"
+	wikidb "wiki/internal/db"
+	"wiki/internal/llm"
 	paging "wiki/internal/page"
+	"wiki/internal/retrieve"
+	wikidomain "wiki/internal/wiki"
 )
 
 func TestHealthToolReturnsAppkitEnvelope(t *testing.T) {
@@ -970,6 +977,93 @@ func TestAskToolCitationURLUsesFrontDoorSubjectRoute(t *testing.T) {
 	}
 }
 
+func TestAskToolLinkifiesFirstSubjectMentionAndKeepsCitations(t *testing.T) {
+	// R-8DB1-UI1Q
+	ctx := context.Background()
+	conn := migratedMCPDB(t, ctx)
+	defer conn.Close()
+	subjects := wikidomain.NewSubjectStore(conn)
+	pages := wikidomain.NewPageStore(conn)
+	acme := wikidomain.Subject{ID: "subject-acme", Name: "Acme Corp", Type: "entity"}
+	if err := subjects.Save(ctx, acme); err != nil {
+		t.Fatalf("Save subject: %v", err)
+	}
+	if err := pages.Upsert(ctx, wikidomain.Page{ID: "page-acme", SubjectID: acme.ID, Title: acme.Name, Body: "Acme Corp profile."}); err != nil {
+		t.Fatalf("Upsert page: %v", err)
+	}
+	provider := &mcpScriptedProvider{responses: []string{
+		`{"sub_queries":["Acme Corp"]}`,
+		`{"found":true,"text":"Acme Corp builds widgets. Acme Corp is based here.","citations":[{"path":"entity/acme-corp","title":"Acme Corp"}]}`,
+	}}
+	asker := ask.New(
+		&mcpScriptedSearch{result: retrieve.Result{Hits: []retrieve.Hit{{PageID: acme.ID, Path: "entity/acme-corp", Title: acme.Name}}, TopDense: 0.8}},
+		subjects,
+		pages,
+		llm.New(provider, nil),
+		llm.CallSite{Model: "ask-subject-test"},
+		llm.CallSite{Model: "ask-synthesis-test"},
+	)
+	h := gatedHandler(t, newTestHandlerWithAuthServer(t, "https://acct.ikigenba.com", WithAskFunc(asker.Ask), WithMentionLinkifier(wikidomain.NewService(conn, nil, nil, nil))))
+	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"ask","method":"tools/call","params":{"name":"ask","arguments":{"question":"What does Acme Corp do?"}}}`, "owner@example.com")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ask status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Answer    string `json:"answer"`
+		Citations []struct {
+			URL string `json:"url"`
+		} `json:"citations"`
+	}
+	decodeToolText(t, rec.Body.Bytes(), &body)
+	if !strings.Contains(body.Answer, "[Acme Corp](https://acct.ikigenba.com/srv/wiki/subject/entity/acme-corp)") {
+		t.Fatalf("answer = %q, want inline subject link", body.Answer)
+	}
+	if len(body.Citations) != 1 || body.Citations[0].URL != "https://acct.ikigenba.com/srv/wiki/subject/entity/acme-corp" {
+		t.Fatalf("citations = %#v, want unchanged front-door citation", body.Citations)
+	}
+}
+
+func TestPageToolLinkifiesOtherSubjectBeforeFooterAndExcludesSelf(t *testing.T) {
+	// R-8EIY-89SF
+	ctx := context.Background()
+	conn := migratedMCPDB(t, ctx)
+	defer conn.Close()
+	subjects := wikidomain.NewSubjectStore(conn)
+	pages := wikidomain.NewPageStore(conn)
+	a := wikidomain.Subject{ID: "subject-a", Name: "Atlas", Type: "entity"}
+	b := wikidomain.Subject{ID: "subject-b", Name: "Borealis", Type: "entity"}
+	for _, subject := range []wikidomain.Subject{a, b} {
+		if err := subjects.Save(ctx, subject); err != nil {
+			t.Fatalf("Save subject %s: %v", subject.ID, err)
+		}
+	}
+	if err := pages.Upsert(ctx, wikidomain.Page{ID: "page-a", SubjectID: a.ID, Title: a.Name, Body: "Atlas works with Borealis."}); err != nil {
+		t.Fatalf("Upsert page A: %v", err)
+	}
+	if err := pages.Upsert(ctx, wikidomain.Page{ID: "page-b", SubjectID: b.ID, Title: b.Name, Body: "Borealis profile."}); err != nil {
+		t.Fatalf("Upsert page B: %v", err)
+	}
+	svc := wikidomain.NewService(conn, nil, nil, nil)
+	h := gatedHandler(t, newTestHandlerWithAuthServer(t, "https://acct.ikigenba.com", WithPagePathService(mcpPageService{resolver: wikidomain.NewResolver(conn), service: svc}), WithMentionLinkifier(svc)))
+	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"page","method":"tools/call","params":{"name":"page","arguments":{"subject":"entity/atlas"}}}`, "owner@example.com")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("page status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Body string `json:"body"`
+	}
+	decodeToolText(t, rec.Body.Bytes(), &body)
+	if !strings.Contains(body.Body, "Atlas works with [Borealis](https://acct.ikigenba.com/srv/wiki/subject/entity/borealis).") {
+		t.Fatalf("body = %q, want inline link for other subject", body.Body)
+	}
+	if strings.Contains(body.Body, "[Atlas](https://acct.ikigenba.com/srv/wiki/subject/entity/atlas)") {
+		t.Fatalf("body = %q, must exclude page subject from inline links", body.Body)
+	}
+	if !strings.Contains(body.Body, "\n\n---\n\n## Links\n\n### Mentions\n- [Borealis](entity/borealis)") || !strings.Contains(body.Body, "\n\n### Mentioned by\n") {
+		t.Fatalf("body = %q, want D12 footer after linkified prose", body.Body)
+	}
+}
+
 func TestAskResultCompositionLeavesSourceCitationPathRelative(t *testing.T) {
 	// R-YA4K-H0IW
 	answer := answer{
@@ -1772,6 +1866,65 @@ type page struct {
 	SubjectID string
 	Title     string
 	Body      string
+	Footer    string
+}
+
+type mcpPageService struct {
+	resolver *wikidomain.Resolver
+	service  *wikidomain.Service
+}
+
+func (s mcpPageService) PageByPath(ctx context.Context, path string) (page, error) {
+	subject, err := s.resolver.ResolveByPath(ctx, path)
+	if err != nil {
+		return page{}, err
+	}
+	linked, err := s.service.PageWithLinks(ctx, subject.ID)
+	if err != nil {
+		return page{}, err
+	}
+	body := wikidomain.RenderFooter(linked.Body, linked.Mentions, linked.MentionedBy)
+	return page{
+		ID:        linked.ID,
+		SubjectID: subject.ID,
+		Title:     linked.Title,
+		Body:      linked.Body,
+		Footer:    strings.TrimPrefix(body, linked.Body),
+	}, nil
+}
+
+type mcpScriptedSearch struct {
+	result retrieve.Result
+}
+
+func (s *mcpScriptedSearch) SearchAnalyzed(context.Context, any, retrieve.SearchLimits) (retrieve.Result, error) {
+	return s.result, nil
+}
+
+type mcpScriptedProvider struct {
+	responses []string
+}
+
+func (p *mcpScriptedProvider) RoundTrip(_ context.Context, _ *agentkit.Request) *agentkit.RoundTrip {
+	if len(p.responses) == 0 {
+		return mcpTextRoundTrip(`{"found":false}`)
+	}
+	text := p.responses[0]
+	p.responses = p.responses[1:]
+	return mcpTextRoundTrip(text)
+}
+
+func (p *mcpScriptedProvider) Name() string { return "mcp-scripted" }
+
+func (p *mcpScriptedProvider) Pricing(string) (agentkit.Pricing, bool) {
+	return agentkit.Pricing{Tiers: []agentkit.RateTier{{MinInputTokens: 0}}}, true
+}
+
+func mcpTextRoundTrip(text string) *agentkit.RoundTrip {
+	return agentkit.NewRoundTrip(agentkit.Message{
+		Role:   agentkit.RoleAssistant,
+		Blocks: []agentkit.Block{agentkit.TextBlock{Text: text}},
+	}, agentkit.FinishStop, agentkit.Usage{InputUncached: 1, Output: 1, Total: 2}, nil, nil)
 }
 
 type answer struct {
@@ -1824,6 +1977,24 @@ func (a *capturingAsker) Ask(_ context.Context, owner, question string) (answer,
 	a.owner = owner
 	a.question = question
 	return a.answer, nil
+}
+
+func migratedMCPDB(t *testing.T, ctx context.Context) *sql.DB {
+	t.Helper()
+	conn, err := appdb.Open(t.TempDir() + "/wiki.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	migs, err := appdb.LoadMigrations(wikidb.FS, "migrations")
+	if err != nil {
+		conn.Close()
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	if err := appdb.Migrate(ctx, conn, migs); err != nil {
+		conn.Close()
+		t.Fatalf("Migrate: %v", err)
+	}
+	return conn
 }
 
 func newTestHandler(t *testing.T, opts ...Option) http.Handler {

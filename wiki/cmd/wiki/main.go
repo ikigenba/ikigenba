@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"appkit"
@@ -148,6 +149,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 				mcp.WithSubjectListService(subjectService),
 				mcp.WithClaimListService(claimService),
 				mcp.WithPagePathService(pageService),
+				mcp.WithMentionLinkifier(svc),
 				mcp.WithLLMCallListService(llmCallListService{calls: wiki.NewLLMCallStore(conns)}),
 				mcp.WithAskFunc(asker.Ask),
 			)
@@ -428,16 +430,18 @@ func (s pathPageService) PageByPath(ctx context.Context, path string) (web.Subje
 	if err != nil {
 		return web.SubjectView{}, err
 	}
-	body := page.Body
+	body, footer := page.Body, ""
 	if s.renderFooter {
-		body = wiki.RenderFooter(body, page.Mentions, page.MentionedBy)
+		footer = strings.TrimPrefix(wiki.RenderFooter(body, page.Mentions, page.MentionedBy), body)
 	}
 	return web.SubjectView{
-		Path:     wiki.Path(subject),
-		Title:    page.Title,
-		Body:     body,
-		Outbound: webRefs(page.Mentions),
-		Inbound:  webRefs(page.MentionedBy),
+		SubjectID: subject.ID,
+		Path:      wiki.Path(subject),
+		Title:     page.Title,
+		Body:      body,
+		Footer:    footer,
+		Outbound:  webRefs(page.Mentions),
+		Inbound:   webRefs(page.MentionedBy),
 	}, nil
 }
 

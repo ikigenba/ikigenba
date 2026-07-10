@@ -26,6 +26,7 @@ const Instructions = "wiki is a knowledge base (notes, a second brain) built fro
 // Handler holds configured wiki domain tool dependencies.
 type Handler struct {
 	pageBase  string
+	linkify   func(context.Context, string, string, string) (string, error)
 	ingest    func(context.Context, string, string, string, []string) (string, error)
 	status    func(context.Context, string) (any, error)
 	abort     func(context.Context, string) (any, error)
@@ -117,6 +118,10 @@ type pageFunc[T any] interface {
 
 type pageByPathFunc[T any] interface {
 	PageByPath(ctx context.Context, path string) (T, error)
+}
+
+type mentionLinkifier interface {
+	LinkifyMentions(ctx context.Context, text, base, excludeID string) (string, error)
 }
 
 // Option configures optional MCP tools backed by wiki domain services.
@@ -288,6 +293,16 @@ func WithPagePathService[T any](s pageByPathFunc[T]) Option {
 			h.page = func(ctx context.Context, path string) (any, error) {
 				return s.PageByPath(ctx, path)
 			}
+		}
+	}
+}
+
+// WithMentionLinkifier enables inline first-occurrence subject links in prose
+// returned by the ask and page tools.
+func WithMentionLinkifier(s mentionLinkifier) Option {
+	return func(h *Handler) {
+		if s != nil {
+			h.linkify = s.LinkifyMentions
 		}
 	}
 }
@@ -603,7 +618,15 @@ func (h *Handler) handleAskCall(ctx context.Context, raw json.RawMessage, id ser
 	if err != nil {
 		return toolError(err.Error()), nil
 	}
-	return appkitmcp.JSONResult(askToolResult(answer, h.pageBase))
+	result := askToolResult(answer, h.pageBase)
+	if h.linkify != nil {
+		text, err := h.linkify(ctx, result["answer"].(string), h.pageBase, "")
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
+		result["answer"] = text
+	}
+	return appkitmcp.JSONResult(result)
 }
 
 func (h *Handler) handleSubjectsCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
@@ -681,7 +704,17 @@ func (h *Handler) handlePageCall(ctx context.Context, raw json.RawMessage, _ ser
 	if err != nil {
 		return toolError(err.Error()), nil
 	}
-	return appkitmcp.JSONResult(publicPageResult(page, subject))
+	result := publicPageResult(page, subject)
+	footer := stringField(indirect(reflect.ValueOf(page)), "Footer")
+	if h.linkify != nil {
+		body, err := h.linkify(ctx, result["body"], h.pageBase, stringField(indirect(reflect.ValueOf(page)), "SubjectID"))
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
+		result["body"] = body
+	}
+	result["body"] += footer
+	return appkitmcp.JSONResult(result)
 }
 
 func (h *Handler) handleLLMCallsCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {

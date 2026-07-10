@@ -44,11 +44,13 @@ type Ref struct {
 
 // SubjectView is the rendered public page shape consumed by subject routes.
 type SubjectView struct {
-	Path     string
-	Title    string
-	Body     string
-	Outbound []Ref
-	Inbound  []Ref
+	SubjectID string
+	Path      string
+	Title     string
+	Body      string
+	Footer    string
+	Outbound  []Ref
+	Inbound   []Ref
 }
 
 // Option injects an external dependency seam.

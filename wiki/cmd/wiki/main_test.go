@@ -968,7 +968,7 @@ func TestBuildSpecRecordsQueryEmbeddingCalls(t *testing.T) {
 	}`)), &answer); err != nil {
 		t.Fatalf("decode ask response: %v", err)
 	}
-	if !answer.Found || answer.Answer != "Acme Robotics owns the scheduler." {
+	if !answer.Found || answer.Answer != "[Acme Robotics](https://int.ikigenba.com/srv/wiki/subject/entity/acme-robotics) owns the scheduler." {
 		t.Fatalf("ask response = %#v, want answer produced through composed retriever", answer)
 	}
 
