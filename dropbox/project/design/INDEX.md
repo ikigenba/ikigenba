@@ -17,6 +17,13 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D11 → `project/design/D11.md` — Web surface from `share/www` through the chassis (`Spec.WWW`, `rt.WWW()`; delete `internal/web`) — owns R-QO40-U0VH, R-QPBX-7SM6
 - D12 → `project/design/D12.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the `list`+`get` tool table; health/reflection chassis-registered — owns R-QQJT-LKCV
 - D13 → `project/design/D13.md` — Delete the `internal/db` `Open`/`Migrate` shim (embed + guards remain) and true up `dropbox/CLAUDE.md` — none (structural; shim deletion + doc truth)
+- D14 → `project/design/D14.md` — Streaming byte I/O in the mirror + streaming read route (`WriteFrom`/`Open`, `http.ServeContent`, fixed copy buffer) — owns R-JV0A-6XDB, R-JW86-KP40, R-JXG2-YGUP
+- D15 → `project/design/D15.md` — First-class directories in the index (`directories` table, mkdir/rmdir/list/stat, recursive delete/move) — owns R-JZVV-Q0C3, R-K13S-3S2S, R-K2BO-HJTH, R-K3JK-VBK6
+- D16 → `project/design/D16.md` — The filesystem write API: `Service` write methods + loopback routes (PUT/DELETE `/content`, `/mkdir`, `/move`, `/stat`) — owns R-K4RH-93AV, R-K5ZD-MV1K, R-K77A-0MS9, R-K8F6-EEIY, R-K9N2-S69N, R-KAUZ-5Y0C
+- D17 → `project/design/D17.md` — Push-up: durable upload queue + Dropbox write client + uploader worker (overwrite, coalescing, echo suppression, poison/health) — owns R-KC2V-JPR1, R-KDAR-XHHQ, R-KEIO-B98F, R-KFQK-P0Z4, R-KGYH-2SPT, R-KJE9-UC77, R-KKM6-83XW, R-KLU2-LVOL, R-KN1Y-ZNFA
+- D18 → `project/design/D18.md` — Origin-tagged file events (`origin` payload field: writing client id, or `dropbox`) — owns R-KO9V-DF5Z, R-KPHR-R6WO, R-KQPO-4YND
+- D19 → `project/design/D19.md` — MCP write tools (`put`/`mkdir`/`delete`/`move`; capped base64 small-file convenience) — owns R-KRXK-IQE2, R-KT5G-WI4R, R-KUDD-A9VG
+- D20 → `project/design/D20.md` — The `dropbox/docs/` filesystem-API reference + route-coverage guard — owns R-KVL9-O1M5, R-KWT6-1TCU
 
 ## Verification ids → Decision
 
@@ -24,6 +31,36 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ASST-5K8L → D3 → `project/design/D03.md`
 - R-ASST-7M1N → D3 → `project/design/D03.md`
 - R-HOME-6P8T → D7 → `project/design/D07.md`
+- R-JV0A-6XDB → D14 → `project/design/D14.md`
+- R-JW86-KP40 → D14 → `project/design/D14.md`
+- R-JXG2-YGUP → D14 → `project/design/D14.md`
+- R-JZVV-Q0C3 → D15 → `project/design/D15.md`
+- R-K13S-3S2S → D15 → `project/design/D15.md`
+- R-K2BO-HJTH → D15 → `project/design/D15.md`
+- R-K3JK-VBK6 → D15 → `project/design/D15.md`
+- R-K4RH-93AV → D16 → `project/design/D16.md`
+- R-K5ZD-MV1K → D16 → `project/design/D16.md`
+- R-K77A-0MS9 → D16 → `project/design/D16.md`
+- R-K8F6-EEIY → D16 → `project/design/D16.md`
+- R-K9N2-S69N → D16 → `project/design/D16.md`
+- R-KAUZ-5Y0C → D16 → `project/design/D16.md`
+- R-KC2V-JPR1 → D17 → `project/design/D17.md`
+- R-KDAR-XHHQ → D17 → `project/design/D17.md`
+- R-KEIO-B98F → D17 → `project/design/D17.md`
+- R-KFQK-P0Z4 → D17 → `project/design/D17.md`
+- R-KGYH-2SPT → D17 → `project/design/D17.md`
+- R-KJE9-UC77 → D17 → `project/design/D17.md`
+- R-KKM6-83XW → D17 → `project/design/D17.md`
+- R-KLU2-LVOL → D17 → `project/design/D17.md`
+- R-KN1Y-ZNFA → D17 → `project/design/D17.md`
+- R-KO9V-DF5Z → D18 → `project/design/D18.md`
+- R-KPHR-R6WO → D18 → `project/design/D18.md`
+- R-KQPO-4YND → D18 → `project/design/D18.md`
+- R-KRXK-IQE2 → D19 → `project/design/D19.md`
+- R-KT5G-WI4R → D19 → `project/design/D19.md`
+- R-KUDD-A9VG → D19 → `project/design/D19.md`
+- R-KVL9-O1M5 → D20 → `project/design/D20.md`
+- R-KWT6-1TCU → D20 → `project/design/D20.md`
 - R-LAND-3C9X → D1 → `project/design/D01.md`
 - R-LAND-5E2Y → D1 → `project/design/D01.md`
 - R-LAND-7G4Z → D1 → `project/design/D01.md`

@@ -1,38 +1,53 @@
-# dropbox — Design (landing page)
+# dropbox — Design
 
 **Authority: shape and its proof.** This document and the `project/design/`
-directory it heads own *how* the dropbox landing page is built and *how each
-behavior is proven*. The product (`project/product/README.md`) owns the *why*,
-*for whom*, and the user-facing promises; design states the **exact, checkable
-form** of those promises and never re-declares the why. Design *uses* the
-product's contractual constants by value (the page lives at the mount root only;
-v1 content is service name + version; the gate is `/_session-authn` and coarse;
-the visual system is Carbon) but does **not** own them. This is the single,
-current statement of the landing-page architecture — it is rewritten in place to
+directory it heads own *how* the dropbox service is built and *how each behavior
+is proven*. The product (`project/product/README.md`) owns the *why*, *for whom*,
+and the user-facing promises; design states the **exact, checkable form** of
+those promises and never re-declares the why. Design *uses* the product's
+contractual constants by value (the landing page lives at the mount root only;
+the visual system is Carbon; the suite is the authority and Dropbox is a replica;
+the shared namespace is convention-organized) but does **not** own them. This is
+the single, current statement of the architecture — it is rewritten in place to
 stay true (stale decisions are removed, not stacked); the history of how it got
 here lives in the plan.
 
-> **Scope.** This design's Decisions cover three threads:
+> **Scope.** This design's Decisions cover four threads:
 >
 > 1. **The web landing page** (D1–D8, built; substrate moved by D11): the page's
 >    content, route, session gate, canonical markup, and self-served assets —
 >    now rendered from the on-disk `share/www` tree through the chassis.
-> 2. **Registry adoption** (D9–D10, active): dropbox resolves its **own**
+> 2. **Registry adoption** (D9–D10, built): dropbox resolves its **own**
 >    loopback address by name (the listen port, the `/content` base default, and
 >    the reflection example origin), with source-scan and deploy-artifact drift
 >    guards.
-> 3. **The chassis conversion** (D11–D13, active): the web surface through
+> 3. **The chassis conversion** (D11–D13, built): the web surface through
 >    `Spec.WWW`, the MCP surface through `appkit/mcp`, and the leftover
 >    `internal/db` shim deleted — all behavior-preserving. appkit's
 >    `Spec.WWW` / `appkit/web` / `appkit/mcp` surfaces (appkit design D5–D9) are
 >    fixed external contracts consumed through the committed
 >    `replace appkit => ../appkit`.
+> 4. **The bidirectional, service-facing filesystem** (D14–D20, active): the
+>    mirror stops being download-only. dropbox stays the **sole owner** of the
+>    folder and exposes a read/write/discovery **API** (option B) so the suite's
+>    services can create, read, delete, move, and walk files and directories;
+>    every local mutation is **pushed up** to Dropbox asynchronously through a
+>    durable queue, with the suite as authority (overwrite) and Dropbox as
+>    replica. Streaming byte paths (D14), first-class directories (D15), the
+>    write API + loopback routes (D16), the push-up queue/client/uploader (D17),
+>    origin-tagged events (D18), MCP write tools (D19), and a `dropbox/docs/`
+>    integrator reference (D20).
 >
-> The rest of the dropbox domain (the mirror-sync engine and its load-bearing
-> correctness rules, the `/feed` outbox producer, the loopback `/content`/`/list`
-> byte routes, the `list`/`get` domain-tool behaviors, the migrations) is owned
-> elsewhere (`dropbox/CLAUDE.md`) and its behavior is untouched. **No schema
-> changes: no Decision here adds a migration.**
+> The pre-existing **download** engine and its load-bearing correctness rules
+> (crash/replay ordering, per-page cursor advance, poison bound, download
+> hash-verify, case-folding, unauthenticated longpoll) remain in force — thread 4
+> **extends** the domain (adds the write direction) rather than replacing it, and
+> preserves every download invariant (`dropbox/CLAUDE.md` documents them). Thread
+> 4 **does** add schema: two additive, timestamped migrations (a `directories`
+> table, D15; an `upload_queue` table, D17) created via `bin/create-migration` —
+> the frozen `001`–`003` are untouched. **Wiring the suite's *other* services to
+> call this API is out of scope** — each service adopts it in its own `project/`
+> later; this design builds only dropbox's side.
 
 ## Requirement ids
 
@@ -135,6 +150,28 @@ approach every Decision's Verification list assumes:
   arguments (injected at the composition root from `rt.Service()`/`rt.Version()`)
   and the MCP tools take an injected Service, so their web/MCP tests have no
   clock, no network, and no external DB.
+- **The filesystem write path is tested hermetically over temp DB + temp mirror.**
+  The mirror byte primitives (D14), the directory model (D15), the write Service
+  methods and loopback routes (D16), the upload queue and uploader logic (D17),
+  and origin tagging (D18) are exercised with a temp SQLite DB, a temp mirror
+  dir, a **recording event sink** (captures emitted payloads without a real
+  outbox), and — for the push side — an **httptest fake Dropbox** (the existing
+  `client_test.go` pattern) that captures request shape (`mode:overwrite`,
+  `upload_session` chunking). No hermetic test makes a network call or needs a
+  running suite; the local filesystem is the real substrate for the atomicity,
+  Range, and large-file round-trip claims.
+- **The real Dropbox write contract is proven by a `-tags live` smoke.** Some
+  claims hinge on the **real external contract** — Dropbox accepting an
+  `overwrite`, returning a `rev` that a later `list_folder` actually reports
+  (echo suppression), reassembling an `upload_session`, applying
+  `create_folder`/`delete`/`move`. A mock cannot falsify these, so they carry
+  **distinct LIVE ids** (D17: R-KEIO-B98F, R-KFQK-P0Z4, R-KGYH-2SPT) whose test
+  runs against the **real app folder** with the suite refresh token
+  (`DROPBOX_*` from `.envrc`), asserting the observable outcome via a follow-up
+  `list_folder`. The live smoke is **not** part of the hermetic green suite —
+  it is a distinct, reachable check (`go test -tags live ./...`) the D17 build
+  phases require be run once; the phases that own those ids state it in their
+  "Done when".
 
 ## Layout
 
@@ -162,6 +199,20 @@ Spec plus the landing handler (over `rt.WWW()`), the `POST /mcp` mount (over
 `internal/mcp.NewHandler`), the `/content`/`/list` mounts, and the sync-engine
 wiring — with the listen port, content-base default, and reflection example
 origin all resolved from `registry` (D9).
+
+**Package shape additions (thread 4, D14–D20).** `internal/dropbox` gains the
+streaming byte primitives (`WriteFrom`/`Open` in `mirror.go`, D14), the directory
+store/service surface (`store.go`/`service.go` + `004_directories.sql`, D15), the
+mutating `Service` methods (`Write`/`Mkdir`/`Delete`/`Move`, D16), the Dropbox
+**write** client methods (`Upload`/`CreateFolder`/`DeletePath`/`Move` in
+`client.go`, D17), a new `uploader.go` worker draining `upload_queue`
+(`005_upload_queue.sql`, D17), and the `origin` field on the event payload
+(`events.go`, D18). `cmd/dropbox/main.go` mounts the new loopback routes
+(`PUT`/`DELETE /content`, `POST /mkdir`, `POST /move`, `GET /stat`) beside the
+existing byte routes and starts the uploader through the `Spec.Workers` hook.
+`internal/mcp` grows four write tools (`put`/`mkdir`/`delete`/`move`, D19). A new
+shipped `dropbox/docs/` tree carries the filesystem-API integrator reference
+(D20). The frozen `001`–`003` migrations are untouched; `004`/`005` are additive.
 
 Design is **rewritten in place**, not append-only (history lives in the plan): a
 changed Decision is rewritten in its `DNN.md` and `INDEX.md` is regenerated; a

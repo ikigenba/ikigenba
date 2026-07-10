@@ -1,159 +1,194 @@
-# dropbox — Product (landing page)
+# dropbox — Product
 
-**Authority: intent.** This document owns *why* dropbox serves a web landing
-page, *for whom*, what is in and out of scope, and what we **promise** the viewer
-— in outcome terms only. Mechanism (the handler, the embedded template, the
-Carbon tokens, the nginx fragment, the route pattern) and its checkable proof
-live in `project/design/README.md`. Where the two touch observable behavior,
-product states the *promise* and design states the *exact, checkable form*; that
-boundary keeps product, design, and plan from overlapping.
+**Authority: intent.** This document owns *why* dropbox exists, *for whom*, what
+is in and out of scope, and what we **promise** — in outcome terms only.
+Mechanism (the handlers, the upload queue, the mirror layout, the Dropbox API
+calls, the Carbon tokens, the route patterns) and its checkable proof live in
+`project/design/`. Where product and design touch observable behavior, product
+states the *promise* and design states the *exact, checkable form*; that boundary
+keeps product, design, and plan from overlapping.
 
-> **Scope note.** This product doc covers **only** the new web-pages direction
-> for dropbox — the landing page. dropbox's existing mirror-sync daemon, its
-> four-tool MCP surface (`health`/`reflection`/`list`/`get`), its `/feed`
-> producer, and its loopback `/content`/`/list` byte routes are owned by
-> `dropbox/CLAUDE.md` and the domain notes; they are
-> untouched here. This work mirrors the suite's approved crm landing-page
-> template, retargeted to dropbox.
+> **Scope note.** dropbox now serves two product threads, and this doc covers
+> both as one coherent statement:
+>
+> 1. **The human web landing page** — the session-gated front door under
+>    `/srv/dropbox/` showing the service name and running version.
+> 2. **The bidirectional, service-facing filesystem** — dropbox is the suite's
+>    shared file store: a single folder every service can read *and* write, kept
+>    in sync with the owner's Dropbox app folder in **both** directions.
+>
+> **Out of scope here:** wiring the suite's *other* services to call the
+> filesystem API (each service adopts it in its own `project/` later — this
+> covers only dropbox's own capability). The lower-level download-engine
+> correctness rules (crash/replay, cursor, case-folding) are mechanism, owned by
+> design and `dropbox/CLAUDE.md`.
 
 ## Problem
 
-Until now every ikigenba service except the dashboard served **only** machine
-surfaces — the RFC 9728 PRM bootstrap, `/health`, the bearer-gated `/mcp`, the
-loopback `/feed`, and (for dropbox) the loopback-only `/content`/`/list` byte
-routes. A human who opened `<account>.ikigenba.com/srv/dropbox/` in a browser got
-nothing useful: there is no token in a browser, so the bearer gate refuses them,
-and there was no human-facing page behind that mount at all. The services
-declared "no UI," and that statement is now being deliberately retired.
-
-The suite is evolving so that **every deployable app serves its own HTML web
-pages**, beginning with a single landing page. Each app's page will later
-diverge to serve that app's specific purpose, so there is **no shared landing
-handler** — each app owns its own page. v1 is the uniform starting point: a
-human who lands on the mount root should see, at minimum, *which service this is*
-and *what version is running*, presented on the suite's design system rather than
-as a raw error or a blank proxy response.
+Every ikigenba service runs as an isolated process with its own database and no
+shared place to put files. dropbox already keeps a **private, read-only** mirror
+of the owner's Dropbox app folder — but that mirror was a dead end for the rest
+of the suite: a service could not create a file in it, and nothing a service
+produced (an export, a rendered artifact, an email attachment, a script output)
+could reach the owner's Dropbox. Files could flow **down** (Dropbox → box) but
+never **up** (service → Dropbox), and services had no sanctioned way to read or
+write the shared folder at all. Meanwhile a human who opened `/srv/dropbox/` in a
+browser saw nothing useful — no token in a browser meant the bearer gate refused
+them, and there was no human-facing page there.
 
 ## Purpose
 
-The dropbox landing page is the **human front door** to the dropbox service under
-`/srv/dropbox/`. For v1 it is intentionally minimal: a single Carbon-styled card
-showing the **service name** and the **running version**. It is gated by the
-viewer's **dashboard browser session** (the login cookie), not by a bearer
-token — because a browser cannot present a bearer token, and because a
-name-and-version page warrants only a coarse "are you a logged-in user of this
-box" check, never a per-resource authorization. The page proves the service is
-deployed, reachable, and on-system, and it establishes the seam (handler +
-embedded template + embedded design assets) that every later dropbox web page
-grows from.
+dropbox is the suite's **shared file store and its Dropbox bridge**. It owns one
+folder that mirrors the owner's Dropbox app folder, exposes that folder to the
+suite's services as a read/write/discovery **API** (dropbox stays the sole owner
+of the bytes — services ask dropbox, they never touch the raw files), and keeps
+the folder and Dropbox in sync **both ways**: changes made in Dropbox flow down,
+and changes made by any service flow up. It also serves a minimal human landing
+page confirming the service is deployed and which version is live. The product
+surface for agents is **MCP**; the surface for on-box services is a set of
+loopback endpoints; the human surface is the landing page.
 
 ## Users
 
-- **A logged-in dashboard user, in a browser.** Any human authenticated to this
-  box's dashboard who navigates to `/srv/dropbox/`. They see the service name and
-  version on the Carbon design system. The check is deliberately **coarse**: any
-  logged-in dashboard user may view any app's landing page — there is no
-  per-resource or per-owner authorization on this page.
-- **The operator, confirming a deploy.** Opens the mount root after a deploy or
-  rollback to confirm dropbox is up and which version is live — a browser-visible
-  liveness signal that complements the machine `/health` and `version` checks.
-
-The page is **not** for agents or MCP clients — those keep using the
-bearer-gated `/mcp` endpoint, which is unchanged. It is also **not** the
-loopback-only `/content`/`/list` byte routes — those stay private to the box and
-are unaffected.
+- **A suite service, reading and writing files.** Any on-box service (crm, wiki,
+  scripts, gmail, sites, …) that needs to store a file where the owner can see it
+  in Dropbox, or read a file the owner or another service placed there. It
+  creates, reads, overwrites, deletes, moves, and lists files and directories by
+  calling dropbox.
+- **An off-box agent, over MCP.** An agent with no local mount browses, fetches,
+  and now also creates, overwrites, deletes, and moves files through dropbox's
+  MCP tools (small files; large transfers are the services' loopback path).
+- **The owner and other people, through Dropbox directly.** They see the folder
+  as any Dropbox user does. By convention they treat it as read-only, or add
+  files only in designated **inbox** folders; the suite is the authority on the
+  rest.
+- **A future integrator agent.** An agent later wiring another service to use the
+  filesystem, who needs a precise reference for every endpoint it will call.
+- **A logged-in dashboard user / the operator, in a browser.** Opens
+  `/srv/dropbox/` to confirm the service is up and which version is running.
 
 ## Scope
 
-The dropbox landing page does this and only this:
+dropbox does this and only this:
 
-- **Serve one landing page at the mount root** — a `GET` of the bare
-  `/srv/dropbox/` root returns an HTML page. Internally (nginx strips the mount
-  prefix) the service answers this at its exact root path `/`.
-- **Show the service name and version** — the page displays the service name
-  (`dropbox`) and the running version, taken from the values the chassis already
-  exposes. Nothing else is shown in v1.
-- **Look like the suite** — the page is styled with the **Carbon** design system:
-  monochrome neutrals, blue `#2563EB` as the only signal color, the Space
-  Grotesk / IBM Plex Sans / IBM Plex Mono type pairing, the 4px spacing grid. A
-  simple centered card: service name in display type, version as a mono label.
-- **Carry its own design assets** — dropbox embeds its **own** copy of the Carbon
-  `tokens.css` and the woff2 fonts under its static directory and serves them
-  from its own mount; it does not depend on the dashboard's assets at runtime.
-- **Gate humans by the dashboard session cookie** — the page (and any future
-  dropbox web page) is reachable only by a viewer whose `dashboard_session`
-  cookie validates against the dashboard's web-session store. An unauthenticated
-  browser gets `401`. This is the same coarse session gate `sites` already uses
-  for its private static tier.
+- **Serve the shared folder to services as an API** — create, read, overwrite,
+  delete, move, and discover (list / stat / walk) files **and** directories.
+  Directories are real, including **empty** ones.
+- **Sync both directions** — changes originating in Dropbox continue to flow down
+  into the mirror (unchanged); changes originating from a service flow **up** to
+  Dropbox. The suite is the **authority**: a service write wins and overwrites
+  the Dropbox copy (last-writer-by-sync-order); Dropbox is a replica that
+  converges to the suite's current state.
+- **Return writes immediately, propagate durably** — a write succeeds as soon as
+  it is safe on the box; reaching Dropbox happens in the background and survives
+  restarts and Dropbox outages, and a push that cannot complete stays visible
+  rather than being lost.
+- **Move large files without exhausting memory** — reads, writes, and uploads
+  stream, so a large image moves within a small, fixed memory footprint on a
+  memory-constrained box.
+- **Tell consumers what changed and who changed it** — every file change emits an
+  event that names the change and its **origin** (which service wrote it, or
+  Dropbox).
+- **Ship an integrator reference** — a document describing every filesystem-API
+  endpoint and its behavior, so a future agent can wire another service without
+  reading the source.
+- **Serve the human landing page** — a `GET` of `/srv/dropbox/` returns a
+  Carbon-styled page showing the service name and running version, gated by the
+  dashboard browser session.
 
-It deliberately does **nothing else** in v1 — in particular it does not: perform
-any per-resource or per-owner authorization (the session gate is coarse by
-design); expose any mirror file, file index, or sync state on the page; add or
-change any MCP tool; serve any interactive control, form, or write action; alter
-the bearer-gated `/mcp`, the PRM well-known, `/health`, the loopback `/feed`, or
-the loopback-only `/content`/`/list` byte routes; or share a landing handler with
-any other service. Later dropbox-specific web pages are **out of scope** for this
-work — this establishes only the uniform v1 page and the seam they will grow
-from.
+It deliberately does **nothing else**: it does not give services raw filesystem
+access to the bytes (they go through dropbox); it does not preserve conflicting
+Dropbox edits as separate copies (the suite wins, overwrite); it does not offer a
+real on-disk path / mount for tools that need one (a service does that work in
+its own temp space and transfers final artifacts); it does not enforce which
+service may write where (the shared namespace is organized by convention, not
+walls); it does not wire any other service to use the API; and it does not expose
+the sync internals, the event feed, health, MCP bootstrap, or the landing page as
+part of the filesystem-API reference.
 
 ## Contractual constants
 
 Promised values the design must honor verbatim and never re-declare:
 
-- **The landing page lives at the mount root only.** A human reaches it at
-  `<account>.ikigenba.com/srv/dropbox/`; the service answers it at its exact root
-  path `/` and nowhere else. It never shadows `/mcp`, `/health`, `/feed`,
-  `/content`, `/list`, or the PRM well-known.
-- **The page is gated by the dashboard browser session, not by a bearer token.**
-  The gate is `auth_request /_session-authn` (the dashboard-owned, loopback-only
-  cookie validator) — never `/_authn` (the bearer gate). A failed session check
-  yields `401`.
-- **The gate is coarse.** Any logged-in dashboard user may view the page; there
-  is no per-resource check. This is acceptable precisely because the page reveals
-  only the service name and version.
-- **v1 content is exactly: service name + running version.** No more. The values
-  come from what the chassis already exposes (`rt.Service()` / `rt.Version()`);
-  the page adds no new data source.
-- **Each app owns its own landing page.** There is no shared landing handler;
-  dropbox's page code, template, and embedded assets live under `dropbox/`.
-- **The visual system is Carbon.** `design/carbon.md` (rules) + `design/tokens.css`
-  (tokens) + `design/example.html` (reference) are the source of truth; dropbox
-  embeds its own copy of the tokens and fonts.
+- **The suite is the authority; Dropbox is a replica.** A service write is pushed
+  up with **overwrite** semantics and always wins; Dropbox converges to the
+  suite's current state. Conflicting concurrent Dropbox edits are not preserved
+  as separate copies.
+- **The shared folder is one namespace, organized by convention.** Any service
+  may read or write anywhere under the folder; there is no per-service
+  enforcement. Human read-only / inbox usage is convention, not enforced.
+- **A write is durable locally before it is on Dropbox.** The write returns on
+  local commit; the upload is asynchronous, coalescing (only the latest version
+  of a path need reach Dropbox), and never silently dropped on failure.
+- **The MCP write path is for small files.** MCP `put` is capped at **25 MiB**
+  (like `get`); larger transfers use the services' loopback path.
+- **The filesystem-API reference ships under `dropbox/docs/`.** It covers the
+  filesystem-interaction endpoints only, and its completeness is mechanically
+  enforced.
+- **The landing page lives at the mount root only, gated by the dashboard
+  session.** A human reaches it at `<account>.ikigenba.com/srv/dropbox/`; an
+  unauthenticated browser gets `401`; the gate is coarse (any logged-in dashboard
+  user). v1 content is exactly the service name + running version.
+- **The visual system is Carbon.** dropbox embeds its own copy of the Carbon
+  tokens and fonts.
 
 ## What we promise (user-facing behavior)
 
-- **A logged-in human who opens `/srv/dropbox/` sees a real page** — the dropbox
-  service name and the running version, on the suite's design system, not a raw
-  proxy error or a blank page.
-- **A browser that is not logged in is refused** — an unauthenticated browser
-  hitting `/srv/dropbox/` gets `401`, because the page is gated by the dashboard
-  session cookie.
-- **Agents are unaffected** — the bearer-gated `/mcp` endpoint, the PRM
-  well-known, `/health`, and the loopback `/feed` behave exactly as before; the
-  landing page is added beside them, shadowing none of them.
-- **The private byte routes are unaffected** — the loopback-only `/content` and
-  `/list` routes, and their nginx defence-in-depth `= /srv/dropbox/content`
-  block, behave exactly as before; the landing page never touches them.
-- **The page looks like the rest of the suite** — same fonts, same neutral
-  palette, same single blue signal color, same spacing grid as the dashboard and
-  the other apps.
-- **The version on the page is the version that is actually running** — it
-  reflects the deployed binary's build version, so the operator can confirm a
-  deploy or rollback in a browser.
+- **A service can put a file into the shared folder and the owner sees it in
+  Dropbox** — it creates or overwrites a file through dropbox, and that file
+  appears in the owner's Dropbox app folder without the service doing anything
+  else.
+- **A service can read, delete, move, and list files and directories** — the
+  folder behaves like a real filesystem: create an empty directory and it exists;
+  move a large file and it relocates without re-transferring its bytes; delete a
+  directory and its whole subtree goes.
+- **Writes are fast and survive outages** — a write returns immediately on the
+  box; if Dropbox is down or slow, the write still succeeds and the change is
+  pushed later, and a push that keeps failing shows up as a visible backlog, not
+  a silent loss.
+- **Large files move without blowing memory** — moving a big image in or out does
+  not load the whole file into memory.
+- **Consumers can tell who changed a file** — each change event says whether a
+  service wrote it (and which one) or whether it came from Dropbox, so a service
+  can ignore its own writes.
+- **An off-box agent can now write, not just read** — through MCP it can create,
+  overwrite, delete, and move small files, symmetric with browsing and fetching.
+- **A future integrator has a complete API reference** — `dropbox/docs/`
+  documents every filesystem endpoint, its parameters, and its behavior, and the
+  reference cannot silently fall out of date as endpoints are added.
+- **A logged-in human who opens `/srv/dropbox/` sees a real page** — the service
+  name and running version, on the suite's design system; an unauthenticated
+  browser gets `401`; the version shown is the version actually running.
+- **The machine surfaces are unaffected** — the bearer-gated `/mcp`, the PRM
+  well-known, `/health`, and the loopback `/feed` behave as before; the download
+  direction and its guarantees are unchanged.
 
 ## Success criteria (outcomes)
 
-Each is a result the viewer or operator can confirm against the running service:
+Each is a result a service, agent, operator, or viewer can confirm against the
+running service:
 
-- As a logged-in dashboard user I open `<account>.ikigenba.com/srv/dropbox/` and
-  see a Carbon-styled page showing the service name `dropbox` and the running
-  version.
-- As a browser with no dashboard session I open `/srv/dropbox/` and am refused
-  with `401`, not shown the page.
-- The version shown on the page matches the version the deployed binary reports.
-- The page's fonts and colors match the suite design system (Carbon), and the
-  page loads its own embedded `tokens.css` and fonts, not the dashboard's.
-- An MCP client still discovers the AS via the PRM well-known and calls the
-  bearer-gated `/mcp` exactly as before; the landing page changed nothing for it.
-- Opening `/srv/dropbox/content` from nginx still returns `404`, and `/health`
-  still responds — the landing page shadowed neither.
+- A service creates a file through dropbox and, after the sync settles, the file
+  is present in the owner's Dropbox app folder with the same contents.
+- A service overwrites an existing file and the Dropbox copy converges to the new
+  contents (the suite's version wins); it is not turned into a conflicted copy.
+- A service creates an **empty** directory and a later `list`/`stat` shows that
+  directory; deleting the directory removes its whole subtree.
+- A service moves a large file and it relocates in Dropbox without re-uploading
+  its bytes; a large file transfers in or out without the service exhausting
+  memory.
+- A write returns success while Dropbox is unreachable, and once Dropbox is back
+  the file appears there; a push that cannot complete is visible in the service's
+  health backlog rather than lost.
+- A consumer reading the event feed can see, for each change, whether it was
+  written by a specific service or came from Dropbox.
+- An off-box agent uses the MCP `put`/`mkdir`/`delete`/`move` tools to change the
+  folder; a `put` over 25 MiB is refused as too large.
+- `dropbox/docs/` documents every filesystem-interaction endpoint, and adding a
+  new such endpoint without documenting it fails a check.
+- As a logged-in dashboard user I open `/srv/dropbox/` and see a Carbon-styled
+  page showing the service name `dropbox` and the running version; with no
+  session I am refused with `401`.
+- The bearer-gated `/mcp`, the PRM well-known, `/health`, and `/feed` behave
+  exactly as before; the download direction still pulls Dropbox changes into the
+  mirror.
