@@ -59,6 +59,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D53 → `project/design/D53.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the tool table — owns R-JKMR-5MV1
 - D54 → `project/design/D54.md` — Composition-root normalization: one inline `Spec` in `cmd/wiki/main.go` — none (structural)
 - D55 → `project/design/D55.md` — Delete the `internal/db` chassis shim (keep the read handle) and true up the docs — none (structural)
+- D56 → `project/design/D56.md` — `ask` MCP citations are fully-qualified front-door URLs — owns R-Y7OR-PH1I, R-Y8WO-38S7, R-YA4K-H0IW
+- D57 → `project/design/D57.md` — Adopt the MCP self-discovery convention: instructions, lean tool descriptions, a `guide` tool — owns R-YDS9-MBQZ, R-YF06-03HO, R-YG82-DV8D, R-YHFY-RMZ2, R-YINV-5EPR
 
 ## Verification ids → Decision
 
@@ -318,6 +320,14 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-Y1YP-0C5H → D15 → `project/design/D15.md`
 - R-Y36L-E3W6 → D16 → `project/design/D16.md`
 - R-Y4EH-RVMV → D16 → `project/design/D16.md`
+- R-Y7OR-PH1I → D56 → `project/design/D56.md`
+- R-Y8WO-38S7 → D56 → `project/design/D56.md`
+- R-YA4K-H0IW → D56 → `project/design/D56.md`
+- R-YDS9-MBQZ → D57 → `project/design/D57.md`
+- R-YF06-03HO → D57 → `project/design/D57.md`
+- R-YG82-DV8D → D57 → `project/design/D57.md`
+- R-YHFY-RMZ2 → D57 → `project/design/D57.md`
+- R-YINV-5EPR → D57 → `project/design/D57.md`
 - R-Z5JL-2IBS → D28 → `project/design/D28.md`
 - R-Z6RH-GA2H → D28 → `project/design/D28.md`
 - R-Z7ZD-U1T6 → D28 → `project/design/D28.md`
