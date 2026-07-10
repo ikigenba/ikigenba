@@ -170,6 +170,7 @@ func TestToolsListComposesDropboxToolsWithChassisTools(t *testing.T) {
 // the event_type detail (schema + example), and the corrective error for an
 // unknown type.
 func TestReflection(t *testing.T) {
+	// R-KQPO-4YND
 	h := newHandler(t)
 
 	// No-arg → the index {publishes, subscribes}.
@@ -207,26 +208,30 @@ func TestReflection(t *testing.T) {
 		t.Fatalf("expected empty subscribes for dropbox, got %v", subscribes)
 	}
 
-	// event_type → the publish detail (schema + example).
-	detail, isErr := callTool(t, h, "reflection", `{"event_type":"file.created"}`)
-	if isErr {
-		t.Fatalf("reflection detail isError: %v", detail)
-	}
-	if detail["type"] != "file.created" {
-		t.Fatalf("detail type mismatch: %v", detail)
-	}
-	if detail["description"] == "" {
-		t.Fatalf("detail missing description: %v", detail)
-	}
-	sch, ok := detail["schema"].(map[string]any)
-	if !ok || sch["type"] != "object" {
-		t.Fatalf("detail schema not an object schema: %v", detail["schema"])
-	}
-	if _, ok := sch["properties"].(map[string]any); !ok {
-		t.Fatalf("detail schema missing properties: %v", sch)
-	}
-	if _, ok := detail["example"].(map[string]any); !ok {
-		t.Fatalf("detail missing example object: %v", detail["example"])
+	// event_type → each publish detail includes origin in its schema and example.
+	for _, eventType := range []string{"file.created", "file.modified", "file.deleted"} {
+		detail, isErr := callTool(t, h, "reflection", `{"event_type":"`+eventType+`"}`)
+		if isErr {
+			t.Fatalf("reflection detail for %s isError: %v", eventType, detail)
+		}
+		if detail["type"] != eventType {
+			t.Fatalf("detail type for %s = %v", eventType, detail)
+		}
+		if detail["description"] == "" {
+			t.Fatalf("detail for %s missing description: %v", eventType, detail)
+		}
+		sch, ok := detail["schema"].(map[string]any)
+		if !ok || sch["type"] != "object" {
+			t.Fatalf("detail schema for %s is not an object schema: %v", eventType, detail["schema"])
+		}
+		properties, ok := sch["properties"].(map[string]any)
+		if !ok || properties["origin"] == nil {
+			t.Fatalf("detail schema for %s missing origin: %v", eventType, sch)
+		}
+		example, ok := detail["example"].(map[string]any)
+		if !ok || example["origin"] != dropbox.OriginDropbox {
+			t.Fatalf("detail example for %s origin = %v, want %q", eventType, example["origin"], dropbox.OriginDropbox)
+		}
 	}
 
 	// Unknown event_type -> chassis error envelope naming the unknown and known types.

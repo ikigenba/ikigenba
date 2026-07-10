@@ -158,6 +158,7 @@ func (s *Service) applyUpsert(ctx context.Context, path, rev, contentHash string
 		ContentHash: contentHash,
 		Size:        size,
 		OccurredAt:  now,
+		Origin:      OriginDropbox,
 	}
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		if err := s.upsertDirParents(tx, path); err != nil {
@@ -203,6 +204,7 @@ func (s *Service) applyRename(ctx context.Context, oldDisplay, newDisplay, rev, 
 		ContentHash: contentHash,
 		Size:        size,
 		OccurredAt:  now,
+		Origin:      OriginDropbox,
 	}
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		// Delete the old display-path row then insert the new one: a case-only
@@ -262,6 +264,7 @@ func (s *Service) applyDelete(ctx context.Context, path string) (emitted int, er
 				ContentHash: r.ContentHash,
 				Size:        r.Size,
 				OccurredAt:  now,
+				Origin:      OriginDropbox,
 			}
 			if err := s.appendEvent(tx, ev); err != nil {
 				return err

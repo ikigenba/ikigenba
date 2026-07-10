@@ -28,6 +28,9 @@ const (
 	EventFileCreated  = "file.created"
 	EventFileModified = "file.modified"
 	EventFileDeleted  = "file.deleted"
+	// OriginDropbox identifies a file change pulled from Dropbox, rather than
+	// one written by a suite service.
+	OriginDropbox = "dropbox"
 )
 
 // Events is the published-event Registry for the reflection tool and Append-time
@@ -39,17 +42,17 @@ const (
 var Events = outbox.Registry{
 	{
 		Type:        EventFileCreated,
-		Description: "A path not previously in the mirror index now exists. Carries a REFERENCE to the bytes (content_url), never the bytes themselves — fetch current bytes over the loopback /content endpoint.",
+		Description: "A path not previously in the mirror index now exists. Carries a REFERENCE to the bytes (content_url), never the bytes themselves — fetch current bytes over the loopback /content endpoint. origin is \"dropbox\" for a pulled change or the writing service's client id for a service write.",
 		Sample:      sampleFilePayload(EventFileCreated),
 	},
 	{
 		Type:        EventFileModified,
-		Description: "A known path's rev changed (includes a case-only rename). Carries the current rev/content_hash/size and a content_url reference to the bytes.",
+		Description: "A known path's rev changed (includes a case-only rename). Carries the current rev/content_hash/size and a content_url reference to the bytes. origin is \"dropbox\" for a pulled change or the writing service's client id for a service write.",
 		Sample:      sampleFilePayload(EventFileModified),
 	},
 	{
 		Type:        EventFileDeleted,
-		Description: "A known path is gone; one event per indexed file removed (including every file beneath a deleted folder). Carries the file's LAST-KNOWN rev/content_hash/size, read before the in-tx delete.",
+		Description: "A known path is gone; one event per indexed file removed (including every file beneath a deleted folder). Carries the file's LAST-KNOWN rev/content_hash/size, read before the in-tx delete. origin is \"dropbox\" for a pulled change or the writing service's client id for a service write.",
 		Sample:      sampleFilePayload(EventFileDeleted),
 	},
 }
@@ -65,6 +68,7 @@ func sampleFilePayload(eventType string) filePayload {
 		Size:        4096,
 		ContentURL:  contentURL(registry.BaseURL("dropbox"), "/notes/meeting.md"),
 		OccurredAt:  "2026-06-03T12:00:00.000000000Z",
+		Origin:      OriginDropbox,
 	}
 }
 
@@ -83,6 +87,7 @@ type FileEvent struct {
 	ContentHash string // verified Dropbox block-SHA256
 	Size        int64  // bytes (last-known on delete)
 	OccurredAt  string // RFC3339Nano UTC
+	Origin      string // writing service's X-Client-Id, or OriginDropbox
 }
 
 // filePayload is the wire shape of a file lifecycle event (PLAN.md §5). The
@@ -96,6 +101,7 @@ type filePayload struct {
 	Size        int64  `json:"size"`
 	ContentURL  string `json:"content_url"`
 	OccurredAt  string `json:"occurred_at"`
+	Origin      string `json:"origin"`
 }
 
 // contentURL builds the §5 content_url for a literal Dropbox path: the service's
@@ -117,6 +123,7 @@ func buildFilePayload(contentBase string, ev FileEvent) (outbox.Event, error) {
 		Size:        ev.Size,
 		ContentURL:  contentURL(contentBase, ev.Path),
 		OccurredAt:  ev.OccurredAt,
+		Origin:      ev.Origin,
 	}
 	raw, err := json.Marshal(p)
 	if err != nil {

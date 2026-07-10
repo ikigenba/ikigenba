@@ -33,6 +33,9 @@ func TestEventsSamplesUseRegistryDropBoxContentOrigin(t *testing.T) {
 		if sample.ContentURL != wantURL {
 			t.Fatalf("%s content_url = %q, want %q", entry.Type, sample.ContentURL, wantURL)
 		}
+		if sample.Origin != OriginDropbox {
+			t.Fatalf("%s origin = %q, want %q", entry.Type, sample.Origin, OriginDropbox)
+		}
 	}
 	for eventType := range wantTypes {
 		t.Fatalf("missing event type %q", eventType)

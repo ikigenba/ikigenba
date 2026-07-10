@@ -201,6 +201,47 @@ func TestRule5_CreateModifyRevDedup(t *testing.T) {
 	}
 }
 
+func TestDropboxPullEventsUseDropboxOrigin(t *testing.T) {
+	// R-KPHR-R6WO
+	fc := newFakeClient()
+	eng, _, sink := newEngineHarness(t, fc)
+
+	fc.listResult = ListResult{Entries: []DeltaEntry{
+		fc.addFile("/notes/report.md", "rev1", ContentHash([]byte("first")), []byte("first")),
+	}, Cursor: "initial"}
+	if err := eng.bootstrap(ctx()); err != nil {
+		t.Fatalf("list_folder pull: %v", err)
+	}
+
+	modified := fc.addFile("/notes/report.md", "rev2", ContentHash([]byte("second")), []byte("second"))
+	if err := applyEntries(t, eng, modified); err != nil {
+		t.Fatalf("modified pull: %v", err)
+	}
+	caseRename := fc.addFile("/notes/Report.md", "rev3", ContentHash([]byte("third")), []byte("third"))
+	if err := applyEntries(t, eng, caseRename); err != nil {
+		t.Fatalf("rename pull: %v", err)
+	}
+	if err := applyEntries(t, eng, deletedEntry("/notes/Report.md")); err != nil {
+		t.Fatalf("delete pull: %v", err)
+	}
+
+	if len(sink.events) == 0 {
+		t.Fatal("pull emitted no file events")
+	}
+	types := map[string]bool{}
+	for _, event := range sink.events {
+		types[event.Type] = true
+		if event.Origin != OriginDropbox {
+			t.Errorf("%s event origin = %q, want %q", event.Type, event.Origin, OriginDropbox)
+		}
+	}
+	for _, eventType := range []string{EventFileCreated, EventFileModified, EventFileDeleted} {
+		if !types[eventType] {
+			t.Errorf("pull emitted no %s event: %+v", eventType, sink.events)
+		}
+	}
+}
+
 // ── Rule 1: folder delete fans out to one file.deleted per row ────────────────
 
 func TestRule1_FolderDeleteSubtreeFanout(t *testing.T) {
