@@ -269,7 +269,7 @@ func TestServeFailsLoudWhenAnthropicKeyMissing(t *testing.T) {
 	}
 }
 
-func TestBuildSpecWiresFifteenMCPTools(t *testing.T) {
+func TestBuildSpecWiresSixteenMCPTools(t *testing.T) {
 	// R-MUQ4-K1JS
 	// R-3G73-064M
 	ctx := context.Background()
@@ -317,7 +317,7 @@ func TestBuildSpecWiresFifteenMCPTools(t *testing.T) {
 	for _, tool := range got.Result.Tools {
 		names[tool.Name] = true
 	}
-	want := []string{"ingest", "status", "abort", "rerun", "jobs", "jobs_count", "merge", "merges", "ask", "subjects", "claims", "page", "llm_calls", "health", "reflection"}
+	want := []string{"ingest", "status", "abort", "rerun", "jobs", "jobs_count", "merge", "merges", "ask", "subjects", "claims", "page", "llm_calls", "guide", "health", "reflection"}
 	if len(names) != len(want) {
 		t.Fatalf("tool names = %#v, want exact %v", names, want)
 	}

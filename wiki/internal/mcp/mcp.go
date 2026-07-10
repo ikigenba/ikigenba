@@ -4,6 +4,7 @@ package mcp
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,7 +21,7 @@ import (
 	"wiki/internal/wiki"
 )
 
-const Instructions = "wiki is a knowledge base built from ingested source text. Call ingest to queue text for extraction; the pipeline distills subjects (entity/event/concept) and claims and compiles a cited page per subject. Use ask for a grounded, cited answer over the owner's wiki; subjects, claims, and page to read the compiled knowledge by type/slug path; jobs and status to track ingestion; and merge to fold a duplicate subject into another. health and reflection report service status and the event graph."
+const Instructions = "wiki is a knowledge base (notes, a second brain) built from source text you ingest. Ingest queues text; a background pipeline distills the subjects it concerns — entities, events, and concepts — and the claims about them, and compiles one cited page per subject. Ask it a question for a grounded, cited answer over your own wiki; read the compiled knowledge by type/slug path with subjects, claims, and page; track ingestion with status, jobs, and jobs_count; merge to fold a duplicate subject into another; and steer or inspect the pipeline with abort, rerun, and llm_calls. Call guide for the full field catalogs, the type/slug path format, and worked examples before your first ingest or merge."
 
 // Handler holds configured wiki domain tool dependencies.
 type Handler struct {
@@ -365,6 +366,7 @@ func Tools(opts ...Option) []appkitmcp.Tool {
 	if h.calls != nil {
 		tools = append(tools, domainTool(llmCallsTool(), h.handleLLMCallsCall))
 	}
+	tools = append(tools, domainTool(guideTool(), handleGuideCall))
 	return tools
 }
 
@@ -712,10 +714,14 @@ func (h *Handler) handleLLMCallsCall(ctx context.Context, raw json.RawMessage, _
 	return appkitmcp.JSONResult(pagedResult("llm_calls", publicLLMCallsResult(calls), next))
 }
 
+func handleGuideCall(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {
+	return appkitmcp.TextResult(guideDoc), nil
+}
+
 func ingestTool() map[string]any {
 	return map[string]any{
 		"name":        "ingest",
-		"description": "Queue source text for wiki ingestion.",
+		"description": "Ingest source text when adding knowledge. Provide text plus optional title and tags; queues background processing and returns a job_id immediately.",
 		"inputSchema": objectSchema(map[string]any{
 			"text":  map[string]any{"type": "string"},
 			"title": map[string]any{"type": "string"},
@@ -727,7 +733,7 @@ func ingestTool() map[string]any {
 func jobStatusTool() map[string]any {
 	return map[string]any{
 		"name":        "status",
-		"description": "Return the status of a wiki ingest job.",
+		"description": "Status check for an ingest or merge job. Provide its job_id; returns lifecycle timestamps, errors, and compiled subject paths.",
 		"inputSchema": objectSchema(map[string]any{
 			"job_id": map[string]any{"type": "string"},
 		}, []string{"job_id"}),
@@ -737,7 +743,7 @@ func jobStatusTool() map[string]any {
 func jobAbortTool() map[string]any {
 	return map[string]any{
 		"name":        "abort",
-		"description": "Abort a pending or working wiki ingest job.",
+		"description": "Abort a pending or working job by job_id. This terminal action cannot abort a finished job; returns whether it was aborted and its resulting status.",
 		"inputSchema": objectSchema(map[string]any{
 			"job_id": map[string]any{"type": "string"},
 		}, []string{"job_id"}),
@@ -747,7 +753,7 @@ func jobAbortTool() map[string]any {
 func jobRerunTool() map[string]any {
 	return map[string]any{
 		"name":        "rerun",
-		"description": "Requeue a completed, failed, or aborted wiki ingest job.",
+		"description": "Rerun a done, failed, or aborted job by job_id. This requeues its work and returns whether it was requeued and its resulting status.",
 		"inputSchema": objectSchema(map[string]any{
 			"job_id": map[string]any{"type": "string"},
 		}, []string{"job_id"}),
@@ -757,7 +763,7 @@ func jobRerunTool() map[string]any {
 func jobsTool() map[string]any {
 	return map[string]any{
 		"name":        "jobs",
-		"description": "List wiki ingest jobs with cursor pagination.",
+		"description": "Jobs history for ingestion and merges. Filter by status, kind, or RFC3339 time range and paginate with limit/cursor; returns jobs and next_cursor.",
 		"inputSchema": listSchema(map[string]any{
 			"status": jobStatusArraySchema(),
 			"kind":   jobKindArraySchema(),
@@ -770,7 +776,7 @@ func jobsTool() map[string]any {
 func jobsCountTool() map[string]any {
 	return map[string]any{
 		"name":        "jobs_count",
-		"description": "Count wiki ingest jobs matching the supplied filters.",
+		"description": "Jobs count for ingestion and merges. Apply the same status, kind, and RFC3339 time filters as jobs; returns the matching count without pagination.",
 		"inputSchema": objectSchema(map[string]any{
 			"status": jobStatusArraySchema(),
 			"kind":   jobKindArraySchema(),
@@ -783,7 +789,7 @@ func jobsCountTool() map[string]any {
 func mergeTool() map[string]any {
 	return map[string]any{
 		"name":        "merge",
-		"description": "Queue a subject merge job from one subject path into another.",
+		"description": "Merge a duplicate subject into its survivor. Provide from and to as type/slug paths; queues an irreversible fold and returns its job_id.",
 		"inputSchema": objectSchema(map[string]any{
 			"from": map[string]any{"type": "string"},
 			"to":   map[string]any{"type": "string"},
@@ -794,7 +800,7 @@ func mergeTool() map[string]any {
 func mergesTool() map[string]any {
 	return map[string]any{
 		"name":        "merges",
-		"description": "List subject merge aliases with cursor pagination.",
+		"description": "Merge alias audit history. Paginate with limit/cursor; returns folded names, survivor subject IDs, and next_cursor.",
 		"inputSchema": listSchema(map[string]any{}),
 	}
 }
@@ -812,7 +818,7 @@ func jobStatusArraySchema() map[string]any {
 func askTool() map[string]any {
 	return map[string]any{
 		"name":        "ask",
-		"description": "Answer a question using the authenticated owner's wiki.",
+		"description": "Ask a question over your own wiki when you need a grounded answer. Provide question; returns found, answer, and cited page URLs with titles.",
 		"inputSchema": objectSchema(map[string]any{
 			"question": map[string]any{"type": "string"},
 		}, []string{"question"}),
@@ -891,7 +897,7 @@ func sliceField(v reflect.Value, name string) reflect.Value {
 func subjectsTool() map[string]any {
 	return map[string]any{
 		"name":        "subjects",
-		"description": "List wiki registry subjects, optionally filtered by type and name substring.",
+		"description": "Subjects registry lookup. Optionally filter by type and name substring and paginate with limit/cursor; returns subject paths, names, page availability, and next_cursor.",
 		"inputSchema": listSchema(map[string]any{
 			"type": map[string]any{"type": "string"},
 			"name": map[string]any{"type": "string"},
@@ -902,7 +908,7 @@ func subjectsTool() map[string]any {
 func claimsTool() map[string]any {
 	return map[string]any{
 		"name":        "claims",
-		"description": "Return claims attached to a wiki subject path.",
+		"description": "Claims lookup for one subject. Provide subject as a type/slug path and paginate with limit/cursor; returns cited claims and next_cursor.",
 		"inputSchema": objectSchema(map[string]any{
 			"subject": map[string]any{"type": "string"},
 			"limit":   map[string]any{"type": "integer"},
@@ -914,7 +920,7 @@ func claimsTool() map[string]any {
 func pageTool() map[string]any {
 	return map[string]any{
 		"name":        "page",
-		"description": "Return the compiled wiki page for a subject path.",
+		"description": "Page lookup for compiled knowledge about one subject. Provide subject as a type/slug path; returns its title and cited Markdown body.",
 		"inputSchema": objectSchema(map[string]any{
 			"subject": map[string]any{"type": "string"},
 		}, []string{"subject"}),
@@ -924,13 +930,21 @@ func pageTool() map[string]any {
 func llmCallsTool() map[string]any {
 	return map[string]any{
 		"name":        "llm_calls",
-		"description": "List recorded LLM provider-call footprints with cursor pagination.",
+		"description": "LLM call inspection for pipeline diagnostics. Filter by job_id, stage, or RFC3339 time range and paginate with limit/cursor; returns recorded calls and next_cursor.",
 		"inputSchema": listSchema(map[string]any{
 			"job_id": map[string]any{"type": "string"},
 			"stage":  map[string]any{"type": "string"},
 			"since":  map[string]any{"type": "string"},
 			"until":  map[string]any{"type": "string"},
 		}),
+	}
+}
+
+func guideTool() map[string]any {
+	return map[string]any{
+		"name":        "guide",
+		"description": "Guide to wiki fields, subject paths, lifecycle states, pagination, and worked usage examples. Call before your first ingest or merge.",
+		"inputSchema": objectSchema(map[string]any{}, nil),
 	}
 }
 
@@ -941,6 +955,9 @@ func listSchema(properties map[string]any) map[string]any {
 }
 
 func objectSchema(properties map[string]any, required []string) map[string]any {
+	if len(properties) == 0 {
+		return map[string]any{"type": "object"}
+	}
 	schema := map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
@@ -951,6 +968,9 @@ func objectSchema(properties map[string]any, required []string) map[string]any {
 	}
 	return schema
 }
+
+//go:embed guide.md
+var guideDoc string
 
 type jobIDArgs struct {
 	JobID string `json:"job_id"`

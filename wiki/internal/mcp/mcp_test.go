@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,7 @@ func TestHealthToolReturnsAppkitEnvelope(t *testing.T) {
 
 func TestInitializeAdvertisesWikiMCPServer(t *testing.T) {
 	// R-6RVX-P1IG
+	// R-YG82-DV8D
 	h := newTestHandler(t)
 	body := bytes.NewBufferString(`{"jsonrpc":"2.0","id":"init","method":"initialize"}`)
 	rec := httptest.NewRecorder()
@@ -101,11 +103,17 @@ func TestInitializeAdvertisesWikiMCPServer(t *testing.T) {
 	if got.Result.Instructions != Instructions {
 		t.Fatalf("instructions = %q, want pinned wiki instructions", got.Result.Instructions)
 	}
+	for _, phrase := range []string{"notes", "second brain", "entities", "events", "concepts", "guide"} {
+		if !strings.Contains(strings.ToLower(got.Result.Instructions), phrase) {
+			t.Fatalf("instructions = %q, want routing phrase %q", got.Result.Instructions, phrase)
+		}
+	}
 }
 
 func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 	// R-JKMR-5MV1
 	// R-MUQ4-K1JS
+	// R-YF06-03HO
 	h := gatedHandler(t, newTestHandler(t,
 		WithIngestService(&capturingWiki{}),
 		WithJobStatusService(&capturingWiki{}),
@@ -159,6 +167,7 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 		"claims":     true,
 		"page":       true,
 		"llm_calls":  true,
+		"guide":      true,
 		"health":     true,
 		"reflection": true,
 	}
@@ -174,6 +183,95 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 		if !want[name] {
 			t.Fatalf("tools/list included unexpected %s in %#v", name, names)
 		}
+	}
+}
+
+func TestGuideIsInputFreeSuccessfulAndDoesNotCallDomainServices(t *testing.T) {
+	// R-YDS9-MBQZ
+	wiki := &capturingWiki{jobCount: 41}
+	before := *wiki
+	h := gatedHandler(t, newTestHandler(t,
+		WithIngestService(wiki),
+		WithJobsCountService(wiki),
+	))
+
+	var schema map[string]any
+	for _, tool := range Tools() {
+		if tool.Name == "guide" {
+			schema = tool.InputSchema
+		}
+	}
+	if !reflect.DeepEqual(schema, map[string]any{"type": "object"}) {
+		t.Fatalf("guide input schema = %#v, want input-free object schema", schema)
+	}
+
+	for _, request := range []string{
+		`{"jsonrpc":"2.0","id":"guide-absent","method":"tools/call","params":{"name":"guide"}}`,
+		`{"jsonrpc":"2.0","id":"guide-empty","method":"tools/call","params":{"name":"guide","arguments":{}}}`,
+	} {
+		rec := callMCP(t, h, request, "owner@example.com")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("guide status = %d, want 200", rec.Code)
+		}
+		var got struct {
+			Result struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+				IsError bool `json:"isError"`
+			} `json:"result"`
+		}
+		decodeJSON(t, rec.Body.Bytes(), &got)
+		if got.Result.IsError {
+			t.Fatalf("guide result marked as error: %s", rec.Body.String())
+		}
+		if len(got.Result.Content) != 1 || strings.TrimSpace(got.Result.Content[0].Text) == "" {
+			t.Fatalf("guide content = %#v, want one non-empty document", got.Result.Content)
+		}
+		if got.Result.Content[0].Text != guideDoc {
+			t.Fatal("guide result does not match embedded document")
+		}
+	}
+	if !reflect.DeepEqual(*wiki, before) {
+		t.Fatalf("domain service state changed from %#v to %#v", before, *wiki)
+	}
+}
+
+func TestDiscoveryGuideIsReferencedOnlyByInstructionsAndGuideDescription(t *testing.T) {
+	// R-YHFY-RMZ2
+	if !strings.Contains(strings.ToLower(Instructions), "guide") {
+		t.Fatal("instructions do not point to guide")
+	}
+
+	references := 1
+	for _, tool := range Tools(
+		WithIngestService(&capturingWiki{}),
+		WithJobStatusService(&capturingWiki{}),
+		WithJobAbortService(&capturingWiki{}),
+		WithJobRerunService(&capturingWiki{}),
+		WithJobListService(&capturingWiki{}),
+		WithJobsCountService(&capturingWiki{}),
+		WithMergeService(&capturingWiki{}, &capturingWiki{}),
+		WithMergeListService(&capturingWiki{}),
+		WithAskFunc((&capturingAsker{}).Ask),
+		WithSubjectListService(&capturingWiki{}),
+		WithClaimListService(&capturingWiki{}),
+		WithPagePathService(&capturingWiki{}),
+		WithLLMCallListService(&capturingCalls{}),
+	) {
+		mentions := strings.Contains(strings.ToLower(tool.Description), "guide")
+		if tool.Name == "guide" && !mentions {
+			t.Fatal("guide description does not identify itself")
+		}
+		if tool.Name != "guide" && mentions {
+			t.Fatalf("%s description unexpectedly points to guide", tool.Name)
+		}
+		if mentions {
+			references++
+		}
+	}
+	if references != 2 {
+		t.Fatalf("guide reference locations = %d, want exactly 2", references)
 	}
 }
 
@@ -346,6 +444,7 @@ func TestUnknownReadsReturnCleanNotFoundResults(t *testing.T) {
 
 func TestIngestToolUsesAuthenticatedIdentity(t *testing.T) {
 	// R-MVY0-XTAH
+	// R-YINV-5EPR
 	wiki := &capturingWiki{ingestID: "job-123"}
 	h := gatedHandler(t, newTestHandler(t, WithIngestService(wiki)))
 	rec := callMCP(t, h, `{
@@ -381,6 +480,7 @@ func TestIngestToolUsesAuthenticatedIdentity(t *testing.T) {
 
 func TestJobStatusToolReturnsDomainStatus(t *testing.T) {
 	// R-MX5X-BL16
+	// R-YINV-5EPR
 	received := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
 	finished := received.Add(3 * time.Second)
 	wiki := &capturingWiki{status: jobStatus{
@@ -416,6 +516,7 @@ func TestJobStatusToolReturnsDomainStatus(t *testing.T) {
 
 func TestPageToolUsesTypeNormNamePath(t *testing.T) {
 	// R-01OQ-Y5YV
+	// R-YINV-5EPR
 	wiki := &capturingWiki{page: page{
 		ID:        "page-1",
 		SubjectID: "subject-1",
@@ -489,6 +590,7 @@ func TestPageToolUsesTypeNormNamePath(t *testing.T) {
 
 func TestReadToolsSerializePublicPathsWithoutSubjectIDs(t *testing.T) {
 	// R-03GW-PX5K
+	// R-YINV-5EPR
 	internalSubjectID := "01HZX4Q0SUBJECTULID00000001"
 	wiki := &capturingWiki{
 		status: jobStatus{
@@ -888,6 +990,7 @@ func TestAskResultCompositionLeavesSourceCitationPathRelative(t *testing.T) {
 
 func TestJobControlToolsCallDomainServices(t *testing.T) {
 	// R-38VO-PJOG
+	// R-YINV-5EPR
 	wiki := &capturingWiki{
 		abortResult: abortResult{Aborted: true, Status: "aborted"},
 		rerunResult: rerunResult{Requeued: true, Status: "pending"},
@@ -943,6 +1046,7 @@ func TestJobControlToolsCallDomainServices(t *testing.T) {
 func TestJobsCountUsesSameFiltersAsJobsAndReturnsOnlyCount(t *testing.T) {
 	// R-Y36L-E3W6
 	// R-37NS-BRXR
+	// R-YINV-5EPR
 	started := time.Date(2026, 6, 22, 12, 30, 0, 0, time.UTC)
 	wiki := &capturingWiki{
 		jobs: []job{
@@ -1070,6 +1174,7 @@ func TestJobsKindSchemaPublishesEnumAndRejectsUnknownKind(t *testing.T) {
 
 func TestMergeToolResolvesPathsOnceAndQueuesJob(t *testing.T) {
 	// R-E2H4-OPZO
+	// R-YINV-5EPR
 	wiki := &capturingWiki{
 		ingestID: "job-merge",
 		pathSubjects: map[string]subject{
@@ -1177,6 +1282,7 @@ func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
 
 func TestMergesToolReturnsAuditPage(t *testing.T) {
 	// R-E4WX-G9H2
+	// R-YINV-5EPR
 	wiki := &capturingWiki{
 		merges: []alias{{
 			NormName:  "old name",
@@ -1299,6 +1405,7 @@ func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 	// R-3A3L-3BF5
 	// R-3BBH-H35U
 	// R-3CJD-UUWJ
+	// R-YINV-5EPR
 	started := time.Date(2026, 6, 22, 12, 30, 0, 0, time.UTC)
 	jobCursor := paging.EncodeCursor("2026-06-22T00:00:00Z", "job-cursor")
 	wiki := &capturingWiki{
