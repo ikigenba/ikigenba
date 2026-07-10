@@ -1,0 +1,13 @@
+# Phase 84 — `ask` citation URLs carry the `/subject/` route segment
+
+*Realizes design Decision 56 (ask citation URLs — corrected). Depends on Phase 82 (the `pageBase` composition + `askToolResult` this corrects) and Phase 80 (the `appkit/mcp` tool table + `NewHandler`).*
+
+The MCP `ask` citation URL was missing the read surface's `/subject/` route segment: it composed `<origin>/srv/wiki/<type>/<slug>`, but the page is served at `GET /subject/{type}/{slug}` (D45), so the resolvable URL is `<origin>/srv/wiki/subject/<type>/<slug>`. In `internal/mcp`, `NewHandler` now derives the page base as `strings.TrimRight(rt.AuthServer(), "/") + wiki.Mount + "subject/"` (the `"subject/"` literal mirrors `internal/web`'s own `"subject/" + citation.Path` composition against the same route). `askToolResult` is unchanged — it stays a dumb `url = pageBase + citation.Path` concatenation, so the `subject/` segment lives entirely in the base.
+
+The change is contained to the MCP page-base derivation: `askToolResult`'s body, `internal/ask` (`ask.Answer`/`ask.Citation`, whose `Path` stays the bare relative `type/slug`), and `internal/web` (which keeps rendering relative hrefs) are **not** touched. Because the correction lives in `pageBase`, the two direct-call unit tests that pass an explicit base (`R-Y7OR-PH1I`, `R-YA4K-H0IW`) are unaffected and stay green. The three **end-to-end** tests that route through `NewHandler`'s real `pageBase` currently assert the mount-only URL and must be corrected to the subject-prefixed URL for a green suite: the new `R-HOJB-ZR3T` test replaces the retired `R-Y8WO-38S7` test (`entity/tsr`), and the two collateral end-to-end ask tests owned by `R-044J-PPG9` (`person/ada-lovelace`) and `R-6A8D-0RK9` (`person/ada`) have their expected URL strings updated in place — those two ids' behaviors (result shape, no internal id) are unchanged; only the literal URL string moves.
+
+**Done when** the following is covered by a clearly-named test and the suite is green (`go test ./...` from `wiki/`, per design Conventions):
+
+- R-HOJB-ZR3T — prod-vs-local correctness with the `/subject/` route segment: with `rt.AuthServer() == "https://acct.ikigenba.com"` a citation for `entity/tsr` yields `url == "https://acct.ikigenba.com/srv/wiki/subject/entity/tsr"`; with `http://localhost:8080` it yields `http://localhost:8080/srv/wiki/subject/entity/tsr` — the URL includes the full `/srv/wiki/subject/` prefix (a URL missing the `subject/` segment fails the test), with exactly one `/` between each part.
+
+(Collateral: the end-to-end ask tests for `R-044J-PPG9` and `R-6A8D-0RK9` are updated to the subject-prefixed URL so the suite is green; those ids are realized by their own phases and are not re-claimed here.)
