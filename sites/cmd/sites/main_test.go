@@ -154,7 +154,7 @@ func TestSitesSpecEnablesChassisWWWAndKeepsMCPWiring(t *testing.T) {
 		`list, err := store.List(r.Context())`,
 		`landingView{`,
 		`landingHandler(store, rt.WWW(), rt.Service(), rt.Version(), baseURL)`,
-		`CreatedAt: s.CreatedAt.UTC().Format(time.RFC3339),`,
+		`CreatedAt:     s.CreatedAt.UTC().Format(time.RFC3339),`,
 		`renderer.Render(w, "landing.html", view)`,
 		`mirror := sites.NewMirrorClient(base)`,
 		`handler, err := mcp.NewHandler(store, layout, baseURL, mirror, rt)`,
@@ -283,6 +283,88 @@ func TestWWWLandingRendersEmptySitesWithVersion(t *testing.T) {
 	}
 	if !strings.Contains(body, "No sites have been created yet.") {
 		t.Fatalf("landing HTML missing explicit empty state:\n%s", body)
+	}
+}
+
+func TestLandingHandlerRendersJSONIslandFromSiteRows(t *testing.T) {
+	store := newLandingTestStore(t, landingSeed{name: "atlas", public: true}, landingSeed{name: "vault", public: false})
+	rec := httptest.NewRecorder()
+	landingHandler(store, loadWWW(t), "sites", "phase24", "https://suite.example/srv/sites/").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	match := regexp.MustCompile(`(?s)<script type="application/json" id="sites-data">(.*?)</script>`).FindStringSubmatch(rec.Body.String())
+	if len(match) != 2 {
+		t.Fatalf("landing HTML missing sites data island:\n%s", rec.Body.String())
+	}
+	var rows []landingSiteData
+	if err := json.Unmarshal([]byte(match[1]), &rows); err != nil {
+		t.Fatalf("unmarshal sites data island: %v\n%s", err, match[1])
+	}
+
+	// R-IDOL-PV70
+	if len(rows) != 2 || rows[0].Slug != "atlas" || rows[0].URL != "https://suite.example/srv/sites/public/atlas/" ||
+		!rows[0].Public || rows[0].CreatedBy != "atlas@example.com" || rows[0].CreatedAt != "2026-07-08T12:00:00Z" ||
+		rows[0].CreatedAtSort != "2026-07-08T12:00:00Z" {
+		t.Fatalf("sites data = %#v, want rendered site fields with its row URL and sortable UTC timestamp", rows)
+	}
+	if rows[1].URL != "https://suite.example/srv/sites/private/vault/" || rows[1].Public {
+		t.Fatalf("sites data = %#v, want private row URL and visibility", rows)
+	}
+}
+
+func TestWWWLandingRendersProgressiveControlMarkup(t *testing.T) {
+	rec := httptest.NewRecorder()
+	if err := loadWWW(t).Render(rec, "landing.html", landingView{
+		Service: "sites",
+		Version: "phase24-controls",
+		Sites:   []siteRow{{Slug: "atlas"}},
+	}); err != nil {
+		t.Fatalf("render landing.html with a site: %v", err)
+	}
+	body := rec.Body.String()
+
+	// R-IEWI-3MXP
+	for _, want := range []string{
+		`class="no-js"`,
+		`class="controls js-only" hidden`,
+		`id="site-search" aria-label="Search sites"`,
+		`id="site-clear"`,
+		`class="pager js-only" hidden`,
+		`id="pager-prev"`,
+		`id="pager-label"`,
+		`id="pager-next"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing HTML missing progressive control markup %q:\n%s", want, body)
+		}
+	}
+
+	// R-IG4E-HEOE
+	for _, want := range []string{
+		`<th scope="col" data-sort-key="name">Slug</th>`,
+		`<th scope="col" data-sort-key="createdBy">Creator</th>`,
+		`<th scope="col" data-sort-key="createdAt">Created</th>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing HTML missing sortable header %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `<th scope="col" data-sort-key="visibility">Visibility</th>`) {
+		t.Fatalf("landing HTML makes visibility sortable:\n%s", body)
+	}
+
+	// R-IHCA-V6F3
+	emptyBody := renderLanding(t, "sites", "phase24-empty").Body.String()
+	if !strings.Contains(emptyBody, `<script type="application/json" id="sites-data">[]</script>`) {
+		t.Fatalf("empty landing HTML does not expose an empty JSON data island:\n%s", emptyBody)
+	}
+
+	// R-ICGP-C3GB
+	if !strings.Contains(body, `<script src="static/landing.js" defer></script>`) {
+		t.Fatalf("landing HTML does not defer its control script:\n%s", body)
+	}
+	asset, err := os.ReadFile(filepath.Join(wwwRoot(t), "static", "landing.js"))
+	if err != nil || len(asset) == 0 {
+		t.Fatalf("read shipped landing.js: err=%v size=%d", err, len(asset))
 	}
 }
 

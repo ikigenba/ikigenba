@@ -20,6 +20,8 @@
 package main
 
 import (
+	"encoding/json"
+	"html/template"
 	"net/http"
 	"os"
 	"strings"
@@ -36,17 +38,28 @@ import (
 )
 
 type landingView struct {
-	Service string
-	Version string
-	Sites   []siteRow
+	Service   string
+	Version   string
+	Sites     []siteRow
+	SitesData template.JS
 }
 
 type siteRow struct {
-	Slug      string
-	URL       string
-	Public    bool
-	CreatedBy string
-	CreatedAt string
+	Slug          string
+	URL           string
+	Public        bool
+	CreatedBy     string
+	CreatedAt     string
+	CreatedAtSort string
+}
+
+type landingSiteData struct {
+	Slug          string `json:"slug"`
+	URL           string `json:"url"`
+	Public        bool   `json:"public"`
+	CreatedBy     string `json:"createdBy"`
+	CreatedAt     string `json:"createdAt"`
+	CreatedAtSort string `json:"createdAtSort"`
 }
 
 type landingRenderer interface {
@@ -109,19 +122,36 @@ func landingHandler(store *sites.Store, renderer landingRenderer, service, versi
 			Version: version,
 			Sites:   make([]siteRow, 0, len(list)),
 		}
+		sitesData := make([]landingSiteData, 0, len(list))
 		for _, s := range list {
 			tier := sites.PublicSeg
 			if !s.Public {
 				tier = sites.PrivateSeg
 			}
-			view.Sites = append(view.Sites, siteRow{
-				Slug:      s.Name,
-				URL:       baseURL + tier + "/" + s.Name + "/",
-				Public:    s.Public,
-				CreatedBy: s.CreatedBy,
-				CreatedAt: s.CreatedAt.UTC().Format(time.RFC3339),
+			row := siteRow{
+				Slug:          s.Name,
+				URL:           baseURL + tier + "/" + s.Name + "/",
+				Public:        s.Public,
+				CreatedBy:     s.CreatedBy,
+				CreatedAt:     s.CreatedAt.UTC().Format(time.RFC3339),
+				CreatedAtSort: s.CreatedAt.UTC().Format(time.RFC3339),
+			}
+			view.Sites = append(view.Sites, row)
+			sitesData = append(sitesData, landingSiteData{
+				Slug:          row.Slug,
+				URL:           row.URL,
+				Public:        row.Public,
+				CreatedBy:     row.CreatedBy,
+				CreatedAt:     row.CreatedAt,
+				CreatedAtSort: row.CreatedAtSort,
 			})
 		}
+		data, err := json.Marshal(sitesData)
+		if err != nil {
+			http.Error(w, "marshal sites", http.StatusInternalServerError)
+			return
+		}
+		view.SitesData = template.JS(data)
 		_ = renderer.Render(w, "landing.html", view)
 	})
 }

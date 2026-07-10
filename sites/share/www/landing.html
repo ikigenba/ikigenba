@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -92,6 +92,13 @@
     .sites {
       display: grid;
       gap: var(--space-4);
+    }
+
+    .controls,
+    .pager {
+      display: flex;
+      gap: var(--space-3);
+      align-items: center;
     }
 
     .site-table {
@@ -193,15 +200,26 @@
       <p>Hosts file-backed static websites and serves them through the suite gateway.</p>
     </section>
 
+    <div class="controls js-only" hidden>
+      <input type="search" id="site-search" aria-label="Search sites">
+      <button type="button" id="site-clear">Clear</button>
+    </div>
+    <div class="pager js-only" hidden>
+      <button type="button" id="pager-prev">Prev</button>
+      <span id="pager-label">Page 1 of 1</span>
+      <button type="button" id="pager-next">Next</button>
+    </div>
+
     <section class="sites">
+      <script type="application/json" id="sites-data">{{if .SitesData}}{{.SitesData}}{{else}}[]{{end}}</script>
       {{if .Sites}}
       <table class="site-table">
         <thead>
           <tr>
-            <th scope="col">Slug</th>
+            <th scope="col" data-sort-key="name">Slug</th>
             <th scope="col">Visibility</th>
-            <th scope="col">Creator</th>
-            <th scope="col">Created</th>
+            <th scope="col" data-sort-key="createdBy">Creator</th>
+            <th scope="col" data-sort-key="createdAt">Created</th>
           </tr>
         </thead>
         <tbody>
@@ -220,5 +238,6 @@
       {{end}}
     </section>
   </main>
+  <script src="static/landing.js" defer></script>
 </body>
 </html>
