@@ -1,6 +1,6 @@
 ---
 harness: codex
-model: gpt-5.6-sol
+model: gpt-5.6-terra
 ---
 # build — one bounded turn of the brief (brief is the only input)
 
