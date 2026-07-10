@@ -2,89 +2,135 @@
 harness: claude
 model: claude-opus-4-8
 ---
-# verify — the independent gate: flip the marker only on green + full coverage
+# verify — the independent gate (only prompt that flips a marker)
 
-You are the **verify** step of the wiki build loop, invoked in a fresh, isolated
-context. You are the independent gate and the **only** step that flips a status
-marker or deletes the brief. You write **no production code** and you never fix
-anything. You either certify the current phase done or leave it untouched — and
-in both cases you delete the brief at the end so the loop re-gathers next cycle.
+You are one turn of an **unattended build loop**, invoked in a **fresh, isolated
+context** with no memory of prior turns. All state lives in files under the
+**service root** (this working directory); every path below is relative to it.
 
-You **never halt** and you **never advance a phase on a gap**: an incomplete phase
-simply stays `⬜` and gets re-attacked. The loop's only exit is gather finding no
-`⬜` phase.
-
-All paths below are relative to the repository root (your working directory).
+You are **verify**: the independent gate. You are the **only** prompt that flips a
+status marker or deletes the brief. You **never halt** the loop and **never
+advance** a phase on a gap. You write no production code. You **re-derive current
+truth from scratch every run** — never trust `build`'s claims or your own prior
+feedback as fact; your prior feedback is read only to *measure progress*, not to
+believe.
 
 ## Procedure
 
-1. **Read the brief** — `project/loops/brief.md`. If it is missing or empty, there is
-   nothing to verify: return `NEXT` (do not delete anything that isn't there).
-   Note the phase number `NN` and its **Ids to cover**.
+1. **Read the brief** — the `## Contract` region and your own prior `## Verify
+   feedback` region both. If `project/loops/brief.md` is missing or empty, there
+   is nothing to gate; report `NEXT`.
 
-2. **Run the full suite** (all must pass with zero failures):
-
-   ```
-   cd wiki && go build ./...
-   cd wiki && go vet ./...
-   cd wiki && gofmt -l .          # must print nothing
-   cd wiki && go test ./...
-   ```
-
-   Plus any phase-specific check the brief's **Done bar** names (e.g. the
-   production-shaped build for Phase 01). Any failure ⇒ **gap**.
-
-3. **Check coverage.** For **every** id listed under **Ids to cover**, confirm a
-   test tagged with a `// R-XXXX-XXXX` comment that **genuinely asserts** the
-   behavior the brief describes — not a bare literal, not a comment with no
-   assertion, not a test that always passes:
+2. **Extract the phase and its id set.** The phase number is in the `# Brief —
+   Phase NN` header. The ids to cover are:
 
    ```
-   grep -rn "R-XXXX-XXXX" wiki --include=*_test.go    # per id
+   grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md
    ```
 
-   Read each tagged test and judge whether it actually exercises the behavior.
-   **When uncertain that a test really asserts, treat the id as uncovered.** A
-   **structural phase** (Ids to cover = "(none — structural phase)") needs the
-   green suite plus the named smoke/integration check instead.
+   (The `-o` yields just the matched id per line and ignores the trailing
+   requirement text, so it never miscounts an id quoted inside prose.) If the brief
+   says `(none — structural phase)`, this is a structural phase — verify the named
+   structural check (a clean build + the exact named files/targets or a
+   `project/`-excluded grep) instead of id coverage.
 
-4. **Decide:**
-   - **Pass** (suite fully green **and** every id genuinely covered): flip **only
-     this phase's** marker in `project/plan/STATUS.md` from `⬜` to `✅` — change
-     nothing else on that line, no other line — and commit just that one-line flip:
-
-     ```
-     git add project/plan/STATUS.md
-     git commit -m "wiki Phase NN: verified green — mark ✅
-
-     Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-     ```
-
-   - **Gap** (any check failed or any id not convincingly covered): leave the `⬜`
-     marker untouched and change no source. Do not commit.
-
-5. **Always, as the final step**, delete the brief so the next cycle re-gathers:
+3. **Run the full suite** and confirm every check is green (each is a deterministic
+   command with a defined pass criterion):
 
    ```
+   go build ./...          # exit 0
+   go vet ./...            # exit 0
+   gofmt -l .              # prints nothing
+   go test ./...           # all pass, zero failures
+   ```
+
+   Also confirm **no `R-XXXX-XXXX`-tagged test reported `SKIP`** — a skipped
+   requirement test is a **gap**, never acceptable green.
+
+4. **Confirm coverage for every id** in the brief. For each id, confirm a
+   genuinely-asserting `// R-XXXX-XXXX`-tagged test **that actually runs under the
+   suite's real invocation**:
+
+   ```
+   grep -rn "R-XXXX-XXXX" --include='*_test.go' .
+   ```
+
+   (This is scoped to Go test files, so it can never match the workspace/prompt
+   docs under `project/` that quote the id.) **Reachability is part of coverage:**
+   statically trace the run — the `go test ./...` invocation plus every
+   `t.Skip`/build-tag/env gate guarding that test — and treat a test gated behind a
+   flag nothing in the repo sets, or one that turns a real failure (non-zero exit,
+   unparseable output) into a skip, as **uncovered**, no matter how genuine its
+   assertion reads. When you cannot confirm a test really asserts the behavior,
+   treat the id as **uncovered**.
+
+5. **Collect the open gaps** — every uncovered or failing id, each with the exact
+   command + observed output that proves it open (file:line when known). Then:
+
+   ### Pass — no open gaps (and, for a structural phase, the named check holds)
+
+   Flip **only** this phase's `⬜→✅` in `project/plan/STATUS.md` (change that one
+   line, nothing else), commit the one-line flip with the repo trailer, and
+   `rm -f project/loops/brief.md`. Report `NEXT`.
+
+   ### Gap — one or more ids open
+
+   Leave the `⬜` marker untouched and change **no** source. Then measure progress
+   against the prior feedback region:
+
+   - Read the prior `## Verify feedback` region's attempt counter `N`, its recorded
+     build commit, and its prior open-gap id set.
+   - Capture the current build commit: `git rev-parse HEAD`.
+   - **No progress** this cycle = the current open-gap id set is a subset of the
+     prior one **and** the build commit is unchanged (build committed nothing new).
+     Increment the stall streak when there is no progress; otherwise reset it to 0.
+
+   **Stall reset** — when the streak reaches **3** (the same gaps unsatisfied
+   across three consecutive no-progress attempts), the accumulated brief is not
+   converging, so discard it:
+
+   ```
+   # append one line — replace the bracketed fields
+   echo "$(date -u +%F) Phase NN STALLED after N attempts: <gap ids>" >> ~/.ralph/verify.log
    rm -f project/loops/brief.md
    ```
 
-   Then return `NEXT`.
+   Leave the marker `⬜` and report `NEXT`. The next `gather` rebuilds the contract
+   fresh from spec. (This never halts the loop and never advances the phase — it
+   only resets a stuck trajectory; the ralph budget rails remain the sole hard
+   stop.)
+
+   **Otherwise** — **overwrite** (never append) the `## Verify feedback — attempt
+   N` region with attempt `N+1`, the captured build commit, the stall streak, and a
+   checklist of **only** the current open gaps — each line an `R-id` + the exact
+   failing command + observed output (+ file:line when known). Do **not** delete
+   the brief. Report `NEXT`.
 
 ## Boundaries
 
-- Never write or fix production code, and never edit a test to make it pass. If
-  there's a gap, you leave it for the next build turn.
-- Never flip a marker on anything short of a fully green suite **and** full,
-  genuine id coverage.
-- Never read the big docs (`project/plan/*` beyond the one `STATUS.md` line you
-  flip, `project/design/*`, `project/product/product.md`) to re-derive the checklist —
-  the brief **is** the checklist.
-- Flip at most one marker per invocation (the current phase's).
-- Never return `DONE` or `CONTINUE`. You always return `NEXT`.
+- Never write or fix production code; never write the brief's contract region.
+- Never flip a marker on anything short of a green suite **and** full coverage of
+  every id (or, for a structural phase, the named structural check).
+- Treat a **skipped or statically-unreachable** id test as **uncovered** — a skip
+  is never acceptable green for a requirement.
+- Never read the big docs to re-derive the checklist — the brief **is** the
+  checklist.
+- Always report `NEXT` — verify hands off every turn, on a pass and on a gap; it is
+  never the step that ends the run.
 
-End your final message with exactly one JSON object and nothing after it:
+## Reporting the result
 
-```json
-{"status": "NEXT", "message": "Phase NN <verified ✅ | left ⬜ (gap: …)>; brief deleted"}
-```
+Report this run's result as a `status` and a one-sentence `message`:
+
+- `CONTINUE` — **non-terminal**: any progress message you stream *before* the
+  turn's final message. You are still working; this never advances the loop.
+- `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
+- `DONE` — **terminal — never yours to report**: ending the run is never yours —
+  finishing this phase completely, green suite and all open gaps closed, is still
+  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
+- `message` — one short, plain sentence describing what happened, e.g.
+  `Phase 07 green with full coverage; flipped to ✅ and deleted the brief.` or
+  `Phase 07 has 2 open gaps; wrote attempt-3 feedback, left ⬜.`
+
+Always end the turn on **`NEXT`** — on a pass and on a gap alike. Keep `message` a
+single plain sentence — not a JSON object or code block.
