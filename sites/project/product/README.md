@@ -78,6 +78,13 @@ sites does this and only this:
   creation time, surfaced by the tools and on the landing page. Because `create`
   is the only way a site comes into being, **every site has a real creator** —
   there are no anonymously-imported sites.
+- **Send logged-out visitors to sign in, then back.** For its session-gated
+  browser surfaces — the landing root, the landing assets, and the private site
+  tier — a logged-out person who navigates there is sent to the dashboard sign-in
+  and returned to that page after signing in, instead of seeing a bare refusal.
+  This is a front-door behavior sites opts into; scripted (non-navigation) and
+  bearer requests are still refused as before, and the public tier and the bearer
+  `/mcp` endpoint are deliberately left untouched.
 - **Serve a landing page at the bare mount root.** A dynamic, session-gated page
   showing the service version and the list of existing sites (slug, visibility,
   creator, created-at), styled with the suite's Carbon design system. The list is
@@ -121,7 +128,10 @@ Promised values the design must honor verbatim and never re-declare:
   and trusts the front door.
 - **The landing page lives at the bare mount root only**, is gated by the
   dashboard browser session (not a bearer token), and shows the running version
-  plus the list of sites. A failed session check yields `401`.
+  plus the list of sites. A failed session check yields `401` — which the apex
+  front door turns into a redirect to the dashboard sign-in for a logged-out
+  **browser navigation** (returning the visitor to the page after they sign in);
+  a non-navigation request with no session still receives the `401`.
 - **The visual system is Carbon.** `design/carbon.md` + `design/tokens.css` +
   `design/example.html` are the source of truth; sites embeds its own copy of the
   tokens and fonts.
@@ -140,7 +150,9 @@ Promised values the design must honor verbatim and never re-declare:
   skill or doc is needed to route work to sites or to drive its tools.
 - **Public sites are served to anyone; private sites only to a logged-in user.**
   Opening a public site's path returns its files with no login; opening a private
-  site's path without a dashboard session is refused with `401`.
+  site's path without a dashboard session is refused — a logged-out browser
+  navigating there is sent to the dashboard sign-in and returned after signing in,
+  and a non-navigation request receives `401`.
 - **Flipping a site public↔private changes who can reach it** — one tool call,
   and the site's URL and access change accordingly; it is never reachable as both
   at once.
@@ -151,8 +163,12 @@ Promised values the design must honor verbatim and never re-declare:
   bare `/srv/sites/` sees the running version and a row per site showing its slug,
   whether it is public or private, who created it, and when. Each slug is a link
   that opens that site.
-- **A browser with no dashboard session is refused the landing page** — `401`,
-  not the page.
+- **A logged-out browser is sent to sign in, then returned.** A person who
+  navigates to the landing page (or to a private site) without a dashboard
+  session is taken to the dashboard sign-in and, on signing in, returned to the
+  page they were headed for — rather than shown a bare refusal. A request that is
+  not a browser navigation (a scripted `fetch`, a bearer API call) is still
+  refused with `401`.
 - **Agents are unaffected in how they connect** — the bearer-gated `/mcp`, the
   PRM well-known, and `/health` behave as before. The *tools* evolve: `create`
   takes an optional public flag, `sync` requires the site to already exist, and
@@ -184,15 +200,17 @@ service:
   fetch its URL and get that page — with no publish step.
 - As the owner I create a site **public in one call**, and a request with no
   dashboard session is immediately served its page; a site I create with no
-  visibility flag is private and returns `401` to that same session-less request.
+  visibility flag is private and is refused to that same session-less request (a
+  browser navigation is sent to sign-in; a scripted/bearer request gets `401`).
 - As an agent I call `sync` for a site that does not exist yet and get a clear
   "not found — create it first" refusal, not a silently-created site.
 - As an agent connecting to sites for the first time I can tell what it is for,
   and by calling `guide` I get worked examples that let me create and publish a
   site without any external instructions.
 - A site I set **public** is served to a request with no dashboard session; a site
-  I set **private** returns `401` to a request with no session and its files to a
-  request with a valid session.
+  I set **private** is refused to a request with no session (a browser navigation
+  is sent to sign-in, a scripted/bearer request gets `401`) and serves its files to
+  a request with a valid session.
 - I flip a site from private to public (or back) with one tool call and its
   reachability changes accordingly; it is never served under both visibilities at
   once.
@@ -201,7 +219,10 @@ service:
   a Carbon-styled page showing the running version and a row for each site with
   its slug, public/private status, creator, and creation time; clicking a slug
   opens that site.
-- As a browser with no dashboard session I open `/srv/sites/` and am refused with
+- As a person with no dashboard session navigating to `/srv/sites/` (or to a
+  private site's URL) in a browser, I am sent to the dashboard sign-in and, after
+  signing in, returned to the page I was headed for. A session-less request that
+  is not a browser navigation (a scripted `fetch`, a bearer call) still gets
   `401`.
 - As a logged-in user on the landing page I type part of a slug into the search
   box — including letters that are non-adjacent in the name — and the list narrows

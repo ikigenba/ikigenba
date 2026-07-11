@@ -27,6 +27,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D21 → `project/design/D21.md` — MCP self-discovery convention: rewrite the Tier-0 `instructions` with routing vocabulary + a guide pointer, replace `describe` with a read-only embedded `guide` tool (worked examples), keyword-forward the `create`/`sync` descriptions (sync avoids publish/deploy wording); reference the guide in exactly two channels — owns R-57KJ-V5SQ, R-58SG-8XJF, R-5A0C-MPA4, R-5B89-0H0T, R-5CG5-E8RI
 - D22 → `project/design/D22.md` — Client-side filter/sort/pagination of the landing listing (fuzzy slug search, sortable name/created-at/created-by columns, page-size-10 pagination, one-click clear; pure JS functions tested in goja + a real branchless `initController` transcribing `computeView` onto the DOM; the controller also renders each row's copy-URL button and wires a delegated copy-to-clipboard side effect — a pure DOM effect outside the reduce cycle, its runtime proof D23's; runtime wiring proven by D23; no handler/DB/nginx change) — owns R-HU67-LJBW, R-HVE3-ZB2L, R-HWM0-D2TA, R-HXTW-QUJZ, R-HZ1T-4MAO, R-I1HL-W5S2, R-I2PI-9XIR, R-I3XE-NP9G, R-I55B-1H05, R-I6D7-F8QU, R-I7L3-T0HJ, R-I8T0-6S88, R-IA0W-KJYX, R-IB8S-YBPM, R-7V8B-GA0T, R-ICGP-C3GB
 - D23 → `project/design/D23.md` — Browser wiring proof: one minimal headless-Chrome test (chromedp, test-only dep; seeded auth-free `httptest` landing page; single session touching each control once — boot/filter/sort/clear/page/copy; copy step grants clipboard permission and reads the clipboard back to prove the row URL lands on it; Chrome hard-required by the green bar, one launch retry, no scenario retries; also asserts the copy icon renders as a real SVG element and that the `Copy`→`Copied` swap does not reflow the table; import-graph boundary check) — owns R-87B9-J644, R-88J5-WXUT, R-89R2-APLI, R-8AYY-OHC7, R-8DER-G0TL, R-NN9H-UKP3, R-VYEF-053C, R-VZMB-DWU1, R-8EMN-TSKA
+- D24 → `project/design/D24.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer `/mcp` and the public tier deliberately excluded) — owns R-XVIT-1NXD, R-XWQP-FFO2, R-XXYL-T7ER
 
 ## Verification ids → Decision
 
@@ -140,3 +141,6 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-NN9H-UKP3 → D23 → `project/design/D23.md`
 - R-VYEF-053C → D23 → `project/design/D23.md`
 - R-VZMB-DWU1 → D23 → `project/design/D23.md`
+- R-XVIT-1NXD → D24 → `project/design/D24.md`
+- R-XWQP-FFO2 → D24 → `project/design/D24.md`
+- R-XXYL-T7ER → D24 → `project/design/D24.md`

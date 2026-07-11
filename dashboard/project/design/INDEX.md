@@ -26,6 +26,9 @@ Verification ids change.
 - D17 → `project/design/D17.md` — Identity model: `(iss, sub)` is the identity, an opaque handle is its durable key, in a new `identities` table — owns R-VJMO-6CN9, R-VKUK-K4DY, R-VM2G-XW4N, R-VNAD-BNVC, R-VOI9-PFM1
 - D18 → `project/design/D18.md` — Capture identity at login: decode the claims and stamp the handle onto every auth artifact — owns R-VPQ6-37CQ, R-VQY2-GZ3F, R-VS5Y-UQU4, R-VTDV-8IKT
 - D19 → `project/design/D19.md` — Introspection emits the identity headers (`X-Owner-Id`, `X-Owner-Name`, `X-Owner-Picture`), additively and injection-safe — owns R-VULR-MABI, R-VX1K-DTSW, R-VY9G-RLJL, R-VZHD-5DAA, R-W0P9-J50Z
+- D20 → `project/design/D20.md` — Apex login-bounce nginx primitive: a shared `@login_bounce` that redirects logged-out navigations to `/login` and 401s scripted fetches — owns R-XJBT-7YIF, R-XKJP-LQ94
+- D21 → `project/design/D21.md` — Sign-in remembers where you were headed: a validated same-site `return_to` on the web handshake — owns R-XLRL-ZHZT, R-XO7E-R1H7, R-XPFB-4T7W
+- D22 → `project/design/D22.md` — The web callback returns you to `return_to`, or `/` by default — owns R-XQN7-IKYL, R-XRV3-WCPA
 
 ## Verification ids → Decision
 
@@ -100,4 +103,11 @@ Verification ids change.
 - R-VY9G-RLJL → D19 → `project/design/D19.md`
 - R-VZHD-5DAA → D19 → `project/design/D19.md`
 - R-W0P9-J50Z → D19 → `project/design/D19.md`
+- R-XJBT-7YIF → D20 → `project/design/D20.md`
+- R-XKJP-LQ94 → D20 → `project/design/D20.md`
+- R-XLRL-ZHZT → D21 → `project/design/D21.md`
 - R-XO4W-LKAI → D5 → `project/design/D05.md`
+- R-XO7E-R1H7 → D21 → `project/design/D21.md`
+- R-XPFB-4T7W → D21 → `project/design/D21.md`
+- R-XQN7-IKYL → D22 → `project/design/D22.md`
+- R-XRV3-WCPA → D22 → `project/design/D22.md`

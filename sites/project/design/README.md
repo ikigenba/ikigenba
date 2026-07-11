@@ -18,8 +18,9 @@ removed, not stacked); the history of how it got here lives in the plan.
 > embedded landing page (`share/www`), the migration set (`internal/db`), and the
 > nginx fragment (`sites/etc/nginx.conf`). All of these live under `sites/`;
 > nothing outside `sites/` is named or changed. Cross-service facts (the dashboard
-> session validator `/_session-authn`, the dropbox mirror, the shared `registry`)
-> are fixed external contracts this design consumes.
+> session validator `/_session-authn`, the dashboard apex login-bounce named
+> location `@login_bounce`, the dropbox mirror, the shared `registry`) are fixed
+> external contracts this design consumes.
 
 ## Requirement ids
 

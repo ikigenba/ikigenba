@@ -99,10 +99,20 @@ This change does exactly this and only this:
 - **Doc truth follows the code.** The dashboard's standing "keep the apex `/` a
   single hybrid page, do not split it into a separate IAM console" rule is now
   **false** and is purged, replaced by the three-page truth.
+- **Sign-in returns you to where you were headed.** When a signed-out person
+  follows a link to a session-gated page and is sent to sign in, the login page
+  remembers that destination and, after a successful sign-in, returns them to it
+  instead of dropping them on the home page. A plain visit to the login page (no
+  remembered destination) still lands on the home page as before, and the
+  remembered destination is always a page on this same box — never anywhere off
+  it.
 
 It deliberately does **nothing else** — in particular it does not: add new
 account-management capabilities (the PAT and grant features are **moved, not
-changed**); change how login, OAuth, push, or inventory work; add per-resource
+changed**); change how OAuth, push, or inventory work, or change login beyond
+teaching the sign-in flow to return the visitor to a remembered same-site
+destination (the identity, federation, and token mechanics of login are
+untouched); add per-resource
 authorization to the profile or telemetry page beyond "signed-in owner";
 introduce new MCP verbs; give the telemetry page any control (it only shows
 graphs); persist telemetry history across restarts or alert on it; or give the
@@ -152,6 +162,10 @@ Promised values the design must honor verbatim and never re-declare:
 - **No capability is lost in the move.** Every token and grant action that worked
   on the old hybrid page works on the profile page, identically — only its
   location changed.
+- **After signing in, you land where you were going.** If you clicked into a
+  session-gated page while signed out and were sent to sign in, signing in takes
+  you straight to that page. Sign in from the login page directly and you land on
+  the home page as always. You are only ever returned to a page on this box.
 - **You can watch the box's health on the telemetry page.** From the landing you
   open a telemetry page that graphs, over the last 24 hours, how much memory and
   disk the box has free and how much memory and disk each service is using. The
@@ -190,3 +204,7 @@ Each is a result the owner can confirm against the running dashboard:
 - After this change the dashboard's docs describe the login, landing, profile, and
   telemetry pages, and no longer claim the apex is a single hybrid page that must
   not be split or capped at three pages.
+- When I follow a link to a session-gated page while signed out, sign in, and
+  succeed, I arrive at that page — not the home page. When I open the login page
+  directly and sign in, I arrive at the home page. In neither case am I ever sent
+  to an address off this box.

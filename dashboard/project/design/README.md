@@ -5,7 +5,7 @@ directory it heads own *how* the dashboard's three-page web surface is built and
 *how each behavior is proven*. The product (`project/product/README.md`) owns the
 *why*, *for whom*, and the user-facing promises; design states the **exact,
 checkable form** of those promises and never re-declares the why. This design
-covers two bodies of work in the dashboard: (1) the **web surface** — splitting
+covers three bodies of work in the dashboard: (1) the **web surface** — splitting
 the single hybrid apex page into a login page, a landing/home page, and a new
 profile page (D1–D6), a diminished name-origin colophon on the login page (D7),
 the shared banner chrome (D10), and a new owner-only **telemetry** page that
@@ -13,7 +13,13 @@ samples box resource health in memory and graphs the last 24 hours (D11–D16);
 and (2) the **identity model** — moving the dashboard's concept of user identity
 from email to the OIDC subject pair `(iss, sub)` behind an opaque local handle,
 capturing name/picture at login, and emitting them (plus the handle) as
-additive identity headers from the introspection endpoints (D17–D19). It is
+additive identity headers from the introspection endpoints (D17–D19); and (3) the
+**login-bounce contract** — a dashboard-owned apex nginx primitive
+(`@login_bounce`) that redirects a logged-out *navigation* to a session-gated
+`/srv/<svc>/` page into `/login` instead of a bare 401, while leaving scripted
+`fetch`/XHR with a clean 401 (D20), plus the web-sign-in plumbing that carries a
+validated same-site `return_to` from `/login` through the handshake and back
+(D21–D22) so the visitor lands where they were headed. It is
 rewritten in place to stay true (stale decisions are removed, not stacked); the
 history of how it got here lives in the plan.
 
@@ -46,7 +52,20 @@ Shared facts every Decision leans on:
   the four auth-artifact carrier tables (`web_sessions`, `oauth_authcodes`,
   `oauth_chains`, `personal_tokens`) (D18). Both are created with
   `bin/create-migration dashboard <name>` (timestamped, immutable) and applied
-  by the appkit runner; committed migrations are never edited.
+  by the appkit runner; committed migrations are never edited. The
+  **login-bounce** work (D20–D22) adds one more such migration — a nullable
+  `return_to TEXT` column on `oauth_state` (D21), mirroring how
+  `005_oauth_state_mcp.sql` added the MCP columns.
+- **The apex nginx `server` block is the dashboard's, and its one login-bounce
+  change (D20) is proven by content-assertion.** `dashboard/etc/nginx.conf` is a
+  server-block fragment `opsctl init-box` installs; the `@login_bounce` named
+  location added to it is verified by a Go test that **reads the file from disk**
+  and asserts its content (the same pattern the sibling `sites` service uses for
+  its fragment) — nginx itself is never run by the suite, so the live 302/401
+  routing is a deploy-time smoke, not a unit test. The **dev front door**
+  `nginx/nginx.conf` (repo root) carries a mirror of the primitive for local
+  testing, but it lives **outside this `project/` tree** and is maintained as
+  suite infrastructure, never by this spec or its build loop.
 - **Telemetry collector runs on the appkit `Workers` seam.** `appkit.Spec.Workers`
   is `[]func(ctx context.Context) error`; each worker runs on the serve context and
   a `ctx` cancel (SIGTERM/shutdown) unwinds it. `cmd/dashboard/main.go` follows the
