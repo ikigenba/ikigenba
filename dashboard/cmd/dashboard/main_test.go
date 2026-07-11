@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,6 +77,49 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
+	}
+}
+
+func committedLoginBounceBlock(t *testing.T) string {
+	t.Helper()
+	config, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatalf("read committed nginx.conf: %v", err)
+	}
+
+	const location = "location @login_bounce {"
+	start := strings.Index(string(config), location)
+	if start == -1 {
+		t.Fatalf("committed nginx.conf is missing %q", location)
+	}
+	block := string(config[start:])
+	end := strings.Index(block, "\n    }")
+	if end == -1 {
+		t.Fatalf("committed nginx.conf has an unclosed %q block", location)
+	}
+	return block[:end+len("\n    }")]
+}
+
+// R-XJBT-7YIF
+func TestCommittedNginxLoginBounceDefaultsToLoginRedirect(t *testing.T) {
+	block := committedLoginBounceBlock(t)
+	lines := strings.Split(strings.TrimSpace(block), "\n")
+	if len(lines) < 3 {
+		t.Fatalf("login-bounce block is unexpectedly short:\n%s", block)
+	}
+	if got, want := strings.TrimSpace(lines[len(lines)-2]), "return 302 /login?return_to=$request_uri;"; got != want {
+		t.Fatalf("login-bounce fallthrough = %q, want %q\nblock:\n%s", got, want, block)
+	}
+}
+
+// R-XKJP-LQ94
+func TestCommittedNginxLoginBounceKeepsScriptedFetchModesUnauthorized(t *testing.T) {
+	block := committedLoginBounceBlock(t)
+	for _, mode := range []string{"cors", "same-origin", "no-cors"} {
+		pattern := regexp.MustCompile(`(?m)^\s*if \(\$http_sec_fetch_mode = ` + regexp.QuoteMeta(mode) + `\)\s*\{ return 401; \}$`)
+		if !pattern.MatchString(block) {
+			t.Errorf("login-bounce block is missing bare 401 branch for Sec-Fetch-Mode %q:\n%s", mode, block)
+		}
 	}
 }
 
