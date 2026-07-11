@@ -69,6 +69,74 @@ func TestNginxPriorTiersRemainIntact(t *testing.T) {
 	}
 }
 
+func TestNginxSessionLocationsOptIntoLoginBounce(t *testing.T) {
+	conf := readNginxConfig(t)
+
+	// R-4B16-6FON
+	for _, opener := range []string{
+		"location = /srv/webhooks/ {",
+		"location /srv/webhooks/static/ {",
+	} {
+		block := nginxLocationBlock(t, conf, opener)
+		if !strings.Contains(block, "auth_request /_session-authn;") {
+			t.Fatalf("session-gated location %q does not retain session auth:\n%s", opener, block)
+		}
+		if !strings.Contains(block, "error_page 401 = @login_bounce;") {
+			t.Fatalf("session-gated location %q does not opt into login bounce:\n%s", opener, block)
+		}
+	}
+}
+
+func TestNginxLoginBounceIsConfinedToSessionLocations(t *testing.T) {
+	conf := readNginxConfig(t)
+
+	// R-4C92-K7FC
+	for _, opener := range []string{
+		"location = /srv/webhooks/mcp {",
+		"location /srv/webhooks/in/ {",
+		"location /srv/webhooks/ {",
+	} {
+		block := nginxLocationBlock(t, conf, opener)
+		if strings.Contains(block, "error_page 401 = @login_bounce;") {
+			t.Fatalf("non-session location %q unexpectedly opts into login bounce:\n%s", opener, block)
+		}
+	}
+}
+
+func TestNginxLoginBouncePreservesExistingLocationsAndSessionProxies(t *testing.T) {
+	conf := readNginxConfig(t)
+
+	// R-4DGY-XZ61
+	if !strings.Contains(conf, "location /srv/webhooks/ { return 404; }") {
+		t.Fatal("nginx config no longer contains the trailing catch-all location")
+	}
+	for _, opener := range []string{
+		"location = /srv/webhooks/.well-known/oauth-protected-resource {",
+		"location = /srv/webhooks/mcp {",
+		"location = /srv/webhooks/feed {",
+		"location = /srv/webhooks/ {",
+		"location /srv/webhooks/static/ {",
+		"location /srv/webhooks/in/ {",
+		"location /srv/webhooks/ {",
+		"location @webhooks_authn_500 {",
+	} {
+		nginxLocationBlock(t, conf, opener)
+	}
+
+	for opener, proxyPass := range map[string]string{
+		"location = /srv/webhooks/ {":      "proxy_pass " + registry.BaseURL("webhooks") + "/;",
+		"location /srv/webhooks/static/ {": "proxy_pass " + registry.BaseURL("webhooks") + "/static/;",
+	} {
+		block := nginxLocationBlock(t, conf, opener)
+		if !strings.Contains(block, "auth_request /_session-authn;") {
+			t.Fatalf("session location %q no longer has session auth:\n%s", opener, block)
+		}
+		if !strings.Contains(block, proxyPass) {
+			t.Fatalf("session location %q no longer has unchanged proxy pass %q:\n%s", opener, proxyPass, block)
+		}
+	}
+}
+
 func readNginxConfig(t *testing.T) string {
 	t.Helper()
 
@@ -87,11 +155,19 @@ func nginxLocationBlock(t *testing.T, conf, opener string) string {
 		t.Fatalf("nginx config does not contain location opener %q", opener)
 	}
 	bodyStart := start + len(opener)
-	relEnd := strings.Index(conf[bodyStart:], "\n}")
-	if relEnd < 0 {
+	depth := 1
+	end := bodyStart
+	for ; end < len(conf) && depth > 0; end++ {
+		switch conf[end] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		}
+	}
+	if depth != 0 {
 		t.Fatalf("nginx location %q does not have a matching closing brace", opener)
 	}
-	end := bodyStart + relEnd + len("\n}")
 	return conf[start:end]
 }
 
