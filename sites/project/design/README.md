@@ -2,7 +2,7 @@
 
 **Authority: shape and its proof.** This document and the `project/design/`
 directory it heads own *how* sites is built and *how each behavior is proven*.
-The product (`project/product/product.md`) owns the *why*, *for whom*, and the
+The product (`project/product/README.md`) owns the *why*, *for whom*, and the
 user-facing promises; design states the **exact, checkable form** of those
 promises and never re-declares the why. Design *uses* the product's contractual
 constants by value (a site is public-or-private; a site that exists is served;
@@ -191,7 +191,7 @@ Testing is part of the architecture. The cross-cutting approach:
 The design is split for addressability so a build phase reads only the one
 Decision it realizes:
 
-- `project/design/design.md` — this spine: static cross-cutting facts only.
+- `project/design/README.md` — this spine: static cross-cutting facts only.
 - `project/design/DNN.md` — one self-contained file per Decision (zero-padded;
   referenced in prose and the plan as `D<N>`).
 - `project/design/INDEX.md` — the manifest: each Decision → its file, plus a

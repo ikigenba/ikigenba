@@ -4,7 +4,7 @@
 in and out of scope, and what we **promise** the user — in outcome terms only.
 Mechanism (the handler, the in-process static server, the DB schema, the nginx
 fragment, the MCP tool shapes, the embedded landing template) and its checkable
-proof live in `project/design/design.md`. Where the two touch observable
+proof live in `project/design/README.md`. Where the two touch observable
 behavior, product states the *promise* and design states the *exact, checkable
 form*; that boundary keeps product, design, and plan from overlapping.
 
