@@ -611,6 +611,49 @@ func TestNginxStaticLocationIsSessionGated(t *testing.T) {
 	}
 }
 
+func TestNginxSessionLocationsUseApexLoginBounce(t *testing.T) {
+	conf := readNginxConfig(t)
+	landing := nginxLocationBlock(t, conf, "location = /srv/ledger/ {")
+	static := nginxLocationBlock(t, conf, "location /srv/ledger/static/ {")
+	prefix := nginxLocationBlock(t, conf, "location /srv/ledger/ {")
+
+	// R-3FBS-8EEL
+	for name, block := range map[string]string{
+		"landing": landing,
+		"static":  static,
+	} {
+		if !strings.Contains(block, "auth_request /_session-authn;") {
+			t.Fatalf("%s location missing session auth_request: %s", name, block)
+		}
+		if !strings.Contains(block, "error_page 401 = @login_bounce;") {
+			t.Fatalf("%s location missing apex login bounce: %s", name, block)
+		}
+	}
+
+	// R-3GJO-M65A
+	if strings.Contains(prefix, "error_page 401 = @login_bounce;") {
+		t.Fatalf("bearer prefix must not use the browser login bounce: %s", prefix)
+	}
+}
+
+func TestNginxLoginBounceOptInRetainsSessionLocationDirectives(t *testing.T) {
+	conf := readNginxConfig(t)
+
+	// R-3HRK-ZXVZ
+	for opener, wantProxyPass := range map[string]string{
+		"location = /srv/ledger/ {":      "proxy_pass " + registry.BaseURL("ledger") + "/;",
+		"location /srv/ledger/static/ {": "proxy_pass " + registry.BaseURL("ledger") + "/static/;",
+	} {
+		block := nginxLocationBlock(t, conf, opener)
+		if !strings.Contains(block, "auth_request /_session-authn;") {
+			t.Fatalf("%s missing retained session auth_request: %s", opener, block)
+		}
+		if !strings.Contains(block, wantProxyPass) {
+			t.Fatalf("%s missing retained proxy_pass %q: %s", opener, wantProxyPass, block)
+		}
+	}
+}
+
 func freeTCPPort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
