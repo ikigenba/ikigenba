@@ -648,6 +648,64 @@ func TestNginxSessionGatesStaticAssets(t *testing.T) {
 	}
 }
 
+func TestNginxSessionGatesUseLoginBounce(t *testing.T) {
+	// R-3IZH-DPMO — both session-gated browser locations opt into the apex login bounce.
+	frag := readNginxConfig(t)
+	for _, location := range []string{
+		"location = /srv/notify/ {",
+		"location /srv/notify/static/ {",
+	} {
+		block := nginxLocationBlock(t, frag, location)
+		for _, want := range []string{
+			"auth_request /_session-authn;",
+			"error_page 401 = @login_bounce;",
+		} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("%s missing %q:\n%s", location, want, block)
+			}
+		}
+	}
+}
+
+func TestNginxBearerLocationDoesNotUseLoginBounce(t *testing.T) {
+	// R-3K7D-RHDD — bearer-protected MCP paths retain a protocol 401 instead of a browser redirect.
+	block := nginxLocationBlock(t, readNginxConfig(t), "location /srv/notify/ {")
+	if !strings.Contains(block, "auth_request /_authn;") {
+		t.Fatalf("bearer location missing auth_request /_authn:\n%s", block)
+	}
+	if strings.Contains(block, "error_page 401 = @login_bounce;") {
+		t.Fatalf("bearer location must not opt into @login_bounce:\n%s", block)
+	}
+}
+
+func TestNginxLoginBouncePreservesSessionLocationDirectives(t *testing.T) {
+	// R-3LFA-5942 — the bounce opt-in is additive: session blocks retain their auth and upstream routing.
+	frag := readNginxConfig(t)
+	for location, proxyPass := range map[string]string{
+		"location = /srv/notify/ {":      registry.BaseURL("notify") + "/;",
+		"location /srv/notify/static/ {": registry.BaseURL("notify") + "/static/;",
+	} {
+		block := nginxLocationBlock(t, frag, location)
+		for _, want := range []string{
+			"auth_request /_session-authn;",
+			"error_page 401 = @login_bounce;",
+			"proxy_pass " + proxyPass,
+		} {
+			if !strings.Contains(block, want) {
+				t.Errorf("%s missing preserved directive %q:\n%s", location, want, block)
+			}
+		}
+	}
+	for _, location := range []string{
+		"location = /srv/notify/.well-known/oauth-protected-resource {",
+		"location @notify_authn_500 {",
+	} {
+		if !strings.Contains(frag, location) {
+			t.Errorf("pre-existing nginx location %q missing", location)
+		}
+	}
+}
+
 type capturedNtfyPost struct {
 	method string
 	path   string
