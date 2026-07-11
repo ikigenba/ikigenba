@@ -46,6 +46,30 @@ func TestSessionAuthnValidCookie(t *testing.T) {
 	}
 }
 
+// R-VY9G-RLJL
+func TestSessionAuthnAllowEmitsStampedIdentityHeaders(t *testing.T) {
+	d := newServerDeps(t)
+	const ownerID = "owner-test"
+	seedIdentity(t, d, ownerID, "owner@int.ikigenba.com", "Session Owner", "https://images.example/session.png")
+	h := authnServer(t, d, nil)
+	cookie := liveSessionCookie(t, d, "owner@int.ikigenba.com")
+
+	rec := doSessionAuthn(h, cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	for header, want := range map[string]string{
+		"X-Owner-Email":   "owner@int.ikigenba.com",
+		"X-Owner-Id":      ownerID,
+		"X-Owner-Name":    headerEncode("Session Owner"),
+		"X-Owner-Picture": headerEncode("https://images.example/session.png"),
+	} {
+		if got := rec.Header().Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+}
+
 func TestSessionAuthnMissingCookie(t *testing.T) {
 	d := newServerDeps(t)
 	h := authnServer(t, d, nil)

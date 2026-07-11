@@ -4,10 +4,12 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"dashboard/internal/identity"
 	"dashboard/internal/oauth"
 	"dashboard/internal/pat"
 	"dashboard/internal/ratelimit"
@@ -32,6 +34,24 @@ func mintAccessToken(t *testing.T, d serverDeps, ownerEmail, resource string) st
 		t.Fatalf("Commit: %v", err)
 	}
 	return pair.AccessToken
+}
+
+// seedIdentity stores an identity at the supplied durable handle so directly
+// minted auth credentials can resolve the same stamped owner id.
+func seedIdentity(t *testing.T, d serverDeps, id, email, name, picture string) {
+	t.Helper()
+	oldNew := d.identity.New
+	d.identity.New = func() string { return id }
+	t.Cleanup(func() { d.identity.New = oldNew })
+	got, err := d.identity.ResolveOrCreate(context.Background(), identity.Claims{
+		Iss: "https://issuer.example", Sub: id, Email: email, Name: name, Picture: picture,
+	})
+	if err != nil {
+		t.Fatalf("ResolveOrCreate: %v", err)
+	}
+	if got != id {
+		t.Fatalf("identity id = %q, want %q", got, id)
+	}
 }
 
 // authnServer builds a server over the given deps and the given limiter,
@@ -81,6 +101,39 @@ func TestAuthnValidToken(t *testing.T) {
 	}
 	if got := rec.Header().Get("X-Client-Id"); got != "client-abc" {
 		t.Errorf("X-Client-Id = %q, want client-abc", got)
+	}
+}
+
+// R-VULR-MABI
+func TestAuthnAllowEmitsStampedIdentityHeaders(t *testing.T) {
+	d := newServerDeps(t)
+	const ownerID = "owner-test"
+	seedIdentity(t, d, ownerID, "owner@int.ikigenba.com", "Ada Lovelace", "https://images.example/ada.png")
+	h := authnServer(t, d, nil)
+	tok := mintAccessToken(t, d, "owner@int.ikigenba.com", testResource)
+	vt, err := d.tokens.ValidateAccess(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("ValidateAccess: %v", err)
+	}
+
+	rec := doAuthn(h, map[string]string{
+		"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	for header, want := range map[string]string{
+		"X-Owner-Email":   vt.Chain.OwnerEmail,
+		"X-Client-Id":     vt.Chain.ClientID,
+		"X-Chain-Id":      vt.Chain.ID,
+		"X-Token-Id":      vt.Token.ID,
+		"X-Owner-Id":      ownerID,
+		"X-Owner-Name":    url.QueryEscape("Ada Lovelace"),
+		"X-Owner-Picture": url.QueryEscape("https://images.example/ada.png"),
+	} {
+		if got := rec.Header().Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
 	}
 }
 
@@ -321,6 +374,112 @@ func TestAuthnPATValidCrossService(t *testing.T) {
 			t.Errorf("uri %s: X-Chain-Id = %q, want absent for PAT", uri, got)
 		}
 	}
+}
+
+// R-VX1K-DTSW
+func TestAuthnPATAllowEmitsStampedIdentityHeaders(t *testing.T) {
+	d := newServerDeps(t)
+	const ownerID = "owner-test"
+	seedIdentity(t, d, ownerID, "owner@int.ikigenba.com", "Pat Owner", "https://images.example/pat.png")
+	h := authnServer(t, d, nil)
+	tok, p := mintPAT(t, d, "owner@int.ikigenba.com")
+
+	rec := doAuthn(h, map[string]string{
+		"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	for header, want := range map[string]string{
+		"X-Owner-Email":   p.OwnerEmail,
+		"X-Client-Id":     "pat:" + p.PublicID,
+		"X-Owner-Id":      ownerID,
+		"X-Owner-Name":    url.QueryEscape("Pat Owner"),
+		"X-Owner-Picture": url.QueryEscape("https://images.example/pat.png"),
+	} {
+		if got := rec.Header().Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+}
+
+// R-VZHD-5DAA
+func TestAuthnIdentityHeaderEncodingRoundTripsUnsafeAttributes(t *testing.T) {
+	d := newServerDeps(t)
+	const ownerID = "owner-test"
+	name := "Ada 世界\r\n"
+	picture := "https://images.example/世界\r\nportrait"
+	seedIdentity(t, d, ownerID, "owner@int.ikigenba.com", name, picture)
+	h := authnServer(t, d, nil)
+	tok := mintAccessToken(t, d, "owner@int.ikigenba.com", testResource)
+
+	rec := doAuthn(h, map[string]string{
+		"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	for header, want := range map[string]string{"X-Owner-Name": name, "X-Owner-Picture": picture} {
+		raw := rec.Header().Get(header)
+		for _, b := range []byte(raw) {
+			if b > 0x7f || b == '\r' || b == '\n' {
+				t.Errorf("%s = %q is not US-ASCII and CR/LF-free", header, raw)
+			}
+		}
+		got, err := url.QueryUnescape(raw)
+		if err != nil {
+			t.Fatalf("QueryUnescape(%s): %v", header, err)
+		}
+		if got != want {
+			t.Errorf("decoded %s = %q, want %q", header, got, want)
+		}
+	}
+}
+
+// R-W0P9-J50Z
+func TestAuthnIdentityHeadersHandleEmptyAttributesAndMissingIdentity(t *testing.T) {
+	t.Run("empty attributes remain explicit empty headers", func(t *testing.T) {
+		d := newServerDeps(t)
+		seedIdentity(t, d, "owner-test", "owner@int.ikigenba.com", "", "")
+		h := authnServer(t, d, nil)
+		tok := mintAccessToken(t, d, "owner@int.ikigenba.com", testResource)
+		rec := doAuthn(h, map[string]string{"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp"})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		for _, header := range []string{"X-Owner-Name", "X-Owner-Picture"} {
+			if values, ok := rec.Header()[header]; !ok || len(values) != 1 || values[0] != "" {
+				t.Errorf("%s = %#v, want one explicit empty value", header, values)
+			}
+		}
+	})
+
+	t.Run("missing identity keeps existing allow headers", func(t *testing.T) {
+		d := newServerDeps(t)
+		h := authnServer(t, d, nil)
+		tok := mintAccessToken(t, d, "owner@int.ikigenba.com", testResource)
+		vt, err := d.tokens.ValidateAccess(context.Background(), tok)
+		if err != nil {
+			t.Fatalf("ValidateAccess: %v", err)
+		}
+		rec := doAuthn(h, map[string]string{"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp"})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		for header, want := range map[string]string{
+			"X-Owner-Email": vt.Chain.OwnerEmail, "X-Client-Id": vt.Chain.ClientID,
+			"X-Chain-Id": vt.Chain.ID, "X-Token-Id": vt.Token.ID,
+		} {
+			if got := rec.Header().Get(header); got != want {
+				t.Errorf("%s = %q, want %q", header, got, want)
+			}
+		}
+		for _, header := range []string{"X-Owner-Id", "X-Owner-Name", "X-Owner-Picture"} {
+			if got := rec.Header().Get(header); got != "" {
+				t.Errorf("%s = %q, want omitted when identity is missing", header, got)
+			}
+		}
+	})
 }
 
 // TestAuthnPATRevoked: a revoked PAT is rejected with a 401 invalid_token,

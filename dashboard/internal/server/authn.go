@@ -152,6 +152,11 @@ func (a *app) handleAuthn() http.HandlerFunc {
 		w.Header().Set("X-Client-Id", vt.Chain.ClientID)
 		w.Header().Set("X-Chain-Id", vt.Chain.ID)
 		w.Header().Set("X-Token-Id", vt.Token.ID)
+		if owner, err := a.identity.Lookup(r.Context(), vt.Chain.OwnerID); err == nil {
+			w.Header().Set("X-Owner-Id", vt.Chain.OwnerID)
+			w.Header().Set("X-Owner-Name", headerEncode(owner.Name))
+			w.Header().Set("X-Owner-Picture", headerEncode(owner.Picture))
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		ip, ua := audit.FromRequest(r)
 		_ = a.audit.Write(r.Context(), audit.Event{
@@ -224,6 +229,11 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 	w.Header().Set("X-Owner-Email", p.OwnerEmail)
 	w.Header().Set("X-Client-Id", clientID)
 	w.Header().Set("X-Token-Id", p.ID)
+	if owner, err := a.identity.Lookup(r.Context(), p.OwnerID); err == nil {
+		w.Header().Set("X-Owner-Id", p.OwnerID)
+		w.Header().Set("X-Owner-Name", headerEncode(owner.Name))
+		w.Header().Set("X-Owner-Picture", headerEncode(owner.Picture))
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	ip, ua := audit.FromRequest(r)
 	_ = a.audit.Write(r.Context(), audit.Event{

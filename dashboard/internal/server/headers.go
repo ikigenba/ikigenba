@@ -1,6 +1,18 @@
 package server
 
-import "net/http"
+import (
+	"net/http"
+	"net/url"
+)
+
+// headerEncode returns a US-ASCII, CR/LF-free encoding of an identity
+// attribute for an HTTP header value; empty in → empty out.
+func headerEncode(s string) string {
+	if s == "" {
+		return ""
+	}
+	return url.QueryEscape(s)
+}
 
 // securityHeaders sets transport-hardening headers that don't depend on auth:
 // nosniff and no-store on every response, and HSTS only when the request

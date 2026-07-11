@@ -49,6 +49,11 @@ func (a *app) handleSessionAuthn() http.HandlerFunc {
 		// (d) Allow: emit the identity header nginx forwards upstream. No
 		// resource/workspace/rate-limit headers — this tier is coarse by design.
 		w.Header().Set("X-Owner-Email", sess.OwnerEmail)
+		if owner, err := a.identity.Lookup(r.Context(), sess.OwnerID); err == nil {
+			w.Header().Set("X-Owner-Id", sess.OwnerID)
+			w.Header().Set("X-Owner-Name", headerEncode(owner.Name))
+			w.Header().Set("X-Owner-Picture", headerEncode(owner.Picture))
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 	}
