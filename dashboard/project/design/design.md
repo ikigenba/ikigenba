@@ -4,13 +4,18 @@
 directory it heads own *how* the dashboard's three-page web surface is built and
 *how each behavior is proven*. The product (`project/product/product.md`) owns the
 *why*, *for whom*, and the user-facing promises; design states the **exact,
-checkable form** of those promises and never re-declares the why. This design is
-scoped to splitting the single hybrid apex page into a login page, a landing/home
-page, and a new profile page (D1–D6), a diminished name-origin colophon on
-the login page (D7), the shared banner chrome (D10), and a new owner-only
-**telemetry** page that samples box resource health in memory and graphs the last
-24 hours (D11–D16) — and is rewritten in place to stay true (stale decisions are
-removed, not stacked); the history of how it got here lives in the plan.
+checkable form** of those promises and never re-declares the why. This design
+covers two bodies of work in the dashboard: (1) the **web surface** — splitting
+the single hybrid apex page into a login page, a landing/home page, and a new
+profile page (D1–D6), a diminished name-origin colophon on the login page (D7),
+the shared banner chrome (D10), and a new owner-only **telemetry** page that
+samples box resource health in memory and graphs the last 24 hours (D11–D16);
+and (2) the **identity model** — moving the dashboard's concept of user identity
+from email to the OIDC subject pair `(iss, sub)` behind an opaque local handle,
+capturing name/picture at login, and emitting them (plus the handle) as
+additive identity headers from the introspection endpoints (D17–D19). It is
+rewritten in place to stay true (stale decisions are removed, not stacked); the
+history of how it got here lives in the plan.
 
 ## Requirement ids
 
@@ -32,10 +37,16 @@ Shared facts every Decision leans on:
   at `dashboard/`. Pure-Go SQLite driver `modernc.org/sqlite` (no cgo). `appkit`
   and `eventplane` are committed in-repo replace-siblings (`replace appkit =>
   ../appkit`, `replace eventplane => ../eventplane`).
-- **This change touches no schema.** It is a pure HTTP-routing + template + view
-  change under `dashboard/internal/server/` and `dashboard/ui/`, plus one new
-  in-memory package `dashboard/internal/telemetry/`. No migration is written; the
-  telemetry history lives only in RAM (ring buffers) and is never persisted.
+- **Schema.** The web-surface work (D1–D16) touches **no** schema: it is a pure
+  HTTP-routing + template + view change under `dashboard/internal/server/` and
+  `dashboard/ui/`, plus one in-memory package `dashboard/internal/telemetry/`
+  whose history lives only in RAM (ring buffers) and is never persisted. The
+  **identity model** work (D17–D19) *does* add schema: two new forward-only
+  migrations — a new `identities` table (D17) and an `owner_id TEXT` column on
+  the four auth-artifact carrier tables (`web_sessions`, `oauth_authcodes`,
+  `oauth_chains`, `personal_tokens`) (D18). Both are created with
+  `bin/create-migration dashboard <name>` (timestamped, immutable) and applied
+  by the appkit runner; committed migrations are never edited.
 - **Telemetry collector runs on the appkit `Workers` seam.** `appkit.Spec.Workers`
   is `[]func(ctx context.Context) error`; each worker runs on the serve context and
   a `ctx` cancel (SIGTERM/shutdown) unwinds it. `cmd/dashboard/main.go` follows the
@@ -131,6 +142,21 @@ Verification list assumes:
   not a stub, and asserts a plausible non-zero total. The collector's lifecycle
   (immediate first sample, per-tick sampling, clean return on `ctx` cancel,
   error→0+log) is tested with fake sources and a short injected interval.
+- **Identity is tested against a real temp DB; Google is injected.** The
+  `internal/identity` store runs against a real temp `modernc.org/sqlite`
+  migrated by the appkit runner — the substrate that actually enforces the
+  `UNIQUE (iss, sub)` upsert and the schema (D17). The `ids.New()` handle source
+  is injected so a test can assert the handle's provenance. The claim decode
+  (D18 part A) drives `googleidp`'s existing token-construction test seam
+  (`internal/googleidp/googleidp_test.go`) with payloads that include and omit
+  `name`/`picture`; no live Google — the id_token is crafted, as the existing
+  googleidp tests already do. Stamping (D18 part B) and header emission (D19) are
+  HTTP-level `server`-package tests: a request is driven through the callback /
+  introspection routes, then the persisted `owner_id` is read back from the temp
+  DB (stamping) or the introspection **response headers** are asserted directly
+  (emission) — including that existing headers are unchanged, that a Unicode /
+  CR-LF attribute emits ASCII+injection-safe and round-trips on decode, and that
+  an empty/absent identity never turns an allow into a deny.
 - **Chart rendering is pure and unit-tested on geometry, not pixels.** The SVG
   builders are pure functions of a `Store` snapshot; tests assert computed
   coordinates and structure (hero y-axis mapped `0 → total capacity`; stacked band

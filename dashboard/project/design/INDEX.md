@@ -23,6 +23,9 @@ Verification ids change.
 - D14 → `project/design/D14.md` — HTTP surface: `/telemetry` page, `/telemetry/fragment`, the 60s poll — owns R-FI68-9AT0, R-FJE4-N2JP, R-FKM1-0UAE, R-FLTX-EM13, R-FN1T-SDRS
 - D15 → `project/design/D15.md` — Chart rendering: hero line charts + stacked-area charts — owns R-FO9Q-65IH, R-FPHM-JX96, R-FQPI-XOZV, R-FRXF-BGQK, R-FT5B-P8H9, R-FUD8-307Y, R-FVL4-GRYN
 - D16 → `project/design/D16.md` — Landing entry: a tile linking to the telemetry page — owns R-FWT0-UJPC, R-FY0X-8BG1
+- D17 → `project/design/D17.md` — Identity model: `(iss, sub)` is the identity, an opaque handle is its durable key, in a new `identities` table — owns R-VJMO-6CN9, R-VKUK-K4DY, R-VM2G-XW4N, R-VNAD-BNVC, R-VOI9-PFM1
+- D18 → `project/design/D18.md` — Capture identity at login: decode the claims and stamp the handle onto every auth artifact — owns R-VPQ6-37CQ, R-VQY2-GZ3F, R-VS5Y-UQU4, R-VTDV-8IKT
+- D19 → `project/design/D19.md` — Introspection emits the identity headers (`X-Owner-Id`, `X-Owner-Name`, `X-Owner-Picture`), additively and injection-safe — owns R-VULR-MABI, R-VX1K-DTSW, R-VY9G-RLJL, R-VZHD-5DAA, R-W0P9-J50Z
 
 ## Verification ids → Decision
 
@@ -80,7 +83,21 @@ Verification ids change.
 - R-P97M-GIJ1 → D8 → `project/design/D08.md`
 - R-PAFI-UA9Q → D8 → `project/design/D08.md`
 - R-PBNF-820F → D8 → `project/design/D08.md`
+- R-VJMO-6CN9 → D17 → `project/design/D17.md`
+- R-VKUK-K4DY → D17 → `project/design/D17.md`
+- R-VM2G-XW4N → D17 → `project/design/D17.md`
+- R-VNAD-BNVC → D17 → `project/design/D17.md`
+- R-VOI9-PFM1 → D17 → `project/design/D17.md`
+- R-VPQ6-37CQ → D18 → `project/design/D18.md`
+- R-VQY2-GZ3F → D18 → `project/design/D18.md`
+- R-VS5Y-UQU4 → D18 → `project/design/D18.md`
+- R-VTDV-8IKT → D18 → `project/design/D18.md`
 - R-VTIE-IUFA → D10 → `project/design/D10.md`
+- R-VULR-MABI → D19 → `project/design/D19.md`
 - R-VUQA-WM5Z → D10 → `project/design/D10.md`
 - R-VVY7-ADWO → D10 → `project/design/D10.md`
+- R-VX1K-DTSW → D19 → `project/design/D19.md`
+- R-VY9G-RLJL → D19 → `project/design/D19.md`
+- R-VZHD-5DAA → D19 → `project/design/D19.md`
+- R-W0P9-J50Z → D19 → `project/design/D19.md`
 - R-XO4W-LKAI → D5 → `project/design/D05.md`
