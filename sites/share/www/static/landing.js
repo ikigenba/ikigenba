@@ -124,7 +124,22 @@
         var created = document.createElement("td");
         created.dataset.label = "Created";
         created.textContent = row.createdAt;
-        tr.append(slug, visibility, creator, created);
+        var copy = document.createElement("td");
+        var button = document.createElement("button");
+        var icon = document.createElement("svg");
+        var label = document.createElement("span");
+        copy.dataset.label = "Copy";
+        button.type = "button";
+        button.className = "copy-btn js-only";
+        button.dataset.url = row.url;
+        icon.setAttribute("aria-hidden", "true");
+        icon.setAttribute("viewBox", "0 0 24 24");
+        icon.innerHTML = '<rect x="9" y="9" width="11" height="11" rx="1"></rect><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4"></path>';
+        label.className = "copy-label";
+        label.textContent = "Copy";
+        button.append(icon, label);
+        copy.appendChild(button);
+        tr.append(slug, visibility, creator, created, copy);
         body.appendChild(tr);
       });
       label.textContent = "Page " + view.page + " of " + view.pageCount;
@@ -159,6 +174,34 @@
     clear.addEventListener("click", function () {
       search.value = "";
       dispatch({ type: "clear" });
+    });
+    body.addEventListener("click", function (event) {
+      var button = event.target.closest(".copy-btn");
+      if (!button) return;
+      var url = button.dataset.url;
+      var copied = function () {
+        var copyLabel = button.querySelector(".copy-label");
+        copyLabel.textContent = "Copied";
+        button.classList.add("is-copied");
+        setTimeout(function () {
+          copyLabel.textContent = "Copy";
+          button.classList.remove("is-copied");
+        }, 1600);
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(url).then(copied);
+        return;
+      }
+      var textarea = document.createElement("textarea");
+      textarea.value = url;
+      textarea.setAttribute("aria-hidden", "true");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
+      copied();
     });
   }
   if (typeof document !== "undefined") {

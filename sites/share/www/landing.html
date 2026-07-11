@@ -240,6 +240,63 @@
       text-transform: uppercase;
     }
 
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      height: var(--control-h-sm);
+      padding: 0 var(--space-3);
+      color: var(--color-text-muted);
+      background: transparent;
+      border: var(--border-width) solid var(--color-border-strong);
+      border-radius: var(--radius);
+      cursor: pointer;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .copy-btn:hover,
+    .copy-btn:focus-visible {
+      color: var(--color-text);
+      background: var(--color-surface-2);
+    }
+
+    .copy-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--color-accent-weak);
+    }
+
+    .copy-btn svg {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+    }
+
+    .copy-label {
+      font-family: var(--font-mono);
+      font-size: var(--text-label-size);
+      line-height: var(--text-label-lh);
+      font-weight: var(--text-label-weight);
+      text-transform: uppercase;
+    }
+
+    .copy-btn.is-copied {
+      color: var(--color-accent);
+      border-color: var(--color-accent);
+    }
+
     .empty {
       max-width: none;
       margin: 0;
@@ -316,6 +373,7 @@
             <th scope="col">Visibility</th>
             <th scope="col" data-sort-key="createdBy">Creator</th>
             <th scope="col" data-sort-key="createdAt">Created</th>
+            <th scope="col"><span class="sr-only">Copy</span></th>
           </tr>
         </thead>
         <tbody>
@@ -325,6 +383,7 @@
             <td data-label="Visibility"><span class="visibility">{{if .Public}}public{{else}}private{{end}}</span></td>
             <td data-label="Creator">{{.CreatedBy}}</td>
             <td data-label="Created">{{.CreatedAt}}</td>
+            <td data-label="Copy"><button type="button" class="copy-btn js-only" data-url="{{.URL}}" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="1"></rect><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4"></path></svg><span class="copy-label">Copy</span></button></td>
           </tr>
           {{end}}
         </tbody>
