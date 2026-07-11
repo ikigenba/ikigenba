@@ -22,6 +22,8 @@ import (
 	sqlkit "appkit/db"
 	"appkit/manifest"
 	appweb "appkit/web"
+	"github.com/chromedp/cdproto/browser"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"registry"
 
@@ -1016,6 +1018,39 @@ func TestLandingBrowserControlsWorkThroughRealDOMEvents(t *testing.T) {
 	}
 	if pagerLabel != "Page 1 of 2" {
 		t.Fatalf("previous page label = %q, want Page 1 of 2", pagerLabel)
+	}
+
+	// R-NN9H-UKP3
+	wantURL := "http://suite.test/srv/sites/public/dashboard/"
+	copySelector := `button.copy-btn[data-url="` + wantURL + `"]`
+	var clipboardText, copiedLabel, rowURL string
+	if err := chromedp.Run(session,
+		browser.SetPermission(&browser.PermissionDescriptor{Name: "clipboard-read"}, browser.PermissionSettingGranted).WithOrigin(srv.URL),
+		browser.SetPermission(&browser.PermissionDescriptor{Name: "clipboard-write"}, browser.PermissionSettingGranted).WithOrigin(srv.URL),
+		chromedp.Evaluate(`document.querySelector('`+copySelector+`').closest('tr').querySelector('td:first-child a').href`, &rowURL),
+		chromedp.Click(copySelector),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			result, exception, err := runtime.Evaluate(`navigator.clipboard.readText()`).WithAwaitPromise(true).WithReturnByValue(true).Do(ctx)
+			if err != nil {
+				return err
+			}
+			if exception != nil {
+				return exception
+			}
+			return json.Unmarshal(result.Value, &clipboardText)
+		}),
+		chromedp.Evaluate(`document.querySelector('`+copySelector+` .copy-label').textContent`, &copiedLabel),
+	); err != nil {
+		t.Fatalf("copy dashboard URL to clipboard: %v", err)
+	}
+	if rowURL != wantURL {
+		t.Fatalf("dashboard row URL = %q, want %q", rowURL, wantURL)
+	}
+	if clipboardText != rowURL {
+		t.Fatalf("clipboard text = %q, want row URL %q", clipboardText, rowURL)
+	}
+	if copiedLabel != "Copied" {
+		t.Fatalf("copy button label = %q, want Copied", copiedLabel)
 	}
 }
 
