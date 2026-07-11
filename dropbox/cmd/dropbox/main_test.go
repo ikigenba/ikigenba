@@ -673,6 +673,60 @@ func TestNginxStaticLocationIsSessionGatedAndProxiesStaticHandler(t *testing.T) 
 	}
 }
 
+func TestNginxSessionLocationsBounceUnauthorizedNavigationsToLogin(t *testing.T) {
+	conf := readNginxConfig(t)
+	for _, opener := range []string{
+		"location = /srv/dropbox/ {",
+		"location /srv/dropbox/static/ {",
+	} {
+		t.Run(opener, func(t *testing.T) {
+			block := nginxLocationBlock(t, conf, opener)
+
+			// R-3MN6-J0UR
+			if !strings.Contains(block, "auth_request /_session-authn;") || !strings.Contains(block, "error_page 401 = @login_bounce;") {
+				t.Fatalf("session-gated location is missing login bounce opt-in:\\n%s", block)
+			}
+		})
+	}
+}
+
+func TestNginxBearerLocationKeepsUnauthorizedResponseForMCPClients(t *testing.T) {
+	conf := readNginxConfig(t)
+	bearer := nginxLocationBlock(t, conf, "location /srv/dropbox/ {")
+
+	// R-3NV2-WSLG
+	if !strings.Contains(bearer, "auth_request /_authn;") || strings.Contains(bearer, "error_page 401 = @login_bounce;") {
+		t.Fatalf("bearer location must keep its unredirected 401 behavior:\\n%s", bearer)
+	}
+}
+
+func TestNginxLoginBounceOptInPreservesExistingLocationDirectives(t *testing.T) {
+	conf := readNginxConfig(t)
+
+	// R-3P2Z-AKC5
+	for _, want := range []string{
+		"location = /srv/dropbox/.well-known/oauth-protected-resource {",
+		"location = /srv/dropbox/content {",
+		"location = /srv/dropbox/ {",
+		"location /srv/dropbox/static/ {",
+		"location /srv/dropbox/ {",
+		"location @dropbox_authn_500 {",
+	} {
+		if !strings.Contains(conf, want) {
+			t.Fatalf("nginx config removed existing location %q", want)
+		}
+	}
+	for opener, proxyPass := range map[string]string{
+		"location = /srv/dropbox/ {":      "proxy_pass " + registry.BaseURL("dropbox") + "/;",
+		"location /srv/dropbox/static/ {": "proxy_pass " + registry.BaseURL("dropbox") + "/static/;",
+	} {
+		block := nginxLocationBlock(t, conf, opener)
+		if !strings.Contains(block, "auth_request /_session-authn;") || !strings.Contains(block, proxyPass) {
+			t.Fatalf("session location did not retain its auth request and proxy pass:\\n%s", block)
+		}
+	}
+}
+
 func testEnv(overrides map[string]string) []string {
 	env := os.Environ()
 	out := make([]string, 0, len(env)+len(overrides))
