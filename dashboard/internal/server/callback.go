@@ -109,15 +109,15 @@ func (a *app) handleCallback() http.HandlerFunc {
 		case oauthstate.OriginMCP:
 			a.callbackMCP(w, r, handshake, googleIdentity.Email, ownerID)
 		default:
-			a.callbackWeb(w, r, googleIdentity.Email, ownerID)
+			a.callbackWeb(w, r, handshake, googleIdentity.Email, ownerID)
 		}
 	}
 }
 
 // callbackWeb is the web-origin completion: it mints a web session, sets the
-// session cookie, and redirects to the apex. Behavior (status, cookie, redirect)
-// matches the pre-OAuth callback exactly.
-func (a *app) callbackWeb(w http.ResponseWriter, r *http.Request, email, ownerID string) {
+// session cookie, and redirects to the handshake's captured destination or the
+// apex when the login did not carry one.
+func (a *app) callbackWeb(w http.ResponseWriter, r *http.Request, handshake oauthstate.Handshake, email, ownerID string) {
 	issued, err := a.sessions.Create(r.Context(), email, ownerID)
 	if err != nil {
 		a.logger.Warn("callback.create_session", "email", email, "err", err)
@@ -135,7 +135,11 @@ func (a *app) callbackWeb(w http.ResponseWriter, r *http.Request, email, ownerID
 		Details: map[string]any{"session_id": issued.ID},
 	})
 	setSessionCookie(w, r, issued.CookieValue)
-	http.Redirect(w, r, "/", http.StatusFound)
+	dest := "/"
+	if handshake.ReturnTo != "" {
+		dest = handshake.ReturnTo
+	}
+	http.Redirect(w, r, dest, http.StatusFound)
 }
 
 // callbackMCP is the MCP-origin completion: it issues an OAuth authorization

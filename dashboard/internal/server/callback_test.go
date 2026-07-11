@@ -129,3 +129,96 @@ func TestCallbackSuccessMintsSession(t *testing.T) {
 		t.Error("plaintext session cookie was stored — must store only the hash")
 	}
 }
+
+// R-XQN7-IKYL
+// TestCallbackRedirectsToHandshakeReturnTo proves the web callback replays the
+// validated same-site destination persisted by the real /login route.
+func TestCallbackRedirectsToHandshakeReturnTo(t *testing.T) {
+	srv, _ := loginServer(t)
+	const returnTo = "/srv/sites/private/test07/"
+
+	login := do(t, srv, "GET", "https://int.ikigenba.com/login?return_to="+url.QueryEscape(returnTo), nil)
+	if login.Code != http.StatusFound {
+		t.Fatalf("login status = %d, want 302", login.Code)
+	}
+	idpURL, err := url.Parse(login.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse login Location: %v", err)
+	}
+	state := idpURL.Query().Get("state")
+	if state == "" {
+		t.Fatal("login redirect carries no state")
+	}
+	var binding *http.Cookie
+	for _, cookie := range login.Result().Cookies() {
+		if cookie.Name == bindingCookieName {
+			binding = cookie
+			break
+		}
+	}
+	if binding == nil {
+		t.Fatalf("login set no %s cookie", bindingCookieName)
+	}
+
+	callback := do(t, srv, "GET", "https://int.ikigenba.com/oauth/google/callback?state="+url.QueryEscape(state)+"&code=auth-code", map[string]string{"Cookie": binding.Name + "=" + binding.Value})
+	if callback.Code != http.StatusFound {
+		t.Fatalf("callback status = %d, want 302", callback.Code)
+	}
+	if got := callback.Header().Get("Location"); got != returnTo {
+		t.Errorf("callback Location = %q, want %q", got, returnTo)
+	}
+}
+
+// R-XRV3-WCPA
+// TestCallbackDefaultAndMCPRedirects confirms ordinary web logins retain the
+// apex default and that the separate MCP callback resume target is unchanged.
+func TestCallbackDefaultAndMCPRedirects(t *testing.T) {
+	t.Run("web default", func(t *testing.T) {
+		srv, _ := loginServer(t)
+		state, binding := startLogin(t, srv)
+		callback := do(t, srv, "GET", "https://int.ikigenba.com/oauth/google/callback?state="+url.QueryEscape(state)+"&code=auth-code", map[string]string{"Cookie": binding.Name + "=" + binding.Value})
+		if callback.Code != http.StatusFound {
+			t.Fatalf("callback status = %d, want 302", callback.Code)
+		}
+		if got := callback.Header().Get("Location"); got != "/" {
+			t.Errorf("callback Location = %q, want /", got)
+		}
+	})
+
+	t.Run("MCP redirect", func(t *testing.T) {
+		ts, _, client := newOAuthTest(t)
+		clientID := registerClient(t, ts, client)
+		resp, err := client.Get(authorizeURL(ts, clientID, nil))
+		if err != nil {
+			t.Fatalf("authorize: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("authorize status = %d, want 303", resp.StatusCode)
+		}
+		idpURL, err := url.Parse(resp.Header.Get("Location"))
+		if err != nil {
+			t.Fatalf("parse authorize Location: %v", err)
+		}
+		state := idpURL.Query().Get("state")
+		if state == "" {
+			t.Fatal("authorize redirect carries no state")
+		}
+
+		resp, err = client.Get(ts.URL + "/oauth/google/callback?" + url.Values{"state": {state}, "code": {"auth-code"}}.Encode())
+		if err != nil {
+			t.Fatalf("callback: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("callback status = %d, want 303", resp.StatusCode)
+		}
+		location, err := url.Parse(resp.Header.Get("Location"))
+		if err != nil {
+			t.Fatalf("parse callback Location: %v", err)
+		}
+		if got := location.Scheme + "://" + location.Host + location.Path; got != clientRedirectURI {
+			t.Errorf("callback Location = %q, want %q", got, clientRedirectURI)
+		}
+	})
+}
