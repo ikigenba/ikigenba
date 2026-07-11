@@ -264,6 +264,82 @@ func TestNginxStaticLocationUsesSessionAuth(t *testing.T) {
 	}
 }
 
+func TestNginxSessionLocationsBounceLogin(t *testing.T) {
+	conf, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatalf("read nginx conf: %v", err)
+	}
+	text := string(conf)
+
+	// R-3RIS-23TJ
+	for _, marker := range []string{
+		"location = /srv/prompts/ {",
+		"location /srv/prompts/static/ {",
+	} {
+		block := nginxLocationBlock(t, text, marker)
+		for _, want := range []string{
+			"auth_request /_session-authn;",
+			"error_page 401 = @login_bounce;",
+		} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("session location %q missing %q:\n%s", marker, want, block)
+			}
+		}
+	}
+}
+
+func TestNginxBearerLocationDoesNotBounceLogin(t *testing.T) {
+	conf, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatalf("read nginx conf: %v", err)
+	}
+	block := nginxLocationBlock(t, string(conf), "location /srv/prompts/ {")
+
+	// R-3SQO-FVK8
+	if !strings.Contains(block, "auth_request /_authn;") {
+		t.Fatalf("bearer location is missing auth_request /_authn;:\n%s", block)
+	}
+	if strings.Contains(block, "error_page 401 = @login_bounce;") {
+		t.Fatalf("bearer location unexpectedly bounces login:\n%s", block)
+	}
+}
+
+func TestNginxLoginBounceOptInRetainsExistingLocations(t *testing.T) {
+	conf, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatalf("read nginx conf: %v", err)
+	}
+	text := string(conf)
+
+	// R-3TYK-TNAX
+	for _, want := range []string{
+		"location = /srv/prompts/.well-known/oauth-protected-resource {",
+		"location = /srv/prompts/feed { return 404; }",
+		"location = /srv/prompts/ {",
+		"location /srv/prompts/static/ {",
+		"location /srv/prompts/ {",
+		"location @prompts_authn_500 {",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("nginx conf missing existing location %q:\n%s", want, text)
+		}
+	}
+	for _, location := range []struct {
+		marker    string
+		proxyPass string
+	}{
+		{"location = /srv/prompts/ {", "proxy_pass http://127.0.0.1:3002/;"},
+		{"location /srv/prompts/static/ {", "proxy_pass http://127.0.0.1:3002/static/;"},
+	} {
+		block := nginxLocationBlock(t, text, location.marker)
+		for _, want := range []string{"auth_request /_session-authn;", location.proxyPass} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("session location %q missing retained directive %q:\n%s", location.marker, want, block)
+			}
+		}
+	}
+}
+
 func loadPromptsSite(t *testing.T) *appweb.Site {
 	t.Helper()
 	site, err := appweb.Load(promptsWWWPath())
