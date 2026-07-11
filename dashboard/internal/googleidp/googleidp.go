@@ -45,6 +45,9 @@ type Identity struct {
 	Email         string
 	HostedDomain  string
 	EmailVerified bool
+	Iss           string
+	Name          string
+	Picture       string
 }
 
 // Credentials carries the Google OAuth client credentials the live provider
@@ -208,6 +211,8 @@ type idTokenClaims struct {
 	Email         string `json:"email"`
 	HostedDomain  string `json:"hd"`
 	EmailVerified any    `json:"email_verified"`
+	Name          string `json:"name"`
+	Picture       string `json:"picture"`
 }
 
 // verifyIDToken parses Google's id_token, verifies its RS256 signature against
@@ -273,6 +278,9 @@ func (g *google) verifyIDToken(jwt string) (Identity, error) {
 		Email:         claims.Email,
 		HostedDomain:  claims.HostedDomain,
 		EmailVerified: verified,
+		Iss:           claims.Iss,
+		Name:          claims.Name,
+		Picture:       claims.Picture,
 	}, nil
 }
 

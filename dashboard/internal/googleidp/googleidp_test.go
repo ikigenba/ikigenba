@@ -118,7 +118,7 @@ func TestVerifyIDToken(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		want := Identity{Sub: "user-sub-123", Email: "alice@example.com", HostedDomain: "example.com", EmailVerified: true}
+		want := Identity{Sub: "user-sub-123", Email: "alice@example.com", HostedDomain: "example.com", EmailVerified: true, Iss: "https://accounts.google.com"}
 		if id != want {
 			t.Errorf("identity = %+v, want %+v", id, want)
 		}
@@ -176,6 +176,65 @@ func TestVerifyIDToken(t *testing.T) {
 					t.Error("expected error, got nil")
 				}
 			})
+		}
+	})
+}
+
+// R-VPQ6-37CQ verifyIDToken carries the identity attributes available at login
+// and accepts their absence because they are not validation gates.
+func TestVerifyIDTokenDecodesIdentityProfileClaims(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	const (
+		kid      = "identity-profile-kid"
+		clientID = "client-identity-profile"
+	)
+	g := googleWithKey(kid, &key.PublicKey, clientID)
+	base := func() map[string]any {
+		return map[string]any{
+			"iss":            "https://accounts.google.com",
+			"aud":            clientID,
+			"exp":            time.Now().Add(time.Hour).Unix(),
+			"sub":            "profile-sub-123",
+			"email":          "profile@example.com",
+			"hd":             "example.com",
+			"email_verified": true,
+		}
+	}
+
+	t.Run("returns issuer name and picture when present", func(t *testing.T) {
+		claims := base()
+		claims["name"] = "Profile Person"
+		claims["picture"] = "https://images.example/profile.png"
+
+		id, err := g.verifyIDToken(mintToken(t, key, "RS256", kid, claims))
+		if err != nil {
+			t.Fatalf("verifyIDToken returned error: %v", err)
+		}
+		if id.Iss != "https://accounts.google.com" {
+			t.Errorf("Iss = %q, want Google issuer", id.Iss)
+		}
+		if id.Name != "Profile Person" {
+			t.Errorf("Name = %q, want profile name", id.Name)
+		}
+		if id.Picture != "https://images.example/profile.png" {
+			t.Errorf("Picture = %q, want profile picture", id.Picture)
+		}
+	})
+
+	t.Run("accepts omitted name and picture", func(t *testing.T) {
+		id, err := g.verifyIDToken(mintToken(t, key, "RS256", kid, base()))
+		if err != nil {
+			t.Fatalf("verifyIDToken returned error: %v", err)
+		}
+		if id.Name != "" || id.Picture != "" {
+			t.Errorf("profile fields = (%q, %q), want empty strings", id.Name, id.Picture)
+		}
+		if id.Sub != "profile-sub-123" || id.Email != "profile@example.com" {
+			t.Errorf("identity = %+v, want intact sub and email", id)
 		}
 	})
 }
