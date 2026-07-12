@@ -28,13 +28,13 @@ type fireRecorder struct {
 }
 
 type fireCall struct {
-	promptID, source, evType, eventID string
-	payload                           []byte
+	promptID, source, evType, subject, eventID string
+	payload                                    []byte
 }
 
-func (f *fireRecorder) fn(ctx context.Context, promptID, source, evType, eventID string, payload []byte) error {
+func (f *fireRecorder) fn(ctx context.Context, promptID, source, evType, subject, eventID string, payload []byte) error {
 	f.mu.Lock()
-	f.calls = append(f.calls, fireCall{promptID, source, evType, eventID, append([]byte(nil), payload...)})
+	f.calls = append(f.calls, fireCall{promptID, source, evType, subject, eventID, append([]byte(nil), payload...)})
 	f.mu.Unlock()
 	f.wg.Done()
 	return f.err
@@ -222,8 +222,8 @@ func TestSubscriptions(t *testing.T) {
 			t.Errorf("unexpected source %q", s.Source)
 		}
 		delete(want, s.Source)
-		if s.Filter != "*" {
-			t.Errorf("source %q Filter = %q, want %q", s.Source, s.Filter, "*")
+		if s.Filter != "**" {
+			t.Errorf("source %q Filter = %q, want %q", s.Source, s.Filter, "**")
 		}
 		if s.Description == "" {
 			t.Errorf("source %q has empty Description", s.Source)

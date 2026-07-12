@@ -86,8 +86,8 @@ func promptsSpec() appkit.Spec {
 			Subscriptions: consume.Subscriptions([]string{src}),
 			Handler: func(rt *appkit.Router) consumer.Handler {
 				logger := rt.Logger()
-				fire := func(ctx context.Context, promptID, s, evType, eventID string, payload []byte) error {
-					_, err := svcRef.RunByEvent(ctx, promptID, s, evType, eventID, payload)
+				fire := func(ctx context.Context, promptID, s, kind, subject, eventID string, payload []byte) error {
+					_, err := svcRef.RunByEvent(ctx, promptID, s, kind, subject, eventID, payload)
 					return err
 				}
 				return consume.Handler(fire, svcRef.PromptsForEvent, src, logger)

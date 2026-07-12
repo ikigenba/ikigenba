@@ -193,11 +193,11 @@ func (s *Store) InsertRun(ctx context.Context, r Run) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO runs
 		   (id, prompt_id, owner_email, prompt_name, status, started_at,
-		    ended_at, usage_json, error, trigger_source, trigger_type, trigger_event_id, log_path)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		    ended_at, usage_json, error, trigger_source, trigger_kind, trigger_subject, trigger_event_id, log_path)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.PromptID, r.OwnerEmail, nullStr(r.PromptName), r.Status, r.StartedAt,
 		nullStr(r.EndedAt), nullStr(r.UsageJSON), nullStr(r.Error),
-		nullStr(r.TriggerSource), nullStr(r.TriggerType), nullStr(r.TriggerEventID), r.LogPath,
+		nullStr(r.TriggerSource), nullStr(firstNonEmpty(r.TriggerKind, r.TriggerType)), nullStr(r.TriggerSubject), nullStr(r.TriggerEventID), r.LogPath,
 	)
 	if err != nil {
 		return fmt.Errorf("prompt: insert run: %w", err)
@@ -208,7 +208,7 @@ func (s *Store) InsertRun(ctx context.Context, r Run) error {
 // runSelectCols is the column list shared by the run-read queries, in
 // scanRun's order.
 const runSelectCols = `id, prompt_id, owner_email, prompt_name, status, started_at,
-	        ended_at, usage_json, error, trigger_source, trigger_type, trigger_event_id, log_path`
+	        ended_at, usage_json, error, trigger_source, trigger_kind, trigger_subject, trigger_event_id, log_path`
 
 // GetRun returns a run by its run_id, or ErrNotFound when absent. It is NOT
 // owner-scoped here (the service scopes via the run's denormalized owner_email,
@@ -322,13 +322,14 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 		promptID    string
 		promptName  sql.NullString
 		trigSource  sql.NullString
-		trigType    sql.NullString
+		trigKind    sql.NullString
+		trigSubject sql.NullString
 		trigEventID sql.NullString
 	)
 	if err := tx.QueryRowContext(ctx,
-		`SELECT prompt_id, prompt_name, trigger_source, trigger_type, trigger_event_id FROM runs WHERE id = ?`,
+		`SELECT prompt_id, prompt_name, trigger_source, trigger_kind, trigger_subject, trigger_event_id FROM runs WHERE id = ?`,
 		in.RunID,
-	).Scan(&promptID, &promptName, &trigSource, &trigType, &trigEventID); err != nil {
+	).Scan(&promptID, &promptName, &trigSource, &trigKind, &trigSubject, &trigEventID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -348,7 +349,7 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 
 	emitted := false
 	if s.Outbox != nil {
-		ev, ok, err := outcomeEvent(in.Status, promptID, promptName.String, in.RunID, trigSource.String, trigType.String, trigEventID.String, in.ErrMsg)
+		ev, ok, err := outcomeEvent(in.Status, promptID, promptName.String, in.RunID, trigSource.String, trigKind.String, trigEventID.String, in.ErrMsg)
 		if err != nil {
 			return err
 		}
@@ -435,12 +436,13 @@ func scanRun(sc scanner) (Run, error) {
 		usage       sql.NullString
 		errMsg      sql.NullString
 		trigSource  sql.NullString
-		trigType    sql.NullString
+		trigKind    sql.NullString
+		trigSubject sql.NullString
 		trigEventID sql.NullString
 	)
 	err := sc.Scan(
 		&r.ID, &r.PromptID, &r.OwnerEmail, &promptName, &r.Status, &r.StartedAt,
-		&endedAt, &usage, &errMsg, &trigSource, &trigType, &trigEventID, &r.LogPath,
+		&endedAt, &usage, &errMsg, &trigSource, &trigKind, &trigSubject, &trigEventID, &r.LogPath,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Run{}, ErrNotFound
@@ -453,7 +455,9 @@ func scanRun(sc scanner) (Run, error) {
 	r.UsageJSON = usage.String
 	r.Error = errMsg.String
 	r.TriggerSource = trigSource.String
-	r.TriggerType = trigType.String
+	r.TriggerKind = trigKind.String
+	r.TriggerType = trigKind.String
+	r.TriggerSubject = trigSubject.String
 	r.TriggerEventID = trigEventID.String
 	return r, nil
 }
@@ -463,6 +467,13 @@ func nullStr(s string) any {
 		return nil
 	}
 	return s
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 func requireOne(res sql.Result, op string) error {

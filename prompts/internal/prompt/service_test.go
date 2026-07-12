@@ -216,7 +216,7 @@ func TestRunByEvent_WritesEventJSON(t *testing.T) {
 	if err := json.Unmarshal(b, &env); err != nil {
 		t.Fatalf("unmarshal event.json: %v", err)
 	}
-	if env.Source != "crm" || env.Type != "contact.created" || env.EventID != "01JEVENT" {
+	if env.Source != "crm" || env.Kind != "contact.created" || env.EventID != "01JEVENT" {
 		t.Fatalf("envelope context = %+v", env)
 	}
 	if string(env.Payload) != `{"id":"c1"}` {

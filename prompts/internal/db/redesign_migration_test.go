@@ -95,11 +95,11 @@ func TestMigrate006_UpgradesOldSchemaPreservingData(t *testing.T) {
 	// 4b. runs: prompt_id, denormalized owner_email/prompt_name, log_path kept,
 	//     trigger_* NULL for a pre-redesign run.
 	var promptID, ownerEmail, promptName, logPath string
-	var trigSource, trigType, trigEventID sql.NullString
+	var trigSource, trigKind, trigSubject, trigEventID sql.NullString
 	if err := conn.QueryRowContext(ctx,
-		`SELECT prompt_id, owner_email, prompt_name, log_path, trigger_source, trigger_type, trigger_event_id
+		`SELECT prompt_id, owner_email, prompt_name, log_path, trigger_source, trigger_kind, trigger_subject, trigger_event_id
 		 FROM runs WHERE id='r1'`,
-	).Scan(&promptID, &ownerEmail, &promptName, &logPath, &trigSource, &trigType, &trigEventID); err != nil {
+	).Scan(&promptID, &ownerEmail, &promptName, &logPath, &trigSource, &trigKind, &trigSubject, &trigEventID); err != nil {
 		t.Fatalf("select run r1: %v", err)
 	}
 	if promptID != "s1" {
@@ -114,29 +114,17 @@ func TestMigrate006_UpgradesOldSchemaPreservingData(t *testing.T) {
 	if logPath != "data/runs/s1/r1.jsonl" {
 		t.Fatalf("run log_path = %q, want data/runs/s1/r1.jsonl", logPath)
 	}
-	if trigSource.Valid || trigType.Valid || trigEventID.Valid {
-		t.Fatalf("expected trigger_* NULL, got source=%v type=%v event=%v", trigSource, trigType, trigEventID)
+	if trigSource.Valid || trigKind.Valid || trigSubject.Valid || trigEventID.Valid {
+		t.Fatalf("expected trigger_* NULL, got source=%v kind=%v subject=%v event=%v", trigSource, trigKind, trigSubject, trigEventID)
 	}
 
-	// 4c. prompt_triggers: exactly one row, mapped from the old session_trigger.
+	// 4c. trigger bindings are intentionally wiped by the routing migration.
 	var nTrig int
 	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM prompt_triggers`).Scan(&nTrig); err != nil {
 		t.Fatalf("count prompt_triggers: %v", err)
 	}
-	if nTrig != 1 {
-		t.Fatalf("prompt_triggers count = %d, want 1", nTrig)
-	}
-	var tPrompt, tSource, tFilter, tCreated string
-	if err := conn.QueryRowContext(ctx,
-		`SELECT prompt_id, source, event_filter, created_at FROM prompt_triggers`,
-	).Scan(&tPrompt, &tSource, &tFilter, &tCreated); err != nil {
-		t.Fatalf("select prompt_trigger: %v", err)
-	}
-	if tPrompt != "s1" || tSource != "cron" || tFilter != "cron.nightly" {
-		t.Fatalf("prompt_trigger = (%q,%q,%q), want (s1,cron,cron.nightly)", tPrompt, tSource, tFilter)
-	}
-	if tCreated != "2026-01-01T00:00:00Z" {
-		t.Fatalf("prompt_trigger created_at = %q, want preserved 2026-01-01T00:00:00Z", tCreated)
+	if nTrig != 0 {
+		t.Fatalf("prompt_triggers count = %d, want 0", nTrig)
 	}
 
 	// 4d. The old tables are GONE.

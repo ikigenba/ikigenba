@@ -80,8 +80,8 @@ func TestSmoke_HandlerAgainstRealServiceAndDB(t *testing.T) {
 
 	// Production wiring: fire = RunByEvent, lookup = PromptsForEvent, source baked
 	// into the per-upstream Handler.
-	fire := func(ctx context.Context, id, source, evType, eventID string, payload []byte) error {
-		_, err := svc.RunByEvent(ctx, id, source, evType, eventID, payload)
+	fire := func(ctx context.Context, id, source, evType, subject, eventID string, payload []byte) error {
+		_, err := svc.RunByEvent(ctx, id, source, evType, subject, eventID, payload)
 		return err
 	}
 	h := Handler(fire, svc.PromptsForEvent, "dropbox", nil)

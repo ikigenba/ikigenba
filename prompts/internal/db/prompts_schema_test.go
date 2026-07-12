@@ -64,8 +64,8 @@ func TestMigrate_CreatesPromptsSchema(t *testing.T) {
 		t.Fatalf("insert run: %v", err)
 	}
 	if _, err := conn.ExecContext(ctx,
-		`INSERT INTO prompt_triggers (prompt_id, source, event_filter, created_at)
-		 VALUES ('s1', 'cron', 'cron.nightly', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO prompt_triggers (prompt_id, source, filter, created_at)
+		 VALUES ('s1', 'cron', 'cron:tick/nightly', '2026-01-01T00:00:00Z')`,
 	); err != nil {
 		t.Fatalf("insert prompt_trigger: %v", err)
 	}

@@ -21,7 +21,7 @@ var (
 	// ErrNotFound — prompt missing, or owned by another caller.
 	ErrNotFound = errors.New("prompt: not found")
 	// ErrValidation — an unsatisfiable trigger binding (unknown source, or an
-	// event_filter that matches no event the producer publishes; A12). The MCP
+	// filter that matches no event the producer publishes; A12). The MCP
 	// layer maps it to an invalid-params response. ValidationError (below) plays
 	// the same role for config validation.
 	ErrValidation = errors.New("prompt: validation")
@@ -97,26 +97,30 @@ type Run struct {
 	LogPath    string `json:"log_path"`
 
 	// Trigger context (persisted). Empty for a manual run.
-	TriggerSource  string `json:"trigger_source,omitempty"`   // producer source id (cron|crm|ledger|dropbox|scripts|prompts)
-	TriggerType    string `json:"trigger_type,omitempty"`     // the fired event type
+	TriggerSource  string `json:"trigger_source,omitempty"` // producer source id (cron|crm|ledger|dropbox|scripts|prompts)
+	TriggerKind    string `json:"trigger_kind,omitempty"`
+	TriggerSubject string `json:"trigger_subject,omitempty"`
+	TriggerType    string `json:"-"`
 	TriggerEventID string `json:"trigger_event_id,omitempty"` // the upstream event id
 }
 
-// Trigger is one (prompt, source, event_filter) binding. A prompt may hold
+// Trigger is one (prompt, source, filter) binding. A prompt may hold
 // many — one per upstream event it reacts to. The cron-only staleness/retry
 // knobs are GONE (fire-and-forget, symmetric with scripts).
 type Trigger struct {
 	PromptID    string `json:"prompt_id"`
-	Source      string `json:"source"`       // producer source id (cron|crm|ledger|dropbox|scripts|prompts)
-	EventFilter string `json:"event_filter"` // the event type/glob, e.g. "cron.nightly"
+	Source      string `json:"source"` // producer source id (cron|crm|ledger|dropbox|scripts|prompts)
+	Filter      string `json:"filter"`
+	EventFilter string `json:"-"`
 	CreatedAt   string `json:"created_at"`
 }
 
 // TriggerSpec is the create-time sugar: triggers passed to Create are applied
 // via SetTrigger after the prompt row is inserted (same validation).
 type TriggerSpec struct {
-	Source      string `json:"source"`
-	EventFilter string `json:"event_filter"`
+	Filter      string `json:"filter"`
+	Source      string `json:"-"`
+	EventFilter string `json:"-"`
 }
 
 // PromptDetail is a Prompt plus its derived run summary: RunningCount (the

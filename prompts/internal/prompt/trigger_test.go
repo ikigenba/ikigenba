@@ -6,8 +6,31 @@ import (
 	"testing"
 )
 
+func TestValidateTriggerCanonicalFamilies(t *testing.T) {
+	// R-6KLN-PNOI
+	for _, filter := range []string{"create/bills/**", ":create/**", "*:create/**", "drop*:create/**", "github:push/**"} {
+		if _, err := validateTrigger(filter); !errors.Is(err, ErrValidation) {
+			t.Errorf("validateTrigger(%q) = %v, want ErrValidation", filter, err)
+		}
+	}
+	if source, err := validateTrigger("dropbox:create/bills/**"); err != nil || source != "dropbox" {
+		t.Fatalf("valid filter = %q, %v", source, err)
+	}
+	// R-6LTK-3FF7
+	for _, filter := range []string{"dropbox:create/bills/**/*.pdf", "dropbox:*", "cron:tick/some-schedule-nobody-declared"} {
+		if _, err := validateTrigger(filter); err != nil {
+			t.Errorf("validateTrigger(%q) = %v", filter, err)
+		}
+	}
+	for _, filter := range []string{"dropbox:nosuchkind/**", "dropbox:create/["} {
+		if _, err := validateTrigger(filter); !errors.Is(err, ErrValidation) {
+			t.Errorf("validateTrigger(%q) = %v, want ErrValidation", filter, err)
+		}
+	}
+}
+
 // TestStore_SetTrigger_MultiSource asserts the composite-key contract: a prompt
-// may hold MANY (source, event_filter) bindings; a repeat of the same composite
+// may hold many canonical filter bindings; a repeat is an upsert.
 // key is an upsert (no duplicate row), while distinct keys insert distinct rows.
 func TestStore_SetTrigger_MultiSource(t *testing.T) {
 	ctx := context.Background()

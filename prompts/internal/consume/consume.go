@@ -22,15 +22,16 @@ import (
 	"log/slog"
 
 	"eventplane/consumer"
+	"eventplane/routing"
 )
 
 // FireFunc starts a run for one prompt in reaction to an event (the consumer
 // path; not owner-scoped). Production wiring is prompt.Service.RunByEvent.
-type FireFunc func(ctx context.Context, promptID, source, evType, eventID string, payload []byte) error
+type FireFunc func(ctx context.Context, promptID, source, kind, subject, eventID string, payload []byte) error
 
 // LookupFunc fans (source, type) out to the subscribed prompt ids. Production
 // wiring is prompt.Service.PromptsForEvent.
-type LookupFunc func(ctx context.Context, source, evType string) ([]string, error)
+type LookupFunc func(ctx context.Context, source, key string) ([]string, error)
 
 // Subscriptions returns one Subscription per upstream — Filter "*" (prompts
 // fires on any type and decides via PromptsForEvent). Source is the producer's
@@ -42,7 +43,7 @@ func Subscriptions(sources []string) []consumer.Subscription {
 	for _, src := range sources {
 		subs = append(subs, consumer.Subscription{
 			Source:      src,
-			Filter:      "*", // fire on any type; PromptsForEvent decides the real fan-out
+			Filter:      "**",
 			Description: fmt.Sprintf("fires a run for every prompt whose trigger matches a %s event", src),
 		})
 	}
@@ -69,7 +70,18 @@ func Handler(fire FireFunc, lookup LookupFunc, source string, logger *slog.Logge
 			return fmt.Errorf("consume: malformed envelope from %s (kind=%q id=%q): %w", source, ev.Kind, ev.ID, consumer.ErrSkip)
 		}
 
-		promptIDs, err := lookup(ctx, source, ev.Kind)
+		key := ev.Key()
+		if source == "dropbox" {
+			switch ev.Kind {
+			case "file.created":
+				key = routing.Key(source, "create", ev.Subject)
+			case "file.modified":
+				key = routing.Key(source, "modify", ev.Subject)
+			case "file.deleted":
+				key = routing.Key(source, "delete", ev.Subject)
+			}
+		}
+		promptIDs, err := lookup(ctx, source, key)
 		if err != nil {
 			// A lookup failure is a transient DB read, NOT poison. The fire-and-forget
 			// contract is explicit: never stall the feed. Log loudly and advance — a
@@ -91,7 +103,7 @@ func Handler(fire FireFunc, lookup LookupFunc, source string, logger *slog.Logge
 			// never holding the cursor open. Detached from the engine's request context
 			// (the handler has already returned) via context.Background().
 			go func(promptID string) {
-				if err := fire(context.Background(), promptID, source, ev.Kind, ev.ID, ev.Payload); err != nil {
+				if err := fire(context.Background(), promptID, source, ev.Kind, ev.Subject, ev.ID, ev.Payload); err != nil {
 					logger.Error("consume: fire run failed (dropped)", "prompt", promptID, "source", source, "kind", ev.Kind, "event_id", ev.ID, "err", err)
 				}
 			}(promptID)

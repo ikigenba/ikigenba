@@ -146,7 +146,10 @@ func (s *Service) Create(ctx context.Context, ownerEmail string, in CreateInput)
 	// Validate every inline trigger BEFORE inserting the prompt, so an invalid
 	// binding rejects the whole create without leaving a triggerless orphan.
 	for _, ts := range in.Triggers {
-		if err := validateTrigger(ts.Source, ts.EventFilter); err != nil {
+		if ts.Filter == "" {
+			ts.Filter = canonicalFilter(ts.Source, ts.EventFilter)
+		}
+		if _, err := validateTrigger(ts.Filter); err != nil {
 			return Prompt{}, err
 		}
 	}
@@ -166,11 +169,15 @@ func (s *Service) Create(ctx context.Context, ownerEmail string, in CreateInput)
 	}
 	// Apply the inline triggers (already validated) via the store SetTrigger.
 	for _, ts := range in.Triggers {
+		if ts.Filter == "" {
+			ts.Filter = canonicalFilter(ts.Source, ts.EventFilter)
+		}
+		source, _ := validateTrigger(ts.Filter)
 		if err := s.store.SetTrigger(ctx, Trigger{
-			PromptID:    p.ID,
-			Source:      ts.Source,
-			EventFilter: ts.EventFilter,
-			CreatedAt:   now,
+			PromptID:  p.ID,
+			Source:    source,
+			Filter:    ts.Filter,
+			CreatedAt: now,
 		}); err != nil {
 			return Prompt{}, err
 		}
@@ -317,7 +324,7 @@ func (s *Service) Run(ctx context.Context, ownerEmail, id string) (Run, error) {
 	if err != nil {
 		return Run{}, err
 	}
-	return s.startRun(ctx, p, "", "", "", nil)
+	return s.startRun(ctx, p, "", "", "", "", nil)
 }
 
 // materializeInput pins the prompt's changeable execution inputs to
@@ -346,7 +353,7 @@ func (s *Service) materializeInput(run Run, p Prompt, payload []byte) error {
 		return fmt.Errorf("prompt: write config: %w", err)
 	}
 	if run.TriggerSource != "" {
-		env := eventEnvelope{Source: run.TriggerSource, Type: run.TriggerType, EventID: run.TriggerEventID, Payload: json.RawMessage(payload)}
+		env := eventEnvelope{Source: run.TriggerSource, Kind: run.TriggerKind, Subject: run.TriggerSubject, EventID: run.TriggerEventID, Payload: json.RawMessage(payload)}
 		if len(env.Payload) == 0 {
 			env.Payload = json.RawMessage("null")
 		}
@@ -368,12 +375,14 @@ func (s *Service) materializeInput(run Run, p Prompt, payload []byte) error {
 // runner — which executes from disk, never from p.
 type eventEnvelope struct {
 	Source  string          `json:"source"`
-	Type    string          `json:"type"`
+	Kind    string          `json:"kind"`
+	Subject string          `json:"subject"`
+	Type    string          `json:"-"`
 	EventID string          `json:"event_id"`
 	Payload json.RawMessage `json:"payload"`
 }
 
-func (s *Service) startRun(ctx context.Context, p Prompt, source, evType, eventID string, payload []byte) (Run, error) {
+func (s *Service) startRun(ctx context.Context, p Prompt, source, kind, subject, eventID string, payload []byte) (Run, error) {
 	runID := ids.NewULID()
 	run := Run{
 		ID:             runID,
@@ -384,7 +393,9 @@ func (s *Service) startRun(ctx context.Context, p Prompt, source, evType, eventI
 		StartedAt:      s.nowStr(),
 		LogPath:        filepath.Join(s.runsDir, runID, "output.jsonl"),
 		TriggerSource:  source,
-		TriggerType:    evType,
+		TriggerKind:    kind,
+		TriggerSubject: subject,
+		TriggerType:    kind,
 		TriggerEventID: eventID,
 	}
 	// Pin the execution inputs to disk BEFORE the row exists / spawn happens.
@@ -417,12 +428,36 @@ func (s *Service) startRun(ctx context.Context, p Prompt, source, evType, eventI
 // Run, which passes "" / "" / ""). payload is the upstream producer's raw event
 // body; it is pinned to the run's input/event.json (inside the canonical event
 // envelope) for an event-triggered run.
-func (s *Service) RunByEvent(ctx context.Context, id, source, evType, eventID string, payload []byte) (Run, error) {
+func (s *Service) RunByEvent(ctx context.Context, id, source, kind string, args ...any) (Run, error) {
+	var subject, eventID string
+	var payload []byte
+	switch len(args) {
+	case 2:
+		eventID, _ = args[0].(string)
+		payload = eventPayload(args[1])
+	case 3:
+		subject, _ = args[0].(string)
+		eventID, _ = args[1].(string)
+		payload = eventPayload(args[2])
+	default:
+		return Run{}, fmt.Errorf("%w: invalid event arguments", ErrValidation)
+	}
 	p, err := s.store.GetPromptByID(ctx, id)
 	if err != nil {
 		return Run{}, err
 	}
-	return s.startRun(ctx, p, source, evType, eventID, payload)
+	return s.startRun(ctx, p, source, kind, subject, eventID, payload)
+}
+
+func eventPayload(v any) []byte {
+	switch b := v.(type) {
+	case []byte:
+		return b
+	case json.RawMessage:
+		return []byte(b)
+	default:
+		return nil
+	}
 }
 
 // readLines reads up to limit lines of the file at path starting at 1-based
@@ -551,17 +586,30 @@ func (s *Service) RunFsRead(ctx context.Context, ownerEmail, runID, path string,
 // validateTrigger rejects an unknown source or an event_filter that matches no
 // type the producer publishes (A12) with ErrValidation. May be called
 // repeatedly to attach several bindings; the composite key dedupes a repeat.
-func (s *Service) SetTrigger(ctx context.Context, ownerEmail, id, source, eventFilter string) (Trigger, error) {
+func (s *Service) SetTrigger(ctx context.Context, ownerEmail, id string, filters ...string) (Trigger, error) {
+	var filter string
+	legacyFilter := ""
+	switch len(filters) {
+	case 1:
+		filter = filters[0]
+	case 2:
+		legacyFilter = filters[1]
+		filter = canonicalFilter(filters[0], filters[1])
+	default:
+		return Trigger{}, fmt.Errorf("%w: filter is required", ErrValidation)
+	}
 	if _, err := s.store.GetPrompt(ctx, ownerEmail, id); err != nil {
 		return Trigger{}, err
 	}
-	if err := validateTrigger(source, eventFilter); err != nil {
+	source, err := validateTrigger(filter)
+	if err != nil {
 		return Trigger{}, err
 	}
 	t := Trigger{
 		PromptID:    id,
 		Source:      source,
-		EventFilter: eventFilter,
+		Filter:      filter,
+		EventFilter: legacyFilter,
 		CreatedAt:   s.nowStr(),
 	}
 	if err := s.store.SetTrigger(ctx, t); err != nil {
@@ -573,19 +621,42 @@ func (s *Service) SetTrigger(ctx context.Context, ownerEmail, id, source, eventF
 // ClearTrigger removes one (source, event_filter) binding from the owner's
 // prompt. Loading the prompt first enforces ownership. A binding that does not
 // exist returns ErrNotFound.
-func (s *Service) ClearTrigger(ctx context.Context, ownerEmail, id, source, eventFilter string) error {
+func (s *Service) ClearTrigger(ctx context.Context, ownerEmail, id string, filters ...string) error {
+	var filter string
+	switch len(filters) {
+	case 1:
+		filter = filters[0]
+	case 2:
+		filter = canonicalFilter(filters[0], filters[1])
+	default:
+		return fmt.Errorf("%w: filter is required", ErrValidation)
+	}
 	if _, err := s.store.GetPrompt(ctx, ownerEmail, id); err != nil {
 		return err
 	}
-	return s.store.ClearTrigger(ctx, id, source, eventFilter)
+	return s.store.ClearTrigger(ctx, id, filter)
+}
+
+func canonicalFilter(source, filter string) string {
+	if strings.Contains(filter, ":") {
+		return filter
+	}
+	legacy := map[string]string{"file.created": "create", "file.modified": "modify", "file.deleted": "delete", "transaction.recorded": "recorded", "scripts.succeeded": "succeeded", "scripts.failed": "failed"}
+	if kind, ok := legacy[filter]; ok {
+		return source + ":" + kind
+	}
+	if source == "cron" {
+		return source + ":tick/" + filter
+	}
+	return source + ":" + filter
 }
 
 // PromptsForEvent returns every prompt id whose binding matches (source, evType)
 // — the event→prompts fan-out the consumer runs on each arrival. It is NOT
 // owner-scoped: a fired event has no caller identity, and the trigger linkage
 // (set by the owner) is the authority. A thin passthrough to the store.
-func (s *Service) PromptsForEvent(ctx context.Context, source, evType string) ([]string, error) {
-	return s.store.PromptsForEvent(ctx, source, evType)
+func (s *Service) PromptsForEvent(ctx context.Context, source, key string) ([]string, error) {
+	return s.store.PromptsForEvent(ctx, source, key)
 }
 
 // TriggerSources returns the static known-producer set (A12), for set_trigger

@@ -368,8 +368,8 @@ func TestReflectionThroughAssembledHandlerReportsPromptsEventGraph(t *testing.T)
 		if got := stringField(t, sub, "source"); got != testSources[i] {
 			t.Fatalf("subscribes[%d].source = %q, want %q", i, got, testSources[i])
 		}
-		if got := stringField(t, sub, "filter"); got != "*" {
-			t.Fatalf("subscribes[%d].filter = %q, want *", i, got)
+		if got := stringField(t, sub, "filter"); got != "**" {
+			t.Fatalf("subscribes[%d].filter = %q, want **", i, got)
 		}
 	}
 }
@@ -391,39 +391,36 @@ func TestSetAndClearTrigger(t *testing.T) {
 	}
 
 	set := call(t, h, "set_trigger", map[string]any{
-		"prompt_id":    cv.PromptID,
-		"source":       "dropbox",
-		"event_filter": "file.created",
+		"prompt_id": cv.PromptID,
+		"filter":    "dropbox:create",
 	})
 	if isError(set) {
 		t.Fatalf("set_trigger returned isError: %+v", set)
 	}
 	var tv struct {
-		Source      string `json:"source"`
-		EventFilter string `json:"event_filter"`
-		CreatedAt   string `json:"created_at"`
+		Source    string `json:"source"`
+		Filter    string `json:"filter"`
+		CreatedAt string `json:"created_at"`
 	}
 	if err := json.Unmarshal([]byte(resultText(t, set)), &tv); err != nil {
 		t.Fatalf("decode set: %v", err)
 	}
-	if tv.Source != "dropbox" || tv.EventFilter != "file.created" || tv.CreatedAt == "" {
+	if tv.Source != "dropbox" || tv.Filter != "dropbox:create" || tv.CreatedAt == "" {
 		t.Fatalf("unexpected trigger: %+v", tv)
 	}
 
 	// An unknown source is rejected (validation).
 	bad := call(t, h, "set_trigger", map[string]any{
-		"prompt_id":    cv.PromptID,
-		"source":       "nope",
-		"event_filter": "x",
+		"prompt_id": cv.PromptID,
+		"filter":    "github:push/**",
 	})
 	if !isError(bad) {
 		t.Fatalf("set_trigger with unknown source must return isError, got %+v", bad)
 	}
 
 	cleared := call(t, h, "clear_trigger", map[string]any{
-		"prompt_id":    cv.PromptID,
-		"source":       "dropbox",
-		"event_filter": "file.created",
+		"prompt_id": cv.PromptID,
+		"filter":    "dropbox:create",
 	})
 	if isError(cleared) {
 		t.Fatalf("clear_trigger returned isError: %+v", cleared)

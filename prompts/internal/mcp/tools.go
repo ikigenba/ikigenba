@@ -46,7 +46,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				triggers := make([]prompt.TriggerSpec, 0, len(in.Triggers))
 				for _, t := range in.Triggers {
-					triggers = append(triggers, prompt.TriggerSpec{Source: t.Source, EventFilter: t.EventFilter})
+					triggers = append(triggers, prompt.TriggerSpec{Filter: string(t)})
 				}
 				p, err := svc.Create(ctx, id.OwnerEmail, prompt.CreateInput{
 					Name:         in.Name,
@@ -152,42 +152,46 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				return appkitmcp.JSONResult(map[string]any{"deleted": in.PromptID})
 			}),
 
-		desc(tool("set_trigger"), "Attach one (source, event_filter) event trigger to one of the caller's prompts: when a matching event arrives from the named producer, prompts starts a run for the prompt. source is the producer (cron|crm|ledger|dropbox|scripts|prompts); event_filter is the event type/glob it publishes, e.g. \"cron.nightly\", \"file.created\", \"run.succeeded\". A prompt may hold several bindings — call repeatedly. An unknown source or an event_filter the producer never publishes is rejected. The run receives the triggering event as a second block in its prompt — see describe for the contract.", obj(map[string]any{
-			"prompt_id":    typ("string"),
-			"source":       typ("string"),
-			"event_filter": typ("string"),
-		}, "prompt_id", "source", "event_filter"),
+		desc(tool("set_trigger"), "Attach a canonical routing-key glob filter such as dropbox:create/bills/**. The literal source is before ':'; ** crosses subject path segments.", obj(map[string]any{
+			"prompt_id": typ("string"), "filter": typ("string"),
+		}, "prompt_id", "filter"),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				var in struct {
 					PromptID    string `json:"prompt_id"`
+					Filter      string `json:"filter"`
 					Source      string `json:"source"`
-					EventFilter string `json:"event_filter"`
+					EventFilter string `json:"legacy_filter"`
 				}
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				trig, err := svc.SetTrigger(ctx, id.OwnerEmail, in.PromptID, in.Source, in.EventFilter)
+				if in.Filter == "" {
+					in.Filter = canonicalWireFilter(in.Source, in.EventFilter)
+				}
+				trig, err := svc.SetTrigger(ctx, id.OwnerEmail, in.PromptID, in.Filter)
 				if err != nil {
 					return appkitmcp.ErrorResult(err.Error()), nil
 				}
 				return appkitmcp.JSONResult(trig)
 			}),
 
-		desc(tool("clear_trigger"), "Remove one (source, event_filter) event trigger from one of the caller's prompts.", obj(map[string]any{
-			"prompt_id":    typ("string"),
-			"source":       typ("string"),
-			"event_filter": typ("string"),
-		}, "prompt_id", "source", "event_filter"),
+		desc(tool("clear_trigger"), "Remove one canonical routing-key filter from one of the caller's prompts.", obj(map[string]any{
+			"prompt_id": typ("string"), "filter": typ("string"),
+		}, "prompt_id", "filter"),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				var in struct {
 					PromptID    string `json:"prompt_id"`
+					Filter      string `json:"filter"`
 					Source      string `json:"source"`
-					EventFilter string `json:"event_filter"`
+					EventFilter string `json:"legacy_filter"`
 				}
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				if err := svc.ClearTrigger(ctx, id.OwnerEmail, in.PromptID, in.Source, in.EventFilter); err != nil {
+				if in.Filter == "" {
+					in.Filter = canonicalWireFilter(in.Source, in.EventFilter)
+				}
+				if err := svc.ClearTrigger(ctx, id.OwnerEmail, in.PromptID, in.Filter); err != nil {
 					return appkitmcp.ErrorResult(err.Error()), nil
 				}
 				return appkitmcp.JSONResult(map[string]any{"cleared": in.PromptID})
@@ -374,16 +378,11 @@ func configSchema() map[string]any {
 	}, "provider", "model")
 }
 
-// triggersSchema is create's optional inline triggers array: each element is a
-// {source, event_filter} binding applied via SetTrigger after the prompt row is
-// inserted (same validation as set_trigger).
+// triggersSchema is create's optional inline canonical-key filter array.
 func triggersSchema() map[string]any {
 	return map[string]any{
-		"type": "array",
-		"items": obj(map[string]any{
-			"source":       typ("string"),
-			"event_filter": typ("string"),
-		}, "source", "event_filter"),
+		"type":  "array",
+		"items": typ("string"),
 	}
 }
 
@@ -445,7 +444,15 @@ func (c configInput) toConfig() prompt.Config {
 }
 
 // triggerInput maps one wire trigger object to prompt.TriggerSpec.
-type triggerInput struct {
-	Source      string `json:"source"`
-	EventFilter string `json:"event_filter"`
+type triggerInput string
+
+func canonicalWireFilter(source, filter string) string {
+	legacy := map[string]string{"file.created": "create", "file.modified": "modify", "file.deleted": "delete", "transaction.recorded": "recorded", "scripts.succeeded": "succeeded", "scripts.failed": "failed"}
+	if kind, ok := legacy[filter]; ok {
+		return source + ":" + kind
+	}
+	if source == "cron" {
+		return source + ":tick/" + filter
+	}
+	return source + ":" + filter
 }
