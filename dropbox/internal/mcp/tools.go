@@ -7,7 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	appkitmcp "appkit/mcp"
 	"appkit/server"
@@ -29,16 +34,33 @@ const toolPrefix = ""
 func tool(verb string) string { return toolPrefix + verb }
 
 type toolHandlers struct {
-	svc *dropbox.Service
+	svc               *dropbox.Service
+	sourcePortAllowed func(port int) bool
+	sourceClient      *http.Client
 }
 
 // Tools returns dropbox's service-owned MCP tool declarations. The shared
 // appkit MCP transport appends the chassis health and reflection tools.
-func Tools(svc *dropbox.Service) []appkitmcp.Tool {
+func Tools(svc *dropbox.Service, sourcePortAllowed func(port int) bool) []appkitmcp.Tool {
 	if svc == nil {
 		panic("mcp: dropbox service is required")
 	}
-	h := &toolHandlers{svc: svc}
+	if sourcePortAllowed == nil {
+		sourcePortAllowed = func(int) bool { return false }
+	}
+	h := &toolHandlers{
+		svc:               svc,
+		sourcePortAllowed: sourcePortAllowed,
+		sourceClient: &http.Client{
+			Transport: &http.Transport{
+				DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+				ResponseHeaderTimeout: 5 * time.Second,
+			},
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+	}
 	return []appkitmcp.Tool{
 		{
 			Name:        tool("list"),
@@ -65,11 +87,12 @@ func Tools(svc *dropbox.Service) []appkitmcp.Tool {
 		},
 		{
 			Name:        tool("put"),
-			Description: "Create or replace one small file in the local Dropbox mirror. 'path' and standard-base64 'content_base64' are required. Decoded content is capped at 25 MiB; use PUT /content for larger files.",
+			Description: "Create or replace one file in the local Dropbox mirror. Supply exactly one of 'source_url' (an allowed loopback http reference, fetched server-side and streamed without a size cap) or standard-base64 'content_base64' (capped at 25 MiB).",
 			InputSchema: obj(map[string]any{
 				"path":           descTyp("string", "required; destination file path."),
-				"content_base64": descTyp("string", "required; standard base64 file bytes, limited to 25 MiB decoded."),
-			}, "path", "content_base64"),
+				"source_url":     descTyp("string", "optional; allowed 127.0.0.1 or ::1 http URL with an explicitly allowed port; fetched server-side."),
+				"content_base64": descTyp("string", "optional; standard base64 file bytes, limited to 25 MiB decoded."),
+			}, "path"),
 			Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				return h.toolPut(ctx, args, id.ClientID)
 			},
@@ -221,18 +244,23 @@ func (h *toolHandlers) toolGet(ctx context.Context, raw json.RawMessage) (map[st
 	})
 }
 
-// toolPut decodes a bounded small-file body then delegates the mutation to the
-// same Service.Write seam used by the loopback content route.
+// toolPut fetches an allowed source_url server-side or decodes a bounded
+// small-file body, then delegates the mutation to the same Service.Write seam
+// used by the loopback content route.
 func (h *toolHandlers) toolPut(ctx context.Context, raw json.RawMessage, clientID string) (map[string]any, error) {
 	var a struct {
 		Path          string `json:"path"`
+		SourceURL     string `json:"source_url"`
 		ContentBase64 string `json:"content_base64"`
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return nil, err
 	}
-	if a.Path == "" || a.ContentBase64 == "" {
+	if a.Path == "" || (a.SourceURL == "" && a.ContentBase64 == "") || (a.SourceURL != "" && a.ContentBase64 != "") {
 		return toolErr(dropbox.ErrValidation), nil
+	}
+	if a.SourceURL != "" {
+		return h.putSourceURL(ctx, a.Path, a.SourceURL, clientID)
 	}
 	decoded, err := io.ReadAll(io.LimitReader(base64.NewDecoder(base64.StdEncoding, strings.NewReader(a.ContentBase64)), maxGetBytes+1))
 	if err != nil {
@@ -252,6 +280,57 @@ func (h *toolHandlers) toolPut(ctx context.Context, raw json.RawMessage, clientI
 		"content_hash": row.ContentHash,
 		"rev":          row.Rev,
 	})
+}
+
+func (h *toolHandlers) putSourceURL(ctx context.Context, path, sourceURL, clientID string) (map[string]any, error) {
+	u, err := url.Parse(sourceURL)
+	if err != nil || u.Scheme != "http" || u.User != nil || u.Hostname() == "" {
+		return toolErr(dropbox.ErrValidation), nil
+	}
+	if host := u.Hostname(); host != "127.0.0.1" && host != "::1" {
+		return toolErr(dropbox.ErrValidation), nil
+	}
+	portText := u.Port()
+	port, err := strconv.Atoi(portText)
+	if portText == "" || err != nil || port < 1 || port > 65535 || !h.sourcePortAllowed(port) {
+		return toolErr(dropbox.ErrValidation), nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return toolErr(dropbox.ErrValidation), nil
+	}
+	resp, err := h.sourceClient.Do(req)
+	if err != nil {
+		return sourceUnavailable(sourceURL), nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return toolErr(dropbox.ErrNotFound), nil
+	}
+	if resp.StatusCode == http.StatusConflict {
+		return toolErr(dropbox.ErrRevMismatch), nil
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return sourceUnavailable(sourceURL), nil
+	}
+	row, err := h.svc.Write(ctx, path, resp.Body, clientID)
+	if err != nil {
+		if errors.Is(err, dropbox.ErrValidation) || errors.Is(err, dropbox.ErrPathEscape) {
+			return toolErr(err), nil
+		}
+		return sourceUnavailable(sourceURL), nil
+	}
+	return appkitmcp.JSONResult(map[string]any{
+		"path":         row.Path,
+		"size":         row.Size,
+		"content_hash": row.ContentHash,
+		"rev":          row.Rev,
+	})
+}
+
+func sourceUnavailable(sourceURL string) map[string]any {
+	return appkitmcp.ErrorResult(toolErrorJSON("source_unavailable", "source URL is unavailable: "+sourceURL))
 }
 
 func (h *toolHandlers) toolMkdir(ctx context.Context, raw json.RawMessage, clientID string) (map[string]any, error) {

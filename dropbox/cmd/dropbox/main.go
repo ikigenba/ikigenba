@@ -182,7 +182,8 @@ func main() {
 					http.Error(w, "template error", http.StatusInternalServerError)
 				}
 			}))
-			handler, err := mcp.NewHandler(svc, rt)
+			allowed := registrySourcePorts()
+			handler, err := mcp.NewHandler(svc, func(port int) bool { return allowed[port] }, rt)
 			if err != nil {
 				return err
 			}
@@ -233,6 +234,16 @@ func main() {
 			},
 		},
 	})
+}
+
+// registrySourcePorts is the composition-root confinement seam for MCP source
+// references: only ports owned by registered suite services are fetchable.
+func registrySourcePorts() map[int]bool {
+	allowed := map[int]bool{}
+	for _, service := range registry.Services {
+		allowed[service.Port] = true
+	}
+	return allowed
 }
 
 func defaultMirrorPath(getenv func(string) string) string {

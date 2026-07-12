@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -50,6 +53,10 @@ func migrateDropbox(ctx context.Context, conn *sql.DB) error {
 }
 
 func newHandlerWithService(t testing.TB, svc *dropbox.Service, health func(context.Context) (map[string]any, error)) http.Handler {
+	return newHandlerWithSourceAllowed(t, svc, health, func(int) bool { return false })
+}
+
+func newHandlerWithSourceAllowed(t testing.TB, svc *dropbox.Service, health func(context.Context) (map[string]any, error), sourcePortAllowed func(int) bool) http.Handler {
 	t.Helper()
 	var handler http.Handler
 	_, err := server.New(server.Options{
@@ -63,7 +70,7 @@ func newHandlerWithService(t testing.TB, svc *dropbox.Service, health func(conte
 		Events:     dropbox.Events,
 		Register: func(rt *server.Router) error {
 			var err error
-			handler, err = NewHandler(svc, rt)
+			handler, err = NewHandler(svc, sourcePortAllowed, rt)
 			return err
 		},
 	})
@@ -74,6 +81,30 @@ func newHandlerWithService(t testing.TB, svc *dropbox.Service, health func(conte
 		t.Fatal("NewHandler returned nil handler")
 	}
 	return handler
+}
+
+type recordedEventSink struct {
+	events []dropbox.FileEvent
+}
+
+func (s *recordedEventSink) AppendFileEvent(_ *sql.Tx, event dropbox.FileEvent) error {
+	s.events = append(s.events, event)
+	return nil
+}
+
+func (s *recordedEventSink) Ring() {}
+
+func sourcePort(t *testing.T, rawURL string) int {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse source URL: %v", err)
+	}
+	p, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatalf("source URL port: %v", err)
+	}
+	return p
 }
 
 // rpc drives one JSON-RPC call through ServeHTTP and returns the decoded result
@@ -581,6 +612,127 @@ func TestPut_WritesBase64BytesEnqueuesUploadAndRejectsOversize(t *testing.T) {
 	}
 	if code := tooLarge["error"].(map[string]any)["code"]; code != "too_large" {
 		t.Errorf("oversize put code = %v, want too_large", code)
+	}
+}
+
+func TestPut_SourceURLFetchesServerSideWritesAndPreservesOrigin(t *testing.T) {
+	// R-Q52B-JQLP
+	body := []byte("bytes held by the source service\n")
+	gets := 0
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("source method = %s, want GET", r.Method)
+		}
+		gets++
+		_, _ = w.Write(body)
+	}))
+	defer source.Close()
+
+	h, svc := newMirrorHandler(t)
+	// Rebuild the real MCP transport with only this source server's port admitted.
+	h = newHandlerWithSourceAllowed(t, svc, nil, func(port int) bool { return port == sourcePort(t, source.URL) })
+	sink := &recordedEventSink{}
+	svc.Outbox = sink
+
+	put, isErr := callTool(t, h, "put", `{"path":"/references/source.txt","source_url":"`+source.URL+`/bytes"}`)
+	if isErr {
+		t.Fatalf("source put isError: %v", put)
+	}
+	if gets != 1 {
+		t.Fatalf("source GETs = %d, want 1", gets)
+	}
+	if put["path"] != "/references/source.txt" || put["size"] != float64(len(body)) || put["content_hash"] == "" || put["rev"] == "" {
+		t.Fatalf("source put result = %v", put)
+	}
+	got, isErr := callTool(t, h, "get", `{"path":"/references/source.txt"}`)
+	if isErr {
+		t.Fatalf("get after source put isError: %v", got)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(got["content_base64"].(string))
+	if err != nil || string(decoded) != string(body) {
+		t.Fatalf("source bytes = %q, %v; want %q", decoded, err, body)
+	}
+	var origin string
+	if err := svc.DB.QueryRow(`SELECT origin FROM upload_queue WHERE path = ?`, "/references/source.txt").Scan(&origin); err != nil || origin != "client-123" {
+		t.Fatalf("upload origin = %q, %v; want client-123", origin, err)
+	}
+	if len(sink.events) != 1 || sink.events[0].Origin != "client-123" {
+		t.Fatalf("emitted events = %+v, want one event with client origin", sink.events)
+	}
+}
+
+func TestPut_SourceURLConfinementAndExclusiveArguments(t *testing.T) {
+	// R-Q6A7-XICE
+	gets := 0
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gets++
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer source.Close()
+	port := sourcePort(t, source.URL)
+	h, svc := newMirrorHandler(t)
+	h = newHandlerWithSourceAllowed(t, svc, nil, func(p int) bool { return p == port })
+	for _, args := range []string{
+		`{"path":"/bad","source_url":"http://10.0.0.5:3202/a"}`,
+		`{"path":"/bad","source_url":"http://localhost:` + strconv.Itoa(port) + `/a"}`,
+		`{"path":"/bad","source_url":"http://127.0.0.1:39999/a"}`,
+		`{"path":"/bad","source_url":"` + source.URL + `/a","content_base64":"eA=="}`,
+		`{"path":"/bad"}`,
+	} {
+		out, isErr := callTool(t, h, "put", args)
+		if !isErr || out["error"].(map[string]any)["code"] != "validation" {
+			t.Errorf("put %s = %v, isError=%t; want validation", args, out, isErr)
+		}
+	}
+	if gets != 0 {
+		t.Fatalf("rejected source URLs made %d fetches, want none", gets)
+	}
+	if out, isErr := callTool(t, h, "put", `{"path":"/good","source_url":"`+source.URL+`/a"}`); isErr || out["size"] != float64(2) {
+		t.Fatalf("allowed source URL = %v, isError=%t", out, isErr)
+	}
+	if gets != 1 {
+		t.Fatalf("allowed source URL GETs = %d, want 1", gets)
+	}
+}
+
+func TestPut_SourceURLFailureMappingLeavesNoMutation(t *testing.T) {
+	// R-Q8Q0-P1TS
+	for _, status := range []int{http.StatusNotFound, http.StatusConflict} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
+			defer source.Close()
+			h, svc := newMirrorHandler(t)
+			h = newHandlerWithSourceAllowed(t, svc, nil, func(p int) bool { return p == sourcePort(t, source.URL) })
+			out, isErr := callTool(t, h, "put", `{"path":"/failed.txt","source_url":"`+source.URL+`/missing"}`)
+			want := map[int]string{http.StatusNotFound: "not_found", http.StatusConflict: "conflict"}[status]
+			if !isErr || out["error"].(map[string]any)["code"] != want {
+				t.Fatalf("source status %d = %v, isError=%t; want %s", status, out, isErr, want)
+			}
+			assertNoFailedSourceMutation(t, svc)
+		})
+	}
+
+	listener := httptest.NewUnstartedServer(http.NotFoundHandler())
+	listener.Start()
+	closedURL := listener.URL
+	listener.Close()
+	h, svc := newMirrorHandler(t)
+	h = newHandlerWithSourceAllowed(t, svc, nil, func(p int) bool { return p == sourcePort(t, closedURL) })
+	out, isErr := callTool(t, h, "put", `{"path":"/failed.txt","source_url":"`+closedURL+`/gone"}`)
+	if !isErr || out["error"].(map[string]any)["code"] != "source_unavailable" {
+		t.Fatalf("closed source = %v, isError=%t; want source_unavailable", out, isErr)
+	}
+	assertNoFailedSourceMutation(t, svc)
+}
+
+func assertNoFailedSourceMutation(t *testing.T, svc *dropbox.Service) {
+	t.Helper()
+	if _, err := svc.Content("/failed.txt", nil); !errors.Is(err, dropbox.ErrNotFound) {
+		t.Fatalf("failed source left mirror/index entry: %v", err)
+	}
+	var count int
+	if err := svc.DB.QueryRow(`SELECT COUNT(*) FROM upload_queue`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("failed source queue count = %d, %v; want zero", count, err)
 	}
 }
 

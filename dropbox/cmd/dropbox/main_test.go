@@ -22,6 +22,21 @@ import (
 	"registry"
 )
 
+func TestRegistrySourcePortsIncludesEveryRegisteredServiceAndNoExtras(t *testing.T) {
+	// R-Q9XX-2TKH
+	allowed := registrySourcePorts()
+	for _, service := range registry.Services {
+		if !allowed[service.Port] {
+			t.Errorf("registered service %q port %d is not allowed", service.Name, service.Port)
+		}
+	}
+	for _, port := range []int{8080, 39999} {
+		if allowed[port] {
+			t.Errorf("unregistered port %d is allowed", port)
+		}
+	}
+}
+
 // R-8DF1-W89F
 func TestCommittedManifestIsPortable(t *testing.T) {
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
