@@ -201,25 +201,40 @@ func TestRecord_RoutesEachHookAndTouchesAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query outbox: %v", err)
 	}
-	defer rows.Close()
 	wantSubjects := map[string]string{"/alpha_1": "alpha@example.com", "/deploy-hook": "deploy@example.com"}
-	seen := map[string]bool{}
+	type outboxRow struct {
+		kind    string
+		subject string
+		raw     string
+	}
+	var outboxRows []outboxRow
 	for rows.Next() {
-		var kind, subject, raw string
-		if err := rows.Scan(&kind, &subject, &raw); err != nil {
+		var row outboxRow
+		if err := rows.Scan(&row.kind, &row.subject, &row.raw); err != nil {
 			t.Fatalf("scan outbox: %v", err)
 		}
-		if kind != "received" {
-			t.Errorf("kind = %q, want received", kind)
+		outboxRows = append(outboxRows, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate outbox: %v", err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatalf("close outbox rows: %v", err)
+	}
+
+	seen := map[string]bool{}
+	for _, row := range outboxRows {
+		if row.kind != "received" {
+			t.Errorf("kind = %q, want received", row.kind)
 		}
-		owner, ok := wantSubjects[subject]
+		owner, ok := wantSubjects[row.subject]
 		if !ok {
-			t.Fatalf("unexpected subject %q", subject)
+			t.Fatalf("unexpected subject %q", row.subject)
 		}
-		seen[subject] = true
+		seen[row.subject] = true
 		var payload map[string]any
-		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-			t.Fatalf("unmarshal payload for %s: %v", subject, err)
+		if err := json.Unmarshal([]byte(row.raw), &payload); err != nil {
+			t.Fatalf("unmarshal payload for %s: %v", row.subject, err)
 		}
 		wantKeys := map[string]bool{"name": true, "owner": true, "received_at": true, "content_type": true, "body": true}
 		gotKeys := map[string]bool{}
@@ -227,21 +242,18 @@ func TestRecord_RoutesEachHookAndTouchesAtomically(t *testing.T) {
 			gotKeys[key] = true
 		}
 		if !reflect.DeepEqual(gotKeys, wantKeys) {
-			t.Errorf("payload keys for %s = %v, want %v", subject, gotKeys, wantKeys)
+			t.Errorf("payload keys for %s = %v, want %v", row.subject, gotKeys, wantKeys)
 		}
-		if payload["name"] != subject[1:] || payload["owner"] != owner {
-			t.Errorf("payload for %s = %v, want name %q and owner %q", subject, payload, subject[1:], owner)
+		if payload["name"] != row.subject[1:] || payload["owner"] != owner {
+			t.Errorf("payload for %s = %v, want name %q and owner %q", row.subject, payload, row.subject[1:], owner)
 		}
-		wh, _, ok, err := db.NewStore(svc.db).GetByName(context.Background(), subject[1:])
+		wh, _, ok, err := db.NewStore(svc.db).GetByName(context.Background(), row.subject[1:])
 		if err != nil || !ok || wh.LastTriggeredAt == nil {
-			t.Fatalf("GetByName(%s): webhook=%+v ok=%v err=%v", subject[1:], wh, ok, err)
+			t.Fatalf("GetByName(%s): webhook=%+v ok=%v err=%v", row.subject[1:], wh, ok, err)
 		}
 		if got := wh.LastTriggeredAt.UTC().Format(time.RFC3339Nano); got != payload["received_at"] {
-			t.Errorf("last_triggered_at for %s = %q, payload received_at = %v", subject, got, payload["received_at"])
+			t.Errorf("last_triggered_at for %s = %q, payload received_at = %v", row.subject, got, payload["received_at"])
 		}
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("iterate outbox: %v", err)
 	}
 	if !reflect.DeepEqual(seen, map[string]bool{"/alpha_1": true, "/deploy-hook": true}) {
 		t.Fatalf("outbox subjects = %v, want one row for each hook", seen)
