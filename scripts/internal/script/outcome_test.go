@@ -15,7 +15,7 @@ func TestCompletionEvent(t *testing.T) {
 		name        string
 		in          FinishRunInput
 		wantEmit    bool
-		wantType    string
+		wantKind    string
 		wantErrText string // "" means error key must be absent
 	}{
 		{
@@ -26,7 +26,7 @@ func TestCompletionEvent(t *testing.T) {
 			wantEmit: false,
 		},
 		{
-			name: "succeeded -> scripts.succeeded, no error key",
+			name: "succeeded has no error key",
 			in: FinishRunInput{
 				RunID: "r1", ScriptID: "s1", ScriptName: "exporter",
 				Status: RunSucceeded, ExitCode: exit0,
@@ -34,17 +34,17 @@ func TestCompletionEvent(t *testing.T) {
 				// ErrMsg present but must be dropped on success.
 				ErrMsg: "should be discarded",
 			},
-			wantEmit: true, wantType: EventSucceeded, wantErrText: "",
+			wantEmit: true, wantKind: EventSucceeded, wantErrText: "",
 		},
 		{
-			name: "failed -> scripts.failed with error",
+			name: "failed carries error",
 			in: FinishRunInput{
 				RunID: "r2", ScriptID: "s1", ScriptName: "exporter",
 				Status: RunFailed, ExitCode: exit1,
 				StderrTail: "boom\n", StderrTrunc: true,
 				ErrMsg: "run TTL exceeded",
 			},
-			wantEmit: true, wantType: EventFailed, wantErrText: "run TTL exceeded",
+			wantEmit: true, wantKind: EventFailed, wantErrText: "run TTL exceeded",
 		},
 		{
 			name: "manual run has empty trigger fields",
@@ -52,7 +52,7 @@ func TestCompletionEvent(t *testing.T) {
 				RunID: "r3", ScriptID: "s1", ScriptName: "manual",
 				Status: RunSucceeded, ExitCode: exit0,
 			},
-			wantEmit: true, wantType: EventSucceeded,
+			wantEmit: true, wantKind: EventSucceeded,
 		},
 		{
 			name: "triggered run populates trigger fields",
@@ -62,7 +62,7 @@ func TestCompletionEvent(t *testing.T) {
 				ExitCode:      exit0,
 				TriggerSource: "crm", TriggerKind: "contact.created", TriggerSubject: "/c1", TriggerEventID: "evt-123",
 			},
-			wantEmit: true, wantType: EventSucceeded,
+			wantEmit: true, wantKind: EventSucceeded,
 		},
 	}
 
@@ -81,8 +81,11 @@ func TestCompletionEvent(t *testing.T) {
 				}
 				return
 			}
-			if ev.Kind != tc.wantType {
-				t.Errorf("Kind = %q, want %q", ev.Kind, tc.wantType)
+			if ev.Kind != tc.wantKind {
+				t.Errorf("Kind = %q, want %q", ev.Kind, tc.wantKind)
+			}
+			if want := "/" + tc.in.ScriptName; ev.Subject != want {
+				t.Errorf("Subject = %q, want %q", ev.Subject, want)
 			}
 
 			// Decode into a generic map to assert exact JSON key presence.
@@ -128,7 +131,7 @@ func TestCompletionEvent(t *testing.T) {
 				}
 			}
 
-			// trigger sub-object source/type/event_id.
+			// trigger sub-object source/kind/subject/event_id.
 			tr, ok := m["trigger"].(map[string]any)
 			if !ok {
 				t.Fatalf("trigger not an object: %v", m["trigger"])
@@ -151,6 +154,25 @@ func TestCompletionEvent(t *testing.T) {
 	}
 }
 
+func TestCompletionEventNormalizesRoutingSubject(t *testing.T) {
+	// R-82AG-F74Z
+	zero := 0
+	for _, tc := range []struct{ name, scriptName, want string }{
+		{"empty", "", ""},
+		{"newlines", "nightly\nexport\rfinal", "/nightly export final"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ev, emit, err := completionEvent(FinishRunInput{ScriptName: tc.scriptName, Status: RunSucceeded, ExitCode: &zero})
+			if err != nil || !emit {
+				t.Fatalf("completionEvent = (%+v, %v, %v), want emitted event", ev, emit, err)
+			}
+			if ev.Subject != tc.want {
+				t.Fatalf("subject = %q, want %q", ev.Subject, tc.want)
+			}
+		})
+	}
+}
+
 func TestEventsRegistry(t *testing.T) {
 	if len(Events) != 2 {
 		t.Fatalf("Events len = %d, want 2", len(Events))
@@ -164,6 +186,9 @@ func TestEventsRegistry(t *testing.T) {
 		want[et.Kind] = true
 		if et.Sample == nil {
 			t.Errorf("kind %q has nil Sample", et.Kind)
+		}
+		if et.Subject != "/<script name>" {
+			t.Errorf("kind %q Subject = %q, want /<script name>", et.Kind, et.Subject)
 		}
 	}
 	for typ, seen := range want {

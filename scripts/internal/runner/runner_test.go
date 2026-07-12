@@ -350,7 +350,7 @@ func TestSpawnTombstonedScript(t *testing.T) {
 	if errMsg == "" {
 		t.Fatalf("expected a failure error message")
 	}
-	// A failed run still emits the scripts.failed completion event.
+	// A failed run still emits the failed completion event.
 	if n := outboxCount(t, conn); n != 1 {
 		t.Fatalf("outbox rows = %d, want 1", n)
 	}

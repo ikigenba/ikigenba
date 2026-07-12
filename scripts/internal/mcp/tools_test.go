@@ -332,6 +332,65 @@ func TestToolsListPartitionsDomainAndChassis(t *testing.T) {
 	}
 }
 
+func TestReflectionReportsScriptCompletionFamilies(t *testing.T) {
+	// R-83IC-SYVO
+	h, _, _ := newTestHandler(t)
+	index := call(t, h, "reflection", map[string]any{})
+	var indexBody struct {
+		Publishes []struct {
+			Kind    string `json:"kind"`
+			Subject string `json:"subject"`
+		} `json:"publishes"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, index)), &indexBody); err != nil {
+		t.Fatalf("decode reflection index: %v", err)
+	}
+	if len(indexBody.Publishes) != 2 {
+		t.Fatalf("publishes = %+v, want exactly two families", indexBody.Publishes)
+	}
+	for i, want := range []string{"succeeded", "failed"} {
+		if got := indexBody.Publishes[i]; got.Kind != want || got.Subject != "/<script name>" {
+			t.Fatalf("publish[%d] = %+v, want (%q, /<script name>)", i, got, want)
+		}
+	}
+
+	detail := call(t, h, "reflection", map[string]any{"kind": "succeeded"})
+	var detailBody map[string]any
+	if err := json.Unmarshal([]byte(resultText(t, detail)), &detailBody); err != nil {
+		t.Fatalf("decode reflection detail: %v", err)
+	}
+	schema, ok := detailBody["schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("reflection detail schema = %#v", detailBody["schema"])
+	}
+	example, ok := detailBody["example"].(map[string]any)
+	if !ok {
+		t.Fatalf("reflection detail example = %#v", detailBody["example"])
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("reflection schema properties = %#v", schema)
+	}
+	for field := range example {
+		if _, ok := properties[field]; !ok {
+			t.Errorf("example field %q absent from schema", field)
+		}
+	}
+	trigger, ok := example["trigger"].(map[string]any)
+	_, hasType := trigger["type"]
+	if !ok || trigger["kind"] == nil || trigger["subject"] == nil || hasType {
+		t.Fatalf("trigger example = %#v, want kind+subject and no type", example["trigger"])
+	}
+
+	unknown := call(t, h, "reflection", map[string]any{"kind": "missing"})
+	if !isError(unknown) {
+		t.Fatalf("unknown kind result = %+v, want tool error", unknown)
+	}
+	if text := resultText(t, unknown); !strings.Contains(text, "missing") || !strings.Contains(text, "succeeded") || !strings.Contains(text, "failed") {
+		t.Fatalf("unknown kind error = %q, want missing kind and declared kinds", text)
+	}
+}
+
 // createScript runs create and returns the new script_id.
 func createScript(t *testing.T, h http.Handler) string {
 	t.Helper()

@@ -19,7 +19,7 @@ import (
 type Store struct {
 	db *sql.DB
 	// Outbox, when set, makes scripts an event-plane producer: FinishRun appends
-	// the scripts.succeeded / scripts.failed completion event on the SAME
+	// the succeeded / failed completion event on the SAME
 	// transaction as the run's terminal-state write (at-most-once per run,
 	// atomic). nil in unit tests; the terminal write still commits without an
 	// event. Injected by the Producer hook in cmd/scripts after appkit
@@ -366,7 +366,7 @@ func (s *Store) SweepRunning(ctx context.Context) (ids []string, err error) {
 // transaction it writes the run's terminal status/exit_code/ended_at/error and,
 // when this Store is a producer (Outbox set) AND the status is an outcome
 // (succeeded|failed, never cancelled), Appends the matching
-// scripts.succeeded / scripts.failed event on that SAME tx. If the Append fails
+// succeeded / failed event on that SAME tx. If the Append fails
 // the whole tx rolls back, so the run is never marked terminal without its event
 // (at-most-once-per-run, atomic). Ring() fires AFTER a successful Commit (never
 // inside the tx). With a nil Outbox or a cancelled status it is a pure terminal

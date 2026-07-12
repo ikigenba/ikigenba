@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -27,12 +28,88 @@ import (
 	appweb "appkit/web"
 
 	"eventplane/consumer"
+	"eventplane/outbox"
 	"registry"
 
 	"scripts/internal/consume"
 	scriptsdb "scripts/internal/db"
 	"scripts/internal/script"
 )
+
+func TestScriptsFeedFramesRoutedCompletionEvent(t *testing.T) {
+	// R-85Y5-KID2
+	conn, err := appkitdatabase.Open(filepath.Join(t.TempDir(), "scripts.db"))
+	if err != nil {
+		t.Fatalf("open SQLite: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	migs, err := appkitdatabase.LoadMigrations(scriptsdb.FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if err := appkitdatabase.Migrate(context.Background(), conn, migs); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+	ob, err := outbox.New(conn, outbox.Options{Source: "scripts", Registry: script.Events})
+	if err != nil {
+		t.Fatalf("new outbox: %v", err)
+	}
+	store := script.NewStore(conn)
+	store.Outbox = ob
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	sc := script.Script{ID: "script-1", OwnerEmail: "owner@example.com", Name: "nightly-export", Body: "print('ok')", Config: script.Config{Interpreter: "python3", TimeoutSecs: 30}, CreatedAt: now, UpdatedAt: now}
+	if err := store.InsertScript(context.Background(), sc); err != nil {
+		t.Fatalf("insert script: %v", err)
+	}
+	run := script.Run{ID: "run-1", ScriptID: sc.ID, Status: script.RunRunning, StartedAt: now, StdoutPath: "runs/run-1/stdout.log", StderrPath: "runs/run-1/stderr.log"}
+	if err := store.InsertRun(context.Background(), run); err != nil {
+		t.Fatalf("insert run: %v", err)
+	}
+	zero := 0
+	if err := store.FinishRun(context.Background(), script.FinishRunInput{RunID: run.ID, ScriptID: sc.ID, ScriptName: sc.Name, Status: script.RunSucceeded, ExitCode: &zero, EndedAt: now}); err != nil {
+		t.Fatalf("finish run: %v", err)
+	}
+
+	server := httptest.NewServer(ob.FeedHandler())
+	t.Cleanup(server.Close)
+	resp, err := http.Get(server.URL)
+	if err != nil {
+		t.Fatalf("get feed: %v", err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	var event, data string
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "event: ") {
+			event = strings.TrimPrefix(line, "event: ")
+		}
+		if strings.HasPrefix(line, "data: ") {
+			data = strings.TrimPrefix(line, "data: ")
+		}
+		if line == "" && event == "scripts:succeeded/nightly-export" && data != "" {
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("read feed: %v", err)
+	}
+	if event != "scripts:succeeded/nightly-export" {
+		t.Fatalf("SSE event = %q, want scripts:succeeded/nightly-export", event)
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(data), &envelope); err != nil {
+		t.Fatalf("decode event envelope: %v", err)
+	}
+	if _, ok := envelope["type"]; ok {
+		t.Fatalf("event envelope must not contain type: %s", data)
+	}
+	for _, key := range []string{"kind", "subject"} {
+		if _, ok := envelope[key]; !ok {
+			t.Fatalf("event envelope missing %q: %s", key, data)
+		}
+	}
+}
 
 // R-8DF1-W89F
 func TestCommittedManifestIsPortable(t *testing.T) {

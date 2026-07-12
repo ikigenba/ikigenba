@@ -12,8 +12,8 @@
 // surface. RESOURCE_ID / AUTH_SERVER are composed in-binary by appkit/config
 // from IKIGENBA_DOMAIN + MOUNT.
 //
-// scripts is BOTH an event-plane PRODUCER (it emits scripts.succeeded /
-// scripts.failed on its own /feed, in the SAME tx as a run's terminal write) and
+// scripts is BOTH an event-plane PRODUCER (it emits succeeded / failed on its
+// own /feed, in the SAME tx as a run's terminal write) and
 // a multi-upstream CONSUMER (one consumer.Run worker per upstream producer:
 // cron, crm, ledger, dropbox, prompts). It holds NO secret — no LLM provider,
 // open network — so there is no provider API key and no bin/secrets.
@@ -70,8 +70,8 @@ func scriptsSpec() appkit.Spec {
 			scriptsConsumerEntry("dropbox"),
 			scriptsConsumerEntry("prompts"),
 		},
-		// PRODUCER of two STATIC completion types (scripts.succeeded /
-		// scripts.failed), emitted in the SAME tx as a run's terminal write. Feed
+		// PRODUCER of two STATIC completion kinds (succeeded / failed), emitted in
+		// the SAME tx as a run's terminal write. Feed
 		// mounts /feed; Events is the static registry; Producer injects the outbox
 		// onto the store; ManifestExtras round-trips retention config.
 		Feed:   "/feed",

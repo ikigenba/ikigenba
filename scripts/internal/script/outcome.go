@@ -3,24 +3,20 @@ package script
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"eventplane/outbox"
 )
 
-// Completion event types (PLAN.md §A7). scripts emits exactly two terminal,
-// STATIC, compile-time-known completion types (source = scripts) — two distinct
-// types, NOT one type with a status field, so a consumer can filter at the type
-// level. They match scripts' runs.status vocabulary: scripts.succeeded on a
-// clean run (exit 0), scripts.failed on a terminal failure (non-zero / TTL /
-// spawn error). A cancelled run emits NEITHER (operator-initiated stop, not a
-// run outcome a downstream consumer announces).
+// Completion event kinds. scripts emits exactly two terminal, static,
+// compile-time-known kinds. A cancelled run emits neither.
 const (
-	EventSucceeded = "scripts.succeeded" // exit 0
-	EventFailed    = "scripts.failed"    // non-zero / TTL / spawn error
+	EventSucceeded = "succeeded" // exit 0
+	EventFailed    = "failed"    // non-zero / TTL / spawn error
 )
 
-// completionPayload is the scripts.succeeded / scripts.failed payload (README
-// JSON block). error is present ONLY on the failed event (omitempty).
+// completionPayload is the terminal completion payload. error is present only
+// on the failed event (omitempty).
 type completionPayload struct {
 	ScriptID        string         `json:"script_id"`
 	ScriptName      string         `json:"script_name"`
@@ -68,12 +64,14 @@ var sampleFailure = completionPayload{
 var Events = outbox.Registry{
 	{
 		Kind:        EventSucceeded,
+		Subject:     "/<script name>",
 		Description: "A scripts run finished successfully (exit 0). Carries the script identity, the captured output tails, and the trigger context that started it (empty for a manual run).",
 		Sample:      sampleSuccess,
 	},
 	{
 		Kind:        EventFailed,
-		Description: "A scripts run terminated in failure (non-zero exit / TTL / spawn error). Same shape as scripts.succeeded plus an error string.",
+		Subject:     "/<script name>",
+		Description: "A scripts run terminated in failure (non-zero exit / TTL / spawn error). Same shape as the succeeded event plus an error string.",
 		Sample:      sampleFailure,
 	},
 }
@@ -81,14 +79,14 @@ var Events = outbox.Registry{
 // completionEvent builds the outbox.Event from a FinishRunInput. Returns
 // (event, shouldEmit, err). shouldEmit=false ONLY for status==cancelled.
 func completionEvent(in FinishRunInput) (outbox.Event, bool, error) {
-	var typ string
+	var kind string
 	errMsg := in.ErrMsg
 	switch in.Status {
 	case RunSucceeded:
-		typ = EventSucceeded
+		kind = EventSucceeded
 		errMsg = "" // success never carries an error
 	case RunFailed:
-		typ = EventFailed
+		kind = EventFailed
 	default:
 		// cancelled (or any non-outcome terminal state) emits no event — an
 		// operator abort is not a script outcome and must not fire chains.
@@ -113,7 +111,11 @@ func completionEvent(in FinishRunInput) (outbox.Event, bool, error) {
 		Error:           errMsg,
 	})
 	if err != nil {
-		return outbox.Event{}, false, fmt.Errorf("script: marshal %s payload: %w", typ, err)
+		return outbox.Event{}, false, fmt.Errorf("script: marshal %s payload: %w", kind, err)
 	}
-	return outbox.Event{Kind: typ, Payload: raw}, true, nil
+	subject := ""
+	if in.ScriptName != "" {
+		subject = "/" + strings.NewReplacer("\r", " ", "\n", " ").Replace(in.ScriptName)
+	}
+	return outbox.Event{Kind: kind, Subject: subject, Payload: raw}, true, nil
 }

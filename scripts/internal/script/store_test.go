@@ -3,6 +3,7 @@ package script
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -326,6 +327,7 @@ func TestSweepRunning(t *testing.T) {
 }
 
 func TestFinishRunSucceededEmits(t *testing.T) {
+	// R-82AG-F74Z
 	s := newTestStore(t)
 	withOutbox(t, s)
 	ctx := context.Background()
@@ -349,12 +351,86 @@ func TestFinishRunSucceededEmits(t *testing.T) {
 	if c := outboxCount(t, s); c != 1 {
 		t.Fatalf("outbox rows: want 1, got %d", c)
 	}
-	var typ string
-	if err := s.db.QueryRow(`SELECT kind FROM outbox LIMIT 1`).Scan(&typ); err != nil {
+	var kind, subject string
+	if err := s.db.QueryRow(`SELECT kind, subject FROM outbox LIMIT 1`).Scan(&kind, &subject); err != nil {
 		t.Fatalf("read outbox: %v", err)
 	}
-	if typ != EventSucceeded {
-		t.Fatalf("event type: want %q, got %q", EventSucceeded, typ)
+	if kind != EventSucceeded || subject != "/nightly" {
+		t.Fatalf("event routing = (%q, %q), want (%q, /nightly)", kind, subject, EventSucceeded)
+	}
+}
+
+func TestFinishRunRoutesTerminalOutcomesAndOmitsCancelled(t *testing.T) {
+	// R-82AG-F74Z
+	s := newTestStore(t)
+	withOutbox(t, s)
+	ctx := context.Background()
+	sc := seedScript(t, s, ownerA)
+	zero, one := 0, 1
+	for _, tc := range []struct {
+		status string
+		exit   *int
+		errMsg string
+	}{
+		{RunSucceeded, &zero, ""},
+		{RunFailed, &one, "boom"},
+		{RunCancelled, nil, ""},
+	} {
+		run := seedRun(t, s, sc.ID, RunRunning)
+		if err := s.FinishRun(ctx, FinishRunInput{
+			RunID: run.ID, ScriptID: sc.ID, ScriptName: "nightly-export", Status: tc.status,
+			ExitCode: tc.exit, EndedAt: nowStr(), ErrMsg: tc.errMsg,
+			TriggerSource: "cron", TriggerKind: "tick", TriggerSubject: "/nightly", TriggerEventID: "evt-1",
+		}); err != nil {
+			t.Fatalf("finish %s run: %v", tc.status, err)
+		}
+		got, err := s.GetRun(ctx, ownerA, run.ID)
+		if err != nil || got.Status != tc.status {
+			t.Fatalf("terminal row = (%+v, %v), want status %q", got, err, tc.status)
+		}
+	}
+	rows, err := s.db.Query(`SELECT kind, subject, payload FROM outbox ORDER BY seq`)
+	if err != nil {
+		t.Fatalf("read outbox: %v", err)
+	}
+	defer rows.Close()
+	var got []struct{ kind, subject, payload string }
+	for rows.Next() {
+		var row struct{ kind, subject, payload string }
+		if err := rows.Scan(&row.kind, &row.subject, &row.payload); err != nil {
+			t.Fatalf("scan outbox: %v", err)
+		}
+		got = append(got, row)
+	}
+	if len(got) != 2 {
+		t.Fatalf("outbox rows = %d, want exactly succeeded and failed", len(got))
+	}
+	for i, wantKind := range []string{EventSucceeded, EventFailed} {
+		if got[i].kind != wantKind || got[i].subject != "/nightly-export" {
+			t.Fatalf("outbox[%d] routing = (%q, %q), want (%q, /nightly-export)", i, got[i].kind, got[i].subject, wantKind)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(got[i].payload), &payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		trigger := payload["trigger"].(map[string]any)
+		if _, hasType := trigger["type"]; trigger["kind"] != "tick" || trigger["subject"] != "/nightly" || hasType {
+			t.Fatalf("trigger = %#v, want kind+subject and no type", trigger)
+		}
+		if wantKind == EventFailed && payload["error"] != "boom" {
+			t.Fatalf("failed payload error = %#v, want boom", payload["error"])
+		}
+	}
+	emptyRun := seedRun(t, s, sc.ID, RunRunning)
+	if err := s.FinishRun(ctx, FinishRunInput{RunID: emptyRun.ID, ScriptID: sc.ID, Status: RunSucceeded, ExitCode: &zero, EndedAt: nowStr()}); err != nil {
+		t.Fatalf("finish empty-name run: %v", err)
+	}
+	var emptySubject string
+	if err := s.db.QueryRow(`SELECT subject FROM outbox ORDER BY seq DESC LIMIT 1`).Scan(&emptySubject); err != nil {
+		t.Fatalf("read empty-name event: %v", err)
+	}
+	if emptySubject != "" {
+		t.Fatalf("empty script name subject = %q, want empty", emptySubject)
 	}
 }
 
@@ -380,10 +456,10 @@ func TestFinishRunFailedEmitsWithError(t *testing.T) {
 	if c := outboxCount(t, s); c != 1 {
 		t.Fatalf("outbox rows: want 1, got %d", c)
 	}
-	var typ string
-	_ = s.db.QueryRow(`SELECT kind FROM outbox LIMIT 1`).Scan(&typ)
-	if typ != EventFailed {
-		t.Fatalf("event type: want %q, got %q", EventFailed, typ)
+	var kind string
+	_ = s.db.QueryRow(`SELECT kind FROM outbox LIMIT 1`).Scan(&kind)
+	if kind != EventFailed {
+		t.Fatalf("event kind: want %q, got %q", EventFailed, kind)
 	}
 }
 

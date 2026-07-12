@@ -35,7 +35,7 @@ TRIGGERS
   set_trigger {script_id, filter} binds the script to a canonical
   source:kind<subject> glob. The source is one of cron|crm|ledger|dropbox|prompts;
   ** matches across subject paths. On a matching event a
-  run starts automatically. Completion emits scripts.succeeded / scripts.failed
+  run starts automatically. Completion emits succeeded / failed
   on this service's own /feed for other services (e.g. prompts) to consume.
 
 health proves the auth chain and reports the runtime contract.`
