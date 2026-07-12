@@ -60,7 +60,7 @@ func TestCompletionEvent(t *testing.T) {
 				RunID: "r4", ScriptID: "s1", ScriptName: "reactor",
 				Status:        RunSucceeded,
 				ExitCode:      exit0,
-				TriggerSource: "crm", TriggerType: "contact.created", TriggerEventID: "evt-123",
+				TriggerSource: "crm", TriggerKind: "contact.created", TriggerSubject: "/c1", TriggerEventID: "evt-123",
 			},
 			wantEmit: true, wantType: EventSucceeded,
 		},
@@ -76,13 +76,13 @@ func TestCompletionEvent(t *testing.T) {
 				t.Fatalf("shouldEmit = %v, want %v", emit, tc.wantEmit)
 			}
 			if !emit {
-				if ev.Type != "" || ev.Payload != nil {
+				if ev.Kind != "" || ev.Payload != nil {
 					t.Fatalf("no-emit must return zero Event, got %+v", ev)
 				}
 				return
 			}
-			if ev.Type != tc.wantType {
-				t.Errorf("Type = %q, want %q", ev.Type, tc.wantType)
+			if ev.Kind != tc.wantType {
+				t.Errorf("Kind = %q, want %q", ev.Kind, tc.wantType)
 			}
 
 			// Decode into a generic map to assert exact JSON key presence.
@@ -133,7 +133,7 @@ func TestCompletionEvent(t *testing.T) {
 			if !ok {
 				t.Fatalf("trigger not an object: %v", m["trigger"])
 			}
-			for _, k := range []string{"source", "type", "event_id"} {
+			for _, k := range []string{"source", "kind", "subject", "event_id"} {
 				if _, ok := tr[k]; !ok {
 					t.Errorf("trigger missing key %q", k)
 				}
@@ -141,8 +141,8 @@ func TestCompletionEvent(t *testing.T) {
 			if tr["source"] != tc.in.TriggerSource {
 				t.Errorf("trigger.source = %v, want %v", tr["source"], tc.in.TriggerSource)
 			}
-			if tr["type"] != tc.in.TriggerType {
-				t.Errorf("trigger.type = %v, want %v", tr["type"], tc.in.TriggerType)
+			if tr["kind"] != tc.in.TriggerKind {
+				t.Errorf("trigger.kind = %v, want %v", tr["kind"], tc.in.TriggerKind)
 			}
 			if tr["event_id"] != tc.in.TriggerEventID {
 				t.Errorf("trigger.event_id = %v, want %v", tr["event_id"], tc.in.TriggerEventID)
@@ -157,13 +157,13 @@ func TestEventsRegistry(t *testing.T) {
 	}
 	want := map[string]bool{EventSucceeded: false, EventFailed: false}
 	for _, et := range Events {
-		if _, ok := want[et.Type]; !ok {
-			t.Errorf("unexpected registered type %q", et.Type)
+		if _, ok := want[et.Kind]; !ok {
+			t.Errorf("unexpected registered kind %q", et.Kind)
 			continue
 		}
-		want[et.Type] = true
+		want[et.Kind] = true
 		if et.Sample == nil {
-			t.Errorf("type %q has nil Sample", et.Type)
+			t.Errorf("kind %q has nil Sample", et.Kind)
 		}
 	}
 	for typ, seen := range want {

@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	appkitdatabase "appkit/db"
+	appkitmcp "appkit/mcp"
 	"appkit/server"
 
 	scriptdb "scripts/internal/db"
@@ -62,6 +63,7 @@ type testHarness struct {
 	server     http.Handler
 	runner     *fakeRunner
 	runsDir    string
+	svc        *script.Service
 }
 
 // newTestHarness wires a real store over a temp DB + a fake recording runner,
@@ -121,7 +123,7 @@ func newTestHarness(t *testing.T) testHarness {
 	if err != nil {
 		t.Fatalf("build mcp handler: %v", err)
 	}
-	return testHarness{mcpHandler: h, server: srv.Handler, runner: fr, runsDir: runsDir}
+	return testHarness{mcpHandler: h, server: srv.Handler, runner: fr, runsDir: runsDir, svc: svc}
 }
 
 func newTestHandler(t *testing.T) (http.Handler, *fakeRunner, string) {
@@ -430,13 +432,38 @@ func TestRunSpawns(t *testing.T) {
 // TestSetTriggerValidAndInvalid: a valid binding succeeds; an unknown source
 // surfaces ErrValidation as an MCP tool error (isError).
 func TestSetTriggerValidAndInvalid(t *testing.T) {
-	h, _, _ := newTestHandler(t)
+	// R-812K-1FEA
+	harness := newTestHarness(t)
+	h := harness.mcpHandler
+	var set, clear appkitmcp.Tool
+	for _, candidate := range Tools(harness.svc) {
+		switch candidate.Name {
+		case tool("set_trigger"):
+			set = candidate
+		case tool("clear_trigger"):
+			clear = candidate
+		}
+	}
+	for _, candidate := range []appkitmcp.Tool{set, clear} {
+		props := candidate.InputSchema["properties"].(map[string]any)
+		if _, ok := props["filter"]; !ok {
+			t.Fatalf("%s lacks filter: %v", candidate.Name, props)
+		}
+		if _, ok := props["source"]; ok {
+			t.Fatalf("%s retains source", candidate.Name)
+		}
+		if _, ok := props["event"+"_filter"]; ok {
+			t.Fatalf("%s retains retired filter", candidate.Name)
+		}
+	}
+	if !strings.Contains(describeText, "source:kind") || strings.Contains(describeText, "event"+"_filter") {
+		t.Fatalf("describe trigger contract is stale")
+	}
 	id := createScript(t, h)
 
 	ok := call(t, h, tool("set_trigger"), map[string]any{
-		"script_id":    id,
-		"source":       "crm",
-		"event_filter": "contact.created",
+		"script_id": id,
+		"filter":    "crm:contact.created",
 	})
 	if isError(ok) {
 		t.Fatalf("set_trigger valid returned isError: %+v", ok)
@@ -445,14 +472,13 @@ func TestSetTriggerValidAndInvalid(t *testing.T) {
 	if err := json.Unmarshal([]byte(resultText(t, ok)), &trig); err != nil {
 		t.Fatalf("decode set_trigger: %v", err)
 	}
-	if trig.Source != "crm" || trig.EventFilter != "contact.created" {
+	if trig.Source != "crm" || trig.Filter != "crm:contact.created" {
 		t.Fatalf("set_trigger: %+v", trig)
 	}
 
 	bad := call(t, h, tool("set_trigger"), map[string]any{
-		"script_id":    id,
-		"source":       "nope",
-		"event_filter": "x.*",
+		"script_id": id,
+		"filter":    "nope:x.*",
 	})
 	if !isError(bad) {
 		t.Fatalf("set_trigger invalid source: want isError, got %+v", bad)
@@ -460,9 +486,8 @@ func TestSetTriggerValidAndInvalid(t *testing.T) {
 
 	// Clearing the valid trigger succeeds.
 	cleared := call(t, h, tool("clear_trigger"), map[string]any{
-		"script_id":    id,
-		"source":       "crm",
-		"event_filter": "contact.created",
+		"script_id": id,
+		"filter":    "crm:contact.created",
 	})
 	if isError(cleared) {
 		t.Fatalf("clear_trigger returned isError: %+v", cleared)

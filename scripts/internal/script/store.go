@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"eventplane/outbox"
+	"eventplane/routing"
 
 	"scripts/internal/ids"
 )
@@ -234,7 +235,7 @@ func (s *Store) RunningCount(ctx context.Context, scriptID string) (int, error) 
 func (s *Store) LastRun(ctx context.Context, scriptID string) (*Run, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, script_id, status, exit_code, started_at, ended_at, error,
-		        trigger_source, trigger_type, trigger_event_id, stdout_path, stderr_path
+		        trigger_source, trigger_kind, trigger_subject, trigger_event_id, stdout_path, stderr_path
 		   FROM runs WHERE script_id = ? ORDER BY started_at DESC, id DESC LIMIT 1`,
 		scriptID,
 	)
@@ -254,11 +255,11 @@ func (s *Store) InsertRun(ctx context.Context, r Run) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO runs
 		   (id, script_id, status, exit_code, started_at, ended_at, error,
-		    trigger_source, trigger_type, trigger_event_id, stdout_path, stderr_path)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		    trigger_source, trigger_kind, trigger_subject, trigger_event_id, stdout_path, stderr_path)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.ScriptID, r.Status, nullInt(r.ExitCode), r.StartedAt,
 		nullStr(r.EndedAt), nullStr(r.Error),
-		nullStr(r.TriggerSource), nullStr(r.TriggerType), nullStr(r.TriggerEventID),
+		nullStr(r.TriggerSource), nullStr(r.TriggerKind), nullStr(r.TriggerSubject), nullStr(r.TriggerEventID),
 		r.StdoutPath, r.StderrPath,
 	)
 	if err != nil {
@@ -272,7 +273,7 @@ func (s *Store) InsertRun(ctx context.Context, r Run) error {
 func (s *Store) GetRun(ctx context.Context, owner, runID string) (Run, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT r.id, r.script_id, r.status, r.exit_code, r.started_at, r.ended_at, r.error,
-		        r.trigger_source, r.trigger_type, r.trigger_event_id, r.stdout_path, r.stderr_path
+		        r.trigger_source, r.trigger_kind, r.trigger_subject, r.trigger_event_id, r.stdout_path, r.stderr_path
 		   FROM runs r JOIN scripts s ON s.id = r.script_id
 		  WHERE r.id = ? AND s.owner_email = ?`,
 		runID, owner,
@@ -284,7 +285,7 @@ func (s *Store) GetRun(ctx context.Context, owner, runID string) (Run, error) {
 // first. scriptID/status "" = no filter on that dimension.
 func (s *Store) ListRuns(ctx context.Context, owner, scriptID, status string) ([]Run, error) {
 	q := `SELECT r.id, r.script_id, r.status, r.exit_code, r.started_at, r.ended_at, r.error,
-	             r.trigger_source, r.trigger_type, r.trigger_event_id, r.stdout_path, r.stderr_path
+	             r.trigger_source, r.trigger_kind, r.trigger_subject, r.trigger_event_id, r.stdout_path, r.stderr_path
 	        FROM runs r JOIN scripts s ON s.id = r.script_id
 	       WHERE s.owner_email = ?`
 	args := []any{owner}
@@ -422,10 +423,10 @@ func (s *Store) SetTrigger(ctx context.Context, owner string, t Trigger) error {
 		return err
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO script_triggers (script_id, source, event_filter, created_at)
+		`INSERT INTO script_triggers (script_id, source, filter, created_at)
 		 VALUES (?, ?, ?, ?)
-		 ON CONFLICT(script_id, source, event_filter) DO UPDATE SET created_at = excluded.created_at`,
-		t.ScriptID, t.Source, t.EventFilter, t.CreatedAt,
+		 ON CONFLICT(script_id, filter) DO UPDATE SET created_at = excluded.created_at`,
+		t.ScriptID, t.Source, t.Filter, t.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("script: set trigger: %w", err)
@@ -440,8 +441,8 @@ func (s *Store) ClearTrigger(ctx context.Context, owner string, t Trigger) error
 		return err
 	}
 	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM script_triggers WHERE script_id = ? AND source = ? AND event_filter = ?`,
-		t.ScriptID, t.Source, t.EventFilter,
+		`DELETE FROM script_triggers WHERE script_id = ? AND filter = ?`,
+		t.ScriptID, t.Filter,
 	)
 	if err != nil {
 		return fmt.Errorf("script: clear trigger: %w", err)
@@ -450,11 +451,11 @@ func (s *Store) ClearTrigger(ctx context.Context, owner string, t Trigger) error
 }
 
 // ScriptsForEvent returns the distinct script_ids whose trigger source matches
-// and whose event_filter glob-matches eventType. NOT owner-scoped (the consumer
+// and whose canonical filter glob-matches key. NOT owner-scoped (the consumer
 // has no caller identity); the box is single-owner.
-func (s *Store) ScriptsForEvent(ctx context.Context, source, eventType string) ([]string, error) {
+func (s *Store) ScriptsForEvent(ctx context.Context, source, key string) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT script_id, event_filter FROM script_triggers WHERE source = ?`,
+		`SELECT script_id, filter FROM script_triggers WHERE source = ?`,
 		source,
 	)
 	if err != nil {
@@ -471,7 +472,11 @@ func (s *Store) ScriptsForEvent(ctx context.Context, source, eventType string) (
 		if seen[id] {
 			continue
 		}
-		if globMatch(filter, eventType) {
+		matched, err := routing.Match(filter, key)
+		if err != nil {
+			continue
+		}
+		if matched {
 			seen[id] = true
 			out = append(out, id)
 		}
@@ -509,7 +514,7 @@ type FinishRunInput struct {
 	EndedAt                     string
 	ErrMsg                      string
 	TriggerSource               string // "" for a manual run
-	TriggerType                 string
+	TriggerKind, TriggerSubject string
 	TriggerEventID              string
 	StdoutTail                  string // last 8KB, already read+truncated by runner
 	StderrTail                  string
@@ -552,17 +557,18 @@ func scanScript(sc scanner) (Script, error) {
 
 func scanRun(sc scanner) (Run, error) {
 	var (
-		r          Run
-		exitCode   sql.NullInt64
-		endedAt    sql.NullString
-		errMsg     sql.NullString
-		trigSource sql.NullString
-		trigType   sql.NullString
-		trigEvent  sql.NullString
+		r           Run
+		exitCode    sql.NullInt64
+		endedAt     sql.NullString
+		errMsg      sql.NullString
+		trigSource  sql.NullString
+		trigKind    sql.NullString
+		trigSubject sql.NullString
+		trigEvent   sql.NullString
 	)
 	err := sc.Scan(
 		&r.ID, &r.ScriptID, &r.Status, &exitCode, &r.StartedAt, &endedAt, &errMsg,
-		&trigSource, &trigType, &trigEvent, &r.StdoutPath, &r.StderrPath,
+		&trigSource, &trigKind, &trigSubject, &trigEvent, &r.StdoutPath, &r.StderrPath,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Run{}, ErrNotFound
@@ -577,7 +583,8 @@ func scanRun(sc scanner) (Run, error) {
 	r.EndedAt = endedAt.String
 	r.Error = errMsg.String
 	r.TriggerSource = trigSource.String
-	r.TriggerType = trigType.String
+	r.TriggerKind = trigKind.String
+	r.TriggerSubject = trigSubject.String
 	r.TriggerEventID = trigEvent.String
 	return r, nil
 }

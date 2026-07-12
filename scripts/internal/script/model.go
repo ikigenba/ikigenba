@@ -44,16 +44,15 @@ type Run struct {
 	EndedAt        string `json:"ended_at"`       // "" while running
 	Error          string `json:"error"`          // failure / TTL / spawn reason
 	TriggerSource  string `json:"trigger_source"` // "" for a manual run
-	TriggerType    string `json:"trigger_type"`
+	TriggerKind    string `json:"trigger_kind"`
+	TriggerSubject string `json:"trigger_subject"`
 	TriggerEventID string `json:"trigger_event_id"`
 	StdoutPath     string `json:"stdout_path"`
 	StderrPath     string `json:"stderr_path"`
 	ElapsedSecs    int    `json:"elapsed_secs"` // computed in service, not stored
 }
 
-type Trigger struct {
-	ScriptID, Source, EventFilter, CreatedAt string
-}
+type Trigger struct{ ScriptID, Source, Filter, CreatedAt string }
 
 // FileEntry is one node in a run's persisted dir tree (run_fs_list).
 type FileEntry struct {

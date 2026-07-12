@@ -15,7 +15,8 @@ WHAT IT IS
   (no single-flight): many runs of one script can be in flight at once. Each run
   has its own persistent dir (main.py, config.json, stdout.log, stderr.log, and
   any files the script wrote).
-- A *trigger* binds a script to an upstream event (e.g. crm contact.created):
+- A *trigger* binds a script to a canonical upstream routing key (e.g.
+  dropbox:create/bills/**/*.pdf):
   when a matching event fires, scripts starts a run with the event payload on
   stdin and in $EVENT_JSON.
 
@@ -31,8 +32,9 @@ LIFECYCLE
   5. run_fs_list / run_fs_read -> files the run wrote
 
 TRIGGERS
-  set_trigger {script_id, source, event_filter} binds the script
-  to a producer (cron|crm|ledger|dropbox|prompts). On a matching event a
+  set_trigger {script_id, filter} binds the script to a canonical
+  source:kind<subject> glob. The source is one of cron|crm|ledger|dropbox|prompts;
+  ** matches across subject paths. On a matching event a
   run starts automatically. Completion emits scripts.succeeded / scripts.failed
   on this service's own /feed for other services (e.g. prompts) to consume.
 

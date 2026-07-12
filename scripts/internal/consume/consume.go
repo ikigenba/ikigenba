@@ -23,11 +23,11 @@ import (
 
 // FireFunc starts a run for one script in reaction to an event (the consumer
 // path; not owner-scoped). Production wiring is script.Service.RunForEvent.
-type FireFunc func(ctx context.Context, scriptID, source, evType, eventID string, payload []byte) error
+type FireFunc func(ctx context.Context, scriptID, source, kind, subject, eventID string, payload []byte) error
 
 // LookupFunc fans (source, type) out to the subscribed script_ids. Production
 // wiring is script.Service.ScriptsForEvent.
-type LookupFunc func(ctx context.Context, source, evType string) ([]string, error)
+type LookupFunc func(ctx context.Context, source, key string) ([]string, error)
 
 // Subscriptions returns one Subscription per upstream — Filter "*" (scripts
 // fires on any type and decides via ScriptsForEvent). Source is the producer's
@@ -39,7 +39,7 @@ func Subscriptions(sources []string) []consumer.Subscription {
 	for _, src := range sources {
 		subs = append(subs, consumer.Subscription{
 			Source:      src,
-			Filter:      "*", // fire on any type; ScriptsForEvent decides the real fan-out
+			Filter:      "**", // every key, including subject-bearing keys
 			Description: fmt.Sprintf("fires a run for every script whose trigger matches a %s event", src),
 		})
 	}
@@ -62,34 +62,34 @@ func Handler(fire FireFunc, lookup LookupFunc, source string, logger *slog.Logge
 		// without either it is structurally unprocessable poison. Skip + advance so
 		// it never stalls the feed forever (event-triggering decisions §1). This is
 		// the handler's only error path — a fired run never returns a stalling error.
-		if ev.Type == "" || ev.ID == "" {
-			return fmt.Errorf("consume: malformed envelope from %s (type=%q id=%q): %w", source, ev.Type, ev.ID, consumer.ErrSkip)
+		if ev.Kind == "" || ev.ID == "" {
+			return fmt.Errorf("consume: malformed envelope from %s (kind=%q id=%q): %w", source, ev.Kind, ev.ID, consumer.ErrSkip)
 		}
 
-		scriptIDs, err := lookup(ctx, source, ev.Type)
+		scriptIDs, err := lookup(ctx, source, ev.Key())
 		if err != nil {
 			// A lookup failure is a transient DB read, NOT poison. The fire-and-forget
 			// contract is explicit: never stall the feed. Log loudly and advance — a
 			// later event re-exercises the trigger set.
-			logger.Error("consume: trigger lookup failed (advancing)", "source", source, "type", ev.Type, "event_id", ev.ID, "err", err)
+			logger.Error("consume: trigger lookup failed (advancing)", "source", source, "kind", ev.Kind, "event_id", ev.ID, "err", err)
 			return nil
 		}
 		if len(scriptIDs) == 0 {
 			// No script listens to this (source, type). Matched-zero is success: the
 			// engine advances the cursor so the event does not re-arrive (§7.3).
-			logger.Debug("consume: no scripts match event", "source", source, "type", ev.Type, "event_id", ev.ID)
+			logger.Debug("consume: no scripts match event", "source", source, "kind", ev.Kind, "event_id", ev.ID)
 			return nil
 		}
 
-		logger.Debug("consume: dispatching event", "source", source, "type", ev.Type, "event_id", ev.ID, "scripts", len(scriptIDs))
+		logger.Debug("consume: dispatching event", "source", source, "kind", ev.Kind, "event_id", ev.ID, "scripts", len(scriptIDs))
 		for _, scriptID := range scriptIDs {
 			// Each script's run starts on its own goroutine so one slow/failing start
 			// never blocks the rest of the fan-out and the handler returns promptly,
 			// never holding the cursor open. Detached from the engine's request
 			// context (the handler has already returned) via context.Background().
 			go func(scriptID string) {
-				if err := fire(context.Background(), scriptID, source, ev.Type, ev.ID, ev.Payload); err != nil {
-					logger.Error("consume: fire run failed (dropped)", "script", scriptID, "source", source, "type", ev.Type, "event_id", ev.ID, "err", err)
+				if err := fire(context.Background(), scriptID, source, ev.Kind, ev.Subject, ev.ID, ev.Payload); err != nil {
+					logger.Error("consume: fire run failed (dropped)", "script", scriptID, "source", source, "kind", ev.Kind, "event_id", ev.ID, "err", err)
 				}
 			}(scriptID)
 		}

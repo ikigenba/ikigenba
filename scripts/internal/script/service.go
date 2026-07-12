@@ -231,7 +231,7 @@ func (s *Service) Run(ctx context.Context, owner, scriptID string) (Run, error) 
 	if _, err := s.store.GetScript(ctx, owner, scriptID); err != nil {
 		return Run{}, err
 	}
-	run := s.newRun(scriptID, "", "", "")
+	run := s.newRun(scriptID, "", "", "", "")
 	if err := s.store.InsertRun(ctx, run); err != nil {
 		return Run{}, err
 	}
@@ -245,7 +245,7 @@ func (s *Service) Run(ctx context.Context, owner, scriptID string) (Run, error) 
 // payload as stdin/$EVENT_JSON. A missing/tombstoned script id is treated as a
 // no-op (returns nil): the consumer is fire-and-forget and never stalls; a
 // dangling trigger that outraced a delete simply fires nothing.
-func (s *Service) RunForEvent(ctx context.Context, scriptID, source, evType, eventID string, payload []byte) error {
+func (s *Service) RunForEvent(ctx context.Context, scriptID, source, kind, subject, eventID string, payload []byte) error {
 	if _, err := s.store.ScriptForRun(ctx, scriptID); err != nil {
 		// ErrNotFound (tombstoned/dangling id) → nothing to fire; consumer treats
 		// nil as handled. Any other error propagates.
@@ -254,7 +254,7 @@ func (s *Service) RunForEvent(ctx context.Context, scriptID, source, evType, eve
 		}
 		return err
 	}
-	run := s.newRun(scriptID, source, evType, eventID)
+	run := s.newRun(scriptID, source, kind, subject, eventID)
 	if err := s.store.InsertRun(ctx, run); err != nil {
 		return err
 	}
@@ -264,7 +264,7 @@ func (s *Service) RunForEvent(ctx context.Context, scriptID, source, evType, eve
 
 // newRun builds a running run row with the §A4 log paths. Empty trigger fields
 // mark a manual run.
-func (s *Service) newRun(scriptID, source, evType, eventID string) Run {
+func (s *Service) newRun(scriptID, source, kind, subject, eventID string) Run {
 	runID := ids.NewULID()
 	return Run{
 		ID:             runID,
@@ -272,7 +272,8 @@ func (s *Service) newRun(scriptID, source, evType, eventID string) Run {
 		Status:         RunRunning,
 		StartedAt:      s.nowStr(),
 		TriggerSource:  source,
-		TriggerType:    evType,
+		TriggerKind:    kind,
+		TriggerSubject: subject,
 		TriggerEventID: eventID,
 		StdoutPath:     filepath.Join("runs", runID, "stdout.log"),
 		StderrPath:     filepath.Join("runs", runID, "stderr.log"),
@@ -414,22 +415,23 @@ func (s *Service) RunFsRead(ctx context.Context, owner, runID, path string, offs
 
 // --- Trigger ops ---
 
-// SetTrigger validates (source, event_filter) against the known producers, then
+// SetTrigger validates a canonical filter against the known producer families, then
 // upserts the trigger on the owner's script. Owner scope + ErrNotFound is
 // enforced by the store; validation rejects an unsatisfiable binding with
 // ErrValidation.
-func (s *Service) SetTrigger(ctx context.Context, owner, scriptID, source, eventFilter string) (Trigger, error) {
+func (s *Service) SetTrigger(ctx context.Context, owner, scriptID, filter string) (Trigger, error) {
 	if _, err := s.store.GetScript(ctx, owner, scriptID); err != nil {
 		return Trigger{}, err
 	}
-	if err := validateTrigger(source, eventFilter); err != nil {
+	source, err := validateTrigger(filter)
+	if err != nil {
 		return Trigger{}, err
 	}
 	t := Trigger{
-		ScriptID:    scriptID,
-		Source:      source,
-		EventFilter: eventFilter,
-		CreatedAt:   s.nowStr(),
+		ScriptID:  scriptID,
+		Source:    source,
+		Filter:    filter,
+		CreatedAt: s.nowStr(),
 	}
 	if err := s.store.SetTrigger(ctx, owner, t); err != nil {
 		return Trigger{}, err
@@ -439,17 +441,16 @@ func (s *Service) SetTrigger(ctx context.Context, owner, scriptID, source, event
 
 // ClearTrigger removes a trigger from the owner's script (ErrNotFound if the
 // script is missing/foreign).
-func (s *Service) ClearTrigger(ctx context.Context, owner, scriptID, source, eventFilter string) error {
+func (s *Service) ClearTrigger(ctx context.Context, owner, scriptID, filter string) error {
 	return s.store.ClearTrigger(ctx, owner, Trigger{
-		ScriptID:    scriptID,
-		Source:      source,
-		EventFilter: eventFilter,
+		ScriptID: scriptID,
+		Filter:   filter,
 	})
 }
 
 // ScriptsForEvent delegates to the store; the consumer uses it for fan-out.
-func (s *Service) ScriptsForEvent(ctx context.Context, source, evType string) ([]string, error) {
-	return s.store.ScriptsForEvent(ctx, source, evType)
+func (s *Service) ScriptsForEvent(ctx context.Context, source, key string) ([]string, error) {
+	return s.store.ScriptsForEvent(ctx, source, key)
 }
 
 // TriggerSources returns the static known-producer set, for set_trigger

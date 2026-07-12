@@ -235,14 +235,14 @@ func TestServiceRunForEvent(t *testing.T) {
 	sc, _ := svc.Create(ctx, ownerA, CreateInput{Name: "x", Body: "print(1)"})
 
 	payload := []byte(`{"id":"evt1"}`)
-	if err := svc.RunForEvent(ctx, sc.ID, "crm", "contact.created", "evt1", payload); err != nil {
+	if err := svc.RunForEvent(ctx, sc.ID, "crm", "contact.created", "/a", "evt1", payload); err != nil {
 		t.Fatalf("RunForEvent: %v", err)
 	}
 	sp := fr.lastSpawn(t)
 	if string(sp.input) != string(payload) {
 		t.Fatalf("RunForEvent Spawn input = %q, want %q", sp.input, payload)
 	}
-	if sp.run.TriggerSource != "crm" || sp.run.TriggerType != "contact.created" || sp.run.TriggerEventID != "evt1" {
+	if sp.run.TriggerSource != "crm" || sp.run.TriggerKind != "contact.created" || sp.run.TriggerSubject != "/a" || sp.run.TriggerEventID != "evt1" {
 		t.Fatalf("RunForEvent trigger fields = %+v", sp.run)
 	}
 	// Row persisted with trigger fields.
@@ -256,7 +256,7 @@ func TestServiceRunForEvent(t *testing.T) {
 
 	// Missing script → no-op (nil), no spawn.
 	before := len(fr.spawns)
-	if err := svc.RunForEvent(ctx, "does-not-exist", "crm", "contact.created", "evt2", payload); err != nil {
+	if err := svc.RunForEvent(ctx, "does-not-exist", "crm", "contact.created", "/a", "evt2", payload); err != nil {
 		t.Fatalf("RunForEvent missing script: want nil, got %v", err)
 	}
 	if len(fr.spawns) != before {
@@ -337,25 +337,25 @@ func TestServiceTriggers(t *testing.T) {
 	sc, _ := svc.Create(ctx, ownerA, CreateInput{Name: "x", Body: "print(1)"})
 
 	// Unknown source → ErrValidation.
-	if _, err := svc.SetTrigger(ctx, ownerA, sc.ID, "bogus", "x.*"); !errors.Is(err, ErrValidation) {
+	if _, err := svc.SetTrigger(ctx, ownerA, sc.ID, "bogus:x.*"); !errors.Is(err, ErrValidation) {
 		t.Fatalf("unknown source: want ErrValidation, got %v", err)
 	}
 	// Unsatisfiable filter → ErrValidation.
-	if _, err := svc.SetTrigger(ctx, ownerA, sc.ID, "crm", "transaction.recorded"); !errors.Is(err, ErrValidation) {
+	if _, err := svc.SetTrigger(ctx, ownerA, sc.ID, "crm:transaction.recorded"); !errors.Is(err, ErrValidation) {
 		t.Fatalf("bad filter: want ErrValidation, got %v", err)
 	}
 
 	// Success.
-	tr, err := svc.SetTrigger(ctx, ownerA, sc.ID, "crm", "contact.*")
+	tr, err := svc.SetTrigger(ctx, ownerA, sc.ID, "crm:contact.*")
 	if err != nil {
 		t.Fatalf("SetTrigger: %v", err)
 	}
-	if tr.ScriptID != sc.ID || tr.Source != "crm" || tr.EventFilter != "contact.*" || tr.CreatedAt == "" {
+	if tr.ScriptID != sc.ID || tr.Source != "crm" || tr.Filter != "crm:contact.*" || tr.CreatedAt == "" {
 		t.Fatalf("SetTrigger returned %+v", tr)
 	}
 
 	// ScriptsForEvent finds it.
-	ids, err := svc.ScriptsForEvent(ctx, "crm", "contact.created")
+	ids, err := svc.ScriptsForEvent(ctx, "crm", "crm:contact.created")
 	if err != nil {
 		t.Fatalf("ScriptsForEvent: %v", err)
 	}
@@ -364,15 +364,15 @@ func TestServiceTriggers(t *testing.T) {
 	}
 
 	// Foreign SetTrigger → ErrNotFound.
-	if _, err := svc.SetTrigger(ctx, ownerB, sc.ID, "crm", "contact.*"); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.SetTrigger(ctx, ownerB, sc.ID, "crm:contact.*"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("foreign SetTrigger: want ErrNotFound, got %v", err)
 	}
 
 	// ClearTrigger.
-	if err := svc.ClearTrigger(ctx, ownerA, sc.ID, "crm", "contact.*"); err != nil {
+	if err := svc.ClearTrigger(ctx, ownerA, sc.ID, "crm:contact.*"); err != nil {
 		t.Fatalf("ClearTrigger: %v", err)
 	}
-	ids2, _ := svc.ScriptsForEvent(ctx, "crm", "contact.created")
+	ids2, _ := svc.ScriptsForEvent(ctx, "crm", "crm:contact.created")
 	if len(ids2) != 0 {
 		t.Fatalf("after ClearTrigger ScriptsForEvent = %v, want empty", ids2)
 	}

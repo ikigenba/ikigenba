@@ -75,19 +75,17 @@ func Tools(svc *script.Service) []appkitmcp.Tool {
 			return h.dispatchTool(ctx, tool("delete"), id, args)
 		}),
 
-		desc(tool("set_trigger"), "Bind a script to an upstream event. source is one of cron|crm|ledger|dropbox|prompts; event_filter is a glob over that producer's event types (e.g. \"contact.created\", \"contact.*\", \"cron.nightly\"). When a matching event fires, scripts starts a run.", obj(map[string]any{
-			"script_id":    typ("string"),
-			"source":       typ("string"),
-			"event_filter": typ("string"),
-		}, "script_id", "source", "event_filter"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+		desc(tool("set_trigger"), "Bind a script to an upstream canonical routing-key filter (for example \"dropbox:create/bills/**/*.pdf\"). The source segment is literal and ** matches across subject paths. When a matching event fires, scripts starts a run.", obj(map[string]any{
+			"script_id": typ("string"),
+			"filter":    typ("string"),
+		}, "script_id", "filter"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 			return h.dispatchTool(ctx, tool("set_trigger"), id, args)
 		}),
 
 		desc(tool("clear_trigger"), "Remove an event trigger from a script.", obj(map[string]any{
-			"script_id":    typ("string"),
-			"source":       typ("string"),
-			"event_filter": typ("string"),
-		}, "script_id", "source", "event_filter"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+			"script_id": typ("string"),
+			"filter":    typ("string"),
+		}, "script_id", "filter"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 			return h.dispatchTool(ctx, tool("clear_trigger"), id, args)
 		}),
 
@@ -289,14 +287,13 @@ func (h *toolHandlers) dispatchTool(ctx context.Context, name string, id server.
 
 	case tool("set_trigger"):
 		var in struct {
-			ScriptID    string `json:"script_id"`
-			Source      string `json:"source"`
-			EventFilter string `json:"event_filter"`
+			ScriptID string `json:"script_id"`
+			Filter   string `json:"filter"`
 		}
 		if err := parseArgs(args, &in); err != nil {
 			return nil, err
 		}
-		trig, err := svc.SetTrigger(ctx, owner, in.ScriptID, in.Source, in.EventFilter)
+		trig, err := svc.SetTrigger(ctx, owner, in.ScriptID, in.Filter)
 		if err != nil {
 			return toolResultErr(err.Error()), nil
 		}
@@ -304,14 +301,13 @@ func (h *toolHandlers) dispatchTool(ctx context.Context, name string, id server.
 
 	case tool("clear_trigger"):
 		var in struct {
-			ScriptID    string `json:"script_id"`
-			Source      string `json:"source"`
-			EventFilter string `json:"event_filter"`
+			ScriptID string `json:"script_id"`
+			Filter   string `json:"filter"`
 		}
 		if err := parseArgs(args, &in); err != nil {
 			return nil, err
 		}
-		if err := svc.ClearTrigger(ctx, owner, in.ScriptID, in.Source, in.EventFilter); err != nil {
+		if err := svc.ClearTrigger(ctx, owner, in.ScriptID, in.Filter); err != nil {
 			return toolResultErr(err.Error()), nil
 		}
 		return toolResultJSON(map[string]any{"cleared": in.ScriptID})

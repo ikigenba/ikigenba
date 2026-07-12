@@ -37,7 +37,8 @@ type completionPayload struct {
 
 type triggerPayload struct {
 	Source  string `json:"source"`
-	Type    string `json:"type"`
+	Kind    string `json:"kind"`
+	Subject string `json:"subject"`
 	EventID string `json:"event_id"`
 }
 
@@ -46,7 +47,7 @@ var sampleSuccess = completionPayload{
 	ScriptName: "nightly export",
 	RunID:      "01J9Z2K7P3QC8M4R6T0V2X5YB",
 	Status:     RunSucceeded,
-	Trigger:    triggerPayload{Source: "cron", Type: "cron.nightly", EventID: "01J9Z2K7P3QC8M4R6T0V2X5YC"},
+	Trigger:    triggerPayload{Source: "cron", Kind: "tick", Subject: "/nightly", EventID: "01J9Z2K7P3QC8M4R6T0V2X5YC"},
 	Stdout:     "exported 42 rows\n",
 }
 
@@ -55,7 +56,7 @@ var sampleFailure = completionPayload{
 	ScriptName: "nightly export",
 	RunID:      "01J9Z2K7P3QC8M4R6T0V2X5YB",
 	Status:     RunFailed,
-	Trigger:    triggerPayload{Source: "cron", Type: "cron.nightly", EventID: "01J9Z2K7P3QC8M4R6T0V2X5YC"},
+	Trigger:    triggerPayload{Source: "cron", Kind: "tick", Subject: "/nightly", EventID: "01J9Z2K7P3QC8M4R6T0V2X5YC"},
 	Stderr:     "Traceback ...\n",
 	Error:      "run TTL exceeded",
 }
@@ -66,12 +67,12 @@ var sampleFailure = completionPayload{
 // type that appears here.
 var Events = outbox.Registry{
 	{
-		Type:        EventSucceeded,
+		Kind:        EventSucceeded,
 		Description: "A scripts run finished successfully (exit 0). Carries the script identity, the captured output tails, and the trigger context that started it (empty for a manual run).",
 		Sample:      sampleSuccess,
 	},
 	{
-		Type:        EventFailed,
+		Kind:        EventFailed,
 		Description: "A scripts run terminated in failure (non-zero exit / TTL / spawn error). Same shape as scripts.succeeded plus an error string.",
 		Sample:      sampleFailure,
 	},
@@ -101,7 +102,8 @@ func completionEvent(in FinishRunInput) (outbox.Event, bool, error) {
 		ExitCode:   in.ExitCode,
 		Trigger: triggerPayload{
 			Source:  in.TriggerSource,
-			Type:    in.TriggerType,
+			Kind:    in.TriggerKind,
+			Subject: in.TriggerSubject,
 			EventID: in.TriggerEventID,
 		},
 		Stdout:          in.StdoutTail,
@@ -113,5 +115,5 @@ func completionEvent(in FinishRunInput) (outbox.Event, bool, error) {
 	if err != nil {
 		return outbox.Event{}, false, fmt.Errorf("script: marshal %s payload: %w", typ, err)
 	}
-	return outbox.Event{Type: typ, Payload: raw}, true, nil
+	return outbox.Event{Kind: typ, Payload: raw}, true, nil
 }

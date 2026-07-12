@@ -210,7 +210,7 @@ func TestDeleteScriptTombstone(t *testing.T) {
 	ctx := context.Background()
 	sc := seedScript(t, s, ownerA)
 	run := seedRun(t, s, sc.ID, RunSucceeded)
-	if err := s.SetTrigger(ctx, ownerA, Trigger{ScriptID: sc.ID, Source: "crm", EventFilter: "contact.created", CreatedAt: nowStr()}); err != nil {
+	if err := s.SetTrigger(ctx, ownerA, Trigger{ScriptID: sc.ID, Source: "crm", Filter: "crm:contact.created", CreatedAt: nowStr()}); err != nil {
 		t.Fatalf("SetTrigger: %v", err)
 	}
 
@@ -336,7 +336,7 @@ func TestFinishRunSucceededEmits(t *testing.T) {
 	in := FinishRunInput{
 		RunID: run.ID, ScriptID: sc.ID, ScriptName: sc.Name,
 		Status: RunSucceeded, ExitCode: &zero, EndedAt: nowStr(),
-		TriggerSource: "cron", TriggerType: "cron.nightly", TriggerEventID: "evt1",
+		TriggerSource: "cron", TriggerKind: "tick", TriggerSubject: "/nightly", TriggerEventID: "evt1",
 		StdoutTail: "ok\n",
 	}
 	if err := s.FinishRun(ctx, in); err != nil {
@@ -350,7 +350,7 @@ func TestFinishRunSucceededEmits(t *testing.T) {
 		t.Fatalf("outbox rows: want 1, got %d", c)
 	}
 	var typ string
-	if err := s.db.QueryRow(`SELECT type FROM outbox LIMIT 1`).Scan(&typ); err != nil {
+	if err := s.db.QueryRow(`SELECT kind FROM outbox LIMIT 1`).Scan(&typ); err != nil {
 		t.Fatalf("read outbox: %v", err)
 	}
 	if typ != EventSucceeded {
@@ -381,7 +381,7 @@ func TestFinishRunFailedEmitsWithError(t *testing.T) {
 		t.Fatalf("outbox rows: want 1, got %d", c)
 	}
 	var typ string
-	_ = s.db.QueryRow(`SELECT type FROM outbox LIMIT 1`).Scan(&typ)
+	_ = s.db.QueryRow(`SELECT kind FROM outbox LIMIT 1`).Scan(&typ)
 	if typ != EventFailed {
 		t.Fatalf("event type: want %q, got %q", EventFailed, typ)
 	}
@@ -427,52 +427,52 @@ func TestFinishRunNilOutbox(t *testing.T) {
 }
 
 func TestTriggersAndScriptsForEvent(t *testing.T) {
+	// R-7XEU-W467
+	// R-7YMR-9VWW
 	s := newTestStore(t)
 	ctx := context.Background()
 	sc1 := seedScript(t, s, ownerA)
 	sc2 := seedScript(t, s, ownerA)
 
 	// foreign owner cannot set a trigger
-	if err := s.SetTrigger(ctx, ownerB, Trigger{ScriptID: sc1.ID, Source: "crm", EventFilter: "contact.*", CreatedAt: nowStr()}); !errors.Is(err, ErrNotFound) {
+	if err := s.SetTrigger(ctx, ownerB, Trigger{ScriptID: sc1.ID, Source: "dropbox", Filter: "dropbox:create/bills/**/*.pdf", CreatedAt: nowStr()}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("foreign SetTrigger: want ErrNotFound, got %v", err)
 	}
-	if err := s.SetTrigger(ctx, ownerA, Trigger{ScriptID: sc1.ID, Source: "crm", EventFilter: "contact.*", CreatedAt: nowStr()}); err != nil {
+	if err := s.SetTrigger(ctx, ownerA, Trigger{ScriptID: sc1.ID, Source: "dropbox", Filter: "dropbox:create/bills/**/*.pdf", CreatedAt: nowStr()}); err != nil {
 		t.Fatalf("SetTrigger sc1: %v", err)
 	}
-	if err := s.SetTrigger(ctx, ownerA, Trigger{ScriptID: sc2.ID, Source: "crm", EventFilter: "contact.created", CreatedAt: nowStr()}); err != nil {
+	if err := s.SetTrigger(ctx, ownerA, Trigger{ScriptID: sc2.ID, Source: "dropbox", Filter: "dropbox:**", CreatedAt: nowStr()}); err != nil {
 		t.Fatalf("SetTrigger sc2: %v", err)
 	}
-	if err := s.SetTrigger(ctx, ownerA, Trigger{ScriptID: sc2.ID, Source: "ledger", EventFilter: "transaction.recorded", CreatedAt: nowStr()}); err != nil {
-		t.Fatalf("SetTrigger sc2 ledger: %v", err)
-	}
-
-	// contact.created matches both (glob contact.* + exact contact.created)
-	got, err := s.ScriptsForEvent(ctx, "crm", "contact.created")
+	got, err := s.ScriptsForEvent(ctx, "dropbox", "dropbox:create/bills/aws/1.pdf")
 	if err != nil {
 		t.Fatalf("ScriptsForEvent: %v", err)
 	}
 	if len(got) != 2 {
-		t.Fatalf("contact.created: want 2 scripts, got %v", got)
+		t.Fatalf("nested bill: want 2 scripts, got %v", got)
 	}
 
 	// contact.updated matches only the glob (sc1)
-	got, _ = s.ScriptsForEvent(ctx, "crm", "contact.updated")
-	if len(got) != 1 || got[0] != sc1.ID {
-		t.Fatalf("contact.updated: want [sc1], got %v", got)
+	got, _ = s.ScriptsForEvent(ctx, "dropbox", "dropbox:create/notes.txt")
+	if len(got) != 1 || got[0] != sc2.ID {
+		t.Fatalf("notes: want [sc2], got %v", got)
 	}
 
 	// wrong source matches nothing
-	got, _ = s.ScriptsForEvent(ctx, "dropbox", "file.created")
+	got, _ = s.ScriptsForEvent(ctx, "crm", "crm:contact.created")
 	if len(got) != 0 {
 		t.Fatalf("dropbox: want 0, got %v", got)
 	}
 
 	// ClearTrigger removes the sc1 binding
-	if err := s.ClearTrigger(ctx, ownerA, Trigger{ScriptID: sc1.ID, Source: "crm", EventFilter: "contact.*"}); err != nil {
+	if err := s.ClearTrigger(ctx, ownerA, Trigger{ScriptID: sc1.ID, Filter: "dropbox:create/bills/**/*.pdf"}); err != nil {
 		t.Fatalf("ClearTrigger: %v", err)
 	}
-	got, _ = s.ScriptsForEvent(ctx, "crm", "contact.updated")
-	if len(got) != 0 {
+	if err := s.ClearTrigger(ctx, ownerA, Trigger{ScriptID: sc1.ID, Filter: "dropbox:create/bills/**/*.pdf"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.ScriptsForEvent(ctx, "dropbox", "dropbox:create/bills/aws/1.pdf")
+	if len(got) != 1 || got[0] != sc2.ID {
 		t.Fatalf("after clear: want 0, got %v", got)
 	}
 }

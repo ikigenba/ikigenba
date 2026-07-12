@@ -228,7 +228,7 @@ func TestScriptsConsumerFactoryFansOutAndSkipsMalformedEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := svc.SetTrigger(ctx, "owner@example.com", sc.ID, "crm", "contact.*"); err != nil {
+	if _, err := svc.SetTrigger(ctx, "owner@example.com", sc.ID, "crm:contact.created/**"); err != nil {
 		t.Fatalf("SetTrigger: %v", err)
 	}
 
@@ -246,7 +246,7 @@ func TestScriptsConsumerFactoryFansOutAndSkipsMalformedEvents(t *testing.T) {
 	handler := factory(rt)
 
 	payload := []byte(`{"contact_id":"c1"}`)
-	ev := consumer.Event{Source: "crm", Type: "contact.created", ID: "evt-1", Payload: payload}
+	ev := consumer.Event{Source: "crm", Kind: "contact.created", Subject: "/c1", ID: "evt-1", Payload: payload}
 	if err := handler(ctx, ev); err != nil {
 		t.Fatalf("well-formed event returned %v, want nil", err)
 	}
@@ -254,14 +254,14 @@ func TestScriptsConsumerFactoryFansOutAndSkipsMalformedEvents(t *testing.T) {
 	if spawn.run.ScriptID != sc.ID {
 		t.Fatalf("spawn script id = %q, want %q", spawn.run.ScriptID, sc.ID)
 	}
-	if spawn.run.TriggerSource != "crm" || spawn.run.TriggerType != "contact.created" || spawn.run.TriggerEventID != "evt-1" {
+	if spawn.run.TriggerSource != "crm" || spawn.run.TriggerKind != "contact.created" || spawn.run.TriggerSubject != "/c1" || spawn.run.TriggerEventID != "evt-1" {
 		t.Fatalf("spawn trigger fields = %+v, want crm/contact.created/evt-1", spawn.run)
 	}
 	if string(spawn.input) != string(payload) {
 		t.Fatalf("spawn input = %s, want %s", spawn.input, payload)
 	}
 
-	err = handler(ctx, consumer.Event{Source: "crm", Type: "", ID: "", Payload: []byte(`{}`)})
+	err = handler(ctx, consumer.Event{Source: "crm", Kind: "", ID: "", Payload: []byte(`{}`)})
 	if err == nil {
 		t.Fatal("malformed event returned nil, want ErrSkip-wrapped error")
 	}
