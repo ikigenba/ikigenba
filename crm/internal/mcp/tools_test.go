@@ -672,8 +672,8 @@ func TestToolsCallReflection(t *testing.T) {
 		t.Fatalf("expected empty subscribes for crm, got %+v", subscribes)
 	}
 
-	// event_type → the publish detail (schema + example).
-	detail := callOK(t, h, "reflection", map[string]any{"event_type": "contact.created"})
+	// kind → the publish detail (schema + example).
+	detail := callOK(t, h, "reflection", map[string]any{"kind": "contact.created"})
 	if detail["kind"] != "contact.created" || detail["subject"] != "/<contact id>" {
 		t.Fatalf("detail addressing mismatch: %+v", detail)
 	}
@@ -698,8 +698,8 @@ func TestToolsCallReflection(t *testing.T) {
 		}
 	}
 
-	// Unknown event_type -> corrective error listing valid types.
-	bad := call(t, h, "reflection", map[string]any{"event_type": "contact.nope"})
+	// Unknown kind -> corrective error listing valid kinds.
+	bad := call(t, h, "reflection", map[string]any{"kind": "contact.nope"})
 	if !bad.IsError {
 		t.Fatalf("expected reflection unknown event_type to return an error envelope: %s", payloadText(bad))
 	}
