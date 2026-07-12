@@ -20,6 +20,7 @@ package gmail
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -334,6 +335,29 @@ func (c *Client) MessageGet(ctx context.Context, id, format string) (Message, er
 		return Message{}, err
 	}
 	return m, nil
+}
+
+// AttachmentGet fetches and decodes one Gmail message attachment body.
+func (c *Client) AttachmentGet(ctx context.Context, messageID, attachmentID string) ([]byte, error) {
+	if messageID == "" || attachmentID == "" {
+		return nil, fmt.Errorf("%w: message and attachment ids required", ErrValidation)
+	}
+	var body Body
+	path := "/messages/" + url.PathEscape(messageID) + "/attachments/" + url.PathEscape(attachmentID)
+	if err := c.rpcCall(ctx, http.MethodGet, path, nil, nil, &body); err != nil {
+		if isStatus(err, http.StatusNotFound) {
+			return nil, fmt.Errorf("%w: attachment %s", ErrNotFound, attachmentID)
+		}
+		return nil, err
+	}
+	decoded, err := base64.URLEncoding.DecodeString(body.Data)
+	if err != nil {
+		decoded, err = base64.RawURLEncoding.DecodeString(body.Data)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("gmail: decode attachment %s: %w", attachmentID, err)
+	}
+	return decoded, nil
 }
 
 // ---------------------------------------------------------------------------

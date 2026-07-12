@@ -70,6 +70,7 @@ func TestNginxFragmentRetainsBearerAndBootstrapLocations(t *testing.T) {
 	}
 	for _, want := range []string{
 		"location = /srv/gmail/feed { return 404; }",
+		"location = /srv/gmail/attachment { return 404; }",
 		"location = /srv/gmail/ {",
 		"location /srv/gmail/static/ {",
 	} {
@@ -82,6 +83,26 @@ func TestNginxFragmentRetainsBearerAndBootstrapLocations(t *testing.T) {
 	}
 	if strings.Count(conf, "location = /srv/gmail/ {") != 1 {
 		t.Fatalf("nginx fragment should contain exactly one bare-root exact-match location")
+	}
+}
+
+func TestNginxAttachmentLocationIsLoopbackOnly(t *testing.T) {
+	conf := readNginxConfig(t)
+
+	// R-X22Z-IV8F
+	if strings.Count(conf, "location = /srv/gmail/attachment { return 404; }") != 1 {
+		t.Fatal("attachment exact-match loopback deny location must appear exactly once")
+	}
+	for _, want := range []string{
+		"location = /srv/gmail/.well-known/oauth-protected-resource {",
+		"location = /srv/gmail/feed { return 404; }",
+		"location = /srv/gmail/ {",
+		"location /srv/gmail/static/ {",
+		"location /srv/gmail/ {",
+	} {
+		if !strings.Contains(conf, want) {
+			t.Fatalf("nginx fragment missing retained location %q", want)
+		}
 	}
 }
 

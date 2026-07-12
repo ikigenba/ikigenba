@@ -7,6 +7,7 @@ package gmail
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -14,6 +15,54 @@ import (
 	"sync/atomic"
 	"testing"
 )
+
+func TestAttachmentGet(t *testing.T) {
+	// R-WVZH-M0IY
+	payload := []byte("attachment bytes\x00\xff")
+	for _, encoded := range []string{
+		base64.URLEncoding.EncodeToString(payload),
+		base64.RawURLEncoding.EncodeToString(payload),
+	} {
+		t.Run(encoded, func(t *testing.T) {
+			c := newTestClient(func(r *http.Request) (*http.Response, error) {
+				if r.URL.String() == hostOAuth {
+					return resp(http.StatusOK, okToken), nil
+				}
+				if r.Method != http.MethodGet || r.URL.EscapedPath() != "/gmail/v1/users/me/messages/message%2Fid/attachments/attachment%2Fid" {
+					t.Errorf("method/path = %s %q", r.Method, r.URL.EscapedPath())
+				}
+				if got := r.Header.Get("Authorization"); got != "Bearer AT-1" {
+					t.Errorf("Authorization = %q", got)
+				}
+				return resp(http.StatusOK, `{"size":18,"data":"`+encoded+`"}`), nil
+			})
+			got, err := c.AttachmentGet(context.Background(), "message/id", "attachment/id")
+			if err != nil || string(got) != string(payload) {
+				t.Fatalf("AttachmentGet = %q, %v; want %q, nil", got, err, payload)
+			}
+		})
+	}
+
+	c := newTestClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.String() == hostOAuth {
+			return resp(http.StatusOK, okToken), nil
+		}
+		return resp(http.StatusNotFound, `{"error":{"code":404,"message":"missing"}}`), nil
+	})
+	if _, err := c.AttachmentGet(context.Background(), "m", "a"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("404 error = %v, want ErrNotFound", err)
+	}
+
+	for _, ids := range [][2]string{{"", "a"}, {"m", ""}} {
+		c := newTestClient(func(*http.Request) (*http.Response, error) {
+			t.Fatal("validation must not issue an HTTP request")
+			return nil, nil
+		})
+		if _, err := c.AttachmentGet(context.Background(), ids[0], ids[1]); !errors.Is(err, ErrValidation) {
+			t.Fatalf("AttachmentGet(%q, %q) error = %v, want ErrValidation", ids[0], ids[1], err)
+		}
+	}
+}
 
 // roundTripFunc adapts a func to an http.RoundTripper.
 type roundTripFunc func(*http.Request) (*http.Response, error)
