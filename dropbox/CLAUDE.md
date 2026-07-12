@@ -1,286 +1,137 @@
 # dropbox
 
-The **dropbox** service for the ikigenba single-tenant suite. A loopback-only
-**daemon + event-plane producer** (not an API wrapper) that serves an **MCP
-surface for agents** and a **human web landing page** under
-`<account>.ikigenba.com/srv/dropbox/` (e.g. `int.ikigenba.com/srv/dropbox/`) with
-**no token logic of its own**. First demo account: **int**.
+`dropbox` is the ikigenba suite's single-tenant Dropbox-backed filesystem
+service. It runs loopback-only behind the dashboard's nginx session gate,
+serves MCP to agents and a human landing page at
+`<account>.ikigenba.com/srv/dropbox/`, and trusts the identity headers nginx
+injects after `auth_request`; it has no token validation of its own.
 
-It keeps a **private local mirror in sync** with a single Dropbox **app folder**
-(one-way, **download-only**) and **emits a file-lifecycle event** for every
-change. One Dropbox account for the whole box (app `ikigai-onebox`, App-folder
-scoped → `/Apps/ikigai-onebox/`); the refresh token is a **suite-level secret**.
-Files originate *in* Dropbox; the box never writes back — no conflict resolution,
-no echo loop. It is an event-plane **producer** (emits `file.created` /
-`file.modified` / `file.deleted` to an outbox at `GET /feed`, mirroring
-`../crm`/`../ledger`), cloned from the **ledger producer chassis** (server, mcp
-transport, db + migration runner, `eventplane/outbox`, logging, ids — renamed).
+The private local mirror is the suite's authority for filesystem operations.
+Downloads from Dropbox flow down unchanged, while suite writes are committed
+locally and flow up asynchronously through the durable `upload_queue` and its
+uploader. Uploads use Dropbox's overwrite policy, making Dropbox a replica of
+the suite's local state. A single Dropbox app folder (`ikigai-onebox`) and a
+suite-level refresh token serve the whole box; there is no per-user OAuth or
+tenant partitioning.
 
-**Read the decisions first — do not re-derive them:**
+## Service model
 
-- `project/design/README.md` — the full dropbox design (the sync engine, crash/replay ordering,
-  case-folding, the content endpoint, the events, the no-backup decision).
-- `../crm` / `../ledger` — the sibling producers that share this chassis
-  (`internal/<domain>` → `/feed` outbox).
+`cmd/dropbox/main.go` is the composition root. It builds the domain service,
+the longpoll download engine, and the upload worker; gives appkit its migrations,
+event registry, health reporter, landing assets, MCP handler, loopback routes,
+and workers. The chassis owns the HTTP server, `POST /mcp`, health/reflection,
+and the producer feed.
 
-A service's connector skills live in the `dashboard`'s `plugin/`, not here.
-
-## What this app is
-
-A loopback-only domain service mounted at **`/srv/dropbox/`**; the composition
-root resolves its loopback port by name with `registry.MustPort("dropbox")`
-(the registry value is 3200).
-It serves the **MCP surface for agents** alongside a session-cookie-gated
-**human web landing page** under that mount. nginx (owned by the dashboard)
-terminates TLS, introspects every `/srv/dropbox/` request via `auth_request`
-against the dashboard, and injects `X-Owner-Email` / `X-Client-Id`; this service
-**trusts those headers** and does no token validation of its own. nginx strips
-the `/srv/dropbox/` prefix, so internal routes stay bare (`/mcp`, `/health`,
-`/feed`, `/content`, `/.well-known/...`).
-
-**Single box, single account.** One Dropbox app folder, one owner; no
-owner/tenant column. `Identity` (the injected headers) is consulted only by
-the single `health` tool. Per-user OAuth is explicitly out of scope —
-a folder-sync daemon has one folder.
-
-## The daemon + producer model
-
-A single **background sync goroutine** (wired in `cmd/dropbox/main.go`, started in
-`main`, clean shutdown on `ctx` cancel) drives the whole thing. The loop is
-**longpoll-driven** — zero inbound surface, idle ≈ zero CPU (a parked socket
-read, not a busy poll):
+The background download engine remains longpoll-driven:
 
 ```
-bootstrap → longpoll(cursor) → continue(cursor) → apply each delta → advance cursor
+bootstrap -> longpoll(cursor) -> continue(cursor) -> apply each delta -> advance cursor
 ```
 
-- **Bootstrap:** first boot (no stored cursor) enumerates the whole app folder via
-  `list_folder` (`recursive:true`) and emits `file.created` for every existing
-  file (no silent baseline). `ikigai-onebox` starts empty in v1, so this is moot
-  today, but a pre-populated folder would emit a `created` burst.
-- **Steady state:** `list_folder/longpoll` blocks ~480s (Dropbox adds up to ~90s
-  jitter → can park ~570s); on `changes:true`, drain `list_folder/continue` while
-  `has_more`, apply each page's entries, persist the cursor.
-- **The atomic seam:** the event row is appended on the **same SQLite
-  transaction** as the `files` index change, and `Ring()` fires after commit — so
-  an event is emitted **iff** the mirror state actually changed (same outbox
-  discipline as ledger).
-- **`GET /feed`** — the outbox SSE handler (unauthenticated, loopback-only, the
-  perimeter is nginx). Producer-only.
-- **Bytes served over loopback `GET /content`** — the mirror stays **private**
-  (`0750`, a subdir of `data/`); consumers fetch current bytes here, never the
-  raw files. **Never public** — guarded by the handler's identity-header check
-  (see below), not by nginx.
+Bootstrap enumerates the app folder when no cursor exists. On a reported
+change, the engine drains `list_folder/continue` pages and persists the cursor
+after each applied page. The uploader separately drains durable local mutations
+and retries failures with backoff; it can therefore keep local filesystem work
+fast and independent of Dropbox availability.
 
-## The MCP surface (4 tools — it's a daemon)
+## MCP surface
 
-The service side is **read-only**; there are no write verbs (nothing here uploads
-to Dropbox or mutates the mirror — `list`/`get` are reads). The surface is four
-tools: `health`, `reflection`, `list`, and `get`. `health`/`reflection` exist for
-the auth proof + the dashboard inventory (`MCP=true`); `list`/`get` let an
-off-machine agent (no local mount) browse and fetch the mirror's files over MCP.
-The former pair of identity/health probes are **folded into one** branded tool
-(DECISIONS §7).
+The MCP surface has eight tools: six service tools — `list`, `get`, `put`,
+`mkdir`, `delete`, and `move` — plus the chassis-owned `health` and
+`reflection` tools.
 
-- **`health`** — `()` renders the shared health envelope
-  (`status`/`version`/`service`/`details`) **plus** the authenticated caller's
-  identity (`owner_email`/`client_id`, the end-to-end auth proof). dropbox's disk
-  telemetry lives under `details`, supplied by its `Spec.Health` reporter:
-  `mirror_bytes` (`SUM(size)` over the index — indexed logical size, no directory
-  walk), `disk_free_bytes` / `disk_total_bytes` (a `statfs` on the mirror path),
-  and `failed_files` (count of index rows with a non-null `error` — the poison
-  entries the engine advanced past). The same reporter feeds the HTTP `/health`
-  route, so the two transports can't diverge.
-- **`reflection`** — `(event_type?)` self-describes dropbox's event-plane edges.
-  No argument returns the index `{publishes, subscribes}` (dropbox is a producer,
-  so `subscribes` is empty); an `event_type` returns that published type's
-  `{type, description, schema, example}`.
-- **`list`** — `(path?, cursor?, limit?)` recursively lists files in the mirror,
-  ordered by path. **Read-only.** No arguments lists everything; `path` scopes to
-  a folder prefix (case-insensitive subtree match — `/notes` matches `/notes` and
-  `/notes/a.md` but not `/notesxyz`). `limit` is the page size (default 1000,
-  clamped to `[1,1000]`); pagination is cursor-based — a full page returns
-  `next_cursor`, which you pass back as `cursor` for the next page (absent =
-  done). Each entry is `{path, size, hash, rev, updated_at}`, where `hash` is the
-  content hash **truncated to its first 8 hex chars** and `updated_at` is the only
-  timestamp the index has (the last time the index row changed). Files only — the
-  index does not track directories.
-- **`get`** — `(path, rev?)` fetches one file's current bytes + metadata.
-  **Read-only.** `path` (required) resolves case-insensitively through the index;
-  returns `{path, size, content_hash, rev, updated_at, content_base64}`, where
-  `content_base64` is the standard base64 of the mirror bytes and `content_hash`
-  is the **full** 64-char hash. An optional `rev` pins the version — a mismatch
-  with the indexed rev returns a conflict (the `/content` `rev`→**409** contract).
-  Files larger than **25 MiB** are rejected with `too_large` (base64-in-JSON is
-  not streamed; fetch those via `/content`); unknown paths return `not_found`.
+- `list(path?, cursor?, limit?)` recursively enumerates the mirror in path
+  order. Entries carry a `kind` of `file` or `dir`; directories are first-class,
+  including empty directories. File entries also carry their size, hash,
+  revision, and update time.
+- `get(path, rev?)` returns one file's bytes and metadata, with bytes in
+  `content_base64`. It supports a revision pin and rejects base64 responses over
+  25 MiB with `too_large`.
+- `put(path, source_url? | content_base64?)` creates or replaces a file. Its
+  primary form, `source_url`, is fetched server-side from an allowed loopback
+  address on a registry-owned port; that streamed form is uncapped.
+  `content_base64` is the convenience form and is capped at 25 MiB decoded.
+  Exactly one source is required. An unavailable otherwise-allowed source
+  returns `source_unavailable`.
+- `mkdir(path)` creates an empty directory; `delete(path)` removes a file or
+  directory tree idempotently; `move(from, to)` renames a file or directory in
+  one operation.
 
-## Package layout
+Structured errors include `not_found`, `conflict`, `validation`, `too_large`,
+and `source_unavailable` where applicable.
 
-Same chassis layering as ledger/crm (one file per concern within one package;
-`internal/mcp/tools.go` is the sole MCP dispatcher).
+## Loopback filesystem API
 
-- **`cmd/dropbox/main.go`** — reads the three secrets + non-secret paths/knobs
-  from env, resolves the service port with `registry.MustPort("dropbox")`, builds
-  the `tokenSource`, opens the db through appkit, wires the `outbox` producer,
-  starts the sync goroutine, mounts `/content`, and hands `share/www` to the
-  chassis through `Spec.WWW`.
-- **`internal/dropbox/`** — the domain package:
-  - `types.go` — shared structs (`FileMeta`, delta entries, `HealthInfo`), error
-    sentinels.
-  - `client.go` — the **only** HTTP-to-Dropbox site: `tokenSource` (refresh→access
-    cache, refresh on expiry/401), `list_folder` / `longpoll` / `continue` /
-    `download` (+ block-SHA256 verify). Sends the bearer on rpc/content hosts,
-    **omits it on longpoll**; the longpoll path uses a ≥600s-timeout client.
-  - `store.go` — SQL-only (`*sql.Tx` methods): `sync_state` cursor get/set; `files`
-    upsert/get (folded `path_lower` lookup)/delete; subtree-delete by prefix;
-    `SUM(size)`; mark-`error`.
-  - `mirror.go` — the private local mirror: atomic write (temp+rename), delete,
-    case-only rename, mkdir, path confinement, `statfs`. No db, no HTTP.
-  - `sync.go` — the engine: longpoll→continue→apply loop, the
-    created/modified/deleted decision, per-page cursor advance, poison-entry bound.
-  - `service.go` — the `Service` type: holds store+mirror+client+`EventSink`; owns
-    the tx that commits `{files change + outbox event}`; exposes `Content(path,
-    rev?)` and `Health()`.
-  - `events.go` — the three payload builders + the `EventSink`/`outboxProducer`
-    seam (lets the engine run with emission disabled in unit tests, like ledger).
-  - `content.go` — the loopback `GET /content` handler.
-  - `health.go` — `HealthInfo` assembly.
-- **`internal/mcp`** — declares `Instructions` plus the two domain tools (`list`,
-  `get`) as an `appkit/mcp` tool table assembled by `NewHandler`. `health` and
-  `reflection` are chassis-standard tools, so the surface is still four tools,
-  two chassis-owned.
-- **`internal/db`** — appkit owns SQLite open plus the forward-only migration
-  runner through `Spec.Migrations`; this package keeps only the embedded `*.sql`
-  set and the load plus `003_outbox.sql` byte-equality guards. Migrations:
-  `001_schema_migrations` (chassis, byte-identical),
-  `002_dropbox.sql` (`sync_state` single-row cursor table; `files` per-path index
-  with `path_lower` + nullable `error`), `003_outbox.sql` (byte-identical to
-  `outbox.SchemaSQL`, with the equality test).
-- **`share/www/`** — the human landing page and its `static/` assets ship on
-  disk, are loaded through `Spec.WWW`, and are served by the chassis via
-  `rt.WWW()` plus the auto-mounted `GET /static/` route.
-- **`eventplane`** — the shared outbox library, consumed via a committed
-  `replace eventplane => ../eventplane` (so the build needs the in-repo
-  `eventplane/` tree but no network/`go.work`).
+Services sharing the mirror use the loopback filesystem API documented in
+[`docs/filesystem-api.md`](docs/filesystem-api.md). Every route rejects requests
+that bear nginx's external identity headers, so these are loopback surfaces:
 
-## Events (event-plane producer)
+- `GET /content` streams a file, optionally pinned by `rev`.
+- `PUT /content` writes file bytes; `DELETE /content` removes a file or
+  directory tree.
+- `POST /mkdir` creates a directory and `POST /move` renames or moves an entry.
+- `GET /stat` returns metadata for one file or directory; `GET /list` pages
+  through both file and directory entries.
 
-Producer-only. Payload is a **reference, never bytes** (consumers fetch via
-`/content`): `event`, literal `path`, `rev`, `content_hash`, `size`, a
-**URL-encoded** `content_url` (`http://127.0.0.1:3200/content?path=…`), and
-`occurred_at`.
+Successful mutations commit the local mirror and database transaction before
+returning, then queue the corresponding Dropbox operation for asynchronous
+upload. Mutation callers supply `X-Client-Id`; it becomes the emitted event's
+`origin`.
 
-- **`file.created`** — a path not previously in the index now exists.
-- **`file.modified`** — a known path's `rev` changed (includes a case-only
-  rename).
-- **`file.deleted`** — a known path is gone; **one event per indexed file
-  removed**, including every file beneath a deleted folder. The payload carries the
-  file's **last-known** `rev`/`content_hash`/`size`, read from the index row before
-  the in-tx delete removes it.
+## Events
 
-`content_url` resolves to *current* bytes (the mirror holds current state only, no
-historical revisions); a consumer that fetches and finds `content_hash` differs
-knows a newer event is in flight. The optional `rev`→**409** contract on `/content`
-lets a consumer demand "the exact bytes this event referenced, or a clear
-moved-on signal."
+dropbox is an event-plane producer. Its event kinds are `create`, `modify`, and
+`delete`; the event subject is the mirror's display path. Registry event keys
+therefore have family-shaped addresses such as
+`dropbox:create/bills/aws/2026-06.pdf`.
 
-## Load-bearing correctness rules (don't break these)
+Each payload is a reference to current bytes rather than bytes themselves. It
+has `path`, `rev`, `content_hash`, `size`, `content_url`, `occurred_at`, and
+`origin`; there is no `event` discriminator in the payload. `content_url`
+contains a URL-encoded path to the loopback content endpoint. `origin` is
+`"dropbox"` for a pulled Dropbox change and the writing service's client ID for
+a suite-originated mutation. Deletes carry the removed file's last-known
+metadata. A folder deletion fans out to one delete event for every indexed file
+beneath it.
 
-These are the invariants the engine is built on. A future maintainer who breaks
-one silently corrupts the mirror or the event stream:
+The files-index change and event append use the same SQLite transaction, and
+the outbox is rung only after commit. This makes an event observable exactly
+when its mirror state change committed.
 
-- **Folder-delete subtree fan-out.** A folder delete arrives from Dropbox as a
-  **single** `DeletedMetadata` — it does *not* enumerate descendants.
-  `apply(deleted)` selects every indexed file at/under that prefix, unlinks each,
-  deletes each row, and emits one `file.deleted` per row, all on the same tx.
-  Missing this leaks a whole subtree into the mirror and index.
-- **Delete crash ordering.** For a delete: read the last-known fields, **commit
-  {row delete + event}, THEN unlink** the mirror file. A crash in that window is
-  closed on restart because the cursor hasn't advanced → the delta replays; a
-  delete of an **already-absent** path performs the idempotent unlink but **emits
-  nothing** (no duplicate `file.deleted`, no orphan). This "absent-path delete =
-  silent for events, but still unlink" is load-bearing, not a nicety.
-- **Per-continue-page cursor advance.** The cursor is persisted after each
-  `continue` page's entries are applied — not only after the full `has_more`
-  drain — so a crash mid-drain replays only the unapplied tail.
-- **Poison-entry bound.** The cursor never advances past an unapplied entry, so a
-  permanently-undownloadable entry would wedge *all* sync. After
-  `DROPBOX_MAX_ENTRY_RETRIES` (default **5**) failed passes on the same entry, mark
-  the index row `error`, advance past it, and surface it in `failed_files` — the
-  failure becomes visible rather than silent.
-- **Download hash-verify.** Before the atomic rename, the temp file's Dropbox
-  **block-SHA256 is recomputed and compared** to the metadata `content_hash`; a
-  mismatch is treated as a download failure and retried. `content_hash` is a
-  verified integrity check, not a stored decoration.
-- **Case folding.** Dropbox is case-insensitive + case-preserving; the ext4 mirror
-  is case-sensitive. The index stores the **display** path and matches on
-  `path_lower`; a case-only rename is an **on-disk rename + `file.modified`**,
-  never a second copy. `/content` resolves its query through the index, so disk,
-  index, and `content_url` never diverge on case.
-- **Longpoll is UNAUTHENTICATED** and needs a **≥600s** client (480 + ~90s
-  jitter). `client.go` MUST omit the bearer on `longpoll` and send it on
-  `list_folder`/`continue`/`download`.
-- **`/content` is private.** The handler returns **404** whenever it sees an
-  nginx-injected identity header (`X-Owner-Email` **or** `X-Forwarded-Proto`) —
-  the same handler-level guard `/feed` uses. The decoded path is cleaned and
-  confined under the mirror root (`..`/escape → 400).
+## Load-bearing download invariants
 
-## nginx fragment (not a vhost)
+- A delete commits the index and its event before unlinking the mirror path;
+  replay closes a crash in that window. An already-absent delete still unlinks
+  idempotently but emits nothing.
+- The cursor advances only after each `continue` page has applied. A permanently
+  bad entry is retried up to `DROPBOX_MAX_ENTRY_RETRIES` (default 5), marked as
+  an error, then advanced past so it cannot wedge the stream.
+- Downloads verify Dropbox block-SHA256 before their atomic rename. A hash
+  mismatch is retried, never accepted into the mirror.
+- Dropbox paths are case-insensitive and case-preserving while the mirror is
+  case-sensitive. The index uses a folded lookup key, and a case-only rename is
+  an on-disk rename plus a modify event rather than a second file.
+- Longpoll omits the bearer token and uses a client timeout of at least 600
+  seconds; Dropbox RPC and content requests carry the bearer token.
 
-`opsctl setup dropbox` writes only `/etc/nginx/conf.d/locations/dropbox.conf` (its
-`location /srv/dropbox/` + the PRM well-known location) and reloads nginx — it
-installs no server block and issues no TLS cert (the dashboard owns both, via
-`opsctl init-box`). An
-exact-match `location = /srv/dropbox/content { return 404; }` is added as
-**optional defence-in-depth** — belt to the handler's braces — not the mechanism.
-A dev mirror of the fragment is **generated, not committed**: `nginx/run`
-regenerates `nginx/locations/dropbox.conf` from `etc/nginx.conf` on every run,
-iterating a hardcoded service loop that **must include `dropbox`** or it never
-appears on the dev front door (:8080).
+## Package and deployment notes
 
-## Manifest / deploy
+`internal/dropbox` owns the mirror, index, sync engine, uploader, events, and
+filesystem handlers. `internal/mcp` owns the six service MCP tools.
+`internal/db` embeds the SQLite migrations. `share/www` supplies the landing
+page and static assets through `Spec.WWW`.
 
-dropbox is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract,
-producer + `Workers` sync engine): `<app>` serve + the fixed `version`/`manifest`/
-`migrate`/`schema` verbs, no `run` wrapper, no bundled
-`registry`. `etc/manifest.env` (`APP=dropbox`, `MOUNT=/srv/dropbox/`,
-`DEFAULT=false`, `PORT` from `registry.MustPort("dropbox")`, `MCP=true` so the dashboard inventory lists it;
-producer, so it also round-trips `FEED=/feed` + the `OUTBOX_RETENTION_*` config)
-is emitted by `dropbox manifest` and regenerated on the box by `opsctl deploy` on
-every swap. Shipping is the shared repo-root `bin/ship dropbox` (no version arg;
-version is the committed `dropbox/VERSION`, advanced by `bin/bump dropbox <field>`)
-→ `opsctl stage` + `opsctl deploy`; provisioning is `opsctl setup dropbox` (the `dropbox`
-`--system` user + `/opt/dropbox` tree — data `0750`, **mirror is a private subdir
-of data** — the enabled systemd unit, the nginx fragment).
+The service is one appkit binary with the fixed `serve`, `version`, `manifest`,
+`migrate`, and `schema` verbs. Its three Dropbox secrets are
+`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and `DROPBOX_REFRESH_TOKEN`; they are
+read only at the composition root and never logged. `opsctl setup dropbox`
+provisions the service and nginx location fragment, while `bin/ship dropbox`
+stages and deploys it.
 
-- **Secrets — dropbox HAS them (unlike ledger).** Three values reach the process
-  env only: `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`. On
-  the box they live in SSM `/ikigenba/<account>/app-config` under the `dropbox`
-  key, injected by `ikigenba-launch`. `bin/secrets` (operator-side, no opsctl verb)
-  does a non-destructive read-modify-write of **only** the `dropbox` key, pulling
-  values from `~/.secrets/DROPBOX_*` (masked summary, never printed; siblings
-  preserved). In dev, `.envrc` exports them from `~/.secrets/DROPBOX_*`.
-- **Non-secret config** (resolved in-binary at the composition root):
-  `DROPBOX_MIRROR_PATH` (box `/opt/dropbox/data/mirror`, dev `./tmp/mirror`),
-  `DROPBOX_DB_PATH`, `DROPBOX_GENERATION_PATH`, `RESOURCE_ID`/`AUTH_SERVER` (now
-  composed in-binary from `IKIGENBA_DOMAIN`+`MOUNT`, not a wrapper),
-  `DROPBOX_LONGPOLL_TIMEOUT` (default 480), `DROPBOX_MAX_ENTRY_RETRIES` (default 5),
-  `DROPBOX_APP_FOLDER_ROOT` (default `""` = app folder root). Plus the shared
-  `OUTBOX_RETENTION_DAYS` / `OUTBOX_RETENTION_MAX_ROWS`.
-- **Dashboard registration — no code edit, derived from the manifest.** The
-  dashboard derives its `/srv/<svc>/mcp` resource set at startup from each deployed
-  service's `etc/manifest.env` (`MCP=true`), via `DASHBOARD_MANIFEST_ROOT=/opt`. So
-  registering dropbox is just deploying it (which lands `/opt/dropbox/etc/
-  manifest.env`) → **restart the dashboard** to re-read the manifests. There is no
-  hardcoded resource list to edit. Until that restart, the `/srv/dropbox/mcp` 401
-  challenge omits `resource_metadata`.
+## Recovery, not backup
 
-## The no-backup decision (intentional)
-
-dropbox declares no custom backup/restore hooks — by design. The mirror is a
-download-only replica and the SQLite state (cursor +
-`files` index) is **fully reconstructible from Dropbox, the source of truth**.
-Recovery on data loss is not a snapshot restore but: **wipe the DB + mirror,
-restart, re-bootstrap** — which re-enumerates the app folder and re-emits
-`file.created` for every file. The generation sidecar lives outside the DB, so a
-wipe mints a fresh epoch and consumers resync cleanly.
+dropbox has no custom backup or restore hooks. The mirror and its index can be
+reconstructed from Dropbox by wiping local state and re-bootstraping. That
+recovery deliberately loses any queued-but-unpushed local mutations held in
+`upload_queue`; operators must accept that loss before rebuilding the local
+state from Dropbox.
