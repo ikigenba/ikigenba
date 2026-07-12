@@ -14,7 +14,7 @@ import (
 
 // Instructions describes dropbox's MCP surface to clients during initialize.
 const Instructions = "Keeps a local mirror of one Dropbox app folder and publishes " +
-	"file.created/modified/deleted events. Check health for sync status and " +
+	"create/modify/delete events. Check health for sync status and " +
 	"reflection for its events. Use list to browse the mirror's files and get " +
 	"to fetch one file's bytes."
 

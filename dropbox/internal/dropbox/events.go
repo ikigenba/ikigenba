@@ -15,7 +15,7 @@ import (
 // mirror state emits one event, appended on the SAME tx as the index change so
 // the event is emitted iff the mirror state changed.
 //
-// The three events — file.created / file.modified / file.deleted — carry a
+// The three events — create / modify / delete — carry a
 // REFERENCE to the bytes, never the bytes themselves: a consumer fetches the
 // current bytes over the loopback /content endpoint via content_url. Mirrors
 // ledger's producer seam: an EventSink interface the Service appends to inside
@@ -23,11 +23,11 @@ import (
 // interface lets the engine run with emission DISABLED (Outbox == nil) in unit
 // tests without importing the library.
 
-// Event type names (PLAN.md §5).
+// Event kind names.
 const (
-	EventFileCreated  = "file.created"
-	EventFileModified = "file.modified"
-	EventFileDeleted  = "file.deleted"
+	KindCreate = "create"
+	KindModify = "modify"
+	KindDelete = "delete"
 	// OriginDropbox identifies a file change pulled from Dropbox, rather than
 	// one written by a suite service.
 	OriginDropbox = "dropbox"
@@ -37,31 +37,32 @@ const (
 // validation (wired via Spec.Events). Each entry carries a filled-in Sample
 // instance of its real payload struct (filePayload) — the single source for both
 // the reflected JSON Schema and the worked example, so schema/example/wire shape
-// can't diverge. All three events share the filePayload shape; only the `event`
-// discriminator and (for delete) the last-known field semantics differ.
+// can't diverge. All three events share the filePayload shape; only the
+// last-known field semantics for delete differ.
 var Events = outbox.Registry{
 	{
-		Kind:        EventFileCreated,
+		Kind:        KindCreate,
+		Subject:     "/<mirror path>",
 		Description: "A path not previously in the mirror index now exists. Carries a REFERENCE to the bytes (content_url), never the bytes themselves — fetch current bytes over the loopback /content endpoint. origin is \"dropbox\" for a pulled change or the writing service's client id for a service write.",
-		Sample:      sampleFilePayload(EventFileCreated),
+		Sample:      sampleFilePayload(),
 	},
 	{
-		Kind:        EventFileModified,
+		Kind:        KindModify,
+		Subject:     "/<mirror path>",
 		Description: "A known path's rev changed (includes a case-only rename). Carries the current rev/content_hash/size and a content_url reference to the bytes. origin is \"dropbox\" for a pulled change or the writing service's client id for a service write.",
-		Sample:      sampleFilePayload(EventFileModified),
+		Sample:      sampleFilePayload(),
 	},
 	{
-		Kind:        EventFileDeleted,
+		Kind:        KindDelete,
+		Subject:     "/<mirror path>",
 		Description: "A known path is gone; one event per indexed file removed (including every file beneath a deleted folder). Carries the file's LAST-KNOWN rev/content_hash/size, read before the in-tx delete. origin is \"dropbox\" for a pulled change or the writing service's client id for a service write.",
-		Sample:      sampleFilePayload(EventFileDeleted),
+		Sample:      sampleFilePayload(),
 	},
 }
 
-// sampleFilePayload is a filled-in filePayload used as the reflection Sample for
-// the file.* events. The `event` discriminator is set to the type being sampled.
-func sampleFilePayload(eventType string) filePayload {
+// sampleFilePayload is a filled-in filePayload used as the reflection Sample.
+func sampleFilePayload() filePayload {
 	return filePayload{
-		Event:       eventType,
 		Path:        "/notes/meeting.md",
 		Rev:         "0123456789abcdef0123456789",
 		ContentHash: "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca7",
@@ -81,7 +82,7 @@ const eventTimeFormat = "2006-01-02T15:04:05.000000000Z07:00"
 // and hands it to the EventSink; the builders below turn it into the wire
 // payload with a URL-encoded content_url.
 type FileEvent struct {
-	Type        string // EventFileCreated | EventFileModified | EventFileDeleted
+	Kind        string // KindCreate | KindModify | KindDelete
 	Path        string // literal Dropbox path within the app folder
 	Rev         string // last-known rev (current on create/modify, last-known on delete)
 	ContentHash string // verified Dropbox block-SHA256
@@ -94,7 +95,6 @@ type FileEvent struct {
 // `path` field is the literal Dropbox path; the `path` inside content_url is
 // URL-encoded.
 type filePayload struct {
-	Event       string `json:"event"`
 	Path        string `json:"path"`
 	Rev         string `json:"rev"`
 	ContentHash string `json:"content_hash"`
@@ -116,7 +116,6 @@ func contentURL(contentBase, path string) string {
 // URL-encoded content_url from contentBase.
 func buildFilePayload(contentBase string, ev FileEvent) (outbox.Event, error) {
 	p := filePayload{
-		Event:       ev.Type,
 		Path:        ev.Path,
 		Rev:         ev.Rev,
 		ContentHash: ev.ContentHash,
@@ -127,9 +126,9 @@ func buildFilePayload(contentBase string, ev FileEvent) (outbox.Event, error) {
 	}
 	raw, err := json.Marshal(p)
 	if err != nil {
-		return outbox.Event{}, fmt.Errorf("marshal %s payload: %w", ev.Type, err)
+		return outbox.Event{}, fmt.Errorf("marshal %s payload: %w", ev.Kind, err)
 	}
-	return outbox.Event{Kind: ev.Type, Payload: raw}, nil
+	return outbox.Event{Kind: ev.Kind, Subject: ev.Path, Payload: raw}, nil
 }
 
 // EventSink is the producer seam the Service appends to inside the index tx. The

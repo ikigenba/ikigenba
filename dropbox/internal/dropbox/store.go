@@ -31,7 +31,7 @@ func foldPath(displayPath string) string {
 
 // FileRow is one row of the files index (the per-path mirror index). Path is the
 // verbatim display path; the engine reads Rev/ContentHash/Size to decide
-// created-vs-modified and to populate the file.deleted payload's last-known
+// created-vs-modified and to populate the delete payload's last-known
 // fields before the in-tx delete removes the row (PLAN.md §5).
 type FileRow struct {
 	Path        string
@@ -389,7 +389,7 @@ func (Store) DeleteFile(tx *sql.Tx, displayPath string) error {
 
 // DeleteSubtree deletes the row at displayPath AND every row beneath it, then
 // returns the deleted rows so the engine can unlink each mirror file and emit one
-// file.deleted per row (PLAN.md §5: a folder delete arrives as a single entry and
+// delete per row (PLAN.md §5: a folder delete arrives as a single entry and
 // is fanned out over the index subtree).
 //
 // The prefix match folds displayPath and matches

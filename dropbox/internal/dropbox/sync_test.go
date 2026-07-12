@@ -35,7 +35,7 @@ func (c *capturingSink) Ring() { c.rings++ }
 func (c *capturingSink) eventTypes() []string {
 	out := make([]string, 0, len(c.events))
 	for _, e := range c.events {
-		out = append(out, e.Type)
+		out = append(out, e.Kind)
 	}
 	return out
 }
@@ -168,8 +168,8 @@ func TestRule5_CreateModifyRevDedup(t *testing.T) {
 	if err := applyEntries(t, eng, e1); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if got := sink.eventTypes(); len(got) != 1 || got[0] != EventFileCreated {
-		t.Fatalf("want [file.created], got %v", got)
+	if got := sink.eventTypes(); len(got) != 1 || got[0] != KindCreate {
+		t.Fatalf("want [create], got %v", got)
 	}
 	if data, _, err := readContent(svc, "/inbox/report.pdf", nil); err != nil || string(data) != "hello" {
 		t.Fatalf("content after create: data=%q err=%v", data, err)
@@ -187,14 +187,14 @@ func TestRule5_CreateModifyRevDedup(t *testing.T) {
 		t.Fatalf("rev-dedup should not re-download, calls=%d", fc.downloadCalls[foldPath("/inbox/report.pdf")])
 	}
 
-	// Modify (rev change) → file.modified.
+	// Modify (rev change) → modify.
 	sink.events = nil
 	e2 := fc.addFile("/inbox/report.pdf", "rev2", ContentHash([]byte("world")), []byte("world"))
 	if err := applyEntries(t, eng, e2); err != nil {
 		t.Fatalf("modify: %v", err)
 	}
-	if got := sink.eventTypes(); len(got) != 1 || got[0] != EventFileModified {
-		t.Fatalf("want [file.modified], got %v", got)
+	if got := sink.eventTypes(); len(got) != 1 || got[0] != KindModify {
+		t.Fatalf("want [modify], got %v", got)
 	}
 	if data, _, err := readContent(svc, "/inbox/report.pdf", nil); err != nil || string(data) != "world" {
 		t.Fatalf("content after modify: data=%q err=%v", data, err)
@@ -230,19 +230,19 @@ func TestDropboxPullEventsUseDropboxOrigin(t *testing.T) {
 	}
 	types := map[string]bool{}
 	for _, event := range sink.events {
-		types[event.Type] = true
+		types[event.Kind] = true
 		if event.Origin != OriginDropbox {
-			t.Errorf("%s event origin = %q, want %q", event.Type, event.Origin, OriginDropbox)
+			t.Errorf("%s event origin = %q, want %q", event.Kind, event.Origin, OriginDropbox)
 		}
 	}
-	for _, eventType := range []string{EventFileCreated, EventFileModified, EventFileDeleted} {
-		if !types[eventType] {
-			t.Errorf("pull emitted no %s event: %+v", eventType, sink.events)
+	for _, kind := range []string{KindCreate, KindModify, KindDelete} {
+		if !types[kind] {
+			t.Errorf("pull emitted no %s event: %+v", kind, sink.events)
 		}
 	}
 }
 
-// ── Rule 1: folder delete fans out to one file.deleted per row ────────────────
+// ── Rule 1: folder delete fans out to one delete per row ──────────────────────
 
 func TestRule1_FolderDeleteSubtreeFanout(t *testing.T) {
 	fc := newFakeClient()
@@ -262,11 +262,11 @@ func TestRule1_FolderDeleteSubtreeFanout(t *testing.T) {
 		t.Fatalf("folder delete: %v", err)
 	}
 	if got := sink.eventTypes(); len(got) != 2 {
-		t.Fatalf("folder delete should emit 2 file.deleted, got %v", got)
+		t.Fatalf("folder delete should emit 2 delete events, got %v", got)
 	}
 	for _, e := range sink.events {
-		if e.Type != EventFileDeleted {
-			t.Fatalf("non-delete event in fanout: %v", e.Type)
+		if e.Kind != KindDelete {
+			t.Fatalf("non-delete event in fanout: %v", e.Kind)
 		}
 	}
 	// /other/c.txt survives; /proj files gone from index and mirror.
@@ -323,8 +323,8 @@ func TestFolderDeleteRemovesDirectoryRowsAndFansOutFiles(t *testing.T) {
 		t.Fatalf("events/rings = %d/%d, want 2/1", len(sink.events), sink.rings)
 	}
 	for _, ev := range sink.events {
-		if ev.Type != EventFileDeleted {
-			t.Fatalf("event = %+v, want file.deleted", ev)
+		if ev.Kind != KindDelete {
+			t.Fatalf("event = %+v, want delete", ev)
 		}
 	}
 	for _, p := range []string{"/a", "/a/sub", "/a/x.md", "/a/sub/y.md"} {
@@ -361,8 +361,8 @@ func TestRule2_AbsentPathDeleteEmitsNothing(t *testing.T) {
 	if err := applyEntries(t, eng, deletedEntry("/real.txt")); err != nil {
 		t.Fatalf("delete real: %v", err)
 	}
-	if got := sink.eventTypes(); len(got) != 1 || got[0] != EventFileDeleted {
-		t.Fatalf("first delete should emit one file.deleted, got %v", got)
+	if got := sink.eventTypes(); len(got) != 1 || got[0] != KindDelete {
+		t.Fatalf("first delete should emit one delete, got %v", got)
 	}
 	sink.events = nil
 	if err := applyEntries(t, eng, deletedEntry("/real.txt")); err != nil {
@@ -463,7 +463,7 @@ func TestRule4_PoisonEntryBoundMarksErrorAndAdvances(t *testing.T) {
 	_ = good
 }
 
-// ── Rule 6: case-only rename → file.modified (not delete+create) ──────────────
+// ── Rule 6: case-only rename → modify (not delete+create) ────────────────────
 
 func TestRule6_CaseOnlyRenameModified(t *testing.T) {
 	fc := newFakeClient()
@@ -483,8 +483,8 @@ func TestRule6_CaseOnlyRenameModified(t *testing.T) {
 	if err := applyEntries(t, eng, rename); err != nil {
 		t.Fatalf("case rename: %v", err)
 	}
-	if got := sink.eventTypes(); len(got) != 1 || got[0] != EventFileModified {
-		t.Fatalf("case-only rename must emit exactly [file.modified], got %v", got)
+	if got := sink.eventTypes(); len(got) != 1 || got[0] != KindModify {
+		t.Fatalf("case-only rename must emit exactly [modify], got %v", got)
 	}
 	// No re-download (it was a rename, not a fetch).
 	if fc.downloadCalls[foldPath("/report.pdf")] != downloadsBefore {
@@ -496,7 +496,7 @@ func TestRule6_CaseOnlyRenameModified(t *testing.T) {
 	}
 }
 
-// ── bootstrap: first boot emits file.created for every existing file ──────────
+// ── bootstrap: first boot emits create for every existing file ────────────────
 
 func TestBootstrap_FirstBootEmitsCreatedForAll(t *testing.T) {
 	fc := newFakeClient()
@@ -510,8 +510,8 @@ func TestBootstrap_FirstBootEmitsCreatedForAll(t *testing.T) {
 		t.Fatalf("bootstrap: %v", err)
 	}
 	got := sink.eventTypes()
-	if len(got) != 2 || got[0] != EventFileCreated || got[1] != EventFileCreated {
-		t.Fatalf("first boot should emit file.created for every file, got %v", got)
+	if len(got) != 2 || got[0] != KindCreate || got[1] != KindCreate {
+		t.Fatalf("first boot should emit create for every file, got %v", got)
 	}
 	if cur := readCursorT(t, svc); cur != "boot-cursor" {
 		t.Fatalf("bootstrap should persist cursor, got %q", cur)

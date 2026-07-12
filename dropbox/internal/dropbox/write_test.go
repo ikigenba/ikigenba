@@ -80,7 +80,7 @@ func TestDeleteHandler_IsIdempotentAndDoesNotEmitForAbsentPath(t *testing.T) {
 			t.Fatalf("DELETE status = %d, body %q", rec.Code, rec.Body.String())
 		}
 	}
-	if got := len(sink.events); got != before+1 || sink.events[before].Type != EventFileDeleted {
+	if got := len(sink.events); got != before+1 || sink.events[before].Kind != KindDelete {
 		t.Fatalf("events after idempotent deletes = %+v, want one delete", sink.events)
 	}
 }
@@ -106,7 +106,7 @@ func TestMoveHandler_RelocatesFileAndEmitsPathLifecycle(t *testing.T) {
 	if _, err := svc.Content("/to.md", nil); err != nil {
 		t.Fatalf("to content: %v", err)
 	}
-	if got := sink.events[before:]; len(got) != 2 || got[0].Type != EventFileDeleted || got[0].Path != "/from.md" || got[1].Type != EventFileCreated || got[1].Path != "/to.md" {
+	if got := sink.events[before:]; len(got) != 2 || got[0].Kind != KindDelete || got[0].Path != "/from.md" || got[1].Kind != KindCreate || got[1].Path != "/to.md" {
 		t.Fatalf("move events = %+v, want deleted(from), created(to)", got)
 	}
 }
@@ -151,7 +151,7 @@ func TestWrite_UsesIndexPresenceForLifecycleAndThreadsOrigin(t *testing.T) {
 	if len(sink.events) != 2 {
 		t.Fatalf("events = %+v, want created then modified", sink.events)
 	}
-	if sink.events[0].Type != EventFileCreated || sink.events[0].Origin != "caller-a" || sink.events[1].Type != EventFileModified || sink.events[1].Origin != "caller-b" {
+	if sink.events[0].Kind != KindCreate || sink.events[0].Origin != "caller-a" || sink.events[1].Kind != KindModify || sink.events[1].Origin != "caller-b" {
 		t.Fatalf("write events = %+v, want lifecycle discriminator and caller origins", sink.events)
 	}
 }

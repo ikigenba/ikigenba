@@ -198,11 +198,12 @@ func TestToolsListComposesDropboxToolsWithChassisTools(t *testing.T) {
 }
 
 // TestReflection covers the reflection tool: the no-arg index
-// (the three published file.* types, empty subscribes — dropbox is a producer),
-// the event_type detail (schema + example), and the corrective error for an
-// unknown type.
+// (the three published families, empty subscribes — dropbox is a producer),
+// the kind detail (schema + example), and the corrective error for an unknown
+// kind.
 func TestReflection(t *testing.T) {
 	// R-KQPO-4YND
+	// R-QCDP-UD1V
 	h := newHandler(t)
 
 	// No-arg → the index {publishes, subscribes}.
@@ -218,17 +219,20 @@ func TestReflection(t *testing.T) {
 	for _, pe := range publishes {
 		p := pe.(map[string]any)
 		got[p["kind"].(string)] = true
+		if p["subject"] != "/<mirror path>" {
+			t.Errorf("published kind %v subject = %v, want mirror-path description", p["kind"], p["subject"])
+		}
 		if p["description"] == "" {
 			t.Errorf("published kind %v has empty description", p["kind"])
 		}
 	}
-	for _, want := range []string{"file.created", "file.modified", "file.deleted"} {
+	for _, want := range []string{"create", "modify", "delete"} {
 		if !got[want] {
 			t.Errorf("publishes missing %q (got %v)", want, got)
 		}
 	}
 	if len(publishes) != 3 {
-		t.Errorf("expected exactly 3 published types, got %d: %v", len(publishes), publishes)
+		t.Errorf("expected exactly 3 published kinds, got %d: %v", len(publishes), publishes)
 	}
 
 	// dropbox is a producer: subscribes is present and empty.
@@ -241,37 +245,43 @@ func TestReflection(t *testing.T) {
 	}
 
 	// kind → each publish detail includes origin in its schema and example.
-	for _, eventType := range []string{"file.created", "file.modified", "file.deleted"} {
-		detail, isErr := callTool(t, h, "reflection", `{"kind":"`+eventType+`"}`)
+	for _, kind := range []string{"create", "modify", "delete"} {
+		detail, isErr := callTool(t, h, "reflection", `{"kind":"`+kind+`"}`)
 		if isErr {
-			t.Fatalf("reflection detail for %s isError: %v", eventType, detail)
+			t.Fatalf("reflection detail for %s isError: %v", kind, detail)
 		}
-		if detail["kind"] != eventType {
-			t.Fatalf("detail kind for %s = %v", eventType, detail)
+		if detail["kind"] != kind || detail["subject"] != "/<mirror path>" {
+			t.Fatalf("detail for %s = %v", kind, detail)
 		}
 		if detail["description"] == "" {
-			t.Fatalf("detail for %s missing description: %v", eventType, detail)
+			t.Fatalf("detail for %s missing description: %v", kind, detail)
 		}
 		sch, ok := detail["schema"].(map[string]any)
 		if !ok || sch["type"] != "object" {
-			t.Fatalf("detail schema for %s is not an object schema: %v", eventType, detail["schema"])
+			t.Fatalf("detail schema for %s is not an object schema: %v", kind, detail["schema"])
 		}
 		properties, ok := sch["properties"].(map[string]any)
 		if !ok || properties["origin"] == nil {
-			t.Fatalf("detail schema for %s missing origin: %v", eventType, sch)
+			t.Fatalf("detail schema for %s missing origin: %v", kind, sch)
+		}
+		if properties["event"] != nil {
+			t.Fatalf("detail schema for %s unexpectedly has event: %v", kind, sch)
 		}
 		example, ok := detail["example"].(map[string]any)
 		if !ok || example["origin"] != dropbox.OriginDropbox {
-			t.Fatalf("detail example for %s origin = %v, want %q", eventType, example["origin"], dropbox.OriginDropbox)
+			t.Fatalf("detail example for %s origin = %v, want %q", kind, example["origin"], dropbox.OriginDropbox)
+		}
+		if example["event"] != nil || len(example) != len(properties) {
+			t.Fatalf("detail example for %s does not agree with schema: example=%v schema=%v", kind, example, properties)
 		}
 	}
 
 	// Unknown kind -> chassis error envelope naming the unknown and known kinds.
-	msg, isErr := callToolText(t, h, "reflection", `{"kind":"file.nope"}`)
+	msg, isErr := callToolText(t, h, "reflection", `{"kind":"nope"}`)
 	if !isErr {
 		t.Fatalf("expected error for unknown event_type, got %q", msg)
 	}
-	for _, want := range []string{"file.nope", "known kinds", "file.created", "file.modified", "file.deleted"} {
+	for _, want := range []string{"nope", "known kinds", "create", "modify", "delete"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("corrective message missing %q: %q", want, msg)
 		}

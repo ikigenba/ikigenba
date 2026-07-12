@@ -152,11 +152,11 @@ func (s *Service) Write(ctx context.Context, path string, src io.Reader, clientI
 			return err
 		}
 		row = FileRow{Path: path, Rev: row.Rev, ContentHash: hash, Size: size, UpdatedAt: now, PathLower: foldPath(path)}
-		typeName := EventFileModified
+		kind := KindModify
 		if created {
-			typeName = EventFileCreated
+			kind = KindCreate
 		}
-		if err := s.appendEvent(tx, FileEvent{Type: typeName, Path: path, Rev: row.Rev, ContentHash: hash, Size: size, OccurredAt: now, Origin: clientID}); err != nil {
+		if err := s.appendEvent(tx, FileEvent{Kind: kind, Path: path, Rev: row.Rev, ContentHash: hash, Size: size, OccurredAt: now, Origin: clientID}); err != nil {
 			return err
 		}
 		return s.Store.EnqueueUpload(tx, localUpload(path, "put", sql.NullString{}, clientID, now))
@@ -212,7 +212,7 @@ func (s *Service) Delete(ctx context.Context, path, clientID string) (removed in
 		}
 		changed = len(deleted) > 0 || len(dirs) > 0
 		for _, row := range deleted {
-			if err := s.appendEvent(tx, FileEvent{Type: EventFileDeleted, Path: row.Path, Rev: row.Rev, ContentHash: row.ContentHash, Size: row.Size, OccurredAt: now, Origin: clientID}); err != nil {
+			if err := s.appendEvent(tx, FileEvent{Kind: KindDelete, Path: row.Path, Rev: row.Rev, ContentHash: row.ContentHash, Size: row.Size, OccurredAt: now, Origin: clientID}); err != nil {
 				return err
 			}
 		}
@@ -269,11 +269,11 @@ func (s *Service) Move(ctx context.Context, from, to, clientID string) error {
 			return getErr
 		}
 		for _, file := range moved {
-			if err := s.appendEvent(tx, FileEvent{Type: EventFileDeleted, Path: file.Path, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
+			if err := s.appendEvent(tx, FileEvent{Kind: KindDelete, Path: file.Path, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
 				return err
 			}
 			newPath := to + file.Path[len(from):]
-			if err := s.appendEvent(tx, FileEvent{Type: EventFileCreated, Path: newPath, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
+			if err := s.appendEvent(tx, FileEvent{Kind: KindCreate, Path: newPath, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
 				return err
 			}
 		}
@@ -330,16 +330,16 @@ func (s *Service) upsertDirParents(tx *sql.Tx, path string) error {
 // ordering): the bytes are ALREADY written to the mirror by the caller (atomic,
 // hash-verified) before this runs; here we commit {index upsert + event} on one
 // tx, then Ring after commit. created is true when the path was absent from the
-// index → file.created, else file.modified. Dedup by rev is the caller's job
+// index → create, else modify. Dedup by rev is the caller's job
 // (a matching rev never reaches here). Returns the event type emitted.
 func (s *Service) applyUpsert(ctx context.Context, path, rev, contentHash string, size int64, created bool) (string, error) {
 	now := s.now()
-	evType := EventFileModified
+	evKind := KindModify
 	if created {
-		evType = EventFileCreated
+		evKind = KindCreate
 	}
 	ev := FileEvent{
-		Type:        evType,
+		Kind:        evKind,
 		Path:        path,
 		Rev:         rev,
 		ContentHash: contentHash,
@@ -360,7 +360,7 @@ func (s *Service) applyUpsert(ctx context.Context, path, rev, contentHash string
 		return "", err
 	}
 	s.ring()
-	return evType, nil
+	return evKind, nil
 }
 
 // applyMkdir indexes a structural directory after it exists on disk. It has no
@@ -379,13 +379,13 @@ func (s *Service) applyMkdir(ctx context.Context, path string) error {
 
 // applyRename applies a case-only rename (PLAN.md §2/§6): the on-disk file has
 // ALREADY been renamed by the caller (mirror.Rename) before this runs. Here we
-// commit {index upsert to the new display path + file.modified event} on one tx,
+// commit {index upsert to the new display path + modify event} on one tx,
 // then Ring. The old row is matched case-foldedly by UpsertFile's ON CONFLICT on
 // the (unchanged) path_lower, so the display path is updated in place.
 func (s *Service) applyRename(ctx context.Context, oldDisplay, newDisplay, rev, contentHash string, size int64) error {
 	now := s.now()
 	ev := FileEvent{
-		Type:        EventFileModified,
+		Kind:        KindModify,
 		Path:        newDisplay,
 		Rev:         rev,
 		ContentHash: contentHash,
@@ -418,7 +418,7 @@ func (s *Service) applyRename(ctx context.Context, oldDisplay, newDisplay, rev, 
 //
 //   - A folder delete arrives as ONE entry; DeleteSubtree fans it out over the
 //     index, returning every row at/under the prefix. We commit {all row-deletes
-//   - one file.deleted event per row} on ONE tx, THEN unlink each mirror file
+//   - one delete event per row} on ONE tx, THEN unlink each mirror file
 //     AFTER commit (delete crash-ordering: DB first, disk second).
 //   - A delete delta on an ALREADY-ABSENT path (no rows under the prefix) is an
 //     idempotent unlink that EMITS NOTHING — closing the crash-replay window:
@@ -445,7 +445,7 @@ func (s *Service) applyDelete(ctx context.Context, path string) (emitted int, er
 		deleted = rows
 		for _, r := range deleted {
 			ev := FileEvent{
-				Type:        EventFileDeleted,
+				Kind:        KindDelete,
 				Path:        r.Path,
 				Rev:         r.Rev,
 				ContentHash: r.ContentHash,

@@ -100,7 +100,7 @@ func (e *Engine) Run(ctx context.Context) error {
 // bootstrap performs first-boot enumeration when no cursor is persisted (PLAN.md
 // §2): ListFolder (recursive) then drain ListFolderContinue while HasMore,
 // applying every entry and persisting the cursor per page. On first boot every
-// existing file emits file.created (no silent baseline, §5). When a cursor is
+// existing file emits create (no silent baseline, §5). When a cursor is
 // already persisted, bootstrap is a no-op — the steady loop resumes from it.
 func (e *Engine) bootstrap(ctx context.Context) error {
 	cursor, ok, err := e.readCursor(ctx)
@@ -261,7 +261,7 @@ func (e *Engine) applyPage(ctx context.Context, res ListResult, retries map[stri
 //	deleted → subtree fan-out (folder) / single delete / absent-path no-op
 //	folder  → structural mkdir on the mirror (no event)
 //	file    → download + hash-verify + write, then created|modified (rev-dedup),
-//	          or a case-only rename → on-disk rename + file.modified
+//	          or a case-only rename → on-disk rename + modify
 func (e *Engine) applyEntry(ctx context.Context, entry DeltaEntry) error {
 	switch entry.Tag {
 	case TagDeleted:
@@ -285,10 +285,10 @@ func (e *Engine) applyEntry(ctx context.Context, entry DeltaEntry) error {
 //     matches, it's a no-op (rev dedup — no re-download, no event).
 //   - If a row exists whose path_lower matches but the DISPLAY path differs AND
 //     the rev is unchanged, it's a CASE-ONLY RENAME: on-disk rename +
-//     file.modified (never delete+create) (§2 case-only rename).
+//     modify (never delete+create) (§2 case-only rename).
 //   - Otherwise download the bytes (client hash-verifies vs content_hash), write
-//     atomically to the mirror, then commit {index upsert + event}: file.created
-//     if the path was absent, file.modified if it existed with a different rev.
+//     atomically to the mirror, then commit {index upsert + event}: create
+//     if the path was absent, modify if it existed with a different rev.
 func (e *Engine) applyFile(ctx context.Context, entry DeltaEntry) error {
 	existing, err := e.getFile(ctx, entry.PathDisplay)
 	hadRow := err == nil
