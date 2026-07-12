@@ -41,6 +41,33 @@ type syncBuffer struct {
 	buf bytes.Buffer
 }
 
+// captureResponseWriter mirrors a streaming response while retaining the bytes
+// already put on the wire for assertions about the real FeedHandler output.
+type captureResponseWriter struct {
+	http.ResponseWriter
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (w *captureResponseWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	_, _ = w.buf.Write(p)
+	w.mu.Unlock()
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *captureResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *captureResponseWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+
 func (s *syncBuffer) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -660,28 +687,49 @@ func TestBackoffResetsOnProgress(t *testing.T) {
 	})
 }
 
-// 13a: control frames (caught-up on an empty feed) don't corrupt the cursor — it
-// stays NULL with no event to commit, while the bootstrap marker is durable.
+// 13a: control frames surrounding keyed delivery don't reach the handler or
+// alter the cursor committed by the domain event.
 func TestControlFramesDoNotAdvanceCursor(t *testing.T) {
-	dir := t.TempDir()
-	_, _, srv := newProducer(t, filepath.Join(dir, "p.db"), filepath.Join(dir, "gen"))
+	var connectionMu sync.Mutex
+	var connections int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		connectionMu.Lock()
+		connections++
+		first := connections == 1
+		connectionMu.Unlock()
+		if first {
+			fmt.Fprint(w, "event: caught-up\ndata: {}\n\nevent: status\ndata: {\"behind\":0}\n\n: keepalive\n\nevent: resync\ndata: {\"reason\":\"stale-epoch\"}\n\n")
+			w.(http.Flusher).Flush()
+			return
+		}
+		fmt.Fprint(w, "id: epoch.1\nevent: crm:created/ok\ndata: {\"id\":\"good\",\"source\":\"crm\",\"time\":\"2026-01-01T00:00:00Z\",\"kind\":\"created\",\"subject\":\"/ok\",\"payload\":{\"n\":1}}\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
 	cdb := newConsumerDB(t)
 	var logbuf syncBuffer
 	c := &collector{}
-	runConsumer(t, baseConfig(cdb, srv.URL, fromEarliest, &logbuf), c.handle)
+	stop := runConsumer(t, baseConfig(cdb, srv.URL, fromEarliest, &logbuf), c.handle)
 
-	waitFor(t, "caught up on empty feed", func() bool { return strings.Contains(logbuf.String(), "caught up") })
-	// No events were emitted: cursor must remain NULL, subscribed must be durable.
+	waitEvents(t, c, 1)
+	waitFor(t, "cursor after keyed event", func() bool {
+		cur, _ := cursorRow(t, cdb)
+		return cur.Valid && cur.String == "epoch.1"
+	})
+	stop()
 	cur, sub := cursorRow(t, cdb)
-	if cur.Valid {
-		t.Fatalf("caught-up advanced the cursor to %q", cur.String)
+	if !cur.Valid || cur.String != "epoch.1" {
+		t.Fatalf("control frames corrupted cursor: %v", cur)
 	}
 	if sub != 1 {
 		t.Fatalf("bootstrap marker not durable: subscribed=%d", sub)
 	}
-	if ns := c.ns(); len(ns) != 0 {
-		// R-3XTF-B3KM: keyed feeds still reserve control frames for the engine.
-		t.Fatalf("received events on an empty feed: %v", ns)
+	// R-3XTF-B3KM: caught-up, status, keepalive, and resync are engine-only;
+	// only the keyed domain frame reached the handler and set the cursor.
+	if ns := c.ns(); !reflect.DeepEqual(ns, []int{1}) || !strings.Contains(logbuf.String(), "caught up") || !strings.Contains(logbuf.String(), "lag") || !strings.Contains(logbuf.String(), "stale epoch") {
+		t.Fatalf("controls dispatched incorrectly: events=%v logs=%q", ns, logbuf.String())
 	}
 }
 
@@ -697,7 +745,13 @@ func TestKeyedDeliveryAndHandlerSideSubscriptionFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(ob.FeedHandler())
+	var wire *captureResponseWriter
+	feed := ob.FeedHandler()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cw := &captureResponseWriter{ResponseWriter: w}
+		wire = cw
+		feed.ServeHTTP(cw, r)
+	}))
 	defer srv.Close()
 
 	type input struct {
@@ -747,7 +801,7 @@ func TestKeyedDeliveryAndHandlerSideSubscriptionFiltering(t *testing.T) {
 	}
 	cfg := baseConfig(cdb, srv.URL, fromEarliest, io.Discard)
 	cfg.Source = "dropbox"
-	runConsumer(t, cfg, h)
+	stop := runConsumer(t, cfg, h)
 	waitFor(t, "three keyed events", func() bool {
 		mu.Lock()
 		defer mu.Unlock()
@@ -781,6 +835,13 @@ func TestKeyedDeliveryAndHandlerSideSubscriptionFiltering(t *testing.T) {
 		cur, _ := cursorRowForSource(t, cdb, "dropbox")
 		return cur.Valid && strings.HasSuffix(cur.String, ".3")
 	})
+	if wire == nil {
+		t.Fatal("real feed response was not captured")
+	}
+	if !strings.Contains(wire.String(), "event: "+first.Key()+"\n") {
+		t.Fatalf("Event.Key %q not observed in real frame: %q", first.Key(), wire.String())
+	}
+	stop()
 }
 
 func cursorRowForSource(t *testing.T, db *sql.DB, source string) (cursor sql.NullString, subscribed int) {
@@ -806,7 +867,7 @@ func TestEmptyKindEnvelopeIsSkippedAndNextEventDelivered(t *testing.T) {
 	defer srv.Close()
 	cdb := newConsumerDB(t)
 	c := &collector{}
-	runConsumer(t, baseConfig(cdb, srv.URL, fromEarliest, io.Discard), c.handle)
+	stop := runConsumer(t, baseConfig(cdb, srv.URL, fromEarliest, io.Discard), c.handle)
 	waitEvents(t, c, 1)
 	// R-4098-2N20: malformed empty-kind event advanced, and only its successor ran.
 	if got := c.ns(); !reflect.DeepEqual(got, []int{2}) {
@@ -819,4 +880,5 @@ func TestEmptyKindEnvelopeIsSkippedAndNextEventDelivered(t *testing.T) {
 		cur, _ := cursorRow(t, cdb)
 		return cur.Valid && cur.String == "epoch.2"
 	})
+	stop()
 }
