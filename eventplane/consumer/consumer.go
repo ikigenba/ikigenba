@@ -46,6 +46,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"eventplane/routing"
 )
 
 // First-subscription positions (§7.1). `tail` streams only new events from the
@@ -67,7 +69,6 @@ var (
 // (§8.3). Payload is the opaque per-type body (§8.6) — the engine never inspects
 // it; the handler unmarshals the types it cares about.
 type Event struct {
-	Type    string          // canonical routing key from the SSE event: line
 	ID      string          // envelope "id" — a ULID, the stable dedup key (§8.3)
 	Source  string          // envelope "source", e.g. "crm" (§8.3)
 	Time    string          // envelope "time", RFC 3339 (§8.3)
@@ -75,6 +76,9 @@ type Event struct {
 	Subject string          // envelope "subject"
 	Payload json.RawMessage // opaque domain snapshot (§8.6)
 }
+
+// Key returns the canonical routing key handlers match with routing.Match.
+func (e Event) Key() string { return routing.Key(e.Source, e.Kind, e.Subject) }
 
 // Handler is the per-event effect. The engine invokes it for EVERY event (the
 // service filters by Type itself, §7.3); its return value gates the cursor
@@ -413,14 +417,14 @@ func (e *engine) handleFrame(ctx context.Context, f sseFrame, res *attemptResult
 			case errors.Is(herr, ErrSkip):
 				// Explicit, deliberate loss: log loud and advance past the poison so
 				// it never stalls the consumer forever.
-				e.log.Warn("consumer: handler skipped event (advancing)", "err", herr, "type", ev.Type, "event_id", ev.ID, "source", e.cfg.Source)
+				e.log.Warn("consumer: handler skipped event (advancing)", "err", herr, "key", ev.Key(), "event_id", ev.ID, "source", e.cfg.Source)
 			default:
 				// Any other error STALLS: do NOT advance. Stop scanning this
 				// connection; the run loop tears it down and replays from the last
 				// committed cursor so this event re-delivers before any later one
 				// (the §10 in-order, at-least-once stall). The default-on-unknown-
 				// error is stall — the safe at-least-once direction.
-				e.log.Warn("consumer: handler error, stalling (will replay)", "err", herr, "type", ev.Type, "event_id", ev.ID, "source", e.cfg.Source)
+				e.log.Warn("consumer: handler error, stalling (will replay)", "err", herr, "key", ev.Key(), "event_id", ev.ID, "source", e.cfg.Source)
 				res.stalled = true
 				return errStopHandlerStall
 			}
@@ -492,8 +496,7 @@ func jitter(d time.Duration) time.Duration {
 	return half + time.Duration(rand.Int64N(int64(half)+1))
 }
 
-// parseEvent decomposes an event frame's envelope (§8.3) into an Event. Type is
-// taken from the SSE event: line (§8.1) — it mirrors the envelope type.
+// parseEvent decomposes an event frame's authoritative envelope (§8.3).
 func parseEvent(f sseFrame) (Event, error) {
 	var env struct {
 		ID      string          `json:"id"`
@@ -506,8 +509,10 @@ func parseEvent(f sseFrame) (Event, error) {
 	if err := json.Unmarshal([]byte(f.data), &env); err != nil {
 		return Event{}, fmt.Errorf("unmarshal envelope: %w", err)
 	}
+	if env.Kind == "" {
+		return Event{}, errors.New("envelope kind is empty")
+	}
 	return Event{
-		Type:    f.event,
 		ID:      env.ID,
 		Source:  env.Source,
 		Time:    env.Time,

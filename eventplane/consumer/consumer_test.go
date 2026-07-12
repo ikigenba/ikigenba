@@ -8,15 +8,18 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"eventplane/outbox"
+	"eventplane/routing"
 
 	_ "modernc.org/sqlite"
 )
@@ -677,6 +680,143 @@ func TestControlFramesDoNotAdvanceCursor(t *testing.T) {
 		t.Fatalf("bootstrap marker not durable: subscribed=%d", sub)
 	}
 	if ns := c.ns(); len(ns) != 0 {
+		// R-3XTF-B3KM: keyed feeds still reserve control frames for the engine.
 		t.Fatalf("received events on an empty feed: %v", ns)
 	}
+}
+
+func TestKeyedDeliveryAndHandlerSideSubscriptionFiltering(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "p.db")
+	pdb := openDB(t, dbPath)
+	applySchema(t, pdb, outbox.SchemaSQL)
+	ob, err := outbox.New(pdb, outbox.Options{
+		Source: "dropbox", DBPath: dbPath, GenerationPath: filepath.Join(dir, "gen"),
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(ob.FeedHandler())
+	defer srv.Close()
+
+	type input struct {
+		kind, subject string
+		payload       json.RawMessage
+	}
+	inputs := []input{
+		{"create", "/bills/aws/1.pdf", json.RawMessage(`{"n":1}`)},
+		{"create", "/notes.txt", json.RawMessage(`{"n":2}`)},
+		{"delete", "/bills/aws/1.pdf", json.RawMessage(`{"n":3}`)},
+	}
+	for _, in := range inputs {
+		tx, err := pdb.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ob.Append(tx, outbox.Event{Kind: in.kind, Subject: in.subject, Payload: in.payload}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ob.Ring()
+
+	var wantID, wantTime string
+	if err := pdb.QueryRow(`SELECT event_id, created_at FROM outbox WHERE seq=1`).Scan(&wantID, &wantTime); err != nil {
+		t.Fatal(err)
+	}
+	cdb := newConsumerDB(t)
+	var mu sync.Mutex
+	var delivered []Event
+	var acted []string
+	sub := Subscription{Source: "dropbox", Filter: "dropbox:create/bills/**/*.pdf"}
+	h := func(_ context.Context, ev Event) error {
+		mu.Lock()
+		defer mu.Unlock()
+		delivered = append(delivered, ev)
+		ok, err := routing.Match(sub.Filter, ev.Key())
+		if err != nil {
+			return err
+		}
+		if ok {
+			acted = append(acted, ev.Key())
+		}
+		return nil
+	}
+	cfg := baseConfig(cdb, srv.URL, fromEarliest, io.Discard)
+	cfg.Source = "dropbox"
+	runConsumer(t, cfg, h)
+	waitFor(t, "three keyed events", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(delivered) == 3
+	})
+	mu.Lock()
+	got, selected := append([]Event(nil), delivered...), append([]string(nil), acted...)
+	mu.Unlock()
+
+	first := got[0]
+	// R-3VDM-JK38: the real producer/consumer substrate delivers envelope fields.
+	if first.ID != wantID || first.Source != "dropbox" || first.Time != wantTime || first.Kind != "create" || first.Subject != "/bills/aws/1.pdf" || string(first.Payload) != `{"n":1}` {
+		t.Fatalf("delivered event = %+v, id=%q time=%q", first, wantID, wantTime)
+	}
+	if _, ok := reflect.TypeOf(first).FieldByName("Type"); ok {
+		t.Fatal("Event unexpectedly retains Type")
+	}
+	// R-3WLI-XBTX: Key is identical to the producer's canonical event line shape.
+	if first.Key() != "dropbox:create/bills/aws/1.pdf" || (Event{Source: "ledger", Kind: "recorded"}).Key() != "ledger:recorded" {
+		t.Fatalf("unexpected keys %q and %q", first.Key(), (Event{Source: "ledger", Kind: "recorded"}).Key())
+	}
+	// R-3Z1B-OVBB: delivery is unfiltered while handler-side selection is exact.
+	if len(got) != 3 || !reflect.DeepEqual(selected, []string{"dropbox:create/bills/aws/1.pdf"}) {
+		t.Fatalf("delivered=%d selected=%v", len(got), selected)
+	}
+	// R-95KP-1QIO: runtime selection consumes the declared Subscription.Filter.
+	if sub.Filter != "dropbox:create/bills/**/*.pdf" || !reflect.DeepEqual(selected, []string{"dropbox:create/bills/aws/1.pdf"}) {
+		t.Fatalf("subscription filter=%q selected=%v", sub.Filter, selected)
+	}
+	waitFor(t, "cursor past all events", func() bool {
+		cur, _ := cursorRowForSource(t, cdb, "dropbox")
+		return cur.Valid && strings.HasSuffix(cur.String, ".3")
+	})
+}
+
+func cursorRowForSource(t *testing.T, db *sql.DB, source string) (cursor sql.NullString, subscribed int) {
+	t.Helper()
+	err := db.QueryRow(`SELECT cursor, subscribed FROM feed_offset WHERE source = ?`, source).Scan(&cursor, &subscribed)
+	if err != nil && err != sql.ErrNoRows {
+		t.Fatalf("read feed_offset: %v", err)
+	}
+	return cursor, subscribed
+}
+
+func TestEmptyKindEnvelopeIsSkippedAndNextEventDelivered(t *testing.T) {
+	const bad = `{"id":"bad","source":"crm","time":"2026-01-01T00:00:00Z","kind":"","subject":"","payload":{"n":1}}`
+	const good = `{"id":"good","source":"crm","time":"2026-01-01T00:00:01Z","kind":"created","subject":"/ok","payload":{"n":2}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "id: epoch.1\nevent: crm:ignored\ndata: %s\n\n", bad)
+		fmt.Fprintf(w, "id: epoch.2\nevent: deliberately:not-authoritative\ndata: %s\n\n", good)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}))
+	defer srv.Close()
+	cdb := newConsumerDB(t)
+	c := &collector{}
+	runConsumer(t, baseConfig(cdb, srv.URL, fromEarliest, io.Discard), c.handle)
+	waitEvents(t, c, 1)
+	// R-4098-2N20: malformed empty-kind event advanced, and only its successor ran.
+	if got := c.ns(); !reflect.DeepEqual(got, []int{2}) {
+		t.Fatalf("handler payload markers = %v", got)
+	}
+	if c.got[0].Kind != "created" || c.got[0].Subject != "/ok" {
+		t.Fatalf("next event = %+v", c.got[0])
+	}
+	waitFor(t, "cursor past empty-kind envelope", func() bool {
+		cur, _ := cursorRow(t, cdb)
+		return cur.Valid && cur.String == "epoch.2"
+	})
 }
