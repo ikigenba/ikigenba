@@ -18,9 +18,11 @@ here lives in the plan.
 > `appkit/mcp` (D10), `registry` port adoption + drift guards (D11–D12),
 > composition-root normalization (D13), and the `internal/db` shim deletion + doc
 > truth-up (D14) — **plus** two suite-protocol conformances: the **content
-> plane** (D16 — the loopback-private `GET /attachment` holder endpoint; D17 —
-> `attachment_id` + `content_url` references in the `read`/`thread` results,
-> realizing gmail's row in `docs/content-plane-design.md`) and the **event
+> plane** (D16 — the loopback-private `GET /attachment` holder endpoint,
+> addressed by stable `message_id` + `part_id`; D17 — durable `content_url`
+> references in the `read`/`thread` results, realizing gmail's row in
+> `docs/content-plane-design.md`; D19 — the tagged live round-trip check
+> against the real Gmail API) and the **event
 > routing revision** (D18 — the kind/subject envelope over the revised
 > eventplane API, kinds `received`/`sent`/`deleted`, realizing gmail's row in
 > `docs/event-routing-design.md`; D18 adds gmail's one outbox schema

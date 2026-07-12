@@ -19,12 +19,20 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D13 → `project/design/D13.md` — Composition-root normalization: the `appkit.Spec` inline in `cmd/gmail/main.go` — none (structural)
 - D14 → `project/design/D14.md` — Delete the chassis shims (`internal/db` wrappers) and true up the doctrine doc — none (structural)
 - D15 → `project/design/D15.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer tier deliberately excluded) — owns R-3YU6-CQ9P, R-4022-QI0E, R-419Z-49R3
-- D16 → `project/design/D16.md` — Attachment content endpoint: loopback `GET /attachment` (content plane holder) — owns R-WVZH-M0IY, R-WX7D-ZS9N, R-WYFA-DK0C, R-WZN6-RBR1, R-X0V3-53HQ, R-X22Z-IV8F
-- D17 → `project/design/D17.md` — Attachment references in `read`/`thread` results (content plane references) — owns R-X3AV-WMZ4, R-X4IS-AEPT, R-X5QO-O6GI
+- D16 → `project/design/D16.md` — Attachment content endpoint: loopback `GET /attachment` addressed by `message_id` + `part_id` (content plane holder) — owns R-WVZH-M0IY, R-WX7D-ZS9N, R-3G57-009Q, R-3HD3-DS0F, R-3IKZ-RJR4, R-X22Z-IV8F
+- D17 → `project/design/D17.md` — Attachment references in `read`/`thread` results: durable `content_url`, no ephemeral ids (content plane references) — owns R-3JSW-5BHT, R-3L0S-J38I, R-3M8O-WUZ7
 - D18 → `project/design/D18.md` — Event-routing conformance: kinds `received`/`sent`/`deleted`, empty subject — owns R-X6YL-1Y77, R-X86H-FPXW, R-X9ED-THOL, R-XAMA-79FA
+- D19 → `project/design/D19.md` — Live attachment round-trip check (`-tags live`, real Gmail API) — owns R-3NGL-AMPW
 
 ## Verification ids → Decision
 
+- R-3G57-009Q → D16 → `project/design/D16.md`
+- R-3HD3-DS0F → D16 → `project/design/D16.md`
+- R-3IKZ-RJR4 → D16 → `project/design/D16.md`
+- R-3JSW-5BHT → D17 → `project/design/D17.md`
+- R-3L0S-J38I → D17 → `project/design/D17.md`
+- R-3M8O-WUZ7 → D17 → `project/design/D17.md`
+- R-3NGL-AMPW → D19 → `project/design/D19.md`
 - R-3X4A-Y8CI → D8 → `project/design/D08.md`
 - R-3YC7-C037 → D8 → `project/design/D08.md`
 - R-3YU6-CQ9P → D15 → `project/design/D15.md`
@@ -56,13 +64,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-8P1S → D2 → `project/design/D02.md`
 - R-WVZH-M0IY → D16 → `project/design/D16.md`
 - R-WX7D-ZS9N → D16 → `project/design/D16.md`
-- R-WYFA-DK0C → D16 → `project/design/D16.md`
-- R-WZN6-RBR1 → D16 → `project/design/D16.md`
-- R-X0V3-53HQ → D16 → `project/design/D16.md`
 - R-X22Z-IV8F → D16 → `project/design/D16.md`
-- R-X3AV-WMZ4 → D17 → `project/design/D17.md`
-- R-X4IS-AEPT → D17 → `project/design/D17.md`
-- R-X5QO-O6GI → D17 → `project/design/D17.md`
 - R-X6YL-1Y77 → D18 → `project/design/D18.md`
 - R-X86H-FPXW → D18 → `project/design/D18.md`
 - R-X9ED-THOL → D18 → `project/design/D18.md`

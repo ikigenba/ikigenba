@@ -11,16 +11,17 @@ from.
 | folder | what's in it | owned by |
 |---|---|---|
 | `product/` | `README.md` — the *why*, for whom, scope, user-facing promises | `/product-mode` (rewritten in place) |
-| `research/` | `README.md` — the design-informing research spine; plus free-form `*-research.md` working notes | `README.md`: `/research-mode` (rewritten in place). Other notes: free-form. |
+| `research/` | `research.md` — collected external ground truth design references; plus free-form `*-research.md` working notes | `research.md`: `$seal-spec` (rewritten in place). Other notes: free-form. |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `/design-mode` (rewritten in place) |
 | `plan/` | `README.md` (spine) + `STATUS.md` (the manifest — the only home of each phase's `⬜`/`✅` marker) + `phase-NN.md` (one per phase) | `/plan-mode` (append-only) |
 | `bugs/` | free-form bug diagnoses / write-ups | free-form (not mode-owned) |
 | `requests/` | free-form feature requests | free-form (not mode-owned) |
 | `loops/` | the `ralph` build-loop prompts: `gather.md`, `build.md`, `verify.md` (+ the ephemeral `brief.md`) | build-loop infrastructure |
 
-The four **spine documents** (`product/README.md`, `research/README.md`,
-`design/README.md`, `plan/README.md`) are each singular and owned by a `/*-mode`
-command — that command is the sanctioned way to change them. The `bugs/`,
+The four **spine documents** (`product/README.md`, `research/research.md`,
+`design/README.md`, `plan/README.md`) are each singular and owned by the
+spec-authoring workflow (`$seal-spec`) — that workflow is the sanctioned way to
+change them. The `bugs/`,
 `requests/` and extra `research/*-research.md` notes are informal
 scratch and are *not* owned by any mode command. Don't add ad-hoc documents to
 the spine folders; fold corrections and follow-ons into the existing spine docs
