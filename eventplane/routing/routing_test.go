@@ -66,6 +66,27 @@ func TestMatchMalformedPattern(t *testing.T) {
 	}
 }
 
+func TestCouldMatchSubjectUsesFixedPrefixAndOpenRootedSuffix(t *testing.T) {
+	for _, tc := range []struct {
+		pattern string
+		prefix  string
+		want    bool
+	}{
+		{"dropbox:create/bills/**", "dropbox:create", true},
+		{"dropbox:*", "dropbox:create", true},
+		{"dropbox:delete/**", "dropbox:create", false},
+		{"cron:tick/specific", "cron:tick", true},
+	} {
+		got, err := CouldMatchSubject(tc.pattern, tc.prefix)
+		if err != nil || got != tc.want {
+			t.Errorf("CouldMatchSubject(%q, %q) = %v, %v; want %v", tc.pattern, tc.prefix, got, err, tc.want)
+		}
+	}
+	if _, err := CouldMatchSubject("dropbox:[", "dropbox:create"); err == nil {
+		t.Error("malformed pattern returned nil error")
+	}
+}
+
 func TestAddressValidity(t *testing.T) {
 	// R-41H4-GESP
 	for _, tc := range []struct {

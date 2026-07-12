@@ -5,25 +5,28 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+
+	"eventplane/routing"
 )
 
-// EventType declares one published event type. Sample is the single source for
+// Family declares one published event family. Sample is the single source for
 // BOTH the JSON Schema (reflected from its type) and the worked example
 // (marshaled from its value), so the two cannot drift.
-type EventType struct {
-	Type        string // wire type, e.g. "contact.created" (§8.5)
+type Family struct {
+	Kind        string
+	Subject     string
 	Description string // what this fact means and when it fires
 	Sample      any    // a filled-in instance of the payload struct
 }
 
-// Registry is the ordered set of event types a service publishes. Order is
+// Registry is the ordered set of event families a service publishes. Order is
 // preserved so reflection output is stable.
-type Registry []EventType
+type Registry []Family
 
 // has reports whether eventType is declared in the registry.
-func (r Registry) has(eventType string) bool {
-	for _, et := range r {
-		if et.Type == eventType {
+func (r Registry) has(kind string) bool {
+	for _, family := range r {
+		if family.Kind == kind {
 			return true
 		}
 	}
@@ -31,10 +34,10 @@ func (r Registry) has(eventType string) bool {
 }
 
 // types returns the declared type strings, in registry order.
-func (r Registry) types() []string {
+func (r Registry) kinds() []string {
 	out := make([]string, len(r))
-	for i, et := range r {
-		out[i] = et.Type
+	for i, family := range r {
+		out[i] = family.Kind
 	}
 	return out
 }
@@ -43,49 +46,67 @@ func (r Registry) types() []string {
 // entry per declared type, in registry order.
 func (r Registry) Index() []map[string]any {
 	out := make([]map[string]any, len(r))
-	for i, et := range r {
+	for i, family := range r {
 		out[i] = map[string]any{
-			"type":        et.Type,
-			"description": et.Description,
+			"kind":        family.Kind,
+			"subject":     family.Subject,
+			"description": family.Description,
 		}
 	}
 	return out
 }
 
-// UnknownEventTypeError is the typed error Detail returns for a type not in the
+// UnknownKindError is the typed error Detail returns for a kind not in the
 // registry. It carries the valid type list so a caller can build a corrective
 // message (the ledger bad_root pattern).
-type UnknownEventTypeError struct {
-	Type  string   // the unknown type requested
-	Valid []string // the declared types, in registry order
+type UnknownKindError struct {
+	Kind  string
+	Valid []string
 }
 
-func (e *UnknownEventTypeError) Error() string {
-	return fmt.Sprintf("outbox: unknown event type %q; valid types: %s", e.Type, strings.Join(e.Valid, ", "))
+func (e *UnknownKindError) Error() string {
+	return fmt.Sprintf("outbox: unknown event kind %q; valid kinds: %s", e.Kind, strings.Join(e.Valid, ", "))
 }
 
-// Detail renders the publish detail for one declared event type:
-// {type, description, schema, example}. The schema is reflected from the
+// Detail renders the publish detail for one declared family. The schema is reflected from the
 // sample's type and the example is marshaled from the sample's value, so the
-// two cannot drift. An unknown type yields a *UnknownEventTypeError carrying the
-// valid-type list.
-func (r Registry) Detail(eventType string) (map[string]any, error) {
-	for _, et := range r {
-		if et.Type != eventType {
+// two cannot drift. An unknown kind yields a *UnknownKindError carrying the
+// valid-kind list.
+func (r Registry) Detail(kind string) (map[string]any, error) {
+	for _, family := range r {
+		if family.Kind != kind {
 			continue
 		}
-		example, err := exampleOf(et.Sample)
+		example, err := exampleOf(family.Sample)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{
-			"type":        et.Type,
-			"description": et.Description,
-			"schema":      schema(et.Sample),
+			"kind":        family.Kind,
+			"subject":     family.Subject,
+			"description": family.Description,
+			"schema":      schema(family.Sample),
 			"example":     example,
 		}, nil
 	}
-	return nil, &UnknownEventTypeError{Type: eventType, Valid: r.types()}
+	return nil, &UnknownKindError{Kind: kind, Valid: r.kinds()}
+}
+
+// CouldMatch reports whether filter can match any event in a declared family.
+// Subjects are deliberately open rather than inferred from their descriptions.
+func (r Registry) CouldMatch(source, filter string) (bool, error) {
+	for _, family := range r {
+		ok, err := routing.CouldMatchSubject(filter, routing.Key(source, family.Kind, ""))
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			return true, nil
+		}
+	}
+	// Validate malformed filters even for an empty registry.
+	_, err := routing.Match(filter, "")
+	return false, err
 }
 
 // exampleOf marshals the sample value and re-decodes it into a generic value, so

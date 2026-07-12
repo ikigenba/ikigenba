@@ -14,6 +14,31 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func TestAppendGatesDeclaredFamilyKinds(t *testing.T) {
+	// R-3O28-8XN2
+	o, db := newMemOutbox(t, func(opts *Options) { opts.Registry = Registry{{Kind: "create"}} })
+	tx, _ := db.BeginTx(context.Background(), nil)
+	if err := o.Append(tx, Event{Kind: "create", Subject: "/anything", Payload: json.RawMessage(`{}`)}); err != nil {
+		t.Fatalf("declared kind rejected: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	tx, _ = db.BeginTx(context.Background(), nil)
+	err := o.Append(tx, Event{Kind: "delete", Payload: json.RawMessage(`{}`)})
+	_ = tx.Rollback()
+	if err == nil || !strings.Contains(err.Error(), "delete") || !strings.Contains(err.Error(), "create") {
+		t.Fatalf("undeclared error = %v; want rejected kind and declared kinds", err)
+	}
+
+	ungated, db2 := newMemOutbox(t)
+	tx, _ = db2.BeginTx(context.Background(), nil)
+	defer tx.Rollback()
+	if err := ungated.Append(tx, Event{Kind: "delete", Payload: json.RawMessage(`{}`)}); err != nil {
+		t.Fatalf("empty registry constrained Append: %v", err)
+	}
+}
+
 // newMemOutbox returns an Outbox backed by a fresh single-connection in-memory
 // SQLite DB with the outbox schema applied. SetMaxOpenConns(1) is the
 // single-writer discipline the ordering invariant (§5) depends on.

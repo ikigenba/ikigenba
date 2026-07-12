@@ -105,6 +105,106 @@ func Match(pattern, key string) (bool, error) {
 	return match(0, 0), nil
 }
 
+// CouldMatchSubject reports whether pattern matches prefix followed by either
+// an empty subject or some slash-rooted subject.
+func CouldMatchSubject(pattern, prefix string) (bool, error) {
+	tokens, err := compile(pattern)
+	if err != nil {
+		return false, err
+	}
+	states := epsilonClosure(tokens, map[int]bool{0: true})
+	for _, ch := range prefix {
+		states = epsilonClosure(tokens, advance(tokens, states, ch))
+	}
+	if states[len(tokens)] {
+		return true, nil
+	}
+	states = epsilonClosure(tokens, advance(tokens, states, '/'))
+	seen := map[int]bool{}
+	queue := make([]int, 0, len(states))
+	for state := range states {
+		queue = append(queue, state)
+	}
+	alphabet := []rune{'a', '/', ':', '0', '-', '_', '.'}
+	for _, tok := range tokens {
+		if tok.kind == literal {
+			alphabet = append(alphabet, tok.char)
+		}
+		for _, pair := range tok.ranges {
+			alphabet = append(alphabet, pair[0], pair[1])
+		}
+	}
+	for len(queue) > 0 {
+		state := queue[0]
+		queue = queue[1:]
+		if seen[state] {
+			continue
+		}
+		seen[state] = true
+		closure := epsilonClosure(tokens, map[int]bool{state: true})
+		if closure[len(tokens)] {
+			return true, nil
+		}
+		for _, ch := range alphabet {
+			if ch == '\n' || ch == '\r' {
+				continue
+			}
+			for next := range epsilonClosure(tokens, advance(tokens, closure, ch)) {
+				if !seen[next] {
+					queue = append(queue, next)
+				}
+			}
+		}
+	}
+	return false, nil
+}
+
+func epsilonClosure(tokens []token, states map[int]bool) map[int]bool {
+	out := make(map[int]bool, len(states))
+	queue := make([]int, 0, len(states))
+	for state := range states {
+		queue = append(queue, state)
+	}
+	for len(queue) > 0 {
+		i := queue[0]
+		queue = queue[1:]
+		if out[i] {
+			continue
+		}
+		out[i] = true
+		if i < len(tokens) && (tokens[i].kind == star || tokens[i].kind == doubleStar) {
+			queue = append(queue, i+1)
+		}
+	}
+	return out
+}
+
+func advance(tokens []token, states map[int]bool, ch rune) map[int]bool {
+	out := map[int]bool{}
+	for i := range states {
+		if i == len(tokens) {
+			continue
+		}
+		t := tokens[i]
+		matches := t.kind == literal && t.char == ch || t.kind == question && ch != '/' || t.kind == star && ch != '/' || t.kind == doubleStar
+		if t.kind == class && ch != '/' {
+			inside := false
+			for _, pair := range t.ranges {
+				inside = inside || pair[0] <= ch && ch <= pair[1]
+			}
+			matches = inside != t.negate
+		}
+		if matches {
+			if t.kind == star || t.kind == doubleStar {
+				out[i] = true
+			} else {
+				out[i+1] = true
+			}
+		}
+	}
+	return out
+}
+
 func compile(pattern string) ([]token, error) {
 	runes := []rune(pattern)
 	tokens := make([]token, 0, len(runes))

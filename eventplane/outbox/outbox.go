@@ -175,8 +175,8 @@ func (o *Outbox) Append(tx *sql.Tx, ev Event) error {
 		return fmt.Errorf("outbox: invalid event subject %q", ev.Subject)
 	}
 	if len(o.registry) > 0 && !o.registry.has(ev.Kind) {
-		return fmt.Errorf("outbox: event type %q is not in the registry; declared types: %s",
-			ev.Kind, strings.Join(o.registry.types(), ", "))
+		return fmt.Errorf("outbox: event kind %q is not in the registry; declared kinds: %s",
+			ev.Kind, strings.Join(o.registry.kinds(), ", "))
 	}
 	eventID := newULID()
 	createdAt := o.now().UTC().Format(time.RFC3339Nano)

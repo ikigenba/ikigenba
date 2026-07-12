@@ -1,7 +1,6 @@
 package outbox
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -31,7 +30,8 @@ func testRegistry() Registry {
 	note := "hello"
 	return Registry{
 		{
-			Type:        "contact.created",
+			Kind:        "create",
+			Subject:     "/<contact id>",
 			Description: "a contact was created",
 			Sample: samplePayload{
 				ID:     "c1",
@@ -42,7 +42,8 @@ func testRegistry() Registry {
 			},
 		},
 		{
-			Type:        "contact.updated",
+			Kind:        "update",
+			Subject:     "any contact",
 			Description: "a contact was updated",
 			Sample:      samplePayload{ID: "c2"},
 		},
@@ -50,28 +51,27 @@ func testRegistry() Registry {
 }
 
 func TestIndexReturnsEveryType(t *testing.T) {
+	// R-3QI1-0H4G
 	idx := testRegistry().Index()
-	want := []string{"contact.created", "contact.updated"}
+	want := []map[string]any{
+		{"kind": "create", "subject": "/<contact id>", "description": "a contact was created"},
+		{"kind": "update", "subject": "any contact", "description": "a contact was updated"},
+	}
 	if len(idx) != len(want) {
 		t.Fatalf("Index len = %d, want %d", len(idx), len(want))
 	}
-	for i, w := range want {
-		if idx[i]["type"] != w {
-			t.Errorf("Index[%d].type = %v, want %q", i, idx[i]["type"], w)
-		}
-		if idx[i]["description"] == "" {
-			t.Errorf("Index[%d] missing description", i)
-		}
+	if !reflect.DeepEqual(idx, want) {
+		t.Errorf("Index = %#v, want %#v", idx, want)
 	}
 }
 
 func TestDetailSchemaMatchesTags(t *testing.T) {
-	d, err := testRegistry().Detail("contact.created")
+	d, err := testRegistry().Detail("create")
 	if err != nil {
 		t.Fatalf("Detail: %v", err)
 	}
-	if d["type"] != "contact.created" {
-		t.Errorf("type = %v", d["type"])
+	if d["kind"] != "create" {
+		t.Errorf("kind = %v", d["kind"])
 	}
 
 	sch := d["schema"].(map[string]any)
@@ -127,7 +127,8 @@ func TestDetailSchemaMatchesTags(t *testing.T) {
 }
 
 func TestDetailExampleRoundTrips(t *testing.T) {
-	d, err := testRegistry().Detail("contact.created")
+	// R-3RPX-E8V5
+	d, err := testRegistry().Detail("create")
 	if err != nil {
 		t.Fatalf("Detail: %v", err)
 	}
@@ -148,6 +149,12 @@ func TestDetailExampleRoundTrips(t *testing.T) {
 	if len(got.Tags) != 1 || got.Tags[0].Name != "vip" {
 		t.Errorf("tags did not round-trip: %+v", got.Tags)
 	}
+	props := d["schema"].(map[string]any)["properties"].(map[string]any)
+	for field := range d["example"].(map[string]any) {
+		if _, ok := props[field]; !ok {
+			t.Errorf("example field %q absent from schema", field)
+		}
+	}
 }
 
 func TestDetailUnknownTypeCorrectiveError(t *testing.T) {
@@ -155,14 +162,14 @@ func TestDetailUnknownTypeCorrectiveError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown type")
 	}
-	var ute *UnknownEventTypeError
+	var ute *UnknownKindError
 	if !errors.As(err, &ute) {
-		t.Fatalf("error is not *UnknownEventTypeError: %T", err)
+		t.Fatalf("error is not *UnknownKindError: %T", err)
 	}
-	if ute.Type != "nope" {
-		t.Errorf("ute.Type = %q", ute.Type)
+	if ute.Kind != "nope" {
+		t.Errorf("ute.Kind = %q", ute.Kind)
 	}
-	want := []string{"contact.created", "contact.updated"}
+	want := []string{"create", "update"}
 	if !reflect.DeepEqual(ute.Valid, want) {
 		t.Errorf("ute.Valid = %v, want %v", ute.Valid, want)
 	}
@@ -180,32 +187,30 @@ func TestSchemaPanicsOnUnsupportedKind(t *testing.T) {
 	_ = schema(bad{})
 }
 
-func TestAppendRejectsUnregisteredTypeWithRegistry(t *testing.T) {
-	reg := testRegistry()
-	o, db := newMemOutbox(t, func(opts *Options) { opts.Registry = reg })
-
-	// A declared type is accepted.
-	tx, _ := db.BeginTx(context.Background(), nil)
-	if err := o.Append(tx, Event{Kind: "contact.created", Payload: json.RawMessage(`{}`)}); err != nil {
-		t.Fatalf("declared type rejected: %v", err)
+func TestCouldMatchFamilyKindWithOpenSubject(t *testing.T) {
+	// R-3SXT-S0LU
+	r := Registry{{Kind: "create", Subject: "/<mirror path>"}}
+	for _, tc := range []struct {
+		filter string
+		want   bool
+	}{
+		{"dropbox:create/bills/**", true}, {"dropbox:delete/**", false}, {"dropbox:*", true},
+	} {
+		got, err := r.CouldMatch("dropbox", tc.filter)
+		if err != nil || got != tc.want {
+			t.Errorf("CouldMatch(%q) = %v, %v; want %v", tc.filter, got, err, tc.want)
+		}
 	}
-	_ = tx.Commit()
-
-	// An undeclared type is rejected.
-	tx2, _ := db.BeginTx(context.Background(), nil)
-	defer tx2.Rollback()
-	err := o.Append(tx2, Event{Kind: "contact.deleted", Payload: json.RawMessage(`{}`)})
-	if err == nil {
-		t.Fatal("expected Append to reject an unregistered type")
+	if _, err := r.CouldMatch("dropbox", "dropbox:["); err == nil {
+		t.Error("malformed filter returned nil error")
 	}
 }
 
-func TestAppendUnchangedWithEmptyRegistry(t *testing.T) {
-	o, db := newMemOutbox(t) // no registry
-	tx, _ := db.BeginTx(context.Background(), nil)
-	defer tx.Rollback()
-	if err := o.Append(tx, Event{Kind: "anything.goes", Payload: json.RawMessage(`{}`)}); err != nil {
-		t.Fatalf("empty registry must not constrain Append: %v", err)
+func TestCouldMatchLeavesSubjectOpen(t *testing.T) {
+	// R-3U5Q-5SCJ
+	got, err := (Registry{{Kind: "tick", Subject: "documented schedules only"}}).CouldMatch("cron", "cron:tick/some-schedule-nobody-declared")
+	if err != nil || !got {
+		t.Fatalf("CouldMatch open subject = %v, %v; want true", got, err)
 	}
 }
 
