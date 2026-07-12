@@ -239,6 +239,23 @@ func TestStandardToolsListAndHealthEnvelope(t *testing.T) {
 	if _, ok := byName["reflection"]; !ok {
 		t.Fatalf("reflection descriptor missing from zero-declared tool list: %#v", byName)
 	}
+	reflection := byName["reflection"]
+	schema, ok := reflection["inputSchema"].(map[string]any)
+	if !ok {
+		t.Fatalf("reflection inputSchema missing or not object: %#v", reflection["inputSchema"])
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("reflection inputSchema.properties missing or not object: %#v", schema["properties"])
+	}
+	// R-7I7V-DBB3
+	if _, ok := properties["kind"]; !ok {
+		t.Fatalf("reflection inputSchema.properties missing kind: %#v", properties)
+	}
+	staleParam := "event" + "_type"
+	if _, ok := properties[staleParam]; ok {
+		t.Fatalf("reflection inputSchema.properties still advertises stale detail parameter: %#v", properties)
+	}
 
 	callResp := rpc(t, h, `{"jsonrpc":"2.0","id":"health","method":"tools/call","params":{"name":"health"}}`, nil)
 	got := resultTextJSON(t, callResp)
@@ -259,22 +276,38 @@ func TestStandardToolsListAndHealthEnvelope(t *testing.T) {
 
 func TestReflectionReturnsEventIndexAndLivePublishes(t *testing.T) {
 	staticEvents := outbox.Registry{{
-		Type:        "static.only",
+		Kind:        "delete",
+		Subject:     "/<mirror path>",
 		Description: "Static-only event.",
 		Sample:      staticEventSample{StaticID: "s1"},
 	}}
-	liveEvents := outbox.Registry{{
-		Type:        "live.only",
+	liveEvents := outbox.Registry{
+		{
+			Kind:        "create",
+			Subject:     "/<mirror path>",
+			Description: "Created mirror path.",
+			Sample:      liveEventSample{LiveID: "l1"},
+		},
+		{
+			Kind:        "delete",
+			Subject:     "/<mirror path>",
+			Description: "Deleted mirror path.",
+			Sample:      liveEventSample{LiveID: "l2"},
+		},
+	}
+	eventsOnly := outbox.Registry{{
+		Kind:        "events.only",
+		Subject:     "/<mirror path>",
 		Description: "Live-only event.",
 		Sample:      liveEventSample{LiveID: "l1"},
 	}}
 	subscriptions := []consumer.Subscription{{
 		Source:      "crm",
-		Filter:      "customer.*",
+		Filter:      "crm:create/<mirror path>",
 		Description: "Customer changes.",
 	}}
 	h := newHandler(t, mcp.Options{
-		Events: staticEvents,
+		Events: append(staticEvents, eventsOnly...),
 		Publishes: func() outbox.Registry {
 			return liveEvents
 		},
@@ -286,7 +319,7 @@ func TestReflectionReturnsEventIndexAndLivePublishes(t *testing.T) {
 	resp := rpc(t, h, `{"jsonrpc":"2.0","id":"reflection-index","method":"tools/call","params":{"name":"reflection"}}`, nil)
 	got := resultTextJSON(t, resp)
 
-	// R-MMAQ-Q3HB
+	// R-7EK6-8030
 	if !reflect.DeepEqual(got["publishes"], normalizeJSON(t, liveEvents.Index())) {
 		t.Fatalf("publishes = %#v, want live provider index %#v", got["publishes"], normalizeJSON(t, liveEvents.Index()))
 	}
@@ -294,15 +327,15 @@ func TestReflectionReturnsEventIndexAndLivePublishes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal publishes: %v", err)
 	}
-	if !strings.Contains(string(publishesJSON), "live.only") {
-		t.Fatalf("publishes missing live-only type: %s", publishesJSON)
+	if !strings.Contains(string(publishesJSON), "create") {
+		t.Fatalf("publishes missing live-provider kind: %s", publishesJSON)
 	}
-	if strings.Contains(string(publishesJSON), "static.only") {
-		t.Fatalf("publishes included static-only type despite live provider: %s", publishesJSON)
+	if strings.Contains(string(publishesJSON), "events.only") {
+		t.Fatalf("publishes included Events-only kind despite live provider: %s", publishesJSON)
 	}
 	wantSubscribes := []map[string]any{{
 		"source":      "crm",
-		"filter":      "customer.*",
+		"filter":      "crm:create/<mirror path>",
 		"description": "Customer changes.",
 	}}
 	if !reflect.DeepEqual(got["subscribes"], normalizeJSON(t, wantSubscribes)) {
@@ -312,20 +345,21 @@ func TestReflectionReturnsEventIndexAndLivePublishes(t *testing.T) {
 
 func TestReflectionReturnsEventDetailSchema(t *testing.T) {
 	events := outbox.Registry{{
-		Type:        "crm.customer.created",
+		Kind:        "customer.created",
+		Subject:     "/<customer id>",
 		Description: "A customer was created.",
 		Sample:      customerEventSample{CustomerID: "cus_123", Email: "owner@example.com"},
 	}}
 	h := newHandler(t, mcp.Options{Events: events})
 
-	resp := rpc(t, h, `{"jsonrpc":"2.0","id":"reflection-detail","method":"tools/call","params":{"name":"reflection","arguments":{"event_type":"crm.customer.created"}}}`, nil)
+	resp := rpc(t, h, `{"jsonrpc":"2.0","id":"reflection-detail","method":"tools/call","params":{"name":"reflection","arguments":{"kind":"customer.created"}}}`, nil)
 	got := resultTextJSON(t, resp)
-	want, err := events.Detail("crm.customer.created")
+	want, err := events.Detail("customer.created")
 	if err != nil {
 		t.Fatalf("Detail: %v", err)
 	}
 
-	// R-MNIN-3V80
+	// R-7FS2-LRTP
 	if !reflect.DeepEqual(got, normalizeJSON(t, want)) {
 		t.Fatalf("detail = %#v, want %#v", got, normalizeJSON(t, want))
 	}
@@ -338,34 +372,36 @@ func TestReflectionReturnsEventDetailSchema(t *testing.T) {
 	}
 }
 
-func TestReflectionUnknownEventTypeReturnsToolError(t *testing.T) {
+func TestReflectionUnknownKindReturnsToolError(t *testing.T) {
 	events := outbox.Registry{
 		{
-			Type:        "crm.customer.created",
+			Kind:        "customer.created",
+			Subject:     "/<customer id>",
 			Description: "A customer was created.",
 			Sample:      customerEventSample{CustomerID: "cus_123"},
 		},
 		{
-			Type:        "crm.customer.deleted",
+			Kind:        "customer.deleted",
+			Subject:     "/<customer id>",
 			Description: "A customer was deleted.",
 			Sample:      customerEventSample{CustomerID: "cus_123"},
 		},
 	}
 	h := newHandler(t, mcp.Options{Events: events})
 
-	resp := rpc(t, h, `{"jsonrpc":"2.0","id":"reflection-unknown","method":"tools/call","params":{"name":"reflection","arguments":{"event_type":"crm.customer.missing"}}}`, nil)
+	resp := rpc(t, h, `{"jsonrpc":"2.0","id":"reflection-unknown","method":"tools/call","params":{"name":"reflection","arguments":{"kind":"customer.missing"}}}`, nil)
 	if errObj, ok := resp["error"]; ok {
-		t.Fatalf("unknown event_type returned JSON-RPC error %#v, want tool result", errObj)
+		t.Fatalf("unknown kind returned JSON-RPC error %#v, want tool result", errObj)
 	}
 	result := resultObject(t, resp)
 
-	// R-MOQJ-HMYP
+	// R-7GZY-ZJKE
 	if result["isError"] != true {
 		t.Fatalf("isError = %v, want true in tool result %#v", result["isError"], result)
 	}
 	msg := resultText(t, resp)
-	if !strings.Contains(msg, "crm.customer.created") || !strings.Contains(msg, "crm.customer.deleted") {
-		t.Fatalf("tool error message %q does not name known event types", msg)
+	if !strings.Contains(msg, "customer.created") || !strings.Contains(msg, "customer.deleted") {
+		t.Fatalf("tool error message %q does not name known event kinds", msg)
 	}
 }
 

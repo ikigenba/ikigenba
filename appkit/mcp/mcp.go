@@ -165,11 +165,11 @@ func (h *Handler) toolDescriptors() []map[string]any {
 		},
 		{
 			"name":        "reflection",
-			"description": "Self-describe this service's event graph. With no arguments, returns {publishes, subscribes}; pass event_type for one published event's detail.",
+			"description": "Self-describe this service's event graph. With no arguments, returns {publishes, subscribes}; pass kind for one published event family's detail.",
 			"inputSchema": objectSchema(map[string]any{
-				"event_type": map[string]any{
+				"kind": map[string]any{
 					"type":        "string",
-					"description": "optional; a published event type to fetch the schema+example detail for",
+					"description": "optional; a published event family kind to fetch the schema+example detail for",
 				},
 			}),
 		},
@@ -202,7 +202,7 @@ func (h *Handler) toolHealth(ctx context.Context, id server.Identity) (map[strin
 
 func (h *Handler) toolReflection(args json.RawMessage) (map[string]any, error) {
 	var p struct {
-		EventType string `json:"event_type,omitempty"`
+		Kind string `json:"kind,omitempty"`
 	}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &p); err != nil {
@@ -213,8 +213,8 @@ func (h *Handler) toolReflection(args json.RawMessage) (map[string]any, error) {
 	if h.publishes != nil {
 		events = h.publishes()
 	}
-	if p.EventType != "" {
-		detail, err := events.Detail(p.EventType)
+	if p.Kind != "" {
+		detail, err := events.Detail(p.Kind)
 		if err != nil {
 			var unknown *outbox.UnknownKindError
 			if errors.As(err, &unknown) {

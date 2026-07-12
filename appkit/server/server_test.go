@@ -483,8 +483,8 @@ func TestApex_BypassesPRMAndOwnsRouteTable(t *testing.T) {
 // then does the service fall back to rt.Events(). It also proves Publishes is the
 // LIVE provider (a second call after a mutation reports the new list).
 func TestRouter_PublishesPreferredOverEvents(t *testing.T) {
-	static := outbox.Registry{{Type: "contact.created", Description: "static"}}
-	dynamic := []outbox.EventType{{Type: "cron.foo", Description: "live"}}
+	static := outbox.Registry{{Kind: "contact.created", Description: "static"}}
+	dynamic := []outbox.Family{{Kind: "cron.foo", Description: "live"}}
 
 	var gotPreferred, gotFallback []string
 	_, err := server.New(server.Options{
@@ -498,11 +498,11 @@ func TestRouter_PublishesPreferredOverEvents(t *testing.T) {
 			// Precedence: prefer the live provider when set.
 			if pub := rt.Publishes(); pub != nil {
 				for _, et := range pub() {
-					gotPreferred = append(gotPreferred, et.Type)
+					gotPreferred = append(gotPreferred, et.Kind)
 				}
 			} else {
 				for _, et := range rt.Events() {
-					gotPreferred = append(gotPreferred, et.Type)
+					gotPreferred = append(gotPreferred, et.Kind)
 				}
 			}
 			return nil
@@ -516,7 +516,7 @@ func TestRouter_PublishesPreferredOverEvents(t *testing.T) {
 	}
 
 	// Live: the provider reflects a runtime change.
-	dynamic = append(dynamic, outbox.EventType{Type: "cron.bar"})
+	dynamic = append(dynamic, outbox.Family{Kind: "cron.bar"})
 	_, err = server.New(server.Options{
 		Addr:       "127.0.0.1:0",
 		Logger:     discardLogger(),
@@ -526,7 +526,7 @@ func TestRouter_PublishesPreferredOverEvents(t *testing.T) {
 		Publishes:  func() outbox.Registry { return outbox.Registry(dynamic) },
 		Register: func(rt *server.Router) error {
 			for _, et := range rt.Publishes()() {
-				gotFallback = append(gotFallback, et.Type)
+				gotFallback = append(gotFallback, et.Kind)
 			}
 			return nil
 		},
@@ -552,7 +552,7 @@ func TestRouter_PublishesPreferredOverEvents(t *testing.T) {
 				t.Error("rt.Publishes() must be nil when Spec.Publishes unset")
 			}
 			for _, et := range rt.Events() {
-				gotStatic = append(gotStatic, et.Type)
+				gotStatic = append(gotStatic, et.Kind)
 			}
 			return nil
 		},

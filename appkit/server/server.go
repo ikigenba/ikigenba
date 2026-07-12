@@ -81,7 +81,7 @@ type Options struct {
 	Service string
 	// Health is the optional per-service details reporter for the health envelope.
 	Health func(ctx context.Context) (map[string]any, error)
-	// Events is the published event-type registry, exposed to the Register hook
+	// Events is the published event-family registry, exposed to the Register hook
 	// (rt.Events()) so a service wires its reflection tool from the same source the
 	// producer outbox validates against. Empty for non-producers.
 	Events outbox.Registry
@@ -167,7 +167,7 @@ func (rt *Router) Service() string { return rt.app.service }
 // the MCP health tool renders the same details as the HTTP /health route.
 func (rt *Router) Health() func(context.Context) (map[string]any, error) { return rt.app.health }
 
-// Events returns the published event-type registry, so the MCP reflection tool's
+// Events returns the published event-family registry, so the MCP reflection tool's
 // `publishes` half renders from the same source the producer outbox validates
 // against. Empty for non-producers.
 func (rt *Router) Events() outbox.Registry { return rt.app.events }

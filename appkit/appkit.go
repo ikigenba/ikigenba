@@ -164,10 +164,10 @@ type Spec struct {
 	// The reporter contributes ONLY to details; the required top-level keys
 	// (status/version/service) are appkit-owned and reserved (DECISIONS §3).
 	Health func(ctx context.Context) (map[string]any, error)
-	// Events is the published event-type registry — the static source of truth for
+	// Events is the published event-family registry — the static source of truth for
 	// the reflection tool (its `publishes` half) AND Append-time validation (a
-	// non-empty registry makes the outbox reject any unregistered ev.Type). A
-	// service's emittable types are compile-time payload structs, so this is a
+	// non-empty registry makes the outbox reject any unregistered ev.Kind). A
+	// service's emittable kinds are compile-time payload structs, so this is a
 	// static value, not a provider. Empty for non-producers.
 	Events outbox.Registry
 	// Publishes is the LIVE provider of what this service currently publishes,
@@ -175,7 +175,7 @@ type Spec struct {
 	// provider). When set it is PREFERRED over the static Events for the reflection
 	// tool's `publishes` half — exposed to the Register hook as rt.Publishes() — so
 	// a dynamic producer (cron, whose emittable cron.<name> types are computed at
-	// runtime from its crontab rows) reports its live types instead of a fixed
+	// runtime from its crontab rows) reports its live families instead of a fixed
 	// compile-time list. nil for static producers (crm, ledger), which keep Events
 	// alone; appkit then falls back to Events exactly as today. Publishes does NOT
 	// feed Append-time validation — that boundary stays on Events (a dynamic

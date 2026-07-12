@@ -28,8 +28,8 @@ type Options struct {
 	Logger           *slog.Logger // feed/retention observability
 	RetentionDays    int          // 0 = library default (7 days)
 	RetentionMaxRows int          // 0 = library default (1,000,000 rows)
-	// Registry is the producer's published event-type registry. When non-empty it
-	// is forwarded into outbox.Options so Append rejects an unregistered ev.Type
+	// Registry is the producer's published event-family registry. When non-empty it
+	// is forwarded into outbox.Options so Append rejects an unregistered ev.Kind
 	// (§5.3 fail-loud); empty preserves today's unvalidated behavior.
 	Registry outbox.Registry
 }

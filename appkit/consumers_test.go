@@ -17,6 +17,7 @@ import (
 	"appkit/server"
 
 	"eventplane/consumer"
+	"eventplane/routing"
 )
 
 func TestConsumers_RunTwoFeedsWithIndependentOffsets(t *testing.T) {
@@ -158,7 +159,7 @@ type singleEventFeed struct {
 	consumerIDs chan string
 }
 
-func newSingleEventFeed(t *testing.T, source, eventType, id string) *singleEventFeed {
+func newSingleEventFeed(t *testing.T, source, kind, id string) *singleEventFeed {
 	t.Helper()
 	ids := make(chan string, 4)
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +168,8 @@ func newSingleEventFeed(t *testing.T, source, eventType, id string) *singleEvent
 		w.WriteHeader(http.StatusOK)
 		body, err := json.Marshal(map[string]any{
 			"id":      id,
-			"type":    eventType,
+			"kind":    kind,
+			"subject": "/fixture",
 			"source":  source,
 			"time":    "2026-07-06T00:00:00Z",
 			"payload": map[string]any{"source": source},
@@ -176,7 +178,7 @@ func newSingleEventFeed(t *testing.T, source, eventType, id string) *singleEvent
 			t.Errorf("marshal event: %v", err)
 			return
 		}
-		if _, err := fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", id, eventType, body); err != nil {
+		if _, err := fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", id, routing.Key(source, kind, "/fixture"), body); err != nil {
 			return
 		}
 		if f, ok := w.(http.Flusher); ok {
