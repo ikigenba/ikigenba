@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"net/url"
+	"path"
 
 	appkitmcp "appkit/mcp"
 	"appkit/server"
@@ -17,7 +19,7 @@ func tool(verb string) string { return toolPrefix + verb }
 
 // Tools returns prompts' domain tool table. Chassis-owned tools such as health
 // and reflection are supplied by appkit/mcp and must not be declared here.
-func Tools(svc *prompt.Service) []appkitmcp.Tool {
+func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 	return []appkitmcp.Tool{
 		desc(tool("describe"), "Return a detailed overview of prompts: what a prompt vs a run is, the create→run→poll→read lifecycle, full concurrency, the per-run sandbox, and LogRecord JSONL run output. Config requires provider (anthropic, openai, google, zai) and model; optional keys tune sampling (temperature, top_p), output size (max_tokens), reasoning (effort, thinking_budget, thinking_level, thinking), retry/backoff behavior (max_attempts, base_delay, max_delay, max_elapsed, ignore_retry_after), tool loops (tool_loop_limit), and provider endpoint override (base_url). Call this first if you're unfamiliar with prompts. Takes no inputs.", obj(map[string]any{}),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
@@ -279,7 +281,7 @@ func Tools(svc *prompt.Service) []appkitmcp.Tool {
 				return appkitmcp.JSONResult(map[string]any{"cancelled": in.RunID})
 			}),
 
-		desc(tool("run_fs_list"), "List entries under path within a run's sandbox folder by run_id (path defaults to the sandbox root).", obj(map[string]any{
+		desc(tool("run_fs_list"), "List entries under path within a run's sandbox folder by run_id (path defaults to the sandbox root). Non-directory entries include a loopback content_url for byte fetch by services (a run's Fetch tool or dropbox put(source_url)), not by the agent.", obj(map[string]any{
 			"run_id": typ("string"),
 			"path":   typ("string"),
 		}, "run_id"),
@@ -295,7 +297,20 @@ func Tools(svc *prompt.Service) []appkitmcp.Tool {
 				if err != nil {
 					return appkitmcp.ErrorResult(err.Error()), nil
 				}
-				return appkitmcp.JSONResult(map[string]any{"entries": entries})
+				rendered := make([]map[string]any, 0, len(entries))
+				for _, entry := range entries {
+					out := map[string]any{
+						"name":   entry.Name,
+						"is_dir": entry.IsDir,
+						"size":   entry.Size,
+					}
+					if !entry.IsDir {
+						query := url.Values{"run_id": {in.RunID}, "path": {path.Join(in.Path, entry.Name)}}
+						out["content_url"] = contentBase + "/run-content?" + query.Encode()
+					}
+					rendered = append(rendered, out)
+				}
+				return appkitmcp.JSONResult(map[string]any{"entries": rendered})
 			}),
 
 		desc(tool("run_fs_read"), "Read a file within a run's sandbox folder by run_id. offset is 1-based; limit caps the number of lines (<=0 means from start / no limit).", obj(map[string]any{

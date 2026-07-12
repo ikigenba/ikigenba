@@ -211,11 +211,13 @@ func registerRoutes(rt *appkit.Router) error {
 		rt.Logger().Warn("crash-recovery: swept orphaned runs", "count", swept)
 	}
 
-	handler, err := mcp.NewHandler(svc, rt)
+	contentBase := registry.BaseURL("prompts")
+	handler, err := mcp.NewHandler(svc, contentBase, rt)
 	if err != nil {
 		return err
 	}
 	rt.Handle("POST /mcp", rt.RequireIdentity(handler))
+	rt.Handle("GET /run-content", svc.RunContentHandler())
 	return nil
 }
 

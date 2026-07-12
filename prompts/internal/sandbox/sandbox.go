@@ -178,6 +178,36 @@ func (m *Manager) Read(id, relPath string, offset, limit int) (string, error) {
 	return b.String(), nil
 }
 
+// Open opens the file at relPath within run id's sandbox and returns both the
+// open file and its metadata. Escapes and directories are rejected.
+func (m *Manager) Open(id, relPath string) (*os.File, os.FileInfo, error) {
+	root, err := m.promptRoot(id)
+	if err != nil {
+		return nil, nil, err
+	}
+	target, err := confine(root, relPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	f, err := os.Open(target)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, fmt.Errorf("sandbox: not found: %q", relPath)
+		}
+		return nil, nil, fmt.Errorf("sandbox: open %q: %w", relPath, err)
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, nil, fmt.Errorf("sandbox: stat %q: %w", relPath, err)
+	}
+	if fi.IsDir() {
+		f.Close()
+		return nil, nil, fmt.Errorf("sandbox: not a file: %q", relPath)
+	}
+	return f, fi, nil
+}
+
 // sandboxRoot validates id and resolves the (must-exist) run sandbox root,
 // resolving symlinks on the root itself.
 func (m *Manager) promptRoot(id string) (string, error) {

@@ -21,12 +21,12 @@ const Instructions = "Prompts runs sandboxed Claude agent sessions on your behal
 	"output format — then use the other tools."
 
 // NewHandler assembles prompts' MCP surface over the shared appkit transport.
-func NewHandler(svc *prompt.Service, rt *appkit.Router) (http.Handler, error) {
+func NewHandler(svc *prompt.Service, contentBase string, rt *appkit.Router) (http.Handler, error) {
 	return appkitmcp.New(appkitmcp.Options{
 		Service:       rt.Service(),
 		Version:       rt.Version(),
 		Instructions:  Instructions,
-		Tools:         Tools(svc),
+		Tools:         Tools(svc, contentBase),
 		Health:        rt.Health(),
 		Events:        rt.Events(),
 		Publishes:     rt.Publishes(),

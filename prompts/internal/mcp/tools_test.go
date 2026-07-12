@@ -118,7 +118,7 @@ func inputConfigSchema(t *testing.T, toolName string) map[string]any {
 
 func findToolDescriptor(t *testing.T, name string) map[string]any {
 	t.Helper()
-	for _, tool := range Tools(nil) {
+	for _, tool := range Tools(nil, "") {
 		if tool.Name == name {
 			return map[string]any{
 				"name":        tool.Name,

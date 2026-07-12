@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,6 +26,8 @@ import (
 	"prompts/internal/db"
 	"prompts/internal/prompt"
 	"prompts/internal/sandbox"
+
+	"registry"
 )
 
 // fakeRunner records Spawn/Cancel and leaves the run running (does not
@@ -87,7 +90,7 @@ func newTestHandler(t *testing.T) (http.Handler, *sandbox.Manager, *prompt.Servi
 			return consume.Subscriptions(testSources)
 		},
 		Register: func(rt *server.Router) error {
-			h, err := NewHandler(svc, rt)
+			h, err := NewHandler(svc, registry.BaseURL("prompts"), rt)
 			if err != nil {
 				return err
 			}
@@ -244,9 +247,93 @@ func TestToolsListThroughAssembledHandlerReturnsDomainPlusChassisTools(t *testin
 		}
 	}
 
-	withReserved := append(Tools(nil), appkitmcp.Tool{Name: "health"})
+	withReserved := append(Tools(nil, ""), appkitmcp.Tool{Name: "health"})
 	if _, err := appkitmcp.New(appkitmcp.Options{Tools: withReserved}); err == nil {
 		t.Fatal("appkit MCP New accepted a domain-declared reserved health tool")
+	}
+}
+
+func TestRunFsListReturnsLiveContentURLs(t *testing.T) {
+	// R-6FQ2-6KPQ
+	h, sb, svc := newTestHandler(t)
+
+	created := call(t, h, "create", map[string]any{
+		"user_prompt": "make files",
+		"config":      map[string]any{"model": "claude-haiku-4-5"},
+	})
+	var promptOut struct {
+		PromptID string `json:"prompt_id"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, created)), &promptOut); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	runResult := call(t, h, "run", map[string]any{"prompt_id": promptOut.PromptID})
+	var runOut struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, runResult)), &runOut); err != nil {
+		t.Fatalf("decode run: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(sb.Root(runOut.RunID), "reports"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("report bytes")
+	if err := os.WriteFile(filepath.Join(sb.Root(runOut.RunID), "reports", "out file.pdf"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	listed := call(t, h, "run_fs_list", map[string]any{"run_id": runOut.RunID})
+	var rootOut struct {
+		Entries []map[string]any `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, listed)), &rootOut); err != nil {
+		t.Fatalf("decode root list: %v", err)
+	}
+	if len(rootOut.Entries) != 1 || rootOut.Entries[0]["name"] != "reports" {
+		t.Fatalf("root entries = %#v", rootOut.Entries)
+	}
+	if _, ok := rootOut.Entries[0]["content_url"]; ok {
+		t.Fatalf("directory entry has content_url: %#v", rootOut.Entries[0])
+	}
+
+	listed = call(t, h, "run_fs_list", map[string]any{"run_id": runOut.RunID, "path": "reports"})
+	var subOut struct {
+		Entries []map[string]any `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, listed)), &subOut); err != nil {
+		t.Fatalf("decode subdirectory list: %v", err)
+	}
+	if len(subOut.Entries) != 1 {
+		t.Fatalf("subdirectory entries = %#v", subOut.Entries)
+	}
+	contentURL, ok := subOut.Entries[0]["content_url"].(string)
+	if !ok {
+		t.Fatalf("file entry lacks content_url: %#v", subOut.Entries[0])
+	}
+	u, err := url.Parse(contentURL)
+	if err != nil {
+		t.Fatalf("parse content_url: %v", err)
+	}
+	base, err := url.Parse(registry.BaseURL("prompts"))
+	if err != nil {
+		t.Fatalf("parse registry base: %v", err)
+	}
+	if u.Scheme != base.Scheme || u.Host != base.Host || u.Path != "/run-content" {
+		t.Fatalf("content_url = %q, want %s/run-content", contentURL, base)
+	}
+	if got, want := u.Query().Get("run_id"), runOut.RunID; got != want {
+		t.Fatalf("content_url run_id = %q, want %q", got, want)
+	}
+	if got, want := u.Query().Get("path"), "reports/out file.pdf"; got != want {
+		t.Fatalf("content_url path = %q, want %q", got, want)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("GET /run-content", svc.RunContentHandler())
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, contentURL, nil))
+	if rr.Code != http.StatusOK || !bytes.Equal(rr.Body.Bytes(), data) {
+		t.Fatalf("fetch returned status=%d body=%q, want status=200 body=%q", rr.Code, rr.Body.Bytes(), data)
 	}
 }
 
