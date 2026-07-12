@@ -130,13 +130,13 @@ func storedCursor(t *testing.T, conn *sql.DB) (string, bool) {
 	return id, ok
 }
 
-// outboxRows returns every (type, payload) row in the outbox table in seq order.
+// outboxRows returns every (kind, payload) row in the outbox table in seq order.
 func outboxRows(t *testing.T, conn *sql.DB) []struct {
 	Type    string
 	Payload map[string]any
 } {
 	t.Helper()
-	rows, err := conn.Query(`SELECT type, payload FROM outbox ORDER BY seq ASC`)
+	rows, err := conn.Query(`SELECT kind, payload FROM outbox ORDER BY seq ASC`)
 	if err != nil {
 		t.Fatalf("query outbox: %v", err)
 	}
