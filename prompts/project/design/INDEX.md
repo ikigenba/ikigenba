@@ -10,7 +10,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D2 | project/design/D02.md | Config struct | R-JTBA-4RDB, R-JUJ6-IJ40 |
 | D3 | project/design/D03.md | Validation | R-JVR2-WAUP, R-JWYZ-A2LE, R-JY6V-NUC3, R-JZES-1M2S |
 | D4 | project/design/D04.md | Provider factory | none — structural |
-| D5 | project/design/D05.md | Built-in sandbox tools | R-64QY-QN1H, R-K1UK-T5K6 |
+| D5 | project/design/D05.md | Built-in sandbox tools | R-F5X1-XH6C, R-K1UK-T5K6 |
 | D6 | project/design/D06.md | Suite discovery | R-K32H-6XAV, R-K4AD-KP1K, R-9JNO-RZM2, R-9KVL-5RCR, R-9M3H-JJ3G |
 | D7 | project/design/D07.md | Runner | R-K5I9-YGS9, R-K6Q6-C8IY, R-K7Y2-Q09N, R-K95Z-3S0C |
 | D8 | project/design/D08.md | DB migration | R-KBLR-VBHQ, R-KCTO-938F |
@@ -31,6 +31,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D23 | project/design/D23.md | Box PDF tooling in the framing prompt; model-native PDF is a non-goal | R-6I5U-Y474 |
 | D24 | project/design/D24.md | Event-routing conformance: triggers become canonical filter strings | R-6JDR-BVXT, R-6KLN-PNOI, R-6LTK-3FF7, R-6N1G-H75W, R-6O9C-UYWL, R-6PH9-8QNA, R-6QP5-MIDZ, R-6RX2-0A4O |
 | D25 | project/design/D25.md | Event-routing conformance: producer kinds `run.succeeded`/`run.failed`, subject = /<prompt name> | R-6T4Y-E1VD, R-6UCU-RTM2, R-6VKR-5LCR, R-ZS8A-TVOF |
+| D26 | project/design/D26.md | File-share sandbox tools: `File*` over the share's loopback filesystem API | R-F74Y-B8X1, R-F8CU-P0NQ, R-F9KR-2SEF, R-FASN-GK54, R-FC0J-UBVT, R-FD8G-83MI, R-FEGC-LVD7 |
 
 ## Verification ids → Decision
 
@@ -39,7 +40,6 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-3RIS-23TJ | D20 | project/design/D20.md |
 | R-3SQO-FVK8 | D20 | project/design/D20.md |
 | R-3TYK-TNAX | D20 | project/design/D20.md |
-| R-64QY-QN1H | D5 | project/design/D05.md |
 | R-65YV-4ES6 | D21 | project/design/D21.md |
 | R-676R-I6IV | D21 | project/design/D21.md |
 | R-68EN-VY9K | D21 | project/design/D21.md |
@@ -79,6 +79,14 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-DKGB-1YYM | D13 | project/design/D13.md |
 | R-DKQP-QZ3Q | D17 | project/design/D17.md |
 | R-DLYM-4QUF | D17 | project/design/D17.md |
+| R-F5X1-XH6C | D5 | project/design/D05.md |
+| R-F74Y-B8X1 | D26 | project/design/D26.md |
+| R-F8CU-P0NQ | D26 | project/design/D26.md |
+| R-F9KR-2SEF | D26 | project/design/D26.md |
+| R-FASN-GK54 | D26 | project/design/D26.md |
+| R-FC0J-UBVT | D26 | project/design/D26.md |
+| R-FD8G-83MI | D26 | project/design/D26.md |
+| R-FEGC-LVD7 | D26 | project/design/D26.md |
 | R-HOME-2T4X | D12 | project/design/D12.md |
 | R-JTBA-4RDB | D2 | project/design/D02.md |
 | R-JUJ6-IJ40 | D2 | project/design/D02.md |
