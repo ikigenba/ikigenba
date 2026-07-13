@@ -90,8 +90,12 @@ func loopbackRejected(r *http.Request) bool {
 }
 
 func writeMutationError(w http.ResponseWriter, err error) {
-	if errors.Is(err, ErrValidation) || errors.Is(err, ErrPathEscape) || errors.Is(err, ErrNotFound) {
-		http.Error(w, "validation error", http.StatusBadRequest)
+	if errors.Is(err, ErrValidation) || errors.Is(err, ErrPathEscape) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, ErrNotFound) {
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	http.Error(w, "internal error", http.StatusInternalServerError)

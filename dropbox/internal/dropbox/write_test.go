@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -108,6 +109,82 @@ func TestMoveHandler_RelocatesFileAndEmitsPathLifecycle(t *testing.T) {
 	}
 	if got := sink.events[before:]; len(got) != 2 || got[0].Kind != KindDelete || got[0].Path != "/from.md" || got[1].Kind != KindCreate || got[1].Path != "/to.md" {
 		t.Fatalf("move events = %+v, want deleted(from), created(to)", got)
+	}
+}
+
+func TestMoveHandler_MissingSourceReturnsNotFoundWithoutMutation(t *testing.T) {
+	// R-BZLK-E9VW
+	svc, conn, _ := newContentService(t)
+	sink := &capturingSink{}
+	svc.Outbox = sink
+	if _, err := svc.Write(context.Background(), "/kept.md", bytes.NewBufferString("keep"), "writer"); err != nil {
+		t.Fatal(err)
+	}
+	beforeEvents := len(sink.events)
+	var beforeUploads int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM upload_queue`).Scan(&beforeUploads); err != nil {
+		t.Fatalf("count uploads before move: %v", err)
+	}
+
+	q := url.Values{"from": {"/missing.md"}, "to": {"/moved.md"}}
+	move := httptest.NewRecorder()
+	svc.MoveHandler().ServeHTTP(move, httptest.NewRequest(http.MethodPost, "/move?"+q.Encode(), nil))
+	if move.Code != http.StatusNotFound || !strings.Contains(move.Body.String(), "dropbox: not found") || !strings.Contains(move.Body.String(), "/missing.md") {
+		t.Fatalf("missing move = %d %q, want 404 with missing-path detail", move.Code, move.Body.String())
+	}
+	if _, err := svc.Content("/kept.md", nil); err != nil {
+		t.Fatalf("kept entry after missing move: %v", err)
+	}
+	if _, err := svc.Content("/moved.md", nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("move destination after missing move = %v, want not found", err)
+	}
+	if got := len(sink.events); got != beforeEvents {
+		t.Fatalf("events after missing move = %d, want %d", got, beforeEvents)
+	}
+	var afterMoveUploads int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM upload_queue`).Scan(&afterMoveUploads); err != nil {
+		t.Fatalf("count uploads after move: %v", err)
+	}
+	if afterMoveUploads != beforeUploads {
+		t.Fatalf("uploads after missing move = %d, want %d", afterMoveUploads, beforeUploads)
+	}
+
+	deleted := writeRequest(t, svc.WriteHandler(), http.MethodDelete, "/also-missing.md", nil, "writer")
+	if deleted.Code != http.StatusNoContent {
+		t.Fatalf("delete absent path = %d %q, want 204", deleted.Code, deleted.Body.String())
+	}
+	if got := len(sink.events); got != beforeEvents {
+		t.Fatalf("events after absent delete = %d, want %d", got, beforeEvents)
+	}
+	var afterDeleteUploads int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM upload_queue`).Scan(&afterDeleteUploads); err != nil {
+		t.Fatalf("count uploads after delete: %v", err)
+	}
+	if afterDeleteUploads != beforeUploads {
+		t.Fatalf("uploads after absent delete = %d, want %d", afterDeleteUploads, beforeUploads)
+	}
+}
+
+func TestWriteHandler_ValidationErrorsCarryDomainDetail(t *testing.T) {
+	// R-C0TG-S1ML
+	svc, _, _ := newContentService(t)
+	for _, tc := range []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "empty path", path: "", want: "path is required"},
+		{name: "escaping path", path: "../outside.md", want: "path escapes mirror root"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := writeRequest(t, svc.WriteHandler(), http.MethodPut, tc.path, []byte("nope"), "writer")
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("PUT %q status = %d, want 400; body %q", tc.path, rec.Code, rec.Body.String())
+			}
+			if body := rec.Body.String(); !strings.Contains(body, tc.want) || body == "validation error\n" {
+				t.Fatalf("PUT %q body = %q, want domain detail %q", tc.path, body, tc.want)
+			}
+		})
 	}
 }
 

@@ -44,6 +44,8 @@ is queued and happens asynchronously, so the caller never waits for the
 network.
 
 An invalid, missing, escaping, or incompatible path is `validation` (HTTP 400).
+The plain-text response body carries the underlying domain error text rather
+than a fixed placeholder.
 
 ## Delete a path
 
@@ -56,7 +58,8 @@ Query parameters:
 Removes a file or directory recursively and returns HTTP 204. It is idempotent:
 deleting an absent path is still successful. A successful local deletion commits
 before the asynchronous Dropbox deletion is queued. Invalid or escaping paths
-are `validation` (HTTP 400).
+are `validation` (HTTP 400); the absent-path case is the idempotent success
+described above, not `not_found`.
 
 ## Create a directory
 
@@ -84,7 +87,8 @@ index transaction commit before a single asynchronous Dropbox move upload is
 queued; it does not re-upload the bytes. A cross-path move emits
 `file.deleted(from)` and `file.created(to)` so path-keyed consumers see both
 states. Invalid, missing, or escaping source/destination paths are
-`validation` (HTTP 400).
+`validation` (HTTP 400), except that an absent `from` path is `not_found`
+(HTTP 404). This distinguishes a stale source from an invalid request.
 
 ## List entries
 
@@ -119,8 +123,12 @@ The service vocabulary is `not_found`, `conflict`, `validation`, and
 `too_large`, conventionally represented by `{ "error": { "code": string,
 "message": string } }` in structured callers. The loopback HTTP handlers above
 use their documented HTTP status and plain error responses for their current
-route-specific mappings. `too_large` applies where a caller or boundary rejects
-an oversized payload.
+route-specific mappings. Mutation `ErrValidation` and `ErrPathEscape` failures
+return HTTP 400; mutation `ErrNotFound` failures return HTTP 404. Every mutation
+4xx response is a single plain-text line containing the underlying domain error
+text, rather than a fixed placeholder. `DELETE /content` remains idempotent, so
+deleting an absent path returns success rather than HTTP 404. `too_large` applies
+where a caller or boundary rejects an oversized payload.
 
 Each successful mutation is local-commit-then-async-push: mirror bytes and the
 database transaction are committed before returning success, while Dropbox

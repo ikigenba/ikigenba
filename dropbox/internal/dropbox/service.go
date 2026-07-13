@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"strings"
 	"time"
 )
@@ -240,6 +241,9 @@ func (s *Service) Move(ctx context.Context, from, to, clientID string) error {
 		return err
 	}
 	if err := s.Mirror.Rename(from, to); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("%w: no entry at %q", ErrNotFound, from)
+		}
 		return mutationError(err)
 	}
 	now := s.now()
