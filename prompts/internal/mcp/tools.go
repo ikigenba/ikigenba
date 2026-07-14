@@ -361,6 +361,10 @@ func codeFor(err error) appkitmcp.ErrorCode {
 		return appkitmcp.ErrNotFound
 	case errors.Is(err, prompt.ErrValidation):
 		return appkitmcp.ErrValidation
+	case errors.Is(err, prompt.ErrTooLarge):
+		return appkitmcp.ErrTooLarge
+	case errors.Is(err, prompt.ErrSourceUnavailable):
+		return appkitmcp.ErrSourceUnavailable
 	default:
 		return appkitmcp.ErrInternal
 	}

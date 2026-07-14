@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -213,7 +214,7 @@ func (s *Service) Import(ctx context.Context, owner, sourcePath, name string) (P
 		return Prompt{}, fmt.Errorf("%w: %q is not valid UTF-8 text (a prompt body must be text)", ErrValidation, sourcePath)
 	}
 	if len(data) > maxImportBytes {
-		return Prompt{}, fmt.Errorf("%w: %q is %d bytes, over the 1 MiB import limit", ErrValidation, sourcePath, len(data))
+		return Prompt{}, fmt.Errorf("%w: %q is %d bytes, over the 1 MiB import limit", ErrTooLarge, sourcePath, len(data))
 	}
 	if name == "" {
 		name = path.Base(sourcePath)
@@ -559,7 +560,11 @@ func (s *Service) RunFsList(ctx context.Context, ownerEmail, runID, path string)
 	if err != nil {
 		return nil, err
 	}
-	return s.sandbox.List(r.ID, path)
+	entries, err := s.sandbox.List(r.ID, path)
+	if err != nil {
+		return nil, translateSandboxError(err)
+	}
+	return entries, nil
 }
 
 // RunFsRead returns up to limit lines of the file at path in a run's sandbox,
@@ -570,7 +575,22 @@ func (s *Service) RunFsRead(ctx context.Context, ownerEmail, runID, path string,
 	if err != nil {
 		return "", err
 	}
-	return s.sandbox.Read(r.ID, path, offset, limit)
+	contents, err := s.sandbox.Read(r.ID, path, offset, limit)
+	if err != nil {
+		return "", translateSandboxError(err)
+	}
+	return contents, nil
+}
+
+func translateSandboxError(err error) error {
+	switch {
+	case errors.Is(err, sandbox.ErrNotFound):
+		return fmt.Errorf("%w: %v", ErrNotFound, err)
+	case errors.Is(err, sandbox.ErrPathEscape):
+		return fmt.Errorf("%w: %v", ErrValidation, err)
+	default:
+		return err
+	}
 }
 
 // SetTrigger attaches one canonical filter to the owner's prompt. Loading the

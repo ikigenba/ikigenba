@@ -37,7 +37,7 @@ func NewHTTPFetcher(base string) ContentFetcher {
 }
 
 // Fetch GETs <base>/content?path=<path>: 200 → body, 404 → ErrNotFound, any other
-// status → a typed error. The request carries no nginx-injected identity headers,
+// status or transport failure → ErrSourceUnavailable. The request carries no nginx-injected identity headers,
 // so dropbox's self-guard treats it as the loopback caller it is.
 func (f *httpFetcher) Fetch(ctx context.Context, path string) ([]byte, error) {
 	u := f.base + "/content?path=" + url.QueryEscape(path)
@@ -47,7 +47,7 @@ func (f *httpFetcher) Fetch(ctx context.Context, path string) ([]byte, error) {
 	}
 	resp, err := f.hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("prompt: fetch %q: %w", path, err)
+		return nil, fmt.Errorf("%w: fetch %q: %v", ErrSourceUnavailable, path, err)
 	}
 	defer resp.Body.Close()
 
@@ -61,6 +61,6 @@ func (f *httpFetcher) Fetch(ctx context.Context, path string) ([]byte, error) {
 	case http.StatusNotFound:
 		return nil, fmt.Errorf("%w: dropbox mirror has no file at %q", ErrNotFound, path)
 	default:
-		return nil, fmt.Errorf("prompt: fetch %q: dropbox returned %s", path, resp.Status)
+		return nil, fmt.Errorf("%w: fetch %q: dropbox returned %s", ErrSourceUnavailable, path, resp.Status)
 	}
 }

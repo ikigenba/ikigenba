@@ -25,6 +25,11 @@ var (
 	// layer maps it to an invalid-params response. ValidationError (below) plays
 	// the same role for config validation.
 	ErrValidation = errors.New("prompt: validation")
+	// ErrTooLarge — an otherwise valid prompt body exceeds the import limit.
+	ErrTooLarge = errors.New("prompt: too large")
+	// ErrSourceUnavailable — the configured source mirror could not be reached
+	// or returned an unexpected response.
+	ErrSourceUnavailable = errors.New("prompt: source unavailable")
 	// ErrBusy and ErrRunning are GONE — full concurrency, no single-flight,
 	// no "rejected while running".
 )

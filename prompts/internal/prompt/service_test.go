@@ -852,7 +852,7 @@ func TestImportRejectsNonUTF8(t *testing.T) {
 	}
 }
 
-// TestImportRejectsTooLarge asserts a body over 1 MiB is rejected as ErrValidation.
+// TestImportRejectsTooLarge asserts a body over 1 MiB is rejected as ErrTooLarge.
 func TestImportRejectsTooLarge(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	big := make([]byte, (1<<20)+1)
@@ -860,8 +860,8 @@ func TestImportRejectsTooLarge(t *testing.T) {
 		big[i] = 'a'
 	}
 	svc.Fetcher = stubFetcher{data: big}
-	if _, err := svc.Import(context.Background(), ownerA, "/prompts/huge.md", ""); !errors.Is(err, ErrValidation) {
-		t.Fatalf("too-large: want ErrValidation, got %v", err)
+	if _, err := svc.Import(context.Background(), ownerA, "/prompts/huge.md", ""); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("too-large: want ErrTooLarge, got %v", err)
 	}
 }
 

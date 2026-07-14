@@ -18,10 +18,18 @@ package sandbox
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+)
+
+var (
+	// ErrNotFound marks an absent sandbox path or a path that is not a file.
+	ErrNotFound = errors.New("sandbox: not found")
+	// ErrPathEscape marks a caller path that escapes its run sandbox.
+	ErrPathEscape = errors.New("sandbox: path escape")
 )
 
 // Manager owns the <sandboxesDir>/<run_id>/sandbox folders under a base
@@ -103,7 +111,7 @@ func (m *Manager) List(id, relPath string) ([]Entry, error) {
 	infos, err := os.ReadDir(target)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("sandbox: not found: %q", relPath)
+			return nil, fmt.Errorf("%w: %q", ErrNotFound, relPath)
 		}
 		return nil, fmt.Errorf("sandbox: list %q: %w", relPath, err)
 	}
@@ -137,12 +145,12 @@ func (m *Manager) Read(id, relPath string, offset, limit int) (string, error) {
 	fi, err := os.Stat(target)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("sandbox: not found: %q", relPath)
+			return "", fmt.Errorf("%w: %q", ErrNotFound, relPath)
 		}
 		return "", fmt.Errorf("sandbox: stat %q: %w", relPath, err)
 	}
-	if fi.IsDir() {
-		return "", fmt.Errorf("sandbox: not a file: %q", relPath)
+	if !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("%w: not a file: %q", ErrNotFound, relPath)
 	}
 
 	f, err := os.Open(target)
@@ -192,7 +200,7 @@ func (m *Manager) Open(id, relPath string) (*os.File, os.FileInfo, error) {
 	f, err := os.Open(target)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil, fmt.Errorf("sandbox: not found: %q", relPath)
+			return nil, nil, fmt.Errorf("%w: %q", ErrNotFound, relPath)
 		}
 		return nil, nil, fmt.Errorf("sandbox: open %q: %w", relPath, err)
 	}
@@ -201,9 +209,9 @@ func (m *Manager) Open(id, relPath string) (*os.File, os.FileInfo, error) {
 		f.Close()
 		return nil, nil, fmt.Errorf("sandbox: stat %q: %w", relPath, err)
 	}
-	if fi.IsDir() {
+	if !fi.Mode().IsRegular() {
 		f.Close()
-		return nil, nil, fmt.Errorf("sandbox: not a file: %q", relPath)
+		return nil, nil, fmt.Errorf("%w: not a file: %q", ErrNotFound, relPath)
 	}
 	return f, fi, nil
 }
@@ -217,7 +225,7 @@ func (m *Manager) promptRoot(id string) (string, error) {
 	root := m.Root(id)
 	if _, err := os.Stat(root); err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("sandbox: run %q has no sandbox folder", id)
+			return "", fmt.Errorf("%w: run %q has no sandbox folder", ErrNotFound, id)
 		}
 		return "", fmt.Errorf("sandbox: stat run %q: %w", id, err)
 	}
@@ -263,7 +271,7 @@ func confine(root, relPath string) (string, error) {
 
 	rel, err := filepath.Rel(realRoot, resolved)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return "", fmt.Errorf("sandbox: path escapes prompt folder: %q", relPath)
+		return "", fmt.Errorf("%w: path escapes prompt folder: %q", ErrPathEscape, relPath)
 	}
 	return abs, nil
 }

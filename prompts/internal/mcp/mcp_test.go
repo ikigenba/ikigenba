@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -968,6 +969,53 @@ func TestErrorMapping(t *testing.T) {
 	if !isError(esc) {
 		t.Fatalf("run_fs_read escape: want isError, got %+v", esc)
 	}
+}
+
+func TestImportOverLimitReturnsTooLarge(t *testing.T) {
+	// R-BC21-7LWP
+	h, _, svc := newTestHandler(t)
+	svc.Fetcher = fakeFetcher{data: []byte(strings.Repeat("a", (1<<20)+1))}
+
+	res := call(t, h, "import", map[string]any{"source_path": "/prompts/huge.md"})
+	assertErrorCode(t, res, "too_large")
+}
+
+func TestImportUnavailableMirrorReturnsSourceUnavailable(t *testing.T) {
+	// R-BD9X-LDNE
+	h, _, svc := newTestHandler(t)
+	svc.Fetcher = fakeFetcher{err: fmt.Errorf("%w: mirror transport failed", prompt.ErrSourceUnavailable)}
+	assertErrorCode(t, call(t, h, "import", map[string]any{"source_path": "/prompts/offline.md"}), "source_unavailable")
+
+	svc.Fetcher = fakeFetcher{err: prompt.ErrNotFound}
+	assertErrorCode(t, call(t, h, "import", map[string]any{"source_path": "/prompts/missing.md"}), "not_found")
+}
+
+func TestRunFsReadAbsentPathReturnsNotFound(t *testing.T) {
+	// R-BEHT-Z5E3
+	h, _, _ := newTestHandler(t)
+	runID := createRunningRun(t, h)
+
+	res := call(t, h, "run_fs_read", map[string]any{"run_id": runID, "path": "missing.txt"})
+	assertErrorCode(t, res, "not_found")
+}
+
+func TestRunFsReadEscapingPathReturnsValidation(t *testing.T) {
+	// R-BFPQ-CX4S
+	h, _, _ := newTestHandler(t)
+	runID := createRunningRun(t, h)
+
+	res := call(t, h, "run_fs_read", map[string]any{"run_id": runID, "path": "../../secrets"})
+	assertErrorCode(t, res, "validation")
+}
+
+func createRunningRun(t *testing.T, h http.Handler) string {
+	t.Helper()
+	promptID := createPrompt(t, h)
+	res := call(t, h, "run", map[string]any{"prompt_id": promptID})
+	if isError(res) {
+		t.Fatalf("run returned isError: %#v", res)
+	}
+	return resultString(t, res, "run_id")
 }
 
 func contains(s, sub string) bool { return bytes.Contains([]byte(s), []byte(sub)) }

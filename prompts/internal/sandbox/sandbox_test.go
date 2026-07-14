@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -168,15 +169,15 @@ func TestReadErrors(t *testing.T) {
 	}
 
 	// Read of a directory → not-a-file.
-	if _, err := m.Read("s1", "dir", 0, 0); err == nil || !strings.Contains(err.Error(), "not a file") {
+	if _, err := m.Read("s1", "dir", 0, 0); err == nil || !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "not a file") {
 		t.Errorf("Read(dir) expected not-a-file, got %v", err)
 	}
 	// Read of non-existent → not-found.
-	if _, err := m.Read("s1", "nope.txt", 0, 0); err == nil || !strings.Contains(err.Error(), "not found") {
+	if _, err := m.Read("s1", "nope.txt", 0, 0); err == nil || !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("Read(nope) expected not-found, got %v", err)
 	}
 	// List of non-existent → not-found.
-	if _, err := m.List("s1", "nope"); err == nil || !strings.Contains(err.Error(), "not found") {
+	if _, err := m.List("s1", "nope"); err == nil || !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("List(nope) expected not-found, got %v", err)
 	}
 }
