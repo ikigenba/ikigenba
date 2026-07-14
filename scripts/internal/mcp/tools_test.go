@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -913,14 +914,57 @@ func TestStructuredErrorCodesFollowDomainSentinels(t *testing.T) {
 
 func TestUnknownDomainErrorDefaultsToInternalCode(t *testing.T) {
 	// R-C7RF-5N6R
+	result := structuredError(errors.New("unexpected storage failure"))
+	if !isError(result) {
+		t.Fatalf("unknown error result = %#v, want isError", result)
+	}
+	structured, ok := result["structuredContent"].(map[string]any)
+	if !ok || structured["code"] != appkitmcp.ErrInternal {
+		t.Fatalf("unknown error structuredContent = %#v, want internal", structured)
+	}
+}
+
+func TestImportTooLargeReturnsStructuredTooLargeError(t *testing.T) {
+	// R-CBF4-AYEU
+	size := (1 << 20) + 1
+	h := newTestHandlerWithFetcher(t, fakeFetcher{data: bytes.Repeat([]byte{'a'}, size)})
+	result := call(t, h, tool("import"), map[string]any{"source_path": "/scripts/huge.py"})
+	if !isError(result) {
+		t.Fatalf("import result = %#v, want isError", result)
+	}
+	structured, ok := result["structuredContent"].(map[string]any)
+	if !ok || structured["code"] != "too_large" {
+		t.Fatalf("import error structuredContent = %#v, want too_large", structured)
+	}
+	message, _ := structured["message"].(string)
+	if !strings.Contains(message, fmt.Sprint(size)) || !strings.Contains(message, "1 MiB import limit") {
+		t.Fatalf("import error message = %q, want byte count %d and 1 MiB limit", message, size)
+	}
+}
+
+func TestImportFetchFailureReturnsStructuredSourceUnavailableError(t *testing.T) {
+	// R-CCN0-OQ5J
 	h := newTestHandlerWithFetcher(t, fakeFetcher{err: errors.New("mirror unavailable")})
 	result := call(t, h, tool("import"), map[string]any{"source_path": "/scripts/fail.py"})
 	if !isError(result) {
 		t.Fatalf("import result = %#v, want isError", result)
 	}
 	structured, ok := result["structuredContent"].(map[string]any)
-	if !ok || structured["code"] != "internal" {
-		t.Fatalf("import error structuredContent = %#v, want internal", structured)
+	if !ok || structured["code"] != "source_unavailable" {
+		t.Fatalf("import error structuredContent = %#v, want source_unavailable", structured)
+	}
+}
+
+func TestImportInvalidUTF8RemainsStructuredValidationError(t *testing.T) {
+	// R-CDUX-2HW8
+	h := newTestHandlerWithFetcher(t, fakeFetcher{data: []byte{0xff, 0xfe, 0x00}})
+	result := call(t, h, tool("import"), map[string]any{"source_path": "/scripts/blob.bin"})
+	if !isError(result) {
+		t.Fatalf("import result = %#v, want isError", result)
+	}
+	structured, ok := result["structuredContent"].(map[string]any)
+	if !ok || structured["code"] != "validation" {
+		t.Fatalf("import error structuredContent = %#v, want validation", structured)
 	}
 }
 

@@ -121,13 +121,13 @@ func (s *Service) Import(ctx context.Context, owner, sourcePath, name string) (S
 	}
 	data, err := s.Fetcher.Fetch(ctx, sourcePath)
 	if err != nil {
-		return Script{}, err
+		return Script{}, fmt.Errorf("%w: fetch %q: %v", ErrSourceUnavailable, sourcePath, err)
 	}
 	if !utf8.Valid(data) {
 		return Script{}, fmt.Errorf("%w: %q is not valid UTF-8 text (a script body must be text)", ErrValidation, sourcePath)
 	}
 	if len(data) > maxImportBytes {
-		return Script{}, fmt.Errorf("%w: %q is %d bytes, over the 1 MiB import limit", ErrValidation, sourcePath, len(data))
+		return Script{}, fmt.Errorf("%w: %q is %d bytes, over the 1 MiB import limit", ErrTooLarge, sourcePath, len(data))
 	}
 	if name == "" {
 		name = path.Base(sourcePath)

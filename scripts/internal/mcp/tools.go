@@ -515,6 +515,10 @@ func structuredError(err error) map[string]any {
 		code = appkitmcp.ErrNotFound
 	} else if errors.Is(err, script.ErrValidation) {
 		code = appkitmcp.ErrValidation
+	} else if errors.Is(err, script.ErrTooLarge) {
+		code = appkitmcp.ErrTooLarge
+	} else if errors.Is(err, script.ErrSourceUnavailable) {
+		code = appkitmcp.ErrSourceUnavailable
 	}
 	return appkitmcp.ErrorResult(code, err.Error())
 }

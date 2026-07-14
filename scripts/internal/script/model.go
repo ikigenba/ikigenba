@@ -69,6 +69,8 @@ type ScriptDetail struct {
 
 // Sentinel errors. ErrNotFound on missing/foreign owner.
 var (
-	ErrNotFound   = errors.New("script: not found")
-	ErrValidation = errors.New("script: validation")
+	ErrNotFound          = errors.New("script: not found")
+	ErrValidation        = errors.New("script: validation")
+	ErrTooLarge          = errors.New("script: too large")
+	ErrSourceUnavailable = errors.New("script: source unavailable")
 )
