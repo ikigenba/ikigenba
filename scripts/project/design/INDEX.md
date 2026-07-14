@@ -23,6 +23,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D17 → `project/design/D17.md` — Event-routing conformance: triggers become canonical filter strings (trigger surface + consumer) — owns R-7TR5-QSY4, R-7UZ2-4KOT, R-7W6Y-ICFI, R-7XEU-W467, R-7YMR-9VWW, R-7ZUN-NNNL, R-812K-1FEA
 - D18 → `project/design/D18.md` — Event-routing conformance: producer kinds `succeeded`/`failed`, subject = /<script name>, family registry, outbox migration — owns R-82AG-F74Z, R-83IC-SYVO, R-84Q9-6QMD, R-85Y5-KID2
 - D19 → `project/design/D19.md` — Structured MCP adoption: `structuredContent` + `outputSchema` on the thirteen structured domain tools, prose exceptions kept text-only, typed error codes from the closed vocabulary (cites `docs/structured-mcp-design.md`) — owns R-C0G0-V0QL, R-C1NX-8SHA, R-C2VT-MK7Z, R-C43Q-0BYO, R-C5BM-E3PD, R-C6JI-RVG2, R-C7RF-5N6R, R-CA77-X6O5
+- D20 → `project/design/D20.md` — Error-taxonomy enrichment: `too_large` and `source_unavailable` become real domain sentinels (`script.ErrTooLarge`/`script.ErrSourceUnavailable` classify the import size cap and mirror-fetch failure; mirrors prompts D27) — owns R-CBF4-AYEU, R-CCN0-OQ5J, R-CDUX-2HW8
 
 ## Verification ids → Decision
 
@@ -59,6 +60,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-C6JI-RVG2 → D19 → `project/design/D19.md`
 - R-C7RF-5N6R → D19 → `project/design/D19.md`
 - R-CA77-X6O5 → D19 → `project/design/D19.md`
+- R-CBF4-AYEU → D20 → `project/design/D20.md`
+- R-CCN0-OQ5J → D20 → `project/design/D20.md`
+- R-CDUX-2HW8 → D20 → `project/design/D20.md`
 - R-HOME-8R2V → D7 → `project/design/D07.md`
 - R-LAND-1S7G → D1 → `project/design/D01.md`
 - R-LAND-3T9H → D1 → `project/design/D01.md`
