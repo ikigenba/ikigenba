@@ -27,10 +27,18 @@ here lives in the plan.
 > eventplane API, kinds `received`/`sent`/`deleted`, realizing gmail's row in
 > `docs/event-routing-design.md`; D18 adds gmail's one outbox schema
 > migration and externally depends on the eventplane revision being built
-> first). The D9–D14 conversion was **behavior-preserving** (wiring moved onto
+> first) — **plus** the **structured-MCP** conformance (D20 — every domain tool
+> returns `structuredContent` alongside its mirrored text, declares an
+> `outputSchema`, and carries a typed error code from the suite vocabulary, and
+> the `GET /attachment` endpoint moves to the shared `X-Forwarded-Proto`-only
+> loopback guard; realizing gmail's row in `docs/structured-mcp-design.md`). The
+> D9–D14 conversion was **behavior-preserving** (wiring moved onto
 > the shared chassis with observable contracts intact); D16–D18 change the
 > observable surface deliberately: attachments become fetchable by reference,
-> and the published events are re-addressed.
+> and the published events are re-addressed. D20 is behavior-preserving for the
+> result *shape* (it formalizes the JSON already emitted) but deliberately
+> changes the attachment guard predicate (a caller-asserted `X-Owner-Email` is
+> no longer rejected) and adds machine-facing schemas and error codes.
 
 ## Requirement ids
 
