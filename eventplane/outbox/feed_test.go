@@ -278,24 +278,35 @@ func TestFeed_ResyncPastHorizon(t *testing.T) {
 	assertResync(t, c.next(t), reasonPastHorizon)
 }
 
-func TestFeed_RejectsIdentityHeaders(t *testing.T) {
-	o, _ := newMemOutbox(t)
-	url := feedServer(t, o)
+func TestFeed_BareHandlerServesDespiteIdentityHeaders(t *testing.T) {
+	tests := map[string]http.Header{
+		"owner email":     {"X-Owner-Email": {"owner@example.com"}},
+		"forwarded proto": {"X-Forwarded-Proto": {"https"}},
+		"both": {
+			"X-Owner-Email":     {"owner@example.com"},
+			"X-Forwarded-Proto": {"https"},
+		},
+	}
+	for name, header := range tests {
+		t.Run(name, func(t *testing.T) {
+			o, db := newMemOutbox(t)
+			appendOne(t, o, db, "contact.created")
+			c := dialFeed(t, feedServer(t, o), header)
 
-	for _, h := range []http.Header{
-		{"X-Owner-Email": {"owner@example.com"}},
-		{"X-Forwarded-Proto": {"https"}},
-	} {
-		req, _ := http.NewRequest(http.MethodGet, url, nil)
-		req.Header = h
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("request: %v", err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusNotFound {
-			t.Fatalf("identity-header request should 404, got %d for %v", resp.StatusCode, h)
-		}
+			// R-Z8Y5-5R0C
+			if c.resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200", c.resp.StatusCode)
+			}
+			if got := c.resp.Header.Get("Content-Type"); got != "text/event-stream" {
+				t.Fatalf("Content-Type = %q, want text/event-stream", got)
+			}
+			if frame := c.next(t); eventOf(frame) != "status" {
+				t.Fatalf("want status frame, got %q", frame)
+			}
+			if frame := c.next(t); eventOf(frame) != "crm:contact.created" {
+				t.Fatalf("want appended event frame, got %q", frame)
+			}
+		})
 	}
 }
 

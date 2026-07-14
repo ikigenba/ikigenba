@@ -34,11 +34,7 @@ type envelope struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-// FeedHandler returns the GET /feed SSE handler (§7, §8, §10). It is mounted
-// WITHOUT any identity middleware: the event plane is unauthenticated and
-// loopback-only (§2). As defence in depth it rejects any request that arrives
-// carrying nginx-injected identity headers — such a request was proxied through
-// the public front door, which must never happen for the feed.
+// FeedHandler returns the GET /feed SSE handler (§7, §8, §10).
 //
 // First-subscription position (§7.1):
 //   - a Last-Event-ID header   -> resume strictly after that opaque cursor
@@ -46,15 +42,6 @@ type envelope struct {
 //   - neither                   -> from the beginning of the retained outbox
 func (o *Outbox) FeedHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Defence in depth: the feed must be reached only by direct loopback
-		// callers. Any nginx-injected identity header means it was proxied
-		// through the authenticated front door — refuse, mirroring the nginx
-		// exact-match 404 on the public mount.
-		if r.Header.Get("X-Owner-Email") != "" || r.Header.Get("X-Forwarded-Proto") != "" {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-
 		ctx := r.Context()
 		consumerID := r.Header.Get("X-Consumer-Id") // §7.1: logged for observability
 		rc := http.NewResponseController(w)
