@@ -217,7 +217,7 @@ func registerRoutes(rt *appkit.Router) error {
 		return err
 	}
 	rt.Handle("POST /mcp", rt.RequireIdentity(handler))
-	rt.Handle("GET /run-content", svc.RunContentHandler())
+	rt.HandleLoopback("GET /run-content", svc.RunContentHandler())
 	return nil
 }
 

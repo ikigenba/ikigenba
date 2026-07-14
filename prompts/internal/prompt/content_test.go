@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"appkit/server"
 )
 
 func TestRunContentHandlerServesSandboxFile(t *testing.T) {
@@ -47,8 +49,9 @@ func TestRunContentHandlerServesSandboxFile(t *testing.T) {
 	}
 }
 
-func TestRunContentHandlerRejectsPublicIdentityHeaders(t *testing.T) {
+func TestRunContentRouteUsesChassisLoopbackGuard(t *testing.T) {
 	// R-6DA9-F18C
+	// R-BI5J-4GM6
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	svc, _, sb, _ := newTestService(t)
 	p := mustCreate(t, svc, ownerA)
@@ -61,17 +64,25 @@ func TestRunContentHandlerRejectsPublicIdentityHeaders(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, header := range []string{"X-Owner-Email", "X-Forwarded-Proto"} {
-		t.Run(header, func(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		header     string
+		wantStatus int
+		wantBody   bool
+	}{
+		{name: "front door", header: "X-Forwarded-Proto", wantStatus: http.StatusNotFound},
+		{name: "loopback identity", header: "X-Owner-Email", wantStatus: http.StatusOK, wantBody: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/run-content?run_id="+url.QueryEscape(run.ID)+"&path=secret.txt", nil)
-			req.Header.Set(header, "present")
+			req.Header.Set(tc.header, "https")
 			rr := httptest.NewRecorder()
-			svc.RunContentHandler().ServeHTTP(rr, req)
-			if rr.Code != http.StatusNotFound {
-				t.Fatalf("status = %d, want 404", rr.Code)
+			server.LoopbackOnly(svc.RunContentHandler()).ServeHTTP(rr, req)
+			if rr.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", rr.Code, tc.wantStatus)
 			}
-			if bytes.Contains(rr.Body.Bytes(), secret) {
-				t.Fatalf("identity guard leaked file bytes: %q", rr.Body.Bytes())
+			if got := bytes.Contains(rr.Body.Bytes(), secret); got != tc.wantBody {
+				t.Fatalf("body contains file = %v, want %v: %q", got, tc.wantBody, rr.Body.Bytes())
 			}
 		})
 	}

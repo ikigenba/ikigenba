@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"path"
 
@@ -20,7 +21,7 @@ func tool(verb string) string { return toolPrefix + verb }
 // Tools returns prompts' domain tool table. Chassis-owned tools such as health
 // and reflection are supplied by appkit/mcp and must not be declared here.
 func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
-	return []appkitmcp.Tool{
+	tools := []appkitmcp.Tool{
 		desc(tool("describe"), "Return a detailed overview of prompts: what a prompt vs a run is, the create→run→poll→read lifecycle, full concurrency, the per-run sandbox, and LogRecord JSONL run output. Config requires provider (anthropic, openai, google, zai) and model; optional keys tune sampling (temperature, top_p), output size (max_tokens), reasoning (effort, thinking_budget, thinking_level, thinking), retry/backoff behavior (max_attempts, base_delay, max_delay, max_elapsed, ignore_retry_after), tool loops (tool_loop_limit), and provider endpoint override (base_url). Call this first if you're unfamiliar with prompts. Takes no inputs.", obj(map[string]any{}),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				return toolDescribe()
@@ -56,9 +57,9 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 					Triggers:     triggers,
 				})
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(map[string]any{"prompt_id": p.ID})
+				return appkitmcp.StructuredResult(map[string]any{"prompt_id": p.ID})
 			}),
 
 		desc(tool("import"), "Import a Dropbox-mirrored file as a prompt. 'source_path' is the file's path in the dropbox mirror. Fetches the current mirror bytes over loopback (valid UTF-8 under 1 MiB) and maps the file body to the prompt's user_prompt; 'name' defaults to the basename. Re-importing the same source_path updates the same prompt (upsert); system_prompt and config keep their defaults. Returns {prompt_id, name}.", obj(map[string]any{
@@ -75,18 +76,18 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				p, err := svc.Import(ctx, id.OwnerEmail, in.SourcePath, in.Name)
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(map[string]any{"prompt_id": p.ID, "name": p.Name})
+				return appkitmcp.StructuredResult(map[string]any{"prompt_id": p.ID, "name": p.Name})
 			}),
 
 		desc(tool("list"), "List the caller's prompts, each with its running run count and latest run (last_run).", obj(map[string]any{}),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				prompts, err := svc.List(ctx, id.OwnerEmail)
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(map[string]any{"prompts": prompts})
+				return appkitmcp.StructuredResult(map[string]any{"prompts": prompts})
 			}),
 
 		desc(tool("get"), "Get one of the caller's prompts, including its running run count and latest run (last_run).", obj(map[string]any{
@@ -101,9 +102,9 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				detail, err := svc.Get(ctx, id.OwnerEmail, in.PromptID)
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(detail)
+				return appkitmcp.StructuredResult(detail)
 			}),
 
 		desc(tool("update"), "Update a prompt's name, user_prompt, system_prompt, and config. Always allowed (in-flight runs read their pinned inputs from disk, so they are unaffected).", obj(map[string]any{
@@ -131,9 +132,9 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 					Config:       in.Config.toConfig(),
 				})
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(p)
+				return appkitmcp.StructuredResult(p)
 			}),
 
 		desc(tool("delete"), "Delete one of the caller's prompts (a tombstone: the prompt row and its triggers are removed; its runs and their on-disk artifacts survive and stay readable by run_id). Always allowed.", obj(map[string]any{
@@ -147,9 +148,9 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 					return nil, err
 				}
 				if err := svc.Delete(ctx, id.OwnerEmail, in.PromptID); err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(map[string]any{"deleted": in.PromptID})
+				return appkitmcp.StructuredResult(map[string]any{"deleted": in.PromptID})
 			}),
 
 		desc(tool("set_trigger"), "Attach a canonical routing-key glob filter such as dropbox:create/bills/**. The literal source is before ':'; ** crosses subject path segments.", obj(map[string]any{
@@ -165,9 +166,9 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				trig, err := svc.SetTrigger(ctx, id.OwnerEmail, in.PromptID, in.Filter)
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(trig)
+				return appkitmcp.StructuredResult(trig)
 			}),
 
 		desc(tool("clear_trigger"), "Remove one canonical routing-key filter from one of the caller's prompts.", obj(map[string]any{
@@ -182,9 +183,9 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 					return nil, err
 				}
 				if err := svc.ClearTrigger(ctx, id.OwnerEmail, in.PromptID, in.Filter); err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(map[string]any{"cleared": in.PromptID})
+				return appkitmcp.StructuredResult(map[string]any{"cleared": in.PromptID})
 			}),
 
 		desc(tool("run"), "Start a run for one of the caller's prompts. Always allowed — runs are fully concurrent, each in its own per-run sandbox. Returns the new run_id, status (\"running\"), and start time.", obj(map[string]any{
@@ -199,9 +200,9 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				run, err := svc.Run(ctx, id.OwnerEmail, in.PromptID)
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(map[string]any{"run_id": run.ID, "status": run.Status, "started_at": run.StartedAt})
+				return appkitmcp.StructuredResult(map[string]any{"run_id": run.ID, "status": run.Status, "started_at": run.StartedAt})
 			}),
 
 		desc(tool("run_list"), "List the runs of one of the caller's prompts, newest first.", obj(map[string]any{
@@ -216,9 +217,9 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				runs, err := svc.RunList(ctx, id.OwnerEmail, in.PromptID)
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(map[string]any{"runs": runs})
+				return appkitmcp.StructuredResult(map[string]any{"runs": runs})
 			}),
 
 		desc(tool("run_get"), "Get one run by run_id (the run stays readable after its prompt is deleted).", obj(map[string]any{
@@ -233,9 +234,9 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				run, err := svc.RunGet(ctx, id.OwnerEmail, in.RunID)
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(run)
+				return appkitmcp.StructuredResult(run)
 			}),
 
 		desc(tool("run_output"), "Read a run's output log by run_id (append-only stream-json, one event per line). offset is 1-based; limit caps the number of lines (<=0 means from start / no limit).", obj(map[string]any{
@@ -254,7 +255,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				out, err := svc.RunOutput(ctx, id.OwnerEmail, in.RunID, in.Offset, in.Limit)
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
 				return appkitmcp.TextResult(out), nil
 			}),
@@ -270,9 +271,9 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 					return nil, err
 				}
 				if err := svc.RunCancel(ctx, id.OwnerEmail, in.RunID); err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
-				return appkitmcp.JSONResult(map[string]any{"cancelled": in.RunID})
+				return appkitmcp.StructuredResult(map[string]any{"cancelled": in.RunID})
 			}),
 
 		desc(tool("run_fs_list"), "List entries under path within a run's sandbox folder by run_id (path defaults to the sandbox root). Non-directory entries include a loopback content_url for byte fetch by services (a run's Fetch tool or dropbox put(source_url)), not by the agent.", obj(map[string]any{
@@ -289,7 +290,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				entries, err := svc.RunFsList(ctx, id.OwnerEmail, in.RunID, in.Path)
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
 				rendered := make([]map[string]any, 0, len(entries))
 				for _, entry := range entries {
@@ -304,7 +305,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 					}
 					rendered = append(rendered, out)
 				}
-				return appkitmcp.JSONResult(map[string]any{"entries": rendered})
+				return appkitmcp.StructuredResult(map[string]any{"entries": rendered})
 			}),
 
 		desc(tool("run_fs_read"), "Read a file within a run's sandbox folder by run_id. offset is 1-based; limit caps the number of lines (<=0 means from start / no limit).", obj(map[string]any{
@@ -325,11 +326,16 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				out, err := svc.RunFsRead(ctx, id.OwnerEmail, in.RunID, in.Path, in.Offset, in.Limit)
 				if err != nil {
-					return appkitmcp.ErrorResult(err.Error()), nil
+					return fail(err), nil
 				}
 				return appkitmcp.TextResult(out), nil
 			}),
 	}
+	schemas := outputSchemas()
+	for i := range tools {
+		tools[i].OutputSchema = schemas[tools[i].Name]
+	}
+	return tools
 }
 
 func desc(name, description string, schema map[string]any, handler func(context.Context, json.RawMessage, server.Identity) (map[string]any, error)) appkitmcp.Tool {
@@ -345,6 +351,69 @@ func obj(props map[string]any, required ...string) map[string]any {
 }
 
 func typ(t string) map[string]any { return map[string]any{"type": t} }
+
+// fail wraps a domain error as a coded MCP tool error.
+func fail(err error) map[string]any { return appkitmcp.ErrorResult(codeFor(err), err.Error()) }
+
+func codeFor(err error) appkitmcp.ErrorCode {
+	switch {
+	case errors.Is(err, prompt.ErrNotFound):
+		return appkitmcp.ErrNotFound
+	case errors.Is(err, prompt.ErrValidation):
+		return appkitmcp.ErrValidation
+	default:
+		return appkitmcp.ErrInternal
+	}
+}
+
+func outputSchemas() map[string]map[string]any {
+	promptProps := map[string]any{
+		"id": typ("string"), "owner_email": typ("string"), "name": typ("string"),
+		"user_prompt": typ("string"), "system_prompt": typ("string"),
+		"config":     map[string]any{"type": "object", "additionalProperties": true},
+		"created_at": typ("string"), "updated_at": typ("string"), "source_path": typ("string"),
+	}
+	runProps := map[string]any{
+		"id": typ("string"), "prompt_id": typ("string"), "owner_email": typ("string"),
+		"prompt_name": typ("string"), "status": typ("string"), "started_at": typ("string"),
+		"ended_at": typ("string"), "usage_json": typ("string"), "error": typ("string"),
+		"log_path": typ("string"), "trigger_source": typ("string"), "trigger_kind": typ("string"),
+		"trigger_subject": typ("string"), "trigger_event_id": typ("string"),
+	}
+	promptSchema := obj(promptProps, "id", "owner_email", "user_prompt", "config", "created_at", "updated_at")
+	detailProps := make(map[string]any, len(promptProps)+2)
+	for key, value := range promptProps {
+		detailProps[key] = value
+	}
+	detailProps["running_count"] = typ("integer")
+	detailProps["last_run"] = map[string]any{"type": []string{"object", "null"}, "additionalProperties": true}
+	detailSchema := obj(detailProps, "id", "owner_email", "user_prompt", "config", "created_at", "updated_at", "running_count", "last_run")
+	runSchema := obj(runProps, "id", "prompt_id", "owner_email", "status", "started_at", "log_path")
+	triggerSchema := obj(map[string]any{
+		"prompt_id": typ("string"), "source": typ("string"), "filter": typ("string"), "created_at": typ("string"),
+	}, "prompt_id", "source", "filter", "created_at")
+	return map[string]map[string]any{
+		tool("create"):        obj(map[string]any{"prompt_id": typ("string")}, "prompt_id"),
+		tool("import"):        obj(map[string]any{"prompt_id": typ("string"), "name": typ("string")}, "prompt_id", "name"),
+		tool("list"):          obj(map[string]any{"prompts": map[string]any{"type": "array", "items": detailSchema}}, "prompts"),
+		tool("get"):           detailSchema,
+		tool("update"):        promptSchema,
+		tool("delete"):        obj(map[string]any{"deleted": typ("string")}, "deleted"),
+		tool("set_trigger"):   triggerSchema,
+		tool("clear_trigger"): obj(map[string]any{"cleared": typ("string")}, "cleared"),
+		tool("run"): obj(map[string]any{
+			"run_id": typ("string"), "status": typ("string"), "started_at": typ("string"),
+		}, "run_id", "status", "started_at"),
+		tool("run_list"):   obj(map[string]any{"runs": map[string]any{"type": "array", "items": runSchema}}, "runs"),
+		tool("run_get"):    runSchema,
+		tool("run_cancel"): obj(map[string]any{"cancelled": typ("string")}, "cancelled"),
+		tool("run_fs_list"): obj(map[string]any{
+			"entries": map[string]any{"type": "array", "items": obj(map[string]any{
+				"name": typ("string"), "is_dir": typ("boolean"), "size": typ("integer"), "content_url": typ("string"),
+			}, "name", "is_dir", "size")},
+		}, "entries"),
+	}
+}
 
 // configSchema is the shared prompt.Config input schema.
 func configSchema() map[string]any {

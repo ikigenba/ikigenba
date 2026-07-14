@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -37,6 +39,13 @@ type fakeRunner struct {
 	spawned []prompt.Run
 }
 
+type fakeFetcher struct {
+	data []byte
+	err  error
+}
+
+func (f fakeFetcher) Fetch(context.Context, string) ([]byte, error) { return f.data, f.err }
+
 func (f *fakeRunner) Spawn(run prompt.Run) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -53,6 +62,12 @@ const (
 var testSources = []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts"}
 
 func newTestHandler(t *testing.T) (http.Handler, *sandbox.Manager, *prompt.Service) {
+	t.Helper()
+	h, sb, svc, _ := newTestHandlerWithDB(t)
+	return h, sb, svc
+}
+
+func newTestHandlerWithDB(t *testing.T) (http.Handler, *sandbox.Manager, *prompt.Service, *sql.DB) {
 	t.Helper()
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	ctx := t.Context()
@@ -104,7 +119,7 @@ func newTestHandler(t *testing.T) (http.Handler, *sandbox.Manager, *prompt.Servi
 	if handler == nil {
 		t.Fatal("server.New did not build MCP handler")
 	}
-	return handler, sb, svc
+	return handler, sb, svc, conn
 }
 
 // call drives one tools/call over ServeHTTP and returns the decoded result.
@@ -250,6 +265,178 @@ func TestToolsListThroughAssembledHandlerReturnsDomainPlusChassisTools(t *testin
 	withReserved := append(Tools(nil, ""), appkitmcp.Tool{Name: "health"})
 	if _, err := appkitmcp.New(appkitmcp.Options{Tools: withReserved}); err == nil {
 		t.Fatal("appkit MCP New accepted a domain-declared reserved health tool")
+	}
+}
+
+func TestToolsListDeclaresSchemasOnlyForStructuredTools(t *testing.T) {
+	// R-B4QM-WZGJ
+	h, _, _ := newTestHandler(t)
+	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	rr := do(t, h, body)
+	var resp struct {
+		Result struct {
+			Tools []map[string]any `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode tools/list: %v", err)
+	}
+	wantStructured := map[string]bool{
+		"create": true, "import": true, "list": true, "get": true, "update": true,
+		"delete": true, "set_trigger": true, "clear_trigger": true, "run": true,
+		"run_list": true, "run_get": true, "run_cancel": true, "run_fs_list": true,
+		"health": true, "reflection": true,
+	}
+	wantProse := map[string]bool{"describe": true, "run_output": true, "run_fs_read": true}
+	seen := map[string]bool{}
+	for _, descriptor := range resp.Result.Tools {
+		name, _ := descriptor["name"].(string)
+		if wantStructured[name] {
+			schema, ok := descriptor["outputSchema"].(map[string]any)
+			if !ok || !isObjectOutputSchema(schema) {
+				t.Errorf("%s outputSchema = %#v, want object schema", name, descriptor["outputSchema"])
+			}
+			seen[name] = true
+		}
+		if wantProse[name] {
+			if _, ok := descriptor["outputSchema"]; ok {
+				t.Errorf("%s unexpectedly declares outputSchema", name)
+			}
+			seen[name] = true
+		}
+	}
+	if len(seen) != len(wantStructured)+len(wantProse) {
+		t.Fatalf("checked %d tools, want %d; seen=%v", len(seen), len(wantStructured)+len(wantProse), seen)
+	}
+}
+
+func isObjectOutputSchema(schema map[string]any) bool {
+	if schema["type"] == "object" {
+		return true
+	}
+	variants, ok := schema["oneOf"].([]any)
+	if !ok || len(variants) == 0 {
+		return false
+	}
+	for _, variant := range variants {
+		object, ok := variant.(map[string]any)
+		if !ok || object["type"] != "object" {
+			return false
+		}
+	}
+	return true
+}
+
+func TestStructuredToolsReturnMatchingMachineAndTextResults(t *testing.T) {
+	// R-B5YJ-AR78
+	h, sb, svc := newTestHandler(t)
+	svc.Fetcher = fakeFetcher{data: []byte("imported body")}
+	results := map[string]map[string]any{}
+	results["create"] = call(t, h, "create", map[string]any{
+		"name": "phase32", "user_prompt": "hello", "config": map[string]any{"model": "claude-haiku-4-5"},
+	})
+	promptID := resultString(t, results["create"], "prompt_id")
+	results["import"] = call(t, h, "import", map[string]any{"source_path": "/notes/import.md"})
+	results["list"] = call(t, h, "list", nil)
+	results["get"] = call(t, h, "get", map[string]any{"prompt_id": promptID})
+	results["update"] = call(t, h, "update", map[string]any{
+		"prompt_id": promptID, "name": "updated", "user_prompt": "updated body",
+		"config": map[string]any{"model": "claude-haiku-4-5"},
+	})
+	results["set_trigger"] = call(t, h, "set_trigger", map[string]any{"prompt_id": promptID, "filter": "dropbox:create/**"})
+	results["clear_trigger"] = call(t, h, "clear_trigger", map[string]any{"prompt_id": promptID, "filter": "dropbox:create/**"})
+	results["run"] = call(t, h, "run", map[string]any{"prompt_id": promptID})
+	runID := resultString(t, results["run"], "run_id")
+	results["run_list"] = call(t, h, "run_list", map[string]any{"prompt_id": promptID})
+	results["run_get"] = call(t, h, "run_get", map[string]any{"run_id": runID})
+	results["run_cancel"] = call(t, h, "run_cancel", map[string]any{"run_id": runID})
+	if err := os.WriteFile(filepath.Join(sb.Root(runID), "artifact.txt"), []byte("artifact"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	results["run_fs_list"] = call(t, h, "run_fs_list", map[string]any{"run_id": runID})
+	results["delete"] = call(t, h, "delete", map[string]any{"prompt_id": promptID})
+
+	for _, name := range []string{"create", "import", "list", "get", "update", "delete", "set_trigger", "clear_trigger", "run", "run_list", "run_get", "run_cancel", "run_fs_list"} {
+		res := results[name]
+		structured, ok := res["structuredContent"].(map[string]any)
+		if !ok {
+			t.Errorf("%s structuredContent = %#v", name, res["structuredContent"])
+			continue
+		}
+		var mirrored map[string]any
+		if err := json.Unmarshal([]byte(resultText(t, res)), &mirrored); err != nil {
+			t.Errorf("%s text is not JSON: %v", name, err)
+			continue
+		}
+		if !reflect.DeepEqual(mirrored, structured) {
+			t.Errorf("%s mirror mismatch: text=%#v structured=%#v", name, mirrored, structured)
+		}
+	}
+}
+
+func TestProseToolsRemainTextOnly(t *testing.T) {
+	// R-B76F-OIXX
+	h, sb, _ := newTestHandler(t)
+	promptID := resultString(t, call(t, h, "create", map[string]any{
+		"user_prompt": "hello", "config": map[string]any{"model": "claude-haiku-4-5"},
+	}), "prompt_id")
+	runID := resultString(t, call(t, h, "run", map[string]any{"prompt_id": promptID}), "run_id")
+	if err := os.WriteFile(filepath.Join(sb.Root(runID), "note.txt"), []byte("sandbox prose"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := call(t, h, "run_get", map[string]any{"run_id": runID})["structuredContent"].(map[string]any)
+	if err := os.WriteFile(run["log_path"].(string), []byte("{\"event\":\"line\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	results := map[string]map[string]any{
+		"describe":    call(t, h, "describe", nil),
+		"run_output":  call(t, h, "run_output", map[string]any{"run_id": runID}),
+		"run_fs_read": call(t, h, "run_fs_read", map[string]any{"run_id": runID, "path": "note.txt"}),
+	}
+	for name, res := range results {
+		if _, ok := res["structuredContent"]; ok {
+			t.Errorf("%s unexpectedly returned structuredContent: %#v", name, res)
+		}
+		if resultText(t, res) == "" {
+			t.Errorf("%s returned empty text", name)
+		}
+	}
+}
+
+func TestDomainFailuresCarryClassifiedErrorCodes(t *testing.T) {
+	// R-B8EC-2AOM
+	// R-B9M8-G2FB
+	// R-BGXM-QOVH
+	h, _, _, conn := newTestHandlerWithDB(t)
+	assertErrorCode(t, call(t, h, "get", map[string]any{"prompt_id": "missing"}), "not_found")
+	assertErrorCode(t, call(t, h, "run_get", map[string]any{"run_id": "missing"}), "not_found")
+	promptID := resultString(t, call(t, h, "create", map[string]any{
+		"user_prompt": "hello", "config": map[string]any{"model": "claude-haiku-4-5"},
+	}), "prompt_id")
+	assertErrorCode(t, call(t, h, "set_trigger", map[string]any{"prompt_id": promptID, "filter": "nope:foo/**"}), "validation")
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close database to force store failure: %v", err)
+	}
+	assertErrorCode(t, call(t, h, "list", nil), "internal")
+}
+
+func resultString(t *testing.T, res map[string]any, key string) string {
+	t.Helper()
+	structured, ok := res["structuredContent"].(map[string]any)
+	if !ok {
+		t.Fatalf("structuredContent = %#v", res["structuredContent"])
+	}
+	return stringField(t, structured, key)
+}
+
+func assertErrorCode(t *testing.T, res map[string]any, want string) {
+	t.Helper()
+	if !isError(res) {
+		t.Fatalf("result is not isError: %#v", res)
+	}
+	structured, ok := res["structuredContent"].(map[string]any)
+	if !ok || structured["code"] != want {
+		t.Fatalf("error code = %#v, want %q; result=%#v", structured["code"], want, res)
 	}
 }
 
