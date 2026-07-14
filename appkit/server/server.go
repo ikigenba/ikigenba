@@ -123,8 +123,7 @@ type Router struct {
 }
 
 // Handle registers h for pattern on the mux verbatim (no gating). Use for
-// unauthenticated routes (e.g. dropbox's /content) or routes the caller has
-// already wrapped with RequireIdentity.
+// public routes or routes the caller has already wrapped with RequireIdentity.
 func (rt *Router) Handle(pattern string, h http.Handler) {
 	rt.mux.Handle(pattern, h)
 }
@@ -132,6 +131,26 @@ func (rt *Router) Handle(pattern string, h http.Handler) {
 // HandleFunc is the http.HandlerFunc convenience over Handle.
 func (rt *Router) HandleFunc(pattern string, h http.HandlerFunc) {
 	rt.mux.Handle(pattern, h)
+}
+
+// HandleLoopback registers h as a loopback-only route. Requests that transited
+// the front door receive a bare 404 without invoking h.
+func (rt *Router) HandleLoopback(pattern string, h http.Handler) {
+	rt.mux.Handle(pattern, LoopbackOnly(h))
+}
+
+// LoopbackOnly wraps a handler that must never be reachable through the front
+// door. nginx stamps X-Forwarded-Proto on every proxied request, so any
+// non-empty value is answered with a bare 404. Identity headers are deliberately
+// ignored because legitimate loopback machine callers assert them themselves.
+func LoopbackOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Forwarded-Proto") != "" {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // RequireIdentity wraps h with the identity-header gate: it rejects (401 +
@@ -249,14 +268,14 @@ func New(opts Options) (*http.Server, error) {
 		if opts.MCP != nil {
 			mux.Handle("POST /mcp", a.requireIdentityHeaders(opts.MCP))
 		}
-		// Event plane: the SSE feed is UNAUTHENTICATED and loopback-only
-		// (event-protocol.md §2), deliberately NOT behind the identity gate.
+		// Event plane: the SSE feed is unauthenticated and loopback-only,
+		// deliberately not behind the identity gate or reachable via nginx.
 		if opts.Feed != nil {
 			fp := opts.FeedPath
 			if fp == "" {
 				fp = "/feed"
 			}
-			mux.Handle("GET "+fp, opts.Feed)
+			mux.Handle("GET "+fp, LoopbackOnly(opts.Feed))
 		}
 		if opts.WWW != nil {
 			mux.Handle("GET /static/", opts.WWW.Static())

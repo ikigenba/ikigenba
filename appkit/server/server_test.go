@@ -242,6 +242,141 @@ func TestRouter_UnauthenticatedRoute(t *testing.T) {
 	}
 }
 
+// R-X0MQ-MNXN
+func TestLoopbackOnly_ForwardedRequestReturnsNotFoundWithoutCallingHandler(t *testing.T) {
+	for _, forwardedProto := range []string{"https", "custom-proxy-protocol"} {
+		t.Run(forwardedProto, func(t *testing.T) {
+			calls := 0
+			mux := http.NewServeMux()
+			mux.Handle("GET /content", server.LoopbackOnly(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.WriteHeader(http.StatusNoContent)
+			})))
+
+			req := httptest.NewRequest(http.MethodGet, "/content", nil)
+			req.Header.Set("X-Forwarded-Proto", forwardedProto)
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404", rr.Code)
+			}
+			if calls != 0 {
+				t.Fatalf("inner handler calls = %d, want 0", calls)
+			}
+		})
+	}
+}
+
+// R-X1UN-0FOC
+func TestLoopbackOnly_IdentityHeadersDoNotBlockLoopbackRequest(t *testing.T) {
+	calls := 0
+	mux := http.NewServeMux()
+	mux.Handle("GET /content", server.LoopbackOnly(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusNoContent)
+	})))
+
+	req := httptest.NewRequest(http.MethodGet, "/content", nil)
+	req.Header.Set("X-Owner-Email", "machine-owner@example.com")
+	req.Header.Set("X-Client-Id", "loopback-machine")
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rr.Code)
+	}
+	if calls != 1 {
+		t.Fatalf("inner handler calls = %d, want 1", calls)
+	}
+}
+
+// R-X32J-E7F1
+func TestRouter_HandleLoopbackGuardsRouteOnNewServer(t *testing.T) {
+	calls := 0
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Version:    testVersion,
+		Service:    testService,
+		Register: func(rt *server.Router) error {
+			rt.HandleLoopback("GET /filesystem", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	forwarded := httptest.NewRequest(http.MethodGet, "/filesystem", nil)
+	forwarded.Header.Set("X-Forwarded-Proto", "https")
+	forwardedRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(forwardedRecorder, forwarded)
+	if forwardedRecorder.Code != http.StatusNotFound {
+		t.Fatalf("forwarded status = %d, want 404", forwardedRecorder.Code)
+	}
+	if calls != 0 {
+		t.Fatalf("calls after forwarded request = %d, want 0", calls)
+	}
+
+	loopback := httptest.NewRequest(http.MethodGet, "/filesystem", nil)
+	loopback.Header.Set("X-Owner-Email", "machine-owner@example.com")
+	loopback.Header.Set("X-Client-Id", "loopback-machine")
+	loopbackRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(loopbackRecorder, loopback)
+	if loopbackRecorder.Code != http.StatusNoContent {
+		t.Fatalf("loopback status = %d, want 204", loopbackRecorder.Code)
+	}
+	if calls != 1 {
+		t.Fatalf("calls after loopback request = %d, want 1", calls)
+	}
+}
+
+// R-X4AF-RZ5Q
+func TestNew_FeedMountIsLoopbackOnly(t *testing.T) {
+	calls := 0
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Version:    testVersion,
+		Service:    testService,
+		Feed: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	forwarded := httptest.NewRequest(http.MethodGet, "/feed", nil)
+	forwarded.Header.Set("X-Forwarded-Proto", "https")
+	forwardedRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(forwardedRecorder, forwarded)
+	if forwardedRecorder.Code != http.StatusNotFound {
+		t.Fatalf("forwarded status = %d, want 404", forwardedRecorder.Code)
+	}
+	if calls != 0 {
+		t.Fatalf("feed calls after forwarded request = %d, want 0", calls)
+	}
+
+	loopbackRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(loopbackRecorder, httptest.NewRequest(http.MethodGet, "/feed", nil))
+	if loopbackRecorder.Code != http.StatusNoContent {
+		t.Fatalf("loopback status = %d, want 204", loopbackRecorder.Code)
+	}
+	if calls != 1 {
+		t.Fatalf("feed calls after loopback request = %d, want 1", calls)
+	}
+}
+
 // R-M7NY-4UKZ
 func TestNew_WWWMountsStaticWithoutServiceRegistration(t *testing.T) {
 	root := t.TempDir()
