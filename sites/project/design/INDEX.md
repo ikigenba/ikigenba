@@ -28,6 +28,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D22 → `project/design/D22.md` — Client-side filter/sort/pagination of the landing listing (fuzzy slug search, sortable name/created-at/created-by columns, page-size-10 pagination, one-click clear; pure JS functions tested in goja + a real branchless `initController` transcribing `computeView` onto the DOM; the controller also renders each row's copy-URL button and wires a delegated copy-to-clipboard side effect — a pure DOM effect outside the reduce cycle, its runtime proof D23's; runtime wiring proven by D23; no handler/DB/nginx change) — owns R-HU67-LJBW, R-HVE3-ZB2L, R-HWM0-D2TA, R-HXTW-QUJZ, R-HZ1T-4MAO, R-I1HL-W5S2, R-I2PI-9XIR, R-I3XE-NP9G, R-I55B-1H05, R-I6D7-F8QU, R-I7L3-T0HJ, R-I8T0-6S88, R-IA0W-KJYX, R-IB8S-YBPM, R-7V8B-GA0T, R-ICGP-C3GB
 - D23 → `project/design/D23.md` — Browser wiring proof: one minimal headless-Chrome test (chromedp, test-only dep; seeded auth-free `httptest` landing page; single session touching each control once — boot/filter/sort/clear/page/copy; copy step grants clipboard permission and reads the clipboard back to prove the row URL lands on it; Chrome hard-required by the green bar, one launch retry, no scenario retries; also asserts the copy icon renders as a real SVG element and that the `Copy`→`Copied` swap does not reflow the table; import-graph boundary check) — owns R-87B9-J644, R-88J5-WXUT, R-89R2-APLI, R-8AYY-OHC7, R-8DER-G0TL, R-NN9H-UKP3, R-VYEF-053C, R-VZMB-DWU1, R-8EMN-TSKA
 - D24 → `project/design/D24.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer `/mcp` and the public tier deliberately excluded) — owns R-XVIT-1NXD, R-XWQP-FFO2, R-XXYL-T7ER
+- D25 → `project/design/D25.md` — Structured MCP adoption: swap `JSONResult`→`StructuredResult` (structuredContent + mirrored text) on every domain success result, declare an `outputSchema` per structured tool (`guide`/`file_read` are prose exceptions with none), and map every failure onto the closed error vocabulary (confinement→`validation`, mirror unavailable→`source_unavailable`, internal fs failures→`internal`) — owns R-CW5E-T20N, R-CXDB-6TRC, R-CYL7-KLI1, R-CZT3-YD8Q, R-D110-C4ZF, R-D28W-PWQ4, R-D3GT-3OGT
 
 ## Verification ids → Decision
 
@@ -144,3 +145,10 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-XVIT-1NXD → D24 → `project/design/D24.md`
 - R-XWQP-FFO2 → D24 → `project/design/D24.md`
 - R-XXYL-T7ER → D24 → `project/design/D24.md`
+- R-CW5E-T20N → D25 → `project/design/D25.md`
+- R-CXDB-6TRC → D25 → `project/design/D25.md`
+- R-CYL7-KLI1 → D25 → `project/design/D25.md`
+- R-CZT3-YD8Q → D25 → `project/design/D25.md`
+- R-D110-C4ZF → D25 → `project/design/D25.md`
+- R-D28W-PWQ4 → D25 → `project/design/D25.md`
+- R-D3GT-3OGT → D25 → `project/design/D25.md`
