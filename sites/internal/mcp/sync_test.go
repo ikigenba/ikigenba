@@ -18,10 +18,15 @@ import (
 // logic is exercised against this fake (the HTTP client itself is unit-tested in
 // the sites package, Phase 6).
 type fakeMirror struct {
-	files map[string][]byte // full mirror path → bytes
+	files    map[string][]byte // full mirror path → bytes
+	listErr  error
+	fetchErr error
 }
 
 func (f *fakeMirror) List(_ context.Context, prefix string) ([]sites.MirrorFile, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	p := strings.TrimRight(prefix, "/")
 	var out []sites.MirrorFile
 	for path, data := range f.files {
@@ -35,6 +40,9 @@ func (f *fakeMirror) List(_ context.Context, prefix string) ([]sites.MirrorFile,
 }
 
 func (f *fakeMirror) Fetch(_ context.Context, path string) ([]byte, error) {
+	if f.fetchErr != nil {
+		return nil, f.fetchErr
+	}
 	data, ok := f.files[path]
 	if !ok {
 		return nil, sites.ErrNotFound
@@ -148,6 +156,34 @@ func TestSyncMissingSourcePath(t *testing.T) {
 	env := callErr(t, h, tool("sync"), map[string]any{})
 	if env["code"] != "validation" {
 		t.Fatalf("error code = %v, want validation", env["code"])
+	}
+}
+
+func TestSyncMirrorFailuresAreSourceUnavailable(t *testing.T) {
+	cases := []struct {
+		name   string
+		mirror sites.MirrorClient
+	}{
+		{"unconfigured", nil},
+		{"list", &fakeMirror{listErr: errors.New("mirror list down")}},
+		{"fetch", &fakeMirror{files: map[string][]byte{"/source/a": []byte("a")}, fetchErr: errors.New("mirror fetch down")}},
+	}
+
+	// R-D28W-PWQ4
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var h *testHandler
+			if tc.mirror == nil {
+				h, _ = newTestHandler(t)
+			} else {
+				h, _ = newTestHandler(t, tc.mirror)
+			}
+			callOK(t, h, "create", map[string]any{"name": "demo"})
+			env := callErr(t, h, "sync", map[string]any{"source_path": "/source", "slug": "demo"})
+			if env["code"] != "source_unavailable" {
+				t.Fatalf("sync %s code = %v, want source_unavailable", tc.name, env["code"])
+			}
+		})
 	}
 }
 

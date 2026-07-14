@@ -182,13 +182,26 @@ func TestFileReadAndListTraversalReturnPathEscapeCode(t *testing.T) {
 	h, _ := fileToolsHandler(t)
 
 	// R-0JAJ-OIF8
+	// R-D110-C4ZF
 	readErr := callErr(t, h, "file_read", map[string]any{"site": "demo", "file_path": "../../../etc/passwd"})
-	if readErr["code"] != "path_escapes_working_dir" {
-		t.Fatalf("file_read escape code = %+v, want path_escapes_working_dir", readErr)
+	if readErr["code"] != "validation" {
+		t.Fatalf("file_read escape code = %+v, want validation", readErr)
 	}
 	listErr := callErr(t, h, "file_list", map[string]any{"site": "demo", "path": "/etc"})
-	if listErr["code"] != "path_escapes_working_dir" {
-		t.Fatalf("file_list escape code = %+v, want path_escapes_working_dir", listErr)
+	if listErr["code"] != "validation" {
+		t.Fatalf("file_list escape code = %+v, want validation", listErr)
+	}
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"file_write", map[string]any{"site": "demo", "file_path": "../escape", "content": "no"}},
+		{"mkdir", map[string]any{"name": "demo", "path": "../escape"}},
+	} {
+		env := callErr(t, h, tc.name, tc.args)
+		if env["code"] != "validation" || !strings.Contains(env["message"].(string), "path_escapes_working_dir") {
+			t.Errorf("%s escape error = %+v, want validation with path detail", tc.name, env)
+		}
 	}
 }
 
@@ -320,14 +333,14 @@ func TestFileList(t *testing.T) {
 	}
 
 	// Error cases.
-	if e := callErr(t, h, "file_list", map[string]any{}); e["code"] != "invalid_site" {
-		t.Fatalf("expected invalid_site, got %+v", e)
+	if e := callErr(t, h, "file_list", map[string]any{}); e["code"] != "validation" {
+		t.Fatalf("expected validation, got %+v", e)
 	}
 	if e := callErr(t, h, "file_list", map[string]any{"site": "no-such-site"}); e["code"] != "not_found" {
 		t.Fatalf("expected not_found, got %+v", e)
 	}
-	if e := callErr(t, h, "file_list", map[string]any{"site": "demo", "path": "../.."}); e["code"] != "path_escapes_working_dir" {
-		t.Fatalf("expected path_escapes_working_dir, got %+v", e)
+	if e := callErr(t, h, "file_list", map[string]any{"site": "demo", "path": "../.."}); e["code"] != "validation" {
+		t.Fatalf("expected validation, got %+v", e)
 	}
 }
 
@@ -371,8 +384,8 @@ func TestFileMissingSite(t *testing.T) {
 	e := callErr(t, h, "file_write", map[string]any{
 		"file_path": "x.html", "content": "y",
 	})
-	if e["code"] != "invalid_site" {
-		t.Fatalf("expected invalid_site, got %+v", e)
+	if e["code"] != "validation" {
+		t.Fatalf("expected validation, got %+v", e)
 	}
 
 	// Unknown site.

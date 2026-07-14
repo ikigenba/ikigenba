@@ -84,8 +84,9 @@ type jsonRPCResponse struct {
 }
 
 type toolResult struct {
-	IsError bool `json:"isError"`
-	Content []struct {
+	IsError           bool           `json:"isError"`
+	StructuredContent map[string]any `json:"structuredContent"`
+	Content           []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
@@ -149,16 +150,13 @@ func callErr(t *testing.T, h http.Handler, name string, args any) map[string]any
 	if !tr.IsError {
 		t.Fatalf("%s: expected an error envelope, got success: %s", name, payloadText(tr))
 	}
-	var env struct {
-		Error map[string]any `json:"error"`
+	if tr.StructuredContent == nil {
+		t.Fatalf("%s: error result missing structuredContent: %+v", name, tr)
 	}
-	if err := json.Unmarshal([]byte(tr.Content[0].Text), &env); err != nil {
-		t.Fatalf("%s: error payload is not the envelope shape: %v (%s)", name, err, tr.Content[0].Text)
+	if tr.StructuredContent["message"] != tr.Content[0].Text {
+		t.Fatalf("%s: error message differs across channels: %+v", name, tr)
 	}
-	if env.Error == nil {
-		t.Fatalf("%s: error envelope missing the top-level \"error\" key: %s", name, tr.Content[0].Text)
-	}
-	return env.Error
+	return tr.StructuredContent
 }
 
 func payloadText(tr toolResult) string {
@@ -553,8 +551,8 @@ func TestCreateHonorsRequestedVisibility(t *testing.T) {
 func TestCreateBadSlug(t *testing.T) {
 	h, _ := newTestHandler(t)
 	e := callErr(t, h, "create", map[string]any{"name": "Bad Slug!"})
-	if e["code"] != "invalid_slug" {
-		t.Fatalf("expected invalid_slug, got %+v", e)
+	if e["code"] != "validation" {
+		t.Fatalf("expected validation, got %+v", e)
 	}
 }
 
@@ -641,11 +639,183 @@ func TestMkdirConfinement(t *testing.T) {
 	}
 
 	e := callErr(t, h, "mkdir", map[string]any{"name": "demo", "path": "../../escape"})
-	if e["code"] != "path_escapes_working_dir" {
-		t.Fatalf("expected path_escapes_working_dir, got %+v", e)
+	if e["code"] != "validation" {
+		t.Fatalf("expected validation, got %+v", e)
 	}
 	e2 := callErr(t, h, "mkdir", map[string]any{"name": "demo", "path": "/etc/evil"})
-	if e2["code"] != "path_escapes_working_dir" {
-		t.Fatalf("expected path_escapes_working_dir for absolute, got %+v", e2)
+	if e2["code"] != "validation" {
+		t.Fatalf("expected validation for absolute, got %+v", e2)
 	}
+}
+
+func TestCreateReturnsMirroredStructuredContent(t *testing.T) {
+	h, _ := newTestHandler(t)
+
+	// R-CW5E-T20N
+	result := call(t, h, "create", map[string]any{"name": "channels"})
+	if result.IsError || result.StructuredContent == nil {
+		t.Fatalf("create result is not structured success: %+v", result)
+	}
+	wantKeys := []string{"name", "public", "created_by", "url", "created_at", "updated_at"}
+	for _, key := range wantKeys {
+		if _, ok := result.StructuredContent[key]; !ok {
+			t.Errorf("create structuredContent missing %q: %+v", key, result.StructuredContent)
+		}
+	}
+	var mirrored map[string]any
+	if err := json.Unmarshal([]byte(payloadText(result)), &mirrored); err != nil {
+		t.Fatalf("decode mirrored create text: %v", err)
+	}
+	if !mapsEqualJSON(mirrored, result.StructuredContent) {
+		t.Fatalf("create channels differ: text=%+v structured=%+v", mirrored, result.StructuredContent)
+	}
+}
+
+func TestStructuredToolsDeclareSchemasMatchingResults(t *testing.T) {
+	mirror := &fakeMirror{files: map[string][]byte{"/source/index.html": []byte("needle")}}
+	h, _ := newTestHandler(t, mirror)
+	callOK(t, h, "create", map[string]any{"name": "demo"})
+	callOK(t, h, "create", map[string]any{"name": "syncsite"})
+
+	resp := rpc(t, h, "tools/list", nil)
+	var listed struct {
+		Tools []struct {
+			Name         string         `json:"name"`
+			OutputSchema map[string]any `json:"outputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(resp.Result, &listed); err != nil {
+		t.Fatalf("decode tools/list: %v", err)
+	}
+	schemas := map[string]map[string]any{}
+	for _, descriptor := range listed.Tools {
+		schemas[descriptor.Name] = descriptor.OutputSchema
+	}
+	structured := []string{"create", "list", "delete", "mkdir", "set_visibility", "sync", "file_write", "file_edit", "file_glob", "file_grep", "file_list"}
+
+	// R-CXDB-6TRC
+	for _, name := range structured {
+		if schemas[name] == nil || schemas[name]["type"] != "object" {
+			t.Errorf("%s outputSchema is not an object: %+v", name, schemas[name])
+		}
+	}
+	for _, name := range []string{"guide", "file_read"} {
+		if schemas[name] != nil {
+			t.Errorf("prose tool %s declares outputSchema: %+v", name, schemas[name])
+		}
+	}
+
+	cases := []struct {
+		name string
+		args map[string]any
+	}{
+		{"create", map[string]any{"name": "schema-create"}},
+		{"list", map[string]any{}},
+		{"delete", map[string]any{"name": "already-absent"}},
+		{"mkdir", map[string]any{"name": "demo", "path": "assets"}},
+		{"set_visibility", map[string]any{"name": "demo", "public": true}},
+		{"sync", map[string]any{"source_path": "/source", "slug": "syncsite"}},
+		{"file_write", map[string]any{"site": "demo", "file_path": "page.txt", "content": "needle"}},
+		{"file_edit", map[string]any{"site": "demo", "file_path": "page.txt", "old_string": "needle", "new_string": "pin"}},
+		{"file_glob", map[string]any{"site": "demo", "pattern": "*.txt"}},
+		{"file_grep", map[string]any{"site": "demo", "pattern": "pin"}},
+		{"file_list", map[string]any{"site": "demo"}},
+	}
+
+	// R-CYL7-KLI1
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := call(t, h, tc.name, tc.args)
+			if result.IsError || result.StructuredContent == nil {
+				t.Fatalf("%s did not return structured success: %+v", tc.name, result)
+			}
+			properties, ok := schemas[tc.name]["properties"].(map[string]any)
+			if !ok {
+				t.Fatalf("%s schema properties malformed: %+v", tc.name, schemas[tc.name])
+			}
+			required, ok := schemas[tc.name]["required"].([]any)
+			if !ok {
+				t.Fatalf("%s schema required malformed: %+v", tc.name, schemas[tc.name])
+			}
+			if len(result.StructuredContent) != len(properties) || len(required) != len(properties) {
+				t.Fatalf("%s result/schema key counts differ: result=%+v schema=%+v", tc.name, result.StructuredContent, schemas[tc.name])
+			}
+			for _, rawKey := range required {
+				key, ok := rawKey.(string)
+				if !ok {
+					t.Fatalf("%s required key is not a string: %v", tc.name, rawKey)
+				}
+				if _, ok := result.StructuredContent[key]; !ok {
+					t.Errorf("%s result missing required key %q: %+v", tc.name, key, result.StructuredContent)
+				}
+			}
+			for key := range result.StructuredContent {
+				if _, ok := properties[key]; !ok {
+					t.Errorf("%s result has undeclared key %q: %+v", tc.name, key, result.StructuredContent)
+				}
+			}
+		})
+	}
+}
+
+func TestClosedErrorVocabularyAndMappings(t *testing.T) {
+	h, _ := newTestHandler(t)
+	callOK(t, h, "create", map[string]any{"name": "exists"})
+	callOK(t, h, "create", map[string]any{"name": "demo"})
+
+	cases := []struct {
+		name string
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"invalid slug", "create", map[string]any{"name": "Bad Slug"}, "validation"},
+		{"reserved slug", "create", map[string]any{"name": "mcp"}, "validation"},
+		{"missing argument", "file_write", map[string]any{"file_path": "x"}, "validation"},
+		{"conflict", "create", map[string]any{"name": "exists"}, "conflict"},
+		{"not found", "file_read", map[string]any{"site": "missing", "file_path": "x"}, "not_found"},
+		{"internal file operation", "file_read", map[string]any{"site": "demo", "file_path": "missing.txt"}, "internal"},
+	}
+	closed := map[string]bool{"validation": true, "not_found": true, "conflict": true, "too_large": true, "source_unavailable": true, "internal": true}
+
+	// R-CZT3-YD8Q
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := callErr(t, h, tc.tool, tc.args)["code"]
+			if got != tc.want || !closed[got.(string)] {
+				t.Fatalf("code = %v, want closed code %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNoRemovedResultHelperToken(t *testing.T) {
+	root := moduleRoot(t)
+	needle := "JSON" + "Result"
+
+	// R-D3GT-3OGT
+	for _, dir := range []string{"internal", "cmd"} {
+		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() || filepath.Ext(path) != ".go" {
+				return err
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if strings.Contains(string(raw), needle) {
+				t.Errorf("removed result helper remains in %s", path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("scan %s: %v", dir, err)
+		}
+	}
+}
+
+func mapsEqualJSON(a, b map[string]any) bool {
+	aJSON, errA := json.Marshal(a)
+	bJSON, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(aJSON, bJSON)
 }

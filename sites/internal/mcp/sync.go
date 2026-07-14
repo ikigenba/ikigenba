@@ -38,10 +38,10 @@ func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage) (map[s
 		return nil, err
 	}
 	if h.mirror == nil {
-		return errResultMsg("sync_unconfigured", "sync is not wired: no dropbox mirror client (DROPBOX_BASE_URL)"), nil
+		return errResultMsg(appkitmcp.ErrSourceUnavailable, "sync_unconfigured: sync is not wired: no dropbox mirror client (DROPBOX_BASE_URL)"), nil
 	}
 	if a.SourcePath == "" {
-		return errResultMsg("validation", "missing required \"source_path\" argument"), nil
+		return errResultMsg(appkitmcp.ErrValidation, "missing required \"source_path\" argument"), nil
 	}
 
 	// Derive the slug from the source-path basename when none was given, then
@@ -57,7 +57,7 @@ func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage) (map[s
 	}
 	if err := sites.ValidateSlug(slug); err != nil {
 		if derived {
-			return errResultMsg("validation",
+			return errResultMsg(appkitmcp.ErrValidation,
 				"derived slug "+jsonQuote(slug)+" from source_path is not a valid slug; pass \"slug\" explicitly"), nil
 		}
 		return errResult(err), nil
@@ -79,14 +79,14 @@ func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage) (map[s
 	// path Reconcile writes to). The client follows /list's cursor to completion.
 	files, err := h.mirror.List(ctx, a.SourcePath)
 	if err != nil {
-		return errResultMsg("list_upstream", err.Error()), nil
+		return errResultMsg(appkitmcp.ErrSourceUnavailable, "list_upstream: "+err.Error()), nil
 	}
 	desired := make(map[string][]byte, len(files))
 	for _, f := range files {
 		rel := relUnder(a.SourcePath, f.Path)
 		data, ferr := h.mirror.Fetch(ctx, f.Path)
 		if ferr != nil {
-			return errResultMsg("fetch_upstream", ferr.Error()), nil
+			return errResultMsg(appkitmcp.ErrSourceUnavailable, "fetch_upstream: "+ferr.Error()), nil
 		}
 		desired[rel] = data
 	}
@@ -111,15 +111,15 @@ func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage) (map[s
 		return nil
 	})
 	if walkErr != nil && !errors.Is(walkErr, fs.ErrNotExist) {
-		return errResultMsg("walk_working", walkErr.Error()), nil
+		return errResultMsg(appkitmcp.ErrInternal, "walk_working: "+walkErr.Error()), nil
 	}
 
 	written, deleted, rerr := sites.Reconcile(workingDir, desired, existingRel)
 	if rerr != nil {
-		return errResultMsg("reconcile", rerr.Error()), nil
+		return errResultMsg(appkitmcp.ErrInternal, "reconcile: "+rerr.Error()), nil
 	}
 
-	return appkitmcp.JSONResult(map[string]any{"slug": slug, "written": written, "deleted": deleted})
+	return appkitmcp.StructuredResult(map[string]any{"slug": slug, "written": written, "deleted": deleted})
 }
 
 // relUnder returns child's path relative to prefix (both mirror paths, slash-

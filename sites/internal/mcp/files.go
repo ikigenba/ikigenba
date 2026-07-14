@@ -23,7 +23,7 @@ func (h *toolHandlers) toolFileList(ctx context.Context, raw json.RawMessage) (m
 		return nil, err
 	}
 	if a.Site == "" {
-		return errResultMsg("invalid_site", "missing required \"site\" argument"), nil
+		return errResultMsg(appkitmcp.ErrValidation, "missing required \"site\" argument"), nil
 	}
 	root, env := h.siteRoot(ctx, a.Site)
 	if env != nil {
@@ -35,9 +35,9 @@ func (h *toolHandlers) toolFileList(ctx context.Context, raw json.RawMessage) (m
 		s, err := sitefiles.ConfinePath(root, a.Path)
 		if err != nil {
 			if errors.Is(err, sitefiles.ErrEscapes) {
-				return errResultMsg("path_escapes_working_dir", err.Error()), nil
+				return errResultMsg(appkitmcp.ErrValidation, "path_escapes_working_dir: "+err.Error()), nil
 			}
-			return errResultMsg("walk", err.Error()), nil
+			return errResultMsg(appkitmcp.ErrInternal, "walk: "+err.Error()), nil
 		}
 		scope = s
 	}
@@ -45,16 +45,16 @@ func (h *toolHandlers) toolFileList(ctx context.Context, raw json.RawMessage) (m
 	listed, err := sitefiles.List(root, scope)
 	if err != nil {
 		if errors.Is(err, sitefiles.ErrEscapes) {
-			return errResultMsg("path_escapes_working_dir", err.Error()), nil
+			return errResultMsg(appkitmcp.ErrValidation, "path_escapes_working_dir: "+err.Error()), nil
 		}
-		return errResultMsg("walk", err.Error()), nil
+		return errResultMsg(appkitmcp.ErrInternal, "walk: "+err.Error()), nil
 	}
 	files := make([]map[string]any, 0, len(listed))
 	for _, f := range listed {
 		files = append(files, map[string]any{"path": f.Path, "size": f.Size, "md5": f.Md5})
 	}
 
-	return appkitmcp.JSONResult(map[string]any{"site": a.Site, "files": files})
+	return appkitmcp.StructuredResult(map[string]any{"site": a.Site, "files": files})
 }
 
 // toolFileWrite writes content to a confined path in the site's current
@@ -70,7 +70,7 @@ func (h *toolHandlers) toolFileWrite(ctx context.Context, raw json.RawMessage) (
 		return nil, err
 	}
 	if a.Site == "" {
-		return errResultMsg("invalid_site", "missing required \"site\" argument"), nil
+		return errResultMsg(appkitmcp.ErrValidation, "missing required \"site\" argument"), nil
 	}
 	root, env := h.siteRoot(ctx, a.Site)
 	if env != nil {
@@ -79,12 +79,12 @@ func (h *toolHandlers) toolFileWrite(ctx context.Context, raw json.RawMessage) (
 
 	if err := sitefiles.Write(root, a.FilePath, a.Content, a.Append); err != nil {
 		if errors.Is(err, sitefiles.ErrEscapes) {
-			return errResultMsg("path_escapes_working_dir", err.Error()), nil
+			return errResultMsg(appkitmcp.ErrValidation, "path_escapes_working_dir: "+err.Error()), nil
 		}
-		return errResultMsg("write", err.Error()), nil
+		return errResultMsg(appkitmcp.ErrInternal, "write: "+err.Error()), nil
 	}
 
-	return appkitmcp.JSONResult(map[string]any{"written": a.FilePath, "site": a.Site, "appended": a.Append})
+	return appkitmcp.StructuredResult(map[string]any{"written": a.FilePath, "site": a.Site, "appended": a.Append})
 }
 
 func (h *toolHandlers) toolFileRead(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
@@ -98,7 +98,7 @@ func (h *toolHandlers) toolFileRead(ctx context.Context, raw json.RawMessage) (m
 		return nil, err
 	}
 	if a.Site == "" {
-		return errResultMsg("invalid_site", "missing required \"site\" argument"), nil
+		return errResultMsg(appkitmcp.ErrValidation, "missing required \"site\" argument"), nil
 	}
 	root, env := h.siteRoot(ctx, a.Site)
 	if env != nil {
@@ -107,9 +107,9 @@ func (h *toolHandlers) toolFileRead(ctx context.Context, raw json.RawMessage) (m
 	content, err := sitefiles.Read(root, a.FilePath, a.Offset, a.Limit)
 	if err != nil {
 		if errors.Is(err, sitefiles.ErrEscapes) {
-			return errResultMsg("path_escapes_working_dir", err.Error()), nil
+			return errResultMsg(appkitmcp.ErrValidation, "path_escapes_working_dir: "+err.Error()), nil
 		}
-		return errResultMsg("read", err.Error()), nil
+		return errResultMsg(appkitmcp.ErrInternal, "read: "+err.Error()), nil
 	}
 	return appkitmcp.TextResult(content), nil
 }
@@ -126,7 +126,7 @@ func (h *toolHandlers) toolFileEdit(ctx context.Context, raw json.RawMessage) (m
 		return nil, err
 	}
 	if a.Site == "" {
-		return errResultMsg("invalid_site", "missing required \"site\" argument"), nil
+		return errResultMsg(appkitmcp.ErrValidation, "missing required \"site\" argument"), nil
 	}
 	root, env := h.siteRoot(ctx, a.Site)
 	if env != nil {
@@ -135,11 +135,11 @@ func (h *toolHandlers) toolFileEdit(ctx context.Context, raw json.RawMessage) (m
 	replaced, err := sitefiles.Edit(root, a.FilePath, a.OldString, a.NewString, a.ReplaceAll)
 	if err != nil {
 		if errors.Is(err, sitefiles.ErrEscapes) {
-			return errResultMsg("path_escapes_working_dir", err.Error()), nil
+			return errResultMsg(appkitmcp.ErrValidation, "path_escapes_working_dir: "+err.Error()), nil
 		}
-		return errResultMsg("edit", err.Error()), nil
+		return errResultMsg(appkitmcp.ErrInternal, "edit: "+err.Error()), nil
 	}
-	return appkitmcp.JSONResult(map[string]any{"edited": a.FilePath, "site": a.Site, "replaced": replaced})
+	return appkitmcp.StructuredResult(map[string]any{"edited": a.FilePath, "site": a.Site, "replaced": replaced})
 }
 
 func (h *toolHandlers) toolFileGlob(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
@@ -152,7 +152,7 @@ func (h *toolHandlers) toolFileGlob(ctx context.Context, raw json.RawMessage) (m
 		return nil, err
 	}
 	if a.Site == "" {
-		return errResultMsg("invalid_site", "missing required \"site\" argument"), nil
+		return errResultMsg(appkitmcp.ErrValidation, "missing required \"site\" argument"), nil
 	}
 	root, env := h.siteRoot(ctx, a.Site)
 	if env != nil {
@@ -161,11 +161,11 @@ func (h *toolHandlers) toolFileGlob(ctx context.Context, raw json.RawMessage) (m
 	matches, err := sitefiles.Glob(root, a.Pattern, a.Path)
 	if err != nil {
 		if errors.Is(err, sitefiles.ErrEscapes) {
-			return errResultMsg("path_escapes_working_dir", err.Error()), nil
+			return errResultMsg(appkitmcp.ErrValidation, "path_escapes_working_dir: "+err.Error()), nil
 		}
-		return errResultMsg("glob", err.Error()), nil
+		return errResultMsg(appkitmcp.ErrInternal, "glob: "+err.Error()), nil
 	}
-	return appkitmcp.JSONResult(map[string]any{"site": a.Site, "matches": matches})
+	return appkitmcp.StructuredResult(map[string]any{"site": a.Site, "matches": matches})
 }
 
 func (h *toolHandlers) toolFileGrep(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
@@ -179,7 +179,7 @@ func (h *toolHandlers) toolFileGrep(ctx context.Context, raw json.RawMessage) (m
 		return nil, err
 	}
 	if a.Site == "" {
-		return errResultMsg("invalid_site", "missing required \"site\" argument"), nil
+		return errResultMsg(appkitmcp.ErrValidation, "missing required \"site\" argument"), nil
 	}
 	root, env := h.siteRoot(ctx, a.Site)
 	if env != nil {
@@ -188,15 +188,15 @@ func (h *toolHandlers) toolFileGrep(ctx context.Context, raw json.RawMessage) (m
 	matches, err := sitefiles.Grep(root, a.Pattern, a.Path, a.Glob)
 	if err != nil {
 		if errors.Is(err, sitefiles.ErrEscapes) {
-			return errResultMsg("path_escapes_working_dir", err.Error()), nil
+			return errResultMsg(appkitmcp.ErrValidation, "path_escapes_working_dir: "+err.Error()), nil
 		}
-		return errResultMsg("grep", err.Error()), nil
+		return errResultMsg(appkitmcp.ErrInternal, "grep: "+err.Error()), nil
 	}
 	out := make([]map[string]any, 0, len(matches))
 	for _, m := range matches {
 		out = append(out, map[string]any{"path": m.Path, "line": m.Line, "text": m.Text})
 	}
-	return appkitmcp.JSONResult(map[string]any{"site": a.Site, "matches": out})
+	return appkitmcp.StructuredResult(map[string]any{"site": a.Site, "matches": out})
 }
 
 func (h *toolHandlers) siteRoot(ctx context.Context, slug string) (string, map[string]any) {
