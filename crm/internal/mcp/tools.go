@@ -40,14 +40,19 @@ func Tools(svc *crm.Service) []appkitmcp.Tool {
 				"limit":    typ("integer"),
 				"after_id": typ("string"),
 			}),
+			OutputSchema: obj(map[string]any{
+				"items":       map[string]any{"type": "array", "items": summarySchema()},
+				"next_cursor": typ("string"),
+			}, "items"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolSearch(ctx, args)
 			},
 		},
 		{
-			Name:        tool("get"),
-			Description: "Fetch one entity as a rich card by ULID: a contact comes back with its organization, open deals, recent interactions, and open tasks already attached. The type is resolved from the id automatically.",
-			InputSchema: obj(map[string]any{"id": typ("string")}, "id"),
+			Name:         tool("get"),
+			Description:  "Fetch one entity as a rich card by ULID: a contact comes back with its organization, open deals, recent interactions, and open tasks already attached. The type is resolved from the id automatically.",
+			InputSchema:  obj(map[string]any{"id": typ("string")}, "id"),
+			OutputSchema: map[string]any{"type": "object", "additionalProperties": true},
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolGet(ctx, args)
 			},
@@ -61,6 +66,7 @@ func Tools(svc *crm.Service) []appkitmcp.Tool {
 				"fields": descTyp("object", "entity-specific; see this tool's description"),
 				"force":  descTyp("boolean", "override a duplicate match on create"),
 			}, "type"),
+			OutputSchema: summarySchema(),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolSave(ctx, args)
 			},
@@ -72,6 +78,7 @@ func Tools(svc *crm.Service) []appkitmcp.Tool {
 				"type": enumTyp("string", "organization", "contact", "deal", "task", "interaction"),
 				"id":   typ("string"),
 			}, "type", "id"),
+			OutputSchema: obj(map[string]any{"ok": typ("boolean")}, "ok"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolDelete(ctx, args)
 			},
@@ -85,6 +92,7 @@ func Tools(svc *crm.Service) []appkitmcp.Tool {
 				"body":        typ("string"),
 				"occurred_at": typ("string"),
 			}, "subject_id", "kind"),
+			OutputSchema: summarySchema(),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolLog(ctx, args)
 			},
@@ -130,6 +138,16 @@ func enumTyp(t string, vals ...string) map[string]any {
 	return map[string]any{"type": t, "enum": vals}
 }
 
+func summarySchema() map[string]any {
+	return obj(map[string]any{
+		"id":         typ("string"),
+		"type":       typ("string"),
+		"label":      typ("string"),
+		"updated_at": typ("string"),
+		"fields":     map[string]any{"type": "object", "additionalProperties": true},
+	}, "id", "type", "label", "updated_at")
+}
+
 func (h *toolHandlers) toolGuide() (map[string]any, error) {
 	return appkitmcp.TextResult(guideDoc), nil
 }
@@ -157,7 +175,7 @@ func (h *toolHandlers) toolSearch(ctx context.Context, raw json.RawMessage) (map
 	if a.Limit > 0 && len(items) == a.Limit {
 		next = items[len(items)-1].ID
 	}
-	return appkitmcp.JSONResult(map[string]any{"items": items, "next_cursor": next})
+	return appkitmcp.StructuredResult(map[string]any{"items": items, "next_cursor": next})
 }
 
 func (h *toolHandlers) toolGet(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
@@ -171,7 +189,7 @@ func (h *toolHandlers) toolGet(ctx context.Context, raw json.RawMessage) (map[st
 	if err != nil {
 		return toolErr(err), nil
 	}
-	return appkitmcp.JSONResult(card)
+	return appkitmcp.StructuredResult(card)
 }
 
 func (h *toolHandlers) toolSave(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
@@ -188,7 +206,7 @@ func (h *toolHandlers) toolSave(ctx context.Context, raw json.RawMessage) (map[s
 	if err != nil {
 		return toolErr(err), nil
 	}
-	return appkitmcp.JSONResult(sum)
+	return appkitmcp.StructuredResult(sum)
 }
 
 func (h *toolHandlers) toolDelete(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
@@ -202,7 +220,7 @@ func (h *toolHandlers) toolDelete(ctx context.Context, raw json.RawMessage) (map
 	if err := h.svc.Delete(ctx, a.Type, a.ID); err != nil {
 		return toolErr(err), nil
 	}
-	return appkitmcp.JSONResult(map[string]any{"ok": true})
+	return appkitmcp.StructuredResult(map[string]any{"ok": true})
 }
 
 func (h *toolHandlers) toolLog(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
@@ -221,44 +239,30 @@ func (h *toolHandlers) toolLog(ctx context.Context, raw json.RawMessage) (map[st
 	if err != nil {
 		return toolErr(err), nil
 	}
-	return appkitmcp.JSONResult(sum)
+	return appkitmcp.StructuredResult(sum)
 }
 
-// errorEnvelope renders a crm domain error into the uniform, closed-vocabulary
-// error envelope. The message is the entity's corrective text; `field` and
-// `existing_id` are surfaced when present.
-func errorEnvelope(err error) map[string]any {
-	e := map[string]any{}
+// errorCode maps crm domain errors onto the appkit MCP closed vocabulary.
+func errorCode(err error) (appkitmcp.ErrorCode, string) {
 	var dup *crm.DuplicateError
 	var val *crm.ValidationError
 	switch {
 	case errors.As(err, &dup):
-		e["code"] = "duplicate"
-		e["existing_id"] = dup.ExistingID
-		e["message"] = dup.Error()
+		return appkitmcp.ErrConflict, dup.Error()
 	case errors.As(err, &val):
-		e["code"] = "validation"
-		e["message"] = val.Error()
-		if val.Field != "" {
-			e["field"] = val.Field
-		}
+		return appkitmcp.ErrValidation, val.Error()
 	case errors.Is(err, crm.ErrValidation):
-		e["code"] = "validation"
-		e["message"] = err.Error()
+		return appkitmcp.ErrValidation, err.Error()
 	case errors.Is(err, crm.ErrNotFound):
-		e["code"] = "not_found"
-		e["message"] = err.Error()
+		return appkitmcp.ErrNotFound, err.Error()
 	case errors.Is(err, crm.ErrConflict):
-		e["code"] = "conflict"
-		e["message"] = err.Error()
+		return appkitmcp.ErrConflict, err.Error()
 	default:
-		e["code"] = "internal"
-		e["message"] = "internal error"
+		return appkitmcp.ErrInternal, "internal error"
 	}
-	return map[string]any{"error": e}
 }
 
 func toolErr(err error) map[string]any {
-	b, _ := json.Marshal(errorEnvelope(err))
-	return appkitmcp.ErrorResult(string(b))
+	code, msg := errorCode(err)
+	return appkitmcp.ErrorResult(code, msg)
 }

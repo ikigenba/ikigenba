@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -89,17 +90,20 @@ type jsonRPCResponse struct {
 }
 
 type toolResult struct {
-	IsError bool `json:"isError"`
-	Content []struct {
+	IsError           bool            `json:"isError"`
+	StructuredContent map[string]any  `json:"structuredContent"`
+	LegacyError       json.RawMessage `json:"error"`
+	Content           []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
 }
 
 type toolDescriptor struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	InputSchema  map[string]any  `json:"inputSchema"`
+	OutputSchema json.RawMessage `json:"outputSchema"`
 }
 
 const (
@@ -148,8 +152,8 @@ func call(t *testing.T, h http.Handler, name string, args any) toolResult {
 	return tr
 }
 
-// callOK asserts the success envelope (no isError) and decodes the text payload
-// into a generic map.
+// callOK asserts the success envelope and that its machine-readable and agent
+// text renderings carry the same JSON value.
 func callOK(t *testing.T, h http.Handler, name string, args any) map[string]any {
 	t.Helper()
 	tr := call(t, h, name, args)
@@ -163,28 +167,36 @@ func callOK(t *testing.T, h http.Handler, name string, args any) map[string]any 
 	if err := json.Unmarshal([]byte(tr.Content[0].Text), &m); err != nil {
 		t.Fatalf("%s: text payload is not a JSON object: %v (%s)", name, err, tr.Content[0].Text)
 	}
-	return m
+	if tr.StructuredContent == nil {
+		t.Fatalf("%s: result is missing structuredContent", name)
+	}
+	if !reflect.DeepEqual(tr.StructuredContent, m) {
+		t.Fatalf("%s: structuredContent differs from text JSON: structured=%v text=%v", name, tr.StructuredContent, m)
+	}
+	return tr.StructuredContent
 }
 
-// callErr asserts an error envelope (isError:true) and returns the rendered
-// `error` object (the errorEnvelope shape: code, message, optional field /
-// existing_id).
+// callErr asserts the structured MCP error shape and returns its {code,message}
+// object.
 func callErr(t *testing.T, h http.Handler, name string, args any) map[string]any {
 	t.Helper()
 	tr := call(t, h, name, args)
 	if !tr.IsError {
 		t.Fatalf("%s: expected an error envelope, got success: %s", name, payloadText(tr))
 	}
-	var env struct {
-		Error map[string]any `json:"error"`
+	if tr.StructuredContent == nil {
+		t.Fatalf("%s: error result missing structuredContent: %+v", name, tr)
 	}
-	if err := json.Unmarshal([]byte(tr.Content[0].Text), &env); err != nil {
-		t.Fatalf("%s: error payload is not the envelope shape: %v (%s)", name, err, tr.Content[0].Text)
+	if len(tr.LegacyError) != 0 {
+		t.Fatalf("%s: result retained legacy top-level error: %s", name, tr.LegacyError)
 	}
-	if env.Error == nil {
-		t.Fatalf("%s: error envelope missing the top-level \"error\" key: %s", name, tr.Content[0].Text)
+	if len(tr.Content) != 1 || tr.Content[0].Type != "text" {
+		t.Fatalf("%s: expected one text content block, got %+v", name, tr.Content)
 	}
-	return env.Error
+	if tr.StructuredContent["message"] != tr.Content[0].Text {
+		t.Fatalf("%s: error text does not mirror structured message: %+v", name, tr)
+	}
+	return tr.StructuredContent
 }
 
 func payloadText(tr toolResult) string {
@@ -277,6 +289,87 @@ func TestToolsList(t *testing.T) {
 	for _, name := range []string{"health", "reflection"} {
 		if !got[name] {
 			t.Errorf("missing chassis tool %q", name)
+		}
+	}
+}
+
+func TestToolsListDomainOutputSchemas(t *testing.T) {
+	h := newTestHandler(t)
+	tools := toolsList(t, h)
+
+	// R-5Y60-E30A
+	for _, name := range []string{"search", "get", "save", "delete", "log", "guide"} {
+		desc := requireTool(t, tools, name)
+		if name == "guide" {
+			if len(desc.OutputSchema) != 0 {
+				t.Errorf("guide must omit outputSchema, got %s", desc.OutputSchema)
+			}
+			continue
+		}
+		if len(desc.OutputSchema) == 0 {
+			t.Errorf("domain tool %q is missing outputSchema", name)
+			continue
+		}
+		var schema map[string]any
+		if err := json.Unmarshal(desc.OutputSchema, &schema); err != nil {
+			t.Errorf("domain tool %q outputSchema is invalid JSON: %v", name, err)
+			continue
+		}
+		if schema["type"] != "object" {
+			t.Errorf("domain tool %q outputSchema is not an object schema: %v", name, schema)
+		}
+	}
+}
+
+func TestDomainToolSuccessResultsAreStructured(t *testing.T) {
+	h := newTestHandler(t)
+	org := callOK(t, h, "save", map[string]any{
+		"type":   "organization",
+		"fields": map[string]any{"name": "Structured Corp"},
+	})
+	orgID := id(t, org)
+	deletable := callOK(t, h, "save", map[string]any{
+		"type":   "task",
+		"fields": map[string]any{"title": "Delete me"},
+	})
+
+	// R-5ZDW-RUQZ
+	tests := []struct {
+		name  string
+		args  map[string]any
+		shape func(*testing.T, map[string]any)
+	}{
+		{"search", map[string]any{}, func(t *testing.T, got map[string]any) {
+			if len(got) != 2 || got["items"] == nil || got["next_cursor"] == nil {
+				t.Fatalf("search result has wrong shape: %+v", got)
+			}
+		}},
+		{"get", map[string]any{"id": orgID}, func(t *testing.T, got map[string]any) {
+			if got["id"] != orgID || got["type"] != "organization" {
+				t.Fatalf("get result has wrong card shape: %+v", got)
+			}
+		}},
+		{"save", map[string]any{"type": "task", "fields": map[string]any{"title": "Structured save"}}, requireSummaryShape},
+		{"delete", map[string]any{"type": "task", "id": id(t, deletable)}, func(t *testing.T, got map[string]any) {
+			if len(got) != 1 || got["ok"] != true {
+				t.Fatalf("delete result is not exactly {ok:true}: %+v", got)
+			}
+		}},
+		{"log", map[string]any{"subject_id": orgID, "kind": "note", "body": "structured"}, requireSummaryShape},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := callOK(t, h, tt.name, tt.args)
+			tt.shape(t, got)
+		})
+	}
+}
+
+func requireSummaryShape(t *testing.T, got map[string]any) {
+	t.Helper()
+	for _, key := range []string{"id", "type", "label", "updated_at"} {
+		if value, ok := got[key].(string); !ok || value == "" {
+			t.Errorf("summary field %q is missing or empty: %+v", key, got)
 		}
 	}
 }
@@ -553,42 +646,84 @@ func TestToolsCallVerbs(t *testing.T) {
 	}
 }
 
-// TestToolsCallErrorEnvelope covers the error-envelope path: a plain validation
-// error, and especially the duplicate case (save a contact twice → duplicate
-// envelope with existing_id; force:true then succeeds). Asserts the exact shape
-// errorEnvelope produces.
-func TestToolsCallErrorEnvelope(t *testing.T) {
+func TestDomainToolErrorsUseClosedVocabulary(t *testing.T) {
+	h := newTestHandler(t)
+	bogusID := "01GHOSTGHOSTGHOSTGHOSTGHOST"
+	allowed := map[any]bool{
+		"validation": true, "not_found": true, "conflict": true,
+		"too_large": true, "source_unavailable": true, "internal": true,
+	}
+
+	// R-60LT-5MHO
+	tests := []struct {
+		name string
+		args map[string]any
+	}{
+		{"search", map[string]any{"type": "widget"}},
+		{"get", map[string]any{"id": bogusID}},
+		{"save", map[string]any{"type": "widget"}},
+		{"delete", map[string]any{"type": "organization", "id": bogusID}},
+		{"log", map[string]any{"subject_id": bogusID, "kind": "note"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := callErr(t, h, tt.name, tt.args)
+			if !allowed[got["code"]] {
+				t.Fatalf("%s emitted code outside the closed vocabulary: %+v", tt.name, got)
+			}
+			if got["code"] == "duplicate" {
+				t.Fatalf("%s emitted retired duplicate code: %+v", tt.name, got)
+			}
+			if len(got) != 2 || got["message"] == "" {
+				t.Fatalf("%s error is not exactly {code,message}: %+v", tt.name, got)
+			}
+		})
+	}
+}
+
+func TestSaveValidationErrorsAreTyped(t *testing.T) {
 	h := newTestHandler(t)
 
-	// Validation: a deal with a client-supplied (derived) status is rejected.
-	val := callErr(t, h, "save", map[string]any{
-		"type":   "deal",
-		"fields": map[string]any{"name": "Big Deal", "status": "won"},
-	})
-	if val["code"] != "validation" {
-		t.Fatalf("expected validation code, got %+v", val)
+	// R-65HE-OPGG
+	for _, tt := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"derived status", map[string]any{"type": "deal", "fields": map[string]any{"name": "Big Deal", "status": "won"}}},
+		{"missing required field", map[string]any{"type": "organization", "fields": map[string]any{}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := callErr(t, h, "save", tt.args)
+			if got["code"] != "validation" {
+				t.Fatalf("expected validation code, got %+v", got)
+			}
+		})
 	}
-	if val["field"] != "status" {
-		t.Fatalf("expected field=status on validation envelope, got %+v", val)
-	}
-	if msg, _ := val["message"].(string); msg == "" {
-		t.Fatalf("validation envelope missing a corrective message: %+v", val)
-	}
+}
 
-	// Validation: unknown save type.
-	badType := callErr(t, h, "save", map[string]any{"type": "widget"})
-	if badType["code"] != "validation" {
-		t.Fatalf("expected validation for unknown type, got %+v", badType)
-	}
+func TestGetAndDeleteMissingRowsAreNotFound(t *testing.T) {
+	h := newTestHandler(t)
+	bogusID := "01GHOSTGHOSTGHOSTGHOSTGHOST"
 
-	// not_found: get a bogus id.
-	nf := callErr(t, h, "get", map[string]any{"id": "01GHOSTGHOSTGHOSTGHOSTGHOST"})
-	if nf["code"] != "not_found" {
-		t.Fatalf("expected not_found, got %+v", nf)
+	// R-631L-X5Z2
+	for _, tt := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"get", map[string]any{"id": bogusID}},
+		{"delete", map[string]any{"type": "organization", "id": bogusID}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := callErr(t, h, tt.name, tt.args)
+			if got["code"] != "not_found" {
+				t.Fatalf("expected not_found, got %+v", got)
+			}
+		})
 	}
+}
 
-	// Duplicate: create a contact, then create another with the same primary
-	// email → duplicate envelope carrying existing_id.
+func TestDuplicateSaveIsConflictWithExistingID(t *testing.T) {
+	h := newTestHandler(t)
 	first := callOK(t, h, "save", map[string]any{
 		"type": "contact",
 		"fields": map[string]any{
@@ -598,6 +733,7 @@ func TestToolsCallErrorEnvelope(t *testing.T) {
 	})
 	firstID := id(t, first)
 
+	// R-61TP-JE8D
 	dup := callErr(t, h, "save", map[string]any{
 		"type": "contact",
 		"fields": map[string]any{
@@ -605,14 +741,12 @@ func TestToolsCallErrorEnvelope(t *testing.T) {
 			"emails":       []map[string]any{{"email": "Bob@Example.com"}},
 		},
 	})
-	if dup["code"] != "duplicate" {
-		t.Fatalf("expected duplicate code, got %+v", dup)
+	if dup["code"] != "conflict" {
+		t.Fatalf("expected conflict code, got %+v", dup)
 	}
-	if dup["existing_id"] != firstID {
-		t.Fatalf("duplicate envelope existing_id mismatch: got %v want %s", dup["existing_id"], firstID)
-	}
-	if msg, _ := dup["message"].(string); msg == "" {
-		t.Fatalf("duplicate envelope missing a message: %+v", dup)
+	msg, _ := dup["message"].(string)
+	if !strings.Contains(msg, "existing_id="+firstID) {
+		t.Fatalf("conflict message does not name existing row %s: %+v", firstID, dup)
 	}
 
 	// force:true on the same call now succeeds and creates a distinct contact.
