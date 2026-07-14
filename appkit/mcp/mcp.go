@@ -181,6 +181,14 @@ func (h *Handler) toolDescriptors() []map[string]any {
 			"name":        "health",
 			"description": "Health + diagnostics for this service. Returns the fixed envelope (status, version, service, details) plus the authenticated caller's identity (owner_email, client_id). Takes no inputs.",
 			"inputSchema": objectSchema(map[string]any{}),
+			"outputSchema": objectSchema(map[string]any{
+				"status":      map[string]any{"type": "string"},
+				"service":     map[string]any{"type": "string"},
+				"version":     map[string]any{"type": "string"},
+				"owner_email": map[string]any{"type": "string"},
+				"client_id":   map[string]any{"type": "string"},
+				"details":     map[string]any{"type": "object", "additionalProperties": true},
+			}, "status", "service", "version", "owner_email", "client_id", "details"),
 		},
 		{
 			"name":        "reflection",
@@ -191,6 +199,7 @@ func (h *Handler) toolDescriptors() []map[string]any {
 					"description": "optional; a published event family kind to fetch the schema+example detail for",
 				},
 			}),
+			"outputSchema": reflectionOutputSchema(),
 		},
 	}
 	for _, tool := range h.tools {
@@ -241,7 +250,7 @@ func (h *Handler) toolReflection(args json.RawMessage) (map[string]any, error) {
 		if err != nil {
 			var unknown *outbox.UnknownKindError
 			if errors.As(err, &unknown) {
-				return ErrorResult(ErrNotFound, fmt.Sprintf("unknown event kind %q; known kinds: %s", unknown.Kind, strings.Join(unknown.Valid, ", "))), nil
+				return ErrorResult(ErrValidation, fmt.Sprintf("unknown event kind %q; known kinds: %s", unknown.Kind, strings.Join(unknown.Valid, ", "))), nil
 			}
 			return nil, err
 		}
@@ -275,6 +284,33 @@ func objectSchema(properties map[string]any, required ...string) map[string]any 
 		schema["required"] = required
 	}
 	return schema
+}
+
+func reflectionOutputSchema() map[string]any {
+	familyProperties := map[string]any{
+		"kind":        map[string]any{"type": "string"},
+		"subject":     map[string]any{"type": "string"},
+		"description": map[string]any{"type": "string"},
+	}
+	indexFamily := objectSchema(familyProperties, "kind", "subject", "description")
+	subscription := objectSchema(map[string]any{
+		"source":      map[string]any{"type": "string"},
+		"filter":      map[string]any{"type": "string"},
+		"description": map[string]any{"type": "string"},
+	}, "source", "filter", "description")
+	index := objectSchema(map[string]any{
+		"publishes":  map[string]any{"type": "array", "items": indexFamily},
+		"subscribes": map[string]any{"type": "array", "items": subscription},
+	}, "publishes", "subscribes")
+	detailProperties := map[string]any{
+		"kind":        map[string]any{"type": "string"},
+		"subject":     map[string]any{"type": "string"},
+		"description": map[string]any{"type": "string"},
+		"schema":      map[string]any{"type": "object", "additionalProperties": true},
+		"example":     map[string]any{},
+	}
+	detail := objectSchema(detailProperties, "kind", "subject", "description", "schema", "example")
+	return map[string]any{"oneOf": []map[string]any{index, detail}}
 }
 
 func identityFromRequest(r *http.Request) server.Identity {

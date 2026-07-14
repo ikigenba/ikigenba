@@ -330,6 +330,7 @@ func TestStandardToolsListAndHealthEnvelope(t *testing.T) {
 
 	callResp := rpc(t, h, `{"jsonrpc":"2.0","id":"health","method":"tools/call","params":{"name":"health"}}`, nil)
 	got := resultTextJSON(t, callResp)
+	result := resultObject(t, callResp)
 	wantEnvelope := appkit.Envelope("v2.4.6", "crm", map[string]any{"queue": 3})
 	for _, key := range []string{"status", "service", "version"} {
 		if got[key] != wantEnvelope[key] {
@@ -342,6 +343,78 @@ func TestStandardToolsListAndHealthEnvelope(t *testing.T) {
 	}
 	if details["queue"] != float64(3) {
 		t.Fatalf("health details.queue = %v, want 3", details["queue"])
+	}
+
+	// R-WWZ1-HCPK
+	if !reflect.DeepEqual(result["structuredContent"], got) {
+		t.Fatalf("health structuredContent = %#v, text rendering = %#v", result["structuredContent"], got)
+	}
+	healthOutput, ok := byName["health"]["outputSchema"].(map[string]any)
+	if !ok {
+		t.Fatalf("health outputSchema missing or not object: %#v", byName["health"])
+	}
+	healthProperties, ok := healthOutput["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("health outputSchema.properties missing or not object: %#v", healthOutput)
+	}
+	for _, name := range []string{"status", "service", "version", "owner_email", "client_id", "details"} {
+		if _, ok := healthProperties[name]; !ok {
+			t.Errorf("health outputSchema.properties missing %q: %#v", name, healthProperties)
+		}
+	}
+}
+
+func TestReflectionStructuredFormsAndOutputSchema(t *testing.T) {
+	events := outbox.Registry{{
+		Kind:        "customer.created",
+		Subject:     "/<customer id>",
+		Description: "A customer was created.",
+		Sample:      customerEventSample{CustomerID: "cus_123", Email: "owner@example.com"},
+	}}
+	h := newHandler(t, mcp.Options{
+		Events: events,
+		Subscriptions: func() []consumer.Subscription {
+			return []consumer.Subscription{{Source: "crm", Filter: "customer.created", Description: "Customer changes."}}
+		},
+	})
+
+	listResp := rpc(t, h, `{"jsonrpc":"2.0","id":"reflection-list","method":"tools/list"}`, nil)
+	reflection := toolsByName(t, listResp)["reflection"]
+	outputSchema, ok := reflection["outputSchema"].(map[string]any)
+	if !ok {
+		t.Fatalf("reflection outputSchema missing or not object: %#v", reflection)
+	}
+	oneOf, ok := outputSchema["oneOf"].([]any)
+	if !ok || len(oneOf) != 2 {
+		t.Fatalf("reflection outputSchema.oneOf = %#v, want two forms", outputSchema["oneOf"])
+	}
+	wantPropertySets := [][]string{{"publishes", "subscribes"}, {"kind", "subject", "description", "schema", "example"}}
+	for i, wantProperties := range wantPropertySets {
+		form, ok := oneOf[i].(map[string]any)
+		if !ok {
+			t.Fatalf("reflection outputSchema.oneOf[%d] not object: %#v", i, oneOf[i])
+		}
+		properties, ok := form["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("reflection outputSchema.oneOf[%d].properties missing: %#v", i, form)
+		}
+		for _, name := range wantProperties {
+			if _, ok := properties[name]; !ok {
+				t.Errorf("reflection outputSchema.oneOf[%d].properties missing %q: %#v", i, name, properties)
+			}
+		}
+	}
+
+	indexResp := rpc(t, h, `{"jsonrpc":"2.0","id":"reflection-index-structured","method":"tools/call","params":{"name":"reflection"}}`, nil)
+	detailResp := rpc(t, h, `{"jsonrpc":"2.0","id":"reflection-detail-structured","method":"tools/call","params":{"name":"reflection","arguments":{"kind":"customer.created"}}}`, nil)
+
+	// R-WY6X-V4G9
+	for name, resp := range map[string]map[string]any{"index": indexResp, "detail": detailResp} {
+		textRendering := resultTextJSON(t, resp)
+		structured := resultObject(t, resp)["structuredContent"]
+		if !reflect.DeepEqual(structured, textRendering) {
+			t.Errorf("reflection %s structuredContent = %#v, text rendering = %#v", name, structured, textRendering)
+		}
 	}
 }
 
@@ -473,6 +546,12 @@ func TestReflectionUnknownKindReturnsToolError(t *testing.T) {
 	msg := resultText(t, resp)
 	if !strings.Contains(msg, "customer.created") || !strings.Contains(msg, "customer.deleted") {
 		t.Fatalf("tool error message %q does not name known event kinds", msg)
+	}
+
+	// R-WZEU-8W6Y
+	wantStructured := map[string]any{"code": "validation", "message": msg}
+	if !reflect.DeepEqual(result["structuredContent"], wantStructured) {
+		t.Fatalf("structuredContent = %#v, want %#v", result["structuredContent"], wantStructured)
 	}
 }
 
