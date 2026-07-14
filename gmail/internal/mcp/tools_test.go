@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -35,6 +38,7 @@ type fakeClient struct {
 	trashID              string
 	deleteID             string
 	labelsCalls          int
+	totalCalls           int
 
 	// canned returns
 	listRes   gm.MessagesListResult
@@ -47,6 +51,7 @@ type fakeClient struct {
 }
 
 func (f *fakeClient) MessagesList(_ context.Context, q, token string) (gm.MessagesListResult, error) {
+	f.totalCalls++
 	f.listQ, f.listToken = q, token
 	if f.err != nil {
 		return gm.MessagesListResult{}, f.err
@@ -55,6 +60,7 @@ func (f *fakeClient) MessagesList(_ context.Context, q, token string) (gm.Messag
 }
 
 func (f *fakeClient) MessageGet(_ context.Context, id, format string) (gm.Message, error) {
+	f.totalCalls++
 	f.getID, f.getFormat = id, format
 	if f.err != nil {
 		return gm.Message{}, f.err
@@ -63,6 +69,7 @@ func (f *fakeClient) MessageGet(_ context.Context, id, format string) (gm.Messag
 }
 
 func (f *fakeClient) ThreadGet(_ context.Context, id string) (gm.Thread, error) {
+	f.totalCalls++
 	f.threadID = id
 	if f.err != nil {
 		return gm.Thread{}, f.err
@@ -71,6 +78,7 @@ func (f *fakeClient) ThreadGet(_ context.Context, id string) (gm.Thread, error) 
 }
 
 func (f *fakeClient) MessagesSend(_ context.Context, raw string) (gm.Message, error) {
+	f.totalCalls++
 	f.sendRaw = raw
 	if f.err != nil {
 		return gm.Message{}, f.err
@@ -79,6 +87,7 @@ func (f *fakeClient) MessagesSend(_ context.Context, raw string) (gm.Message, er
 }
 
 func (f *fakeClient) DraftCreate(_ context.Context, raw string) (gm.Draft, error) {
+	f.totalCalls++
 	f.draftRaw = raw
 	if f.err != nil {
 		return gm.Draft{}, f.err
@@ -87,6 +96,7 @@ func (f *fakeClient) DraftCreate(_ context.Context, raw string) (gm.Draft, error
 }
 
 func (f *fakeClient) LabelsList(_ context.Context) (gm.LabelsListResult, error) {
+	f.totalCalls++
 	f.labelsCalls++
 	if f.err != nil {
 		return gm.LabelsListResult{}, f.err
@@ -95,6 +105,7 @@ func (f *fakeClient) LabelsList(_ context.Context) (gm.LabelsListResult, error) 
 }
 
 func (f *fakeClient) MessageModify(_ context.Context, id string, add, rem []string) (gm.Message, error) {
+	f.totalCalls++
 	f.modifyID, f.modifyAdd, f.modifyRem = id, add, rem
 	if f.err != nil {
 		return gm.Message{}, f.err
@@ -103,6 +114,7 @@ func (f *fakeClient) MessageModify(_ context.Context, id string, add, rem []stri
 }
 
 func (f *fakeClient) MessageTrash(_ context.Context, id string) (gm.Message, error) {
+	f.totalCalls++
 	f.trashID = id
 	if f.err != nil {
 		return gm.Message{}, f.err
@@ -111,6 +123,7 @@ func (f *fakeClient) MessageTrash(_ context.Context, id string) (gm.Message, err
 }
 
 func (f *fakeClient) MessageDelete(_ context.Context, id string) error {
+	f.totalCalls++
 	f.deleteID = id
 	return f.err
 }
@@ -175,6 +188,11 @@ func callToolText(t *testing.T, h http.Handler, name, args string) (string, bool
 	return content[0].(map[string]any)["text"].(string), isErr
 }
 
+func callToolResult(t *testing.T, h http.Handler, name, args string) map[string]any {
+	t.Helper()
+	return rpc(t, h, "tools/call", `{"name":"`+name+`","arguments":`+args+`}`)
+}
+
 // callTool invokes tools/call and returns the decoded JSON text payload plus the
 // isError flag. For a non-error result the text is always a JSON object.
 func callTool(t *testing.T, h http.Handler, name, args string) (map[string]any, bool) {
@@ -228,6 +246,193 @@ func TestToolsList_ExactlyTwelve(t *testing.T) {
 	} {
 		if names[leaked] {
 			t.Errorf("surface leaks deferred tool %q", leaked)
+		}
+	}
+}
+
+func TestToolsList_DomainToolsDeclareOutputSchemas(t *testing.T) {
+	// R-8K29-UF3R
+	h, _ := newHandler(t)
+	res := rpc(t, h, "tools/list", `{}`)
+	domain := map[string]bool{
+		"list": false, "read": false, "thread": false, "labels": false,
+		"send": false, "draft": false, "label": false, "unlabel": false,
+		"trash": false, "delete": false,
+	}
+	for _, raw := range res["tools"].([]any) {
+		decl := raw.(map[string]any)
+		name := decl["name"].(string)
+		if _, ok := domain[name]; !ok {
+			continue
+		}
+		schema, ok := decl["outputSchema"].(map[string]any)
+		if !ok || schema["type"] != "object" {
+			t.Errorf("domain tool %q outputSchema = %v", name, decl["outputSchema"])
+		}
+		domain[name] = ok
+	}
+	for name, present := range domain {
+		if !present {
+			t.Errorf("domain tool %q has no outputSchema", name)
+		}
+	}
+}
+
+func TestDomainSuccessesMirrorStructuredContentInText(t *testing.T) {
+	// R-8LA6-86UG
+	tests := []struct {
+		name string
+		args string
+	}{
+		{"list", `{}`},
+		{"read", `{"id":"m1"}`},
+		{"thread", `{"id":"t1"}`},
+		{"labels", `{}`},
+		{"send", `{"to":"a@example.com","subject":"s","body":"b"}`},
+		{"draft", `{"to":"a@example.com","subject":"s","body":"b"}`},
+		{"label", `{"id":"m1","label_id":"INBOX"}`},
+		{"unlabel", `{"id":"m1","label_id":"INBOX"}`},
+		{"trash", `{"id":"m1"}`},
+		{"delete", `{"id":"m1"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, fc := newHandler(t)
+			fc.msg = gm.Message{ID: "m1", ThreadID: "t1", LabelIDs: []string{"INBOX"}}
+			fc.thread = gm.Thread{ID: "t1", Messages: []gm.Message{fc.msg}}
+			fc.draft = gm.Draft{ID: "d1", Message: fc.msg}
+			res := callToolResult(t, h, tt.name, tt.args)
+			if isErr, _ := res["isError"].(bool); isErr {
+				t.Fatalf("unexpected tool error: %v", res)
+			}
+			structured, ok := res["structuredContent"].(map[string]any)
+			if !ok {
+				t.Fatalf("structuredContent missing: %v", res)
+			}
+			content, ok := res["content"].([]any)
+			if !ok || len(content) != 1 {
+				t.Fatalf("mirrored text content missing: %v", res)
+			}
+			text := content[0].(map[string]any)["text"].(string)
+			var mirrored map[string]any
+			if err := json.Unmarshal([]byte(text), &mirrored); err != nil {
+				t.Fatalf("text block is not JSON: %q: %v", text, err)
+			}
+			if !reflect.DeepEqual(structured, mirrored) {
+				got, _ := json.Marshal(structured)
+				want, _ := json.Marshal(mirrored)
+				t.Fatalf("structuredContent %s != mirrored text %s", got, want)
+			}
+		})
+	}
+}
+
+func TestArgumentValidationReturnsTypedErrorsWithoutClientCalls(t *testing.T) {
+	// R-8MI2-LYL5
+	tests := []struct {
+		name string
+		args string
+	}{
+		{"read", `{}`},
+		{"label", `{"id":"m1"}`},
+		{"send", `{"subject":"s","body":"b"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+"_"+tt.args, func(t *testing.T) {
+			h, fc := newHandler(t)
+			res := callToolResult(t, h, tt.name, tt.args)
+			if isErr, _ := res["isError"].(bool); !isErr {
+				t.Fatalf("expected tool error: %v", res)
+			}
+			structured, ok := res["structuredContent"].(map[string]any)
+			if !ok || structured["code"] != "validation" {
+				t.Fatalf("structured validation error = %v", res["structuredContent"])
+			}
+			if fc.totalCalls != 0 {
+				t.Fatalf("validation made %d client calls", fc.totalCalls)
+			}
+		})
+	}
+	t.Run("malformed_json", func(t *testing.T) {
+		fc := &fakeClient{}
+		res, err := (&toolHandlers{client: fc, contentBase: contentBase()}).toolRead(context.Background(), json.RawMessage(`{"id":`))
+		if err != nil {
+			t.Fatalf("malformed arguments became handler error: %v", err)
+		}
+		structured := res["structuredContent"].(map[string]any)
+		if res["isError"] != true || structured["code"] != appkitmcp.ErrValidation {
+			t.Fatalf("malformed argument result = %v", res)
+		}
+		if fc.totalCalls != 0 {
+			t.Fatalf("malformed arguments made %d client calls", fc.totalCalls)
+		}
+	})
+}
+
+func TestNotFoundClientErrorHasTypedCode(t *testing.T) {
+	// R-8NPY-ZQBU
+	h, fc := newHandler(t)
+	fc.err = gm.ErrNotFound
+	res := callToolResult(t, h, "read", `{"id":"missing"}`)
+	if isErr, _ := res["isError"].(bool); !isErr {
+		t.Fatalf("expected tool error: %v", res)
+	}
+	structured := res["structuredContent"].(map[string]any)
+	if structured["code"] != "not_found" {
+		t.Fatalf("error code = %v, want not_found", structured["code"])
+	}
+}
+
+func TestClientErrorCodeMapping(t *testing.T) {
+	// R-8OXV-DI2J
+	tests := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{"validation", gm.ErrValidation, "validation"},
+		{"invalid_grant", gm.ErrInvalidGrant, "source_unavailable"},
+		{"transport", fmt.Errorf("transport failed"), "source_unavailable"},
+		{"not_found", gm.ErrNotFound, "not_found"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, fc := newHandler(t)
+			fc.err = tt.err
+			res := callToolResult(t, h, "read", `{"id":"m1"}`)
+			if isErr, _ := res["isError"].(bool); !isErr {
+				t.Fatalf("expected tool error: %v", res)
+			}
+			structured := res["structuredContent"].(map[string]any)
+			if structured["code"] != tt.code {
+				t.Fatalf("error code = %v, want %s", structured["code"], tt.code)
+			}
+		})
+	}
+}
+
+func TestNonTestGoSourceContainsNoLegacyJSONResult(t *testing.T) {
+	// R-8RDO-51JX
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, dir := range []string{"internal", "cmd"} {
+		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if strings.Contains(string(contents), "JSONResult") {
+				t.Errorf("legacy JSONResult token remains in %s", path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("scan %s: %v", dir, err)
 		}
 	}
 }

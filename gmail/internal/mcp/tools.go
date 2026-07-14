@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime"
 	"net/url"
@@ -133,6 +134,14 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 				"q":          descTyp("string", "optional Gmail search query (e.g. 'from:alice@example.com', 'subject:invoice', 'is:unread', 'after:2026/01/01'); empty lists recent messages"),
 				"page_token": descTyp("string", "optional pagination cursor from a prior call's next_page_token"),
 			}),
+			OutputSchema: obj(map[string]any{
+				"messages": map[string]any{"type": "array", "items": obj(map[string]any{
+					"id":        map[string]any{"type": "string"},
+					"thread_id": map[string]any{"type": "string"},
+				}, "id", "thread_id")},
+				"next_page_token":      map[string]any{"type": "string"},
+				"result_size_estimate": map[string]any{"type": "integer"},
+			}, "messages", "next_page_token", "result_size_estimate"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolList(ctx, args)
 			},
@@ -143,6 +152,7 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			InputSchema: obj(map[string]any{
 				"id": descTyp("string", "the message id (from list/search or an event payload)"),
 			}, "id"),
+			OutputSchema: messageSchema(),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolRead(ctx, args)
 			},
@@ -153,6 +163,11 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			InputSchema: obj(map[string]any{
 				"id": descTyp("string", "the thread id (thread_id from a message or event payload)"),
 			}, "id"),
+			OutputSchema: obj(map[string]any{
+				"id":       map[string]any{"type": "string"},
+				"snippet":  map[string]any{"type": "string"},
+				"messages": map[string]any{"type": "array", "items": messageSchema()},
+			}, "id", "snippet", "messages"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolThread(ctx, args)
 			},
@@ -161,6 +176,13 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			Name:        tool("labels"),
 			Description: "List the mailbox's available labels — system labels (INBOX, SENT, UNREAD, TRASH, …) and user labels — as {id, name, type}. Use a label id with label/unlabel. Takes no inputs.",
 			InputSchema: obj(map[string]any{}),
+			OutputSchema: obj(map[string]any{
+				"labels": map[string]any{"type": "array", "items": obj(map[string]any{
+					"id":   map[string]any{"type": "string"},
+					"name": map[string]any{"type": "string"},
+					"type": map[string]any{"type": "string"},
+				}, "id", "name", "type")},
+			}, "labels"),
 			Handler: func(ctx context.Context, _ json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolLabels(ctx)
 			},
@@ -173,6 +195,11 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 				"subject": descTyp("string", "the Subject: header"),
 				"body":    descTyp("string", "the plain-text message body"),
 			}, "to", "subject", "body"),
+			OutputSchema: obj(map[string]any{
+				"id":        map[string]any{"type": "string"},
+				"thread_id": map[string]any{"type": "string"},
+				"label_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			}, "id", "thread_id", "label_ids"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolSend(ctx, args)
 			},
@@ -185,6 +212,13 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 				"subject": descTyp("string", "the Subject: header"),
 				"body":    descTyp("string", "the plain-text message body"),
 			}, "to", "subject", "body"),
+			OutputSchema: obj(map[string]any{
+				"id": map[string]any{"type": "string"},
+				"message": obj(map[string]any{
+					"id":        map[string]any{"type": "string"},
+					"thread_id": map[string]any{"type": "string"},
+				}, "id", "thread_id"),
+			}, "id", "message"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolDraft(ctx, args)
 			},
@@ -196,6 +230,10 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 				"id":       descTyp("string", "the message id"),
 				"label_id": descTyp("string", "the label id to add (a system id like INBOX/UNREAD or a user label id from the labels tool)"),
 			}, "id", "label_id"),
+			OutputSchema: obj(map[string]any{
+				"id":        map[string]any{"type": "string"},
+				"label_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			}, "id", "label_ids"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolLabel(ctx, args)
 			},
@@ -207,6 +245,10 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 				"id":       descTyp("string", "the message id"),
 				"label_id": descTyp("string", "the label id to remove (e.g. INBOX to archive, UNREAD to mark read)"),
 			}, "id", "label_id"),
+			OutputSchema: obj(map[string]any{
+				"id":        map[string]any{"type": "string"},
+				"label_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			}, "id", "label_ids"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolUnlabel(ctx, args)
 			},
@@ -217,6 +259,10 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			InputSchema: obj(map[string]any{
 				"id": descTyp("string", "the message id to trash"),
 			}, "id"),
+			OutputSchema: obj(map[string]any{
+				"id":        map[string]any{"type": "string"},
+				"label_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			}, "id", "label_ids"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolTrash(ctx, args)
 			},
@@ -227,6 +273,10 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			InputSchema: obj(map[string]any{
 				"id": descTyp("string", "the message id to permanently delete"),
 			}, "id"),
+			OutputSchema: obj(map[string]any{
+				"id":      map[string]any{"type": "string"},
+				"deleted": map[string]any{"type": "boolean"},
+			}, "id", "deleted"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolDelete(ctx, args)
 			},
@@ -248,6 +298,23 @@ func descTyp(t, description string) map[string]any {
 	return map[string]any{"type": t, "description": description}
 }
 
+func messageSchema() map[string]any {
+	return obj(map[string]any{
+		"id":            map[string]any{"type": "string"},
+		"thread_id":     map[string]any{"type": "string"},
+		"label_ids":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		"snippet":       map[string]any{"type": "string"},
+		"internal_date": map[string]any{"type": "string"},
+		"headers":       map[string]any{"type": "object", "additionalProperties": true},
+		"attachments": map[string]any{"type": "array", "items": obj(map[string]any{
+			"filename":    map[string]any{"type": "string"},
+			"size":        map[string]any{"type": "integer"},
+			"mime_type":   map[string]any{"type": "string"},
+			"content_url": map[string]any{"type": "string"},
+		}, "filename", "size", "mime_type")},
+	}, "id", "thread_id", "label_ids", "snippet", "internal_date", "headers", "attachments")
+}
+
 // ── mailbox tool implementations (P4) ─────────────────────────────────────
 
 // toolList lists/searches messages (one tool over MessagesList — list and
@@ -258,17 +325,17 @@ func (h *toolHandlers) toolList(ctx context.Context, raw json.RawMessage) (map[s
 		PageToken string `json:"page_token"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
-		return nil, err
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error()), nil
 	}
 	res, err := h.client.MessagesList(ctx, a.Q, a.PageToken)
 	if err != nil {
-		return appkitmcp.ErrorResult(err.Error()), nil
+		return errorResultFor(err), nil
 	}
 	msgs := make([]map[string]any, 0, len(res.Messages))
 	for _, m := range res.Messages {
 		msgs = append(msgs, map[string]any{"id": m.ID, "thread_id": m.ThreadID})
 	}
-	return appkitmcp.JSONResult(map[string]any{
+	return appkitmcp.StructuredResult(map[string]any{
 		"messages":             msgs,
 		"next_page_token":      res.NextPageToken,
 		"result_size_estimate": res.ResultSizeEstimate,
@@ -282,16 +349,16 @@ func (h *toolHandlers) toolRead(ctx context.Context, raw json.RawMessage) (map[s
 		ID string `json:"id"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
-		return nil, err
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error()), nil
 	}
 	if a.ID == "" {
-		return appkitmcp.ErrorResult("id is required"), nil
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, "id is required"), nil
 	}
 	m, err := h.client.MessageGet(ctx, a.ID, "full")
 	if err != nil {
-		return appkitmcp.ErrorResult(err.Error()), nil
+		return errorResultFor(err), nil
 	}
-	return appkitmcp.JSONResult(renderMessage(m, h.contentBase))
+	return appkitmcp.StructuredResult(renderMessage(m, h.contentBase))
 }
 
 // toolThread reads a whole thread and renders each message.
@@ -300,20 +367,20 @@ func (h *toolHandlers) toolThread(ctx context.Context, raw json.RawMessage) (map
 		ID string `json:"id"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
-		return nil, err
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error()), nil
 	}
 	if a.ID == "" {
-		return appkitmcp.ErrorResult("id is required"), nil
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, "id is required"), nil
 	}
 	t, err := h.client.ThreadGet(ctx, a.ID)
 	if err != nil {
-		return appkitmcp.ErrorResult(err.Error()), nil
+		return errorResultFor(err), nil
 	}
 	msgs := make([]map[string]any, 0, len(t.Messages))
 	for _, m := range t.Messages {
 		msgs = append(msgs, renderMessage(m, h.contentBase))
 	}
-	return appkitmcp.JSONResult(map[string]any{
+	return appkitmcp.StructuredResult(map[string]any{
 		"id":       t.ID,
 		"snippet":  t.Snippet,
 		"messages": msgs,
@@ -324,13 +391,13 @@ func (h *toolHandlers) toolThread(ctx context.Context, raw json.RawMessage) (map
 func (h *toolHandlers) toolLabels(ctx context.Context) (map[string]any, error) {
 	res, err := h.client.LabelsList(ctx)
 	if err != nil {
-		return appkitmcp.ErrorResult(err.Error()), nil
+		return errorResultFor(err), nil
 	}
 	labels := make([]map[string]any, 0, len(res.Labels))
 	for _, l := range res.Labels {
 		labels = append(labels, map[string]any{"id": l.ID, "name": l.Name, "type": l.Type})
 	}
-	return appkitmcp.JSONResult(map[string]any{"labels": labels})
+	return appkitmcp.StructuredResult(map[string]any{"labels": labels})
 }
 
 // toolSend composes an RFC-2822 message from {to, subject, body}, base64url-
@@ -343,9 +410,9 @@ func (h *toolHandlers) toolSend(ctx context.Context, raw json.RawMessage) (map[s
 	rawMsg := buildRawMessage(to, subject, body)
 	m, err := h.client.MessagesSend(ctx, rawMsg)
 	if err != nil {
-		return appkitmcp.ErrorResult(err.Error()), nil
+		return errorResultFor(err), nil
 	}
-	return appkitmcp.JSONResult(map[string]any{
+	return appkitmcp.StructuredResult(map[string]any{
 		"id":        m.ID,
 		"thread_id": m.ThreadID,
 		"label_ids": orEmpty(m.LabelIDs),
@@ -362,9 +429,9 @@ func (h *toolHandlers) toolDraft(ctx context.Context, raw json.RawMessage) (map[
 	rawMsg := buildRawMessage(to, subject, body)
 	d, err := h.client.DraftCreate(ctx, rawMsg)
 	if err != nil {
-		return appkitmcp.ErrorResult(err.Error()), nil
+		return errorResultFor(err), nil
 	}
-	return appkitmcp.JSONResult(map[string]any{
+	return appkitmcp.StructuredResult(map[string]any{
 		"id": d.ID,
 		"message": map[string]any{
 			"id":        d.Message.ID,
@@ -391,13 +458,13 @@ func (h *toolHandlers) modifyLabel(ctx context.Context, raw json.RawMessage, add
 		LabelID string `json:"label_id"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
-		return nil, err
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error()), nil
 	}
 	if a.ID == "" {
-		return appkitmcp.ErrorResult("id is required"), nil
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, "id is required"), nil
 	}
 	if a.LabelID == "" {
-		return appkitmcp.ErrorResult("label_id is required"), nil
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, "label_id is required"), nil
 	}
 	var m gm.Message
 	var err error
@@ -407,9 +474,9 @@ func (h *toolHandlers) modifyLabel(ctx context.Context, raw json.RawMessage, add
 		m, err = h.client.MessageModify(ctx, a.ID, nil, []string{a.LabelID})
 	}
 	if err != nil {
-		return appkitmcp.ErrorResult(err.Error()), nil
+		return errorResultFor(err), nil
 	}
-	return appkitmcp.JSONResult(map[string]any{"id": m.ID, "label_ids": orEmpty(m.LabelIDs)})
+	return appkitmcp.StructuredResult(map[string]any{"id": m.ID, "label_ids": orEmpty(m.LabelIDs)})
 }
 
 // toolTrash moves a message to Trash (recoverable; emits deleted next poll).
@@ -418,16 +485,16 @@ func (h *toolHandlers) toolTrash(ctx context.Context, raw json.RawMessage) (map[
 		ID string `json:"id"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
-		return nil, err
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error()), nil
 	}
 	if a.ID == "" {
-		return appkitmcp.ErrorResult("id is required"), nil
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, "id is required"), nil
 	}
 	m, err := h.client.MessageTrash(ctx, a.ID)
 	if err != nil {
-		return appkitmcp.ErrorResult(err.Error()), nil
+		return errorResultFor(err), nil
 	}
-	return appkitmcp.JSONResult(map[string]any{"id": m.ID, "label_ids": orEmpty(m.LabelIDs)})
+	return appkitmcp.StructuredResult(map[string]any{"id": m.ID, "label_ids": orEmpty(m.LabelIDs)})
 }
 
 // toolDelete PERMANENTLY deletes a message (not recoverable — decisions §1).
@@ -436,15 +503,15 @@ func (h *toolHandlers) toolDelete(ctx context.Context, raw json.RawMessage) (map
 		ID string `json:"id"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
-		return nil, err
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error()), nil
 	}
 	if a.ID == "" {
-		return appkitmcp.ErrorResult("id is required"), nil
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, "id is required"), nil
 	}
 	if err := h.client.MessageDelete(ctx, a.ID); err != nil {
-		return appkitmcp.ErrorResult(err.Error()), nil
+		return errorResultFor(err), nil
 	}
-	return appkitmcp.JSONResult(map[string]any{"id": a.ID, "deleted": true})
+	return appkitmcp.StructuredResult(map[string]any{"id": a.ID, "deleted": true})
 }
 
 // ── mailbox helpers ──────────────────────────────────────────────────────
@@ -467,15 +534,26 @@ func (h *toolHandlers) composeArgs(raw json.RawMessage) (to, subject, body strin
 		Body    string `json:"body"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
-		return "", "", "", appkitmcp.ErrorResult(err.Error())
+		return "", "", "", appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error())
 	}
 	if a.To == "" {
-		return "", "", "", appkitmcp.ErrorResult("to is required")
+		return "", "", "", appkitmcp.ErrorResult(appkitmcp.ErrValidation, "to is required")
 	}
 	if a.Subject == "" {
-		return "", "", "", appkitmcp.ErrorResult("subject is required")
+		return "", "", "", appkitmcp.ErrorResult(appkitmcp.ErrValidation, "subject is required")
 	}
 	return a.To, a.Subject, a.Body, nil
+}
+
+func errorResultFor(err error) map[string]any {
+	switch {
+	case errors.Is(err, gm.ErrValidation):
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error())
+	case errors.Is(err, gm.ErrNotFound):
+		return appkitmcp.ErrorResult(appkitmcp.ErrNotFound, err.Error())
+	default:
+		return appkitmcp.ErrorResult(appkitmcp.ErrSourceUnavailable, err.Error())
+	}
 }
 
 // buildRawMessage assembles a minimal RFC-2822 message from structured fields
