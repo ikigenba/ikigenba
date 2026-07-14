@@ -3,7 +3,6 @@
 package mcp
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -40,37 +39,19 @@ func NewHandler(store *crontab.Store, rt *appkit.Router) (http.Handler, error) {
 	})
 }
 
-// errorEnvelope renders a crontab/parse error into the uniform, closed-vocabulary
-// error envelope {error:{code,message,field?}} that crm/ledger use. The store
-// returns typed sentinels; the parser's message names the bad field.
-func errorEnvelope(err error) map[string]any {
-	e := map[string]any{}
+// toolErr maps domain failures onto appkit's closed MCP error vocabulary.
+func toolErr(err error) map[string]any {
 	var pe *parseError
 	switch {
 	case errors.As(err, &pe):
-		e["code"] = "validation"
-		e["message"] = pe.Error()
-		e["field"] = "expr"
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error())
 	case errors.Is(err, crontab.ErrExists):
-		e["code"] = "duplicate"
-		e["message"] = err.Error()
+		return appkitmcp.ErrorResult(appkitmcp.ErrConflict, err.Error())
 	case errors.Is(err, crontab.ErrNotFound):
-		e["code"] = "not_found"
-		e["message"] = err.Error()
+		return appkitmcp.ErrorResult(appkitmcp.ErrNotFound, err.Error())
 	case errors.Is(err, crontab.ErrInvalid):
-		e["code"] = "validation"
-		e["message"] = err.Error()
-		e["field"] = "name"
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error())
 	default:
-		e["code"] = "internal"
-		e["message"] = "internal error"
+		return appkitmcp.ErrorResult(appkitmcp.ErrInternal, "internal error")
 	}
-	return map[string]any{"error": e}
-}
-
-// toolErr renders a domain error as a tool-call error result carrying the JSON
-// envelope text.
-func toolErr(err error) map[string]any {
-	b, _ := json.Marshal(errorEnvelope(err))
-	return appkitmcp.ErrorResult(string(b))
 }

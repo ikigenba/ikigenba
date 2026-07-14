@@ -56,19 +56,21 @@ func Tools(store *crontab.Store) []appkitmcp.Tool {
 			obj(map[string]any{
 				"name": descTyp("string", "schedule identity / cron:tick/<name> suffix; [a-z0-9-]"),
 				"expr": descTyp("string", "5-field cron (min hour dom mon dow), UTC. Operators: *, n, lists a,b, ranges a-b, steps */n and a-b/n; dow 0 or 7 = Sunday. e.g. \"0 3 * * *\" = daily 03:00 UTC"),
-			}, "name", "expr"),
+			}, "name", "expr"), entrySchema(),
 			func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolCreate(ctx, args)
 			}),
 		desc(tool("list"),
 			"List every schedule, ordered by name. Each entry returns {name, expr, created_at, updated_at, last_slot}. The authoritative view of which cron:tick/<name> events exist. Takes no inputs.",
-			obj(map[string]any{}),
+			obj(map[string]any{}), obj(map[string]any{
+				"items": map[string]any{"type": "array", "items": entrySchema()},
+			}, "items"),
 			func(ctx context.Context, _ json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolList(ctx)
 			}),
 		desc(tool("get"),
 			"Fetch one schedule by name: {name, expr, created_at, updated_at, last_slot}. 'last_slot' is the last minute (RFC3339 UTC) the schedule fired, or null if it never has.",
-			obj(map[string]any{"name": descTyp("string", "schedule name")}, "name"),
+			obj(map[string]any{"name": descTyp("string", "schedule name")}, "name"), entrySchema(),
 			func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolGet(ctx, args)
 			}),
@@ -77,21 +79,22 @@ func Tools(store *crontab.Store) []appkitmcp.Tool {
 			obj(map[string]any{
 				"name": descTyp("string", "schedule name"),
 				"expr": descTyp("string", "new 5-field cron expression, UTC"),
-			}, "name", "expr"),
+			}, "name", "expr"), entrySchema(),
 			func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolUpdate(ctx, args)
 			}),
 		desc(tool("delete"),
 			"Delete a schedule by name. The cron:tick/<name> event stops being published. Consumers subscribed to it simply stop receiving (cron is subscriber-blind).",
 			obj(map[string]any{"name": descTyp("string", "schedule name")}, "name"),
+			obj(map[string]any{"ok": typ("boolean")}, "ok"),
 			func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolDelete(ctx, args)
 			}),
 	}
 }
 
-func desc(name, description string, schema map[string]any, handler func(context.Context, json.RawMessage, server.Identity) (map[string]any, error)) appkitmcp.Tool {
-	return appkitmcp.Tool{Name: name, Description: description, InputSchema: schema, Handler: handler}
+func desc(name, description string, inputSchema, outputSchema map[string]any, handler func(context.Context, json.RawMessage, server.Identity) (map[string]any, error)) appkitmcp.Tool {
+	return appkitmcp.Tool{Name: name, Description: description, InputSchema: inputSchema, OutputSchema: outputSchema, Handler: handler}
 }
 
 func obj(props map[string]any, required ...string) map[string]any {
@@ -103,6 +106,16 @@ func obj(props map[string]any, required ...string) map[string]any {
 }
 
 func typ(t string) map[string]any { return map[string]any{"type": t} }
+
+func entrySchema() map[string]any {
+	return obj(map[string]any{
+		"name":       typ("string"),
+		"expr":       typ("string"),
+		"created_at": typ("string"),
+		"updated_at": typ("string"),
+		"last_slot":  map[string]any{"type": []string{"string", "null"}},
+	}, "name", "expr", "created_at", "updated_at", "last_slot")
+}
 
 func descTyp(t, description string) map[string]any {
 	return map[string]any{"type": t, "description": description}
@@ -125,7 +138,7 @@ func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage) (map
 	if err != nil {
 		return toolErr(err), nil
 	}
-	return appkitmcp.JSONResult(renderEntry(*e))
+	return appkitmcp.StructuredResult(renderEntry(*e))
 }
 
 func (h *toolHandlers) toolList(ctx context.Context) (map[string]any, error) {
@@ -137,7 +150,7 @@ func (h *toolHandlers) toolList(ctx context.Context) (map[string]any, error) {
 	for _, e := range entries {
 		items = append(items, renderEntry(e))
 	}
-	return appkitmcp.JSONResult(map[string]any{"items": items})
+	return appkitmcp.StructuredResult(map[string]any{"items": items})
 }
 
 func (h *toolHandlers) toolGet(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
@@ -151,7 +164,7 @@ func (h *toolHandlers) toolGet(ctx context.Context, raw json.RawMessage) (map[st
 	if err != nil {
 		return toolErr(err), nil
 	}
-	return appkitmcp.JSONResult(renderEntry(*e))
+	return appkitmcp.StructuredResult(renderEntry(*e))
 }
 
 func (h *toolHandlers) toolUpdate(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
@@ -169,7 +182,7 @@ func (h *toolHandlers) toolUpdate(ctx context.Context, raw json.RawMessage) (map
 	if err != nil {
 		return toolErr(err), nil
 	}
-	return appkitmcp.JSONResult(renderEntry(*e))
+	return appkitmcp.StructuredResult(renderEntry(*e))
 }
 
 func (h *toolHandlers) toolDelete(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
@@ -182,7 +195,7 @@ func (h *toolHandlers) toolDelete(ctx context.Context, raw json.RawMessage) (map
 	if err := h.store.Delete(ctx, a.Name); err != nil {
 		return toolErr(err), nil
 	}
-	return appkitmcp.JSONResult(map[string]any{"ok": true})
+	return appkitmcp.StructuredResult(map[string]any{"ok": true})
 }
 
 // ── shared helpers ──────────────────────────────────────────────────────

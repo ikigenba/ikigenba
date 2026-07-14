@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -93,32 +95,27 @@ func rpc(t *testing.T, h http.Handler, method string, params any) map[string]any
 	return resp.Result
 }
 
-// call issues a tools/call and returns the parsed tool result (the
-// result.content[0].text decoded as JSON, plus the raw isError flag).
+// toolCall issues a tools/call and returns the complete tool result.
+func toolCall(t *testing.T, h http.Handler, name string, args map[string]any) map[string]any {
+	t.Helper()
+	return rpc(t, h, "tools/call", map[string]any{"name": name, "arguments": args})
+}
+
+// call returns the machine-readable rendering and error flag used by most
+// behavior tests.
 func call(t *testing.T, h http.Handler, name string, args map[string]any) (map[string]any, bool) {
 	t.Helper()
-	result := rpc(t, h, "tools/call", map[string]any{"name": name, "arguments": args})
-	var resp struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-		IsError bool `json:"isError"`
-	}
-	raw, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("marshal tool result: %v", err)
-	}
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		t.Fatalf("decode tool result: %v\nresult: %s", err, raw)
-	}
-	if len(resp.Content) == 0 {
+	result := toolCall(t, h, name, args)
+	content, _ := result["content"].([]any)
+	if len(content) == 0 {
 		t.Fatalf("no content in result: %v", result)
 	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(resp.Content[0].Text), &payload); err != nil {
-		t.Fatalf("decode tool text: %v\ntext: %s", err, resp.Content[0].Text)
+	payload, _ := result["structuredContent"].(map[string]any)
+	if payload == nil {
+		t.Fatalf("no structuredContent in result: %v", result)
 	}
-	return payload, resp.IsError
+	isErr, _ := result["isError"].(bool)
+	return payload, isErr
 }
 
 func TestToolsList_ComposesCronAndChassisTools(t *testing.T) {
@@ -159,6 +156,117 @@ func TestToolsList_ComposesCronAndChassisTools(t *testing.T) {
 	}
 }
 
+// R-6V3A-PW11
+func TestToolsList_DomainOutputSchemasMatchResults(t *testing.T) {
+	h, _ := newHandler(t)
+	result := rpc(t, h, "tools/list", map[string]any{})
+	tools, _ := result["tools"].([]any)
+	byName := map[string]map[string]any{}
+	for _, raw := range tools {
+		desc, _ := raw.(map[string]any)
+		byName[desc["name"].(string)] = desc
+	}
+
+	for _, name := range []string{"create", "get", "update"} {
+		schema, _ := byName[name]["outputSchema"].(map[string]any)
+		assertObjectSchema(t, name, schema, []string{"name", "expr", "created_at", "updated_at", "last_slot"})
+		props := schema["properties"].(map[string]any)
+		for _, field := range []string{"name", "expr", "created_at", "updated_at"} {
+			if got := props[field].(map[string]any)["type"]; got != "string" {
+				t.Errorf("%s %s type = %v, want string", name, field, got)
+			}
+		}
+		if got := props["last_slot"].(map[string]any)["type"]; !reflect.DeepEqual(got, []any{"string", "null"}) {
+			t.Errorf("%s last_slot type = %#v, want [string null]", name, got)
+		}
+	}
+	listSchema, _ := byName["list"]["outputSchema"].(map[string]any)
+	assertObjectSchema(t, "list", listSchema, []string{"items"})
+	items := listSchema["properties"].(map[string]any)["items"].(map[string]any)
+	if items["type"] != "array" || items["items"] == nil {
+		t.Errorf("list items schema = %v, want typed array with item schema", items)
+	}
+	deleteSchema, _ := byName["delete"]["outputSchema"].(map[string]any)
+	assertObjectSchema(t, "delete", deleteSchema, []string{"ok"})
+	if got := deleteSchema["properties"].(map[string]any)["ok"].(map[string]any)["type"]; got != "boolean" {
+		t.Errorf("delete ok type = %v, want boolean", got)
+	}
+}
+
+func assertObjectSchema(t *testing.T, name string, schema map[string]any, required []string) {
+	t.Helper()
+	if schema == nil || schema["type"] != "object" {
+		t.Fatalf("%s outputSchema = %v, want non-nil object schema", name, schema)
+	}
+	got, _ := schema["required"].([]any)
+	if len(got) != len(required) {
+		t.Fatalf("%s required = %v, want %v", name, got, required)
+	}
+	for i, want := range required {
+		if got[i] != want {
+			t.Errorf("%s required[%d] = %v, want %q", name, i, got[i], want)
+		}
+	}
+}
+
+// R-6TVE-C4AC
+func TestDomainTools_ReturnMatchingStructuredAndTextResults(t *testing.T) {
+	h, _ := newHandler(t)
+	tests := []struct {
+		name  string
+		args  map[string]any
+		check func(*testing.T, map[string]any)
+	}{
+		{"create", map[string]any{"name": "nightly", "expr": "0 3 * * *"}, func(t *testing.T, got map[string]any) {
+			if got["name"] != "nightly" || got["last_slot"] != nil {
+				t.Fatalf("create structured result = %v", got)
+			}
+		}},
+		{"list", map[string]any{}, func(t *testing.T, got map[string]any) {
+			if _, ok := got["items"].([]any); !ok {
+				t.Fatalf("list items = %#v, want array", got["items"])
+			}
+		}},
+		{"get", map[string]any{"name": "nightly"}, func(t *testing.T, got map[string]any) {
+			if got["name"] != "nightly" {
+				t.Fatalf("get structured result = %v", got)
+			}
+		}},
+		{"update", map[string]any{"name": "nightly", "expr": "15 4 * * *"}, func(t *testing.T, got map[string]any) {
+			if got["expr"] != "15 4 * * *" {
+				t.Fatalf("update structured result = %v", got)
+			}
+		}},
+		{"delete", map[string]any{"name": "nightly"}, func(t *testing.T, got map[string]any) {
+			if got["ok"] != true {
+				t.Fatalf("delete structured result = %v", got)
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := toolCall(t, h, tt.name, tt.args)
+			structured, _ := result["structuredContent"].(map[string]any)
+			if structured == nil {
+				t.Fatalf("missing structuredContent: %v", result)
+			}
+			content, _ := result["content"].([]any)
+			if len(content) != 1 {
+				t.Fatalf("content = %v, want one mirrored text block", content)
+			}
+			block, _ := content[0].(map[string]any)
+			var mirrored map[string]any
+			if err := json.Unmarshal([]byte(block["text"].(string)), &mirrored); err != nil {
+				t.Fatalf("decode mirrored text: %v", err)
+			}
+			if !reflect.DeepEqual(mirrored, structured) {
+				t.Fatalf("mirrored text = %#v, structuredContent = %#v", mirrored, structured)
+			}
+			tt.check(t, structured)
+		})
+	}
+}
+
 // TestCreate_RejectsBadExpr: the MCP boundary parses the expr and fails loudly,
 // naming the bad field, before touching the store.
 func TestCreate_RejectsBadExpr(t *testing.T) {
@@ -170,19 +278,89 @@ func TestCreate_RejectsBadExpr(t *testing.T) {
 	if !isErr {
 		t.Fatalf("bad expr should be a tool error, got success: %v", payload)
 	}
-	errObj, _ := payload["error"].(map[string]any)
-	if errObj == nil {
-		t.Fatalf("expected error envelope, got %v", payload)
+	// R-6WB7-3NRQ
+	if payload["code"] != "validation" {
+		t.Fatalf("wrong structured error code: %v", payload)
 	}
-	if errObj["code"] != "validation" || errObj["field"] != "expr" {
-		t.Fatalf("wrong error code/field: %v", errObj)
-	}
-	if msg, _ := errObj["message"].(string); !strings.Contains(msg, "hour") {
+	if msg, _ := payload["message"].(string); !strings.Contains(msg, "hour") {
 		t.Fatalf("error message should name the bad field 'hour': %q", msg)
 	}
 	// Nothing must have been persisted.
 	if _, err := store.Get(context.Background(), "broken"); err == nil {
 		t.Fatalf("bad-expr row must not be persisted")
+	}
+}
+
+// R-6XJ3-HFIF
+func TestCreate_DuplicateNameReturnsConflict(t *testing.T) {
+	h, _ := newHandler(t)
+	args := map[string]any{"name": "nightly", "expr": "0 3 * * *"}
+	if _, isErr := call(t, h, "create", args); isErr {
+		t.Fatal("initial create failed")
+	}
+	payload, isErr := call(t, h, "create", args)
+	if !isErr || payload["code"] != "conflict" {
+		t.Fatalf("duplicate create = %v, isError=%v; want conflict", payload, isErr)
+	}
+}
+
+// R-6YQZ-V794
+func TestMissingScheduleReturnsNotFound(t *testing.T) {
+	h, _ := newHandler(t)
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"get", map[string]any{"name": "missing"}},
+		{"update", map[string]any{"name": "missing", "expr": "0 3 * * *"}},
+		{"delete", map[string]any{"name": "missing"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, isErr := call(t, h, tc.name, tc.args)
+			if !isErr || payload["code"] != "not_found" {
+				t.Fatalf("%s missing result = %v, isError=%v; want not_found", tc.name, payload, isErr)
+			}
+		})
+	}
+}
+
+// R-6ZYW-8YZT
+func TestCreate_InvalidNameReturnsValidation(t *testing.T) {
+	h, _ := newHandler(t)
+	payload, isErr := call(t, h, "create", map[string]any{"name": "Bad Name", "expr": "0 3 * * *"})
+	if !isErr || payload["code"] != "validation" {
+		t.Fatalf("invalid name result = %v, isError=%v; want validation", payload, isErr)
+	}
+	if msg, _ := payload["message"].(string); !strings.Contains(msg, "constraint") {
+		t.Fatalf("invalid-name message should identify the constraint: %q", msg)
+	}
+}
+
+// R-716S-MQQI
+func TestNoRetiredJSONResultInProductionSource(t *testing.T) {
+	moduleRoot := filepath.Join("..", "..")
+	needle := "JSON" + "Result"
+	for _, dir := range []string{"internal", "cmd"} {
+		root := filepath.Join(moduleRoot, dir)
+		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if bytes.Contains(body, []byte(needle)) {
+				t.Errorf("%s contains retired result helper token", path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", root, err)
+		}
 	}
 }
 
