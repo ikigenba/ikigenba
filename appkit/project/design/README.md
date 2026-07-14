@@ -2,7 +2,7 @@
 
 **Authority: shape and its proof.** This document and the `project/design/`
 directory it heads own *how* appkit's ralph-governed surfaces are shaped and
-*how each behavior is proven*. The product (`project/product/product.md`) owns
+*how each behavior is proven*. The product (`project/product/README.md`) owns
 the *why* and the user-facing promises; design states the **exact, checkable
 form** of those promises and never re-declares the why. This design is the
 **single current** statement, rewritten in place (stale decisions removed, not
@@ -84,7 +84,7 @@ Shared facts every Decision leans on:
   `replace` directives are not transitive, every module requiring appkit must
   mirror the registry replace (exactly as `eventplane` already forced); the
   sweep over the services that don't yet carry it is an operator step in
-  `project/plan/plan.md`, not appkit-phase work.
+  `project/plan/README.md`, not appkit-phase work.
 - **Testing substrate:** all D5–D9 behavior is provable in-process —
   `net/http/httptest` for HTTP, `t.TempDir()` for on-disk asset roots, injected
   `getenv` maps for config. A `t.TempDir()` tree is a real filesystem, so the
@@ -166,7 +166,7 @@ Decision a phase realizes:
   sorted `R-id → Decision/file` reverse map (the grep target for id lookup).
 - `project/design/DNN.md` — one self-contained file per Decision (zero-padded
   `D01.md`, …; referenced in prose and the plan as `D<N>`).
-- `project/design/design.md` — this spine: static cross-cutting facts only.
+- `project/design/README.md` — this spine: static cross-cutting facts only.
 
 **New packages (D5–D9).** This work adds two packages to the module:
 `appkit/web` (template loading + rendering + static serving over an on-disk

@@ -27,8 +27,9 @@ Do one iteration, then report.
    many thin increments (an incomplete phase is simply re-attacked next cycle, so
    there is no benefit to stopping short).
 
-   - See what already exists: `grep -rn '<the id>' inventory ../bin` for each id in
-     the brief, and run the suite to read current failures.
+   - See what already exists: for each id in the brief,
+     `grep -rn 'R-XXXX-XXXX' --include='*.go' .` from `appkit/`, and run the
+     suite to read current failures.
    - Build the named package(s) / edit the named files (see *Files to touch*),
      consuming dependencies **only** through the interface signatures the brief
      copied in — do not open a design file to look them up.
@@ -63,7 +64,8 @@ regardless of cwd.
 - **"The appkit suite is green"** means, from `appkit/`: `go build ./...`,
   `go vet ./...`, `gofmt -l .` (no output), and `go test ./...` all succeed with
   zero failures, and `GOWORK=off go build ./...` succeeds.
-- **Cross-module collaborators (not appkit Go, not verified by the Go suite):**
+- **Cross-module collaborators (not appkit Go, not verified by the Go suite —
+  only when the brief names one):**
   - `../bin/registry` — verified by `../bin/registry.test.sh` (passes = exit 0).
   - `../bin/start` — verified by the live `/services` smoke: bring the suite up,
     assert the staged `tmp/opt/<svc>/etc/current/manifest.env` layout, and
@@ -71,20 +73,25 @@ regardless of cwd.
     `../bin/stop` after. ⚠️ Only start/stop the suite this loop started from
     **this** worktree; if a shared port (`:3000`–`:3006`, `:8080`) is held by a
     stack from another worktree, stop and surface it — do not kill it.
-
 - **Test placement (design's rule — enforce it):** unit tests live **beside the
   code they exercise**, named for the behavior — appkit unit tests in the
-  package's own `*_test.go` (here `inventory/inventory_test.go`); the `bin/registry`
-  behavior in `../bin/registry.test.sh`; the `bin/start` behavior as the live smoke.
+  exercised package's own `*_test.go` (e.g. `mcp/*_test.go` for the transport and
+  standard tools, `server/*_test.go` for routes, `config/*_test.go` for env
+  resolution); the shell-collaborator behaviors in their named script/smoke.
   **Never** create a per-phase or root-level test file.
 - **Id tagging:** each covered id is named in a comment on the test that asserts
   it — `// R-XXXX-XXXX` in Go, `# R-XXXX-XXXX` in shell — on a test that *genuinely
   asserts* the behavior (never a bare literal, never a test held out of the run by
   a skip/build-tag/env gate nothing satisfies, never one that turns a real failure
   into a skip).
-- **Determinism seams:** the behaviors under test are real filesystem/symlink
-  resolution — exercise them against **real temp dirs and real symlinks**, not a
-  faked filesystem, matching the Decisions' prose.
+- **Determinism seams (design's testing strategy):** exercise behavior through
+  the **real seams, not stand-ins** — MCP transport and standard-tool claims go
+  through the real `ServeHTTP` JSON-RPC seam via `net/http/httptest`; route and
+  loopback-class claims drive the real handler and the real `server.New` mux
+  (recording inner handlers for not-invoked claims); on-disk claims use real
+  `t.TempDir()` trees; config claims use injected `getenv` maps. Result-shape
+  assertions compare `structuredContent` against the parsed text block — never
+  against a string fixture.
 
 ## Boundaries
 
@@ -101,10 +108,12 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops.
+- `DONE` — **terminal — never yours to report**: ending the run is never yours —
+  finishing this phase completely, green suite and all open gaps closed, is still
+  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Implemented Phase 01 inventory glob + two symlink tests; appkit suite green.`
+  `Implemented Phase 12 StructuredResult + ErrorCode with five tagged tests; appkit suite green.`
 
-Always end the turn on **`NEXT`** — build hands off every turn and never ends the
-run, so it never reports `DONE`. `CONTINUE` is only ever a non-terminal progress
-status. Keep `message` a single plain sentence, not a JSON object or code block.
+Always end the turn on **`NEXT`**. `CONTINUE` is only ever a non-terminal
+progress status. Keep `message` a single plain sentence, not a JSON object or
+code block.

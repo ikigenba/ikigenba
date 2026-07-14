@@ -3,7 +3,7 @@
 **Authority: intent.** This document owns *why* appkit exists, *for whom*, what
 is in and out of scope, and what we **promise** — in outcome terms only.
 Mechanism (package layout, signatures, env-var names, route tables, JSON-RPC
-envelopes) and its checkable proof live in `project/design/design.md` and the
+envelopes) and its checkable proof live in `project/design/README.md` and the
 Decision files it heads. Where the two touch observable behavior, product states
 the *promise* and design states the *exact, checkable form*; that boundary keeps
 product, design, and plan from overlapping.

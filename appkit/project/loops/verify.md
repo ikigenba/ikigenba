@@ -30,7 +30,8 @@ halt the loop and never advance a phase on a gap. Do one iteration, then report.
 3. **Re-derive coverage independently.** Every check below is a deterministic
    command with a defined pass criterion (a green suite, an exit code, an exact
    match count). Any `grep`-style source check is **scoped to exclude `project/`**
-   so it can never match the workspace/prompt docs that quote these patterns.
+   (e.g. via `--include='*.go'`) so it can never match the workspace/prompt docs
+   that quote these patterns.
 
    - **Run the full suite** for whatever this phase touches, and confirm no
      `R-XXXX-XXXX`-tagged test reported `SKIP` (a skipped requirement test is a
@@ -38,22 +39,26 @@ halt the loop and never advance a phase on a gap. Do one iteration, then report.
      - appkit ids → from `appkit/`: `go build ./...`, `go vet ./...`,
        `gofmt -l .` (must print nothing), `go test ./...`, and the isolated-module
        mirror `GOWORK=off go build ./...` — all must succeed.
-     - the `bin/registry` id (R-YQFZ-11IM) → `../bin/registry.test.sh` exits 0.
-     - the live-smoke id (R-YRNV-ET9B) → run the named live check: `../bin/start`,
-       then assert `tmp/opt/<svc>/etc/current/manifest.env` resolves for each
-       launched service **and** `curl -s http://127.0.0.1:3000/services` lists
-       `crm`; tear down with `../bin/stop`. ⚠️ Only start/stop the stack this loop
+     - shell-collaborator ids (only when the brief names one) → the
+       `bin/registry` behavior is `../bin/registry.test.sh` exiting 0; the
+       `bin/start` behavior is the named live smoke: `../bin/start`, assert
+       `tmp/opt/<svc>/etc/current/manifest.env` resolves for each launched
+       service **and** `curl -s http://127.0.0.1:3000/services` lists `crm`;
+       tear down with `../bin/stop`. ⚠️ Only start/stop the stack this loop
        started from **this** worktree; if a shared port is held by another
-       worktree's stack, stop and surface it — do not kill it. (This is the design-
-       sanctioned live proof; there is no unit stub for this id.)
+       worktree's stack, stop and surface it — do not kill it.
+     - any extra deterministic check the brief's Done bar states → run it
+       verbatim and hold it to its stated pass criterion (e.g. Phase 12's
+       `grep -rn "JSONResult" --include="*.go" .` from `appkit/` must print
+       nothing).
    - **For every id in the denominator**, confirm a genuinely-asserting tagged test
-     (`// R-…` in Go, `# R-…` in shell, or the named live check for the smoke id)
-     that **actually runs under the suite's real invocation**. Statically trace the
-     run — the test command plus every skip / build-tag / env gate guarding that
-     test — and treat as **uncovered**: a test gated behind a flag nothing in the
-     repo sets, a test that converts a real failure (non-zero exit, unparseable
-     output) into a skip, or any test you are not confident genuinely asserts the
-     behavior. A skip is never acceptable green for a requirement.
+     (`// R-…` in Go, `# R-…` in shell, or the named live check when the brief
+     says so) that **actually runs under the suite's real invocation**. Statically
+     trace the run — the test command plus every skip / build-tag / env gate
+     guarding that test — and treat as **uncovered**: a test gated behind a flag
+     nothing in the repo sets, a test that converts a real failure (non-zero exit,
+     unparseable output) into a skip, or any test you are not confident genuinely
+     asserts the behavior. A skip is never acceptable green for a requirement.
 
 4. **Collect the open gaps** — the set of ids that are uncovered or failing, each
    with the **exact command run and the observed output** that proves it open
@@ -65,7 +70,7 @@ halt the loop and never advance a phase on a gap. Do one iteration, then report.
    `⬜` to `✅` and leaving every other byte of the file identical, e.g.:
 
    ```
-   sed -i 's/^Phase NN ⬜/Phase NN ✅/' project/plan/STATUS.md
+   sed -i 's/^- Phase NN ⬜/- Phase NN ✅/' project/plan/STATUS.md
    ```
 
 2. Commit the one-line flip with the trailer:
@@ -137,12 +142,13 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops.
+- `DONE` — **terminal — never yours to report**: ending the run is never yours —
+  finishing this phase completely, green suite and all open gaps closed, is still
+  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 02 verified green; flipped to ✅ and removed the brief.` or
-  `Phase 03 still open on R-YRNV-ET9B; wrote attempt 2 feedback.`
+  `Phase 12 verified green; flipped to ✅ and removed the brief.` or
+  `Phase 13 still open on R-WY6X-V4G9; wrote attempt 2 feedback.`
 
-Always end the turn on **`NEXT`** — verify hands off every turn (on a pass and on
-a gap) and never ends the run, so it never reports `DONE`. `CONTINUE` is only ever
-a non-terminal progress status. Keep `message` a single plain sentence, not a JSON
-object or code block.
+Always end the turn on **`NEXT`** — on a pass and on a gap alike. `CONTINUE` is
+only ever a non-terminal progress status. Keep `message` a single plain sentence,
+not a JSON object or code block.

@@ -5,10 +5,18 @@
 ralph-governed work and the **record of what has been built**. The plan is
 **append-only**: completed phases are never rewritten or deleted, so the plan
 doubles as the construction history. To extend the work, update the design
-(`project/design/design.md` + `project/design/`) **in place**, then **append** a
+(`project/design/README.md` + `project/design/`) **in place**, then **append** a
 new phase here — a new `project/plan/phase-NN.md` plus a new line in
 `project/plan/STATUS.md`. Never edit a finished phase except to flip its status
 marker in `STATUS.md`.
+
+**Coverage invariant.** The phases collectively realize **every current** design
+Verification id in **exactly one** phase — no current id unassigned, none split,
+none duplicated. Coverage is one-directional: design (rewritten in place) is the
+denominator; the plan (append-only history) must cover all of it. The plan may
+also carry **retired** ids in frozen phases whose behavior has since left design
+— that is expected, never a defect, and never a reason to edit a finished phase.
+A current id minted later can only be covered by a newly appended phase.
 
 **One phase = one coherent increment.** Each phase is a single coherent unit sized
 for one subagent, built against the design Decision(s) it realizes (resolved
@@ -44,6 +52,8 @@ The plan is physically split so the build loop reads only what it needs:
   the **only** home of status markers (`✅` done / `⬜` not started).
 - `project/plan/phase-NN.md` — one body file per phase (zero-padded). A phase body
   carries **no** status token — status lives only in `STATUS.md`.
+- `project/plan/README.md` — this file: the static rules (plus the operator
+  steps below). It never accumulates phase content.
 
 ## Operator steps (outside the unattended loop)
 

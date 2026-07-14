@@ -22,13 +22,13 @@ one untouched.
 1. **Find the next unit of work.** Run:
 
    ```
-   grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
+   grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
    - **No match** → every phase is `✅`. The whole job is done: report **`DONE`**.
      This is the *only* place the loop ends. Do not write or touch the brief.
    - **A match** → note its phase number `NN` (the two-digit number after the
-     literal word `Phase`). Continue.
+     literal words `- Phase`). Continue.
 
 2. **Preserve an in-flight brief.** If `project/loops/brief.md` exists, read only
    its first line, the header `# Brief — Phase NN`.
@@ -40,22 +40,22 @@ one untouched.
      fall through to step 3 and author a fresh brief.
 
 3. **Resolve the phase.** Read **only**:
-   - `project/plan/phase-NN.md` — the phase body (build steps, the ids it owns,
-     its Done bar).
+   - `project/plan/phase-NN.md` — the phase body (what gets built, the ids it
+     owns or its slice of a Decision's ids, its *Done when* bar).
    - The realized Decision file(s). Resolve each `D<k>` the phase names via
      `project/design/INDEX.md` (`- D<k> → project/design/D0k.md …`); read only
      those `project/design/D0k.md`. To resolve a bare id, `grep -n R-XXXX-XXXX
      project/design/INDEX.md`.
    - The **dependency interface signatures** the phase leans on: the public
-     Go signatures of any package the phase's code calls (e.g. from
-     `appkit/manifest`, `appkit/inventory`) — read just enough to copy the exact
-     signatures. If the phase has no code dependency beyond its own package, this
-     is `(none)`.
+     Go signatures of any package the phase's code calls (e.g. from `appkit/mcp`,
+     `appkit/server`, or the `eventplane` sibling's `outbox`/`consumer` packages)
+     — read just enough to copy the exact signatures. If the phase has no code
+     dependency beyond its own package, this is `(none)`.
 
    Determine **the ids to cover**: *only* the `R-XXXX-XXXX` ids the phase's body /
-   *Done* section lists — this is usually a **slice** of a Decision's full
-   Verification list, never all of it. Never include an id the phase does not
-   own, even if it lives in the same Decision.
+   *Done when* section lists as this phase's new coverage — this is usually a
+   **slice** of a Decision's full Verification list, never all of it. Never
+   include an id the phase does not own, even if it lives in the same Decision.
 
 4. **Write `project/loops/brief.md`** to the schema below. Copy the **full design
    prose** of each realized Decision verbatim from its `D0k.md` — the Decision
@@ -105,20 +105,22 @@ own line. If the phase owns no ids, write the single line
 
 ## Done bar
 <the deterministic pass predicate(s) for this phase, as exact commands — copied
- from phase-NN.md's Done section and design's Conventions. Use the project's
- fixed check catalog:
- - appkit Go ids  → the appkit suite is green from `appkit/`: `go build ./...`,
+ from phase-NN.md's Done when section and design's Conventions. Use the
+ project's fixed check catalog:
+ - appkit Go ids → the appkit suite is green from `appkit/`: `go build ./...`,
    `go vet ./...`, `gofmt -l .` (no output), `go test ./...` all pass, plus the
    isolated-module mirror `GOWORK=off go build ./...`; and every owned id has a
    genuinely-asserting `// R-XXXX-XXXX`-tagged test co-located in the exercised
-   package's `*_test.go` (here `inventory/inventory_test.go`) that actually runs
-   (no SKIP).
- - the bin/registry id (R-YQFZ-11IM) → `../bin/registry.test.sh` exits 0 with a
-   `# R-YQFZ-11IM`-tagged asserting case.
- - the live-smoke id (R-YRNV-ET9B) → the named live check passes: after
-   `../bin/start`, each service has `tmp/opt/<svc>/etc/current/manifest.env` and
-   `curl -s http://127.0.0.1:3000/services` lists `crm`; captured reproducibly and
-   tagged `# R-YRNV-ET9B`.
+   package's own `*_test.go` (e.g. `mcp/*_test.go` for transport/tool ids,
+   `server/*_test.go` for route ids) that actually runs (no SKIP).
+ - shell-collaborator ids (only when the phase names one; design's cross-module
+   collaborators) → the `bin/registry` behavior is `../bin/registry.test.sh`
+   exiting 0 with a `# R-…`-tagged asserting case; the `bin/start` behavior is
+   the named live `/services` smoke.
+ - any extra deterministic check the phase's Done when section states — copy it
+   verbatim (e.g. Phase 12's `grep -rn "JSONResult" --include="*.go" .` from
+   `appkit/` printing nothing; the `--include` scope keeps it off `project/`
+   docs).
  State the concrete co-located test path(s) so build and verify enforce
  placement: unit tests live beside the code they exercise, named for the
  behavior — never a per-phase or root-level test file.>
@@ -133,8 +135,8 @@ own line. If the phase owns no ids, write the single line
 
 - Read only `project/plan/STATUS.md`, the one `project/plan/phase-NN.md`, the
   realized `project/design/D0k.md` (resolved via `INDEX.md`), and the dependency
-  interface signatures. Never read `product.md`, `research.md`, other phases, or
-  other Decisions.
+  interface signatures. Never read `project/product/README.md`,
+  `project/research/research.md`, other phases, or other Decisions.
 - Never build, test, or commit. Never edit `STATUS.md` or flip a marker.
 - Never write the feedback region (below the marker) beyond the empty stub, and
   never touch an in-flight brief for the phase already active.
@@ -148,7 +150,7 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Authored brief for Phase 02 covering R-YQFZ-11IM.`
+  `Authored brief for Phase 12 covering five D8 structured-result ids.`
 
 End the turn on **`DONE`** only when the step-1 grep found no `⬜` phase;
 otherwise end it on **`NEXT`** (whether you authored a fresh brief or left an
