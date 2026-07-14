@@ -3,12 +3,15 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +48,11 @@ func (c fixedClock) Now() time.Time { return c.t }
 // clock. It returns the handler and underlying Service so a test can also drive
 // the public ingress handler to prove a secret still verifies end-to-end.
 func newTestHandler(t *testing.T) (http.Handler, *webhooks.Service) {
+	h, svc, _ := newTestHandlerWithDB(t)
+	return h, svc
+}
+
+func newTestHandlerWithDB(t *testing.T) (http.Handler, *webhooks.Service, *sql.DB) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "webhooks_test.db")
 	conn, err := chassis.Open(path)
@@ -92,7 +100,7 @@ func newTestHandler(t *testing.T) (http.Handler, *webhooks.Service) {
 	if handler == nil {
 		t.Fatal("NewHandler returned nil handler")
 	}
-	return handler, svc
+	return handler, svc, conn
 }
 
 // ── JSON-RPC drivers ───────────────────────────────────────────────────────
@@ -108,17 +116,19 @@ type jsonRPCResponse struct {
 }
 
 type toolResult struct {
-	IsError bool `json:"isError"`
-	Content []struct {
+	IsError           bool           `json:"isError"`
+	StructuredContent map[string]any `json:"structuredContent"`
+	Content           []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
 }
 
 type toolDescriptor struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description"`
+	InputSchema  map[string]any `json:"inputSchema"`
+	OutputSchema map[string]any `json:"outputSchema"`
 }
 
 // rpcAs drives a single JSON-RPC request through the real ServeHTTP seam with the
@@ -178,24 +188,24 @@ func callOK(t *testing.T, h http.Handler, owner, name string, args any) map[stri
 	return m
 }
 
-// callErr asserts an error envelope (isError:true) and returns the rendered
-// `error` object (code, message, optional field).
+// callErr asserts a structured error envelope (isError:true) and returns its
+// machine-readable {code,message} object.
 func callErr(t *testing.T, h http.Handler, owner, name string, args any) map[string]any {
 	t.Helper()
 	tr := callAs(t, h, owner, name, args)
 	if !tr.IsError {
 		t.Fatalf("%s: expected an error envelope, got success: %s", name, payloadText(tr))
 	}
-	var env struct {
-		Error map[string]any `json:"error"`
+	if tr.StructuredContent == nil {
+		t.Fatalf("%s: error envelope missing structuredContent: %+v", name, tr)
 	}
-	if err := json.Unmarshal([]byte(tr.Content[0].Text), &env); err != nil {
-		t.Fatalf("%s: error payload is not the envelope shape: %v (%s)", name, err, tr.Content[0].Text)
+	if len(tr.Content) != 1 || tr.Content[0].Type != "text" {
+		t.Fatalf("%s: expected one text error content block, got %+v", name, tr.Content)
 	}
-	if env.Error == nil {
-		t.Fatalf("%s: error envelope missing the top-level \"error\" key: %s", name, tr.Content[0].Text)
+	if tr.StructuredContent["message"] != tr.Content[0].Text {
+		t.Fatalf("%s: text error message %q does not mirror structured message %v", name, tr.Content[0].Text, tr.StructuredContent["message"])
 	}
-	return env.Error
+	return tr.StructuredContent
 }
 
 func payloadText(tr toolResult) string {
@@ -458,21 +468,229 @@ func TestNonOwnerDeleteRotateNotFound(t *testing.T) {
 	}
 }
 
-// R-65C1-UVO6 — create of an already-used name → duplicate; create of an invalid
-// name → validation with field=="name".
+// R-65C1-UVO6 — create of an already-used name → conflict; create of an invalid
+// name → validation.
 func TestCreateDuplicateAndInvalid(t *testing.T) {
 	h, _ := newTestHandler(t)
 
 	callOK(t, h, ownerA, "create", map[string]any{"name": "dup"})
-	if env := callErr(t, h, ownerA, "create", map[string]any{"name": "dup"}); env["code"] != "duplicate" {
-		t.Fatalf("duplicate create code = %v, want duplicate", env["code"])
+	if env := callErr(t, h, ownerA, "create", map[string]any{"name": "dup"}); env["code"] != "conflict" {
+		t.Fatalf("duplicate create code = %v, want conflict", env["code"])
 	}
 
 	env := callErr(t, h, ownerA, "create", map[string]any{"name": "bad name"})
 	if env["code"] != "validation" {
 		t.Fatalf("invalid-name create code = %v, want validation", env["code"])
 	}
-	if env["field"] != "name" {
-		t.Fatalf("invalid-name create field = %v, want name", env["field"])
+	if len(env) != 2 {
+		t.Fatalf("invalid-name error keys = %v, want exactly code and message", env)
+	}
+}
+
+// R-DRUS-R3AP — every webhooks-owned domain tool advertises a non-nil output
+// schema through the assembled handler's tools/list response.
+func TestDomainToolsDeclareOutputSchemas(t *testing.T) {
+	h, _ := newTestHandler(t)
+	resp := rpcAs(t, h, ownerA, "tools/list", nil)
+	var result struct {
+		Tools []toolDescriptor `json:"tools"`
+	}
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("decode tools/list result: %v", err)
+	}
+
+	byName := make(map[string]toolDescriptor, len(result.Tools))
+	for _, descriptor := range result.Tools {
+		byName[descriptor.Name] = descriptor
+	}
+	for _, name := range []string{"create", "list", "delete", "rotate"} {
+		descriptor, ok := byName[name]
+		if !ok {
+			t.Errorf("tools/list missing domain tool %q", name)
+			continue
+		}
+		if descriptor.OutputSchema == nil {
+			t.Errorf("domain tool %q has nil outputSchema", name)
+		}
+	}
+}
+
+// R-DT2P-4V1E — all four domain successes carry structuredContent and a text
+// JSON rendering that decodes to exactly the same value.
+func TestDomainSuccessesMirrorStructuredContentAsText(t *testing.T) {
+	h, _ := newTestHandler(t)
+	results := map[string]toolResult{}
+	results["create"] = callAs(t, h, ownerA, "create", map[string]any{"name": "mirrored"})
+	results["list"] = callAs(t, h, ownerA, "list", map[string]any{})
+	results["rotate"] = callAs(t, h, ownerA, "rotate", map[string]any{"name": "mirrored"})
+	results["delete"] = callAs(t, h, ownerA, "delete", map[string]any{"name": "mirrored"})
+
+	for _, name := range []string{"create", "list", "delete", "rotate"} {
+		tr := results[name]
+		if tr.IsError {
+			t.Errorf("%s returned isError:true", name)
+			continue
+		}
+		if tr.StructuredContent == nil {
+			t.Errorf("%s success has nil structuredContent", name)
+			continue
+		}
+		if len(tr.Content) != 1 || tr.Content[0].Type != "text" {
+			t.Errorf("%s content = %+v, want one text block", name, tr.Content)
+			continue
+		}
+		var mirrored map[string]any
+		if err := json.Unmarshal([]byte(tr.Content[0].Text), &mirrored); err != nil {
+			t.Errorf("%s text is not JSON: %v", name, err)
+			continue
+		}
+		if !reflect.DeepEqual(mirrored, tr.StructuredContent) {
+			t.Errorf("%s text JSON = %#v, structuredContent = %#v", name, mirrored, tr.StructuredContent)
+		}
+	}
+}
+
+// R-DUAL-IMS3 — each domain success has exactly the keys its declared output
+// schema describes, including the secret-free list item projection.
+func TestDomainSuccessesConformToDeclaredOutputSchemas(t *testing.T) {
+	h, _ := newTestHandler(t)
+	resp := rpcAs(t, h, ownerA, "tools/list", nil)
+	var listed struct {
+		Tools []toolDescriptor `json:"tools"`
+	}
+	if err := json.Unmarshal(resp.Result, &listed); err != nil {
+		t.Fatalf("decode tools/list: %v", err)
+	}
+	schemas := map[string]map[string]any{}
+	for _, descriptor := range listed.Tools {
+		schemas[descriptor.Name] = descriptor.OutputSchema
+	}
+
+	results := map[string]map[string]any{}
+	results["create"] = callAs(t, h, ownerA, "create", map[string]any{"name": "schema-match"}).StructuredContent
+	results["list"] = callAs(t, h, ownerA, "list", map[string]any{}).StructuredContent
+	results["rotate"] = callAs(t, h, ownerA, "rotate", map[string]any{"name": "schema-match"}).StructuredContent
+	results["delete"] = callAs(t, h, ownerA, "delete", map[string]any{"name": "schema-match"}).StructuredContent
+	for _, name := range []string{"create", "list", "delete", "rotate"} {
+		assertObjectMatchesSchema(t, name, results[name], schemas[name])
+	}
+
+	if str(t, results["create"], "secret") == "" {
+		t.Fatal("create omitted its show-once secret")
+	}
+	if results["delete"]["deleted"] != true {
+		t.Fatalf("delete structuredContent = %v, want deleted:true", results["delete"])
+	}
+	items, ok := results["list"]["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("list items = %v, want one item", results["list"]["items"])
+	}
+	item, ok := items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("list item = %T, want object", items[0])
+	}
+	listProps := schemas["list"]["properties"].(map[string]any)
+	itemSchema := listProps["items"].(map[string]any)["items"].(map[string]any)
+	assertObjectMatchesSchema(t, "list item", item, itemSchema)
+	if _, leaked := item["secret"]; leaked {
+		t.Fatal("list item leaked secret")
+	}
+	if _, leaked := item["secret_hash"]; leaked {
+		t.Fatal("list item leaked secret_hash")
+	}
+}
+
+func assertObjectMatchesSchema(t *testing.T, name string, value, schema map[string]any) {
+	t.Helper()
+	if value == nil || schema == nil {
+		t.Fatalf("%s value/schema must be non-nil: value=%v schema=%v", name, value, schema)
+	}
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s schema properties = %T, want object", name, schema["properties"])
+	}
+	want := make(map[string]bool, len(props))
+	for key := range props {
+		want[key] = true
+	}
+	got := make(map[string]bool, len(value))
+	for key := range value {
+		got[key] = true
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("%s keys = %v, schema property keys = %v", name, got, want)
+	}
+	required, ok := schema["required"].([]any)
+	if !ok || len(required) != len(want) {
+		t.Fatalf("%s required = %v, want every property required", name, schema["required"])
+	}
+	for _, key := range required {
+		if !want[key.(string)] {
+			t.Fatalf("%s schema requires unknown key %v", name, key)
+		}
+	}
+}
+
+// R-DVIH-WEIS — a second create of the same name is a structured conflict,
+// never the retired duplicate code.
+func TestDuplicateCreateReturnsStructuredConflict(t *testing.T) {
+	h, _ := newTestHandler(t)
+	callOK(t, h, ownerA, "create", map[string]any{"name": "taken"})
+	env := callErr(t, h, ownerA, "create", map[string]any{"name": "taken"})
+	if env["code"] != "conflict" {
+		t.Fatalf("duplicate create code = %v, want conflict", env["code"])
+	}
+}
+
+// R-DWQE-A69H — domain errors are structured isError results whose codes stay
+// inside appkit's closed vocabulary, including an unexpected closed-store error.
+func TestDomainErrorsUseClosedStructuredVocabulary(t *testing.T) {
+	h, _ := newTestHandler(t)
+	callOK(t, h, ownerA, "create", map[string]any{"name": "owned"})
+
+	internalHandler, _, conn := newTestHandlerWithDB(t)
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close db to force store failure: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		got  map[string]any
+		want string
+	}{
+		{name: "invalid create", got: callErr(t, h, ownerA, "create", map[string]any{"name": "bad name"}), want: "validation"},
+		{name: "non-owner delete", got: callErr(t, h, ownerB, "delete", map[string]any{"name": "owned"}), want: "not_found"},
+		{name: "non-owner rotate", got: callErr(t, h, ownerB, "rotate", map[string]any{"name": "owned"}), want: "not_found"},
+		{name: "unexpected store failure", got: callErr(t, internalHandler, ownerA, "list", map[string]any{}), want: "internal"},
+	}
+	closed := map[string]bool{
+		"validation": true, "not_found": true, "conflict": true,
+		"too_large": true, "source_unavailable": true, "internal": true,
+	}
+	for _, tc := range cases {
+		if tc.got["code"] != tc.want {
+			t.Errorf("%s code = %v, want %s", tc.name, tc.got["code"], tc.want)
+		}
+		code, _ := tc.got["code"].(string)
+		if !closed[code] {
+			t.Errorf("%s code %q is outside closed vocabulary", tc.name, code)
+		}
+		if len(tc.got) != 2 || tc.got["message"] == nil {
+			t.Errorf("%s structuredContent = %v, want exactly code and message", tc.name, tc.got)
+		}
+	}
+}
+
+// R-DXYA-NY06 — no non-test service source retains the removed legacy result
+// helper identifier.
+func TestNonTestSourceContainsNoLegacyJSONResultCalls(t *testing.T) {
+	cmd := exec.Command("bash", "-c", "grep -rn 'JSONResult' internal cmd --include='*.go' | grep -v _test.go || true")
+	cmd.Dir = filepath.Join("..", "..")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("scan non-test Go source: %v (%s)", err, out)
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("legacy JSONResult remains in non-test source:\n%s", out)
 	}
 }

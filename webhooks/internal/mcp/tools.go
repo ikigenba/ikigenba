@@ -38,30 +38,34 @@ func Tools(svc *webhooks.Service, baseURL string) []appkitmcp.Tool {
 			InputSchema: obj(map[string]any{
 				"name": descTyp("string", "optional; ^[A-Za-z0-9_-]{1,64}$. Omit for a generated name."),
 			}),
+			OutputSchema: createOutputSchema,
 			Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				return h.toolCreate(ctx, args, id)
 			},
 		},
 		{
-			Name:        tool("list"),
-			Description: "List your webhooks (owner-scoped — only your own). Each entry has name, trigger_url, created_at, and last_triggered_at (null until first fired). Secrets are never returned by list.",
-			InputSchema: obj(map[string]any{}),
+			Name:         tool("list"),
+			Description:  "List your webhooks (owner-scoped — only your own). Each entry has name, trigger_url, created_at, and last_triggered_at (null until first fired). Secrets are never returned by list.",
+			InputSchema:  obj(map[string]any{}),
+			OutputSchema: listOutputSchema,
 			Handler: func(ctx context.Context, _ json.RawMessage, id server.Identity) (map[string]any, error) {
 				return h.toolList(ctx, id)
 			},
 		},
 		{
-			Name:        tool("delete"),
-			Description: "Delete one of your webhooks by name. Owner-scoped: a name you do not own returns not_found and changes nothing. Returns {deleted:true} on success.",
-			InputSchema: obj(map[string]any{"name": typ("string")}, "name"),
+			Name:         tool("delete"),
+			Description:  "Delete one of your webhooks by name. Owner-scoped: a name you do not own returns not_found and changes nothing. Returns {deleted:true} on success.",
+			InputSchema:  obj(map[string]any{"name": typ("string")}, "name"),
+			OutputSchema: deleteOutputSchema,
 			Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				return h.toolDelete(ctx, args, id)
 			},
 		},
 		{
-			Name:        tool("rotate"),
-			Description: "Issue a fresh show-once signing secret for one of your webhooks. The name and trigger_url are unchanged; the previous secret stops verifying immediately. Owner-scoped: a name you do not own returns not_found.",
-			InputSchema: obj(map[string]any{"name": typ("string")}, "name"),
+			Name:         tool("rotate"),
+			Description:  "Issue a fresh show-once signing secret for one of your webhooks. The name and trigger_url are unchanged; the previous secret stops verifying immediately. Owner-scoped: a name you do not own returns not_found.",
+			InputSchema:  obj(map[string]any{"name": typ("string")}, "name"),
+			OutputSchema: rotateOutputSchema,
 			Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				return h.toolRotate(ctx, args, id)
 			},
@@ -82,6 +86,43 @@ func typ(t string) map[string]any { return map[string]any{"type": t} }
 func descTyp(t, description string) map[string]any {
 	return map[string]any{"type": t, "description": description}
 }
+
+func outObj(props map[string]any, required ...string) map[string]any {
+	o := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		o["required"] = required
+	}
+	return o
+}
+
+var webhookOutputSchema = outObj(map[string]any{
+	"name":              typ("string"),
+	"trigger_url":       typ("string"),
+	"created_at":        typ("string"),
+	"last_triggered_at": map[string]any{"type": []string{"string", "null"}},
+}, "name", "trigger_url", "created_at", "last_triggered_at")
+
+var createOutputSchema = outObj(map[string]any{
+	"name":              typ("string"),
+	"trigger_url":       typ("string"),
+	"created_at":        typ("string"),
+	"last_triggered_at": map[string]any{"type": []string{"string", "null"}},
+	"secret":            typ("string"),
+}, "name", "trigger_url", "created_at", "last_triggered_at", "secret")
+
+var listOutputSchema = outObj(map[string]any{
+	"items": map[string]any{"type": "array", "items": webhookOutputSchema},
+}, "items")
+
+var deleteOutputSchema = outObj(map[string]any{
+	"deleted": typ("boolean"),
+}, "deleted")
+
+var rotateOutputSchema = outObj(map[string]any{
+	"name":        typ("string"),
+	"trigger_url": typ("string"),
+	"secret":      typ("string"),
+}, "name", "trigger_url", "secret")
 
 // triggerURL renders a webhook's public POST endpoint: baseURL (trailing slash)
 // + "in/" + name. Both create/rotate and list go through this one site so the
@@ -119,7 +160,7 @@ func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage, id s
 	}
 	out := h.webhookView(wh)
 	out["secret"] = secret
-	return appkitmcp.JSONResult(out)
+	return appkitmcp.StructuredResult(out)
 }
 
 func (h *toolHandlers) toolList(ctx context.Context, id server.Identity) (map[string]any, error) {
@@ -131,7 +172,7 @@ func (h *toolHandlers) toolList(ctx context.Context, id server.Identity) (map[st
 	for _, wh := range whs {
 		items = append(items, h.webhookView(wh))
 	}
-	return appkitmcp.JSONResult(map[string]any{"items": items})
+	return appkitmcp.StructuredResult(map[string]any{"items": items})
 }
 
 func (h *toolHandlers) toolDelete(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
@@ -148,7 +189,7 @@ func (h *toolHandlers) toolDelete(ctx context.Context, raw json.RawMessage, id s
 	if !deleted {
 		return toolErr(webhooks.ErrNotFound), nil
 	}
-	return appkitmcp.JSONResult(map[string]any{"deleted": true})
+	return appkitmcp.StructuredResult(map[string]any{"deleted": true})
 }
 
 func (h *toolHandlers) toolRotate(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
@@ -162,37 +203,23 @@ func (h *toolHandlers) toolRotate(ctx context.Context, raw json.RawMessage, id s
 	if err != nil {
 		return toolErr(err), nil
 	}
-	return appkitmcp.JSONResult(map[string]any{
+	return appkitmcp.StructuredResult(map[string]any{
 		"name":        a.Name,
 		"trigger_url": h.triggerURL(a.Name),
 		"secret":      secret,
 	})
 }
 
-// errorEnvelope renders a webhooks domain error into the uniform, closed-vocabulary
-// error envelope. ErrInvalidName additionally pins field:"name" so the agent can
-// self-correct the offending argument.
-func errorEnvelope(err error) map[string]any {
-	e := map[string]any{}
+// toolErr maps webhooks domain errors onto appkit's shared closed vocabulary.
+func toolErr(err error) map[string]any {
 	switch {
 	case errors.Is(err, webhooks.ErrNameTaken):
-		e["code"] = "duplicate"
-		e["message"] = err.Error()
+		return appkitmcp.ErrorResult(appkitmcp.ErrConflict, err.Error())
 	case errors.Is(err, webhooks.ErrInvalidName):
-		e["code"] = "validation"
-		e["message"] = err.Error()
-		e["field"] = "name"
+		return appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error())
 	case errors.Is(err, webhooks.ErrNotFound):
-		e["code"] = "not_found"
-		e["message"] = err.Error()
+		return appkitmcp.ErrorResult(appkitmcp.ErrNotFound, err.Error())
 	default:
-		e["code"] = "internal"
-		e["message"] = "internal error"
+		return appkitmcp.ErrorResult(appkitmcp.ErrInternal, "internal error")
 	}
-	return map[string]any{"error": e}
-}
-
-func toolErr(err error) map[string]any {
-	b, _ := json.Marshal(errorEnvelope(err))
-	return appkitmcp.ErrorResult(string(b))
 }
