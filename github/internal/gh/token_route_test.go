@@ -16,7 +16,6 @@ import (
 )
 
 func TestTokenHandlerAssembledRouterJSONGuardAndFailureR_GTQ4_30E7(t *testing.T) {
-	// R-GTQ4-30E7
 	key := mustRSAKey(t)
 	var calls int
 	httpClient := stubClient(func(req *http.Request) (*http.Response, error) {

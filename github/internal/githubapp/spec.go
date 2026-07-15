@@ -15,6 +15,8 @@ import (
 	"github/internal/web"
 )
 
+var newGitHubClient = gh.NewClient
+
 // Spec returns the production-shaped appkit service declaration.
 func Spec() appkit.Spec {
 	var client *gh.Client
@@ -37,13 +39,13 @@ func Spec() appkit.Spec {
 		Health:     health,
 		Config: func(getenv func(string) string) (any, error) {
 			cfg := gh.ConfigFromEnv(getenv)
-			_, err := gh.NewClient(cfg, nil)
+			_, err := newGitHubClient(cfg, nil)
 			return cfg, err
 		},
 		Handlers: func(rt *appkit.Router) error {
 			cfg := gh.ConfigFromEnv(os.Getenv)
 			var err error
-			client, err = gh.NewClient(cfg, nil)
+			client, err = newGitHubClient(cfg, nil)
 			if err != nil {
 				return err
 			}
