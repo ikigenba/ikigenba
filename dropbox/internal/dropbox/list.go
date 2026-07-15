@@ -63,14 +63,10 @@ func (s *Service) ListHandler() http.Handler {
 
 		files := []map[string]any{}
 		for _, row := range rows {
-			files = append(files, map[string]any{
-				"path":       row.Path,
-				"kind":       row.Kind,
-				"size":       row.Size,
-				"hash":       row.ContentHash, // FULL hash (ADR decision 4), not abbreviated
-				"rev":        row.Rev,
-				"updated_at": row.UpdatedAt,
-			})
+			entry := s.loopbackEntry(row)
+			entry["hash"] = entry["content_hash"] // FULL hash (ADR decision 4), not abbreviated
+			delete(entry, "content_hash")
+			files = append(files, entry)
 		}
 		out := map[string]any{"files": files}
 		if len(rows) == limit {

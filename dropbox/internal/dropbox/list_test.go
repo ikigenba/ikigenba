@@ -1,6 +1,8 @@
 package dropbox
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,11 +13,13 @@ import (
 // listResponse is the decoded /list JSON body shape ({files:[…], next_cursor?}).
 type listResponse struct {
 	Files []struct {
-		Path      string `json:"path"`
-		Size      int64  `json:"size"`
-		Hash      string `json:"hash"`
-		Rev       string `json:"rev"`
-		UpdatedAt string `json:"updated_at"`
+		Path       string    `json:"path"`
+		Kind       EntryKind `json:"kind"`
+		Size       int64     `json:"size"`
+		Hash       string    `json:"hash"`
+		Rev        string    `json:"rev"`
+		UpdatedAt  string    `json:"updated_at"`
+		ContentURL *string   `json:"content_url"`
 	} `json:"files"`
 	NextCursor string `json:"next_cursor"`
 }
@@ -84,6 +88,42 @@ func TestListHandler_HappyPathOrderedFullHash(t *testing.T) {
 	// A short page (len < limit) carries no next_cursor.
 	if resp.NextCursor != "" {
 		t.Fatalf("next_cursor = %q, want empty on a short page", resp.NextCursor)
+	}
+}
+
+func TestListHandler_ContentURLOnlyOnCanonicalFileEntries(t *testing.T) {
+	// R-5AWI-SAOX
+	svc, _, _ := newContentService(t)
+	svc.ContentBase = "http://127.0.0.1:4321"
+	if _, err := svc.Write(context.Background(), "reports/../reports/my report.txt", bytes.NewBufferString("report"), "writer"); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := doList(t, svc.ListHandler(), url.Values{})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	var resp listResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Files) != 2 {
+		t.Fatalf("entries = %+v, want parent directory and file", resp.Files)
+	}
+	for _, entry := range resp.Files {
+		switch entry.Kind {
+		case KindFile:
+			want := "http://127.0.0.1:4321/content?path=%2Freports%2Fmy+report.txt"
+			if entry.Path != "/reports/my report.txt" || entry.ContentURL == nil || *entry.ContentURL != want {
+				t.Fatalf("file entry = %+v, want canonical path and content_url %q", entry, want)
+			}
+		case KindDir:
+			if entry.ContentURL != nil {
+				t.Fatalf("directory entry = %+v, want no content_url", entry)
+			}
+		default:
+			t.Fatalf("unexpected entry kind in %+v", entry)
+		}
 	}
 }
 

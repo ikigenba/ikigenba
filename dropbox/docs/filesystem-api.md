@@ -102,9 +102,11 @@ Query parameters:
 - `limit` (optional): page size, defaulting to 1000 and clamped to 1000.
 
 Returns HTTP 200 JSON with `files`, an array of
-`{path, kind, size, hash, rev, updated_at}`, and `next_cursor` only when the
-page is full. The listing includes both files and directories. Internal lookup
-failures return HTTP 500.
+`{path, kind, size, hash, rev, updated_at, content_url}`, and `next_cursor` only
+when the page is full. Every file entry has a `content_url`; directory entries
+omit it. The URL is a complete reference to loopback `GET /content` and can be
+dereferenced directly to read the file bytes. The listing includes both files
+and directories. Internal lookup failures return HTTP 500.
 
 ## Stat an entry
 
@@ -115,8 +117,11 @@ Query parameters:
 - `path` (required): file or directory path.
 
 Returns HTTP 200 JSON metadata for one entry: `path`, `kind`, `size`, `rev`,
-`content_hash`, and `updated_at` (directory-only fields may be empty). A missing
-entry is `not_found` (HTTP 404); an internal lookup failure is HTTP 500.
+`content_hash`, `updated_at`, and, for files, `content_url`. Directories omit
+`content_url`; for a file it is a complete reference to loopback `GET /content`
+that can be dereferenced to read the bytes. Directory-only fields may be empty.
+A missing entry is `not_found` (HTTP 404); an internal lookup failure is HTTP
+500.
 
 ## Errors and delivery contract
 

@@ -66,8 +66,25 @@ func (s *Service) StatHandler() http.Handler {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, entry)
+		writeJSON(w, http.StatusOK, s.loopbackEntry(entry))
 	})
+}
+
+// loopbackEntry renders the shared metadata shape for /stat and /list. Only
+// loopback callers receive content_url; MCP deliberately renders its own shape.
+func (s *Service) loopbackEntry(entry Entry) map[string]any {
+	out := map[string]any{
+		"path":         entry.Path,
+		"kind":         entry.Kind,
+		"size":         entry.Size,
+		"content_hash": entry.ContentHash,
+		"rev":          entry.Rev,
+		"updated_at":   entry.UpdatedAt,
+	}
+	if entry.Kind == KindFile && s.ContentBase != "" {
+		out["content_url"] = contentURL(s.ContentBase, entry.Path)
+	}
+	return out
 }
 
 func writeMutationError(w http.ResponseWriter, logger *slog.Logger, route string, err error) {

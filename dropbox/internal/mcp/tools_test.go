@@ -160,6 +160,24 @@ func callTool(t *testing.T, h http.Handler, name, args string) (map[string]any, 
 	return payload, isErr
 }
 
+func containsJSONKey(v any, key string) bool {
+	switch value := v.(type) {
+	case map[string]any:
+		for k, child := range value {
+			if k == key || containsJSONKey(child, key) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range value {
+			if containsJSONKey(child, key) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestToolsListComposesDropboxToolsWithChassisTools(t *testing.T) {
 	// R-QQJT-LKCV
 	// R-KRXK-IQE2
@@ -691,6 +709,29 @@ func TestGet_HappyPath(t *testing.T) {
 	}
 	if string(dec) != string(body) {
 		t.Errorf("decoded bytes = %q, want %q", dec, body)
+	}
+}
+
+func TestListAndGet_OmitLoopbackContentURLFromStructuredContent(t *testing.T) {
+	// R-5C4F-62FM
+	h, svc := newMirrorHandler(t)
+	svc.ContentBase = "http://127.0.0.1:4321"
+	seedFile(t, svc, "/notes/a.md", "rev-7", "hash-full", []byte("bytes"))
+
+	for _, tc := range []struct {
+		name string
+		args string
+	}{
+		{name: "list", args: `{}`},
+		{name: "get", args: `{"path":"/notes/a.md"}`},
+	} {
+		structured, isErr := callTool(t, h, tc.name, tc.args)
+		if isErr {
+			t.Fatalf("%s returned an error: %v", tc.name, structured)
+		}
+		if containsJSONKey(structured, "content_url") {
+			t.Fatalf("%s structuredContent contains content_url: %v", tc.name, structured)
+		}
 	}
 }
 

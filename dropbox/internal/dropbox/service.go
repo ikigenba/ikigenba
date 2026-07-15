@@ -33,17 +33,16 @@ type Service struct {
 	// an interface so the domain does not hard-depend on the event-plane library
 	// when emission is off.
 	Outbox EventSink
-	Now    func() time.Time
-	Logger *slog.Logger
-
-	// contentBase is the scheme+host(+port) the loopback /content route lives at,
-	// used only by Whoami/Health-adjacent code if ever needed; the event builders
-	// get it through the outboxProducer. Kept for symmetry / future use.
-	contentBase string
+	// ContentBase is the scheme+host(+port) of the loopback /content route. The
+	// loopback stat and list handlers use it to render dereferenceable file URLs.
+	// An empty value omits those URLs for unit fixtures that do not need them.
+	ContentBase string
+	Now         func() time.Time
+	Logger      *slog.Logger
 }
 
 // NewService builds a Service over db with the real clock. The store, mirror,
-// client, outbox, and contentBase are wired in by main (or by a test). A bare
+// client, outbox, and ContentBase are wired in by main (or by a test). A bare
 // NewService (store only) keeps the Phase 0 identity probes working.
 func NewService(db *sql.DB) *Service {
 	return &Service{DB: db, Store: NewStore(), Now: time.Now, Logger: slog.Default()}

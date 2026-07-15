@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -217,6 +218,94 @@ func TestStatHandler_ReturnsFileDirectoryAndNotFound(t *testing.T) {
 	svc.StatHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stat?path=%2Fmissing", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("missing stat status = %d, want 404", rec.Code)
+	}
+}
+
+func TestStatHandler_ContentURLOnlyOnCanonicalFileEntry(t *testing.T) {
+	// R-59OM-EIY8
+	svc, _, _ := newContentService(t)
+	svc.ContentBase = "http://127.0.0.1:4321"
+	if _, err := svc.Write(context.Background(), "folder/../folder/my file.txt", bytes.NewBufferString("file"), "writer"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		path    string
+		wantURL string
+	}{
+		{path: "/folder/my file.txt", wantURL: "http://127.0.0.1:4321/content?path=%2Ffolder%2Fmy+file.txt"},
+		{path: "/folder"},
+	} {
+		q := url.Values{"path": {tc.path}}
+		rec := httptest.NewRecorder()
+		svc.StatHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stat?"+q.Encode(), nil))
+		var entry map[string]any
+		if rec.Code != http.StatusOK {
+			t.Fatalf("stat %q status = %d, want 200 (body %q)", tc.path, rec.Code, rec.Body.String())
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &entry); err != nil {
+			t.Fatalf("decode stat %q: %v", tc.path, err)
+		}
+		got, present := entry["content_url"]
+		if tc.wantURL == "" && present {
+			t.Fatalf("directory stat content_url = %v, want key absent", got)
+		}
+		if tc.wantURL != "" && (!present || got != tc.wantURL || entry["path"] != tc.path) {
+			t.Fatalf("file stat = %v, want canonical path and content_url %q", entry, tc.wantURL)
+		}
+	}
+
+	svc.ContentBase = ""
+	rec := httptest.NewRecorder()
+	svc.StatHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stat?path=%2Ffolder%2Fmy+file.txt", nil))
+	var entry map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &entry); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := entry["content_url"]; present {
+		t.Fatalf("empty ContentBase rendered content_url: %v", entry)
+	}
+}
+
+func TestStatContentURL_DereferencesRealRouteBytes(t *testing.T) {
+	// R-5DCB-JU6B
+	svc, _, _ := newContentService(t)
+	want := []byte("bytes fetched through the stat reference\n")
+	if _, err := svc.Write(context.Background(), "artifacts/../artifacts/my result.txt", bytes.NewReader(want), "writer"); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.Handle("GET /stat", svc.StatHandler())
+	mux.Handle("GET /content", svc.ContentHandler())
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	svc.ContentBase = server.URL
+
+	statURL := server.URL + "/stat?path=%2Fartifacts%2Fmy+result.txt"
+	statResp, err := server.Client().Get(statURL)
+	if err != nil {
+		t.Fatalf("GET stat: %v", err)
+	}
+	defer statResp.Body.Close()
+	var entry map[string]any
+	if err := json.NewDecoder(statResp.Body).Decode(&entry); err != nil {
+		t.Fatalf("decode stat: %v", err)
+	}
+	contentRef, ok := entry["content_url"].(string)
+	if statResp.StatusCode != http.StatusOK || !ok || contentRef == "" {
+		t.Fatalf("stat = %d %v, want dereferenceable content_url", statResp.StatusCode, entry)
+	}
+	contentResp, err := server.Client().Get(contentRef)
+	if err != nil {
+		t.Fatalf("GET returned content_url %q: %v", contentRef, err)
+	}
+	defer contentResp.Body.Close()
+	got, err := io.ReadAll(contentResp.Body)
+	if err != nil {
+		t.Fatalf("read content: %v", err)
+	}
+	if contentResp.StatusCode != http.StatusOK || !bytes.Equal(got, want) {
+		t.Fatalf("content_url response = %d %q, want 200 %q", contentResp.StatusCode, got, want)
 	}
 }
 
