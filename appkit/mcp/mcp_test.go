@@ -245,7 +245,8 @@ func TestStructuredResultRenderingsMatchOnWire(t *testing.T) {
 		"meta":  map[string]any{"ready": true},
 	}
 	h := newHandler(t, mcp.Options{Tools: []mcp.Tool{{
-		Name: "structured",
+		Name:        "structured",
+		InputSchema: map[string]any{"type": "object"},
 		Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 			return mcp.StructuredResult(want)
 		},
@@ -269,7 +270,8 @@ func TestStructuredResultRenderingsMatchOnWire(t *testing.T) {
 
 func TestErrorResultCarriesTypedCodeAndMessageOnWire(t *testing.T) {
 	h := newHandler(t, mcp.Options{Tools: []mcp.Tool{{
-		Name: "lookup",
+		Name:        "lookup",
+		InputSchema: map[string]any{"type": "object"},
 		Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 			return mcp.ErrorResult(mcp.ErrNotFound, "record missing"), nil
 		},
@@ -384,24 +386,17 @@ func TestReflectionStructuredFormsAndOutputSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("reflection outputSchema missing or not object: %#v", reflection)
 	}
-	oneOf, ok := outputSchema["oneOf"].([]any)
-	if !ok || len(oneOf) != 2 {
-		t.Fatalf("reflection outputSchema.oneOf = %#v, want two forms", outputSchema["oneOf"])
+
+	// R-EK69-IDVW
+	if outputSchema["type"] != "object" {
+		t.Fatalf("reflection outputSchema.type = %v, want object", outputSchema["type"])
 	}
-	wantPropertySets := [][]string{{"publishes", "subscribes"}, {"kind", "subject", "description", "schema", "example"}}
-	for i, wantProperties := range wantPropertySets {
-		form, ok := oneOf[i].(map[string]any)
-		if !ok {
-			t.Fatalf("reflection outputSchema.oneOf[%d] not object: %#v", i, oneOf[i])
-		}
-		properties, ok := form["properties"].(map[string]any)
-		if !ok {
-			t.Fatalf("reflection outputSchema.oneOf[%d].properties missing: %#v", i, form)
-		}
-		for _, name := range wantProperties {
-			if _, ok := properties[name]; !ok {
-				t.Errorf("reflection outputSchema.oneOf[%d].properties missing %q: %#v", i, name, properties)
-			}
+	if outputSchema["additionalProperties"] != true {
+		t.Fatalf("reflection outputSchema.additionalProperties = %v, want true", outputSchema["additionalProperties"])
+	}
+	for _, key := range []string{"oneOf", "anyOf", "allOf"} {
+		if schemaContainsKey(outputSchema, key) {
+			t.Errorf("reflection outputSchema contains forbidden key %q: %#v", key, outputSchema)
 		}
 	}
 
@@ -614,7 +609,8 @@ func TestToolsCallPassesRequestIdentityHeaders(t *testing.T) {
 
 func TestErrorsForUnknownMethodAndUndeclaredTool(t *testing.T) {
 	h := newHandler(t, mcp.Options{Tools: []mcp.Tool{{
-		Name: "broken",
+		Name:        "broken",
+		InputSchema: map[string]any{"type": "object"},
 		Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 			return nil, errors.New("database disconnected")
 		},
@@ -677,4 +673,67 @@ func TestNewRejectsDuplicateAndReservedToolNames(t *testing.T) {
 	if _, err := mcp.New(mcp.Options{Tools: []mcp.Tool{{Name: "reflection", Handler: handler}}}); err == nil {
 		t.Fatal("New reflection reserved name error = nil, want non-nil")
 	}
+}
+
+func TestNewRejectsSchemasThatStrictClientsCannotAdvertise(t *testing.T) {
+	validInput := map[string]any{"type": "object", "properties": map[string]any{}}
+	type schemaCase struct {
+		name       string
+		input      map[string]any
+		output     map[string]any
+		wantSchema string
+		wantKey    string
+	}
+	cases := []schemaCase{
+		{name: "input type absent", input: map[string]any{}, wantSchema: "inputSchema", wantKey: "type"},
+		{name: "input type non-object", input: map[string]any{"type": "array"}, wantSchema: "inputSchema", wantKey: "type"},
+		{name: "output type absent", input: validInput, output: map[string]any{}, wantSchema: "outputSchema", wantKey: "type"},
+		{name: "output type non-object", input: validInput, output: map[string]any{"type": "string"}, wantSchema: "outputSchema", wantKey: "type"},
+	}
+	for _, composition := range []string{"oneOf", "anyOf", "allOf"} {
+		cases = append(cases,
+			schemaCase{name: "input " + composition, input: map[string]any{"type": "object", composition: []any{}}, wantSchema: "inputSchema", wantKey: composition},
+			schemaCase{name: "output " + composition, input: validInput, output: map[string]any{"type": "object", composition: []any{}}, wantSchema: "outputSchema", wantKey: composition},
+		)
+	}
+
+	// R-EIYD-4M57
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := mcp.New(mcp.Options{Tools: []mcp.Tool{{Name: "strict-client-check", InputSchema: tc.input, OutputSchema: tc.output}}})
+			if err == nil {
+				t.Fatal("New error = nil, want strict-client schema rejection")
+			}
+			for _, want := range []string{"strict-client-check", tc.wantSchema, tc.wantKey} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("New error = %q, want it to name %q", err, want)
+				}
+			}
+		})
+	}
+
+	if _, err := mcp.New(mcp.Options{Tools: []mcp.Tool{
+		{Name: "structured", InputSchema: validInput, OutputSchema: map[string]any{"type": "object", "additionalProperties": true}},
+		{Name: "prose", InputSchema: validInput},
+	}}); err != nil {
+		t.Fatalf("New conforming tool table: %v", err)
+	}
+}
+
+func schemaContainsKey(v any, key string) bool {
+	switch value := v.(type) {
+	case map[string]any:
+		for candidate, nested := range value {
+			if candidate == key || schemaContainsKey(nested, key) {
+				return true
+			}
+		}
+	case []any:
+		for _, nested := range value {
+			if schemaContainsKey(nested, key) {
+				return true
+			}
+		}
+	}
+	return false
 }

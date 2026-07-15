@@ -72,6 +72,11 @@ type Handler struct {
 
 // New validates the tool table and returns the shared MCP transport handler.
 func New(opts Options) (*Handler, error) {
+	for _, tool := range standardTools() {
+		if err := validateToolSchemas(tool); err != nil {
+			return nil, err
+		}
+	}
 	toolByName := make(map[string]Tool, len(opts.Tools))
 	for _, tool := range opts.Tools {
 		if _, reserved := reservedToolNames[tool.Name]; reserved {
@@ -81,6 +86,11 @@ func New(opts Options) (*Handler, error) {
 			return nil, fmt.Errorf("mcp: duplicate tool name %q", tool.Name)
 		}
 		toolByName[tool.Name] = tool
+	}
+	for _, tool := range opts.Tools {
+		if err := validateToolSchemas(tool); err != nil {
+			return nil, err
+		}
 	}
 	tools := append([]Tool(nil), opts.Tools...)
 	return &Handler{
@@ -176,33 +186,9 @@ func (h *Handler) dispatchTool(ctx context.Context, name string, args json.RawMe
 }
 
 func (h *Handler) toolDescriptors() []map[string]any {
-	descriptors := []map[string]any{
-		{
-			"name":        "health",
-			"description": "Health + diagnostics for this service. Returns the fixed envelope (status, version, service, details) plus the authenticated caller's identity (owner_email, client_id). Takes no inputs.",
-			"inputSchema": objectSchema(map[string]any{}),
-			"outputSchema": objectSchema(map[string]any{
-				"status":      map[string]any{"type": "string"},
-				"service":     map[string]any{"type": "string"},
-				"version":     map[string]any{"type": "string"},
-				"owner_email": map[string]any{"type": "string"},
-				"client_id":   map[string]any{"type": "string"},
-				"details":     map[string]any{"type": "object", "additionalProperties": true},
-			}, "status", "service", "version", "owner_email", "client_id", "details"),
-		},
-		{
-			"name":        "reflection",
-			"description": "Self-describe this service's event graph. With no arguments, returns {publishes, subscribes}; pass kind for one published event family's detail.",
-			"inputSchema": objectSchema(map[string]any{
-				"kind": map[string]any{
-					"type":        "string",
-					"description": "optional; a published event family kind to fetch the schema+example detail for",
-				},
-			}),
-			"outputSchema": reflectionOutputSchema(),
-		},
-	}
-	for _, tool := range h.tools {
+	tools := append(standardTools(), h.tools...)
+	descriptors := make([]map[string]any, 0, len(tools))
+	for _, tool := range tools {
 		descriptor := map[string]any{
 			"name":        tool.Name,
 			"description": tool.Description,
@@ -214,6 +200,59 @@ func (h *Handler) toolDescriptors() []map[string]any {
 		descriptors = append(descriptors, descriptor)
 	}
 	return descriptors
+}
+
+func standardTools() []Tool {
+	return []Tool{
+		{
+			Name:        "health",
+			Description: "Health + diagnostics for this service. Returns the fixed envelope (status, version, service, details) plus the authenticated caller's identity (owner_email, client_id). Takes no inputs.",
+			InputSchema: objectSchema(map[string]any{}),
+			OutputSchema: objectSchema(map[string]any{
+				"status":      map[string]any{"type": "string"},
+				"service":     map[string]any{"type": "string"},
+				"version":     map[string]any{"type": "string"},
+				"owner_email": map[string]any{"type": "string"},
+				"client_id":   map[string]any{"type": "string"},
+				"details":     map[string]any{"type": "object", "additionalProperties": true},
+			}, "status", "service", "version", "owner_email", "client_id", "details"),
+		},
+		{
+			Name:        "reflection",
+			Description: "Self-describe this service's event graph. With no arguments, returns {publishes, subscribes}; pass kind for one published event family's detail.",
+			InputSchema: objectSchema(map[string]any{
+				"kind": map[string]any{
+					"type":        "string",
+					"description": "optional; a published event family kind to fetch the schema+example detail for",
+				},
+			}),
+			OutputSchema: reflectionOutputSchema(),
+		},
+	}
+}
+
+func validateToolSchemas(tool Tool) error {
+	if err := conformsToStrictClient(tool.InputSchema); err != nil {
+		return fmt.Errorf("mcp: tool %q inputSchema %w", tool.Name, err)
+	}
+	if tool.OutputSchema != nil {
+		if err := conformsToStrictClient(tool.OutputSchema); err != nil {
+			return fmt.Errorf("mcp: tool %q outputSchema %w", tool.Name, err)
+		}
+	}
+	return nil
+}
+
+func conformsToStrictClient(schema map[string]any) error {
+	if schema["type"] != "object" {
+		return fmt.Errorf("has invalid top-level key %q: must equal %q", "type", "object")
+	}
+	for _, key := range []string{"oneOf", "anyOf", "allOf"} {
+		if _, exists := schema[key]; exists {
+			return fmt.Errorf("has forbidden top-level key %q", key)
+		}
+	}
+	return nil
 }
 
 func (h *Handler) toolHealth(ctx context.Context, id server.Identity) (map[string]any, error) {
@@ -287,30 +326,7 @@ func objectSchema(properties map[string]any, required ...string) map[string]any 
 }
 
 func reflectionOutputSchema() map[string]any {
-	familyProperties := map[string]any{
-		"kind":        map[string]any{"type": "string"},
-		"subject":     map[string]any{"type": "string"},
-		"description": map[string]any{"type": "string"},
-	}
-	indexFamily := objectSchema(familyProperties, "kind", "subject", "description")
-	subscription := objectSchema(map[string]any{
-		"source":      map[string]any{"type": "string"},
-		"filter":      map[string]any{"type": "string"},
-		"description": map[string]any{"type": "string"},
-	}, "source", "filter", "description")
-	index := objectSchema(map[string]any{
-		"publishes":  map[string]any{"type": "array", "items": indexFamily},
-		"subscribes": map[string]any{"type": "array", "items": subscription},
-	}, "publishes", "subscribes")
-	detailProperties := map[string]any{
-		"kind":        map[string]any{"type": "string"},
-		"subject":     map[string]any{"type": "string"},
-		"description": map[string]any{"type": "string"},
-		"schema":      map[string]any{"type": "object", "additionalProperties": true},
-		"example":     map[string]any{},
-	}
-	detail := objectSchema(detailProperties, "kind", "subject", "description", "schema", "example")
-	return map[string]any{"oneOf": []map[string]any{index, detail}}
+	return map[string]any{"type": "object", "additionalProperties": true}
 }
 
 func identityFromRequest(r *http.Request) server.Identity {
