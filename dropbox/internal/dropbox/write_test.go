@@ -3,8 +3,11 @@ package dropbox
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +16,11 @@ import (
 	"strings"
 	"testing"
 )
+
+type failingEventSink struct{ err error }
+
+func (s failingEventSink) AppendFileEvent(*sql.Tx, FileEvent) error { return s.err }
+func (failingEventSink) Ring()                                      {}
 
 func writeRequest(t *testing.T, h http.Handler, method, path string, body []byte, clientID string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -50,19 +58,19 @@ func TestWriteHandler_PutThenContentReturnsExactIndexedBytes(t *testing.T) {
 	}
 }
 
-func TestWrite_RejectsMirrorEscapeWithoutCreatingFiles(t *testing.T) {
+func TestWrite_ClampsParentSegmentsInsideMirrorRoot(t *testing.T) {
 	// R-K5ZD-MV1K
 	svc, _, mirror := newContentService(t)
-	_, err := svc.Write(context.Background(), "../outside.md", bytes.NewBufferString("nope"), "writer")
-	if !errors.Is(err, ErrValidation) || !errors.Is(err, ErrPathEscape) {
-		t.Fatalf("Write escape error = %v, want validation path escape", err)
+	row, err := svc.Write(context.Background(), "../outside.md", bytes.NewBufferString("inside"), "writer")
+	if err != nil || row.Path != "/outside.md" {
+		t.Fatalf("Write parent path = %+v, %v; want clamped canonical path", row, err)
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(mirror.Root()), "outside.md")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("escaped file stat error = %v, want not exist", err)
 	}
-	entries, err := os.ReadDir(mirror.Root())
-	if err != nil || len(entries) != 0 {
-		t.Fatalf("mirror entries = %v, %v; want none", entries, err)
+	got, err := os.ReadFile(filepath.Join(mirror.Root(), "outside.md"))
+	if err != nil || string(got) != "inside" {
+		t.Fatalf("clamped mirror bytes = %q, %v", got, err)
 	}
 }
 
@@ -174,7 +182,6 @@ func TestWriteHandler_ValidationErrorsCarryDomainDetail(t *testing.T) {
 		want string
 	}{
 		{name: "empty path", path: "", want: "path is required"},
-		{name: "escaping path", path: "../outside.md", want: "path escapes mirror root"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := writeRequest(t, svc.WriteHandler(), http.MethodPut, tc.path, []byte("nope"), "writer")
@@ -230,5 +237,26 @@ func TestWrite_UsesIndexPresenceForLifecycleAndThreadsOrigin(t *testing.T) {
 	}
 	if sink.events[0].Kind != KindCreate || sink.events[0].Origin != "caller-a" || sink.events[1].Kind != KindModify || sink.events[1].Origin != "caller-b" {
 		t.Fatalf("write events = %+v, want lifecycle discriminator and caller origins", sink.events)
+	}
+}
+
+func TestWriteHandler_LogsUnexpectedMutationFailureBeforeInternalError(t *testing.T) {
+	// R-58GQ-0R7J
+	svc, _, _ := newContentService(t)
+	underlying := errors.New("forced event append failure")
+	svc.Outbox = failingEventSink{err: underlying}
+	var logs bytes.Buffer
+	svc.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
+
+	rec := writeRequest(t, svc.WriteHandler(), http.MethodPut, "/logged.txt", []byte("bytes"), "writer")
+	if rec.Code != http.StatusInternalServerError || rec.Body.String() != "internal error\n" {
+		t.Fatalf("failed PUT = %d %q, want bare 500", rec.Code, rec.Body.String())
+	}
+	var record map[string]any
+	if err := json.Unmarshal(logs.Bytes(), &record); err != nil {
+		t.Fatalf("decode error log %q: %v", logs.String(), err)
+	}
+	if record["level"] != "ERROR" || record["route"] != "PUT /content" || !strings.Contains(fmt.Sprint(record["err"]), underlying.Error()) {
+		t.Fatalf("error log = %v, want ERROR route and underlying error", record)
 	}
 }

@@ -158,6 +158,7 @@ func main() {
 			svc = dropbox.NewService(conn)
 			svc.Mirror = mirror
 			svc.Client = client
+			svc.Logger = rt.Logger()
 
 			engine = dropbox.NewEngine(svc, dropbox.EngineOptions{
 				Client:          client,

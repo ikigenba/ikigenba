@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
+	"path"
 	"strings"
 	"time"
 )
@@ -32,6 +34,7 @@ type Service struct {
 	// when emission is off.
 	Outbox EventSink
 	Now    func() time.Time
+	Logger *slog.Logger
 
 	// contentBase is the scheme+host(+port) the loopback /content route lives at,
 	// used only by Whoami/Health-adjacent code if ever needed; the event builders
@@ -43,7 +46,16 @@ type Service struct {
 // client, outbox, and contentBase are wired in by main (or by a test). A bare
 // NewService (store only) keeps the Phase 0 identity probes working.
 func NewService(db *sql.DB) *Service {
-	return &Service{DB: db, Store: NewStore(), Now: time.Now}
+	return &Service{DB: db, Store: NewStore(), Now: time.Now, Logger: slog.Default()}
+}
+
+// normalizePath maps an externally supplied mirror path to its canonical
+// absolute display form. Empty remains the caller-level unset/root sentinel.
+func normalizePath(p string) string {
+	if p == "" {
+		return ""
+	}
+	return path.Clean("/" + p)
 }
 
 // ── identity probes (MCP) ─────────────────────────────────────────────────
@@ -65,6 +77,7 @@ func (s *Service) Whoami(ownerEmail, clientID string) (HealthInfo, error) {
 // returns ErrRevMismatch (the §4 exact-bytes contract → 409). ErrNotFound when
 // the path is not in the index (e.g. after a delete → the route 404s).
 func (s *Service) Content(path string, rev *string) (FileRow, error) {
+	path = normalizePath(path)
 	tx, err := s.DB.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return FileRow{}, fmt.Errorf("content: begin tx: %w", err)
@@ -91,6 +104,7 @@ func (s *Service) Content(path string, rev *string) (FileRow, error) {
 // "" and "/" fold to a value the store treats as "no prefix" ("" stays "", and a
 // bare "/" never bounds a real subtree), so either means "list everything".
 func (s *Service) List(path, after string, limit int) ([]Entry, error) {
+	path = normalizePath(path)
 	prefix := foldPath(path)
 	if prefix == "/" {
 		prefix = ""
@@ -105,6 +119,7 @@ func (s *Service) List(path, after string, limit int) ([]Entry, error) {
 
 // Stat resolves a path to either indexed entry kind.
 func (s *Service) Stat(path string) (Entry, error) {
+	path = normalizePath(path)
 	tx, err := s.DB.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return Entry{}, fmt.Errorf("stat: begin tx: %w", err)
@@ -127,6 +142,7 @@ func (s *Service) Stat(path string) (Entry, error) {
 // Local writes have no Dropbox revision yet, so rev remains empty until the
 // uploader receives Dropbox's authoritative revision.
 func (s *Service) Write(ctx context.Context, path string, src io.Reader, clientID string) (FileRow, error) {
+	path = normalizePath(path)
 	if err := s.validateWritePath(path); err != nil {
 		return FileRow{}, err
 	}
@@ -171,6 +187,7 @@ func (s *Service) Write(ctx context.Context, path string, src io.Reader, clientI
 
 // Mkdir creates and indexes a directory and queues its asynchronous creation.
 func (s *Service) Mkdir(ctx context.Context, path, clientID string) error {
+	path = normalizePath(path)
 	if err := s.validateWritePath(path); err != nil {
 		return err
 	}
@@ -192,6 +209,7 @@ func (s *Service) Mkdir(ctx context.Context, path, clientID string) error {
 // Delete removes a file or directory tree. It is idempotent: an absent index
 // entry produces neither an event nor an upload request.
 func (s *Service) Delete(ctx context.Context, path, clientID string) (removed int, err error) {
+	path = normalizePath(path)
 	if err := s.validateWritePath(path); err != nil {
 		return 0, err
 	}
@@ -234,6 +252,8 @@ func (s *Service) Delete(ctx context.Context, path, clientID string) (removed in
 // Move relocates a file or directory in the mirror and atomically reflects the
 // path-keyed deletion and creation events in the index.
 func (s *Service) Move(ctx context.Context, from, to, clientID string) error {
+	from = normalizePath(from)
+	to = normalizePath(to)
 	if err := s.validateWritePath(from); err != nil {
 		return err
 	}

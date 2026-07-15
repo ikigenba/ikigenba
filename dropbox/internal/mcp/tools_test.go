@@ -784,6 +784,36 @@ func TestPut_WritesBase64BytesEnqueuesUploadAndRejectsOversize(t *testing.T) {
 	}
 }
 
+func TestPutAndGetShareCanonicalAbsolutePathSeam(t *testing.T) {
+	// R-578T-MZGU
+	h, _ := newMirrorHandler(t)
+	for _, tc := range []struct {
+		name    string
+		putPath string
+		getPath string
+		body    string
+	}{
+		{name: "relative put absolute get", putPath: "e2e/mcp.txt", getPath: "/e2e/mcp.txt", body: "relative"},
+		{name: "absolute put relative get", putPath: "/e2e/reverse.txt", getPath: "e2e/reverse.txt", body: "absolute"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			encoded := base64.StdEncoding.EncodeToString([]byte(tc.body))
+			put, isErr := callTool(t, h, "put", `{"path":"`+tc.putPath+`","content_base64":"`+encoded+`"}`)
+			if isErr || put["path"] != "/"+strings.TrimPrefix(tc.putPath, "/") {
+				t.Fatalf("put = %v, isError=%v", put, isErr)
+			}
+			got, isErr := callTool(t, h, "get", `{"path":"`+tc.getPath+`"}`)
+			if isErr {
+				t.Fatalf("get = %v, isError=true", got)
+			}
+			decoded, err := base64.StdEncoding.DecodeString(got["content_base64"].(string))
+			if err != nil || string(decoded) != tc.body {
+				t.Fatalf("get bytes = %q, %v; want %q", decoded, err, tc.body)
+			}
+		})
+	}
+}
+
 func TestPut_SourceURLFetchesServerSideWritesAndPreservesOrigin(t *testing.T) {
 	// R-Q52B-JQLP
 	body := []byte("bytes held by the source service\n")
@@ -948,7 +978,7 @@ func TestMkdirDeleteMove_HaveLoopbackWriteSemanticsAndErrorEnvelope(t *testing.T
 	if isErr || len(remaining["files"].([]any)) != 0 {
 		t.Fatalf("recursive delete left entries: %v, isError=%t", remaining, isErr)
 	}
-	bad, isErr := callTool(t, h, "move", `{"from":"../escape","to":"/safe"}`)
+	bad, isErr := callTool(t, h, "move", `{"from":"","to":"/safe"}`)
 	if !isErr {
 		t.Fatalf("invalid move should be an error: %v", bad)
 	}

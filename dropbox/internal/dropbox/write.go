@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 )
 
@@ -15,13 +16,13 @@ func (s *Service) WriteHandler() http.Handler {
 		case http.MethodPut:
 			row, err := s.Write(context.Background(), path, r.Body, r.Header.Get("X-Client-Id"))
 			if err != nil {
-				writeMutationError(w, err)
+				writeMutationError(w, s.Logger, "PUT /content", err)
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"path": row.Path, "size": row.Size, "content_hash": row.ContentHash, "rev": row.Rev})
 		case http.MethodDelete:
 			if _, err := s.Delete(context.Background(), path, r.Header.Get("X-Client-Id")); err != nil {
-				writeMutationError(w, err)
+				writeMutationError(w, s.Logger, "DELETE /content", err)
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -35,7 +36,7 @@ func (s *Service) WriteHandler() http.Handler {
 func (s *Service) MkdirHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := s.Mkdir(context.Background(), r.URL.Query().Get("path"), r.Header.Get("X-Client-Id")); err != nil {
-			writeMutationError(w, err)
+			writeMutationError(w, s.Logger, "POST /mkdir", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -46,7 +47,7 @@ func (s *Service) MkdirHandler() http.Handler {
 func (s *Service) MoveHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := s.Move(context.Background(), r.URL.Query().Get("from"), r.URL.Query().Get("to"), r.Header.Get("X-Client-Id")); err != nil {
-			writeMutationError(w, err)
+			writeMutationError(w, s.Logger, "POST /move", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -69,7 +70,7 @@ func (s *Service) StatHandler() http.Handler {
 	})
 }
 
-func writeMutationError(w http.ResponseWriter, err error) {
+func writeMutationError(w http.ResponseWriter, logger *slog.Logger, route string, err error) {
 	if errors.Is(err, ErrValidation) || errors.Is(err, ErrPathEscape) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -78,6 +79,10 @@ func writeMutationError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.Error("dropbox mutation failed", "route", route, "err", err)
 	http.Error(w, "internal error", http.StatusInternalServerError)
 }
 

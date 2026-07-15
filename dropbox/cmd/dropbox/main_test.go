@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +29,7 @@ import (
 	"dropbox/internal/db"
 	dropboxservice "dropbox/internal/dropbox"
 
+	"eventplane/outbox"
 	"registry"
 
 	_ "modernc.org/sqlite"
@@ -200,6 +202,139 @@ func TestMountedFilesystemRoutesUseSharedLoopbackGuard(t *testing.T) {
 		if rec.Code != tc.status {
 			t.Fatalf("owner-bearing loopback %s %s = %d %q, want %d", tc.method, tc.url, rec.Code, rec.Body.String(), tc.status)
 		}
+	}
+}
+
+func newCanonicalLoopback(t *testing.T) (http.Handler, *dropboxservice.Service, *sql.DB, *dropboxservice.Mirror) {
+	t.Helper()
+	conn, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "dropbox.db")+"?_pragma=foreign_keys(ON)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.SetMaxOpenConns(1)
+	t.Cleanup(func() { conn.Close() })
+	migrations, err := appkitdatabase.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appkitdatabase.Migrate(context.Background(), conn, migrations); err != nil {
+		t.Fatal(err)
+	}
+	mirror, err := dropboxservice.NewMirror(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := dropboxservice.NewService(conn)
+	svc.Mirror = mirror
+	svc.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	ob, err := outbox.New(conn, outbox.Options{Source: "dropbox", Registry: dropboxservice.Events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.Outbox = dropboxservice.NewOutboxProducer(ob, "http://127.0.0.1:3200")
+	srv, err := appkitserver.New(appkitserver.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     svc.Logger,
+		ResourceID: "https://int.ikigenba.com/srv/dropbox/mcp",
+		AuthServer: "https://int.ikigenba.com",
+		Version:    "test",
+		Service:    "dropbox",
+		DB:         conn,
+		Register: func(rt *appkitserver.Router) error {
+			mountLoopbackRoutes(rt, svc)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv.Handler, svc, conn, mirror
+}
+
+func loopbackRequest(t *testing.T, h http.Handler, method, route string, query url.Values, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, route+"?"+query.Encode(), strings.NewReader(body))
+	req.Header.Set("X-Owner-Email", "machine@example.com")
+	req.Header.Set("X-Client-Id", "e2e-test")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestLoopbackRelativePutUsesCanonicalIndexAndOutboxSubject(t *testing.T) {
+	// R-54T0-VFZG
+	h, _, conn, mirror := newCanonicalLoopback(t)
+	body := "canonical bytes"
+	put := loopbackRequest(t, h, http.MethodPut, "/content", url.Values{"path": {"e2e/artifact.txt"}}, body)
+	if put.Code != http.StatusOK {
+		t.Fatalf("relative PUT = %d %q, want 200", put.Code, put.Body.String())
+	}
+	got, err := os.ReadFile(filepath.Join(mirror.Root(), "e2e", "artifact.txt"))
+	if err != nil || string(got) != body {
+		t.Fatalf("mirror bytes = %q, %v; want %q", got, err, body)
+	}
+	var indexed string
+	if err := conn.QueryRow(`SELECT path FROM files WHERE path_lower = ?`, "/e2e/artifact.txt").Scan(&indexed); err != nil || indexed != "/e2e/artifact.txt" {
+		t.Fatalf("indexed path = %q, %v; want canonical absolute path", indexed, err)
+	}
+	var kind, subject string
+	if err := conn.QueryRow(`SELECT kind, subject FROM outbox ORDER BY seq DESC LIMIT 1`).Scan(&kind, &subject); err != nil || kind != "create" || subject != "/e2e/artifact.txt" {
+		t.Fatalf("outbox event = %q %q, %v; want create canonical subject", kind, subject, err)
+	}
+}
+
+func TestLoopbackVerbsAndReadsShareCanonicalIndexKeys(t *testing.T) {
+	// R-560X-97Q5
+	h, svc, conn, _ := newCanonicalLoopback(t)
+	if rec := loopbackRequest(t, h, http.MethodPut, "/content", url.Values{"path": {"/e2e/x"}}, "x"); rec.Code != http.StatusOK {
+		t.Fatalf("seed x = %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := loopbackRequest(t, h, http.MethodGet, "/stat", url.Values{"path": {"e2e/x"}}, ""); rec.Code != http.StatusOK {
+		t.Fatalf("relative stat = %d %q", rec.Code, rec.Body.String())
+	}
+	listed := loopbackRequest(t, h, http.MethodGet, "/list", url.Values{"path": {"e2e"}}, "")
+	var listing struct {
+		Files []struct {
+			Path string `json:"path"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal(listed.Body.Bytes(), &listing); listed.Code != http.StatusOK || err != nil {
+		t.Fatalf("relative list = %d %q, decode error %v", listed.Code, listed.Body.String(), err)
+	}
+	foundX := false
+	for _, entry := range listing.Files {
+		foundX = foundX || entry.Path == "/e2e/x"
+	}
+	if !foundX {
+		t.Fatalf("relative list = %d %q, want canonical x entry", listed.Code, listed.Body.String())
+	}
+	if rec := loopbackRequest(t, h, http.MethodPost, "/mkdir", url.Values{"path": {"e2e//sub/../sub2"}}, ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("messy mkdir = %d %q", rec.Code, rec.Body.String())
+	}
+	if entry, err := svc.Stat("/e2e/sub2"); err != nil || entry.Path != "/e2e/sub2" {
+		t.Fatalf("canonical mkdir entry = %+v, %v", entry, err)
+	}
+	if rec := loopbackRequest(t, h, http.MethodPut, "/content", url.Values{"path": {"/e2e/a"}}, "a"); rec.Code != http.StatusOK {
+		t.Fatalf("seed move source = %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := loopbackRequest(t, h, http.MethodPost, "/move", url.Values{"from": {"e2e/a"}, "to": {"e2e/b"}}, ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("relative move = %d %q", rec.Code, rec.Body.String())
+	}
+	if _, err := svc.Stat("/e2e/a"); !errors.Is(err, dropboxservice.ErrNotFound) {
+		t.Fatalf("old move key = %v, want not found", err)
+	}
+	if entry, err := svc.Stat("/e2e/b"); err != nil || entry.Path != "/e2e/b" {
+		t.Fatalf("new move key = %+v, %v", entry, err)
+	}
+	if rec := loopbackRequest(t, h, http.MethodDelete, "/content", url.Values{"path": {"e2e/x"}}, ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("relative delete = %d %q", rec.Code, rec.Body.String())
+	}
+	if _, err := svc.Stat("/e2e/x"); !errors.Is(err, dropboxservice.ErrNotFound) {
+		t.Fatalf("deleted canonical key = %v, want not found", err)
+	}
+	var parallel int
+	if err := conn.QueryRow(`SELECT (SELECT COUNT(*) FROM files WHERE path NOT LIKE '/%') + (SELECT COUNT(*) FROM directories WHERE path NOT LIKE '/%')`).Scan(&parallel); err != nil || parallel != 0 {
+		t.Fatalf("noncanonical parallel entries = %d, %v; want none", parallel, err)
 	}
 }
 

@@ -6,6 +6,7 @@ the protected-resource metadata endpoint, and the landing page are not part of
 this API.
 
 All paths are absolute, slash-separated paths in the shared mirror namespace.
+Relative input is accepted and canonicalized to the cleaned absolute form, which is what the index, events, and `content_url`s carry.
 The namespace is shared and is not partitioned by service. Every mutation path
 is resolved through `Mirror.resolve`: a path that escapes the mirror root (for
 example, `../outside`) is rejected as a validation error and writes nothing.
