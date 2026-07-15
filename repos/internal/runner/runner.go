@@ -1,0 +1,459 @@
+// Package runner owns queued repository sessions and their confined agents.
+package runner
+
+import (
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit/anthropic"
+
+	"repos/internal/repos"
+	toolset "repos/internal/tools"
+)
+
+const framingPrompt = `Work only in the supplied git worktree. Commit what you produce. Run .ikibot/check as the gate when it exists. Honor AGENTS.md when present. Your final message must be a concise summary suitable for the pull request body.`
+
+// ModelConfig is service-wide model configuration read at the composition root.
+type ModelConfig struct {
+	Provider string
+	Model    string
+	APIKey   string
+}
+
+// DefaultModelConfig returns the v1 default pair.
+func DefaultModelConfig(apiKey string) ModelConfig {
+	return ModelConfig{Provider: "anthropic", Model: anthropic.ModelOpus48, APIKey: apiKey}
+}
+
+// ValidateModel checks both the API credential and the provider's real pricing
+// registry. It is intended to run before the HTTP server is constructed.
+func ValidateModel(config ModelConfig) (agentkit.Provider, error) {
+	pair := fmt.Sprintf("%s/%s", config.Provider, config.Model)
+	if strings.TrimSpace(config.APIKey) == "" {
+		return nil, fmt.Errorf("model %s: empty provider API key", pair)
+	}
+	var provider agentkit.Provider
+	switch config.Provider {
+	case "anthropic":
+		provider = anthropic.New(config.APIKey)
+	default:
+		return nil, fmt.Errorf("model %s: unsupported provider", pair)
+	}
+	if _, ok := provider.Pricing(config.Model); !ok {
+		return nil, fmt.Errorf("model %s: unknown pricing pair", pair)
+	}
+	return provider, nil
+}
+
+// SessionRequest describes an issue-driven or manual run. ID is optional and
+// exists to make callers and deterministic tests able to correlate a request.
+type SessionRequest struct {
+	ID           string
+	RepoName     string
+	OwnerEmail   string
+	IssueNumber  *int
+	Instructions string
+}
+
+// IssueContent is the untrusted issue material fetched runner-side.
+type IssueContent struct {
+	Title    string
+	Body     string
+	Comments []string
+}
+
+// Protocol is the narrow Phase 03 seam implemented by the GitHub protocol in
+// the next phase.
+type Protocol interface {
+	FetchIssue(context.Context, string, int) (IssueContent, error)
+	PostQueued(context.Context, string, int) error
+}
+
+// Agent is one conversation turn, drained to completion by Send.
+type Agent interface {
+	Send(context.Context, string) error
+}
+
+// ConversationConfig is handed to the swappable agent factory.
+type ConversationConfig struct {
+	Provider agentkit.Provider
+	Model    string
+	System   string
+	Tools    []agentkit.Tool
+	Log      io.Writer
+}
+
+// AgentFactory constructs a fresh, one-turn conversation for each session.
+type AgentFactory interface {
+	New(ConversationConfig) Agent
+}
+
+// AgentFactoryFunc adapts a function into AgentFactory.
+type AgentFactoryFunc func(ConversationConfig) Agent
+
+func (f AgentFactoryFunc) New(config ConversationConfig) Agent { return f(config) }
+
+type agentkitFactory struct{}
+
+func (agentkitFactory) New(config ConversationConfig) Agent {
+	return &conversationAgent{conversation: &agentkit.Conversation{
+		Provider: config.Provider,
+		Model:    config.Model,
+		System:   config.System,
+		Tools:    config.Tools,
+		Log:      config.Log,
+	}}
+}
+
+type conversationAgent struct{ conversation *agentkit.Conversation }
+
+func (a *conversationAgent) Send(ctx context.Context, text string) error {
+	stream := a.conversation.Send(ctx, text)
+	for range stream.Events() {
+	}
+	return stream.Err()
+}
+
+// Clock is the deterministic time seam used for durable timestamps.
+type Clock interface{ Now() time.Time }
+
+// Config contains composition-root dependencies and runtime limits.
+type Config struct {
+	Store     *repos.Store
+	Git       *repos.Git
+	Protocol  Protocol
+	Clock     Clock
+	StateRoot string
+	TTL       time.Duration
+	MaxRun    int
+	Model     ModelConfig
+	Factory   AgentFactory
+}
+
+// Runner admits durable queued sessions and owns their cancellation lifecycle.
+type Runner struct {
+	store      *repos.Store
+	git        *repos.Git
+	protocol   Protocol
+	clock      Clock
+	stateRoot  string
+	ttl        time.Duration
+	maxRun     int
+	model      ModelConfig
+	provider   agentkit.Provider
+	factory    AgentFactory
+	mu         sync.Mutex
+	cancels    map[string]context.CancelFunc
+	userCancel map[string]bool
+	wake       chan struct{}
+}
+
+// New validates boot configuration before returning a runnable engine.
+func New(config Config) (*Runner, error) {
+	provider, err := ValidateModel(config.Model)
+	if err != nil {
+		return nil, err
+	}
+	if config.Store == nil || config.Git == nil || config.Clock == nil || config.StateRoot == "" {
+		return nil, errors.New("runner: store, git, clock, and state root are required")
+	}
+	if config.TTL <= 0 {
+		config.TTL = 30 * time.Minute
+	}
+	if config.MaxRun <= 0 {
+		config.MaxRun = 2
+	}
+	if config.Factory == nil {
+		config.Factory = agentkitFactory{}
+	}
+	return &Runner{
+		store: config.Store, git: config.Git, protocol: config.Protocol,
+		clock: config.Clock, stateRoot: config.StateRoot, ttl: config.TTL,
+		maxRun: config.MaxRun, model: config.Model, provider: provider,
+		factory: config.Factory, cancels: make(map[string]context.CancelFunc),
+		userCancel: make(map[string]bool), wake: make(chan struct{}, 1),
+	}, nil
+}
+
+// Enqueue inserts a durable queued row and rings the dispatcher doorbell.
+func (r *Runner) Enqueue(ctx context.Context, request SessionRequest) (repos.Session, error) {
+	if request.RepoName == "" || request.OwnerEmail == "" {
+		return repos.Session{}, errors.New("enqueue: repository and owner are required")
+	}
+	id := request.ID
+	if id == "" {
+		var err error
+		id, err = sessionID()
+		if err != nil {
+			return repos.Session{}, err
+		}
+	}
+	attempt := 1
+	branch := "ikibot/session-" + id
+	if request.IssueNumber != nil {
+		max, err := r.store.MaxAttempt(ctx, request.RepoName, *request.IssueNumber)
+		if err != nil {
+			return repos.Session{}, err
+		}
+		attempt = max + 1
+		for {
+			branch = issueBranch(*request.IssueNumber, attempt)
+			exists, err := r.git.BranchExists(ctx, request.RepoName, branch)
+			if err != nil {
+				return repos.Session{}, err
+			}
+			if !exists {
+				break
+			}
+			attempt++
+		}
+	}
+	queuedBehind := request.IssueNumber != nil && r.repoIsActive(ctx, request.RepoName)
+	sessionDir := filepath.Join(r.stateRoot, "sessions", id)
+	session := repos.Session{
+		ID: id, RepoName: request.RepoName, OwnerEmail: request.OwnerEmail,
+		IssueNumber: request.IssueNumber, Attempt: attempt, Branch: branch,
+		Instructions: request.Instructions, Status: repos.StatusQueued,
+		CreatedAt: r.clock.Now(), LogPath: filepath.Join(sessionDir, "output.jsonl"),
+	}
+	if err := r.store.InsertSession(ctx, session); err != nil {
+		return repos.Session{}, err
+	}
+	if queuedBehind && r.protocol != nil {
+		if err := r.protocol.PostQueued(ctx, request.RepoName, *request.IssueNumber); err != nil {
+			return repos.Session{}, fmt.Errorf("post queued comment: %w", err)
+		}
+	}
+	r.ring()
+	return session, nil
+}
+
+// Cancel cancels a running session, or terminally cancels a queued one.
+func (r *Runner) Cancel(sessionID string) bool {
+	r.mu.Lock()
+	r.userCancel[sessionID] = true
+	cancel := r.cancels[sessionID]
+	r.mu.Unlock()
+	if cancel != nil {
+		cancel()
+		return true
+	}
+	session, err := r.store.GetSession(context.Background(), sessionID)
+	if err == nil && session.Status == repos.StatusRunning {
+		// Admission and goroutine startup have a small handoff window. The run
+		// observes this flag immediately after installing its cancel function.
+		return true
+	}
+	if err != nil || session.Status != repos.StatusQueued {
+		r.mu.Lock()
+		delete(r.userCancel, sessionID)
+		r.mu.Unlock()
+		return false
+	}
+	if err := r.finish(context.Background(), sessionID, repos.StatusCancelled, nil); err != nil {
+		return false
+	}
+	r.ring()
+	return true
+}
+
+// Recover marks sessions interrupted by restart and leaves queued work intact.
+func (r *Runner) Recover(ctx context.Context) (int, error) {
+	count, err := r.store.SweepRunning(ctx, r.clock.Now(), "interrupted by restart")
+	if err == nil {
+		r.ring()
+	}
+	return count, err
+}
+
+// Dispatch continuously admits the oldest eligible sessions until ctx ends.
+func (r *Runner) Dispatch(ctx context.Context) error {
+	for {
+		admitted, err := r.admit(ctx)
+		if err != nil {
+			return err
+		}
+		if admitted {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-r.wake:
+		}
+	}
+}
+
+func (r *Runner) admit(ctx context.Context) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	running, err := r.store.CountRunning(ctx)
+	if err != nil || running >= r.maxRun {
+		return false, err
+	}
+	sessions, err := r.store.ListSessions(ctx, "", "")
+	if err != nil {
+		return false, err
+	}
+	runningRepos := make(map[string]bool)
+	for _, session := range sessions {
+		if session.Status == repos.StatusRunning {
+			runningRepos[session.RepoName] = true
+		}
+	}
+	for _, session := range sessions {
+		if session.Status != repos.StatusQueued || runningRepos[session.RepoName] {
+			continue
+		}
+		if err := r.store.MarkRunning(ctx, session.ID, r.clock.Now()); err != nil {
+			return false, err
+		}
+		go r.run(ctx, session)
+		return true, nil
+	}
+	return false, nil
+}
+
+func (r *Runner) run(parent context.Context, session repos.Session) {
+	ctx, cancel := context.WithTimeout(parent, r.ttl)
+	r.mu.Lock()
+	r.cancels[session.ID] = cancel
+	if r.userCancel[session.ID] {
+		cancel()
+	}
+	r.mu.Unlock()
+	defer func() {
+		cancel()
+		r.mu.Lock()
+		delete(r.cancels, session.ID)
+		delete(r.userCancel, session.ID)
+		r.mu.Unlock()
+		r.ring()
+	}()
+
+	err := r.execute(ctx, session)
+	status := repos.StatusSucceeded
+	var message *string
+	r.mu.Lock()
+	userCancelled := r.userCancel[session.ID]
+	r.mu.Unlock()
+	if userCancelled {
+		status = repos.StatusCancelled
+	} else if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		status = repos.StatusFailed
+		text := "session TTL exceeded"
+		message = &text
+	} else if err != nil {
+		status = repos.StatusFailed
+		text := err.Error()
+		message = &text
+	}
+	_ = r.finish(context.Background(), session.ID, status, message)
+}
+
+func (r *Runner) execute(ctx context.Context, session repos.Session) error {
+	repo, err := r.store.GetRepo(ctx, session.RepoName)
+	if err != nil {
+		return err
+	}
+	if err := r.git.Freshen(ctx, repo.Name, repo.DefaultBranch); err != nil {
+		return err
+	}
+	sessionDir := filepath.Join(r.stateRoot, "sessions", session.ID)
+	worktree := filepath.Join(sessionDir, "worktree")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		return err
+	}
+	if err := r.git.WorktreeAdd(ctx, repo.Name, session.Branch, worktree, "origin/"+repo.DefaultBranch); err != nil {
+		return err
+	}
+	instructions := session.Instructions
+	if session.IssueNumber != nil {
+		if r.protocol == nil {
+			return errors.New("issue session: protocol is required")
+		}
+		issue, err := r.protocol.FetchIssue(ctx, session.RepoName, *session.IssueNumber)
+		if err != nil {
+			return err
+		}
+		instructions = formatIssue(issue)
+	}
+	instructionPath := filepath.Join(sessionDir, "instructions.md")
+	if err := os.WriteFile(instructionPath, []byte(instructions), 0o600); err != nil {
+		return err
+	}
+	logFile, err := os.OpenFile(session.LogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	agent := r.factory.New(ConversationConfig{
+		Provider: r.provider, Model: r.model.Model, System: framingPrompt,
+		Tools: toolset.New(worktree), Log: logFile,
+	})
+	return agent.Send(ctx, instructions)
+}
+
+func (r *Runner) finish(ctx context.Context, id, status string, message *string) error {
+	return r.store.FinishSession(ctx, id, status, message, nil, r.clock.Now(),
+		func(context.Context, *sql.Tx, repos.Session) error { return nil })
+}
+
+func (r *Runner) ring() {
+	select {
+	case r.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (r *Runner) repoIsActive(ctx context.Context, repoName string) bool {
+	sessions, err := r.store.ListSessions(ctx, repoName, "")
+	if err != nil {
+		return false
+	}
+	for _, session := range sessions {
+		if session.Status == repos.StatusRunning || session.Status == repos.StatusQueued {
+			return true
+		}
+	}
+	return false
+}
+
+func issueBranch(issue, attempt int) string {
+	branch := fmt.Sprintf("ikibot/issue-%d", issue)
+	if attempt > 1 {
+		branch += fmt.Sprintf(".%d", attempt)
+	}
+	return branch
+}
+
+func formatIssue(issue IssueContent) string {
+	var text strings.Builder
+	fmt.Fprintf(&text, "# %s\n\n%s", issue.Title, issue.Body)
+	if len(issue.Comments) > 0 {
+		text.WriteString("\n\n## Comments")
+		for _, comment := range issue.Comments {
+			fmt.Fprintf(&text, "\n\n%s", comment)
+		}
+	}
+	return text.String()
+}
+
+func sessionID() (string, error) {
+	var bytes [12]byte
+	if _, err := rand.Read(bytes[:]); err != nil {
+		return "", fmt.Errorf("session id: %w", err)
+	}
+	return hex.EncodeToString(bytes[:]), nil
+}
