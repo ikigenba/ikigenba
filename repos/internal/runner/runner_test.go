@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	appdb "appkit/db"
+	"eventplane/outbox"
 	reposdb "repos/internal/db"
 	"repos/internal/repos"
 )
@@ -34,6 +36,7 @@ func TestIssueSessionCreatesFreshWorktreeAndPinsInstructionsBeforeSend(t *testin
 	fixture.config.Protocol = protocol
 	instructionPath := filepath.Join(fixture.stateRoot, "sessions", "issue-one", "instructions.md")
 	var sent string
+	var seenTip, seenBranch string
 	firstSend := true
 	fixture.config.Factory = AgentFactoryFunc(func(config ConversationConfig) Agent {
 		return agentFunc(func(_ context.Context, text string) error {
@@ -47,6 +50,9 @@ func TestIssueSessionCreatesFreshWorktreeAndPinsInstructionsBeforeSend(t *testin
 					t.Errorf("pinned instructions = %q, Send text = %q", contents, text)
 				}
 				sent = text
+				worktree := filepath.Join(fixture.stateRoot, "sessions", "issue-one", "worktree")
+				seenTip = gitOutput(t, worktree, "rev-parse", "HEAD")
+				seenBranch = gitOutput(t, worktree, "branch", "--show-current")
 			}
 			return nil
 		})
@@ -66,11 +72,14 @@ func TestIssueSessionCreatesFreshWorktreeAndPinsInstructionsBeforeSend(t *testin
 	go runner.Dispatch(ctx)
 	waitStatus(t, fixture.store, session.ID, repos.StatusSucceeded)
 	worktree := filepath.Join(fixture.stateRoot, "sessions", session.ID, "worktree")
-	if got := gitOutput(t, worktree, "rev-parse", "HEAD"); got != wantTip {
-		t.Fatalf("worktree tip = %s, want fresh origin tip %s", got, wantTip)
+	if seenTip != wantTip {
+		t.Fatalf("worktree tip during run = %s, want fresh origin tip %s", seenTip, wantTip)
 	}
-	if got := gitOutput(t, worktree, "branch", "--show-current"); got != "ikibot/issue-41" {
-		t.Fatalf("worktree branch = %q", got)
+	if seenBranch != "ikibot/issue-41" {
+		t.Fatalf("worktree branch during run = %q", seenBranch)
+	}
+	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
+		t.Fatalf("successful worktree remains after finish: %v", err)
 	}
 	if got := gitOutput(t, canonical, "branch", "--show-current"); got != "main" {
 		t.Fatalf("canonical branch changed to %q", got)
@@ -311,6 +320,8 @@ func TestModelValidationRejectsBadBootConfigurationAndAcceptsDefaultPricing(t *t
 
 func TestPassingCheckPushesBranchCreatesPRAndPersistsURL(t *testing.T) {
 	// R-FEIC-0N91
+	// R-FUD0-ZNW2
+	// R-FWST-R7DG
 	fixture := newFixture(t, 1, time.Minute)
 	canonical, remote := fixture.addRepo(t, "passing")
 	installCheck(t, canonical, "#!/bin/sh\necho gate-passed\n")
@@ -328,6 +339,19 @@ func TestPassingCheckPushesBranchCreatesPRAndPersistsURL(t *testing.T) {
 	if !remoteHasBranch(t, remote, "ikibot/issue-23") {
 		t.Fatal("passing branch was not pushed")
 	}
+	sessionDir := filepath.Join(fixture.stateRoot, "sessions", session.ID)
+	if _, err := os.Stat(filepath.Join(sessionDir, "worktree")); !os.IsNotExist(err) {
+		t.Fatalf("successful worktree remains: %v", err)
+	}
+	for _, name := range []string{"instructions.md", "output.jsonl", "check.log"} {
+		if _, err := os.Stat(filepath.Join(sessionDir, name)); err != nil {
+			t.Fatalf("durable %s missing after success: %v", name, err)
+		}
+	}
+	var kind, subject string
+	if err := fixture.db.QueryRow(`SELECT kind, subject FROM outbox WHERE seq = 1`).Scan(&kind, &subject); err != nil || kind != "session.succeeded" || subject != "/passing" {
+		t.Fatalf("runner outcome = %q %q, %v", kind, subject, err)
+	}
 	pr := recorder.only(t, "pr_create")
 	if pr.string("head") != "ikibot/issue-23" || pr.string("base") != "main" ||
 		!strings.Contains(pr.string("body"), "Fixes #23") || !strings.Contains(pr.string("body"), "passing") {
@@ -340,6 +364,7 @@ func TestPassingCheckPushesBranchCreatesPRAndPersistsURL(t *testing.T) {
 
 func TestFailingCheckPushesBranchWithoutPRAndPersistsFullLog(t *testing.T) {
 	// R-FFQ8-EEZQ
+	// R-FWST-R7DG
 	fixture := newFixture(t, 1, time.Minute)
 	canonical, remote := fixture.addRepo(t, "failing")
 	installCheck(t, canonical, "#!/bin/sh\necho first-line\necho final-tail\nexit 7\n")
@@ -356,6 +381,9 @@ func TestFailingCheckPushesBranchWithoutPRAndPersistsFullLog(t *testing.T) {
 	}
 	if !remoteHasBranch(t, remote, "ikibot/issue-24") {
 		t.Fatal("failed branch was not pushed")
+	}
+	if _, err := os.Stat(filepath.Join(fixture.stateRoot, "sessions", session.ID, "worktree")); err != nil {
+		t.Fatalf("failed worktree was not retained: %v", err)
 	}
 	log, err := os.ReadFile(filepath.Join(fixture.stateRoot, "sessions", "failing", "check.log"))
 	if err != nil || string(log) != "first-line\nfinal-tail\n" {
@@ -454,6 +482,7 @@ func TestManualSessionSkipsIssueTrafficAndCreatesPRWithoutFixes(t *testing.T) {
 
 type fixture struct {
 	store     *repos.Store
+	db        *sql.DB
 	git       *repos.Git
 	clock     *fakeClock
 	stateRoot string
@@ -476,10 +505,18 @@ func newFixture(t *testing.T, maxRun int, ttl time.Duration) *fixture {
 	}
 	stateRoot := t.TempDir()
 	clock := &fakeClock{now: time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)}
-	f := &fixture{store: repos.NewStore(db), clock: clock, stateRoot: stateRoot}
+	f := &fixture{store: repos.NewStore(db), db: db, clock: clock, stateRoot: stateRoot}
 	f.git = repos.NewGit(filepath.Join(stateRoot, "repos"), staticToken("fixture"))
+	producer, err := outbox.New(db, outbox.Options{Source: "repos", Registry: repos.Events, Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reaper, err := repos.NewReaper(f.store, f.git, clock, stateRoot, repos.DefaultWorktreeTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	f.config = Config{Store: f.store, Git: f.git, Clock: clock, StateRoot: stateRoot,
-		MaxRun: maxRun, TTL: ttl, Model: DefaultModelConfig("fixture-key")}
+		MaxRun: maxRun, TTL: ttl, Model: DefaultModelConfig("fixture-key"), Outbox: producer, Reaper: reaper}
 	return f
 }
 

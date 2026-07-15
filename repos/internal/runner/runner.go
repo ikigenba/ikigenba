@@ -4,7 +4,6 @@ package runner
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -16,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"eventplane/outbox"
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/anthropic"
 
@@ -168,6 +168,8 @@ type Config struct {
 	MaxRun    int
 	Model     ModelConfig
 	Factory   AgentFactory
+	Outbox    *outbox.Outbox
+	Reaper    *repos.Reaper
 }
 
 // Runner admits durable queued sessions and owns their cancellation lifecycle.
@@ -182,6 +184,8 @@ type Runner struct {
 	model      ModelConfig
 	provider   agentkit.Provider
 	factory    AgentFactory
+	outbox     *outbox.Outbox
+	reaper     *repos.Reaper
 	mu         sync.Mutex
 	cancels    map[string]context.CancelFunc
 	userCancel map[string]bool
@@ -194,8 +198,8 @@ func New(config Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	if config.Store == nil || config.Git == nil || config.Clock == nil || config.StateRoot == "" {
-		return nil, errors.New("runner: store, git, clock, and state root are required")
+	if config.Store == nil || config.Git == nil || config.Clock == nil || config.StateRoot == "" || config.Outbox == nil || config.Reaper == nil {
+		return nil, errors.New("runner: store, git, clock, state root, outbox, and reaper are required")
 	}
 	if config.TTL <= 0 {
 		config.TTL = 30 * time.Minute
@@ -211,6 +215,7 @@ func New(config Config) (*Runner, error) {
 		clock: config.Clock, stateRoot: config.StateRoot, ttl: config.TTL,
 		maxRun: config.MaxRun, model: config.Model, provider: provider,
 		factory: config.Factory, cancels: make(map[string]context.CancelFunc),
+		outbox: config.Outbox, reaper: config.Reaper,
 		userCancel: make(map[string]bool), wake: make(chan struct{}, 1),
 	}, nil
 }
@@ -299,15 +304,29 @@ func (r *Runner) Cancel(sessionID string) bool {
 
 // Recover marks sessions interrupted by restart and leaves queued work intact.
 func (r *Runner) Recover(ctx context.Context) (int, error) {
-	count, err := r.store.SweepRunning(ctx, r.clock.Now(), "interrupted by restart")
-	if err == nil {
-		r.ring()
+	sessions, err := r.store.ListSessions(ctx, "", "")
+	if err != nil {
+		return 0, err
 	}
-	return count, err
+	reason := "interrupted by restart"
+	count := 0
+	for _, session := range sessions {
+		if session.Status != repos.StatusRunning {
+			continue
+		}
+		if err := r.finish(ctx, session.ID, repos.StatusFailed, &reason, nil); err != nil {
+			return count, err
+		}
+		count++
+	}
+	r.ring()
+	return count, nil
 }
 
 // Dispatch continuously admits the oldest eligible sessions until ctx ends.
 func (r *Runner) Dispatch(ctx context.Context) error {
+	sweeps := time.NewTicker(r.reaper.SweepInterval())
+	defer sweeps.Stop()
 	for {
 		admitted, err := r.admit(ctx)
 		if err != nil {
@@ -320,6 +339,10 @@ func (r *Runner) Dispatch(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-r.wake:
+		case <-sweeps.C:
+			if err := r.reaper.Sweep(ctx); err != nil {
+				return err
+			}
 		}
 	}
 }
@@ -391,6 +414,13 @@ func (r *Runner) run(parent context.Context, session repos.Session) {
 	}
 	if lifecycle, ok := r.protocol.(lifecycleProtocol); status != repos.StatusCancelled && ok {
 		status, message, prURL = r.complete(context.Background(), ctx, lifecycle, session, result, status, message)
+	}
+	if status == repos.StatusSucceeded {
+		if err := r.reaper.Success(context.Background(), session); err != nil {
+			status = repos.StatusFailed
+			text := err.Error()
+			message, prURL = &text, nil
+		}
 	}
 	_ = r.finish(context.Background(), session.ID, status, message, prURL)
 }
@@ -540,8 +570,11 @@ func runCheck(ctx context.Context, worktree, logPath string) (string, error) {
 }
 
 func (r *Runner) finish(ctx context.Context, id, status string, message, prURL *string) error {
-	return r.store.FinishSession(ctx, id, status, message, prURL, r.clock.Now(),
-		func(context.Context, *sql.Tx, repos.Session) error { return nil })
+	err := r.store.FinishSession(ctx, id, status, message, prURL, r.clock.Now(), repos.AppendOutcome(r.outbox))
+	if err == nil {
+		r.outbox.Ring()
+	}
+	return err
 }
 
 func (r *Runner) ring() {
