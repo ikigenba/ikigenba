@@ -24,6 +24,12 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D18 → `project/design/D18.md` — Event-routing conformance: producer kinds `succeeded`/`failed`, subject = /<script name>, family registry, outbox migration — owns R-82AG-F74Z, R-83IC-SYVO, R-84Q9-6QMD, R-85Y5-KID2
 - D19 → `project/design/D19.md` — Structured MCP adoption: `structuredContent` + `outputSchema` on the thirteen structured domain tools, prose exceptions kept text-only, typed error codes from the closed vocabulary (cites `docs/structured-mcp-design.md`) — owns R-C0G0-V0QL, R-C1NX-8SHA, R-C2VT-MK7Z, R-C43Q-0BYO, R-C5BM-E3PD, R-C6JI-RVG2, R-C7RF-5N6R, R-CA77-X6O5
 - D20 → `project/design/D20.md` — Error-taxonomy enrichment: `too_large` and `source_unavailable` become real domain sentinels (`script.ErrTooLarge`/`script.ErrSourceUnavailable` classify the import size cap and mirror-fetch failure; mirrors prompts D27) — owns R-CBF4-AYEU, R-CCN0-OQ5J, R-CDUX-2HW8
+- D21 → `project/design/D21.md` — The runner-injected `suite` Python module: embedded stdlib-only `suite.py` materialized beside `main.py`, runtime facts as `SUITE_*` env vars, `suite.event()`, the `ToolError` exception model — owns R-HVKP-FQRD, R-HWSL-TII2, R-HY0I-7A8R, R-HZ8E-L1ZG
+- D22 → `project/design/D22.md` — `suite.mcp(service, tool, args)`: the generic MCP verb client (identity asserted, structuredContent verbatim, prose fallback, typed errors) — owns R-I0GA-YTQ5, R-I1O7-CLGU, R-I2W3-QD7J, R-I5BW-HWOX, R-I6JS-VOFM
+- D23 → `project/design/D23.md` — `suite.fetch(content_url, dest)`: the content-plane acceptor (loopback URL confinement, streamed + hash-verified, pinned failure mapping) — owns R-I7RP-9G6B, R-I8ZL-N7X0, R-IA7I-0ZNP
+- D24 → `project/design/D24.md` — `suite.files`: the file share's filesystem API, service-agnostic (all seven verbs, streaming, `X-Client-Id: scripts:<script_id>`, status-derived failure mapping) — owns R-IBFE-EREE, R-ICNA-SJ53, R-IDV7-6AVS, R-IF33-K2MH, R-IGAZ-XUD6, R-IHIW-BM3V
+- D25 → `project/design/D25.md` — Content-plane holder: `GET /run-content` over run dirs (chassis loopback guard, 404-never-leaks) + `content_url` on non-directory `run_fs_list` entries — owns R-IIQS-PDUK, R-IJYP-35L9, R-IMEH-UP2N, R-INME-8GTC
+- D26 → `project/design/D26.md` — `describe` teaches the runtime contract (the `suite` module, the error model, products travel by reference) — owns R-IOUA-M8K1
 
 ## Verification ids → Decision
 
@@ -64,6 +70,29 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-CCN0-OQ5J → D20 → `project/design/D20.md`
 - R-CDUX-2HW8 → D20 → `project/design/D20.md`
 - R-HOME-8R2V → D7 → `project/design/D07.md`
+- R-HVKP-FQRD → D21 → `project/design/D21.md`
+- R-HWSL-TII2 → D21 → `project/design/D21.md`
+- R-HY0I-7A8R → D21 → `project/design/D21.md`
+- R-HZ8E-L1ZG → D21 → `project/design/D21.md`
+- R-I0GA-YTQ5 → D22 → `project/design/D22.md`
+- R-I1O7-CLGU → D22 → `project/design/D22.md`
+- R-I2W3-QD7J → D22 → `project/design/D22.md`
+- R-I5BW-HWOX → D22 → `project/design/D22.md`
+- R-I6JS-VOFM → D22 → `project/design/D22.md`
+- R-I7RP-9G6B → D23 → `project/design/D23.md`
+- R-I8ZL-N7X0 → D23 → `project/design/D23.md`
+- R-IA7I-0ZNP → D23 → `project/design/D23.md`
+- R-IBFE-EREE → D24 → `project/design/D24.md`
+- R-ICNA-SJ53 → D24 → `project/design/D24.md`
+- R-IDV7-6AVS → D24 → `project/design/D24.md`
+- R-IF33-K2MH → D24 → `project/design/D24.md`
+- R-IGAZ-XUD6 → D24 → `project/design/D24.md`
+- R-IHIW-BM3V → D24 → `project/design/D24.md`
+- R-IIQS-PDUK → D25 → `project/design/D25.md`
+- R-IJYP-35L9 → D25 → `project/design/D25.md`
+- R-IMEH-UP2N → D25 → `project/design/D25.md`
+- R-INME-8GTC → D25 → `project/design/D25.md`
+- R-IOUA-M8K1 → D26 → `project/design/D26.md`
 - R-LAND-1S7G → D1 → `project/design/D01.md`
 - R-LAND-3T9H → D1 → `project/design/D01.md`
 - R-LAND-7Q3D → D1 → `project/design/D01.md`

@@ -8,13 +8,16 @@ live in `project/design/README.md`. Where the two touch observable behavior,
 product states the *promise* and design states the *exact, checkable form*; that
 boundary keeps product, design, and plan from overlapping.
 
-> **Scope note.** This product doc covers **only** the new web-pages direction
-> for scripts — the landing page. scripts's existing domain (the deterministic
-> `python3`-exec script runner, the `ikigenba_scripts_*` MCP surface, the
-> event-plane producer of run-completion events (`scripts:succeeded|failed/…`),
-> and the multi-upstream consumer) is owned by `scripts/project/notes/` and is
-> untouched here. This mirrors the **template** the suite's other simple services copy, so
-> it states the uniform v1 starting point precisely.
+> **Scope note.** This product doc covers the new web-pages direction for
+> scripts — the landing page — **and the script runtime contract** (the `suite`
+> module a running script imports, and the addressability of a run's product
+> files; see "The script runtime" below). The rest of scripts's existing domain
+> (the deterministic `python3`-exec script runner, the `ikigenba_scripts_*` MCP
+> surface, the event-plane producer of run-completion events
+> (`scripts:succeeded|failed/…`), and the multi-upstream consumer) predates this
+> doc and is untouched here. The landing-page half mirrors the **template** the
+> suite's other simple services copy, so it states the uniform v1 starting point
+> precisely.
 
 > **Registry-adoption note (no promise change).** A separate, behavior-preserving
 > internal change adopts the suite's shared `registry` library so scripts resolves
@@ -98,6 +101,39 @@ The scripts landing page does this and only this:
   browser gets `401`. This is the same coarse session gate `sites` already uses
   for its private static tier.
 
+### The script runtime
+
+Beyond the landing page, this doc owns the promise of **what a running script
+can do**. scripts is the suite's first *machine* consumer of the suite's verb
+surface: a script is deterministic code working on the owner's behalf, and it
+should reach the rest of the suite through a supported contract, not hand-rolled
+HTTP. In scope:
+
+- **A `suite` helper every run can import** — the runtime provides it; the
+  script author ships only their own logic. Through it a script can: read its
+  triggering event; call any suite service's tools (the same tools, arguments,
+  and results an agent sees) with its identity asserted honestly; fetch the
+  bytes behind a content reference (from an event payload or a tool result)
+  into a local file; and read, write, list, and manage files in the account's
+  **file share** — the durable store the owner and other workflows see, so
+  writing there is how a script publishes results and how watching workflows
+  chain.
+- **Failures are typed and loud** — a suite call that fails distinguishes "bad
+  input" from "doesn't exist" from "temporarily unavailable" so a script can
+  branch on the kind; an unhandled failure crashes the run visibly rather than
+  letting it limp on.
+- **A run's product files travel by reference** — files a run writes are
+  addressable afterward by other suite services (another script, an agent run,
+  the file share) without copying bytes through an intermediary.
+
+Deliberately **not** in scope: no confinement of what a script may do locally
+(a script is the owner's own code and already runs with the service's full
+local authority — the trust decision happens when the script is authored); no
+third-party Python packages (the helper rides the standard library, keeping the
+"stdlib only" runtime promise); no service-to-service chaining beyond what the
+suite already sanctions (scripts calling verbs on the owner's behalf, never
+services calling each other's private APIs).
+
 It deliberately does **nothing else** in v1 — in particular it does not: perform
 any per-resource or per-owner authorization (the session gate is coarse by
 design); expose any script body, run output, trigger, or completion-event data on
@@ -152,6 +188,17 @@ Promised values the design must honor verbatim and never re-declare:
 - **The version on the page is the version that is actually running** — it
   reflects the deployed binary's build version, so the operator can confirm a
   deploy or rollback in a browser.
+- **A script can work the suite** — a run imports the provided `suite` helper
+  and, with no other setup, reads its triggering event, calls suite services'
+  tools, fetches content references to disk, and reads/writes the account's
+  file share. Suite failures carry a kind the script can branch on; an
+  unhandled one fails the run visibly.
+- **A run's products are usable downstream** — after a run, the files it wrote
+  are individually addressable by other suite services by reference; asking
+  scripts what a run produced includes how to fetch each file.
+- **Agents learn the runtime from scripts itself** — an agent that asks scripts
+  to describe itself is taught the `suite` contract well enough to author a
+  working script without reading source code.
 
 ## Success criteria (outcomes)
 
@@ -169,3 +216,14 @@ Each is a result the viewer or operator can confirm against the running service:
   bearer-gated `/mcp` exactly as before; the landing page changed nothing for it.
 - Opening `/srv/scripts/feed` from nginx still returns `404`, and `/health` still
   responds — the landing page shadowed neither.
+- A script whose body is `import suite` plus a call to another service's tool
+  runs to success against the live suite, and the effect of that call is
+  visible in the target service.
+- A script triggered by a file-share event fetches the referenced file's bytes
+  to local disk and writes a result file back to the share, where the owner
+  (and any watching workflow) sees it.
+- A file written by a run is fetched afterward, byte-identical, by another
+  suite service using only what scripts reported about the run — no bytes
+  pasted through an intermediary.
+- An agent given only scripts' own self-description authors a working script
+  that uses the runtime helper — without hand-rolling HTTP.

@@ -36,6 +36,17 @@ here lives in the plan.
 > the frozen `002_scripts.sql` and `004_outbox.sql` stay untouched. Both are
 > gated on the revised eventplane library being built first (see each Decision's
 > external-ordering banner).
+>
+> The newest series is the **scripts runtime as the suite's first machine
+> consumer** (**D21–D26**, per `docs/structured-mcp-design.md` §"The first
+> machine consumer"): the runner-injected `suite` Python module — its embedded
+> chassis, env injection, `event()`, and exception model (**D21**), the generic
+> MCP verb client `suite.mcp` (**D22**), the content-plane acceptor
+> `suite.fetch` (**D23**), and the file-share filesystem client `suite.files`
+> (**D24**) — plus the holder side: `GET /run-content` over run dirs and
+> `content_url` on `run_fs_list` entries (**D25**), and `describe` teaching the
+> runtime contract (**D26**). Pattern donors are prompts D21/D22/D26; the wire
+> tool count stays 18 and no migration is added.
 
 ## Requirement ids
 
@@ -136,6 +147,15 @@ approach every Decision's Verification list assumes:
   `/srv/scripts/` prefix, the `= /srv/scripts/feed` 404, and the PRM well-known
   location remain. This is a genuine assertion over the shipped artifact, runnable
   in the same `go test ./...`.
+- **The `suite` module is tested through a `python3` probe harness** (D21–D24):
+  Go tests in `internal/runner` materialize the embedded `suite.py` into a temp
+  dir exactly as the runner does, then exec the real `python3` (the precedent
+  `runner_test.go` set — no pytest, no second toolchain) on small probe scripts
+  that `import suite` and exercise one behavior, with test-controlled `SUITE_*`
+  env pointing at real `net/http/httptest` loopback servers that record
+  method/path/query/headers/body. Assertions run on both sides: what the server
+  recorded (including **zero requests** for local rejections) and what the
+  probe printed/exited. `go test ./...` stays the single green bar.
 - **Determinism.** The handler takes its name/version as plain string arguments
   (injected at the composition root from `rt.Service()`/`rt.Version()`), so its
   output is fully determined by its inputs — no clock, no network, no DB.
