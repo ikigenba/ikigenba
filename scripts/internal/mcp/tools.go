@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
+	"strings"
 
 	appkitmcp "appkit/mcp"
 	"appkit/server"
@@ -20,16 +22,17 @@ const toolPrefix = ""
 func tool(verb string) string { return toolPrefix + verb }
 
 type toolHandlers struct {
-	svc *script.Service
+	svc         *script.Service
+	contentBase string
 }
 
 // Tools returns scripts' service-owned MCP tool declarations. The shared appkit
 // MCP transport appends the chassis health and reflection tools.
-func Tools(svc *script.Service) []appkitmcp.Tool {
+func Tools(svc *script.Service, contentBase string) []appkitmcp.Tool {
 	if svc == nil {
 		panic("mcp: script service is required")
 	}
-	h := &toolHandlers{svc: svc}
+	h := &toolHandlers{svc: svc, contentBase: strings.TrimRight(contentBase, "/")}
 	return []appkitmcp.Tool{
 		desc(tool("describe"), "Return a detailed overview of scripts: what a script is, the create→run→poll→read lifecycle, triggers, and the runtime contract. Call this first if you're unfamiliar with scripts. Takes no inputs.", obj(map[string]any{}), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 			return h.dispatchTool(ctx, tool("describe"), id, args)
@@ -123,7 +126,7 @@ func Tools(svc *script.Service) []appkitmcp.Tool {
 			return h.dispatchTool(ctx, tool("run_cancel"), id, args)
 		}),
 
-		desc(tool("run_fs_list"), "List entries under path within a run's persisted dir tree (path defaults to the run root).", obj(map[string]any{
+		desc(tool("run_fs_list"), "List entries under path within a run's persisted dir tree (path defaults to the run root). Non-directory entries carry a loopback content_url for byte fetch by services, such as a run's suite.fetch or share put(source_url), not by the agent.", obj(map[string]any{
 			"run_id": typ("string"),
 			"path":   typ("string"),
 		}, "run_id"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
@@ -240,7 +243,7 @@ func runSchema() map[string]any {
 }
 
 func fileEntrySchema() map[string]any {
-	return objSchema(map[string]any{"path": typ("string"), "is_dir": typ("boolean"), "size": typ("integer")}, "path", "is_dir", "size")
+	return objSchema(map[string]any{"path": typ("string"), "is_dir": typ("boolean"), "size": typ("integer"), "content_url": typ("string")}, "path", "is_dir", "size")
 }
 
 // configSchema is the shared script.Config input schema (minimal day-one).
@@ -479,6 +482,13 @@ func (h *toolHandlers) dispatchTool(ctx context.Context, name string, id server.
 		entries, err := svc.RunFsList(ctx, owner, in.RunID, in.Path)
 		if err != nil {
 			return structuredError(err), nil
+		}
+		for i := range entries {
+			if entries[i].IsDir {
+				continue
+			}
+			query := url.Values{"run_id": {in.RunID}, "path": {entries[i].Path}}
+			entries[i].ContentURL = h.contentBase + "/run-content?" + query.Encode()
 		}
 		return toolResultJSON(map[string]any{"entries": entries})
 

@@ -56,9 +56,10 @@ type Trigger struct{ ScriptID, Source, Filter, CreatedAt string }
 
 // FileEntry is one node in a run's persisted dir tree (run_fs_list).
 type FileEntry struct {
-	Path  string `json:"path"` // relative to the run dir root
-	IsDir bool   `json:"is_dir"`
-	Size  int64  `json:"size"` // bytes; 0 for dirs
+	Path       string `json:"path"` // relative to the run dir root
+	IsDir      bool   `json:"is_dir"`
+	Size       int64  `json:"size"` // bytes; 0 for dirs
+	ContentURL string `json:"content_url,omitempty"`
 }
 
 type ScriptDetail struct {

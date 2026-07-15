@@ -22,7 +22,7 @@ const Instructions = "Scripts runs Python scripts on your behalf, manually or on
 // NewHandler builds the POST /mcp handler from the appkit Router seam. The
 // shared transport owns JSON-RPC, health, and reflection; scripts declares only
 // its domain tools.
-func NewHandler(svc *script.Service, rt *appkit.Router) (http.Handler, error) {
+func NewHandler(svc *script.Service, contentBase string, rt *appkit.Router) (http.Handler, error) {
 	if svc == nil {
 		panic("mcp: script service is required")
 	}
@@ -33,7 +33,7 @@ func NewHandler(svc *script.Service, rt *appkit.Router) (http.Handler, error) {
 		Service:       rt.Service(),
 		Version:       rt.Version(),
 		Instructions:  Instructions,
-		Tools:         Tools(svc),
+		Tools:         Tools(svc, contentBase),
 		Health:        rt.Health(),
 		Events:        rt.Events(),
 		Publishes:     rt.Publishes(),

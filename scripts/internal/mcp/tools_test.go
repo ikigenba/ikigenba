@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,6 +21,7 @@ import (
 	appkitdatabase "appkit/db"
 	appkitmcp "appkit/mcp"
 	"appkit/server"
+	"registry"
 
 	scriptdb "scripts/internal/db"
 	"scripts/internal/script"
@@ -121,10 +123,12 @@ func newTestHarness(t *testing.T) testHarness {
 	if captured == nil {
 		t.Fatalf("server.New did not invoke Register")
 	}
-	h, err := NewHandler(svc, captured)
+	contentBase := registry.BaseURL("scripts")
+	h, err := NewHandler(svc, contentBase, captured)
 	if err != nil {
 		t.Fatalf("build mcp handler: %v", err)
 	}
+	captured.HandleLoopback("GET /run-content", svc.RunContentHandler())
 	return testHarness{mcpHandler: h, server: srv.Handler, runner: fr, runsDir: runsDir, svc: svc}
 }
 
@@ -193,7 +197,7 @@ func newTestHandlerWithFetcher(t *testing.T, f script.ContentFetcher) http.Handl
 	if captured == nil {
 		t.Fatalf("server.New did not invoke Register")
 	}
-	h, err := NewHandler(svc, captured)
+	h, err := NewHandler(svc, registry.BaseURL("scripts"), captured)
 	if err != nil {
 		t.Fatalf("build mcp handler: %v", err)
 	}
@@ -497,7 +501,7 @@ func TestSetTriggerValidAndInvalid(t *testing.T) {
 	harness := newTestHarness(t)
 	h := harness.mcpHandler
 	var set, clear appkitmcp.Tool
-	for _, candidate := range Tools(harness.svc) {
+	for _, candidate := range Tools(harness.svc, registry.BaseURL("scripts")) {
 		switch candidate.Name {
 		case tool("set_trigger"):
 			set = candidate
@@ -614,6 +618,97 @@ func TestRunOutputAndFs(t *testing.T) {
 	esc := call(t, h, tool("run_fs_read"), map[string]any{"run_id": runOut.RunID, "path": "../escape"})
 	if !isError(esc) {
 		t.Fatalf("run_fs_read escape: want isError, got %+v", esc)
+	}
+}
+
+func TestRunFsListReturnsLiveEncodedContentReferencesAndDeclaresSchema(t *testing.T) {
+	// R-IMEH-UP2N
+	// R-INME-8GTC
+	h := newTestHarness(t)
+	scriptID := createScript(t, h.mcpHandler)
+	runResult := call(t, h.mcpHandler, tool("run"), map[string]any{"script_id": scriptID})
+	runID := runResult["structuredContent"].(map[string]any)["run_id"].(string)
+	runDir := filepath.Join(h.runsDir, runID)
+	if err := os.MkdirAll(filepath.Join(runDir, "reports"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{
+		"summary #1.txt":       []byte("summary\n"),
+		"reports/out file.pdf": []byte("pdf bytes\n"),
+	}
+	for rel, body := range files {
+		if err := os.WriteFile(filepath.Join(runDir, filepath.FromSlash(rel)), body, 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+
+	rootResult := call(t, h.mcpHandler, tool("run_fs_list"), map[string]any{"run_id": runID})
+	assertStructuredMirrorsText(t, "run_fs_list root", rootResult)
+	assertContentEntries(t, h.server, rootResult, runID, files)
+
+	subResult := call(t, h.mcpHandler, tool("run_fs_list"), map[string]any{"run_id": runID, "path": "reports"})
+	assertStructuredMirrorsText(t, "run_fs_list subdirectory", subResult)
+	assertContentEntries(t, h.server, subResult, runID, files)
+
+	descriptor := listedTools(t, h.mcpHandler)[tool("run_fs_list")]
+	output, ok := descriptor["outputSchema"].(map[string]any)
+	if !ok {
+		t.Fatalf("run_fs_list outputSchema = %#v", descriptor["outputSchema"])
+	}
+	properties := output["properties"].(map[string]any)
+	entries := properties["entries"].(map[string]any)
+	items := entries["items"].(map[string]any)
+	itemProperties := items["properties"].(map[string]any)
+	if got, ok := itemProperties["content_url"].(map[string]any); !ok || got["type"] != "string" {
+		t.Fatalf("content_url schema = %#v, want optional string property", itemProperties["content_url"])
+	}
+	required := items["required"].([]any)
+	for _, name := range required {
+		if name == "content_url" {
+			t.Fatalf("content_url must be optional, required = %#v", required)
+		}
+	}
+}
+
+func assertContentEntries(t *testing.T, mounted http.Handler, result map[string]any, runID string, files map[string][]byte) {
+	t.Helper()
+	var decoded struct {
+		Entries []map[string]any `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, result)), &decoded); err != nil {
+		t.Fatalf("decode run_fs_list: %v", err)
+	}
+	for _, entry := range decoded.Entries {
+		rel := entry["path"].(string)
+		isDir := entry["is_dir"].(bool)
+		contentURL, present := entry["content_url"].(string)
+		if isDir {
+			if present {
+				t.Errorf("directory %q has content_url %q", rel, contentURL)
+			}
+			continue
+		}
+		body, known := files[filepath.ToSlash(rel)]
+		if !known {
+			t.Fatalf("unexpected file entry %q", rel)
+		}
+		query := url.Values{"run_id": {runID}, "path": {rel}}
+		want := fmt.Sprintf("http://127.0.0.1:%d/run-content?%s", registry.MustPort("scripts"), query.Encode())
+		if contentURL != want {
+			t.Errorf("content_url for %q = %q, want %q", rel, contentURL, want)
+		}
+		parsed, err := url.Parse(contentURL)
+		if err != nil {
+			t.Fatalf("parse content_url %q: %v", contentURL, err)
+		}
+		if parsed.Query().Get("run_id") != runID || parsed.Query().Get("path") != rel {
+			t.Errorf("content_url query = %#v, want run_id=%q path=%q", parsed.Query(), runID, rel)
+		}
+		rr := httptest.NewRecorder()
+		mounted.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, parsed.RequestURI(), nil))
+		if rr.Code != http.StatusOK || !bytes.Equal(rr.Body.Bytes(), body) {
+			t.Errorf("fetch %q = status %d body %q, want status 200 body %q", contentURL, rr.Code, rr.Body.Bytes(), body)
+		}
 	}
 }
 

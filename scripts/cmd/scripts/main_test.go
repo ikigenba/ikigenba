@@ -649,7 +649,9 @@ func TestCompositionRootEnablesChassisWWWAndKeepsMCPWiring(t *testing.T) {
 		`rt.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {`,
 		`rt.WWW().Render(w, "landing.html", struct{ Service, Version string }{rt.Service(), rt.Version()})`,
 		`Health: scriptsHealth,`,
-		`handler, err := mcp.NewHandler(svc, rt)`,
+		`contentBase := registry.BaseURL("scripts")`,
+		`rt.HandleLoopback("GET /run-content", svc.RunContentHandler())`,
+		`handler, err := mcp.NewHandler(svc, contentBase, rt)`,
 		`rt.Handle("POST /mcp", rt.RequireIdentity(handler))`,
 	} {
 		if !strings.Contains(main, want) {
