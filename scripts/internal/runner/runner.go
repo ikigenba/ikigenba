@@ -14,6 +14,7 @@ package runner
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"os"
@@ -34,11 +35,18 @@ const python3 = "python3"
 // the completion event (last 8 KB; §A6 step 9 / §A7 payload).
 const tailMax = 8192
 
+// suitePy is materialized beside main.py for every run, keeping the Python
+// client surface byte-for-byte coupled to the scripts binary.
+//
+//go:embed suite.py
+var suitePy string
+
 // Runner drives run lifecycles. It satisfies script.Runner.
 type Runner struct {
-	store   *script.Store
-	dataDir string // service root: <dataDir>/runs/<run_id>/
-	ttl     time.Duration
+	store    *script.Store
+	dataDir  string // service root: <dataDir>/runs/<run_id>/
+	ttl      time.Duration
+	suiteEnv []string
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
@@ -50,11 +58,12 @@ type Runner struct {
 
 // New constructs a Runner over the store, the service root (run trees live
 // under <dataDir>/runs/), and the per-run TTL backstop.
-func New(store *script.Store, dataDir string, ttl time.Duration) *Runner {
+func New(store *script.Store, dataDir string, ttl time.Duration, suiteEnv []string) *Runner {
 	return &Runner{
 		store:         store,
 		dataDir:       dataDir,
 		ttl:           ttl,
+		suiteEnv:      append([]string(nil), suiteEnv...),
 		cancels:       make(map[string]context.CancelFunc),
 		userCancelled: make(map[string]bool),
 	}
@@ -142,6 +151,10 @@ func (r *Runner) execute(run script.Run, input []byte) {
 		finish(sc.Name, script.RunFailed, nil, "write main.py: "+err.Error())
 		return
 	}
+	if err := os.WriteFile(filepath.Join(dir, "suite.py"), []byte(suitePy), 0o600); err != nil {
+		finish(sc.Name, script.RunFailed, nil, "write suite.py: "+err.Error())
+		return
+	}
 	cfgJSON, err := json.Marshal(sc.Config)
 	if err != nil {
 		finish(sc.Name, script.RunFailed, nil, "marshal config: "+err.Error())
@@ -171,7 +184,13 @@ func (r *Runner) execute(run script.Run, input []byte) {
 	// its own process group so a TTL/cancel kills the whole tree.
 	cmd := exec.CommandContext(ctx, python3, "main.py")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "EVENT_JSON="+string(input))
+	cmd.Env = append(os.Environ(), r.suiteEnv...)
+	cmd.Env = append(cmd.Env,
+		"EVENT_JSON="+string(input),
+		"SUITE_SCRIPT_ID="+run.ScriptID,
+		"SUITE_RUN_ID="+run.ID,
+		"SUITE_OWNER_EMAIL="+sc.OwnerEmail,
+	)
 	cmd.Stdin = bytes.NewReader(input)
 	cmd.Stdout = stdoutFile
 	cmd.Stderr = stderrFile

@@ -21,6 +21,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -142,14 +143,27 @@ func registerRoutes(rt *appkit.Router) error {
 		return err
 	}
 
-	store := script.NewStore(conn)
-	run := runner.New(store, rootDir, runTTL)
-	svc := script.NewService(store, runsDir, run)
 	// Wire the dropbox loopback client for the import verb. DROPBOX_BASE_URL is
 	// env-only (the loopback-URL-via-env shape notify uses for *_FEED_URL); the
 	// default works for the standard on-box loopback layout. Field-injected after
 	// NewService so existing construction stays untouched.
 	dropboxBase := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", registry.BaseURL("dropbox"))
+	services := make(map[string]string, len(registry.Services))
+	for _, service := range registry.Services {
+		services[service.Name] = registry.BaseURL(service.Name)
+	}
+	servicesJSON, err := json.Marshal(services)
+	if err != nil {
+		return fmt.Errorf("scripts: marshal suite services: %w", err)
+	}
+	suiteEnv := []string{
+		"SUITE_SERVICES=" + string(servicesJSON),
+		"SUITE_FILES_BASE_URL=" + dropboxBase,
+	}
+
+	store := script.NewStore(conn)
+	run := runner.New(store, rootDir, runTTL, suiteEnv)
+	svc := script.NewService(store, runsDir, run)
 	svc.Fetcher = script.NewHTTPFetcher(dropboxBase)
 	// Capture the service for the consumer Workers and the store for the Producer
 	// hook (both run after Handlers; the Producer injects the outbox onto store).

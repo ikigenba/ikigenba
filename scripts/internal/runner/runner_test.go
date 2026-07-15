@@ -3,9 +3,11 @@ package runner
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -132,7 +134,7 @@ func TestSpawnSucceeds(t *testing.T) {
 	requirePython(t)
 	st, conn := newStore(t)
 	dataDir := t.TempDir()
-	r := New(st, dataDir, 30*time.Second)
+	r := New(st, dataDir, 30*time.Second, nil)
 
 	body := "open('out.txt', 'w').write('done')\nprint('hello')\n"
 	run := seed(t, st, body)
@@ -164,6 +166,141 @@ func TestSpawnSucceeds(t *testing.T) {
 	}
 }
 
+func TestSpawnMaterializesEmbeddedSuiteBeforeExecution(t *testing.T) {
+	// R-HVKP-FQRD
+	st, _ := newStore(t)
+	dataDir := t.TempDir()
+	r := New(st, dataDir, 30*time.Second, nil)
+	run := seed(t, st, "import suite\n")
+
+	r.Spawn(run, []byte("{}"))
+	got := waitTerminal(t, st, run.ID)
+	if got.Status != script.RunSucceeded {
+		t.Fatalf("status = %q, want succeeded; error = %q", got.Status, got.Error)
+	}
+
+	path := filepath.Join(dataDir, "runs", run.ID, "suite.py")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read materialized suite.py: %v", err)
+	}
+	if string(b) != suitePy {
+		t.Fatalf("materialized suite.py differs from embedded source")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat materialized suite.py: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("suite.py mode = %o, want 600", got)
+	}
+}
+
+func TestSpawnInjectsSuiteEnvironment(t *testing.T) {
+	// R-HWSL-TII2
+	st, _ := newStore(t)
+	dataDir := t.TempDir()
+	services := `{"crm":"http://127.0.0.1:3100","scripts":"http://127.0.0.1:3200"}`
+	filesBase := "http://127.0.0.1:3300"
+	r := New(st, dataDir, 30*time.Second, []string{
+		"SUITE_SERVICES=" + services,
+		"SUITE_FILES_BASE_URL=" + filesBase,
+	})
+	body := "import json, os\nprint(json.dumps([os.environ[k] for k in [\"SUITE_SERVICES\", \"SUITE_FILES_BASE_URL\", \"SUITE_SCRIPT_ID\", \"SUITE_RUN_ID\", \"SUITE_OWNER_EMAIL\"]]))\n"
+	run := seed(t, st, body)
+
+	r.Spawn(run, []byte("{}"))
+	got := waitTerminal(t, st, run.ID)
+	if got.Status != script.RunSucceeded {
+		t.Fatalf("status = %q, want succeeded; error = %q", got.Status, got.Error)
+	}
+
+	b, err := os.ReadFile(filepath.Join(dataDir, "runs", run.ID, "stdout.log"))
+	if err != nil {
+		t.Fatalf("read stdout.log: %v", err)
+	}
+	var values []string
+	if err := json.Unmarshal(b, &values); err != nil {
+		t.Fatalf("decode environment probe %q: %v", b, err)
+	}
+	want := []string{services, filesBase, run.ScriptID, run.ID, owner}
+	if !reflect.DeepEqual(values, want) {
+		t.Fatalf("suite environment = %#v, want %#v", values, want)
+	}
+}
+
+func TestSuiteEventReturnsTriggerPayloadVerbatim(t *testing.T) {
+	// R-HY0I-7A8R
+	tests := []struct {
+		name  string
+		input string
+		want  any
+	}{
+		{name: "triggered", input: `{"a":{"b":[1,2]},"c":"x"}`, want: map[string]any{"a": map[string]any{"b": []any{float64(1), float64(2)}}, "c": "x"}},
+		{name: "manual", input: `{}`, want: map[string]any{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, _ := newStore(t)
+			dataDir := t.TempDir()
+			r := New(st, dataDir, 30*time.Second, nil)
+			run := seed(t, st, "import json, suite\nprint(json.dumps(suite.event()))\n")
+
+			r.Spawn(run, []byte(tt.input))
+			got := waitTerminal(t, st, run.ID)
+			if got.Status != script.RunSucceeded {
+				t.Fatalf("status = %q, want succeeded; error = %q", got.Status, got.Error)
+			}
+			b, err := os.ReadFile(filepath.Join(dataDir, "runs", run.ID, "stdout.log"))
+			if err != nil {
+				t.Fatalf("read stdout.log: %v", err)
+			}
+			var payload any
+			if err := json.Unmarshal(b, &payload); err != nil {
+				t.Fatalf("decode event probe %q: %v", b, err)
+			}
+			if !reflect.DeepEqual(payload, tt.want) {
+				t.Fatalf("suite.event() = %#v, want %#v", payload, tt.want)
+			}
+		})
+	}
+}
+
+func TestSuiteRuntimeFactsAreRequiredOutsideRunner(t *testing.T) {
+	// R-HZ8E-L1ZG
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "suite.py"), []byte(suitePy), 0o600); err != nil {
+		t.Fatalf("write suite.py probe: %v", err)
+	}
+	tests := []struct {
+		name    string
+		expr    string
+		missing string
+	}{
+		{name: "event", expr: "suite.event()", missing: "EVENT_JSON"},
+		{name: "mcp", expr: "suite.mcp('crm', 'probe')", missing: "SUITE_SERVICES"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			probe := "import suite\ntry:\n    " + tt.expr + "\nexcept Exception as exc:\n    print(type(exc).__name__)\n    print(str(exc))\n"
+			cmd := exec.Command("python3", "-c", probe)
+			cmd.Dir = dir
+			cmd.Env = []string{}
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("python probe failed: %v; output = %s", err, output)
+			}
+			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+			if len(lines) != 2 || lines[0] != "RuntimeError" {
+				t.Fatalf("raised output = %q, want RuntimeError and message", output)
+			}
+			if !strings.Contains(lines[1], "missing "+tt.missing) {
+				t.Fatalf("error message = %q, want missing variable %s", lines[1], tt.missing)
+			}
+		})
+	}
+}
+
 func TestSpawnUsesRebuildableRunsDirOutsideState(t *testing.T) {
 	// R-4LKF-FB23
 	requirePython(t)
@@ -173,7 +310,7 @@ func TestSpawnUsesRebuildableRunsDirOutsideState(t *testing.T) {
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		t.Fatalf("mkdir state: %v", err)
 	}
-	r := New(st, root, 30*time.Second)
+	r := New(st, root, 30*time.Second, nil)
 
 	run := seed(t, st, "open('out.txt', 'w').write('artifact')\n")
 	r.Spawn(run, []byte("{}"))
@@ -194,7 +331,7 @@ func TestSpawnUsesRebuildableRunsDirOutsideState(t *testing.T) {
 func TestSpawnFailsNonZero(t *testing.T) {
 	requirePython(t)
 	st, conn := newStore(t)
-	r := New(st, t.TempDir(), 30*time.Second)
+	r := New(st, t.TempDir(), 30*time.Second, nil)
 
 	run := seed(t, st, "import sys\nsys.exit(3)\n")
 	r.Spawn(run, []byte("{}"))
@@ -215,7 +352,7 @@ func TestSpawnStdoutTruncated(t *testing.T) {
 	requirePython(t)
 	st, conn := newStore(t)
 	dataDir := t.TempDir()
-	r := New(st, dataDir, 30*time.Second)
+	r := New(st, dataDir, 30*time.Second, nil)
 
 	// Print 10000 'A' chars (no newline) → > 8KB; tail must be the last 8192 'A'.
 	run := seed(t, st, "import sys\nsys.stdout.write('A' * 10000)\n")
@@ -247,7 +384,7 @@ func TestSpawnStdoutTruncated(t *testing.T) {
 func TestCancel(t *testing.T) {
 	requirePython(t)
 	st, conn := newStore(t)
-	r := New(st, t.TempDir(), 30*time.Second)
+	r := New(st, t.TempDir(), 30*time.Second, nil)
 
 	// A sleeper that writes its pid so we can confirm the kill.
 	run := seed(t, st, "import time\ntime.sleep(60)\n")
@@ -278,7 +415,7 @@ func TestCancel(t *testing.T) {
 func TestTTL(t *testing.T) {
 	requirePython(t)
 	st, _ := newStore(t)
-	r := New(st, t.TempDir(), 150*time.Millisecond)
+	r := New(st, t.TempDir(), 150*time.Millisecond, nil)
 
 	run := seed(t, st, "import time\ntime.sleep(60)\n")
 	start := time.Now()
@@ -298,7 +435,7 @@ func TestTTL(t *testing.T) {
 
 func TestRecover(t *testing.T) {
 	st, _ := newStore(t)
-	r := New(st, t.TempDir(), 30*time.Second)
+	r := New(st, t.TempDir(), 30*time.Second, nil)
 
 	// Plant a running row directly (simulating a crash mid-run).
 	run := seed(t, st, "print('x')")
@@ -319,7 +456,7 @@ func TestRecover(t *testing.T) {
 func TestSpawnTombstonedScript(t *testing.T) {
 	st, conn := newStore(t)
 	dataDir := t.TempDir()
-	r := New(st, dataDir, 30*time.Second)
+	r := New(st, dataDir, 30*time.Second, nil)
 
 	// Insert a script + its running run, then tombstone the script (the run row
 	// survives with a dangling script_id, §7A). Spawning then hits the
