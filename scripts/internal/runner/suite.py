@@ -4,7 +4,6 @@ import hashlib
 import http.client
 import json
 import os
-import shutil
 import tempfile
 import urllib.error
 import urllib.parse
@@ -103,8 +102,272 @@ def _content_text(content):
     return "".join(block.get("text", "") for block in content)
 
 
+def _tool_error_for_status(status, body=b"", map_validation=False):
+    if status == 400 and map_validation:
+        return ToolError("validation", body.decode("utf-8", errors="replace"))
+    if status == 404:
+        return ToolError("not_found", "source returned 404")
+    if status == 409:
+        return ToolError("conflict", "source returned 409")
+    return ToolError("source_unavailable", f"source returned {status}")
+
+
+def _open_http(method, url, headers=None, body_file=None):
+    parsed = urllib.parse.urlsplit(url)
+    connection = http.client.HTTPConnection(
+        parsed.hostname, parsed.port, timeout=HTTP_TIMEOUT_SECONDS
+    )
+    target = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+    request_headers = {} if headers is None else dict(headers)
+    try:
+        if body_file is None:
+            connection.request(method, target, headers=request_headers)
+        else:
+            connection.putrequest(method, target)
+            for name, value in request_headers.items():
+                connection.putheader(name, value)
+            connection.endheaders()
+    except (OSError, TimeoutError, http.client.HTTPException) as exc:
+        connection.close()
+        raise ToolError("source_unavailable", str(exc)) from None
+    if body_file is not None:
+        while True:
+            try:
+                chunk = body_file.read(64 * 1024)
+            except OSError:
+                connection.close()
+                raise
+            if not chunk:
+                break
+            try:
+                connection.send(chunk)
+            except (OSError, TimeoutError, http.client.HTTPException) as exc:
+                connection.close()
+                raise ToolError("source_unavailable", str(exc)) from None
+    try:
+        return connection, connection.getresponse()
+    except (OSError, TimeoutError, http.client.HTTPException) as exc:
+        connection.close()
+        raise ToolError("source_unavailable", str(exc)) from None
+
+
+def _read_response(response):
+    try:
+        return response.read()
+    except (OSError, TimeoutError, http.client.HTTPException) as exc:
+        raise ToolError("source_unavailable", str(exc)) from None
+
+
+def _remove_destination(dest):
+    try:
+        os.unlink(dest)
+    except FileNotFoundError:
+        pass
+
+
+def _stream_response(response, dest):
+    directory = os.path.dirname(os.path.abspath(dest))
+    temporary = tempfile.NamedTemporaryFile(dir=directory, delete=False)
+    temporary_path = temporary.name
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with temporary:
+            while True:
+                try:
+                    chunk = response.read(64 * 1024)
+                except (OSError, TimeoutError, http.client.HTTPException) as exc:
+                    raise ToolError("source_unavailable", str(exc)) from None
+                if not chunk:
+                    if response.length not in (None, 0):
+                        raise ToolError(
+                            "source_unavailable",
+                            f"response ended with {response.length} bytes remaining",
+                        )
+                    break
+                temporary.write(chunk)
+                digest.update(chunk)
+                size += len(chunk)
+        os.replace(temporary_path, dest)
+    except Exception:
+        try:
+            os.unlink(temporary_path)
+        except FileNotFoundError:
+            pass
+        raise
+    return {"path": dest, "size": size, "content_hash": digest.hexdigest()}
+
+
+def _allowed_content_ports():
+    origins = list(json.loads(_runtime_value("SUITE_SERVICES")).values())
+    origins.append(_runtime_value("SUITE_FILES_BASE_URL"))
+    ports = set()
+    for origin in origins:
+        try:
+            parsed = urllib.parse.urlsplit(origin)
+            if parsed.port is not None:
+                ports.add(parsed.port)
+        except ValueError:
+            continue
+    return ports
+
+
+def fetch(content_url, dest):
+    """Fetch a suite content URL to a local file."""
+
+    try:
+        parsed = urllib.parse.urlsplit(content_url)
+        port = parsed.port
+    except (TypeError, ValueError) as exc:
+        raise ToolError("validation", f"content URL must have a valid port: {exc}") from None
+    if parsed.scheme != "http":
+        raise ToolError("validation", "content URL scheme must be http")
+    if parsed.hostname not in {"127.0.0.1", "::1"}:
+        raise ToolError("validation", "content URL host must be 127.0.0.1 or ::1")
+    if port is None:
+        raise ToolError("validation", "content URL must have an explicit port")
+    if port not in _allowed_content_ports():
+        raise ToolError("validation", "content URL port must be a suite service port")
+
+    try:
+        connection, response = _open_http("GET", content_url)
+        try:
+            if response.status < 200 or response.status >= 300:
+                body = _read_response(response)
+                _remove_destination(dest)
+                raise _tool_error_for_status(response.status, body)
+            return _stream_response(response, dest)
+        finally:
+            response.close()
+            connection.close()
+    except ToolError:
+        _remove_destination(dest)
+        raise
+
+
 class _Files:
-    """Namespace reserved for the file-share client surface."""
+    """Filesystem client for the suite file share."""
+
+    @staticmethod
+    def _url(route, params=None):
+        base = _runtime_value("SUITE_FILES_BASE_URL").rstrip("/")
+        query = urllib.parse.urlencode(params or {})
+        return base + route + (("?" + query) if query else "")
+
+    @staticmethod
+    def _headers():
+        return {"X-Client-Id": f"scripts:{_runtime_value('SUITE_SCRIPT_ID')}"}
+
+    def _json(self, method, route, params=None):
+        connection, response = _open_http(
+            method, self._url(route, params), headers=self._headers()
+        )
+        try:
+            body = _read_response(response)
+            if response.status < 200 or response.status >= 300:
+                raise _tool_error_for_status(response.status, body, map_validation=True)
+            try:
+                return json.loads(body)
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ToolError("source_unavailable", str(exc)) from None
+        finally:
+            response.close()
+            connection.close()
+
+    def _empty(self, method, route, params):
+        connection, response = _open_http(
+            method, self._url(route, params), headers=self._headers()
+        )
+        try:
+            body = _read_response(response)
+            if response.status < 200 or response.status >= 300:
+                raise _tool_error_for_status(response.status, body, map_validation=True)
+            return None
+        finally:
+            response.close()
+            connection.close()
+
+    def list(self, path=None, cursor=None, limit=None):
+        """List entries in the file share."""
+
+        params = {}
+        if path is not None:
+            params["path"] = path
+        if cursor is not None:
+            params["cursor"] = cursor
+        if limit is not None:
+            params["limit"] = limit
+        return self._json("GET", "/list", params)
+
+    def stat(self, path):
+        """Return metadata for a file-share path."""
+
+        return self._json("GET", "/stat", {"path": path})
+
+    def get(self, share_path, dest):
+        """Stream a file-share object to a local file."""
+
+        try:
+            connection, response = _open_http(
+                "GET",
+                self._url("/content", {"path": share_path}),
+                headers=self._headers(),
+            )
+            try:
+                if response.status < 200 or response.status >= 300:
+                    body = _read_response(response)
+                    _remove_destination(dest)
+                    raise _tool_error_for_status(
+                        response.status, body, map_validation=True
+                    )
+                return _stream_response(response, dest)
+            finally:
+                response.close()
+                connection.close()
+        except ToolError:
+            _remove_destination(dest)
+            raise
+
+    def put(self, source, share_path):
+        """Stream a local file into the file share."""
+
+        with open(source, "rb") as body:
+            headers = self._headers()
+            headers["Content-Length"] = str(os.fstat(body.fileno()).st_size)
+            connection, response = _open_http(
+                "PUT",
+                self._url("/content", {"path": share_path}),
+                headers=headers,
+                body_file=body,
+            )
+            try:
+                response_body = _read_response(response)
+                if response.status < 200 or response.status >= 300:
+                    raise _tool_error_for_status(
+                        response.status, response_body, map_validation=True
+                    )
+                try:
+                    return json.loads(response_body)
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ToolError("source_unavailable", str(exc)) from None
+            finally:
+                response.close()
+                connection.close()
+
+    def delete(self, path):
+        """Delete a file-share path if it exists."""
+
+        return self._empty("DELETE", "/content", {"path": path})
+
+    def move(self, src, dest):
+        """Move a file-share path."""
+
+        return self._empty("POST", "/move", {"from": src, "to": dest})
+
+    def mkdir(self, path):
+        """Create a directory in the file share."""
+
+        return self._empty("POST", "/mkdir", {"path": path})
 
 
 files = _Files()
