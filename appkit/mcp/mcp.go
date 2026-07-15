@@ -202,7 +202,9 @@ func (h *Handler) toolDescriptors() []map[string]any {
 	return descriptors
 }
 
-func standardTools() []Tool {
+var standardTools = defaultStandardTools
+
+func defaultStandardTools() []Tool {
 	return []Tool{
 		{
 			Name:        "health",

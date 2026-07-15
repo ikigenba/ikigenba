@@ -1,4 +1,4 @@
-package mcp_test
+package mcp
 
 import (
 	"bytes"
@@ -12,16 +12,15 @@ import (
 	"testing"
 
 	"appkit"
-	"appkit/mcp"
 	"appkit/server"
 
 	"eventplane/consumer"
 	"eventplane/outbox"
 )
 
-func newHandler(t *testing.T, opts mcp.Options) *mcp.Handler {
+func newHandler(t *testing.T, opts Options) *Handler {
 	t.Helper()
-	h, err := mcp.New(opts)
+	h, err := New(opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -143,7 +142,7 @@ type customerEventSample struct {
 }
 
 func TestInitializeReturnsOptions(t *testing.T) {
-	h := newHandler(t, mcp.Options{
+	h := newHandler(t, Options{
 		Service:      "ledger",
 		Version:      "v1.2.3",
 		Instructions: "Use ledger tools for accounting records.",
@@ -187,15 +186,15 @@ func TestToolsListIncludesDeclaredTools(t *testing.T) {
 			"records": map[string]any{"type": "array"},
 		},
 	}
-	h := newHandler(t, mcp.Options{
-		Tools: []mcp.Tool{
+	h := newHandler(t, Options{
+		Tools: []Tool{
 			{
 				Name:         "search",
 				Description:  "Search records.",
 				InputSchema:  schema,
 				OutputSchema: outputSchema,
 				Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-					return mcp.TextResult("ok"), nil
+					return TextResult("ok"), nil
 				},
 			},
 			{
@@ -203,7 +202,7 @@ func TestToolsListIncludesDeclaredTools(t *testing.T) {
 				Description: "Save records.",
 				InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
 				Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-					return mcp.TextResult("ok"), nil
+					return TextResult("ok"), nil
 				},
 			},
 		},
@@ -244,11 +243,11 @@ func TestStructuredResultRenderingsMatchOnWire(t *testing.T) {
 		"items": []any{"alpha", float64(2)},
 		"meta":  map[string]any{"ready": true},
 	}
-	h := newHandler(t, mcp.Options{Tools: []mcp.Tool{{
+	h := newHandler(t, Options{Tools: []Tool{{
 		Name:        "structured",
 		InputSchema: map[string]any{"type": "object"},
 		Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return mcp.StructuredResult(want)
+			return StructuredResult(want)
 		},
 	}}})
 
@@ -269,11 +268,11 @@ func TestStructuredResultRenderingsMatchOnWire(t *testing.T) {
 }
 
 func TestErrorResultCarriesTypedCodeAndMessageOnWire(t *testing.T) {
-	h := newHandler(t, mcp.Options{Tools: []mcp.Tool{{
+	h := newHandler(t, Options{Tools: []Tool{{
 		Name:        "lookup",
 		InputSchema: map[string]any{"type": "object"},
 		Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return mcp.ErrorResult(mcp.ErrNotFound, "record missing"), nil
+			return ErrorResult(ErrNotFound, "record missing"), nil
 		},
 	}}})
 
@@ -294,7 +293,7 @@ func TestErrorResultCarriesTypedCodeAndMessageOnWire(t *testing.T) {
 }
 
 func TestStandardToolsListAndHealthEnvelope(t *testing.T) {
-	h := newHandler(t, mcp.Options{
+	h := newHandler(t, Options{
 		Service: "crm",
 		Version: "v2.4.6",
 		Health: func(ctx context.Context) (map[string]any, error) {
@@ -373,7 +372,7 @@ func TestReflectionStructuredFormsAndOutputSchema(t *testing.T) {
 		Description: "A customer was created.",
 		Sample:      customerEventSample{CustomerID: "cus_123", Email: "owner@example.com"},
 	}}
-	h := newHandler(t, mcp.Options{
+	h := newHandler(t, Options{
 		Events: events,
 		Subscriptions: func() []consumer.Subscription {
 			return []consumer.Subscription{{Source: "crm", Filter: "customer.created", Description: "Customer changes."}}
@@ -445,7 +444,7 @@ func TestReflectionReturnsEventIndexAndLivePublishes(t *testing.T) {
 		Filter:      "crm:create/<mirror path>",
 		Description: "Customer changes.",
 	}}
-	h := newHandler(t, mcp.Options{
+	h := newHandler(t, Options{
 		Events: append(staticEvents, eventsOnly...),
 		Publishes: func() outbox.Registry {
 			return liveEvents
@@ -489,7 +488,7 @@ func TestReflectionReturnsEventDetailSchema(t *testing.T) {
 		Description: "A customer was created.",
 		Sample:      customerEventSample{CustomerID: "cus_123", Email: "owner@example.com"},
 	}}
-	h := newHandler(t, mcp.Options{Events: events})
+	h := newHandler(t, Options{Events: events})
 
 	resp := rpc(t, h, `{"jsonrpc":"2.0","id":"reflection-detail","method":"tools/call","params":{"name":"reflection","arguments":{"kind":"customer.created"}}}`, nil)
 	got := resultTextJSON(t, resp)
@@ -526,7 +525,7 @@ func TestReflectionUnknownKindReturnsToolError(t *testing.T) {
 			Sample:      customerEventSample{CustomerID: "cus_123"},
 		},
 	}
-	h := newHandler(t, mcp.Options{Events: events})
+	h := newHandler(t, Options{Events: events})
 
 	resp := rpc(t, h, `{"jsonrpc":"2.0","id":"reflection-unknown","method":"tools/call","params":{"name":"reflection","arguments":{"kind":"customer.missing"}}}`, nil)
 	if errObj, ok := resp["error"]; ok {
@@ -556,8 +555,8 @@ func TestToolsCallDispatchesRawArgumentsAndResult(t *testing.T) {
 		"content": []map[string]any{{"type": "text", "text": "created"}},
 		"meta":    map[string]any{"id": "abc123"},
 	}
-	h := newHandler(t, mcp.Options{
-		Tools: []mcp.Tool{{
+	h := newHandler(t, Options{
+		Tools: []Tool{{
 			Name:        "create",
 			Description: "Create a record.",
 			InputSchema: map[string]any{"type": "object"},
@@ -581,14 +580,14 @@ func TestToolsCallDispatchesRawArgumentsAndResult(t *testing.T) {
 
 func TestToolsCallPassesRequestIdentityHeaders(t *testing.T) {
 	var gotID server.Identity
-	h := newHandler(t, mcp.Options{
-		Tools: []mcp.Tool{{
+	h := newHandler(t, Options{
+		Tools: []Tool{{
 			Name:        "whoami",
 			Description: "Return caller identity.",
 			InputSchema: map[string]any{"type": "object"},
 			Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				gotID = id
-				return mcp.TextResult("ok"), nil
+				return TextResult("ok"), nil
 			},
 		}},
 	})
@@ -608,7 +607,7 @@ func TestToolsCallPassesRequestIdentityHeaders(t *testing.T) {
 }
 
 func TestErrorsForUnknownMethodAndUndeclaredTool(t *testing.T) {
-	h := newHandler(t, mcp.Options{Tools: []mcp.Tool{{
+	h := newHandler(t, Options{Tools: []Tool{{
 		Name:        "broken",
 		InputSchema: map[string]any{"type": "object"},
 		Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
@@ -644,7 +643,7 @@ func TestErrorsForUnknownMethodAndUndeclaredTool(t *testing.T) {
 }
 
 func TestMalformedBodyReturnsParseError(t *testing.T) {
-	h := newHandler(t, mcp.Options{})
+	h := newHandler(t, Options{})
 
 	resp := rpc(t, h, `not json`, nil)
 	errObj := errorObject(t, resp)
@@ -661,16 +660,16 @@ func TestNewRejectsDuplicateAndReservedToolNames(t *testing.T) {
 	}
 
 	// R-MJUX-YJZX
-	if _, err := mcp.New(mcp.Options{Tools: []mcp.Tool{
+	if _, err := New(Options{Tools: []Tool{
 		{Name: "dupe", Handler: handler},
 		{Name: "dupe", Handler: handler},
 	}}); err == nil {
 		t.Fatal("New duplicate tool names error = nil, want non-nil")
 	}
-	if _, err := mcp.New(mcp.Options{Tools: []mcp.Tool{{Name: "health", Handler: handler}}}); err == nil {
+	if _, err := New(Options{Tools: []Tool{{Name: "health", Handler: handler}}}); err == nil {
 		t.Fatal("New health reserved name error = nil, want non-nil")
 	}
-	if _, err := mcp.New(mcp.Options{Tools: []mcp.Tool{{Name: "reflection", Handler: handler}}}); err == nil {
+	if _, err := New(Options{Tools: []Tool{{Name: "reflection", Handler: handler}}}); err == nil {
 		t.Fatal("New reflection reserved name error = nil, want non-nil")
 	}
 }
@@ -700,7 +699,7 @@ func TestNewRejectsSchemasThatStrictClientsCannotAdvertise(t *testing.T) {
 	// R-EIYD-4M57
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := mcp.New(mcp.Options{Tools: []mcp.Tool{{Name: "strict-client-check", InputSchema: tc.input, OutputSchema: tc.output}}})
+			_, err := New(Options{Tools: []Tool{{Name: "strict-client-check", InputSchema: tc.input, OutputSchema: tc.output}}})
 			if err == nil {
 				t.Fatal("New error = nil, want strict-client schema rejection")
 			}
@@ -712,7 +711,31 @@ func TestNewRejectsSchemasThatStrictClientsCannotAdvertise(t *testing.T) {
 		})
 	}
 
-	if _, err := mcp.New(mcp.Options{Tools: []mcp.Tool{
+	t.Run("chassis reflection output", func(t *testing.T) {
+		originalStandardTools := standardTools
+		standardTools = func() []Tool {
+			tools := originalStandardTools()
+			for i := range tools {
+				if tools[i].Name == "reflection" {
+					tools[i].OutputSchema = map[string]any{"type": "object", "oneOf": []any{}}
+				}
+			}
+			return tools
+		}
+		defer func() { standardTools = originalStandardTools }()
+
+		_, err := New(Options{})
+		if err == nil {
+			t.Fatal("New error = nil, want former reflection outputSchema rejection")
+		}
+		for _, want := range []string{"reflection", "outputSchema", "oneOf"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("New error = %q, want it to name %q", err, want)
+			}
+		}
+	})
+
+	if _, err := New(Options{Tools: []Tool{
 		{Name: "structured", InputSchema: validInput, OutputSchema: map[string]any{"type": "object", "additionalProperties": true}},
 		{Name: "prose", InputSchema: validInput},
 	}}); err != nil {
