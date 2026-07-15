@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"reflect"
@@ -66,6 +67,36 @@ func TestClientPRListR_DXTX_6CSJ(t *testing.T) {
 	if len(got) != 1 || got[0].Number != 7 || got[0].Title != "Add thing" || got[0].State != "open" {
 		t.Fatalf("PRList() = %+v, want decoded PR list", got)
 	}
+}
+
+func TestClientPRCreateExactPayloadAndInvalidR_GJYX_0UGN(t *testing.T) {
+	// R-GJYX-0UGN
+	t.Run("created PR", func(t *testing.T) {
+		c := newRESTTestClient(t, func(req *http.Request) (*http.Response, error) {
+			assertRESTRequest(t, req, http.MethodPost, "/repos/acme/widgets/pulls")
+			body := readRequestObject(t, req)
+			assertOnlyKeys(t, body, "title", "head", "base", "body")
+			if body["title"] != "Ship it" || body["head"] != "feature" || body["base"] != "main" || body["body"] != "details" {
+				t.Fatalf("request body = %v, want exact PR fields", body)
+			}
+			assertNoOwnerFields(t, body)
+			return jsonResponse(http.StatusCreated, `{"number":8,"title":"Ship it","state":"open","body":"details","html_url":"https://example.test/pr/8"}`), nil
+		})
+		got, err := c.PRCreate(context.Background(), "widgets", "Ship it", "feature", "main", "details")
+		if err != nil || got.Number != 8 || got.Title != "Ship it" || got.HTMLURL == "" {
+			t.Fatalf("PRCreate() = %+v, %v; want decoded PR", got, err)
+		}
+	})
+
+	t.Run("unprocessable head", func(t *testing.T) {
+		c := newRESTTestClient(t, func(*http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusUnprocessableEntity, `{"message":"head invalid"}`), nil
+		})
+		_, err := c.PRCreate(context.Background(), "widgets", "Ship it", "missing", "main", "")
+		if !errors.Is(err, ErrInvalid) {
+			t.Fatalf("PRCreate() error = %v, want ErrInvalid", err)
+		}
+	})
 }
 
 func TestClientPRGetR_DZ1T_K4J8(t *testing.T) {
@@ -243,6 +274,103 @@ func TestClientIssueCommentR_E7L4_8IQ3(t *testing.T) {
 	if got.ID != 44 || got.Body != "exact issue comment" {
 		t.Fatalf("IssueComment() = %+v, want decoded comment", got)
 	}
+}
+
+func TestClientIssueCommentsOrderedAndNotFoundR_F70H_NRU9(t *testing.T) {
+	// R-F70H-NRU9
+	t.Run("ordered comments", func(t *testing.T) {
+		c := newRESTTestClient(t, func(req *http.Request) (*http.Response, error) {
+			assertRESTRequest(t, req, http.MethodGet, "/repos/acme/widgets/issues/4/comments")
+			return jsonResponse(http.StatusOK, `[{"id":1,"body":"first"},{"id":2,"body":"second"}]`), nil
+		})
+		got, err := c.IssueComments(context.Background(), "widgets", 4)
+		if err != nil || len(got) != 2 || got[0].ID != 1 || got[1].ID != 2 {
+			t.Fatalf("IssueComments() = %+v, %v; want response order", got, err)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		c := newRESTTestClient(t, func(*http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusNotFound, `{"message":"missing"}`), nil
+		})
+		_, err := c.IssueComments(context.Background(), "widgets", 404)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("IssueComments() error = %v, want ErrNotFound", err)
+		}
+	})
+}
+
+func TestClientLabelAddExactPayloadAndDecodeR_GL6T_EM7C(t *testing.T) {
+	// R-GL6T-EM7C
+	c := newRESTTestClient(t, func(req *http.Request) (*http.Response, error) {
+		assertRESTRequest(t, req, http.MethodPost, "/repos/acme/widgets/issues/4/labels")
+		body := readRequestObject(t, req)
+		assertOnlyKeys(t, body, "labels")
+		if !reflect.DeepEqual(body["labels"], []any{"triaged", "bug"}) {
+			t.Fatalf("labels = %#v, want supplied label names", body["labels"])
+		}
+		assertNoOwnerFields(t, body)
+		return jsonResponse(http.StatusOK, `[{"name":"triaged","color":"00ff00"},{"name":"bug","color":"ff0000"}]`), nil
+	})
+	got, err := c.LabelAdd(context.Background(), "widgets", 4, []string{"triaged", "bug"})
+	if err != nil || len(got) != 2 || got[0].Name != "triaged" || got[1].Color != "ff0000" {
+		t.Fatalf("LabelAdd() = %+v, %v; want decoded labels", got, err)
+	}
+}
+
+func TestClientLabelRemoveDeleteRetryAndNotFoundR_GMEP_SDY1(t *testing.T) {
+	// R-GMEP-SDY1
+	t.Run("standard request and not found", func(t *testing.T) {
+		c := newRESTTestClient(t, func(req *http.Request) (*http.Response, error) {
+			assertRESTRequest(t, req, http.MethodDelete, "/repos/acme/widgets/issues/4/labels/needs review")
+			if req.URL.EscapedPath() != "/repos/acme/widgets/issues/4/labels/needs%20review" {
+				t.Fatalf("escaped path = %q, want label path escaped", req.URL.EscapedPath())
+			}
+			return jsonResponse(http.StatusNotFound, `{"message":"label missing"}`), nil
+		})
+		err := c.LabelRemove(context.Background(), "widgets", 4, "needs review")
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("LabelRemove() error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("401 refresh and retry", func(t *testing.T) {
+		key := mustRSAKey(t)
+		now := time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
+		var mintCalls, deleteCalls int
+		httpClient := stubClient(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/orgs/acme/installation":
+				return jsonResponse(http.StatusOK, `{"id":42}`), nil
+			case "/app/installations/42/access_tokens":
+				mintCalls++
+				return jsonResponse(http.StatusCreated, fmt.Sprintf(`{"token":"token-%d","expires_at":"2026-07-04T12:10:00Z"}`, mintCalls)), nil
+			case "/repos/acme/widgets/issues/4/labels/bug":
+				deleteCalls++
+				if req.Method != http.MethodDelete || req.Header.Get("Accept") != "application/vnd.github+json" || req.Header.Get("X-GitHub-Api-Version") != "2022-11-28" {
+					t.Fatalf("DELETE retry missing standard request headers: method=%s headers=%v", req.Method, req.Header)
+				}
+				if deleteCalls == 1 {
+					return jsonResponse(http.StatusUnauthorized, `{"message":"expired"}`), nil
+				}
+				if req.Header.Get("Authorization") != "Bearer token-2" {
+					t.Fatalf("retry authorization = %q, want refreshed token", req.Header.Get("Authorization"))
+				}
+				return jsonResponse(http.StatusNoContent, ``), nil
+			default:
+				t.Fatalf("unexpected path %s", req.URL.Path)
+				return nil, nil
+			}
+		})
+		withAPIBase(t, "https://stub.github.test")
+		c := &Client{org: "acme", http: httpClient, ts: &tokenSource{appID: "123", org: "acme", signer: key, httpClient: httpClient, now: func() time.Time { return now }}}
+		if err := c.LabelRemove(context.Background(), "widgets", 4, "bug"); err != nil {
+			t.Fatalf("LabelRemove() error = %v", err)
+		}
+		if mintCalls != 2 || deleteCalls != 2 {
+			t.Fatalf("mintCalls=%d deleteCalls=%d, want one refresh and retry", mintCalls, deleteCalls)
+		}
+	})
 }
 
 func TestClientIssueUpdateR_EA0X_027H(t *testing.T) {

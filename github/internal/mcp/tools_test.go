@@ -28,6 +28,10 @@ type fakeClient struct {
 	lastEvent  string
 	lastMethod string
 	lastTitle  string
+	lastHead   string
+	lastBase   string
+	lastLabel  string
+	lastLabels []string
 	lastPatch  gh.IssuePatch
 	lastFile   gh.FilePut
 }
@@ -54,6 +58,12 @@ func (f *fakeClient) PRList(_ context.Context, repo, state string) ([]gh.PR, err
 	f.record("pr_list")
 	f.lastRepo = repo
 	return []gh.PR{{Number: 7, State: state}}, f.err
+}
+
+func (f *fakeClient) PRCreate(_ context.Context, repo, title, head, base, body string) (gh.PR, error) {
+	f.record("pr_create")
+	f.lastRepo, f.lastTitle, f.lastHead, f.lastBase, f.lastBody = repo, title, head, base, body
+	return gh.PR{Number: 8, Title: title, State: "open", Body: body}, f.err
 }
 
 func (f *fakeClient) PRGet(_ context.Context, repo string, number int) (gh.PRDetail, error) {
@@ -104,10 +114,28 @@ func (f *fakeClient) IssueComment(_ context.Context, repo string, number int, bo
 	return gh.Comment{ID: 5, Body: body}, f.err
 }
 
+func (f *fakeClient) IssueComments(_ context.Context, repo string, number int) ([]gh.Comment, error) {
+	f.record("issue_comments")
+	f.lastRepo, f.lastNumber = repo, number
+	return []gh.Comment{{ID: 1, Body: "first"}, {ID: 2, Body: "second"}}, f.err
+}
+
 func (f *fakeClient) IssueUpdate(_ context.Context, repo string, number int, patch gh.IssuePatch) (gh.Issue, error) {
 	f.record("issue_update")
 	f.lastRepo, f.lastNumber, f.lastPatch = repo, number, patch
 	return gh.Issue{Number: number, State: patch.State}, f.err
+}
+
+func (f *fakeClient) LabelAdd(_ context.Context, repo string, number int, labels []string) ([]gh.Label, error) {
+	f.record("label_add")
+	f.lastRepo, f.lastNumber, f.lastLabels = repo, number, labels
+	return []gh.Label{{Name: labels[0], Color: "ff0000"}}, f.err
+}
+
+func (f *fakeClient) LabelRemove(_ context.Context, repo string, number int, label string) error {
+	f.record("label_remove")
+	f.lastRepo, f.lastNumber, f.lastLabel = repo, number, label
+	return f.err
 }
 
 func (f *fakeClient) FileGet(_ context.Context, repo, path, ref string) (gh.FileContent, error) {
@@ -254,8 +282,9 @@ func TestInitializeAndToolsListR_EEWI_J569(t *testing.T) {
 	}
 	want := []string{
 		"repos_list", "repo_get",
-		"pr_list", "pr_get", "pr_comment", "pr_review", "pr_merge",
-		"issue_list", "issue_get", "issue_create", "issue_comment", "issue_update",
+		"pr_list", "pr_get", "pr_create", "pr_comment", "pr_review", "pr_merge",
+		"issue_list", "issue_get", "issue_create", "issue_comment", "issue_update", "issue_comments",
+		"label_add", "label_remove",
 		"file_get", "file_put",
 		"health", "reflection",
 	}
@@ -363,6 +392,127 @@ func TestWriteProvenanceAndNoOwnerInClientRequestR_EJS4_2851(t *testing.T) {
 	}
 }
 
+func TestPRCreateToolValidationResultLoggingAndErrorsR_GNMM_65OQ(t *testing.T) {
+	// R-GNMM-65OQ
+	t.Run("validation never calls client", func(t *testing.T) {
+		for _, args := range []string{
+			`{"title":"title","head":"feature","base":"main"}`,
+			`{"repo":"repo","head":"feature","base":"main"}`,
+			`{"repo":"repo","title":"title","base":"main"}`,
+			`{"repo":"repo","title":"title","head":"feature"}`,
+		} {
+			fc := &fakeClient{}
+			res, rpcErr, _ := rpc(t, newTestHandler(fc, &captureHandler{}, nil), "tools/call", `{"name":"pr_create","arguments":`+args+`}`)
+			if rpcErr != nil || res["isError"] != true || res["structuredContent"].(map[string]any)["code"] != "validation" || len(fc.calls) != 0 {
+				t.Fatalf("args=%s result=%v rpcErr=%v calls=%v", args, res, rpcErr, fc.calls)
+			}
+		}
+	})
+
+	t.Run("structured success and one write log", func(t *testing.T) {
+		fc := &fakeClient{}
+		cap := &captureHandler{}
+		res, rpcErr, _ := rpc(t, newTestHandler(fc, cap, nil), "tools/call", `{"name":"pr_create","arguments":{"repo":"repo","title":"title","head":"feature","base":"main","body":"details"}}`)
+		if rpcErr != nil || res["isError"] == true {
+			t.Fatalf("result=%v rpcErr=%v", res, rpcErr)
+		}
+		got := res["structuredContent"].(map[string]any)
+		if got["number"] != float64(8) || got["title"] != "title" || fc.lastHead != "feature" || fc.lastBase != "main" || fc.lastBody != "details" {
+			t.Fatalf("structured=%v fake=%+v", got, fc)
+		}
+		if len(cap.records) != 1 || cap.records[0]["owner_email"] != "owner@example.com" || cap.records[0]["client_id"] != "client-123" || cap.records[0]["verb"] != "pr_create" {
+			t.Fatalf("write records = %v, want one caller-attributed pr_create", cap.records)
+		}
+	})
+
+	t.Run("client error uses codeFor", func(t *testing.T) {
+		res, rpcErr, _ := rpc(t, newTestHandler(&fakeClient{err: gh.ErrInvalid}, &captureHandler{}, nil), "tools/call", `{"name":"pr_create","arguments":{"repo":"repo","title":"title","head":"bad","base":"main"}}`)
+		if rpcErr != nil || res["structuredContent"].(map[string]any)["code"] != "validation" {
+			t.Fatalf("result=%v rpcErr=%v, want validation", res, rpcErr)
+		}
+	})
+}
+
+func TestIssueCommentsToolWrappedResultValidationAndNoLoggingR_F88E_1JKY(t *testing.T) {
+	// R-F88E-1JKY
+	fc := &fakeClient{}
+	cap := &captureHandler{}
+	h := newTestHandler(fc, cap, nil)
+	for _, args := range []string{`{"number":4}`, `{"repo":"repo"}`} {
+		res, rpcErr, _ := rpc(t, h, "tools/call", `{"name":"issue_comments","arguments":`+args+`}`)
+		if rpcErr != nil || res["structuredContent"].(map[string]any)["code"] != "validation" {
+			t.Fatalf("args=%s result=%v rpcErr=%v", args, res, rpcErr)
+		}
+	}
+	if len(fc.calls) != 0 {
+		t.Fatalf("client called during validation: %v", fc.calls)
+	}
+
+	res, rpcErr, _ := rpc(t, h, "tools/call", `{"name":"issue_comments","arguments":{"repo":"repo","number":4}}`)
+	if rpcErr != nil || res["isError"] == true {
+		t.Fatalf("result=%v rpcErr=%v", res, rpcErr)
+	}
+	items := res["structuredContent"].(map[string]any)["items"].([]any)
+	if len(items) != 2 || items[0].(map[string]any)["body"] != "first" || items[1].(map[string]any)["body"] != "second" {
+		t.Fatalf("items = %v, want wrapped comments in order", items)
+	}
+	if len(cap.records) != 0 {
+		t.Fatalf("read emitted write logs: %v", cap.records)
+	}
+}
+
+func TestLabelAddToolNonEmptyValidationResultAndLoggingR_GOUI_JXFF(t *testing.T) {
+	// R-GOUI-JXFF
+	fc := &fakeClient{}
+	cap := &captureHandler{}
+	h := newTestHandler(fc, cap, nil)
+	for _, args := range []string{`{"repo":"repo","number":4}`, `{"repo":"repo","number":4,"labels":[]}`, `{"repo":"repo","number":4,"labels":[""]}`} {
+		res, rpcErr, _ := rpc(t, h, "tools/call", `{"name":"label_add","arguments":`+args+`}`)
+		if rpcErr != nil || res["structuredContent"].(map[string]any)["code"] != "validation" {
+			t.Fatalf("args=%s result=%v rpcErr=%v", args, res, rpcErr)
+		}
+	}
+	if len(fc.calls) != 0 {
+		t.Fatalf("client called during validation: %v", fc.calls)
+	}
+
+	res, rpcErr, _ := rpc(t, h, "tools/call", `{"name":"label_add","arguments":{"repo":"repo","number":4,"labels":["bug"]}}`)
+	if rpcErr != nil || res["isError"] == true {
+		t.Fatalf("result=%v rpcErr=%v", res, rpcErr)
+	}
+	labels := res["structuredContent"].(map[string]any)["labels"].([]any)
+	if len(labels) != 1 || labels[0].(map[string]any)["name"] != "bug" || !reflect.DeepEqual(fc.lastLabels, []string{"bug"}) {
+		t.Fatalf("labels=%v client labels=%v", labels, fc.lastLabels)
+	}
+	if len(cap.records) != 1 || cap.records[0]["verb"] != "label_add" || cap.records[0]["owner_email"] != "owner@example.com" {
+		t.Fatalf("write records = %v", cap.records)
+	}
+}
+
+func TestLabelRemoveToolValidationSuccessLoggingAndNotFoundR_GQ2E_XP64(t *testing.T) {
+	// R-GQ2E-XP64
+	fc := &fakeClient{}
+	cap := &captureHandler{}
+	h := newTestHandler(fc, cap, nil)
+	res, rpcErr, _ := rpc(t, h, "tools/call", `{"name":"label_remove","arguments":{"repo":"repo","number":4}}`)
+	if rpcErr != nil || res["structuredContent"].(map[string]any)["code"] != "validation" || len(fc.calls) != 0 {
+		t.Fatalf("validation result=%v rpcErr=%v calls=%v", res, rpcErr, fc.calls)
+	}
+
+	res, rpcErr, _ = rpc(t, h, "tools/call", `{"name":"label_remove","arguments":{"repo":"repo","number":4,"label":"bug"}}`)
+	if rpcErr != nil || res["structuredContent"].(map[string]any)["removed"] != true || fc.lastLabel != "bug" {
+		t.Fatalf("success result=%v rpcErr=%v label=%q", res, rpcErr, fc.lastLabel)
+	}
+	if len(cap.records) != 1 || cap.records[0]["verb"] != "label_remove" || cap.records[0]["client_id"] != "client-123" {
+		t.Fatalf("write records = %v", cap.records)
+	}
+
+	res, rpcErr, _ = rpc(t, newTestHandler(&fakeClient{err: gh.ErrNotFound}, &captureHandler{}, nil), "tools/call", `{"name":"label_remove","arguments":{"repo":"repo","number":4,"label":"missing"}}`)
+	if rpcErr != nil || res["structuredContent"].(map[string]any)["code"] != "not_found" {
+		t.Fatalf("not-found result=%v rpcErr=%v", res, rpcErr)
+	}
+}
+
 func TestHealthEnvelopeReflectsAuthCallR_EL00_FZVQ(t *testing.T) {
 	// R-EL00-FZVQ
 	calls := 0
@@ -426,9 +576,10 @@ func TestAllToolsDeclareOutputSchemasR_FKHH_0XLI(t *testing.T) {
 	tools := res["tools"].([]any)
 	want := map[string]bool{
 		"repos_list": false, "repo_get": false, "pr_list": false, "pr_get": false,
-		"pr_comment": false, "pr_review": false, "pr_merge": false,
+		"pr_create": false, "pr_comment": false, "pr_review": false, "pr_merge": false,
 		"issue_list": false, "issue_get": false, "issue_create": false,
-		"issue_comment": false, "issue_update": false, "file_get": false, "file_put": false,
+		"issue_comment": false, "issue_update": false, "issue_comments": false,
+		"label_add": false, "label_remove": false, "file_get": false, "file_put": false,
 		"health": false, "reflection": false,
 	}
 	for _, raw := range tools {

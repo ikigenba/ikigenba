@@ -75,6 +75,33 @@ func Tools(client GitHubClient, logger *slog.Logger) []appkitmcp.Tool {
 			},
 		},
 		{
+			Name: tool("pr_create"), Description: "Create a pull request.",
+			InputSchema: obj(map[string]any{"repo": descTyp("string", "repository name"), "title": descTyp("string", "pull request title"), "head": descTyp("string", "head branch"), "base": descTyp("string", "base branch"), "body": descTyp("string", "optional pull request body")}, "repo", "title", "head", "base"), OutputSchema: prOutput(),
+			Handler: func(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
+				var a struct {
+					Repo  string `json:"repo"`
+					Title string `json:"title"`
+					Head  string `json:"head"`
+					Base  string `json:"base"`
+					Body  string `json:"body"`
+				}
+				validate := func() error {
+					for _, p := range []struct{ name, value string }{{"repo", a.Repo}, {"title", a.Title}, {"head", a.Head}, {"base", a.Base}} {
+						if err := requireString(p.name, p.value); err != nil {
+							return err
+						}
+					}
+					return nil
+				}
+				if err := decodeAndValidate(raw, &a, validate); err != nil {
+					return validationResult(err), nil
+				}
+				logWrite(ctx, logger, id, "pr_create", a.Repo, 0, "")
+				v, err := client.PRCreate(ctx, a.Repo, a.Title, a.Head, a.Base, a.Body)
+				return clientResult(v, err)
+			},
+		},
+		{
 			Name: tool("pr_comment"), Description: "Create a pull request comment.",
 			InputSchema: obj(map[string]any{"repo": descTyp("string", "repository name"), "number": descTyp("integer", "pull request number"), "body": descTyp("string", "comment body")}, "repo", "number", "body"), OutputSchema: commentOutput(),
 			Handler: func(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
@@ -216,6 +243,72 @@ func Tools(client GitHubClient, logger *slog.Logger) []appkitmcp.Tool {
 			},
 		},
 		{
+			Name: tool("issue_comments"), Description: "List an issue's comments.",
+			InputSchema: obj(map[string]any{"repo": descTyp("string", "repository name"), "number": descTyp("integer", "issue number")}, "repo", "number"), OutputSchema: listOutput(commentOutput()),
+			Handler: func(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
+				var a repoNumberArgs
+				if err := decodeAndValidate(raw, &a, func() error { return a.validate("number") }); err != nil {
+					return validationResult(err), nil
+				}
+				v, err := client.IssueComments(ctx, a.Repo, a.Number)
+				return clientResult(map[string]any{"items": v}, err)
+			},
+		},
+		{
+			Name: tool("label_add"), Description: "Atomically add labels to an issue.",
+			InputSchema: obj(map[string]any{"repo": descTyp("string", "repository name"), "number": descTyp("integer", "issue number"), "labels": arrayTyp("string", "labels to add")}, "repo", "number", "labels"), OutputSchema: obj(map[string]any{"labels": map[string]any{"type": "array", "items": labelOutput()}}, "labels"),
+			Handler: func(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
+				var a struct {
+					Repo   string   `json:"repo"`
+					Number int      `json:"number"`
+					Labels []string `json:"labels"`
+				}
+				validate := func() error {
+					if err := (repoNumberArgs{a.Repo, a.Number}).validate("number"); err != nil {
+						return err
+					}
+					if len(a.Labels) == 0 {
+						return errors.New("labels is required")
+					}
+					for _, label := range a.Labels {
+						if err := requireString("labels", label); err != nil {
+							return err
+						}
+					}
+					return nil
+				}
+				if err := decodeAndValidate(raw, &a, validate); err != nil {
+					return validationResult(err), nil
+				}
+				logWrite(ctx, logger, id, "label_add", a.Repo, a.Number, "")
+				v, err := client.LabelAdd(ctx, a.Repo, a.Number, a.Labels)
+				return clientResult(map[string]any{"labels": v}, err)
+			},
+		},
+		{
+			Name: tool("label_remove"), Description: "Atomically remove a label from an issue.",
+			InputSchema: obj(map[string]any{"repo": descTyp("string", "repository name"), "number": descTyp("integer", "issue number"), "label": descTyp("string", "label to remove")}, "repo", "number", "label"), OutputSchema: obj(map[string]any{"removed": map[string]any{"type": "boolean"}}, "removed"),
+			Handler: func(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
+				var a struct {
+					Repo   string `json:"repo"`
+					Number int    `json:"number"`
+					Label  string `json:"label"`
+				}
+				validate := func() error {
+					if err := (repoNumberArgs{a.Repo, a.Number}).validate("number"); err != nil {
+						return err
+					}
+					return requireString("label", a.Label)
+				}
+				if err := decodeAndValidate(raw, &a, validate); err != nil {
+					return validationResult(err), nil
+				}
+				logWrite(ctx, logger, id, "label_remove", a.Repo, a.Number, "")
+				err := client.LabelRemove(ctx, a.Repo, a.Number, a.Label)
+				return clientResult(map[string]any{"removed": true}, err)
+			},
+		},
+		{
 			Name: tool("file_get"), Description: "Fetch repository file metadata.",
 			InputSchema: obj(map[string]any{"repo": descTyp("string", "repository name"), "path": descTyp("string", "file path"), "ref": descTyp("string", "optional git ref")}, "repo", "path"), OutputSchema: fileContentOutput(),
 			Handler: func(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
@@ -321,6 +414,9 @@ func commentOutput() map[string]any {
 	p := strProps("body", "html_url")
 	p["id"] = map[string]any{"type": "integer"}
 	return objectOutput(p, "id", "body", "html_url")
+}
+func labelOutput() map[string]any {
+	return objectOutput(strProps("name", "color"), "name", "color")
 }
 func reviewOutput() map[string]any {
 	p := strProps("state", "body", "html_url")

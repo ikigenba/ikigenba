@@ -18,6 +18,7 @@ type GitHubClient interface {
 	ReposList(ctx context.Context) ([]gh.Repo, error)
 	RepoGet(ctx context.Context, repo string) (gh.Repo, error)
 	PRList(ctx context.Context, repo, state string) ([]gh.PR, error)
+	PRCreate(ctx context.Context, repo, title, head, base, body string) (gh.PR, error)
 	PRGet(ctx context.Context, repo string, number int) (gh.PRDetail, error)
 	PRComment(ctx context.Context, repo string, number int, body string) (gh.Comment, error)
 	PRReview(ctx context.Context, repo string, number int, event, body string) (gh.Review, error)
@@ -26,7 +27,10 @@ type GitHubClient interface {
 	IssueGet(ctx context.Context, repo string, number int) (gh.Issue, error)
 	IssueCreate(ctx context.Context, repo, title, body string) (gh.Issue, error)
 	IssueComment(ctx context.Context, repo string, number int, body string) (gh.Comment, error)
+	IssueComments(ctx context.Context, repo string, number int) ([]gh.Comment, error)
 	IssueUpdate(ctx context.Context, repo string, number int, patch gh.IssuePatch) (gh.Issue, error)
+	LabelAdd(ctx context.Context, repo string, number int, labels []string) ([]gh.Label, error)
+	LabelRemove(ctx context.Context, repo string, number int, label string) error
 	FileGet(ctx context.Context, repo, path, ref string) (gh.FileContent, error)
 	FilePut(ctx context.Context, repo, path string, in gh.FilePut) (gh.FileCommit, error)
 }

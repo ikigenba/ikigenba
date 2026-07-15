@@ -199,6 +199,18 @@ func (c *Client) PRList(ctx context.Context, repo, state string) ([]PR, error) {
 	return out, err
 }
 
+// PRCreate creates a pull request.
+func (c *Client) PRCreate(ctx context.Context, repo, title, head, base, body string) (PR, error) {
+	var out PR
+	err := c.post(ctx, []string{"repos", c.org, repo, "pulls"}, map[string]string{
+		"title": title,
+		"head":  head,
+		"base":  base,
+		"body":  body,
+	}, &out)
+	return out, err
+}
+
 // PRGet fetches a pull request and its changed files.
 func (c *Client) PRGet(ctx context.Context, repo string, number int) (PRDetail, error) {
 	var pr PR
@@ -268,6 +280,25 @@ func (c *Client) IssueComment(ctx context.Context, repo string, number int, body
 	var out Comment
 	err := c.post(ctx, []string{"repos", c.org, repo, "issues", fmt.Sprint(number), "comments"}, map[string]string{"body": body}, &out)
 	return out, err
+}
+
+// IssueComments lists an issue's comments in GitHub's ascending response order.
+func (c *Client) IssueComments(ctx context.Context, repo string, number int) ([]Comment, error) {
+	var out []Comment
+	err := c.get(ctx, []string{"repos", c.org, repo, "issues", fmt.Sprint(number), "comments"}, nil, &out)
+	return out, err
+}
+
+// LabelAdd atomically adds labels to an issue.
+func (c *Client) LabelAdd(ctx context.Context, repo string, number int, labels []string) ([]Label, error) {
+	var out []Label
+	err := c.post(ctx, []string{"repos", c.org, repo, "issues", fmt.Sprint(number), "labels"}, map[string][]string{"labels": labels}, &out)
+	return out, err
+}
+
+// LabelRemove atomically removes a label from an issue.
+func (c *Client) LabelRemove(ctx context.Context, repo string, number int, label string) error {
+	return c.delete(ctx, []string{"repos", c.org, repo, "issues", fmt.Sprint(number), "labels", label}, nil)
 }
 
 // IssueUpdate updates selected issue fields.
@@ -344,6 +375,10 @@ func (c *Client) put(ctx context.Context, parts []string, in any, out any) error
 
 func (c *Client) patch(ctx context.Context, parts []string, in any, out any) error {
 	return c.doJSON(ctx, http.MethodPatch, parts, nil, in, out)
+}
+
+func (c *Client) delete(ctx context.Context, parts []string, out any) error {
+	return c.doJSON(ctx, http.MethodDelete, parts, nil, nil, out)
 }
 
 func (c *Client) doJSON(ctx context.Context, method string, parts []string, query url.Values, in any, out any) error {
