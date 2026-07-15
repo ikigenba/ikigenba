@@ -21,8 +21,34 @@ WHAT IT IS
   stdin and in $EVENT_JSON.
 
 RUNTIME CONTRACT
-- python3 >= 3.11, bash >= 5.0, network access, Python standard library only
-  (no third-party packages day-one).
+- python3 >= 3.11, bash >= 5.0, and network access. The Python standard library
+  and the preinstalled suite module are available; no other third-party packages
+  are installed day-one.
+- The suite module is importable in every run with: import suite
+- suite.event() returns the trigger payload verbatim as a dict, or {} for a
+  manual run.
+    event = suite.event()
+- suite.mcp(service, tool, args) calls any suite service's MCP tool and returns
+  its structured result as a dict, or text for a prose tool.
+    contact = suite.mcp("crm", "contact_get", {"contact_id": contact_id})
+- suite.fetch(content_url, dest) writes the bytes behind a content URL from an
+  event payload or tool result to a local file.
+    suite.fetch(invoice["content_url"], "invoice.pdf")
+- suite.files.* accesses the account's file share: list, stat, get, put, delete,
+  move, and mkdir. This is the durable, shared file store: its files persist and
+  sync, and are what the owner and other workflows see; the run dir is private
+  working space. Put a product in the file share to publish it durably and let
+  watching workflows trigger.
+    suite.files.put("reports/summary.pdf", "summary.pdf")
+- Suite-service failures raise suite.ToolError; its .code is one of validation,
+  not_found, conflict, too_large, source_unavailable, or internal. Catch it and
+  branch on .code, or let it crash the run: the
+  failure is written to stderr.log and the run is marked failed.
+    try: suite.mcp(service, tool, args)
+    except suite.ToolError as err: print(err.code)
+- Products travel by reference. Non-directory run_fs_list entries carry a
+  content_url that other services can fetch after the run, so hand results
+  onward by writing a file instead of printing its bytes.
 
 LIFECYCLE
   1. create {name, body}        -> {script_id}
