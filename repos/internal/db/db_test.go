@@ -18,8 +18,14 @@ func TestEmbeddedMigrationsCreateExactDomainAndOutboxSchemas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load migrations and drift guard: %v", err)
 	}
-	if !strings.Contains(migrations[len(migrations)-1].SQL, outbox.SchemaSQL) {
-		t.Fatal("newest migration does not contain outbox.SchemaSQL verbatim")
+	var outboxMigration appdb.Migration
+	for _, migration := range migrations {
+		if strings.Contains(migration.Name, "outbox") {
+			outboxMigration = migration
+		}
+	}
+	if !strings.Contains(outboxMigration.SQL, outbox.SchemaSQL) {
+		t.Fatal("outbox migration does not contain outbox.SchemaSQL verbatim")
 	}
 
 	conn, err := appdb.Open(filepath.Join(t.TempDir(), "repos.db"))

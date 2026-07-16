@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	appdb "appkit/db"
+	"eventplane/consumer"
 	"eventplane/outbox"
 )
 
@@ -19,7 +20,7 @@ var migrationsFS embed.FS
 var FS = migrationsFS
 
 // Migrations loads the ordered embedded migration set and guards the copied
-// eventplane outbox DDL against drift.
+// eventplane DDL against drift.
 func Migrations() ([]appdb.Migration, error) {
 	migrations, err := appdb.LoadMigrations(migrationsFS, "migrations")
 	if err != nil {
@@ -28,9 +29,25 @@ func Migrations() ([]appdb.Migration, error) {
 	if len(migrations) == 0 {
 		return nil, fmt.Errorf("repos db: no embedded migrations")
 	}
-	newest := migrations[len(migrations)-1]
-	if !strings.Contains(newest.SQL, outbox.SchemaSQL) {
-		return nil, fmt.Errorf("repos db: newest migration %s does not contain eventplane outbox schema verbatim", newest.Name)
+	if err := guardCopiedSchema(migrations, "outbox", outbox.SchemaSQL); err != nil {
+		return nil, err
+	}
+	if err := guardCopiedSchema(migrations, "feed_offset", consumer.SchemaSQL); err != nil {
+		return nil, err
 	}
 	return migrations, nil
+}
+
+func guardCopiedSchema(migrations []appdb.Migration, name, schema string) error {
+	for i := len(migrations) - 1; i >= 0; i-- {
+		migration := migrations[i]
+		if !strings.Contains(migration.Name, name) {
+			continue
+		}
+		if !strings.Contains(migration.SQL, schema) {
+			return fmt.Errorf("repos db: newest %s migration %s does not contain eventplane schema verbatim", name, migration.Name)
+		}
+		return nil
+	}
+	return fmt.Errorf("repos db: no embedded %s migration", name)
 }
