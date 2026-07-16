@@ -59,9 +59,11 @@ func (p *GitHubPeer) IssueGet(ctx context.Context, id Identity, repo string, n i
 }
 
 func (p *GitHubPeer) IssueComments(ctx context.Context, id Identity, repo string, n int) ([]Comment, error) {
-	var comments []Comment
-	err := p.call(ctx, id, "issue_comments", map[string]any{"repo": repo, "number": n}, &comments)
-	return comments, err
+	var result struct {
+		Items []Comment `json:"items"`
+	}
+	err := p.call(ctx, id, "issue_comments", map[string]any{"repo": repo, "number": n}, &result)
+	return result.Items, err
 }
 
 func (p *GitHubPeer) IssueComment(ctx context.Context, id Identity, repo string, n int, body string) error {

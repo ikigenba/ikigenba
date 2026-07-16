@@ -960,7 +960,10 @@ func newGitHubRecorder(t *testing.T) *githubRecorder {
 		case "issue_get":
 			result = map[string]any{"number": 1, "title": "Fixture issue", "body": "Do the work."}
 		case "issue_comments":
-			result = []any{}
+			result = map[string]any{"items": []any{
+				map[string]any{"body": "First fixture comment."},
+				map[string]any{"body": "Second fixture comment."},
+			}}
 		case "pr_create":
 			result = map[string]any{"number": 1, "url": "https://example.test/pull/1"}
 		}

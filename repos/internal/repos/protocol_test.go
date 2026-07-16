@@ -71,3 +71,92 @@ func TestProtocolRetryAdmissionRemovesFailedLabel(t *testing.T) {
 		t.Fatalf("retry calls = %v, labels = %v", names, labels)
 	}
 }
+
+func TestProtocolFetchIssueDecodesCommentListEnvelope(t *testing.T) {
+	// R-894D-CUA2
+	tests := []struct {
+		name     string
+		comments any
+		want     IssueContent
+		wantErr  bool
+	}{
+		{
+			name: "wrapped comments preserve order",
+			comments: map[string]any{"items": []any{
+				map[string]any{"body": "First comment"},
+				map[string]any{"body": "Second comment"},
+			}},
+			want: IssueContent{
+				Title:    "Envelope issue",
+				Body:     "Read the whole thread.",
+				Comments: []string{"First comment", "Second comment"},
+			},
+		},
+		{
+			name: "bare comment array is rejected",
+			comments: []any{
+				map[string]any{"body": "First comment"},
+				map[string]any{"body": "Second comment"},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var call struct {
+					Params struct {
+						Name string `json:"name"`
+					} `json:"params"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
+					t.Error(err)
+				}
+				var result any
+				switch call.Params.Name {
+				case "issue_get":
+					result = map[string]any{
+						"number": 42,
+						"title":  "Envelope issue",
+						"body":   "Read the whole thread.",
+					}
+				case "issue_comments":
+					result = test.comments
+				default:
+					t.Errorf("unexpected github call %q", call.Params.Name)
+					result = map[string]any{}
+				}
+				if err := json.NewEncoder(w).Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      1,
+					"result":  result,
+				}); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+
+			issueNumber := 42
+			protocol := NewProtocol(NewGitHubPeerAt(server.URL, server.Client()))
+			got, err := protocol.FetchIssue(context.Background(), Session{
+				ID:          "session-42",
+				RepoName:    "alpha",
+				OwnerEmail:  "owner@example.com",
+				IssueNumber: &issueNumber,
+			})
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("FetchIssue accepted a bare issue_comments array")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("FetchIssue() = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
