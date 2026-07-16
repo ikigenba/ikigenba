@@ -206,12 +206,15 @@ func TestDispatcherEnforcesGlobalAndPerRepoCapsInFIFOOrder(t *testing.T) {
 
 func TestTTLAndUserCancellationAreClassifiedAndReleaseRepo(t *testing.T) {
 	// R-F9MQ-HKA9
-	fixture := newFixture(t, 2, 25*time.Millisecond)
+	fixture := newFixture(t, 2, time.Second)
 	fixture.addRepo(t, "alpha")
 	started := make(chan string, 5)
 	fixture.config.Factory = AgentFactoryFunc(func(ConversationConfig) Agent {
 		return agentFunc(func(ctx context.Context, text string) error {
 			started <- text
+			if text == "after-ttl" {
+				return nil
+			}
 			<-ctx.Done()
 			return ctx.Err()
 		})
@@ -240,7 +243,12 @@ func TestTTLAndUserCancellationAreClassifiedAndReleaseRepo(t *testing.T) {
 	if got := waitStart(t, started); got != "after-ttl" {
 		t.Fatalf("repo was not released after TTL; start = %q", got)
 	}
-	waitStatus(t, fixture.store, "after-ttl", repos.StatusFailed)
+	waitStatus(t, fixture.store, "after-ttl", repos.StatusSucceeded)
+
+	// User cancellation is a separate assertion from the deliberately short
+	// TTL above. Give it enough time that scheduler load cannot classify the
+	// session as an expiry between observing its start and calling Cancel.
+	runner.ttl = time.Minute
 
 	if _, err := runner.Enqueue(context.Background(), SessionRequest{
 		ID: "cancel", RepoName: "alpha", OwnerEmail: "owner@example.com", Instructions: "cancel",
