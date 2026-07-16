@@ -22,3 +22,4 @@ grep matches only phase lines.
 - Phase 12 ✅ realizes R-3K9X-IPJZ, R-3MPQ-A91D, R-3NXM-O0S2 (retires R-AQMT-9M04, R-ARUP-NDQT, R-QEPF-HJ11, R-AVIE-SOYW, R-AWQB-6GPL, R-AZ63-Y06Z) — replace the web-group served-tree model with service-user ownership across setup/deploy/restore
 - Phase 13 ✅ realizes R-3LHT-WHAO — remove the orphaned served-tree seams (`Chmod`/`EnsureSystemGroup`/`AddUserToGroup`) and the dead `stateWWWFragment`
 - Phase 14 ✅ realizes R-WHC0-I9HL (R-WIJW-W18A live-box, operator-verified out-of-loop) — init-box installs the box-baseline PDF tooling (poppler-utils)
+- Phase 15 ⬜ realizes R-JQGB-RYA2 (R-JRO8-5Q0R live-box, operator-verified out-of-loop; retires R-WHC0-I9HL, R-WIJW-W18A) — init-box adds git and sqlite to the box-baseline package install
