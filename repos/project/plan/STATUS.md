@@ -17,3 +17,4 @@ outside the phase lines, so the anchored grep matches only phase lines.
 - Phase 07 ✅ realizes R-FN1M-P1FW, R-FO9J-2T6L, R-FPHF-GKXA, R-FQPB-UCNZ, R-FRX8-84EO — MCP tool surface (nine structured verbs)
 - Phase 08 ✅ realizes R-EISY-2LYZ, R-EL8Q-U5GD — composition root & chassis boot (Spec, manifest, wiring)
 - Phase 09 ✅ realizes R-G1OF-AAC8, R-G2WB-O22X, R-G448-1TTM — nginx fragment & canonical landing page
+- Phase 10 ✅ realizes R-TY2R-GFRU, R-TZAN-U7IJ — consumer offset store (feed_offset migration byte-identical to consumer.SchemaSQL + drift guard + live consumer-engine boot proof)
