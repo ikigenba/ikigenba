@@ -44,7 +44,10 @@ durably publish it as an event, attributed to the owner who created the webhook.
 webhooks **does**:
 
 - Let an owner **create** a webhook (a name plus a secret), receiving back the
-  URL an outside system will call.
+  URL an outside system will call — choosing, at creation, **how callers are
+  verified**: the suite-minted secret presented directly (the default), or a
+  **GitHub-style signed delivery**, where the caller signs each payload with
+  the shared secret instead of sending the secret itself.
 - Let an owner **list** their own webhooks.
 - Let an owner **delete** one of their webhooks, after which its URL is dead.
 - Let an owner **rotate** a webhook's secret without changing its name or URL, so
@@ -62,9 +65,9 @@ webhooks **does**:
 webhooks does **nothing else**. In particular, for this version it deliberately
 excludes:
 
-- **Provider-signature verification (HMAC).** No GitHub/Stripe-style per-provider
-  signing schemes; authentication is a required suite-minted secret only. This is
-  a named **future feature**, and the design must not preclude adding it.
+- **Provider-signature schemes beyond GitHub's.** GitHub-style signed
+  deliveries are supported; other providers' schemes (Stripe et al.) are not —
+  each is a future scheme added the same way, never a redesign.
 - **Rate limiting.** No per-webhook or per-secret throttling; the payload cap is
   the only inbound resource guard in this version. Named fast-follow.
 - **Exactly-once / de-duplication.** A retrying caller may produce duplicate
@@ -110,6 +113,12 @@ limit are **not** product constants — design declares them.
 - **Rejections leak nothing.** A call with a wrong secret and a call to a name
   that does not exist are rejected **the same way**, so an outsider cannot probe
   which webhooks exist. An over-size payload is rejected rather than accepted.
+- **A GitHub-signed call lands like any other.** A webhook created for signed
+  deliveries accepts a correctly signed call and publishes the same kind of
+  event — additionally carrying the delivery's event name so consumers can
+  tell a GitHub issue event from a push without parsing the payload. A call
+  with a wrong or missing signature is rejected exactly like a wrong secret,
+  leaking nothing.
 - **Rotation preserves the URL.** Rotating a secret issues a new secret (shown
   once) and immediately invalidates the old one, while the webhook's name and URL
   stay the same — no need to reconfigure the external system's address.
@@ -144,6 +153,12 @@ limit are **not** product constants — design declares them.
   produces no event.
 - Listing webhooks returns exactly the calling owner's webhooks and none created
   by another user.
+- An owner can create a webhook verified by GitHub-style signed deliveries; a
+  correctly signed call to it is acknowledged and its event (carrying the
+  delivery's event name) is observable on the event plane; an unsigned or
+  wrongly signed call is rejected indistinguishably from the wrong-secret
+  rejection and produces no event; existing direct-secret webhooks behave
+  exactly as before.
 - A logged-in dashboard user opening `<account>.ikigenba.com/srv/webhooks/` sees
   a page showing the service name `webhooks` and the running version; a browser
   with no dashboard session is refused rather than shown the page; and the

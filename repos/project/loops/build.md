@@ -1,3 +1,7 @@
+---
+harness: codex
+model: gpt-5.6-sol
+---
 # build — do one bounded turn of the brief's remaining work
 
 You run from the **service root** (`repos/`); every path below is relative to

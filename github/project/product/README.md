@@ -40,6 +40,11 @@ service handles GitHub credentials or GitHub's API.
 - **A `scripts` job (deterministic).** A Python script wired to a suite event that
   needs GitHub data. Scripts do not speak MCP/JSON-RPC; they call a plain
   loopback HTTP route. v1 gives scripts one proven path: fetch a pull request.
+- **The `repos` service (the development plane).** Its session runner drives
+  the issue-execution protocol through this connector's tools — reading issue
+  threads, swapping labels, commenting, opening pull requests — and fetches a
+  short-lived credential over loopback so its git transport can reach the org
+  without ever holding the App key.
 - **The operator, confirming the connector is live.** Opens the service's landing
   page in a browser to see it is deployed and which version is running, and reads
   `health` to confirm the GitHub App can actually authenticate to the org.
@@ -57,12 +62,18 @@ switches which GitHub account or org is reached.
   token, refreshing it before it expires. Every GitHub call uses that token. No
   per-user OAuth, no human consent flow.
 - **Expose org GitHub as MCP tools** — read plus light write, org-scoped:
-  list/read repositories; list/read pull requests, comment on and review and merge
-  them; list/read/create/comment-on/update issues; read and write single files via
-  the Contents API. Plus the chassis tools every service has (`health`,
+  list/read repositories; list/read/**create** pull requests, comment on and
+  review and merge them; list/read/create/comment-on/update issues, **read an
+  issue's comment thread**, and **add or remove individual issue labels
+  without disturbing the rest of the label set**. Read and write single files
+  via the Contents API. Plus the chassis tools every service has (`health`,
   `reflection`).
-- **Give `scripts` one proven loopback path** — a loopback-only HTTP route that
-  returns a pull request, the deterministic twin of the PR-read tool.
+- **Give deterministic and service callers proven loopback paths** — loopback-
+  only HTTP routes for callers that do not speak MCP: one that returns a pull
+  request (for `scripts`), and one that hands a sibling suite service a
+  short-lived credential for git itself (for `repos`' clone/pull/push), so
+  this connector remains the only holder of the GitHub App key even when
+  another service must run real git.
 - **Serve the canonical suite landing page** — the same non-interactive landing
   layout every other service ships (a service eyebrow, a one-line description, and
   a service / version / API panel), on the suite design system, gated by the
@@ -138,3 +149,11 @@ Each is a result a caller or operator can confirm against the running service:
   making requests an hour apart does not see a token-expiry failure.
 - A logged-in dashboard user opens `/srv/github/` and sees the service name
   `github` and the running version; a browser with no session gets `401`.
+- Through the tools, a caller opens a pull request from an existing branch and
+  it appears on GitHub authored by the App, with no owner marker; adding and
+  then removing a single label on an issue leaves every other label on that
+  issue untouched; and an issue's full comment thread is readable in order.
+- A sibling service obtains a working short-lived credential over the loopback
+  route and completes a real git operation with it; the same route refuses a
+  request arriving through the public front door, and the credential's value
+  appears in no log.

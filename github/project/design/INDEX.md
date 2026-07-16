@@ -15,6 +15,8 @@ Verification ids change.
 - D6 → `project/design/D06.md` — The landing page and nginx fragment — owns `R-EVZ3-VXJZ`, `R-XSOU-THYE`, `R-XTWR-79P3`, `R-7NJI-UTHM`, `R-7PZB-MCZ0`, `R-EX70-9PAO`, `R-XV4N-L1FS`, `R-XWCJ-YT6H`, `R-XXKG-CKX6`, `R-XYSC-QCNV`, `R-EYEW-NH1D`
 - D7 → `project/design/D07.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer tier deliberately excluded) — owns `R-42HV-I1HS`, `R-43PR-VT8H`, `R-44XO-9KZ6`
 - D8 → `project/design/D08.md` — Structured MCP adoption — owns `R-FI1O-9E44`, `R-FJ9K-N5UT`, `R-FKHH-0XLI`, `R-FLPD-EPC7`, `R-FMX9-SH2W`, `R-FO56-68TL`, `R-FPD2-K0KA`, `R-FQKY-XSAZ`, `R-FT0R-PBSD`
+- D9 → `project/design/D09.md` — Issue-execution support verbs: `pr_create`, `issue_comments`, `label_add`, `label_remove` — owns `R-GJYX-0UGN`, `R-F70H-NRU9`, `R-GL6T-EM7C`, `R-GMEP-SDY1`, `R-GNMM-65OQ`, `R-F88E-1JKY`, `R-GOUI-JXFF`, `R-GQ2E-XP64`
+- D10 → `project/design/D10.md` — The loopback `GET /token` twin: installation tokens for repos' git plumbing — owns `R-GSI7-P8NI`, `R-GTQ4-30E7`, `R-GUY0-GS4W`, `R-GW5W-UJVL`
 
 ## Verification ids → Decision
 
@@ -56,6 +58,8 @@ Verification ids change.
 - R-EVZ3-VXJZ → D6 — `project/design/D06.md`
 - R-EX70-9PAO → D6 — `project/design/D06.md`
 - R-EYEW-NH1D → D6 — `project/design/D06.md`
+- R-F70H-NRU9 → D9 — `project/design/D09.md`
+- R-F88E-1JKY → D9 — `project/design/D09.md`
 - R-FI1O-9E44 → D8 — `project/design/D08.md`
 - R-FJ9K-N5UT → D8 — `project/design/D08.md`
 - R-FKHH-0XLI → D8 — `project/design/D08.md`
@@ -65,6 +69,16 @@ Verification ids change.
 - R-FPD2-K0KA → D8 — `project/design/D08.md`
 - R-FQKY-XSAZ → D8 — `project/design/D08.md`
 - R-FT0R-PBSD → D8 — `project/design/D08.md`
+- R-GJYX-0UGN → D9 — `project/design/D09.md`
+- R-GL6T-EM7C → D9 — `project/design/D09.md`
+- R-GMEP-SDY1 → D9 — `project/design/D09.md`
+- R-GNMM-65OQ → D9 — `project/design/D09.md`
+- R-GOUI-JXFF → D9 — `project/design/D09.md`
+- R-GQ2E-XP64 → D9 — `project/design/D09.md`
+- R-GSI7-P8NI → D10 — `project/design/D10.md`
+- R-GTQ4-30E7 → D10 — `project/design/D10.md`
+- R-GUY0-GS4W → D10 — `project/design/D10.md`
+- R-GW5W-UJVL → D10 — `project/design/D10.md`
 - R-XSOU-THYE → D6 — `project/design/D06.md`
 - R-XTWR-79P3 → D6 — `project/design/D06.md`
 - R-XV4N-L1FS → D6 — `project/design/D06.md`

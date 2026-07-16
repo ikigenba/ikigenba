@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-sonnet-5
+---
 # gather — select the next phase and author its brief
 
 You run from the **service root** (`repos/`); every path below is relative to

@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-opus-4-8
+---
 # verify — the independent gate
 
 You run from the **service root** (`repos/`); every path below is relative to

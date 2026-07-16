@@ -23,6 +23,7 @@ Verification ids change.
 - D14 → `project/design/D14.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer tier deliberately excluded) — R-4B16-6FON, R-4C92-K7FC, R-4DGY-XZ61
 - D15 → `project/design/D15.md` — Event-routing conformance: kind `received`, subject = `/` + hook name — R-A3FB-J3ZK, R-A4N7-WVQ9, R-A5V4-ANGY, R-A730-OF7N
 - D16 → `project/design/D16.md` — Structured MCP adoption (structuredContent, output schemas, closed error vocabulary) — R-DRUS-R3AP, R-DT2P-4V1E, R-DUAL-IMS3, R-DVIH-WEIS, R-DWQE-A69H, R-DXYA-NY06
+- D17 → `project/design/D17.md` — Per-hook verification schemes: `bearer` and `github-hmac` — R-G7RX-751P, R-G8ZT-KWSE, R-GA7P-YOJ3, R-GBFM-CG9S, R-GCNI-Q80H, R-GDVF-3ZR6, R-GF3B-HRHV
 
 ## Verification ids → Decision
 
@@ -62,6 +63,13 @@ Verification ids change.
 - R-DVIH-WEIS → D16 — `project/design/D16.md`
 - R-DWQE-A69H → D16 — `project/design/D16.md`
 - R-DXYA-NY06 → D16 — `project/design/D16.md`
+- R-G7RX-751P → D17 — `project/design/D17.md`
+- R-G8ZT-KWSE → D17 — `project/design/D17.md`
+- R-GA7P-YOJ3 → D17 — `project/design/D17.md`
+- R-GBFM-CG9S → D17 — `project/design/D17.md`
+- R-GCNI-Q80H → D17 — `project/design/D17.md`
+- R-GDVF-3ZR6 → D17 — `project/design/D17.md`
+- R-GF3B-HRHV → D17 — `project/design/D17.md`
 - R-GTUZ-AIGW → D5 — `project/design/D05.md`
 - R-GV2V-OA7L → D5 — `project/design/D05.md`
 - R-GWAS-21YA → D5 — `project/design/D05.md`
