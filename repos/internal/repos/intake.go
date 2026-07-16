@@ -13,7 +13,7 @@ import (
 
 const (
 	defaultGitHubHook = "github"
-	defaultBotLogin   = "ikibot[bot]"
+	defaultBotLogin   = "ikigenba[bot]"
 )
 
 // Intake accepts GitHub webhook facts delivered through the event plane.

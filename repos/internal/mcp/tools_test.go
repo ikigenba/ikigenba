@@ -280,7 +280,7 @@ func TestSessionStartAndCancelLifecycle(t *testing.T) {
 	}
 	created := callOK(t, f.h, "session_start", map[string]any{"repo": "alpha", "instructions": "work"})["session"].(map[string]any)
 	id := created["id"].(string)
-	if created["status"] != "queued" || created["branch"] != "ikibot/session-"+id {
+	if created["status"] != "queued" || created["branch"] != "ikigenba/session-"+id {
 		t.Fatalf("created session = %#v", created)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -328,9 +328,9 @@ func TestSessionReadToolsFilterAndWindowRealTranscript(t *testing.T) {
 	}
 	problem, pr := "check failed", "https://example.test/pull/7"
 	rows := []repos.Session{
-		{ID: "one", RepoName: "alpha", OwnerEmail: testOwner, Attempt: 1, Branch: "ikibot/session-one", Instructions: "full instructions", Status: repos.StatusFailed, Error: &problem, PRURL: &pr, CreatedAt: now, EndedAt: &now, LogPath: logPath},
-		{ID: "two", RepoName: "beta", OwnerEmail: testOwner, Attempt: 1, Branch: "ikibot/session-two", Status: repos.StatusQueued, CreatedAt: now, LogPath: filepath.Join(f.stateRoot, "two.jsonl")},
-		{ID: "other", RepoName: "alpha", OwnerEmail: "other@example.com", Attempt: 1, Branch: "ikibot/session-other", Status: repos.StatusQueued, CreatedAt: now, LogPath: filepath.Join(f.stateRoot, "other.jsonl")},
+		{ID: "one", RepoName: "alpha", OwnerEmail: testOwner, Attempt: 1, Branch: "ikigenba/session-one", Instructions: "full instructions", Status: repos.StatusFailed, Error: &problem, PRURL: &pr, CreatedAt: now, EndedAt: &now, LogPath: logPath},
+		{ID: "two", RepoName: "beta", OwnerEmail: testOwner, Attempt: 1, Branch: "ikigenba/session-two", Status: repos.StatusQueued, CreatedAt: now, LogPath: filepath.Join(f.stateRoot, "two.jsonl")},
+		{ID: "other", RepoName: "alpha", OwnerEmail: "other@example.com", Attempt: 1, Branch: "ikigenba/session-other", Status: repos.StatusQueued, CreatedAt: now, LogPath: filepath.Join(f.stateRoot, "other.jsonl")},
 	}
 	for _, row := range rows {
 		if err := f.store.InsertSession(context.Background(), row); err != nil {

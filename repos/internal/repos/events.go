@@ -19,7 +19,7 @@ var Events = outbox.Registry{
 		Description: "A repository session completed successfully and its work landed.",
 		Sample: sessionOutcomePayload{
 			Repo: "example", SessionID: "01JEXAMPLE", IssueNumber: intPointer(42),
-			Branch: "ikibot/issue-42", PRURL: "https://github.com/example/example/pull/1",
+			Branch: "ikigenba/issue-42", PRURL: "https://github.com/example/example/pull/1",
 			EndedAt: "2026-07-15T12:00:00Z",
 		},
 	},
@@ -29,7 +29,7 @@ var Events = outbox.Registry{
 		Description: "A repository session ended without landing, including cancellation.",
 		Sample: sessionOutcomePayload{
 			Repo: "example", SessionID: "01JEXAMPLE", IssueNumber: intPointer(42),
-			Branch: "ikibot/issue-42", Error: "check failed",
+			Branch: "ikigenba/issue-42", Error: "check failed",
 			EndedAt: "2026-07-15T12:00:00Z",
 		},
 	},

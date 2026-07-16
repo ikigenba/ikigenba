@@ -57,9 +57,9 @@ func TestFinishSessionAppendsExactOutcomePayloadsAtomically(t *testing.T) {
 	producer := newTestOutbox(t, conn, func() time.Time { return now })
 	issue := 17
 	for _, session := range []Session{
-		{ID: "success-event", RepoName: "alpha", OwnerEmail: "owner@example.com", IssueNumber: &issue, Attempt: 1, Branch: "ikibot/issue-17", Instructions: "land", Status: StatusRunning, CreatedAt: now.Add(-time.Hour), LogPath: "success.jsonl"},
-		{ID: "failed-event", RepoName: "beta", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "ikibot/session-failed", Instructions: "fail", Status: StatusRunning, CreatedAt: now.Add(-time.Hour), LogPath: "failed.jsonl"},
-		{ID: "cancelled-event", RepoName: "gamma", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "ikibot/session-cancelled", Instructions: "cancel", Status: StatusRunning, CreatedAt: now.Add(-time.Hour), LogPath: "cancelled.jsonl"},
+		{ID: "success-event", RepoName: "alpha", OwnerEmail: "owner@example.com", IssueNumber: &issue, Attempt: 1, Branch: "ikigenba/issue-17", Instructions: "land", Status: StatusRunning, CreatedAt: now.Add(-time.Hour), LogPath: "success.jsonl"},
+		{ID: "failed-event", RepoName: "beta", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "ikigenba/session-failed", Instructions: "fail", Status: StatusRunning, CreatedAt: now.Add(-time.Hour), LogPath: "failed.jsonl"},
+		{ID: "cancelled-event", RepoName: "gamma", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "ikigenba/session-cancelled", Instructions: "cancel", Status: StatusRunning, CreatedAt: now.Add(-time.Hour), LogPath: "cancelled.jsonl"},
 	} {
 		insertSession(t, store, session)
 	}
@@ -88,9 +88,9 @@ func TestFinishSessionAppendsExactOutcomePayloadsAtomically(t *testing.T) {
 		kind, subject string
 		payload       map[string]any
 	}{
-		{"session.succeeded", "/alpha", map[string]any{"repo": "alpha", "session_id": "success-event", "issue_number": float64(17), "branch": "ikibot/issue-17", "pr_url": prURL, "ended_at": now.Format(time.RFC3339Nano)}},
-		{"session.failed", "/beta", map[string]any{"repo": "beta", "session_id": "failed-event", "branch": "ikibot/session-failed", "error": failure, "ended_at": now.Format(time.RFC3339Nano)}},
-		{"session.failed", "/gamma", map[string]any{"repo": "gamma", "session_id": "cancelled-event", "branch": "ikibot/session-cancelled", "error": "cancelled", "ended_at": now.Format(time.RFC3339Nano)}},
+		{"session.succeeded", "/alpha", map[string]any{"repo": "alpha", "session_id": "success-event", "issue_number": float64(17), "branch": "ikigenba/issue-17", "pr_url": prURL, "ended_at": now.Format(time.RFC3339Nano)}},
+		{"session.failed", "/beta", map[string]any{"repo": "beta", "session_id": "failed-event", "branch": "ikigenba/session-failed", "error": failure, "ended_at": now.Format(time.RFC3339Nano)}},
+		{"session.failed", "/gamma", map[string]any{"repo": "gamma", "session_id": "cancelled-event", "branch": "ikigenba/session-cancelled", "error": "cancelled", "ended_at": now.Format(time.RFC3339Nano)}},
 	}
 	rowCount := 0
 	for index := 0; rows.Next(); index++ {

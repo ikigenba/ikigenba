@@ -120,8 +120,8 @@ func (h toolHandlers) sessionStart(ctx context.Context, raw json.RawMessage, id 
 	if err := decode(raw, &a); err != nil || blank(a.Repo) || blank(a.Instructions) || blank(id.OwnerEmail) {
 		return validation(err, "repo, instructions, and authenticated owner are required"), nil
 	}
-	if a.Branch != "" && (!strings.HasPrefix(a.Branch, "ikibot/") || len(a.Branch) == len("ikibot/")) {
-		return validation(nil, "branch must match ikibot/*"), nil
+	if a.Branch != "" && (!strings.HasPrefix(a.Branch, "ikigenba/") || len(a.Branch) == len("ikigenba/")) {
+		return validation(nil, "branch must match ikigenba/*"), nil
 	}
 	if _, err := h.svc.GetRepo(ctx, a.Repo); err != nil {
 		return domainError(err, appkitmcp.ErrInternal), nil

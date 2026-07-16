@@ -23,7 +23,7 @@ import (
 	toolset "repos/internal/tools"
 )
 
-const framingPrompt = `Work only in the supplied git worktree. Commit what you produce. Run .ikibot/check as the gate when it exists. Honor AGENTS.md when present. Your final message must be a concise summary suitable for the pull request body.`
+const framingPrompt = `Work only in the supplied git worktree. Commit what you produce. Run .ikigenba/check as the gate when it exists. Honor AGENTS.md when present. Your final message must be a concise summary suitable for the pull request body.`
 
 // ModelConfig is service-wide model configuration read at the composition root.
 type ModelConfig struct {
@@ -227,7 +227,7 @@ func (r *Runner) Enqueue(ctx context.Context, request SessionRequest) (repos.Ses
 		}
 	}
 	attempt := 1
-	branch := "ikibot/session-" + id
+	branch := "ikigenba/session-" + id
 	if request.IssueNumber != nil {
 		max, err := r.store.MaxAttempt(ctx, request.RepoName, *request.IssueNumber)
 		if err != nil {
@@ -542,7 +542,7 @@ func (r *Runner) complete(bg, runCtx context.Context, protocol lifecycleProtocol
 }
 
 func runCheck(ctx context.Context, worktree, logPath string) (string, error) {
-	path := filepath.Join(worktree, ".ikibot", "check")
+	path := filepath.Join(worktree, ".ikigenba", "check")
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return "no check declared", nil
@@ -601,7 +601,7 @@ func (r *Runner) repoIsActive(ctx context.Context, repoName string) bool {
 }
 
 func issueBranch(issue, attempt int) string {
-	branch := fmt.Sprintf("ikibot/issue-%d", issue)
+	branch := fmt.Sprintf("ikigenba/issue-%d", issue)
 	if attempt > 1 {
 		branch += fmt.Sprintf(".%d", attempt)
 	}

@@ -82,7 +82,7 @@ func TestWebhookIntakeEnqueuesRunnableSessionAndRingsDispatcher(t *testing.T) {
 		issue := 42
 		handRolled := repos.Session{
 			ID: "hand-rolled", RepoName: "fixture", OwnerEmail: "owner@example.com",
-			IssueNumber: &issue, Attempt: 1, Branch: "ikibot/issue-42",
+			IssueNumber: &issue, Attempt: 1, Branch: "ikigenba/issue-42",
 			Instructions: "Resolve GitHub issue #42.", Status: repos.StatusQueued,
 			CreatedAt: fixture.clock.Now(),
 		}
@@ -207,7 +207,7 @@ func TestIssueSessionCreatesFreshWorktreeAndPinsInstructionsBeforeSend(t *testin
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
-	if session.Branch != "ikibot/issue-41" {
+	if session.Branch != "ikigenba/issue-41" {
 		t.Fatalf("branch = %q", session.Branch)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -218,7 +218,7 @@ func TestIssueSessionCreatesFreshWorktreeAndPinsInstructionsBeforeSend(t *testin
 	if seenTip != wantTip {
 		t.Fatalf("worktree tip during run = %s, want fresh origin tip %s", seenTip, wantTip)
 	}
-	if seenBranch != "ikibot/issue-41" {
+	if seenBranch != "ikigenba/issue-41" {
 		t.Fatalf("worktree branch during run = %q", seenBranch)
 	}
 	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
@@ -240,7 +240,7 @@ func TestIssueSessionCreatesFreshWorktreeAndPinsInstructionsBeforeSend(t *testin
 	failed := "inspected failure"
 	if err := fixture.store.InsertSession(context.Background(), repos.Session{
 		ID: "old-failure", RepoName: "beta", OwnerEmail: "owner@example.com",
-		IssueNumber: &issue, Attempt: 1, Branch: "ikibot/issue-41", Instructions: "old",
+		IssueNumber: &issue, Attempt: 1, Branch: "ikigenba/issue-41", Instructions: "old",
 		Status: repos.StatusFailed, Error: &failed, CreatedAt: fixture.clock.Now(), LogPath: "old.jsonl",
 	}); err != nil {
 		t.Fatal(err)
@@ -248,7 +248,7 @@ func TestIssueSessionCreatesFreshWorktreeAndPinsInstructionsBeforeSend(t *testin
 	next, err := runner.Enqueue(context.Background(), SessionRequest{
 		ID: "issue-two", RepoName: "beta", OwnerEmail: "owner@example.com", IssueNumber: &issue,
 	})
-	if err != nil || next.Attempt != 2 || next.Branch != "ikibot/issue-41.2" {
+	if err != nil || next.Attempt != 2 || next.Branch != "ikigenba/issue-41.2" {
 		t.Fatalf("next attempt = %#v, %v", next, err)
 	}
 
@@ -417,7 +417,7 @@ func TestRecoverSweepsRunningAndPreservesQueuedForDispatch(t *testing.T) {
 	now := fixture.clock.Now()
 	for _, session := range []repos.Session{
 		{ID: "orphan", RepoName: "alpha", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "orphan", Instructions: "old", Status: repos.StatusRunning, CreatedAt: now, LogPath: "old.jsonl"},
-		{ID: "survivor", RepoName: "alpha", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "ikibot/session-survivor", Instructions: "queued", Status: repos.StatusQueued, CreatedAt: now.Add(time.Second), LogPath: filepath.Join(fixture.stateRoot, "sessions", "survivor", "output.jsonl")},
+		{ID: "survivor", RepoName: "alpha", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "ikigenba/session-survivor", Instructions: "queued", Status: repos.StatusQueued, CreatedAt: now.Add(time.Second), LogPath: filepath.Join(fixture.stateRoot, "sessions", "survivor", "output.jsonl")},
 	} {
 		if err := fixture.store.InsertSession(context.Background(), session); err != nil {
 			t.Fatal(err)
@@ -487,7 +487,7 @@ func TestPassingCheckPushesBranchCreatesPRAndPersistsURL(t *testing.T) {
 	if ended.PRURL == nil || *ended.PRURL != "https://example.test/pull/1" {
 		t.Fatalf("persisted PR URL = %#v", ended.PRURL)
 	}
-	if !remoteHasBranch(t, remote, "ikibot/issue-23") {
+	if !remoteHasBranch(t, remote, "ikigenba/issue-23") {
 		t.Fatal("passing branch was not pushed")
 	}
 	sessionDir := filepath.Join(fixture.stateRoot, "sessions", session.ID)
@@ -504,7 +504,7 @@ func TestPassingCheckPushesBranchCreatesPRAndPersistsURL(t *testing.T) {
 		t.Fatalf("runner outcome = %q %q, %v", kind, subject, err)
 	}
 	pr := recorder.only(t, "pr_create")
-	if pr.string("head") != "ikibot/issue-23" || pr.string("base") != "main" ||
+	if pr.string("head") != "ikigenba/issue-23" || pr.string("base") != "main" ||
 		!strings.Contains(pr.string("body"), "Fixes #23") || !strings.Contains(pr.string("body"), "passing") {
 		t.Fatalf("PR arguments = %#v", pr.arguments)
 	}
@@ -530,7 +530,7 @@ func TestFailingCheckPushesBranchWithoutPRAndPersistsFullLog(t *testing.T) {
 	if ended.Error == nil || !strings.Contains(*ended.Error, "final-tail") || recorder.count("pr_create") != 0 {
 		t.Fatalf("failed outcome = %#v, PR calls = %d", ended, recorder.count("pr_create"))
 	}
-	if !remoteHasBranch(t, remote, "ikibot/issue-24") {
+	if !remoteHasBranch(t, remote, "ikigenba/issue-24") {
 		t.Fatal("failed branch was not pushed")
 	}
 	if _, err := os.Stat(filepath.Join(fixture.stateRoot, "sessions", session.ID, "worktree")); err != nil {
@@ -625,7 +625,7 @@ func TestRetryPushesAttemptTwoBranch(t *testing.T) {
 	reason := "old failure"
 	if err := fixture.store.InsertSession(context.Background(), repos.Session{
 		ID: "old", RepoName: "retry", OwnerEmail: "owner@example.com", IssueNumber: &issue,
-		Attempt: 1, Branch: "ikibot/issue-27", Status: repos.StatusFailed, Error: &reason,
+		Attempt: 1, Branch: "ikigenba/issue-27", Status: repos.StatusFailed, Error: &reason,
 		CreatedAt: fixture.clock.Now(), LogPath: "old.log",
 	}); err != nil {
 		t.Fatal(err)
@@ -637,7 +637,7 @@ func TestRetryPushesAttemptTwoBranch(t *testing.T) {
 	runner := fixture.runner(t)
 	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "retry-2", RepoName: "retry", OwnerEmail: "owner@example.com", IssueNumber: &issue})
 	waitStatus(t, fixture.store, session.ID, repos.StatusSucceeded)
-	if session.Branch != "ikibot/issue-27.2" || !remoteHasBranch(t, remote, session.Branch) {
+	if session.Branch != "ikigenba/issue-27.2" || !remoteHasBranch(t, remote, session.Branch) {
 		t.Fatalf("retry branch = %q, pushed = %v", session.Branch, remoteHasBranch(t, remote, session.Branch))
 	}
 }
@@ -858,14 +858,14 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 
 func installCheck(t *testing.T, canonical, script string) {
 	t.Helper()
-	path := filepath.Join(canonical, ".ikibot", "check")
+	path := filepath.Join(canonical, ".ikigenba", "check")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gitRun(t, canonical, "add", ".ikibot/check")
+	gitRun(t, canonical, "add", ".ikigenba/check")
 	gitRun(t, canonical, "commit", "-m", "add check")
 	gitRun(t, canonical, "push", "origin", "main")
 }

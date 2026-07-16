@@ -52,7 +52,7 @@ func TestIntakeSuppressesConfiguredBotSender(t *testing.T) {
 	// R-ESK5-4RWJ
 	for _, test := range []struct {
 		name, configured, sender string
-	}{{"default", "", "ikibot[bot]"}, {"custom", "automation[bot]", "automation[bot]"}} {
+	}{{"default", "", "ikigenba[bot]"}, {"custom", "automation[bot]", "automation[bot]"}} {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newIntakeFixture(t, test.configured)
 			if err := fixture.intake.Handle(context.Background(), fixture.event(t, issueDelivery(test.sender, "open", "execute"))); err != nil {
@@ -67,7 +67,7 @@ func TestIntakeSuppressesConfiguredBotSender(t *testing.T) {
 		})
 	}
 	custom := newIntakeFixture(t, "automation[bot]")
-	if err := custom.intake.Handle(context.Background(), custom.event(t, issueDelivery("ikibot[bot]", "open", "execute"))); err != nil {
+	if err := custom.intake.Handle(context.Background(), custom.event(t, issueDelivery("ikigenba[bot]", "open", "execute"))); err != nil {
 		t.Fatalf("non-configured bot Handle: %v", err)
 	}
 	if sessions, err := custom.store.ListSessions(context.Background(), "fixture", ""); err != nil || len(sessions) != 1 {
@@ -159,14 +159,14 @@ type intakeTestEnqueuer struct {
 
 func (e *intakeTestEnqueuer) Enqueue(ctx context.Context, request SessionRequest) (Session, error) {
 	attempt := 1
-	branch := "ikibot/session-intake-1"
+	branch := "ikigenba/session-intake-1"
 	if request.IssueNumber != nil {
 		max, err := e.store.MaxAttempt(ctx, request.RepoName, *request.IssueNumber)
 		if err != nil {
 			return Session{}, err
 		}
 		attempt = max + 1
-		branch = fmt.Sprintf("ikibot/issue-%d", *request.IssueNumber)
+		branch = fmt.Sprintf("ikigenba/issue-%d", *request.IssueNumber)
 		if attempt > 1 {
 			branch += fmt.Sprintf(".%d", attempt)
 		}

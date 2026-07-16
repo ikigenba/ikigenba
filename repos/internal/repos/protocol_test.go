@@ -234,7 +234,7 @@ func TestProtocolSuccessRequiresCreatedPRHTMLURL(t *testing.T) {
 				RepoName:    "alpha",
 				OwnerEmail:  "owner@example.com",
 				IssueNumber: &issueNumber,
-				Branch:      "ikibot/issue-17",
+				Branch:      "ikigenba/issue-17",
 			}, Repo{
 				Name:          "alpha",
 				DefaultBranch: "main",
