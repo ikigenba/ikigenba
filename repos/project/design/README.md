@@ -49,8 +49,10 @@ ids ends at minting them — how coverage is measured and when the work is
   (default `claude-opus-4-8`), `REPOS_SESSION_TTL` (default `30m`),
   `REPOS_MAX_SESSIONS` (default `2`), `REPOS_GITHUB_HOOK` (default `github`),
   `REPOS_BOT_LOGIN` (default `ikibot[bot]`), `REPOS_GITHUB_ORG` (default
-  `ikigenba`), `REPOS_WORKTREE_TTL_DAYS` (default `14`), plus the provider API
-  keys (`ANTHROPIC_API_KEY` et al.) that agentkit providers need.
+  `ikigenba`), `REPOS_WORKTREE_TTL_DAYS` (default `14`), `REPOS_STATE_DIR`
+  (default `state`, resolved to an absolute path at the composition root —
+  D9/D4), plus the provider API keys (`ANTHROPIC_API_KEY` et al.) that agentkit
+  providers need.
 - **Peers by name, addresses from the registry:** the service names its peers
   in code (`webhooks` as event source, `github` as the GitHub actor) and asks
   `registry` where they live (`registry.MustPort("repos")`,

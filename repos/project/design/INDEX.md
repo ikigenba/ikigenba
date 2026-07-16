@@ -10,7 +10,7 @@ Verification ids change.
 - D1 → `project/design/D01.md` — Composition root & chassis boot — R-EISY-2LYZ, R-EL8Q-U5GD
 - D2 → `project/design/D02.md` — Data model & migrations — R-EMGN-7X72, R-ENOJ-LOXR, R-EOWF-ZGOG, R-TY2R-GFRU, R-TZAN-U7IJ
 - D3 → `project/design/D03.md` — GitHub-fact intake: the webhooks consumer & dispatch table — R-EQ4C-D8F5, R-ERC8-R05U, R-ESK5-4RWJ, R-ETS1-IJN8, R-EUZX-WBDX, R-EW7U-A34M
-- D4 → `project/design/D04.md` — Repo lifecycle & git custody — R-EXFQ-NUVB, R-EYNN-1MM0, R-EZVJ-FECP, R-F13F-T63E, R-F3J8-KPKS
+- D4 → `project/design/D04.md` — Repo lifecycle & git custody — R-EXFQ-NUVB, R-EYNN-1MM0, R-EZVJ-FECP, R-F13F-T63E, R-F3J8-KPKS, R-C9CO-ODYU
 - D5 → `project/design/D05.md` — The session engine: worktree-per-session, queue, and the confined agent — R-F4R4-YHBH, R-F5Z1-C926, R-F76X-Q0SV, R-F8EU-3SJK, R-F9MQ-HKA9, R-FAUM-VC0Y, R-FC2J-93RN
 - D6 → `project/design/D06.md` — The issue protocol: labels, the check gate, and runner-side GitHub I/O — R-FDAF-MVIC, R-FEIC-0N91, R-FFQ8-EEZQ, R-FGY4-S6QF, R-FI61-5YH4, R-FKLT-XHYI, R-FLTQ-B9P7
 - D7 → `project/design/D07.md` — The MCP tool surface — R-FN1M-P1FW, R-FO9J-2T6L, R-FPHF-GKXA, R-FQPB-UCNZ, R-FRX8-84EO
@@ -20,6 +20,7 @@ Verification ids change.
 
 ## Verification ids → Decision
 
+- R-C9CO-ODYU → D4 — `project/design/D04.md`
 - R-EISY-2LYZ → D1 — `project/design/D01.md`
 - R-EL8Q-U5GD → D1 — `project/design/D01.md`
 - R-EMGN-7X72 → D2 — `project/design/D02.md`
