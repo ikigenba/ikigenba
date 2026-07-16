@@ -49,7 +49,7 @@ repos **does**, in v1:
   per-repo onboarding required.
 - Report progress **on the issue itself**: acknowledge the dispatch, mark it
   in progress, link the PR on success, and mark it failed with a reason on
-  failure. The bot's GitHub identity is **@ikibot**; everything it does on
+  failure. The bot's GitHub identity is **@ikigenba**; everything it does on
   GitHub is attributed to that identity.
 - Run each session in an **isolated working copy** on its **own branch**,
   never on the repository's default branch, and never with GitHub credentials
@@ -84,8 +84,8 @@ already-designed later direction, `docs/repos-design.md`):
 
 ## Contractual constants
 
-- **Bot identity `@ikibot`** — the GitHub App identity all bot activity is
-  attributed to, and the branch namespace prefix (`ikibot/…`) session branches
+- **Bot identity `@ikigenba`** — the GitHub App identity all bot activity is
+  attributed to, and the branch namespace prefix (`ikigenba/…`) session branches
   live under.
 - **Dispatch label `execute`** — the human gate. The in-flight, failure, and
   reserved-conversation labels are `executing`, `failed`, and `discuss`.
@@ -110,7 +110,7 @@ already-designed later direction, `docs/repos-design.md`):
 - **The agent can't leak what it never had.** The session agent works only
   inside its working copy with local tools; it holds no GitHub credentials and
   no suite tools. All GitHub activity is performed on its behalf and appears
-  as @ikibot, with no owner-identifying marker.
+  as @ikigenba, with no owner-identifying marker.
 - **The default branch is never touched.** All bot work lands on bot-namespace
   branches and reaches the default branch only through a human-merged PR.
 - **The repo defines "done".** If the repository ships an executable check,
@@ -129,8 +129,8 @@ already-designed later direction, `docs/repos-design.md`):
 ## Success criteria (outcomes)
 
 - Applying `execute` to an open issue in an org repo the suite has never seen
-  results — with no other setup — in an @ikibot acknowledgment on that issue
-  and, on completion, a pull request from an `ikibot/…` branch that references
+  results — with no other setup — in an @ikigenba acknowledgment on that issue
+  and, on completion, a pull request from an `ikigenba/…` branch that references
   the issue.
 - The PR's repository default branch has no bot commits; all bot work is on
   the bot's branch.

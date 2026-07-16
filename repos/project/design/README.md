@@ -5,7 +5,7 @@ service is built and *how each behavior is proven* — seams, interfaces, types,
 naming, and the test plan. Product (`project/product/README.md`) owns the why
 and the promises; design states the exact, checkable form of those promises
 and never re-declares the why. Design uses the product's contractual constants
-(bot identity `@ikibot`, label set `execute`/`executing`/`failed`/`discuss`,
+(bot identity `@ikigenba`, label set `execute`/`executing`/`failed`/`discuss`,
 port 3007, mount `/srv/repos/`, starting version `v0.1.0`) by value but does
 not own them. This is the single current statement of the architecture,
 rewritten in place; history lives in the plan.
@@ -48,7 +48,7 @@ ids ends at minting them — how coverage is measured and when the work is
   below it. The set: `REPOS_PROVIDER` (default `anthropic`), `REPOS_MODEL`
   (default `claude-opus-4-8`), `REPOS_SESSION_TTL` (default `30m`),
   `REPOS_MAX_SESSIONS` (default `2`), `REPOS_GITHUB_HOOK` (default `github`),
-  `REPOS_BOT_LOGIN` (default `ikibot[bot]`), `REPOS_GITHUB_ORG` (default
+  `REPOS_BOT_LOGIN` (default `ikigenba[bot]`), `REPOS_GITHUB_ORG` (default
   `ikigenba`), `REPOS_WORKTREE_TTL_DAYS` (default `14`), `REPOS_STATE_DIR`
   (default `state`, resolved to an absolute path at the composition root —
   D9/D4), plus the provider API keys (`ANTHROPIC_API_KEY` et al.) that agentkit
