@@ -21,3 +21,4 @@ outside the phase lines, so the anchored grep matches only phase lines.
 - Phase 11 ✅ realizes R-C9CO-ODYU — absolute state root (ResolveStateRoot at composition root → cwd-independent worktree create/inspect/push)
 - Phase 12 ✅ realizes R-2U0F-NNXH — route webhook intake through the Enqueuer seam (single session-construction point: LogPath + doorbell + branch naming set only in Enqueue)
 - Phase 13 ✅ realizes R-2V8C-1FO6 — unmask complete() so an errored run reports its real reason instead of "no commits produced"
+- Phase 14 ⬜ realizes R-894D-CUA2 — decode github's real issue_comments list envelope {"items":[...]} (fix bare-array assumption; correct the recorder stub to github's real shape + non-empty thread)
