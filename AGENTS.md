@@ -50,6 +50,7 @@ in the folders below and in `docs/`.
 | **bin** | Shared repo-root **operator scripts** — the off-box build/version tooling (`ship`, `bump`, …). |
 | **nginx** | Local-dev front door on **:8080** mirroring the prod `/srv/<svc>/` routing (`./run`). |
 | **docs** | Suite-level docs: the deployment ADR, versioning how-to, runbooks, and the event-plane protocol write-ups. |
+| **sops** | **Standard operating procedures for agents** — step-by-step recipes for routine operations (e.g. seeding a service's secrets). Check here before rediscovering how a standard operation works. |
 
 The twelve deployable apps are **dashboard, crm, ledger, notify, dropbox,
 prompts, wiki, cron, gmail, scripts, sites, webhooks**; `appkit`/`eventplane`
