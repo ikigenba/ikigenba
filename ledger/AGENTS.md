@@ -1,135 +1,40 @@
 # ledger
 
-The **ledger** service for the ikigenba single-tenant suite. It is a
-loopback-only domain service that serves a bearer-gated MCP surface for agents
-and a session-cookie-gated human web landing page under `/srv/ledger/`. It runs
-**no token logic**: nginx remains the sole trust boundary for both doors. Public
-deployment path: `<account>.ikigenba.com/srv/ledger/` (e.g.
-`int.ikigenba.com/srv/ledger/`). First demo account: **int**.
+A deployable path-routed service of the ikigenba suite, double-entry bookkeeping
+for personal and small-business use, routed at `/srv/ledger/` (module `ledger`).
+It is an immutable journal of balanced transactions modeled on ledger-cli: every
+report is a query over postings, the chart of accounts is emergent and typed, and
+money is integer cents. The domain surface is a fixed set of seven verbs (record,
+reverse, reconcile, balance, register, get, describe) over one write entity, the
+transaction, exposed as MCP; the chassis adds standard `health`/`reflection`
+tools. It is an event-plane producer, emitting `transaction.recorded` to an outbox
+at `GET /feed`. Loopback-only over SQLite; nginx is the sole trust boundary, so
+the service runs no token logic.
 
-A real **double-entry bookkeeping** service for personal and small-business use,
-modeled conceptually on [ledger-cli](https://ledger-cli.org/): an **immutable
-journal** of balanced transactions, with every report a query over postings. The
-domain surface is a **fixed set of seven verbs** (it does not grow as features
-are added — see `project/design/README.md`) over a single write entity, the
-transaction. The chassis adds standard `health` and `reflection` tools, for nine
-tools on the wire. It is an event-plane **producer** (emits
-`transaction.recorded` to an outbox at `GET /feed`, mirroring `../crm`). The
-chassis (auth, nginx, deploy, transport) is the same production-grade crm
-chassis, renamed.
+## How changes are made
 
-**Read the decisions first — do not re-derive them:**
+Changes go through the spec under `project/`, not direct edits: settle the spec,
+then let the build loop realize it. Edit code directly only on explicit operator
+instruction. See the `$ikispec` skill for the `project/` spec contracts and
+`$ralph` for the unattended build workflow.
 
-- `project/design/README.md` — the ledger design (the 8-verb rationale, the immutable-journal /
-  emergent-typed-account model, the transaction contract, the events).
-- `../crm` — the sibling service that shares this chassis and is the reference
-  event-plane **producer** (`internal/contacts` → `/feed` outbox).
+## Layout
 
-A service's connector **skills live in the `dashboard` repo's `plugin/`**, not here.
+- `internal/ledger/`: the domain package (store, service, per-verb files, events).
+- `internal/mcp/`: the seven-tool declaration, sole dispatcher and arg validation.
+- `internal/db/`: embedded migrations plus load and outbox byte-equality guards.
+- `internal/ids/`: ULID generation.
+- `cmd/ledger/`: `main.go`, the `appkit.Main(appkit.Spec{…})` entrypoint.
+- `share/www/`: the human web landing surface.
+- `project/`: the spec (product/design/plan) the build loop works from.
 
-## What this app is
+## Tests
 
-A loopback-only domain service with an MCP surface for agents and a human web
-landing page. nginx (owned by the dashboard) terminates TLS, introspects every
-request via `auth_request` against the dashboard, and injects `X-Owner-Email` /
-`X-Client-Id`. This service **trusts those headers** and does no token validation
-of its own. nginx strips the `/srv/ledger/` prefix, so internally routes stay
-bare (`/`, `/mcp`, `/health`, `/feed`, `/.well-known/...`).
-Small business, ≤100 users: SQLite, single instance, is correct and deliberate.
+- Unit: `go test ./...`
+- Isolated build check (mirrors the prod build): `GOWORK=off go build ./...`
 
-**Books are global to the box** — one set of books per instance; no owner/tenant
-column on transactions/postings. `Identity` (the injected headers) is consulted
-only by `health`, matching crm and the single-tenant model.
+## Versioning
 
-## The MCP surface (7 domain verbs)
-
-There is **one write entity — the transaction** (a set of balanced postings); the
-surface area is reads. The journal is **immutable** (transactions are never
-mutated, only reversed). The chart of accounts is **emergent and typed**: accounts
-spring into existence on first posting to a colon-path (`Assets:Bank:Checking`),
-the only guardrail being that the top-level root must be one of five known types
-(`Assets`, `Liabilities`, `Equity`, `Income` [alias `Revenue`], `Expenses`), with
-alias + case-fold canonicalization so the tree can't fork. Money is integer cents,
-single-currency USD. The domain surface is seven verbs; `health` and
-`reflection` are chassis-supplied standard tools, for nine tools on the wire.
-See `project/design/README.md` for the full contract.
-
-- **`record`** — record one immutable double-entry transaction (≥2 postings
-  that must balance to zero; at most one posting may elide its amount and receive
-  the balancing residual; optional per-posting/txn status and array ordering).
-- **`reverse`** — the correction primitive: post the sign-flipped mirror of
-  an existing transaction, linked both ways (`reverses_id`/`reversed_by_id`); the
-  mirror's legs reset to `pending`. Double-reversal is guarded.
-- **`reconcile`** — the *only* mutation of existing rows: free status
-  transitions among `pending`/`cleared`/`reconciled`, idempotent, all-or-nothing.
-- **`balance`** — account balances with depth roll-up across the typed
-  account tree; no args = the whole live chart. Raw signed sums (ledger-cli style).
-- **`register`** — the running-total register for matched accounts over a
-  period; also the list verb.
-- **`get`** — fetch one transaction in full (postings, per-posting status,
-  ord, reversal links).
-- **`describe`** — static introspection (the five typed roots + normal
-  balances, statuses, recipes) merged with the live account tree. The first call
-  an agent should make.
-## Domain layout
-
-- **`internal/ledger/`** — the domain package, one file per concern within a single
-  package (not a second dispatch layer): `types.go` (structs, account-type table,
-  error sentinels), `store.go` (SQL-only, `*sql.Tx` methods), `service.go` (the
-  `Service` type — owns transactions, the balance invariant, and event emission),
-  `transaction.go` (record + get), `reverse.go`, `reconcile.go`, `balance.go`,
-  `register.go`, `describe.go`, `events.go` (event payloads/builders).
-- **`internal/mcp`** — the seven-domain-tool declaration over the `appkit/mcp`
-  chassis transport. `tools.go` holds `Instructions` and `Tools(svc)` and is
-  the **sole** dispatcher + arg-validation/normalization site (account
-  canonicalization, date parsing, elision well-formedness), translating typed
-  sentinels (`unbalanced`, `bad_root`, `validation`, `not_found`,
-  `already_reversed`) to MCP tool-error text. `mcp.go` exposes `NewHandler`.
-  The transport and the `health`/`reflection` tools are chassis-owned.
-- **`internal/db`** — the embedded migration set (`FS`) plus the load and
-  outbox-DDL byte-equality guards (`migrations_load_test.go`,
-  `migrations_outbox_test.go`). SQLite open and the migration runner are
-  `appkit/db` through `Spec.Migrations`. Migrations: `001_schema_migrations`
-  (chassis), `002_ledger.sql` (`transactions` + `postings`; no accounts table —
-  accounts are `SELECT DISTINCT account FROM postings`), `003_outbox.sql`
-  (byte-identical to `outbox.SchemaSQL`, with a test asserting that equality).
-- **`internal/ids`** — ULID generation.
-- **`share/www`** — the human web surface served through `Spec.WWW` / `rt.WWW()`;
-  the chassis static mount serves `/static/`.
-
-## Events (event-plane producer)
-
-Producer-only. The outbox shares ledger's single SQLite writer; the event is
-appended on the **same transaction** as the journal write, and `Ring()` fires
-after commit. **Every committed transaction emits exactly one
-`transaction.recorded`** through one shared insert helper — including a
-`reverse` mirror (its payload carries `reverses_id` so a consumer can tell
-it's a correction). `cmd/ledger/main.go` wires the `outbox` and injects it into
-`ledger.Service`; the SSE handler is mounted at `GET /feed` (unauthenticated,
-loopback-only — the perimeter is nginx). Second-wave payloads (`transaction.reversed`,
-`posting.reconciled`) are designed but unwired in v1 (`project/design/README.md`).
-
-## nginx fragment (not a vhost)
-
-`opsctl setup ledger` writes only `/etc/nginx/conf.d/locations/ledger.conf` (its
-`location /srv/ledger/` + the PRM well-known location, per the suite's path-routing
-model in the root `AGENTS.md`) and reloads nginx. It does **not** install a
-server block and does **not** issue a TLS cert — the dashboard owns both (the
-box-global apex/cert pieces are `opsctl init-box`). A dev mirror of this fragment
-lives at `../nginx/locations/ledger.conf`.
-
-## Manifest / deploy
-
-ledger is one static appkit binary (the `appkit.Main(appkit.Spec{…})` contract):
-`<app>` serve + the fixed `version`/`manifest`/`migrate`/`schema`
-verbs, no `run` wrapper. `etc/manifest.env` (`APP=ledger`,
-`MOUNT=/srv/ledger/`, `DEFAULT=false`, `PORT=3101`, `MCP=true` so the dashboard
-inventory lists it) is emitted by `ledger manifest`; the runtime port is
-resolved via `registry.MustPort("ledger")`, with the manifest's literal port
-guarded by a registry-derived test. The binary owns its own identity, and
-`opsctl deploy` regenerates the on-box copy on every swap. Shipping is the shared
-repo-root `bin/ship ledger` (no version arg; version is the committed
-`ledger/VERSION`, advanced by `bin/bump ledger <field>`) → `opsctl stage` +
-`opsctl deploy` (versioned release dir + atomic swap + rollback); provisioning is
-`opsctl setup ledger`. The only `bin/*` scripts ledger still carries are
-`start`/`stop` (systemd control). No `plugin/` in this repo.
+The committed `ledger/VERSION` file is the single source of truth (v-prefixed
+SemVer, currently `v0.10.1`). Advance it with `bin/bump ledger <major|minor|patch>`;
+ship with `bin/ship ledger`. Git tags are not the version mechanism.

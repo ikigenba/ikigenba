@@ -1,54 +1,37 @@
 # gmail
 
-gmail is a loopback-only Gmail connector. nginx routes `/srv/gmail/` to the
-service and remains the sole trust boundary for both served surfaces: a bearer-
-gated MCP surface for agents and a session-cookie-gated human web landing page.
+gmail is a deployable, path-routed service in the ikigenba suite, mounted at
+`/srv/gmail/` (Go module `gmail`, over SQLite on the shared appkit chassis). It
+is a loopback-only Gmail connector: a bearer-gated MCP surface for agents plus a
+Gmail History API poll daemon, and an event-plane producer that publishes
+`mail.*` facts to its outbox `/feed`. nginx routes `/srv/gmail/` and stays the
+sole trust boundary; the service accepts the trusted identity headers as input,
+runs no token logic, and reads its Gmail OAuth secrets only from the environment.
 
-The service accepts nginx-provided identity headers as trusted input and runs no
-token logic. Its domain work stays in the normal-mailbox MCP tool surface, the
-Gmail History API poll daemon in `Workers`, and the `mail.*` event-plane
-producer exposed through `Producer`/`Feed`. The `cmd/consent` one-time OAuth CLI
-is unchanged.
+## How changes are made
 
-`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, and
-`GMAIL_POLL_INTERVAL` reach the process only through the environment. appkit
-does not read or log those values.
+Changes go through the spec under `project/`, not direct edits: settle the spec,
+then let the build loop realize it. Edit code directly only on explicit operator
+instruction. See the `$ikispec` skill for the `project/` spec contracts and
+`$ralph` for the unattended build workflow.
 
-## Composition Root
+## Layout
 
-`cmd/gmail/main.go` builds an `appkit.Spec` for the binary in `gmailSpec()`:
+- `cmd/gmail/`: binary entrypoint, builds the `appkit.Spec` and verb dispatch.
+- `cmd/consent/`: one-time OAuth consent CLI.
+- `internal/mcp/`: Gmail MCP tools, handler, and the published-event registry.
+- `internal/gmail/`: Gmail client and the producer engine (poll loop, outbox).
+- `internal/db/`: migration `FS` and load guards; SQLite/migrations are appkit's.
+- `share/`: the human web landing assets served via `Spec.WWW`.
+- `project/`: the spec (product/design/plan) the build loop works from.
 
-- `App: "gmail"`, `Mount: "/srv/gmail/"`, and `Port: registry.MustPort("gmail")`.
-- `MCP: true` and `WWW: true`.
-- `Migrations: db.FS`, so gmail's migration set is handed to appkit.
-- `Events: mcp.Events` is the static published-event registry backing the
-  outbox's Append-time validation and the reflection tool.
-- `Handlers` builds the Gmail client and producer `Engine` over appkit's shared
-  DB handle, mounts the landing page through `rt.WWW()` at `GET /{$}`, and
-  mounts `POST /mcp` through `rt.RequireIdentity(handler)`.
-- `Producer` attaches the outbox as the engine's `EventSink` so derived
-  `mail.*` events append atomically with the cursor advance.
-- `Workers` runs the engine's Gmail History API poll loop on the serve context.
+## Tests
 
-## Surfaces
+- Package checks from this directory: `go build ./...`, `go vet ./...`,
+  `gofmt -l .`, `go test ./...`.
 
-The human web surface is served from `share/www` through `Spec.WWW` and
-`rt.WWW()`. nginx protects it with the session-cookie gate.
+## Versioning
 
-`internal/mcp` declares the ten Gmail tools with `Instructions`, `Tools(client)`,
-and `NewHandler` over the `appkit/mcp` chassis transport. The `health` and
-`reflection` tools are chassis-owned.
-
-`internal/db` now holds only `FS`, the migration-set load guard, and the outbox
-DDL guard. SQLite open and migration execution are appkit concerns.
-
-## Local Work
-
-Run package checks from this service directory:
-
-```sh
-go build ./...
-go vet ./...
-gofmt -l .
-go test ./...
-```
+The committed `gmail/VERSION` file is the single source of truth (v-prefixed
+SemVer, currently `v0.9.1`). Advance it with `bin/bump gmail <major|minor|patch>`;
+ship with `bin/ship gmail`. Git tags are not the version mechanism.

@@ -1,178 +1,127 @@
 # suite
 
-The **suite** is the deployable **application suite** for ikigenba — one **dashboard**
-plus N small **services** that run together on a single box, one box per
-customer, answering on the apex `<account>.ikigenba.com`. It is a **single
-mono-repo** (one `.git`): the dashboard, every service, the shared libraries,
-the local-dev nginx front door, and the docs are all subdirectories of this one
-repo, not independent projects. The dashboard owns identity (OAuth authorization
-server, IAM, grants, install landing, service inventory); each service owns one
-domain, its own SQLite database, and a loopback HTTP server. nginx is the sole
-trust boundary: it introspects every `/srv/<svc>/` request against the
-dashboard, strips the prefix, and forwards it to the loopback service with
-trusted `X-Owner-Email` / `X-Client-Id` headers that services accept blindly —
-so services run **no UI and no token logic**. The product surface is **MCP**:
-users connect an agent and work through tools, not screens.
+The **suite** is ikigenba's deployable application suite: one **dashboard** plus N
+small **services** on a single box, one box per customer, answering on the apex
+`<account>.ikigenba.com`. It is a single **mono-repo** (one `.git`). The dashboard
+owns identity (OAuth, IAM, grants, install landing, service inventory); each
+service owns one domain, its own SQLite database, and a loopback HTTP server.
+**nginx is the sole trust boundary**: it introspects each `/srv/<svc>/` request
+against the dashboard, strips the prefix, and forwards it with trusted
+`X-Owner-Email` / `X-Client-Id` headers, so services run no UI and no token logic.
+The product surface is **MCP**. Every app is one static `linux/amd64` Go binary on
+the shared **appkit** chassis over SQLite (fixed verbs
+`serve`/`version`/`manifest`/`migrate`/`schema`), and services exchange facts over
+the **event plane** (append-only outbox, `/feed` SSE) rather than private API
+calls. The bet: tolerating short scheduled downtime buys a cheaper,
+easier-to-recover system, with no cluster and no broker. Infrastructure lives
+separately in `~/projects/metaspot`.
 
-The operating bet is that business software which can accept short, scheduled
-downtime gets to be cheaper, simpler, and easier to recover — no cluster, no
-broker, no zero-downtime machinery. Every app is **one static `linux/amd64` Go
-binary** built on the shared `appkit` chassis over SQLite, implementing a fixed
-verb set (`serve`/`version`/`manifest`/`migrate`/`schema`); deploys
-land in versioned release directories with an atomic swap and one-command
-rollback. Backup and restore are **not** binary verbs — they are box-level
-operations owned by `opsctl` (S3 snapshots of `state/`). Services don't call each other as private API chains — they publish
-facts to an append-only outbox and consume each other's `/feed` over SSE (the
-event plane). The **infrastructure** (Terraform for the `int.ikigenba.com` box —
-AWS accounts, DNS, the box itself) is managed separately in `~/projects/metaspot`
-and is not part of this repo. This file is the introduction; the specifics live
-in the folders below and in `docs/`.
+**Each subproject has its own `AGENTS.md`** (what it is, layout, tests,
+versioning); this file is only the suite-level map and whole-suite workflows. You
+almost always work in exactly one subfolder: read its `AGENTS.md` first and keep
+everything for the unit of work (code, schema, `.envrc`, its `project/` spec) under
+it. If unsure which subfolder a task belongs to, ask; do not default to the root.
 
 ## Top-level layout
 
 | dir | what's in it |
 |---|---|
-| **dashboard** | The apex/`DEFAULT` app: OAuth authorization server, IAM, grants, push, install landing, and service inventory (Go, SQLite). |
-| **crm** | Path-routed service `/srv/crm/` — contacts domain + MCP; event-plane **producer** (`/feed` outbox). |
-| **ledger** | Path-routed service `/srv/ledger/` — double-entry bookkeeping (immutable journal, fixed-verb MCP); event-plane **producer**. |
-| **notify** | Path-routed service `/srv/notify/` — event-plane **consumer** (push) and the worked example for bringing up a new consumer. |
-| **dropbox** | Path-routed service `/srv/dropbox/` — keeps a private local mirror in sync with a single Dropbox app folder; loopback daemon + event-plane **producer**. |
-| **prompts** | Path-routed service `/srv/prompts/` — runs sandboxed Claude agent sessions on the owner's behalf, exposed as MCP; event-plane **producer** + **consumer** (self-chaining). |
-| **wiki** | Path-routed service `/srv/wiki/` — knowledge base: ingest / search / ask (RAG) + MCP. |
-| **cron** | Path-routed service `/srv/cron/` — loopback scheduled-event emitter; event-plane **producer** (emits scheduled tick events). |
-| **gmail** | Path-routed service `/srv/gmail/` — loopback Gmail connector + MCP; event-plane **producer**. |
-| **scripts** | Path-routed service `/srv/scripts/` — runs deterministic Python scripts wired to suite events; event-plane **consumer** + **producer** (completion events). |
-| **sites** | Path-routed service `/srv/sites/` — loopback static-website host (file-backed) + MCP. |
-| **webhooks** | Path-routed service `/srv/webhooks/` — loopback inbound-webhook receiver: owner-facing MCP (create/list/delete/rotate) plus a public `POST /in/<name>` ingress self-guarded by a per-webhook secret; event-plane **producer** (`/feed` outbox). |
-| **appkit** | Shared Go **chassis** library: config-from-env, migration runner + downgrade guard, loopback server, `/feed`, manifest emit/parse, the verb dispatcher (consumed via a committed `replace`). |
-| **eventplane** | Shared Go **library** — the event-plane producer/consumer plumbing (committed `replace`). |
-| **opsctl** | The **on-box CLI** (Go) that owns every box-side operation — stage, deploy, rollback, prune, status, provisioning; built here and installed to `/usr/local/bin/opsctl`. |
-| **bin** | Shared repo-root **operator scripts** — the off-box build/version tooling (`ship`, `bump`, …). |
-| **nginx** | Local-dev front door on **:8080** mirroring the prod `/srv/<svc>/` routing (`./run`). |
-| **docs** | Suite-level docs: the deployment ADR, versioning how-to, runbooks, and the event-plane protocol write-ups. |
-| **sops** | **Standard operating procedures for agents** — step-by-step recipes for routine operations (e.g. seeding a service's secrets). Check here before rediscovering how a standard operation works. |
+| **dashboard** | Apex/`DEFAULT` app: OAuth server, IAM, grants, install landing, service inventory. Owns nginx + TLS on the box. |
+| **crm** | `/srv/crm/` sales CRM. |
+| **ledger** | `/srv/ledger/` double-entry bookkeeping. |
+| **notify** | `/srv/notify/` push notifications; the worked-example consumer. |
+| **dropbox** | `/srv/dropbox/` loopback sync daemon mirroring a Dropbox app folder. |
+| **prompts** | `/srv/prompts/` sandboxed Claude agent sessions (uses `agentkit`). |
+| **wiki** | `/srv/wiki/` knowledge base (ingest / search / RAG ask). |
+| **cron** | `/srv/cron/` scheduled-event emitter. |
+| **gmail** | `/srv/gmail/` Gmail connector. |
+| **scripts** | `/srv/scripts/` runs owner Python scripts wired to events. |
+| **sites** | `/srv/sites/` static-website host. |
+| **webhooks** | `/srv/webhooks/` inbound-webhook receiver (public `POST /in/<name>` ingress). |
+| **github** | `/srv/github/` GitHub connector. |
+| **repos** | `/srv/repos/` development plane: dispatches confined agent sessions in worktrees and opens PRs. |
+| **appkit** | Shared **chassis** library: verb dispatcher, config, migrations, loopback server, `/feed`, manifest. |
+| **eventplane** | Shared **library**: event-plane producer/consumer plumbing (outbox, feed, routing). |
+| **registry** | Shared **library**: the authoritative service-name to loopback-port table. |
+| **opsctl** | **On-box CLI**: stage/deploy/rollback/prune/status/provision/backup. Installed to `/usr/local/bin/opsctl`. |
+| **bin** | Repo-root operator scripts: off-box build/version tooling (`ship`, `bump`, `start`, `stop`, `create-migration`). |
+| **nginx** | Local-dev front door on **:8080** mirroring prod `/srv/<svc>/` routing (`./run`). |
+| **docs** | Suite-level docs: deployment ADR, versioning, runbooks, event-plane protocol. |
+| **sops** | Standard operating procedures for agents (e.g. seeding secrets). Check here first. |
+| **design** | The shared Carbon design-system reference (tokens, example). |
+| **project** | The suite-level spec workspace (product/design/plan). |
 
-The twelve deployable apps are **dashboard, crm, ledger, notify, dropbox,
-prompts, wiki, cron, gmail, scripts, sites, webhooks**; `appkit`/`eventplane`
-and `opsctl` are libraries/tooling and are **not** versioned. The agent chassis
-lives in its own repo, `github.com/ikigenba/agentkit`, consumed as a tagged
-module. The root `go.work` wires the modules for local dev; the
-production build forces `GOWORK=off`.
+The **fourteen deployable apps** each carry a committed `<app>/VERSION` and ship
+independently: **dashboard, crm, ledger, notify, dropbox, prompts, wiki, cron,
+gmail, scripts, sites, webhooks, github, repos**. `appkit`/`eventplane`/`registry`
+(libraries) and `opsctl` (tooling) are **not** versioned. `agentkit` is a separate
+repo (`github.com/ikigenba/agentkit`), consumed as a tagged module. The root
+`go.work` wires modules for local dev; the production build forces `GOWORK=off`.
+Loopback port assignments live in **`registry/`**.
 
 ## Working locally
 
-This is a **mono-repo**, and even when you're started at the repo root you are
-**almost always working in exactly one subfolder** (one service or library) for
-the entire unit of work. Stay inside it. **Everything that belongs to that unit
-of work lives under that subfolder** — its code, its schema
-(`<svc>/internal/db/migrations/`), its `.envrc`/`CLAUDE.md`, **and its docs,
-including the design/plan/ralph workspace (`<svc>/project/`)**. Do not create or
-edit files at the repo root for work that belongs to a service; the root
-`docs/` is suite-level only.
+You almost always work in one subfolder; read its `AGENTS.md` first. Testing
+usually needs the whole suite up, driven from the root:
 
-**If you don't know which subfolder a piece of work belongs to, ask — do not
-default to the repo root.** Changing the wrong directory, or scattering a
-service's files across the root, causes real problems.
+- **`bin/start`** builds every service, launches each on its loopback port, and
+  brings up the nginx front door on **:8080** for the full path-routed auth chain.
+  Logs land in `tmp/<svc>.log`.
+- **`bin/stop`** tears the stack down; **`bin/stop --clean`** also wipes `tmp/`
+  dev state.
 
-The suite-wide concerns below — running the suite, the nginx front door, deploy
-tooling — are the only exceptions that legitimately live at the root.
+With the suite up you should have the `ikigenba_<svc>` MCP tools reachable. If
+they are missing or a `health` check fails, complain prominently rather than
+proceeding as if testing passed (usually the suite just is not up).
 
-Testing usually needs the **whole suite running together**, so that happens from
-the root, not per-service:
-
-- **`bin/start`** native-builds every service, launches each on its loopback
-  port, and brings up the nginx front door on **:8080** so the full path-routed
-  auth chain is reachable end to end. Logs land in `tmp/<svc>.log`.
-- **`bin/stop`** tears the whole stack back down; **`bin/stop --clean`** also
-  wipes the `tmp/` dev state (binaries, logs, SQLite dbs).
-
-> ⚠️ **You may only stop services you started from the worktree you are working
-> in.** The suite binds shared host ports (`:3000`–`:3006`, `:8080`), so a suite
-> launched from a *different* worktree or clone can be occupying them. Stopping
-> services — `bin/stop`, `kill`/`pkill`, freeing a port, or anything that
-> terminates a process — is permitted **only** for the stack this worktree's own
-> `bin/start` launched. **Any** action against a process you did not start from
-> this worktree — including one merely holding a port you want (e.g. a stale
-> nginx on `:8080`) — requires **explicit, specific operator approval first**.
-> When a needed port is occupied by something this worktree didn't start, do
-> **not** kill it to clear the way: identify the owning process (`ss -ltnp`,
-> check the binary path), **stop, and surface it** — name the process and the
-> owning directory and ask how to proceed. "It's in my way" is never permission;
-> a port conflict is a question for the operator, not an obstacle to bulldoze.
-
-With the suite up, you should normally have the local **`ikigenba_<svc>` MCP
-tools** available and reachable against the running services. If those tools are
-missing from your toolset, or a service's `health` check fails, **complain
-prominently** — don't proceed as if testing succeeded — then continue with
-whatever parts of the work are still doable. A missing MCP usually just means the
-suite isn't up (run `bin/start`).
+> ⚠️ **Only stop the stack this worktree started.** The suite binds shared host
+> ports, so another worktree or clone may own a running stack. `bin/stop`,
+> `kill`/`pkill`, or freeing a port is permitted only for the stack your own
+> `bin/start` launched. Anything holding a port you did not start (for example a
+> stale nginx on :8080) is a question for the operator: identify the owner
+> (`ss -ltnp`), stop, and surface it. A port conflict is never permission to kill.
 
 ## Deploying
 
-> ⚠️ **`int.ikigenba.com` is the live account.** Do **not** `ssh int` / invoke
-> `opsctl` against the box, even read-only, unless you've been **explicitly told
-> to deploy**. The default workflow is local-only (`bin/start`); deploying is a
-> separate, explicit request.
+> ⚠️ **`int.ikigenba.com` is the live account.** Do not `ssh int` or invoke
+> `opsctl` against the box, even read-only, unless explicitly told to deploy. The
+> default workflow is local-only.
 
-> ⚠️ **TEMPORARY (migration window only — REMOVE this note once migration is
-> done): ONLY `ledger` holds live/production customer data.** The ledger's
-> `state/` is real and must be protected — treat every deploy, `convert`,
-> migration, or `opsctl` action against ledger as if data loss is
-> unacceptable, because it is. Every **other** service's `state/` is still
-> disposable until migration completes — no real customers, no data to
-> protect; do **not** justify caution on those services by "protecting
-> customer data"; their state can be wiped and rebuilt at will.
-> **This flips service by service as migration proceeds** — once migration
-> finishes, ALL services hold real customer data and this whole note must be
-> deleted.
+> ⚠️ **TEMPORARY (migration window, REMOVE when done): only `ledger` holds live
+> customer data.** Protect ledger's `state/` as if data loss is unacceptable.
+> Every other service's `state/` is disposable until migration completes and may
+> be wiped and rebuilt. This flips service by service; when migration finishes,
+> all services hold real data and this note must be deleted.
 
-The full deploy runbook — the `bump → ship → stage → deploy` sequence, rollback,
-and inspection commands — lives in **`deploy.md`** at the repo root.
+The full `bump → ship → stage → deploy` runbook, rollback, and inspection commands
+live in **`deploy.md`**.
 
-## Migrations — timestamped and immutable
+## Migrations, timestamped and immutable
 
-Each service owns its schema as ordered SQL files under
-`<service>/internal/db/migrations/`, applied forward-only by the appkit runner
-and tracked individually in `schema_migrations`. Two hard rules:
+Each service owns its schema under `<svc>/internal/db/migrations/`, applied
+forward-only by the appkit runner. Two hard rules:
 
-- **Never hand-pick a migration number, and never write one by hand.** Run
-  `bin/create-migration <service> <name>`; it stamps a UTC timestamp version
-  (`YYYYMMDDHHMMSS_name.sql`). Timestamps are why two agents on two branches
-  don't collide — sequential integers did, and the clash only surfaced at
-  deploy. (Legacy `NNN_*.sql` files predate this and stay frozen; they sort
-  before any timestamp, so the two coexist.)
-- **Never modify or delete a committed migration.** Once a migration is on
-  `main` it is immutable — the runner keys on its version and will silently skip
-  an edited body, so the change reaches new databases but not existing ones.
-  Change schema by adding a *new* migration.
+- **Never hand-number a migration.** Run `bin/create-migration <service> <name>`;
+  it stamps a UTC timestamp so two branches do not collide. (Legacy `NNN_*.sql`
+  files are frozen and sort first.)
+- **Never modify or delete a committed migration.** The runner keys on the version
+  and silently skips an edited body, so the change reaches new databases but not
+  existing ones. Change schema by adding a new migration.
 
 ## Source changes go through the spec, not the editor
 
-> ⚠️ **A service with a `project/` tree is spec-governed: its source is produced
-> only by its build loop from `project/design` + `project/plan`.** Do **not**
-> hand-edit a governed service's code, templates, styles, migrations, or config
-> directly — not even a one-line "obvious" fix. Make the change by amending the
-> spec (`$open-spec` → `$seal-spec`) and letting the loop build it; a stray
-> manual edit desyncs the code from the spec that is its single source of truth.
->
-> The **only** exception is an explicit operator instruction to edit a **named
-> file** directly. A broad ask ("fix the styling", "make it match the design")
-> is a **spec change**, never license to hand-edit source. If you're unsure
-> which one a task is, **ask before writing.**
+> ⚠️ A subproject with a `project/` tree is **spec-governed**: its source is
+> produced only by its build loop from `project/design` + `project/plan`. Do not
+> hand-edit governed code, templates, migrations, or config directly, not even a
+> one-line fix. Amend the spec (`$open-spec` → `$seal-spec`) and let the loop
+> build it. The only exception is an explicit operator instruction to edit a
+> **named file**; a broad ask is a spec change. If unsure, ask before writing.
 
 ## Designing and planning work
 
-This is our process for designing and planning a piece of work before we build
-it. In short: each piece of work moves through paired documents in
-`docs/` that share one slug — **`<slug>-design.md`** (the how + decisions) then
-**`<slug>-plan.md`** (ordered phases, each sized for one subagent, run
-sequentially), after which a coordinator reads the plan in full and `/finish`es
-it.
-
-Two optional document types extend the pair:
-
-- **`<slug>-research.md`** — when we do research *before* design, it lands here
-  and feeds the design doc.
-- **`<slug>-verification.md`** — an occasional special-case doc describing a
-  post-work verification step, for work that warrants explicit validation after
-  it's built.
+Suite-level work moves through paired documents in `docs/` sharing one slug:
+**`<slug>-design.md`** (the how and the decisions) then **`<slug>-plan.md`**
+(ordered phases, each sized for one subagent), after which a coordinator reads the
+plan and `/finish`es it. Optional companions: **`<slug>-research.md`** (research
+feeding the design) and **`<slug>-verification.md`** (a post-build validation
+step).
