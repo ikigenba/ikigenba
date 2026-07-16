@@ -965,7 +965,7 @@ func newGitHubRecorder(t *testing.T) *githubRecorder {
 				map[string]any{"body": "Second fixture comment."},
 			}}
 		case "pr_create":
-			result = map[string]any{"number": 1, "url": "https://example.test/pull/1"}
+			result = map[string]any{"number": 1, "html_url": "https://example.test/pull/1"}
 		}
 		if err := json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": result}); err != nil {
 			t.Error(err)

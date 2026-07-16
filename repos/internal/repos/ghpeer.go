@@ -30,7 +30,7 @@ type Comment struct {
 
 type PR struct {
 	Number int    `json:"number"`
-	URL    string `json:"url"`
+	URL    string `json:"html_url"`
 }
 
 // GitHubPeer is the sole GitHub-service client used by the repository runner.

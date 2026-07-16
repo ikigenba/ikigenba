@@ -76,6 +76,9 @@ func (p *Protocol) Success(ctx context.Context, session Session, repo Repo, titl
 	if err != nil {
 		return "", err
 	}
+	if strings.TrimSpace(pr.URL) == "" {
+		return "", fmt.Errorf("pr_create: missing html_url")
+	}
 	if session.IssueNumber == nil {
 		return pr.URL, nil
 	}

@@ -160,3 +160,104 @@ func TestProtocolFetchIssueDecodesCommentListEnvelope(t *testing.T) {
 		})
 	}
 }
+
+func TestProtocolSuccessRequiresCreatedPRHTMLURL(t *testing.T) {
+	// R-APSC-24AL
+	tests := []struct {
+		name       string
+		createdPR  map[string]any
+		wantURL    string
+		wantErr    bool
+		wantBodies []string
+	}{
+		{
+			name:       "html_url is persisted and posted",
+			createdPR:  map[string]any{"number": 17, "html_url": "https://example.test/pull/17"},
+			wantURL:    "https://example.test/pull/17",
+			wantBodies: []string{"https://example.test/pull/17"},
+		},
+		{
+			name:      "legacy url field fails loud",
+			createdPR: map[string]any{"number": 17, "url": "https://example.test/pull/17"},
+			wantErr:   true,
+		},
+		{
+			name:      "empty html_url fails loud",
+			createdPR: map[string]any{"number": 17, "html_url": ""},
+			wantErr:   true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var commentBodies []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var call struct {
+					Params struct {
+						Name      string         `json:"name"`
+						Arguments map[string]any `json:"arguments"`
+					} `json:"params"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
+					t.Error(err)
+				}
+
+				result := any(map[string]any{})
+				switch call.Params.Name {
+				case "pr_create":
+					result = test.createdPR
+				case "issue_comment":
+					body, ok := call.Params.Arguments["body"].(string)
+					if !ok {
+						t.Errorf("issue_comment body = %#v", call.Params.Arguments["body"])
+					} else {
+						commentBodies = append(commentBodies, body)
+					}
+				case "label_remove":
+				default:
+					t.Errorf("unexpected github call %q", call.Params.Name)
+				}
+				if err := json.NewEncoder(w).Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      1,
+					"result":  result,
+				}); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+
+			issueNumber := 17
+			protocol := NewProtocol(NewGitHubPeerAt(server.URL, server.Client()))
+			gotURL, err := protocol.Success(context.Background(), Session{
+				ID:          "session-17",
+				RepoName:    "alpha",
+				OwnerEmail:  "owner@example.com",
+				IssueNumber: &issueNumber,
+				Branch:      "ikibot/issue-17",
+			}, Repo{
+				Name:          "alpha",
+				DefaultBranch: "main",
+			}, "Fix the issue", "Implemented the fix.", "passed")
+
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("Success accepted a created PR without html_url")
+				}
+				if gotURL != "" {
+					t.Fatalf("Success URL = %q, want empty on error", gotURL)
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if gotURL != test.wantURL {
+					t.Fatalf("Success URL = %q, want %q", gotURL, test.wantURL)
+				}
+			}
+			if !reflect.DeepEqual(commentBodies, test.wantBodies) {
+				t.Fatalf("issue_comment bodies = %#v, want %#v", commentBodies, test.wantBodies)
+			}
+		})
+	}
+}
