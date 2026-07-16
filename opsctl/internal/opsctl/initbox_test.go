@@ -46,8 +46,9 @@ func TestInitBoxDoesNotCreateServedTreeGroup(t *testing.T) {
 	}
 }
 
-func TestInitBoxInstallsBaselinePDFToolsWhenSkippingCert(t *testing.T) {
+func TestInitBoxInstallsBaselineCommandLineToolsWhenSkippingCert(t *testing.T) {
 	// R-WHC0-I9HL
+	// R-JQGB-RYA2
 	root := t.TempDir()
 	sysRoot := t.TempDir()
 	sys := &stubSystem{}
@@ -69,7 +70,7 @@ func TestInitBoxInstallsBaselinePDFToolsWhenSkippingCert(t *testing.T) {
 		t.Fatalf("init-box --skip-cert: %v", err)
 	}
 
-	want := "install-packages:nginx,certbot,poppler-utils"
+	want := "install-packages:nginx,certbot,poppler-utils,git,sqlite"
 	for _, op := range sys.opSeq() {
 		if op == want {
 			return
