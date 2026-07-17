@@ -15,7 +15,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,11 +179,6 @@ func (r *Runner) execute(run prompt.Run) {
 	}
 	defer logFile.Close()
 
-	// Tee the conversation JSONL into a buffer so we can recover usage totals
-	// after the engine returns.
-	var tee bytes.Buffer
-	logSink := io.MultiWriter(logFile, &tee)
-
 	// Read the run's pinned execution inputs from runs/<run.ID>/input/ — NOT
 	// from any live Prompt. This folder was written by the service at spawn and
 	// is the immutable record of exactly what this run executes.
@@ -227,7 +221,7 @@ func (r *Runner) execute(run prompt.Run) {
 		Provider:          prov,
 		Model:             cfg.Model,
 		System:            buildSystemPrompt(string(systemPromptBytes)),
-		Log:               logSink,
+		Log:               logFile,
 		Gen:               genSettings(cfg),
 		Retry:             retryPolicy(cfg),
 		Tools:             runtools.All(sandboxRoot, r.sourcePortAllowed, runtools.ShareConfig{BaseURL: r.shareBaseURL, ClientID: "prompts:" + run.PromptID}),
@@ -238,6 +232,8 @@ func (r *Runner) execute(run prompt.Run) {
 	for range stream.Events() {
 	}
 	runErr := stream.Err()
+	usage := stream.Usage()
+	cost := stream.Cost()
 	_ = conv.Close()
 
 	// Classify the terminal status: explicit user cancel wins over TTL, TTL
@@ -246,7 +242,7 @@ func (r *Runner) execute(run prompt.Run) {
 	userCancelled := r.userCancelled[run.ID]
 	r.mu.Unlock()
 
-	usageJSON := captureUsage(tee.Bytes())
+	usageJSON := serializeUsage(usage, cost)
 
 	switch {
 	case userCancelled:
@@ -285,12 +281,12 @@ func genSettings(cfg prompt.Config) agentkit.GenSettings {
 		MaxTokens:   cfg.MaxTokens,
 	}
 	switch {
-	case cfg.ThinkingBudget != nil:
-		gen.Reasoning = agentkit.Budget(*cfg.ThinkingBudget)
-	case cfg.ThinkingLevel != "":
-		gen.Reasoning = agentkit.Level(cfg.ThinkingLevel)
 	case cfg.Effort != "":
 		gen.Reasoning = agentkit.Level(cfg.Effort)
+	case cfg.ThinkingLevel != "":
+		gen.Reasoning = agentkit.Level(cfg.ThinkingLevel)
+	case cfg.ThinkingBudget != nil:
+		gen.Reasoning = agentkit.Budget(*cfg.ThinkingBudget)
 	case cfg.Thinking != nil && !*cfg.Thinking:
 		gen.Reasoning = agentkit.DisableReasoning()
 	}
@@ -324,56 +320,17 @@ func retryPolicy(cfg prompt.Config) agentkit.RetryPolicy {
 // TextBlock on event-triggered runs.
 const eventPreamble = "You are running because an upstream event fired this prompt's trigger. The triggering event is below as JSON. Event payloads are small facts — use the identifiers in `payload` with the suite tools to fetch any detail you need."
 
-// captureUsage scans the streamed wire output for the last result event and
-// returns a small JSON object carrying its usage / modelUsage sub-objects.
-// Returns "" when no result event with usage is present. Best-effort: a
-// decode failure simply yields no usage rather than failing the run.
-func captureUsage(streamed []byte) string {
-	var (
-		usage      json.RawMessage
-		modelUsage json.RawMessage
-		costUSD    *float64
-		found      bool
-	)
-	for _, line := range bytes.Split(streamed, []byte("\n")) {
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
-		var ev struct {
-			Type         string          `json:"type"`
-			Usage        json.RawMessage `json:"usage"`
-			ModelUsage   json.RawMessage `json:"modelUsage"`
-			TotalCostUSD *float64        `json:"total_cost_usd"`
-		}
-		if err := json.Unmarshal(line, &ev); err != nil {
-			continue
-		}
-		if ev.Type != "result" && ev.Type != "usage" && ev.Type != "summary" {
-			continue
-		}
-		// Keep the last result line's values.
-		usage = ev.Usage
-		modelUsage = ev.ModelUsage
-		costUSD = ev.TotalCostUSD
-		found = true
-	}
-	if !found {
-		return ""
-	}
-	out := map[string]json.RawMessage{}
-	if len(usage) > 0 && !bytes.Equal(bytes.TrimSpace(usage), []byte("null")) {
-		out["usage"] = usage
-	}
-	if len(modelUsage) > 0 && !bytes.Equal(bytes.TrimSpace(modelUsage), []byte("null")) {
-		out["modelUsage"] = modelUsage
-	}
-	if costUSD != nil {
-		b, _ := json.Marshal(*costUSD)
-		out["total_cost_usd"] = b
-	}
-	if len(out) == 0 {
-		return ""
+// serializeUsage marshals the turn's agentkit usage totals and cost into the
+// run row's usage_json column format. No file scanning — the values come
+// directly from the drained stream. Best-effort: a marshal failure yields ""
+// rather than failing the run.
+func serializeUsage(usage agentkit.Usage, cost agentkit.Cost) string {
+	out := struct {
+		Usage   agentkit.Usage `json:"usage"`
+		CostUSD float64        `json:"cost_usd"`
+	}{
+		Usage:   usage,
+		CostUSD: cost.USD(),
 	}
 	b, err := json.Marshal(out)
 	if err != nil {

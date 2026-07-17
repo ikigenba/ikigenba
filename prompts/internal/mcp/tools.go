@@ -430,7 +430,7 @@ func configSchema() map[string]any {
 		"effort":             typ("string"),
 		"thinking_budget":    typ("integer"),
 		"thinking_level":     typ("string"),
-		"thinking":           typ("string"),
+		"thinking":           typ("boolean"),
 		"max_attempts":       typ("integer"),
 		"base_delay":         typ("string"),
 		"max_delay":          typ("string"),

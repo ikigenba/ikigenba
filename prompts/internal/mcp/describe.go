@@ -45,9 +45,10 @@ LIFECYCLE
   5. run_fs_list / run_fs_read {run_id} -> the files the agent wrote
 
 OUTPUT FORMAT
-- run_output returns a run's log as append-only stream-json:
-  one JSON event per line (the agent's turn-by-turn event stream). offset is
-  1-based; limit caps lines — tail a long run by advancing offset.
+- run_output returns a run's log as append-only LogRecord JSONL:
+  one JSON LogRecord per line (turn_start, message, tool_use, tool_result,
+  usage, turn_end, summary). offset is 1-based; limit caps lines — tail a long
+  run by advancing offset.
 - The *answer* is usually a file in the run's sandbox (e.g. report.md), not the
   agent's final message — read it with run_fs_read.
 
@@ -85,8 +86,8 @@ WORKED EXAMPLE
   run_fs_read {"run_id":"R","path":"report.md"}
 
 CONFIG
-  model is required (e.g. claude-sonnet-4-6 / claude-haiku-4-5, or aliases
-  opus|sonnet|haiku); optional effort (low|medium|high|xhigh|max, model-
+  model is required — the provider-native model id (e.g. claude-sonnet-4-6,
+  claude-haiku-4-5); optional effort (low|medium|high|xhigh|max, model-
   dependent), max_tokens, temperature. health proves the auth chain.`
 
 // toolDescribe returns the on-demand overview. Takes no inputs.

@@ -35,7 +35,7 @@ func TestConfigSchemaIncludesProviderModelAndOptionalExpansion(t *testing.T) {
 		"effort":             "string",
 		"thinking_budget":    "integer",
 		"thinking_level":     "string",
-		"thinking":           "string",
+		"thinking":           "boolean",
 		"max_attempts":       "integer",
 		"base_delay":         "string",
 		"max_delay":          "string",

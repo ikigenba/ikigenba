@@ -86,7 +86,7 @@ func TestLandingHandlerRendersCanonicalPromptsLanding(t *testing.T) {
 		`<a class="home" href="/">Home</a>`,
 		`<div class="eyebrow">Agent sessions</div>`,
 		`<h1 id="page-title">prompts-canary</h1>`,
-		"Prompts runs configured agent sessions through MCP tools and records the resulting outputs.",
+		"Prompts runs sandboxed Claude agent sessions on the owner's behalf and exposes them as MCP tools.",
 		`<dl aria-label="Service details">`,
 		"<dt>Service</dt>",
 		"<dd>prompts-canary</dd>",
