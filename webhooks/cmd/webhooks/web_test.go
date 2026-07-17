@@ -14,7 +14,7 @@ import (
 	"appkit/web"
 )
 
-const webhooksDescription = "Webhooks keeps named inbound endpoints in SQLite and emits typed event-plane messages when callbacks arrive."
+const webhooksDescription = "Webhooks receives inbound HTTP from third parties on per-webhook secret-guarded endpoints and publishes each delivery as a typed event to the event plane."
 
 func TestLoadedShareWWWRendersLandingWithServiceAndVersion(t *testing.T) {
 	site := loadShareWWW(t)

@@ -75,6 +75,23 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	}
 }
 
+// R-IC14-FKIK
+func TestManifestVerbByteEqualsCommittedFile(t *testing.T) {
+	bin := buildBinary(t)
+
+	output, err := exec.Command(bin, "manifest").CombinedOutput()
+	if err != nil {
+		t.Fatalf("webhooks manifest: %v: %s", err, output)
+	}
+	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest.env: %v", err)
+	}
+	if !bytes.Equal(output, committed) {
+		t.Fatalf("manifest verb output != committed etc/manifest.env\n--- verb ---\n%s\n--- committed ---\n%s", output, committed)
+	}
+}
+
 func manifestExtras(in []appkit.ManifestKV) []manifest.KV {
 	out := make([]manifest.KV, 0, len(in))
 	for _, kv := range in {
