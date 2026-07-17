@@ -2,12 +2,13 @@
 
 A deployable path-routed service (`/srv/crm/`) in the ikigenba suite: a
 loopback-only domain service for a sales CRM (organizations, contacts, deals,
-tasks, interactions), exposed as an MCP surface and an event-plane producer.
-Module path: `crm`, built on the shared `appkit` chassis over SQLite. nginx
-(owned by the dashboard) is the sole trust boundary: it introspects each request
-against the dashboard, strips the `/srv/crm/` prefix, and injects trusted
-`X-Owner-Email` / `X-Client-Id` headers, so this service runs no token logic and
-binds `127.0.0.1` only.
+tasks, interactions). It serves two doors under `/srv/crm/`: an MCP surface for
+agents (bearer-gated) and a human web landing page (session-cookie-gated), and it
+is also an event-plane producer. Module path: `crm`, built on the shared `appkit`
+chassis over SQLite. nginx (owned by the dashboard) is the sole trust boundary: it
+introspects each request against the dashboard, strips the `/srv/crm/` prefix, and
+injects trusted `X-Owner-Email` / `X-Client-Id` headers, so this service runs no
+token logic and binds `127.0.0.1` only.
 
 ## How changes are made
 
@@ -22,7 +23,7 @@ instruction. See the `$ikispec` skill for the `project/` spec contracts and
 - `internal/crm/`: the domain package, one file per entity, plus `service.go`
   (dispatcher seam) and `events.go`.
 - `internal/db/`: SQLite open, migration runner, and `migrations/`.
-- `internal/mcp/`: JSON-RPC transport, tool registry, `guide.md`.
+- `internal/mcp/`: the MCP tool table over `appkit/mcp`, plus `guide.md`.
 - `etc/`: `manifest.env` and deploy config.
 - `bin/`: on-box `start`/`stop` systemd control.
 - `project/`: the spec (product/design/plan) the build loop works from.

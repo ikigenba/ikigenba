@@ -116,6 +116,7 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		Mount:   "/srv/crm/",
 		Default: false,
 		// R-X2K6-DUXS
+		// R-X04D-MBGE
 		Port: registry.MustPort("crm"),
 		MCP:  true,
 		Feed: "/feed",
@@ -319,6 +320,16 @@ func TestWWWSiteUsesCanonicalServiceLayout(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("landing HTML missing %q:\n%s", want, body)
 		}
+	}
+}
+
+func TestWWWSiteRendersHomeLinkToDashboardApex(t *testing.T) {
+	// R-HOME-3L5Q
+	rec := renderLanding(t, "crm", "dev")
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `<a class="home" href="/">Home</a>`) {
+		t.Fatalf("landing HTML missing top-left Home link to apex root:\n%s", body)
 	}
 }
 
