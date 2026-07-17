@@ -1,5 +1,5 @@
-// Package web tests the browser-independent landing-page logic.
-package web
+// Browser-independent landing-page logic tests.
+package main
 
 import (
 	"encoding/json"
