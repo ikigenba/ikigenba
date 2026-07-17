@@ -13,7 +13,7 @@ from.
 | `product/` | `README.md` — the *why*, for whom, scope, user-facing promises | `/product-mode` (rewritten in place) |
 | `research/` | `README.md` — the design-informing research spine; plus free-form `*-research.md` working notes | `README.md`: `/research-mode` (rewritten in place). Other notes: free-form. |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `/design-mode` (rewritten in place) |
-| `plan/` | `README.md` (spine) + `STATUS.md` (the manifest — the only home of each phase's `⬜`/`✅` marker) + `phase-NN.md` (one per phase) | `/plan-mode` (append-only) |
+| `plan/` | `README.md` (spine) + `STATUS.md` (the manifest — the `Next phase` counter plus the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per pending phase) | `/plan-mode` (a work queue; completion is deletion — the build loop removes a finished phase's `STATUS.md` line and body file) |
 | `bugs/` | free-form bug diagnoses / write-ups | free-form (not mode-owned) |
 | `requests/` | free-form feature requests | free-form (not mode-owned) |
 | `loops/` | the `ralph` build-loop prompts: `gather.md`, `build.md`, `verify.md` (+ the ephemeral `brief.md`) | build-loop infrastructure |
@@ -47,10 +47,11 @@ either `NEXT` (advance to the next prompt, wrapping `verify → gather`) or `DON
   Otherwise it resolves that phase's Decision(s) and writes a tiny, self-contained
   `loops/brief.md`, then returns `NEXT`.
 - **build** — reads **only** `loops/brief.md`; builds the package + id-tagged
-  tests, runs the suite, commits, leaves the marker untouched. Returns `NEXT`.
-- **verify** — the independent gate and only prompt that flips a marker. Pass →
-  flip that phase's `⬜→✅` in `STATUS.md` and commit; gap → leave it `⬜`. Either
-  way it deletes `loops/brief.md`. Returns `NEXT`.
+  tests, runs the suite, commits, leaves `STATUS.md` untouched. Returns `NEXT`.
+- **verify** — the independent gate and only prompt that mutates `STATUS.md`.
+  Pass → delete that phase's line from `STATUS.md` and its `phase-NN.md` body
+  file, commit the deletion, and delete `loops/brief.md`. Gap → leave the `⬜`
+  line and `loops/brief.md` in place. Returns `NEXT`.
 
 `brief.md` is the ephemeral seam between the prompts — created by `gather`,
 deleted by `verify`, never committed (it is gitignored). The loop is human-free

@@ -29,11 +29,11 @@ Each turn ends with a terminal status `ralph` reads from the final message:
 
 ## Who reads and writes what
 
-| step | reads | writes | commits | flips marker |
+| step | reads | writes | commits | deletes completed phase |
 |---|---|---|---|---|
 | **gather** | `STATUS.md`, one `phase-NN.md`, the realized `DNN.md` via `INDEX.md`, dependency signatures | `brief.md` contract region (fresh phase only; no-ops on an in-flight brief) | never | never |
 | **build** | `brief.md` only (both regions) | source + tests; never the brief | every turn (its increment) | never |
-| **verify** | `brief.md` (both regions), the repo, the suite | `brief.md` feedback region, or deletes the brief | the `⬜→✅` flip on pass | the only flipper |
+| **verify** | `brief.md` (both regions), the repo, the suite | `brief.md` feedback region, or deletes the brief | deletes the phase's `STATUS.md` line + `phase-NN.md` on pass | the only one that does |
 
 `gather` is the only prompt that opens the big docs; `build` and `verify` work
 entirely from the brief.
@@ -49,11 +49,12 @@ repo-root `.gitignore`). It is **phase-scoped, not per-cycle**:
    doc is re-read, and `verify`'s feedback survives.
 2. `build` consumes the whole brief, closes any listed gaps first, and commits
    its increment.
-3. `verify` re-derives coverage from scratch. **Pass** → flip the phase's marker
-   in `STATUS.md`, commit, delete the brief. **Gap** → overwrite the feedback
-   region with only the currently-open gaps (attempt counter, observed build
-   commit, stall streak, each gap tied to an `R-id` and a failing command);
-   the brief persists into the next cycle.
+3. `verify` re-derives coverage from scratch. **Pass** → delete the phase's line
+   from `STATUS.md` and its `phase-NN.md` body file, commit the deletion,
+   delete the brief. **Gap** → overwrite the feedback region with only the
+   currently-open gaps (attempt counter, observed build commit, stall streak,
+   each gap tied to an `R-id` and a failing command); the brief persists into
+   the next cycle.
 
 ## Why it converges
 
@@ -63,9 +64,9 @@ in front of `build`. The persisted feedback gives `verify` cross-cycle memory:
 it distinguishes slow convergence (the open-gap set shrinking/changing) from a
 true stall (the same gap ids with no new build commit for 3 consecutive
 attempts). On a true stall it logs to `~/.ralph/verify.log`, deletes the brief,
-and leaves the marker `⬜`, so the next `gather` rebuilds the contract fresh from
-spec. The only exit is `gather` finding zero `⬜` phases (`DONE`) — or a `ralph`
-budget rail.
+and leaves the phase's `⬜` line in place, so the next `gather` rebuilds the
+contract fresh from spec. The only exit is `gather` finding zero `⬜` phases
+(`DONE`) — or a `ralph` budget rail.
 
 ## The `project/loops/brief.md` schema
 

@@ -13,7 +13,7 @@ from.
 | `product/` | `README.md` — the *why*, for whom, scope, user-facing promises | `/product-mode` (rewritten in place) |
 | `research/` | `README.md` — the design-informing research spine; plus free-form `*-research.md` working notes | `README.md`: `/research-mode` (rewritten in place). Other notes: free-form. |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `/design-mode` (rewritten in place) |
-| `plan/` | `README.md` (spine) + `STATUS.md` (the manifest — the only home of each phase's `⬜`/`✅` marker) + `phase-NN.md` (one per phase) | `/plan-mode` (append-only) |
+| `plan/` | `README.md` (spine) + `STATUS.md` (the manifest — `Next phase` counter + the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per pending phase) | `/plan-mode` (work queue; completion is deletion — history lives in git) |
 | `bugs/` | free-form bug diagnoses / write-ups | free-form (not mode-owned) |
 | `requests/` | free-form feature requests | free-form (not mode-owned) |
 | `loops/` | the `ralph` build-loop prompts: `gather.md`, `build.md`, `verify.md` (+ the ephemeral `brief.md`) | build-loop infrastructure |
@@ -48,9 +48,11 @@ either `NEXT` (advance to the next prompt, wrapping `verify → gather`) or `DON
   `loops/brief.md`, then returns `NEXT`.
 - **build** — reads **only** `loops/brief.md`; builds the package + id-tagged
   tests, runs the suite, commits, leaves the marker untouched. Returns `NEXT`.
-- **verify** — the independent gate and only prompt that flips a marker. Pass →
-  flip that phase's `⬜→✅` in `STATUS.md` and commit; gap → leave it `⬜`. Either
-  way it deletes `loops/brief.md`. Returns `NEXT`.
+- **verify** — the independent gate and only prompt that completes a phase.
+  Pass → delete that phase's `- Phase NN …` line from `STATUS.md` (never the
+  `Next phase` counter line) and its `phase-NN.md` body file, and commit the
+  deletion; gap → leave its `⬜` line untouched. Either way it deletes
+  `loops/brief.md`. Returns `NEXT`.
 
 `brief.md` is the ephemeral seam between the prompts — created by `gather`,
 deleted by `verify`, never committed (it is gitignored). The loop is human-free

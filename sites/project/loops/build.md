@@ -87,7 +87,8 @@ toolchain commands run as written (`cd sites && …`).
 
 - Never read `project/design/*`, `project/plan/*`, or `project/product/*` — the
   brief is your only input.
-- Never edit `project/plan/STATUS.md` or flip a `⬜`/`✅` marker.
+- Never edit `project/plan/STATUS.md` and never delete a phase's line or its
+  `phase-NN.md` body file.
 - Never delete or edit the brief, including its `## Verify feedback` region — you
   **read** that region but never write it.
 - Always report `NEXT` — build hands off every turn; it is never the step that

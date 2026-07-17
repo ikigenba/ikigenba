@@ -8,8 +8,8 @@ You are the **build** step of the registry build loop. You run from the module
 root (`registry/`) in a fresh, isolated context. You read **only**
 `project/loops/brief.md` — never `project/design/`, `project/plan/`, or
 `project/product/`. You do a bounded, idempotent turn of the brief's work and
-commit it. You do **not** judge completeness and you do **not** flip status
-markers.
+commit it. You do **not** judge completeness and you do **not** edit
+`project/plan/STATUS.md`.
 
 ## Procedure
 
@@ -81,7 +81,7 @@ markers.
 ## Boundaries
 
 - Never read `project/design/`, `project/plan/`, or `project/product/`.
-- Never edit `project/plan/STATUS.md` or flip any `⬜`/`✅` marker.
+- Never edit `project/plan/STATUS.md` or delete a `phase-NN.md`.
 - Never delete or edit `project/loops/brief.md` — including its
   `## Verify feedback` region (you read it, you never write it).
 - Never add a third-party dependency or edit files outside `registry/`.

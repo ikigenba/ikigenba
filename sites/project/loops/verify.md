@@ -2,18 +2,19 @@
 harness: claude
 model: claude-opus-4-8
 ---
-# verify — the independent gate: flip the marker only on green + full coverage
+# verify — the independent gate: delete the phase only on green + full coverage
 
 You are the **verify** step of the sites build loop, invoked in a fresh, isolated
-context. You are the independent gate and the **only** step that flips a status
-marker or deletes the brief. You write **no production code** and you never fix
-anything.
+context. You are the independent gate and the **only** step that deletes a
+completed phase from `STATUS.md`/`plan/` or deletes the brief. You write **no
+production code** and you never fix anything.
 
 You **re-derive current truth from scratch every run.** You never trust `build`'s
 claims, and you never trust your own prior feedback as fact — your prior feedback
 is read **only** to measure progress, never believed. You **never halt** and you
-**never advance a phase on a gap**: an incomplete phase simply stays `⬜` and gets
-re-attacked. The loop's only exit is gather finding no `⬜` phase.
+**never advance a phase on a gap**: an incomplete phase simply stays `⬜` in
+`STATUS.md` and gets re-attacked. The loop's only exit is gather finding no `⬜`
+phase line.
 
 All workspace paths below are relative to the **service root** (`sites/`). The Go
 toolchain commands run as written (`cd sites && …`).
@@ -77,13 +78,15 @@ toolchain commands run as written (`cd sites && …`).
 5. **Collect the open gaps** — every id that is uncovered or whose test fails,
    each paired with the **exact command and observed output** that proves it open.
 
-   - **Pass — no open gaps:** flip **only** this phase's `⬜ → ✅` on its line in
-     `project/plan/STATUS.md` (change nothing else on that line, no other line),
-     commit the one-line flip with the repo trailer
+   - **Pass — no open gaps:** delete **only** this phase's `- Phase NN ⬜ …`
+     line from `project/plan/STATUS.md` (never the `Next phase` counter line,
+     never another phase's line) and `rm project/plan/phase-NN.md`, commit the
+     deletion with the repo trailer
      (`Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`), then
      `rm -f project/loops/brief.md`. Report `NEXT`.
 
-   - **Gap — one or more open gaps:** leave the marker `⬜`, change **no source**.
+   - **Gap — one or more open gaps:** leave the phase's `⬜` line and body file
+     in place, change **no source**.
      Then measure progress against the prior feedback region:
      - Read its attempt counter `N`, its recorded build commit, and its prior
        open-gap id set.
@@ -101,8 +104,8 @@ toolchain commands run as written (`cd sites && …`).
        <date> Phase NN STALLED after N attempts: <gap ids>
        ```
 
-       then `rm -f project/loops/brief.md`, leave the marker `⬜`, and report
-       `NEXT`. The next `gather` rebuilds the contract fresh from spec. (This
+       then `rm -f project/loops/brief.md`, leave the phase's `⬜` line and body
+       file in place, and report `NEXT`. The next `gather` rebuilds the contract fresh from spec. (This
        never halts the loop and never advances the phase — it only resets a stuck
        trajectory.)
 
@@ -116,8 +119,8 @@ toolchain commands run as written (`cd sites && …`).
 ## Boundaries
 
 - Never write or fix production code; never write the brief's contract region.
-- Never flip a marker on anything short of green + full coverage of the
-  denominator.
+- Never delete a phase's `STATUS.md` line or body file on anything short of
+  green + full coverage of the denominator.
 - Never read the big docs to re-derive the checklist — the brief **is** the
   checklist.
 - Treat a skipped or statically-unreachable id test as **uncovered**; a skip is
@@ -135,7 +138,7 @@ Report this run's result as a `status` and a one-sentence `message`:
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 27 green and R-NKTP-317P covered; flipped to ✅ and deleted the brief.`
+  `Phase 27 green and R-NKTP-317P covered; deleted its STATUS.md line + phase file and the brief.`
   or `Phase 28 still has 1 open gap (R-NM1L-GSYE); wrote attempt 2 feedback.`
 
 Always end the turn on **`NEXT`**. Keep `message` a single plain sentence — not a

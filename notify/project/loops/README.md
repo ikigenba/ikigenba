@@ -40,16 +40,16 @@ message of a turn drives the loop:
   progress messages with; `ralph` reads only the last message, so `CONTINUE`
   never advances or ends the loop.
 
-## Per-step reads / writes / commits / flips
+## Per-step reads / writes / commits / queue mutations
 
-| step | reads | writes | commits | flips marker |
+| step | reads | writes | commits | mutates queue |
 |---|---|---|---|---|
 | **gather** | `STATUS.md`, one `phase-NN.md`, `design/INDEX.md` + realized `DNN.md`, (product for intent) | `brief.md` **contract region** (fresh phase only; no-ops on an in-flight brief) | no | no |
 | **build** | `brief.md` only (contract + feedback) | service source + co-located id-tagged tests | yes (the code increment) | no |
-| **verify** | `brief.md` (contract + own prior feedback), the suite, the source under test | on pass: nothing; on gap: `brief.md` **feedback region** | on pass: the one `⬜→✅` flip | yes (pass only) |
+| **verify** | `brief.md` (contract + own prior feedback), the suite, the source under test | on pass: nothing; on gap: `brief.md` **feedback region** | on pass: the phase's `STATUS.md` line + `phase-NN.md` deletion | yes (pass only — deletes the phase) |
 
-Only `gather` reads the big docs; only `verify` flips a marker or deletes the
-brief; only `build` writes service code.
+Only `gather` reads the big docs; only `verify` deletes a completed phase from
+the queue or deletes the brief; only `build` writes service code.
 
 ## The brief lifecycle
 
@@ -63,8 +63,9 @@ scoped to one phase without opening design or plan. It is **never committed**
   while that phase is still `⬜`.
 - **build** consumes the whole brief — contract plus any `## Verify feedback` —
   and closes the listed open gaps first; it never writes the brief.
-- **verify** on a **pass** flips the marker and **deletes** the brief; on a **gap**
-  it **overwrites** the feedback region with only the currently-open gaps (each
+- **verify** on a **pass** deletes the phase's `STATUS.md` line and its
+  `phase-NN.md` body file, then **deletes** the brief; on a **gap** it
+  **overwrites** the feedback region with only the currently-open gaps (each
   tied to an `R-id` and the exact failing command/output) and **keeps** the brief,
   so it persists across cycles until the phase passes or a stall reset fires.
 
@@ -79,8 +80,8 @@ memory: it distinguishes *slow convergence* (the open-gap id set shrinking) from
 **no new build commit**). On a true stall it does a **trajectory reset** —
 discards the brief, logs the stall to `~/.ralph/verify.log`, leaves `⬜` — so the
 next `gather` rebuilds the contract fresh. The only exit is `gather → DONE`, which
-requires zero `⬜` markers, so the run ends only when every phase is verified green
-(or a ralph budget rail trips).
+requires the queue to be empty, so the run ends only when every phase has been
+verified green and removed (or a ralph budget rail trips).
 
 ## The `project/loops/brief.md` schema
 
@@ -134,7 +135,7 @@ project/loops/brief.md` yields exactly the active phase's id set.
 - **Test:** `go test ./...`.
 - **"Suite is green":** `go build ./...`, `go vet ./...`, `gofmt -l .` (no
   output), and `go test ./...` all succeed with zero failures.
-- **Next-phase lookup:** `grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1`
-  (STATUS.md phase lines are bare `Phase NN ⬜/✅ …`, not Markdown bullets).
+- **Next-phase lookup:** `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1`
+  (STATUS.md pending-phase lines are Markdown bullets: `- Phase NN ⬜ …`).
 - **Id resolution:** a Decision → its `DNN.md` via `project/design/INDEX.md`; a
   single id via `grep -n R-XXXX-XXXX project/design/INDEX.md`.

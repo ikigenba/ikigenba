@@ -6,7 +6,7 @@ directory it heads own *how* appkit's ralph-governed surfaces are shaped and
 the *why* and the user-facing promises; design states the **exact, checkable
 form** of those promises and never re-declares the why. This design is the
 **single current** statement, rewritten in place (stale decisions removed, not
-stacked); the history of how it got here lives in the plan.
+stacked); construction history lives in git, not here.
 
 > **Scope.** This design covers three threads:
 >
@@ -76,6 +76,8 @@ Shared facts every Decision leans on:
   `go build ./...`, `go vet ./...`, `gofmt -l .` (no output), and `go test ./...`
   all succeed with zero failures, from `appkit/`.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
+- **Requirement-id tag location:** `R-XXXX-XXXX` ids live inline in Go test
+  source, tagged verbatim in files matching `*_test.go`.
 - **Dependencies:** the D5–D9 packages use only the standard library plus the
   existing in-repo `eventplane` sibling (already a committed require/replace in
   `appkit/go.mod`). D10 adds one more **in-repo** replace-sibling, `registry`
@@ -186,6 +188,6 @@ field, `StructuredResult`/`ErrorCode`/`ErrorResult`, dispatch error mapping,
 standard-tool schemas); the route class extends `appkit/server`
 (`LoopbackOnly`, `Router.HandleLoopback`, the wrapped `/feed` mount).
 
-Design is rewritten in place, not append-only (history lives in the plan): a
+Design is rewritten in place, not append-only (construction history lives in git): a
 changed Decision is rewritten in its `DNN.md` and `INDEX.md` is regenerated; a new
 Decision adds a `DNN.md` and an INDEX entry.

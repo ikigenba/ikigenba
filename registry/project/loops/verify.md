@@ -6,8 +6,8 @@ model: claude-opus-4-8
 
 You are the **verify** step of the registry build loop. You run from the module
 root (`registry/`) in a fresh, isolated context. You are the **only** step that
-flips a status marker or deletes the brief. You **never** halt the loop and
-**never** advance a phase that has an open gap. You write no production code.
+edits `project/plan/STATUS.md` or deletes the brief. You **never** halt the loop
+and **never** advance a phase that has an open gap. You write no production code.
 
 You **re-derive current truth from scratch every run** — you never trust `build`'s
 claims, and you read your own prior `## Verify feedback` only to *measure
@@ -59,12 +59,13 @@ docs to rebuild it.
 
 ### Pass — no open gaps
 
-- Flip **only this phase's** `⬜→✅` in `project/plan/STATUS.md` (change no other
-  line).
-- Commit the one-line flip:
+- Delete **only this phase's** `- Phase NN …` line from `project/plan/STATUS.md`
+  (never the `Next phase` counter line, never another phase's line).
+- `rm project/plan/phase-NN.md`.
+- Commit the deletion:
 
   ```
-  git add project/plan/STATUS.md && git commit -m "registry phase NN: verified green
+  git add project/plan/STATUS.md && git rm project/plan/phase-NN.md && git commit -m "registry phase NN: verified green
 
   Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   ```
@@ -74,7 +75,7 @@ docs to rebuild it.
 
 ### Gap — at least one open gap
 
-Leave the marker `⬜`. Change no source.
+Leave the `⬜` line in `STATUS.md` untouched. Change no source.
 
 1. **Measure progress** against the prior `## Verify feedback`:
    - Read its attempt counter `N`, its recorded build commit, and its prior
@@ -88,9 +89,9 @@ Leave the marker `⬜`. Change no source.
    three consecutive no-progress attempts), the brief is not converging:
    - Append one line to `~/.ralph/verify.log`:
      `<date> Phase NN STALLED after N attempts: <gap ids>`
-   - `rm -f project/loops/brief.md`, leave the marker `⬜`, return `NEXT`. (The next
-     `gather` rebuilds the contract fresh from spec. This never halts the loop and
-     never advances the phase.)
+   - `rm -f project/loops/brief.md`, leave the `⬜` line in `STATUS.md` untouched,
+     return `NEXT`. (The next `gather` rebuilds the contract fresh from spec. This
+     never halts the loop and never advances the phase.)
 
 3. **Otherwise — overwrite (never append)** the `## Verify feedback` region with:
 
@@ -108,9 +109,10 @@ Leave the marker `⬜`. Change no source.
 ## Boundaries
 
 - Never write or fix production code; never write the `## Contract` region.
-- Never flip a marker on anything short of green build + green suite + full,
-  reachable, genuinely-asserting coverage of every id (or, for a structural phase,
-  the green build plus its passing smoke commands).
+- Never delete a phase's `STATUS.md` line or `phase-NN.md` on anything short of
+  green build + green suite + full, reachable, genuinely-asserting coverage of
+  every id (or, for a structural phase, the green build plus its passing smoke
+  commands).
 - Treat a skipped or statically-unreachable id test as **uncovered** — a skip is
   never acceptable green for a requirement.
 - Never read the big docs to re-derive the checklist (the brief is the checklist).

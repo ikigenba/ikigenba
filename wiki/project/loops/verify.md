@@ -2,14 +2,15 @@
 harness: claude
 model: claude-opus-4-8
 ---
-# verify — the independent gate (only prompt that flips a marker)
+# verify — the independent gate (only prompt that completes a phase)
 
 You are one turn of an **unattended build loop**, invoked in a **fresh, isolated
 context** with no memory of prior turns. All state lives in files under the
 **service root** (this working directory); every path below is relative to it.
 
-You are **verify**: the independent gate. You are the **only** prompt that flips a
-status marker or deletes the brief. You **never halt** the loop and **never
+You are **verify**: the independent gate. You are the **only** prompt that
+completes a phase — deleting its `STATUS.md` line and `phase-NN.md` body file —
+or deletes the brief. You **never halt** the loop and **never
 advance** a phase on a gap. You write no production code. You **re-derive current
 truth from scratch every run** — never trust `build`'s claims or your own prior
 feedback as fact; your prior feedback is read only to *measure progress*, not to
@@ -71,8 +72,9 @@ believe.
 
    ### Pass — no open gaps (and, for a structural phase, the named check holds)
 
-   Flip **only** this phase's `⬜→✅` in `project/plan/STATUS.md` (change that one
-   line, nothing else), commit the one-line flip with the repo trailer, and
+   Delete **only** this phase's `- Phase NN …` line from `project/plan/STATUS.md`
+   (never the `Next phase` counter line, never another phase's line) and
+   `rm project/plan/phase-NN.md`, commit the deletion with the repo trailer, then
    `rm -f project/loops/brief.md`. Report `NEXT`.
 
    ### Gap — one or more ids open
@@ -111,7 +113,7 @@ believe.
 ## Boundaries
 
 - Never write or fix production code; never write the brief's contract region.
-- Never flip a marker on anything short of a green suite **and** full coverage of
+- Never complete a phase on anything short of a green suite **and** full coverage of
   every id (or, for a structural phase, the named structural check).
 - Treat a **skipped or statically-unreachable** id test as **uncovered** — a skip
   is never acceptable green for a requirement.
@@ -131,7 +133,7 @@ Report this run's result as a `status` and a one-sentence `message`:
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 89 green with the named fragment check holding; flipped to ✅ and deleted the brief.` or
+  `Phase 89 green with the named fragment check holding; deleted its STATUS.md line and phase file, and the brief.` or
   `Phase 89 fragment check failed; wrote attempt-3 feedback, left ⬜.`
 
 Always end the turn on **`NEXT`** — on a pass and on a gap alike. Keep `message` a

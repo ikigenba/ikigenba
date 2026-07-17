@@ -14,8 +14,8 @@ docs. The brief is the complete and only contract for the one phase in flight: i
 carries the realized Decision's full design prose, the exact ids to cover with
 their requirement text, the files to touch, the dependency interface signatures,
 and the done bar. Do a bounded, idempotent turn of the phase's remaining work and
-commit it. You do **not** decide completeness and you do **not** flip status
-markers — that is verify's job.
+commit it. You do **not** decide completeness and you do **not** delete a
+phase's `STATUS.md` line or body file — that is verify's job.
 
 ## Procedure
 
@@ -87,8 +87,8 @@ markers — that is verify's job.
 - Never read `project/design/*`, `project/plan/*`, or `project/product/*` — the
   brief is your only input. If it seems insufficient, do what it does support and
   report `NEXT`; gather will re-author it if the phase resets.
-- Never edit `project/plan/STATUS.md` or flip a `⬜`/`✅` marker — that is verify's
-  sole right.
+- Never edit `project/plan/STATUS.md` or delete a phase's line/body file — that is
+  verify's sole right.
 - Never delete or edit `project/loops/brief.md`, including its `## Verify feedback`
   region — you **read** the feedback but never write it.
 - Never make an empty commit.

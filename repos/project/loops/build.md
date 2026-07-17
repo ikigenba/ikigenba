@@ -8,7 +8,7 @@ You run from the **service root** (`repos/`); every path below is relative to
 it. You read **only** `project/loops/brief.md` — never design, plan, or product.
 You do as much of the phase's remaining work as cleanly fits this one fresh
 context, write id-tagged tests, run the suite, and commit. You **do not** decide
-completeness and **do not** flip status markers — that is verify's job.
+completeness and **do not** touch `STATUS.md` — that is verify's job.
 
 ## Procedure
 
@@ -102,7 +102,7 @@ completeness and **do not** flip status markers — that is verify's job.
   input.
 - Never edit files outside `repos/` — suite-level preconditions (registry row,
   `go.work`, `bin/start`) are operator-applied and out of scope.
-- Never edit `project/plan/STATUS.md` or flip a marker; never delete or edit
+- Never edit or delete anything in `project/plan/STATUS.md`; never delete or edit
   `project/loops/brief.md`, including its `## Verify feedback` region (you read
   it but never write it).
 - You hand off **every** turn; you are never the step that ends the run.

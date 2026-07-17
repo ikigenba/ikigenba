@@ -2,18 +2,20 @@
 harness: claude
 model: claude-opus-4-8
 ---
-# verify — the independent gate: flip on green + full coverage, else record gaps
+# verify — the independent gate: remove from the queue on green + full coverage, else record gaps
 
 You are the **verify** step of the notify build loop, invoked in a fresh,
-isolated context. You are the independent gate and the **only** step that flips a
-status marker or deletes the brief. You write **no production code** and you never
-fix anything. You **re-derive current truth from scratch every run** — you never
-trust `build`'s claims, and you read your own prior feedback only to *measure
+isolated context. You are the independent gate and the **only** step that deletes
+a phase from the queue (its `STATUS.md` line and its `phase-NN.md` body) or
+deletes the brief. You write **no production code** and you never fix anything.
+You **re-derive current truth from scratch every run** — you never trust
+`build`'s claims, and you read your own prior feedback only to *measure
 progress*, never to believe it.
 
 You **never halt** and you **never advance a phase on a gap**: an incomplete phase
-stays `⬜` and gets re-attacked next cycle, now with your grounded feedback in
-front of `build`. The loop's only exit is gather finding no `⬜` phase.
+stays `⬜` in the queue and gets re-attacked next cycle, now with your grounded
+feedback in front of `build`. The loop's only exit is gather finding the queue
+empty.
 
 All paths below are relative to the **service root** (`notify/`), which is your
 working directory.
@@ -69,14 +71,15 @@ working directory.
 4. **Decide:**
 
    - **Pass** (no open gaps: suite fully green **and** every id genuinely covered
-     and reachable, or the structural check satisfied): flip **only this phase's**
-     marker in `project/plan/STATUS.md` from `⬜` to `✅` — change nothing else on
-     that line, no other line — commit just that one-line flip, then delete the
-     brief:
+     and reachable, or the structural check satisfied): delete **only this
+     phase's** line from `project/plan/STATUS.md` — change nothing else on that
+     file, no other line — and `rm` its `project/plan/phase-NN.md` body file,
+     commit that deletion, then delete the brief:
 
      ```
+     git rm project/plan/phase-NN.md
      git add project/plan/STATUS.md
-     git commit -m "notify Phase NN: verified green — mark ✅
+     git commit -m "notify Phase NN: verified green — complete, removed from queue
 
      Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
      rm -f project/loops/brief.md
@@ -113,12 +116,13 @@ working directory.
   is left for the next build turn.
 - Never write the brief's `## Contract` region; on a gap you write **only** the
   `## Verify feedback` region (or delete the brief on a pass or stall reset).
-- Never flip a marker on anything short of a fully green suite **and** full,
-  genuine, reachable id coverage (or, for a structural phase, the named content
-  check). Flip at most one marker per invocation (the current phase's).
-- Never read the big docs (`project/plan/*` beyond the one `STATUS.md` line you
-  flip, `project/design/*`, `project/product/*`) to re-derive the checklist — the
-  brief **is** the checklist.
+- Never delete a phase from the queue on anything short of a fully green suite
+  **and** full, genuine, reachable id coverage (or, for a structural phase, the
+  named content check). Delete at most one phase (line + body file) per
+  invocation (the current phase's).
+- Never read the big docs (`project/plan/*` beyond the one `STATUS.md` line and
+  `phase-NN.md` you delete, `project/design/*`, `project/product/*`) to re-derive
+  the checklist — the brief **is** the checklist.
 - Treat a skipped or statically-unreachable id test as **uncovered** — a skip is
   never acceptable green.
 
@@ -130,9 +134,9 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
+  `NEXT`; only gather, finding the queue empty, ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 13 verified green — marked ✅ and deleted the brief.`
+  `Phase 13 verified green — removed from the queue and deleted the brief.`
 
 Always return `NEXT` — verify hands off every turn, on a pass and on a gap, and is
 never the step that ends the run. Keep `message` a single plain sentence, not a

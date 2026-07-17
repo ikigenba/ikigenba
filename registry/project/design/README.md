@@ -7,7 +7,7 @@ form** of those promises and never re-declares the why. Design *uses* the
 product's contractual constants (`dashboard = 3000`, loopback host `127.0.0.1`) by
 value but does not own them. This is the **single, current** statement of the
 architecture: when a decision changes its file is rewritten in place (never
-stacked); the history of how it got here lives in the plan.
+stacked); construction history lives in git, not here.
 
 ## Requirement ids
 

@@ -2,14 +2,15 @@
 harness: claude
 model: claude-opus-4-8
 ---
-# verify — the independent gate: flip the marker only on green + full coverage
+# verify — the independent gate: complete the phase only on green + full coverage
 
 You are the **verify** step of the cron build loop, invoked in a fresh, isolated
-context. You are the independent gate and the **only** step that flips a status
-marker or deletes the brief. You write **no production code** and you never fix
-anything. You **re-derive current truth from scratch every run** — you never trust
-build's claims or your own prior feedback as input; your prior feedback is read
-only to measure progress, not believed.
+context. You are the independent gate and the **only** step that completes a
+phase (deletes its `STATUS.md` line and body file) or deletes the brief. You
+write **no production code** and you never fix anything. You **re-derive current
+truth from scratch every run** — you never trust build's claims or your own
+prior feedback as input; your prior feedback is read only to measure progress,
+not believed.
 
 You **never halt** and you **never advance a phase on a gap**: an incomplete phase
 simply stays `⬜` and gets re-attacked next cycle. The loop's only exit is gather
@@ -68,14 +69,15 @@ working directory.
 4. **Decide:**
 
    - **Pass** (no open gaps: suite fully green **and** every id genuinely covered
-     and reachable, or the structural check satisfied): flip **only this phase's**
-     marker in `project/plan/STATUS.md` from `⬜` to `✅` — change nothing else on
-     that line, no other line — commit just that one-line flip, then delete the
-     brief:
+     and reachable, or the structural check satisfied): delete **only this
+     phase's** `- Phase NN …` line from `project/plan/STATUS.md` — never the
+     `Next phase` counter line, never another phase's line — and `rm` its
+     `project/plan/phase-NN.md`. Commit the deletion, then delete the brief:
 
      ```
+     git rm project/plan/phase-NN.md
      git add project/plan/STATUS.md
-     git commit -m "cron Phase NN: verified green — mark ✅
+     git commit -m "cron Phase NN: verified green — complete phase
 
      Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
      rm -f project/loops/brief.md
@@ -115,14 +117,14 @@ working directory.
   there's a gap, you leave it for the next build turn.
 - Never write the brief's **contract region** — you own only the `## Verify
   feedback` region (overwrite it, never append).
-- Never flip a marker on anything short of a fully green suite **and** full,
+- Never complete a phase on anything short of a fully green suite **and** full,
   genuine, reachable id coverage (or, for a structural phase, the named content
   check). Treat a skipped or statically-unreachable id test as **uncovered** — a
   skip is never acceptable green.
 - Never read the big docs (`project/plan/*` beyond the one `STATUS.md` line you
-  flip, `project/design/*`, `project/product/README.md`) to re-derive the checklist
-  — the brief **is** the checklist.
-- Flip at most one marker per invocation (the current phase's).
+  delete, `project/design/*`, `project/product/README.md`) to re-derive the
+  checklist — the brief **is** the checklist.
+- Complete at most one phase per invocation (the current phase's).
 
 ## Reporting the result
 
@@ -135,7 +137,7 @@ Report this run's result as a `status` and a one-sentence `message`:
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 11 verified green — marked ✅ and deleted brief` or
+  `Phase 11 verified green — completed and deleted brief` or
   `Phase 11 left ⬜ (gap: R-3V6H-7F1M nginx assertion failing); wrote feedback`.
 
 Keep `message` a single plain sentence — not a JSON object or code block.

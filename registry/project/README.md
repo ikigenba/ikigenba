@@ -20,7 +20,7 @@ in one of the folders below. Paths are written relative to the **module root**
 | `product/` | `product.md` — the *why*, for whom, scope, promises | `/product-mode` (rewritten in place) |
 | `research/` | design-informing research notes (none yet) | free-form / `/research-mode` |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `/design-mode` (rewritten in place) |
-| `plan/` | `README.md` (rules) + `STATUS.md` (the manifest — only home of each phase's `⬜`/`✅` marker) + `phase-NN.md` (one per phase) | `/plan-mode` (append-only) |
+| `plan/` | `README.md` (rules) + `STATUS.md` (the manifest — `Next phase` counter + only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per **pending** phase; completion deletes it) | `/plan-mode` (work queue) |
 | `bugs/` | free-form bug diagnoses | free-form (not mode-owned) |
 | `requests/` | free-form feature requests | free-form (not mode-owned) |
 | `loops/` | the `ralph` build-loop prompts: `gather.md`, `build.md`, `verify.md` (+ the ephemeral `brief.md`) and `run` | build-loop infrastructure |
@@ -40,15 +40,17 @@ one JSON object whose `status` is `NEXT` (advance, wrapping `verify → gather`)
 `DONE` (stop).
 
 - **gather** — the only prompt that reads the big docs. Greps `STATUS.md` for the
-  first `⬜` phase; if none, returns `DONE` (the sole exit). Otherwise it resolves
-  that phase's Decision(s) and writes a tiny, self-contained `loops/brief.md`,
-  then returns `NEXT`. It preserves an in-flight brief rather than regenerating it.
+  first `⬜` phase; if none, the queue is empty and it returns `DONE` (the sole
+  exit). Otherwise it resolves that phase's Decision(s) and writes a tiny,
+  self-contained `loops/brief.md`, then returns `NEXT`. It preserves an in-flight
+  brief rather than regenerating it.
 - **build** — reads **only** `loops/brief.md`; builds the package + id-tagged
-  tests, runs the suite, commits, leaves the marker untouched. Returns `NEXT`.
-- **verify** — the independent gate and only prompt that flips a marker. Pass →
-  flip that phase's `⬜→✅` in `STATUS.md`, commit, and delete `brief.md`; gap →
-  leave `⬜` and overwrite the brief's feedback region with the open gaps (the
-  brief persists). Returns `NEXT`.
+  tests, runs the suite, commits, touches no `STATUS.md` line. Returns `NEXT`.
+- **verify** — the independent gate and only prompt that edits `STATUS.md`. Pass →
+  delete that phase's `- Phase NN …` line from `STATUS.md` and `rm` its
+  `phase-NN.md`, commit the deletion, and delete `brief.md`; gap → leave the
+  `⬜` line as is and overwrite the brief's feedback region with the open gaps
+  (the brief persists). Returns `NEXT`.
 
 `brief.md` is the ephemeral seam between the prompts — created by `gather`, deleted
 by `verify` on a pass, never committed (it is gitignored via the repo-root

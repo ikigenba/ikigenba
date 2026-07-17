@@ -18,8 +18,8 @@ for exactly one phase. You write no code, run no tests, and commit nothing.
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** → every phase is verified done. Report `DONE` (this is the
-     only way the loop ends). Do nothing else.
+   - **No match** → the queue is empty. Report `DONE` (this is the only way
+     the loop ends). Do nothing else.
    - **Match** → note the phase number `NN` from the line. Continue.
 
 2. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read

@@ -40,19 +40,19 @@ harness supplies the `{status, message}` schema out of band and reads back the
   messages it emits *before* its terminal message. `ralph` reads only the last
   message, so `CONTINUE` never advances or ends the loop.
 
-## Per-step reads / writes / commits / flips
+## Per-step reads / writes / commits / queue mutation
 
-| step | reads | writes | commits | flips marker |
+| step | reads | writes | commits | removes phase from queue |
 |---|---|---|---|---|
 | **gather** | `STATUS.md`, one `phase-NN.md`, `INDEX.md`, the realized `DNN.md`, `product/README.md` (intent) | the brief's **contract region** (fresh phase only) | no | no |
 | **build**  | **only** `project/loops/brief.md` (both regions) | source + co-located id-tagged tests | yes (the increment) | no |
-| **verify** | `project/loops/brief.md` + runs the suite | the brief's **feedback region** (on a gap) | yes (the one-line `⬜→✅` flip, on pass) | yes (on pass) |
+| **verify** | `project/loops/brief.md` + runs the suite | the brief's **feedback region** (on a gap) | yes (the `STATUS.md` line + `phase-NN.md` deletion, on pass) | yes (on pass) |
 
 The toolchain the prompts bake in (from design's *Conventions*): "green" means
 `cd gmail && go build ./...`, `cd gmail && go vet ./...`,
 `cd gmail && gofmt -l .` (no output), and `cd gmail && go test ./...` all succeed
 with zero failures. The next-phase lookup is
-`grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1`. Tests are co-located
+`grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1`. Tests are co-located
 with the code they exercise as `*_test.go` files named for the behavior (e.g.
 `cmd/gmail/nginx_test.go`, `cmd/gmail/landing_test.go`), never in a per-phase or
 root-level file.
@@ -68,10 +68,11 @@ It is **never committed** (listed in the repo-root `.gitignore` via
   while that same phase is still in flight.
 - `build` consumes the whole brief — contract **and** verify-feedback regions —
   and closes any open gaps first; it never writes the brief.
-- `verify` re-derives truth independently and either **passes** the phase (flip
-  `⬜→✅`, commit, delete the brief) or records a **gap** (overwrite the feedback
-  region with only the currently-open gaps, keep the brief). The brief therefore
-  **persists across cycles** until the phase passes or a stall reset discards it.
+- `verify` re-derives truth independently and either **passes** the phase (delete
+  its `STATUS.md` line and `phase-NN.md`, commit, delete the brief) or records a
+  **gap** (overwrite the feedback region with only the currently-open gaps, keep
+  the brief). The brief therefore **persists across cycles** until the phase
+  passes or a stall reset discards it.
 
 ## Why it converges (human-free)
 

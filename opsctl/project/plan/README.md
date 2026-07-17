@@ -1,13 +1,22 @@
 # opsctl — Plan
 
-**Authority: construction order and history.** This document and the
-`project/plan/` directory it heads own the **build order** and the **record of
-what has been built**. The plan is **append-only**: completed phases are never
-rewritten or deleted, so the plan doubles as the construction history. To extend
-it, update `project/product/` and `project/design/` **in place** first, then
-**append** a new phase here — a new `project/plan/phase-NN.md` body plus a new
-line in `project/plan/STATUS.md`. Never edit a finished phase except to flip its
-status marker in `STATUS.md`.
+**Authority: construction order.** This document and the `project/plan/`
+directory it heads own the **build order** of **pending** work only. Completion
+is deletion: when a phase is done, the build loop removes its line from
+`project/plan/STATUS.md` and deletes its `project/plan/phase-NN.md` body file in
+the completion commit — the plan never holds finished work, so it can never
+contradict a design that has since moved on. The record of what was built is
+git's (the completion commits, and the deleted files recoverable there). To
+extend the plan, update `project/product/` and `project/design/` **in place**
+first, then **append** a new phase — a new `project/plan/phase-NN.md` body plus
+a new line in `project/plan/STATUS.md`, numbered from the `Next phase` counter.
+Phase numbers are never reused: never renumber an existing phase, never reuse a
+number after its files are deleted.
+
+The **coverage invariant**: every *current* design Verification id is either
+already realized — its id appearing verbatim as a tag in a test file that runs
+under the suite — or assigned to exactly one pending phase. No current id is
+unassigned, split, or duplicated across pending phases.
 
 ## One phase = one package = one build-turn context
 
@@ -46,13 +55,16 @@ split.
 
 The plan is **split for addressability**:
 
-- `project/plan/STATUS.md` — the manifest: one line per phase in build order, and
-  the **only** home of each phase's status marker (`⬜` not started / `✅` done).
-- `project/plan/phase-NN.md` — one body file per phase (zero-padded; sub-phases
-  keep their suffix, e.g. `phase-07a.md`). Carries no status marker of its own.
+- `project/plan/STATUS.md` — the manifest: the `Next phase` counter plus one line
+  per **pending** phase in build order, and the **only** home of a phase's
+  pending marker (`⬜`).
+- `project/plan/phase-NN.md` — one body file per **pending** phase (zero-padded;
+  sub-phases keep their suffix, e.g. `phase-07a.md`). Carries no status marker of
+  its own.
 - `project/plan/README.md` — these static, invariant rules; it never grows with
   the project.
 
-Append-only for this layout: never rewrite or delete a `phase-NN.md`, never delete
-a `STATUS.md` line; the only build-time mutation is flipping one phase's `⬜ → ✅`
-in `STATUS.md`.
+Completion-is-deletion for this layout: the build loop's only mutations are
+removing a finished phase's `STATUS.md` line together with its `phase-NN.md`.
+The `Next phase` counter is never decremented and never touched by that
+deletion — it only ever advances when a new phase is appended.

@@ -9,7 +9,7 @@ why. Design **uses** the product's contractual constants by value
 (`/srv/webhooks/`, starting version `0.1.0`) but does not own them. This is the
 **single, current** statement of the architecture — when a decision changes its
 `DNN.md` is rewritten in place (stale decisions removed, not stacked); the
-history of how it got here lives in the plan, not here.
+construction history of how it got here lives in git, not here.
 
 ## Requirement ids
 
@@ -39,6 +39,8 @@ history of how it got here lives in the plan, not here.
   `go vet ./...`. Tests run against **real SQLite** (temp-file DBs via
   `db.Open`, the suite convention) — never a mocked store — with a deterministic
   injected clock.
+- **Requirement-id test-file glob:** `*_test.go` — every `// R-XXXX-XXXX` tag
+  lives in a Go test file matching this glob.
 - **DB / migrations:** schema lives in `internal/db/migrations/` as ordered,
   immutable SQL applied forward-only by the appkit runner. New migrations are
   created with `bin/create-migration webhooks <name>` (timestamped); numbers are

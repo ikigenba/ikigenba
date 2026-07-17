@@ -12,7 +12,7 @@ runs from.
 | `product/` | `README.md` — the *why*, for whom, scope, user-facing promises | `$seal-spec` (rewritten in place) |
 | `research/` | design-informing research notes (`*-research.md`), if any | free-form (not mode-owned) |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
-| `plan/` | `README.md` (spine) + `STATUS.md` (the manifest — the only home of each phase's `⬜`/`✅` marker) + `phase-NN.md` (one per phase) | `$seal-spec` (append-only) |
+| `plan/` | `README.md` (spine) + `STATUS.md` (the manifest — the `Next phase` counter and the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per pending phase) | `$seal-spec` (appends); the build loop deletes completed phases |
 | `bugs/` | free-form bug diagnoses / write-ups | free-form (not mode-owned) |
 | `requests/` | free-form feature requests | free-form (not mode-owned) |
 | `loops/` | the `ralph` build-loop prompts: `gather.md`, `build.md`, `verify.md` (+ the ephemeral `brief.md`) | build-loop infrastructure |
@@ -40,5 +40,6 @@ ralph project/loops/gather.md project/loops/build.md project/loops/verify.md
 It cycles the prompts in fresh contexts — `gather → build → verify → …`:
 `gather` picks the next `⬜` phase from `plan/STATUS.md` and writes a
 self-contained brief, `build` writes the code + id-tagged tests, and `verify` is
-the independent gate that flips the one marker. The loop stops when `gather`
-finds no `⬜` phase.
+the independent gate that, on a pass, deletes the phase's `STATUS.md` line and
+its `phase-NN.md` body file — there is no done marker; done is gone. The loop
+stops when `gather` finds no `⬜` phase.

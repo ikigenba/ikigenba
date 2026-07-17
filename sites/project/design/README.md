@@ -10,7 +10,7 @@ sites serves every byte under its mount; the visibility gate is nginx's; the
 landing page is session-gated and shows version + site list; the visual system is
 Carbon) but does **not** own them. This is the single, current statement of the
 architecture — it is rewritten in place to stay true (stale decisions are
-removed, not stacked); the history of how it got here lives in the plan.
+removed, not stacked); construction history lives in git, not here.
 
 > **Scope.** This design covers sites' whole current surface: the slug/visibility
 > domain (`internal/sites`), the in-process static server (`internal/serve`), the
@@ -44,7 +44,8 @@ Shared facts every Decision leans on:
   `cd sites && go vet ./...`. The production build adds
   `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off -buildvcs=false` (driven by
   `bin/ship sites`).
-- **Test command:** `cd sites && go test ./...`. **"The suite is green"** means:
+- **Test command:** `cd sites && go test ./...`. **The test-file glob where
+  requirement-id tags live is `*_test.go`.** **"The suite is green"** means:
   `cd sites && go build ./...`, `cd sites && go vet ./...`, `cd sites && gofmt -l .`
   (no output), and `cd sites && go test ./...` all succeed with zero failures.
   **Green includes the browser wiring test (D23) and therefore hard-requires a
@@ -207,8 +208,8 @@ chassis, including the landing page's client script `share/www/static/landing.js
 (D22, filter/sort/paginate). There is **no** working tree, no served-symlink
 tree, and no `internal/web` package.
 
-Design is **rewritten in place**, not append-only (history lives in the plan): a
-changed Decision is rewritten in its `DNN.md` and `INDEX.md` is regenerated; a new
-Decision adds a `DNN.md` and an INDEX entry. Existing `R-XXXX-XXXX` ids are stable
-handles — never renumbered; a newly added behavior gets a freshly minted id, and a
-removed behavior's id is deleted with it.
+Design is **rewritten in place**, not append-only (construction history lives in
+git): a changed Decision is rewritten in its `DNN.md` and `INDEX.md` is
+regenerated; a new Decision adds a `DNN.md` and an INDEX entry. Existing
+`R-XXXX-XXXX` ids are stable handles — never renumbered; a newly added behavior
+gets a freshly minted id, and a removed behavior's id is deleted with it.

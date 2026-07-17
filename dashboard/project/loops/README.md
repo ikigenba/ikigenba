@@ -20,8 +20,8 @@ ralph project/loops/gather.md project/loops/build.md project/loops/verify.md
 
 `ralph` runs from the **service root** (`dashboard/`), re-invoking each prompt in a
 **fresh, isolated context** every turn. It cycles `gather → build → verify →
-gather → …`, building the dashboard one phase at a time, until every phase is
-verified green (or a ralph budget rail trips).
+gather → …`, building the dashboard one phase at a time, until the queue is
+empty (or a ralph budget rail trips).
 
 ## The status contract
 
@@ -31,18 +31,18 @@ last message and acts on it:
 - **`NEXT`** — terminal: advance to the next prompt (wrapping `verify → gather`).
   **build and verify always report `NEXT`.**
 - **`DONE`** — terminal: stop the loop. **Only `gather` ever reports `DONE`**, and
-  only when `STATUS.md` shows no `⬜` phase left.
+  only when `STATUS.md` shows no `⬜` phase line left (the queue is empty).
 - **`CONTINUE`** — **non-terminal**: the status a streaming model tags its
   mid-turn progress messages with (codex/gpt coerces *every* streamed message into
   the schema). It never terminates a turn and never drives the loop.
 
 ## Per-step reads / writes / commits
 
-| step | reads | writes | commits | flips a marker? |
+| step | reads | writes | commits | deletes the phase? |
 |---|---|---|---|---|
 | **gather** | `STATUS.md`, one `phase-NN.md`, `INDEX.md`, the realized `DNN.md`, (opt.) `product/README.md` | authors `brief.md` **contract region** (or no-ops on an in-flight brief) | no | no |
 | **build** | **only** `brief.md` (contract + feedback) | source + co-located `// R-id` tests | yes (the code increment) | no |
-| **verify** | `brief.md` + runs the suite; re-derives truth independently | pass: deletes `brief.md`; gap: overwrites `brief.md` **feedback region** | yes (only the one-line `STATUS.md` flip, on pass) | **yes — the only step that does** |
+| **verify** | `brief.md` + runs the suite; re-derives truth independently | pass: deletes `brief.md`; gap: overwrites `brief.md` **feedback region** | yes (only the `STATUS.md` line + `phase-NN.md` deletion, on pass) | **yes — the only step that does** |
 
 ## The brief lifecycle
 
@@ -54,9 +54,10 @@ last message and acts on it:
   brief (it checks the `# Brief — Phase NN` header) and does not re-read the big
   docs — so the docs are read once per phase, not once per cycle.
 - **build** consumes the brief (contract + any feedback) and never opens a big doc.
-- **verify** either **passes** the phase (flip `⬜→✅`, delete the brief) or records
-  **gaps** (overwrite the feedback region, keep the brief). The brief therefore
-  **persists across cycles** until the phase passes or is stall-reset.
+- **verify** either **passes** the phase (delete its `STATUS.md` line and
+  `phase-NN.md`, delete the brief) or records **gaps** (overwrite the feedback
+  region, keep the brief). The brief therefore **persists across cycles** until
+  the phase passes or is stall-reset.
 
 ## Why it converges
 
@@ -68,8 +69,8 @@ shrinking) from a *true stall* (the same gap ids unsatisfied for **3** consecuti
 no-progress attempts with no new build commit). On a true stall it does a
 **trajectory reset** — discard the brief, log to `~/.ralph/verify.log`, leave `⬜`
 — so the next `gather` rebuilds the contract fresh from spec. The **only** exit is
-`gather → DONE`, which requires zero `⬜` markers: the run ends only when every
-phase is verified green (or a ralph budget rail trips).
+`gather → DONE`, which requires zero `⬜` phase lines: the run ends only when the
+queue is empty (or a ralph budget rail trips).
 
 ## The `project/loops/brief.md` schema
 
@@ -118,4 +119,4 @@ stall-streak: <count>
 
 The green suite (from design *Conventions*), run from `dashboard/`:
 `go build ./...`, `go vet ./...`, `gofmt -l .` (empty), `go test ./...`.
-Next-phase lookup: `grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1`.
+Next-phase lookup: `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1`.

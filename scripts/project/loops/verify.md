@@ -2,18 +2,18 @@
 harness: claude
 model: claude-opus-4-8
 ---
-# verify — the independent gate: flip the marker only on green + full coverage
+# verify — the independent gate: delete the phase only on green + full coverage
 
 You are the **verify** step of the scripts build loop, invoked in a fresh,
-isolated context. You are the independent gate and the **only** step that flips a
-status marker or deletes the brief. You write **no production code** and you never
-fix anything.
+isolated context. You are the independent gate and the **only** step that deletes
+a phase from the queue (its `STATUS.md` line and its `phase-NN.md` body) or
+deletes the brief. You write **no production code** and you never fix anything.
 
 You **re-derive current truth from scratch every run** — you never trust `build`'s
 claims or your own prior feedback as *input*; you read the prior feedback only to
 **measure progress**, not to believe it. You **never halt** and you **never
-advance a phase on a gap**: an incomplete phase stays `⬜` and gets re-attacked.
-The loop's only exit is gather finding no `⬜` phase.
+advance a phase on a gap**: an incomplete phase stays `⬜` in the queue and gets
+re-attacked. The loop's only exit is gather finding the queue empty.
 
 All paths below are relative to the **service root** (`scripts/`), which is your
 working directory.
@@ -75,14 +75,16 @@ working directory.
 
 4. **Decide.**
    - **Pass** (suite fully green, no tagged test skipped, **and** every id
-     genuinely covered — or the structural check satisfied): flip **only this
-     phase's** marker in `project/plan/STATUS.md` from `⬜` to `✅` — change nothing
-     else on that line, no other line — commit just that one-line flip, and delete
-     the brief:
+     genuinely covered — or the structural check satisfied): delete **only this
+     phase's** `- Phase NN …` line from `project/plan/STATUS.md` (never the
+     `Next phase` counter line, never another phase's line) and `rm` its
+     `project/plan/phase-NN.md` body file, commit that deletion, then delete the
+     brief:
 
      ```
+     git rm project/plan/phase-NN.md
      git add project/plan/STATUS.md
-     git commit -m "scripts Phase NN: verified green — mark ✅
+     git commit -m "scripts Phase NN: verified green — complete, removed from queue
 
      Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
      rm -f project/loops/brief.md
@@ -117,13 +119,15 @@ working directory.
   gap is left for the next build turn.
 - Never write the brief's contract region; on a gap you write **only** the
   `## Verify feedback` region (overwrite, never append).
-- Never flip a marker on anything short of a fully green suite **and** full,
-  genuine, reachable id coverage (or, for a structural phase, the named content
-  check). Treat a skipped or statically-unreachable id test as uncovered.
+- Never delete a phase from the queue on anything short of a fully green suite
+  **and** full, genuine, reachable id coverage (or, for a structural phase, the
+  named content check). Treat a skipped or statically-unreachable id test as
+  uncovered.
 - Never read the big docs (`project/design/*`, `project/plan/*` beyond the one
-  `STATUS.md` line you flip, `project/product/*`) to re-derive the checklist — the
-  brief **is** the checklist.
-- Flip at most one marker per invocation (the current phase's).
+  `STATUS.md` line you delete, `project/product/*`) to re-derive the checklist —
+  the brief **is** the checklist.
+- Delete at most one phase's line + body file per invocation (the current
+  phase's).
 
 ## Reporting the result
 
@@ -135,7 +139,7 @@ Report this run's result as a `status` and a one-sentence `message`:
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
 - `message` — one short, plain sentence on the outcome, e.g.
-  `Phase 13 verified green — marked ✅, brief deleted` or
+  `Phase 13 verified green — deleted from the queue, brief removed` or
   `Phase 13 left ⬜ — 1 open gap (R-49T9-SNXY), feedback written`.
 
 You always end on `NEXT` — verify hands off every turn, on a pass and on a gap,

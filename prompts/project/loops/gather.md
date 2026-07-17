@@ -24,10 +24,10 @@ directory).
 1. **Find the next phase.** Run:
 
    ```
-   grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
+   grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** (every phase is `✅`): the build is complete. Write nothing,
+   - **No match** (the queue is empty): the build is complete. Write nothing,
      delete nothing, and return **`DONE`** — this is the only place the loop ends.
    - **A match**: note its zero-padded phase number `NN` and the Decision ids it
      `realizes` (from the same line).
@@ -39,8 +39,9 @@ directory).
      any `verify` feedback are already on disk and must be preserved. Leave the
      brief **exactly as is** — touch neither region — open **no** big doc, and
      return **`NEXT`**.
-   - **It names a different (now-`✅`) phase**, or there is no brief → author a
-     fresh brief for phase `NN` (steps 3–7).
+   - **It names a phase with no `STATUS.md` line left** (completed, hence
+     deleted), or there is no brief → author a fresh brief for phase `NN`
+     (steps 3–7).
 
 3. **Read exactly that one phase body** — `project/plan/phase-NN.md`. It names the
    package(s)/files to build, the realized Decision(s), and a **Done when:** list

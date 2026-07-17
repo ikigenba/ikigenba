@@ -9,8 +9,8 @@ product's contractual constants by value (the page lives at the mount root only;
 v1 content is service name + version; the gate is `/_session-authn` and coarse;
 the visual system is Carbon) but does **not** own them. This is the single,
 current statement of the governed ledger design — it is rewritten in place to
-stay true (stale decisions are removed, not stacked); the history of how it got
-here lives in the plan.
+stay true (stale decisions are removed, not stacked); construction history
+lives in git, not here.
 
 > **Scope.** This design's Decisions cover three threads:
 >
@@ -78,6 +78,8 @@ Shared facts every Decision leans on:
   `cd ledger && go build ./...`, `cd ledger && go vet ./...`,
   `cd ledger && gofmt -l .` (no output), and `cd ledger && go test ./...` all
   succeed with zero failures.
+- **Test-file glob:** `*_test.go` — requirement-id tags (`R-XXXX-XXXX`) live in
+  these files only.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit`, `eventplane`, and `registry` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,
@@ -171,7 +173,7 @@ gate, `/feed`, security headers, graceful shutdown, and structured slog are all
 appkit's). The composition root (`cmd/ledger/main.go`) is the Spec plus the landing
 handler; the outbox is injected into the domain Service through the `Producer` hook.
 
-Design is **rewritten in place**, not append-only (history lives in the plan): a
+Design is **rewritten in place**, not append-only (construction history lives in git): a
 changed Decision is rewritten in its `DNN.md` and `INDEX.md` is regenerated; a
 new Decision adds a `DNN.md` and an INDEX entry. Existing `R-XXXX-XXXX` ids are
 stable handles — never renumbered; a newly added behavior gets a freshly minted

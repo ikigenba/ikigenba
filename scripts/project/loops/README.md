@@ -46,15 +46,15 @@ green suite and all, is still `NEXT`; ending the run is never theirs.
 
 ## Per-step responsibilities
 
-| step | reads | writes / commits | flips marker? | terminal status |
+| step | reads | writes / commits | mutates queue? | terminal status |
 |---|---|---|---|---|
 | **gather** | the big docs — `STATUS.md`, one `phase-NN.md`, `INDEX.md`, the realized `DNN.md` | authors `brief.md`'s **contract region** once per phase (no-ops on an in-flight brief); commits nothing | no | `DONE` if no `⬜` phase, else `NEXT` |
 | **build** | **only** `brief.md` (contract + feedback) | builds the package/artifact + id-tagged tests; commits the code increment; never writes the brief | no | always `NEXT` |
-| **verify** | `brief.md` + re-runs the suite/coverage from scratch | on pass: flips the marker, commits the flip, deletes the brief; on gap: overwrites the **feedback region** only | **yes** (the only step that does) | always `NEXT` |
+| **verify** | `brief.md` + re-runs the suite/coverage from scratch | on pass: deletes the phase's `STATUS.md` line + `phase-NN.md`, commits the deletion, deletes the brief; on gap: overwrites the **feedback region** only | **yes** (the only step that does) | always `NEXT` |
 
 The next unit of work is found with
-`grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1` (phase lines are bare
-`Phase NN ⬜ …` lines). "The suite is green" means all of
+`grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1` (pending phase lines
+are Markdown bullets: `- Phase NN ⬜ …`). "The suite is green" means all of
 `cd scripts && go build ./...`, `cd scripts && go vet ./...`,
 `cd scripts && gofmt -l .` (no output), and `cd scripts && go test ./...` succeed
 with zero failures (design's *Conventions*).
@@ -70,8 +70,9 @@ it describes exactly **one** phase at a time. Its lifecycle:
   reads the header and no-ops, never re-opening the big docs).
 - **build** consumes the whole brief; if the feedback region lists open gaps it
   closes those first, then commits its increment. It never writes the brief.
-- **verify** owns the **feedback region**. On a pass it flips `⬜ → ✅`, commits,
-  and **deletes** the brief. On a gap it leaves `⬜`, changes no source, and
+- **verify** owns the **feedback region**. On a pass it deletes the phase's
+  `STATUS.md` line and its `phase-NN.md` body file, commits that deletion, and
+  **deletes** the brief. On a gap it leaves `⬜`, changes no source, and
   **overwrites** the feedback region with the currently-open gaps — the brief
   **persists** across cycles until the phase passes or a stall reset discards it.
 
@@ -89,8 +90,8 @@ shrinking/changing) from a *true stall* (the **same** gap ids unsatisfied for 3
 consecutive attempts with no new build commit). On a true stall it does a
 **trajectory reset** — logs the stall, deletes the brief, leaves `⬜` — so the next
 `gather` rebuilds the contract fresh from spec. The only exit is still
-`gather → DONE`, which requires zero `⬜` markers: the run ends only when every
-phase is verified green.
+`gather → DONE`, which requires the queue to be empty: the run ends only when
+every phase has been verified green and removed.
 
 ## `brief.md` schema
 

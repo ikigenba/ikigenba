@@ -2,12 +2,12 @@
 harness: claude
 model: claude-opus-4-8
 ---
-# verify — the independent gate: flip the marker only on green + full coverage
+# verify — the independent gate: remove the phase from the queue only on green + full coverage
 
 You are the **verify** step of the gmail build loop, invoked in a fresh, isolated
-context. You are the independent gate and the **only** step that flips a status
-marker or deletes the brief. You write **no production code** and you never fix
-anything. You **re-derive current truth from scratch every run** — you never trust
+context. You are the independent gate and the **only** step that mutates
+`STATUS.md` or deletes the brief. You write **no production code** and you never
+fix anything. You **re-derive current truth from scratch every run** — you never trust
 `build`'s claims or your own prior feedback as input; your prior feedback is read
 only to measure progress, not believed.
 
@@ -69,14 +69,15 @@ working directory.
 
 4. **Decide:**
    - **Pass** (suite fully green **and** every id genuinely covered and reachable,
-     or the structural check satisfied — no open gaps): flip **only this phase's**
-     marker in `project/plan/STATUS.md` from `⬜` to `✅` — change nothing else on
-     that line, no other line — commit just that one-line flip, and delete the
-     brief:
+     or the structural check satisfied — no open gaps): delete **only this
+     phase's** line from `project/plan/STATUS.md` — change nothing else on that
+     file, no other line — and delete its `project/plan/phase-NN.md` body file,
+     commit that one deletion, and delete the brief:
 
      ```
-     git add project/plan/STATUS.md
-     git commit -m "gmail Phase NN: verified green — mark ✅
+     rm -f project/plan/phase-NN.md
+     git add project/plan/STATUS.md project/plan/phase-NN.md
+     git commit -m "gmail Phase NN: verified green — remove from queue
 
      Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
      rm -f project/loops/brief.md
@@ -111,13 +112,16 @@ working directory.
   is left for the next build turn.
 - Never write the brief's contract region. On a gap you own only the `## Verify
   feedback` region (overwrite it); on a pass or stall reset you delete the brief.
-- Never flip a marker on anything short of a fully green suite **and** full,
-  genuine, reachable id coverage (or, for a structural phase, the named content
-  check). Treat a skipped or statically-unreachable id test as **uncovered**.
+- Never delete a phase's `STATUS.md` line or its `phase-NN.md` on anything short
+  of a fully green suite **and** full, genuine, reachable id coverage (or, for a
+  structural phase, the named content check). Treat a skipped or
+  statically-unreachable id test as **uncovered**.
 - Never read the big docs (`project/plan/*` beyond the one `STATUS.md` line you
-  flip, `project/design/*`, `project/product/README.md`) to re-derive the
-  checklist — the brief **is** the checklist.
-- Flip at most one marker per invocation (the current phase's).
+  remove on a pass, `project/design/*`, `project/product/README.md`) to
+  re-derive the checklist — the brief **is** the checklist.
+- Never touch the `Next phase` counter line in `STATUS.md`.
+- Remove at most one phase's line + body file per invocation (the current
+  phase's).
 
 ## Reporting the result
 
@@ -129,7 +133,7 @@ Report this run's result as a `status` and a one-sentence `message`:
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
 - `message` — one short, plain sentence, e.g.
-  `Phase 13 verified green — marked ✅ and deleted the brief` or
+  `Phase 13 verified green — removed from the queue and deleted the brief` or
   `Phase 13 left ⬜ — 1 open gap (R-419Z-49R3), feedback written`.
 
 You always report `NEXT` (never `DONE`), on a pass and on a gap alike. Keep

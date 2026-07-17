@@ -94,8 +94,8 @@ directory).
 
 - Never read `project/plan/*`, `project/design/*`, or `project/product/*`. The
   brief is your only source.
-- Never edit `project/plan/STATUS.md` or flip a `⬜`/`✅` marker — that is
-  verify's job alone.
+- Never edit `project/plan/STATUS.md` or delete a phase's line/body file — that
+  is verify's job alone.
 - Never delete or edit `project/loops/brief.md`, including its `## Verify
   feedback` region — you read that region but never write it.
 

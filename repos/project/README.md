@@ -12,7 +12,7 @@ from.
 | `product/` | `README.md` — the *why*, for whom, scope, user-facing promises | `$seal-spec` (rewritten in place) |
 | `research/` | `research.md` — collected external ground truth design references | `$seal-spec` (rewritten in place) |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
-| `plan/` | `README.md` (rules) + `STATUS.md` (the manifest — the only home of each phase's `⬜`/`✅` marker) + `phase-NN.md` (one per phase) | `$seal-spec` (append-only) |
+| `plan/` | `README.md` (rules) + `STATUS.md` (the manifest — the `Next phase` counter and the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per **pending** phase; completed phases are deleted by the build loop) | `$seal-spec` (appends new phases) |
 | `loops/` | the generated build-loop prompts + `loops/README.md` describing the installed loop | a prompt-generator workflow |
 
 The spine documents are singular and written by `$seal-spec` — the sanctioned

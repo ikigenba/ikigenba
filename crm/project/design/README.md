@@ -11,7 +11,7 @@ and coarse; the visual system is Carbon; the MCP surface is self-sufficient with
 no external skill; discovery describes but does not change behavior and adds no
 per-entity tool) but does **not** own them. This is the single, current statement
 of the architecture — it is rewritten in place to stay true (stale decisions are
-removed, not stacked); the history of how it got here lives in the plan.
+removed, not stacked); construction history lives in git, not here.
 
 > **Scope.** This design covers five crm threads: **(1)** the web landing page
 > and the seam it establishes (D1–D8), **(2)** the agent-facing **MCP discovery
@@ -54,6 +54,8 @@ Shared facts every Decision leans on:
 - **Test command:** `cd crm && go test ./...`. **"The suite is green"** means:
   `cd crm && go build ./...`, `cd crm && go vet ./...`, `cd crm && gofmt -l .`
   (no output), and `cd crm && go test ./...` all succeed with zero failures.
+- **Test-file glob:** `*_test.go` is where `R-XXXX-XXXX` requirement-id tags
+  live.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit`, `eventplane`, and `registry` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,

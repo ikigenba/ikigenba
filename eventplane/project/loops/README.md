@@ -27,13 +27,13 @@ exec ralph project/loops/gather.md project/loops/build.md project/loops/verify.m
   progress messages with. It never terminates a turn and never drives the
   loop; ralph reads only the last message.
 
-## Who reads / writes / commits / flips what
+## Who reads / writes / commits / deletes what
 
-| step | reads | writes | commits | flips marker |
+| step | reads | writes | commits | deletes completed phase |
 |---|---|---|---|---|
 | gather | `STATUS.md`, one `phase-NN.md`, `INDEX.md`, realized `DNN.md`(s) | brief contract region (fresh briefs only) | never | never |
 | build | the brief only (both regions) | source + co-located id-tagged tests | yes — the increment | never |
-| verify | the brief + the repo (re-derives truth) | brief feedback region; or deletes the brief | yes — the one-line STATUS flip on pass | pass only: `⬜→✅` |
+| verify | the brief + the repo (re-derives truth) | brief feedback region; or deletes the brief | yes — the phase deletion on pass | pass only: removes the `STATUS.md` line + `phase-NN.md` |
 
 ## Brief lifecycle
 
@@ -46,9 +46,10 @@ single-phase, and **phase-scoped, not per-cycle**:
    `# Brief — Phase NN` header and no-ops (no big doc reads, feedback
    preserved).
 2. build consumes it — feedback gaps first, then the remaining contract work.
-3. verify either **passes** (flip the marker, commit, delete the brief) or
-   finds **gaps** (overwrite the feedback region with only the currently-open
-   gaps; brief persists into the next cycle).
+3. verify either **passes** (delete the phase's `STATUS.md` line and
+   `phase-NN.md`, commit, delete the brief) or finds **gaps** (overwrite the
+   feedback region with only the currently-open gaps; brief persists into the
+   next cycle).
 4. On a **true stall** — the same gap ids unsatisfied for 3 consecutive
    attempts with no new build commit — verify logs to `~/.ralph/verify.log`,
    deletes the brief, and leaves `⬜`, so the next gather rebuilds the

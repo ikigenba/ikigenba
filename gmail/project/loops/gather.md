@@ -22,10 +22,10 @@ working directory.
 1. **Find the next phase.** Run:
 
    ```
-   grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
+   grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** (every phase is `✅`): the build is complete. Write nothing,
+   - **No match** (the queue is empty): the build is complete. Write nothing,
      delete nothing, and report **`DONE`** — this is the only place the loop
      ends.
    - **A match**: note its zero-padded phase number `NN` and the Decision ids it
@@ -37,8 +37,9 @@ working directory.
      any accumulated `verify` feedback must be preserved. **Leave the brief
      exactly as is** (both regions untouched), open **no** big doc, and report
      `NEXT`.
-   - If it names a **different** (now-`✅`) phase, it is stale — proceed to author
-     a fresh brief for phase `NN` (overwriting it entirely).
+   - If it names a **different** phase with no line left in `STATUS.md`
+     (completed, hence deleted), it is stale — proceed to author a fresh brief
+     for phase `NN` (overwriting it entirely).
    - If there is **no** brief, proceed to author a fresh one.
 
 3. **Read exactly that one phase body** — `project/plan/phase-NN.md`. It names

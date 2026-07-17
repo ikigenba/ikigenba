@@ -14,7 +14,7 @@ themselves are defined once, in the `ikispec` skill.
 | `product/` | `README.md` — the *why*: problem, users, scope, promises, success criteria | `$seal-spec` (rewritten in place) |
 | `research/` | `research.md` — external ground truth the design references (optional) | `$seal-spec` (rewritten in place) |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
-| `plan/` | `README.md` (rules) + `STATUS.md` (manifest + `⬜`/`✅` markers) + `phase-NN.md` (one per phase) | `$seal-spec` (append-only) |
+| `plan/` | `README.md` (rules) + `STATUS.md` (manifest: `Next phase` counter + `⬜` lines) + `phase-NN.md` (one per **pending** phase) | `$seal-spec` (appends); the build loop deletes completed phases |
 | `loops/` | the generated `ralph` build-loop prompts + `README.md` describing the installed loop | prompt-generator workflow |
 | `bugs/` | free-form bug diagnoses / write-ups | free-form (not spec-owned) |
 | `requests/` | free-form feature requests | free-form (not spec-owned) |

@@ -6,8 +6,8 @@
 those promises and never re-declares the why. Design *uses* the product's
 contractual constants by value but does not own them. This is the **single,
 current** statement of the architecture: when a decision changes its file is
-rewritten in place (never stacked); the history of how it got here lives in the
-plan.
+rewritten in place (never stacked); construction history lives in git, never in
+this doc.
 
 ## Requirement ids
 
@@ -31,6 +31,8 @@ Shared facts every Decision leans on.
   root (`opsctl/`). The production build always forces `GOWORK=off`; design and
   tests assume the same so behavior matches the deployed binary.
 - **Test command.** `GOWORK=off go test ./...` from the service root.
+- **Test-file glob.** Requirement-id tags live in package-local `*_test.go`
+  files (this is a Go project).
 - **"The suite is green"** means: `GOWORK=off go build ./...` succeeds **and**
   `GOWORK=off go test ./...` passes with no failures, from `opsctl/`.
 - **Privilege / IO seam.** opsctl runs as root on the box (via `sudo`) and

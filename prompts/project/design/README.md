@@ -1,6 +1,6 @@
 # prompts — Design
 
-**Authority: shape and its proof.** This document owns *how* the migration is built and *how each behavior is verified*. The product doc owns the *why* and the user-facing promises; this doc uses the product's contractual constants (provider names, config keys) by value but does not restate the intent behind them. Design states the exact, checkable form of those promises — mechanism, interfaces, types, naming, test strategy. This is the single current statement of the architecture: when a decision changes, its `DNN.md` is rewritten in place; history lives in the plan.
+**Authority: shape and its proof.** This document owns *how* the migration is built and *how each behavior is verified*. The product doc owns the *why* and the user-facing promises; this doc uses the product's contractual constants (provider names, config keys) by value but does not restate the intent behind them. Design states the exact, checkable form of those promises — mechanism, interfaces, types, naming, test strategy. This is the single current statement of the architecture: when a decision changes, its `DNN.md` is rewritten in place; construction history lives in git.
 
 ## Requirement ids
 
@@ -14,6 +14,7 @@ Design's responsibility ends at minting. How coverage is measured, what counts a
 - **Build**: `go build ./...` run from the `prompts/` directory. Passes when all packages compile without error.
 - **Test**: `go test ./...` run from the `prompts/` directory. "The suite is green" means every test passes and no race detector violations appear (`-race` is implicit in CI).
 - **Formatting**: `gofmt -l .` emits no output.
+- **Requirement-id tag glob**: `*_test.go` — the test-file glob under which `R-XXXX-XXXX` tags must appear for an id to count as realized.
 - **Published agentkit**: `github.com/ikigenba/agentkit v0.2.0` — the external dependency (currently pinned at `v0.1.1`; D19 bumps to `v0.2.0`, the release carrying the deferred-tools API — research §2). The `v0.2.0` tag is an **external precondition** owned by the agentkit repo (its phase 48); local dev resolves agentkit via the repo-root `go.work` replace and does not wait on it, but the production build (`GOWORK=off`) does.
 - **Local chassis modules**: `appkit` and `eventplane` remain as committed `replace` directives in `prompts/go.mod`, consumed as fixed external contracts (never edited from here). The **revised eventplane routing API** (kind/subject envelope, `routing.Key`/`Match`, `outbox.Family`/`Registry.CouldMatch`, `consumer.Event{Kind, Subject}` + `Key()` — `eventplane/project/design/` D1–D4) and an appkit that compiles against it are **external preconditions** for the conformance Decisions D24/D25 (operator-sequenced; see the ⛔ banners there).
 - **Migrations**: schema changes land only as new timestamped migrations minted with `bin/create-migration prompts <name>`; committed migrations are immutable (the suite rule).
@@ -30,4 +31,4 @@ prompts is no longer MCP-only: it serves one **human HTML web page** — the lan
 
 `project/design/DNN.md` — one self-contained file per Decision (zero-padded), referenced in prose and the plan as `D<N>`.
 
-This spine holds only the cross-cutting facts above. Rewritten in place when decisions change; history lives in the plan.
+This spine holds only the cross-cutting facts above. Rewritten in place when decisions change; construction history lives in git.

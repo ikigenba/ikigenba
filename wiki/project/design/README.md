@@ -1,6 +1,6 @@
 # wiki — Design
 
-**Authority: shape and its proof.** This document and the `project/design/` directory it heads own *how* the wiki is built and *how each behavior is proven*. The product (`project/product/README.md`) owns the *why*, *for whom*, and the user-facing promises; design states the **exact, checkable form** of those promises and never re-declares the why. Design *uses* the product's contractual constants by value (page cap 12,000 chars; subject types `entity|event|concept`; `ask` strictly read-only) but does **not** own them. This is the single, current statement of the architecture — it is rewritten in place to stay true (stale decisions are removed, not stacked); the history of how it got here lives in the plan.
+**Authority: shape and its proof.** This document and the `project/design/` directory it heads own *how* the wiki is built and *how each behavior is proven*. The product (`project/product/README.md`) owns the *why*, *for whom*, and the user-facing promises; design states the **exact, checkable form** of those promises and never re-declares the why. Design *uses* the product's contractual constants by value (page cap 12,000 chars; subject types `entity|event|concept`; `ask` strictly read-only) but does **not** own them. This is the single, current statement of the architecture — it is rewritten in place to stay true (stale decisions are removed, not stacked); construction history lives in git, not here.
 
 ## Requirement ids
 
@@ -15,7 +15,7 @@ Shared facts every Decision leans on:
 
 - **Language / toolchain:** Go **1.26**, single module `module wiki` rooted at `wiki/`. Pure-Go SQLite driver `modernc.org/sqlite` (no cgo).
 - **Build / typecheck command:** `cd wiki && go build -trimpath -ldflags "-X main.version=$(cat VERSION)" -o build/wiki.bin ./cmd/wiki`. A bare typecheck is `go build ./...` and `go vet ./...`. The production build adds `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off -buildvcs=false` (driven by `bin/ship`).
-- **Test command:** `cd wiki && go test ./...`. **"The suite is green"** means: `go build ./...`, `go vet ./...`, `gofmt -l .` (no output), and `go test ./...` all succeed with zero failures.
+- **Test command:** `cd wiki && go test ./...`. **"The suite is green"** means: `go build ./...`, `go vet ./...`, `gofmt -l .` (no output), and `go test ./...` all succeed with zero failures. Requirement-id tags live in `*_test.go` files.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit` and `eventplane` are committed in-repo replace-siblings (`replace appkit => ../appkit`, `replace eventplane => ../eventplane`); `github.com/ikigenba/agentkit` is a **published, proxy-fetched** dependency with **no committed replace** (see D1). The read surface's markdown renderer adds two further **proxy-fetched, pure-Go** dependencies with no replace: `github.com/yuin/goldmark` (CommonMark + GFM) and `github.com/microcosm-cc/bluemonday` (HTML sanitizer) — see D48.
 - **Migrations:** ordered SQL under `wiki/internal/db/migrations/`, embedded via `//go:embed` as `db.FS`, applied forward-only by the appkit runner. Never hand-author a version; always `bin/create-migration wiki <name>`. `001_schema_migrations.sql` is frozen/verbatim. Never edit a committed migration.

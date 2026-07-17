@@ -21,23 +21,25 @@ write its **feedback region**.
 1. **Find the next unstarted phase.** Run:
 
    ```
-   grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
+   grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   `project/plan/STATUS.md` is the manifest and the only home of the `⬜`/`✅`
-   markers; phase lines begin with the literal word `Phase` at column 0.
-   - **If it prints nothing** (no `⬜` phase remains), the whole job is complete.
-     Report **`DONE`** and stop. This is the sole end of the loop.
+   `project/plan/STATUS.md` is the manifest and the only home of the `⬜`
+   marker; phase lines are bullets beginning `- Phase` at column 0.
+   - **If it prints nothing** (the queue is empty — no pending phase line
+     remains), the whole job is complete. Report **`DONE`** and stop. This is
+     the sole end of the loop.
    - Otherwise, read the phase number `NN` from the matched line (e.g.
-     `Phase 20 ⬜ realizes D17 — …` → `NN = 20`).
+     `- Phase 20 ⬜ realizes D17 — …` → `NN = 20`).
 
 2. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read only
    its first heading line `# Brief — Phase MM`:
    - **If `MM == NN`**, this phase is mid-flight — its contract and any `verify`
      feedback must be preserved. **Leave the brief exactly as is** (open no big
      doc, touch neither region), and report **`NEXT`**. You are done this turn.
-   - If `MM != NN` (the brief is for an already-`✅` phase), or the brief is
-     missing/empty, continue to step 3 and author a fresh brief.
+   - If `MM != NN` (the brief names a phase with no `STATUS.md` line left —
+     completed, hence deleted), or the brief is missing/empty, continue to
+     step 3 and author a fresh brief.
 
 3. **Read exactly the phase body** — `project/plan/phase-NN.md`. It names the
    Decision(s) this phase realizes and the **slice of ids** it covers (a phase may

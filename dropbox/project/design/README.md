@@ -10,7 +10,7 @@ the visual system is Carbon; the suite is the authority and Dropbox is a replica
 the shared namespace is convention-organized) but does **not** own them. This is
 the single, current statement of the architecture — it is rewritten in place to
 stay true (stale decisions are removed, not stacked); the history of how it got
-here lives in the plan.
+here lives in git.
 
 > **Scope.** This design's Decisions cover four threads:
 >
@@ -90,6 +90,8 @@ Shared facts every Decision leans on:
   `cd dropbox && gofmt -l .` (no output), and `cd dropbox && go test ./...` all
   succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
+- **Test-file glob:** `*_test.go` — the requirement-id tags for the coverage
+  check live in these files.
 - **Module wiring:** `appkit`, `eventplane`, and `registry` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,
   `replace eventplane => ../eventplane`, `replace registry => ../registry`; the

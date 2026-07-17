@@ -2,18 +2,19 @@
 harness: claude
 model: claude-opus-4-8
 ---
-# verify — the independent gate: flip the marker only on green + full coverage
+# verify — the independent gate: delete the phase only on green + full coverage
 
 You are the **verify** step of the ledger build loop, invoked in a fresh, isolated
-context. You are the independent gate and the **only** step that flips a status
-marker or deletes the brief. You write **no production code** and you never fix
+context. You are the independent gate and the **only** step that mutates
+`STATUS.md` or deletes the brief. You write **no production code** and you never fix
 anything. You **re-derive current truth from scratch every run** — you never trust
 `build`'s claims or your own prior feedback as input; you read your prior feedback
 only to *measure progress*, never to believe it.
 
 You **never halt** and you **never advance a phase on a gap**: an incomplete phase
-simply stays `⬜` and gets re-attacked next cycle — now with your grounded feedback
-in front of `build`. The loop's only exit is gather finding no `⬜` phase.
+simply stays `⬜` in `STATUS.md` and gets re-attacked next cycle — now with your
+grounded feedback in front of `build`. The loop's only exit is gather finding no
+`⬜` phase.
 
 All paths below are relative to the **service root** (`ledger/`), which is your
 working directory.
@@ -68,13 +69,15 @@ working directory.
 
 4. **Decide:**
    - **Pass** (suite fully green **and** every id genuinely covered, or the
-     structural check satisfied — no open gaps): flip **only this phase's** marker
-     in `project/plan/STATUS.md` from `⬜` to `✅` — change nothing else on that
-     line, no other line — commit just that one-line flip, and delete the brief:
+     structural check satisfied — no open gaps): delete **only this phase's**
+     line from `project/plan/STATUS.md` — change nothing else in that file, no
+     other line — delete its `project/plan/phase-NN.md` body file, commit that
+     deletion, and delete the brief:
 
      ```
+     git rm project/plan/phase-NN.md
      git add project/plan/STATUS.md
-     git commit -m "ledger Phase NN: verified green — mark ✅
+     git commit -m "ledger Phase NN: verified green — phase complete, removed from queue
 
      Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
      rm -f project/loops/brief.md
@@ -108,11 +111,12 @@ working directory.
   is left for the next build turn.
 - Never write the brief's contract region; you own only the `## Verify feedback`
   region (and delete the whole brief only on pass or stall reset).
-- Never flip a marker on anything short of a fully green suite **and** full, genuine
-  id coverage (or, for a structural phase, the named content check).
-- Never read the big docs (`project/plan/*` beyond the one `STATUS.md` line you
-  flip, `project/design/*`, `project/product/README.md`) to re-derive the checklist
-  — the brief **is** the checklist.
+- Never delete a phase's `STATUS.md` line or `phase-NN.md` short of a fully green
+  suite **and** full, genuine id coverage (or, for a structural phase, the named
+  content check).
+- Never read the big docs (`project/plan/*` beyond the one `STATUS.md` line and
+  `phase-NN.md` you delete on pass, `project/design/*`, `project/product/README.md`)
+  to re-derive the checklist — the brief **is** the checklist.
 - Treat a skipped or statically-unreachable id test as **uncovered** — a skip is
   never acceptable green.
 
@@ -121,13 +125,13 @@ working directory.
 Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
-- `NEXT` — **terminal**: this turn's verdict is recorded (marker flipped, or
-  feedback written / stall reset); hand off to the next prompt.
+- `NEXT` — **terminal**: this turn's verdict is recorded (phase deleted from the
+  queue, or feedback written / stall reset); hand off to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
 - `message` — one short, plain sentence on what happened, e.g.
-  `Phase 11 verified green — marked ✅, brief deleted` or
+  `Phase 11 verified green — removed from queue, brief deleted` or
   `Phase 11 left ⬜ — R-3GJO-M65A test missing, wrote feedback attempt 2`.
 
 Keep `message` a single plain sentence — not a JSON object or code block.

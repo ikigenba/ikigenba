@@ -22,15 +22,14 @@ working directory.
 1. **Find the next phase.** Run:
 
    ```
-   grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
+   grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   (STATUS.md phase lines are bare `Phase NN ✅|⬜ …` lines — not Markdown
-   bullets.)
+   (STATUS.md phase lines are Markdown bullets: `- Phase NN ⬜ …`.)
 
-   - **No match** (every phase is `✅`): the build is complete. Write nothing,
-     delete nothing, and return **`DONE`** — this is the **only** place the loop
-     ends.
+   - **No match** (the queue is empty — no pending phase lines remain): the build
+     is complete. Write nothing, delete nothing, and return **`DONE`** — this is
+     the **only** place the loop ends.
    - **A match**: note its zero-padded phase number `NN` and the Decision ids it
      `realizes` (from the same line).
 
@@ -40,8 +39,9 @@ working directory.
      `verify` feedback must be preserved. Leave the brief **exactly as is** (both
      the contract region and the `## Verify feedback` region untouched), open no
      big doc, and return **`NEXT`**.
-   - **It names a different (now-`✅`) phase, or there is no brief** → author a
-     fresh brief for phase `NN` (steps 3–7 below).
+   - **It names a phase with no `STATUS.md` line left** (completed, hence
+     deleted), **or there is no brief** → author a fresh brief for phase `NN`
+     (steps 3–7 below).
 
 3. **Read exactly that one phase body** — `project/plan/phase-NN.md`. It names the
    package(s)/files or artifact to build, the realized Decision(s), and a

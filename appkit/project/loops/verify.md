@@ -6,8 +6,9 @@ model: claude-opus-4-8
 
 You run in a **fresh, isolated context** from the service root `appkit/` (the
 directory `ralph` launched from; all `project/…` and `../bin/…` paths below are
-relative to it). You are the independent gate and the **only** prompt that flips a
-marker or deletes the brief. You write no production code. You **re-derive current
+relative to it). You are the independent gate and the **only** prompt that deletes
+a completed phase from the queue or deletes the brief. You write no production
+code. You **re-derive current
 truth from scratch every run** — never trust `build`'s claims, and never trust
 your own prior feedback as fact (you read it only to measure progress). You never
 halt the loop and never advance a phase on a gap. Do one iteration, then report.
@@ -66,17 +67,19 @@ halt the loop and never advance a phase on a gap. Do one iteration, then report.
 
 ### Pass — no open gaps
 
-1. Flip **only this phase's** marker in `project/plan/STATUS.md`, changing its
-   `⬜` to `✅` and leaving every other byte of the file identical, e.g.:
+1. Delete **only this phase's** line from `project/plan/STATUS.md` — never the
+   `Next phase` counter line, never another phase's line — and remove its body
+   file, leaving every other byte of `STATUS.md` identical, e.g.:
 
    ```
-   sed -i 's/^- Phase NN ⬜/- Phase NN ✅/' project/plan/STATUS.md
+   sed -i '/^- Phase NN /d' project/plan/STATUS.md
+   rm -f project/plan/phase-NN.md
    ```
 
-2. Commit the one-line flip with the trailer:
+2. Commit the deletion with the trailer:
 
    ```
-   git commit -am "appkit: phase NN verified — flip ⬜→✅
+   git commit -am "appkit: phase NN verified — complete, deleted from queue
 
    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
    ```
@@ -126,8 +129,8 @@ Leave the marker `⬜`. Change no source.
 ## Boundaries
 
 - Never write or fix production code. Never write the contract region.
-- Never flip a marker on anything short of a green suite **and** full coverage of
-  the phase's ids.
+- Never delete a phase's `STATUS.md` line/body file on anything short of a green
+  suite **and** full coverage of the phase's ids.
 - Never read the big docs to re-derive the checklist — the brief **is** the
   checklist.
 - When uncertain a test really asserts, or when a tagged test is statically
@@ -146,7 +149,8 @@ Report this run's result as a `status` and a one-sentence `message`:
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 12 verified green; flipped to ✅ and removed the brief.` or
+  `Phase 12 verified green; deleted its STATUS.md line and phase file and
+  removed the brief.` or
   `Phase 13 still open on R-WY6X-V4G9; wrote attempt 2 feedback.`
 
 Always end the turn on **`NEXT`** — on a pass and on a gap alike. `CONTINUE` is

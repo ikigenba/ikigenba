@@ -20,10 +20,10 @@ not ask questions.
 1. **Find the next unstarted phase.** Run:
 
    ```
-   grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
+   grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** → every phase is verified green. There is nothing to gather.
+   - **No match** → the queue is empty. There is nothing to gather.
      Report **`DONE`** (the only end of the loop). Do nothing else.
    - **A match** → note that phase's number `NN`. Continue.
 
@@ -34,8 +34,9 @@ not ask questions.
      and any `verify` feedback must be preserved. **Leave the brief exactly as is**
      (touch neither the contract region nor the `## Verify feedback` region),
      **open no big doc**, and report **`NEXT`**. You are done this turn.
-   - If it names a **different** phase (now `✅`), or there is no brief, fall through
-     to step 3 and author a fresh brief.
+   - If it names a **different** phase with **no `STATUS.md` line left** (completed,
+     hence deleted), or there is no brief, fall through to step 3 and author a
+     fresh brief.
 
 3. **Author a fresh brief.** Only now do you read the big docs, and only the
    minimum:
@@ -133,8 +134,8 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Wrote a fresh brief for Phase 89 realizing D60.` or `Phase 89 brief already in
-  flight; left it untouched.` or `No ⬜ phase remains; the plan is fully built.`
+  flight; left it untouched.` or `The queue is empty; the plan is fully built.`
 
-End the turn on **`DONE`** only when step 1's grep found no `⬜` phase; otherwise
+End the turn on **`DONE`** only when step 1's grep found no `⬜` phase line; otherwise
 end on **`NEXT`** (whether you authored a fresh brief or preserved an in-flight
 one). Keep `message` a single plain sentence — not a JSON object or code block.

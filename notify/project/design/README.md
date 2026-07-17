@@ -9,8 +9,8 @@ the product's contractual constants by value (the page lives at the mount root
 only; v1 content is service name + version; the gate is `/_session-authn` and
 coarse; the visual system is Carbon) but does **not** own them. This is the
 single, current statement of the architecture — it is rewritten in place to
-stay true (stale decisions are removed, not stacked); the history of how it got
-here lives in the plan.
+stay true (stale decisions are removed, not stacked); construction history
+lives in git, never in the spec.
 
 > **Scope.** This design's Decisions cover five threads:
 >
@@ -79,6 +79,8 @@ Shared facts every Decision leans on:
   `cd notify && gofmt -l .` (no output), and `cd notify && go test ./...`
   all succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
+- **Requirement-id tags live in `*_test.go` files** — the test-file glob every
+  `R-XXXX-XXXX` id is grepped against to determine realized-ness.
 - **Module wiring:** `appkit`, `eventplane`, and `registry` are committed
   in-repo replace-siblings (`replace appkit => ../appkit`,
   `replace eventplane => ../eventplane`, `replace registry => ../registry`).

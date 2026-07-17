@@ -18,7 +18,7 @@ tests, and commit nothing.
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** → every phase is `✅`. Return `DONE` (this is the only end of
+   - **No match** → the queue is empty. Return `DONE` (this is the only end of
      the loop). Write nothing.
    - **Match** → note the zero-padded phase number `NN` (e.g. `01`, `07a`).
 
@@ -27,8 +27,9 @@ tests, and commit nothing.
    - If it names **this same phase**, the phase is mid-flight — its contract and
      any `verify` feedback must be preserved. **Leave the brief exactly as is**
      (touch neither region), open no big doc, and return `NEXT`.
-   - If it names a **different** (now-`✅`) phase, or no brief exists, author a
-     fresh brief in step 3.
+   - If it names a phase with **no `STATUS.md` line left** (completed, hence
+     deleted), or a different pending phase, or no brief exists, author a fresh
+     brief in step 3.
 
 3. **Author a fresh brief.** Only now open the big docs, and only the slice you
    need:

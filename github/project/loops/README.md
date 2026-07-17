@@ -46,17 +46,18 @@ contract, never a transport.
   Finishing a phase — even the last one, green suite and all gaps closed — is
   still `NEXT` for `build` and `verify`; ending the run is never theirs.
 
-## Per-step reads / writes / commits / flips
+## Per-step reads / writes / commits / deletes
 
-| step | reads | writes | commits | flips a marker |
+| step | reads | writes | commits | deletes the phase on pass |
 |---|---|---|---|---|
 | **gather** | `STATUS.md`; the one `phase-NN.md`; `INDEX.md` + the realized `DNN.md`; dependency interface signatures | the brief's **contract region** (only when authoring a fresh brief) | no | no |
 | **build** | **only** `project/loops/brief.md` (contract + feedback) | service source + package-local id-tagged tests | yes (the code increment) | no |
-| **verify** | the brief (contract + its own prior feedback); the suite; the tests | on pass: deletes the brief; on gap: **overwrites** the brief's feedback region | on pass: the one-line `STATUS.md` flip | **yes** (`⬜→✅`, on pass only) |
+| **verify** | the brief (contract + its own prior feedback); the suite; the tests | on pass: deletes the brief; on gap: **overwrites** the brief's feedback region | on pass: the phase-deletion commit | **yes** (deletes the `STATUS.md` line + `phase-NN.md`, on pass only) |
 
 `gather` is the only prompt that opens the big design/plan docs. `build` and
-`verify` read **only** the brief. `verify` is the only prompt that flips a marker
-or deletes the brief, and it writes no production code.
+`verify` read **only** the brief. `verify` is the only prompt that deletes a
+completed phase's `STATUS.md` line and body file, or deletes the brief, and it
+writes no production code.
 
 ## The brief lifecycle
 
@@ -73,7 +74,8 @@ prompts. It is **never committed** (ignored via the repo-root `.gitignore` entry
   open `## Verify feedback` gaps, does as much of the phase as cleanly fits one
   fresh context, and commits — leaving the marker `⬜` and the brief untouched.
 - **verify passes → delete, or gaps → feedback.** On a green suite with full
-  coverage, `verify` flips the marker and deletes the brief. On a gap it leaves
+  coverage, `verify` deletes the phase's `STATUS.md` line and `phase-NN.md`, and
+  deletes the brief — there is no done marker; done is gone. On a gap it leaves
   `⬜`, changes no source, and **overwrites** the feedback region with only the
   currently-open gaps (each tied to an `R-id` and the exact failing
   command/output). The brief therefore **persists across cycles** until the phase

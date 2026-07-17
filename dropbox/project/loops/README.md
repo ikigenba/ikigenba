@@ -45,16 +45,16 @@ Each turn ends with a `{status, message}` the harness supplies out of band
 completely (green suite, all gaps closed) is still `NEXT`; ending the run belongs
 to `gather` alone.
 
-## Per-step reads / writes / commits / flips
+## Per-step reads / writes / commits / deletes
 
-| step | reads | writes | commits | flips marker |
+| step | reads | writes | commits | deletes phase |
 |---|---|---|---|---|
 | **gather** | `STATUS.md`, one `phase-NN.md`, `INDEX.md`, the realized `DNN.md`, (product for intent) | `brief.md` **contract region** — only for a phase with no in-flight brief | no | no |
 | **build** | `brief.md` (contract **+** feedback) only | production code + co-located id-tagged tests | yes (the code increment) | no |
-| **verify** | `brief.md` (contract + its own feedback), the suite | `STATUS.md` flip **or** `brief.md` feedback region | the one-line `⬜→✅` flip (pass only) | **yes** (pass only) |
+| **verify** | `brief.md` (contract + its own feedback), the suite | deletes the phase's `STATUS.md` line + `phase-NN.md` **or** writes `brief.md` feedback region | the phase deletion (pass only) | **yes** (pass only) |
 
-Only `gather` reads the big docs; only `verify` flips a marker or deletes the
-brief.
+Only `gather` reads the big docs; only `verify` deletes a phase's `STATUS.md`
+line and body file, or deletes the brief.
 
 ## The brief lifecycle
 
@@ -70,8 +70,9 @@ writer):
 - **build** consumes the whole brief. If the `## Verify feedback` region lists
   open gaps, it closes those first, then does as much of the remaining work as
   cleanly fits (ideally the whole phase). It never writes the brief.
-- **verify** re-derives truth independently. **Pass** → flip `⬜→✅`, commit, and
-  **delete** the brief. **Gap** → leave `⬜`, change no source, and **overwrite**
+- **verify** re-derives truth independently. **Pass** → delete the phase's
+  `STATUS.md` line and `phase-NN.md`, commit, and **delete** the brief. **Gap**
+  → leave `⬜`, change no source, and **overwrite**
   the feedback region with only the currently-open gaps (each tied to an `R-id`
   and grounded in the exact failing command/output) — the brief **persists** so
   the next `build` sees the feedback. On a **true stall** (same gap ids, no new

@@ -16,26 +16,25 @@ never write or touch its **verify-feedback region**.
 1. **Find the next phase.** Run:
 
    ```
-   grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
+   grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   (Phase lines in this tree are bare lines beginning with the literal word
-   `Phase`, not Markdown bullets.)
+   (Phase lines in this tree are Markdown bullets beginning with `- Phase`.)
 
-   - **No match** (every phase is `✅`): the whole job is complete. Write no
-     brief, change nothing, and report **`DONE`** (see *Reporting the result*).
-     This is the **only** way the loop ever ends.
+   - **No match** (the queue is empty — no `⬜` phase line left): the whole job
+     is complete. Write no brief, change nothing, and report **`DONE`** (see
+     *Reporting the result*). This is the **only** way the loop ever ends.
    - **A match:** note the zero-padded phase number `NN` (e.g. `14`), the Decision
      ids after `realizes` (e.g. `D14` or `D7, D8`), and copy the **entire matched
-     `STATUS.md` line verbatim** — verify needs the exact text to flip its marker.
+     `STATUS.md` line verbatim** — verify needs the exact text to delete on pass.
 
 2. **Preserve an in-flight brief.** If `project/loops/brief.md` already exists,
    read its `# Build Brief — Phase NN` header:
    - If it names **this same phase**, the phase is mid-flight — its contract and
      any accumulated `verify` feedback must be preserved. **Leave the brief exactly
      as is** (both regions untouched), open no big doc, and report `NEXT`.
-   - If it names a **different** (now-`✅`) phase, it is stale; overwrite it in the
-     next steps.
+   - If it names a **different** phase that no longer has a `STATUS.md` line
+     (completed, hence deleted), it is stale; overwrite it in the next steps.
 
 3. **Read exactly the phase body** `project/plan/phase-NN.md` — its objective, the
    files it builds, its dependency phases, and its **Done when** bar.

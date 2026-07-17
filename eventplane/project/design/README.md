@@ -6,8 +6,8 @@ types, naming, and the test strategy. Product owns the why and the promises;
 design states their exact, checkable form and never re-declares the why. It
 uses product's contractual constants (the envelope fields, the canonical key
 form, the glob dialect) by value but does not own them. This is the single
-current statement of the design, rewritten in place; history lives in the
-plan.
+current statement of the design, rewritten in place; construction history
+lives in git.
 
 **Scope note — revision over a baseline.** This spec covers the routing
 revision plus the feed-guard removal (D5). The as-built library — outbox atomicity, the SSE transport and
@@ -46,6 +46,7 @@ the work is "done" are downstream's concern and are not specified here.
   `consumer.Run` on the other end (the existing `consumer_test.go` pattern).
 - **Test naming:** each Verification id is covered by a test that cites the id
   in its name or an adjacent comment, so grepping for the id finds the proof.
+  Requirement-id tags live in Go test files, glob `*_test.go`.
 
 ## Layout
 

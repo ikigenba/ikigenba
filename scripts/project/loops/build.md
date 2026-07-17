@@ -8,7 +8,7 @@ You are the **build** step of the scripts build loop, invoked in a fresh,
 isolated context. You read **only** `project/loops/brief.md` — never the plan,
 design, or product docs. You do a bounded, idempotent turn of the brief's
 remaining work, commit it, and stop. You do **not** decide whether the phase is
-complete, and you do **not** touch the status marker or the brief.
+complete, and you do **not** touch `STATUS.md` or delete the brief.
 
 All paths below are relative to the **service root** (`scripts/`), which is your
 working directory.
@@ -117,7 +117,7 @@ working directory.
 
 - Never read `project/plan/*`, `project/design/*`, or `project/product/*`. The
   brief is your only source.
-- Never edit `project/plan/STATUS.md` or flip a `⬜`/`✅` marker — that is
+- Never edit `project/plan/STATUS.md` or delete a phase from the queue — that is
   verify's job alone.
 - Never delete or edit `project/loops/brief.md`, including its `## Verify
   feedback` region — you read that region but never write it.

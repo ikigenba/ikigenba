@@ -15,7 +15,7 @@ behaviors, the files to touch, dependency interface signatures, and the done
 bar. You never read `project/design/`, `project/plan/`, or
 `project/product/`. You do a bounded, idempotent turn of the brief's
 remaining work and commit it. You do not decide completeness and you do not
-flip status markers — that is verify's job.
+delete a completed phase from `STATUS.md` — that is verify's job.
 
 ## Procedure
 
@@ -102,7 +102,7 @@ flip status markers — that is verify's job.
 
 - Never read `project/design/`, `project/plan/`, or `project/product/` — the
   brief is your entire specification.
-- Never edit `project/plan/STATUS.md` or flip a marker.
+- Never edit `project/plan/STATUS.md` or delete a completed phase.
 - Never delete or edit `project/loops/brief.md` — including its
   `## Verify feedback` region, which you read but never write.
 - Always end the turn on `NEXT` — you hand off every turn; you are never the

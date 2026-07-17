@@ -42,13 +42,13 @@ message of the turn — a prompt never emits literal JSON:
   progress messages it emits *before* its terminal message. `ralph` reads only
   the last message, so `CONTINUE` never advances the loop.
 
-## Per-step reads / writes / commits / flips
+## Per-step reads / writes / commits / completions
 
-| step | reads | writes | commits | flips marker |
+| step | reads | writes | commits | completes phase |
 |---|---|---|---|---|
 | **gather** | `STATUS.md`, the one `phase-NN.md`, its realized `DNN.md` (via `INDEX.md`), dependency source | `brief.md` **contract region** (fresh phase only) | no | no |
 | **build**  | `brief.md` only | service code + co-located id-tagged tests | yes (the code increment) | no |
-| **verify** | `brief.md` + runs the suite + traces coverage | `brief.md` **feedback region** (on gap), or deletes `brief.md` (on pass/stall) | yes (the one-line `⬜→✅` flip, on pass) | yes (on pass only) |
+| **verify** | `brief.md` + runs the suite + traces coverage | `brief.md` **feedback region** (on gap), or deletes `brief.md` (on pass/stall) | yes (the `STATUS.md` line + `phase-NN.md` deletion, on pass) | yes (on pass only) |
 
 Next-phase lookup (gather):
 `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1` (phase lines are
@@ -72,8 +72,9 @@ docs. It is **never committed** (gitignored at the repo root via
   opens no big doc.
 - **build** consumes the whole brief (contract + feedback), does as much of the
   phase as cleanly fits one turn, commits, and never writes the brief.
-- **verify** re-derives truth from scratch. On **pass** it flips `⬜→✅`,
-  commits the flip, and **deletes** the brief. On a **gap** it **overwrites**
+- **verify** re-derives truth from scratch. On **pass** it deletes the
+  completed phase's `STATUS.md` line and its `phase-NN.md`, commits that
+  deletion, and **deletes** the brief. On a **gap** it **overwrites**
   the feedback region with only the currently-open gaps (each tied to an `R-id`
   and grounded in the exact failing command/output) and leaves the brief in
   place, so the next `build` sees the feedback. The brief thus **persists across

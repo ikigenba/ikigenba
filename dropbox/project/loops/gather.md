@@ -24,10 +24,10 @@ dropbox`).
 1. **Find the next phase.** Run:
 
    ```
-   grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
+   grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** (every phase is `✅`): the build is complete. Write nothing,
+   - **No match** (the queue is empty): the build is complete. Write nothing,
      delete nothing, and report **`DONE`** — this is the only place the loop
      ends.
    - **A match**: note its zero-padded phase number `NN` and the Decision ids it
@@ -41,8 +41,9 @@ dropbox`).
      the brief exactly as it is** — do not touch the contract region, do not
      touch the `## Verify feedback` region, open **no** big doc — and report
      `NEXT`. You are done this turn.
-   - **The brief is for a different (now-`✅`) phase, or there is no brief** →
-     author a fresh brief for phase `NN` (steps 3–8).
+   - **The brief names a phase with no `STATUS.md` line left (completed, hence
+     deleted), or there is no brief** → author a fresh brief for phase `NN`
+     (steps 3–8).
 
 3. **Read exactly that one phase body** — `project/plan/phase-NN.md`. It names
    the package(s)/files or artifact to build, the realized Decision(s), and a

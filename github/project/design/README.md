@@ -7,8 +7,7 @@ form** of those promises and never re-declares the why. Design *uses* the
 product's contractual constants (org `ikigenba`, loopback port `3203`, bot-only
 attribution, no `/feed`) by value but does not own them. This is the **single,
 current** statement of the architecture: when a decision changes its file is
-rewritten in place (never stacked); the history of how it got here lives in the
-plan.
+rewritten in place (never stacked); construction history lives in git.
 
 ## Requirement ids
 
@@ -58,6 +57,8 @@ Shared facts every Decision leans on.
   fully offline: the GitHub client is exercised against an injected
   `http.RoundTripper` stub (the same technique `gmail`'s client tests use), and the
   nginx fragment against a parse/grep test. No unit test performs live network I/O.
+- **Test-file glob.** Requirement-id tags live in `*_test.go` files, each id as a
+  `// R-XXXX-XXXX` comment on the test that asserts it.
 - **"The suite is green"** means: `GOWORK=off go build ./...` succeeds **and**
   `GOWORK=off go test ./...` passes with no failures and no `SKIP`, from `github/`,
   and `gofmt -l .` is empty and `go vet ./...` is clean.

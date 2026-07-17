@@ -20,8 +20,8 @@ additive identity headers from the introspection endpoints (D17–D19); and (3) 
 `fetch`/XHR with a clean 401 (D20), plus the web-sign-in plumbing that carries a
 validated same-site `return_to` from `/login` through the handshake and back
 (D21–D22) so the visitor lands where they were headed. It is
-rewritten in place to stay true (stale decisions are removed, not stacked); the
-history of how it got here lives in the plan.
+rewritten in place to stay true (stale decisions are removed, not stacked);
+construction history lives in git, not here.
 
 ## Requirement ids
 
@@ -89,7 +89,8 @@ Shared facts every Decision leans on:
   GOWORK=off` (driven by `bin/ship`).
 - **Test command:** `cd dashboard && go test ./...`. **"The suite is green"**
   means: `cd dashboard && go build ./...`, `go vet ./...`, `gofmt -l .` (no
-  output), and `go test ./...` all succeed with zero failures.
+  output), and `go test ./...` all succeed with zero failures. Requirement-id
+  tags live in Go test files matched by the glob `*_test.go`.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Server package:** the dashboard's whole apex route table is registered in
   `dashboard/internal/server/routes.go` (`(*app).register`), built over `*app`
@@ -200,7 +201,8 @@ Decision it realizes:
   sorted `R-id → Decision/file` reverse map. It is the grep target for resolving
   an id.
 
-Design is **rewritten in place**, not append-only (history lives in the plan): a
-changed Decision is rewritten in its `DNN.md` and `INDEX.md` is regenerated.
+Design is **rewritten in place**, not append-only (construction history lives
+in git): a changed Decision is rewritten in its `DNN.md` and `INDEX.md` is
+regenerated.
 Existing `R-XXXX-XXXX` ids are stable handles — never renumbered; a newly added
 behavior gets a freshly minted id, and a removed behavior's id is deleted with it.

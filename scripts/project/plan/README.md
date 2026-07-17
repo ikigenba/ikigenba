@@ -1,15 +1,23 @@
 # scripts — Plan
 
-**Authority: construction order and history.** This document and the
-`project/plan/` directory it heads own the **build order** of the scripts landing
-page and the **record of what has been built**. The plan is **append-only**:
-completed phases are never rewritten or deleted, so the plan doubles as the
-construction history. To extend the work, update the product
+**Authority: construction order.** This document and the `project/plan/`
+directory it heads own the **build order** of scripts's **pending** work only.
+Completion is deletion: the build loop removes the finished phase's `STATUS.md`
+line and its `phase-NN.md` in the completion commit, so the plan never holds
+finished work and can never contradict a design that has since moved on. History
+lives in git, not here — the completion commits and the deleted files remain
+recoverable there. To extend the work, update the product
 (`project/product/README.md`) and design (`project/design/README.md` +
 `project/design/`) **in place** to stay authoritative for the current state, then
-**append** a new phase here — a new `project/plan/phase-NN.md` body file plus a
-new line in `project/plan/STATUS.md`. Never edit a finished phase except to flip
-its status marker in `STATUS.md`.
+**append** a new phase — a new `project/plan/phase-NN.md` body file plus a new
+line in `project/plan/STATUS.md`, numbered from the `Next phase` counter. Never
+renumber a phase and never reuse a number, so a number names one phase forever
+even after its files are deleted.
+
+**Coverage invariant.** Every *current* design Verification id is either already
+**realized** — its id appears verbatim as a `// R-XXXX-XXXX` tag in a test file
+that runs under the suite — or assigned to **exactly one** pending phase: no
+current id unassigned, none split, none duplicated across pending phases.
 
 **One phase = one coherent unit = one accumulating context.** Each phase is a
 single coherent unit — almost always one Go package (`internal/<pkg>` or
@@ -33,19 +41,24 @@ each listed id has a genuine test exercising the behavior that Decision's
 Verification list describes — see each `project/design/DNN.md` Verification
 section for what the id requires. A **structural** phase (no ids, e.g. the docs
 update) is done when its named content check passes and the suite stays green.
+Every phase's acceptance bar is deterministic exit conditions, never a subjective
+judgment, never a self-referential/unsatisfiable check.
 
 ## Layout
 
 The plan is physically split so the build loop reads only what it needs:
 
-- `project/plan/STATUS.md` — the manifest: one line per phase in build order, and
-  the **only** home of status markers (`✅` done / `⬜` not started).
-- `project/plan/phase-NN.md` — one body file per phase (zero-padded: `phase-01.md`,
-  `phase-02.md`, …). A phase body carries **no** status token — status lives only
-  in `STATUS.md`.
-- `project/plan/README.md` — this file: the static, invariant rules above. It lists
-  no phases and carries no status, so it never grows with the project.
+- `project/plan/STATUS.md` — the manifest: the `Next phase` counter plus the
+  **only** home of the pending marker (`⬜`), one bullet line per pending phase in
+  build order.
+- `project/plan/phase-NN.md` — one body file per **pending** phase (zero-padded:
+  `phase-01.md`, `phase-02.md`, …). A phase body carries **no** status token —
+  status lives only in `STATUS.md`.
+- `project/plan/README.md` — this file: the static, invariant rules above. It
+  lists no phases and carries no status, so it never grows with the project.
 
-**Append-only, restated for this layout:** never rewrite or delete a
-`phase-NN.md`; never delete a line in `STATUS.md`. The only build-time mutation to
-either is flipping a single phase's `⬜ → ✅` in `STATUS.md` when it lands.
+**Completion is deletion, restated for this layout:** the build loop's only
+mutations to this directory are removing a finished phase's `STATUS.md` line
+together with its `phase-NN.md`, and appending a new phase's line + body file.
+The `Next phase` counter is never decremented and never touched except to bump
+it on an append.

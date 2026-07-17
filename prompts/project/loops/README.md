@@ -42,13 +42,13 @@ Each turn ends with a `{status, message}` the harness supplies out of band
   mid-turn progress message with (codex coerces *every* streamed message into the
   schema). It never terminates a turn and never drives the loop.
 
-## Per-step reads / writes / commits / flips
+## Per-step reads / writes / commits / completions
 
-| step | reads | writes | commits | flips marker | terminal status |
+| step | reads | writes | commits | completes phase | terminal status |
 |---|---|---|---|---|---|
 | **gather** | `STATUS.md`, the one `phase-NN.md`, `INDEX.md`, the realized `DNN.md`, `product/README.md` | the brief's **contract region** (only when authoring fresh) | no | no | `NEXT`, or `DONE` if no `⬜` phase |
 | **build** | `brief.md` only (contract + feedback) | source + co-located `*_test.go` | yes (code increment) | no | always `NEXT` |
-| **verify** | `brief.md` + the suite | brief's **feedback region** on a gap; `STATUS.md` on a pass | yes (the one-line `⬜→✅` flip, on pass) | yes (pass only) | always `NEXT` |
+| **verify** | `brief.md` + the suite | brief's **feedback region** on a gap; deletes the `STATUS.md` line and `phase-NN.md` on a pass | yes (the deletion commit, on pass) | yes (pass only) | always `NEXT` |
 
 ## Brief lifecycle (`project/loops/brief.md`)
 
@@ -62,7 +62,8 @@ committed** (gitignored), **single-phase**, and **phase-scoped, not per-cycle**:
   big doc and does not touch either region.
 - **build** consumes the whole brief (prioritizing any open feedback gaps) and
   never writes it.
-- **verify** owns the feedback region. On a **pass** it flips the marker and
+- **verify** owns the feedback region. On a **pass** it deletes the phase's
+  `STATUS.md` line and `phase-NN.md` (there is no `✅` marker; done is gone) and
   **deletes** the brief; on a **gap** it **overwrites** the feedback region with
   only the currently-open gaps and leaves the brief in place, so the brief
   persists across cycles until the phase passes or a stall reset discards it.

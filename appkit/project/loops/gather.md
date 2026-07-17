@@ -25,7 +25,7 @@ one untouched.
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** → every phase is `✅`. The whole job is done: report **`DONE`**.
+   - **No match** → the queue is empty. The whole job is done: report **`DONE`**.
      This is the *only* place the loop ends. Do not write or touch the brief.
    - **A match** → note its phase number `NN` (the two-digit number after the
      literal words `- Phase`). Continue.
@@ -36,8 +36,9 @@ one untouched.
      **mid-flight** — its contract and any `verify` feedback must be preserved.
      Leave the file **exactly as is** (touch neither region), open **no** big doc,
      and report **`NEXT`**. You are done this turn.
-   - If it names a **different** (now-`✅`) phase, or the file does not exist,
-     fall through to step 3 and author a fresh brief.
+   - If it names a phase with no `STATUS.md` line left (completed, hence
+     deleted), or the file does not exist, fall through to step 3 and author a
+     fresh brief.
 
 3. **Resolve the phase.** Read **only**:
    - `project/plan/phase-NN.md` — the phase body (what gets built, the ids it

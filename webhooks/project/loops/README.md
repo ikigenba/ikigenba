@@ -42,16 +42,16 @@ prompt never emits literal JSON:
   messages it emits *before* its terminal message. `ralph` reads only the last
   message, so `CONTINUE` never advances the loop.
 
-## Per-step reads / writes / commits / flips
+## Per-step reads / writes / commits / queue mutations
 
-| step | reads | writes | commits | flips marker |
+| step | reads | writes | commits | mutates STATUS.md |
 |---|---|---|---|---|
 | **gather** | `STATUS.md`, the one `phase-NN.md`, its realized `DNN.md` (via `INDEX.md`), dependency source | `brief.md` **contract region** (fresh phase only) | no | no |
 | **build**  | `brief.md` only | service code + co-located id-tagged tests | yes (the code increment) | no |
-| **verify** | `brief.md` + runs the suite + traces coverage | `brief.md` **feedback region** (on gap), or deletes `brief.md` (on pass/stall) | yes (the one-line `⬜→✅` flip, on pass) | yes (on pass only) |
+| **verify** | `brief.md` + runs the suite + traces coverage | `brief.md` **feedback region** (on gap), or deletes `brief.md` (on pass/stall) | yes (deletes the phase's line + `phase-NN.md`, on pass) | yes (deletes the phase's line, on pass only) |
 
-Next-phase lookup (gather): `grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1`
-(phase lines are bare lines, not Markdown bullets). "The suite is green" (build &
+Next-phase lookup (gather): `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1`
+(phase lines are Markdown bullets). "The suite is green" (build &
 verify): `go build ./...`, `go vet ./...`, and `go test ./...` all exit 0 with no
 failures, tests run against real temp-file SQLite with a deterministic injected
 clock — never a mocked store or outbox.
@@ -69,12 +69,13 @@ describes exactly **one** phase at a time:
   no big doc.
 - **build** consumes the whole brief (contract + feedback), does as much of the
   phase as cleanly fits one turn, commits, and never writes the brief.
-- **verify** re-derives truth from scratch. On **pass** it flips `⬜→✅`, commits
-  the flip, and **deletes** the brief. On a **gap** it **overwrites** the
-  feedback region with only the currently-open gaps (each tied to an `R-id` and
-  grounded in the exact failing command/output) and leaves the brief in place, so
-  the next `build` sees the feedback. The brief thus **persists across cycles**
-  until the phase passes or a stall reset discards it.
+- **verify** re-derives truth from scratch. On **pass** it deletes the phase's
+  `STATUS.md` line and its `phase-NN.md`, commits that deletion, and **deletes**
+  the brief. On a **gap** it **overwrites** the feedback region with only the
+  currently-open gaps (each tied to an `R-id` and grounded in the exact failing
+  command/output) and leaves the brief in place, so the next `build` sees the
+  feedback. The brief thus **persists across cycles** until the phase passes or
+  a stall reset discards it.
 
 ## Why it converges (human-free)
 

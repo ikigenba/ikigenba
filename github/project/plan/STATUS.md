@@ -1,24 +1,12 @@
 # github — Plan Status
 
-This is the manifest: one line per phase in build order, and the **only** place a
-phase's status marker lives. Each phase line is a Markdown bullet beginning with
-`- Phase`, carrying `✅` (done) or `⬜` (not started). The build loop finds its next
-work with `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1`, reads only
-that phase's `project/plan/phase-NN.md`, and on completion flips that one marker.
-This file deliberately carries **no bare status glyph**, so the anchored grep
-matches only phase lines.
+This is the manifest: one line per **pending** phase in build order, and the
+**only** place a phase's pending marker lives. Each phase line is a Markdown
+bullet beginning with `- Phase`, carrying `⬜` (pending). The build loop finds
+its next work with `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1`,
+reads only that phase's `project/plan/phase-NN.md`, and on completion **deletes**
+that phase's line and its body file — there is no done marker; done is gone.
+This file deliberately carries **no bare status glyph** outside phase lines, so
+the anchored grep matches only phase lines.
 
-- Phase 01 ✅ realizes — (structural, D1) — the stateless connector module skeleton on the appkit chassis
-- Phase 02 ✅ realizes R-DLMX-CNDL, R-DO2Q-46UZ, R-DPAM-HYLO, R-DQII-VQCD, R-DRQF-9I32 — the GitHub App installation-token source (offline)
-- Phase 03 ✅ realizes R-DVE4-ETB5, R-DWM0-SL1U, R-DXTX-6CSJ, R-DZ1T-K4J8, R-E09P-XW9X, R-E1HM-BO0M, R-E2PI-PFRB, R-E3XF-37I0, R-E55B-GZ8P, R-E6D7-UQZE, R-E7L4-8IQ3, R-EA0X-027H, R-EB8T-DTY6, R-ECGP-RLOV, R-D0IM-VQ7H — the typed GitHub REST v3 client
-- Phase 04 ✅ realizes R-EEWI-J569, R-EHCB-AONN, R-EIK7-OGEC, R-EJS4-2851, R-EL00-FZVQ, R-EM7W-TRMF, R-ENFT-7JD4 — the MCP tool surface (all verbs + health + reflection + provenance)
-- Phase 05 ✅ realizes R-EPVL-Z2UI, R-ER3I-CUL7, R-ETJB-4E2L — the loopback GET /pr twin for scripts
-- Phase 06 ✅ realizes R-EVZ3-VXJZ, R-EX70-9PAO, R-EYEW-NH1D — the landing page and nginx fragment
-- Phase 07 ✅ realizes R-7NJI-UTHM, R-7ORF-8L8B, R-7PZB-MCZ0 — upgrade the landing page to the canonical suite layout
-- Phase 08 ✅ realizes R-WYSR-NPL3, R-X00O-1HBS — pin the landing page to the canonical layout (token integrity + golden render), not just its content
-- Phase 09 ✅ realizes R-31CG-6FPW, R-X00O-1HBS — realign the shipped landing.html to the true canonical layout (crm/gmail/ledger), regenerate the golden, and add an independent structural-contract check
-- Phase 10 ✅ realizes R-EVZ3-VXJZ, R-XSOU-THYE, R-XTWR-79P3, R-7NJI-UTHM, R-7PZB-MCZ0, R-EX70-9PAO, R-XV4N-L1FS, R-XWCJ-YT6H, R-XXKG-CKX6, R-XYSC-QCNV — clone the canonical crm landing.html verbatim (three text fields aside) and mirror crm's web test set; drop the bespoke golden/structural/token/escaping guards and the golden fixture
-- Phase 11 ✅ realizes R-42HV-I1HS, R-43PR-VT8H, R-44XO-9KZ6 — add `error_page 401 = @login_bounce;` to the two session-gated locations in `github/etc/nginx.conf` (`= /srv/github/`, `/srv/github/static/`), leaving the bearer tier untouched; purely additive, proven by extending the `internal/web/nginx_test.go` nginx content assertions; covers R-42HV-I1HS, R-43PR-VT8H, R-44XO-9KZ6
-- Phase 12 ✅ realizes R-FI1O-9E44, R-FJ9K-N5UT, R-FKHH-0XLI, R-FLPD-EPC7, R-FMX9-SH2W, R-FO56-68TL, R-FPD2-K0KA, R-FQKY-XSAZ, R-FT0R-PBSD — structured MCP adoption: migrate the hand-rolled JSON-RPC layer to the shared appkit/mcp transport (StructuredResult + per-tool outputSchema + typed error codes + chassis health/reflection), and swap the `GET /pr` self-guard to the chassis loopback guard
-- Phase 13 ✅ realizes R-GJYX-0UGN, R-F70H-NRU9, R-GL6T-EM7C, R-GMEP-SDY1, R-GNMM-65OQ, R-F88E-1JKY, R-GOUI-JXFF, R-GQ2E-XP64 — issue-execution support verbs: `PRCreate`/`IssueComments`/`LabelAdd`/`LabelRemove` client methods (new `delete` helper) + the four MCP verbs with per-write `logWrite` and bot-only bodies
-- Phase 14 ✅ realizes R-GSI7-P8NI, R-GTQ4-30E7, R-GUY0-GS4W, R-GW5W-UJVL — loopback `GET /token` twin: exported `Client.Token` accessor, `TokenHandler` JSON route behind the chassis loopback guard, nginx `/srv/github/token` 404, never-logged token
+Next phase: 15

@@ -8,7 +8,7 @@ You run from the **service root** (`webhooks/`); every path below is relative to
 it. You read **only** `project/loops/brief.md` — never design, plan, or product.
 You do as much of the phase's remaining work as cleanly fits this one fresh
 context, write id-tagged tests, run the suite, and commit. You **do not** decide
-completeness and **do not** flip status markers — that is verify's job.
+completeness and **do not** touch `STATUS.md` — that is verify's job.
 
 ## Procedure
 
@@ -90,7 +90,7 @@ completeness and **do not** flip status markers — that is verify's job.
 ## Boundaries
 
 - Never read design, plan, or product — the brief is your complete and only input.
-- Never edit `project/plan/STATUS.md` or flip a marker; never delete or edit
+- Never edit `project/plan/STATUS.md`; never delete or edit
   `project/loops/brief.md`, including its `## Verify feedback` region (you read it
   but never write it).
 - You hand off **every** turn; you are never the step that ends the run.

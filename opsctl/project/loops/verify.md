@@ -6,8 +6,9 @@ model: claude-opus-4-8
 
 You are the **verify** step of the opsctl build loop. You run from the service
 root (`opsctl/`) in a fresh, isolated context. You are the **only** step that
-flips a status marker or deletes the brief. You **never** halt the loop and
-**never** advance a phase that has an open gap. You write no production code.
+mutates `project/plan/STATUS.md` (or deletes a `phase-NN.md`) or deletes the
+brief. You **never** halt the loop and **never** advance a phase that has an
+open gap. You write no production code.
 
 You **re-derive current truth from scratch every run** — you never trust `build`'s
 claims, and you read your own prior `## Verify feedback` only to *measure
@@ -58,12 +59,13 @@ docs to rebuild it.
 
 ### Pass — no open gaps
 
-- Flip **only this phase's** `⬜→✅` in `project/plan/STATUS.md` (change no other
-  line).
-- Commit the one-line flip:
+- Delete **only this phase's** `- Phase NN …` line from `project/plan/STATUS.md`
+  (never the `Next phase` counter line, never another phase's line).
+- `rm project/plan/phase-NN.md`.
+- Commit the deletion:
 
   ```
-  git add project/plan/STATUS.md && git commit -m "opsctl phase NN: verified green
+  git add project/plan/STATUS.md && git rm project/plan/phase-NN.md && git commit -m "opsctl phase NN: verified green
 
   Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   ```
@@ -73,7 +75,8 @@ docs to rebuild it.
 
 ### Gap — at least one open gap
 
-Leave the marker `⬜`. Change no source.
+Leave the marker `⬜` and the phase's `STATUS.md` line and `phase-NN.md` in
+place. Change no source.
 
 1. **Measure progress** against the prior `## Verify feedback`:
    - Read its attempt counter `N`, its recorded build commit, and its prior
@@ -107,7 +110,7 @@ Leave the marker `⬜`. Change no source.
 ## Boundaries
 
 - Never write or fix production code; never write the `## Contract` region.
-- Never flip a marker on anything short of green build + green suite + full,
+- Never delete a phase's line/body on anything short of green build + green suite + full,
   reachable, genuinely-asserting coverage of every id.
 - Treat a skipped or statically-unreachable id test as **uncovered** — a skip is
   never acceptable green for a requirement.

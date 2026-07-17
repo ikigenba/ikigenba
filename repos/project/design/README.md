@@ -8,7 +8,7 @@ and never re-declares the why. Design uses the product's contractual constants
 (bot identity `@ikigenba`, label set `execute`/`executing`/`failed`/`discuss`,
 port 3007, mount `/srv/repos/`, starting version `v0.1.0`) by value but does
 not own them. This is the single current statement of the architecture,
-rewritten in place; history lives in the plan.
+rewritten in place; construction history lives in git.
 
 ## Requirement ids
 
@@ -33,7 +33,8 @@ ids ends at minting them — how coverage is measured and when the work is
   GOARCH=amd64 GOWORK=off`).
 - **Test:** `cd repos && go test ./...`. **"The suite is green" means:**
   `go build ./...`, `go vet ./...`, and `go test ./...` all exit 0 with no
-  failures, and `gofmt -l .` prints nothing — all from `repos/`.
+  failures, and `gofmt -l .` prints nothing — all from `repos/`. Requirement-id
+  tags live in the test-file glob `*_test.go`.
 - **Test substrates:** real temp-file SQLite through the embedded migration
   set; the **real `git` binary** against local fixture remotes
   (`git init --bare` in `t.TempDir()`, `file://` URLs) — never a mocked git;

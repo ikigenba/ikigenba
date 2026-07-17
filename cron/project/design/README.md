@@ -17,8 +17,8 @@ product's contractual constants by value (the page lives at the mount root only;
 v1 content is service name + version; the gate is `/_session-authn` and coarse;
 the visual system is Carbon) but does **not** own them. This is the single,
 current statement of the landing-page architecture — it is rewritten in place to
-stay true (stale decisions are removed, not stacked); the history of how it got
-here lives in the plan.
+stay true (stale decisions are removed, not stacked); construction history lives
+in git, not here.
 
 > **Scope.** This design covers cron's web landing page **and cron's conformance
 > to the appkit chassis reference shape** — the on-disk `share/www` web surface
@@ -62,6 +62,7 @@ Shared facts every Decision leans on:
 - **Test command:** `cd cron && go test ./...`. **"The suite is green"** means:
   `cd cron && go build ./...`, `cd cron && go vet ./...`, `cd cron && gofmt -l .`
   (no output), and `cd cron && go test ./...` all succeed with zero failures.
+  Requirement-id tags live in Go test files matched by the glob `*_test.go`.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit`, `eventplane`, and `registry` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,

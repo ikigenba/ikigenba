@@ -1,22 +1,21 @@
 # appkit — Plan
 
-**Authority: construction order and history.** This document and the
-`project/plan/` directory it heads own the **build order** of appkit's
-ralph-governed work and the **record of what has been built**. The plan is
-**append-only**: completed phases are never rewritten or deleted, so the plan
-doubles as the construction history. To extend the work, update the design
-(`project/design/README.md` + `project/design/`) **in place**, then **append** a
-new phase here — a new `project/plan/phase-NN.md` plus a new line in
-`project/plan/STATUS.md`. Never edit a finished phase except to flip its status
-marker in `STATUS.md`.
+**Authority: construction order.** This document and the `project/plan/`
+directory it heads own the **build order** of appkit's ralph-governed
+**pending** work only. Completion is deletion: the build loop removes the
+finished phase's `STATUS.md` line and its `phase-NN.md` in the completion
+commit — construction history lives in git, not here. To extend the work,
+update the design (`project/design/README.md` + `project/design/`) **in
+place**, then **append** a new phase — a new `project/plan/phase-NN.md` plus a
+new line in `project/plan/STATUS.md`, numbered from the `Next phase` counter.
+Never renumber a phase and never reuse a number.
 
-**Coverage invariant.** The phases collectively realize **every current** design
-Verification id in **exactly one** phase — no current id unassigned, none split,
-none duplicated. Coverage is one-directional: design (rewritten in place) is the
-denominator; the plan (append-only history) must cover all of it. The plan may
-also carry **retired** ids in frozen phases whose behavior has since left design
-— that is expected, never a defect, and never a reason to edit a finished phase.
-A current id minted later can only be covered by a newly appended phase.
+**Coverage invariant.** Every **current** design Verification id is either
+already **realized** — its id appearing verbatim as a tag in a test file that
+runs under the suite — or assigned to **exactly one pending** phase: no current
+id unassigned, none split, none duplicated across pending phases. Design
+(rewritten in place) is the denominator; realized-ness is read from the code
+itself, never from a ledger or history kept here.
 
 **One phase = one coherent increment.** Each phase is a single coherent unit sized
 for one subagent, built against the design Decision(s) it realizes (resolved
@@ -48,19 +47,24 @@ integration/box ids, the named live check passes.
 
 The plan is physically split so the build loop reads only what it needs:
 
-- `project/plan/STATUS.md` — the manifest: one line per phase in build order, and
-  the **only** home of status markers (`✅` done / `⬜` not started).
-- `project/plan/phase-NN.md` — one body file per phase (zero-padded). A phase body
-  carries **no** status token — status lives only in `STATUS.md`.
+- `project/plan/STATUS.md` — the manifest: the `Next phase` counter plus the
+  **only** home of the `⬜` pending markers.
+- `project/plan/phase-NN.md` — one body file per **pending** phase
+  (zero-padded). A phase body carries **no** status token — status lives only
+  in `STATUS.md`.
 - `project/plan/README.md` — this file: the static rules (plus the operator
   steps below). It never accumulates phase content.
+
+Completion is deletion: the build loop's only mutations to this directory are
+removing a finished phase's `STATUS.md` line together with its `phase-NN.md`.
+The `Next phase` counter is never decremented and never touched by the loop.
 
 ## Operator steps (outside the unattended loop)
 
 Some Verification lives on the **live `int` box** and cannot be a `STATUS.md`
 phase: the unattended loop is forbidden to `ssh int` / `opsctl` / mutate the box,
-so an id whose only pass-predicate is a live-box command could never flip ⬜→✅ and
-would make the loop non-convergent. Such ids are recorded here as explicit operator
+so an id whose only pass-predicate is a live-box command could never clear its
+pending `⬜` line and would make the loop non-convergent. Such ids are recorded here as explicit operator
 steps, run **only on explicit instruction to deploy**, and are deliberately **absent
 from `STATUS.md`** so `gather`/`verify` never treat them as loop work.
 

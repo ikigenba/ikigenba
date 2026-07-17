@@ -22,10 +22,10 @@ toolchain commands run as written (`cd sites && …`).
 1. **Find the next phase.** Run:
 
    ```
-   grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
+   grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** (every phase is `✅`) → the whole job is done. Report **`DONE`**.
+   - **No match** (the queue is empty) → the whole job is done. Report **`DONE`**.
      This is the **only** place the loop ever ends. Do nothing else.
    - **A match** → note that phase number `NN` and continue.
 
@@ -35,8 +35,9 @@ toolchain commands run as written (`cd sites && …`).
      contract and any `## Verify feedback` region are still live. Leave the brief
      **exactly as is** (do not touch either region), open **no** big doc, and
      report `NEXT`.
-   - If it names a **different** phase (now `✅`) or has no readable header,
-     discard it and author a fresh brief in step 3.
+   - If it names a phase with **no `STATUS.md` line left** (completed, hence
+     deleted) or has no readable header, discard it and author a fresh brief in
+     step 3.
    - If there is **no** brief, author a fresh brief in step 3.
 
 3. **Author a fresh brief** (only when step 2 did not preserve one):

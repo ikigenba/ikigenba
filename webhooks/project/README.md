@@ -12,7 +12,7 @@ of the folders below. Paths are written relative to the **service root**
 | `product/` | `product.md` — the *why*, for whom, scope, user-facing promises | `/product-mode` (rewritten in place) |
 | `research/` | `research.md` — the design-informing research spine; plus free-form `*-research.md` working notes | `research.md`: `/research-mode` (rewritten in place). Other notes: free-form. |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `/design-mode` (rewritten in place) |
-| `plan/` | `README.md` (rules) + `STATUS.md` (the manifest — the only home of each phase's `⬜`/`✅` marker) + `phase-NN.md` (one per phase) | `/plan-mode` (append-only) |
+| `plan/` | `README.md` (rules) + `STATUS.md` (the manifest — the `Next phase` counter and the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per **pending** phase; completion deletes it) | `/plan-mode` (a work queue — appends new phases, never rewrites finished ones) |
 | `bugs/` | free-form bug diagnoses / write-ups | free-form (not mode-owned) |
 | `requests/` | free-form feature requests | free-form (not mode-owned) |
 | `loops/` | the `ralph` build-loop prompts: `gather.md`, `build.md`, `verify.md` (+ the ephemeral `brief.md`) | build-loop infrastructure |
@@ -42,7 +42,7 @@ either `NEXT` (advance to the next prompt, wrapping `verify → gather`) or `DON
 
 - **gather** — the only prompt that reads the big docs. Greps `STATUS.md` for the
   first `⬜` phase
-  (`grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1`); if there is none it
+  (`grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1`); if there is none it
   returns `DONE` (the sole exit). Otherwise it reads that one `phase-NN.md`,
   resolves its Decision(s) via `INDEX.md`, and writes a tiny, self-contained
   `loops/brief.md`, then returns `NEXT`.
@@ -50,14 +50,16 @@ either `NEXT` (advance to the next prompt, wrapping `verify → gather`) or `DON
   id-tagged tests, runs the suite (`go build ./...`, `go vet ./...`,
   `go test ./...` from the service root), commits, leaves the marker untouched.
   Returns `NEXT`.
-- **verify** — the independent gate and only prompt that flips a marker. Pass →
-  flip that phase's `⬜→✅` in `STATUS.md` and commit; gap → leave it `⬜`. Either
-  way it deletes `loops/brief.md`. Returns `NEXT`.
+- **verify** — the independent gate and only prompt that completes a phase.
+  Pass → delete that phase's `- Phase NN …` line from `STATUS.md` (never the
+  `Next phase` counter line) and its `phase-NN.md` body file, and commit the
+  deletion; gap → leave its `⬜` line untouched. Either way it deletes
+  `loops/brief.md`. Returns `NEXT`.
 
 The loop is human-free and **converges**: `verify` can neither halt nor advance a
 phase on a gap, so an incomplete phase simply stays `⬜` and is re-gathered and
 re-attacked next cycle. The only stops are `gather`'s `DONE` (which requires zero
-`⬜` markers — every phase verified green) or a `ralph` budget rail.
+`⬜` lines — the queue is empty) or a `ralph` budget rail.
 
 ### `brief.md` — the ephemeral seam
 
@@ -73,7 +75,7 @@ gitignored at the repo root). Its schema:
 phase: NN
 realizes: <D2 | D7, D8>
 decision_files: <project/design/D0k.md[, …]>
-status_line: <the exact STATUS.md phase line, verbatim — verify flips this>
+status_line: <the exact STATUS.md phase line, verbatim — verify deletes this on pass>
 
 ## ids to cover
 <one bare R-XXXX-XXXX per line; or "(none — structural phase)">
@@ -89,6 +91,6 @@ status_line: <the exact STATUS.md phase line, verbatim — verify flips this>
  rule; and, only when the phase needs it, "requires the suite up via ../bin/start">
 ```
 
-Because `gather` is the only big-doc reader and `verify` is the only
-marker-flipper, the three prompts compose into a closed, self-correcting loop with
-the brief as its single shared state.
+Because `gather` is the only big-doc reader and `verify` is the only prompt
+that completes a phase, the three prompts compose into a closed, self-correcting
+loop with the brief as its single shared state.

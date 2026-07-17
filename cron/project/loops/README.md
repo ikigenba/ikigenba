@@ -49,22 +49,21 @@ itself (codex via `--output-schema`, claude via `--json-schema` surfaced as a
 `StructuredOutput` tool) — the prompts describe only *which* status to report and
 *what* the message says, never a transport.
 
-## Per-step reads / writes / commits / flips
+## Per-step reads / writes / commits / completions
 
-| step | reads | writes | commits | flips marker |
+| step | reads | writes | commits | completes phase |
 |---|---|---|---|---|
 | **gather** | `STATUS.md`, one `phase-NN.md`, `design/INDEX.md`, realized `DNN.md`, (optionally) `product/README.md` | `brief.md` **contract region** (only when authoring a fresh brief) | no | no |
 | **build** | `brief.md` only (contract + feedback) | service code + co-located id-tagged tests | yes (the code increment) | no |
-| **verify** | `brief.md` (contract + own prior feedback) + runs the suite | on pass: deletes `brief.md`; on gap: overwrites `brief.md` **feedback region** | yes (only the one-line `⬜→✅` flip, on pass) | yes (on pass only) |
+| **verify** | `brief.md` (contract + own prior feedback) + runs the suite | on pass: deletes the phase's `STATUS.md` line + `phase-NN.md`, then `brief.md`; on gap: overwrites `brief.md` **feedback region** | yes (only the phase-deletion commit, on pass) | yes (on pass only) |
 
 The next unit of work is found with:
 
 ```
-grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
+grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
 ```
 
-(cron's `STATUS.md` phase lines are bare `Phase NN ⬜/✅ …` lines, not Markdown
-bullets.)
+(cron's `STATUS.md` phase lines are Markdown bullets: `- Phase NN ⬜ …`.)
 
 ## Brief lifecycle
 
@@ -79,11 +78,12 @@ consume, so neither ever opens design or plan. It is **single-phase** and
   in-flight brief** (leaves it untouched, opens no big doc).
 - **build** consumes the whole brief (contract + feedback), prioritizing any open
   gaps in the feedback region, and never writes the brief.
-- **verify** either **passes** the phase (flip `⬜→✅`, commit the flip, delete the
-  brief) or records a **gap** (leave `⬜`, overwrite the feedback region with only
-  the currently-open gaps, each tied to an `R-id` and grounded in the exact failing
-  command/output — never delete the brief). The brief thus persists across cycles
-  until the phase passes or a stall reset.
+- **verify** either **passes** the phase (delete its `STATUS.md` line and
+  `phase-NN.md`, commit the deletion, delete the brief) or records a **gap**
+  (leave the `⬜` line and body file in place, overwrite the feedback region with
+  only the currently-open gaps, each tied to an `R-id` and grounded in the exact
+  failing command/output — never delete the brief). The brief thus persists
+  across cycles until the phase passes or a stall reset.
 
 ## Why it converges (and is human-free)
 
@@ -97,8 +97,9 @@ consecutive no-progress attempts with no new build commit). On a true stall it d
 a **trajectory reset** — discards the brief and logs the stall to
 `~/.ralph/verify.log` — so the next `gather` rebuilds the contract fresh from spec,
 still without halting or advancing the phase. The only exit is `gather → DONE`,
-which requires zero `⬜` markers, so the run ends only when every phase is verified
-green (or a ralph budget rail trips).
+which requires an empty queue (no `⬜` line left in `STATUS.md`), so the run ends
+only when every phase has been verified green and deleted (or a ralph budget
+rail trips).
 
 ## The `project/loops/brief.md` schema
 

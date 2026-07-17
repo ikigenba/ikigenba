@@ -35,7 +35,7 @@ only the **last** message of a turn and acts on its status:
 - **`NEXT`** — *terminal*: advance to the next prompt (wrapping `verify → gather`).
   **build and verify always report `NEXT`.**
 - **`DONE`** — *terminal*: stop the loop. **Only `gather` ever reports it**, and
-  only when no `⬜` phase remains in `STATUS.md`.
+  only when the queue is empty — no `⬜` phase line remains in `STATUS.md`.
 - **`CONTINUE`** — *non-terminal*: the status a streaming model (e.g. gpt-5.5 under
   codex, which coerces every streamed message into the schema) tags the progress
   messages it emits **before** its terminal message. It never advances the loop;
@@ -45,13 +45,13 @@ The harness supplies the `{status, message}` schema out of band per backend (cod
 via `--output-schema`; claude via `--json-schema` surfaced as a `StructuredOutput`
 tool) — the prompts describe only the contract, never a transport.
 
-## Per-step reads / writes / commits / flips
+## Per-step reads / writes / commits / completions
 
-| step | reads | writes | commits | flips a marker |
+| step | reads | writes | commits | completes a phase |
 |---|---|---|---|---|
 | **gather** | `STATUS.md`; for a fresh brief, the one `phase-NN.md` + its Decision `DNN.md`(s) + `INDEX.md` + dependency interface signatures | `brief.md` **contract** region (fresh brief only); nothing on an in-flight brief | no | no |
 | **build** | `brief.md` only (contract + feedback) | source packages + id-tagged `*_test.go` (or the named config file, for a structural phase) | yes (the code increment) | no |
-| **verify** | `brief.md` (contract + own prior feedback) + the suite | on pass: the one `STATUS.md` line; on gap: `brief.md` **feedback** region | yes (the one-line flip, on pass) | **yes** (only verify) |
+| **verify** | `brief.md` (contract + own prior feedback) + the suite | on pass: deletes the phase's `STATUS.md` line and `phase-NN.md`; on gap: `brief.md` **feedback** region | yes (the deletion, on pass) | **yes** (only verify) |
 
 The toolchain the loop bakes in (from design's *Conventions*): build/typecheck
 `go build ./...` + `go vet ./...`; test `go test ./...`; **green** = those plus
@@ -72,9 +72,11 @@ check the phase states (a `project/`-excluded grep over that file).
   already names the current phase and leaves it (contract *and* feedback) untouched,
   opening no big doc.
 - **build consumes it** every cycle, closing verify's open gaps first, and commits.
-- **verify passes → deletes it**; **verify finds gaps → overwrites the feedback
-  region** with only the currently-open gaps and leaves the brief in place, so it
-  **persists across cycles** until the phase passes or a stall reset discards it.
+- **verify passes → deletes the phase's `STATUS.md` line and `phase-NN.md`, commits
+  the deletion, and deletes the brief**; **verify finds gaps → overwrites the
+  feedback region** with only the currently-open gaps and leaves the brief in
+  place, so it **persists across cycles** until the phase passes or a stall reset
+  discards it.
 
 ## Why it converges (and is human-free)
 

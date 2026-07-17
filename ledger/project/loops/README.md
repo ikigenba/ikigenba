@@ -3,9 +3,9 @@
 This directory holds the **installed** unattended build loop for the ledger
 service. `ralph` re-invokes three prompts in a **fresh context** each turn,
 cycling `gather → build → verify → gather → …` and building the project one phase
-at a time until every phase in `project/plan/STATUS.md` is `✅`. This README
-describes the loop **as it is on disk**; the workspace map (`project/README.md`)
-only points here.
+at a time until the queue in `project/plan/STATUS.md` is empty (every pending
+phase line has been deleted). This README describes the loop **as it is on
+disk**; the workspace map (`project/README.md`) only points here.
 
 ## Running it
 
@@ -40,16 +40,17 @@ injects the schema per backend — codex via `--output-schema`, claude via
   messages it emits **before** its terminal message. `ralph` reads only the last
   message, so `CONTINUE` never advances or ends the loop.
 
-## Per-step reads / writes / commits / flips
+## Per-step reads / writes / commits / queue mutations
 
-| step | reads | writes | commits | flips marker |
+| step | reads | writes | commits | mutates STATUS.md |
 |---|---|---|---|---|
 | **gather** | `STATUS.md`, one `phase-NN.md`, `INDEX.md`, realized `DNN.md`, (product for intent) | `project/loops/brief.md` **contract region** (only when no brief exists for the active phase) | no | no |
 | **build** | `project/loops/brief.md` only | package source + co-located id-tagged tests | yes (the code increment) | no |
-| **verify** | `project/loops/brief.md` + runs the suite | `STATUS.md` (one flip) **or** the brief's `## Verify feedback` region | yes (the one-line flip, on pass) | **yes**, on pass only |
+| **verify** | `project/loops/brief.md` + runs the suite | deletes the phase's `STATUS.md` line + `phase-NN.md` **or** writes the brief's `## Verify feedback` region | yes (the deletion, on pass) | **yes**, on pass only |
 
-The next-phase lookup is `grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1`
-(STATUS.md phase lines are bare `Phase NN …` lines). "Green" is
+The next-phase lookup is
+`grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1` (STATUS.md phase
+lines are Markdown bullets: `- Phase NN ⬜ …`). "Green" is
 `cd ledger && go build ./...`, `go vet ./...`, `gofmt -l .` (no output), and
 `go test ./...`, all with zero failures. Tests are **co-located** with the code
 they exercise (post-D10, landing/route/nginx assertions live in `cmd/ledger`,
@@ -68,11 +69,12 @@ committed** (it is `.gitignore`d via the repo-root `*/project/loops/brief.md`) a
   big doc).
 - **build** consumes the whole brief (contract + feedback) and, if the feedback
   lists open gaps, closes those first. It reads the brief but never writes it.
-- **verify** re-derives truth independently. **Pass** → flip `⬜→✅`, commit, and
-  delete the brief. **Gap** → leave `⬜`, change no source, and **overwrite** the
-  feedback region with only the currently-open gaps (each tied to its `R-id` and
-  the exact failing command/output). The brief **persists across cycles** until
-  the phase passes or a stall reset discards it.
+- **verify** re-derives truth independently. **Pass** → delete the phase's line
+  from `STATUS.md` and its `phase-NN.md`, commit that deletion, and delete the
+  brief. **Gap** → leave `⬜` and the line untouched, change no source, and
+  **overwrite** the feedback region with only the currently-open gaps (each tied
+  to its `R-id` and the exact failing command/output). The brief **persists
+  across cycles** until the phase passes or a stall reset discards it.
 
 ## Why it converges (human-free)
 

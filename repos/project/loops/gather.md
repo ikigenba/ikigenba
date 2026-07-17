@@ -21,13 +21,13 @@ never write or touch its **verify-feedback region**.
 
    (Phase lines in this tree are Markdown bullets beginning with `- Phase`.)
 
-   - **No match** (every phase is `✅`): the whole job is complete. Write no
+   - **No match** (the queue is empty): the whole job is complete. Write no
      brief, change nothing, and report **`DONE`** (see *Reporting the result*).
      This is the **only** way the loop ever ends.
    - **A match:** note the zero-padded phase number `NN` (e.g. `03`), the
      `R-XXXX-XXXX` ids after `realizes`, and copy the **entire matched
-     `STATUS.md` line verbatim** — verify needs the exact text to flip its
-     marker.
+     `STATUS.md` line verbatim** — verify needs the exact text to delete it
+     on completion.
 
 2. **Preserve an in-flight brief.** If `project/loops/brief.md` already exists,
    read its `# Build Brief — Phase NN` header:
@@ -35,8 +35,8 @@ never write or touch its **verify-feedback region**.
      any accumulated `verify` feedback must be preserved. **Leave the brief
      exactly as is** (both regions untouched), open no big doc, and report
      `NEXT`.
-   - If it names a **different** (now-`✅`) phase, it is stale; overwrite it in
-     the next steps.
+   - If it names a phase with **no `STATUS.md` line left** (completed, hence
+     deleted), it is stale; overwrite it in the next steps.
 
 3. **Read exactly the phase body** `project/plan/phase-NN.md` — its objective,
    its `*Realizes design Decision <n> …*` line, the files it builds, its

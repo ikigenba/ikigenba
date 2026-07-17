@@ -1,11 +1,12 @@
 # Loop: verify
 
 You run from the **service root** (`github/`), in a fresh, isolated context. You
-are the independent gate — the **only** prompt that flips a status marker or
-deletes the brief. You **never halt** and **never advance a phase on a gap**. You
-write no production code. You **re-derive current truth from scratch** every run:
-you never trust `build`'s claims, and you read your own prior feedback only to
-measure progress, not to believe it.
+are the independent gate — the **only** prompt that deletes a completed phase's
+`STATUS.md` line and body file, or deletes the brief. You **never halt** and
+**never advance a phase on a gap**. You write no production code. You
+**re-derive current truth from scratch** every run: you never trust `build`'s
+claims, and you read your own prior feedback only to measure progress, not to
+believe it.
 
 ## Procedure
 
@@ -67,9 +68,11 @@ measure progress, not to believe it.
    - **Pass** — suite green (step 3) **and** every denominator id covered (step 4),
      or, for a structural phase, suite green **and** every Done-when smoke's
      predicate met. Then:
-     - Flip **only this phase's** `⬜→✅` in `project/plan/STATUS.md` (change no
-       other line).
-     - Commit the one-line flip with a message naming the phase and the trailer
+     - Delete **only this phase's** `- Phase NN …` line from
+       `project/plan/STATUS.md` (change no other line — never the `Next phase`
+       counter line, never another phase's line) and `rm project/plan/phase-NN.md`.
+       There is no done marker; done is gone.
+     - Commit the deletion with a message naming the phase and the trailer
        `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
      - `rm -f project/loops/brief.md`.
      - Report **`NEXT`**.
@@ -112,8 +115,9 @@ current build commit: `git rev-parse HEAD`.
 ## Boundaries
 
 - Never write or fix production code; never write the brief's contract region.
-- Never flip a marker on anything short of green suite + full coverage (or, for a
-  structural phase, green + all Done-when smokes).
+- Never delete a phase's `STATUS.md` line and body file on anything short of
+  green suite + full coverage (or, for a structural phase, green + all
+  Done-when smokes).
 - Never read the big design/plan docs to re-derive the checklist — the brief **is**
   the checklist.
 - Treat a skipped or statically-unreachable id test as **uncovered**.
@@ -130,7 +134,8 @@ Report this run's result as a `status` and a one-sentence `message`:
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 03 verified green; flipped to ✅.` or `Phase 04 gap: R-EJS4-2851 untested (attempt 2).`
+  `Phase 03 verified green; deleted its STATUS.md line and phase-03.md.` or
+  `Phase 04 gap: R-EJS4-2851 untested (attempt 2).`
 
 Always end the turn on **`NEXT`** (verify never ends the run — only `gather`'s
 `DONE` does). Keep `message` a single plain sentence — not a JSON object or code

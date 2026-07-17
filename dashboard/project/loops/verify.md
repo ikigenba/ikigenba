@@ -3,14 +3,14 @@ harness: claude
 model: claude-opus-4-8
 ---
 
-# verify — the independent gate: flip the marker only on green + full coverage
+# verify — the independent gate: delete the phase only on green + full coverage
 
 You run in a fresh, isolated context, one turn per invocation, as the final step
 of an unattended `gather → build → verify` loop. `ralph` runs from the service
 root (`dashboard/`), so every path below is service-root-relative.
 
-You are the **independent gate**. You are the **only** prompt that flips a status
-marker or deletes the brief. You **re-derive current truth from scratch every
+You are the **independent gate**. You are the **only** prompt that deletes a
+completed phase from `project/plan/STATUS.md` or deletes the brief. You **re-derive current truth from scratch every
 run** — you never trust build's claims, and you never trust your own prior
 feedback as fact. You read your prior feedback only to **measure progress**, not
 to believe it. You write **no production code**. You either pass the phase (green
@@ -68,12 +68,14 @@ advance a phase on a gap.
 
 5. **Decide:**
 
-   - **Pass** (suite green **and** no open gaps): flip **only this phase's**
-     marker in `project/plan/STATUS.md` from `⬜` to `✅` (change no other line),
-     commit that one-line flip with the repo's `Co-Authored-By` trailer, and
+   - **Pass** (suite green **and** no open gaps): delete **only this phase's**
+     `- Phase NN …` line from `project/plan/STATUS.md` (never the `Next phase`
+     counter line, never another phase's line) and `rm project/plan/phase-NN.md`,
+     commit that deletion with the repo's `Co-Authored-By` trailer, and
      `rm -f project/loops/brief.md`. Report `NEXT`.
 
-   - **Gap** (anything open): **leave the marker `⬜`, change no source.** Then
+   - **Gap** (anything open): **leave the phase's `⬜` line in place, change no
+     source.** Then
      measure progress against your prior `## Verify feedback`:
      - read its recorded attempt number `N`, its recorded build commit, and its
        prior open-gap id set;
@@ -86,7 +88,8 @@ advance a phase on a gap.
        across three consecutive no-progress attempts): the accumulated brief is not
        converging, so discard it. Append one line to `~/.ralph/verify.log` —
        `<date> Phase NN STALLED after N attempts: <gap ids>` — then
-       `rm -f project/loops/brief.md`, leave the marker `⬜`, and report `NEXT`. The
+       `rm -f project/loops/brief.md`, leave the phase's `⬜` line in place, and
+       report `NEXT`. The
        next `gather` rebuilds the contract fresh from spec. (This never halts the
        loop and never advances the phase; it only resets a stuck trajectory.)
 
@@ -107,12 +110,13 @@ advance a phase on a gap.
 ## Boundaries
 
 - Never write or fix production code; never write the brief's `## Contract` region.
-- Never flip a marker on anything short of a green suite **and** full, reachable
-  coverage of every id; a **skipped or statically-unreachable** id test is
-  uncovered — a skip is never acceptable green.
+- Never delete a phase's `STATUS.md` line or `phase-NN.md` on anything short of a
+  green suite **and** full, reachable coverage of every id; a **skipped or
+  statically-unreachable** id test is uncovered — a skip is never acceptable
+  green.
 - Never read `project/design/*`, `project/plan/phase-*.md`, or `project/product/*`
   to re-derive the checklist — the brief is the checklist (you may touch only the
-  one `STATUS.md` line you flip).
+  one `STATUS.md` line and `phase-NN.md` file you delete on pass).
 - Never blindly append to the feedback region (an append duplicates on re-run and
   stacks stale gaps) — always overwrite it with only the currently-open gaps.
 
@@ -127,7 +131,7 @@ Report this run's result as a `status` and a one-sentence `message`:
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 20 green: 5/5 ids covered, flipped ✅.` or
+  `Phase 20 green: 5/5 ids covered, deleted.` or
   `Phase 20 gap: R-VM2G-XW4N test skipped; recorded feedback attempt 2.`
 
 Always report **`NEXT`** — you hand off every turn, on a pass and on a gap. Keep

@@ -9,8 +9,8 @@ product's contractual constants by value (the page lives at the mount root only;
 v1 content is service name + version; the gate is `/_session-authn` and coarse;
 the visual system is Carbon) but does **not** own them. This is the single,
 current statement of the landing-page architecture — it is rewritten in place to
-stay true (stale decisions are removed, not stacked); the history of how it got
-here lives in the plan.
+stay true (stale decisions are removed, not stacked); construction history lives
+in git, never in the spec.
 
 > **Scope.** This design began as scripts's web **landing page** and the seam it
 > establishes (D1–D8), and grew two composition-root Decisions orthogonal to the
@@ -76,6 +76,8 @@ Shared facts every Decision leans on:
   `cd scripts && gofmt -l .` (no output), and `cd scripts && go test ./...`
   all succeed with zero failures.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
+- **Requirement-id tag location:** `R-XXXX-XXXX` tags live as `// R-XXXX-XXXX`
+  comments in `*_test.go` files — the glob the coverage check greps.
 - **Module wiring:** `appkit` and `eventplane` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,
   `replace eventplane => ../eventplane`). The landing page adds **no new
@@ -182,7 +184,8 @@ The remaining domain packages are `internal/consume` (event-plane fan-out),
 shim), `internal/ids`, `internal/mcp` (the domain tool table over `appkit/mcp` —
 **D13**), `internal/runner`, and `internal/script`.
 
-Design is **rewritten in place**, not append-only (history lives in the plan): a
+Design is **rewritten in place**, not append-only (construction history lives in
+git): a
 changed Decision is rewritten in its `DNN.md` and `INDEX.md` is regenerated; a
 new Decision adds a `DNN.md` and an INDEX entry. Existing `R-XXXX-XXXX` ids are
 stable handles — never renumbered; a newly added behavior gets a freshly minted

@@ -14,7 +14,7 @@ for a single phase. You write no code, run no tests, and commit nothing. You
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** → every phase is `✅`. The job is complete. Report **`DONE`**.
+   - **No match** → the queue is empty. The job is complete. Report **`DONE`**.
      (This is the only end of the loop.)
    - **A match** → note its zero-padded phase number `NN` and the ids on that line.
 
@@ -23,8 +23,9 @@ for a single phase. You write no code, run no tests, and commit nothing. You
    - If it names **this same** phase `NN`, the phase is mid-flight: leave the brief
      **exactly as is** — do not touch the contract region and do not touch the
      `## Verify feedback` region. Open no big doc. Report **`NEXT`**.
-   - If it names a **different** phase (now `✅`), it is stale — you will overwrite
-     it in step 4.
+   - If it names a **different** phase — and that phase has no `STATUS.md` line
+     left (completed, hence deleted) — the brief is stale: you will overwrite it
+     in step 4.
 
 3. **Read only what this phase needs.** (Reached only when no brief exists, or the
    brief is for a stale phase.)

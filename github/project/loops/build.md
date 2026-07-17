@@ -7,7 +7,8 @@ model: gpt-5.6-sol
 You run from the **service root** (`github/`), in a fresh, isolated context. You
 read **only** `project/loops/brief.md` — never the big design/plan/product docs.
 You do a bounded, idempotent turn of the brief's remaining work and commit it. You
-do **not** decide completeness and you do **not** flip status markers.
+do **not** decide completeness and you do **not** touch `STATUS.md` or delete a
+phase's body file.
 
 ## Procedure
 
@@ -87,7 +88,7 @@ do **not** decide completeness and you do **not** flip status markers.
 ## Boundaries
 
 - Never read design, plan, or product docs — the brief is your only input.
-- Never edit `STATUS.md` or flip a marker; never create/delete/edit the brief
+- Never edit `STATUS.md` or delete a phase's body file; never create/delete/edit the brief
   (including its `## Verify feedback` region — you read it, never write it).
 - Always report **`NEXT`** — build hands off every turn and is never the step that
   ends the run.

@@ -13,7 +13,7 @@ described in `loops/README.md`.
 | `product/` | `README.md` — the *why*: problem, users, scope, promises, success criteria | `$seal-spec` (rewritten in place) |
 | `research/` | `research.md` — collected external ground truth that design references | `$seal-spec` (rewritten in place; optional) |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
-| `plan/` | `README.md` (rules) + `STATUS.md` (manifest + `⬜`/`✅` markers) + `phase-NN.md` (one per phase) | `$seal-spec` (append-only) |
+| `plan/` | `README.md` (rules) + `STATUS.md` (manifest: `Next phase` counter + `⬜` lines for pending work only) + `phase-NN.md` (one per pending phase) | `$seal-spec` (appends); the build loop deletes completed phases |
 | `loops/` | the generated build-loop prompts + `README.md` describing the installed loop | a prompt-generator workflow |
 | `bugs/` | free-form bug diagnoses / write-ups | free-form (not spec-owned) |
 | `requests/` | free-form feature requests | free-form (not spec-owned) |

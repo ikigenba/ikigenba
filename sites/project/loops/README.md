@@ -43,26 +43,28 @@ prompts describe the contract, never a transport):
 
 ## What each step reads, writes, and may mutate
 
-| step | reads | writes | commits | flips marker | deletes brief |
+| step | reads | writes | commits | deletes phase | deletes brief |
 |---|---|---|---|---|---|
 | **gather** | the big docs (`project/plan/*`, `project/design/*`), for one phase only | the brief's **contract region** (fresh phases only) | no | no | no |
 | **build** | **only** `project/loops/brief.md` | source + co-located `*_test.go` | yes (code) | no | no |
-| **verify** | the brief + the running suite | the brief's **feedback region** (on a gap) | yes (marker flip / stall log) | **yes** (`⬜→✅`, pass only) | **yes** (pass or stall reset) |
+| **verify** | the brief + the running suite | the brief's **feedback region** (on a gap) | yes (deletion / stall log) | **yes** (`STATUS.md` line + `phase-NN.md`, pass only) | **yes** (pass or stall reset) |
 
-- **gather** greps `grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1` for
-  the first `⬜` phase. None left → `DONE`. Otherwise, if a brief for **that same**
-  phase already exists it is mid-flight and left untouched (no big doc opened);
-  only when no brief exists (or it names an already-`✅` phase) does gather read
-  that one `phase-NN.md`, resolve its Decision(s) via `INDEX.md`, read only those
-  `DNN.md`, and author a fresh brief. Returns `NEXT`.
+- **gather** greps `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1`
+  for the first `⬜` phase. None left → the queue is empty, report `DONE`.
+  Otherwise, if a brief for **that same** phase already exists it is mid-flight
+  and left untouched (no big doc opened); only when no brief exists (or it names
+  a phase with no `STATUS.md` line left — completed, hence deleted) does gather
+  read that one `phase-NN.md`, resolve its Decision(s) via `INDEX.md`, read only
+  those `DNN.md`, and author a fresh brief. Returns `NEXT`.
 - **build** reads the whole brief (contract + any feedback), closes listed gaps
   first, does as much of the phase as cleanly fits one context (ideally the whole
-  phase), commits the code, leaves the marker `⬜`, never touches the brief.
-  Returns `NEXT`.
+  phase), commits the code, leaves the phase's `⬜` line and body file in place,
+  never touches the brief. Returns `NEXT`.
 - **verify** re-derives truth independently: runs the suite, checks that every
   brief id has a genuinely-asserting, actually-running `// R-XXXX-XXXX` test.
-  Pass → flip `⬜→✅`, commit, delete the brief. Gap → leave `⬜`, change no source,
-  overwrite the feedback region with only the open gaps. Returns `NEXT`.
+  Pass → delete the phase's `STATUS.md` line and its `phase-NN.md`, commit,
+  delete the brief. Gap → leave the `⬜` line and body file as is, change no
+  source, overwrite the feedback region with only the open gaps. Returns `NEXT`.
 
 ## Brief lifecycle
 
@@ -85,9 +87,10 @@ cross-cycle memory: it distinguishes *slow convergence* (the open-gap id set
 shrinking/changing) from a *true stall* (the **same** gap ids unsatisfied for **3**
 consecutive attempts with **no new build commit**). On a true stall verify does a
 **trajectory reset** — discards the brief, logs the stall to `~/.ralph/verify.log`,
-leaves `⬜` — so the next gather rebuilds the contract fresh. The only exit is
-`gather → DONE`, which requires **zero** `⬜` markers — so the run ends only when
-every phase is verified green (or a `ralph` budget rail trips).
+leaves the `⬜` line and body file in place — so the next gather rebuilds the
+contract fresh. The only exit is `gather → DONE`, which requires **zero** `⬜`
+phase lines left in `STATUS.md` — so the run ends only when every phase has been
+verified green and deleted (or a `ralph` budget rail trips).
 
 ## The green bar
 
