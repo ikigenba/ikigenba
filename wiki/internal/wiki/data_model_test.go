@@ -231,6 +231,18 @@ func TestDomainStoresPersistPhaseOneModel(t *testing.T) {
 	}
 }
 
+func TestSubjectStoreRejectsTypeOutsideClosedSet(t *testing.T) {
+	// R-7WB5-5RHD
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subjects := NewSubjectStore(conn)
+	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: "Widget Co", NormName: "widget-co", Type: "widget"}); err == nil {
+		t.Fatal("Save with type outside {entity,event,concept} succeeded, want CHECK rejection")
+	}
+}
+
 func TestLLMCallStorePersistsProviderCallFootprint(t *testing.T) {
 	// R-VV3E-CLOB
 	ctx := context.Background()

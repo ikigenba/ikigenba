@@ -33,11 +33,30 @@
     }
 
     main {
+      position: relative;
       min-height: calc(100vh - 96px);
       padding: var(--space-16) 0 var(--space-10);
       display: grid;
       align-content: center;
       gap: var(--space-8);
+    }
+
+    .home {
+      position: absolute;
+      top: var(--space-8);
+      left: 0;
+      font-family: var(--font-mono, var(--read-font-mono));
+      font-size: var(--text-label-size);
+      line-height: var(--text-label-lh);
+      font-weight: var(--text-label-weight);
+      text-transform: uppercase;
+      color: var(--color-text-muted);
+      text-decoration: none;
+    }
+
+    .home:hover,
+    .home:focus-visible {
+      color: var(--color-text);
     }
 
     h1 {
@@ -205,6 +224,7 @@
 </head>
 <body>
   <main>
+    <a class="home" href="/">Home</a>
 {{end}}
 
 {{define "foot"}}  </main>

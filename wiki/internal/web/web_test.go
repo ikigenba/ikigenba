@@ -183,6 +183,19 @@ func TestHomeHandlerRendersInjectedNameAndVersionInFooter(t *testing.T) {
 	}
 }
 
+func TestHomeHandlerRendersTopLeftHomeLink(t *testing.T) {
+	// R-HOME-3U5Y
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `<a class="home" href="/">Home</a>`) {
+		t.Fatalf("body missing top-left home link to the dashboard apex: %s", body)
+	}
+}
+
 func TestHomeHandlerRendersInjectedMountBase(t *testing.T) {
 	// R-WDA6-B2C8
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

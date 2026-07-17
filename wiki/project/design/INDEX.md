@@ -28,7 +28,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D22 → `project/design/D22.md` — The `cmd/eval-extract` binary + the shipped gold case — owns R-34NV-WDIP, R-35VS-A59E, R-373O-NX03, R-38BL-1OQS, R-39JH-FGHH, R-3ARD-T886, R-8PSN-NDRQ, R-ME5L-HXJ3
 - D23 → `project/design/D23.md` — The human scorecard is itemized (diff-style), not count-only — owns R-8KX2-4ASY, R-8M4Y-I2JN, R-8NCU-VUAC, R-8OKR-9M11
 - D24 → `project/design/D24.md` — An overridable extract prompt for the eval (default = the baked-in production prompt) — owns R-ODAP-34N6, R-OEIL-GWDV, R-OFQH-UO4K, R-OGYE-8FV9
-- D25 → `project/design/D25.md` — Aliases table & name resolution — owns R-BGPF-NVTU, R-BHXC-1NKJ, R-BJ58-FFB8, R-BKD4-T71X, R-BLL1-6YSM, R-BMSX-KQJB, R-BO0T-YIA0, R-BP8Q-CA0P
+- D25 → `project/design/D25.md` — Aliases table & name resolution — owns R-BGPF-NVTU, R-BHXC-1NKJ, R-BJ58-FFB8, R-BKD4-T71X, R-BLL1-6YSM, R-BMSX-KQJB, R-BO0T-YIA0 (R-BP8Q-CA0P retired — superseded by D33/D36)
 - D26 → `project/design/D26.md` — The merge work item & execution — owns R-NEFH-U8IO, R-NFNE-809D, R-NGVA-LS02, R-NI36-ZJQR, R-NJB3-DBHG, R-NKIZ-R385, R-NLQW-4UYU, R-NMYS-IMPJ, R-NPEL-A66X, R-HUDR-AWS9
 - D27 → `project/design/D27.md` — Merge MCP surface (`merge` + `merges`) — owns R-DWDM-RVA7, R-DYTF-JERL, R-E01B-X6IA, R-E198-AY8Z, R-E2H4-OPZO, R-E3P1-2HQD
 - D28 → `project/design/D28.md` — Blackhole empty-normalization content — owns R-Z5JL-2IBS, R-Z6RH-GA2H, R-Z7ZD-U1T6
@@ -180,7 +180,6 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-BLL1-6YSM → D25 → `project/design/D25.md`
 - R-BMSX-KQJB → D25 → `project/design/D25.md`
 - R-BO0T-YIA0 → D25 → `project/design/D25.md`
-- R-BP8Q-CA0P → D25 → `project/design/D25.md`
 - R-DRME-T4FA → D21 → `project/design/D21.md`
 - R-DRX6-PWSW → D11 → `project/design/D11.md`
 - R-DSUB-6W5Z → D21 → `project/design/D21.md`

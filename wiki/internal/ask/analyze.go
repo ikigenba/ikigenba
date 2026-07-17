@@ -23,6 +23,9 @@ func Analyze(ctx context.Context, c *llm.Client, site llm.CallSite, question str
 	if err != nil {
 		return wiki.QueryAnalysis{}, err
 	}
+	if len(out.SubQueries) == 0 {
+		out.SubQueries = []string{question}
+	}
 	return out, nil
 }
 

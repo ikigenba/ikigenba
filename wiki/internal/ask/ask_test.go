@@ -455,6 +455,26 @@ func TestAnalyzeNormalizesAndCapsPreparedQuestion(t *testing.T) {
 	}
 }
 
+func TestAnalyzeFallsBackToWholeQuestionWhenNoSubQueries(t *testing.T) {
+	// R-QDN3-QSN8
+	prov := &askProvider{responses: []*agentkit.RoundTrip{
+		textRoundTrip(`{
+			"sub_queries": ["", "   "],
+			"keywords": ["release"],
+			"aliases": []
+		}`),
+	}}
+
+	question := "How did Ada handle the release?"
+	got, err := Analyze(context.Background(), llm.New(prov, nil), testExtractSite(), question)
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if want := []string{question}; !reflect.DeepEqual(got.SubQueries, want) {
+		t.Fatalf("sub_queries = %#v, want single fallback %#v", got.SubQueries, want)
+	}
+}
+
 func TestAskParsesDecoratedJSONResponses(t *testing.T) {
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
