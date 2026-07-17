@@ -8,6 +8,12 @@ nginx trust boundary plus apex TLS. Small business scale (≤100 users per box):
 one box, SQLite, in-process everything, deliberately. Deployed at
 `<account>.ikigenba.com/` (first account: `int`). Module path: `dashboard`.
 
+The human web surface is three pages: a logged-out **login** page, a logged-in
+**landing/home** page (connect-your-agent install instructions plus the service
+list), and a session-gated **profile** page reached from the owner's email.
+Personal-access-token management and OAuth-grant management live on the profile
+page, not the landing.
+
 ## How changes are made
 
 Changes go through the spec under `project/`, not direct edits, settle the
