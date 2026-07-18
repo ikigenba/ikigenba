@@ -48,7 +48,7 @@ func TestIndexLoggedOut(t *testing.T) {
 	}
 }
 
-func TestIndexLoggedOutShowsNameOriginColophon(t *testing.T) {
+func TestIndexLoggedOutShowsNameWithTwoSubordinateParts(t *testing.T) {
 	srv := testServer(t)
 	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
 
@@ -67,18 +67,18 @@ func TestIndexLoggedOutShowsNameOriginColophon(t *testing.T) {
 	}
 	for _, want := range []string{
 		`<aside class="name-origin" aria-label="What ikigenba means">`,
-		`<p class="name-origin-lede"><b>ikigenba</b> — A portmanteau of two words:</p>`,
+		`<p class="name-origin-lede"><b>ikigenba</b> — The place life actually happens.</p>`,
 		`<dl class="name-origin-parts">`,
-		`<dt><b class="seam">iki</b>gai <span lang="ja">生き甲斐</span></dt>`,
-		`<dd>&ldquo;reason for being&rdquo; — work worth doing.</dd>`,
+		`<dt><b class="seam">iki</b> <span lang="ja">生き</span></dt>`,
+		`<dd>= to live</dd>`,
 		`<dt><b class="seam">genba</b> <span lang="ja">現場</span></dt>`,
-		`<dd>&ldquo;the actual place&rdquo; — where the work happens.</dd>`,
+		`<dd>= the place</dd>`,
 	} {
-		// R-DB17-ORIG
 		if !strings.Contains(body, want) {
 			t.Errorf("logged-out index missing name-origin content %q:\n%s", want, body)
 		}
 	}
+	// R-HBWF-GM4D
 	if got := strings.Count(aside, `<p class="name-origin-lede">`); got != 1 {
 		t.Errorf("name-origin lede count = %d, want 1:\n%s", got, aside)
 	}
@@ -99,6 +99,11 @@ func TestIndexLoggedOutShowsNameOriginColophon(t *testing.T) {
 	}
 	if got := strings.Count(aside, `span lang="ja"`); got != 2 {
 		t.Errorf("name-origin Japanese span count = %d, want 2:\n%s", got, aside)
+	}
+	for _, retired := range []string{"portmanteau", "生き甲斐", "ikigai", "reason for being", "the actual place"} {
+		if strings.Contains(body, retired) {
+			t.Errorf("logged-out index contains retired name-origin copy %q:\n%s", retired, body)
+		}
 	}
 	if strings.Contains(aside, "name-origin-roots") {
 		t.Errorf("name-origin uses stale roots class instead of parts:\n%s", aside)
