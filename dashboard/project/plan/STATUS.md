@@ -11,5 +11,3 @@ file — there is no done marker; done is gone. This file deliberately carries
 matches only phase lines.
 
 Next phase: 29
-
-- Phase 28 ⬜ realizes R-HBWF-GM4D — rewrite the login page's name-origin colophon copy
