@@ -315,6 +315,11 @@ a:hover { text-decoration: underline; }
   display: grid;
   gap: var(--space-3);
 }
+.name-origin-parts > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
 .name-origin-parts dt {
   font-family: var(--font-mono);
   font-size: var(--text-label-size);
@@ -333,7 +338,7 @@ a:hover { text-decoration: underline; }
   margin-left: var(--space-2);
 }
 .name-origin-parts dd {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   font-size: var(--text-small-size);
   line-height: var(--text-small-lh);
   color: var(--color-text-muted);

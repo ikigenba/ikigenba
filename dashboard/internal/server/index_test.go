@@ -159,6 +159,32 @@ func TestIndexLoggedOutShowsNameOriginPronunciationFoot(t *testing.T) {
 	}
 }
 
+func TestNameOriginPartsRenderAsSingleBaselineRows(t *testing.T) {
+	srv := testServer(t)
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/static/app.css", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stylesheet status = %d, want 200", rec.Code)
+	}
+	css := rec.Body.String()
+	rowRule := cssRule(t, css, `.name-origin-parts > div`)
+	definitionRule := cssRule(t, css, `.name-origin-parts dd`)
+
+	// R-JNSL-OLCI
+	if !strings.Contains(rowRule, `display: flex;`) {
+		t.Errorf("name-origin part row is not flex:\n%s", rowRule)
+	}
+	if !strings.Contains(rowRule, `align-items: baseline;`) {
+		t.Errorf("name-origin part row is not baseline-aligned:\n%s", rowRule)
+	}
+	if !strings.Contains(definitionRule, `margin: 0;`) {
+		t.Errorf("name-origin definition does not remove its leading offset:\n%s", definitionRule)
+	}
+	if strings.Contains(definitionRule, `margin: var(--space-1) 0 0;`) {
+		t.Errorf("name-origin definition retains stacked-layout offset:\n%s", definitionRule)
+	}
+}
+
 func TestIndexLoggedOutKeepsSigninCopy(t *testing.T) {
 	srv := testServer(t)
 	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
