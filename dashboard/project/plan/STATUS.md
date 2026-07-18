@@ -11,5 +11,3 @@ file — there is no done marker; done is gone. This file deliberately carries
 matches only phase lines.
 
 Next phase: 30
-
-- Phase 29 ⬜ realizes R-JNSL-OLCI — render each name-origin part on one line
