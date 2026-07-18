@@ -10,4 +10,6 @@ file — there is no done marker; done is gone. This file deliberately carries
 **no bare status glyph** anywhere but on a phase line, so the anchored grep
 matches only phase lines.
 
-Next phase: 29
+Next phase: 30
+
+- Phase 29 ⬜ realizes R-JNSL-OLCI — render each name-origin part on one line
