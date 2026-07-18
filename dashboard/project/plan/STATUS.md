@@ -10,4 +10,6 @@ file — there is no done marker; done is gone. This file deliberately carries
 **no bare status glyph** anywhere but on a phase line, so the anchored grep
 matches only phase lines.
 
-Next phase: 28
+Next phase: 29
+
+- Phase 28 ⬜ realizes R-HBWF-GM4D — rewrite the login page's name-origin colophon copy

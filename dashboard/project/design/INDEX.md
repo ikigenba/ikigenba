@@ -13,7 +13,7 @@ Verification ids change.
 - D4 → `project/design/D04.md` — OAuth grant management moves to the profile page — owns R-DB09-GRNT, R-DB10-GRVK, R-DB11-GRNX
 - D5 → `project/design/D05.md` — Landing composition: service-name links, profile-avatar nav, sign-out, shared list-chrome service list with copyable URLs — owns R-DB12-LINK, R-DB14-SOUT, R-DB15-INST, R-XO4W-LKAI, R-OF1Q-VEDC, R-OG9N-9641, R-OHHJ-MXUQ
 - D6 → `project/design/D06.md` — Purge the stale "single hybrid page / don't split" doc rule — owns R-DB16-DOCS
-- D7 → `project/design/D07.md` — Login composition: the sign-in line is the `<h1>`; name-origin colophon below the CTA — owns R-DB17-ORIG, R-DB18-KEEP, R-DB19-LAND, R-O7K1-XEN7
+- D7 → `project/design/D07.md` — Login composition: the sign-in line is the `<h1>`; name-origin colophon below the CTA — owns R-HBWF-GM4D, R-DB18-KEEP, R-DB19-LAND, R-O7K1-XEN7
 - D8 → `project/design/D08.md` — Eliminate the web-font FOUT (font-display: optional + font preload) — owns R-P97M-GIJ1, R-PAFI-UA9Q, R-PBNF-820F
 - D9 → `project/design/D09.md` — No site footer: remove the `.site-footer` element from every page — owns R-EFJZ-FRQ1
 - D10 → `project/design/D10.md` — The banner is shared app-shell chrome: wordmark links home, monogram avatar + sign-out on both landing and profile — owns R-VTIE-IUFA, R-VUQA-WM5Z, R-VVY7-ADWO
@@ -52,7 +52,6 @@ Verification ids change.
 - R-DB14-SOUT → D5 → `project/design/D05.md`
 - R-DB15-INST → D5 → `project/design/D05.md`
 - R-DB16-DOCS → D6 → `project/design/D06.md`
-- R-DB17-ORIG → D7 → `project/design/D07.md`
 - R-DB18-KEEP → D7 → `project/design/D07.md`
 - R-DB19-LAND → D7 → `project/design/D07.md`
 - R-EFJZ-FRQ1 → D9 → `project/design/D09.md`
@@ -84,6 +83,7 @@ Verification ids change.
 - R-FVL4-GRYN → D15 → `project/design/D15.md`
 - R-FWT0-UJPC → D16 → `project/design/D16.md`
 - R-FY0X-8BG1 → D16 → `project/design/D16.md`
+- R-HBWF-GM4D → D7 → `project/design/D07.md`
 - R-O7K1-XEN7 → D7 → `project/design/D07.md`
 - R-OF1Q-VEDC → D5 → `project/design/D05.md`
 - R-OG9N-9641 → D5 → `project/design/D05.md`
