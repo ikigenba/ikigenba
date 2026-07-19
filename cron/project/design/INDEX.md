@@ -7,7 +7,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D1 → `project/design/D01.md` — The landing handler and its v1 content (service name + version) — owns R-LAND-3C9K, R-LAND-5E2L, R-LAND-7G4M, R-LAND-9J6N
 - D2 → `project/design/D02.md` — Route wiring: `GET /{$}` mounted ungated through `Spec.Handlers` — owns R-ROUT-2P8Q, R-ROUT-4R1S, R-ROUT-6T3U
 - D3 → `project/design/D03.md` — cron's own Carbon design assets (shipped in `share/www/static`) — owns R-ASST-3V7W, R-ASST-5X9Y, R-ASST-7Z2A
-- D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/cron/` location — owns R-NGNX-3B6C, R-NGNX-5D8E, R-NGNX-7F1G, R-NGNX-9H3J
+- D4 → `project/design/D04.md` — nginx fragment: the session-gated `= /srv/cron/` location and the full owner-identity forwarding contract — owns R-NGNX-3B6C, R-NGNX-5D8E, R-NGNX-7F1G, R-NGNX-9H3J, R-8ALX-VK6V, R-8BTU-9BXK
 - D5 → `project/design/D05.md` — Docs state current truth: state the landing-page truth in cron's doctrine — none (structural; docs-only)
 - D6 → `project/design/D06.md` — A top-left Home link to the dashboard landing page — owns R-HOME-2K4P
 - D7 → `project/design/D07.md` — Self-serve the landing page's fonts and eliminate the FOUT — owns R-21DE-LOX3, R-22LA-ZGNS, R-23T7-D8EH, R-2513-R056, R-2690-4RVV
@@ -37,6 +37,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-6YQZ-V794 → D15 → `project/design/D15.md`
 - R-6ZYW-8YZT → D15 → `project/design/D15.md`
 - R-716S-MQQI → D15 → `project/design/D15.md`
+- R-8ALX-VK6V → D4 → `project/design/D04.md`
+- R-8BTU-9BXK → D4 → `project/design/D04.md`
 - R-ASST-3V7W → D3 → `project/design/D03.md`
 - R-ASST-5X9Y → D3 → `project/design/D03.md`
 - R-ASST-7Z2A → D3 → `project/design/D03.md`

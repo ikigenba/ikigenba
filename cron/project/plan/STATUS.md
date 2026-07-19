@@ -9,4 +9,6 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 `✅` marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 14
+Next phase: 15
+
+- Phase 14 ⬜ realizes R-8ALX-VK6V, R-8BTU-9BXK — forward all four owner-identity headers (`X-Owner-Id`/`X-Owner-Email`/`X-Owner-Name`/`X-Owner-Picture`) through cron's nginx fragment on both identity-forwarding locations
