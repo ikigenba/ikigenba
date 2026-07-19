@@ -87,6 +87,54 @@ func TestNginxFragmentEnforcesPublicRouteTiers(t *testing.T) {
 	}
 }
 
+func TestNginxFragmentForwardsSessionOwnerIdentity(t *testing.T) {
+	// R-UZVS-S08C
+	contents, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	landing := nginxBlock(t, string(contents), "location = /srv/repos/ {")
+	for _, directive := range []string{
+		"auth_request_set $repos_session_owner $upstream_http_x_owner_email;",
+		"auth_request_set $repos_session_owner_id $upstream_http_x_owner_id;",
+		"auth_request_set $repos_session_owner_name $upstream_http_x_owner_name;",
+		"auth_request_set $repos_session_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email $repos_session_owner;",
+		"proxy_set_header X-Owner-Id $repos_session_owner_id;",
+		"proxy_set_header X-Owner-Name $repos_session_owner_name;",
+		"proxy_set_header X-Owner-Picture $repos_session_owner_picture;",
+	} {
+		if !strings.Contains(landing, directive) {
+			t.Errorf("session landing missing owner identity directive %q:\n%s", directive, landing)
+		}
+	}
+}
+
+func TestNginxFragmentForwardsBearerOwnerAndClientIdentity(t *testing.T) {
+	// R-V13P-5RZ1
+	contents, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bearer := nginxBlock(t, string(contents), "location /srv/repos/ {")
+	for _, directive := range []string{
+		"auth_request_set $repos_owner  $upstream_http_x_owner_email;",
+		"auth_request_set $repos_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $repos_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $repos_owner_picture $upstream_http_x_owner_picture;",
+		"auth_request_set $repos_client $upstream_http_x_client_id;",
+		"proxy_set_header X-Owner-Email $repos_owner;",
+		"proxy_set_header X-Owner-Id $repos_owner_id;",
+		"proxy_set_header X-Owner-Name $repos_owner_name;",
+		"proxy_set_header X-Owner-Picture $repos_owner_picture;",
+		"proxy_set_header X-Client-Id  $repos_client;",
+	} {
+		if !strings.Contains(bearer, directive) {
+			t.Errorf("bearer tier missing identity directive %q:\n%s", directive, bearer)
+		}
+	}
+}
+
 func nginxBlock(t *testing.T, conf, header string) string {
 	t.Helper()
 	start := strings.Index(conf, header)
