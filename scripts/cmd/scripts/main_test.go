@@ -858,10 +858,10 @@ func TestNginxBearerIdentityUsesScriptsNamedPlumbing(t *testing.T) {
 	conf := readNginxConfig(t)
 	block := nginxLocationBlock(t, conf, "location /srv/scripts/ {")
 	for _, want := range []string{
-		"auth_request_set $scripts_owner  $upstream_http_x_owner_email;",
-		"auth_request_set $scripts_client $upstream_http_x_client_id;",
-		"proxy_set_header X-Owner-Email $scripts_owner;",
-		"proxy_set_header X-Client-Id  $scripts_client;",
+		"auth_request_set $scripts_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $scripts_client        $upstream_http_x_client_id;",
+		"proxy_set_header X-Owner-Email   $scripts_owner;",
+		"proxy_set_header X-Client-Id     $scripts_client;",
 		"error_page 500 = @scripts_authn_500;",
 	} {
 		if !strings.Contains(block, want) {
@@ -880,6 +880,41 @@ func TestNginxContainsNoPromptsNamedHeritage(t *testing.T) {
 	// R-4FWR-PINF
 	if conf := readNginxConfig(t); strings.Contains(conf, "prompts") {
 		t.Fatalf("nginx config retains prompts-named heritage:\n%s", conf)
+	}
+}
+
+func TestNginxBearerForwardsAllOwnerIdentityHeaders(t *testing.T) {
+	// R-LXR5-KN5G
+	block := nginxLocationBlock(t, readNginxConfig(t), "location /srv/scripts/ {")
+	assertNginxIdentityDirectives(t, block, []string{
+		"auth_request_set $scripts_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $scripts_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $scripts_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $scripts_owner_picture $upstream_http_x_owner_picture;",
+		"auth_request_set $scripts_client        $upstream_http_x_client_id;",
+		"proxy_set_header X-Owner-Id      $scripts_owner_id;",
+		"proxy_set_header X-Owner-Email   $scripts_owner;",
+		"proxy_set_header X-Owner-Name    $scripts_owner_name;",
+		"proxy_set_header X-Owner-Picture $scripts_owner_picture;",
+		"proxy_set_header X-Client-Id     $scripts_client;",
+	})
+}
+
+func TestNginxSessionForwardsAllOwnerIdentityHeadersWithoutClientID(t *testing.T) {
+	// R-LYZ1-YEW5
+	block := nginxLocationBlock(t, readNginxConfig(t), "location = /srv/scripts/ {")
+	assertNginxIdentityDirectives(t, block, []string{
+		"auth_request_set $scripts_session_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $scripts_session_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $scripts_session_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $scripts_session_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Id      $scripts_session_owner_id;",
+		"proxy_set_header X-Owner-Email   $scripts_session_owner;",
+		"proxy_set_header X-Owner-Name    $scripts_session_owner_name;",
+		"proxy_set_header X-Owner-Picture $scripts_session_owner_picture;",
+	})
+	if strings.Contains(block, "X-Client-Id") || strings.Contains(block, "x_client_id") {
+		t.Fatalf("session block must not capture or forward bearer client identity:\n%s", block)
 	}
 }
 
@@ -1326,6 +1361,20 @@ func nginxLocationBlock(t *testing.T, conf, opener string) string {
 		t.Fatalf("nginx config location %q has no closing brace", opener)
 	}
 	return conf[start : bodyStart+endRel+len("\n}")]
+}
+
+func assertNginxIdentityDirectives(t *testing.T, block string, directives []string) {
+	t.Helper()
+	for _, directive := range directives {
+		if count := strings.Count(block, directive); count != 1 {
+			t.Fatalf("nginx location directive %q count = %d, want exactly 1:\n%s", directive, count, block)
+		}
+	}
+	for _, header := range []string{"X-Owner-Id", "X-Owner-Email", "X-Owner-Name", "X-Owner-Picture"} {
+		if count := strings.Count(block, "proxy_set_header "+header); count != 1 {
+			t.Fatalf("nginx location proxy_set_header %s count = %d, want exactly 1:\n%s", header, count, block)
+		}
+	}
 }
 
 func copyTree(t *testing.T, src, dst string) {
