@@ -16,7 +16,7 @@ Verification ids change.
 - D7 → `project/design/D07.md` — The MCP tool surface — R-FN1M-P1FW, R-FO9J-2T6L, R-FPHF-GKXA, R-FQPB-UCNZ, R-FRX8-84EO
 - D8 → `project/design/D08.md` — Events: the session-outcome families — R-FT54-LW5D, R-FUD0-ZNW2, R-FVKX-DFMR
 - D9 → `project/design/D09.md` — State layout & retention — R-FWST-R7DG, R-FY0Q-4Z45, R-G0GI-WILJ
-- D10 → `project/design/D10.md` — nginx fragment & the canonical landing page — R-G1OF-AAC8, R-G2WB-O22X, R-G448-1TTM
+- D10 → `project/design/D10.md` — nginx fragment & the canonical landing page — R-G1OF-AAC8, R-G2WB-O22X, R-G448-1TTM, R-UZVS-S08C, R-V13P-5RZ1
 
 ## Verification ids → Decision
 
@@ -71,3 +71,5 @@ Verification ids change.
 - R-G448-1TTM → D10 — `project/design/D10.md`
 - R-TY2R-GFRU → D2 — `project/design/D02.md`
 - R-TZAN-U7IJ → D2 — `project/design/D02.md`
+- R-UZVS-S08C → D10 — `project/design/D10.md`
+- R-V13P-5RZ1 → D10 — `project/design/D10.md`
