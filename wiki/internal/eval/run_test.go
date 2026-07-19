@@ -12,6 +12,7 @@ import (
 
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/llmtest"
 )
 
 func TestRunDatasetBuildsStampedScorecardWithMockLLMs(t *testing.T) {
@@ -26,7 +27,7 @@ func TestRunDatasetBuildsStampedScorecardWithMockLLMs(t *testing.T) {
 	extractSite.Model = "mock-extract"
 	judgeSite := DefaultJudgeCallSite()
 	judgeSite.Model = "mock-judge"
-	client := llm.New(prov, nil)
+	client := llmtest.NewClient(t, prov)
 
 	got, err := RunDataset(context.Background(), root, extract.New(client, extractSite), extractSite, NewJudge(client, judgeSite), judgeSite)
 	if err != nil {
@@ -94,14 +95,14 @@ func TestScorecardWritersEmitStampCasesAggregateAndRoundTripJSON(t *testing.T) {
 	}
 }
 
-func TestJSONLRecorderCapturesExtractAndJudgeRoundTrips(t *testing.T) {
+func TestJSONLRecorderDoesNotDuplicatePromptsChatAccounting(t *testing.T) {
 	// R-38BL-1OQS
 	var log bytes.Buffer
 	prov := &capturingProvider{responses: []string{
 		`{"subjects":[{"type":"entity","kind":"company","name":"Acme Robotics","claims":["Acme Robotics opened a Tulsa lab."]}]}`,
 		`{"covered":[{"gold":"Acme Robotics opened a Tulsa lab.","predicted":"Acme Robotics opened a Tulsa lab."}],"missed":[],"extra":[]}`,
 	}}
-	client := llm.New(prov, nil, NewJSONLRecorder(&log))
+	client := llmtest.NewClient(t, prov, NewJSONLRecorder(&log))
 	extractSite := extract.DefaultCallSite()
 	extractSite.Model = "mock-extract"
 	judgeSite := DefaultJudgeCallSite()
@@ -122,22 +123,8 @@ func TestJSONLRecorderCapturesExtractAndJudgeRoundTrips(t *testing.T) {
 		t.Fatalf("Score returned error: %v", err)
 	}
 
-	records := decodeJSONLLines(t, log.String())
-	if len(records) != 2 {
-		t.Fatalf("record count = %d, want extract and judge records in JSONL:\n%s", len(records), log.String())
-	}
-	for i, record := range records {
-		for _, field := range []string{"Stage", "Model", "Params", "Request", "Response"} {
-			if _, ok := record[field]; !ok {
-				t.Fatalf("record %d = %#v, missing %s", i, record, field)
-			}
-		}
-	}
-	if records[0]["Stage"] != "extract" || records[1]["Stage"] != "judge" {
-		t.Fatalf("stages = %q, %q; want extract then judge", records[0]["Stage"], records[1]["Stage"])
-	}
-	if !strings.Contains(records[0]["Params"].(string), `"max_tokens":16384`) || !strings.Contains(records[1]["Request"].(string), "gold_claims") {
-		t.Fatalf("records = %#v, want request and params footprints", records)
+	if log.Len() != 0 {
+		t.Fatalf("chat log = %q, want prompts to own chat accounting", log.String())
 	}
 }
 

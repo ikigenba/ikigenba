@@ -35,6 +35,7 @@ func DefaultCallSite() llm.CallSite {
 	temp := 0.0
 	return llm.CallSite{
 		Stage:           "compile",
+		Config:          llm.Config{Temperature: &temp, Thinking: boolPtr(false), MaxTokens: defaultMaxTokens},
 		Temperature:     &temp,
 		Reasoning:       llm.DisableReasoning(),
 		MaxTokens:       defaultMaxTokens,
@@ -56,7 +57,7 @@ func (c *Compiler) Compile(ctx context.Context, s wiki.Subject, claims []wiki.Cl
 	prompt := renderPrompt(s, claims, PageCharCap, "")
 	var last compileResponse
 	for attempt := 0; attempt <= maxTighten; attempt++ {
-		out, err := llm.JSON[compileResponse](ctx, c.c, c.site, prompt, validateResponse)
+		out, err := llm.JSON[compileResponse](ctx, c.c, c.site, llm.Attribution{Origin: "service:wiki", GroupID: llm.JobID(ctx)}, prompt, validateResponse)
 		if err != nil {
 			return "", "", err
 		}
@@ -83,6 +84,8 @@ func (c *Compiler) Compile(ctx context.Context, s wiki.Subject, claims []wiki.Cl
 	}
 	return last.Title, truncateRunes(last.Body, PageCharCap), nil
 }
+
+func boolPtr(value bool) *bool { return &value }
 
 type compileResponse struct {
 	Title string `json:"title"`

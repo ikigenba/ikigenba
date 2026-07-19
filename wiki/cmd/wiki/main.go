@@ -71,7 +71,10 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 				return err
 			}
 			conns := wiki.Conns{Read: read, Write: write}
-			llmClient := cfg.LLM.WithRecorder(wiki.NewLLMCallStore(conns)).WithClock(time.Now)
+			llmClient := cfg.LLM
+			if llmClient == nil {
+				llmClient = llm.New(registry.BaseURL("prompts"))
+			}
 			vectorCache := retrieve.NewVectorCache()
 			cacheEntries, err := wiki.LoadVectorCacheEntries(context.Background(), conns)
 			if err != nil {
@@ -169,8 +172,8 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 }
 
 func recordingEmbedders(inner wiki.PageEmbedder, recorder llm.Recorder, site wiki.EmbedSite) (page, query wiki.PageEmbedder) {
-	return llm.NewRecordingEmbedder(inner, recorder, "embed-page", site.Provider, site.Model, site.Dims),
-		llm.NewRecordingEmbedder(inner, recorder, "embed-query", site.Provider, site.Model, site.Dims)
+	return wiki.NewRecordingEmbedder(inner, recorder, "embed-page", site.Provider, site.Model, site.Dims),
+		wiki.NewRecordingEmbedder(inner, recorder, "embed-query", site.Provider, site.Model, site.Dims)
 }
 
 func retrieveCacheEntries(entries []wiki.VectorCacheEntry) []retrieve.VectorEntry {

@@ -43,9 +43,13 @@ func RunDataset(ctx context.Context, dataset string, ex *extract.Extractor, extr
 		}
 		results = append(results, result)
 	}
+	model := extractSite.Config.Model
+	if extractSite.Model != "" {
+		model = extractSite.Model
+	}
 	return Scorecard{
 		Dataset: dataset,
-		Model:   extractSite.Model,
+		Model:   model,
 		Prompt:  "default",
 		Config:  CallSiteParamsJSON(extractSite),
 		Judge:   JudgeStampJSON(judgeSite),
@@ -98,17 +102,36 @@ func (s Scorecard) WriteJSON(w io.Writer) {
 
 // CallSiteParamsJSON returns the resolved generation parameters for a call site.
 func CallSiteParamsJSON(site llm.CallSite) string {
+	temperature := site.Config.Temperature
+	if site.Temperature != nil {
+		temperature = site.Temperature
+	}
+	reasoning := any(site.Config.Effort)
+	if site.Config.Thinking != nil && !*site.Config.Thinking {
+		reasoning = llm.DisableReasoning()
+	}
+	if site.Reasoning != nil {
+		reasoning = site.Reasoning
+	}
+	maxTokens := site.Config.MaxTokens
+	if site.MaxTokens != 0 {
+		maxTokens = site.MaxTokens
+	}
 	return compactJSON(callSiteParams{
-		Temperature: site.Temperature,
-		Reasoning:   reasoningStamp(site.Reasoning),
-		MaxTokens:   site.MaxTokens,
+		Temperature: temperature,
+		Reasoning:   reasoningStamp(reasoning),
+		MaxTokens:   maxTokens,
 	})
 }
 
 // JudgeStampJSON returns the judge model and generation parameters.
 func JudgeStampJSON(site llm.CallSite) string {
+	model := site.Config.Model
+	if site.Model != "" {
+		model = site.Model
+	}
 	return compactJSON(judgeStamp{
-		Model:  site.Model,
+		Model:  model,
 		Params: json.RawMessage(CallSiteParamsJSON(site)),
 	})
 }

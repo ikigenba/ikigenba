@@ -133,8 +133,8 @@ func TestRunUsesInternalEvalWithMockBackedClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read record file: %v", err)
 	}
-	if got := strings.Count(string(rawLog), "\n"); got != 2 {
-		t.Fatalf("record lines = %d, want extract and judge JSONL records:\n%s", got, string(rawLog))
+	if len(rawLog) != 0 {
+		t.Fatalf("record file = %q, want prompts to own chat accounting", rawLog)
 	}
 }
 

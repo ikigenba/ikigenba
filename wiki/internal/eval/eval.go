@@ -274,7 +274,7 @@ func judgeClaims(ctx context.Context, j *Judge, subject string, goldClaims, pred
 	if j == nil {
 		return SubjectClaimResult{}, fmt.Errorf("eval judge: nil judge")
 	}
-	verdict, err := llm.JSON[judgeVerdict](ctx, j.c, j.site, renderJudgePrompt(subject, goldClaims, predictedClaims), validateJudgeVerdict(goldClaims, predictedClaims))
+	verdict, err := llm.JSON[judgeVerdict](ctx, j.c, j.site, llm.Attribution{Origin: "service:wiki", GroupID: llm.JobID(ctx)}, renderJudgePrompt(subject, goldClaims, predictedClaims), validateJudgeVerdict(goldClaims, predictedClaims))
 	if err != nil {
 		return SubjectClaimResult{}, err
 	}

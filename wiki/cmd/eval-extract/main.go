@@ -16,6 +16,7 @@ import (
 	"wiki/internal/eval"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/llmtest"
 )
 
 func main() {
@@ -78,7 +79,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		recorder = eval.NewJSONLRecorder(recordFile)
 	}
 
-	client := llm.New(deps.newProvider(apiKey), nil, recorder)
+	provider := deps.newProvider(apiKey)
+	_ = recorder
+	client, closePrompts := llmtest.ServeProvider(provider)
+	defer closePrompts()
 	extractor := extract.New(client, cfg.extract, extractorOpts...)
 	judge := eval.NewJudge(client, cfg.judge)
 	scorecard, err := deps.evaluate(ctx, cfg.dataset, extractor, cfg.extract, judge, cfg.judge)
@@ -101,6 +105,7 @@ func parseConfig(args []string) (config, error) {
 		extract: extract.DefaultCallSite(),
 		judge:   eval.DefaultJudgeCallSite(),
 	}
+	cfg.extract.Config.Model = "claude-sonnet-4-6"
 	cfg.extract.Model = "claude-sonnet-4-6"
 
 	fs := flag.NewFlagSet("eval-extract", flag.ContinueOnError)
@@ -127,6 +132,7 @@ func parseConfig(args []string) (config, error) {
 	cfg.promptFile = strings.TrimSpace(*promptFile)
 	cfg.json = *jsonOut
 	if strings.TrimSpace(*model) != "" {
+		cfg.extract.Config.Model = strings.TrimSpace(*model)
 		cfg.extract.Model = strings.TrimSpace(*model)
 	}
 	if strings.TrimSpace(*reasoning) != "" {
@@ -134,13 +140,15 @@ func parseConfig(args []string) (config, error) {
 		if err != nil {
 			return config{}, fmt.Errorf("-reasoning: %w", err)
 		}
-		cfg.extract.Reasoning = parsed
+		cfg.extract.Config.Effort = parsed
+		cfg.extract.Reasoning = agentkit.Level(parsed)
 	}
 	if strings.TrimSpace(*temperature) != "" {
 		parsed, err := strconv.ParseFloat(strings.TrimSpace(*temperature), 64)
 		if err != nil {
 			return config{}, fmt.Errorf("-temperature: %w", err)
 		}
+		cfg.extract.Config.Temperature = &parsed
 		cfg.extract.Temperature = &parsed
 	}
 	if strings.TrimSpace(*maxTokens) != "" {
@@ -151,9 +159,11 @@ func parseConfig(args []string) (config, error) {
 		if parsed <= 0 {
 			return config{}, fmt.Errorf("-max-tokens: must be greater than zero")
 		}
+		cfg.extract.Config.MaxTokens = parsed
 		cfg.extract.MaxTokens = parsed
 	}
 	if strings.TrimSpace(*judgeModel) != "" {
+		cfg.judge.Config.Model = strings.TrimSpace(*judgeModel)
 		cfg.judge.Model = strings.TrimSpace(*judgeModel)
 	}
 	if strings.TrimSpace(*judgeReasoning) != "" {
@@ -161,18 +171,19 @@ func parseConfig(args []string) (config, error) {
 		if err != nil {
 			return config{}, fmt.Errorf("-judge-reasoning: %w", err)
 		}
-		cfg.judge.Reasoning = parsed
+		cfg.judge.Config.Effort = parsed
+		cfg.judge.Reasoning = agentkit.Level(parsed)
 	}
 	return cfg, nil
 }
 
-func parseReasoning(raw string) (any, error) {
+func parseReasoning(raw string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "disabled", "off":
-		return llm.DisableReasoning(), nil
+		return "none", nil
 	case "minimal", "low", "medium", "high", "xhigh", "max", "none":
-		return agentkit.Level(strings.ToLower(strings.TrimSpace(raw))), nil
+		return strings.ToLower(strings.TrimSpace(raw)), nil
 	default:
-		return nil, fmt.Errorf("must be disabled, off, or a native reasoning level")
+		return "", fmt.Errorf("must be disabled, off, or a native reasoning level")
 	}
 }

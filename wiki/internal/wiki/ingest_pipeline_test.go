@@ -13,6 +13,7 @@ import (
 	"wiki/internal/compile"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/llmtest"
 	wikidomain "wiki/internal/wiki"
 	"wiki/internal/worker"
 )
@@ -36,7 +37,7 @@ func TestIngestReturnsPendingThenWorkerCommitsPage(t *testing.T) {
 		}]}`,
 		`{"title":"Acme Robotics","body":"Acme Robotics opened a research lab in Tulsa."}`,
 	}}
-	svc := scriptedService(conn, prov, time.Date(2026, 6, 20, 22, 0, 0, 0, time.UTC))
+	svc := scriptedService(t, conn, prov, time.Date(2026, 6, 20, 22, 0, 0, 0, time.UTC))
 
 	jobID, err := svc.Ingest(ctx, " owner@example.com ", "Acme Robotics opened a research lab in Tulsa.", " Tulsa lab ", []string{"robotics"})
 	if err != nil {
@@ -98,7 +99,7 @@ func TestWorkerStoresPageVectorAfterCommit(t *testing.T) {
 		`{"title":"Acme Robotics","body":"Acme Robotics opened a background-vector lab."}`,
 	}}
 	embedder := &scriptedEmbedder{vectors: [][]float32{{0.4, 0.6}}}
-	client := llm.New(prov, nil)
+	client := llmtest.NewClient(t, prov)
 	svc := wikidomain.NewService(
 		conn,
 		extract.New(client, llm.CallSite{Model: "extract-model"}),
@@ -164,7 +165,7 @@ func TestWorkerReusesSubjectAndCompilesCompleteClaims(t *testing.T) {
 		}]}`,
 		`{"title":"Acme Robotics","body":"Acme Robotics opened a Tulsa lab.\nAcme Robotics hired Mira Patel."}`,
 	}}
-	svc := scriptedService(conn, prov, time.Date(2026, 6, 20, 22, 5, 0, 0, time.UTC))
+	svc := scriptedService(t, conn, prov, time.Date(2026, 6, 20, 22, 5, 0, 0, time.UTC))
 	stop := startWorker(t, ctx, svc)
 	defer stop()
 
@@ -223,7 +224,7 @@ func TestWorkerRecordsFailedExtractStatus(t *testing.T) {
 			"claims":["Acme Robotics opened a Tulsa lab."]
 		}]}`,
 	}}
-	svc := scriptedService(conn, prov, time.Date(2026, 6, 20, 22, 10, 0, 0, time.UTC))
+	svc := scriptedService(t, conn, prov, time.Date(2026, 6, 20, 22, 10, 0, 0, time.UTC))
 	stop := startWorker(t, ctx, svc)
 	defer stop()
 
@@ -246,8 +247,8 @@ func TestWorkerRecordsFailedExtractStatus(t *testing.T) {
 	}
 }
 
-func scriptedService(conn *sql.DB, prov *scriptedProvider, now time.Time) *wikidomain.Service {
-	client := llm.New(prov, nil)
+func scriptedService(t *testing.T, conn *sql.DB, prov *scriptedProvider, now time.Time) *wikidomain.Service {
+	client := llmtest.NewClient(t, prov)
 	return wikidomain.NewService(
 		conn,
 		extract.New(client, llm.CallSite{Model: "extract-model"}),

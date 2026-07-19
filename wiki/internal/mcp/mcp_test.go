@@ -24,6 +24,7 @@ import (
 	"wiki/internal/ask"
 	wikidb "wiki/internal/db"
 	"wiki/internal/llm"
+	"wiki/internal/llmtest"
 	paging "wiki/internal/page"
 	"wiki/internal/retrieve"
 	wikidomain "wiki/internal/wiki"
@@ -1170,7 +1171,7 @@ func TestAskToolLinkifiesFirstSubjectMentionAndKeepsCitations(t *testing.T) {
 		&mcpScriptedSearch{result: retrieve.Result{Hits: []retrieve.Hit{{PageID: acme.ID, Path: "entity/acme-corp", Title: acme.Name}}, TopDense: 0.8}},
 		subjects,
 		pages,
-		llm.New(provider, nil),
+		llmtest.NewClient(t, provider),
 		llm.CallSite{Model: "ask-subject-test"},
 		llm.CallSite{Model: "ask-synthesis-test"},
 	)

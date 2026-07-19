@@ -19,17 +19,8 @@ func TestNewConfigBuildsDefaultPerCallSiteModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
-	if cfg.Provider == nil {
-		t.Fatal("Provider is nil")
-	}
-	if cfg.LLM == nil {
-		t.Fatal("LLM is nil")
-	}
-	if cfg.LLM.Provider() != cfg.Provider {
-		t.Fatal("LLM provider is not the shared provider")
-	}
-	if cfg.LLM.Model() != ModelID {
-		t.Fatalf("LLM model = %q, want %q", cfg.LLM.Model(), ModelID)
+	if cfg.LLM != nil {
+		t.Fatal("NewConfig should leave the prompts client to the composition root")
 	}
 	assertResolvedSite(t, cfg.CallSites.Extract, "extract", ModelID, 0, llm.DisableReasoning(), 16384, 2)
 	assertResolvedSite(t, cfg.CallSites.Compile, "compile", ModelID, 0, llm.DisableReasoning(), 16384, 2)

@@ -21,6 +21,7 @@ func NewJudge(c *llm.Client, site llm.CallSite) *Judge {
 func DefaultJudgeCallSite() llm.CallSite {
 	return llm.CallSite{
 		Stage:           "judge",
+		Config:          llm.Config{Model: "claude-opus-4-8", Effort: "high", MaxTokens: 16384},
 		Model:           "claude-opus-4-8",
 		Reasoning:       agentkit.Level("high"),
 		MaxTokens:       16384,

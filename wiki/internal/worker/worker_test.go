@@ -15,6 +15,7 @@ import (
 	wikidb "wiki/internal/db"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/llmtest"
 	wikidomain "wiki/internal/wiki"
 	"wiki/internal/worker"
 )
@@ -37,7 +38,7 @@ func TestRunIntegratesPendingJobWithRealDBAndMockProvider(t *testing.T) {
 		}]}`,
 		`{"title":"Acme Robotics","body":"Acme Robotics opened a research lab in Tulsa. [job]"}`,
 	}}
-	client := llm.New(prov, nil)
+	client := llmtest.NewClient(t, prov)
 	svc := wikidomain.NewService(
 		conn,
 		extract.New(client, llm.CallSite{Model: "extract-model"}),
@@ -101,7 +102,7 @@ func TestRunRequeuesOrphanedWorkingJobOnStartup(t *testing.T) {
 		}]}`,
 		`{"title":"Acme Robotics","body":"Acme Robotics reopened a stuck worker job. [requeued]"}`,
 	}}
-	client := llm.New(prov, nil)
+	client := llmtest.NewClient(t, prov)
 	svc := wikidomain.NewService(
 		conn,
 		extract.New(client, llm.CallSite{Model: "extract-model"}),
@@ -166,7 +167,7 @@ func TestRunAbortWorkingJobCancelsProviderAndPreservesAbortedStatus(t *testing.T
 	defer conn.Close()
 
 	prov := newBlockingProvider()
-	client := llm.New(prov, nil)
+	client := llmtest.NewClient(t, prov)
 	svc := wikidomain.NewService(
 		conn,
 		extract.New(client, llm.CallSite{Model: "extract-model"}),

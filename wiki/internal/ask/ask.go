@@ -95,6 +95,7 @@ func New(search Retriever, subjects *wiki.SubjectStore, pages *wiki.PageStore, c
 func DefaultSubjectCallSite() llm.CallSite {
 	return llm.CallSite{
 		Stage:     "ask-subject",
+		Config:    llm.Config{Effort: "low", MaxTokens: defaultMaxTokens},
 		Reasoning: agentkit.Level("low"),
 		MaxTokens: defaultMaxTokens,
 	}
@@ -104,6 +105,7 @@ func DefaultSubjectCallSite() llm.CallSite {
 func DefaultSynthesisCallSite() llm.CallSite {
 	return llm.CallSite{
 		Stage:     "ask-synthesis",
+		Config:    llm.Config{Effort: "low", MaxTokens: defaultMaxTokens},
 		Reasoning: agentkit.Level("low"),
 		MaxTokens: defaultMaxTokens,
 	}
@@ -141,7 +143,7 @@ func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error)
 		return honestEmpty(), nil
 	}
 
-	result, err := llm.JSON[answerResult](ctx, a.c, a.synthSite, synthPrompt(question, pages), func(out *answerResult) error {
+	result, err := llm.JSON[answerResult](ctx, a.c, a.synthSite, llm.Attribution{Origin: "service:wiki", GroupID: llm.JobID(ctx)}, synthPrompt(question, pages), func(out *answerResult) error {
 		normalizeAnswer(out)
 		return nil
 	})

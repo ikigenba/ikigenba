@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	agentkit "github.com/ikigenba/agentkit"
-	"github.com/ikigenba/agentkit/anthropic"
 	"github.com/ikigenba/agentkit/openai"
 
 	"wiki/internal/llm"
@@ -35,19 +34,14 @@ type EmbedSite struct {
 type Config struct {
 	CallSites         CallSites
 	EmbedSite         EmbedSite
+	LLM               *llm.Client
 	WorkerConcurrency int
 	SearchDefault     int
 	SearchCap         int
-	Provider          agentkit.Provider
-	LLM               *llm.Client
 }
 
-// NewConfig reads wiki's secret and constructs the shared LLM provider/client.
+// NewConfig reads service configuration. Chat inference is supplied by prompts.
 func NewConfig(getenv func(string) string) (Config, error) {
-	apiKey := strings.TrimSpace(getenv("ANTHROPIC_API_KEY"))
-	if apiKey == "" {
-		return Config{}, fmt.Errorf("ANTHROPIC_API_KEY is required")
-	}
 	openAIKey := strings.TrimSpace(getenv("OPENAI_API_KEY"))
 	if openAIKey == "" {
 		return Config{}, fmt.Errorf("OPENAI_API_KEY is required")
@@ -61,15 +55,12 @@ func NewConfig(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	provider := anthropic.New(anthropic.APIKey(apiKey))
 	return Config{
 		CallSites:         callSites,
 		EmbedSite:         embedSite,
 		WorkerConcurrency: WorkerConcurrency,
 		SearchDefault:     SearchDefault,
 		SearchCap:         SearchCap,
-		Provider:          provider,
-		LLM:               llm.NewClient(provider, ModelID),
 	}, nil
 }
 
@@ -124,20 +115,28 @@ func resolveCallSites(getenv func(string) string) (CallSites, error) {
 func resolveCallSite(getenv func(string) string, prefix string, base llm.CallSite) (llm.CallSite, error) {
 	site := base
 	if model := strings.TrimSpace(getenv(prefix + "_MODEL")); model != "" {
+		site.Config.Model = model
 		site.Model = model
 	}
 	if raw := strings.TrimSpace(getenv(prefix + "_REASONING")); raw != "" {
-		reasoning, err := parseReasoning(raw)
+		effort, thinking, err := parseReasoning(raw)
 		if err != nil {
 			return llm.CallSite{}, fmt.Errorf("%s_REASONING: %w", prefix, err)
 		}
-		site.Reasoning = reasoning
+		site.Config.Effort = effort
+		site.Config.Thinking = thinking
+		if thinking != nil {
+			site.Reasoning = llm.DisableReasoning()
+		} else {
+			site.Reasoning = agentkit.Level(effort)
+		}
 	}
 	if raw := strings.TrimSpace(getenv(prefix + "_TEMPERATURE")); raw != "" {
 		temp, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
 			return llm.CallSite{}, fmt.Errorf("%s_TEMPERATURE: %w", prefix, err)
 		}
+		site.Config.Temperature = &temp
 		site.Temperature = &temp
 	}
 	if raw := strings.TrimSpace(getenv(prefix + "_MAX_TOKENS")); raw != "" {
@@ -148,60 +147,38 @@ func resolveCallSite(getenv func(string) string, prefix string, base llm.CallSit
 		if maxTokens <= 0 {
 			return llm.CallSite{}, fmt.Errorf("%s_MAX_TOKENS: must be greater than zero", prefix)
 		}
+		site.Config.MaxTokens = maxTokens
 		site.MaxTokens = maxTokens
 	}
 	return site, nil
 }
 
-func parseReasoning(raw string) (any, error) {
+func parseReasoning(raw string) (string, *bool, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "disabled", "off":
-		return llm.DisableReasoning(), nil
+		value := false
+		return "", &value, nil
 	case "minimal", "low", "medium", "high", "xhigh", "max", "none":
-		return agentkit.Level(strings.ToLower(strings.TrimSpace(raw))), nil
+		return strings.ToLower(strings.TrimSpace(raw)), nil, nil
 	default:
-		return nil, fmt.Errorf("must be disabled, off, or a native reasoning level")
+		return "", nil, fmt.Errorf("must be disabled, off, or a native reasoning level")
 	}
 }
 
 func defaultExtractCallSite() llm.CallSite {
-	temp := 0.0
-	return llm.CallSite{
-		Stage:           "extract",
-		Model:           ModelID,
-		Temperature:     &temp,
-		Reasoning:       llm.DisableReasoning(),
-		MaxTokens:       defaultMaxTokens,
-		MaxParseRetries: 2,
-	}
+	temp, thinking := 0.0, false
+	return llm.CallSite{Stage: "extract", Config: llm.Config{Model: ModelID, Temperature: &temp, Thinking: &thinking, MaxTokens: defaultMaxTokens}, Model: ModelID, Temperature: &temp, Reasoning: llm.DisableReasoning(), MaxTokens: defaultMaxTokens, MaxParseRetries: 2}
 }
 
 func defaultCompileCallSite() llm.CallSite {
-	temp := 0.0
-	return llm.CallSite{
-		Stage:           "compile",
-		Model:           ModelID,
-		Temperature:     &temp,
-		Reasoning:       llm.DisableReasoning(),
-		MaxTokens:       defaultMaxTokens,
-		MaxParseRetries: 2,
-	}
+	temp, thinking := 0.0, false
+	return llm.CallSite{Stage: "compile", Config: llm.Config{Model: ModelID, Temperature: &temp, Thinking: &thinking, MaxTokens: defaultMaxTokens}, Model: ModelID, Temperature: &temp, Reasoning: llm.DisableReasoning(), MaxTokens: defaultMaxTokens, MaxParseRetries: 2}
 }
 
 func defaultAskSubjectCallSite() llm.CallSite {
-	return llm.CallSite{
-		Stage:     "ask-subject",
-		Model:     ModelID,
-		Reasoning: agentkit.Level("low"),
-		MaxTokens: defaultMaxTokens,
-	}
+	return llm.CallSite{Stage: "ask-subject", Config: llm.Config{Model: ModelID, Effort: "low", MaxTokens: defaultMaxTokens}, Model: ModelID, Reasoning: agentkit.Level("low"), MaxTokens: defaultMaxTokens}
 }
 
 func defaultAskSynthesisCallSite() llm.CallSite {
-	return llm.CallSite{
-		Stage:     "ask-synthesis",
-		Model:     ModelID,
-		Reasoning: agentkit.Level("low"),
-		MaxTokens: defaultMaxTokens,
-	}
+	return llm.CallSite{Stage: "ask-synthesis", Config: llm.Config{Model: ModelID, Effort: "low", MaxTokens: defaultMaxTokens}, Model: ModelID, Reasoning: agentkit.Level("low"), MaxTokens: defaultMaxTokens}
 }

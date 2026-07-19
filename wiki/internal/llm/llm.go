@@ -1,120 +1,114 @@
-// Package llm defines the injectable LLM boundary for later wiki phases.
+// Package llm is wiki's stateless client for the prompts completion service.
 package llm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
+	"net/http"
 	"strings"
 	"time"
-	"unsafe"
-
-	agentkit "github.com/ikigenba/agentkit"
 )
 
-// Message is one provider-neutral chat message.
-type Message struct {
-	Role    string
-	Content string
-}
-
-// Provider is the narrow seam domain packages consume.
-type Provider interface {
-	Complete(ctx context.Context, messages []Message) (string, error)
-}
-
-// ErrTruncated reports a provider response that reached the configured output ceiling.
+// ErrTruncated reports a completion that reached its configured output ceiling.
 var ErrTruncated = errors.New("llm: response truncated")
 
-// CallRecord is one provider round-trip's footprint.
-type CallRecord struct {
-	ID        string
-	Stage     string
-	JobID     string
-	Attempt   int
-	Provider  string
-	Model     string
-	Params    string
-	Request   string
-	Response  string
-	Usage     string
-	Err       string
-	StartedAt time.Time
-	EndedAt   time.Time
+// Client posts completions to the prompts service.
+type Client struct {
+	baseURL string
+	http    *http.Client
 }
 
-// Recorder persists one call record. A nil Recorder is a no-op.
-type Recorder interface {
-	Record(ctx context.Context, rec CallRecord) error
+// New constructs a concurrency-safe prompts client. Calls carry their own
+// context deadlines, so the shared HTTP client deliberately has no timeout.
+func New(baseURL string) *Client {
+	return &Client{baseURL: strings.TrimRight(baseURL, "/"), http: &http.Client{}}
 }
 
-type jobIDContextKey struct{}
-
-// WithJobID returns a context carrying the current ingest job id.
-func WithJobID(ctx context.Context, id string) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, jobIDContextKey{}, strings.TrimSpace(id))
+// Config is the prompts /complete generation configuration vocabulary.
+type Config struct {
+	Model       string   `json:"model"`
+	Provider    string   `json:"provider,omitempty"`
+	Temperature *float64 `json:"temperature,omitempty"`
+	MaxTokens   int      `json:"max_tokens,omitempty"`
+	Effort      string   `json:"effort,omitempty"`
+	Thinking    *bool    `json:"thinking,omitempty"`
 }
 
-// JobID reports the current ingest job id, or "" when none is attached.
-func JobID(ctx context.Context) string {
-	if ctx == nil {
-		return ""
-	}
-	id, _ := ctx.Value(jobIDContextKey{}).(string)
-	return id
-}
-
-// New records the shared AgentKit provider and optional JSONL log sink.
-func New(prov agentkit.Provider, log io.Writer, recorders ...Recorder) *Client {
-	c := &Client{prov: prov, log: log}
-	if len(recorders) > 0 {
-		c.recorder = recorders[0]
-	}
-	c.setDefaults()
-	return c
-}
-
-// CallSite is the per-stage generation config.
+// CallSite configures one wiki generation stage.
 type CallSite struct {
 	Stage           string
-	Model           string
-	Temperature     *float64
-	Reasoning       any
 	System          string
-	MaxTokens       int
+	Config          Config
 	MaxParseRetries int
+
+	// Deprecated compatibility fields for package-external evaluation residue.
+	Model       string
+	Temperature *float64
+	Reasoning   any
+	MaxTokens   int
 }
 
 type disabledReasoning struct{}
 
-// DisableReasoning requests explicit reasoning-off generation for a call site.
-func DisableReasoning() any {
-	return disabledReasoning{}
+// DisableReasoning is retained for package-external evaluation configuration.
+func DisableReasoning() any { return disabledReasoning{} }
+
+// Attribution identifies the origin and correlation group recorded by prompts.
+type Attribution struct {
+	Origin  string
+	GroupID string
 }
 
-// JSON runs a tool-less structured generation and validates the decoded value.
-func JSON[T any](ctx context.Context, c *Client, site CallSite, userText string, validate func(*T) error) (T, error) {
+type message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type completeRequest struct {
+	Origin   string         `json:"origin"`
+	Name     string         `json:"name"`
+	GroupID  string         `json:"group_id,omitempty"`
+	Attempt  int            `json:"attempt"`
+	Model    string         `json:"model"`
+	Provider string         `json:"provider,omitempty"`
+	Config   completeConfig `json:"config"`
+	System   string         `json:"system,omitempty"`
+	Messages []message      `json:"messages"`
+}
+
+type completeConfig struct {
+	Temperature *float64 `json:"temperature,omitempty"`
+	MaxTokens   int      `json:"max_tokens,omitempty"`
+	Effort      string   `json:"effort,omitempty"`
+	Thinking    *bool    `json:"thinking,omitempty"`
+}
+
+type completeResponse struct {
+	Text     string          `json:"text"`
+	Response string          `json:"response"`
+	Content  string          `json:"content"`
+	Usage    json.RawMessage `json:"usage"`
+}
+
+// JSON runs one structured generation and validates the decoded value.
+func JSON[T any](ctx context.Context, c *Client, site CallSite, attr Attribution, userText string, validate func(*T) error) (T, error) {
 	var zero T
-	if c == nil || c.prov == nil {
-		return zero, fmt.Errorf("llm JSON: nil client provider")
+	if c == nil || c.http == nil || c.baseURL == "" {
+		return zero, fmt.Errorf("llm JSON: invalid prompts client")
 	}
 
+	messages := []message{{Role: "user", Content: userText}}
 	attempts := site.MaxParseRetries + 1
 	if attempts < 1 {
 		attempts = 1
 	}
-
-	conv := c.Converse(site, nil)
-	prompt := userText
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
-		text, err := sendText(ctx, c, site, conv, attempt, prompt)
+		text, err := c.complete(ctx, site, attr, attempt, messages)
 		if err != nil {
 			return zero, err
 		}
@@ -131,192 +125,136 @@ func JSON[T any](ctx context.Context, c *Client, site CallSite, userText string,
 			return out, nil
 		}
 		if attempt < attempts {
-			prompt = correctivePrompt(userText, lastErr)
+			messages = []message{
+				{Role: "user", Content: userText},
+				{Role: "assistant", Content: text},
+				{Role: "user", Content: correctivePrompt(userText, lastErr)},
+			}
 		}
 	}
-
 	return zero, fmt.Errorf("llm JSON: parse or validation failed after %d attempt(s): %w", attempts, lastErr)
 }
 
-// Converse builds a fresh AgentKit conversation for a stage.
-func (c *Client) Converse(site CallSite, tools []agentkit.Tool) *agentkit.Conversation {
-	if c == nil {
-		return &agentkit.Conversation{}
-	}
-	gen := agentkit.GenSettings{
-		Temperature: site.Temperature,
-		MaxTokens:   site.MaxTokens,
-	}
-	setReasoning(&gen, site.Reasoning)
-	return &agentkit.Conversation{
-		Provider: c.prov,
-		Model:    site.Model,
+func (c *Client) complete(ctx context.Context, site CallSite, attr Attribution, attempt int, messages []message) (string, error) {
+	config := effectiveConfig(site)
+	reqBody := completeRequest{
+		Origin:   attr.Origin,
+		Name:     "wiki." + site.Stage,
+		GroupID:  attr.GroupID,
+		Attempt:  attempt,
+		Model:    config.Model,
+		Provider: config.Provider,
+		Config: completeConfig{
+			Temperature: config.Temperature,
+			MaxTokens:   config.MaxTokens,
+			Effort:      config.Effort,
+			Thinking:    config.Thinking,
+		},
 		System:   site.System,
-		Log:      c.log,
-		Gen:      gen,
-		Tools:    append([]agentkit.Tool(nil), tools...),
+		Messages: messages,
 	}
+	raw, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("llm: encode /complete request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/complete", bytes.NewReader(raw))
+	if err != nil {
+		return "", fmt.Errorf("llm: build /complete request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("llm: prompts /complete: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("llm: read prompts /complete response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", promptsStatusError(resp.StatusCode, body)
+	}
+	var out completeResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return "", fmt.Errorf("llm: decode prompts /complete response: %w", err)
+	}
+	text := out.Text
+	if text == "" {
+		text = out.Response
+	}
+	if text == "" {
+		text = out.Content
+	}
+	if output, ok := outputUsage(out.Usage); ok && config.MaxTokens > 0 && output >= int64(config.MaxTokens) {
+		return "", fmt.Errorf("%w: stage %s output usage %d reached max_tokens %d", ErrTruncated, site.Stage, output, config.MaxTokens)
+	}
+	return text, nil
 }
 
-func sendText(ctx context.Context, c *Client, site CallSite, conv *agentkit.Conversation, attempt int, userText string) (string, error) {
-	startedAt := callNow(c)
-	stream := conv.Send(ctx, userText)
-	var final string
-	for ev := range stream.Events() {
-		if done, ok := ev.(agentkit.MessageDone); ok {
-			final = agentkitText(done.Message)
+func effectiveConfig(site CallSite) Config {
+	config := site.Config
+	if site.Model != "" {
+		config.Model = site.Model
+	}
+	if site.Temperature != nil {
+		config.Temperature = site.Temperature
+	}
+	if site.MaxTokens != 0 {
+		config.MaxTokens = site.MaxTokens
+	}
+	if site.Reasoning != nil {
+		if _, disabled := site.Reasoning.(disabledReasoning); disabled {
+			value := false
+			config.Thinking = &value
+		} else if value, ok := site.Reasoning.(interface{ Disabled() bool }); ok && value.Disabled() {
+			thinking := false
+			config.Thinking = &thinking
+		} else if value, ok := site.Reasoning.(interface{ Level() (string, bool) }); ok {
+			if level, valid := value.Level(); valid {
+				config.Effort = level
+			}
+		} else {
+			config.Effort = fmt.Sprint(site.Reasoning)
 		}
 	}
-	err := stream.Err()
-	if err == nil {
-		err = truncationError(site, stream.Usage())
-	}
-	endedAt := callNow(c)
-	if recErr := recordCall(ctx, c, site, conv, attempt, userText, final, stream.Usage(), err, startedAt, endedAt); recErr != nil {
-		return "", recErr
-	}
-	if err != nil {
-		return "", err
-	}
-	return final, nil
+	return config
 }
 
-func recordCall(ctx context.Context, c *Client, site CallSite, conv *agentkit.Conversation, attempt int, userText, final string, usage agentkit.Usage, callErr error, startedAt, endedAt time.Time) error {
-	if c == nil || c.recorder == nil {
-		return nil
+func promptsStatusError(status int, body []byte) error {
+	message := strings.TrimSpace(string(body))
+	var envelope struct {
+		Error any `json:"error"`
 	}
-	c.setDefaults()
-	provider := ""
-	if conv != nil && conv.Provider != nil {
-		provider = conv.Provider.Name()
-	}
-	errText := ""
-	if callErr != nil {
-		errText = callErr.Error()
-	}
-	rec := CallRecord{
-		ID:        c.newID(),
-		Stage:     site.Stage,
-		JobID:     JobID(ctx),
-		Attempt:   attempt,
-		Provider:  provider,
-		Model:     site.Model,
-		Params:    mustJSON(callParamsFor(site)),
-		Request:   mustJSON(callRequest{System: site.System, User: userText}),
-		Response:  final,
-		Usage:     usageJSON(usage),
-		Err:       errText,
-		StartedAt: startedAt,
-		EndedAt:   endedAt,
-	}
-	return c.recorder.Record(ctx, rec)
-}
-
-type callRequest struct {
-	System string `json:"system"`
-	User   string `json:"user"`
-}
-
-type callParams struct {
-	Temperature *float64 `json:"temperature,omitempty"`
-	Reasoning   any      `json:"reasoning,omitempty"`
-	MaxTokens   int      `json:"max_tokens,omitempty"`
-}
-
-func callParamsFor(site CallSite) callParams {
-	reasoning := site.Reasoning
-	if _, ok := reasoning.(disabledReasoning); ok {
-		reasoning = "disabled"
-	}
-	return callParams{Temperature: site.Temperature, Reasoning: reasoning, MaxTokens: site.MaxTokens}
-}
-
-func usageJSON(usage agentkit.Usage) string {
-	if usage == (agentkit.Usage{}) {
-		return ""
-	}
-	return mustJSON(usage)
-}
-
-func mustJSON(v any) string {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return ""
-	}
-	return string(raw)
-}
-
-func callNow(c *Client) time.Time {
-	if c == nil {
-		return time.Now()
-	}
-	c.setDefaults()
-	return c.now()
-}
-
-func truncationError(site CallSite, usage agentkit.Usage) error {
-	if site.MaxTokens <= 0 {
-		return nil
-	}
-	generated := usage.Output + usage.ReasoningOutput
-	if generated < int64(site.MaxTokens) {
-		return nil
-	}
-	return fmt.Errorf("%w: generated output usage %d reached max_tokens %d", ErrTruncated, generated, site.MaxTokens)
-}
-
-func agentkitText(message agentkit.Message) string {
-	var b strings.Builder
-	for _, block := range message.Blocks {
-		if text, ok := block.(agentkit.TextBlock); ok {
-			b.WriteString(text.Text)
+	if json.Unmarshal(body, &envelope) == nil && envelope.Error != nil {
+		switch value := envelope.Error.(type) {
+		case string:
+			message = value
+		default:
+			if raw, err := json.Marshal(value); err == nil {
+				message = string(raw)
+			}
 		}
 	}
-	return b.String()
+	return fmt.Errorf("llm: prompts /complete returned %d: %s", status, message)
 }
 
-func setReasoning(gen *agentkit.GenSettings, reasoning any) {
-	if gen == nil || reasoning == nil {
-		return
+func outputUsage(raw json.RawMessage) (int64, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0, false
 	}
-
-	field := reflect.ValueOf(gen).Elem().FieldByName("Reasoning")
-	if _, ok := reasoning.(disabledReasoning); ok {
-		setDisabledReasoning(field)
-		return
+	var usage map[string]json.RawMessage
+	if json.Unmarshal(raw, &usage) != nil {
+		return 0, false
 	}
-	value := reflect.ValueOf(reasoning)
-	if value.Type().AssignableTo(field.Type()) {
-		field.Set(value)
-		return
+	for _, key := range []string{"output", "output_tokens"} {
+		if value, ok := usage[key]; ok {
+			var n int64
+			if json.Unmarshal(value, &n) == nil {
+				return n, true
+			}
+		}
 	}
-	if value.Type().ConvertibleTo(field.Type()) {
-		field.Set(value.Convert(field.Type()))
-	}
-}
-
-func setDisabledReasoning(field reflect.Value) {
-	if !field.IsValid() || !field.CanSet() {
-		return
-	}
-
-	if isIntKind(field.Kind()) {
-		field.SetInt(1)
-		return
-	}
-
-	if field.Kind() != reflect.Struct {
-		return
-	}
-	tag := field.FieldByName("tag")
-	if !tag.IsValid() || !tag.CanAddr() || !isIntKind(tag.Kind()) {
-		return
-	}
-	reflect.NewAt(tag.Type(), unsafe.Pointer(tag.UnsafeAddr())).Elem().SetInt(3)
-}
-
-func isIntKind(k reflect.Kind) bool {
-	return k >= reflect.Int && k <= reflect.Int64
+	return 0, false
 }
 
 // ExtractJSON carves the first JSON object or array from a decorated reply.
@@ -324,7 +262,6 @@ func ExtractJSON(text string) string {
 	s := strings.TrimSpace(text)
 	firstObject := strings.IndexByte(s, '{')
 	firstArray := strings.IndexByte(s, '[')
-
 	start := firstObject
 	close := byte('}')
 	if firstArray >= 0 && (start < 0 || firstArray < start) {
@@ -334,7 +271,6 @@ func ExtractJSON(text string) string {
 	if start < 0 {
 		return s
 	}
-
 	end := strings.LastIndexByte(s, close)
 	if end < start {
 		return s
@@ -345,4 +281,43 @@ func ExtractJSON(text string) string {
 func correctivePrompt(original string, err error) string {
 	return original + "\n\nThe previous response could not be parsed and validated as the requested JSON: " +
 		err.Error() + "\nReturn only valid JSON for the original request."
+}
+
+// CallRecord and Recorder remain the neutral persistence vocabulary used by
+// embedding accounting. Completion accounting belongs to prompts.
+type CallRecord struct {
+	ID        string
+	Stage     string
+	JobID     string
+	Attempt   int
+	Provider  string
+	Model     string
+	Params    string
+	Request   string
+	Response  string
+	Usage     string
+	Err       string
+	StartedAt time.Time
+	EndedAt   time.Time
+}
+
+type Recorder interface {
+	Record(context.Context, CallRecord) error
+}
+
+type jobIDContextKey struct{}
+
+func WithJobID(ctx context.Context, id string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, jobIDContextKey{}, strings.TrimSpace(id))
+}
+
+func JobID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	id, _ := ctx.Value(jobIDContextKey{}).(string)
+	return id
 }

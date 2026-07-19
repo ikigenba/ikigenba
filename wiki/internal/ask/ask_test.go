@@ -13,6 +13,7 @@ import (
 
 	wikidb "wiki/internal/db"
 	"wiki/internal/llm"
+	"wiki/internal/llmtest"
 	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
 )
@@ -53,7 +54,7 @@ func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) 
 		}`),
 	}}
 
-	got, err := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+	got, err := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who owns the scheduler?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
@@ -113,7 +114,7 @@ func TestAskHonestEmptyFloorSkipsSynthesisUnlessPinnedOrDenseEnough(t *testing.T
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{"found":true,"text":"should not run","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
-	got, err := New(lowSearch, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(lowProv, nil), testExtractSite(), testSynthSite()).
+	got, err := New(lowSearch, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, lowProv), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask below floor returned error: %v", err)
@@ -134,7 +135,7 @@ func TestAskHonestEmptyFloorSkipsSynthesisUnlessPinnedOrDenseEnough(t *testing.T
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
-	got, err = New(pinnedSearch, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(pinnedProv, nil), testExtractSite(), testSynthSite()).
+	got, err = New(pinnedSearch, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, pinnedProv), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask pinned returned error: %v", err)
@@ -167,7 +168,7 @@ func TestAskRelevanceFloorIsConfigurableThreshold(t *testing.T) {
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{"found":true,"text":"should not run","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
-	got, err := New(&scriptedSearch{result: result}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(highProv, nil), testExtractSite(), testSynthSite(), WithRelevanceFloor(0.50)).
+	got, err := New(&scriptedSearch{result: result}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, highProv), testExtractSite(), testSynthSite(), WithRelevanceFloor(0.50)).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask high floor returned error: %v", err)
@@ -180,7 +181,7 @@ func TestAskRelevanceFloorIsConfigurableThreshold(t *testing.T) {
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
-	got, err = New(&scriptedSearch{result: result}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(lowProv, nil), testExtractSite(), testSynthSite(), WithRelevanceFloor(0.40)).
+	got, err = New(&scriptedSearch{result: result}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, lowProv), testExtractSite(), testSynthSite(), WithRelevanceFloor(0.40)).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask low floor returned error: %v", err)
@@ -206,7 +207,7 @@ func TestAskDowngradesFoundAnswerWithoutGroundedCitations(t *testing.T) {
 		textRoundTrip(`{"found":true,"text":"Ada wrote the note.","citations":[]}`),
 	}}
 
-	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
@@ -231,7 +232,7 @@ func TestAskDowngradesFoundAnswerWithoutText(t *testing.T) {
 		textRoundTrip(`{"found":true,"text":"   ","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
 
-	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
@@ -264,7 +265,7 @@ func TestAskDropsCitationsOutsideRetrievedPages(t *testing.T) {
 		}`),
 	}}
 
-	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
@@ -302,7 +303,7 @@ func TestAskSynthesisUsesOnlyRetrievedPageBodies(t *testing.T) {
 		}`),
 	}}
 
-	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who approved the release?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
@@ -340,7 +341,7 @@ func TestAskDoesNotWriteOnHonestEmptyOrParseFailure(t *testing.T) {
 
 	before := totalChanges(t, conn)
 	emptyProv := &askProvider{responses: []*agentkit.RoundTrip{textRoundTrip(`{"sub_queries":["Ada"]}`)}}
-	got, err := New(&scriptedSearch{result: retrieve.Result{Hits: []retrieve.Hit{{PageID: "subject-ada"}}, TopDense: 0.01}}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(emptyProv, nil), testExtractSite(), testSynthSite()).
+	got, err := New(&scriptedSearch{result: retrieve.Result{Hits: []retrieve.Hit{{PageID: "subject-ada"}}, TopDense: 0.01}}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, emptyProv), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("honest-empty Ask returned error: %v", err)
@@ -356,7 +357,7 @@ func TestAskDoesNotWriteOnHonestEmptyOrParseFailure(t *testing.T) {
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`not json`),
 	}}
-	_, err = New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(parseProv, nil), testExtractSite(), testSynthSite()).
+	_, err = New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, parseProv), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
 	if err == nil {
 		t.Fatal("parse-failure Ask error = nil, want error")
@@ -400,7 +401,7 @@ func TestAnalyzeRunsOneAskSubjectCallAndParsesQueryAnalysis(t *testing.T) {
 	}}
 	site := llm.CallSite{Stage: "ask-subject", Model: "analysis-model", System: "analysis system", MaxTokens: 123}
 
-	got, err := Analyze(context.Background(), llm.New(prov, nil), site, "How did Ada and Grace handle the release?")
+	got, err := Analyze(context.Background(), llmtest.NewClient(t, prov), site, "How did Ada and Grace handle the release?")
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
 	}
@@ -440,7 +441,7 @@ func TestAnalyzeNormalizesAndCapsPreparedQuestion(t *testing.T) {
 		}`),
 	}}
 
-	got, err := Analyze(context.Background(), llm.New(prov, nil), testExtractSite(), "question")
+	got, err := Analyze(context.Background(), llmtest.NewClient(t, prov), testExtractSite(), "question")
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
 	}
@@ -466,7 +467,7 @@ func TestAnalyzeFallsBackToWholeQuestionWhenNoSubQueries(t *testing.T) {
 	}}
 
 	question := "How did Ada handle the release?"
-	got, err := Analyze(context.Background(), llm.New(prov, nil), testExtractSite(), question)
+	got, err := Analyze(context.Background(), llmtest.NewClient(t, prov), testExtractSite(), question)
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
 	}
@@ -495,7 +496,7 @@ func TestAskParsesDecoratedJSONResponses(t *testing.T) {
 		textRoundTrip("Here is the answer:\n" + string(answer)),
 	}}
 
-	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llm.New(prov, nil), testExtractSite(), testSynthSite()).
+	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)

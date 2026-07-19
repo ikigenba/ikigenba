@@ -15,6 +15,7 @@ import (
 
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/llmtest"
 )
 
 func TestLoadCaseLoadsWellFormedCase(t *testing.T) {
@@ -226,7 +227,7 @@ func TestRunFeedsCaseToProductionExtractor(t *testing.T) {
 	}]}`}}
 	site := extract.DefaultCallSite()
 	site.Model = "extract-model"
-	ex := extract.New(llm.New(prov, nil), site)
+	ex := extract.New(llmtest.NewClient(t, prov), site)
 	c := Case{
 		Header: extract.DocumentHeader{
 			Source:     "mcp:ingest_text",
@@ -280,7 +281,7 @@ func TestScorePartitionsSubjectsByTypeAndNormalizedName(t *testing.T) {
 		"missed":[],
 		"extra":[]
 	}`}}
-	j := NewJudge(llm.New(prov, nil), DefaultJudgeCallSite())
+	j := NewJudge(llmtest.NewClient(t, prov), DefaultJudgeCallSite())
 	c := Case{
 		Name:       "subject-partition",
 		Difficulty: "easy",
@@ -321,7 +322,7 @@ func TestScoreCallsJudgeForMatchedSubjectAndUsesVerdict(t *testing.T) {
 	}`}}
 	rec := &recordingRecorder{}
 	site := DefaultJudgeCallSite()
-	j := NewJudge(llm.New(prov, nil, rec), site)
+	j := NewJudge(llmtest.NewClient(t, prov, rec), site)
 	c := Case{
 		Name:       "judge-call",
 		Difficulty: "medium",
@@ -348,8 +349,8 @@ func TestScoreCallsJudgeForMatchedSubjectAndUsesVerdict(t *testing.T) {
 	if len(prov.requests) != 1 {
 		t.Fatalf("requests len = %d, want one judge llm.JSON call for matched subject", len(prov.requests))
 	}
-	if len(rec.records) != 1 || rec.records[0].Stage != "judge" {
-		t.Fatalf("records = %#v, want one Stage judge call record", rec.records)
+	if len(rec.records) != 0 {
+		t.Fatalf("records = %#v, want prompts to own chat accounting", rec.records)
 	}
 	req := prov.requests[0]
 	if req.Model != site.Model || req.Gen.MaxTokens != site.MaxTokens {
@@ -370,7 +371,7 @@ func TestScoreCallsJudgeForMatchedSubjectAndUsesVerdict(t *testing.T) {
 func TestScoreSkipsJudgeForUnmatchedSubjectsAndClassifiesClaims(t *testing.T) {
 	// R-DU27-KNWO
 	prov := &capturingProvider{}
-	j := NewJudge(llm.New(prov, nil), DefaultJudgeCallSite())
+	j := NewJudge(llmtest.NewClient(t, prov), DefaultJudgeCallSite())
 	c := Case{
 		Name:       "unmatched",
 		Difficulty: "hard",
@@ -417,7 +418,7 @@ func TestScoreErrorsAfterBoundedMalformedOrOutOfRangeJudgeVerdicts(t *testing.T)
 	}}
 	site := DefaultJudgeCallSite()
 	site.MaxParseRetries = 2
-	j := NewJudge(llm.New(prov, nil), site)
+	j := NewJudge(llmtest.NewClient(t, prov), site)
 	c := Case{
 		Name:       "bad-verdict",
 		Difficulty: "easy",

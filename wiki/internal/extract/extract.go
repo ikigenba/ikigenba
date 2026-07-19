@@ -92,6 +92,7 @@ func DefaultCallSite() llm.CallSite {
 	temp := 0.0
 	return llm.CallSite{
 		Stage:           "extract",
+		Config:          llm.Config{Temperature: &temp, Thinking: boolPtr(false), MaxTokens: defaultMaxTokens},
 		Temperature:     &temp,
 		Reasoning:       llm.DisableReasoning(),
 		MaxTokens:       defaultMaxTokens,
@@ -104,12 +105,18 @@ func (e *Extractor) Extract(ctx context.Context, h DocumentHeader, text string) 
 	if e == nil {
 		return nil, fmt.Errorf("extract: nil extractor")
 	}
-	out, err := llm.JSON[extractResponse](ctx, e.c, e.site, renderPrompt(e.promptInstructions, h, text), validateResponse)
+	out, err := llm.JSON[extractResponse](ctx, e.c, e.site, attribution(ctx), renderPrompt(e.promptInstructions, h, text), validateResponse)
 	if err != nil {
 		return nil, err
 	}
 	return out.Subjects, nil
 }
+
+func attribution(ctx context.Context) llm.Attribution {
+	return llm.Attribution{Origin: "service:wiki", GroupID: llm.JobID(ctx)}
+}
+
+func boolPtr(value bool) *bool { return &value }
 
 type extractResponse struct {
 	Subjects []ExtractedSubject `json:"subjects"`

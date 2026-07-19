@@ -34,6 +34,7 @@ import (
 	wikidb "wiki/internal/db"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/llmtest"
 	"wiki/internal/mcp"
 	paging "wiki/internal/page"
 	"wiki/internal/web"
@@ -237,34 +238,20 @@ func TestWikiBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	}
 }
 
-func TestServeFailsLoudWhenAnthropicKeyMissing(t *testing.T) {
+func TestConfigDoesNotRequireAnthropicKey(t *testing.T) {
 	// R-6RVX-P1IG
 	for _, value := range []string{"", "   "} {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		cmd := exec.CommandContext(ctx, "go", "run", ".", "serve")
-		root := t.TempDir()
-		cmd.Env = testEnv(map[string]string{
-			"IKIGENBA_DOMAIN":      "int.ikigenba.com",
-			"IKIGENBA_ROOT":        root,
-			"WIKI_DB_PATH":         filepath.Join(root, "wiki.db"),
-			"WIKI_GENERATION_PATH": filepath.Join(root, "wiki.db.generation"),
-			"WIKI_WWW_PATH":        testWWWRoot(t),
-			"WIKI_IP":              "127.0.0.1",
-			"WIKI_PORT":            fmt.Sprintf("%d", freeTCPPort(t)),
-			"OPENAI_API_KEY":       "test-openai-key",
-			"ANTHROPIC_API_KEY":    value,
+		_, err := wiki.NewConfig(func(key string) string {
+			if key == "OPENAI_API_KEY" {
+				return "test-openai-key"
+			}
+			if key == "ANTHROPIC_API_KEY" {
+				return value
+			}
+			return ""
 		})
-		out, err := cmd.CombinedOutput()
-		if ctx.Err() == context.DeadlineExceeded {
-			t.Fatal("serve did not fail before startup timeout")
-		}
-		if err == nil {
-			t.Fatalf("serve with ANTHROPIC_API_KEY=%q exited 0; output:\n%s", value, out)
-		}
-		if !strings.Contains(string(out), "ANTHROPIC_API_KEY is required") {
-			t.Fatalf("serve output = %q, want missing-key error", out)
+		if err != nil {
+			t.Fatalf("NewConfig with ANTHROPIC_API_KEY=%q: %v; prompts owns provider credentials", value, err)
 		}
 	}
 }
@@ -829,7 +816,7 @@ func TestBuildSpecRecordsPageEmbeddingCalls(t *testing.T) {
 			Dims:     2,
 			Provider: embeds,
 		},
-		LLM: llm.New(prov, nil),
+		LLM: llmtest.NewClient(t, prov),
 	}))
 	h := buildSpecTestHandler(t, conn, spec)
 	stopWorker, workerErr := startBuildSpecWorker(t, ctx, spec.Workers[0])
@@ -916,7 +903,7 @@ func TestBuildSpecMergeRemovesLoserVectorFromLiveCache(t *testing.T) {
 			Provider: embeds,
 		},
 		SearchDefault: 1,
-		LLM:           llm.New(prov, nil),
+		LLM:           llmtest.NewClient(t, prov),
 	}))
 	h := buildSpecTestHandler(t, conn, spec)
 	stopWorker, workerErr := startBuildSpecWorker(t, ctx, spec.Workers[0])
@@ -1009,7 +996,7 @@ func TestBuildSpecRecordsQueryEmbeddingCalls(t *testing.T) {
 			Provider: embeds,
 		},
 		SearchDefault: 8,
-		LLM:           llm.New(prov, nil),
+		LLM:           llmtest.NewClient(t, prov),
 	}))
 	h := buildSpecTestHandler(t, conn, spec)
 
@@ -1059,7 +1046,7 @@ func TestBuildCompilerUsesDefaultCompileCallSite(t *testing.T) {
 	wantSite.Model = "compile-model"
 	cfg := wiki.Config{
 		CallSites: wiki.CallSites{Compile: wantSite},
-		LLM:       llm.New(prov, nil),
+		LLM:       llmtest.NewClient(t, prov),
 	}
 	compiler := buildCompiler(cfg, cfg.LLM)
 

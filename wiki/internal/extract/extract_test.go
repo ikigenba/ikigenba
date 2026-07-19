@@ -10,6 +10,7 @@ import (
 	agentkit "github.com/ikigenba/agentkit"
 
 	"wiki/internal/llm"
+	"wiki/internal/llmtest"
 )
 
 func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
@@ -24,7 +25,7 @@ func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 			}
 		]
 	}`}}
-	extractor := New(llm.New(prov, nil), llm.CallSite{Model: "extract-model", System: "extract system"})
+	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model", System: "extract system"})
 	header := DocumentHeader{
 		Source:     "mcp:ingest_text",
 		Title:      "Tulsa robotics notes",
@@ -82,7 +83,7 @@ func TestExtractUsesCustomPromptInstructionsAndAppendsSourceContext(t *testing.T
 		]
 	}`}}
 	extractor := New(
-		llm.New(prov, nil),
+		llmtest.NewClient(t, prov),
 		llm.CallSite{Model: "extract-model"},
 		WithPromptInstructions("CUSTOM JSON CONTRACT"),
 	)
@@ -113,7 +114,7 @@ func TestExtractUsesCustomPromptInstructionsAndAppendsSourceContext(t *testing.T
 func TestExtractDefaultsToExportedPromptInstructions(t *testing.T) {
 	// R-OGYE-8FV9
 	prov := &scriptedProvider{responses: []string{`{"subjects":[{"type":"entity","kind":"company","name":"Acme Robotics","occurred_at":"","claims":["Acme Robotics opened a research lab."]}]}`}}
-	extractor := New(llm.New(prov, nil), llm.CallSite{Model: "extract-model"})
+	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
 
 	if _, err := extractor.Extract(context.Background(), validHeader(), "Acme Robotics opened a research lab."); err != nil {
 		t.Fatalf("Extract returned error: %v", err)
@@ -159,7 +160,7 @@ func TestExtractRejectsInvalidSubjectTypesAndEmptyClaims(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			prov := &scriptedProvider{responses: []string{tt.response}}
-			extractor := New(llm.New(prov, nil), llm.CallSite{Model: "extract-model"})
+			extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
 
 			got, err := extractor.Extract(context.Background(), validHeader(), "source text")
 			if err == nil {
@@ -184,7 +185,7 @@ func TestExtractRetainsNonEventOccurredAt(t *testing.T) {
 		"occurred_at":"2026-06",
 		"claims":["Acme Robotics was founded in June 2026."]
 	}]}`}}
-	extractor := New(llm.New(prov, nil), llm.CallSite{Model: "extract-model"})
+	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
 
 	got, err := extractor.Extract(context.Background(), validHeader(), "Acme Robotics was founded in June 2026.")
 	if err != nil {
@@ -223,7 +224,7 @@ func TestExtractGaryGygaxDocumentAcceptsEntityYears(t *testing.T) {
 			"claims":["Dungeons & Dragons was first published in 1974."]
 		}
 	]}`}}
-	extractor := New(llm.New(prov, nil), llm.CallSite{Model: "extract-model"})
+	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
 
 	got, err := extractor.Extract(context.Background(), validHeader(), "Gary Gygax was born in 1938. TSR was founded in 1973. Dungeons & Dragons was first published in 1974.")
 	if err != nil {
@@ -328,7 +329,7 @@ func TestExtractValidatesOccurredAtOnEverySubjectType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			prov := &scriptedProvider{responses: []string{`{"subjects":[` + tt.subject + `]}`}}
-			extractor := New(llm.New(prov, nil), llm.CallSite{Model: "extract-model"})
+			extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
 
 			got, err := extractor.Extract(context.Background(), validHeader(), "Acme Robotics opened a research lab.")
 			if tt.wantError {
@@ -371,7 +372,7 @@ func TestExtractRepromptsAfterOccurredAtValidationFailure(t *testing.T) {
 			"claims":["Acme Robotics opened a research lab."]
 		}]}`,
 	}}
-	extractor := New(llm.New(prov, nil), llm.CallSite{Model: "extract-model", MaxParseRetries: 1})
+	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model", MaxParseRetries: 1})
 
 	got, err := extractor.Extract(context.Background(), validHeader(), "Acme Robotics opened a research lab in 2026.")
 	if err != nil {
@@ -409,6 +410,10 @@ func TestDefaultCallSiteRetriesBadThenGoodExtraction(t *testing.T) {
 		}]}`,
 	}}
 	site := DefaultCallSite()
+	// R-MW86-M158
+	if site.Config.MaxTokens < 16384 {
+		t.Fatalf("Config.MaxTokens = %d, want at least 16384", site.Config.MaxTokens)
+	}
 	site.Model = "extract-model"
 	// R-GGIG-AN7W
 	if site.Stage != "extract" {
@@ -426,7 +431,7 @@ func TestDefaultCallSiteRetriesBadThenGoodExtraction(t *testing.T) {
 	if site.MaxParseRetries != 2 {
 		t.Fatalf("MaxParseRetries = %d, want 2", site.MaxParseRetries)
 	}
-	extractor := New(llm.New(prov, nil), site)
+	extractor := New(llmtest.NewClient(t, prov), site)
 
 	got, err := extractor.Extract(context.Background(), validHeader(), "Tulsa hosted the planning meeting on June 20, 2026.")
 	if err != nil {
@@ -459,7 +464,7 @@ func TestExtractUsesInjectedLLMCallSiteWithoutTools(t *testing.T) {
 	}]}`}}
 	site := DefaultCallSite()
 	site.Model = "extract-model"
-	extractor := New(llm.New(prov, nil), site)
+	extractor := New(llmtest.NewClient(t, prov), site)
 
 	if _, err := extractor.Extract(context.Background(), validHeader(), "Claim extraction turns source text into statements."); err != nil {
 		t.Fatalf("Extract returned error: %v", err)

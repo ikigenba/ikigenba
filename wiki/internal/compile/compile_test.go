@@ -11,13 +11,14 @@ import (
 
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/llmtest"
 	"wiki/internal/wiki"
 )
 
 func TestCompileRendersSubjectIdentityAndCompleteClaimSet(t *testing.T) {
 	// R-FQLB-QWS6
 	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics opened a Tulsa lab and hired Mira Patel."}`}}
-	compiler := New(llm.New(prov, nil), llm.CallSite{Model: "compile-model", System: "compile system"}, nil)
+	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "compile-model", System: "compile system"}, nil)
 
 	title, body, err := compiler.Compile(context.Background(), acmeSubject(), []wiki.Claim{
 		{ID: "claim-001", SubjectID: "subj-acme", Body: "Acme Robotics opened a research lab in Tulsa."},
@@ -64,7 +65,7 @@ func TestCompileUsesInjectedCallSiteWithoutTools(t *testing.T) {
 		Reasoning:   agentkit.DisableReasoning(),
 		System:      "compile from claims",
 	}
-	compiler := New(llm.New(prov, nil), site, nil)
+	compiler := New(llmtest.NewClient(t, prov), site, nil)
 
 	if _, _, err := compiler.Compile(context.Background(), acmeSubject(), acmeClaims()); err != nil {
 		t.Fatalf("Compile returned error: %v", err)
@@ -106,7 +107,7 @@ func TestDefaultCallSiteUsesDeterministicReasoningOffSettings(t *testing.T) {
 	}
 
 	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics operates a Tulsa research lab."}`}}
-	compiler := New(llm.New(prov, nil), site, nil)
+	compiler := New(llmtest.NewClient(t, prov), site, nil)
 	if _, _, err := compiler.Compile(context.Background(), acmeSubject(), acmeClaims()); err != nil {
 		t.Fatalf("Compile returned error: %v", err)
 	}
@@ -133,15 +134,15 @@ func TestExtractAndCompileDefaultCallSitesCarryOutputTokenCeilings(t *testing.T)
 	compileSite := DefaultCallSite()
 	compileSite.Model = "compile-model"
 	const minOutputBudget = 16384
-	if extractSite.MaxTokens < minOutputBudget || compileSite.MaxTokens < minOutputBudget {
-		t.Fatalf("default max tokens = extract:%d compile:%d, want both at least %d", extractSite.MaxTokens, compileSite.MaxTokens, minOutputBudget)
+	if extractSite.Config.MaxTokens < minOutputBudget || compileSite.Config.MaxTokens < minOutputBudget {
+		t.Fatalf("default config max tokens = extract:%d compile:%d, want both at least %d", extractSite.Config.MaxTokens, compileSite.Config.MaxTokens, minOutputBudget)
 	}
 
-	extractor := extract.New(llm.New(prov, nil), extractSite)
+	extractor := extract.New(llmtest.NewClient(t, prov), extractSite)
 	if _, err := extractor.Extract(context.Background(), extract.DocumentHeader{}, "source text"); err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
-	compiler := New(llm.New(prov, nil), compileSite, nil)
+	compiler := New(llmtest.NewClient(t, prov), compileSite, nil)
 	if _, _, err := compiler.Compile(context.Background(), acmeSubject(), acmeClaims()); err != nil {
 		t.Fatalf("Compile returned error: %v", err)
 	}
@@ -162,7 +163,7 @@ func TestCompileRebuildsFromClaimsWithoutPriorGeneratedBody(t *testing.T) {
 		`{"title":"Acme Robotics","body":"STALE GENERATED BODY should not be reused."}`,
 		`{"title":"Acme Robotics","body":"Acme Robotics opened a Denver lab."}`,
 	}}
-	compiler := New(llm.New(prov, nil), llm.CallSite{Model: "compile-model"}, nil)
+	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "compile-model"}, nil)
 
 	if _, _, err := compiler.Compile(context.Background(), acmeSubject(), []wiki.Claim{
 		{ID: "claim-001", SubjectID: "subj-acme", Body: "Acme Robotics opened a Tulsa lab."},
@@ -195,7 +196,7 @@ func TestCompileTightensOverCapBodyFromClaims(t *testing.T) {
 		`{"title":"Acme Robotics","body":"` + tooLong + `"}`,
 		`{"title":"Acme Robotics","body":"Acme Robotics runs a concise Tulsa lab page."}`,
 	}}
-	compiler := New(llm.New(prov, nil), llm.CallSite{Model: "compile-model"}, nil)
+	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "compile-model"}, nil)
 
 	_, body, err := compiler.Compile(context.Background(), acmeSubject(), acmeClaims())
 	if err != nil {
@@ -222,7 +223,7 @@ func TestCompileDeterministicallyEnforcesRuneCap(t *testing.T) {
 	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"` + body + `"}`}}
 	site := DefaultCallSite()
 	site.Model = "compile-model"
-	compiler := New(llm.New(prov, nil), site, nil)
+	compiler := New(llmtest.NewClient(t, prov), site, nil)
 	compiler.maxTighten = 0
 
 	_, got, err := compiler.Compile(context.Background(), acmeSubject(), acmeClaims())

@@ -382,7 +382,7 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 		),
 		wikidomain.WithPageEmbedder(
 			"merge-model",
-			llm.NewRecordingEmbedder(embedder, wikidomain.NewLLMCallStore(conns.Write), "embed-page", nil, "merge-model", 2),
+			wikidomain.NewRecordingEmbedder(embedder, wikidomain.NewLLMCallStore(conns.Write), "embed-page", nil, "merge-model", 2),
 		),
 		wikidomain.WithVectorCacheUpdater(cache.Upsert),
 		wikidomain.WithVectorCacheRemover(cache.Remove),
