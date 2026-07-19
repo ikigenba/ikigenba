@@ -15,7 +15,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D7 | project/design/D07.md | Runner | R-K5I9-YGS9, R-1X6X-E3KP, R-1ZMQ-5N23, R-K6Q6-C8IY, R-K7Y2-Q09N, R-K95Z-3S0C |
 | D8 | project/design/D08.md | DB migration | R-KBLR-VBHQ, R-KCTO-938F |
 | D9 | project/design/D09.md | MCP schema | R-KE1K-MUZ4, R-20UM-JESS, R-222I-X6JH |
-| D10 | project/design/D10.md | The landing page: a session-gated human web surface (`GET /{$}`) | R-LAND-PG01, R-LAND-NMVR, R-LAND-CARB, R-LAND-ROOT, R-LAND-UNGT |
+| D10 | project/design/D10.md | The landing page: a session-gated human web surface (`GET /{$}`) | R-LAND-PG01, R-LAND-NMVR, R-LAND-CARB, R-LAND-ROOT, R-LAND-UNGT, R-7NY0-UIO6, R-7P5X-8AEV |
 | D11 | project/design/D11.md | Conform the landing page to the cron canonical template | none — structural |
 | D12 | project/design/D12.md | A top-left Home link to the dashboard landing page | R-HOME-2T4X |
 | D13 | project/design/D13.md | Self-serve the landing page's fonts and eliminate the FOUT | R-DFKP-IVZU, R-DGSL-WNQJ, R-DI0I-AFH8, R-DJ8E-O77X, R-DKGB-1YYM |
@@ -110,6 +110,8 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-6T4Y-E1VD | D25 | project/design/D25.md |
 | R-6UCU-RTM2 | D25 | project/design/D25.md |
 | R-6VKR-5LCR | D25 | project/design/D25.md |
+| R-7NY0-UIO6 | D10 | project/design/D10.md |
+| R-7P5X-8AEV | D10 | project/design/D10.md |
 | R-9JNO-RZM2 | D6 | project/design/D06.md |
 | R-9KVL-5RCR | D6 | project/design/D06.md |
 | R-9M3H-JJ3G | D6 | project/design/D06.md |
