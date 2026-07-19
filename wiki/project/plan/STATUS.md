@@ -10,4 +10,6 @@ no done marker; done is gone. This file deliberately carries **no bare status
 glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
-Next phase: 91
+Next phase: 92
+
+- Phase 91 ⬜ realizes D39/D47 — nginx fragment (structural): capture and forward all four `X-Owner-*` owner headers (`X-Owner-Id`, `X-Owner-Email`, `X-Owner-Name`, `X-Owner-Picture`) on each of wiki's three identity-forwarding locations (`= /srv/wiki/`, `/srv/wiki/subject/`, bearer `/srv/wiki/`), leaving `/srv/wiki/static/` identity-free and `X-Client-Id` unchanged; purely additive, verified by a named fragment check (no R-ids)
