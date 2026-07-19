@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	appdb "appkit/db"
-	agentkit "github.com/ikigenba/agentkit"
 
 	wikidb "wiki/internal/db"
 	"wiki/internal/llm"
@@ -124,7 +123,7 @@ func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) 
 		Hits:     []retrieve.Hit{{PageID: "subject-grace", Path: "entity/grace", Title: "Grace"}},
 		TopDense: 0.72,
 	}}
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{
 			"sub_queries": ["Ada"],
 			"keywords": ["scheduler"],
@@ -193,7 +192,7 @@ func TestAskHonestEmptyFloorSkipsSynthesisUnlessPinnedOrDenseEnough(t *testing.T
 		TopDense: 0.29,
 		Pinned:   false,
 	}}
-	lowProv := &askProvider{responses: []*agentkit.RoundTrip{
+	lowProv := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{"found":true,"text":"should not run","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
@@ -214,7 +213,7 @@ func TestAskHonestEmptyFloorSkipsSynthesisUnlessPinnedOrDenseEnough(t *testing.T
 		TopDense: 0.01,
 		Pinned:   true,
 	}}
-	pinnedProv := &askProvider{responses: []*agentkit.RoundTrip{
+	pinnedProv := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
@@ -247,7 +246,7 @@ func TestAskRelevanceFloorIsConfigurableThreshold(t *testing.T) {
 		TopDense: 0.42,
 	}
 
-	highProv := &askProvider{responses: []*agentkit.RoundTrip{
+	highProv := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{"found":true,"text":"should not run","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
@@ -260,7 +259,7 @@ func TestAskRelevanceFloorIsConfigurableThreshold(t *testing.T) {
 		t.Fatalf("high floor Ask = %+v with %d provider requests, want honest-empty before synthesis", got, len(highProv.requests))
 	}
 
-	lowProv := &askProvider{responses: []*agentkit.RoundTrip{
+	lowProv := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
@@ -285,7 +284,7 @@ func TestAskDowngradesFoundAnswerWithoutGroundedCitations(t *testing.T) {
 		Title:     "Ada",
 		Body:      "Ada wrote the note.",
 	})
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{"found":true,"text":"Ada wrote the note.","citations":[]}`),
 	}}
@@ -310,7 +309,7 @@ func TestAskDowngradesFoundAnswerWithoutText(t *testing.T) {
 		Title:     "Ada",
 		Body:      "Ada wrote the note.",
 	})
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{"found":true,"text":"   ","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
@@ -336,7 +335,7 @@ func TestAskDropsCitationsOutsideRetrievedPages(t *testing.T) {
 		Title:     "Ada",
 		Body:      "Ada wrote the note.",
 	})
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{
 			"found": true,
@@ -377,7 +376,7 @@ func TestAskSynthesisUsesOnlyRetrievedPageBodies(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Save claim: %v", err)
 	}
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`{
 			"found": true,
@@ -423,7 +422,7 @@ func TestAskDoesNotWriteOnHonestEmptyOrParseFailure(t *testing.T) {
 	})
 
 	before := totalChanges(t, conn)
-	emptyProv := &askProvider{responses: []*agentkit.RoundTrip{textRoundTrip(`{"sub_queries":["Ada"]}`)}}
+	emptyProv := &askProvider{responses: []*llmtest.RoundTrip{textRoundTrip(`{"sub_queries":["Ada"]}`)}}
 	got, err := New(&scriptedSearch{result: retrieve.Result{Hits: []retrieve.Hit{{PageID: "subject-ada"}}, TopDense: 0.01}}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, emptyProv), testExtractSite(), testSynthSite()).
 		Ask(ctx, "owner@example.com", "Who wrote the note?")
 	if err != nil {
@@ -436,7 +435,7 @@ func TestAskDoesNotWriteOnHonestEmptyOrParseFailure(t *testing.T) {
 		t.Fatalf("total_changes after honest-empty = %d, want unchanged %d", after, before)
 	}
 
-	parseProv := &askProvider{responses: []*agentkit.RoundTrip{
+	parseProv := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{"sub_queries":["Ada"]}`),
 		textRoundTrip(`not json`),
 	}}
@@ -467,15 +466,19 @@ func TestDefaultAskCallSitesUseSeparateReasoningLowStages(t *testing.T) {
 		if site.MaxTokens != 16384 {
 			t.Fatalf("%s MaxTokens = %d, want 16384", name, site.MaxTokens)
 		}
-		if !reflect.DeepEqual(site.Reasoning, agentkit.Level("low")) {
-			t.Fatalf("%s reasoning = %#v, want low level", name, site.Reasoning)
+		level, ok := site.Reasoning.(interface{ Level() (string, bool) })
+		if !ok {
+			t.Fatalf("%s reasoning = %#v, want level setting", name, site.Reasoning)
+		}
+		if value, enabled := level.Level(); value != "low" || !enabled {
+			t.Fatalf("%s reasoning level = %q/%v, want low/true", name, value, enabled)
 		}
 	}
 }
 
 func TestAnalyzeRunsOneAskSubjectCallAndParsesQueryAnalysis(t *testing.T) {
 	// R-QB7A-Z95U
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{
 			"sub_queries": ["Ada release", "Grace scheduler"],
 			"keywords": ["release", "scheduler"],
@@ -516,7 +519,7 @@ func TestAnalyzeRunsOneAskSubjectCallAndParsesQueryAnalysis(t *testing.T) {
 
 func TestAnalyzeNormalizesAndCapsPreparedQuestion(t *testing.T) {
 	// R-QCF7-D0WJ
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{
 			"sub_queries": ["  Ada  ", "", "Grace", "ada", "Linus", "Margaret", "Katherine"],
 			"keywords": [" release ", "", "Release", "scheduler"],
@@ -541,7 +544,7 @@ func TestAnalyzeNormalizesAndCapsPreparedQuestion(t *testing.T) {
 
 func TestAnalyzeFallsBackToWholeQuestionWhenNoSubQueries(t *testing.T) {
 	// R-QDN3-QSN8
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip(`{
 			"sub_queries": ["", "   "],
 			"keywords": ["release"],
@@ -574,7 +577,7 @@ func TestAskParsesDecoratedJSONResponses(t *testing.T) {
 		Text:      "Ada wrote the note.",
 		Citations: []Citation{{Path: "entity/ada", Title: "Ada"}},
 	})
-	prov := &askProvider{responses: []*agentkit.RoundTrip{
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
 		textRoundTrip("```json\n{\"sub_queries\":[\"Ada\"]}\n```"),
 		textRoundTrip("Here is the answer:\n" + string(answer)),
 	}}
@@ -661,11 +664,11 @@ func (s *scriptedSearch) SearchAnalyzed(_ context.Context, _ llm.Attribution, qa
 }
 
 type askProvider struct {
-	responses []*agentkit.RoundTrip
-	requests  []agentkit.Request
+	responses []*llmtest.RoundTrip
+	requests  []llmtest.Request
 }
 
-func (p *askProvider) RoundTrip(_ context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+func (p *askProvider) RoundTrip(_ context.Context, req *llmtest.Request) *llmtest.RoundTrip {
 	p.requests = append(p.requests, cloneRequest(req))
 	if len(p.responses) == 0 {
 		return textRoundTrip(`{"found":false}`)
@@ -679,35 +682,35 @@ func (p *askProvider) Name() string {
 	return "ask-scripted"
 }
 
-func (p *askProvider) Pricing(string) (agentkit.Pricing, bool) {
-	return agentkit.Pricing{Tiers: []agentkit.RateTier{{MinInputTokens: 0}}}, true
+func (p *askProvider) Pricing(string) (llmtest.Pricing, bool) {
+	return llmtest.Pricing{Tiers: []llmtest.RateTier{{MinInputTokens: 0}}}, true
 }
 
-func cloneRequest(req *agentkit.Request) agentkit.Request {
+func cloneRequest(req *llmtest.Request) llmtest.Request {
 	if req == nil {
-		return agentkit.Request{}
+		return llmtest.Request{}
 	}
-	return agentkit.Request{
+	return llmtest.Request{
 		Model:    req.Model,
 		System:   req.System,
-		Messages: append([]agentkit.Message(nil), req.Messages...),
-		Tools:    append([]agentkit.Tool(nil), req.Tools...),
+		Messages: append([]llmtest.Message(nil), req.Messages...),
+		Tools:    append([]llmtest.Tool(nil), req.Tools...),
 		Gen:      req.Gen,
 	}
 }
 
-func textRoundTrip(text string) *agentkit.RoundTrip {
-	return agentkit.NewRoundTrip(agentkit.Message{
-		Role:   agentkit.RoleAssistant,
-		Blocks: []agentkit.Block{agentkit.TextBlock{Text: text}},
-	}, agentkit.FinishStop, agentkit.Usage{InputUncached: 1, Output: 1, Total: 2}, nil, nil, 0, false)
+func textRoundTrip(text string) *llmtest.RoundTrip {
+	return llmtest.NewRoundTrip(llmtest.Message{
+		Role:   llmtest.RoleAssistant,
+		Blocks: []llmtest.Block{llmtest.TextBlock{Text: text}},
+	}, llmtest.FinishStop, llmtest.Usage{InputUncached: 1, Output: 1, Total: 2}, nil, nil, 0, false)
 }
 
-func requestText(req agentkit.Request) string {
+func requestText(req llmtest.Request) string {
 	var b strings.Builder
 	for _, msg := range req.Messages {
 		for _, block := range msg.Blocks {
-			if text, ok := block.(agentkit.TextBlock); ok {
+			if text, ok := block.(llmtest.TextBlock); ok {
 				b.WriteString(text.Text)
 			}
 		}

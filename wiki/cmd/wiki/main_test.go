@@ -25,7 +25,6 @@ import (
 	"appkit/manifest"
 	"appkit/server"
 	appkitweb "appkit/web"
-	agentkit "github.com/ikigenba/agentkit"
 	"registry"
 
 	"wiki/internal/ask"
@@ -203,12 +202,10 @@ func TestWikiBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, run, "serve")
 	cmd.Env = testEnv(map[string]string{
-		"IKIGENBA_DOMAIN":   "int.ikigenba.com",
-		"IKIGENBA_ROOT":     root,
-		"WIKI_IP":           "127.0.0.1",
-		"WIKI_PORT":         fmt.Sprintf("%d", port),
-		"ANTHROPIC_API_KEY": "test-anthropic-key",
-		"OPENAI_API_KEY":    "test-openai-key",
+		"IKIGENBA_DOMAIN": "int.ikigenba.com",
+		"IKIGENBA_ROOT":   root,
+		"WIKI_IP":         "127.0.0.1",
+		"WIKI_PORT":       fmt.Sprintf("%d", port),
 	})
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -237,25 +234,7 @@ func TestWikiBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	}
 }
 
-func TestConfigDoesNotRequireAnthropicKey(t *testing.T) {
-	// R-6RVX-P1IG
-	for _, value := range []string{"", "   "} {
-		_, err := wiki.NewConfig(func(key string) string {
-			if key == "OPENAI_API_KEY" {
-				return "test-openai-key"
-			}
-			if key == "ANTHROPIC_API_KEY" {
-				return value
-			}
-			return ""
-		})
-		if err != nil {
-			t.Fatalf("NewConfig with ANTHROPIC_API_KEY=%q: %v; prompts owns provider credentials", value, err)
-		}
-	}
-}
-
-func TestBuildSpecWiresSixteenMCPTools(t *testing.T) {
+func TestBuildSpecWiresFifteenMCPTools(t *testing.T) {
 	// R-MUQ4-K1JS
 	// R-3G73-064M
 	ctx := context.Background()
@@ -303,7 +282,7 @@ func TestBuildSpecWiresSixteenMCPTools(t *testing.T) {
 	for _, tool := range got.Result.Tools {
 		names[tool.Name] = true
 	}
-	want := []string{"ingest", "status", "abort", "rerun", "jobs", "jobs_count", "merge", "merges", "ask", "subjects", "claims", "page", "llm_calls", "guide", "health", "reflection"}
+	want := []string{"ingest", "status", "abort", "rerun", "jobs", "jobs_count", "merge", "merges", "ask", "subjects", "claims", "page", "guide", "health", "reflection"}
 	if len(names) != len(want) {
 		t.Fatalf("tool names = %#v, want exact %v", names, want)
 	}
@@ -764,7 +743,6 @@ func TestBuildSpecMatchesDirectMCPToolSurface(t *testing.T) {
 				mcp.WithSubjectListService(surfaceWiki{}),
 				mcp.WithClaimListService(surfaceWiki{}),
 				mcp.WithPagePathService(surfaceWiki{}),
-				mcp.WithLLMCallListService(surfaceCalls{}),
 			)
 			return err
 		},
@@ -1114,17 +1092,6 @@ func mcpToolSurface(t *testing.T, h http.Handler, authenticated bool) []struct {
 	return got.Result.Tools
 }
 
-func withoutAnthropicKey(env []string) []string {
-	out := env[:0]
-	for _, kv := range env {
-		if strings.HasPrefix(kv, "ANTHROPIC_API_KEY=") {
-			continue
-		}
-		out = append(out, kv)
-	}
-	return out
-}
-
 func staticConfig(cfg wiki.Config) configLoader {
 	return func(func(string) string) (wiki.Config, error) {
 		return cfg, nil
@@ -1330,7 +1297,7 @@ func stopProcess(cancel context.CancelFunc, done <-chan error) {
 
 type capturingProvider struct {
 	responses []string
-	requests  []agentkit.Request
+	requests  []llmtest.Request
 }
 
 type surfaceWiki struct{}
@@ -1391,12 +1358,6 @@ func (surfaceWiki) PageByPath(context.Context, string) (publicPage, error) {
 	return publicPage{}, nil
 }
 
-type surfaceCalls struct{}
-
-func (surfaceCalls) List(context.Context, mcp.LLMCallFilter, paging.Params) ([]wiki.CallRecord, string, error) {
-	return []wiki.CallRecord{{ID: "call-1", Stage: "extract", JobID: "job-1"}}, "", nil
-}
-
 func surfaceAsk(context.Context, string, string) (askSurfaceAnswer, error) {
 	return askSurfaceAnswer{}, nil
 }
@@ -1412,17 +1373,17 @@ type askSurfaceCitation struct {
 	Title string
 }
 
-func (p *capturingProvider) RoundTrip(_ context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+func (p *capturingProvider) RoundTrip(_ context.Context, req *llmtest.Request) *llmtest.RoundTrip {
 	p.requests = append(p.requests, cloneRequest(req))
 	text := `{"title":"Untitled","body":"Empty."}`
 	if len(p.responses) > 0 {
 		text = p.responses[0]
 		p.responses = p.responses[1:]
 	}
-	return agentkit.NewRoundTrip(
-		agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: text}}},
-		agentkit.FinishStop,
-		agentkit.Usage{InputUncached: 1, Output: 1, Total: 2},
+	return llmtest.NewRoundTrip(
+		llmtest.Message{Role: llmtest.RoleAssistant, Blocks: []llmtest.Block{llmtest.TextBlock{Text: text}}},
+		llmtest.FinishStop,
+		llmtest.Usage{InputUncached: 1, Output: 1, Total: 2},
 		nil,
 		nil,
 		0,
@@ -1434,19 +1395,19 @@ func (p *capturingProvider) Name() string {
 	return "capturing"
 }
 
-func (p *capturingProvider) Pricing(string) (agentkit.Pricing, bool) {
-	return agentkit.Pricing{Tiers: []agentkit.RateTier{{MinInputTokens: 0}}}, true
+func (p *capturingProvider) Pricing(string) (llmtest.Pricing, bool) {
+	return llmtest.Pricing{Tiers: []llmtest.RateTier{{MinInputTokens: 0}}}, true
 }
 
-func cloneRequest(req *agentkit.Request) agentkit.Request {
+func cloneRequest(req *llmtest.Request) llmtest.Request {
 	if req == nil {
-		return agentkit.Request{}
+		return llmtest.Request{}
 	}
-	return agentkit.Request{
+	return llmtest.Request{
 		Model:    req.Model,
 		System:   req.System,
-		Messages: append([]agentkit.Message(nil), req.Messages...),
-		Tools:    append([]agentkit.Tool(nil), req.Tools...),
+		Messages: append([]llmtest.Message(nil), req.Messages...),
+		Tools:    append([]llmtest.Tool(nil), req.Tools...),
 		Gen:      req.Gen,
 	}
 }

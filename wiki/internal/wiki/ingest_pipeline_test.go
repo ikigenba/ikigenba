@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	agentkit "github.com/ikigenba/agentkit"
-
 	"wiki/internal/compile"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
@@ -94,12 +92,12 @@ type workerPromptCall struct {
 
 type attributedClientEmbedder struct{ client *llm.Client }
 
-func (e attributedClientEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, _ agentkit.InputType) (*agentkit.EmbedResult, error) {
+func (e attributedClientEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, _ wikidomain.EmbedRole) (*wikidomain.EmbedResult, error) {
 	vectors, err := e.client.Embed(ctx, llm.EmbedSite{Name: "wiki.embed-page", Model: "embed", Dims: 2}, attr, "document", inputs)
 	if err != nil {
 		return nil, err
 	}
-	return &agentkit.EmbedResult{Vectors: vectors}, nil
+	return &wikidomain.EmbedResult{Vectors: vectors}, nil
 }
 
 func TestIngestReturnsPendingThenWorkerCommitsPage(t *testing.T) {
@@ -207,7 +205,7 @@ func TestWorkerStoresPageVectorAfterCommit(t *testing.T) {
 	if got := embedder.Inputs(); len(got) != 1 || len(got[0]) != 1 || got[0][0] != "Acme Robotics opened a background-vector lab." {
 		t.Fatalf("embed inputs = %#v, want compiled page body", got)
 	}
-	if got := embedder.Roles(); len(got) != 1 || got[0] != agentkit.InputDocument {
+	if got := embedder.Roles(); len(got) != 1 || got[0] != wikidomain.EmbedDocument {
 		t.Fatalf("embed roles = %#v, want document role", got)
 	}
 	embeddings, err := wikidomain.NewEmbeddingStore(conn).LoadAll(ctx)
@@ -405,12 +403,12 @@ func waitEmbeddingCount(t *testing.T, ctx context.Context, conn *sql.DB, want in
 type scriptedProvider struct {
 	mu        sync.Mutex
 	responses []string
-	requests  []agentkit.Request
+	requests  []llmtest.Request
 }
 
-func (p *scriptedProvider) RoundTrip(_ context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+func (p *scriptedProvider) RoundTrip(_ context.Context, req *llmtest.Request) *llmtest.RoundTrip {
 	p.mu.Lock()
-	p.requests = append(p.requests, cloneAgentKitRequest(req))
+	p.requests = append(p.requests, cloneProviderRequest(req))
 	text := `{"subjects":[]}`
 	if len(p.responses) > 0 {
 		text = p.responses[0]
@@ -418,10 +416,10 @@ func (p *scriptedProvider) RoundTrip(_ context.Context, req *agentkit.Request) *
 	}
 	p.mu.Unlock()
 
-	return agentkit.NewRoundTrip(
-		agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: text}}},
-		agentkit.FinishStop,
-		agentkit.Usage{InputUncached: 1, Output: 1, Total: 2},
+	return llmtest.NewRoundTrip(
+		llmtest.Message{Role: llmtest.RoleAssistant, Blocks: []llmtest.Block{llmtest.TextBlock{Text: text}}},
+		llmtest.FinishStop,
+		llmtest.Usage{InputUncached: 1, Output: 1, Total: 2},
 		nil,
 		nil,
 		0,
@@ -429,25 +427,25 @@ func (p *scriptedProvider) RoundTrip(_ context.Context, req *agentkit.Request) *
 	)
 }
 
-func (p *scriptedProvider) Requests() []agentkit.Request {
+func (p *scriptedProvider) Requests() []llmtest.Request {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return append([]agentkit.Request(nil), p.requests...)
+	return append([]llmtest.Request(nil), p.requests...)
 }
 
 func (p *scriptedProvider) Name() string {
 	return "scripted"
 }
 
-func (p *scriptedProvider) Pricing(string) (agentkit.Pricing, bool) {
-	return agentkit.Pricing{Tiers: []agentkit.RateTier{{MinInputTokens: 0}}}, true
+func (p *scriptedProvider) Pricing(string) (llmtest.Pricing, bool) {
+	return llmtest.Pricing{Tiers: []llmtest.RateTier{{MinInputTokens: 0}}}, true
 }
 
-func requestText(req agentkit.Request) string {
+func requestText(req llmtest.Request) string {
 	var b strings.Builder
 	for _, msg := range req.Messages {
 		for _, block := range msg.Blocks {
-			if text, ok := block.(agentkit.TextBlock); ok {
+			if text, ok := block.(llmtest.TextBlock); ok {
 				b.WriteString(text.Text)
 				b.WriteByte('\n')
 			}
@@ -460,10 +458,10 @@ type scriptedEmbedder struct {
 	mu      sync.Mutex
 	vectors [][]float32
 	inputs  [][]string
-	roles   []agentkit.InputType
+	roles   []wikidomain.EmbedRole
 }
 
-func (e *scriptedEmbedder) Embed(_ context.Context, _ llm.Attribution, inputs []string, role agentkit.InputType) (*agentkit.EmbedResult, error) {
+func (e *scriptedEmbedder) Embed(_ context.Context, _ llm.Attribution, inputs []string, role wikidomain.EmbedRole) (*wikidomain.EmbedResult, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -474,7 +472,7 @@ func (e *scriptedEmbedder) Embed(_ context.Context, _ llm.Attribution, inputs []
 		vec = append([]float32(nil), e.vectors[0]...)
 		e.vectors = e.vectors[1:]
 	}
-	return &agentkit.EmbedResult{Vectors: [][]float32{vec}}, nil
+	return &wikidomain.EmbedResult{Vectors: [][]float32{vec}}, nil
 }
 
 func (e *scriptedEmbedder) Inputs() [][]string {
@@ -488,9 +486,9 @@ func (e *scriptedEmbedder) Inputs() [][]string {
 	return out
 }
 
-func (e *scriptedEmbedder) Roles() []agentkit.InputType {
+func (e *scriptedEmbedder) Roles() []wikidomain.EmbedRole {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	return append([]agentkit.InputType(nil), e.roles...)
+	return append([]wikidomain.EmbedRole(nil), e.roles...)
 }

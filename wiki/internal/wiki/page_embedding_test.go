@@ -8,7 +8,6 @@ import (
 	"time"
 
 	appdb "appkit/db"
-	agentkit "github.com/ikigenba/agentkit"
 
 	wikidb "wiki/internal/db"
 	"wiki/internal/extract"
@@ -46,7 +45,7 @@ func TestEmbedAndStoreUsesDocumentRoleAndUpdatesStoreAndCache(t *testing.T) {
 	if len(embedder.inputs) != 1 || !reflect.DeepEqual(embedder.inputs[0], []string{page.Body}) {
 		t.Fatalf("embed inputs = %#v, want page body only", embedder.inputs)
 	}
-	if len(embedder.roles) != 1 || embedder.roles[0] != agentkit.InputDocument {
+	if len(embedder.roles) != 1 || embedder.roles[0] != EmbedDocument {
 		t.Fatalf("embed roles = %#v, want document role", embedder.roles)
 	}
 
@@ -148,7 +147,7 @@ func TestProcessNextEmbedsCommittedPageAfterIngest(t *testing.T) {
 
 	embedder := &recordingPageEmbedder{
 		vectors: [][]float32{{1, 0}},
-		onEmbed: func(_ context.Context, inputs []string, _ agentkit.InputType) error {
+		onEmbed: func(_ context.Context, inputs []string, _ EmbedRole) error {
 			page, err := NewPageStore(conns.Read).GetBySubject(ctx, "subject-1")
 			if err != nil {
 				return err
@@ -213,7 +212,7 @@ func TestProcessNextKeepsCommittedPageDoneWhenAfterCommitEmbedFails(t *testing.T
 	defer conn.Close()
 
 	embedder := &recordingPageEmbedder{
-		onEmbed: func(context.Context, []string, agentkit.InputType) error {
+		onEmbed: func(context.Context, []string, EmbedRole) error {
 			return errors.New("embed transport down")
 		},
 	}
@@ -284,11 +283,11 @@ func TestProcessNextKeepsCommittedPageDoneWhenAfterCommitEmbedFails(t *testing.T
 type recordingPageEmbedder struct {
 	vectors [][]float32
 	inputs  [][]string
-	roles   []agentkit.InputType
-	onEmbed func(context.Context, []string, agentkit.InputType) error
+	roles   []EmbedRole
+	onEmbed func(context.Context, []string, EmbedRole) error
 }
 
-func (e *recordingPageEmbedder) Embed(ctx context.Context, _ llm.Attribution, inputs []string, role agentkit.InputType) (*agentkit.EmbedResult, error) {
+func (e *recordingPageEmbedder) Embed(ctx context.Context, _ llm.Attribution, inputs []string, role EmbedRole) (*EmbedResult, error) {
 	e.inputs = append(e.inputs, append([]string(nil), inputs...))
 	e.roles = append(e.roles, role)
 	if e.onEmbed != nil {
@@ -301,7 +300,7 @@ func (e *recordingPageEmbedder) Embed(ctx context.Context, _ llm.Attribution, in
 		vec = append([]float32(nil), e.vectors[0]...)
 		e.vectors = e.vectors[1:]
 	}
-	return &agentkit.EmbedResult{Vectors: [][]float32{vec}}, nil
+	return &EmbedResult{Vectors: [][]float32{vec}}, nil
 }
 
 func migratedEmbeddingConns(t *testing.T, ctx context.Context) (Conns, func()) {

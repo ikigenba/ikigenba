@@ -9,7 +9,6 @@ import (
 	"time"
 
 	appdb "appkit/db"
-	agentkit "github.com/ikigenba/agentkit"
 
 	"wiki/internal/compile"
 	wikidb "wiki/internal/db"
@@ -285,20 +284,20 @@ func clockAt(t time.Time) func() time.Time {
 
 type scriptedProvider struct {
 	responses []string
-	requests  []agentkit.Request
+	requests  []llmtest.Request
 }
 
-func (p *scriptedProvider) RoundTrip(_ context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+func (p *scriptedProvider) RoundTrip(_ context.Context, req *llmtest.Request) *llmtest.RoundTrip {
 	p.requests = append(p.requests, cloneRequest(req))
 	text := `{"subjects":[]}`
 	if len(p.responses) > 0 {
 		text = p.responses[0]
 		p.responses = p.responses[1:]
 	}
-	return agentkit.NewRoundTrip(
-		agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: text}}},
-		agentkit.FinishStop,
-		agentkit.Usage{InputUncached: 1, Output: 1, Total: 2},
+	return llmtest.NewRoundTrip(
+		llmtest.Message{Role: llmtest.RoleAssistant, Blocks: []llmtest.Block{llmtest.TextBlock{Text: text}}},
+		llmtest.FinishStop,
+		llmtest.Usage{InputUncached: 1, Output: 1, Total: 2},
 		nil,
 		nil,
 		0,
@@ -310,8 +309,8 @@ func (p *scriptedProvider) Name() string {
 	return "scripted"
 }
 
-func (p *scriptedProvider) Pricing(string) (agentkit.Pricing, bool) {
-	return agentkit.Pricing{Tiers: []agentkit.RateTier{{MinInputTokens: 0}}}, true
+func (p *scriptedProvider) Pricing(string) (llmtest.Pricing, bool) {
+	return llmtest.Pricing{Tiers: []llmtest.RateTier{{MinInputTokens: 0}}}, true
 }
 
 type blockingProvider struct {
@@ -320,7 +319,7 @@ type blockingProvider struct {
 	enteredOnce  sync.Once
 	canceledOnce sync.Once
 	mu           sync.Mutex
-	requests     []agentkit.Request
+	requests     []llmtest.Request
 }
 
 func newBlockingProvider() *blockingProvider {
@@ -330,7 +329,7 @@ func newBlockingProvider() *blockingProvider {
 	}
 }
 
-func (p *blockingProvider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+func (p *blockingProvider) RoundTrip(ctx context.Context, req *llmtest.Request) *llmtest.RoundTrip {
 	p.mu.Lock()
 	p.requests = append(p.requests, cloneRequest(req))
 	p.mu.Unlock()
@@ -338,10 +337,10 @@ func (p *blockingProvider) RoundTrip(ctx context.Context, req *agentkit.Request)
 
 	<-ctx.Done()
 	p.canceledOnce.Do(func() { close(p.canceled) })
-	return agentkit.NewRoundTrip(
-		agentkit.Message{},
-		agentkit.FinishOther,
-		agentkit.Usage{},
+	return llmtest.NewRoundTrip(
+		llmtest.Message{},
+		llmtest.FinishOther,
+		llmtest.Usage{},
 		nil,
 		ctx.Err(),
 		0,
@@ -353,8 +352,8 @@ func (p *blockingProvider) Name() string {
 	return "blocking"
 }
 
-func (p *blockingProvider) Pricing(string) (agentkit.Pricing, bool) {
-	return agentkit.Pricing{Tiers: []agentkit.RateTier{{MinInputTokens: 0}}}, true
+func (p *blockingProvider) Pricing(string) (llmtest.Pricing, bool) {
+	return llmtest.Pricing{Tiers: []llmtest.RateTier{{MinInputTokens: 0}}}, true
 }
 
 func (p *blockingProvider) requestCount() int {
@@ -363,15 +362,15 @@ func (p *blockingProvider) requestCount() int {
 	return len(p.requests)
 }
 
-func cloneRequest(req *agentkit.Request) agentkit.Request {
+func cloneRequest(req *llmtest.Request) llmtest.Request {
 	if req == nil {
-		return agentkit.Request{}
+		return llmtest.Request{}
 	}
-	return agentkit.Request{
+	return llmtest.Request{
 		Model:    req.Model,
 		System:   req.System,
-		Messages: append([]agentkit.Message(nil), req.Messages...),
-		Tools:    append([]agentkit.Tool(nil), req.Tools...),
+		Messages: append([]llmtest.Message(nil), req.Messages...),
+		Tools:    append([]llmtest.Tool(nil), req.Tools...),
 		Gen:      req.Gen,
 	}
 }

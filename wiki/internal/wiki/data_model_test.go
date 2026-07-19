@@ -9,7 +9,6 @@ import (
 
 	appdb "appkit/db"
 	wikidb "wiki/internal/db"
-	"wiki/internal/llm"
 	"wiki/internal/page"
 )
 
@@ -243,66 +242,6 @@ func TestSubjectStoreRejectsTypeOutsideClosedSet(t *testing.T) {
 	}
 }
 
-func TestLLMCallStorePersistsProviderCallFootprint(t *testing.T) {
-	// R-VV3E-CLOB
-	ctx := context.Background()
-	conn := migratedDB(t, ctx)
-	defer conn.Close()
-
-	started := time.Date(2026, 6, 22, 7, 3, 0, 0, time.UTC)
-	ended := time.Date(2026, 6, 22, 7, 3, 1, 0, time.UTC)
-	rec := llm.CallRecord{
-		ID:        "call-1",
-		Stage:     "extract",
-		JobID:     "job-1",
-		Attempt:   2,
-		Provider:  "anthropic",
-		Model:     "claude-test",
-		Params:    `{"temperature":0}`,
-		Request:   `{"system":"sys","user":"prompt"}`,
-		Response:  `{"ok":true}`,
-		Usage:     `{"total":12}`,
-		Err:       "",
-		StartedAt: started,
-		EndedAt:   ended,
-	}
-
-	if err := NewLLMCallStore(conn).Record(ctx, rec); err != nil {
-		t.Fatalf("Record: %v", err)
-	}
-
-	var got llm.CallRecord
-	var startedRaw, endedRaw string
-	err := conn.QueryRowContext(ctx, `
-		SELECT id, stage, job_id, attempt, provider, model, params, request,
-		       response, usage, err, started_at, ended_at
-		FROM llm_calls
-		WHERE id = ?`, "call-1").
-		Scan(
-			&got.ID,
-			&got.Stage,
-			&got.JobID,
-			&got.Attempt,
-			&got.Provider,
-			&got.Model,
-			&got.Params,
-			&got.Request,
-			&got.Response,
-			&got.Usage,
-			&got.Err,
-			&startedRaw,
-			&endedRaw,
-		)
-	if err != nil {
-		t.Fatalf("query llm_calls: %v", err)
-	}
-	got.StartedAt = parseStoredTime(startedRaw)
-	got.EndedAt = parseStoredTime(endedRaw)
-	if got != rec {
-		t.Fatalf("stored record = %+v, want %+v", got, rec)
-	}
-}
-
 func TestSubjectStoreCursorPaginationWalksRowsExactlyOnceInKeyOrder(t *testing.T) {
 	// R-17C5-VP2I
 	ctx := context.Background()
@@ -435,24 +374,6 @@ func TestListFiltersApplyBeforePaging(t *testing.T) {
 		t.Fatalf("ListBySubject walked %v, want only subject-robot claims", gotClaimIDs)
 	}
 
-	calls := NewLLMCallStore(conn)
-	for _, rec := range []CallRecord{
-		{ID: "call-1", Stage: "compile", JobID: "job-done-1", Attempt: 1, Provider: "test", Model: "m", StartedAt: t1, EndedAt: t1},
-		{ID: "call-2", Stage: "extract", JobID: "job-done-1", Attempt: 1, Provider: "test", Model: "m", StartedAt: t2, EndedAt: t2},
-		{ID: "call-3", Stage: "extract", JobID: "job-done-2", Attempt: 1, Provider: "test", Model: "m", StartedAt: t3, EndedAt: t3},
-		{ID: "call-4", Stage: "extract", JobID: "job-done-1", Attempt: 1, Provider: "test", Model: "m", StartedAt: t4, EndedAt: t4},
-	} {
-		if err := calls.Record(ctx, rec); err != nil {
-			t.Fatalf("Record %s: %v", rec.ID, err)
-		}
-	}
-	gotCalls, next, err := calls.List(ctx, LLMCallFilter{JobID: "job-done-1", Stage: "extract", Since: t2, Until: t3}, page.Params{Limit: 10})
-	if err != nil {
-		t.Fatalf("LLMCall List: %v", err)
-	}
-	if next != "" || len(gotCalls) != 1 || gotCalls[0].ID != "call-2" {
-		t.Fatalf("LLMCall List = %+v, next %q; want only job/stage/time filtered call-2", gotCalls, next)
-	}
 }
 
 func TestListJobsOrdersNewestFirstFilteredOrAll(t *testing.T) {
@@ -651,9 +572,6 @@ func TestListMethodsRejectUndecodableCursor(t *testing.T) {
 	}
 	if _, _, err := NewClaimStore(conn).ListBySubject(ctx, "subject-1", params); !errors.Is(err, ErrInvalidCursor) {
 		t.Fatalf("ListBySubject err = %v, want ErrInvalidCursor", err)
-	}
-	if _, _, err := NewLLMCallStore(conn).List(ctx, LLMCallFilter{}, params); !errors.Is(err, ErrInvalidCursor) {
-		t.Fatalf("LLMCall List err = %v, want ErrInvalidCursor", err)
 	}
 }
 

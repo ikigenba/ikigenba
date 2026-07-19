@@ -19,7 +19,6 @@ import (
 	"appkit"
 	appdb "appkit/db"
 	"appkit/server"
-	agentkit "github.com/ikigenba/agentkit"
 
 	"wiki/internal/ask"
 	wikidb "wiki/internal/db"
@@ -122,6 +121,7 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 	// R-JKMR-5MV1
 	// R-MUQ4-K1JS
 	// R-YF06-03HO
+	// R-1CZC-T1KC
 	// R-ENK6-P4KR
 	h := gatedHandler(t, newTestHandler(t,
 		WithIngestService(&capturingWiki{}),
@@ -136,7 +136,6 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 		WithSubjectListService(&capturingWiki{}),
 		WithClaimListService(&capturingWiki{}),
 		WithPagePathService(&capturingWiki{}),
-		WithLLMCallListService(&capturingCalls{}),
 	))
 	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"list","method":"tools/list"}`, "owner@example.com")
 
@@ -182,7 +181,6 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 		"subjects":   true,
 		"claims":     true,
 		"page":       true,
-		"llm_calls":  true,
 		"guide":      true,
 		"health":     true,
 		"reflection": true,
@@ -199,6 +197,21 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 		if !want[name] {
 			t.Fatalf("tools/list included unexpected %s in %#v", name, names)
 		}
+	}
+	if names["llm_calls"] {
+		t.Fatal("tools/list retained retired llm_calls capability")
+	}
+	verbs := make(map[string]bool, len(names)-1)
+	for name := range names {
+		if name != "guide" {
+			verbs[name] = true
+		}
+	}
+	if len(verbs) != 14 {
+		t.Fatalf("non-guide verb membership = %#v, want exactly fourteen verbs", verbs)
+	}
+	if strings.Contains(Instructions, "llm_calls") || strings.Contains(guideDoc, "llm_calls") {
+		t.Fatal("initialize instructions or guide advertises retired llm_calls capability")
 	}
 }
 
@@ -271,22 +284,21 @@ func TestDomainOutputSchemasMirrorRepresentativeStructuredResults(t *testing.T) 
 		WithJobRerunService(wiki), WithJobListService(wiki), WithJobsCountService(wiki),
 		WithMergeService(wiki, wiki), WithMergeListService(wiki),
 		WithAskFunc((&capturingAsker{}).Ask), WithSubjectListService(wiki),
-		WithClaimListService(wiki), WithPagePathService(wiki), WithLLMCallListService(&capturingCalls{}),
+		WithClaimListService(wiki), WithPagePathService(wiki),
 	)
 	args := map[string]string{
 		"ingest": `{"text":"source"}`, "status": `{"job_id":"job"}`, "abort": `{"job_id":"job"}`,
 		"rerun": `{"job_id":"job"}`, "jobs": `{}`, "jobs_count": `{}`,
 		"merge": `{"from":"entity/from","to":"entity/to"}`, "merges": `{}`,
 		"ask": `{"question":"question"}`, "subjects": `{}`, "claims": `{"subject":"entity/from"}`,
-		"page": `{"subject":"entity/from"}`, "llm_calls": `{}`,
+		"page": `{"subject":"entity/from"}`,
 	}
 	nested := map[string]map[string][]string{
-		"jobs":      {"jobs": {"id", "owner", "title", "tags", "status", "received_at", "started_at", "finished_at", "error"}},
-		"merges":    {"merges": {"norm_name", "subject_id", "name", "created_by", "created_at"}},
-		"subjects":  {"subjects": {"path", "type", "name", "has_page"}},
-		"claims":    {"claims": {"id", "text", "job"}},
-		"llm_calls": {"llm_calls": {"id", "stage", "job_id", "attempt", "provider", "model", "params", "request", "response", "usage", "error", "started_at", "ended_at"}},
-		"ask":       {"citations": {"url", "title"}},
+		"jobs":     {"jobs": {"id", "owner", "title", "tags", "status", "received_at", "started_at", "finished_at", "error"}},
+		"merges":   {"merges": {"norm_name", "subject_id", "name", "created_by", "created_at"}},
+		"subjects": {"subjects": {"path", "type", "name", "has_page"}},
+		"claims":   {"claims": {"id", "text", "job"}},
+		"ask":      {"citations": {"url", "title"}},
 	}
 	identity := server.Identity{OwnerEmail: "owner@example.com"}
 	seen := 0
@@ -325,8 +337,8 @@ func TestDomainOutputSchemasMirrorRepresentativeStructuredResults(t *testing.T) 
 			}
 		}
 	}
-	if seen != 13 {
-		t.Fatalf("exercised %d domain tools, want 13", seen)
+	if seen != 12 {
+		t.Fatalf("exercised %d domain tools, want 12", seen)
 	}
 }
 
@@ -396,7 +408,6 @@ func TestDiscoveryGuideIsReferencedOnlyByInstructionsAndGuideDescription(t *test
 		WithSubjectListService(&capturingWiki{}),
 		WithClaimListService(&capturingWiki{}),
 		WithPagePathService(&capturingWiki{}),
-		WithLLMCallListService(&capturingCalls{}),
 	) {
 		mentions := strings.Contains(strings.ToLower(tool.Description), "guide")
 		if tool.Name == "guide" && !mentions {
@@ -430,7 +441,6 @@ func TestToolsListInputSchemasUseValidRequiredFields(t *testing.T) {
 		WithSubjectListService(&capturingWiki{}),
 		WithClaimListService(&capturingWiki{}),
 		WithPagePathService(&capturingWiki{}),
-		WithLLMCallListService(&capturingCalls{}),
 	))
 	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"list","method":"tools/list"}`, "owner@example.com")
 
@@ -450,7 +460,7 @@ func TestToolsListInputSchemasUseValidRequiredFields(t *testing.T) {
 		t.Fatal("tools/list returned no tools")
 	}
 	seenSubjects := false
-	optionalOnly := map[string]bool{"jobs": false, "jobs_count": false, "merges": false, "llm_calls": false}
+	optionalOnly := map[string]bool{"jobs": false, "jobs_count": false, "merges": false}
 	for _, tool := range got.Result.Tools {
 		if tool.InputSchema["type"] != "object" {
 			t.Fatalf("%s schema type = %v, want object", tool.Name, tool.InputSchema["type"])
@@ -1697,24 +1707,10 @@ func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 		}},
 		claimsNext: "claim-next",
 	}
-	calls := &capturingCalls{
-		calls: []callRecord{{
-			ID:        "call-1",
-			Stage:     "extract",
-			JobID:     "job-123",
-			Attempt:   2,
-			Provider:  "test-provider",
-			Model:     "test-model",
-			Usage:     `{"total":3}`,
-			StartedAt: started,
-		}},
-		next: "call-next",
-	}
 	h := gatedHandler(t, newTestHandler(t,
 		WithJobListService(wiki),
 		WithSubjectListService(wiki),
 		WithClaimListService(wiki),
-		WithLLMCallListService(calls),
 	))
 
 	jobsRec := callMCP(t, h, `{
@@ -1781,29 +1777,6 @@ func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 		t.Fatalf("claims body = %#v, want paginated claims result", claimsBody)
 	}
 
-	callsRec := callMCP(t, h, `{
-		"jsonrpc":"2.0",
-		"id":"llm_calls",
-		"method":"tools/call",
-		"params":{"name":"llm_calls","arguments":{"job_id":"job-123","stage":"extract","since":"2026-06-22T00:00:00Z","until":"2026-06-23T00:00:00Z","limit":4,"cursor":"call-cursor"}}
-	}`, "owner@example.com")
-	var callsBody struct {
-		Calls []struct {
-			ID       string `json:"id"`
-			Stage    string `json:"stage"`
-			JobID    string `json:"job_id"`
-			Attempt  int64  `json:"attempt"`
-			Provider string `json:"provider"`
-		} `json:"llm_calls"`
-		Next string `json:"next_cursor"`
-	}
-	decodeToolText(t, callsRec.Body.Bytes(), &callsBody)
-	if calls.filter.JobID != "job-123" || calls.filter.Stage != "extract" || calls.params.Limit != 4 || calls.params.Cursor != "call-cursor" {
-		t.Fatalf("call list args = %#v/%#v, want forwarded filter/page", calls.filter, calls.params)
-	}
-	if len(callsBody.Calls) != 1 || callsBody.Calls[0].ID != "call-1" || callsBody.Calls[0].Attempt != 2 || callsBody.Calls[0].Provider != "test-provider" || callsBody.Next != "call-next" {
-		t.Fatalf("llm_calls body = %#v, want paginated footprint result", callsBody)
-	}
 }
 
 func TestMCPToolsAreBehindRequireIdentity(t *testing.T) {
@@ -2092,7 +2065,7 @@ type mcpScriptedProvider struct {
 	responses []string
 }
 
-func (p *mcpScriptedProvider) RoundTrip(_ context.Context, _ *agentkit.Request) *agentkit.RoundTrip {
+func (p *mcpScriptedProvider) RoundTrip(_ context.Context, _ *llmtest.Request) *llmtest.RoundTrip {
 	if len(p.responses) == 0 {
 		return mcpTextRoundTrip(`{"found":false}`)
 	}
@@ -2103,15 +2076,15 @@ func (p *mcpScriptedProvider) RoundTrip(_ context.Context, _ *agentkit.Request) 
 
 func (p *mcpScriptedProvider) Name() string { return "mcp-scripted" }
 
-func (p *mcpScriptedProvider) Pricing(string) (agentkit.Pricing, bool) {
-	return agentkit.Pricing{Tiers: []agentkit.RateTier{{MinInputTokens: 0}}}, true
+func (p *mcpScriptedProvider) Pricing(string) (llmtest.Pricing, bool) {
+	return llmtest.Pricing{Tiers: []llmtest.RateTier{{MinInputTokens: 0}}}, true
 }
 
-func mcpTextRoundTrip(text string) *agentkit.RoundTrip {
-	return agentkit.NewRoundTrip(agentkit.Message{
-		Role:   agentkit.RoleAssistant,
-		Blocks: []agentkit.Block{agentkit.TextBlock{Text: text}},
-	}, agentkit.FinishStop, agentkit.Usage{InputUncached: 1, Output: 1, Total: 2}, nil, nil, 0, false)
+func mcpTextRoundTrip(text string) *llmtest.RoundTrip {
+	return llmtest.NewRoundTrip(llmtest.Message{
+		Role:   llmtest.RoleAssistant,
+		Blocks: []llmtest.Block{llmtest.TextBlock{Text: text}},
+	}, llmtest.FinishStop, llmtest.Usage{InputUncached: 1, Output: 1, Total: 2}, nil, nil, 0, false)
 }
 
 type answer struct {
@@ -2123,35 +2096,6 @@ type answer struct {
 type citation struct {
 	Path  string
 	Title string
-}
-
-type callRecord struct {
-	ID        string
-	Stage     string
-	JobID     string
-	Attempt   int
-	Provider  string
-	Model     string
-	Params    string
-	Request   string
-	Response  string
-	Usage     string
-	Err       string
-	StartedAt time.Time
-	EndedAt   time.Time
-}
-
-type capturingCalls struct {
-	calls  []callRecord
-	filter LLMCallFilter
-	params paging.Params
-	next   string
-}
-
-func (c *capturingCalls) List(_ context.Context, f LLMCallFilter, p paging.Params) ([]callRecord, string, error) {
-	c.filter = f
-	c.params = p
-	return c.calls, c.next, nil
 }
 
 type capturingAsker struct {

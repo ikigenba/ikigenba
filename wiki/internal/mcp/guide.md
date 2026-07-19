@@ -28,7 +28,7 @@ A claim is returned as an object with `id`, `text`, and `job`. The text is the e
 
 ## Pagination
 
-`jobs`, `merges`, `subjects`, `claims`, and `llm_calls` are cursor-paginated. Send optional `limit` and `cursor` fields. Each response contains its item array and `next_cursor`; pass a non-empty `next_cursor` unchanged into the next call, and stop when it is empty.
+`jobs`, `merges`, `subjects`, and `claims` are cursor-paginated. Send optional `limit` and `cursor` fields. Each response contains its item array and `next_cursor`; pass a non-empty `next_cursor` unchanged into the next call, and stop when it is empty.
 
 ## Basic flow: ingest, poll, ask
 
@@ -48,4 +48,4 @@ Choose the canonical survivor before merging. To fold `entity/acme-robotics-inc`
 
 ## Inspect pipeline calls
 
-Call `llm_calls` with filters such as `{"job_id":"...","stage":"extract","limit":20}` to inspect recorded provider requests, responses, usage, errors, and timestamps. Follow `next_cursor` to retrieve later pages.
+Inspect inference through the prompts service's `calls` and `usage` tools, grouped by wiki job ID.

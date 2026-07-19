@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	agentkit "github.com/ikigenba/agentkit"
-
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
 )
@@ -66,48 +64,6 @@ func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(prompt), "today is") {
 		t.Fatalf("prompt = %q, want received date rendered without relative today wording", prompt)
-	}
-}
-
-func TestExtractUsesCustomPromptInstructionsAndAppendsSourceContext(t *testing.T) {
-	// R-ODAP-34N6
-	prov := &scriptedProvider{responses: []string{`{
-		"subjects": [
-			{
-				"type": "concept",
-				"kind": "method",
-				"name": "prompt experiments",
-				"occurred_at": "",
-				"claims": ["Prompt experiments compare extraction instructions."]
-			}
-		]
-	}`}}
-	extractor := New(
-		llmtest.NewClient(t, prov),
-		llm.CallSite{Model: "extract-model"},
-		WithPromptInstructions("CUSTOM JSON CONTRACT"),
-	)
-
-	_, err := extractor.Extract(context.Background(), llm.Attribution{}, validHeader(), "Prompt experiments compare extraction instructions.")
-	if err != nil {
-		t.Fatalf("Extract returned error: %v", err)
-	}
-
-	prompt := onlyPrompt(t, prov)
-	if !strings.HasPrefix(prompt, "CUSTOM JSON CONTRACT\n\nDocument header:\n") {
-		t.Fatalf("prompt = %q, want custom instructions before generated document context", prompt)
-	}
-	for _, want := range []string{
-		"source: mcp:ingest_text",
-		"title: Source",
-		"Source text:\nPrompt experiments compare extraction instructions.",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt %q does not contain %q", prompt, want)
-		}
-	}
-	if strings.Contains(prompt, DefaultPromptInstructions) {
-		t.Fatalf("prompt = %q, want custom instructions to replace the default prompt", prompt)
 	}
 }
 
@@ -507,20 +463,20 @@ func onlyPrompt(t *testing.T, prov *scriptedProvider) string {
 
 type scriptedProvider struct {
 	responses []string
-	requests  []agentkit.Request
+	requests  []llmtest.Request
 }
 
-func (p *scriptedProvider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+func (p *scriptedProvider) RoundTrip(ctx context.Context, req *llmtest.Request) *llmtest.RoundTrip {
 	p.requests = append(p.requests, cloneRequest(req))
 	text := `{"subjects":[]}`
 	if len(p.responses) > 0 {
 		text = p.responses[0]
 		p.responses = p.responses[1:]
 	}
-	return agentkit.NewRoundTrip(
-		agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: text}}},
-		agentkit.FinishStop,
-		agentkit.Usage{InputUncached: 1, Output: 1, Total: 2},
+	return llmtest.NewRoundTrip(
+		llmtest.Message{Role: llmtest.RoleAssistant, Blocks: []llmtest.Block{llmtest.TextBlock{Text: text}}},
+		llmtest.FinishStop,
+		llmtest.Usage{InputUncached: 1, Output: 1, Total: 2},
 		nil,
 		nil,
 		0,
@@ -532,29 +488,29 @@ func (p *scriptedProvider) Name() string {
 	return "scripted"
 }
 
-func (p *scriptedProvider) Pricing(string) (agentkit.Pricing, bool) {
-	return agentkit.Pricing{Tiers: []agentkit.RateTier{{MinInputTokens: 0}}}, true
+func (p *scriptedProvider) Pricing(string) (llmtest.Pricing, bool) {
+	return llmtest.Pricing{Tiers: []llmtest.RateTier{{MinInputTokens: 0}}}, true
 }
 
-func cloneRequest(req *agentkit.Request) agentkit.Request {
+func cloneRequest(req *llmtest.Request) llmtest.Request {
 	if req == nil {
-		return agentkit.Request{}
+		return llmtest.Request{}
 	}
-	return agentkit.Request{
+	return llmtest.Request{
 		Model:    req.Model,
 		System:   req.System,
-		Messages: append([]agentkit.Message(nil), req.Messages...),
-		Tools:    append([]agentkit.Tool(nil), req.Tools...),
+		Messages: append([]llmtest.Message(nil), req.Messages...),
+		Tools:    append([]llmtest.Tool(nil), req.Tools...),
 		Gen:      req.Gen,
 	}
 }
 
-func requestTexts(req agentkit.Request) []string {
+func requestTexts(req llmtest.Request) []string {
 	var out []string
 	for _, msg := range req.Messages {
 		var b strings.Builder
 		for _, block := range msg.Blocks {
-			if text, ok := block.(agentkit.TextBlock); ok {
+			if text, ok := block.(llmtest.TextBlock); ok {
 				b.WriteString(text.Text)
 			}
 		}

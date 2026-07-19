@@ -21,7 +21,7 @@ import (
 	"wiki/internal/wiki"
 )
 
-const Instructions = "wiki is a knowledge base (notes, a second brain) built from source text you ingest. Ingest queues text; a background pipeline distills the subjects it concerns — entities, events, and concepts — and the claims about them, and compiles one cited page per subject. Ask it a question for a grounded, cited answer over your own wiki; read the compiled knowledge by type/slug path with subjects, claims, and page; track ingestion with status, jobs, and jobs_count; merge to fold a duplicate subject into another; and steer or inspect the pipeline with abort, rerun, and llm_calls. Call guide for the full field catalogs, the type/slug path format, and worked examples before your first ingest or merge."
+const Instructions = "wiki is a knowledge base (notes, a second brain) built from source text you ingest. Ingest queues text; a background pipeline distills the subjects it concerns — entities, events, and concepts — and the claims about them, and compiles one cited page per subject. Ask it a question for a grounded, cited answer over your own wiki; read the compiled knowledge by type/slug path with subjects, claims, and page; track ingestion with status, jobs, and jobs_count; merge to fold a duplicate subject into another; and steer the pipeline with abort and rerun. Call guide for the full field catalogs, the type/slug path format, and worked examples before your first ingest or merge."
 
 // Handler holds configured wiki domain tool dependencies.
 type Handler struct {
@@ -40,19 +40,12 @@ type Handler struct {
 	subjects  func(context.Context, string, string, paging.Params) (any, string, error)
 	claims    func(context.Context, string, paging.Params) (any, string, error)
 	page      func(context.Context, string) (any, error)
-	calls     func(context.Context, LLMCallFilter, paging.Params) (any, string, error)
 }
 
 // JobFilter is a paginated MCP job-list filter.
 type JobFilter struct {
 	Statuses     []string
 	Kinds        []string
-	Since, Until time.Time
-}
-
-// LLMCallFilter is a paginated MCP LLM-call footprint filter.
-type LLMCallFilter struct {
-	JobID, Stage string
 	Since, Until time.Time
 }
 
@@ -106,10 +99,6 @@ type claimsFunc[T any] interface {
 
 type claimListFunc[T any] interface {
 	ListBySubject(ctx context.Context, subjectID string, p paging.Params) (T, string, error)
-}
-
-type llmCallListFunc[T any] interface {
-	List(ctx context.Context, f LLMCallFilter, p paging.Params) (T, string, error)
 }
 
 type pageFunc[T any] interface {
@@ -307,22 +296,6 @@ func WithMentionLinkifier(s mentionLinkifier) Option {
 	}
 }
 
-// WithLLMCallListService enables the paginated llm_calls footprint tool.
-func WithLLMCallListService[T any](s llmCallListFunc[T]) Option {
-	return func(h *Handler) {
-		if s != nil {
-			h.calls = func(ctx context.Context, f LLMCallFilter, p paging.Params) (any, string, error) {
-				return s.List(ctx, f, p)
-			}
-		}
-	}
-}
-
-// WithLLMCallsService enables the paginated llm_calls footprint tool.
-func WithLLMCallsService[T any](s llmCallListFunc[T]) Option {
-	return WithLLMCallListService(s)
-}
-
 // WithAskFunc enables the grounded ask tool.
 func WithAskFunc[T any](fn func(context.Context, string, string) (T, error)) Option {
 	return func(h *Handler) {
@@ -377,9 +350,6 @@ func Tools(opts ...Option) []appkitmcp.Tool {
 	}
 	if h.page != nil {
 		tools = append(tools, domainTool(pageTool(), h.handlePageCall))
-	}
-	if h.calls != nil {
-		tools = append(tools, domainTool(llmCallsTool(), h.handleLLMCallsCall))
 	}
 	tools = append(tools, domainTool(guideTool(), handleGuideCall))
 	return tools
@@ -721,36 +691,6 @@ func (h *Handler) handlePageCall(ctx context.Context, raw json.RawMessage, _ ser
 	return appkitmcp.StructuredResult(result)
 }
 
-func (h *Handler) handleLLMCallsCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
-	if h.calls == nil {
-		return internalError("llm_calls tool is not configured"), nil
-	}
-	var args struct {
-		JobID  string `json:"job_id"`
-		Stage  string `json:"stage"`
-		Since  string `json:"since"`
-		Until  string `json:"until"`
-		Limit  int    `json:"limit"`
-		Cursor string `json:"cursor"`
-	}
-	if err := decodeArgs(raw, &args); err != nil {
-		return validationError(err.Error()), nil
-	}
-	since, err := parseOptionalTime(args.Since)
-	if err != nil {
-		return validationError("since must be RFC3339"), nil
-	}
-	until, err := parseOptionalTime(args.Until)
-	if err != nil {
-		return validationError("until must be RFC3339"), nil
-	}
-	calls, next, err := h.calls(ctx, LLMCallFilter{JobID: args.JobID, Stage: args.Stage, Since: since, Until: until}, paging.Params{Limit: args.Limit, Cursor: args.Cursor})
-	if err != nil {
-		return internalError(err.Error()), nil
-	}
-	return appkitmcp.StructuredResult(pagedResult("llm_calls", publicLLMCallsResult(calls), next))
-}
-
 func handleGuideCall(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {
 	return appkitmcp.TextResult(guideDoc), nil
 }
@@ -992,24 +932,6 @@ func pageTool() map[string]any {
 		"outputSchema": objectSchema(map[string]any{
 			"subject": stringSchema(), "title": stringSchema(), "body": stringSchema(),
 		}, []string{"subject", "title", "body"}),
-	}
-}
-
-func llmCallsTool() map[string]any {
-	return map[string]any{
-		"name":        "llm_calls",
-		"description": "LLM call inspection for pipeline diagnostics. Filter by job_id, stage, or RFC3339 time range and paginate with limit/cursor; returns recorded calls and next_cursor.",
-		"inputSchema": listSchema(map[string]any{
-			"job_id": map[string]any{"type": "string"},
-			"stage":  map[string]any{"type": "string"},
-			"since":  map[string]any{"type": "string"},
-			"until":  map[string]any{"type": "string"},
-		}),
-		"outputSchema": pagedOutputSchema("llm_calls", objectArraySchema(map[string]any{
-			"id": stringSchema(), "stage": stringSchema(), "job_id": stringSchema(), "attempt": map[string]any{"type": "integer"},
-			"provider": stringSchema(), "model": stringSchema(), "params": stringSchema(), "request": stringSchema(),
-			"response": stringSchema(), "usage": stringSchema(), "error": stringSchema(), "started_at": stringSchema(), "ended_at": stringSchema(),
-		})),
 	}
 }
 
@@ -1312,33 +1234,6 @@ func publicSubjectsResult(subjects any) []map[string]any {
 			"type":     stringField(subject, "Type"),
 			"name":     stringField(subject, "Name"),
 			"has_page": boolField(subject, "HasPage"),
-		})
-	}
-	return out
-}
-
-func publicLLMCallsResult(calls any) []map[string]any {
-	values := sliceValue(reflect.ValueOf(calls))
-	out := make([]map[string]any, 0, values.Len())
-	for i := 0; i < values.Len(); i++ {
-		call := indirect(values.Index(i))
-		if !call.IsValid() || call.Kind() != reflect.Struct {
-			continue
-		}
-		out = append(out, map[string]any{
-			"id":         stringField(call, "ID"),
-			"stage":      stringField(call, "Stage"),
-			"job_id":     stringField(call, "JobID"),
-			"attempt":    intField(call, "Attempt"),
-			"provider":   stringField(call, "Provider"),
-			"model":      stringField(call, "Model"),
-			"params":     stringField(call, "Params"),
-			"request":    stringField(call, "Request"),
-			"response":   stringField(call, "Response"),
-			"usage":      stringField(call, "Usage"),
-			"error":      stringField(call, "Err"),
-			"started_at": interfaceField(call, "StartedAt"),
-			"ended_at":   interfaceField(call, "EndedAt"),
 		})
 	}
 	return out

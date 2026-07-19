@@ -289,15 +289,7 @@ func TestLoadVectorCacheEntriesLoadsStoredPageEmbeddings(t *testing.T) {
 }
 
 func TestConfigLeavesPromptsClientToCompositionRoot(t *testing.T) {
-	cfg, err := NewConfig(func(key string) string {
-		if key == "ANTHROPIC_API_KEY" {
-			return "test-key"
-		}
-		if key == "OPENAI_API_KEY" {
-			return "openai-test-key"
-		}
-		return ""
-	})
+	cfg, err := NewConfig(func(string) string { return "" })
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}

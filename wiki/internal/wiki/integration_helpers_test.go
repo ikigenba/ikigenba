@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	appdb "appkit/db"
-	agentkit "github.com/ikigenba/agentkit"
 
 	wikidb "wiki/internal/db"
+	"wiki/internal/llmtest"
 	wikidomain "wiki/internal/wiki"
 )
 
@@ -65,17 +65,17 @@ func migratedConns(t *testing.T, ctx context.Context) (wikidomain.Conns, func())
 	}
 }
 
-// cloneAgentKitRequest makes a defensive copy of an agentkit request so that
+// cloneProviderRequest makes a defensive copy of a scripted provider request so that
 // captured requests are not mutated by later round trips.
-func cloneAgentKitRequest(req *agentkit.Request) agentkit.Request {
+func cloneProviderRequest(req *llmtest.Request) llmtest.Request {
 	if req == nil {
-		return agentkit.Request{}
+		return llmtest.Request{}
 	}
-	return agentkit.Request{
+	return llmtest.Request{
 		Model:    req.Model,
 		System:   req.System,
-		Messages: append([]agentkit.Message(nil), req.Messages...),
-		Tools:    append([]agentkit.Tool(nil), req.Tools...),
+		Messages: append([]llmtest.Message(nil), req.Messages...),
+		Tools:    append([]llmtest.Tool(nil), req.Tools...),
 		Gen:      req.Gen,
 	}
 }

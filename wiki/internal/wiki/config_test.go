@@ -5,17 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	agentkit "github.com/ikigenba/agentkit"
-
 	"wiki/internal/llm"
 )
 
 func TestNewConfigBuildsDefaultPerCallSiteModels(t *testing.T) {
 	// R-GIY9-26PA
-	cfg, err := NewConfig(fakeGetenv(map[string]string{
-		"ANTHROPIC_API_KEY": "test-key",
-		"OPENAI_API_KEY":    "openai-test-key",
-	}))
+	cfg, err := NewConfig(fakeGetenv(map[string]string{}))
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
@@ -24,8 +19,8 @@ func TestNewConfigBuildsDefaultPerCallSiteModels(t *testing.T) {
 	}
 	assertResolvedSite(t, cfg.CallSites.Extract, "extract", ModelID, 0, llm.DisableReasoning(), 16384, 2)
 	assertResolvedSite(t, cfg.CallSites.Compile, "compile", ModelID, 0, llm.DisableReasoning(), 16384, 2)
-	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", ModelID, nil, agentkit.Level("low"), 16384, 0)
-	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", ModelID, nil, agentkit.Level("low"), 16384, 0)
+	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", ModelID, nil, reasoningLevel("low"), 16384, 0)
+	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", ModelID, nil, reasoningLevel("low"), 16384, 0)
 	if cfg.EmbedSite.Model != "text-embedding-3-small" || cfg.EmbedSite.Dims != 512 {
 		t.Fatalf("EmbedSite = %#v, want default OpenAI small embeddings at 512 dims", cfg.EmbedSite)
 	}
@@ -34,8 +29,6 @@ func TestNewConfigBuildsDefaultPerCallSiteModels(t *testing.T) {
 func TestNewConfigLayersPerCallSiteEnvironmentOverrides(t *testing.T) {
 	// R-GK65-FYFZ
 	cfg, err := NewConfig(fakeGetenv(map[string]string{
-		"ANTHROPIC_API_KEY":        "test-key",
-		"OPENAI_API_KEY":           "openai-test-key",
 		"EXTRACT_MODEL":            "extract-model",
 		"EXTRACT_TEMPERATURE":      "0.25",
 		"COMPILE_MODEL":            "compile-model",
@@ -52,16 +45,13 @@ func TestNewConfigLayersPerCallSiteEnvironmentOverrides(t *testing.T) {
 
 	assertResolvedSite(t, cfg.CallSites.Extract, "extract", "extract-model", 0.25, llm.DisableReasoning(), 16384, 2)
 	assertResolvedSite(t, cfg.CallSites.Compile, "compile", "compile-model", 0, llm.DisableReasoning(), 4096, 2)
-	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", "subject-model", nil, agentkit.Level("high"), 16384, 0)
+	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", "subject-model", nil, reasoningLevel("high"), 16384, 0)
 	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", "synthesis-model", nil, llm.DisableReasoning(), 8192, 0)
 }
 
 func TestNewConfigBuildsDefaultEmbeddingSite(t *testing.T) {
 	// R-Z932-H2RA
-	cfg, err := NewConfig(fakeGetenv(map[string]string{
-		"ANTHROPIC_API_KEY": "test-key",
-		"OPENAI_API_KEY":    "openai-test-key",
-	}))
+	cfg, err := NewConfig(fakeGetenv(map[string]string{}))
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
@@ -77,10 +67,8 @@ func TestNewConfigLayersEmbeddingEnvironmentOverrides(t *testing.T) {
 	// R-Z932-H2RA
 	// R-ZAAY-UUHZ
 	cfg, err := NewConfig(fakeGetenv(map[string]string{
-		"ANTHROPIC_API_KEY": "test-key",
-		"OPENAI_API_KEY":    "openai-test-key",
-		"EMBED_MODEL":       "text-embedding-3-large",
-		"EMBED_DIMS":        "1024",
+		"EMBED_MODEL": "text-embedding-3-large",
+		"EMBED_DIMS":  "1024",
 	}))
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
@@ -99,8 +87,6 @@ func TestNewConfigRejectsMalformedCallSiteEnvironment(t *testing.T) {
 		{
 			name: "temperature",
 			env: map[string]string{
-				"ANTHROPIC_API_KEY":   "test-key",
-				"OPENAI_API_KEY":      "openai-test-key",
 				"EXTRACT_TEMPERATURE": "warm",
 			},
 			wantErr: "EXTRACT_TEMPERATURE",
@@ -108,8 +94,6 @@ func TestNewConfigRejectsMalformedCallSiteEnvironment(t *testing.T) {
 		{
 			name: "max tokens",
 			env: map[string]string{
-				"ANTHROPIC_API_KEY":  "test-key",
-				"OPENAI_API_KEY":     "openai-test-key",
 				"COMPILE_MAX_TOKENS": "0",
 			},
 			wantErr: "COMPILE_MAX_TOKENS",
@@ -117,8 +101,6 @@ func TestNewConfigRejectsMalformedCallSiteEnvironment(t *testing.T) {
 		{
 			name: "reasoning",
 			env: map[string]string{
-				"ANTHROPIC_API_KEY":     "test-key",
-				"OPENAI_API_KEY":        "openai-test-key",
 				"ASK_SUBJECT_REASONING": "turbo",
 			},
 			wantErr: "ASK_SUBJECT_REASONING",
@@ -149,18 +131,14 @@ func TestNewConfigRejectsMalformedEmbeddingEnvironment(t *testing.T) {
 		{
 			name: "non numeric dims",
 			env: map[string]string{
-				"ANTHROPIC_API_KEY": "test-key",
-				"OPENAI_API_KEY":    "openai-test-key",
-				"EMBED_DIMS":        "wide",
+				"EMBED_DIMS": "wide",
 			},
 			wantErr: "EMBED_DIMS",
 		},
 		{
 			name: "zero dims",
 			env: map[string]string{
-				"ANTHROPIC_API_KEY": "test-key",
-				"OPENAI_API_KEY":    "openai-test-key",
-				"EMBED_DIMS":        "0",
+				"EMBED_DIMS": "0",
 			},
 			wantErr: "EMBED_DIMS",
 		},

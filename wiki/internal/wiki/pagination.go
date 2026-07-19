@@ -71,18 +71,3 @@ func nextAliasCursor(aliases []Alias, limit int) string {
 	last := aliases[limit-1]
 	return page.EncodeCursor(last.CreatedAt, last.NormName)
 }
-
-func pageCalls(calls []CallRecord, limit int) []CallRecord {
-	if len(calls) > limit {
-		return calls[:limit]
-	}
-	return calls
-}
-
-func nextCallCursor(calls []CallRecord, limit int) string {
-	if len(calls) <= limit {
-		return ""
-	}
-	last := calls[limit-1]
-	return page.EncodeCursor(formatTime(last.StartedAt), last.ID)
-}

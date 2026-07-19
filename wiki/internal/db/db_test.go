@@ -2,11 +2,52 @@ package db
 
 import (
 	"context"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	appdb "appkit/db"
 )
+
+func TestMigrationsRetireLLMCallSchemaWithoutChangingHistory(t *testing.T) {
+	// R-1BRG-F9TN
+	ctx := context.Background()
+	conn, err := appdb.Open(t.TempDir() + "/wiki.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer conn.Close()
+	migs, err := appdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	foundDrop := false
+	for _, mig := range migs {
+		if strings.Contains(mig.Name, "drop_llm_calls") {
+			foundDrop = strings.Contains(mig.SQL, "DROP TABLE llm_calls")
+		}
+	}
+	if !foundDrop {
+		t.Fatal("embedded drop_llm_calls migration with DROP TABLE statement not found")
+	}
+	if err := appdb.Migrate(ctx, conn, migs); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	var count int
+	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE name = 'llm_calls' OR name LIKE 'llm_calls_%'`).Scan(&count); err != nil {
+		t.Fatalf("query sqlite_master: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("sqlite_master retained %d llm_calls schema objects, want zero", count)
+	}
+	root := filepath.Clean(filepath.Join("..", ".."))
+	cmd := exec.Command("git", "diff", "--exit-code", "HEAD", "--", "internal/db/migrations")
+	cmd.Dir = root
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("previously committed migrations changed:\n%s", output)
+	}
+}
 
 func TestEmbeddedMigrationsApplyToTempSQLite(t *testing.T) {
 	ctx := context.Background()

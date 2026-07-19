@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"appkit"
-	agentkit "github.com/ikigenba/agentkit"
 	"registry"
 
 	"wiki/internal/ask"
@@ -150,7 +149,6 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 				mcp.WithClaimListService(claimService),
 				mcp.WithPagePathService(pageService),
 				mcp.WithMentionLinkifier(svc),
-				mcp.WithLLMCallListService(llmCallListService{calls: wiki.NewLLMCallStore(conns)}),
 				mcp.WithAskFunc(asker.Ask),
 			)
 			if err != nil {
@@ -178,12 +176,12 @@ func embeddingPaths(client *llm.Client, site wiki.EmbedSite) (page, query wiki.P
 	return page, query
 }
 
-func (e promptsEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, _ agentkit.InputType) (*agentkit.EmbedResult, error) {
+func (e promptsEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, _ wiki.EmbedRole) (*wiki.EmbedResult, error) {
 	vectors, err := e.client.Embed(ctx, e.site, attr, e.role, inputs)
 	if err != nil {
 		return nil, err
 	}
-	return &agentkit.EmbedResult{Vectors: vectors}, nil
+	return &wiki.EmbedResult{Vectors: vectors}, nil
 }
 
 func retrieveCacheEntries(entries []wiki.VectorCacheEntry) []retrieve.VectorEntry {
@@ -200,7 +198,7 @@ func retrieveCacheEntries(entries []wiki.VectorCacheEntry) []retrieve.VectorEntr
 
 func queryEmbedder(embedder wiki.PageEmbedder) func(context.Context, llm.Attribution, string) ([]float32, error) {
 	return func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error) {
-		result, err := embedder.Embed(ctx, attr, []string{text}, agentkit.InputQuery)
+		result, err := embedder.Embed(ctx, attr, []string{text}, wiki.EmbedQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -211,7 +209,7 @@ func queryEmbedder(embedder wiki.PageEmbedder) func(context.Context, llm.Attribu
 	}
 }
 
-func vectorCount(result *agentkit.EmbedResult) int {
+func vectorCount(result *wiki.EmbedResult) int {
 	if result == nil {
 		return 0
 	}
@@ -271,19 +269,6 @@ func (s jobCountService) CountJobs(ctx context.Context, f mcp.JobFilter) (int, e
 		Since:    f.Since,
 		Until:    f.Until,
 	})
-}
-
-type llmCallListService struct {
-	calls *wiki.LLMCallStore
-}
-
-func (s llmCallListService) List(ctx context.Context, f mcp.LLMCallFilter, p page.Params) ([]wiki.CallRecord, string, error) {
-	return s.calls.List(ctx, wiki.LLMCallFilter{
-		JobID: f.JobID,
-		Stage: f.Stage,
-		Since: f.Since,
-		Until: f.Until,
-	}, p)
 }
 
 type mergePathResolver struct {

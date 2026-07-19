@@ -7,8 +7,6 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	agentkit "github.com/ikigenba/agentkit"
-
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
@@ -62,7 +60,7 @@ func TestCompileUsesInjectedCallSiteWithoutTools(t *testing.T) {
 	site := llm.CallSite{
 		Model:       "compile-model",
 		Temperature: &temp,
-		Reasoning:   agentkit.DisableReasoning(),
+		Reasoning:   llmtest.DisableReasoning(),
 		System:      "compile from claims",
 	}
 	compiler := New(llmtest.NewClient(t, prov), site, nil)
@@ -273,20 +271,20 @@ func onlyPrompt(t *testing.T, prov *scriptedProvider, i int) string {
 
 type scriptedProvider struct {
 	responses []string
-	requests  []agentkit.Request
+	requests  []llmtest.Request
 }
 
-func (p *scriptedProvider) RoundTrip(_ context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+func (p *scriptedProvider) RoundTrip(_ context.Context, req *llmtest.Request) *llmtest.RoundTrip {
 	p.requests = append(p.requests, cloneRequest(req))
 	text := `{"title":"Untitled","body":"Empty."}`
 	if len(p.responses) > 0 {
 		text = p.responses[0]
 		p.responses = p.responses[1:]
 	}
-	return agentkit.NewRoundTrip(
-		agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: text}}},
-		agentkit.FinishStop,
-		agentkit.Usage{InputUncached: 1, Output: 1, Total: 2},
+	return llmtest.NewRoundTrip(
+		llmtest.Message{Role: llmtest.RoleAssistant, Blocks: []llmtest.Block{llmtest.TextBlock{Text: text}}},
+		llmtest.FinishStop,
+		llmtest.Usage{InputUncached: 1, Output: 1, Total: 2},
 		nil,
 		nil,
 		0,
@@ -298,27 +296,27 @@ func (p *scriptedProvider) Name() string {
 	return "scripted"
 }
 
-func (p *scriptedProvider) Pricing(string) (agentkit.Pricing, bool) {
-	return agentkit.Pricing{Tiers: []agentkit.RateTier{{MinInputTokens: 0}}}, true
+func (p *scriptedProvider) Pricing(string) (llmtest.Pricing, bool) {
+	return llmtest.Pricing{Tiers: []llmtest.RateTier{{MinInputTokens: 0}}}, true
 }
 
-func cloneRequest(req *agentkit.Request) agentkit.Request {
+func cloneRequest(req *llmtest.Request) llmtest.Request {
 	if req == nil {
-		return agentkit.Request{}
+		return llmtest.Request{}
 	}
-	return agentkit.Request{
+	return llmtest.Request{
 		Model:    req.Model,
 		System:   req.System,
-		Messages: append([]agentkit.Message(nil), req.Messages...),
-		Tools:    append([]agentkit.Tool(nil), req.Tools...),
+		Messages: append([]llmtest.Message(nil), req.Messages...),
+		Tools:    append([]llmtest.Tool(nil), req.Tools...),
 		Gen:      req.Gen,
 	}
 }
 
-func requestTexts(req agentkit.Request) []string {
+func requestTexts(req llmtest.Request) []string {
 	var out []string
 	for _, msg := range req.Messages {
-		text := agentkitText(msg)
+		text := providerText(msg)
 		if text != "" {
 			out = append(out, text)
 		}
@@ -326,10 +324,10 @@ func requestTexts(req agentkit.Request) []string {
 	return out
 }
 
-func agentkitText(message agentkit.Message) string {
+func providerText(message llmtest.Message) string {
 	var b strings.Builder
 	for _, block := range message.Blocks {
-		if text, ok := block.(agentkit.TextBlock); ok {
+		if text, ok := block.(llmtest.TextBlock); ok {
 			b.WriteString(text.Text)
 		}
 	}

@@ -29,9 +29,8 @@ type DocumentHeader struct {
 
 // Extractor runs the extract-stage LLM call.
 type Extractor struct {
-	c                  *llm.Client
-	site               llm.CallSite
-	promptInstructions string
+	c    *llm.Client
+	site llm.CallSite
 }
 
 const defaultMaxTokens = 16384
@@ -68,23 +67,9 @@ Keep predicate direction faithful to the source:
 occurred_at is required for events, optional for entities and concepts, and must be an ISO-8601 prefix (YYYY, YYYY-MM, or YYYY-MM-DD) when present.
 type must be one of "entity", "event", or "concept"; kind and name must be non-empty; each subject needs at least one non-empty claim.`
 
-// Option configures an Extractor at construction.
-type Option func(*Extractor)
-
-// WithPromptInstructions replaces the instruction preamble for this Extractor.
-func WithPromptInstructions(instructions string) Option {
-	return func(e *Extractor) {
-		e.promptInstructions = instructions
-	}
-}
-
 // New builds an Extractor from an injected LLM client and extract call site.
-func New(c *llm.Client, site llm.CallSite, opts ...Option) *Extractor {
-	e := &Extractor{c: c, site: site, promptInstructions: DefaultPromptInstructions}
-	for _, opt := range opts {
-		opt(e)
-	}
-	return e
+func New(c *llm.Client, site llm.CallSite) *Extractor {
+	return &Extractor{c: c, site: site}
 }
 
 // DefaultCallSite returns the production extract-stage generation settings.
@@ -105,7 +90,7 @@ func (e *Extractor) Extract(ctx context.Context, attr llm.Attribution, h Documen
 	if e == nil {
 		return nil, fmt.Errorf("extract: nil extractor")
 	}
-	out, err := llm.JSON[extractResponse](ctx, e.c, e.site, attr, renderPrompt(e.promptInstructions, h, text), validateResponse)
+	out, err := llm.JSON[extractResponse](ctx, e.c, e.site, attr, renderPrompt(DefaultPromptInstructions, h, text), validateResponse)
 	if err != nil {
 		return nil, err
 	}

@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // ErrTruncated reports a completion that reached its configured output ceiling.
@@ -285,43 +284,4 @@ func ExtractJSON(text string) string {
 func correctivePrompt(original string, err error) string {
 	return original + "\n\nThe previous response could not be parsed and validated as the requested JSON: " +
 		err.Error() + "\nReturn only valid JSON for the original request."
-}
-
-// CallRecord and Recorder remain the neutral persistence vocabulary used by
-// embedding accounting. Completion accounting belongs to prompts.
-type CallRecord struct {
-	ID        string
-	Stage     string
-	JobID     string
-	Attempt   int
-	Provider  string
-	Model     string
-	Params    string
-	Request   string
-	Response  string
-	Usage     string
-	Err       string
-	StartedAt time.Time
-	EndedAt   time.Time
-}
-
-type Recorder interface {
-	Record(context.Context, CallRecord) error
-}
-
-type jobIDContextKey struct{}
-
-func WithJobID(ctx context.Context, id string) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, jobIDContextKey{}, strings.TrimSpace(id))
-}
-
-func JobID(ctx context.Context) string {
-	if ctx == nil {
-		return ""
-	}
-	id, _ := ctx.Value(jobIDContextKey{}).(string)
-	return id
 }

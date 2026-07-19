@@ -5,10 +5,12 @@ import (
 	"strconv"
 	"strings"
 
-	agentkit "github.com/ikigenba/agentkit"
-
 	"wiki/internal/llm"
 )
+
+type reasoningLevel string
+
+func (level reasoningLevel) Level() (string, bool) { return string(level), level != "" }
 
 const defaultMaxTokens = 16384
 const defaultEmbedModel = "text-embedding-3-small"
@@ -120,7 +122,7 @@ func resolveCallSite(getenv func(string) string, prefix string, base llm.CallSit
 		if thinking != nil {
 			site.Reasoning = llm.DisableReasoning()
 		} else {
-			site.Reasoning = agentkit.Level(effort)
+			site.Reasoning = reasoningLevel(effort)
 		}
 	}
 	if raw := strings.TrimSpace(getenv(prefix + "_TEMPERATURE")); raw != "" {
@@ -168,9 +170,9 @@ func defaultCompileCallSite() llm.CallSite {
 }
 
 func defaultAskSubjectCallSite() llm.CallSite {
-	return llm.CallSite{Stage: "ask-subject", Config: llm.Config{Model: ModelID, Effort: "low", MaxTokens: defaultMaxTokens}, Model: ModelID, Reasoning: agentkit.Level("low"), MaxTokens: defaultMaxTokens}
+	return llm.CallSite{Stage: "ask-subject", Config: llm.Config{Model: ModelID, Effort: "low", MaxTokens: defaultMaxTokens}, Model: ModelID, Reasoning: reasoningLevel("low"), MaxTokens: defaultMaxTokens}
 }
 
 func defaultAskSynthesisCallSite() llm.CallSite {
-	return llm.CallSite{Stage: "ask-synthesis", Config: llm.Config{Model: ModelID, Effort: "low", MaxTokens: defaultMaxTokens}, Model: ModelID, Reasoning: agentkit.Level("low"), MaxTokens: defaultMaxTokens}
+	return llm.CallSite{Stage: "ask-synthesis", Config: llm.Config{Model: ModelID, Effort: "low", MaxTokens: defaultMaxTokens}, Model: ModelID, Reasoning: reasoningLevel("low"), MaxTokens: defaultMaxTokens}
 }

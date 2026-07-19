@@ -8,13 +8,15 @@ import (
 	"fmt"
 	"strings"
 
-	agentkit "github.com/ikigenba/agentkit"
-
 	"wiki/internal/ids"
 	"wiki/internal/llm"
 	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
 )
+
+type reasoningLevel string
+
+func (level reasoningLevel) Level() (string, bool) { return string(level), level != "" }
 
 const honestEmptyText = "The wiki holds nothing on that question."
 
@@ -97,7 +99,7 @@ func DefaultSubjectCallSite() llm.CallSite {
 	return llm.CallSite{
 		Stage:     "ask-subject",
 		Config:    llm.Config{Effort: "low", MaxTokens: defaultMaxTokens},
-		Reasoning: agentkit.Level("low"),
+		Reasoning: reasoningLevel("low"),
 		MaxTokens: defaultMaxTokens,
 	}
 }
@@ -107,7 +109,7 @@ func DefaultSynthesisCallSite() llm.CallSite {
 	return llm.CallSite{
 		Stage:     "ask-synthesis",
 		Config:    llm.Config{Effort: "low", MaxTokens: defaultMaxTokens},
-		Reasoning: agentkit.Level("low"),
+		Reasoning: reasoningLevel("low"),
 		MaxTokens: defaultMaxTokens,
 	}
 }

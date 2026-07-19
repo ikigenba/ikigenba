@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	agentkit "github.com/ikigenba/agentkit"
-
 	"wiki/internal/llm"
 	"wiki/internal/page"
 	wikidomain "wiki/internal/wiki"
@@ -344,11 +342,11 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 	var jobID string
 	embedder := &mergeRecordingPageEmbedder{
 		vectors: [][]float32{{0.25, 0.75}},
-		onEmbed: func(_ context.Context, attr llm.Attribution, inputs []string, role agentkit.InputType) error {
+		onEmbed: func(_ context.Context, attr llm.Attribution, inputs []string, role wikidomain.EmbedRole) error {
 			if got := attr.GroupID; got != jobID {
 				t.Errorf("embed group id = %q, want merge job %q", got, jobID)
 			}
-			if role != agentkit.InputDocument {
+			if role != wikidomain.EmbedDocument {
 				t.Errorf("embed role = %v, want document", role)
 			}
 			page, err := wikidomain.NewPageStore(conns.Read).GetBySubject(ctx, "subject-winner")
@@ -500,7 +498,7 @@ func TestMergeWorkerKeepsDoneMergeWhenAfterCommitWinnerEmbedFails(t *testing.T) 
 	}
 
 	embedder := &mergeRecordingPageEmbedder{
-		onEmbed: func(context.Context, llm.Attribution, []string, agentkit.InputType) error {
+		onEmbed: func(context.Context, llm.Attribution, []string, wikidomain.EmbedRole) error {
 			return errors.New("embed transport down")
 		},
 	}
@@ -701,11 +699,11 @@ func mergePageFingerprint(title, body string) string {
 type mergeRecordingPageEmbedder struct {
 	vectors [][]float32
 	inputs  [][]string
-	roles   []agentkit.InputType
-	onEmbed func(context.Context, llm.Attribution, []string, agentkit.InputType) error
+	roles   []wikidomain.EmbedRole
+	onEmbed func(context.Context, llm.Attribution, []string, wikidomain.EmbedRole) error
 }
 
-func (e *mergeRecordingPageEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, role agentkit.InputType) (*agentkit.EmbedResult, error) {
+func (e *mergeRecordingPageEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, role wikidomain.EmbedRole) (*wikidomain.EmbedResult, error) {
 	e.inputs = append(e.inputs, append([]string(nil), inputs...))
 	e.roles = append(e.roles, role)
 	if e.onEmbed != nil {
@@ -718,7 +716,7 @@ func (e *mergeRecordingPageEmbedder) Embed(ctx context.Context, attr llm.Attribu
 		vec = append([]float32(nil), e.vectors[0]...)
 		e.vectors = e.vectors[1:]
 	}
-	return &agentkit.EmbedResult{Vectors: [][]float32{vec}}, nil
+	return &wikidomain.EmbedResult{Vectors: [][]float32{vec}}, nil
 }
 
 type mergeVectorCacheRecorder struct {
