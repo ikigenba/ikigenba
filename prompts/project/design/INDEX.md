@@ -10,7 +10,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D2 | project/design/D02.md | Config struct | R-JTBA-4RDB, R-JUJ6-IJ40 |
 | D3 | project/design/D03.md | Validation | R-JVR2-WAUP, R-JWYZ-A2LE, R-1ONM-PPDU, R-1PVJ-3H4J, R-1R3F-H8V8, R-1SBB-V0LX, R-1TJ8-8SCM, R-1UR4-MK3B, R-1VZ1-0BU0, R-JY6V-NUC3, R-JZES-1M2S |
 | D4 | project/design/D04.md | Provider factory | none — structural |
-| D5 | project/design/D05.md | Built-in sandbox tools | R-F5X1-XH6C, R-K1UK-T5K6 |
+| D5 | project/design/D05.md | Built-in sandbox tools | R-F5X1-XH6C, R-GNY2-Y47H, R-K1UK-T5K6 |
 | D6 | project/design/D06.md | Suite discovery | R-K32H-6XAV, R-K4AD-KP1K, R-9JNO-RZM2, R-9KVL-5RCR, R-9M3H-JJ3G |
 | D7 | project/design/D07.md | Runner | R-K5I9-YGS9, R-1X6X-E3KP, R-1ZMQ-5N23, R-K6Q6-C8IY, R-K7Y2-Q09N, R-K95Z-3S0C |
 | D8 | project/design/D08.md | DB migration | R-KBLR-VBHQ, R-KCTO-938F |
@@ -109,6 +109,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-FC0J-UBVT | D26 | project/design/D26.md |
 | R-FD8G-83MI | D26 | project/design/D26.md |
 | R-FEGC-LVD7 | D26 | project/design/D26.md |
+| R-GNY2-Y47H | D5 | project/design/D05.md |
 | R-HOME-2T4X | D12 | project/design/D12.md |
 | R-JTBA-4RDB | D2 | project/design/D02.md |
 | R-JUJ6-IJ40 | D2 | project/design/D02.md |

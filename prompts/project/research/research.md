@@ -32,7 +32,7 @@ Semantics (agentkit-owned; prompts relies on, does not re-prove):
 - One `Send` gate: name uniqueness across eager ∪ MCP ∪ deferred ∪ the reserved `load_tools` name; deferred schemas validated like `RawTool`.
 - Works uniformly across all four providers; a live-Anthropic integration id (R-DFH0-A8TE, agentkit's) proves the real API accepts the mid-turn grown tools array.
 
-**Availability:** first published in `v0.2.0`; the API is unchanged through `v0.6.0`, the release prompts now pins (§5).
+**Availability:** first published in `v0.2.0`; the API is unchanged through `v0.7.0`, the release prompts now pins (§5, §6).
 
 ## 3. The blurb source — MCP `initialize.instructions`
 
@@ -81,3 +81,25 @@ func ListByProvider(provider string) []Entry
 **Consumer-owned cost (v0.4.0).** A provider-reported cost takes precedence; otherwise `Conversation.Pricing` (a `*agentkit.Pricing` field) prices the turn's usage; with neither, cost is zero and the stream emits a `WarnCostUnknown` warning. `catalog.Entry.Pricing` is the intended source for the field.
 
 **Box wiring.** `OPENROUTER_API_KEY` is already exported by `prompts/.envrc` from `~/.secrets/OPENROUTER_API_KEY`, following the same pattern as the other four provider keys.
+
+## 6. agentkit v0.7.0 — the `toolkit` subpackage (the release this design consumes)
+
+Published tag `github.com/ikigenba/agentkit v0.7.0` (2026-07-19). The only delta over v0.6.0 is the new `github.com/ikigenba/agentkit/toolkit` subpackage: six standard coding tools as ready-made `agentkit.Tool` values, via per-tool constructors and `All(root)`:
+
+```go
+// Package toolkit provides standard tools for local coding agents.
+func All(root string) []agentkit.Tool // Bash, Read, Write, Edit, Glob, Grep, in that order
+func Bash(root string) agentkit.Tool  // + Read, Write, Edit, Glob, Grep per-tool constructors
+```
+
+Behavior, verified against the tagged source and empirically where noted:
+
+- **Confinement**: file tools resolve paths against `root` with symlink-aware checks (`EvalSymlinks` on root and the longest existing ancestor, `filepath.Rel` containment). Toolkit's own doc states this protects against *accidental* filesystem access and is not a security sandbox; `Bash` runs with `root` as its working directory but is not confined.
+- **Bash**: `command` + optional `timeout` (ms, default 120000, no ceiling). Runs `bash -c` in its own process group; on timeout or context cancellation it SIGKILLs the whole group and returns output with a `[command timed out after Nms]` / `[command cancelled]` marker. A nonzero exit is **not** a tool error — output gets an appended `[exit status N]` marker.
+- **Output caps**: every tool result is capped at 30,000 characters (rune-safe), with a `[output truncated: showing first N of M characters]` marker.
+- **Read**: whole file or `offset`/`limit` line window (1-based offset), negative values rejected.
+- **Write**: creates parent directories; returns `wrote <path>`.
+- **Edit**: exact-string replace; empty `old_string` rejected; a non-unique match without `replace_all` is refused with the occurrence count.
+- **Glob**: plain patterns via `filepath.Glob`; `**` patterns via a walk that skips `.git`. Returns a sorted JSON array of root-relative slash paths. **Known gap (empirically verified)**: a non-`**` pattern is joined to the base *without* confinement, so `pattern: "../*"` lists entry names outside `root` (list-only — Read/Write/Edit still refuse those paths). Accepted for prompts (Bash is unconfined anyway, so this widens nothing); flagged as a future toolkit improvement.
+- **Grep**: Go regexp over files under `path` (optional base-name `glob` filter), skipping `.git` and binary files (NUL in the first 8 KB). Returns a sorted JSON array of `rel/path:line:text` matches. Reads whole files, so long lines are safe (no 64 KB scanner limit).
+- **Schemas**: input structs carry `json` tags only — no `jsonschema` description tags — so the generated schemas have bare property names, and tool descriptions are terse ("Run a shell command."). Field-level guidance must come from the framing prompt if wanted.

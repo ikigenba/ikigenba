@@ -9,4 +9,6 @@ loop **deletes** that phase's line and its `phase-NN.md` — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 37
+Next phase: 38
+
+- Phase 37 ⬜ realizes R-F5X1-XH6C, R-GNY2-Y47H, R-K1UK-T5K6 — adopt agentkit v0.7.0 and its toolkit for the six standard sandbox tools
