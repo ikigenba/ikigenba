@@ -7,7 +7,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D1 → `project/design/D01.md` — The landing handler and its v1 content (service name + version) — owns R-LAND-3C9X, R-LAND-5E2Y, R-LAND-7G4Z, R-LAND-9J6A
 - D2 → `project/design/D02.md` — Route wiring: `GET /{$}` mounted ungated through `Spec.Handlers` — owns R-ROUT-2B5C, R-ROUT-4D7E, R-ROUT-6F9G
 - D3 → `project/design/D03.md` — Embedded Carbon design assets (dropbox's own copy) — owns R-ASST-3H6J, R-ASST-5K8L, R-ASST-7M1N
-- D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/dropbox/` location — owns R-NGNX-2P4Q, R-NGNX-4R6S, R-NGNX-6T8U, R-NGNX-8V1W
+- D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/dropbox/` location + all four owner identity headers forwarded — owns R-NGNX-2P4Q, R-NGNX-4R6S, R-NGNX-6T8U, R-NGNX-8V1W, R-KJGZ-FKVP, R-KKOV-TCME
 - D5 → `project/design/D05.md` — Docs state current truth: purge the stale "no UI" line — none (structural; docs-only)
 - D6 → `project/design/D06.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-6P8T
@@ -73,7 +73,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-KFQK-P0Z4 → D17 → `project/design/D17.md`
 - R-KGYH-2SPT → D17 → `project/design/D17.md`
 - R-KJE9-UC77 → D17 → `project/design/D17.md`
+- R-KJGZ-FKVP → D4 → `project/design/D04.md`
 - R-KKM6-83XW → D17 → `project/design/D17.md`
+- R-KKOV-TCME → D4 → `project/design/D04.md`
 - R-KLU2-LVOL → D17 → `project/design/D17.md`
 - R-KN1Y-ZNFA → D17 → `project/design/D17.md`
 - R-KO9V-DF5Z → D18 → `project/design/D18.md`
