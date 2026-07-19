@@ -13,7 +13,7 @@ Verification ids change.
 - D4 → `project/design/D04.md` — Public ingress endpoint (/in/<name>) — R-7ISQ-ZZCF, R-7K0N-DR34, R-7L8J-RITT, R-7MGG-5AKI, R-7NOC-J2B7
 - D5 → `project/design/D05.md` — Event production (durable-before-ack) — R-GTUZ-AIGW, R-GV2V-OA7L, R-GWAS-21YA, R-GXIO-FTOZ, R-GYQK-TLFO
 - D6 → `project/design/D06.md` — MCP tool surface (the four owner tools) — R-5Z8J-Y0YP, R-60GG-BSPE, R-61OC-PKG3, R-62W9-3C6S, R-6445-H3XH, R-65C1-UVO6
-- D7 → `project/design/D07.md` — nginx location fragment (tiers) — R-OD12-3CVG, R-OE8Y-H4M5, R-OFGU-UWCU, R-OGOR-8O3J, R-TTUW-5O3V, R-TV2S-JFUK, R-TWAO-X7L9
+- D7 → `project/design/D07.md` — nginx location fragment (tiers) — R-OD12-3CVG, R-OE8Y-H4M5, R-OFGU-UWCU, R-OGOR-8O3J, R-TTUW-5O3V, R-TV2S-JFUK, R-TWAO-X7L9, R-XK5N-0I1E, R-XLDJ-E9S3
 - D8 → `project/design/D08.md` — Test strategy, harness & dev-onboarding — R-UELV-YLA4, R-UFTS-CD0T
 - D9 → `project/design/D09.md` — Human landing page (`share/www` template & Carbon assets) — R-TMJH-V1NP, R-TNRE-8TEE, R-TOZA-ML53, R-TQ77-0CVS, R-TRF3-E4MH
 - D10 → `project/design/D10.md` — Adopt `registry` (own port by name + drift guards) — R-0D7X-9EB6, R-0EFT-N61V, R-0FNQ-0XSK
@@ -94,3 +94,5 @@ Verification ids change.
 - R-TWAO-X7L9 → D7 — `project/design/D07.md`
 - R-UELV-YLA4 → D8 — `project/design/D08.md`
 - R-UFTS-CD0T → D8 — `project/design/D08.md`
+- R-XK5N-0I1E → D7 — `project/design/D07.md`
+- R-XLDJ-E9S3 → D7 — `project/design/D07.md`

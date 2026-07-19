@@ -13,4 +13,6 @@ gone. A phase body file carries no marker of its own. This document
 deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
-Next phase: 18
+Next phase: 19
+
+- Phase 18 ⬜ realizes R-XK5N-0I1E, R-XLDJ-E9S3 — forward all four X-Owner-* identity headers on the bearer /mcp and session landing nginx tiers
