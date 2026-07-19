@@ -121,6 +121,37 @@ func TestIndexLoggedOutShowsRuleImmediatelyBeforeCTA(t *testing.T) {
 	}
 }
 
+func TestIndexLoggedOutRulesBracketCTAWithoutMargins(t *testing.T) {
+	srv := testServer(t)
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
+	wall := signinWallMain(t, rec.Body.String())
+	bracketed := `<hr class="signin-rule">
+    <a href="/login" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>
+    <hr class="signin-rule">
+    <aside class="name-origin" aria-label="What ikigenba means">`
+
+	// R-3JAM-JLZ6
+	if got := strings.Count(wall, `class="signin-rule"`); got != 2 {
+		t.Errorf("sign-in rule count = %d, want 2:\n%s", got, wall)
+	}
+	if got := strings.Count(wall, `<hr class="signin-rule">`); got != 2 {
+		t.Errorf("margin-free sign-in rule markup count = %d, want 2:\n%s", got, wall)
+	}
+	if !strings.Contains(wall, bracketed) {
+		t.Errorf("two sign-in rules do not immediately bracket the CTA before the name-origin aside:\n%s", wall)
+	}
+
+	cssRec := do(t, srv, "GET", "https://int.ikigenba.com/static/app.css", nil)
+	rule := cssRule(t, cssRec.Body.String(), `.signin-wall .signin-rule`)
+	if got := strings.Count(rule, `margin:`); got != 1 || !strings.Contains(rule, `margin: 0;`) {
+		t.Errorf("sign-in rule CSS margin must be exactly zero:\n%s", rule)
+	}
+	wallRule := cssRule(t, cssRec.Body.String(), `.signin-wall`)
+	if !strings.Contains(wallRule, `gap: var(--space-6);`) {
+		t.Errorf("sign-in wall does not provide the rules' spacing with the standard gap:\n%s", wallRule)
+	}
+}
+
 func TestIndexLoggedOutShowsBorderlessEtymologyTable(t *testing.T) {
 	srv := testServer(t)
 	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
