@@ -304,6 +304,57 @@ func TestNginxBearerLocationDoesNotBounceLogin(t *testing.T) {
 	}
 }
 
+func TestNginxBearerLocationForwardsAllOwnerIdentityHeaders(t *testing.T) {
+	conf, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatalf("read nginx conf: %v", err)
+	}
+	block := nginxLocationBlock(t, string(conf), "location /srv/prompts/ {")
+
+	// R-7NY0-UIO6
+	for _, want := range []string{
+		"auth_request /_authn;",
+		"auth_request_set $prompts_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $prompts_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $prompts_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $prompts_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email   $prompts_owner;",
+		"proxy_set_header X-Owner-Id      $prompts_owner_id;",
+		"proxy_set_header X-Owner-Name    $prompts_owner_name;",
+		"proxy_set_header X-Owner-Picture $prompts_owner_picture;",
+		"proxy_set_header X-Client-Id     $prompts_client;",
+	} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("bearer location missing %q:\n%s", want, block)
+		}
+	}
+}
+
+func TestNginxSessionLandingForwardsAllOwnerIdentityHeaders(t *testing.T) {
+	conf, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatalf("read nginx conf: %v", err)
+	}
+	block := nginxLocationBlock(t, string(conf), "location = /srv/prompts/ {")
+
+	// R-7P5X-8AEV
+	for _, want := range []string{
+		"auth_request /_session-authn;",
+		"auth_request_set $prompts_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $prompts_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $prompts_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $prompts_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email   $prompts_owner;",
+		"proxy_set_header X-Owner-Id      $prompts_owner_id;",
+		"proxy_set_header X-Owner-Name    $prompts_owner_name;",
+		"proxy_set_header X-Owner-Picture $prompts_owner_picture;",
+	} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("session landing location missing %q:\n%s", want, block)
+		}
+	}
+}
+
 func TestNginxLoginBounceOptInRetainsExistingLocations(t *testing.T) {
 	conf, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
 	if err != nil {
