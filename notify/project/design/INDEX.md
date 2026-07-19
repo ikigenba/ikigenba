@@ -7,7 +7,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D1 → `project/design/D01.md` — The landing handler and its v1 content (service name + version) — owns R-LAND-3C8K, R-LAND-5D1M, R-LAND-7E4N, R-LAND-9F6P
 - D2 → `project/design/D02.md` — Route wiring: `GET /{$}` mounted ungated through `Spec.Handlers` — owns R-ROUT-4G2Q, R-ROUT-6H5R, R-ROUT-8J7S
 - D3 → `project/design/D03.md` — notify's own Carbon design assets (shipped in `share/www/static`) — owns R-ASST-3K9T, R-ASST-5L2V, R-ASST-7M4W
-- D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/notify/` location — owns R-NGNX-3N6X, R-NGNX-5P8Y, R-NGNX-7Q1Z, R-NGNX-9R3B
+- D4 → `project/design/D04.md` — nginx fragment: session-gated `= /srv/notify/` location and the owner identity headers every gated location forwards — owns R-M9EO-BQGX, R-MAMK-PI7M, R-NGNX-3N6X, R-NGNX-5P8Y, R-NGNX-7Q1Z, R-NGNX-9R3B
 - D5 → `project/design/D05.md` — Docs state current truth: purge the stale "no UI" line — none (structural; docs-only)
 - D6 → `project/design/D06.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-5N7S
@@ -49,6 +49,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-LAND-5D1M → D1 → `project/design/D01.md`
 - R-LAND-7E4N → D1 → `project/design/D01.md`
 - R-LAND-9F6P → D1 → `project/design/D01.md`
+- R-M9EO-BQGX → D4 → `project/design/D04.md`
+- R-MAMK-PI7M → D4 → `project/design/D04.md`
 - R-NGNX-3N6X → D4 → `project/design/D04.md`
 - R-NGNX-5P8Y → D4 → `project/design/D04.md`
 - R-NGNX-7Q1Z → D4 → `project/design/D04.md`
