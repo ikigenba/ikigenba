@@ -8,13 +8,13 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 |----------|------|-------|-----------------|
 | D1 | project/design/D01.md | Module dependency | none — structural |
 | D2 | project/design/D02.md | Config struct | R-JTBA-4RDB, R-JUJ6-IJ40 |
-| D3 | project/design/D03.md | Validation | R-JVR2-WAUP, R-JWYZ-A2LE, R-JY6V-NUC3, R-JZES-1M2S |
+| D3 | project/design/D03.md | Validation | R-JVR2-WAUP, R-JWYZ-A2LE, R-1ONM-PPDU, R-1PVJ-3H4J, R-1R3F-H8V8, R-1SBB-V0LX, R-1TJ8-8SCM, R-1UR4-MK3B, R-1VZ1-0BU0, R-JY6V-NUC3, R-JZES-1M2S |
 | D4 | project/design/D04.md | Provider factory | none — structural |
 | D5 | project/design/D05.md | Built-in sandbox tools | R-F5X1-XH6C, R-K1UK-T5K6 |
 | D6 | project/design/D06.md | Suite discovery | R-K32H-6XAV, R-K4AD-KP1K, R-9JNO-RZM2, R-9KVL-5RCR, R-9M3H-JJ3G |
-| D7 | project/design/D07.md | Runner | R-K5I9-YGS9, R-K6Q6-C8IY, R-K7Y2-Q09N, R-K95Z-3S0C |
+| D7 | project/design/D07.md | Runner | R-K5I9-YGS9, R-1X6X-E3KP, R-1ZMQ-5N23, R-K6Q6-C8IY, R-K7Y2-Q09N, R-K95Z-3S0C |
 | D8 | project/design/D08.md | DB migration | R-KBLR-VBHQ, R-KCTO-938F |
-| D9 | project/design/D09.md | MCP schema | R-KE1K-MUZ4, R-KF9H-0MPT |
+| D9 | project/design/D09.md | MCP schema | R-KE1K-MUZ4, R-20UM-JESS, R-222I-X6JH |
 | D10 | project/design/D10.md | The landing page: a session-gated human web surface (`GET /{$}`) | R-LAND-PG01, R-LAND-NMVR, R-LAND-CARB, R-LAND-ROOT, R-LAND-UNGT |
 | D11 | project/design/D11.md | Conform the landing page to the cron canonical template | none — structural |
 | D12 | project/design/D12.md | A top-left Home link to the dashboard landing page | R-HOME-2T4X |
@@ -38,6 +38,17 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 
 | id | Decision | File |
 |----|----------|------|
+| R-1ONM-PPDU | D3 | project/design/D03.md |
+| R-1PVJ-3H4J | D3 | project/design/D03.md |
+| R-1R3F-H8V8 | D3 | project/design/D03.md |
+| R-1SBB-V0LX | D3 | project/design/D03.md |
+| R-1TJ8-8SCM | D3 | project/design/D03.md |
+| R-1UR4-MK3B | D3 | project/design/D03.md |
+| R-1VZ1-0BU0 | D3 | project/design/D03.md |
+| R-1X6X-E3KP | D7 | project/design/D07.md |
+| R-1ZMQ-5N23 | D7 | project/design/D07.md |
+| R-20UM-JESS | D9 | project/design/D09.md |
+| R-222I-X6JH | D9 | project/design/D09.md |
 | R-3RIS-23TJ | D20 | project/design/D20.md |
 | R-3SQO-FVK8 | D20 | project/design/D20.md |
 | R-3TYK-TNAX | D20 | project/design/D20.md |
@@ -115,7 +126,6 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-KBLR-VBHQ | D8 | project/design/D08.md |
 | R-KCTO-938F | D8 | project/design/D08.md |
 | R-KE1K-MUZ4 | D9 | project/design/D09.md |
-| R-KF9H-0MPT | D9 | project/design/D09.md |
 | R-LAND-CARB | D10 | project/design/D10.md |
 | R-LAND-NMVR | D10 | project/design/D10.md |
 | R-LAND-PG01 | D10 | project/design/D10.md |

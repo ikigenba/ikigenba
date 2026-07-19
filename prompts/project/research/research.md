@@ -32,7 +32,7 @@ Semantics (agentkit-owned; prompts relies on, does not re-prove):
 - One `Send` gate: name uniqueness across eager ∪ MCP ∪ deferred ∪ the reserved `load_tools` name; deferred schemas validated like `RawTool`.
 - Works uniformly across all four providers; a live-Anthropic integration id (R-DFH0-A8TE, agentkit's) proves the real API accepts the mid-turn grown tools array.
 
-**Availability precondition:** the published tag `github.com/ikigenba/agentkit v0.2.0` (agentkit phase 48). Local dev builds resolve agentkit through the repo-root `go.work` replace to `~/projects/agentkit`; the production build (`GOWORK=off`) needs the tag.
+**Availability:** first published in `v0.2.0`; the API is unchanged through `v0.6.0`, the release prompts now pins (§5).
 
 ## 3. The blurb source — MCP `initialize.instructions`
 
@@ -49,3 +49,35 @@ Every suite peer publishes a one-paragraph server description in the MCP `initia
 ## 4. Prior art
 
 Claude Code's ToolSearch is the pattern being mirrored: deferred tools appear by name + per-server blurb; fetching a tool's schema on demand makes it directly callable; loads are monotonic per session. Anthropic's provider-native tool-search beta confirms the pattern but is single-provider — hence the agentkit (cross-provider) home, decided in agentkit D23.
+
+## 5. agentkit v0.6.0 — catalog, typed credentials, OpenRouter, cost (the release this design consumes)
+
+Published tag `github.com/ikigenba/agentkit v0.6.0` (2026-07-18). Breaking deltas since the pinned `v0.2.1`, verified against the tagged source:
+
+**Typed-credential constructors (v0.4.0).** Every provider sub-package's `New` takes a closed `Credential` type, not a string: `anthropic.New(anthropic.APIKey(key), opts...)`, likewise `openai`, `google`, `zai`, and the new `openrouter`. All five expose `WithBaseURL` and `WithHTTPClient` options. The legacy model registries and the `Provider.Pricing(model)` method are **gone** — the `agentkit.Provider` interface is now just `RoundTrip(ctx, *Request) *RoundTrip` + `Name()`. (v0.5.0's subscription-login rework touches only `openai/subscription`, which prompts does not use.)
+
+**The `catalog` package (v0.4.0, extended v0.6.0).** Advisory metadata keyed by globally unique model name — advisory upstream ("coverage never controls whether a model can be sent"), but the authoritative table of supported provider/model/effort combinations. Footprint:
+
+```go
+type Entry struct {
+    Model     string            // catalog name, globally unique, e.g. "grok-4.5"
+    Provider  string            // default provider
+    Routes    map[string]string // provider → wire model slug, e.g. {"openrouter": "deepseek/deepseek-v4-flash"}
+    Pricing   *agentkit.Pricing // nil on embedding-only entries
+    Reasoning *ReasoningSpec    // nil → model has no reasoning control
+    Context   int64
+    Embedding *EmbeddingInfo
+    Options   json.RawMessage
+}
+func Lookup(model string) (Entry, bool)
+func Resolve(provider, model string) (routeProvider, wireModel string, entry Entry, ok bool)
+func ListByProvider(provider string) []Entry
+```
+
+`Resolve("", model)` fills the entry's default provider; an explicit provider succeeds only when it is the default or appears in `Routes` (returning the route's wire slug). `ReasoningSpec` (aliased from the root package) has `Kind` ∈ {`ReasoningEnum` (+`Levels`), `ReasoningRange` (+`Min`/`Max`/`Sentinels`), `ReasoningToggle`}, `Default`, `CanDisable`, and `Accepts(v ReasoningValue) bool` — the one-call create-time check for effort/level/budget/disable values.
+
+**Chat inventory at v0.6.0** (entries with non-nil `Pricing`): anthropic `claude-opus-4-8`, `claude-sonnet-4-6`, `claude-haiku-4-5`, `claude-fable-5`, `claude-sonnet-5`; google `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-3.1-pro-preview`; openai `gpt-5.5-pro`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`; openrouter (new in v0.6.0) `grok-4.5`, `grok-4.3`, `grok-4.20`, `grok-4.20-multi-agent`, `deepseek-v4-flash`, `deepseek-v4-pro`, `kimi-k3`, `kimi-k2.7-code`, `kimi-k2.6`; zai `glm-5.2`, `glm-5.1` (thinking toggle only — the v0.6.0 spec fix), `glm-4.7`, `glm-4.6`. Plus embedding-only entries (`text-embedding-3-*`, `gemini-embedding-001`). **The anthropic/openai/google/zai entries currently carry no `Routes` map** — only their native provider serves them; the OpenRouter-routed vendors carry vendor-namespaced slugs (e.g. `x-ai/...`, `deepseek/...`, `moonshotai/...`). Widening routing (e.g. Claude via OpenRouter) is an agentkit catalog change prompts picks up with a version bump.
+
+**Consumer-owned cost (v0.4.0).** A provider-reported cost takes precedence; otherwise `Conversation.Pricing` (a `*agentkit.Pricing` field) prices the turn's usage; with neither, cost is zero and the stream emits a `WarnCostUnknown` warning. `catalog.Entry.Pricing` is the intended source for the field.
+
+**Box wiring.** `OPENROUTER_API_KEY` is already exported by `prompts/.envrc` from `~/.secrets/OPENROUTER_API_KEY`, following the same pattern as the other four provider keys.

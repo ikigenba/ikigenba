@@ -20,10 +20,11 @@ The box owner, operating through an agent connected to the prompts MCP service. 
 
 **In scope:**
 
-- **Multi-provider support.** Any prompt may target any of the four providers the published agentkit supports: `anthropic`, `openai`, `google`, `zai`. Provider and model are required on every prompt; there is no implicit default.
+- **Multi-provider support over a curated model catalog.** Any prompt may target any of the five providers the published agentkit supports: `anthropic`, `openai`, `google`, `zai`, `openrouter` — the last opening up the OpenRouter-hosted vendors (Grok, DeepSeek, Kimi). The model is required on every prompt and must be one the agentkit model catalog lists; the provider is optional — when omitted it is the model's catalog default — but stays settable to deliberately reach a model through an alternate provider the catalog supports.
 - **Full generation and retry tuning via a config object.** Alongside provider and model, a prompt may carry an optional structured config object with any of these keys: `temperature`, `top_p`, `max_tokens`, `effort`, `thinking_budget`, `thinking_level`, `thinking`, `max_attempts`, `base_delay`, `max_delay`, `max_elapsed`, `ignore_retry_after`, `tool_loop_limit`, `base_url`. Unset keys use the agentkit's defaults; keys that do not apply to the chosen model are silently ignored by the agentkit.
 - **Config update with full-replacement semantics.** Updating a prompt's config replaces the entire config object. To keep a value, re-specify it; omitting a key removes it and reverts it to the agentkit default.
-- **Validation at create/update time.** An unknown provider or a model not recognised for the chosen provider is rejected immediately with a clear error. A run is never started with a config that cannot be resolved.
+- **Validation at create/update time.** A model outside the catalog, a provider that cannot serve the chosen model, or a reasoning setting (effort, thinking level, thinking budget, thinking on/off) the chosen model does not accept is rejected immediately with a clear error naming what the model does accept. A run is never started with a config that cannot be resolved.
+- **Discoverable inventory.** The service's own documentation surface lists every available model — per provider, with each model's reasoning options — generated from the same catalog that validation enforces, so what the doc offers and what validation accepts can never disagree.
 - **Edits take effect on the next run.** The runner pins its execution inputs at spawn time, so in-flight runs are unaffected. Any edit to provider, model, or config is reflected starting with the next run.
 - **Backfill migration for existing prompts.** Existing rows with no provider set are migrated to `anthropic` so they continue to work without user intervention.
 - **Serve a landing page.** At the mount root, present a small styled web page showing the service **name** and **version** to a person who opens it in a browser. It is for **logged-in humans** (gated by the dashboard browser session, like any web page in the suite — any signed-in user may view it); agents continue to use MCP. v1 shows only name+version and reads nothing about the viewer; the page exists to be the foundation prompts' web surface grows from.
@@ -40,14 +41,14 @@ The box owner, operating through an agent connected to the prompts MCP service. 
   whatever workflows watch that location.
 - **Suite tools reach the in-run agent on demand, not front-loaded.** The in-run agent can still use every other suite service on the owner's behalf, exactly as before — but it no longer carries every service tool's full definition in its working context from the first moment of every run. It starts with a compact catalog of what the account's services offer and pulls in the specific tools a task actually needs, as it needs them. The observable outcome: runs behave the same, reach the same services, and produce the same kinds of results, while a run's context carries only the catalog plus the tools it actually used — so runs over a fully-populated box stay focused and spend less on tool definitions that were never touched.
 
-**Out of scope (nothing else):** No renumbering of any service and no ownership of the registry table itself (prompts only *reads* it by name); the `registry` module and the repo-root wiring that publishes it (`go.work`) are provided from outside prompts. No new providers beyond the four agentkit already supports. No change to *which* services and tools a run can reach (only to how they are surfaced). No changes to the trigger or event model. No new run management capabilities. The `system_prompt` field remains a dedicated top-level field and is not part of the config object. The on-demand loading mechanism itself is the agentkit's (owned and proven in its own project); prompts only adopts it.
+**Out of scope (nothing else):** No renumbering of any service and no ownership of the registry table itself (prompts only *reads* it by name); the `registry` module and the repo-root wiring that publishes it (`go.work`) are provided from outside prompts. No free-form model strings — models outside the agentkit catalog are not accepted, and widening the catalog (including which models OpenRouter can route) is agentkit's change, not prompts'. No change to *which* services and tools a run can reach (only to how they are surfaced). No changes to the trigger or event model. No new run management capabilities. The `system_prompt` field remains a dedicated top-level field and is not part of the config object. The on-demand loading mechanism itself is the agentkit's (owned and proven in its own project); prompts only adopts it.
 
 ## Contractual constants
 
-The four valid provider names, exactly as the agentkit recognises them:
+The five valid provider names, exactly as the agentkit recognises them:
 
 ```
-anthropic   openai   google   zai
+anthropic   openai   google   zai   openrouter
 ```
 
 The eleven optional config keys, exactly as named:
@@ -63,11 +64,11 @@ These names are promises — the design must use them verbatim in the MCP tool s
 
 ## What we promise (user-facing behavior)
 
-**Creating a prompt** requires provider and model. Config keys are optional:
+**Creating a prompt** requires a model from the catalog; the provider and all config keys are optional:
 
-> "Create a prompt that runs on OpenAI's gpt-4o with temperature 0.3 and a max of 2000 output tokens."
+> "Create a prompt that runs on gpt-5.5 with temperature 0.3 and a max of 2000 output tokens."
 
-The MCP tool accepts `provider: "openai"`, `model: "gpt-4o"`, and a config object `{"temperature": 0.3, "max_tokens": 2000}`. If the provider or model is unknown, the create call fails immediately with a descriptive error — no prompt is stored.
+The MCP tool accepts `model: "gpt-5.5"` and a config object `{"temperature": 0.3, "max_tokens": 2000}`; the provider defaults to the model's home (here OpenAI) and may be given explicitly to pick an alternate route the catalog supports. If the model is not in the catalog, the provider cannot serve it, or a reasoning setting is not one the model accepts, the create call fails immediately with a descriptive error — no prompt is stored.
 
 **Running a prompt** uses exactly the provider, model, and config stored at run-start time. A run triggered by an event and a manual run go through the same path. Provider selection, model selection, and all config values are applied; keys left at default have no effect.
 
@@ -77,7 +78,7 @@ The MCP tool accepts `provider: "openai"`, `model: "gpt-4o"`, and a config objec
 
 **Opening prompts in a browser shows a page, not an error.** A logged-in dashboard user who navigates to the prompts mount root gets a small, on-brand page naming the service and its version; someone without a valid session is turned away. Agents are unaffected — they keep working through MCP.
 
-**Unsupported keys for a model** (e.g. `thinking_budget` on a model that does not support extended thinking) are passed through and silently ignored by the agentkit — the run proceeds normally.
+**Reasoning settings are checked against the chosen model up front.** An effort level, thinking level, thinking budget, or thinking-off request the model does not accept is rejected at create/update with an error naming the model's actual options — it never becomes a mid-run surprise. Non-reasoning keys a model happens to ignore (e.g. `temperature` on a model that fixes it) are still passed through and silently ignored — the run proceeds normally.
 
 **A run reads and writes the account's file share.** A run triggered by a new
 file arriving in the share can pull that file into its own folder, work on it,
@@ -90,13 +91,16 @@ syncs, and it can set the next workflow in motion.
 
 ## Success criteria (outcomes)
 
-- A prompt created with `provider: "openai"` and a valid OpenAI model runs successfully against the OpenAI API.
+- A prompt created with `provider: "openai"` and a catalog OpenAI model runs successfully against the OpenAI API.
+- A prompt created with only a model (no provider) is stored with that model's default provider and runs on it — including an OpenRouter-hosted model like a Grok, DeepSeek, or Kimi model running through OpenRouter.
 - A prompt created with an unknown provider name is rejected at create time with a clear error message; no prompt row is created.
-- A prompt created with a valid provider but an unrecognised model name is rejected at create time with a clear error message.
+- A prompt created with a model outside the catalog, or with a provider the catalog cannot serve that model through, is rejected at create time with a clear error message.
+- A prompt created with a reasoning setting the model does not accept (a level outside its list, a budget outside its range, or thinking off where it cannot be turned off) is rejected at create time with an error naming the model's accepted options.
+- Asking the service to describe itself lists every catalog model with its provider and reasoning options; a model the description lists is accepted by create, and a model it does not list is rejected.
 - A prompt created with `{"temperature": 0.5, "max_tokens": 500}` in its config runs with those values applied; a subsequent update omitting `temperature` causes the next run to use the agentkit default temperature.
 - An existing prompt with no provider set in the database continues to run successfully after the migration, executing against Anthropic as before.
 - A prompt running on the `zai` provider with `base_url` set in its config targets that URL.
-- A config value not supported by the chosen model (e.g. `thinking_budget` on a non-reasoning model) does not cause the run to fail.
+- A non-reasoning config value the chosen model happens to ignore does not cause the run to fail.
 - Editing a prompt's provider, model, or config while a run is in flight does not affect that run; the change is reflected only in the next run.
 - As a logged-in dashboard user I open the prompts mount root in a browser and see a styled page showing the service name and its version; without a valid session the page is refused, and the agent-facing MCP surface is unchanged.
 - prompts serves on the same loopback port and reaches the same peer `/feed` and dropbox addresses as before, with every one of those addresses obtained from the shared registry by service name; no loopback port number appears as a literal anywhere in prompts's own (non-test) source.
