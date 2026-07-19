@@ -70,6 +70,21 @@ so every app must be seeded **before** first deploy.
 
    Never `jq .` the decrypted object -- that prints values.
 
+5. **Verify a multi-line secret round trip by shape only.** After a live push
+   of an app carrying a PEM-style multi-line secret, read back only that key's
+   length and line count, then confirm the line count is greater than 1:
+
+   ```sh
+   MULTI_LINE_KEY=<key-name>
+   aws --profile int --region us-east-2 ssm get-parameter \
+     --name /ikigenba/int/app-config/<app> --with-decryption \
+     --query Parameter.Value --output text \
+     | jq -r --arg key "$MULTI_LINE_KEY" \
+         '.[$key] | "length=\(length) line count=\(split("\n") | length)"'
+   ```
+
+   Never print the decrypted key value itself.
+
 ## After seeding
 
 Secrets take effect on the box at the next service (re)start:
