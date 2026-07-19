@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 95
-
-- Phase 94 ⬜ realizes R-1BRG-F9TN, R-1CZC-T1KC, R-1E79-6TB1, R-1GN1-YCSF, R-0UOV-2HFX, R-0VWR-G96M — the retirement sweep: llm_calls, recorder stack, eval harness, agentkit
