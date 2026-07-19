@@ -2,14 +2,14 @@
 
 **Authority: shape and its proof.** This directory owns *how* the on-box install
 tree, the versioned-binary stage/deploy/rollback orchestration, the SemVer 2.0
-version contract, the env/manifest contract, and the per-service backup/restore are
-built, and *how each behavior is proven*. The product
-(`project/product/README.md`) owns the *why* and the user-facing promises. Design
-uses the suite's contractual constants (service names, the `IKIGENBA_*` env names,
-the event-protocol epoch rules) **by value** but does not own them. This is the **single, current**
-statement of the architecture: when a decision changes, its `DNN.md` is rewritten
-in place — decisions are never stacked. History of how it got here lives in the
-plan.
+version contract, the env/manifest contract, the per-service backup/restore, and
+the per-app secrets delivery are built, and *how each behavior is proven*. The
+product (`project/product/README.md`) owns the *why* and the user-facing
+promises. Design uses the suite's contractual constants (service names, the
+`IKIGENBA_*` env names, the event-protocol epoch rules) **by value** but does
+not own them. This is the **single, current** statement of the architecture:
+when a decision changes, its `DNN.md` is rewritten in place — decisions are
+never stacked. Construction history lives in git.
 
 ## Requirement ids
 
@@ -34,11 +34,13 @@ Shared facts every Decision leans on:
 - **Build / typecheck command.** `go build ./...` within a module (workspace
   mode locally). A release artifact is built static for `linux/amd64` with
   `GOWORK=off`.
-- **Test command — the green gate.** `bin/test` from the repo root. It runs, fail-fast:
-  (1) the repo-root shell tests `bin/*.test.sh`, (2) `go test ./...` across
-  every workspace module. **"The suite is green"
-  means `bin/test` exits 0.** Shell tooling (`bump`, `ship`) is tested by a
-  sibling `bin/<name>.test.sh`; opsctl/appkit behavior is tested by `go test`.
+- **Test command — the green gate.** `go test ./...` from the repo root
+  (workspace mode, covering every workspace module). **"The suite is green"
+  means that command exits 0.** Requirement-id tags live in `*_test.go` files.
+  Shell tooling in `bin/` (`bump`, `ship`, `push-secrets`, …) is deliberately
+  **untested** — the former `bin/test` + `bin/*.test.sh` tier was removed
+  (commit `019a99ee`; nothing automated ran it) — and is instead verified once,
+  manually, outside the build loop, when created or changed.
 - **New dependency.** `golang.org/x/mod/semver` (added to `opsctl/go.mod`) is the
   sole SemVer 2.0 authority — no hand-rolled version parsing survives this design
   (`x/*` deps are in policy; the suite already vendors `golang.org/x/text`).
@@ -50,17 +52,17 @@ Shared facts every Decision leans on:
   (filesystem ownership — `chown` of a path to a uid/gid; D01), and — added by
   this design (D07) — `ObjectStore` (the S3 object operations). **Tests run
   unprivileged and with no external services, matching the suite's green gate**
-  (`bin/test` → `go test ./...`, which starts nothing external): a claim is
+  (`go test ./...`, which starts nothing external): a claim is
   verified on the most faithful substrate reachable *in-gate without privilege* —
   a real filesystem honoring an atomic rename; real mode bits on a real temp tree
   with ownership asserted through the stubbed `Owner` seam; a real `tar` archive
   round-tripped through the `ObjectStore` seam; the event plane rejecting a stale
   cursor through a real in-process `httptest` server. The few contracts that need
   a privileged or networked substrate the gate cannot provide — `aws` actually
-  transferring bytes to a real S3 bucket, a live `www-data`-gid read through a
-  running nginx — are exercised by an **on-box/manual check outside the green
-  gate**, never as a `t.Skip`-gated test (a skipped requirement test counts as
-  uncovered, so it is never the in-gate proof).
+  transferring bytes to a real S3 bucket or SSM parameter, a live `www-data`-gid
+  read through a running nginx — are exercised by an **on-box/manual check
+  outside the green gate**, never as a `t.Skip`-gated test (a skipped
+  requirement test counts as uncovered, so it is never the in-gate proof).
 
 ## Layout
 

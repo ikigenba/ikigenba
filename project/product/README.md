@@ -63,8 +63,8 @@ has to.
 ## Scope
 
 In scope — applied uniformly to **every deployable service in the suite** (the
-twelve that carry a `VERSION`: dashboard, crm, ledger, notify, dropbox, prompts,
-wiki, cron, gmail, scripts, sites, **webhooks**):
+fourteen that carry a `VERSION`: dashboard, crm, ledger, notify, dropbox,
+prompts, wiki, cron, gmail, scripts, sites, webhooks, github, repos):
 
 - A **uniform on-box install tree** per service: one self-contained, FHS-mirroring
   home holding the service's shipped binaries and resources, its host config, its
@@ -100,6 +100,11 @@ wiki, cron, gmail, scripts, sites, **webhooks**):
   the rest of the tree stays private to the service.
 - A **one-time, safe migration** of the existing live box from the old layout to
   the new one — including retiring the old `data/` and `backups/` locations.
+- **Uniform secrets delivery**: every service's deployed secrets are seeded with
+  the same single workstation command, and the set of secrets a service gets on
+  the box is exactly the set its local development environment declares — local
+  and deployed environments cannot silently diverge. Seeding one service can
+  never damage another's secrets.
 
 Out of scope — nothing else is promised here:
 
@@ -184,6 +189,14 @@ Fixed, promised values the design must use verbatim and never re-derive:
 - **The live box migrates safely.** Moving the existing box to the new layout is a
   one-time, non-destructive, re-runnable step that drops no data and leaves a
   bootable service even if interrupted.
+- **Secrets are seeded one way, per app, from what local dev already declares.**
+  One workstation command seeds (or re-seeds) any service's deployed secrets;
+  the keys it pushes are exactly the keys the service's local environment
+  declares, so what runs locally and what runs on the box see the same secret
+  set by construction. A service with no secrets is still explicitly seeded, and
+  a service that was never seeded refuses to start rather than starting without
+  its secrets. Seeding is per-app: no seeding operation can touch, corrupt, or
+  drop another service's secrets.
 
 ## Success criteria (outcomes)
 
@@ -232,3 +245,8 @@ tooling:
 - Running the one-time migration against an old-layout box produces a working
   new-layout service with its data intact — old `data/` and `backups/` locations
   retired — and running it again changes nothing.
+- For **any** deployable service, one workstation command seeds its deployed
+  secrets; afterward the service, restarted, runs with exactly the secret keys
+  its local development environment declares — no more, no fewer — and every
+  other service's secrets are untouched. A secret-less service seeds and starts
+  the same way.

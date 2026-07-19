@@ -2,56 +2,29 @@
 
 Everything this workspace needs to be **designed, planned, and built** lives
 under `project/`. This file is the only loose file here; everything else is in
-one of the folders below. Paths are written relative to the **repo root**, which
-is also the directory the `ralph` build loop runs from.
+one of the folders below. Paths are written relative to the **repo root**,
+which is also the directory the build loop runs from — this workspace governs
+the suite mono-repo it sits at the root of.
 
 ## The folders
 
-| folder | what's in it | owned by |
+| folder | what's in it | written by |
 |---|---|---|
-| `product/` | `product.md` — the *why*, for whom, scope, user-facing promises | `/product-mode` (rewritten in place) |
-| `research/` | `research.md` — the design-informing research spine; plus free-form `*-research.md` working notes | `research.md`: `/research-mode` (rewritten in place). Other notes: free-form. |
-| `design/` | `design.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `/design-mode` (rewritten in place) |
-| `plan/` | `plan.md` (spine) + `STATUS.md` (the manifest — the only home of each phase's `⬜`/`✅` marker) + `phase-NN.md` (one per phase) | `/plan-mode` (append-only) |
-| `bugs/` | free-form bug diagnoses / write-ups | free-form (not mode-owned) |
-| `requests/` | free-form feature requests | free-form (not mode-owned) |
-| `loops/` | the `ralph` build-loop prompts: `gather.md`, `build.md`, `verify.md` (+ the ephemeral `brief.md`) — generated once a design and plan exist | build-loop infrastructure |
+| `product/` | `README.md` — the *why*: problem, users, scope, promises, success criteria | `$seal-spec` (rewritten in place) |
+| `research/` | `research.md` — collected external ground truth design references | `$seal-spec` (rewritten in place; optional) |
+| `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
+| `plan/` | `README.md` (static rules) + `STATUS.md` (manifest: `Next phase` counter + `⬜` lines) + `phase-NN.md` (one per **pending** phase) | `$seal-spec` (appends); the build loop deletes completed phases |
+| `bugs/` | free-form bug diagnoses / write-ups | free-form (not spec-owned) |
+| `requests/` | free-form feature requests | free-form (not spec-owned) |
+| `loops/` | the generated build-loop prompts + how the installed loop works | a prompt-generator workflow |
 
-The four **spine documents** (`product/product.md`, `research/research.md`,
-`design/design.md`, `plan/plan.md`) are each singular and owned by a `/*-mode`
-command — that command is the sanctioned way to change them. The `bugs/`,
-`requests/`, and extra `research/*-research.md` notes are informal scratch and
-are *not* owned by any mode command. Don't add ad-hoc documents to the spine
-folders; fold corrections and follow-ons into the existing spine docs via the
-mode commands (and append a plan phase) instead.
+Product, research, and design are the **single current statement** — rewritten
+in place, never stacked; the plan is a **work queue** of pending phases only —
+completed phases are deleted by the build loop, and construction history lives
+in git. The `bugs/` and `requests/` folders are informal scratch. Don't add
+ad-hoc documents to the spec folders; change the spec through an
+`$open-spec` → `$seal-spec` session instead.
 
-## The build loop
-
-`ralph` is the autonomous executor. It runs **from the repo root** and is handed
-the full paths to the three prompt files — the names and locations are this
-project's convention (documented here); `ralph` itself assumes nothing about
-them:
-
-```
-ralph project/loops/gather.md project/loops/build.md project/loops/verify.md
-```
-
-It cycles the prompts in fresh contexts — `gather → build → verify → …` — on a
-two-status contract: each prompt ends with one JSON object whose `status` is
-either `NEXT` (advance to the next prompt, wrapping `verify → gather`) or `DONE`
-(stop).
-
-- **gather** — the only prompt that reads the big docs. Greps `STATUS.md` for
-  the first `⬜` phase; if there is none it returns `DONE` (the sole exit).
-  Otherwise it resolves that phase's Decision(s) and writes a tiny, self-contained
-  `loops/brief.md`, then returns `NEXT`.
-- **build** — reads **only** `loops/brief.md`; builds the package + id-tagged
-  tests, runs the suite, commits, leaves the marker untouched. Returns `NEXT`.
-- **verify** — the independent gate and only prompt that flips a marker. Pass →
-  flip that phase's `⬜→✅` in `STATUS.md` and commit; gap → leave it `⬜`. Either
-  way it deletes `loops/brief.md`. Returns `NEXT`.
-
-`brief.md` is the ephemeral seam between the prompts — created by `gather`,
-deleted by `verify`, never committed (it is gitignored). The loop is human-free
-and converges: an incomplete phase simply stays `⬜` and is re-attacked next
-cycle; the only stops are `gather`'s `DONE` or a `ralph` budget rail.
+For how the installed build loop runs, see `project/loops/README.md` (or the
+loop prompt files themselves) — loop mechanics belong to the generator
+workflow that installed them, not to this map.
