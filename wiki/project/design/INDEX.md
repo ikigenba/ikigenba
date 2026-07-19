@@ -8,7 +8,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D2 → `project/design/D02.md` — Service skeleton: package layout, Spec wiring, and the config/secret composition root — owns R-6RVX-P1IG
 - D3 → `project/design/D03.md` — The phase-1 data model — owns R-7SNG-0G9A, R-7TVC-E7ZZ, R-7V38-RZQO, R-7WB5-5RHD, R-RU0J-77HX, R-RV8F-KZ8M, R-RXO8-CIQ0, R-RYW4-QAGP, R-S041-427E, R-S1BX-HTY3, R-S2JT-VLOS
 - D4 → `project/design/D04.md` — The ingest pipeline and worker — owns R-M8RN-87WV, R-M9ZJ-LZNK, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MDN8-RAVN, R-MG31-IUD1
-- D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): a prompts `/complete` client + json-mode helper — owns R-J8QP-BETB, R-4BCC-0EHJ, R-J9YL-P6K0, R-JCEE-GQ1E, R-0X4N-U0XB, R-0ZKG-LKEP, R-10SC-ZC5E, R-1209-D3W3
+- D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): a prompts `/complete` client + json-mode helper — owns R-J8QP-BETB, R-4BCC-0EHJ, R-J9YL-P6K0, R-JCEE-GQ1E, R-0X4N-U0XB, R-8H1B-9CCI, R-0ZKG-LKEP, R-10SC-ZC5E, R-1209-D3W3
 - D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-W2HP-H0J0, R-4CK8-E688
 - D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-FWOT-NRHN, R-4DS4-RXYX
 - D8 → `project/design/D08.md` — Search returns: hybrid retrieval over pages, behind one seam — none — structural
@@ -152,6 +152,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-8EIY-89SF → D10 (`project/design/D10.md`)
 - R-8FQU-M1J4 → D44 (`project/design/D44.md`)
 - R-8GYQ-ZT9T → D45 (`project/design/D45.md`)
+- R-8H1B-9CCI → D5 (`project/design/D05.md`)
 - R-8I6N-DL0I → D59 (`project/design/D59.md`)
 - R-8JEJ-RCR7 → D59 (`project/design/D59.md`)
 - R-9EPS-LWWY → D49 (`project/design/D49.md`)
