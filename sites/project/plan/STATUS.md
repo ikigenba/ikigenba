@@ -11,4 +11,3 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 34
 
-- Phase 33 ⬜ realizes R-7MHG-PUOP, R-7NPD-3MFE, R-7L9K-C2Y0 — nginx fragment forwards all four X-Owner-* identity headers on every identity-forwarding location (bearer MCP, session landing root, private tier)
