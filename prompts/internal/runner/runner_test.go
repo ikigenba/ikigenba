@@ -212,6 +212,10 @@ func newTestRunner(t *testing.T, ttl time.Duration, fp agentkit.Provider) (*Runn
 // run's input/ on disk (what the runner now reads from), then opens a running
 // run on it — mirroring Service.Run, so the runner can take it terminal.
 func seedRunning(t *testing.T, store *prompt.Store, sb *sandbox.Manager, runsDir string) (prompt.Prompt, prompt.Run) {
+	return seedRunningWithConfig(t, store, sb, runsDir, prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"})
+}
+
+func seedRunningWithConfig(t *testing.T, store *prompt.Store, sb *sandbox.Manager, runsDir string, cfg prompt.Config) (prompt.Prompt, prompt.Run) {
 	t.Helper()
 	ctx := context.Background()
 	now := time.Now().UTC().Format(time.RFC3339Nano)
@@ -220,7 +224,7 @@ func seedRunning(t *testing.T, store *prompt.Store, sb *sandbox.Manager, runsDir
 		OwnerEmail: "owner@example.com",
 		Name:       "n",
 		UserPrompt: "do the thing",
-		Config:     prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"},
+		Config:     cfg,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
@@ -246,6 +250,60 @@ func seedRunning(t *testing.T, store *prompt.Store, sb *sandbox.Manager, runsDir
 		t.Fatalf("InsertRun: %v", err)
 	}
 	return sess, run
+}
+
+func TestExecute_UsesCatalogRouteWireModel(t *testing.T) {
+	// R-1X6X-E3KP
+	fp := &fakeProvider{}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	_, run := seedRunningWithConfig(t, store, r.sandbox, runsDir, prompt.Config{
+		Provider: "openrouter",
+		Model:    "deepseek-v4-flash",
+	})
+
+	r.execute(run)
+
+	req := fp.lastRequest()
+	if req == nil {
+		t.Fatal("fake provider saw no request")
+	}
+	if got, want := req.Model, "deepseek/deepseek-v4-flash"; got != want {
+		t.Fatalf("provider request model = %q, want catalog route wire model %q", got, want)
+	}
+}
+
+func TestExecute_PricesUsageFromCatalogRates(t *testing.T) {
+	// R-1ZMQ-5N23
+	fp := &fakeProvider{}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	sess, run := seedRunningWithConfig(t, store, r.sandbox, runsDir, prompt.Config{
+		Provider: "openrouter",
+		Model:    "deepseek-v4-flash",
+	})
+
+	r.execute(run)
+
+	got, err := store.GetLatestRun(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatalf("GetLatestRun: %v", err)
+	}
+	if got == nil {
+		t.Fatal("GetLatestRun returned nil run")
+	}
+	if got.Status != prompt.RunSucceeded {
+		t.Fatalf("run status = %q, want succeeded (error=%q)", got.Status, got.Error)
+	}
+	var usage struct {
+		CostUSD float64 `json:"cost_usd"`
+	}
+	if err := json.Unmarshal([]byte(got.UsageJSON), &usage); err != nil {
+		t.Fatalf("parse usage_json %q: %v", got.UsageJSON, err)
+	}
+	if usage.CostUSD <= 0 {
+		t.Fatalf("usage_json cost_usd = %v, want catalog-priced cost greater than zero", usage.CostUSD)
+	}
 }
 
 // writeRunInput pins a run's execution inputs to runs/<run_id>/input/, the
