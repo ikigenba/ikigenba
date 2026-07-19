@@ -48,191 +48,146 @@ func TestIndexLoggedOut(t *testing.T) {
 	}
 }
 
-func TestIndexLoggedOutShowsNameWithTwoSubordinateParts(t *testing.T) {
+func TestIndexLoggedOutShowsBrandTitle(t *testing.T) {
 	srv := testServer(t)
 	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
-
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	body := rec.Body.String()
-	wall := signinWallMain(t, body)
-	aside := nameOriginAside(t, body)
-	signInLink := `<a href="/login" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>`
-	if strings.Index(wall, `<aside class="name-origin"`) <= strings.Index(wall, signInLink) {
-		t.Errorf("name-origin colophon is not after the sign-in CTA:\n%s", wall)
-	}
-	if !strings.Contains(wall, "</aside>\n  </main>") {
-		t.Errorf("name-origin colophon is not last inside the sign-in wall:\n%s", wall)
-	}
-	for _, want := range []string{
-		`<aside class="name-origin" aria-label="What ikigenba means">`,
-		`<p class="name-origin-lede"><b>ikigenba</b> — The place life actually happens.</p>`,
-		`<dl class="name-origin-parts">`,
-		`<dt><b class="seam">iki</b> <span lang="ja">生き</span></dt>`,
-		`<dd>= to live</dd>`,
-		`<dt><b class="seam">genba</b> <span lang="ja">現場</span></dt>`,
-		`<dd>= the place</dd>`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("logged-out index missing name-origin content %q:\n%s", want, body)
-		}
-	}
-	// R-HBWF-GM4D
-	if got := strings.Count(aside, `<p class="name-origin-lede">`); got != 1 {
-		t.Errorf("name-origin lede count = %d, want 1:\n%s", got, aside)
-	}
-	if got := strings.Count(aside, "<p"); got != 2 {
-		t.Errorf("name-origin paragraph count = %d, want lede and pronunciation foot:\n%s", got, aside)
-	}
-	if got := strings.Count(aside, `<dl class="name-origin-parts">`); got != 1 {
-		t.Errorf("name-origin parts list count = %d, want 1:\n%s", got, aside)
-	}
-	if got := strings.Count(aside, "<dt>"); got != 2 {
-		t.Errorf("name-origin dt count = %d, want 2:\n%s", got, aside)
-	}
-	if got := strings.Count(aside, "<dd>"); got != 2 {
-		t.Errorf("name-origin dd count = %d, want 2:\n%s", got, aside)
-	}
-	if got := strings.Count(aside, `<b class="seam">`); got != 2 {
-		t.Errorf("name-origin seam count = %d, want 2:\n%s", got, aside)
-	}
-	if got := strings.Count(aside, `span lang="ja"`); got != 2 {
-		t.Errorf("name-origin Japanese span count = %d, want 2:\n%s", got, aside)
-	}
-	for _, retired := range []string{"portmanteau", "生き甲斐", "ikigai", "reason for being", "the actual place"} {
-		if strings.Contains(body, retired) {
-			t.Errorf("logged-out index contains retired name-origin copy %q:\n%s", retired, body)
-		}
-	}
-	if strings.Contains(aside, "name-origin-roots") {
-		t.Errorf("name-origin uses stale roots class instead of parts:\n%s", aside)
-	}
-}
+	wall := signinWallMain(t, rec.Body.String())
 
-func TestIndexLoggedOutShowsNameOriginPronunciationFoot(t *testing.T) {
-	srv := testServer(t)
-	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+	// R-JA3I-IY1F
+	if got := strings.Count(wall, `<h1 class="signin-title">Ikigenba</h1>`); got != 1 {
+		t.Errorf("brand title count = %d, want 1:\n%s", got, wall)
 	}
-	body := rec.Body.String()
-	aside := nameOriginAside(t, body)
-	parts := `<dl class="name-origin-parts">`
-	say := `<p class="name-origin-say">pronounced <b>EE-kee-GEN-buh</b></p>`
-
-	// R-O7K1-XEN7
-	if got := strings.Count(aside, `<p class="name-origin-say">`); got != 1 {
-		t.Fatalf("name-origin pronunciation count = %d, want 1:\n%s", got, aside)
-	}
-	if !strings.Contains(aside, say) {
-		t.Errorf("name-origin pronunciation foot missing phonetic string:\n%s", aside)
-	}
-	if got := strings.Count(aside, "<p"); got != 2 {
-		t.Errorf("name-origin paragraph count = %d, want lede and pronunciation foot:\n%s", got, aside)
-	}
-	if strings.Index(aside, say) <= strings.Index(aside, parts) {
-		t.Errorf("name-origin pronunciation foot is not after the parts list:\n%s", aside)
-	}
-	if !strings.HasSuffix(aside, say+"\n    </aside>") {
-		t.Errorf("name-origin pronunciation foot is not last inside the aside:\n%s", aside)
-	}
-
-	sess := liveSession(t, srv)
-	rec = do(t, srv, "GET", "https://int.ikigenba.com/", map[string]string{"Cookie": sess.Name + "=" + sess.Value})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("signed-in status = %d, want 200", rec.Code)
-	}
-	if strings.Contains(rec.Body.String(), `name-origin-say`) || strings.Contains(rec.Body.String(), `EE-kee-GEN-buh`) {
-		t.Errorf("signed-in index includes logged-out pronunciation guide:\n%s", rec.Body.String())
+	if strings.Contains(wall, `<h1>Sign in to access your services.</h1>`) {
+		t.Errorf("sign-in lede remains the heading:\n%s", wall)
 	}
 
 	cssRec := do(t, srv, "GET", "https://int.ikigenba.com/static/app.css", nil)
-	if cssRec.Code != http.StatusOK {
-		t.Fatalf("stylesheet status = %d, want 200", cssRec.Code)
-	}
-	rule := cssRule(t, cssRec.Body.String(), `.name-origin .name-origin-say`)
-	// R-O7K1-XEN7
-	if !strings.Contains(rule, `text-align: center;`) {
-		t.Errorf("name-origin pronunciation rule is not centered:\n%s", rule)
+	rule := cssRule(t, cssRec.Body.String(), `.signin-wall .signin-title`)
+	for _, want := range []string{`font-family: var(--font-display);`, `font-size: var(--text-h1-size);`, `line-height: var(--text-h1-lh);`, `font-weight: var(--text-h1-weight);`} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("brand title CSS missing %q:\n%s", want, rule)
+		}
 	}
 }
 
-func TestNameOriginPartsRenderAsSingleBaselineRows(t *testing.T) {
-	srv := testServer(t)
-	rec := do(t, srv, "GET", "https://int.ikigenba.com/static/app.css", nil)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("stylesheet status = %d, want 200", rec.Code)
-	}
-	css := rec.Body.String()
-	rowRule := cssRule(t, css, `.name-origin-parts > div`)
-	definitionRule := cssRule(t, css, `.name-origin-parts dd`)
-
-	// R-JNSL-OLCI
-	if !strings.Contains(rowRule, `display: flex;`) {
-		t.Errorf("name-origin part row is not flex:\n%s", rowRule)
-	}
-	if !strings.Contains(rowRule, `align-items: baseline;`) {
-		t.Errorf("name-origin part row is not baseline-aligned:\n%s", rowRule)
-	}
-	if !strings.Contains(definitionRule, `margin: 0;`) {
-		t.Errorf("name-origin definition does not remove its leading offset:\n%s", definitionRule)
-	}
-	if strings.Contains(definitionRule, `margin: var(--space-1) 0 0;`) {
-		t.Errorf("name-origin definition retains stacked-layout offset:\n%s", definitionRule)
-	}
-}
-
-func TestIndexLoggedOutKeepsSigninCopy(t *testing.T) {
+func TestIndexLoggedOutShowsTaglineThenLede(t *testing.T) {
 	srv := testServer(t)
 	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+	wall := signinWallMain(t, rec.Body.String())
+	wantOrder := `<h1 class="signin-title">Ikigenba</h1>
+    <p class="signin-tagline">The place life actually happens.</p>
+    <p class="signin-lede">Sign in to access your services.</p>
+    <hr class="signin-rule">`
+	if !strings.Contains(wall, wantOrder) {
+		t.Errorf("title, tagline, lede, and rule are not consecutive:\n%s", wall)
 	}
-	body := rec.Body.String()
-	wall := signinWallMain(t, body)
-	for _, want := range []string{
-		`<p class="wordmark" style="font-family: var(--font-display); font-size: var(--text-h3-size); font-weight: var(--text-h3-weight); margin: 0;">ikigenba</p>`,
-		`<h1>Sign in to access your services.</h1>`,
-		`<a href="/login" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>`,
-	} {
-		// R-DB18-KEEP
-		if !strings.Contains(body, want) {
-			t.Errorf("logged-out index no longer keeps sign-in copy %q:\n%s", want, body)
+	cssRec := do(t, srv, "GET", "https://int.ikigenba.com/static/app.css", nil)
+	taglineRule := cssRule(t, cssRec.Body.String(), `.signin-wall .signin-tagline`)
+	// R-JCJB-AHIT
+	for _, want := range []string{`font-family: var(--font-display);`, `font-size: var(--text-h3-size);`, `font-weight: var(--text-h3-weight);`} {
+		if !strings.Contains(taglineRule, want) {
+			t.Errorf("tagline CSS missing %q:\n%s", want, taglineRule)
 		}
 	}
-	if got := strings.Count(wall, `<h1>Sign in to access your services.</h1>`); got != 1 {
-		t.Errorf("sign-in heading count = %d, want 1:\n%s", got, wall)
-	}
-	for _, stale := range []string{
-		`Your account's control plane`,
-		`<p>Sign in to access your services.</p>`,
-		`tokens`,
-		`agents`,
-		`MCP`,
-	} {
-		if strings.Contains(wall, stale) {
-			t.Errorf("sign-in wall still contains stale descriptive copy %q:\n%s", stale, wall)
+	ledeRule := cssRule(t, cssRec.Body.String(), `.signin-wall .signin-lede`)
+	// R-JDR7-O99I
+	for _, want := range []string{`font-size: var(--text-small-size);`, `line-height: var(--text-small-lh);`} {
+		if !strings.Contains(ledeRule, want) {
+			t.Errorf("lede CSS missing %q:\n%s", want, ledeRule)
 		}
 	}
-	for _, want := range []string{
-		`<p class="wordmark"`,
-		`<p class="name-origin-lede">`,
-		`<p class="name-origin-say">`,
-	} {
-		if !strings.Contains(wall, want) {
-			t.Errorf("sign-in wall missing allowed paragraph %q:\n%s", want, wall)
-		}
-	}
-	if got := strings.Count(wall, "<p"); got != 3 {
-		t.Errorf("sign-in wall paragraph count = %d, want wordmark plus name-origin lede and say:\n%s", got, wall)
+	if strings.Contains(ledeRule, `color:`) {
+		t.Errorf("lede CSS declares its own color:\n%s", ledeRule)
 	}
 }
 
-func TestIndexLoggedInOmitsNameOriginColophon(t *testing.T) {
+func TestIndexLoggedOutShowsRuleImmediatelyBeforeCTA(t *testing.T) {
+	srv := testServer(t)
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
+	wall := signinWallMain(t, rec.Body.String())
+	adjacent := `<hr class="signin-rule">
+    <a href="/login" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>`
+	if !strings.Contains(wall, adjacent) {
+		t.Errorf("sign-in rule is not immediately before unchanged CTA:\n%s", wall)
+	}
+	cssRec := do(t, srv, "GET", "https://int.ikigenba.com/static/app.css", nil)
+	// R-JEZ4-2107
+	rule := cssRule(t, cssRec.Body.String(), `.signin-wall .signin-rule`)
+	if !strings.Contains(rule, `border-top: var(--border-width) solid var(--color-border);`) {
+		t.Errorf("sign-in rule lacks the required hairline:\n%s", rule)
+	}
+}
+
+func TestIndexLoggedOutShowsBorderlessEtymologyTable(t *testing.T) {
+	srv := testServer(t)
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
+	aside := nameOriginAside(t, rec.Body.String())
+	wantTable := `<table class="name-origin-table">
+        <tbody>
+          <tr>
+            <td class="name-origin-word"><b class="seam">iki</b></td>
+            <td class="name-origin-kanji" lang="ja">生き</td>
+            <td class="name-origin-gloss">to live</td>
+          </tr>
+          <tr>
+            <td class="name-origin-word"><b class="seam">genba</b></td>
+            <td class="name-origin-kanji" lang="ja">現場</td>
+            <td class="name-origin-gloss">the place</td>
+          </tr>`
+	// R-JG70-FSQW
+	if !strings.Contains(aside, wantTable) || strings.Count(aside, `<tr>`) != 2 || strings.Count(aside, `<td class=`) != 6 {
+		t.Errorf("name-origin table does not contain exactly the required two-by-three content:\n%s", aside)
+	}
+	for _, retired := range []string{"<dt", "<dd", "name-origin-parts"} {
+		if strings.Contains(aside, retired) {
+			t.Errorf("name-origin contains retired %q markup:\n%s", retired, aside)
+		}
+	}
+
+	cssRec := do(t, srv, "GET", "https://int.ikigenba.com/static/app.css", nil)
+	tableRule := cssRule(t, cssRec.Body.String(), `.name-origin-table`)
+	cellRule := cssRule(t, cssRec.Body.String(), `.name-origin-table td`)
+	if !strings.Contains(tableRule, `margin: 0 auto var(--space-3);`) || !strings.Contains(cellRule, `text-align: left;`) {
+		t.Errorf("table is not block-centered with left-aligned cells:\n%s\n%s", tableRule, cellRule)
+	}
+	// R-JHEW-TKHL
+	for _, rule := range []string{tableRule, cellRule} {
+		for _, forbidden := range []string{"\n  border:", "border-color:", "border-style:", "border-width:"} {
+			if strings.Contains(rule, forbidden) {
+				t.Errorf("name-origin table CSS contains forbidden border property %q:\n%s", forbidden, rule)
+			}
+		}
+	}
+}
+
+func TestIndexLoggedOutShowsPronunciationAfterTable(t *testing.T) {
+	srv := testServer(t)
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
+	aside := nameOriginAside(t, rec.Body.String())
+	say := `<p class="name-origin-say">pronounced <b>EE-kee-GEN-buh</b></p>`
+
+	// R-O7K1-XEN7
+	if strings.Count(aside, `<p class="name-origin-say">`) != 1 || !strings.HasSuffix(aside, say+"\n    </aside>") {
+		t.Errorf("pronunciation is not the single final element after the table:\n%s", aside)
+	}
+	cssRec := do(t, srv, "GET", "https://int.ikigenba.com/static/app.css", nil)
+	wantRule := `.name-origin .name-origin-say {
+  max-width: none;
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-lh);
+  color: var(--color-text-subtle);
+  text-align: center;
+}`
+	if got := cssRule(t, cssRec.Body.String(), `.name-origin .name-origin-say`); got != wantRule {
+		t.Errorf("pronunciation CSS changed:\ngot:\n%s\nwant:\n%s", got, wantRule)
+	}
+}
+
+func TestIndexLoggedInOmitsLoginComposition(t *testing.T) {
 	srv := testServer(t)
 	sess := liveSession(t, srv)
 
@@ -243,11 +198,10 @@ func TestIndexLoggedInOmitsNameOriginColophon(t *testing.T) {
 	}
 	body := rec.Body.String()
 	// R-DB19-LAND
-	if strings.Contains(body, `class="name-origin"`) {
-		t.Errorf("logged-in index includes logged-out name-origin colophon:\n%s", body)
-	}
-	if strings.Contains(body, `<main class="signin-wall">`) {
-		t.Errorf("logged-in index rendered the logged-out sign-in wall:\n%s", body)
+	for _, forbidden := range []string{"name-origin-table", "name-origin-say", "signin-title", "signin-tagline", "signin-lede", "signin-rule"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("logged-in index includes logged-out class %q:\n%s", forbidden, body)
+		}
 	}
 	for _, want := range []string{
 		`<main class="page">`,

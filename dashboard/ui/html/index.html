@@ -92,21 +92,26 @@
 
 {{else}}
   <main class="signin-wall">
-    <p class="wordmark" style="font-family: var(--font-display); font-size: var(--text-h3-size); font-weight: var(--text-h3-weight); margin: 0;">ikigenba</p>
-    <h1>Sign in to access your services.</h1>
+    <h1 class="signin-title">Ikigenba</h1>
+    <p class="signin-tagline">The place life actually happens.</p>
+    <p class="signin-lede">Sign in to access your services.</p>
+    <hr class="signin-rule">
     <a href="/login" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>
     <aside class="name-origin" aria-label="What ikigenba means">
-      <p class="name-origin-lede"><b>ikigenba</b> — The place life actually happens.</p>
-      <dl class="name-origin-parts">
-        <div>
-          <dt><b class="seam">iki</b> <span lang="ja">生き</span></dt>
-          <dd>= to live</dd>
-        </div>
-        <div>
-          <dt><b class="seam">genba</b> <span lang="ja">現場</span></dt>
-          <dd>= the place</dd>
-        </div>
-      </dl>
+      <table class="name-origin-table">
+        <tbody>
+          <tr>
+            <td class="name-origin-word"><b class="seam">iki</b></td>
+            <td class="name-origin-kanji" lang="ja">生き</td>
+            <td class="name-origin-gloss">to live</td>
+          </tr>
+          <tr>
+            <td class="name-origin-word"><b class="seam">genba</b></td>
+            <td class="name-origin-kanji" lang="ja">現場</td>
+            <td class="name-origin-gloss">the place</td>
+          </tr>
+        </tbody>
+      </table>
       <p class="name-origin-say">pronounced <b>EE-kee-GEN-buh</b></p>
     </aside>
   </main>
