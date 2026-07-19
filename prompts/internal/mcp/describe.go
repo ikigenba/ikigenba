@@ -1,6 +1,15 @@
 package mcp
 
-import appkitmcp "appkit/mcp"
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	appkitmcp "appkit/mcp"
+
+	"github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit/catalog"
+)
 
 // describeText is the on-demand deep overview returned by the describe
 // tool. It is intentionally NOT loaded into the initialize `instructions`
@@ -86,11 +95,90 @@ WORKED EXAMPLE
   run_fs_read {"run_id":"R","path":"report.md"}
 
 CONFIG
-  model is required — the provider-native model id (e.g. claude-sonnet-4-6,
-  claude-haiku-4-5); optional effort (low|medium|high|xhigh|max, model-
-  dependent), max_tokens, temperature. health proves the auth chain.`
+- model is the only required config key. provider is optional: when omitted it
+  is derived from the model catalog's default provider; set it explicitly to
+  select one of the model's alternate routes.
+- Reasoning controls are checked against the selected model's native vocabulary.
+  If several are supplied, precedence is effort, thinking_budget,
+  thinking_level, then thinking. Invalid levels, budgets, or disabling requests
+  are rejected for that model.
+- Other optional controls cover sampling, output size, retry/backoff, tool-loop
+  limits, and provider endpoint override.
+
+MODEL CATALOG
+`
+
+var catalogProviders = []string{"anthropic", "openai", "google", "zai", "openrouter"}
 
 // toolDescribe returns the on-demand overview. Takes no inputs.
 func toolDescribe() (map[string]any, error) {
-	return appkitmcp.TextResult(describeText), nil
+	return appkitmcp.TextResult(describeText + describeCatalog()), nil
+}
+
+func describeCatalog() string {
+	var out strings.Builder
+	for _, provider := range catalogProviders {
+		fmt.Fprintf(&out, "\n%s:\n", provider)
+		for _, entry := range catalog.ListByProvider(provider) {
+			if entry.Pricing == nil {
+				continue
+			}
+			fmt.Fprintf(&out, "- %s; default provider: %s; alternate routes: %s; context: %d; reasoning: %s\n",
+				entry.Model, entry.Provider, alternateRoutes(entry), entry.Context, reasoningDescription(entry.Reasoning))
+		}
+	}
+	return out.String()
+}
+
+func alternateRoutes(entry catalog.Entry) string {
+	routes := make([]string, 0, len(entry.Routes))
+	for provider, model := range entry.Routes {
+		if provider != entry.Provider {
+			routes = append(routes, fmt.Sprintf("%s=%s", provider, model))
+		}
+	}
+	sort.Strings(routes)
+	if len(routes) == 0 {
+		return "none"
+	}
+	return strings.Join(routes, ", ")
+}
+
+func reasoningDescription(spec *catalog.ReasoningSpec) string {
+	if spec == nil {
+		return "no reasoning control"
+	}
+	switch spec.Kind {
+	case catalog.ReasoningEnum:
+		return fmt.Sprintf("%s levels [%s], default %s", spec.Term, strings.Join(spec.Levels, ", "), reasoningDefault(spec.Default))
+	case catalog.ReasoningRange:
+		sentinels := make([]string, 0, len(spec.Sentinels))
+		for _, sentinel := range spec.Sentinels {
+			sentinels = append(sentinels, fmt.Sprintf("%d=%s", sentinel.Value, sentinel.Meaning))
+		}
+		if len(sentinels) == 0 {
+			sentinels = append(sentinels, "none")
+		}
+		return fmt.Sprintf("%s range %d..%d, sentinels [%s], default %s", spec.Term, spec.Min, spec.Max, strings.Join(sentinels, ", "), reasoningDefault(spec.Default))
+	case catalog.ReasoningToggle:
+		return fmt.Sprintf("%s on/off, default %s", spec.Term, reasoningDefault(spec.Default))
+	default:
+		return "no reasoning control"
+	}
+}
+
+func reasoningDefault(value agentkit.ReasoningValue) string {
+	if value.IsUnset() {
+		return "provider default"
+	}
+	if value.Disabled() {
+		return "off"
+	}
+	if level, ok := value.Level(); ok {
+		return level
+	}
+	if budget, ok := value.Budget(); ok {
+		return fmt.Sprintf("%d", budget)
+	}
+	return "provider default"
 }

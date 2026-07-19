@@ -14,14 +14,6 @@ func TestConfigSchemaIncludesProviderModelAndOptionalExpansion(t *testing.T) {
 		t.Fatalf("create and update config schemas differ:\ncreate=%#v\nupdate=%#v", createConfig, updateConfig)
 	}
 
-	required, ok := createConfig["required"].([]string)
-	if !ok {
-		t.Fatalf("config required field has type %T: %#v", createConfig["required"], createConfig["required"])
-	}
-	if !reflect.DeepEqual(required, []string{"provider", "model"}) {
-		t.Fatalf("required config keys = %v, want [provider model]", required)
-	}
-
 	properties, ok := createConfig["properties"].(map[string]any)
 	if !ok {
 		t.Fatalf("config properties has type %T: %#v", createConfig["properties"], createConfig["properties"])
@@ -61,8 +53,25 @@ func TestConfigSchemaIncludesProviderModelAndOptionalExpansion(t *testing.T) {
 	}
 }
 
+func TestCreateAndUpdateConfigRequireOnlyModel(t *testing.T) {
+	// R-20UM-JESS
+	for _, toolName := range []string{"create", "update"} {
+		config := inputConfigSchema(t, toolName)
+		required, ok := config["required"].([]string)
+		if !ok {
+			t.Fatalf("%s config required field has type %T: %#v", toolName, config["required"], config["required"])
+		}
+		if !reflect.DeepEqual(required, []string{"model"}) {
+			t.Fatalf("%s required config keys = %v, want [model]", toolName, required)
+		}
+		properties := config["properties"].(map[string]any)
+		if _, ok := properties["provider"]; !ok {
+			t.Fatalf("%s config does not expose optional provider: %#v", toolName, properties)
+		}
+	}
+}
+
 func TestDescribeDescriptorDocumentsExpandedConfigAndJSONL(t *testing.T) {
-	// R-KF9H-0MPT
 	description, ok := findToolDescriptor(t, "describe")["description"].(string)
 	if !ok || description == "" {
 		t.Fatalf("describe descriptor has no description: %#v", findToolDescriptor(t, "describe")["description"])
