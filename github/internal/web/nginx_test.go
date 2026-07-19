@@ -104,6 +104,62 @@ func TestNginxBearerLocationDoesNotUseLoginBounce(t *testing.T) {
 	}
 }
 
+func TestNginxBearerLocationForwardsAllOwnerHeadersAndClientID(t *testing.T) {
+	// R-1GOK-GA2F
+	conf := readNginxFragment(t)
+	prefix := nginxLocationBlock(t, conf, `location /srv/github/ {`)
+
+	wants := []string{
+		"auth_request_set $github_owner  $upstream_http_x_owner_email;",
+		"auth_request_set $github_owner_id $upstream_http_x_owner_id;",
+		"auth_request_set $github_owner_name $upstream_http_x_owner_name;",
+		"auth_request_set $github_owner_picture $upstream_http_x_owner_picture;",
+		"auth_request_set $github_client $upstream_http_x_client_id;",
+		"proxy_set_header X-Owner-Id $github_owner_id;",
+		"proxy_set_header X-Owner-Email $github_owner;",
+		"proxy_set_header X-Owner-Name $github_owner_name;",
+		"proxy_set_header X-Owner-Picture $github_owner_picture;",
+		"proxy_set_header X-Client-Id  $github_client;",
+	}
+	for _, want := range wants {
+		if !strings.Contains(prefix, want) {
+			t.Errorf("bearer location missing %q:\n%s", want, prefix)
+		}
+	}
+	for _, header := range []string{"X-Owner-Id", "X-Owner-Email", "X-Owner-Name", "X-Owner-Picture", "X-Client-Id"} {
+		if got := strings.Count(prefix, "proxy_set_header "+header+" "); got != 1 {
+			t.Errorf("bearer location has %d proxy_set_header directives for %s, want 1:\n%s", got, header, prefix)
+		}
+	}
+}
+
+func TestNginxSessionRootForwardsAllOwnerHeaders(t *testing.T) {
+	// R-1HWG-U1T4
+	conf := readNginxFragment(t)
+	root := nginxLocationBlock(t, conf, `location = /srv/github/ {`)
+
+	wants := []string{
+		"auth_request_set $github_session_owner $upstream_http_x_owner_email;",
+		"auth_request_set $github_session_owner_id $upstream_http_x_owner_id;",
+		"auth_request_set $github_session_owner_name $upstream_http_x_owner_name;",
+		"auth_request_set $github_session_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Id $github_session_owner_id;",
+		"proxy_set_header X-Owner-Email $github_session_owner;",
+		"proxy_set_header X-Owner-Name $github_session_owner_name;",
+		"proxy_set_header X-Owner-Picture $github_session_owner_picture;",
+	}
+	for _, want := range wants {
+		if !strings.Contains(root, want) {
+			t.Errorf("session root missing %q:\n%s", want, root)
+		}
+	}
+	for _, header := range []string{"X-Owner-Id", "X-Owner-Email", "X-Owner-Name", "X-Owner-Picture"} {
+		if got := strings.Count(root, "proxy_set_header "+header+" "); got != 1 {
+			t.Errorf("session root has %d proxy_set_header directives for %s, want 1:\n%s", got, header, root)
+		}
+	}
+}
+
 func TestNginxLoginBounceChangePreservesLocationsAndSessionProxies(t *testing.T) {
 	// R-44XO-9KZ6
 	conf := readNginxFragment(t)
