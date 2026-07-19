@@ -10,6 +10,7 @@ import (
 
 	agentkit "github.com/ikigenba/agentkit"
 
+	"wiki/internal/ids"
 	"wiki/internal/llm"
 	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
@@ -38,7 +39,7 @@ type Citation struct {
 
 // Retriever is the analyzed-query retrieval seam Ask consumes.
 type Retriever interface {
-	SearchAnalyzed(ctx context.Context, qa any, limits retrieve.SearchLimits) (retrieve.Result, error)
+	SearchAnalyzed(ctx context.Context, attr llm.Attribution, qa any, limits retrieve.SearchLimits) (retrieve.Result, error)
 }
 
 // Asker is the read-only question-answering service.
@@ -114,7 +115,6 @@ func DefaultSynthesisCallSite() llm.CallSite {
 // Ask answers a question by analyzing it, retrieving relevant pages, reading
 // only those page bodies, and synthesizing an answer grounded in that set.
 func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error) {
-	_ = owner
 	if a == nil || a.search == nil || a.subjects == nil || a.pages == nil {
 		return Answer{}, fmt.Errorf("ask: nil stores")
 	}
@@ -122,12 +122,18 @@ func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error)
 		return Answer{}, fmt.Errorf("ask: nil llm client")
 	}
 
-	analysis, err := Analyze(ctx, a.c, a.analyzeSite, question)
+	origin := "service:wiki"
+	if owner = strings.TrimSpace(owner); owner != "" {
+		origin = "user:" + owner
+	}
+	attr := llm.Attribution{Origin: origin, GroupID: ids.New()}
+
+	analysis, err := Analyze(ctx, a.c, a.analyzeSite, attr, question)
 	if err != nil {
 		return Answer{}, err
 	}
 
-	retrieved, err := a.search.SearchAnalyzed(ctx, analysis, retrieve.SearchLimits{Limit: a.finalK})
+	retrieved, err := a.search.SearchAnalyzed(ctx, attr, analysis, retrieve.SearchLimits{Limit: a.finalK})
 	if err != nil {
 		return Answer{}, err
 	}
@@ -143,7 +149,7 @@ func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error)
 		return honestEmpty(), nil
 	}
 
-	result, err := llm.JSON[answerResult](ctx, a.c, a.synthSite, llm.Attribution{Origin: "service:wiki", GroupID: llm.JobID(ctx)}, synthPrompt(question, pages), func(out *answerResult) error {
+	result, err := llm.JSON[answerResult](ctx, a.c, a.synthSite, attr, synthPrompt(question, pages), func(out *answerResult) error {
 		normalizeAnswer(out)
 		return nil
 	})

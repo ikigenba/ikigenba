@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"wiki/internal/llm"
 )
 
 // VectorCache holds page vectors in memory for query-time scans.
@@ -20,7 +22,7 @@ func NewVectorCache() *VectorCache {
 }
 
 // NewVectorRetriever returns a retriever that embeds the query and scans cache.
-func NewVectorRetriever(embed func(context.Context, string) ([]float32, error), cache *VectorCache) Retriever {
+func NewVectorRetriever(embed func(context.Context, llm.Attribution, string) ([]float32, error), cache *VectorCache) Retriever {
 	return &vectorRetriever{embed: embed, cache: cache}
 }
 
@@ -118,11 +120,15 @@ func (c *vectorCache) nearest(q []float32, k int) []Hit {
 }
 
 type vectorRetriever struct {
-	embed func(ctx context.Context, text string) ([]float32, error)
+	embed func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error)
 	cache *vectorCache
 }
 
 func (r *vectorRetriever) Search(ctx context.Context, query string, limits SearchLimits) (Result, error) {
+	return r.searchAttributed(ctx, llm.Attribution{}, query, limits)
+}
+
+func (r *vectorRetriever) searchAttributed(ctx context.Context, attr llm.Attribution, query string, limits SearchLimits) (Result, error) {
 	if r == nil || r.embed == nil {
 		return Result{}, fmt.Errorf("retrieve: nil vector retriever embedder")
 	}
@@ -133,7 +139,7 @@ func (r *vectorRetriever) Search(ctx context.Context, query string, limits Searc
 	if query == "" {
 		return Result{}, nil
 	}
-	vec, err := r.embed(ctx, query)
+	vec, err := r.embed(ctx, attr, query)
 	if err != nil {
 		return Result{}, err
 	}

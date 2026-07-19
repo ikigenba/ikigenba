@@ -44,7 +44,7 @@ func DefaultCallSite() llm.CallSite {
 }
 
 // Compile rebuilds one subject's page from its complete claim set.
-func (c *Compiler) Compile(ctx context.Context, s wiki.Subject, claims []wiki.Claim) (title, body string, err error) {
+func (c *Compiler) Compile(ctx context.Context, attr llm.Attribution, s wiki.Subject, claims []wiki.Claim) (title, body string, err error) {
 	if c == nil {
 		return "", "", fmt.Errorf("compile: nil compiler")
 	}
@@ -57,7 +57,7 @@ func (c *Compiler) Compile(ctx context.Context, s wiki.Subject, claims []wiki.Cl
 	prompt := renderPrompt(s, claims, PageCharCap, "")
 	var last compileResponse
 	for attempt := 0; attempt <= maxTighten; attempt++ {
-		out, err := llm.JSON[compileResponse](ctx, c.c, c.site, llm.Attribution{Origin: "service:wiki", GroupID: llm.JobID(ctx)}, prompt, validateResponse)
+		out, err := llm.JSON[compileResponse](ctx, c.c, c.site, attr, prompt, validateResponse)
 		if err != nil {
 			return "", "", err
 		}

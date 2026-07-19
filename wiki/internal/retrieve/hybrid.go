@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+
+	"wiki/internal/llm"
 )
 
 const (
@@ -42,14 +44,14 @@ type hybridRetriever struct {
 }
 
 func (r *hybridRetriever) Search(ctx context.Context, query string, limits SearchLimits) (Result, error) {
-	return r.search(ctx, []hybridLaneQuery{{
+	return r.search(ctx, llm.Attribution{}, []hybridLaneQuery{{
 		meaning: strings.TrimSpace(query),
 		keyword: strings.TrimSpace(query),
 	}}, []string{query}, limits)
 }
 
 // SearchAnalyzed fuses every analyzed sub-query lane list in one pass.
-func (r *hybridRetriever) SearchAnalyzed(ctx context.Context, qa any, limits SearchLimits) (Result, error) {
+func (r *hybridRetriever) SearchAnalyzed(ctx context.Context, attr llm.Attribution, qa any, limits SearchLimits) (Result, error) {
 	analyzed := extractQueryAnalysis(qa)
 	keywordQuery := joinAnalyzedTerms(analyzed.keywords, analyzed.aliases)
 	queries := make([]hybridLaneQuery, 0, len(analyzed.subQueries))
@@ -67,7 +69,7 @@ func (r *hybridRetriever) SearchAnalyzed(ctx context.Context, qa any, limits Sea
 
 	pinCandidates := append([]string(nil), analyzed.subQueries...)
 	pinCandidates = append(pinCandidates, analyzed.aliases...)
-	return r.search(ctx, queries, pinCandidates, limits)
+	return r.search(ctx, attr, queries, pinCandidates, limits)
 }
 
 type hybridLaneQuery struct {
@@ -75,7 +77,7 @@ type hybridLaneQuery struct {
 	keyword string
 }
 
-func (r *hybridRetriever) search(ctx context.Context, queries []hybridLaneQuery, pinCandidates []string, limits SearchLimits) (Result, error) {
+func (r *hybridRetriever) search(ctx context.Context, attr llm.Attribution, queries []hybridLaneQuery, pinCandidates []string, limits SearchLimits) (Result, error) {
 	cfg := r.cfg.resolve(limits)
 	acc := map[string]*fusedHit{}
 	var order int
@@ -91,7 +93,7 @@ func (r *hybridRetriever) search(ctx context.Context, queries []hybridLaneQuery,
 			order = addFused(acc, result.Hits, cfg.RRFk, order)
 		}
 		if r.vector != nil && strings.TrimSpace(q.meaning) != "" {
-			result, err := r.vector.Search(ctx, q.meaning, SearchLimits{Limit: cfg.PerLane})
+			result, err := searchWithAttribution(ctx, r.vector, attr, q.meaning, SearchLimits{Limit: cfg.PerLane})
 			if err != nil {
 				return Result{}, err
 			}
@@ -118,6 +120,13 @@ func (r *hybridRetriever) search(ctx context.Context, queries []hybridLaneQuery,
 		hits = pinFirst(hits, pinned, cfg.FinalK)
 	}
 	return Result{Hits: hits, TopDense: topDense, Pinned: ok}, nil
+}
+
+func searchWithAttribution(ctx context.Context, retriever Retriever, attr llm.Attribution, query string, limits SearchLimits) (Result, error) {
+	if vector, ok := retriever.(*vectorRetriever); ok {
+		return vector.searchAttributed(ctx, attr, query, limits)
+	}
+	return retriever.Search(ctx, query, limits)
 }
 
 type resolvedFusionConfig struct {

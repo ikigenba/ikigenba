@@ -12,6 +12,7 @@ import (
 
 	wikidb "wiki/internal/db"
 	"wiki/internal/extract"
+	"wiki/internal/llm"
 )
 
 func TestEmbedAndStoreUsesDocumentRoleAndUpdatesStoreAndCache(t *testing.T) {
@@ -39,7 +40,7 @@ func TestEmbedAndStoreUsesDocumentRoleAndUpdatesStoreAndCache(t *testing.T) {
 		Body:      "Acme Robotics opened a Tulsa lab.",
 	}
 
-	if err := svc.embedAndStore(ctx, page); err != nil {
+	if err := svc.embedAndStore(ctx, llm.Attribution{}, page); err != nil {
 		t.Fatalf("embedAndStore: %v", err)
 	}
 	if len(embedder.inputs) != 1 || !reflect.DeepEqual(embedder.inputs[0], []string{page.Body}) {
@@ -109,7 +110,7 @@ func TestEmbedAndStoreOverwritesExistingPageVector(t *testing.T) {
 		Body:      "Acme Robotics opened a refreshed Tulsa lab.",
 	}
 
-	if err := svc.embedAndStore(ctx, page); err != nil {
+	if err := svc.embedAndStore(ctx, llm.Attribution{}, page); err != nil {
 		t.Fatalf("embedAndStore: %v", err)
 	}
 
@@ -287,7 +288,7 @@ type recordingPageEmbedder struct {
 	onEmbed func(context.Context, []string, agentkit.InputType) error
 }
 
-func (e *recordingPageEmbedder) Embed(ctx context.Context, inputs []string, role agentkit.InputType) (*agentkit.EmbedResult, error) {
+func (e *recordingPageEmbedder) Embed(ctx context.Context, _ llm.Attribution, inputs []string, role agentkit.InputType) (*agentkit.EmbedResult, error) {
 	e.inputs = append(e.inputs, append([]string(nil), inputs...))
 	e.roles = append(e.roles, role)
 	if e.onEmbed != nil {

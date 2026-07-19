@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"wiki/internal/extract"
+	"wiki/internal/llm"
 	"wiki/internal/retrieve"
 )
 
@@ -272,7 +273,7 @@ func TestLoadVectorCacheEntriesLoadsStoredPageEmbeddings(t *testing.T) {
 	}
 	cache := retrieve.NewVectorCache()
 	cache.Replace(cacheEntries)
-	retriever := retrieve.NewVectorRetriever(func(context.Context, string) ([]float32, error) {
+	retriever := retrieve.NewVectorRetriever(func(context.Context, llm.Attribution, string) ([]float32, error) {
 		return []float32{1, 0}, nil
 	}, cache)
 	got, err := retriever.Search(ctx, "alpha", retrieve.SearchLimits{Limit: 2})

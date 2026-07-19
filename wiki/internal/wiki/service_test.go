@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"wiki/internal/extract"
+	"wiki/internal/llm"
 	"wiki/internal/page"
 )
 
@@ -800,7 +801,7 @@ type recordingExtractor struct {
 	batches [][]extract.ExtractedSubject
 }
 
-func (e *recordingExtractor) Extract(_ context.Context, h extract.DocumentHeader, text string) ([]extract.ExtractedSubject, error) {
+func (e *recordingExtractor) Extract(_ context.Context, _ llm.Attribution, h extract.DocumentHeader, text string) ([]extract.ExtractedSubject, error) {
 	e.calls++
 	e.headers = append(e.headers, h)
 	e.texts = append(e.texts, text)
@@ -821,7 +822,7 @@ type blockingExtractor struct {
 	canceled chan struct{}
 }
 
-func (e *blockingExtractor) Extract(ctx context.Context, _ extract.DocumentHeader, _ string) ([]extract.ExtractedSubject, error) {
+func (e *blockingExtractor) Extract(ctx context.Context, _ llm.Attribution, _ extract.DocumentHeader, _ string) ([]extract.ExtractedSubject, error) {
 	close(e.entered)
 	select {
 	case <-e.release:
@@ -840,7 +841,7 @@ type recordingCompiler struct {
 	err       error
 }
 
-func (c *recordingCompiler) Compile(_ context.Context, subject Subject, claims []Claim) (string, string, error) {
+func (c *recordingCompiler) Compile(_ context.Context, _ llm.Attribution, subject Subject, claims []Claim) (string, string, error) {
 	c.subjects = append(c.subjects, subject)
 	copied := append([]Claim(nil), claims...)
 	c.claimSets = append(c.claimSets, copied)

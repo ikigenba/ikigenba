@@ -33,12 +33,12 @@ type AbortResult struct {
 
 // Extractor is the injected extract-stage dependency.
 type Extractor interface {
-	Extract(ctx context.Context, h extract.DocumentHeader, text string) ([]extract.ExtractedSubject, error)
+	Extract(ctx context.Context, attr llm.Attribution, h extract.DocumentHeader, text string) ([]extract.ExtractedSubject, error)
 }
 
 // Compiler is the injected compile-stage dependency.
 type Compiler interface {
-	Compile(ctx context.Context, subject Subject, claims []Claim) (title, body string, err error)
+	Compile(ctx context.Context, attr llm.Attribution, subject Subject, claims []Claim) (title, body string, err error)
 }
 
 // Service coordinates ingest jobs and the single background integration worker.
@@ -339,8 +339,8 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 	if s.compiler == nil {
 		return fmt.Errorf("wiki: nil compiler")
 	}
-	ctx = llm.WithJobID(ctx, job.ID)
-	extracted, err := s.extractor.Extract(ctx, extract.DocumentHeader{
+	attr := jobAttribution(job)
+	extracted, err := s.extractor.Extract(ctx, attr, extract.DocumentHeader{
 		Source:     "mcp:ingest_text",
 		Title:      job.Title,
 		Tags:       job.Tags,
@@ -350,7 +350,7 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 		return err
 	}
 
-	plan, err := s.planIntegration(ctx, job, extracted)
+	plan, err := s.planIntegration(ctx, attr, job, extracted)
 	if err != nil {
 		return err
 	}
@@ -421,7 +421,7 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 		return err
 	}
 	for _, page := range pagesToEmbed {
-		if err := s.embedAndStore(ctx, page); err != nil {
+		if err := s.embedAndStore(ctx, attr, page); err != nil {
 			return err
 		}
 	}
@@ -441,7 +441,7 @@ type plannedPage struct {
 	delete    bool
 }
 
-func (s *Service) planIntegration(ctx context.Context, job Job, extracted []extract.ExtractedSubject) (integrationPlan, error) {
+func (s *Service) planIntegration(ctx context.Context, attr llm.Attribution, job Job, extracted []extract.ExtractedSubject) (integrationPlan, error) {
 	affected, err := s.affectedSubjects(ctx, s.subjects, s.claims, job.ID)
 	if err != nil {
 		return integrationPlan{}, err
@@ -486,7 +486,7 @@ func (s *Service) planIntegration(ctx context.Context, job Job, extracted []extr
 			plan.pages = append(plan.pages, plannedPage{subjectID: subject.ID, delete: true})
 			continue
 		}
-		title, body, err := s.compiler.Compile(ctx, subject, subjectClaims)
+		title, body, err := s.compiler.Compile(ctx, attr, subject, subjectClaims)
 		if err != nil {
 			return integrationPlan{}, err
 		}
@@ -503,7 +503,7 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	if s.compiler == nil {
 		return fmt.Errorf("wiki: nil compiler")
 	}
-	ctx = llm.WithJobID(ctx, job.ID)
+	attr := jobAttribution(job)
 	merge, ok, err := s.mergeForJob(ctx, job.ID)
 	if err != nil {
 		return err
@@ -533,7 +533,7 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	if err != nil {
 		return err
 	}
-	title, body, err := s.compiler.Compile(ctx, winner, combined)
+	title, body, err := s.compiler.Compile(ctx, attr, winner, combined)
 	if err != nil {
 		return err
 	}
@@ -614,7 +614,15 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	if s.vectorCacheRemove != nil {
 		s.vectorCacheRemove(merge.FromSubjectID)
 	}
-	return s.embedAndStore(ctx, winnerPage)
+	return s.embedAndStore(ctx, attr, winnerPage)
+}
+
+func jobAttribution(job Job) llm.Attribution {
+	origin := "service:wiki"
+	if owner := strings.TrimSpace(job.Owner); owner != "" {
+		origin = "user:" + owner
+	}
+	return llm.Attribution{Origin: origin, GroupID: job.ID}
 }
 
 func (s *Service) mergeForJob(ctx context.Context, jobID string) (SubjectMerge, bool, error) {

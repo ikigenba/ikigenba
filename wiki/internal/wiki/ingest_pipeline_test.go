@@ -3,6 +3,9 @@ package wiki_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +20,87 @@ import (
 	wikidomain "wiki/internal/wiki"
 	"wiki/internal/worker"
 )
+
+func TestWorkerThreadsJobOwnerAndIDThroughExtractCompileAndEmbed(t *testing.T) {
+	// R-183R-9YLK
+	// R-1AJK-1I2Y
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+
+	var calls []workerPromptCall
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var call workerPromptCall
+		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		calls = append(calls, call)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/embed" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"vectors": [][]float32{{1, 0}}})
+			return
+		}
+		text := `{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote the note."]}]}`
+		if call.Name == "wiki.compile" {
+			text = `{"title":"Ada","body":"Ada wrote the note."}`
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL)
+	svc := wikidomain.NewService(
+		conn,
+		extract.New(client, llm.CallSite{Stage: "extract", Model: "extract"}),
+		compile.New(client, llm.CallSite{Stage: "compile", Model: "compile"}, nil),
+		time.Now,
+		wikidomain.WithPageEmbedder("embed", attributedClientEmbedder{client: client}),
+	)
+	owners := []string{"bob@example.com", ""}
+	jobs := make([]string, 0, len(owners))
+	for _, owner := range owners {
+		jobID, err := svc.Ingest(ctx, owner, "Ada wrote the note.", "Ada", nil)
+		if err != nil {
+			t.Fatalf("Ingest owner %q: %v", owner, err)
+		}
+		jobs = append(jobs, jobID)
+		processed, err := svc.ProcessNext(ctx)
+		if err != nil || !processed {
+			t.Fatalf("ProcessNext owner %q = processed %v, err %v", owner, processed, err)
+		}
+	}
+	if len(calls) != 6 {
+		t.Fatalf("prompts calls = %d, want extract, compile, and embed for two jobs", len(calls))
+	}
+	for i, jobID := range jobs {
+		origin := "service:wiki"
+		if owners[i] != "" {
+			origin = "user:" + owners[i]
+		}
+		for _, call := range calls[i*3 : i*3+3] {
+			if call.Origin != origin || call.GroupID != jobID {
+				t.Fatalf("job %q call = %+v, want origin %q and group_id equal to job id", jobID, call, origin)
+			}
+		}
+	}
+}
+
+type workerPromptCall struct {
+	Origin  string `json:"origin"`
+	Name    string `json:"name"`
+	GroupID string `json:"group_id"`
+}
+
+type attributedClientEmbedder struct{ client *llm.Client }
+
+func (e attributedClientEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, _ agentkit.InputType) (*agentkit.EmbedResult, error) {
+	vectors, err := e.client.Embed(ctx, llm.EmbedSite{Name: "wiki.embed-page", Model: "embed", Dims: 2}, attr, "document", inputs)
+	if err != nil {
+		return nil, err
+	}
+	return &agentkit.EmbedResult{Vectors: vectors}, nil
+}
 
 func TestIngestReturnsPendingThenWorkerCommitsPage(t *testing.T) {
 	// R-M8RN-87WV
@@ -379,7 +463,7 @@ type scriptedEmbedder struct {
 	roles   []agentkit.InputType
 }
 
-func (e *scriptedEmbedder) Embed(_ context.Context, inputs []string, role agentkit.InputType) (*agentkit.EmbedResult, error) {
+func (e *scriptedEmbedder) Embed(_ context.Context, _ llm.Attribution, inputs []string, role agentkit.InputType) (*agentkit.EmbedResult, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 

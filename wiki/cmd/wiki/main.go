@@ -178,8 +178,8 @@ func embeddingPaths(client *llm.Client, site wiki.EmbedSite) (page, query wiki.P
 	return page, query
 }
 
-func (e promptsEmbedder) Embed(ctx context.Context, inputs []string, _ agentkit.InputType) (*agentkit.EmbedResult, error) {
-	vectors, err := e.client.Embed(ctx, e.site, llm.Attribution{Origin: "service:wiki", GroupID: llm.JobID(ctx)}, e.role, inputs)
+func (e promptsEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, _ agentkit.InputType) (*agentkit.EmbedResult, error) {
+	vectors, err := e.client.Embed(ctx, e.site, attr, e.role, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -198,9 +198,9 @@ func retrieveCacheEntries(entries []wiki.VectorCacheEntry) []retrieve.VectorEntr
 	return out
 }
 
-func queryEmbedder(embedder wiki.PageEmbedder) func(context.Context, string) ([]float32, error) {
-	return func(ctx context.Context, text string) ([]float32, error) {
-		result, err := embedder.Embed(ctx, []string{text}, agentkit.InputQuery)
+func queryEmbedder(embedder wiki.PageEmbedder) func(context.Context, llm.Attribution, string) ([]float32, error) {
+	return func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error) {
+		result, err := embedder.Embed(ctx, attr, []string{text}, agentkit.InputQuery)
 		if err != nil {
 			return nil, err
 		}

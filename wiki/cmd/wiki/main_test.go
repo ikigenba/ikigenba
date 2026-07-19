@@ -1006,7 +1006,7 @@ func TestBuildCompilerUsesDefaultCompileCallSite(t *testing.T) {
 	}
 	compiler := buildCompiler(cfg, cfg.LLM)
 
-	title, body, err := compiler.Compile(context.Background(), wiki.Subject{
+	title, body, err := compiler.Compile(context.Background(), llm.Attribution{}, wiki.Subject{
 		ID:       "subject-acme",
 		Name:     "Acme Robotics",
 		NormName: "acme-robotics",

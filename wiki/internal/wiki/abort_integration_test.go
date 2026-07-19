@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"wiki/internal/extract"
+	"wiki/internal/llm"
 	wikidomain "wiki/internal/wiki"
 )
 
@@ -132,7 +133,7 @@ type staticExtractor struct {
 	subjects []extract.ExtractedSubject
 }
 
-func (e staticExtractor) Extract(context.Context, extract.DocumentHeader, string) ([]extract.ExtractedSubject, error) {
+func (e staticExtractor) Extract(context.Context, llm.Attribution, extract.DocumentHeader, string) ([]extract.ExtractedSubject, error) {
 	return e.subjects, nil
 }
 
@@ -152,7 +153,7 @@ func newBlockingCompiler() *blockingCompiler {
 	}
 }
 
-func (c *blockingCompiler) Compile(ctx context.Context, subject wikidomain.Subject, claims []wikidomain.Claim) (string, string, error) {
+func (c *blockingCompiler) Compile(ctx context.Context, _ llm.Attribution, subject wikidomain.Subject, claims []wikidomain.Claim) (string, string, error) {
 	c.enteredOnce.Do(func() { close(c.entered) })
 	select {
 	case <-ctx.Done():

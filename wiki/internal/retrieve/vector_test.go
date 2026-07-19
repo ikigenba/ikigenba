@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+
+	"wiki/internal/llm"
 )
 
 func TestVectorCacheReplaceHydratesEntriesAndDefensivelyCopies(t *testing.T) {
@@ -76,7 +78,7 @@ func TestVectorRetrieverEmbedsQueryAndReturnsCosineTopK(t *testing.T) {
 	var embedded []string
 	retriever := &vectorRetriever{
 		cache: cache,
-		embed: func(_ context.Context, text string) ([]float32, error) {
+		embed: func(_ context.Context, _ llm.Attribution, text string) ([]float32, error) {
 			embedded = append(embedded, text)
 			return []float32{1, 0}, nil
 		},
@@ -104,7 +106,7 @@ func TestVectorRetrieverReturnsEmbedError(t *testing.T) {
 	want := errors.New("embed failed")
 	retriever := &vectorRetriever{
 		cache: NewVectorCache(),
-		embed: func(context.Context, string) ([]float32, error) {
+		embed: func(context.Context, llm.Attribution, string) ([]float32, error) {
 			return nil, want
 		},
 	}

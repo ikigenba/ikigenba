@@ -244,7 +244,7 @@ func LoadDataset(root string) ([]Case, error) {
 
 // Run executes production extract over a loaded case.
 func Run(ctx context.Context, ex *extract.Extractor, c Case) ([]extract.ExtractedSubject, error) {
-	return ex.Extract(ctx, c.Header, c.Text)
+	return ex.Extract(ctx, llm.Attribution{Origin: "service:wiki"}, c.Header, c.Text)
 }
 
 func subjectID(subjectType, name string) string {

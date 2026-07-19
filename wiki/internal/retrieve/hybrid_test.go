@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"wiki/internal/llm"
 	wikidomain "wiki/internal/wiki"
 )
 
@@ -191,7 +192,7 @@ func TestHybridRetrieverSearchAnalyzedFansOutAndRoutesLaneQueries(t *testing.T) 
 	keyword.calls = nil
 	vector.calls = nil
 
-	got, err := retriever.SearchAnalyzed(ctx, qa, SearchLimits{})
+	got, err := retriever.SearchAnalyzed(ctx, llm.Attribution{}, qa, SearchLimits{})
 	if err != nil {
 		t.Fatalf("SearchAnalyzed: %v", err)
 	}

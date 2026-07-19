@@ -6,11 +6,13 @@ import (
 	"strings"
 
 	agentkit "github.com/ikigenba/agentkit"
+
+	"wiki/internal/llm"
 )
 
 // PageEmbedder embeds compiled wiki page bodies.
 type PageEmbedder interface {
-	Embed(ctx context.Context, inputs []string, role agentkit.InputType) (*agentkit.EmbedResult, error)
+	Embed(ctx context.Context, attr llm.Attribution, inputs []string, role agentkit.InputType) (*agentkit.EmbedResult, error)
 }
 
 // VectorCache updates the in-memory vector search cache for one subject.
@@ -51,14 +53,14 @@ func WithVectorCacheRemover(remove func(subjectID string)) ServiceOption {
 }
 
 // embedAndStore computes and stores the current vector for a compiled page.
-func (s *Service) embedAndStore(ctx context.Context, p Page) error {
+func (s *Service) embedAndStore(ctx context.Context, attr llm.Attribution, p Page) error {
 	if s == nil {
 		return fmt.Errorf("wiki: nil service")
 	}
 	if s.pageEmbedder == nil {
 		return nil
 	}
-	result, err := s.pageEmbedder.Embed(ctx, []string{p.Body}, agentkit.InputDocument)
+	result, err := s.pageEmbedder.Embed(ctx, attr, []string{p.Body}, agentkit.InputDocument)
 	if err != nil {
 		return err
 	}

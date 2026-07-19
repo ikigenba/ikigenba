@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -17,6 +20,86 @@ import (
 	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
 )
+
+func TestAskThreadsOwnerAndOneFreshCorrelationIDThroughEveryPromptsCall(t *testing.T) {
+	// R-16VU-W6UV
+	// R-19BN-NQC9
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
+		ID: "page-ada", SubjectID: "subject-ada", Title: "Ada", Body: "Ada wrote the note.",
+	})
+
+	var calls []promptCall
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var call promptCall
+		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		call.Path = r.URL.Path
+		calls = append(calls, call)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/embed":
+			_ = json.NewEncoder(w).Encode(map[string]any{"vectors": [][]float32{{1}}})
+		case "/complete":
+			text := `{"sub_queries":["Ada"],"keywords":["note"]}`
+			if call.Name == "wiki.ask-synthesis" {
+				text = `{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL)
+	cache := retrieve.NewVectorCache()
+	cache.Upsert(retrieve.VectorEntry{SubjectID: "subject-ada", Title: "Ada", Vec: []float32{1}})
+	vector := retrieve.NewVectorRetriever(func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error) {
+		vectors, err := client.Embed(ctx, llm.EmbedSite{Name: "wiki.embed-query", Model: "embed", Dims: 1}, attr, "query", []string{text})
+		if err != nil {
+			return nil, err
+		}
+		return vectors[0], nil
+	}, cache)
+	search := retrieve.NewHybridRetriever(nil, vector, nil, nil, retrieve.FusionConfig{})
+	asker := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), client, testExtractSite(), testSynthSite())
+
+	for i := 0; i < 2; i++ {
+		if _, err := asker.Ask(ctx, "alice@example.com", "Who wrote the note?"); err != nil {
+			t.Fatalf("Ask %d: %v", i+1, err)
+		}
+	}
+	if len(calls) != 6 {
+		t.Fatalf("prompts calls = %d, want three per ask", len(calls))
+	}
+	shape := regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
+	for askIndex := 0; askIndex < 2; askIndex++ {
+		group := calls[askIndex*3].GroupID
+		if !shape.MatchString(group) {
+			t.Fatalf("ask %d group_id = %q, want Crockford ULID", askIndex+1, group)
+		}
+		for _, call := range calls[askIndex*3 : askIndex*3+3] {
+			if call.Origin != "user:alice@example.com" || call.GroupID != group {
+				t.Fatalf("ask %d call = %+v, want alice origin and group %q", askIndex+1, call, group)
+			}
+		}
+	}
+	if calls[0].GroupID == calls[3].GroupID {
+		t.Fatalf("two asks reused group_id %q", calls[0].GroupID)
+	}
+}
+
+type promptCall struct {
+	Path    string
+	Origin  string `json:"origin"`
+	Name    string `json:"name"`
+	GroupID string `json:"group_id"`
+}
 
 func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) {
 	// R-BAFW-D24P
@@ -401,7 +484,7 @@ func TestAnalyzeRunsOneAskSubjectCallAndParsesQueryAnalysis(t *testing.T) {
 	}}
 	site := llm.CallSite{Stage: "ask-subject", Model: "analysis-model", System: "analysis system", MaxTokens: 123}
 
-	got, err := Analyze(context.Background(), llmtest.NewClient(t, prov), site, "How did Ada and Grace handle the release?")
+	got, err := Analyze(context.Background(), llmtest.NewClient(t, prov), site, llm.Attribution{}, "How did Ada and Grace handle the release?")
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
 	}
@@ -441,7 +524,7 @@ func TestAnalyzeNormalizesAndCapsPreparedQuestion(t *testing.T) {
 		}`),
 	}}
 
-	got, err := Analyze(context.Background(), llmtest.NewClient(t, prov), testExtractSite(), "question")
+	got, err := Analyze(context.Background(), llmtest.NewClient(t, prov), testExtractSite(), llm.Attribution{}, "question")
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
 	}
@@ -467,7 +550,7 @@ func TestAnalyzeFallsBackToWholeQuestionWhenNoSubQueries(t *testing.T) {
 	}}
 
 	question := "How did Ada handle the release?"
-	got, err := Analyze(context.Background(), llmtest.NewClient(t, prov), testExtractSite(), question)
+	got, err := Analyze(context.Background(), llmtest.NewClient(t, prov), testExtractSite(), llm.Attribution{}, question)
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
 	}
@@ -572,7 +655,7 @@ type searchCall struct {
 	limits retrieve.SearchLimits
 }
 
-func (s *scriptedSearch) SearchAnalyzed(_ context.Context, qa any, limits retrieve.SearchLimits) (retrieve.Result, error) {
+func (s *scriptedSearch) SearchAnalyzed(_ context.Context, _ llm.Attribution, qa any, limits retrieve.SearchLimits) (retrieve.Result, error) {
 	s.calls = append(s.calls, searchCall{qa: qa, limits: limits})
 	return s.result, s.err
 }

@@ -20,7 +20,7 @@ func TestCompileRendersSubjectIdentityAndCompleteClaimSet(t *testing.T) {
 	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics opened a Tulsa lab and hired Mira Patel."}`}}
 	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "compile-model", System: "compile system"}, nil)
 
-	title, body, err := compiler.Compile(context.Background(), acmeSubject(), []wiki.Claim{
+	title, body, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), []wiki.Claim{
 		{ID: "claim-001", SubjectID: "subj-acme", Body: "Acme Robotics opened a research lab in Tulsa."},
 		{ID: "claim-002", SubjectID: "subj-acme", Body: "Mira Patel leads Acme Robotics' Tulsa lab."},
 	})
@@ -67,7 +67,7 @@ func TestCompileUsesInjectedCallSiteWithoutTools(t *testing.T) {
 	}
 	compiler := New(llmtest.NewClient(t, prov), site, nil)
 
-	if _, _, err := compiler.Compile(context.Background(), acmeSubject(), acmeClaims()); err != nil {
+	if _, _, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), acmeClaims()); err != nil {
 		t.Fatalf("Compile returned error: %v", err)
 	}
 	if len(prov.requests) != 1 {
@@ -108,7 +108,7 @@ func TestDefaultCallSiteUsesDeterministicReasoningOffSettings(t *testing.T) {
 
 	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics operates a Tulsa research lab."}`}}
 	compiler := New(llmtest.NewClient(t, prov), site, nil)
-	if _, _, err := compiler.Compile(context.Background(), acmeSubject(), acmeClaims()); err != nil {
+	if _, _, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), acmeClaims()); err != nil {
 		t.Fatalf("Compile returned error: %v", err)
 	}
 	if len(prov.requests) != 1 {
@@ -139,11 +139,11 @@ func TestExtractAndCompileDefaultCallSitesCarryOutputTokenCeilings(t *testing.T)
 	}
 
 	extractor := extract.New(llmtest.NewClient(t, prov), extractSite)
-	if _, err := extractor.Extract(context.Background(), extract.DocumentHeader{}, "source text"); err != nil {
+	if _, err := extractor.Extract(context.Background(), llm.Attribution{}, extract.DocumentHeader{}, "source text"); err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 	compiler := New(llmtest.NewClient(t, prov), compileSite, nil)
-	if _, _, err := compiler.Compile(context.Background(), acmeSubject(), acmeClaims()); err != nil {
+	if _, _, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), acmeClaims()); err != nil {
 		t.Fatalf("Compile returned error: %v", err)
 	}
 	if len(prov.requests) != 2 {
@@ -165,12 +165,12 @@ func TestCompileRebuildsFromClaimsWithoutPriorGeneratedBody(t *testing.T) {
 	}}
 	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "compile-model"}, nil)
 
-	if _, _, err := compiler.Compile(context.Background(), acmeSubject(), []wiki.Claim{
+	if _, _, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), []wiki.Claim{
 		{ID: "claim-001", SubjectID: "subj-acme", Body: "Acme Robotics opened a Tulsa lab."},
 	}); err != nil {
 		t.Fatalf("first Compile returned error: %v", err)
 	}
-	title, body, err := compiler.Compile(context.Background(), acmeSubject(), []wiki.Claim{
+	title, body, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), []wiki.Claim{
 		{ID: "claim-003", SubjectID: "subj-acme", Body: "Acme Robotics opened a Denver lab."},
 	})
 	if err != nil {
@@ -198,7 +198,7 @@ func TestCompileTightensOverCapBodyFromClaims(t *testing.T) {
 	}}
 	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "compile-model"}, nil)
 
-	_, body, err := compiler.Compile(context.Background(), acmeSubject(), acmeClaims())
+	_, body, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), acmeClaims())
 	if err != nil {
 		t.Fatalf("Compile returned error: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestCompileDeterministicallyEnforcesRuneCap(t *testing.T) {
 	compiler := New(llmtest.NewClient(t, prov), site, nil)
 	compiler.maxTighten = 0
 
-	_, got, err := compiler.Compile(context.Background(), acmeSubject(), acmeClaims())
+	_, got, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), acmeClaims())
 	if err != nil {
 		t.Fatalf("Compile returned error: %v", err)
 	}

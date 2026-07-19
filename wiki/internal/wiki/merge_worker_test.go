@@ -313,6 +313,7 @@ func TestMergeWorkerSerializesDuplicateMergeJobsIntoOneFold(t *testing.T) {
 func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) {
 	// R-MRG8-K2WP
 	// R-EV2H-6RKN
+	// R-1AJK-1I2Y
 	ctx := context.Background()
 	conns, cleanup := migratedConns(t, ctx)
 	defer cleanup()
@@ -343,9 +344,9 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 	var jobID string
 	embedder := &mergeRecordingPageEmbedder{
 		vectors: [][]float32{{0.25, 0.75}},
-		onEmbed: func(embedCtx context.Context, inputs []string, role agentkit.InputType) error {
-			if got := llm.JobID(embedCtx); got != jobID {
-				t.Errorf("embed job id = %q, want merge job %q", got, jobID)
+		onEmbed: func(_ context.Context, attr llm.Attribution, inputs []string, role agentkit.InputType) error {
+			if got := attr.GroupID; got != jobID {
+				t.Errorf("embed group id = %q, want merge job %q", got, jobID)
 			}
 			if role != agentkit.InputDocument {
 				t.Errorf("embed role = %v, want document", role)
@@ -371,10 +372,11 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 			}
 		},
 	}
+	compiler := &scriptedMergeCompiler{}
 	svc := wikidomain.NewService(
 		conns,
 		nil,
-		&scriptedMergeCompiler{},
+		compiler,
 		mergeSequenceTimes(
 			time.Date(2026, 6, 25, 15, 0, 0, 0, time.UTC),
 			time.Date(2026, 6, 25, 15, 0, 1, 0, time.UTC),
@@ -398,6 +400,10 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 	}
 	if !processed {
 		t.Fatal("ProcessNext processed = false, want true")
+	}
+	compileCalls := compiler.Calls()
+	if len(compileCalls) != 1 || compileCalls[0].Attr.GroupID != jobID {
+		t.Fatalf("merge compile calls = %+v, want group_id equal to merge job %q", compileCalls, jobID)
 	}
 
 	embeddings, err := wikidomain.NewEmbeddingStore(conns.Read).LoadAll(ctx)
@@ -494,7 +500,7 @@ func TestMergeWorkerKeepsDoneMergeWhenAfterCommitWinnerEmbedFails(t *testing.T) 
 	}
 
 	embedder := &mergeRecordingPageEmbedder{
-		onEmbed: func(context.Context, []string, agentkit.InputType) error {
+		onEmbed: func(context.Context, llm.Attribution, []string, agentkit.InputType) error {
 			return errors.New("embed transport down")
 		},
 	}
@@ -569,6 +575,7 @@ func TestMergeWorkerKeepsDoneMergeWhenAfterCommitWinnerEmbedFails(t *testing.T) 
 type mergeCompileCall struct {
 	Subject wikidomain.Subject
 	Claims  []wikidomain.Claim
+	Attr    llm.Attribution
 }
 
 type scriptedMergeCompiler struct {
@@ -578,11 +585,12 @@ type scriptedMergeCompiler struct {
 	calls []mergeCompileCall
 }
 
-func (c *scriptedMergeCompiler) Compile(_ context.Context, subject wikidomain.Subject, claims []wikidomain.Claim) (string, string, error) {
+func (c *scriptedMergeCompiler) Compile(_ context.Context, attr llm.Attribution, subject wikidomain.Subject, claims []wikidomain.Claim) (string, string, error) {
 	c.mu.Lock()
 	c.calls = append(c.calls, mergeCompileCall{
 		Subject: subject,
 		Claims:  append([]wikidomain.Claim(nil), claims...),
+		Attr:    attr,
 	})
 	c.mu.Unlock()
 	if c.err != nil {
@@ -694,14 +702,14 @@ type mergeRecordingPageEmbedder struct {
 	vectors [][]float32
 	inputs  [][]string
 	roles   []agentkit.InputType
-	onEmbed func(context.Context, []string, agentkit.InputType) error
+	onEmbed func(context.Context, llm.Attribution, []string, agentkit.InputType) error
 }
 
-func (e *mergeRecordingPageEmbedder) Embed(ctx context.Context, inputs []string, role agentkit.InputType) (*agentkit.EmbedResult, error) {
+func (e *mergeRecordingPageEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, role agentkit.InputType) (*agentkit.EmbedResult, error) {
 	e.inputs = append(e.inputs, append([]string(nil), inputs...))
 	e.roles = append(e.roles, role)
 	if e.onEmbed != nil {
-		if err := e.onEmbed(ctx, inputs, role); err != nil {
+		if err := e.onEmbed(ctx, attr, inputs, role); err != nil {
 			return nil, err
 		}
 	}
