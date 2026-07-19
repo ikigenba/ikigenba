@@ -10,5 +10,3 @@ done marker; done is gone. This file deliberately carries **no bare status glyph
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 30
-
-- Phase 29 ⬜ realizes R-KJGZ-FKVP, R-KKOV-TCME — forward all four owner identity headers (X-Owner-Id/Email/Name/Picture) through the nginx fragment's session-gated and bearer-gated locations
