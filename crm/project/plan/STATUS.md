@@ -13,4 +13,3 @@ the anchored grep matches only phase lines.
 
 Next phase: 17
 
-- Phase 16 ⬜ realizes R-FS4N-9HTJ, R-FTCJ-N9K8 — forward all four owner headers (X-Owner-Id/Email/Name/Picture) on both identity-forwarding nginx locations
