@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	agentkit "github.com/ikigenba/agentkit"
-	"github.com/ikigenba/agentkit/openai"
 
 	"wiki/internal/llm"
 )
@@ -25,9 +24,8 @@ type CallSites struct {
 
 // EmbedSite carries wiki's embedding model settings.
 type EmbedSite struct {
-	Model    string
-	Dims     int
-	Provider agentkit.EmbeddingProvider
+	Model string
+	Dims  int
 }
 
 // Config is wiki's service-side runtime configuration.
@@ -42,16 +40,11 @@ type Config struct {
 
 // NewConfig reads service configuration. Chat inference is supplied by prompts.
 func NewConfig(getenv func(string) string) (Config, error) {
-	openAIKey := strings.TrimSpace(getenv("OPENAI_API_KEY"))
-	if openAIKey == "" {
-		return Config{}, fmt.Errorf("OPENAI_API_KEY is required")
-	}
-
 	callSites, err := resolveCallSites(getenv)
 	if err != nil {
 		return Config{}, err
 	}
-	embedSite, err := resolveEmbedSite(getenv, openAIKey)
+	embedSite, err := resolveEmbedSite(getenv)
 	if err != nil {
 		return Config{}, err
 	}
@@ -64,7 +57,7 @@ func NewConfig(getenv func(string) string) (Config, error) {
 	}, nil
 }
 
-func resolveEmbedSite(getenv func(string) string, apiKey string) (EmbedSite, error) {
+func resolveEmbedSite(getenv func(string) string) (EmbedSite, error) {
 	site := EmbedSite{
 		Model: defaultEmbedModel,
 		Dims:  defaultEmbedDims,
@@ -82,7 +75,6 @@ func resolveEmbedSite(getenv func(string) string, apiKey string) (EmbedSite, err
 		}
 		site.Dims = dims
 	}
-	site.Provider = openai.NewEmbedder(openai.APIKey(apiKey))
 	return site, nil
 }
 

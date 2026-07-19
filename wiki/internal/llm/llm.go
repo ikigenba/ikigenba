@@ -221,6 +221,10 @@ func effectiveConfig(site CallSite) Config {
 }
 
 func promptsStatusError(status int, body []byte) error {
+	return promptsEndpointStatusError("/complete", status, body)
+}
+
+func promptsEndpointStatusError(endpoint string, status int, body []byte) error {
 	message := strings.TrimSpace(string(body))
 	var envelope struct {
 		Error any `json:"error"`
@@ -235,7 +239,7 @@ func promptsStatusError(status int, body []byte) error {
 			}
 		}
 	}
-	return fmt.Errorf("llm: prompts /complete returned %d: %s", status, message)
+	return fmt.Errorf("llm: prompts %s returned %d: %s", endpoint, status, message)
 }
 
 func outputUsage(raw json.RawMessage) (int64, bool) {

@@ -81,13 +81,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 				return err
 			}
 			vectorCache.Replace(retrieveCacheEntries(cacheEntries))
-			embedder := &agentkit.Embedder{
-				Provider:   cfg.EmbedSite.Provider,
-				Model:      cfg.EmbedSite.Model,
-				Dimensions: cfg.EmbedSite.Dims,
-			}
-			callRecorder := wiki.NewLLMCallStore(conns)
-			pageEmbedder, queryEmbedding := recordingEmbedders(embedder, callRecorder, cfg.EmbedSite)
+			pageEmbedder, queryEmbedding := embeddingPaths(llmClient, cfg.EmbedSite)
 			extractor := extract.New(llmClient, cfg.CallSites.Extract)
 			compiler := buildCompiler(cfg, llmClient)
 			svc = wiki.NewService(conns, extractor, compiler, time.Now,
@@ -171,9 +165,25 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 	}
 }
 
-func recordingEmbedders(inner wiki.PageEmbedder, recorder llm.Recorder, site wiki.EmbedSite) (page, query wiki.PageEmbedder) {
-	return wiki.NewRecordingEmbedder(inner, recorder, "embed-page", site.Provider, site.Model, site.Dims),
-		wiki.NewRecordingEmbedder(inner, recorder, "embed-query", site.Provider, site.Model, site.Dims)
+type promptsEmbedder struct {
+	client *llm.Client
+	site   llm.EmbedSite
+	role   string
+}
+
+func embeddingPaths(client *llm.Client, site wiki.EmbedSite) (page, query wiki.PageEmbedder) {
+	base := llm.EmbedSite{Model: site.Model, Dims: site.Dims}
+	page = promptsEmbedder{client: client, site: llm.EmbedSite{Name: "wiki.embed-page", Model: base.Model, Dims: base.Dims}, role: "document"}
+	query = promptsEmbedder{client: client, site: llm.EmbedSite{Name: "wiki.embed-query", Model: base.Model, Dims: base.Dims}, role: "query"}
+	return page, query
+}
+
+func (e promptsEmbedder) Embed(ctx context.Context, inputs []string, _ agentkit.InputType) (*agentkit.EmbedResult, error) {
+	vectors, err := e.client.Embed(ctx, e.site, llm.Attribution{Origin: "service:wiki", GroupID: llm.JobID(ctx)}, e.role, inputs)
+	if err != nil {
+		return nil, err
+	}
+	return &agentkit.EmbedResult{Vectors: vectors}, nil
 }
 
 func retrieveCacheEntries(entries []wiki.VectorCacheEntry) []retrieve.VectorEntry {

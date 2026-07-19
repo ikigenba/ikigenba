@@ -382,7 +382,7 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 		),
 		wikidomain.WithPageEmbedder(
 			"merge-model",
-			wikidomain.NewRecordingEmbedder(embedder, wikidomain.NewLLMCallStore(conns.Write), "embed-page", nil, "merge-model", 2),
+			embedder,
 		),
 		wikidomain.WithVectorCacheUpdater(cache.Upsert),
 		wikidomain.WithVectorCacheRemover(cache.Remove),
@@ -412,13 +412,6 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 	}
 	if want := mergePageFingerprint("Winner Subject", "Loser fact.\nWinner fact."); embeddings[0].ContentHash != want {
 		t.Fatalf("winner content_hash = %q, want post-merge page fingerprint %q", embeddings[0].ContentHash, want)
-	}
-	calls, _, err := wikidomain.NewLLMCallStore(conns.Write).List(ctx, wikidomain.LLMCallFilter{Stage: "embed-page"}, page.Params{Limit: 10})
-	if err != nil {
-		t.Fatalf("List embed-page calls: %v", err)
-	}
-	if len(calls) != 1 || calls[0].JobID != jobID || calls[0].Stage != "embed-page" || calls[0].Err != "" {
-		t.Fatalf("embed-page calls = %+v, want one successful merge job call", calls)
 	}
 	if len(cache.removed) != 1 || cache.removed[0] != "subject-loser" {
 		t.Fatalf("cache removals = %#v, want loser removed after commit", cache.removed)

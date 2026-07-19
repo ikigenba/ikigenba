@@ -17,7 +17,6 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -784,9 +783,7 @@ func TestBuildSpecMatchesDirectMCPToolSurface(t *testing.T) {
 	}
 }
 
-func TestBuildSpecRecordsPageEmbeddingCalls(t *testing.T) {
-	// R-LFOY-L6TZ
-	// R-SIFE-Z88I
+func TestBuildSpecRoutesPageEmbeddingThroughPrompts(t *testing.T) {
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -801,7 +798,7 @@ func TestBuildSpecRecordsPageEmbeddingCalls(t *testing.T) {
 		}]}`,
 		`{"title":"Acme Robotics","body":"Acme Robotics opened a recorded embedding lab."}`,
 	}}
-	embeds := &capturingEmbeddingProvider{vectors: [][]float32{{0.6, 0.8}}, usage: agentkit.EmbeddingUsage{InputTokens: 5, Total: 5}}
+	client, embeds := llmtest.NewClientWithEmbeddings(t, prov, [][]float32{{0.6, 0.8}})
 	extractSite := extract.DefaultCallSite()
 	extractSite.Model = "extract-model"
 	compileSite := compile.DefaultCallSite()
@@ -812,11 +809,10 @@ func TestBuildSpecRecordsPageEmbeddingCalls(t *testing.T) {
 			Compile: compileSite,
 		},
 		EmbedSite: wiki.EmbedSite{
-			Model:    "recorded-page-embed-model",
-			Dims:     2,
-			Provider: embeds,
+			Model: "recorded-page-embed-model",
+			Dims:  2,
 		},
-		LLM: llmtest.NewClient(t, prov),
+		LLM: client,
 	}))
 	h := buildSpecTestHandler(t, conn, spec)
 	stopWorker, workerErr := startBuildSpecWorker(t, ctx, spec.Workers[0])
@@ -838,31 +834,15 @@ func TestBuildSpecRecordsPageEmbeddingCalls(t *testing.T) {
 		t.Fatalf("job subjects = %#v, want one embedded subject", status.Subjects)
 	}
 
-	calls, _, err := wiki.NewLLMCallStore(conn).List(ctx, wiki.LLMCallFilter{Stage: "embed-page"}, paging.Params{Limit: 10})
-	if err != nil {
-		t.Fatalf("List embed-page calls: %v", err)
-	}
-	if len(calls) != 1 {
-		t.Fatalf("embed-page calls = %+v, want one page embedding record", calls)
-	}
-	call := calls[0]
-	if call.JobID != ingest.JobID || call.Provider != "capturing-embed" || call.Model != "recorded-page-embed-model" || call.Err != "" {
-		t.Fatalf("embed-page call = %+v, want recorded production page embedding footprint", call)
-	}
-	assertCallJSONField(t, call.Params, "dimensions", float64(2))
-	assertCallJSONField(t, call.Request, "role", "document")
-	assertCallJSONField(t, call.Response, "vectors", float64(1))
-	assertCallJSONField(t, call.Response, "dims", float64(2))
-	assertCallJSONField(t, call.Usage, "InputTokens", float64(5))
-
 	requests := embeds.Requests()
-	if len(requests) != 1 || requests[0].Role != agentkit.InputDocument || requests[0].Model != "recorded-page-embed-model" || requests[0].Dimensions != 2 {
-		t.Fatalf("embedding provider requests = %#v, want one document request from buildSpec page embedder", requests)
+	if len(requests) != 1 || requests[0].Name != "wiki.embed-page" || requests[0].Role != "document" || requests[0].GroupID != ingest.JobID || requests[0].Model != "recorded-page-embed-model" || requests[0].Dimensions != 2 {
+		t.Fatalf("prompts embedding requests = %#v, want one labeled document request from buildSpec page embedder", requests)
 	}
 }
 
 func TestBuildSpecMergeRemovesLoserVectorFromLiveCache(t *testing.T) {
 	// R-WS3C-J4QB
+	// R-14G2-4NDH
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -884,7 +864,7 @@ func TestBuildSpecMergeRemovesLoserVectorFromLiveCache(t *testing.T) {
 		`{"sub_queries":["meaning lane"],"keywords":[],"aliases":[]}`,
 		`{"found":true,"text":"The winner retained the merged page.","citations":[{"path":"entity/winner-subject","title":"Winner Subject"}]}`,
 	}}
-	embeds := &capturingEmbeddingProvider{vectors: [][]float32{{1, 0}}, usage: agentkit.EmbeddingUsage{InputTokens: 2, Total: 2}}
+	client, embeds := llmtest.NewClientWithEmbeddings(t, prov, [][]float32{{1, 0}})
 	compileSite := compile.DefaultCallSite()
 	compileSite.Model = "merge-compile-model"
 	askSubjectSite := ask.DefaultSubjectCallSite()
@@ -898,12 +878,11 @@ func TestBuildSpecMergeRemovesLoserVectorFromLiveCache(t *testing.T) {
 			AskSynthesis: askSynthesisSite,
 		},
 		EmbedSite: wiki.EmbedSite{
-			Model:    "merge-cache-model",
-			Dims:     2,
-			Provider: embeds,
+			Model: "merge-cache-model",
+			Dims:  2,
 		},
 		SearchDefault: 1,
-		LLM:           llmtest.NewClient(t, prov),
+		LLM:           client,
 	}))
 	h := buildSpecTestHandler(t, conn, spec)
 	stopWorker, workerErr := startBuildSpecWorker(t, ctx, spec.Workers[0])
@@ -937,18 +916,13 @@ func TestBuildSpecMergeRemovesLoserVectorFromLiveCache(t *testing.T) {
 		t.Fatalf("ask response = %+v, want winner page found after loser vector eviction", answer)
 	}
 
-	calls, _, err := wiki.NewLLMCallStore(conn).List(ctx, wiki.LLMCallFilter{Stage: "embed-page"}, paging.Params{Limit: 10})
-	if err != nil {
-		t.Fatalf("List embed-page calls: %v", err)
-	}
-	if len(calls) != 1 || calls[0].JobID != merge.JobID {
-		t.Fatalf("embed-page calls = %+v, want one merge job page embedding", calls)
+	requests := embeds.Requests()
+	if len(requests) != 2 || requests[0].Name != "wiki.embed-page" || requests[0].GroupID != merge.JobID || requests[1].Name != "wiki.embed-query" {
+		t.Fatalf("prompts embedding requests = %+v, want merge page then ask query", requests)
 	}
 }
 
-func TestBuildSpecRecordsQueryEmbeddingCalls(t *testing.T) {
-	// R-JEC4-3M6O
-	// R-NWE2-CUPE
+func TestBuildSpecRoutesQueryEmbeddingThroughPrompts(t *testing.T) {
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -980,7 +954,7 @@ func TestBuildSpecRecordsQueryEmbeddingCalls(t *testing.T) {
 		`{"sub_queries":["scheduler owner"],"keywords":["scheduler"],"aliases":[]}`,
 		`{"found":true,"text":"Acme Robotics owns the scheduler.","citations":[{"path":"entity/acme-robotics","title":"Acme Robotics"}]}`,
 	}}
-	embeds := &capturingEmbeddingProvider{vectors: [][]float32{{1, 0}}, usage: agentkit.EmbeddingUsage{InputTokens: 3, Total: 3}}
+	client, embeds := llmtest.NewClientWithEmbeddings(t, prov, [][]float32{{1, 0}})
 	askSubjectSite := ask.DefaultSubjectCallSite()
 	askSubjectSite.Model = "ask-subject-model"
 	askSynthesisSite := ask.DefaultSynthesisCallSite()
@@ -991,12 +965,11 @@ func TestBuildSpecRecordsQueryEmbeddingCalls(t *testing.T) {
 			AskSynthesis: askSynthesisSite,
 		},
 		EmbedSite: wiki.EmbedSite{
-			Model:    "recorded-query-embed-model",
-			Dims:     2,
-			Provider: embeds,
+			Model: "recorded-query-embed-model",
+			Dims:  2,
 		},
 		SearchDefault: 8,
-		LLM:           llmtest.NewClient(t, prov),
+		LLM:           client,
 	}))
 	h := buildSpecTestHandler(t, conn, spec)
 
@@ -1016,26 +989,9 @@ func TestBuildSpecRecordsQueryEmbeddingCalls(t *testing.T) {
 		t.Fatalf("ask response = %#v, want answer produced through composed retriever", answer)
 	}
 
-	calls, _, err := wiki.NewLLMCallStore(conn).List(ctx, wiki.LLMCallFilter{Stage: "embed-query"}, paging.Params{Limit: 10})
-	if err != nil {
-		t.Fatalf("List embed-query calls: %v", err)
-	}
-	if len(calls) != 1 {
-		t.Fatalf("embed-query calls = %+v, want one query embedding record", calls)
-	}
-	call := calls[0]
-	if call.JobID != "" || call.Provider != "capturing-embed" || call.Model != "recorded-query-embed-model" || call.Err != "" {
-		t.Fatalf("embed-query call = %+v, want recorded production query embedding footprint", call)
-	}
-	assertCallJSONField(t, call.Params, "dimensions", float64(2))
-	assertCallJSONField(t, call.Request, "role", "query")
-	assertCallJSONField(t, call.Response, "vectors", float64(1))
-	assertCallJSONField(t, call.Response, "dims", float64(2))
-	assertCallJSONField(t, call.Usage, "InputTokens", float64(3))
-
 	requests := embeds.Requests()
-	if len(requests) != 1 || requests[0].Role != agentkit.InputQuery || requests[0].Model != "recorded-query-embed-model" || requests[0].Dimensions != 2 {
-		t.Fatalf("embedding provider requests = %#v, want one query request from buildSpec retriever", requests)
+	if len(requests) != 1 || requests[0].Name != "wiki.embed-query" || requests[0].Role != "query" || requests[0].Model != "recorded-query-embed-model" || requests[0].Dimensions != 2 {
+		t.Fatalf("prompts embedding requests = %#v, want one labeled query request from buildSpec retriever", requests)
 	}
 }
 
@@ -1296,17 +1252,6 @@ func waitBuildSpecJob(t *testing.T, ctx context.Context, conn *sql.DB, jobID, wa
 	return wiki.JobStatus{}
 }
 
-func assertCallJSONField(t *testing.T, raw, key string, want any) {
-	t.Helper()
-	var fields map[string]any
-	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
-		t.Fatalf("decode %s as JSON object: %v", raw, err)
-	}
-	if got := fields[key]; got != want {
-		t.Fatalf("JSON field %s in %s = %#v, want %#v", key, raw, got, want)
-	}
-}
-
 func manifestExtras(in []appkit.ManifestKV) []manifest.KV {
 	out := make([]manifest.KV, 0, len(in))
 	for _, kv := range in {
@@ -1386,44 +1331,6 @@ func stopProcess(cancel context.CancelFunc, done <-chan error) {
 type capturingProvider struct {
 	responses []string
 	requests  []agentkit.Request
-}
-
-type capturingEmbeddingProvider struct {
-	mu       sync.Mutex
-	vectors  [][]float32
-	usage    agentkit.EmbeddingUsage
-	requests []agentkit.EmbedRequest
-}
-
-func (p *capturingEmbeddingProvider) Embed(_ context.Context, req *agentkit.EmbedRequest) *agentkit.EmbedRoundTrip {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if req != nil {
-		p.requests = append(p.requests, *req)
-	}
-	return agentkit.NewEmbedRoundTrip(cloneVectors(p.vectors), p.usage, nil, nil)
-}
-
-func (p *capturingEmbeddingProvider) Name() string {
-	return "capturing-embed"
-}
-
-func (p *capturingEmbeddingProvider) Pricing(string) (agentkit.EmbeddingPricing, bool) {
-	return agentkit.EmbeddingPricing{InputToken: 1}, true
-}
-
-func (p *capturingEmbeddingProvider) Requests() []agentkit.EmbedRequest {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return append([]agentkit.EmbedRequest(nil), p.requests...)
-}
-
-func cloneVectors(in [][]float32) [][]float32 {
-	out := make([][]float32, len(in))
-	for i := range in {
-		out[i] = append([]float32(nil), in[i]...)
-	}
-	return out
 }
 
 type surfaceWiki struct{}

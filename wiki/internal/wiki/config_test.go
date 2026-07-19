@@ -26,7 +26,7 @@ func TestNewConfigBuildsDefaultPerCallSiteModels(t *testing.T) {
 	assertResolvedSite(t, cfg.CallSites.Compile, "compile", ModelID, 0, llm.DisableReasoning(), 16384, 2)
 	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", ModelID, nil, agentkit.Level("low"), 16384, 0)
 	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", ModelID, nil, agentkit.Level("low"), 16384, 0)
-	if cfg.EmbedSite.Model != "text-embedding-3-small" || cfg.EmbedSite.Dims != 512 || cfg.EmbedSite.Provider == nil {
+	if cfg.EmbedSite.Model != "text-embedding-3-small" || cfg.EmbedSite.Dims != 512 {
 		t.Fatalf("EmbedSite = %#v, want default OpenAI small embeddings at 512 dims", cfg.EmbedSite)
 	}
 }
@@ -71,15 +71,10 @@ func TestNewConfigBuildsDefaultEmbeddingSite(t *testing.T) {
 	if cfg.EmbedSite.Dims != 512 {
 		t.Fatalf("EmbedSite.Dims = %d, want 512", cfg.EmbedSite.Dims)
 	}
-	if cfg.EmbedSite.Provider == nil {
-		t.Fatal("EmbedSite.Provider is nil")
-	}
-	if got := cfg.EmbedSite.Provider.Name(); got != "openai" {
-		t.Fatalf("EmbedSite provider name = %q, want openai", got)
-	}
 }
 
 func TestNewConfigLayersEmbeddingEnvironmentOverrides(t *testing.T) {
+	// R-Z932-H2RA
 	// R-ZAAY-UUHZ
 	cfg, err := NewConfig(fakeGetenv(map[string]string{
 		"ANTHROPIC_API_KEY": "test-key",
@@ -92,9 +87,6 @@ func TestNewConfigLayersEmbeddingEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.EmbedSite.Model != "text-embedding-3-large" || cfg.EmbedSite.Dims != 1024 {
 		t.Fatalf("EmbedSite = %#v, want env-selected model and dims", cfg.EmbedSite)
-	}
-	if cfg.EmbedSite.Provider == nil || cfg.EmbedSite.Provider.Name() != "openai" {
-		t.Fatalf("EmbedSite provider = %#v, want OpenAI provider from OPENAI_API_KEY", cfg.EmbedSite.Provider)
 	}
 }
 
@@ -148,18 +140,12 @@ func TestNewConfigRejectsMalformedCallSiteEnvironment(t *testing.T) {
 }
 
 func TestNewConfigRejectsMalformedEmbeddingEnvironment(t *testing.T) {
+	// R-Z932-H2RA
 	tests := []struct {
 		name    string
 		env     map[string]string
 		wantErr string
 	}{
-		{
-			name: "missing key",
-			env: map[string]string{
-				"ANTHROPIC_API_KEY": "test-key",
-			},
-			wantErr: "OPENAI_API_KEY",
-		},
 		{
 			name: "non numeric dims",
 			env: map[string]string{
@@ -175,6 +161,13 @@ func TestNewConfigRejectsMalformedEmbeddingEnvironment(t *testing.T) {
 				"ANTHROPIC_API_KEY": "test-key",
 				"OPENAI_API_KEY":    "openai-test-key",
 				"EMBED_DIMS":        "0",
+			},
+			wantErr: "EMBED_DIMS",
+		},
+		{
+			name: "negative dims",
+			env: map[string]string{
+				"EMBED_DIMS": "-1",
 			},
 			wantErr: "EMBED_DIMS",
 		},

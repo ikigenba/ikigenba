@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	agentkit "github.com/ikigenba/agentkit"
@@ -27,6 +28,30 @@ type completeRequest struct {
 	} `json:"messages"`
 }
 
+// EmbedRequest is the prompts /embed request captured by a test client.
+type EmbedRequest struct {
+	Origin     string   `json:"origin"`
+	Name       string   `json:"name"`
+	GroupID    string   `json:"group_id"`
+	Model      string   `json:"model"`
+	Dimensions int      `json:"dimensions"`
+	Role       string   `json:"role"`
+	Inputs     []string `json:"inputs"`
+}
+
+// EmbedCapture records prompts /embed requests and serves scripted vectors.
+type EmbedCapture struct {
+	mu       sync.Mutex
+	vectors  [][]float32
+	requests []EmbedRequest
+}
+
+func (c *EmbedCapture) Requests() []EmbedRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]EmbedRequest(nil), c.requests...)
+}
+
 // NewClient serves /complete through provider for tests and closes with t.
 func NewClient(t testing.TB, provider agentkit.Provider, _ ...llm.Recorder) *llm.Client {
 	t.Helper()
@@ -35,9 +60,39 @@ func NewClient(t testing.TB, provider agentkit.Provider, _ ...llm.Recorder) *llm
 	return client
 }
 
+// NewClientWithEmbeddings serves both /complete and /embed and closes with t.
+func NewClientWithEmbeddings(t testing.TB, provider agentkit.Provider, vectors [][]float32) (*llm.Client, *EmbedCapture) {
+	t.Helper()
+	capture := &EmbedCapture{vectors: cloneVectors(vectors)}
+	client, closeServer := serve(provider, capture)
+	t.Cleanup(closeServer)
+	return client, capture
+}
+
 // ServeProvider returns a prompts-compatible loopback around a provider.
 func ServeProvider(provider agentkit.Provider) (*llm.Client, func()) {
+	return serve(provider, nil)
+}
+
+func serve(provider agentkit.Provider, embeds *EmbedCapture) (*llm.Client, func()) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/embed" {
+			if embeds == nil {
+				http.NotFound(w, r)
+				return
+			}
+			var req EmbedRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			embeds.mu.Lock()
+			embeds.requests = append(embeds.requests, req)
+			vectors := cloneVectors(embeds.vectors)
+			embeds.mu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]any{"vectors": vectors})
+			return
+		}
 		var req completeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -87,4 +142,12 @@ func ServeProvider(provider agentkit.Provider) (*llm.Client, func()) {
 		})
 	}))
 	return llm.New(server.URL), server.Close
+}
+
+func cloneVectors(in [][]float32) [][]float32 {
+	out := make([][]float32, len(in))
+	for i := range in {
+		out[i] = append([]float32(nil), in[i]...)
+	}
+	return out
 }
