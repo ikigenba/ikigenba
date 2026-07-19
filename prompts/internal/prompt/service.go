@@ -94,11 +94,11 @@ var providerEnvVars = map[string]string{
 	"openrouter": "OPENROUTER_API_KEY",
 }
 
-// validateConfig validates and normalizes a config for storage. getenv is
+// ValidateConfig validates and normalizes a config for storage. getenv is
 // injected so tests can exercise the key contract without mutating the process
 // environment. The returned config differs only when the catalog supplies an
 // omitted provider.
-func validateConfig(c Config, getenv func(string) string) (Config, error) {
+func ValidateConfig(c Config, getenv func(string) string) (Config, error) {
 	entry, ok := catalog.Lookup(c.Model)
 	if !ok || entry.Pricing == nil {
 		return Config{}, validationErrf("invalid config: unknown prompt model %q", c.Model)
@@ -151,7 +151,7 @@ func validateConfig(c Config, getenv func(string) string) (Config, error) {
 // created here — it is per-run, created at Run time keyed by run_id.
 // Config.Provider is validated against the configured model and preserved.
 func (s *Service) Create(ctx context.Context, ownerEmail string, in CreateInput) (Prompt, error) {
-	cfg, err := validateConfig(in.Config, os.Getenv)
+	cfg, err := ValidateConfig(in.Config, os.Getenv)
 	if err != nil {
 		return Prompt{}, err
 	}
@@ -233,7 +233,7 @@ func (s *Service) Import(ctx context.Context, owner, sourcePath, name string) (P
 	// Seed a valid default config so the imported prompt is runnable. Config is
 	// left as-is on a re-import (the upsert refreshes name + user_prompt only), so
 	// this default only takes effect on the first import.
-	cfg, err := validateConfig(Config{Model: importDefaultModel}, os.Getenv)
+	cfg, err := ValidateConfig(Config{Model: importDefaultModel}, os.Getenv)
 	if err != nil {
 		return Prompt{}, err
 	}
@@ -288,7 +288,7 @@ func (s *Service) Update(ctx context.Context, ownerEmail, id string, in UpdateIn
 	if err != nil {
 		return Prompt{}, err
 	}
-	cfg, err := validateConfig(in.Config, os.Getenv)
+	cfg, err := ValidateConfig(in.Config, os.Getenv)
 	if err != nil {
 		return Prompt{}, err
 	}

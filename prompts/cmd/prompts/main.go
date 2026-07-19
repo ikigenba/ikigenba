@@ -40,11 +40,14 @@ import (
 	"eventplane/consumer"
 	"eventplane/outbox"
 
+	"prompts/internal/admit"
 	"prompts/internal/calls"
 	"prompts/internal/consume"
 	"prompts/internal/db"
+	"prompts/internal/inference"
 	"prompts/internal/mcp"
 	"prompts/internal/prompt"
+	"prompts/internal/provider"
 	"prompts/internal/runner"
 	"prompts/internal/sandbox"
 
@@ -174,6 +177,16 @@ func registerRoutes(rt *appkit.Router) error {
 	}
 	callsRef = callStore
 	callsRetentionDays = retentionDays
+	callCap, err := config.EnvOrInt(os.Getenv, "PROMPTS_MAX_INFLIGHT_CALLS", 8)
+	if err != nil || callCap < 1 {
+		return fmt.Errorf("PROMPTS_MAX_INFLIGHT_CALLS must be a positive integer")
+	}
+	runCap, err := config.EnvOrInt(os.Getenv, "PROMPTS_MAX_CONCURRENT_RUNS", 8)
+	if err != nil || runCap < 1 {
+		return fmt.Errorf("PROMPTS_MAX_CONCURRENT_RUNS must be a positive integer")
+	}
+	gate := admit.New(callCap, runCap)
+	completion := inference.NewExecutor(callStore, gate, provider.Build, os.Getenv)
 
 	// PROMPTS_RUN_TTL bounds each run's wall-clock — the runaway-goroutine backstop
 	// (§5.3). Parsed as a Go duration (e.g. "30m", "2h"). Read here at the domain
@@ -237,6 +250,7 @@ func registerRoutes(rt *appkit.Router) error {
 		return err
 	}
 	rt.Handle("POST /mcp", rt.RequireIdentity(handler))
+	rt.HandleLoopback("POST /complete", completion.CompleteHandler())
 	rt.HandleLoopback("GET /run-content", svc.RunContentHandler())
 	return nil
 }
