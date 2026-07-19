@@ -580,6 +580,49 @@ func TestNginxFragmentRetainsBearerAndBootstrapLocations(t *testing.T) {
 	}
 }
 
+func TestNginxBearerLocationForwardsFullOwnerIdentity(t *testing.T) {
+	prefix := nginxLocationBlock(t, readNginxConfig(t), "location /srv/ledger/ {")
+
+	// R-FLV3-9RX8
+	for _, directive := range []string{
+		"auth_request /_authn;",
+		"auth_request_set $ledger_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $ledger_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $ledger_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $ledger_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email   $ledger_owner;",
+		"proxy_set_header X-Owner-Id      $ledger_owner_id;",
+		"proxy_set_header X-Owner-Name    $ledger_owner_name;",
+		"proxy_set_header X-Owner-Picture $ledger_owner_picture;",
+		"proxy_set_header X-Client-Id     $ledger_client;",
+	} {
+		if !strings.Contains(prefix, directive) {
+			t.Errorf("bearer location missing identity directive %q: %s", directive, prefix)
+		}
+	}
+}
+
+func TestNginxLandingLocationForwardsFullOwnerIdentity(t *testing.T) {
+	landing := nginxLocationBlock(t, readNginxConfig(t), "location = /srv/ledger/ {")
+
+	// R-FN2Z-NJNX
+	for _, directive := range []string{
+		"auth_request /_session-authn;",
+		"auth_request_set $ledger_session_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $ledger_session_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $ledger_session_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $ledger_session_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email   $ledger_session_owner;",
+		"proxy_set_header X-Owner-Id      $ledger_session_owner_id;",
+		"proxy_set_header X-Owner-Name    $ledger_session_owner_name;",
+		"proxy_set_header X-Owner-Picture $ledger_session_owner_picture;",
+	} {
+		if !strings.Contains(landing, directive) {
+			t.Errorf("landing location missing identity directive %q: %s", directive, landing)
+		}
+	}
+}
+
 func TestNginxStaticLocationIsSessionGated(t *testing.T) {
 	conf := readNginxConfig(t)
 
