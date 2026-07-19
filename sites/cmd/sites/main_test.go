@@ -697,6 +697,36 @@ func TestNginxFragmentGatesAndProxiesLandingRoot(t *testing.T) {
 	}
 }
 
+// R-7MHG-PUOP
+func TestNginxFragmentForwardsLandingOwnerIdentity(t *testing.T) {
+	conf := readNginxConfig(t)
+	block := nginxLocationBlock(t, conf, "location = /srv/sites/")
+	assertNginxOwnerIdentityHeaders(t, block, "$sites_session_owner")
+}
+
+// R-7NPD-3MFE
+func TestNginxFragmentForwardsPrivateTierOwnerIdentity(t *testing.T) {
+	conf := readNginxConfig(t)
+	block := nginxLocationBlock(t, conf, "location /srv/sites/private/")
+	assertNginxOwnerIdentityHeaders(t, block, "$sites_session_owner")
+}
+
+// R-7L9K-C2Y0
+func TestNginxFragmentForwardsMCPBearerOwnerIdentity(t *testing.T) {
+	conf := readNginxConfig(t)
+	block := nginxLocationBlock(t, conf, "location = /srv/sites/mcp")
+	assertNginxOwnerIdentityHeaders(t, block, "$sites_owner")
+	for _, directive := range []string{
+		"auth_request /_authn;",
+		"auth_request_set $sites_client        $upstream_http_x_client_id;",
+		"proxy_set_header X-Client-Id     $sites_client;",
+	} {
+		if !strings.Contains(block, directive) {
+			t.Errorf("MCP location is missing bearer directive %q:\n%s", directive, block)
+		}
+	}
+}
+
 func TestNginxFragmentPreservesExistingLocations(t *testing.T) {
 	conf := readNginxConfig(t)
 
@@ -1290,6 +1320,25 @@ func readNginxConfig(t *testing.T) string {
 		t.Fatalf("read nginx fragment: %v", err)
 	}
 	return string(body)
+}
+
+func assertNginxOwnerIdentityHeaders(t *testing.T, block, variablePrefix string) {
+	t.Helper()
+	directives := []string{
+		"auth_request_set " + variablePrefix + "         $upstream_http_x_owner_email;",
+		"auth_request_set " + variablePrefix + "_id      $upstream_http_x_owner_id;",
+		"auth_request_set " + variablePrefix + "_name    $upstream_http_x_owner_name;",
+		"auth_request_set " + variablePrefix + "_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email   " + variablePrefix + ";",
+		"proxy_set_header X-Owner-Id      " + variablePrefix + "_id;",
+		"proxy_set_header X-Owner-Name    " + variablePrefix + "_name;",
+		"proxy_set_header X-Owner-Picture " + variablePrefix + "_picture;",
+	}
+	for _, directive := range directives {
+		if !strings.Contains(block, directive) {
+			t.Errorf("nginx location is missing owner identity directive %q:\n%s", directive, block)
+		}
+	}
 }
 
 func nginxLocationBlock(t *testing.T, conf, prefix string) string {
