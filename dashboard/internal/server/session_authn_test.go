@@ -71,6 +71,20 @@ func TestSessionAuthnAllowEmitsStampedIdentityHeaders(t *testing.T) {
 	}
 }
 
+// R-HUXJ-PRSQ
+func TestSessionAuthnIdentityLookupFailureFailsClosed(t *testing.T) {
+	d := newServerDeps(t)
+	cookie := liveSessionCookie(t, d, "owner@int.ikigenba.com")
+	failIdentityLookups(t, &d)
+	h := authnServer(t, d, nil)
+
+	rec := doSessionAuthn(h, cookie)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	requireNoOwnerHeaders(t, rec)
+}
+
 func TestSessionAuthnMissingCookie(t *testing.T) {
 	d := newServerDeps(t)
 	h := authnServer(t, d, nil)

@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"dashboard/internal/db"
 	"dashboard/internal/identity"
 	"dashboard/internal/oauth"
 	"dashboard/internal/pat"
@@ -68,6 +70,30 @@ func authnServer(t *testing.T, d serverDeps, limiter *ratelimit.Limiter) http.Ha
 		t.Fatalf("New: %v", err)
 	}
 	return srv.Handler
+}
+
+// failIdentityLookups replaces only the identity reader with a closed, real
+// SQLite store, leaving the artifact stores live so requests reach the identity
+// lookup seam and exercise a genuine store error.
+func failIdentityLookups(t *testing.T, d *serverDeps) {
+	t.Helper()
+	database, err := db.Open(filepath.Join(t.TempDir(), "closed-identity.db"))
+	if err != nil {
+		t.Fatalf("db.Open failing identity store: %v", err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatalf("close failing identity store: %v", err)
+	}
+	d.identity = identity.NewStore(database)
+}
+
+func requireNoOwnerHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	for _, header := range []string{"X-Owner-Id", "X-Owner-Email", "X-Owner-Name", "X-Owner-Picture"} {
+		if _, ok := rec.Header()[header]; ok {
+			t.Errorf("%s = %#v, want header absent", header, rec.Header().Values(header))
+		}
+	}
 }
 
 // doAuthn issues a POST /internal/authn through h with the given headers and a
@@ -395,6 +421,7 @@ func TestAuthnPATAllowEmitsStampedIdentityHeaders(t *testing.T) {
 	for header, want := range map[string]string{
 		"X-Owner-Email":   p.OwnerEmail,
 		"X-Client-Id":     "pat:" + p.PublicID,
+		"X-Token-Id":      p.ID,
 		"X-Owner-Id":      ownerID,
 		"X-Owner-Name":    url.QueryEscape("Pat Owner"),
 		"X-Owner-Picture": url.QueryEscape("https://images.example/pat.png"),
@@ -438,58 +465,102 @@ func TestAuthnIdentityHeaderEncodingRoundTripsUnsafeAttributes(t *testing.T) {
 	}
 }
 
-// R-W0P9-J50Z
-func TestAuthnIdentityHeadersHandleEmptyAttributesAndMissingIdentity(t *testing.T) {
-	t.Run("empty attributes remain explicit empty headers", func(t *testing.T) {
-		d := newServerDeps(t)
-		seedIdentity(t, d, "owner-test", "owner@int.ikigenba.com", "", "")
-		h := authnServer(t, d, nil)
-		tok := mintAccessToken(t, d, "owner@int.ikigenba.com", testResource)
-		rec := doAuthn(h, map[string]string{"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp"})
+// R-HXDC-HBA4
+func TestAuthnIdentityHeadersKeepEmptyOptionalAttributes(t *testing.T) {
+	d := newServerDeps(t)
+	seedIdentity(t, d, "owner-test", "owner@int.ikigenba.com", "", "")
+	h := authnServer(t, d, nil)
+	tok := mintAccessToken(t, d, "owner@int.ikigenba.com", testResource)
+	rec := doAuthn(h, map[string]string{"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	for _, header := range []string{"X-Owner-Name", "X-Owner-Picture"} {
+		if values, ok := rec.Header()[header]; !ok || len(values) != 1 || values[0] != "" {
+			t.Errorf("%s = %#v, want one explicit empty value", header, values)
+		}
+	}
+	for _, header := range []string{"X-Owner-Id", "X-Owner-Email"} {
+		if got := rec.Header().Get(header); got == "" {
+			t.Errorf("%s is empty, want required identity value", header)
+		}
+	}
+}
+
+// R-HSHQ-Y8BC
+func TestAuthnIdentityLookupFailureFailsClosed(t *testing.T) {
+	d := newServerDeps(t)
+	tok := mintAccessToken(t, d, "owner@int.ikigenba.com", testResource)
+	failIdentityLookups(t, &d)
+	h := authnServer(t, d, nil)
+	rec := doAuthn(h, map[string]string{"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp"})
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	requireNoOwnerHeaders(t, rec)
+}
+
+// R-HTPN-C021
+func TestAuthnPATIdentityLookupFailureFailsClosed(t *testing.T) {
+	d := newServerDeps(t)
+	tok, _ := mintPAT(t, d, "owner@int.ikigenba.com")
+	failIdentityLookups(t, &d)
+	h := authnServer(t, d, nil)
+	rec := doAuthn(h, map[string]string{"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp"})
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	requireNoOwnerHeaders(t, rec)
+}
+
+// R-HW5G-3JJF
+func TestIntrospectionOwnerEmailAlwaysComesFromIdentityRow(t *testing.T) {
+	const (
+		stampedEmail = "stamped@int.ikigenba.com"
+		currentEmail = "current@int.ikigenba.com"
+	)
+	updateIdentity := func(t *testing.T, d serverDeps) {
+		t.Helper()
+		if _, err := d.db.Exec(`UPDATE identities SET email = ? WHERE id = 'owner-test'`, currentEmail); err != nil {
+			t.Fatalf("update identity email: %v", err)
+		}
+	}
+	assertCurrent := func(t *testing.T, rec *httptest.ResponseRecorder) {
+		t.Helper()
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
-		for _, header := range []string{"X-Owner-Name", "X-Owner-Picture"} {
-			if values, ok := rec.Header()[header]; !ok || len(values) != 1 || values[0] != "" {
-				t.Errorf("%s = %#v, want one explicit empty value", header, values)
-			}
+		if got := rec.Header().Get("X-Owner-Email"); got != currentEmail {
+			t.Errorf("X-Owner-Email = %q, want current identities-row email %q", got, currentEmail)
 		}
+	}
+
+	t.Run("oauth bearer", func(t *testing.T) {
+		d := newServerDeps(t)
+		tok := mintAccessToken(t, d, stampedEmail, testResource)
+		updateIdentity(t, d)
+		h := authnServer(t, d, nil)
+		assertCurrent(t, doAuthn(h, map[string]string{
+			"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp",
+		}))
 	})
 
-	t.Run("missing identity keeps existing allow headers", func(t *testing.T) {
+	t.Run("personal access token", func(t *testing.T) {
 		d := newServerDeps(t)
+		tok, _ := mintPAT(t, d, stampedEmail)
+		updateIdentity(t, d)
 		h := authnServer(t, d, nil)
-		tok := mintAccessToken(t, d, "owner@int.ikigenba.com", testResource)
-		if _, err := d.db.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
-			t.Fatalf("disable foreign keys for corrupt-fixture setup: %v", err)
-		}
-		if _, err := d.db.Exec(`DELETE FROM identities WHERE id = 'owner-test'`); err != nil {
-			t.Fatalf("remove identity for corrupt-fixture setup: %v", err)
-		}
-		if _, err := d.db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
-			t.Fatalf("restore foreign keys after corrupt-fixture setup: %v", err)
-		}
-		vt, err := d.tokens.ValidateAccess(context.Background(), tok)
-		if err != nil {
-			t.Fatalf("ValidateAccess: %v", err)
-		}
-		rec := doAuthn(h, map[string]string{"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp"})
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want 200", rec.Code)
-		}
-		for header, want := range map[string]string{
-			"X-Owner-Email": vt.Chain.OwnerEmail, "X-Client-Id": vt.Chain.ClientID,
-			"X-Chain-Id": vt.Chain.ID, "X-Token-Id": vt.Token.ID,
-		} {
-			if got := rec.Header().Get(header); got != want {
-				t.Errorf("%s = %q, want %q", header, got, want)
-			}
-		}
-		for _, header := range []string{"X-Owner-Id", "X-Owner-Name", "X-Owner-Picture"} {
-			if got := rec.Header().Get(header); got != "" {
-				t.Errorf("%s = %q, want omitted when identity is missing", header, got)
-			}
-		}
+		assertCurrent(t, doAuthn(h, map[string]string{
+			"Authorization": "Bearer " + tok, "X-Original-URI": "/srv/crm/mcp",
+		}))
+	})
+
+	t.Run("web session", func(t *testing.T) {
+		d := newServerDeps(t)
+		cookie := liveSessionCookie(t, d, stampedEmail)
+		updateIdentity(t, d)
+		h := authnServer(t, d, nil)
+		assertCurrent(t, doSessionAuthn(h, cookie))
 	})
 }
 
