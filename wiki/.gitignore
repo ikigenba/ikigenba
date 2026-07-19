@@ -1,4 +1,4 @@
-# Build artifacts (ignore the built binaries, but track bin/secrets etc.)
+# Build artifacts (ignore the built binaries)
 /bin/wiki
 /bin/eval-extract
 

@@ -16,7 +16,7 @@
 // own /feed, in the SAME tx as a run's terminal write) and
 // a multi-upstream CONSUMER (one consumer.Run worker per upstream producer:
 // cron, crm, ledger, dropbox, prompts). It holds NO secret — no LLM provider,
-// open network — so there is no provider API key and no bin/secrets.
+// open network — so bin/push-secrets seeds it as an explicit empty object.
 package main
 
 import (

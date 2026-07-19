@@ -260,7 +260,7 @@ func randomState() (string, error) {
 }
 
 // mask returns a non-revealing fingerprint of a secret: first 4 + last 4 chars,
-// or **** when it is too short to mask safely. Mirrors bin/secrets' mask().
+// or **** when it is too short to mask safely. Mirrors bin/push-secrets.
 func mask(s string) string {
 	if len(s) <= 8 {
 		return "****"

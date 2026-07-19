@@ -83,9 +83,8 @@ older commit and reinstall (roll-forward only). Build green first —
 > ship → stage → deploy. Do **not** stop a deploy to run `aws sso login`.
 >
 > Workstation AWS creds are needed for **exactly one** optional step: seeding
-> secrets from your laptop via `<svc>/bin/secrets` (step 1), which does a
-> workstation-side SSM read-modify-write. That's the only place SSO matters, and
-> only when an app's secrets are new or changed.
+> secrets from your laptop via `bin/push-secrets` (step 1). That's the only
+> place SSO matters, and only when an app's secrets are new or changed.
 
 Before starting, confirm the channels a deploy actually needs are live:
 
@@ -119,16 +118,17 @@ service binary or shipped bundle.
 
 ## 1. Seed Secrets When Needed
 
-Secret-bearing apps read their keys from the shared SSM SecureString
-`/ikigenba/<account>/app-config` under the app's own object key. Seed before
-deploying an app whose secrets are new, changed, or missing:
+Apps read their keys from their own SSM SecureString
+`/ikigenba/<account>/app-config/<app>`. Seed before deploying an app whose
+secrets are new, changed, or missing:
 
 ```sh
-<svc>/bin/secrets
+bin/push-secrets <app>
 ```
 
-The script does a non-destructive read-modify-write for that app only and prints
-masked summaries. Apps with no `bin/secrets` do not need this step.
+Use `bin/push-secrets --dry-run <app>` to preview the parameter name and pushed
+key names without calling AWS. Apps without secrets still need an explicit `{}`
+seed before first deploy; `bin/push-secrets <app>` handles that state.
 
 ## 2. bump → ship → stage → deploy
 
