@@ -27,7 +27,7 @@ func TestNginxLandingLocationIsSessionGatedExactMatch(t *testing.T) {
 	if strings.Contains(block, "auth_request /_authn;") {
 		t.Fatalf("landing location uses bearer auth instead of session auth:\n%s", block)
 	}
-	if !strings.Contains(block, "proxy_set_header X-Owner-Email "+sessionOwner+";") {
+	if !containsNginxDirective(block, "proxy_set_header X-Owner-Email "+sessionOwner+";") {
 		t.Fatalf("landing location does not forward captured session owner %s:\n%s", sessionOwner, block)
 	}
 	// R-0FNQ-0XSK
@@ -66,6 +66,46 @@ func TestNginxPriorTiersRemainIntact(t *testing.T) {
 	}
 	if !strings.Contains(conf, "location = /srv/webhooks/feed { return 404; }") {
 		t.Fatalf("nginx config no longer contains verbatim feed shield")
+	}
+}
+
+func TestNginxBearerMCPForwardsAllOwnerIdentityHeaders(t *testing.T) {
+	conf := readNginxConfig(t)
+	block := nginxLocationBlock(t, conf, "location = /srv/webhooks/mcp {")
+
+	// R-XK5N-0I1E
+	assertNginxLinesExactlyOnce(t, block, []string{
+		"auth_request_set $wh_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $wh_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $wh_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $wh_owner_picture $upstream_http_x_owner_picture;",
+		"auth_request_set $wh_client        $upstream_http_x_client_id;",
+		"proxy_set_header X-Owner-Id      $wh_owner_id;",
+		"proxy_set_header X-Owner-Email   $wh_owner;",
+		"proxy_set_header X-Owner-Name    $wh_owner_name;",
+		"proxy_set_header X-Owner-Picture $wh_owner_picture;",
+		"proxy_set_header X-Client-Id     $wh_client;",
+	})
+}
+
+func TestNginxSessionLandingForwardsAllOwnerIdentityHeaders(t *testing.T) {
+	conf := readNginxConfig(t)
+	block := nginxLocationBlock(t, conf, "location = /srv/webhooks/ {")
+
+	// R-XLDJ-E9S3
+	assertNginxLinesExactlyOnce(t, block, []string{
+		"auth_request_set $wh_session_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $wh_session_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $wh_session_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $wh_session_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Id      $wh_session_owner_id;",
+		"proxy_set_header X-Owner-Email   $wh_session_owner;",
+		"proxy_set_header X-Owner-Name    $wh_session_owner_name;",
+		"proxy_set_header X-Owner-Picture $wh_session_owner_picture;",
+	})
+	if strings.Contains(block, "$wh_owner_id;") || strings.Contains(block, "$wh_owner;") ||
+		strings.Contains(block, "$wh_owner_name;") || strings.Contains(block, "$wh_owner_picture;") {
+		t.Fatalf("session landing reuses bearer-tier owner variables:\n%s", block)
 	}
 }
 
@@ -169,6 +209,31 @@ func nginxLocationBlock(t *testing.T, conf, opener string) string {
 		t.Fatalf("nginx location %q does not have a matching closing brace", opener)
 	}
 	return conf[start:end]
+}
+
+func assertNginxLinesExactlyOnce(t *testing.T, block string, expected []string) {
+	t.Helper()
+
+	lines := make(map[string]int)
+	for _, line := range strings.Split(block, "\n") {
+		lines[strings.Join(strings.Fields(line), " ")]++
+	}
+	for _, line := range expected {
+		directive := strings.Join(strings.Fields(line), " ")
+		if lines[directive] != 1 {
+			t.Errorf("nginx location contains %q %d times, want exactly once:\n%s", directive, lines[directive], block)
+		}
+	}
+}
+
+func containsNginxDirective(block, directive string) bool {
+	want := strings.Join(strings.Fields(directive), " ")
+	for _, line := range strings.Split(block, "\n") {
+		if strings.Join(strings.Fields(line), " ") == want {
+			return true
+		}
+	}
+	return false
 }
 
 func sessionOwnerVariable(t *testing.T, block string) string {
