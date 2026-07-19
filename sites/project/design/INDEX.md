@@ -7,7 +7,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D1 → `project/design/D01.md` — The landing handler and its v1 content (service name + version) — owns R-LAND-3C9K, R-LAND-5E2M, R-LAND-7G4P, R-LAND-9J6R
 - D2 → `project/design/D02.md` — Route wiring: `GET /{$}` mounted ungated through `Spec.Handlers` — owns R-ROUT-4Q8B, R-ROUT-6S1D, R-ROUT-8U3F
 - D3 → `project/design/D03.md` — Embedded Carbon design assets (sites's own copy) — owns R-ASST-3H7N, R-ASST-5K9Q, R-ASST-7M2S
-- D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/sites/` landing root beside the existing static tiers — owns R-NGNX-3P6T, R-NGNX-5R8V, R-NGNX-7T1X, R-NGNX-9W4Z
+- D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/sites/` landing root beside the existing static tiers (forwards all four owner identity headers) — owns R-NGNX-3P6T, R-NGNX-5R8V, R-NGNX-7T1X, R-NGNX-9W4Z, R-7MHG-PUOP
 - D5 → `project/design/D05.md` — Docs state current truth: state the standardized landing card in sites's self-description (no "no UI" claim to purge) — none (structural; docs-only)
 - D6 → `project/design/D06.md` — Landing page layout (sites-specific; supersedes the cron-canonical conformance; filter bar above the table + pager below it, sortable-header hooks, `aria-sort` caret/pointer CSS, hidden-until-JS with `[hidden]` guaranteed to hide; interactive controls carry Carbon `.input`/`.btn` component styling; far-right per-row copy-URL button replicating the suite copy-button pattern, hidden-until-JS) — owns R-WKGI-FVFJ, R-WLOE-TN68, R-83NK-DUW1, R-84VG-RMMQ, R-863D-5EDF, R-NKTP-317P, R-NM1L-GSYE
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-9S3W
@@ -21,7 +21,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D15 → `project/design/D15.md` — Data model: a `public` boolean and `created_by`, retiring the publish lifecycle (`tier`/`published`/`published_at` dropped; two immutable migrations; `Store.Create(name, createdBy, public)` persists the requested visibility + `SetVisibility`) — owns R-QRDS-EIS1, R-QSLO-SAIQ, R-QTTL-629F, R-QQ5W-0R1C
 - D16 → `project/design/D16.md` — Filesystem layout: files live at the served path `SITES_ROOT/<public|private>/<slug>`; delete the working tree and symlink indirection (`Layout.SiteDir`/`SiteBase`/`Move`; `publish.go` removed) — owns R-QV1H-JU04, R-QW9D-XLQT, R-QYP6-P587
 - D17 → `project/design/D17.md` — In-process static serving of hosted sites (`internal/serve`): index-mapping, no-listing, confined, trailing-slash redirect; mounted ungated at `GET /public/` and `GET /private/` — owns R-QZX3-2WYW, R-R14Z-GOPL, R-R2CV-UGGA, R-R3KS-886Z, R-R4SO-LZXO, R-R60K-ZROD
-- D18 → `project/design/D18.md` — nginx fragment proxies the public/private tiers to the process (no `alias`; private keeps `/_session-authn`; nginx reads no state off disk) — owns R-R78H-DJF2, R-R8GD-RB5R, R-R9OA-52WG
+- D18 → `project/design/D18.md` — nginx fragment proxies the public/private tiers to the process (no `alias`; private keeps `/_session-authn` and forwards all four owner identity headers; nginx reads no state off disk) — owns R-R78H-DJF2, R-R8GD-RB5R, R-R9OA-52WG, R-7NPD-3MFE
 - D19 → `project/design/D19.md` — The landing page lists the sites that exist (live-rendered from `store.List`; slug-as-link/public-private/creator/created-at; empty-state safe; also emits the JSON data island + `createdAtSort` for D22) — owns R-RAW6-IUN5, R-RC42-WMDU, R-WMWB-7EWX, R-IDOL-PV70, R-IEWI-3MXP
 - D20 → `project/design/D20.md` — MCP surface: drop publish/unpublish, add `set_visibility`, thread `created_by` from Identity, serve the live folder via `SiteDir` (file tools/sync/delete retargeted), `create(name, public?)` births at the chosen visibility in one insert (default private), and `sync` requires an already-created site (no create-or-reuse) — owns R-RDBZ-AE4J, R-RFRS-1XLX, R-RGZO-FPCM, R-RI7K-TH3B, R-RJFH-78U0, R-554R-3MBC, R-56CN-HE21
 - D21 → `project/design/D21.md` — MCP self-discovery convention: rewrite the Tier-0 `instructions` with routing vocabulary + a guide pointer, replace `describe` with a read-only embedded `guide` tool (worked examples), keyword-forward the `create`/`sync` descriptions (sync avoids publish/deploy wording); reference the guide in exactly two channels — owns R-57KJ-V5SQ, R-58SG-8XJF, R-5A0C-MPA4, R-5B89-0H0T, R-5CG5-E8RI
@@ -29,6 +29,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D23 → `project/design/D23.md` — Browser wiring proof: one minimal headless-Chrome test (chromedp, test-only dep; seeded auth-free `httptest` landing page; single session touching each control once — boot/filter/sort/clear/page/copy; copy step grants clipboard permission and reads the clipboard back to prove the row URL lands on it; Chrome hard-required by the green bar, one launch retry, no scenario retries; also asserts the copy icon renders as a real SVG element and that the `Copy`→`Copied` swap does not reflow the table; import-graph boundary check) — owns R-87B9-J644, R-88J5-WXUT, R-89R2-APLI, R-8AYY-OHC7, R-8DER-G0TL, R-NN9H-UKP3, R-VYEF-053C, R-VZMB-DWU1, R-8EMN-TSKA
 - D24 → `project/design/D24.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer `/mcp` and the public tier deliberately excluded) — owns R-XVIT-1NXD, R-XWQP-FFO2, R-XXYL-T7ER
 - D25 → `project/design/D25.md` — Structured MCP adoption: swap `JSONResult`→`StructuredResult` (structuredContent + mirrored text) on every domain success result, declare an `outputSchema` per structured tool (`guide`/`file_read` are prose exceptions with none), and map every failure onto the closed error vocabulary (confinement→`validation`, mirror unavailable→`source_unavailable`, internal fs failures→`internal`) — owns R-CW5E-T20N, R-CXDB-6TRC, R-CYL7-KLI1, R-CZT3-YD8Q, R-D110-C4ZF, R-D28W-PWQ4, R-D3GT-3OGT
+- D26 → `project/design/D26.md` — the bearer MCP endpoint `= /srv/sites/mcp` forwards all four owner identity headers (`X-Owner-Email`/`X-Owner-Id`/`X-Owner-Name`/`X-Owner-Picture`) plus the unchanged `X-Client-Id` — owns R-7L9K-C2Y0
 
 ## Verification ids → Decision
 
@@ -67,8 +68,11 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-675A-R7MX → D8 → `project/design/D08.md`
 - R-7K2P-QN4D → D9 → `project/design/D09.md`
 - R-7L9F-XW3H → D9 → `project/design/D09.md`
+- R-7L9K-C2Y0 → D26 → `project/design/D26.md`
 - R-7M4C-BV8J → D9 → `project/design/D09.md`
+- R-7MHG-PUOP → D4 → `project/design/D04.md`
 - R-7N6R-TZ2Q → D9 → `project/design/D09.md`
+- R-7NPD-3MFE → D18 → `project/design/D18.md`
 - R-NGNX-3P6T → D4 → `project/design/D04.md`
 - R-NGNX-5R8V → D4 → `project/design/D04.md`
 - R-NGNX-7T1X → D4 → `project/design/D04.md`
