@@ -49,6 +49,7 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		Extras: []manifest.KV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
+			{Key: "PROMPTS_CALLS_BODY_RETENTION_DAYS", Value: "30"},
 		},
 	})
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))

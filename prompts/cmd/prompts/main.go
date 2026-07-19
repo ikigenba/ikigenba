@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"appkit"
@@ -39,6 +40,7 @@ import (
 	"eventplane/consumer"
 	"eventplane/outbox"
 
+	"prompts/internal/calls"
 	"prompts/internal/consume"
 	"prompts/internal/db"
 	"prompts/internal/mcp"
@@ -69,8 +71,10 @@ var sources = []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts"}
 // onto the store so the runner's terminal write emits the outcome event on the
 // same tx (event-triggering decisions §3).
 var (
-	svcRef   *prompt.Service
-	storeRef *prompt.Store
+	svcRef             *prompt.Service
+	storeRef           *prompt.Store
+	callsRef           *calls.Store
+	callsRetentionDays int
 )
 
 func main() {
@@ -114,7 +118,9 @@ func promptsSpec() appkit.Spec {
 		ManifestExtras: []appkit.ManifestKV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
+			{Key: "PROMPTS_CALLS_BODY_RETENTION_DAYS", Value: "30"},
 		},
+		Workers: []func(context.Context) error{callsBodyRetentionWorker},
 		Producer: func(ob *outbox.Outbox) error {
 			if storeRef == nil {
 				return fmt.Errorf("prompts: Producer called before Handlers built the Store")
@@ -154,6 +160,18 @@ func registerRoutes(rt *appkit.Router) error {
 	if conn == nil {
 		return fmt.Errorf("prompts: no DB handle on router")
 	}
+	retentionDays, err := callsBodyRetentionConfig(os.Getenv)
+	if err != nil {
+		return err
+	}
+	callStore := calls.NewStore(conn)
+	if swept, err := callStore.PruneBodies(context.Background(), callsBodyCutoff(time.Now(), retentionDays)); err != nil {
+		return fmt.Errorf("prompts: calls body-retention boot sweep: %w", err)
+	} else if swept > 0 {
+		rt.Logger().Info("calls: pruned retained bodies", "count", swept)
+	}
+	callsRef = callStore
+	callsRetentionDays = retentionDays
 
 	// PROMPTS_RUN_TTL bounds each run's wall-clock — the runaway-goroutine backstop
 	// (§5.3). Parsed as a Go duration (e.g. "30m", "2h"). Read here at the domain
@@ -241,4 +259,35 @@ func recreateRunsDir(runsDir string) error {
 		return fmt.Errorf("prompts: recreate runs dir: mkdir %s: %w", runsDir, err)
 	}
 	return nil
+}
+
+func callsBodyRetentionConfig(getenv func(string) string) (int, error) {
+	raw := config.EnvOr(getenv, "PROMPTS_CALLS_BODY_RETENTION_DAYS", "30")
+	days, err := strconv.Atoi(raw)
+	if err != nil || days < 0 {
+		return 0, fmt.Errorf("PROMPTS_CALLS_BODY_RETENTION_DAYS must be a non-negative integer, got %q", raw)
+	}
+	return days, nil
+}
+
+func callsBodyCutoff(now time.Time, days int) time.Time {
+	return now.UTC().AddDate(0, 0, -days)
+}
+
+func callsBodyRetentionWorker(ctx context.Context) error {
+	if callsRef == nil {
+		return fmt.Errorf("prompts: calls retention worker started before Handlers built the Store")
+	}
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case now := <-ticker.C:
+			if _, err := callsRef.PruneBodies(ctx, callsBodyCutoff(now, callsRetentionDays)); err != nil {
+				return fmt.Errorf("prompts: calls body-retention sweep: %w", err)
+			}
+		}
+	}
 }
