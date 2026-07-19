@@ -12,5 +12,4 @@ lines.
 
 Next phase: 95
 
-- Phase 93 ⬜ realizes R-16VU-W6UV, R-183R-9YLK, R-19BN-NQC9, R-1AJK-1I2Y — origin and correlation attribution
 - Phase 94 ⬜ realizes R-1BRG-F9TN, R-1CZC-T1KC, R-1E79-6TB1, R-1GN1-YCSF, R-0UOV-2HFX, R-0VWR-G96M — the retirement sweep: llm_calls, recorder stack, eval harness, agentkit
