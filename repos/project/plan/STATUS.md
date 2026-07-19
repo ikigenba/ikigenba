@@ -11,4 +11,3 @@ outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 18
 
-- Phase 17 ⬜ realizes R-UZVS-S08C, R-V13P-5RZ1 — forward all four owner identity headers (X-Owner-Id/Email/Name/Picture) through the repos nginx fragment's session-landing and bearer-prefix locations
