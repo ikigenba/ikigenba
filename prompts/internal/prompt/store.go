@@ -10,6 +10,7 @@ import (
 
 	"eventplane/outbox"
 
+	"prompts/internal/calls"
 	"prompts/internal/ids"
 )
 
@@ -26,6 +27,10 @@ type Store struct {
 	// terminal write still commits, just without an event. Injected by the
 	// Producer hook in cmd/prompts after appkit constructs the outbox.
 	Outbox *outbox.Outbox
+
+	// Calls, when set, records one session-class accounting row on the same
+	// transaction as FinishRun's terminal-state and outcome-event writes.
+	Calls *calls.Store
 }
 
 // NewStore wraps a migrated *sql.DB (the prompts/runs tables must exist).
@@ -293,11 +298,17 @@ func (s *Store) UpdateRunTerminal(ctx context.Context, runID, status, endedAt, u
 // trigger_kind, trigger_subject, trigger_event_id) are read FROM the run row inside the
 // transaction, so the runner no longer threads them in (A5).
 type FinishRunInput struct {
-	RunID     string // the run being finished
-	Status    string // terminal runs.status (succeeded|failed|cancelled)
-	EndedAt   string // terminal timestamp
-	UsageJSON string // captured usage ("" → NULL)
-	ErrMsg    string // terminal error ("" → NULL; carried on run.failed)
+	RunID        string // the run being finished
+	Status       string // terminal runs.status (succeeded|failed|cancelled)
+	EndedAt      string // terminal timestamp
+	UsageJSON    string // captured usage ("" → NULL)
+	ErrMsg       string // terminal error ("" → NULL; carried on run.failed)
+	Provider     string // pinned provider name
+	Model        string // pinned catalog model name
+	InputTokens  int64
+	OutputTokens int64
+	TotalTokens  int64
+	CostUSD      float64
 }
 
 // FinishRun writes a run's terminal outcome and, when this Store is a producer
@@ -321,15 +332,17 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 	var (
 		promptID    string
 		promptName  sql.NullString
+		ownerEmail  string
+		startedAt   string
 		trigSource  sql.NullString
 		trigKind    sql.NullString
 		trigSubject sql.NullString
 		trigEventID sql.NullString
 	)
 	if err := tx.QueryRowContext(ctx,
-		`SELECT prompt_id, prompt_name, trigger_source, trigger_kind, trigger_subject, trigger_event_id FROM runs WHERE id = ?`,
+		`SELECT prompt_id, prompt_name, owner_email, started_at, trigger_source, trigger_kind, trigger_subject, trigger_event_id FROM runs WHERE id = ?`,
 		in.RunID,
-	).Scan(&promptID, &promptName, &trigSource, &trigKind, &trigSubject, &trigEventID); err != nil {
+	).Scan(&promptID, &promptName, &ownerEmail, &startedAt, &trigSource, &trigKind, &trigSubject, &trigEventID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -345,6 +358,45 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 	}
 	if err := requireOne(res, "finish run"); err != nil {
 		return err
+	}
+
+	if s.Calls != nil {
+		start, err := time.Parse(time.RFC3339Nano, startedAt)
+		if err != nil {
+			return fmt.Errorf("prompt: finish run parse started_at: %w", err)
+		}
+		end, err := time.Parse(time.RFC3339Nano, in.EndedAt)
+		if err != nil {
+			return fmt.Errorf("prompt: finish run parse ended_at: %w", err)
+		}
+		origin := "user:" + ownerEmail
+		if trigSource.String != "" {
+			origin = "trigger:" + trigSource.String
+		}
+		name := promptName.String
+		if name == "" {
+			name = promptID
+		}
+		if err := s.Calls.InsertTx(ctx, tx, calls.Row{
+			Class:        calls.ClassSession,
+			Origin:       origin,
+			Name:         name,
+			GroupID:      in.RunID,
+			Attempt:      1,
+			OwnerEmail:   ownerEmail,
+			Provider:     in.Provider,
+			Model:        in.Model,
+			InputTokens:  in.InputTokens,
+			OutputTokens: in.OutputTokens,
+			TotalTokens:  in.TotalTokens,
+			UsageJSON:    in.UsageJSON,
+			CostUSD:      in.CostUSD,
+			Error:        in.ErrMsg,
+			StartedAt:    start,
+			EndedAt:      end,
+		}); err != nil {
+			return fmt.Errorf("prompt: finish run insert call: %w", err)
+		}
 	}
 
 	emitted := false

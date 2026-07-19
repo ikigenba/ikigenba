@@ -13,6 +13,8 @@ import (
 
 	appkitdb "appkit/db"
 
+	"prompts/internal/admit"
+	"prompts/internal/calls"
 	"prompts/internal/db"
 	"prompts/internal/ids"
 	"prompts/internal/prompt"
@@ -31,6 +33,34 @@ type fakeProvider struct {
 	mu       sync.Mutex
 	requests []*agentkit.Request
 	next     int
+}
+
+type serialProvider struct {
+	mu           sync.Mutex
+	next         int
+	started      chan int
+	releaseFirst chan struct{}
+}
+
+func (p *serialProvider) Name() string { return "serial" }
+
+func (p *serialProvider) RoundTrip(ctx context.Context, _ *agentkit.Request) *agentkit.RoundTrip {
+	p.mu.Lock()
+	p.next++
+	call := p.next
+	p.mu.Unlock()
+	p.started <- call
+	if call == 1 {
+		select {
+		case <-p.releaseFirst:
+		case <-ctx.Done():
+			return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, ctx.Err(), 0, false)
+		}
+	}
+	return agentkit.NewRoundTrip(
+		agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: "done"}}},
+		agentkit.FinishStop, agentkit.Usage{InputUncached: 1, Output: 1, Total: 2}, nil, nil, 0, false,
+	)
 }
 
 func (f *fakeProvider) Name() string { return "fake" }
@@ -131,13 +161,14 @@ func newTestRunner(t *testing.T, ttl time.Duration, fp agentkit.Provider) (*Runn
 		t.Fatalf("appkitdb.Migrate: %v", err)
 	}
 	store := prompt.NewStore(conn)
+	store.Calls = calls.NewStore(conn)
 
 	sb, err := sandbox.New(filepath.Join(t.TempDir(), "sandboxes"))
 	if err != nil {
 		t.Fatalf("sandbox.New: %v", err)
 	}
 
-	r := New(store, sb, ttl, t.TempDir(), func(int) bool { return false }, "")
+	r := New(store, sb, admit.New(8, 8), ttl, t.TempDir(), func(int) bool { return false }, "")
 	r.buildProvider = func(prompt.Config, func(string) string) (agentkit.Provider, error) { return fp, nil }
 	return r, store
 }
@@ -240,6 +271,80 @@ func TestExecute_PricesUsageFromCatalogRates(t *testing.T) {
 	}
 }
 
+func TestExecute_RecordsOneSessionCallFromProviderUsage(t *testing.T) {
+	// R-6JMV-PFLG
+	fp := &fakeProvider{}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	_, run := seedRunningWithConfig(t, store, r.sandbox, runsDir, prompt.Config{
+		Provider: "openrouter",
+		Model:    "deepseek-v4-flash",
+	})
+
+	r.execute(run)
+
+	rows, err := store.Calls.List(context.Background(), calls.Filter{GroupID: run.ID})
+	if err != nil {
+		t.Fatalf("List calls: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("session calls = %+v, want exactly one", rows)
+	}
+	row := rows[0]
+	if row.Class != calls.ClassSession || row.GroupID != run.ID {
+		t.Fatalf("call identity = %+v, want session group %s", row, run.ID)
+	}
+	if row.InputTokens != 12 || row.OutputTokens != 7 || row.TotalTokens != 19 {
+		t.Fatalf("call tokens = (%d,%d,%d), want (12,7,19)", row.InputTokens, row.OutputTokens, row.TotalTokens)
+	}
+	if row.CostUSD <= 0 || row.Model != "deepseek-v4-flash" || row.Provider != "openrouter" {
+		t.Fatalf("call pricing/model = %+v, want priced pinned catalog config", row)
+	}
+	gotRun, err := store.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if row.UsageJSON != gotRun.UsageJSON {
+		t.Fatalf("call usage_json = %q, run usage_json = %q", row.UsageJSON, gotRun.UsageJSON)
+	}
+	if row.RequestBody != nil || row.ResponseBody != nil {
+		t.Fatalf("session bodies = (%v,%v), want nil", row.RequestBody, row.ResponseBody)
+	}
+}
+
+func TestExecute_FailedRunRecordsConsumedUsage(t *testing.T) {
+	// R-6NAK-UQTJ
+	fp := &fakeProvider{roundTrips: []*agentkit.RoundTrip{
+		agentkit.NewRoundTrip(
+			agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{
+				agentkit.ToolUseBlock{ID: "toolu_consumed", Name: "Bash", Input: json.RawMessage(`{"command":"true"}`)},
+			}},
+			agentkit.FinishToolUse, agentkit.Usage{InputUncached: 9, Output: 4, Total: 13}, nil, nil, 0, false),
+		agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther,
+			agentkit.Usage{}, nil,
+			errors.New("provider exploded"), 0, false),
+	}}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	_, run := seedRunning(t, store, r.sandbox, runsDir)
+
+	r.execute(run)
+
+	rows, err := store.Calls.List(context.Background(), calls.Filter{GroupID: run.ID})
+	if err != nil {
+		t.Fatalf("List calls: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("session calls = %+v, want exactly one", rows)
+	}
+	if rows[0].Error == "" || !strings.Contains(rows[0].Error, "provider exploded") {
+		t.Fatalf("call error = %q, want provider failure", rows[0].Error)
+	}
+	if rows[0].InputTokens != 9 || rows[0].OutputTokens != 4 || rows[0].TotalTokens != 13 {
+		t.Fatalf("failed call usage = %+v, want consumed 9/4/13 tokens", rows[0])
+	}
+}
+
 // writeRunInput pins a run's execution inputs to runs/<run_id>/input/, the
 // disk source the runner reads (mirrors Service.materializeInput).
 func writeRunInput(t *testing.T, runsDir, runID, userPrompt, sysPrompt string, cfg prompt.Config) {
@@ -321,6 +426,52 @@ func TestSpawn_TerminalSuccess(t *testing.T) {
 	}
 	if fp.requestCount() != 1 {
 		t.Fatalf("provider RoundTrip calls = %d, want 1", fp.requestCount())
+	}
+}
+
+func TestSpawn_RunCapacitySerializesProviderExecution(t *testing.T) {
+	// R-6B3L-11EL
+	fp := &serialProvider{started: make(chan int, 2), releaseFirst: make(chan struct{})}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	r.gate = admit.New(8, 1)
+	firstPrompt, firstRun := seedRunning(t, store, r.sandbox, runsDir)
+	_, secondRun := seedRunning(t, store, r.sandbox, runsDir)
+
+	r.Spawn(firstRun)
+	select {
+	case call := <-fp.started:
+		if call != 1 {
+			t.Fatalf("first provider start = %d, want 1", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first provider call did not start")
+	}
+	r.Spawn(secondRun)
+	select {
+	case call := <-fp.started:
+		t.Fatalf("provider call %d began while first run still held the only slot", call)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(fp.releaseFirst)
+	select {
+	case call := <-fp.started:
+		if call != 2 {
+			t.Fatalf("second provider start = %d, want 2", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second provider call did not start after first completed")
+	}
+	first, err := store.GetLatestRun(context.Background(), firstPrompt.ID)
+	if err != nil {
+		t.Fatalf("GetLatestRun(first): %v", err)
+	}
+	if first == nil || first.Status != prompt.RunSucceeded {
+		t.Fatalf("first run at second provider start = %+v, want terminal success", first)
+	}
+	if got := waitRun(t, store, secondRun.PromptID); got.Status != prompt.RunSucceeded {
+		t.Fatalf("second run status = %q, want succeeded", got.Status)
 	}
 }
 
@@ -730,7 +881,7 @@ func TestNew_DefaultDiscoverWired(t *testing.T) {
 		t.Fatalf("sandbox.New: %v", err)
 	}
 
-	r := New(prompt.NewStore(conn), sb, time.Minute, t.TempDir(), func(int) bool { return false }, "")
+	r := New(prompt.NewStore(conn), sb, admit.New(8, 8), time.Minute, t.TempDir(), func(int) bool { return false }, "")
 	if r.discover == nil {
 		t.Fatalf("New left discover seam nil")
 	}

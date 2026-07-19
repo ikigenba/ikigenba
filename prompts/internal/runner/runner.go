@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"prompts/internal/admit"
 	"prompts/internal/prompt"
 	"prompts/internal/provider"
 	"prompts/internal/sandbox"
@@ -34,6 +35,7 @@ import (
 type Runner struct {
 	store         *prompt.Store
 	sandbox       *sandbox.Manager
+	gate          *admit.Gate
 	ttl           time.Duration
 	buildProvider func(prompt.Config, func(string) string) (agentkit.Provider, error)
 	// discover snapshots the box's other loopback MCP services as deferred
@@ -59,10 +61,11 @@ type Runner struct {
 // every run's wall-clock; on expiry the run ends failed with a TTL error.
 // manifestRoot is the box inventory root (PROMPTS_MANIFEST_ROOT) threaded into
 // the default suite-discovery closure.
-func New(store *prompt.Store, sb *sandbox.Manager, ttl time.Duration, manifestRoot string, sourcePortAllowed func(int) bool, shareBaseURL string) *Runner {
+func New(store *prompt.Store, sb *sandbox.Manager, gate *admit.Gate, ttl time.Duration, manifestRoot string, sourcePortAllowed func(int) bool, shareBaseURL string) *Runner {
 	return &Runner{
 		store:         store,
 		sandbox:       sb,
+		gate:          gate,
 		ttl:           ttl,
 		buildProvider: provider.Build,
 		discover: func(ctx context.Context, owner, promptID string) []agentkit.DeferredToolGroup {
@@ -109,14 +112,30 @@ func (r *Runner) execute(run prompt.Run) {
 	// (event-triggering decisions §3 — at-most-once per run, atomic). The outcome
 	// fields (prompt_id, prompt_name, trigger context) are sourced from the run
 	// row by FinishRun itself, so the runner threads only the terminal state.
+	var (
+		providerName string
+		modelName    string
+		usage        agentkit.Usage
+		cost         agentkit.Cost
+		releaseRun   func()
+	)
 	finish := func(status, usageJSON, errMsg string) {
 		_ = r.store.FinishRun(bg, prompt.FinishRunInput{
-			RunID:     run.ID,
-			Status:    status,
-			EndedAt:   endedAt(),
-			UsageJSON: usageJSON,
-			ErrMsg:    errMsg,
+			RunID:        run.ID,
+			Status:       status,
+			EndedAt:      endedAt(),
+			UsageJSON:    usageJSON,
+			ErrMsg:       errMsg,
+			Provider:     providerName,
+			Model:        modelName,
+			InputTokens:  usage.InputUncached + usage.CacheReadInput + usage.CacheWriteInput,
+			OutputTokens: usage.Output + usage.ReasoningOutput,
+			TotalTokens:  usage.Total,
+			CostUSD:      cost.USD(),
 		})
+		if releaseRun != nil {
+			releaseRun()
+		}
 	}
 
 	// Open the run log for create/write/truncate.
@@ -145,6 +164,8 @@ func (r *Runner) execute(run prompt.Run) {
 		finish(prompt.RunFailed, "", "parse run config: "+err.Error())
 		return
 	}
+	providerName = cfg.Provider
+	modelName = cfg.Model
 	userPromptBytes, err := os.ReadFile(filepath.Join(inputDir, "user_prompt.txt"))
 	if err != nil {
 		finish(prompt.RunFailed, "", "read user prompt: "+err.Error())
@@ -161,6 +182,12 @@ func (r *Runner) execute(run prompt.Run) {
 		return
 	}
 	// eventBytes == nil when the file is absent (manual run).
+
+	releaseRun, err = r.gate.AcquireRun(ctx)
+	if err != nil {
+		finish(prompt.RunFailed, "", "acquire run capacity: "+err.Error())
+		return
+	}
 
 	prov, err := r.buildProvider(cfg, os.Getenv)
 	if err != nil {
@@ -190,8 +217,8 @@ func (r *Runner) execute(run prompt.Run) {
 	for range stream.Events() {
 	}
 	runErr := stream.Err()
-	usage := stream.Usage()
-	cost := stream.Cost()
+	usage = stream.Usage()
+	cost = stream.Cost()
 	_ = conv.Close()
 
 	// Classify the terminal status: explicit user cancel wins over TTL, TTL
