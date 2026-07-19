@@ -9,4 +9,6 @@ that phase's line here and its `project/plan/phase-NN.md` body file — there is
 done marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 15
+Next phase: 16
+
+- Phase 15 ⬜ realizes R-FLV3-9RX8, R-FN2Z-NJNX — forward all four `X-Owner-*` identity headers through the nginx fragment (bearer prefix + session landing root)
