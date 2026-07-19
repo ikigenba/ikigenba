@@ -710,6 +710,57 @@ func TestNginxLoginBouncePreservesSessionLocationDirectives(t *testing.T) {
 	}
 }
 
+func TestNginxBearerLocationForwardsFullOwnerHeaderSet(t *testing.T) {
+	// R-M9EO-BQGX — bearer auth captures and forwards each owner header exactly once while retaining client identity.
+	block := nginxLocationBlock(t, readNginxConfig(t), "location /srv/notify/ {")
+	for _, directive := range []string{
+		"auth_request /_authn;",
+		"auth_request_set $notify_owner_id $upstream_http_x_owner_id;",
+		"auth_request_set $notify_owner $upstream_http_x_owner_email;",
+		"auth_request_set $notify_owner_name $upstream_http_x_owner_name;",
+		"auth_request_set $notify_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Id $notify_owner_id;",
+		"proxy_set_header X-Owner-Email $notify_owner;",
+		"proxy_set_header X-Owner-Name $notify_owner_name;",
+		"proxy_set_header X-Owner-Picture $notify_owner_picture;",
+		"proxy_set_header X-Client-Id $notify_client;",
+	} {
+		assertNginxDirectiveOnce(t, block, directive)
+	}
+}
+
+func TestNginxSessionLocationForwardsFullOwnerHeaderSet(t *testing.T) {
+	// R-MAMK-PI7M — session auth captures and forwards each owner header exactly once from session-scoped variables.
+	block := nginxLocationBlock(t, readNginxConfig(t), "location = /srv/notify/ {")
+	for _, directive := range []string{
+		"auth_request /_session-authn;",
+		"auth_request_set $notify_session_owner_id $upstream_http_x_owner_id;",
+		"auth_request_set $notify_session_owner $upstream_http_x_owner_email;",
+		"auth_request_set $notify_session_owner_name $upstream_http_x_owner_name;",
+		"auth_request_set $notify_session_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Id $notify_session_owner_id;",
+		"proxy_set_header X-Owner-Email $notify_session_owner;",
+		"proxy_set_header X-Owner-Name $notify_session_owner_name;",
+		"proxy_set_header X-Owner-Picture $notify_session_owner_picture;",
+	} {
+		assertNginxDirectiveOnce(t, block, directive)
+	}
+}
+
+func assertNginxDirectiveOnce(t *testing.T, block, directive string) {
+	t.Helper()
+	want := strings.Fields(directive)
+	count := 0
+	for line := range strings.SplitSeq(block, "\n") {
+		if reflect.DeepEqual(strings.Fields(line), want) {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("nginx directive %q appears %d times, want exactly once:\n%s", directive, count, block)
+	}
+}
+
 type capturedNtfyPost struct {
 	method string
 	path   string
