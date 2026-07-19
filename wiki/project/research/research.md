@@ -1,4 +1,4 @@
-# wiki — Research: the `ask` retrieval upgrade
+# wiki — Research
 
 **Status: informational, non-contractual.** This doc feeds the author of
 `project/design/README.md` and nothing downstream consumes it (the autonomous
@@ -93,46 +93,20 @@ immutable — never edit `20260622001058_drop_pages_fts.sql` or the existing
 
 ---
 
-## 2. Embeddings via agentkit (already available, already pinned)
+## 2. Embedding model facts (execution now via prompts `/embed` — §12)
 
-**The single biggest de-risking finding.** wiki imports the **external**
-`github.com/ikigenba/agentkit v0.1.0` (enforced by `cmd/wiki/module_wiring_test.go`
-— a versioned require, **no `replace`**). The pinned **v0.1.0 tag already
-contains the embeddings API** (`embed.go`, `embedding.go`,
-`internal/openaicompat/embedding.go`). So embeddings are consumable from wiki's
-*current* dependency — **no version bump, no `replace`, no off-box `bin/ship`
-risk.** The old research's "publish/vendor the external agentkit" open question
-is **closed**. (Newer tags v0.1.1–v0.1.3 exist if a bump is ever wanted, but
-v0.1.0 suffices.) The **in-repo** `agentkit/embed/` module is the dead one — do
-**not** target it.
+Embedding *execution* has moved to the prompts service (§12); the model-level
+facts below remain the evidence behind the D30/D32/D34 choices:
 
-### The API (concrete)
-```go
-// composition root (cmd/wiki/main.go): read key yourself, inject explicitly
-provider := openai.NewEmbedder(os.Getenv("OPENAI_API_KEY"))   // agentkit never reads env
-embedder := &agentkit.Embedder{
-    Provider:   provider,
-    Model:      "text-embedding-3-small",
-    Dimensions: 512,                       // optional reduction; omit for native
-    Retry:      agentkit.RetryPolicy{},    // zero value = sane backoff
-}
-res, err := embedder.Embed(ctx, []string{pageBody}, agentkit.InputDocument) // page side
-res, err := embedder.Embed(ctx, []string{query},    agentkit.InputQuery)    // ask side
-// res.Vectors() [][]float32 (L2-normalized), res.Usage(), res.Cost()
-```
-
-### Facts the design must honor
-- **Vectors are L2-normalized** (`normalizeFloat32Vectors` in agentkit `embed.go`)
+- **Vectors come back L2-normalized** from `text-embedding-3-*`
   → **cosine similarity = plain dot product.** Store them as-is; no wiki-side
-  normalization needed. *(Note: agent F claimed normalization is absent — that was
-  the dead in-repo module; the external agentkit wiki uses does normalize.)*
+  normalization needed.
 - **`float32`** throughout.
-- **Roles**: `InputDocument` for page bodies, `InputQuery` for the question —
+- **Roles**: `document` for page bodies, `query` for the question —
   `text-embedding-3` is trained for this asymmetry; use it.
-- **Dimension reduction is supported** (set `Dimensions` in `[Min,Max]`); OpenAI
+- **Dimension reduction is supported** (a `dimensions` request field); OpenAI
   shortens server-side (Matryoshka). 1536→512 ≈ 99% retrieval quality.
-- **Batching**: up to 2,048 inputs/request, auto-fanned, order preserved.
-- **Usage/cost tracked** per call and cumulatively.
+- **Batching**: inputs are batched per request, order preserved.
 
 ### Model & dimension choice
 | Model | Native dims | Max input tok | Price (USD/M tok) |
@@ -360,24 +334,14 @@ clamp.
 
 ---
 
-## 9. Call-site config & `llm_calls` recording for embeddings
+## 9. Embedding as a configured call site (recording since retired)
 
-**Record embedding calls in `llm_calls`, and make embedding a configured call
-site** — both fit the existing pattern and keep the "every LLM call recorded"
-cost-accounting promise honest.
-
-- **Two new call sites** (genuinely distinct): **page-embed** (ingest/merge time)
-  and **query-embed** (ask time). Add to the `CallSites` struct + `resolveCallSite`
-  in `config.go` following the existing `EXTRACT_*/COMPILE_*/ASK_*` env layering;
-  the knobs are **model + dims** (not reasoning/temperature).
-- **New `llm_calls` stages** `embed-page` and `embed-query`, added via a **new
-  table-rebuild migration** (SQLite can't `ALTER` a CHECK; the existing
-  `20260624200122_widen_llm_calls_stage.sql` is the rebuild template). `CallRecord`
-  already carries `provider/model/usage`; `params` carries `{dims}`.
-- **One integration caveat**: `llm.Client` today wraps only the *chat* provider;
-  `agentkit.Embedder` is a different interface, so the embed path needs a small
-  parallel record path (or thin adapter) onto the existing `Recorder` /
-  `LLMCallStore.Record` seam — both reusable as-is.
+Embedding is a configured call site (**model + dims** knobs — D34); the two
+sides stay genuinely distinct as **embed-page** (ingest/merge time) and
+**embed-query** (ask time). The wiki-side `llm_calls` recording this section
+originally specified is retired: accounting for every call — chat and embedding
+— is now the prompts service's `calls` table (§12), keyed by `name`
+(`wiki.embed-page` / `wiki.embed-query`) and `group_id`.
 
 ---
 
@@ -423,3 +387,71 @@ embedding a page is a read-only projection, not a re-ingest.
    fine and fastest; design should pick and state cache-invalidation on re-embed.
 </content>
 </invoke>
+
+---
+
+## 12. The prompts service inference API (the unified-inference dependency)
+
+Facts verified against the prompts spec (its D28–D33) and its deployed v0.21.0
+service, which this conversion consumes. Base URL: `registry.BaseURL("prompts")`
+(loopback :3002); both endpoints are loopback-only plumbing (unauthenticated —
+nginx never routes them; only loopback processes can reach them).
+
+**`POST /complete`** — stateless, synchronous, tool-less chat completion:
+
+```json
+{
+  "origin":   "user:a@b.com | trigger:<source> | service:wiki",   // required
+  "name":     "wiki.<stage>",           // required: ^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9._-]*$
+  "group_id": "…",                      // optional correlation id
+  "attempt":  2,                        // optional, default 1
+  "model":    "claude-sonnet-4-6",      // required, catalog name
+  "provider": "anthropic",              // optional, catalog default
+  "config":   { "temperature": 0, "max_tokens": 16384, "effort": "low", "thinking": false },
+  "system":   "…",
+  "messages": [ { "role": "user|assistant", "text": "…" } ]   // non-empty; last role must be "user"
+}
+```
+
+`200` → `{"call_id", "text", "usage": {"InputUncached", "CacheReadInput", …,
+"Output", "Total"}, "cost_usd"}`. Status taxonomy: `400` envelope/validation
+(catalog membership, provider routability, reasoning vocabulary, origin/name
+grammar, final-role rule; body `{"error": "…"}` naming the problem, nothing
+executed or recorded), `405` non-POST, `500` internal/recording failure, `502`
+provider failure. The `config` keys are the prompts config vocabulary
+(`temperature`, `top_p`, `max_tokens`, `effort`, `thinking_budget`,
+`thinking_level`, `thinking`, retry keys, `base_url`); `effort` maps to a
+reasoning level, `thinking:false` disables reasoning explicitly. Verified live:
+a haiku one-shot returned `text:"pong"`, usage, and catalog-priced `cost_usd`.
+
+**`POST /embed`** — batch embeddings:
+
+```json
+{
+  "origin": "…", "name": "wiki.embed-page", "group_id": "…",
+  "model": "text-embedding-3-small",     // catalog embedding entry (openai/google only)
+  "dimensions": 512,                     // optional; 0/omitted = native; validated to [min,max]
+  "role": "document",                    // required: "document" | "query"
+  "inputs": ["…"]                        // non-empty, no blank strings
+}
+```
+
+`200` → `{"call_id", "vectors": [[…]], "usage", "cost_usd"}`, vectors in input
+order, one per input. Same `400`/`502` taxonomy; a chat model, an out-of-range
+`dimensions`, an embedder-less provider, or a bad `role` each `400` with no row.
+
+**Accounting.** Every executed call lands one durable row in prompts' `calls`
+table (class `completion`/`embedding`/`session`) carrying origin, name,
+group_id, attempt, model, tokens, cost, error; request/response bodies are
+retained ~30 days then pruned (metrics forever). Inspection: prompts' MCP
+`calls` (filter by class/origin/name/group_id, detail by `call_id`) and `usage`
+(aggregate by name|origin|model|day). This is what replaces wiki's `llm_calls`.
+
+**Admission.** prompts gates concurrent synchronous calls per provider
+(default 8 in-flight); a call may therefore block briefly before executing —
+another reason wiki's client carries no fixed HTTP timeout.
+
+**Correlation ids.** The suite standard (`docs/correlation-ids.md`): a
+correlation id is a bare 26-char Crockford-base32 ULID minted **once at the
+initial user action** and propagated verbatim; a durable root entity's own ULID
+(an ingest job) serves as the id; otherwise (an ask) mint one fresh.
