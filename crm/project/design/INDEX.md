@@ -7,7 +7,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D1 → `project/design/D01.md` — The landing handler and its v1 content (service name + version) — owns R-LAND-2K7P, R-LAND-4M9Q, R-LAND-6N3R, R-LAND-8P5S
 - D2 → `project/design/D02.md` — Route wiring: `GET /{$}` mounted ungated through `Spec.Handlers` — owns R-ROUT-3T2V, R-ROUT-5W4X, R-ROUT-7Y6Z
 - D3 → `project/design/D03.md` — crm's own Carbon design assets (shipped in `share/www/static`) — owns R-ASST-2B8C, R-ASST-4D1E, R-ASST-6F3G
-- D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/crm/` location — owns R-NGNX-2H5J, R-NGNX-4K7L, R-NGNX-6M9N, R-NGNX-8P1Q
+- D4 → `project/design/D04.md` — nginx fragment: the session-gated `= /srv/crm/` landing location and the full owner-identity forwarding contract — owns R-NGNX-2H5J, R-NGNX-4K7L, R-NGNX-6M9N, R-NGNX-8P1Q, R-FS4N-9HTJ, R-FTCJ-N9K8
 - D5 → `project/design/D05.md` — Docs state current truth: purge the stale "no UI" line — none (structural; docs-only)
 - D6 → `project/design/D06.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-3L5Q
@@ -42,6 +42,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ASST-2B8C → D3 → `project/design/D03.md`
 - R-ASST-4D1E → D3 → `project/design/D03.md`
 - R-ASST-6F3G → D3 → `project/design/D03.md`
+- R-FS4N-9HTJ → D4 → `project/design/D04.md`
+- R-FTCJ-N9K8 → D4 → `project/design/D04.md`
 - R-HOME-3L5Q → D7 → `project/design/D07.md`
 - R-LAND-2K7P → D1 → `project/design/D01.md`
 - R-LAND-4M9Q → D1 → `project/design/D01.md`
