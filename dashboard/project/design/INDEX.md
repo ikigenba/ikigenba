@@ -13,7 +13,7 @@ Verification ids change.
 - D4 → `project/design/D04.md` — OAuth grant management moves to the profile page — owns R-DB09-GRNT, R-DB10-GRVK, R-DB11-GRNX
 - D5 → `project/design/D05.md` — Landing composition: service-name links, profile-avatar nav, sign-out, shared list-chrome service list with copyable URLs — owns R-DB12-LINK, R-DB14-SOUT, R-DB15-INST, R-XO4W-LKAI, R-OF1Q-VEDC, R-OG9N-9641, R-OHHJ-MXUQ
 - D6 → `project/design/D06.md` — Purge the stale "single hybrid page / don't split" doc rule — owns R-DB16-DOCS
-- D7 → `project/design/D07.md` — Login composition: brand title, tagline, sign-in lede, rule, CTA, then a borderless etymology table — owns R-JA3I-IY1F, R-JCJB-AHIT, R-JDR7-O99I, R-JEZ4-2107, R-JG70-FSQW, R-JHEW-TKHL, R-O7K1-XEN7, R-DB19-LAND
+- D7 → `project/design/D07.md` — Login composition: brand title, tagline, sign-in lede, rule, CTA, rule, then a borderless etymology table — owns R-JA3I-IY1F, R-JCJB-AHIT, R-JDR7-O99I, R-JEZ4-2107, R-3JAM-JLZ6, R-JG70-FSQW, R-JHEW-TKHL, R-O7K1-XEN7, R-DB19-LAND
 - D8 → `project/design/D08.md` — Eliminate the web-font FOUT (font-display: optional + font preload) — owns R-P97M-GIJ1, R-PAFI-UA9Q, R-PBNF-820F
 - D9 → `project/design/D09.md` — No site footer: remove the `.site-footer` element from every page — owns R-EFJZ-FRQ1
 - D10 → `project/design/D10.md` — The banner is shared app-shell chrome: wordmark links home, monogram avatar + sign-out on both landing and profile — owns R-VTIE-IUFA, R-VUQA-WM5Z, R-VVY7-ADWO
@@ -33,6 +33,7 @@ Verification ids change.
 
 ## Verification ids → Decision
 
+- R-3JAM-JLZ6 → D7 → `project/design/D07.md`
 - R-6QJD-1MUY → D23 → `project/design/D23.md`
 - R-6RR9-FELN → D23 → `project/design/D23.md`
 - R-6SZ5-T6CC → D23 → `project/design/D23.md`
