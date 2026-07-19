@@ -12,4 +12,6 @@ done marker; done is deleted, and history lives in git. This file carries no
 bare status glyph outside phase lines, so the anchored grep matches only
 phase lines.
 
-Next phase: 50
+Next phase: 51
+
+- Phase 50 ⬜ realizes — — bin/push-secrets preserves multi-line secret values (trailing-newline trim only) + SOP round-trip step
