@@ -28,8 +28,8 @@ func TestNginxLandingLocationIsExactSessionGatedRoot(t *testing.T) {
 
 	// R-NGNX-5D8E
 	for _, want := range []string{
-		"auth_request_set $gmail_session_owner $upstream_http_x_owner_email;",
-		"proxy_set_header X-Owner-Email $gmail_session_owner;",
+		"auth_request_set $gmail_session_owner         $upstream_http_x_owner_email;",
+		"proxy_set_header X-Owner-Email   $gmail_session_owner;",
 	} {
 		if !strings.Contains(landing, want) {
 			t.Fatalf("landing location missing %q: %s", want, landing)
@@ -166,6 +166,47 @@ func TestNginxBearerLocationDoesNotUseLoginBounce(t *testing.T) {
 	// R-4022-QI0E
 	if strings.Contains(bearer, "error_page 401 = @login_bounce;") {
 		t.Fatalf("bearer location must keep its 401 protocol response: %s", bearer)
+	}
+}
+
+func TestNginxBearerLocationForwardsAllOwnerHeaders(t *testing.T) {
+	bearer := nginxLocationBlock(t, readNginxConfig(t), "location /srv/gmail/ {")
+
+	// R-MTLH-R7Z9
+	for _, want := range []string{
+		"auth_request_set $gmail_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $gmail_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $gmail_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $gmail_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email   $gmail_owner;",
+		"proxy_set_header X-Owner-Id      $gmail_owner_id;",
+		"proxy_set_header X-Owner-Name    $gmail_owner_name;",
+		"proxy_set_header X-Owner-Picture $gmail_owner_picture;",
+		"proxy_set_header X-Client-Id     $gmail_client;",
+	} {
+		if !strings.Contains(bearer, want) {
+			t.Errorf("bearer location missing %q", want)
+		}
+	}
+}
+
+func TestNginxLandingLocationForwardsAllOwnerHeaders(t *testing.T) {
+	landing := nginxLocationBlock(t, readNginxConfig(t), "location = /srv/gmail/ {")
+
+	// R-MUTE-4ZPY
+	for _, want := range []string{
+		"auth_request_set $gmail_session_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $gmail_session_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $gmail_session_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $gmail_session_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email   $gmail_session_owner;",
+		"proxy_set_header X-Owner-Id      $gmail_session_owner_id;",
+		"proxy_set_header X-Owner-Name    $gmail_session_owner_name;",
+		"proxy_set_header X-Owner-Picture $gmail_session_owner_picture;",
+	} {
+		if !strings.Contains(landing, want) {
+			t.Errorf("landing location missing %q", want)
+		}
 	}
 }
 
