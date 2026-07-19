@@ -11,5 +11,3 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 44
 
-- Phase 43 ⬜ realizes R-7NY0-UIO6, R-7P5X-8AEV — forward all four owner identity headers (X-Owner-Id/Email/Name/Picture) through the nginx fragment's bearer and session identity-forwarding locations
-
