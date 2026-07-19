@@ -9,4 +9,6 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 25
+Next phase: 26
+
+- Phase 25 ⬜ realizes R-LXR5-KN5G, R-LYZ1-YEW5 — forward all four X-Owner-* identity headers through both identity-forwarding locations of the nginx fragment

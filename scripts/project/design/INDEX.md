@@ -7,7 +7,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D1 → `project/design/D01.md` — The landing handler and its v1 content (service name + version) — owns R-LAND-7Q3D, R-LAND-9R5F, R-LAND-1S7G, R-LAND-3T9H
 - D2 → `project/design/D02.md` — Route wiring: `GET /{$}` mounted ungated through `Spec.Handlers` — owns R-ROUT-8U2J, R-ROUT-1V4K, R-ROUT-3W6L
 - D3 → `project/design/D03.md` — scripts's own Carbon design assets (shipped in `share/www/static`) — owns R-ASST-5X8M, R-ASST-7Y1N, R-ASST-9Z3P
-- D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/scripts/` location — owns R-NGNX-2A5Q, R-NGNX-4B7R, R-NGNX-6C9S, R-NGNX-8D1T
+- D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/scripts/` location — owns R-NGNX-2A5Q, R-NGNX-4B7R, R-NGNX-6C9S, R-NGNX-8D1T, R-LYZ1-YEW5
 - D5 → `project/design/D05.md` — Docs state current truth: state the landing-page surface in scripts's doctrine — none (structural; docs-only)
 - D6 → `project/design/D06.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-8R2V
@@ -19,7 +19,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the sixteen-tool domain table; chassis `health`+`reflection` added; runtime contract moves to `Spec.Health` — owns R-91IM-JYPA, R-92QI-XQFZ
 - D14 → `project/design/D14.md` — Delete the `internal/db` open/migrate shim and true up the doctrine — none (structural)
 - D15 → `project/design/D15.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer tier deliberately excluded) — owns R-465K-NCPV, R-47DH-14GK, R-49T9-SNXY
-- D16 → `project/design/D16.md` — Rename the bearer tier's prompts-named identity plumbing (`$prompts_owner`/`$prompts_client`/`@prompts_authn_500`) to scripts-owned names — owns R-4EOV-BQWQ, R-4FWR-PINF
+- D16 → `project/design/D16.md` — The bearer tier's identity plumbing: scripts-named variables forwarding all four owner headers — owns R-4EOV-BQWQ, R-4FWR-PINF, R-LXR5-KN5G
 - D17 → `project/design/D17.md` — Event-routing conformance: triggers become canonical filter strings (trigger surface + consumer) — owns R-7TR5-QSY4, R-7UZ2-4KOT, R-7W6Y-ICFI, R-7XEU-W467, R-7YMR-9VWW, R-7ZUN-NNNL, R-812K-1FEA
 - D18 → `project/design/D18.md` — Event-routing conformance: producer kinds `succeeded`/`failed`, subject = /<script name>, family registry, outbox migration — owns R-82AG-F74Z, R-83IC-SYVO, R-84Q9-6QMD, R-85Y5-KID2
 - D19 → `project/design/D19.md` — Structured MCP adoption: `structuredContent` + `outputSchema` on the thirteen structured domain tools, prose exceptions kept text-only, typed error codes from the closed vocabulary (cites `docs/structured-mcp-design.md`) — owns R-C0G0-V0QL, R-C1NX-8SHA, R-C2VT-MK7Z, R-C43Q-0BYO, R-C5BM-E3PD, R-C6JI-RVG2, R-C7RF-5N6R, R-CA77-X6O5
@@ -98,6 +98,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-LAND-3T9H → D1 → `project/design/D01.md`
 - R-LAND-7Q3D → D1 → `project/design/D01.md`
 - R-LAND-9R5F → D1 → `project/design/D01.md`
+- R-LXR5-KN5G → D16 → `project/design/D16.md`
+- R-LYZ1-YEW5 → D4 → `project/design/D04.md`
 - R-M59W-5CAW → D8 → `project/design/D08.md`
 - R-M6HS-J41L → D8 → `project/design/D08.md`
 - R-M8XL-ANIZ → D8 → `project/design/D08.md`
