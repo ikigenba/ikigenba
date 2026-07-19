@@ -14,5 +14,4 @@ phase lines.
 
 Next phase: 50
 
-- Phase 48  ⬜  realizes D12  — `.envrc` conformance + the `bin/push-secrets` tool
 - Phase 49  ⬜  realizes D12  — retire the shared-blob era (delete per-service `bin/secrets`, rewrite the seeding SOP)
