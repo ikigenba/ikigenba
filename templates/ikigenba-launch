@@ -8,11 +8,12 @@
 # Contract (see AGENTS.md "Service layer"):
 #   1. Source /etc/ikigenba/env for identity/region.
 #   2. Source /opt/<app>/etc/manifest.env (non-secret defaults: PORT, etc.).
-#   3. Fetch /ikigenba/${IKIGENBA_ENV}/app-config from SSM. Hard-fail on
-#      any error (missing grant, missing parameter, network) — apps that
+#   3. Fetch /ikigenba/${IKIGENBA_ENV}/app-config/<app> from SSM — one
+#      parameter per app, a flat {KEY: value} JSON object. Hard-fail on any
+#      error (missing grant, missing parameter, network) — every app is
+#      seeded before first deploy (secret-less apps hold '{}'), so apps that
 #      expect secrets must not silently start without them.
-#   4. Extract .["<app>"] from the JSON blob, export each KEY=value.
-#      SSM wins over manifest on key collision.
+#   4. Export each KEY=value. SSM wins over manifest on key collision.
 #   5. exec /opt/<app>/bin/run. Secrets live only in this process's env;
 #      never written to disk.
 
@@ -33,19 +34,21 @@ if [[ -f "$manifest" ]]; then
   set +a
 fi
 
-# 3. Fetch secrets blob. Hard-fail on any error.
+# 3. Fetch this app's secrets parameter. Hard-fail on any error, including
+#    ParameterNotFound — every app is seeded before first deploy (secret-less
+#    apps carry an explicit '{}'), so a missing parameter means the app was
+#    never seeded and must not start.
 blob=$(aws ssm get-parameter \
-  --name "/ikigenba/${IKIGENBA_ENV}/app-config" \
+  --name "/ikigenba/${IKIGENBA_ENV}/app-config/${app}" \
   --with-decryption \
   --region "${IKIGENBA_AWS_REGION}" \
   --query 'Parameter.Value' \
   --output text)
 
-# 4. Extract this app's key and export each pair. jq emits shell-safe
+# 4. Export each pair of the flat {KEY: value} object. jq emits shell-safe
 #    `export KEY=value` lines; eval imports them into this shell.
-assignments=$(jq -r --arg app "$app" '
-  (.[$app] // {})
-  | to_entries[]
+assignments=$(jq -r '
+  to_entries[]
   | "export \(.key)=\(.value | @sh)"
 ' <<<"$blob")
 
