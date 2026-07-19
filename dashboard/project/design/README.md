@@ -12,8 +12,10 @@ the shared banner chrome (D10), and a new owner-only **telemetry** page that
 samples box resource health in memory and graphs the last 24 hours (D11–D16);
 and (2) the **identity model** — moving the dashboard's concept of user identity
 from email to the OIDC subject pair `(iss, sub)` behind an opaque local handle,
-capturing name/picture at login, and emitting them (plus the handle) as
-additive identity headers from the introspection endpoints (D17–D19); and (3) the
+capturing name/picture at login, enforcing the artifact→identity link as a real
+foreign key (D23–D24), and emitting the full identity header set from the
+introspection endpoints on every allow, fail-closed, sourced from the
+identities row (D17–D19, D24); and (3) the
 **login-bounce contract** — a dashboard-owned apex nginx primitive
 (`@login_bounce`) that redirects a logged-out *navigation* to a session-gated
 `/srv/<svc>/` page into `/login` instead of a bare 401, while leaving scripted
@@ -47,12 +49,14 @@ Shared facts every Decision leans on:
   HTTP-routing + template + view change under `dashboard/internal/server/` and
   `dashboard/ui/`, plus one in-memory package `dashboard/internal/telemetry/`
   whose history lives only in RAM (ring buffers) and is never persisted. The
-  **identity model** work (D17–D19) *does* add schema: two new forward-only
-  migrations — a new `identities` table (D17) and an `owner_id TEXT` column on
+  **identity model** work (D17–D19, D23–D24) *does* add schema: forward-only
+  migrations — a new `identities` table (D17), an `owner_id TEXT` column on
   the four auth-artifact carrier tables (`web_sessions`, `oauth_authcodes`,
-  `oauth_chains`, `personal_tokens`) (D18). Both are created with
-  `bin/create-migration dashboard <name>` (timestamped, immutable) and applied
-  by the appkit runner; committed migrations are never edited. The
+  `oauth_chains`, `personal_tokens`) (D18), the purge + `NOT NULL` rebuild of
+  those carriers (D23), and a rebuild-with-copy declaring
+  `owner_id … REFERENCES identities(id)` on all four (D24). Each is created
+  with `bin/create-migration dashboard <name>` (timestamped, immutable) and
+  applied by the appkit runner; committed migrations are never edited. The
   **login-bounce** work (D20–D22) adds one more such migration — a nullable
   `return_to TEXT` column on `oauth_state` (D21), mirroring how
   `005_oauth_state_mcp.sql` added the MCP columns.
