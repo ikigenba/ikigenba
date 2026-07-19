@@ -619,6 +619,49 @@ func TestNginxPreExistingServiceLocationsSurvive(t *testing.T) {
 	}
 }
 
+func TestNginxLandingForwardsAllOwnerIdentityHeaders(t *testing.T) {
+	conf := readNginxConfig(t)
+	landing := nginxLocationBlock(t, conf, "location = /srv/cron/ {")
+
+	// R-8ALX-VK6V
+	for _, want := range []string{
+		"auth_request_set $cron_session_owner $upstream_http_x_owner_email;",
+		"auth_request_set $cron_session_owner_id $upstream_http_x_owner_id;",
+		"auth_request_set $cron_session_owner_name $upstream_http_x_owner_name;",
+		"auth_request_set $cron_session_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email $cron_session_owner;",
+		"proxy_set_header X-Owner-Id $cron_session_owner_id;",
+		"proxy_set_header X-Owner-Name $cron_session_owner_name;",
+		"proxy_set_header X-Owner-Picture $cron_session_owner_picture;",
+	} {
+		if !strings.Contains(landing, want) {
+			t.Fatalf("session-gated landing location does not contain %q:\n%s", want, landing)
+		}
+	}
+}
+
+func TestNginxBearerPrefixForwardsAllOwnerIdentityHeaders(t *testing.T) {
+	conf := readNginxConfig(t)
+	prefix := nginxLocationBlock(t, conf, "location /srv/cron/ {")
+
+	// R-8BTU-9BXK
+	for _, want := range []string{
+		"auth_request_set $cron_owner $upstream_http_x_owner_email;",
+		"auth_request_set $cron_owner_id $upstream_http_x_owner_id;",
+		"auth_request_set $cron_owner_name $upstream_http_x_owner_name;",
+		"auth_request_set $cron_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email $cron_owner;",
+		"proxy_set_header X-Owner-Id $cron_owner_id;",
+		"proxy_set_header X-Owner-Name $cron_owner_name;",
+		"proxy_set_header X-Owner-Picture $cron_owner_picture;",
+		"proxy_set_header X-Client-Id $cron_client;",
+	} {
+		if !strings.Contains(prefix, want) {
+			t.Fatalf("bearer-gated service prefix does not contain %q:\n%s", want, prefix)
+		}
+	}
+}
+
 func TestNginxStaticLocationIsSessionGatedAndProxiesToStaticHandler(t *testing.T) {
 	conf := readNginxConfig(t)
 	static := nginxLocationBlock(t, conf, "location /srv/cron/static/ {")
