@@ -12,4 +12,3 @@ lines.
 
 Next phase: 96
 
-- Phase 95 ⬜ realizes R-8H1B-9CCI — pin the /complete message wire spelling (`text`, not `content`)
