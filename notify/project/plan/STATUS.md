@@ -11,4 +11,3 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 17
 
-- Phase 16 ⬜ realizes R-M9EO-BQGX, R-MAMK-PI7M — forward the full owner header set (X-Owner-Id/Email/Name/Picture) on both identity-forwarding nginx locations
