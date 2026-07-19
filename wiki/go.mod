@@ -4,11 +4,10 @@ go 1.26
 
 require (
 	appkit v0.0.0
-	github.com/ikigenba/agentkit v0.1.0
+	github.com/ikigenba/agentkit v0.6.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/text v0.38.0
-	modernc.org/sqlite v1.50.1
 	registry v0.0.0
 )
 
@@ -31,6 +30,7 @@ require (
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
+	modernc.org/sqlite v1.50.1 // indirect
 )
 
 replace appkit => ../appkit

@@ -2,7 +2,6 @@ package eval
 
 import (
 	agentkit "github.com/ikigenba/agentkit"
-	"github.com/ikigenba/agentkit/anthropic"
 
 	"wiki/internal/llm"
 )
@@ -22,7 +21,7 @@ func NewJudge(c *llm.Client, site llm.CallSite) *Judge {
 func DefaultJudgeCallSite() llm.CallSite {
 	return llm.CallSite{
 		Stage:           "judge",
-		Model:           anthropic.ModelOpus48,
+		Model:           "claude-opus-4-8",
 		Reasoning:       agentkit.Level("high"),
 		MaxTokens:       16384,
 		MaxParseRetries: 2,

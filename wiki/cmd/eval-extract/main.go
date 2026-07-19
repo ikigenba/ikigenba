@@ -48,7 +48,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		return 2
 	}
 	if deps.newProvider == nil {
-		deps.newProvider = func(apiKey string) agentkit.Provider { return anthropic.New(apiKey) }
+		deps.newProvider = func(apiKey string) agentkit.Provider { return anthropic.New(anthropic.APIKey(apiKey)) }
 	}
 	if deps.evaluate == nil {
 		deps.evaluate = eval.RunDataset
@@ -101,7 +101,7 @@ func parseConfig(args []string) (config, error) {
 		extract: extract.DefaultCallSite(),
 		judge:   eval.DefaultJudgeCallSite(),
 	}
-	cfg.extract.Model = anthropic.ModelSonnet46
+	cfg.extract.Model = "claude-sonnet-4-6"
 
 	fs := flag.NewFlagSet("eval-extract", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

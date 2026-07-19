@@ -18,6 +18,7 @@ import (
 	"eventplane/outbox"
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/anthropic"
+	"github.com/ikigenba/agentkit/catalog"
 
 	"repos/internal/repos"
 	toolset "repos/internal/tools"
@@ -34,11 +35,11 @@ type ModelConfig struct {
 
 // DefaultModelConfig returns the v1 default pair.
 func DefaultModelConfig(apiKey string) ModelConfig {
-	return ModelConfig{Provider: "anthropic", Model: anthropic.ModelOpus48, APIKey: apiKey}
+	return ModelConfig{Provider: "anthropic", Model: "claude-opus-4-8", APIKey: apiKey}
 }
 
-// ValidateModel checks both the API credential and the provider's real pricing
-// registry. It is intended to run before the HTTP server is constructed.
+// ValidateModel checks both the API credential and the cataloged pricing row.
+// It is intended to run before the HTTP server is constructed.
 func ValidateModel(config ModelConfig) (agentkit.Provider, error) {
 	pair := fmt.Sprintf("%s/%s", config.Provider, config.Model)
 	if strings.TrimSpace(config.APIKey) == "" {
@@ -47,11 +48,12 @@ func ValidateModel(config ModelConfig) (agentkit.Provider, error) {
 	var provider agentkit.Provider
 	switch config.Provider {
 	case "anthropic":
-		provider = anthropic.New(config.APIKey)
+		provider = anthropic.New(anthropic.APIKey(config.APIKey))
 	default:
 		return nil, fmt.Errorf("model %s: unsupported provider", pair)
 	}
-	if _, ok := provider.Pricing(config.Model); !ok {
+	entry, ok := catalog.Lookup(config.Model)
+	if !ok || entry.Provider != config.Provider || entry.Pricing == nil {
 		return nil, fmt.Errorf("model %s: unknown pricing pair", pair)
 	}
 	return provider, nil

@@ -156,6 +156,8 @@ func (p *scriptedProvider) RoundTrip(ctx context.Context, req *agentkit.Request)
 		agentkit.Usage{InputUncached: 1, Output: 1, Total: 2},
 		nil,
 		nil,
+		0,
+		false,
 	)
 }
 

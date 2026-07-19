@@ -638,7 +638,7 @@ func (p *scriptedProvider) RoundTrip(ctx context.Context, req *agentkit.Request)
 	if len(p.errs) > 0 {
 		err := p.errs[0]
 		p.errs = p.errs[1:]
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err, 0, false)
 	}
 	text := `{}`
 	if len(p.responses) > 0 {
@@ -661,6 +661,8 @@ func (p *scriptedProvider) RoundTrip(ctx context.Context, req *agentkit.Request)
 		usage,
 		nil,
 		nil,
+		0,
+		false,
 	)
 }
 

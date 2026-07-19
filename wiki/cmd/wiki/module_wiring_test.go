@@ -57,8 +57,8 @@ func TestProductionShapedBuildCompilesWithPublishedAgentkit(t *testing.T) {
 		t.Fatalf("read go.mod: %v", err)
 	}
 	modText := string(goMod)
-	if !strings.Contains(modText, "github.com/ikigenba/agentkit v0.1.0") {
-		t.Fatalf("go.mod does not pin published agentkit v0.1.0:\n%s", modText)
+	if !strings.Contains(modText, "github.com/ikigenba/agentkit v0.6.0") {
+		t.Fatalf("go.mod does not pin published agentkit v0.6.0:\n%s", modText)
 	}
 	if strings.Contains(modText, "replace github.com/ikigenba/agentkit") {
 		t.Fatalf("go.mod must not replace published agentkit:\n%s", modText)

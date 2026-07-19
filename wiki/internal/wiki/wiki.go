@@ -5,15 +5,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-
-	"github.com/ikigenba/agentkit/anthropic"
 )
 
 const (
 	App   = "wiki"
 	Mount = "/srv/wiki/"
 
-	ModelID           = anthropic.ModelSonnet46
+	ModelID           = "claude-sonnet-4-6"
 	WorkerConcurrency = 1
 	SearchDefault     = 8
 	SearchCap         = 32

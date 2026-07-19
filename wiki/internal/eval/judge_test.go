@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	agentkit "github.com/ikigenba/agentkit"
-	"github.com/ikigenba/agentkit/anthropic"
 )
 
 func TestDefaultJudgeCallSiteUsesPinnedOpusHighReasoningWithoutTemperature(t *testing.T) {
@@ -13,8 +12,8 @@ func TestDefaultJudgeCallSiteUsesPinnedOpusHighReasoningWithoutTemperature(t *te
 	if site.Stage != "judge" {
 		t.Fatalf("stage = %q, want judge", site.Stage)
 	}
-	if site.Model != anthropic.ModelOpus48 {
-		t.Fatalf("model = %q, want %q", site.Model, anthropic.ModelOpus48)
+	if site.Model != "claude-opus-4-8" {
+		t.Fatalf("model = %q, want %q", site.Model, "claude-opus-4-8")
 	}
 	if site.Temperature != nil {
 		t.Fatalf("temperature = %v, want unset for extended thinking", *site.Temperature)

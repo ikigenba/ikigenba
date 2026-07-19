@@ -18,7 +18,7 @@ func TestRecordingEmbedderRecordsSuccessfulPageEmbeddingFootprint(t *testing.T) 
 		usage:   agentkit.EmbeddingUsage{InputTokens: 7, Total: 7},
 	}
 	embedder := &recordingEmbedder{
-		inner:    &agentkit.Embedder{Provider: prov, Model: "embed-model", Dimensions: 512},
+		inner:    &agentkit.Embedder{Provider: prov, Model: "embed-model", Dimensions: 2},
 		recorder: rec,
 		stage:    "embed-page",
 		now: sequenceTimes(
@@ -44,7 +44,7 @@ func TestRecordingEmbedderRecordsSuccessfulPageEmbeddingFootprint(t *testing.T) 
 		call.Attempt != 1 || call.Provider != "embedding-scripted" || call.Model != "embed-model" || call.Err != "" {
 		t.Fatalf("record = %+v, want successful embed-page footprint", call)
 	}
-	assertJSONField(t, call.Params, "dimensions", float64(512))
+	assertJSONField(t, call.Params, "dimensions", float64(2))
 	assertJSONField(t, call.Request, "role", "document")
 	assertJSONField(t, call.Response, "vectors", float64(1))
 	assertJSONField(t, call.Response, "dims", float64(2))
@@ -54,7 +54,7 @@ func TestRecordingEmbedderRecordsSuccessfulPageEmbeddingFootprint(t *testing.T) 
 		t.Fatalf("record times = %v/%v, want fixed embedding call times", call.StartedAt, call.EndedAt)
 	}
 	if len(prov.requests) != 1 || prov.requests[0].Model != "embed-model" ||
-		prov.requests[0].Dimensions != 512 || prov.requests[0].Role != agentkit.InputDocument {
+		prov.requests[0].Dimensions != 2 || prov.requests[0].Role != agentkit.InputDocument {
 		t.Fatalf("provider request = %#v, want configured model, dims, and document role", prov.requests)
 	}
 }

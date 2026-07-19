@@ -464,8 +464,8 @@ func TestModelValidationRejectsBadBootConfigurationAndAcceptsDefaultPricing(t *t
 	if err != nil {
 		t.Fatalf("default model did not pass real pricing registry: %v", err)
 	}
-	if _, ok := provider.Pricing("claude-opus-4-8"); !ok {
-		t.Fatal("default model absent from real provider pricing table")
+	if provider.Name() != "anthropic" {
+		t.Fatalf("default provider = %q, want anthropic", provider.Name())
 	}
 }
 

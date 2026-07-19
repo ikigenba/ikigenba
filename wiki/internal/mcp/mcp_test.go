@@ -2110,7 +2110,7 @@ func mcpTextRoundTrip(text string) *agentkit.RoundTrip {
 	return agentkit.NewRoundTrip(agentkit.Message{
 		Role:   agentkit.RoleAssistant,
 		Blocks: []agentkit.Block{agentkit.TextBlock{Text: text}},
-	}, agentkit.FinishStop, agentkit.Usage{InputUncached: 1, Output: 1, Total: 2}, nil, nil)
+	}, agentkit.FinishStop, agentkit.Usage{InputUncached: 1, Output: 1, Total: 2}, nil, nil, 0, false)
 }
 
 type answer struct {

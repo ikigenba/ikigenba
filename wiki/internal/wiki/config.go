@@ -61,7 +61,7 @@ func NewConfig(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	provider := anthropic.New(apiKey)
+	provider := anthropic.New(anthropic.APIKey(apiKey))
 	return Config{
 		CallSites:         callSites,
 		EmbedSite:         embedSite,
@@ -91,7 +91,7 @@ func resolveEmbedSite(getenv func(string) string, apiKey string) (EmbedSite, err
 		}
 		site.Dims = dims
 	}
-	site.Provider = openai.NewEmbedder(apiKey)
+	site.Provider = openai.NewEmbedder(openai.APIKey(apiKey))
 	return site, nil
 }
 
