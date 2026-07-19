@@ -187,6 +187,7 @@ func registerRoutes(rt *appkit.Router) error {
 	}
 	gate := admit.New(callCap, runCap)
 	completion := inference.NewExecutor(callStore, gate, provider.Build, os.Getenv)
+	embedding := inference.NewEmbedExecutor(callStore, gate, provider.BuildEmbedder, os.Getenv)
 
 	// PROMPTS_RUN_TTL bounds each run's wall-clock — the runaway-goroutine backstop
 	// (§5.3). Parsed as a Go duration (e.g. "30m", "2h"). Read here at the domain
@@ -251,6 +252,7 @@ func registerRoutes(rt *appkit.Router) error {
 	}
 	rt.Handle("POST /mcp", rt.RequireIdentity(handler))
 	rt.HandleLoopback("POST /complete", completion.CompleteHandler())
+	rt.HandleLoopback("POST /embed", embedding.EmbedHandler())
 	rt.HandleLoopback("GET /run-content", svc.RunContentHandler())
 	return nil
 }
