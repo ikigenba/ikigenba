@@ -208,16 +208,17 @@ func defaultStandardTools() []Tool {
 	return []Tool{
 		{
 			Name:        "health",
-			Description: "Health + diagnostics for this service. Returns the fixed envelope (status, version, service, details) plus the authenticated caller's identity (owner_email, client_id). Takes no inputs.",
+			Description: "Health + diagnostics for this service. Returns the fixed envelope (status, version, service, details) plus the authenticated caller's identity (owner_id, owner_email, client_id). Takes no inputs.",
 			InputSchema: objectSchema(map[string]any{}),
 			OutputSchema: objectSchema(map[string]any{
 				"status":      map[string]any{"type": "string"},
 				"service":     map[string]any{"type": "string"},
 				"version":     map[string]any{"type": "string"},
+				"owner_id":    map[string]any{"type": "string"},
 				"owner_email": map[string]any{"type": "string"},
 				"client_id":   map[string]any{"type": "string"},
 				"details":     map[string]any{"type": "object", "additionalProperties": true},
-			}, "status", "service", "version", "owner_email", "client_id", "details"),
+			}, "status", "service", "version", "owner_id", "owner_email", "client_id", "details"),
 		},
 		{
 			Name:        "reflection",
@@ -268,6 +269,7 @@ func (h *Handler) toolHealth(ctx context.Context, id server.Identity) (map[strin
 		}
 	}
 	envelope := appkit.Envelope(h.version, h.service, details)
+	envelope["owner_id"] = id.OwnerID
 	envelope["owner_email"] = id.OwnerEmail
 	envelope["client_id"] = id.ClientID
 	return StructuredResult(envelope)
@@ -336,8 +338,11 @@ func identityFromRequest(r *http.Request) server.Identity {
 		return id
 	}
 	return server.Identity{
-		OwnerEmail: r.Header.Get("X-Owner-Email"),
-		ClientID:   r.Header.Get("X-Client-Id"),
+		OwnerID:      r.Header.Get("X-Owner-Id"),
+		OwnerEmail:   r.Header.Get("X-Owner-Email"),
+		OwnerName:    r.Header.Get("X-Owner-Name"),
+		OwnerPicture: r.Header.Get("X-Owner-Picture"),
+		ClientID:     r.Header.Get("X-Client-Id"),
 	}
 }
 

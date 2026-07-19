@@ -6,11 +6,15 @@ import (
 )
 
 // Identity is the authenticated caller, as told to us authoritatively by nginx.
-// It is exported so a service's own gated handlers (registered via Router) can
-// read it off the request context behind RequireIdentity.
+// OwnerID is the stable key used for scoping, lookups, and authorization. The
+// remaining owner fields are display data and must never be used as identity
+// keys.
 type Identity struct {
-	OwnerEmail string
-	ClientID   string
+	OwnerID      string
+	OwnerEmail   string
+	OwnerName    string
+	OwnerPicture string
+	ClientID     string
 }
 
 type identityCtxKey struct{}
@@ -29,19 +33,19 @@ func IdentityFrom(ctx context.Context) (Identity, bool) {
 
 // requireIdentityHeaders does NO token parsing, NO ValidateAccess, NO hashing —
 // a suite service performs no token logic at all. nginx is the only ingress,
-// the server binds 127.0.0.1, and nginx sets X-Owner-Email / X-Client-Id
+// the server binds 127.0.0.1, and nginx sets X-Owner-* / X-Client-Id
 // authoritatively only AFTER a successful auth_request against the dashboard
-// (clearing any inbound spoof first). So an empty X-Owner-Email means the
+// (clearing any inbound spoof first). So an empty X-Owner-Id means the
 // request did not come through the authenticated front door (or nginx is
 // misconfigured) — we refuse to serve it (PLAN §2.9).
 //
-// We trust X-Owner-Email / X-Client-Id precisely because that loopback bind plus
+// We trust X-Owner-* / X-Client-Id precisely because that loopback bind plus
 // nginx-only ingress is the entire security boundary; binding a public interface
 // would let anyone spoof these headers, which is why the server binds 127.0.0.1.
 func (a *appHandler) requireIdentityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		owner := r.Header.Get("X-Owner-Email")
-		if owner == "" {
+		ownerID := r.Header.Get("X-Owner-Id")
+		if ownerID == "" {
 			// No authenticated identity: this request did not transit nginx's
 			// auth_request gate. The MCP challenge points clients at our PRM doc.
 			w.Header().Set("WWW-Authenticate",
@@ -53,8 +57,11 @@ func (a *appHandler) requireIdentityHeaders(next http.Handler) http.Handler {
 			return
 		}
 		id := Identity{
-			OwnerEmail: owner,
-			ClientID:   r.Header.Get("X-Client-Id"),
+			OwnerID:      ownerID,
+			OwnerEmail:   r.Header.Get("X-Owner-Email"),
+			OwnerName:    r.Header.Get("X-Owner-Name"),
+			OwnerPicture: r.Header.Get("X-Owner-Picture"),
+			ClientID:     r.Header.Get("X-Client-Id"),
 		}
 		next.ServeHTTP(w, r.WithContext(withIdentity(r.Context(), id)))
 	})

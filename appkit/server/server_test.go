@@ -215,6 +215,7 @@ func TestIdentityGate_RejectsWithoutOwnerEmail(t *testing.T) {
 func TestIdentityGate_AllowsServiceRouteWithHeaders(t *testing.T) {
 	h := newStandardServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("X-Owner-Id", "owner-123")
 	req.Header.Set("X-Owner-Email", "owner@example.com")
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)

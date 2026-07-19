@@ -329,7 +329,11 @@ func TestStandardToolsListAndHealthEnvelope(t *testing.T) {
 		t.Fatalf("reflection inputSchema.properties still advertises stale detail parameter: %#v", properties)
 	}
 
-	callResp := rpc(t, h, `{"jsonrpc":"2.0","id":"health","method":"tools/call","params":{"name":"health"}}`, nil)
+	callResp := rpc(t, h, `{"jsonrpc":"2.0","id":"health","method":"tools/call","params":{"name":"health"}}`, map[string]string{
+		"X-Owner-Id":    "owner_opaque_123",
+		"X-Owner-Email": "owner@example.com",
+		"X-Client-Id":   "client-123",
+	})
 	got := resultTextJSON(t, callResp)
 	result := resultObject(t, callResp)
 	wantEnvelope := appkit.Envelope("v2.4.6", "crm", map[string]any{"queue": 3})
@@ -358,10 +362,18 @@ func TestStandardToolsListAndHealthEnvelope(t *testing.T) {
 	if !ok {
 		t.Fatalf("health outputSchema.properties missing or not object: %#v", healthOutput)
 	}
-	for _, name := range []string{"status", "service", "version", "owner_email", "client_id", "details"} {
+	for _, name := range []string{"status", "service", "version", "owner_id", "owner_email", "client_id", "details"} {
 		if _, ok := healthProperties[name]; !ok {
 			t.Errorf("health outputSchema.properties missing %q: %#v", name, healthProperties)
 		}
+	}
+
+	// R-DIR6-WSU3
+	if got["owner_id"] != "owner_opaque_123" {
+		t.Errorf("health owner_id = %v, want request X-Owner-Id", got["owner_id"])
+	}
+	if _, ok := healthProperties["owner_id"]; !ok {
+		t.Errorf("health outputSchema.properties missing owner_id: %#v", healthProperties)
 	}
 }
 
@@ -593,16 +605,23 @@ func TestToolsCallPassesRequestIdentityHeaders(t *testing.T) {
 	})
 
 	rpc(t, h, `{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"whoami","arguments":{}}}`, map[string]string{
-		"X-Owner-Email": "owner@example.com",
-		"X-Client-Id":   "client-123",
+		"X-Owner-Id":      "owner_opaque_123",
+		"X-Owner-Email":   "owner@example.com",
+		"X-Owner-Name":    "Owner Name",
+		"X-Owner-Picture": "https://images.example/owner.png",
+		"X-Client-Id":     "client-123",
 	})
 
-	// R-MG78-T8RU
-	if gotID.OwnerEmail != "owner@example.com" {
-		t.Errorf("OwnerEmail = %q, want request X-Owner-Email", gotID.OwnerEmail)
+	// R-DHJA-J13E
+	want := server.Identity{
+		OwnerID:      "owner_opaque_123",
+		OwnerEmail:   "owner@example.com",
+		OwnerName:    "Owner Name",
+		OwnerPicture: "https://images.example/owner.png",
+		ClientID:     "client-123",
 	}
-	if gotID.ClientID != "client-123" {
-		t.Errorf("ClientID = %q, want request X-Client-Id", gotID.ClientID)
+	if gotID != want {
+		t.Errorf("handler identity = %#v, want request headers as %#v", gotID, want)
 	}
 }
 
