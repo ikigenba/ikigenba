@@ -14,10 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ikigenba/agentkit"
-	"github.com/ikigenba/agentkit/anthropic"
-	"github.com/ikigenba/agentkit/google"
-	"github.com/ikigenba/agentkit/openai"
-	"github.com/ikigenba/agentkit/zai"
+	"github.com/ikigenba/agentkit/catalog"
 	"prompts/internal/ids"
 	"prompts/internal/sandbox"
 )
@@ -90,58 +87,72 @@ type UpdateInput struct {
 }
 
 var providerEnvVars = map[string]string{
-	"anthropic": "ANTHROPIC_API_KEY",
-	"openai":    "OPENAI_API_KEY",
-	"google":    "GEMINI_API_KEY",
-	"zai":       "ZAI_API_KEY",
+	"anthropic":  "ANTHROPIC_API_KEY",
+	"openai":     "OPENAI_API_KEY",
+	"google":     "GEMINI_API_KEY",
+	"zai":        "ZAI_API_KEY",
+	"openrouter": "OPENROUTER_API_KEY",
 }
 
-// validateConfig enforces the provider/model/key contract for the stored
-// config. getenv is injected so tests can validate the key contract without
-// mutating process-wide environment.
-func validateConfig(c Config, getenv func(string) string) error {
+// validateConfig validates and normalizes a config for storage. getenv is
+// injected so tests can exercise the key contract without mutating the process
+// environment. The returned config differs only when the catalog supplies an
+// omitted provider.
+func validateConfig(c Config, getenv func(string) string) (Config, error) {
+	entry, ok := catalog.Lookup(c.Model)
+	if !ok || entry.Pricing == nil {
+		return Config{}, validationErrf("invalid config: unknown prompt model %q", c.Model)
+	}
+
+	if c.Provider == "" {
+		c.Provider = entry.Provider
+	}
 	envVar, ok := providerEnvVars[c.Provider]
 	if !ok {
-		return validationErrf("invalid config: provider %q is not supported", c.Provider)
+		return Config{}, validationErrf("invalid config: provider %q is not supported", c.Provider)
 	}
-	provider := providerRegistry(c.Provider)
-	if _, ok := provider.Pricing(c.Model); !ok {
-		return validationErrf("invalid config: provider %q does not support model %q", c.Provider, c.Model)
+	if _, _, _, ok := catalog.Resolve(c.Provider, c.Model); !ok {
+		return Config{}, validationErrf("invalid config: provider %q does not route model %q", c.Provider, c.Model)
 	}
+
+	var reasoning agentkit.ReasoningValue
+	switch {
+	case c.Effort != "":
+		reasoning = agentkit.Level(c.Effort)
+	case c.ThinkingBudget != nil:
+		reasoning = agentkit.Budget(*c.ThinkingBudget)
+	case c.ThinkingLevel != "":
+		reasoning = agentkit.Level(c.ThinkingLevel)
+	case c.Thinking != nil && !*c.Thinking:
+		reasoning = agentkit.DisableReasoning()
+	}
+	if !reasoning.IsUnset() {
+		if entry.Reasoning == nil {
+			return Config{}, validationErrf("invalid config: model %q accepts no reasoning control", c.Model)
+		}
+		if !entry.Reasoning.Accepts(reasoning) {
+			if reasoning.Disabled() && !entry.Reasoning.CanDisable {
+				return Config{}, validationErrf("invalid config: reasoning cannot be disabled for model %q", c.Model)
+			}
+			if len(entry.Reasoning.Levels) > 0 {
+				return Config{}, validationErrf("invalid config: model %q accepts reasoning levels %q", c.Model, entry.Reasoning.Levels)
+			}
+			return Config{}, validationErrf("invalid config: model %q accepts reasoning budgets %d..%d and sentinels %v", c.Model, entry.Reasoning.Min, entry.Reasoning.Max, entry.Reasoning.Sentinels)
+		}
+	}
+
 	if getenv(envVar) == "" {
-		return validationErrf("invalid config: %s is not set", envVar)
+		return Config{}, validationErrf("invalid config: %s is not set", envVar)
 	}
-	return nil
-}
-
-func providerRegistry(name string) agentkit.Provider {
-	switch name {
-	case "anthropic":
-		return anthropic.New("")
-	case "openai":
-		return openai.New("")
-	case "google":
-		return google.New("")
-	case "zai":
-		return zai.New("")
-	default:
-		panic("providerRegistry called with unsupported provider")
-	}
-}
-
-func applyProviderDefault(c Config) Config {
-	if c.Provider == "" {
-		c.Provider = "anthropic"
-	}
-	return c
+	return c, nil
 }
 
 // Create validates config and inserts a prompt. The sandbox is no longer
 // created here — it is per-run, created at Run time keyed by run_id.
 // Config.Provider is validated against the configured model and preserved.
 func (s *Service) Create(ctx context.Context, ownerEmail string, in CreateInput) (Prompt, error) {
-	cfg := applyProviderDefault(in.Config)
-	if err := validateConfig(cfg, os.Getenv); err != nil {
+	cfg, err := validateConfig(in.Config, os.Getenv)
+	if err != nil {
 		return Prompt{}, err
 	}
 	// Validate every inline trigger BEFORE inserting the prompt, so an invalid
@@ -222,7 +233,10 @@ func (s *Service) Import(ctx context.Context, owner, sourcePath, name string) (P
 	// Seed a valid default config so the imported prompt is runnable. Config is
 	// left as-is on a re-import (the upsert refreshes name + user_prompt only), so
 	// this default only takes effect on the first import.
-	cfg := Config{Provider: "anthropic", Model: importDefaultModel}
+	cfg, err := validateConfig(Config{Model: importDefaultModel}, os.Getenv)
+	if err != nil {
+		return Prompt{}, err
+	}
 	return s.store.UpsertPromptBySource(ctx, owner, sourcePath, name, string(data), cfg, s.nowStr())
 }
 
@@ -274,8 +288,8 @@ func (s *Service) Update(ctx context.Context, ownerEmail, id string, in UpdateIn
 	if err != nil {
 		return Prompt{}, err
 	}
-	cfg := applyProviderDefault(in.Config)
-	if err := validateConfig(cfg, os.Getenv); err != nil {
+	cfg, err := validateConfig(in.Config, os.Getenv)
+	if err != nil {
 		return Prompt{}, err
 	}
 

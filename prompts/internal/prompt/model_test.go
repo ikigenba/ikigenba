@@ -115,6 +115,14 @@ func TestConfigJSONOmitsUnsetOptionalFieldsAndPreservesExplicitValues(t *testing
 	assertJSONFieldAbsent(t, got, "ignore_retry_after")
 	assertJSONFieldAbsent(t, got, "tool_loop_limit")
 	assertJSONFieldAbsent(t, got, "base_url")
+
+	withoutProvider, err := json.Marshal(Config{Model: "gpt-5.5"})
+	if err != nil {
+		t.Fatalf("Marshal config without provider: %v", err)
+	}
+	if string(withoutProvider) != `{"model":"gpt-5.5"}` {
+		t.Fatalf("config without provider = %s, want provider omitted", withoutProvider)
+	}
 }
 
 func assertJSONField(t *testing.T, got map[string]any, key string, want any) {

@@ -38,7 +38,7 @@ var (
 // validated at create/update time and stored verbatim as JSON so the schema
 // stays stable as the set of tunables grows.
 type Config struct {
-	Provider string `json:"provider"`
+	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model"`
 
 	Temperature    *float64 `json:"temperature,omitempty"`

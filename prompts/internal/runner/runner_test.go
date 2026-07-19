@@ -35,24 +35,20 @@ type fakeProvider struct {
 
 func (f *fakeProvider) Name() string { return "fake" }
 
-func (f *fakeProvider) Pricing(model string) (agentkit.Pricing, bool) {
-	return agentkit.Pricing{Tiers: []agentkit.RateTier{{InputUncached: 1, Output: 1}}}, true
-}
-
 func (f *fakeProvider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	f.mu.Lock()
 	f.requests = append(f.requests, req)
 	if f.block {
 		f.mu.Unlock()
 		<-ctx.Done()
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, ctx.Err())
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, ctx.Err(), 0, false)
 	}
 	if len(f.roundTrips) > 0 {
 		next := f.next
 		f.next++
 		f.mu.Unlock()
 		if next >= len(f.roundTrips) {
-			return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, errors.New("fake provider script exhausted"))
+			return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, errors.New("fake provider script exhausted"), 0, false)
 		}
 		return f.roundTrips[next]
 	}
@@ -64,6 +60,8 @@ func (f *fakeProvider) RoundTrip(ctx context.Context, req *agentkit.Request) *ag
 		agentkit.Usage{InputUncached: 12, Output: 7, Total: 19},
 		nil,
 		nil,
+		0,
+		false,
 	)
 }
 
@@ -98,6 +96,8 @@ func scriptedRoundTrip(blocks ...agentkit.Block) *agentkit.RoundTrip {
 		agentkit.Usage{InputUncached: 1, Output: 1, Total: 2},
 		nil,
 		nil,
+		0,
+		false,
 	)
 }
 
@@ -108,6 +108,8 @@ func scriptedTextRoundTrip(text string) *agentkit.RoundTrip {
 		agentkit.Usage{InputUncached: 1, Output: 1, Total: 2},
 		nil,
 		nil,
+		0,
+		false,
 	)
 }
 
@@ -135,6 +137,45 @@ func TestBuildProviderUsesInjectedEnvironment(t *testing.T) {
 	_, err = buildProvider(cfg, func(string) string { return "" })
 	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
 		t.Fatalf("missing key error = %v, want ANTHROPIC_API_KEY failure", err)
+	}
+}
+
+func TestBuildProviderSupportsEveryCatalogProviderWithBaseURL(t *testing.T) {
+	tests := []struct {
+		provider string
+		model    string
+		envVar   string
+	}{
+		{provider: "anthropic", model: "claude-sonnet-4-6", envVar: "ANTHROPIC_API_KEY"},
+		{provider: "openai", model: "gpt-5.5", envVar: "OPENAI_API_KEY"},
+		{provider: "google", model: "gemini-2.5-pro", envVar: "GEMINI_API_KEY"},
+		{provider: "zai", model: "glm-5.2", envVar: "ZAI_API_KEY"},
+		{provider: "openrouter", model: "grok-4.5", envVar: "OPENROUTER_API_KEY"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.provider, func(t *testing.T) {
+			var lookedUp string
+			prov, err := buildProvider(prompt.Config{
+				Provider: tt.provider,
+				Model:    tt.model,
+				BaseURL:  "https://provider.example.test/v1",
+			}, func(key string) string {
+				lookedUp = key
+				return "sk-test"
+			})
+			if err != nil {
+				t.Fatalf("buildProvider: %v", err)
+			}
+			if prov == nil {
+				t.Fatal("buildProvider returned nil provider")
+			}
+			if prov.Name() == "" {
+				t.Fatal("provider returned an empty name")
+			}
+			if lookedUp != tt.envVar {
+				t.Fatalf("getenv key = %q, want %q", lookedUp, tt.envVar)
+			}
+		})
 	}
 }
 

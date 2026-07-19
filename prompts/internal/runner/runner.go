@@ -28,8 +28,10 @@ import (
 
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/anthropic"
+	"github.com/ikigenba/agentkit/catalog"
 	"github.com/ikigenba/agentkit/google"
 	"github.com/ikigenba/agentkit/openai"
+	"github.com/ikigenba/agentkit/openrouter"
 	"github.com/ikigenba/agentkit/zai"
 )
 
@@ -80,10 +82,11 @@ func New(store *prompt.Store, sb *sandbox.Manager, ttl time.Duration, manifestRo
 
 func buildProvider(cfg prompt.Config, getenv func(string) string) (agentkit.Provider, error) {
 	keyName := map[string]string{
-		"anthropic": "ANTHROPIC_API_KEY",
-		"openai":    "OPENAI_API_KEY",
-		"google":    "GEMINI_API_KEY",
-		"zai":       "ZAI_API_KEY",
+		"anthropic":  "ANTHROPIC_API_KEY",
+		"openai":     "OPENAI_API_KEY",
+		"google":     "GEMINI_API_KEY",
+		"zai":        "ZAI_API_KEY",
+		"openrouter": "OPENROUTER_API_KEY",
 	}[cfg.Provider]
 	if keyName == "" {
 		return nil, fmt.Errorf("unsupported provider %q", cfg.Provider)
@@ -99,25 +102,31 @@ func buildProvider(cfg prompt.Config, getenv func(string) string) (agentkit.Prov
 		if cfg.BaseURL != "" {
 			opts = append(opts, anthropic.WithBaseURL(cfg.BaseURL))
 		}
-		return anthropic.New(apiKey, opts...), nil
+		return anthropic.New(anthropic.APIKey(apiKey), opts...), nil
 	case "openai":
 		var opts []openai.Option
 		if cfg.BaseURL != "" {
 			opts = append(opts, openai.WithBaseURL(cfg.BaseURL))
 		}
-		return openai.New(apiKey, opts...), nil
+		return openai.New(openai.APIKey(apiKey), opts...), nil
 	case "google":
 		var opts []google.Option
 		if cfg.BaseURL != "" {
 			opts = append(opts, google.WithBaseURL(cfg.BaseURL))
 		}
-		return google.New(apiKey, opts...), nil
+		return google.New(google.APIKey(apiKey), opts...), nil
 	case "zai":
 		var opts []zai.Option
 		if cfg.BaseURL != "" {
 			opts = append(opts, zai.WithBaseURL(cfg.BaseURL))
 		}
-		return zai.New(apiKey, opts...), nil
+		return zai.New(zai.APIKey(apiKey), opts...), nil
+	case "openrouter":
+		var opts []openrouter.Option
+		if cfg.BaseURL != "" {
+			opts = append(opts, openrouter.WithBaseURL(cfg.BaseURL))
+		}
+		return openrouter.New(openrouter.APIKey(apiKey), opts...), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider %q", cfg.Provider)
 	}
@@ -215,11 +224,17 @@ func (r *Runner) execute(run prompt.Run) {
 		finish(prompt.RunFailed, "", "create provider: "+err.Error())
 		return
 	}
+	_, wireModel, entry, ok := catalog.Resolve(cfg.Provider, cfg.Model)
+	if !ok || entry.Pricing == nil {
+		finish(prompt.RunFailed, "", fmt.Sprintf("resolve model: provider %q does not route catalog model %q", cfg.Provider, cfg.Model))
+		return
+	}
 
 	sandboxRoot := r.sandbox.Root(run.ID)
 	conv := &agentkit.Conversation{
 		Provider:          prov,
-		Model:             cfg.Model,
+		Model:             wireModel,
+		Pricing:           entry.Pricing,
 		System:            buildSystemPrompt(string(systemPromptBytes)),
 		Log:               logFile,
 		Gen:               genSettings(cfg),
@@ -283,10 +298,10 @@ func genSettings(cfg prompt.Config) agentkit.GenSettings {
 	switch {
 	case cfg.Effort != "":
 		gen.Reasoning = agentkit.Level(cfg.Effort)
-	case cfg.ThinkingLevel != "":
-		gen.Reasoning = agentkit.Level(cfg.ThinkingLevel)
 	case cfg.ThinkingBudget != nil:
 		gen.Reasoning = agentkit.Budget(*cfg.ThinkingBudget)
+	case cfg.ThinkingLevel != "":
+		gen.Reasoning = agentkit.Level(cfg.ThinkingLevel)
 	case cfg.Thinking != nil && !*cfg.Thinking:
 		gen.Reasoning = agentkit.DisableReasoning()
 	}

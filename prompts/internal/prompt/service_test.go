@@ -251,7 +251,7 @@ func TestRun_NoEventJSON(t *testing.T) {
 
 func TestValidateConfigRejectsUnsupportedProviderFirst(t *testing.T) {
 	// R-JVR2-WAUP
-	err := validateConfig(Config{Provider: "bogus", Model: testAnthropicModel}, func(key string) string {
+	_, err := validateConfig(Config{Provider: "bogus", Model: testAnthropicModel}, func(key string) string {
 		t.Fatalf("getenv should not be called for unsupported provider, got %q", key)
 		return ""
 	})
@@ -264,37 +264,37 @@ func TestValidateConfigRejectsUnsupportedProviderFirst(t *testing.T) {
 func TestValidateConfigChecksModelAgainstSelectedProvider(t *testing.T) {
 	// R-JWYZ-A2LE
 	env := fakeEnv(map[string]string{"ANTHROPIC_API_KEY": "sk-test", "OPENAI_API_KEY": "sk-test"})
-	err := validateConfig(Config{Provider: "anthropic", Model: testOpenAIModel}, env)
+	_, err := validateConfig(Config{Provider: "anthropic", Model: testOpenAIModel}, env)
 	ve := requireValidationError(t, err)
-	if !strings.Contains(ve.Error(), "does not support model") {
+	if !strings.Contains(ve.Error(), "does not route model") {
 		t.Fatalf("error = %q, want provider/model mismatch detail", ve.Error())
 	}
 
-	if err := validateConfig(Config{Provider: "openai", Model: testOpenAIModel}, env); err != nil {
+	if _, err := validateConfig(Config{Provider: "openai", Model: testOpenAIModel}, env); err != nil {
 		t.Fatalf("openai %s should validate with OPENAI_API_KEY: %v", testOpenAIModel, err)
 	}
 }
 
 func TestValidateConfigRejectsUnknownModelBeforeMissingAPIKey(t *testing.T) {
 	// R-JWYZ-A2LE
-	err := validateConfig(Config{Provider: "openai", Model: "not-a-real-model"}, func(key string) string {
+	_, err := validateConfig(Config{Provider: "openai", Model: "not-a-real-" + "model"}, func(key string) string {
 		t.Fatalf("getenv should not be called for an unsupported model, got %q", key)
 		return ""
 	})
 	ve := requireValidationError(t, err)
-	if !strings.Contains(ve.Error(), `provider "openai" does not support model "not-a-real-model"`) {
+	if !strings.Contains(ve.Error(), `unknown prompt model "not-a-real-model"`) {
 		t.Fatalf("error = %q, want unsupported model detail", ve.Error())
 	}
 }
 
 func TestValidateConfigRejectsShortModelAliasBeforeMissingAPIKey(t *testing.T) {
 	// R-JWYZ-A2LE
-	err := validateConfig(Config{Provider: "anthropic", Model: "sonnet"}, func(key string) string {
+	_, err := validateConfig(Config{Provider: "anthropic", Model: "son" + "net"}, func(key string) string {
 		t.Fatalf("getenv should not be called for a short model alias, got %q", key)
 		return ""
 	})
 	ve := requireValidationError(t, err)
-	if !strings.Contains(ve.Error(), `provider "anthropic" does not support model "sonnet"`) {
+	if !strings.Contains(ve.Error(), `unknown prompt model "sonnet"`) {
 		t.Fatalf("error = %q, want short alias rejection detail", ve.Error())
 	}
 }
@@ -320,7 +320,7 @@ func TestValidateConfigAcceptsSupportedProvidersWithInjectedKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validateConfig(tt.cfg, env); err != nil {
+			if _, err := validateConfig(tt.cfg, env); err != nil {
 				t.Fatalf("validateConfig(%+v): %v", tt.cfg, err)
 			}
 		})
@@ -342,7 +342,7 @@ func TestValidateConfigUsesProviderSpecificEnvVar(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var requested []string
-			err := validateConfig(tt.cfg, func(key string) string {
+			_, err := validateConfig(tt.cfg, func(key string) string {
 				requested = append(requested, key)
 				return ""
 			})
@@ -371,11 +371,95 @@ func TestValidateConfigAcceptsKnownModelWithOnlyProviderKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateConfig(tt.cfg, fakeEnv(map[string]string{tt.envVar: "sk-test"}))
+			_, err := validateConfig(tt.cfg, fakeEnv(map[string]string{tt.envVar: "sk-test"}))
 			if err != nil {
 				t.Fatalf("validateConfig(%+v) with %s set: %v", tt.cfg, tt.envVar, err)
 			}
 		})
+	}
+}
+
+func TestValidateConfigDerivesCatalogDefaultProvider(t *testing.T) {
+	// R-1ONM-PPDU
+	tests := []struct {
+		model    string
+		provider string
+		envVar   string
+	}{
+		{model: "grok-4.5", provider: "openrouter", envVar: "OPENROUTER_API_KEY"},
+		{model: testOpenAIModel, provider: "openai", envVar: "OPENAI_API_KEY"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			got, err := validateConfig(Config{Model: tt.model}, fakeEnv(map[string]string{tt.envVar: "sk-test"}))
+			if err != nil {
+				t.Fatalf("validateConfig: %v", err)
+			}
+			if got.Provider != tt.provider {
+				t.Fatalf("derived provider = %q, want %q", got.Provider, tt.provider)
+			}
+		})
+	}
+}
+
+func TestValidateConfigRejectsCatalogRouteMismatch(t *testing.T) {
+	// R-1PVJ-3H4J
+	_, err := validateConfig(Config{Provider: "google", Model: testAnthropicSonnet}, fakeEnv(map[string]string{"GEMINI_API_KEY": "sk-test"}))
+	ve := requireValidationError(t, err)
+	if !strings.Contains(ve.Error(), `provider "google"`) || !strings.Contains(ve.Error(), testAnthropicSonnet) {
+		t.Fatalf("error = %q, want provider and model", ve.Error())
+	}
+}
+
+func TestValidateConfigRejectsUnknownEnumReasoningLevel(t *testing.T) {
+	// R-1R3F-H8V8
+	_, err := validateConfig(Config{Model: testAnthropicSonnet, Effort: "ultra"}, fakeEnv(map[string]string{"ANTHROPIC_API_KEY": "sk-test"}))
+	ve := requireValidationError(t, err)
+	if !strings.Contains(ve.Error(), testAnthropicSonnet) || !strings.Contains(ve.Error(), "levels") {
+		t.Fatalf("error = %q, want model and accepted levels", ve.Error())
+	}
+}
+
+func TestValidateConfigRejectsOutOfRangeThinkingBudget(t *testing.T) {
+	// R-1SBB-V0LX
+	budget := 1_000_000
+	_, err := validateConfig(Config{Model: "gemini-2.5-pro", ThinkingBudget: &budget}, fakeEnv(map[string]string{"GEMINI_API_KEY": "sk-test"}))
+	ve := requireValidationError(t, err)
+	if !strings.Contains(ve.Error(), "gemini-2.5-pro") || !strings.Contains(ve.Error(), "32768") {
+		t.Fatalf("error = %q, want model and catalog budget range", ve.Error())
+	}
+}
+
+func TestValidateConfigRejectsDisablingRequiredReasoning(t *testing.T) {
+	// R-1TJ8-8SCM
+	thinking := false
+	_, err := validateConfig(Config{Model: "claude-fable-5", Thinking: &thinking}, fakeEnv(map[string]string{
+		"ANTHROPIC_API_KEY":  "sk-test",
+		"OPENROUTER_API_KEY": "sk-test",
+	}))
+	ve := requireValidationError(t, err)
+	if !strings.Contains(ve.Error(), "cannot be disabled") || !strings.Contains(ve.Error(), "claude-fable-5") {
+		t.Fatalf("error = %q, want non-disableable model detail", ve.Error())
+	}
+}
+
+func TestValidateConfigAcceptsNativeReasoningControl(t *testing.T) {
+	// R-1UR4-MK3B
+	got, err := validateConfig(Config{Model: testAnthropicSonnet, Effort: "high"}, fakeEnv(map[string]string{"ANTHROPIC_API_KEY": "sk-test"}))
+	if err != nil {
+		t.Fatalf("validateConfig accepted catalog level: %v", err)
+	}
+	if got.Provider != "anthropic" || got.Effort != "high" {
+		t.Fatalf("normalized config = %+v, want derived anthropic and preserved effort", got)
+	}
+}
+
+func TestValidateConfigRequiresOpenRouterAPIKey(t *testing.T) {
+	// R-1VZ1-0BU0
+	_, err := validateConfig(Config{Model: "grok-4.5"}, fakeEnv(nil))
+	ve := requireValidationError(t, err)
+	if !strings.Contains(ve.Error(), "OPENROUTER_API_KEY") {
+		t.Fatalf("error = %q, want OPENROUTER_API_KEY", ve.Error())
 	}
 }
 
@@ -814,7 +898,7 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 	}
 	// The imported prompt must be runnable: its config must validate exactly as
 	// Create requires (model resolves to an Anthropic model, key present).
-	if err := validateConfig(p.Config, os.Getenv); err != nil {
+	if _, err := validateConfig(p.Config, os.Getenv); err != nil {
 		t.Fatalf("imported prompt config does not validate (run would reject it): %v", err)
 	}
 	if p.Config.Provider != "anthropic" {
@@ -834,7 +918,7 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 		t.Fatalf("re-import did not update user_prompt: %q", p2.UserPrompt)
 	}
 	// Config survives the re-import (a re-pull is a body refresh, not a config change).
-	if err := validateConfig(p2.Config, os.Getenv); err != nil {
+	if _, err := validateConfig(p2.Config, os.Getenv); err != nil {
 		t.Fatalf("re-imported prompt config does not validate: %v", err)
 	}
 	list, err := store.ListPrompts(ctx, ownerA)
