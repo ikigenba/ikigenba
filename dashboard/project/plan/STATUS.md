@@ -12,5 +12,4 @@ matches only phase lines.
 
 Next phase: 32
 
-- Phase 31 ⬜ realizes D7 (R-3JAM-JLZ6) — add the second sign-in-wall rule below the CTA
 
