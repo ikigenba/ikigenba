@@ -1,3 +1,5 @@
+//go:build livee2e
+
 // Package e2e is the cross-package, suite-up end-to-end layer for webhooks (the
 // D7 tier). Unlike the package-local integration tests it does NOT use httptest:
 // it drives the real binary through the running nginx front door on :8080, the
