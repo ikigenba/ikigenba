@@ -12,4 +12,3 @@ lines.
 
 Next phase: 92
 
-- Phase 91 ⬜ realizes D39/D47 — nginx fragment (structural): capture and forward all four `X-Owner-*` owner headers (`X-Owner-Id`, `X-Owner-Email`, `X-Owner-Name`, `X-Owner-Picture`) on each of wiki's three identity-forwarding locations (`= /srv/wiki/`, `/srv/wiki/subject/`, bearer `/srv/wiki/`), leaving `/srv/wiki/static/` identity-free and `X-Client-Id` unchanged; purely additive, verified by a named fragment check (no R-ids)
