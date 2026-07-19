@@ -11,5 +11,4 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 37
 
-- Phase 35 ⬜ realizes R-1X6X-E3KP, R-1ZMQ-5N23 — runner resolves the catalog route: wire model and pricing on the Conversation
 - Phase 36 ⬜ realizes R-20UM-JESS, R-222I-X6JH — MCP surface: model-only required schema and catalog-generated describe inventory
