@@ -33,6 +33,12 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D25 | project/design/D25.md | Event-routing conformance: producer kinds `run.succeeded`/`run.failed`, subject = /<prompt name> | R-6T4Y-E1VD, R-6UCU-RTM2, R-6VKR-5LCR, R-ZS8A-TVOF |
 | D26 | project/design/D26.md | File-share sandbox tools: `File*` over the share's loopback filesystem API | R-F74Y-B8X1, R-F8CU-P0NQ, R-F9KR-2SEF, R-FASN-GK54, R-FC0J-UBVT, R-FD8G-83MI, R-FEGC-LVD7 |
 | D27 | project/design/D27.md | Structured MCP adoption: `StructuredResult`, typed error codes, output schemas, shared loopback guard | R-B4QM-WZGJ, R-B5YJ-AR78, R-B76F-OIXX, R-B8EC-2AOM, R-B9M8-G2FB, R-BC21-7LWP, R-BD9X-LDNE, R-BEHT-Z5E3, R-BFPQ-CX4S, R-BGXM-QOVH, R-BI5J-4GM6 |
+| D28 | project/design/D28.md | The `calls` table: one durable row per inference unit | R-5J1W-8BCM, R-5K9S-M33B, R-5LHO-ZUU0, R-5MPL-DMKP, R-5NXH-REBE |
+| D29 | project/design/D29.md | `POST /complete`: the synchronous one-shot completion endpoint | R-5P5E-5623, R-5QDA-IXSS, R-5ST3-AHA6, R-5U0Z-O90V, R-5V8W-20RK, R-5WGS-FSI9, R-5XOO-TK8Y, R-5YWL-7BZN |
+| D30 | project/design/D30.md | `POST /embed`: the synchronous embedding endpoint | R-604H-L3QC, R-61CD-YVH1, R-62KA-CN7Q, R-63S6-QEYF, R-6503-46P4, R-667Z-HYFT |
+| D31 | project/design/D31.md | Admission control: bounded inference concurrency | R-67FV-VQ6I, R-68NS-9HX7, R-6B3L-11EL, R-6CBH-ET5A |
+| D32 | project/design/D32.md | `calls` and `usage`: the inspection and reporting MCP tools | R-6DJD-SKVZ, R-6ERA-6CMO, R-6FZ6-K4DD, R-6H72-XW42, R-6IEZ-BNUR |
+| D33 | project/design/D33.md | Sessions on the record: runs write `calls` rows | R-6JMV-PFLG, R-6KUS-37C5, R-6M2O-GZ2U, R-6NAK-UQTJ |
 
 ## Verification ids → Decision
 
@@ -52,19 +58,51 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-3RIS-23TJ | D20 | project/design/D20.md |
 | R-3SQO-FVK8 | D20 | project/design/D20.md |
 | R-3TYK-TNAX | D20 | project/design/D20.md |
+| R-5J1W-8BCM | D28 | project/design/D28.md |
+| R-5K9S-M33B | D28 | project/design/D28.md |
+| R-5LHO-ZUU0 | D28 | project/design/D28.md |
+| R-5MPL-DMKP | D28 | project/design/D28.md |
+| R-5NXH-REBE | D28 | project/design/D28.md |
+| R-5P5E-5623 | D29 | project/design/D29.md |
+| R-5QDA-IXSS | D29 | project/design/D29.md |
+| R-5ST3-AHA6 | D29 | project/design/D29.md |
+| R-5U0Z-O90V | D29 | project/design/D29.md |
+| R-5V8W-20RK | D29 | project/design/D29.md |
+| R-5WGS-FSI9 | D29 | project/design/D29.md |
+| R-5XOO-TK8Y | D29 | project/design/D29.md |
+| R-5YWL-7BZN | D29 | project/design/D29.md |
+| R-604H-L3QC | D30 | project/design/D30.md |
+| R-61CD-YVH1 | D30 | project/design/D30.md |
+| R-62KA-CN7Q | D30 | project/design/D30.md |
+| R-63S6-QEYF | D30 | project/design/D30.md |
+| R-6503-46P4 | D30 | project/design/D30.md |
 | R-65YV-4ES6 | D21 | project/design/D21.md |
+| R-667Z-HYFT | D30 | project/design/D30.md |
 | R-676R-I6IV | D21 | project/design/D21.md |
+| R-67FV-VQ6I | D31 | project/design/D31.md |
 | R-68EN-VY9K | D21 | project/design/D21.md |
+| R-68NS-9HX7 | D31 | project/design/D31.md |
 | R-69MK-9Q09 | D21 | project/design/D21.md |
 | R-6AUG-NHQY | D21 | project/design/D21.md |
+| R-6B3L-11EL | D31 | project/design/D31.md |
 | R-6C2D-19HN | D22 | project/design/D22.md |
+| R-6CBH-ET5A | D31 | project/design/D31.md |
+| R-6DJD-SKVZ | D32 | project/design/D32.md |
 | R-6EI5-SSZ1 | D22 | project/design/D22.md |
+| R-6ERA-6CMO | D32 | project/design/D32.md |
 | R-6FQ2-6KPQ | D22 | project/design/D22.md |
+| R-6FZ6-K4DD | D32 | project/design/D32.md |
+| R-6H72-XW42 | D32 | project/design/D32.md |
 | R-6I5U-Y474 | D23 | project/design/D23.md |
+| R-6IEZ-BNUR | D32 | project/design/D32.md |
 | R-6JDR-BVXT | D24 | project/design/D24.md |
+| R-6JMV-PFLG | D33 | project/design/D33.md |
 | R-6KLN-PNOI | D24 | project/design/D24.md |
+| R-6KUS-37C5 | D33 | project/design/D33.md |
 | R-6LTK-3FF7 | D24 | project/design/D24.md |
+| R-6M2O-GZ2U | D33 | project/design/D33.md |
 | R-6N1G-H75W | D24 | project/design/D24.md |
+| R-6NAK-UQTJ | D33 | project/design/D33.md |
 | R-6O9C-UYWL | D24 | project/design/D24.md |
 | R-6PH9-8QNA | D24 | project/design/D24.md |
 | R-6QP5-MIDZ | D24 | project/design/D24.md |

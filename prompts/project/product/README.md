@@ -6,15 +6,21 @@
 
 The prompts service is hardcoded to a single provider (Anthropic) with a narrow set of generation controls (effort, max_tokens, temperature). Users cannot choose a different provider or model per prompt, and cannot tune the full set of generation and retry knobs that the underlying agentkit supports. The local agentkit package that backs the service is also a dead end — it is a private fork, not the shared library.
 
+Inference is also scattered across the suite: other services execute their own LLM calls with their own provider keys, their own logging, and their own controls, so there is no single place where the owner can see every inference workload, what caused it, and what it cost — and every new inference-using service reinvents that plumbing again.
+
 ## Purpose
 
 Replace the local `./agentkit` dependency with the published `github.com/ikigenba/agentkit` package, and expose its full provider and configuration surface through the prompts MCP API. A prompt now declares which provider and model it runs on, and optionally tunes any generation or retry setting the agentkit supports. The change is mechanical at the library boundary and additive at the API surface — existing behavior is preserved under a clean migration.
 
 prompts' primary surface stays **MCP** (the owner works through an agent and tools, not screens), but it now also serves one small **human web page** — a landing page at its mount root (`…/srv/prompts/`) showing the service **name** and **version** — so a logged-in person who opens it in a browser sees a styled page, not a raw error. That page is the seed of prompts' own web surface; v1 is deliberately just name+version, gated by the dashboard browser session like any web page in the suite. Agents are unaffected — they keep working through MCP.
 
+prompts is also the suite's **inference service**: the one place on the box that executes LLM work, accounts for it, and answers for its spend. Beside agent sessions it runs two further workload classes on behalf of sibling services — one-shot **completions** and **embeddings** — so a service that needs inference asks prompts instead of holding provider keys and building its own execution, logging, and reporting. Every unit of inference, whatever its class and whoever caused it, lands in one durable record the owner can inspect and total.
+
 ## Users
 
 The box owner, operating through an agent connected to the prompts MCP service. The owner states intent in natural language ("run this on OpenAI with low temperature"); the agent maps that to the structured MCP parameters. The owner never writes raw JSON — that is the agent's job.
+
+Sibling services on the box are the second consumer: their daemons hand prompts their completion and embedding work and get the result back synchronously, without ever touching a provider key.
 
 ## Scope
 
@@ -41,7 +47,12 @@ The box owner, operating through an agent connected to the prompts MCP service. 
   whatever workflows watch that location.
 - **Suite tools reach the in-run agent on demand, not front-loaded.** The in-run agent can still use every other suite service on the owner's behalf, exactly as before — but it no longer carries every service tool's full definition in its working context from the first moment of every run. It starts with a compact catalog of what the account's services offer and pulls in the specific tools a task actually needs, as it needs them. The observable outcome: runs behave the same, reach the same services, and produce the same kinds of results, while a run's context carries only the catalog plus the tools it actually used — so runs over a fully-populated box stay focused and spend less on tool definitions that were never touched.
 
-**Out of scope (nothing else):** No renumbering of any service and no ownership of the registry table itself (prompts only *reads* it by name); the `registry` module and the repo-root wiring that publishes it (`go.work`) are provided from outside prompts. No free-form model strings — models outside the agentkit catalog are not accepted, and widening the catalog (including which models OpenRouter can route) is agentkit's change, not prompts'. No change to *which* services and tools a run can reach (only to how they are surfaced). No changes to the trigger or event model. No new run management capabilities. The `system_prompt` field remains a dedicated top-level field and is not part of the config object. The on-demand loading mechanism itself is the agentkit's (owned and proven in its own project); prompts only adopts it.
+- **Completions and embeddings for sibling services.** A service on the box can hand prompts a one-shot completion (its own full prompt text, model choice, and tuning — including a multi-turn retry history) or a batch embedding request, and get the result back synchronously. The same curated model catalog that governs prompts' own runs governs these calls: an unknown model, an unroutable provider, or a rejected reasoning setting fails immediately with a clear error. All provider credentials live with prompts alone.
+- **One account of every inference workload.** Every unit of inference prompts executes — an agent-session run, a completion, an embedding — is durably recorded with who caused it (a user, an event trigger, or a service), a stable workload name for grouping (every wiki compile call is recognizable as a group), what model ran it, tokens in and out, cost, timing, and any error. Unnamed or unattributed work is refused. The metrics are kept forever; the full request/response text of recent work stays inspectable for a retention window (default 30 days) and then ages out, leaving the totals intact.
+- **Inspection and spend reporting.** Through prompts' own MCP tools the owner can list and filter recorded inference (by workload, cause, group, time, errors), open one call's full request and response while retained, and total tokens, cost, and error counts by workload, cause, model, or day — "what did wiki ingest cost this month" is one question, one answer. These views cover the whole box's inference, whoever caused it.
+- **Bounded concurrency.** prompts caps how much inference it fires at once — concurrent agent-session runs, and concurrent in-flight service calls per provider — so a burst of triggered work degrades into orderly progress instead of a provider-quota incident, and long-running sessions cannot starve services' synchronous calls.
+
+**Out of scope (nothing else):** Converting any sibling service to use these capabilities is that service's own change (wiki is the first planned consumer, specified in wiki's own project). The repos service's inference remains as it is, pending its own redesign. No spend budgets or alerting yet — reporting first. No streaming completion responses. No renumbering of any service and no ownership of the registry table itself (prompts only *reads* it by name); the `registry` module and the repo-root wiring that publishes it (`go.work`) are provided from outside prompts. No free-form model strings — models outside the agentkit catalog are not accepted, and widening the catalog (including which models OpenRouter can route) is agentkit's change, not prompts'. No change to *which* services and tools a run can reach (only to how they are surfaced). No changes to the trigger or event model. No new run management capabilities. The `system_prompt` field remains a dedicated top-level field and is not part of the config object. The on-demand loading mechanism itself is the agentkit's (owned and proven in its own project); prompts only adopts it.
 
 ## Contractual constants
 
@@ -61,6 +72,12 @@ ignore_retry_after   tool_loop_limit   base_url
 ```
 
 These names are promises — the design must use them verbatim in the MCP tool schema and in stored JSON.
+
+The three inference workload class names, exactly as recorded and reported:
+
+```
+session   completion   embedding
+```
 
 ## What we promise (user-facing behavior)
 
@@ -89,6 +106,14 @@ syncs, and it can set the next workflow in motion.
 
 **A run discovers suite tools as it needs them.** The in-run agent starts each run knowing what the account's services offer — a compact, per-service catalog — and brings the specific tools a task needs into play on demand. An event-triggered run still follows its event's identifiers to the right service's tools; a run that touches no suite service carries no suite tool definitions at all. Which services a run may reach is unchanged (all of them except prompts itself, on the owner's behalf), and a service that is down simply doesn't appear, exactly as before.
 
+**A sibling service gets its inference from prompts.** A service daemon on the box submits a completion — its own prompt text, a catalog model, its tuning, optionally a prior exchange to continue — and receives the model's reply, token usage, and cost in the same request. Embeddings work the same way: a batch of texts in, vectors and cost out. The service holds no provider key and builds no LLM plumbing; a bad model choice or malformed request is refused immediately with an error that names the problem.
+
+**Every inference workload is on the record, attributably.** After any inference — an owner-run prompt, an event-triggered run, a service's completion or embedding — the owner can find its record: which class it was, who caused it, its workload name and group, model, tokens, cost, duration, and error if any. Work arriving without a valid cause or workload name is refused, so the record is never partial by omission.
+
+**Spend questions have one answer.** The owner asks prompts — not each service — what inference cost: totals by workload name, by cause, by model, or by day, over any time window, covering sessions, completions, and embeddings alike.
+
+**Recent work is fully inspectable; history never loses its totals.** Within the retention window the owner can open any recorded call and read exactly what was sent and what came back. Older records keep every metric forever; only the bodies age out, and a pruned record says so.
+
 ## Success criteria (outcomes)
 
 - A prompt created with `provider: "openai"` and a catalog OpenAI model runs successfully against the OpenAI API.
@@ -110,3 +135,10 @@ syncs, and it can set the next workflow in motion.
 - A run set off by a new file in a shared folder pulls that file into its workspace, and the report it saves back to the share is sitting in that folder — durable and synced — when the owner looks.
 - A run can pull in, transform, and save back a shared file far larger than any message the agent could carry, and the run completes normally.
 - A file a run saves into a watched shared folder triggers the workflows watching that folder, exactly as if the owner had put it there.
+- A sibling service on the box submits a completion with its own prompt text and a catalog model and receives the reply, token usage, and cost in the same request; a request naming a model outside the catalog, or missing its cause or workload name, is refused with an error naming the problem and leaves no record.
+- A service submits a completion that continues a prior exchange (its earlier request, the model's earlier reply, a corrective follow-up) and the model's answer reflects that full history.
+- A service submits a batch of texts for embedding against a catalog embedding model and receives one vector per text, in order, with usage and cost.
+- After a run, a service completion, and an embedding have each executed, the owner can list all three from prompts, each carrying its class, its cause (the user, the trigger, or the service), its workload name, model, tokens, cost, and timing.
+- The owner asks for inference totals grouped by workload name over a time window and gets counts, tokens, and cost that add up to the individual records — with every wiki-style service workload recognizable as its own group.
+- Within the retention window the owner opens one recorded completion and reads the exact request and response text; after the window the same record still shows every metric but reports its bodies as pruned.
+- With concurrency caps in place, a burst of simultaneously triggered runs executes without exceeding the configured limits, every run still completes, and a service's synchronous completion still gets through while sessions are saturated.
