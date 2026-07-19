@@ -103,13 +103,10 @@ resource "aws_iam_role_policy" "int_app_config" {
           "ssm:GetParameter",
           "ssm:PutParameter",
         ]
-        # The blob itself plus its per-app children
-        # (/ikigenba/int/app-config/<app> — one parameter per app; existence
-        # is script-managed by the repo's push tool, not Terraform).
-        Resource = [
-          aws_ssm_parameter.app_config.arn,
-          "${aws_ssm_parameter.app_config.arn}/*",
-        ]
+        # One parameter per app under /ikigenba/int/app-config/. Existence is
+        # script-managed by the suite repo's bin/push-secrets, not Terraform,
+        # so the ARN is a hardcoded path pattern, not a resource reference.
+        Resource = "arn:aws:ssm:us-east-2:704229156466:parameter/ikigenba/int/app-config/*"
       },
       {
         Effect = "Allow"
