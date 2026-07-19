@@ -9,4 +9,6 @@ loop deletes the phase's line and body file — there is no done marker; done is
 gone. This file deliberately carries **no bare status glyph** anywhere but on a
 phase line, so the anchored grep matches only phase lines.
 
-Next phase: 21
+Next phase: 22
+
+- Phase 21 ⬜ realizes R-MTLH-R7Z9, R-MUTE-4ZPY — forward all four owner identity headers (X-Owner-Id/Email/Name/Picture) through the gmail nginx fragment's bearer and session locations

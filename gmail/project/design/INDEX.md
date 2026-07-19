@@ -7,7 +7,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D1 → `project/design/D01.md` — The landing handler and its v1 content (service name + version) — owns R-LAND-3F7K, R-LAND-5H9M, R-LAND-7J2N, R-LAND-9K4P
 - D2 → `project/design/D02.md` — Route wiring: `GET /{$}` mounted ungated through `Spec.Handlers` — owns R-ROUT-4M6Q, R-ROUT-6N8R, R-ROUT-8P1S
 - D3 → `project/design/D03.md` — gmail's own Carbon design assets (shipped in `share/www/static`) — owns R-ASST-3T5V, R-ASST-5W7X, R-ASST-7Y9Z
-- D4 → `project/design/D04.md` — nginx fragment: the exact-match session-gated `= /srv/gmail/` location — owns R-NGNX-3B6C, R-NGNX-5D8E, R-NGNX-7F1G, R-NGNX-9H3J
+- D4 → `project/design/D04.md` — nginx fragment: the session-gated `= /srv/gmail/` landing location and the fragment's four-header identity-forwarding contract — owns R-NGNX-3B6C, R-NGNX-5D8E, R-NGNX-7F1G, R-NGNX-9H3J, R-MTLH-R7Z9, R-MUTE-4ZPY
 - D5 → `project/design/D05.md` — Docs state current truth: purge the stale "no UI" line — none (structural; docs-only)
 - D6 → `project/design/D06.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-7Q9U
@@ -63,6 +63,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-LAND-5H9M → D1 → `project/design/D01.md`
 - R-LAND-7J2N → D1 → `project/design/D01.md`
 - R-LAND-9K4P → D1 → `project/design/D01.md`
+- R-MTLH-R7Z9 → D4 → `project/design/D04.md`
+- R-MUTE-4ZPY → D4 → `project/design/D04.md`
 - R-NGNX-3B6C → D4 → `project/design/D04.md`
 - R-NGNX-5D8E → D4 → `project/design/D04.md`
 - R-NGNX-7F1G → D4 → `project/design/D04.md`
