@@ -12,6 +12,5 @@ matches only phase lines.
 
 Next phase: 34
 
-- Phase 33 ⬜ realizes R-VULR-MABI, R-VX1K-DTSW, R-VY9G-RLJL, R-HW5G-3JJF, R-HSHQ-Y8BC, R-HTPN-C021, R-HUXJ-PRSQ, R-VZHD-5DAA, R-HXDC-HBA4 — fail-closed introspection: all four identity headers on every allow, sourced from the identities row
 
 
