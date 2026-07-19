@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -115,8 +116,58 @@ func TestJSONCarriesCompleteRequestConfiguration(t *testing.T) {
 	if got.Config.Temperature == nil || *got.Config.Temperature != temp || got.Config.MaxTokens != 321 || got.Config.Effort != "low" || got.Config.Thinking == nil || *got.Config.Thinking {
 		t.Fatalf("request config = %+v", got.Config)
 	}
-	if len(got.Messages) != 1 || got.Messages[0].Role != "user" || got.Messages[0].Content != "prompt" {
+	if len(got.Messages) != 1 || got.Messages[0].Role != "user" || got.Messages[0].Text != "prompt" {
 		t.Fatalf("messages = %+v", got.Messages)
+	}
+}
+
+func TestJSONMessagesUsePromptsWireSpelling(t *testing.T) {
+	// R-8H1B-9CCI
+	var rawRequests [][]byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawRequest, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rawRequests = append(rawRequests, rawRequest)
+		if len(rawRequests) == 1 {
+			writeResponse(t, w, "bad reply", 1)
+			return
+		}
+		writeResponse(t, w, `{"title":"ok"}`, 1)
+	}))
+	defer server.Close()
+
+	if _, err := JSON(context.Background(), New(server.URL), CallSite{MaxParseRetries: 1}, Attribution{}, "message body", nilFixture); err != nil {
+		t.Fatal(err)
+	}
+	if len(rawRequests) != 2 {
+		t.Fatalf("captured %d requests; want retry request", len(rawRequests))
+	}
+	var request struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal(rawRequests[1], &request); err != nil {
+		t.Fatalf("decode raw request: %v", err)
+	}
+	expected := []struct {
+		role string
+		text string
+	}{
+		{role: "user", text: "message body"},
+		{role: "assistant", text: "bad reply"},
+		{role: "user", text: correctivePrompt("message body", errors.New("invalid character 'b' looking for beginning of value"))},
+	}
+	if len(request.Messages) != len(expected) {
+		t.Fatalf("messages = %#v; want %d messages", request.Messages, len(expected))
+	}
+	for i, message := range request.Messages {
+		if len(message) != 2 || message["role"] != expected[i].role || message["text"] != expected[i].text {
+			t.Fatalf("message %d keys and values = %#v; want exactly role=%q and text=%q", i, message, expected[i].role, expected[i].text)
+		}
+		if _, present := message["content"]; present {
+			t.Fatalf("message %d contains forbidden content key: %#v", i, message)
+		}
 	}
 }
 
@@ -143,7 +194,7 @@ func TestJSONRetryReplaysFullStatelessHistory(t *testing.T) {
 		t.Fatalf("requests = %+v", requests)
 	}
 	roles := []string{requests[1].Messages[0].Role, requests[1].Messages[1].Role, requests[1].Messages[2].Role}
-	if strings.Join(roles, ",") != "user,assistant,user" || requests[1].Messages[0].Content != "original" || requests[1].Messages[1].Content != "bad reply" {
+	if strings.Join(roles, ",") != "user,assistant,user" || requests[1].Messages[0].Text != "original" || requests[1].Messages[1].Text != "bad reply" {
 		t.Fatalf("retry messages = %+v", requests[1].Messages)
 	}
 }

@@ -63,8 +63,8 @@ type Attribution struct {
 }
 
 type message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role string `json:"role"`
+	Text string `json:"text"`
 }
 
 type completeRequest struct {
@@ -100,7 +100,7 @@ func JSON[T any](ctx context.Context, c *Client, site CallSite, attr Attribution
 		return zero, fmt.Errorf("llm JSON: invalid prompts client")
 	}
 
-	messages := []message{{Role: "user", Content: userText}}
+	messages := []message{{Role: "user", Text: userText}}
 	attempts := site.MaxParseRetries + 1
 	if attempts < 1 {
 		attempts = 1
@@ -125,9 +125,9 @@ func JSON[T any](ctx context.Context, c *Client, site CallSite, attr Attribution
 		}
 		if attempt < attempts {
 			messages = []message{
-				{Role: "user", Content: userText},
-				{Role: "assistant", Content: text},
-				{Role: "user", Content: correctivePrompt(userText, lastErr)},
+				{Role: "user", Text: userText},
+				{Role: "assistant", Text: text},
+				{Role: "user", Text: correctivePrompt(userText, lastErr)},
 			}
 		}
 	}

@@ -111,8 +111,8 @@ type completeRequest struct {
 		Thinking    *bool    `json:"thinking"`
 	} `json:"config"`
 	Messages []struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role string `json:"role"`
+		Text string `json:"text"`
 	} `json:"messages"`
 }
 
@@ -200,7 +200,7 @@ func serve(provider Provider, embeds *EmbedCapture) (*llm.Client, func()) {
 			providerReq.Gen.Reasoning = Level(req.Config.Effort)
 		}
 		for _, message := range req.Messages {
-			providerReq.Messages = append(providerReq.Messages, Message{Role: Role(message.Role), Blocks: []Block{TextBlock{Text: message.Content}}})
+			providerReq.Messages = append(providerReq.Messages, Message{Role: Role(message.Role), Blocks: []Block{TextBlock{Text: message.Text}}})
 		}
 		result := provider.RoundTrip(r.Context(), providerReq)
 		if result == nil {
