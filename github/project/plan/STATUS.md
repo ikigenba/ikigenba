@@ -11,4 +11,3 @@ the anchored grep matches only phase lines.
 
 Next phase: 16
 
-- Phase 15 ⬜ realizes R-1GOK-GA2F, R-1HWG-U1T4 — forward all four owner headers through the nginx fragment
