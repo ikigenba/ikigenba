@@ -22,9 +22,9 @@ not ask questions.
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** (every phase is `✅`) → the whole job is complete. Return
+   - **No match** (no `⬜` phase lines left) → the whole job is complete. Return
      **`DONE`**. This is the *only* end of the loop.
-   - **A match** → note its zero-padded phase number `NN` (e.g. `33`, `08a`) and
+   - **A match** → note its zero-padded phase number `NN` (e.g. `48`, `08a`) and
      continue.
 
 2. **Preserve an in-flight brief.** If `project/loops/brief.md` exists, read its
@@ -33,25 +33,29 @@ not ask questions.
      any `verify` feedback are already in place. **Leave the brief exactly as is**
      (touch neither the contract region nor the feedback region), open **no** big
      doc, and return `NEXT`.
-   - If it names a **different** (now-`✅`) phase, or there is no brief, fall
-     through to step 3 and author a fresh one.
+   - If it names a phase whose `- Phase NN …` line is **no longer present** in
+     `project/plan/STATUS.md` (it passed verify and was deleted along with its
+     `phase-NN.md`), or there is no brief at all, fall through to step 3 and
+     author a fresh one.
 
 3. **Author a fresh brief** (only when step 2 did not preserve one):
    1. Read **only** `project/plan/phase-NN.md`.
    2. Resolve its realized Decision(s): the phase's header names them (`Decision
-      8`, `D11`, …). Map each Decision to its file via
-      `project/design/INDEX.md`, and read **only** those `project/design/DNN.md`
-      files. (Resolve an individual id with
+      12`, `D8`, …), or `realizes —` for a pure structural phase. Map each
+      Decision to its file via `project/design/INDEX.md`, and read **only** those
+      `project/design/DNN.md` files. (Resolve an individual id with
       `grep -n R-XXXX-XXXX project/design/INDEX.md`.)
    3. Determine the **ids to cover**: exactly the `R-XXXX-XXXX` ids the phase's
       body / *Done when* lists — a **slice** of a Decision's Verification ids,
-      **never all of them**. A structural phase may own none.
+      **never all of them**. A structural phase (like Phases 48/49, which realize
+      D12 — a Decision that mints **no** ids) owns none.
    4. For each realized Decision, copy its **full design prose verbatim** from the
       `DNN.md` — the Decision statement, the shape/signatures, and the rejected
       alternatives — but **omit that Decision's Verification list** (build must
       not see ids the phase does not own).
    5. For each covered id, copy its **full requirement text verbatim** from the
-      Decision's Verification list. Copy **no** out-of-scope ids.
+      Decision's Verification list. Copy **no** out-of-scope ids. If the Decision
+      mints no ids at all, skip this step.
    6. Extract the **public interface signatures** of the dependency packages the
       phase builds against (from their design prose / the phase's dependency
       notes), so build never opens a design file to learn a signature.
@@ -69,7 +73,7 @@ Write exactly these two regions. The **contract region** is yours; the
 ## Contract
 
 - **Phase:** NN — <one-line objective>
-- **Realizes:** <Decision id(s), e.g. D8, D11>
+- **Realizes:** <Decision id(s), e.g. D8, D12, or "—" for a structural phase>
 - **Decision files:** <project/design/DNN.md paths>
 
 ### Design prose (verbatim, Verification lists omitted)
@@ -90,10 +94,13 @@ R-XXXX-XXXX — <full requirement text copied verbatim from the Decision's Verif
 <public signatures of packages this phase builds against, copied in>
 
 ### Done bar
-<the phase's deterministic exit conditions: the tagged tests required, exact
-grep counts, and `bin/test` exits 0. Tests are co-located `*_test.go` in the
-package they exercise (shell-tool behavior in the sibling `bin/<name>.test.sh`);
-never a per-phase or root-level test file.>
+<the phase's deterministic exit conditions copied from its "Done when" list:
+exact commands, exact grep/match counts, and "the suite is green" — `go test
+./...` from the repo root exits 0. Tests are co-located `*_test.go` files in
+the package they exercise, named for the behavior; shell tooling under `bin/`
+is deliberately untested by Convention and is instead proven by the phase's
+structural checks (e.g. `test -x`, `bash -n`, exact grep counts). Never a
+per-phase or root-level test file.>
 
 ## Verify feedback
 
@@ -123,7 +130,7 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Authored brief for Phase 33 (D8, D11).`
+  `Authored brief for Phase 48 (D12).`
 
 End the turn on `DONE` **only** when step 1's grep finds no `⬜` phase; in every
 other case (fresh brief authored, or in-flight brief preserved) end the turn on
