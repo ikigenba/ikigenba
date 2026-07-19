@@ -226,15 +226,16 @@ func TestToolsListThroughAssembledHandlerReturnsDomainPlusChassisTools(t *testin
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(resp.Result.Tools) != 18 {
-		t.Fatalf("want 18 tools, got %d", len(resp.Result.Tools))
+	if len(resp.Result.Tools) != 20 {
+		t.Fatalf("want 20 tools, got %d", len(resp.Result.Tools))
 	}
-	got := make([]string, 0, 18)
+	got := make([]string, 0, 20)
 	for _, tl := range resp.Result.Tools {
 		got = append(got, tl.Name)
 	}
 	sort.Strings(got)
 	want := []string{
+		"calls",
 		"clear_trigger",
 		"create",
 		"delete",
@@ -253,6 +254,7 @@ func TestToolsListThroughAssembledHandlerReturnsDomainPlusChassisTools(t *testin
 		"run_output",
 		"set_trigger",
 		"update",
+		"usage",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("name count mismatch: %v", got)
@@ -283,6 +285,7 @@ func TestToolsListDeclaresSchemasOnlyForStructuredTools(t *testing.T) {
 		t.Fatalf("decode tools/list: %v", err)
 	}
 	wantStructured := map[string]bool{
+		"calls": true, "usage": true,
 		"create": true, "import": true, "list": true, "get": true, "update": true,
 		"delete": true, "set_trigger": true, "clear_trigger": true, "run": true,
 		"run_list": true, "run_get": true, "run_cancel": true, "run_fs_list": true,

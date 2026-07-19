@@ -2,14 +2,18 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"path"
+	"time"
 
 	appkitmcp "appkit/mcp"
 	"appkit/server"
 
+	"prompts/internal/calls"
 	"prompts/internal/prompt"
 )
 
@@ -330,12 +334,164 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				return appkitmcp.TextResult(out), nil
 			}),
+
+		desc(tool("calls"), "Inspect inference calls. Without call_id, returns filtered and paginated metric rows without request/response bodies. With call_id, returns one detail row including retained bodies; pruned details carry bodies_pruned=true.", callsInputSchema(),
+			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+				var in callsInput
+				if err := parseArgs(args, &in); err != nil {
+					return nil, err
+				}
+				store := svc.CallStore()
+				if store == nil {
+					return fail(errors.New("calls store is not configured")), nil
+				}
+				if in.CallID != "" {
+					row, err := store.Get(ctx, in.CallID)
+					if errors.Is(err, sql.ErrNoRows) {
+						return fail(fmt.Errorf("%w: call %q", prompt.ErrNotFound, in.CallID)), nil
+					}
+					if err != nil {
+						return fail(err), nil
+					}
+					return appkitmcp.StructuredResult(callDetail(row))
+				}
+				filter, err := in.filter()
+				if err != nil {
+					return fail(err), nil
+				}
+				rows, err := store.List(ctx, filter)
+				if err != nil {
+					return fail(err), nil
+				}
+				out := make([]map[string]any, 0, len(rows))
+				for _, row := range rows {
+					out = append(out, callMetrics(row))
+				}
+				return appkitmcp.StructuredResult(map[string]any{"calls": out})
+			}),
+
+		desc(tool("usage"), "Aggregate inference usage by name, origin, model, or UTC day, optionally filtered by class and time window.", obj(map[string]any{
+			"group_by": map[string]any{"type": "string", "enum": []string{"name", "origin", "model", "day"}},
+			"class":    classSchema(), "since": typ("string"), "until": typ("string"),
+		}, "group_by"),
+			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+				var in struct {
+					GroupBy string `json:"group_by"`
+					Class   string `json:"class"`
+					Since   string `json:"since"`
+					Until   string `json:"until"`
+				}
+				if err := parseArgs(args, &in); err != nil {
+					return nil, err
+				}
+				group := calls.GroupBy(in.GroupBy)
+				if group != calls.GroupByName && group != calls.GroupByOrigin && group != calls.GroupByModel && group != calls.GroupByDay {
+					return fail(validationError("group_by must be one of name, origin, model, day")), nil
+				}
+				filter, err := (callsInput{Class: in.Class, Since: in.Since, Until: in.Until}).filter()
+				if err != nil {
+					return fail(err), nil
+				}
+				store := svc.CallStore()
+				if store == nil {
+					return fail(errors.New("calls store is not configured")), nil
+				}
+				buckets, err := store.Aggregate(ctx, group, filter)
+				if err != nil {
+					return fail(err), nil
+				}
+				out := make([]map[string]any, 0, len(buckets))
+				for _, bucket := range buckets {
+					out = append(out, map[string]any{"key": bucket.Key, "calls": bucket.Calls, "input_tokens": bucket.InputTokens, "output_tokens": bucket.OutputTokens, "total_tokens": bucket.TotalTokens, "cost_usd": bucket.CostUSD, "errors": bucket.Errors})
+				}
+				return appkitmcp.StructuredResult(map[string]any{"buckets": out})
+			}),
 	}
 	schemas := outputSchemas()
 	for i := range tools {
 		tools[i].OutputSchema = schemas[tools[i].Name]
 	}
 	return tools
+}
+
+type callsInput struct {
+	Class      string `json:"class"`
+	Origin     string `json:"origin"`
+	Name       string `json:"name"`
+	GroupID    string `json:"group_id"`
+	ErrorsOnly bool   `json:"errors_only"`
+	Since      string `json:"since"`
+	Until      string `json:"until"`
+	Limit      int    `json:"limit"`
+	Offset     int    `json:"offset"`
+	CallID     string `json:"call_id"`
+}
+
+func callsInputSchema() map[string]any {
+	return obj(map[string]any{
+		"class": classSchema(), "origin": typ("string"), "name": typ("string"),
+		"group_id": typ("string"), "errors_only": typ("boolean"), "since": typ("string"),
+		"until": typ("string"), "limit": typ("integer"), "offset": typ("integer"), "call_id": typ("string"),
+	})
+}
+
+func classSchema() map[string]any {
+	return map[string]any{"type": "string", "enum": []string{"session", "completion", "embedding"}}
+}
+
+func (in callsInput) filter() (calls.Filter, error) {
+	f := calls.Filter{Class: calls.Class(in.Class), Origin: in.Origin, Name: in.Name, GroupID: in.GroupID, ErrorsOnly: in.ErrorsOnly, Limit: in.Limit, Offset: in.Offset}
+	if f.Class != "" && f.Class != calls.ClassSession && f.Class != calls.ClassCompletion && f.Class != calls.ClassEmbedding {
+		return calls.Filter{}, validationError("class must be one of session, completion, embedding")
+	}
+	var err error
+	if f.Since, err = parseOptionalTime("since", in.Since); err != nil {
+		return calls.Filter{}, err
+	}
+	if f.Until, err = parseOptionalTime("until", in.Until); err != nil {
+		return calls.Filter{}, err
+	}
+	return f, nil
+}
+
+func parseOptionalTime(name, value string) (time.Time, error) {
+	if value == "" {
+		return time.Time{}, nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}, validationError(name + " must be an RFC3339 timestamp")
+	}
+	return parsed, nil
+}
+
+func validationError(message string) error {
+	return fmt.Errorf("%w: %s", prompt.ErrValidation, message)
+}
+
+func callMetrics(row calls.Row) map[string]any {
+	return map[string]any{
+		"id": row.ID, "class": row.Class, "origin": row.Origin, "name": row.Name,
+		"group_id": row.GroupID, "attempt": row.Attempt, "owner_email": row.OwnerEmail,
+		"provider": row.Provider, "model": row.Model, "input_tokens": row.InputTokens,
+		"output_tokens": row.OutputTokens, "total_tokens": row.TotalTokens,
+		"usage_json": row.UsageJSON, "cost_usd": row.CostUSD, "error": row.Error,
+		"started_at": row.StartedAt, "ended_at": row.EndedAt,
+	}
+}
+
+func callDetail(row calls.Row) map[string]any {
+	out := callMetrics(row)
+	if row.RequestBody != nil {
+		out["request_body"] = *row.RequestBody
+	}
+	if row.ResponseBody != nil {
+		out["response_body"] = *row.ResponseBody
+	}
+	if row.RequestBody == nil && row.ResponseBody == nil {
+		out["bodies_pruned"] = true
+	}
+	return out
 }
 
 func desc(name, description string, schema map[string]any, handler func(context.Context, json.RawMessage, server.Identity) (map[string]any, error)) appkitmcp.Tool {
@@ -397,6 +553,15 @@ func outputSchemas() map[string]map[string]any {
 		"prompt_id": typ("string"), "source": typ("string"), "filter": typ("string"), "created_at": typ("string"),
 	}, "prompt_id", "source", "filter", "created_at")
 	return map[string]map[string]any{
+		tool("calls"): obj(map[string]any{
+			"calls": map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": true}},
+			"id":    typ("string"),
+		}),
+		tool("usage"): obj(map[string]any{
+			"buckets": map[string]any{"type": "array", "items": obj(map[string]any{
+				"key": typ("string"), "calls": typ("integer"), "input_tokens": typ("integer"), "output_tokens": typ("integer"), "total_tokens": typ("integer"), "cost_usd": typ("number"), "errors": typ("integer"),
+			}, "key", "calls", "input_tokens", "output_tokens", "total_tokens", "cost_usd", "errors")},
+		}, "buckets"),
 		tool("create"):        obj(map[string]any{"prompt_id": typ("string")}, "prompt_id"),
 		tool("import"):        obj(map[string]any{"prompt_id": typ("string"), "name": typ("string")}, "prompt_id", "name"),
 		tool("list"):          obj(map[string]any{"prompts": map[string]any{"type": "array", "items": detailSchema}}, "prompts"),

@@ -15,6 +15,7 @@ import (
 
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/catalog"
+	"prompts/internal/calls"
 	"prompts/internal/ids"
 	"prompts/internal/sandbox"
 )
@@ -63,6 +64,16 @@ func NewService(store *Store, sb *sandbox.Manager, runsDir string, runner Runner
 		runner:  runner,
 		now:     func() time.Time { return time.Now().UTC() },
 	}
+}
+
+// CallStore returns the suite-wide inference accounting store wired at the
+// composition root. Inspection/reporting callers intentionally apply no owner
+// scoping: identity is enforced by the transport before they reach the store.
+func (s *Service) CallStore() *calls.Store {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	return s.store.Calls
 }
 
 func (s *Service) nowStr() string { return s.now().UTC().Format(time.RFC3339Nano) }
