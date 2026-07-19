@@ -11,4 +11,3 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 17
 
-- Phase 16 ⬜ realizes R-DDVL-DPVB, R-DF3H-RHM0, R-DGBE-59CP, R-DHJA-J13E, R-DIR6-WSU3 — Identity keys on `X-Owner-Id`: widened `server.Identity`, hard gate flip, id-carrying transport and health
