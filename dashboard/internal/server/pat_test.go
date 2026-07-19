@@ -157,6 +157,7 @@ func TestPATCreateUnauthenticated(t *testing.T) {
 // store.Create with a chosen label; the authn-test mintPAT uses a fixed label.
 func mintPATWithLabel(t *testing.T, deps serverDeps, owner, label string) string {
 	t.Helper()
+	ensureTestIdentity(t, deps, "owner-test", owner)
 	_, p, err := deps.pats.Create(context.Background(), owner, "owner-test", label)
 	if err != nil {
 		t.Fatalf("pats.Create: %v", err)

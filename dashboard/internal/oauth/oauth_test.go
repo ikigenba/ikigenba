@@ -19,6 +19,15 @@ func openTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("db.Open: %v", err)
 	}
 	t.Cleanup(func() { d.Close() })
+	for _, identity := range []struct{ id, email string }{
+		{"owner-1", "owner@example.com"},
+		{"owner-test", "owner@example.com"},
+		{"identity-handle", "owner@example.com"},
+	} {
+		if _, err := d.Exec(`INSERT INTO identities (id, iss, sub, email, created_at, updated_at) VALUES (?, 'test-issuer', ?, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, identity.id, identity.id, identity.email); err != nil {
+			t.Fatalf("seed identity %q: %v", identity.id, err)
+		}
+	}
 	return d
 }
 
@@ -165,6 +174,7 @@ func TestAuthCodeStoreIssuePersistsHashOnly(t *testing.T) {
 	plaintext, rec, err := acs.Issue(ctx, IssueParams{
 		ClientID:            "client-1",
 		OwnerEmail:          "owner@example.com",
+		OwnerID:             "owner-1",
 		CodeChallenge:       "chal",
 		CodeChallengeMethod: "S256",
 		RedirectURI:         "https://e/cb",
@@ -207,6 +217,7 @@ func TestAuthCodeStoreLookupAndMarkUsed(t *testing.T) {
 	plaintext, rec, err := acs.Issue(ctx, IssueParams{
 		ClientID:            "client-1",
 		OwnerEmail:          "owner@example.com",
+		OwnerID:             "owner-1",
 		CodeChallenge:       "chal",
 		CodeChallengeMethod: "S256",
 		RedirectURI:         "https://e/cb",

@@ -72,6 +72,17 @@ func newServerDeps(t *testing.T) serverDeps {
 	}
 }
 
+func ensureTestIdentity(t *testing.T, d serverDeps, id, email string) {
+	t.Helper()
+	if _, err := d.db.Exec(`
+		INSERT OR IGNORE INTO identities
+			(id, iss, sub, email, created_at, updated_at)
+		VALUES (?, 'https://issuer.example', ?, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+	`, id, id, email); err != nil {
+		t.Fatalf("ensure test identity %q: %v", id, err)
+	}
+}
+
 // opts expands the deps into a valid Options for New. Individual tests mutate the
 // returned value (e.g. nil out one dep) to probe the constructor's guards.
 func (d serverDeps) opts() Options {

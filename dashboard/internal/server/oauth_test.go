@@ -460,9 +460,11 @@ func TestIntrospectRequiresCallerBearer(t *testing.T) {
 func TestTokenPKCEMismatch(t *testing.T) {
 	ts, d, client := newOAuthTest(t)
 	ctx := context.Background()
+	ensureTestIdentity(t, d, "owner-test", "owner@int.ikigenba.com")
 	plaintext, _, err := d.codes.Issue(ctx, oauth.IssueParams{
 		ClientID:            "client-x",
 		OwnerEmail:          "owner@int.ikigenba.com",
+		OwnerID:             "owner-test",
 		CodeChallenge:       pkceChallenge(),
 		CodeChallengeMethod: "S256",
 		RedirectURI:         clientRedirectURI,
@@ -493,12 +495,14 @@ func TestTokenPKCEMismatch(t *testing.T) {
 func TestTokenExpiredCode(t *testing.T) {
 	ts, d, client := newOAuthTest(t)
 	ctx := context.Background()
+	ensureTestIdentity(t, d, "owner-test", "owner@int.ikigenba.com")
 	// A code store with a negative TTL persists an already-expired code; the row
 	// lives in the shared db, so the server's token handler looks it up and rejects.
 	expired := oauth.NewAuthCodeStore(d.db, -time.Minute)
 	plaintext, _, err := expired.Issue(ctx, oauth.IssueParams{
 		ClientID:            "client-x",
 		OwnerEmail:          "owner@int.ikigenba.com",
+		OwnerID:             "owner-test",
 		CodeChallenge:       pkceChallenge(),
 		CodeChallengeMethod: "S256",
 		RedirectURI:         clientRedirectURI,

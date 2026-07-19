@@ -51,6 +51,7 @@ func grantsTestServer(t *testing.T) (*http.Server, serverDeps) {
 // mintSession creates a live web session for owner and returns its cookie.
 func mintSession(t *testing.T, deps serverDeps, owner string) *http.Cookie {
 	t.Helper()
+	ensureTestIdentity(t, deps, "owner-test", owner)
 	issued, err := deps.sessions.Create(context.Background(), owner, "owner-test")
 	if err != nil {
 		t.Fatalf("sessions.Create: %v", err)
@@ -62,6 +63,7 @@ func mintSession(t *testing.T, deps serverDeps, owner string) *http.Cookie {
 // the chain's public_id and the client name (so tests can assert on rendering).
 func issueChain(t *testing.T, deps serverDeps, owner, clientName string) (publicID, gotClientName string) {
 	t.Helper()
+	ensureTestIdentity(t, deps, "owner-test", owner)
 	ctx := context.Background()
 	client, err := deps.clients.Register(ctx, clientName, []string{"https://app.example/cb"})
 	if err != nil {

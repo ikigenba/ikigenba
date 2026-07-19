@@ -20,6 +20,7 @@ import (
 // email and bound resource. It returns the access-token plaintext.
 func mintAccessToken(t *testing.T, d serverDeps, ownerEmail, resource string) string {
 	t.Helper()
+	ensureTestIdentity(t, d, "owner-test", ownerEmail)
 	ctx := context.Background()
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -337,6 +338,7 @@ func twoResourceServer(t *testing.T, d serverDeps, limiter *ratelimit.Limiter) h
 // mintPAT creates a PAT directly through the store and returns its plaintext.
 func mintPAT(t *testing.T, d serverDeps, ownerEmail string) (plaintext string, p pat.PAT) {
 	t.Helper()
+	ensureTestIdentity(t, d, "owner-test", ownerEmail)
 	plaintext, p, err := d.pats.Create(context.Background(), ownerEmail, "owner-test", "test pat")
 	if err != nil {
 		t.Fatalf("pats.Create: %v", err)
@@ -458,6 +460,15 @@ func TestAuthnIdentityHeadersHandleEmptyAttributesAndMissingIdentity(t *testing.
 		d := newServerDeps(t)
 		h := authnServer(t, d, nil)
 		tok := mintAccessToken(t, d, "owner@int.ikigenba.com", testResource)
+		if _, err := d.db.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+			t.Fatalf("disable foreign keys for corrupt-fixture setup: %v", err)
+		}
+		if _, err := d.db.Exec(`DELETE FROM identities WHERE id = 'owner-test'`); err != nil {
+			t.Fatalf("remove identity for corrupt-fixture setup: %v", err)
+		}
+		if _, err := d.db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+			t.Fatalf("restore foreign keys after corrupt-fixture setup: %v", err)
+		}
 		vt, err := d.tokens.ValidateAccess(context.Background(), tok)
 		if err != nil {
 			t.Fatalf("ValidateAccess: %v", err)

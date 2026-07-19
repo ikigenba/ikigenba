@@ -25,6 +25,7 @@ func doSessionAuthn(h http.Handler, cookie string) *httptest.ResponseRecorder {
 // directly through the session store and returns its plaintext cookie value.
 func liveSessionCookie(t *testing.T, d serverDeps, ownerEmail string) string {
 	t.Helper()
+	ensureTestIdentity(t, d, "owner-test", ownerEmail)
 	issued, err := d.sessions.Create(context.Background(), ownerEmail, "owner-test")
 	if err != nil {
 		t.Fatalf("sessions.Create: %v", err)

@@ -19,6 +19,15 @@ func testStore(t *testing.T) *SessionStore {
 		t.Fatalf("db.Open: %v", err)
 	}
 	t.Cleanup(func() { database.Close() })
+	for _, identity := range []struct{ id, email string }{
+		{"owner-1", "owner@int.ikigenba.com"},
+		{"owner-a", "a@int.ikigenba.com"},
+		{"owner-b", "b@int.ikigenba.com"},
+	} {
+		if _, err := database.Exec(`INSERT INTO identities (id, iss, sub, email, created_at, updated_at) VALUES (?, 'test-issuer', ?, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, identity.id, identity.id, identity.email); err != nil {
+			t.Fatalf("seed identity %q: %v", identity.id, err)
+		}
+	}
 	return NewSessionStore(database)
 }
 

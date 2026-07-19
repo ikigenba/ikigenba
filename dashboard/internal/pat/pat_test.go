@@ -19,6 +19,15 @@ func openTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("db.Open: %v", err)
 	}
 	t.Cleanup(func() { d.Close() })
+	for _, identity := range []struct{ id, email string }{
+		{"owner-alice", "alice@example.com"},
+		{"owner-bob", "bob@example.com"},
+		{"identity-handle", "owner@example.com"},
+	} {
+		if _, err := d.Exec(`INSERT INTO identities (id, iss, sub, email, created_at, updated_at) VALUES (?, 'test-issuer', ?, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, identity.id, identity.id, identity.email); err != nil {
+			t.Fatalf("seed identity %q: %v", identity.id, err)
+		}
+	}
 	return d
 }
 
