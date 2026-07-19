@@ -12,4 +12,3 @@ matches only phase lines.
 
 Next phase: 31
 
-- Phase 30 ⬜ realizes D7 (R-JA3I-IY1F, R-JCJB-AHIT, R-JDR7-O99I, R-JEZ4-2107, R-JG70-FSQW, R-JHEW-TKHL, R-O7K1-XEN7, R-DB19-LAND) — rebuild the login page composition around a brand title and a borderless etymology table
