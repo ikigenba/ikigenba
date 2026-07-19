@@ -554,9 +554,16 @@ func TestNginxLandingLocationIsExactMatchAndSessionGated(t *testing.T) {
 	if strings.Contains(block, "auth_request /_authn;") {
 		t.Fatalf("landing location is bearer-gated instead of session-gated:\n%s", block)
 	}
-	if !strings.Contains(block, "proxy_set_header X-Owner-Email $crm_session_owner;") {
+	if !strings.Contains(strings.Join(strings.Fields(block), " "), "proxy_set_header X-Owner-Email $crm_session_owner;") {
 		t.Fatalf("landing location does not forward session owner identity:\n%s", block)
 	}
+
+	// R-FTCJ-N9K8
+	assertNginxOwnerHeaders(t, block, "$crm_session_owner", map[string]string{
+		"Id":      "$crm_session_owner_id",
+		"Name":    "$crm_session_owner_name",
+		"Picture": "$crm_session_owner_picture",
+	})
 
 	// R-NGNX-6M9N
 	// R-X2K6-DUXS
@@ -573,6 +580,20 @@ func TestNginxExistingServiceLocationsSurvive(t *testing.T) {
 	if !strings.Contains(prefix, "auth_request /_authn;") {
 		t.Fatalf("service prefix location missing bearer auth_request:\n%s", prefix)
 	}
+	// R-FS4N-9HTJ
+	assertNginxOwnerHeaders(t, prefix, "$crm_owner", map[string]string{
+		"Id":      "$crm_owner_id",
+		"Name":    "$crm_owner_name",
+		"Picture": "$crm_owner_picture",
+	})
+	for _, want := range []string{
+		"auth_request_set $crm_client        $upstream_http_x_client_id;",
+		"proxy_set_header X-Client-Id     $crm_client;",
+	} {
+		if !strings.Contains(prefix, want) {
+			t.Fatalf("service prefix location missing %q:\n%s", want, prefix)
+		}
+	}
 	if !strings.Contains(conf, "location = /srv/crm/feed { return 404; }") {
 		t.Fatalf("feed denial location missing:\n%s", conf)
 	}
@@ -583,6 +604,33 @@ func TestNginxExistingServiceLocationsSurvive(t *testing.T) {
 	// R-X2K6-DUXS
 	if !strings.Contains(prm, "proxy_pass "+registry.BaseURL("crm")+"/.well-known/oauth-protected-resource;") {
 		t.Fatalf("PRM bootstrap location missing upstream proxy_pass:\n%s", prm)
+	}
+}
+
+func assertNginxOwnerHeaders(t *testing.T, block, emailVariable string, variables map[string]string) {
+	t.Helper()
+
+	normalized := strings.Join(strings.Fields(block), " ")
+	variables["Email"] = emailVariable
+	for header, variable := range variables {
+		upstream := strings.ToLower(strings.ReplaceAll(header, "-", "_"))
+		capture := "auth_request_set " + variable + " "
+		if count := strings.Count(block, capture); count != 1 {
+			t.Fatalf("location has %d captures for %s, want exactly one:\n%s", count, variable, block)
+		}
+		captureDirective := capture + "$upstream_http_x_owner_" + upstream + ";"
+		if !strings.Contains(normalized, captureDirective) {
+			t.Fatalf("location missing owner capture %q:\n%s", captureDirective, block)
+		}
+
+		forward := "proxy_set_header X-Owner-" + header + " "
+		if count := strings.Count(block, forward); count != 1 {
+			t.Fatalf("location has %d forwards for X-Owner-%s, want exactly one:\n%s", count, header, block)
+		}
+		forwardDirective := forward + variable + ";"
+		if !strings.Contains(normalized, forwardDirective) {
+			t.Fatalf("location missing owner forwarding %q:\n%s", forwardDirective, block)
+		}
 	}
 }
 
