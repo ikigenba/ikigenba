@@ -13,5 +13,3 @@ bare status glyph outside phase lines, so the anchored grep matches only
 phase lines.
 
 Next phase: 50
-
-- Phase 49  ⬜  realizes D12  — retire the shared-blob era (delete per-service `bin/secrets`, rewrite the seeding SOP)
