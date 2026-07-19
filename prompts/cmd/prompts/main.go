@@ -119,6 +119,8 @@ func promptsSpec() appkit.Spec {
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
 			{Key: "PROMPTS_CALLS_BODY_RETENTION_DAYS", Value: "30"},
+			{Key: "PROMPTS_MAX_INFLIGHT_CALLS", Value: "8"},
+			{Key: "PROMPTS_MAX_CONCURRENT_RUNS", Value: "8"},
 		},
 		Workers: []func(context.Context) error{callsBodyRetentionWorker},
 		Producer: func(ob *outbox.Outbox) error {

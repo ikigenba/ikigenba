@@ -17,22 +17,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"prompts/internal/prompt"
+	"prompts/internal/provider"
 	"prompts/internal/sandbox"
 	"prompts/internal/suite"
 	runtools "prompts/internal/tools"
 
 	"github.com/ikigenba/agentkit"
-	"github.com/ikigenba/agentkit/anthropic"
 	"github.com/ikigenba/agentkit/catalog"
-	"github.com/ikigenba/agentkit/google"
-	"github.com/ikigenba/agentkit/openai"
-	"github.com/ikigenba/agentkit/openrouter"
-	"github.com/ikigenba/agentkit/zai"
 )
 
 // Runner drives run lifecycles. It satisfies prompt.Runner.
@@ -69,7 +64,7 @@ func New(store *prompt.Store, sb *sandbox.Manager, ttl time.Duration, manifestRo
 		store:         store,
 		sandbox:       sb,
 		ttl:           ttl,
-		buildProvider: buildProvider,
+		buildProvider: provider.Build,
 		discover: func(ctx context.Context, owner, promptID string) []agentkit.DeferredToolGroup {
 			return suite.Discover(ctx, manifestRoot, owner, promptID)
 		},
@@ -77,58 +72,6 @@ func New(store *prompt.Store, sb *sandbox.Manager, ttl time.Duration, manifestRo
 		shareBaseURL:      shareBaseURL,
 		cancels:           make(map[string]context.CancelFunc),
 		userCancelled:     make(map[string]bool),
-	}
-}
-
-func buildProvider(cfg prompt.Config, getenv func(string) string) (agentkit.Provider, error) {
-	keyName := map[string]string{
-		"anthropic":  "ANTHROPIC_API_KEY",
-		"openai":     "OPENAI_API_KEY",
-		"google":     "GEMINI_API_KEY",
-		"zai":        "ZAI_API_KEY",
-		"openrouter": "OPENROUTER_API_KEY",
-	}[cfg.Provider]
-	if keyName == "" {
-		return nil, fmt.Errorf("unsupported provider %q", cfg.Provider)
-	}
-	apiKey := strings.TrimSpace(getenv(keyName))
-	if apiKey == "" {
-		return nil, fmt.Errorf("%s is not set", keyName)
-	}
-
-	switch cfg.Provider {
-	case "anthropic":
-		var opts []anthropic.Option
-		if cfg.BaseURL != "" {
-			opts = append(opts, anthropic.WithBaseURL(cfg.BaseURL))
-		}
-		return anthropic.New(anthropic.APIKey(apiKey), opts...), nil
-	case "openai":
-		var opts []openai.Option
-		if cfg.BaseURL != "" {
-			opts = append(opts, openai.WithBaseURL(cfg.BaseURL))
-		}
-		return openai.New(openai.APIKey(apiKey), opts...), nil
-	case "google":
-		var opts []google.Option
-		if cfg.BaseURL != "" {
-			opts = append(opts, google.WithBaseURL(cfg.BaseURL))
-		}
-		return google.New(google.APIKey(apiKey), opts...), nil
-	case "zai":
-		var opts []zai.Option
-		if cfg.BaseURL != "" {
-			opts = append(opts, zai.WithBaseURL(cfg.BaseURL))
-		}
-		return zai.New(zai.APIKey(apiKey), opts...), nil
-	case "openrouter":
-		var opts []openrouter.Option
-		if cfg.BaseURL != "" {
-			opts = append(opts, openrouter.WithBaseURL(cfg.BaseURL))
-		}
-		return openrouter.New(openrouter.APIKey(apiKey), opts...), nil
-	default:
-		return nil, fmt.Errorf("unsupported provider %q", cfg.Provider)
 	}
 }
 
