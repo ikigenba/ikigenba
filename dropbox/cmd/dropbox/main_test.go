@@ -864,13 +864,54 @@ func TestNginxLandingLocationIsExactMatchAndSessionGated(t *testing.T) {
 	if !strings.Contains(block, "auth_request /_session-authn;") || strings.Contains(block, "auth_request /_authn;") {
 		t.Fatalf("landing block auth_request is not session-gated only:\n%s", block)
 	}
-	if !strings.Contains(block, "auth_request_set $dropbox_session_owner $upstream_http_x_owner_email;") ||
-		!strings.Contains(block, "proxy_set_header X-Owner-Email $dropbox_session_owner;") {
+	if !strings.Contains(block, "auth_request_set $dropbox_session_owner         $upstream_http_x_owner_email;") ||
+		!strings.Contains(block, "proxy_set_header X-Owner-Email   $dropbox_session_owner;") {
 		t.Fatalf("landing block does not propagate session owner identity:\n%s", block)
 	}
 	// R-NGNX-6T8U
 	if !strings.Contains(block, "proxy_pass "+registry.BaseURL("dropbox")+"/;") {
 		t.Fatalf("landing block does not proxy to loopback upstream root with trailing slash:\n%s", block)
+	}
+}
+
+func TestNginxLandingLocationForwardsAllOwnerIdentityHeaders(t *testing.T) {
+	block := nginxLocationBlock(t, readNginxConfig(t), "location = /srv/dropbox/ {")
+
+	// R-KJGZ-FKVP
+	for _, want := range []string{
+		"auth_request_set $dropbox_session_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $dropbox_session_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $dropbox_session_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $dropbox_session_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email   $dropbox_session_owner;",
+		"proxy_set_header X-Owner-Id      $dropbox_session_owner_id;",
+		"proxy_set_header X-Owner-Name    $dropbox_session_owner_name;",
+		"proxy_set_header X-Owner-Picture $dropbox_session_owner_picture;",
+	} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("session-gated landing location missing %q:\n%s", want, block)
+		}
+	}
+}
+
+func TestNginxBearerLocationForwardsAllOwnerIdentityHeadersAndClientID(t *testing.T) {
+	block := nginxLocationBlock(t, readNginxConfig(t), "location /srv/dropbox/ {")
+
+	// R-KKOV-TCME
+	for _, want := range []string{
+		"auth_request_set $dropbox_owner         $upstream_http_x_owner_email;",
+		"auth_request_set $dropbox_owner_id      $upstream_http_x_owner_id;",
+		"auth_request_set $dropbox_owner_name    $upstream_http_x_owner_name;",
+		"auth_request_set $dropbox_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Email   $dropbox_owner;",
+		"proxy_set_header X-Owner-Id      $dropbox_owner_id;",
+		"proxy_set_header X-Owner-Name    $dropbox_owner_name;",
+		"proxy_set_header X-Owner-Picture $dropbox_owner_picture;",
+		"proxy_set_header X-Client-Id     $dropbox_client;",
+	} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("bearer-gated prefix location missing %q:\n%s", want, block)
+		}
 	}
 }
 
