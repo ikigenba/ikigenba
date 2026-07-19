@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 37
-
-- Phase 36 ⬜ realizes R-20UM-JESS, R-222I-X6JH — MCP surface: model-only required schema and catalog-generated describe inventory
