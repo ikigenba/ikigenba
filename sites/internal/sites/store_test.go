@@ -44,7 +44,7 @@ func TestCRUDRoundtrip(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	a, err := s.Create(ctx, "alpha", "", false)
+	a, err := s.Create(ctx, "alpha", "", "", false)
 	if err != nil {
 		t.Fatalf("create alpha: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestCRUDRoundtrip(t *testing.T) {
 		t.Fatalf("create alpha: timestamps unset %+v", a)
 	}
 
-	if _, err := s.Create(ctx, "bravo", "", false); err != nil {
+	if _, err := s.Create(ctx, "bravo", "", "", false); err != nil {
 		t.Fatalf("create bravo: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestSlugReject(t *testing.T) {
 	}
 	for _, tc := range bad {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := s.Create(ctx, tc.slug, "", false)
+			_, err := s.Create(ctx, tc.slug, "", "", false)
 			if !errors.Is(err, ErrInvalidSlug) {
 				t.Fatalf("create %q: want ErrInvalidSlug, got %v", tc.slug, err)
 			}
@@ -128,7 +128,7 @@ func TestReservedNameReject(t *testing.T) {
 
 	for _, name := range []string{"mcp", ".well-known"} {
 		t.Run(name, func(t *testing.T) {
-			_, err := s.Create(ctx, name, "", false)
+			_, err := s.Create(ctx, name, "", "", false)
 			if !errors.Is(err, ErrReservedName) {
 				t.Fatalf("create %q: want ErrReservedName, got %v", name, err)
 			}
@@ -140,10 +140,10 @@ func TestCreateDuplicate(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	if _, err := s.Create(ctx, "dup", "", false); err != nil {
+	if _, err := s.Create(ctx, "dup", "", "", false); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
-	_, err := s.Create(ctx, "dup", "", false)
+	_, err := s.Create(ctx, "dup", "", "", false)
 	if !errors.Is(err, ErrExists) {
 		t.Fatalf("duplicate create: want ErrExists, got %v", err)
 	}
@@ -161,11 +161,11 @@ func TestGetDeleteNotFound(t *testing.T) {
 	}
 }
 
-func TestCreatePersistsCreatedByAndDefaultsPrivate(t *testing.T) {
+func TestCreatePersistsOwnerIdentityAndRequestedVisibility(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	created, err := s.Create(ctx, "creator-site", "user-123", false)
+	created, err := s.Create(ctx, "creator-site", "id-alpha", "shared@example.com", false)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -173,17 +173,17 @@ func TestCreatePersistsCreatedByAndDefaultsPrivate(t *testing.T) {
 	if created.Public {
 		t.Fatalf("Create Public = true, want false")
 	}
-	// R-QRDS-EIS1
-	if created.CreatedBy != "user-123" {
-		t.Fatalf("Create CreatedBy = %q, want %q", created.CreatedBy, "user-123")
+	// R-Z3ZN-5BFE
+	if created.OwnerID != "id-alpha" || created.OwnerEmail != "shared@example.com" {
+		t.Fatalf("Create owner = (%q, %q), want (%q, %q)", created.OwnerID, created.OwnerEmail, "id-alpha", "shared@example.com")
 	}
 
 	got, err := s.Get(ctx, "creator-site")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.CreatedBy != "user-123" {
-		t.Fatalf("Get CreatedBy = %q, want %q", got.CreatedBy, "user-123")
+	if got.OwnerID != "id-alpha" || got.OwnerEmail != "shared@example.com" {
+		t.Fatalf("Get owner = (%q, %q), want (%q, %q)", got.OwnerID, got.OwnerEmail, "id-alpha", "shared@example.com")
 	}
 	if got.Public {
 		t.Fatalf("Get Public = true, want false")
@@ -196,14 +196,14 @@ func TestCreatePersistsCreatedByAndDefaultsPrivate(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("list len = %d, want 1", len(list))
 	}
-	if list[0].CreatedBy != "user-123" {
-		t.Fatalf("List CreatedBy = %q, want %q", list[0].CreatedBy, "user-123")
+	if list[0].OwnerID != "id-alpha" || list[0].OwnerEmail != "shared@example.com" {
+		t.Fatalf("List owner = (%q, %q), want (%q, %q)", list[0].OwnerID, list[0].OwnerEmail, "id-alpha", "shared@example.com")
 	}
 	if list[0].Public {
 		t.Fatalf("List Public = true, want false")
 	}
 
-	publicCreated, err := s.Create(ctx, "public-creator-site", "user-456", true)
+	publicCreated, err := s.Create(ctx, "public-creator-site", "unrelated-id-beta", "shared@example.com", true)
 	if err != nil {
 		t.Fatalf("create public: %v", err)
 	}
@@ -230,8 +230,11 @@ func TestCreatePersistsCreatedByAndDefaultsPrivate(t *testing.T) {
 	for _, site := range list {
 		byName[site.Name] = site
 	}
-	if byName["creator-site"].CreatedBy != "user-123" {
-		t.Fatalf("List creator-site CreatedBy = %q, want %q", byName["creator-site"].CreatedBy, "user-123")
+	if byName["creator-site"].OwnerID != "id-alpha" || byName["public-creator-site"].OwnerID != "unrelated-id-beta" {
+		t.Fatalf("same-email sites owner ids = (%q, %q), want distinct passed ids", byName["creator-site"].OwnerID, byName["public-creator-site"].OwnerID)
+	}
+	if byName["public-creator-site"].OwnerEmail != "shared@example.com" {
+		t.Fatalf("public site OwnerEmail = %q, want snapshot %q", byName["public-creator-site"].OwnerEmail, "shared@example.com")
 	}
 	if byName["creator-site"].Public {
 		t.Fatalf("List creator-site Public = true, want false")
@@ -240,7 +243,7 @@ func TestCreatePersistsCreatedByAndDefaultsPrivate(t *testing.T) {
 		t.Fatalf("List public-creator-site Public = false, want true")
 	}
 
-	for _, column := range []string{"public", "created_by"} {
+	for _, column := range []string{"public", "owner_id", "owner_email"} {
 		var found int
 		if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('sites') WHERE name = ?`, column).Scan(&found); err != nil {
 			t.Fatalf("query schema column %q: %v", column, err)
@@ -273,13 +276,13 @@ func TestSitesSchemaDropsPublishLifecycleColumns(t *testing.T) {
 		t.Fatalf("schema rows: %v", err)
 	}
 
-	// R-QQ5W-0R1C
-	for _, name := range []string{"public", "created_by"} {
+	// R-Z57J-J363
+	for _, name := range []string{"public", "owner_id", "owner_email"} {
 		if !columns[name] {
 			t.Fatalf("schema missing %q column; columns=%v", name, columns)
 		}
 	}
-	for _, name := range []string{"tier", "published", "published_at"} {
+	for _, name := range []string{"created_by", "tier", "published", "published_at"} {
 		if columns[name] {
 			t.Fatalf("schema still has %q column; columns=%v", name, columns)
 		}
@@ -290,7 +293,7 @@ func TestSetVisibilityPersistsAndAdvancesUpdatedAt(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	site, err := s.Create(ctx, "visibility", "", false)
+	site, err := s.Create(ctx, "visibility", "", "", false)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

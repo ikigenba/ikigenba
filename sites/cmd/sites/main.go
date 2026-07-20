@@ -132,7 +132,7 @@ func landingHandler(store *sites.Store, renderer landingRenderer, service, versi
 				Slug:          s.Name,
 				URL:           baseURL + tier + "/" + s.Name + "/",
 				Public:        s.Public,
-				CreatedBy:     s.CreatedBy,
+				CreatedBy:     s.OwnerEmail,
 				CreatedAt:     s.CreatedAt.UTC().Format(time.RFC3339),
 				CreatedAtSort: s.CreatedAt.UTC().Format(time.RFC3339),
 			}

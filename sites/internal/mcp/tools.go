@@ -139,13 +139,14 @@ func descOut(name, description string, in, out map[string]any, handler func(cont
 
 func siteOutputSchema() map[string]any {
 	return obj(map[string]any{
-		"name":       map[string]any{"type": "string"},
-		"public":     map[string]any{"type": "boolean"},
-		"created_by": map[string]any{"type": "string"},
-		"url":        map[string]any{"type": "string"},
-		"created_at": map[string]any{"type": "string"},
-		"updated_at": map[string]any{"type": "string"},
-	}, "name", "public", "created_by", "url", "created_at", "updated_at")
+		"name":        map[string]any{"type": "string"},
+		"public":      map[string]any{"type": "boolean"},
+		"owner_id":    map[string]any{"type": "string"},
+		"owner_email": map[string]any{"type": "string"},
+		"url":         map[string]any{"type": "string"},
+		"created_at":  map[string]any{"type": "string"},
+		"updated_at":  map[string]any{"type": "string"},
+	}, "name", "public", "owner_id", "owner_email", "url", "created_at", "updated_at")
 }
 
 func obj(props map[string]any, required ...string) map[string]any {
@@ -170,7 +171,7 @@ func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage, id s
 	if err := unmarshalArgs(raw, &a); err != nil {
 		return nil, err
 	}
-	site, err := h.store.Create(ctx, a.Name, id.OwnerEmail, a.Public)
+	site, err := h.store.Create(ctx, a.Name, id.OwnerID, id.OwnerEmail, a.Public)
 	if err != nil {
 		return errResult(err), nil
 	}
@@ -287,12 +288,13 @@ func (h *toolHandlers) renderSite(s sites.Site) map[string]any {
 		tier = sites.PrivateSeg
 	}
 	return map[string]any{
-		"name":       s.Name,
-		"public":     s.Public,
-		"created_by": s.CreatedBy,
-		"url":        h.siteURL(tier, s.Name),
-		"created_at": s.CreatedAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"),
-		"updated_at": s.UpdatedAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"),
+		"name":        s.Name,
+		"public":      s.Public,
+		"owner_id":    s.OwnerID,
+		"owner_email": s.OwnerEmail,
+		"url":         h.siteURL(tier, s.Name),
+		"created_at":  s.CreatedAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"),
+		"updated_at":  s.UpdatedAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"),
 	}
 }
 

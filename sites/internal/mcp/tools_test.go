@@ -24,6 +24,7 @@ import (
 )
 
 const (
+	testOwnerID  = "id-owner"
 	testOwner    = "owner@example.com"
 	testClientID = "client-123"
 	testVersion  = "test-1.2.3"
@@ -94,6 +95,11 @@ type toolResult struct {
 
 func rpc(t *testing.T, h http.Handler, method string, params any) jsonRPCResponse {
 	t.Helper()
+	return rpcIdentity(t, h, method, params, testOwnerID, testOwner)
+}
+
+func rpcIdentity(t *testing.T, h http.Handler, method string, params any, ownerID, ownerEmail string) jsonRPCResponse {
+	t.Helper()
 	body := map[string]any{"jsonrpc": "2.0", "id": 1, "method": method}
 	if params != nil {
 		body["params"] = params
@@ -103,7 +109,8 @@ func rpc(t *testing.T, h http.Handler, method string, params any) jsonRPCRespons
 		t.Fatalf("marshal request: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(raw))
-	req.Header.Set("X-Owner-Email", testOwner)
+	req.Header.Set("X-Owner-Id", ownerID)
+	req.Header.Set("X-Owner-Email", ownerEmail)
 	req.Header.Set("X-Client-Id", testClientID)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -116,6 +123,16 @@ func rpc(t *testing.T, h http.Handler, method string, params any) jsonRPCRespons
 		t.Fatalf("%s returned JSON-RPC error: %d %s", method, resp.Error.Code, resp.Error.Message)
 	}
 	return resp
+}
+
+func callIdentity(t *testing.T, h http.Handler, name string, args any, ownerID, ownerEmail string) toolResult {
+	t.Helper()
+	resp := rpcIdentity(t, h, "tools/call", map[string]any{"name": name, "arguments": args}, ownerID, ownerEmail)
+	var tr toolResult
+	if err := json.Unmarshal(resp.Result, &tr); err != nil {
+		t.Fatalf("decode tool result for %s: %v (result=%s)", name, err, resp.Result)
+	}
+	return tr
 }
 
 func call(t *testing.T, h http.Handler, name string, args any) toolResult {
@@ -494,8 +511,8 @@ func TestCreateThenList(t *testing.T) {
 	if want := testBaseURL + "private/demo/"; created["url"] != want {
 		t.Errorf("create url = %v, want %v", created["url"], want)
 	}
-	if created["created_by"] != testOwner {
-		t.Errorf("create created_by = %v, want %v", created["created_by"], testOwner)
+	if created["owner_id"] != testOwnerID || created["owner_email"] != testOwner {
+		t.Errorf("create owner = (%v, %v), want (%v, %v)", created["owner_id"], created["owner_email"], testOwnerID, testOwner)
 	}
 	privateDir := filepath.Join(root, sites.PrivateSeg, "demo")
 	if fi, err := os.Stat(privateDir); err != nil || !fi.IsDir() {
@@ -510,9 +527,49 @@ func TestCreateThenList(t *testing.T) {
 	if arr[0].(map[string]any)["name"] != "demo" {
 		t.Errorf("list entry = %+v", arr[0])
 	}
-	// R-RFRS-1XLX
-	if arr[0].(map[string]any)["created_by"] != testOwner {
-		t.Fatalf("list created_by = %v, want %v", arr[0].(map[string]any)["created_by"], testOwner)
+	if arr[0].(map[string]any)["owner_id"] != testOwnerID || arr[0].(map[string]any)["owner_email"] != testOwner {
+		t.Fatalf("list owner = (%v, %v), want (%v, %v)", arr[0].(map[string]any)["owner_id"], arr[0].(map[string]any)["owner_email"], testOwnerID, testOwner)
+	}
+}
+
+func TestCreateThreadsStableOwnerIDAndEmailSnapshot(t *testing.T) {
+	h, _ := newTestHandler(t)
+
+	// R-Z6FF-WUWS
+	first := callIdentity(t, h, "create", map[string]any{"name": "first-owner"}, "id-alice", "shared@example.com")
+	second := callIdentity(t, h, "create", map[string]any{"name": "second-owner"}, "id-bob", "shared@example.com")
+	for label, result := range map[string]toolResult{"first": first, "second": second} {
+		if result.IsError || result.StructuredContent == nil {
+			t.Fatalf("%s create failed: %+v", label, result)
+		}
+	}
+	if first.StructuredContent["owner_id"] != "id-alice" || first.StructuredContent["owner_email"] != "shared@example.com" {
+		t.Fatalf("first create owner = (%v, %v)", first.StructuredContent["owner_id"], first.StructuredContent["owner_email"])
+	}
+	if second.StructuredContent["owner_id"] != "id-bob" || second.StructuredContent["owner_email"] != "shared@example.com" {
+		t.Fatalf("second create owner = (%v, %v)", second.StructuredContent["owner_id"], second.StructuredContent["owner_email"])
+	}
+	storedFirst, err := h.store.Get(context.Background(), "first-owner")
+	if err != nil {
+		t.Fatalf("get first owner: %v", err)
+	}
+	storedSecond, err := h.store.Get(context.Background(), "second-owner")
+	if err != nil {
+		t.Fatalf("get second owner: %v", err)
+	}
+	if storedFirst.OwnerID != "id-alice" || storedSecond.OwnerID != "id-bob" || storedFirst.OwnerEmail != "shared@example.com" || storedSecond.OwnerEmail != "shared@example.com" {
+		t.Fatalf("stored owners = %+v, %+v", storedFirst, storedSecond)
+	}
+	listed := call(t, h, "list", map[string]any{})
+	if listed.IsError || listed.StructuredContent == nil {
+		t.Fatalf("list failed: %+v", listed)
+	}
+	sitesList, ok := listed.StructuredContent["sites"].([]any)
+	if !ok || len(sitesList) != 2 {
+		t.Fatalf("list sites = %+v", listed.StructuredContent["sites"])
+	}
+	if sitesList[0].(map[string]any)["owner_id"] != "id-alice" || sitesList[1].(map[string]any)["owner_id"] != "id-bob" {
+		t.Fatalf("listed owner ids = %+v", sitesList)
 	}
 }
 
@@ -656,7 +713,7 @@ func TestCreateReturnsMirroredStructuredContent(t *testing.T) {
 	if result.IsError || result.StructuredContent == nil {
 		t.Fatalf("create result is not structured success: %+v", result)
 	}
-	wantKeys := []string{"name", "public", "created_by", "url", "created_at", "updated_at"}
+	wantKeys := []string{"name", "public", "owner_id", "owner_email", "url", "created_at", "updated_at"}
 	for _, key := range wantKeys {
 		if _, ok := result.StructuredContent[key]; !ok {
 			t.Errorf("create structuredContent missing %q: %+v", key, result.StructuredContent)

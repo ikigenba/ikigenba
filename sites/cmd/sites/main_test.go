@@ -1249,10 +1249,11 @@ func newLandingTestStore(t *testing.T, seeds ...landingSeed) *sitesdomain.Store 
 			createdAt = "2026-07-08T12:00:00.000000000Z"
 		}
 		_, err := conn.ExecContext(context.Background(),
-			`INSERT INTO sites (name, source_path, public, created_by, created_at, updated_at)
-			 VALUES (?, NULL, ?, ?, ?, ?)`,
+			`INSERT INTO sites (name, source_path, public, owner_id, owner_email, created_at, updated_at)
+			 VALUES (?, NULL, ?, ?, ?, ?, ?)`,
 			seed.name,
 			public,
+			"id-"+seed.name,
 			seed.name+"@example.com",
 			createdAt,
 			createdAt,

@@ -50,7 +50,8 @@ var (
 type Site struct {
 	Name       string
 	Public     bool
-	CreatedBy  string
+	OwnerID    string
+	OwnerEmail string
 	SourcePath string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
@@ -116,7 +117,7 @@ func parseTime(s string) time.Time {
 // caller-chosen visibility; there is no store-side default. created_at/updated_at
 // are set to now (UTC).
 // Returns ErrExists if the name is already taken.
-func (s *Store) Create(ctx context.Context, name, createdBy string, public bool) (Site, error) {
+func (s *Store) Create(ctx context.Context, name, ownerID, ownerEmail string, public bool) (Site, error) {
 	if err := validateName(name); err != nil {
 		return Site{}, err
 	}
@@ -129,9 +130,9 @@ func (s *Store) Create(ctx context.Context, name, createdBy string, public bool)
 	// source_path is inserted NULL: a freshly created site is hand-authored until
 	// a sync stamps it via SetSourcePath.
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sites (name, source_path, public, created_by, created_at, updated_at)
-		 VALUES (?, NULL, ?, ?, ?, ?)`,
-		name, publicInt, createdBy, ts, ts)
+		`INSERT INTO sites (name, source_path, public, owner_id, owner_email, created_at, updated_at)
+		 VALUES (?, NULL, ?, ?, ?, ?, ?)`,
+		name, publicInt, ownerID, ownerEmail, ts, ts)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") ||
 			strings.Contains(err.Error(), "PRIMARY KEY") {
@@ -140,18 +141,19 @@ func (s *Store) Create(ctx context.Context, name, createdBy string, public bool)
 		return Site{}, fmt.Errorf("create site %q: %w", name, err)
 	}
 	return Site{
-		Name:      name,
-		Public:    public,
-		CreatedBy: createdBy,
-		CreatedAt: parseTime(ts),
-		UpdatedAt: parseTime(ts),
+		Name:       name,
+		Public:     public,
+		OwnerID:    ownerID,
+		OwnerEmail: ownerEmail,
+		CreatedAt:  parseTime(ts),
+		UpdatedAt:  parseTime(ts),
 	}, nil
 }
 
 // Get fetches one site by name. Returns ErrNotFound when absent.
 func (s *Store) Get(ctx context.Context, name string) (Site, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT name, public, created_by, source_path, created_at, updated_at
+		`SELECT name, public, owner_id, owner_email, source_path, created_at, updated_at
 		 FROM sites WHERE name = ?`, name)
 	site, err := scanSite(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -166,7 +168,7 @@ func (s *Store) Get(ctx context.Context, name string) (Site, error) {
 // List returns every site ordered by name (deterministic).
 func (s *Store) List(ctx context.Context) ([]Site, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT name, public, created_by, source_path, created_at, updated_at
+		`SELECT name, public, owner_id, owner_email, source_path, created_at, updated_at
 		 FROM sites ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list sites: %w", err)
@@ -261,17 +263,18 @@ func scanSite(sc rowScanner) (Site, error) {
 		name, createdAt, updatedAt string
 		public                     int64
 		sourcePath                 sql.NullString
-		createdBy                  string
+		ownerID, ownerEmail        string
 	)
-	if err := sc.Scan(&name, &public, &createdBy, &sourcePath, &createdAt, &updatedAt); err != nil {
+	if err := sc.Scan(&name, &public, &ownerID, &ownerEmail, &sourcePath, &createdAt, &updatedAt); err != nil {
 		return Site{}, err
 	}
 	site := Site{
-		Name:      name,
-		Public:    public != 0,
-		CreatedBy: createdBy,
-		CreatedAt: parseTime(createdAt),
-		UpdatedAt: parseTime(updatedAt),
+		Name:       name,
+		Public:     public != 0,
+		OwnerID:    ownerID,
+		OwnerEmail: ownerEmail,
+		CreatedAt:  parseTime(createdAt),
+		UpdatedAt:  parseTime(updatedAt),
 	}
 	// NULL source_path (hand-authored) reads back as the empty string.
 	if sourcePath.Valid {
