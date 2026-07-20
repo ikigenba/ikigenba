@@ -356,17 +356,18 @@ func TestWriteProvenanceIncludesOwnerIDR_X3XX_6BNN(t *testing.T) {
 func TestWriteProvenanceAndNoOwnerInClientRequestR_EJS4_2851(t *testing.T) {
 	// R-EJS4-2851
 	writes := []struct {
-		name string
-		args string
-		path string
+		name   string
+		args   string
+		number int
+		path   string
 	}{
-		{"pr_comment", `{"repo":"repo","number":1,"body":"body"}`, ""},
-		{"pr_review", `{"repo":"repo","number":2,"event":"APPROVE","body":"body"}`, ""},
-		{"pr_merge", `{"repo":"repo","number":3,"method":"squash"}`, ""},
-		{"issue_create", `{"repo":"repo","title":"title","body":"body"}`, ""},
-		{"issue_comment", `{"repo":"repo","number":4,"body":"body"}`, ""},
-		{"issue_update", `{"repo":"repo","number":5,"state":"closed","labels":["bug"],"assignees":["octo"]}`, ""},
-		{"file_put", `{"repo":"repo","path":"README.md","message":"msg","content":"hello","sha":"old"}`, "README.md"},
+		{"pr_comment", `{"repo":"repo","number":1,"body":"body"}`, 1, ""},
+		{"pr_review", `{"repo":"repo","number":2,"event":"APPROVE","body":"body"}`, 2, ""},
+		{"pr_merge", `{"repo":"repo","number":3,"method":"squash"}`, 3, ""},
+		{"issue_create", `{"repo":"repo","title":"title","body":"body"}`, 0, ""},
+		{"issue_comment", `{"repo":"repo","number":4,"body":"body"}`, 4, ""},
+		{"issue_update", `{"repo":"repo","number":5,"state":"closed","labels":["bug"],"assignees":["octo"]}`, 5, ""},
+		{"file_put", `{"repo":"repo","path":"README.md","message":"msg","content":"hello","sha":"old"}`, 0, "README.md"},
 	}
 	for _, tc := range writes {
 		t.Run(tc.name, func(t *testing.T) {
@@ -382,6 +383,9 @@ func TestWriteProvenanceAndNoOwnerInClientRequestR_EJS4_2851(t *testing.T) {
 			rec := cap.records[0]
 			if rec["owner_email"] != "owner@example.com" || rec["verb"] != tc.name || rec["repo"] != "repo" {
 				t.Fatalf("provenance attrs wrong: %v", rec)
+			}
+			if tc.number != 0 && rec["number"] != int64(tc.number) {
+				t.Fatalf("number target = %v, want %d in record %v", rec["number"], tc.number, rec)
 			}
 			if tc.path != "" && rec["path"] != tc.path {
 				t.Fatalf("path target missing: %v", rec)
