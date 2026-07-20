@@ -11,5 +11,4 @@ phase line, so the anchored grep matches only phase lines.
 
 Next phase: 23
 
-- Phase 22 ⬜ realizes — — owner-id identity alignment: MCP tests inject `X-Owner-Id`; health-envelope assertion gains `owner_id` (no owner columns, no migration)
 
