@@ -27,7 +27,7 @@ func testStore(t *testing.T, ttl time.Duration) *HandshakeStore {
 // value persisted is its SHA-256 hash — never the plaintext.
 func TestCreateStoresHashNotCookie(t *testing.T) {
 	store := testStore(t, 5*time.Minute)
-	handshake, cookie, err := store.Create(context.Background())
+	handshake, cookie, err := store.CreateWeb(context.Background(), ProviderGoogle, "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestCreateStoresHashNotCookie(t *testing.T) {
 func TestCreateSetsTTL(t *testing.T) {
 	ttl := 3 * time.Minute
 	store := testStore(t, ttl)
-	handshake, _, err := store.Create(context.Background())
+	handshake, _, err := store.CreateWeb(context.Background(), ProviderGoogle, "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -72,11 +72,11 @@ func TestCreateSetsTTL(t *testing.T) {
 // TestCreateMintsUniqueValues guards against a botched RNG handing out repeats.
 func TestCreateMintsUniqueValues(t *testing.T) {
 	store := testStore(t, time.Minute)
-	a, cookieA, err := store.Create(context.Background())
+	a, cookieA, err := store.CreateWeb(context.Background(), ProviderGoogle, "")
 	if err != nil {
 		t.Fatalf("Create a: %v", err)
 	}
-	b, cookieB, err := store.Create(context.Background())
+	b, cookieB, err := store.CreateWeb(context.Background(), ProviderGoogle, "")
 	if err != nil {
 		t.Fatalf("Create b: %v", err)
 	}
@@ -90,12 +90,12 @@ func TestCreateMintsUniqueValues(t *testing.T) {
 
 // R-XLRL-ZHZT
 // TestCreateWebReturnToRoundTrip proves the optional web destination survives
-// the real migrated SQLite row, while ordinary Create keeps it empty.
+// the real migrated SQLite row, while CreateWeb without a destination keeps it empty.
 func TestCreateWebReturnToRoundTrip(t *testing.T) {
 	store := testStore(t, 5*time.Minute)
 	const returnTo = "/srv/sites/private/test07/"
 
-	created, cookie, err := store.CreateWeb(context.Background(), returnTo)
+	created, cookie, err := store.CreateWeb(context.Background(), ProviderGoogle, returnTo)
 	if err != nil {
 		t.Fatalf("CreateWeb: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestCreateWebReturnToRoundTrip(t *testing.T) {
 		t.Errorf("CreateWeb ReturnTo = %q, want %q", got.ReturnTo, returnTo)
 	}
 
-	plain, plainCookie, err := store.Create(context.Background())
+	plain, plainCookie, err := store.CreateWeb(context.Background(), ProviderGoogle, "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -120,11 +120,51 @@ func TestCreateWebReturnToRoundTrip(t *testing.T) {
 	}
 }
 
+// R-IBM4-4NJ8
+// TestProviderRoundTripsForBothOrigins proves the migrated provider column
+// binds both web and MCP handshakes to the IdP selected when they were minted.
+func TestProviderRoundTripsForBothOrigins(t *testing.T) {
+	store := testStore(t, 5*time.Minute)
+	ctx := context.Background()
+
+	web, webCookie, err := store.CreateWeb(ctx, ProviderGitHub, "")
+	if err != nil {
+		t.Fatalf("CreateWeb: %v", err)
+	}
+	if web.Provider != ProviderGitHub {
+		t.Errorf("created web Provider = %q, want %q", web.Provider, ProviderGitHub)
+	}
+	consumedWeb, err := store.Consume(ctx, web.ID, webCookie)
+	if err != nil {
+		t.Fatalf("Consume web: %v", err)
+	}
+	if consumedWeb.Provider != ProviderGitHub {
+		t.Errorf("consumed web Provider = %q, want %q", consumedWeb.Provider, ProviderGitHub)
+	}
+
+	mcpContext := sampleMCPContext()
+	mcp, mcpCookie, err := store.CreateMCP(ctx, ProviderGoogle, mcpContext)
+	if err != nil {
+		t.Fatalf("CreateMCP: %v", err)
+	}
+	if mcp.Provider != ProviderGoogle {
+		t.Errorf("created MCP Provider = %q, want %q", mcp.Provider, ProviderGoogle)
+	}
+	consumedMCP, err := store.Consume(ctx, mcp.ID, mcpCookie)
+	if err != nil {
+		t.Fatalf("Consume MCP: %v", err)
+	}
+	if consumedMCP.Provider != ProviderGoogle {
+		t.Errorf("consumed MCP Provider = %q, want %q", consumedMCP.Provider, ProviderGoogle)
+	}
+	assertMCPFields(t, consumedMCP, mcpContext)
+}
+
 // TestConsumeReturnsHandshake is the happy path: a freshly created handshake,
 // consumed with the right id and cookie, returns the stored row.
 func TestConsumeReturnsHandshake(t *testing.T) {
 	store := testStore(t, 5*time.Minute)
-	created, cookie, err := store.Create(context.Background())
+	created, cookie, err := store.CreateWeb(context.Background(), ProviderGoogle, "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -145,7 +185,7 @@ func TestConsumeReturnsHandshake(t *testing.T) {
 // the second finds no row. This is the replay defense.
 func TestConsumeIsSingleUse(t *testing.T) {
 	store := testStore(t, 5*time.Minute)
-	created, cookie, err := store.Create(context.Background())
+	created, cookie, err := store.CreateWeb(context.Background(), ProviderGoogle, "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -172,7 +212,7 @@ func TestConsumeUnknownID(t *testing.T) {
 // row expired the instant it is created, so the check is deterministic.
 func TestConsumeExpired(t *testing.T) {
 	store := testStore(t, -time.Minute)
-	created, cookie, err := store.Create(context.Background())
+	created, cookie, err := store.CreateWeb(context.Background(), ProviderGoogle, "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -187,7 +227,7 @@ func TestConsumeExpired(t *testing.T) {
 // can still complete the flow afterward with the right cookie.
 func TestConsumeBindingMismatch(t *testing.T) {
 	store := testStore(t, 5*time.Minute)
-	created, cookie, err := store.Create(context.Background())
+	created, cookie, err := store.CreateWeb(context.Background(), ProviderGoogle, "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -236,11 +276,11 @@ func assertMCPFields(t *testing.T, got Handshake, want MCPContext) {
 	}
 }
 
-// TestCreateWebOrigin guards the regression: a web Create → Consume round-trip
+// TestCreateWebOrigin guards the regression: a CreateWeb → Consume round-trip
 // reports OriginWeb and carries no MCP context.
 func TestCreateWebOrigin(t *testing.T) {
 	store := testStore(t, 5*time.Minute)
-	created, cookie, err := store.Create(context.Background())
+	created, cookie, err := store.CreateWeb(context.Background(), ProviderGoogle, "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -267,7 +307,7 @@ func TestCreateMCPPersistsContext(t *testing.T) {
 	store := testStore(t, 5*time.Minute)
 	mcp := sampleMCPContext()
 
-	created, cookie, err := store.CreateMCP(context.Background(), mcp)
+	created, cookie, err := store.CreateMCP(context.Background(), ProviderGoogle, mcp)
 	if err != nil {
 		t.Fatalf("CreateMCP: %v", err)
 	}
@@ -298,7 +338,7 @@ func TestConsumeMCPReturnsContext(t *testing.T) {
 	store := testStore(t, 5*time.Minute)
 	mcp := sampleMCPContext()
 
-	created, cookie, err := store.CreateMCP(context.Background(), mcp)
+	created, cookie, err := store.CreateMCP(context.Background(), ProviderGoogle, mcp)
 	if err != nil {
 		t.Fatalf("CreateMCP: %v", err)
 	}
@@ -319,7 +359,7 @@ func TestConsumeMCPReturnsContext(t *testing.T) {
 // TestConsumeMCPSingleUse proves delete-on-consume applies to MCP handshakes too.
 func TestConsumeMCPSingleUse(t *testing.T) {
 	store := testStore(t, 5*time.Minute)
-	created, cookie, err := store.CreateMCP(context.Background(), sampleMCPContext())
+	created, cookie, err := store.CreateMCP(context.Background(), ProviderGoogle, sampleMCPContext())
 	if err != nil {
 		t.Fatalf("CreateMCP: %v", err)
 	}
@@ -335,7 +375,7 @@ func TestConsumeMCPSingleUse(t *testing.T) {
 // TestConsumeMCPExpired rejects an MCP handshake past its TTL.
 func TestConsumeMCPExpired(t *testing.T) {
 	store := testStore(t, -time.Minute)
-	created, cookie, err := store.CreateMCP(context.Background(), sampleMCPContext())
+	created, cookie, err := store.CreateMCP(context.Background(), ProviderGoogle, sampleMCPContext())
 	if err != nil {
 		t.Fatalf("CreateMCP: %v", err)
 	}
@@ -349,7 +389,7 @@ func TestConsumeMCPExpired(t *testing.T) {
 // crucially, does not burn it.
 func TestConsumeMCPBindingMismatch(t *testing.T) {
 	store := testStore(t, 5*time.Minute)
-	created, cookie, err := store.CreateMCP(context.Background(), sampleMCPContext())
+	created, cookie, err := store.CreateMCP(context.Background(), ProviderGoogle, sampleMCPContext())
 	if err != nil {
 		t.Fatalf("CreateMCP: %v", err)
 	}

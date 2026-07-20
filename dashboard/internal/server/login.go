@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"dashboard/internal/oauthstate"
 )
 
 // handleLogin starts the Google sign-in flow: it mints a one-time state record,
@@ -11,7 +13,7 @@ import (
 // URL carrying that state.
 func (a *app) handleLogin() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		handshake, cookie, err := a.handshakes.CreateWeb(r.Context(), safeReturnTo(r.URL.Query().Get("return_to")))
+		handshake, cookie, err := a.handshakes.CreateWeb(r.Context(), oauthstate.ProviderGoogle, safeReturnTo(r.URL.Query().Get("return_to")))
 		if err != nil {
 			a.logger.Error("login.create_handshake", "err", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)

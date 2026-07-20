@@ -1,13 +1,18 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"dashboard/internal/googleidp"
+	"dashboard/internal/oauthstate"
 )
 
 // startLogin runs the GET /login leg and returns the state the handler sent to
@@ -166,6 +171,59 @@ func TestCallbackRedirectsToHandshakeReturnTo(t *testing.T) {
 	}
 	if got := callback.Header().Get("Location"); got != returnTo {
 		t.Errorf("callback Location = %q, want %q", got, returnTo)
+	}
+}
+
+// R-ICU0-IF9X
+// TestGoogleCallbackRejectsGitHubHandshake proves a state minted for GitHub
+// cannot cross the Google callback boundary, even with the correct binding
+// cookie, and that the rejected state remains single-use.
+func TestGoogleCallbackRejectsGitHubHandshake(t *testing.T) {
+	srv, database := loginServer(t)
+	store := oauthstate.NewHandshakeStore(database, 5*time.Minute)
+	handshake, binding, err := store.CreateWeb(context.Background(), oauthstate.ProviderGitHub, "")
+	if err != nil {
+		t.Fatalf("CreateWeb: %v", err)
+	}
+
+	target := "https://int.ikigenba.com/oauth/google/callback?state=" + url.QueryEscape(handshake.ID) + "&code=auth-code"
+	rec := do(t, srv, "GET", target, map[string]string{"Cookie": bindingCookieName + "=" + binding})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("callback status = %d, want 400", rec.Code)
+	}
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == sessionCookieName {
+			t.Errorf("provider mismatch set %s cookie", sessionCookieName)
+		}
+	}
+
+	var eventType, detailsJSON string
+	if err := database.QueryRow(`
+		SELECT event_type, details FROM audit_log ORDER BY occurred_at DESC LIMIT 1
+	`).Scan(&eventType, &detailsJSON); err != nil {
+		t.Fatalf("read audit record: %v", err)
+	}
+	if eventType != "federation.reject" {
+		t.Errorf("audit event_type = %q, want federation.reject", eventType)
+	}
+	var details map[string]any
+	if err := json.Unmarshal([]byte(detailsJSON), &details); err != nil {
+		t.Fatalf("decode audit details: %v", err)
+	}
+	if got := details["reason"]; got != "provider_mismatch" {
+		t.Errorf("audit reason = %v, want provider_mismatch", got)
+	}
+
+	_, err = store.Consume(context.Background(), handshake.ID, binding)
+	if !errors.Is(err, oauthstate.ErrHandshakeNotFound) {
+		t.Errorf("replay Consume err = %v, want ErrHandshakeNotFound", err)
+	}
+	var sessions int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM web_sessions`).Scan(&sessions); err != nil {
+		t.Fatalf("count web_sessions: %v", err)
+	}
+	if sessions != 0 {
+		t.Errorf("web_sessions rows = %d, want 0", sessions)
 	}
 }
 

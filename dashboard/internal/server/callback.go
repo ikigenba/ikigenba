@@ -72,6 +72,12 @@ func (a *app) handleCallback() http.HandlerFunc {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
+		if handshake.Provider != oauthstate.ProviderGoogle {
+			a.logger.Warn("callback.provider_mismatch", "provider", handshake.Provider)
+			a.writeFederationReject(r, "", "provider_mismatch")
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
 		redirectURI := a.publicBaseURL + "/oauth/google/callback"
 		googleIdentity, err := a.idpProvider.ExchangeCode(r.Context(), code, redirectURI)
 		if err != nil {

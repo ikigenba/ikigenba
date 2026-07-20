@@ -1,5 +1,5 @@
-// Package oauthstate persists the short-lived state that binds a redirect-to-
-// Google login round-trip back to the browser that started it. The
+// Package oauthstate persists the short-lived state that binds a federated
+// login round-trip back to the browser and provider that started it. The
 // HandshakeStore both mints a handshake and stores it: it returns the persisted
 // row plus the one secret that is never stored — the plaintext binding cookie.
 package oauthstate
@@ -23,6 +23,9 @@ import (
 const (
 	OriginWeb = "web"
 	OriginMCP = "mcp"
+
+	ProviderGoogle = "google"
+	ProviderGitHub = "github"
 )
 
 // Handshake is one persisted oauth_state row: the server's record of a pending
@@ -48,6 +51,9 @@ type Handshake struct {
 	// ReturnTo is the validated same-site destination captured for web logins.
 	// It is empty when no destination was supplied.
 	ReturnTo string
+
+	// Provider binds this state to the IdP callback that may complete it.
+	Provider string
 }
 
 // MCPContext is the originating MCP client's /oauth/authorize context, captured
@@ -74,37 +80,10 @@ func NewHandshakeStore(db *sql.DB, ttl time.Duration) *HandshakeStore {
 	return &HandshakeStore{db: db, ttl: ttl}
 }
 
-// Create mints a new web-origin handshake, stores it, and returns the stored
-// row together with the plaintext binding cookie. The row keeps only the
-// cookie's hash; the plaintext is returned here and never persisted — the
-// browser gets the plaintext, the database gets the hash, and the callback
-// re-hashes to compare. The INSERT omits origin, so the schema default 'web'
-// applies.
-func (s *HandshakeStore) Create(ctx context.Context) (Handshake, string, error) {
-	cookie := ids.New()
-	now := time.Now().UTC()
-	handshake := Handshake{
-		ID:                ids.New(),
-		BindingCookieHash: hashCookie(cookie),
-		CreatedAt:         now,
-		ExpiresAt:         now.Add(s.ttl),
-		Origin:            OriginWeb,
-	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO oauth_state (id, binding_cookie_hash, created_at, expires_at)
-		VALUES (?, ?, ?, ?)`,
-		handshake.ID, handshake.BindingCookieHash,
-		handshake.CreatedAt.Format(time.RFC3339Nano), handshake.ExpiresAt.Format(time.RFC3339Nano))
-	if err != nil {
-		return Handshake{}, "", fmt.Errorf("insert oauth_state: %w", err)
-	}
-	return handshake, cookie, nil
-}
-
 // CreateWeb mints a new web-origin handshake with a validated same-site
 // destination. Validation belongs to the HTTP boundary; this store persists the
 // supplied value verbatim alongside the otherwise ordinary web handshake.
-func (s *HandshakeStore) CreateWeb(ctx context.Context, returnTo string) (Handshake, string, error) {
+func (s *HandshakeStore) CreateWeb(ctx context.Context, provider, returnTo string) (Handshake, string, error) {
 	cookie := ids.New()
 	now := time.Now().UTC()
 	handshake := Handshake{
@@ -114,24 +93,25 @@ func (s *HandshakeStore) CreateWeb(ctx context.Context, returnTo string) (Handsh
 		ExpiresAt:         now.Add(s.ttl),
 		Origin:            OriginWeb,
 		ReturnTo:          returnTo,
+		Provider:          provider,
 	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO oauth_state (id, binding_cookie_hash, created_at, expires_at, return_to)
-		VALUES (?, ?, ?, ?, ?)`,
+		INSERT INTO oauth_state (id, binding_cookie_hash, created_at, expires_at, return_to, provider)
+		VALUES (?, ?, ?, ?, ?, ?)`,
 		handshake.ID, handshake.BindingCookieHash,
 		handshake.CreatedAt.Format(time.RFC3339Nano), handshake.ExpiresAt.Format(time.RFC3339Nano),
-		handshake.ReturnTo)
+		handshake.ReturnTo, handshake.Provider)
 	if err != nil {
 		return Handshake{}, "", fmt.Errorf("insert oauth_state: %w", err)
 	}
 	return handshake, cookie, nil
 }
 
-// CreateMCP mints a new MCP-origin handshake, mirroring Create but also
+// CreateMCP mints a new MCP-origin handshake, mirroring CreateWeb but also
 // persisting the originating MCP client's /oauth/authorize context. It returns
 // the stored row (with Origin=OriginMCP and the MCP fields populated) and the
 // plaintext binding cookie.
-func (s *HandshakeStore) CreateMCP(ctx context.Context, mcp MCPContext) (Handshake, string, error) {
+func (s *HandshakeStore) CreateMCP(ctx context.Context, provider string, mcp MCPContext) (Handshake, string, error) {
 	cookie := ids.New()
 	now := time.Now().UTC()
 	handshake := Handshake{
@@ -146,18 +126,20 @@ func (s *HandshakeStore) CreateMCP(ctx context.Context, mcp MCPContext) (Handsha
 		MCPCodeChallengeMethod: mcp.CodeChallengeMethod,
 		MCPClientState:         mcp.ClientState,
 		MCPResource:            mcp.Resource,
+		Provider:               provider,
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO oauth_state (
 			id, binding_cookie_hash, created_at, expires_at, origin,
 			mcp_client_id, mcp_redirect_uri, mcp_code_challenge,
-			mcp_code_challenge_method, mcp_client_state, mcp_resource)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			mcp_code_challenge_method, mcp_client_state, mcp_resource, provider)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		handshake.ID, handshake.BindingCookieHash,
 		handshake.CreatedAt.Format(time.RFC3339Nano), handshake.ExpiresAt.Format(time.RFC3339Nano),
 		handshake.Origin,
 		handshake.MCPClientID, handshake.MCPRedirectURI, handshake.MCPCodeChallenge,
-		handshake.MCPCodeChallengeMethod, handshake.MCPClientState, handshake.MCPResource)
+		handshake.MCPCodeChallengeMethod, handshake.MCPClientState, handshake.MCPResource,
+		handshake.Provider)
 	if err != nil {
 		return Handshake{}, "", fmt.Errorf("insert oauth_state: %w", err)
 	}
@@ -202,11 +184,11 @@ func (s *HandshakeStore) Consume(ctx context.Context, id, cookie string) (Handsh
 	err = tx.QueryRowContext(ctx, `
 		SELECT binding_cookie_hash, created_at, expires_at, origin,
 			mcp_client_id, mcp_redirect_uri, mcp_code_challenge,
-			mcp_code_challenge_method, mcp_client_state, mcp_resource, return_to
+			mcp_code_challenge_method, mcp_client_state, mcp_resource, return_to, provider
 		FROM oauth_state WHERE id = ?`, id).
 		Scan(&handshake.BindingCookieHash, &createdAt, &expiresAt, &handshake.Origin,
 			&mcpClientID, &mcpRedirectURI, &mcpCodeChallenge,
-			&mcpCodeChallengeMethod, &mcpClientState, &mcpResource, &returnTo)
+			&mcpCodeChallengeMethod, &mcpClientState, &mcpResource, &returnTo, &handshake.Provider)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Handshake{}, ErrHandshakeNotFound
 	}

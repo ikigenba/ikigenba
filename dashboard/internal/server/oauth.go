@@ -178,7 +178,7 @@ func (a *app) handleAuthorize() http.HandlerFunc {
 			return
 		}
 
-		handshake, cookie, err := a.handshakes.CreateMCP(r.Context(), oauthstate.MCPContext{
+		handshake, cookie, err := a.handshakes.CreateMCP(r.Context(), oauthstate.ProviderGoogle, oauthstate.MCPContext{
 			ClientID:            clientID,
 			RedirectURI:         redirectURI,
 			CodeChallenge:       codeChallenge,
