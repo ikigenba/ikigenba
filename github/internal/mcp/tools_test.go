@@ -391,7 +391,7 @@ func TestWriteProvenanceAndNoOwnerInClientRequestR_EJS4_2851(t *testing.T) {
 				t.Fatalf("path target missing: %v", rec)
 			}
 			for _, field := range []string{fc.lastBody, fc.lastEvent, fc.lastMethod, fc.lastTitle, string(fc.lastFile.Content)} {
-				if strings.Contains(field, "owner@example.com") || strings.Contains(field, "client-123") {
+				if strings.Contains(field, "owner-456") || strings.Contains(field, "owner@example.com") || strings.Contains(field, "client-123") {
 					t.Fatalf("owner identity leaked into client request field %q", field)
 				}
 			}
