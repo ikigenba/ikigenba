@@ -139,7 +139,11 @@ approach every Decision's Verification list assumes:
   with `initialize`, `tools/list`, and `tools/call` requests — the
   `internal/mcp` `tools_test.go` harness, rewired at the same seam the
   composition root uses. The guide document stays embedded bytes (`//go:embed`),
-  asserted as real content.
+  asserted as real content. Because the `/mcp` mount is `rt.RequireIdentity`-gated
+  and that chassis gate keys on `X-Owner-Id` (appkit D13), the harness injects
+  `X-Owner-Id` on every request so the gate admits it, alongside `X-Owner-Email`
+  (kept where a display value is asserted, e.g. the health envelope's
+  `owner_email`) and `X-Client-Id`; no crm test re-proves the chassis gate itself.
 
 ## Layout
 
