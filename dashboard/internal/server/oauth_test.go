@@ -6,15 +6,19 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"html"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"dashboard/internal/oauth"
+	"dashboard/internal/oauthstate"
 )
 
 // ── harness ─────────────────────────────────────────────────────────────────
@@ -122,7 +126,7 @@ func obtainCode(t *testing.T, ts *httptest.Server, client *http.Client) (clientI
 	t.Helper()
 	clientID = registerClient(t, ts, client)
 
-	resp, err := client.Get(authorizeURL(ts, clientID, nil))
+	resp, err := client.Get(authorizeURL(ts, clientID, map[string]string{"provider": "google"}))
 	if err != nil {
 		t.Fatalf("authorize: %v", err)
 	}
@@ -315,7 +319,7 @@ func TestAuthorizeRejections(t *testing.T) {
 func TestAuthorizeHappyRedirectsAndBindsBrowser(t *testing.T) {
 	ts, _, client := newOAuthTest(t)
 	clientID := registerClient(t, ts, client)
-	resp, err := client.Get(authorizeURL(ts, clientID, nil))
+	resp, err := client.Get(authorizeURL(ts, clientID, map[string]string{"provider": "google"}))
 	if err != nil {
 		t.Fatalf("authorize: %v", err)
 	}
@@ -339,6 +343,172 @@ func TestAuthorizeHappyRedirectsAndBindsBrowser(t *testing.T) {
 	if !bound {
 		t.Errorf("no %s binding cookie set", bindingCookieName)
 	}
+}
+
+// R-IWCE-MR51
+func TestAuthorizeChooserPreservesRequestWithoutMintingState(t *testing.T) {
+	ts, d, client := newOAuthTest(t)
+	clientID := registerClient(t, ts, client)
+	target := authorizeURL(ts, clientID, map[string]string{"state": "client state & résumé"})
+
+	resp, err := client.Get(target)
+	if err != nil {
+		t.Fatalf("authorize: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html", got)
+	}
+	if got := resp.Header.Values("Set-Cookie"); len(got) != 0 {
+		t.Errorf("Set-Cookie = %v, want none", got)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read chooser: %v", err)
+	}
+	anchors := regexp.MustCompile(`<a\s+[^>]*href="([^"]+)"[^>]*>`).FindAllStringSubmatch(string(body), -1)
+	if len(anchors) != 2 {
+		t.Fatalf("chooser anchors = %d, want exactly 2; body:\n%s", len(anchors), body)
+	}
+	original, err := url.Parse(target)
+	if err != nil {
+		t.Fatalf("parse target: %v", err)
+	}
+	for i, provider := range []string{oauthstate.ProviderGoogle, oauthstate.ProviderGitHub} {
+		wantQuery := original.Query()
+		wantQuery.Set("provider", provider)
+		want := "/oauth/authorize?" + wantQuery.Encode()
+		if got := html.UnescapeString(anchors[i][1]); got != want {
+			t.Errorf("%s chooser href = %q, want %q", provider, got, want)
+		}
+	}
+	var count int
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM oauth_state`).Scan(&count); err != nil {
+		t.Fatalf("count handshakes: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("handshake rows = %d, want 0", count)
+	}
+}
+
+// R-IXKB-0IVQ
+func TestAuthorizeGoogleMintsBoundHandshakeAndRedirects(t *testing.T) {
+	ts, d, client := newOAuthTest(t)
+	clientID := registerClient(t, ts, client)
+	resp, err := client.Get(authorizeURL(ts, clientID, map[string]string{"provider": "google"}))
+	if err != nil {
+		t.Fatalf("authorize: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", resp.StatusCode)
+	}
+	if bindingCookieFromResponse(resp) == nil {
+		t.Fatal("authorize set no binding cookie")
+	}
+	location, err := url.Parse(resp.Header.Get("Location"))
+	if err != nil {
+		t.Fatalf("parse Location: %v", err)
+	}
+	if location.Host != "idp.stub.invalid" {
+		t.Errorf("Location host = %q, want Google stub", location.Host)
+	}
+	id, provider := onlyMCPHandshake(t, d)
+	if provider != oauthstate.ProviderGoogle {
+		t.Errorf("handshake provider = %q, want google", provider)
+	}
+	if got := location.Query().Get("state"); got != id {
+		t.Errorf("redirect state = %q, want handshake id %q", got, id)
+	}
+}
+
+// R-IYS7-EAMF
+func TestAuthorizeGitHubMintsBoundHandshakeAndRedirects(t *testing.T) {
+	ts, d, client := newOAuthTest(t)
+	clientID := registerClient(t, ts, client)
+	resp, err := client.Get(authorizeURL(ts, clientID, map[string]string{"provider": "github"}))
+	if err != nil {
+		t.Fatalf("authorize: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", resp.StatusCode)
+	}
+	if bindingCookieFromResponse(resp) == nil {
+		t.Fatal("authorize set no binding cookie")
+	}
+	location, err := url.Parse(resp.Header.Get("Location"))
+	if err != nil {
+		t.Fatalf("parse Location: %v", err)
+	}
+	if location.Host != "github.stub.invalid" {
+		t.Errorf("Location host = %q, want GitHub stub", location.Host)
+	}
+	id, provider := onlyMCPHandshake(t, d)
+	if provider != oauthstate.ProviderGitHub {
+		t.Errorf("handshake provider = %q, want github", provider)
+	}
+	if got := location.Query().Get("state"); got != id {
+		t.Errorf("redirect state = %q, want handshake id %q", got, id)
+	}
+	if got := location.Query().Get("redirect_uri"); !strings.HasSuffix(got, "/oauth/github/callback") {
+		t.Errorf("redirect_uri = %q, want GitHub callback", got)
+	}
+}
+
+// R-J003-S2D4
+func TestAuthorizeProviderValidationFollowsRequestValidation(t *testing.T) {
+	ts, _, client := newOAuthTest(t)
+	clientID := registerClient(t, ts, client)
+	tests := []struct {
+		name     string
+		override map[string]string
+	}{
+		{name: "unknown provider", override: map[string]string{"provider": "gitlab"}},
+		{name: "request error precedes chooser", override: map[string]string{"code_challenge": ""}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := client.Get(authorizeURL(ts, clientID, tt.override))
+			if err != nil {
+				t.Fatalf("authorize: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", resp.StatusCode)
+			}
+			if got := oauthErr(t, resp); got != "invalid_request" {
+				t.Errorf("error = %q, want invalid_request", got)
+			}
+		})
+	}
+}
+
+func bindingCookieFromResponse(resp *http.Response) *http.Cookie {
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == bindingCookieName {
+			return cookie
+		}
+	}
+	return nil
+}
+
+func onlyMCPHandshake(t *testing.T, d serverDeps) (id, provider string) {
+	t.Helper()
+	var count int
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM oauth_state`).Scan(&count); err != nil {
+		t.Fatalf("count handshakes: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("handshake rows = %d, want 1", count)
+	}
+	if err := d.db.QueryRow(`SELECT id, provider FROM oauth_state`).Scan(&id, &provider); err != nil {
+		t.Fatalf("read handshake: %v", err)
+	}
+	return id, provider
 }
 
 // ── full flow ───────────────────────────────────────────────────────────────

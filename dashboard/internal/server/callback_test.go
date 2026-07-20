@@ -246,7 +246,7 @@ func TestCallbackDefaultAndMCPRedirects(t *testing.T) {
 	t.Run("MCP redirect", func(t *testing.T) {
 		ts, _, client := newOAuthTest(t)
 		clientID := registerClient(t, ts, client)
-		resp, err := client.Get(authorizeURL(ts, clientID, nil))
+		resp, err := client.Get(authorizeURL(ts, clientID, map[string]string{"provider": "google"}))
 		if err != nil {
 			t.Fatalf("authorize: %v", err)
 		}

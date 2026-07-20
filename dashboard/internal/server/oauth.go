@@ -17,6 +17,7 @@ package server
 // stores wired in server.go.
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -178,7 +179,47 @@ func (a *app) handleAuthorize() http.HandlerFunc {
 			return
 		}
 
-		handshake, cookie, err := a.handshakes.CreateMCP(r.Context(), oauthstate.ProviderGoogle, oauthstate.MCPContext{
+		provider := q.Get("provider")
+		if provider == "" {
+			chooserQuery := make(url.Values, len(q)+1)
+			for key, values := range q {
+				chooserQuery[key] = append([]string(nil), values...)
+			}
+			chooserQuery.Set("provider", oauthstate.ProviderGoogle)
+			googleURL := "/oauth/authorize?" + chooserQuery.Encode()
+			chooserQuery.Set("provider", oauthstate.ProviderGitHub)
+			githubURL := "/oauth/authorize?" + chooserQuery.Encode()
+
+			var page bytes.Buffer
+			if err := a.tmpl.ExecuteTemplate(&page, "oauth_authorize.html", struct {
+				GoogleURL string
+				GitHubURL string
+			}{GoogleURL: googleURL, GitHubURL: githubURL}); err != nil {
+				a.logger.Error("authorize.render_chooser", "err", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(page.Bytes())
+			return
+		}
+
+		var authorizeURL func(state, redirectURI string) string
+		var callbackURI string
+		switch provider {
+		case oauthstate.ProviderGoogle:
+			authorizeURL = a.idpProvider.AuthorizeURL
+			callbackURI = a.publicBaseURL + "/oauth/google/callback"
+		case oauthstate.ProviderGitHub:
+			authorizeURL = a.githubProvider.AuthorizeURL
+			callbackURI = a.publicBaseURL + "/oauth/github/callback"
+		default:
+			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "provider must be 'google' or 'github'")
+			return
+		}
+
+		handshake, cookie, err := a.handshakes.CreateMCP(r.Context(), provider, oauthstate.MCPContext{
 			ClientID:            clientID,
 			RedirectURI:         redirectURI,
 			CodeChallenge:       codeChallenge,
@@ -192,7 +233,7 @@ func (a *app) handleAuthorize() http.HandlerFunc {
 			return
 		}
 		setBindingCookie(w, r, cookie)
-		http.Redirect(w, r, a.idpProvider.AuthorizeURL(handshake.ID, a.publicBaseURL+"/oauth/google/callback"), http.StatusSeeOther)
+		http.Redirect(w, r, authorizeURL(handshake.ID, callbackURI), http.StatusSeeOther)
 	}
 }
 
