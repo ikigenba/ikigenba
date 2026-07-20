@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	appkitdb "appkit/db"
@@ -111,6 +112,101 @@ func TestStoreLatestRunNewest(t *testing.T) {
 	if last == nil || last.ID != newer.ID {
 		t.Fatalf("want newest %s, got %+v", newer.ID, last)
 	}
+}
+
+func TestBrowsePromptsFiltersOrdersPaginatesAndCounts(t *testing.T) {
+	// R-ZZVE-DK4O
+	store := newTestStore(t)
+	ctx := context.Background()
+	seed := func(id, owner, name, updated string) {
+		t.Helper()
+		if err := store.InsertPrompt(ctx, Prompt{
+			ID: id, OwnerEmail: owner, Name: name, UserPrompt: "body",
+			Config:    Config{Provider: "anthropic", Model: "claude-haiku-4-5"},
+			CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: updated,
+		}); err != nil {
+			t.Fatalf("InsertPrompt %s: %v", id, err)
+		}
+	}
+	seed("p1", "first@example.com", "Alpha report", "2026-01-01T01:00:00Z")
+	seed("p2", "alpha.owner@example.com", "Quarterly", "2026-01-01T02:00:00Z")
+	seed("p3", "other@example.com", "ALPHABET", "2026-01-01T03:00:00Z")
+	seed("p4", "other@example.com", "Unrelated", "2026-01-01T04:00:00Z")
+
+	got, total, err := store.BrowsePrompts(ctx, BrowseFilter{Q: "aLpHa", Limit: 2, Offset: 1})
+	if err != nil {
+		t.Fatalf("BrowsePrompts: %v", err)
+	}
+	if total != 3 {
+		t.Fatalf("filtered total = %d, want 3", total)
+	}
+	if ids := promptIDs(got); !reflect.DeepEqual(ids, []string{"p2", "p1"}) {
+		t.Fatalf("paged prompt ids = %v, want [p2 p1]", ids)
+	}
+}
+
+func TestBrowseRunsFiltersOrdersPaginatesAndCounts(t *testing.T) {
+	// R-013A-RBVD
+	store := newTestStore(t)
+	ctx := context.Background()
+	runs := []Run{
+		{ID: "r1", PromptID: "prompt-a", OwnerEmail: "one@example.com", PromptName: "Alpha", Status: RunSucceeded, StartedAt: "2026-01-01T01:00:00Z", LogPath: "1"},
+		{ID: "r2", PromptID: "prompt-a", OwnerEmail: "alice@example.com", PromptName: "Beta", Status: RunFailed, StartedAt: "2026-01-01T02:00:00Z", LogPath: "2"},
+		{ID: "r3", PromptID: "prompt-b", OwnerEmail: "other@example.com", PromptName: "Gamma", Status: RunSucceeded, StartedAt: "2026-01-01T03:00:00Z", LogPath: "3"},
+		{ID: "r4", PromptID: "prompt-a", OwnerEmail: "alice@example.com", PromptName: "Alpha Plus", Status: RunSucceeded, StartedAt: "2026-01-01T04:00:00Z", LogPath: "4"},
+	}
+	for _, run := range runs {
+		if err := store.InsertRun(ctx, run); err != nil {
+			t.Fatalf("InsertRun %s: %v", run.ID, err)
+		}
+	}
+
+	checks := []struct {
+		name string
+		f    BrowseFilter
+		want []string
+	}{
+		{"q", BrowseFilter{Q: "ALIce"}, []string{"r4", "r2"}},
+		{"status", BrowseFilter{Status: RunFailed}, []string{"r2"}},
+		{"prompt", BrowseFilter{PromptID: "prompt-b"}, []string{"r3"}},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			got, total, err := store.BrowseRuns(ctx, check.f)
+			if err != nil {
+				t.Fatalf("BrowseRuns: %v", err)
+			}
+			if ids := runIDs(got); !reflect.DeepEqual(ids, check.want) || total != len(check.want) {
+				t.Fatalf("ids/total = %v/%d, want %v/%d", ids, total, check.want, len(check.want))
+			}
+		})
+	}
+
+	got, total, err := store.BrowseRuns(ctx, BrowseFilter{
+		Q: "alpha", Status: RunSucceeded, PromptID: "prompt-a", Limit: 1, Offset: 1,
+	})
+	if err != nil {
+		t.Fatalf("combined BrowseRuns: %v", err)
+	}
+	if ids := runIDs(got); !reflect.DeepEqual(ids, []string{"r1"}) || total != 2 {
+		t.Fatalf("combined paged ids/total = %v/%d, want [r1]/2", ids, total)
+	}
+}
+
+func promptIDs(prompts []Prompt) []string {
+	result := make([]string, len(prompts))
+	for i, prompt := range prompts {
+		result[i] = prompt.ID
+	}
+	return result
+}
+
+func runIDs(runs []Run) []string {
+	result := make([]string, len(runs))
+	for i, run := range runs {
+		result[i] = run.ID
+	}
+	return result
 }
 
 func TestStoreUpdateRunTerminal(t *testing.T) {

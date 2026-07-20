@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"eventplane/outbox"
@@ -159,6 +160,48 @@ func (s *Store) ListPrompts(ctx context.Context, owner string) ([]Prompt, error)
 	return out, nil
 }
 
+// BrowseFilter controls the unscoped, server-rendered browse queries.
+type BrowseFilter struct {
+	Q        string
+	Status   string
+	PromptID string
+	Limit    int
+	Offset   int
+}
+
+// BrowsePrompts returns one page of prompts and the total number matching Q.
+// Unlike ListPrompts, it deliberately spans all owners.
+func (s *Store) BrowsePrompts(ctx context.Context, f BrowseFilter) ([]Prompt, int, error) {
+	where, args := browsePromptWhere(f.Q)
+	total, err := queryCount(ctx, s.db, "prompts", where, args)
+	if err != nil {
+		return nil, 0, fmt.Errorf("prompt: browse prompts count: %w", err)
+	}
+	limit, offset := browsePage(f.Limit, f.Offset)
+	pageArgs := append(append([]any(nil), args...), limit, offset)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
+		   FROM prompts`+where+` ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`,
+		pageArgs...,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("prompt: browse prompts: %w", err)
+	}
+	defer rows.Close()
+	result := make([]Prompt, 0)
+	for rows.Next() {
+		p, err := scanPrompt(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		result = append(result, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("prompt: browse prompts rows: %w", err)
+	}
+	return result, total, nil
+}
+
 // UpdatePrompt persists editable fields (name/user_prompt/system_prompt/config)
 // and bumps updated_at. It is owner-scoped; a no-match (missing or
 // foreign-owned) returns ErrNotFound.
@@ -247,6 +290,82 @@ func (s *Store) ListRunsByPrompt(ctx context.Context, promptID string) ([]Run, e
 		return nil, fmt.Errorf("prompt: list runs rows: %w", err)
 	}
 	return out, nil
+}
+
+// BrowseRuns returns one unscoped page of runs and the filtered total.
+func (s *Store) BrowseRuns(ctx context.Context, f BrowseFilter) ([]Run, int, error) {
+	where, args := browseRunWhere(f)
+	total, err := queryCount(ctx, s.db, "runs", where, args)
+	if err != nil {
+		return nil, 0, fmt.Errorf("prompt: browse runs count: %w", err)
+	}
+	limit, offset := browsePage(f.Limit, f.Offset)
+	pageArgs := append(append([]any(nil), args...), limit, offset)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+runSelectCols+` FROM runs`+where+` ORDER BY started_at DESC, id DESC LIMIT ? OFFSET ?`,
+		pageArgs...,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("prompt: browse runs: %w", err)
+	}
+	defer rows.Close()
+	result := make([]Run, 0)
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		result = append(result, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("prompt: browse runs rows: %w", err)
+	}
+	return result, total, nil
+}
+
+func browsePromptWhere(q string) (string, []any) {
+	if q == "" {
+		return "", nil
+	}
+	return ` WHERE instr(lower(COALESCE(name, '')), lower(?)) > 0
+		OR instr(lower(owner_email), lower(?)) > 0`, []any{q, q}
+}
+
+func browseRunWhere(f BrowseFilter) (string, []any) {
+	var clauses []string
+	var args []any
+	if f.Q != "" {
+		clauses = append(clauses, `(instr(lower(COALESCE(prompt_name, '')), lower(?)) > 0 OR instr(lower(owner_email), lower(?)) > 0)`)
+		args = append(args, f.Q, f.Q)
+	}
+	if f.Status != "" {
+		clauses = append(clauses, "status = ?")
+		args = append(args, f.Status)
+	}
+	if f.PromptID != "" {
+		clauses = append(clauses, "prompt_id = ?")
+		args = append(args, f.PromptID)
+	}
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func browsePage(limit, offset int) (int, int) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}
+
+func queryCount(ctx context.Context, db *sql.DB, table, where string, args []any) (int, error) {
+	var total int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table+where, args...).Scan(&total)
+	return total, err
 }
 
 // RunningCount returns how many of a prompt's runs are currently 'running' —

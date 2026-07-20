@@ -171,6 +171,42 @@ func TestListFiltersAndPaginatesDeterministically(t *testing.T) {
 	}
 }
 
+func TestListByGroupReturnsBodiesInStartedOrder(t *testing.T) {
+	// R-03J3-IVCR
+	store := testStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	rows := []Row{
+		seededRow("later", "wiki.compile", base.Add(2*time.Hour)),
+		seededRow("other", "wiki.compile", base.Add(time.Hour)),
+		seededRow("earlier", "wiki.compile", base),
+	}
+	for i := range rows {
+		rows[i].StartedAt = rows[i].EndedAt
+		rows[i].GroupID = "wanted"
+	}
+	rows[1].GroupID = "different"
+	for _, row := range rows {
+		if err := store.Insert(ctx, row); err != nil {
+			t.Fatalf("Insert %s: %v", row.ID, err)
+		}
+	}
+
+	got, err := store.ListByGroup(ctx, "wanted")
+	if err != nil {
+		t.Fatalf("ListByGroup: %v", err)
+	}
+	if ids := rowIDs(got); !reflect.DeepEqual(ids, []string{"earlier", "later"}) {
+		t.Fatalf("row ids = %v, want [earlier later]", ids)
+	}
+	for _, row := range got {
+		if row.RequestBody == nil || *row.RequestBody != "request-"+row.ID ||
+			row.ResponseBody == nil || *row.ResponseBody != "response-"+row.ID {
+			t.Fatalf("row %s bodies not populated: request=%v response=%v", row.ID, row.RequestBody, row.ResponseBody)
+		}
+	}
+}
+
 func TestAggregateByNameSumsUsageCostAndAppliesWindow(t *testing.T) {
 	// R-5NXH-REBE
 	store := testStore(t)

@@ -227,6 +227,27 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Row, error) {
 	return result, nil
 }
 
+// ListByGroup returns a run's calls in replay order, including stored bodies.
+func (s *Store) ListByGroup(ctx context.Context, groupID string) ([]Row, error) {
+	rows, err := s.db.QueryContext(ctx, selectColumns+` WHERE group_id = ? ORDER BY started_at ASC, id ASC`, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("calls: list by group: %w", err)
+	}
+	defer rows.Close()
+	result := make([]Row, 0)
+	for rows.Next() {
+		row, err := scanRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("calls: list by group scan: %w", err)
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("calls: list by group rows: %w", err)
+	}
+	return result, nil
+}
+
 func (s *Store) Aggregate(ctx context.Context, group GroupBy, f Filter) ([]Bucket, error) {
 	var expression string
 	switch group {
