@@ -19,7 +19,7 @@ func TestStoreRoundTripsRowsAndSelectsSessionQueueState(t *testing.T) {
 	ctx := context.Background()
 	created := time.Date(2026, 7, 15, 12, 30, 0, 123456789, time.UTC)
 	repo := Repo{
-		Name: "fixture", OwnerEmail: "owner@example.com",
+		Name: "fixture", OwnerID: "owner-1", OwnerEmail: "owner@example.com",
 		CloneURL: "https://github.com/example/fixture.git", DefaultBranch: "main", CreatedAt: created,
 	}
 	if err := store.InsertRepo(ctx, repo); err != nil {
@@ -39,7 +39,7 @@ func TestStoreRoundTripsRowsAndSelectsSessionQueueState(t *testing.T) {
 	failure := "fixture failure"
 	prURL := "https://github.com/example/fixture/pull/7"
 	session := Session{
-		ID: "01J00000000000000000000000", RepoName: repo.Name, OwnerEmail: repo.OwnerEmail,
+		ID: "01J00000000000000000000000", RepoName: repo.Name, OwnerID: repo.OwnerID, OwnerEmail: repo.OwnerEmail,
 		IssueNumber: &issue, Attempt: 3, Branch: "agent/issue-42-3",
 		Instructions: "Implement the fixture.", Status: StatusFailed, Error: &failure, PRURL: &prURL,
 		CreatedAt: created, StartedAt: &started, EndedAt: &ended, LogPath: "state/sessions/01J/output.jsonl",
@@ -92,6 +92,28 @@ func TestStoreRoundTripsRowsAndSelectsSessionQueueState(t *testing.T) {
 	active, err = store.ActiveSessionForIssue(ctx, repo.Name, issue)
 	if err != nil || active.ID != "queued-old" || active.Status != StatusRunning {
 		t.Fatalf("running active session = %#v, %v", active, err)
+	}
+}
+
+func TestStoreScopesEqualEmailRowsOnlyByOwnerID(t *testing.T) {
+	// R-IDQF-EVJZ
+	store, _ := migratedStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	for _, ownerID := range []string{"owner-a", "owner-b"} {
+		name := "repo-" + ownerID
+		if err := store.InsertRepo(ctx, Repo{Name: name, OwnerID: ownerID, OwnerEmail: "same@example.com", CloneURL: "file:///" + name, DefaultBranch: "main", CreatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		insertSession(t, store, Session{ID: "session-" + ownerID, RepoName: name, OwnerID: ownerID, OwnerEmail: "same@example.com", Attempt: 1, Branch: name, Instructions: "work", Status: StatusQueued, CreatedAt: now, LogPath: name + ".jsonl"})
+	}
+	repos, err := store.ListRepos(ctx, "owner-a")
+	if err != nil || len(repos) != 1 || repos[0].OwnerID != "owner-a" || repos[0].OwnerEmail != "same@example.com" {
+		t.Fatalf("owner-a repos = %#v, %v", repos, err)
+	}
+	sessions, err := store.ListSessions(ctx, "repo-owner-a", "owner-a")
+	if err != nil || len(sessions) != 1 || sessions[0].OwnerID != "owner-a" || sessions[0].OwnerEmail != "same@example.com" {
+		t.Fatalf("owner-a sessions = %#v, %v", sessions, err)
 	}
 }
 

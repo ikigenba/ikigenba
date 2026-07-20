@@ -19,8 +19,8 @@ func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
 func (s *Store) InsertRepo(ctx context.Context, repo Repo) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO repos
-		(name, owner_email, clone_url, default_branch, created_at)
-		VALUES (?, ?, ?, ?, ?)`, repo.Name, repo.OwnerEmail, repo.CloneURL,
+		(name, owner_id, owner_email, clone_url, default_branch, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`, repo.Name, repo.OwnerID, repo.OwnerEmail, repo.CloneURL,
 		repo.DefaultBranch, formatTime(repo.CreatedAt))
 	return wrap("insert repo", err)
 }
@@ -28,9 +28,9 @@ func (s *Store) InsertRepo(ctx context.Context, repo Repo) error {
 func (s *Store) GetRepo(ctx context.Context, name string) (Repo, error) {
 	var repo Repo
 	var created string
-	err := s.db.QueryRowContext(ctx, `SELECT name, owner_email, clone_url,
+	err := s.db.QueryRowContext(ctx, `SELECT name, owner_id, owner_email, clone_url,
 		default_branch, created_at FROM repos WHERE name = ?`, name).Scan(
-		&repo.Name, &repo.OwnerEmail, &repo.CloneURL, &repo.DefaultBranch, &created)
+		&repo.Name, &repo.OwnerID, &repo.OwnerEmail, &repo.CloneURL, &repo.DefaultBranch, &created)
 	if err != nil {
 		return Repo{}, rowError("get repo", err)
 	}
@@ -38,12 +38,12 @@ func (s *Store) GetRepo(ctx context.Context, name string) (Repo, error) {
 	return repo, wrap("parse repo created_at", err)
 }
 
-func (s *Store) ListRepos(ctx context.Context, owner string) ([]Repo, error) {
-	query := `SELECT name, owner_email, clone_url, default_branch, created_at FROM repos`
+func (s *Store) ListRepos(ctx context.Context, ownerID string) ([]Repo, error) {
+	query := `SELECT name, owner_id, owner_email, clone_url, default_branch, created_at FROM repos`
 	var args []any
-	if owner != "" {
-		query += ` WHERE owner_email = ?`
-		args = append(args, owner)
+	if ownerID != "" {
+		query += ` WHERE owner_id = ?`
+		args = append(args, ownerID)
 	}
 	query += ` ORDER BY name`
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -55,7 +55,7 @@ func (s *Store) ListRepos(ctx context.Context, owner string) ([]Repo, error) {
 	for rows.Next() {
 		var repo Repo
 		var created string
-		if err := rows.Scan(&repo.Name, &repo.OwnerEmail, &repo.CloneURL, &repo.DefaultBranch, &created); err != nil {
+		if err := rows.Scan(&repo.Name, &repo.OwnerID, &repo.OwnerEmail, &repo.CloneURL, &repo.DefaultBranch, &created); err != nil {
 			return nil, fmt.Errorf("scan repo: %w", err)
 		}
 		repo.CreatedAt, err = parseTime(created)
@@ -74,10 +74,10 @@ func (s *Store) DeleteRepo(ctx context.Context, name string) error {
 
 func (s *Store) InsertSession(ctx context.Context, session Session) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions
-		(id, repo_name, owner_email, issue_number, attempt, branch, instructions,
+		(id, repo_name, owner_id, owner_email, issue_number, attempt, branch, instructions,
 		 status, error, pr_url, created_at, started_at, ended_at, log_path)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		session.ID, session.RepoName, session.OwnerEmail, nullableInt(session.IssueNumber),
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		session.ID, session.RepoName, session.OwnerID, session.OwnerEmail, nullableInt(session.IssueNumber),
 		session.Attempt, session.Branch, session.Instructions, session.Status,
 		nullableString(session.Error), nullableString(session.PRURL), formatTime(session.CreatedAt),
 		nullableTime(session.StartedAt), nullableTime(session.EndedAt), session.LogPath)
@@ -93,16 +93,16 @@ func (s *Store) GetSession(ctx context.Context, id string) (Session, error) {
 	return session, nil
 }
 
-func (s *Store) ListSessions(ctx context.Context, repoName, owner string) ([]Session, error) {
+func (s *Store) ListSessions(ctx context.Context, repoName, ownerID string) ([]Session, error) {
 	query := sessionSelect + ` WHERE 1=1`
 	var args []any
 	if repoName != "" {
 		query += ` AND repo_name = ?`
 		args = append(args, repoName)
 	}
-	if owner != "" {
-		query += ` AND owner_email = ?`
-		args = append(args, owner)
+	if ownerID != "" {
+		query += ` AND owner_id = ?`
+		args = append(args, ownerID)
 	}
 	query += ` ORDER BY created_at, id`
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -210,7 +210,7 @@ func (s *Store) SweepRunning(ctx context.Context, endedAt time.Time, reason stri
 	return int(n), wrap("sweep running rows affected", err)
 }
 
-const sessionSelect = `SELECT id, repo_name, owner_email, issue_number, attempt,
+const sessionSelect = `SELECT id, repo_name, owner_id, owner_email, issue_number, attempt,
 	branch, instructions, status, error, pr_url, created_at, started_at, ended_at, log_path
 	FROM sessions`
 
@@ -221,7 +221,7 @@ func scanSession(row scanner) (Session, error) {
 	var issue sql.NullInt64
 	var sessionError, prURL, started, ended sql.NullString
 	var created string
-	err := row.Scan(&session.ID, &session.RepoName, &session.OwnerEmail, &issue,
+	err := row.Scan(&session.ID, &session.RepoName, &session.OwnerID, &session.OwnerEmail, &issue,
 		&session.Attempt, &session.Branch, &session.Instructions, &session.Status,
 		&sessionError, &prURL, &created, &started, &ended, &session.LogPath)
 	if err != nil {

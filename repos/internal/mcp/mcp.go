@@ -20,7 +20,7 @@ const Instructions = "Clone and manage GitHub repositories, then start, inspect,
 // Service is the narrow domain seam used by the MCP surface. Composition
 // delegates these methods to the lifecycle service, store, runner, and reaper.
 type Service interface {
-	CloneRepo(context.Context, string, string) error
+	CloneRepo(context.Context, string, string, string) error
 	GetRepo(context.Context, string) (repos.Repo, error)
 	ListRepos(context.Context, string) ([]repos.Repo, error)
 	DeleteRepo(context.Context, string) error

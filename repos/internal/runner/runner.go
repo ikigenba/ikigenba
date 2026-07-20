@@ -217,7 +217,7 @@ func New(config Config) (*Runner, error) {
 
 // Enqueue inserts a durable queued row and rings the dispatcher doorbell.
 func (r *Runner) Enqueue(ctx context.Context, request SessionRequest) (repos.Session, error) {
-	if request.RepoName == "" || request.OwnerEmail == "" {
+	if request.RepoName == "" || request.OwnerID == "" {
 		return repos.Session{}, errors.New("enqueue: repository and owner are required")
 	}
 	id := request.ID
@@ -251,7 +251,7 @@ func (r *Runner) Enqueue(ctx context.Context, request SessionRequest) (repos.Ses
 	queuedBehind := request.IssueNumber != nil && r.repoIsActive(ctx, request.RepoName)
 	sessionDir := filepath.Join(r.stateRoot, "sessions", id)
 	session := repos.Session{
-		ID: id, RepoName: request.RepoName, OwnerEmail: request.OwnerEmail,
+		ID: id, RepoName: request.RepoName, OwnerID: request.OwnerID, OwnerEmail: request.OwnerEmail,
 		IssueNumber: request.IssueNumber, Attempt: attempt, Branch: branch,
 		Instructions: request.Instructions, Status: repos.StatusQueued,
 		CreatedAt: r.clock.Now(), LogPath: filepath.Join(sessionDir, "output.jsonl"),

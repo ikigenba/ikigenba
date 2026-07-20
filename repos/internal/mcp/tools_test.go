@@ -28,7 +28,10 @@ import (
 	"repos/internal/runner"
 )
 
-const testOwner = "owner@example.com"
+const (
+	testOwnerID = "owner-1"
+	testOwner   = "owner@example.com"
+)
 
 type fixedClock struct{ now time.Time }
 
@@ -45,8 +48,8 @@ type domain struct {
 	reaper    *repos.Reaper
 }
 
-func (d *domain) CloneRepo(ctx context.Context, owner, name string) error {
-	return d.lifecycle.CloneRepo(ctx, owner, name)
+func (d *domain) CloneRepo(ctx context.Context, ownerID, ownerEmail, name string) error {
+	return d.lifecycle.CloneRepo(ctx, ownerID, ownerEmail, name)
 }
 func (d *domain) GetRepo(ctx context.Context, name string) (repos.Repo, error) {
 	return d.store.GetRepo(ctx, name)
@@ -180,6 +183,11 @@ func rpc(t *testing.T, h http.Handler, method string, params any, owner string) 
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(encoded))
+	ownerID := "id:" + owner
+	if owner == testOwner {
+		ownerID = testOwnerID
+	}
+	request.Header.Set("X-Owner-Id", ownerID)
 	request.Header.Set("X-Owner-Email", owner)
 	request.Header.Set("X-Client-Id", "test-client")
 	recorder := httptest.NewRecorder()
@@ -240,7 +248,7 @@ func TestRepositoryToolsRoundTripAndScopeByOwner(t *testing.T) {
 	if code := callError(t, f.h, "get", map[string]any{"name": "missing"}); code != "not_found" {
 		t.Fatalf("missing get code = %q", code)
 	}
-	if err := f.store.InsertRepo(context.Background(), repos.Repo{Name: "theirs", OwnerEmail: "other@example.com", CloneURL: "file:///fixture", DefaultBranch: "main", CreatedAt: time.Now()}); err != nil {
+	if err := f.store.InsertRepo(context.Background(), repos.Repo{Name: "theirs", OwnerID: "owner-2", OwnerEmail: testOwner, CloneURL: "file:///fixture", DefaultBranch: "main", CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	items := callOK(t, f.h, "list", map[string]any{})["items"].([]any)
@@ -328,9 +336,9 @@ func TestSessionReadToolsFilterAndWindowRealTranscript(t *testing.T) {
 	}
 	problem, pr := "check failed", "https://example.test/pull/7"
 	rows := []repos.Session{
-		{ID: "one", RepoName: "alpha", OwnerEmail: testOwner, Attempt: 1, Branch: "ikigenba/session-one", Instructions: "full instructions", Status: repos.StatusFailed, Error: &problem, PRURL: &pr, CreatedAt: now, EndedAt: &now, LogPath: logPath},
-		{ID: "two", RepoName: "beta", OwnerEmail: testOwner, Attempt: 1, Branch: "ikigenba/session-two", Status: repos.StatusQueued, CreatedAt: now, LogPath: filepath.Join(f.stateRoot, "two.jsonl")},
-		{ID: "other", RepoName: "alpha", OwnerEmail: "other@example.com", Attempt: 1, Branch: "ikigenba/session-other", Status: repos.StatusQueued, CreatedAt: now, LogPath: filepath.Join(f.stateRoot, "other.jsonl")},
+		{ID: "one", RepoName: "alpha", OwnerID: testOwnerID, OwnerEmail: testOwner, Attempt: 1, Branch: "ikigenba/session-one", Instructions: "full instructions", Status: repos.StatusFailed, Error: &problem, PRURL: &pr, CreatedAt: now, EndedAt: &now, LogPath: logPath},
+		{ID: "two", RepoName: "beta", OwnerID: testOwnerID, OwnerEmail: testOwner, Attempt: 1, Branch: "ikigenba/session-two", Status: repos.StatusQueued, CreatedAt: now, LogPath: filepath.Join(f.stateRoot, "two.jsonl")},
+		{ID: "other", RepoName: "alpha", OwnerID: "owner-2", OwnerEmail: testOwner, Attempt: 1, Branch: "ikigenba/session-other", Status: repos.StatusQueued, CreatedAt: now, LogPath: filepath.Join(f.stateRoot, "other.jsonl")},
 	}
 	for _, row := range rows {
 		if err := f.store.InsertSession(context.Background(), row); err != nil {

@@ -31,7 +31,7 @@ func TestEnsureRepoCreatesCanonicalCloneAndIsIdempotent(t *testing.T) {
 	stateRoot := filepath.Join(t.TempDir(), "state", "repos")
 	clock := fixedClock{time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)}
 	service := NewService(store, NewGit(stateRoot, &staticTokenSource{token: "fixture"}), clock, "ikigenba")
-	facts := RepoFacts{Name: "fixture", Owner: "owner@example.com", CloneURL: fileURL(remote), DefaultBranch: "main"}
+	facts := RepoFacts{Name: "fixture", OwnerID: "owner-1", OwnerEmail: "owner@example.com", CloneURL: fileURL(remote), DefaultBranch: "main"}
 	if err := service.EnsureRepo(context.Background(), facts); err != nil {
 		t.Fatalf("first EnsureRepo: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestEnsureRepoCreatesCanonicalCloneAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get repo: %v", err)
 	}
-	want := Repo{Name: facts.Name, OwnerEmail: facts.Owner, CloneURL: facts.CloneURL, DefaultBranch: "main", CreatedAt: clock.value}
+	want := Repo{Name: facts.Name, OwnerID: facts.OwnerID, OwnerEmail: facts.OwnerEmail, CloneURL: facts.CloneURL, DefaultBranch: "main", CreatedAt: clock.value}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("repo = %#v, want %#v", got, want)
 	}
@@ -67,7 +67,7 @@ func TestCloneRepoDerivesOrganizationURLAndConflictsWhenTracked(t *testing.T) {
 	if err := exec.Command("git", "clone", "--bare", remote, filepath.Join(parent, "acme.git")).Run(); err != nil {
 		t.Fatalf("make named fixture remote: %v", err)
 	}
-	if err := service.CloneRepo(context.Background(), "owner@example.com", "acme"); err != nil {
+	if err := service.CloneRepo(context.Background(), "owner-1", "owner@example.com", "acme"); err != nil {
 		t.Fatalf("CloneRepo: %v", err)
 	}
 	got, err := store.GetRepo(context.Background(), "acme")
@@ -77,7 +77,10 @@ func TestCloneRepoDerivesOrganizationURLAndConflictsWhenTracked(t *testing.T) {
 	if got.CloneURL != "https://github.com/ikigenba/acme.git" {
 		t.Fatalf("clone URL = %q", got.CloneURL)
 	}
-	if err := service.CloneRepo(context.Background(), "owner@example.com", "acme"); !errors.Is(err, ErrConflict) {
+	if got.OwnerID != "owner-1" || got.OwnerEmail != "owner@example.com" {
+		t.Fatalf("owner snapshot = %#v", got)
+	}
+	if err := service.CloneRepo(context.Background(), "owner-1", "owner@example.com", "acme"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("second CloneRepo error = %v, want ErrConflict", err)
 	}
 }

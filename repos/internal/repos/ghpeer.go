@@ -14,6 +14,7 @@ import (
 
 // Identity is asserted by loopback callers on every GitHub peer request.
 type Identity struct {
+	OwnerID    string
 	OwnerEmail string
 	SessionID  string
 }
@@ -100,6 +101,7 @@ func (p *GitHubPeer) call(ctx context.Context, id Identity, name string, argumen
 		return fmt.Errorf("github peer %s: request: %w", name, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Owner-Id", id.OwnerID)
 	req.Header.Set("X-Owner-Email", id.OwnerEmail)
 	req.Header.Set("X-Client-Id", "repos:"+id.SessionID)
 	response, err := p.http.Do(req)

@@ -53,12 +53,13 @@ func Tools(svc Service) []appkitmcp.Tool {
 
 func (h toolHandlers) clone(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	var a struct {
-		Name string `json:"name"`
+		Name  string `json:"name"`
+		Owner string `json:"owner,omitempty"`
 	}
-	if err := decode(raw, &a); err != nil || blank(a.Name) || blank(id.OwnerEmail) {
+	if err := decode(raw, &a); err != nil || blank(a.Name) || blank(id.OwnerID) {
 		return validation(err, "name and authenticated owner are required"), nil
 	}
-	if err := h.svc.CloneRepo(ctx, id.OwnerEmail, a.Name); err != nil {
+	if err := h.svc.CloneRepo(ctx, id.OwnerID, id.OwnerEmail, a.Name); err != nil {
 		return domainError(err, appkitmcp.ErrSourceUnavailable), nil
 	}
 	repo, err := h.svc.GetRepo(ctx, a.Name)
@@ -73,7 +74,7 @@ func (h toolHandlers) list(ctx context.Context, raw json.RawMessage, id server.I
 	if err := decode(raw, &a); err != nil {
 		return validation(err, "arguments must be an object"), nil
 	}
-	items, err := h.svc.ListRepos(ctx, id.OwnerEmail)
+	items, err := h.svc.ListRepos(ctx, id.OwnerID)
 	if err != nil {
 		return domainError(err, appkitmcp.ErrInternal), nil
 	}
@@ -84,7 +85,7 @@ func (h toolHandlers) list(ctx context.Context, raw json.RawMessage, id server.I
 	return structured(map[string]any{"items": views})
 }
 
-func (h toolHandlers) get(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
+func (h toolHandlers) get(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	var a struct {
 		Name string `json:"name"`
 	}
@@ -95,15 +96,25 @@ func (h toolHandlers) get(ctx context.Context, raw json.RawMessage, _ server.Ide
 	if err != nil {
 		return domainError(err, appkitmcp.ErrInternal), nil
 	}
+	if repo.OwnerID != id.OwnerID {
+		return domainError(repos.ErrNotFound, appkitmcp.ErrInternal), nil
+	}
 	return structured(map[string]any{"repo": repoView(repo)})
 }
 
-func (h toolHandlers) delete(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
+func (h toolHandlers) delete(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	var a struct {
 		Name string `json:"name"`
 	}
 	if err := decode(raw, &a); err != nil || blank(a.Name) {
 		return validation(err, "name is required"), nil
+	}
+	repo, err := h.svc.GetRepo(ctx, a.Name)
+	if err != nil {
+		return domainError(err, appkitmcp.ErrInternal), nil
+	}
+	if repo.OwnerID != id.OwnerID {
+		return domainError(repos.ErrNotFound, appkitmcp.ErrInternal), nil
 	}
 	if err := h.svc.DeleteRepo(ctx, a.Name); err != nil {
 		return domainError(err, appkitmcp.ErrInternal), nil
@@ -116,17 +127,22 @@ func (h toolHandlers) sessionStart(ctx context.Context, raw json.RawMessage, id 
 		Repo         string `json:"repo"`
 		Instructions string `json:"instructions"`
 		Branch       string `json:"branch,omitempty"`
+		Owner        string `json:"owner,omitempty"`
 	}
-	if err := decode(raw, &a); err != nil || blank(a.Repo) || blank(a.Instructions) || blank(id.OwnerEmail) {
+	if err := decode(raw, &a); err != nil || blank(a.Repo) || blank(a.Instructions) || blank(id.OwnerID) {
 		return validation(err, "repo, instructions, and authenticated owner are required"), nil
 	}
 	if a.Branch != "" && (!strings.HasPrefix(a.Branch, "ikigenba/") || len(a.Branch) == len("ikigenba/")) {
 		return validation(nil, "branch must match ikigenba/*"), nil
 	}
-	if _, err := h.svc.GetRepo(ctx, a.Repo); err != nil {
+	repo, err := h.svc.GetRepo(ctx, a.Repo)
+	if err != nil {
 		return domainError(err, appkitmcp.ErrInternal), nil
 	}
-	session, err := h.svc.Enqueue(ctx, runner.SessionRequest{RepoName: a.Repo, OwnerEmail: id.OwnerEmail, Instructions: a.Instructions})
+	if repo.OwnerID != id.OwnerID {
+		return domainError(repos.ErrNotFound, appkitmcp.ErrInternal), nil
+	}
+	session, err := h.svc.Enqueue(ctx, runner.SessionRequest{RepoName: a.Repo, OwnerID: id.OwnerID, OwnerEmail: id.OwnerEmail, Instructions: a.Instructions})
 	if err != nil {
 		return domainError(err, appkitmcp.ErrValidation), nil
 	}
@@ -140,7 +156,7 @@ func (h toolHandlers) sessionList(ctx context.Context, raw json.RawMessage, id s
 	if err := decode(raw, &a); err != nil {
 		return validation(err, "invalid session_list arguments"), nil
 	}
-	items, err := h.svc.ListSessions(ctx, a.Repo, id.OwnerEmail)
+	items, err := h.svc.ListSessions(ctx, a.Repo, id.OwnerID)
 	if err != nil {
 		return domainError(err, appkitmcp.ErrInternal), nil
 	}
@@ -151,7 +167,7 @@ func (h toolHandlers) sessionList(ctx context.Context, raw json.RawMessage, id s
 	return structured(map[string]any{"items": views})
 }
 
-func (h toolHandlers) sessionGet(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
+func (h toolHandlers) sessionGet(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	var a struct {
 		ID string `json:"id"`
 	}
@@ -162,10 +178,13 @@ func (h toolHandlers) sessionGet(ctx context.Context, raw json.RawMessage, _ ser
 	if err != nil {
 		return domainError(err, appkitmcp.ErrInternal), nil
 	}
+	if session.OwnerID != id.OwnerID {
+		return domainError(repos.ErrNotFound, appkitmcp.ErrInternal), nil
+	}
 	return structured(map[string]any{"session": sessionView(session, true)})
 }
 
-func (h toolHandlers) sessionOutput(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
+func (h toolHandlers) sessionOutput(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	var a struct {
 		ID     string `json:"id"`
 		Offset *int   `json:"offset,omitempty"`
@@ -188,6 +207,9 @@ func (h toolHandlers) sessionOutput(ctx context.Context, raw json.RawMessage, _ 
 	if err != nil {
 		return domainError(err, appkitmcp.ErrInternal), nil
 	}
+	if session.OwnerID != id.OwnerID {
+		return domainError(repos.ErrNotFound, appkitmcp.ErrInternal), nil
+	}
 	lines, err := readLines(session.LogPath)
 	if err != nil {
 		return domainError(err, appkitmcp.ErrInternal), nil
@@ -197,15 +219,22 @@ func (h toolHandlers) sessionOutput(ctx context.Context, raw json.RawMessage, _ 
 	return structured(map[string]any{"lines": lines[start:end], "total": len(lines), "offset": offset})
 }
 
-func (h toolHandlers) sessionCancel(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
+func (h toolHandlers) sessionCancel(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	var a struct {
 		ID string `json:"id"`
 	}
 	if err := decode(raw, &a); err != nil || blank(a.ID) {
 		return validation(err, "id is required"), nil
 	}
-	cancelled := h.svc.Cancel(a.ID)
 	session, err := h.svc.GetSession(ctx, a.ID)
+	if err != nil {
+		return domainError(err, appkitmcp.ErrInternal), nil
+	}
+	if session.OwnerID != id.OwnerID {
+		return domainError(repos.ErrNotFound, appkitmcp.ErrInternal), nil
+	}
+	cancelled := h.svc.Cancel(a.ID)
+	session, err = h.svc.GetSession(ctx, a.ID)
 	if err != nil {
 		return domainError(err, appkitmcp.ErrInternal), nil
 	}

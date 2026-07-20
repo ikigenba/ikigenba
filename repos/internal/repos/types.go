@@ -13,6 +13,7 @@ const (
 // Repo is a provisioned GitHub repository.
 type Repo struct {
 	Name          string
+	OwnerID       string
 	OwnerEmail    string
 	CloneURL      string
 	DefaultBranch string
@@ -23,6 +24,7 @@ type Repo struct {
 type Session struct {
 	ID           string
 	RepoName     string
+	OwnerID      string
 	OwnerEmail   string
 	IssueNumber  *int
 	Attempt      int

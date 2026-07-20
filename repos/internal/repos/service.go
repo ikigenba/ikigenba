@@ -19,7 +19,8 @@ type RepoFacts struct {
 	Name          string
 	CloneURL      string
 	DefaultBranch string
-	Owner         string
+	OwnerID       string
+	OwnerEmail    string
 }
 
 type Service struct {
@@ -39,7 +40,7 @@ func (s *Service) EnsureRepo(ctx context.Context, facts RepoFacts) error {
 	} else if !errors.Is(err, ErrNotFound) {
 		return fmt.Errorf("ensure repo lookup: %w", err)
 	}
-	repo := Repo{Name: facts.Name, OwnerEmail: facts.Owner, CloneURL: facts.CloneURL,
+	repo := Repo{Name: facts.Name, OwnerID: facts.OwnerID, OwnerEmail: facts.OwnerEmail, CloneURL: facts.CloneURL,
 		DefaultBranch: facts.DefaultBranch, CreatedAt: s.clock.Now()}
 	if err := s.store.InsertRepo(ctx, repo); err != nil {
 		return fmt.Errorf("ensure repo insert: %w", err)
@@ -52,7 +53,7 @@ func (s *Service) EnsureRepo(ctx context.Context, facts RepoFacts) error {
 	return nil
 }
 
-func (s *Service) CloneRepo(ctx context.Context, owner, name string) error {
+func (s *Service) CloneRepo(ctx context.Context, ownerID, ownerEmail, name string) error {
 	if _, err := s.store.GetRepo(ctx, name); err == nil {
 		return ErrConflict
 	} else if !errors.Is(err, ErrNotFound) {
@@ -61,7 +62,7 @@ func (s *Service) CloneRepo(ctx context.Context, owner, name string) error {
 	if s.githubOrg == "" {
 		return errors.New("clone repo: github organization is required")
 	}
-	facts := RepoFacts{Name: name, Owner: owner, DefaultBranch: "main",
+	facts := RepoFacts{Name: name, OwnerID: ownerID, OwnerEmail: ownerEmail, DefaultBranch: "main",
 		CloneURL: "https://github.com/" + s.githubOrg + "/" + name + ".git"}
 	return s.EnsureRepo(ctx, facts)
 }

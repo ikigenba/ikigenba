@@ -51,8 +51,9 @@ func TestManifestVerbMatchesCommittedServiceContract(t *testing.T) {
 	}
 }
 
-func TestAssembledRoutesGateMCPAndServeLandingAndFeed(t *testing.T) {
+func TestAssembledRoutesGateMCPAndCreateRowsFromOwnerIdentity(t *testing.T) {
 	// R-EL8Q-U5GD
+	// R-IEYB-SNAO
 	root := t.TempDir()
 	dbPath := filepath.Join(root, "repos.db")
 	conn, err := appdb.Open(dbPath)
@@ -89,6 +90,10 @@ func TestAssembledRoutesGateMCPAndServeLandingAndFeed(t *testing.T) {
 		peerRequests = append(peerRequests, request.Clone(context.Background()))
 		peerMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
+		if request.Method == http.MethodGet && request.URL.Path == "/token" {
+			_, _ = io.WriteString(w, `{"token":"fixture-token","expires_at":"2026-07-20T14:00:00Z"}`)
+			return
+		}
 		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
 	}))
 	defer peer.Close()
@@ -139,6 +144,31 @@ func TestAssembledRoutesGateMCPAndServeLandingAndFeed(t *testing.T) {
 		t.Fatalf("authenticated tools/list status=%d body=%s", authenticated.Code, authenticated.Body.String())
 	}
 
+	clone := rpcToolCall(t, srv.Handler, "owner-x", "owner@example.com", "clone", map[string]any{"name": "fixture", "owner": "bogus-owner"})
+	if clone.Code != http.StatusOK || strings.Contains(clone.Body.String(), `"isError":true`) {
+		t.Fatalf("clone status=%d body=%s", clone.Code, clone.Body.String())
+	}
+	start := rpcToolCall(t, srv.Handler, "owner-x", "owner@example.com", "session_start", map[string]any{"repo": "fixture", "instructions": "work", "owner": "bogus-owner"})
+	if start.Code != http.StatusOK || strings.Contains(start.Body.String(), `"isError":true`) {
+		t.Fatalf("session_start status=%d body=%s", start.Code, start.Body.String())
+	}
+	var repoOwnerID, repoOwnerEmail, sessionID, sessionOwnerID, sessionOwnerEmail string
+	if err := conn.QueryRow(`SELECT owner_id, owner_email FROM repos WHERE name = 'fixture'`).Scan(&repoOwnerID, &repoOwnerEmail); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.QueryRow(`SELECT id, owner_id, owner_email FROM sessions WHERE repo_name = 'fixture'`).Scan(&sessionID, &sessionOwnerID, &sessionOwnerEmail); err != nil {
+		t.Fatal(err)
+	}
+	if repoOwnerID != "owner-x" || repoOwnerEmail != "owner@example.com" || sessionOwnerID != "owner-x" || sessionOwnerEmail != "owner@example.com" {
+		t.Fatalf("stored identities repo=(%q,%q) session=(%q,%q)", repoOwnerID, repoOwnerEmail, sessionOwnerID, sessionOwnerEmail)
+	}
+	if response := rpcToolCall(t, srv.Handler, "owner-y", "owner@example.com", "get", map[string]any{"name": "fixture"}); !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+		t.Fatalf("cross-owner get body=%s", response.Body.String())
+	}
+	if response := rpcToolCall(t, srv.Handler, "owner-y", "owner@example.com", "session_get", map[string]any{"id": sessionID}); !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+		t.Fatalf("cross-owner session_get body=%s", response.Body.String())
+	}
+
 	landing := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(landing, httptest.NewRequest(http.MethodGet, "/", nil))
 	if landing.Code != http.StatusOK || !strings.HasPrefix(landing.Header().Get("Content-Type"), "text/html") || !strings.Contains(landing.Body.String(), "repos") {
@@ -169,9 +199,25 @@ func TestAssembledRoutesGateMCPAndServeLandingAndFeed(t *testing.T) {
 	}
 	peerMu.Lock()
 	defer peerMu.Unlock()
-	if len(peerRequests) != 0 {
-		t.Fatalf("tools/list unexpectedly called github peer %d times", len(peerRequests))
+	if len(peerRequests) != 1 || peerRequests[0].URL.Path != "/token" {
+		t.Fatalf("assembled peer requests = %#v, want one token request", peerRequests)
 	}
+}
+
+func rpcToolCall(t *testing.T, handler http.Handler, ownerID, ownerEmail, name string, args map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Owner-Id", ownerID)
+	request.Header.Set("X-Owner-Email", ownerEmail)
+	request.Header.Set("X-Client-Id", "fixture")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
 }
 
 func rpcRequest(t *testing.T, authenticated bool) *http.Request {
@@ -183,6 +229,7 @@ func rpcRequest(t *testing.T, authenticated bool) *http.Request {
 	request := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	if authenticated {
+		request.Header.Set("X-Owner-Id", "owner-1")
 		request.Header.Set("X-Owner-Email", "owner@example.com")
 		request.Header.Set("X-Client-Id", "fixture")
 	}

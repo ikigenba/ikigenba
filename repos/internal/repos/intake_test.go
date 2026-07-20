@@ -35,7 +35,7 @@ func TestIntakeExecuteDeliveryProvisionsRepoAndQueuesSession(t *testing.T) {
 		t.Fatalf("Handle: %v", err)
 	}
 	repo, err := fixture.store.GetRepo(context.Background(), "fixture")
-	if err != nil || repo.OwnerEmail != "owner@example.com" {
+	if err != nil || repo.OwnerID != "owner-1" || repo.OwnerEmail != "owner@example.com" {
 		t.Fatalf("repo = %#v, %v", repo, err)
 	}
 	sessions, err := fixture.store.ListSessions(context.Background(), "fixture", "")
@@ -43,7 +43,7 @@ func TestIntakeExecuteDeliveryProvisionsRepoAndQueuesSession(t *testing.T) {
 		t.Fatalf("sessions = %#v, %v", sessions, err)
 	}
 	got := sessions[0]
-	if got.Status != StatusQueued || got.OwnerEmail != "owner@example.com" || got.IssueNumber == nil || *got.IssueNumber != 42 || got.Attempt != 1 || got.LogPath == "" {
+	if got.Status != StatusQueued || got.OwnerID != "owner-1" || got.OwnerEmail != "owner@example.com" || got.IssueNumber == nil || *got.IssueNumber != 42 || got.Attempt != 1 || got.LogPath == "" {
 		t.Fatalf("queued session = %#v", got)
 	}
 }
@@ -121,9 +121,9 @@ func TestIntakeGuardsActiveSessionAndIncrementsAfterTerminal(t *testing.T) {
 func TestIntakeClassifiesPoisonUnknownAndDatabaseFailure(t *testing.T) {
 	// R-EW7U-A34M
 	fixture := newIntakeFixture(t, "")
-	badBody, _ := json.Marshal(webhookEnvelope{Owner: "owner@example.com", Body: "%%%", Headers: map[string]string{"x-github-event": "issues"}})
-	badJSONBody, _ := json.Marshal(webhookEnvelope{Owner: "owner@example.com", Body: base64.StdEncoding.EncodeToString([]byte(`not-json`)), Headers: map[string]string{"x-github-event": "issues"}})
-	missingHeader, _ := json.Marshal(webhookEnvelope{Owner: "owner@example.com", Body: base64.StdEncoding.EncodeToString([]byte(`{}`))})
+	badBody, _ := json.Marshal(webhookEnvelope{OwnerID: "owner-1", OwnerEmail: "owner@example.com", Body: "%%%", Headers: map[string]string{"x-github-event": "issues"}})
+	badJSONBody, _ := json.Marshal(webhookEnvelope{OwnerID: "owner-1", OwnerEmail: "owner@example.com", Body: base64.StdEncoding.EncodeToString([]byte(`not-json`)), Headers: map[string]string{"x-github-event": "issues"}})
+	missingHeader, _ := json.Marshal(webhookEnvelope{OwnerID: "owner-1", OwnerEmail: "owner@example.com", Body: base64.StdEncoding.EncodeToString([]byte(`{}`))})
 	for _, payload := range [][]byte{[]byte(`not-json`), badBody, badJSONBody, missingHeader} {
 		err := fixture.intake.Handle(context.Background(), consumer.Event{Payload: payload})
 		if !errors.Is(err, consumer.ErrSkip) {
@@ -141,6 +141,32 @@ func TestIntakeClassifiesPoisonUnknownAndDatabaseFailure(t *testing.T) {
 	err := closed.intake.Handle(context.Background(), closed.event(t, issueDelivery("alice", "open", "execute")))
 	if err == nil || errors.Is(err, consumer.ErrSkip) {
 		t.Fatalf("database error = %v, want non-ErrSkip error", err)
+	}
+}
+
+func TestIntakeAttributesSessionsByPayloadOwnerIDAndSkipsMissingID(t *testing.T) {
+	// R-IG68-6F1D
+	for _, ownerID := range []string{"owner-x", "owner-y"} {
+		fixture := newIntakeFixture(t, "")
+		ev := fixture.eventIdentity(t, "issues", issueDelivery("alice", "open", "execute"), ownerID, "same@example.com")
+		if err := fixture.intake.Handle(context.Background(), ev); err != nil {
+			t.Fatalf("Handle owner %s: %v", ownerID, err)
+		}
+		sessions, err := fixture.store.ListSessions(context.Background(), "fixture", ownerID)
+		if err != nil || len(sessions) != 1 || sessions[0].OwnerID != ownerID || sessions[0].OwnerEmail != "same@example.com" {
+			t.Fatalf("owner %s sessions = %#v, %v", ownerID, sessions, err)
+		}
+	}
+	missing := newIntakeFixture(t, "")
+	err := missing.intake.Handle(context.Background(), missing.eventIdentity(t, "issues", issueDelivery("alice", "open", "execute"), "", "same@example.com"))
+	if !errors.Is(err, consumer.ErrSkip) {
+		t.Fatalf("missing owner_id error = %v, want ErrSkip", err)
+	}
+	if _, err := missing.store.GetRepo(context.Background(), "fixture"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing owner_id created repo: %v", err)
+	}
+	if sessions, err := missing.store.ListSessions(context.Background(), "", ""); err != nil || len(sessions) != 0 {
+		t.Fatalf("missing owner_id sessions = %#v, %v", sessions, err)
 	}
 }
 
@@ -173,7 +199,7 @@ func (e *intakeTestEnqueuer) Enqueue(ctx context.Context, request SessionRequest
 	}
 	session := Session{
 		ID: fmt.Sprintf("intake-%d", attempt), RepoName: request.RepoName,
-		OwnerEmail: request.OwnerEmail, IssueNumber: request.IssueNumber,
+		OwnerID: request.OwnerID, OwnerEmail: request.OwnerEmail, IssueNumber: request.IssueNumber,
 		Attempt: attempt, Branch: branch,
 		Instructions: request.Instructions, Status: StatusQueued,
 		CreatedAt: e.clock.Now(), LogPath: fmt.Sprintf("state/sessions/intake-%d/output.jsonl", attempt),
@@ -198,13 +224,17 @@ func (f intakeFixture) event(t *testing.T, delivery map[string]any) consumer.Eve
 }
 
 func (f intakeFixture) eventNamed(t *testing.T, name string, delivery map[string]any) consumer.Event {
+	return f.eventIdentity(t, name, delivery, "owner-1", "owner@example.com")
+}
+
+func (f intakeFixture) eventIdentity(t *testing.T, name string, delivery map[string]any, ownerID, ownerEmail string) consumer.Event {
 	t.Helper()
 	delivery["repository"] = map[string]any{"name": "fixture", "clone_url": fileURL(f.remote), "default_branch": "main"}
 	body, err := json.Marshal(delivery)
 	if err != nil {
 		t.Fatalf("marshal delivery: %v", err)
 	}
-	payload, err := json.Marshal(webhookEnvelope{Owner: "owner@example.com", Body: base64.StdEncoding.EncodeToString(body), Headers: map[string]string{"x-github-event": name}})
+	payload, err := json.Marshal(webhookEnvelope{OwnerID: ownerID, OwnerEmail: ownerEmail, Body: base64.StdEncoding.EncodeToString(body), Headers: map[string]string{"x-github-event": name}})
 	if err != nil {
 		t.Fatalf("marshal envelope: %v", err)
 	}
@@ -214,12 +244,12 @@ func (f intakeFixture) eventNamed(t *testing.T, name string, delivery map[string
 func (f intakeFixture) insertRepoAndSession(t *testing.T, status string, attempt int) {
 	t.Helper()
 	ctx := context.Background()
-	repo := Repo{Name: "fixture", OwnerEmail: "owner@example.com", CloneURL: fileURL(f.remote), DefaultBranch: "main", CreatedAt: f.clock.value}
+	repo := Repo{Name: "fixture", OwnerID: "owner-1", OwnerEmail: "owner@example.com", CloneURL: fileURL(f.remote), DefaultBranch: "main", CreatedAt: f.clock.value}
 	if err := f.store.InsertRepo(ctx, repo); err != nil {
 		t.Fatalf("insert repo: %v", err)
 	}
 	issue := 42
-	insertSession(t, f.store, Session{ID: "existing-" + status, RepoName: repo.Name, OwnerEmail: repo.OwnerEmail, IssueNumber: &issue,
+	insertSession(t, f.store, Session{ID: "existing-" + status, RepoName: repo.Name, OwnerID: repo.OwnerID, OwnerEmail: repo.OwnerEmail, IssueNumber: &issue,
 		Attempt: attempt, Branch: "existing", Instructions: "existing", Status: status, CreatedAt: f.clock.value.Add(-time.Hour)})
 }
 

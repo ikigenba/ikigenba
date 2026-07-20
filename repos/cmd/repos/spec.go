@@ -32,8 +32,8 @@ type domainAdapter struct {
 	reaper    *repos.Reaper
 }
 
-func (d *domainAdapter) CloneRepo(ctx context.Context, owner, name string) error {
-	return d.lifecycle.CloneRepo(ctx, owner, name)
+func (d *domainAdapter) CloneRepo(ctx context.Context, ownerID, ownerEmail, name string) error {
+	return d.lifecycle.CloneRepo(ctx, ownerID, ownerEmail, name)
 }
 func (d *domainAdapter) GetRepo(ctx context.Context, name string) (repos.Repo, error) {
 	return d.store.GetRepo(ctx, name)

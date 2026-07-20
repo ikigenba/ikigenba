@@ -19,7 +19,7 @@ type Protocol struct{ peer *GitHubPeer }
 func NewProtocol(peer *GitHubPeer) *Protocol { return &Protocol{peer: peer} }
 
 func identity(session Session) Identity {
-	return Identity{OwnerEmail: session.OwnerEmail, SessionID: session.ID}
+	return Identity{OwnerID: session.OwnerID, OwnerEmail: session.OwnerEmail, SessionID: session.ID}
 }
 
 func (p *Protocol) FetchIssue(ctx context.Context, session Session) (IssueContent, error) {

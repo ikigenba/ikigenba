@@ -81,7 +81,7 @@ func TestWebhookIntakeEnqueuesRunnableSessionAndRingsDispatcher(t *testing.T) {
 		engine := fixture.runner(t)
 		issue := 42
 		handRolled := repos.Session{
-			ID: "hand-rolled", RepoName: "fixture", OwnerEmail: "owner@example.com",
+			ID: "hand-rolled", RepoName: "fixture", OwnerID: "owner-1", OwnerEmail: "owner@example.com",
 			IssueNumber: &issue, Attempt: 1, Branch: "ikigenba/issue-42",
 			Instructions: "Resolve GitHub issue #42.", Status: repos.StatusQueued,
 			CreatedAt: fixture.clock.Now(),
@@ -139,7 +139,7 @@ func webhookIssueEvent(t *testing.T, remote string) consumer.Event {
 		t.Fatal(err)
 	}
 	payload, err := json.Marshal(map[string]any{
-		"name": "fixture", "owner": "owner@example.com",
+		"name": "fixture", "owner_id": "owner-1", "owner_email": "owner@example.com",
 		"content_type": "application/json", "body": base64.StdEncoding.EncodeToString(delivery),
 		"headers": map[string]string{"x-github-event": "issues"},
 	})
@@ -202,7 +202,7 @@ func TestIssueSessionCreatesFreshWorktreeAndPinsInstructionsBeforeSend(t *testin
 	})
 	runner := fixture.runner(t)
 	session, err := runner.Enqueue(context.Background(), SessionRequest{
-		ID: "issue-one", RepoName: "alpha", OwnerEmail: "owner@example.com", IssueNumber: &issue,
+		ID: "issue-one", RepoName: "alpha", OwnerID: "owner-1", OwnerEmail: "owner@example.com", IssueNumber: &issue,
 	})
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
@@ -239,14 +239,14 @@ func TestIssueSessionCreatesFreshWorktreeAndPinsInstructionsBeforeSend(t *testin
 	fixture.addRepo(t, "beta")
 	failed := "inspected failure"
 	if err := fixture.store.InsertSession(context.Background(), repos.Session{
-		ID: "old-failure", RepoName: "beta", OwnerEmail: "owner@example.com",
+		ID: "old-failure", RepoName: "beta", OwnerID: "owner-1", OwnerEmail: "owner@example.com",
 		IssueNumber: &issue, Attempt: 1, Branch: "ikigenba/issue-41", Instructions: "old",
 		Status: repos.StatusFailed, Error: &failed, CreatedAt: fixture.clock.Now(), LogPath: "old.jsonl",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	next, err := runner.Enqueue(context.Background(), SessionRequest{
-		ID: "issue-two", RepoName: "beta", OwnerEmail: "owner@example.com", IssueNumber: &issue,
+		ID: "issue-two", RepoName: "beta", OwnerID: "owner-1", OwnerEmail: "owner@example.com", IssueNumber: &issue,
 	})
 	if err != nil || next.Attempt != 2 || next.Branch != "ikigenba/issue-41.2" {
 		t.Fatalf("next attempt = %#v, %v", next, err)
@@ -254,7 +254,7 @@ func TestIssueSessionCreatesFreshWorktreeAndPinsInstructionsBeforeSend(t *testin
 
 	manualText := "manual text\nverbatim\n"
 	manual, err := runner.Enqueue(context.Background(), SessionRequest{
-		ID: "manual", RepoName: "alpha", OwnerEmail: "owner@example.com", Instructions: manualText,
+		ID: "manual", RepoName: "alpha", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Instructions: manualText,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -300,7 +300,7 @@ func TestDispatcherEnforcesGlobalAndPerRepoCapsInFIFOOrder(t *testing.T) {
 	for i, name := range []string{"one", "two", "three"} {
 		fixture.clock.Advance(time.Second)
 		if _, err := runner.Enqueue(context.Background(), SessionRequest{
-			ID: fmt.Sprintf("fifo-%d", i), RepoName: name, OwnerEmail: "owner@example.com", Instructions: name,
+			ID: fmt.Sprintf("fifo-%d", i), RepoName: name, OwnerID: "owner-1", OwnerEmail: "owner@example.com", Instructions: name,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -325,7 +325,7 @@ func TestDispatcherEnforcesGlobalAndPerRepoCapsInFIFOOrder(t *testing.T) {
 	for i := range 2 {
 		fixture.clock.Advance(time.Second)
 		if _, err := runner.Enqueue(context.Background(), SessionRequest{
-			ID: fmt.Sprintf("same-%d", i), RepoName: "one", OwnerEmail: "owner@example.com", Instructions: fmt.Sprintf("same-%d", i),
+			ID: fmt.Sprintf("same-%d", i), RepoName: "one", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Instructions: fmt.Sprintf("same-%d", i),
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -371,7 +371,7 @@ func TestTTLAndUserCancellationAreClassifiedAndReleaseRepo(t *testing.T) {
 			fixture.clock.Advance(time.Second)
 		}
 		if _, err := runner.Enqueue(context.Background(), SessionRequest{
-			ID: id, RepoName: "alpha", OwnerEmail: "owner@example.com", Instructions: id,
+			ID: id, RepoName: "alpha", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Instructions: id,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -394,7 +394,7 @@ func TestTTLAndUserCancellationAreClassifiedAndReleaseRepo(t *testing.T) {
 	runner.ttl = time.Minute
 
 	if _, err := runner.Enqueue(context.Background(), SessionRequest{
-		ID: "cancel", RepoName: "alpha", OwnerEmail: "owner@example.com", Instructions: "cancel",
+		ID: "cancel", RepoName: "alpha", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Instructions: "cancel",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -416,8 +416,8 @@ func TestRecoverSweepsRunningAndPreservesQueuedForDispatch(t *testing.T) {
 	fixture.addRepo(t, "alpha")
 	now := fixture.clock.Now()
 	for _, session := range []repos.Session{
-		{ID: "orphan", RepoName: "alpha", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "orphan", Instructions: "old", Status: repos.StatusRunning, CreatedAt: now, LogPath: "old.jsonl"},
-		{ID: "survivor", RepoName: "alpha", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "ikigenba/session-survivor", Instructions: "queued", Status: repos.StatusQueued, CreatedAt: now.Add(time.Second), LogPath: filepath.Join(fixture.stateRoot, "sessions", "survivor", "output.jsonl")},
+		{ID: "orphan", RepoName: "alpha", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "orphan", Instructions: "old", Status: repos.StatusRunning, CreatedAt: now, LogPath: "old.jsonl"},
+		{ID: "survivor", RepoName: "alpha", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "ikigenba/session-survivor", Instructions: "queued", Status: repos.StatusQueued, CreatedAt: now.Add(time.Second), LogPath: filepath.Join(fixture.stateRoot, "sessions", "survivor", "output.jsonl")},
 	} {
 		if err := fixture.store.InsertSession(context.Background(), session); err != nil {
 			t.Fatal(err)
@@ -482,7 +482,7 @@ func TestPassingCheckPushesBranchCreatesPRAndPersistsURL(t *testing.T) {
 	issue := 23
 	fixture.config.Factory = committingFactory(filepath.Join(fixture.stateRoot, "sessions", "passing", "worktree"), "agent-pass")
 	runner := fixture.runner(t)
-	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "passing", RepoName: "passing", OwnerEmail: "owner@example.com", IssueNumber: &issue})
+	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "passing", RepoName: "passing", OwnerID: "owner-1", OwnerEmail: "owner@example.com", IssueNumber: &issue})
 	ended := waitStatus(t, fixture.store, session.ID, repos.StatusSucceeded)
 	if ended.PRURL == nil || *ended.PRURL != "https://example.test/pull/1" {
 		t.Fatalf("persisted PR URL = %#v", ended.PRURL)
@@ -525,7 +525,7 @@ func TestFailingCheckPushesBranchWithoutPRAndPersistsFullLog(t *testing.T) {
 	issue := 24
 	fixture.config.Factory = committingFactory(filepath.Join(fixture.stateRoot, "sessions", "failing", "worktree"), "agent-fail")
 	runner := fixture.runner(t)
-	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "failing", RepoName: "failing", OwnerEmail: "owner@example.com", IssueNumber: &issue})
+	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "failing", RepoName: "failing", OwnerID: "owner-1", OwnerEmail: "owner@example.com", IssueNumber: &issue})
 	ended := waitStatus(t, fixture.store, session.ID, repos.StatusFailed)
 	if ended.Error == nil || !strings.Contains(*ended.Error, "final-tail") || recorder.count("pr_create") != 0 {
 		t.Fatalf("failed outcome = %#v, PR calls = %d", ended, recorder.count("pr_create"))
@@ -556,7 +556,7 @@ func TestMissingCheckCreatesPRWithNoCheckDeclaration(t *testing.T) {
 	issue := 25
 	fixture.config.Factory = committingFactory(filepath.Join(fixture.stateRoot, "sessions", "unchecked", "worktree"), "agent-unchecked")
 	runner := fixture.runner(t)
-	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "unchecked", RepoName: "unchecked", OwnerEmail: "owner@example.com", IssueNumber: &issue})
+	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "unchecked", RepoName: "unchecked", OwnerID: "owner-1", OwnerEmail: "owner@example.com", IssueNumber: &issue})
 	waitStatus(t, fixture.store, session.ID, repos.StatusSucceeded)
 	if body := recorder.only(t, "pr_create").string("body"); !strings.Contains(body, "no check declared") {
 		t.Fatalf("PR body = %q", body)
@@ -578,7 +578,7 @@ func TestNoCommitFailsWithoutPushOrPR(t *testing.T) {
 	})
 	issue := 26
 	runner := fixture.runner(t)
-	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "empty", RepoName: "empty", OwnerEmail: "owner@example.com", IssueNumber: &issue})
+	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "empty", RepoName: "empty", OwnerID: "owner-1", OwnerEmail: "owner@example.com", IssueNumber: &issue})
 	ended := waitStatus(t, fixture.store, session.ID, repos.StatusFailed)
 	if ended.Error == nil || *ended.Error != "no commits produced" || recorder.count("pr_create") != 0 || remoteHasBranch(t, remote, session.Branch) {
 		t.Fatalf("no-commit outcome = %#v, calls = %#v", ended, recorder.calls)
@@ -598,7 +598,7 @@ func TestEngineErrorSurfacesVerbatimReasonWithoutCommitMask(t *testing.T) {
 	})
 	issue := 29
 	runner := fixture.runner(t)
-	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "engine-error", RepoName: "engine-error", OwnerEmail: "owner@example.com", IssueNumber: &issue})
+	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "engine-error", RepoName: "engine-error", OwnerID: "owner-1", OwnerEmail: "owner@example.com", IssueNumber: &issue})
 	ended := waitStatus(t, fixture.store, session.ID, repos.StatusFailed)
 	if ended.Error == nil || *ended.Error != reason {
 		t.Fatalf("engine failure reason = %#v, want %q", ended.Error, reason)
@@ -624,7 +624,7 @@ func TestRetryPushesAttemptTwoBranch(t *testing.T) {
 	issue := 27
 	reason := "old failure"
 	if err := fixture.store.InsertSession(context.Background(), repos.Session{
-		ID: "old", RepoName: "retry", OwnerEmail: "owner@example.com", IssueNumber: &issue,
+		ID: "old", RepoName: "retry", OwnerID: "owner-1", OwnerEmail: "owner@example.com", IssueNumber: &issue,
 		Attempt: 1, Branch: "ikigenba/issue-27", Status: repos.StatusFailed, Error: &reason,
 		CreatedAt: fixture.clock.Now(), LogPath: "old.log",
 	}); err != nil {
@@ -635,7 +635,7 @@ func TestRetryPushesAttemptTwoBranch(t *testing.T) {
 	fixture.config.Protocol = repos.NewProtocol(repos.NewGitHubPeerAt(recorder.URL, recorder.Client()))
 	fixture.config.Factory = committingFactory(filepath.Join(fixture.stateRoot, "sessions", "retry-2", "worktree"), "agent-retry")
 	runner := fixture.runner(t)
-	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "retry-2", RepoName: "retry", OwnerEmail: "owner@example.com", IssueNumber: &issue})
+	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "retry-2", RepoName: "retry", OwnerID: "owner-1", OwnerEmail: "owner@example.com", IssueNumber: &issue})
 	waitStatus(t, fixture.store, session.ID, repos.StatusSucceeded)
 	if session.Branch != "ikigenba/issue-27.2" || !remoteHasBranch(t, remote, session.Branch) {
 		t.Fatalf("retry branch = %q, pushed = %v", session.Branch, remoteHasBranch(t, remote, session.Branch))
@@ -652,7 +652,7 @@ func TestManualSessionSkipsIssueTrafficAndCreatesPRWithoutFixes(t *testing.T) {
 	fixture.config.Protocol = repos.NewProtocol(repos.NewGitHubPeerAt(recorder.URL, recorder.Client()))
 	fixture.config.Factory = committingFactory(filepath.Join(fixture.stateRoot, "sessions", "manual-protocol", "worktree"), "agent-manual")
 	runner := fixture.runner(t)
-	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "manual-protocol", RepoName: "manual", OwnerEmail: "owner@example.com", Instructions: "manual work"})
+	session := enqueueAndDispatch(t, runner, SessionRequest{ID: "manual-protocol", RepoName: "manual", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Instructions: "manual work"})
 	waitStatus(t, fixture.store, session.ID, repos.StatusSucceeded)
 	if recorder.count("label_add") != 0 || recorder.count("label_remove") != 0 || recorder.count("issue_comment") != 0 {
 		t.Fatalf("manual issue traffic = %#v", recorder.calls)
@@ -719,7 +719,7 @@ func (f *fixture) addRepo(t *testing.T, name string) (string, string) {
 		t.Fatalf("clone %s: %v", name, err)
 	}
 	if err := f.store.InsertRepo(context.Background(), repos.Repo{
-		Name: name, OwnerEmail: "owner@example.com", CloneURL: "file://" + filepath.ToSlash(remote),
+		Name: name, OwnerID: "owner-1", OwnerEmail: "owner@example.com", CloneURL: "file://" + filepath.ToSlash(remote),
 		DefaultBranch: "main", CreatedAt: f.clock.Now(),
 	}); err != nil {
 		t.Fatal(err)

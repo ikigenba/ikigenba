@@ -30,6 +30,7 @@ type Intake struct {
 type SessionRequest struct {
 	ID           string
 	RepoName     string
+	OwnerID      string
 	OwnerEmail   string
 	IssueNumber  *int
 	Instructions string
@@ -66,7 +67,8 @@ func Subscriptions(hookName string) []consumer.Subscription {
 
 type webhookEnvelope struct {
 	Name        string            `json:"name"`
-	Owner       string            `json:"owner"`
+	OwnerID     string            `json:"owner_id"`
+	OwnerEmail  string            `json:"owner_email"`
 	ReceivedAt  string            `json:"received_at"`
 	ContentType string            `json:"content_type"`
 	Body        string            `json:"body"`
@@ -91,7 +93,8 @@ type ghDelivery struct {
 		DefaultBranch string `json:"default_branch"`
 	} `json:"repository"`
 
-	owner string
+	ownerID    string
+	ownerEmail string
 }
 
 var ghHandlers = map[string]func(*Intake, context.Context, ghDelivery) error{
@@ -116,6 +119,9 @@ func (in *Intake) Handle(ctx context.Context, ev consumer.Event) error {
 	if err := json.Unmarshal(body, &delivery); err != nil {
 		return in.skip("decode GitHub delivery", err)
 	}
+	if envelope.OwnerID == "" {
+		return in.skip("attribute webhooks payload", errors.New("missing owner_id"))
+	}
 	handler, ok := ghHandlers[eventName]
 	if !ok {
 		return nil
@@ -123,7 +129,8 @@ func (in *Intake) Handle(ctx context.Context, ev consumer.Event) error {
 	if delivery.Sender.Login == in.botLogin {
 		return nil
 	}
-	delivery.owner = envelope.Owner
+	delivery.ownerID = envelope.OwnerID
+	delivery.ownerEmail = envelope.OwnerEmail
 	return handler(in, ctx, delivery)
 }
 
@@ -144,7 +151,8 @@ func (in *Intake) handleIssues(ctx context.Context, delivery ghDelivery) error {
 		Name:          delivery.Repository.Name,
 		CloneURL:      delivery.Repository.CloneURL,
 		DefaultBranch: delivery.Repository.DefaultBranch,
-		Owner:         delivery.owner,
+		OwnerID:       delivery.ownerID,
+		OwnerEmail:    delivery.ownerEmail,
 	}
 	if err := in.svc.EnsureRepo(ctx, facts); err != nil {
 		return fmt.Errorf("provision delivery repository: %w", err)
@@ -152,7 +160,8 @@ func (in *Intake) handleIssues(ctx context.Context, delivery ghDelivery) error {
 	issue := delivery.Issue.Number
 	_, err := in.enqueuer.Enqueue(ctx, SessionRequest{
 		RepoName:     facts.Name,
-		OwnerEmail:   delivery.owner,
+		OwnerID:      delivery.ownerID,
+		OwnerEmail:   delivery.ownerEmail,
 		IssueNumber:  &issue,
 		Instructions: fmt.Sprintf("Resolve GitHub issue #%d.", issue),
 	})

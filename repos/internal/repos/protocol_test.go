@@ -21,8 +21,8 @@ func TestProtocolAdmissionOrdersLabelsAndAssertsIdentity(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
 			t.Error(err)
 		}
-		if r.Header.Get("X-Owner-Email") != "owner@example.com" || r.Header.Get("X-Client-Id") != "repos:session-7" {
-			t.Errorf("identity headers = %q, %q", r.Header.Get("X-Owner-Email"), r.Header.Get("X-Client-Id"))
+		if r.Header.Get("X-Owner-Id") != "owner-1" || r.Header.Get("X-Owner-Email") != "owner@example.com" || r.Header.Get("X-Client-Id") != "repos:session-7" {
+			t.Errorf("identity headers = %q, %q, %q", r.Header.Get("X-Owner-Id"), r.Header.Get("X-Owner-Email"), r.Header.Get("X-Client-Id"))
 		}
 		names = append(names, call.Params.Name)
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{}})
@@ -31,7 +31,7 @@ func TestProtocolAdmissionOrdersLabelsAndAssertsIdentity(t *testing.T) {
 	issue := 7
 	protocol := NewProtocol(NewGitHubPeerAt(server.URL, server.Client()))
 	if err := protocol.Admit(context.Background(), Session{
-		ID: "session-7", RepoName: "alpha", OwnerEmail: "owner@example.com", IssueNumber: &issue, Attempt: 1,
+		ID: "session-7", RepoName: "alpha", OwnerID: "owner-1", OwnerEmail: "owner@example.com", IssueNumber: &issue, Attempt: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
