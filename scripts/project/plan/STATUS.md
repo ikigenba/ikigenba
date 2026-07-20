@@ -11,4 +11,3 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 27
 
-- Phase 26 ⬜ realizes D28 (owner-id keying) + D22/D21/D19/D17 revisions — rebuild the `scripts` table on `owner_id`, rekey all scoping/`ownsScript` on the id with `owner_email` as a write-once snapshot, expose both owner fields, and assert `suite.mcp` identity by id
