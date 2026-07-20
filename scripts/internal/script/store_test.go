@@ -57,6 +57,7 @@ func seedScript(t *testing.T, s *Store, owner string) Script {
 	now := nowStr()
 	sc := Script{
 		ID:         ids.NewULID(),
+		OwnerID:    owner,
 		OwnerEmail: owner,
 		Name:       "nightly",
 		Body:       "print('hi')",
@@ -143,6 +144,7 @@ func TestSourcePathRoundTrip(t *testing.T) {
 	now := nowStr()
 	sc := Script{
 		ID:         ids.NewULID(),
+		OwnerID:    ownerA,
 		OwnerEmail: ownerA,
 		Name:       "nightly",
 		Body:       "print('hi')",
@@ -510,6 +512,11 @@ func TestTriggersAndScriptsForEvent(t *testing.T) {
 	sc1 := seedScript(t, s, ownerA)
 	sc2 := seedScript(t, s, ownerA)
 	sc3 := seedScript(t, s, ownerA)
+	// The owner arguments are stable ids. Give every row the same display email
+	// so the foreign-id checks below cannot accidentally pass via email scoping.
+	if _, err := s.db.ExecContext(ctx, `UPDATE scripts SET owner_email = 'shared@example.test'`); err != nil {
+		t.Fatal(err)
+	}
 	svc := NewService(s, t.TempDir(), nil)
 
 	// The service derives source from the canonical filter; callers do not get

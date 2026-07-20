@@ -59,6 +59,7 @@ def mcp(service, verb, arguments=None):
         services[service].rstrip("/") + "/mcp",
         data=json.dumps(payload).encode("utf-8"),
         headers={
+            "X-Owner-Id": _runtime_value("SUITE_OWNER_ID"),
             "X-Owner-Email": _runtime_value("SUITE_OWNER_EMAIL"),
             "X-Client-Id": f"scripts:{_runtime_value('SUITE_SCRIPT_ID')}",
             "Content-Type": "application/json",

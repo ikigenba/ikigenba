@@ -78,7 +78,12 @@ type UpdateInput struct {
 
 // Create validates name/body, generates an id, defaults the config, and inserts
 // the script.
-func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Script, error) {
+func (s *Service) Create(ctx context.Context, ownerID string, in CreateInput) (Script, error) {
+	return s.CreateForOwner(ctx, ownerID, ownerID, in)
+}
+
+// CreateForOwner captures the stable owner id and display email independently.
+func (s *Service) CreateForOwner(ctx context.Context, ownerID, ownerEmail string, in CreateInput) (Script, error) {
 	if strings.TrimSpace(in.Name) == "" {
 		return Script{}, fmt.Errorf("%w: name is required", ErrValidation)
 	}
@@ -92,7 +97,8 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Scr
 	now := s.nowStr()
 	sc := Script{
 		ID:         ids.NewULID(),
-		OwnerEmail: owner,
+		OwnerID:    ownerID,
+		OwnerEmail: ownerEmail,
 		Name:       in.Name,
 		Body:       in.Body,
 		Config:     cfg,
@@ -115,7 +121,12 @@ const maxImportBytes = 1 << 20
 // and upserts on (owner, source_path): re-importing the same path updates the
 // same script instead of creating a duplicate. Direction is strictly
 // Dropbox → scripts; nothing writes back. See docs/adr-dropbox-import-sync.md.
-func (s *Service) Import(ctx context.Context, owner, sourcePath, name string) (Script, error) {
+func (s *Service) Import(ctx context.Context, ownerID, sourcePath, name string) (Script, error) {
+	return s.ImportForOwner(ctx, ownerID, ownerID, sourcePath, name)
+}
+
+// ImportForOwner captures the stable owner id and display email independently.
+func (s *Service) ImportForOwner(ctx context.Context, ownerID, ownerEmail, sourcePath, name string) (Script, error) {
 	if strings.TrimSpace(sourcePath) == "" {
 		return Script{}, fmt.Errorf("%w: source_path is required", ErrValidation)
 	}
@@ -136,7 +147,7 @@ func (s *Service) Import(ctx context.Context, owner, sourcePath, name string) (S
 	// runnable. Config is left as-is on re-import (the upsert refreshes body+name
 	// only), so this default only takes effect on the first import.
 	cfg := Config{Interpreter: "python3"}
-	return s.store.UpsertScriptBySource(ctx, owner, sourcePath, name, string(data), cfg, s.nowStr())
+	return s.store.UpsertScriptBySource(ctx, ownerID, ownerEmail, sourcePath, name, string(data), cfg, s.nowStr())
 }
 
 // Update applies the optional Name/Body/Config pointers (nil = leave as-is) and

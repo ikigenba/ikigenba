@@ -57,9 +57,9 @@ func (s *Store) InsertScript(ctx context.Context, sc Script) error {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO scripts (id, owner_email, name, body, config_json, source_path, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		sc.ID, sc.OwnerEmail, nullStr(sc.Name), sc.Body, cfg, nullStr(sc.SourcePath), sc.CreatedAt, sc.UpdatedAt,
+		`INSERT INTO scripts (id, owner_id, owner_email, name, body, config_json, source_path, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sc.ID, sc.OwnerID, sc.OwnerEmail, nullStr(sc.Name), sc.Body, cfg, nullStr(sc.SourcePath), sc.CreatedAt, sc.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("script: insert: %w", err)
@@ -68,14 +68,14 @@ func (s *Store) InsertScript(ctx context.Context, sc Script) error {
 }
 
 // UpsertScriptBySource inserts an import-managed script or, when one already
-// exists for (owner_email, source_path), updates it in place — refreshing
+// exists for (owner_id, source_path), updates it in place — refreshing
 // name/body/updated_at only and leaving config_json as-is (a re-import is a
 // content pull, not a config change). The partial unique index
 // idx_scripts_source backs the ON CONFLICT target, making idempotency a schema
 // invariant rather than a convention. Returns the resolved script (its id is the
 // freshly-generated ULID on insert, or the existing row's id on update via
 // RETURNING). config is the value used only on the INSERT arm.
-func (s *Store) UpsertScriptBySource(ctx context.Context, owner, sourcePath, name, body string, config Config, now string) (Script, error) {
+func (s *Store) UpsertScriptBySource(ctx context.Context, ownerID, ownerEmail, sourcePath, name, body string, config Config, now string) (Script, error) {
 	cfg, err := marshalConfig(config)
 	if err != nil {
 		return Script{}, err
@@ -83,25 +83,25 @@ func (s *Store) UpsertScriptBySource(ctx context.Context, owner, sourcePath, nam
 	id := ids.NewULID()
 	var resolvedID string
 	err = s.db.QueryRowContext(ctx,
-		`INSERT INTO scripts (id, owner_email, name, body, config_json, source_path, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(owner_email, source_path) WHERE source_path IS NOT NULL DO UPDATE SET
+		`INSERT INTO scripts (id, owner_id, owner_email, name, body, config_json, source_path, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(owner_id, source_path) WHERE source_path IS NOT NULL DO UPDATE SET
 		     name = excluded.name, body = excluded.body, updated_at = excluded.updated_at
 		 RETURNING id`,
-		id, owner, nullStr(name), body, cfg, sourcePath, now, now,
+		id, ownerID, ownerEmail, nullStr(name), body, cfg, sourcePath, now, now,
 	).Scan(&resolvedID)
 	if err != nil {
 		return Script{}, fmt.Errorf("script: upsert by source: %w", err)
 	}
 	// Read the resolved row back so the caller (and its result) reflects exactly
 	// what landed (config is the pre-existing one on an update).
-	return s.GetScript(ctx, owner, resolvedID)
+	return s.GetScript(ctx, ownerID, resolvedID)
 }
 
 func (s *Store) GetScript(ctx context.Context, owner, id string) (Script, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, owner_email, name, body, config_json, source_path, created_at, updated_at
-		   FROM scripts WHERE id = ? AND owner_email = ?`,
+		`SELECT id, owner_id, owner_email, name, body, config_json, source_path, created_at, updated_at
+		   FROM scripts WHERE id = ? AND owner_id = ?`,
 		id, owner,
 	)
 	return scanScript(row)
@@ -114,7 +114,7 @@ func (s *Store) GetScript(ctx context.Context, owner, id string) (Script, error)
 // run as failed).
 func (s *Store) ScriptForRun(ctx context.Context, scriptID string) (Script, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, owner_email, name, body, config_json, source_path, created_at, updated_at
+		`SELECT id, owner_id, owner_email, name, body, config_json, source_path, created_at, updated_at
 		   FROM scripts WHERE id = ?`,
 		scriptID,
 	)
@@ -130,7 +130,7 @@ func (s *Store) UpdateScript(ctx context.Context, owner string, sc Script) error
 	}
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE scripts SET name = ?, body = ?, config_json = ?, updated_at = ?
-		  WHERE id = ? AND owner_email = ?`,
+		  WHERE id = ? AND owner_id = ?`,
 		nullStr(sc.Name), sc.Body, cfg, sc.UpdatedAt, sc.ID, owner,
 	)
 	if err != nil {
@@ -172,7 +172,7 @@ func (s *Store) DeleteScript(ctx context.Context, owner, id string) error {
 	defer tx.Rollback()
 
 	res, err := tx.ExecContext(ctx,
-		`DELETE FROM scripts WHERE id = ? AND owner_email = ?`, id, owner,
+		`DELETE FROM scripts WHERE id = ? AND owner_id = ?`, id, owner,
 	)
 	if err != nil {
 		return fmt.Errorf("script: delete: %w", err)
@@ -193,8 +193,8 @@ func (s *Store) DeleteScript(ctx context.Context, owner, id string) error {
 
 func (s *Store) ListScripts(ctx context.Context, owner string) ([]Script, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, owner_email, name, body, config_json, source_path, created_at, updated_at
-		   FROM scripts WHERE owner_email = ? ORDER BY created_at DESC, id DESC`,
+		`SELECT id, owner_id, owner_email, name, body, config_json, source_path, created_at, updated_at
+		   FROM scripts WHERE owner_id = ? ORDER BY created_at DESC, id DESC`,
 		owner,
 	)
 	if err != nil {
@@ -275,19 +275,19 @@ func (s *Store) GetRun(ctx context.Context, owner, runID string) (Run, error) {
 		`SELECT r.id, r.script_id, r.status, r.exit_code, r.started_at, r.ended_at, r.error,
 		        r.trigger_source, r.trigger_kind, r.trigger_subject, r.trigger_event_id, r.stdout_path, r.stderr_path
 		   FROM runs r JOIN scripts s ON s.id = r.script_id
-		  WHERE r.id = ? AND s.owner_email = ?`,
+		  WHERE r.id = ? AND s.owner_id = ?`,
 		runID, owner,
 	)
 	return scanRun(row)
 }
 
-// ListRuns returns the owner's runs (JOIN scripts on owner_email), newest
+// ListRuns returns the owner's runs (JOIN scripts on owner_id), newest
 // first. scriptID/status "" = no filter on that dimension.
 func (s *Store) ListRuns(ctx context.Context, owner, scriptID, status string) ([]Run, error) {
 	q := `SELECT r.id, r.script_id, r.status, r.exit_code, r.started_at, r.ended_at, r.error,
 	             r.trigger_source, r.trigger_kind, r.trigger_subject, r.trigger_event_id, r.stdout_path, r.stderr_path
 	        FROM runs r JOIN scripts s ON s.id = r.script_id
-	       WHERE s.owner_email = ?`
+	       WHERE s.owner_id = ?`
 	args := []any{owner}
 	if scriptID != "" {
 		q += ` AND r.script_id = ?`
@@ -492,7 +492,7 @@ func (s *Store) ScriptsForEvent(ctx context.Context, source, key string) ([]stri
 func (s *Store) ownsScript(ctx context.Context, owner, scriptID string) error {
 	var exists int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT 1 FROM scripts WHERE id = ? AND owner_email = ?`, scriptID, owner,
+		`SELECT 1 FROM scripts WHERE id = ? AND owner_id = ?`, scriptID, owner,
 	).Scan(&exists)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
@@ -537,7 +537,7 @@ func scanScript(sc scanner) (Script, error) {
 		srcPath sql.NullString
 	)
 	err := sc.Scan(
-		&out.ID, &out.OwnerEmail, &name, &out.Body, &cfgJSON, &srcPath, &out.CreatedAt, &out.UpdatedAt,
+		&out.ID, &out.OwnerID, &out.OwnerEmail, &name, &out.Body, &cfgJSON, &srcPath, &out.CreatedAt, &out.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Script{}, ErrNotFound

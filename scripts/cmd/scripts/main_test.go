@@ -57,7 +57,7 @@ func TestScriptsFeedFramesRoutedCompletionEvent(t *testing.T) {
 	store := script.NewStore(conn)
 	store.Outbox = ob
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	sc := script.Script{ID: "script-1", OwnerEmail: "owner@example.com", Name: "nightly-export", Body: "print('ok')", Config: script.Config{Interpreter: "python3", TimeoutSecs: 30}, CreatedAt: now, UpdatedAt: now}
+	sc := script.Script{ID: "script-1", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Name: "nightly-export", Body: "print('ok')", Config: script.Config{Interpreter: "python3", TimeoutSecs: 30}, CreatedAt: now, UpdatedAt: now}
 	if err := store.InsertScript(context.Background(), sc); err != nil {
 		t.Fatalf("insert script: %v", err)
 	}

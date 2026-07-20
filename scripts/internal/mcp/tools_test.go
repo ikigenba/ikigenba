@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,7 @@ import (
 )
 
 const (
+	ownerID     = "owner-123"
 	ownerEmail  = "owner@example.com"
 	clientID    = "client-123"
 	testVersion = "1.2.3"
@@ -68,6 +70,7 @@ type testHarness struct {
 	runner     *fakeRunner
 	runsDir    string
 	svc        *script.Service
+	db         *sql.DB
 }
 
 // newTestHarness wires a real store over a temp DB + a fake recording runner,
@@ -129,7 +132,7 @@ func newTestHarness(t *testing.T) testHarness {
 		t.Fatalf("build mcp handler: %v", err)
 	}
 	captured.HandleLoopback("GET /run-content", svc.RunContentHandler())
-	return testHarness{mcpHandler: h, server: srv.Handler, runner: fr, runsDir: runsDir, svc: svc}
+	return testHarness{mcpHandler: h, server: srv.Handler, runner: fr, runsDir: runsDir, svc: svc, db: conn}
 }
 
 func newTestHandler(t *testing.T) (http.Handler, *fakeRunner, string) {
@@ -227,8 +230,110 @@ func TestImportDispatch(t *testing.T) {
 	}
 }
 
+func TestOwnerIDScopesHandlersAndSnapshotsEmail(t *testing.T) {
+	// R-Q3TJ-BJ0L
+	// R-Q51F-PARA
+	// R-Q69C-32HZ
+	// R-Q7H8-GU8O
+	// R-Q8P4-ULZD
+	h := newTestHarness(t)
+	h.svc.Fetcher = fakeFetcher{data: []byte("print('imported')\n")}
+	const (
+		idA    = "opaque-owner-a"
+		idB    = "opaque-owner-b"
+		shared = "shared@example.test"
+	)
+
+	createdA := callAs(t, h.mcpHandler, idA, shared, tool("create"), map[string]any{"name": "a", "body": "print('a')"})
+	scriptA := createdA["structuredContent"].(map[string]any)["script_id"].(string)
+	createdB := callAs(t, h.mcpHandler, idB, shared, tool("create"), map[string]any{"name": "b", "body": "print('b')"})
+	scriptB := createdB["structuredContent"].(map[string]any)["script_id"].(string)
+	var storedID, storedEmail string
+	if err := h.db.QueryRow(`SELECT owner_id, owner_email FROM scripts WHERE id = ?`, scriptA).Scan(&storedID, &storedEmail); err != nil {
+		t.Fatal(err)
+	}
+	if storedID != idA || storedEmail != shared {
+		t.Fatalf("stored identity = (%q, %q), want (%q, %q)", storedID, storedEmail, idA, shared)
+	}
+
+	list := callAs(t, h.mcpHandler, idA, shared, tool("list"), nil)["structuredContent"].(map[string]any)
+	listed := list["scripts"].([]any)
+	if len(listed) != 1 || listed[0].(map[string]any)["ID"] != scriptA {
+		t.Fatalf("owner A list = %#v; foreign same-email script %s must be absent", listed, scriptB)
+	}
+	assertScriptOwner(t, listed[0].(map[string]any), idA, shared)
+
+	for _, verb := range []string{"get", "update", "delete", "run"} {
+		args := map[string]any{"script_id": scriptA}
+		if verb == "update" {
+			args["name"] = "foreign edit"
+		}
+		assertToolErrorCode(t, callAs(t, h.mcpHandler, idB, shared, tool(verb), args), "not_found")
+	}
+
+	get := callAs(t, h.mcpHandler, idA, "changed@example.test", tool("get"), map[string]any{"script_id": scriptA})["structuredContent"].(map[string]any)
+	assertScriptOwner(t, get, idA, shared)
+	updated := callAs(t, h.mcpHandler, idA, "changed@example.test", tool("update"), map[string]any{"script_id": scriptA, "name": "owned edit"})["structuredContent"].(map[string]any)
+	assertScriptOwner(t, updated, idA, shared)
+	if isError(callAs(t, h.mcpHandler, idA, shared, tool("run"), map[string]any{"script_id": scriptA})) {
+		t.Fatal("owning run unexpectedly failed")
+	}
+
+	firstImport := callAs(t, h.mcpHandler, idA, shared, tool("import"), map[string]any{"source_path": "/scripts/shared.py"})
+	importA := firstImport["structuredContent"].(map[string]any)["script_id"].(string)
+	secondImport := callAs(t, h.mcpHandler, idA, "new@example.test", tool("import"), map[string]any{"source_path": "/scripts/shared.py"})
+	if got := secondImport["structuredContent"].(map[string]any)["script_id"].(string); got != importA {
+		t.Fatalf("same-owner re-import id = %q, want %q", got, importA)
+	}
+	otherImport := callAs(t, h.mcpHandler, idB, shared, tool("import"), map[string]any{"source_path": "/scripts/shared.py"})
+	importB := otherImport["structuredContent"].(map[string]any)["script_id"].(string)
+	if importB == importA {
+		t.Fatal("different owner ids with the same email shared an import row")
+	}
+	var importOwner, importEmail string
+	if err := h.db.QueryRow(`SELECT owner_id, owner_email FROM scripts WHERE id = ?`, importA).Scan(&importOwner, &importEmail); err != nil {
+		t.Fatal(err)
+	}
+	if importOwner != idA || importEmail != shared {
+		t.Fatalf("import snapshot = (%q, %q), want (%q, %q)", importOwner, importEmail, idA, shared)
+	}
+	var imports int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM scripts WHERE source_path = '/scripts/shared.py'`).Scan(&imports); err != nil {
+		t.Fatal(err)
+	}
+	if imports != 2 {
+		t.Fatalf("import rows = %d, want one per owner id", imports)
+	}
+
+	if isError(callAs(t, h.mcpHandler, idA, shared, tool("delete"), map[string]any{"script_id": scriptA})) {
+		t.Fatal("owning delete unexpectedly failed")
+	}
+}
+
+func assertScriptOwner(t *testing.T, got map[string]any, ownerID, ownerEmail string) {
+	t.Helper()
+	if got["OwnerID"] != ownerID || got["OwnerEmail"] != ownerEmail {
+		t.Fatalf("structured owner = (%#v, %#v), want (%q, %q)", got["OwnerID"], got["OwnerEmail"], ownerID, ownerEmail)
+	}
+}
+
+func assertToolErrorCode(t *testing.T, result map[string]any, want string) {
+	t.Helper()
+	if !isError(result) {
+		t.Fatalf("result = %#v, want isError %q", result, want)
+	}
+	structured, ok := result["structuredContent"].(map[string]any)
+	if !ok || structured["code"] != want {
+		t.Fatalf("structured error = %#v, want code %q", result["structuredContent"], want)
+	}
+}
+
 // call drives one tools/call over ServeHTTP and returns the decoded result.
 func call(t *testing.T, h http.Handler, tool string, args map[string]any) map[string]any {
+	return callAs(t, h, ownerID, ownerEmail, tool, args)
+}
+
+func callAs(t *testing.T, h http.Handler, callerID, callerEmail, tool string, args map[string]any) map[string]any {
 	t.Helper()
 	argsJSON, _ := json.Marshal(args)
 	body, _ := json.Marshal(map[string]any{
@@ -237,7 +342,7 @@ func call(t *testing.T, h http.Handler, tool string, args map[string]any) map[st
 		"method":  "tools/call",
 		"params":  map[string]any{"name": tool, "arguments": json.RawMessage(argsJSON)},
 	})
-	rr := do(t, h, body)
+	rr := doAs(t, h, callerID, callerEmail, body)
 	var resp struct {
 		Result map[string]any `json:"result"`
 		Error  *struct {
@@ -258,9 +363,14 @@ func call(t *testing.T, h http.Handler, tool string, args map[string]any) map[st
 }
 
 func do(t *testing.T, h http.Handler, body []byte) *httptest.ResponseRecorder {
+	return doAs(t, h, ownerID, ownerEmail, body)
+}
+
+func doAs(t *testing.T, h http.Handler, callerID, callerEmail string, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
-	req.Header.Set("X-Owner-Email", ownerEmail)
+	req.Header.Set("X-Owner-Id", callerID)
+	req.Header.Set("X-Owner-Email", callerEmail)
 	req.Header.Set("X-Client-Id", clientID)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
@@ -966,7 +1076,7 @@ func TestOutputSchemasMatchScriptAndRunWireCasing(t *testing.T) {
 		result   map[string]any
 		required []string
 	}{
-		{"update", update, []string{"ID", "OwnerEmail", "Name", "Body", "Config", "SourcePath", "CreatedAt", "UpdatedAt"}},
+		{"update", update, []string{"ID", "OwnerID", "OwnerEmail", "Name", "Body", "Config", "SourcePath", "CreatedAt", "UpdatedAt"}},
 		{"run_get", runGet, []string{"id", "script_id", "exit_code", "started_at", "elapsed_secs"}},
 	}
 	for _, check := range checks {

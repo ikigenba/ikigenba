@@ -62,6 +62,7 @@ func seed(t *testing.T, st *script.Store, body string) script.Run {
 	now := nowStr()
 	sc := script.Script{
 		ID:         ids.NewULID(),
+		OwnerID:    owner,
 		OwnerEmail: owner,
 		Name:       "nightly",
 		Body:       body,
@@ -211,7 +212,7 @@ func TestSpawnInjectsSuiteEnvironment(t *testing.T) {
 		"SUITE_SERVICES=" + services,
 		"SUITE_FILES_BASE_URL=" + filesBase,
 	})
-	body := "import json, os\nprint(json.dumps([os.environ[k] for k in [\"SUITE_SERVICES\", \"SUITE_FILES_BASE_URL\", \"SUITE_SCRIPT_ID\", \"SUITE_RUN_ID\", \"SUITE_OWNER_EMAIL\"]]))\n"
+	body := "import json, os\nprint(json.dumps([os.environ[k] for k in [\"SUITE_SERVICES\", \"SUITE_FILES_BASE_URL\", \"SUITE_SCRIPT_ID\", \"SUITE_RUN_ID\", \"SUITE_OWNER_ID\", \"SUITE_OWNER_EMAIL\"]]))\n"
 	run := seed(t, st, body)
 
 	r.Spawn(run, []byte("{}"))
@@ -228,7 +229,7 @@ func TestSpawnInjectsSuiteEnvironment(t *testing.T) {
 	if err := json.Unmarshal(b, &values); err != nil {
 		t.Fatalf("decode environment probe %q: %v", b, err)
 	}
-	want := []string{services, filesBase, run.ScriptID, run.ID, owner}
+	want := []string{services, filesBase, run.ScriptID, run.ID, owner, owner}
 	if !reflect.DeepEqual(values, want) {
 		t.Fatalf("suite environment = %#v, want %#v", values, want)
 	}
@@ -360,7 +361,7 @@ func runSuiteMCPProbe(t *testing.T, services, body string) (script.Run, string) 
 }
 
 func TestSuiteMcpHappyPath(t *testing.T) {
-	// R-I0GA-YTQ5
+	// R-Q9X1-8DQ2
 	server, requests := newMCPServer(t, `{"jsonrpc":"2.0","id":1,"result":{"structuredContent":{"id":"x","nested":{"ok":true}},"isError":false}}`)
 	services, _ := json.Marshal(map[string]string{"svc": server.URL})
 	body := "import json, suite\nprint(json.dumps([suite.mcp('svc', 'get', {'id': 'x'}), suite.mcp('svc', 'list')], sort_keys=True))\n"
@@ -388,6 +389,9 @@ func TestSuiteMcpHappyPath(t *testing.T) {
 		}
 		if request.Header.Get("X-Owner-Email") != owner {
 			t.Fatalf("X-Owner-Email = %q, want %q", request.Header.Get("X-Owner-Email"), owner)
+		}
+		if request.Header.Get("X-Owner-Id") != owner {
+			t.Fatalf("X-Owner-Id = %q, want %q", request.Header.Get("X-Owner-Id"), owner)
 		}
 		if request.Header.Get("X-Client-Id") != "scripts:"+got.ScriptID {
 			t.Fatalf("X-Client-Id = %q, want scripts:%s", request.Header.Get("X-Client-Id"), got.ScriptID)

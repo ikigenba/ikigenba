@@ -211,11 +211,11 @@ func arraySchema(items map[string]any) map[string]any {
 
 func scriptSchema() map[string]any {
 	props := map[string]any{}
-	for _, key := range []string{"ID", "OwnerEmail", "Name", "Body", "SourcePath", "CreatedAt", "UpdatedAt"} {
+	for _, key := range []string{"ID", "OwnerID", "OwnerEmail", "Name", "Body", "SourcePath", "CreatedAt", "UpdatedAt"} {
 		props[key] = typ("string")
 	}
 	props["Config"] = openObjectSchema()
-	return objSchema(props, "ID", "OwnerEmail", "Name", "Body", "Config", "SourcePath", "CreatedAt", "UpdatedAt")
+	return objSchema(props, "ID", "OwnerID", "OwnerEmail", "Name", "Body", "Config", "SourcePath", "CreatedAt", "UpdatedAt")
 }
 
 func scriptDetailSchema() map[string]any {
@@ -225,7 +225,7 @@ func scriptDetailSchema() map[string]any {
 	}
 	props["RunningCount"] = typ("integer")
 	props["LastRun"] = nullable(openObjectSchema())
-	return objSchema(props, "ID", "OwnerEmail", "Name", "Body", "Config", "SourcePath", "CreatedAt", "UpdatedAt", "RunningCount", "LastRun")
+	return objSchema(props, "ID", "OwnerID", "OwnerEmail", "Name", "Body", "Config", "SourcePath", "CreatedAt", "UpdatedAt", "RunningCount", "LastRun")
 }
 
 func triggerSchema() map[string]any {
@@ -285,7 +285,7 @@ func (c configInput) toConfig() script.Config {
 
 func (h *toolHandlers) dispatchTool(ctx context.Context, name string, id server.Identity, args json.RawMessage) (map[string]any, error) {
 	svc := h.svc
-	owner := id.OwnerEmail
+	owner := id.OwnerID
 	switch name {
 	case tool("describe"):
 		return toolDescribe()
@@ -299,7 +299,7 @@ func (h *toolHandlers) dispatchTool(ctx context.Context, name string, id server.
 		if err := parseArgs(args, &in); err != nil {
 			return nil, err
 		}
-		sc, err := svc.Create(ctx, owner, script.CreateInput{
+		sc, err := svc.CreateForOwner(ctx, owner, id.OwnerEmail, script.CreateInput{
 			Name:   in.Name,
 			Body:   in.Body,
 			Config: in.Config.toConfig(),
@@ -317,7 +317,7 @@ func (h *toolHandlers) dispatchTool(ctx context.Context, name string, id server.
 		if err := parseArgs(args, &in); err != nil {
 			return nil, err
 		}
-		sc, err := svc.Import(ctx, owner, in.SourcePath, in.Name)
+		sc, err := svc.ImportForOwner(ctx, owner, id.OwnerEmail, in.SourcePath, in.Name)
 		if err != nil {
 			return structuredError(err), nil
 		}

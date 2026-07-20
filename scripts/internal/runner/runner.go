@@ -189,6 +189,7 @@ func (r *Runner) execute(run script.Run, input []byte) {
 		"EVENT_JSON="+string(input),
 		"SUITE_SCRIPT_ID="+run.ScriptID,
 		"SUITE_RUN_ID="+run.ID,
+		"SUITE_OWNER_ID="+sc.OwnerID,
 		"SUITE_OWNER_EMAIL="+sc.OwnerEmail,
 	)
 	cmd.Stdin = bytes.NewReader(input)
