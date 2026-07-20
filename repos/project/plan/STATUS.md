@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 19
-
-- Phase 18 ⬜ realizes R-ICIJ-13TA, R-IDQF-EVJZ, R-IEYB-SNAO, R-IG68-6F1D — owner-id keying: rebuild `repos`/`sessions` on `owner_id` + `owner_email` snapshot, rekey store/intake/MCP/runner scoping and github assertion
