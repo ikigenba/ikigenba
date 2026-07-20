@@ -84,7 +84,7 @@ func decodeOnlyOutboxRow(t *testing.T, conn *sql.DB) (kind, subject string, p we
 // base64-decodes byte-for-byte.
 func TestRecord_WritesEventWithBinaryBodyRecoverable(t *testing.T) {
 	binary := []byte{0x00, 0xff, 0x01, 0xfe, 0x80, 0x7f, 0x00, 0xc3, 0x28}
-	wh := db.Webhook{Name: "deploy-hook", OwnerEmail: "owner@example.com"}
+	wh := db.Webhook{Name: "deploy-hook", OwnerID: "owner-123", OwnerEmail: "owner@example.com"}
 	svc, _, _ := newRecordFixture(t, wh)
 
 	if err := svc.Record(context.Background(), wh, "application/octet-stream", binary); err != nil {
@@ -98,8 +98,8 @@ func TestRecord_WritesEventWithBinaryBodyRecoverable(t *testing.T) {
 	if p.Name != "deploy-hook" {
 		t.Errorf("name = %q, want deploy-hook", p.Name)
 	}
-	if p.Owner != "owner@example.com" {
-		t.Errorf("owner = %q, want owner@example.com", p.Owner)
+	if p.OwnerID != "owner-123" || p.OwnerEmail != "owner@example.com" {
+		t.Errorf("owner fields = (%q, %q)", p.OwnerID, p.OwnerEmail)
 	}
 	if p.ContentType != "application/octet-stream" {
 		t.Errorf("content_type = %q", p.ContentType)
@@ -113,10 +113,10 @@ func TestRecord_WritesEventWithBinaryBodyRecoverable(t *testing.T) {
 	}
 }
 
-// R-GV2V-OA7L — the payload owner is always the stored owner_email, never any
-// owner the triggering call might carry.
+// R-GV2V-OA7L — the payload owner is always the stored owner fields.
+// R-L9XF-6ZFK
 func TestRecord_StampsStoredOwnerNotCallerInput(t *testing.T) {
-	wh := db.Webhook{Name: "scoped", OwnerEmail: "stored-owner@example.com"}
+	wh := db.Webhook{Name: "scoped", OwnerID: "stored-owner-id", OwnerEmail: "stored-owner@example.com"}
 	svc, _, _ := newRecordFixture(t, wh)
 
 	// The caller passes a wh value whose OwnerEmail is the stored one; even if a
@@ -126,8 +126,19 @@ func TestRecord_StampsStoredOwnerNotCallerInput(t *testing.T) {
 	}
 
 	_, _, p := decodeOnlyOutboxRow(t, svc.db)
-	if p.Owner != "stored-owner@example.com" {
-		t.Fatalf("owner = %q, want stored-owner@example.com (caller input must never be echoed)", p.Owner)
+	if p.OwnerID != "stored-owner-id" || p.OwnerEmail != "stored-owner@example.com" {
+		t.Fatalf("owner fields = (%q, %q), want stored row values", p.OwnerID, p.OwnerEmail)
+	}
+	var raw string
+	if err := svc.db.QueryRow(`SELECT payload FROM outbox`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, retired := fields["owner"]; retired {
+		t.Fatalf("payload retained retired owner field: %v", fields)
 	}
 }
 
@@ -135,7 +146,7 @@ func TestRecord_StampsStoredOwnerNotCallerInput(t *testing.T) {
 // connection to the same temp file sees it (durable-before-ack, not a value on
 // the live handle).
 func TestRecord_DurableAcrossReopen(t *testing.T) {
-	wh := db.Webhook{Name: "durable", OwnerEmail: "owner@example.com"}
+	wh := db.Webhook{Name: "durable", OwnerID: "owner-123", OwnerEmail: "owner@example.com"}
 	svc, dbPath, _ := newRecordFixture(t, wh)
 
 	if err := svc.Record(context.Background(), wh, "text/plain", []byte("payload")); err != nil {
@@ -158,7 +169,7 @@ func TestRecord_DurableAcrossReopen(t *testing.T) {
 // last_triggered_at equals the payload's received_at (append + touch committed
 // in one tx under one fixed clock).
 func TestRecord_TouchEqualsReceivedAtInOneTx(t *testing.T) {
-	wh := db.Webhook{Name: "atomic", OwnerEmail: "owner@example.com"}
+	wh := db.Webhook{Name: "atomic", OwnerID: "owner-123", OwnerEmail: "owner@example.com"}
 	svc, _, _ := newRecordFixture(t, wh)
 
 	if err := svc.Record(context.Background(), wh, "application/json", []byte("{}")); err != nil {
@@ -184,9 +195,9 @@ func TestRecord_TouchEqualsReceivedAtInOneTx(t *testing.T) {
 // per-hook routing subject, unchanged payload shape, and last-triggered touch in
 // the same real SQLite transaction.
 func TestRecord_RoutesEachHookAndTouchesAtomically(t *testing.T) {
-	deploy := db.Webhook{Name: "deploy-hook", OwnerEmail: "deploy@example.com"}
+	deploy := db.Webhook{Name: "deploy-hook", OwnerID: "deploy-id", OwnerEmail: "deploy@example.com"}
 	svc, _, now := newRecordFixture(t, deploy)
-	alpha := db.Webhook{Name: "alpha_1", OwnerEmail: "alpha@example.com", CreatedAt: now}
+	alpha := db.Webhook{Name: "alpha_1", OwnerID: "alpha-id", OwnerEmail: "alpha@example.com", CreatedAt: now}
 	if err := db.NewStore(svc.db).Insert(context.Background(), alpha, "alpha-secret"); err != nil {
 		t.Fatalf("insert alpha webhook: %v", err)
 	}
@@ -201,7 +212,7 @@ func TestRecord_RoutesEachHookAndTouchesAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query outbox: %v", err)
 	}
-	wantSubjects := map[string]string{"/alpha_1": "alpha@example.com", "/deploy-hook": "deploy@example.com"}
+	wantSubjects := map[string]db.Webhook{"/alpha_1": alpha, "/deploy-hook": deploy}
 	type outboxRow struct {
 		kind    string
 		subject string
@@ -227,7 +238,7 @@ func TestRecord_RoutesEachHookAndTouchesAtomically(t *testing.T) {
 		if row.kind != "received" {
 			t.Errorf("kind = %q, want received", row.kind)
 		}
-		owner, ok := wantSubjects[row.subject]
+		stored, ok := wantSubjects[row.subject]
 		if !ok {
 			t.Fatalf("unexpected subject %q", row.subject)
 		}
@@ -236,7 +247,7 @@ func TestRecord_RoutesEachHookAndTouchesAtomically(t *testing.T) {
 		if err := json.Unmarshal([]byte(row.raw), &payload); err != nil {
 			t.Fatalf("unmarshal payload for %s: %v", row.subject, err)
 		}
-		wantKeys := map[string]bool{"name": true, "owner": true, "received_at": true, "content_type": true, "body": true}
+		wantKeys := map[string]bool{"name": true, "owner_id": true, "owner_email": true, "received_at": true, "content_type": true, "body": true}
 		gotKeys := map[string]bool{}
 		for key := range payload {
 			gotKeys[key] = true
@@ -244,8 +255,8 @@ func TestRecord_RoutesEachHookAndTouchesAtomically(t *testing.T) {
 		if !reflect.DeepEqual(gotKeys, wantKeys) {
 			t.Errorf("payload keys for %s = %v, want %v", row.subject, gotKeys, wantKeys)
 		}
-		if payload["name"] != row.subject[1:] || payload["owner"] != owner {
-			t.Errorf("payload for %s = %v, want name %q and owner %q", row.subject, payload, row.subject[1:], owner)
+		if payload["name"] != row.subject[1:] || payload["owner_id"] != stored.OwnerID || payload["owner_email"] != stored.OwnerEmail {
+			t.Errorf("payload for %s = %v, want stored owner fields", row.subject, payload)
 		}
 		wh, _, _, ok, err := db.NewStore(svc.db).GetByName(context.Background(), row.subject[1:])
 		if err != nil || !ok || wh.LastTriggeredAt == nil {

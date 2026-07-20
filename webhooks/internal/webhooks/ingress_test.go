@@ -57,7 +57,7 @@ func newIngressFixtureScheme(t *testing.T, scheme string) (h http.Handler, conn 
 	svc = NewService(conn, clk)
 	svc.Outbox = ob
 
-	wh, sec, err := svc.Create(context.Background(), "owner@example.com", "deploy-hook", scheme)
+	wh, sec, err := svc.Create(context.Background(), "owner-123", "owner@example.com", "deploy-hook", scheme)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -156,15 +156,18 @@ func TestIngress_AuthFailuresAreByteIdenticalAndAppendNothing(t *testing.T) {
 }
 
 // R-7L8J-RITT — a correct-secret POST carrying a front-door identity header
-// (X-Owner-Email or X-Client-Id) is rejected 404 with no outbox row; the same
+// (X-Owner-Id, X-Owner-Email, or X-Client-Id) is rejected 404 with no outbox row; the same
 // request carrying only X-Forwarded-Proto is accepted 202.
+// R-L8PI-T7OV
 func TestIngress_IdentityHeadersRejectedButForwardedProtoAllowed(t *testing.T) {
-	for _, h := range []string{"X-Owner-Email", "X-Client-Id"} {
+	for _, h := range []string{"X-Owner-Id", "X-Owner-Email", "X-Client-Id"} {
 		t.Run(h, func(t *testing.T) {
 			handler, conn, name, secret := newIngressFixture(t)
 			req := httptest.NewRequest(http.MethodPost, "/in/"+name, strings.NewReader("x"))
 			req.Header.Set("Authorization", "Bearer "+secret)
 			switch h {
+			case "X-Owner-Id":
+				req.Header.Set(h, "owner-456")
 			case "X-Owner-Email":
 				req.Header.Set(h, "attacker@example.com")
 			case "X-Client-Id":
@@ -260,12 +263,12 @@ func TestIngressGitHubHMACRecordsAllowlistedHeaders(t *testing.T) {
 		t.Fatalf("response=%d %q outbox=%d", rec.Code, rec.Body.String(), countOutbox(t, conn))
 	}
 	p := onlyPayloadMap(t, conn)
-	for _, key := range []string{"name", "owner", "received_at", "content_type", "body", "headers"} {
+	for _, key := range []string{"name", "owner_id", "owner_email", "received_at", "content_type", "body", "headers"} {
 		if _, ok := p[key]; !ok {
 			t.Errorf("payload missing %q: %v", key, p)
 		}
 	}
-	if p["name"] != name || p["owner"] != "owner@example.com" || p["content_type"] != "application/octet-stream" || p["body"] != base64.StdEncoding.EncodeToString(body) || p["received_at"] != "2026-06-25T12:00:00Z" {
+	if p["name"] != name || p["owner_id"] != "owner-123" || p["owner_email"] != "owner@example.com" || p["content_type"] != "application/octet-stream" || p["body"] != base64.StdEncoding.EncodeToString(body) || p["received_at"] != "2026-06-25T12:00:00Z" {
 		t.Fatalf("payload values = %v", p)
 	}
 	headers, ok := p["headers"].(map[string]any)
@@ -312,7 +315,7 @@ func TestIngressGitHubHMACRejectsOverCapBody(t *testing.T) {
 // R-GA7P-YOJ3 — rotation replaces the retained HMAC key immediately.
 func TestIngressGitHubHMACRotateAcceptsNewAndRejectsOld(t *testing.T) {
 	h, conn, svc, name, oldSecret := newIngressFixtureScheme(t, "github-hmac")
-	newSecret, err := svc.Rotate(context.Background(), "owner@example.com", name)
+	newSecret, err := svc.Rotate(context.Background(), "owner-123", name)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -40,7 +40,7 @@ func NewIngressHandler(svc *Service, log *slog.Logger) http.Handler {
 		// 2. Front-door identity headers must never appear on the public ingress;
 		//    their presence means a misrouted internal request. X-Forwarded-Proto
 		//    is a legitimate proxy header and is NOT rejected.
-		if r.Header.Get("X-Owner-Email") != "" || r.Header.Get("X-Client-Id") != "" {
+		if r.Header.Get("X-Owner-Id") != "" || r.Header.Get("X-Owner-Email") != "" || r.Header.Get("X-Client-Id") != "" {
 			notFound(w)
 			return
 		}

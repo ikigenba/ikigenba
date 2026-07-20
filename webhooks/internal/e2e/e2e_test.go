@@ -180,7 +180,7 @@ func newIngressFixture(t *testing.T) (http.Handler, *sql.DB, string, string) {
 	}
 	svc := webhooks.NewService(conn, clk)
 	svc.Outbox = ob
-	wh, secret, err := svc.Create(context.Background(), "e2e@example.com", "e2e-ingress", "bearer")
+	wh, secret, err := svc.Create(context.Background(), "e2e-owner", "e2e@example.com", "e2e-ingress", "bearer")
 	if err != nil {
 		t.Fatalf("mint webhook: %v", err)
 	}

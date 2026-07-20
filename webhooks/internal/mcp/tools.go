@@ -159,7 +159,7 @@ func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage, id s
 			return nil, err
 		}
 	}
-	wh, secret, err := h.svc.Create(ctx, id.OwnerEmail, a.Name, a.Verification)
+	wh, secret, err := h.svc.Create(ctx, id.OwnerID, id.OwnerEmail, a.Name, a.Verification)
 	if err != nil {
 		return toolErr(err), nil
 	}
@@ -169,7 +169,7 @@ func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage, id s
 }
 
 func (h *toolHandlers) toolList(ctx context.Context, id server.Identity) (map[string]any, error) {
-	whs, err := h.svc.List(ctx, id.OwnerEmail)
+	whs, err := h.svc.List(ctx, id.OwnerID)
 	if err != nil {
 		return toolErr(err), nil
 	}
@@ -187,7 +187,7 @@ func (h *toolHandlers) toolDelete(ctx context.Context, raw json.RawMessage, id s
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return nil, err
 	}
-	deleted, err := h.svc.Delete(ctx, id.OwnerEmail, a.Name)
+	deleted, err := h.svc.Delete(ctx, id.OwnerID, a.Name)
 	if err != nil {
 		return toolErr(err), nil
 	}
@@ -204,7 +204,7 @@ func (h *toolHandlers) toolRotate(ctx context.Context, raw json.RawMessage, id s
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return nil, err
 	}
-	secret, err := h.svc.Rotate(ctx, id.OwnerEmail, a.Name)
+	secret, err := h.svc.Rotate(ctx, id.OwnerID, a.Name)
 	if err != nil {
 		return toolErr(err), nil
 	}

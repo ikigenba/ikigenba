@@ -44,7 +44,7 @@ func TestRecordFeedFramesCanonicalRoutedKey(t *testing.T) {
 	}
 	svc := webhooks.NewService(conn, clock)
 	svc.Outbox = ob
-	hook := db.Webhook{Name: "deploy-hook", OwnerEmail: "owner@example.com", CreatedAt: clock.Now()}
+	hook := db.Webhook{Name: "deploy-hook", OwnerID: "owner-123", OwnerEmail: "owner@example.com", CreatedAt: clock.Now()}
 	if err := db.NewStore(conn).Insert(context.Background(), hook, "secret"); err != nil {
 		t.Fatalf("insert webhook: %v", err)
 	}

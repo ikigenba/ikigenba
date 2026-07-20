@@ -29,6 +29,74 @@ func newTestStore(t *testing.T) *Store {
 	return NewStore(conn)
 }
 
+// R-L3TX-A4Q3 — applying the owner-id migration to a populated pre-conversion
+// database rebuilds the table with the effective schema and deliberately drops
+// rows that cannot be mapped from email to a stable owner id.
+func TestOwnerIDMigrationRebuildsSchemaAndDropsPreconversionRows(t *testing.T) {
+	conn, err := chassis.Open(filepath.Join(t.TempDir(), "preconversion.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer conn.Close()
+	_, err = conn.Exec(`
+		CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+		INSERT INTO schema_migrations(version, applied_at) VALUES
+			(1, '2026-07-19T00:00:00Z'), (2, '2026-07-19T00:00:00Z'),
+			(3, '2026-07-19T00:00:00Z'), (20260712201504, '2026-07-19T00:00:00Z'),
+			(20260715173020, '2026-07-19T00:00:00Z');
+		CREATE TABLE webhooks (
+			name TEXT PRIMARY KEY, owner_email TEXT NOT NULL, secret_hash TEXT NOT NULL,
+			created_at TEXT NOT NULL, last_triggered_at TEXT,
+			verification TEXT NOT NULL DEFAULT 'bearer', secret TEXT
+		);
+		CREATE INDEX idx_webhooks_owner ON webhooks(owner_email);
+		INSERT INTO webhooks(name, owner_email, secret_hash, created_at)
+			VALUES ('legacy', 'legacy@example.com', 'hash', '2026-07-19T00:00:00Z');
+	`)
+	if err != nil {
+		t.Fatalf("seed pre-conversion database: %v", err)
+	}
+	migs, err := chassis.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if err := chassis.Migrate(context.Background(), conn, migs); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	columns := map[string]int{}
+	rows, err := conn.Query(`PRAGMA table_info(webhooks)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var def any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &def, &pk); err != nil {
+			t.Fatal(err)
+		}
+		columns[name] = notNull
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"owner_id", "owner_email", "verification"} {
+		if columns[name] != 1 {
+			t.Errorf("column %s not-null = %d, want 1", name, columns[name])
+		}
+	}
+	if _, ok := columns["secret"]; !ok {
+		t.Error("secret column missing")
+	}
+	var count int
+	if err := conn.QueryRow(`SELECT count(*) FROM webhooks`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("webhooks rows = %d, want 0", count)
+	}
+}
+
 // R-G7RX-751P — the full real migration set adds the scheme/default and nullable
 // retained secret, and Store round-trips both schemes without putting secrets on Webhook.
 func TestVerificationSchemaAndStoreRoundTrip(t *testing.T) {
@@ -63,7 +131,7 @@ func TestVerificationSchemaAndStoreRoundTrip(t *testing.T) {
 	}
 
 	at := fixedTime(t)
-	hmacHook := Webhook{Name: "github", OwnerEmail: "a@example.com", Verification: "github-hmac", CreatedAt: at}
+	hmacHook := Webhook{Name: "github", OwnerID: "owner-a", OwnerEmail: "a@example.com", Verification: "github-hmac", CreatedAt: at}
 	if err := s.Insert(ctx, hmacHook, "fingerprint", "retained-key"); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +139,7 @@ func TestVerificationSchemaAndStoreRoundTrip(t *testing.T) {
 	if err != nil || !ok || got.Verification != "github-hmac" || hash != "fingerprint" || secret != "retained-key" {
 		t.Fatalf("github round trip = (%+v,%q,%q,%v,%v)", got, hash, secret, ok, err)
 	}
-	if err := s.Insert(ctx, Webhook{Name: "bearer", OwnerEmail: "a@example.com", CreatedAt: at}, "bearer-hash"); err != nil {
+	if err := s.Insert(ctx, Webhook{Name: "bearer", OwnerID: "owner-a", OwnerEmail: "a@example.com", CreatedAt: at}, "bearer-hash"); err != nil {
 		t.Fatal(err)
 	}
 	got, _, secret, ok, err = s.GetByName(ctx, "bearer")
@@ -100,12 +168,12 @@ func fixedTime(t *testing.T) time.Time {
 func TestInsertDuplicateNameRejectedByConstraint(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	w := Webhook{Name: "deploy", OwnerEmail: "alice@example.com", CreatedAt: fixedTime(t)}
+	w := Webhook{Name: "deploy", OwnerID: "owner-a", OwnerEmail: "alice@example.com", CreatedAt: fixedTime(t)}
 	if err := s.Insert(ctx, w, "hash-alice"); err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
 
-	dup := Webhook{Name: "deploy", OwnerEmail: "bob@example.com", CreatedAt: fixedTime(t)}
+	dup := Webhook{Name: "deploy", OwnerID: "owner-b", OwnerEmail: "bob@example.com", CreatedAt: fixedTime(t)}
 	if err := s.Insert(ctx, dup, "hash-bob"); err == nil {
 		t.Fatal("second insert with duplicate name: want non-nil error, got nil")
 	}
@@ -122,16 +190,17 @@ func TestInsertDuplicateNameRejectedByConstraint(t *testing.T) {
 	}
 }
 
-// R-T0GF-4W5N — ListByOwner returns exactly the calling owner's set and never
+// R-T0GF-4W5N
+// R-L51T-NWGS — ListByOwner returns exactly the calling owner id's set and never
 // another owner's rows.
 func TestListByOwnerIsOwnerScoped(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	at := fixedTime(t)
 	seed := []Webhook{
-		{Name: "a-deploy", OwnerEmail: "alice@example.com", CreatedAt: at},
-		{Name: "a-ci", OwnerEmail: "alice@example.com", CreatedAt: at},
-		{Name: "b-deploy", OwnerEmail: "bob@example.com", CreatedAt: at},
+		{Name: "a-deploy", OwnerID: "owner-a", OwnerEmail: "shared@example.com", CreatedAt: at},
+		{Name: "a-ci", OwnerID: "owner-a", OwnerEmail: "shared@example.com", CreatedAt: at},
+		{Name: "b-deploy", OwnerID: "owner-b", OwnerEmail: "shared@example.com", CreatedAt: at},
 	}
 	for _, w := range seed {
 		if err := s.Insert(ctx, w, "h-"+w.Name); err != nil {
@@ -139,14 +208,14 @@ func TestListByOwnerIsOwnerScoped(t *testing.T) {
 		}
 	}
 
-	got, err := s.ListByOwner(ctx, "alice@example.com")
+	got, err := s.ListByOwner(ctx, "owner-a")
 	if err != nil {
 		t.Fatalf("ListByOwner: %v", err)
 	}
 	gotNames := map[string]bool{}
 	for _, w := range got {
-		if w.OwnerEmail != "alice@example.com" {
-			t.Errorf("ListByOwner(alice) leaked %s owned by %s", w.Name, w.OwnerEmail)
+		if w.OwnerID != "owner-a" {
+			t.Errorf("ListByOwner(owner-a) leaked %s owned by %s", w.Name, w.OwnerID)
 		}
 		gotNames[w.Name] = true
 	}
@@ -160,15 +229,25 @@ func TestListByOwnerIsOwnerScoped(t *testing.T) {
 
 // R-T1OB-INWC — Delete is owner-scoped: A cannot delete B's webhook (deleted
 // false, row survives), but B can (deleted true, row gone).
+// R-L69Q-1O7H — owner-scoped delete and update act on nothing for another id.
 func TestDeleteIsOwnerScoped(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	w := Webhook{Name: "deploy", OwnerEmail: "bob@example.com", CreatedAt: fixedTime(t)}
+	w := Webhook{Name: "deploy", OwnerID: "owner-b", OwnerEmail: "shared@example.com", CreatedAt: fixedTime(t)}
 	if err := s.Insert(ctx, w, "hash-bob"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
-	deleted, err := s.Delete(ctx, "alice@example.com", "deploy")
+	updated, err := s.UpdateSecret(ctx, "owner-a", "deploy", "attacker-hash")
+	if err != nil || updated {
+		t.Fatalf("UpdateSecret(owner-a): updated=%v err=%v", updated, err)
+	}
+	_, hash, _, ok, err := s.GetByName(ctx, "deploy")
+	if err != nil || !ok || hash != "hash-bob" {
+		t.Fatalf("row changed after foreign update: hash=%q ok=%v err=%v", hash, ok, err)
+	}
+
+	deleted, err := s.Delete(ctx, "owner-a", "deploy")
 	if err != nil {
 		t.Fatalf("Delete(alice): %v", err)
 	}
@@ -179,7 +258,7 @@ func TestDeleteIsOwnerScoped(t *testing.T) {
 		t.Fatalf("bob's row should survive A's delete: ok=%v err=%v", ok, err)
 	}
 
-	deleted, err = s.Delete(ctx, "bob@example.com", "deploy")
+	deleted, err = s.Delete(ctx, "owner-b", "deploy")
 	if err != nil {
 		t.Fatalf("Delete(bob): %v", err)
 	}

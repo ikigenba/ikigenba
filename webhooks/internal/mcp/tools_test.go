@@ -135,6 +135,10 @@ type toolDescriptor struct {
 // nginx-injected X-Owner-Email identity header set, and returns the decoded
 // response.
 func rpcAs(t *testing.T, h http.Handler, owner, method string, params any) jsonRPCResponse {
+	return rpcAsIdentity(t, h, owner, owner, method, params)
+}
+
+func rpcAsIdentity(t *testing.T, h http.Handler, ownerID, ownerEmail, method string, params any) jsonRPCResponse {
 	t.Helper()
 	body := map[string]any{"jsonrpc": "2.0", "id": 1, "method": method}
 	if params != nil {
@@ -145,7 +149,8 @@ func rpcAs(t *testing.T, h http.Handler, owner, method string, params any) jsonR
 		t.Fatalf("marshal request: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(raw))
-	req.Header.Set("X-Owner-Email", owner)
+	req.Header.Set("X-Owner-Id", ownerID)
+	req.Header.Set("X-Owner-Email", ownerEmail)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -157,6 +162,16 @@ func rpcAs(t *testing.T, h http.Handler, owner, method string, params any) jsonR
 		t.Fatalf("%s returned JSON-RPC error: %d %s", method, resp.Error.Code, resp.Error.Message)
 	}
 	return resp
+}
+
+func callAsIdentity(t *testing.T, h http.Handler, ownerID, ownerEmail, name string, args any) toolResult {
+	t.Helper()
+	resp := rpcAsIdentity(t, h, ownerID, ownerEmail, "tools/call", map[string]any{"name": name, "arguments": args})
+	var tr toolResult
+	if err := json.Unmarshal(resp.Result, &tr); err != nil {
+		t.Fatalf("decode tool result for %s: %v (result=%s)", name, err, resp.Result)
+	}
+	return tr
 }
 
 // callAs drives a tools/call as owner and decodes the inner tool result.
@@ -465,6 +480,49 @@ func TestNonOwnerDeleteRotateNotFound(t *testing.T) {
 	}
 	if !secretVerifies(t, svc, "shared", secret) {
 		t.Fatalf("original secret no longer verifies after non-owner mutation attempts")
+	}
+}
+
+// R-LB5B-KR69 — owner id, not a shared display email, scopes tool reads and
+// mutations through the assembled handler and real SQLite store.
+func TestToolsScopeSameEmailCallersByOwnerID(t *testing.T) {
+	h, _ := newTestHandler(t)
+	sharedEmail := "shared@example.com"
+	call := func(ownerID, name string, args any) toolResult {
+		return callAsIdentity(t, h, ownerID, sharedEmail, name, args)
+	}
+	for ownerID, name := range map[string]string{"owner-id-a": "hook-a", "owner-id-b": "hook-b"} {
+		if got := call(ownerID, "create", map[string]any{"name": name}); got.IsError {
+			t.Fatalf("create for %s failed: %+v", ownerID, got)
+		}
+	}
+	list := func(ownerID string) map[string]bool {
+		tr := call(ownerID, "list", map[string]any{})
+		if tr.IsError {
+			t.Fatalf("list for %s failed: %+v", ownerID, tr)
+		}
+		items, ok := tr.StructuredContent["items"].([]any)
+		if !ok {
+			t.Fatalf("items = %T", tr.StructuredContent["items"])
+		}
+		out := map[string]bool{}
+		for _, item := range items {
+			out[item.(map[string]any)["name"].(string)] = true
+		}
+		return out
+	}
+	if got := list("owner-id-a"); !reflect.DeepEqual(got, map[string]bool{"hook-a": true}) {
+		t.Fatalf("owner A list = %v", got)
+	}
+	if got := list("owner-id-b"); !reflect.DeepEqual(got, map[string]bool{"hook-b": true}) {
+		t.Fatalf("owner B list = %v", got)
+	}
+	foreignDelete := call("owner-id-a", "delete", map[string]any{"name": "hook-b"})
+	if !foreignDelete.IsError || foreignDelete.StructuredContent["code"] != "not_found" {
+		t.Fatalf("foreign delete = %+v, want not_found", foreignDelete)
+	}
+	if got := list("owner-id-b"); !got["hook-b"] || len(got) != 1 {
+		t.Fatalf("owner B list after foreign delete = %v", got)
 	}
 }
 

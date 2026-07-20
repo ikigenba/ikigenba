@@ -46,18 +46,18 @@ func NewService(conn *sql.DB, clock Clock) *Service {
 	}
 }
 
-// List returns exactly the webhooks owned by owner, ordered by name. It is a thin
+// List returns exactly the webhooks owned by ownerID, ordered by name. It is a thin
 // owner-scoped wrapper over Store.ListByOwner so the unexported store stays
 // private to package webhooks while the MCP handler reaches owner-scoped reads
 // through the Service alone.
-func (s *Service) List(ctx context.Context, owner string) ([]db.Webhook, error) {
-	return s.store.ListByOwner(ctx, owner)
+func (s *Service) List(ctx context.Context, ownerID string) ([]db.Webhook, error) {
+	return s.store.ListByOwner(ctx, ownerID)
 }
 
-// Delete removes owner's webhook by name, owner-scoped. deleted reports whether a
+// Delete removes ownerID's webhook by name, owner-scoped. deleted reports whether a
 // row was actually removed; another owner's webhook is left untouched and deleted
 // is false. Thin wrapper over Store.Delete for the same encapsulation reason as
 // List.
-func (s *Service) Delete(ctx context.Context, owner, name string) (deleted bool, err error) {
-	return s.store.Delete(ctx, owner, name)
+func (s *Service) Delete(ctx context.Context, ownerID, name string) (deleted bool, err error) {
+	return s.store.Delete(ctx, ownerID, name)
 }

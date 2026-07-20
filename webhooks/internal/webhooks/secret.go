@@ -57,13 +57,14 @@ func validateName(name string) error {
 	return nil
 }
 
-// Create provisions a new webhook owned by owner. An empty name is replaced by a
+// Create provisions a new webhook scoped by ownerID and snapshots ownerEmail for
+// display. An empty name is replaced by a
 // freshly-generated opaque name; a non-empty name must match
 // ^[A-Za-z0-9_-]{1,64}$ or Create returns ErrInvalidName with no row written.
 // Bearer persists only hashSecret(secret); github-hmac additionally retains the
 // key needed for verification. The plaintext is returned for the caller to show
 // once. A duplicate name maps the PRIMARY KEY violation to ErrNameTaken.
-func (s *Service) Create(ctx context.Context, owner, name string, requested ...string) (w db.Webhook, secret string, err error) {
+func (s *Service) Create(ctx context.Context, ownerID, ownerEmail, name string, requested ...string) (w db.Webhook, secret string, err error) {
 	verification := "bearer"
 	if len(requested) > 0 && requested[0] != "" {
 		verification = requested[0]
@@ -80,7 +81,8 @@ func (s *Service) Create(ctx context.Context, owner, name string, requested ...s
 	secret = newSecret()
 	w = db.Webhook{
 		Name:         name,
-		OwnerEmail:   owner,
+		OwnerID:      ownerID,
+		OwnerEmail:   ownerEmail,
 		Verification: verification,
 		CreatedAt:    s.clock.Now(),
 	}
@@ -99,12 +101,12 @@ func (s *Service) Create(ctx context.Context, owner, name string, requested ...s
 	return w, secret, nil
 }
 
-// Rotate issues a fresh secret for owner's webhook, invalidating the old one.
-// name, owner_email, and created_at are untouched. A missing or not-owned
+// Rotate issues a fresh secret for ownerID's webhook, invalidating the old one.
+// name, owner_id, owner_email, and created_at are untouched. A missing or not-owned
 // webhook (Store.UpdateSecret reporting updated==false) maps to ErrNotFound.
-func (s *Service) Rotate(ctx context.Context, owner, name string) (secret string, err error) {
+func (s *Service) Rotate(ctx context.Context, ownerID, name string) (secret string, err error) {
 	secret = newSecret()
-	updated, err := s.store.UpdateSecret(ctx, owner, name, hashSecret(secret), secret)
+	updated, err := s.store.UpdateSecret(ctx, ownerID, name, hashSecret(secret), secret)
 	if err != nil {
 		return "", err
 	}

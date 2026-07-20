@@ -16,6 +16,7 @@ const timeFormat = time.RFC3339Nano
 // back separately by GetByName, so a Webhook can be logged or listed freely (D2).
 type Webhook struct {
 	Name            string
+	OwnerID         string
 	OwnerEmail      string
 	Verification    string
 	CreatedAt       time.Time
@@ -47,9 +48,9 @@ func (s *Store) Insert(ctx context.Context, w Webhook, secretHash string, retain
 		secret = retainedSecret[0]
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO webhooks (name, owner_email, secret_hash, created_at, last_triggered_at, verification, secret)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		w.Name, w.OwnerEmail, secretHash, w.CreatedAt.UTC().Format(timeFormat), lastTriggered, verification, secret)
+		`INSERT INTO webhooks (name, owner_id, owner_email, secret_hash, created_at, last_triggered_at, verification, secret)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		w.Name, w.OwnerID, w.OwnerEmail, secretHash, w.CreatedAt.UTC().Format(timeFormat), lastTriggered, verification, secret)
 	return err
 }
 
@@ -58,7 +59,7 @@ func (s *Store) Insert(ctx context.Context, w Webhook, secretHash string, retain
 // the value object remains safe to list or log.
 func (s *Store) GetByName(ctx context.Context, name string) (w Webhook, secretHash, secret string, ok bool, err error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT name, owner_email, secret_hash, created_at, last_triggered_at, verification, secret
+		`SELECT name, owner_id, owner_email, secret_hash, created_at, last_triggered_at, verification, secret
 		 FROM webhooks WHERE name = ?`, name)
 	w, secretHash, secret, err = scanWebhook(row)
 	if err == sql.ErrNoRows {
@@ -70,12 +71,12 @@ func (s *Store) GetByName(ctx context.Context, name string) (w Webhook, secretHa
 	return w, secretHash, secret, true, nil
 }
 
-// ListByOwner returns exactly the webhooks owned by owner, ordered by name. It is
-// owner-scoped: another owner's rows are never returned.
-func (s *Store) ListByOwner(ctx context.Context, owner string) ([]Webhook, error) {
+// ListByOwner returns exactly the webhooks owned by ownerID, ordered by name.
+// OwnerEmail is display-only and never participates in scoping.
+func (s *Store) ListByOwner(ctx context.Context, ownerID string) ([]Webhook, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT name, owner_email, secret_hash, created_at, last_triggered_at, verification, secret
-		 FROM webhooks WHERE owner_email = ? ORDER BY name`, owner)
+		`SELECT name, owner_id, owner_email, secret_hash, created_at, last_triggered_at, verification, secret
+		 FROM webhooks WHERE owner_id = ? ORDER BY name`, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -92,12 +93,12 @@ func (s *Store) ListByOwner(ctx context.Context, owner string) ([]Webhook, error
 	return out, rows.Err()
 }
 
-// Delete removes a webhook only when it is owned by owner. deleted reports whether
-// a row was actually removed; an Insert by another owner is left untouched and
+// Delete removes a webhook only when it is owned by ownerID. deleted reports whether
+// a row was actually removed; an Insert by another owner id is left untouched and
 // deleted is false.
-func (s *Store) Delete(ctx context.Context, owner, name string) (deleted bool, err error) {
+func (s *Store) Delete(ctx context.Context, ownerID, name string) (deleted bool, err error) {
 	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM webhooks WHERE owner_email = ? AND name = ?`, owner, name)
+		`DELETE FROM webhooks WHERE owner_id = ? AND name = ?`, ownerID, name)
 	if err != nil {
 		return false, err
 	}
@@ -110,14 +111,14 @@ func (s *Store) Delete(ctx context.Context, owner, name string) (deleted bool, e
 
 // UpdateSecret rotates the fingerprint and, for github-hmac, retained key.
 // The update is owner-scoped; updated reports whether a row matched.
-func (s *Store) UpdateSecret(ctx context.Context, owner, name, secretHash string, plaintext ...string) (updated bool, err error) {
+func (s *Store) UpdateSecret(ctx context.Context, ownerID, name, secretHash string, plaintext ...string) (updated bool, err error) {
 	var secret any
 	if len(plaintext) > 0 {
 		secret = plaintext[0]
 	}
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE webhooks SET secret_hash = ?, secret = CASE WHEN verification = 'github-hmac' THEN ? ELSE NULL END WHERE owner_email = ? AND name = ?`,
-		secretHash, secret, owner, name)
+		`UPDATE webhooks SET secret_hash = ?, secret = CASE WHEN verification = 'github-hmac' THEN ? ELSE NULL END WHERE owner_id = ? AND name = ?`,
+		secretHash, secret, ownerID, name)
 	if err != nil {
 		return false, err
 	}
@@ -152,7 +153,7 @@ func scanWebhook(sc rowScanner) (Webhook, string, string, error) {
 		lastTriggered sql.NullString
 		secret        sql.NullString
 	)
-	if err := sc.Scan(&w.Name, &w.OwnerEmail, &secretHash, &createdAt, &lastTriggered, &w.Verification, &secret); err != nil {
+	if err := sc.Scan(&w.Name, &w.OwnerID, &w.OwnerEmail, &secretHash, &createdAt, &lastTriggered, &w.Verification, &secret); err != nil {
 		return Webhook{}, "", "", err
 	}
 	t, err := time.Parse(timeFormat, createdAt)

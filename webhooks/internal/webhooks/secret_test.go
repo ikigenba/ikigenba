@@ -65,7 +65,7 @@ func TestCreatePersistsHashOfPrefixedSecret(t *testing.T) {
 	svc, conn, _ := newTestService(t)
 	ctx := context.Background()
 
-	w, secret, err := svc.Create(ctx, "alice@example.com", "deploy-hook")
+	w, secret, err := svc.Create(ctx, "owner-a", "alice@example.com", "deploy-hook")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -111,13 +111,13 @@ func TestRotateReplacesSecretKeepsIdentity(t *testing.T) {
 	svc, conn, now := newTestService(t)
 	ctx := context.Background()
 
-	w, oldSecret, err := svc.Create(ctx, "alice@example.com", "rotate-me")
+	w, oldSecret, err := svc.Create(ctx, "owner-a", "alice@example.com", "rotate-me")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	oldHash := readHash(t, conn, "rotate-me")
 
-	newSecret, err := svc.Rotate(ctx, "alice@example.com", "rotate-me")
+	newSecret, err := svc.Rotate(ctx, "owner-a", "rotate-me")
 	if err != nil {
 		t.Fatalf("Rotate: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestRotateReplacesSecretKeepsIdentity(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("GetByName after rotate: ok=%v err=%v", ok, err)
 	}
-	if got.Name != w.Name || got.OwnerEmail != "alice@example.com" {
+	if got.Name != w.Name || got.OwnerID != "owner-a" || got.OwnerEmail != "alice@example.com" {
 		t.Fatalf("identity changed: %+v", got)
 	}
 	if !got.CreatedAt.Equal(now) {
@@ -154,14 +154,14 @@ func TestRotateNotFound(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	if _, err := svc.Rotate(ctx, "alice@example.com", "nope"); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.Rotate(ctx, "owner-a", "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Rotate missing: err = %v, want ErrNotFound", err)
 	}
 
-	if _, _, err := svc.Create(ctx, "alice@example.com", "owned"); err != nil {
+	if _, _, err := svc.Create(ctx, "owner-a", "alice@example.com", "owned"); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := svc.Rotate(ctx, "mallory@example.com", "owned"); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.Rotate(ctx, "owner-mallory", "owned"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Rotate not-owned: err = %v, want ErrNotFound", err)
 	}
 }
@@ -172,11 +172,11 @@ func TestWebhookValueCarriesNoSecret(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	if _, _, err := svc.Create(ctx, "alice@example.com", "hidden"); err != nil {
+	if _, _, err := svc.Create(ctx, "owner-a", "alice@example.com", "hidden"); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	list, err := svc.store.ListByOwner(ctx, "alice@example.com")
+	list, err := svc.store.ListByOwner(ctx, "owner-a")
 	if err != nil || len(list) != 1 {
 		t.Fatalf("ListByOwner: n=%d err=%v", len(list), err)
 	}
@@ -218,7 +218,7 @@ func TestCreateValidatesUserName(t *testing.T) {
 		"bad!char",
 	}
 	for _, name := range invalid {
-		_, _, err := svc.Create(ctx, "alice@example.com", name)
+		_, _, err := svc.Create(ctx, "owner-a", "alice@example.com", name)
 		if !errors.Is(err, ErrInvalidName) {
 			t.Fatalf("Create(%q): err = %v, want ErrInvalidName", name, err)
 		}
@@ -226,11 +226,11 @@ func TestCreateValidatesUserName(t *testing.T) {
 			t.Fatalf("invalid name %q wrote a row (ok=%v err=%v)", name, ok, err)
 		}
 	}
-	if list, err := svc.store.ListByOwner(ctx, "alice@example.com"); err != nil || len(list) != 0 {
+	if list, err := svc.store.ListByOwner(ctx, "owner-a"); err != nil || len(list) != 0 {
 		t.Fatalf("expected no rows after invalid Creates: n=%d err=%v", len(list), err)
 	}
 
-	w, _, err := svc.Create(ctx, "alice@example.com", "valid_Name-09")
+	w, _, err := svc.Create(ctx, "owner-a", "alice@example.com", "valid_Name-09")
 	if err != nil {
 		t.Fatalf("Create valid name: %v", err)
 	}
@@ -244,10 +244,10 @@ func TestCreateDuplicateName(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	if _, _, err := svc.Create(ctx, "alice@example.com", "dup"); err != nil {
+	if _, _, err := svc.Create(ctx, "owner-a", "alice@example.com", "dup"); err != nil {
 		t.Fatalf("first Create: %v", err)
 	}
-	if _, _, err := svc.Create(ctx, "alice@example.com", "dup"); !errors.Is(err, ErrNameTaken) {
+	if _, _, err := svc.Create(ctx, "owner-a", "alice@example.com", "dup"); !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("duplicate Create: err = %v, want ErrNameTaken", err)
 	}
 }
@@ -260,11 +260,11 @@ func TestCreateEmptyNameGenerates(t *testing.T) {
 
 	genRE := regexp.MustCompile(`^[A-Z2-7]{26}$`)
 
-	w1, _, err := svc.Create(ctx, "alice@example.com", "")
+	w1, _, err := svc.Create(ctx, "owner-a", "alice@example.com", "")
 	if err != nil {
 		t.Fatalf("Create empty #1: %v", err)
 	}
-	w2, _, err := svc.Create(ctx, "alice@example.com", "")
+	w2, _, err := svc.Create(ctx, "owner-a", "alice@example.com", "")
 	if err != nil {
 		t.Fatalf("Create empty #2: %v", err)
 	}
@@ -275,5 +275,22 @@ func TestCreateEmptyNameGenerates(t *testing.T) {
 	}
 	if w1.Name == w2.Name {
 		t.Fatalf("two empty-name creates produced the same name %q", w1.Name)
+	}
+}
+
+// R-L7HM-FFY6 — Create persists the stable owner id and the unrelated email
+// snapshot exactly as supplied.
+func TestCreatePersistsOwnerIDAndEmailSnapshot(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	ctx := context.Background()
+	if _, _, err := svc.Create(ctx, "acct_7f91", "display@example.net", "owner-fields"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, _, _, ok, err := svc.store.GetByName(ctx, "owner-fields")
+	if err != nil || !ok {
+		t.Fatalf("GetByName: ok=%v err=%v", ok, err)
+	}
+	if got.OwnerID != "acct_7f91" || got.OwnerEmail != "display@example.net" {
+		t.Fatalf("stored owner fields = (%q, %q)", got.OwnerID, got.OwnerEmail)
 	}
 }
