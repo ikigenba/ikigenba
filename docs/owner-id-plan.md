@@ -42,7 +42,7 @@ Decisions 2–5. Common content:
 | phase | service | tables |
 |---|---|---|
 | 2 | prompts | `prompts`, `runs` |
-| 3 | repos | `repos`, `sessions` |
+| 3 | repos | `repos`, `sessions` (intake consumer follows webhooks' payload rename: `owner` → `owner_id`/`owner_email`, keys on `owner_id`) |
 | 4 | scripts | `scripts` |
 | 5 | webhooks | `webhooks` |
 | 6 | wiki | `wiki_ingest`, `wiki_jobs`, `jobs` (rename `owner`; consumer seam rekeys) |

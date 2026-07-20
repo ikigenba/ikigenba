@@ -78,10 +78,16 @@ MCP tool results that expose an owner today (for example prompts' prompt/run
 records, sites' list) keep `owner_email` and add `owner_id`. Log fields and
 health envelopes likewise carry both.
 
-### 6. The event plane is untouched
+### 6. The event plane's envelope is untouched; one payload converts
 
-Event envelopes (`{id, source, time, kind, subject, payload}`) carry no owner,
-and no service embeds an owner email in an event payload. Nothing to convert.
+Event envelopes (`{id, source, time, kind, subject, payload}`) carry no owner.
+One payload does: webhooks' `received` events carry an `owner` field (the
+stored owner email), which repos' intake consumer reads to attribute sessions.
+Per Decision 2's row rule applied to the payload, the field is replaced by the
+pair `owner_id` (the for-whom key consumers act on) + `owner_email` (display
+snapshot), both from the stored webhook row; webhooks' phase renames the field
+and repos' phase follows it on the consuming side. No other service embeds an
+owner in an event payload.
 
 ## Inventory — what each module changes
 
