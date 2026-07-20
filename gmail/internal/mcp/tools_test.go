@@ -154,6 +154,7 @@ func rpc(t *testing.T, h http.Handler, method, params string) map[string]any {
 	t.Helper()
 	body := `{"jsonrpc":"2.0","id":1,"method":"` + method + `","params":` + params + `}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("X-Owner-Id", "owner-123")
 	req.Header.Set("X-Owner-Email", "me@example.com")
 	req.Header.Set("X-Client-Id", "client-123")
 	rec := httptest.NewRecorder()
@@ -519,7 +520,7 @@ func TestHealth_Envelope(t *testing.T) {
 	if p["status"] != "ok" || p["version"] != "v-test" || p["service"] != "gmail" {
 		t.Errorf("health envelope keys = %v", p)
 	}
-	if p["owner_email"] != "me@example.com" || p["client_id"] != "client-123" {
+	if p["owner_id"] != "owner-123" || p["owner_email"] != "me@example.com" || p["client_id"] != "client-123" {
 		t.Errorf("health identity = %v", p)
 	}
 }
