@@ -18,12 +18,12 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D12 → `project/design/D12.md` — Web surface from `share/www` through the chassis (de-embed via `Spec.WWW`): move `landing.html` + `static/` to `sites/share/www`, render at `GET /{$}` via `rt.WWW()`, delete `internal/web` and the service-side `/static/` mount (chassis auto-mounts it); rewrites the mechanism of D1/D2/D3/D6/D7/D8 — owns R-0SF5-VPQF, R-0TN2-9HH4
 - D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the domain-tool table; delete the local JSON-RPC transport + local `health`; chassis supplies `health`/`reflection` (sites gains `reflection`, empty graph); mirror client becomes a constructor param; supersedes D11's R-0KIG-2A5X (15-tool set) — owns R-0UUY-N97T, R-P21E-0285
 - D14 → `project/design/D14.md` — Delete the `internal/db` `Open`/`Migrate` shim (keep only the embedded `FS` + load guard; test harnesses call `appkit/db` directly), normalize the composition root (relocate the `Handlers` closure inside `sitesSpec()`; no post-construction `.Handlers` mutation; keep the builder), and true up `AGENTS.md` if present — none (structural; shim deletion + composition-root normalization + doc truth)
-- D15 → `project/design/D15.md` — Data model: a `public` boolean and `created_by`, retiring the publish lifecycle (`tier`/`published`/`published_at` dropped; two immutable migrations; `Store.Create(name, createdBy, public)` persists the requested visibility + `SetVisibility`) — owns R-QRDS-EIS1, R-QSLO-SAIQ, R-QTTL-629F, R-QQ5W-0R1C
+- D15 → `project/design/D15.md` — Data model: a `public` boolean and owner id/email, retiring the publish lifecycle (`tier`/`published`/`published_at` dropped; owner-id conversion rebuilds the table with `owner_id`+`owner_email`, `created_by` retired, rows dropped; `Store.Create(name, ownerID, ownerEmail, public)` + `SetVisibility`) — owns R-QSLO-SAIQ, R-QTTL-629F, R-Z3ZN-5BFE, R-Z57J-J363
 - D16 → `project/design/D16.md` — Filesystem layout: files live at the served path `SITES_ROOT/<public|private>/<slug>`; delete the working tree and symlink indirection (`Layout.SiteDir`/`SiteBase`/`Move`; `publish.go` removed) — owns R-QV1H-JU04, R-QW9D-XLQT, R-QYP6-P587
 - D17 → `project/design/D17.md` — In-process static serving of hosted sites (`internal/serve`): index-mapping, no-listing, confined, trailing-slash redirect; mounted ungated at `GET /public/` and `GET /private/` — owns R-QZX3-2WYW, R-R14Z-GOPL, R-R2CV-UGGA, R-R3KS-886Z, R-R4SO-LZXO, R-R60K-ZROD
 - D18 → `project/design/D18.md` — nginx fragment proxies the public/private tiers to the process (no `alias`; private keeps `/_session-authn` and forwards all four owner identity headers; nginx reads no state off disk) — owns R-R78H-DJF2, R-R8GD-RB5R, R-R9OA-52WG, R-7NPD-3MFE
 - D19 → `project/design/D19.md` — The landing page lists the sites that exist (live-rendered from `store.List`; slug-as-link/public-private/creator/created-at; empty-state safe; also emits the JSON data island + `createdAtSort` for D22) — owns R-RAW6-IUN5, R-RC42-WMDU, R-WMWB-7EWX, R-IDOL-PV70, R-IEWI-3MXP
-- D20 → `project/design/D20.md` — MCP surface: drop publish/unpublish, add `set_visibility`, thread `created_by` from Identity, serve the live folder via `SiteDir` (file tools/sync/delete retargeted), `create(name, public?)` births at the chosen visibility in one insert (default private), and `sync` requires an already-created site (no create-or-reuse) — owns R-RDBZ-AE4J, R-RFRS-1XLX, R-RGZO-FPCM, R-RI7K-TH3B, R-RJFH-78U0, R-554R-3MBC, R-56CN-HE21
+- D20 → `project/design/D20.md` — MCP surface: drop publish/unpublish, add `set_visibility`, thread the owner (`owner_id`+`owner_email`) from Identity, serve the live folder via `SiteDir` (file tools/sync/delete retargeted), `create(name, public?)` births at the chosen visibility in one insert (default private), and `sync` requires an already-created site (no create-or-reuse) — owns R-RDBZ-AE4J, R-Z6FF-WUWS, R-RGZO-FPCM, R-RI7K-TH3B, R-RJFH-78U0, R-554R-3MBC, R-56CN-HE21
 - D21 → `project/design/D21.md` — MCP self-discovery convention: rewrite the Tier-0 `instructions` with routing vocabulary + a guide pointer, replace `describe` with a read-only embedded `guide` tool (worked examples), keyword-forward the `create`/`sync` descriptions (sync avoids publish/deploy wording); reference the guide in exactly two channels — owns R-57KJ-V5SQ, R-58SG-8XJF, R-5A0C-MPA4, R-5B89-0H0T, R-5CG5-E8RI
 - D22 → `project/design/D22.md` — Client-side filter/sort/pagination of the landing listing (fuzzy slug search, sortable name/created-at/created-by columns, page-size-10 pagination, one-click clear; pure JS functions tested in goja + a real branchless `initController` transcribing `computeView` onto the DOM; the controller also renders each row's copy-URL button and wires a delegated copy-to-clipboard side effect — a pure DOM effect outside the reduce cycle, its runtime proof D23's; runtime wiring proven by D23; no handler/DB/nginx change) — owns R-HU67-LJBW, R-HVE3-ZB2L, R-HWM0-D2TA, R-HXTW-QUJZ, R-HZ1T-4MAO, R-I1HL-W5S2, R-I2PI-9XIR, R-I3XE-NP9G, R-I55B-1H05, R-I6D7-F8QU, R-I7L3-T0HJ, R-I8T0-6S88, R-IA0W-KJYX, R-IB8S-YBPM, R-7V8B-GA0T, R-ICGP-C3GB
 - D23 → `project/design/D23.md` — Browser wiring proof: one minimal headless-Chrome test (chromedp, test-only dep; seeded auth-free `httptest` landing page; single session touching each control once — boot/filter/sort/clear/page/copy; copy step grants clipboard permission and reads the clipboard back to prove the row URL lands on it; Chrome hard-required by the green bar, one launch retry, no scenario retries; also asserts the copy icon renders as a real SVG element and that the `Copy`→`Copied` swap does not reflow the table; import-graph boundary check) — owns R-87B9-J644, R-88J5-WXUT, R-89R2-APLI, R-8AYY-OHC7, R-8DER-G0TL, R-NN9H-UKP3, R-VYEF-053C, R-VZMB-DWU1, R-8EMN-TSKA
@@ -81,10 +81,10 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-6S1D → D2 → `project/design/D02.md`
 - R-ROUT-8U3F → D2 → `project/design/D02.md`
 - R-HOME-9S3W → D7 → `project/design/D07.md`
-- R-QQ5W-0R1C → D15 → `project/design/D15.md`
-- R-QRDS-EIS1 → D15 → `project/design/D15.md`
 - R-QSLO-SAIQ → D15 → `project/design/D15.md`
 - R-QTTL-629F → D15 → `project/design/D15.md`
+- R-Z3ZN-5BFE → D15 → `project/design/D15.md`
+- R-Z57J-J363 → D15 → `project/design/D15.md`
 - R-QV1H-JU04 → D16 → `project/design/D16.md`
 - R-QW9D-XLQT → D16 → `project/design/D16.md`
 - R-QYP6-P587 → D16 → `project/design/D16.md`
@@ -100,12 +100,12 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-RAW6-IUN5 → D19 → `project/design/D19.md`
 - R-RC42-WMDU → D19 → `project/design/D19.md`
 - R-RDBZ-AE4J → D20 → `project/design/D20.md`
-- R-RFRS-1XLX → D20 → `project/design/D20.md`
 - R-RGZO-FPCM → D20 → `project/design/D20.md`
 - R-RI7K-TH3B → D20 → `project/design/D20.md`
 - R-RJFH-78U0 → D20 → `project/design/D20.md`
 - R-554R-3MBC → D20 → `project/design/D20.md`
 - R-56CN-HE21 → D20 → `project/design/D20.md`
+- R-Z6FF-WUWS → D20 → `project/design/D20.md`
 - R-57KJ-V5SQ → D21 → `project/design/D21.md`
 - R-58SG-8XJF → D21 → `project/design/D21.md`
 - R-5A0C-MPA4 → D21 → `project/design/D21.md`

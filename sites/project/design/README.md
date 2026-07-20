@@ -59,8 +59,10 @@ Shared facts every Decision leans on:
   keyed per file. A committed migration is **frozen** — a schema change is a
   **new** migration created with `bin/create-migration sites <name>` (which stamps
   a UTC `YYYYMMDDHHMMSS_<slug>.sql` version); never hand-name or edit one. The
-  hosting-model change adds new migrations; `002_sites.sql` and
-  `20260609135943_add_source_path.sql` stay frozen.
+  owner-id conversion adds one new migration that **drops and recreates** `sites`
+  with `owner_id`/`owner_email` (rows dropped, D15); `002_sites.sql`,
+  `20260609135943_add_source_path.sql`, `20260708010236_add_public_created_by.sql`,
+  and `20260708012637_drop_publish_lifecycle.sql` all stay frozen.
 - **Module wiring:** `appkit`, `eventplane`, and `registry` are committed in-repo
   replace-siblings. sites resolves its own port and the dropbox mirror address by
   name through `registry` (D9). No `agentkit` dependency (D10/D11): confined
@@ -98,15 +100,20 @@ Shared facts every Decision leans on:
 
 ## Data model
 
-`sites` is one row per hosted site, keyed by slug `name`. After the hosting-model
-change the row is: `name` (slug PK), `public` (INTEGER 0/1 — the visibility
-boolean), `created_by` (TEXT — the owner email that created it), `source_path`
-(TEXT, nullable — dropbox-sync provenance, unchanged), `created_at`, `updated_at`.
-The retired columns `tier`, `published`, and `published_at` are **gone** (a site's
-visibility is the `public` boolean; there is no lifecycle flag). The database is
-the single source of truth for which sites exist and their visibility; the
-on-disk folder location mirrors it in lockstep (the MCP tools are the only
-writer). See D15.
+`sites` is one row per hosted site, keyed by slug `name`. The row is: `name`
+(slug PK), `public` (INTEGER 0/1 — the visibility boolean), `owner_id` (TEXT NOT
+NULL — the stable owner key `X-Owner-Id`, captured at create), `owner_email` (TEXT
+NOT NULL — a write-once display snapshot of the creator email; replaces the retired
+`created_by`), `source_path` (TEXT, nullable — dropbox-sync provenance, unchanged),
+`created_at`, `updated_at`. Per the suite owner-id conversion
+(`docs/owner-id-design.md`) sites stores the stable `owner_id` beside the display
+`owner_email`; sites owner-scopes no query (the slug `name` is the global handle
+and `list`/the landing page show every site), so neither column is read for logic
+— they are captured and displayed only. The retired columns `tier`, `published`,
+and `published_at` are **gone** (a site's visibility is the `public` boolean; there
+is no lifecycle flag). The database is the single source of truth for which sites
+exist and their visibility; the on-disk folder location mirrors it in lockstep (the
+MCP tools are the only writer). See D15.
 
 ## Filesystem layout
 
@@ -144,16 +151,19 @@ Testing is part of the architecture. The cross-cutting approach:
   redirect. No network, no running suite.
 - **The domain store is tested over a real migrated SQLite DB.** `internal/sites`
   tests open an in-memory/temp DB via `appkit/db`, run the migration set, and
-  assert `Create` persists `created_by` and defaults `public` false, `SetVisibility`
-  flips the flag and moves the directory, and the final schema has `public` +
-  `created_by` and lacks `tier`/`published`/`published_at` (via `pragma
-  table_info`). The migration assertions run against the **real** SQLite the
-  runner uses, not a fake — the substrate that actually enforces the column set.
-- **The MCP tool table is tested at the handler boundary.** Tests assert the tool
-  set contains no `publish`/`unpublish`, that `create` records the request
-  Identity's owner as `created_by`, that `set_visibility` moves the folder and the
-  returned `url` reflects the new tier, and that the file tools/`sync`/`delete`
-  operate on `SiteDir(site.Public, slug)`.
+  assert `Create` persists `owner_id` + `owner_email` (distinct even for a shared
+  email) and defaults `public` false, `SetVisibility` flips the flag and moves the
+  directory, and the final schema has `public` + `owner_id` + `owner_email` and
+  lacks `created_by`/`tier`/`published`/`published_at` (via `pragma table_info`).
+  The migration assertions run against the **real** SQLite the runner uses, not a
+  fake — the substrate that actually enforces the column set.
+- **The MCP tool table is tested at the handler boundary.** Tests inject the
+  Identity headers (`X-Owner-Id` plus `X-Owner-Email`) and assert the tool set
+  contains no `publish`/`unpublish`, that `create` records the request Identity's
+  `owner_id` and `owner_email` (the stable id captured even when two callers share
+  an email), that `set_visibility` moves the folder and the returned `url` reflects
+  the new tier, and that the file tools/`sync`/`delete` operate on
+  `SiteDir(site.Public, slug)`.
 - **The landing surface is tested over the repo-real `share/www` tree.** Tests
   load the shipped tree with `appkit/web.Load`, render `landing.html` with a fixed
   version and a fixed slice of sites, and assert the version card plus one row per
