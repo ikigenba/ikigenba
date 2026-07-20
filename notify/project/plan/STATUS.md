@@ -9,5 +9,7 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 17
+Next phase: 18
+
+- Phase 17 ⬜ realizes — — MCP tests inject `X-Owner-Id` under the flipped appkit gate (owner-id conversion; no migration, no schema, no non-test source change)
 
