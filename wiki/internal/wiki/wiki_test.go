@@ -309,7 +309,7 @@ func serviceWithExtractedSubjects(conn any, subjects []extract.ExtractedSubject)
 func ingestAndProcess(t *testing.T, ctx context.Context, svc *Service) string {
 	t.Helper()
 
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "source text", "Source title", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "source text", "Source title", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}

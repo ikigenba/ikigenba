@@ -8,11 +8,12 @@ import (
 
 // Alias records a historical or alternate name that resolves to a canonical subject.
 type Alias struct {
-	NormName  string
-	SubjectID string
-	Name      string
-	CreatedBy string
-	CreatedAt string
+	NormName   string
+	SubjectID  string
+	Name       string
+	OwnerID    string
+	OwnerEmail string
+	CreatedAt  string
 }
 
 // AliasStore persists subject aliases.
@@ -30,9 +31,9 @@ func (a *AliasStore) Insert(ctx context.Context, al Alias) error {
 		normName = al.Name
 	}
 	_, err := a.db.ExecContext(ctx, `
-		INSERT INTO aliases (norm_name, subject_id, name, created_by, created_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		Normalize(normName), al.SubjectID, al.Name, al.CreatedBy, al.CreatedAt)
+		INSERT INTO aliases (norm_name, subject_id, name, owner_id, owner_email, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		Normalize(normName), al.SubjectID, al.Name, al.OwnerID, al.OwnerEmail, al.CreatedAt)
 	return err
 }
 
@@ -45,17 +46,17 @@ func (a *AliasStore) RepointSubject(ctx context.Context, from, to string) error 
 func (a *AliasStore) GetByNormName(ctx context.Context, normName string) (Alias, error) {
 	var al Alias
 	err := a.db.QueryRowContext(ctx, `
-		SELECT norm_name, subject_id, name, created_by, created_at
+		SELECT norm_name, subject_id, name, owner_id, owner_email, created_at
 		FROM aliases
 		WHERE norm_name = ?`,
 		Normalize(normName)).
-		Scan(&al.NormName, &al.SubjectID, &al.Name, &al.CreatedBy, &al.CreatedAt)
+		Scan(&al.NormName, &al.SubjectID, &al.Name, &al.OwnerID, &al.OwnerEmail, &al.CreatedAt)
 	return al, err
 }
 
 func (a *AliasStore) ListAll(ctx context.Context) ([]Alias, error) {
 	rows, err := a.db.QueryContext(ctx, `
-		SELECT norm_name, subject_id, name, created_by, created_at
+		SELECT norm_name, subject_id, name, owner_id, owner_email, created_at
 		FROM aliases
 		ORDER BY norm_name`)
 	if err != nil {
@@ -66,7 +67,7 @@ func (a *AliasStore) ListAll(ctx context.Context) ([]Alias, error) {
 	var aliases []Alias
 	for rows.Next() {
 		var al Alias
-		if err := rows.Scan(&al.NormName, &al.SubjectID, &al.Name, &al.CreatedBy, &al.CreatedAt); err != nil {
+		if err := rows.Scan(&al.NormName, &al.SubjectID, &al.Name, &al.OwnerID, &al.OwnerEmail, &al.CreatedAt); err != nil {
 			return nil, err
 		}
 		aliases = append(aliases, al)
@@ -82,7 +83,7 @@ func (a *AliasStore) ListMerges(ctx context.Context, p page.Params) ([]Alias, st
 	limit := p.ResolvedLimit()
 	var args []any
 	query := `
-		SELECT norm_name, subject_id, name, created_by, created_at
+		SELECT norm_name, subject_id, name, owner_id, owner_email, created_at
 		FROM aliases
 		WHERE 1 = 1`
 	if len(cursor) > 0 {
@@ -104,7 +105,7 @@ func (a *AliasStore) ListMerges(ctx context.Context, p page.Params) ([]Alias, st
 	var aliases []Alias
 	for rows.Next() {
 		var al Alias
-		if err := rows.Scan(&al.NormName, &al.SubjectID, &al.Name, &al.CreatedBy, &al.CreatedAt); err != nil {
+		if err := rows.Scan(&al.NormName, &al.SubjectID, &al.Name, &al.OwnerID, &al.OwnerEmail, &al.CreatedAt); err != nil {
 			return nil, "", err
 		}
 		aliases = append(aliases, al)

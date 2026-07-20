@@ -105,7 +105,7 @@ func TestOrphansCountsAliasMentionsAsCanonicalInbound(t *testing.T) {
 	if err := aliases.Insert(ctx, Alias{
 		Name:      "Vasari",
 		SubjectID: "subject-w",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-25T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias: %v", err)

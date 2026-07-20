@@ -168,7 +168,7 @@ func TestPageWithLinksProjectsAliasAwareInboundAndOutbound(t *testing.T) {
 	if err := aliases.Insert(ctx, Alias{
 		Name:      "Former Lab",
 		SubjectID: "subject-1",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-24T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias for subject-1: %v", err)
@@ -176,7 +176,7 @@ func TestPageWithLinksProjectsAliasAwareInboundAndOutbound(t *testing.T) {
 	if err := aliases.Insert(ctx, Alias{
 		Name:      "Project Lumen",
 		SubjectID: "subject-2",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-24T12:01:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias for subject-2: %v", err)
@@ -242,7 +242,7 @@ func TestMentionsInResolvesAliasKeysToCanonicalSubject(t *testing.T) {
 	if err := aliases.Insert(ctx, Alias{
 		Name:      "Project Lumen",
 		SubjectID: "subject-lumen",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-25T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias: %v", err)
@@ -375,7 +375,7 @@ func TestServiceLinkifyMentionsLoadsAliasesAndComposesAbsoluteBase(t *testing.T)
 	if withoutAlias != "Vasari painted it." {
 		t.Fatalf("LinkifyMentions without alias = %q, want unchanged text", withoutAlias)
 	}
-	if err := aliases.Insert(ctx, Alias{Name: "Vasari", SubjectID: "W", CreatedBy: "owner@example.com", CreatedAt: "2026-07-10T00:00:00Z"}); err != nil {
+	if err := aliases.Insert(ctx, Alias{Name: "Vasari", SubjectID: "W", OwnerID: "owner-id", OwnerEmail: "owner@example.com", CreatedAt: "2026-07-10T00:00:00Z"}); err != nil {
 		t.Fatalf("Insert alias: %v", err)
 	}
 	got, err := svc.LinkifyMentions(ctx, "Vasari painted it.", base, "")
@@ -402,7 +402,7 @@ func TestMentionsInOrdersAndDedupesWebRefs(t *testing.T) {
 	if err := aliases.Insert(ctx, Alias{
 		Name:      "Project A",
 		SubjectID: "subject-a",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-25T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias: %v", err)

@@ -17,8 +17,8 @@ func TestConcurrentReadReturnsLastCommittedSnapshotDuringOpenWrite(t *testing.T)
 	defer closeConns()
 
 	if err := NewJobStore(conns).InsertIngest(ctx, Job{
-		ID:         "job-snapshot",
-		Owner:      "owner@example.com",
+		ID:      "job-snapshot",
+		OwnerID: "owner-id", OwnerEmail: "owner@example.com",
 		SourceText: "source",
 		Status:     JobPending,
 		ReceivedAt: time.Date(2026, 6, 22, 9, 0, 0, 0, time.UTC),
@@ -69,8 +69,8 @@ func TestConcurrentWritesSerializeWithoutBusy(t *testing.T) {
 		id := id
 		go func() {
 			errCh <- NewJobStore(conns).InsertIngest(ctx, Job{
-				ID:         id,
-				Owner:      "owner@example.com",
+				ID:      id,
+				OwnerID: "owner-id", OwnerEmail: "owner@example.com",
 				SourceText: id + " source",
 				Status:     JobPending,
 				ReceivedAt: time.Date(2026, 6, 22, 9, 1, 0, 0, time.UTC),
@@ -101,8 +101,8 @@ func TestConcurrentReadAndControlWriteCompleteWhenWriterIdle(t *testing.T) {
 	defer closeConns()
 
 	if err := NewJobStore(conns).InsertIngest(ctx, Job{
-		ID:         "job-readable",
-		Owner:      "owner@example.com",
+		ID:      "job-readable",
+		OwnerID: "owner-id", OwnerEmail: "owner@example.com",
 		SourceText: "source",
 		Status:     JobPending,
 		ReceivedAt: time.Date(2026, 6, 22, 9, 2, 0, 0, time.UTC),
@@ -126,8 +126,8 @@ func TestConcurrentReadAndControlWriteCompleteWhenWriterIdle(t *testing.T) {
 	}()
 	go func() {
 		writeDone <- NewJobStore(conns).InsertIngest(ctx, Job{
-			ID:         "job-control-write",
-			Owner:      "owner@example.com",
+			ID:      "job-control-write",
+			OwnerID: "owner-id", OwnerEmail: "owner@example.com",
 			SourceText: "control source",
 			Status:     JobPending,
 			ReceivedAt: time.Date(2026, 6, 22, 9, 2, 1, 0, time.UTC),
@@ -154,8 +154,8 @@ func TestReadHandleSeesWriteHandleCommit(t *testing.T) {
 	defer closeConns()
 
 	if err := NewJobStore(conns).InsertIngest(ctx, Job{
-		ID:         "job-committed",
-		Owner:      "owner@example.com",
+		ID:      "job-committed",
+		OwnerID: "owner-id", OwnerEmail: "owner@example.com",
 		SourceText: "source",
 		Status:     JobPending,
 		ReceivedAt: time.Date(2026, 6, 22, 9, 3, 0, 0, time.UTC),

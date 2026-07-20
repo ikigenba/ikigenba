@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -294,8 +295,8 @@ func TestDomainOutputSchemasMirrorRepresentativeStructuredResults(t *testing.T) 
 		"page": `{"subject":"entity/from"}`,
 	}
 	nested := map[string]map[string][]string{
-		"jobs":     {"jobs": {"id", "owner", "title", "tags", "status", "received_at", "started_at", "finished_at", "error"}},
-		"merges":   {"merges": {"norm_name", "subject_id", "name", "created_by", "created_at"}},
+		"jobs":     {"jobs": {"id", "owner_email", "owner_id", "title", "tags", "status", "received_at", "started_at", "finished_at", "error"}},
+		"merges":   {"merges": {"norm_name", "subject_id", "name", "owner_email", "owner_id", "created_at"}},
 		"subjects": {"subjects": {"path", "type", "name", "has_page"}},
 		"claims":   {"claims": {"id", "text", "job"}},
 		"ask":      {"citations": {"url", "title"}},
@@ -651,6 +652,125 @@ func TestIngestToolUsesAuthenticatedIdentity(t *testing.T) {
 	decodeJSON(t, []byte(result.Content[0].Text), &mirrored)
 	if !reflect.DeepEqual(mirrored, want) {
 		t.Fatalf("text content = %#v, want %#v", mirrored, want)
+	}
+}
+
+func TestIngestStoresAndJobsExposeOwnerPairKeyedOnID(t *testing.T) {
+	// R-1QO4-77EI
+	// R-1T3W-YQVW
+	ctx := context.Background()
+	conn := migratedMCPDB(t, ctx)
+	defer conn.Close()
+	svc := wikidomain.NewService(conn, nil, nil, func() time.Time { return time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC) })
+	h := gatedHandler(t, newTestHandler(t, WithIngestService(svc), WithJobListService(mcpJobLister{store: wikidomain.NewJobStore(conn)})))
+
+	for i, email := range []string{"alice@example.com", ""} {
+		rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"ingest","method":"tools/call","params":{"name":"ingest","arguments":{"text":"source `+fmt.Sprint(i)+`"}}}`, "id-1", email)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("ingest %d status = %d, want 200; body=%s", i, rec.Code, rec.Body.String())
+		}
+		var result struct {
+			JobID string `json:"job_id"`
+		}
+		decodeToolText(t, rec.Body.Bytes(), &result)
+		var ownerID, ownerEmail string
+		if err := conn.QueryRowContext(ctx, `SELECT owner_id, owner_email FROM jobs WHERE id = ?`, result.JobID).Scan(&ownerID, &ownerEmail); err != nil {
+			t.Fatalf("read job owner pair: %v", err)
+		}
+		if ownerID != "id-1" || ownerEmail != email {
+			t.Fatalf("stored owner pair = %q/%q, want id-1/%q", ownerID, ownerEmail, email)
+		}
+	}
+
+	rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"jobs","method":"tools/call","params":{"name":"jobs","arguments":{"limit":10}}}`, "id-1", "alice@example.com")
+	var page map[string]any
+	decodeToolText(t, rec.Body.Bytes(), &page)
+	items := page["jobs"].([]any)
+	var item map[string]any
+	for _, raw := range items {
+		candidate := raw.(map[string]any)
+		if candidate["owner_email"] == "alice@example.com" {
+			item = candidate
+		}
+	}
+	if item == nil {
+		t.Fatalf("jobs page has no alice owner snapshot: %#v", page)
+	}
+	if item["owner_id"] != "id-1" || item["owner_email"] != "alice@example.com" {
+		t.Fatalf("jobs owner pair = %#v, want id and email snapshot", item)
+	}
+	if _, exists := item["owner"]; exists {
+		t.Fatalf("jobs item retained owner field: %#v", item)
+	}
+}
+
+func TestMergeStoresAndMergesExposeOwnerPairKeyedOnID(t *testing.T) {
+	// R-1RW0-KZ57
+	// R-1VJP-QADA
+	// R-E198-AY8Z
+	ctx := context.Background()
+	conn := migratedMCPDB(t, ctx)
+	defer conn.Close()
+	subjects := wikidomain.NewSubjectStore(conn)
+	for _, subject := range []wikidomain.Subject{
+		{ID: "winner-1", Name: "Winner One", Type: "entity"}, {ID: "loser-1", Name: "Loser One", Type: "entity"},
+		{ID: "winner-2", Name: "Winner Two", Type: "entity"}, {ID: "loser-2", Name: "Loser Two", Type: "entity"},
+	} {
+		if err := subjects.Save(ctx, subject); err != nil {
+			t.Fatalf("save subject %s: %v", subject.ID, err)
+		}
+	}
+	svc := wikidomain.NewService(conn, nil, ownerPairCompiler{}, func() time.Time { return time.Date(2026, 7, 19, 13, 0, 0, 0, time.UTC) })
+	h := gatedHandler(t, newTestHandler(t,
+		WithMergeService(subjects, svc),
+		WithMergeListService(mcpMergeLister{store: wikidomain.NewAliasStore(conn)}),
+	))
+
+	for i, email := range []string{"alice@example.com", ""} {
+		n := i + 1
+		word := []string{"one", "two"}[i]
+		rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/loser-`+word+`","to":"entity/winner-`+word+`"}}}`, "id-1", email)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("merge %d status = %d, want 200; body=%s", n, rec.Code, rec.Body.String())
+		}
+		var result struct {
+			JobID string `json:"job_id"`
+		}
+		decodeToolText(t, rec.Body.Bytes(), &result)
+		var ownerID, ownerEmail string
+		if err := conn.QueryRowContext(ctx, `SELECT owner_id, owner_email FROM jobs WHERE id = ?`, result.JobID).Scan(&ownerID, &ownerEmail); err != nil {
+			t.Fatalf("read merge job owner pair: %v", err)
+		}
+		if ownerID != "id-1" || ownerEmail != email {
+			t.Fatalf("merge job owner pair = %q/%q, want id-1/%q", ownerID, ownerEmail, email)
+		}
+		if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
+			t.Fatalf("ProcessNext = %v/%v, want true/nil", processed, err)
+		}
+		alias, err := wikidomain.NewAliasStore(conn).GetByNormName(ctx, fmt.Sprintf("Loser %s", []string{"One", "Two"}[i]))
+		if err != nil {
+			t.Fatalf("read alias: %v", err)
+		}
+		if alias.OwnerID != "id-1" || alias.OwnerEmail != email {
+			t.Fatalf("alias owner pair = %q/%q, want id-1/%q", alias.OwnerID, alias.OwnerEmail, email)
+		}
+	}
+
+	rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"merges","method":"tools/call","params":{"name":"merges","arguments":{"limit":2}}}`, "id-1", "alice@example.com")
+	var page map[string]any
+	decodeToolText(t, rec.Body.Bytes(), &page)
+	var item map[string]any
+	for _, raw := range page["merges"].([]any) {
+		candidate := raw.(map[string]any)
+		if candidate["owner_email"] == "alice@example.com" {
+			item = candidate
+		}
+	}
+	if item == nil || item["owner_id"] != "id-1" {
+		t.Fatalf("merges owner pair = %#v, want alice/id-1", page)
+	}
+	if _, exists := item["created_by"]; exists {
+		t.Fatalf("merges item retained created_by: %#v", item)
 	}
 }
 
@@ -1556,6 +1676,7 @@ func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
 }
 
 func TestMergesToolReturnsAuditPage(t *testing.T) {
+	// R-E2H4-OPZO
 	// R-E4WX-G9H2
 	// R-YINV-5EPR
 	wiki := &capturingWiki{
@@ -1563,7 +1684,7 @@ func TestMergesToolReturnsAuditPage(t *testing.T) {
 			NormName:  "old name",
 			SubjectID: "subject-new",
 			Name:      "Old Name",
-			CreatedBy: "owner@example.com",
+			OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 			CreatedAt: "2026-06-24T12:00:00Z",
 		}},
 		mergesNext: "next-token",
@@ -1578,16 +1699,17 @@ func TestMergesToolReturnsAuditPage(t *testing.T) {
 	}
 	var body struct {
 		Merges []struct {
-			NormName  string `json:"norm_name"`
-			SubjectID string `json:"subject_id"`
-			Name      string `json:"name"`
-			CreatedBy string `json:"created_by"`
-			CreatedAt string `json:"created_at"`
+			NormName   string `json:"norm_name"`
+			SubjectID  string `json:"subject_id"`
+			Name       string `json:"name"`
+			OwnerID    string `json:"owner_id"`
+			OwnerEmail string `json:"owner_email"`
+			CreatedAt  string `json:"created_at"`
 		} `json:"merges"`
 		Next string `json:"next_cursor"`
 	}
 	decodeToolText(t, rec.Body.Bytes(), &body)
-	if len(body.Merges) != 1 || body.Merges[0].NormName != "old name" || body.Merges[0].SubjectID != "subject-new" || body.Merges[0].CreatedBy != "owner@example.com" {
+	if len(body.Merges) != 1 || body.Merges[0].NormName != "old name" || body.Merges[0].SubjectID != "subject-new" || body.Merges[0].OwnerEmail != "owner@example.com" {
 		t.Fatalf("merges body = %#v, want audit alias row", body)
 	}
 	if body.Next != "next-token" {
@@ -1685,8 +1807,8 @@ func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 	jobCursor := paging.EncodeCursor("2026-06-22T00:00:00Z", "job-cursor")
 	wiki := &capturingWiki{
 		jobs: []job{{
-			ID:         "job-123",
-			Owner:      "owner@example.com",
+			ID:      "job-123",
+			OwnerID: "owner-id", OwnerEmail: "owner@example.com",
 			Title:      "Source",
 			Tags:       []string{"one"},
 			Status:     "done",
@@ -1799,6 +1921,7 @@ func TestMCPToolsAreBehindRequireIdentity(t *testing.T) {
 
 type capturingWiki struct {
 	ingestID       string
+	ingestOwnerID  string
 	ingestOwner    string
 	ingestText     string
 	ingestTitle    string
@@ -1853,12 +1976,36 @@ func (missingJobs) Rerun(context.Context, string) (rerunResult, error) {
 
 type failingIngest struct{ err error }
 
-func (f failingIngest) Ingest(context.Context, string, string, string, []string) (string, error) {
+type mcpJobLister struct{ store *wikidomain.JobStore }
+
+func (l mcpJobLister) ListJobs(ctx context.Context, f JobFilter, p paging.Params) ([]wikidomain.Job, string, error) {
+	return l.store.ListJobs(ctx, wikidomain.JobFilter{
+		Statuses: f.Statuses,
+		Kinds:    f.Kinds,
+		Since:    f.Since,
+		Until:    f.Until,
+	}, p)
+}
+
+type mcpMergeLister struct{ store *wikidomain.AliasStore }
+
+func (l mcpMergeLister) ListMerges(ctx context.Context, p paging.Params) ([]wikidomain.Alias, string, error) {
+	return l.store.ListMerges(ctx, p)
+}
+
+type ownerPairCompiler struct{}
+
+func (ownerPairCompiler) Compile(_ context.Context, _ llm.Attribution, subject wikidomain.Subject, _ []wikidomain.Claim) (string, string, error) {
+	return subject.Name, "merged", nil
+}
+
+func (f failingIngest) Ingest(context.Context, string, string, string, string, []string) (string, error) {
 	return "", f.err
 }
 
-func (w *capturingWiki) Ingest(_ context.Context, owner, text, title string, tags []string) (string, error) {
-	w.ingestOwner = owner
+func (w *capturingWiki) Ingest(_ context.Context, ownerID, ownerEmail, text, title string, tags []string) (string, error) {
+	w.ingestOwnerID = ownerID
+	w.ingestOwner = ownerEmail
 	w.ingestText = text
 	w.ingestTitle = title
 	w.ingestTags = append([]string(nil), tags...)
@@ -1978,7 +2125,8 @@ type rerunResult struct {
 
 type job struct {
 	ID         string
-	Owner      string
+	OwnerID    string
+	OwnerEmail string
 	Title      string
 	Tags       []string
 	Status     string
@@ -1999,11 +2147,12 @@ type jobStatus struct {
 }
 
 type alias struct {
-	NormName  string
-	SubjectID string
-	Name      string
-	CreatedBy string
-	CreatedAt string
+	NormName   string
+	SubjectID  string
+	Name       string
+	OwnerID    string
+	OwnerEmail string
+	CreatedAt  string
 }
 
 type subject struct {
@@ -2177,9 +2326,19 @@ func gatedHandler(t *testing.T, mcp http.Handler) http.Handler {
 
 func callMCP(t *testing.T, h http.Handler, body, owner string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(body))
+	ownerID := ""
 	if owner != "" {
-		req.Header.Set("X-Owner-Email", owner)
+		ownerID = "owner-id"
+	}
+	return callMCPIdentity(t, h, body, ownerID, owner)
+}
+
+func callMCPIdentity(t *testing.T, h http.Handler, body, ownerID, ownerEmail string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(body))
+	if ownerID != "" {
+		req.Header.Set("X-Owner-Id", ownerID)
+		req.Header.Set("X-Owner-Email", ownerEmail)
 		req.Header.Set("X-Client-Id", "client-1")
 	}
 	rec := httptest.NewRecorder()

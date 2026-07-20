@@ -179,7 +179,7 @@ func TestProcessNextEmbedsCommittedPageAfterIngest(t *testing.T) {
 	)
 	svc.newID = sequenceIDs("job-1", "subject-1", "claim-1")
 
-	if _, err := svc.Ingest(ctx, "owner@example.com", "source", "Source", nil); err != nil {
+	if _, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "source", "Source", nil); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
 	processed, err := svc.ProcessNext(ctx)
@@ -236,7 +236,7 @@ func TestProcessNextKeepsCommittedPageDoneWhenAfterCommitEmbedFails(t *testing.T
 	)
 	svc.newID = sequenceIDs("job-1", "subject-1", "claim-1")
 
-	if _, err := svc.Ingest(ctx, "owner@example.com", "source", "Source", nil); err != nil {
+	if _, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "source", "Source", nil); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
 	processed, err := svc.ProcessNext(ctx)

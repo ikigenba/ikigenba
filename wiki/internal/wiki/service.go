@@ -102,14 +102,15 @@ func NewService(db any, extractor Extractor, compiler Compiler, now func() time.
 }
 
 // Ingest records a pending job and returns immediately with its handle.
-func (s *Service) Ingest(ctx context.Context, owner, text, title string, tags []string) (string, error) {
+func (s *Service) Ingest(ctx context.Context, ownerID, ownerEmail, text, title string, tags []string) (string, error) {
 	if s == nil {
 		return "", fmt.Errorf("wiki: nil service")
 	}
 	jobID := s.newID()
 	job := Job{
 		ID:         jobID,
-		Owner:      strings.TrimSpace(owner),
+		OwnerID:    strings.TrimSpace(ownerID),
+		OwnerEmail: strings.TrimSpace(ownerEmail),
 		SourceText: text,
 		Title:      strings.TrimSpace(title),
 		Tags:       append([]string(nil), tags...),
@@ -136,15 +137,16 @@ func (s *Service) MergeSubjects(ctx context.Context, fromSubjectID, toSubjectID 
 	defer tx.Rollback()
 
 	receivedAt := s.now()
-	owner := ""
+	ownerID, ownerEmail := "", ""
 	if id, ok := appkit.IdentityFrom(ctx); ok {
-		owner = strings.TrimSpace(id.OwnerEmail)
+		ownerID = strings.TrimSpace(id.OwnerID)
+		ownerEmail = strings.TrimSpace(id.OwnerEmail)
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO jobs (
-			id, owner, source_text, title, tags, source_hash, status, received_at
-		) VALUES (?, ?, '', 'subject merge', '[]', ?, ?, ?)`,
-		jobID, owner, hashText(""), JobPending, formatTime(receivedAt))
+			id, owner_id, owner_email, source_text, title, tags, source_hash, status, received_at
+		) VALUES (?, ?, ?, '', 'subject merge', '[]', ?, ?, ?)`,
+		jobID, ownerID, ownerEmail, hashText(""), JobPending, formatTime(receivedAt))
 	if err != nil {
 		return "", err
 	}
@@ -584,11 +586,12 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	}
 	if _, err := aliases.GetByNormName(ctx, loser.Name); errors.Is(err, sql.ErrNoRows) {
 		if err := aliases.Insert(ctx, Alias{
-			NormName:  Normalize(loser.Name),
-			SubjectID: merge.ToSubjectID,
-			Name:      loser.Name,
-			CreatedBy: job.Owner,
-			CreatedAt: formatTime(s.now()),
+			NormName:   Normalize(loser.Name),
+			SubjectID:  merge.ToSubjectID,
+			Name:       loser.Name,
+			OwnerID:    job.OwnerID,
+			OwnerEmail: job.OwnerEmail,
+			CreatedAt:  formatTime(s.now()),
 		}); err != nil {
 			return err
 		}
@@ -619,7 +622,7 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 
 func jobAttribution(job Job) llm.Attribution {
 	origin := "service:wiki"
-	if owner := strings.TrimSpace(job.Owner); owner != "" {
+	if owner := strings.TrimSpace(job.OwnerEmail); owner != "" {
 		origin = "user:" + owner
 	}
 	return llm.Attribution{Origin: origin, GroupID: job.ID}

@@ -22,7 +22,7 @@ func TestResolverResolveByPathFallsBackToAliasToken(t *testing.T) {
 	if err := NewAliasStore(conn).Insert(ctx, Alias{
 		Name:      "Folded Widget",
 		SubjectID: "subject-survivor",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-24T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias: %v", err)
@@ -56,7 +56,7 @@ func TestResolverResolveByPathPrefersExactLiveSubjectAndPreservesTypeDiscipline(
 	if err := NewAliasStore(conn).Insert(ctx, Alias{
 		Name:      "Legacy Widget",
 		SubjectID: "subject-survivor",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-24T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias: %v", err)

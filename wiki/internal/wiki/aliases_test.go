@@ -33,7 +33,8 @@ func TestAliasesMigrationCreatesConstrainedLookupTable(t *testing.T) {
 		"norm_name TEXT NOT NULL UNIQUE",
 		"subject_id TEXT NOT NULL REFERENCES subjects(id) ON DELETE RESTRICT",
 		"name TEXT NOT NULL",
-		"created_by TEXT NOT NULL",
+		"owner_id TEXT NOT NULL",
+		"owner_email TEXT NOT NULL",
 		"created_at TEXT NOT NULL",
 	} {
 		if !strings.Contains(compactTableSQL, want) {
@@ -56,7 +57,7 @@ func TestAliasesMigrationCreatesConstrainedLookupTable(t *testing.T) {
 		NormName:  "Cafe Old",
 		SubjectID: "subject-survivor",
 		Name:      "Café Old",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC).Format(time.RFC3339Nano),
 	}
 	if err := aliases.Insert(ctx, al); err != nil {
@@ -90,7 +91,7 @@ func TestAliasStorePersistsLookupAndRepointsSubjects(t *testing.T) {
 	if err := aliases.Insert(ctx, Alias{
 		Name:      "  Café   Former  ",
 		SubjectID: "subject-old",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-23T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert: %v", err)
@@ -132,8 +133,8 @@ func TestAliasStoreListAllReturnsEveryAliasForProjection(t *testing.T) {
 	}
 	aliases := NewAliasStore(conn)
 	for _, al := range []Alias{
-		{Name: "Former Two", SubjectID: "subject-two", CreatedBy: "owner@example.com", CreatedAt: "2026-06-24T12:01:00Z"},
-		{Name: "Former One", SubjectID: "subject-one", CreatedBy: "owner@example.com", CreatedAt: "2026-06-24T12:00:00Z"},
+		{Name: "Former Two", SubjectID: "subject-two", OwnerID: "owner-id", OwnerEmail: "owner@example.com", CreatedAt: "2026-06-24T12:01:00Z"},
+		{Name: "Former One", SubjectID: "subject-one", OwnerID: "owner-id", OwnerEmail: "owner@example.com", CreatedAt: "2026-06-24T12:00:00Z"},
 	} {
 		if err := aliases.Insert(ctx, al); err != nil {
 			t.Fatalf("Insert %s: %v", al.Name, err)
@@ -173,9 +174,9 @@ func TestAliasStoreListMergesReturnsNewestAuditPage(t *testing.T) {
 	}
 	aliases := NewAliasStore(conn)
 	for _, al := range []Alias{
-		{Name: "Old One", SubjectID: "subject-one", CreatedBy: "owner-a@example.com", CreatedAt: "2026-06-24T12:00:00Z"},
-		{Name: "Old Two", SubjectID: "subject-two", CreatedBy: "owner-b@example.com", CreatedAt: "2026-06-24T12:02:00Z"},
-		{Name: "Old Three", SubjectID: "subject-three", CreatedBy: "owner-c@example.com", CreatedAt: "2026-06-24T12:01:00Z"},
+		{Name: "Old One", SubjectID: "subject-one", OwnerID: "owner-id", OwnerEmail: "owner-a@example.com", CreatedAt: "2026-06-24T12:00:00Z"},
+		{Name: "Old Two", SubjectID: "subject-two", OwnerID: "owner-id", OwnerEmail: "owner-b@example.com", CreatedAt: "2026-06-24T12:02:00Z"},
+		{Name: "Old Three", SubjectID: "subject-three", OwnerID: "owner-id", OwnerEmail: "owner-c@example.com", CreatedAt: "2026-06-24T12:01:00Z"},
 	} {
 		if err := aliases.Insert(ctx, al); err != nil {
 			t.Fatalf("Insert %s: %v", al.Name, err)
@@ -189,7 +190,7 @@ func TestAliasStoreListMergesReturnsNewestAuditPage(t *testing.T) {
 	if !sameStrings(aliasNames(first), []string{"Old Two", "Old Three"}) || next == "" {
 		t.Fatalf("first page aliases = %v, next %q; want newest two plus cursor", aliasNames(first), next)
 	}
-	if first[0].SubjectID != "subject-two" || first[0].CreatedBy != "owner-b@example.com" {
+	if first[0].SubjectID != "subject-two" || first[0].OwnerEmail != "owner-b@example.com" {
 		t.Fatalf("first merge row = %+v, want audit metadata for newest alias", first[0])
 	}
 
@@ -221,7 +222,7 @@ func TestResolverPrefersSubjectsThenAliasesAndReportsNotFound(t *testing.T) {
 	if err := NewAliasStore(conn).Insert(ctx, Alias{
 		Name:      "Legacy Name",
 		SubjectID: "subject-canonical",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-23T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias: %v", err)
@@ -264,7 +265,7 @@ func TestProcessNextAppliesAliasedNameToSurvivorSubject(t *testing.T) {
 	if err := NewAliasStore(conn).Insert(ctx, Alias{
 		Name:      "Former Name",
 		SubjectID: "subject-survivor",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-23T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias: %v", err)
@@ -280,7 +281,7 @@ func TestProcessNextAppliesAliasedNameToSurvivorSubject(t *testing.T) {
 	))
 	svc.newID = sequenceIDs("job-1", "claim-1")
 
-	if _, err := svc.Ingest(ctx, "owner@example.com", "source", "Title", nil); err != nil {
+	if _, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "source", "Title", nil); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
 	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {

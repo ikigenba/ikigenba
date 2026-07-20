@@ -64,7 +64,7 @@ func TestHybridRetrieverPinsExactAliasSubjectOnce(t *testing.T) {
 	if err := wikidomain.NewAliasStore(conn).Insert(ctx, wikidomain.Alias{
 		Name:      "The Widget",
 		SubjectID: "subject-acme",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-24T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias: %v", err)

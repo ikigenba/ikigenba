@@ -50,7 +50,7 @@ func TestRunIntegratesPendingJobWithRealDBAndMockProvider(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- worker.Run(runCtx, svc) }()
 
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "Acme Robotics opened a research lab in Tulsa.", "Tulsa lab", []string{"robotics"})
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme Robotics opened a research lab in Tulsa.", "Tulsa lab", []string{"robotics"})
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestRunRequeuesOrphanedWorkingJobOnStartup(t *testing.T) {
 		clockAt(time.Date(2026, 6, 22, 22, 0, 0, 0, time.UTC)),
 	)
 
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "Acme Robotics reopened a stuck worker job.", "Stuck job", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme Robotics reopened a stuck worker job.", "Stuck job", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestRunAbortWorkingJobCancelsProviderAndPreservesAbortedStatus(t *testing.T
 	done := make(chan error, 1)
 	go func() { done <- worker.Run(runCtx, svc) }()
 
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "Acme Robotics opened a blocked lab.", "Blocked lab", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme Robotics opened a blocked lab.", "Blocked lab", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}

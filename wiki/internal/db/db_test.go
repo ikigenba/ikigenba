@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,99 @@ import (
 
 	appdb "appkit/db"
 )
+
+func TestOwnerIDMigrationDropsPreConversionJobs(t *testing.T) {
+	// R-1O8B-FNX4
+	ctx := context.Background()
+	conn, migrations := preOwnerIDDatabase(t, ctx)
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, `INSERT INTO jobs (id, status, owner) VALUES ('old-job', 'pending', 'old@example.com')`); err != nil {
+		t.Fatalf("seed pre-conversion job: %v", err)
+	}
+	if err := appdb.Migrate(ctx, conn, migrations); err != nil {
+		t.Fatalf("apply owner-id migration: %v", err)
+	}
+	assertOwnerColumns(t, ctx, conn, "jobs", []string{"owner_id", "owner_email"}, "owner")
+	assertTableEmpty(t, ctx, conn, "jobs")
+}
+
+func TestOwnerIDMigrationDropsPreConversionAliases(t *testing.T) {
+	// R-1PG7-TFNT
+	ctx := context.Background()
+	conn, migrations := preOwnerIDDatabase(t, ctx)
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, `INSERT INTO subjects (id, name, norm_name, type) VALUES ('winner', 'Winner', 'winner', 'entity')`); err != nil {
+		t.Fatalf("seed subject: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, `INSERT INTO aliases (norm_name, subject_id, name, created_by, created_at) VALUES ('old-name', 'winner', 'Old Name', 'old@example.com', '2026-07-19T00:00:00Z')`); err != nil {
+		t.Fatalf("seed pre-conversion alias: %v", err)
+	}
+	if err := appdb.Migrate(ctx, conn, migrations); err != nil {
+		t.Fatalf("apply owner-id migration: %v", err)
+	}
+	assertOwnerColumns(t, ctx, conn, "aliases", []string{"owner_id", "owner_email"}, "created_by")
+	assertTableEmpty(t, ctx, conn, "aliases")
+}
+
+func preOwnerIDDatabase(t *testing.T, ctx context.Context) (*sql.DB, []appdb.Migration) {
+	t.Helper()
+	conn, err := appdb.Open(t.TempDir() + "/wiki.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	migrations, err := appdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		conn.Close()
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	if len(migrations) < 2 || !strings.Contains(migrations[len(migrations)-1].Name, "owner_id_columns") {
+		conn.Close()
+		t.Fatalf("latest migration = %#v, want owner_id_columns", migrations[len(migrations)-1])
+	}
+	if err := appdb.Migrate(ctx, conn, migrations[:len(migrations)-1]); err != nil {
+		conn.Close()
+		t.Fatalf("apply pre-conversion migrations: %v", err)
+	}
+	return conn, migrations
+}
+
+func assertOwnerColumns(t *testing.T, ctx context.Context, conn *sql.DB, table string, required []string, forbidden string) {
+	t.Helper()
+	rows, err := conn.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+	if err != nil {
+		t.Fatalf("table_info(%s): %v", table, err)
+	}
+	defer rows.Close()
+	columns := map[string]bool{}
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatalf("scan table_info(%s): %v", table, err)
+		}
+		columns[name] = notNull == 1
+	}
+	for _, name := range required {
+		if !columns[name] {
+			t.Fatalf("%s column %s missing or nullable: %#v", table, name, columns)
+		}
+	}
+	if _, exists := columns[forbidden]; exists {
+		t.Fatalf("%s retained forbidden column %s: %#v", table, forbidden, columns)
+	}
+}
+
+func assertTableEmpty(t *testing.T, ctx context.Context, conn *sql.DB, table string) {
+	t.Helper()
+	var count int
+	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&count); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	if count != 0 {
+		t.Fatalf("%s row count = %d, want zero", table, count)
+	}
+}
 
 func TestMigrationsRetireLLMCallSchemaWithoutChangingHistory(t *testing.T) {
 	// R-1BRG-F9TN

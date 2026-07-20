@@ -27,7 +27,7 @@ const Instructions = "wiki is a knowledge base (notes, a second brain) built fro
 type Handler struct {
 	pageBase  string
 	linkify   func(context.Context, string, string, string) (string, error)
-	ingest    func(context.Context, string, string, string, []string) (string, error)
+	ingest    func(context.Context, string, string, string, string, []string) (string, error)
 	status    func(context.Context, string) (any, error)
 	abort     func(context.Context, string) (any, error)
 	rerun     func(context.Context, string) (any, error)
@@ -50,7 +50,7 @@ type JobFilter struct {
 }
 
 type ingestService interface {
-	Ingest(ctx context.Context, owner, text, title string, tags []string) (string, error)
+	Ingest(ctx context.Context, ownerID, ownerEmail, text, title string, tags []string) (string, error)
 }
 
 type jobStatusFunc[T any] interface {
@@ -391,9 +391,6 @@ func (h *Handler) handleIngestCall(ctx context.Context, raw json.RawMessage, id 
 	if h.ingest == nil {
 		return internalError("ingest tool is not configured"), nil
 	}
-	if strings.TrimSpace(id.OwnerEmail) == "" {
-		return validationError("missing authenticated identity"), nil
-	}
 	var args struct {
 		Text  string   `json:"text"`
 		Title string   `json:"title"`
@@ -405,7 +402,7 @@ func (h *Handler) handleIngestCall(ctx context.Context, raw json.RawMessage, id 
 	if strings.TrimSpace(args.Text) == "" {
 		return validationError("text is required"), nil
 	}
-	jobID, err := h.ingest(ctx, id.OwnerEmail, args.Text, args.Title, args.Tags)
+	jobID, err := h.ingest(ctx, id.OwnerID, id.OwnerEmail, args.Text, args.Title, args.Tags)
 	if err != nil {
 		return internalError(err.Error()), nil
 	}
@@ -505,9 +502,6 @@ func (h *Handler) handleMergeCall(ctx context.Context, raw json.RawMessage, id s
 	if h.resolve == nil || h.merge == nil {
 		return internalError("merge tool is not configured"), nil
 	}
-	if strings.TrimSpace(id.OwnerEmail) == "" {
-		return validationError("missing authenticated identity"), nil
-	}
 	var args struct {
 		From string `json:"from"`
 		To   string `json:"to"`
@@ -575,9 +569,6 @@ func (h *Handler) handleMergesCall(ctx context.Context, raw json.RawMessage, _ s
 func (h *Handler) handleAskCall(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	if h.ask == nil {
 		return internalError("ask tool is not configured"), nil
-	}
-	if strings.TrimSpace(id.OwnerEmail) == "" {
-		return validationError("missing authenticated identity"), nil
 	}
 	var args struct {
 		Question string `json:"question"`
@@ -755,7 +746,7 @@ func jobsTool() map[string]any {
 			"until":  map[string]any{"type": "string"},
 		}),
 		"outputSchema": pagedOutputSchema("jobs", objectArraySchema(map[string]any{
-			"id": stringSchema(), "owner": stringSchema(), "title": stringSchema(), "tags": stringArraySchema(),
+			"id": stringSchema(), "owner_email": stringSchema(), "owner_id": stringSchema(), "title": stringSchema(), "tags": stringArraySchema(),
 			"status": stringSchema(), "received_at": nullableStringSchema(), "started_at": nullableStringSchema(),
 			"finished_at": nullableStringSchema(), "error": stringSchema(),
 		})),
@@ -795,7 +786,7 @@ func mergesTool() map[string]any {
 		"inputSchema": listSchema(map[string]any{}),
 		"outputSchema": pagedOutputSchema("merges", objectArraySchema(map[string]any{
 			"norm_name": stringSchema(), "subject_id": stringSchema(), "name": stringSchema(),
-			"created_by": stringSchema(), "created_at": stringSchema(),
+			"owner_email": stringSchema(), "owner_id": stringSchema(), "created_at": stringSchema(),
 		})),
 	}
 }
@@ -1189,7 +1180,8 @@ func publicJobsResult(jobs any) []map[string]any {
 		}
 		out = append(out, map[string]any{
 			"id":          stringField(job, "ID"),
-			"owner":       stringField(job, "Owner"),
+			"owner_email": stringField(job, "OwnerEmail"),
+			"owner_id":    stringField(job, "OwnerID"),
 			"title":       stringField(job, "Title"),
 			"tags":        stringSliceField(job, "Tags"),
 			"status":      stringField(job, "Status"),
@@ -1211,11 +1203,12 @@ func publicMergesResult(merges any) []map[string]string {
 			continue
 		}
 		out = append(out, map[string]string{
-			"norm_name":  stringField(merge, "NormName"),
-			"subject_id": stringField(merge, "SubjectID"),
-			"name":       stringField(merge, "Name"),
-			"created_by": stringField(merge, "CreatedBy"),
-			"created_at": stringField(merge, "CreatedAt"),
+			"norm_name":   stringField(merge, "NormName"),
+			"subject_id":  stringField(merge, "SubjectID"),
+			"name":        stringField(merge, "Name"),
+			"owner_email": stringField(merge, "OwnerEmail"),
+			"owner_id":    stringField(merge, "OwnerID"),
+			"created_at":  stringField(merge, "CreatedAt"),
 		})
 	}
 	return out

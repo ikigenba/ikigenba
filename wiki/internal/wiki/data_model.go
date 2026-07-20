@@ -55,7 +55,8 @@ type Page struct {
 // Job is a phase-1 wiki data-model job.
 type Job struct {
 	ID         string
-	Owner      string
+	OwnerID    string
+	OwnerEmail string
 	SourceText string
 	Title      string
 	Tags       []string
@@ -155,8 +156,8 @@ func mustConns(db any) Conns {
 
 func (s *JobStore) Save(ctx context.Context, job Job) error {
 	_, err := s.write.ExecContext(ctx,
-		`INSERT INTO jobs (id, status) VALUES (?, ?)`,
-		job.ID, job.Status)
+		`INSERT INTO jobs (id, status, owner_id, owner_email) VALUES (?, ?, ?, ?)`,
+		job.ID, job.Status, job.OwnerID, job.OwnerEmail)
 	return err
 }
 
@@ -167,10 +168,11 @@ func (s *JobStore) InsertIngest(ctx context.Context, job Job) error {
 	}
 	_, err = s.write.ExecContext(ctx, `
 		INSERT INTO jobs (
-			id, owner, source_text, title, tags, source_hash, status, received_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, owner_id, owner_email, source_text, title, tags, source_hash, status, received_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID,
-		job.Owner,
+		job.OwnerID,
+		job.OwnerEmail,
 		job.SourceText,
 		job.Title,
 		string(tags),
@@ -197,7 +199,7 @@ func (s *JobStore) ClaimPending(ctx context.Context, startedAt time.Time) (Job, 
 	defer tx.Rollback()
 
 	job, err := scanJob(tx.QueryRowContext(ctx, `
-		SELECT id, owner, source_text, title, tags, source_hash, status,
+		SELECT id, owner_id, owner_email, source_text, title, tags, source_hash, status,
 		       received_at, started_at, finished_at, error
 		FROM jobs
 		WHERE status = 'pending'
@@ -347,7 +349,7 @@ func (s *JobStore) Rerun(ctx context.Context, id string) (RerunResult, error) {
 
 func (s *JobStore) Status(ctx context.Context, id string) (JobStatus, error) {
 	job, err := scanJob(s.read.QueryRowContext(ctx, `
-		SELECT id, owner, source_text, title, tags, source_hash, status,
+		SELECT id, owner_id, owner_email, source_text, title, tags, source_hash, status,
 		       received_at, started_at, finished_at, error
 		FROM jobs
 		WHERE id = ?`, id))
@@ -399,7 +401,7 @@ func (s *JobStore) ListJobs(ctx context.Context, f JobFilter, p page.Params) ([]
 	limit := p.ResolvedLimit()
 	var args []any
 	query := `
-		SELECT id, owner, source_text, title, tags, source_hash, status,
+		SELECT id, owner_id, owner_email, source_text, title, tags, source_hash, status,
 		       received_at, started_at, finished_at, error
 		FROM jobs
 		WHERE 1 = 1`
@@ -529,7 +531,8 @@ func scanJob(row rowScanner) (Job, error) {
 	var tagsJSON, receivedAt, startedAt, finishedAt string
 	if err := row.Scan(
 		&job.ID,
-		&job.Owner,
+		&job.OwnerID,
+		&job.OwnerEmail,
 		&job.SourceText,
 		&job.Title,
 		&tagsJSON,

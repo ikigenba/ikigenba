@@ -260,6 +260,7 @@ func TestBuildSpecWiresFifteenMCPTools(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":"list","method":"tools/list"}`))
+	req.Header.Set("X-Owner-Id", "owner-id")
 	req.Header.Set("X-Owner-Email", "owner@example.com")
 	req.Header.Set("X-Client-Id", "client-1")
 	rec := httptest.NewRecorder()
@@ -348,6 +349,7 @@ func TestBuildSpecPageToolReturnsRenderedFooter(t *testing.T) {
 		"method":"tools/call",
 		"params":{"name":"page","arguments":{"subject":"entity/acme-robotics"}}
 	}`))
+	req.Header.Set("X-Owner-Id", "owner-id")
 	req.Header.Set("X-Owner-Email", "owner@example.com")
 	req.Header.Set("X-Client-Id", "client-1")
 	rec := httptest.NewRecorder()
@@ -398,8 +400,8 @@ func TestBuildSpecReadToolsReturnPublicPathsWithoutSubjectIDs(t *testing.T) {
 		t.Fatalf("Save subject: %v", err)
 	}
 	if err := wiki.NewJobStore(conn).InsertIngest(ctx, wiki.Job{
-		ID:         "job-123",
-		Owner:      "owner@example.com",
+		ID:      "job-123",
+		OwnerID: "owner-id", OwnerEmail: "owner@example.com",
 		SourceText: "source",
 		Status:     wiki.JobDone,
 		ReceivedAt: time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC),
@@ -490,14 +492,14 @@ func TestPathReadServicesResolveFoldedAndSurvivorPathsIdentically(t *testing.T) 
 	if err := wiki.NewAliasStore(conn).Insert(ctx, wiki.Alias{
 		Name:      "Folded Widget",
 		SubjectID: survivor.ID,
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-24T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias: %v", err)
 	}
 	if err := wiki.NewJobStore(conn).InsertIngest(ctx, wiki.Job{
-		ID:         "job-1",
-		Owner:      "owner@example.com",
+		ID:      "job-1",
+		OwnerID: "owner-id", OwnerEmail: "owner@example.com",
 		SourceText: "source",
 		Status:     wiki.JobDone,
 		ReceivedAt: time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC),
@@ -591,7 +593,7 @@ func TestSubjectHandlerWithRealPathPageServiceResolvesAliasInboundLinks(t *testi
 	if err := wiki.NewAliasStore(conn).Insert(ctx, wiki.Alias{
 		Name:      "Vasari",
 		SubjectID: "subject-w",
-		CreatedBy: "owner@example.com",
+		OwnerID:   "owner-id", OwnerEmail: "owner@example.com",
 		CreatedAt: "2026-06-24T12:00:00Z",
 	}); err != nil {
 		t.Fatalf("Insert alias: %v", err)
@@ -1035,6 +1037,7 @@ func decodeMCPToolText(t *testing.T, raw []byte, dst any) {
 func mcpToolCallText(t *testing.T, h http.Handler, body string) string {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("X-Owner-Id", "owner-id")
 	req.Header.Set("X-Owner-Email", "owner@example.com")
 	req.Header.Set("X-Client-Id", "client-1")
 	rec := httptest.NewRecorder()
@@ -1070,6 +1073,7 @@ func mcpToolSurface(t *testing.T, h http.Handler, authenticated bool) []struct {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":"list","method":"tools/list"}`))
 	if authenticated {
+		req.Header.Set("X-Owner-Id", "owner-id")
 		req.Header.Set("X-Owner-Email", "owner@example.com")
 		req.Header.Set("X-Client-Id", "client-1")
 	}
@@ -1302,7 +1306,7 @@ type capturingProvider struct {
 
 type surfaceWiki struct{}
 
-func (surfaceWiki) Ingest(context.Context, string, string, string, []string) (string, error) {
+func (surfaceWiki) Ingest(context.Context, string, string, string, string, []string) (string, error) {
 	return "", nil
 }
 
@@ -1335,7 +1339,7 @@ func (surfaceWiki) MergeSubjects(context.Context, string, string) (string, error
 }
 
 func (surfaceWiki) ListMerges(context.Context, paging.Params) ([]wiki.Alias, string, error) {
-	return []wiki.Alias{{NormName: "old acme", SubjectID: "subject-1", Name: "Old Acme", CreatedBy: "owner@example.com", CreatedAt: "2026-06-24T12:00:00Z"}}, "", nil
+	return []wiki.Alias{{NormName: "old acme", SubjectID: "subject-1", Name: "Old Acme", OwnerID: "owner-id", OwnerEmail: "owner@example.com", CreatedAt: "2026-06-24T12:00:00Z"}}, "", nil
 }
 
 func (surfaceWiki) Subjects(context.Context, string, string) ([]publicSubject, error) {

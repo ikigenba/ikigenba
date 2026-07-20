@@ -34,7 +34,7 @@ func TestAbortDuringCompileLeavesWriterIdleAndCommitsNoRows(t *testing.T) {
 		func() time.Time { return time.Date(2026, 6, 22, 10, 30, 0, 0, time.UTC) },
 	)
 
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "Acme Robotics opened a Tulsa lab.", "Tulsa lab", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme Robotics opened a Tulsa lab.", "Tulsa lab", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}

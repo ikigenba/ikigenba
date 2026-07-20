@@ -24,7 +24,7 @@ func TestIngestReturnsJobIDFromPendingInsertWithoutExtraction(t *testing.T) {
 	svc := NewService(conn, extractor, &recordingCompiler{}, func() time.Time { return fixed })
 	svc.newID = sequenceIDs("job-1")
 
-	jobID, err := svc.Ingest(ctx, " owner@example.com ", "Acme Robotics opened a lab.", " Lab notes ", []string{"robotics"})
+	jobID, err := svc.Ingest(ctx, "owner-id", " owner@example.com ", "Acme Robotics opened a lab.", " Lab notes ", []string{"robotics"})
 	if err != nil {
 		t.Fatalf("Ingest returned error: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestProcessNextMarksFailedJobStatusOnExtractError(t *testing.T) {
 	svc := NewService(conn, &recordingExtractor{err: errors.New("extract exploded")}, &recordingCompiler{}, times)
 	svc.newID = sequenceIDs("job-1")
 
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "bad source", "Bad source", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "bad source", "Bad source", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -125,13 +125,13 @@ func TestProcessNextReusesSubjectAndRecompilesFromCompleteClaims(t *testing.T) {
 	))
 	svc.newID = sequenceIDs("job-1", "subject-1", "claim-1", "job-2", "claim-2")
 
-	if _, err := svc.Ingest(ctx, "owner@example.com", "source one", "One", nil); err != nil {
+	if _, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "source one", "One", nil); err != nil {
 		t.Fatalf("first Ingest: %v", err)
 	}
 	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
 		t.Fatalf("first ProcessNext = %v/%v, want true/nil", processed, err)
 	}
-	if _, err := svc.Ingest(ctx, "owner@example.com", "source two", "Two", nil); err != nil {
+	if _, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "source two", "Two", nil); err != nil {
 		t.Fatalf("second Ingest: %v", err)
 	}
 	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
@@ -207,7 +207,7 @@ func TestProcessNextCompilesFromSubjectIdentityAndClaimsOnly(t *testing.T) {
 	))
 	svc.newID = sequenceIDs("job-1", "claim-new")
 
-	if _, err := svc.Ingest(ctx, "owner@example.com", "Acme source", "Acme", nil); err != nil {
+	if _, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme source", "Acme", nil); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
 	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
@@ -264,7 +264,7 @@ func TestRerunRefreshesPagesFTSForRewrittenPage(t *testing.T) {
 	))
 	svc.newID = sequenceIDs("job-1", "subject-1", "claim-1", "claim-2")
 
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "Acme Robotics opened a Tulsa lab.", "Tulsa lab", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme Robotics opened a Tulsa lab.", "Tulsa lab", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestAbortPendingJobMarksAbortedAndPreventsProcessing(t *testing.T) {
 	svc := NewService(conn, extractor, &recordingCompiler{}, clockAt(now))
 	svc.newID = sequenceIDs("job-1")
 
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "Acme Robotics opened a lab.", "Lab", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme Robotics opened a lab.", "Lab", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestAbortTerminalJobLeavesStatusUnchanged(t *testing.T) {
 
 	svc := NewService(conn, &recordingExtractor{}, &recordingCompiler{}, clockAt(time.Date(2026, 6, 22, 8, 1, 0, 0, time.UTC)))
 	svc.newID = sequenceIDs("job-1")
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "empty source", "Empty", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "empty source", "Empty", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestAbortWorkingJobIsNotOverwrittenByWorkerFinish(t *testing.T) {
 	}
 	svc := NewService(conn, extractor, &recordingCompiler{}, clockAt(time.Date(2026, 6, 22, 8, 2, 0, 0, time.UTC)))
 	svc.newID = sequenceIDs("job-1")
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "Acme Robotics opened a lab.", "Lab", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme Robotics opened a lab.", "Lab", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -457,7 +457,7 @@ func TestProcessNextRollsBackIntegratedRowsWhenCompileFails(t *testing.T) {
 	))
 	svc.newID = sequenceIDs("job-1", "subject-1", "claim-1")
 
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "Acme Robotics opened a lab.", "Lab", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme Robotics opened a lab.", "Lab", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -498,7 +498,7 @@ func TestRerunTerminalJobRequeuesAndUsesOriginalSourceText(t *testing.T) {
 	svc.newID = sequenceIDs("job-1")
 
 	source := "Acme Robotics opened a lab from the original source."
-	jobID, err := svc.Ingest(ctx, "owner@example.com", source, "Original title", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", source, "Original title", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestRerunReplacesJobClaimsAndRecompilesPage(t *testing.T) {
 	))
 	svc.newID = sequenceIDs("job-1", "subject-1", "claim-1", "claim-2")
 
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "Acme source", "Acme", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme source", "Acme", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -623,14 +623,14 @@ func TestRerunRefreshesSubjectsDroppedByNewExtraction(t *testing.T) {
 		"claim-alpha-2",
 	)
 
-	jobID, err := svc.Ingest(ctx, "owner@example.com", "first source", "First", nil)
+	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "first source", "First", nil)
 	if err != nil {
 		t.Fatalf("first Ingest: %v", err)
 	}
 	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
 		t.Fatalf("first ProcessNext = %v/%v, want true/nil", processed, err)
 	}
-	if _, err := svc.Ingest(ctx, "owner@example.com", "second source", "Second", nil); err != nil {
+	if _, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "second source", "Second", nil); err != nil {
 		t.Fatalf("second Ingest: %v", err)
 	}
 	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
@@ -674,7 +674,7 @@ func TestRerunRefusesInProgressJobsWithoutChangingStatus(t *testing.T) {
 
 		svc := NewService(conn, &recordingExtractor{}, &recordingCompiler{}, clockAt(time.Date(2026, 6, 22, 8, 7, 0, 0, time.UTC)))
 		svc.newID = sequenceIDs("job-1")
-		jobID, err := svc.Ingest(ctx, "owner@example.com", "source", "Title", nil)
+		jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "source", "Title", nil)
 		if err != nil {
 			t.Fatalf("Ingest: %v", err)
 		}
@@ -705,7 +705,7 @@ func TestRerunRefusesInProgressJobsWithoutChangingStatus(t *testing.T) {
 		}
 		svc := NewService(conn, extractor, &recordingCompiler{}, clockAt(time.Date(2026, 6, 22, 8, 8, 0, 0, time.UTC)))
 		svc.newID = sequenceIDs("job-1")
-		jobID, err := svc.Ingest(ctx, "owner@example.com", "source", "Title", nil)
+		jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "source", "Title", nil)
 		if err != nil {
 			t.Fatalf("Ingest: %v", err)
 		}
