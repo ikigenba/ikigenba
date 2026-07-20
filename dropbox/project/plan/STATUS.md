@@ -9,4 +9,6 @@ phase's `project/plan/phase-NN.md`, and builds it. On completion the build loop
 done marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 30
+Next phase: 31
+
+- Phase 30 ⬜ realizes — — owner-id alignment: name the `X-Owner-Id`-keyed identity contract in governed source and tests; no migration, no schema; suite green

@@ -154,6 +154,18 @@ approach every Decision's Verification list assumes:
   conflict, base64 bodies, the sentinel→code error envelope). The table/chassis
   partition (the dropbox-declared domain tools + chassis `health`/`reflection`,
   currently the eight-tool surface pinned by D19) is asserted at the same seam.
+- **Identity is id-keyed; dropbox reads no owner for logic.** Since the suite's
+  owner-id conversion (`docs/owner-id-design.md`, appkit D13), the chassis
+  identity gate on `POST /mcp` keys on `X-Owner-Id` alone; `X-Owner-Email`,
+  `X-Owner-Name`, and `X-Owner-Picture` ride along as display and are never
+  gated on. dropbox is single-tenant and keys **no** domain data on the owner —
+  the write tools read only `Identity.ClientID` (event attribution), the health
+  reporter carries no identity (the chassis `health` tool adds `owner_id`/
+  `owner_email`/`client_id`, appkit D9), and no tool renders an owner. Tests
+  that drive the identity-gated `POST /mcp` (or any `RequireIdentity` route)
+  therefore inject `X-Owner-Id` with `X-Client-Id`; the display owner headers
+  are set only where a test asserts a display value. No dropbox behavior of its
+  own is gained here — the gate and the health owner keys are chassis-owned.
 - **The nginx fragment is proven by content assertion.** The session-gate
   fragment is config, not Go, so its behavior is pinned by a test that reads
   `dropbox/etc/nginx.conf` from disk and asserts the exact-match `= /srv/dropbox/`
