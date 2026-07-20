@@ -11,4 +11,3 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 17
 
-- Phase 16 ⬜ realizes — — owner-id test/identity alignment: the MCP test harness injects `X-Owner-Id` under appkit's flipped identity gate; no schema, no migration (ledger holds live data).
