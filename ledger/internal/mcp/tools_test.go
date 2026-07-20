@@ -21,6 +21,7 @@ import (
 )
 
 const (
+	testOwnerID  = "owner-abc123"
 	testOwner    = "owner@example.com"
 	testClientID = "client-123"
 	testVersion  = "test-1.2.3"
@@ -82,6 +83,7 @@ func rpc(t *testing.T, h http.Handler, method, params string) map[string]any {
 	t.Helper()
 	body := `{"jsonrpc":"2.0","id":1,"method":"` + method + `","params":` + params + `}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("X-Owner-Id", testOwnerID)
 	req.Header.Set("X-Owner-Email", testOwner)
 	req.Header.Set("X-Client-Id", testClientID)
 	rec := httptest.NewRecorder()
@@ -471,7 +473,7 @@ func TestHealth(t *testing.T) {
 	if p["status"] != "ok" || p["version"] != testVersion || p["service"] != testService {
 		t.Errorf("health envelope = %v", p)
 	}
-	if p["owner_email"] != testOwner || p["client_id"] != testClientID {
+	if p["owner_id"] != testOwnerID || p["owner_email"] != testOwner || p["client_id"] != testClientID {
 		t.Errorf("health identity = %v", p)
 	}
 	details, ok := p["details"].(map[string]any)
