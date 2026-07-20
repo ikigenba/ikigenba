@@ -25,12 +25,13 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D19 → `project/design/D19.md` — Structured MCP adoption: `structuredContent` + `outputSchema` on the thirteen structured domain tools, prose exceptions kept text-only, typed error codes from the closed vocabulary (cites `docs/structured-mcp-design.md`) — owns R-C0G0-V0QL, R-C1NX-8SHA, R-C2VT-MK7Z, R-C43Q-0BYO, R-C5BM-E3PD, R-C6JI-RVG2, R-C7RF-5N6R, R-CA77-X6O5
 - D20 → `project/design/D20.md` — Error-taxonomy enrichment: `too_large` and `source_unavailable` become real domain sentinels (`script.ErrTooLarge`/`script.ErrSourceUnavailable` classify the import size cap and mirror-fetch failure; mirrors prompts D27) — owns R-CBF4-AYEU, R-CCN0-OQ5J, R-CDUX-2HW8
 - D21 → `project/design/D21.md` — The runner-injected `suite` Python module: embedded stdlib-only `suite.py` materialized beside `main.py`, runtime facts as `SUITE_*` env vars, `suite.event()`, the `ToolError` exception model — owns R-HVKP-FQRD, R-HWSL-TII2, R-HY0I-7A8R, R-HZ8E-L1ZG
-- D22 → `project/design/D22.md` — `suite.mcp(service, tool, args)`: the generic MCP verb client (identity asserted, structuredContent verbatim, prose fallback, typed errors) — owns R-I0GA-YTQ5, R-I1O7-CLGU, R-I2W3-QD7J, R-I5BW-HWOX, R-I6JS-VOFM
+- D22 → `project/design/D22.md` — `suite.mcp(service, tool, args)`: the generic MCP verb client (identity asserted by owner id, structuredContent verbatim, prose fallback, typed errors) — owns R-Q9X1-8DQ2, R-I1O7-CLGU, R-I2W3-QD7J, R-I5BW-HWOX, R-I6JS-VOFM
 - D23 → `project/design/D23.md` — `suite.fetch(content_url, dest)`: the content-plane acceptor (loopback URL confinement, streamed + hash-verified, pinned failure mapping) — owns R-I7RP-9G6B, R-I8ZL-N7X0, R-IA7I-0ZNP
 - D24 → `project/design/D24.md` — `suite.files`: the file share's filesystem API, service-agnostic (all seven verbs, streaming, `X-Client-Id: scripts:<script_id>`, status-derived failure mapping) — owns R-IBFE-EREE, R-ICNA-SJ53, R-IDV7-6AVS, R-IF33-K2MH, R-IGAZ-XUD6, R-IHIW-BM3V
 - D25 → `project/design/D25.md` — Content-plane holder: `GET /run-content` over run dirs (chassis loopback guard, 404-never-leaks) + `content_url` on non-directory `run_fs_list` entries — owns R-IIQS-PDUK, R-IJYP-35L9, R-IMEH-UP2N, R-INME-8GTC
 - D26 → `project/design/D26.md` — `describe` teaches the runtime contract (the `suite` module, the error model, products travel by reference) — owns R-IOUA-M8K1
 - D27 → `project/design/D27.md` — `suite.files` share paths: client-side leading-slash normalization on every share-path argument (`list` prefix included, absent path unchanged), absolute-canonical teaching in `describe` — owns R-ZECX-40UZ, R-ZFKT-HSLO, R-ZGSP-VKCD
+- D28 → `project/design/D28.md` — Owner-id keying: rebuild the `scripts` table (`owner_id` sole scoping key + write-once `owner_email` snapshot, rows dropped, `idx_scripts_source` rekeyed), rekey all scoping/`ownsScript` on `owner_id`, expose both owner fields on the MCP surface — owns R-Q2LM-XR9W, R-Q3TJ-BJ0L, R-Q51F-PARA, R-Q69C-32HZ, R-Q7H8-GU8O, R-Q8P4-ULZD
 
 ## Verification ids → Decision
 
@@ -75,7 +76,6 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-HWSL-TII2 → D21 → `project/design/D21.md`
 - R-HY0I-7A8R → D21 → `project/design/D21.md`
 - R-HZ8E-L1ZG → D21 → `project/design/D21.md`
-- R-I0GA-YTQ5 → D22 → `project/design/D22.md`
 - R-I1O7-CLGU → D22 → `project/design/D22.md`
 - R-I2W3-QD7J → D22 → `project/design/D22.md`
 - R-I5BW-HWOX → D22 → `project/design/D22.md`
@@ -109,6 +109,13 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-NGNX-4B7R → D4 → `project/design/D04.md`
 - R-NGNX-6C9S → D4 → `project/design/D04.md`
 - R-NGNX-8D1T → D4 → `project/design/D04.md`
+- R-Q2LM-XR9W → D28 → `project/design/D28.md`
+- R-Q3TJ-BJ0L → D28 → `project/design/D28.md`
+- R-Q51F-PARA → D28 → `project/design/D28.md`
+- R-Q69C-32HZ → D28 → `project/design/D28.md`
+- R-Q7H8-GU8O → D28 → `project/design/D28.md`
+- R-Q8P4-ULZD → D28 → `project/design/D28.md`
+- R-Q9X1-8DQ2 → D22 → `project/design/D22.md`
 - R-RGST-DBOX → D10 → `project/design/D10.md`
 - R-RGST-GMOD → D10 → `project/design/D10.md`
 - R-RGST-NLIT → D10 → `project/design/D10.md`
@@ -123,3 +130,5 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ZGSP-VKCD → D27 → `project/design/D27.md`
 
 _Retired: R-RGST-PEER (was D10) — the peer feed-URL default resolution it pinned became chassis-owned when D11 moved the consumer loops to `Spec.Consumers`; the behavior is pinned by appkit's `R-464U-T3T1`/`R-47CR-6VJQ`._
+
+_Retired: R-I0GA-YTQ5 (was D22) — the `suite.mcp` happy-path assertion pinned the identity header as `X-Owner-Email`; the owner-id conversion (D28, appkit D13) makes `X-Owner-Id` the gated/asserted header, a changed discriminating behavior now pinned by R-Q9X1-8DQ2._
