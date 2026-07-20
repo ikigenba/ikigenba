@@ -98,7 +98,7 @@ owner in an event payload.
 | repos | `repos`, `sessions` | key on owner_id |
 | scripts | `scripts` | key on owner_id |
 | webhooks | `webhooks` | key on owner_id |
-| wiki | `wiki_ingest`, `wiki_jobs`, `jobs` (`owner` renamed) | key on owner_id incl. the agentkit consumer seam |
+| wiki | `jobs` (`owner` renamed), `aliases` (`created_by` renamed) | key on owner_id (`wiki_ingest`/`wiki_jobs` are dead legacy tables from frozen 002, no readers — untouched) |
 | sites | `sites` (`created_by` renamed to owner_email, owner_id added) | list keeps showing email |
 | dropbox | none | Identity field reads only (health/display) |
 | github | none | Identity field reads only (log fields) |

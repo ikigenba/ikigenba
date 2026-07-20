@@ -45,7 +45,7 @@ Decisions 2–5. Common content:
 | 3 | repos | `repos`, `sessions` (intake consumer follows webhooks' payload rename: `owner` → `owner_id`/`owner_email`, keys on `owner_id`) |
 | 4 | scripts | `scripts` |
 | 5 | webhooks | `webhooks` |
-| 6 | wiki | `wiki_ingest`, `wiki_jobs`, `jobs` (rename `owner`; consumer seam rekeys) |
+| 6 | wiki | `jobs` (rename `owner`), `aliases` (rename `created_by`); consumer seam rekeys (`wiki_ingest`/`wiki_jobs` are dead legacy tables, untouched) |
 | 7 | sites | `sites` (rename `created_by` to `owner_email`, add `owner_id`) |
 
 ## Phases 8–9 — non-storing services with owner code
