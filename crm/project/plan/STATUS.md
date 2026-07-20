@@ -13,4 +13,3 @@ the anchored grep matches only phase lines.
 
 Next phase: 18
 
-- Phase 17 ⬜ realizes — — owner-id gate alignment: inject `X-Owner-Id` in the MCP test harness so the flipped chassis gate (appkit D13) admits crm's MCP tests; no owner columns, no migration.
