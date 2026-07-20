@@ -126,6 +126,7 @@ func rpc(t *testing.T, h http.Handler, method string, params any) jsonRPCRespons
 		t.Fatalf("marshal request: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(raw))
+	req.Header.Set("X-Owner-Id", testOwner)
 	req.Header.Set("X-Owner-Email", testOwner)
 	req.Header.Set("X-Client-Id", testClientID)
 	rec := httptest.NewRecorder()
