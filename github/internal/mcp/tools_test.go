@@ -390,13 +390,31 @@ func TestWriteProvenanceAndNoOwnerInClientRequestR_EJS4_2851(t *testing.T) {
 			if tc.path != "" && rec["path"] != tc.path {
 				t.Fatalf("path target missing: %v", rec)
 			}
-			for _, field := range []string{fc.lastBody, fc.lastEvent, fc.lastMethod, fc.lastTitle, string(fc.lastFile.Content)} {
-				if strings.Contains(field, "owner-456") || strings.Contains(field, "owner@example.com") || strings.Contains(field, "client-123") {
-					t.Fatalf("owner identity leaked into client request field %q", field)
-				}
+			if len(fc.calls) != 1 || fc.calls[0] != tc.name {
+				t.Fatalf("client calls = %v, want only %q", fc.calls, tc.name)
 			}
-			if fc.lastPatch.State == "owner@example.com" {
-				t.Fatal("owner identity leaked into issue patch")
+			requestFields := map[string][]string{
+				"repo":                  {fc.lastRepo},
+				"path":                  {fc.lastPath},
+				"body":                  {fc.lastBody},
+				"event":                 {fc.lastEvent},
+				"method":                {fc.lastMethod},
+				"title":                 {fc.lastTitle},
+				"issue_patch_state":     {fc.lastPatch.State},
+				"issue_patch_labels":    fc.lastPatch.Labels,
+				"issue_patch_assignees": fc.lastPatch.Assignees,
+				"file_message":          {fc.lastFile.Message},
+				"file_content":          {string(fc.lastFile.Content)},
+				"file_sha":              {fc.lastFile.SHA},
+			}
+			for name, values := range requestFields {
+				for _, value := range values {
+					for _, identity := range []string{"owner-456", "owner@example.com", "client-123"} {
+						if strings.Contains(value, identity) {
+							t.Fatalf("identity %q leaked into client request field %s=%q", identity, name, value)
+						}
+					}
+				}
 			}
 		})
 	}
