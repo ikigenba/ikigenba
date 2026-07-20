@@ -11,4 +11,4 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 47
 
-
+- Phase 44 ⬜ realizes D36, D37, D6, D7 — owner-id keying: rebuild `prompts`/`runs`, rekey store/MCP/discovery on `owner_id`

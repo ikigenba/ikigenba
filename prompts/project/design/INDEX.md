@@ -11,7 +11,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D3 | project/design/D03.md | Validation | R-JVR2-WAUP, R-JWYZ-A2LE, R-1ONM-PPDU, R-1PVJ-3H4J, R-1R3F-H8V8, R-1SBB-V0LX, R-1TJ8-8SCM, R-1UR4-MK3B, R-1VZ1-0BU0, R-JY6V-NUC3, R-JZES-1M2S |
 | D4 | project/design/D04.md | Provider factory | none — structural |
 | D5 | project/design/D05.md | Built-in sandbox tools | R-F5X1-XH6C, R-GNY2-Y47H, R-K1UK-T5K6 |
-| D6 | project/design/D06.md | Suite discovery | R-K32H-6XAV, R-K4AD-KP1K, R-9JNO-RZM2, R-9KVL-5RCR, R-9M3H-JJ3G |
+| D6 | project/design/D06.md | Suite discovery | R-K32H-6XAV, R-K4AD-KP1K, R-9JNO-RZM2, R-9KVL-5RCR, R-9M3H-JJ3G, R-EF0V-TP9R |
 | D7 | project/design/D07.md | Runner | R-K5I9-YGS9, R-1X6X-E3KP, R-1ZMQ-5N23, R-K6Q6-C8IY, R-K7Y2-Q09N, R-K95Z-3S0C |
 | D8 | project/design/D08.md | DB migration | R-KBLR-VBHQ, R-KCTO-938F |
 | D9 | project/design/D09.md | MCP schema | R-KE1K-MUZ4, R-20UM-JESS, R-222I-X6JH |
@@ -40,6 +40,8 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D33 | project/design/D33.md | Sessions on the record: runs write `calls` rows | R-6JMV-PFLG, R-6KUS-37C5, R-6M2O-GZ2U, R-6NAK-UQTJ |
 | D34 | project/design/D34.md | The `ui/` namespace: one session-gated prefix for the human browse surface | R-ZW7P-88WL, R-ZXFL-M0NA, R-ZYNH-ZSDZ |
 | D35 | project/design/D35.md | The browse UI: server-rendered prompts/runs pages with a per-run calls log | R-ZZVE-DK4O, R-013A-RBVD, R-03J3-IVCR, R-04QZ-WN3G, R-05YW-AEU5, R-076S-O6KU, R-08EP-1YBJ, R-09ML-FQ28, R-0AUH-THSX, R-0C2E-79JM, R-0DAA-L1AB, R-0EI6-YT10, R-0FQ3-CKRP, R-0GXZ-QCIE, R-0I5W-4493, R-0JDS-HVZS, R-LAND-NMVR, R-LAND-CARB |
+| D36 | project/design/D36.md | Owner-id keying: rebuild `prompts`/`runs`, rekey store on `owner_id` | R-E59O-RJC7, R-E6HL-5B2W, R-E7PH-J2TL, R-E8XD-WUKA |
+| D37 | project/design/D37.md | Owner-id at the MCP tool surface: scope on `X-Owner-Id`, snapshot the email, expose both | R-EBD6-OE1O, R-ECL3-25SD, R-EDSZ-FXJ2 |
 
 ## Verification ids → Decision
 
@@ -157,6 +159,14 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-DKGB-1YYM | D13 | project/design/D13.md |
 | R-DKQP-QZ3Q | D17 | project/design/D17.md |
 | R-DLYM-4QUF | D17 | project/design/D17.md |
+| R-E59O-RJC7 | D36 | project/design/D36.md |
+| R-E6HL-5B2W | D36 | project/design/D36.md |
+| R-E7PH-J2TL | D36 | project/design/D36.md |
+| R-E8XD-WUKA | D36 | project/design/D36.md |
+| R-EBD6-OE1O | D37 | project/design/D37.md |
+| R-ECL3-25SD | D37 | project/design/D37.md |
+| R-EDSZ-FXJ2 | D37 | project/design/D37.md |
+| R-EF0V-TP9R | D6 | project/design/D06.md |
 | R-F5X1-XH6C | D5 | project/design/D05.md |
 | R-F74Y-B8X1 | D26 | project/design/D26.md |
 | R-F8CU-P0NQ | D26 | project/design/D26.md |
