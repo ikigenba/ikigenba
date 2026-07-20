@@ -180,7 +180,7 @@ func (s *Store) BrowsePrompts(ctx context.Context, f BrowseFilter) ([]Prompt, in
 	limit, offset := browsePage(f.Limit, f.Offset)
 	pageArgs := append(append([]any(nil), args...), limit, offset)
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
+		`SELECT id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
 		   FROM prompts`+where+` ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
