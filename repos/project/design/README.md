@@ -60,9 +60,13 @@ ids ends at minting them — how coverage is measured and when the work is
   `registry.BaseURL("github")`). No `127.0.0.1:30xx` literal in source.
 - **Time / IO:** time enters through a `Clock` seam; the DB handle is the
   appkit single-writer `*sql.DB` (`rt.DB()`), shared with the producer outbox.
-- **Trust posture:** identity arrives as nginx-injected (or
-  loopback-asserted) `X-Owner-Email`/`X-Client-Id`; the service accepts them
-  blindly (suite convention). The session agent's isolation is
+- **Trust posture:** identity arrives as nginx-injected (or loopback-asserted)
+  owner headers — `X-Owner-Id` (the stable scoping key; the appkit gate
+  refuses on its absence), plus the `X-Owner-Email`/`X-Owner-Name`/
+  `X-Owner-Picture` display headers and `X-Client-Id`; the service accepts them
+  blindly (suite convention) and keys **all** scoping and provenance on
+  `X-Owner-Id` (appkit `Identity.OwnerID`), treating `owner_email` as a
+  write-once display snapshot. The session agent's isolation is
   worktree-cwd + path-confined file tools, the same single-owner-box posture
   as prompts/scripts — not a security sandbox.
 
