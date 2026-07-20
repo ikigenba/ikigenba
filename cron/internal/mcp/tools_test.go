@@ -74,7 +74,7 @@ func rpc(t *testing.T, h http.Handler, method string, params any) map[string]any
 		t.Fatalf("marshal request: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(raw))
-	req.Header.Set("X-Owner-Email", "owner@example.com")
+	req.Header.Set("X-Owner-Id", "owner-123")
 	req.Header.Set("X-Client-Id", "client-123")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
