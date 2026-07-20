@@ -43,7 +43,7 @@ type Runner struct {
 	// defaults to a closure over the configured manifestRoot calling
 	// suite.Discover, but is injectable so tests can supply fake groups and
 	// never touch the real inventory or any peer.
-	discover func(ctx context.Context, owner, promptID string) []agentkit.DeferredToolGroup
+	discover func(ctx context.Context, ownerID, ownerEmail, promptID string) []agentkit.DeferredToolGroup
 	// sourcePortAllowed confines Fetch to registered loopback services.
 	sourcePortAllowed func(port int) bool
 	// shareBaseURL locates the account file share for the File* tools.
@@ -68,8 +68,8 @@ func New(store *prompt.Store, sb *sandbox.Manager, gate *admit.Gate, ttl time.Du
 		gate:          gate,
 		ttl:           ttl,
 		buildProvider: provider.Build,
-		discover: func(ctx context.Context, owner, promptID string) []agentkit.DeferredToolGroup {
-			return suite.Discover(ctx, manifestRoot, owner, promptID)
+		discover: func(ctx context.Context, ownerID, ownerEmail, promptID string) []agentkit.DeferredToolGroup {
+			return suite.Discover(ctx, manifestRoot, ownerID, ownerEmail, promptID)
 		},
 		sourcePortAllowed: sourcePortAllowed,
 		shareBaseURL:      shareBaseURL,
@@ -210,7 +210,7 @@ func (r *Runner) execute(run prompt.Run) {
 		Gen:               genSettings(cfg),
 		Retry:             retryPolicy(cfg),
 		Tools:             runtools.All(sandboxRoot, r.sourcePortAllowed, runtools.ShareConfig{BaseURL: r.shareBaseURL, ClientID: "prompts:" + run.PromptID}),
-		DeferredTools:     r.discover(ctx, run.OwnerEmail, run.PromptID),
+		DeferredTools:     r.discover(ctx, run.OwnerID, run.OwnerEmail, run.PromptID),
 		MaxToolIterations: cfg.ToolLoopLimit,
 	}
 	stream := conv.Send(ctx, buildUserText(string(userPromptBytes), eventBytes))

@@ -157,6 +157,7 @@ func do(t *testing.T, h http.Handler, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	req.Header.Set("X-Owner-Email", ownerEmail)
+	req.Header.Set("X-Owner-Id", "owner-id")
 	req.Header.Set("X-Client-Id", clientID)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)

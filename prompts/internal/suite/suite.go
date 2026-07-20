@@ -45,9 +45,10 @@ const clientIDPrefix = "prompts:"
 // remaining peer's tools, attaching the run's identity headers. Best-effort:
 // unreachable or garbled peers are logged and skipped; it never returns an error
 // and never panics, always returning a non-nil slice (possibly empty).
-func Discover(ctx context.Context, manifestRoot, owner, promptID string) []agentkit.DeferredToolGroup {
+func Discover(ctx context.Context, manifestRoot, ownerID, ownerEmail, promptID string) []agentkit.DeferredToolGroup {
 	headers := map[string]string{
-		"X-Owner-Email": owner,
+		"X-Owner-Id":    ownerID,
+		"X-Owner-Email": ownerEmail,
 		"X-Client-Id":   clientIDPrefix + promptID,
 	}
 

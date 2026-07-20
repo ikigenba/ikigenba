@@ -68,8 +68,16 @@ func TestMigrate006_UpgradesOldSchemaPreservingData(t *testing.T) {
 		t.Fatalf("insert session_trigger: %v", err)
 	}
 
-	// 3. Apply the FULL set (now including version 6) — the in-place upgrade.
-	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
+	// 3. Apply every pre-owner-id migration. The owner-id rebuild intentionally
+	// drops these legacy rows and is covered separately.
+	var preOwnerID []appkitdb.Migration
+	for _, m := range migs {
+		if strings.Contains(m.Name, "owner_id_keying") {
+			break
+		}
+		preOwnerID = append(preOwnerID, m)
+	}
+	if err := appkitdb.Migrate(ctx, conn, preOwnerID); err != nil {
 		t.Fatalf("full migrate (incl. v6): %v", err)
 	}
 

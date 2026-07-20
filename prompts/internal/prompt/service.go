@@ -161,7 +161,7 @@ func ValidateConfig(c Config, getenv func(string) string) (Config, error) {
 // Create validates config and inserts a prompt. The sandbox is no longer
 // created here — it is per-run, created at Run time keyed by run_id.
 // Config.Provider is validated against the configured model and preserved.
-func (s *Service) Create(ctx context.Context, ownerEmail string, in CreateInput) (Prompt, error) {
+func (s *Service) Create(ctx context.Context, ownerID, ownerEmail string, in CreateInput) (Prompt, error) {
 	cfg, err := ValidateConfig(in.Config, os.Getenv)
 	if err != nil {
 		return Prompt{}, err
@@ -176,6 +176,7 @@ func (s *Service) Create(ctx context.Context, ownerEmail string, in CreateInput)
 	now := s.nowStr()
 	p := Prompt{
 		ID:           ids.NewULID(),
+		OwnerID:      ownerID,
 		OwnerEmail:   ownerEmail,
 		Name:         in.Name,
 		UserPrompt:   in.UserPrompt,
@@ -224,7 +225,7 @@ const importDefaultModel = "claude-sonnet-4-6"
 // re-import — a re-pull is a body refresh, not a config change). Direction is
 // strictly Dropbox → prompts; nothing writes back. See
 // docs/adr-dropbox-import-sync.md.
-func (s *Service) Import(ctx context.Context, owner, sourcePath, name string) (Prompt, error) {
+func (s *Service) Import(ctx context.Context, ownerID, ownerEmail, sourcePath, name string) (Prompt, error) {
 	if strings.TrimSpace(sourcePath) == "" {
 		return Prompt{}, fmt.Errorf("%w: source_path is required", ErrValidation)
 	}
@@ -248,13 +249,13 @@ func (s *Service) Import(ctx context.Context, owner, sourcePath, name string) (P
 	if err != nil {
 		return Prompt{}, err
 	}
-	return s.store.UpsertPromptBySource(ctx, owner, sourcePath, name, string(data), cfg, s.nowStr())
+	return s.store.UpsertPromptBySource(ctx, ownerID, ownerEmail, sourcePath, name, string(data), cfg, s.nowStr())
 }
 
 // List returns the owner's prompts, each as a PromptDetail carrying its derived
 // RunningCount + LastRun.
-func (s *Service) List(ctx context.Context, ownerEmail string) ([]PromptDetail, error) {
-	prompts, err := s.store.ListPrompts(ctx, ownerEmail)
+func (s *Service) List(ctx context.Context, ownerID string) ([]PromptDetail, error) {
+	prompts, err := s.store.ListPrompts(ctx, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -270,8 +271,8 @@ func (s *Service) List(ctx context.Context, ownerEmail string) ([]PromptDetail, 
 }
 
 // Get returns the owner's prompt as a PromptDetail (RunningCount + LastRun).
-func (s *Service) Get(ctx context.Context, ownerEmail, id string) (PromptDetail, error) {
-	p, err := s.store.GetPrompt(ctx, ownerEmail, id)
+func (s *Service) Get(ctx context.Context, ownerID, id string) (PromptDetail, error) {
+	p, err := s.store.GetPrompt(ctx, ownerID, id)
 	if err != nil {
 		return PromptDetail{}, err
 	}
@@ -294,8 +295,8 @@ func (s *Service) detail(ctx context.Context, p Prompt) (PromptDetail, error) {
 
 // Update edits name/user_prompt/system_prompt/config. ALWAYS allowed (no
 // single-flight); re-validates config.
-func (s *Service) Update(ctx context.Context, ownerEmail, id string, in UpdateInput) (Prompt, error) {
-	p, err := s.store.GetPrompt(ctx, ownerEmail, id)
+func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput) (Prompt, error) {
+	p, err := s.store.GetPrompt(ctx, ownerID, id)
 	if err != nil {
 		return Prompt{}, err
 	}
@@ -310,7 +311,7 @@ func (s *Service) Update(ctx context.Context, ownerEmail, id string, in UpdateIn
 	p.Config = cfg
 	p.UpdatedAt = s.nowStr()
 
-	if err := s.store.UpdatePrompt(ctx, ownerEmail, p); err != nil {
+	if err := s.store.UpdatePrompt(ctx, ownerID, p); err != nil {
 		return Prompt{}, err
 	}
 	return p, nil
@@ -321,12 +322,12 @@ func (s *Service) Update(ctx context.Context, ownerEmail, id string, in UpdateIn
 // directories (output.jsonl, input/, sandbox/), and any emitted outbox rows in
 // place — a run stays owner-addressable by run_id (via the run's denormalized
 // owner_email) after its prompt is gone. ALWAYS allowed (no single-flight).
-func (s *Service) Delete(ctx context.Context, ownerEmail, id string) error {
-	if _, err := s.store.GetPrompt(ctx, ownerEmail, id); err != nil {
+func (s *Service) Delete(ctx context.Context, ownerID, id string) error {
+	if _, err := s.store.GetPrompt(ctx, ownerID, id); err != nil {
 		return err
 	}
 	// Row first (owner-scoped): if this fails nothing else is touched.
-	if err := s.store.DeletePrompt(ctx, ownerEmail, id); err != nil {
+	if err := s.store.DeletePrompt(ctx, ownerID, id); err != nil {
 		return err
 	}
 	// Remove the prompt's trigger(s) explicitly — there is no FK cascade.
@@ -339,8 +340,8 @@ func (s *Service) Delete(ctx context.Context, ownerEmail, id string) error {
 // Run starts a run for the owner's prompt. It is ALWAYS accepted — there is no
 // single-flight gate, so any number of runs of one prompt may execute
 // concurrently, each in its own run-scoped sandbox (keyed by run_id).
-func (s *Service) Run(ctx context.Context, ownerEmail, id string) (Run, error) {
-	p, err := s.store.GetPrompt(ctx, ownerEmail, id)
+func (s *Service) Run(ctx context.Context, ownerID, id string) (Run, error) {
+	p, err := s.store.GetPrompt(ctx, ownerID, id)
 	if err != nil {
 		return Run{}, err
 	}
@@ -406,6 +407,7 @@ func (s *Service) startRun(ctx context.Context, p Prompt, source, kind, subject,
 	run := Run{
 		ID:             runID,
 		PromptID:       p.ID,
+		OwnerID:        p.OwnerID,
 		OwnerEmail:     p.OwnerEmail,
 		PromptName:     p.Name,
 		Status:         RunRunning,
@@ -528,12 +530,12 @@ func readLines(path string, offset, limit int) (string, error) {
 // via the run's denormalized owner_email. ErrNotFound when the run is missing or
 // owned by another caller — identical to the prompt-not-owned semantics, so a
 // foreign run is indistinguishable from an absent one.
-func (s *Service) runForOwner(ctx context.Context, ownerEmail, runID string) (Run, error) {
+func (s *Service) runForOwner(ctx context.Context, ownerID, runID string) (Run, error) {
 	r, err := s.store.GetRun(ctx, runID)
 	if err != nil {
 		return Run{}, err
 	}
-	if r.OwnerEmail != ownerEmail {
+	if r.OwnerID != ownerID {
 		return Run{}, ErrNotFound
 	}
 	return r, nil
@@ -542,8 +544,8 @@ func (s *Service) runForOwner(ctx context.Context, ownerEmail, runID string) (Ru
 // RunList returns the owner's prompt's runs, newest first. It scopes via the
 // PROMPT (loading it enforces ownership); ErrNotFound if the prompt is missing
 // or not owned.
-func (s *Service) RunList(ctx context.Context, ownerEmail, promptID string) ([]Run, error) {
-	if _, err := s.store.GetPrompt(ctx, ownerEmail, promptID); err != nil {
+func (s *Service) RunList(ctx context.Context, ownerID, promptID string) ([]Run, error) {
+	if _, err := s.store.GetPrompt(ctx, ownerID, promptID); err != nil {
 		return nil, err
 	}
 	return s.store.ListRunsByPrompt(ctx, promptID)
@@ -551,15 +553,15 @@ func (s *Service) RunList(ctx context.Context, ownerEmail, promptID string) ([]R
 
 // RunGet returns a single run by run_id, owner-scoped via the run's owner_email
 // (works after the run's prompt has been tombstoned).
-func (s *Service) RunGet(ctx context.Context, ownerEmail, runID string) (Run, error) {
-	return s.runForOwner(ctx, ownerEmail, runID)
+func (s *Service) RunGet(ctx context.Context, ownerID, runID string) (Run, error) {
+	return s.runForOwner(ctx, ownerID, runID)
 }
 
 // RunOutput returns up to limit lines of a run's output.jsonl, starting at
 // 1-based offset (same line-slice semantics as sandbox.Read). Owner-scoped via
 // the run's owner_email; survives a tombstoned prompt.
-func (s *Service) RunOutput(ctx context.Context, ownerEmail, runID string, offset, limit int) (string, error) {
-	r, err := s.runForOwner(ctx, ownerEmail, runID)
+func (s *Service) RunOutput(ctx context.Context, ownerID, runID string, offset, limit int) (string, error) {
+	r, err := s.runForOwner(ctx, ownerID, runID)
 	if err != nil {
 		return "", err
 	}
@@ -569,8 +571,8 @@ func (s *Service) RunOutput(ctx context.Context, ownerEmail, runID string, offse
 // RunCancel signals the in-flight run by run_id. Owner-scoped via the run's
 // owner_email. Idempotent: a run that is not in flight is not an error (the
 // foreground may race the run's own completion).
-func (s *Service) RunCancel(ctx context.Context, ownerEmail, runID string) error {
-	r, err := s.runForOwner(ctx, ownerEmail, runID)
+func (s *Service) RunCancel(ctx context.Context, ownerID, runID string) error {
+	r, err := s.runForOwner(ctx, ownerID, runID)
 	if err != nil {
 		return err
 	}
@@ -580,8 +582,8 @@ func (s *Service) RunCancel(ctx context.Context, ownerEmail, runID string) error
 
 // RunFsList lists the entries under path in a run's durable sandbox. Owner-
 // scoped via the run's owner_email; survives a tombstoned prompt.
-func (s *Service) RunFsList(ctx context.Context, ownerEmail, runID, path string) ([]sandbox.Entry, error) {
-	r, err := s.runForOwner(ctx, ownerEmail, runID)
+func (s *Service) RunFsList(ctx context.Context, ownerID, runID, path string) ([]sandbox.Entry, error) {
+	r, err := s.runForOwner(ctx, ownerID, runID)
 	if err != nil {
 		return nil, err
 	}
@@ -595,8 +597,8 @@ func (s *Service) RunFsList(ctx context.Context, ownerEmail, runID, path string)
 // RunFsRead returns up to limit lines of the file at path in a run's sandbox,
 // starting at 1-based offset. Owner-scoped via the run's owner_email; survives a
 // tombstoned prompt.
-func (s *Service) RunFsRead(ctx context.Context, ownerEmail, runID, path string, offset, limit int) (string, error) {
-	r, err := s.runForOwner(ctx, ownerEmail, runID)
+func (s *Service) RunFsRead(ctx context.Context, ownerID, runID, path string, offset, limit int) (string, error) {
+	r, err := s.runForOwner(ctx, ownerID, runID)
 	if err != nil {
 		return "", err
 	}
@@ -620,8 +622,8 @@ func translateSandboxError(err error) error {
 
 // SetTrigger attaches one canonical filter to the owner's prompt. Loading the
 // prompt first enforces ownership (ErrNotFound if not owned).
-func (s *Service) SetTrigger(ctx context.Context, ownerEmail, id, filter string) (Trigger, error) {
-	if _, err := s.store.GetPrompt(ctx, ownerEmail, id); err != nil {
+func (s *Service) SetTrigger(ctx context.Context, ownerID, id, filter string) (Trigger, error) {
+	if _, err := s.store.GetPrompt(ctx, ownerID, id); err != nil {
 		return Trigger{}, err
 	}
 	source, err := validateTrigger(filter)
@@ -642,8 +644,8 @@ func (s *Service) SetTrigger(ctx context.Context, ownerEmail, id, filter string)
 
 // ClearTrigger removes one canonical filter from the owner's prompt. Loading
 // the prompt first enforces ownership. A missing binding returns ErrNotFound.
-func (s *Service) ClearTrigger(ctx context.Context, ownerEmail, id, filter string) error {
-	if _, err := s.store.GetPrompt(ctx, ownerEmail, id); err != nil {
+func (s *Service) ClearTrigger(ctx context.Context, ownerID, id, filter string) error {
+	if _, err := s.store.GetPrompt(ctx, ownerID, id); err != nil {
 		return err
 	}
 	return s.store.ClearTrigger(ctx, id, filter)

@@ -53,7 +53,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				for _, t := range in.Triggers {
 					triggers = append(triggers, prompt.TriggerSpec{Filter: string(t)})
 				}
-				p, err := svc.Create(ctx, id.OwnerEmail, prompt.CreateInput{
+				p, err := svc.Create(ctx, id.OwnerID, id.OwnerEmail, prompt.CreateInput{
 					Name:         in.Name,
 					UserPrompt:   in.UserPrompt,
 					SystemPrompt: in.SystemPrompt,
@@ -78,7 +78,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				p, err := svc.Import(ctx, id.OwnerEmail, in.SourcePath, in.Name)
+				p, err := svc.Import(ctx, id.OwnerID, id.OwnerEmail, in.SourcePath, in.Name)
 				if err != nil {
 					return fail(err), nil
 				}
@@ -87,7 +87,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 
 		desc(tool("list"), "List the caller's prompts, each with its running run count and latest run (last_run).", obj(map[string]any{}),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-				prompts, err := svc.List(ctx, id.OwnerEmail)
+				prompts, err := svc.List(ctx, id.OwnerID)
 				if err != nil {
 					return fail(err), nil
 				}
@@ -104,7 +104,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				detail, err := svc.Get(ctx, id.OwnerEmail, in.PromptID)
+				detail, err := svc.Get(ctx, id.OwnerID, in.PromptID)
 				if err != nil {
 					return fail(err), nil
 				}
@@ -129,7 +129,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				p, err := svc.Update(ctx, id.OwnerEmail, in.PromptID, prompt.UpdateInput{
+				p, err := svc.Update(ctx, id.OwnerID, in.PromptID, prompt.UpdateInput{
 					Name:         in.Name,
 					UserPrompt:   in.UserPrompt,
 					SystemPrompt: in.SystemPrompt,
@@ -151,7 +151,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				if err := svc.Delete(ctx, id.OwnerEmail, in.PromptID); err != nil {
+				if err := svc.Delete(ctx, id.OwnerID, in.PromptID); err != nil {
 					return fail(err), nil
 				}
 				return appkitmcp.StructuredResult(map[string]any{"deleted": in.PromptID})
@@ -168,7 +168,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				trig, err := svc.SetTrigger(ctx, id.OwnerEmail, in.PromptID, in.Filter)
+				trig, err := svc.SetTrigger(ctx, id.OwnerID, in.PromptID, in.Filter)
 				if err != nil {
 					return fail(err), nil
 				}
@@ -186,7 +186,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				if err := svc.ClearTrigger(ctx, id.OwnerEmail, in.PromptID, in.Filter); err != nil {
+				if err := svc.ClearTrigger(ctx, id.OwnerID, in.PromptID, in.Filter); err != nil {
 					return fail(err), nil
 				}
 				return appkitmcp.StructuredResult(map[string]any{"cleared": in.PromptID})
@@ -202,7 +202,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				run, err := svc.Run(ctx, id.OwnerEmail, in.PromptID)
+				run, err := svc.Run(ctx, id.OwnerID, in.PromptID)
 				if err != nil {
 					return fail(err), nil
 				}
@@ -219,7 +219,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				runs, err := svc.RunList(ctx, id.OwnerEmail, in.PromptID)
+				runs, err := svc.RunList(ctx, id.OwnerID, in.PromptID)
 				if err != nil {
 					return fail(err), nil
 				}
@@ -236,7 +236,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				run, err := svc.RunGet(ctx, id.OwnerEmail, in.RunID)
+				run, err := svc.RunGet(ctx, id.OwnerID, in.RunID)
 				if err != nil {
 					return fail(err), nil
 				}
@@ -257,7 +257,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				out, err := svc.RunOutput(ctx, id.OwnerEmail, in.RunID, in.Offset, in.Limit)
+				out, err := svc.RunOutput(ctx, id.OwnerID, in.RunID, in.Offset, in.Limit)
 				if err != nil {
 					return fail(err), nil
 				}
@@ -274,7 +274,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				if err := svc.RunCancel(ctx, id.OwnerEmail, in.RunID); err != nil {
+				if err := svc.RunCancel(ctx, id.OwnerID, in.RunID); err != nil {
 					return fail(err), nil
 				}
 				return appkitmcp.StructuredResult(map[string]any{"cancelled": in.RunID})
@@ -292,7 +292,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				entries, err := svc.RunFsList(ctx, id.OwnerEmail, in.RunID, in.Path)
+				entries, err := svc.RunFsList(ctx, id.OwnerID, in.RunID, in.Path)
 				if err != nil {
 					return fail(err), nil
 				}
@@ -328,7 +328,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				out, err := svc.RunFsRead(ctx, id.OwnerEmail, in.RunID, in.Path, in.Offset, in.Limit)
+				out, err := svc.RunFsRead(ctx, id.OwnerID, in.RunID, in.Path, in.Offset, in.Limit)
 				if err != nil {
 					return fail(err), nil
 				}
@@ -528,27 +528,27 @@ func codeFor(err error) appkitmcp.ErrorCode {
 
 func outputSchemas() map[string]map[string]any {
 	promptProps := map[string]any{
-		"id": typ("string"), "owner_email": typ("string"), "name": typ("string"),
+		"id": typ("string"), "owner_id": typ("string"), "owner_email": typ("string"), "name": typ("string"),
 		"user_prompt": typ("string"), "system_prompt": typ("string"),
 		"config":     map[string]any{"type": "object", "additionalProperties": true},
 		"created_at": typ("string"), "updated_at": typ("string"), "source_path": typ("string"),
 	}
 	runProps := map[string]any{
-		"id": typ("string"), "prompt_id": typ("string"), "owner_email": typ("string"),
+		"id": typ("string"), "prompt_id": typ("string"), "owner_id": typ("string"), "owner_email": typ("string"),
 		"prompt_name": typ("string"), "status": typ("string"), "started_at": typ("string"),
 		"ended_at": typ("string"), "usage_json": typ("string"), "error": typ("string"),
 		"log_path": typ("string"), "trigger_source": typ("string"), "trigger_kind": typ("string"),
 		"trigger_subject": typ("string"), "trigger_event_id": typ("string"),
 	}
-	promptSchema := obj(promptProps, "id", "owner_email", "user_prompt", "config", "created_at", "updated_at")
+	promptSchema := obj(promptProps, "id", "owner_id", "owner_email", "user_prompt", "config", "created_at", "updated_at")
 	detailProps := make(map[string]any, len(promptProps)+2)
 	for key, value := range promptProps {
 		detailProps[key] = value
 	}
 	detailProps["running_count"] = typ("integer")
 	detailProps["last_run"] = map[string]any{"type": []string{"object", "null"}, "additionalProperties": true}
-	detailSchema := obj(detailProps, "id", "owner_email", "user_prompt", "config", "created_at", "updated_at", "running_count", "last_run")
-	runSchema := obj(runProps, "id", "prompt_id", "owner_email", "status", "started_at", "log_path")
+	detailSchema := obj(detailProps, "id", "owner_id", "owner_email", "user_prompt", "config", "created_at", "updated_at", "running_count", "last_run")
+	runSchema := obj(runProps, "id", "prompt_id", "owner_id", "owner_email", "status", "started_at", "log_path")
 	triggerSchema := obj(map[string]any{
 		"prompt_id": typ("string"), "source": typ("string"), "filter": typ("string"), "created_at": typ("string"),
 	}, "prompt_id", "source", "filter", "created_at")

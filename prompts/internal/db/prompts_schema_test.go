@@ -79,14 +79,14 @@ func TestMigrate_CreatesPromptsSchema(t *testing.T) {
 	// leaves its runs in place (they stay owner-addressable by run_id), and the
 	// prompt's trigger(s) must be removed EXPLICITLY, not by cascade.
 	if _, err := conn.ExecContext(ctx,
-		`INSERT INTO prompts (id, owner_email, user_prompt, config_json, created_at, updated_at)
-		 VALUES ('s1', 'o@example.com', 'hi', '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO prompts (id, owner_id, owner_email, user_prompt, config_json, created_at, updated_at)
+		 VALUES ('s1', 'owner-1', 'o@example.com', 'hi', '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
 	); err != nil {
 		t.Fatalf("insert prompt: %v", err)
 	}
 	if _, err := conn.ExecContext(ctx,
-		`INSERT INTO runs (id, prompt_id, owner_email, status, started_at, log_path)
-		 VALUES ('r1', 's1', 'o@example.com', 'running', '2026-01-01T00:00:00Z', 'data/runs/s1/r1.jsonl')`,
+		`INSERT INTO runs (id, prompt_id, owner_id, owner_email, status, started_at, log_path)
+		 VALUES ('r1', 's1', 'owner-1', 'o@example.com', 'running', '2026-01-01T00:00:00Z', 'data/runs/s1/r1.jsonl')`,
 	); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}

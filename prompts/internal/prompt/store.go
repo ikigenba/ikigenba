@@ -67,9 +67,9 @@ func (s *Store) InsertPrompt(ctx context.Context, p Prompt) error {
 	}
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO prompts
-		   (id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.OwnerEmail, nullStr(p.Name), p.UserPrompt, nullStr(p.SystemPrompt),
+		   (id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.OwnerID, p.OwnerEmail, nullStr(p.Name), p.UserPrompt, nullStr(p.SystemPrompt),
 		cfg, nullStr(p.SourcePath), p.CreatedAt, p.UpdatedAt,
 	)
 	if err != nil {
@@ -88,7 +88,7 @@ func (s *Store) InsertPrompt(ctx context.Context, p Prompt) error {
 // will not match the partial unique index. Returns the resolved prompt (its id is
 // the freshly-generated ULID on insert, or the existing row's id on update via
 // RETURNING). config is the value used only on the INSERT arm.
-func (s *Store) UpsertPromptBySource(ctx context.Context, owner, sourcePath, name, userPrompt string, config Config, now string) (Prompt, error) {
+func (s *Store) UpsertPromptBySource(ctx context.Context, ownerID, ownerEmail, sourcePath, name, userPrompt string, config Config, now string) (Prompt, error) {
 	cfg, err := marshalConfig(config)
 	if err != nil {
 		return Prompt{}, err
@@ -97,27 +97,27 @@ func (s *Store) UpsertPromptBySource(ctx context.Context, owner, sourcePath, nam
 	var resolvedID string
 	err = s.db.QueryRowContext(ctx,
 		`INSERT INTO prompts
-		   (id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(owner_email, source_path) WHERE source_path IS NOT NULL DO UPDATE SET
+		   (id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(owner_id, source_path) WHERE source_path IS NOT NULL DO UPDATE SET
 		     name = excluded.name, user_prompt = excluded.user_prompt, updated_at = excluded.updated_at
 		 RETURNING id`,
-		id, owner, nullStr(name), userPrompt, nullStr(""), cfg, sourcePath, now, now,
+		id, ownerID, ownerEmail, nullStr(name), userPrompt, nullStr(""), cfg, sourcePath, now, now,
 	).Scan(&resolvedID)
 	if err != nil {
 		return Prompt{}, fmt.Errorf("prompt: upsert by source: %w", err)
 	}
 	// Read the resolved row back so the caller (and its result) reflects exactly
 	// what landed (config + system_prompt are the pre-existing ones on an update).
-	return s.GetPrompt(ctx, owner, resolvedID)
+	return s.GetPrompt(ctx, ownerID, resolvedID)
 }
 
 // GetPrompt returns the owner's prompt, or ErrNotFound when it is missing or
 // owned by another caller.
 func (s *Store) GetPrompt(ctx context.Context, owner, id string) (Prompt, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
-		   FROM prompts WHERE id = ? AND owner_email = ?`,
+		`SELECT id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
+		   FROM prompts WHERE id = ? AND owner_id = ?`,
 		id, owner,
 	)
 	return scanPrompt(row)
@@ -128,7 +128,7 @@ func (s *Store) GetPrompt(ctx context.Context, owner, id string) (Prompt, error)
 // the prompt is gone.
 func (s *Store) GetPromptByID(ctx context.Context, id string) (Prompt, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
+		`SELECT id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
 		   FROM prompts WHERE id = ?`,
 		id,
 	)
@@ -138,8 +138,8 @@ func (s *Store) GetPromptByID(ctx context.Context, id string) (Prompt, error) {
 // ListPrompts returns all of the owner's prompts, newest first.
 func (s *Store) ListPrompts(ctx context.Context, owner string) ([]Prompt, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
-		   FROM prompts WHERE owner_email = ? ORDER BY created_at DESC, id DESC`,
+		`SELECT id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
+		   FROM prompts WHERE owner_id = ? ORDER BY created_at DESC, id DESC`,
 		owner,
 	)
 	if err != nil {
@@ -213,7 +213,7 @@ func (s *Store) UpdatePrompt(ctx context.Context, owner string, p Prompt) error 
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE prompts
 		    SET name = ?, user_prompt = ?, system_prompt = ?, config_json = ?, updated_at = ?
-		  WHERE id = ? AND owner_email = ?`,
+		  WHERE id = ? AND owner_id = ?`,
 		nullStr(p.Name), p.UserPrompt, nullStr(p.SystemPrompt), cfg, p.UpdatedAt,
 		p.ID, owner,
 	)
@@ -228,7 +228,7 @@ func (s *Store) UpdatePrompt(ctx context.Context, owner string, p Prompt) error 
 // owner-addressable by run_id. A no-match returns ErrNotFound.
 func (s *Store) DeletePrompt(ctx context.Context, owner, id string) error {
 	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM prompts WHERE id = ? AND owner_email = ?`, id, owner,
+		`DELETE FROM prompts WHERE id = ? AND owner_id = ?`, id, owner,
 	)
 	if err != nil {
 		return fmt.Errorf("prompt: delete: %w", err)
@@ -240,10 +240,10 @@ func (s *Store) DeletePrompt(ctx context.Context, owner, id string) error {
 func (s *Store) InsertRun(ctx context.Context, r Run) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO runs
-		   (id, prompt_id, owner_email, prompt_name, status, started_at,
+		   (id, prompt_id, owner_id, owner_email, prompt_name, status, started_at,
 		    ended_at, usage_json, error, trigger_source, trigger_kind, trigger_subject, trigger_event_id, log_path)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.PromptID, r.OwnerEmail, nullStr(r.PromptName), r.Status, r.StartedAt,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.PromptID, r.OwnerID, r.OwnerEmail, nullStr(r.PromptName), r.Status, r.StartedAt,
 		nullStr(r.EndedAt), nullStr(r.UsageJSON), nullStr(r.Error),
 		nullStr(r.TriggerSource), nullStr(r.TriggerKind), nullStr(r.TriggerSubject), nullStr(r.TriggerEventID), r.LogPath,
 	)
@@ -255,7 +255,7 @@ func (s *Store) InsertRun(ctx context.Context, r Run) error {
 
 // runSelectCols is the column list shared by the run-read queries, in
 // scanRun's order.
-const runSelectCols = `id, prompt_id, owner_email, prompt_name, status, started_at,
+const runSelectCols = `id, prompt_id, owner_id, owner_email, prompt_name, status, started_at,
 	        ended_at, usage_json, error, trigger_source, trigger_kind, trigger_subject, trigger_event_id, log_path`
 
 // GetRun returns a run by its run_id, or ErrNotFound when absent. It is NOT
@@ -579,7 +579,7 @@ func scanPrompt(sc scanner) (Prompt, error) {
 		srcPath sql.NullString
 	)
 	err := sc.Scan(
-		&p.ID, &p.OwnerEmail, &name, &p.UserPrompt, &sysProm,
+		&p.ID, &p.OwnerID, &p.OwnerEmail, &name, &p.UserPrompt, &sysProm,
 		&cfgJSON, &srcPath, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -612,7 +612,7 @@ func scanRun(sc scanner) (Run, error) {
 		trigEventID sql.NullString
 	)
 	err := sc.Scan(
-		&r.ID, &r.PromptID, &r.OwnerEmail, &promptName, &r.Status, &r.StartedAt,
+		&r.ID, &r.PromptID, &r.OwnerID, &r.OwnerEmail, &promptName, &r.Status, &r.StartedAt,
 		&endedAt, &usage, &errMsg, &trigSource, &trigKind, &trigSubject, &trigEventID, &r.LogPath,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

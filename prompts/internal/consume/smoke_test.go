@@ -68,13 +68,13 @@ func TestSmoke_HandlerAgainstRealServiceAndDB(t *testing.T) {
 	svc := prompt.NewService(store, sb, runsDir, cr)
 
 	// A real prompt with a real NON-cron trigger.
-	p, err := svc.Create(ctx, "owner@example.com", prompt.CreateInput{
+	p, err := svc.Create(ctx, "owner-id", "owner@example.com", prompt.CreateInput{
 		UserPrompt: "do the thing", Config: prompt.Config{Model: "claude-haiku-4-5"},
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := svc.SetTrigger(ctx, "owner@example.com", p.ID, "dropbox:create/**"); err != nil {
+	if _, err := svc.SetTrigger(ctx, "owner-id", p.ID, "dropbox:create/**"); err != nil {
 		t.Fatalf("SetTrigger: %v", err)
 	}
 
@@ -94,7 +94,7 @@ func TestSmoke_HandlerAgainstRealServiceAndDB(t *testing.T) {
 	}
 	waitFor(t, func() bool { return cr.count() == 1 })
 
-	detail, err := svc.Get(ctx, "owner@example.com", p.ID)
+	detail, err := svc.Get(ctx, "owner-id", p.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}

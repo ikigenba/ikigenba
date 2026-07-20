@@ -62,6 +62,7 @@ type Config struct {
 // Prompt mirrors the prompts table; Config is carried parsed.
 type Prompt struct {
 	ID           string `json:"id"`
+	OwnerID      string `json:"owner_id"`
 	OwnerEmail   string `json:"owner_email"`
 	Name         string `json:"name,omitempty"`
 	UserPrompt   string `json:"user_prompt"`
@@ -92,6 +93,7 @@ type Prompt struct {
 type Run struct {
 	ID         string `json:"id"`
 	PromptID   string `json:"prompt_id"`
+	OwnerID    string `json:"owner_id"`
 	OwnerEmail string `json:"owner_email"`
 	PromptName string `json:"prompt_name,omitempty"`
 	Status     string `json:"status"`

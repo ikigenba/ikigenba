@@ -29,6 +29,7 @@ func TestMigrateBackfillsProviderFromCanonicalModelIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load migrations: %v", err)
 	}
+	migs = throughNamedMigration(migs, "backfill_provider_and_model_aliases")
 	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
 		t.Fatalf("migrate backfill: %v", err)
 	}
@@ -61,6 +62,7 @@ func TestMigrateCanonicalizesLegacyModelAliases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load migrations: %v", err)
 	}
+	migs = throughNamedMigration(migs, "backfill_provider_and_model_aliases")
 	if err := appkitdb.Migrate(ctx, conn, migs); err != nil {
 		t.Fatalf("migrate backfill: %v", err)
 	}
@@ -75,6 +77,15 @@ func TestMigrateCanonicalizesLegacyModelAliases(t *testing.T) {
 	if cfg["max_tokens"] != float64(123) {
 		t.Fatalf("max_tokens = %#v, want preserved 123", cfg["max_tokens"])
 	}
+}
+
+func throughNamedMigration(migs []appkitdb.Migration, name string) []appkitdb.Migration {
+	for i, m := range migs {
+		if strings.Contains(m.Name, name) {
+			return migs[:i+1]
+		}
+	}
+	return migs
 }
 
 func migrateBeforeProviderModelAliasBackfill(t *testing.T, ctx context.Context, conn *sql.DB) {

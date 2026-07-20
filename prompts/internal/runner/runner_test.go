@@ -186,6 +186,7 @@ func seedRunningWithConfig(t *testing.T, store *prompt.Store, sb *sandbox.Manage
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	sess := prompt.Prompt{
 		ID:         ids.NewULID(),
+		OwnerID:    "owner-id",
 		OwnerEmail: "owner@example.com",
 		Name:       "n",
 		UserPrompt: "do the thing",
@@ -204,6 +205,7 @@ func seedRunningWithConfig(t *testing.T, store *prompt.Store, sb *sandbox.Manage
 	run := prompt.Run{
 		ID:         runID,
 		PromptID:   sess.ID,
+		OwnerID:    sess.OwnerID,
 		OwnerEmail: sess.OwnerEmail,
 		PromptName: sess.Name,
 		Status:     prompt.RunRunning,
@@ -513,7 +515,7 @@ func TestSpawn_RequestAdvertisesSandboxAndLoaderOnlyForDeferredTools(t *testing.
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, withDeferred)
 	_, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string) []agentkit.DeferredToolGroup {
+	r.discover = func(context.Context, string, string, string) []agentkit.DeferredToolGroup {
 		return []agentkit.DeferredToolGroup{{
 			Name:  "crm",
 			Blurb: "CRM tools",
@@ -550,7 +552,7 @@ func TestSpawn_RequestAdvertisesSandboxAndLoaderOnlyForDeferredTools(t *testing.
 	runsDir = t.TempDir()
 	r, store = newTestRunner(t, time.Minute, withoutDeferred)
 	_, run = seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string) []agentkit.DeferredToolGroup {
+	r.discover = func(context.Context, string, string, string) []agentkit.DeferredToolGroup {
 		return []agentkit.DeferredToolGroup{}
 	}
 
@@ -580,7 +582,7 @@ func TestSpawn_SystemFramesDeferredToolsWithoutServiceEnumeration(t *testing.T) 
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
 	_, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string) []agentkit.DeferredToolGroup {
+	r.discover = func(context.Context, string, string, string) []agentkit.DeferredToolGroup {
 		return []agentkit.DeferredToolGroup{{
 			Name: "crm",
 			Tools: []agentkit.Tool{
@@ -626,7 +628,7 @@ func TestSpawn_SystemFramesDeferredToolGroupNameLoading(t *testing.T) {
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
 	_, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string) []agentkit.DeferredToolGroup {
+	r.discover = func(context.Context, string, string, string) []agentkit.DeferredToolGroup {
 		return []agentkit.DeferredToolGroup{{
 			Name: "crm",
 			Tools: []agentkit.Tool{
@@ -662,7 +664,7 @@ func TestExecute_LoadsAndCallsDeferredSuiteTool(t *testing.T) {
 	sess, run := seedRunning(t, store, r.sandbox, runsDir)
 
 	var calledWith json.RawMessage
-	r.discover = func(context.Context, string, string) []agentkit.DeferredToolGroup {
+	r.discover = func(context.Context, string, string, string) []agentkit.DeferredToolGroup {
 		return []agentkit.DeferredToolGroup{{
 			Name:  "crm",
 			Blurb: "CRM tools",
@@ -709,7 +711,7 @@ func TestExecute_LoadsAndCallsDeferredSuiteTool(t *testing.T) {
 
 // TestSpawn_DiscoversSuiteTools asserts the runner builds in-run suite deferred
 // tool groups at spawn via the injectable discover seam, calling it with the
-// run's OwnerEmail/PromptID, and that the resulting catalog is threaded into the
+// run's OwnerID/OwnerEmail/PromptID, and that the resulting catalog is threaded into the
 // engine (the run completes successfully with the fake source wired). It reuses
 // the fake-client seam so no real Anthropic call is made.
 func TestSpawn_DiscoversSuiteTools(t *testing.T) {
@@ -722,13 +724,15 @@ func TestSpawn_DiscoversSuiteTools(t *testing.T) {
 	var (
 		mu          sync.Mutex
 		calls       int
-		gotOwner    string
+		gotOwnerID  string
+		gotEmail    string
 		gotPromptID string
 	)
-	r.discover = func(ctx context.Context, owner, promptID string) []agentkit.DeferredToolGroup {
+	r.discover = func(ctx context.Context, ownerID, ownerEmail, promptID string) []agentkit.DeferredToolGroup {
 		mu.Lock()
 		calls++
-		gotOwner = owner
+		gotOwnerID = ownerID
+		gotEmail = ownerEmail
 		gotPromptID = promptID
 		mu.Unlock()
 		return []agentkit.DeferredToolGroup{{
@@ -754,8 +758,8 @@ func TestSpawn_DiscoversSuiteTools(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("discover seam called %d times, want exactly 1", calls)
 	}
-	if gotOwner != run.OwnerEmail {
-		t.Fatalf("discover owner = %q, want %q", gotOwner, run.OwnerEmail)
+	if gotOwnerID != run.OwnerID || gotEmail != run.OwnerEmail {
+		t.Fatalf("discover identity = (%q, %q), want (%q, %q)", gotOwnerID, gotEmail, run.OwnerID, run.OwnerEmail)
 	}
 	if gotPromptID != run.PromptID {
 		t.Fatalf("discover promptID = %q, want %q", gotPromptID, run.PromptID)
@@ -885,7 +889,7 @@ func TestNew_DefaultDiscoverWired(t *testing.T) {
 	if r.discover == nil {
 		t.Fatalf("New left discover seam nil")
 	}
-	if groups := r.discover(ctx, "owner@example.com", "p_123"); groups == nil {
+	if groups := r.discover(ctx, "owner-id", "owner@example.com", "p_123"); groups == nil {
 		t.Fatalf("default discover returned nil group slice; want non-nil (best-effort contract)")
 	}
 }

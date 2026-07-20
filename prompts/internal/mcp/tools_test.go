@@ -290,6 +290,111 @@ func TestCreateAndUpdateConfigRequireOnlyModel(t *testing.T) {
 	}
 }
 
+type ownerIDFetcher struct{ body []byte }
+
+func (f ownerIDFetcher) Fetch(context.Context, string) ([]byte, error) { return f.body, nil }
+
+func structuredJSON(t *testing.T, result map[string]any) map[string]any {
+	t.Helper()
+	b, err := json.Marshal(result["structuredContent"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestToolsKeyOwnershipOnIDAndExposeStoredOwnerFields(t *testing.T) {
+	// R-EBD6-OE1O
+	// R-ECL3-25SD
+	// R-EDSZ-FXJ2
+	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
+	svc, _ := phase42Service(t)
+	svc.Fetcher = ownerIDFetcher{body: []byte("imported")}
+	a := server.Identity{OwnerID: "idA", OwnerEmail: "same@example.com"}
+	b := server.Identity{OwnerID: "idB", OwnerEmail: "same@example.com"}
+	create := func(id server.Identity, body string) string {
+		res := phase42RawCallAs(t, svc, "create", map[string]any{
+			"user_prompt": body,
+			"config":      map[string]any{"model": "claude-haiku-4-5"},
+		}, id)
+		if isError(res) {
+			t.Fatalf("create: %#v", res)
+		}
+		return structuredJSON(t, res)["prompt_id"].(string)
+	}
+	promptA, promptB := create(a, "a"), create(b, "b")
+	imported := phase42RawCallAs(t, svc, "import", map[string]any{"source_path": "/x.md"}, a)
+	if isError(imported) {
+		t.Fatalf("import: %#v", imported)
+	}
+	importID := structuredJSON(t, imported)["prompt_id"].(string)
+	importDetail, err := svc.Get(context.Background(), "idA", importID)
+	if err != nil || importDetail.OwnerID != "idA" || importDetail.OwnerEmail != "same@example.com" {
+		t.Fatalf("import owner=%+v err=%v", importDetail.Prompt, err)
+	}
+	if _, err := svc.Get(context.Background(), "idB", importID); err == nil {
+		t.Fatal("idB read idA import")
+	}
+	runAResult := phase42RawCallAs(t, svc, "run", map[string]any{"prompt_id": promptA}, a)
+	runBResult := phase42RawCallAs(t, svc, "run", map[string]any{"prompt_id": promptB}, b)
+	runA := structuredJSON(t, runAResult)["run_id"].(string)
+	runB := structuredJSON(t, runBResult)["run_id"].(string)
+
+	list := structuredJSON(t, phase42RawCallAs(t, svc, "list", map[string]any{}, a))["prompts"].([]any)
+	if len(list) != 2 {
+		t.Fatalf("idA list len=%d, want own create+import", len(list))
+	}
+	for _, item := range list {
+		row := item.(map[string]any)
+		if row["owner_id"] != "idA" || row["owner_email"] != "same@example.com" {
+			t.Fatalf("prompt owner fields=%#v", row)
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"get", map[string]any{"prompt_id": promptB}},
+		{"delete", map[string]any{"prompt_id": promptB}},
+		{"run_cancel", map[string]any{"run_id": runB}},
+	} {
+		res := phase42RawCallAs(t, svc, tc.name, tc.args, a)
+		if !isError(res) || structuredJSON(t, res)["code"] != "not_found" {
+			t.Fatalf("foreign %s=%#v", tc.name, res)
+		}
+	}
+	if got := phase42RawCallAs(t, svc, "get", map[string]any{"prompt_id": promptB}, b); isError(got) {
+		t.Fatalf("foreign mutation changed idB prompt: %#v", got)
+	}
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"get", map[string]any{"prompt_id": promptA}},
+		{"run_get", map[string]any{"run_id": runA}},
+	} {
+		row := structuredJSON(t, phase42RawCallAs(t, svc, tc.name, tc.args, a))
+		if row["owner_id"] != "idA" || row["owner_email"] != "same@example.com" {
+			t.Fatalf("%s owner fields=%#v", tc.name, row)
+		}
+	}
+	runList := structuredJSON(t, phase42RawCallAs(t, svc, "run_list", map[string]any{"prompt_id": promptA}, a))["runs"].([]any)
+	if len(runList) != 1 || runList[0].(map[string]any)["owner_id"] != "idA" || runList[0].(map[string]any)["owner_email"] != "same@example.com" {
+		t.Fatalf("run_list owner fields=%#v", runList)
+	}
+	for _, name := range []string{"list", "get", "run_list", "run_get"} {
+		schema := outputSchemas()[name]
+		b, _ := json.Marshal(schema)
+		if !strings.Contains(string(b), `"owner_id"`) || !strings.Contains(string(b), `"owner_email"`) {
+			t.Fatalf("%s output schema lacks owner fields: %s", name, b)
+		}
+	}
+}
+
 func TestDescribeDescriptorDocumentsExpandedConfigAndJSONL(t *testing.T) {
 	description, ok := findToolDescriptor(t, "describe")["description"].(string)
 	if !ok || description == "" {

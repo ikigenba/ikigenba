@@ -34,6 +34,7 @@ type peer struct {
 	mu          sync.Mutex
 	listed      bool
 	calledNames []string
+	gotOwnerID  string
 	gotEmail    string
 	gotClient   string
 
@@ -60,6 +61,7 @@ func newPeer(t *testing.T, tools []map[string]any, callText string, callErr bool
 		}
 
 		p.mu.Lock()
+		p.gotOwnerID = r.Header.Get("X-Owner-Id")
 		p.gotEmail = r.Header.Get("X-Owner-Email")
 		p.gotClient = r.Header.Get("X-Client-Id")
 		p.mu.Unlock()
@@ -225,7 +227,7 @@ func TestSelfExcluded(t *testing.T) {
 	writeManifest(t, root, "prompts", portOf(t, self.srv.URL))
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
-	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner-id", "owner@example.com", "p_123")
 
 	if hasTool(groups, "ikigenba_prompts_run") {
 		t.Error("self tool should not be owned")
@@ -251,7 +253,7 @@ func TestToolsListErrorPeerSkipped(t *testing.T) {
 	writeManifest(t, root, "crm", portOf(t, live.srv.URL))
 	writeManifest(t, root, "ledger", portOf(t, bad.srv.URL))
 
-	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner-id", "owner@example.com", "p_123")
 
 	if !hasTool(groups, "ikigenba_crm_list") {
 		t.Error("live peer's tool missing; list-error peer broke discovery")
@@ -267,14 +269,25 @@ func TestToolsListErrorPeerSkipped(t *testing.T) {
 // TestIdentityHeaders: a live peer sees X-Owner-Email and X-Client-Id
 // (prompts:<promptID>) on the tools/list request.
 func TestIdentityHeaders(t *testing.T) {
+	// R-EF0V-TP9R
 	root := t.TempDir()
 	crm := newPeer(t, []map[string]any{tool("list")}, "ok", false)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
-	Discover(context.Background(), root, "alice@example.com", "p_abc")
+	groups := Discover(context.Background(), root, "alice-id", "alice@example.com", "p_abc")
+	discovered, ok := findTool(groups, "ikigenba_crm_list")
+	if !ok {
+		t.Fatal("discovered tool missing")
+	}
+	if _, err := discovered.Call(context.Background(), json.RawMessage(`{}`)); err != nil {
+		t.Fatal(err)
+	}
 
 	crm.mu.Lock()
 	defer crm.mu.Unlock()
+	if crm.gotOwnerID != "alice-id" {
+		t.Errorf("X-Owner-Id = %q, want alice-id", crm.gotOwnerID)
+	}
 	if crm.gotEmail != "alice@example.com" {
 		t.Errorf("X-Owner-Email = %q, want alice@example.com", crm.gotEmail)
 	}
@@ -299,7 +312,7 @@ func TestReachablePeerYieldsQualifiedToolAndDispatches(t *testing.T) {
 	}}, "crm-result", false)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
-	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner-id", "owner@example.com", "p_123")
 
 	if got := len(groups); got != 1 {
 		t.Fatalf("Discover returned %d groups, want exactly 1", got)
@@ -348,7 +361,7 @@ func TestInitializeFailureOrEmptyKeepsGroupWithEmptyBlurb(t *testing.T) {
 	writeManifest(t, root, "crm", portOf(t, failing.srv.URL))
 	writeManifest(t, root, "ledger", portOf(t, empty.srv.URL))
 
-	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner-id", "owner@example.com", "p_123")
 
 	crm, ok := findGroup(groups, "crm")
 	if !ok {
@@ -385,7 +398,7 @@ func TestInventoryBuildsOneGroupPerReachableNonSelfPeer(t *testing.T) {
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 	writeManifest(t, root, "ledger", portOf(t, ledger.srv.URL))
 
-	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner-id", "owner@example.com", "p_123")
 
 	if got := len(groups); got != 2 {
 		t.Fatalf("Discover returned %d groups, want exactly 2 non-self peers", got)
@@ -419,7 +432,7 @@ func TestSharedBareVerbReQualifiedPerService(t *testing.T) {
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 	writeManifest(t, root, "ledger", portOf(t, ledger.srv.URL))
 
-	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner-id", "owner@example.com", "p_123")
 
 	// Both services' health tools survive under distinct service-qualified names.
 	crmTool, ok := findTool(groups, "ikigenba_crm_health")
@@ -481,7 +494,7 @@ func TestWithinServiceDuplicateKeepsFirst(t *testing.T) {
 	crm := newPeer(t, []map[string]any{tool("health"), tool("health")}, "ok", false)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
-	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner-id", "owner@example.com", "p_123")
 
 	if !hasTool(groups, "ikigenba_crm_health") {
 		t.Error("want ikigenba_crm_health owned")
@@ -498,7 +511,7 @@ func TestDispatchDownstreamIsError(t *testing.T) {
 	crm := newPeer(t, []map[string]any{tool("list")}, "boom", true)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
-	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner-id", "owner@example.com", "p_123")
 	tool, ok := findTool(groups, "ikigenba_crm_list")
 	if !ok {
 		t.Fatal("missing ikigenba_crm_list")
@@ -523,7 +536,7 @@ func TestDispatchTransportFailureIsError(t *testing.T) {
 	crm := newPeer(t, []map[string]any{tool("list")}, "ok", false)
 	writeManifest(t, root, "crm", portOf(t, crm.srv.URL))
 
-	groups := Discover(context.Background(), root, "owner@example.com", "p_123")
+	groups := Discover(context.Background(), root, "owner-id", "owner@example.com", "p_123")
 	tool, ok := findTool(groups, "ikigenba_crm_list")
 	if !ok {
 		t.Fatal("missing ikigenba_crm_list")
@@ -548,7 +561,7 @@ func TestInventoryErrorEmptySource(t *testing.T) {
 	// An unclosed '[' in the root makes inventory.Read's filepath.Glob return a
 	// bad-pattern error, exercising the inventory-error branch (not the empty
 	// match path).
-	groups := Discover(context.Background(), "bad[root", "owner@example.com", "p_123")
+	groups := Discover(context.Background(), "bad[root", "owner-id", "owner@example.com", "p_123")
 	if groups == nil {
 		t.Fatal("Discover returned nil, want a non-nil empty slice")
 	}

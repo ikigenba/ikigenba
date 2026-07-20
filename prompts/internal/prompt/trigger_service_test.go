@@ -82,7 +82,7 @@ func TestService_Create_InlineTriggers(t *testing.T) {
 	ctx := context.Background()
 	svc, store, _, _ := newTestService(t)
 
-	p, err := svc.Create(ctx, "owner@example.com", CreateInput{
+	p, err := svc.Create(ctx, "owner-id", "owner@example.com", CreateInput{
 		UserPrompt: "do the thing",
 		Config:     validConfig(),
 		Triggers: []TriggerSpec{
@@ -102,7 +102,7 @@ func TestService_Create_InlineTriggers(t *testing.T) {
 	}
 
 	// An invalid inline trigger rejects the whole create — no prompt row written.
-	_, err = svc.Create(ctx, "owner@example.com", CreateInput{
+	_, err = svc.Create(ctx, "owner-id", "owner@example.com", CreateInput{
 		UserPrompt: "bad",
 		Config:     validConfig(),
 		Triggers:   []TriggerSpec{{Filter: "ledger:nosuchkind/**"}},
@@ -110,7 +110,7 @@ func TestService_Create_InlineTriggers(t *testing.T) {
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected ErrValidation for invalid inline trigger, got %v", err)
 	}
-	all, err := store.ListPrompts(ctx, "owner@example.com")
+	all, err := store.ListPrompts(ctx, "owner-id")
 	if err != nil {
 		t.Fatalf("ListPrompts: %v", err)
 	}

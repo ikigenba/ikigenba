@@ -85,14 +85,14 @@ func TestPromptsSpecConsumerHandlerRunsMatchingPromptOnly(t *testing.T) {
 	svcRef = svc
 	t.Cleanup(func() { svcRef = previousSvc })
 
-	p, err := svc.Create(ctx, "owner@example.com", prompt.CreateInput{
+	p, err := svc.Create(ctx, "owner-id", "owner@example.com", prompt.CreateInput{
 		UserPrompt: "summarize the file",
 		Config:     prompt.Config{Model: "claude-haiku-4-5"},
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := svc.SetTrigger(ctx, "owner@example.com", p.ID, "dropbox:create/**"); err != nil {
+	if _, err := svc.SetTrigger(ctx, "owner-id", p.ID, "dropbox:create/**"); err != nil {
 		t.Fatalf("SetTrigger: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func TestPromptsSpecConsumerHandlerRunsMatchingPromptOnly(t *testing.T) {
 	}
 	waitForSpawnCount(t, runner, 1)
 
-	detail, err := svc.Get(ctx, "owner@example.com", p.ID)
+	detail, err := svc.Get(ctx, "owner-id", p.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}

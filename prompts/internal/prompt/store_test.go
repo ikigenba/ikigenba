@@ -42,6 +42,7 @@ func seedPrompt(t *testing.T, store *Store, owner string) Prompt {
 	now := store.nowStr()
 	sess := Prompt{
 		ID:         ids.NewULID(),
+		OwnerID:    owner,
 		OwnerEmail: owner,
 		Name:       "n",
 		UserPrompt: "p",
@@ -234,7 +235,7 @@ func TestStoreDeleteIsTombstone(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 	sess := seedPrompt(t, store, ownerA)
-	run := Run{ID: ids.NewULID(), PromptID: sess.ID, OwnerEmail: ownerA, Status: RunSucceeded, StartedAt: store.nowStr(), LogPath: "x"}
+	run := Run{ID: ids.NewULID(), PromptID: sess.ID, OwnerID: ownerA, OwnerEmail: ownerA, Status: RunSucceeded, StartedAt: store.nowStr(), LogPath: "x"}
 	if err := store.InsertRun(ctx, run); err != nil {
 		t.Fatalf("InsertRun: %v", err)
 	}

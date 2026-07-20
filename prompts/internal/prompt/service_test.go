@@ -79,7 +79,7 @@ const (
 
 func mustCreate(t *testing.T, svc *Service, owner string) Prompt {
 	t.Helper()
-	sess, err := svc.Create(context.Background(), owner, CreateInput{
+	sess, err := svc.Create(context.Background(), owner, owner, CreateInput{
 		Name:       "test",
 		UserPrompt: "do a thing",
 		Config:     validConfig(),
@@ -471,7 +471,7 @@ func TestServiceCreateAndUpdatePreserveValidatedProvider(t *testing.T) {
 	ctx := context.Background()
 	temp := 0.7
 
-	created, err := svc.Create(ctx, ownerA, CreateInput{
+	created, err := svc.Create(ctx, ownerA, ownerA, CreateInput{
 		UserPrompt: "p",
 		Config:     Config{Provider: "google", Model: testGoogleModel, Temperature: &temp},
 	})
@@ -804,7 +804,7 @@ func TestRun_MaterializesFrozenInput_SurvivesMutation(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, runsDir := newTestService(t)
 
-	sess, err := svc.Create(ctx, ownerA, CreateInput{
+	sess, err := svc.Create(ctx, ownerA, ownerA, CreateInput{
 		Name:         "frozen",
 		UserPrompt:   "ORIGINAL user prompt",
 		SystemPrompt: "ORIGINAL system prompt",
@@ -880,7 +880,7 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 	ctx := context.Background()
 	svc.Fetcher = stubFetcher{data: []byte("summarize the inbox\n")}
 
-	p, err := svc.Import(ctx, ownerA, "/prompts/triage.md", "")
+	p, err := svc.Import(ctx, ownerA, ownerA, "/prompts/triage.md", "")
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
@@ -907,7 +907,7 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 
 	// Re-import the same path with new bytes → same id, updated user_prompt, no dup.
 	svc.Fetcher = stubFetcher{data: []byte("summarize and label the inbox\n")}
-	p2, err := svc.Import(ctx, ownerA, "/prompts/triage.md", "")
+	p2, err := svc.Import(ctx, ownerA, ownerA, "/prompts/triage.md", "")
 	if err != nil {
 		t.Fatalf("re-Import: %v", err)
 	}
@@ -931,7 +931,7 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 func TestImportRejectsNonUTF8(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	svc.Fetcher = stubFetcher{data: []byte{0xff, 0xfe, 0x00}}
-	if _, err := svc.Import(context.Background(), ownerA, "/prompts/blob.bin", ""); !errors.Is(err, ErrValidation) {
+	if _, err := svc.Import(context.Background(), ownerA, ownerA, "/prompts/blob.bin", ""); !errors.Is(err, ErrValidation) {
 		t.Fatalf("non-UTF-8: want ErrValidation, got %v", err)
 	}
 }
@@ -944,7 +944,7 @@ func TestImportRejectsTooLarge(t *testing.T) {
 		big[i] = 'a'
 	}
 	svc.Fetcher = stubFetcher{data: big}
-	if _, err := svc.Import(context.Background(), ownerA, "/prompts/huge.md", ""); !errors.Is(err, ErrTooLarge) {
+	if _, err := svc.Import(context.Background(), ownerA, ownerA, "/prompts/huge.md", ""); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("too-large: want ErrTooLarge, got %v", err)
 	}
 }
@@ -954,8 +954,97 @@ func TestImportRejectsTooLarge(t *testing.T) {
 func TestImportRejectsEmptySourcePath(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	svc.Fetcher = stubFetcher{data: []byte("x")}
-	if _, err := svc.Import(context.Background(), ownerA, "", ""); !errors.Is(err, ErrValidation) {
+	if _, err := svc.Import(context.Background(), ownerA, ownerA, "", ""); !errors.Is(err, ErrValidation) {
 		t.Fatalf("empty source_path: want ErrValidation, got %v", err)
+	}
+}
+
+func TestOwnerIDScopesPromptsWithSharedEmail(t *testing.T) {
+	// R-E6HL-5B2W
+	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
+	ctx := context.Background()
+	svc, _, _, _ := newTestService(t)
+	a, err := svc.Create(ctx, "idA", "same@example.com", CreateInput{UserPrompt: "a", Config: validConfig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := svc.Create(ctx, "idB", "same@example.com", CreateInput{UserPrompt: "b", Config: validConfig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.List(ctx, "idA")
+	if err != nil || len(got) != 1 || got[0].ID != a.ID {
+		t.Fatalf("idA list=%+v err=%v", got, err)
+	}
+	if _, err := svc.Get(ctx, "idA", b.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("foreign Get err=%v", err)
+	}
+	if err := svc.Delete(ctx, "idA", b.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("foreign Delete err=%v", err)
+	}
+	if _, err := svc.Get(ctx, "idB", b.ID); err != nil {
+		t.Fatalf("foreign delete mutated idB: %v", err)
+	}
+}
+
+func TestOwnerIDSnapshotsEmailAndScopesRunArtifacts(t *testing.T) {
+	// R-E7PH-J2TL
+	// R-E8XD-WUKA
+	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
+	ctx := context.Background()
+	svc, _, sb, _ := newTestService(t)
+	a, err := svc.Create(ctx, "idA", "same@example.com", CreateInput{Name: "a", UserPrompt: "a", Config: validConfig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := svc.Create(ctx, "idB", "same@example.com", CreateInput{Name: "b", UserPrompt: "b", Config: validConfig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := svc.Update(ctx, "idA", a.ID, UpdateInput{Name: "changed", UserPrompt: "a2", Config: validConfig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.OwnerID != "idA" || updated.OwnerEmail != "same@example.com" {
+		t.Fatalf("updated owner snapshot=%+v", updated)
+	}
+	runA, err := svc.Run(ctx, "idA", a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runB, err := svc.Run(ctx, "idB", b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runA.OwnerID != "idA" || runA.OwnerEmail != "same@example.com" {
+		t.Fatalf("run owner denormalization=%+v", runA)
+	}
+	if err := os.MkdirAll(filepath.Dir(runB.LogPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(runB.LogPath, []byte("secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sb.Root(runB.ID), "secret.txt"), []byte("secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if runs, err := svc.RunList(ctx, "idA", a.ID); err != nil || len(runs) != 1 || runs[0].ID != runA.ID {
+		t.Fatalf("idA runs=%+v err=%v", runs, err)
+	}
+	if _, err := svc.RunGet(ctx, "idA", runB.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("RunGet foreign err=%v", err)
+	}
+	if err := svc.RunCancel(ctx, "idA", runB.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("RunCancel foreign err=%v", err)
+	}
+	if _, err := svc.RunOutput(ctx, "idA", runB.ID, 1, 1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("RunOutput foreign err=%v", err)
+	}
+	if _, err := svc.RunFsList(ctx, "idA", runB.ID, "."); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("RunFsList foreign err=%v", err)
+	}
+	if _, err := svc.RunFsRead(ctx, "idA", runB.ID, "secret.txt", 1, 1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("RunFsRead foreign err=%v", err)
 	}
 }
 
