@@ -10,7 +10,7 @@ Verification ids change.
 - D1 → `project/design/D01.md` — A stateless connector on the appkit chassis — none (structural)
 - D2 → `project/design/D02.md` — App authentication: the installation-token source — owns `R-DLMX-CNDL`, `R-DMUT-QF4A`, `R-DO2Q-46UZ`, `R-DPAM-HYLO`, `R-DQII-VQCD`, `R-DRQF-9I32`
 - D3 → `project/design/D03.md` — The typed GitHub REST v3 client — owns `R-DVE4-ETB5`, `R-DWM0-SL1U`, `R-DXTX-6CSJ`, `R-DZ1T-K4J8`, `R-E09P-XW9X`, `R-E1HM-BO0M`, `R-E2PI-PFRB`, `R-E3XF-37I0`, `R-E55B-GZ8P`, `R-E6D7-UQZE`, `R-E7L4-8IQ3`, `R-EA0X-027H`, `R-EB8T-DTY6`, `R-ECGP-RLOV`, `R-D0IM-VQ7H`
-- D4 → `project/design/D04.md` — The MCP tool surface — owns `R-EEWI-J569`, `R-EHCB-AONN`, `R-EIK7-OGEC`, `R-EJS4-2851`, `R-EL00-FZVQ`, `R-EM7W-TRMF`, `R-ENFT-7JD4`
+- D4 → `project/design/D04.md` — The MCP tool surface — owns `R-EEWI-J569`, `R-EHCB-AONN`, `R-EIK7-OGEC`, `R-EJS4-2851`, `R-EL00-FZVQ`, `R-EM7W-TRMF`, `R-ENFT-7JD4`, `R-X3XX-6BNN`
 - D5 → `project/design/D05.md` — The loopback `GET /pr` twin for scripts — owns `R-EPVL-Z2UI`, `R-ETJB-4E2L`
 - D6 → `project/design/D06.md` — The landing page and nginx fragment — owns `R-EVZ3-VXJZ`, `R-XSOU-THYE`, `R-XTWR-79P3`, `R-7NJI-UTHM`, `R-7PZB-MCZ0`, `R-EX70-9PAO`, `R-XV4N-L1FS`, `R-XWCJ-YT6H`, `R-XXKG-CKX6`, `R-XYSC-QCNV`, `R-EYEW-NH1D`, `R-1GOK-GA2F`, `R-1HWG-U1T4`
 - D7 → `project/design/D07.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer tier deliberately excluded) — owns `R-42HV-I1HS`, `R-43PR-VT8H`, `R-44XO-9KZ6`
@@ -81,6 +81,7 @@ Verification ids change.
 - R-GTQ4-30E7 → D10 — `project/design/D10.md`
 - R-GUY0-GS4W → D10 — `project/design/D10.md`
 - R-GW5W-UJVL → D10 — `project/design/D10.md`
+- R-X3XX-6BNN → D4 — `project/design/D04.md`
 - R-XSOU-THYE → D6 — `project/design/D06.md`
 - R-XTWR-79P3 → D6 — `project/design/D06.md`
 - R-XV4N-L1FS → D6 — `project/design/D06.md`

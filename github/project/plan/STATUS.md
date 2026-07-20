@@ -9,5 +9,6 @@ that phase's line and its body file — there is no done marker; done is gone.
 This file deliberately carries **no bare status glyph** outside phase lines, so
 the anchored grep matches only phase lines.
 
-Next phase: 16
+Next phase: 17
 
+- Phase 16 ⬜ realizes D4 (R-X3XX-6BNN; R-EIK7-OGEC, R-EJS4-2851 text touch-ups) — owner-id keying: write-provenance log line gains owner_id; identity reads and tests move to the widened X-Owner-Id-gated Identity
