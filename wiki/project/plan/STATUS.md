@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 97
-
-- Phase 96 ⬜ realizes D3, D25, D10, D16, D27 (and touch-ups in D4, D26, D61, D62) — owner_email → owner_id conversion: rename the jobs/aliases owner columns to the owner_id/owner_email pair via one new migration, capture the id as the durable key with the email as a write-once snapshot, expose both in the jobs/merges MCP results
