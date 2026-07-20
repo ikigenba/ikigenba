@@ -12,7 +12,6 @@ matches only phase lines.
 
 Next phase: 39
 
-- Phase 37 ⬜ realizes R-INT3-YCY6, R-IP10-C4OV, R-IQ8W-PWFK, R-IRGT-3O69, R-ISOP-HFWY, R-ITWL-V7NN, R-IF9T-9YRB, R-IAE7-QVSJ (D28 + D26/D25 slices) — the GitHub callback, federation gate, and wiring
 - Phase 38 ⬜ realizes R-IWCE-MR51, R-IXKB-0IVQ, R-IYS7-EAMF, R-J003-S2D4 (D29) — the provider chooser inside `GET /oauth/authorize`
 
 
