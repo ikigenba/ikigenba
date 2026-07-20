@@ -203,6 +203,7 @@ func rpc(t *testing.T, h http.Handler, method, params string) (map[string]any, a
 	t.Helper()
 	body := `{"jsonrpc":"2.0","id":1,"method":"` + method + `","params":` + params + `}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("X-Owner-Id", "owner-456")
 	req.Header.Set("X-Owner-Email", "owner@example.com")
 	req.Header.Set("X-Client-Id", "client-123")
 	req.Header.Set("Authorization", "Bearer ignored-by-service")
@@ -329,11 +330,26 @@ func TestIdentityFromHeadersAndNoBearerParsingR_EIK7_OGEC(t *testing.T) {
 		t.Fatalf("expected one provenance log, got %d", len(cap.records))
 	}
 	rec := cap.records[0]
-	if rec["owner_email"] != "owner@example.com" || rec["client_id"] != "client-123" {
+	if rec["owner_id"] != "owner-456" || rec["owner_email"] != "owner@example.com" || rec["client_id"] != "client-123" {
 		t.Fatalf("identity not read from headers: %v", rec)
 	}
 	if rec["verb"] != "issue_comment" || rec["repo"] != "repo" || rec["number"] != int64(9) && rec["number"] != 9 {
 		t.Fatalf("dispatch target not logged: %v", rec)
+	}
+}
+
+func TestWriteProvenanceIncludesOwnerIDR_X3XX_6BNN(t *testing.T) {
+	// R-X3XX-6BNN
+	cap := &captureHandler{}
+	h := newTestHandler(&fakeClient{}, cap, nil)
+	if _, isErr, rpcErr, _ := callTool(t, h, "issue_comment", `{"repo":"repo","number":9,"body":"hi"}`); rpcErr != nil || isErr {
+		t.Fatalf("issue_comment failed rpcErr=%v isErr=%v", rpcErr, isErr)
+	}
+	if len(cap.records) != 1 {
+		t.Fatalf("expected one provenance log, got %d", len(cap.records))
+	}
+	if got := cap.records[0]; got["owner_id"] != "owner-456" || got["owner_email"] != "owner@example.com" {
+		t.Fatalf("owner provenance = %v, want distinct owner_id beside owner_email", got)
 	}
 }
 

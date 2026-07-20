@@ -502,7 +502,7 @@ func clientResult(v any, err error) (map[string]any, error) {
 }
 
 func logWrite(ctx context.Context, logger *slog.Logger, id server.Identity, verb, repo string, number int, path string) {
-	args := []any{"owner_email", id.OwnerEmail, "client_id", id.ClientID, "verb", verb, "repo", repo}
+	args := []any{"owner_id", id.OwnerID, "owner_email", id.OwnerEmail, "client_id", id.ClientID, "verb", verb, "repo", repo}
 	if number > 0 {
 		args = append(args, "number", number)
 	}
