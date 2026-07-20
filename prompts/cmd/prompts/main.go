@@ -29,9 +29,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"appkit"
@@ -152,14 +154,6 @@ func registerRoutes(rt *appkit.Router) error {
 	if site == nil {
 		return fmt.Errorf("prompts: no WWW site on router")
 	}
-	rt.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		if err := site.Render(w, "landing.html", landingData{
-			Service: rt.Service(),
-			Version: rt.Version(),
-		}); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	})
 
 	conn := rt.DB()
 	if conn == nil {
@@ -219,6 +213,7 @@ func registerRoutes(rt *appkit.Router) error {
 
 	store := prompt.NewStore(conn)
 	store.Calls = callStore
+	registerUIRoutes(rt, store)
 	allowedPorts := make(map[int]bool, len(registry.Services))
 	for _, service := range registry.Services {
 		allowedPorts[service.Port] = true
@@ -258,9 +253,180 @@ func registerRoutes(rt *appkit.Router) error {
 	return nil
 }
 
-type landingData struct {
+const uiPageSize = 50
+
+type promptBrowser interface {
+	BrowsePrompts(context.Context, prompt.BrowseFilter) ([]prompt.Prompt, int, error)
+	BrowseRuns(context.Context, prompt.BrowseFilter) ([]prompt.Run, int, error)
+}
+
+type uiChrome struct {
 	Service string
 	Version string
+}
+
+type promptsPageData struct {
+	uiChrome
+	Prompts []prompt.Prompt
+	Q       string
+	Page    int
+	Pages   int
+	PrevURL string
+	NextURL string
+}
+
+type runListRow struct {
+	ID         string
+	PromptID   string
+	PromptName string
+	Status     string
+	OwnerEmail string
+	StartedAt  string
+	Duration   string
+	Trigger    string
+}
+
+type runsPageData struct {
+	uiChrome
+	Runs     []runListRow
+	Q        string
+	Status   string
+	PromptID string
+	Page     int
+	Pages    int
+	PrevURL  string
+	NextURL  string
+}
+
+func registerUIRoutes(rt *appkit.Router, store promptBrowser) {
+	rt.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "ui/")
+		w.WriteHeader(http.StatusSeeOther)
+	})
+	rt.HandleFunc("GET /ui/{$}", promptsListHandler(rt, store))
+	rt.HandleFunc("GET /ui/runs", runsListHandler(rt, store))
+}
+
+func promptsListHandler(rt *appkit.Router, store promptBrowser) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		page := queryPage(r)
+		q := r.URL.Query().Get("q")
+		rows, total, err := store.BrowsePrompts(r.Context(), prompt.BrowseFilter{
+			Q: q, Limit: uiPageSize, Offset: (page - 1) * uiPageSize,
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pages := pageCount(total)
+		data := promptsPageData{
+			uiChrome: uiChrome{Service: rt.Service(), Version: rt.Version()},
+			Prompts:  rows, Q: q, Page: page, Pages: pages,
+		}
+		data.PrevURL, data.NextURL = pagerURLs("/srv/prompts/ui/", r.URL.Query(), page, pages)
+		if err := rt.WWW().Render(w, "ui-prompts.html", data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}
+}
+
+func runsListHandler(rt *appkit.Router, store promptBrowser) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		page := queryPage(r)
+		query := r.URL.Query()
+		filter := prompt.BrowseFilter{
+			Q: query.Get("q"), Status: query.Get("status"), PromptID: query.Get("prompt_id"),
+			Limit: uiPageSize, Offset: (page - 1) * uiPageSize,
+		}
+		runs, total, err := store.BrowseRuns(r.Context(), filter)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		rows := make([]runListRow, 0, len(runs))
+		for _, run := range runs {
+			rows = append(rows, runListRow{
+				ID: run.ID, PromptID: run.PromptID, PromptName: run.PromptName,
+				Status: run.Status, OwnerEmail: run.OwnerEmail, StartedAt: run.StartedAt,
+				Duration: runDuration(run.StartedAt, run.EndedAt), Trigger: runTrigger(run.TriggerSource, run.TriggerKind),
+			})
+		}
+		pages := pageCount(total)
+		data := runsPageData{
+			uiChrome: uiChrome{Service: rt.Service(), Version: rt.Version()},
+			Runs:     rows, Q: filter.Q, Status: filter.Status, PromptID: filter.PromptID,
+			Page: page, Pages: pages,
+		}
+		data.PrevURL, data.NextURL = pagerURLs("/srv/prompts/ui/runs", query, page, pages)
+		if err := rt.WWW().Render(w, "ui-runs.html", data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}
+}
+
+func queryPage(r *http.Request) int {
+	page, err := strconv.Atoi(r.URL.Query().Get("page"))
+	if err != nil || page < 1 {
+		return 1
+	}
+	return page
+}
+
+func pageCount(total int) int {
+	pages := (total + uiPageSize - 1) / uiPageSize
+	if pages < 1 {
+		return 1
+	}
+	return pages
+}
+
+func pagerURLs(path string, query url.Values, page, pages int) (string, string) {
+	pageURL := func(n int) string {
+		q := url.Values{}
+		for key, values := range query {
+			if key == "page" {
+				continue
+			}
+			for _, value := range values {
+				q.Add(key, value)
+			}
+		}
+		q.Set("page", strconv.Itoa(n))
+		return path + "?" + q.Encode()
+	}
+	var prev, next string
+	if page > 1 {
+		prev = pageURL(page - 1)
+	}
+	if page < pages {
+		next = pageURL(page + 1)
+	}
+	return prev, next
+}
+
+func runDuration(startedAt, endedAt string) string {
+	if endedAt == "" {
+		return ""
+	}
+	started, err := time.Parse(time.RFC3339Nano, startedAt)
+	if err != nil {
+		return ""
+	}
+	ended, err := time.Parse(time.RFC3339Nano, endedAt)
+	if err != nil || ended.Before(started) {
+		return ""
+	}
+	return ended.Sub(started).Round(time.Second).String()
+}
+
+func runTrigger(source, kind string) string {
+	if source == "" {
+		return ""
+	}
+	if kind == "" {
+		return source
+	}
+	return strings.TrimSpace(source) + " / " + strings.TrimSpace(kind)
 }
 
 func dropboxBaseURL(getenv func(string) string) string {

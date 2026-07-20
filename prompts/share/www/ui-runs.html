@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Runs · {{.Service}}</title>
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/srv/prompts/static/fonts/space-grotesk.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/srv/prompts/static/fonts/ibm-plex-sans.woff2">
+  <link rel="stylesheet" href="/srv/prompts/static/tokens.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--color-text); background: var(--color-bg); font-family: var(--font-body); }
+    main { width: min(100% - 32px, 1400px); margin: 0 auto; padding: var(--space-8) 0 var(--space-16); }
+    a { color: inherit; }
+    .home, .version, label, th, .pager { font-family: var(--font-mono); font-size: var(--text-label-size); line-height: var(--text-label-lh); }
+    .home { color: var(--color-text-muted); text-decoration: none; text-transform: uppercase; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); margin-top: var(--space-10); }
+    h1 { margin: 0; font-family: var(--font-display); font-size: var(--text-heading-01-size); line-height: var(--text-heading-01-lh); }
+    .version { color: var(--color-text-muted); }
+    nav { display: flex; gap: var(--space-8); margin-top: var(--space-8); border-bottom: var(--border-width) solid var(--color-border); }
+    nav a { padding: var(--space-3) 0; color: var(--color-text-muted); text-decoration: none; }
+    nav a.active { color: var(--color-text); border-bottom: 2px solid currentColor; }
+    form { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: var(--space-3); margin: var(--space-8) 0 var(--space-6); }
+    .field { display: grid; gap: var(--space-2); }
+    input, select, button { min-height: 40px; border: var(--border-width) solid var(--color-border); background: var(--color-bg); color: var(--color-text); font: inherit; padding: var(--space-2) var(--space-3); }
+    button { align-self: end; cursor: pointer; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: var(--space-3); border-bottom: var(--border-width) solid var(--color-border); text-align: left; vertical-align: top; white-space: nowrap; }
+    th { color: var(--color-text-muted); text-transform: uppercase; }
+    .pager { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); margin-top: var(--space-6); }
+    .pager-links { display: flex; gap: var(--space-4); }
+    @media (max-width: 800px) { header { align-items: flex-start; flex-direction: column; } form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="home" href="/">Home</a>
+    <header>
+      <h1>{{.Service}}</h1>
+      <span class="version">{{.Version}}</span>
+    </header>
+    <nav aria-label="Browse">
+      <a href="/srv/prompts/ui/">Prompts</a>
+      <a class="active" aria-current="page" href="/srv/prompts/ui/runs">Runs</a>
+    </nav>
+    <form method="get" action="/srv/prompts/ui/runs">
+      <div class="field"><label for="q">Search</label><input id="q" name="q" value="{{.Q}}" placeholder="Prompt or owner email"></div>
+      <div class="field"><label for="status">Status</label><input id="status" name="status" value="{{.Status}}" placeholder="e.g. failed"></div>
+      <div class="field"><label for="prompt_id">Prompt ID</label><input id="prompt_id" name="prompt_id" value="{{.PromptID}}"></div>
+      <button type="submit">Filter</button>
+    </form>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Prompt</th><th>Status</th><th>Owner email</th><th>Started at</th><th>Duration</th><th>Trigger</th></tr></thead>
+        <tbody>
+          {{range .Runs}}
+          <tr data-run-id="{{.ID}}">
+            <td><a href="/srv/prompts/ui/prompts/{{.PromptID}}">{{.PromptName}}</a></td>
+            <td><a href="/srv/prompts/ui/runs/{{.ID}}">{{.Status}}</a></td>
+            <td>{{.OwnerEmail}}</td><td>{{.StartedAt}}</td><td>{{.Duration}}</td><td>{{.Trigger}}</td>
+          </tr>
+          {{else}}<tr><td colspan="6">No runs found.</td></tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <span>Page {{.Page}} of {{.Pages}}</span>
+      <span class="pager-links">{{if .PrevURL}}<a rel="prev" href="{{.PrevURL}}">Prev</a>{{end}}{{if .NextURL}}<a rel="next" href="{{.NextURL}}">Next</a>{{end}}</span>
+    </div>
+  </main>
+</body>
+</html>
