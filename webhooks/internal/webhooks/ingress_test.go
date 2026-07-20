@@ -155,10 +155,9 @@ func TestIngress_AuthFailuresAreByteIdenticalAndAppendNothing(t *testing.T) {
 	}
 }
 
-// R-7L8J-RITT — a correct-secret POST carrying a front-door identity header
+// R-L8PI-T7OV — a correct-secret POST carrying a front-door identity header
 // (X-Owner-Id, X-Owner-Email, or X-Client-Id) is rejected 404 with no outbox row; the same
 // request carrying only X-Forwarded-Proto is accepted 202.
-// R-L8PI-T7OV
 func TestIngress_IdentityHeadersRejectedButForwardedProtoAllowed(t *testing.T) {
 	for _, h := range []string{"X-Owner-Id", "X-Owner-Email", "X-Client-Id"} {
 		t.Run(h, func(t *testing.T) {

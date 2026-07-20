@@ -190,7 +190,6 @@ func TestInsertDuplicateNameRejectedByConstraint(t *testing.T) {
 	}
 }
 
-// R-T0GF-4W5N
 // R-L51T-NWGS — ListByOwner returns exactly the calling owner id's set and never
 // another owner's rows.
 func TestListByOwnerIsOwnerScoped(t *testing.T) {
@@ -227,8 +226,6 @@ func TestListByOwnerIsOwnerScoped(t *testing.T) {
 	}
 }
 
-// R-T1OB-INWC — Delete is owner-scoped: A cannot delete B's webhook (deleted
-// false, row survives), but B can (deleted true, row gone).
 // R-L69Q-1O7H — owner-scoped delete and update act on nothing for another id.
 func TestDeleteIsOwnerScoped(t *testing.T) {
 	s := newTestStore(t)

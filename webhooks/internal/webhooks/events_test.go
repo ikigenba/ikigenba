@@ -113,7 +113,6 @@ func TestRecord_WritesEventWithBinaryBodyRecoverable(t *testing.T) {
 	}
 }
 
-// R-GV2V-OA7L — the payload owner is always the stored owner fields.
 // R-L9XF-6ZFK
 func TestRecord_StampsStoredOwnerNotCallerInput(t *testing.T) {
 	wh := db.Webhook{Name: "scoped", OwnerID: "stored-owner-id", OwnerEmail: "stored-owner@example.com"}
