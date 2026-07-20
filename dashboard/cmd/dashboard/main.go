@@ -102,10 +102,18 @@ func registerRoutes(rt *appkit.Router, telemetryStore *telemetry.Store, manifest
 	if err := requireEnv(getenv, "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_WORKSPACE_DOMAIN"); err != nil {
 		return err
 	}
+	if err := requireEnv(getenv, "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GITHUB_ORG"); err != nil {
+		return err
+	}
 	creds := googleidp.Credentials{
 		ClientID:        getenv("GOOGLE_CLIENT_ID"),
 		ClientSecret:    getenv("GOOGLE_CLIENT_SECRET"),
 		WorkspaceDomain: getenv("GOOGLE_WORKSPACE_DOMAIN"),
+	}
+	githubCreds := githubidp.Credentials{
+		ClientID:     getenv("GITHUB_CLIENT_ID"),
+		ClientSecret: getenv("GITHUB_CLIENT_SECRET"),
+		Org:          getenv("GITHUB_ORG"),
 	}
 
 	// publicBaseURL is the exact origin Google redirects back to and that the later
@@ -174,7 +182,7 @@ func registerRoutes(rt *appkit.Router, telemetryStore *telemetry.Store, manifest
 	regHook, err := server.Register(server.Options{
 		Logger:          logger,
 		IDPProvider:     googleidp.New(creds),
-		GithubProvider:  githubidp.NewStub(), // Phase 37 replaces this with the live configured provider.
+		GithubProvider:  githubidp.New(githubCreds),
 		PublicBaseURL:   publicBaseURL,
 		Handshakes:      handshakes,
 		WorkspaceDomain: creds.WorkspaceDomain,

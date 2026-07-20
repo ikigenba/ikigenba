@@ -120,6 +120,77 @@ func (a *app) handleCallback() http.HandlerFunc {
 	}
 }
 
+// handleGitHubCallback completes a GitHub sign-in round-trip. GitHub reports
+// identity and organization facts; this boundary owns the admission policy and
+// then hands the provider-neutral owner ID to the existing web or MCP finish.
+func (a *app) handleGitHubCallback() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		state := r.URL.Query().Get("state")
+		code := r.URL.Query().Get("code")
+		cookie, err := r.Cookie(bindingCookieName)
+		if err != nil {
+			a.logger.Warn("github_callback.missing_binding_cookie", "err", err)
+			a.writeFederationReject(r, "", "missing_binding_cookie")
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		handshake, err := a.handshakes.Consume(r.Context(), state, cookie.Value)
+		if err != nil {
+			a.logger.Warn("github_callback.consume_handshake", "err", err)
+			a.writeFederationReject(r, "", "state_rejected")
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if handshake.Provider != oauthstate.ProviderGitHub {
+			a.logger.Warn("github_callback.provider_mismatch", "provider", handshake.Provider)
+			a.writeFederationReject(r, "", "provider_mismatch")
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		githubIdentity, err := a.githubProvider.ExchangeCode(r.Context(), code, a.publicBaseURL+"/oauth/github/callback")
+		if err != nil {
+			a.logger.Warn("github_callback.exchange_code", "err", err)
+			a.writeFederationReject(r, "", "code_exchange_failed")
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if !githubIdentity.EmailVerified {
+			a.logger.Warn("github_callback.email_unverified", "email", githubIdentity.Email)
+			a.writeFederationReject(r, githubIdentity.Email, "email_not_verified")
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if githubIdentity.OrgMembership != "active" {
+			a.logger.Warn("github_callback.org_membership", "email", githubIdentity.Email, "login", githubIdentity.Login, "state", githubIdentity.OrgMembership)
+			a.writeFederationReject(r, githubIdentity.Email, "org_membership")
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		name := githubIdentity.Name
+		if name == "" {
+			name = githubIdentity.Login
+		}
+		ownerID, err := a.identity.ResolveOrCreate(r.Context(), identity.Claims{
+			Iss: githubIdentity.Iss, Sub: githubIdentity.Sub, Email: githubIdentity.Email,
+			Name: name, Picture: githubIdentity.Picture,
+		})
+		if err != nil {
+			a.logger.Error("github_callback.resolve_identity", "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		switch handshake.Origin {
+		case oauthstate.OriginMCP:
+			a.callbackMCP(w, r, handshake, githubIdentity.Email, ownerID)
+		default:
+			a.callbackWeb(w, r, handshake, githubIdentity.Email, ownerID)
+		}
+	}
+}
+
 // callbackWeb is the web-origin completion: it mints a web session, sets the
 // session cookie, and redirects to the handshake's captured destination or the
 // apex when the login did not carry one.

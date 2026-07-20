@@ -24,6 +24,7 @@ func (a *app) register(mux muxer) {
 	mux.Handle("GET /login/google", a.handleLoginGoogle())
 	mux.Handle("GET /login/github", a.handleLoginGitHub())
 	mux.Handle("GET /oauth/google/callback", a.handleCallback())
+	mux.Handle("GET /oauth/github/callback", a.handleGitHubCallback())
 	mux.Handle("POST /logout", a.handleLogout())
 	mux.Handle("GET /services", a.handleInventory())
 	mux.Handle("GET /install/claude", a.handleInstall(claudeAgent))

@@ -414,6 +414,7 @@ type introspectResponse struct {
 	Active   bool   `json:"active"`
 	ClientID string `json:"client_id,omitempty"`
 	Username string `json:"username,omitempty"`
+	OwnerID  string `json:"owner_id,omitempty"`
 	Exp      int64  `json:"exp,omitempty"`
 	Iat      int64  `json:"iat,omitempty"`
 	Resource string `json:"resource,omitempty"`
@@ -466,6 +467,7 @@ func (a *app) handleIntrospect() http.HandlerFunc {
 			Active:   true,
 			ClientID: bodyTok.Chain.ClientID,
 			Username: bodyTok.Chain.OwnerEmail,
+			OwnerID:  bodyTok.Chain.OwnerID,
 			Exp:      bodyTok.Token.ExpiresAt.Unix(),
 			Iat:      bodyTok.Token.IssuedAt.Unix(),
 			Resource: bodyTok.Chain.Resource,

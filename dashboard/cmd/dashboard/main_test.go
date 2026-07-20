@@ -190,6 +190,27 @@ func TestRequireEnv(t *testing.T) {
 	}
 }
 
+// R-IAE7-QVSJ
+func TestRequireEnvRejectsEachMissingGitHubCredential(t *testing.T) {
+	names := []string{"GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GITHUB_ORG"}
+	for _, missing := range names {
+		t.Run(missing, func(t *testing.T) {
+			values := map[string]string{}
+			for _, name := range names {
+				values[name] = "configured"
+			}
+			delete(values, missing)
+			err := requireEnv(envMap(values), names...)
+			if err == nil {
+				t.Fatalf("requireEnv accepted missing %s", missing)
+			}
+			if !strings.Contains(err.Error(), missing) {
+				t.Errorf("error %q does not name missing %s", err, missing)
+			}
+		})
+	}
+}
+
 // R-4LKF-FB23
 func TestDashboardBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	root := t.TempDir()
@@ -239,6 +260,9 @@ func TestDashboardBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 		"GOOGLE_CLIENT_ID=test-client",
 		"GOOGLE_CLIENT_SECRET=test-secret",
 		"GOOGLE_WORKSPACE_DOMAIN=example.com",
+		"GITHUB_CLIENT_ID=test-github-client",
+		"GITHUB_CLIENT_SECRET=test-github-secret",
+		"GITHUB_ORG=ikigenba",
 	)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
