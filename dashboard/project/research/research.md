@@ -7,10 +7,11 @@ what is currently known, not a running log.
 
 ## Google OpenID Connect id_token — the identity claims
 
-The dashboard federates identity to Google only. `internal/googleidp` performs
-the authorization-code exchange and verifies the returned **id_token** (RS256
+The dashboard federates identity to two IdPs: Google (OIDC) and GitHub (plain
+OAuth; see the GitHub section below). `internal/googleidp` performs the
+authorization-code exchange and verifies the returned **id_token** (RS256
 against Google's JWKS, `iss`/`aud`/`exp` checked). Everything below is about
-that verified id_token; the dashboard makes **no** separate `userinfo` call.
+that verified id_token; the Google path makes **no** separate `userinfo` call.
 
 - **`iss` (issuer)** — a standard OIDC claim, always present. For Google it is
   `https://accounts.google.com` (Google also accepts the bare
@@ -45,6 +46,75 @@ facts:
   requests a different resolution from the same URL.
 - The URL can **rotate/expire** over time, so a stored URL is a cache of the
   last login, acceptable for a display avatar and refreshed on every login.
+
+## GitHub user login via the suite's GitHub App — no OIDC, no id_token
+
+The suite already owns one **GitHub App** named `ikigenba` (App ID `4217005`,
+owned by the `@ikigenba` org), used by the `github`/`repos` services in
+*installation* mode (App JWT → installation token). The same App also carries
+**OAuth user-authorization credentials** — a client id (`Iv23…`-form) and a
+client secret — which support a user-to-server web login flow. Facts the design
+leans on, verified against GitHub's documented v3 API:
+
+- **Endpoints.** Authorize: `https://github.com/login/oauth/authorize`
+  (`client_id`, `redirect_uri`, `state`). Token exchange: `POST
+  https://github.com/login/oauth/access_token` with `client_id`,
+  `client_secret`, `code`, `redirect_uri`; send `Accept: application/json` to
+  get a JSON body (`access_token`, `error`, …) instead of the default
+  form-encoded one. Errors (bad/expired code, wrong secret) come back **HTTP
+  200 with an `error` field**, not a 4xx — the client must check the body.
+- **No id_token.** GitHub is not an OIDC provider for user login: the exchange
+  yields only an opaque user-to-server access token (`ghu_…` when expiring).
+  Identity is then read from the REST API with that token — there is nothing to
+  signature-verify locally; authenticity comes from the token exchange having
+  been performed directly against `github.com` with the client secret.
+- **Scopes are ignored for GitHub Apps.** A GitHub App's user-to-server token's
+  abilities come from the App's configured permissions (plus the user's own
+  access), not from a `scope` parameter; `scope` on the authorize URL is
+  ignored. The App has **Account → Email addresses: Read-only** and
+  **Organization → Members: Read-only** configured.
+- **Who the user is: `GET https://api.github.com/user`** (header
+  `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`).
+  Relevant fields: `id` (immutable numeric user id — the stable subject;
+  `login` can be changed by the user), `login`, `name` (nullable), `avatar_url`
+  (public CDN URL, same display-avatar properties as Google's `picture`),
+  `email` (**null unless the user made an email public** — unreliable).
+- **The real email: `GET https://api.github.com/user/emails`** — a JSON array
+  of `{email, primary, verified, visibility}`. The design uses the entry with
+  `primary: true`; its `verified` flag is GitHub's own verification state.
+  Requires the Email-addresses account permission above.
+- **Org membership: `GET https://api.github.com/user/memberships/orgs/{org}`**
+  with the *user's own* token — returns `{state, role, …}` where `state` is
+  `active` or `pending`; **404** when the authenticated user has no membership
+  at all. Because the App is installed on the org and has Members: Read-only,
+  a user-to-server token can read the caller's own membership. (The
+  alternative, `GET /orgs/{org}/members/{username}` with an installation
+  token, would require the App private key in the dashboard — rejected; the
+  key stays confined to the `github` service.)
+- **No forced re-auth.** GitHub has no equivalent of OIDC's `prompt=login`; if
+  the browser already has a GitHub session, the authorize hop may complete
+  silently. Accepted behavior.
+- **Token lifecycle.** With "user-to-server token expiration" enabled the token
+  expires in 8 hours and a refresh token is issued. Irrelevant here: the
+  dashboard uses the token for the three reads above during the callback and
+  discards it — nothing is stored.
+- **Credentials on disk.** `~/.secrets/IKIGENBA_APP_CLIENT_ID` and
+  `~/.secrets/IKIGENBA_APP_CLIENT_SECRET` hold the pair; the org name lives in
+  `~/.secrets/IKIGENBA_GITHUB_ORG`. The dashboard consumes them as env vars
+  (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_ORG`) via `.envrc`
+  references, matching the `GOOGLE_*` convention.
+- **Callback URLs registered on the App:** `http://localhost:8080/oauth/github/callback`
+  (dev) and `https://int.ikigenba.com/oauth/github/callback` (prod).
+
+## One authorization endpoint per AS metadata document
+
+RFC 8414 AS metadata (what MCP clients discover at
+`/.well-known/oauth-authorization-server`) carries exactly **one**
+`authorization_endpoint`, and MCP clients follow it non-interactively — there
+is no client UI for choosing among several. Multi-IdP sites therefore keep one
+authorize URL and put the provider choice *inside* the flow as a human-facing
+chooser page. This is why the design adds a chooser rather than a second
+authorize endpoint.
 
 ## HTTP header value constraints
 

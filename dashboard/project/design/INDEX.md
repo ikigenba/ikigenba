@@ -1,4 +1,4 @@
-# dashboard — Design Index (web pages restructure)
+# dashboard — Design Index (web surface & sign-in)
 
 Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps to
 its Decision/file. Resolve an id by grepping this index (or the Decision files
@@ -13,7 +13,7 @@ Verification ids change.
 - D4 → `project/design/D04.md` — OAuth grant management moves to the profile page — owns R-DB09-GRNT, R-DB10-GRVK, R-DB11-GRNX
 - D5 → `project/design/D05.md` — Landing composition: service-name links, profile-avatar nav, sign-out, shared list-chrome service list with copyable URLs — owns R-DB12-LINK, R-DB14-SOUT, R-DB15-INST, R-XO4W-LKAI, R-OF1Q-VEDC, R-OG9N-9641, R-OHHJ-MXUQ
 - D6 → `project/design/D06.md` — Purge the stale "single hybrid page / don't split" doc rule — owns R-DB16-DOCS
-- D7 → `project/design/D07.md` — Login composition: brand title, tagline, sign-in lede, rule, CTA, rule, then a borderless etymology table — owns R-JA3I-IY1F, R-JCJB-AHIT, R-JDR7-O99I, R-JEZ4-2107, R-3JAM-JLZ6, R-JG70-FSQW, R-JHEW-TKHL, R-O7K1-XEN7, R-DB19-LAND
+- D7 → `project/design/D07.md` — Login composition: brand title, tagline, sign-in lede, rule, two provider CTAs, rule, then a borderless etymology table — owns R-JA3I-IY1F, R-JCJB-AHIT, R-JDR7-O99I, R-ILDB-6TGS, R-IML7-KL7H, R-JG70-FSQW, R-JHEW-TKHL, R-O7K1-XEN7, R-DB19-LAND
 - D8 → `project/design/D08.md` — Eliminate the web-font FOUT (font-display: optional + font preload) — owns R-P97M-GIJ1, R-PAFI-UA9Q, R-PBNF-820F
 - D9 → `project/design/D09.md` — No site footer: remove the `.site-footer` element from every page — owns R-EFJZ-FRQ1
 - D10 → `project/design/D10.md` — The banner is shared app-shell chrome: wordmark links home, monogram avatar + sign-out on both landing and profile — owns R-VTIE-IUFA, R-VUQA-WM5Z, R-VVY7-ADWO
@@ -31,10 +31,14 @@ Verification ids change.
 - D22 → `project/design/D22.md` — The web callback returns you to `return_to`, or `/` by default — owns R-XQN7-IKYL, R-XRV3-WCPA
 - D23 → `project/design/D23.md` — Purge legacy auth state and enforce the `owner_id` invariant (`NOT NULL`) — owns R-6QJD-1MUY, R-6RR9-FELN, R-6SZ5-T6CC, R-6U72-6Y31
 - D24 → `project/design/D24.md` — `owner_id` becomes a real foreign key into `identities` — owns R-HYL8-V30T, R-HZT5-8URI, R-I111-MMI7
+- D25 → `project/design/D25.md` — GitHub identity provider: `internal/githubidp`, a sibling seam with REST-read identity and membership — owns R-I4AP-U132, R-I5IM-7STR, R-I6QI-LKKG, R-I7YE-ZCB5, R-I96B-D41U, R-IAE7-QVSJ
+- D26 → `project/design/D26.md` — Handshakes are provider-bound: `oauth_state` records which IdP a round-trip belongs to, and each callback refuses the other's — owns R-IBM4-4NJ8, R-ICU0-IF9X, R-IF9T-9YRB
+- D27 → `project/design/D27.md` — `/login` becomes the provider chooser; `/login/google` and `/login/github` start the flows — owns R-IGHP-NQI0, R-IHPM-1I8P, R-IIXI-F9ZE, R-IK5E-T1Q3
+- D28 → `project/design/D28.md` — The GitHub callback: `/oauth/github/callback`, gated on verified primary email + active ikigenba-org membership — owns R-INT3-YCY6, R-IP10-C4OV, R-IQ8W-PWFK, R-IRGT-3O69, R-ISOP-HFWY, R-ITWL-V7NN
+- D29 → `project/design/D29.md` — MCP authorize keeps one URL and grows a chooser: `provider` selects the IdP, absent renders the choice — owns R-IWCE-MR51, R-IXKB-0IVQ, R-IYS7-EAMF, R-J003-S2D4
 
 ## Verification ids → Decision
 
-- R-3JAM-JLZ6 → D7 → `project/design/D07.md`
 - R-6QJD-1MUY → D23 → `project/design/D23.md`
 - R-6RR9-FELN → D23 → `project/design/D23.md`
 - R-6SZ5-T6CC → D23 → `project/design/D23.md`
@@ -92,10 +96,34 @@ Verification ids change.
 - R-HYL8-V30T → D24 → `project/design/D24.md`
 - R-HZT5-8URI → D24 → `project/design/D24.md`
 - R-I111-MMI7 → D24 → `project/design/D24.md`
+- R-I4AP-U132 → D25 → `project/design/D25.md`
+- R-I5IM-7STR → D25 → `project/design/D25.md`
+- R-I6QI-LKKG → D25 → `project/design/D25.md`
+- R-I7YE-ZCB5 → D25 → `project/design/D25.md`
+- R-I96B-D41U → D25 → `project/design/D25.md`
+- R-IAE7-QVSJ → D25 → `project/design/D25.md`
+- R-IBM4-4NJ8 → D26 → `project/design/D26.md`
+- R-ICU0-IF9X → D26 → `project/design/D26.md`
+- R-IF9T-9YRB → D26 → `project/design/D26.md`
+- R-IGHP-NQI0 → D27 → `project/design/D27.md`
+- R-IHPM-1I8P → D27 → `project/design/D27.md`
+- R-IIXI-F9ZE → D27 → `project/design/D27.md`
+- R-IK5E-T1Q3 → D27 → `project/design/D27.md`
+- R-ILDB-6TGS → D7 → `project/design/D07.md`
+- R-IML7-KL7H → D7 → `project/design/D07.md`
+- R-INT3-YCY6 → D28 → `project/design/D28.md`
+- R-IP10-C4OV → D28 → `project/design/D28.md`
+- R-IQ8W-PWFK → D28 → `project/design/D28.md`
+- R-IRGT-3O69 → D28 → `project/design/D28.md`
+- R-ISOP-HFWY → D28 → `project/design/D28.md`
+- R-ITWL-V7NN → D28 → `project/design/D28.md`
+- R-IWCE-MR51 → D29 → `project/design/D29.md`
+- R-IXKB-0IVQ → D29 → `project/design/D29.md`
+- R-IYS7-EAMF → D29 → `project/design/D29.md`
+- R-J003-S2D4 → D29 → `project/design/D29.md`
 - R-JA3I-IY1F → D7 → `project/design/D07.md`
 - R-JCJB-AHIT → D7 → `project/design/D07.md`
 - R-JDR7-O99I → D7 → `project/design/D07.md`
-- R-JEZ4-2107 → D7 → `project/design/D07.md`
 - R-JG70-FSQW → D7 → `project/design/D07.md`
 - R-JHEW-TKHL → D7 → `project/design/D07.md`
 - R-O7K1-XEN7 → D7 → `project/design/D07.md`

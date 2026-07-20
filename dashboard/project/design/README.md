@@ -1,4 +1,4 @@
-# dashboard — Design (web pages restructure)
+# dashboard — Design (web surface & sign-in)
 
 **Authority: shape and its proof.** This document and the `project/design/`
 directory it heads own *how* the dashboard's three-page web surface is built and
@@ -21,9 +21,15 @@ identities row (D17–D19, D24); and (3) the
 `/srv/<svc>/` page into `/login` instead of a bare 401, while leaving scripted
 `fetch`/XHR with a clean 401 (D20), plus the web-sign-in plumbing that carries a
 validated same-site `return_to` from `/login` through the handshake and back
-(D21–D22) so the visitor lands where they were headed. It is
-rewritten in place to stay true (stale decisions are removed, not stacked);
-construction history lives in git, not here.
+(D21–D22) so the visitor lands where they were headed; and (4) the **second
+sign-in method** — "Sign in with GitHub" for active members of the ikigenba
+GitHub organization, a permanently separate identity from Google sign-in: a
+sibling GitHub provider package (D25), provider-bound handshakes (D26), the
+`/login` chooser with per-provider start routes (D27, with the two-CTA login
+composition in D7), the GitHub callback and its org-membership federation gate
+(D28), and the provider chooser inside the single MCP authorize endpoint (D29).
+It is rewritten in place to stay true (stale decisions are removed, not
+stacked); construction history lives in git, not here.
 
 ## Requirement ids
 
@@ -59,7 +65,11 @@ Shared facts every Decision leans on:
   applied by the appkit runner; committed migrations are never edited. The
   **login-bounce** work (D20–D22) adds one more such migration — a nullable
   `return_to TEXT` column on `oauth_state` (D21), mirroring how
-  `005_oauth_state_mcp.sql` added the MCP columns.
+  `005_oauth_state_mcp.sql` added the MCP columns. The **GitHub sign-in** work
+  (D25–D29) adds exactly one migration — a
+  `provider TEXT NOT NULL DEFAULT 'google'` column on `oauth_state` (D26) — and
+  touches no other schema: GitHub identities are ordinary `identities` rows
+  under the existing `(iss, sub)` key.
 - **The apex nginx `server` block is the dashboard's, and its one login-bounce
   change (D20) is proven by content-assertion.** `dashboard/etc/nginx.conf` is a
   server-block fragment `opsctl init-box` installs; the `@login_bounce` named
@@ -181,6 +191,15 @@ Verification list assumes:
   (emission) — including that existing headers are unchanged, that a Unicode /
   CR-LF attribute emits ASCII+injection-safe and round-trips on decode, and that
   an empty/absent identity never turns an allow into a deny.
+- **GitHub is tested at two seams, no live network.** `internal/githubidp`'s
+  live impl runs against `httptest` fakes of the two GitHub bases (the token
+  endpoint's 200-with-`error` contract, `/user`, `/user/emails`, the
+  membership endpoint's 404-means-none contract) through the injectable
+  `webBase`/`apiBase` roots (D25); the `server`-package tests drive the GitHub
+  routes/callback with the `githubidp.NewStub()` double, exactly the pattern
+  the Google pair uses. An interactive login cannot run under CI, so the real
+  GitHub contract is captured in `project/research/research.md` and exercised
+  manually at deploy time — the same precedent as Google.
 - **Chart rendering is pure and unit-tested on geometry, not pixels.** The SVG
   builders are pure functions of a `Store` snapshot; tests assert computed
   coordinates and structure (hero y-axis mapped `0 → total capacity`; stacked band

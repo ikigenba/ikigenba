@@ -1,16 +1,18 @@
-# dashboard — Product (web pages restructure)
+# dashboard — Product (web surface & sign-in)
 
 **Authority: intent.** This document owns *why* this change exists, *for whom*,
 what is in and out of scope, and what we **promise** the user — in outcome terms
 only. Mechanism, route tables, template structure, redirect codes, and test
 assertions live in `project/design/README.md`. Where the two touch observable
 behavior, product states the *promise* and design states the *exact, checkable
-proof*. This product doc scopes the dashboard's web-surface reshape: splitting the
-single hybrid apex page into purpose-built pages, enriching the logged-out login
-page with a brief, diminished explanation of the **ikigenba** name, and adding an
-owner-only **telemetry** page that graphs the box's resource health over the last
-day. It does not re-state the dashboard's whole product (identity, OAuth AS, push,
-inventory) — only the web surface this change reshapes.
+proof*. This product doc scopes the dashboard's web-surface reshape and its
+sign-in surface: splitting the single hybrid apex page into purpose-built pages,
+enriching the logged-out login page with a brief, diminished explanation of the
+**ikigenba** name, adding an owner-only **telemetry** page that graphs the box's
+resource health over the last day, and offering a **second, permanently separate
+sign-in method — "Sign in with GitHub"** — alongside the existing Google
+sign-in. It does not re-state the dashboard's whole product (identity, OAuth AS,
+push, inventory) — only the surfaces this change reshapes.
 
 ## Problem
 
@@ -35,6 +37,11 @@ The suite is also moving so that **every service serves its own landing page** a
 of raw MCP text for hand-wiring — there is nowhere to *click through* to a service
 now that each has a real human page.
 
+Sign-in itself is also too narrow: the box admits only people with an account in
+its Google Workspace. Collaborators who live in the **ikigenba GitHub
+organization** — the people the `github` and `repos` services already serve —
+have no way in at all.
+
 ## Purpose
 
 Separate **"get connected"** from **"manage my account"** by giving each its own
@@ -57,6 +64,11 @@ page, and turn the service list into real navigation:
   and disk each service is consuming, each drawn as a graph of the **last 24
   hours**. It is reached from a tile on the landing page and is for watching the
   box, not managing it — it carries no controls, only graphs.
+- **Sign-in gains a second door.** Alongside "Sign in with Google", the login
+  page offers **"Sign in with GitHub"**, open to members of the ikigenba GitHub
+  organization. The two sign-ins are **two permanently separate identities** —
+  a person who uses both has two accounts, never one merged account. Connecting
+  an agent (MCP client) offers the same choice of provider mid-flow.
 
 The dashboard is the **apex** app, so unlike the other services this page is not a
 generic name+version card — the dashboard's logged-in landing **is** its web home.
@@ -106,13 +118,26 @@ This change does exactly this and only this:
   remembered destination) still lands on the home page as before, and the
   remembered destination is always a page on this same box — never anywhere off
   it.
+- **Two sign-in methods, two separate identities.** The login page offers both
+  "Sign in with Google" (unchanged: verified accounts in the box's Google
+  Workspace) and "Sign in with GitHub" (members of the ikigenba GitHub
+  organization in good standing; anyone else is refused). A Google identity and
+  a GitHub identity are never linked, merged, or treated as the same person —
+  even when they share an email address. Everything a signed-in person can do
+  works identically regardless of which door they came through: web pages,
+  personal access tokens, and connecting agents.
+- **Connecting an agent offers the same choice.** When an MCP client connects
+  and sends its human to authorize, that person picks Google or GitHub mid-flow;
+  the connection then belongs to whichever identity they chose. Existing
+  connections and personal access tokens are untouched.
 
 It deliberately does **nothing else** — in particular it does not: add new
 account-management capabilities (the PAT and grant features are **moved, not
 changed**); change how OAuth, push, or inventory work, or change login beyond
 teaching the sign-in flow to return the visitor to a remembered same-site
-destination (the identity, federation, and token mechanics of login are
-untouched); add per-resource
+destination and adding the GitHub sign-in method (the dashboard's own token
+mechanics are untouched); link, merge, or migrate identities between the two
+sign-in methods; let a rejected GitHub visitor request access; add per-resource
 authorization to the profile or telemetry page beyond "signed-in owner";
 introduce new MCP verbs; give the telemetry page any control (it only shows
 graphs); persist telemetry history across restarts or alert on it; or give the
@@ -130,10 +155,17 @@ Promised values the design must honor verbatim and never re-declare:
   It shows free memory, free disk, and per-service memory and disk usage; it is
   gated to the signed-in owner, refreshes about once a minute, and carries no
   controls. Its history is the most recent day and does not survive a restart.
-- **The login page keeps its control-plane tagline and sign-in control verbatim,**
-  and carries the name-origin colophon **only** in its logged-out form — the
-  colophon never appears on the logged-in landing/home page, and adds no new
-  control.
+- **The login page carries exactly two sign-in controls** — "Sign in with
+  Google" and "Sign in with GitHub", visually equal peers with Google first —
+  keeps its control-plane tagline, and carries the name-origin colophon **only**
+  in its logged-out form — the colophon never appears on the logged-in
+  landing/home page. Beyond the second sign-in control it adds no new control.
+- **GitHub sign-in admits only active members of the ikigenba GitHub
+  organization** whose primary GitHub email is verified; everyone else is
+  refused.
+- **A Google identity and a GitHub identity are never unified.** Each sign-in
+  method yields its own permanent identity, even for the same human and the
+  same email address.
 - **The profile page is gated to a signed-in owner.** A visitor without a live
   session never sees profile content.
 - **Personal-access-token and OAuth-grant management live only on the profile
@@ -144,9 +176,21 @@ Promised values the design must honor verbatim and never re-declare:
 ## What we promise (user-facing behavior)
 
 - **Logged out, `/` is just sign-in** — and tells you what the name means. The
-  control-plane tagline and the "Sign in with Google" button are exactly as
-  before; below them sits a quiet, diminished explanation of the **ikigenba** name
-  (its two Japanese roots and what the word means together). No new control.
+  control-plane tagline sits above two sign-in buttons — "Sign in with Google"
+  and "Sign in with GitHub" — and below them sits a quiet, diminished
+  explanation of the **ikigenba** name (its two Japanese roots and what the word
+  means together). No other control.
+- **GitHub members get in; strangers do not.** Signing in with GitHub as an
+  active member of the ikigenba organization lands you signed in like any owner.
+  Signing in with any other GitHub account is refused — no session, no partial
+  access.
+- **Your two sign-ins are two accounts.** Sign in with Google and you are your
+  Google identity; sign in with GitHub and you are your GitHub identity. Tokens,
+  grants, and every service's data belong to whichever identity created them,
+  and nothing ever crosses between the two.
+- **Connecting an agent lets you pick the door.** When an MCP client sends you
+  to authorize, you choose Google or GitHub on the spot; the resulting
+  connection acts as the identity you chose.
 - **Logged in, `/` is a focused home.** It shows who you are, how to connect an
   agent (the same paste-one-line install instructions), and the box's services —
   and nothing about token administration.
@@ -178,8 +222,20 @@ Promised values the design must honor verbatim and never re-declare:
 Each is a result the owner can confirm against the running dashboard:
 
 - Visiting `/` while signed out shows the sign-in page — the control-plane
-  tagline, the "Sign in with Google" button, and beneath them a diminished
-  explanation of the ikigenba name — and no account controls.
+  tagline, the "Sign in with Google" and "Sign in with GitHub" buttons, and
+  beneath them a diminished explanation of the ikigenba name — and no account
+  controls.
+- Signing in with GitHub as an active ikigenba-org member signs me in and lands
+  me on the home page (or the page I was headed to), exactly as Google sign-in
+  does.
+- Signing in with GitHub from an account outside the ikigenba organization is
+  refused and yields no session.
+- Signing in with Google and with GitHub — even with the same email — produces
+  two distinct signed-in identities: each sees its own tokens, grants, and
+  service data.
+- Connecting an MCP client presents a Google-or-GitHub choice during
+  authorization, and completing it with either provider yields a working
+  connection acting as that identity.
 - The name-origin explanation is visible only signed out; once signed in, the
   home page shows no such colophon.
 - Visiting `/` while signed in shows the home page: my email, the connect-your-agent
