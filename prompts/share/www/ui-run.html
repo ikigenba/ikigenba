@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Run {{.Run.ID}} · {{.Service}}</title>
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/srv/prompts/static/fonts/space-grotesk.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/srv/prompts/static/fonts/ibm-plex-sans.woff2">
+  <link rel="stylesheet" href="/srv/prompts/static/tokens.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--color-text); background: var(--color-bg); font-family: var(--font-body); }
+    main { width: min(100% - 32px, 1400px); margin: 0 auto; padding: var(--space-8) 0 var(--space-16); }
+    a { color: inherit; }
+    .home, .version, dt, .metadata, .note { font-family: var(--font-mono); font-size: var(--text-label-size); line-height: var(--text-label-lh); }
+    .home { color: var(--color-text-muted); text-decoration: none; text-transform: uppercase; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); margin-top: var(--space-10); }
+    h1, h2, h3 { font-family: var(--font-display); }
+    h1 { margin: 0; font-size: var(--text-heading-01-size); line-height: var(--text-heading-01-lh); }
+    .version, dt, .metadata, .note { color: var(--color-text-muted); }
+    nav { display: flex; gap: var(--space-8); margin-top: var(--space-8); border-bottom: var(--border-width) solid var(--color-border); }
+    nav a { padding: var(--space-3) 0; color: var(--color-text-muted); text-decoration: none; }
+    nav a.active { color: var(--color-text); border-bottom: 2px solid currentColor; }
+    dl { display: grid; grid-template-columns: minmax(140px, 1fr) 4fr; gap: var(--space-3); }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    pre { margin: var(--space-2) 0; max-height: 32rem; padding: var(--space-4); overflow: auto; border: var(--border-width) solid var(--color-border); white-space: pre-wrap; }
+    section { margin-top: var(--space-8); }
+    article { margin-top: var(--space-6); padding-top: var(--space-4); border-top: var(--border-width) solid var(--color-border); }
+    .metadata { overflow-wrap: anywhere; }
+    .body { margin-top: var(--space-4); }
+    @media (max-width: 640px) { header { align-items: flex-start; flex-direction: column; } dl { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="home" href="/">Home</a>
+    <header><h1>{{.Service}}</h1><span class="version">{{.Version}}</span></header>
+    <nav aria-label="Browse">
+      <a href="/srv/prompts/ui/">Prompts</a>
+      <a class="active" aria-current="page" href="/srv/prompts/ui/runs">Runs</a>
+    </nav>
+    <section>
+      <h2>Run {{.Run.ID}}</h2>
+      <dl>
+        <dt>ID</dt><dd>{{.Run.ID}}</dd>
+        <dt>Prompt ID</dt><dd><a href="/srv/prompts/ui/prompts/{{.Run.PromptID}}">{{.Run.PromptID}}</a></dd>
+        <dt>Status</dt><dd>{{.Run.Status}}</dd><dt>Error</dt><dd>{{.Run.Error}}</dd>
+        <dt>Usage</dt><dd><pre>{{.UsageJSON}}</pre></dd>
+        <dt>Trigger event ID</dt><dd>{{.Run.TriggerEventID}}</dd><dt>Log path</dt><dd>{{.Run.LogPath}}</dd>
+      </dl>
+    </section>
+    <section>
+      <h2>Calls</h2>
+      {{range .Calls}}
+      <article data-call-id="{{.ID}}">
+        <h3>{{.Name}}</h3>
+        <div class="metadata">class={{.Class}} · name={{.Name}} · attempt={{.Attempt}} · provider={{.Provider}} · model={{.Model}} · input_tokens={{.InputTokens}} · output_tokens={{.OutputTokens}} · total_tokens={{.TotalTokens}} · cost_usd={{.CostUSD}} · started_at={{.StartedAt}} · ended_at={{.EndedAt}}{{if .Error}} · error={{.Error}}{{end}}</div>
+        <div class="body"><strong>Request body</strong>{{if .Request.Present}}<pre>{{.Request.Content}}</pre>{{if .Request.Truncated}}<p class="note">Body truncated to the first 64 KiB. <a href="{{.Request.RawURL}}">View full body</a></p>{{end}}{{else}}<p class="note">Body pruned by retention or no body recorded.</p>{{end}}</div>
+        <div class="body"><strong>Response body</strong>{{if .Response.Present}}<pre>{{.Response.Content}}</pre>{{if .Response.Truncated}}<p class="note">Body truncated to the first 64 KiB. <a href="{{.Response.RawURL}}">View full body</a></p>{{end}}{{else}}<p class="note">Body pruned by retention or no body recorded.</p>{{end}}</div>
+      </article>
+      {{else}}<p>No calls recorded for this run.</p>{{end}}
+    </section>
+  </main>
+</body>
+</html>

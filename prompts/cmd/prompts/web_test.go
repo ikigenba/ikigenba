@@ -17,6 +17,7 @@ import (
 	appserver "appkit/server"
 	appweb "appkit/web"
 
+	"prompts/internal/calls"
 	promptsdb "prompts/internal/db"
 	"prompts/internal/prompt"
 )
@@ -533,6 +534,7 @@ func newUIHandler(t *testing.T, prompts []prompt.Prompt, runs []prompt.Run) http
 		t.Fatalf("migrate test DB: %v", err)
 	}
 	store := prompt.NewStore(conn)
+	callStore := calls.NewStore(conn)
 	for _, row := range prompts {
 		if err := store.InsertPrompt(ctx, row); err != nil {
 			t.Fatalf("insert prompt %s: %v", row.ID, err)
@@ -553,7 +555,7 @@ func newUIHandler(t *testing.T, prompts []prompt.Prompt, runs []prompt.Run) http
 		WWW:        loadPromptsSite(t),
 		DB:         conn,
 		Register: func(rt *appserver.Router) error {
-			registerUIRoutes(rt, store)
+			registerUIRoutes(rt, store, callStore)
 			return nil
 		},
 	})

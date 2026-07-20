@@ -26,7 +26,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -213,7 +217,7 @@ func registerRoutes(rt *appkit.Router) error {
 
 	store := prompt.NewStore(conn)
 	store.Calls = callStore
-	registerUIRoutes(rt, store)
+	registerUIRoutes(rt, store, callStore)
 	allowedPorts := make(map[int]bool, len(registry.Services))
 	for _, service := range registry.Services {
 		allowedPorts[service.Port] = true
@@ -253,11 +257,30 @@ func registerRoutes(rt *appkit.Router) error {
 	return nil
 }
 
-const uiPageSize = 50
+const (
+	uiPageSize        = 50
+	uiBodyInlineLimit = 64 << 10
+)
 
 type promptBrowser interface {
 	BrowsePrompts(context.Context, prompt.BrowseFilter) ([]prompt.Prompt, int, error)
 	BrowseRuns(context.Context, prompt.BrowseFilter) ([]prompt.Run, int, error)
+}
+
+type promptDetailBrowser interface {
+	GetPromptByID(context.Context, string) (prompt.Prompt, error)
+	GetRun(context.Context, string) (prompt.Run, error)
+	ListTriggers(context.Context, string) ([]prompt.Trigger, error)
+}
+
+type callBrowser interface {
+	ListByGroup(context.Context, string) ([]calls.Row, error)
+	Get(context.Context, string) (calls.Row, error)
+}
+
+type uiStore interface {
+	promptBrowser
+	promptDetailBrowser
 }
 
 type uiChrome struct {
@@ -298,13 +321,177 @@ type runsPageData struct {
 	NextURL  string
 }
 
-func registerUIRoutes(rt *appkit.Router, store promptBrowser) {
+type promptPageData struct {
+	uiChrome
+	Prompt     prompt.Prompt
+	ConfigJSON string
+	Triggers   []prompt.Trigger
+}
+
+type uiCallBody struct {
+	Present   bool
+	Content   string
+	Truncated bool
+	RawURL    string
+}
+
+type uiCallRow struct {
+	calls.Row
+	Request  uiCallBody
+	Response uiCallBody
+}
+
+type runPageData struct {
+	uiChrome
+	Run       prompt.Run
+	UsageJSON string
+	Calls     []uiCallRow
+}
+
+type notFoundPageData struct {
+	uiChrome
+	Title   string
+	Message string
+}
+
+func registerUIRoutes(rt *appkit.Router, store uiStore, callStore callBrowser) {
 	rt.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Location", "ui/")
 		w.WriteHeader(http.StatusSeeOther)
 	})
 	rt.HandleFunc("GET /ui/{$}", promptsListHandler(rt, store))
 	rt.HandleFunc("GET /ui/runs", runsListHandler(rt, store))
+	rt.HandleFunc("GET /ui/prompts/{id}", promptDetailHandler(rt, store))
+	rt.HandleFunc("GET /ui/runs/{id}", runDetailHandler(rt, store, callStore))
+	rt.HandleFunc("GET /ui/calls/{id}/raw", rawCallBodyHandler(callStore))
+}
+
+func promptDetailHandler(rt *appkit.Router, store promptDetailBrowser) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		row, err := store.GetPromptByID(r.Context(), r.PathValue("id"))
+		if errors.Is(err, prompt.ErrNotFound) {
+			renderUINotFound(rt, w, "Prompt not found", "This prompt does not exist or was deleted.")
+			return
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		triggers, err := store.ListTriggers(r.Context(), row.ID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		config, err := json.MarshalIndent(row.Config, "", "  ")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		data := promptPageData{
+			uiChrome:   uiChrome{Service: rt.Service(), Version: rt.Version()},
+			Prompt:     row,
+			ConfigJSON: string(config),
+			Triggers:   triggers,
+		}
+		if err := rt.WWW().Render(w, "ui-prompt.html", data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}
+}
+
+func runDetailHandler(rt *appkit.Router, store promptDetailBrowser, callStore callBrowser) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		run, err := store.GetRun(r.Context(), r.PathValue("id"))
+		if errors.Is(err, prompt.ErrNotFound) {
+			renderUINotFound(rt, w, "Run not found", "This run does not exist.")
+			return
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		rows, err := callStore.ListByGroup(r.Context(), run.ID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		shown := make([]uiCallRow, 0, len(rows))
+		for _, row := range rows {
+			shown = append(shown, uiCallRow{
+				Row:      row,
+				Request:  inlineCallBody(row.ID, "request", row.RequestBody),
+				Response: inlineCallBody(row.ID, "response", row.ResponseBody),
+			})
+		}
+		data := runPageData{
+			uiChrome: uiChrome{Service: rt.Service(), Version: rt.Version()},
+			Run:      run, UsageJSON: prettyJSON(run.UsageJSON), Calls: shown,
+		}
+		if err := rt.WWW().Render(w, "ui-run.html", data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}
+}
+
+func rawCallBodyHandler(store callBrowser) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		side := r.URL.Query().Get("side")
+		if side != "request" && side != "response" {
+			http.Error(w, "side must be request or response", http.StatusBadRequest)
+			return
+		}
+		row, err := store.Get(r.Context(), r.PathValue("id"))
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "call not found", http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		body := row.RequestBody
+		if side == "response" {
+			body = row.ResponseBody
+		}
+		if body == nil {
+			http.Error(w, "body pruned by retention or no body recorded", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte(*body))
+	}
+}
+
+func inlineCallBody(callID, side string, body *string) uiCallBody {
+	if body == nil {
+		return uiCallBody{}
+	}
+	if len(*body) > uiBodyInlineLimit {
+		return uiCallBody{
+			Present: true, Content: (*body)[:uiBodyInlineLimit], Truncated: true,
+			RawURL: "/srv/prompts/ui/calls/" + url.PathEscape(callID) + "/raw?side=" + side,
+		}
+	}
+	return uiCallBody{Present: true, Content: prettyJSON(*body)}
+}
+
+func prettyJSON(value string) string {
+	if value == "" {
+		return ""
+	}
+	var out bytes.Buffer
+	if err := json.Indent(&out, []byte(value), "", "  "); err != nil {
+		return value
+	}
+	return out.String()
+}
+
+func renderUINotFound(rt *appkit.Router, w http.ResponseWriter, title, message string) {
+	w.WriteHeader(http.StatusNotFound)
+	_ = rt.WWW().Render(w, "ui-404.html", notFoundPageData{
+		uiChrome: uiChrome{Service: rt.Service(), Version: rt.Version()},
+		Title:    title, Message: message,
+	})
 }
 
 func promptsListHandler(rt *appkit.Router, store promptBrowser) http.HandlerFunc {

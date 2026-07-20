@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · {{.Service}}</title>
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/srv/prompts/static/fonts/space-grotesk.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/srv/prompts/static/fonts/ibm-plex-sans.woff2">
+  <link rel="stylesheet" href="/srv/prompts/static/tokens.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--color-text); background: var(--color-bg); font-family: var(--font-body); }
+    main { width: min(100% - 32px, 900px); margin: 0 auto; padding: var(--space-8) 0 var(--space-16); }
+    a { color: inherit; }
+    .home, .version { font-family: var(--font-mono); font-size: var(--text-label-size); line-height: var(--text-label-lh); }
+    .home { color: var(--color-text-muted); text-decoration: none; text-transform: uppercase; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); margin-top: var(--space-10); }
+    h1, h2 { font-family: var(--font-display); }
+    h1 { margin: 0; font-size: var(--text-heading-01-size); line-height: var(--text-heading-01-lh); }
+    .version { color: var(--color-text-muted); }
+    nav { display: flex; gap: var(--space-8); margin-top: var(--space-8); border-bottom: var(--border-width) solid var(--color-border); }
+    nav a { padding: var(--space-3) 0; color: var(--color-text-muted); text-decoration: none; }
+    section { margin-top: var(--space-10); padding: var(--space-6); border: var(--border-width) solid var(--color-border); }
+  </style>
+</head>
+<body><main>
+  <a class="home" href="/">Home</a>
+  <header><h1>{{.Service}}</h1><span class="version">{{.Version}}</span></header>
+  <nav aria-label="Browse"><a href="/srv/prompts/ui/">Prompts</a><a href="/srv/prompts/ui/runs">Runs</a></nav>
+  <section><h2>{{.Title}}</h2><p>{{.Message}}</p></section>
+</main></body>
+</html>
