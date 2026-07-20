@@ -10,5 +10,3 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 16
-
-- Phase 15 ⬜ realizes — — owner-id test/identity alignment: MCP harness injects `X-Owner-Id`; no schema, no migration, no owner columns
