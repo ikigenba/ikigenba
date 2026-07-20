@@ -15,10 +15,9 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D7 | project/design/D07.md | Runner | R-K5I9-YGS9, R-1X6X-E3KP, R-1ZMQ-5N23, R-K6Q6-C8IY, R-K7Y2-Q09N, R-K95Z-3S0C |
 | D8 | project/design/D08.md | DB migration | R-KBLR-VBHQ, R-KCTO-938F |
 | D9 | project/design/D09.md | MCP schema | R-KE1K-MUZ4, R-20UM-JESS, R-222I-X6JH |
-| D10 | project/design/D10.md | The landing page: a session-gated human web surface (`GET /{$}`) | R-LAND-PG01, R-LAND-NMVR, R-LAND-CARB, R-LAND-ROOT, R-LAND-UNGT, R-7NY0-UIO6, R-7P5X-8AEV |
-| D11 | project/design/D11.md | Conform the landing page to the cron canonical template | none — structural |
+| D10 | project/design/D10.md | Two front doors: the session-gated human root and the bearer-gated agent surface | R-LAND-ROOT, R-LAND-UNGT, R-7NY0-UIO6, R-7P5X-8AEV |
 | D12 | project/design/D12.md | A top-left Home link to the dashboard landing page | R-HOME-2T4X |
-| D13 | project/design/D13.md | Self-serve the landing page's fonts and eliminate the FOUT | R-DFKP-IVZU, R-DGSL-WNQJ, R-DI0I-AFH8, R-DJ8E-O77X, R-DKGB-1YYM |
+| D13 | project/design/D13.md | Self-serve the pages' fonts and eliminate the FOUT | R-DFKP-IVZU, R-DGSL-WNQJ, R-DI0I-AFH8, R-DJ8E-O77X, R-DKGB-1YYM |
 | D14 | project/design/D14.md | Adopt the shared `registry` for all loopback addressing | R-RG01-PORT, R-RG03-DBOX, R-RG04-NLIT |
 | D15 | project/design/D15.md | Consumer loops through `Spec.Consumers` (chassis-owned) | R-DFV4-7W4Y, R-DH30-LNVN |
 | D16 | project/design/D16.md | Web surface from `share/www` through the chassis (de-embed) | R-DIAW-ZFMC, R-DJIT-D7D1 |
@@ -39,11 +38,28 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D31 | project/design/D31.md | Admission control: bounded inference concurrency | R-67FV-VQ6I, R-68NS-9HX7, R-6B3L-11EL, R-6CBH-ET5A |
 | D32 | project/design/D32.md | `calls` and `usage`: the inspection and reporting MCP tools | R-6DJD-SKVZ, R-6ERA-6CMO, R-6FZ6-K4DD, R-6H72-XW42, R-6IEZ-BNUR |
 | D33 | project/design/D33.md | Sessions on the record: runs write `calls` rows | R-6JMV-PFLG, R-6KUS-37C5, R-6M2O-GZ2U, R-6NAK-UQTJ |
+| D34 | project/design/D34.md | The `ui/` namespace: one session-gated prefix for the human browse surface | R-ZW7P-88WL, R-ZXFL-M0NA, R-ZYNH-ZSDZ |
+| D35 | project/design/D35.md | The browse UI: server-rendered prompts/runs pages with a per-run calls log | R-ZZVE-DK4O, R-013A-RBVD, R-03J3-IVCR, R-04QZ-WN3G, R-05YW-AEU5, R-076S-O6KU, R-08EP-1YBJ, R-09ML-FQ28, R-0AUH-THSX, R-0C2E-79JM, R-0DAA-L1AB, R-0EI6-YT10, R-0FQ3-CKRP, R-0GXZ-QCIE, R-0I5W-4493, R-0JDS-HVZS, R-LAND-NMVR, R-LAND-CARB |
 
 ## Verification ids → Decision
 
 | id | Decision | File |
 |----|----------|------|
+| R-013A-RBVD | D35 | project/design/D35.md |
+| R-03J3-IVCR | D35 | project/design/D35.md |
+| R-04QZ-WN3G | D35 | project/design/D35.md |
+| R-05YW-AEU5 | D35 | project/design/D35.md |
+| R-076S-O6KU | D35 | project/design/D35.md |
+| R-08EP-1YBJ | D35 | project/design/D35.md |
+| R-09ML-FQ28 | D35 | project/design/D35.md |
+| R-0AUH-THSX | D35 | project/design/D35.md |
+| R-0C2E-79JM | D35 | project/design/D35.md |
+| R-0DAA-L1AB | D35 | project/design/D35.md |
+| R-0EI6-YT10 | D35 | project/design/D35.md |
+| R-0FQ3-CKRP | D35 | project/design/D35.md |
+| R-0GXZ-QCIE | D35 | project/design/D35.md |
+| R-0I5W-4493 | D35 | project/design/D35.md |
+| R-0JDS-HVZS | D35 | project/design/D35.md |
 | R-1ONM-PPDU | D3 | project/design/D03.md |
 | R-1PVJ-3H4J | D3 | project/design/D03.md |
 | R-1R3F-H8V8 | D3 | project/design/D03.md |
@@ -167,12 +183,15 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-KBLR-VBHQ | D8 | project/design/D08.md |
 | R-KCTO-938F | D8 | project/design/D08.md |
 | R-KE1K-MUZ4 | D9 | project/design/D09.md |
-| R-LAND-CARB | D10 | project/design/D10.md |
-| R-LAND-NMVR | D10 | project/design/D10.md |
-| R-LAND-PG01 | D10 | project/design/D10.md |
+| R-LAND-CARB | D35 | project/design/D35.md |
+| R-LAND-NMVR | D35 | project/design/D35.md |
 | R-LAND-ROOT | D10 | project/design/D10.md |
 | R-LAND-UNGT | D10 | project/design/D10.md |
 | R-RG01-PORT | D14 | project/design/D14.md |
 | R-RG03-DBOX | D14 | project/design/D14.md |
 | R-RG04-NLIT | D14 | project/design/D14.md |
 | R-ZS8A-TVOF | D25 | project/design/D25.md |
+| R-ZW7P-88WL | D34 | project/design/D34.md |
+| R-ZXFL-M0NA | D34 | project/design/D34.md |
+| R-ZYNH-ZSDZ | D34 | project/design/D34.md |
+| R-ZZVE-DK4O | D35 | project/design/D35.md |
