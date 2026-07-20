@@ -11,5 +11,4 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 47
 
-- Phase 46 ⬜ realizes R-0C2E-79JM, R-0DAA-L1AB, R-0EI6-YT10, R-0FQ3-CKRP, R-0GXZ-QCIE, R-0I5W-4493, R-0JDS-HVZS — detail pages: prompt detail, the run log, and the raw-body endpoint
 
