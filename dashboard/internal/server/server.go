@@ -25,6 +25,7 @@ import (
 	"appkit/server"
 
 	"dashboard/internal/audit"
+	"dashboard/internal/githubidp"
 	"dashboard/internal/googleidp"
 	"dashboard/internal/grantevents"
 	"dashboard/internal/identity"
@@ -41,6 +42,7 @@ import (
 type Options struct {
 	Logger          *slog.Logger               // structured logger (required)
 	IDPProvider     googleidp.Provider         // Google identity-provider seam (required for login)
+	GithubProvider  githubidp.Provider         // GitHub identity-provider seam (required for login)
 	PublicBaseURL   string                     // public origin, e.g. "https://int.ikigenba.com" (for the OAuth redirect URI)
 	Handshakes      *oauthstate.HandshakeStore // login-handshake store (required for login)
 	WorkspaceDomain string                     // Google Workspace hosted domain federation is restricted to (required for login)
@@ -88,6 +90,7 @@ type app struct {
 	tmpl            *template.Template
 	static          fs.FS
 	idpProvider     googleidp.Provider
+	githubProvider  githubidp.Provider
 	publicBaseURL   string
 	handshakes      *oauthstate.HandshakeStore
 	workspaceDomain string
@@ -118,6 +121,9 @@ func newApp(opts Options) (*app, error) {
 	}
 	if opts.IDPProvider == nil {
 		return nil, errors.New("server: IDPProvider is required")
+	}
+	if opts.GithubProvider == nil {
+		return nil, errors.New("server: GithubProvider is required")
 	}
 	if opts.Handshakes == nil {
 		return nil, errors.New("server: Handshakes is required")
@@ -191,6 +197,7 @@ func newApp(opts Options) (*app, error) {
 		tmpl:            tmpl,
 		static:          static,
 		idpProvider:     opts.IDPProvider,
+		githubProvider:  opts.GithubProvider,
 		publicBaseURL:   opts.PublicBaseURL,
 		handshakes:      opts.Handshakes,
 		workspaceDomain: opts.WorkspaceDomain,

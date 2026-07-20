@@ -40,7 +40,7 @@ func TestIndexLoggedOut(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `href="/login"`) {
+	if !strings.Contains(body, `href="/login/google"`) || !strings.Contains(body, `href="/login/github"`) {
 		t.Errorf("logged-out index missing sign-in link:\n%s", body)
 	}
 	if strings.Contains(body, `action="/logout"`) {
@@ -109,12 +109,23 @@ func TestIndexLoggedOutShowsRuleImmediatelyBeforeCTA(t *testing.T) {
 	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
 	wall := signinWallMain(t, rec.Body.String())
 	adjacent := `<hr class="signin-rule">
-    <a href="/login" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>`
+    <a href="/login/google" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>`
 	if !strings.Contains(wall, adjacent) {
 		t.Errorf("sign-in rule is not immediately before unchanged CTA:\n%s", wall)
 	}
+	google := `<a href="/login/google" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>`
+	github := `<a href="/login/github" class="btn btn-primary btn-lg btn-accent-link">Sign in with GitHub</a>`
+	if got := strings.Count(wall, `<a `); got != 2 {
+		t.Errorf("sign-in anchor count = %d, want exactly 2:\n%s", got, wall)
+	}
+	if strings.Count(wall, google) != 1 || strings.Count(wall, github) != 1 || !strings.Contains(wall, google+"\n    "+github) {
+		t.Errorf("provider anchors are not adjacent equal peers in Google/GitHub order:\n%s", wall)
+	}
+	if strings.Contains(wall, `href="/login"`) {
+		t.Errorf("retired chooser-less login anchor remains:\n%s", wall)
+	}
 	cssRec := do(t, srv, "GET", "https://int.ikigenba.com/static/app.css", nil)
-	// R-JEZ4-2107
+	// R-ILDB-6TGS
 	rule := cssRule(t, cssRec.Body.String(), `.signin-wall .signin-rule`)
 	if !strings.Contains(rule, `border-top: var(--border-width) solid var(--color-border);`) {
 		t.Errorf("sign-in rule lacks the required hairline:\n%s", rule)
@@ -126,11 +137,12 @@ func TestIndexLoggedOutRulesBracketCTAWithoutMargins(t *testing.T) {
 	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
 	wall := signinWallMain(t, rec.Body.String())
 	bracketed := `<hr class="signin-rule">
-    <a href="/login" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>
+    <a href="/login/google" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>
+    <a href="/login/github" class="btn btn-primary btn-lg btn-accent-link">Sign in with GitHub</a>
     <hr class="signin-rule">
     <aside class="name-origin" aria-label="What ikigenba means">`
 
-	// R-3JAM-JLZ6
+	// R-IML7-KL7H
 	if got := strings.Count(wall, `class="signin-rule"`); got != 2 {
 		t.Errorf("sign-in rule count = %d, want 2:\n%s", got, wall)
 	}
@@ -287,7 +299,7 @@ func TestIndexLoggedOutKeepsLandingOnly(t *testing.T) {
 	}
 	body := rec.Body.String()
 	// R-DB02-LND7
-	if !strings.Contains(body, `href="/login"`) {
+	if !strings.Contains(body, `href="/login/google"`) || !strings.Contains(body, `href="/login/github"`) {
 		t.Errorf("logged-out landing missing sign-in link:\n%s", body)
 	}
 	if strings.Contains(body, googleidp.StubIdentity.Email) {
@@ -314,7 +326,7 @@ func TestIndexDeadCookie(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), `href="/login"`) {
+	if !strings.Contains(rec.Body.String(), `href="/login/google"`) || !strings.Contains(rec.Body.String(), `href="/login/github"`) {
 		t.Errorf("dead-cookie index not logged-out:\n%s", rec.Body.String())
 	}
 

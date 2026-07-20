@@ -7,7 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+
+	"dashboard/internal/githubidp"
+	"dashboard/internal/googleidp"
 )
 
 // loginServer builds a server backed by one shared temp SQLite file, returning
@@ -22,6 +26,136 @@ func loginServer(t *testing.T) (*http.Server, *sql.DB) {
 	return srv, d.db
 }
 
+func loginServerWithProviders(t *testing.T, google googleidp.Provider, github githubidp.Provider) (*http.Server, *sql.DB) {
+	t.Helper()
+	d := newServerDeps(t)
+	opts := d.opts()
+	opts.IDPProvider = google
+	opts.GithubProvider = github
+	srv, err := New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return srv, d.db
+}
+
+func bindingCookie(rec *httptest.ResponseRecorder) *http.Cookie {
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == bindingCookieName {
+			return cookie
+		}
+	}
+	return nil
+}
+
+// R-IGHP-NQI0
+func TestLoginChooserRendersProvidersWithoutMintingHandshake(t *testing.T) {
+	srv, database := loginServer(t)
+
+	assertChooser := func(target, googleHref, githubHref string) {
+		t.Helper()
+		rec := do(t, srv, "GET", target, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		body := rec.Body.String()
+		googleAnchor := `<a href="` + googleHref + `" class="btn btn-primary btn-lg btn-accent-link">Sign in with Google</a>`
+		githubAnchor := `<a href="` + githubHref + `" class="btn btn-primary btn-lg btn-accent-link">Sign in with GitHub</a>`
+		if strings.Count(body, googleAnchor) != 1 || strings.Count(body, githubAnchor) != 1 || strings.Count(body, `class="btn btn-primary btn-lg btn-accent-link"`) != 2 {
+			t.Errorf("chooser does not contain exactly the expected provider anchors:\n%s", body)
+		}
+		if bindingCookie(rec) != nil {
+			t.Error("chooser set a binding cookie")
+		}
+	}
+
+	assertChooser("https://int.ikigenba.com/login", "/login/google", "/login/github")
+	const returnTo = "/srv/sites/private/test07/"
+	encoded := url.QueryEscape(returnTo)
+	assertChooser("https://int.ikigenba.com/login?return_to="+encoded, "/login/google?return_to="+encoded, "/login/github?return_to="+encoded)
+	assertChooser("https://int.ikigenba.com/login?return_to="+url.QueryEscape("//evil.com"), "/login/google", "/login/github")
+
+	var count int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM oauth_state`).Scan(&count); err != nil {
+		t.Fatalf("count oauth_state: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("chooser minted %d handshakes, want 0", count)
+	}
+}
+
+// R-IHPM-1I8P
+func TestLoginGoogleMintsProviderBoundHandshake(t *testing.T) {
+	google := googleidp.New(googleidp.Credentials{ClientID: "client", ClientSecret: "secret", WorkspaceDomain: testWorkspaceDomain})
+	srv, database := loginServerWithProviders(t, google, githubidp.NewStub())
+	const returnTo = "/srv/wiki/"
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/login/google?return_to="+url.QueryEscape(returnTo), nil)
+	if rec.Code != http.StatusFound || bindingCookie(rec) == nil {
+		t.Fatalf("status/cookie = %d/%v, want 302 and binding cookie", rec.Code, bindingCookie(rec) != nil)
+	}
+	location, err := url.Parse(rec.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse Location: %v", err)
+	}
+	if got := location.Scheme + "://" + location.Host + location.Path; got != "https://accounts.google.com/o/oauth2/v2/auth" {
+		t.Errorf("authorize endpoint = %q", got)
+	}
+	var id, provider, storedReturnTo string
+	if err := database.QueryRow(`SELECT id, provider, return_to FROM oauth_state`).Scan(&id, &provider, &storedReturnTo); err != nil {
+		t.Fatalf("read handshake: %v", err)
+	}
+	if provider != "google" || storedReturnTo != returnTo || location.Query().Get("state") != id {
+		t.Errorf("handshake = provider %q return_to %q id %q; redirect state %q", provider, storedReturnTo, id, location.Query().Get("state"))
+	}
+}
+
+// R-IIXI-F9ZE
+func TestLoginGitHubMintsProviderBoundHandshake(t *testing.T) {
+	github := githubidp.New(githubidp.Credentials{ClientID: "client", ClientSecret: "secret", Org: "ikigenba"})
+	srv, database := loginServerWithProviders(t, googleidp.NewStub(), github)
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/login/github", nil)
+	if rec.Code != http.StatusFound || bindingCookie(rec) == nil {
+		t.Fatalf("status/cookie = %d/%v, want 302 and binding cookie", rec.Code, bindingCookie(rec) != nil)
+	}
+	location, err := url.Parse(rec.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse Location: %v", err)
+	}
+	if got := location.Scheme + "://" + location.Host + location.Path; got != "https://github.com/login/oauth/authorize" {
+		t.Errorf("authorize endpoint = %q", got)
+	}
+	var id, provider string
+	if err := database.QueryRow(`SELECT id, provider FROM oauth_state`).Scan(&id, &provider); err != nil {
+		t.Fatalf("read handshake: %v", err)
+	}
+	if provider != "github" || location.Query().Get("state") != id {
+		t.Errorf("handshake provider/state = %q/%q, redirect state %q", provider, id, location.Query().Get("state"))
+	}
+	if got := location.Query().Get("redirect_uri"); !strings.HasSuffix(got, "/oauth/github/callback") {
+		t.Errorf("redirect_uri = %q, want GitHub callback", got)
+	}
+}
+
+// R-IK5E-T1Q3
+func TestLoginGitHubRejectsHostileReturnTo(t *testing.T) {
+	for _, hostile := range []string{"//evil.com", "https://evil.com/x"} {
+		t.Run(hostile, func(t *testing.T) {
+			srv, database := loginServer(t)
+			rec := do(t, srv, "GET", "https://int.ikigenba.com/login/github?return_to="+url.QueryEscape(hostile), nil)
+			if rec.Code != http.StatusFound {
+				t.Fatalf("status = %d, want 302", rec.Code)
+			}
+			var provider, returnTo string
+			if err := database.QueryRow(`SELECT provider, return_to FROM oauth_state`).Scan(&provider, &returnTo); err != nil {
+				t.Fatalf("read handshake: %v", err)
+			}
+			if provider != "github" || returnTo != "" {
+				t.Errorf("provider/return_to = %q/%q, want github/empty", provider, returnTo)
+			}
+		})
+	}
+}
+
 // TestLoginPersistsHandshakeAndBindsBrowser is the end-to-end contract for the
 // start of the login flow: GET /login redirects to the IdP carrying a state, sets
 // the plaintext binding cookie on the browser, and persists exactly one handshake
@@ -29,7 +163,7 @@ func loginServer(t *testing.T) (*http.Server, *sql.DB) {
 // cookie — never the cookie itself.
 func TestLoginPersistsHandshakeAndBindsBrowser(t *testing.T) {
 	srv, database := loginServer(t)
-	rec := do(t, srv, "GET", "http://int.ikigenba.com/login", nil)
+	rec := do(t, srv, "GET", "http://int.ikigenba.com/login/google", nil)
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rec.Code)
@@ -89,7 +223,7 @@ func TestLoginPersistsHandshakeAndBindsBrowser(t *testing.T) {
 func TestLoginCapturesSameSiteReturnTo(t *testing.T) {
 	srv, database := loginServer(t)
 	const returnTo = "/srv/sites/private/test07/"
-	rec := do(t, srv, "GET", "http://int.ikigenba.com/login?return_to="+url.QueryEscape(returnTo), nil)
+	rec := do(t, srv, "GET", "http://int.ikigenba.com/login/google?return_to="+url.QueryEscape(returnTo), nil)
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rec.Code)
 	}
@@ -115,7 +249,7 @@ func TestLoginRejectsHostileReturnTo(t *testing.T) {
 	} {
 		t.Run(returnTo, func(t *testing.T) {
 			srv, database := loginServer(t)
-			rec := do(t, srv, "GET", "http://int.ikigenba.com/login?return_to="+url.QueryEscape(returnTo), nil)
+			rec := do(t, srv, "GET", "http://int.ikigenba.com/login/google?return_to="+url.QueryEscape(returnTo), nil)
 			if rec.Code != http.StatusFound {
 				t.Fatalf("status = %d, want 302", rec.Code)
 			}

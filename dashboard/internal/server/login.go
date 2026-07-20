@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"net/http"
 	"net/url"
 	"strings"
@@ -8,10 +9,27 @@ import (
 	"dashboard/internal/oauthstate"
 )
 
-// handleLogin starts the Google sign-in flow: it mints a one-time state record,
+// handleLoginChooser renders the shared signed-out composition without minting
+// a handshake. A validated return destination is threaded into both start URLs.
+func (a *app) handleLoginChooser() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data := signedOutIndexData(r, safeReturnTo(r.URL.Query().Get("return_to")))
+		var buf bytes.Buffer
+		if err := a.tmpl.Execute(&buf, data); err != nil {
+			a.logger.Error("login.render_chooser", "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(buf.Bytes())
+	}
+}
+
+// handleLoginGoogle starts the Google sign-in flow: it mints a one-time state record,
 // binds it to the browser with a cookie, then redirects to Google's authorize
 // URL carrying that state.
-func (a *app) handleLogin() http.HandlerFunc {
+func (a *app) handleLoginGoogle() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		handshake, cookie, err := a.handshakes.CreateWeb(r.Context(), oauthstate.ProviderGoogle, safeReturnTo(r.URL.Query().Get("return_to")))
 		if err != nil {
@@ -22,6 +40,22 @@ func (a *app) handleLogin() http.HandlerFunc {
 		setBindingCookie(w, r, cookie)
 		redirectURI := a.publicBaseURL + "/oauth/google/callback"
 		http.Redirect(w, r, a.idpProvider.AuthorizeURL(handshake.ID, redirectURI), http.StatusFound)
+	}
+}
+
+// handleLoginGitHub starts the GitHub sign-in flow with the same browser binding
+// and same-site return destination rules as the Google start route.
+func (a *app) handleLoginGitHub() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		handshake, cookie, err := a.handshakes.CreateWeb(r.Context(), oauthstate.ProviderGitHub, safeReturnTo(r.URL.Query().Get("return_to")))
+		if err != nil {
+			a.logger.Error("login.create_github_handshake", "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		setBindingCookie(w, r, cookie)
+		redirectURI := a.publicBaseURL + "/oauth/github/callback"
+		http.Redirect(w, r, a.githubProvider.AuthorizeURL(handshake.ID, redirectURI), http.StatusFound)
 	}
 }
 

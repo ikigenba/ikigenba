@@ -20,7 +20,9 @@ type muxer interface {
 func (a *app) register(mux muxer) {
 	mux.Handle("GET /{$}", a.handleIndex())
 	mux.Handle("GET /profile", a.handleProfile())
-	mux.Handle("GET /login", a.handleLogin())
+	mux.Handle("GET /login", a.handleLoginChooser())
+	mux.Handle("GET /login/google", a.handleLoginGoogle())
+	mux.Handle("GET /login/github", a.handleLoginGitHub())
 	mux.Handle("GET /oauth/google/callback", a.handleCallback())
 	mux.Handle("POST /logout", a.handleLogout())
 	mux.Handle("GET /services", a.handleInventory())

@@ -32,6 +32,7 @@ import (
 
 	"dashboard/internal/audit"
 	"dashboard/internal/db"
+	"dashboard/internal/githubidp"
 	"dashboard/internal/googleidp"
 	"dashboard/internal/grantevents"
 	"dashboard/internal/identity"
@@ -173,6 +174,7 @@ func registerRoutes(rt *appkit.Router, telemetryStore *telemetry.Store, manifest
 	regHook, err := server.Register(server.Options{
 		Logger:          logger,
 		IDPProvider:     googleidp.New(creds),
+		GithubProvider:  githubidp.NewStub(), // Phase 37 replaces this with the live configured provider.
 		PublicBaseURL:   publicBaseURL,
 		Handshakes:      handshakes,
 		WorkspaceDomain: creds.WorkspaceDomain,

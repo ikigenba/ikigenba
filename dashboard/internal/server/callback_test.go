@@ -15,12 +15,12 @@ import (
 	"dashboard/internal/oauthstate"
 )
 
-// startLogin runs the GET /login leg and returns the state the handler sent to
+// startLogin runs the GET /login/google leg and returns the state the handler sent to
 // the IdP and the plaintext binding cookie it set on the browser — the two
 // values the callback leg needs to prove it is the same round-trip.
 func startLogin(t *testing.T, srv *http.Server) (state string, binding *http.Cookie) {
 	t.Helper()
-	rec := do(t, srv, "GET", "https://int.ikigenba.com/login", nil)
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/login/google", nil)
 	if rec.Code != http.StatusFound {
 		t.Fatalf("login status = %d, want 302", rec.Code)
 	}
@@ -142,7 +142,7 @@ func TestCallbackRedirectsToHandshakeReturnTo(t *testing.T) {
 	srv, _ := loginServer(t)
 	const returnTo = "/srv/sites/private/test07/"
 
-	login := do(t, srv, "GET", "https://int.ikigenba.com/login?return_to="+url.QueryEscape(returnTo), nil)
+	login := do(t, srv, "GET", "https://int.ikigenba.com/login/google?return_to="+url.QueryEscape(returnTo), nil)
 	if login.Code != http.StatusFound {
 		t.Fatalf("login status = %d, want 302", login.Code)
 	}

@@ -13,6 +13,7 @@ import (
 
 	"dashboard/internal/audit"
 	"dashboard/internal/db"
+	"dashboard/internal/githubidp"
 	"dashboard/internal/googleidp"
 	"dashboard/internal/grantevents"
 	"dashboard/internal/identity"
@@ -89,6 +90,7 @@ func (d serverDeps) opts() Options {
 	return Options{
 		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		IDPProvider:     googleidp.NewStub(),
+		GithubProvider:  githubidp.NewStub(),
 		PublicBaseURL:   "https://int.ikigenba.com",
 		Handshakes:      d.handshakes,
 		WorkspaceDomain: testWorkspaceDomain,
@@ -180,6 +182,7 @@ func TestNewRequiresDependencies(t *testing.T) {
 	cases := map[string]func(*Options){
 		"Logger":          func(o *Options) { o.Logger = nil },
 		"IDPProvider":     func(o *Options) { o.IDPProvider = nil },
+		"GithubProvider":  func(o *Options) { o.GithubProvider = nil },
 		"Handshakes":      func(o *Options) { o.Handshakes = nil },
 		"WorkspaceDomain": func(o *Options) { o.WorkspaceDomain = "" },
 		"Sessions":        func(o *Options) { o.Sessions = nil },
