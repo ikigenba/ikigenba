@@ -25,7 +25,10 @@ import (
 	"scripts/internal/script"
 )
 
-const owner = "a@example.com"
+const (
+	ownerID    = "opaque-owner-a"
+	ownerEmail = "a@example.com"
+)
 
 func nowStr() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 
@@ -62,8 +65,8 @@ func seed(t *testing.T, st *script.Store, body string) script.Run {
 	now := nowStr()
 	sc := script.Script{
 		ID:         ids.NewULID(),
-		OwnerID:    owner,
-		OwnerEmail: owner,
+		OwnerID:    ownerID,
+		OwnerEmail: ownerEmail,
 		Name:       "nightly",
 		Body:       body,
 		Config:     script.Config{Interpreter: "python3", TimeoutSecs: 30},
@@ -107,7 +110,7 @@ func lastOutboxPayload(t *testing.T, conn *sql.DB) string {
 
 func getRun(t *testing.T, st *script.Store, runID string) script.Run {
 	t.Helper()
-	r, err := st.GetRun(context.Background(), owner, runID)
+	r, err := st.GetRun(context.Background(), ownerID, runID)
 	if err != nil {
 		t.Fatalf("GetRun: %v", err)
 	}
@@ -229,7 +232,7 @@ func TestSpawnInjectsSuiteEnvironment(t *testing.T) {
 	if err := json.Unmarshal(b, &values); err != nil {
 		t.Fatalf("decode environment probe %q: %v", b, err)
 	}
-	want := []string{services, filesBase, run.ScriptID, run.ID, owner, owner}
+	want := []string{services, filesBase, run.ScriptID, run.ID, ownerID, ownerEmail}
 	if !reflect.DeepEqual(values, want) {
 		t.Fatalf("suite environment = %#v, want %#v", values, want)
 	}
@@ -387,11 +390,11 @@ func TestSuiteMcpHappyPath(t *testing.T) {
 		if !reflect.DeepEqual(request.Body, wantBody) {
 			t.Fatalf("request %d body = %#v, want %#v", i, request.Body, wantBody)
 		}
-		if request.Header.Get("X-Owner-Email") != owner {
-			t.Fatalf("X-Owner-Email = %q, want %q", request.Header.Get("X-Owner-Email"), owner)
+		if request.Header.Get("X-Owner-Email") != ownerEmail {
+			t.Fatalf("X-Owner-Email = %q, want %q", request.Header.Get("X-Owner-Email"), ownerEmail)
 		}
-		if request.Header.Get("X-Owner-Id") != owner {
-			t.Fatalf("X-Owner-Id = %q, want %q", request.Header.Get("X-Owner-Id"), owner)
+		if request.Header.Get("X-Owner-Id") != ownerID {
+			t.Fatalf("X-Owner-Id = %q, want %q", request.Header.Get("X-Owner-Id"), ownerID)
 		}
 		if request.Header.Get("X-Client-Id") != "scripts:"+got.ScriptID {
 			t.Fatalf("X-Client-Id = %q, want scripts:%s", request.Header.Get("X-Client-Id"), got.ScriptID)
@@ -1056,7 +1059,7 @@ func TestSpawnTombstonedScript(t *testing.T) {
 	// survives with a dangling script_id, §7A). Spawning then hits the
 	// ScriptForRun not-found path: fail the run, materialize nothing.
 	run := seed(t, st, "print('never runs')")
-	if err := st.DeleteScript(context.Background(), owner, run.ScriptID); err != nil {
+	if err := st.DeleteScript(context.Background(), ownerID, run.ScriptID); err != nil {
 		t.Fatalf("DeleteScript: %v", err)
 	}
 
