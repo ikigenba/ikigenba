@@ -1,8 +1,9 @@
 // Command dropbox is the loopback-only mirror daemon + event-plane producer
-// behind nginx. It trusts the X-Owner-Email / X-Client-Id headers nginx injects
-// after a successful auth_request against the dashboard's authorization server,
-// and performs no token logic of its own. See appkit/server for the auth
-// contract.
+// behind nginx. It trusts the stable X-Owner-Id key and X-Client-Id headers
+// nginx injects after a successful auth_request against the dashboard's
+// authorization server; X-Owner-Email / X-Owner-Name / X-Owner-Picture ride
+// along as display values. It performs no token logic of its own. See
+// appkit/server for the auth contract.
 //
 // The uniform chassis — the fixed subcommands (serve/version/manifest/migrate/
 // schema), config-from-env, the migration runner + downgrade guard, the
@@ -76,9 +77,10 @@ func main() {
 		// gated health MCP tool, so the two cannot diverge. The
 		// source is svc.Health (the same data the old dropbox_health tool used) —
 		// only its mirror/disk telemetry goes under details; identity is NOT
-		// included here (the MCP tool adds owner_email/client_id; HTTP carries
-		// none). svc is built in Handlers, which appkit calls before serve, so the
-		// closure captures a non-nil Service by the time the reporter runs.
+		// included here (the MCP tool adds the stable owner_id beside the display
+		// owner_email and client_id; HTTP carries none). svc is built in Handlers,
+		// which appkit calls before serve, so the closure captures a non-nil Service
+		// by the time the reporter runs.
 		Health: func(ctx context.Context) (map[string]any, error) {
 			if svc == nil {
 				return nil, fmt.Errorf("dropbox: Health reporter ran before Handlers built the Service")

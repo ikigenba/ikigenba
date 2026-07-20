@@ -112,10 +112,19 @@ func sourcePort(t *testing.T, rawURL string) int {
 // object. params is the raw JSON for "params".
 func rpc(t *testing.T, h http.Handler, method, params string) map[string]any {
 	t.Helper()
+	return rpcWithOwnerEmail(t, h, method, params, "")
+}
+
+// rpcWithOwnerEmail adds the display owner email only for tests that assert it.
+func rpcWithOwnerEmail(t *testing.T, h http.Handler, method, params, ownerEmail string) map[string]any {
+	t.Helper()
 	body := `{"jsonrpc":"2.0","id":1,"method":"` + method + `","params":` + params + `}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
-	req.Header.Set("X-Owner-Email", "me@example.com")
+	req.Header.Set("X-Owner-Id", "owner-123")
 	req.Header.Set("X-Client-Id", "client-123")
+	if ownerEmail != "" {
+		req.Header.Set("X-Owner-Email", ownerEmail)
+	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -152,6 +161,17 @@ func callToolText(t *testing.T, h http.Handler, name, args string) (string, bool
 func callTool(t *testing.T, h http.Handler, name, args string) (map[string]any, bool) {
 	t.Helper()
 	res := rpc(t, h, "tools/call", `{"name":"`+name+`","arguments":`+args+`}`)
+	return structuredToolResult(t, name, res)
+}
+
+func callToolWithOwnerEmail(t *testing.T, h http.Handler, name, args, ownerEmail string) (map[string]any, bool) {
+	t.Helper()
+	res := rpcWithOwnerEmail(t, h, "tools/call", `{"name":"`+name+`","arguments":`+args+`}`, ownerEmail)
+	return structuredToolResult(t, name, res)
+}
+
+func structuredToolResult(t *testing.T, name string, res map[string]any) (map[string]any, bool) {
+	t.Helper()
 	payload, ok := res["structuredContent"].(map[string]any)
 	if !ok {
 		t.Fatalf("%s: missing structuredContent object: %v", name, res)
@@ -467,7 +487,7 @@ func TestReflection(t *testing.T) {
 
 func TestHealth_Envelope(t *testing.T) {
 	h := newHandler(t)
-	p, isErr := callTool(t, h, "health", `{}`)
+	p, isErr := callToolWithOwnerEmail(t, h, "health", `{}`, "me@example.com")
 	if isErr {
 		t.Fatal("health isError")
 	}
@@ -475,7 +495,7 @@ func TestHealth_Envelope(t *testing.T) {
 	if p["status"] != "ok" || p["version"] != "v-test" || p["service"] != "dropbox" {
 		t.Errorf("health envelope keys = %v", p)
 	}
-	if p["owner_email"] != "me@example.com" || p["client_id"] != "client-123" {
+	if p["owner_id"] != "owner-123" || p["owner_email"] != "me@example.com" || p["client_id"] != "client-123" {
 		t.Errorf("health identity = %v", p)
 	}
 	d, ok := p["details"].(map[string]any)
@@ -523,11 +543,11 @@ func TestHealth_ReporterPopulatesDetails(t *testing.T) {
 	}
 	h := newHandlerWithService(t, svc, reporter)
 
-	p, isErr := callTool(t, h, "health", `{}`)
+	p, isErr := callToolWithOwnerEmail(t, h, "health", `{}`, "me@example.com")
 	if isErr {
 		t.Fatal("health isError")
 	}
-	if p["owner_email"] != "me@example.com" || p["client_id"] != "client-123" {
+	if p["owner_id"] != "owner-123" || p["owner_email"] != "me@example.com" || p["client_id"] != "client-123" {
 		t.Errorf("health identity = %v", p)
 	}
 	d, ok := p["details"].(map[string]any)
@@ -1032,7 +1052,7 @@ func TestUnknownTool_IsTransportError(t *testing.T) {
 	h := newHandler(t)
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dropbox_bogus","arguments":{}}}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
-	req.Header.Set("X-Owner-Email", "me@example.com")
+	req.Header.Set("X-Owner-Id", "owner-123")
 	req.Header.Set("X-Client-Id", "client-123")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
