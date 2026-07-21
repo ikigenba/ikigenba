@@ -77,6 +77,8 @@ func ScoreCase(ctx context.Context, gold GoldCase, got []extract.ExtractedSubjec
 	score.Claims = metrics(claimMatched, claimMissed, claimSpurious)
 	if score.FieldTotal != 0 {
 		score.FieldAccuracy = float64(score.FieldCorrect) / float64(score.FieldTotal)
+	} else if len(gold.Gold) == 0 {
+		score.FieldAccuracy = 1
 	}
 	score.Composite = cfg.Weights.Subject*score.Subjects.F1 + cfg.Weights.Claim*score.Claims.F1 + cfg.Weights.Field*score.FieldAccuracy
 	return score, nil
@@ -226,6 +228,10 @@ func cosine(a, b []float32) (float64, error) {
 
 func metrics(matched, missed, spurious int) Metrics {
 	m := Metrics{Matched: matched, Missed: missed, Spurious: spurious}
+	if matched == 0 && missed == 0 && spurious == 0 {
+		m.Precision, m.Recall, m.F1 = 1, 1, 1
+		return m
+	}
 	if matched+spurious > 0 {
 		m.Precision = float64(matched) / float64(matched+spurious)
 	}

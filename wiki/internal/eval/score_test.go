@@ -131,6 +131,37 @@ func TestRollupMatchesHandComputedCountsAndHandlesEmptyExtraction(t *testing.T) 
 	}
 }
 
+func TestScoreCaseRewardsOnlyHonestAgreementOnEmptiness(t *testing.T) {
+	// R-ESN9-RFM1
+	cfg := testConfig()
+
+	honestEmpty, err := ScoreCase(context.Background(), GoldCase{}, nil, nil, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if honestEmpty.Subjects.F1 != 1 || honestEmpty.Claims.F1 != 1 || honestEmpty.FieldAccuracy != 1 || honestEmpty.Composite != 1 {
+		t.Fatalf("honest-empty score = %+v", honestEmpty)
+	}
+
+	spurious := []extract.ExtractedSubject{{Type: "entity", Name: "Invented"}}
+	emptyGold, err := ScoreCase(context.Background(), GoldCase{}, spurious, nil, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emptyGold.Subjects.F1 != 0 {
+		t.Fatalf("empty-gold subject score with spurious extraction = %+v", emptyGold.Subjects)
+	}
+
+	nonEmptyGold := GoldCase{Gold: []GoldSubject{{Type: "entity", Name: "Missing", Claims: []string{"Missing claim"}}}}
+	emptyExtraction, err := ScoreCase(context.Background(), nonEmptyGold, nil, nil, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emptyExtraction.Subjects.F1 != 0 || emptyExtraction.Composite != 0 {
+		t.Fatalf("non-empty-gold score with empty extraction = %+v", emptyExtraction)
+	}
+}
+
 func testConfig() Config {
 	return Config{Embedding: Embedding{Threshold: 0.8, Margin: 0.03}, Weights: Weights{Subject: 0.35, Claim: 0.5, Field: 0.15}}
 }
