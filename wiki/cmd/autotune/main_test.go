@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type recordedCommand struct {
@@ -17,8 +20,12 @@ type recordedCommand struct {
 }
 
 type scriptedExecutor struct {
-	calls []recordedCommand
-	err   error
+	calls   []recordedCommand
+	err     error
+	waitErr error
+	onStart func() error
+	onWait  func()
+	output  bytes.Buffer
 }
 
 func (e *scriptedExecutor) Run(dir, name string, args ...string) error {
@@ -32,13 +39,44 @@ func (e *scriptedExecutor) Run(dir, name string, args ...string) error {
 			if !filepath.IsAbs(path) {
 				path = filepath.Join(dir, path)
 			}
-			if err := writeFile(path, []byte(`{"composite":0.75}`)); err != nil {
+			content := []byte(`{"mean_composite":0.75,"run_composites":[0.74,0.75,0.76],"epsilon":0.02}`)
+			for j := range args {
+				if args[j] == "-split" && j+1 < len(args) && args[j+1] == "holdout" {
+					content = []byte(`{"mean_composite":0.70}`)
+				}
+			}
+			if err := writeFile(path, content); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
 }
+
+func (e *scriptedExecutor) Start(dir, name string, args ...string) (commandProcess, error) {
+	e.calls = append(e.calls, recordedCommand{dir: dir, name: name, args: append([]string(nil), args...)})
+	if e.err != nil {
+		return nil, e.err
+	}
+	if e.onStart != nil {
+		if err := e.onStart(); err != nil {
+			return nil, err
+		}
+	}
+	return scriptedProcess{wait: func() error {
+		if e.onWait != nil {
+			e.onWait()
+		}
+		return e.waitErr
+	}}, nil
+}
+
+func (e *scriptedExecutor) Output() io.Writer { return &e.output }
+
+type scriptedProcess struct{ wait func() error }
+
+func (p scriptedProcess) Wait() error            { return p.wait() }
+func (p scriptedProcess) Signal(os.Signal) error { return nil }
 
 func TestStepDispatchNamesSupportedAndRejectedSteps(t *testing.T) {
 	// R-EYQR-OABI
@@ -47,8 +85,8 @@ func TestStepDispatchNamesSupportedAndRejectedSteps(t *testing.T) {
 	if err := run([]string{"extract"}, root, executor); err != nil {
 		t.Fatalf("supported extract step failed: %v", err)
 	}
-	if len(executor.calls) != 2 {
-		t.Fatalf("extract invoked %d commands, want build and baseline", len(executor.calls))
+	if len(executor.calls) != 3 {
+		t.Fatalf("extract invoked %d commands, want build, baseline, and ralph", len(executor.calls))
 	}
 
 	for _, tc := range []struct {
@@ -104,7 +142,7 @@ func TestFreshRunResetsSeedsBuildsAndMeasuresBaseline(t *testing.T) {
 			}
 			assertFile(t, filepath.Join(root, "autotune/extract/prompt.txt"), tc.promptText)
 			assertFile(t, filepath.Join(root, "tmp/autotune/extract/best/prompt.txt"), tc.promptText)
-			assertFile(t, filepath.Join(root, "tmp/autotune/extract/best/scorecard.json"), `{"composite":0.75}`)
+			assertFile(t, filepath.Join(root, "tmp/autotune/extract/best/scorecard.json"), `{"mean_composite":0.75,"run_composites":[0.74,0.75,0.76],"epsilon":0.02}`)
 			resolvedConfig := mustRead(t, filepath.Join(root, "tmp/autotune/extract/config.json"))
 			committedConfig := mustRead(t, filepath.Join(root, "eval/extract/config.json"))
 			if string(resolvedConfig) != string(committedConfig) {
@@ -114,6 +152,7 @@ func TestFreshRunResetsSeedsBuildsAndMeasuresBaseline(t *testing.T) {
 			want := []recordedCommand{
 				{dir: root, name: "go", args: []string{"build", "-o", "tmp/autotune/extract/bin/eval-extract", "./cmd/eval-extract"}},
 				{dir: root, name: "tmp/autotune/extract/bin/eval-extract", args: []string{"run", "-prompt", "autotune/extract/prompt.txt", "-gold", "eval/extract/gold", "-config", "tmp/autotune/extract/config.json", "-out", "tmp/autotune/extract/baseline.json", "-split", "dev", "-repeat", "3"}},
+				{dir: root, name: "ralph", args: []string{"eval/extract/improve.md"}},
 			}
 			if !reflect.DeepEqual(executor.calls, want) {
 				t.Fatalf("commands:\n got: %#v\nwant: %#v", executor.calls, want)
@@ -180,12 +219,15 @@ func TestResumeRequiresMatchingEvalStampWithoutMutation(t *testing.T) {
 	mustWrite(t, stampPath, stamp)
 	mustWrite(t, filepath.Join(root, "tmp/autotune/extract/sentinel"), []byte("keep"))
 
+	mustWrite(t, filepath.Join(root, "tmp/autotune/extract/start-prompt.txt"), []byte("committed prompt\n"))
+	mustWrite(t, filepath.Join(root, "tmp/autotune/extract/best/prompt.txt"), []byte("committed prompt\n"))
+	mustWrite(t, filepath.Join(root, "autotune/extract/prompt.txt"), []byte("committed prompt\n"))
 	executor := &scriptedExecutor{}
 	if err := run([]string{"extract", "--resume", "-c", "model=X"}, root, executor); err != nil {
 		t.Fatalf("matching resume: %v", err)
 	}
-	if len(executor.calls) != 0 {
-		t.Fatalf("resume invoked commands: %#v", executor.calls)
+	if len(executor.calls) != 1 || executor.calls[0].name != "ralph" {
+		t.Fatalf("resume commands: %#v", executor.calls)
 	}
 	assertFile(t, stampPath, string(stamp))
 	assertFile(t, filepath.Join(root, "tmp/autotune/extract/sentinel"), "keep")
@@ -196,6 +238,145 @@ func TestResumeRequiresMatchingEvalStampWithoutMutation(t *testing.T) {
 	}
 	assertFile(t, stampPath, string(stamp))
 	assertFile(t, filepath.Join(root, "tmp/autotune/extract/sentinel"), "keep")
+}
+
+func TestWrappedExecPreservesPassthroughExactly(t *testing.T) {
+	// R-F3MD-7DAA
+	for _, tc := range []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "passthrough", args: []string{"extract", "--", "--harness", "agentkit", "-c", "model=Z", "--max-time", "2h"}, want: []string{"--harness", "agentkit", "-c", "model=Z", "--max-time", "2h", "eval/extract/improve.md"}},
+		{name: "defaults", args: []string{"extract"}, want: []string{"eval/extract/improve.md"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newAutotuneTree(t)
+			executor := &scriptedExecutor{}
+			if err := run(tc.args, root, executor); err != nil {
+				t.Fatal(err)
+			}
+			got := executor.calls[2]
+			if got.name != "ralph" || !reflect.DeepEqual(got.args, tc.want) {
+				t.Fatalf("ralph call = %#v, want args %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDiffIsPrintedOnlyWhenPromptChangesDuringRun(t *testing.T) {
+	// R-F4U9-L50Z
+	root := newAutotuneTree(t)
+	executor := &scriptedExecutor{}
+	executor.onWait = func() {
+		mustWrite(t, filepath.Join(root, "autotune/extract/prompt.txt"), []byte("improved prompt\n"))
+		time.Sleep(20 * time.Millisecond)
+		if !strings.Contains(executor.output.String(), "+improved prompt") {
+			t.Error("diff was not printed before the child ended")
+		}
+	}
+	if err := run([]string{"extract"}, root, executor); err != nil {
+		t.Fatal(err)
+	}
+	output := executor.output.String()
+	for _, want := range []string{"--- a/eval/extract/prompt.txt", "+++ b/autotune/extract/prompt.txt", "-committed prompt", "+improved prompt"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("output missing %q:\n%s", want, output)
+		}
+	}
+
+	unchanged := &scriptedExecutor{}
+	if err := run([]string{"extract"}, newAutotuneTree(t), unchanged); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(unchanged.output.String(), "--- a/") {
+		t.Fatalf("unchanged run printed a diff:\n%s", unchanged.output.String())
+	}
+}
+
+func TestFinalizerScoresWinnerOnceForEveryChildExit(t *testing.T) {
+	// R-F625-YWRO
+	for _, tc := range []struct {
+		name    string
+		waitErr error
+	}{
+		{name: "success"},
+		{name: "non-zero", waitErr: errors.New("exit status 9")},
+		{name: "signaled", waitErr: errors.New("signal: interrupt")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newAutotuneTree(t)
+			executor := &scriptedExecutor{waitErr: tc.waitErr}
+			executor.onWait = func() {
+				mustWrite(t, filepath.Join(root, "tmp/autotune/extract/best/prompt.txt"), []byte("winner\n"))
+				mustWrite(t, filepath.Join(root, "autotune/extract/prompt.txt"), []byte("winner\n"))
+				mustWrite(t, filepath.Join(root, "tmp/autotune/extract/best/scorecard.json"), []byte(`{"mean_composite":0.90}`))
+				mustWrite(t, filepath.Join(root, "tmp/autotune/extract/history.md"), []byte("001 accept\n002 reject\n"))
+			}
+			if err := run([]string{"extract"}, root, executor); err != nil {
+				t.Fatalf("finalize after child exit: %v", err)
+			}
+			if got := holdoutCalls(executor.calls); got != 1 {
+				t.Fatalf("holdout calls = %d, want 1; %#v", got, executor.calls)
+			}
+			summary := string(mustRead(t, filepath.Join(root, "tmp/autotune/extract/summary.md")))
+			for _, want := range []string{"Dev best: 0.900000", "Baseline: 0.750000", "Epsilon: 0.020000", "Attempts: 2", "Holdout composite: 0.700000", "OVERFIT"} {
+				if !strings.Contains(summary, want) {
+					t.Errorf("summary missing %q:\n%s", want, summary)
+				}
+			}
+			if !strings.Contains(executor.output.String(), "+winner") {
+				t.Fatalf("final diff missing:\n%s", executor.output.String())
+			}
+
+			resume := &scriptedExecutor{}
+			if err := run([]string{"extract", "--resume"}, root, resume); err != nil {
+				t.Fatalf("resume finalization: %v", err)
+			}
+			if got := holdoutCalls(resume.calls); got != 0 {
+				t.Fatalf("resume holdout calls = %d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestFinalizerWithoutWinnerReportsEvidenceAndRestoresPrompt(t *testing.T) {
+	// R-F7A2-COID
+	root := newAutotuneTree(t)
+	executor := &scriptedExecutor{}
+	executor.onWait = func() {
+		mustWrite(t, filepath.Join(root, "autotune/extract/prompt.txt"), []byte("rejected candidate\n"))
+		mustWrite(t, filepath.Join(root, "tmp/autotune/extract/history.md"), []byte("001 reject\n002 reject\n003 reject\n"))
+	}
+	if err := run([]string{"extract"}, root, executor); err != nil {
+		t.Fatal(err)
+	}
+	if holdoutCalls(executor.calls) != 0 {
+		t.Fatalf("no-winner finalizer ran holdout: %#v", executor.calls)
+	}
+	if output := executor.output.String(); !strings.Contains(output, "no improvement after 3 attempts") || !strings.Contains(output, "tmp/autotune/extract") {
+		t.Fatalf("no-improvement evidence missing: %s", output)
+	}
+	assertFile(t, filepath.Join(root, "autotune/extract/prompt.txt"), "committed prompt\n")
+}
+
+func holdoutCalls(calls []recordedCommand) int {
+	count := 0
+	for _, call := range calls {
+		if slicesContainPair(call.args, "-split", "holdout") {
+			count++
+		}
+	}
+	return count
+}
+
+func slicesContainPair(values []string, first, second string) bool {
+	for i := 0; i+1 < len(values); i++ {
+		if values[i] == first && values[i+1] == second {
+			return true
+		}
+	}
+	return false
 }
 
 func newAutotuneTree(t *testing.T) string {

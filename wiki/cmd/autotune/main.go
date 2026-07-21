@@ -8,16 +8,28 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
+
+	"wiki/internal/eval"
 )
 
 const supportedStep = "extract"
 
 type commandExecutor interface {
 	Run(dir, name string, args ...string) error
+	Start(dir, name string, args ...string) (commandProcess, error)
+	Output() io.Writer
+}
+
+type commandProcess interface {
+	Wait() error
+	Signal(os.Signal) error
 }
 
 type osExecutor struct {
@@ -33,6 +45,25 @@ func (e osExecutor) Run(dir, name string, args ...string) error {
 	cmd.Stdin = os.Stdin
 	return cmd.Run()
 }
+
+func (e osExecutor) Start(dir, name string, args ...string) (commandProcess, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Stdout = e.stdout
+	cmd.Stderr = e.stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return osProcess{cmd: cmd}, nil
+}
+
+func (e osExecutor) Output() io.Writer { return e.stdout }
+
+type osProcess struct{ cmd *exec.Cmd }
+
+func (p osProcess) Wait() error                   { return p.cmd.Wait() }
+func (p osProcess) Signal(signal os.Signal) error { return p.cmd.Process.Signal(signal) }
 
 type options struct {
 	step      string
@@ -68,10 +99,6 @@ func run(args []string, root string, executor commandExecutor) error {
 	workspaceRel := filepath.Join("tmp", "autotune", opts.step)
 	workspace := filepath.Join(root, workspaceRel)
 	stampPath := filepath.Join(workspace, "config.json")
-	if opts.resume {
-		return checkResumeStamp(stampPath, requestedEval)
-	}
-
 	promptSource := filepath.Join(root, "eval", opts.step, "prompt.txt")
 	if opts.from != "" {
 		promptSource = opts.from
@@ -79,55 +106,206 @@ func run(args []string, root string, executor commandExecutor) error {
 			promptSource = filepath.Join(root, promptSource)
 		}
 	}
-	prompt, err := os.ReadFile(promptSource)
-	if err != nil {
-		return fmt.Errorf("read starting prompt: %w", err)
-	}
-
-	if err := os.RemoveAll(workspace); err != nil {
-		return fmt.Errorf("reset workspace: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Join(workspace, "bin"), 0o755); err != nil {
-		return fmt.Errorf("create workspace: %w", err)
-	}
-	if err := writeFile(stampPath, resolved); err != nil {
-		return fmt.Errorf("write resolved config: %w", err)
-	}
-
 	workingPromptRel := filepath.Join("autotune", opts.step, "prompt.txt")
 	workingPrompt := filepath.Join(root, workingPromptRel)
-	if err := writeFile(workingPrompt, prompt); err != nil {
-		return fmt.Errorf("seed working prompt: %w", err)
-	}
-
 	runnerRel := filepath.Join(workspaceRel, "bin", "eval-extract")
-	if err := executor.Run(root, "go", "build", "-o", runnerRel, "./cmd/eval-extract"); err != nil {
-		return fmt.Errorf("build eval-extract runner: %w", err)
-	}
 	baselineRel := filepath.Join(workspaceRel, "baseline.json")
 	configRel := filepath.Join(workspaceRel, "config.json")
-	if err := executor.Run(root, runnerRel,
-		"run",
-		"-prompt", workingPromptRel,
-		"-gold", filepath.Join("eval", opts.step, "gold"),
-		"-config", configRel,
-		"-out", baselineRel,
-		"-split", "dev",
-		"-repeat", "3",
-	); err != nil {
-		return fmt.Errorf("measure dev baseline: %w", err)
+	startPath := filepath.Join(workspace, "start-prompt.txt")
+	if opts.resume {
+		if err := checkResumeStamp(stampPath, requestedEval); err != nil {
+			return err
+		}
+	} else {
+		prompt, err := os.ReadFile(promptSource)
+		if err != nil {
+			return fmt.Errorf("read starting prompt: %w", err)
+		}
+		if err := os.RemoveAll(workspace); err != nil {
+			return fmt.Errorf("reset workspace: %w", err)
+		}
+		if err := os.MkdirAll(filepath.Join(workspace, "bin"), 0o755); err != nil {
+			return fmt.Errorf("create workspace: %w", err)
+		}
+		if err := writeFile(stampPath, resolved); err != nil {
+			return fmt.Errorf("write resolved config: %w", err)
+		}
+		if err := writeFile(workingPrompt, prompt); err != nil {
+			return fmt.Errorf("seed working prompt: %w", err)
+		}
+		if err := writeFile(startPath, prompt); err != nil {
+			return fmt.Errorf("stamp starting prompt: %w", err)
+		}
+		if err := executor.Run(root, "go", "build", "-o", runnerRel, "./cmd/eval-extract"); err != nil {
+			return fmt.Errorf("build eval-extract runner: %w", err)
+		}
+		if err := executor.Run(root, runnerRel,
+			"run", "-prompt", workingPromptRel,
+			"-gold", filepath.Join("eval", opts.step, "gold"),
+			"-config", configRel, "-out", baselineRel,
+			"-split", "dev", "-repeat", "3",
+		); err != nil {
+			return fmt.Errorf("measure dev baseline: %w", err)
+		}
+		baseline, err := os.ReadFile(filepath.Join(root, baselineRel))
+		if err != nil {
+			return fmt.Errorf("read baseline result: %w", err)
+		}
+		best := filepath.Join(workspace, "best")
+		if err := writeFile(filepath.Join(best, "prompt.txt"), prompt); err != nil {
+			return fmt.Errorf("install best prompt: %w", err)
+		}
+		if err := writeFile(filepath.Join(best, "scorecard.json"), baseline); err != nil {
+			return fmt.Errorf("install best baseline: %w", err)
+		}
 	}
 
-	baseline, err := os.ReadFile(filepath.Join(root, baselineRel))
+	committedPrompt, err := os.ReadFile(filepath.Join(root, "eval", opts.step, "prompt.txt"))
 	if err != nil {
-		return fmt.Errorf("read baseline result: %w", err)
+		return fmt.Errorf("read committed prompt for diff: %w", err)
 	}
-	best := filepath.Join(workspace, "best")
-	if err := writeFile(filepath.Join(best, "prompt.txt"), prompt); err != nil {
-		return fmt.Errorf("install best prompt: %w", err)
+	before, err := os.ReadFile(workingPrompt)
+	if err != nil {
+		return fmt.Errorf("read working prompt: %w", err)
 	}
-	if err := writeFile(filepath.Join(best, "scorecard.json"), baseline); err != nil {
-		return fmt.Errorf("install best baseline: %w", err)
+	loopArgs := append(append([]string(nil), opts.passthru...), filepath.Join("eval", opts.step, "improve.md"))
+	process, err := executor.Start(root, "ralph", loopArgs...)
+	if err != nil {
+		return fmt.Errorf("start ralph: %w", err)
+	}
+	watchPrompt(process, workingPrompt, filepath.Join("eval", opts.step, "prompt.txt"), workingPromptRel, committedPrompt, before, executor.Output())
+	return finalize(root, opts.step, executor)
+}
+
+func watchPrompt(process commandProcess, path, oldName, newName string, committed, previous []byte, out io.Writer) {
+	done := make(chan struct{})
+	go func() { _ = process.Wait(); close(done) }()
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if current, err := os.ReadFile(path); err == nil && !bytes.Equal(current, previous) {
+			fmt.Fprint(out, unifiedDiff(oldName, newName, committed, current))
+			previous = current
+		}
+		select {
+		case sig := <-signals:
+			_ = process.Signal(sig)
+		case <-ticker.C:
+		case <-done:
+			if current, err := os.ReadFile(path); err == nil && !bytes.Equal(current, previous) {
+				fmt.Fprint(out, unifiedDiff(oldName, newName, committed, current))
+			}
+			return
+		}
+	}
+}
+
+func unifiedDiff(oldName, newName string, old, new []byte) string {
+	if bytes.Equal(old, new) {
+		return ""
+	}
+	var result strings.Builder
+	fmt.Fprintf(&result, "--- a/%s\n+++ b/%s\n@@ -1 +1 @@\n", oldName, newName)
+	for _, line := range strings.Split(strings.TrimSuffix(string(old), "\n"), "\n") {
+		fmt.Fprintf(&result, "-%s\n", line)
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(string(new), "\n"), "\n") {
+		fmt.Fprintf(&result, "+%s\n", line)
+	}
+	return result.String()
+}
+
+func finalize(root, step string, executor commandExecutor) error {
+	workspaceRel := filepath.Join("tmp", "autotune", step)
+	workspace := filepath.Join(root, workspaceRel)
+	start, err := os.ReadFile(filepath.Join(workspace, "start-prompt.txt"))
+	if err != nil {
+		return fmt.Errorf("read starting prompt stamp: %w", err)
+	}
+	best, err := os.ReadFile(filepath.Join(workspace, "best", "prompt.txt"))
+	if err != nil {
+		return fmt.Errorf("read best prompt: %w", err)
+	}
+	attempts := countAttempts(filepath.Join(workspace, "history.md"))
+	working := filepath.Join(root, "autotune", step, "prompt.txt")
+	if bytes.Equal(best, start) {
+		if err := writeFile(working, start); err != nil {
+			return fmt.Errorf("restore starting prompt: %w", err)
+		}
+		fmt.Fprintf(executor.Output(), "no improvement after %d attempts; evidence: %s\n", attempts, workspaceRel)
+		return nil
+	}
+	holdoutRel := filepath.Join(workspaceRel, "holdout-scorecard.json")
+	holdoutPath := filepath.Join(root, holdoutRel)
+	if _, err := os.Stat(holdoutPath); errors.Is(err, os.ErrNotExist) {
+		runnerRel := filepath.Join(workspaceRel, "bin", "eval-extract")
+		if err := executor.Run(root, runnerRel, "run",
+			"-prompt", filepath.Join(workspaceRel, "best", "prompt.txt"),
+			"-gold", filepath.Join("eval", step, "gold"),
+			"-config", filepath.Join(workspaceRel, "config.json"),
+			"-out", holdoutRel, "-split", "holdout",
+		); err != nil {
+			return fmt.Errorf("measure holdout: %w", err)
+		}
+		if err := writeSummary(workspace, attempts); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return fmt.Errorf("check holdout scorecard: %w", err)
+	}
+	committed, err := os.ReadFile(filepath.Join(root, "eval", step, "prompt.txt"))
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(executor.Output(), unifiedDiff(filepath.Join("eval", step, "prompt.txt"), filepath.Join("autotune", step, "prompt.txt"), committed, best))
+	return nil
+}
+
+func countAttempts(path string) int {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, line := range strings.Split(string(content), "\n") {
+		if strings.TrimSpace(line) != "" {
+			count++
+		}
+	}
+	return count
+}
+
+func writeSummary(workspace string, attempts int) error {
+	read := func(name string) (eval.Scorecard, error) {
+		var score eval.Scorecard
+		content, err := os.ReadFile(filepath.Join(workspace, name))
+		if err == nil {
+			err = json.Unmarshal(content, &score)
+		}
+		return score, err
+	}
+	baseline, err := read("baseline.json")
+	if err != nil {
+		return fmt.Errorf("read baseline scorecard: %w", err)
+	}
+	best, err := read(filepath.Join("best", "scorecard.json"))
+	if err != nil {
+		return fmt.Errorf("read best scorecard: %w", err)
+	}
+	holdout, err := read("holdout-scorecard.json")
+	if err != nil {
+		return fmt.Errorf("read holdout scorecard: %w", err)
+	}
+	verdict := "generalized"
+	if holdout.MeanComposite <= baseline.MeanComposite {
+		verdict = "OVERFIT: the dev win did not hold up on holdout"
+	}
+	summary := fmt.Sprintf("# Autotune summary\n\nDev best: %.6f\nBaseline: %.6f\nEpsilon: %.6f\nAttempts: %d\nHoldout composite: %.6f\nVerdict: %s\n", best.MeanComposite, baseline.MeanComposite, baseline.Epsilon, attempts, holdout.MeanComposite, verdict)
+	if err := writeFile(filepath.Join(workspace, "summary.md"), []byte(summary)); err != nil {
+		return fmt.Errorf("write summary: %w", err)
 	}
 	return nil
 }
