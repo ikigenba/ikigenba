@@ -10,4 +10,10 @@ no done marker; done is gone. This file deliberately carries **no bare status
 glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
-Next phase: 97
+Next phase: 102
+
+- Phase 97 ⬜ realizes R-KDHD-V3XI, R-KEPA-8VO7, R-KFX6-MNEW, R-KH53-0F5L — re-scope the retirement proofs: agentkit confined, not banned
+- Phase 98 ⬜ realizes R-KICZ-E6WA — the eval workspace: prompt-as-data under `eval/extract/`
+- Phase 99 ⬜ realizes R-KJKV-RYMZ, R-KKSS-5QDO, R-KM0O-JI4D, R-KN8K-X9V2, R-KOGH-B1LR, R-KPOD-OTCG, R-KQWA-2L35, R-KTC2-U4KJ, R-KUJZ-7WB8, R-KVRV-LO1X, R-KWZR-ZFSM — the deterministic scorer (`internal/eval`)
+- Phase 100 ⬜ realizes R-KY7O-D7JB, R-KZFK-QZA0, R-L0NH-4R0P, R-L1VD-IIRE, R-L339-WAI3, R-L4B6-A28S, R-L5J2-NTZH — the eval runner (`cmd/eval-extract`) over agentkit
+- Phase 101 ⬜ realizes — — the improvement-loop assets (`improve.md`, operator README)
