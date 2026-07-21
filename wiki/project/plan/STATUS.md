@@ -12,5 +12,4 @@ lines.
 
 Next phase: 106
 
-- Phase 104 ⬜ realizes R-EYQR-OABI, R-EZYO-2227, R-F2EG-TLJL, R-F16K-FTSW — autotune driver core: CLI, resolved config, workspace lifecycle
 - Phase 105 ⬜ realizes R-F3MD-7DAA, R-F4U9-L50Z, R-F625-YWRO, R-F7A2-COID — wrapped loop + finalizer; improve.md/README/gitignore rewritten for the driver
