@@ -226,8 +226,11 @@ func TestBuildChatProviderSupportsCompleteProviderSetAndNamesFailures(t *testing
 	for name, env := range providers {
 		t.Run(name, func(t *testing.T) {
 			provider, err := buildChatProvider(name, func(got string) string {
+				if got == "EVAL_"+env {
+					return ""
+				}
 				if got != env {
-					t.Fatalf("environment variable = %q, want %q", got, env)
+					t.Fatalf("environment variable = %q, want %q or %q", got, "EVAL_"+env, env)
 				}
 				return "test-key"
 			})
@@ -242,6 +245,52 @@ func TestBuildChatProviderSupportsCompleteProviderSetAndNamesFailures(t *testing
 	}
 	if _, err := buildChatProvider("other", func(string) string { return "test-key" }); err == nil || !strings.Contains(err.Error(), "other") {
 		t.Fatalf("unsupported-provider error = %v", err)
+	}
+}
+
+func TestProviderKeysPreferEvalAliasesAndNameBothAcceptedVariables(t *testing.T) {
+	// R-1JMV-JW9B
+	canonicalNames := []string{
+		"ANTHROPIC_API_KEY",
+		"GEMINI_API_KEY",
+		"OPENAI_API_KEY",
+		"OPENROUTER_API_KEY",
+		"ZAI_API_KEY",
+	}
+	values := make(map[string]string)
+	for _, canonical := range canonicalNames {
+		values[canonical] = "canonical-" + canonical
+		values["EVAL_"+canonical] = "alias-" + canonical
+	}
+	getenv := func(name string) string { return values[name] }
+	for _, canonical := range canonicalNames {
+		got, err := requiredKey(canonical, getenv)
+		if err != nil {
+			t.Fatalf("requiredKey(%q): %v", canonical, err)
+		}
+		if want := values["EVAL_"+canonical]; got != want {
+			t.Errorf("requiredKey(%q) = %q, want alias value %q", canonical, got, want)
+		}
+	}
+	delete(values, "OPENAI_API_KEY")
+	if provider, err := buildChatProvider("openai", getenv); err != nil || provider == nil {
+		t.Fatalf("openai chat from alias = %v, %v", provider, err)
+	}
+	if provider, err := buildEmbeddingProvider("openai", getenv); err != nil || provider == nil {
+		t.Fatalf("openai embedding from alias = %v, %v", provider, err)
+	}
+	delete(values, "ANTHROPIC_API_KEY")
+	if provider, err := buildChatProvider("anthropic", getenv); err != nil || provider == nil {
+		t.Fatalf("anthropic chat from alias = %v, %v", provider, err)
+	}
+
+	for _, canonical := range canonicalNames {
+		delete(values, canonical)
+		delete(values, "EVAL_"+canonical)
+		_, err := requiredKey(canonical, getenv)
+		if err == nil || !strings.Contains(err.Error(), canonical) || !strings.Contains(err.Error(), "EVAL_"+canonical) {
+			t.Errorf("missing %s error = %v, want both accepted names", canonical, err)
+		}
 	}
 }
 

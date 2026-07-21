@@ -408,9 +408,13 @@ func buildEmbeddingProvider(name string, getenv func(string) string) (agentkit.E
 }
 
 func requiredKey(name string, getenv func(string) string) (string, error) {
+	alias := "EVAL_" + name
+	if value := strings.TrimSpace(getenv(alias)); value != "" {
+		return value, nil
+	}
 	value := strings.TrimSpace(getenv(name))
 	if value == "" {
-		return "", fmt.Errorf("%s is not set", name)
+		return "", fmt.Errorf("neither %s nor %s is set", alias, name)
 	}
 	return value, nil
 }

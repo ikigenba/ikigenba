@@ -17,6 +17,7 @@ type recordedCommand struct {
 	dir  string
 	name string
 	args []string
+	env  []string
 }
 
 type scriptedExecutor struct {
@@ -53,8 +54,8 @@ func (e *scriptedExecutor) Run(dir, name string, args ...string) error {
 	return nil
 }
 
-func (e *scriptedExecutor) Start(dir, name string, args ...string) (commandProcess, error) {
-	e.calls = append(e.calls, recordedCommand{dir: dir, name: name, args: append([]string(nil), args...)})
+func (e *scriptedExecutor) Start(dir string, env []string, name string, args ...string) (commandProcess, error) {
+	e.calls = append(e.calls, recordedCommand{dir: dir, name: name, args: append([]string(nil), args...), env: append([]string(nil), env...)})
 	if e.err != nil {
 		return nil, e.err
 	}
@@ -157,7 +158,7 @@ func TestFreshRunResetsSeedsBuildsAndMeasuresBaseline(t *testing.T) {
 				{dir: root, name: "tmp/autotune/extract/bin/eval-extract", args: []string{"run", "-prompt", "autotune/extract/prompt.txt", "-gold", "eval/extract/gold", "-config", "tmp/autotune/extract/config.json", "-out", "tmp/autotune/extract/baseline.json", "-split", "dev", "-repeat", "3"}},
 				{dir: root, name: "ralph", args: []string{"eval/extract/improve.md"}},
 			}
-			if !reflect.DeepEqual(executor.calls, want) {
+			if !reflect.DeepEqual(commandsWithoutEnv(executor.calls), want) {
 				t.Fatalf("commands:\n got: %#v\nwant: %#v", executor.calls, want)
 			}
 		})
@@ -282,6 +283,68 @@ func TestWrappedExecPreservesPassthroughExactly(t *testing.T) {
 	}
 }
 
+func TestRalphReceivesScorerAliasesWithoutDriverAddedCanonicalKeys(t *testing.T) {
+	// R-1KUR-XO00
+	t.Run("key auth injects embedding and provider-specific chat aliases", func(t *testing.T) {
+		root := newAutotuneTree(t)
+		unsetEnv(t, "OPENAI_API_KEY")
+		unsetEnv(t, "ANTHROPIC_API_KEY")
+		t.Setenv("EVAL_OPENAI_API_KEY", "embedding-alias-key")
+		t.Setenv("EVAL_ANTHROPIC_API_KEY", "chat-alias-key")
+		executor := &scriptedExecutor{}
+		if err := run(configuredArgs(), root, executor); err != nil {
+			t.Fatal(err)
+		}
+		env := environmentMap(executor.calls[2].env)
+		if env["EVAL_OPENAI_API_KEY"] != "embedding-alias-key" {
+			t.Errorf("embedding alias = %q", env["EVAL_OPENAI_API_KEY"])
+		}
+		if env["EVAL_ANTHROPIC_API_KEY"] != "chat-alias-key" {
+			t.Errorf("anthropic chat alias = %q", env["EVAL_ANTHROPIC_API_KEY"])
+		}
+		for _, canonical := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY"} {
+			if _, ok := env[canonical]; ok {
+				t.Errorf("driver added canonical key %s", canonical)
+			}
+		}
+	})
+
+	t.Run("subscription auth injects only the embedding alias", func(t *testing.T) {
+		root := newAutotuneTree(t)
+		unsetEnv(t, "OPENAI_API_KEY")
+		unsetEnv(t, "ANTHROPIC_API_KEY")
+		unsetEnv(t, "EVAL_ANTHROPIC_API_KEY")
+		t.Setenv("EVAL_OPENAI_API_KEY", "embedding-alias-key")
+		executor := &scriptedExecutor{}
+		if err := run(configuredArgs("-c", "provider=openai", "-c", "auth=sub"), root, executor); err != nil {
+			t.Fatal(err)
+		}
+		env := environmentMap(executor.calls[2].env)
+		if env["EVAL_OPENAI_API_KEY"] != "embedding-alias-key" {
+			t.Errorf("embedding alias = %q", env["EVAL_OPENAI_API_KEY"])
+		}
+		for _, name := range []string{"EVAL_ANTHROPIC_API_KEY", "EVAL_GEMINI_API_KEY", "EVAL_OPENROUTER_API_KEY", "EVAL_ZAI_API_KEY"} {
+			if _, ok := env[name]; ok {
+				t.Errorf("subscription run injected chat alias %s", name)
+			}
+		}
+	})
+
+	t.Run("missing embedding key fails before any child", func(t *testing.T) {
+		root := newAutotuneTree(t)
+		unsetEnv(t, "OPENAI_API_KEY")
+		unsetEnv(t, "EVAL_OPENAI_API_KEY")
+		executor := &scriptedExecutor{}
+		err := run(configuredArgs(), root, executor)
+		if err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") || !strings.Contains(err.Error(), "EVAL_OPENAI_API_KEY") {
+			t.Fatalf("missing embedding error = %v", err)
+		}
+		if len(executor.calls) != 0 {
+			t.Fatalf("commands ran before embedding key validation: %#v", executor.calls)
+		}
+	})
+}
+
 func TestDiffIsPrintedOnlyWhenPromptChangesDuringRun(t *testing.T) {
 	// R-F4U9-L50Z
 	root := newAutotuneTree(t)
@@ -399,6 +462,8 @@ func slicesContainPair(values []string, first, second string) bool {
 
 func newAutotuneTree(t *testing.T) string {
 	t.Helper()
+	t.Setenv("OPENAI_API_KEY", "embedding-test-key")
+	t.Setenv("ANTHROPIC_API_KEY", "chat-test-key")
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "eval/extract/config.json"), []byte(`{
   "eval": {
@@ -430,6 +495,40 @@ func newAutotuneTree(t *testing.T) string {
 func configuredArgs(suffix ...string) []string {
 	args := []string{"extract", "-c", "provider=anthropic", "-c", "model=claude-sonnet-4-6"}
 	return append(args, suffix...)
+}
+
+func commandsWithoutEnv(commands []recordedCommand) []recordedCommand {
+	result := append([]recordedCommand(nil), commands...)
+	for i := range result {
+		result[i].env = nil
+	}
+	return result
+}
+
+func environmentMap(entries []string) map[string]string {
+	result := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		name, value, ok := strings.Cut(entry, "=")
+		if ok {
+			result[name] = value
+		}
+	}
+	return result
+}
+
+func unsetEnv(t *testing.T, name string) {
+	t.Helper()
+	previous, present := os.LookupEnv(name)
+	if err := os.Unsetenv(name); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if present {
+			_ = os.Setenv(name, previous)
+		} else {
+			_ = os.Unsetenv(name)
+		}
+	})
 }
 
 func mustWrite(t *testing.T, path string, content []byte) {

@@ -23,7 +23,7 @@ const supportedStep = "extract"
 
 type commandExecutor interface {
 	Run(dir, name string, args ...string) error
-	Start(dir, name string, args ...string) (commandProcess, error)
+	Start(dir string, env []string, name string, args ...string) (commandProcess, error)
 	Output() io.Writer
 }
 
@@ -46,9 +46,10 @@ func (e osExecutor) Run(dir, name string, args ...string) error {
 	return cmd.Run()
 }
 
-func (e osExecutor) Start(dir, name string, args ...string) (commandProcess, error) {
+func (e osExecutor) Start(dir string, env []string, name string, args ...string) (commandProcess, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	cmd.Env = env
 	cmd.Stdout = e.stdout
 	cmd.Stderr = e.stderr
 	cmd.Stdin = os.Stdin
@@ -92,6 +93,14 @@ func run(args []string, root string, executor commandExecutor) error {
 		return fmt.Errorf("read committed config: %w", err)
 	}
 	resolved, requestedEval, err := resolveConfig(base, opts.overrides)
+	if err != nil {
+		return err
+	}
+	var call eval.EvalCall
+	if err := json.Unmarshal(requestedEval, &call); err != nil {
+		return fmt.Errorf("decode resolved eval config: %w", err)
+	}
+	childEnv, err := scorerEnvironment(call, os.Getenv, os.Environ())
 	if err != nil {
 		return err
 	}
@@ -169,12 +178,68 @@ func run(args []string, root string, executor commandExecutor) error {
 		return fmt.Errorf("read working prompt: %w", err)
 	}
 	loopArgs := append(append([]string(nil), opts.passthru...), filepath.Join("eval", opts.step, "improve.md"))
-	process, err := executor.Start(root, "ralph", loopArgs...)
+	process, err := executor.Start(root, childEnv, "ralph", loopArgs...)
 	if err != nil {
 		return fmt.Errorf("start ralph: %w", err)
 	}
 	watchPrompt(process, workingPrompt, filepath.Join("eval", opts.step, "prompt.txt"), workingPromptRel, committedPrompt, before, executor.Output())
 	return finalize(root, opts.step, executor)
+}
+
+var providerKeyNames = map[string]string{
+	"anthropic":  providerKeyName("ANTHROPIC"),
+	"google":     providerKeyName("GEMINI"),
+	"openai":     providerKeyName("OPENAI"),
+	"openrouter": providerKeyName("OPENROUTER"),
+	"zai":        providerKeyName("ZAI"),
+}
+
+func scorerEnvironment(call eval.EvalCall, getenv func(string) string, environ []string) ([]string, error) {
+	embeddingCanonical := providerKeyName("OPENAI")
+	embeddingKey, err := availableKey(embeddingCanonical, getenv)
+	if err != nil {
+		return nil, fmt.Errorf("embedding key: %w", err)
+	}
+	aliases := map[string]string{"EVAL_" + embeddingCanonical: embeddingKey}
+	if call.Auth == "" || call.Auth == "key" {
+		canonical, ok := providerKeyNames[call.Provider]
+		if !ok {
+			return nil, fmt.Errorf("unsupported chat provider %q", call.Provider)
+		}
+		chatKey, err := availableKey(canonical, getenv)
+		if err != nil {
+			return nil, fmt.Errorf("chat key for provider %s: %w", call.Provider, err)
+		}
+		aliases["EVAL_"+canonical] = chatKey
+	}
+
+	result := append([]string(nil), environ...)
+	for name, value := range aliases {
+		prefix := name + "="
+		filtered := result[:0]
+		for _, entry := range result {
+			if !strings.HasPrefix(entry, prefix) {
+				filtered = append(filtered, entry)
+			}
+		}
+		result = append(filtered, name+"="+value)
+	}
+	return result, nil
+}
+
+func providerKeyName(provider string) string {
+	return provider + "_API_" + "KEY"
+}
+
+func availableKey(canonical string, getenv func(string) string) (string, error) {
+	alias := "EVAL_" + canonical
+	if value := strings.TrimSpace(getenv(alias)); value != "" {
+		return value, nil
+	}
+	if value := strings.TrimSpace(getenv(canonical)); value != "" {
+		return value, nil
+	}
+	return "", fmt.Errorf("neither %s nor %s is set", alias, canonical)
 }
 
 func watchPrompt(process commandProcess, path, oldName, newName string, committed, previous []byte, out io.Writer) {
