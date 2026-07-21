@@ -1,0 +1,54 @@
+{
+  "difficulty": "hard",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "Notes from the Glasswing Optics standup",
+    "tags": ["meeting", "startup"],
+    "received_at": "2026-05-12T09:00:00Z"
+  },
+  "gold": [
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "Glasswing Optics",
+      "aliases": ["Glasswing"],
+      "occurred_at": "",
+      "claims": [
+        "Glasswing Optics closed a Series B of $22 million in April 2026.",
+        "Glasswing Optics plans to move into the larger Fremont facility in 2027.",
+        "Glasswing Optics built its first prototype in 2019.",
+        "Glasswing Optics' first prototype is going to the company museum case."
+      ]
+    },
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "Tessellate Ventures",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Tessellate Ventures will lead Glasswing Optics' bridge round if one is needed."
+      ]
+    },
+    {
+      "type": "entity",
+      "kind": "person",
+      "name": "Mira Chen",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Mira Chen is a founder of Glasswing Optics."
+      ]
+    },
+    {
+      "type": "entity",
+      "kind": "person",
+      "name": "Dev Ratner",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Dev Ratner works in finance at Glasswing Optics."
+      ]
+    }
+  ]
+}

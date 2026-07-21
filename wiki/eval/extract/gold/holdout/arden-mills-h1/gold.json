@@ -1,0 +1,26 @@
+{
+  "difficulty": "hard",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "Arden Mills H1 2026 results",
+    "tags": ["finance", "results"],
+    "received_at": "2026-07-30T13:00:00Z"
+  },
+  "gold": [
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "Arden Mills",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Arden Mills reported first-half 2026 revenue of $31.6 million.",
+        "Arden Mills reported second-half 2025 revenue of $27.9 million.",
+        "Arden Mills reported first-half 2026 operating profit of $4.8 million.",
+        "Arden Mills reported second-half 2025 operating profit of $3.5 million.",
+        "Arden Mills commissioned two new grain silos during the first half of 2026.",
+        "Arden Mills' storage capacity reached 64,000 tonnes in the first half of 2026."
+      ]
+    }
+  ]
+}
