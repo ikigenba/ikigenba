@@ -13,11 +13,29 @@ func TestLoadGoldLoadsSplitsAndNamesInvalidCases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(dev) != 1 || dev[0].Name != "meridian-freshcrate-acquisition" || len(dev[0].Gold) != 3 {
-		t.Fatalf("unexpected dev cases: %+v", dev)
+	// The corpus grows by operator review outside build phases, so assert the
+	// seeded cases are present and every loaded case is well-formed — never a
+	// frozen census of the corpus.
+	seed := func(cases []GoldCase, name string) *GoldCase {
+		for i := range cases {
+			if cases[i].Name == name {
+				return &cases[i]
+			}
+		}
+		return nil
 	}
-	if len(holdout) != 1 || holdout[0].Name != "tulsa-lab-opening" || holdout[0].Document == "" {
-		t.Fatalf("unexpected holdout cases: %+v", holdout)
+	if c := seed(dev, "meridian-freshcrate-acquisition"); c == nil || len(c.Gold) != 3 {
+		t.Fatalf("seeded dev case missing or malformed: %+v", dev)
+	}
+	if c := seed(holdout, "tulsa-lab-opening"); c == nil || c.Document == "" {
+		t.Fatalf("seeded holdout case missing or malformed: %+v", holdout)
+	}
+	for _, cases := range [][]GoldCase{dev, holdout} {
+		for _, c := range cases {
+			if c.Document == "" || len(c.Gold) == 0 {
+				t.Fatalf("loaded case %s is empty", c.Name)
+			}
+		}
 	}
 
 	tests := []struct {
