@@ -1,0 +1,38 @@
+{
+  "difficulty": "hard",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "Bram Textiles and Loomware sign supply deal",
+    "tags": ["manufacturing"],
+    "received_at": "2026-02-04T08:00:00Z"
+  },
+  "gold": [
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "Bram Textiles",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Bram Textiles is a family-owned mill in Ghent.",
+        "Bram Textiles was founded in 1911.",
+        "Bram Textiles signed a five-year supply agreement with Loomware on 3 February 2026.",
+        "Bram Textiles will remain the exclusive European testing site for Loomware's next machine generation."
+      ]
+    },
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "Loomware",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Loomware is based in Eindhoven.",
+        "Loomware makes control systems for industrial looms.",
+        "Loomware signed a five-year supply agreement with Bram Textiles on 3 February 2026.",
+        "Loomware will install its automated warping machines at Bram Textiles' main plant.",
+        "Loomware will train Bram Textiles' operators during 2026."
+      ]
+    }
+  ]
+}

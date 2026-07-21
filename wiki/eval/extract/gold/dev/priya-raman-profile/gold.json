@@ -1,0 +1,27 @@
+{
+  "difficulty": "easy",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "Staff profile: Priya Raman",
+    "tags": ["profile"],
+    "received_at": "2026-02-10T15:00:00Z"
+  },
+  "gold": [
+    {
+      "type": "entity",
+      "kind": "person",
+      "name": "Priya Raman",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Priya Raman is the chief technology officer of Halewood Systems.",
+        "Priya Raman joined Halewood Systems in 2019.",
+        "Priya Raman worked at Corvex Labs for eleven years.",
+        "Priya Raman led the compiler tools group at Corvex Labs.",
+        "Priya Raman studied electrical engineering at the University of Waterloo.",
+        "Priya Raman holds four patents in program analysis.",
+        "Priya Raman lives in Ottawa."
+      ]
+    }
+  ]
+}

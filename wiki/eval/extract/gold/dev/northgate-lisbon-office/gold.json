@@ -1,0 +1,25 @@
+{
+  "difficulty": "medium",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "Northgate Analytics opens Lisbon office",
+    "tags": ["expansion"],
+    "received_at": "2024-07-02T09:30:00Z"
+  },
+  "gold": [
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "Northgate Analytics",
+      "aliases": ["NGA"],
+      "occurred_at": "",
+      "claims": [
+        "Northgate Analytics opened its first European office in Lisbon in June 2024.",
+        "Northgate Analytics is headquartered in Toronto.",
+        "Northgate Analytics employs about 240 people.",
+        "Northgate Analytics sells forecasting software to utility operators.",
+        "Northgate Analytics' Lisbon office will focus on customers in Portugal and Spain."
+      ]
+    }
+  ]
+}

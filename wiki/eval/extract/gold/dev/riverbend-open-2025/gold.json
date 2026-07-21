@@ -1,0 +1,35 @@
+{
+  "difficulty": "medium",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "Recap: Riverbend Open 2025",
+    "tags": ["chess", "tournament"],
+    "received_at": "2025-08-18T14:00:00Z"
+  },
+  "gold": [
+    {
+      "type": "event",
+      "kind": "tournament",
+      "name": "Riverbend Open",
+      "aliases": ["The Riverbend Open"],
+      "occurred_at": "2025-08-17",
+      "claims": [
+        "The Riverbend Open concluded on August 17, 2025, in Davenport, Iowa.",
+        "The Riverbend Open drew 312 players across five sections.",
+        "The Riverbend Open championship section carried a $6,000 first prize."
+      ]
+    },
+    {
+      "type": "entity",
+      "kind": "person",
+      "name": "Marta Ilves",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Marta Ilves won the championship section of the Riverbend Open with a score of 8.5 out of 9.",
+        "Marta Ilves is a schoolteacher from Tartu.",
+        "Marta Ilves has won the Riverbend Open twice before."
+      ]
+    }
+  ]
+}
