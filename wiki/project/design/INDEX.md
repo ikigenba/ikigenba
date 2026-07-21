@@ -65,6 +65,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D66 → `project/design/D66.md` — The eval runner (`cmd/eval-extract`): production-faithful calls through agentkit, scorecards out — owns R-KY7O-D7JB, R-KZFK-QZA0, R-L0NH-4R0P, R-L1VD-IIRE, R-L339-WAI3, R-L4B6-A28S, R-L5J2-NTZH, R-ETV6-57CQ, R-EWAY-WQU4, R-EXIV-AIKT, R-XHOE-XC0J, R-1JMV-JW9B
 - D67 → `project/design/D67.md` — The improvement loop: one ralph turn per candidate, driven by autotune — none — structural
 - D68 → `project/design/D68.md` — The autotune driver (`cmd/autotune`): one command from baseline to diff — owns R-EYQR-OABI, R-EZYO-2227, R-F16K-FTSW, R-F3MD-7DAA, R-F4U9-L50Z, R-F625-YWRO, R-F7A2-COID, R-XGGI-JK9U, R-1KUR-XO00
+- D69 → `project/design/D69.md` — The analysis eval workbench: tuning the ask question-analysis prompt — owns R-BICU-BZG6, R-BJKQ-PR6V, R-BKSN-3IXK, R-BM0J-HAO9, R-BN8F-V2EY, R-BOGC-8U5N, R-BPO8-MLWC, R-BQW5-0DN1, R-BTBX-RX4F, R-BUJU-5OV4, R-BVRQ-JGLT, R-BWZM-X8CI, R-BY7J-B037, R-BZFF-ORTW
 
 ## Verification ids → Decision
 
@@ -183,11 +184,25 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-BCVP-4LM3 → D9 (`project/design/D09.md`)
 - R-BGPF-NVTU → D25 (`project/design/D25.md`)
 - R-BHXC-1NKJ → D25 (`project/design/D25.md`)
+- R-BICU-BZG6 → D69 (`project/design/D69.md`)
 - R-BJ58-FFB8 → D25 (`project/design/D25.md`)
+- R-BJKQ-PR6V → D69 (`project/design/D69.md`)
 - R-BKD4-T71X → D25 (`project/design/D25.md`)
+- R-BKSN-3IXK → D69 (`project/design/D69.md`)
 - R-BLL1-6YSM → D25 (`project/design/D25.md`)
+- R-BM0J-HAO9 → D69 (`project/design/D69.md`)
 - R-BMSX-KQJB → D25 (`project/design/D25.md`)
+- R-BN8F-V2EY → D69 (`project/design/D69.md`)
 - R-BO0T-YIA0 → D25 (`project/design/D25.md`)
+- R-BOGC-8U5N → D69 (`project/design/D69.md`)
+- R-BPO8-MLWC → D69 (`project/design/D69.md`)
+- R-BQW5-0DN1 → D69 (`project/design/D69.md`)
+- R-BTBX-RX4F → D69 (`project/design/D69.md`)
+- R-BUJU-5OV4 → D69 (`project/design/D69.md`)
+- R-BVRQ-JGLT → D69 (`project/design/D69.md`)
+- R-BWZM-X8CI → D69 (`project/design/D69.md`)
+- R-BY7J-B037 → D69 (`project/design/D69.md`)
+- R-BZFF-ORTW → D69 (`project/design/D69.md`)
 - R-DRX6-PWSW → D11 (`project/design/D11.md`)
 - R-DT53-3OJL → D11 (`project/design/D11.md`)
 - R-DUCZ-HGAA → D11 (`project/design/D11.md`)
