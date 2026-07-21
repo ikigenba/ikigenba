@@ -92,12 +92,15 @@ func (p scriptedProcess) Signal(os.Signal) error { return nil }
 func TestStepDispatchNamesSupportedAndRejectedSteps(t *testing.T) {
 	// R-EYQR-OABI
 	root := newAutotuneTree(t)
-	executor := &scriptedExecutor{}
-	if err := run(configuredArgs(), root, executor); err != nil {
-		t.Fatalf("supported extract step failed: %v", err)
-	}
-	if len(executor.calls) != 3 {
-		t.Fatalf("extract invoked %d commands, want build, baseline, and ralph", len(executor.calls))
+	for _, step := range []string{"extract", "analysis"} {
+		executor := &scriptedExecutor{}
+		args := []string{step, "-c", "provider=anthropic", "-c", "model=claude-sonnet-4-6"}
+		if err := run(args, root, executor); err != nil {
+			t.Fatalf("supported %s step failed: %v", step, err)
+		}
+		if len(executor.calls) != 3 {
+			t.Fatalf("%s invoked %d commands, want build, baseline, and ralph", step, len(executor.calls))
+		}
 	}
 
 	for _, tc := range []struct {
@@ -105,9 +108,9 @@ func TestStepDispatchNamesSupportedAndRejectedSteps(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{name: "compile", args: []string{"compile"}, want: []string{"compile", "extract"}},
-		{name: "unknown", args: []string{"frobnicate"}, want: []string{"frobnicate", "extract"}},
-		{name: "missing", args: nil, want: []string{"missing step", "extract"}},
+		{name: "compile", args: []string{"compile"}, want: []string{"compile", "extract, analysis"}},
+		{name: "unknown", args: []string{"frobnicate"}, want: []string{"frobnicate", "extract, analysis"}},
+		{name: "missing", args: nil, want: []string{"missing step", "extract, analysis"}},
 		{name: "resume from", args: []string{"extract", "--resume", "--from", "candidate.txt"}, want: []string{"--resume", "--from"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -121,6 +124,38 @@ func TestStepDispatchNamesSupportedAndRejectedSteps(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAnalysisFreshRunProvisionsStepSpecificWorkspaceAndRunner(t *testing.T) {
+	// R-BZFF-ORTW
+	root := newAutotuneTree(t)
+	executor := &scriptedExecutor{}
+	args := []string{"analysis", "-c", "provider=anthropic", "-c", "model=claude-sonnet-4-6"}
+	if err := run(args, root, executor); err != nil {
+		t.Fatalf("run analysis: %v", err)
+	}
+
+	assertFile(t, filepath.Join(root, "autotune/analysis/prompt.txt"), "analysis prompt\n")
+	assertFile(t, filepath.Join(root, "tmp/autotune/analysis/best/prompt.txt"), "analysis prompt\n")
+	if _, err := os.Stat(filepath.Join(root, "tmp/autotune/analysis/config.json")); err != nil {
+		t.Fatalf("analysis workspace config: %v", err)
+	}
+	want := []recordedCommand{
+		{dir: root, name: "go", args: []string{"build", "-o", "tmp/autotune/analysis/bin/eval-analysis", "./cmd/eval-analysis"}},
+		{dir: root, name: "tmp/autotune/analysis/bin/eval-analysis", args: []string{"run", "-prompt", "autotune/analysis/prompt.txt", "-gold", "eval/analysis/gold", "-config", "tmp/autotune/analysis/config.json", "-out", "tmp/autotune/analysis/baseline.json", "-split", "dev", "-repeat", "3"}},
+		{dir: root, name: "ralph", args: []string{"eval/analysis/improve.md"}},
+	}
+	if got := commandsWithoutEnv(executor.calls); !reflect.DeepEqual(got, want) {
+		t.Fatalf("analysis commands:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	extractExecutor := &scriptedExecutor{}
+	if err := run(configuredArgs(), newAutotuneTree(t), extractExecutor); err != nil {
+		t.Fatalf("run extract: %v", err)
+	}
+	if got := extractExecutor.calls[0]; got.name != "go" || !reflect.DeepEqual(got.args, []string{"build", "-o", "tmp/autotune/extract/bin/eval-extract", "./cmd/eval-extract"}) {
+		t.Fatalf("extract build command regressed: %#v", got)
 	}
 }
 
@@ -499,6 +534,28 @@ func newAutotuneTree(t *testing.T) string {
 }
 `))
 	mustWrite(t, filepath.Join(root, "eval/extract/prompt.txt"), []byte("committed prompt\n"))
+	mustWrite(t, filepath.Join(root, "eval/analysis/config.json"), []byte(`{
+  "eval": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "max_tokens": 16384,
+    "max_parse_retries": 2
+  },
+  "embedding": {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "dimensions": 1536,
+    "threshold": 0.80,
+    "margin": 0.03
+  },
+  "weights": {
+    "sub_queries": 0.50,
+    "keywords": 0.30,
+    "aliases": 0.20
+  }
+}
+`))
+	mustWrite(t, filepath.Join(root, "eval/analysis/prompt.txt"), []byte("analysis prompt\n"))
 	return root
 }
 

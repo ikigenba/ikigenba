@@ -126,6 +126,19 @@ func TestLoadAnalysisGoldLoadsBothSplitsAndNamesInvalidCases(t *testing.T) {
 	}
 }
 
+func TestLoadAnalysisGoldLoadsSeededCommittedCorpus(t *testing.T) {
+	dev, holdout, err := LoadAnalysisGold(filepath.Join("..", "..", "eval", "analysis", "gold"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dev) != 1 || len(holdout) != 1 {
+		t.Fatalf("committed analysis corpus has %d dev and %d holdout cases, want exactly 1 each", len(dev), len(holdout))
+	}
+	if dev[0].Question == "" || holdout[0].Question == "" {
+		t.Fatalf("committed analysis corpus contains an empty question: dev=%+v holdout=%+v", dev, holdout)
+	}
+}
+
 func writeAnalysisCase(t *testing.T, root, split, name, question, gold string) {
 	t.Helper()
 	dir := filepath.Join(root, split, name)
