@@ -79,3 +79,63 @@ func validGoldJSON() string {
 func goldJSON(subject string) string {
 	return `{"difficulty":"easy","header":{"source":"s","title":"t","tags":[],"received_at":"2026-01-01T00:00:00Z"},"gold":[` + subject + `]}`
 }
+
+func TestLoadAnalysisGoldLoadsBothSplitsAndNamesInvalidCases(t *testing.T) {
+	// R-BM0J-HAO9
+	root := t.TempDir()
+	writeAnalysisCase(t, root, "dev", "case-b", "Who bought FreshCrate?", `{"difficulty":"easy","gold":{"sub_queries":["FreshCrate acquisition"],"keywords":["FreshCrate"],"aliases":[]}}`)
+	writeAnalysisCase(t, root, "dev", "case-a", "When did it happen?", `{"difficulty":"medium","gold":{"sub_queries":[],"keywords":["date"],"aliases":[]}}`)
+	writeAnalysisCase(t, root, "holdout", "case-c", "Where is the lab?", `{"difficulty":"hard","gold":{"sub_queries":["lab location"],"keywords":[],"aliases":["laboratory"]}}`)
+	dev, holdout, err := LoadAnalysisGold(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dev) != 2 || dev[0].Name != "case-a" || dev[1].Question != "Who bought FreshCrate?" || dev[1].Gold.Keywords[0] != "FreshCrate" {
+		t.Fatalf("unexpected dev cases: %+v", dev)
+	}
+	if len(holdout) != 1 || holdout[0].Name != "case-c" || holdout[0].Difficulty != "hard" || holdout[0].Gold.Aliases[0] != "laboratory" {
+		t.Fatalf("unexpected holdout cases: %+v", holdout)
+	}
+
+	for name, setup := range map[string]func(string){
+		"missing-question": func(root string) {
+			dir := filepath.Join(root, "dev", "missing-question")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "gold.json"), []byte(`{"difficulty":"easy","gold":{}}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"bad-json": func(root string) { writeAnalysisCase(t, root, "dev", "bad-json", "question", `{`) },
+		"missing-gold": func(root string) {
+			writeAnalysisCase(t, root, "dev", "missing-gold", "question", `{"difficulty":"easy"}`)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "holdout"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			setup(root)
+			_, _, err := LoadAnalysisGold(root)
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("expected error naming case %q, got %v", name, err)
+			}
+		})
+	}
+}
+
+func writeAnalysisCase(t *testing.T, root, split, name, question, gold string) {
+	t.Helper()
+	dir := filepath.Join(root, split, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "question.txt"), []byte(question), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gold.json"), []byte(gold), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}

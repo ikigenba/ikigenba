@@ -78,3 +78,38 @@ func TestLoadConfigAcceptsEvalWithoutOptionalGenerationKnobs(t *testing.T) {
 		t.Fatalf("optional knobs were invented: %+v", cfg.Eval)
 	}
 }
+
+func TestLoadAnalysisConfigPreservesPinsAndNamesInvalidFields(t *testing.T) {
+	// R-BKSN-3IXK
+	cfg, err := LoadAnalysisConfig(filepath.Join("..", "..", "eval", "analysis", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Eval.Model != "claude-sonnet-4-6" || cfg.Eval.MaxTokens == nil || *cfg.Eval.MaxTokens != 16384 || cfg.Eval.MaxParseRetries == nil || *cfg.Eval.MaxParseRetries != 2 {
+		t.Fatalf("unexpected eval pin: %+v", cfg.Eval)
+	}
+	if cfg.Embedding.Provider != "openai" || cfg.Embedding.Model != "text-embedding-3-small" || cfg.Embedding.Dimensions != 1536 || cfg.Embedding.Threshold != 0.80 || cfg.Embedding.Margin != 0.03 {
+		t.Fatalf("unexpected embedding pin: %+v", cfg.Embedding)
+	}
+	if cfg.Weights.SubQueries != 0.50 || cfg.Weights.Keywords != 0.30 || cfg.Weights.Aliases != 0.20 || cfg.Weights.SubQueries+cfg.Weights.Keywords+cfg.Weights.Aliases != 1 {
+		t.Fatalf("unexpected analysis weights: %+v", cfg.Weights)
+	}
+
+	for name, test := range map[string]struct {
+		body, field string
+	}{
+		"missing required field": {`{"eval":{"provider":"a","model":"m"},"embedding":{"provider":"o","model":"e","dimensions":3,"threshold":0.8,"margin":0.03},"weights":{"sub_queries":0.5,"keywords":0.3}}`, "weights.aliases"},
+		"weights do not sum":     {`{"eval":{"provider":"a","model":"m"},"embedding":{"provider":"o","model":"e","dimensions":3,"threshold":0.8,"margin":0.03},"weights":{"sub_queries":0.5,"keywords":0.3,"aliases":0.3}}`, "weights"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(test.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadAnalysisConfig(path)
+			if err == nil || !strings.Contains(err.Error(), test.field) {
+				t.Fatalf("expected error naming %q, got %v", test.field, err)
+			}
+		})
+	}
+}

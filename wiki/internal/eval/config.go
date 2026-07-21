@@ -39,6 +39,93 @@ type Weights struct {
 	Field   float64 `json:"field"`
 }
 
+type AnalysisConfig struct {
+	Eval      EvalCall        `json:"eval"`
+	Embedding Embedding       `json:"embedding"`
+	Weights   AnalysisWeights `json:"weights"`
+}
+
+type AnalysisWeights struct {
+	SubQueries float64 `json:"sub_queries"`
+	Keywords   float64 `json:"keywords"`
+	Aliases    float64 `json:"aliases"`
+}
+
+func LoadAnalysisConfig(path string) (AnalysisConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return AnalysisConfig{}, fmt.Errorf("read analysis config: %w", err)
+	}
+	var raw struct {
+		Eval *struct {
+			Provider        *string  `json:"provider"`
+			Model           *string  `json:"model"`
+			Temperature     *float64 `json:"temperature"`
+			Thinking        *bool    `json:"thinking"`
+			MaxTokens       *int     `json:"max_tokens"`
+			MaxParseRetries *int     `json:"max_parse_retries"`
+			Auth            string   `json:"auth"`
+			AuthFile        string   `json:"auth_file"`
+		} `json:"eval"`
+		Embedding *struct {
+			Provider   *string  `json:"provider"`
+			Model      *string  `json:"model"`
+			Dimensions *int     `json:"dimensions"`
+			Threshold  *float64 `json:"threshold"`
+			Margin     *float64 `json:"margin"`
+		} `json:"embedding"`
+		Weights *struct {
+			SubQueries *float64 `json:"sub_queries"`
+			Keywords   *float64 `json:"keywords"`
+			Aliases    *float64 `json:"aliases"`
+		} `json:"weights"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return AnalysisConfig{}, fmt.Errorf("parse analysis config: %w", err)
+	}
+	if raw.Eval == nil {
+		return AnalysisConfig{}, fmt.Errorf("missing required field eval")
+	}
+	if raw.Embedding == nil {
+		return AnalysisConfig{}, fmt.Errorf("missing required field embedding")
+	}
+	if raw.Weights == nil {
+		return AnalysisConfig{}, fmt.Errorf("missing required field weights")
+	}
+	fields := []struct {
+		name  string
+		value any
+	}{
+		{"eval.provider", raw.Eval.Provider}, {"eval.model", raw.Eval.Model},
+		{"embedding.provider", raw.Embedding.Provider}, {"embedding.model", raw.Embedding.Model},
+		{"embedding.dimensions", raw.Embedding.Dimensions}, {"embedding.threshold", raw.Embedding.Threshold},
+		{"embedding.margin", raw.Embedding.Margin}, {"weights.sub_queries", raw.Weights.SubQueries},
+		{"weights.keywords", raw.Weights.Keywords}, {"weights.aliases", raw.Weights.Aliases},
+	}
+	for _, field := range fields {
+		if field.value == nil || (reflect.ValueOf(field.value).Kind() == reflect.Pointer && reflect.ValueOf(field.value).IsNil()) {
+			return AnalysisConfig{}, fmt.Errorf("missing required field %s", field.name)
+		}
+	}
+	auth := raw.Eval.Auth
+	if auth == "" {
+		auth = "key"
+	}
+	authFile := raw.Eval.AuthFile
+	if authFile == "" {
+		authFile = "~/.agentrepl/auth.json"
+	}
+	cfg := AnalysisConfig{
+		Eval:      EvalCall{Provider: *raw.Eval.Provider, Model: *raw.Eval.Model, Temperature: raw.Eval.Temperature, Thinking: raw.Eval.Thinking, MaxTokens: raw.Eval.MaxTokens, MaxParseRetries: raw.Eval.MaxParseRetries, Auth: auth, AuthFile: authFile},
+		Embedding: Embedding{Provider: *raw.Embedding.Provider, Model: *raw.Embedding.Model, Dimensions: *raw.Embedding.Dimensions, Threshold: *raw.Embedding.Threshold, Margin: *raw.Embedding.Margin},
+		Weights:   AnalysisWeights{SubQueries: *raw.Weights.SubQueries, Keywords: *raw.Weights.Keywords, Aliases: *raw.Weights.Aliases},
+	}
+	if math.Abs(cfg.Weights.SubQueries+cfg.Weights.Keywords+cfg.Weights.Aliases-1) > 1e-9 {
+		return AnalysisConfig{}, fmt.Errorf("analysis weights must sum to 1")
+	}
+	return cfg, nil
+}
+
 func LoadConfig(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

@@ -10,8 +10,10 @@ import (
 	"strings"
 	"unicode"
 
+	analysisprompt "wiki/eval/analysis"
 	extractprompt "wiki/eval/extract"
 	"wiki/internal/extract"
+	"wiki/internal/wiki"
 )
 
 type EmbedFunc func(ctx context.Context, texts []string) ([][]float32, error)
@@ -35,6 +37,41 @@ type CaseScore struct {
 	FieldAccuracy float64 `json:"field_accuracy"`
 	Composite     float64 `json:"composite"`
 	PromptSHA256  string  `json:"prompt_sha256"`
+}
+
+type AnalysisCaseScore struct {
+	Name         string  `json:"name"`
+	Difficulty   string  `json:"difficulty"`
+	SubQueries   Metrics `json:"sub_queries"`
+	Keywords     Metrics `json:"keywords"`
+	Aliases      Metrics `json:"aliases"`
+	Composite    float64 `json:"composite"`
+	PromptSHA256 string  `json:"prompt_sha256"`
+}
+
+func ScoreAnalysisCase(ctx context.Context, gold AnalysisGoldCase, got wiki.QueryAnalysis, embed EmbedFunc, cfg AnalysisConfig) (AnalysisCaseScore, error) {
+	score := AnalysisCaseScore{
+		Name: gold.Name, Difficulty: gold.Difficulty,
+		PromptSHA256: fmt.Sprintf("%x", sha256.Sum256([]byte(analysisprompt.Instructions))),
+	}
+	lists := []struct {
+		name        string
+		gold, got   []string
+		destination *Metrics
+	}{
+		{"sub_queries", gold.Gold.SubQueries, got.SubQueries, &score.SubQueries},
+		{"keywords", gold.Gold.Keywords, got.Keywords, &score.Keywords},
+		{"aliases", gold.Gold.Aliases, got.Aliases, &score.Aliases},
+	}
+	for _, list := range lists {
+		matched, err := alignClaims(ctx, list.gold, list.got, embed, cfg.Embedding)
+		if err != nil {
+			return AnalysisCaseScore{}, fmt.Errorf("score analysis case %s %s: %w", gold.Name, list.name, err)
+		}
+		*list.destination = metrics(matched, len(list.gold)-matched, len(list.got)-matched)
+	}
+	score.Composite = cfg.Weights.SubQueries*score.SubQueries.F1 + cfg.Weights.Keywords*score.Keywords.F1 + cfg.Weights.Aliases*score.Aliases.F1
+	return score, nil
 }
 
 type subjectPair struct{ gold, got int }
