@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 107
-
-- Phase 106 ⬜ realizes R-XGGI-JK9U, R-XHOE-XC0J — free-form step config: `-c` spec is the whole call, absent knobs never sent
