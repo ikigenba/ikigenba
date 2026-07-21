@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 102
-
-- Phase 101 ⬜ realizes — — the improvement-loop assets (`improve.md`, operator README)
