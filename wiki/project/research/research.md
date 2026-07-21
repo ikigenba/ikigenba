@@ -481,6 +481,12 @@ passes through verbatim (everything after the driver's `--` separator):
   the codex harness carries its own ChatGPT subscription auth.
 - Output: `--format chat|jsonl|raw` on stdout (default chat) — the driver
   streams this through.
+- Key hygiene: by default ralph **unsets** `ANTHROPIC_API_KEY` and
+  `OPENAI_API_KEY` in spawned harness environments so OAuth stays the default
+  auth path (`--keep-api-keys` preserves them). Independently, the codex
+  harness switches from ChatGPT-subscription billing to API billing whenever
+  `OPENAI_API_KEY` is present in its environment — so a key needed by tooling
+  *inside* a harness turn must travel under a non-canonical variable name.
 
 ralph runs in the current working directory; the prompt path is positional
 and last. Exit occurs on DONE, budget exhaustion, or signal.

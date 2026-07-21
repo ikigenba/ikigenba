@@ -62,9 +62,9 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D63 → `project/design/D63.md` — The retirement: `llm_calls` and the recorder stack leave wiki; agentkit is confined to the eval workbench — owns R-KFX6-MNEW, R-KH53-0F5L
 - D64 → `project/design/D64.md` — The eval workspace: the extract prompt as data, the pinned config, and the gold corpus — owns R-KICZ-E6WA, R-KJKV-RYMZ, R-KKSS-5QDO
 - D65 → `project/design/D65.md` — The deterministic scorer (`internal/eval`): rules for subjects and fields, pinned embeddings for claims — owns R-KM0O-JI4D, R-KN8K-X9V2, R-KOGH-B1LR, R-KPOD-OTCG, R-KQWA-2L35, R-KTC2-U4KJ, R-KUJZ-7WB8, R-KVRV-LO1X, R-KWZR-ZFSM, R-ESN9-RFM1
-- D66 → `project/design/D66.md` — The eval runner (`cmd/eval-extract`): production-faithful calls through agentkit, scorecards out — owns R-KY7O-D7JB, R-KZFK-QZA0, R-L0NH-4R0P, R-L1VD-IIRE, R-L339-WAI3, R-L4B6-A28S, R-L5J2-NTZH, R-ETV6-57CQ, R-EWAY-WQU4, R-EXIV-AIKT, R-XHOE-XC0J
+- D66 → `project/design/D66.md` — The eval runner (`cmd/eval-extract`): production-faithful calls through agentkit, scorecards out — owns R-KY7O-D7JB, R-KZFK-QZA0, R-L0NH-4R0P, R-L1VD-IIRE, R-L339-WAI3, R-L4B6-A28S, R-L5J2-NTZH, R-ETV6-57CQ, R-EWAY-WQU4, R-EXIV-AIKT, R-XHOE-XC0J, R-1JMV-JW9B
 - D67 → `project/design/D67.md` — The improvement loop: one ralph turn per candidate, driven by autotune — none — structural
-- D68 → `project/design/D68.md` — The autotune driver (`cmd/autotune`): one command from baseline to diff — owns R-EYQR-OABI, R-EZYO-2227, R-F16K-FTSW, R-F3MD-7DAA, R-F4U9-L50Z, R-F625-YWRO, R-F7A2-COID, R-XGGI-JK9U
+- D68 → `project/design/D68.md` — The autotune driver (`cmd/autotune`): one command from baseline to diff — owns R-EYQR-OABI, R-EZYO-2227, R-F16K-FTSW, R-F3MD-7DAA, R-F4U9-L50Z, R-F625-YWRO, R-F7A2-COID, R-XGGI-JK9U, R-1KUR-XO00
 
 ## Verification ids → Decision
 
@@ -99,6 +99,8 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-1AJK-1I2Y → D62 (`project/design/D62.md`)
 - R-1C7R-ES1A → D15 (`project/design/D15.md`)
 - R-1DFN-SJRZ → D15 (`project/design/D15.md`)
+- R-1JMV-JW9B → D66 (`project/design/D66.md`)
+- R-1KUR-XO00 → D68 (`project/design/D68.md`)
 - R-1O8B-FNX4 → D3 (`project/design/D03.md`)
 - R-1PG7-TFNT → D25 (`project/design/D25.md`)
 - R-1QO4-77EI → D10 (`project/design/D10.md`)
