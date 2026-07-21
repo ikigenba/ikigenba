@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 106
-
-- Phase 105 ⬜ realizes R-F3MD-7DAA, R-F4U9-L50Z, R-F625-YWRO, R-F7A2-COID — wrapped loop + finalizer; improve.md/README/gitignore rewritten for the driver
