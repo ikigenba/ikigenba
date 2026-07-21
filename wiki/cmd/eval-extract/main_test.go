@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -152,6 +154,105 @@ func TestRunRepeatRecordsCompositesAndEpsilon(t *testing.T) {
 	}
 }
 
+func TestRunReportsEveryExtractionOnlyToStderr(t *testing.T) {
+	// R-ETV6-57CQ
+	root := seedWorkbench(t)
+	seedGoldCase(t, root, "second", "Beta opened a lab.", "Beta")
+	chat := &scriptedChat{responses: []string{validResponse(), validResponse(), validResponse(), validResponse()}}
+	out := filepath.Join(root, "progress.json")
+	var stdout, stderr bytes.Buffer
+	code := execute(context.Background(), runArgs(root, out, "-repeat", "2"), &stdout, &stderr, fakeDependencies(chat, &fakeEmbeddingProvider{}))
+	if code != 0 {
+		t.Fatalf("code = %d, stderr = %q", code, stderr.String())
+	}
+	lines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("progress lines = %d, want 4: %q", len(lines), stderr.String())
+	}
+	for _, want := range []string{"case 1/2 repeat 1/2", "case 2/2 repeat 1/2", "case 1/2 repeat 2/2", "case 2/2 repeat 2/2"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("stderr missing %q: %q", want, stderr.String())
+		}
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout.Len() != 0 || bytes.Contains(data, []byte("case ")) || bytes.Contains(data, []byte("repeat ")) {
+		t.Fatalf("progress leaked to stdout/scorecard: stdout=%q scorecard=%q", stdout.String(), data)
+	}
+}
+
+func TestBuildChatProviderSupportsCompleteProviderSetAndNamesFailures(t *testing.T) {
+	// R-EWAY-WQU4
+	providers := map[string]string{
+		"anthropic":  "ANTHROPIC_API_KEY",
+		"google":     "GEMINI_API_KEY",
+		"openai":     "OPENAI_API_KEY",
+		"openrouter": "OPENROUTER_API_KEY",
+		"zai":        "ZAI_API_KEY",
+	}
+	for name, env := range providers {
+		t.Run(name, func(t *testing.T) {
+			provider, err := buildChatProvider(name, func(got string) string {
+				if got != env {
+					t.Fatalf("environment variable = %q, want %q", got, env)
+				}
+				return "test-key"
+			})
+			if err != nil || provider == nil {
+				t.Fatalf("provider/error = %v/%v", provider, err)
+			}
+			_, err = buildChatProvider(name, func(string) string { return "" })
+			if err == nil || !strings.Contains(err.Error(), env) {
+				t.Fatalf("missing-key error = %v, want %s", err, env)
+			}
+		})
+	}
+	if _, err := buildChatProvider("other", func(string) string { return "test-key" }); err == nil || !strings.Contains(err.Error(), "other") {
+		t.Fatalf("unsupported-provider error = %v", err)
+	}
+}
+
+func TestBuildConfiguredChatProviderUsesSubscriptionAuthAndNamesEarlyFailures(t *testing.T) {
+	// R-EXIV-AIKT
+	root := t.TempDir()
+	authPath := filepath.Join(root, "auth.json")
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"acct-test"}}`))
+	auth := `{"access_token":"header.` + payload + `.signature","id_token":"header.` + payload + `.signature"}`
+	if err := os.WriteFile(authPath, []byte(auth), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := buildConfiguredChatProvider(eval.EvalCall{Provider: "openai", Auth: "sub", AuthFile: authPath}, func(string) string {
+		t.Fatal("subscription chat auth must not read an API key")
+		return ""
+	})
+	if err != nil || provider == nil {
+		t.Fatalf("subscription provider/error = %v/%v", provider, err)
+	}
+	for _, tt := range []struct {
+		name string
+		cfg  eval.EvalCall
+		want string
+	}{
+		{"non-openai", eval.EvalCall{Provider: "anthropic", Auth: "sub", AuthFile: authPath}, "anthropic"},
+		{"missing", eval.EvalCall{Provider: "openai", Auth: "sub", AuthFile: filepath.Join(root, "missing.json")}, "missing.json"},
+		{"malformed", eval.EvalCall{Provider: "openai", Auth: "sub", AuthFile: filepath.Join(root, "bad.json")}, "bad.json"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "malformed" {
+				if err := os.WriteFile(tt.cfg.AuthFile, []byte(`{`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := buildConfiguredChatProvider(tt.cfg, func(string) string { t.Fatal("failure must precede any API-key read"); return "" })
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want path/provider %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestComparePrintsVerdictAndUsesStrictExitCode(t *testing.T) {
 	// R-L4B6-A28S
 	root := t.TempDir()
@@ -181,7 +282,7 @@ func TestComparePrintsVerdictAndUsesStrictExitCode(t *testing.T) {
 
 func fakeDependencies(chat agentkit.Provider, embed agentkit.EmbeddingProvider) dependencies {
 	return dependencies{
-		chat:   func(string, func(string) string) (agentkit.Provider, error) { return chat, nil },
+		chat:   func(eval.EvalCall, func(string) string) (agentkit.Provider, error) { return chat, nil },
 		embed:  func(string, func(string) string) (agentkit.EmbeddingProvider, error) { return embed, nil },
 		getenv: func(string) string { return "unused" },
 	}
@@ -214,6 +315,21 @@ func seedWorkbench(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+func seedGoldCase(t *testing.T, root, name, document, subject string) {
+	t.Helper()
+	caseDir := filepath.Join(root, "gold", "dev", name)
+	if err := os.MkdirAll(caseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(caseDir, "document.txt"), []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gold := fmt.Sprintf(`{"difficulty":"easy","header":{"source":"test","title":%q,"tags":[],"received_at":"2026-01-01T00:00:00Z"},"gold":[{"type":"entity","kind":"company","name":%q,"aliases":[],"occurred_at":"","claims":[%q]}]}`, subject, subject, document)
+	if err := os.WriteFile(filepath.Join(caseDir, "gold.json"), []byte(gold), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func runArgs(root, out string, extra ...string) []string {

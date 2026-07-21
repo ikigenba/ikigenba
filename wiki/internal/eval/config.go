@@ -21,6 +21,8 @@ type EvalCall struct {
 	Thinking        bool   `json:"thinking"`
 	MaxTokens       int    `json:"max_tokens"`
 	MaxParseRetries int    `json:"max_parse_retries"`
+	Auth            string `json:"auth"`
+	AuthFile        string `json:"auth_file"`
 }
 
 type Embedding struct {
@@ -50,6 +52,8 @@ func LoadConfig(path string) (Config, error) {
 			Thinking        *bool   `json:"thinking"`
 			MaxTokens       *int    `json:"max_tokens"`
 			MaxParseRetries *int    `json:"max_parse_retries"`
+			Auth            string  `json:"auth"`
+			AuthFile        string  `json:"auth_file"`
 		} `json:"eval"`
 		Embedding *struct {
 			Provider   *string  `json:"provider"`
@@ -79,8 +83,16 @@ func LoadConfig(path string) (Config, error) {
 	if err := requireConfigFields(raw.Eval.Provider, raw.Eval.Model, raw.Eval.Temperature, raw.Eval.Thinking, raw.Eval.MaxTokens, raw.Eval.MaxParseRetries, raw.Embedding.Provider, raw.Embedding.Model, raw.Embedding.Dimensions, raw.Embedding.Threshold, raw.Embedding.Margin, raw.Weights.Subject, raw.Weights.Claim, raw.Weights.Field); err != nil {
 		return Config{}, err
 	}
+	auth := raw.Eval.Auth
+	if auth == "" {
+		auth = "key"
+	}
+	authFile := raw.Eval.AuthFile
+	if authFile == "" {
+		authFile = "~/.agentrepl/auth.json"
+	}
 	cfg := Config{
-		Eval:      EvalCall{*raw.Eval.Provider, *raw.Eval.Model, *raw.Eval.Temperature, *raw.Eval.Thinking, *raw.Eval.MaxTokens, *raw.Eval.MaxParseRetries},
+		Eval:      EvalCall{Provider: *raw.Eval.Provider, Model: *raw.Eval.Model, Temperature: *raw.Eval.Temperature, Thinking: *raw.Eval.Thinking, MaxTokens: *raw.Eval.MaxTokens, MaxParseRetries: *raw.Eval.MaxParseRetries, Auth: auth, AuthFile: authFile},
 		Embedding: Embedding{*raw.Embedding.Provider, *raw.Embedding.Model, *raw.Embedding.Dimensions, *raw.Embedding.Threshold, *raw.Embedding.Margin},
 		Weights:   Weights{*raw.Weights.Subject, *raw.Weights.Claim, *raw.Weights.Field},
 	}

@@ -14,14 +14,18 @@ import (
 
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/anthropic"
+	"github.com/ikigenba/agentkit/google"
 	"github.com/ikigenba/agentkit/openai"
+	"github.com/ikigenba/agentkit/openai/subscription"
+	"github.com/ikigenba/agentkit/openrouter"
+	"github.com/ikigenba/agentkit/zai"
 
 	"wiki/internal/eval"
 	"wiki/internal/extract"
 )
 
 type dependencies struct {
-	chat     func(string, func(string) string) (agentkit.Provider, error)
+	chat     func(eval.EvalCall, func(string) string) (agentkit.Provider, error)
 	embed    func(string, func(string) string) (agentkit.EmbeddingProvider, error)
 	getenv   func(string) string
 	cacheDir string
@@ -39,7 +43,7 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer, deps 
 	var err error
 	switch args[0] {
 	case "run":
-		err = run(ctx, args[1:], deps)
+		err = run(ctx, args[1:], stderr, deps)
 	case "compare":
 		var accepted bool
 		accepted, err = compare(args[1:], stdout)
@@ -76,7 +80,7 @@ func (v *optionalInt) Set(value string) error {
 	return err
 }
 
-func run(ctx context.Context, args []string, deps dependencies) error {
+func run(ctx context.Context, args []string, stderr io.Writer, deps dependencies) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	promptPath := fs.String("prompt", "", "prompt instruction file")
@@ -133,7 +137,7 @@ func run(ctx context.Context, args []string, deps dependencies) error {
 	default:
 		return fmt.Errorf("split must be dev or holdout, got %q", *split)
 	}
-	chatProvider, err := deps.chat(cfg.Eval.Provider, deps.getenv)
+	chatProvider, err := deps.chat(cfg.Eval, deps.getenv)
 	if err != nil {
 		return fmt.Errorf("create chat provider: %w", err)
 	}
@@ -162,7 +166,7 @@ func run(ctx context.Context, args []string, deps dependencies) error {
 	composites := make([]float64, 0, *repeat)
 	for n := 0; n < *repeat; n++ {
 		scores := make([]eval.CaseScore, 0, len(cases))
-		for _, gold := range cases {
+		for i, gold := range cases {
 			got, err := extractCase(ctx, chatProvider, cfg.Eval, string(instructions), gold)
 			if err != nil {
 				return fmt.Errorf("case %s: %w", gold.Name, err)
@@ -172,6 +176,7 @@ func run(ctx context.Context, args []string, deps dependencies) error {
 				return fmt.Errorf("case %s: %w", gold.Name, err)
 			}
 			scores = append(scores, score)
+			fmt.Fprintf(stderr, "case %d/%d repeat %d/%d %s composite=%.6f\n", i+1, len(cases), n+1, *repeat, gold.Name, score.Composite)
 		}
 		card := eval.Aggregate(scores, cfg)
 		if n == 0 {
@@ -304,7 +309,43 @@ func messageText(message agentkit.Message) string {
 func floatPointer(value float64) *float64 { return &value }
 
 func productionDependencies() dependencies {
-	return dependencies{chat: buildChatProvider, embed: buildEmbeddingProvider, getenv: os.Getenv, cacheDir: filepath.Join("tmp", "eval-extract", "embeddings")}
+	return dependencies{chat: buildConfiguredChatProvider, embed: buildEmbeddingProvider, getenv: os.Getenv, cacheDir: filepath.Join("tmp", "eval-extract", "embeddings")}
+}
+
+func buildConfiguredChatProvider(cfg eval.EvalCall, getenv func(string) string) (agentkit.Provider, error) {
+	switch cfg.Auth {
+	case "", "key":
+		return buildChatProvider(cfg.Provider, getenv)
+	case "sub":
+		if cfg.Provider != "openai" {
+			return nil, fmt.Errorf("subscription auth is unsupported for provider %q", cfg.Provider)
+		}
+		path, err := expandHome(cfg.AuthFile)
+		if err != nil {
+			return nil, fmt.Errorf("load subscription auth file %q: %w", cfg.AuthFile, err)
+		}
+		store, err := subscription.Load(path)
+		if err != nil {
+			return nil, fmt.Errorf("load subscription auth file %q: %w", cfg.AuthFile, err)
+		}
+		return openai.New(openai.Subscription(store)), nil
+	default:
+		return nil, fmt.Errorf("unsupported auth %q", cfg.Auth)
+	}
+}
+
+func expandHome(path string) (string, error) {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	if path == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, strings.TrimPrefix(path, "~/")), nil
 }
 
 func buildChatProvider(name string, getenv func(string) string) (agentkit.Provider, error) {
@@ -315,12 +356,30 @@ func buildChatProvider(name string, getenv func(string) string) (agentkit.Provid
 			return nil, err
 		}
 		return anthropic.New(anthropic.APIKey(key)), nil
+	case "google":
+		key, err := requiredKey("GEMINI_API_KEY", getenv)
+		if err != nil {
+			return nil, err
+		}
+		return google.New(google.APIKey(key)), nil
 	case "openai":
 		key, err := requiredKey("OPENAI_API_KEY", getenv)
 		if err != nil {
 			return nil, err
 		}
 		return openai.New(openai.APIKey(key)), nil
+	case "openrouter":
+		key, err := requiredKey("OPENROUTER_API_KEY", getenv)
+		if err != nil {
+			return nil, err
+		}
+		return openrouter.New(openrouter.APIKey(key)), nil
+	case "zai":
+		key, err := requiredKey("ZAI_API_KEY", getenv)
+		if err != nil {
+			return nil, err
+		}
+		return zai.New(zai.APIKey(key)), nil
 	default:
 		return nil, fmt.Errorf("unsupported chat provider %q", name)
 	}

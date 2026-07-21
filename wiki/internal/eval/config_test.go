@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,26 @@ func TestLoadConfigPreservesPinsAndRejectsInvalidFields(t *testing.T) {
 	}
 	if cfg.Eval.Model != "claude-sonnet-4-6" || cfg.Eval.Temperature != 0 || cfg.Eval.Thinking || cfg.Eval.MaxTokens != 16384 || cfg.Eval.MaxParseRetries != 2 {
 		t.Fatalf("unexpected eval pin: %+v", cfg.Eval)
+	}
+	if cfg.Eval.Auth != "key" || cfg.Eval.AuthFile != "~/.agentrepl/auth.json" {
+		t.Fatalf("unexpected auth defaults: %+v", cfg.Eval)
+	}
+	cfg.Eval.Auth = "sub"
+	cfg.Eval.AuthFile = "/tmp/test-auth.json"
+	explicitPath := filepath.Join(t.TempDir(), "explicit-auth.json")
+	explicitData, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(explicitPath, explicitData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	explicit, err := LoadConfig(explicitPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if explicit.Eval.Auth != "sub" || explicit.Eval.AuthFile != "/tmp/test-auth.json" {
+		t.Fatalf("explicit auth settings were not loaded: %+v", explicit.Eval)
 	}
 	if cfg.Embedding.Model != "text-embedding-3-small" || cfg.Embedding.Dimensions != 1536 || cfg.Embedding.Threshold != 0.80 || cfg.Embedding.Margin != 0.03 {
 		t.Fatalf("unexpected embedding pin: %+v", cfg.Embedding)
