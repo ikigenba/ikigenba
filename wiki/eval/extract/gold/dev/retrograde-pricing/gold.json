@@ -1,0 +1,36 @@
+{
+  "difficulty": "medium",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "Retrograde pricing",
+    "tags": ["economics", "reference"],
+    "received_at": "2026-03-05T11:00:00Z"
+  },
+  "gold": [
+    {
+      "type": "concept",
+      "kind": "pricing method",
+      "name": "Retrograde pricing",
+      "aliases": [],
+      "occurred_at": "1961",
+      "claims": [
+        "Retrograde pricing is a wholesale pricing method in which the retail price is fixed first and every upstream margin is derived backward from it.",
+        "Retrograde pricing was formalized by Hella Braun in 1961.",
+        "Retrograde pricing is standard practice in Scandinavian book publishing.",
+        "Critics argue that retrograde pricing hides true unit costs.",
+        "Retrograde pricing remains widely taught."
+      ]
+    },
+    {
+      "type": "entity",
+      "kind": "person",
+      "name": "Hella Braun",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Hella Braun was an economist.",
+        "Hella Braun formalized retrograde pricing in 1961."
+      ]
+    }
+  ]
+}
