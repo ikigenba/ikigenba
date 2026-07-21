@@ -61,9 +61,10 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D62 → `project/design/D62.md` — Origin and correlation attribution on every inference call — owns R-16VU-W6UV, R-183R-9YLK, R-19BN-NQC9, R-1AJK-1I2Y
 - D63 → `project/design/D63.md` — The retirement: `llm_calls` and the recorder stack leave wiki; agentkit is confined to the eval workbench — owns R-KFX6-MNEW, R-KH53-0F5L
 - D64 → `project/design/D64.md` — The eval workspace: the extract prompt as data, the pinned config, and the gold corpus — owns R-KICZ-E6WA, R-KJKV-RYMZ, R-KKSS-5QDO
-- D65 → `project/design/D65.md` — The deterministic scorer (`internal/eval`): rules for subjects and fields, pinned embeddings for claims — owns R-KM0O-JI4D, R-KN8K-X9V2, R-KOGH-B1LR, R-KPOD-OTCG, R-KQWA-2L35, R-KTC2-U4KJ, R-KUJZ-7WB8, R-KVRV-LO1X, R-KWZR-ZFSM
-- D66 → `project/design/D66.md` — The eval runner (`cmd/eval-extract`): production-faithful calls through agentkit, scorecards out — owns R-KY7O-D7JB, R-KZFK-QZA0, R-L0NH-4R0P, R-L1VD-IIRE, R-L339-WAI3, R-L4B6-A28S, R-L5J2-NTZH
-- D67 → `project/design/D67.md` — The improvement loop: ralph-driven prompt tuning over the workbench — none — structural
+- D65 → `project/design/D65.md` — The deterministic scorer (`internal/eval`): rules for subjects and fields, pinned embeddings for claims — owns R-KM0O-JI4D, R-KN8K-X9V2, R-KOGH-B1LR, R-KPOD-OTCG, R-KQWA-2L35, R-KTC2-U4KJ, R-KUJZ-7WB8, R-KVRV-LO1X, R-KWZR-ZFSM, R-ESN9-RFM1
+- D66 → `project/design/D66.md` — The eval runner (`cmd/eval-extract`): production-faithful calls through agentkit, scorecards out — owns R-KY7O-D7JB, R-KZFK-QZA0, R-L0NH-4R0P, R-L1VD-IIRE, R-L339-WAI3, R-L4B6-A28S, R-L5J2-NTZH, R-ETV6-57CQ, R-EWAY-WQU4, R-EXIV-AIKT
+- D67 → `project/design/D67.md` — The improvement loop: one ralph turn per candidate, driven by autotune — none — structural
+- D68 → `project/design/D68.md` — The autotune driver (`cmd/autotune`): one command from baseline to diff — owns R-EYQR-OABI, R-EZYO-2227, R-F2EG-TLJL, R-F16K-FTSW, R-F3MD-7DAA, R-F4U9-L50Z, R-F625-YWRO, R-F7A2-COID
 
 ## Verification ids → Decision
 
@@ -200,10 +201,22 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-EPZZ-GO25 → D61 (`project/design/D61.md`)
 - R-ER7V-UFSU → D61 (`project/design/D61.md`)
 - R-ESFS-87JJ → D61 (`project/design/D61.md`)
+- R-ESN9-RFM1 → D65 (`project/design/D65.md`)
 - R-ETNO-LZA8 → D61 (`project/design/D61.md`)
+- R-ETV6-57CQ → D66 (`project/design/D66.md`)
 - R-EV2H-6RKN → D38 (`project/design/D38.md`)
 - R-EW3H-DIRM → D61 (`project/design/D61.md`)
+- R-EWAY-WQU4 → D66 (`project/design/D66.md`)
 - R-EXBD-RAIB → D61 (`project/design/D61.md`)
+- R-EXIV-AIKT → D66 (`project/design/D66.md`)
+- R-EYQR-OABI → D68 (`project/design/D68.md`)
+- R-EZYO-2227 → D68 (`project/design/D68.md`)
+- R-F16K-FTSW → D68 (`project/design/D68.md`)
+- R-F2EG-TLJL → D68 (`project/design/D68.md`)
+- R-F3MD-7DAA → D68 (`project/design/D68.md`)
+- R-F4U9-L50Z → D68 (`project/design/D68.md`)
+- R-F625-YWRO → D68 (`project/design/D68.md`)
+- R-F7A2-COID → D68 (`project/design/D68.md`)
 - R-FM7A-D0SZ → D38 (`project/design/D38.md`)
 - R-FQLB-QWS6 → D7 (`project/design/D07.md`)
 - R-FT14-IG9K → D7 (`project/design/D07.md`)

@@ -455,3 +455,58 @@ another reason wiki's client carries no fixed HTTP timeout.
 correlation id is a bare 26-char Crockford-base32 ULID minted **once at the
 initial user action** and propagated verbatim; a durable root entity's own ULID
 (an ingest job) serves as the id; otherwise (an ask) mint one fresh.
+
+## 13. The autotune driver's external tools: ralph, the agentrepl config convention, and subscription auth
+
+External ground truth for the one-command tuning driver (D68). Three tools
+outside this repository are load-bearing; their observed contracts as of
+2026-07-20:
+
+### ralph (the loop executor, `~/.local/bin/ralph`, v0.10.0)
+
+`ralph [flags] <prompt-path>...` runs an agent harness in a fresh-context
+loop, dispatching on the model's final status word: `CONTINUE` re-runs the
+same prompt, `NEXT` advances (wrapping), `DONE` stops. Flags the driver
+passes through verbatim (everything after the driver's `--` separator):
+
+- Budgets: `--max-iterations N`, `--max-time D` (e.g. `30m`), `--max-spend USD`,
+  `--max-tokens N` (0 = unlimited); `--max-retries N` (default 3) for
+  bad/failed turns.
+- `--harness codex|claude|zai|kimi|agentkit` (default **codex**) and repeatable
+  `-c key=value` harness config. The agentkit harness's keys/defaults:
+  `provider=openrouter auth=key model=glm-5.2 effort=high`; env keys per
+  provider (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`,
+  `ZAI_API_KEY`, `OPENROUTER_API_KEY`). As of v0.10.0 ralph's agentkit harness
+  rejects `auth` other than `key` (sub support is in progress upstream);
+  the codex harness carries its own ChatGPT subscription auth.
+- Output: `--format chat|jsonl|raw` on stdout (default chat) — the driver
+  streams this through.
+
+ralph runs in the current working directory; the prompt path is positional
+and last. Exit occurs on DONE, budget exhaustion, or signal.
+
+### agentrepl's `-c` config convention (`~/.local/bin/agentrepl`)
+
+The suite's de-facto CLI convention for naming an agentkit call, which the
+driver's step-model flags mirror: repeatable `-c key=value` with keys
+`provider`, `model`, `auth`, `effort` / `thinking_level` / `thinking_budget`,
+`auth_file`. Provider set: `anthropic`, `google`, `openai`, `openrouter`,
+`zai`, all with `auth=key` via the env vars above; **`auth=sub` exists for
+`openai` only**, reading `auth_file` (default `~/.agentrepl/auth.json`).
+agentrepl's defaults are `provider=openai model=gpt-5.6-sol auth=sub`; the
+driver's defaults instead come from the committed `eval/extract/config.json`
+production pins.
+
+### Subscription auth: `oauth-login` and agentkit's store
+
+`~/.local/bin/oauth-login` is a standalone OAuth authorization-code CLI; its
+stdout contract is the **raw token-endpoint response saved verbatim** — that
+file (e.g. `~/.agentrepl/auth.json`) is exactly what
+`github.com/ikigenba/agentkit/openai/subscription` consumes:
+`subscription.Load(path)` parses the raw response, requires `access_token`
+plus a ChatGPT account claim in the id/access token, refreshes with skew
+internally, and rewrites the file as the refresh-token lineage rotates. The
+store is **OpenAI/ChatGPT-specific**; agentkit has no subscription store for
+any other provider (an openrouter/anthropic `auth=sub` is simply
+unsupported). The codex CLI's wrapper file format (`tokens.*`,
+`last_refresh`) is *not* accepted — only the raw token response.
