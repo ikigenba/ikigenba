@@ -67,7 +67,7 @@ func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 		"title: Tulsa robotics notes",
 		"tags: robotics, tulsa",
 		"received on: 2026-06-20",
-		"occurred_at is required for events, optional for entities and concepts",
+		"occurred_at is required for events. For entities and concepts, omit occurred_at unless the source directly associates the subject itself with a date",
 		"Acme Robotics opened a research lab in Tulsa.",
 	} {
 		if !strings.Contains(prompt, want) {
