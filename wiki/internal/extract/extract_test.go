@@ -2,6 +2,7 @@ package extract
 
 import (
 	"context"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -10,6 +11,17 @@ import (
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
 )
+
+func TestDefaultPromptInstructionsMatchesPromptFile(t *testing.T) {
+	// R-KICZ-E6WA
+	want, err := os.ReadFile("../../eval/extract/prompt.txt")
+	if err != nil {
+		t.Fatalf("read prompt.txt: %v", err)
+	}
+	if DefaultPromptInstructions != string(want) {
+		t.Fatalf("DefaultPromptInstructions differs from eval/extract/prompt.txt")
+	}
+}
 
 func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 	prov := &scriptedProvider{responses: []string{`{

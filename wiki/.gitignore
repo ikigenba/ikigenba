@@ -17,6 +17,9 @@
 # Ephemeral build-loop brief (gather writes, verify deletes)
 /project/loops/brief.md
 
+# Disposable eval workspace
+/tmp/
+
 # Editor / OS
 .DS_Store
 *.swp

@@ -1,0 +1,23 @@
+{
+  "difficulty": "easy",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "Tulsa lab opening note",
+    "tags": ["robotics", "tulsa"],
+    "received_at": "2026-06-20T19:45:00Z"
+  },
+  "gold": [
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "Acme Robotics",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Acme Robotics opened a small robotics lab in Tulsa on June 19, 2026.",
+        "The Tulsa lab will test warehouse navigation software.",
+        "The Tulsa lab will host local robotics engineers."
+      ]
+    }
+  ]
+}

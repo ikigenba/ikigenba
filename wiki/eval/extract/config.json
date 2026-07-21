@@ -1,0 +1,22 @@
+{
+  "eval": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "temperature": 0,
+    "thinking": false,
+    "max_tokens": 16384,
+    "max_parse_retries": 2
+  },
+  "embedding": {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "dimensions": 1536,
+    "threshold": 0.80,
+    "margin": 0.03
+  },
+  "weights": {
+    "subject": 0.35,
+    "claim": 0.50,
+    "field": 0.15
+  }
+}
