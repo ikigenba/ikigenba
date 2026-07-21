@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 108
-
-- Phase 107 ⬜ realizes R-1JMV-JW9B, R-1KUR-XO00 — scorer keys ride `EVAL_` aliases; driver injects them into loop turns
