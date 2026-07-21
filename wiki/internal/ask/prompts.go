@@ -1,11 +1,15 @@
 package ask
 
-import "strings"
+import (
+	"strings"
 
-func analysisPrompt(question string) string {
-	return "Prepare the wiki question for retrieval. " +
-		"Return only JSON with sub_queries, keywords, and aliases arrays. " +
-		"Split sub_queries by subject and return at most four. " +
-		"Use keywords for salient terms and aliases for alternate names.\n\nQuestion: " +
-		strings.TrimSpace(question)
+	analysisprompt "wiki/eval/analysis"
+)
+
+// DefaultAnalysisInstructions is the production question-analysis instruction preamble.
+var DefaultAnalysisInstructions = analysisprompt.Instructions
+
+// RenderAnalysis assembles the exact prompt sent by the production analysis call.
+func RenderAnalysis(instructions, question string) string {
+	return instructions + "\n\nQuestion: " + strings.TrimSpace(question)
 }

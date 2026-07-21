@@ -13,11 +13,11 @@ const maxAnalysisSubQueries = 4
 
 // Analyze runs one ask-subject call and returns the parsed, capped analysis.
 func Analyze(ctx context.Context, c *llm.Client, site llm.CallSite, attr llm.Attribution, question string) (wiki.QueryAnalysis, error) {
-	out, err := llm.JSON[wiki.QueryAnalysis](ctx, c, site, attr, analysisPrompt(question), func(out *wiki.QueryAnalysis) error {
+	out, err := llm.JSON[wiki.QueryAnalysis](ctx, c, site, attr, RenderAnalysis(DefaultAnalysisInstructions, question), func(out *wiki.QueryAnalysis) error {
 		if out == nil {
 			return fmt.Errorf("analysis required")
 		}
-		normalizeQueryAnalysis(out)
+		NormalizeAnalysis(out)
 		return nil
 	})
 	if err != nil {
@@ -29,7 +29,9 @@ func Analyze(ctx context.Context, c *llm.Client, site llm.CallSite, attr llm.Att
 	return out, nil
 }
 
-func normalizeQueryAnalysis(out *wiki.QueryAnalysis) {
+// NormalizeAnalysis applies production trimming, case-insensitive deduplication,
+// and the four-item sub-query cap in place.
+func NormalizeAnalysis(out *wiki.QueryAnalysis) {
 	if out == nil {
 		return
 	}
