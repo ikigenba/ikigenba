@@ -12,7 +12,6 @@ lines.
 
 Next phase: 112
 
-- Phase 108 ⬜ realizes R-BICU-BZG6, R-BJKQ-PR6V — the analysis prompt as data: `eval/analysis/` workspace files and the production seams
 - Phase 109 ⬜ realizes R-BKSN-3IXK, R-BM0J-HAO9, R-BN8F-V2EY, R-BOGC-8U5N, R-BPO8-MLWC, R-BQW5-0DN1 — the analysis scorer: `internal/eval` config, gold, and list alignment
 - Phase 110 ⬜ realizes R-BTBX-RX4F, R-BUJU-5OV4, R-BVRQ-JGLT, R-BWZM-X8CI, R-BY7J-B037 — the sibling runner: `cmd/eval-analysis` over shared agentkit plumbing
 - Phase 111 ⬜ realizes R-BZFF-ORTW — the driver's second step: `autotune analysis`, loop assets, and the seed gold
