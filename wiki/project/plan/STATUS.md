@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 112
-
-- Phase 111 ⬜ realizes R-BZFF-ORTW — the driver's second step: `autotune analysis`, loop assets, and the seed gold
