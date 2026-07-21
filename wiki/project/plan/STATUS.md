@@ -12,5 +12,4 @@ lines.
 
 Next phase: 102
 
-- Phase 100 ⬜ realizes R-KY7O-D7JB, R-KZFK-QZA0, R-L0NH-4R0P, R-L1VD-IIRE, R-L339-WAI3, R-L4B6-A28S, R-L5J2-NTZH — the eval runner (`cmd/eval-extract`) over agentkit
 - Phase 101 ⬜ realizes — — the improvement-loop assets (`improve.md`, operator README)
