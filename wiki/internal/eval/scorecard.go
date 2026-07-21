@@ -15,6 +15,14 @@ type Scorecard struct {
 	Epsilon       float64     `json:"epsilon,omitempty"`
 }
 
+type AnalysisScorecard struct {
+	Cases         []AnalysisCaseScore `json:"cases"`
+	MeanComposite float64             `json:"mean_composite"`
+	Config        AnalysisConfig      `json:"config"`
+	RunComposites []float64           `json:"run_composites,omitempty"`
+	Epsilon       float64             `json:"epsilon,omitempty"`
+}
+
 type fixedFloat float64
 
 func (f fixedFloat) MarshalJSON() ([]byte, error) {
@@ -42,6 +50,16 @@ type deterministicCase struct {
 	PromptSHA256  string               `json:"prompt_sha256"`
 }
 
+type deterministicAnalysisCase struct {
+	Name         string               `json:"name"`
+	Difficulty   string               `json:"difficulty"`
+	SubQueries   deterministicMetrics `json:"sub_queries"`
+	Keywords     deterministicMetrics `json:"keywords"`
+	Aliases      deterministicMetrics `json:"aliases"`
+	Composite    fixedFloat           `json:"composite"`
+	PromptSHA256 string               `json:"prompt_sha256"`
+}
+
 type deterministicEmbedding struct {
 	Provider   string     `json:"provider"`
 	Model      string     `json:"model"`
@@ -62,6 +80,18 @@ type deterministicConfig struct {
 	Weights   deterministicWeights   `json:"weights"`
 }
 
+type deterministicAnalysisWeights struct {
+	SubQueries fixedFloat `json:"sub_queries"`
+	Keywords   fixedFloat `json:"keywords"`
+	Aliases    fixedFloat `json:"aliases"`
+}
+
+type deterministicAnalysisConfig struct {
+	Eval      EvalCall                     `json:"eval"`
+	Embedding deterministicEmbedding       `json:"embedding"`
+	Weights   deterministicAnalysisWeights `json:"weights"`
+}
+
 func Aggregate(cases []CaseScore, cfg Config) Scorecard {
 	ordered := append([]CaseScore(nil), cases...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Name < ordered[j].Name })
@@ -70,6 +100,20 @@ func Aggregate(cases []CaseScore, cfg Config) Scorecard {
 		total += score.Composite
 	}
 	card := Scorecard{Cases: ordered, Config: cfg}
+	if len(ordered) > 0 {
+		card.MeanComposite = total / float64(len(ordered))
+	}
+	return card
+}
+
+func AggregateAnalysis(cases []AnalysisCaseScore, cfg AnalysisConfig) AnalysisScorecard {
+	ordered := append([]AnalysisCaseScore(nil), cases...)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Name < ordered[j].Name })
+	var total float64
+	for _, score := range ordered {
+		total += score.Composite
+	}
+	card := AnalysisScorecard{Cases: ordered, Config: cfg}
 	if len(ordered) > 0 {
 		card.MeanComposite = total / float64(len(ordered))
 	}
@@ -107,6 +151,55 @@ func (s Scorecard) MarshalDeterministic() ([]byte, error) {
 			Dimensions: s.Config.Embedding.Dimensions, Threshold: fixedFloat(s.Config.Embedding.Threshold), Margin: fixedFloat(s.Config.Embedding.Margin),
 		},
 		Weights: deterministicWeights{fixedFloat(s.Config.Weights.Subject), fixedFloat(s.Config.Weights.Claim), fixedFloat(s.Config.Weights.Field)},
+	})
+	if err != nil {
+		return nil, err
+	}
+	buffer.Write(data)
+	if len(s.RunComposites) > 0 {
+		buffer.WriteString(`,"run_composites":[`)
+		for i, composite := range s.RunComposites {
+			if i > 0 {
+				buffer.WriteByte(',')
+			}
+			buffer.WriteString(fmt.Sprintf("%.6f", composite))
+		}
+		buffer.WriteString(`],"epsilon":`)
+		buffer.WriteString(fmt.Sprintf("%.6f", s.Epsilon))
+	}
+	buffer.WriteByte('}')
+	return buffer.Bytes(), nil
+}
+
+func (s AnalysisScorecard) MarshalDeterministic() ([]byte, error) {
+	cases := append([]AnalysisCaseScore(nil), s.Cases...)
+	sort.SliceStable(cases, func(i, j int) bool { return cases[i].Name < cases[j].Name })
+	var buffer bytes.Buffer
+	buffer.WriteString(`{"cases":[`)
+	for i, score := range cases {
+		if i > 0 {
+			buffer.WriteByte(',')
+		}
+		data, err := json.Marshal(deterministicAnalysisCase{
+			Name: score.Name, Difficulty: score.Difficulty,
+			SubQueries: deterministicMetric(score.SubQueries), Keywords: deterministicMetric(score.Keywords), Aliases: deterministicMetric(score.Aliases),
+			Composite: fixedFloat(score.Composite), PromptSHA256: score.PromptSHA256,
+		})
+		if err != nil {
+			return nil, err
+		}
+		buffer.Write(data)
+	}
+	buffer.WriteString(`],"mean_composite":`)
+	buffer.WriteString(fmt.Sprintf("%.6f", s.MeanComposite))
+	buffer.WriteString(`,"config":`)
+	data, err := json.Marshal(deterministicAnalysisConfig{
+		Eval: s.Config.Eval,
+		Embedding: deterministicEmbedding{
+			Provider: s.Config.Embedding.Provider, Model: s.Config.Embedding.Model,
+			Dimensions: s.Config.Embedding.Dimensions, Threshold: fixedFloat(s.Config.Embedding.Threshold), Margin: fixedFloat(s.Config.Embedding.Margin),
+		},
+		Weights: deterministicAnalysisWeights{fixedFloat(s.Config.Weights.SubQueries), fixedFloat(s.Config.Weights.Keywords), fixedFloat(s.Config.Weights.Aliases)},
 	})
 	if err != nil {
 		return nil, err

@@ -1,4 +1,4 @@
-// Command eval-extract runs production-faithful extraction evaluations.
+// Command eval-analysis runs production-faithful question-analysis evaluations.
 package main
 
 import (
@@ -13,8 +13,9 @@ import (
 
 	"github.com/ikigenba/agentkit"
 
+	"wiki/internal/ask"
 	"wiki/internal/eval"
-	"wiki/internal/extract"
+	"wiki/internal/wiki"
 )
 
 type dependencies struct {
@@ -30,7 +31,7 @@ func main() {
 
 func execute(ctx context.Context, args []string, stdout, stderr io.Writer, deps dependencies) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: eval-extract run|compare")
+		fmt.Fprintln(stderr, "usage: eval-analysis run|compare")
 		return 2
 	}
 	var err error
@@ -102,7 +103,7 @@ func run(ctx context.Context, args []string, stderr io.Writer, deps dependencies
 	if err != nil {
 		return fmt.Errorf("read prompt file: %w", err)
 	}
-	cfg, err := eval.LoadConfig(*configPath)
+	cfg, err := eval.LoadAnalysisConfig(*configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -118,11 +119,11 @@ func run(ctx context.Context, args []string, stderr io.Writer, deps dependencies
 	if maxTokens.set {
 		cfg.Eval.MaxTokens = &maxTokens.value
 	}
-	dev, holdout, err := eval.LoadGold(*goldPath)
+	dev, holdout, err := eval.LoadAnalysisGold(*goldPath)
 	if err != nil {
 		return fmt.Errorf("load gold: %w", err)
 	}
-	var cases []eval.GoldCase
+	var cases []eval.AnalysisGoldCase
 	switch *split {
 	case "dev":
 		cases = dev
@@ -142,7 +143,7 @@ func run(ctx context.Context, args []string, stderr io.Writer, deps dependencies
 	embedder := &agentkit.Embedder{Provider: embedProvider, Model: cfg.Embedding.Model, Dimensions: cfg.Embedding.Dimensions}
 	cacheDir := deps.cacheDir
 	if cacheDir == "" {
-		cacheDir, err = os.MkdirTemp("", "eval-extract-cache-*")
+		cacheDir, err = os.MkdirTemp("", "eval-analysis-cache-*")
 		if err != nil {
 			return fmt.Errorf("create temporary embedding cache: %w", err)
 		}
@@ -156,23 +157,23 @@ func run(ctx context.Context, args []string, stderr io.Writer, deps dependencies
 		return result.Vectors, nil
 	})
 
-	var first eval.Scorecard
+	var first eval.AnalysisScorecard
 	composites := make([]float64, 0, *repeat)
 	for n := 0; n < *repeat; n++ {
-		scores := make([]eval.CaseScore, 0, len(cases))
+		scores := make([]eval.AnalysisCaseScore, 0, len(cases))
 		for i, gold := range cases {
-			got, err := extractCase(ctx, chatProvider, cfg.Eval, string(instructions), gold)
+			got, err := analyzeCase(ctx, chatProvider, cfg.Eval, string(instructions), gold)
 			if err != nil {
 				return fmt.Errorf("case %s: %w", gold.Name, err)
 			}
-			score, err := eval.ScoreCase(ctx, gold, got, embed, cfg)
+			score, err := eval.ScoreAnalysisCase(ctx, gold, got, embed, cfg)
 			if err != nil {
 				return fmt.Errorf("case %s: %w", gold.Name, err)
 			}
 			scores = append(scores, score)
 			fmt.Fprintf(stderr, "case %d/%d repeat %d/%d %s composite=%.6f\n", i+1, len(cases), n+1, *repeat, gold.Name, score.Composite)
 		}
-		card := eval.Aggregate(scores, cfg)
+		card := eval.AggregateAnalysis(scores, cfg)
 		if n == 0 {
 			first = card
 		}
@@ -192,17 +193,18 @@ func run(ctx context.Context, args []string, stderr io.Writer, deps dependencies
 	return nil
 }
 
-func extractCase(ctx context.Context, provider agentkit.Provider, cfg eval.EvalCall, instructions string, gold eval.GoldCase) ([]extract.ExtractedSubject, error) {
-	prompt := extract.Render(instructions, gold.Header, gold.Document)
-	return eval.ChatJSON(ctx, provider, cfg, prompt, func(response string) ([]extract.ExtractedSubject, error) {
-		var envelope struct {
-			Subjects []extract.ExtractedSubject `json:"subjects"`
+func analyzeCase(ctx context.Context, provider agentkit.Provider, cfg eval.EvalCall, instructions string, gold eval.AnalysisGoldCase) (wiki.QueryAnalysis, error) {
+	prompt := ask.RenderAnalysis(instructions, gold.Question)
+	return eval.ChatJSON(ctx, provider, cfg, prompt, func(response string) (wiki.QueryAnalysis, error) {
+		var out wiki.QueryAnalysis
+		if err := json.Unmarshal([]byte(response), &out); err != nil {
+			return wiki.QueryAnalysis{}, err
 		}
-		err := json.Unmarshal([]byte(response), &envelope)
-		if err == nil {
-			err = extract.Validate(envelope.Subjects)
+		ask.NormalizeAnalysis(&out)
+		if len(out.SubQueries) == 0 {
+			return wiki.QueryAnalysis{}, errors.New("analysis requires at least one sub_query")
 		}
-		return envelope.Subjects, err
+		return out, nil
 	})
 }
 
@@ -217,7 +219,7 @@ func compare(args []string, stdout io.Writer) (bool, error) {
 	if *candidatePath == "" || *baselinePath == "" {
 		return false, errors.New("compare requires -candidate and -baseline")
 	}
-	var candidate, baseline eval.Scorecard
+	var candidate, baseline eval.AnalysisScorecard
 	if err := readJSON(*candidatePath, &candidate); err != nil {
 		return false, fmt.Errorf("read candidate: %w", err)
 	}
@@ -238,10 +240,7 @@ func readJSON(path string, dst any) error {
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(data, dst); err != nil {
-		return err
-	}
-	return nil
+	return json.Unmarshal(data, dst)
 }
 
 func atomicWrite(path string, data []byte) error {
@@ -267,30 +266,6 @@ func atomicWrite(path string, data []byte) error {
 	return os.Rename(name, path)
 }
 
-func messageText(message agentkit.Message) string {
-	return eval.MessageText(message)
-}
-
 func productionDependencies() dependencies {
-	return dependencies{chat: buildConfiguredChatProvider, embed: buildEmbeddingProvider, getenv: os.Getenv, cacheDir: filepath.Join("tmp", "eval-extract", "embeddings")}
-}
-
-func buildConfiguredChatProvider(cfg eval.EvalCall, getenv func(string) string) (agentkit.Provider, error) {
-	return eval.BuildConfiguredChatProvider(cfg, getenv)
-}
-
-func expandHome(path string) (string, error) {
-	return eval.ExpandHome(path)
-}
-
-func buildChatProvider(name string, getenv func(string) string) (agentkit.Provider, error) {
-	return eval.BuildChatProvider(name, getenv)
-}
-
-func buildEmbeddingProvider(name string, getenv func(string) string) (agentkit.EmbeddingProvider, error) {
-	return eval.BuildEmbeddingProvider(name, getenv)
-}
-
-func requiredKey(name string, getenv func(string) string) (string, error) {
-	return eval.RequiredKey(name, getenv)
+	return dependencies{chat: eval.BuildConfiguredChatProvider, embed: eval.BuildEmbeddingProvider, getenv: os.Getenv, cacheDir: filepath.Join("tmp", "eval-analysis", "embeddings")}
 }

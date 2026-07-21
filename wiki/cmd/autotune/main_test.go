@@ -13,6 +13,16 @@ import (
 	"time"
 )
 
+func TestParseOptionsSupportsAnalysisStep(t *testing.T) {
+	opts, err := parseOptions([]string{"analysis"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.step != "analysis" {
+		t.Fatalf("step = %q, want analysis", opts.step)
+	}
+}
+
 type recordedCommand struct {
 	dir  string
 	name string

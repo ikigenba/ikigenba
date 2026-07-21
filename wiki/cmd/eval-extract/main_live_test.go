@@ -29,7 +29,8 @@ func TestLiveProvidersExtractAndEmbed(t *testing.T) {
 		Header:   extract.DocumentHeader{Source: "live-test", Title: "Tulsa lab", ReceivedAt: time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)},
 		Document: "Acme Robotics opened a research laboratory in Tulsa on July 20, 2026.",
 	}
-	subjects, err := extractCase(context.Background(), chat, eval.EvalCall{Model: "claude-sonnet-4-6", MaxTokens: 16384, MaxParseRetries: 2}, extract.DefaultPromptInstructions, gold)
+	maxTokens, maxParseRetries := 16384, 2
+	subjects, err := extractCase(context.Background(), chat, eval.EvalCall{Model: "claude-sonnet-4-6", MaxTokens: &maxTokens, MaxParseRetries: &maxParseRetries}, extract.DefaultPromptInstructions, gold)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,11 @@
+{
+  "difficulty": "medium",
+  "gold": {
+    "sub_queries": [
+      "brewery second taproom Duluth",
+      "Duluth taproom hosted program"
+    ],
+    "keywords": ["Pinegate Brewing", "Duluth", "second taproom", "barrel-aging program"],
+    "aliases": ["PGB"]
+  }
+}

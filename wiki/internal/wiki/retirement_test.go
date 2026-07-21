@@ -23,13 +23,13 @@ func TestRetiredRecorderAndEvaluationSurfaceIsAbsent(t *testing.T) {
 func TestServiceSourceDoesNotReadProviderKeys(t *testing.T) {
 	// R-KEPA-8VO7
 	root := filepath.Clean(filepath.Join("..", ".."))
-	assertGoTreeOmits(t, root, []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY"}, false, []string{"cmd/eval-extract"})
+	assertGoTreeOmits(t, root, []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY"}, false, []string{"cmd/eval-extract", "cmd/eval-analysis", "internal/eval"})
 }
 
 func TestAgentkitImportsAreConfinedToEvaluationWorkbench(t *testing.T) {
 	// R-KH53-0F5L
 	root := filepath.Clean(filepath.Join("..", ".."))
-	assertGoTreeOmits(t, root, []string{"ikigenba/" + "agentkit"}, true, []string{"cmd/eval-extract", "internal/eval"})
+	assertGoTreeOmits(t, root, []string{"ikigenba/" + "agentkit"}, true, []string{"cmd/eval-extract", "cmd/eval-analysis", "internal/eval"})
 }
 
 func assertGoTreeOmits(t *testing.T, root string, forbidden []string, includeTests bool, allowedDirs []string) {

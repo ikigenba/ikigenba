@@ -19,7 +19,9 @@ import (
 	"wiki/internal/eval"
 )
 
-const supportedStep = "extract"
+const supportedSteps = "extract, analysis"
+
+var supportedStep = map[string]bool{"extract": true, "analysis": true}
 
 type commandExecutor interface {
 	Run(dir, name string, args ...string) error
@@ -117,7 +119,8 @@ func run(args []string, root string, executor commandExecutor) error {
 	}
 	workingPromptRel := filepath.Join("autotune", opts.step, "prompt.txt")
 	workingPrompt := filepath.Join(root, workingPromptRel)
-	runnerRel := filepath.Join(workspaceRel, "bin", "eval-extract")
+	runnerName := "eval-" + opts.step
+	runnerRel := filepath.Join(workspaceRel, "bin", runnerName)
 	baselineRel := filepath.Join(workspaceRel, "baseline.json")
 	configRel := filepath.Join(workspaceRel, "config.json")
 	startPath := filepath.Join(workspace, "start-prompt.txt")
@@ -145,8 +148,8 @@ func run(args []string, root string, executor commandExecutor) error {
 		if err := writeFile(startPath, prompt); err != nil {
 			return fmt.Errorf("stamp starting prompt: %w", err)
 		}
-		if err := executor.Run(root, "go", "build", "-o", runnerRel, "./cmd/eval-extract"); err != nil {
-			return fmt.Errorf("build eval-extract runner: %w", err)
+		if err := executor.Run(root, "go", "build", "-o", runnerRel, "./cmd/"+runnerName); err != nil {
+			return fmt.Errorf("build %s runner: %w", runnerName, err)
 		}
 		if err := executor.Run(root, runnerRel,
 			"run", "-prompt", workingPromptRel,
@@ -306,7 +309,7 @@ func finalize(root, step string, executor commandExecutor) error {
 	holdoutRel := filepath.Join(workspaceRel, "holdout-scorecard.json")
 	holdoutPath := filepath.Join(root, holdoutRel)
 	if _, err := os.Stat(holdoutPath); errors.Is(err, os.ErrNotExist) {
-		runnerRel := filepath.Join(workspaceRel, "bin", "eval-extract")
+		runnerRel := filepath.Join(workspaceRel, "bin", "eval-"+step)
 		if err := executor.Run(root, runnerRel, "run",
 			"-prompt", filepath.Join(workspaceRel, "best", "prompt.txt"),
 			"-gold", filepath.Join("eval", step, "gold"),
@@ -378,11 +381,11 @@ func writeSummary(workspace string, attempts int) error {
 func parseOptions(args []string) (options, error) {
 	var opts options
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		return opts, fmt.Errorf("missing step; supported steps: %s", supportedStep)
+		return opts, fmt.Errorf("missing step; supported steps: %s", supportedSteps)
 	}
 	opts.step = args[0]
-	if opts.step != supportedStep {
-		return opts, fmt.Errorf("unsupported step %q; supported steps: %s", opts.step, supportedStep)
+	if !supportedStep[opts.step] {
+		return opts, fmt.Errorf("unsupported step %q; supported steps: %s", opts.step, supportedSteps)
 	}
 
 	for i := 1; i < len(args); i++ {
