@@ -62,7 +62,12 @@ func (e *Extractor) Extract(ctx context.Context, attr llm.Attribution, h Documen
 	if e == nil {
 		return nil, fmt.Errorf("extract: nil extractor")
 	}
-	out, err := llm.JSON[extractResponse](ctx, e.c, e.site, attr, renderPrompt(DefaultPromptInstructions, h, text), validateResponse)
+	out, err := llm.JSON[extractResponse](ctx, e.c, e.site, attr, Render(DefaultPromptInstructions, h, text), func(response *extractResponse) error {
+		if response == nil {
+			return validateResponse(nil)
+		}
+		return Validate(response.Subjects)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +92,16 @@ func renderPrompt(instructions string, h DocumentHeader, text string) string {
 	b.WriteString("\nSource text:\n")
 	b.WriteString(text)
 	return b.String()
+}
+
+// Render assembles the exact prompt used by the production extraction path.
+func Render(instructions string, h DocumentHeader, text string) string {
+	return renderPrompt(instructions, h, text)
+}
+
+// Validate applies the production extraction response rules to subjects.
+func Validate(subjects []ExtractedSubject) error {
+	return validateResponse(&extractResponse{Subjects: subjects})
 }
 
 func writeHeaderLine(b *strings.Builder, key, value string) {

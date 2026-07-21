@@ -94,6 +94,25 @@ func TestExtractDefaultsToExportedPromptInstructions(t *testing.T) {
 	}
 }
 
+func TestProductionEnvelopeUsesExportedRenderAndValidate(t *testing.T) {
+	// R-KY7O-D7JB
+	invalid := []ExtractedSubject{{Type: "place", Kind: "city", Name: "Tulsa", Claims: []string{"Tulsa is a city."}}}
+	if err := Validate(invalid); err == nil || !strings.Contains(err.Error(), "type") {
+		t.Fatalf("Validate(invalid) = %v, want production type validation error", err)
+	}
+
+	prov := &scriptedProvider{responses: []string{`{"subjects":[{"type":"entity","kind":"company","name":"Acme","occurred_at":"","claims":["Acme opened a lab."]}]}`}}
+	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
+	header := validHeader()
+	text := "Acme opened a lab."
+	if _, err := extractor.Extract(context.Background(), llm.Attribution{}, header, text); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := onlyPrompt(t, prov), Render(DefaultPromptInstructions, header, text); got != want {
+		t.Fatalf("production prompt differs from Render\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
 func TestExtractRejectsInvalidSubjectTypesAndEmptyClaims(t *testing.T) {
 	tests := []struct {
 		name     string

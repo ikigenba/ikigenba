@@ -11,6 +11,8 @@ type Scorecard struct {
 	Cases         []CaseScore `json:"cases"`
 	MeanComposite float64     `json:"mean_composite"`
 	Config        Config      `json:"config"`
+	RunComposites []float64   `json:"run_composites,omitempty"`
+	Epsilon       float64     `json:"epsilon,omitempty"`
 }
 
 type fixedFloat float64
@@ -110,6 +112,17 @@ func (s Scorecard) MarshalDeterministic() ([]byte, error) {
 		return nil, err
 	}
 	buffer.Write(data)
+	if len(s.RunComposites) > 0 {
+		buffer.WriteString(`,"run_composites":[`)
+		for i, composite := range s.RunComposites {
+			if i > 0 {
+				buffer.WriteByte(',')
+			}
+			buffer.WriteString(fmt.Sprintf("%.6f", composite))
+		}
+		buffer.WriteString(`],"epsilon":`)
+		buffer.WriteString(fmt.Sprintf("%.6f", s.Epsilon))
+	}
 	buffer.WriteByte('}')
 	return buffer.Bytes(), nil
 }
