@@ -14,7 +14,7 @@ func TestLoadConfigPreservesPinsAndRejectsInvalidFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Eval.Model != "claude-sonnet-4-6" || cfg.Eval.Temperature != 0 || cfg.Eval.Thinking || cfg.Eval.MaxTokens != 16384 || cfg.Eval.MaxParseRetries != 2 {
+	if cfg.Eval.Model != "claude-sonnet-4-6" || cfg.Eval.Temperature == nil || *cfg.Eval.Temperature != 0 || cfg.Eval.Thinking == nil || *cfg.Eval.Thinking || cfg.Eval.MaxTokens == nil || *cfg.Eval.MaxTokens != 16384 || cfg.Eval.MaxParseRetries == nil || *cfg.Eval.MaxParseRetries != 2 {
 		t.Fatalf("unexpected eval pin: %+v", cfg.Eval)
 	}
 	if cfg.Eval.Auth != "key" || cfg.Eval.AuthFile != "~/.agentrepl/auth.json" {
@@ -45,8 +45,7 @@ func TestLoadConfigPreservesPinsAndRejectsInvalidFields(t *testing.T) {
 	}
 
 	for name, body := range map[string]string{
-		"missing max_tokens": `{"eval":{"provider":"a","model":"m","temperature":0,"thinking":false,"max_parse_retries":2},"embedding":{"provider":"o","model":"e","dimensions":3,"threshold":0.8,"margin":0.03},"weights":{"subject":0.35,"claim":0.5,"field":0.15}}`,
-		"bad weights":        `{"eval":{"provider":"a","model":"m","temperature":0,"thinking":false,"max_tokens":1,"max_parse_retries":2},"embedding":{"provider":"o","model":"e","dimensions":3,"threshold":0.8,"margin":0.03},"weights":{"subject":0.4,"claim":0.5,"field":0.15}}`,
+		"bad weights": `{"eval":{"provider":"a","model":"m"},"embedding":{"provider":"o","model":"e","dimensions":3,"threshold":0.8,"margin":0.03},"weights":{"subject":0.4,"claim":0.5,"field":0.15}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.json")
@@ -54,9 +53,28 @@ func TestLoadConfigPreservesPinsAndRejectsInvalidFields(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, err := LoadConfig(path)
-			if err == nil || (!strings.Contains(err.Error(), "max_tokens") && !strings.Contains(err.Error(), "weights")) {
+			if err == nil || !strings.Contains(err.Error(), "weights") {
 				t.Fatalf("expected named field error, got %v", err)
 			}
 		})
+	}
+}
+
+func TestLoadConfigAcceptsEvalWithoutOptionalGenerationKnobs(t *testing.T) {
+	// R-XHOE-XC0J
+	path := filepath.Join(t.TempDir(), "config.json")
+	body := `{"eval":{"provider":"openai","model":"gpt-test"},"embedding":{"provider":"openai","model":"embed","dimensions":3,"threshold":0.8,"margin":0.03},"weights":{"subject":0.35,"claim":0.5,"field":0.15}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Eval.Provider != "openai" || cfg.Eval.Model != "gpt-test" || cfg.Eval.Auth != "key" {
+		t.Fatalf("minimal eval config = %+v", cfg.Eval)
+	}
+	if cfg.Eval.Temperature != nil || cfg.Eval.Thinking != nil || cfg.Eval.MaxTokens != nil || cfg.Eval.MaxParseRetries != nil {
+		t.Fatalf("optional knobs were invented: %+v", cfg.Eval)
 	}
 }

@@ -68,13 +68,13 @@ type optionalString struct {
 func (v *optionalString) String() string         { return v.value }
 func (v *optionalString) Set(value string) error { v.value, v.set = value, true; return nil }
 
-type optionalInt struct {
-	value int
+type optionalNumber[T int | float64] struct {
+	value T
 	set   bool
 }
 
-func (v *optionalInt) String() string { return fmt.Sprint(v.value) }
-func (v *optionalInt) Set(value string) error {
+func (v *optionalNumber[T]) String() string { return fmt.Sprint(v.value) }
+func (v *optionalNumber[T]) Set(value string) error {
 	_, err := fmt.Sscan(value, &v.value)
 	v.set = err == nil
 	return err
@@ -90,7 +90,8 @@ func run(ctx context.Context, args []string, stderr io.Writer, deps dependencies
 	split := fs.String("split", "dev", "dev or holdout")
 	repeat := fs.Int("repeat", 1, "number of complete runs")
 	var model, provider optionalString
-	var temperature, maxTokens optionalInt
+	var temperature optionalNumber[float64]
+	var maxTokens optionalNumber[int]
 	fs.Var(&model, "model", "model override")
 	fs.Var(&provider, "provider", "provider override")
 	fs.Var(&temperature, "temperature", "temperature override")
@@ -119,10 +120,10 @@ func run(ctx context.Context, args []string, stderr io.Writer, deps dependencies
 		cfg.Eval.Provider = provider.value
 	}
 	if temperature.set {
-		cfg.Eval.Temperature = temperature.value
+		cfg.Eval.Temperature = &temperature.value
 	}
 	if maxTokens.set {
-		cfg.Eval.MaxTokens = maxTokens.value
+		cfg.Eval.MaxTokens = &maxTokens.value
 	}
 	dev, holdout, err := eval.LoadGold(*goldPath)
 	if err != nil {
@@ -200,10 +201,22 @@ func run(ctx context.Context, args []string, stderr io.Writer, deps dependencies
 
 func extractCase(ctx context.Context, provider agentkit.Provider, cfg eval.EvalCall, instructions string, gold eval.GoldCase) ([]extract.ExtractedSubject, error) {
 	prompt := extract.Render(instructions, gold.Header, gold.Document)
-	for attempt := 0; attempt <= cfg.MaxParseRetries; attempt++ {
+	maxParseRetries := 2
+	if cfg.MaxParseRetries != nil {
+		maxParseRetries = *cfg.MaxParseRetries
+	}
+	for attempt := 0; attempt <= maxParseRetries; attempt++ {
+		var gen agentkit.GenSettings
+		gen.Temperature = cfg.Temperature
+		if cfg.MaxTokens != nil {
+			gen.MaxTokens = *cfg.MaxTokens
+		}
+		if cfg.Thinking != nil && !*cfg.Thinking {
+			gen.Reasoning = agentkit.DisableReasoning()
+		}
 		conv := &agentkit.Conversation{
 			Provider: provider, Model: cfg.Model,
-			Gen: agentkit.GenSettings{Temperature: floatPointer(float64(cfg.Temperature)), MaxTokens: cfg.MaxTokens, Reasoning: agentkit.DisableReasoning()},
+			Gen: gen,
 		}
 		stream := conv.Send(ctx, prompt)
 		var response string
@@ -227,7 +240,7 @@ func extractCase(ctx context.Context, provider agentkit.Provider, cfg eval.EvalC
 		if err == nil {
 			return envelope.Subjects, nil
 		}
-		if attempt == cfg.MaxParseRetries {
+		if attempt == maxParseRetries {
 			return nil, fmt.Errorf("response validation exhausted retries: %w", err)
 		}
 		prompt = extract.Render(instructions, gold.Header, gold.Document) + "\n\nYour previous response was invalid (" + err.Error() + "). Return corrected JSON only."
@@ -305,8 +318,6 @@ func messageText(message agentkit.Message) string {
 	}
 	return b.String()
 }
-
-func floatPointer(value float64) *float64 { return &value }
 
 func productionDependencies() dependencies {
 	return dependencies{chat: buildConfiguredChatProvider, embed: buildEmbeddingProvider, getenv: os.Getenv, cacheDir: filepath.Join("tmp", "eval-extract", "embeddings")}

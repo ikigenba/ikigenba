@@ -15,14 +15,14 @@ type Config struct {
 }
 
 type EvalCall struct {
-	Provider        string `json:"provider"`
-	Model           string `json:"model"`
-	Temperature     int    `json:"temperature"`
-	Thinking        bool   `json:"thinking"`
-	MaxTokens       int    `json:"max_tokens"`
-	MaxParseRetries int    `json:"max_parse_retries"`
-	Auth            string `json:"auth"`
-	AuthFile        string `json:"auth_file"`
+	Provider        string   `json:"provider"`
+	Model           string   `json:"model"`
+	Temperature     *float64 `json:"temperature,omitempty"`
+	Thinking        *bool    `json:"thinking,omitempty"`
+	MaxTokens       *int     `json:"max_tokens,omitempty"`
+	MaxParseRetries *int     `json:"max_parse_retries,omitempty"`
+	Auth            string   `json:"auth"`
+	AuthFile        string   `json:"auth_file"`
 }
 
 type Embedding struct {
@@ -46,14 +46,14 @@ func LoadConfig(path string) (Config, error) {
 	}
 	var raw struct {
 		Eval *struct {
-			Provider        *string `json:"provider"`
-			Model           *string `json:"model"`
-			Temperature     *int    `json:"temperature"`
-			Thinking        *bool   `json:"thinking"`
-			MaxTokens       *int    `json:"max_tokens"`
-			MaxParseRetries *int    `json:"max_parse_retries"`
-			Auth            string  `json:"auth"`
-			AuthFile        string  `json:"auth_file"`
+			Provider        *string  `json:"provider"`
+			Model           *string  `json:"model"`
+			Temperature     *float64 `json:"temperature"`
+			Thinking        *bool    `json:"thinking"`
+			MaxTokens       *int     `json:"max_tokens"`
+			MaxParseRetries *int     `json:"max_parse_retries"`
+			Auth            string   `json:"auth"`
+			AuthFile        string   `json:"auth_file"`
 		} `json:"eval"`
 		Embedding *struct {
 			Provider   *string  `json:"provider"`
@@ -80,7 +80,7 @@ func LoadConfig(path string) (Config, error) {
 	if raw.Weights == nil {
 		return Config{}, fmt.Errorf("missing required field weights")
 	}
-	if err := requireConfigFields(raw.Eval.Provider, raw.Eval.Model, raw.Eval.Temperature, raw.Eval.Thinking, raw.Eval.MaxTokens, raw.Eval.MaxParseRetries, raw.Embedding.Provider, raw.Embedding.Model, raw.Embedding.Dimensions, raw.Embedding.Threshold, raw.Embedding.Margin, raw.Weights.Subject, raw.Weights.Claim, raw.Weights.Field); err != nil {
+	if err := requireConfigFields(raw.Eval.Provider, raw.Eval.Model, raw.Embedding.Provider, raw.Embedding.Model, raw.Embedding.Dimensions, raw.Embedding.Threshold, raw.Embedding.Margin, raw.Weights.Subject, raw.Weights.Claim, raw.Weights.Field); err != nil {
 		return Config{}, err
 	}
 	auth := raw.Eval.Auth
@@ -92,7 +92,7 @@ func LoadConfig(path string) (Config, error) {
 		authFile = "~/.agentrepl/auth.json"
 	}
 	cfg := Config{
-		Eval:      EvalCall{Provider: *raw.Eval.Provider, Model: *raw.Eval.Model, Temperature: *raw.Eval.Temperature, Thinking: *raw.Eval.Thinking, MaxTokens: *raw.Eval.MaxTokens, MaxParseRetries: *raw.Eval.MaxParseRetries, Auth: auth, AuthFile: authFile},
+		Eval:      EvalCall{Provider: *raw.Eval.Provider, Model: *raw.Eval.Model, Temperature: raw.Eval.Temperature, Thinking: raw.Eval.Thinking, MaxTokens: raw.Eval.MaxTokens, MaxParseRetries: raw.Eval.MaxParseRetries, Auth: auth, AuthFile: authFile},
 		Embedding: Embedding{*raw.Embedding.Provider, *raw.Embedding.Model, *raw.Embedding.Dimensions, *raw.Embedding.Threshold, *raw.Embedding.Margin},
 		Weights:   Weights{*raw.Weights.Subject, *raw.Weights.Claim, *raw.Weights.Field},
 	}
@@ -103,7 +103,7 @@ func LoadConfig(path string) (Config, error) {
 }
 
 func requireConfigFields(fields ...any) error {
-	names := []string{"eval.provider", "eval.model", "eval.temperature", "eval.thinking", "eval.max_tokens", "eval.max_parse_retries", "embedding.provider", "embedding.model", "embedding.dimensions", "embedding.threshold", "embedding.margin", "weights.subject", "weights.claim", "weights.field"}
+	names := []string{"eval.provider", "eval.model", "embedding.provider", "embedding.model", "embedding.dimensions", "embedding.threshold", "embedding.margin", "weights.subject", "weights.claim", "weights.field"}
 	for i, field := range fields {
 		if field == nil || (reflect.ValueOf(field).Kind() == reflect.Pointer && reflect.ValueOf(field).IsNil()) {
 			return fmt.Errorf("missing required field %s", names[i])

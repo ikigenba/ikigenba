@@ -354,17 +354,11 @@ func resolveConfig(base []byte, overrides []string) ([]byte, json.RawMessage, er
 	if err := json.Unmarshal(base, &document); err != nil {
 		return nil, nil, fmt.Errorf("decode committed config: %w", err)
 	}
-	rawEval, ok := document["eval"]
-	if !ok {
+	if _, ok := document["eval"]; !ok {
 		return nil, nil, errors.New("committed config has no eval block")
 	}
-	if len(overrides) == 0 {
-		return append([]byte(nil), base...), append(json.RawMessage(nil), rawEval...), nil
-	}
-	var evalBlock map[string]any
-	if err := json.Unmarshal(rawEval, &evalBlock); err != nil {
-		return nil, nil, fmt.Errorf("decode committed eval block: %w", err)
-	}
+	rawEval := document["eval"]
+	evalBlock := map[string]any{}
 
 	for _, override := range overrides {
 		key, value, found := strings.Cut(override, "=")
@@ -386,7 +380,7 @@ func resolveConfig(base []byte, overrides []string) ([]byte, json.RawMessage, er
 				return nil, nil, fmt.Errorf("invalid value for %s: %q", key, value)
 			}
 			evalBlock[key] = b
-		case "max_tokens":
+		case "max_tokens", "max_parse_retries":
 			n, err := strconv.Atoi(value)
 			if err != nil {
 				return nil, nil, fmt.Errorf("invalid value for %s: %q", key, value)
@@ -395,6 +389,14 @@ func resolveConfig(base []byte, overrides []string) ([]byte, json.RawMessage, er
 		default:
 			return nil, nil, fmt.Errorf("unsupported config key %q; overrides apply only to eval", key)
 		}
+	}
+	for _, required := range []string{"provider", "model"} {
+		if value, ok := evalBlock[required].(string); !ok || value == "" {
+			return nil, nil, fmt.Errorf("missing required config key %q", required)
+		}
+	}
+	if _, ok := evalBlock["auth"]; !ok {
+		evalBlock["auth"] = "key"
 	}
 
 	resolvedEval, err := json.MarshalIndent(evalBlock, "  ", "  ")

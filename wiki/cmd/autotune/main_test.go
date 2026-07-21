@@ -82,7 +82,7 @@ func TestStepDispatchNamesSupportedAndRejectedSteps(t *testing.T) {
 	// R-EYQR-OABI
 	root := newAutotuneTree(t)
 	executor := &scriptedExecutor{}
-	if err := run([]string{"extract"}, root, executor); err != nil {
+	if err := run(configuredArgs(), root, executor); err != nil {
 		t.Fatalf("supported extract step failed: %v", err)
 	}
 	if len(executor.calls) != 3 {
@@ -128,7 +128,7 @@ func TestFreshRunResetsSeedsBuildsAndMeasuresBaseline(t *testing.T) {
 			mustWrite(t, filepath.Join(root, "eval/extract/prompt.txt"), []byte("committed prompt\n"))
 			stale := filepath.Join(root, "tmp/autotune/extract/stale")
 			mustWrite(t, stale, []byte("old"))
-			args := []string{"extract"}
+			args := configuredArgs()
 			if tc.from {
 				mustWrite(t, filepath.Join(root, "candidate.txt"), []byte(tc.promptText))
 				args = append(args, "--from", "candidate.txt")
@@ -144,9 +144,12 @@ func TestFreshRunResetsSeedsBuildsAndMeasuresBaseline(t *testing.T) {
 			assertFile(t, filepath.Join(root, "tmp/autotune/extract/best/prompt.txt"), tc.promptText)
 			assertFile(t, filepath.Join(root, "tmp/autotune/extract/best/scorecard.json"), `{"mean_composite":0.75,"run_composites":[0.74,0.75,0.76],"epsilon":0.02}`)
 			resolvedConfig := mustRead(t, filepath.Join(root, "tmp/autotune/extract/config.json"))
-			committedConfig := mustRead(t, filepath.Join(root, "eval/extract/config.json"))
-			if string(resolvedConfig) != string(committedConfig) {
-				t.Fatal("unoverridden resolved config is not byte-identical to committed pins")
+			var resolved map[string]json.RawMessage
+			if err := json.Unmarshal(resolvedConfig, &resolved); err != nil {
+				t.Fatal(err)
+			}
+			if compactJSON(resolved["eval"]) != `{"auth":"key","model":"claude-sonnet-4-6","provider":"anthropic"}` {
+				t.Fatalf("resolved eval config = %s", resolved["eval"])
 			}
 
 			want := []recordedCommand{
@@ -161,11 +164,11 @@ func TestFreshRunResetsSeedsBuildsAndMeasuresBaseline(t *testing.T) {
 	}
 }
 
-func TestConfigResolutionChangesOnlyAcceptedEvalPins(t *testing.T) {
-	// R-F2EG-TLJL
+func TestFreeFormConfigResolutionUsesOnlyRequestedEvalSettings(t *testing.T) {
+	// R-XGGI-JK9U
 	root := newAutotuneTree(t)
 	base := mustRead(t, filepath.Join(root, "eval/extract/config.json"))
-	if err := run([]string{"extract", "-c", "model=X", "-c", "temperature=0.5"}, root, &scriptedExecutor{}); err != nil {
+	if err := run(configuredArgs("-c", "model=X", "-c", "temperature=0.5"), root, &scriptedExecutor{}); err != nil {
 		t.Fatalf("run with overrides: %v", err)
 	}
 	resolved := mustRead(t, filepath.Join(root, "tmp/autotune/extract/config.json"))
@@ -185,17 +188,14 @@ func TestConfigResolutionChangesOnlyAcceptedEvalPins(t *testing.T) {
 	if err := json.Unmarshal(after["eval"], &evalBlock); err != nil {
 		t.Fatal(err)
 	}
-	if evalBlock["model"] != "X" || evalBlock["temperature"] != 0.5 {
-		t.Fatalf("overrides not resolved: %#v", evalBlock)
-	}
-	if evalBlock["provider"] != "anthropic" || evalBlock["max_tokens"] != float64(16384) || evalBlock["max_parse_retries"] != float64(2) {
-		t.Fatalf("unrelated eval pins changed: %#v", evalBlock)
+	if !reflect.DeepEqual(evalBlock, map[string]any{"auth": "key", "provider": "anthropic", "model": "X", "temperature": 0.5}) {
+		t.Fatalf("eval block inherited or omitted settings: %#v", evalBlock)
 	}
 
 	for _, rejected := range []string{"embedding.model=nope", "weights.claim=1", "unknown=nope"} {
 		t.Run(rejected, func(t *testing.T) {
 			rejectRoot := newAutotuneTree(t)
-			err := run([]string{"extract", "-c", rejected}, rejectRoot, &scriptedExecutor{})
+			err := run(configuredArgs("-c", rejected), rejectRoot, &scriptedExecutor{})
 			key, _, _ := strings.Cut(rejected, "=")
 			if err == nil || !strings.Contains(err.Error(), key) {
 				t.Fatalf("error %v does not name rejected key %q", err, key)
@@ -205,13 +205,31 @@ func TestConfigResolutionChangesOnlyAcceptedEvalPins(t *testing.T) {
 			}
 		})
 	}
+	for _, missing := range []struct {
+		name string
+		args []string
+	}{
+		{name: "provider", args: []string{"extract", "-c", "model=X"}},
+		{name: "model", args: []string{"extract", "-c", "provider=openai"}},
+	} {
+		t.Run("missing "+missing.name, func(t *testing.T) {
+			missingRoot := newAutotuneTree(t)
+			err := run(missing.args, missingRoot, &scriptedExecutor{})
+			if err == nil || !strings.Contains(err.Error(), missing.name) {
+				t.Fatalf("error %v does not name missing key %q", err, missing.name)
+			}
+			if _, statErr := os.Stat(filepath.Join(missingRoot, "tmp/autotune/extract")); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("missing key wrote workspace: %v", statErr)
+			}
+		})
+	}
 }
 
 func TestResumeRequiresMatchingEvalStampWithoutMutation(t *testing.T) {
 	// R-F16K-FTSW
 	root := newAutotuneTree(t)
 	base := mustRead(t, filepath.Join(root, "eval/extract/config.json"))
-	stamp, _, err := resolveConfig(base, []string{"model=X"})
+	stamp, _, err := resolveConfig(base, []string{"provider=anthropic", "model=X"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +241,7 @@ func TestResumeRequiresMatchingEvalStampWithoutMutation(t *testing.T) {
 	mustWrite(t, filepath.Join(root, "tmp/autotune/extract/best/prompt.txt"), []byte("committed prompt\n"))
 	mustWrite(t, filepath.Join(root, "autotune/extract/prompt.txt"), []byte("committed prompt\n"))
 	executor := &scriptedExecutor{}
-	if err := run([]string{"extract", "--resume", "-c", "model=X"}, root, executor); err != nil {
+	if err := run(configuredArgs("--resume", "-c", "model=X"), root, executor); err != nil {
 		t.Fatalf("matching resume: %v", err)
 	}
 	if len(executor.calls) != 1 || executor.calls[0].name != "ralph" {
@@ -232,7 +250,7 @@ func TestResumeRequiresMatchingEvalStampWithoutMutation(t *testing.T) {
 	assertFile(t, stampPath, string(stamp))
 	assertFile(t, filepath.Join(root, "tmp/autotune/extract/sentinel"), "keep")
 
-	err = run([]string{"extract", "--resume", "-c", "model=Y"}, root, &scriptedExecutor{})
+	err = run(configuredArgs("--resume", "-c", "model=Y"), root, &scriptedExecutor{})
 	if err == nil || !strings.Contains(err.Error(), "X") || !strings.Contains(err.Error(), "Y") {
 		t.Fatalf("mismatch error does not name both configs: %v", err)
 	}
@@ -247,8 +265,8 @@ func TestWrappedExecPreservesPassthroughExactly(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{name: "passthrough", args: []string{"extract", "--", "--harness", "agentkit", "-c", "model=Z", "--max-time", "2h"}, want: []string{"--harness", "agentkit", "-c", "model=Z", "--max-time", "2h", "eval/extract/improve.md"}},
-		{name: "defaults", args: []string{"extract"}, want: []string{"eval/extract/improve.md"}},
+		{name: "passthrough", args: configuredArgs("--", "--harness", "agentkit", "-c", "model=Z", "--max-time", "2h"), want: []string{"--harness", "agentkit", "-c", "model=Z", "--max-time", "2h", "eval/extract/improve.md"}},
+		{name: "defaults", args: configuredArgs(), want: []string{"eval/extract/improve.md"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := newAutotuneTree(t)
@@ -275,7 +293,7 @@ func TestDiffIsPrintedOnlyWhenPromptChangesDuringRun(t *testing.T) {
 			t.Error("diff was not printed before the child ended")
 		}
 	}
-	if err := run([]string{"extract"}, root, executor); err != nil {
+	if err := run(configuredArgs(), root, executor); err != nil {
 		t.Fatal(err)
 	}
 	output := executor.output.String()
@@ -286,7 +304,7 @@ func TestDiffIsPrintedOnlyWhenPromptChangesDuringRun(t *testing.T) {
 	}
 
 	unchanged := &scriptedExecutor{}
-	if err := run([]string{"extract"}, newAutotuneTree(t), unchanged); err != nil {
+	if err := run(configuredArgs(), newAutotuneTree(t), unchanged); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(unchanged.output.String(), "--- a/") {
@@ -313,7 +331,7 @@ func TestFinalizerScoresWinnerOnceForEveryChildExit(t *testing.T) {
 				mustWrite(t, filepath.Join(root, "tmp/autotune/extract/best/scorecard.json"), []byte(`{"mean_composite":0.90}`))
 				mustWrite(t, filepath.Join(root, "tmp/autotune/extract/history.md"), []byte("001 accept\n002 reject\n"))
 			}
-			if err := run([]string{"extract"}, root, executor); err != nil {
+			if err := run(configuredArgs(), root, executor); err != nil {
 				t.Fatalf("finalize after child exit: %v", err)
 			}
 			if got := holdoutCalls(executor.calls); got != 1 {
@@ -330,7 +348,7 @@ func TestFinalizerScoresWinnerOnceForEveryChildExit(t *testing.T) {
 			}
 
 			resume := &scriptedExecutor{}
-			if err := run([]string{"extract", "--resume"}, root, resume); err != nil {
+			if err := run(configuredArgs("--resume"), root, resume); err != nil {
 				t.Fatalf("resume finalization: %v", err)
 			}
 			if got := holdoutCalls(resume.calls); got != 0 {
@@ -348,7 +366,7 @@ func TestFinalizerWithoutWinnerReportsEvidenceAndRestoresPrompt(t *testing.T) {
 		mustWrite(t, filepath.Join(root, "autotune/extract/prompt.txt"), []byte("rejected candidate\n"))
 		mustWrite(t, filepath.Join(root, "tmp/autotune/extract/history.md"), []byte("001 reject\n002 reject\n003 reject\n"))
 	}
-	if err := run([]string{"extract"}, root, executor); err != nil {
+	if err := run(configuredArgs(), root, executor); err != nil {
 		t.Fatal(err)
 	}
 	if holdoutCalls(executor.calls) != 0 {
@@ -407,6 +425,11 @@ func newAutotuneTree(t *testing.T) string {
 `))
 	mustWrite(t, filepath.Join(root, "eval/extract/prompt.txt"), []byte("committed prompt\n"))
 	return root
+}
+
+func configuredArgs(suffix ...string) []string {
+	args := []string{"extract", "-c", "provider=anthropic", "-c", "model=claude-sonnet-4-6"}
+	return append(args, suffix...)
 }
 
 func mustWrite(t *testing.T, path string, content []byte) {

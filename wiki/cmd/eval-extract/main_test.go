@@ -78,11 +78,42 @@ func TestRunScoresCorpusRetriesAndEchoesOverrides(t *testing.T) {
 	if len(card.Cases) != 1 || card.Cases[0].Composite != 1 || card.MeanComposite != 1 {
 		t.Fatalf("scorecard = %+v, want D65 perfect-case scores", card)
 	}
-	if card.Config.Eval.Model != "override-model" || card.Config.Eval.Temperature != 1 {
+	if card.Config.Eval.Model != "override-model" || card.Config.Eval.Temperature == nil || *card.Config.Eval.Temperature != 1 {
 		t.Fatalf("echoed config = %+v", card.Config.Eval)
 	}
 	if embed.calls == 0 {
 		t.Fatal("fake EmbedFunc provider was not used by scorer")
+	}
+}
+
+func TestExtractCaseSendsOnlyConfiguredGenerationKnobsAndDefaultsRetries(t *testing.T) {
+	// R-XHOE-XC0J
+	gold := eval.GoldCase{Name: "case", Document: "Acme opened a lab."}
+	temperature, thinking, maxTokens := 0.5, false, 321
+	configured := &scriptedChat{responses: []string{validResponse()}}
+	_, err := extractCase(context.Background(), configured, eval.EvalCall{
+		Model: "configured", Temperature: &temperature, Thinking: &thinking, MaxTokens: &maxTokens,
+	}, "Extract JSON.", gold)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen := configured.requests[0].Gen
+	if gen.Temperature == nil || *gen.Temperature != temperature || gen.MaxTokens != maxTokens || !gen.Reasoning.Disabled() {
+		t.Fatalf("configured generation settings = %+v", gen)
+	}
+
+	minimal := &scriptedChat{responses: []string{"not-json", validResponse()}}
+	_, err = extractCase(context.Background(), minimal, eval.EvalCall{Model: "minimal"}, "Extract JSON.", gold)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(minimal.requests) != 2 {
+		t.Fatalf("minimal config calls = %d, want one invalid response plus retry", len(minimal.requests))
+	}
+	for _, request := range minimal.requests {
+		if request.Gen.Temperature != nil || request.Gen.MaxTokens != 0 || !request.Gen.Reasoning.IsUnset() {
+			t.Fatalf("minimal config sent generation knobs: %+v", request.Gen)
+		}
 	}
 }
 
