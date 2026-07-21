@@ -12,5 +12,4 @@ lines.
 
 Next phase: 112
 
-- Phase 110 ⬜ realizes R-BTBX-RX4F, R-BUJU-5OV4, R-BVRQ-JGLT, R-BWZM-X8CI, R-BY7J-B037 — the sibling runner: `cmd/eval-analysis` over shared agentkit plumbing
 - Phase 111 ⬜ realizes R-BZFF-ORTW — the driver's second step: `autotune analysis`, loop assets, and the seed gold
