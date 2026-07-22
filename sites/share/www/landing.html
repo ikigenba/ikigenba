@@ -386,7 +386,7 @@
           {{range .Sites}}
           <tr>
             <td data-label="Slug"><a href="{{.URL}}">{{.Slug}}</a></td>
-            <td data-label="Visibility"><span class="visibility">{{if .Public}}public{{else}}private{{end}}</span></td>
+            <td data-label="Visibility"><span class="visibility">{{.Visibility}}</span></td>
             <td data-label="Creator">{{.CreatedBy}}</td>
             <td data-label="Created">{{.CreatedAt}}</td>
             <td data-label="Copy"><button type="button" class="copy-btn js-only" data-url="{{.URL}}" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="1"></rect><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4"></path></svg><span class="copy-label">Copy</span></button></td>

@@ -242,8 +242,8 @@ func TestWWWLandingRendersExistingSites(t *testing.T) {
 		Service: "sites",
 		Version: "phase18-test",
 		Sites: []siteRow{
-			{Slug: "atlas", Public: true, CreatedBy: "alice@example.com", CreatedAt: "2026-07-08T14:15:16Z"},
-			{Slug: "vault", Public: false, CreatedBy: "bob@example.com", CreatedAt: "2026-07-09T01:02:03Z"},
+			{Slug: "atlas", Visibility: "public", CreatedBy: "alice@example.com", CreatedAt: "2026-07-08T14:15:16Z"},
+			{Slug: "vault", Visibility: "private", CreatedBy: "bob@example.com", CreatedAt: "2026-07-09T01:02:03Z"},
 		},
 	})
 	if err != nil {
@@ -305,11 +305,11 @@ func TestLandingHandlerRendersJSONIslandFromSiteRows(t *testing.T) {
 
 	// R-IDOL-PV70
 	if len(rows) != 2 || rows[0].Slug != "atlas" || rows[0].URL != "https://suite.example/srv/sites/public/atlas/" ||
-		!rows[0].Public || rows[0].CreatedBy != "atlas@example.com" || rows[0].CreatedAt != "2026-07-08T12:00:00Z" ||
+		rows[0].Visibility != "public" || rows[0].CreatedBy != "atlas@example.com" || rows[0].CreatedAt != "2026-07-08T12:00:00Z" ||
 		rows[0].CreatedAtSort != "2026-07-08T12:00:00Z" {
 		t.Fatalf("sites data = %#v, want rendered site fields with its row URL and sortable UTC timestamp", rows)
 	}
-	if rows[1].URL != "https://suite.example/srv/sites/private/vault/" || rows[1].Public {
+	if rows[1].URL != "https://suite.example/srv/sites/private/vault/" || rows[1].Visibility != "private" {
 		t.Fatalf("sites data = %#v, want private row URL and visibility", rows)
 	}
 }
@@ -1219,9 +1219,10 @@ func landingData(service, version string) landingView {
 }
 
 type landingSeed struct {
-	name      string
-	public    bool
-	createdAt string
+	name       string
+	public     bool
+	visibility sitesdomain.Visibility
+	createdAt  string
 }
 
 func newLandingTestStore(t *testing.T, seeds ...landingSeed) *sitesdomain.Store {
@@ -1241,7 +1242,9 @@ func newLandingTestStore(t *testing.T, seeds ...landingSeed) *sitesdomain.Store 
 	}
 	for _, seed := range seeds {
 		visibility := sitesdomain.Private
-		if seed.public {
+		if seed.visibility != "" {
+			visibility = seed.visibility
+		} else if seed.public {
 			visibility = sitesdomain.Public
 		}
 		createdAt := seed.createdAt

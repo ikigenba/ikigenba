@@ -116,7 +116,7 @@
         var badge = document.createElement("span");
         visibility.dataset.label = "Visibility";
         badge.className = "visibility";
-        badge.textContent = row.public ? "public" : "private";
+        badge.textContent = row.visibility;
         visibility.appendChild(badge);
         var creator = document.createElement("td");
         creator.dataset.label = "Creator";

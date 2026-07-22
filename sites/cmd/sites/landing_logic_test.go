@@ -15,7 +15,7 @@ import (
 type landingRow struct {
 	Slug          string `json:"slug"`
 	URL           string `json:"url"`
-	Public        bool   `json:"public"`
+	Visibility    string `json:"visibility"`
 	CreatedBy     string `json:"createdBy"`
 	CreatedAt     string `json:"createdAt"`
 	CreatedAtSort string `json:"createdAtSort"`
@@ -105,7 +105,7 @@ func rows(count int) []landingRow {
 		result[i] = landingRow{
 			Slug:          "site-" + string(rune('a'+i)),
 			URL:           "https://example.test/" + string(rune('a'+i)),
-			Public:        true,
+			Visibility:    "public",
 			CreatedBy:     "owner",
 			CreatedAt:     "display",
 			CreatedAtSort: "2025-01-" + string(rune('0'+(i/10))) + string(rune('0'+(i%10))) + "T00:00:00Z",
@@ -297,8 +297,8 @@ func TestReduceResetsOnlyQueryAndSortPages(t *testing.T) {
 func TestLandingControllerRendersAndWiresControls(t *testing.T) {
 	// R-863D-5EDF
 	input := []landingRow{
-		{Slug: "zebra", URL: "/zebra", Public: false, CreatedBy: "zoe", CreatedAt: "Yesterday", CreatedAtSort: "2026-01-02T00:00:00Z"},
-		{Slug: "alpha", URL: "/alpha", Public: true, CreatedBy: "amy", CreatedAt: "Today", CreatedAtSort: "2026-01-03T00:00:00Z"},
+		{Slug: "zebra", URL: "/zebra", Visibility: "private", CreatedBy: "zoe", CreatedAt: "Yesterday", CreatedAtSort: "2026-01-02T00:00:00Z"},
+		{Slug: "alpha", URL: "/alpha", Visibility: "unlisted", CreatedBy: "amy", CreatedAt: "Today", CreatedAtSort: "2026-01-03T00:00:00Z"},
 	}
 	var got struct {
 		ClassName       string
@@ -328,7 +328,7 @@ func TestLandingControllerRendersAndWiresControls(t *testing.T) {
 	    Sort: nodes.name.attributes["aria-sort"]
 	  };
 	}())`, &got)
-	if got.ClassName != "js" || got.ControlsHidden || !got.NoMatchHidden || got.RowCount != 2 || got.FirstSlug != "alpha" || got.FirstURL != "/alpha" || got.FirstVisibility != "public" || got.Sort != "ascending" {
+	if got.ClassName != "js" || got.ControlsHidden || !got.NoMatchHidden || got.RowCount != 2 || got.FirstSlug != "alpha" || got.FirstURL != "/alpha" || got.FirstVisibility != "unlisted" || got.Sort != "ascending" {
 		t.Fatalf("controller view = %#v, want rendered, searchable, sortable DOM state", got)
 	}
 }

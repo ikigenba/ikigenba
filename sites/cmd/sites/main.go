@@ -47,7 +47,7 @@ type landingView struct {
 type siteRow struct {
 	Slug          string
 	URL           string
-	Public        bool
+	Visibility    string
 	CreatedBy     string
 	CreatedAt     string
 	CreatedAtSort string
@@ -56,7 +56,7 @@ type siteRow struct {
 type landingSiteData struct {
 	Slug          string `json:"slug"`
 	URL           string `json:"url"`
-	Public        bool   `json:"public"`
+	Visibility    string `json:"visibility"`
 	CreatedBy     string `json:"createdBy"`
 	CreatedAt     string `json:"createdAt"`
 	CreatedAtSort string `json:"createdAtSort"`
@@ -128,7 +128,7 @@ func landingHandler(store *sites.Store, renderer landingRenderer, service, versi
 			row := siteRow{
 				Slug:          s.Name,
 				URL:           baseURL + tier + "/" + s.Name + "/",
-				Public:        s.Visibility == sites.Public,
+				Visibility:    string(s.Visibility),
 				CreatedBy:     s.OwnerEmail,
 				CreatedAt:     s.CreatedAt.UTC().Format(time.RFC3339),
 				CreatedAtSort: s.CreatedAt.UTC().Format(time.RFC3339),
@@ -137,7 +137,7 @@ func landingHandler(store *sites.Store, renderer landingRenderer, service, versi
 			sitesData = append(sitesData, landingSiteData{
 				Slug:          row.Slug,
 				URL:           row.URL,
-				Public:        row.Public,
+				Visibility:    row.Visibility,
 				CreatedBy:     row.CreatedBy,
 				CreatedAt:     row.CreatedAt,
 				CreatedAtSort: row.CreatedAtSort,
