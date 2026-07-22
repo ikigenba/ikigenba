@@ -11,5 +11,4 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 38
 
-- Phase 36 ⬜ realizes R-H94T-M54D, R-HACP-ZWV2, R-HBKM-DOLR, R-HCSI-RGCG, R-HF8B-IZTU, R-HGG7-WRKJ, R-HHO4-AJB8, R-HIW0-OB1X — MCP surface: explicit visibility, unlisted create, the transition matrix, guide
 - Phase 37 ⬜ realizes R-HK3X-22SM, R-HLBT-FUJB, R-HMJP-TMA0 — landing page speaks the visibility enum
