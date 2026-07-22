@@ -35,19 +35,23 @@ tree for nginx's benefit is redundant state that can drift.
 ## Purpose
 
 sites is the box's **static-website host**. Each site is a slug-named folder of
-files. A site is either **public** (served to anyone) or **private** (served only
-to a logged-in dashboard user) — that is the whole of its state. The owner
-manages sites through the `ikigenba_sites_*` MCP surface (create, edit files,
-set public/private, delete); the **sites process itself serves the site bytes**
-over its loopback HTTP server, behind the nginx front door. A human who opens the
-service root in a browser gets a **landing page** that shows the service version
-and lists the sites that exist.
+files. A site has exactly one of three **visibilities**: **public** (served to
+anyone, at a name the owner chose), **private** (served only to a logged-in
+dashboard user), or **unlisted** (served to anyone — but at a long, generated,
+unguessable name, so the URL itself is the credential; the owner never chooses
+an unlisted site's name). That visibility, plus the naming rule it implies, is
+the whole of a site's state. The owner manages sites through the
+`ikigenba_sites_*` MCP surface (create, edit files, change visibility, delete);
+the **sites process itself serves the site bytes** over its loopback HTTP
+server, behind the nginx front door. A human who opens the service root in a
+browser gets a **landing page** that shows the service version and lists the
+sites that exist.
 
 ## Users
 
 - **The owner, through an agent (MCP).** Creates sites, edits their files, sets
-  each public or private, and deletes them — all as MCP tool calls. This is the
-  primary surface.
+  each site's visibility (public, private, or unlisted), and deletes them — all
+  as MCP tool calls. This is the primary surface.
 - **A logged-in dashboard user, in a browser.** Opens the bare `/srv/sites/` root
   and sees the landing page: the running version and the list of sites (slug,
   public/private, who created it, when). The check is coarse — any logged-in
@@ -55,6 +59,10 @@ and lists the sites that exist.
 - **A visitor to a public site.** Anyone on the internet who opens a public
   site's URL and is served its files. A **private** site's files are served only
   to a logged-in dashboard user.
+- **A recipient of an unlisted link.** Someone the owner hands an unlisted
+  site's URL — a client, a reviewer — who opens it and is served the files with
+  no login. They can reach only what they were linked to; the unguessable name
+  is what keeps everyone else out.
 - **The operator, confirming a deploy.** Opens the root after a deploy to confirm
   sites is up and which version is live.
 
@@ -62,18 +70,27 @@ and lists the sites that exist.
 
 sites does this and only this:
 
-- **Host static sites in two visibilities.** A site's files live under one of two
-  places and are served accordingly: **public** (served with no authentication)
-  or **private** (served only to a logged-in dashboard user). Which one a site is
-  is a single boolean the owner sets; there is no third "unpublished/draft" state
-  and no separate publish step — a site that exists is served.
+- **Host static sites in three visibilities.** A site is served according to
+  exactly one visibility the owner sets: **public** (served with no
+  authentication, at a name the owner chose), **private** (served only to a
+  logged-in dashboard user, at a name the owner chose), or **unlisted** (served
+  with no authentication, at a long generated name nobody can guess — the URL is
+  the credential). There is no "unpublished/draft" state and no separate publish
+  step — a site that exists is served.
 - **Serve site bytes in-process.** The sites process serves the files for both
   visibilities from its own loopback server; nginx proxies to it and never reads
   the site files off disk itself.
-- **Manage sites over MCP.** Create a site — private by default, or public in a
-  single step — edit its files with the file tools, flip it public↔private, and
+- **Manage sites over MCP.** Create a site at an explicitly stated visibility —
+  the caller always says which of the three it wants; there is no silent
+  default — edit its files with the file tools, change its visibility, and
   delete it, through the `ikigenba_sites_*` tools. Content edits are
   **immediately live** (there is no working-copy/publish indirection).
+- **Generate and rotate unlisted links.** Creating an unlisted site returns its
+  long unguessable URL, ready to hand out. Setting an already-unlisted site to
+  unlisted again **rotates** the link: a fresh unguessable URL replaces the old
+  one, which stops working — that is how the owner revokes a link they no longer
+  trust. Moving a site out of unlisted requires the owner to give it a real name
+  of their choosing.
 - **Record who and when.** Each site records the owner who created it and the
   creation time, surfaced by the tools and on the landing page. Because `create`
   is the only way a site comes into being, **every site has a real creator** —
@@ -112,18 +129,25 @@ anything but static files.
 
 Promised values the design must honor verbatim and never re-declare:
 
-- **A site is public or private — a binary, never a "tier" spectrum.** There is
-  no third state. "Not public" means private (served only to a logged-in
-  dashboard user).
+- **A site's visibility is exactly one of public, private, or unlisted** — never
+  a spectrum, never a lifecycle. Public and private sites carry a name the owner
+  chose; an unlisted site carries a generated unguessable name the owner never
+  chooses. There is no fourth state.
+- **An unlisted site's URL is its credential.** It is served with no
+  authentication, exactly like a public site; what protects it is that its name
+  cannot be guessed. Setting an unlisted site to unlisted again rotates the
+  name, and the old URL stops working.
 - **A site that exists is served.** There is no publish step and no unpublished
   state: creating a site and putting files in it makes it live; deleting it takes
-  it offline. Choosing public/private at create, and flipping it thereafter, are
+  it offline. Choosing the visibility at create, and changing it thereafter, are
   the only visibility controls.
 - **sites serves every byte under its mount.** For any path under
   `/srv/sites/…`, the bytes come from the sites process — nginx proxies, it does
   not serve site files off disk.
-- **The visibility gate is nginx's.** Public site paths are unauthenticated;
-  private site paths are gated by the dashboard browser session
+- **The visibility gate is nginx's.** Public and unlisted site paths are
+  unauthenticated (an unlisted site is served through the same ungated public
+  tier — its protection is its unguessable name, not an auth check); private
+  site paths are gated by the dashboard browser session
   (`auth_request /_session-authn`). The sites process runs no token/session logic
   and trusts the front door.
 - **The landing page lives at the bare mount root only**, is gated by the
@@ -139,30 +163,40 @@ Promised values the design must honor verbatim and never re-declare:
 ## What we promise (user-facing behavior)
 
 - **Creating a site and adding files makes it live** — with no separate publish
-  step. The owner creates a slug, writes files into it, and the site is served at
-  its URL immediately. A site is **private by default**; the owner may instead
-  create it **public in a single call** when it should be world-visible from the
-  start.
+  step. The owner creates a site at a **stated visibility** — public, private,
+  or unlisted; the call always says which — writes files into it, and the site
+  is served at its URL immediately. For public and private the owner chooses the
+  slug; for unlisted the service generates the unguessable name and returns the
+  URL ready to share.
+- **An unlisted link can be handed out, and later revoked.** Creating an
+  unlisted site (or setting an existing site unlisted) yields a long random URL
+  anyone can open with no login — the owner shares it with exactly the people
+  they choose. Setting the site unlisted again rotates the URL: the returned
+  link is fresh and the old one stops serving, so a leaked link is one call from
+  dead. Taking a site out of unlisted requires the owner to supply a real name
+  for it.
 - **An agent can learn sites from the connection alone** — on connecting, the
   instructions say what sites is for in the words a user actually uses, and a
   `guide` tool returns the site model, the rules, and worked examples (including
   creating a public page in one call and importing from Dropbox). No external
   skill or doc is needed to route work to sites or to drive its tools.
-- **Public sites are served to anyone; private sites only to a logged-in user.**
-  Opening a public site's path returns its files with no login; opening a private
-  site's path without a dashboard session is refused — a logged-out browser
-  navigating there is sent to the dashboard sign-in and returned after signing in,
-  and a non-navigation request receives `401`.
-- **Flipping a site public↔private changes who can reach it** — one tool call,
-  and the site's URL and access change accordingly; it is never reachable as both
-  at once.
+- **Public and unlisted sites are served to anyone; private sites only to a
+  logged-in user.** Opening a public or unlisted site's path returns its files
+  with no login (an unlisted site differs only in that its path cannot be
+  guessed); opening a private site's path without a dashboard session is
+  refused — a logged-out browser navigating there is sent to the dashboard
+  sign-in and returned after signing in, and a non-navigation request receives
+  `401`.
+- **Changing a site's visibility changes who can reach it** — one tool call,
+  and the site's URL and access change accordingly; it is never reachable under
+  more than one visibility at once.
 - **Deleting a site takes it offline** — its files stop being served and its
   record is gone. There is no lingering "unpublished" state; delete is how a site
   goes away.
 - **The landing page lists the sites that exist** — a logged-in human opening the
   bare `/srv/sites/` sees the running version and a row per site showing its slug,
-  whether it is public or private, who created it, and when. Each slug is a link
-  that opens that site.
+  its visibility (public, private, or unlisted), who created it, and when. Each
+  slug is a link that opens that site.
 - **A logged-out browser is sent to sign in, then returned.** A person who
   navigates to the landing page (or to a private site) without a dashboard
   session is taken to the dashboard sign-in and, on signing in, returned to the
@@ -171,9 +205,9 @@ Promised values the design must honor verbatim and never re-declare:
   refused with `401`.
 - **Agents are unaffected in how they connect** — the bearer-gated `/mcp`, the
   PRM well-known, and `/health` behave as before. The *tools* evolve: `create`
-  takes an optional public flag, `sync` requires the site to already exist, and
-  the self-description tool is `guide` (returning worked examples) rather than
-  `describe`.
+  states the visibility explicitly, `sync` requires the site to already exist,
+  and the self-description tool is `guide` (returning worked examples) rather
+  than `describe`.
 - **The version on the page is the version actually running** — so the operator
   can confirm a deploy in a browser.
 - **The landing list is browsable in place.** A logged-in user can **type in a
@@ -199,9 +233,18 @@ service:
 - As the owner I create a site, write an `index.html` into it, and immediately
   fetch its URL and get that page — with no publish step.
 - As the owner I create a site **public in one call**, and a request with no
-  dashboard session is immediately served its page; a site I create with no
-  visibility flag is private and is refused to that same session-less request (a
-  browser navigation is sent to sign-in; a scripted/bearer request gets `401`).
+  dashboard session is immediately served its page; a site I create private is
+  refused to that same session-less request (a browser navigation is sent to
+  sign-in; a scripted/bearer request gets `401`). A `create` that does not state
+  a visibility is refused — nothing is silently defaulted.
+- As the owner I create an **unlisted** site without choosing a name, get back a
+  URL whose final name segment is long and obviously random, and a request with
+  no dashboard session is served its page at that URL — while nobody who lacks
+  the URL can find it by guessing.
+- As the owner I set an unlisted site to unlisted again and get back a **new**
+  URL; the new URL serves the site and the **old URL stops serving it**.
+- As the owner I take a site out of unlisted by giving it a real name of my
+  choosing; a call that omits the new name is refused.
 - As an agent I call `sync` for a site that does not exist yet and get a clear
   "not found — create it first" refusal, not a silently-created site.
 - As an agent connecting to sites for the first time I can tell what it is for,
@@ -211,14 +254,13 @@ service:
   I set **private** is refused to a request with no session (a browser navigation
   is sent to sign-in, a scripted/bearer request gets `401`) and serves its files to
   a request with a valid session.
-- I flip a site from private to public (or back) with one tool call and its
-  reachability changes accordingly; it is never served under both visibilities at
-  once.
+- I change a site's visibility with one tool call and its reachability changes
+  accordingly; it is never served under more than one visibility at once.
 - I delete a site and its URL stops serving its files.
 - As a logged-in dashboard user I open `<account>.ikigenba.com/srv/sites/` and see
   a Carbon-styled page showing the running version and a row for each site with
-  its slug, public/private status, creator, and creation time; clicking a slug
-  opens that site.
+  its slug, visibility (public, private, or unlisted), creator, and creation
+  time; clicking a slug opens that site.
 - As a person with no dashboard session navigating to `/srv/sites/` (or to a
   private site's URL) in a browser, I am sent to the dashboard sign-in and, after
   signing in, returned to the page I was headed for. A session-less request that

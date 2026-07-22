@@ -1,4 +1,4 @@
-# sites — Plan (landing page)
+# sites — Plan
 
 **Authority: construction order.** This document and the `project/plan/`
 directory it heads own the **build order** of **pending** work only.
