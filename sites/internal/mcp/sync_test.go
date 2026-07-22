@@ -97,7 +97,7 @@ func TestSyncExistingReconciles(t *testing.T) {
 	}}
 	h, _ := newTestHandler(t, mirror)
 
-	callOK(t, h, tool("create"), map[string]any{"name": "blog"})
+	callOK(t, h, tool("create"), map[string]any{"name": "blog", "visibility": "private"})
 	if out := callOK(t, h, tool("sync"), map[string]any{"source_path": "/site", "slug": "blog"}); out["written"] != float64(2) {
 		t.Fatalf("first sync written = %v, want 2", out["written"])
 	}
@@ -134,7 +134,7 @@ func TestSyncSlugDerivation(t *testing.T) {
 	}})
 
 	// Valid basename derives.
-	callOK(t, h, tool("create"), map[string]any{"name": "good-slug"})
+	callOK(t, h, tool("create"), map[string]any{"name": "good-slug", "visibility": "private"})
 	out := callOK(t, h, tool("sync"), map[string]any{"source_path": "/projects/good-slug"})
 	if out["slug"] != "good-slug" {
 		t.Fatalf("derived slug = %v, want good-slug", out["slug"])
@@ -178,7 +178,7 @@ func TestSyncMirrorFailuresAreSourceUnavailable(t *testing.T) {
 			} else {
 				h, _ = newTestHandler(t, tc.mirror)
 			}
-			callOK(t, h, "create", map[string]any{"name": "demo"})
+			callOK(t, h, "create", map[string]any{"name": "demo", "visibility": "private"})
 			env := callErr(t, h, "sync", map[string]any{"source_path": "/source", "slug": "demo"})
 			if env["code"] != "source_unavailable" {
 				t.Fatalf("sync %s code = %v, want source_unavailable", tc.name, env["code"])
@@ -193,7 +193,7 @@ func TestSyncPublicSiteUsesPublicDirectory(t *testing.T) {
 	}}
 	h, _ := newTestHandler(t, mirror)
 
-	callOK(t, h, tool("create"), map[string]any{"name": "live", "public": true})
+	callOK(t, h, tool("create"), map[string]any{"name": "live", "visibility": "public"})
 
 	// R-56CN-HE21
 	out := callOK(t, h, tool("sync"), map[string]any{"source_path": "/feed", "slug": "live"})

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -41,6 +42,10 @@ type testHandler struct {
 // newTestHandler stands up a temp DB (migrated) and a temp SITES_ROOT, returning
 // a wired appkit MCP handler plus the root for filesystem assertions.
 func newTestHandler(t *testing.T, mirror ...sites.MirrorClient) (*testHandler, string) {
+	return newTestHandlerWithToken(t, nil, mirror...)
+}
+
+func newTestHandlerWithToken(t *testing.T, newToken func() string, mirror ...sites.MirrorClient) (*testHandler, string) {
 	t.Helper()
 	root := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "sites.db")
@@ -66,7 +71,7 @@ func newTestHandler(t *testing.T, mirror ...sites.MirrorClient) (*testHandler, s
 		Service:      testService,
 		Version:      testVersion,
 		Instructions: Instructions,
-		Tools:        Tools(store, layout, testBaseURL, mc),
+		Tools:        toolsWithToken(store, layout, testBaseURL, mc, newToken),
 	})
 	if err != nil {
 		t.Fatalf("new mcp handler: %v", err)
@@ -382,13 +387,19 @@ func TestGuideDocDocumentsModelExamplesAndErrors(t *testing.T) {
 	// R-58SG-8XJF
 	assertContains(t, guideDoc, "`create` is the only way a site comes into being")
 	assertContains(t, guideDoc, "returns `not_found` otherwise")
-	assertContains(t, guideDoc, `create(name:"launch", public:true)`)
+	assertContains(t, guideDoc, `create(name:"launch", visibility:"public")`)
 	assertContains(t, guideDoc, "path_escapes_working_dir")
-	createIdx := strings.Index(guideDoc, `create(name:"marketing")`)
+	createIdx := strings.Index(guideDoc, `create(name:"marketing", visibility:"private")`)
 	syncIdx := strings.Index(guideDoc, `sync(source_path:"/sites/marketing")`)
 	if createIdx < 0 || syncIdx < 0 || createIdx > syncIdx {
 		t.Fatalf("Dropbox flow must show create before sync; create index=%d sync index=%d", createIdx, syncIdx)
 	}
+
+	// R-HIW0-OB1X
+	assertContains(t, guideDoc, "unlisted")
+	assertContains(t, guideDoc, `create(visibility:"unlisted")`)
+	assertContains(t, guideDoc, "URL is the credential")
+	assertContains(t, guideDoc, `set_visibility(name:"<token>", visibility:"unlisted")`)
 }
 
 func TestInstructionsRouteToGuideWithoutDescribe(t *testing.T) {
@@ -501,11 +512,11 @@ func TestHealth(t *testing.T) {
 func TestCreateThenList(t *testing.T) {
 	h, root := newTestHandler(t)
 
-	created := callOK(t, h, "create", map[string]any{"name": "demo"})
+	created := callOK(t, h, "create", map[string]any{"name": "demo", "visibility": "private"})
 	if created["name"] != "demo" {
 		t.Fatalf("create returned %+v", created)
 	}
-	if created["public"] != false {
+	if created["visibility"] != "private" {
 		t.Errorf("new site should be private: %+v", created)
 	}
 	if want := testBaseURL + "private/demo/"; created["url"] != want {
@@ -536,8 +547,8 @@ func TestCreateThreadsStableOwnerIDAndEmailSnapshot(t *testing.T) {
 	h, _ := newTestHandler(t)
 
 	// R-Z6FF-WUWS
-	first := callIdentity(t, h, "create", map[string]any{"name": "first-owner"}, "id-alice", "shared@example.com")
-	second := callIdentity(t, h, "create", map[string]any{"name": "second-owner"}, "id-bob", "shared@example.com")
+	first := callIdentity(t, h, "create", map[string]any{"name": "first-owner", "visibility": "private"}, "id-alice", "shared@example.com")
+	second := callIdentity(t, h, "create", map[string]any{"name": "second-owner", "visibility": "private"}, "id-bob", "shared@example.com")
 	for label, result := range map[string]toolResult{"first": first, "second": second} {
 		if result.IsError || result.StructuredContent == nil {
 			t.Fatalf("%s create failed: %+v", label, result)
@@ -577,9 +588,9 @@ func TestCreateHonorsRequestedVisibility(t *testing.T) {
 	h, _ := newTestHandler(t)
 
 	// R-554R-3MBC
-	publicSite := callOK(t, h, "create", map[string]any{"name": "public-demo", "public": true})
-	if publicSite["public"] != true {
-		t.Fatalf("public create returned public = %v, want true", publicSite["public"])
+	publicSite := callOK(t, h, "create", map[string]any{"name": "public-demo", "visibility": "public"})
+	if publicSite["visibility"] != "public" {
+		t.Fatalf("public create returned visibility = %v, want public", publicSite["visibility"])
 	}
 	if want := testBaseURL + "public/public-demo/"; publicSite["url"] != want {
 		t.Fatalf("public create url = %v, want %v", publicSite["url"], want)
@@ -591,9 +602,9 @@ func TestCreateHonorsRequestedVisibility(t *testing.T) {
 		t.Fatalf("private dir should not exist for public create: %v", err)
 	}
 
-	privateSite := callOK(t, h, "create", map[string]any{"name": "private-demo"})
-	if privateSite["public"] != false {
-		t.Fatalf("private create returned public = %v, want false", privateSite["public"])
+	privateSite := callOK(t, h, "create", map[string]any{"name": "private-demo", "visibility": "private"})
+	if privateSite["visibility"] != "private" {
+		t.Fatalf("private create returned visibility = %v, want private", privateSite["visibility"])
 	}
 	if want := testBaseURL + "private/private-demo/"; privateSite["url"] != want {
 		t.Fatalf("private create url = %v, want %v", privateSite["url"], want)
@@ -607,20 +618,131 @@ func TestCreateHonorsRequestedVisibility(t *testing.T) {
 // transport error) with the stable code.
 func TestCreateBadSlug(t *testing.T) {
 	h, _ := newTestHandler(t)
-	e := callErr(t, h, "create", map[string]any{"name": "Bad Slug!"})
+	e := callErr(t, h, "create", map[string]any{"name": "Bad Slug!", "visibility": "private"})
 	if e["code"] != "validation" {
 		t.Fatalf("expected validation, got %+v", e)
 	}
 }
 
+func TestCreateRequiresValidExplicitVisibility(t *testing.T) {
+	cases := []struct {
+		name string
+		args map[string]any
+	}{
+		{"omitted", map[string]any{"name": "demo"}},
+		{"secret", map[string]any{"name": "demo", "visibility": "secret"}},
+		{"true", map[string]any{"name": "demo", "visibility": "true"}},
+		{"empty", map[string]any{"name": "demo", "visibility": ""}},
+	}
+
+	// R-H94T-M54D
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := newTestHandler(t)
+			if got := callErr(t, h, "create", tc.args)["code"]; got != "validation" {
+				t.Fatalf("create error code = %v, want validation", got)
+			}
+			if all, err := h.store.List(context.Background()); err != nil || len(all) != 0 {
+				t.Fatalf("failed create left rows: sites=%+v err=%v", all, err)
+			}
+			for _, visibility := range []sites.Visibility{sites.Public, sites.Private} {
+				if _, err := os.Stat(h.layout.SiteBase(visibility)); !os.IsNotExist(err) {
+					t.Fatalf("failed create made %s tree: %v", visibility, err)
+				}
+			}
+		})
+	}
+}
+
+func TestCreateNamedVisibilityAndConditionalName(t *testing.T) {
+	// R-HACP-ZWV2
+	for _, visibility := range []sites.Visibility{sites.Public, sites.Private} {
+		t.Run(string(visibility), func(t *testing.T) {
+			h, _ := newTestHandler(t)
+			name := string(visibility) + "-site"
+			created := callOK(t, h, "create", map[string]any{"name": name, "visibility": visibility})
+			if created["visibility"] != string(visibility) || created["url"] != testBaseURL+sites.Seg(visibility)+"/"+name+"/" {
+				t.Fatalf("create returned %+v", created)
+			}
+			stored, err := h.store.Get(context.Background(), name)
+			if err != nil || stored.Visibility != visibility {
+				t.Fatalf("stored site = %+v, err=%v", stored, err)
+			}
+			if info, err := os.Stat(h.layout.SiteDir(visibility, name)); err != nil || !info.IsDir() {
+				t.Fatalf("site directory missing: %v", err)
+			}
+		})
+	}
+	for _, visibility := range []string{"public", "private"} {
+		t.Run(visibility+"-missing-name", func(t *testing.T) {
+			h, _ := newTestHandler(t)
+			if got := callErr(t, h, "create", map[string]any{"visibility": visibility})["code"]; got != "validation" {
+				t.Fatalf("error code = %v, want validation", got)
+			}
+			if all, err := h.store.List(context.Background()); err != nil || len(all) != 0 {
+				t.Fatalf("missing-name create left rows: %+v, err=%v", all, err)
+			}
+		})
+	}
+}
+
+func TestCreateUnlistedGeneratesSecretName(t *testing.T) {
+	h, _ := newTestHandler(t)
+
+	// R-HBKM-DOLR
+	created := callOK(t, h, "create", map[string]any{"visibility": "unlisted"})
+	name, _ := created["name"].(string)
+	if !regexp.MustCompile(`^[a-z2-7]{30}$`).MatchString(name) {
+		t.Fatalf("generated name = %q, want 30-character base32 token", name)
+	}
+	if created["visibility"] != "unlisted" || created["url"] != testBaseURL+"public/"+name+"/" {
+		t.Fatalf("unlisted create returned %+v", created)
+	}
+	if info, err := os.Stat(h.layout.SiteDir(sites.Unlisted, name)); err != nil || !info.IsDir() {
+		t.Fatalf("unlisted public-tree directory missing: %v", err)
+	}
+
+	h2, _ := newTestHandler(t)
+	if got := callErr(t, h2, "create", map[string]any{"name": "guessable", "visibility": "unlisted"})["code"]; got != "validation" {
+		t.Fatalf("named unlisted error code = %v, want validation", got)
+	}
+	if all, err := h2.store.List(context.Background()); err != nil || len(all) != 0 {
+		t.Fatalf("named unlisted create left rows: %+v, err=%v", all, err)
+	}
+}
+
+func TestCreateUnlistedRetriesOneTokenCollision(t *testing.T) {
+	const taken = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const fresh = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	sequence := []string{taken, fresh}
+	calls := 0
+	h, _ := newTestHandlerWithToken(t, func() string {
+		value := sequence[calls]
+		calls++
+		return value
+	})
+	callOK(t, h, "create", map[string]any{"name": taken, "visibility": "public"})
+
+	// R-HCSI-RGCG
+	created := callOK(t, h, "create", map[string]any{"visibility": "unlisted"})
+	if created["name"] != fresh || calls != 2 {
+		t.Fatalf("collision create = %+v, token calls=%d", created, calls)
+	}
+	for _, name := range []string{taken, fresh} {
+		if _, err := h.store.Get(context.Background(), name); err != nil {
+			t.Fatalf("site %q does not coexist after retry: %v", name, err)
+		}
+	}
+}
+
 func TestSetVisibilityMovesBetweenPublicAndPrivate(t *testing.T) {
 	h, _ := newTestHandler(t)
-	callOK(t, h, "create", map[string]any{"name": "demo"})
+	callOK(t, h, "create", map[string]any{"name": "demo", "visibility": "private"})
 	if err := os.WriteFile(filepath.Join(h.layout.SiteDir(sites.Private, "demo"), "index.html"), []byte("hello"), 0o644); err != nil {
 		t.Fatalf("seed private file: %v", err)
 	}
 
-	pub := callOK(t, h, "set_visibility", map[string]any{"name": "demo", "public": true})
+	pub := callOK(t, h, "set_visibility", map[string]any{"name": "demo", "visibility": "public"})
 	if want := testBaseURL + "public/demo/"; pub["url"] != want {
 		t.Errorf("public visibility url = %v, want %v", pub["url"], want)
 	}
@@ -638,7 +760,7 @@ func TestSetVisibilityMovesBetweenPublicAndPrivate(t *testing.T) {
 		t.Fatalf("private dir should be gone after public move: %v", err)
 	}
 
-	pvt := callOK(t, h, "set_visibility", map[string]any{"name": "demo", "public": false})
+	pvt := callOK(t, h, "set_visibility", map[string]any{"name": "demo", "visibility": "private"})
 	if want := testBaseURL + "private/demo/"; pvt["url"] != want {
 		t.Errorf("private visibility url = %v, want %v", pvt["url"], want)
 	}
@@ -659,11 +781,138 @@ func TestSetVisibilityMovesBetweenPublicAndPrivate(t *testing.T) {
 	// R-RGZO-FPCM
 }
 
+func TestSetVisibilityNamedMatrixAndIdempotence(t *testing.T) {
+	h, _ := newTestHandler(t)
+	callOK(t, h, "create", map[string]any{"name": "demo", "visibility": "private"})
+	file := filepath.Join(h.layout.SiteDir(sites.Private, "demo"), "index.html")
+	if err := os.WriteFile(file, []byte("hello"), 0o644); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+
+	// R-HF8B-IZTU
+	for _, visibility := range []sites.Visibility{sites.Public, sites.Private} {
+		result := callOK(t, h, "set_visibility", map[string]any{"name": "demo", "visibility": visibility})
+		if result["name"] != "demo" || result["visibility"] != string(visibility) || result["url"] != testBaseURL+sites.Seg(visibility)+"/demo/" {
+			t.Fatalf("set %s returned %+v", visibility, result)
+		}
+		if _, err := os.Stat(filepath.Join(h.layout.SiteDir(visibility, "demo"), "index.html")); err != nil {
+			t.Fatalf("file not moved to %s: %v", visibility, err)
+		}
+	}
+	idempotent := callOK(t, h, "set_visibility", map[string]any{"name": "demo", "visibility": "private"})
+	if idempotent["name"] != "demo" || idempotent["visibility"] != "private" {
+		t.Fatalf("idempotent result = %+v", idempotent)
+	}
+	for _, visibility := range []string{"public", "private"} {
+		before, err := h.store.Get(context.Background(), "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := callErr(t, h, "set_visibility", map[string]any{"name": "demo", "visibility": visibility, "new_name": "renamed"})["code"]; got != "validation" {
+			t.Fatalf("new_name error code = %v, want validation", got)
+		}
+		after, err := h.store.Get(context.Background(), "demo")
+		if err != nil || after.Name != before.Name || after.Visibility != before.Visibility {
+			t.Fatalf("rejected transition changed site: before=%+v after=%+v err=%v", before, after, err)
+		}
+	}
+}
+
+func TestSetVisibilityEnteringAndRotatingUnlisted(t *testing.T) {
+	tokens := []string{
+		"cccccccccccccccccccccccccccccc",
+		"dddddddddddddddddddddddddddddd",
+	}
+	calls := 0
+	h, _ := newTestHandlerWithToken(t, func() string {
+		value := tokens[calls]
+		calls++
+		return value
+	})
+	callOK(t, h, "create", map[string]any{"name": "demo", "visibility": "private"})
+	if err := os.WriteFile(filepath.Join(h.layout.SiteDir(sites.Private, "demo"), "index.html"), []byte("secret"), 0o644); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+
+	// R-HGG7-WRKJ
+	first := callOK(t, h, "set_visibility", map[string]any{"name": "demo", "visibility": "unlisted"})
+	if first["name"] != tokens[0] || first["visibility"] != "unlisted" || first["url"] != testBaseURL+"public/"+tokens[0]+"/" {
+		t.Fatalf("first unlisted transition = %+v", first)
+	}
+	if _, err := h.store.Get(context.Background(), "demo"); !errors.Is(err, sites.ErrNotFound) {
+		t.Fatalf("old name still resolves: %v", err)
+	}
+	if _, err := os.Stat(h.layout.SiteDir(sites.Private, "demo")); !os.IsNotExist(err) {
+		t.Fatalf("old directory remains: %v", err)
+	}
+	if bytes, err := os.ReadFile(filepath.Join(h.layout.SiteDir(sites.Unlisted, tokens[0]), "index.html")); err != nil || string(bytes) != "secret" {
+		t.Fatalf("unlisted file = %q, err=%v", bytes, err)
+	}
+
+	second := callOK(t, h, "set_visibility", map[string]any{"name": tokens[0], "visibility": "unlisted"})
+	if second["name"] != tokens[1] || second["url"] != testBaseURL+"public/"+tokens[1]+"/" || calls != 2 {
+		t.Fatalf("rotation = %+v, token calls=%d", second, calls)
+	}
+	if _, err := h.store.Get(context.Background(), tokens[0]); !errors.Is(err, sites.ErrNotFound) {
+		t.Fatalf("first token still resolves: %v", err)
+	}
+	before, err := h.store.Get(context.Background(), tokens[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := callErr(t, h, "set_visibility", map[string]any{"name": tokens[1], "visibility": "unlisted", "new_name": "forbidden"})["code"]; got != "validation" {
+		t.Fatalf("new_name error code = %v, want validation", got)
+	}
+	after, err := h.store.Get(context.Background(), tokens[1])
+	if err != nil || after.Name != before.Name || after.Visibility != before.Visibility {
+		t.Fatalf("rejected rotation changed site: before=%+v after=%+v err=%v", before, after, err)
+	}
+}
+
+func TestSetVisibilityLeavingUnlistedRequiresValidNewName(t *testing.T) {
+	// R-HHO4-AJB8
+	for _, visibility := range []sites.Visibility{sites.Public, sites.Private} {
+		t.Run(string(visibility), func(t *testing.T) {
+			const token = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+			h, _ := newTestHandlerWithToken(t, func() string { return token })
+			created := callOK(t, h, "create", map[string]any{"visibility": "unlisted"})
+			if created["name"] != token {
+				t.Fatalf("created = %+v", created)
+			}
+			if err := os.WriteFile(filepath.Join(h.layout.SiteDir(sites.Unlisted, token), "index.html"), []byte("hello"), 0o644); err != nil {
+				t.Fatalf("seed file: %v", err)
+			}
+			for _, bad := range []map[string]any{
+				{"name": token, "visibility": visibility},
+				{"name": token, "visibility": visibility, "new_name": "Bad Slug"},
+				{"name": token, "visibility": visibility, "new_name": "mcp"},
+			} {
+				if got := callErr(t, h, "set_visibility", bad)["code"]; got != "validation" {
+					t.Fatalf("bad transition error code = %v, want validation", got)
+				}
+				if site, err := h.store.Get(context.Background(), token); err != nil || site.Visibility != sites.Unlisted {
+					t.Fatalf("bad transition changed site: %+v, err=%v", site, err)
+				}
+			}
+			result := callOK(t, h, "set_visibility", map[string]any{"name": token, "visibility": visibility, "new_name": "launch"})
+			if result["name"] != "launch" || result["visibility"] != string(visibility) || result["url"] != testBaseURL+sites.Seg(visibility)+"/launch/" {
+				t.Fatalf("leave unlisted returned %+v", result)
+			}
+			if _, err := h.store.Get(context.Background(), token); !errors.Is(err, sites.ErrNotFound) {
+				t.Fatalf("old token still resolves: %v", err)
+			}
+			if bytes, err := os.ReadFile(filepath.Join(h.layout.SiteDir(visibility, "launch"), "index.html")); err != nil || string(bytes) != "hello" {
+				t.Fatalf("renamed file = %q, err=%v", bytes, err)
+			}
+		})
+	}
+}
+
 // TestDelete covers deleting the current visibility directory and row.
 func TestDelete(t *testing.T) {
 	h, _ := newTestHandler(t)
-	callOK(t, h, "create", map[string]any{"name": "demo"})
-	callOK(t, h, "set_visibility", map[string]any{"name": "demo", "public": true})
+	callOK(t, h, "create", map[string]any{"name": "demo", "visibility": "private"})
+	callOK(t, h, "set_visibility", map[string]any{"name": "demo", "visibility": "public"})
 	if err := os.WriteFile(filepath.Join(h.layout.SiteDir(sites.Public, "demo"), "index.html"), []byte("hello"), 0o644); err != nil {
 		t.Fatalf("seed public file: %v", err)
 	}
@@ -688,7 +937,7 @@ func TestDelete(t *testing.T) {
 // TestMkdirConfinement covers a valid nested mkdir and rejects an escape.
 func TestMkdirConfinement(t *testing.T) {
 	h, root := newTestHandler(t)
-	callOK(t, h, "create", map[string]any{"name": "demo"})
+	callOK(t, h, "create", map[string]any{"name": "demo", "visibility": "private"})
 
 	callOK(t, h, "mkdir", map[string]any{"name": "demo", "path": "a/b/c"})
 	if fi, err := os.Stat(filepath.Join(root, sites.PrivateSeg, "demo", "a", "b", "c")); err != nil || !fi.IsDir() {
@@ -709,11 +958,11 @@ func TestCreateReturnsMirroredStructuredContent(t *testing.T) {
 	h, _ := newTestHandler(t)
 
 	// R-CW5E-T20N
-	result := call(t, h, "create", map[string]any{"name": "channels"})
+	result := call(t, h, "create", map[string]any{"name": "channels", "visibility": "private"})
 	if result.IsError || result.StructuredContent == nil {
 		t.Fatalf("create result is not structured success: %+v", result)
 	}
-	wantKeys := []string{"name", "public", "owner_id", "owner_email", "url", "created_at", "updated_at"}
+	wantKeys := []string{"name", "visibility", "owner_id", "owner_email", "url", "created_at", "updated_at"}
 	for _, key := range wantKeys {
 		if _, ok := result.StructuredContent[key]; !ok {
 			t.Errorf("create structuredContent missing %q: %+v", key, result.StructuredContent)
@@ -731,8 +980,8 @@ func TestCreateReturnsMirroredStructuredContent(t *testing.T) {
 func TestStructuredToolsDeclareSchemasMatchingResults(t *testing.T) {
 	mirror := &fakeMirror{files: map[string][]byte{"/source/index.html": []byte("needle")}}
 	h, _ := newTestHandler(t, mirror)
-	callOK(t, h, "create", map[string]any{"name": "demo"})
-	callOK(t, h, "create", map[string]any{"name": "syncsite"})
+	callOK(t, h, "create", map[string]any{"name": "demo", "visibility": "private"})
+	callOK(t, h, "create", map[string]any{"name": "syncsite", "visibility": "private"})
 
 	resp := rpc(t, h, "tools/list", nil)
 	var listed struct {
@@ -766,11 +1015,11 @@ func TestStructuredToolsDeclareSchemasMatchingResults(t *testing.T) {
 		name string
 		args map[string]any
 	}{
-		{"create", map[string]any{"name": "schema-create"}},
+		{"create", map[string]any{"name": "schema-create", "visibility": "private"}},
 		{"list", map[string]any{}},
 		{"delete", map[string]any{"name": "already-absent"}},
 		{"mkdir", map[string]any{"name": "demo", "path": "assets"}},
-		{"set_visibility", map[string]any{"name": "demo", "public": true}},
+		{"set_visibility", map[string]any{"name": "demo", "visibility": "public"}},
 		{"sync", map[string]any{"source_path": "/source", "slug": "syncsite"}},
 		{"file_write", map[string]any{"site": "demo", "file_path": "page.txt", "content": "needle"}},
 		{"file_edit", map[string]any{"site": "demo", "file_path": "page.txt", "old_string": "needle", "new_string": "pin"}},
@@ -817,8 +1066,8 @@ func TestStructuredToolsDeclareSchemasMatchingResults(t *testing.T) {
 
 func TestClosedErrorVocabularyAndMappings(t *testing.T) {
 	h, _ := newTestHandler(t)
-	callOK(t, h, "create", map[string]any{"name": "exists"})
-	callOK(t, h, "create", map[string]any{"name": "demo"})
+	callOK(t, h, "create", map[string]any{"name": "exists", "visibility": "private"})
+	callOK(t, h, "create", map[string]any{"name": "demo", "visibility": "private"})
 
 	cases := []struct {
 		name string
@@ -826,10 +1075,10 @@ func TestClosedErrorVocabularyAndMappings(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		{"invalid slug", "create", map[string]any{"name": "Bad Slug"}, "validation"},
-		{"reserved slug", "create", map[string]any{"name": "mcp"}, "validation"},
+		{"invalid slug", "create", map[string]any{"name": "Bad Slug", "visibility": "private"}, "validation"},
+		{"reserved slug", "create", map[string]any{"name": "mcp", "visibility": "private"}, "validation"},
 		{"missing argument", "file_write", map[string]any{"file_path": "x"}, "validation"},
-		{"conflict", "create", map[string]any{"name": "exists"}, "conflict"},
+		{"conflict", "create", map[string]any{"name": "exists", "visibility": "private"}, "conflict"},
 		{"not found", "file_read", map[string]any{"site": "missing", "file_path": "x"}, "not_found"},
 		{"internal file operation", "file_read", map[string]any{"site": "demo", "file_path": "missing.txt"}, "internal"},
 	}

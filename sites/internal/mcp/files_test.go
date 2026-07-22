@@ -18,7 +18,7 @@ import (
 func fileToolsHandler(t *testing.T) (*testHandler, string) {
 	t.Helper()
 	h, root := newTestHandler(t)
-	callOK(t, h, "create", map[string]any{"name": "demo"})
+	callOK(t, h, "create", map[string]any{"name": "demo", "visibility": "private"})
 	return h, root
 }
 
@@ -55,7 +55,7 @@ func TestFileWriteReadRoundtrip(t *testing.T) {
 
 func TestFileWriteUsesPublicSiteDir(t *testing.T) {
 	h, _ := fileToolsHandler(t)
-	callOK(t, h, "set_visibility", map[string]any{"name": "demo", "public": true})
+	callOK(t, h, "set_visibility", map[string]any{"name": "demo", "visibility": "public"})
 
 	callOK(t, h, "file_write", map[string]any{
 		"site":      "demo",
