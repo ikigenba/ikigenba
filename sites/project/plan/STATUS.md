@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 38
-
-- Phase 37 ⬜ realizes R-HK3X-22SM, R-HLBT-FUJB, R-HMJP-TMA0 — landing page speaks the visibility enum
