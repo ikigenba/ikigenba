@@ -48,35 +48,35 @@ func (l Layout) root() string {
 	return l.Root
 }
 
-// SiteDir is a site's on-disk directory for its visibility:
-//
-//	public  -> <root>/public/<slug>
-//	private -> <root>/private/<slug>
-func (l Layout) SiteDir(public bool, slug string) string {
-	return filepath.Join(l.SiteBase(public), slug)
-}
-
-// SiteBase is <root>/<public|private> — the parent of a visibility's site dirs.
-func (l Layout) SiteBase(public bool) string {
-	if public {
-		return filepath.Join(l.root(), PublicSeg)
+// Seg maps public and unlisted sites to the public tree, and private sites to
+// the private tree.
+func Seg(visibility Visibility) string {
+	if visibility == Private {
+		return PrivateSeg
 	}
-	return filepath.Join(l.root(), PrivateSeg)
+	return PublicSeg
 }
 
-// Move relocates a site's directory between private and public visibility
-// parents. Missing source directories are tolerated so an empty site can be
-// made public/private before it has files.
-func (l Layout) Move(slug string, toPublic bool) error {
-	src := l.SiteDir(!toPublic, slug)
-	dst := l.SiteDir(toPublic, slug)
+// SiteDir is <root>/<visibility segment>/<slug>.
+func (l Layout) SiteDir(visibility Visibility, slug string) string {
+	return filepath.Join(l.SiteBase(visibility), slug)
+}
+
+// SiteBase is <root>/<visibility segment>.
+func (l Layout) SiteBase(visibility Visibility) string {
+	return filepath.Join(l.root(), Seg(visibility))
+}
+
+// Move relocates and optionally renames a site directory. Missing sources are
+// tolerated, while existing destinations are never merged.
+func (l Layout) Move(slug string, from Visibility, newSlug string, to Visibility) error {
+	src := l.SiteDir(from, slug)
+	dst := l.SiteDir(to, newSlug)
+	if src == dst {
+		return nil
+	}
 
 	if _, err := os.Stat(dst); err == nil {
-		if _, srcErr := os.Stat(src); os.IsNotExist(srcErr) {
-			return nil
-		} else if srcErr != nil {
-			return fmt.Errorf("move site %q: stat source: %w", slug, srcErr)
-		}
 		return fmt.Errorf("move site %q: destination already exists: %s", slug, dst)
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("move site %q: stat destination: %w", slug, err)

@@ -1240,19 +1240,19 @@ func newLandingTestStore(t *testing.T, seeds ...landingSeed) *sitesdomain.Store 
 		t.Fatalf("migrate test db: %v", err)
 	}
 	for _, seed := range seeds {
-		public := 0
+		visibility := sitesdomain.Private
 		if seed.public {
-			public = 1
+			visibility = sitesdomain.Public
 		}
 		createdAt := seed.createdAt
 		if createdAt == "" {
 			createdAt = "2026-07-08T12:00:00.000000000Z"
 		}
 		_, err := conn.ExecContext(context.Background(),
-			`INSERT INTO sites (name, source_path, public, owner_id, owner_email, created_at, updated_at)
+			`INSERT INTO sites (name, source_path, visibility, owner_id, owner_email, created_at, updated_at)
 			 VALUES (?, NULL, ?, ?, ?, ?, ?)`,
 			seed.name,
-			public,
+			visibility,
 			"id-"+seed.name,
 			seed.name+"@example.com",
 			createdAt,

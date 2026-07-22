@@ -204,5 +204,5 @@ func (h *toolHandlers) siteRoot(ctx context.Context, slug string) (string, map[s
 	if err != nil {
 		return "", errResult(err)
 	}
-	return h.layout.SiteDir(site.Public, slug), nil
+	return h.layout.SiteDir(site.Visibility, slug), nil
 }

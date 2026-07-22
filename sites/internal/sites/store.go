@@ -42,14 +42,36 @@ var (
 	ErrExists = errors.New("sites: already exists")
 	// ErrNotFound — no row with that name.
 	ErrNotFound = errors.New("sites: not found")
+	// ErrInvalidVisibility — value is outside the closed visibility enum.
+	ErrInvalidVisibility = errors.New("sites: invalid visibility")
 )
+
+// Visibility is the closed set of site visibility states stored on a row.
+type Visibility string
+
+const (
+	Public   Visibility = "public"
+	Private  Visibility = "private"
+	Unlisted Visibility = "unlisted"
+)
+
+// ParseVisibility maps a wire value to the visibility enum.
+func ParseVisibility(value string) (Visibility, error) {
+	v := Visibility(value)
+	switch v {
+	case Public, Private, Unlisted:
+		return v, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrInvalidVisibility, value)
+	}
+}
 
 // Site mirrors one `sites` row. SourcePath records the originating Dropbox
 // subtree for a sync-managed site (empty ⇒ SQL NULL ⇒ hand-authored / not
 // import-managed; ADR Decision 2).
 type Site struct {
 	Name       string
-	Public     bool
+	Visibility Visibility
 	OwnerID    string
 	OwnerEmail string
 	SourcePath string
@@ -117,22 +139,21 @@ func parseTime(s string) time.Time {
 // caller-chosen visibility; there is no store-side default. created_at/updated_at
 // are set to now (UTC).
 // Returns ErrExists if the name is already taken.
-func (s *Store) Create(ctx context.Context, name, ownerID, ownerEmail string, public bool) (Site, error) {
+func (s *Store) Create(ctx context.Context, name, ownerID, ownerEmail string, visibility Visibility) (Site, error) {
 	if err := validateName(name); err != nil {
+		return Site{}, err
+	}
+	if _, err := ParseVisibility(string(visibility)); err != nil {
 		return Site{}, err
 	}
 	now := s.Now().UTC()
 	ts := fmtTime(now)
-	publicInt := 0
-	if public {
-		publicInt = 1
-	}
 	// source_path is inserted NULL: a freshly created site is hand-authored until
 	// a sync stamps it via SetSourcePath.
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sites (name, source_path, public, owner_id, owner_email, created_at, updated_at)
+		`INSERT INTO sites (name, source_path, visibility, owner_id, owner_email, created_at, updated_at)
 		 VALUES (?, NULL, ?, ?, ?, ?, ?)`,
-		name, publicInt, ownerID, ownerEmail, ts, ts)
+		name, visibility, ownerID, ownerEmail, ts, ts)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") ||
 			strings.Contains(err.Error(), "PRIMARY KEY") {
@@ -142,7 +163,7 @@ func (s *Store) Create(ctx context.Context, name, ownerID, ownerEmail string, pu
 	}
 	return Site{
 		Name:       name,
-		Public:     public,
+		Visibility: visibility,
 		OwnerID:    ownerID,
 		OwnerEmail: ownerEmail,
 		CreatedAt:  parseTime(ts),
@@ -153,7 +174,7 @@ func (s *Store) Create(ctx context.Context, name, ownerID, ownerEmail string, pu
 // Get fetches one site by name. Returns ErrNotFound when absent.
 func (s *Store) Get(ctx context.Context, name string) (Site, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT name, public, owner_id, owner_email, source_path, created_at, updated_at
+		`SELECT name, visibility, owner_id, owner_email, source_path, created_at, updated_at
 		 FROM sites WHERE name = ?`, name)
 	site, err := scanSite(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -168,7 +189,7 @@ func (s *Store) Get(ctx context.Context, name string) (Site, error) {
 // List returns every site ordered by name (deterministic).
 func (s *Store) List(ctx context.Context) ([]Site, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT name, public, owner_id, owner_email, source_path, created_at, updated_at
+		`SELECT name, visibility, owner_id, owner_email, source_path, created_at, updated_at
 		 FROM sites ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list sites: %w", err)
@@ -227,19 +248,25 @@ func (s *Store) SetSourcePath(ctx context.Context, name, sourcePath string) erro
 	return nil
 }
 
-// SetVisibility flips the public visibility bit for an existing site row and
-// bumps updated_at. Moving files between visibility directories is handled by
-// Layout.Move at the caller boundary.
-func (s *Store) SetVisibility(ctx context.Context, name string, public bool) error {
-	ts := fmtTime(s.Now().UTC())
-	publicInt := 0
-	if public {
-		publicInt = 1
+// SetVisibility changes visibility and optionally renames the site in one
+// statement. Moving files is handled by Layout.Move at the caller boundary.
+func (s *Store) SetVisibility(ctx context.Context, name string, visibility Visibility, newName string) error {
+	if _, err := ParseVisibility(string(visibility)); err != nil {
+		return err
 	}
+	if newName == "" {
+		newName = name
+	} else if err := validateName(newName); err != nil {
+		return err
+	}
+	ts := fmtTime(s.Now().UTC())
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE sites SET public = ?, updated_at = ? WHERE name = ?`,
-		publicInt, ts, name)
+		`UPDATE sites SET name = ?, visibility = ?, updated_at = ? WHERE name = ?`,
+		newName, visibility, ts, name)
 	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") || strings.Contains(err.Error(), "PRIMARY KEY") {
+			return fmt.Errorf("%w: %q", ErrExists, newName)
+		}
 		return fmt.Errorf("set visibility %q: %w", name, err)
 	}
 	n, err := res.RowsAffected()
@@ -261,16 +288,20 @@ type rowScanner interface {
 func scanSite(sc rowScanner) (Site, error) {
 	var (
 		name, createdAt, updatedAt string
-		public                     int64
+		visibility                 string
 		sourcePath                 sql.NullString
 		ownerID, ownerEmail        string
 	)
-	if err := sc.Scan(&name, &public, &ownerID, &ownerEmail, &sourcePath, &createdAt, &updatedAt); err != nil {
+	if err := sc.Scan(&name, &visibility, &ownerID, &ownerEmail, &sourcePath, &createdAt, &updatedAt); err != nil {
+		return Site{}, err
+	}
+	v, err := ParseVisibility(visibility)
+	if err != nil {
 		return Site{}, err
 	}
 	site := Site{
 		Name:       name,
-		Public:     public != 0,
+		Visibility: v,
 		OwnerID:    ownerID,
 		OwnerEmail: ownerEmail,
 		CreatedAt:  parseTime(createdAt),

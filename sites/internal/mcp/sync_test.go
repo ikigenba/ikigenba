@@ -54,7 +54,7 @@ func (f *fakeMirror) Fetch(_ context.Context, path string) ([]byte, error) {
 // test if it is absent.
 func readWorking(t *testing.T, h *testHandler, slug, rel string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(h.layout.SiteDir(false, slug), filepath.FromSlash(rel)))
+	b, err := os.ReadFile(filepath.Join(h.layout.SiteDir(sites.Private, slug), filepath.FromSlash(rel)))
 	if err != nil {
 		t.Fatalf("read private site %s/%s: %v", slug, rel, err)
 	}
@@ -80,10 +80,10 @@ func TestSyncAbsentSlugReturnsNotFound(t *testing.T) {
 	if arr, _ := listed["sites"].([]any); len(arr) != 0 {
 		t.Fatalf("list after failed sync = %+v, want empty", listed)
 	}
-	if _, err := os.Stat(h.layout.SiteDir(true, "marketing")); !os.IsNotExist(err) {
+	if _, err := os.Stat(h.layout.SiteDir(sites.Public, "marketing")); !os.IsNotExist(err) {
 		t.Fatalf("public dir should not exist after failed sync: %v", err)
 	}
-	if _, err := os.Stat(h.layout.SiteDir(false, "marketing")); !os.IsNotExist(err) {
+	if _, err := os.Stat(h.layout.SiteDir(sites.Private, "marketing")); !os.IsNotExist(err) {
 		t.Fatalf("private dir should not exist after failed sync: %v", err)
 	}
 }
@@ -120,7 +120,7 @@ func TestSyncExistingReconciles(t *testing.T) {
 	if readWorking(t, h, "blog", "c.html") != "c" {
 		t.Fatal("c.html not written")
 	}
-	if _, err := os.Stat(filepath.Join(h.layout.SiteDir(false, "blog"), "b.html")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(h.layout.SiteDir(sites.Private, "blog"), "b.html")); !os.IsNotExist(err) {
 		t.Fatalf("b.html should be deleted, stat err = %v", err)
 	}
 }
@@ -201,7 +201,7 @@ func TestSyncPublicSiteUsesPublicDirectory(t *testing.T) {
 		t.Fatalf("sync written = %v, want 1", out["written"])
 	}
 
-	publicPath := filepath.Join(h.layout.SiteDir(true, "live"), "index.html")
+	publicPath := filepath.Join(h.layout.SiteDir(sites.Public, "live"), "index.html")
 	b, err := os.ReadFile(publicPath)
 	if err != nil {
 		t.Fatalf("read public file: %v", err)
@@ -213,7 +213,7 @@ func TestSyncPublicSiteUsesPublicDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get live: %v", err)
 	}
-	if !after.Public {
+	if after.Visibility != sites.Public {
 		t.Fatal("site should remain public after sync")
 	}
 }

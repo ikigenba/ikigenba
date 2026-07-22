@@ -64,7 +64,7 @@ func TestFileWriteUsesPublicSiteDir(t *testing.T) {
 	})
 
 	// R-RI7K-TH3B
-	b, err := os.ReadFile(filepath.Join(h.layout.SiteDir(true, "demo"), "index.html"))
+	b, err := os.ReadFile(filepath.Join(h.layout.SiteDir(sites.Public, "demo"), "index.html"))
 	if err != nil || string(b) != "<h1>public</h1>" {
 		t.Fatalf("file not written under public dir: %v (%q)", err, string(b))
 	}

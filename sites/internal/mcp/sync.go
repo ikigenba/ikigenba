@@ -94,7 +94,7 @@ func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage) (map[s
 	// Walk the site directory for its current relative file set (the path set is all
 	// Reconcile needs for delete-absent — overwrite-all means no md5 compare; same
 	// WalkDir + Rel/ToSlash pattern as toolFileList).
-	workingDir := h.layout.SiteDir(site.Public, slug)
+	workingDir := h.layout.SiteDir(site.Visibility, slug)
 	var existingRel []string
 	walkErr := filepath.WalkDir(workingDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {

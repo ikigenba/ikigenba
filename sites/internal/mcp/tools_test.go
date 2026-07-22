@@ -584,10 +584,10 @@ func TestCreateHonorsRequestedVisibility(t *testing.T) {
 	if want := testBaseURL + "public/public-demo/"; publicSite["url"] != want {
 		t.Fatalf("public create url = %v, want %v", publicSite["url"], want)
 	}
-	if fi, err := os.Stat(h.layout.SiteDir(true, "public-demo")); err != nil || !fi.IsDir() {
+	if fi, err := os.Stat(h.layout.SiteDir(sites.Public, "public-demo")); err != nil || !fi.IsDir() {
 		t.Fatalf("public dir not created: %v", err)
 	}
-	if _, err := os.Stat(h.layout.SiteDir(false, "public-demo")); !os.IsNotExist(err) {
+	if _, err := os.Stat(h.layout.SiteDir(sites.Private, "public-demo")); !os.IsNotExist(err) {
 		t.Fatalf("private dir should not exist for public create: %v", err)
 	}
 
@@ -598,7 +598,7 @@ func TestCreateHonorsRequestedVisibility(t *testing.T) {
 	if want := testBaseURL + "private/private-demo/"; privateSite["url"] != want {
 		t.Fatalf("private create url = %v, want %v", privateSite["url"], want)
 	}
-	if fi, err := os.Stat(h.layout.SiteDir(false, "private-demo")); err != nil || !fi.IsDir() {
+	if fi, err := os.Stat(h.layout.SiteDir(sites.Private, "private-demo")); err != nil || !fi.IsDir() {
 		t.Fatalf("private dir not created: %v", err)
 	}
 }
@@ -616,7 +616,7 @@ func TestCreateBadSlug(t *testing.T) {
 func TestSetVisibilityMovesBetweenPublicAndPrivate(t *testing.T) {
 	h, _ := newTestHandler(t)
 	callOK(t, h, "create", map[string]any{"name": "demo"})
-	if err := os.WriteFile(filepath.Join(h.layout.SiteDir(false, "demo"), "index.html"), []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(h.layout.SiteDir(sites.Private, "demo"), "index.html"), []byte("hello"), 0o644); err != nil {
 		t.Fatalf("seed private file: %v", err)
 	}
 
@@ -628,13 +628,13 @@ func TestSetVisibilityMovesBetweenPublicAndPrivate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get public site: %v", err)
 	}
-	if !site.Public {
+	if site.Visibility != sites.Public {
 		t.Fatalf("stored Public = false, want true")
 	}
-	if _, err := os.Stat(filepath.Join(h.layout.SiteDir(true, "demo"), "index.html")); err != nil {
+	if _, err := os.Stat(filepath.Join(h.layout.SiteDir(sites.Public, "demo"), "index.html")); err != nil {
 		t.Fatalf("public dir should contain moved file: %v", err)
 	}
-	if _, err := os.Stat(h.layout.SiteDir(false, "demo")); !os.IsNotExist(err) {
+	if _, err := os.Stat(h.layout.SiteDir(sites.Private, "demo")); !os.IsNotExist(err) {
 		t.Fatalf("private dir should be gone after public move: %v", err)
 	}
 
@@ -646,13 +646,13 @@ func TestSetVisibilityMovesBetweenPublicAndPrivate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get private site: %v", err)
 	}
-	if site.Public {
+	if site.Visibility != sites.Private {
 		t.Fatalf("stored Public = true, want false")
 	}
-	if _, err := os.Stat(filepath.Join(h.layout.SiteDir(false, "demo"), "index.html")); err != nil {
+	if _, err := os.Stat(filepath.Join(h.layout.SiteDir(sites.Private, "demo"), "index.html")); err != nil {
 		t.Fatalf("private dir should contain moved file: %v", err)
 	}
-	if _, err := os.Stat(h.layout.SiteDir(true, "demo")); !os.IsNotExist(err) {
+	if _, err := os.Stat(h.layout.SiteDir(sites.Public, "demo")); !os.IsNotExist(err) {
 		t.Fatalf("public dir should be gone after private move: %v", err)
 	}
 
@@ -664,7 +664,7 @@ func TestDelete(t *testing.T) {
 	h, _ := newTestHandler(t)
 	callOK(t, h, "create", map[string]any{"name": "demo"})
 	callOK(t, h, "set_visibility", map[string]any{"name": "demo", "public": true})
-	if err := os.WriteFile(filepath.Join(h.layout.SiteDir(true, "demo"), "index.html"), []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(h.layout.SiteDir(sites.Public, "demo"), "index.html"), []byte("hello"), 0o644); err != nil {
 		t.Fatalf("seed public file: %v", err)
 	}
 
@@ -675,7 +675,7 @@ func TestDelete(t *testing.T) {
 	if _, err := h.store.Get(context.Background(), "demo"); !errors.Is(err, sites.ErrNotFound) {
 		t.Fatalf("store.Get after delete err = %v, want ErrNotFound", err)
 	}
-	if _, err := os.Stat(h.layout.SiteDir(true, "demo")); !os.IsNotExist(err) {
+	if _, err := os.Stat(h.layout.SiteDir(sites.Public, "demo")); !os.IsNotExist(err) {
 		t.Errorf("public dir should be removed: %v", err)
 	}
 	listed := callOK(t, h, "list", map[string]any{})

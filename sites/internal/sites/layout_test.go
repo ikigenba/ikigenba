@@ -8,29 +8,34 @@ import (
 	"testing"
 )
 
-// R-QV1H-JU04
 func TestLayoutSiteDirAndBaseUseVisibilitySegments(t *testing.T) {
 	layout := NewLayout(filepath.Join("tmp", "sites-root"))
 
-	if got, want := layout.SiteBase(true), filepath.Join(layout.root(), PublicSeg); got != want {
+	// R-H5H4-GTWA
+	if got, want := layout.SiteBase(Public), filepath.Join(layout.root(), PublicSeg); got != want {
 		t.Fatalf("public SiteBase = %q, want %q", got, want)
 	}
-	if got, want := layout.SiteBase(false), filepath.Join(layout.root(), PrivateSeg); got != want {
+	if got, want := layout.SiteBase(Private), filepath.Join(layout.root(), PrivateSeg); got != want {
 		t.Fatalf("private SiteBase = %q, want %q", got, want)
 	}
-	if got, want := layout.SiteDir(true, "blog"), filepath.Join(layout.root(), PublicSeg, "blog"); got != want {
+	if got, want := layout.SiteDir(Public, "blog"), filepath.Join(layout.root(), PublicSeg, "blog"); got != want {
 		t.Fatalf("public SiteDir = %q, want %q", got, want)
 	}
-	if got, want := layout.SiteDir(false, "blog"), filepath.Join(layout.root(), PrivateSeg, "blog"); got != want {
+	if got, want := layout.SiteDir(Private, "blog"), filepath.Join(layout.root(), PrivateSeg, "blog"); got != want {
 		t.Fatalf("private SiteDir = %q, want %q", got, want)
+	}
+	if got, want := layout.SiteDir(Unlisted, "token"), filepath.Join(layout.root(), PublicSeg, "token"); got != want {
+		t.Fatalf("unlisted SiteDir = %q, want %q", got, want)
+	}
+	if Seg(Public) != PublicSeg || Seg(Private) != PrivateSeg || Seg(Unlisted) != PublicSeg {
+		t.Fatalf("Seg mapping = (%q, %q, %q), want (public, private, public)", Seg(Public), Seg(Private), Seg(Unlisted))
 	}
 }
 
-// R-QW9D-XLQT
-func TestLayoutMoveRelocatesVisibilityDirectories(t *testing.T) {
+func TestLayoutMoveRelocatesRenamesAndProtectsDestinations(t *testing.T) {
 	layout := NewLayout(t.TempDir())
-	privateDir := layout.SiteDir(false, "blog")
-	publicDir := layout.SiteDir(true, "blog")
+	privateDir := layout.SiteDir(Private, "blog")
+	publicDir := layout.SiteDir(Unlisted, "tok")
 	if err := os.MkdirAll(privateDir, 0o755); err != nil {
 		t.Fatalf("mkdir private: %v", err)
 	}
@@ -39,8 +44,9 @@ func TestLayoutMoveRelocatesVisibilityDirectories(t *testing.T) {
 		t.Fatalf("write private file: %v", err)
 	}
 
-	if err := layout.Move("blog", true); err != nil {
-		t.Fatalf("move public: %v", err)
+	// R-H6P0-ULMZ
+	if err := layout.Move("blog", Private, "tok", Unlisted); err != nil {
+		t.Fatalf("move and rename unlisted: %v", err)
 	}
 	publicFile := filepath.Join(publicDir, "index.html")
 	if got, err := os.ReadFile(publicFile); err != nil || string(got) != "hello" {
@@ -54,8 +60,8 @@ func TestLayoutMoveRelocatesVisibilityDirectories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat public before no-op: %v", err)
 	}
-	if err := layout.Move("blog", true); err != nil {
-		t.Fatalf("move already public: %v", err)
+	if err := layout.Move("tok", Unlisted, "tok", Public); err != nil {
+		t.Fatalf("same-path move: %v", err)
 	}
 	after, err := os.Stat(publicFile)
 	if err != nil {
@@ -65,17 +71,25 @@ func TestLayoutMoveRelocatesVisibilityDirectories(t *testing.T) {
 		t.Fatalf("no-op move changed file mod time: before %v after %v", before.ModTime(), after.ModTime())
 	}
 
-	if err := layout.Move("blog", false); err != nil {
-		t.Fatalf("move private: %v", err)
-	}
-	if got, err := os.ReadFile(privateFile); err != nil || string(got) != "hello" {
-		t.Fatalf("private file = %q, %v; want hello, nil", got, err)
-	}
-	if _, err := os.Stat(publicDir); !os.IsNotExist(err) {
-		t.Fatalf("public dir after private move: want missing, got %v", err)
-	}
-	if err := layout.Move("empty", true); err != nil {
+	if err := layout.Move("empty", Private, "empty-token", Unlisted); err != nil {
 		t.Fatalf("move missing source: %v", err)
+	}
+	destination := layout.SiteDir(Public, "occupied")
+	if err := os.MkdirAll(destination, 0o755); err != nil {
+		t.Fatalf("mkdir destination: %v", err)
+	}
+	source := layout.SiteDir(Private, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("mkdir source: %v", err)
+	}
+	if err := layout.Move("source", Private, "occupied", Public); err == nil {
+		t.Fatal("move onto existing destination succeeded")
+	}
+	if _, err := os.Stat(source); err != nil {
+		t.Fatalf("source changed after collision: %v", err)
+	}
+	if _, err := os.Stat(destination); err != nil {
+		t.Fatalf("destination changed after collision: %v", err)
 	}
 }
 

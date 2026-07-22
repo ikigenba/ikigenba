@@ -98,8 +98,8 @@ func sitesSpec() appkit.Spec {
 				return err
 			}
 			rt.Handle("GET /{$}", landingHandler(store, rt.WWW(), rt.Service(), rt.Version(), baseURL))
-			rt.Handle("GET /public/", serve.Handler(layout.SiteBase(true), "/public/"))
-			rt.Handle("GET /private/", serve.Handler(layout.SiteBase(false), "/private/"))
+			rt.Handle("GET /public/", serve.Handler(layout.SiteBase(sites.Public), "/public/"))
+			rt.Handle("GET /private/", serve.Handler(layout.SiteBase(sites.Private), "/private/"))
 			rt.Handle("POST /mcp", rt.RequireIdentity(handler))
 			return nil
 		},
@@ -124,14 +124,11 @@ func landingHandler(store *sites.Store, renderer landingRenderer, service, versi
 		}
 		sitesData := make([]landingSiteData, 0, len(list))
 		for _, s := range list {
-			tier := sites.PublicSeg
-			if !s.Public {
-				tier = sites.PrivateSeg
-			}
+			tier := sites.Seg(s.Visibility)
 			row := siteRow{
 				Slug:          s.Name,
 				URL:           baseURL + tier + "/" + s.Name + "/",
-				Public:        s.Public,
+				Public:        s.Visibility == sites.Public,
 				CreatedBy:     s.OwnerEmail,
 				CreatedAt:     s.CreatedAt.UTC().Format(time.RFC3339),
 				CreatedAtSort: s.CreatedAt.UTC().Format(time.RFC3339),

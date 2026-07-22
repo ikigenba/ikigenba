@@ -171,11 +171,15 @@ func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage, id s
 	if err := unmarshalArgs(raw, &a); err != nil {
 		return nil, err
 	}
-	site, err := h.store.Create(ctx, a.Name, id.OwnerID, id.OwnerEmail, a.Public)
+	visibility := sites.Private
+	if a.Public {
+		visibility = sites.Public
+	}
+	site, err := h.store.Create(ctx, a.Name, id.OwnerID, id.OwnerEmail, visibility)
 	if err != nil {
 		return errResult(err), nil
 	}
-	if err := os.MkdirAll(h.layout.SiteDir(a.Public, a.Name), 0o755); err != nil {
+	if err := os.MkdirAll(h.layout.SiteDir(visibility, a.Name), 0o755); err != nil {
 		return errResultMsg(appkitmcp.ErrInternal, "create_site_dir: "+err.Error()), nil
 	}
 	return appkitmcp.StructuredResult(h.renderSite(site))
@@ -213,7 +217,7 @@ func (h *toolHandlers) toolDelete(ctx context.Context, raw json.RawMessage) (map
 	if err := h.store.Delete(ctx, a.Name); err != nil && !errors.Is(err, sites.ErrNotFound) {
 		return errResult(err), nil
 	}
-	if err := os.RemoveAll(h.layout.SiteDir(site.Public, a.Name)); err != nil {
+	if err := os.RemoveAll(h.layout.SiteDir(site.Visibility, a.Name)); err != nil {
 		return errResultMsg(appkitmcp.ErrInternal, "remove_site_dir: "+err.Error()), nil
 	}
 	return appkitmcp.StructuredResult(map[string]any{"deleted": a.Name})
@@ -234,7 +238,7 @@ func (h *toolHandlers) toolMkdir(ctx context.Context, raw json.RawMessage) (map[
 	if err != nil {
 		return errResult(err), nil
 	}
-	root := h.layout.SiteDir(site.Public, a.Name)
+	root := h.layout.SiteDir(site.Visibility, a.Name)
 	if err := sitefiles.Mkdir(root, a.Path); err != nil {
 		if errors.Is(err, sitefiles.ErrEscapes) {
 			return errResultMsg(appkitmcp.ErrValidation, "path_escapes_working_dir: "+err.Error()), nil
@@ -254,13 +258,21 @@ func (h *toolHandlers) toolSetVisibility(ctx context.Context, raw json.RawMessag
 	if err := unmarshalArgs(raw, &a); err != nil {
 		return nil, err
 	}
-	if err := h.store.SetVisibility(ctx, a.Name, a.Public); err != nil {
+	site, err := h.store.Get(ctx, a.Name)
+	if err != nil {
 		return errResult(err), nil
 	}
-	if err := h.layout.Move(a.Name, a.Public); err != nil {
+	visibility := sites.Private
+	if a.Public {
+		visibility = sites.Public
+	}
+	if err := h.store.SetVisibility(ctx, a.Name, visibility, ""); err != nil {
+		return errResult(err), nil
+	}
+	if err := h.layout.Move(a.Name, site.Visibility, a.Name, visibility); err != nil {
 		return errResultMsg(appkitmcp.ErrInternal, "move_site_dir: "+err.Error()), nil
 	}
-	site, err := h.store.Get(ctx, a.Name)
+	site, err = h.store.Get(ctx, a.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -283,13 +295,10 @@ func (h *toolHandlers) siteURL(tier, name string) string {
 
 // renderSite maps a Site to its MCP JSON projection.
 func (h *toolHandlers) renderSite(s sites.Site) map[string]any {
-	tier := sites.PublicSeg
-	if !s.Public {
-		tier = sites.PrivateSeg
-	}
+	tier := sites.Seg(s.Visibility)
 	return map[string]any{
 		"name":        s.Name,
-		"public":      s.Public,
+		"public":      s.Visibility == sites.Public,
 		"owner_id":    s.OwnerID,
 		"owner_email": s.OwnerEmail,
 		"url":         h.siteURL(tier, s.Name),
