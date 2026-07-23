@@ -11,5 +11,4 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 42
 
-- Phase 40 ⬜ realizes R-ZI4K-DR4L R-ZJCG-RIVA R-ZKKD-5ALZ R-ZLS9-J2CO R-ZGWN-ZZDW — the landing page lists sites by name
 - Phase 41 ⬜ realizes R-02UU-VUQE R-042R-9MH3 R-05AN-NE7S R-06IK-15YH R-08YC-SPFV — the client controls filter and sort by name
