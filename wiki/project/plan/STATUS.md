@@ -12,5 +12,4 @@ lines.
 
 Next phase: 120
 
-- Phase 118 ⬜ realizes — — readiness proof: one bounded run per folder (baseline + one improver iteration), outputs discarded
 - Phase 119 ⬜ realizes R-GGIG-AN7W — restore D19 requirement-id tag coverage (re-anchor drifted tags)
