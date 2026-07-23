@@ -12,5 +12,4 @@ lines.
 
 Next phase: 119
 
-- Phase 117 ⬜ realizes R-A5T0-FD39, R-A88T-6WKN, R-A9GP-KOBC, R-AECB-3RA4, R-AGS3-VARI — tune folder: synthesis, completing the four-folder workspace
 - Phase 118 ⬜ realizes — — readiness proof: one small baseline run per folder, outputs discarded
