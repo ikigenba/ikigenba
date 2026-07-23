@@ -1,0 +1,3 @@
+Question: What does Kestrel Marine build and where?
+
+Pages: [{"path":"entity/kestrel-marine","title":"Kestrel Marine","body":"Kestrel Marine builds autonomous survey vessels at its shipyard in Aberdeen."}]

@@ -1,0 +1,3 @@
+Question: What is retrograde pricing?
+
+Pages: [{"path":"concept/retrograde-pricing","title":"Retrograde pricing","body":"Retrograde pricing fixes the retail price first and derives every upstream margin backward from it. Critics say it hides true unit costs."}]

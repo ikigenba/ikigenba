@@ -1,0 +1,3 @@
+Question: What art is Tomas Reyes-Aldana known for?
+
+Pages: [{"path":"entity/tomas-reyes-aldana","title":"Tomas Reyes-Aldana","body":"Tomas Reyes-Aldana trained as a marine painter, turned to printmaking in the late 1980s, and created the woodcut series Nine Harbors."}]

@@ -1,0 +1,3 @@
+Question: What happened in the Aldercroft Fire?
+
+Pages: [{"path":"event/aldercroft-fire","title":"Aldercroft Fire","body":"The Aldercroft Fire began in a flour mill on 14 April 1907, burned for two days, destroyed most of Aldercroft, and left about 3,000 people homeless."}]

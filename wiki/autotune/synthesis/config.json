@@ -1,0 +1,4 @@
+{
+  "runner": {"provider": "openai", "model": "gpt-5.6-luna", "auth": "sub", "effort": "low"},
+  "improver": {"provider": "openai", "model": "gpt-5.6-sol", "auth": "sub", "effort": "high"}
+}

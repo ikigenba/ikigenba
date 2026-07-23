@@ -1,0 +1,1 @@
+{"key_points":["It automatically ships merged changes and fixes problems forward rather than rolling back."],"expected_found":true,"allowed_citations":[{"path":"concept/forward-deployment","title":"Forward deployment"}],"notes":"Seed gold pending operator review."}

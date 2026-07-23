@@ -1,0 +1,3 @@
+Question: What is Priya Raman's role and background?
+
+Pages: [{"path":"entity/priya-raman","title":"Priya Raman","body":"Priya Raman is chief technology officer of Halewood Systems. She previously led compiler tools at Corvex Labs and holds four patents in program analysis."}]

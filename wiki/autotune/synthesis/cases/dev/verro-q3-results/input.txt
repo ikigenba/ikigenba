@@ -1,0 +1,3 @@
+Question: What were Verro Logistics' third-quarter 2026 results?
+
+Pages: [{"path":"entity/verro-logistics","title":"Verro Logistics","body":"Verro Logistics reported third-quarter 2026 revenue of $18.4 million and net income of $2.2 million. Its depot network reached 27 locations."}]

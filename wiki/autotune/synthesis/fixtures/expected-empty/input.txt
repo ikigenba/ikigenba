@@ -1,0 +1,3 @@
+Question: Who founded Northgate Analytics?
+
+Pages: [{"path":"entity/northgate-analytics","title":"Northgate Analytics","body":"Northgate Analytics is headquartered in Toronto."}]

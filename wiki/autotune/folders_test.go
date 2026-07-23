@@ -21,13 +21,19 @@ var pinnedConfig = map[string]any{
 	},
 }
 
-func TestExtractAndAnalysisFoldersSatisfyTuneContract(t *testing.T) {
-	for _, folder := range []string{"extract", "analysis"} {
+var tuneFolders = []string{"extract", "analysis", "compile", "synthesis"}
+
+// R-A5T0-FD39
+func TestAllFoldersHaveRequiredTuneFiles(t *testing.T) {
+	for _, folder := range tuneFolders {
 		t.Run(folder, func(t *testing.T) {
-			for _, name := range []string{"prompt.txt", "improve.md", "score", "config.json", "README.md", ".gitignore"} {
+			names := []string{"prompt.txt", "improve.md", "score", "config.json", "README.md", ".gitignore"}
+			if folder == "compile" || folder == "synthesis" {
+				names = append(names, "judge-prompt.txt")
+			}
+			for _, name := range names {
 				assertNonEmptyFile(t, filepath.Join(folder, name))
 			}
-
 			info, err := os.Stat(filepath.Join(folder, "score"))
 			if err != nil {
 				t.Fatalf("stat score: %v", err)
@@ -35,13 +41,34 @@ func TestExtractAndAnalysisFoldersSatisfyTuneContract(t *testing.T) {
 			if info.Mode().Perm()&0o111 == 0 {
 				t.Fatalf("%s/score is not executable: mode %v", folder, info.Mode())
 			}
+			ignore, err := os.ReadFile(filepath.Join(folder, ".gitignore"))
+			if err != nil {
+				t.Fatalf("read .gitignore: %v", err)
+			}
+			if !bytes.Contains(ignore, []byte("runs/")) {
+				t.Fatalf("%s/.gitignore does not cover runs/: %q", folder, ignore)
+			}
+		})
+	}
+}
 
+// R-A88T-6WKN
+func TestAllFoldersPinExactRunnerAndImproverConfig(t *testing.T) {
+	for _, folder := range tuneFolders {
+		t.Run(folder, func(t *testing.T) {
 			var config map[string]any
 			readJSON(t, filepath.Join(folder, "config.json"), &config)
 			if !reflect.DeepEqual(config, pinnedConfig) {
 				t.Fatalf("%s/config.json = %#v, want exact pins %#v", folder, config, pinnedConfig)
 			}
+		})
+	}
+}
 
+// R-A9GP-KOBC
+func TestAllFoldersHaveValidDisjointCases(t *testing.T) {
+	for _, folder := range tuneFolders {
+		t.Run(folder, func(t *testing.T) {
 			dev := validateCases(t, filepath.Join(folder, "cases", "dev"))
 			holdout := validateCases(t, filepath.Join(folder, "cases", "holdout"))
 			for _, name := range dev {
@@ -49,43 +76,32 @@ func TestExtractAndAnalysisFoldersSatisfyTuneContract(t *testing.T) {
 					t.Fatalf("case %q appears in both dev and holdout", name)
 				}
 			}
+			if folder == "compile" || folder == "synthesis" {
+				if len(dev) != 14 || len(holdout) != 7 {
+					t.Fatalf("%s split sizes = %d dev/%d holdout, want 14/7", folder, len(dev), len(holdout))
+				}
+				wantHoldout := []string{"arden-mills-h1", "ferro-nordwind-deal", "forward-deployment", "glasswing-standup", "osei-danquah-profile", "solstice-regatta-2026", "tulsa-lab-opening"}
+				if !reflect.DeepEqual(holdout, wantHoldout) {
+					t.Fatalf("%s holdout cases = %v, want aligned universe cases %v", folder, holdout, wantHoldout)
+				}
+			}
 		})
+	}
+	for _, path := range []string{
+		filepath.Join("synthesis", "cases", "dev", "harbor-fund-call", "gold.json"),
+		filepath.Join("synthesis", "cases", "holdout", "glasswing-standup", "gold.json"),
+	} {
+		var gold struct {
+			ExpectedFound bool `json:"expected_found"`
+		}
+		readJSON(t, path, &gold)
+		if gold.ExpectedFound {
+			t.Fatalf("expected-empty seed %s has expected_found=true", path)
+		}
 	}
 }
 
-func TestCompileFolderSatisfiesTuneContract(t *testing.T) {
-	for _, name := range []string{"prompt.txt", "improve.md", "score", "config.json", "judge-prompt.txt", "README.md", ".gitignore"} {
-		assertNonEmptyFile(t, filepath.Join("compile", name))
-	}
-
-	info, err := os.Stat(filepath.Join("compile", "score"))
-	if err != nil {
-		t.Fatalf("stat score: %v", err)
-	}
-	if info.Mode().Perm()&0o111 == 0 {
-		t.Fatalf("compile/score is not executable: mode %v", info.Mode())
-	}
-
-	var config map[string]any
-	readJSON(t, filepath.Join("compile", "config.json"), &config)
-	if !reflect.DeepEqual(config, pinnedConfig) {
-		t.Fatalf("compile/config.json = %#v, want exact pins %#v", config, pinnedConfig)
-	}
-
-	dev := validateCases(t, filepath.Join("compile", "cases", "dev"))
-	holdout := validateCases(t, filepath.Join("compile", "cases", "holdout"))
-	if len(dev) != 14 || len(holdout) != 7 {
-		t.Fatalf("compile split sizes = %d dev/%d holdout, want 14/7", len(dev), len(holdout))
-	}
-	for _, name := range dev {
-		if contains(holdout, name) {
-			t.Fatalf("case %q appears in both dev and holdout", name)
-		}
-	}
-	wantHoldout := []string{"arden-mills-h1", "ferro-nordwind-deal", "forward-deployment", "glasswing-standup", "osei-danquah-profile", "solstice-regatta-2026", "tulsa-lab-opening"}
-	if !reflect.DeepEqual(holdout, wantHoldout) {
-		t.Fatalf("compile holdout cases = %v, want aligned universe cases %v", holdout, wantHoldout)
-	}
+func TestCompileGateFixturesArePresent(t *testing.T) {
 	for _, name := range []string{"input.txt", "gold.json", "expected.json", "clean.json", "over-cap.json", "invented-citation.json", "malformed.json"} {
 		assertNonEmptyFile(t, filepath.Join("compile", "fixtures", "gates", name))
 	}
@@ -138,6 +154,65 @@ func TestCompileScoreLiveJudgeReturnsComposedRubricScore(t *testing.T) {
 		t.Fatalf("judge rubric = %#v, want four subscores", got.Rubric)
 	}
 	for _, name := range []string{"coverage", "factuality", "lead", "organization"} {
+		value, ok := got.Rubric[name]
+		if !ok || value < 0 || value > 1 {
+			t.Fatalf("rubric %s = %v (present %v), want [0,1]", name, value, ok)
+		}
+	}
+	want := 0.60*got.GateScore + 0.40*got.JudgeScore
+	if !closeEnough(got.Score, want) {
+		t.Fatalf("score = %v, want composed %v", got.Score, want)
+	}
+}
+
+// R-AECB-3RA4
+func TestSynthesisScoreAppliesReproducibleDeterministicGates(t *testing.T) {
+	t.Setenv("SCORE_SKIP_JUDGE", "1")
+	fixture := filepath.Join("synthesis", "fixtures", "gates")
+	var expected map[string]float64
+	readJSON(t, filepath.Join(fixture, "expected.json"), &expected)
+
+	for _, candidate := range []struct {
+		name    string
+		fixture string
+		file    string
+	}{
+		{name: "clean", fixture: fixture, file: "clean.json"},
+		{name: "unsupplied_citation", fixture: fixture, file: "unsupplied-citation.json"},
+		{name: "no_citations", fixture: fixture, file: "no-citations.json"},
+		{name: "expected_empty", fixture: filepath.Join("synthesis", "fixtures", "expected-empty"), file: "output.json"},
+	} {
+		t.Run(candidate.name, func(t *testing.T) {
+			first := runScorer(t, "synthesis", candidate.fixture, candidate.file, "")
+			second := runScorer(t, "synthesis", candidate.fixture, candidate.file, "")
+			want := expected[candidate.name]
+			if !closeEnough(first.Score, want) {
+				t.Fatalf("score = %v, want hand-computed %v", first.Score, want)
+			}
+			if first.Score != second.Score || first.GateScore != second.GateScore || !reflect.DeepEqual(first.Gates, second.Gates) {
+				t.Fatalf("repeated scores differ: first=%+v second=%+v", first, second)
+			}
+		})
+	}
+}
+
+// R-AGS3-VARI
+func TestSynthesisScoreLiveJudgeReturnsComposedRubricScore(t *testing.T) {
+	if os.Getenv("WIKI_TUNE_LIVE") != "1" || os.Getenv("OPENAI_API_KEY") == "" {
+		t.Skip("set WIKI_TUNE_LIVE=1 and OPENAI_API_KEY to run the live synthesis judge")
+	}
+	fixture := filepath.Join("synthesis", "fixtures", "gates")
+	got := runScorer(t, "synthesis", fixture, "clean.json", "")
+	if got.Score < 0 || got.Score > 1 {
+		t.Fatalf("composed score = %v, want [0,1]", got.Score)
+	}
+	if got.GateScore != 1 {
+		t.Fatalf("clean fixture gate score = %v, want 1", got.GateScore)
+	}
+	if len(got.Rubric) != 2 {
+		t.Fatalf("judge rubric = %#v, want two subscores", got.Rubric)
+	}
+	for _, name := range []string{"groundedness", "completeness"} {
 		value, ok := got.Rubric[name]
 		if !ok || value < 0 || value > 1 {
 			t.Fatalf("rubric %s = %v (present %v), want [0,1]", name, value, ok)

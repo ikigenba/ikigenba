@@ -1,0 +1,3 @@
+Question: Who is the chief executive of Harbor Fund?
+
+Pages: [{"path":"entity/harbor-fund","title":"Harbor Fund","body":"The Harbor Fund closed its third fund at $95 million in May 2026 and plans to open a Chicago office in 2027."}]

@@ -1,0 +1,3 @@
+Question: What is forward deployment?
+
+Pages: [{"path":"concept/forward-deployment","title":"Forward deployment","body":"Forward deployment ships every merged change automatically and corrects problems with a follow-up change rather than a rollback. It demands unusually strong monitoring."}]

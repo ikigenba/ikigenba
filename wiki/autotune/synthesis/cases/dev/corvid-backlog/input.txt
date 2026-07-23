@@ -1,0 +1,3 @@
+Question: How did Corvid Insurance reduce its claims backlog?
+
+Pages: [{"path":"entity/corvid-insurance","title":"Corvid Insurance","body":"Corvid Insurance cut its claims backlog from nine weeks to six days during 2025 after adopting straight-through processing for simple claims and hiring 14 adjusters."}]

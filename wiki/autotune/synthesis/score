@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Hybrid deterministic-gate and prose-judge scorer for synthesized answers."""
+
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+W_GATE = 0.60
+W_JUDGE = 0.40
+GATE_WEIGHTS = {"shape": 0.25, "citations": 0.25, "citation_required": 0.25, "expected_empty": 0.25}
+JUDGE_WEIGHTS = {"groundedness": 0.50, "completeness": 0.50}
+JUDGE_MODEL = "gpt-5.6-sol"
+
+
+def emit(score, feedback, **extra):
+    result = {"score": round(score, 6), "feedback": feedback}
+    result.update(extra)
+    print(json.dumps(result, sort_keys=True))
+
+
+def parse_candidate(raw):
+    value = json.loads(raw)
+    if not isinstance(value, dict) or set(value) != {"found", "text", "citations"}:
+        raise ValueError('output must contain exactly "found", "text", and "citations"')
+    if not isinstance(value["found"], bool) or not isinstance(value["text"], str) or not isinstance(value["citations"], list):
+        raise ValueError("found must be boolean, text string, and citations a list")
+    for citation in value["citations"]:
+        if not isinstance(citation, dict) or set(citation) != {"path", "title"}:
+            raise ValueError('each citation must contain exactly "path" and "title"')
+        if not all(isinstance(citation[key], str) and citation[key].strip() for key in ("path", "title")):
+            raise ValueError("citation path and title must be non-empty strings")
+    return value
+
+
+def supplied_pages(case_input):
+    marker = "\n\nPages: "
+    if marker not in case_input:
+        raise ValueError("case input has no Pages JSON")
+    pages = json.loads(case_input.split(marker, 1)[1])
+    return {(page["path"], page["title"]) for page in pages}
+
+
+def deterministic_gates(raw, case_input, gold):
+    gates = {key: 0.0 for key in GATE_WEIGHTS}
+    messages = []
+    try:
+        candidate = parse_candidate(raw)
+    except (ValueError, json.JSONDecodeError) as exc:
+        return None, gates, [f"shape failed: {exc}"]
+    gates["shape"] = 1.0
+    allowed = supplied_pages(case_input)
+    cited = {(item["path"], item["title"]) for item in candidate["citations"]}
+    invented = sorted(cited - allowed)
+    if invented:
+        messages.append("unsupplied citations: " + ", ".join(path for path, _ in invented))
+    else:
+        gates["citations"] = 1.0
+    if not candidate["found"] or candidate["citations"]:
+        gates["citation_required"] = 1.0
+    else:
+        messages.append("found answer has no citations")
+    if gold["expected_found"] or not candidate["found"]:
+        gates["expected_empty"] = 1.0
+    else:
+        messages.append("expected-empty case returned found=true")
+    return candidate, gates, messages
+
+
+def response_text(value):
+    direct = value.get("output_text")
+    if isinstance(direct, str) and direct.strip():
+        return direct
+    for item in value.get("output", []):
+        for content in item.get("content", []):
+            text = content.get("text")
+            if isinstance(text, str) and text.strip():
+                return text
+    raise ValueError("judge response contains no output text")
+
+
+def call_judge(case_input, gold, candidate, rubric):
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is required unless SCORE_SKIP_JUDGE=1")
+    payload = {
+        "model": JUDGE_MODEL,
+        "reasoning": {"effort": "high"},
+        "instructions": rubric,
+        "input": "CASE INPUT:\n" + case_input + "\n\nGOLD GUIDANCE:\n" + json.dumps(gold, sort_keys=True) + "\n\nCANDIDATE:\n" + json.dumps(candidate, sort_keys=True),
+        "text": {"format": {"type": "json_schema", "name": "synthesis_rubric", "strict": True, "schema": {
+            "type": "object",
+            "properties": {key: {"type": "number", "minimum": 0, "maximum": 1} for key in JUDGE_WEIGHTS},
+            "required": list(JUDGE_WEIGHTS),
+            "additionalProperties": False,
+        }}},
+    }
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(payload).encode(),
+        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            result = json.load(response)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        raise RuntimeError(f"judge request failed ({exc.code}): {detail}") from exc
+    rubric_scores = json.loads(response_text(result))
+    if set(rubric_scores) != set(JUDGE_WEIGHTS):
+        raise ValueError(f"judge returned wrong rubric fields: {sorted(rubric_scores)}")
+    for key, value in rubric_scores.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
+            raise ValueError(f"judge rubric {key} is outside [0,1]")
+    return rubric_scores
+
+
+def main():
+    if len(sys.argv) != 2:
+        print("usage: score <case-dir>", file=sys.stderr)
+        return 2
+    case_dir = sys.argv[1]
+    with open(os.path.join(case_dir, "input.txt"), encoding="utf-8") as source:
+        case_input = source.read()
+    with open(os.path.join(case_dir, "gold.json"), encoding="utf-8") as source:
+        gold = json.load(source)
+    candidate, gates, messages = deterministic_gates(sys.stdin.read(), case_input, gold)
+    gate_score = sum(GATE_WEIGHTS[key] * value for key, value in gates.items())
+    if os.environ.get("SCORE_SKIP_JUDGE") == "1":
+        feedback = "; ".join(messages) if messages else "all deterministic gates passed"
+        emit(gate_score, feedback, gate_score=round(gate_score, 6), gates=gates)
+        return 0
+    if candidate is None:
+        emit(0.0, "; ".join(messages), gate_score=0.0, gates=gates)
+        return 0
+    with open(os.path.join(os.path.dirname(__file__), "judge-prompt.txt"), encoding="utf-8") as source:
+        rubric_scores = call_judge(case_input, gold, candidate, source.read())
+    judge_score = sum(JUDGE_WEIGHTS[key] * value for key, value in rubric_scores.items())
+    total = W_GATE * gate_score + W_JUDGE * judge_score
+    feedback = "; ".join(messages + [f"judge {judge_score:.3f}"])
+    emit(total, feedback, gate_score=round(gate_score, 6), judge_score=round(judge_score, 6), gates=gates, rubric=rubric_scores)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        print(f"synthesis scorer failed: {exc}", file=sys.stderr)
+        sys.exit(1)

@@ -1,0 +1,3 @@
+Question: What agreement did Bram Textiles sign with Loomware?
+
+Pages: [{"path":"entity/bram-textiles","title":"Bram Textiles","body":"Bram Textiles signed a five-year supply agreement with Loomware on 3 February 2026 and will remain its exclusive European testing site for the next machine generation."}]

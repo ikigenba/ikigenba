@@ -1,0 +1,3 @@
+Question: What did Meridian Foods gain by acquiring FreshCrate?
+
+Pages: [{"path":"entity/meridian-foods","title":"Meridian Foods","body":"Meridian Foods acquired FreshCrate for $40 million in March 2025 and gained access to FreshCrate's cold-chain logistics network."}]

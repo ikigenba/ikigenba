@@ -1,0 +1,3 @@
+Question: What did the Camorim mangrove study find?
+
+Pages: [{"path":"entity/instituto-aguas-claras","title":"Instituto Aguas Claras","body":"A five-year study found that mangrove replanting along the Camorim estuary raised juvenile fish counts by 62 percent."}]

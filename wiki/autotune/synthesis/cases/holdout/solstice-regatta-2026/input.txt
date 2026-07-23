@@ -1,0 +1,3 @@
+Question: What were the scale and prize of the 2026 Solstice Regatta?
+
+Pages: [{"path":"event/solstice-regatta","title":"Solstice Regatta","body":"The Solstice Regatta drew 87 boats in four classes. Its keelboat class carried a $4,500 first prize."}]

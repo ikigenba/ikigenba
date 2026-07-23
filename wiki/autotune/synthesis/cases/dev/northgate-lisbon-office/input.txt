@@ -1,0 +1,3 @@
+Question: Where are Northgate Analytics' headquarters and first European office?
+
+Pages: [{"path":"entity/northgate-analytics","title":"Northgate Analytics","body":"Northgate Analytics is headquartered in Toronto and opened its first European office in Lisbon in June 2024."}]

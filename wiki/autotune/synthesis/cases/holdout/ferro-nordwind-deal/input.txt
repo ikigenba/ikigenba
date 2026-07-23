@@ -1,0 +1,3 @@
+Question: What contract did Ferro Docks sign?
+
+Pages: [{"path":"entity/ferro-docks","title":"Ferro Docks","body":"Ferro Docks signed a three-year maintenance contract with Nordwind Ferries on 9 March 2026 and remains the sole Mediterranean maintenance site for its ice-class fleet."}]

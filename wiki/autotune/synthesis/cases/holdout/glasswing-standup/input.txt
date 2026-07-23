@@ -1,0 +1,3 @@
+Question: Who founded Glasswing Optics?
+
+Pages: [{"path":"entity/glasswing-optics","title":"Glasswing Optics","body":"Glasswing Optics built its first prototype in 2019 and closed a $22 million Series B in April 2026."}]
