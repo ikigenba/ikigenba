@@ -104,6 +104,7 @@ func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) 
 	// R-BAFW-D24P
 	// R-6A8D-0RK9
 	// R-05CG-3H6Y
+	// R-9ZPI-IIDS
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -136,7 +137,7 @@ func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) 
 		}`),
 	}}
 
-	got, err := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
+	got, err := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), DefaultSubjectCallSite(), DefaultSynthesisCallSite()).
 		Ask(ctx, "owner@example.com", "Who owns the scheduler?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
@@ -166,11 +167,21 @@ func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) 
 	if len(prov.requests) != 2 {
 		t.Fatalf("provider requests = %d, want analysis then synthesis", len(prov.requests))
 	}
-	synthText := requestText(prov.requests[1])
+	synthRequest := prov.requests[1]
+	if synthRequest.System != DefaultSynthesisInstructions {
+		t.Fatalf("synthesis system = %q, want embedded instructions %q", synthRequest.System, DefaultSynthesisInstructions)
+	}
+	if len(synthRequest.Messages) != 1 {
+		t.Fatalf("synthesis messages = %#v, want one user turn", synthRequest.Messages)
+	}
+	synthText := requestText(synthRequest)
 	if !strings.Contains(synthText, "Grace owns the scheduler.") {
 		t.Fatalf("synth prompt = %q, want retrieved Grace page body", synthText)
 	}
-	if strings.Contains(synthText, "Ada body should not be sent") || strings.Contains(synthText, "subject-grace") {
+	if !strings.Contains(synthText, "Who owns the scheduler?") {
+		t.Fatalf("synth prompt = %q, want original question", synthText)
+	}
+	if strings.Contains(synthText, DefaultSynthesisInstructions) || strings.Contains(synthText, "Ada body should not be sent") || strings.Contains(synthText, "subject-grace") {
 		t.Fatalf("synth prompt = %q, want retrieved public page context without exact-name or internal-id grounding", synthText)
 	}
 }
@@ -449,7 +460,7 @@ func TestAskDoesNotWriteOnHonestEmptyOrParseFailure(t *testing.T) {
 	}
 }
 
-func TestDefaultAskCallSitesUseSeparateReasoningLowStages(t *testing.T) {
+func TestDefaultAskCallSitesUseLunaAndEmbeddedSystemPrompts(t *testing.T) {
 	// R-GHQC-OEYL
 	subject := DefaultSubjectCallSite()
 	synthesis := DefaultSynthesisCallSite()
@@ -463,15 +474,11 @@ func TestDefaultAskCallSitesUseSeparateReasoningLowStages(t *testing.T) {
 		"subject":   subject,
 		"synthesis": synthesis,
 	} {
-		if site.MaxTokens != 16384 {
-			t.Fatalf("%s MaxTokens = %d, want 16384", name, site.MaxTokens)
+		if site.Config.Provider != "openai" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "low" || site.Config.MaxTokens != 16384 {
+			t.Fatalf("%s config = %#v, want openai Luna low/16384", name, site.Config)
 		}
-		level, ok := site.Reasoning.(interface{ Level() (string, bool) })
-		if !ok {
-			t.Fatalf("%s reasoning = %#v, want level setting", name, site.Reasoning)
-		}
-		if value, enabled := level.Level(); value != "low" || !enabled {
-			t.Fatalf("%s reasoning level = %q/%v, want low/true", name, value, enabled)
+		if site.System == "" || site.Config.Temperature != nil || site.Config.Thinking != nil || site.Temperature != nil || site.Reasoning != nil {
+			t.Fatalf("%s site = %#v, want embedded system and no temperature/thinking pins", name, site)
 		}
 	}
 }
@@ -510,10 +517,8 @@ func TestAnalyzeRunsOneAskSubjectCallAndParsesQueryAnalysis(t *testing.T) {
 		t.Fatalf("analysis tools = %#v, want tool-less JSON call", req.Tools)
 	}
 	prompt := requestText(req)
-	for _, want := range []string{"sub_queries", "keywords", "aliases", "How did Ada and Grace handle the release?"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("analysis prompt = %q, want %q", prompt, want)
-		}
+	if prompt != "How did Ada and Grace handle the release?" {
+		t.Fatalf("analysis user prompt = %q, want question only", prompt)
 	}
 }
 

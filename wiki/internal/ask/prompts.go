@@ -1,15 +1,20 @@
 package ask
 
 import (
-	"strings"
-
-	analysisprompt "wiki/eval/analysis"
+	_ "embed"
 )
 
 // DefaultAnalysisInstructions is the production question-analysis instruction preamble.
-var DefaultAnalysisInstructions = analysisprompt.Instructions
+//
+//go:embed analysis-prompt.txt
+var DefaultAnalysisInstructions string
 
-// RenderAnalysis assembles the exact prompt sent by the production analysis call.
-func RenderAnalysis(instructions, question string) string {
-	return instructions + "\n\nQuestion: " + strings.TrimSpace(question)
+// DefaultSynthesisInstructions is the production answer-synthesis instruction preamble.
+//
+//go:embed synthesis-prompt.txt
+var DefaultSynthesisInstructions string
+
+// RenderAnalysis returns the question-only user turn used by production analysis.
+func RenderAnalysis(_ string, question string) string {
+	return question
 }

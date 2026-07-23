@@ -8,15 +8,12 @@ import (
 	"fmt"
 	"strings"
 
+	"wiki/internal/asksite"
 	"wiki/internal/ids"
 	"wiki/internal/llm"
 	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
 )
-
-type reasoningLevel string
-
-func (level reasoningLevel) Level() (string, bool) { return string(level), level != "" }
 
 const honestEmptyText = "The wiki holds nothing on that question."
 
@@ -96,22 +93,12 @@ func New(search Retriever, subjects *wiki.SubjectStore, pages *wiki.PageStore, c
 
 // DefaultSubjectCallSite returns the production ask subject-analysis settings.
 func DefaultSubjectCallSite() llm.CallSite {
-	return llm.CallSite{
-		Stage:     "ask-subject",
-		Config:    llm.Config{Effort: "low", MaxTokens: defaultMaxTokens},
-		Reasoning: reasoningLevel("low"),
-		MaxTokens: defaultMaxTokens,
-	}
+	return asksite.Subject()
 }
 
 // DefaultSynthesisCallSite returns the production ask answer-synthesis settings.
 func DefaultSynthesisCallSite() llm.CallSite {
-	return llm.CallSite{
-		Stage:     "ask-synthesis",
-		Config:    llm.Config{Effort: "low", MaxTokens: defaultMaxTokens},
-		Reasoning: reasoningLevel("low"),
-		MaxTokens: defaultMaxTokens,
-	}
+	return asksite.Synthesis()
 }
 
 // Ask answers a question by analyzing it, retrieving relevant pages, reading
@@ -219,11 +206,7 @@ func (a *Asker) gatherPages(ctx context.Context, hits []retrieve.Hit) ([]pageCon
 
 func synthPrompt(question string, pages []pageContext) string {
 	raw, _ := json.Marshal(pages)
-	return "Answer the question using only the supplied wiki pages. " +
-		"Return only JSON with found, text, and citations. " +
-		"Each citation must use an exact path and title from the pages. " +
-		"If the pages do not answer the question, return found=false.\n\n" +
-		"Question: " + question + "\n\nPages: " + string(raw)
+	return "Question: " + question + "\n\nPages: " + string(raw)
 }
 
 func normalizeAnswer(out *answerResult) {

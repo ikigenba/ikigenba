@@ -11,7 +11,7 @@ const (
 	App   = "wiki"
 	Mount = "/srv/wiki/"
 
-	ModelID           = "claude-sonnet-4-6"
+	ModelID           = "gpt-5.6-luna"
 	WorkerConcurrency = 1
 	SearchDefault     = 8
 	SearchCap         = 32

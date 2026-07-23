@@ -8,8 +8,8 @@ import (
 	"wiki/internal/llm"
 )
 
-func TestNewConfigBuildsDefaultPerCallSiteModels(t *testing.T) {
-	// R-GIY9-26PA
+func TestNewConfigUsesEveryStageDefaultLunaCallSite(t *testing.T) {
+	// R-A25B-A1V6
 	cfg, err := NewConfig(fakeGetenv(map[string]string{}))
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
@@ -19,8 +19,8 @@ func TestNewConfigBuildsDefaultPerCallSiteModels(t *testing.T) {
 	}
 	assertProductionSite(t, cfg.CallSites.Extract, "extract", 2)
 	assertProductionSite(t, cfg.CallSites.Compile, "compile", 0)
-	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", ModelID, nil, reasoningLevel("low"), 16384, 0)
-	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", ModelID, nil, reasoningLevel("low"), 16384, 0)
+	assertProductionSite(t, cfg.CallSites.AskSubject, "ask-subject", 0)
+	assertProductionSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", 0)
 	if cfg.EmbedSite.Model != "text-embedding-3-small" || cfg.EmbedSite.Dims != 512 {
 		t.Fatalf("EmbedSite = %#v, want default OpenAI small embeddings at 512 dims", cfg.EmbedSite)
 	}
@@ -45,7 +45,7 @@ func TestNewConfigLayersPerCallSiteEnvironmentOverrides(t *testing.T) {
 
 	assertResolvedSite(t, cfg.CallSites.Extract, "extract", "extract-model", 0.25, nil, 0, 2)
 	assertResolvedSite(t, cfg.CallSites.Compile, "compile", "compile-model", nil, nil, 4096, 0)
-	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", "subject-model", nil, reasoningLevel("high"), 16384, 0)
+	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", "subject-model", nil, reasoningLevel("high"), 0, 0)
 	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", "synthesis-model", nil, llm.DisableReasoning(), 8192, 0)
 }
 

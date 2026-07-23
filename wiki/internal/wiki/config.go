@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"wiki/internal/asksite"
 	"wiki/internal/compile"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
@@ -91,11 +92,11 @@ func resolveCallSites(getenv func(string) string) (CallSites, error) {
 	if err != nil {
 		return CallSites{}, err
 	}
-	askSubject, err := resolveCallSite(getenv, "ASK_SUBJECT", defaultAskSubjectCallSite())
+	askSubject, err := resolveCallSite(getenv, "ASK_SUBJECT", asksite.Subject())
 	if err != nil {
 		return CallSites{}, err
 	}
-	askSynthesis, err := resolveCallSite(getenv, "ASK_SYNTHESIS", defaultAskSynthesisCallSite())
+	askSynthesis, err := resolveCallSite(getenv, "ASK_SYNTHESIS", asksite.Synthesis())
 	if err != nil {
 		return CallSites{}, err
 	}
@@ -159,12 +160,4 @@ func parseReasoning(raw string) (string, *bool, error) {
 	default:
 		return "", nil, fmt.Errorf("must be disabled, off, or a native reasoning level")
 	}
-}
-
-func defaultAskSubjectCallSite() llm.CallSite {
-	return llm.CallSite{Stage: "ask-subject", Config: llm.Config{Model: ModelID, Effort: "low", MaxTokens: defaultMaxTokens}, Model: ModelID, Reasoning: reasoningLevel("low"), MaxTokens: defaultMaxTokens}
-}
-
-func defaultAskSynthesisCallSite() llm.CallSite {
-	return llm.CallSite{Stage: "ask-synthesis", Config: llm.Config{Model: ModelID, Effort: "low", MaxTokens: defaultMaxTokens}, Model: ModelID, Reasoning: reasoningLevel("low"), MaxTokens: defaultMaxTokens}
 }
