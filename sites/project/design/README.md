@@ -5,7 +5,8 @@ directory it heads own *how* sites is built and *how each behavior is proven*.
 The product (`project/product/README.md`) owns the *why*, *for whom*, and the
 user-facing promises; design states the **exact, checkable form** of those
 promises and never re-declares the why. Design *uses* the product's contractual
-constants by value (a site's visibility is exactly one of public, private, or
+constants by value (every site carries an owner-chosen display name distinct
+from its slug; a site's visibility is exactly one of public, private, or
 unlisted; an unlisted site's URL is its credential; a site that exists is
 served; sites serves every byte under its mount; the visibility gate is
 nginx's; the landing page is session-gated and shows version + site list; the
@@ -60,10 +61,10 @@ Shared facts every Decision leans on:
   keyed per file. A committed migration is **frozen** — a schema change is a
   **new** migration created with `bin/create-migration sites <name>` (which stamps
   a UTC `YYYYMMDDHHMMSS_<slug>.sql` version); never hand-name or edit one. The
-  visibility-enum conversion adds one new migration that **rebuilds** `sites`
-  with the three-value `visibility` TEXT column, mapping the retired `public`
-  boolean's rows across (D15); every previously committed migration stays
-  frozen.
+  name/slug split adds one new migration that **rebuilds** `sites` with a
+  `slug` primary key and a required `name` display-label column, carrying no
+  rows across (no production data; D15); every previously committed migration
+  stays frozen.
 - **Module wiring:** `appkit`, `eventplane`, and `registry` are committed in-repo
   replace-siblings. sites resolves its own port and the dropbox mirror address by
   name through `registry` (D9). No `agentkit` dependency (D10/D11): confined
@@ -103,21 +104,24 @@ Shared facts every Decision leans on:
 
 ## Data model
 
-`sites` is one row per hosted site, keyed by slug `name`. The row is: `name`
-(slug PK — owner-chosen for public/private sites, the generated 30-char token
-for unlisted sites, D27), `visibility` (TEXT, CHECK-constrained to exactly
-`public`/`private`/`unlisted` — the retired `public` boolean is gone),
-`owner_id` (TEXT NOT NULL — the stable owner key `X-Owner-Id`, captured at
-create), `owner_email` (TEXT NOT NULL — a write-once display snapshot of the
-creator email), `source_path` (TEXT, nullable — dropbox-sync provenance,
-unchanged), `created_at`, `updated_at`. Per the suite owner-id conversion
-(`docs/owner-id-design.md`) sites stores the stable `owner_id` beside the display
-`owner_email`; sites owner-scopes no query (the slug `name` is the global handle
-and `list`/the landing page show every site), so neither column is read for logic
-— they are captured and displayed only. There is no lifecycle flag. The database
-is the single source of truth for which sites exist and their visibility; the
-on-disk folder location mirrors it in lockstep (the MCP tools are the only
-writer). See D15; the token generator is D27.
+`sites` is one row per hosted site, keyed by `slug`. The row is: `slug` (PK —
+the URL handle: owner-chosen for public/private sites, the generated 30-char
+token for unlisted sites, D27), `name` (TEXT NOT NULL — the owner-chosen
+free-form display label, validated by `ValidateName`; never touched by a
+visibility transition, changed only by `rename`), `visibility` (TEXT,
+CHECK-constrained to exactly `public`/`private`/`unlisted` — the retired
+`public` boolean is gone), `owner_id` (TEXT NOT NULL — the stable owner key
+`X-Owner-Id`, captured at create), `owner_email` (TEXT NOT NULL — a write-once
+display snapshot of the creator email), `source_path` (TEXT, nullable —
+dropbox-sync provenance, unchanged), `created_at`, `updated_at`. Per the suite
+owner-id conversion (`docs/owner-id-design.md`) sites stores the stable
+`owner_id` beside the display `owner_email`; sites owner-scopes no query (the
+`slug` is the global handle and `list`/the landing page show every site), so
+neither column is read for logic — they are captured and displayed only. There
+is no lifecycle flag. The database is the single source of truth for which
+sites exist, what they are called, and their visibility; the on-disk folder
+location mirrors it in lockstep (the MCP tools are the only writer). See D15;
+the token generator is D27.
 
 ## Filesystem layout
 
@@ -159,32 +163,35 @@ Testing is part of the architecture. The cross-cutting approach:
   redirect. No network, no running suite.
 - **The domain store is tested over a real migrated SQLite DB.** `internal/sites`
   tests open an in-memory/temp DB via `appkit/db`, run the migration set, and
-  assert `Create` persists `owner_id` + `owner_email` (distinct even for a shared
-  email) and stores each of the three visibility values verbatim,
-  `SetVisibility` updates the visibility (and the name, when a rename rides
-  along) in one step, and the final schema has the CHECK-constrained
-  `visibility` column and lacks `public`/`created_by`/`tier`/`published`/
-  `published_at` (via `pragma table_info`, with the CHECK proven by a rejected
-  INSERT). The row-mapping of the conversion migration is proven by executing
-  the real `.sql` files in order with seeded rows. The migration assertions run
-  against the **real** SQLite the runner uses, not a fake — the substrate that
-  actually enforces the column set.
+  assert `Create` persists slug, name, `owner_id` + `owner_email` (distinct
+  even for a shared email) and stores each of the three visibility values
+  verbatim, `SetVisibility` updates the visibility (and the slug, when a
+  re-slug rides along — never the name) in one step, `Rename` changes only the
+  display name, and the final schema has the `slug` PK, the NOT NULL `name`,
+  the CHECK-constrained `visibility` column, and lacks
+  `public`/`created_by`/`tier`/`published`/`published_at` (via
+  `pragma table_info`, with the CHECK proven by a rejected INSERT). The
+  migration assertions run against the **real** SQLite the runner uses, not a
+  fake — the substrate that actually enforces the column set.
 - **The MCP tool table is tested at the handler boundary.** Tests inject the
   Identity headers (`X-Owner-Id` plus `X-Owner-Email`) and assert the tool set
   contains no `publish`/`unpublish`, that `create` requires the stated
-  visibility and enforces the naming invariant (name required for
-  public/private, forbidden for unlisted — where the generated token comes from
-  the injectable source), that `create` records the request Identity's
-  `owner_id` and `owner_email` (the stable id captured even when two callers
-  share an email), that `set_visibility` realizes the full transition matrix
-  (rename-into-unlisted rotation, `new_name` required when leaving unlisted)
-  with the folder moved and the returned `url` reflecting the new state, and
-  that the file tools/`sync`/`delete` operate on `SiteDir(site.Visibility, slug)`.
+  visibility and a valid display name at every visibility, and enforces the
+  slug invariant (slug required for public/private, forbidden for unlisted —
+  where the generated token comes from the injectable source), that `create`
+  records the request Identity's `owner_id` and `owner_email` (the stable id
+  captured even when two callers share an email), that `set_visibility`
+  realizes the full transition matrix (re-slug-into-unlisted rotation,
+  `new_slug` required when leaving unlisted, the name untouched everywhere)
+  with the folder moved and the returned `url` reflecting the new state, that
+  `rename` changes only the display name, and that the file
+  tools/`sync`/`delete` operate on `SiteDir(site.Visibility, slug)`.
 - **The landing surface is tested over the repo-real `share/www` tree.** Tests
   load the shipped tree with `appkit/web.Load`, render `landing.html` with a fixed
   version and a fixed slice of sites, and assert the version card plus one row per
-  site (slug, the verbatim visibility label, creator, created-at), and that an
-  empty slice still renders. The same substrate proves the D22 additions structurally: the JSON
+  site (the display name as the linked row identity, the verbatim visibility
+  label, creator, created-at — the slug travels only in the data island), and
+  that an empty slice still renders. The same substrate proves the D22 additions structurally: the JSON
   data island's shape and URL-parity (D19), and the control layout — filter bar
   above the table, pager below it, hidden-until-JS with a stylesheet that makes
   `hidden` actually hide, sort hooks and `aria-sort` affordance CSS (D6).

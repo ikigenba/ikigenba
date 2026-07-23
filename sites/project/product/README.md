@@ -34,13 +34,18 @@ tree for nginx's benefit is redundant state that can drift.
 
 ## Purpose
 
-sites is the box's **static-website host**. Each site is a slug-named folder of
-files. A site has exactly one of three **visibilities**: **public** (served to
-anyone, at a name the owner chose), **private** (served only to a logged-in
-dashboard user), or **unlisted** (served to anyone — but at a long, generated,
-unguessable name, so the URL itself is the credential; the owner never chooses
-an unlisted site's name). That visibility, plus the naming rule it implies, is
-the whole of a site's state. The owner manages sites through the
+sites is the box's **static-website host**. Each site is a folder of files with
+two identities: a human **name** (a free-form label the owner chooses, which is
+how the owner tells sites apart in any listing) and a **web address** (its
+slug — the name and the address are not the same thing). A site has exactly one
+of three **visibilities**: **public** (served to anyone, at an address the
+owner chose), **private** (served only to a logged-in dashboard user), or
+**unlisted** (served to anyone — but at a long, generated, unguessable address,
+so the URL itself is the credential; the owner never chooses an unlisted site's
+address). Every site keeps its owner-chosen name whatever its visibility — an
+unlisted site is still identified by its name in the owner's list, never by its
+random address. That name-plus-address pair and the visibility are the whole of
+a site's state. The owner manages sites through the
 `ikigenba_sites_*` MCP surface (create, edit files, change visibility, delete);
 the **sites process itself serves the site bytes** over its loopback HTTP
 server, behind the nginx front door. A human who opens the service root in a
@@ -53,8 +58,8 @@ sites that exist.
   each site's visibility (public, private, or unlisted), and deletes them — all
   as MCP tool calls. This is the primary surface.
 - **A logged-in dashboard user, in a browser.** Opens the bare `/srv/sites/` root
-  and sees the landing page: the running version and the list of sites (slug,
-  public/private, who created it, when). The check is coarse — any logged-in
+  and sees the landing page: the running version and the list of sites (name,
+  visibility, who created it, when). The check is coarse — any logged-in
   dashboard user may view it.
 - **A visitor to a public site.** Anyone on the internet who opens a public
   site's URL and is served its files. A **private** site's files are served only
@@ -72,11 +77,15 @@ sites does this and only this:
 
 - **Host static sites in three visibilities.** A site is served according to
   exactly one visibility the owner sets: **public** (served with no
-  authentication, at a name the owner chose), **private** (served only to a
-  logged-in dashboard user, at a name the owner chose), or **unlisted** (served
-  with no authentication, at a long generated name nobody can guess — the URL is
-  the credential). There is no "unpublished/draft" state and no separate publish
-  step — a site that exists is served.
+  authentication, at an address the owner chose), **private** (served only to a
+  logged-in dashboard user, at an address the owner chose), or **unlisted**
+  (served with no authentication, at a long generated address nobody can
+  guess — the URL is the credential). There is no "unpublished/draft" state and
+  no separate publish step — a site that exists is served.
+- **Name every site.** Every site carries a free-form display name the owner
+  states at creation and can change later — the label that identifies the site
+  in listings, independent of its address and untouched by any visibility
+  change.
 - **Serve site bytes in-process.** The sites process serves the files for both
   visibilities from its own loopback server; nginx proxies to it and never reads
   the site files off disk itself.
@@ -89,8 +98,9 @@ sites does this and only this:
   long unguessable URL, ready to hand out. Setting an already-unlisted site to
   unlisted again **rotates** the link: a fresh unguessable URL replaces the old
   one, which stops working — that is how the owner revokes a link they no longer
-  trust. Moving a site out of unlisted requires the owner to give it a real name
-  of their choosing.
+  trust. The site's name is untouched by rotation, so the owner can always tell
+  which site a fresh link belongs to. Moving a site out of unlisted requires
+  the owner to give it a real address of their choosing.
 - **Record who and when.** Each site records the owner who created it and the
   creation time, surfaced by the tools and on the landing page. Because `create`
   is the only way a site comes into being, **every site has a real creator** —
@@ -103,10 +113,10 @@ sites does this and only this:
   bearer requests are still refused as before, and the public tier and the bearer
   `/mcp` endpoint are deliberately left untouched.
 - **Serve a landing page at the bare mount root.** A dynamic, session-gated page
-  showing the service version and the list of existing sites (slug, visibility,
+  showing the service version and the list of existing sites (name, visibility,
   creator, created-at), styled with the suite's Carbon design system. The list is
-  **browsable in the page**: a fuzzy search box filters by slug, the name /
-  created / creator columns sort (click a header to change direction), results
+  **browsable in the page**: a fuzzy search box filters by name or address, the
+  name / created / creator columns sort (click a header to change direction), results
   **paginate past ten** rows, a single control clears the filter and ordering
   back to the default view, and each row carries a one-click control that copies
   that site's full URL to the clipboard.
@@ -129,14 +139,17 @@ anything but static files.
 
 Promised values the design must honor verbatim and never re-declare:
 
+- **A site's name and its address are not the same thing.** Every site carries
+  an owner-chosen free-form display name — the label that identifies it in any
+  listing — and a separate web address. Public and private sites live at an
+  address the owner chose; an unlisted site lives at a generated unguessable
+  address the owner never chooses. The name survives every visibility change.
 - **A site's visibility is exactly one of public, private, or unlisted** — never
-  a spectrum, never a lifecycle. Public and private sites carry a name the owner
-  chose; an unlisted site carries a generated unguessable name the owner never
-  chooses. There is no fourth state.
+  a spectrum, never a lifecycle. There is no fourth state.
 - **An unlisted site's URL is its credential.** It is served with no
-  authentication, exactly like a public site; what protects it is that its name
-  cannot be guessed. Setting an unlisted site to unlisted again rotates the
-  name, and the old URL stops working.
+  authentication, exactly like a public site; what protects it is that its
+  address cannot be guessed. Setting an unlisted site to unlisted again rotates
+  the address, and the old URL stops working — the site's name is untouched.
 - **A site that exists is served.** There is no publish step and no unpublished
   state: creating a site and putting files in it makes it live; deleting it takes
   it offline. Choosing the visibility at create, and changing it thereafter, are
@@ -165,16 +178,21 @@ Promised values the design must honor verbatim and never re-declare:
 - **Creating a site and adding files makes it live** — with no separate publish
   step. The owner creates a site at a **stated visibility** — public, private,
   or unlisted; the call always says which — writes files into it, and the site
-  is served at its URL immediately. For public and private the owner chooses the
-  slug; for unlisted the service generates the unguessable name and returns the
-  URL ready to share.
+  is served at its URL immediately. Every site is created **with a name** the
+  owner states. For public and private the owner also chooses the address; for
+  unlisted the service generates the unguessable address and returns the URL
+  ready to share.
+- **A site is always identifiable by its name.** Whatever its visibility, a
+  site keeps its owner-chosen name — in a long list of sites the owner can tell
+  each one apart by name, unlisted ones included. The name can be changed at
+  any time without affecting the site's address, visibility, or files.
 - **An unlisted link can be handed out, and later revoked.** Creating an
   unlisted site (or setting an existing site unlisted) yields a long random URL
   anyone can open with no login — the owner shares it with exactly the people
   they choose. Setting the site unlisted again rotates the URL: the returned
   link is fresh and the old one stops serving, so a leaked link is one call from
-  dead. Taking a site out of unlisted requires the owner to supply a real name
-  for it.
+  dead — and the site's name stays put through every rotation. Taking a site
+  out of unlisted requires the owner to supply a real address for it.
 - **An agent can learn sites from the connection alone** — on connecting, the
   instructions say what sites is for in the words a user actually uses, and a
   `guide` tool returns the site model, the rules, and worked examples (including
@@ -194,9 +212,10 @@ Promised values the design must honor verbatim and never re-declare:
   record is gone. There is no lingering "unpublished" state; delete is how a site
   goes away.
 - **The landing page lists the sites that exist** — a logged-in human opening the
-  bare `/srv/sites/` sees the running version and a row per site showing its slug,
-  its visibility (public, private, or unlisted), who created it, and when. Each
-  slug is a link that opens that site.
+  bare `/srv/sites/` sees the running version and a row per site showing its
+  name, its visibility (public, private, or unlisted), who created it, and when.
+  Each name is a link that opens that site; an unlisted site's row reads as its
+  name, not as a wall of random characters.
 - **A logged-out browser is sent to sign in, then returned.** A person who
   navigates to the landing page (or to a private site) without a dashboard
   session is taken to the dashboard sign-in and, on signing in, returned to the
@@ -205,22 +224,23 @@ Promised values the design must honor verbatim and never re-declare:
   refused with `401`.
 - **Agents are unaffected in how they connect** — the bearer-gated `/mcp`, the
   PRM well-known, and `/health` behave as before. The *tools* evolve: `create`
-  states the visibility explicitly, `sync` requires the site to already exist,
-  and the self-description tool is `guide` (returning worked examples) rather
-  than `describe`.
+  states the visibility explicitly and always takes a name, a site's display
+  name can be changed after the fact, `sync` requires the site to already
+  exist, and the self-description tool is `guide` (returning worked examples)
+  rather than `describe`.
 - **The version on the page is the version actually running** — so the operator
   can confirm a deploy in a browser.
 - **The landing list is browsable in place.** A logged-in user can **type in a
-  search box to fuzzily filter the sites by slug** (partial, out-of-order letters
-  still match), **sort by name, created-at, or creator by clicking a column
-  header** (clicking again reverses the direction), and **page through the
+  search box to fuzzily filter the sites by name or address** (partial,
+  out-of-order letters still match), **sort by name, created-at, or creator by
+  clicking a column header** (clicking again reverses the direction), and **page through the
   results ten at a time** once there are more than ten. A single **Clear** action
   returns to the default view (no filter, newest-first, first page). Filtering,
   sorting, and paging happen **instantly in the browser** with no page reload;
   the default view is newest-first. This is a convenience for the human viewer —
   it changes nothing an agent sees over MCP.
 - **Copying a site's URL from the listing is one click.** Each row carries a copy
-  control that places that site's full URL — the same address the slug links to —
+  control that places that site's full URL — the same address its name links to —
   onto the clipboard, ready to paste, so the viewer never has to hand-select the
   link. Like the other in-browser conveniences it is a viewer aid only, present
   when JavaScript is on, and changes nothing an agent sees over MCP.
@@ -237,14 +257,20 @@ service:
   refused to that same session-less request (a browser navigation is sent to
   sign-in; a scripted/bearer request gets `401`). A `create` that does not state
   a visibility is refused — nothing is silently defaulted.
-- As the owner I create an **unlisted** site without choosing a name, get back a
-  URL whose final name segment is long and obviously random, and a request with
-  no dashboard session is served its page at that URL — while nobody who lacks
-  the URL can find it by guessing.
+- As the owner I create an **unlisted** site by stating its name but no
+  address, get back a URL whose final address segment is long and obviously
+  random, and a request with no dashboard session is served its page at that
+  URL — while nobody who lacks the URL can find it by guessing. In my site
+  list that site appears under the name I gave it, not under the random
+  address.
 - As the owner I set an unlisted site to unlisted again and get back a **new**
-  URL; the new URL serves the site and the **old URL stops serving it**.
-- As the owner I take a site out of unlisted by giving it a real name of my
-  choosing; a call that omits the new name is refused.
+  URL; the new URL serves the site, the **old URL stops serving it**, and the
+  site's name in my list is unchanged — I can still tell which site it is.
+- As the owner I take a site out of unlisted by giving it a real address of my
+  choosing; a call that omits the new address is refused.
+- As the owner I rename a site and its listing shows the new name while its
+  URL, visibility, and files are exactly as before; a create or rename with a
+  blank name is refused.
 - As an agent I call `sync` for a site that does not exist yet and get a clear
   "not found — create it first" refusal, not a silently-created site.
 - As an agent connecting to sites for the first time I can tell what it is for,
@@ -259,16 +285,17 @@ service:
 - I delete a site and its URL stops serving its files.
 - As a logged-in dashboard user I open `<account>.ikigenba.com/srv/sites/` and see
   a Carbon-styled page showing the running version and a row for each site with
-  its slug, visibility (public, private, or unlisted), creator, and creation
-  time; clicking a slug opens that site.
+  its name, visibility (public, private, or unlisted), creator, and creation
+  time; clicking a name opens that site. An unlisted site's row shows its name,
+  not its random address.
 - As a person with no dashboard session navigating to `/srv/sites/` (or to a
   private site's URL) in a browser, I am sent to the dashboard sign-in and, after
   signing in, returned to the page I was headed for. A session-less request that
   is not a browser navigation (a scripted `fetch`, a bearer call) still gets
   `401`.
-- As a logged-in user on the landing page I type part of a slug into the search
-  box — including letters that are non-adjacent in the name — and the list narrows
-  to just the matching sites as I type, with no page reload.
+- As a logged-in user on the landing page I type part of a site's name or
+  address into the search box — including letters that are non-adjacent — and
+  the list narrows to just the matching sites as I type, with no page reload.
 - As a logged-in user I click the Name, Created, or Creator column header and the
   list reorders by that column; clicking the same header again reverses the
   direction. The list opens sorted newest-first by default.
@@ -278,12 +305,12 @@ service:
 - As a logged-in user I click **Clear** and the search box empties, the ordering
   returns to newest-first, and I am back on the first page.
 - As a logged-in user I click a row's **copy** control and that site's full URL —
-  the same address its slug links to — is on my clipboard, ready to paste, with a
+  the same address its name links to — is on my clipboard, ready to paste, with a
   brief "Copied" confirmation.
 - As a logged-in user with JavaScript disabled I still see the complete list of
   sites (unfiltered, the search / sort / pager / copy controls absent) — the page
   degrades to the plain listing rather than showing broken or dead controls; the
-  slug links still open each site so its URL can be copied by hand.
+  name links still open each site so its URL can be copied by hand.
 - Every path served under `/srv/sites/…` is served by the sites process — nginx
   holds no `alias` and reads no site files off disk.
 - An MCP client still discovers the AS via the PRM well-known and calls the
