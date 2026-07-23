@@ -4,15 +4,15 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 
 ## Decisions
 
-- D1 → `project/design/D01.md` — Dependency on the prompts service (unified inference; agentkit confined to the dev workbench) — owns R-KDHD-V3XI, R-KEPA-8VO7
+- D1 → `project/design/D01.md` — Dependency on the prompts service (unified inference; no provider dependency anywhere) — owns R-KDHD-V3XI, R-A3D7-NTLV
 - D2 → `project/design/D02.md` — Service skeleton: package layout, Spec wiring, and the config/secret composition root — owns R-6RVX-P1IG
 - D3 → `project/design/D03.md` — The phase-1 data model — owns R-7SNG-0G9A, R-7TVC-E7ZZ, R-7V38-RZQO, R-7WB5-5RHD, R-RU0J-77HX, R-RV8F-KZ8M, R-RXO8-CIQ0, R-RYW4-QAGP, R-S041-427E, R-S1BX-HTY3, R-S2JT-VLOS, R-1O8B-FNX4
 - D4 → `project/design/D04.md` — The ingest pipeline and worker — owns R-M8RN-87WV, R-M9ZJ-LZNK, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MDN8-RAVN, R-MG31-IUD1
 - D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): a prompts `/complete` client + json-mode helper — owns R-J8QP-BETB, R-4BCC-0EHJ, R-J9YL-P6K0, R-JCEE-GQ1E, R-0X4N-U0XB, R-8H1B-9CCI, R-0ZKG-LKEP, R-10SC-ZC5E, R-1209-D3W3
-- D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-W2HP-H0J0, R-4CK8-E688
-- D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-FWOT-NRHN, R-4DS4-RXYX
+- D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-9UTW-ZFF0, R-9W1T-D75P
+- D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-9X9P-QYWE, R-9YHM-4QN3
 - D8 → `project/design/D08.md` — Search returns: hybrid retrieval over pages, behind one seam — none — structural
-- D9 → `project/design/D09.md` — `ask` (`internal/ask`): hybrid-retrieval pipeline, grounded/cited/honest-empty — owns R-BAFW-D24P, R-BBNS-QTVE, R-BCVP-4LM3, R-5UPD-VVNA, R-5VXA-9NDZ, R-690G-MZTK, R-5X56-NF4O, R-6A8D-0RK9, R-05CG-3H6Y
+- D9 → `project/design/D09.md` — `ask` (`internal/ask`): hybrid-retrieval pipeline, grounded/cited/honest-empty — owns R-BAFW-D24P, R-BBNS-QTVE, R-BCVP-4LM3, R-5UPD-VVNA, R-5VXA-9NDZ, R-690G-MZTK, R-5X56-NF4O, R-6A8D-0RK9, R-05CG-3H6Y, R-9ZPI-IIDS
 - D10 → `project/design/D10.md` — The MCP tool surface (`internal/mcp`) + identity — owns R-MUQ4-K1JS, R-MVY0-XTAH, R-MX5X-BL16, R-MYDT-PCRV, R-MZLQ-34IK, R-1QO4-77EI, R-N4KO-2WTZ, R-01OQ-Y5YV, R-02WN-BXPK, R-044J-PPG9, R-03GW-PX5K, R-04HB-QM7T, R-8DB1-UI1Q, R-8EIY-89SF
 - D11 → `project/design/D11.md` — Subject addressing: the public path == identity (`type/norm_name`) — owns R-DRX6-PWSW, R-DT53-3OJL, R-DUCZ-HGAA
 - D12 → `project/design/D12.md` — Page links: read-time mention detection + markdown footer — owns R-ZUDC-NJIP, R-ZVL9-1B9E, R-ZWT5-F303, R-ZY11-SUQS, R-ZZ8Y-6MHH, R-00GU-KE86, R-1WP9-CLM9, R-1XX5-QDCY, R-1Z52-453N
@@ -21,7 +21,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D16 → `project/design/D16.md` — MCP surface expansion: control & footprint verbs + paginated lists — owns R-37NS-BRXR, R-Y36L-E3W6, R-Y4EH-RVMV, R-38VO-PJOG, R-3A3L-3BF5, R-3CJD-UUWJ, R-3EZ6-MEDX, R-3G73-064M, R-E4WX-G9H2, R-1T3W-YQVW
 - D17 → `project/design/D17.md` — DB concurrency: a single-writer handle + a concurrent read pool (reads never blocked) — owns R-FUCC-IT4M, R-FVK8-WKVB, R-FWS5-ACM0, R-FY01-O4CP
 - D18 → `project/design/D18.md` — Output-token budget & honest truncation handling — owns R-MSKH-GPX5, R-MTSD-UHNU, R-MV0A-89EJ, R-MW86-M158
-- D19 → `project/design/D19.md` — Per-call-site configuration in production (retire the single global model) — owns R-GGIG-AN7W, R-GHQC-OEYL, R-GIY9-26PA, R-GK65-FYFZ, R-GLE1-TQ6O
+- D19 → `project/design/D19.md` — Per-call-site configuration in production (retire the single global model) — owns R-GGIG-AN7W, R-GHQC-OEYL, R-GK65-FYFZ, R-GLE1-TQ6O, R-A25B-A1V6
 - D25 → `project/design/D25.md` — Aliases table & name resolution — owns R-BGPF-NVTU, R-BHXC-1NKJ, R-BJ58-FFB8, R-BKD4-T71X, R-BLL1-6YSM, R-BMSX-KQJB, R-BO0T-YIA0, R-1PG7-TFNT
 - D26 → `project/design/D26.md` — The merge work item & execution — owns R-NEFH-U8IO, R-NFNE-809D, R-NGVA-LS02, R-NI36-ZJQR, R-NJB3-DBHG, R-NKIZ-R385, R-NLQW-4UYU, R-NMYS-IMPJ, R-NPEL-A66X, R-HUDR-AWS9
 - D27 → `project/design/D27.md` — Merge MCP surface (`merge` + `merges`) — owns R-DWDM-RVA7, R-DYTF-JERL, R-E01B-X6IA, R-E198-AY8Z, R-1RW0-KZ57, R-E2H4-OPZO, R-1VJP-QADA, R-E3P1-2HQD
@@ -33,7 +33,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D33 → `project/design/D33.md` — Merging the two lanes: rank fusion + exact-name pin — owns R-79KD-1622, R-7AS9-EXSR, R-7C05-SPJG, R-7D82-6HA5, R-Q8RI-7POG, R-Q9ZE-LHF5
 - D34 → `project/design/D34.md` — The embedding call site: prompts `/embed`, one model for both sides — owns R-Z932-H2RA, R-1385-QVMS, R-14G2-4NDH, R-15NY-IF46
 - D35 → `project/design/D35.md` — Keeping page vectors current, in the background — owns R-6XNX-FNXO, R-6YVT-TFOD, R-703Q-77F2, R-71BM-KZ5R, R-72JI-YQWG, R-73RF-CIN5
-- D36 → `project/design/D36.md` — Preparing the question: one analysis call — owns R-QB7A-Z95U, R-QCF7-D0WJ, R-QDN3-QSN8
+- D36 → `project/design/D36.md` — Preparing the question: one analysis call — owns R-QB7A-Z95U, R-QCF7-D0WJ, R-QDN3-QSN8, R-A0XE-WA4H
 - D38 → `project/design/D38.md` — Keep the meaning lane consistent across a merge (close the D35 merge gap) — owns R-MRG8-K2WP, R-LP5Q-9XTD, R-EV2H-6RKN, R-FM7A-D0SZ, R-WS3C-J4QB
 - D39 → `project/design/D39.md` — The human web surface: gating, embedded assets, and the exact-root mount — owns R-LAND-PG01, R-LAND-NMVR, R-LAND-CARB, R-LAND-ROOT, R-LAND-UNGT
 - D40 → `project/design/D40.md` — Conform the landing page to the cron canonical template — none — structural
@@ -59,13 +59,10 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D60 → `project/design/D60.md` — the session-gated web locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 — none — structural
 - D61 → `project/design/D61.md` — Structured MCP adoption: `StructuredResult`, typed error codes, and per-tool output schemas — owns R-EMCA-BCU2, R-ENK6-P4KR, R-EPZZ-GO25, R-ER7V-UFSU, R-ESFS-87JJ, R-ETNO-LZA8, R-EW3H-DIRM, R-EXBD-RAIB
 - D62 → `project/design/D62.md` — Origin and correlation attribution on every inference call — owns R-16VU-W6UV, R-183R-9YLK, R-19BN-NQC9, R-1AJK-1I2Y
-- D63 → `project/design/D63.md` — The retirement: `llm_calls` and the recorder stack leave wiki; agentkit is confined to the eval workbench — owns R-KFX6-MNEW, R-KH53-0F5L
-- D64 → `project/design/D64.md` — The eval workspace: the extract prompt as data, the pinned config, and the gold corpus — owns R-KICZ-E6WA, R-KJKV-RYMZ, R-KKSS-5QDO
-- D65 → `project/design/D65.md` — The deterministic scorer (`internal/eval`): rules for subjects and fields, pinned embeddings for claims — owns R-KM0O-JI4D, R-KN8K-X9V2, R-KOGH-B1LR, R-KPOD-OTCG, R-KQWA-2L35, R-KTC2-U4KJ, R-KUJZ-7WB8, R-KVRV-LO1X, R-KWZR-ZFSM, R-ESN9-RFM1
-- D66 → `project/design/D66.md` — The eval runner (`cmd/eval-extract`): production-faithful calls through agentkit, scorecards out — owns R-KY7O-D7JB, R-KZFK-QZA0, R-L0NH-4R0P, R-L1VD-IIRE, R-L339-WAI3, R-L4B6-A28S, R-L5J2-NTZH, R-ETV6-57CQ, R-EWAY-WQU4, R-EXIV-AIKT, R-XHOE-XC0J, R-1JMV-JW9B
-- D67 → `project/design/D67.md` — The improvement loop: one ralph turn per candidate, driven by autotune — none — structural
-- D68 → `project/design/D68.md` — The autotune driver (`cmd/autotune`): one command from baseline to diff — owns R-EYQR-OABI, R-EZYO-2227, R-F16K-FTSW, R-F3MD-7DAA, R-F4U9-L50Z, R-F625-YWRO, R-F7A2-COID, R-XGGI-JK9U, R-1KUR-XO00
-- D69 → `project/design/D69.md` — The analysis eval workbench: tuning the ask question-analysis prompt — owns R-BICU-BZG6, R-BJKQ-PR6V, R-BKSN-3IXK, R-BM0J-HAO9, R-BN8F-V2EY, R-BOGC-8U5N, R-BPO8-MLWC, R-BQW5-0DN1, R-BTBX-RX4F, R-BUJU-5OV4, R-BVRQ-JGLT, R-BWZM-X8CI, R-BY7J-B037, R-BZFF-ORTW
+- D63 → `project/design/D63.md` — The retirement: the recorder stack and every in-repo tuning executable stay gone — owns R-KFX6-MNEW, R-A4L4-1LCK
+- D70 → `project/design/D70.md` — Remove the in-repo tuning machinery — none — structural
+- D71 → `project/design/D71.md` — The committed tune-folder workspace: `autotune/<step>/`, one per pipeline prompt — owns R-A5T0-FD39, R-A88T-6WKN, R-A9GP-KOBC
+- D72 → `project/design/D72.md` — The four scorers: deterministic where mechanical, sol-judged where prose — owns R-AAOL-YG21, R-ABWI-C7SQ, R-AD4E-PZJF, R-AECB-3RA4, R-AFK7-HJ0T, R-AGS3-VARI
 
 ## Verification ids → Decision
 
@@ -100,8 +97,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-1AJK-1I2Y → D62 (`project/design/D62.md`)
 - R-1C7R-ES1A → D15 (`project/design/D15.md`)
 - R-1DFN-SJRZ → D15 (`project/design/D15.md`)
-- R-1JMV-JW9B → D66 (`project/design/D66.md`)
-- R-1KUR-XO00 → D68 (`project/design/D68.md`)
 - R-1O8B-FNX4 → D3 (`project/design/D03.md`)
 - R-1PG7-TFNT → D25 (`project/design/D25.md`)
 - R-1QO4-77EI → D10 (`project/design/D10.md`)
@@ -126,8 +121,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-3Z43-YDM4 → D32 (`project/design/D32.md`)
 - R-40C0-C5CT → D32 (`project/design/D32.md`)
 - R-4BCC-0EHJ → D5 (`project/design/D05.md`)
-- R-4CK8-E688 → D6 (`project/design/D06.md`)
-- R-4DS4-RXYX → D7 (`project/design/D07.md`)
 - R-5UPD-VVNA → D9 (`project/design/D09.md`)
 - R-5VXA-9NDZ → D9 (`project/design/D09.md`)
 - R-5X56-NF4O → D9 (`project/design/D09.md`)
@@ -169,8 +162,26 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-9PKG-TBAQ → D30 (`project/design/D30.md`)
 - R-9QSD-731F → D30 (`project/design/D30.md`)
 - R-9S09-KUS4 → D30 (`project/design/D30.md`)
+- R-9UTW-ZFF0 → D6 (`project/design/D06.md`)
+- R-9W1T-D75P → D6 (`project/design/D06.md`)
+- R-9X9P-QYWE → D7 (`project/design/D07.md`)
+- R-9YHM-4QN3 → D7 (`project/design/D07.md`)
+- R-9ZPI-IIDS → D9 (`project/design/D09.md`)
+- R-A0XE-WA4H → D36 (`project/design/D36.md`)
+- R-A25B-A1V6 → D19 (`project/design/D19.md`)
+- R-A3D7-NTLV → D1 (`project/design/D01.md`)
+- R-A4L4-1LCK → D63 (`project/design/D63.md`)
+- R-A5T0-FD39 → D71 (`project/design/D71.md`)
+- R-A88T-6WKN → D71 (`project/design/D71.md`)
+- R-A9GP-KOBC → D71 (`project/design/D71.md`)
+- R-AAOL-YG21 → D72 (`project/design/D72.md`)
+- R-ABWI-C7SQ → D72 (`project/design/D72.md`)
+- R-AD4E-PZJF → D72 (`project/design/D72.md`)
+- R-AECB-3RA4 → D72 (`project/design/D72.md`)
 - R-AF1X-PG7K → D29 (`project/design/D29.md`)
+- R-AFK7-HJ0T → D72 (`project/design/D72.md`)
 - R-AG2Y-PH8L → D29 (`project/design/D29.md`)
+- R-AGS3-VARI → D72 (`project/design/D72.md`)
 - R-AH3Z-PJ9M → D29 (`project/design/D29.md`)
 - R-AL5R-PL1P → D29 (`project/design/D29.md`)
 - R-ARN9-5YPS → D44 (`project/design/D44.md`)
@@ -184,25 +195,11 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-BCVP-4LM3 → D9 (`project/design/D09.md`)
 - R-BGPF-NVTU → D25 (`project/design/D25.md`)
 - R-BHXC-1NKJ → D25 (`project/design/D25.md`)
-- R-BICU-BZG6 → D69 (`project/design/D69.md`)
 - R-BJ58-FFB8 → D25 (`project/design/D25.md`)
-- R-BJKQ-PR6V → D69 (`project/design/D69.md`)
 - R-BKD4-T71X → D25 (`project/design/D25.md`)
-- R-BKSN-3IXK → D69 (`project/design/D69.md`)
 - R-BLL1-6YSM → D25 (`project/design/D25.md`)
-- R-BM0J-HAO9 → D69 (`project/design/D69.md`)
 - R-BMSX-KQJB → D25 (`project/design/D25.md`)
-- R-BN8F-V2EY → D69 (`project/design/D69.md`)
 - R-BO0T-YIA0 → D25 (`project/design/D25.md`)
-- R-BOGC-8U5N → D69 (`project/design/D69.md`)
-- R-BPO8-MLWC → D69 (`project/design/D69.md`)
-- R-BQW5-0DN1 → D69 (`project/design/D69.md`)
-- R-BTBX-RX4F → D69 (`project/design/D69.md`)
-- R-BUJU-5OV4 → D69 (`project/design/D69.md`)
-- R-BVRQ-JGLT → D69 (`project/design/D69.md`)
-- R-BWZM-X8CI → D69 (`project/design/D69.md`)
-- R-BY7J-B037 → D69 (`project/design/D69.md`)
-- R-BZFF-ORTW → D69 (`project/design/D69.md`)
 - R-DRX6-PWSW → D11 (`project/design/D11.md`)
 - R-DT53-3OJL → D11 (`project/design/D11.md`)
 - R-DUCZ-HGAA → D11 (`project/design/D11.md`)
@@ -218,21 +215,10 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-EPZZ-GO25 → D61 (`project/design/D61.md`)
 - R-ER7V-UFSU → D61 (`project/design/D61.md`)
 - R-ESFS-87JJ → D61 (`project/design/D61.md`)
-- R-ESN9-RFM1 → D65 (`project/design/D65.md`)
 - R-ETNO-LZA8 → D61 (`project/design/D61.md`)
-- R-ETV6-57CQ → D66 (`project/design/D66.md`)
 - R-EV2H-6RKN → D38 (`project/design/D38.md`)
 - R-EW3H-DIRM → D61 (`project/design/D61.md`)
-- R-EWAY-WQU4 → D66 (`project/design/D66.md`)
 - R-EXBD-RAIB → D61 (`project/design/D61.md`)
-- R-EXIV-AIKT → D66 (`project/design/D66.md`)
-- R-EYQR-OABI → D68 (`project/design/D68.md`)
-- R-EZYO-2227 → D68 (`project/design/D68.md`)
-- R-F16K-FTSW → D68 (`project/design/D68.md`)
-- R-F3MD-7DAA → D68 (`project/design/D68.md`)
-- R-F4U9-L50Z → D68 (`project/design/D68.md`)
-- R-F625-YWRO → D68 (`project/design/D68.md`)
-- R-F7A2-COID → D68 (`project/design/D68.md`)
 - R-FM7A-D0SZ → D38 (`project/design/D38.md`)
 - R-FQLB-QWS6 → D7 (`project/design/D07.md`)
 - R-FT14-IG9K → D7 (`project/design/D07.md`)
@@ -240,12 +226,10 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-FUCC-IT4M → D17 (`project/design/D17.md`)
 - R-FVGX-9ZQY → D7 (`project/design/D07.md`)
 - R-FVK8-WKVB → D17 (`project/design/D17.md`)
-- R-FWOT-NRHN → D7 (`project/design/D07.md`)
 - R-FWS5-ACM0 → D17 (`project/design/D17.md`)
 - R-FY01-O4CP → D17 (`project/design/D17.md`)
 - R-GGIG-AN7W → D19 (`project/design/D19.md`)
 - R-GHQC-OEYL → D19 (`project/design/D19.md`)
-- R-GIY9-26PA → D19 (`project/design/D19.md`)
 - R-GK65-FYFZ → D19 (`project/design/D19.md`)
 - R-GLE1-TQ6O → D19 (`project/design/D19.md`)
 - R-HOJB-ZR3T → D56 (`project/design/D56.md`)
@@ -262,32 +246,11 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-JJEU-RV4C → D52 (`project/design/D52.md`)
 - R-JKMR-5MV1 → D53 (`project/design/D53.md`)
 - R-KDHD-V3XI → D1 (`project/design/D01.md`)
-- R-KEPA-8VO7 → D1 (`project/design/D01.md`)
 - R-KFVF-EMEO → D50 (`project/design/D50.md`)
 - R-KFX6-MNEW → D63 (`project/design/D63.md`)
 - R-KH3B-SE5D → D50 (`project/design/D50.md`)
-- R-KH53-0F5L → D63 (`project/design/D63.md`)
 - R-KIB8-65W2 → D50 (`project/design/D50.md`)
-- R-KICZ-E6WA → D64 (`project/design/D64.md`)
 - R-KJJ4-JXMR → D50 (`project/design/D50.md`)
-- R-KJKV-RYMZ → D64 (`project/design/D64.md`)
-- R-KKSS-5QDO → D64 (`project/design/D64.md`)
-- R-KM0O-JI4D → D65 (`project/design/D65.md`)
-- R-KN8K-X9V2 → D65 (`project/design/D65.md`)
-- R-KOGH-B1LR → D65 (`project/design/D65.md`)
-- R-KPOD-OTCG → D65 (`project/design/D65.md`)
-- R-KQWA-2L35 → D65 (`project/design/D65.md`)
-- R-KTC2-U4KJ → D65 (`project/design/D65.md`)
-- R-KUJZ-7WB8 → D65 (`project/design/D65.md`)
-- R-KVRV-LO1X → D65 (`project/design/D65.md`)
-- R-KWZR-ZFSM → D65 (`project/design/D65.md`)
-- R-KY7O-D7JB → D66 (`project/design/D66.md`)
-- R-KZFK-QZA0 → D66 (`project/design/D66.md`)
-- R-L0NH-4R0P → D66 (`project/design/D66.md`)
-- R-L1VD-IIRE → D66 (`project/design/D66.md`)
-- R-L339-WAI3 → D66 (`project/design/D66.md`)
-- R-L4B6-A28S → D66 (`project/design/D66.md`)
-- R-L5J2-NTZH → D66 (`project/design/D66.md`)
 - R-LAND-CARB → D39 (`project/design/D39.md`)
 - R-LAND-NMVR → D39 (`project/design/D39.md`)
 - R-LAND-PG01 → D39 (`project/design/D39.md`)
@@ -359,14 +322,11 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-T2ZN-A5DP → D48 (`project/design/D48.md`)
 - R-VYU0-BPAX → D6 (`project/design/D06.md`)
 - R-W19T-38SB → D6 (`project/design/D06.md`)
-- R-W2HP-H0J0 → D6 (`project/design/D06.md`)
 - R-WC29-XALJ → D42 (`project/design/D42.md`)
 - R-WDA6-B2C8 → D42 (`project/design/D42.md`)
 - R-WFPZ-2LTM → D42 (`project/design/D42.md`)
 - R-WGXV-GDKB → D42 (`project/design/D42.md`)
 - R-WS3C-J4QB → D38 (`project/design/D38.md`)
-- R-XGGI-JK9U → D68 (`project/design/D68.md`)
-- R-XHOE-XC0J → D66 (`project/design/D66.md`)
 - R-XJBY-H8JZ → D6 (`project/design/D06.md`)
 - R-XKJU-V0AO → D6 (`project/design/D06.md`)
 - R-XYAZ-V0XE → D15 (`project/design/D15.md`)

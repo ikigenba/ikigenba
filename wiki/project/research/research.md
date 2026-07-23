@@ -456,63 +456,98 @@ correlation id is a bare 26-char Crockford-base32 ULID minted **once at the
 initial user action** and propagated verbatim; a durable root entity's own ULID
 (an ingest job) serves as the id; otherwise (an ask) mint one fresh.
 
-## 13. The autotune driver's external tools: ralph, the agentrepl config convention, and subscription auth
+## 13. The external tuning toolchain: the `autotune` CLI, its tune-folder contract, and the `embed` CLI
 
-External ground truth for the one-command tuning driver (D68). Three tools
-outside this repository are load-bearing; their observed contracts as of
-2026-07-20:
+External ground truth for the prompt-tuning process. Tuning no longer runs on
+in-repo machinery: two standalone tools outside this repository own it. Their
+observed contracts as of 2026-07-22 (both complete through their v1 plans and
+building green):
 
-### ralph (the loop executor, `~/.local/bin/ralph`, v0.10.0)
+### The `autotune` CLI (`~/projects/autotune`, on PATH as `autotune`)
 
-`ralph [flags] <prompt-path>...` runs an agent harness in a fresh-context
-loop, dispatching on the model's final status word: `CONTINUE` re-runs the
-same prompt, `NEXT` advances (wrapping), `DONE` stops. Flags the driver
-passes through verbatim (everything after the driver's `--` separator):
+`autotune <folder>` optimizes one prompt against a scored dataset inside one
+self-contained **tune folder**; `autotune --init <folder>` scaffolds a new one.
+It measures the incumbent's baseline (with an epsilon noise floor), then runs
+an unattended propose→score→accept loop until a budget (`--max-spend USD`,
+`--max-iterations`, `--max-time`) runs out or no further gain is found, and
+confirms a winner on the holdout split once at the end. Everything a run
+writes lives under the folder's gitignored `runs/<id>/`; the incumbent
+`prompt.txt` is never touched — adoption is always manual.
 
-- Budgets: `--max-iterations N`, `--max-time D` (e.g. `30m`), `--max-spend USD`,
-  `--max-tokens N` (0 = unlimited); `--max-retries N` (default 3) for
-  bad/failed turns.
-- `--harness codex|claude|zai|kimi|agentkit` (default **codex**) and repeatable
-  `-c key=value` harness config. The agentkit harness's keys/defaults:
-  `provider=openrouter auth=key model=glm-5.2 effort=high`; env keys per
-  provider (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`,
-  `ZAI_API_KEY`, `OPENROUTER_API_KEY`). As of v0.10.0 ralph's agentkit harness
-  rejects `auth` other than `key` (sub support is in progress upstream);
-  the codex harness carries its own ChatGPT subscription auth.
-- Output: `--format chat|jsonl|raw` on stdout (default chat) — the driver
-  streams this through.
-- Key hygiene: by default ralph **unsets** `ANTHROPIC_API_KEY` and
-  `OPENAI_API_KEY` in spawned harness environments so OAuth stays the default
-  auth path (`--keep-api-keys` preserves them). Independently, the codex
-  harness switches from ChatGPT-subscription billing to API billing whenever
-  `OPENAI_API_KEY` is present in its environment — so a key needed by tooling
-  *inside* a harness turn must travel under a non-canonical variable name.
+**Tune-folder contract** (validated by the tool; a missing piece fails loudly
+naming it):
 
-ralph runs in the current working directory; the prompt path is positional
-and last. Exit occurs on DONE, budget exhaustion, or signal.
+```
+prompt.txt          the prompt under test (incumbent)
+improve.md          system prompt for the improver
+score               user-supplied executable, any language, +x required
+config.json         {"runner": {...}, "improver": {...}} string pairs
+cases/dev/<case>/input.txt      >=1 required; other files in the case dir are the scorer's
+cases/holdout/<case>/input.txt  optional; empty skips the holdout check
+runs/               created on demand; gitignored
+.gitignore          ships with the scaffold (runs/)
+```
 
-### agentrepl's `-c` config convention (`~/.local/bin/agentrepl`)
+**Call shape.** One bare, tool-less call per case: **system = the candidate
+prompt text, user message = the case's `input.txt` contents**, output = the
+final assistant text. Cases run on a bounded worker pool; results are sorted
+by case name before aggregation; the composite is the arithmetic mean of case
+scores. Any terminal model-call or scorer failure aborts the whole evaluation
+— no partial scorecards.
 
-The suite's de-facto CLI convention for naming an agentkit call, which the
-driver's step-model flags mirror: repeatable `-c key=value` with keys
-`provider`, `model`, `auth`, `effort` / `thinking_level` / `thinking_budget`,
-`auth_file`. Provider set: `anthropic`, `google`, `openai`, `openrouter`,
-`zai`, all with `auth=key` via the env vars above; **`auth=sub` exists for
-`openai` only**, reading `auth_file` (default `~/.agentrepl/auth.json`).
-agentrepl's defaults are `provider=openai model=gpt-5.6-sol auth=sub`; the
-driver's defaults instead come from the committed `eval/extract/config.json`
-production pins.
+**Scorer contract.** autotune runs `<folder>/score <abs-case-dir>` with
+working directory = the folder root, environment inherited untouched, the
+model's output for that case on **stdin**, and expects one JSON object on
+stdout: `{"score": <float in [0,1]>, "feedback": "<optional>"}`. Feedback
+feeds the improver's evidence bundle. Non-zero exit, non-JSON stdout, a
+missing `score`, or an out-of-range score is a **hard abort** of the run.
+Determinism is the scorer author's contract; autotune enforces only the
+envelope. Everything else in the case directory (`gold.json`, fixtures)
+belongs to the scorer alone — autotune reads only `input.txt`.
 
-### Subscription auth: `oauth-login` and agentkit's store
+**Config model.** `config.json` holds two sections of string key=value pairs
+(the agentrepl `-c` vocabulary: `provider`, `model`, `auth`, `auth_file`,
+`temperature`, `top_p`, `max_tokens`, `effort`, `thinking`, retry keys …);
+CLI `-c runner.<k>=<v>` / `-c improver.<k>=<v>` overrides per key. `system`
+is not a key — the folder owns both system prompts by definition. `auth`
+accepts `key` (conventional provider env var) or `sub` (OAuth token at
+`~/.autotune/auth.json` by default, produced by the external `oauth-login`
+tool; OpenAI/ChatGPT-specific). Defaults per the tool's product constants:
+runner `gpt-5.6-luna`, improver `gpt-5.6-sol`, both `auth=sub`.
 
-`~/.local/bin/oauth-login` is a standalone OAuth authorization-code CLI; its
-stdout contract is the **raw token-endpoint response saved verbatim** — that
-file (e.g. `~/.agentrepl/auth.json`) is exactly what
-`github.com/ikigenba/agentkit/openai/subscription` consumes:
-`subscription.Load(path)` parses the raw response, requires `access_token`
-plus a ChatGPT account claim in the id/access token, refreshes with skew
-internally, and rewrites the file as the refresh-token lineage rotates. The
-store is **OpenAI/ChatGPT-specific**; agentkit has no subscription store for
-any other provider (an openrouter/anthropic `auth=sub` is simply
-unsupported). The codex CLI's wrapper file format (`tokens.*`,
-`last_refresh`) is *not* accepted — only the raw token response.
+**Knob caveat (observed).** The OpenAI subscription backend rejects
+`temperature` and `max_tokens` pins with a 400 "Unsupported parameter" —
+sub-auth tune configs must omit both and let the epsilon noise floor absorb
+the variance.
+
+### The `embed` CLI (`~/projects/embed`, on PATH as `embed`)
+
+A standalone batch text→embedding-vector CLI: the single credential and
+caching boundary for embeddings on this machine. Callers pipe texts in and
+get vectors out; embed owns `OPENAI_API_KEY` (read from the environment),
+HTTP, retries, and a disk cache — a warm cache scores offline and free.
+The wiki extract scorer's pins through it: openai `text-embedding-3-small`
+at 1536 dimensions (matching the retired in-repo workbench). Scripts can
+override the binary via `EMBED_BIN`.
+
+### The ported extract workbench (`~/projects/autotune/examples/extract`)
+
+A complete conversion of this repo's extract tuning workbench into a tune
+folder, kept in the autotune repo as its demo: 15 dev / 8 holdout cases
+(each `input.txt` = the workbench's rendered document header + source text,
+`gold.json` = scorer-only gold subjects/claims) plus a standalone python3
+scorer porting the workbench's deterministic math (threshold 0.80, margin
+0.03, weights 0.35 subject / 0.50 claim / 0.15 field — constants at the top
+of `score`, the scorer's business). Historical reference numbers for the
+fully refined prompt under the old anthropic/temperature-0 config: baseline
+0.783, tuned best 0.807, holdout 0.843, verdict "generalized" — not directly
+comparable to gpt-5.6-luna scores.
+
+### Model catalog facts (agentkit `catalog`, consumed by the prompts service)
+
+The prompts service resolves `provider`/`model` through agentkit's catalog,
+which routes `gpt-5.6-luna` (openai, 400k context) and `gpt-5.6-sol` (openai,
+1,050k context). gpt-5.6 models are reasoning models addressed with the
+`effort` knob; `temperature` pins are not portable to them (see the knob
+caveat above). The production switch to `gpt-5.6-luna` therefore replaces
+wiki's `temperature 0` / `thinking false` pins with `effort` on every site.
