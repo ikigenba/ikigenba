@@ -10,6 +10,7 @@ no done marker; done is gone. This file deliberately carries **no bare status
 glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
-Next phase: 119
+Next phase: 120
 
-- Phase 118 ⬜ realizes — — readiness proof: one small baseline run per folder, outputs discarded
+- Phase 118 ⬜ realizes — — readiness proof: one bounded run per folder (baseline + one improver iteration), outputs discarded
+- Phase 119 ⬜ realizes R-GGIG-AN7W — restore D19 requirement-id tag coverage (re-anchor drifted tags)
