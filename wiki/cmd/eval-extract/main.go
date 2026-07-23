@@ -193,7 +193,7 @@ func run(ctx context.Context, args []string, stderr io.Writer, deps dependencies
 }
 
 func extractCase(ctx context.Context, provider agentkit.Provider, cfg eval.EvalCall, instructions string, gold eval.GoldCase) ([]extract.ExtractedSubject, error) {
-	prompt := extract.Render(instructions, gold.Header, gold.Document)
+	prompt := instructions + "\n\n" + extract.Render(gold.Header, gold.Document)
 	return eval.ChatJSON(ctx, provider, cfg, prompt, func(response string) ([]extract.ExtractedSubject, error) {
 		var envelope struct {
 			Subjects []extract.ExtractedSubject `json:"subjects"`

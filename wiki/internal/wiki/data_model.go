@@ -14,16 +14,12 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
+	"wiki/internal/model"
 	"wiki/internal/page"
 )
 
 // Subject is a canonical entity, event, or concept in the wiki.
-type Subject struct {
-	ID       string
-	Name     string
-	NormName string
-	Type     string
-}
+type Subject = model.Subject
 
 var (
 	ErrSubjectNotFound = errors.New("wiki: subject not found")
@@ -37,12 +33,7 @@ func Path(s Subject) string {
 }
 
 // Claim is an extracted statement about a subject.
-type Claim struct {
-	ID        string
-	SubjectID string
-	JobID     string
-	Body      string
-}
+type Claim = model.Claim
 
 // Page is a generated wiki page for a subject.
 type Page struct {

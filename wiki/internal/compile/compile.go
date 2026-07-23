@@ -3,19 +3,25 @@ package compile
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"log/slog"
 	"strings"
 	"unicode/utf8"
 
 	"wiki/internal/llm"
-	"wiki/internal/wiki"
+	"wiki/internal/model"
 )
 
 // PageCharCap is the maximum generated page body length in Unicode code points.
 const PageCharCap = 12000
 
 const defaultMaxTokens = 16384
+
+// DefaultPromptInstructions is the production compile instruction preamble.
+//
+//go:embed prompt.txt
+var DefaultPromptInstructions string
 
 // Compiler rebuilds wiki pages from subject identity and complete claim sets.
 type Compiler struct {
@@ -32,19 +38,20 @@ func New(c *llm.Client, site llm.CallSite, log *slog.Logger) *Compiler {
 
 // DefaultCallSite returns the production compile-stage generation settings.
 func DefaultCallSite() llm.CallSite {
-	temp := 0.0
 	return llm.CallSite{
-		Stage:           "compile",
-		Config:          llm.Config{Temperature: &temp, Thinking: boolPtr(false), MaxTokens: defaultMaxTokens},
-		Temperature:     &temp,
-		Reasoning:       llm.DisableReasoning(),
-		MaxTokens:       defaultMaxTokens,
-		MaxParseRetries: 2,
+		Stage:  "compile",
+		System: DefaultPromptInstructions,
+		Config: llm.Config{
+			Provider:  "openai",
+			Model:     "gpt-5.6-luna",
+			Effort:    "low",
+			MaxTokens: defaultMaxTokens,
+		},
 	}
 }
 
 // Compile rebuilds one subject's page from its complete claim set.
-func (c *Compiler) Compile(ctx context.Context, attr llm.Attribution, s wiki.Subject, claims []wiki.Claim) (title, body string, err error) {
+func (c *Compiler) Compile(ctx context.Context, attr llm.Attribution, s model.Subject, claims []model.Claim) (title, body string, err error) {
 	if c == nil {
 		return "", "", fmt.Errorf("compile: nil compiler")
 	}
@@ -70,7 +77,7 @@ func (c *Compiler) Compile(ctx context.Context, attr llm.Attribution, s wiki.Sub
 		}
 
 		prompt = renderPrompt(s, claims, PageCharCap, fmt.Sprintf(
-			"The previous body was %d characters; recompile it to fit the %d-character cap.",
+			"The previous page is %d chars; hard limit %d — compress lower-salience claims, keep the lead and all citations.",
 			utf8.RuneCountInString(out.Body), PageCharCap,
 		))
 	}
@@ -84,8 +91,6 @@ func (c *Compiler) Compile(ctx context.Context, attr llm.Attribution, s wiki.Sub
 	}
 	return last.Title, truncateRunes(last.Body, PageCharCap), nil
 }
-
-func boolPtr(value bool) *bool { return &value }
 
 type compileResponse struct {
 	Title string `json:"title"`
@@ -105,12 +110,9 @@ func validateResponse(r *compileResponse) error {
 	return nil
 }
 
-func renderPrompt(s wiki.Subject, claims []wiki.Claim, cap int, tighten string) string {
+func renderPrompt(s model.Subject, claims []model.Claim, cap int, tighten string) string {
 	var b strings.Builder
-	b.WriteString("Compile one wiki page from the subject identity and complete claim set below.\n")
-	b.WriteString("Use only the subject identity and claims; do not use previous pages, prior page bodies, source documents, or unstated facts.\n")
-	b.WriteString("Return only JSON with shape {\"title\":\"...\",\"body\":\"...\"}.\n")
-	fmt.Fprintf(&b, "The body must be no more than %d Unicode code points.\n", cap)
+	fmt.Fprintf(&b, "Hard body limit: %d characters.\n", cap)
 	if strings.TrimSpace(tighten) != "" {
 		b.WriteString(tighten)
 		b.WriteByte('\n')
@@ -128,7 +130,11 @@ func renderPrompt(s wiki.Subject, claims []wiki.Claim, cap int, tighten string) 
 		return b.String()
 	}
 	for i, claim := range claims {
-		fmt.Fprintf(&b, "%d. [%s] %s\n", i+1, claim.ID, strings.TrimSpace(claim.Body))
+		citation := claim.JobID
+		if citation == "" {
+			citation = claim.ID
+		}
+		fmt.Fprintf(&b, "%d. [%s] %s\n", i+1, citation, strings.TrimSpace(claim.Body))
 	}
 	return b.String()
 }

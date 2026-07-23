@@ -131,8 +131,8 @@ func TestLoadAnalysisGoldLoadsSeededCommittedCorpus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(dev) != 1 || len(holdout) != 1 {
-		t.Fatalf("committed analysis corpus has %d dev and %d holdout cases, want exactly 1 each", len(dev), len(holdout))
+	if len(dev) != 15 || len(holdout) != 8 {
+		t.Fatalf("committed analysis corpus has %d dev and %d holdout cases, want exactly 15 dev and 8 holdout", len(dev), len(holdout))
 	}
 	if dev[0].Question == "" || holdout[0].Question == "" {
 		t.Fatalf("committed analysis corpus contains an empty question: dev=%+v holdout=%+v", dev, holdout)

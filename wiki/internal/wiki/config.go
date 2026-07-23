@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"wiki/internal/compile"
+	"wiki/internal/extract"
 	"wiki/internal/llm"
 )
 
@@ -81,11 +83,11 @@ func resolveEmbedSite(getenv func(string) string) (EmbedSite, error) {
 }
 
 func resolveCallSites(getenv func(string) string) (CallSites, error) {
-	extract, err := resolveCallSite(getenv, "EXTRACT", defaultExtractCallSite())
+	extractSite, err := resolveCallSite(getenv, "EXTRACT", extract.DefaultCallSite())
 	if err != nil {
 		return CallSites{}, err
 	}
-	compile, err := resolveCallSite(getenv, "COMPILE", defaultCompileCallSite())
+	compileSite, err := resolveCallSite(getenv, "COMPILE", compile.DefaultCallSite())
 	if err != nil {
 		return CallSites{}, err
 	}
@@ -98,8 +100,8 @@ func resolveCallSites(getenv func(string) string) (CallSites, error) {
 		return CallSites{}, err
 	}
 	return CallSites{
-		Extract:      extract,
-		Compile:      compile,
+		Extract:      extractSite,
+		Compile:      compileSite,
 		AskSubject:   askSubject,
 		AskSynthesis: askSynthesis,
 	}, nil
@@ -157,16 +159,6 @@ func parseReasoning(raw string) (string, *bool, error) {
 	default:
 		return "", nil, fmt.Errorf("must be disabled, off, or a native reasoning level")
 	}
-}
-
-func defaultExtractCallSite() llm.CallSite {
-	temp, thinking := 0.0, false
-	return llm.CallSite{Stage: "extract", Config: llm.Config{Model: ModelID, Temperature: &temp, Thinking: &thinking, MaxTokens: defaultMaxTokens}, Model: ModelID, Temperature: &temp, Reasoning: llm.DisableReasoning(), MaxTokens: defaultMaxTokens, MaxParseRetries: 2}
-}
-
-func defaultCompileCallSite() llm.CallSite {
-	temp, thinking := 0.0, false
-	return llm.CallSite{Stage: "compile", Config: llm.Config{Model: ModelID, Temperature: &temp, Thinking: &thinking, MaxTokens: defaultMaxTokens}, Model: ModelID, Temperature: &temp, Reasoning: llm.DisableReasoning(), MaxTokens: defaultMaxTokens, MaxParseRetries: 2}
 }
 
 func defaultAskSubjectCallSite() llm.CallSite {

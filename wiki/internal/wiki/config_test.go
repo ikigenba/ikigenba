@@ -17,8 +17,8 @@ func TestNewConfigBuildsDefaultPerCallSiteModels(t *testing.T) {
 	if cfg.LLM != nil {
 		t.Fatal("NewConfig should leave the prompts client to the composition root")
 	}
-	assertResolvedSite(t, cfg.CallSites.Extract, "extract", ModelID, 0, llm.DisableReasoning(), 16384, 2)
-	assertResolvedSite(t, cfg.CallSites.Compile, "compile", ModelID, 0, llm.DisableReasoning(), 16384, 2)
+	assertProductionSite(t, cfg.CallSites.Extract, "extract", 2)
+	assertProductionSite(t, cfg.CallSites.Compile, "compile", 0)
 	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", ModelID, nil, reasoningLevel("low"), 16384, 0)
 	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", ModelID, nil, reasoningLevel("low"), 16384, 0)
 	if cfg.EmbedSite.Model != "text-embedding-3-small" || cfg.EmbedSite.Dims != 512 {
@@ -43,8 +43,8 @@ func TestNewConfigLayersPerCallSiteEnvironmentOverrides(t *testing.T) {
 		t.Fatalf("NewConfig: %v", err)
 	}
 
-	assertResolvedSite(t, cfg.CallSites.Extract, "extract", "extract-model", 0.25, llm.DisableReasoning(), 16384, 2)
-	assertResolvedSite(t, cfg.CallSites.Compile, "compile", "compile-model", 0, llm.DisableReasoning(), 4096, 2)
+	assertResolvedSite(t, cfg.CallSites.Extract, "extract", "extract-model", 0.25, nil, 0, 2)
+	assertResolvedSite(t, cfg.CallSites.Compile, "compile", "compile-model", nil, nil, 4096, 0)
 	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", "subject-model", nil, reasoningLevel("high"), 16384, 0)
 	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", "synthesis-model", nil, llm.DisableReasoning(), 8192, 0)
 }
@@ -195,6 +195,22 @@ func assertResolvedSite(t *testing.T, got llm.CallSite, stage, model string, tem
 	}
 	if got.MaxTokens != maxTokens {
 		t.Fatalf("%s MaxTokens = %d, want %d", stage, got.MaxTokens, maxTokens)
+	}
+	if got.MaxParseRetries != maxParseRetries {
+		t.Fatalf("%s MaxParseRetries = %d, want %d", stage, got.MaxParseRetries, maxParseRetries)
+	}
+}
+
+func assertProductionSite(t *testing.T, got llm.CallSite, stage string, maxParseRetries int) {
+	t.Helper()
+	if got.Stage != stage || got.System == "" {
+		t.Fatalf("%s site = %#v, want stage and embedded system prompt", stage, got)
+	}
+	if got.Config.Provider != "openai" || got.Config.Model != "gpt-5.6-luna" || got.Config.Effort != "low" || got.Config.MaxTokens != 16384 {
+		t.Fatalf("%s config = %#v, want openai Luna low/16384", stage, got.Config)
+	}
+	if got.Config.Temperature != nil || got.Config.Thinking != nil || got.Temperature != nil || got.Reasoning != nil {
+		t.Fatalf("%s site = %#v, want no temperature or thinking pins", stage, got)
 	}
 	if got.MaxParseRetries != maxParseRetries {
 		t.Fatalf("%s MaxParseRetries = %d, want %d", stage, got.MaxParseRetries, maxParseRetries)

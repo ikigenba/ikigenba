@@ -3,11 +3,11 @@ package extract
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 	"time"
 
-	extractprompt "wiki/eval/extract"
 	"wiki/internal/llm"
 )
 
@@ -36,8 +36,10 @@ type Extractor struct {
 
 const defaultMaxTokens = 16384
 
-// DefaultPromptInstructions is the baked-in production extract instruction preamble.
-var DefaultPromptInstructions = extractprompt.Instructions
+// DefaultPromptInstructions is the production extract instruction preamble.
+//
+//go:embed prompt.txt
+var DefaultPromptInstructions string
 
 // New builds an Extractor from an injected LLM client and extract call site.
 func New(c *llm.Client, site llm.CallSite) *Extractor {
@@ -46,13 +48,10 @@ func New(c *llm.Client, site llm.CallSite) *Extractor {
 
 // DefaultCallSite returns the production extract-stage generation settings.
 func DefaultCallSite() llm.CallSite {
-	temp := 0.0
 	return llm.CallSite{
 		Stage:           "extract",
-		Config:          llm.Config{Temperature: &temp, Thinking: boolPtr(false), MaxTokens: defaultMaxTokens},
-		Temperature:     &temp,
-		Reasoning:       llm.DisableReasoning(),
-		MaxTokens:       defaultMaxTokens,
+		System:          DefaultPromptInstructions,
+		Config:          llm.Config{Provider: "openai", Model: "gpt-5.6-luna", Effort: "low", MaxTokens: defaultMaxTokens},
 		MaxParseRetries: 2,
 	}
 }
@@ -62,7 +61,7 @@ func (e *Extractor) Extract(ctx context.Context, attr llm.Attribution, h Documen
 	if e == nil {
 		return nil, fmt.Errorf("extract: nil extractor")
 	}
-	out, err := llm.JSON[extractResponse](ctx, e.c, e.site, attr, Render(DefaultPromptInstructions, h, text), func(response *extractResponse) error {
+	out, err := llm.JSON[extractResponse](ctx, e.c, e.site, attr, Render(h, text), func(response *extractResponse) error {
 		if response == nil {
 			return validateResponse(nil)
 		}
@@ -74,16 +73,12 @@ func (e *Extractor) Extract(ctx context.Context, attr llm.Attribution, h Documen
 	return out.Subjects, nil
 }
 
-func boolPtr(value bool) *bool { return &value }
-
 type extractResponse struct {
 	Subjects []ExtractedSubject `json:"subjects"`
 }
 
-func renderPrompt(instructions string, h DocumentHeader, text string) string {
+func renderPrompt(h DocumentHeader, text string) string {
 	var b strings.Builder
-	b.WriteString(instructions)
-	b.WriteString("\n\n")
 	b.WriteString("Document header:\n")
 	writeHeaderLine(&b, "source", h.Source)
 	writeHeaderLine(&b, "title", h.Title)
@@ -94,9 +89,9 @@ func renderPrompt(instructions string, h DocumentHeader, text string) string {
 	return b.String()
 }
 
-// Render assembles the exact prompt used by the production extraction path.
-func Render(instructions string, h DocumentHeader, text string) string {
-	return renderPrompt(instructions, h, text)
+// Render assembles the user input used by the production extraction path.
+func Render(h DocumentHeader, text string) string {
+	return renderPrompt(h, text)
 }
 
 // Validate applies the production extraction response rules to subjects.

@@ -3,7 +3,6 @@ package extract
 import (
 	"context"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -13,13 +12,12 @@ import (
 )
 
 func TestDefaultPromptInstructionsMatchesPromptFile(t *testing.T) {
-	// R-KICZ-E6WA
-	want, err := os.ReadFile("../../eval/extract/prompt.txt")
+	want, err := os.ReadFile("prompt.txt")
 	if err != nil {
 		t.Fatalf("read prompt.txt: %v", err)
 	}
 	if DefaultPromptInstructions != string(want) {
-		t.Fatalf("DefaultPromptInstructions differs from eval/extract/prompt.txt")
+		t.Fatalf("DefaultPromptInstructions differs from internal/extract/prompt.txt")
 	}
 }
 
@@ -67,7 +65,6 @@ func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 		"title: Tulsa robotics notes",
 		"tags: robotics, tulsa",
 		"received on: 2026-06-20",
-		"occurred_at is required for events. For entities and concepts, omit occurred_at unless the source directly associates the subject itself with a date",
 		"Acme Robotics opened a research lab in Tulsa.",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -80,17 +77,23 @@ func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 }
 
 func TestExtractDefaultsToExportedPromptInstructions(t *testing.T) {
-	// R-OGYE-8FV9
+	// R-9W1T-D75P
 	prov := &scriptedProvider{responses: []string{`{"subjects":[{"type":"entity","kind":"company","name":"Acme Robotics","occurred_at":"","claims":["Acme Robotics opened a research lab."]}]}`}}
-	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
+	site := DefaultCallSite()
+	site.Config.Model = "extract-model"
+	extractor := New(llmtest.NewClient(t, prov), site)
 
 	if _, err := extractor.Extract(context.Background(), llm.Attribution{}, validHeader(), "Acme Robotics opened a research lab."); err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 
+	req := prov.requests[0]
+	if req.System != DefaultPromptInstructions {
+		t.Fatalf("system = %q, want embedded extract instructions", req.System)
+	}
 	prompt := onlyPrompt(t, prov)
-	if !strings.HasPrefix(prompt, DefaultPromptInstructions+"\n\nDocument header:\n") {
-		t.Fatalf("prompt = %q, want exported default instructions followed by generated document context", prompt)
+	if !strings.HasPrefix(prompt, "Document header:\n") || strings.Contains(prompt, DefaultPromptInstructions) {
+		t.Fatalf("user prompt = %q, want only rendered header and source text", prompt)
 	}
 }
 
@@ -108,7 +111,7 @@ func TestProductionEnvelopeUsesExportedRenderAndValidate(t *testing.T) {
 	if _, err := extractor.Extract(context.Background(), llm.Attribution{}, header, text); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := onlyPrompt(t, prov), Render(DefaultPromptInstructions, header, text); got != want {
+	if got, want := onlyPrompt(t, prov), Render(header, text); got != want {
 		t.Fatalf("production prompt differs from Render\ngot:  %q\nwant: %q", got, want)
 	}
 }
@@ -378,8 +381,8 @@ func TestExtractRepromptsAfterOccurredAtValidationFailure(t *testing.T) {
 	}
 }
 
-func TestDefaultCallSiteRetriesBadThenGoodExtraction(t *testing.T) {
-	// R-4CK8-E688
+func TestDefaultCallSiteUsesLunaAndRetriesBadThenGoodExtraction(t *testing.T) {
+	// R-9UTW-ZFF0
 	prov := &scriptedProvider{responses: []string{
 		`{"subjects":[{
 			"type":"place",
@@ -397,27 +400,13 @@ func TestDefaultCallSiteRetriesBadThenGoodExtraction(t *testing.T) {
 		}]}`,
 	}}
 	site := DefaultCallSite()
-	// R-MW86-M158
-	if site.Config.MaxTokens < 16384 {
-		t.Fatalf("Config.MaxTokens = %d, want at least 16384", site.Config.MaxTokens)
+	if site.Stage != "extract" || site.System != DefaultPromptInstructions || site.Config.Provider != "openai" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "low" || site.Config.MaxTokens < 16384 || site.MaxParseRetries != 2 {
+		t.Fatalf("DefaultCallSite = %#v, want production Luna extract settings", site)
 	}
-	site.Model = "extract-model"
-	// R-GGIG-AN7W
-	if site.Stage != "extract" {
-		t.Fatalf("stage = %q, want extract", site.Stage)
+	if site.Config.Temperature != nil || site.Config.Thinking != nil || site.Temperature != nil || site.Reasoning != nil {
+		t.Fatalf("DefaultCallSite = %#v, want no temperature or thinking pins", site)
 	}
-	if site.Temperature == nil || *site.Temperature != 0 {
-		t.Fatalf("temperature = %#v, want 0", site.Temperature)
-	}
-	if !reflect.DeepEqual(site.Reasoning, llm.DisableReasoning()) {
-		t.Fatalf("reasoning = %#v, want disabled", site.Reasoning)
-	}
-	if site.MaxTokens != 16384 {
-		t.Fatalf("MaxTokens = %d, want 16384", site.MaxTokens)
-	}
-	if site.MaxParseRetries != 2 {
-		t.Fatalf("MaxParseRetries = %d, want 2", site.MaxParseRetries)
-	}
+	site.Config.Model = "extract-model"
 	extractor := New(llmtest.NewClient(t, prov), site)
 
 	got, err := extractor.Extract(context.Background(), llm.Attribution{}, validHeader(), "Tulsa hosted the planning meeting on June 20, 2026.")
@@ -431,43 +420,12 @@ func TestDefaultCallSiteRetriesBadThenGoodExtraction(t *testing.T) {
 		t.Fatalf("requests len = %d, want bad response to trigger one re-prompt", len(prov.requests))
 	}
 	req := prov.requests[0]
-	if req.Gen.Temperature == nil || *req.Gen.Temperature != 0 || !req.Gen.Reasoning.Disabled() {
-		t.Fatalf("gen settings = %#v, want default temperature 0 and disabled reasoning", req.Gen)
+	if req.System != DefaultPromptInstructions || req.Gen.Temperature != nil || req.Gen.Reasoning.Disabled() {
+		t.Fatalf("request = %#v, want system prompt with unpinned temperature/reasoning", req)
 	}
 	corrective := strings.Join(requestTexts(prov.requests[1]), "\n")
 	if !strings.Contains(corrective, "previous response") || !strings.Contains(corrective, "type must be entity, event, or concept") {
 		t.Fatalf("corrective prompt = %q, want validation error in re-prompt", corrective)
-	}
-}
-
-func TestExtractUsesInjectedLLMCallSiteWithoutTools(t *testing.T) {
-	// R-W2HP-H0J0
-	prov := &scriptedProvider{responses: []string{`{"subjects":[{
-		"type":"concept",
-		"kind":"method",
-		"name":"claim extraction",
-		"occurred_at":"",
-		"claims":["Claim extraction turns source text into self-contained statements."]
-	}]}`}}
-	site := DefaultCallSite()
-	site.Model = "extract-model"
-	extractor := New(llmtest.NewClient(t, prov), site)
-
-	if _, err := extractor.Extract(context.Background(), llm.Attribution{}, validHeader(), "Claim extraction turns source text into statements."); err != nil {
-		t.Fatalf("Extract returned error: %v", err)
-	}
-	if len(prov.requests) != 1 {
-		t.Fatalf("requests len = %d, want 1", len(prov.requests))
-	}
-	req := prov.requests[0]
-	if req.Model != site.Model {
-		t.Fatalf("request model = %q, want %q", req.Model, site.Model)
-	}
-	if len(req.Tools) != 0 {
-		t.Fatalf("request tools len = %d, want tool-less extract generation", len(req.Tools))
-	}
-	if req.Gen.Temperature == nil || *req.Gen.Temperature != 0 || !req.Gen.Reasoning.Disabled() {
-		t.Fatalf("gen settings = %#v, want default temperature 0 and disabled reasoning", req.Gen)
 	}
 }
 

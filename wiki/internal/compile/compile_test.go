@@ -2,7 +2,6 @@ package compile
 
 import (
 	"context"
-	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -10,17 +9,19 @@ import (
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
-	"wiki/internal/wiki"
+	"wiki/internal/model"
 )
 
 func TestCompileRendersSubjectIdentityAndCompleteClaimSet(t *testing.T) {
 	// R-FQLB-QWS6
 	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics opened a Tulsa lab and hired Mira Patel."}`}}
-	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "compile-model", System: "compile system"}, nil)
+	site := DefaultCallSite()
+	site.Config.Model = "compile-model"
+	compiler := New(llmtest.NewClient(t, prov), site, nil)
 
-	title, body, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), []wiki.Claim{
-		{ID: "claim-001", SubjectID: "subj-acme", Body: "Acme Robotics opened a research lab in Tulsa."},
-		{ID: "claim-002", SubjectID: "subj-acme", Body: "Mira Patel leads Acme Robotics' Tulsa lab."},
+	title, body, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), []model.Claim{
+		{ID: "claim-001", SubjectID: "subj-acme", JobID: "job-001", Body: "Acme Robotics opened a research lab in Tulsa."},
+		{ID: "claim-002", SubjectID: "subj-acme", JobID: "job-002", Body: "Mira Patel leads Acme Robotics' Tulsa lab."},
 	})
 	if err != nil {
 		t.Fatalf("Compile returned error: %v", err)
@@ -29,11 +30,14 @@ func TestCompileRendersSubjectIdentityAndCompleteClaimSet(t *testing.T) {
 		t.Fatalf("Compile result = %q/%q, want decoded page", title, body)
 	}
 
+	if system := prov.requests[0].System; !strings.Contains(system, "Rebuild one wiki page") || !strings.Contains(system, "Never use or imagine a prior page body, source document") {
+		t.Fatalf("system prompt %q does not contain compile boundary", system)
+	}
 	prompt := onlyPrompt(t, prov, 0)
 	for _, want := range []string{
-		"Compile one wiki page from the subject identity and complete claim set below.",
-		"Use only the subject identity and claims",
-		"do not use previous pages, prior page bodies, source documents, or unstated facts",
+		"Hard body limit: 12000 characters.",
+		"Subject identity:",
+		"Complete claims:",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt %q does not contain compile boundary %q", prompt, want)
@@ -44,8 +48,8 @@ func TestCompileRendersSubjectIdentityAndCompleteClaimSet(t *testing.T) {
 		"name: Acme Robotics",
 		"norm_name: acme-robotics",
 		"type: entity",
-		"[claim-001] Acme Robotics opened a research lab in Tulsa.",
-		"[claim-002] Mira Patel leads Acme Robotics' Tulsa lab.",
+		"[job-001] Acme Robotics opened a research lab in Tulsa.",
+		"[job-002] Mira Patel leads Acme Robotics' Tulsa lab.",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt %q does not contain %q", prompt, want)
@@ -83,26 +87,16 @@ func TestCompileUsesInjectedCallSiteWithoutTools(t *testing.T) {
 	}
 }
 
-func TestDefaultCallSiteUsesDeterministicReasoningOffSettings(t *testing.T) {
-	// R-4DS4-RXYX
+func TestDefaultCallSiteUsesLunaSettings(t *testing.T) {
+	// R-9X9P-QYWE
 	site := DefaultCallSite()
-	site.Model = "compile-model"
-	// R-GGIG-AN7W
-	if site.Stage != "compile" {
-		t.Fatalf("stage = %q, want compile", site.Stage)
+	if site.Stage != "compile" || site.System != DefaultPromptInstructions || site.Config.Provider != "openai" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "low" || site.Config.MaxTokens < 16384 {
+		t.Fatalf("DefaultCallSite = %#v, want production Luna compile settings", site)
 	}
-	if site.Temperature == nil || *site.Temperature != 0 {
-		t.Fatalf("temperature = %#v, want 0", site.Temperature)
+	if site.Config.Temperature != nil || site.Config.Thinking != nil || site.Temperature != nil || site.Reasoning != nil {
+		t.Fatalf("DefaultCallSite = %#v, want no temperature or thinking pins", site)
 	}
-	if !reflect.DeepEqual(site.Reasoning, llm.DisableReasoning()) {
-		t.Fatalf("reasoning = %#v, want disabled", site.Reasoning)
-	}
-	if site.MaxTokens != 16384 {
-		t.Fatalf("MaxTokens = %d, want 16384", site.MaxTokens)
-	}
-	if site.MaxParseRetries != 2 {
-		t.Fatalf("MaxParseRetries = %d, want 2", site.MaxParseRetries)
-	}
+	site.Config.Model = "compile-model"
 
 	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics operates a Tulsa research lab."}`}}
 	compiler := New(llmtest.NewClient(t, prov), site, nil)
@@ -113,11 +107,31 @@ func TestDefaultCallSiteUsesDeterministicReasoningOffSettings(t *testing.T) {
 		t.Fatalf("requests len = %d, want 1", len(prov.requests))
 	}
 	req := prov.requests[0]
-	if req.Gen.Temperature == nil || *req.Gen.Temperature != 0 || !req.Gen.Reasoning.Disabled() {
-		t.Fatalf("gen settings = %#v, want default temperature 0 and disabled reasoning", req.Gen)
+	if req.System != DefaultPromptInstructions || req.Gen.Temperature != nil || req.Gen.Reasoning.Disabled() {
+		t.Fatalf("request = %#v, want system prompt with unpinned temperature/reasoning", req)
 	}
-	if req.Gen.MaxTokens != site.MaxTokens {
-		t.Fatalf("request max tokens = %d, want default ceiling %d", req.Gen.MaxTokens, site.MaxTokens)
+	if req.Gen.MaxTokens != site.Config.MaxTokens {
+		t.Fatalf("request max tokens = %d, want default ceiling %d", req.Gen.MaxTokens, site.Config.MaxTokens)
+	}
+}
+
+func TestCompileSendsEmbeddedInstructionsAsSystemOnly(t *testing.T) {
+	// R-9YHM-4QN3
+	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics is an entity. [job-001]"}`}}
+	site := DefaultCallSite()
+	site.Config.Model = "compile-model"
+	compiler := New(llmtest.NewClient(t, prov), site, nil)
+
+	if _, _, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), acmeClaims()[:1]); err != nil {
+		t.Fatalf("Compile returned error: %v", err)
+	}
+	req := prov.requests[0]
+	if req.System != DefaultPromptInstructions {
+		t.Fatalf("system = %q, want embedded compile instructions", req.System)
+	}
+	user := onlyPrompt(t, prov, 0)
+	if strings.Contains(user, DefaultPromptInstructions) || !strings.Contains(user, "Subject identity:\n") || !strings.Contains(user, "[job-001]") {
+		t.Fatalf("user prompt = %q, want only rendered identity and citation-tagged claims", user)
 	}
 }
 
@@ -128,9 +142,9 @@ func TestExtractAndCompileDefaultCallSitesCarryOutputTokenCeilings(t *testing.T)
 		`{"title":"Acme Robotics","body":"Acme Robotics operates a Tulsa research lab."}`,
 	}}
 	extractSite := extract.DefaultCallSite()
-	extractSite.Model = "extract-model"
+	extractSite.Config.Model = "extract-model"
 	compileSite := DefaultCallSite()
-	compileSite.Model = "compile-model"
+	compileSite.Config.Model = "compile-model"
 	const minOutputBudget = 16384
 	if extractSite.Config.MaxTokens < minOutputBudget || compileSite.Config.MaxTokens < minOutputBudget {
 		t.Fatalf("default config max tokens = extract:%d compile:%d, want both at least %d", extractSite.Config.MaxTokens, compileSite.Config.MaxTokens, minOutputBudget)
@@ -147,11 +161,11 @@ func TestExtractAndCompileDefaultCallSitesCarryOutputTokenCeilings(t *testing.T)
 	if len(prov.requests) != 2 {
 		t.Fatalf("requests len = %d, want extract and compile calls", len(prov.requests))
 	}
-	if prov.requests[0].Gen.MaxTokens != extractSite.MaxTokens {
-		t.Fatalf("extract request max tokens = %d, want %d", prov.requests[0].Gen.MaxTokens, extractSite.MaxTokens)
+	if prov.requests[0].Gen.MaxTokens != extractSite.Config.MaxTokens {
+		t.Fatalf("extract request max tokens = %d, want %d", prov.requests[0].Gen.MaxTokens, extractSite.Config.MaxTokens)
 	}
-	if prov.requests[1].Gen.MaxTokens != compileSite.MaxTokens {
-		t.Fatalf("compile request max tokens = %d, want %d", prov.requests[1].Gen.MaxTokens, compileSite.MaxTokens)
+	if prov.requests[1].Gen.MaxTokens != compileSite.Config.MaxTokens {
+		t.Fatalf("compile request max tokens = %d, want %d", prov.requests[1].Gen.MaxTokens, compileSite.Config.MaxTokens)
 	}
 }
 
@@ -163,13 +177,13 @@ func TestCompileRebuildsFromClaimsWithoutPriorGeneratedBody(t *testing.T) {
 	}}
 	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "compile-model"}, nil)
 
-	if _, _, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), []wiki.Claim{
-		{ID: "claim-001", SubjectID: "subj-acme", Body: "Acme Robotics opened a Tulsa lab."},
+	if _, _, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), []model.Claim{
+		{ID: "claim-001", SubjectID: "subj-acme", JobID: "job-001", Body: "Acme Robotics opened a Tulsa lab."},
 	}); err != nil {
 		t.Fatalf("first Compile returned error: %v", err)
 	}
-	title, body, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), []wiki.Claim{
-		{ID: "claim-003", SubjectID: "subj-acme", Body: "Acme Robotics opened a Denver lab."},
+	title, body, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), []model.Claim{
+		{ID: "claim-003", SubjectID: "subj-acme", JobID: "job-003", Body: "Acme Robotics opened a Denver lab."},
 	})
 	if err != nil {
 		t.Fatalf("second Compile returned error: %v", err)
@@ -207,7 +221,7 @@ func TestCompileTightensOverCapBodyFromClaims(t *testing.T) {
 		t.Fatalf("requests len = %d, want initial compile plus tighten", len(prov.requests))
 	}
 	secondPrompt := onlyPrompt(t, prov, 1)
-	if !strings.Contains(secondPrompt, "previous body was 12001 characters") || !strings.Contains(secondPrompt, "[claim-001]") {
+	if !strings.Contains(secondPrompt, "previous page is 12001 chars; hard limit 12000") || !strings.Contains(secondPrompt, "[job-001]") {
 		t.Fatalf("tighten prompt = %q, want cap warning and original claims", secondPrompt)
 	}
 	if strings.Contains(secondPrompt, tooLong) {
@@ -216,11 +230,10 @@ func TestCompileTightensOverCapBodyFromClaims(t *testing.T) {
 }
 
 func TestCompileDeterministicallyEnforcesRuneCap(t *testing.T) {
-	// R-FWOT-NRHN
 	body := strings.Repeat("é", PageCharCap+7)
 	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"` + body + `"}`}}
 	site := DefaultCallSite()
-	site.Model = "compile-model"
+	site.Config.Model = "compile-model"
 	compiler := New(llmtest.NewClient(t, prov), site, nil)
 	compiler.maxTighten = 0
 
@@ -238,22 +251,22 @@ func TestCompileDeterministicallyEnforcesRuneCap(t *testing.T) {
 		t.Fatalf("requests len = %d, want 1", len(prov.requests))
 	}
 	req := prov.requests[0]
-	if req.Model != site.Model {
-		t.Fatalf("request model = %q, want %q", req.Model, site.Model)
+	if req.Model != site.Config.Model {
+		t.Fatalf("request model = %q, want %q", req.Model, site.Config.Model)
 	}
-	if req.Gen.Temperature == nil || *req.Gen.Temperature != 0 || !req.Gen.Reasoning.Disabled() {
-		t.Fatalf("gen settings = %#v, want default temperature 0 and disabled reasoning", req.Gen)
+	if req.Gen.Temperature != nil || req.Gen.Reasoning.Disabled() {
+		t.Fatalf("gen settings = %#v, want no temperature or thinking pin", req.Gen)
 	}
 }
 
-func acmeSubject() wiki.Subject {
-	return wiki.Subject{ID: "subj-acme", Name: "Acme Robotics", NormName: "acme-robotics", Type: "entity"}
+func acmeSubject() model.Subject {
+	return model.Subject{ID: "subj-acme", Name: "Acme Robotics", NormName: "acme-robotics", Type: "entity"}
 }
 
-func acmeClaims() []wiki.Claim {
-	return []wiki.Claim{
-		{ID: "claim-001", SubjectID: "subj-acme", Body: "Acme Robotics opened a research lab in Tulsa."},
-		{ID: "claim-002", SubjectID: "subj-acme", Body: "Mira Patel leads Acme Robotics' Tulsa lab."},
+func acmeClaims() []model.Claim {
+	return []model.Claim{
+		{ID: "claim-001", SubjectID: "subj-acme", JobID: "job-001", Body: "Acme Robotics opened a research lab in Tulsa."},
+		{ID: "claim-002", SubjectID: "subj-acme", JobID: "job-002", Body: "Mira Patel leads Acme Robotics' Tulsa lab."},
 	}
 }
 

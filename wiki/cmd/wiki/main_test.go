@@ -976,10 +976,9 @@ func TestBuildSpecRoutesQueryEmbeddingThroughPrompts(t *testing.T) {
 }
 
 func TestBuildCompilerUsesDefaultCompileCallSite(t *testing.T) {
-	// R-4DS4-RXYX
 	prov := &capturingProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics runs a Tulsa lab."}`}}
 	wantSite := compile.DefaultCallSite()
-	wantSite.Model = "compile-model"
+	wantSite.Config.Model = "compile-model"
 	cfg := wiki.Config{
 		CallSites: wiki.CallSites{Compile: wantSite},
 		LLM:       llmtest.NewClient(t, prov),
@@ -1004,8 +1003,8 @@ func TestBuildCompilerUsesDefaultCompileCallSite(t *testing.T) {
 		t.Fatalf("requests len = %d, want 1", len(prov.requests))
 	}
 	req := prov.requests[0]
-	if req.Model != wantSite.Model {
-		t.Fatalf("request model = %q, want %q from compile.DefaultCallSite", req.Model, wantSite.Model)
+	if req.Model != wantSite.Config.Model {
+		t.Fatalf("request model = %q, want %q from compile.DefaultCallSite", req.Model, wantSite.Config.Model)
 	}
 	if req.System != wantSite.System {
 		t.Fatalf("request system = %q, want %q from compile.DefaultCallSite", req.System, wantSite.System)
@@ -1013,17 +1012,8 @@ func TestBuildCompilerUsesDefaultCompileCallSite(t *testing.T) {
 	if len(req.Tools) != 0 {
 		t.Fatalf("request tools len = %d, want tool-less compile call site", len(req.Tools))
 	}
-	if wantSite.Temperature == nil {
-		t.Fatal("compile.DefaultCallSite temperature is nil, want deterministic temperature")
-	}
-	if *wantSite.Temperature != 0 {
-		t.Fatalf("compile.DefaultCallSite temperature = %v, want 0", *wantSite.Temperature)
-	}
-	if !reflect.DeepEqual(wantSite.Reasoning, llm.DisableReasoning()) {
-		t.Fatalf("compile.DefaultCallSite reasoning = %#v, want llm.DisableReasoning()", wantSite.Reasoning)
-	}
-	if req.Gen.Temperature == nil || *req.Gen.Temperature != *wantSite.Temperature || !req.Gen.Reasoning.Disabled() {
-		t.Fatalf("gen settings = %#v, want compile.DefaultCallSite temperature %v and disabled reasoning", req.Gen, *wantSite.Temperature)
+	if wantSite.Config.Temperature != nil || wantSite.Config.Thinking != nil || req.Gen.Temperature != nil || req.Gen.Reasoning.Disabled() {
+		t.Fatalf("site/request generation settings = %#v/%#v, want no temperature or thinking pin", wantSite.Config, req.Gen)
 	}
 }
 
