@@ -17,10 +17,11 @@ instruction. See the `$ikispec` skill for the `project/` spec contracts and
 
 ## Layout
 
-- `cmd/wiki`: the composition root, plus `eval-extract` (an extraction harness).
+- `cmd/wiki`: the composition root.
 - `internal/`: the domain packages: `extract`, `compile`, `retrieve`, `ask`,
   `page`, `markdown`, `llm`, `worker` (ingest queue), `web`, `mcp`, `db`
-  (migrations), `ids`, `eval`.
+  (migrations), `ids`.
+- `autotune/`: committed tune-folder data and scorer workspace.
 - `etc/`: `manifest.env` and the nginx location fragment.
 - `share/www`: Carbon assets and page templates for the read surface.
 - `project/`: the spec the build loop works from.

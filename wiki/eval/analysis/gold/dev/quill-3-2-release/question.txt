@@ -1,1 +1,0 @@
-What changed in Quill 3.2, and what is planned for Quill 3.3?

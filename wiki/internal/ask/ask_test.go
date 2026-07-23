@@ -477,7 +477,7 @@ func TestDefaultAskCallSitesUseLunaAndEmbeddedSystemPrompts(t *testing.T) {
 		if site.Config.Provider != "openai" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "low" || site.Config.MaxTokens != 16384 {
 			t.Fatalf("%s config = %#v, want openai Luna low/16384", name, site.Config)
 		}
-		if site.System == "" || site.Config.Temperature != nil || site.Config.Thinking != nil || site.Temperature != nil || site.Reasoning != nil {
+		if site.System == "" || site.Config.Temperature != nil || site.Config.Thinking != nil {
 			t.Fatalf("%s site = %#v, want embedded system and no temperature/thinking pins", name, site)
 		}
 	}
@@ -492,7 +492,7 @@ func TestAnalyzeRunsOneAskSubjectCallAndParsesQueryAnalysis(t *testing.T) {
 			"aliases": ["G. Hopper"]
 		}`),
 	}}
-	site := llm.CallSite{Stage: "ask-subject", Model: "analysis-model", System: "analysis system", MaxTokens: 123}
+	site := llm.CallSite{Stage: "ask-subject", System: "analysis system", Config: llm.Config{Model: "analysis-model", MaxTokens: 123}}
 
 	got, err := Analyze(context.Background(), llmtest.NewClient(t, prov), site, llm.Attribution{}, "How did Ada and Grace handle the release?")
 	if err != nil {
@@ -645,11 +645,11 @@ func oneHitSearch(subjectID string, topDense float64) *scriptedSearch {
 }
 
 func testExtractSite() llm.CallSite {
-	return llm.CallSite{Model: "extract-model"}
+	return llm.CallSite{Config: llm.Config{Model: "extract-model"}}
 }
 
 func testSynthSite() llm.CallSite {
-	return llm.CallSite{Model: "synth-model"}
+	return llm.CallSite{Config: llm.Config{Model: "synth-model"}}
 }
 
 type scriptedSearch struct {

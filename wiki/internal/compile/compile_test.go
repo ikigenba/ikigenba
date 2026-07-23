@@ -59,13 +59,15 @@ func TestCompileRendersSubjectIdentityAndCompleteClaimSet(t *testing.T) {
 
 func TestCompileUsesInjectedCallSiteWithoutTools(t *testing.T) {
 	// R-FT14-IG9K
-	temp := 0.0
+	temp, thinking := 0.0, false
 	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics operates a Tulsa research lab."}`}}
 	site := llm.CallSite{
-		Model:       "compile-model",
-		Temperature: &temp,
-		Reasoning:   llmtest.DisableReasoning(),
-		System:      "compile from claims",
+		System: "compile from claims",
+		Config: llm.Config{
+			Model:       "compile-model",
+			Temperature: &temp,
+			Thinking:    &thinking,
+		},
 	}
 	compiler := New(llmtest.NewClient(t, prov), site, nil)
 
@@ -76,7 +78,7 @@ func TestCompileUsesInjectedCallSiteWithoutTools(t *testing.T) {
 		t.Fatalf("requests len = %d, want 1", len(prov.requests))
 	}
 	req := prov.requests[0]
-	if req.Model != site.Model || req.System != site.System {
+	if req.Model != site.Config.Model || req.System != site.System {
 		t.Fatalf("request config = %#v, want injected call site model/system", req)
 	}
 	if len(req.Tools) != 0 {
@@ -93,7 +95,7 @@ func TestDefaultCallSiteUsesLunaSettings(t *testing.T) {
 	if site.Stage != "compile" || site.System != DefaultPromptInstructions || site.Config.Provider != "openai" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "low" || site.Config.MaxTokens < 16384 {
 		t.Fatalf("DefaultCallSite = %#v, want production Luna compile settings", site)
 	}
-	if site.Config.Temperature != nil || site.Config.Thinking != nil || site.Temperature != nil || site.Reasoning != nil {
+	if site.Config.Temperature != nil || site.Config.Thinking != nil {
 		t.Fatalf("DefaultCallSite = %#v, want no temperature or thinking pins", site)
 	}
 	site.Config.Model = "compile-model"
@@ -175,7 +177,7 @@ func TestCompileRebuildsFromClaimsWithoutPriorGeneratedBody(t *testing.T) {
 		`{"title":"Acme Robotics","body":"STALE GENERATED BODY should not be reused."}`,
 		`{"title":"Acme Robotics","body":"Acme Robotics opened a Denver lab."}`,
 	}}
-	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "compile-model"}, nil)
+	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Config: llm.Config{Model: "compile-model"}}, nil)
 
 	if _, _, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), []model.Claim{
 		{ID: "claim-001", SubjectID: "subj-acme", JobID: "job-001", Body: "Acme Robotics opened a Tulsa lab."},
@@ -208,7 +210,7 @@ func TestCompileTightensOverCapBodyFromClaims(t *testing.T) {
 		`{"title":"Acme Robotics","body":"` + tooLong + `"}`,
 		`{"title":"Acme Robotics","body":"Acme Robotics runs a concise Tulsa lab page."}`,
 	}}
-	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "compile-model"}, nil)
+	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Config: llm.Config{Model: "compile-model"}}, nil)
 
 	_, body, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), acmeClaims())
 	if err != nil {

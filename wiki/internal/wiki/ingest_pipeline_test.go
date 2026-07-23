@@ -50,8 +50,8 @@ func TestWorkerThreadsJobOwnerAndIDThroughExtractCompileAndEmbed(t *testing.T) {
 	client := llm.New(server.URL)
 	svc := wikidomain.NewService(
 		conn,
-		extract.New(client, llm.CallSite{Stage: "extract", Model: "extract"}),
-		compile.New(client, llm.CallSite{Stage: "compile", Model: "compile"}, nil),
+		extract.New(client, llm.CallSite{Stage: "extract", Config: llm.Config{Model: "extract"}}),
+		compile.New(client, llm.CallSite{Stage: "compile", Config: llm.Config{Model: "compile"}}, nil),
 		time.Now,
 		wikidomain.WithPageEmbedder("embed", attributedClientEmbedder{client: client}),
 	)
@@ -184,8 +184,8 @@ func TestWorkerStoresPageVectorAfterCommit(t *testing.T) {
 	client := llmtest.NewClient(t, prov)
 	svc := wikidomain.NewService(
 		conn,
-		extract.New(client, llm.CallSite{Model: "extract-model"}),
-		compile.New(client, llm.CallSite{Model: "compile-model"}, nil),
+		extract.New(client, llm.CallSite{Config: llm.Config{Model: "extract-model"}}),
+		compile.New(client, llm.CallSite{Config: llm.Config{Model: "compile-model"}}, nil),
 		func() time.Time { return time.Date(2026, 6, 25, 15, 0, 0, 0, time.UTC) },
 		wikidomain.WithPageEmbedder("embed-model", embedder),
 	)
@@ -333,8 +333,8 @@ func scriptedService(t *testing.T, conn *sql.DB, prov *scriptedProvider, now tim
 	client := llmtest.NewClient(t, prov)
 	return wikidomain.NewService(
 		conn,
-		extract.New(client, llm.CallSite{Model: "extract-model"}),
-		compile.New(client, llm.CallSite{Model: "compile-model"}, nil),
+		extract.New(client, llm.CallSite{Config: llm.Config{Model: "extract-model"}}),
+		compile.New(client, llm.CallSite{Config: llm.Config{Model: "compile-model"}}, nil),
 		func() time.Time { return now },
 	)
 }

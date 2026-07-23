@@ -18,7 +18,6 @@
 
 # Disposable eval workspace
 /tmp/
-/autotune/
 
 # Editor / OS
 .DS_Store

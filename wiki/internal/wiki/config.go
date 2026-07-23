@@ -11,10 +11,6 @@ import (
 	"wiki/internal/llm"
 )
 
-type reasoningLevel string
-
-func (level reasoningLevel) Level() (string, bool) { return string(level), level != "" }
-
 const defaultMaxTokens = 16384
 const defaultEmbedModel = "text-embedding-3-small"
 const defaultEmbedDims = 512
@@ -113,7 +109,6 @@ func resolveCallSite(getenv func(string) string, prefix string, base llm.CallSit
 	site := base
 	if model := strings.TrimSpace(getenv(prefix + "_MODEL")); model != "" {
 		site.Config.Model = model
-		site.Model = model
 	}
 	if raw := strings.TrimSpace(getenv(prefix + "_REASONING")); raw != "" {
 		effort, thinking, err := parseReasoning(raw)
@@ -122,11 +117,6 @@ func resolveCallSite(getenv func(string) string, prefix string, base llm.CallSit
 		}
 		site.Config.Effort = effort
 		site.Config.Thinking = thinking
-		if thinking != nil {
-			site.Reasoning = llm.DisableReasoning()
-		} else {
-			site.Reasoning = reasoningLevel(effort)
-		}
 	}
 	if raw := strings.TrimSpace(getenv(prefix + "_TEMPERATURE")); raw != "" {
 		temp, err := strconv.ParseFloat(raw, 64)
@@ -134,7 +124,6 @@ func resolveCallSite(getenv func(string) string, prefix string, base llm.CallSit
 			return llm.CallSite{}, fmt.Errorf("%s_TEMPERATURE: %w", prefix, err)
 		}
 		site.Config.Temperature = &temp
-		site.Temperature = &temp
 	}
 	if raw := strings.TrimSpace(getenv(prefix + "_MAX_TOKENS")); raw != "" {
 		maxTokens, err := strconv.Atoi(raw)
@@ -145,7 +134,6 @@ func resolveCallSite(getenv func(string) string, prefix string, base llm.CallSit
 			return llm.CallSite{}, fmt.Errorf("%s_MAX_TOKENS: must be greater than zero", prefix)
 		}
 		site.Config.MaxTokens = maxTokens
-		site.MaxTokens = maxTokens
 	}
 	return site, nil
 }

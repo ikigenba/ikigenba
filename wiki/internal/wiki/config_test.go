@@ -1,7 +1,6 @@
 package wiki
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 
@@ -43,10 +42,10 @@ func TestNewConfigLayersPerCallSiteEnvironmentOverrides(t *testing.T) {
 		t.Fatalf("NewConfig: %v", err)
 	}
 
-	assertResolvedSite(t, cfg.CallSites.Extract, "extract", "extract-model", 0.25, nil, 0, 2)
-	assertResolvedSite(t, cfg.CallSites.Compile, "compile", "compile-model", nil, nil, 4096, 0)
-	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", "subject-model", nil, reasoningLevel("high"), 0, 0)
-	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", "synthesis-model", nil, llm.DisableReasoning(), 8192, 0)
+	assertResolvedSite(t, cfg.CallSites.Extract, "extract", "extract-model", 0.25, "low", 16384, 2)
+	assertResolvedSite(t, cfg.CallSites.Compile, "compile", "compile-model", nil, "low", 4096, 0)
+	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", "subject-model", nil, "high", 16384, 0)
+	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", "synthesis-model", nil, false, 8192, 0)
 }
 
 func TestNewConfigBuildsDefaultEmbeddingSite(t *testing.T) {
@@ -169,12 +168,12 @@ func assertResolvedSite(t *testing.T, got llm.CallSite, stage, model string, tem
 	if got.Stage != stage {
 		t.Fatalf("stage = %q, want %q", got.Stage, stage)
 	}
-	if got.Model != model {
-		t.Fatalf("%s model = %q, want %q", stage, got.Model, model)
+	if got.Config.Model != model {
+		t.Fatalf("%s model = %q, want %q", stage, got.Config.Model, model)
 	}
 	if temp == nil {
-		if got.Temperature != nil {
-			t.Fatalf("%s temperature = %#v, want nil", stage, got.Temperature)
+		if got.Config.Temperature != nil {
+			t.Fatalf("%s temperature = %#v, want nil", stage, got.Config.Temperature)
 		}
 	} else {
 		var wantTemp float64
@@ -186,15 +185,28 @@ func assertResolvedSite(t *testing.T, got llm.CallSite, stage, model string, tem
 		default:
 			t.Fatalf("unsupported temperature expectation type %T", temp)
 		}
-		if got.Temperature == nil || *got.Temperature != wantTemp {
-			t.Fatalf("%s temperature = %#v, want %v", stage, got.Temperature, wantTemp)
+		if got.Config.Temperature == nil || *got.Config.Temperature != wantTemp {
+			t.Fatalf("%s temperature = %#v, want %v", stage, got.Config.Temperature, wantTemp)
 		}
 	}
-	if !reflect.DeepEqual(got.Reasoning, reasoning) {
-		t.Fatalf("%s reasoning = %#v, want %#v", stage, got.Reasoning, reasoning)
+	switch want := reasoning.(type) {
+	case nil:
+		if got.Config.Effort != "" || got.Config.Thinking != nil {
+			t.Fatalf("%s reasoning config = effort %q, thinking %#v; want unset", stage, got.Config.Effort, got.Config.Thinking)
+		}
+	case string:
+		if got.Config.Effort != want || got.Config.Thinking != nil {
+			t.Fatalf("%s reasoning config = effort %q, thinking %#v; want effort %q", stage, got.Config.Effort, got.Config.Thinking, want)
+		}
+	case bool:
+		if got.Config.Effort != "" || got.Config.Thinking == nil || *got.Config.Thinking != want {
+			t.Fatalf("%s reasoning config = effort %q, thinking %#v; want thinking %v", stage, got.Config.Effort, got.Config.Thinking, want)
+		}
+	default:
+		t.Fatalf("unsupported reasoning expectation type %T", reasoning)
 	}
-	if got.MaxTokens != maxTokens {
-		t.Fatalf("%s MaxTokens = %d, want %d", stage, got.MaxTokens, maxTokens)
+	if got.Config.MaxTokens != maxTokens {
+		t.Fatalf("%s MaxTokens = %d, want %d", stage, got.Config.MaxTokens, maxTokens)
 	}
 	if got.MaxParseRetries != maxParseRetries {
 		t.Fatalf("%s MaxParseRetries = %d, want %d", stage, got.MaxParseRetries, maxParseRetries)
@@ -209,7 +221,7 @@ func assertProductionSite(t *testing.T, got llm.CallSite, stage string, maxParse
 	if got.Config.Provider != "openai" || got.Config.Model != "gpt-5.6-luna" || got.Config.Effort != "low" || got.Config.MaxTokens != 16384 {
 		t.Fatalf("%s config = %#v, want openai Luna low/16384", stage, got.Config)
 	}
-	if got.Config.Temperature != nil || got.Config.Thinking != nil || got.Temperature != nil || got.Reasoning != nil {
+	if got.Config.Temperature != nil || got.Config.Thinking != nil {
 		t.Fatalf("%s site = %#v, want no temperature or thinking pins", stage, got)
 	}
 	if got.MaxParseRetries != maxParseRetries {

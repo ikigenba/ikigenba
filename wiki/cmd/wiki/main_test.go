@@ -780,9 +780,9 @@ func TestBuildSpecRoutesPageEmbeddingThroughPrompts(t *testing.T) {
 	}}
 	client, embeds := llmtest.NewClientWithEmbeddings(t, prov, [][]float32{{0.6, 0.8}})
 	extractSite := extract.DefaultCallSite()
-	extractSite.Model = "extract-model"
+	extractSite.Config.Model = "extract-model"
 	compileSite := compile.DefaultCallSite()
-	compileSite.Model = "compile-model"
+	compileSite.Config.Model = "compile-model"
 	spec := newSpec(staticConfig(wiki.Config{
 		CallSites: wiki.CallSites{
 			Extract: extractSite,
@@ -846,11 +846,11 @@ func TestBuildSpecMergeRemovesLoserVectorFromLiveCache(t *testing.T) {
 	}}
 	client, embeds := llmtest.NewClientWithEmbeddings(t, prov, [][]float32{{1, 0}})
 	compileSite := compile.DefaultCallSite()
-	compileSite.Model = "merge-compile-model"
+	compileSite.Config.Model = "merge-compile-model"
 	askSubjectSite := ask.DefaultSubjectCallSite()
-	askSubjectSite.Model = "merge-ask-subject-model"
+	askSubjectSite.Config.Model = "merge-ask-subject-model"
 	askSynthesisSite := ask.DefaultSynthesisCallSite()
-	askSynthesisSite.Model = "merge-ask-synthesis-model"
+	askSynthesisSite.Config.Model = "merge-ask-synthesis-model"
 	spec := newSpec(staticConfig(wiki.Config{
 		CallSites: wiki.CallSites{
 			Compile:      compileSite,
@@ -936,9 +936,9 @@ func TestBuildSpecRoutesQueryEmbeddingThroughPrompts(t *testing.T) {
 	}}
 	client, embeds := llmtest.NewClientWithEmbeddings(t, prov, [][]float32{{1, 0}})
 	askSubjectSite := ask.DefaultSubjectCallSite()
-	askSubjectSite.Model = "ask-subject-model"
+	askSubjectSite.Config.Model = "ask-subject-model"
 	askSynthesisSite := ask.DefaultSynthesisCallSite()
-	askSynthesisSite.Model = "ask-synthesis-model"
+	askSynthesisSite.Config.Model = "ask-synthesis-model"
 	spec := newSpec(staticConfig(wiki.Config{
 		CallSites: wiki.CallSites{
 			AskSubject:   askSubjectSite,

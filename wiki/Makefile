@@ -12,7 +12,6 @@ LDFLAGS := -X main.version=$(VERSION)
 build:
 	@mkdir -p bin
 	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/wiki
-	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/eval-extract ./cmd/eval-extract
 
 run: build
 	./$(BIN)

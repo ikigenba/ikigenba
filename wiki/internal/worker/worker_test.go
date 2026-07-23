@@ -40,8 +40,8 @@ func TestRunIntegratesPendingJobWithRealDBAndMockProvider(t *testing.T) {
 	client := llmtest.NewClient(t, prov)
 	svc := wikidomain.NewService(
 		conn,
-		extract.New(client, llm.CallSite{Model: "extract-model"}),
-		compile.New(client, llm.CallSite{Model: "compile-model"}, nil),
+		extract.New(client, llm.CallSite{Config: llm.Config{Model: "extract-model"}}),
+		compile.New(client, llm.CallSite{Config: llm.Config{Model: "compile-model"}}, nil),
 		clockAt(time.Date(2026, 6, 20, 20, 33, 0, 0, time.UTC)),
 	)
 
@@ -104,8 +104,8 @@ func TestRunRequeuesOrphanedWorkingJobOnStartup(t *testing.T) {
 	client := llmtest.NewClient(t, prov)
 	svc := wikidomain.NewService(
 		conn,
-		extract.New(client, llm.CallSite{Model: "extract-model"}),
-		compile.New(client, llm.CallSite{Model: "compile-model"}, nil),
+		extract.New(client, llm.CallSite{Config: llm.Config{Model: "extract-model"}}),
+		compile.New(client, llm.CallSite{Config: llm.Config{Model: "compile-model"}}, nil),
 		clockAt(time.Date(2026, 6, 22, 22, 0, 0, 0, time.UTC)),
 	)
 
@@ -169,8 +169,8 @@ func TestRunAbortWorkingJobCancelsProviderAndPreservesAbortedStatus(t *testing.T
 	client := llmtest.NewClient(t, prov)
 	svc := wikidomain.NewService(
 		conn,
-		extract.New(client, llm.CallSite{Model: "extract-model"}),
-		compile.New(client, llm.CallSite{Model: "compile-model"}, nil),
+		extract.New(client, llm.CallSite{Config: llm.Config{Model: "extract-model"}}),
+		compile.New(client, llm.CallSite{Config: llm.Config{Model: "compile-model"}}, nil),
 		clockAt(time.Date(2026, 6, 22, 21, 25, 0, 0, time.UTC)),
 	)
 

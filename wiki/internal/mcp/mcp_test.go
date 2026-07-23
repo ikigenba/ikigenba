@@ -1302,8 +1302,8 @@ func TestAskToolLinkifiesFirstSubjectMentionAndKeepsCitations(t *testing.T) {
 		subjects,
 		pages,
 		llmtest.NewClient(t, provider),
-		llm.CallSite{Model: "ask-subject-test"},
-		llm.CallSite{Model: "ask-synthesis-test"},
+		llm.CallSite{Config: llm.Config{Model: "ask-subject-test"}},
+		llm.CallSite{Config: llm.Config{Model: "ask-synthesis-test"}},
 	)
 	h := gatedHandler(t, newTestHandlerWithAuthServer(t, "https://acct.ikigenba.com", WithAskFunc(asker.Ask), WithMentionLinkifier(wikidomain.NewService(conn, nil, nil, nil))))
 	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"ask","method":"tools/call","params":{"name":"ask","arguments":{"question":"What does Acme Corp do?"}}}`, "owner@example.com")

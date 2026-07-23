@@ -1,1 +1,0 @@
-Quill 3.2, released on 2026-01-20, adds offline sync and drops support for 32-bit builds. The release fixes 41 bugs. Quill is an open-source note-taking application maintained by the Fernwood Collective since 2018. Version 3.3 will move the sync engine to a plugin.

@@ -17,22 +17,30 @@ func TestRetiredRecorderAndEvaluationSurfaceIsAbsent(t *testing.T) {
 		t.Fatal("extract.DefaultPromptInstructions is not exported with production content")
 	}
 	retired := []string{"Recorder", "Call" + "Record", "LLM" + "CallStore", "NewRecording" + "Embedder", "WithJob" + "ID"}
-	assertGoTreeOmits(t, root, retired, false, nil)
+	assertGoTreeOmits(t, root, retired, false)
 }
 
 func TestServiceSourceDoesNotReadProviderKeys(t *testing.T) {
-	// R-KEPA-8VO7
+	// R-A3D7-NTLV
 	root := filepath.Clean(filepath.Join("..", ".."))
-	assertGoTreeOmits(t, root, []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY"}, false, []string{"cmd/eval-extract", "cmd/eval-analysis", "internal/eval"})
+	assertGoTreeOmits(t, root, []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY"}, false)
 }
 
-func TestAgentkitImportsAreConfinedToEvaluationWorkbench(t *testing.T) {
-	// R-KH53-0F5L
+func TestModuleSourceAndManifestDoNotDependOnAgentkit(t *testing.T) {
+	// R-A4L4-1LCK
 	root := filepath.Clean(filepath.Join("..", ".."))
-	assertGoTreeOmits(t, root, []string{"ikigenba/" + "agentkit"}, true, []string{"cmd/eval-extract", "cmd/eval-analysis", "internal/eval"})
+	forbidden := "ikigenba/" + "agentkit"
+	assertGoTreeOmits(t, root, []string{forbidden}, true)
+	manifest, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	if strings.Contains(string(manifest), forbidden) {
+		t.Fatalf("go.mod contains retired module dependency %q", forbidden)
+	}
 }
 
-func assertGoTreeOmits(t *testing.T, root string, forbidden []string, includeTests bool, allowedDirs []string) {
+func assertGoTreeOmits(t *testing.T, root string, forbidden []string, includeTests bool) {
 	t.Helper()
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -43,7 +51,7 @@ func assertGoTreeOmits(t *testing.T, root string, forbidden []string, includeTes
 			return err
 		}
 		if entry.IsDir() {
-			if rel == "project" || pathWithinAny(rel, allowedDirs) {
+			if rel == "project" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -65,13 +73,4 @@ func assertGoTreeOmits(t *testing.T, root string, forbidden []string, includeTes
 	if err != nil {
 		t.Fatalf("walk Go source: %v", err)
 	}
-}
-
-func pathWithinAny(path string, dirs []string) bool {
-	for _, dir := range dirs {
-		if path == dir || strings.HasPrefix(path, dir+string(filepath.Separator)) {
-			return true
-		}
-	}
-	return false
 }

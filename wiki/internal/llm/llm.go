@@ -43,18 +43,7 @@ type CallSite struct {
 	System          string
 	Config          Config
 	MaxParseRetries int
-
-	// Deprecated compatibility fields for package-external evaluation residue.
-	Model       string
-	Temperature *float64
-	Reasoning   any
-	MaxTokens   int
 }
-
-type disabledReasoning struct{}
-
-// DisableReasoning is retained for package-external evaluation configuration.
-func DisableReasoning() any { return disabledReasoning{} }
 
 // Attribution identifies the origin and correlation group recorded by prompts.
 type Attribution struct {
@@ -135,7 +124,7 @@ func JSON[T any](ctx context.Context, c *Client, site CallSite, attr Attribution
 }
 
 func (c *Client) complete(ctx context.Context, site CallSite, attr Attribution, attempt int, messages []message) (string, error) {
-	config := effectiveConfig(site)
+	config := site.Config
 	reqBody := completeRequest{
 		Origin:   attr.Origin,
 		Name:     "wiki." + site.Stage,
@@ -188,35 +177,6 @@ func (c *Client) complete(ctx context.Context, site CallSite, attr Attribution, 
 		return "", fmt.Errorf("%w: stage %s output usage %d reached max_tokens %d", ErrTruncated, site.Stage, output, config.MaxTokens)
 	}
 	return text, nil
-}
-
-func effectiveConfig(site CallSite) Config {
-	config := site.Config
-	if site.Model != "" {
-		config.Model = site.Model
-	}
-	if site.Temperature != nil {
-		config.Temperature = site.Temperature
-	}
-	if site.MaxTokens != 0 {
-		config.MaxTokens = site.MaxTokens
-	}
-	if site.Reasoning != nil {
-		if _, disabled := site.Reasoning.(disabledReasoning); disabled {
-			value := false
-			config.Thinking = &value
-		} else if value, ok := site.Reasoning.(interface{ Disabled() bool }); ok && value.Disabled() {
-			thinking := false
-			config.Thinking = &thinking
-		} else if value, ok := site.Reasoning.(interface{ Level() (string, bool) }); ok {
-			if level, valid := value.Level(); valid {
-				config.Effort = level
-			}
-		} else {
-			config.Effort = fmt.Sprint(site.Reasoning)
-		}
-	}
-	return config
 }
 
 func promptsStatusError(status int, body []byte) error {

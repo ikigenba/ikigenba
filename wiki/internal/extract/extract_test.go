@@ -33,7 +33,7 @@ func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 			}
 		]
 	}`}}
-	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model", System: "extract system"})
+	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{System: "extract system", Config: llm.Config{Model: "extract-model"}})
 	header := DocumentHeader{
 		Source:     "mcp:ingest_text",
 		Title:      "Tulsa robotics notes",
@@ -105,7 +105,7 @@ func TestProductionEnvelopeUsesExportedRenderAndValidate(t *testing.T) {
 	}
 
 	prov := &scriptedProvider{responses: []string{`{"subjects":[{"type":"entity","kind":"company","name":"Acme","occurred_at":"","claims":["Acme opened a lab."]}]}`}}
-	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
+	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Config: llm.Config{Model: "extract-model"}})
 	header := validHeader()
 	text := "Acme opened a lab."
 	if _, err := extractor.Extract(context.Background(), llm.Attribution{}, header, text); err != nil {
@@ -150,7 +150,7 @@ func TestExtractRejectsInvalidSubjectTypesAndEmptyClaims(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			prov := &scriptedProvider{responses: []string{tt.response}}
-			extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
+			extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Config: llm.Config{Model: "extract-model"}})
 
 			got, err := extractor.Extract(context.Background(), llm.Attribution{}, validHeader(), "source text")
 			if err == nil {
@@ -175,7 +175,7 @@ func TestExtractRetainsNonEventOccurredAt(t *testing.T) {
 		"occurred_at":"2026-06",
 		"claims":["Acme Robotics was founded in June 2026."]
 	}]}`}}
-	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
+	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Config: llm.Config{Model: "extract-model"}})
 
 	got, err := extractor.Extract(context.Background(), llm.Attribution{}, validHeader(), "Acme Robotics was founded in June 2026.")
 	if err != nil {
@@ -214,7 +214,7 @@ func TestExtractGaryGygaxDocumentAcceptsEntityYears(t *testing.T) {
 			"claims":["Dungeons & Dragons was first published in 1974."]
 		}
 	]}`}}
-	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
+	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Config: llm.Config{Model: "extract-model"}})
 
 	got, err := extractor.Extract(context.Background(), llm.Attribution{}, validHeader(), "Gary Gygax was born in 1938. TSR was founded in 1973. Dungeons & Dragons was first published in 1974.")
 	if err != nil {
@@ -319,7 +319,7 @@ func TestExtractValidatesOccurredAtOnEverySubjectType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			prov := &scriptedProvider{responses: []string{`{"subjects":[` + tt.subject + `]}`}}
-			extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model"})
+			extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Config: llm.Config{Model: "extract-model"}})
 
 			got, err := extractor.Extract(context.Background(), llm.Attribution{}, validHeader(), "Acme Robotics opened a research lab.")
 			if tt.wantError {
@@ -362,7 +362,7 @@ func TestExtractRepromptsAfterOccurredAtValidationFailure(t *testing.T) {
 			"claims":["Acme Robotics opened a research lab."]
 		}]}`,
 	}}
-	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Model: "extract-model", MaxParseRetries: 1})
+	extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Config: llm.Config{Model: "extract-model"}, MaxParseRetries: 1})
 
 	got, err := extractor.Extract(context.Background(), llm.Attribution{}, validHeader(), "Acme Robotics opened a research lab in 2026.")
 	if err != nil {
@@ -403,7 +403,7 @@ func TestDefaultCallSiteUsesLunaAndRetriesBadThenGoodExtraction(t *testing.T) {
 	if site.Stage != "extract" || site.System != DefaultPromptInstructions || site.Config.Provider != "openai" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "low" || site.Config.MaxTokens < 16384 || site.MaxParseRetries != 2 {
 		t.Fatalf("DefaultCallSite = %#v, want production Luna extract settings", site)
 	}
-	if site.Config.Temperature != nil || site.Config.Thinking != nil || site.Temperature != nil || site.Reasoning != nil {
+	if site.Config.Temperature != nil || site.Config.Thinking != nil {
 		t.Fatalf("DefaultCallSite = %#v, want no temperature or thinking pins", site)
 	}
 	site.Config.Model = "extract-model"
