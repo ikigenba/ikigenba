@@ -12,7 +12,6 @@ lines.
 
 Next phase: 119
 
-- Phase 115 ⬜ realizes R-A3D7-NTLV, R-A4L4-1LCK — remove the tuning machinery (executables, eval tree, agentkit, compat fields, env/gitignore rewire)
 - Phase 116 ⬜ realizes R-AD4E-PZJF, R-AFK7-HJ0T — tune folder: compile, with its hybrid scorer and seed corpus
 - Phase 117 ⬜ realizes R-A5T0-FD39, R-A88T-6WKN, R-A9GP-KOBC, R-AECB-3RA4, R-AGS3-VARI — tune folder: synthesis, completing the four-folder workspace
 - Phase 118 ⬜ realizes — — readiness proof: one small baseline run per folder, outputs discarded
