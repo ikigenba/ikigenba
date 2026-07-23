@@ -15,7 +15,8 @@ Verification ids change.
 - D7 → `project/design/D07.md` — setup provisions the served `www` tree (`public`/`private`, no `working`) owned by the service user — owns `R-QFXB-VARQ`, `R-3K9X-IPJZ`, `R-AUAI-EX87`, `R-3LHT-WHAO`
 - D8 → `project/design/D08.md` — deploy's state-ownership chown already owns the served tree; no separate www step — owns `R-3MPQ-A91D`, `R-AXY7-K8GA`
 - D9 → `project/design/D09.md` — restore reconstitutes the served tree's ownership to the service user — owns `R-3NXM-O0S2`, `R-B0E0-BRXO`
-- D10 → `project/design/D10.md` — init-box installs the box-baseline command-line tooling (poppler-utils, git, sqlite) — owns `R-JQGB-RYA2`, `R-JRO8-5Q0R`
+- D10 → `project/design/D10.md` — init-box installs the box-baseline command-line tooling (poppler-utils, git, sqlite, tar, curl-minimal) — owns `R-JQGB-RYA2`, `R-JRO8-5Q0R`
+- D11 → `project/design/D11.md` — init-box installs the oauth CLI via its release installer to `/usr/local/bin` — owns `R-ML75-3NVZ`, `R-MMF1-HFMO`
 
 ## Verification ids → Decision
 
@@ -39,6 +40,8 @@ Verification ids change.
 - R-CNPY-3Z4Y → D4 — `project/design/D04.md`
 - R-JQGB-RYA2 → D10 — `project/design/D10.md`
 - R-JRO8-5Q0R → D10 — `project/design/D10.md`
+- R-ML75-3NVZ → D11 — `project/design/D11.md`
+- R-MMF1-HFMO → D11 — `project/design/D11.md`
 - R-MSOP-5MDA → D4 — `project/design/D04.md`
 - R-MTWL-JE3Z → D4 — `project/design/D04.md`
 - R-MV4H-X5UO → D4 — `project/design/D04.md`

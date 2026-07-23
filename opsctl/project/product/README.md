@@ -79,7 +79,12 @@ producer's job, not opsctl's.
   tools that turn PDF files into text and images for the suite's sandboxed agent
   runs, `git` for the services that clone and work with repositories, and the
   `sqlite3` command line for inspecting the per-app databases. Re-provisioning
-  never disturbs them.
+  never disturbs them. Provisioning also installs the shared **OAuth login CLI**
+  the services use to obtain access tokens, placed where any service user on the
+  box can run it; because that tool is delivered as a standalone release rather
+  than a system package, provisioning installs whatever the current release is,
+  and re-provisioning refreshes it to the latest — it is always present, and
+  always current.
 
 ## Success criteria (outcomes)
 
@@ -107,3 +112,7 @@ producer's job, not opsctl's.
   provisioning put in place works: converting a PDF to text succeeds, `git` is
   available to clone a repository, and the `sqlite3` CLI opens a database; running
   provisioning again completes successfully with all of it still working.
+- After box provisioning runs on a fresh box, the shared OAuth login CLI is
+  installed where any service user can run it and works when invoked (it reports
+  its version); running provisioning again reinstalls the current release and it
+  still works.

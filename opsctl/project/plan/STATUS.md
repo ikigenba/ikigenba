@@ -10,4 +10,6 @@ is no done marker; done is gone. This file deliberately carries **no bare
 status glyph** outside phase lines, so the anchored grep matches only phase
 lines.
 
-Next phase: 16
+Next phase: 17
+
+- Phase 16 ⬜ realizes D10 (R-JQGB-RYA2) + D11 (R-ML75-3NVZ) — extend the init-box package baseline (tar, curl-minimal) and add the generic InstallScript seam that installs the oauth CLI to /usr/local/bin
