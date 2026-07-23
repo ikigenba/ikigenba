@@ -1,0 +1,16 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-quill-3-2-release
+name: Quill
+norm_name: quill
+type: entity
+
+Complete claims:
+1. [job-quill-3-2-release-01] Quill is an open-source note-taking application.
+2. [job-quill-3-2-release-02] Quill has been maintained by the Fernwood Collective since 2018.
+3. [job-quill-3-2-release-03] Quill 3.2 was released on January 20, 2026.
+4. [job-quill-3-2-release-04] Quill 3.2 adds offline sync.
+5. [job-quill-3-2-release-05] Quill 3.2 drops support for 32-bit builds.
+6. [job-quill-3-2-release-06] Quill 3.2 fixes 41 bugs.
+7. [job-quill-3-2-release-07] Quill version 3.3 will move the sync engine to a plugin.

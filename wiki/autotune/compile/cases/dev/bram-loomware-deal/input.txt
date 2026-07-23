@@ -1,0 +1,13 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-bram-loomware-deal
+name: Bram Textiles
+norm_name: bram-textiles
+type: entity
+
+Complete claims:
+1. [job-bram-loomware-deal-01] Bram Textiles is a family-owned mill in Ghent.
+2. [job-bram-loomware-deal-02] Bram Textiles was founded in 1911.
+3. [job-bram-loomware-deal-03] Bram Textiles signed a five-year supply agreement with Loomware on 3 February 2026.
+4. [job-bram-loomware-deal-04] Bram Textiles will remain the exclusive European testing site for Loomware's next machine generation.

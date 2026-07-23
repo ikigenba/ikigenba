@@ -1,0 +1,15 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-osei-danquah-profile
+name: Kwame Osei-Danquah
+norm_name: kwame-osei-danquah
+type: entity
+
+Complete claims:
+1. [job-osei-danquah-profile-01] Kwame Osei-Danquah is the head archivist of the Volta Basin Trust.
+2. [job-osei-danquah-profile-02] Kwame Osei-Danquah joined the Volta Basin Trust in 2016.
+3. [job-osei-danquah-profile-03] Kwame Osei-Danquah spent twelve years cataloguing colonial-era survey maps at the National Records Office.
+4. [job-osei-danquah-profile-04] Kwame Osei-Danquah studied history at the University of Ghana.
+5. [job-osei-danquah-profile-05] Kwame Osei-Danquah has published two reference guides on watershed cartography.
+6. [job-osei-danquah-profile-06] Kwame Osei-Danquah is based in Tamale.

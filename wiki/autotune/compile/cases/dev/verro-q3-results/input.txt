@@ -1,0 +1,15 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-verro-q3-results
+name: Verro Logistics
+norm_name: verro-logistics
+type: entity
+
+Complete claims:
+1. [job-verro-q3-results-01] Verro Logistics reported third-quarter 2026 revenue of $18.4 million.
+2. [job-verro-q3-results-02] Verro Logistics reported second-quarter 2026 revenue of $15.1 million.
+3. [job-verro-q3-results-03] Verro Logistics reported third-quarter 2026 net income of $2.2 million.
+4. [job-verro-q3-results-04] Verro Logistics reported second-quarter 2026 net income of $1.9 million.
+5. [job-verro-q3-results-05] Verro Logistics opened three new depots during the third quarter of 2026.
+6. [job-verro-q3-results-06] Verro Logistics' depot network reached 27 locations in the third quarter of 2026.

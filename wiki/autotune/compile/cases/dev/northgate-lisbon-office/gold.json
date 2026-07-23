@@ -1,0 +1,10 @@
+{
+  "key_facts": [
+    "Northgate Analytics opened its first European office in Lisbon in June 2024.",
+    "Northgate Analytics is headquartered in Toronto.",
+    "Northgate Analytics employs about 240 people.",
+    "Northgate Analytics sells forecasting software to utility operators.",
+    "Northgate Analytics' Lisbon office will focus on customers in Portugal and Spain."
+  ],
+  "notes": "Write a grounded page for Northgate Analytics; identify it as entity and cover the supplied key facts without adding outside detail."
+}

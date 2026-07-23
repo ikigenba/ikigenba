@@ -1,0 +1,1 @@
+Improve the compile system prompt while preserving its exact `{title, body}` JSON contract. Favor complete, readable pages grounded only in the identity card and supplied claims. Strengthen citation discipline, concise leads, conflict handling, and organization under the 12,000-character cap. Make general rules rather than wording tailored to individual seed cases.

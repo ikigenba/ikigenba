@@ -1,0 +1,15 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-reyes-aldana-bio
+name: Tomas Reyes-Aldana
+norm_name: tomas-reyes-aldana
+type: entity
+
+Complete claims:
+1. [job-reyes-aldana-bio-01] Tomas Reyes-Aldana was born in Valparaíso in 1958.
+2. [job-reyes-aldana-bio-02] Tomas Reyes-Aldana trained as a marine painter.
+3. [job-reyes-aldana-bio-03] Tomas Reyes-Aldana turned to printmaking in the late 1980s.
+4. [job-reyes-aldana-bio-04] Tomas Reyes-Aldana created the woodcut series Nine Harbors.
+5. [job-reyes-aldana-bio-05] Tomas Reyes-Aldana taught at the Catholic University of Valparaíso for two decades.
+6. [job-reyes-aldana-bio-06] Tomas Reyes-Aldana retired in 2019.

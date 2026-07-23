@@ -1,0 +1,15 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-meridian-freshcrate-acquisition
+name: Meridian Foods
+norm_name: meridian-foods
+type: entity
+
+Complete claims:
+1. [job-meridian-freshcrate-acquisition-01] Meridian Foods is a regional grocery cooperative.
+2. [job-meridian-freshcrate-acquisition-02] Meridian Foods was founded in 1998.
+3. [job-meridian-freshcrate-acquisition-03] Meridian Foods acquired FreshCrate in March 2025 for $40 million.
+4. [job-meridian-freshcrate-acquisition-04] Meridian Foods will keep the FreshCrate brand independent for at least two years.
+5. [job-meridian-freshcrate-acquisition-05] Meridian Foods gained access to FreshCrate's cold-chain logistics network through the acquisition.
+6. [job-meridian-freshcrate-acquisition-06] Meridian Foods established a new Prepared Meals division.

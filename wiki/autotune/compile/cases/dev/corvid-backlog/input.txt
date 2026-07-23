@@ -1,0 +1,14 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-corvid-backlog
+name: Corvid Insurance
+norm_name: corvid-insurance
+type: entity
+
+Complete claims:
+1. [job-corvid-backlog-01] Corvid Insurance cut its claims backlog from nine weeks to six days during 2025.
+2. [job-corvid-backlog-02] Corvid Insurance adopted straight-through processing for simple claims.
+3. [job-corvid-backlog-03] Corvid Insurance hired 14 additional adjusters.
+4. [job-corvid-backlog-04] Corvid Insurance was founded in Leeds in 1987.
+5. [job-corvid-backlog-05] Corvid Insurance insures small fishing fleets across the North Sea.

@@ -1,0 +1,9 @@
+{
+  "key_facts": [
+    "Ferro Docks is a ship-repair yard in Trieste.",
+    "Ferro Docks was founded in 1954.",
+    "Ferro Docks signed a three-year maintenance contract with Nordwind Ferries on 9 March 2026.",
+    "Ferro Docks will remain the sole Mediterranean maintenance site for Nordwind Ferries' ice-class fleet."
+  ],
+  "notes": "Write a grounded page for Ferro Docks; identify it as entity and cover the supplied key facts without adding outside detail."
+}

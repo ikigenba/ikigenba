@@ -53,6 +53,102 @@ func TestExtractAndAnalysisFoldersSatisfyTuneContract(t *testing.T) {
 	}
 }
 
+func TestCompileFolderSatisfiesTuneContract(t *testing.T) {
+	for _, name := range []string{"prompt.txt", "improve.md", "score", "config.json", "judge-prompt.txt", "README.md", ".gitignore"} {
+		assertNonEmptyFile(t, filepath.Join("compile", name))
+	}
+
+	info, err := os.Stat(filepath.Join("compile", "score"))
+	if err != nil {
+		t.Fatalf("stat score: %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("compile/score is not executable: mode %v", info.Mode())
+	}
+
+	var config map[string]any
+	readJSON(t, filepath.Join("compile", "config.json"), &config)
+	if !reflect.DeepEqual(config, pinnedConfig) {
+		t.Fatalf("compile/config.json = %#v, want exact pins %#v", config, pinnedConfig)
+	}
+
+	dev := validateCases(t, filepath.Join("compile", "cases", "dev"))
+	holdout := validateCases(t, filepath.Join("compile", "cases", "holdout"))
+	if len(dev) != 14 || len(holdout) != 7 {
+		t.Fatalf("compile split sizes = %d dev/%d holdout, want 14/7", len(dev), len(holdout))
+	}
+	for _, name := range dev {
+		if contains(holdout, name) {
+			t.Fatalf("case %q appears in both dev and holdout", name)
+		}
+	}
+	wantHoldout := []string{"arden-mills-h1", "ferro-nordwind-deal", "forward-deployment", "glasswing-standup", "osei-danquah-profile", "solstice-regatta-2026", "tulsa-lab-opening"}
+	if !reflect.DeepEqual(holdout, wantHoldout) {
+		t.Fatalf("compile holdout cases = %v, want aligned universe cases %v", holdout, wantHoldout)
+	}
+	for _, name := range []string{"input.txt", "gold.json", "expected.json", "clean.json", "over-cap.json", "invented-citation.json", "malformed.json"} {
+		assertNonEmptyFile(t, filepath.Join("compile", "fixtures", "gates", name))
+	}
+}
+
+// R-AD4E-PZJF
+func TestCompileScoreAppliesReproducibleDeterministicGates(t *testing.T) {
+	t.Setenv("SCORE_SKIP_JUDGE", "1")
+	fixture := filepath.Join("compile", "fixtures", "gates")
+	var expected map[string]float64
+	readJSON(t, filepath.Join(fixture, "expected.json"), &expected)
+
+	for _, candidate := range []struct {
+		name string
+		file string
+	}{
+		{name: "clean", file: "clean.json"},
+		{name: "over_cap", file: "over-cap.json"},
+		{name: "invented_citation", file: "invented-citation.json"},
+		{name: "malformed", file: "malformed.json"},
+	} {
+		t.Run(candidate.name, func(t *testing.T) {
+			first := runScorer(t, "compile", fixture, candidate.file, "")
+			second := runScorer(t, "compile", fixture, candidate.file, "")
+			want := expected[candidate.name]
+			if !closeEnough(first.Score, want) {
+				t.Fatalf("score = %v, want hand-computed %v", first.Score, want)
+			}
+			if first.Score != second.Score || first.GateScore != second.GateScore || !reflect.DeepEqual(first.Gates, second.Gates) {
+				t.Fatalf("repeated scores differ: first=%+v second=%+v", first, second)
+			}
+		})
+	}
+}
+
+// R-AFK7-HJ0T
+func TestCompileScoreLiveJudgeReturnsComposedRubricScore(t *testing.T) {
+	if os.Getenv("WIKI_TUNE_LIVE") != "1" || os.Getenv("OPENAI_API_KEY") == "" {
+		t.Skip("set WIKI_TUNE_LIVE=1 and OPENAI_API_KEY to run the live compile judge")
+	}
+	fixture := filepath.Join("compile", "fixtures", "gates")
+	got := runScorer(t, "compile", fixture, "clean.json", "")
+	if got.Score < 0 || got.Score > 1 {
+		t.Fatalf("composed score = %v, want [0,1]", got.Score)
+	}
+	if got.GateScore != 1 {
+		t.Fatalf("clean fixture gate score = %v, want 1", got.GateScore)
+	}
+	if len(got.Rubric) != 4 {
+		t.Fatalf("judge rubric = %#v, want four subscores", got.Rubric)
+	}
+	for _, name := range []string{"coverage", "factuality", "lead", "organization"} {
+		value, ok := got.Rubric[name]
+		if !ok || value < 0 || value > 1 {
+			t.Fatalf("rubric %s = %v (present %v), want [0,1]", name, value, ok)
+		}
+	}
+	want := 0.60*got.GateScore + 0.40*got.JudgeScore
+	if !closeEnough(got.Score, want) {
+		t.Fatalf("score = %v, want composed %v", got.Score, want)
+	}
+}
+
 // R-AAOL-YG21
 func TestExtractScoreMatchesHandComputedFixtureAndFloorsMalformedOutput(t *testing.T) {
 	fixture := filepath.Join("extract", "fixtures", "perfect")
@@ -114,9 +210,13 @@ type expectedMetrics struct {
 }
 
 type scoreResult struct {
-	Score    float64                    `json:"score"`
-	Feedback string                     `json:"feedback"`
-	Details  map[string]expectedMetrics `json:"details"`
+	Score      float64                    `json:"score"`
+	Feedback   string                     `json:"feedback"`
+	Details    map[string]expectedMetrics `json:"details"`
+	GateScore  float64                    `json:"gate_score"`
+	JudgeScore float64                    `json:"judge_score"`
+	Gates      map[string]float64         `json:"gates"`
+	Rubric     map[string]float64         `json:"rubric"`
 }
 
 func runScorer(t *testing.T, folder, fixture, candidateName, embedPath string) scoreResult {

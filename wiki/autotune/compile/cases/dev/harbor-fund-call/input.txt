@@ -1,0 +1,13 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-harbor-fund-call
+name: Harbor Fund
+norm_name: harbor-fund
+type: entity
+
+Complete claims:
+1. [job-harbor-fund-call-01] The Harbor Fund closed its third fund at $95 million in May 2026.
+2. [job-harbor-fund-call-02] The Harbor Fund plans to open a Chicago office in 2027.
+3. [job-harbor-fund-call-03] The Harbor Fund's first fund was raised in 2014.
+4. [job-harbor-fund-call-04] The Harbor Fund's first fund is fully returned to investors.

@@ -1,0 +1,12 @@
+{
+  "key_facts": [
+    "Quill is an open-source note-taking application.",
+    "Quill has been maintained by the Fernwood Collective since 2018.",
+    "Quill 3.2 was released on January 20, 2026.",
+    "Quill 3.2 adds offline sync.",
+    "Quill 3.2 drops support for 32-bit builds.",
+    "Quill 3.2 fixes 41 bugs.",
+    "Quill version 3.3 will move the sync engine to a plugin."
+  ],
+  "notes": "Write a grounded page for Quill; identify it as entity and cover the supplied key facts without adding outside detail."
+}

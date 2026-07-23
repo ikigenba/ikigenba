@@ -1,0 +1,11 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-acme
+name: Acme Robotics
+norm_name: acme-robotics
+type: entity
+
+Complete claims:
+1. [job-001] Acme Robotics opened a research lab in Tulsa.
+2. [job-002] The lab opened in 2025.

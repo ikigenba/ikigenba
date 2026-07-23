@@ -1,0 +1,13 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-glasswing-standup
+name: Glasswing Optics
+norm_name: glasswing-optics
+type: entity
+
+Complete claims:
+1. [job-glasswing-standup-01] Glasswing Optics closed a Series B of $22 million in April 2026.
+2. [job-glasswing-standup-02] Glasswing Optics plans to move into the larger Fremont facility in 2027.
+3. [job-glasswing-standup-03] Glasswing Optics built its first prototype in 2019.
+4. [job-glasswing-standup-04] Glasswing Optics' first prototype is going to the company museum case.

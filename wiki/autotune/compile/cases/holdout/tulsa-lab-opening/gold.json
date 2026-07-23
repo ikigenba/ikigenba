@@ -1,0 +1,8 @@
+{
+  "key_facts": [
+    "Acme Robotics opened a small robotics lab in Tulsa on June 19, 2026.",
+    "The Tulsa lab will test warehouse navigation software.",
+    "The Tulsa lab will host local robotics engineers."
+  ],
+  "notes": "Write a grounded page for Acme Robotics; identify it as entity and cover the supplied key facts without adding outside detail."
+}

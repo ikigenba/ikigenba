@@ -1,0 +1,15 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-arden-mills-h1
+name: Arden Mills
+norm_name: arden-mills
+type: entity
+
+Complete claims:
+1. [job-arden-mills-h1-01] Arden Mills reported first-half 2026 revenue of $31.6 million.
+2. [job-arden-mills-h1-02] Arden Mills reported second-half 2025 revenue of $27.9 million.
+3. [job-arden-mills-h1-03] Arden Mills reported first-half 2026 operating profit of $4.8 million.
+4. [job-arden-mills-h1-04] Arden Mills reported second-half 2025 operating profit of $3.5 million.
+5. [job-arden-mills-h1-05] Arden Mills commissioned two new grain silos during the first half of 2026.
+6. [job-arden-mills-h1-06] Arden Mills' storage capacity reached 64,000 tonnes in the first half of 2026.

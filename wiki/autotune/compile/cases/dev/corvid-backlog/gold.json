@@ -1,0 +1,10 @@
+{
+  "key_facts": [
+    "Corvid Insurance cut its claims backlog from nine weeks to six days during 2025.",
+    "Corvid Insurance adopted straight-through processing for simple claims.",
+    "Corvid Insurance hired 14 additional adjusters.",
+    "Corvid Insurance was founded in Leeds in 1987.",
+    "Corvid Insurance insures small fishing fleets across the North Sea."
+  ],
+  "notes": "Write a grounded page for Corvid Insurance; identify it as entity and cover the supplied key facts without adding outside detail."
+}

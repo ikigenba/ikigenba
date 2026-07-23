@@ -1,0 +1,13 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-aldercroft-fire
+name: Aldercroft Fire
+norm_name: aldercroft-fire
+type: event
+
+Complete claims:
+1. [job-aldercroft-fire-01] The Aldercroft Fire destroyed most of the town of Aldercroft on 14 April 1907.
+2. [job-aldercroft-fire-02] The Aldercroft Fire began in a flour mill.
+3. [job-aldercroft-fire-03] The Aldercroft Fire burned for two days.
+4. [job-aldercroft-fire-04] The Aldercroft Fire left about 3,000 people homeless.

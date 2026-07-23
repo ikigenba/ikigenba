@@ -1,0 +1,12 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-riverbend-open-2025
+name: Riverbend Open
+norm_name: riverbend-open
+type: event
+
+Complete claims:
+1. [job-riverbend-open-2025-01] The Riverbend Open concluded on August 17, 2025, in Davenport, Iowa.
+2. [job-riverbend-open-2025-02] The Riverbend Open drew 312 players across five sections.
+3. [job-riverbend-open-2025-03] The Riverbend Open championship section carried a $6,000 first prize.

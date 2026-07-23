@@ -1,0 +1,10 @@
+{
+  "key_facts": [
+    "Forward deployment is a release practice in which every merged change ships to production automatically and is corrected by a follow-up change rather than a rollback.",
+    "Forward deployment was popularized by Sana Whitfield in a widely cited 2017 talk.",
+    "Forward deployment is common at large software platforms.",
+    "Detractors say forward deployment demands unusually strong monitoring.",
+    "Adoption of forward deployment continues to grow."
+  ],
+  "notes": "Write a grounded page for Forward deployment; identify it as concept and cover the supplied key facts without adding outside detail."
+}

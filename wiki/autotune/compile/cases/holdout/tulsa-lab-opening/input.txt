@@ -1,0 +1,12 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-tulsa-lab-opening
+name: Acme Robotics
+norm_name: acme-robotics
+type: entity
+
+Complete claims:
+1. [job-tulsa-lab-opening-01] Acme Robotics opened a small robotics lab in Tulsa on June 19, 2026.
+2. [job-tulsa-lab-opening-02] The Tulsa lab will test warehouse navigation software.
+3. [job-tulsa-lab-opening-03] The Tulsa lab will host local robotics engineers.

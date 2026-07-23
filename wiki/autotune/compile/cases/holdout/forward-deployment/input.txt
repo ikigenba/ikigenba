@@ -1,0 +1,14 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-forward-deployment
+name: Forward deployment
+norm_name: forward-deployment
+type: concept
+
+Complete claims:
+1. [job-forward-deployment-01] Forward deployment is a release practice in which every merged change ships to production automatically and is corrected by a follow-up change rather than a rollback.
+2. [job-forward-deployment-02] Forward deployment was popularized by Sana Whitfield in a widely cited 2017 talk.
+3. [job-forward-deployment-03] Forward deployment is common at large software platforms.
+4. [job-forward-deployment-04] Detractors say forward deployment demands unusually strong monitoring.
+5. [job-forward-deployment-05] Adoption of forward deployment continues to grow.

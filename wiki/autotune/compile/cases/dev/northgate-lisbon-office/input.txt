@@ -1,0 +1,14 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-northgate-lisbon-office
+name: Northgate Analytics
+norm_name: northgate-analytics
+type: entity
+
+Complete claims:
+1. [job-northgate-lisbon-office-01] Northgate Analytics opened its first European office in Lisbon in June 2024.
+2. [job-northgate-lisbon-office-02] Northgate Analytics is headquartered in Toronto.
+3. [job-northgate-lisbon-office-03] Northgate Analytics employs about 240 people.
+4. [job-northgate-lisbon-office-04] Northgate Analytics sells forecasting software to utility operators.
+5. [job-northgate-lisbon-office-05] Northgate Analytics' Lisbon office will focus on customers in Portugal and Spain.

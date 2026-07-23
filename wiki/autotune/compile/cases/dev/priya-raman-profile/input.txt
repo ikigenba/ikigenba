@@ -1,0 +1,16 @@
+Hard body limit: 12000 characters.
+
+Subject identity:
+id: subject-priya-raman-profile
+name: Priya Raman
+norm_name: priya-raman
+type: entity
+
+Complete claims:
+1. [job-priya-raman-profile-01] Priya Raman is the chief technology officer of Halewood Systems.
+2. [job-priya-raman-profile-02] Priya Raman joined Halewood Systems in 2019.
+3. [job-priya-raman-profile-03] Priya Raman worked at Corvex Labs for eleven years.
+4. [job-priya-raman-profile-04] Priya Raman led the compiler tools group at Corvex Labs.
+5. [job-priya-raman-profile-05] Priya Raman studied electrical engineering at the University of Waterloo.
+6. [job-priya-raman-profile-06] Priya Raman holds four patents in program analysis.
+7. [job-priya-raman-profile-07] Priya Raman lives in Ottawa.

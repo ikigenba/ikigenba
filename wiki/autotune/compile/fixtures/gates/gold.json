@@ -1,0 +1,7 @@
+{
+  "key_facts": [
+    "Acme Robotics opened a research lab in Tulsa.",
+    "The lab opened in 2025."
+  ],
+  "notes": "Identify Acme Robotics as an entity and combine the two supported lab facts."
+}
