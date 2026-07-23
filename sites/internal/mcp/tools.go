@@ -178,7 +178,7 @@ func enumString(values ...string) map[string]any {
 	return map[string]any{"type": "string", "enum": enum}
 }
 
-// toolCreate validates the slug (via Store.Create), inserts the row, then
+// toolCreate validates the slug, inserts the row, then
 // creates the site directory at the requested visibility.
 func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	var a struct {
@@ -205,7 +205,10 @@ func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage, id s
 }
 
 func (h *toolHandlers) createNamed(ctx context.Context, name string, visibility sites.Visibility, id server.Identity) (map[string]any, error) {
-	site, err := h.store.Create(ctx, name, id.OwnerID, id.OwnerEmail, visibility)
+	if err := sites.ValidateSlug(name); err != nil {
+		return errResult(err), nil
+	}
+	site, err := h.store.Create(ctx, name, name, id.OwnerID, id.OwnerEmail, visibility)
 	if err != nil {
 		return errResult(err), nil
 	}
@@ -344,10 +347,10 @@ func (h *toolHandlers) setUnlisted(ctx context.Context, site sites.Site) (map[st
 }
 
 func (h *toolHandlers) applyVisibility(ctx context.Context, site sites.Site, visibility sites.Visibility, newName string) (map[string]any, error) {
-	if err := h.store.SetVisibility(ctx, site.Name, visibility, newName); err != nil {
+	if err := h.store.SetVisibility(ctx, site.Slug, visibility, newName); err != nil {
 		return errResult(err), nil
 	}
-	if err := h.layout.Move(site.Name, site.Visibility, newName, visibility); err != nil {
+	if err := h.layout.Move(site.Slug, site.Visibility, newName, visibility); err != nil {
 		return errResultMsg(appkitmcp.ErrInternal, "move_site_dir: "+err.Error()), nil
 	}
 	site, err := h.store.Get(ctx, newName)
@@ -380,11 +383,11 @@ func (h *toolHandlers) siteURL(tier, name string) string {
 func (h *toolHandlers) renderSite(s sites.Site) map[string]any {
 	tier := sites.Seg(s.Visibility)
 	return map[string]any{
-		"name":        s.Name,
+		"name":        s.Slug,
 		"visibility":  string(s.Visibility),
 		"owner_id":    s.OwnerID,
 		"owner_email": s.OwnerEmail,
-		"url":         h.siteURL(tier, s.Name),
+		"url":         h.siteURL(tier, s.Slug),
 		"created_at":  s.CreatedAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"),
 		"updated_at":  s.UpdatedAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"),
 	}

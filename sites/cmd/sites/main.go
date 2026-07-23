@@ -126,8 +126,8 @@ func landingHandler(store *sites.Store, renderer landingRenderer, service, versi
 		for _, s := range list {
 			tier := sites.Seg(s.Visibility)
 			row := siteRow{
-				Slug:          s.Name,
-				URL:           baseURL + tier + "/" + s.Name + "/",
+				Slug:          s.Slug,
+				URL:           baseURL + tier + "/" + s.Slug + "/",
 				Visibility:    string(s.Visibility),
 				CreatedBy:     s.OwnerEmail,
 				CreatedAt:     s.CreatedAt.UTC().Format(time.RFC3339),
