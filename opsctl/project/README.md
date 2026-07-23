@@ -17,16 +17,16 @@ from.
 
 | folder | what's in it | owned by |
 |---|---|---|
-| `product/` | `product.md` — the *why*, for whom, scope, user-facing promises | `/product-mode` (rewritten in place) |
+| `product/` | `README.md` — the *why*, for whom, scope, user-facing promises | `/product-mode` (rewritten in place) |
 | `research/` | `research.md` — the design-informing research spine; plus free-form `*-research.md` working notes | `research.md`: `/research-mode` (rewritten in place). Other notes: free-form. |
-| `design/` | `design.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `/design-mode` (rewritten in place) |
-| `plan/` | `plan.md` (spine) + `STATUS.md` (the manifest — the `Next phase` counter plus the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per pending phase) | `/plan-mode` (appends pending phases; completion is deletion by the build loop) |
+| `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `/design-mode` (rewritten in place) |
+| `plan/` | `README.md` (spine) + `STATUS.md` (the manifest — the `Next phase` counter plus the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per pending phase) | `/plan-mode` (appends pending phases; completion is deletion by the build loop) |
 | `bugs/` | free-form bug diagnoses / write-ups | free-form (not mode-owned) |
 | `requests/` | free-form feature requests | free-form (not mode-owned) |
 | `loops/` | the `ralph` build-loop prompts: `gather.md`, `build.md`, `verify.md` (+ the ephemeral `brief.md`) | build-loop infrastructure |
 
-The four **spine documents** (`product/product.md`, `research/research.md`,
-`design/design.md`, `plan/plan.md`) are each singular and owned by a `/*-mode`
+The four **spine documents** (`product/README.md`, `research/research.md`,
+`design/README.md`, `plan/README.md`) are each singular and owned by a `/*-mode`
 command — that command is the sanctioned way to change them. The `bugs/`,
 `requests/` and extra `research/*-research.md` notes are informal
 scratch and are *not* owned by any mode command. Don't add ad-hoc documents to

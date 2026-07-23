@@ -1,4 +1,4 @@
-# prompts agentkit migration — Design Index
+# prompts — Design Index
 
 Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Decision and file. Regenerate this index when a Decision is added or its Verification ids change. To resolve an id, grep this file or the Decision files directly.
 

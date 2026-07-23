@@ -1,7 +1,7 @@
 # opsctl — Design
 
 **Authority: shape and its proof.** This directory owns *how* opsctl is built and
-*how each behavior is proven*. The product (`project/product/product.md`) owns the
+*how each behavior is proven*. The product (`project/product/README.md`) owns the
 *why* and the user-facing promises; design states the **exact, checkable form** of
 those promises and never re-declares the why. Design *uses* the product's
 contractual constants by value but does not own them. This is the **single,

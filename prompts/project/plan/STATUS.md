@@ -1,4 +1,4 @@
-# prompts agentkit migration — Plan Status
+# prompts — Plan Status
 
 This is the manifest: one line per **pending** phase in build order, the
 **only** place a phase's `⬜` marker lives. Each phase line is a Markdown

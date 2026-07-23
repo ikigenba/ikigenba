@@ -17,7 +17,7 @@ in one of the folders below. Paths are written relative to the **module root**
 
 | folder | what's in it | owned by |
 |---|---|---|
-| `product/` | `product.md` — the *why*, for whom, scope, promises | `/product-mode` (rewritten in place) |
+| `product/` | `README.md` — the *why*, for whom, scope, promises | `/product-mode` (rewritten in place) |
 | `research/` | design-informing research notes (none yet) | free-form / `/research-mode` |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `/design-mode` (rewritten in place) |
 | `plan/` | `README.md` (rules) + `STATUS.md` (the manifest — `Next phase` counter + only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per **pending** phase; completion deletes it) | `/plan-mode` (work queue) |
