@@ -1,0 +1,14 @@
+Document header:
+source: mcp:ingest_text
+title: Notes from the Glasswing Optics standup
+tags: meeting, startup
+received on: 2026-05-12
+
+Source text:
+Attendees: Mira Chen (founder), Dev Ratner (finance).
+
+Mira: Glasswing Optics closed a Series B of $22 million in April 2026. We plan to move into the larger Fremont facility next year.
+
+Dev: The insurance renewal is due this month. Also, Tessellate Ventures confirmed they will lead our bridge round if we need one.
+
+Mira: Noted. Remember our first prototype, built in 2019, is going to the company museum case.

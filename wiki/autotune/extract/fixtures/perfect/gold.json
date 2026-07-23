@@ -1,0 +1,12 @@
+{
+  "gold": [
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "Example Institute",
+      "aliases": ["The Institute"],
+      "occurred_at": "",
+      "claims": []
+    }
+  ]
+}

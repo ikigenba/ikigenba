@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+import json
+import sys
+
+vectors = {
+    "alpha one": [1.0, 0.0, 0.0],
+    "beta two": [0.0, 1.0, 0.0],
+    "alpha match": [1.0, 0.0, 0.0],
+    "signal": [0.0, 0.0, 1.0],
+    "signal match": [0.0, 0.0, 1.0],
+}
+texts = json.load(sys.stdin)
+print(json.dumps({"embeddings": [vectors[text] for text in texts]}))

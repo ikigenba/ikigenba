@@ -1,0 +1,1 @@
+Improve the extraction system prompt while preserving its JSON contract. Focus on missed or spurious subjects, incorrect subject types and kinds, unsupported claims, dates placed in claims instead of occurred_at, and failure to resolve aliases. Prefer precise general instructions over examples tied to an individual case.

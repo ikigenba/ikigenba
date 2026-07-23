@@ -1,0 +1,7 @@
+{
+  "gold": {
+    "sub_queries": ["alpha one", "beta two"],
+    "keywords": ["signal"],
+    "aliases": ["name alt"]
+  }
+}

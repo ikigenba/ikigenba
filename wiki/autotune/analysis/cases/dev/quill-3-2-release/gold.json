@@ -1,0 +1,17 @@
+{
+  "difficulty": "medium",
+  "gold": {
+    "sub_queries": [
+      "Quill 3.2 changes",
+      "Quill 3.3 planned changes"
+    ],
+    "keywords": [
+      "Quill 3.2",
+      "Quill 3.3",
+      "release changes"
+    ],
+    "aliases": [
+      "Quill"
+    ]
+  }
+}

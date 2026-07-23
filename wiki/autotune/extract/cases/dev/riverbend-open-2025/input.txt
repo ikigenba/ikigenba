@@ -1,0 +1,8 @@
+Document header:
+source: mcp:ingest_text
+title: Recap: Riverbend Open 2025
+tags: chess, tournament
+received on: 2025-08-18
+
+Source text:
+The Riverbend Open concluded on August 17, 2025, in Davenport, Iowa. The tournament drew 312 players across five sections, and the championship section carried a $6,000 first prize. Marta Ilves won the championship section with a score of 8.5 out of 9. Ilves, a schoolteacher from Tartu, has won the event twice before.

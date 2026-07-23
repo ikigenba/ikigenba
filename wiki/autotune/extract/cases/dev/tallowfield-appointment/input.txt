@@ -1,0 +1,15 @@
+Document header:
+source: mcp:ingest_text
+title: Welcome our new head of clinical operations
+tags: email, announcement
+received on: 2026-08-20
+
+Source text:
+From: comms@tallowfield.example
+Subject: Welcome our new head of clinical operations
+
+Team,
+
+I am pleased to share that Dr. Renata Okafor-Slate joins Tallowfield Health on 1 September 2026 as head of clinical operations. Renata spent the last six years at Meridian Care, where she oversaw the rollout of remote triage across 40 clinics. She will be based in our Manchester office and will lead the winter staffing review.
+
+— Priya

@@ -1,0 +1,50 @@
+{
+  "difficulty": "hard",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "Meridian Foods acquires FreshCrate",
+    "tags": ["grocery", "acquisition"],
+    "received_at": "2025-04-01T12:00:00Z"
+  },
+  "gold": [
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "Meridian Foods",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Meridian Foods is a regional grocery cooperative.",
+        "Meridian Foods was founded in 1998.",
+        "Meridian Foods acquired FreshCrate in March 2025 for $40 million.",
+        "Meridian Foods will keep the FreshCrate brand independent for at least two years.",
+        "Meridian Foods gained access to FreshCrate's cold-chain logistics network through the acquisition.",
+        "Meridian Foods established a new Prepared Meals division."
+      ]
+    },
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "FreshCrate",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "FreshCrate is a meal-kit startup.",
+        "FreshCrate was founded by Dana Okafor.",
+        "FreshCrate was acquired by Meridian Foods in March 2025.",
+        "FreshCrate operates a cold-chain logistics network that delivers refrigerated kits to 12 metropolitan areas."
+      ]
+    },
+    {
+      "type": "entity",
+      "kind": "person",
+      "name": "Dana Okafor",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Dana Okafor founded FreshCrate.",
+        "Dana Okafor will join Meridian Foods as head of its new Prepared Meals division."
+      ]
+    }
+  ]
+}

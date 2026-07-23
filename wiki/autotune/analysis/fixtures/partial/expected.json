@@ -1,0 +1,6 @@
+{
+  "score": 0.633333,
+  "sub_queries": {"matched": 1, "missed": 1, "spurious": 0, "f1": 0.6666666666666666},
+  "keywords": {"matched": 1, "missed": 0, "spurious": 0, "f1": 1.0},
+  "aliases": {"matched": 0, "missed": 1, "spurious": 0, "f1": 0.0}
+}

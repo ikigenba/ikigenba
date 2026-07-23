@@ -1,0 +1,26 @@
+{
+  "difficulty": "medium",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "Mangrove replanting raises juvenile fish counts",
+    "tags": ["research", "ecology"],
+    "received_at": "2026-04-03T15:00:00Z"
+  },
+  "gold": [
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "Instituto Aguas Claras",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Instituto Aguas Claras led a five-year study that found mangrove replanting along the Camorim estuary raised juvenile fish counts by 62 percent.",
+        "Instituto Aguas Claras published the Camorim estuary study in March 2026.",
+        "The Instituto Aguas Claras study of the Camorim estuary tracked 18 restored plots.",
+        "Instituto Aguas Claras is based in Recife.",
+        "Instituto Aguas Claras has monitored the Camorim estuary since 2012.",
+        "Instituto Aguas Claras plans to extend the estuary survey to two neighboring estuaries in 2027."
+      ]
+    }
+  ]
+}

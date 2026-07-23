@@ -1,0 +1,24 @@
+{
+  "difficulty": "medium",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "Pinegate Brewing opens Duluth taproom",
+    "tags": ["expansion"],
+    "received_at": "2025-11-03T09:00:00Z"
+  },
+  "gold": [
+    {
+      "type": "entity",
+      "kind": "organization",
+      "name": "Pinegate Brewing",
+      "aliases": ["PGB"],
+      "occurred_at": "",
+      "claims": [
+        "Pinegate Brewing opened its second taproom in Duluth in October 2025.",
+        "Pinegate Brewing was founded in 2013.",
+        "Pinegate Brewing distributes to about 90 bars across Minnesota and Wisconsin.",
+        "Pinegate Brewing's Duluth taproom will host the brewery's barrel-aging program starting in spring 2026."
+      ]
+    }
+  ]
+}

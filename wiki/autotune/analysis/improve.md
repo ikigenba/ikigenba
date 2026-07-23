@@ -1,0 +1,1 @@
+Improve the question-analysis system prompt while preserving its JSON contract. Focus on decomposing multi-subject questions into at most four useful retrieval queries, retaining salient keywords, supplying genuine alternate names, and avoiding redundant or over-broad list entries. Prefer rules that generalize across the corpus rather than case-specific wording.

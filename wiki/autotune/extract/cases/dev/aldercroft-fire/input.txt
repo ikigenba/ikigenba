@@ -1,0 +1,8 @@
+Document header:
+source: mcp:ingest_text
+title: The Aldercroft Fire of 1907
+tags: history, disaster
+received on: 2026-04-12
+
+Source text:
+The Aldercroft Fire destroyed most of the town of Aldercroft on 14 April 1907. The fire began in a flour mill and burned for two days, leaving about 3,000 people homeless. Journalist Edith Mavor documented the aftermath in a series of photographs now held by the Provincial Archives. Her collection, published as "Ash and Timber" in 1911, is considered the definitive record of the disaster.

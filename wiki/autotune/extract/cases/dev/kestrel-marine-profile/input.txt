@@ -1,0 +1,12 @@
+Document header:
+source: mcp:ingest_text
+title: Company profile: Kestrel Marine
+tags: maritime, profile
+received on: 2026-01-08
+
+Source text:
+Kestrel Marine builds autonomous survey vessels at its shipyard in Aberdeen. The company was founded in 2009 by two former offshore engineers and now employs 380 people.
+
+In November 2025 the board appointed Ingrid Solheim as chief executive. Solheim previously ran the subsea robotics unit at Havlund. She has said her first priority is doubling production of the company's Petrel-class vessels.
+
+Kestrel's largest contract to date, signed in 2024 with the Norwegian Coastal Administration, covers seabed mapping of 14,000 square kilometres. The company also operates a training academy in Stavanger, which certified 120 pilots last year.

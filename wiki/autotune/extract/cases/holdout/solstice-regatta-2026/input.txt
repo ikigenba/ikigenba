@@ -1,0 +1,8 @@
+Document header:
+source: mcp:ingest_text
+title: Recap: Solstice Regatta 2026
+tags: sailing, race
+received on: 2026-06-22
+
+Source text:
+The Solstice Regatta finished on June 21, 2026, off Port Fairview. The race drew 87 boats in four classes, and the keelboat class carried a $4,500 first prize. Noor Haddad won the keelboat class by a margin of eleven minutes. Haddad, a ferry captain from Aqaba, was competing in the regatta for the first time.

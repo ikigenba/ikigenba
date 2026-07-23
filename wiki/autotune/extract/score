@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""Scorer for the extract example.
+
+Usage (the autotune contract): score <case-dir>, model output on stdin,
+JSON {"score": float, "feedback": str} on stdout.
+
+Faithful port of the wiki workbench's deterministic extract scorer:
+subjects paired by type + normalized name/alias equality; claims aligned by
+embedding cosine similarity (threshold 0.80, margin 0.03 both ways, digit
+compatibility guard); kind/occurred_at exact fields; composite =
+0.35*subject_F1 + 0.50*claim_F1 + 0.15*field_accuracy.
+
+Embeddings come from the `embed` CLI (see ~/projects/embed): texts in as a
+JSON array on stdin, vectors out as {"embeddings": [[...], ...]}. Override
+the binary with EMBED_BIN. The embed CLI owns credentials and caching; this
+script is pure arithmetic.
+
+Unparseable/invalid model output scores 0 with explanatory feedback (a bad
+prompt, not a scorer failure). A broken embed pipeline is a scorer failure:
+non-zero exit, which aborts the autotune run.
+"""
+
+import json
+import math
+import os
+import re
+import subprocess
+import sys
+import unicodedata
+
+THRESHOLD = 0.80
+MARGIN = 0.03
+W_SUBJECT, W_CLAIM, W_FIELD = 0.35, 0.50, 0.15
+FEEDBACK_MAX_ITEMS = 8
+
+# ---------------------------------------------------------------------------
+# Generic embedding + alignment machinery (no domain knowledge; candidate for
+# extraction into a shared library once a second scorer exists).
+# ---------------------------------------------------------------------------
+
+
+def embed(texts):
+    """Return one vector per text via the embed CLI. Raises on any failure."""
+    if not texts:
+        return []
+    proc = subprocess.run(
+        [os.environ.get("EMBED_BIN", "embed")],
+        input=json.dumps(texts),
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"embed CLI failed (exit {proc.returncode}): {proc.stderr.strip()}")
+    vectors = json.loads(proc.stdout)["embeddings"]
+    if len(vectors) != len(texts):
+        raise RuntimeError(f"embed returned {len(vectors)} vectors for {len(texts)} texts")
+    return vectors
+
+
+def cosine(a, b):
+    dot = sum(x * y for x, y in zip(a, b))
+    aa = sum(x * x for x in a)
+    bb = sum(y * y for y in b)
+    if aa == 0 or bb == 0:
+        return 0.0
+    return dot / math.sqrt(aa * bb)
+
+
+def digits_compatible(a, b):
+    a_digits, b_digits = re.findall(r"[0-9]+", a), re.findall(r"[0-9]+", b)
+    if not a_digits or not b_digits:
+        return True
+    return bool(set(a_digits) & set(b_digits))
+
+
+def align(gold, got):
+    """Count matched pairs between two text lists: greedy best-similarity
+    alignment gated by THRESHOLD, a both-ways MARGIN over the next-best
+    alternative, and digit compatibility."""
+    if not gold or not got:
+        return 0, set(), set()
+    vectors = embed(list(gold) + list(got))
+    sims = [[cosine(vectors[gi], vectors[len(gold) + ei]) for ei in range(len(got))]
+            for gi in range(len(gold))]
+    candidates = sorted(
+        ((gi, ei) for gi in range(len(gold)) for ei in range(len(got))),
+        key=lambda c: (-sims[c[0]][c[1]], c[0], c[1]),
+    )
+    gold_used, got_used, matched = set(), set(), 0
+    for gi, ei in candidates:
+        sim = sims[gi][ei]
+        if gi in gold_used or ei in got_used or sim < THRESHOLD:
+            continue
+        gold_alt = max((sims[gi][e] for e in range(len(got)) if e != ei), default=-math.inf)
+        got_alt = max((sims[g][ei] for g in range(len(gold)) if g != gi), default=-math.inf)
+        if sim - gold_alt < MARGIN or sim - got_alt < MARGIN:
+            continue
+        if not digits_compatible(gold[gi], got[ei]):
+            continue
+        gold_used.add(gi)
+        got_used.add(ei)
+        matched += 1
+    return matched, gold_used, got_used
+
+
+def metrics(matched, missed, spurious):
+    if matched == 0 and missed == 0 and spurious == 0:
+        return {"precision": 1.0, "recall": 1.0, "f1": 1.0}
+    precision = matched / (matched + spurious) if matched + spurious else 0.0
+    recall = matched / (matched + missed) if matched + missed else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {"precision": precision, "recall": recall, "f1": f1}
+
+
+# ---------------------------------------------------------------------------
+# Domain: extract-output scoring.
+# ---------------------------------------------------------------------------
+
+
+def normalize(value):
+    kept = (c.lower() for c in value if not unicodedata.category(c).startswith("P"))
+    return " ".join("".join(kept).split())
+
+
+def parse_output(text):
+    """Extract the subjects list from model output; return (subjects, error)."""
+    body = text.strip()
+    fence = re.search(r"```(?:json)?\s*\n(.*?)```", body, re.DOTALL)
+    if fence:
+        body = fence.group(1).strip()
+    if not body.startswith("{"):
+        start, end = body.find("{"), body.rfind("}")
+        if start == -1 or end <= start:
+            return None, "output contains no JSON object"
+        body = body[start : end + 1]
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as exc:
+        return None, f"output is not valid JSON: {exc}"
+    subjects = data.get("subjects") if isinstance(data, dict) else None
+    if not isinstance(subjects, list):
+        return None, 'output JSON has no "subjects" array'
+    for i, s in enumerate(subjects):
+        if not isinstance(s, dict) or not isinstance(s.get("claims"), list):
+            return None, f"subjects[{i}] is malformed (needs an object with a claims array)"
+    return subjects, None
+
+
+def pair_subjects(gold, got):
+    used, pairs = set(), []
+    for gi, want in enumerate(gold):
+        names = {normalize(n) for n in [want["name"], *want.get("aliases", [])]}
+        for ei, actual in enumerate(got):
+            if ei in used or actual.get("type") != want["type"]:
+                continue
+            if normalize(actual.get("name", "")) in names:
+                pairs.append((gi, ei))
+                used.add(ei)
+                break
+    return pairs
+
+
+def clip(items):
+    if len(items) > FEEDBACK_MAX_ITEMS:
+        return items[:FEEDBACK_MAX_ITEMS] + [f"... and {len(items) - FEEDBACK_MAX_ITEMS} more"]
+    return items
+
+
+def score_case(gold_subjects, got):
+    pairs = pair_subjects(gold_subjects, got)
+    gold_paired = {gi for gi, _ in pairs}
+    got_paired = {ei for _, ei in pairs}
+    subj = metrics(len(pairs), len(gold_subjects) - len(pairs), len(got) - len(pairs))
+
+    field_correct, field_total = 0, 2 * len(pairs)
+    claim_matched = claim_missed = claim_spurious = 0
+    feedback = []
+
+    for name in (gold_subjects[gi]["name"] for gi in range(len(gold_subjects)) if gi not in gold_paired):
+        feedback.append(f"missed subject: {name}")
+    for name in (got[ei].get("name", "?") for ei in range(len(got)) if ei not in got_paired):
+        feedback.append(f"spurious subject: {name}")
+
+    for gi, ei in pairs:
+        g, e = gold_subjects[gi], got[ei]
+        if normalize(g.get("kind", "")) == normalize(e.get("kind", "")):
+            field_correct += 1
+        else:
+            feedback.append(f'{g["name"]}: kind "{e.get("kind", "")}" != gold "{g.get("kind", "")}"')
+        if g.get("occurred_at", "") == e.get("occurred_at", ""):
+            field_correct += 1
+        else:
+            feedback.append(
+                f'{g["name"]}: occurred_at "{e.get("occurred_at", "")}" != gold "{g.get("occurred_at", "")}"'
+            )
+        g_claims = [c for c in g.get("claims", [])]
+        e_claims = [str(c) for c in e.get("claims", [])]
+        matched, g_used, e_used = align(g_claims, e_claims)
+        claim_matched += matched
+        claim_missed += len(g_claims) - matched
+        claim_spurious += len(e_claims) - matched
+        missed = clip([g_claims[i] for i in range(len(g_claims)) if i not in g_used])
+        spurious = clip([e_claims[i] for i in range(len(e_claims)) if i not in e_used])
+        if missed:
+            feedback.append(f"{g['name']}: missed claims: " + " | ".join(missed))
+        if spurious:
+            feedback.append(f"{g['name']}: unmatched extracted claims: " + " | ".join(spurious))
+
+    for gi in range(len(gold_subjects)):
+        if gi not in gold_paired:
+            claim_missed += len(gold_subjects[gi].get("claims", []))
+    for ei in range(len(got)):
+        if ei not in got_paired:
+            claim_spurious += len(got[ei].get("claims", []))
+
+    claims = metrics(claim_matched, claim_missed, claim_spurious)
+    if field_total:
+        field_accuracy = field_correct / field_total
+    else:
+        field_accuracy = 1.0 if not gold_subjects else 0.0
+
+    composite = W_SUBJECT * subj["f1"] + W_CLAIM * claims["f1"] + W_FIELD * field_accuracy
+    summary = (
+        f"subjects F1 {subj['f1']:.3f}, claims F1 {claims['f1']:.3f} "
+        f"({claim_matched} matched / {claim_missed} missed / {claim_spurious} spurious), "
+        f"fields {field_correct}/{field_total}"
+    )
+    return composite, "; ".join([summary, *feedback])
+
+
+def main():
+    if len(sys.argv) != 2:
+        print("usage: score <case-dir>", file=sys.stderr)
+        return 2
+    with open(os.path.join(sys.argv[1], "gold.json"), encoding="utf-8") as f:
+        gold_subjects = json.load(f)["gold"]
+    output = sys.stdin.read()
+
+    got, err = parse_output(output)
+    if err is not None:
+        print(json.dumps({"score": 0.0, "feedback": f"unscorable output: {err}"}))
+        return 0
+
+    composite, feedback = score_case(gold_subjects, got)
+    print(json.dumps({"score": round(composite, 6), "feedback": feedback}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

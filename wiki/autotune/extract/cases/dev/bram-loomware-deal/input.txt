@@ -1,0 +1,8 @@
+Document header:
+source: mcp:ingest_text
+title: Bram Textiles and Loomware sign supply deal
+tags: manufacturing
+received on: 2026-02-04
+
+Source text:
+Bram Textiles, a family-owned mill in Ghent founded in 1911, signed a five-year supply agreement with Loomware on 3 February 2026. Under the deal, Loomware will install its automated warping machines at Bram's main plant and will train Bram's operators during 2026. Loomware, based in Eindhoven, makes control systems for industrial looms. Bram Textiles will remain the exclusive European testing site for Loomware's next machine generation.

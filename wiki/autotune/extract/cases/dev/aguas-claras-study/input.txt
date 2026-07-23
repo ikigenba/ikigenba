@@ -1,0 +1,8 @@
+Document header:
+source: mcp:ingest_text
+title: Mangrove replanting raises juvenile fish counts
+tags: research, ecology
+received on: 2026-04-03
+
+Source text:
+A five-year study led by the Instituto Aguas Claras found that mangrove replanting along the Camorim estuary raised juvenile fish counts by 62 percent. The study, published in March 2026, tracked 18 restored plots. The institute, based in Recife, has monitored the estuary since 2012 and plans to extend the survey to two neighboring estuaries in 2027.

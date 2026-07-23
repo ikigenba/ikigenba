@@ -1,0 +1,8 @@
+Document header:
+source: mcp:ingest_text
+title: Forward deployment
+tags: software, reference
+received on: 2026-07-01
+
+Source text:
+Forward deployment is a release practice in which every merged change ships to production automatically and is corrected by a follow-up change rather than a rollback. The practice was popularized by the engineer Sana Whitfield in a widely cited 2017 talk. Forward deployment is common at large software platforms. Detractors say it demands unusually strong monitoring, though adoption continues to grow.

@@ -1,0 +1,8 @@
+Document header:
+source: mcp:ingest_text
+title: Corvid Insurance clears its claims backlog
+tags: insurance, operations
+received on: 2026-02-02
+
+Source text:
+Corvid Insurance cut its claims backlog from nine weeks to six days during 2025. The company credits the turnaround to adopting straight-through processing for simple claims and to hiring 14 additional adjusters. Corvid, founded in Leeds in 1987, insures small fishing fleets across the North Sea.

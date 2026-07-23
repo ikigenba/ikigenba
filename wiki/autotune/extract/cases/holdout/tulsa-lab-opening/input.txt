@@ -1,0 +1,9 @@
+Document header:
+source: mcp:ingest_text
+title: Tulsa lab opening note
+tags: robotics, tulsa
+received on: 2026-06-20
+
+Source text:
+Acme Robotics opened a small robotics lab in Tulsa on June 19, 2026.
+The lab will test warehouse navigation software and host local robotics engineers.

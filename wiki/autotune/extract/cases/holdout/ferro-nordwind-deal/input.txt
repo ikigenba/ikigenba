@@ -1,0 +1,8 @@
+Document header:
+source: mcp:ingest_text
+title: Ferro Docks and Nordwind Ferries sign maintenance contract
+tags: maritime
+received on: 2026-03-10
+
+Source text:
+Ferro Docks, a ship-repair yard in Trieste founded in 1954, signed a three-year maintenance contract with Nordwind Ferries on 9 March 2026. Under the contract, Nordwind will base two of its vessels at Ferro's dry dock each winter and will fund an apprentice welding program at the yard through 2028. Nordwind Ferries, headquartered in Kiel, operates eleven routes on the Baltic Sea. Ferro Docks will remain the sole Mediterranean maintenance site for Nordwind's ice-class fleet.
