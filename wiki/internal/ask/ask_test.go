@@ -461,7 +461,7 @@ func TestAskDoesNotWriteOnHonestEmptyOrParseFailure(t *testing.T) {
 }
 
 func TestDefaultAskCallSitesUseLunaAndEmbeddedSystemPrompts(t *testing.T) {
-	// R-GHQC-OEYL
+	// R-GLE1-TQ6O
 	subject := DefaultSubjectCallSite()
 	synthesis := DefaultSynthesisCallSite()
 	if subject.Stage != "ask-subject" {

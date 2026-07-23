@@ -26,7 +26,8 @@ func TestNewConfigUsesEveryStageDefaultLunaCallSite(t *testing.T) {
 }
 
 func TestNewConfigLayersPerCallSiteEnvironmentOverrides(t *testing.T) {
-	// R-GK65-FYFZ
+	// R-GGIG-AN7W
+	// R-GHQC-OEYL
 	cfg, err := NewConfig(fakeGetenv(map[string]string{
 		"EXTRACT_MODEL":            "extract-model",
 		"EXTRACT_TEMPERATURE":      "0.25",
@@ -46,6 +47,9 @@ func TestNewConfigLayersPerCallSiteEnvironmentOverrides(t *testing.T) {
 	assertResolvedSite(t, cfg.CallSites.Compile, "compile", "compile-model", nil, "low", 4096, 0)
 	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", "subject-model", nil, "high", 16384, 0)
 	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", "synthesis-model", nil, false, 8192, 0)
+	if cfg.CallSites.Extract.Config.Model == cfg.CallSites.Compile.Config.Model {
+		t.Fatalf("extract and compile models both = %q, want independent per-site models", cfg.CallSites.Extract.Config.Model)
+	}
 }
 
 func TestNewConfigBuildsDefaultEmbeddingSite(t *testing.T) {
@@ -78,6 +82,7 @@ func TestNewConfigLayersEmbeddingEnvironmentOverrides(t *testing.T) {
 }
 
 func TestNewConfigRejectsMalformedCallSiteEnvironment(t *testing.T) {
+	// R-GK65-FYFZ
 	tests := []struct {
 		name    string
 		env     map[string]string
@@ -108,7 +113,6 @@ func TestNewConfigRejectsMalformedCallSiteEnvironment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// R-GLE1-TQ6O
 			_, err := NewConfig(fakeGetenv(tt.env))
 			if err == nil {
 				t.Fatal("NewConfig returned nil error")
