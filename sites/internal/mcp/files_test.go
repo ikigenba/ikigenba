@@ -18,7 +18,7 @@ import (
 func fileToolsHandler(t *testing.T) (*testHandler, string) {
 	t.Helper()
 	h, root := newTestHandler(t)
-	callOK(t, h, "create", map[string]any{"name": "demo", "visibility": "private"})
+	callOK(t, h, "create", map[string]any{"name": "demo", "slug": "demo", "visibility": "private"})
 	return h, root
 }
 
@@ -55,7 +55,7 @@ func TestFileWriteReadRoundtrip(t *testing.T) {
 
 func TestFileWriteUsesPublicSiteDir(t *testing.T) {
 	h, _ := fileToolsHandler(t)
-	callOK(t, h, "set_visibility", map[string]any{"name": "demo", "visibility": "public"})
+	callOK(t, h, "set_visibility", map[string]any{"slug": "demo", "visibility": "public"})
 
 	callOK(t, h, "file_write", map[string]any{
 		"site":      "demo",
@@ -196,7 +196,7 @@ func TestFileReadAndListTraversalReturnPathEscapeCode(t *testing.T) {
 		args map[string]any
 	}{
 		{"file_write", map[string]any{"site": "demo", "file_path": "../escape", "content": "no"}},
-		{"mkdir", map[string]any{"name": "demo", "path": "../escape"}},
+		{"mkdir", map[string]any{"slug": "demo", "path": "../escape"}},
 	} {
 		env := callErr(t, h, tc.name, tc.args)
 		if env["code"] != "validation" || !strings.Contains(env["message"].(string), "path_escapes_working_dir") {
@@ -271,7 +271,7 @@ func TestFileList(t *testing.T) {
 	if w := call(t, h, "file_write", map[string]any{"site": "demo", "file_path": "index.html", "content": indexContent}); w.IsError {
 		t.Fatalf("write index.html: %s", payloadText(w))
 	}
-	callOK(t, h, "mkdir", map[string]any{"name": "demo", "path": "css"})
+	callOK(t, h, "mkdir", map[string]any{"slug": "demo", "path": "css"})
 	if w := call(t, h, "file_write", map[string]any{"site": "demo", "file_path": "css/site.css", "content": cssContent}); w.IsError {
 		t.Fatalf("write css/site.css: %s", payloadText(w))
 	}
