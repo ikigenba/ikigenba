@@ -25,6 +25,10 @@
     return rows.slice().sort(function (left, right) {
       var a = String(left[field] || (field === "name" ? left.slug : ""));
       var b = String(right[field] || (field === "name" ? right.slug : ""));
+      if (field === "name") {
+        a = a.toLowerCase();
+        b = b.toLowerCase();
+      }
       var compare = a < b ? -1 : a > b ? 1 : 0;
       if (compare) return compare * direction;
       return String(left.slug || "") < String(right.slug || "") ? -1 : String(left.slug || "") > String(right.slug || "") ? 1 : 0;

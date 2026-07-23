@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -1023,13 +1024,14 @@ func TestSitesBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 
 func TestLandingBrowserControlsWorkThroughRealDOMEvents(t *testing.T) {
 	seeds := []landingSeed{
-		{name: "docs", public: true, createdAt: "2026-07-04T08:00:00.000000000Z"},
-		{name: "dashboard", public: true, createdAt: "2026-07-12T08:00:00.000000000Z"},
-		{name: "blog", public: false, createdAt: "2026-07-01T08:00:00.000000000Z"},
+		{name: "Docs", slug: "docs", public: true, createdAt: "2026-07-04T08:00:00.000000000Z"},
+		{name: "Ops Panel", slug: "dashboard", public: true, createdAt: "2026-07-12T08:00:00.000000000Z"},
+		{name: "Blog", slug: "blog", public: false, createdAt: "2026-07-01T08:00:00.000000000Z"},
 	}
 	for i := 1; i <= 9; i++ {
 		seeds = append(seeds, landingSeed{
-			name:      fmt.Sprintf("site-%02d", i),
+			name:      fmt.Sprintf("Filler %02d", i),
+			slug:      fmt.Sprintf("site-%02d", i),
 			public:    i%2 == 0,
 			createdAt: fmt.Sprintf("2026-07-%02dT08:00:00.000000000Z", i+2),
 		})
@@ -1044,8 +1046,8 @@ func TestLandingBrowserControlsWorkThroughRealDOMEvents(t *testing.T) {
 	session, cancel := landingBrowserSession(t)
 	defer cancel()
 
-	var slugs []string
-	readSlugs := chromedp.Evaluate(`Array.from(document.querySelectorAll("tbody tr td:first-child a"), function (a) { return a.textContent; })`, &slugs)
+	var names []string
+	readNames := chromedp.Evaluate(`Array.from(document.querySelectorAll("tbody tr td:first-child a"), function (a) { return a.textContent; })`, &names)
 	var ariaSort string
 	var searchValue string
 	var pagerLabel string
@@ -1056,45 +1058,50 @@ func TestLandingBrowserControlsWorkThroughRealDOMEvents(t *testing.T) {
 		t.Fatalf("boot landing controller: %v", err)
 	}
 
-	// R-88J5-WXUT
-	if err := chromedp.Run(session, chromedp.SendKeys(`#site-search`, "dsb"), readSlugs); err != nil {
+	// R-06IK-15YH
+	if err := chromedp.Run(session, chromedp.SendKeys(`#site-search`, "dsb"), readNames); err != nil {
 		t.Fatalf("filter dashboard: %v", err)
 	}
-	if got, want := strings.Join(slugs, ","), "dashboard"; got != want {
-		t.Fatalf("filtered slugs = %q, want %q", got, want)
+	if got, want := strings.Join(names, ","), "Ops Panel"; got != want {
+		t.Fatalf("filtered names = %q, want %q", got, want)
 	}
 
-	// R-89R2-APLI
+	// R-08YC-SPFV
 	if err := chromedp.Run(session,
+		chromedp.Evaluate(`(function () { var input = document.querySelector("#site-search"); input.value = ""; input.dispatchEvent(new Event("input", {bubbles:true})); }())`, nil),
 		chromedp.Click(`th[data-sort-key="name"]`),
+		readNames,
 		chromedp.Evaluate(`document.querySelector('th[data-sort-key="name"]').getAttribute("aria-sort")`, &ariaSort),
 	); err != nil {
-		t.Fatalf("sort slugs ascending: %v", err)
+		t.Fatalf("sort display names ascending: %v", err)
 	}
-	if ariaSort != "ascending" {
-		t.Fatalf("slug ascending aria-sort = %q, want ascending", ariaSort)
+	wantAscending := []string{"Blog", "Docs", "Filler 01", "Filler 02", "Filler 03", "Filler 04", "Filler 05", "Filler 06", "Filler 07", "Filler 08"}
+	if ariaSort != "ascending" || !reflect.DeepEqual(names, wantAscending) {
+		t.Fatalf("name ascending = %v with aria-sort %q, want %v and ascending", names, ariaSort, wantAscending)
 	}
 	if err := chromedp.Run(session,
 		chromedp.Click(`th[data-sort-key="name"]`),
+		readNames,
 		chromedp.Evaluate(`document.querySelector('th[data-sort-key="name"]').getAttribute("aria-sort")`, &ariaSort),
 	); err != nil {
-		t.Fatalf("sort slugs descending: %v", err)
+		t.Fatalf("sort display names descending: %v", err)
 	}
-	if ariaSort != "descending" {
-		t.Fatalf("slug descending aria-sort = %q, want descending", ariaSort)
+	wantDescending := []string{"Ops Panel", "Filler 09", "Filler 08", "Filler 07", "Filler 06", "Filler 05", "Filler 04", "Filler 03", "Filler 02", "Filler 01"}
+	if ariaSort != "descending" || !reflect.DeepEqual(names, wantDescending) {
+		t.Fatalf("name descending = %v with aria-sort %q, want %v and descending", names, ariaSort, wantDescending)
 	}
 
 	// R-8AYY-OHC7
 	if err := chromedp.Run(session,
 		chromedp.Click(`#site-clear`),
 		chromedp.Evaluate(`document.querySelector("#site-search").value`, &searchValue),
-		readSlugs,
+		readNames,
 		chromedp.Text(`#pager-label`, &pagerLabel),
 	); err != nil {
 		t.Fatalf("clear landing controls: %v", err)
 	}
-	if searchValue != "" || len(slugs) != 10 || pagerLabel != "Page 1 of 2" || slugs[0] != "dashboard" {
-		t.Fatalf("clear state = search %q, slugs %#v, pager %q; want default first page", searchValue, slugs, pagerLabel)
+	if searchValue != "" || len(names) != 10 || pagerLabel != "Page 1 of 2" || names[0] != "Ops Panel" {
+		t.Fatalf("clear state = search %q, names %#v, pager %q; want default first page", searchValue, names, pagerLabel)
 	}
 
 	// R-8DER-G0TL

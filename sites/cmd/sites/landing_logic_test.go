@@ -125,23 +125,32 @@ func slugs(rows []landingRow) []string {
 }
 
 func TestFilterSitesSubsequence(t *testing.T) {
-	// R-HU67-LJBW
-	input := []landingRow{{Slug: "docs"}, {Slug: "dashboard"}, {Slug: "blog"}}
-	var got []landingRow
-	landingEval(t, "SitesLanding.filterSites("+landingJSON(t, input)+", 'dsb')", &got)
-	if want := []string{"dashboard"}; !reflect.DeepEqual(slugs(got), want) {
-		t.Fatalf("filter slugs = %v, want %v", slugs(got), want)
+	// R-02UU-VUQE
+	input := []landingRow{
+		{Slug: "docs", Name: "Docs"},
+		{Slug: "dashboard", Name: "Ops Panel"},
+		{Slug: "tok234xyz", Name: "Client Preview"},
+	}
+	var slugMatch, nameMatch []landingRow
+	landingEval(t, "SitesLanding.filterSites("+landingJSON(t, input)+", 'dsb')", &slugMatch)
+	landingEval(t, "SitesLanding.filterSites("+landingJSON(t, input)+", 'clientpre')", &nameMatch)
+	if want := []string{"dashboard"}; !reflect.DeepEqual(slugs(slugMatch), want) {
+		t.Fatalf("slug-field subsequence matches = %v, want %v", slugs(slugMatch), want)
+	}
+	if want := []string{"tok234xyz"}; !reflect.DeepEqual(slugs(nameMatch), want) {
+		t.Fatalf("name-field subsequence matches = %v, want %v", slugs(nameMatch), want)
 	}
 }
 
 func TestFilterSitesCaseInsensitive(t *testing.T) {
-	// R-HVE3-ZB2L
-	input := []landingRow{{Slug: "docs"}, {Slug: "dashboard"}}
-	var docs, dashboard []landingRow
+	// R-042R-9MH3
+	input := []landingRow{{Slug: "docs", Name: "Docs"}, {Slug: "dashboard", Name: "Ops Panel"}}
+	var docs, ops, dashboard []landingRow
 	landingEval(t, "SitesLanding.filterSites("+landingJSON(t, input)+", 'DOCS')", &docs)
+	landingEval(t, "SitesLanding.filterSites("+landingJSON(t, input)+", 'ops')", &ops)
 	landingEval(t, "SitesLanding.filterSites("+landingJSON(t, input)+", 'DsB')", &dashboard)
-	if !reflect.DeepEqual(slugs(docs), []string{"docs"}) || !reflect.DeepEqual(slugs(dashboard), []string{"dashboard"}) {
-		t.Fatalf("case-insensitive results = %v, %v", slugs(docs), slugs(dashboard))
+	if !reflect.DeepEqual(slugs(docs), []string{"docs"}) || !reflect.DeepEqual(slugs(ops), []string{"dashboard"}) || !reflect.DeepEqual(slugs(dashboard), []string{"dashboard"}) {
+		t.Fatalf("case-insensitive results = docs %v, ops %v, dsb %v", slugs(docs), slugs(ops), slugs(dashboard))
 	}
 }
 
@@ -166,13 +175,18 @@ func TestFilterSitesDoesNotSortMatches(t *testing.T) {
 }
 
 func TestSortRowsNameDescendingReversesAscending(t *testing.T) {
-	// R-HZ1T-4MAO
-	input := []landingRow{{Slug: "beta"}, {Slug: "alpha"}, {Slug: "gamma"}}
-	var asc, desc []landingRow
+	// R-05AN-NE7S
+	input := []landingRow{{Slug: "b", Name: "beta"}, {Slug: "a", Name: "Alpha"}, {Slug: "g", Name: "gamma"}}
+	tied := []landingRow{{Slug: "zulu", Name: "Same"}, {Slug: "able", Name: "same"}}
+	var asc, desc, tiedAsc []landingRow
 	landingEval(t, "SitesLanding.sortRows("+landingJSON(t, input)+", 'name', 'asc')", &asc)
 	landingEval(t, "SitesLanding.sortRows("+landingJSON(t, input)+", 'name', 'desc')", &desc)
-	if want := []string{"gamma", "beta", "alpha"}; !reflect.DeepEqual(slugs(desc), want) || !reflect.DeepEqual(slugs(asc), []string{"alpha", "beta", "gamma"}) {
+	landingEval(t, "SitesLanding.sortRows("+landingJSON(t, tied)+", 'name', 'asc')", &tiedAsc)
+	if want := []string{"g", "b", "a"}; !reflect.DeepEqual(slugs(desc), want) || !reflect.DeepEqual(slugs(asc), []string{"a", "b", "g"}) {
 		t.Fatalf("name sort asc=%v desc=%v", slugs(asc), slugs(desc))
+	}
+	if want := []string{"able", "zulu"}; !reflect.DeepEqual(slugs(tiedAsc), want) {
+		t.Fatalf("equal-name slug tie-break = %v, want %v", slugs(tiedAsc), want)
 	}
 }
 
