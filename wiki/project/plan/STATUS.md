@@ -12,7 +12,6 @@ lines.
 
 Next phase: 119
 
-- Phase 113 ⬜ realizes R-A0XE-WA4H, R-9ZPI-IIDS, R-A25B-A1V6 — ask call sites: rehoused analysis/synthesis prompts, system/user split, luna defaults everywhere
 - Phase 114 ⬜ realizes R-AAOL-YG21, R-ABWI-C7SQ — tune folders: extract and analysis, with their deterministic scorers
 - Phase 115 ⬜ realizes R-A3D7-NTLV, R-A4L4-1LCK — remove the tuning machinery (executables, eval tree, agentkit, compat fields, env/gitignore rewire)
 - Phase 116 ⬜ realizes R-AD4E-PZJF, R-AFK7-HJ0T — tune folder: compile, with its hybrid scorer and seed corpus
