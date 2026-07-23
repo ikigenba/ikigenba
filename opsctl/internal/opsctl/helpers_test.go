@@ -53,6 +53,11 @@ func (s *stubSystem) InstallPackages(ctx context.Context, pkgs ...string) error 
 	return nil
 }
 
+func (s *stubSystem) InstallScript(ctx context.Context, installerURL string, env ...string) error {
+	s.record("install-script:" + installerURL + "|env:" + strings.Join(env, ","))
+	return nil
+}
+
 func (s *stubSystem) EnsureSystemUser(ctx context.Context, app, homeDir string) error {
 	s.record("ensure-user:" + app + ":" + homeDir)
 	return nil

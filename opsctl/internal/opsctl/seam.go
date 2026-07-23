@@ -51,6 +51,9 @@ type System interface {
 	// -y <pkgs...>`). init-box installs nginx+certbot; setup installs the app's
 	// own runtime deps. Idempotent (dnf is a no-op when already present).
 	InstallPackages(ctx context.Context, pkgs ...string) error
+	// InstallScript fetches and runs a curl|sh installer as root, with env
+	// layered over the process environment. The installer owns idempotency.
+	InstallScript(ctx context.Context, installerURL string, env ...string) error
 	// EnsureSystemUser creates the dedicated `--system` app user if absent (the
 	// box runs `useradd --system --home-dir /opt/<app> --shell /usr/sbin/nologin
 	// <app>`). Idempotent: a no-op when the user already exists.
@@ -206,6 +209,15 @@ func (s RealSystem) InstallPackages(ctx context.Context, pkgs ...string) error {
 		return nil
 	}
 	return run(ctx, "dnf", append([]string{"install", "-y"}, pkgs...)...)
+}
+
+func (s RealSystem) InstallScript(ctx context.Context, installerURL string, env ...string) error {
+	cmd := exec.CommandContext(ctx, "sh", "-c", `curl -fsSL "$1" | sh`, "opsctl-install-script", installerURL)
+	cmd.Env = append(os.Environ(), env...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("install script %s: %w: %s", installerURL, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func (s RealSystem) EnsureSystemUser(ctx context.Context, app, homeDir string) error {
