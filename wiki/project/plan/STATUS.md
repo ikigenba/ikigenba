@@ -12,7 +12,6 @@ lines.
 
 Next phase: 119
 
-- Phase 112 ⬜ realizes R-9UTW-ZFF0, R-9W1T-D75P, R-9X9P-QYWE, R-9YHM-4QN3 — extract and compile call sites: rehoused prompts, system/user split, gpt-5.6-luna defaults
 - Phase 113 ⬜ realizes R-A0XE-WA4H, R-9ZPI-IIDS, R-A25B-A1V6 — ask call sites: rehoused analysis/synthesis prompts, system/user split, luna defaults everywhere
 - Phase 114 ⬜ realizes R-AAOL-YG21, R-ABWI-C7SQ — tune folders: extract and analysis, with their deterministic scorers
 - Phase 115 ⬜ realizes R-A3D7-NTLV, R-A4L4-1LCK — remove the tuning machinery (executables, eval tree, agentkit, compat fields, env/gitignore rewire)
