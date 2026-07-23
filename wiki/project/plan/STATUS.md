@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 120
-
-- Phase 119 ⬜ realizes R-GGIG-AN7W — restore D19 requirement-id tag coverage (re-anchor drifted tags)
