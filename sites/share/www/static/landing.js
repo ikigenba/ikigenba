@@ -7,21 +7,24 @@
     var needle = String(query || "").toLowerCase();
     if (!needle) return rows.slice();
     return rows.filter(function (row) {
-      var slug = String(row.slug || "").toLowerCase();
-      var position = 0;
-      for (var i = 0; i < slug.length && position < needle.length; i++) {
-        if (slug[i] === needle[position]) position++;
+      var fields = [String(row.name || "").toLowerCase(), String(row.slug || "").toLowerCase()];
+      for (var field = 0; field < fields.length; field++) {
+        var position = 0;
+        for (var i = 0; i < fields[field].length && position < needle.length; i++) {
+          if (fields[field][i] === needle[position]) position++;
+        }
+        if (position === needle.length) return true;
       }
-      return position === needle.length;
+      return false;
     });
   }
 
   function sortRows(rows, key, dir) {
-    var field = key === "name" ? "slug" : key === "createdAt" ? "createdAtSort" : "createdBy";
+    var field = key === "name" ? "name" : key === "createdAt" ? "createdAtSort" : "createdBy";
     var direction = dir === "desc" ? -1 : 1;
     return rows.slice().sort(function (left, right) {
-      var a = String(left[field] || "");
-      var b = String(right[field] || "");
+      var a = String(left[field] || (field === "name" ? left.slug : ""));
+      var b = String(right[field] || (field === "name" ? right.slug : ""));
       var compare = a < b ? -1 : a > b ? 1 : 0;
       if (compare) return compare * direction;
       return String(left.slug || "") < String(right.slug || "") ? -1 : String(left.slug || "") > String(right.slug || "") ? 1 : 0;
@@ -106,12 +109,12 @@
       body.replaceChildren();
       view.rows.forEach(function (row) {
         var tr = document.createElement("tr");
-        var slug = document.createElement("td");
+        var name = document.createElement("td");
         var anchor = document.createElement("a");
         anchor.href = row.url;
-        anchor.textContent = row.slug;
-        slug.dataset.label = "Slug";
-        slug.appendChild(anchor);
+        anchor.textContent = row.name;
+        name.dataset.label = "Name";
+        name.appendChild(anchor);
         var visibility = document.createElement("td");
         var badge = document.createElement("span");
         visibility.dataset.label = "Visibility";
@@ -148,7 +151,7 @@
         label.textContent = "Copy";
         button.append(icon, label);
         copy.appendChild(button);
-        tr.append(slug, visibility, creator, created, copy);
+        tr.append(name, visibility, creator, created, copy);
         body.appendChild(tr);
       });
       label.textContent = "Page " + view.page + " of " + view.pageCount;

@@ -375,7 +375,7 @@
       <table class="site-table">
         <thead>
           <tr>
-            <th scope="col" data-sort-key="name">Slug</th>
+            <th scope="col" data-sort-key="name">Name</th>
             <th scope="col">Visibility</th>
             <th scope="col" data-sort-key="createdBy">Creator</th>
             <th scope="col" data-sort-key="createdAt">Created</th>
@@ -385,7 +385,7 @@
         <tbody>
           {{range .Sites}}
           <tr>
-            <td data-label="Slug"><a href="{{.URL}}">{{.Slug}}</a></td>
+            <td data-label="Name"><a href="{{.URL}}">{{.Name}}</a></td>
             <td data-label="Visibility"><span class="visibility">{{.Visibility}}</span></td>
             <td data-label="Creator">{{.CreatedBy}}</td>
             <td data-label="Created">{{.CreatedAt}}</td>

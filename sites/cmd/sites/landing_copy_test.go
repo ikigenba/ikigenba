@@ -23,7 +23,7 @@ func TestLandingHandlerRendersHiddenCopyButtonsForEachSiteURL(t *testing.T) {
 		{"X", baseURL + "public/X/"},
 		{"Y", baseURL + "private/Y/"},
 	} {
-		anchor := `<td data-label="Slug"><a href="` + row.url + `">` + row.slug + `</a></td>`
+		anchor := `<td data-label="Name"><a href="` + row.url + `">` + row.slug + `</a></td>`
 		if !strings.Contains(body, anchor) {
 			t.Fatalf("landing HTML missing %s slug anchor %q:\n%s", row.slug, anchor, body)
 		}

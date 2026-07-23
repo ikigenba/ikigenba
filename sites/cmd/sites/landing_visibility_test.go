@@ -13,14 +13,15 @@ import (
 )
 
 func TestLandingTemplateRendersVisibilityEnumsVerbatim(t *testing.T) {
+	const token = "012345678901234567890123456789"
 	rec := httptest.NewRecorder()
 	view := landingView{
 		Service: "sites",
 		Version: "phase37",
 		Sites: []siteRow{
-			{Slug: "atlas", URL: "https://suite.test/public/atlas/", Visibility: "public", CreatedBy: "alice@example.com", CreatedAt: "2026-07-20T10:00:00Z"},
-			{Slug: "vault", URL: "https://suite.test/private/vault/", Visibility: "private", CreatedBy: "bob@example.com", CreatedAt: "2026-07-20T11:00:00Z"},
-			{Slug: "quiet", URL: "https://suite.test/public/quiet/", Visibility: "unlisted", CreatedBy: "carol@example.com", CreatedAt: "2026-07-20T12:00:00Z"},
+			{Slug: "atlas", Name: "Atlas Docs", URL: "https://suite.test/public/atlas/", Visibility: "public", CreatedBy: "alice@example.com", CreatedAt: "2026-07-20T10:00:00Z"},
+			{Slug: "vault", Name: "Team Vault", URL: "https://suite.test/private/vault/", Visibility: "private", CreatedBy: "bob@example.com", CreatedAt: "2026-07-20T11:00:00Z"},
+			{Slug: token, Name: "Client Preview", URL: "https://suite.test/public/" + token + "/", Visibility: "unlisted", CreatedBy: "carol@example.com", CreatedAt: "2026-07-20T12:00:00Z"},
 		},
 	}
 	if err := loadWWW(t).Render(rec, "landing.html", view); err != nil {
@@ -28,17 +29,18 @@ func TestLandingTemplateRendersVisibilityEnumsVerbatim(t *testing.T) {
 	}
 
 	// R-HK3X-22SM
+	// R-ZI4K-DR4L
 	body := rec.Body.String()
 	for _, want := range []string{
-		`<a href="https://suite.test/public/atlas/">atlas</a></td>` +
+		`<td data-label="Name"><a href="https://suite.test/public/atlas/">Atlas Docs</a></td>` +
 			`<td data-label="Visibility"><span class="visibility">public</span></td>` +
 			`<td data-label="Creator">alice@example.com</td>` +
 			`<td data-label="Created">2026-07-20T10:00:00Z</td>`,
-		`<a href="https://suite.test/private/vault/">vault</a></td>` +
+		`<td data-label="Name"><a href="https://suite.test/private/vault/">Team Vault</a></td>` +
 			`<td data-label="Visibility"><span class="visibility">private</span></td>` +
 			`<td data-label="Creator">bob@example.com</td>` +
 			`<td data-label="Created">2026-07-20T11:00:00Z</td>`,
-		`<a href="https://suite.test/public/quiet/">quiet</a></td>` +
+		`<td data-label="Name"><a href="https://suite.test/public/` + token + `/">Client Preview</a></td>` +
 			`<td data-label="Visibility"><span class="visibility">unlisted</span></td>` +
 			`<td data-label="Creator">carol@example.com</td>` +
 			`<td data-label="Created">2026-07-20T12:00:00Z</td>`,
@@ -47,36 +49,41 @@ func TestLandingTemplateRendersVisibilityEnumsVerbatim(t *testing.T) {
 			t.Fatalf("landing HTML missing enum row %q:\n%s", want, body)
 		}
 	}
+	if strings.Contains(body, `>`+token+`</a>`) {
+		t.Fatalf("unlisted token is visible as the anchor label:\n%s", body)
+	}
 }
 
 func TestLandingTemplateJSONIslandUsesVisibilityEnum(t *testing.T) {
 	store := newLandingTestStore(t,
-		landingSeed{name: "atlas", visibility: sitesdomain.Public, createdAt: "2026-07-20T10:00:00Z"},
-		landingSeed{name: "quiet", visibility: sitesdomain.Unlisted, createdAt: "2026-07-20T12:00:00Z"},
-		landingSeed{name: "vault", visibility: sitesdomain.Private, createdAt: "2026-07-20T11:00:00Z"},
+		landingSeed{name: "Atlas Docs", slug: "atlas", visibility: sitesdomain.Public, createdAt: "2026-07-20T10:00:00Z"},
+		landingSeed{name: "Client Preview", slug: "012345678901234567890123456789", visibility: sitesdomain.Unlisted, createdAt: "2026-07-20T12:00:00Z"},
+		landingSeed{name: "Team Vault", slug: "vault", visibility: sitesdomain.Private, createdAt: "2026-07-20T11:00:00Z"},
 	)
 	rec := httptest.NewRecorder()
 	landingHandler(store, loadWWW(t), "sites", "phase37", "https://suite.test/").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	// R-HLBT-FUJB
+	// R-ZKKD-5ALZ
 	rows := parseLandingIsland(t, rec.Body.String())
 	if len(rows) != 3 {
 		t.Fatalf("island row count = %d, want 3: %#v", len(rows), rows)
 	}
-	wantVisibility := map[string]string{"atlas": "public", "quiet": "unlisted", "vault": "private"}
+	wantVisibility := map[string]string{"atlas": "public", "012345678901234567890123456789": "unlisted", "vault": "private"}
+	wantName := map[string]string{"atlas": "Atlas Docs", "012345678901234567890123456789": "Client Preview", "vault": "Team Vault"}
 	for _, row := range rows {
 		if _, exists := row["public"]; exists {
 			t.Fatalf("island row retains retired public key: %#v", row)
 		}
-		for _, key := range []string{"slug", "url", "visibility", "createdBy", "createdAt", "createdAtSort"} {
+		for _, key := range []string{"slug", "name", "url", "visibility", "createdBy", "createdAt", "createdAtSort"} {
 			if _, exists := row[key]; !exists {
 				t.Fatalf("island row missing %q: %#v", key, row)
 			}
 		}
-		if len(row) != 6 {
-			t.Fatalf("island row keys = %#v, want exactly six contract keys", row)
+		if len(row) != 7 {
+			t.Fatalf("island row keys = %#v, want exactly seven contract keys", row)
 		}
-		var slug, visibility, createdAtSort string
+		var slug, name, visibility, createdAtSort string
 		if err := json.Unmarshal(row["slug"], &slug); err != nil {
 			t.Fatalf("decode slug: %v", err)
 		}
@@ -86,8 +93,14 @@ func TestLandingTemplateJSONIslandUsesVisibilityEnum(t *testing.T) {
 		if err := json.Unmarshal(row["createdAtSort"], &createdAtSort); err != nil {
 			t.Fatalf("decode createdAtSort: %v", err)
 		}
+		if err := json.Unmarshal(row["name"], &name); err != nil {
+			t.Fatalf("decode name: %v", err)
+		}
 		if visibility != wantVisibility[slug] {
 			t.Fatalf("visibility for %q = %q, want %q", slug, visibility, wantVisibility[slug])
+		}
+		if name != wantName[slug] {
+			t.Fatalf("name for %q = %q, want %q", slug, name, wantName[slug])
 		}
 		if _, err := time.Parse(time.RFC3339, createdAtSort); err != nil {
 			t.Fatalf("createdAtSort for %q is not RFC3339: %q: %v", slug, createdAtSort, err)
@@ -102,14 +115,16 @@ func TestLandingTemplateJSONIslandUsesVisibilityEnum(t *testing.T) {
 }
 
 func TestLandingHandlerMapsUnlistedSiteToPublicURL(t *testing.T) {
-	store := newLandingTestStore(t, landingSeed{name: "Z", visibility: sitesdomain.Unlisted})
+	const token = "012345678901234567890123456789"
+	store := newLandingTestStore(t, landingSeed{name: "Client Preview", slug: token, visibility: sitesdomain.Unlisted})
 	baseURL := "https://suite.test/srv/sites/"
 	rec := httptest.NewRecorder()
 	landingHandler(store, loadWWW(t), "sites", "phase37", baseURL).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	// R-HMJP-TMA0
-	wantURL := baseURL + "public/Z/"
-	if !strings.Contains(rec.Body.String(), `<a href="`+wantURL+`">Z</a>`) {
+	// R-ZLS9-J2CO
+	wantURL := baseURL + "public/" + token + "/"
+	if !strings.Contains(rec.Body.String(), `<a href="`+wantURL+`">Client Preview</a>`) {
 		t.Fatalf("unlisted site anchor does not use public URL %q:\n%s", wantURL, rec.Body.String())
 	}
 	rows := parseLandingIsland(t, rec.Body.String())

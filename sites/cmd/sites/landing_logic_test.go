@@ -14,6 +14,7 @@ import (
 
 type landingRow struct {
 	Slug          string `json:"slug"`
+	Name          string `json:"name"`
 	URL           string `json:"url"`
 	Visibility    string `json:"visibility"`
 	CreatedBy     string `json:"createdBy"`
@@ -104,6 +105,7 @@ func rows(count int) []landingRow {
 	for i := range result {
 		result[i] = landingRow{
 			Slug:          "site-" + string(rune('a'+i)),
+			Name:          "Site " + string(rune('A'+i)),
 			URL:           "https://example.test/" + string(rune('a'+i)),
 			Visibility:    "public",
 			CreatedBy:     "owner",
@@ -297,15 +299,15 @@ func TestReduceResetsOnlyQueryAndSortPages(t *testing.T) {
 func TestLandingControllerRendersAndWiresControls(t *testing.T) {
 	// R-863D-5EDF
 	input := []landingRow{
-		{Slug: "zebra", URL: "/zebra", Visibility: "private", CreatedBy: "zoe", CreatedAt: "Yesterday", CreatedAtSort: "2026-01-02T00:00:00Z"},
-		{Slug: "alpha", URL: "/alpha", Visibility: "unlisted", CreatedBy: "amy", CreatedAt: "Today", CreatedAtSort: "2026-01-03T00:00:00Z"},
+		{Slug: "zebra", Name: "Zebra Site", URL: "/zebra", Visibility: "private", CreatedBy: "zoe", CreatedAt: "Yesterday", CreatedAtSort: "2026-01-02T00:00:00Z"},
+		{Slug: "alpha", Name: "Alpha Site", URL: "/alpha", Visibility: "unlisted", CreatedBy: "amy", CreatedAt: "Today", CreatedAtSort: "2026-01-03T00:00:00Z"},
 	}
 	var got struct {
 		ClassName       string
 		ControlsHidden  bool
 		NoMatchHidden   bool
 		RowCount        int
-		FirstSlug       string
+		FirstName       string
 		FirstURL        string
 		FirstVisibility string
 		Sort            string
@@ -322,13 +324,13 @@ func TestLandingControllerRendersAndWiresControls(t *testing.T) {
 	    ControlsHidden: Object.prototype.hasOwnProperty.call(nodes.controls.attributes, "hidden"),
 	    NoMatchHidden: noMatch,
 	    RowCount: nodes.body.children.length,
-	    FirstSlug: first.children[0].children[0].textContent,
+	    FirstName: first.children[0].children[0].textContent,
 	    FirstURL: first.children[0].children[0].href,
 	    FirstVisibility: first.children[1].children[0].textContent,
 	    Sort: nodes.name.attributes["aria-sort"]
 	  };
 	}())`, &got)
-	if got.ClassName != "js" || got.ControlsHidden || !got.NoMatchHidden || got.RowCount != 2 || got.FirstSlug != "alpha" || got.FirstURL != "/alpha" || got.FirstVisibility != "unlisted" || got.Sort != "ascending" {
+	if got.ClassName != "js" || got.ControlsHidden || !got.NoMatchHidden || got.RowCount != 2 || got.FirstName != "Alpha Site" || got.FirstURL != "/alpha" || got.FirstVisibility != "unlisted" || got.Sort != "ascending" {
 		t.Fatalf("controller view = %#v, want rendered, searchable, sortable DOM state", got)
 	}
 }

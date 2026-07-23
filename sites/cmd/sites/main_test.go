@@ -242,8 +242,8 @@ func TestWWWLandingRendersExistingSites(t *testing.T) {
 		Service: "sites",
 		Version: "phase18-test",
 		Sites: []siteRow{
-			{Slug: "atlas", Visibility: "public", CreatedBy: "alice@example.com", CreatedAt: "2026-07-08T14:15:16Z"},
-			{Slug: "vault", Visibility: "private", CreatedBy: "bob@example.com", CreatedAt: "2026-07-09T01:02:03Z"},
+			{Slug: "atlas", Name: "Atlas", Visibility: "public", CreatedBy: "alice@example.com", CreatedAt: "2026-07-08T14:15:16Z"},
+			{Slug: "vault", Name: "Vault", Visibility: "private", CreatedBy: "bob@example.com", CreatedAt: "2026-07-09T01:02:03Z"},
 		},
 	})
 	if err != nil {
@@ -253,11 +253,11 @@ func TestWWWLandingRendersExistingSites(t *testing.T) {
 
 	// R-RAW6-IUN5
 	for _, want := range []string{
-		"atlas",
+		"Atlas",
 		"public",
 		"alice@example.com",
 		"2026-07-08T14:15:16Z",
-		"vault",
+		"Vault",
 		"private",
 		"bob@example.com",
 		"2026-07-09T01:02:03Z",
@@ -343,7 +343,7 @@ func TestWWWLandingRendersProgressiveControlMarkup(t *testing.T) {
 
 	// R-IG4E-HEOE
 	for _, want := range []string{
-		`<th scope="col" data-sort-key="name">Slug</th>`,
+		`<th scope="col" data-sort-key="name">Name</th>`,
 		`<th scope="col" data-sort-key="createdBy">Creator</th>`,
 		`<th scope="col" data-sort-key="createdAt">Created</th>`,
 	} {
@@ -373,18 +373,33 @@ func TestWWWLandingRendersProgressiveControlMarkup(t *testing.T) {
 
 func TestWWWLandingPlacesEnhancementsAfterTheTable(t *testing.T) {
 	rec := httptest.NewRecorder()
-	if err := loadWWW(t).Render(rec, "landing.html", landingView{Sites: []siteRow{{Slug: "atlas"}}}); err != nil {
+	if err := loadWWW(t).Render(rec, "landing.html", landingView{Sites: []siteRow{{Slug: "atlas", Name: "Atlas"}}}); err != nil {
 		t.Fatalf("render landing.html with a site: %v", err)
 	}
 	body := rec.Body.String()
 
 	// R-83NK-DUW1
+	// R-ZGWN-ZZDW
+	lead := strings.Index(body, "Hosts file-backed static websites and serves them through the suite gateway.")
 	controls := strings.Index(body, `class="controls js-only" hidden`)
 	table := strings.Index(body, `<table class="site-table">`)
 	noMatch := strings.Index(body, `class="no-match js-only" hidden`)
 	pager := strings.Index(body, `class="pager js-only" hidden`)
-	if controls < 0 || table < 0 || noMatch < 0 || pager < 0 || !(controls < table && table < noMatch && noMatch < pager) {
+	if lead < 0 || controls < 0 || table < 0 || noMatch < 0 || pager < 0 || !(lead < controls && controls < table && table < noMatch && noMatch < pager) {
 		t.Fatalf("progressive controls are not ordered lead < controls < table < no-match < pager:\n%s", body)
+	}
+	for _, want := range []string{
+		`<th scope="col" data-sort-key="name">Name</th>`,
+		`<th scope="col">Visibility</th>`,
+		`<th scope="col" data-sort-key="createdBy">Creator</th>`,
+		`<th scope="col" data-sort-key="createdAt">Created</th>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing HTML missing table header %q:\n%s", want, body)
+		}
+	}
+	if regexp.MustCompile(`<th[^>]*>Slug</th>`).MatchString(body) || regexp.MustCompile(`<th[^>]*data-sort-key="visibility"`).MatchString(body) {
+		t.Fatalf("landing HTML exposes a Slug header or sortable Visibility header:\n%s", body)
 	}
 
 	// R-84VG-RMMQ
@@ -452,8 +467,11 @@ func TestWWWLandingRendersStaticWebsiteHostCopy(t *testing.T) {
 	}
 }
 
-func TestLandingHandlerLinksSlugsToVisibilityURLs(t *testing.T) {
-	store := newLandingTestStore(t, landingSeed{name: "X", public: true}, landingSeed{name: "Y", public: false})
+func TestLandingHandlerLinksNamesToSlugVisibilityURLs(t *testing.T) {
+	store := newLandingTestStore(t,
+		landingSeed{name: "X Site", slug: "x-site", visibility: sitesdomain.Public},
+		landingSeed{name: "Y Site", slug: "y-site", visibility: sitesdomain.Private},
+	)
 	baseURL := "https://suite.example/srv/sites/"
 	rec := httptest.NewRecorder()
 
@@ -461,16 +479,18 @@ func TestLandingHandlerLinksSlugsToVisibilityURLs(t *testing.T) {
 	body := rec.Body.String()
 
 	// R-WMWB-7EWX
+	// R-ZJCG-RIVA
 	for _, want := range []string{
-		`<td data-label="Slug"><a href="https://suite.example/srv/sites/public/X/">X</a></td>`,
-		`<td data-label="Slug"><a href="https://suite.example/srv/sites/private/Y/">Y</a></td>`,
+		`<td data-label="Name"><a href="https://suite.example/srv/sites/public/x-site/">X Site</a></td>`,
+		`<td data-label="Name"><a href="https://suite.example/srv/sites/private/y-site/">Y Site</a></td>`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("landing HTML missing slug link %q in:\n%s", want, body)
+			t.Fatalf("landing HTML missing name link %q in:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, `href="https://suite.example/srv/sites/public/Y/"`) ||
-		strings.Contains(body, `href="https://suite.example/srv/sites/private/X/"`) {
+	if strings.Contains(body, `href="https://suite.example/srv/sites/public/y-site/"`) ||
+		strings.Contains(body, `href="https://suite.example/srv/sites/private/x-site/"`) ||
+		strings.Contains(body, `>x-site</a>`) || strings.Contains(body, `>y-site</a>`) {
 		t.Fatalf("landing HTML mixed visibility tiers between rows:\n%s", body)
 	}
 }
@@ -1220,6 +1240,8 @@ func landingData(service, version string) landingView {
 
 type landingSeed struct {
 	name       string
+	slug       string
+	ownerEmail string
 	public     bool
 	visibility sitesdomain.Visibility
 	createdAt  string
@@ -1241,6 +1263,14 @@ func newLandingTestStore(t *testing.T, seeds ...landingSeed) *sitesdomain.Store 
 		t.Fatalf("migrate test db: %v", err)
 	}
 	for _, seed := range seeds {
+		slug := seed.slug
+		if slug == "" {
+			slug = seed.name
+		}
+		ownerEmail := seed.ownerEmail
+		if ownerEmail == "" {
+			ownerEmail = seed.name + "@example.com"
+		}
 		visibility := sitesdomain.Private
 		if seed.visibility != "" {
 			visibility = seed.visibility
@@ -1254,11 +1284,11 @@ func newLandingTestStore(t *testing.T, seeds ...landingSeed) *sitesdomain.Store 
 		_, err := conn.ExecContext(context.Background(),
 			`INSERT INTO sites (slug, name, source_path, visibility, owner_id, owner_email, created_at, updated_at)
 			 VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
-			seed.name,
+			slug,
 			seed.name,
 			visibility,
-			"id-"+seed.name,
-			seed.name+"@example.com",
+			"id-"+slug,
+			ownerEmail,
 			createdAt,
 			createdAt,
 		)
