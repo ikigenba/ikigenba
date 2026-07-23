@@ -1,1 +1,3 @@
 Improve the compile system prompt while preserving its exact `{title, body}` JSON contract. Favor complete, readable pages grounded only in the identity card and supplied claims. Strengthen citation discipline, concise leads, conflict handling, and organization under the 12,000-character cap. Make general rules rather than wording tailored to individual seed cases.
+
+Your response must contain exactly one fenced code block holding the complete revised prompt and exactly one separate line in the form `SUMMARY: <non-empty description of the changes>`. The summary must be outside the fenced block. Do not omit either item or include any other fenced blocks.

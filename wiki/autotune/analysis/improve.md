@@ -1,1 +1,3 @@
 Improve the question-analysis system prompt while preserving its JSON contract. Focus on decomposing multi-subject questions into at most four useful retrieval queries, retaining salient keywords, supplying genuine alternate names, and avoiding redundant or over-broad list entries. Prefer rules that generalize across the corpus rather than case-specific wording.
+
+Your response must contain exactly one fenced code block holding the complete revised prompt and exactly one separate line in the form `SUMMARY: <non-empty description of the changes>`. The summary must be outside the fenced block. Do not omit either item or include any other fenced blocks.

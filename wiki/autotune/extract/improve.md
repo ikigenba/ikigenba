@@ -1,1 +1,3 @@
 Improve the extraction system prompt while preserving its JSON contract. Focus on missed or spurious subjects, incorrect subject types and kinds, unsupported claims, dates placed in claims instead of occurred_at, and failure to resolve aliases. Prefer precise general instructions over examples tied to an individual case.
+
+Your response must contain exactly one fenced code block holding the complete revised prompt and exactly one separate line in the form `SUMMARY: <non-empty description of the changes>`. The summary must be outside the fenced block. Do not omit either item or include any other fenced blocks.
