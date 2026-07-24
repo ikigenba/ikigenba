@@ -43,6 +43,42 @@ deploy with `IKIGENBA_DOMAIN` missing fails loudly (the apex block needs it for
 That file is managed out of repo in `~/projects/metaspot`, so setting it is a
 manual operator prerequisite, not something this repo's green gate can verify.
 
+## Parked Front Door
+
+The parked front door is a one-time install for the live box's non-apex
+registered domains. It commits the source files in `parked/`, but does not add an
+`opsctl` verb or app deploy step. Issue the shared parked certificate first, then
+install the config and page:
+
+```sh
+CERTBOT_EMAIL=<operator-email>
+
+ssh int "sudo certbot certonly --webroot -w /var/lib/letsencrypt --cert-name parked \
+  -d ikigenba.com -d ikigenba.dev -d logic-refinery.com \
+  -d logic-refinery.io -d logic-refinery.net -d logic-refinery.tv \
+  -d metaspot.net -d metaspot.org -d michaelgreenly.com \
+  --non-interactive --agree-tos -m \"$CERTBOT_EMAIL\" \
+  --deploy-hook \"systemctl reload nginx\""
+
+scp parked/index.html parked/nginx.conf int:/tmp/
+ssh int 'sudo install -d -m 0755 -o root -g root /var/www/parked && \
+  sudo install -m 0644 -o root -g root /tmp/index.html /var/www/parked/index.html && \
+  sudo install -m 0644 -o root -g root /tmp/nginx.conf /etc/nginx/conf.d/parked.conf && \
+  sudo nginx -t && \
+  sudo systemctl reload nginx'
+```
+
+After reload, confirm drift and the default-server response:
+
+```sh
+scp int:/etc/nginx/conf.d/parked.conf /tmp/parked.conf.live
+scp int:/var/www/parked/index.html /tmp/parked.index.live
+diff -u parked/nginx.conf /tmp/parked.conf.live
+diff -u parked/index.html /tmp/parked.index.live
+curl -k -sS --resolve logic-refinery.com:443:$(ssh int "hostname -I | awk '{print \$1}'") \
+  https://logic-refinery.com/
+```
+
 ## Deploying opsctl Itself
 
 `opsctl` is the on-box CLI, **not** one of the release-versioned apps: it has no

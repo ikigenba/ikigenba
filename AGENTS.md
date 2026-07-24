@@ -46,6 +46,7 @@ it. If unsure which subfolder a task belongs to, ask; do not default to the root
 | **opsctl** | **On-box CLI**: stage/deploy/rollback/prune/status/provision/backup. Installed to `/usr/local/bin/opsctl`. |
 | **bin** | Repo-root operator scripts: off-box build/version tooling (`ship`, `bump`, `start`, `stop`, `create-migration`). |
 | **nginx** | Local-dev front door on **:8080** mirroring prod `/srv/<svc>/` routing (`./run`). |
+| **parked** | Committed `default_server` nginx config and static parking page for live non-apex domains. |
 | **docs** | Suite-level docs: deployment ADR, versioning, runbooks, event-plane protocol. |
 | **sops** | Standard operating procedures for agents (e.g. seeding secrets). Check here first. |
 | **design** | The shared Carbon design-system reference (tokens, example). |
