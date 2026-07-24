@@ -9,4 +9,6 @@ loop **deletes** that phase's line and its `phase-NN.md` — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 47
+Next phase: 48
+
+- Phase 47 ⬜ realizes R-JTBA-4RDB, R-SVPV-O479, R-SWXS-1VXY, R-SY5O-FNON, R-SZDK-TFFC, R-T0LH-7761, R-T1TD-KYWQ, R-T319-YQNF, R-T496-CIE4, R-T6OZ-41VI, R-T7WV-HTM7 — OpenAI subscription auth: the `auth` config key end to end

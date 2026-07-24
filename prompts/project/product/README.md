@@ -27,7 +27,8 @@ Sibling services on the box are the second consumer: their daemons hand prompts 
 **In scope:**
 
 - **Multi-provider support over a curated model catalog.** Any prompt may target any of the five providers the published agentkit supports: `anthropic`, `openai`, `google`, `zai`, `openrouter` — the last opening up the OpenRouter-hosted vendors (Grok, DeepSeek, Kimi). The model is required on every prompt and must be one the agentkit model catalog lists; the provider is optional — when omitted it is the model's catalog default — but stays settable to deliberately reach a model through an alternate provider the catalog supports.
-- **Full generation and retry tuning via a config object.** Alongside provider and model, a prompt may carry an optional structured config object with any of these keys: `temperature`, `top_p`, `max_tokens`, `effort`, `thinking_budget`, `thinking_level`, `thinking`, `max_attempts`, `base_delay`, `max_delay`, `max_elapsed`, `ignore_retry_after`, `tool_loop_limit`, `base_url`. Unset keys use the agentkit's defaults; keys that do not apply to the chosen model are silently ignored by the agentkit.
+- **Full generation and retry tuning via a config object.** Alongside provider and model, a prompt may carry an optional structured config object with any of these keys: `temperature`, `top_p`, `max_tokens`, `effort`, `thinking_budget`, `thinking_level`, `thinking`, `max_attempts`, `base_delay`, `max_delay`, `max_elapsed`, `ignore_retry_after`, `tool_loop_limit`, `base_url`, `auth`. Unset keys use the agentkit's defaults; keys that do not apply to the chosen model are silently ignored by the agentkit.
+- **OpenAI work can run on the ChatGPT subscription.** Any OpenAI-backed prompt or service completion may set `auth: "sub"` to authenticate with the account's ChatGPT subscription instead of the metered API key; the default (`auth` unset or `"key"`) remains the API key, and nothing changes for existing configs. The subscription credential is a file the operator provisions once by logging in; producing that file (the login flow) is out of scope — prompts consumes it, keeps it fresh, and rejects subscription-configured work up front with a clear error while the file is absent. Subscription auth applies to sessions and completions only; embeddings always use the API key.
 - **Config update with full-replacement semantics.** Updating a prompt's config replaces the entire config object. To keep a value, re-specify it; omitting a key removes it and reverts it to the agentkit default.
 - **Validation at create/update time.** A model outside the catalog, a provider that cannot serve the chosen model, or a reasoning setting (effort, thinking level, thinking budget, thinking on/off) the chosen model does not accept is rejected immediately with a clear error naming what the model does accept. A run is never started with a config that cannot be resolved.
 - **Discoverable inventory.** The service's own documentation surface lists every available model — per provider, with each model's reasoning options — generated from the same catalog that validation enforces, so what the doc offers and what validation accepts can never disagree.
@@ -62,13 +63,19 @@ The five valid provider names, exactly as the agentkit recognises them:
 anthropic   openai   google   zai   openrouter
 ```
 
-The eleven optional config keys, exactly as named:
+The fifteen optional config keys, exactly as named:
 
 ```
 temperature   top_p   max_tokens   effort
 thinking_budget   thinking_level   thinking
 max_attempts   base_delay   max_delay   max_elapsed
-ignore_retry_after   tool_loop_limit   base_url
+ignore_retry_after   tool_loop_limit   base_url   auth
+```
+
+The two authentication mode names the `auth` key accepts, exactly as named:
+
+```
+key   sub
 ```
 
 These names are promises — the design must use them verbatim in the MCP tool schema and in stored JSON.
@@ -105,6 +112,8 @@ writes to the share is as real as what the owner puts there: it persists, it
 syncs, and it can set the next workflow in motion.
 
 **A run discovers suite tools as it needs them.** The in-run agent starts each run knowing what the account's services offer — a compact, per-service catalog — and brings the specific tools a task needs into play on demand. An event-triggered run still follows its event's identifiers to the right service's tools; a run that touches no suite service carries no suite tool definitions at all. Which services a run may reach is unchanged (all of them except prompts itself, on the owner's behalf), and a service that is down simply doesn't appear, exactly as before.
+
+**OpenAI inference can bill the subscription instead of the meter.** An owner marks an OpenAI-backed prompt — or a service marks its completion — with `auth: "sub"` and it runs against the account's ChatGPT subscription; leaving `auth` unset (or `"key"`) keeps today's API-key behavior exactly. If the operator has not yet provisioned the subscription credential, creating or running subscription-configured work fails immediately with an error saying what is missing — never a silent fallback to the key. Embedding work is unaffected by `auth` and always uses the API key.
 
 **A sibling service gets its inference from prompts.** A service daemon on the box submits a completion — its own prompt text, a catalog model, its tuning, optionally a prior exchange to continue — and receives the model's reply, token usage, and cost in the same request. Embeddings work the same way: a batch of texts in, vectors and cost out. The service holds no provider key and builds no LLM plumbing; a bad model choice or malformed request is refused immediately with an error that names the problem.
 
@@ -145,3 +154,5 @@ syncs, and it can set the next workflow in motion.
 - The owner asks for inference totals grouped by workload name over a time window and gets counts, tokens, and cost that add up to the individual records — with every wiki-style service workload recognizable as its own group.
 - Within the retention window the owner opens one recorded completion and reads the exact request and response text; after the window the same record still shows every metric but reports its bodies as pruned.
 - With concurrency caps in place, a burst of simultaneously triggered runs executes without exceeding the configured limits, every run still completes, and a service's synchronous completion still gets through while sessions are saturated.
+- A prompt or completion configured with `auth: "sub"` on an OpenAI model executes against the ChatGPT subscription when the operator-provisioned credential is present, and is rejected with an error naming the missing credential when it is not; the same config with `auth` unset behaves exactly as today.
+- A config combining `auth: "sub"` with a non-OpenAI provider, an unknown `auth` value, or a custom `base_url` is rejected at create/update with a clear error.
