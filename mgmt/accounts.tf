@@ -1,10 +1,5 @@
 locals {
   member_accounts = {
-    prod = {
-      name  = "Production"
-      email = "mgreenly+aws.prod@gmail.com"
-      admin = true
-    }
     int = {
       name  = "int"
       email = "mgreenly+int@gmail.com"
