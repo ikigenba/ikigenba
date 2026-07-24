@@ -40,7 +40,11 @@ Shared facts every Decision leans on:
   Shell tooling in `bin/` (`bump`, `ship`, `push-secrets`, …) is deliberately
   **untested** — the former `bin/test` + `bin/*.test.sh` tier was removed
   (commit `019a99ee`; nothing automated ran it) — and is instead verified once,
-  manually, outside the build loop, when created or changed.
+  manually, outside the build loop, when created or changed. The same holds for
+  **static committed artifacts at repo root that no module owns** (`parked/`,
+  D13): the gate has no faithful assertion to make about them, so their phases
+  carry structural exit conditions and their real behavior is verified on the box
+  outside the loop.
 - **New dependency.** `golang.org/x/mod/semver` (added to `opsctl/go.mod`) is the
   sole SemVer 2.0 authority — no hand-rolled version parsing survives this design
   (`x/*` deps are in policy; the suite already vendors `golang.org/x/text`).
@@ -108,5 +112,14 @@ Decisions; recorded here so the *why* survives:
 - **Backup automation → scheduled, restore interactive** (D09). One 3 AM
   America/Chicago systemd timer drives the `opsctl backup --all` box sweep
   (per-service stop·snapshot·start, fail-soft); restore is never scheduled.
+- **Non-apex hosts → a committed parked page installed by runbook, not by
+  `opsctl`** (D13). The parking answer is two static files and one certificate on
+  the single box those domains point at. Putting it in `opsctl` would compile a
+  domain portfolio into app-agnostic tooling; putting it in `init-box` would make
+  every future customer box request certificates for domains resolving elsewhere
+  and fail provisioning. Committed artifacts plus a `deploy.md` runbook keep it
+  reproducible across a rebuild without touching provisioning at all. The
+  certificate is one `parked` lineage over nine names, deliberately excluding the
+  one domain not on auto-renew, so a lapse cannot fail the shared renewal.
 
 No open decisions remain.

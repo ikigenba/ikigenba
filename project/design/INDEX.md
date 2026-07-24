@@ -19,6 +19,7 @@ ids change.
 - **D10** → `project/design/D10.md` — stage / deploy / rollback / prune orchestration — ids: R-84VR-7U2K, R-863N-LLT9, R-87BJ-ZDJY, R-88JG-D5AN, R-89RC-QX1C, R-8AZ9-4OS1, R-8C75-IGIQ
 - **D11** → `project/design/D11.md` — The env contract: portable authored `manifest.env` + `IKIGENBA_ROOT` path composition + reduced verb set — ids: R-8DF1-W89F, R-8EMY-A004, R-8FUU-NRQT, R-8H2R-1JHI, R-8IAN-FB87
 - **D12** → `project/design/D12.md` — Per-app secrets parameters, pushed from `.envrc` — ids: none (untested-by-decision `bin/` tooling + an already-live external contract; verified once outside the loop)
+- **D13** → `project/design/D13.md` — The parked `default_server` front door for non-apex hosts — ids: none (two static committed files + an operator runbook; the real-CA/real-nginx claim is verified once outside the loop)
 
 ## Verification ids → Decision
 

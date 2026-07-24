@@ -100,6 +100,11 @@ prompts, wiki, cron, gmail, scripts, sites, webhooks, github, repos):
   the rest of the tree stays private to the service.
 - A **one-time, safe migration** of the existing live box from the old layout to
   the new one — including retiring the old `data/` and `backups/` locations.
+- **A deliberate answer for hosts that are not this account's apex.** A box
+  answers on its account's apex domain, but other names can resolve to its
+  address — other registrations in the operator's portfolio, or a bare IP. What
+  such a request gets back is stated on purpose rather than left to fall through
+  to whichever service happened to be configured first.
 - **Uniform secrets delivery**: every service's deployed secrets are seeded with
   the same single workstation command, and the set of secrets a service gets on
   the box is exactly the set its local development environment declares — local
@@ -118,6 +123,14 @@ Out of scope — nothing else is promised here:
   kind**. Only durable state is preserved, only off-box; everything a service can
   rebuild on boot is intentionally excluded, and nothing on local disk is a backup
   of record.
+- **No website hosting for the operator's other domains.** The answer given to a
+  non-apex host is one fixed page, the same for every such host. There is no
+  per-domain content, no redirect destinations, no templating, and no management
+  surface. Hosting real content is what the `sites` service is for.
+- **No change to how a box is provisioned.** Answering non-apex hosts is an
+  operator step applied to the one box whose address those domains point at. It
+  is never part of provisioning, so a box that has no such domains is unaffected
+  and provisioning behaves exactly as before.
 
 ## Contractual constants
 
@@ -189,6 +202,18 @@ Fixed, promised values the design must use verbatim and never re-derive:
 - **The live box migrates safely.** Moving the existing box to the new layout is a
   one-time, non-destructive, re-runnable step that drops no data and leaves a
   bootable service even if interrupted.
+- **A non-apex host gets a plain parked page, not a service.** A request whose
+  host is not the account's apex — another of the operator's registered domains,
+  or the box's bare address — is answered with one small fixed page saying the
+  visitor is in the wrong place. It is a normal successful page, not an error.
+  The account's own apex is untouched and keeps serving the dashboard and its
+  services exactly as before, and a parked host is never routed to any service.
+- **The parked answer is secured for the domains worth securing.** Domains the
+  operator intends to keep are reachable over HTTPS with a valid certificate,
+  renewing on the same unattended schedule as the apex certificate and surviving
+  a box rebuild through the same backup. A domain the operator is letting lapse
+  is deliberately left out of that certificate: it still gets the page over plain
+  HTTP, and its expiry can never take HTTPS down for the domains that were kept.
 - **Secrets are seeded one way, per app, from what local dev already declares.**
   One workstation command seeds (or re-seeds) any service's deployed secrets;
   the keys it pushes are exactly the keys the service's local environment
@@ -245,6 +270,14 @@ tooling:
 - Running the one-time migration against an old-layout box produces a working
   new-layout service with its data intact — old `data/` and `backups/` locations
   retired — and running it again changes nothing.
+- Requesting one of the operator's kept parked domains over HTTPS, with normal
+  certificate validation, returns a successful page carrying the parked message;
+  requesting the domain deliberately excluded from the certificate returns the
+  same page over plain HTTP; and requesting the box by its bare address returns
+  the page rather than a service.
+- With the parked answer live, the account's apex still serves the dashboard and
+  every `/srv/<svc>/` service over valid TLS exactly as it did before, and a
+  provisioning run on a box with no parked domains is unchanged.
 - For **any** deployable service, one workstation command seeds its deployed
   secrets; afterward the service, restarted, runs with exactly the secret keys
   its local development environment declares — no more, no fewer — and every

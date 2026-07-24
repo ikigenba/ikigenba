@@ -12,4 +12,6 @@ done marker; done is deleted, and history lives in git. This file carries no
 bare status glyph outside phase lines, so the anchored grep matches only
 phase lines.
 
-Next phase: 51
+Next phase: 52
+
+- Phase 51 ⬜ realizes D13 — commit the parked front-door artifacts (`parked/nginx.conf`, `parked/index.html`) and the `deploy.md` install runbook
