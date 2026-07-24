@@ -26,7 +26,7 @@ func tool(verb string) string { return toolPrefix + verb }
 // and reflection are supplied by appkit/mcp and must not be declared here.
 func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 	tools := []appkitmcp.Tool{
-		desc(tool("describe"), "Return a detailed overview of prompts: what a prompt vs a run is, the create→run→poll→read lifecycle, full concurrency, the per-run sandbox, and LogRecord JSONL run output. Config requires model; provider is optional and defaults from the model catalog, or may select an alternate anthropic, openai, google, zai, or openrouter route. Optional keys tune sampling (temperature, top_p), output size (max_tokens), reasoning (effort, thinking_budget, thinking_level, thinking), retry/backoff behavior (max_attempts, base_delay, max_delay, max_elapsed, ignore_retry_after), tool loops (tool_loop_limit), and provider endpoint override (base_url). Call this first if you're unfamiliar with prompts. Takes no inputs.", obj(map[string]any{}),
+		desc(tool("describe"), "Return a detailed overview of prompts: what a prompt vs a run is, the create→run→poll→read lifecycle, full concurrency, the per-run sandbox, and LogRecord JSONL run output. Config requires model; provider is optional and defaults from the model catalog, or may select an alternate anthropic, openai, google, zai, or openrouter route. Optional keys tune sampling (temperature, top_p), output size (max_tokens), reasoning (effort, thinking_budget, thinking_level, thinking), retry/backoff behavior (max_attempts, base_delay, max_delay, max_elapsed, ignore_retry_after), tool loops (tool_loop_limit), provider endpoint override (base_url), and credential mode (auth). Call this first if you're unfamiliar with prompts. Takes no inputs.", obj(map[string]any{}),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				return toolDescribe()
 			}),
@@ -603,6 +603,7 @@ func configSchema() map[string]any {
 		"ignore_retry_after": typ("boolean"),
 		"tool_loop_limit":    typ("integer"),
 		"base_url":           typ("string"),
+		"auth":               typ("string"),
 	}, "model")
 }
 
@@ -648,6 +649,7 @@ type configInput struct {
 	IgnoreRetryAfter bool     `json:"ignore_retry_after"`
 	ToolLoopLimit    int      `json:"tool_loop_limit"`
 	BaseURL          string   `json:"base_url"`
+	Auth             string   `json:"auth"`
 }
 
 func (c configInput) toConfig() prompt.Config {
@@ -668,6 +670,7 @@ func (c configInput) toConfig() prompt.Config {
 		IgnoreRetryAfter: c.IgnoreRetryAfter,
 		ToolLoopLimit:    c.ToolLoopLimit,
 		BaseURL:          c.BaseURL,
+		Auth:             c.Auth,
 	}
 }
 

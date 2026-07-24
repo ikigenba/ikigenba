@@ -40,6 +40,7 @@ type Config struct {
 
 	ToolLoopLimit int    `json:"tool_loop_limit,omitempty"`
 	BaseURL       string `json:"base_url,omitempty"`
+	Auth          string `json:"auth,omitempty"`
 }
 
 type Message struct {
@@ -74,14 +75,15 @@ type ProviderFactory func(prompt.Config, func(string) string) (agentkit.Provider
 
 // Executor runs and records stateless inference calls.
 type Executor struct {
-	store         CallStore
-	gate          *admit.Gate
-	buildProvider ProviderFactory
-	getenv        func(string) string
+	store            CallStore
+	gate             *admit.Gate
+	buildProvider    ProviderFactory
+	getenv           func(string) string
+	subAuthAvailable func() bool
 }
 
-func NewExecutor(store CallStore, gate *admit.Gate, build ProviderFactory, getenv func(string) string) *Executor {
-	return &Executor{store: store, gate: gate, buildProvider: build, getenv: getenv}
+func NewExecutor(store CallStore, gate *admit.Gate, build ProviderFactory, getenv func(string) string, subAuthAvailable func() bool) *Executor {
+	return &Executor{store: store, gate: gate, buildProvider: build, getenv: getenv, subAuthAvailable: subAuthAvailable}
 }
 
 // CompleteHandler returns the synchronous, tool-less completion endpoint.
@@ -108,7 +110,7 @@ func (e *Executor) complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, err := prompt.ValidateConfig(req.promptConfig(), e.getenv)
+	cfg, err := prompt.ValidateConfig(req.promptConfig(), e.getenv, e.subAuthAvailable)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -205,6 +207,7 @@ func (r Request) promptConfig() prompt.Config {
 		MaxAttempts: r.Config.MaxAttempts, BaseDelay: r.Config.BaseDelay,
 		MaxDelay: r.Config.MaxDelay, MaxElapsed: r.Config.MaxElapsed,
 		IgnoreRetryAfter: r.Config.IgnoreRetryAfter, BaseURL: r.Config.BaseURL,
+		Auth: r.Config.Auth,
 	}
 }
 

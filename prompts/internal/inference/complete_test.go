@@ -100,6 +100,28 @@ func TestCompleteRejectsInvalidModelRoutingAndReasoningWithoutRecording(t *testi
 	}
 }
 
+func TestCompleteCarriesSubscriptionAuthToProviderFactory(t *testing.T) {
+	// R-T1TD-KYWQ
+	store := newTestStore(t)
+	fake := &fakeProvider{result: roundTrip("subscription reply", agentkit.Usage{Total: 1}, nil)}
+	var got prompt.Config
+	build := func(cfg prompt.Config, _ func(string) string) (agentkit.Provider, error) {
+		got = cfg
+		return fake, nil
+	}
+	executor := NewExecutor(store, admit.New(2, 2), build, func(string) string { return "" }, func() bool { return true })
+	req := validRequest()
+	req.Model = "gpt-5.5"
+	req.Config.Auth = "sub"
+	recorder := postComplete(t, executor.CompleteHandler(), req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if got.Auth != "sub" || got.Provider != "openai" || got.Model != req.Model {
+		t.Fatalf("factory config = %#v, want openai subscription config", got)
+	}
+}
+
 func TestCompleteRejectsInvalidEnvelopeWithoutRecording(t *testing.T) {
 	// R-5U0Z-O90V
 	cases := []struct {
@@ -220,7 +242,7 @@ func validRequest() Request {
 func testHandler(store CallStore, provider agentkit.Provider) http.Handler {
 	build := func(prompt.Config, func(string) string) (agentkit.Provider, error) { return provider, nil }
 	getenv := func(string) string { return "test-key" }
-	return NewExecutor(store, admit.New(2, 2), build, getenv).CompleteHandler()
+	return NewExecutor(store, admit.New(2, 2), build, getenv, func() bool { return false }).CompleteHandler()
 }
 
 func newTestStore(t *testing.T) *calls.Store {

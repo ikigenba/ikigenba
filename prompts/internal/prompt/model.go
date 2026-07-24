@@ -57,6 +57,7 @@ type Config struct {
 
 	ToolLoopLimit int    `json:"tool_loop_limit,omitempty"`
 	BaseURL       string `json:"base_url,omitempty"`
+	Auth          string `json:"auth,omitempty"`
 }
 
 // Prompt mirrors the prompts table; Config is carried parsed.

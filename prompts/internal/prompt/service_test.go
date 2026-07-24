@@ -254,7 +254,7 @@ func TestValidateConfigRejectsUnsupportedProviderFirst(t *testing.T) {
 	_, err := ValidateConfig(Config{Provider: "bogus", Model: testAnthropicModel}, func(key string) string {
 		t.Fatalf("getenv should not be called for unsupported provider, got %q", key)
 		return ""
-	})
+	}, subAuthUnavailable)
 	ve := requireValidationError(t, err)
 	if !strings.Contains(ve.Error(), `provider "bogus"`) {
 		t.Fatalf("error = %q, want unsupported provider detail", ve.Error())
@@ -264,13 +264,13 @@ func TestValidateConfigRejectsUnsupportedProviderFirst(t *testing.T) {
 func TestValidateConfigChecksModelAgainstSelectedProvider(t *testing.T) {
 	// R-JWYZ-A2LE
 	env := fakeEnv(map[string]string{"ANTHROPIC_API_KEY": "sk-test", "OPENAI_API_KEY": "sk-test"})
-	_, err := ValidateConfig(Config{Provider: "anthropic", Model: testOpenAIModel}, env)
+	_, err := ValidateConfig(Config{Provider: "anthropic", Model: testOpenAIModel}, env, subAuthUnavailable)
 	ve := requireValidationError(t, err)
 	if !strings.Contains(ve.Error(), "does not route model") {
 		t.Fatalf("error = %q, want provider/model mismatch detail", ve.Error())
 	}
 
-	if _, err := ValidateConfig(Config{Provider: "openai", Model: testOpenAIModel}, env); err != nil {
+	if _, err := ValidateConfig(Config{Provider: "openai", Model: testOpenAIModel}, env, subAuthUnavailable); err != nil {
 		t.Fatalf("openai %s should validate with OPENAI_API_KEY: %v", testOpenAIModel, err)
 	}
 }
@@ -280,7 +280,7 @@ func TestValidateConfigRejectsUnknownModelBeforeMissingAPIKey(t *testing.T) {
 	_, err := ValidateConfig(Config{Provider: "openai", Model: "not-a-real-" + "model"}, func(key string) string {
 		t.Fatalf("getenv should not be called for an unsupported model, got %q", key)
 		return ""
-	})
+	}, subAuthUnavailable)
 	ve := requireValidationError(t, err)
 	if !strings.Contains(ve.Error(), `unknown prompt model "not-a-real-model"`) {
 		t.Fatalf("error = %q, want unsupported model detail", ve.Error())
@@ -292,7 +292,7 @@ func TestValidateConfigRejectsShortModelAliasBeforeMissingAPIKey(t *testing.T) {
 	_, err := ValidateConfig(Config{Provider: "anthropic", Model: "son" + "net"}, func(key string) string {
 		t.Fatalf("getenv should not be called for a short model alias, got %q", key)
 		return ""
-	})
+	}, subAuthUnavailable)
 	ve := requireValidationError(t, err)
 	if !strings.Contains(ve.Error(), `unknown prompt model "sonnet"`) {
 		t.Fatalf("error = %q, want short alias rejection detail", ve.Error())
@@ -320,7 +320,7 @@ func TestValidateConfigAcceptsSupportedProvidersWithInjectedKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := ValidateConfig(tt.cfg, env); err != nil {
+			if _, err := ValidateConfig(tt.cfg, env, subAuthUnavailable); err != nil {
 				t.Fatalf("validateConfig(%+v): %v", tt.cfg, err)
 			}
 		})
@@ -345,7 +345,7 @@ func TestValidateConfigUsesProviderSpecificEnvVar(t *testing.T) {
 			_, err := ValidateConfig(tt.cfg, func(key string) string {
 				requested = append(requested, key)
 				return ""
-			})
+			}, subAuthUnavailable)
 			ve := requireValidationError(t, err)
 			if len(requested) != 1 || requested[0] != tt.envVar {
 				t.Fatalf("getenv calls = %v, want [%s]", requested, tt.envVar)
@@ -371,7 +371,7 @@ func TestValidateConfigAcceptsKnownModelWithOnlyProviderKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ValidateConfig(tt.cfg, fakeEnv(map[string]string{tt.envVar: "sk-test"}))
+			_, err := ValidateConfig(tt.cfg, fakeEnv(map[string]string{tt.envVar: "sk-test"}), subAuthUnavailable)
 			if err != nil {
 				t.Fatalf("validateConfig(%+v) with %s set: %v", tt.cfg, tt.envVar, err)
 			}
@@ -391,7 +391,7 @@ func TestValidateConfigDerivesCatalogDefaultProvider(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
-			got, err := ValidateConfig(Config{Model: tt.model}, fakeEnv(map[string]string{tt.envVar: "sk-test"}))
+			got, err := ValidateConfig(Config{Model: tt.model}, fakeEnv(map[string]string{tt.envVar: "sk-test"}), subAuthUnavailable)
 			if err != nil {
 				t.Fatalf("validateConfig: %v", err)
 			}
@@ -404,7 +404,7 @@ func TestValidateConfigDerivesCatalogDefaultProvider(t *testing.T) {
 
 func TestValidateConfigRejectsCatalogRouteMismatch(t *testing.T) {
 	// R-1PVJ-3H4J
-	_, err := ValidateConfig(Config{Provider: "google", Model: testAnthropicSonnet}, fakeEnv(map[string]string{"GEMINI_API_KEY": "sk-test"}))
+	_, err := ValidateConfig(Config{Provider: "google", Model: testAnthropicSonnet}, fakeEnv(map[string]string{"GEMINI_API_KEY": "sk-test"}), subAuthUnavailable)
 	ve := requireValidationError(t, err)
 	if !strings.Contains(ve.Error(), `provider "google"`) || !strings.Contains(ve.Error(), testAnthropicSonnet) {
 		t.Fatalf("error = %q, want provider and model", ve.Error())
@@ -413,7 +413,7 @@ func TestValidateConfigRejectsCatalogRouteMismatch(t *testing.T) {
 
 func TestValidateConfigRejectsUnknownEnumReasoningLevel(t *testing.T) {
 	// R-1R3F-H8V8
-	_, err := ValidateConfig(Config{Model: testAnthropicSonnet, Effort: "ultra"}, fakeEnv(map[string]string{"ANTHROPIC_API_KEY": "sk-test"}))
+	_, err := ValidateConfig(Config{Model: testAnthropicSonnet, Effort: "ultra"}, fakeEnv(map[string]string{"ANTHROPIC_API_KEY": "sk-test"}), subAuthUnavailable)
 	ve := requireValidationError(t, err)
 	if !strings.Contains(ve.Error(), testAnthropicSonnet) || !strings.Contains(ve.Error(), "levels") {
 		t.Fatalf("error = %q, want model and accepted levels", ve.Error())
@@ -423,7 +423,7 @@ func TestValidateConfigRejectsUnknownEnumReasoningLevel(t *testing.T) {
 func TestValidateConfigRejectsOutOfRangeThinkingBudget(t *testing.T) {
 	// R-1SBB-V0LX
 	budget := 1_000_000
-	_, err := ValidateConfig(Config{Model: "gemini-2.5-pro", ThinkingBudget: &budget}, fakeEnv(map[string]string{"GEMINI_API_KEY": "sk-test"}))
+	_, err := ValidateConfig(Config{Model: "gemini-2.5-pro", ThinkingBudget: &budget}, fakeEnv(map[string]string{"GEMINI_API_KEY": "sk-test"}), subAuthUnavailable)
 	ve := requireValidationError(t, err)
 	if !strings.Contains(ve.Error(), "gemini-2.5-pro") || !strings.Contains(ve.Error(), "32768") {
 		t.Fatalf("error = %q, want model and catalog budget range", ve.Error())
@@ -436,7 +436,7 @@ func TestValidateConfigRejectsDisablingRequiredReasoning(t *testing.T) {
 	_, err := ValidateConfig(Config{Model: "claude-fable-5", Thinking: &thinking}, fakeEnv(map[string]string{
 		"ANTHROPIC_API_KEY":  "sk-test",
 		"OPENROUTER_API_KEY": "sk-test",
-	}))
+	}), subAuthUnavailable)
 	ve := requireValidationError(t, err)
 	if !strings.Contains(ve.Error(), "cannot be disabled") || !strings.Contains(ve.Error(), "claude-fable-5") {
 		t.Fatalf("error = %q, want non-disableable model detail", ve.Error())
@@ -445,7 +445,7 @@ func TestValidateConfigRejectsDisablingRequiredReasoning(t *testing.T) {
 
 func TestValidateConfigAcceptsNativeReasoningControl(t *testing.T) {
 	// R-1UR4-MK3B
-	got, err := ValidateConfig(Config{Model: testAnthropicSonnet, Effort: "high"}, fakeEnv(map[string]string{"ANTHROPIC_API_KEY": "sk-test"}))
+	got, err := ValidateConfig(Config{Model: testAnthropicSonnet, Effort: "high"}, fakeEnv(map[string]string{"ANTHROPIC_API_KEY": "sk-test"}), subAuthUnavailable)
 	if err != nil {
 		t.Fatalf("validateConfig accepted catalog level: %v", err)
 	}
@@ -456,10 +456,59 @@ func TestValidateConfigAcceptsNativeReasoningControl(t *testing.T) {
 
 func TestValidateConfigRequiresOpenRouterAPIKey(t *testing.T) {
 	// R-1VZ1-0BU0
-	_, err := ValidateConfig(Config{Model: "grok-4.5"}, fakeEnv(nil))
+	_, err := ValidateConfig(Config{Model: "grok-4.5"}, fakeEnv(nil), subAuthUnavailable)
 	ve := requireValidationError(t, err)
 	if !strings.Contains(ve.Error(), "OPENROUTER_API_KEY") {
 		t.Fatalf("error = %q, want OPENROUTER_API_KEY", ve.Error())
+	}
+}
+
+func TestValidateConfigRejectsUnknownAuthMode(t *testing.T) {
+	// R-SVPV-O479
+	_, err := ValidateConfig(Config{Model: testOpenAIModel, Auth: "oauth"}, fakeEnv(map[string]string{"OPENAI_API_KEY": "key"}), func() bool { return true })
+	var validationErr *ValidationError
+	if !errors.As(err, &validationErr) || !strings.Contains(err.Error(), `""`) ||
+		!strings.Contains(err.Error(), `"key"`) || !strings.Contains(err.Error(), `"sub"`) {
+		t.Fatalf("error = %T %v, want ValidationError naming auth vocabulary", err, err)
+	}
+}
+
+func TestValidateConfigRejectsSubscriptionAuthForNonOpenAIProvider(t *testing.T) {
+	// R-SWXS-1VXY
+	_, err := ValidateConfig(Config{Model: testAnthropicModel, Auth: "sub"}, fakeEnv(nil), func() bool { return true })
+	var validationErr *ValidationError
+	if !errors.As(err, &validationErr) || !strings.Contains(err.Error(), "sub") ||
+		!strings.Contains(err.Error(), "openai") || !strings.Contains(err.Error(), "anthropic") {
+		t.Fatalf("error = %T %v, want ValidationError naming auth and providers", err, err)
+	}
+}
+
+func TestValidateConfigRejectsSubscriptionAuthWithBaseURL(t *testing.T) {
+	// R-SY5O-FNON
+	_, err := ValidateConfig(Config{Model: testOpenAIModel, Auth: "sub", BaseURL: "https://example.test"}, fakeEnv(nil), func() bool { return true })
+	var validationErr *ValidationError
+	if !errors.As(err, &validationErr) || !strings.Contains(err.Error(), "base_url") {
+		t.Fatalf("error = %T %v, want ValidationError naming base_url", err, err)
+	}
+}
+
+func TestValidateConfigRequiresSubscriptionCredentialFile(t *testing.T) {
+	// R-SZDK-TFFC
+	_, err := ValidateConfig(Config{Model: testOpenAIModel, Auth: "sub"}, fakeEnv(nil), func() bool { return false })
+	var validationErr *ValidationError
+	if !errors.As(err, &validationErr) || !strings.Contains(err.Error(), "PROMPTS_OPENAI_AUTH_PATH") {
+		t.Fatalf("error = %T %v, want ValidationError naming credential path", err, err)
+	}
+}
+
+func TestValidateConfigSubscriptionAuthDoesNotRequireAPIKey(t *testing.T) {
+	// R-T0LH-7761
+	got, err := ValidateConfig(Config{Model: testOpenAIModel, Auth: "sub"}, fakeEnv(nil), func() bool { return true })
+	if err != nil {
+		t.Fatalf("ValidateConfig: %v", err)
+	}
+	if got.Provider != "openai" || got.Auth != "sub" {
+		t.Fatalf("config = %#v, want derived openai subscription auth", got)
 	}
 }
 
@@ -511,6 +560,8 @@ func TestServiceCreateAndUpdatePreserveValidatedProvider(t *testing.T) {
 func fakeEnv(values map[string]string) func(string) string {
 	return func(key string) string { return values[key] }
 }
+
+func subAuthUnavailable() bool { return false }
 
 func requireValidationError(t *testing.T, err error) *ValidationError {
 	t.Helper()
@@ -898,7 +949,7 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 	}
 	// The imported prompt must be runnable: its config must validate exactly as
 	// Create requires (model resolves to an Anthropic model, key present).
-	if _, err := ValidateConfig(p.Config, os.Getenv); err != nil {
+	if _, err := ValidateConfig(p.Config, os.Getenv, subAuthUnavailable); err != nil {
 		t.Fatalf("imported prompt config does not validate (run would reject it): %v", err)
 	}
 	if p.Config.Provider != "anthropic" {
@@ -918,7 +969,7 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 		t.Fatalf("re-import did not update user_prompt: %q", p2.UserPrompt)
 	}
 	// Config survives the re-import (a re-pull is a body refresh, not a config change).
-	if _, err := ValidateConfig(p2.Config, os.Getenv); err != nil {
+	if _, err := ValidateConfig(p2.Config, os.Getenv, subAuthUnavailable); err != nil {
 		t.Fatalf("re-imported prompt config does not validate: %v", err)
 	}
 	list, err := store.ListPrompts(ctx, ownerA)

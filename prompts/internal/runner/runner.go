@@ -78,6 +78,12 @@ func New(store *prompt.Store, sb *sandbox.Manager, gate *admit.Gate, ttl time.Du
 	}
 }
 
+// SetProviderFactory installs the process-wide provider builder assembled by
+// the composition root.
+func (r *Runner) SetProviderFactory(build func(prompt.Config, func(string) string) (agentkit.Provider, error)) {
+	r.buildProvider = build
+}
+
 // Spawn starts the run on a goroutine and returns immediately. The runner reads
 // its execution inputs from runs/<run.ID>/input/ on disk (pinned by the service
 // before spawn) — never from a live Prompt, so a mid-run edit/delete of the

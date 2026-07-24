@@ -2,11 +2,11 @@ package prompt
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
 func TestConfigJSONCarriesProviderModelAndGenerationControls(t *testing.T) {
-	// R-JTBA-4RDB
 	temp := 0.7
 	topP := 0.9
 	budget := 4096
@@ -76,7 +76,6 @@ func TestConfigJSONCarriesRetryLoopAndProviderTuning(t *testing.T) {
 }
 
 func TestConfigJSONOmitsUnsetOptionalFieldsAndPreservesExplicitValues(t *testing.T) {
-	// R-JTBA-4RDB
 	// R-JUJ6-IJ40
 	// R-JZES-1M2S
 	temp := 0.0
@@ -122,6 +121,29 @@ func TestConfigJSONOmitsUnsetOptionalFieldsAndPreservesExplicitValues(t *testing
 	}
 	if string(withoutProvider) != `{"model":"gpt-5.5"}` {
 		t.Fatalf("config without provider = %s, want provider omitted", withoutProvider)
+	}
+}
+
+func TestConfigJSONRoundTripPreservesEveryOptionalKey(t *testing.T) {
+	// R-JTBA-4RDB
+	temp, topP, budget, thinking := 0.7, 0.9, 4096, false
+	want := Config{
+		Provider: "openai", Model: "gpt-5.4",
+		Temperature: &temp, TopP: &topP, MaxTokens: 8192,
+		Effort: "high", ThinkingBudget: &budget, ThinkingLevel: "medium", Thinking: &thinking,
+		MaxAttempts: 5, BaseDelay: "500ms", MaxDelay: "10s", MaxElapsed: "1m",
+		IgnoreRetryAfter: true, ToolLoopLimit: 42, BaseURL: "https://example.test/v1", Auth: "sub",
+	}
+	raw, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var got Config
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("round trip = %#v, want %#v", got, want)
 	}
 }
 

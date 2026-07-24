@@ -254,6 +254,7 @@ func TestConfigSchemaIncludesProviderModelAndOptionalExpansion(t *testing.T) {
 		"ignore_retry_after": "boolean",
 		"tool_loop_limit":    "integer",
 		"base_url":           "string",
+		"auth":               "string",
 	}
 	for key, wantType := range wantTypes {
 		prop, ok := properties[key].(map[string]any)
@@ -421,6 +422,7 @@ func TestDescribeDescriptorDocumentsExpandedConfigAndJSONL(t *testing.T) {
 		"ignore_retry_after",
 		"tool_loop_limit",
 		"base_url",
+		"auth",
 		"sampling",
 		"retry/backoff",
 		"LogRecord JSONL",

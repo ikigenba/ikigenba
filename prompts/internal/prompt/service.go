@@ -53,16 +53,20 @@ type Service struct {
 	// NewService parameter, so every existing NewService call site and test stays
 	// untouched. nil unless wired (only Import uses it).
 	Fetcher ContentFetcher
+	// SubAuthAvailable probes the optional OpenAI subscription credential.
+	// It is field-injected by the composition root and defaults to unavailable.
+	SubAuthAvailable func() bool
 }
 
 // NewService wires the store, sandbox manager, run-logs base dir, and runner.
 func NewService(store *Store, sb *sandbox.Manager, runsDir string, runner Runner) *Service {
 	return &Service{
-		store:   store,
-		sandbox: sb,
-		runsDir: runsDir,
-		runner:  runner,
-		now:     func() time.Time { return time.Now().UTC() },
+		store:            store,
+		sandbox:          sb,
+		runsDir:          runsDir,
+		runner:           runner,
+		now:              func() time.Time { return time.Now().UTC() },
+		SubAuthAvailable: func() bool { return false },
 	}
 }
 
@@ -109,7 +113,7 @@ var providerEnvVars = map[string]string{
 // injected so tests can exercise the key contract without mutating the process
 // environment. The returned config differs only when the catalog supplies an
 // omitted provider.
-func ValidateConfig(c Config, getenv func(string) string) (Config, error) {
+func ValidateConfig(c Config, getenv func(string) string, subAuthAvailable func() bool) (Config, error) {
 	entry, ok := catalog.Lookup(c.Model)
 	if !ok || entry.Pricing == nil {
 		return Config{}, validationErrf("invalid config: unknown prompt model %q", c.Model)
@@ -152,6 +156,25 @@ func ValidateConfig(c Config, getenv func(string) string) (Config, error) {
 		}
 	}
 
+	switch c.Auth {
+	case "", "key":
+	case "sub":
+		if c.Provider != "openai" {
+			return Config{}, validationErrf("invalid config: auth %q requires provider %q, got %q", c.Auth, "openai", c.Provider)
+		}
+		if c.BaseURL != "" {
+			return Config{}, validationErrf("invalid config: auth %q cannot be combined with base_url", c.Auth)
+		}
+		if subAuthAvailable == nil || !subAuthAvailable() {
+			return Config{}, validationErrf("invalid config: auth %q requires PROMPTS_OPENAI_AUTH_PATH or the state-dir default auth.json", c.Auth)
+		}
+	default:
+		return Config{}, validationErrf("invalid config: auth must be one of %q, %q, or %q", "", "key", "sub")
+	}
+
+	if c.Auth == "sub" {
+		return c, nil
+	}
 	if getenv(envVar) == "" {
 		return Config{}, validationErrf("invalid config: %s is not set", envVar)
 	}
@@ -162,7 +185,7 @@ func ValidateConfig(c Config, getenv func(string) string) (Config, error) {
 // created here — it is per-run, created at Run time keyed by run_id.
 // Config.Provider is validated against the configured model and preserved.
 func (s *Service) Create(ctx context.Context, ownerID, ownerEmail string, in CreateInput) (Prompt, error) {
-	cfg, err := ValidateConfig(in.Config, os.Getenv)
+	cfg, err := ValidateConfig(in.Config, os.Getenv, s.SubAuthAvailable)
 	if err != nil {
 		return Prompt{}, err
 	}
@@ -245,7 +268,7 @@ func (s *Service) Import(ctx context.Context, ownerID, ownerEmail, sourcePath, n
 	// Seed a valid default config so the imported prompt is runnable. Config is
 	// left as-is on a re-import (the upsert refreshes name + user_prompt only), so
 	// this default only takes effect on the first import.
-	cfg, err := ValidateConfig(Config{Model: importDefaultModel}, os.Getenv)
+	cfg, err := ValidateConfig(Config{Model: importDefaultModel}, os.Getenv, s.SubAuthAvailable)
 	if err != nil {
 		return Prompt{}, err
 	}
@@ -300,7 +323,7 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 	if err != nil {
 		return Prompt{}, err
 	}
-	cfg, err := ValidateConfig(in.Config, os.Getenv)
+	cfg, err := ValidateConfig(in.Config, os.Getenv, s.SubAuthAvailable)
 	if err != nil {
 		return Prompt{}, err
 	}

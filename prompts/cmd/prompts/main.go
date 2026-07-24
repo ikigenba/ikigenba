@@ -184,7 +184,9 @@ func registerRoutes(rt *appkit.Router) error {
 		return fmt.Errorf("PROMPTS_MAX_CONCURRENT_RUNS must be a positive integer")
 	}
 	gate := admit.New(callCap, runCap)
-	completion := inference.NewExecutor(callStore, gate, provider.Build, os.Getenv)
+	subAuth := provider.NewSubAuth(provider.ResolveAuthPath(os.Getenv))
+	buildProvider := provider.NewBuilder(subAuth)
+	completion := inference.NewExecutor(callStore, gate, buildProvider, os.Getenv, subAuth.Available)
 	embedding := inference.NewEmbedExecutor(callStore, gate, provider.BuildEmbedder, os.Getenv)
 
 	// PROMPTS_RUN_TTL bounds each run's wall-clock — the runaway-goroutine backstop
@@ -224,7 +226,9 @@ func registerRoutes(rt *appkit.Router) error {
 	}
 	dropboxBase := dropboxBaseURL(os.Getenv)
 	run := runner.New(store, sb, gate, runTTL, manifestRoot, func(port int) bool { return allowedPorts[port] }, dropboxBase)
+	run.SetProviderFactory(buildProvider)
 	svc := prompt.NewService(store, sb, runsDir, run)
+	svc.SubAuthAvailable = subAuth.Available
 	// Wire the dropbox loopback content fetcher for the import verb. DROPBOX_BASE_URL
 	// is env-only (defaulting through the shared registry), the same
 	// loopback-URL-via-env shape notify uses for its feed URLs. Field-injected so
