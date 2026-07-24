@@ -5,16 +5,6 @@ locals {
       email = "mgreenly+aws.prod@gmail.com"
       admin = true
     }
-    test = {
-      name  = "Test"
-      email = "mgreenly+aws.test@gmail.com"
-      admin = true
-    }
-    sandbox = {
-      name  = "Sandbox"
-      email = "mgreenly+aws.sandbox@gmail.com"
-      admin = true
-    }
     int = {
       name  = "int"
       email = "mgreenly+int@gmail.com"
