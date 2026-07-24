@@ -211,9 +211,11 @@ Fixed, promised values the design must use verbatim and never re-derive:
 - **The parked answer is secured for the domains worth securing.** Domains the
   operator intends to keep are reachable over HTTPS with a valid certificate,
   renewing on the same unattended schedule as the apex certificate and surviving
-  a box rebuild through the same backup. A domain the operator is letting lapse
-  is deliberately left out of that certificate: it still gets the page over plain
-  HTTP, and its expiry can never take HTTPS down for the domains that were kept.
+  a box rebuild through the same backup. Every host is sent to HTTPS, so a domain
+  the operator is letting lapse — deliberately left out of that certificate —
+  effectively goes dark rather than showing the page, which is the intended
+  outcome for a domain being abandoned. What the exclusion buys is containment:
+  that domain's expiry can never take HTTPS down for the domains that were kept.
 - **Secrets are seeded one way, per app, from what local dev already declares.**
   One workstation command seeds (or re-seeds) any service's deployed secrets;
   the keys it pushes are exactly the keys the service's local environment
@@ -271,10 +273,12 @@ tooling:
   new-layout service with its data intact — old `data/` and `backups/` locations
   retired — and running it again changes nothing.
 - Requesting one of the operator's kept parked domains over HTTPS, with normal
-  certificate validation, returns a successful page carrying the parked message;
-  requesting the domain deliberately excluded from the certificate returns the
-  same page over plain HTTP; and requesting the box by its bare address returns
-  the page rather than a service.
+  certificate validation, returns a successful page carrying the parked message.
+  The domain deliberately excluded from the certificate is redirected to HTTPS
+  like every other host and then fails certificate validation, so it shows no
+  page at all. The box's bare address is likewise redirected to HTTPS and fails
+  validation, since an address can never match a certificate name; behind that
+  failure it is the parked page, not a service, that is being served.
 - With the parked answer live, the account's apex still serves the dashboard and
   every `/srv/<svc>/` service over valid TLS exactly as it did before, and a
   provisioning run on a box with no parked domains is unchanged.

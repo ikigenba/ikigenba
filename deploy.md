@@ -68,15 +68,50 @@ ssh int 'sudo install -d -m 0755 -o root -g root /var/www/parked && \
   sudo systemctl reload nginx'
 ```
 
-After reload, confirm drift and the default-server response:
+After reload, confirm the installed bytes match source:
 
 ```sh
 scp int:/etc/nginx/conf.d/parked.conf /tmp/parked.conf.live
 scp int:/var/www/parked/index.html /tmp/parked.index.live
 diff -u parked/nginx.conf /tmp/parked.conf.live
 diff -u parked/index.html /tmp/parked.index.live
-curl -k -sS --resolve logic-refinery.com:443:$(ssh int "hostname -I | awk '{print \$1}'") \
-  https://logic-refinery.com/
+```
+
+Then run the verification checklist (D13). **Never pass `curl -k` here**: these
+checks exist to prove the certificate is valid, and `-k` would report success
+while the wrong certificate is served — the exact failure this work fixes. All
+nine certificate names resolve to the box in public DNS, so no `--resolve` is
+needed either.
+
+```sh
+# 1. Two certificate names answer with the page over VALIDATED TLS.
+#    metaspot.org is the permanent anchor and must always be one of them.
+for d in metaspot.org logic-refinery.net; do
+  printf '%-22s ' "$d"
+  curl -sS -o /dev/null -w '%{http_code} %{ssl_verify_result}\n' "https://$d/"
+done   # expect: 200 0
+
+# 2. The EXCLUDED domain must still FAIL validation. It is redirected to HTTPS
+#    like every other host, so it shows no page at all — that is intended.
+curl -sS -o /dev/null -w 'http  %{http_code} -> %{redirect_url}\n' http://ikigai-group.io/
+curl -sS -o /dev/null -w 'https %{http_code}\n' https://ikigai-group.io/ \
+  && echo 'FAIL: ikigai-group.io validated — it must NOT be in the parked cert' \
+  || echo 'ok: ikigai-group.io fails validation as designed'
+
+# 3. The bare IP gets the page — proves default_server selection, not name match.
+curl -sS http://16.59.0.148/ -o /dev/null -w 'bare-ip %{http_code} -> %{redirect_url}\n'
+curl -sSk https://16.59.0.148/ | grep -c droids   # expect 1 (-k is correct here:
+                                                  # an IP can never match a SAN)
+
+# 4. Non-interference: the apex still serves the dashboard and a /srv/ route,
+#    both over validated TLS.
+curl -sS -o /dev/null -w 'apex     %{http_code} %{ssl_verify_result}\n' \
+  https://int.ikigenba.com/
+curl -sS -o /dev/null -w 'srv/crm  %{http_code} %{ssl_verify_result}\n' \
+  https://int.ikigenba.com/srv/crm/    # 401/403 is fine — it must not be 200 droids
+
+# 5. Exactly two lineages, and the parked one names exactly the nine domains.
+ssh int 'sudo certbot certificates'
 ```
 
 ## Deploying opsctl Itself
