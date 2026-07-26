@@ -13,10 +13,15 @@ an event-plane **consumer** (of `webhooks`) and **producer** (session outcomes o
 
 ## How changes are made
 
-Changes go through the spec under `project/`, not direct edits, settle the spec,
-then let the build loop realize it. Edit code directly only on explicit operator
-instruction. See the `$ikispec` skill for the `project/` spec contracts and
-`$ralph` for the unattended build workflow.
+Changes go through the spec under `project/`, not direct edits — settle the
+spec, then let the build loop realize it. The spec itself is direction-gated:
+`project/**` is written only inside an operator-invoked move (the `$open-spec`
+→ `$grill-me` → `$seal-spec` arc, or the build loop's completion mutations).
+In any other session `project/` is read-only reference — a stale or wrong spec
+is a finding to report, not a license to edit, and a settled discussion is not
+direction: say what should change and wait. Edit code directly only on
+explicit operator instruction. See the `$ikispec` skill for the `project/`
+spec contracts and `$ralph` for the unattended build workflow.
 
 ## Layout
 

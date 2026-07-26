@@ -114,9 +114,18 @@ forward-only by the appkit runner. Two hard rules:
 > ⚠️ A subproject with a `project/` tree is **spec-governed**: its source is
 > produced only by its build loop from `project/design` + `project/plan`. Do not
 > hand-edit governed code, templates, migrations, or config directly, not even a
-> one-line fix. Amend the spec (`$open-spec` → `$seal-spec`) and let the loop
-> build it. The only exception is an explicit operator instruction to edit a
-> **named file**; a broad ask is a spec change. If unsure, ask before writing.
+> one-line fix. Amend the spec and let the loop build it. The only exception is
+> an explicit operator instruction to edit a **named file**; a broad ask is a
+> spec change. If unsure, ask before writing.
+
+The spec itself is **direction-gated**: `project/**` is written only inside an
+operator-invoked move (the `$open-spec` → `$grill-me` → `$seal-spec` arc, or the
+build loop's completion mutations). In any other session `project/` is read-only
+reference — a stale or wrong spec is a finding to report, not a license to edit,
+and a settled discussion is not direction: say what should change and wait. This
+holds for the suite-level `project/` at the root and for every subproject's.
+See the `$ikispec` skill for the `project/` spec contracts and `$ralph` for the
+unattended build workflow.
 
 ## Designing and planning work
 
