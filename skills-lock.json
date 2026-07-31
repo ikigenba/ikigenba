@@ -1,12 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "author-ikispec": {
-      "source": "ikigenba/skills",
-      "sourceType": "github",
-      "skillPath": "author-ikispec/SKILL.md",
-      "computedHash": "efd4467e90cdeea6f505fe841255b62183ce16f0415f0bf9c014522fca0325e4"
-    },
     "create-audit-prompts": {
       "source": "ikigenba/skills",
       "sourceType": "github",
@@ -29,31 +23,25 @@
       "source": "ikigenba/skills",
       "sourceType": "github",
       "skillPath": "grill-me/SKILL.md",
-      "computedHash": "fbd09a1fb7deceaa0241db1df5c2fa4ecbc92f94505e18e4671af728ea986d59"
-    },
-    "grillme": {
-      "source": "ikigenba/skills",
-      "sourceType": "github",
-      "skillPath": "grillme/SKILL.md",
-      "computedHash": "62db5f8257f60ac30901b6e450e541cb52c5eeeb4a49dee944e672ab1533f19e"
+      "computedHash": "ee717769c68570c9db1e4d5bf4993a19f8654fe25360814466e1000e5f65f58e"
     },
     "ikispec": {
       "source": "ikigenba/skills",
       "sourceType": "github",
       "skillPath": "ikispec/SKILL.md",
-      "computedHash": "194f9c615effb8a60e86f061b0f4e2eb121e2b3fbbea9fceb041e750989972e3"
+      "computedHash": "98113bbbde8938c9b349eac54fea0bb5853d839562b5f531c27497df37abb46a"
     },
     "open-spec": {
       "source": "ikigenba/skills",
       "sourceType": "github",
       "skillPath": "open-spec/SKILL.md",
-      "computedHash": "fcd9f82ffd4cabf6f9892f497c4b218dafa03c6a54d69e1267b67e6223284fc9"
+      "computedHash": "3841eb55eb10faeab7a37091623520ffea2d1bf5a86c08d49e92d3f1300cc6f2"
     },
     "ralph": {
       "source": "ikigenba/skills",
       "sourceType": "github",
       "skillPath": "ralph/SKILL.md",
-      "computedHash": "6d25e5418ef1a2176d14a01946594f2238a9bb928dc59e04a27421073cea52bd"
+      "computedHash": "03b91a5a2c89ecad019dcad83165b53bb17218f59dcebf7043ac5d2847cb056b"
     },
     "seal-spec": {
       "source": "ikigenba/skills",
