@@ -69,11 +69,16 @@ work and commit it. You do **not** decide completeness and you do **not** touch
   `bin/test` + `bin/*.test.sh` tier was removed (commit `019a99ee`; nothing
   automated ran it). Prove a shell-tool phase with the exact structural checks
   its "Done when" names (executable bit, `bash -n`, precise grep counts), never
-  by inventing a test file for it.
+  by inventing a test file for it. The same holds for **static committed
+  artifacts at repo root that no module owns** (e.g. `parked/`, D13): the gate
+  has no faithful assertion to make about them, so their phases carry
+  structural exit conditions only, and their real on-box behavior is verified
+  once, manually, outside the loop.
 - **Test placement (enforce this).** Unit tests are **co-located** with the code
   they exercise — a package-local `*_test.go` named for the behavior. **Never**
   gather tests into a per-phase or root-level Go test file, and never write a
-  test file for `bin/` shell tooling.
+  test file for `bin/` shell tooling or for the static committed artifacts
+  (e.g. `parked/`) that no module owns.
 - **Determinism / testability seams.** opsctl roots every filesystem op at a
   configurable base (`OPSCTL_ROOT`, default `/opt`) and a parallel `SysRoot`
   (default `/`), so the layout is exercised against a temp dir with no real box.

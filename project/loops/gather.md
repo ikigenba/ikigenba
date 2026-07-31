@@ -47,8 +47,8 @@ not ask questions.
       `grep -n R-XXXX-XXXX project/design/INDEX.md`.)
    3. Determine the **ids to cover**: exactly the `R-XXXX-XXXX` ids the phase's
       body / *Done when* lists — a **slice** of a Decision's Verification ids,
-      **never all of them**. A structural phase (like Phases 48/49, which realize
-      D12 — a Decision that mints **no** ids) owns none.
+      **never all of them**. A structural phase (one realizing a Decision that
+      mints **no** ids, e.g. D4, D12, or D13) owns none.
    4. For each realized Decision, copy its **full design prose verbatim** from the
       `DNN.md` — the Decision statement, the shape/signatures, and the rejected
       alternatives — but **omit that Decision's Verification list** (build must
@@ -98,7 +98,8 @@ R-XXXX-XXXX — <full requirement text copied verbatim from the Decision's Verif
 exact commands, exact grep/match counts, and "the suite is green" — `go test
 ./...` from the repo root exits 0. Tests are co-located `*_test.go` files in
 the package they exercise, named for the behavior; shell tooling under `bin/`
-is deliberately untested by Convention and is instead proven by the phase's
+and static committed artifacts no module owns (e.g. `parked/`) are
+deliberately untested by Convention and are instead proven by the phase's
 structural checks (e.g. `test -x`, `bash -n`, exact grep counts). Never a
 per-phase or root-level test file.>
 
