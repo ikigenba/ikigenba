@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	appkitdb "appkit/db"
 	"appkit/manifest"
 )
 
@@ -63,7 +64,9 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 }
 
 // R-4LKF-FB23
-func TestPromptsBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
+func TestPromptsBootsWithDurableUnifiedRunDirectoryThatSurvivesRestart(t *testing.T) {
+	// R-ZMJ5-6QEW
+	// R-ZNR1-KI5L
 	root := t.TempDir()
 	appRoot := filepath.Join(root, "prompts")
 	stateDir := filepath.Join(appRoot, "state")
@@ -178,7 +181,12 @@ func TestPromptsBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	defer stopProcess(cancel, done)
+	firstStopped := false
+	defer func() {
+		if !firstStopped {
+			stopProcess(cancel, done)
+		}
+	}()
 
 	doc := waitForHealth(t, port, done, &stdout, &stderr)
 	if got := doc["service"]; got != "prompts" {
@@ -199,16 +207,131 @@ func TestPromptsBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	if filepath.Dir(generationPath) != cacheDir {
 		t.Fatalf("generation sidecar path %s is not under cache dir %s", generationPath, cacheDir)
 	}
-	if info, err := os.Stat(filepath.Join(stateDir, "sandboxes")); err != nil {
-		t.Fatalf("prompts did not create sandboxes under state/: %v", err)
-	} else if !info.IsDir() {
-		t.Fatalf("sandboxes path is not a directory")
-	}
-	if info, err := os.Stat(filepath.Join(cacheDir, "runs")); err != nil {
-		t.Fatalf("prompts did not create runs under cache/: %v", err)
+	runsDir := filepath.Join(stateDir, "runs")
+	if info, err := os.Stat(runsDir); err != nil {
+		t.Fatalf("prompts did not create runs under state/: %v", err)
 	} else if !info.IsDir() {
 		t.Fatalf("runs path is not a directory")
 	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "runs")); !os.IsNotExist(err) {
+		t.Fatalf("cache runs path exists or could not be checked: %v", err)
+	}
+
+	// Stop after the first successful startup, then put a completed run record
+	// and its full artifact tree where the composition root says they belong.
+	stopProcess(cancel, done)
+	firstStopped = true
+	runID := "run-durable-smoke"
+	runDir := filepath.Join(runsDir, runID)
+	wantFiles := map[string][]byte{
+		filepath.Join("input", "config.json"):       []byte("{\"model\":\"test\"}\n"),
+		filepath.Join("input", "user_prompt.txt"):   []byte("durable user prompt\n"),
+		filepath.Join("input", "system_prompt.txt"): []byte("durable system prompt\n"),
+		"output.jsonl": []byte("{\"type\":\"assistant\",\"text\":\"durable output\"}\n"),
+		filepath.Join("sandbox", "survives-restart"): []byte("durable sandbox\n"),
+	}
+	for name, content := range wantFiles {
+		path := filepath.Join(runDir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir artifact parent for %s: %v", name, err)
+		}
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatalf("write artifact %s: %v", name, err)
+		}
+	}
+	conn, err := appkitdb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open migrated prompts DB: %v", err)
+	}
+	if _, err := conn.ExecContext(t.Context(), `
+		INSERT INTO runs (id, prompt_id, owner_id, owner_email, status, started_at, ended_at, log_path)
+		VALUES (?, ?, ?, ?, 'succeeded', ?, ?, ?)`,
+		runID, "prompt-durable-smoke", "client-durable-smoke", "durable@example.com",
+		"2026-08-03T00:00:00Z", "2026-08-03T00:00:01Z", filepath.Join(runDir, "output.jsonl")); err != nil {
+		conn.Close()
+		t.Fatalf("insert completed run: %v", err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close prompts DB: %v", err)
+	}
+
+	// A second composition-root startup against the same state must preserve
+	// every byte and continue serving the persisted output through run_output.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	var stdout2, stderr2 bytes.Buffer
+	cmd2 := exec.CommandContext(ctx2, run, "serve")
+	cmd2.Env = cmd.Env
+	cmd2.Stdout = &stdout2
+	cmd2.Stderr = &stderr2
+	if err := cmd2.Start(); err != nil {
+		t.Fatalf("restart prompts: %v", err)
+	}
+	done2 := make(chan error, 1)
+	go func() { done2 <- cmd2.Wait() }()
+	defer stopProcess(cancel2, done2)
+	waitForHealth(t, port, done2, &stdout2, &stderr2)
+	for name, want := range wantFiles {
+		got, err := os.ReadFile(filepath.Join(runDir, name))
+		if err != nil {
+			t.Fatalf("read artifact %s after restart: %v", name, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("artifact %s changed across restart: got %q want %q", name, got, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "runs", runID)); !os.IsNotExist(err) {
+		t.Fatalf("run artifact appeared under generation cache: %v", err)
+	}
+	if got := runOutputOverMCP(t, port, runID); got != string(wantFiles["output.jsonl"]) {
+		t.Fatalf("run_output after restart = %q, want %q", got, wantFiles["output.jsonl"])
+	}
+}
+
+func runOutputOverMCP(t *testing.T, port int, runID string) string {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "run_output",
+			"arguments": map[string]any{"run_id": runID},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal run_output request: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/mcp", port), bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("new run_output request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Owner-Id", "client-durable-smoke")
+	req.Header.Set("X-Owner-Email", "durable@example.com")
+	req.Header.Set("X-Client-Id", "client-durable-smoke")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("call run_output after restart: %v", err)
+	}
+	defer resp.Body.Close()
+	var rpc struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+		Error any `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rpc); err != nil {
+		t.Fatalf("decode run_output response: %v", err)
+	}
+	if rpc.Error != nil {
+		t.Fatalf("run_output RPC error: %#v", rpc.Error)
+	}
+	if len(rpc.Result.Content) != 1 {
+		t.Fatalf("run_output content = %#v", rpc.Result.Content)
+	}
+	return rpc.Result.Content[0].Text
 }
 
 func newIdleFeedServer(t *testing.T) *httptest.Server {

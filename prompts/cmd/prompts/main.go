@@ -197,22 +197,16 @@ func registerRoutes(rt *appkit.Router) error {
 		return err
 	}
 
-	// PROMPTS_DB_PATH is appkit's state DB path. Sandboxes are durable state
-	// beside it; runs are boot-recreated scratch under the generation cache.
+	// PROMPTS_DB_PATH is appkit's state DB path. Every artifact for a run lives
+	// together in the durable runs tree beside it.
 	dbPath := config.EnvOr(os.Getenv, "PROMPTS_DB_PATH", "./tmp/prompts.db")
-	generationPath := config.EnvOr(os.Getenv, "PROMPTS_GENERATION_PATH", filepath.Join(filepath.Dir(dbPath), "prompts.db.generation"))
 	// PROMPTS_MANIFEST_ROOT is the box inventory root the runner reads at run
 	// spawn to discover the suite's other loopback MCP services (Surface 2 —
 	// in-run suite tools). Defaults to /opt, the on-box layout root.
 	manifestRoot := config.EnvOr(os.Getenv, "PROMPTS_MANIFEST_ROOT", "/opt")
 	stateDir := filepath.Dir(dbPath)
-	sandboxesDir := filepath.Join(stateDir, "sandboxes")
-	cacheDir := filepath.Dir(generationPath)
-	runsDir := filepath.Join(cacheDir, "runs")
-	if err := recreateRunsDir(runsDir); err != nil {
-		return err
-	}
-	sb, err := sandbox.New(sandboxesDir)
+	runsDir := filepath.Join(stateDir, "runs")
+	sb, err := sandbox.New(runsDir)
 	if err != nil {
 		return fmt.Errorf("prompts: sandbox: %w", err)
 	}
@@ -622,19 +616,6 @@ func runTrigger(source, kind string) string {
 
 func dropboxBaseURL(getenv func(string) string) string {
 	return config.EnvOr(getenv, "DROPBOX_BASE_URL", registry.BaseURL("dropbox"))
-}
-
-func recreateRunsDir(runsDir string) error {
-	if runsDir == "" || runsDir == "." || runsDir == string(os.PathSeparator) {
-		return fmt.Errorf("prompts: invalid runs dir %q", runsDir)
-	}
-	if err := os.RemoveAll(runsDir); err != nil {
-		return fmt.Errorf("prompts: recreate runs dir: remove %s: %w", runsDir, err)
-	}
-	if err := os.MkdirAll(runsDir, 0o755); err != nil {
-		return fmt.Errorf("prompts: recreate runs dir: mkdir %s: %w", runsDir, err)
-	}
-	return nil
 }
 
 func callsBodyRetentionConfig(getenv func(string) string) (int, error) {
