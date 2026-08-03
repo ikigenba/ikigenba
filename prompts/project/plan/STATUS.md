@@ -11,5 +11,4 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 52
 
-- Phase 50 ⬜ realizes D40 — the two prompt loaders, and a run listing that outlives its prompt
 - Phase 51 ⬜ realizes D41 — run_delete
