@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -53,10 +54,45 @@ func ValidateModel(config ModelConfig) (agentkit.Provider, error) {
 		return nil, fmt.Errorf("model %s: unsupported provider", pair)
 	}
 	entry, ok := catalog.Lookup(config.Model)
-	if !ok || entry.Provider != config.Provider || entry.Pricing == nil {
+	if !ok || !catalogHasPricing(entry, config.Provider) {
 		return nil, fmt.Errorf("model %s: unknown pricing pair", pair)
 	}
 	return provider, nil
+}
+
+// catalogHasPricing accepts both the single-provider catalog entries used by
+// the pinned agentkit release and the offering-based entries used by a newer
+// workspace checkout. This keeps workspace builds from coupling the service
+// to either catalog representation.
+func catalogHasPricing(entry any, provider string) bool {
+	value := reflect.ValueOf(entry)
+	if value.Kind() != reflect.Struct {
+		return false
+	}
+	if catalogProviderMatches(value, provider) && catalogPricingPresent(value) {
+		return true
+	}
+	offerings := value.FieldByName("Offerings")
+	if !offerings.IsValid() || offerings.Kind() != reflect.Slice {
+		return false
+	}
+	for i := 0; i < offerings.Len(); i++ {
+		offering := offerings.Index(i)
+		if offering.Kind() == reflect.Struct && catalogProviderMatches(offering, provider) && catalogPricingPresent(offering) {
+			return true
+		}
+	}
+	return false
+}
+
+func catalogProviderMatches(value reflect.Value, provider string) bool {
+	field := value.FieldByName("Provider")
+	return field.IsValid() && field.Kind() == reflect.String && field.String() == provider
+}
+
+func catalogPricingPresent(value reflect.Value) bool {
+	field := value.FieldByName("Pricing")
+	return field.IsValid() && field.Kind() == reflect.Pointer && !field.IsNil()
 }
 
 // SessionRequest is the intake-owned request shared by webhook and MCP paths.

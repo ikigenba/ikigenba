@@ -464,9 +464,28 @@ func TestModelValidationRejectsBadBootConfigurationAndAcceptsDefaultPricing(t *t
 	if err != nil {
 		t.Fatalf("default model did not pass real pricing registry: %v", err)
 	}
-	if provider.Name() != "anthropic" {
-		t.Fatalf("default provider = %q, want anthropic", provider.Name())
+	if name := providerName(provider); name != "anthropic" {
+		t.Fatalf("default provider = %q, want anthropic", name)
 	}
+}
+
+func providerName(provider any) string {
+	if named, ok := provider.(interface{ Name() string }); ok {
+		return named.Name()
+	}
+	identity := reflect.ValueOf(provider).MethodByName("Identity")
+	if !identity.IsValid() {
+		return ""
+	}
+	results := identity.Call(nil)
+	if len(results) != 1 || results[0].Kind() != reflect.Struct {
+		return ""
+	}
+	name := results[0].FieldByName("Provider")
+	if !name.IsValid() || name.Kind() != reflect.String {
+		return ""
+	}
+	return name.String()
 }
 
 func TestPassingCheckPushesBranchCreatesPRAndPersistsURL(t *testing.T) {

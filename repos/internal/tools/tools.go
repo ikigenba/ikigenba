@@ -25,7 +25,7 @@ func New(root string) []agentkit.Tool {
 	}
 	return []agentkit.Tool{
 		agentkit.NewTool("Bash", "Run a shell command in the repository worktree.", func(ctx context.Context, in struct {
-			Command string `json:"command" jsonschema:"required"`
+			Command string `json:"command"`
 		}) (string, error) {
 			cmd := exec.CommandContext(ctx, "bash", "-lc", in.Command)
 			cmd.Dir = root
@@ -75,7 +75,7 @@ func New(root string) []agentkit.Tool {
 			return "edited", nil
 		}),
 		agentkit.NewTool("Glob", "List repository paths matching a glob.", func(_ context.Context, in struct {
-			Pattern string `json:"pattern" jsonschema:"required"`
+			Pattern string `json:"pattern"`
 		}) (string, error) {
 			pattern, err := confinePath(root, in.Pattern)
 			if err != nil {
@@ -126,22 +126,22 @@ func New(root string) []agentkit.Tool {
 }
 
 type pathInput struct {
-	Path string `json:"path" jsonschema:"required"`
+	Path string `json:"path"`
 }
 
 type writeInput struct {
-	Path    string `json:"path" jsonschema:"required"`
-	Content string `json:"content" jsonschema:"required"`
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 type editInput struct {
-	Path string `json:"path" jsonschema:"required"`
-	Old  string `json:"old" jsonschema:"required"`
+	Path string `json:"path"`
+	Old  string `json:"old"`
 	New  string `json:"new"`
 }
 
 type grepInput struct {
-	Pattern string `json:"pattern" jsonschema:"required"`
+	Pattern string `json:"pattern"`
 	Path    string `json:"path"`
 }
 
