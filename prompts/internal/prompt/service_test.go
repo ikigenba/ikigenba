@@ -1164,10 +1164,10 @@ func TestDeleteTombstoneRunStillReadable(t *testing.T) {
 		t.Fatalf("RunGet: unexpected run %+v", got)
 	}
 
-	// RunList scopes via the prompt, which is gone → ErrNotFound (the prompt-keyed
-	// listing no longer resolves once tombstoned).
-	if _, err := svc.RunList(ctx, ownerA, sess.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("RunList on tombstoned prompt: want ErrNotFound, got %v", err)
+	// RunList scopes directly through the surviving run rows.
+	runs, err := svc.RunList(ctx, ownerA, sess.ID)
+	if err != nil || len(runs) != 1 || runs[0].ID != run.ID {
+		t.Fatalf("RunList on tombstoned prompt: runs=%+v err=%v", runs, err)
 	}
 
 	// RunOutput — reads the surviving output.jsonl.

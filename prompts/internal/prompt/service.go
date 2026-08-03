@@ -316,6 +316,50 @@ func (s *Service) Get(ctx context.Context, ownerID, id string) (PromptDetail, er
 	return s.detail(ctx, p)
 }
 
+// LoadFromPrompt reads the live, owner-scoped prompt definition. The spawn path
+// uses it at the point where mutable prompt state becomes a frozen run input.
+func (s *Service) LoadFromPrompt(ctx context.Context, ownerID, promptID string) (Executed, error) {
+	p, err := s.store.GetPrompt(ctx, ownerID, promptID)
+	if err != nil {
+		return Executed{}, err
+	}
+	return Executed{Name: p.Name, UserPrompt: p.UserPrompt, SystemPrompt: p.SystemPrompt, Config: p.Config}, nil
+}
+
+// LoadFromRun reads a run's frozen prompt definition directly from input/.
+// Authorization is intentionally outside this package-level loader.
+func LoadFromRun(runsDir, runID string) (Executed, error) {
+	inputDir := filepath.Join(runsDir, runID, "input")
+	read := func(name string) ([]byte, error) {
+		b, err := os.ReadFile(filepath.Join(inputDir, name))
+		if err != nil {
+			return nil, fmt.Errorf("prompt: read run %s: %w", name, err)
+		}
+		return b, nil
+	}
+	name, err := os.ReadFile(filepath.Join(inputDir, "name.txt"))
+	if err != nil && !os.IsNotExist(err) {
+		return Executed{}, fmt.Errorf("prompt: read run name.txt: %w", err)
+	}
+	userPrompt, err := read("user_prompt.txt")
+	if err != nil {
+		return Executed{}, err
+	}
+	systemPrompt, err := read("system_prompt.txt")
+	if err != nil {
+		return Executed{}, err
+	}
+	configJSON, err := read("config.json")
+	if err != nil {
+		return Executed{}, err
+	}
+	var cfg Config
+	if err := json.Unmarshal(configJSON, &cfg); err != nil {
+		return Executed{}, fmt.Errorf("prompt: parse run config: %w", err)
+	}
+	return Executed{Name: string(name), UserPrompt: string(userPrompt), SystemPrompt: string(systemPrompt), Config: cfg}, nil
+}
+
 // detail enriches a Prompt with its derived run summary (RunningCount +
 // LastRun) — the shared body of Get/List.
 func (s *Service) detail(ctx context.Context, p Prompt) (PromptDetail, error) {
@@ -392,18 +436,21 @@ func (s *Service) Run(ctx context.Context, ownerID, id string) (Run, error) {
 // editing or deleting the prompt mid-run cannot change what the run runs. For an
 // event-triggered run it also writes event.json (the triggering event envelope);
 // that file is absent on a manual run.
-func (s *Service) materializeInput(run Run, p Prompt, payload []byte) error {
+func (s *Service) materializeInput(run Run, executed Executed, payload []byte) error {
 	inputDir := filepath.Join(s.runsDir, run.ID, "input")
 	if err := os.MkdirAll(inputDir, 0o755); err != nil {
 		return fmt.Errorf("prompt: create run input dir: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(inputDir, "user_prompt.txt"), []byte(p.UserPrompt), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(inputDir, "name.txt"), []byte(executed.Name), 0o644); err != nil {
+		return fmt.Errorf("prompt: write name: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(inputDir, "user_prompt.txt"), []byte(executed.UserPrompt), 0o644); err != nil {
 		return fmt.Errorf("prompt: write user_prompt: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(inputDir, "system_prompt.txt"), []byte(p.SystemPrompt), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(inputDir, "system_prompt.txt"), []byte(executed.SystemPrompt), 0o644); err != nil {
 		return fmt.Errorf("prompt: write system_prompt: %w", err)
 	}
-	cfgJSON, err := json.Marshal(p.Config)
+	cfgJSON, err := json.Marshal(executed.Config)
 	if err != nil {
 		return fmt.Errorf("prompt: marshal run config: %w", err)
 	}
@@ -440,6 +487,10 @@ type eventEnvelope struct {
 }
 
 func (s *Service) startRun(ctx context.Context, p Prompt, source, kind, subject, eventID string, payload []byte) (Run, error) {
+	executed, err := s.LoadFromPrompt(ctx, p.OwnerID, p.ID)
+	if err != nil {
+		return Run{}, err
+	}
 	runID := ids.NewULID()
 	run := Run{
 		ID:             runID,
@@ -456,7 +507,7 @@ func (s *Service) startRun(ctx context.Context, p Prompt, source, kind, subject,
 		TriggerEventID: eventID,
 	}
 	// Pin the execution inputs to disk BEFORE the row exists / spawn happens.
-	if err := s.materializeInput(run, p, payload); err != nil {
+	if err := s.materializeInput(run, executed, payload); err != nil {
 		return Run{}, err
 	}
 	if err := s.store.InsertRun(ctx, run); err != nil {
@@ -558,10 +609,8 @@ func readLines(path string, offset, limit int) (string, error) {
 
 // --- First-class, run_id-addressed run readers (A7) ---
 //
-// These are owner-scoped via the RUN's denormalized owner_email, not via its
-// prompt — so a run remains readable after its prompt has been tombstone-
-// deleted. (RunList is the exception: it lists a prompt's runs and so scopes via
-// the prompt.)
+// These are owner-scoped via the RUN's denormalized owner id, not via its
+// prompt — so a run remains readable after its prompt has been deleted.
 
 // runForOwner loads a run by run_id and enforces that it belongs to the caller
 // via the run's denormalized owner_email. ErrNotFound when the run is missing or
@@ -578,14 +627,19 @@ func (s *Service) runForOwner(ctx context.Context, ownerID, runID string) (Run, 
 	return r, nil
 }
 
-// RunList returns the owner's prompt's runs, newest first. It scopes via the
-// PROMPT (loading it enforces ownership); ErrNotFound if the prompt is missing
-// or not owned.
+// RunList returns the owner's runs for promptID, newest first. The runs rows
+// enforce ownership directly, so a deleted or unknown prompt yields its
+// surviving owned runs or an empty list without consulting the prompts table.
 func (s *Service) RunList(ctx context.Context, ownerID, promptID string) ([]Run, error) {
-	if _, err := s.store.GetPrompt(ctx, ownerID, promptID); err != nil {
-		return nil, err
+	return s.store.ListRunsByPromptForOwner(ctx, ownerID, promptID)
+}
+
+// RunExecuted returns the frozen prompt definition for an owner-scoped run.
+func (s *Service) RunExecuted(ctx context.Context, ownerID, runID string) (Executed, error) {
+	if _, err := s.runForOwner(ctx, ownerID, runID); err != nil {
+		return Executed{}, err
 	}
-	return s.store.ListRunsByPrompt(ctx, promptID)
+	return LoadFromRun(s.runsDir, runID)
 }
 
 // RunGet returns a single run by run_id, owner-scoped via the run's owner_email

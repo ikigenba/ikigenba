@@ -158,29 +158,16 @@ func (r *Runner) execute(run prompt.Run) {
 	// Read the run's pinned execution inputs from runs/<run.ID>/input/ — NOT
 	// from any live Prompt. This folder was written by the service at spawn and
 	// is the immutable record of exactly what this run executes.
-	inputDir := filepath.Join(filepath.Dir(run.LogPath), "input")
-	var cfg prompt.Config
-	cfgBytes, err := os.ReadFile(filepath.Join(inputDir, "config.json"))
+	runsDir := filepath.Dir(filepath.Dir(run.LogPath))
+	executed, err := prompt.LoadFromRun(runsDir, run.ID)
 	if err != nil {
-		finish(prompt.RunFailed, "", "read run config: "+err.Error())
+		finish(prompt.RunFailed, "", "load run prompt: "+err.Error())
 		return
 	}
-	if err := json.Unmarshal(cfgBytes, &cfg); err != nil {
-		finish(prompt.RunFailed, "", "parse run config: "+err.Error())
-		return
-	}
+	cfg := executed.Config
 	providerName = cfg.Provider
 	modelName = cfg.Model
-	userPromptBytes, err := os.ReadFile(filepath.Join(inputDir, "user_prompt.txt"))
-	if err != nil {
-		finish(prompt.RunFailed, "", "read user prompt: "+err.Error())
-		return
-	}
-	systemPromptBytes, err := os.ReadFile(filepath.Join(inputDir, "system_prompt.txt"))
-	if err != nil {
-		finish(prompt.RunFailed, "", "read system prompt: "+err.Error())
-		return
-	}
+	inputDir := filepath.Join(runsDir, run.ID, "input")
 	eventBytes, err := os.ReadFile(filepath.Join(inputDir, "event.json"))
 	if err != nil && !os.IsNotExist(err) {
 		finish(prompt.RunFailed, "", "read run event: "+err.Error())
@@ -211,7 +198,7 @@ func (r *Runner) execute(run prompt.Run) {
 		Provider:          prov,
 		Model:             res.WireModel,
 		Pricing:           res.Offering.Pricing,
-		System:            buildSystemPrompt(string(systemPromptBytes)),
+		System:            buildSystemPrompt(executed.SystemPrompt),
 		Log:               logFile,
 		Gen:               genSettings(cfg),
 		Retry:             retryPolicy(cfg),
@@ -219,7 +206,7 @@ func (r *Runner) execute(run prompt.Run) {
 		MCPServers:        r.discover(ctx, run.OwnerID, run.OwnerEmail, run.PromptID),
 		MaxToolIterations: cfg.ToolLoopLimit,
 	}
-	stream := conv.Send(ctx, buildUserText(string(userPromptBytes), eventBytes))
+	stream := conv.Send(ctx, buildUserText(executed.UserPrompt, eventBytes))
 	for range stream.Events() {
 	}
 	runErr := stream.Err()

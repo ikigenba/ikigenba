@@ -292,6 +292,32 @@ func (s *Store) ListRunsByPrompt(ctx context.Context, promptID string) ([]Run, e
 	return out, nil
 }
 
+// ListRunsByPromptForOwner returns only the owner's runs for a prompt, newest
+// first. It deliberately does not consult the prompts table, so runs remain
+// listable after their prompt is deleted.
+func (s *Store) ListRunsByPromptForOwner(ctx context.Context, ownerID, promptID string) ([]Run, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+runSelectCols+` FROM runs WHERE prompt_id = ? AND owner_id = ? ORDER BY started_at DESC, id DESC`,
+		promptID, ownerID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("prompt: list owner runs: %w", err)
+	}
+	defer rows.Close()
+	var out []Run
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("prompt: list owner runs rows: %w", err)
+	}
+	return out, nil
+}
+
 // BrowseRuns returns one unscoped page of runs and the filtered total.
 func (s *Store) BrowseRuns(ctx context.Context, f BrowseFilter) ([]Run, int, error) {
 	where, args := browseRunWhere(f)

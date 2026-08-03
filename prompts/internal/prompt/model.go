@@ -60,6 +60,15 @@ type Config struct {
 	Auth          string `json:"auth,omitempty"`
 }
 
+// Executed is the prompt definition a run executes. Unlike Prompt, it contains
+// only the changeable inputs pinned at spawn time.
+type Executed struct {
+	Name         string `json:"name"`
+	UserPrompt   string `json:"user_prompt"`
+	SystemPrompt string `json:"system_prompt,omitempty"`
+	Config       Config `json:"config"`
+}
+
 // Prompt mirrors the prompts table; Config is carried parsed.
 type Prompt struct {
 	ID           string `json:"id"`
