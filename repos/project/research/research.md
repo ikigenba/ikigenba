@@ -158,10 +158,19 @@ record, the shared client, and the event envelope are the suite's.
   go to github.com — a third party, which must never receive a correlation id.
   `net/http/httptest.NewServer` binds `127.0.0.1`, so a test server is the *real*
   substrate for the loopback rule rather than a stand-in for it.
-- **Chain roots are appkit's helper, not hand-rolled.** For self-started
-  background work with no inbound request behind it,
-  `ctx, _ := rec.StartRoot(ctx, "<op>", nil)` mints the id, installs it on the
-  context, and emits the `root` record — one call per cycle, never per item.
+- **Chain roots are appkit's helpers, not hand-rolled.** Two nil-safe recorder
+  methods, each returning `(ctx, id)` — they mint or adopt the id, install it on
+  the context, and emit the `root` record:
+
+  ```go
+  func (r *Recorder) StartRoot(ctx context.Context, op string, detail map[string]any) (context.Context, string)
+  func (r *Recorder) StartChain(ctx context.Context, op string, detail map[string]any) (context.Context, string)
+  ```
+
+  `StartRoot` always mints — for a cycle with no cause outside itself;
+  `StartChain` adopts an ambient id when one is present. One call per cycle,
+  never per item. The root `op` convention is `<service>:<origin>` — service
+  first (`repos:<cycle-name>`), so a service's root records group under one grep.
   `rt.Recorder()` returns the recorder (nil when telemetry is disabled; all
   methods nil-safe). repos has one self-started cycle, the reaper sweep, and
   deliberately mints no root for it (D12).
