@@ -945,9 +945,8 @@ func objectSchema(properties map[string]any, required []string) map[string]any {
 		return map[string]any{"type": "object"}
 	}
 	schema := map[string]any{
-		"type":                 "object",
-		"additionalProperties": false,
-		"properties":           properties,
+		"type":       "object",
+		"properties": properties,
 	}
 	if len(required) > 0 {
 		schema["required"] = required

@@ -507,6 +507,67 @@ func TestToolsListInputSchemasUseValidRequiredFields(t *testing.T) {
 	}
 }
 
+func TestToolsListInputSchemasOmitAdditionalProperties(t *testing.T) {
+	// R-1Y7B-TN7Y
+	h := gatedHandler(t, newTestHandler(t,
+		WithIngestService(&capturingWiki{}),
+		WithJobStatusService(&capturingWiki{}),
+		WithJobAbortService(&capturingWiki{}),
+		WithJobRerunService(&capturingWiki{}),
+		WithJobListService(&capturingWiki{}),
+		WithJobsCountService(&capturingWiki{}),
+		WithMergeService(&capturingWiki{}, &capturingWiki{}),
+		WithMergeListService(&capturingWiki{}),
+		WithAskFunc((&capturingAsker{}).Ask),
+		WithSubjectListService(&capturingWiki{}),
+		WithClaimListService(&capturingWiki{}),
+		WithPagePathService(&capturingWiki{}),
+	))
+	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"list","method":"tools/list"}`, "owner@example.com")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Result struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				InputSchema any    `json:"inputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &got)
+	if len(got.Result.Tools) == 0 {
+		t.Fatal("tools/list returned no tools")
+	}
+
+	var assertKeyAbsent func(t *testing.T, value any)
+	assertKeyAbsent = func(t *testing.T, value any) {
+		t.Helper()
+		switch value := value.(type) {
+		case map[string]any:
+			for key, child := range value {
+				if key == "additionalProperties" {
+					t.Fatal("inputSchema contains additionalProperties")
+				}
+				assertKeyAbsent(t, child)
+			}
+		case []any:
+			for _, child := range value {
+				assertKeyAbsent(t, child)
+			}
+		}
+	}
+	for _, tool := range got.Result.Tools {
+		t.Run(tool.Name, func(t *testing.T) {
+			if tool.InputSchema == nil {
+				t.Fatal("inputSchema is missing")
+			}
+			assertKeyAbsent(t, tool.InputSchema)
+		})
+	}
+}
+
 func TestReflectionToolReturnsEmptyEventEdges(t *testing.T) {
 	h := gatedHandler(t, newTestHandler(t))
 	rec := callMCP(t, h, `{
