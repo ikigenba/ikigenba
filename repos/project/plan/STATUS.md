@@ -9,4 +9,6 @@ build loop **deletes** the phase's line and its body file — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 19
+Next phase: 20
+
+- Phase 19 ⬜ realizes R-1WZF-FVH9 — drop `additionalProperties` from every tool `inputSchema` so agentkit's canonical-subset gate accepts the surface
