@@ -100,7 +100,65 @@ pattern, observed on the dashboard (`2026-07-10`), is:
   context clipboard permission via the DevTools `Browser.grantPermissions`
   (`clipboardReadWrite`) before `navigator.clipboard.readText()` will resolve.
 
-## Alternatives evaluated and not chosen
+## Suite telemetry — the external contracts sites consumes
+
+Facts collected for D28/D29 so those Decisions cite rather than re-derive them.
+None of this is sites' to define: the header, the record, and the shared client
+are the suite's, and appkit owns the client's design.
+
+- **The header.** `X-Correlation-Id`, whose value is a bare 26-character
+  Crockford-base32 ULID. One id per causal chain, propagated verbatim on every
+  hop — never re-minted mid-chain.
+- **Who mints it.** The dashboard's introspection endpoint mints the id while
+  answering an `auth_request` subrequest for a gated route and returns it as a
+  response header. For a request that arrives with no id at all (an ungated
+  public route), appkit's inbound middleware mints one — the universal
+  read-or-mint point. Loopback callers are inside the trust boundary, so an id
+  arriving on the loopback interface is trusted as-is.
+- **The instrumented outbound client (appkit's, handed out by the Router as `rt.HTTPClient(…)`).** An `*http.Client`
+  whose transport records each call as a telemetry record of kind `outbound`
+  (operation, elapsed, status class, response size + SHA-256 digest — never the
+  response bytes) and attaches `X-Correlation-Id` **only** when the destination
+  host is `127.0.0.1`, so nothing leaks to a third party. It reads the id off
+  the outgoing request's `Context()`, which is why the caller must thread its
+  handler context down to the call instead of detaching it — Go's
+  `http.Request.Context()` is exactly the channel a `RoundTripper` sees.
+  Recording is best-effort: the telemetry service being down never blocks or
+  fails an outbound call.
+- **dropbox is a loopback peer.** sites reaches the dropbox mirror through the
+  registry-resolved `http://127.0.0.1:<port>` base URL, so mirror traffic is
+  inside the propagation rule. `net/http/httptest.NewServer` also binds
+  `127.0.0.1`, so a test server is the *real* substrate for that rule rather
+  than a stand-in for it.
+- **sites emits no events.** The event-plane change that adds `correlation_id`
+  to the outbox and the wire envelope (and the `Append` signature change that
+  makes it compile-caught) touches producers only. sites has no producer and no
+  consumer, so it sees neither.
+
+## nginx facts the fragment change relies on
+
+Verified against the nginx `ngx_http_auth_request_module` and
+`ngx_http_proxy_module` documentation:
+
+- `auth_request_set $var $upstream_http_<header_name>;` copies a **response**
+  header of the auth subrequest into a variable, with the header name
+  lowercased and `-` replaced by `_` (so `X-Correlation-Id` is read as
+  `$upstream_http_x_correlation_id`). The binding is **per location** — the same
+  variable name used in several `location` blocks is set independently in each,
+  which is why the fragment can reuse one naming scheme across gates.
+- `proxy_set_header <Name> <value>;` **replaces** any inbound client header of
+  that name on the upstream request; the last directive for a name in a location
+  wins. This is the identity-hygiene property the owner headers already rely on,
+  applied to the correlation header.
+- `proxy_set_header <Name> "";` — an **empty value means the field is not passed
+  to the proxied server at all**. That is the strip: the upstream sees no such
+  header rather than seeing an empty one, so appkit's read-or-mint middleware
+  takes the mint branch.
+- `auth_request` only understands 2xx (allow) and 401/403 (deny); the fragment's
+  existing `@sites_authn_500` re-emit handles the collapsed-status case and is
+  unaffected by adding header captures.
+
+## Alternatives evaluated and not chosen (browser testing)
 
 - **Playwright (node).** Would drag a second-language toolchain into a pure-Go
   repo: `package.json`, `node_modules`, a version-churning driver. Everything it

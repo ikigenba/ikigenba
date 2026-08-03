@@ -10,7 +10,7 @@ runs from.
 | folder | what's in it | owned by |
 |---|---|---|
 | `product/` | `README.md` — the *why*, for whom, scope, user-facing promises | `$seal-spec` (rewritten in place) |
-| `research/` | design-informing research notes (`*-research.md`), if any | free-form (not mode-owned) |
+| `research/` | `research.md` — collected ground truth design references; plus free-form `*-research.md` working notes | `research.md`: `$seal-spec` (rewritten in place). Other notes: free-form. |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
 | `plan/` | `README.md` (spine) + `STATUS.md` (the manifest — the `Next phase` counter and the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per pending phase) | `$seal-spec` (appends); the build loop deletes completed phases |
 | `bugs/` | free-form bug diagnoses / write-ups | free-form (not mode-owned) |
@@ -20,10 +20,11 @@ runs from.
 There is also a loose `project/github-verification.md` — a one-off post-work
 verification note that sits outside the spine folders.
 
-The spine documents (`product/README.md`, `design/README.md`,
-`plan/README.md`) are each singular and written by `$seal-spec` — the sanctioned
-way to change them. The `bugs/`, `requests/`, and `research/` notes are informal
-scratch and are *not* spec-owned. Don't add ad-hoc documents to the spine
+The spine documents (`product/README.md`, `research/research.md`,
+`design/README.md`, `plan/README.md`) are each singular and written by
+`$seal-spec` — the sanctioned way to change them. The `bugs/`, `requests/`, and
+the extra `research/*-research.md` notes are informal scratch and are *not*
+spec-owned. Don't add ad-hoc documents to the spine
 folders; fold corrections and follow-ons into the existing spine docs via
 `$seal-spec` (and append a plan phase) instead.
 

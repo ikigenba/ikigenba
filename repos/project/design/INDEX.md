@@ -17,6 +17,9 @@ Verification ids change.
 - D8 → `project/design/D08.md` — Events: the session-outcome families — R-FT54-LW5D, R-FUD0-ZNW2, R-FVKX-DFMR
 - D9 → `project/design/D09.md` — State layout & retention — R-FWST-R7DG, R-FY0Q-4Z45, R-G0GI-WILJ
 - D10 → `project/design/D10.md` — nginx fragment & the canonical landing page — R-G1OF-AAC8, R-G2WB-O22X, R-G448-1TTM, R-UZVS-S08C, R-V13P-5RZ1
+- D11 → `project/design/D11.md` — The two direct HTTP peers (`HTTPTokenSource`, `GitHubPeer`) take the Router-provided instrumented outbound HTTP client (`rt.HTTPClient(…)` at the composition root; nil-client fallbacks deleted; each peer's requests reach the wire through it carrying the call's live context); git subprocesses and dispatched agent sessions are explicitly out of recording scope — R-BT9N-POGV, R-BUHK-3G7K
+- D12 → `project/design/D12.md` — A session carries its correlation id in its row (`sessions.correlation_id`, additive migration), captured once in `Runner.Enqueue` from the ambient context and re-attached to the runner's detached completion contexts, so the outcome event stays on the chain — including across a restart via `Recover` — R-BVPG-H7Y9, R-BWXC-UZOY, R-BY59-8RFN, R-BZD5-MJ6C
+- D13 → `project/design/D13.md` — nginx fragment: all three gated locations capture the introspection-minted correlation id with `auth_request_set` and overwrite `X-Correlation-Id` upstream; the ungated PRM bootstrap sets it to `""` so the chassis mints — R-9DUI-TUQJ, R-9F2F-7MH8
 
 ## Verification ids → Decision
 
@@ -24,7 +27,15 @@ Verification ids change.
 - R-2U0F-NNXH → D5 — `project/design/D05.md`
 - R-2V8C-1FO6 → D6 — `project/design/D06.md`
 - R-894D-CUA2 → D6 — `project/design/D06.md`
+- R-9DUI-TUQJ → D13 — `project/design/D13.md`
+- R-9F2F-7MH8 → D13 — `project/design/D13.md`
 - R-APSC-24AL → D6 — `project/design/D06.md`
+- R-BT9N-POGV → D11 — `project/design/D11.md`
+- R-BUHK-3G7K → D11 — `project/design/D11.md`
+- R-BVPG-H7Y9 → D12 — `project/design/D12.md`
+- R-BWXC-UZOY → D12 — `project/design/D12.md`
+- R-BY59-8RFN → D12 — `project/design/D12.md`
+- R-BZD5-MJ6C → D12 — `project/design/D12.md`
 - R-C9CO-ODYU → D4 — `project/design/D04.md`
 - R-EISY-2LYZ → D1 — `project/design/D01.md`
 - R-EL8Q-U5GD → D1 — `project/design/D01.md`

@@ -31,6 +31,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D25 → `project/design/D25.md` — Structured MCP adoption: swap `JSONResult`→`StructuredResult` (structuredContent + mirrored text) on every domain success result, declare an `outputSchema` per structured tool incl. `rename` (`guide`/`file_read` are prose exceptions with none), and map every failure onto the closed error vocabulary (confinement→`validation`, invalid name→`validation`, mirror unavailable→`source_unavailable`, internal fs failures→`internal`) — owns R-CW5E-T20N, R-CXDB-6TRC, R-CYL7-KLI1, R-CZT3-YD8Q, R-D110-C4ZF, R-D28W-PWQ4, R-D3GT-3OGT, R-0A69-6H6K
 - D26 → `project/design/D26.md` — the bearer MCP endpoint `= /srv/sites/mcp` forwards all four owner identity headers (`X-Owner-Email`/`X-Owner-Id`/`X-Owner-Name`/`X-Owner-Picture`) plus the unchanged `X-Client-Id` — owns R-7L9K-C2Y0
 - D27 → `project/design/D27.md` — The unlisted-slug token generator: `sites.NewToken()`, 30 chars of lowercase base32 (`a-z2-7`) from `crypto/rand` (150 bits), always slug-valid; stateless, uniqueness enforced by the primary key + one create retry; consumed through an injectable seam — owns R-H7WX-8DDO
+- D28 → `project/design/D28.md` — The dropbox mirror client takes the Router-provided instrumented outbound HTTP client (`rt.HTTPClient(…)`, injected into `NewMirrorClient` from the composition root; every `/list` page and `/content` fetch goes through it, and the live request context reaches it end to end through the `sync` MCP verb; the header logic and `outbound` recording are appkit's and are not re-proven here; sites produces no events, so the `eventplane` `Append` change cannot reach it) — owns R-BOE2-6LI3, R-BPLY-KD8S
+- D29 → `project/design/D29.md` — nginx fragment: all four gated locations capture the introspection-minted correlation id with `auth_request_set` and overwrite `X-Correlation-Id` on the upstream request; both ungated proxying locations (PRM bootstrap, the public site tier) set it to `""` so the chassis mints — owns R-BN65-STRE, R-9CMM-G2ZU
 
 ## Verification ids → Decision
 
@@ -86,9 +88,13 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-8AYY-OHC7 → D23 → `project/design/D23.md`
 - R-8DER-G0TL → D23 → `project/design/D23.md`
 - R-8EMN-TSKA → D23 → `project/design/D23.md`
+- R-9CMM-G2ZU → D29 → `project/design/D29.md`
 - R-ASST-3H7N → D3 → `project/design/D03.md`
 - R-ASST-5K9Q → D3 → `project/design/D03.md`
 - R-ASST-7M2S → D3 → `project/design/D03.md`
+- R-BN65-STRE → D29 → `project/design/D29.md`
+- R-BOE2-6LI3 → D28 → `project/design/D28.md`
+- R-BPLY-KD8S → D28 → `project/design/D28.md`
 - R-CW5E-T20N → D25 → `project/design/D25.md`
 - R-CXDB-6TRC → D25 → `project/design/D25.md`
 - R-CYL7-KLI1 → D25 → `project/design/D25.md`

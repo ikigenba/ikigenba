@@ -125,6 +125,8 @@ syncs, and it can set the next workflow in motion.
 
 **Every inference workload is on the record, attributably.** After any inference — an owner-run prompt, an event-triggered run, a service's completion or embedding — the owner can find its record: which class it was, who caused it, its workload name and group, model, tokens, cost, duration, and error if any. Work arriving without a valid cause or workload name is refused, so the record is never partial by omission.
 
+**A run's actions are traceable, and the run is findable from any of them.** Every run carries the identifier of the causal chain it belongs to — the action, event, or run start that set it off — and everything the run does through other suite services carries the same identifier. So the owner can start from a record of work anywhere on the box, land on the run that caused it, and read that run's full conversation here; a run is the one place that conversation is kept.
+
 **Spend questions have one answer.** The owner asks prompts — not each service — what inference cost: totals by workload name, by cause, by model, or by day, over any time window, covering sessions, completions, and embeddings alike.
 
 **Recent work is fully inspectable; history never loses its totals.** Within the retention window the owner can open any recorded call and read exactly what was sent and what came back. Older records keep every metric forever; only the bodies age out, and a pruned record says so.
@@ -165,3 +167,4 @@ syncs, and it can set the next workflow in motion.
 - With concurrency caps in place, a burst of simultaneously triggered runs executes without exceeding the configured limits, every run still completes, and a service's synchronous completion still gets through while sessions are saturated.
 - A prompt or completion configured with `auth: "sub"` on an OpenAI model executes against the ChatGPT subscription when the operator-provisioned credential is present, and is rejected with an error naming the missing credential when it is not; the same config with `auth` unset behaves exactly as today.
 - A config combining `auth: "sub"` with a non-OpenAI provider, an unknown `auth` value, or a custom `base_url` is rejected at create/update with a clear error.
+- Starting from a record of work another suite service did on a run's behalf, the owner can find the run that caused it and read that run's conversation; a run fired by an event, and the outcome that run itself publishes, carry the same chain identifier as the action that set the whole thing off.

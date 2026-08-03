@@ -60,6 +60,18 @@ construction history of how it got here lives in git, not here.
   The page is served ungated in-process; the browser-session gate lives in the
   nginx fragment (D7).
 
+- **Correlation ids are a suite constant, used by value.** Every request the
+  chassis serves carries a chain id under the header `X-Correlation-Id` — a
+  bare 26-character Crockford-base32 ULID defined by the leaf package
+  `eventplane/correlation`, read-or-minted by appkit's middleware and readable
+  from the request context. webhooks **owns none of it**: the header name, the
+  id shape, the strip-then-mint rule for ungated public locations, and the
+  recorder are defined by the suite protocol doc
+  (`docs/telemetry-protocol.md`) and realized in `eventplane`/`appkit`.
+  webhooks' share is its nginx fragment (D18) and letting the id reach the
+  event it publishes (D19); recording of requests, publishes and lifecycle is
+  chassis-owned and is deliberately **not** re-proven here.
+
 ## Layout
 
 The design is **split for addressability** so the build loop reads only the one

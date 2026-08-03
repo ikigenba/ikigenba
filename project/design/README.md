@@ -1,9 +1,11 @@
-# Suite on-box layout, versioning & backup/restore — Design
+# Suite operations — Design
 
 **Authority: shape and its proof.** This directory owns *how* the on-box install
 tree, the versioned-binary stage/deploy/rollback orchestration, the SemVer 2.0
-version contract, the env/manifest contract, the per-service backup/restore, and
-the per-app secrets delivery are built, and *how each behavior is proven*. The
+version contract, the env/manifest contract, the per-service backup/restore,
+the per-app secrets delivery, and the suite-level share of the telemetry
+contract (the normative protocol documents and the stack wiring for the
+`telemetry` service) are built, and *how each behavior is proven*. The
 product (`project/product/README.md`) owns the *why* and the user-facing
 promises. Design uses the suite's contractual constants (service names, the
 `IKIGENBA_*` env names, the event-protocol epoch rules) **by value** but does

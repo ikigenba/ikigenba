@@ -11,14 +11,14 @@ from.
 | folder | what's in it | owned by |
 |---|---|---|
 | `product/` | `README.md` — the *why*, for whom, scope, user-facing promises | `/product-mode` (rewritten in place) |
-| `research/` | `README.md` — the design-informing research spine; plus free-form `*-research.md` working notes | `README.md`: `/research-mode` (rewritten in place). Other notes: free-form. |
+| `research/` | `research.md` — the design-informing research spine; plus free-form `*-research.md` working notes | `research.md`: `/research-mode` (rewritten in place). Other notes: free-form. |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `/design-mode` (rewritten in place) |
 | `plan/` | `README.md` (spine) + `STATUS.md` (the manifest — the `Next phase` counter plus the only home of each **pending** phase's `⬜` marker) + `phase-NN.md` (one per **pending** phase) | `/plan-mode` (work queue: appends pending phases; the build loop deletes a phase's line and body file on completion — no ✅ marker, done is gone; history lives in git) |
 | `bugs/` | free-form bug diagnoses / write-ups | free-form (not mode-owned) |
 | `requests/` | free-form feature requests | free-form (not mode-owned) |
 | `loops/` | the `ralph` build-loop prompts: `gather.md`, `build.md`, `verify.md` (+ the ephemeral `brief.md`) | build-loop infrastructure |
 
-The four **spine documents** (`product/README.md`, `research/README.md`,
+The four **spine documents** (`product/README.md`, `research/research.md`,
 `design/README.md`, `plan/README.md`) are each singular and owned by a `/*-mode`
 command — that command is the sanctioned way to change them. The `bugs/`,
 `requests/` and extra `research/*-research.md` notes are informal

@@ -23,7 +23,12 @@ removed, not stacked); construction history lives in git, not here.
 > **(4)** the **port-registry adoption** (D15–D16), and **(5)** the
 > **event-routing conformance** to the suite's revised `kind`/`subject`
 > addressing — the family registry, the emit sites, and one new timestamped
-> outbox migration (D18). crm's CRM **domain behavior** — the five entities,
+> outbox migration (D18), and **(6)** the **suite telemetry adoption** — the
+> nginx fragment forwarding the edge-minted `X-Correlation-Id` on gated
+> locations and stripping it on the ungated one, plus the context-carrying
+> `Outbox.Append` at crm's single emit site (D20). crm records nothing itself:
+> MCP/HTTP `request` records, param capture, and `lifecycle` records arrive
+> from the rebuilt appkit chassis. crm's CRM **domain behavior** — the five entities,
 > the verb semantics, validation, the domain migrations — is owned elsewhere
 > (`crm/CLAUDE.md`) and is **unchanged** by all five threads; the only schema
 > change this design makes is D18's outbox re-creation migration (the event
@@ -126,8 +131,11 @@ approach every Decision's Verification list assumes:
   location exists, uses `auth_request /_session-authn` (not `/_authn`), and
   proxies to the loopback upstream root — while the pre-existing bearer-gated
   `/srv/crm/` prefix, the `= /srv/crm/feed` 404, and the PRM well-known location
-  remain. This is a genuine assertion over the shipped artifact, runnable in the
-  same `go test ./...`.
+  remain. The same disk-read harness pins D20's correlation lines: the capture +
+  overwrite pair on every gated location, the empty-string strip on the ungated
+  PRM location, and the count invariant that no loopback-proxying location
+  lacks an `X-Correlation-Id`. This is a genuine assertion over the shipped
+  artifact, runnable in the same `go test ./...`.
 - **Determinism.** The landing handler takes its name/version as plain string
   arguments (injected at the composition root from
   `rt.Service()`/`rt.Version()`), so its output is fully determined by its

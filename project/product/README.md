@@ -1,4 +1,4 @@
-# Suite on-box layout, deployment & backup/restore — Product
+# Suite operations — Product
 
 **Authority: intent.** This doc owns *why* this work exists, *for whom*, what is
 in and out of scope, and the user-facing **promises** — stated once, in outcome
@@ -10,7 +10,9 @@ checkable proof** of it. That boundary is load-bearing: it is what keeps product
 design, and plan from restating each other. The normative source notes this doc
 realizes are `docs/app-layout.md` (the on-box tree and its delivery) and
 `docs/backups-design.md` (off-box-only backup/restore); the operator runbook
-`deploy.md` is brought into line with them as part of this work.
+`deploy.md` is brought into line with them as part of this work. The suite-wide
+telemetry capability adds a third normative note, `docs/telemetry-protocol.md`
+(the forensic record contract and correlation rules), produced by this work.
 
 ## Problem
 
@@ -39,6 +41,17 @@ subdomain of the single registered domain `ikigenba.com`, and TLS-certificate
 reissue is rate-limited per registered domain, so a mass rebuild that reissued
 certificates would exhaust the shared quota and strand boxes.
 
+Finally, the suite has no memory of its own behavior. When something happens —
+an agent acts across three services, a webhook triggers a chain of consumers, a
+customer asks "what changed my data" — there is no record that can answer.
+Request logging is debug-level and off in production, each hop that does log
+mints its own unrelated request id so nothing connects across services, the
+event plane carries no causal thread, and outbound third-party calls leave no
+trace at all. Reconstructing any sequence of events means grepping fourteen
+uncorrelated logs and guessing. A suite whose product surface is agents acting
+on the owner's behalf cannot answer "what did the agent actually do" — and that
+is not acceptable.
+
 ## Purpose
 
 A single, uniform, **app-agnostic** on-box discipline: one install tree, one
@@ -48,6 +61,19 @@ rolled back, and recovered **identically**, parameterized only by its name (and
 loopback port). One way to do each thing, for every service, with nothing retained
 on the box that a rebuild cannot either reproduce from the release or restore from
 off-box.
+
+To that operational discipline this work adds one **forensic** discipline: a
+single suite-wide telemetry contract — one correlation id per causal chain,
+minted inside the trust boundary and carried across every hop, with every
+request, tool call, event, outbound call, and service start/stop recorded to one
+store — so that any sequence of events in the suite can be reconstructed after
+the fact by an agent, without any service inventing its own tracing. This
+suite-level workspace owns the **contract and the wiring**: the normative
+protocol document every workspace implements, and the suite plumbing that brings
+the new `telemetry` service into the fold. The recording chassis is appkit's,
+the envelope is eventplane's, and the store and its forensic surface are the
+`telemetry` service's — each specified in its own workspace against the contract
+this one owns.
 
 ## Users
 
@@ -59,6 +85,13 @@ rebuilt, recover a service — or an entire box, or the entire fleet — to its 
 good state quickly and without special per-service knowledge. The end customer
 never touches any of this; their only stake is that their box comes back when it
 has to.
+
+The telemetry contract adds a second consumer: the **forensic agent** — an LLM
+agent (or the operator driving one) using the `telemetry` service's MCP surface
+to answer "what happened": reconstructing what an agent did across services,
+tracing what a webhook delivery triggered, or bounding an outage. The contract
+this workspace owns is what makes that agent's reconstruction complete rather
+than best-effort-per-service.
 
 ## Scope
 
@@ -110,6 +143,37 @@ prompts, wiki, cron, gmail, scripts, sites, webhooks, github, repos):
   the box is exactly the set its local development environment declares — local
   and deployed environments cannot silently diverge. Seeding one service can
   never damage another's secrets.
+- **The suite-wide telemetry contract**, stated once, normatively, for every
+  workspace to implement: what a forensic record is (the allowlist of fields it
+  may carry, and nothing else), which moments produce one (a request entering
+  the edge, a service handling a call, an outbound third-party call, an event
+  published or consumed, self-originated work starting a chain, a service
+  starting or stopping), how the one correlation id per causal chain is minted
+  inside the trust boundary and carried hop to hop — including across the event
+  plane — and how bulk content is referenced (size and digest) rather than
+  stored. The existing suite correlation standard is brought into line with it.
+- **Suite wiring for the fifteenth deployable service**: the `telemetry`
+  service joins the local dev stack and the front door exactly as its fourteen
+  peers do, with its port owned by the registry.
+
+Deliberate limits of the telemetry contract (promised as exclusions, so
+coverage is honest):
+
+- **No payload warehouse.** Telemetry stores the skeleton of what happened —
+  never response bodies, never raw headers, never bulk content, never LLM
+  conversations (the `prompts` service already archives those in full; a chain's
+  id resolves to the run). Big values are referenced by size and digest.
+- **Secrets never land in the record**, by construction: records carry only
+  explicitly chosen fields, and show-once material travels in responses, which
+  are never stored.
+- **Observation degrades before operation.** Recording is best-effort
+  everywhere: the telemetry store being down or slow never blocks, fails, or
+  crashes any service — records drop instead.
+- **Out of recorded scope**: operator tooling (`opsctl`, `bin/`) — its effects
+  are visible through lifecycle records; code running inside sandboxes (a
+  script's own network calls, an in-run agent's internals) — the sandbox
+  boundary is recorded and run archives hold the inside; and requests nginx
+  answers without a service (its own static serving, the parked page).
 
 Out of scope — nothing else is promised here:
 
@@ -142,6 +206,10 @@ Fixed, promised values the design must use verbatim and never re-derive:
 - **Default backup retention: 30** most-recent snapshots per service
   (operator-configurable; 30 is the out-of-the-box default).
 - **Default object-storage region: `us-east-2`** (operator-configurable).
+- **The correlation header is `X-Correlation-Id`**, carrying a bare 26-character
+  Crockford-base32 ULID, everywhere a correlation id travels.
+- **The forensic store service is named `telemetry`** (its port is the
+  registry's to own).
 
 ## What we promise (user-facing behavior)
 
@@ -216,6 +284,26 @@ Fixed, promised values the design must use verbatim and never re-derive:
   effectively goes dark rather than showing the page, which is the intended
   outcome for a domain being abandoned. What the exclusion buys is containment:
   that domain's expiry can never take HTTPS down for the domains that were kept.
+- **Any sequence of events is reconstructible.** With the suite up and the
+  contract adopted, a forensic agent can take any starting point — a time
+  window, an actor, a service, a digest, or one record — and recover the
+  complete, time-ordered chain of what happened: the request entering the edge,
+  every service and tool it touched, every event it published and every
+  consumer that fired, every third-party call it made, and how each step ended.
+  One id names the whole chain, and a public caller can never supply or forge
+  it.
+- **Denied requests are part of the record.** A request the front door turns
+  away — bad token, revoked client, rate limit — is recorded at the edge with
+  the identity as far as it was established, so probes and misuse are
+  reconstructible even though no service ever saw them.
+- **Starts, stops, and versions are forensic facts.** Every service records its
+  start (with its version) and graceful stop, so deploys, rollbacks, restores,
+  and outage windows can be read from the record — without the operator plane
+  itself being recorded.
+- **The record is honest about its own gaps.** Recording is best-effort by
+  design: if the telemetry store was down, records from that window are gone,
+  and the store's own lifecycle records make the gap visible rather than
+  silent.
 - **Secrets are seeded one way, per app, from what local dev already declares.**
   One workstation command seeds (or re-seeds) any service's deployed secrets;
   the keys it pushes are exactly the keys the service's local environment
@@ -287,3 +375,17 @@ tooling:
   its local development environment declares — no more, no fewer — and every
   other service's secrets are untouched. A secret-less service seeds and starts
   the same way.
+- The normative telemetry contract exists as a committed document
+  (`docs/telemetry-protocol.md`) stating the record allowlist, the recorded
+  moments, the correlation rules, and the reference-by-digest policy; the suite
+  correlation standard (`docs/correlation-ids.md`) agrees with it.
+- `bin/start` brings up the local stack with the `telemetry` service among its
+  peers, front-doored like any other service.
+- With the suite up, one gated request produces records that a forensic agent
+  can retrieve as a single chain under a single correlation id — the edge
+  decision and the service's handling at minimum — and a request bearing a
+  client-supplied correlation id appears under a fresh id, not the supplied
+  one.
+- With the suite up, a webhook delivery that fires a consumer yields one chain:
+  the ingress record, the published event, and the consumer's work all share
+  the delivery's correlation id.

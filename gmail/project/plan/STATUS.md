@@ -9,6 +9,8 @@ loop deletes the phase's line and body file — there is no done marker; done is
 gone. This file deliberately carries **no bare status glyph** anywhere but on a
 phase line, so the anchored grep matches only phase lines.
 
-Next phase: 23
+Next phase: 25
 
+- Phase 23 ⬜ realizes D21, D23 — instrumented outbound client, and the poll cycle as a chain root
+- Phase 24 ⬜ realizes D22 — nginx fragment: forward the edge-minted correlation id
 

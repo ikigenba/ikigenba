@@ -47,9 +47,11 @@ Shared facts every Decision leans on.
   signing use only the Go standard library (`crypto/rsa`, `crypto/x509`,
   `crypto/sha256`, `encoding/pem`, `encoding/base64`, `encoding/json`,
   `net/http`); the JSON-RPC transport is the shared `appkit/mcp` (D8), not
-  hand-rolled here. No `go-github`, no JWT library, no `x/oauth2`. The module's
-  dependency set matches the chassis's existing closure (sqlite via appkit) and
-  adds nothing.
+  hand-rolled here, and the outbound `*http.Client` is the shared
+  `appkit/httpclient` (D11). No `go-github`, no JWT library, no `x/oauth2`. The
+  module's dependency set matches the chassis's existing closure (sqlite via
+  appkit) and adds nothing — `appkit` is a committed in-repo replace-sibling,
+  so consuming more of it adds no third-party dependency.
 - **Build / typecheck command.** `GOWORK=off go build ./...` from the module root
   (`github/`). Forcing `GOWORK=off` matches the deterministic production build and
   proves the module resolves standalone via its `replace` directives.

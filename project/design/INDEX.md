@@ -1,4 +1,4 @@
-# Suite on-box layout, versioning & backup/restore — Design Index
+# Suite operations — Design Index
 
 Each Decision maps to its `DNN.md`; every `R-XXXX-XXXX` id maps to its
 Decision/file. Resolve an id by grepping this index (or the Decision files
@@ -20,6 +20,8 @@ ids change.
 - **D11** → `project/design/D11.md` — The env contract: portable authored `manifest.env` + `IKIGENBA_ROOT` path composition + reduced verb set — ids: R-8DF1-W89F, R-8EMY-A004, R-8FUU-NRQT, R-8H2R-1JHI, R-8IAN-FB87
 - **D12** → `project/design/D12.md` — Per-app secrets parameters, pushed from `.envrc` — ids: none (untested-by-decision `bin/` tooling + an already-live external contract; verified once outside the loop)
 - **D13** → `project/design/D13.md` — The parked `default_server` front door for non-apex hosts — ids: none (two static committed files + an operator runbook; the real-CA/real-nginx claim is verified once outside the loop)
+- **D14** → `project/design/D14.md` — The telemetry contract docs: `docs/telemetry-protocol.md` + the correlation-standard amendment — ids: none (committed docs no module owns; behaviors proven by the implementing workspaces)
+- **D15** → `project/design/D15.md` — Suite wiring for the `telemetry` service (go.work, `bin/start`, `nginx/run`) — ids: none (untested `bin/`/config tier; structural checks in its phase)
 
 ## Verification ids → Decision
 

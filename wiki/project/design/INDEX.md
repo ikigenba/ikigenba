@@ -58,8 +58,11 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D59 → `project/design/D59.md` — Every user-facing subject link is a fully-qualified front-door URL (retire the web-relative rule) — owns R-8I6N-DL0I, R-8JEJ-RCR7
 - D60 → `project/design/D60.md` — the session-gated web locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 — none — structural
 - D61 → `project/design/D61.md` — Structured MCP adoption: `StructuredResult`, typed error codes, and per-tool output schemas — owns R-EMCA-BCU2, R-ENK6-P4KR, R-EPZZ-GO25, R-ER7V-UFSU, R-ESFS-87JJ, R-ETNO-LZA8, R-EW3H-DIRM, R-EXBD-RAIB
-- D62 → `project/design/D62.md` — Origin and correlation attribution on every inference call — owns R-16VU-W6UV, R-183R-9YLK, R-19BN-NQC9, R-1AJK-1I2Y
+- D62 → `project/design/D62.md` — Origin attribution on every inference call — owns R-16VU-W6UV, R-183R-9YLK
 - D63 → `project/design/D63.md` — The retirement: the recorder stack and every in-repo tuning executable stay gone — owns R-KFX6-MNEW, R-A4L4-1LCK
+- D64 → `project/design/D64.md` — Prompts calls ride the chassis's instrumented client, and the chain id replaces every wiki-minted correlation id — owns R-XLHZ-WPT5, R-XMPW-AHJU, R-XNXS-O9AJ, R-XP5P-2118
+- D65 → `project/design/D65.md` — Inherit the chain across the async boundary; mint a root only for genuinely self-started work — owns R-XGME-DMUD, R-XJ27-56BR, R-KIH2-R4UC, R-XKA3-IY2G
+- D66 → `project/design/D66.md` — nginx: forward the edge-minted correlation id on gated locations, strip it on the ungated one — none — structural
 - D70 → `project/design/D70.md` — Remove the in-repo tuning machinery — none — structural
 - D71 → `project/design/D71.md` — The committed tune-folder workspace: `autotune/<step>/`, one per pipeline prompt — owns R-A5T0-FD39, R-A88T-6WKN, R-A9GP-KOBC
 - D72 → `project/design/D72.md` — The four scorers: deterministic where mechanical, sol-judged where prose — owns R-AAOL-YG21, R-ABWI-C7SQ, R-AD4E-PZJF, R-AECB-3RA4, R-AFK7-HJ0T, R-AGS3-VARI
@@ -92,9 +95,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-17C5-VP2I → D15 (`project/design/D15.md`)
 - R-183R-9YLK → D62 (`project/design/D62.md`)
 - R-18K2-9GT7 → D15 (`project/design/D15.md`)
-- R-19BN-NQC9 → D62 (`project/design/D62.md`)
 - R-19RY-N8JW → D15 (`project/design/D15.md`)
-- R-1AJK-1I2Y → D62 (`project/design/D62.md`)
 - R-1C7R-ES1A → D15 (`project/design/D15.md`)
 - R-1DFN-SJRZ → D15 (`project/design/D15.md`)
 - R-1O8B-FNX4 → D3 (`project/design/D03.md`)
@@ -251,6 +252,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-KFX6-MNEW → D63 (`project/design/D63.md`)
 - R-KH3B-SE5D → D50 (`project/design/D50.md`)
 - R-KIB8-65W2 → D50 (`project/design/D50.md`)
+- R-KIH2-R4UC → D65 (`project/design/D65.md`)
 - R-KJJ4-JXMR → D50 (`project/design/D50.md`)
 - R-LAND-CARB → D39 (`project/design/D39.md`)
 - R-LAND-NMVR → D39 (`project/design/D39.md`)
@@ -328,8 +330,15 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-WFPZ-2LTM → D42 (`project/design/D42.md`)
 - R-WGXV-GDKB → D42 (`project/design/D42.md`)
 - R-WS3C-J4QB → D38 (`project/design/D38.md`)
+- R-XGME-DMUD → D65 (`project/design/D65.md`)
+- R-XJ27-56BR → D65 (`project/design/D65.md`)
 - R-XJBY-H8JZ → D6 (`project/design/D06.md`)
+- R-XKA3-IY2G → D65 (`project/design/D65.md`)
 - R-XKJU-V0AO → D6 (`project/design/D06.md`)
+- R-XLHZ-WPT5 → D64 (`project/design/D64.md`)
+- R-XMPW-AHJU → D64 (`project/design/D64.md`)
+- R-XNXS-O9AJ → D64 (`project/design/D64.md`)
+- R-XP5P-2118 → D64 (`project/design/D64.md`)
 - R-XYAZ-V0XE → D15 (`project/design/D15.md`)
 - R-XZIW-8SO3 → D15 (`project/design/D15.md`)
 - R-Y1YP-0C5H → D15 (`project/design/D15.md`)

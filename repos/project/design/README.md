@@ -60,6 +60,34 @@ ids ends at minting them — how coverage is measured and when the work is
   `registry.BaseURL("github")`). No `127.0.0.1:30xx` literal in source.
 - **Time / IO:** time enters through a `Clock` seam; the DB handle is the
   appkit single-writer `*sql.DB` (`rt.DB()`), shared with the producer outbox.
+- **Correlation and telemetry are the chassis's, with two repos-owned seams.**
+  Reading-or-minting the `X-Correlation-Id` on every inbound request, recording
+  inbound MCP and plain HTTP traffic, `publish`/`consume` hops, and `lifecycle`
+  records at boot and graceful shutdown all arrive with the `appkit`/`eventplane`
+  rebuild and are proven by their ids, never re-proven here. repos owns exactly
+  three things: its two direct HTTP peers use the shared **instrumented outbound
+  HTTP client** and thread a live context to it (D11); a session carries its
+  correlation id in its row so the chain survives the runner's deliberately
+  detached contexts and a restart (D12); and its nginx fragment hands the process
+  a trustworthy id (D13). **Out of recording scope, deliberately:** anything
+  happening inside a spawned subprocess or a dispatched agent session — git
+  invocations, the agent's own tool calls and provider traffic. The boundary
+  (the MCP call or consumed event that dispatched the work, and its outcome) is
+  recorded; the inside lives in the session transcript under `state/`.
+- **Outbound HTTP is proven at the injected client, not by re-asserting the
+  chassis.** The instrumented client comes off the Router (`rt.HTTPClient(…)`)
+  and is injected into both peers at the composition root, so tests supply a
+  `*http.Client` whose `Transport` is a recording `RoundTripper` and assert the
+  two things that are repos': the request reaches the wire through that client,
+  and it carries the call's live context (the transport reads the correlation id
+  off `req.Context()`). Setting the header and emitting the `outbound` record are
+  appkit's behaviors with appkit's ids, never re-proven here — and no test needs
+  to stand up a Router.
+- **Fragment ids are scoped to what a content read shows.** `cmd/repos/nginx_test.go`
+  already pins the fragment's routing and identity shape under D10's ids; D13's
+  correlation lines extend that same test under their own. Whether a genuine
+  minted id arrives, un-injectable by an anonymous caller, is not claimable
+  there — it needs a live nginx plus dashboard introspection, outside `repos/`.
 - **Trust posture:** identity arrives as nginx-injected (or loopback-asserted)
   owner headers — `X-Owner-Id` (the stable scoping key; the appkit gate
   refuses on its absence), plus the `X-Owner-Email`/`X-Owner-Name`/

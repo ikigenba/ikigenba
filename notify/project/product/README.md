@@ -29,9 +29,14 @@ boundary keeps product, design, and plan from overlapping.
 > loops adopt the revised event addressing (`kind`/`subject` routing keys in
 > place of the flat `type`), and the owner still receives exactly the same
 > pushes for the same facts — a new contact created, a prompt run succeeding or
-> failing. This is noted here only so the product doc does not appear to
-> contradict a Decision in the same backlog; it adds no user-facing promise of
-> its own.
+> failing. And the same holds for the suite-wide **telemetry adoption**
+> (D18–D19): notify's outbound push becomes visible to the suite's forensic
+> surface and each push is tied to the chain that caused it, but the owner
+> receives exactly the same pushes for exactly the same facts, at the same
+> times. The forensic capability itself is the `telemetry` service's promise to
+> its own users, not notify's. This is all noted here only so the product doc
+> does not appear to contradict a Decision in the same backlog; it adds no
+> user-facing promise of its own.
 
 ## Problem
 

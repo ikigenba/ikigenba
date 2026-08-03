@@ -196,6 +196,14 @@ Promised values the design must honor verbatim and never re-declare:
 - **A run's products are usable downstream** — after a run, the files it wrote
   are individually addressable by other suite services by reference; asking
   scripts what a run produced includes how to fetch each file.
+- **A run is on the record, and findable from anything it did** — every run
+  carries the identifier of the causal chain it belongs to: the owner action or
+  the event that set it off. Everything the run does through other suite
+  services carries the same identifier, so the owner can start from a record of
+  work anywhere on the box, land on the run that caused it, and read what that
+  run did and produced. The run's own internals — the Python code, its files,
+  its calls to the outside world — stay the run's own record here and are not
+  copied anywhere else.
 - **Agents learn the runtime from scripts itself** — an agent that asks scripts
   to describe itself is taught the `suite` contract well enough to author a
   working script without reading source code.
@@ -227,3 +235,8 @@ Each is a result the viewer or operator can confirm against the running service:
   pasted through an intermediary.
 - An agent given only scripts' own self-description authors a working script
   that uses the runtime helper — without hand-rolling HTTP.
+- Starting from a record of work another suite service did on a run's behalf,
+  the owner can find that run in scripts and see what it did; a run fired by an
+  event, and the completion the run itself publishes, carry the same chain
+  identifier as the action that set the whole thing off, and asking scripts for
+  the runs on that identifier returns exactly them.

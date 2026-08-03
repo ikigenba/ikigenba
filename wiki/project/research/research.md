@@ -451,10 +451,13 @@ retained ~30 days then pruned (metrics forever). Inspection: prompts' MCP
 (default 8 in-flight); a call may therefore block briefly before executing —
 another reason wiki's client carries no fixed HTTP timeout.
 
-**Correlation ids.** The suite standard (`docs/correlation-ids.md`): a
-correlation id is a bare 26-char Crockford-base32 ULID minted **once at the
-initial user action** and propagated verbatim; a durable root entity's own ULID
-(an ingest job) serves as the id; otherwise (an ask) mint one fresh.
+**Correlation ids.** The suite standard is now the header-carried chain id of
+§14, not a value each service invents. `group_id` remains prompts' own
+call-grouping field on both endpoints — prompts stores it on the `calls` row
+and filters on it — so wiki keeps sending it, but its **value** is the chain id
+wiki received, never one wiki minted. The durable-root-reuse rule (an ingest
+job's own ULID *is* the correlation id) is retired: reusing the job id would
+sever the chain from the edge-minted id of the request that enqueued it.
 
 ## 13. The external tuning toolchain: the `autotune` CLI, its tune-folder contract, and the `embed` CLI
 
@@ -551,3 +554,72 @@ which routes `gpt-5.6-luna` (openai, 400k context) and `gpt-5.6-sol` (openai,
 `effort` knob; `temperature` pins are not portable to them (see the knob
 caveat above). The production switch to `gpt-5.6-luna` therefore replaces
 wiki's `temperature 0` / `thinking false` pins with `effort` on every site.
+
+## 14. Suite telemetry: the chain id and the chassis seams wiki consumes
+
+The suite gained a `telemetry` service (loopback :3008) that stores the
+*skeleton* of every call — actor, timing, params, outcome, digests — so a
+forensic agent can reconstruct a sequence of events across service boundaries.
+wiki is an **adopter**: it stores nothing, records nothing itself, and writes no
+correlation code. These are the facts its Decisions lean on.
+
+**The chain id.** One `X-Correlation-Id` per causal chain, a bare 26-character
+Crockford base32 ULID — the same shape `internal/ids` already mints —
+propagated verbatim on every hop and never re-minted mid-chain.
+
+**appkit is the read-or-mint point.** The chassis middleware trusts an inbound
+`X-Correlation-Id` (loopback callers are inside the trust boundary) and mints
+one when absent, exposing it on the request context. Every inbound MCP call,
+web request, and health/PRM request therefore reaches wiki's handlers with a
+non-empty chain id already in `ctx` — wiki never has to mint on a
+request-driven path, and a handler that mints its own id is now a bug.
+
+**The edge strips and mints.** The dashboard's introspection endpoint mints the
+id for gated routes and returns it on the auth subrequest response; a service's
+nginx fragment captures it with `auth_request_set` and forwards it with
+`proxy_set_header X-Correlation-Id`, which replaces anything the client sent
+(the same identity-hygiene mechanism the fragment already uses for
+`X-Owner-Email`). An **ungated** location has no minted id to capture, so it
+sets `proxy_set_header X-Correlation-Id ""` and lets the chassis mint. Without
+that line a public caller could inject a chosen id.
+
+**The shared instrumented outbound client.** appkit supplies it through the
+**Router** — a service asks the Router for the outbound client and gets one
+already wired to the recorder, naming no appkit or telemetry type of its own.
+It records an `outbound` telemetry record per call (`<METHOD> <host><path>`,
+elapsed, status, response size + SHA-256 — never the body) and propagates
+`X-Correlation-Id` **only to loopback suite peers** (host `127.0.0.1`), never to
+third parties. prompts *is* a loopback peer (`registry.BaseURL("prompts")`,
+:3002), so wiki's `/complete` and `/embed` calls both get recorded and carry the
+header. This is the only outbound HTTP wiki does; there is no third-party call
+in the tree, so the never-propagate-to-strangers half of the rule never binds
+here.
+
+**Roots.** Self-originated work — work no inbound request is waiting on — mints
+its own root id and records a `root` record: a cron tick, a run spawn, a
+consumer handling an event that carried no id, and any background
+poll/watch/sync cycle that makes outbound calls or publishes events with nothing
+to inherit from. The rule is **one root per cycle**, not per event or per call,
+so everything one cycle caused shares a chain. appkit owns a single root-start
+helper — mint, install in the context, emit the `root` record — so no service
+hand-rolls the idiom.
+
+Two things follow for wiki. A job is *enqueued* by an MCP `ingest` call that has
+a chain id but *processed* later, after that request is gone: that work is
+inherited, not self-started, so storing the enqueuing chain id on the job row
+(the pattern prompts uses for a run) is what keeps the trail intact across the
+async boundary, and a root is minted only for a job row carrying none. The
+catch-up embedding sweep, by contrast, is genuinely self-started — an
+independent worker loop making `wiki.embed-page` calls with no request and no
+job behind them — so each of its drain cycles is a root chain of its own.
+
+**The event plane does not apply to wiki.** `correlation_id` becomes a
+first-class outbox column and wire-envelope field, superseding the old
+payload-field convention — but wiki neither produces nor consumes events
+(`eventplane` is an indirect dependency only, pulled in through appkit), so no
+wiki code, schema, or payload changes for it.
+
+**What arrives free.** Rebuilt against the new appkit, wiki emits `request`
+records for MCP dispatch (`mcp:<tool>`) and plain HTTP, param capture under the
+suite's per-value 1024-byte / per-record 8192-byte budgets, and `lifecycle`
+start/stop records — with no wiki-side code and no wiki-side test.

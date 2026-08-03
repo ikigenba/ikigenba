@@ -9,4 +9,7 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 42
+Next phase: 44
+
+- Phase 42 ⬜ realizes D29 — nginx fragment: capture the introspection-minted correlation id on the gated locations, strip it on the ungated public ones
+- Phase 43 ⬜ realizes D28 — the dropbox mirror client takes the Router-provided instrumented outbound HTTP client (needs appkit first)

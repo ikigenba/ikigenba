@@ -47,6 +47,28 @@ in git, never in the spec.
 > `content_url` on `run_fs_list` entries (**D25**), and `describe` teaching the
 > runtime contract (**D26**). Pattern donors are prompts D21/D22/D26; the wire
 > tool count stays 18 and no migration is added.
+>
+> The newest series is **suite telemetry adoption** (**D29–D32**): the run row
+> carries the causal chain it belongs to (`runs.correlation_id`, mint-or-inherit
+> at spawn, exposed on the run surface — **D29**), the chain crosses the sandbox
+> boundary on every `suite.*` call (**D30**), the nginx fragment captures the
+> edge-minted id on gated locations and strips it on the ungated one (**D31**,
+> structural), and rebuilding against the revised chassis carries the chain
+> across the consumer fan-out and out through the ctx-bearing `Append`, names
+> the origin at spawn, and fixes the recorded boundary of a run (**D32**).
+> Pattern donor is prompts D39–D43. The series is gated on the revised
+> `eventplane` and `appkit` being built first (see each Decision's
+> external-ordering banner) and adds two timestamped migrations
+> (`correlation_id`, `outbox_correlation`); every frozen migration stays
+> untouched.
+>
+> **Correlation ids are a suite constant, used by value.** The header
+> `X-Correlation-Id`, the 26-character Crockford-base32 ULID shape, the
+> read-or-mint rule and the context accessors are defined by
+> `docs/telemetry-protocol.md` and the leaf package `eventplane/correlation`,
+> and applied by appkit's middleware. scripts owns none of them, re-implements
+> none of them (`internal/ids` mints **run** ids only), and does not re-prove
+> chassis-owned recording.
 
 ## Requirement ids
 

@@ -12,7 +12,7 @@ current statement of the governed ledger design — it is rewritten in place to
 stay true (stale decisions are removed, not stacked); construction history
 lives in git, not here.
 
-> **Scope.** This design's Decisions cover three threads:
+> **Scope.** This design's Decisions cover five threads:
 >
 > 1. **The web landing page** (D1–D8, built; substrate moved by D10): the page's
 >    content, route, session gate, canonical markup, and self-served assets — now
@@ -44,6 +44,19 @@ lives in git, not here.
 >    `outputSchema`; errors carry a typed code from the shared closed vocabulary;
 >    `describe` stays a prose exception. The emitted JSON is preserved verbatim;
 >    only the transport envelope is formalized.
+>
+> 5. **Correlation adoption** (D17): ledger joins the suite telemetry
+>    capability as a **pure propagator** — the nginx fragment captures the
+>    introspection-minted `X-Correlation-Id` on every gated location and strips
+>    it on the ungated PRM bootstrap, and the domain seam stops dropping the
+>    request context so the chain id reaches `outbox.Append` and lands on the
+>    row. The `correlation_id` column arrives by one new **additive**
+>    `ALTER TABLE` migration (`outbox.AddCorrelationIDSQL`). All recording
+>    (`request`, `lifecycle`, `publish`) arrives by recompiling against the
+>    revised chassis; ledger writes no instrumentation and mints no id.
+>    `eventplane/correlation`, the revised `eventplane/outbox`, and the revised
+>    `appkit` telemetry surfaces are fixed external contracts consumed here —
+>    see `project/research/research.md`.
 >
 > The rest of the ledger bookkeeping **domain** (the immutable journal, the
 > seven-verb contract, the report reads) stands as described in
@@ -145,6 +158,15 @@ approach every Decision's Verification list assumes:
   service), outbox rows are read back by SQL, and the feed claim drives the
   real eventplane `FeedHandler` over `net/http/httptest`. No mock stands in
   for the schema or the wire.
+- **Correlation claims run over the real column, not a spy.** D17's claims are
+  asserted by reading the `outbox` row's `correlation_id` back by SQL from a
+  real migrated SQLite database after driving `Record`/`Reverse` under a
+  context prepared with `correlation.WithContext` — the substrate that can
+  actually falsify "the context reached `Append`". A recording double around
+  the `EventSink` would pass even when the id never reached the row. Chassis
+  behavior (read-or-mint middleware, `request`/`lifecycle`/`publish` records)
+  is **not** re-tested here: it is appkit's and eventplane's denominator, and
+  duplicating it would mean two homes for one behavior.
 
 ## Layout
 

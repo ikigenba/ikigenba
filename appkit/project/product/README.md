@@ -51,7 +51,11 @@ current unit of work extends the MCP surface once more: every tool result
 carries a **machine-readable rendering alongside the agent-readable one**, tool
 errors carry **stable codes** from one suite vocabulary, and the chassis owns
 the **loopback-only route boundary** as a declared route class instead of a
-per-service hand-copied guard.
+per-service hand-copied guard. The unit of work now in progress extends the
+chassis once more, to **the record of what happened**: a service built on it
+reports its own activity — who called it, when, in what order, and how it went —
+and carries the caller's chain identity through every hop it makes, without its
+author writing any of that.
 
 ## Users
 
@@ -77,6 +81,12 @@ consumer loops driven by a per-service declaration of upstreams and handlers,
 machine-readable tool results with declared shapes and a single tool-error code
 vocabulary across the suite, and a chassis-owned loopback-only route class for
 the surfaces that must never be reachable through the front door.
+It also adds automatic activity recording: every call a chassis-built service
+answers is reported to the suite's forensic store, every chain carries one
+identity from the action that started it through every hop it causes, a service
+author can declare an argument too sensitive to record, and a shared outbound
+HTTP client both records the calls a service makes and decides where the chain
+identity may travel.
 Nothing else: appkit still knows nothing about LLMs, tools-of-agents, or any
 service's domain; it still never reads secrets; migrations stay embedded in
 each service binary; the event-plane producer/consumer *split* and the wire
@@ -84,6 +94,13 @@ protocol are unchanged (what an event means, and what a consumer does with it,
 stay service-owned); per-service *pages* (which routes exist beyond static,
 what data they render) remain service-owned. The outbox migration SQL is
 deliberately out of scope for this round.
+On the recording side the boundary is just as firm: appkit **records**, it does
+not **store, retain, or answer questions about** activity — the forensic store,
+its retention, and its query surface belong to the telemetry service. It never
+captures raw headers, raw request bodies, or response content; large values are
+reported by size and digest rather than copied. And recording is never
+load-bearing: a service whose recording has nowhere to go behaves exactly as it
+does today.
 
 ## What we promise (user-facing behavior)
 
@@ -128,6 +145,37 @@ deliberately out of scope for this round.
   enforces it uniformly — including for callers that legitimately assert
   their own identity from on-box, which the old hand guards would wrongly
   reject.
+- **A service records its own activity without being asked to.** A service
+  author writes no reporting code: rebuilding on the chassis is what makes the
+  service's calls, their callers, their timing, and their outcomes show up in
+  the suite's forensic record — including the moments it started and stopped,
+  so an operator can tell a clean restart from a crash and see which version
+  was running when.
+- **One chain identity, carried the whole way.** Work caused by a single user
+  action carries one identity from end to end: a service that receives it
+  passes it on to every call and event it causes, and a service that receives
+  none starts one. Two services' records of the same chain can therefore be
+  read as one story.
+- **That identity never leaves the box.** The chain identity travels to other
+  suite services and to nothing else — no third party a service calls ever
+  sees it.
+- **A service author can declare an argument unrecordable.** A tool argument
+  marked sensitive is never captured, no matter how small it is; and no
+  response content is ever recorded, so a show-once secret cannot end up in the
+  record by accident.
+- **Recording never costs the caller anything.** If the forensic store is down,
+  slow, or absent entirely, requests answer exactly as fast and exactly as
+  correctly as before; the only consequence is a gap in the record, and the
+  service reports how much it had to skip once it can.
+- **A service's outgoing calls are recorded from one place.** A service that
+  calls anything over HTTP gets the same record of that call — endpoint,
+  outcome, timing, sizes — by using the chassis's client instead of its own,
+  which it asks for in one line rather than assembling.
+- **Work that nobody asked for can still start a chain.** A timer tick, a run
+  spawn, a polling or syncing cycle — anything a service starts on its own —
+  begins a new chain in one call, and everything that cycle causes belongs to
+  it. A service author does not hand-roll that, and a cycle never gets folded
+  into whatever chain happened to be running before it.
 - **The web and consumer surfaces remain opt-in.** Services that haven't
   adopted them keep building and behaving identically. **The structured
   result contract is the deliberate exception:** it is a suite-wide cutover —
@@ -170,3 +218,22 @@ deliberately out of scope for this round.
   turned away exactly as before, while an on-box caller asserting its own
   identity gets through — across every service, from one shared enforcement
   point.
+- A tool call made against a service rebuilt on the chassis shows up in the
+  suite's forensic record — with its caller, its arguments, its timing, and its
+  outcome — without that service having gained a line of reporting code.
+- Following one user action across two services yields records sharing a single
+  chain identity, so the whole sequence reads as one ordered story rather than
+  two unrelated ones.
+- A call a service makes to an outside provider carries no chain identity, while
+  the same service's call to a suite peer does.
+- An argument a service declared sensitive, and the content of any response,
+  cannot be found anywhere in the record — only its size and a fingerprint.
+- With the forensic store stopped, every service still answers requests
+  normally and at normal speed; when it comes back, the records resume and the
+  amount that was skipped is reported.
+- A service started and then stopped cleanly leaves a matching pair of records
+  naming the version it ran; a service that was killed leaves only the start,
+  so the gap is visible rather than silent.
+- A background cycle that publishes events and makes calls produces one chain
+  covering the whole cycle — not one chain per event, and not a chain borrowed
+  from an unrelated earlier request.

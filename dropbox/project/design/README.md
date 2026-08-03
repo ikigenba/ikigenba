@@ -49,6 +49,21 @@ here lives in git.
 >    eventplane API (`eventplane/project/design/` D1–D4) — spec'd but not yet
 >    built; its phase is operator-sequenced behind eventplane plan phases
 >    01–04.
+> 6. **Suite telemetry adoption** (D26–D27, active): dropbox joins the suite's
+>    forensic telemetry capability. Its three privately-constructed
+>    `http.Client`s move onto appkit's shared **instrumented outbound client**
+>    (injected at the composition root, per-call-site timeouts preserved), its
+>    two background daemons — the sync engine and the uploader — **mint a root
+>    correlation chain per cycle** instead of running id-less, and the event
+>    `Append` seam is threaded with the context the change happened on (D26);
+>    the nginx fragment's gated locations capture and forward the edge-minted
+>    `X-Correlation-Id` while its one ungated public location clears it (D27).
+>    Inbound `request`, `publish`, and `lifecycle` recording arrives from the
+>    rebuilt chassis and is not re-proven here. D26 consumes appkit's
+>    instrumented client / root helper and eventplane's `correlation` leaf
+>    package + context-taking `Append` as fixed external contracts
+>    (`project/research/research.md`); both must be built first — the `Append`
+>    change is compile-caught.
 >
 > The pre-existing **download** engine and its load-bearing correctness rules
 > (crash/replay ordering, per-page cursor advance, poison bound, download
@@ -217,6 +232,19 @@ approach every Decision's Verification list assumes:
   eventplane `FeedHandler` over `httptest`; the family registry through the
   assembled MCP reflection surface. D22's phase additionally depends on the
   revised eventplane API being built (external ordering, operator-sequenced).
+- **Telemetry adoption is proven at dropbox's own seams, never by re-proving the
+  chassis** (D26). The outbound claims install a **recording
+  `http.RoundTripper`** through the composition root's own wiring path — so what
+  is asserted is what ships — and drive real HTTP: the existing `httptest` fake
+  Dropbox for the third-party side (asserting no `X-Correlation-Id` leaves the
+  box) and a real loopback `httptest` server for the `source_url` side
+  (asserting the header *does* travel to a suite peer and that the bytes land).
+  Root-chain claims start from a context carrying **no** id, so a build that
+  merely inherits the lifecycle context fails. The `Append` threading is read
+  back by SQL from the real migrated SQLite database. What the chassis and
+  eventplane prove — read-or-mint of an inbound header, `request`/`publish`/
+  `lifecycle` recording, the loopback-only propagation rule itself — is **not**
+  re-asserted here.
 
 ## Layout
 
@@ -272,6 +300,19 @@ the other seven fields are unchanged), and reshapes `dropbox.Events` into three
 the revised `outbox.SchemaSQL`; the byte-equality drift guard in
 `internal/db/migrations_outbox_test.go` re-points at that newest migration
 while the frozen `003_outbox.sql` stays untouched.
+
+**Package shape additions (thread 6, D26–D27).** No new package. `internal/dropbox`
+loses its private `http.Client` construction — `NewClient(cfg, rpc, longpoll
+*http.Client)` takes both clients injected — and gains root-chain minting at the
+top of each `Engine` cycle (`sync.go`) and each uploader drain pass
+(`uploader.go`); `events.go`'s `EventSink` seam and its one `Append` call site
+carry a `context.Context`. `internal/mcp` takes its `source_url` fetcher
+injected (`Tools(svc, sourcePortAllowed, source *http.Client)`). The composition
+root (`cmd/dropbox/main.go`) builds all three clients from the chassis's
+instrumented outbound client, each keeping its own timeout/redirect policy. No
+migration and no new module dependency: the `correlation` leaf package arrives
+through the existing `replace eventplane => ../eventplane`. `etc/nginx.conf`
+gains the `X-Correlation-Id` capture/forward lines (D27).
 
 Design is **rewritten in place**, not append-only (history lives in the plan): a
 changed Decision is rewritten in its `DNN.md` and `INDEX.md` is regenerated; a

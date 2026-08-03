@@ -31,14 +31,29 @@ in git, not here.
 > returns `structuredContent` alongside its mirrored text, declares an
 > `outputSchema`, and carries a typed error code from the suite vocabulary, and
 > the `GET /attachment` endpoint moves to the shared `X-Forwarded-Proto`-only
-> loopback guard; realizing gmail's row in `docs/structured-mcp-design.md`). The
+> loopback guard; realizing gmail's row in `docs/structured-mcp-design.md`) —
+> **plus** the **suite telemetry** adoption (D21 — gmail's Gmail REST and OAuth
+> token-refresh calls move onto appkit's shared instrumented outbound HTTP
+> client; D22 — the nginx fragment forwards the edge-minted `X-Correlation-Id`
+> on gated locations and blanks it on ungated ones; D23 — the poll cycle is a
+> chain root, minting one correlation id per cycle and threading it into every
+> outbound Google call and every event append through eventplane's revised
+> `Append`, with one additive outbox migration for the new `correlation_id`
+> column. D21 and D23 externally depend on the appkit and eventplane revisions
+> being built first; gmail writes no recording code of its own — inbound
+> MCP/HTTP, `publish`, and `lifecycle` records arrive from the chassis on
+> recompile, and the root-start idiom is appkit's helper). The
 > D9–D14 conversion was **behavior-preserving** (wiring moved onto
 > the shared chassis with observable contracts intact); D16–D18 change the
 > observable surface deliberately: attachments become fetchable by reference,
 > and the published events are re-addressed. D20 is behavior-preserving for the
 > result *shape* (it formalizes the JSON already emitted) but deliberately
 > changes the attachment guard predicate (a caller-asserted `X-Owner-Email` is
-> no longer rejected) and adds machine-facing schemas and error codes.
+> no longer rejected) and adds machine-facing schemas and error codes. D21–D23
+are behavior-preserving toward Google and toward callers — the same endpoints,
+the same 100-second timeout, the same events — changing only the transport
+underneath, the headers nginx forwards, and the correlation id now carried
+alongside each published event.
 
 ## Requirement ids
 

@@ -46,6 +46,10 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D39 | project/design/D39.md | The run directory is durable state, and holds the whole run | R-ZMJ5-6QEW, R-ZNR1-KI5L |
 | D40 | project/design/D40.md | Two loaders: the live prompt and the run's frozen copy | R-ZOYX-Y9WA, R-ZREQ-PTDO, R-ZSMN-3L4D |
 | D41 | project/design/D41.md | `run_delete`: removing a run and everything it produced | R-ZTUJ-HCV2, R-ZV2F-V4LR, R-ZWAC-8WCG |
+| D44 | project/design/D44.md | The correlation id on the record: `runs.correlation_id`, `calls.correlation_id`, mint-or-inherit at spawn | R-HIAG-2MGL, R-HJIC-GE7A, R-HKQ8-U5XZ, R-HLY5-7XOO, R-HN61-LPFD, R-HODX-ZH62 |
+| D45 | project/design/D45.md | Chain propagation on suite peer calls: `X-Correlation-Id` in the `MCPServer` headers | R-HPLU-D8WR, R-HS1N-4SE5, R-HT9J-IK4U |
+| D46 | project/design/D46.md | nginx fragment: capture the edge-minted chain id on gated locations, strip it on the ungated one | R-HWX8-NVCX, R-HY55-1N3M |
+| D47 | project/design/D47.md | Rebuild to adopt: event-plane chain continuation, the `root` record at spawn, and the recorded boundary of a run | R-HZD1-FEUB, R-I0KX-T6L0, R-I1SU-6YBP, R-I30Q-KQ2E, R-I48M-YHT3 |
 
 ## Verification ids → Decision
 
@@ -121,6 +125,22 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-EF0V-TP9R | D6 | project/design/D06.md |
 | R-F5X1-XH6C | D5 | project/design/D05.md |
 | R-GNY2-Y47H | D5 | project/design/D05.md |
+| R-HIAG-2MGL | D44 | project/design/D44.md |
+| R-HJIC-GE7A | D44 | project/design/D44.md |
+| R-HKQ8-U5XZ | D44 | project/design/D44.md |
+| R-HLY5-7XOO | D44 | project/design/D44.md |
+| R-HN61-LPFD | D44 | project/design/D44.md |
+| R-HODX-ZH62 | D44 | project/design/D44.md |
+| R-HPLU-D8WR | D45 | project/design/D45.md |
+| R-HS1N-4SE5 | D45 | project/design/D45.md |
+| R-HT9J-IK4U | D45 | project/design/D45.md |
+| R-HWX8-NVCX | D46 | project/design/D46.md |
+| R-HY55-1N3M | D46 | project/design/D46.md |
+| R-HZD1-FEUB | D47 | project/design/D47.md |
+| R-I0KX-T6L0 | D47 | project/design/D47.md |
+| R-I1SU-6YBP | D47 | project/design/D47.md |
+| R-I30Q-KQ2E | D47 | project/design/D47.md |
+| R-I48M-YHT3 | D47 | project/design/D47.md |
 | R-JTBA-4RDB | D2 | project/design/D02.md |
 | R-JUJ6-IJ40 | D2 | project/design/D02.md |
 | R-JVR2-WAUP | D3 | project/design/D03.md |

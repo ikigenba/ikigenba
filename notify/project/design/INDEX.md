@@ -21,6 +21,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D15 → `project/design/D15.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer tier deliberately excluded) — owns R-3IZH-DPMO, R-3K7D-RHDD, R-3LFA-5942
 - D16 → `project/design/D16.md` — Event-routing conformance (consumer side): canonical-key subscription filters, kind/subject handler matching — owns R-ZCGU-FG9L, R-ZEWN-6ZQZ, R-ZG4J-KRHO, R-ZHCF-YJ8D
 - D17 → `project/design/D17.md` — Structured MCP adoption: `send` returns `structuredContent`, declares an `outputSchema`, and carries typed error codes (`validation`, `source_unavailable`) from the closed vocabulary — owns R-A918-YY6H, R-AA95-CPX6, R-ACOY-49EK, R-ADWU-I159
+- D18 → `project/design/D18.md` — Telemetry adoption, Go side: the ntfy client's `http.Client` injected from the chassis's instrumented outbound client, and a correlation id that survives the detached-goroutine seam (`context.WithoutCancel`) — owns R-TK2Y-2LTX, R-TLAU-GDKM, R-TMIQ-U5BB, R-TNQN-7X20
+- D19 → `project/design/D19.md` — nginx fragment: gated locations capture and forward the edge-minted `X-Correlation-Id`; the ungated public PRM location clears it — none (structural; configuration-only)
 
 ## Verification ids → Decision
 
@@ -61,6 +63,10 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-4G2Q → D2 → `project/design/D02.md`
 - R-ROUT-6H5R → D2 → `project/design/D02.md`
 - R-ROUT-8J7S → D2 → `project/design/D02.md`
+- R-TK2Y-2LTX → D18 → `project/design/D18.md`
+- R-TLAU-GDKM → D18 → `project/design/D18.md`
+- R-TMIQ-U5BB → D18 → `project/design/D18.md`
+- R-TNQN-7X20 → D18 → `project/design/D18.md`
 - R-ZCGU-FG9L → D16 → `project/design/D16.md`
 - R-ZEWN-6ZQZ → D16 → `project/design/D16.md`
 - R-ZG4J-KRHO → D16 → `project/design/D16.md`

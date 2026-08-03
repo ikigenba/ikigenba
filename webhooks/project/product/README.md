@@ -119,6 +119,13 @@ limit are **not** product constants — design declares them.
   tell a GitHub issue event from a push without parsing the payload. A call
   with a wrong or missing signature is rejected exactly like a wrong secret,
   leaking nothing.
+- **A delivery and everything it set off are one traceable chain.** Every
+  accepted inbound call begins a single traceable chain: afterwards, that
+  delivery and every piece of work any suite service did because of it can be
+  reconstructed as one ordered sequence, from the outside call to the last
+  downstream effect. The chain a delivery starts always belongs to this
+  service — nothing an outside caller puts in its request can place its
+  delivery inside someone else's chain, or hide it from its own.
 - **Rotation preserves the URL.** Rotating a secret issues a new secret (shown
   once) and immediately invalidates the old one, while the webhook's name and URL
   stay the same — no need to reconfigure the external system's address.
@@ -153,6 +160,11 @@ limit are **not** product constants — design declares them.
   produces no event.
 - Listing webhooks returns exactly the calling owner's webhooks and none created
   by another user.
+- Given one accepted inbound call, an investigator can afterwards retrieve that
+  delivery together with every downstream action the resulting event caused
+  across the suite, as a single ordered sequence; two separate deliveries never
+  land in the same sequence, and a call that tries to declare which chain it
+  belongs to is recorded under this service's own chain regardless.
 - An owner can create a webhook verified by GitHub-style signed deliveries; a
   correctly signed call to it is acknowledged and its event (carrying the
   delivery's event name) is observable on the event plane; an unsigned or

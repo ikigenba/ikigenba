@@ -9,5 +9,8 @@ that phase's line and its body file — there is no done marker; done is gone.
 This file deliberately carries **no bare status glyph** outside phase lines, so
 the anchored grep matches only phase lines.
 
-Next phase: 17
+Next phase: 19
+
+- Phase 17 ⬜ realizes D11 — adopt the shared instrumented outbound HTTP client
+- Phase 18 ⬜ realizes D12 — nginx fragment: forward the edge-minted correlation id
 

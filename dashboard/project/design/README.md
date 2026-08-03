@@ -1,15 +1,18 @@
 # dashboard — Design (web surface & sign-in)
 
 **Authority: shape and its proof.** This document and the `project/design/`
-directory it heads own *how* the dashboard's three-page web surface is built and
+directory it heads own *how* the dashboard's web surface, sign-in, and
+introspection edge are built and
 *how each behavior is proven*. The product (`project/product/README.md`) owns the
 *why*, *for whom*, and the user-facing promises; design states the **exact,
 checkable form** of those promises and never re-declares the why. This design
-covers three bodies of work in the dashboard: (1) the **web surface** — splitting
+covers five bodies of work in the dashboard: (1) the **web surface** — splitting
 the single hybrid apex page into a login page, a landing/home page, and a new
 profile page (D1–D6), a diminished name-origin colophon on the login page (D7),
-the shared banner chrome (D10), and a new owner-only **telemetry** page that
-samples box resource health in memory and graphs the last 24 hours (D11–D16);
+the shared banner chrome (D10), and a new owner-only **metrics** page that
+samples box resource health in memory and graphs the last 24 hours (D11–D16 —
+named *metrics* throughout, page and package, so the word *telemetry* belongs
+solely to the suite's forensic record service);
 and (2) the **identity model** — moving the dashboard's concept of user identity
 from email to the OIDC subject pair `(iss, sub)` behind an opaque local handle,
 capturing name/picture at login, enforcing the artifact→identity link as a real
@@ -27,7 +30,14 @@ GitHub organization, a permanently separate identity from Google sign-in: a
 sibling GitHub provider package (D25), provider-bound handshakes (D26), the
 `/login` chooser with per-provider start routes (D27, with the two-CTA login
 composition in D7), the GitHub callback and its org-membership federation gate
-(D28), and the provider chooser inside the single MCP authorize endpoint (D29).
+(D28), and the provider chooser inside the single MCP authorize endpoint (D29);
+and (5) the **suite telemetry edge** — the dashboard is the point every gated
+`/srv/<svc>/` request passes through, so its introspection endpoints mint the
+suite's per-request **correlation id** and return it to nginx (D30), emit an
+`edge` telemetry record for every gated auth decision including denials and
+rate-limited attempts (D31) while the durable internal audit log stays exactly as
+it is (D32), and the dashboard's own apex nginx fragment blanks
+client-supplied correlation ids and forwards the original request method (D33).
 It is rewritten in place to stay true (stale decisions are removed, not
 stacked); construction history lives in git, not here.
 
@@ -53,8 +63,11 @@ Shared facts every Decision leans on:
   ../appkit`, `replace eventplane => ../eventplane`).
 - **Schema.** The web-surface work (D1–D16) touches **no** schema: it is a pure
   HTTP-routing + template + view change under `dashboard/internal/server/` and
-  `dashboard/ui/`, plus one in-memory package `dashboard/internal/telemetry/`
+  `dashboard/ui/`, plus one in-memory package `dashboard/internal/metrics/`
   whose history lives only in RAM (ring buffers) and is never persisted. The
+  **telemetry edge** work (D30–D33) touches no schema either: it is a change to
+  the three introspection handlers, a one-method recorder seam, and the apex
+  nginx fragment. The
   **identity model** work (D17–D19, D23–D24) *does* add schema: forward-only
   migrations — a new `identities` table (D17), an `owner_id TEXT` column on
   the four auth-artifact carrier tables (`web_sessions`, `oauth_authcodes`,
@@ -70,23 +83,45 @@ Shared facts every Decision leans on:
   `provider TEXT NOT NULL DEFAULT 'google'` column on `oauth_state` (D26) — and
   touches no other schema: GitHub identities are ordinary `identities` rows
   under the existing `(iss, sub)` key.
-- **The apex nginx `server` block is the dashboard's, and its one login-bounce
-  change (D20) is proven by content-assertion.** `dashboard/etc/nginx.conf` is a
-  server-block fragment `opsctl init-box` installs; the `@login_bounce` named
-  location added to it is verified by a Go test that **reads the file from disk**
-  and asserts its content (the same pattern the sibling `sites` service uses for
-  its fragment) — nginx itself is never run by the suite, so the live 302/401
-  routing is a deploy-time smoke, not a unit test. The **dev front door**
-  `nginx/nginx.conf` (repo root) carries a mirror of the primitive for local
-  testing, but it lives **outside this `project/` tree** and is maintained as
-  suite infrastructure, never by this spec or its build loop.
-- **Telemetry collector runs on the appkit `Workers` seam.** `appkit.Spec.Workers`
+- **The apex nginx `server` block is the dashboard's, and its changes (D20's
+  login-bounce primitive, D33's correlation-id blanking and original-method
+  forwarding) are proven by content-assertion.** `dashboard/etc/nginx.conf` is a
+  server-block fragment `opsctl init-box` installs; lines added to it are
+  verified by a Go test that **reads the file from disk** and asserts its content
+  (the same pattern the sibling `sites` service uses for its fragment) — nginx
+  itself is never run by the suite, so the live 302/401 routing and the live
+  header handling are deploy-time smokes, not unit tests. The **dev front door**
+  `nginx/nginx.conf` (repo root) carries a mirror of the login-bounce primitive
+  for local testing, but it lives **outside this `project/` tree** and is
+  maintained as suite infrastructure, never by this spec or its build loop.
+- **Suite seams consumed as external fact.** Two shared seams land in sibling
+  workspaces before this work builds and are consumed here, never re-implemented:
+  the **correlation minter** (`eventplane/correlation` — a leaf package producing
+  a bare 26-character Crockford-base32 ULID) and appkit's **telemetry recorder**
+  (ring-buffered, batched, fire-and-forget `POST` to the telemetry service's
+  `/ingest`, best-effort by contract). The recorder is **obtained from the
+  `*appkit.Router`**, never constructed here — a Router-level accessor alongside
+  `rt.HTTPClient(...)`, so the process has exactly one recorder and one
+  dropped-record count. Most instrumentation arrives free through the chassis;
+  the dashboard's `edge` records (D31) are the direct-emitter exception, because
+  only the handler knows the decision. Their exact Go signatures are those
+  workspaces' decisions; the dashboard depends on each through a one-method
+  interface it owns (D30, D31) and satisfies at the composition root, so a
+  signature change is a one-line adapter change and the dashboard's tests pin the
+  *observable* contract (the emitted header format, the delivered JSON record)
+  rather than a foreign symbol.
+- **The suite's correlation header is `X-Correlation-Id`,** a bare 26-character
+  Crockford-base32 ULID. The record shape, digest algorithm, capture thresholds,
+  and ingest endpoint are the suite protocol's (see `project/research/research.md`
+  for the parts the dashboard uses); this design owns only what the dashboard
+  mints, returns, and records.
+- **The metrics collector runs on the appkit `Workers` seam.** `appkit.Spec.Workers`
   is `[]func(ctx context.Context) error`; each worker runs on the serve context and
   a `ctx` cancel (SIGTERM/shutdown) unwinds it. `cmd/dashboard/main.go` follows the
   established capture idiom (`var rt *appkit.Router`; the `Handlers` hook sets it
   and constructs shared collaborators; the `Workers` closure captures it, running
   strictly after Handlers so `rt.Logger()` is live) — the same pattern
-  `notify`/`dropbox`/`prompts` use for their consumer loops. The one telemetry
+  `notify`/`dropbox`/`prompts` use for their consumer loops. The one metrics
   `Store` instance is constructed once at that composition root and shared between
   the collector worker (writer) and the `server` handlers (reader).
 - **Linux metric sources are read through injected roots.** The collector reads
@@ -134,12 +169,12 @@ services consume) is untouched by this change.
 | **Login** | `GET /` with no/invalid session | logged-out human | none (public) |
 | **Landing / home** | `GET /` with a valid session | logged-in owner | session (in-process branch) |
 | **Profile** | `GET /profile` | logged-in owner | session (in-process, redirect if absent) |
-| **Telemetry** | `GET /telemetry` (+ `GET /telemetry/fragment`) | logged-in owner | session (in-process, redirect if absent) |
+| **Metrics** | `GET /metrics` (+ `GET /metrics/fragment`) | logged-in owner | session (in-process, redirect if absent) |
 
 `GET /` stays **one** handler that branches on the session (login vs landing) —
 its split is by *audience on the same route*, the behavior that exists today.
-The profile and telemetry pages are each a **new route** with a **new handler**
-and its own template; telemetry adds a second route (`/telemetry/fragment`) that
+The profile and metrics pages are each a **new route** with a **new handler**
+and its own template; metrics adds a second route (`/metrics/fragment`) that
 returns just its charts block for the once-a-minute client poll (D14).
 
 ## Testing strategy
@@ -166,7 +201,7 @@ Verification list assumes:
 - **The doc-truth phase is grep-checkable.** The AGENTS.md purge (D6) is verified
   by asserting the stale phrase is gone and the three-page truth is present — a
   text check, not a Go test.
-- **Telemetry sources are unit-tested against fixtures; the two that hinge on a
+- **Metric sources are unit-tested against fixtures; the two that hinge on a
   real OS contract get a real-substrate check.** The `/proc/meminfo` parser runs
   against a fixture reader; the cgroup reader and the `du` walk run against temp
   trees at an injected root (including the absent-path → 0 case); service discovery
@@ -200,13 +235,28 @@ Verification list assumes:
   the Google pair uses. An interactive login cannot run under CI, so the real
   GitHub contract is captured in `project/research/research.md` and exercised
   manually at deploy time — the same precedent as Google.
+- **The telemetry edge is tested against the real handler and a live sink.** The
+  minting and edge-record claims (D30, D31, D32) are driven through the **real**
+  introspection handlers — `httptest` requests against `(*app).routes()`, the
+  same harness the rest of the `server` package uses, with a real temp DB behind
+  them — because the seam under test *is* an HTTP handler and its response
+  headers. Nothing about the decision path is stubbed. Anything that hinges on a
+  record actually being **delivered** is asserted against a **live in-process
+  HTTP sink**: an `httptest.Server` standing in for the telemetry service's
+  `POST /ingest`, wired as the recorder's real ingest target, flushed before the
+  assertion, with the test reading the decoded JSON the sink received. A stub
+  recorder would accept whatever it was handed and prove nothing left the
+  process, so it is not the substrate for those ids; the unreachable-sink case is
+  driven against a **closed** listener, which is the only way to falsify the
+  best-effort promise. The nginx-fragment claims (D33) are file-content
+  assertions per the Conventions above.
 - **Chart rendering is pure and unit-tested on geometry, not pixels.** The SVG
   builders are pure functions of a `Store` snapshot; tests assert computed
   coordinates and structure (hero y-axis mapped `0 → total capacity`; stacked band
   height at each x equals the sum of service values; the long tail folds into one
   "Other" band; a legend names every band; each visible band gets a distinct
   palette color) and the `humanBytes` binary-unit formatter, plus that the served
-  `app.js` wires the 60s telemetry poll. The categorical band palette was validated
+  `app.js` wires the 60s metrics poll. The categorical band palette was validated
   colorblind-safe with the dataviz validator when authored and is committed as a
   fixed ordered set; the suite asserts the render *uses* it (distinct color per
   band + legend), not that CI re-runs the validator.

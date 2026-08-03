@@ -24,6 +24,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D18 → `project/design/D18.md` — Event-routing conformance: kinds `received`/`sent`/`deleted`, empty subject — owns R-X6YL-1Y77, R-X86H-FPXW, R-X9ED-THOL, R-XAMA-79FA
 - D19 → `project/design/D19.md` — Live attachment round-trip check (`-tags live`, real Gmail API) — owns R-3NGL-AMPW
 - D20 → `project/design/D20.md` — Structured MCP adoption: `StructuredResult`, output schemas, typed error codes, and the shared loopback guard — owns R-8K29-UF3R, R-8LA6-86UG, R-8MI2-LYL5, R-8NPY-ZQBU, R-8OXV-DI2J, R-8Q5R-R9T8, R-8RDO-51JX
+- D21 → `project/design/D21.md` — Gmail's outbound calls move onto the shared instrumented HTTP client — owns R-ZUC0-6K42, R-ZWRS-Y3LG, R-ZXZP-BVC5, R-ZZ7L-PN2U
+- D22 → `project/design/D22.md` — nginx fragment: forward the edge-minted `X-Correlation-Id` on gated locations, blank it on ungated ones — none (structural; artifact-only)
+- D23 → `project/design/D23.md` — The poll cycle is a chain root: one correlation id per cycle, threaded into every append and every outbound call — owns R-PJWQ-547Q, R-PL4M-IVYF, R-PMCI-WNP4
 
 ## Verification ids → Decision
 
@@ -69,6 +72,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-NGNX-5D8E → D4 → `project/design/D04.md`
 - R-NGNX-7F1G → D4 → `project/design/D04.md`
 - R-NGNX-9H3J → D4 → `project/design/D04.md`
+- R-PJWQ-547Q → D23 → `project/design/D23.md`
+- R-PL4M-IVYF → D23 → `project/design/D23.md`
+- R-PMCI-WNP4 → D23 → `project/design/D23.md`
 - R-ROUT-4M6Q → D2 → `project/design/D02.md`
 - R-ROUT-6N8R → D2 → `project/design/D02.md`
 - R-ROUT-8P1S → D2 → `project/design/D02.md`
@@ -78,3 +84,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-X86H-FPXW → D18 → `project/design/D18.md`
 - R-X9ED-THOL → D18 → `project/design/D18.md`
 - R-XAMA-79FA → D18 → `project/design/D18.md`
+- R-ZUC0-6K42 → D21 → `project/design/D21.md`
+- R-ZWRS-Y3LG → D21 → `project/design/D21.md`
+- R-ZXZP-BVC5 → D21 → `project/design/D21.md`
+- R-ZZ7L-PN2U → D21 → `project/design/D21.md`

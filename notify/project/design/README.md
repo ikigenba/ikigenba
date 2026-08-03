@@ -45,6 +45,24 @@ lives in git, never in the spec.
 >    swap (notify holds no hand-copied loopback guard); no migration. appkit's
 >    revised `appkit/mcp` (protocol `2025-06-18`, `StructuredResult`,
 >    `ErrorResult(code, msg)`, `Tool.OutputSchema`) is a fixed external contract.
+> 6. **Suite telemetry adoption** (D18–D19, active): notify joins the suite's
+>    forensic telemetry capability. The ntfy client's `http.Client` is
+>    **injected** at the composition root from appkit's shared instrumented
+>    outbound client (so the push is recorded, with its 10s push timeout still notify's
+>    to set), and the consumer handlers' deliberately-detached push goroutines
+>    derive from the handler context with `context.WithoutCancel` so the
+>    correlation id survives the async seam without the cancellation doing so
+>    (D18); the nginx fragment's gated locations capture and forward the
+>    edge-minted `X-Correlation-Id` while the ungated public PRM location clears
+>    it (D19). `consume`, `request`, and `lifecycle` recording arrives from the
+>    rebuilt chassis and is not re-proven here, and neither is the
+>    loopback-only propagation rule — notify's mock ntfy is on `127.0.0.1`, so
+>    that substrate cannot falsify it. notify produces nothing, so the
+>    context-taking `Outbox.Append` change that compile-breaks producers does not
+>    reach it: still no outbox and still no migration. D18 consumes appkit's
+>    instrumented client and the revised eventplane consumer (which surfaces the
+>    id into handler ctx) as fixed external contracts
+>    (`project/research/research.md`); both must be built first.
 >
 > The rest of the notify domain (the ntfy push mechanics —
 > `Client`/`Publish`/`Send` — and the event-plane wire contract itself) is
@@ -152,6 +170,17 @@ approach every Decision's Verification list assumes:
   `notify/etc/nginx.conf` from disk and assert the session-gated locations and
   registry-derived proxy targets (D4, D8, D10) — a genuine assertion over the
   shipped artifact, runnable in the same `go test ./...`.
+- **Telemetry adoption is proven at notify's own seams, never by re-proving the
+  chassis** (D18). The outbound claim installs a recording
+  `http.RoundTripper` through the composition root's own wiring path — so what is
+  asserted is what ships — and every push claim requires the request to actually
+  **arrive at the mock ntfy server**, observing the context at the moment the
+  POST is made; a test cannot pass by merely configuring a value. The async-seam
+  claims are falsified from both sides: a `context.Background()` build yields an
+  empty correlation id, and a raw-pass-through build is aborted when the handler
+  context is cancelled. What appkit and eventplane prove — read-or-mint,
+  `consume`/`request`/`lifecycle` recording, and the loopback-only propagation
+  rule (unfalsifiable against a `127.0.0.1` mock) — is **not** re-asserted here.
 - **Determinism.** Handlers take name/version as plain strings and clients take
   injected config; no clock, no network, no DB in the web/MCP tests.
 
@@ -176,6 +205,17 @@ and `internal/mcp` (the `send` tool table over `appkit/mcp`). There is **no**
 wiring (D11 — the loops are chassis-run). The composition root
 (`cmd/notify/main.go`) is the Spec plus the landing handler and the ntfy config
 resolution.
+
+**Package shape additions (thread 6, D18–D19).** No new package and no new
+module dependency — the `correlation` leaf package arrives through the existing
+`replace eventplane => ../eventplane`. `internal/push` stops constructing an
+`http.Client` (`NewClient(baseURL, topic, token string, hc *http.Client, logger
+*slog.Logger)`) and its two handlers derive their detached push goroutine's
+context with `context.WithoutCancel(hctx)` + `context.WithTimeout(…,
+PushTimeout)`. `cmd/notify/main.go` builds the one instrumented client from the
+chassis and hands it to all three `push.NewClient` sites (the two
+`Spec.Consumers` factories and the `Spec.Handlers` MCP client).
+`etc/nginx.conf` gains the `X-Correlation-Id` capture/forward lines (D19).
 
 Design is **rewritten in place**, not append-only (history lives in the plan): a
 changed Decision is rewritten in its `DNN.md` and `INDEX.md` is regenerated; a

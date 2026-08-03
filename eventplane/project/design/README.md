@@ -1,18 +1,19 @@
 # eventplane — Design
 
-**Authority: shape and its proof.** This document set owns *how* the routing
-revision is built and *how each behavior is proven* — seams, interfaces,
-types, naming, and the test strategy. Product owns the why and the promises;
-design states their exact, checkable form and never re-declares the why. It
-uses product's contractual constants (the envelope fields, the canonical key
-form, the glob dialect) by value but does not own them. This is the single
-current statement of the design, rewritten in place; construction history
-lives in git.
+**Authority: shape and its proof.** This document set owns *how* the current
+work is built and *how each behavior is proven* — seams, interfaces, types,
+naming, and the test strategy. Product owns the why and the promises; design
+states their exact, checkable form and never re-declares the why. It uses
+product's contractual constants (the envelope fields, the canonical key form,
+the glob dialect, the correlation-id format and its header and envelope field
+names) by value but does not own them. This is the single current statement of
+the design, rewritten in place; construction history lives in git.
 
 **Scope note — revision over a baseline.** This spec covers the routing
-revision plus the feed-guard removal (D5). The as-built library — outbox atomicity, the SSE transport and
-control frames, cursors and the epoch token, all four resync reasons,
-reconnect backoff, retention, and the handler-return cursor gate
+revision (D1–D4), the feed-guard removal (D5), and the correlation and
+observation work (D6–D9). The as-built library — outbox atomicity, the SSE
+transport and control frames, cursors and the epoch token, all four resync
+reasons, reconnect backoff, retention, and the handler-return cursor gate
 (nil/ErrSkip/stall) — is the baseline described in `eventplane/CLAUDE.md` and
 verified in `project/research/research.md`. Decisions reference that baseline;
 they never respecify it, and no Verification id below re-proves it.
@@ -30,9 +31,14 @@ the work is "done" are downstream's concern and are not specified here.
 ## Conventions
 
 - **Language/module:** Go 1.26, module `eventplane` (packages `outbox`,
-  `consumer`, and the new `routing`). Sole direct dependency stays
-  `modernc.org/sqlite` — the matcher is hand-rolled; **no new `require` may
-  appear in `go.mod`**.
+  `consumer`, `routing`, and the new `correlation` and `observe`). Sole direct
+  dependency stays `modernc.org/sqlite` — the matcher and the ULID minter are
+  hand-rolled; **no new `require` may appear in `go.mod`**.
+- **Leaf packages:** `routing`, `correlation` and `observe` are leaves that
+  anything downstream of this module may import. `correlation` is stdlib-only;
+  `observe` imports only stdlib plus `routing`. Neither may import `outbox` or
+  `consumer`, and nothing in this module may import `appkit` (which requires
+  `eventplane` — the reverse is an import cycle).
 - **Build/vet:** `go vet ./...` run from `eventplane/`; code is `gofmt`-clean
   (`gofmt -l .` prints nothing). Local dev runs in workspace mode via the
   repo-root `go.work` (do not set `GOWORK=off`).
@@ -65,3 +71,11 @@ Current Decisions:
 - **D4** — Consumer surface: routing fields on `consumer.Event`.
 - **D5** — Feed guard ownership moves to the chassis: `FeedHandler` checks no
   headers itself.
+- **D6** — `eventplane/correlation`: the suite's correlation-id leaf package
+  (header, Crockford ULID minter, validity, context accessors).
+- **D7** — Correlation on the producer path: outbox column, envelope field,
+  ctx-bearing `Append`.
+- **D8** — Correlation on the consumer path: the chain enters the handler's
+  context, minting a root when the event carries none.
+- **D9** — `eventplane/observe`: an injectable hook on the publish and consume
+  paths.

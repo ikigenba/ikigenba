@@ -19,6 +19,7 @@ Design's responsibility ends at minting. How coverage is measured, what counts a
 - **Local chassis modules**: `appkit` and `eventplane` remain as committed `replace` directives in `prompts/go.mod`, consumed as fixed external contracts (never edited from here). The **revised eventplane routing API** (kind/subject envelope, `routing.Key`/`Match`, `outbox.Family`/`Registry.CouldMatch`, `consumer.Event{Kind, Subject}` + `Key()` — `eventplane/project/design/` D1–D4) and an appkit that compiles against it are **external preconditions** for the conformance Decisions D24/D25 (operator-sequenced; see the ⛔ banners there).
 - **Migrations**: schema changes land only as new timestamped migrations minted with `bin/create-migration prompts <name>`; committed migrations are immutable (the suite rule).
 - **Share filesystem API**: the file-share tools (D26) consume dropbox's loopback filesystem API (`dropbox/docs/filesystem-api.md`) as a fixed external contract, addressed through the registry-defaulted `DROPBOX_BASE_URL`. Its refined mutation error contract (dropbox design D16, error-contract slice; dropbox plan phase 25) is an **external precondition**, operator-sequenced before D26's phases (see the ⛔ banner in D26).
+- **Suite telemetry contracts (external, consumed by value)**: the correlation header is `X-Correlation-Id` carrying a bare 26-char Crockford-base32 ULID (`docs/correlation-ids.md`, `docs/telemetry-protocol.md`); appkit owns the read-or-mint middleware and its context accessors (`correlation.FromContext` / `correlation.WithID`), the **root-start helper** (adopt-or-mint + ctx + `root` record) that every self-originated spawn goes through, the telemetry recorder and its record kinds (`edge`/`request`/`outbound`/`publish`/`consume`/`root`/`lifecycle`), and the instrumented outbound HTTP client the **Router** hands out (`rt.HTTPClient(...)`); eventplane owns the outbox `correlation_id` column, the wire envelope field, the ctx-populated `Append`, and the id it surfaces into consumer handler contexts. prompts consumes all of these as fixed external contracts and re-implements none of them: it mints no chain id, builds no telemetry record, and names the chassis accessors only at the composition root — the domain and transport packages take narrow injected seams instead. Both revisions are **external preconditions** for D39–D43 (see the ⛔ banners there).
 - **Shared `registry` module**: adopted by D14 as a third committed `replace registry => ../registry` (plus `require registry v0.0.0`) in `prompts/go.mod`, wired exactly like `eventplane`. It is a zero-dependency leaf that turns a service **name** into its loopback port / base URL from one authoritative table. The `registry` module itself and the repo-root `go.work use ./registry` entry are **external preconditions** owned outside `prompts/` and assumed satisfied; no phase here creates or edits them.
 
 ## Run durability and the two prompt loaders
@@ -36,6 +37,27 @@ prompts is no longer MCP-only: it serves a **human browse UI** — server-render
 ## Inference surface (the loopback plumbing endpoints)
 
 prompts is the suite's sole inference service: beside agent sessions it executes one-shot **completions** (`POST /complete`, D29) and **embeddings** (`POST /embed`, D30) on behalf of sibling daemons, records every inference unit in the **`calls`** table (D28, one durable row per session run / completion / embedding), bounds concurrency with semaphores (D31), and reports through the `calls`/`usage` MCP tools (D32). The two endpoints are **loopback-only plumbing**, mounted through the chassis loopback guard beside `/feed` and `/run-content` — never routed by nginx, no identity headers, trusted because one box is one trust domain. The doctrine line they sit on: the event plane carries *facts* between daemons; loopback plumbing endpoints carry *capabilities* one daemon consumes from another (the nginx→dashboard `/internal/authn` precedent) — and the bar for adding a new capability endpoint stays high. The term "ledger" is never used for this surface (`ledger` names a sibling service); the table, package, and tools say `calls`. OpenAI-backed work — sessions and completions alike — can opt into **ChatGPT subscription authentication** per config (`auth: "sub"`) instead of the metered API key; the credential file, store lifecycle, and factory wiring are D38 (embeddings stay key-authenticated).
+
+## Correlation and telemetry (the run as a chain root)
+
+prompts is the suite's **content store for agent chains**: telemetry records the
+skeleton of what happened everywhere, and when a chain touches a run, the run's
+own archive (`output.jsonl`) is the single copy of the conversation. That works
+because a run's causal chain id is stored durably on the run row and is
+queryable (D44): a run started by an MCP caller or an event *continues* the
+inbound chain, and a run with no inbound cause *is* its own root (durable-root
+reuse — the run id is the chain id) and records one `root` record at spawn
+(D47), established by the chassis root-start helper rather than anything
+prompts mints. Every suite peer MCP call an in-run agent makes carries that id
+(`X-Correlation-Id` in the `MCPServer` headers agentkit injects, D45); the
+hop is recorded once, by the receiving peer, since agentkit's client offers
+no instrumentation seam (D45's recorded boundary). At the edge, the fragment captures the introspection-minted id on every
+gated location and strips it on the ungated PRM bootstrap (D46). Everything
+else — inbound `request` records, `lifecycle`, `publish`/`consume` — arrives by
+rebuilding against the new appkit/eventplane (D47), which also states the
+boundary: the run's *inside* (provider traffic, builtin sandbox tool use) is
+never recorded. `calls.correlation_id` (the causal chain) and `calls.group_id`
+(the caller's reporting label) are deliberately distinct — D44 records why.
 
 ## Layout
 

@@ -13,6 +13,8 @@ gone. A phase body file carries no marker of its own. This document
 deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
-Next phase: 20
+Next phase: 22
 
+- Phase 20 ⬜ realizes D18 — correlation lines in the committed nginx fragment (strip on the public tiers, capture on the gated tiers)
+- Phase 21 ⬜ realizes D19 — the delivery's correlation id rides the published event (needs the revised appkit + eventplane built first)
 

@@ -11,22 +11,22 @@ Verification ids change.
 - D2 → `project/design/D02.md` — The profile route is session-gated in-process (redirect when signed out) — owns R-DB04-GATE, R-DB05-SESS
 - D3 → `project/design/D03.md` — Personal-access-token management moves to the profile page — owns R-DB06-PATM, R-DB07-PATR, R-DB08-PATX
 - D4 → `project/design/D04.md` — OAuth grant management moves to the profile page — owns R-DB09-GRNT, R-DB10-GRVK, R-DB11-GRNX
-- D5 → `project/design/D05.md` — Landing composition: service-name links, profile-avatar nav, sign-out, shared list-chrome service list with copyable URLs — owns R-DB12-LINK, R-DB14-SOUT, R-DB15-INST, R-XO4W-LKAI, R-OF1Q-VEDC, R-OG9N-9641, R-OHHJ-MXUQ
+- D5 → `project/design/D05.md` — Landing composition: service-name links, profile-avatar nav, sign-out — owns R-DB12-LINK, R-XO4W-LKAI, R-DB14-SOUT, R-DB15-INST, R-OF1Q-VEDC, R-OG9N-9641, R-OHHJ-MXUQ
 - D6 → `project/design/D06.md` — Purge the stale "single hybrid page / don't split" doc rule — owns R-DB16-DOCS
 - D7 → `project/design/D07.md` — Login composition: brand title, tagline, sign-in lede, rule, two provider CTAs, rule, then a borderless etymology table — owns R-JA3I-IY1F, R-JCJB-AHIT, R-JDR7-O99I, R-ILDB-6TGS, R-IML7-KL7H, R-JG70-FSQW, R-JHEW-TKHL, R-O7K1-XEN7, R-DB19-LAND
-- D8 → `project/design/D08.md` — Eliminate the web-font FOUT (font-display: optional + font preload) — owns R-P97M-GIJ1, R-PAFI-UA9Q, R-PBNF-820F
-- D9 → `project/design/D09.md` — No site footer: remove the `.site-footer` element from every page — owns R-EFJZ-FRQ1
-- D10 → `project/design/D10.md` — The banner is shared app-shell chrome: wordmark links home, monogram avatar + sign-out on both landing and profile — owns R-VTIE-IUFA, R-VUQA-WM5Z, R-VVY7-ADWO
-- D11 → `project/design/D11.md` — Telemetry store: in-memory ring-buffer series + snapshot — owns R-EZVQ-IQOL, R-F13M-WIFA, R-F2BJ-AA5Z
+- D8 → `project/design/D08.md` — Eliminate the web-font FOUT (font-display + preload) — owns R-P97M-GIJ1, R-PAFI-UA9Q, R-PBNF-820F
+- D9 → `project/design/D09.md` — No site footer: remove the `.site-footer` from every page and delete its CSS — owns R-EFJZ-FRQ1
+- D10 → `project/design/D10.md` — The banner is shared app-shell chrome: wordmark→home, monogram avatar, sign-out — owns R-VTIE-IUFA, R-VUQA-WM5Z, R-VVY7-ADWO
+- D11 → `project/design/D11.md` — Metrics store: in-memory ring-buffer series + snapshot — owns R-EZVQ-IQOL, R-F13M-WIFA, R-F2BJ-AA5Z
 - D12 → `project/design/D12.md` — Metric source readers + service discovery — owns R-F4RC-1TND, R-F5Z8-FLE2, R-F774-TD4R, R-F8F1-74VG, R-F9MX-KWM5, R-FAUT-YOCU, R-FC2Q-CG3J
-- D13 → `project/design/D13.md` — Collector worker: startup sample + 60s ticker on the serve context — owns R-FDAM-Q7U8, R-FEIJ-3ZKX, R-FFQF-HRBM, R-FGYB-VJ2B
-- D14 → `project/design/D14.md` — HTTP surface: `/telemetry` page, `/telemetry/fragment`, the 60s poll — owns R-FI68-9AT0, R-FJE4-N2JP, R-FKM1-0UAE, R-FLTX-EM13, R-FN1T-SDRS
+- D13 → `project/design/D13.md` — Metrics collector worker: startup sample + 60s ticker on the serve context — owns R-FDAM-Q7U8, R-FEIJ-3ZKX, R-FFQF-HRBM, R-FGYB-VJ2B
+- D14 → `project/design/D14.md` — HTTP surface: `/metrics` page, `/metrics/fragment`, the 60s poll — owns R-WWGV-S5V0, R-WXOS-5XLP, R-WYWO-JPCE, R-X1CH-B8TS, R-X2KD-P0KH, R-X3SA-2SB6
 - D15 → `project/design/D15.md` — Chart rendering: hero line charts + stacked-area charts — owns R-FO9Q-65IH, R-FPHM-JX96, R-FQPI-XOZV, R-FRXF-BGQK, R-FT5B-P8H9, R-FUD8-307Y, R-FVL4-GRYN
-- D16 → `project/design/D16.md` — Landing entry: a tile linking to the telemetry page — owns R-FWT0-UJPC, R-FY0X-8BG1
+- D16 → `project/design/D16.md` — Landing entry: a tile linking to the metrics page — owns R-X506-GK1V, R-X682-UBSK
 - D17 → `project/design/D17.md` — Identity model: `(iss, sub)` is the identity, an opaque handle is its durable key, in a new `identities` table — owns R-VJMO-6CN9, R-VKUK-K4DY, R-VM2G-XW4N, R-VNAD-BNVC, R-VOI9-PFM1
 - D18 → `project/design/D18.md` — Capture identity at login: decode the claims and stamp the handle onto every auth artifact — owns R-VPQ6-37CQ, R-VQY2-GZ3F, R-VS5Y-UQU4, R-VTDV-8IKT
-- D19 → `project/design/D19.md` — Introspection always emits the four identity headers from the identities row, and fails closed — owns R-VULR-MABI, R-VX1K-DTSW, R-VY9G-RLJL, R-VZHD-5DAA, R-HSHQ-Y8BC, R-HTPN-C021, R-HUXJ-PRSQ, R-HW5G-3JJF, R-HXDC-HBA4
-- D20 → `project/design/D20.md` — Apex login-bounce nginx primitive: a shared `@login_bounce` that redirects logged-out navigations to `/login` and 401s scripted fetches — owns R-XJBT-7YIF, R-XKJP-LQ94
+- D19 → `project/design/D19.md` — Introspection always emits the four identity headers from the identities row, and fails closed — owns R-VULR-MABI, R-VX1K-DTSW, R-VY9G-RLJL, R-HW5G-3JJF, R-HSHQ-Y8BC, R-HTPN-C021, R-HUXJ-PRSQ, R-VZHD-5DAA, R-HXDC-HBA4
+- D20 → `project/design/D20.md` — Apex login-bounce nginx primitive: a shared `@login_bounce` that redirects logged-out *navigations* to `/login`, and 401s everything else — owns R-XJBT-7YIF, R-XKJP-LQ94
 - D21 → `project/design/D21.md` — Sign-in remembers where you were headed: a validated same-site `return_to` on the web handshake — owns R-XLRL-ZHZT, R-XO7E-R1H7, R-XPFB-4T7W
 - D22 → `project/design/D22.md` — The web callback returns you to `return_to`, or `/` by default — owns R-XQN7-IKYL, R-XRV3-WCPA
 - D23 → `project/design/D23.md` — Purge legacy auth state and enforce the `owner_id` invariant (`NOT NULL`) — owns R-6QJD-1MUY, R-6RR9-FELN, R-6SZ5-T6CC, R-6U72-6Y31
@@ -36,6 +36,10 @@ Verification ids change.
 - D27 → `project/design/D27.md` — `/login` becomes the provider chooser; `/login/google` and `/login/github` start the flows — owns R-IGHP-NQI0, R-IHPM-1I8P, R-IIXI-F9ZE, R-IK5E-T1Q3
 - D28 → `project/design/D28.md` — The GitHub callback: `/oauth/github/callback`, gated on verified primary email + active ikigenba-org membership — owns R-INT3-YCY6, R-IP10-C4OV, R-IQ8W-PWFK, R-IRGT-3O69, R-ISOP-HFWY, R-ITWL-V7NN
 - D29 → `project/design/D29.md` — MCP authorize keeps one URL and grows a chooser: `provider` selects the IdP, absent renders the choice — owns R-IWCE-MR51, R-IXKB-0IVQ, R-IYS7-EAMF, R-J003-S2D4
+- D30 → `project/design/D30.md` — The introspection endpoints are the suite's edge minter: a fresh correlation id per gated request — owns R-X7FZ-83J9, R-X8NV-LV9Y, R-X9VR-ZN0N, R-XB3O-DERC, R-XCBK-R6I1
+- D31 → `project/design/D31.md` — Every gated auth decision emits an `edge` telemetry record — owns R-XDJH-4Y8Q, R-XERD-IPZF, R-XFZ9-WHQ4, R-XIF2-O17I, R-XJMZ-1SY7, R-XKUV-FKOW, R-XM2R-TCFL
+- D32 → `project/design/D32.md` — The internal audit log stays; edge records are additive — owns R-XNAO-746A
+- D33 → `project/design/D33.md` — The apex nginx fragment blanks client-supplied correlation ids and forwards the original method — owns R-XOIK-KVWZ, R-XPQG-YNNO
 
 ## Verification ids → Decision
 
@@ -74,11 +78,6 @@ Verification ids change.
 - R-FEIJ-3ZKX → D13 → `project/design/D13.md`
 - R-FFQF-HRBM → D13 → `project/design/D13.md`
 - R-FGYB-VJ2B → D13 → `project/design/D13.md`
-- R-FI68-9AT0 → D14 → `project/design/D14.md`
-- R-FJE4-N2JP → D14 → `project/design/D14.md`
-- R-FKM1-0UAE → D14 → `project/design/D14.md`
-- R-FLTX-EM13 → D14 → `project/design/D14.md`
-- R-FN1T-SDRS → D14 → `project/design/D14.md`
 - R-FO9Q-65IH → D15 → `project/design/D15.md`
 - R-FPHM-JX96 → D15 → `project/design/D15.md`
 - R-FQPI-XOZV → D15 → `project/design/D15.md`
@@ -86,8 +85,6 @@ Verification ids change.
 - R-FT5B-P8H9 → D15 → `project/design/D15.md`
 - R-FUD8-307Y → D15 → `project/design/D15.md`
 - R-FVL4-GRYN → D15 → `project/design/D15.md`
-- R-FWT0-UJPC → D16 → `project/design/D16.md`
-- R-FY0X-8BG1 → D16 → `project/design/D16.md`
 - R-HSHQ-Y8BC → D19 → `project/design/D19.md`
 - R-HTPN-C021 → D19 → `project/design/D19.md`
 - R-HUXJ-PRSQ → D19 → `project/design/D19.md`
@@ -149,11 +146,34 @@ Verification ids change.
 - R-VX1K-DTSW → D19 → `project/design/D19.md`
 - R-VY9G-RLJL → D19 → `project/design/D19.md`
 - R-VZHD-5DAA → D19 → `project/design/D19.md`
+- R-WWGV-S5V0 → D14 → `project/design/D14.md`
+- R-WXOS-5XLP → D14 → `project/design/D14.md`
+- R-WYWO-JPCE → D14 → `project/design/D14.md`
+- R-X1CH-B8TS → D14 → `project/design/D14.md`
+- R-X2KD-P0KH → D14 → `project/design/D14.md`
+- R-X3SA-2SB6 → D14 → `project/design/D14.md`
+- R-X506-GK1V → D16 → `project/design/D16.md`
+- R-X682-UBSK → D16 → `project/design/D16.md`
+- R-X7FZ-83J9 → D30 → `project/design/D30.md`
+- R-X8NV-LV9Y → D30 → `project/design/D30.md`
+- R-X9VR-ZN0N → D30 → `project/design/D30.md`
+- R-XB3O-DERC → D30 → `project/design/D30.md`
+- R-XCBK-R6I1 → D30 → `project/design/D30.md`
+- R-XDJH-4Y8Q → D31 → `project/design/D31.md`
+- R-XERD-IPZF → D31 → `project/design/D31.md`
+- R-XFZ9-WHQ4 → D31 → `project/design/D31.md`
+- R-XIF2-O17I → D31 → `project/design/D31.md`
 - R-XJBT-7YIF → D20 → `project/design/D20.md`
+- R-XJMZ-1SY7 → D31 → `project/design/D31.md`
 - R-XKJP-LQ94 → D20 → `project/design/D20.md`
+- R-XKUV-FKOW → D31 → `project/design/D31.md`
 - R-XLRL-ZHZT → D21 → `project/design/D21.md`
+- R-XM2R-TCFL → D31 → `project/design/D31.md`
+- R-XNAO-746A → D32 → `project/design/D32.md`
 - R-XO4W-LKAI → D5 → `project/design/D05.md`
 - R-XO7E-R1H7 → D21 → `project/design/D21.md`
+- R-XOIK-KVWZ → D33 → `project/design/D33.md`
 - R-XPFB-4T7W → D21 → `project/design/D21.md`
+- R-XPQG-YNNO → D33 → `project/design/D33.md`
 - R-XQN7-IKYL → D22 → `project/design/D22.md`
 - R-XRV3-WCPA → D22 → `project/design/D22.md`

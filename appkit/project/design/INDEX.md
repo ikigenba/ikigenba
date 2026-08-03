@@ -20,9 +20,48 @@ Verification ids change.
 - D11 → `project/design/D11.md` — Event-routing conformance: the chassis compiles and plumbs the family/kind revision — owns R-7JFR-R31S, R-7LVK-IMJ6
 - D12 → `project/design/D12.md` — The loopback-only route class: `LoopbackOnly` + `Router.HandleLoopback`, `/feed` mount wrapped, predicate narrowed to `X-Forwarded-Proto` — owns R-X0MQ-MNXN, R-X1UN-0FOC, R-X32J-E7F1, R-X4AF-RZ5Q
 - D13 → `project/design/D13.md` — Identity keys on `X-Owner-Id`; `server.Identity` carries the four owner headers + `ClientID`; gate hard-flipped off `X-Owner-Email` — owns R-DDVL-DPVB, R-DF3H-RHM0, R-DGBE-59CP
+- D14 → `project/design/D14.md` — Correlation context: read-or-mint at the chassis edge (consuming `eventplane/correlation`), Crockford ULIDs — owns R-14QN-I04R, R-15YJ-VRVG, R-176G-9JM5, R-18EC-NBCU, R-19M9-133J
+- D15 → `project/design/D15.md` — The `appkit/telemetry` recorder: bounded drop-oldest ring, ≤256 batches, fire-and-forget ingest POST, env config — owns R-1AU5-EUU8, R-1C21-SMKX, R-1D9Y-6EBM, R-1EHU-K62B, R-1FPQ-XXT0, R-1GXN-BPJP
+- D16 → `project/design/D16.md` — The allowlist record shape and the capture-under-threshold param encoder (1024 B/value, 8192 B/record, `$elided` + SHA-256) — owns R-1I5J-PHAE, R-1JDG-3913, R-1LT8-USIH, R-1N15-8K96, R-1O91-MBZV
+- D17 → `project/design/D17.md` — Inbound instrumentation: `dispatchTool` MCP records + plain-HTTP request records, `Tool.SensitiveParams`, the exclusion list — owns R-1PGY-03QK, R-1QOU-DVH9, R-1RWQ-RN7Y, R-1T4N-5EYN, R-1UCJ-J6PC, R-1VKF-WYG1
+- D18 → `project/design/D18.md` — Lifecycle records (`start` with version / `stop`) and event-plane publish/consume hop recording wired through `eventplane/observe` in `serve` — owns R-1WSC-AQ6Q, R-1Y08-OHXF, R-1Z85-29O4, R-20G1-G1ET, R-21NX-TT5I
+- D19 → `project/design/D19.md` — `appkit/httpclient`: the shared instrumented outbound client, correlation propagated to loopback IP literals only — owns R-22VU-7KW7, R-25BM-Z4DL, R-26JJ-CW4A, R-27RF-QNUZ, R-28ZC-4FLO
+- D20 → `project/design/D20.md` — Chain roots: `Recorder.StartRoot`/`StartChain`, plus `Router.Recorder()` and `Router.HTTPClient(timeout)` — owns R-XP15-H34E, R-XQ91-UUV3, R-XRGY-8MLS, R-XSOU-MECH, R-XTWR-0636
 
 ## Verification ids → Decision
 
+- R-14QN-I04R → D14 → `project/design/D14.md`
+- R-15YJ-VRVG → D14 → `project/design/D14.md`
+- R-176G-9JM5 → D14 → `project/design/D14.md`
+- R-18EC-NBCU → D14 → `project/design/D14.md`
+- R-19M9-133J → D14 → `project/design/D14.md`
+- R-1AU5-EUU8 → D15 → `project/design/D15.md`
+- R-1C21-SMKX → D15 → `project/design/D15.md`
+- R-1D9Y-6EBM → D15 → `project/design/D15.md`
+- R-1EHU-K62B → D15 → `project/design/D15.md`
+- R-1FPQ-XXT0 → D15 → `project/design/D15.md`
+- R-1GXN-BPJP → D15 → `project/design/D15.md`
+- R-1I5J-PHAE → D16 → `project/design/D16.md`
+- R-1JDG-3913 → D16 → `project/design/D16.md`
+- R-1LT8-USIH → D16 → `project/design/D16.md`
+- R-1N15-8K96 → D16 → `project/design/D16.md`
+- R-1O91-MBZV → D16 → `project/design/D16.md`
+- R-1PGY-03QK → D17 → `project/design/D17.md`
+- R-1QOU-DVH9 → D17 → `project/design/D17.md`
+- R-1RWQ-RN7Y → D17 → `project/design/D17.md`
+- R-1T4N-5EYN → D17 → `project/design/D17.md`
+- R-1UCJ-J6PC → D17 → `project/design/D17.md`
+- R-1VKF-WYG1 → D17 → `project/design/D17.md`
+- R-1WSC-AQ6Q → D18 → `project/design/D18.md`
+- R-1Y08-OHXF → D18 → `project/design/D18.md`
+- R-1Z85-29O4 → D18 → `project/design/D18.md`
+- R-20G1-G1ET → D18 → `project/design/D18.md`
+- R-21NX-TT5I → D18 → `project/design/D18.md`
+- R-22VU-7KW7 → D19 → `project/design/D19.md`
+- R-25BM-Z4DL → D19 → `project/design/D19.md`
+- R-26JJ-CW4A → D19 → `project/design/D19.md`
+- R-27RF-QNUZ → D19 → `project/design/D19.md`
+- R-28ZC-4FLO → D19 → `project/design/D19.md`
 - R-4199-A0U9 → D10 → `project/design/D10.md`
 - R-42H5-NSKY → D10 → `project/design/D10.md`
 - R-44WY-FC2C → D10 → `project/design/D10.md`
@@ -75,6 +114,11 @@ Verification ids change.
 - R-X1UN-0FOC → D12 → `project/design/D12.md`
 - R-X32J-E7F1 → D12 → `project/design/D12.md`
 - R-X4AF-RZ5Q → D12 → `project/design/D12.md`
+- R-XP15-H34E → D20 → `project/design/D20.md`
+- R-XQ91-UUV3 → D20 → `project/design/D20.md`
+- R-XRGY-8MLS → D20 → `project/design/D20.md`
+- R-XSOU-MECH → D20 → `project/design/D20.md`
+- R-XTWR-0636 → D20 → `project/design/D20.md`
 - R-YO06-9I18 → D1 → `project/design/D01.md`
 - R-YP82-N9RX → D1 → `project/design/D01.md`
 - R-YQFZ-11IM → D2 → `project/design/D02.md`

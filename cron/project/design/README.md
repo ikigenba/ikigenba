@@ -35,6 +35,25 @@ in git, not here.
 > at-most-once (schedule, slot) firing, and the `{name, scheduled_for,
 > fired_at}` payload — is **unchanged**: the conversion and the routing
 > revision move *how events are addressed and wired*, never *what fires when*.
+>
+> **Plus the correlation adoption and tick root (D16).** cron joins the suite
+> telemetry capability on both sides. As an **adopter**: the nginx fragment
+> captures the introspection-minted `X-Correlation-Id` on every gated location
+> and strips it on the ungated PRM bootstrap, and all inbound recording
+> (`request`, `lifecycle`, `publish`) arrives by recompiling against the
+> revised chassis — cron writes no inbound instrumentation. As the **root of
+> every scheduled chain**: each firing calls the chassis `StartRoot` helper in
+> `tick.fireOne`, which mints a fresh Crockford-ULID correlation id, installs
+> it on the context `outbox.Append` reads, and records a `root` record with op
+> `cron:tick/<name>` — so a scheduled chain begins at the tick and consumers
+> continue it rather than restarting it. The `correlation_id` column arrives by
+> one new **additive** `ALTER TABLE` migration
+> (`outbox.AddCorrelationIDSQL`) — the second and last schema change in this
+> design. The tick worker's `(schedule, slot)` at-most-once guarantee, the
+> payload shape, and the atomicity of the append with the `last_slot` advance
+> are all unchanged. `eventplane/correlation`, the revised `eventplane/outbox`,
+> and the revised `appkit` telemetry surfaces are fixed external contracts
+> consumed here — see `project/research/research.md`.
 
 ## Requirement ids
 
@@ -140,6 +159,20 @@ approach every Decision's Verification list assumes:
   `registry.BaseURL("cron")` (D11), so a registry renumber fails the test. This is
   a genuine assertion over the shipped artifact, runnable in the same
   `go test ./...`.
+- **Correlation and root claims run over the real column and a real recorder
+  seam.** D16's claims are asserted by reading the `outbox` row's
+  `correlation_id` back by SQL after driving the **real** `tick.Worker.Fire`
+  against a temp SQLite database built by cron's full embedded migration set,
+  and by inspecting the records the worker's recorder actually received. A
+  double around the `EventSink` or a spy on `event.Build` would pass even when
+  the id never reached the row, which is precisely the failure at issue.
+  Chassis behavior (read-or-mint middleware, the recorder's ring/batching/
+  ingest, `request`/`lifecycle`/`publish` records, `StartRoot`'s own mint and
+  nil-safety) is **not** re-tested here: it is appkit's and eventplane's
+  denominator, and duplicating it would mean two homes for one behavior. What
+  cron proves is that *its* migration set applies the upgrade and that *its*
+  firing seam mints per firing, propagates to the row, and roots on the same
+  id.
 - **Determinism.** The landing handler takes its name/version as plain string
   arguments (injected at the composition root from `rt.Service()`/`rt.Version()`),
   so its output is fully determined by its inputs and the on-disk template — no

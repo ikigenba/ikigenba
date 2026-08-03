@@ -9,5 +9,13 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 17
+Next phase: 24
+
+- Phase 17 ⬜ realizes D14 — correlation read-or-mint at the chassis edge, on Crockford ULIDs
+- Phase 18 ⬜ realizes D16 — the telemetry record shape, digests, and the param encoder
+- Phase 19 ⬜ realizes D15 — the telemetry recorder: ring, batching, ingest client, env config
+- Phase 20 ⬜ realizes D17 — inbound instrumentation: MCP dispatch and the HTTP middleware chain
+- Phase 22 ⬜ realizes D19 — `appkit/httpclient`, the shared instrumented outbound client
+- Phase 23 ⬜ realizes D20 — chain-root helpers and the chassis's recorder reach
+- Phase 21 ⬜ realizes D18 — lifecycle records and event-plane hop recording in `serve`
 

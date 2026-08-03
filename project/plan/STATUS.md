@@ -12,4 +12,7 @@ done marker; done is deleted, and history lives in git. This file carries no
 bare status glyph outside phase lines, so the anchored grep matches only
 phase lines.
 
-Next phase: 52
+Next phase: 54
+
+- Phase 52 ⬜ realizes — — write `docs/telemetry-protocol.md` and amend `docs/correlation-ids.md` (the normative telemetry contract)
+- Phase 53 ⬜ realizes — — wire the `telemetry` service into `go.work`, `bin/start`, and `nginx/run` (after the telemetry module exists)

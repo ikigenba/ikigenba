@@ -8,52 +8,74 @@ the exact, checkable proof of that promise.
 
 ## Problem
 
-Events on the suite's event plane are addressed by a flat `type` string from a
-closed per-service list, and the *thing the event happened to* — a file path,
-a schedule name, a prompt name — is buried in the payload where selectors
-cannot see it. A prompt that cares only about PDFs landing under `/bills/`
-must be triggered by *every* dropbox file event on the box and burn a full
-agent run discovering each one is not for it. Only cron escapes this, by
-baking its subject into the type — which in turn breaks the closed-list model
-and forces consumers to special-case it. Routing precision exists for one
-producer and by accident.
+Two gaps in how the suite's event plane addresses and accounts for its events.
+
+**Addressing.** Events were addressed by a flat `type` string from a closed
+per-service list, and the *thing the event happened to* — a file path, a
+schedule name, a prompt name — was buried in the payload where selectors could
+not see it. A prompt that cares only about PDFs landing under `/bills/` had to
+be triggered by *every* dropbox file event on the box and burn a full agent run
+discovering each one was not for it. Only cron escaped this, by baking its
+subject into the type — which in turn broke the closed-list model and forced
+consumers to special-case it. Routing precision existed for one producer and by
+accident.
+
+**Accountability.** Work in this suite crosses service boundaries by
+*publishing a fact*, not by calling an API: a user action lands in one service,
+which publishes, and a second service reacts minutes later in a different
+process. Nothing carries the identity of the originating action across that
+hop, so the causal thread breaks exactly where it is hardest to reconstruct by
+hand. A service that wants to account for the hop — to record that this event
+was published, that this handler ran and how it ended — has nowhere to stand:
+the plumbing that knows those facts is a library, and the machinery that
+records them is the application chassis that *depends on* this library, so the
+library cannot reach for it.
 
 ## Purpose
 
 `eventplane` is the suite's shared event-plane library (producer `outbox` +
-consumer engine `consumer`). This revision gives every event a producer-chosen
-**routing address** — what happened, and to what — and gives every selector in
-the suite one shared way to match against it, so a consumer fires for exactly
-the events it cares about and nothing else. It realizes, inside this library,
-the suite-level addressing model in `docs/event-routing-design.md`.
+consumer engine `consumer`). It gives every event a producer-chosen **routing
+address** — what happened, and to what — with one shared way to match against
+it, so a consumer fires for exactly the events it cares about and nothing else.
+It also carries the **correlation id of the work that caused each event**
+across the hop as a first-class envelope fact, and exposes an **observation
+seam** so whatever wants to account for publish and consume hops can, without
+the library depending on it.
 
 ## Users
 
 Suite service developers (and the build loops acting for them): producers that
 publish events through `outbox`, consumers that receive them through
-`consumer`, and services that validate or evaluate event selectors (e.g. a
-trigger filter) and need the one shared matcher to do it.
+`consumer`, services that validate or evaluate event selectors (e.g. a trigger
+filter) and need the one shared matcher, and the application chassis that
+observes and records what crosses the plane.
 
 ## Scope
 
-This revision covers event **addressing and selection** only: the envelope's
-routing fields, the canonical routing key, the single matcher, the producer's
-declared vocabulary (families) and its reflection/validation surface, and the
-consumer-side visibility of the routing fields. It is a **hard cutover** — the
-old addressing is replaced, with no dual-format or compatibility period (the
-suite is inside its no-live-data migration window).
+This library covers event **addressing and selection**, the **correlation of
+events with the work that caused them**, and the **observation seam** for
+publish and consume hops. The correlation id is an envelope fact and never a
+payload convention; the library is its carrier, never its interpreter — it
+neither stores, searches, nor reports on what it carries.
+
+The library also owns the one home for the suite's correlation-id primitives —
+the header name, the id format, and the request-scoped accessor — because the
+chassis and the services that need them all sit downstream of this library and
+must share exactly one of each.
 
 Nothing else about the event plane changes: delivery semantics (ordering,
 at-least-once, stall/skip), cursors and resync, retention, backoff, and the
 outbox's atomicity all stand exactly as built. Filters select on the routing
-address only — never on payload contents. Each consuming service adopts the
-revised addressing in its own spec; this library ships only its own two
-package surfaces and the shared schema constants.
+address only — never on payload contents. Observation is passive: it can never
+change what is delivered, in what order, or whether it is delivered at all.
+Each consuming service adopts these surfaces in its own spec; this library
+ships only its own package surfaces and the shared schema constants.
 
 ## Contractual constants
 
-These come from the suite addressing model (`docs/event-routing-design.md`)
-and are promised verbatim:
+These come from the suite addressing model
+(`docs/event-routing-design.md`) and the suite correlation standard
+(`docs/correlation-ids.md`), and are promised verbatim:
 
 - An event is addressed by `source` (the producing service), `kind` (the fact
   class, lowercase `[a-z0-9_.-]+`), and `subject` (either empty or a
@@ -64,6 +86,12 @@ and are promised verbatim:
 - Selection is one glob over the whole key: `*` matches within a path segment
   (never across `/`), `**` crosses segments, `?` matches one character,
   character classes as in standard glob, no brace expansion.
+- A correlation id is a bare 26-character Crockford base32 ULID: 48 bits of
+  millisecond timestamp followed by 80 bits of cryptographic randomness. It is
+  opaque — nothing parses it.
+- The correlation id travels between processes in the header
+  `X-Correlation-Id`, and on the event plane in the envelope field
+  `correlation_id`.
 
 ## What we promise (user-facing behavior)
 
@@ -83,6 +111,23 @@ and are promised verbatim:
   being a special case: dynamic subjects are ordinary.
 - A malformed address never enters the plane: publishing with an invalid kind
   or subject fails loudly at the producer.
+- An event published from inside correlated work carries that work's
+  correlation id, and the producer does nothing to make that happen beyond
+  passing along the context it already has. The id is never something the
+  producer packs into its payload.
+- A consumer's handler runs inside the same correlated work that published the
+  event: whatever it publishes, calls, or spawns in turn belongs to the same
+  chain, again without the handler doing anything to arrange it.
+- An event that arrives carrying no correlation gives its handler a fresh
+  chain of its own, so downstream work is never orphaned — and two such events
+  never share a chain by accident.
+- Anything that wants to account for the plane can be handed a single callback
+  and will be told about every publish and every consume: what the event was,
+  which chain it belonged to, how it ended, and how long it took. The library
+  needs to know nothing about what is listening.
+- Observation cannot hurt delivery. A listener that is slow, that fails, or
+  that crashes outright changes nothing about which events are delivered, in
+  what order, or whether the cursor advances.
 
 ## Success criteria (outcomes)
 
@@ -101,6 +146,19 @@ and are promised verbatim:
   `dropbox:create/**` reports that it can.
 - Publishing with an uppercase kind, or a subject that is neither empty nor
   `/`-rooted, is refused with an explanatory error.
-- The event plane's delivery behavior is unchanged: events still arrive in
-  order, at least once, with the same recovery behavior as before this
-  revision.
+- An event published from within correlated work arrives at its consumer
+  reporting the same correlation id the publishing work had.
+- A handler that publishes a further event produces an event carrying the
+  *original* correlation id — the chain survives the hop, and survives a
+  second hop the same way.
+- An event published with no correlation in scope still gives its handler a
+  well-formed chain id, and two such events give two different ones.
+- A listener wired to a producer and to a consumer sees one publish record and
+  one consume record per event, each reporting the event's address, its chain
+  id, how it ended, and how long it took — including the failures, not only
+  the successes.
+- A listener that panics on every single call changes nothing a consumer sees:
+  the same events arrive, in the same order, and progress is retained across a
+  reconnect exactly as without it.
+- The event plane's delivery behavior is otherwise unchanged: events still
+  arrive in order, at least once, with the same recovery behavior as before.

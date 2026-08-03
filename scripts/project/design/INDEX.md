@@ -33,6 +33,11 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D27 → `project/design/D27.md` — `suite.files` share paths: client-side leading-slash normalization on every share-path argument (`list` prefix included, absent path unchanged), absolute-canonical teaching in `describe` — owns R-ZECX-40UZ, R-ZFKT-HSLO, R-ZGSP-VKCD
 - D28 → `project/design/D28.md` — Owner-id keying: rebuild the `scripts` table (`owner_id` sole scoping key + write-once `owner_email` snapshot, rows dropped, `idx_scripts_source` rekeyed), rekey all scoping/`ownsScript` on `owner_id`, expose both owner fields on the MCP surface — owns R-Q2LM-XR9W, R-Q3TJ-BJ0L, R-Q51F-PARA, R-Q69C-32HZ, R-Q7H8-GU8O, R-Q8P4-ULZD
 
+- D29 → `project/design/D29.md` — `runs.correlation_id`: mint-or-inherit at spawn, stored on the run, exposed on the run surface — owns R-4OW5-Q1ND, R-4Q42-3TE2, R-4RBY-HL4R, R-4SJU-VCVG
+- D30 → `project/design/D30.md` — The chain crosses the sandbox boundary: `SUITE_CORRELATION_ID` and `X-Correlation-Id` on every `suite.*` call — owns R-4UZN-MWCU, R-4W7K-0O3J
+- D31 → `project/design/D31.md` — nginx fragment: capture the edge-minted chain id on the gated locations, strip it on the ungated one — none (structural; fragment-only)
+- D32 → `project/design/D32.md` — Rebuild to adopt: chain continuation across the consumer fan-out, the ctx-bearing `Append`, the origin at spawn, and the recorded boundary of a run — owns R-4XFG-EFU8, R-4YNC-S7KX, R-4ZV9-5ZBM, R-5135-JR2B
+
 ## Verification ids → Decision
 
 - R-465K-NCPV → D15 → `project/design/D15.md`
@@ -40,6 +45,16 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-49T9-SNXY → D15 → `project/design/D15.md`
 - R-4EOV-BQWQ → D16 → `project/design/D16.md`
 - R-4FWR-PINF → D16 → `project/design/D16.md`
+- R-4OW5-Q1ND → D29 → `project/design/D29.md`
+- R-4Q42-3TE2 → D29 → `project/design/D29.md`
+- R-4RBY-HL4R → D29 → `project/design/D29.md`
+- R-4SJU-VCVG → D29 → `project/design/D29.md`
+- R-4UZN-MWCU → D30 → `project/design/D30.md`
+- R-4W7K-0O3J → D30 → `project/design/D30.md`
+- R-4XFG-EFU8 → D32 → `project/design/D32.md`
+- R-4YNC-S7KX → D32 → `project/design/D32.md`
+- R-4ZV9-5ZBM → D32 → `project/design/D32.md`
+- R-5135-JR2B → D32 → `project/design/D32.md`
 - R-7TR5-QSY4 → D17 → `project/design/D17.md`
 - R-7UZ2-4KOT → D17 → `project/design/D17.md`
 - R-7W6Y-ICFI → D17 → `project/design/D17.md`

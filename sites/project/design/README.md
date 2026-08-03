@@ -87,6 +87,17 @@ Shared facts every Decision leans on:
   appkit's. main.go declares sites's identity (the Spec) and wires its surface
   through the `Spec.Handlers` hook: the landing route (`GET /{$}`), the site-serving
   routes (`GET /public/`, `GET /private/`), and the `POST /mcp` mount.
+- **The chassis also owns correlation and telemetry.** Reading-or-minting the
+  `X-Correlation-Id` on every inbound request, recording inbound MCP and plain
+  HTTP traffic, emitting `lifecycle` records at boot and graceful shutdown, and
+  the **instrumented outbound HTTP client the Router hands out** (`rt.HTTPClient(…)`)
+  are all appkit's, proven by appkit's ids and never re-proven here. sites' own
+  obligations are exactly two: its one outbound client is that Router-provided
+  client, injected at the composition root and reached by the live request
+  context (D28); and its nginx fragment hands the process a trustworthy id
+  (D29). Since sites is not an event-plane producer, the
+  `eventplane` `Append` change that carries `correlation_id` cannot reach its
+  source; adopting the new libraries is a recompile.
 - **nginx is the sole trust boundary.** sites runs no token/session logic and
   binds `127.0.0.1` only. Every `/srv/sites/` request is gated (or not) at nginx,
   which forwards to the loopback service. **nginx serves no site bytes off disk** —
@@ -216,7 +227,21 @@ Testing is part of the architecture. The cross-cutting approach:
   `…/public/` with no `auth_request`, the private tier gates with
   `auth_request /_session-authn` and `proxy_pass`es to `…/private/`, neither
   contains `alias` nor references the on-disk state path, and the pre-existing
-  landing/PRM/mcp/`@sites_authn_500` locations remain (D4's ids).
+  landing/PRM/mcp/`@sites_authn_500` locations remain (D4's ids). D29's
+  correlation-header lines extend that same test under their own ids, scoped to
+  what a content read genuinely shows — the directives present, on the right
+  locations, in the right form. Whether a real minted id arrives is not
+  claimable here; it needs a live nginx plus dashboard introspection, outside
+  `sites/`.
+- **Outbound HTTP is proven at the injected client, not by re-asserting the
+  chassis.** The instrumented client comes off the Router (`rt.HTTPClient(…)`)
+  and is injected into the mirror client at the composition root, so sites' tests
+  supply a `*http.Client` whose `Transport` is a recording `RoundTripper` and
+  assert the two things that are sites': every request goes through the injected
+  client, and the live request context reaches it (the transport reads the
+  correlation id off `req.Context()`). Setting the header and emitting the
+  `outbound` record are appkit's behaviors with appkit's ids, never re-proven
+  here — and no test needs to stand up a Router.
 - **Determinism.** Handlers take their inputs explicitly (name/version strings,
   the site slice, the `SITES_ROOT`), so output is determined by inputs — no clock,
   no network.

@@ -23,6 +23,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D17 → `project/design/D17.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer tier deliberately excluded) — owns R-3BO3-336I, R-3CVZ-GUX7, R-3E3V-UMNW
 - D18 → `project/design/D18.md` — Event-routing conformance: kinds keep `contact.*`, subject = `/<contact id>`, family registry, new outbox migration — owns R-8HHB-24SG, R-8IP7-FWJ5, R-8JX3-TO9U, R-8L50-7G0J
 - D19 → `project/design/D19.md` — Structured MCP adoption: `structuredContent` + declared `outputSchema` per domain verb + typed closed-vocabulary error codes (no guard swap — crm has no loopback guard site) — owns R-5Y60-E30A, R-5ZDW-RUQZ, R-60LT-5MHO, R-61TP-JE8D, R-631L-X5Z2, R-65HE-OPGG
+- D20 → `project/design/D20.md` — Correlation-id adoption: the nginx fragment forwards the chain id on gated locations and strips it on the ungated PRM bootstrap; event appends carry it from context — owns R-X9B0-30E7, R-XAIW-GS4W, R-XCYP-8BMA, R-XE6L-M3CZ
 
 ## Verification ids → Decision
 
@@ -74,3 +75,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-X04D-MBGE → D15 → `project/design/D15.md`
 - R-X1CA-0373 → D16 → `project/design/D16.md`
 - R-X2K6-DUXS → D16 → `project/design/D16.md`
+- R-X9B0-30E7 → D20 → `project/design/D20.md`
+- R-XAIW-GS4W → D20 → `project/design/D20.md`
+- R-XCYP-8BMA → D20 → `project/design/D20.md`
+- R-XE6L-M3CZ → D20 → `project/design/D20.md`

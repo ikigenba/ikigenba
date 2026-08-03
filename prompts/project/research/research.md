@@ -153,3 +153,77 @@ Facts verified against the tagged agentkit source and the `oauth` CLI repo (`git
 **The `oauth` CLI.** Provider-agnostic authorization-code + PKCE login: serves its own loopback callback, opens the browser, exchanges the code, and writes the token endpoint's JSON response **verbatim to stdout** (human output on stderr; failed login writes nothing, exits non-zero) — exactly the file `subscription.Load` consumes. Its own `--help` carries the OpenAI worked example: `--auth-url https://auth.openai.com/oauth/authorize --token-url https://auth.openai.com/oauth/token --client-id app_EMoamEEZ73f0CkXaXp7hrann --scope "openid profile email offline_access" --port 1455 --callback-path /auth/callback` (matching OpenAI's registered `http://localhost:1455/auth/callback`). opsctl init-box installs it to `/usr/local/bin` on every box (its D11); on a headless box the printed authorize URL plus an `ssh -L 1455:localhost:1455` forward completes the flow.
 
 **On-box home.** `/opt/prompts/state/` is the durable, service-owned tree: deploy chowns it to `prompts:prompts` and never touches its contents — the correct home for a file the service must rewrite and that must survive deploys. `/opt/prompts/etc/` is deploy-owned versioned config (root-written, 0644) and is wrong for a mutable credential. The SSM/env secret path is also wrong: it delivers static values from the workstation, and a pushed copy of a rotating lineage goes stale after the first on-box refresh.
+
+## 9. Suite telemetry — the contracts prompts adopts (external ground truth)
+
+Facts settled in the suite-wide telemetry design (`docs/telemetry-protocol.md`,
+`docs/correlation-ids.md`) and owned by other workspaces. prompts consumes them
+by value and re-derives none of them.
+
+**The correlation header.** `X-Correlation-Id`, carrying a **bare 26-character
+Crockford-base32 ULID** — no prefix, no separators, opaque to consumers. Same
+shape `prompts/internal/ids.NewULID` already mints, which is why a run id can
+*be* a chain id (the durable-root-reuse rule). appkit's middleware is the
+universal read-or-mint point: an inbound header is **trusted** (loopback
+callers are inside the trust boundary), absent means mint. The edge is where an
+untrusted id dies: the dashboard's introspection endpoints mint per gated route
+and return the id on the auth subresponse; each service's nginx fragment
+captures it with `auth_request_set` and overwrites anything client-supplied
+with `proxy_set_header`; ungated public locations set the header to `""`.
+
+**The recorder and its record kinds.** appkit owns an in-process recorder
+(ring buffer, batching, fire-and-forget POST to the telemetry service's
+loopback `/ingest`, best-effort — telemetry being down never blocks or crashes
+a service). Record kinds: `edge | request | outbound | publish | consume | root
+| lifecycle`. Records carry an allowlist of fields chosen by the
+instrumentation (id, time, correlation_id, service, kind, actor, op, params,
+outcome, detail) — never raw header dumps, never raw bodies; a response is
+recorded as size + SHA-256 digest, never literally. Ops relevant here:
+`request` → `mcp:<tool>` or `<METHOD> <path>`; `outbound` → `<METHOD>
+<host><path>`; `publish`/`consume` → the routing key; `root` → the origin, for
+which the settled form for a run spawn is **`run:<run-id>`**.
+
+**Self-originated work and roots.** A run spawn is named in the suite contract
+as one of the origins that mints its own chain and records a `root` record
+(beside a cron tick, a scripts run spawn, and a consumer processing an event
+with no chain id). `docs/correlation-ids.md`'s durable-root-reuse rule says an
+entity that already owns a suite ULID *is* the chain root — no second id is
+minted.
+
+**The event plane carries the chain.** `correlation_id` becomes a first-class
+**outbox column** and **wire envelope field**, populated by the eventplane
+library from context at `Append` (a signature change every producer sees at
+compile time), and surfaced into consumer handler contexts on delivery.
+eventplane must not import appkit, so the ctx-key ownership sits in a leaf
+package. This **supersedes** the payload-field convention
+`docs/correlation-ids.md` originally described (the wiki→prompts `group_id`
+linkage); a `group_id` remains a caller's reporting label, not a chain id.
+
+**The instrumented outbound client is Router-provided.** appkit publishes one
+outbound HTTP client that records an `outbound` record per round-trip and
+propagates `X-Correlation-Id` **only to loopback suite peers** (host
+`127.0.0.1`), never to third parties. The service-facing seam is the Router:
+`rt.HTTPClient(...)` hands back the client already wired to the recorder, so a
+service never assembles it from telemetry types. Services migrate their ad-hoc
+`http.Client`s onto it rather than instrumenting their own.
+
+For prompts specifically, the run path offers **nowhere to plug it in**:
+agentkit v0.16.0's `MCPServer` attachment (`{Name, URL, Headers}`, §2) exposes
+no transport or `*http.Client` injection, so in-run suite peer calls cannot
+ride the instrumented client; propagation happens via the `Headers` map and
+the hop is recorded by the receiving peer's inbound record (design D45 states
+this boundary).
+
+**Self-originated spawns go through a root-start helper.** appkit publishes a
+single helper for the mint-a-chain case: it establishes the root id, returns a
+context carrying it, and emits the `root` record — one call, no service-local
+record building. A caller with a durable root (a run, a job) supplies that
+entity's own id rather than having one minted, per the durable-root-reuse rule.
+
+**prompts' role in the capability: the content store.** The settled scope says
+telemetry stores skeletons, never bulk content, and explicitly that **LLM
+conversations are never duplicated — prompts already archives full run
+conversations and the correlation id resolves to the run.** Traffic originating
+*inside* sandboxes (the in-run agent's provider calls and its non-suite tool
+use) is out of recording scope by the same clause; the sandbox boundary (spawn,
+suite MCP calls, outcome) is what is recorded.

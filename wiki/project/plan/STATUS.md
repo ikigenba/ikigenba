@@ -10,4 +10,8 @@ no done marker; done is gone. This file deliberately carries **no bare status
 glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
-Next phase: 121
+Next phase: 124
+
+- Phase 121 ⬜ realizes D65 (storage + minting slice) — the ingest job row stores the chain id of the request that enqueued it and the worker resumes it, while self-started work roots its own: one per job with no stored id, one per catch-up-sweep drain cycle
+- Phase 122 ⬜ realizes D64 and D65's R-KIH2-R4UC — the prompts calls move onto the chassis's shared instrumented client and carry the received chain id, retiring the per-ask mint and the job-id-as-correlation rule
+- Phase 123 ⬜ realizes — — nginx fragment: forward the edge-minted correlation id on the four gated locations, strip it to empty on the ungated PRM bootstrap

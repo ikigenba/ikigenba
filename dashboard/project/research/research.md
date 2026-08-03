@@ -127,6 +127,92 @@ emoji). Any attribute placed in a header is therefore **percent-encoded**
 (UTF-8 then `%`-escaped) so the emitted value is guaranteed ASCII and
 injection-safe; a consumer percent-decodes to recover the original.
 
+## The suite telemetry protocol — the parts the dashboard consumes
+
+The suite gained a `telemetry` service (loopback port 3008, mount
+`/srv/telemetry/`) that holds a forensic record of every call in the suite. The
+dashboard is one producer of that record and the minter of the id that joins it
+together. The facts below are the settled suite contract, not the dashboard's to
+choose; the dashboard's design uses them by value.
+
+- **The correlation header is `X-Correlation-Id`,** carrying a **bare 26-character
+  Crockford base32 ULID** — 48 bits of millisecond timestamp then 80 bits of
+  randomness, no prefix, no separators (`docs/correlation-ids.md`). Crockford's
+  alphabet is `0123456789ABCDEFGHJKMNPQRSTVWXYZ`: it deliberately omits `I`, `L`,
+  `O`, and `U`, which is what distinguishes it from RFC 4648 base32 and makes the
+  format checkable by inspection.
+- **One id per causal chain, propagated verbatim.** A service that receives an id
+  passes it unchanged to everything it causes; re-minting mid-chain severs the
+  trail. The dashboard is the exception that *starts* chains, because it sits at
+  the boundary where an untrusted request becomes a trusted one.
+- **The edge is a strip-and-mint point.** Inbound ids are trusted only inside the
+  loopback boundary; on a public request they are discarded. The dashboard's
+  introspection endpoints mint and hand the id back to nginx, which forwards it
+  upstream on gated locations via `auth_request_set` and blanks it on ungated
+  public ones.
+- **The ingest endpoint** is `POST http://127.0.0.1:3008/ingest`, loopback-only,
+  body `{"records": [<record>, …], "dropped": <int optional>}`, answering `202`.
+  Delivery is best-effort by contract everywhere: telemetry being down never
+  blocks, slows, or fails the work being recorded.
+- **The record is an allowlist by construction** — only fields the
+  instrumentation explicitly chose; raw header dumps and raw bodies are never
+  captured. The JSON fields are `id`, `time` (RFC3339Nano UTC), `correlation_id`,
+  `service`, `kind` (`edge | request | outbound | publish | consume | root |
+  lifecycle`), `actor` (`{owner_email, client_id}`, omitted when unknown), `op`,
+  `params`, `outcome` (`{status, error, duration_ms, bytes, sha256}`), and
+  `detail`.
+- **The `edge` kind is the dashboard's.** Its `op` is `<METHOD> <original-uri>`
+  and its `detail` is `{decision: allow|deny|rate_limited, service}`. No other
+  service emits it.
+- **Digests are SHA-256, lowercase hex**; response content is never stored
+  literally, which is also what keeps show-once secrets out of the record by
+  construction. Retention is `TELEMETRY_RETENTION_DAYS`, default **90**, pruned
+  by the telemetry service.
+- **Recorder behavior (appkit's, not contractual, but what the dashboard's
+  best-effort assumptions rest on):** an in-memory ring buffer of ~4096 records
+  dropping oldest, batches of ≤256, a flush about every second or on a full
+  batch, a fire-and-forget POST, and the count of dropped records reported in the
+  next successful batch.
+
+### The two shared seams the dashboard consumes
+
+- **`eventplane/correlation`** — the leaf package that mints and carries the id.
+  It is a leaf on purpose: eventplane must not import appkit, and appkit's
+  middleware and eventplane's outbox both need the same minter and context key,
+  so neither can own it. The dashboard uses only "mint one fresh id".
+- **appkit's telemetry recorder** — constructed by the chassis from environment
+  config, handed to the app, and responsible for buffering, batching, and the
+  POST above. It is nil-safe/disabled-capable: an unconfigured box records
+  nothing and behaves identically otherwise.
+
+Both land in their own workspaces before the dashboard's phases build. Their Go
+signatures are those workspaces' decisions; the facts above (header name and
+format, record shape, best-effort delivery) are the parts fixed suite-wide.
+
+## nginx `auth_request`: what the subrequest does and does not carry
+
+The dashboard's introspection endpoints are reached only as `auth_request`
+subrequests, which constrains what they can know:
+
+- The subrequest is issued to an `internal;` location and its **response body is
+  discarded** — nginx reads only the status code and the response headers. This
+  is why the identity and correlation values are returned as *headers*.
+- Response headers of the subrequest are readable in the parent request as
+  `$upstream_http_<lowercased_header_with_underscores>`, captured into a variable
+  with `auth_request_set` (e.g. `auth_request_set $correlation_id
+  $upstream_http_x_correlation_id;`) and then forwarded with `proxy_set_header`.
+  `auth_request_set` is evaluated in the parent request's context, so a captured
+  value is usable on the `proxy_pass` that follows an allow.
+- The subrequest is **not** a faithful copy of the client's request: the request
+  body is dropped (the fragments set `proxy_pass_request_body off`), and the
+  method is not reliably the client's. Anything the endpoint needs about the
+  original request must be passed explicitly — which is why `X-Original-URI
+  $request_uri` already exists and why the original method needs its own header.
+- Client request headers *are* visible to the subrequest, including any
+  `X-Correlation-Id` an outside caller chose to send — hence the strip rule.
+- `proxy_set_header <name> "";` on a location removes that header from what is
+  proxied upstream: an empty value means the header is not sent at all.
+
 ## Existing local id primitive
 
 `internal/ids` already provides `ids.New()` — an opaque, random 128-bit value,

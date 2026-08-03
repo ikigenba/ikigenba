@@ -11,5 +11,7 @@ in the completion commit — there is no done marker; done is gone. This file
 deliberately carries **no bare status glyph** anywhere but on a phase line, so
 the anchored grep matches only phase lines.
 
-Next phase: 18
+Next phase: 19
+
+- Phase 18 ⬜ realizes D20 — correlation-id adoption: the nginx fragment forwards the edge-minted chain id on gated locations and strips it on the ungated one, and the contact-event append carries it from context
 
