@@ -11,7 +11,6 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 52
 
-- Phase 48 ⬜ realizes D1, D3, D4, D5, D6, D7, D9, D19, D29, D30 — bump agentkit to v0.16.0 across every consuming package
 - Phase 49 ⬜ realizes D39 — move the run directory into durable state, unified per run
 - Phase 50 ⬜ realizes D40 — the two prompt loaders, and a run listing that outlives its prompt
 - Phase 51 ⬜ realizes D41 — run_delete
