@@ -115,18 +115,18 @@ var providerEnvVars = map[string]string{
 // omitted provider.
 func ValidateConfig(c Config, getenv func(string) string, subAuthAvailable func() bool) (Config, error) {
 	entry, ok := catalog.Lookup(c.Model)
-	if !ok || entry.Pricing == nil {
+	if !ok || len(entry.Offerings) == 0 {
 		return Config{}, validationErrf("invalid config: unknown prompt model %q", c.Model)
 	}
 
 	if c.Provider == "" {
-		c.Provider = entry.Provider
+		c.Provider = string(entry.Offerings[0].Provider)
 	}
 	envVar, ok := providerEnvVars[c.Provider]
 	if !ok {
 		return Config{}, validationErrf("invalid config: provider %q is not supported", c.Provider)
 	}
-	if _, _, _, ok := catalog.Resolve(c.Provider, c.Model); !ok {
+	if _, ok := catalog.Offer(c.Model, catalogProviderID(c.Provider)); !ok {
 		return Config{}, validationErrf("invalid config: provider %q does not route model %q", c.Provider, c.Model)
 	}
 
@@ -134,25 +134,26 @@ func ValidateConfig(c Config, getenv func(string) string, subAuthAvailable func(
 	switch {
 	case c.Effort != "":
 		reasoning = agentkit.Level(c.Effort)
-	case c.ThinkingBudget != nil:
-		reasoning = agentkit.Budget(*c.ThinkingBudget)
 	case c.ThinkingLevel != "":
 		reasoning = agentkit.Level(c.ThinkingLevel)
+	case c.ThinkingBudget != nil:
+		reasoning = agentkit.Budget(*c.ThinkingBudget)
 	case c.Thinking != nil && !*c.Thinking:
 		reasoning = agentkit.DisableReasoning()
 	}
 	if !reasoning.IsUnset() {
-		if entry.Reasoning == nil {
-			return Config{}, validationErrf("invalid config: model %q accepts no reasoning control", c.Model)
-		}
-		if !entry.Reasoning.Accepts(reasoning) {
-			if reasoning.Disabled() && !entry.Reasoning.CanDisable {
-				return Config{}, validationErrf("invalid config: reasoning cannot be disabled for model %q", c.Model)
+		accepted, spec, _ := catalog.Check(c.Model, catalogProviderID(c.Provider), reasoning)
+		if !accepted {
+			if spec == nil {
+				return Config{}, validationErrf("invalid config: model %q through provider %q accepts no reasoning control", c.Model, c.Provider)
 			}
-			if len(entry.Reasoning.Levels) > 0 {
-				return Config{}, validationErrf("invalid config: model %q accepts reasoning levels %q", c.Model, entry.Reasoning.Levels)
+			if reasoning.Disabled() && !spec.CanDisable {
+				return Config{}, validationErrf("invalid config: reasoning cannot be disabled for model %q through provider %q", c.Model, c.Provider)
 			}
-			return Config{}, validationErrf("invalid config: model %q accepts reasoning budgets %d..%d and sentinels %v", c.Model, entry.Reasoning.Min, entry.Reasoning.Max, entry.Reasoning.Sentinels)
+			if len(spec.Levels) > 0 {
+				return Config{}, validationErrf("invalid config: model %q through provider %q accepts reasoning levels %q", c.Model, c.Provider, spec.Levels)
+			}
+			return Config{}, validationErrf("invalid config: model %q through provider %q accepts reasoning budgets %d..%d and sentinels %v", c.Model, c.Provider, spec.Min, spec.Max, spec.Sentinels)
 		}
 	}
 
@@ -179,6 +180,19 @@ func ValidateConfig(c Config, getenv func(string) string, subAuthAvailable func(
 		return Config{}, validationErrf("invalid config: %s is not set", envVar)
 	}
 	return c, nil
+}
+
+// CatalogProviderID translates prompts' stable config spelling for Z.ai to
+// AgentKit's vendor-namespace provider identity.
+func CatalogProviderID(provider string) agentkit.ProviderID {
+	return catalogProviderID(provider)
+}
+
+func catalogProviderID(provider string) agentkit.ProviderID {
+	if provider == "zai" {
+		return agentkit.ProviderZAI
+	}
+	return agentkit.ProviderID(provider)
 }
 
 // Create validates config and inserts a prompt. The sandbox is no longer

@@ -1,180 +1,46 @@
-// Package suite owns prompts' suite-specific discovery and identity policy: at
-// run spawn it snapshots the box's other loopback MCP services and exposes their
-// tools to the in-run agent, talking to each peer on behalf of the run's owner.
-//
-// Discovery is best-effort by design (decision: a down peer must not break a
-// run). An unreadable inventory, an unreachable peer, or a garbled tools/list is
-// logged loud and skipped; Discover never returns an error and never panics.
-//
-// Identity flows in as arguments (composition-root pattern): Discover takes
-// manifestRoot/owner/promptID and reads no environment. The runner reads
-// PROMPTS_MANIFEST_ROOT and threads it here.
+// Package suite maps the box inventory to AgentKit MCP attachments.
 package suite
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"log/slog"
-	"sync"
-	"time"
 
 	"appkit/inventory"
 	"github.com/ikigenba/agentkit"
-
-	"prompts/internal/mcpclient"
+	"registry"
 )
 
-// selfName is the service excluded from discovery: a run must not spawn another
-// run, so the prompts service never lists its own tools to the in-run agent.
-const selfName = "prompts"
+const (
+	selfName       = "prompts"
+	clientIDPrefix = "prompts:"
+)
 
-// perCallTimeout bounds every outbound MCP call (tools/list during discovery,
-// tools/call during dispatch). Generous but well under any run TTL, so a wedged
-// peer can never hang discovery or a tool dispatch forever.
-const perCallTimeout = 30 * time.Second
-
-// clientIDPrefix is prepended to the run's prompt id to form the X-Client-Id the
-// peers see, marking the call as originating from a prompts run.
-const clientIDPrefix = "prompts:"
-
-// Discover snapshots, at run spawn, the suite's loopback MCP tools available to
-// the in-run agent on behalf of owner. It reads the box inventory under
-// manifestRoot, excludes the prompts service itself, and concurrently lists each
-// remaining peer's tools, attaching the run's identity headers. Best-effort:
-// unreachable or garbled peers are logged and skipped; it never returns an error
-// and never panics, always returning a non-nil slice (possibly empty).
-func Discover(ctx context.Context, manifestRoot, ownerID, ownerEmail, promptID string) []agentkit.DeferredToolGroup {
-	headers := map[string]string{
-		"X-Owner-Id":    ownerID,
-		"X-Owner-Email": ownerEmail,
-		"X-Client-Id":   clientIDPrefix + promptID,
-	}
-
+// Discover returns one MCP attachment for every non-prompts service in the
+// inventory. It performs no network I/O; AgentKit resolves tools at Send time.
+func Discover(_ context.Context, manifestRoot, ownerID, ownerEmail, promptID string) []agentkit.MCPServer {
 	services, err := inventory.Read(manifestRoot)
 	if err != nil {
-		// Treat an unreadable inventory as zero services: discovery degrades to an
-		// empty slice rather than failing the run.
-		slog.Error("suite discovery: inventory read failed, no suite tools",
-			"manifest_root", manifestRoot, "err", err)
-		return []agentkit.DeferredToolGroup{}
+		return []agentkit.MCPServer{}
 	}
 
-	// Concurrently list tools from every non-self peer. Each peer's result lands
-	// in its own slot; a guarding mutex serializes the index build.
-	type listing struct {
-		svc    inventory.Service
-		client *mcpclient.Client
-		tools  []mcpclient.Tool
-		blurb  string
-	}
-
-	var (
-		wg sync.WaitGroup
-		mu sync.Mutex
-	)
-	var listings []listing
-
+	servers := make([]agentkit.MCPServer, 0, len(services))
 	for _, svc := range services {
 		if svc.Name == selfName {
-			continue // self-exclusion: no run-spawns-run.
-		}
-		if svc.Port == "" {
-			slog.Error("suite discovery: peer has no port, skipping", "service", svc.Name)
 			continue
 		}
-
-		endpoint := fmt.Sprintf("http://127.0.0.1:%s/mcp", svc.Port)
-		client := mcpclient.New(endpoint, headers, perCallTimeout)
-
-		wg.Add(1)
-		go func(svc inventory.Service, endpoint string, client *mcpclient.Client) {
-			defer wg.Done()
-
-			var (
-				tools   []mcpclient.Tool
-				listErr error
-				blurb   string
-				initErr error
-				peerWG  sync.WaitGroup
-			)
-			peerWG.Add(2)
-			go func() {
-				defer peerWG.Done()
-				tools, listErr = client.ListTools(ctx)
-			}()
-			go func() {
-				defer peerWG.Done()
-				blurb, initErr = client.Initialize(ctx)
-			}()
-			peerWG.Wait()
-
-			if listErr != nil {
-				// A down or garbled peer must not break discovery: log loud, skip it.
-				slog.Error("suite discovery: tools/list failed, skipping peer",
-					"service", svc.Name, "endpoint", endpoint, "err", listErr)
-				return
-			}
-			if initErr != nil {
-				slog.Error("suite discovery: initialize failed, using empty blurb",
-					"service", svc.Name, "endpoint", endpoint, "err", initErr)
-				blurb = ""
-			} else if blurb == "" {
-				slog.Error("suite discovery: initialize returned empty instructions, using empty blurb",
-					"service", svc.Name, "endpoint", endpoint)
-			}
-			mu.Lock()
-			listings = append(listings, listing{svc: svc, client: client, tools: tools, blurb: blurb})
-			mu.Unlock()
-		}(svc, endpoint, client)
-	}
-	wg.Wait()
-
-	// Build RawTool values. Peers now register BARE verbs, so the same verb
-	// (health, reflection, ...) is exposed by every service and is not unique across
-	// peers. The suite layer re-qualifies each bare verb back to ikigenba_<svc>_<verb>
-	// using the owning service's name. The duplicate guard below therefore only
-	// fires on a genuine within-service duplicate.
-	groups := make([]agentkit.DeferredToolGroup, 0, len(listings))
-	for _, l := range listings {
-		group := agentkit.DeferredToolGroup{
-			Name:  l.svc.Name,
-			Blurb: l.blurb,
-			Tools: make([]agentkit.Tool, 0, len(l.tools)),
+		port, ok := registry.Port(svc.Name)
+		if !ok {
+			continue
 		}
-		seen := map[string]bool{}
-		for _, t := range l.tools {
-			qualified := qualify(l.svc.Name, t.Name)
-			if seen[qualified] {
-				slog.Error("suite discovery: duplicate tool name within service, keeping first",
-					"tool", qualified, "service", l.svc.Name)
-				continue
-			}
-			seen[qualified] = true
-			client := l.client
-			bare := t.Name
-			group.Tools = append(group.Tools, agentkit.RawTool(qualified, t.Description, t.InputSchema, func(ctx context.Context, input json.RawMessage) (string, error) {
-				text, isError, err := client.CallTool(ctx, bare, input)
-				if err != nil {
-					return "", errors.New("suite: tool " + qualified + " failed: " + err.Error())
-				}
-				if isError {
-					return "", errors.New(text)
-				}
-				return text, nil
-			}))
-		}
-		groups = append(groups, group)
+		servers = append(servers, agentkit.MCPServer{
+			Name: "ikigenba_" + svc.Name,
+			URL:  fmt.Sprintf("http://127.0.0.1:%d/mcp", port),
+			Headers: map[string]string{
+				"X-Owner-Id":    ownerID,
+				"X-Owner-Email": ownerEmail,
+				"X-Client-Id":   clientIDPrefix + promptID,
+			},
+		})
 	}
-
-	return groups
-}
-
-// qualify reconstructs the service-qualified tool name ikigenba_<svc>_<verb> that
-// peers used to register before the bare-verb rename (docs/adr-mcp-tool-bare-names.md).
-// svc is the owning service's manifest APP name (the <svc> segment of the old
-// prefix), verb is the bare verb the peer now registers.
-func qualify(svc, verb string) string {
-	return "ikigenba_" + svc + "_" + verb
+	return servers
 }

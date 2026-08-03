@@ -115,8 +115,8 @@ func (e *Executor) complete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	routeProvider, wireModel, entry, ok := catalog.Resolve(cfg.Provider, cfg.Model)
-	if !ok || entry.Pricing == nil {
+	res := catalog.Resolve(prompt.CatalogProviderID(cfg.Provider), cfg.Model)
+	if res.Coverage == catalog.Unrouted {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("provider %q does not route model %q", cfg.Provider, cfg.Model))
 		return
 	}
@@ -125,7 +125,7 @@ func (e *Executor) complete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "create provider: "+err.Error())
 		return
 	}
-	release, err := e.gate.AcquireCall(r.Context(), routeProvider)
+	release, err := e.gate.AcquireCall(r.Context(), string(res.Provider))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "acquire provider call: "+err.Error())
 		return
@@ -141,8 +141,8 @@ func (e *Executor) complete(w http.ResponseWriter, r *http.Request) {
 	}
 	conv := &agentkit.Conversation{
 		Provider: prov,
-		Model:    wireModel,
-		Pricing:  entry.Pricing,
+		Model:    res.WireModel,
+		Pricing:  res.Offering.Pricing,
 		System:   req.System,
 		Gen:      genSettings(cfg),
 		Retry:    retryPolicy(cfg),
@@ -176,7 +176,7 @@ func (e *Executor) complete(w http.ResponseWriter, r *http.Request) {
 	}
 	row := calls.Row{
 		ID: callID, Class: calls.ClassCompletion, Origin: req.Origin, Name: req.Name,
-		GroupID: req.GroupID, Attempt: attempt, Provider: routeProvider, Model: req.Model,
+		GroupID: req.GroupID, Attempt: attempt, Provider: string(res.Provider), Model: req.Model,
 		InputTokens:  usage.InputUncached + usage.CacheReadInput + usage.CacheWriteInput,
 		OutputTokens: usage.Output + usage.ReasoningOutput, TotalTokens: usage.Total,
 		UsageJSON: string(usageJSON), CostUSD: cost.USD(), RequestBody: stringPointer(string(requestJSON)),
@@ -266,10 +266,10 @@ func genSettings(cfg prompt.Config) agentkit.GenSettings {
 	switch {
 	case cfg.Effort != "":
 		gen.Reasoning = agentkit.Level(cfg.Effort)
-	case cfg.ThinkingBudget != nil:
-		gen.Reasoning = agentkit.Budget(*cfg.ThinkingBudget)
 	case cfg.ThinkingLevel != "":
 		gen.Reasoning = agentkit.Level(cfg.ThinkingLevel)
+	case cfg.ThinkingBudget != nil:
+		gen.Reasoning = agentkit.Budget(*cfg.ThinkingBudget)
 	case cfg.Thinking != nil && !*cfg.Thinking:
 		gen.Reasoning = agentkit.DisableReasoning()
 	}

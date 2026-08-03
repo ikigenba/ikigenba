@@ -436,6 +436,26 @@ func serverPort(t *testing.T, rawURL string) int {
 	return port
 }
 
+func TestReadDetectsBinaryContentRatherThanExtension(t *testing.T) {
+	// R-ZCRY-4KHC
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "binary.txt"), []byte("%PDF-1.7\n%\x80\x81\x82\n1 0 obj\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "README"), []byte("extensionless UTF-8 text\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	read := findTool(t, All(root, func(int) bool { return false }, ShareConfig{}), "Read")
+	_, err := read.Call(context.Background(), mustJSON(t, map[string]any{"file_path": "binary.txt"}))
+	if err == nil || !strings.Contains(err.Error(), "application/pdf") {
+		t.Fatalf("binary Read error = %v, want detected application/pdf", err)
+	}
+	got, err := read.Call(context.Background(), mustJSON(t, map[string]any{"file_path": "README"}))
+	if err != nil || got != "extensionless UTF-8 text\n" {
+		t.Fatalf("extensionless text Read = %q, %v", got, err)
+	}
+}
+
 func findTool(t *testing.T, tools []agentkit.Tool, name string) agentkit.Tool {
 	t.Helper()
 	for _, tool := range tools {

@@ -83,7 +83,11 @@ func (e *EmbedExecutor) embed(w http.ResponseWriter, r *http.Request) {
 	}
 	providerName := req.Provider
 	if providerName == "" {
-		providerName = entry.Provider
+		if len(entry.Offerings) == 0 {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("model %q has no provider offering", req.Model))
+			return
+		}
+		providerName = string(entry.Offerings[0].Provider)
 	}
 	if providerName != "openai" && providerName != "google" {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("provider %q does not support embeddings", providerName))
@@ -93,17 +97,17 @@ func (e *EmbedExecutor) embed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("dimensions must be between %d and %d for model %q", entry.Embedding.MinDimension, entry.Embedding.MaxDimension, req.Model))
 		return
 	}
-	resolvedProvider, wireModel, _, ok := catalog.Resolve(providerName, req.Model)
-	if !ok {
+	res := catalog.Resolve(agentkit.ProviderID(providerName), req.Model)
+	if res.Coverage != catalog.Curated {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("provider %q does not route embedding model %q", providerName, req.Model))
 		return
 	}
-	embedProvider, err := e.buildEmbedder(resolvedProvider, e.getenv)
+	embedProvider, err := e.buildEmbedder(string(res.Provider), e.getenv)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "create embedding provider: "+err.Error())
 		return
 	}
-	release, err := e.gate.AcquireCall(r.Context(), resolvedProvider)
+	release, err := e.gate.AcquireCall(r.Context(), string(res.Provider))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "acquire provider call: "+err.Error())
 		return
@@ -111,7 +115,7 @@ func (e *EmbedExecutor) embed(w http.ResponseWriter, r *http.Request) {
 	defer release()
 
 	embedder := &agentkit.Embedder{
-		Provider: embedProvider, Model: wireModel,
+		Provider: embedProvider, Model: res.WireModel,
 		Pricing: &entry.Embedding.Pricing, Dimensions: req.Dimensions,
 	}
 	result, embedErr := embedder.Embed(r.Context(), req.Inputs, role)
@@ -138,7 +142,7 @@ func (e *EmbedExecutor) embed(w http.ResponseWriter, r *http.Request) {
 	}
 	row := calls.Row{
 		ID: callID, Class: calls.ClassEmbedding, Origin: req.Origin, Name: req.Name,
-		GroupID: req.GroupID, Attempt: attempt, Provider: resolvedProvider, Model: req.Model,
+		GroupID: req.GroupID, Attempt: attempt, Provider: string(res.Provider), Model: req.Model,
 		InputTokens: usage.InputTokens, TotalTokens: usage.Total,
 		UsageJSON: string(usageJSON), CostUSD: cost.USD(), RequestBody: stringPointer(string(requestJSON)),
 	}

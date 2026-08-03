@@ -454,6 +454,25 @@ func TestValidateConfigAcceptsNativeReasoningControl(t *testing.T) {
 	}
 }
 
+func TestValidateConfigChecksReasoningAgainstSelectedOffering(t *testing.T) {
+	// R-ZAC5-D0ZY
+	env := fakeEnv(map[string]string{"ZAI_API_KEY": "key", "OPENROUTER_API_KEY": "key"})
+	if _, err := ValidateConfig(Config{Provider: "zai", Model: "glm-5.2", Effort: "max"}, env, subAuthUnavailable); err != nil {
+		t.Fatalf("native glm-5.2 max should validate: %v", err)
+	}
+	_, err := ValidateConfig(Config{Provider: "openrouter", Model: "glm-5.2", Effort: "max"}, env, subAuthUnavailable)
+	if err == nil || !strings.Contains(err.Error(), "openrouter") || !strings.Contains(err.Error(), "xhigh") {
+		t.Fatalf("openrouter max error = %v, want selected offering vocabulary", err)
+	}
+	if _, err := ValidateConfig(Config{Provider: "openrouter", Model: "glm-5.2", Effort: "xhigh"}, env, subAuthUnavailable); err != nil {
+		t.Fatalf("openrouter glm-5.2 xhigh should validate: %v", err)
+	}
+	_, err = ValidateConfig(Config{Provider: "zai", Model: "glm-5.2", Effort: "xhigh"}, env, subAuthUnavailable)
+	if err == nil || !strings.Contains(err.Error(), "zai") || !strings.Contains(err.Error(), "max") {
+		t.Fatalf("native xhigh error = %v, want selected offering vocabulary", err)
+	}
+}
+
 func TestValidateConfigRequiresOpenRouterAPIKey(t *testing.T) {
 	// R-1VZ1-0BU0
 	_, err := ValidateConfig(Config{Model: "grok-4.5"}, fakeEnv(nil), subAuthUnavailable)

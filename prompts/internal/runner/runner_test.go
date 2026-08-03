@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +20,7 @@ import (
 	"prompts/internal/db"
 	"prompts/internal/ids"
 	"prompts/internal/prompt"
+	runprovider "prompts/internal/provider"
 	"prompts/internal/sandbox"
 
 	"github.com/ikigenba/agentkit"
@@ -42,7 +45,9 @@ type serialProvider struct {
 	releaseFirst chan struct{}
 }
 
-func (p *serialProvider) Name() string { return "serial" }
+func (p *serialProvider) Identity() agentkit.Identity {
+	return agentkit.Identity{Provider: "serial"}
+}
 
 func (p *serialProvider) RoundTrip(ctx context.Context, _ *agentkit.Request) *agentkit.RoundTrip {
 	p.mu.Lock()
@@ -63,7 +68,9 @@ func (p *serialProvider) RoundTrip(ctx context.Context, _ *agentkit.Request) *ag
 	)
 }
 
-func (f *fakeProvider) Name() string { return "fake" }
+func (f *fakeProvider) Identity() agentkit.Identity {
+	return agentkit.Identity{Provider: "fake"}
+}
 
 func (f *fakeProvider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	f.mu.Lock()
@@ -509,282 +516,189 @@ func TestSpawn_UsesInjectedProviderFactoryWithoutLiveEnvironment(t *testing.T) {
 	}
 }
 
-func TestSpawn_RequestAdvertisesSandboxAndLoaderOnlyForDeferredTools(t *testing.T) {
-	// R-9NBD-XAU5
-	withDeferred := &fakeProvider{}
+func TestExecuteAttachesEagerMCPToolsWithoutLoader(t *testing.T) {
+	// R-ZIVG-1F6T
+	peer := newRunnerMCPServer(t, "health", nil)
+	defer peer.Close()
+	fp := &fakeProvider{}
 	runsDir := t.TempDir()
-	r, store := newTestRunner(t, time.Minute, withDeferred)
+	r, store := newTestRunner(t, time.Minute, fp)
 	_, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string, string) []agentkit.DeferredToolGroup {
-		return []agentkit.DeferredToolGroup{{
-			Name:  "crm",
-			Blurb: "CRM tools",
-			Tools: []agentkit.Tool{
-				agentkit.RawTool("ikigenba_crm_lookup", "Lookup CRM records.", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
-					return "ok", nil
-				}),
-			},
-		}}
+	r.discover = func(context.Context, string, string, string) []agentkit.MCPServer {
+		return []agentkit.MCPServer{{Name: "ikigenba_crm", URL: peer.URL}}
 	}
 
 	r.execute(run)
-
-	req := withDeferred.request(0)
+	req := fp.request(0)
 	if req == nil {
-		t.Fatalf("fake provider saw no first request")
+		t.Fatal("provider saw no request")
 	}
 	names := requestToolNames(req)
-	for _, want := range []string{"Bash", "Read", "Write", "Edit", "Glob", "Grep"} {
+	for _, want := range []string{"Bash", "Read", "Write", "Edit", "Glob", "Grep", "ikigenba_crm_health"} {
 		if !names[want] {
-			t.Fatalf("first request tools = %v, missing sandbox tool %q", sortedToolNames(req.Tools), want)
+			t.Fatalf("request tools = %v, missing %q", sortedToolNames(req.Tools), want)
 		}
 	}
-	if !names["load_tools"] {
-		t.Fatalf("first request tools = %v, want load_tools for non-empty deferred groups", sortedToolNames(req.Tools))
-	}
-	for name := range names {
-		if strings.HasPrefix(name, "ikigenba_") {
-			t.Fatalf("first request included eager suite tool %q; want only sandbox tools plus load_tools", name)
-		}
-	}
-
-	withoutDeferred := &fakeProvider{}
-	runsDir = t.TempDir()
-	r, store = newTestRunner(t, time.Minute, withoutDeferred)
-	_, run = seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string, string) []agentkit.DeferredToolGroup {
-		return []agentkit.DeferredToolGroup{}
-	}
-
-	r.execute(run)
-
-	req = withoutDeferred.request(0)
-	if req == nil {
-		t.Fatalf("empty-deferred fake provider saw no first request")
-	}
-	names = requestToolNames(req)
 	if names["load_tools"] {
-		t.Fatalf("first request tools = %v, want no load_tools when deferred groups are empty", sortedToolNames(req.Tools))
+		t.Fatalf("request unexpectedly exposed load_tools: %v", sortedToolNames(req.Tools))
 	}
-	for _, want := range []string{"Bash", "Read", "Write", "Edit", "Glob", "Grep"} {
-		if !names[want] {
-			t.Fatalf("empty-deferred first request tools = %v, missing sandbox tool %q", sortedToolNames(req.Tools), want)
+}
+
+func TestFramingPromptNamesNoLoaderOrIndividualService(t *testing.T) {
+	// R-ZK3C-F6XI
+	if strings.Contains(framingPrompt, "load_tools") || strings.Contains(framingPrompt, "ikigenba_") {
+		t.Fatalf("framing prompt contains retired loader or service prefix: %q", framingPrompt)
+	}
+	for _, service := range []string{"crm", "gmail", "dropbox", "wiki"} {
+		if strings.Contains(strings.ToLower(framingPrompt), service) {
+			t.Fatalf("framing prompt names individual service %q: %q", service, framingPrompt)
 		}
 	}
 }
 
-func TestSpawn_SystemFramesDeferredToolsWithoutServiceEnumeration(t *testing.T) {
-	// R-9OJA-B2KU
-	// R-6AUG-NHQY
-	// R-6I5U-Y474
-	// R-FEGC-LVD7
-	fp := &fakeProvider{}
-	runsDir := t.TempDir()
-	r, store := newTestRunner(t, time.Minute, fp)
-	_, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string, string) []agentkit.DeferredToolGroup {
-		return []agentkit.DeferredToolGroup{{
-			Name: "crm",
-			Tools: []agentkit.Tool{
-				agentkit.RawTool("ikigenba_crm_lookup", "Lookup CRM records.", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
-					return "ok", nil
-				}),
-			},
-		}}
-	}
-
-	r.execute(run)
-
-	req := fp.request(0)
-	if req == nil {
-		t.Fatalf("fake provider saw no first request")
-	}
-	if !strings.Contains(req.System, "deferred tools") || !strings.Contains(req.System, "load_tools") {
-		t.Fatalf("system prompt = %q, want deferred-tools guidance naming load_tools", req.System)
-	}
-	if strings.Contains(req.System, "ikigenba_") {
-		t.Fatalf("system prompt enumerates suite tool names: %q", req.System)
-	}
-	for _, phrase := range []string{
-		"file list, file get, file put, file delete, file move, and file mkdir",
-		"Fetch takes a suite content URL",
-		"The account's file share is its durable, shared file store",
-		"Your own folder stays private to this prompt; use the file tools as the channel",
-		"You have NO network access from bash: do not attempt to fetch anything from the internet.",
-		"pdftotext", "pdftoppm", "pdfinfo",
-	} {
-		if !strings.Contains(req.System, phrase) {
-			t.Fatalf("system prompt = %q, missing %q", req.System, phrase)
-		}
-	}
-	if strings.Contains(strings.ToLower(req.System), "dropbox") {
-		t.Fatalf("system prompt names an individual service: %q", req.System)
-	}
-}
-
-func TestSpawn_SystemFramesDeferredToolGroupNameLoading(t *testing.T) {
-	// R-A69O-ATWI
-	fp := &fakeProvider{}
-	runsDir := t.TempDir()
-	r, store := newTestRunner(t, time.Minute, fp)
-	_, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string, string) []agentkit.DeferredToolGroup {
-		return []agentkit.DeferredToolGroup{{
-			Name: "crm",
-			Tools: []agentkit.Tool{
-				agentkit.RawTool("ikigenba_crm_lookup", "Lookup CRM records.", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
-					return "ok", nil
-				}),
-			},
-		}}
-	}
-
-	r.execute(run)
-
-	req := fp.request(0)
-	if req == nil {
-		t.Fatalf("fake provider saw no first request")
-	}
-	want := "call `load_tools` with tool names — or a service's name to load all of its tools — to make them callable"
-	if !strings.Contains(req.System, want) {
-		t.Fatalf("system prompt = %q, want group-name loading guidance %q", req.System, want)
-	}
-}
-
-func TestExecute_LoadsAndCallsDeferredSuiteTool(t *testing.T) {
-	// R-9PR6-OUBJ
-	const toolName = "ikigenba_crm_lookup"
+func TestExecuteCallsAttachedSuiteToolOnFirstRoundTrip(t *testing.T) {
+	// R-ZLB8-SYO7
+	var called string
+	peer := newRunnerMCPServer(t, "health", func(name string) { called = name })
+	defer peer.Close()
 	fp := &fakeProvider{roundTrips: []*agentkit.RoundTrip{
-		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "toolu_load", Name: "load_tools", Input: json.RawMessage(`{"tools":["` + toolName + `"]}`)}),
-		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "toolu_crm", Name: toolName, Input: json.RawMessage(`{"id":"contact_123"}`)}),
+		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "call-1", Name: "ikigenba_crm_health", Input: json.RawMessage(`{}`)}),
 		scriptedTextRoundTrip("done"),
 	}}
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
 	sess, run := seedRunning(t, store, r.sandbox, runsDir)
-
-	var calledWith json.RawMessage
-	r.discover = func(context.Context, string, string, string) []agentkit.DeferredToolGroup {
-		return []agentkit.DeferredToolGroup{{
-			Name:  "crm",
-			Blurb: "CRM tools",
-			Tools: []agentkit.Tool{
-				agentkit.RawTool(toolName, "Lookup CRM records.", json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}}}`), func(_ context.Context, input json.RawMessage) (string, error) {
-					calledWith = append(json.RawMessage(nil), input...)
-					return `{"name":"Ada Lovelace"}`, nil
-				}),
-			},
-		}}
+	r.discover = func(context.Context, string, string, string) []agentkit.MCPServer {
+		return []agentkit.MCPServer{{Name: "ikigenba_crm", URL: peer.URL}}
 	}
 
 	r.execute(run)
-
 	got, err := store.GetLatestRun(context.Background(), sess.ID)
-	if err != nil {
-		t.Fatalf("GetLatestRun: %v", err)
+	if err != nil || got == nil || got.Status != prompt.RunSucceeded {
+		t.Fatalf("run = %#v, err=%v, want succeeded", got, err)
 	}
-	if got == nil || got.Status != prompt.RunSucceeded {
-		t.Fatalf("run = %#v, want succeeded", got)
+	if called != "health" {
+		t.Fatalf("peer tools/call name = %q, want health", called)
 	}
-	if string(calledWith) != `{"id":"contact_123"}` {
-		t.Fatalf("deferred tool input = %s, want contact id payload", calledWith)
-	}
-	if fp.requestCount() != 3 {
-		t.Fatalf("provider RoundTrip calls = %d, want load, native call, final", fp.requestCount())
-	}
-	second := fp.request(1)
-	if second == nil {
-		t.Fatalf("fake provider saw no second request")
-	}
-	if !requestToolNames(second)[toolName] {
-		t.Fatalf("second request tools = %v, want loaded deferred tool", sortedToolNames(second.Tools))
-	}
-
 	records := readRunnerLogRecords(t, run.LogPath)
-	if !hasToolUse(records, "load_tools") || !hasToolResult(records, "load_tools") {
-		t.Fatalf("log records missing load_tools tool_use/tool_result: %v", logToolEvents(records))
-	}
-	if !hasToolUse(records, toolName) || !hasToolResult(records, toolName) {
-		t.Fatalf("log records missing deferred tool_use/tool_result: %v", logToolEvents(records))
+	if !hasToolUse(records, "ikigenba_crm_health") || !hasToolResult(records, "ikigenba_crm_health") {
+		t.Fatalf("log missing native suite tool events: %v", logToolEvents(records))
 	}
 }
 
-// TestSpawn_DiscoversSuiteTools asserts the runner builds in-run suite deferred
-// tool groups at spawn via the injectable discover seam, calling it with the
-// run's OwnerID/OwnerEmail/PromptID, and that the resulting catalog is threaded into the
-// engine (the run completes successfully with the fake source wired). It reuses
-// the fake-client seam so no real Anthropic call is made.
-func TestSpawn_DiscoversSuiteTools(t *testing.T) {
-	// R-K95Z-3S0C
+func TestExecuteFailsWhenAnyAttachedPeerDiscoveryFails(t *testing.T) {
+	// R-ZGFN-9VPF
+	healthy := newRunnerMCPServer(t, "health", nil)
+	defer healthy.Close()
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		w.Header().Set("Content-Type", "application/json")
+		if req.Method == "initialize" {
+			writeRunnerRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-11-25"})
+			return
+		}
+		if req.Method == "notifications/initialized" {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "crm unavailable"}})
+	}))
+	defer bad.Close()
 	fp := &fakeProvider{}
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
 	sess, run := seedRunning(t, store, r.sandbox, runsDir)
+	r.discover = func(context.Context, string, string, string) []agentkit.MCPServer {
+		return []agentkit.MCPServer{{Name: "ikigenba_crm", URL: bad.URL}, {Name: "ikigenba_gmail", URL: healthy.URL}}
+	}
+	r.execute(run)
+	got, err := store.GetLatestRun(context.Background(), sess.ID)
+	if err != nil || got == nil || got.Status != prompt.RunFailed || !strings.Contains(got.Error, "ikigenba_crm") {
+		t.Fatalf("run = %#v, err=%v, want failed error naming bad peer", got, err)
+	}
+	if fp.requestCount() != 0 {
+		t.Fatalf("provider round trips = %d, want none when MCP discovery fails", fp.requestCount())
+	}
+}
 
-	var (
-		mu          sync.Mutex
-		calls       int
-		gotOwnerID  string
-		gotEmail    string
-		gotPromptID string
-	)
-	r.discover = func(ctx context.Context, ownerID, ownerEmail, promptID string) []agentkit.DeferredToolGroup {
-		mu.Lock()
-		calls++
-		gotOwnerID = ownerID
-		gotEmail = ownerEmail
-		gotPromptID = promptID
-		mu.Unlock()
-		return []agentkit.DeferredToolGroup{{
-			Name:  "suite",
-			Blurb: "suite tools",
-			Tools: []agentkit.Tool{
-				agentkit.RawTool("suite_lookup", "suite lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
-					return "ok", nil
-				}),
-			},
-		}}
+func TestExecuteRejectsUnroutedPinnedConfigBeforeProviderRoundTrip(t *testing.T) {
+	// R-ZHNJ-NNG4
+	fp := &fakeProvider{}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	sess, run := seedRunningWithConfig(t, store, r.sandbox, runsDir, prompt.Config{Provider: "unknown-provider", Model: "unknown-model"})
+	r.execute(run)
+	got, err := store.GetLatestRun(context.Background(), sess.ID)
+	if err != nil || got == nil || got.Status != prompt.RunFailed || !strings.Contains(got.Error, "unknown-provider") || !strings.Contains(got.Error, "unknown-model") {
+		t.Fatalf("run = %#v, err=%v, want failed error naming provider and model", got, err)
 	}
+	if fp.requestCount() != 0 {
+		t.Fatalf("provider round trips = %d, want none", fp.requestCount())
+	}
+}
 
-	r.Spawn(run)
-	got := waitRun(t, store, sess.ID)
+func TestExecuteMissingCredentialFailsAtSendNotProviderBuild(t *testing.T) {
+	// R-ZBK1-QSQN
+	t.Setenv("OPENAI_API_KEY", "")
+	cfg := prompt.Config{Provider: "openai", Model: "gpt-5.5"}
+	if built, err := runprovider.Build(cfg, func(string) string { return "" }); err != nil || built == nil {
+		t.Fatalf("provider.Build with absent key = %v, %v; want constructed provider", built, err)
+	}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, &fakeProvider{})
+	r.buildProvider = runprovider.Build
+	sess, run := seedRunningWithConfig(t, store, r.sandbox, runsDir, cfg)
+	r.execute(run)
+	got, err := store.GetLatestRun(context.Background(), sess.ID)
+	if err != nil || got == nil || got.Status != prompt.RunFailed || !strings.Contains(strings.ToLower(got.Error), "api key is absent") {
+		t.Fatalf("run = %#v, err=%v, want failed missing-credential error", got, err)
+	}
+}
 
-	if got.Status != prompt.RunSucceeded {
-		t.Fatalf("run status = %q, want succeeded (error=%q)", got.Status, got.Error)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	if calls != 1 {
-		t.Fatalf("discover seam called %d times, want exactly 1", calls)
-	}
-	if gotOwnerID != run.OwnerID || gotEmail != run.OwnerEmail {
-		t.Fatalf("discover identity = (%q, %q), want (%q, %q)", gotOwnerID, gotEmail, run.OwnerID, run.OwnerEmail)
-	}
-	if gotPromptID != run.PromptID {
-		t.Fatalf("discover promptID = %q, want %q", gotPromptID, run.PromptID)
-	}
-	req := fp.lastRequest()
-	if req == nil {
-		t.Fatalf("fake provider saw no request")
-	}
-	var foundLoader bool
-	var foundSuiteLookup bool
-	for _, tool := range req.Tools {
-		switch tool.Name() {
-		case "load_tools":
-			foundLoader = strings.Contains(tool.Description(), "suite") &&
-				strings.Contains(tool.Description(), "suite tools") &&
-				strings.Contains(tool.Description(), "suite_lookup")
-		case "suite_lookup":
-			foundSuiteLookup = true
+func newRunnerMCPServer(t *testing.T, toolName string, called func(string)) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
 		}
-	}
-	if !foundLoader {
-		t.Fatalf("provider request tools did not include load_tools catalog for discovered suite group")
-	}
-	if foundSuiteLookup {
-		t.Fatalf("provider request included deferred suite_lookup eagerly")
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode MCP request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "initialize":
+			writeRunnerRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-11-25"})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			writeRunnerRPC(t, w, req.ID, map[string]any{"tools": []any{map[string]any{"name": toolName, "inputSchema": map[string]any{"type": "object"}}}})
+		case "tools/call":
+			var params struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(req.Params, &params); err != nil {
+				t.Errorf("decode tools/call: %v", err)
+				return
+			}
+			if called != nil {
+				called(params.Name)
+			}
+			writeRunnerRPC(t, w, req.ID, map[string]any{"content": []any{map[string]any{"type": "text", "text": "ok"}}})
+		}
+	}))
+}
+
+func writeRunnerRPC(t *testing.T, w http.ResponseWriter, id json.RawMessage, result any) {
+	t.Helper()
+	if err := json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result}); err != nil {
+		t.Errorf("encode MCP response: %v", err)
 	}
 }
 

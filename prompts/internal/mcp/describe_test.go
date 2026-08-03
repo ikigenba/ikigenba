@@ -25,8 +25,8 @@ func TestDescribeContainsEveryCatalogChatModel(t *testing.T) {
 	seen := make(map[string]bool)
 	openRouterModel := ""
 	for _, provider := range catalogProviders {
-		for _, entry := range catalog.ListByProvider(provider) {
-			if entry.Pricing == nil {
+		for _, entry := range catalog.ListCurated(provider) {
+			if len(entry.Offerings) == 0 {
 				continue
 			}
 			seen[entry.Model] = true

@@ -157,7 +157,9 @@ type fakeEmbeddingProvider struct {
 	trip    *agentkit.EmbedRoundTrip
 }
 
-func (p *fakeEmbeddingProvider) Name() string { return "fake-embedding" }
+func (p *fakeEmbeddingProvider) Identity() agentkit.Identity {
+	return agentkit.Identity{Provider: "fake-embedding"}
+}
 
 func (p *fakeEmbeddingProvider) Embed(_ context.Context, req *agentkit.EmbedRequest) *agentkit.EmbedRoundTrip {
 	copy := *req

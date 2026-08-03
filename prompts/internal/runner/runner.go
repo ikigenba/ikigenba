@@ -38,12 +38,11 @@ type Runner struct {
 	gate          *admit.Gate
 	ttl           time.Duration
 	buildProvider func(prompt.Config, func(string) string) (agentkit.Provider, error)
-	// discover snapshots the box's other loopback MCP services as deferred
-	// agentkit tool groups at run spawn (Surface 2 — in-run suite tools). It
-	// defaults to a closure over the configured manifestRoot calling
-	// suite.Discover, but is injectable so tests can supply fake groups and
+	// discover snapshots the box's other loopback services as MCP attachments.
+	// It defaults to a closure over the configured manifestRoot calling
+	// suite.Discover, but is injectable so tests can supply fake servers and
 	// never touch the real inventory or any peer.
-	discover func(ctx context.Context, ownerID, ownerEmail, promptID string) []agentkit.DeferredToolGroup
+	discover func(ctx context.Context, ownerID, ownerEmail, promptID string) []agentkit.MCPServer
 	// sourcePortAllowed confines Fetch to registered loopback services.
 	sourcePortAllowed func(port int) bool
 	// shareBaseURL locates the account file share for the File* tools.
@@ -68,7 +67,7 @@ func New(store *prompt.Store, sb *sandbox.Manager, gate *admit.Gate, ttl time.Du
 		gate:          gate,
 		ttl:           ttl,
 		buildProvider: provider.Build,
-		discover: func(ctx context.Context, ownerID, ownerEmail, promptID string) []agentkit.DeferredToolGroup {
+		discover: func(ctx context.Context, ownerID, ownerEmail, promptID string) []agentkit.MCPServer {
 			return suite.Discover(ctx, manifestRoot, ownerID, ownerEmail, promptID)
 		},
 		sourcePortAllowed: sourcePortAllowed,
@@ -200,8 +199,9 @@ func (r *Runner) execute(run prompt.Run) {
 		finish(prompt.RunFailed, "", "create provider: "+err.Error())
 		return
 	}
-	_, wireModel, entry, ok := catalog.Resolve(cfg.Provider, cfg.Model)
-	if !ok || entry.Pricing == nil {
+	res := catalog.Resolve(prompt.CatalogProviderID(cfg.Provider), cfg.Model)
+	_, modelKnown := catalog.Lookup(cfg.Model)
+	if res.Coverage == catalog.Unrouted || (!modelKnown && !knownProvider(cfg.Provider)) {
 		finish(prompt.RunFailed, "", fmt.Sprintf("resolve model: provider %q does not route catalog model %q", cfg.Provider, cfg.Model))
 		return
 	}
@@ -209,14 +209,14 @@ func (r *Runner) execute(run prompt.Run) {
 	sandboxRoot := r.sandbox.Root(run.ID)
 	conv := &agentkit.Conversation{
 		Provider:          prov,
-		Model:             wireModel,
-		Pricing:           entry.Pricing,
+		Model:             res.WireModel,
+		Pricing:           res.Offering.Pricing,
 		System:            buildSystemPrompt(string(systemPromptBytes)),
 		Log:               logFile,
 		Gen:               genSettings(cfg),
 		Retry:             retryPolicy(cfg),
 		Tools:             runtools.All(sandboxRoot, r.sourcePortAllowed, runtools.ShareConfig{BaseURL: r.shareBaseURL, ClientID: "prompts:" + run.PromptID}),
-		DeferredTools:     r.discover(ctx, run.OwnerID, run.OwnerEmail, run.PromptID),
+		MCPServers:        r.discover(ctx, run.OwnerID, run.OwnerEmail, run.PromptID),
 		MaxToolIterations: cfg.ToolLoopLimit,
 	}
 	stream := conv.Send(ctx, buildUserText(string(userPromptBytes), eventBytes))
@@ -247,6 +247,15 @@ func (r *Runner) execute(run prompt.Run) {
 	}
 }
 
+func knownProvider(name string) bool {
+	switch name {
+	case "anthropic", "openai", "google", "zai", "openrouter":
+		return true
+	default:
+		return false
+	}
+}
+
 func buildSystemPrompt(sysPrompt string) string {
 	if sysPrompt == "" {
 		return framingPrompt
@@ -274,10 +283,10 @@ func genSettings(cfg prompt.Config) agentkit.GenSettings {
 	switch {
 	case cfg.Effort != "":
 		gen.Reasoning = agentkit.Level(cfg.Effort)
-	case cfg.ThinkingBudget != nil:
-		gen.Reasoning = agentkit.Budget(*cfg.ThinkingBudget)
 	case cfg.ThinkingLevel != "":
 		gen.Reasoning = agentkit.Level(cfg.ThinkingLevel)
+	case cfg.ThinkingBudget != nil:
+		gen.Reasoning = agentkit.Budget(*cfg.ThinkingBudget)
 	case cfg.Thinking != nil && !*cfg.Thinking:
 		gen.Reasoning = agentkit.DisableReasoning()
 	}

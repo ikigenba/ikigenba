@@ -74,18 +74,18 @@ func All(sandboxRoot string, sourcePortAllowed func(port int) bool, share ShareC
 }
 
 type fetchInput struct {
-	ContentURL string `json:"content_url" jsonschema:"required,description=A suite loopback content URL (e.g. from an event payload or a tool result)"`
-	DestPath   string `json:"dest_path" jsonschema:"required,description=Destination file path, relative to the sandbox root"`
+	ContentURL string `json:"content_url" jsonschema:"description=A suite loopback content URL (e.g. from an event payload or a tool result)"`
+	DestPath   string `json:"dest_path" jsonschema:"description=Destination file path relative to the sandbox root"`
 }
 
 type fileGetInput struct {
-	SharePath string `json:"share_path" jsonschema:"required,description=Path of the share file to copy"`
-	DestPath  string `json:"dest_path" jsonschema:"required,description=Destination file path, relative to the sandbox root"`
+	SharePath string `json:"share_path" jsonschema:"description=Path of the share file to copy"`
+	DestPath  string `json:"dest_path" jsonschema:"description=Destination file path relative to the sandbox root"`
 }
 
 type filePutInput struct {
-	SourcePath string `json:"source_path" jsonschema:"required,description=Sandbox file to copy, relative to the sandbox root"`
-	SharePath  string `json:"share_path" jsonschema:"required,description=Destination path in the share (overwrites)"`
+	SourcePath string `json:"source_path" jsonschema:"description=Sandbox file to copy relative to the sandbox root"`
+	SharePath  string `json:"share_path" jsonschema:"description=Destination path in the share (overwrites)"`
 }
 
 type fileListInput struct {
@@ -95,16 +95,16 @@ type fileListInput struct {
 }
 
 type fileDeleteInput struct {
-	SharePath string `json:"share_path" jsonschema:"required,description=Share file or folder to delete"`
+	SharePath string `json:"share_path" jsonschema:"description=Share file or folder to delete"`
 }
 
 type fileMoveInput struct {
-	From string `json:"from" jsonschema:"required,description=Current share path"`
-	To   string `json:"to" jsonschema:"required,description=New share path"`
+	From string `json:"from" jsonschema:"description=Current share path"`
+	To   string `json:"to" jsonschema:"description=New share path"`
 }
 
 type fileMkdirInput struct {
-	SharePath string `json:"share_path" jsonschema:"required,description=Share folder to create"`
+	SharePath string `json:"share_path" jsonschema:"description=Share folder to create"`
 }
 
 func fileList(ctx context.Context, share ShareConfig, in fileListInput) (string, error) {

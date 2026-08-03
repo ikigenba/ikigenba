@@ -99,8 +99,8 @@ CONFIG
   is derived from the model catalog's default provider; set it explicitly to
   select one of the model's alternate routes.
 - Reasoning controls are checked against the selected model's native vocabulary.
-  If several are supplied, precedence is effort, thinking_budget,
-  thinking_level, then thinking. Invalid levels, budgets, or disabling requests
+  If several are supplied, precedence is effort, thinking_level,
+  thinking_budget, then thinking. Invalid levels, budgets, or disabling requests
   are rejected for that model.
 - Other optional controls cover sampling, output size, retry/backoff, tool-loop
   limits, and provider endpoint override.
@@ -108,7 +108,13 @@ CONFIG
 MODEL CATALOG
 `
 
-var catalogProviders = []string{"anthropic", "openai", "google", "zai", "openrouter"}
+var catalogProviders = []agentkit.ProviderID{
+	agentkit.ProviderAnthropic,
+	agentkit.ProviderOpenAI,
+	agentkit.ProviderGoogle,
+	agentkit.ProviderZAI,
+	agentkit.ProviderOpenRouter,
+}
 
 // toolDescribe returns the on-demand overview. Takes no inputs.
 func toolDescribe() (map[string]any, error) {
@@ -119,22 +125,27 @@ func describeCatalog() string {
 	var out strings.Builder
 	for _, provider := range catalogProviders {
 		fmt.Fprintf(&out, "\n%s:\n", provider)
-		for _, entry := range catalog.ListByProvider(provider) {
-			if entry.Pricing == nil {
+		for _, entry := range catalog.ListCurated(provider) {
+			if len(entry.Offerings) == 0 {
+				continue
+			}
+			offering, ok := catalog.Offer(entry.Model, provider)
+			if !ok {
 				continue
 			}
 			fmt.Fprintf(&out, "- %s; default provider: %s; alternate routes: %s; context: %d; reasoning: %s\n",
-				entry.Model, entry.Provider, alternateRoutes(entry), entry.Context, reasoningDescription(entry.Reasoning))
+				entry.Model, entry.Offerings[0].Provider, alternateRoutes(entry, provider), offering.Context, reasoningDescription(offering.Reasoning))
 		}
 	}
 	return out.String()
 }
 
-func alternateRoutes(entry catalog.Entry) string {
-	routes := make([]string, 0, len(entry.Routes))
-	for provider, model := range entry.Routes {
-		if provider != entry.Provider {
-			routes = append(routes, fmt.Sprintf("%s=%s", provider, model))
+func alternateRoutes(entry catalog.Entry, current agentkit.ProviderID) string {
+	routes := make([]string, 0, len(entry.Offerings))
+	for _, offering := range entry.Offerings {
+		if offering.Provider != current {
+			wire := entry.WireModel(offering.Provider)
+			routes = append(routes, fmt.Sprintf("%s=%s", offering.Provider, wire))
 		}
 	}
 	sort.Strings(routes)
@@ -167,7 +178,16 @@ func reasoningDescription(spec *catalog.ReasoningSpec) string {
 	}
 }
 
-func reasoningDefault(value agentkit.ReasoningValue) string {
+func reasoningDefault(def catalog.ReasoningDefault) string {
+	switch def.Mode {
+	case catalog.DefaultOff:
+		return "off"
+	case catalog.DefaultDynamic:
+		return "dynamic"
+	case catalog.DefaultUnaudited:
+		return "provider default"
+	}
+	value := def.Value
 	if value.IsUnset() {
 		return "provider default"
 	}

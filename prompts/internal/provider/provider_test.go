@@ -19,11 +19,11 @@ func TestBuildConstructsEveryConfiguredProvider(t *testing.T) {
 		envKey   string
 		name     string
 	}{
-		{provider: "anthropic", envKey: "ANTHROPIC_API_KEY", name: "anthropic"},
+		{provider: "anthropic", envKey: "ANTHROPIC_API_KEY", name: "anthropic.apikey"},
 		{provider: "openai", envKey: "OPENAI_API_KEY", name: "openai.apikey"},
-		{provider: "google", envKey: "GEMINI_API_KEY", name: "google"},
-		{provider: "zai", envKey: "ZAI_API_KEY", name: "zai"},
-		{provider: "openrouter", envKey: "OPENROUTER_API_KEY", name: "openrouter"},
+		{provider: "google", envKey: "GEMINI_API_KEY", name: "google.apikey"},
+		{provider: "zai", envKey: "ZAI_API_KEY", name: "z-ai.apikey"},
+		{provider: "openrouter", envKey: "OPENROUTER_API_KEY", name: "openrouter.apikey"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.provider, func(t *testing.T) {
@@ -41,7 +41,7 @@ func TestBuildConstructsEveryConfiguredProvider(t *testing.T) {
 			if requested != tt.envKey {
 				t.Fatalf("requested env key = %q, want %q", requested, tt.envKey)
 			}
-			if got := built.Name(); got != tt.name {
+			if got := built.Identity().String(); got != tt.name {
 				t.Fatalf("provider name = %q, want %q", got, tt.name)
 			}
 		})
@@ -58,7 +58,7 @@ func TestNewBuilderSelectsSubscriptionAndKeyCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subscription build: %v", err)
 	}
-	if got := sub.Name(); got != "openai.subscription" {
+	if got := sub.Identity().String(); got != "openai.subscription" {
 		t.Fatalf("subscription provider name = %q", got)
 	}
 	for _, auth := range []string{"", "key"} {
@@ -66,7 +66,7 @@ func TestNewBuilderSelectsSubscriptionAndKeyCredentials(t *testing.T) {
 		if err != nil {
 			t.Fatalf("key build (%q): %v", auth, err)
 		}
-		if got := key.Name(); got != "openai.apikey" {
+		if got := key.Identity().String(); got != "openai.apikey" {
 			t.Fatalf("key provider name (%q) = %q", auth, got)
 		}
 	}
@@ -85,7 +85,7 @@ func TestNewBuilderCachesLoadedSubscriptionStore(t *testing.T) {
 		t.Fatalf("remove credential: %v", err)
 	}
 	got, err := build(cfg, func(string) string { return "" })
-	if err != nil || got.Name() != "openai.subscription" {
+	if err != nil || got.Identity().String() != "openai.subscription" {
 		t.Fatalf("cached build = %v, %v", got, err)
 	}
 }
@@ -158,10 +158,7 @@ func writeSubscriptionTokens(t *testing.T, path string) {
 
 func stringPointer(value string) *string { return &value }
 
-func TestBuildRejectsMissingKeyAndUnknownProvider(t *testing.T) {
-	if _, err := Build(prompt.Config{Provider: "openai"}, func(string) string { return "  " }); err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
-		t.Fatalf("missing-key error = %v", err)
-	}
+func TestBuildRejectsUnknownProvider(t *testing.T) {
 	if _, err := Build(prompt.Config{Provider: "unknown"}, func(string) string { return "key" }); err == nil || !strings.Contains(err.Error(), "unsupported provider") {
 		t.Fatalf("unknown-provider error = %v", err)
 	}
@@ -173,7 +170,7 @@ func TestBuildEmbedderSupportsOpenAIAndGoogleOnly(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BuildEmbedder(%q): %v", providerName, err)
 		}
-		if embedder == nil || embedder.Name() == "" {
+		if embedder == nil || embedder.Identity().String() == "" {
 			t.Fatalf("BuildEmbedder(%q) returned invalid embedder", providerName)
 		}
 	}

@@ -3,7 +3,6 @@ package provider
 
 import (
 	"fmt"
-	"strings"
 
 	"prompts/internal/prompt"
 
@@ -62,7 +61,7 @@ func Build(cfg prompt.Config, getenv func(string) string) (agentkit.Provider, er
 		}
 		return openrouter.New(openrouter.APIKey(key), opts...), nil
 	default:
-		panic("unreachable")
+		return nil, fmt.Errorf("unsupported provider %q", cfg.Provider)
 	}
 }
 
@@ -91,9 +90,5 @@ func apiKey(providerName string, getenv func(string) string) (string, error) {
 	if keyName == "" {
 		return "", fmt.Errorf("unsupported provider %q", providerName)
 	}
-	key := strings.TrimSpace(getenv(keyName))
-	if key == "" {
-		return "", fmt.Errorf("%s is not set", keyName)
-	}
-	return key, nil
+	return getenv(keyName), nil
 }

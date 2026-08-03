@@ -10,10 +10,7 @@ const framingPrompt = "You are an autonomous agent working inside a single persi
 	"PDF tooling is available in Bash: pdftotext extracts text, pdftoppm renders pages to images, and pdfinfo reads metadata.\n\n" +
 	"The account's file share is its durable, shared file store: files there persist, sync, and are what the owner and other workflows see. " +
 	"Your own folder stays private to this prompt; use the file tools as the channel between it and the file share.\n\n" +
-	"Beyond the sandbox tools, this account's services are available as deferred tools. " +
-	"The `load_tools` tool's description catalogs every service and tool name; " +
-	"call `load_tools` with tool names — or a service's name to load all of its tools — to make them callable, then call them. " +
-	"Load a tool before calling it.\n\n" +
+	"Beyond the sandbox tools, this account's services are available as tools and can be called directly.\n\n" +
 	"You have NO network access from bash: do not attempt to fetch anything from the internet. " +
 	"Leave your deliverables as FILES in the folder. Files written by earlier runs are readable, " +
 	"and writing files is how your work persists across runs (the Ralph pattern). " +

@@ -40,11 +40,11 @@ func TestCompleteReturnsFakeReplyUsageAndCatalogCost(t *testing.T) {
 	if got.CallID == "" || got.Text != "finished text" || got.Usage != usage {
 		t.Fatalf("response = %#v, want call id, fake text, and usage %#v", got, usage)
 	}
-	_, _, entry, ok := catalog.Resolve("anthropic", testModel)
-	if !ok {
+	res := catalog.Resolve(agentkit.ProviderAnthropic, testModel)
+	if res.Coverage != catalog.Curated {
 		t.Fatal("test model did not resolve")
 	}
-	wantCost := entry.Pricing.Cost(usage).USD()
+	wantCost := res.Offering.Pricing.Cost(usage).USD()
 	if math.Abs(got.CostUSD-wantCost) > 1e-12 {
 		t.Fatalf("cost_usd = %.12f, want %.12f", got.CostUSD, wantCost)
 	}
@@ -210,7 +210,9 @@ type fakeProvider struct {
 	result  *agentkit.RoundTrip
 }
 
-func (p *fakeProvider) Name() string { return "fake" }
+func (p *fakeProvider) Identity() agentkit.Identity {
+	return agentkit.Identity{Provider: "fake"}
+}
 
 func (p *fakeProvider) RoundTrip(_ context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	copy := *req

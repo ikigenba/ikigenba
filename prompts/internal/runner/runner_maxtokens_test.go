@@ -24,7 +24,7 @@ func TestGenSettings_MaxTokensHonorsConfig(t *testing.T) {
 	}
 }
 
-// Reasoning precedence: effort → thinking_budget → thinking_level →
+// Reasoning precedence: effort → thinking_level → thinking_budget →
 // thinking, first field that is set wins.
 func TestGenSettings_ReasoningPrecedence(t *testing.T) {
 	budget := 4096
@@ -41,16 +41,16 @@ func TestGenSettings_ReasoningPrecedence(t *testing.T) {
 		t.Fatalf("effort precedence: Reasoning level = %q (ok=%v), want \"high\"", level, ok)
 	}
 
-	// thinking_budget wins when effort is empty.
+	// thinking_level wins when effort is empty.
 	cfg = prompt.Config{ThinkingLevel: "medium", ThinkingBudget: &budget, Thinking: &thinkingOff}
-	if got, ok := genSettings(cfg).Reasoning.Budget(); !ok || got != budget {
-		t.Fatalf("thinking_budget precedence: Reasoning budget = %d (ok=%v), want %d", got, ok, budget)
+	if level, ok := genSettings(cfg).Reasoning.Level(); !ok || level != "medium" {
+		t.Fatalf("thinking_level precedence: Reasoning level = %q (ok=%v), want medium", level, ok)
 	}
 
-	// thinking_level wins when effort and thinking_budget are empty.
-	cfg = prompt.Config{ThinkingLevel: "medium", Thinking: &thinkingOff}
-	if level, ok := genSettings(cfg).Reasoning.Level(); !ok || level != "medium" {
-		t.Fatalf("thinking_level precedence: Reasoning level = %q (ok=%v), want \"medium\"", level, ok)
+	// thinking_budget wins when effort and thinking_level are empty.
+	cfg = prompt.Config{ThinkingBudget: &budget, Thinking: &thinkingOff}
+	if got, ok := genSettings(cfg).Reasoning.Budget(); !ok || got != budget {
+		t.Fatalf("thinking_budget precedence: Reasoning budget = %d (ok=%v), want %d", got, ok, budget)
 	}
 
 	// thinking (disabled) applies only when all higher-precedence fields are unset.
