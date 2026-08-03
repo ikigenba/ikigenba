@@ -84,15 +84,15 @@ proceeding as if testing passed (usually the suite just is not up).
 
 ## Deploying
 
-> ⚠️ **`int.ikigenba.com` is the live account.** Do not `ssh int` or invoke
-> `opsctl` against the box, even read-only, unless explicitly told to deploy. The
-> default workflow is local-only.
+> ⚠️ **`int.ikigenba.com` is the live account.** `ssh int` and read-only
+> `opsctl` inspection are fine when the work calls for them. What lives there is
+> production data: never mutate it casually, never wipe or rebuild a `state/`,
+> and confirm before anything that writes, deploys, restarts, or rolls back.
 
-> ⚠️ **TEMPORARY (migration window, REMOVE when done): only `ledger` holds live
-> customer data.** Protect ledger's `state/` as if data loss is unacceptable.
-> Every other service's `state/` is disposable until migration completes and may
-> be wiped and rebuilt. This flips service by service; when migration finishes,
-> all services hold real data and this note must be deleted.
+> ⚠️ **Every service holds production data.** Migration is complete: treat each
+> service's `state/` as live customer data and assume data loss is unacceptable.
+> No service's `state/` may be wiped or rebuilt, and a schema change that cannot
+> preserve existing rows is a design problem, not a cleanup step.
 
 The full `bump → ship → stage → deploy` runbook, rollback, and inspection commands
 live in **`deploy.md`**.
