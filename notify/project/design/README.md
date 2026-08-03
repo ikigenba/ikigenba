@@ -47,9 +47,10 @@ lives in git, never in the spec.
 >    `ErrorResult(code, msg)`, `Tool.OutputSchema`) is a fixed external contract.
 > 6. **Suite telemetry adoption** (D18–D19, active): notify joins the suite's
 >    forensic telemetry capability. The ntfy client's `http.Client` is
->    **injected** at the composition root from appkit's shared instrumented
->    outbound client (so the push is recorded, with its 10s push timeout still notify's
->    to set), and the consumer handlers' deliberately-detached push goroutines
+>    **injected** at the composition root from the chassis's instrumented
+>    outbound client, obtained from the `Router` (so the push is recorded, with
+>    its 10s push timeout still notify's to set), and the consumer handlers'
+>    deliberately-detached push goroutines
 >    derive from the handler context with `context.WithoutCancel` so the
 >    correlation id survives the async seam without the cancellation doing so
 >    (D18); the nginx fragment's gated locations capture and forward the
@@ -59,9 +60,10 @@ lives in git, never in the spec.
 >    loopback-only propagation rule — notify's mock ntfy is on `127.0.0.1`, so
 >    that substrate cannot falsify it. notify produces nothing, so the
 >    context-taking `Outbox.Append` change that compile-breaks producers does not
->    reach it: still no outbox and still no migration. D18 consumes appkit's
->    instrumented client and the revised eventplane consumer (which surfaces the
->    id into handler ctx) as fixed external contracts
+>    reach it: still no outbox and still no migration. D18 consumes the Router's
+>    instrumented-client seam and the revised eventplane consumer (which surfaces
+>    the id into handler ctx, minting a root at the consumer — never at `Append`)
+>    as fixed external contracts
 >    (`project/research/research.md`); both must be built first.
 >
 > The rest of the notify domain (the ntfy push mechanics —
@@ -212,8 +214,8 @@ module dependency — the `correlation` leaf package arrives through the existin
 `http.Client` (`NewClient(baseURL, topic, token string, hc *http.Client, logger
 *slog.Logger)`) and its two handlers derive their detached push goroutine's
 context with `context.WithoutCancel(hctx)` + `context.WithTimeout(…,
-PushTimeout)`. `cmd/notify/main.go` builds the one instrumented client from the
-chassis and hands it to all three `push.NewClient` sites (the two
+PushTimeout)`. `cmd/notify/main.go` obtains the one instrumented client from the
+Router seam and hands it to all three `push.NewClient` sites (the two
 `Spec.Consumers` factories and the `Spec.Handlers` MCP client).
 `etc/nginx.conf` gains the `X-Correlation-Id` capture/forward lines (D19).
 

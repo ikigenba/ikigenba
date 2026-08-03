@@ -5,7 +5,7 @@ continuation, `root` at spawn, recorded boundary). Depends on Phase 52.*
 
 ⛔ **External precondition (operator-sequenced, not built here).** Both chassis
 revisions must be built and available through the committed `replace`
-directives: appkit (correlation middleware, the root-start helper, telemetry
+directives: appkit (correlation middleware and `StartChain`, telemetry
 recorder, MCP-dispatch and plain-HTTP request instrumentation, lifecycle
 records) **and** eventplane
 (the `correlation_id` outbox column and wire envelope field, the ctx-populated
@@ -27,9 +27,10 @@ the DDL drift guard re-points at that newest outbox migration while the frozen
 ones stay untouched. `prompt.Service` gains the injected `RootStarter` seam
 (nil = ctx unchanged) and calls it at spawn **only** when the run roots its own
 chain, passing the run id and op `run:<run-id>`; the composition root binds it
-to the chassis root-start helper (adopt-or-mint + ctx + `root` record) and
-wires the chassis telemetry/correlation middleware. prompts mints no chain id
-and builds no record itself.
+to the seed-then-`StartChain` composition (`correlation.WithContext(ctx,
+runID)` then `correlation.StartChain(ctx, op)`, which adopts the seeded id and
+records the `root`) and wires the chassis telemetry/correlation middleware.
+prompts mints no chain id and builds no record itself.
 
 **Done when:** `go build ./...` and `go test ./...` from `prompts/` are green
 (design *Conventions*), with these ids covered by clearly-named tests:

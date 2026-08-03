@@ -27,7 +27,7 @@ One shipped artifact, `gmail/etc/nginx.conf`, plus the assertions that pin it.
   `@gmail_authn_500` are untouched — they proxy nothing.
 - The existing content assertions in `cmd/gmail/nginx_test.go` are extended to
   cover the new lines, in the style already used there (read the file from
-  disk, assert on its content). They carry no requirement id, matching D22.
+  disk, assert on its content), each tagged with its D22 requirement id.
 
 Observable end state: a gated request reaching gmail carries the chain id the
 edge minted, and can never carry one a client supplied; an ungated request
@@ -37,6 +37,19 @@ carries none, so the chassis mints. No Go behavior changes.
 
 The suite is green — `cd gmail && go build ./...`, `go vet ./...`,
 `gofmt -l .` (no output), and `go test ./...` all succeed with zero failures —
+D22's ids are covered by clearly-named tests over the shipped artifact:
+
+- `R-1M1T-299W` — the bearer-gated prefix carries both the
+  `auth_request_set $gmail_correlation …` capture and the matching
+  `proxy_set_header X-Correlation-Id $gmail_correlation;`.
+- `R-1N9P-G10L` — both session-gated locations (the exact-match landing and the
+  static tier) carry the `$gmail_session_correlation` capture and its matching
+  forward; exactly two do.
+- `R-1OHL-TSRA` — the ungated PRM bootstrap blanks the header
+  (`proxy_set_header X-Correlation-Id "";`) with no correlation
+  `auth_request_set` inside it, and exactly four
+  `proxy_set_header X-Correlation-Id` directives exist in the whole file.
+
 and these deterministic checks over the shipped artifact pass (all run against
 `gmail/etc/nginx.conf`, which is not under `project/`):
 

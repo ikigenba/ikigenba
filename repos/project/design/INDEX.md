@@ -18,7 +18,7 @@ Verification ids change.
 - D9 → `project/design/D09.md` — State layout & retention — R-FWST-R7DG, R-FY0Q-4Z45, R-G0GI-WILJ
 - D10 → `project/design/D10.md` — nginx fragment & the canonical landing page — R-G1OF-AAC8, R-G2WB-O22X, R-G448-1TTM, R-UZVS-S08C, R-V13P-5RZ1
 - D11 → `project/design/D11.md` — The two direct HTTP peers (`HTTPTokenSource`, `GitHubPeer`) take the Router-provided instrumented outbound HTTP client (`rt.HTTPClient(…)` at the composition root; nil-client fallbacks deleted; each peer's requests reach the wire through it carrying the call's live context); git subprocesses and dispatched agent sessions are explicitly out of recording scope — R-BT9N-POGV, R-BUHK-3G7K
-- D12 → `project/design/D12.md` — A session carries its correlation id in its row (`sessions.correlation_id`, additive migration), captured once in `Runner.Enqueue` from the ambient context and re-attached to the runner's detached completion contexts, so the outcome event stays on the chain — including across a restart via `Recover` — R-BVPG-H7Y9, R-BWXC-UZOY, R-BY59-8RFN, R-BZD5-MJ6C
+- D12 → `project/design/D12.md` — A session carries its correlation id in its row (`sessions.correlation_id`, additive migration), captured once in `Runner.Enqueue` from the ambient context and re-attached both to the context a dispatched run executes under (so its GitHub peer calls stay on the chain) and to the runner's detached completion contexts (so the outcome event does), including across a restart via `Recover` — R-BVPG-H7Y9, R-BWXC-UZOY, R-LM2I-ORUI, R-BY59-8RFN, R-BZD5-MJ6C
 - D13 → `project/design/D13.md` — nginx fragment: all three gated locations capture the introspection-minted correlation id with `auth_request_set` and overwrite `X-Correlation-Id` upstream; the ungated PRM bootstrap sets it to `""` so the chassis mints — R-9DUI-TUQJ, R-9F2F-7MH8
 
 ## Verification ids → Decision
@@ -85,6 +85,7 @@ Verification ids change.
 - R-IDQF-EVJZ → D2 — `project/design/D02.md`
 - R-IEYB-SNAO → D7 — `project/design/D07.md`
 - R-IG68-6F1D → D3 — `project/design/D03.md`
+- R-LM2I-ORUI → D12 — `project/design/D12.md`
 - R-TY2R-GFRU → D2 — `project/design/D02.md`
 - R-TZAN-U7IJ → D2 — `project/design/D02.md`
 - R-UZVS-S08C → D10 — `project/design/D10.md`

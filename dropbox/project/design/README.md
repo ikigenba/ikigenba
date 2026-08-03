@@ -51,19 +51,20 @@ here lives in git.
 >    01–04.
 > 6. **Suite telemetry adoption** (D26–D27, active): dropbox joins the suite's
 >    forensic telemetry capability. Its three privately-constructed
->    `http.Client`s move onto appkit's shared **instrumented outbound client**
->    (injected at the composition root, per-call-site timeouts preserved), its
->    two background daemons — the sync engine and the uploader — **mint a root
->    correlation chain per cycle** instead of running id-less, and the event
->    `Append` seam is threaded with the context the change happened on (D26);
->    the nginx fragment's gated locations capture and forward the edge-minted
->    `X-Correlation-Id` while its one ungated public location clears it (D27).
->    Inbound `request`, `publish`, and `lifecycle` recording arrives from the
->    rebuilt chassis and is not re-proven here. D26 consumes appkit's
->    instrumented client / root helper and eventplane's `correlation` leaf
->    package + context-taking `Append` as fixed external contracts
->    (`project/research/research.md`); both must be built first — the `Append`
->    change is compile-caught.
+>    `http.Client`s move onto the chassis's **instrumented outbound client**,
+>    obtained from the `Router` at the composition root with per-call-site
+>    timeouts preserved; its two background daemons — the sync engine and the
+>    uploader — **open a root correlation chain per cycle** (through the
+>    chassis's root-start helper, never a dropbox-minted id) instead of running
+>    id-less; and the event `Append` seam is threaded with the context the
+>    change happened on (D26). The nginx fragment's gated locations capture and
+>    forward the edge-minted `X-Correlation-Id` while its one ungated public
+>    location clears it (D27). Inbound `request`, `publish`, and `lifecycle`
+>    recording arrives from the rebuilt chassis and is not re-proven here. D26
+>    consumes the Router's instrumented-client seam, the chassis root-start
+>    helper, and eventplane's context-taking `Append` as fixed external
+>    contracts (`project/research/research.md`); both must be built first — the
+>    `Append` change is compile-caught.
 >
 > The pre-existing **download** engine and its load-bearing correctness rules
 > (crash/replay ordering, per-page cursor advance, poison bound, download
@@ -308,8 +309,8 @@ top of each `Engine` cycle (`sync.go`) and each uploader drain pass
 (`uploader.go`); `events.go`'s `EventSink` seam and its one `Append` call site
 carry a `context.Context`. `internal/mcp` takes its `source_url` fetcher
 injected (`Tools(svc, sourcePortAllowed, source *http.Client)`). The composition
-root (`cmd/dropbox/main.go`) builds all three clients from the chassis's
-instrumented outbound client, each keeping its own timeout/redirect policy. No
+root (`cmd/dropbox/main.go`) obtains all three clients from the Router's
+instrumented-client seam, each keeping its own timeout/redirect policy. No
 migration and no new module dependency: the `correlation` leaf package arrives
 through the existing `replace eventplane => ../eventplane`. `etc/nginx.conf`
 gains the `X-Correlation-Id` capture/forward lines (D27).

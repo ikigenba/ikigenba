@@ -54,12 +54,30 @@ read another module's spec.
   (`127.0.0.0/8`, `::1`) — deliberately not even to the *name* `localhost`.
   Calls to `gmail.googleapis.com` and `oauth2.googleapis.com` therefore never
   carry a suite-internal identifier off the box.
-- **Reaching the recorder from a service.** appkit constructs the recorder in
-  `runServe`; a service's `Spec.Handlers` hook reads it from the runtime
-  (`rt.Recorder()`, nil when telemetry is disabled) and hands it to
-  `httpclient.New`. *(This accessor is the one piece of the seam still being
-  settled in appkit's spec at the time of writing — gmail's Decision names it,
-  and the phase that realizes it must build after appkit's.)*
+- **The service-facing seam is on the Router, not the package.** appkit
+  constructs the recorder in `runServe` and exposes two accessors, so most
+  services never import `appkit/telemetry` at all:
+
+  ```go
+  func (rt *Router) HTTPClient(timeout time.Duration) *http.Client  // instrumented, wired to this service's recorder
+  func (rt *Router) Recorder() *telemetry.Recorder                  // nil when telemetry is disabled; every method nil-safe
+  ```
+
+  `rt.HTTPClient(t)` is exactly
+  `httpclient.New(Options{Recorder: rt.Recorder(), Timeout: t})`. Call
+  `httpclient.New`/`NewTransport` directly only where a custom transport,
+  redirect policy, or client shape is needed — the offline stub-transport tests
+  (`Options.Base`) and the below-the-composition-root fallbacks are gmail's
+  only such sites.
+- **`Spec.Config` gets no recorder** — it runs before the serve wiring exists
+  and is construction-validation only; a client built there records nothing,
+  which is correct because no chain exists yet.
+- **There is deliberately no exported transport type or predicate** to assert
+  on. Proving a client is instrumented is done by the **record that arrives**:
+  drive a real request at an `httptest` server with a recorder draining to a
+  live in-process sink and assert the `outbound` record shows up. A type
+  assertion is a proxy a stub also satisfies and would not prove the service
+  re-pointed its client.
 
 ### Recording gmail gets for free
 
@@ -110,11 +128,23 @@ and re-verifies none of that behavior.
   explicitly, as are dropbox's sync cycle and wiki's self-started pipeline work.
 - **One root id per cycle, not per event**, so everything one cycle caused
   shares one chain.
-- **appkit owns a single root-start helper** (mint the id, install it in the
-  context, emit the `root` record) so services do not hand-roll the idiom and
-  the eight that need it cannot drift apart on record shape or `op` naming.
-  Its exact signature was still being sealed in appkit's spec when this was
-  written; gmail's D23 names the shape it is specced against.
+- **appkit owns the root-start helpers**, on the recorder, so services do not
+  hand-roll the idiom:
+
+  ```go
+  func (r *Recorder) StartRoot(ctx, op string, detail map[string]any) (context.Context, string)
+  func (r *Recorder) StartChain(ctx, op string, detail map[string]any) (context.Context, string)
+  ```
+
+  `StartRoot` **always mints**, ignoring any id the context carries;
+  `StartChain` adopts an ambient id when there is one and mints otherwise. The
+  choice rule appkit states once: **`StartRoot` when the work has no cause
+  outside itself; `StartChain` when it might.** Both emit a `root` record and
+  both are nil-safe on a nil `*Recorder` (still mint and install, record
+  nothing), so correlation behavior never depends on telemetry being enabled.
+- **appkit fixes the mechanism, never the `op` vocabulary** — the op is the
+  caller's (`cron:tick/<name>`, `run:<run-id>`, `gmail:poll-cycle`,
+  `dropbox:sync-cycle`).
 
 ## Attachment addressing: `attachmentId` is ephemeral, `partId` is stable
 

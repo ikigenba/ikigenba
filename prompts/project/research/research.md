@@ -214,11 +214,21 @@ ride the instrumented client; propagation happens via the `Headers` map and
 the hop is recorded by the receiving peer's inbound record (design D45 states
 this boundary).
 
-**Self-originated spawns go through a root-start helper.** appkit publishes a
-single helper for the mint-a-chain case: it establishes the root id, returns a
-context carrying it, and emits the `root` record — one call, no service-local
-record building. A caller with a durable root (a run, a job) supplies that
-entity's own id rather than having one minted, per the durable-root-reuse rule.
+For prompts specifically, the run path offers **nowhere to plug it in**:
+agentkit v0.16.0's `MCPServer` attachment (`{Name, URL, Headers}`, §2) exposes
+no transport or `*http.Client` injection, so in-run suite peer calls cannot
+ride the instrumented client; propagation happens via the `Headers` map and
+the hop is recorded by the receiving peer's inbound record (design D45 states
+this boundary).
+
+**Self-originated spawns root a chain with `correlation.StartChain`.** appkit's
+correlation package (its D20) publishes `StartChain`, which **adopts the
+context's id** with `correlation.Ensure` semantics — minting **only when
+absent** — returns a context carrying it, and emits the `root` record. No
+service builds a `root` record itself. Durable-root reuse therefore falls out
+of composition rather than a parameter: a caller whose origin already owns a
+suite ULID seeds it first (`correlation.WithContext(ctx, id)`, and a run id is
+a valid ULID), and `StartChain` adopts that id instead of minting a second one.
 
 **prompts' role in the capability: the content store.** The settled scope says
 telemetry stores skeletons, never bulk content, and explicitly that **LLM

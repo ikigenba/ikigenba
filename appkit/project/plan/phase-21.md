@@ -23,9 +23,10 @@ op, the hop's correlation id, and an outcome carrying the duration and an error
 **class** (never a raw message). It only enqueues on the recorder, so it never
 blocks and can never fail a publish or a delivery. Separately, each declared
 consumer's handler is wrapped so a delivery whose `consumer.Event.CorrelationID`
-is empty — the wire fact, an event that carried no chain — emits a `root` record
-naming the routing key via `StartChain`, adopting the id eventplane already
-minted onto the handler context.
+fails `correlation.Valid` — the verbatim wire fact, covering both an absent and
+a malformed id — emits a `root` record naming the routing key via `StartChain`,
+adopting the id eventplane already minted onto the handler context. The
+predicate is `!correlation.Valid(...)`, never `== ""`.
 
 **Done when:**
 - These Verification ids are covered by clearly-named tests tagged with the id
@@ -42,6 +43,8 @@ minted onto the handler context.
     with the same routing key and the publisher's correlation id.
   - R-21NX-TT5I — an envelope with no correlation id yields a `root` record
     sharing the `consume` record's non-empty valid id; two such events yield
-    two different ids; a correlated envelope yields no `root` record.
+    two different ids; a **malformed** wire id also yields a `root` record
+    carrying the minted id, not the malformed one; a validly correlated
+    envelope yields no `root` record.
 - The suite is green per design's *Conventions* (`go build ./...`, `go vet
   ./...`, `gofmt -l .` empty, `go test ./...`, all from `appkit/`).

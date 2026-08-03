@@ -12,5 +12,5 @@ phase line, so the anchored grep matches only phase lines.
 Next phase: 25
 
 - Phase 23 ⬜ realizes D21, D23 — instrumented outbound client, and the poll cycle as a chain root
-- Phase 24 ⬜ realizes D22 — nginx fragment: forward the edge-minted correlation id
+- Phase 24 ⬜ realizes D22 (R-1M1T-299W, R-1N9P-G10L, R-1OHL-TSRA) — nginx fragment: forward the edge-minted correlation id
 

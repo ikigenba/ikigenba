@@ -115,21 +115,36 @@ are the suite's, and appkit owns the client's design.
   public route), appkit's inbound middleware mints one — the universal
   read-or-mint point. Loopback callers are inside the trust boundary, so an id
   arriving on the loopback interface is trusted as-is.
-- **The instrumented outbound client (appkit's, handed out by the Router as `rt.HTTPClient(…)`).** An `*http.Client`
-  whose transport records each call as a telemetry record of kind `outbound`
-  (operation, elapsed, status class, response size + SHA-256 digest — never the
-  response bytes) and attaches `X-Correlation-Id` **only** when the destination
-  host is `127.0.0.1`, so nothing leaks to a third party. It reads the id off
-  the outgoing request's `Context()`, which is why the caller must thread its
-  handler context down to the call instead of detaching it — Go's
+- **The instrumented outbound client (appkit's, package `appkit/httpclient`).**
+  It returns a concrete `*http.Client`, never an interface. The Router
+  convenience is the line services use —
+  `rt.HTTPClient(timeout time.Duration) *http.Client` — which wires the service's
+  own recorder and keeps `appkit/telemetry` out of the caller's imports. The
+  lower-level `httpclient.New(Options{Recorder, Timeout, Base})` and
+  `httpclient.NewTransport(Options)` exist for callers needing a custom
+  transport, redirect policy, or a client shape they must preserve; `Timeout`
+  defaults to 30s and `Base` to `http.DefaultTransport`. A nil `Recorder` still
+  yields a working client, just an unrecorded one.
+  The transport records every round trip as kind `outbound` (operation, elapsed,
+  status class, response size + SHA-256 digest — never the response bytes) and
+  reads the correlation id off the outgoing request's `Context()`, which is why
+  a caller must thread its handler context down instead of detaching it — Go's
   `http.Request.Context()` is exactly the channel a `RoundTripper` sees.
   Recording is best-effort: the telemetry service being down never blocks or
-  fails an outbound call.
-- **dropbox is a loopback peer.** sites reaches the dropbox mirror through the
-  registry-resolved `http://127.0.0.1:<port>` base URL, so mirror traffic is
-  inside the propagation rule. `net/http/httptest.NewServer` also binds
-  `127.0.0.1`, so a test server is the *real* substrate for that rule rather
-  than a stand-in for it.
+  fails an outbound call. `rt.Recorder()` is also available (nil when telemetry
+  is disabled, all methods nil-safe) for code emitting its own records; sites
+  emits none.
+- **The propagation rule keys on a loopback IP literal**, `127.0.0.0/8` or
+  `::1` — the *name* `localhost` deliberately does **not** qualify.
+- **dropbox normally qualifies, but the env var can break it.** sites resolves
+  the mirror base as
+  `config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", registry.BaseURL("dropbox"))`, and
+  `registry.BaseURL` is built from the literal `const loopbackHost = "127.0.0.1"`
+  — so the default qualifies. A `DROPBOX_BASE_URL` pointed at
+  `http://localhost:<port>` would not, and mirror calls would silently stop
+  carrying the id while continuing to work. Deployment note, not a code branch.
+- **`httptest.NewServer` binds `127.0.0.1`**, so a test server is the *real*
+  substrate for the propagation rule rather than a stand-in for it.
 - **sites emits no events.** The event-plane change that adds `correlation_id`
   to the outbox and the wire envelope (and the `Append` signature change that
   makes it compile-caught) touches producers only. sites has no producer and no

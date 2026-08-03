@@ -1,11 +1,9 @@
 # Phase 16 — Carry `X-Correlation-Id` across cron's nginx trust boundary
 
-*Realizes design Decision 16 (correlation adoption and tick-root minting),
-fragment slice only — no Verification ids: the fragment adds no cron behavior
-of its own, so its acceptance bar is deterministic content assertions over the
-shipped artifact. No dependency on any other pending phase, and none on the
-appkit/eventplane rebuild — this phase touches one config file and no Go
-source, so it can run before those land.*
+*Realizes design Decision 16 (correlation adoption and the tick root), fragment
+slice — its ids R-BBON-OZTN and R-BE4G-GJB1. No dependency on any other pending
+phase, and none on the appkit/eventplane rebuild — this phase touches one
+config file and its test, so it can run before those land.*
 
 This phase changes exactly one shipped artifact, `cron/etc/nginx.conf`, so the
 introspection-minted correlation id reaches the loopback service and a public
@@ -38,11 +36,28 @@ string entirely, so the chassis sees nothing inbound and mints for itself.
 proxy nothing and are untouched — the event plane stays unreachable through
 nginx exactly as before.
 
-The change is proven by extending the existing content-assertion test that
-reads `cron/etc/nginx.conf` from disk (`cmd/cron`); nginx is not run by the
-suite.
+The change is proven by extending the existing id-tagged content-assertion
+tests that read `cron/etc/nginx.conf` from disk (`cmd/cron/main_test.go`, where
+D4's `R-NGNX-*` / `R-8ALX-VK6V` / `R-8BTU-9BXK` tags already live); nginx is not
+run by the suite.
 
-**Done when** (deterministic exit conditions):
+**Done when** — the suite is green per design's *Conventions*
+(`cd cron && go build ./...`, `go vet ./...`, `gofmt -l .` empty, and
+`go test ./...` all pass with zero failures), each id below is covered by a
+clearly-named test tagged with the id, and the deterministic checks hold:
+
+- R-BBON-OZTN — a test over `cron/etc/nginx.conf` asserts all three gated
+  locations carry both halves: `location /srv/cron/` (bearer) has
+  `auth_request_set $cron_correlation $upstream_http_x_correlation_id;` plus
+  `proxy_set_header X-Correlation-Id $cron_correlation;`; `location = /srv/cron/`
+  (session) the same pair on `$cron_session_correlation`; and
+  `location /srv/cron/static/` the same pair on `$cron_static_correlation`.
+- R-BE4G-GJB1 — a test asserts `location =
+  /srv/cron/.well-known/oauth-protected-resource` carries
+  `proxy_set_header X-Correlation-Id "";`, **and** that the file carries
+  exactly four `proxy_set_header X-Correlation-Id` lines in total.
+
+Deterministic checks:
 
 - **Three gated captures present.** All three succeed from `cron/`:
   - `grep -c 'auth_request_set \$cron_correlation \$upstream_http_x_correlation_id;' etc/nginx.conf` prints `1`
@@ -63,11 +78,5 @@ suite.
   each print `1`, and `grep -c 'proxy_set_header X-Owner-' etc/nginx.conf`
   prints `8` (four owner headers on each of the two identity-forwarding
   locations, unchanged).
-- **A test asserts it, not just the grep.** The `cmd/cron` fragment test that
-  reads `etc/nginx.conf` from disk is extended with the assertions above and
-  passes.
 - **No migration, no schema, no Go source outside the test.**
   `git status --porcelain internal/db/migrations/` prints nothing.
-- The suite is green per design's *Conventions*: `cd cron && go build ./...`,
-  `cd cron && go vet ./...`, `cd cron && gofmt -l .` (no output), and
-  `cd cron && go test ./...` all succeed with zero failures.

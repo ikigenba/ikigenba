@@ -83,8 +83,10 @@ arrive from the rebuilt chassis with no notify code.
   the chassis-run loop receives a `ctx` for which `correlation.From(ctx)` returns
   the producer's chain id, so a push caused by a crm contact creation lands on
   the same chain as the MCP call that created the contact.
-- An event that carries **no** correlation id makes the consumer mint a **root**
-  chain before invoking the handler, so a handler ctx is never id-less.
+- An event that carries **no** correlation id makes the chassis's consumer
+  wrapper open a **root** chain and emit the `root` record itself before
+  invoking the handler, so a handler ctx is never id-less and notify writes no
+  minting code at all.
 - The `consume` hop is recorded through an injectable observation hook eventplane
   exposes and appkit installs — no notify code, and no new import.
 - The payload-field correlation convention formerly described in

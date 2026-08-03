@@ -205,7 +205,12 @@ both libraries read.
   value is reported verbatim on the delivered event (`""` when the event was
   uncorrelated) while the **handler's context** always carries a valid id —
   the wire id when it is valid, otherwise a fresh root eventplane mints per
-  delivery.
+  delivery. `consumer.Event.CorrelationID` reports the wire value **verbatim and
+  is never backfilled** with that minted root — a guarantee eventplane pins in
+  both directions, and the only signal available that an event arrived
+  uncorrelated. Note a non-empty but **malformed** wire id is reported verbatim
+  too, so the test for "arrived uncorrelated" is `!correlation.Valid(...)`,
+  never `== ""`.
 - **`eventplane/observe`** is the injectable hook seam, so eventplane observes
   hops without knowing what telemetry is:
 

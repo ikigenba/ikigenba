@@ -55,12 +55,31 @@ design Decision never has to go read another module's spec.
   (`127.0.0.0/8`, `::1`) — deliberately not even to the *name* `localhost`.
   Calls to `api.github.com` therefore never carry a suite-internal identifier
   off the box.
-- **Reaching the recorder from a service.** appkit constructs the recorder in
-  `runServe`; a service's `Spec.Handlers` hook reads it from the runtime
-  (`rt.Recorder()`, nil when telemetry is disabled) and hands it to
-  `httpclient.New`. *(This accessor is the one piece of the seam still being
-  settled in appkit's spec at the time of writing — `github`'s Decision names
-  it, and the phase that realizes it must build after appkit's.)*
+- **The service-facing seam is on the Router, not the package.** appkit
+  constructs the recorder in `runServe` and exposes two accessors, so most
+  services never import `appkit/telemetry` at all:
+
+  ```go
+  func (rt *Router) HTTPClient(timeout time.Duration) *http.Client  // instrumented, wired to this service's recorder
+  func (rt *Router) Recorder() *telemetry.Recorder                  // nil when telemetry is disabled; every method nil-safe
+  ```
+
+  `rt.HTTPClient(t)` is exactly
+  `httpclient.New(Options{Recorder: rt.Recorder(), Timeout: t})`. Call
+  `httpclient.New`/`NewTransport` directly only where a custom transport,
+  redirect policy, or client shape is needed — the offline stub-transport tests
+  (`Options.Base`) and the below-the-composition-root fallbacks in
+  `internal/gh` are `github`'s only such sites.
+- **`Spec.Config` gets no recorder** — it runs before the serve wiring exists
+  and is construction-validation only; a client built there records nothing,
+  which is correct because no chain exists yet. This is exactly what `github`'s
+  `Config` hook does.
+- **There is deliberately no exported transport type or predicate** to assert
+  on. Proving a client is instrumented is done by the **record that arrives**:
+  drive a real request at an `httptest` server with a recorder draining to a
+  live in-process sink and assert the `outbound` record shows up. A type
+  assertion is a proxy a stub also satisfies and would not prove the service
+  re-pointed its client.
 
 ## What `github`'s outbound traffic looks like today
 
@@ -98,10 +117,10 @@ outbox), so eventplane's `Append`-takes-a-context change and the `publish` /
 
 The settled suite rule makes any **background poll/watch/sync cycle** that
 publishes events or makes outbound calls with no inbound request to inherit
-from a chain root — one root id per cycle, emitted through appkit's root-start
-helper. That rule names gmail's poll loop, dropbox's sync cycle, and wiki's
-self-started pipeline work, alongside cron ticks and `prompts`/`scripts` run
-spawns.
+from a chain root — one root id per cycle, emitted through appkit's
+`Recorder.StartRoot`. That rule names gmail's poll loop, dropbox's sync cycle,
+and wiki's self-started pipeline work, alongside cron ticks and
+`prompts`/`scripts` run spawns.
 
 **`github` has no such cycle.** Verified against the source (2026-08-03): its
 `appkit.Spec` declares no `Workers`, and no package under `internal/` or

@@ -22,7 +22,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D16 → `project/design/D16.md` — Event-routing conformance (consumer side): canonical-key subscription filters, kind/subject handler matching — owns R-ZCGU-FG9L, R-ZEWN-6ZQZ, R-ZG4J-KRHO, R-ZHCF-YJ8D
 - D17 → `project/design/D17.md` — Structured MCP adoption: `send` returns `structuredContent`, declares an `outputSchema`, and carries typed error codes (`validation`, `source_unavailable`) from the closed vocabulary — owns R-A918-YY6H, R-AA95-CPX6, R-ACOY-49EK, R-ADWU-I159
 - D18 → `project/design/D18.md` — Telemetry adoption, Go side: the ntfy client's `http.Client` injected from the chassis's instrumented outbound client, and a correlation id that survives the detached-goroutine seam (`context.WithoutCancel`) — owns R-TK2Y-2LTX, R-TLAU-GDKM, R-TMIQ-U5BB, R-TNQN-7X20
-- D19 → `project/design/D19.md` — nginx fragment: gated locations capture and forward the edge-minted `X-Correlation-Id`; the ungated public PRM location clears it — none (structural; configuration-only)
+- D19 → `project/design/D19.md` — nginx fragment: gated locations capture and forward the edge-minted `X-Correlation-Id`; the ungated public PRM location clears it — owns R-VLOW-90H2, R-VMWS-MS7R
 
 ## Verification ids → Decision
 
@@ -67,6 +67,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-TLAU-GDKM → D18 → `project/design/D18.md`
 - R-TMIQ-U5BB → D18 → `project/design/D18.md`
 - R-TNQN-7X20 → D18 → `project/design/D18.md`
+- R-VLOW-90H2 → D19 → `project/design/D19.md`
+- R-VMWS-MS7R → D19 → `project/design/D19.md`
 - R-ZCGU-FG9L → D16 → `project/design/D16.md`
 - R-ZEWN-6ZQZ → D16 → `project/design/D16.md`
 - R-ZG4J-KRHO → D16 → `project/design/D16.md`

@@ -20,7 +20,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D14 → `project/design/D14.md` — `external_ref`: opt-in idempotency for derived transactions (nullable column + partial unique index, duplicate rejected via the shared `conflict` error, event-payload field, reverse interaction) — owns R-FP14-UYWQ, R-FQ91-8QNF, R-FRGX-MIE4, R-FSOU-0A4T, R-FTWQ-E1VI, R-FV4M-RTM7, R-FWCJ-5LCW
 - D15 → `project/design/D15.md` — Event-routing conformance: kind `recorded`, empty subject (`ledger:recorded`), family registry, new outbox migration — owns R-FXKF-JD3L, R-FYSB-X4UA, R-G184-OOBO, R-G2G1-2G2D
 - D16 → `project/design/D16.md` — Structured MCP adoption: `StructuredResult` + per-verb `outputSchema` on the six domain result verbs, typed closed-vocabulary error codes, `describe` prose exception — owns R-9FRN-SGDT, R-9GZK-684I, R-9I7G-JZV7, R-9JFC-XRLW, R-9KN9-BJCL, R-9LV5-PB3A, R-9N32-32TZ, R-9OAY-GUKO, R-9PIU-UMBD, R-9QQR-8E22, R-9RYN-M5SR, R-9T6J-ZXJG, R-9UEG-DPA5
-- D17 → `project/design/D17.md` — Correlation adoption: the nginx fragment carries the chain id across the trust boundary, the domain seam carries the context to `outbox.Append`, and the `correlation_id` column arrives by one additive migration — owns R-VOH6-HG8R, R-VPP2-V7ZG, R-Y3Z7-H9BG
+- D17 → `project/design/D17.md` — Correlation adoption: the nginx fragment carries the chain id across the trust boundary, the domain seam carries the context to `outbox.Append`, and the `correlation_id` column arrives by one additive migration — owns R-VOH6-HG8R, R-VPP2-V7ZG, R-Y3Z7-H9BG, R-B98U-XGC9, R-BAGR-B82Y
 
 ## Verification ids → Decision
 
@@ -55,6 +55,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ASST-3T7V → D3 → `project/design/D03.md`
 - R-ASST-5W9X → D3 → `project/design/D03.md`
 - R-ASST-7Y2Z → D3 → `project/design/D03.md`
+- R-B98U-XGC9 → D17 → `project/design/D17.md`
+- R-BAGR-B82Y → D17 → `project/design/D17.md`
 - R-FLV3-9RX8 → D4 → `project/design/D04.md`
 - R-FN2Z-NJNX → D4 → `project/design/D04.md`
 - R-FP14-UYWQ → D14 → `project/design/D14.md`

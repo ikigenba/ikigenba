@@ -4,10 +4,11 @@
 strip on the ungated one). No dependency on any other pending phase.*
 
 `scripts/etc/nginx.conf` gains the correlation-header plumbing D31 specifies,
-and nothing else. This is a **structural** phase: the fragment is inert
-configuration, it carries no requirement ids, and it can be built before the
-revised `eventplane`/`appkit` exist (its effect becomes observable when they
-do).
+and nothing else. The fragment is inert configuration, so this phase can be
+built before the revised `eventplane`/`appkit` exist (its effect becomes
+observable when they do). Its proof extends the existing per-location content
+assertions in `cmd/scripts/main_test.go`, the way every other tier in this
+fragment is already pinned.
 
 End state of the fragment:
 
@@ -25,17 +26,26 @@ End state of the fragment:
   re-emit are untouched, as are every tier's gate, precedence, upstream, and
   owner-header plumbing.
 
-**Done when:** all four checks below pass from `scripts/`, with the suite green
-per design's *Conventions* (`go build ./...`, `go vet ./...`, `gofmt -l .`
-printing nothing, and `go test ./...` — the existing fragment content
-assertions in `cmd/scripts/main_test.go` must still pass, proving no tier
-regressed and that the string `prompts` still does not appear in the file):
+**Done when:** both ids below are covered by clearly-named per-location
+assertions in `cmd/scripts/main_test.go` (reading the repo-real
+`etc/nginx.conf` from disk and asserting **inside each location block** through
+the existing block-extraction helper — a whole-file substring search does not
+satisfy them), and the suite is green per design's *Conventions*
+(`go build ./...`, `go vet ./...`, `gofmt -l .` printing nothing, and
+`go test ./...` clean, with every pre-existing fragment assertion still passing
+— including that the string `prompts` does not appear in the file):
 
-1. `grep -c 'proxy_set_header X-Correlation-Id' etc/nginx.conf` prints exactly
-   `4`.
-2. `grep -c 'proxy_set_header X-Correlation-Id "";' etc/nginx.conf` prints
-   exactly `1`.
-3. `grep -cE 'auth_request_set \$scripts_(corr|session_corr|static_corr) \$upstream_http_x_correlation_id;' etc/nginx.conf`
-   prints exactly `3`.
-4. `grep -c 'upstream_http_x_correlation_id' etc/nginx.conf` prints exactly `3`
-   — the id is captured on the gated tiers only, never on an ungated one.
+- **R-ENOZ-F427** — the ungated PRM block carries
+  `proxy_set_header X-Correlation-Id "";` with no `auth_request` and no
+  correlation `auth_request_set`, and no other block carries the strip.
+- **R-EOWV-SVSW** — each of the three gated blocks (the bearer prefix, the
+  session landing, the session assets) captures
+  `$upstream_http_x_correlation_id` into its own variable (`$scripts_corr`,
+  `$scripts_session_corr`, `$scripts_static_corr` — three distinct names) and
+  forwards exactly that variable with one `proxy_set_header X-Correlation-Id` in
+  the same block.
+
+As a fast structural sanity check while building (not the acceptance bar):
+`grep -c 'proxy_set_header X-Correlation-Id' etc/nginx.conf` should print `4`,
+`grep -c 'proxy_set_header X-Correlation-Id "";'` should print `1`, and
+`grep -c 'upstream_http_x_correlation_id'` should print `3`.

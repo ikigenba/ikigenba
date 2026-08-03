@@ -27,7 +27,7 @@ One shipped artifact, `github/etc/nginx.conf`, plus the assertions that pin it.
   `@github_authn_500` are untouched — they proxy nothing.
 - The existing content assertions in `internal/web/nginx_test.go` are extended
   to cover the new lines, in the style already used there (read the file from
-  disk, assert on its content). They carry no requirement id, matching D12.
+  disk, assert on its content), each tagged with its D12 requirement id.
 
 Observable end state: a gated request reaching `github` carries the chain id
 the edge minted, and can never carry one a client supplied; an ungated request
@@ -35,11 +35,34 @@ carries none, so the chassis mints. No Go behavior changes.
 
 ## Done when
 
+Every D12 Verification id this phase realizes is covered by a clearly-named,
+id-tagged test in `github/internal/web/nginx_test.go`:
+
+- R-1S5A-Z3ZD — the bearer-gated prefix carries both the
+  `$github_correlation` capture and its `proxy_set_header` forward.
+- R-1TD7-CVQ2 — exactly the two session-gated locations carry the
+  `$github_session_correlation` capture-and-forward pair.
+- R-1UL3-QNGR — the ungated PRM bootstrap blanks the header, and exactly four
+  `proxy_set_header X-Correlation-Id` directives exist file-wide.
+
 The suite is green — from `github/`: `GOWORK=off go build ./...` succeeds,
 `GOWORK=off go test ./...` passes with no failures and no `SKIP`,
 `gofmt -l .` is empty, and `go vet ./...` is clean — and these deterministic
-checks over the shipped artifact pass (all run against `github/etc/nginx.conf`,
-which is not under `project/`):
+D12's ids are covered by clearly-named tests over the shipped artifact:
+
+- `R-1S5A-Z3ZD` — the bearer-gated prefix carries both the
+  `auth_request_set $github_correlation …` capture and the matching
+  `proxy_set_header X-Correlation-Id $github_correlation;`.
+- `R-1TD7-CVQ2` — both session-gated locations (the exact-match landing and the
+  static tier) carry the `$github_session_correlation` capture and its matching
+  forward; exactly two do.
+- `R-1UL3-QNGR` — the ungated PRM bootstrap blanks the header
+  (`proxy_set_header X-Correlation-Id "";`) with no correlation
+  `auth_request_set` inside it, and exactly four
+  `proxy_set_header X-Correlation-Id` directives exist in the whole file.
+
+and these deterministic checks over the shipped artifact pass (all run against
+`github/etc/nginx.conf`, which is not under `project/`):
 
 - `grep -c 'auth_request_set \$github_correlation \$upstream_http_x_correlation_id;' github/etc/nginx.conf`
   prints **1**.

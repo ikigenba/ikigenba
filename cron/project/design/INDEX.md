@@ -19,7 +19,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D13 → `project/design/D13.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer tier deliberately excluded) — owns R-3V6H-7F1M, R-3WED-L6SB, R-3XM9-YYJ0
 - D14 → `project/design/D14.md` — Event-routing conformance: kind `tick`, subject `/<schedule name>`, live one-family reflection — owns R-PQH6-2RYI, R-PRP2-GJP7, R-PSWY-UBFW, R-PU4V-836L, R-PVCR-LUXA
 - D15 → `project/design/D15.md` — Structured MCP adoption: `StructuredResult` + mirrored text, per-tool `outputSchema`, closed-vocabulary error codes — owns R-6TVE-C4AC, R-6V3A-PW11, R-6WB7-3NRQ, R-6XJ3-HFIF, R-6YQZ-V794, R-6ZYW-8YZT, R-716S-MQQI
-- D16 → `project/design/D16.md` — Correlation adoption and the tick root: the nginx fragment carries the chain id across the trust boundary, every firing mints a fresh root id via the chassis `StartRoot` and records a `root` record with op `cron:tick/<name>`, and the `correlation_id` column arrives by one additive migration — owns R-2V3L-RE05, R-2WBI-55QU, R-2XJE-IXHJ, R-2YRA-WP88
+- D16 → `project/design/D16.md` — Correlation adoption and the tick root: the nginx fragment carries the chain id across the trust boundary, every firing mints a fresh root id via the chassis `StartRoot` and records a `root` record with op `cron:tick/<name>`, and the `correlation_id` column arrives by one additive migration — owns R-2V3L-RE05, R-2WBI-55QU, R-2XJE-IXHJ, R-2YRA-WP88, R-BBON-OZTN, R-BE4G-GJB1
 
 ## Verification ids → Decision
 
@@ -47,6 +47,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ASST-3V7W → D3 → `project/design/D03.md`
 - R-ASST-5X9Y → D3 → `project/design/D03.md`
 - R-ASST-7Z2A → D3 → `project/design/D03.md`
+- R-BBON-OZTN → D16 → `project/design/D16.md`
+- R-BE4G-GJB1 → D16 → `project/design/D16.md`
 - R-HOME-2K4P → D6 → `project/design/D06.md`
 - R-LAND-3C9K → D1 → `project/design/D01.md`
 - R-LAND-5E2L → D1 → `project/design/D01.md`

@@ -4,10 +4,11 @@
 any other pending phase.*
 
 `webhooks/etc/nginx.conf` gains the correlation-header plumbing D18 specifies,
-and nothing else. This is a **structural** phase: the fragment is inert
-configuration, it carries no requirement ids, and it can be built before the
-revised `appkit`/`eventplane` exist (its effect becomes observable when they do,
-under Phase 21).
+and nothing else. The fragment is inert configuration, so this phase can be
+built before the revised `appkit`/`eventplane` exist (its effect becomes
+observable when they do, under Phase 21). Its proof extends the existing
+per-location content assertions in `cmd/webhooks/nginx_test.go`, the way every
+other tier in this fragment is already pinned.
 
 End state of the fragment:
 
@@ -26,16 +27,26 @@ End state of the fragment:
   precedence, owner-header plumbing, `client_max_body_size`, and the
   `@webhooks_authn_500` re-emit.
 
-**Done when:** all four checks below pass from `webhooks/`, with the suite green
-per design's *Conventions* (`go build ./...`, `go vet ./...`, `go test ./...`
-all clean — the existing `cmd/webhooks/nginx_test.go` and `internal/e2e`
-fragment assertions must still pass, proving no tier regressed):
+**Done when:** both ids below are covered by clearly-named per-location
+assertions in `cmd/webhooks/nginx_test.go` (reading the repo-real
+`etc/nginx.conf` from disk and asserting **inside each location block**, using
+the existing block-extraction helper — a whole-file substring search does not
+satisfy them), and the suite is green per design's *Conventions*
+(`go build ./...`, `go vet ./...`, `go test ./...` all clean, with every
+pre-existing fragment assertion in `cmd/webhooks/nginx_test.go` and
+`internal/e2e` still passing, proving no tier regressed):
 
-1. `grep -c 'proxy_set_header X-Correlation-Id' etc/nginx.conf` prints exactly
-   `5`.
-2. `grep -c 'proxy_set_header X-Correlation-Id "";' etc/nginx.conf` prints
-   exactly `2`.
-3. `grep -cE 'auth_request_set \$wh_(corr|session_corr|static_corr) \$upstream_http_x_correlation_id;' etc/nginx.conf`
-   prints exactly `3`.
-4. `grep -c 'upstream_http_x_correlation_id' etc/nginx.conf` prints exactly `3`
-   — the id is captured on the gated tiers only, never on an ungated one.
+- **R-EL96-NKKT** — both ungated proxying blocks (the PRM exact match and the
+  public ingress prefix) carry `proxy_set_header X-Correlation-Id "";` and
+  neither carries an `auth_request` or a correlation `auth_request_set`.
+- **R-EMH3-1CBI** — each of the three gated blocks (`= /srv/webhooks/mcp`,
+  `= /srv/webhooks/`, `/srv/webhooks/static/`) captures
+  `$upstream_http_x_correlation_id` into its own variable (`$wh_corr`,
+  `$wh_session_corr`, `$wh_static_corr` — three distinct names) and forwards
+  exactly that variable with one `proxy_set_header X-Correlation-Id` in the same
+  block; no gated block carries the empty-string strip.
+
+As a fast structural sanity check while building (not the acceptance bar):
+`grep -c 'proxy_set_header X-Correlation-Id' etc/nginx.conf` should print `5`,
+`grep -c 'proxy_set_header X-Correlation-Id "";'` should print `2`, and
+`grep -c 'upstream_http_x_correlation_id'` should print `3`.

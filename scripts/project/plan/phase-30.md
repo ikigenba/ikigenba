@@ -44,7 +44,10 @@ the suite is green per design's *Conventions* (`go build ./...`, `go vet ./...`,
 
 - **R-4XFG-EFU8** — an event delivered on a handler context carrying chain `X`
   fires runs whose stored `correlation_id` is exactly `X`, including when one
-  event matches three scripts (all three rows carry `X`).
+  event matches three scripts (all three rows carry `X`); and a delivery whose
+  envelope carried no chain (so `ev.CorrelationID == ""` while the handler
+  context's id is valid) fires a run storing that **context** id — catching a
+  fan-out re-seeded from the event field instead of the context.
 - **R-4YNC-S7KX** — after `FinishRun` lands a succeeded run whose row carries
   chain `X`, the real SQLite outbox holds exactly one row for that run with
   `correlation_id == X`, appended on the same transaction as the terminal write;

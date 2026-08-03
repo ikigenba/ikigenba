@@ -25,11 +25,14 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D19 → `project/design/D19.md` — Live attachment round-trip check (`-tags live`, real Gmail API) — owns R-3NGL-AMPW
 - D20 → `project/design/D20.md` — Structured MCP adoption: `StructuredResult`, output schemas, typed error codes, and the shared loopback guard — owns R-8K29-UF3R, R-8LA6-86UG, R-8MI2-LYL5, R-8NPY-ZQBU, R-8OXV-DI2J, R-8Q5R-R9T8, R-8RDO-51JX
 - D21 → `project/design/D21.md` — Gmail's outbound calls move onto the shared instrumented HTTP client — owns R-ZUC0-6K42, R-ZWRS-Y3LG, R-ZXZP-BVC5, R-ZZ7L-PN2U
-- D22 → `project/design/D22.md` — nginx fragment: forward the edge-minted `X-Correlation-Id` on gated locations, blank it on ungated ones — none (structural; artifact-only)
+- D22 → `project/design/D22.md` — nginx fragment: forward the edge-minted `X-Correlation-Id` on gated locations, blank it on ungated ones — owns R-1M1T-299W, R-1N9P-G10L, R-1OHL-TSRA
 - D23 → `project/design/D23.md` — The poll cycle is a chain root: one correlation id per cycle, threaded into every append and every outbound call — owns R-PJWQ-547Q, R-PL4M-IVYF, R-PMCI-WNP4
 
 ## Verification ids → Decision
 
+- R-1M1T-299W → D22 → `project/design/D22.md`
+- R-1N9P-G10L → D22 → `project/design/D22.md`
+- R-1OHL-TSRA → D22 → `project/design/D22.md`
 - R-3G57-009Q → D16 → `project/design/D16.md`
 - R-3HD3-DS0F → D16 → `project/design/D16.md`
 - R-3IKZ-RJR4 → D16 → `project/design/D16.md`

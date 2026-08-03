@@ -24,7 +24,7 @@ Verification ids change.
 - D15 → `project/design/D15.md` — Event-routing conformance: kind `received`, subject = `/` + hook name — R-A3FB-J3ZK, R-A4N7-WVQ9, R-A5V4-ANGY, R-A730-OF7N
 - D16 → `project/design/D16.md` — Structured MCP adoption (structuredContent, output schemas, closed error vocabulary) — R-DRUS-R3AP, R-DT2P-4V1E, R-DUAL-IMS3, R-DVIH-WEIS, R-DWQE-A69H, R-DXYA-NY06
 - D17 → `project/design/D17.md` — Per-hook verification schemes: `bearer` and `github-hmac` — R-G7RX-751P, R-G8ZT-KWSE, R-GA7P-YOJ3, R-GBFM-CG9S, R-GCNI-Q80H, R-GDVF-3ZR6, R-GF3B-HRHV
-- D18 → `project/design/D18.md` — Correlation at the front door: strip-then-mint on the public ingress and PRM, capture-and-overwrite on every gated location — none (structural; fragment-only)
+- D18 → `project/design/D18.md` — Correlation at the front door: strip-then-mint on the public ingress and PRM, capture-and-overwrite on every gated location — R-EL96-NKKT, R-EMH3-1CBI
 - D19 → `project/design/D19.md` — One inbound delivery, one chain: the minted id rides the published event — R-L1A1-XMRN, R-L2HY-BEIC, R-L3PU-P691
 
 ## Verification ids → Decision
@@ -64,6 +64,8 @@ Verification ids change.
 - R-DVIH-WEIS → D16 — `project/design/D16.md`
 - R-DWQE-A69H → D16 — `project/design/D16.md`
 - R-DXYA-NY06 → D16 — `project/design/D16.md`
+- R-EL96-NKKT → D18 — `project/design/D18.md`
+- R-EMH3-1CBI → D18 — `project/design/D18.md`
 - R-G7RX-751P → D17 — `project/design/D17.md`
 - R-G8ZT-KWSE → D17 — `project/design/D17.md`
 - R-GA7P-YOJ3 → D17 — `project/design/D17.md`

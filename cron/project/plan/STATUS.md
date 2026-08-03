@@ -11,5 +11,5 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 18
 
-- Phase 16 ⬜ realizes D16 (fragment slice; no ids) — carry `X-Correlation-Id` across cron's nginx trust boundary: capture on every gated location, strip on the ungated PRM bootstrap
+- Phase 16 ⬜ realizes D16 (fragment slice: R-BBON-OZTN, R-BE4G-GJB1) — carry `X-Correlation-Id` across cron's nginx trust boundary: capture on every gated location, strip on the ungated PRM bootstrap
 - Phase 17 ⬜ realizes D16 (code slice) — mint a root correlation id at every tick via the chassis `StartRoot`, record its `root` with op `cron:tick/<name>`, and add the `correlation_id` column by one additive migration

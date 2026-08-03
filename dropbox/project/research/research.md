@@ -141,6 +141,17 @@ composition root never assembles chassis machinery itself:
   recorder behind it is best-effort (ring buffer, batched, fire-and-forget), so
   opening a chain never blocks a daemon cycle and never returns an error.
 
+  Two variants exist — one that always mints a fresh id, and one that adopts an
+  ambient id when the context already has one. **dropbox's daemons want the
+  always-mint variant**: a sync cycle and an uploader drain have no cause
+  outside themselves, and adopting a stale ambient id would silently glue two
+  unrelated cycles together.
+
+  Both are **nil-safe when telemetry is disabled**: the id is still minted and
+  installed on the context, only the `root` record is skipped. Correlation
+  therefore never depends on telemetry being enabled — which is also what makes
+  the root-chain claims testable without a live recorder.
+
 Note that **eventplane never mints at `Append`** — it reads whatever id the
 context already carries. If a daemon cycle failed to open a root, its events
 would simply land with an empty `correlation_id`; nothing downstream repairs

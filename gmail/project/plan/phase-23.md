@@ -6,15 +6,13 @@ is a chain root). Also re-points the drift-guard assertion behind D18's
 
 **External dependency — build this phase after appkit and eventplane.** Both
 Decisions consume seams that do not exist yet: from **appkit**,
-`appkit/httpclient` (`New`/`NewTransport`/`Options`), the root-start helper
-(mint + install in ctx + emit the `root` record), and the runtime accessor that
-yields the `*telemetry.Recorder` inside `Spec.Handlers`; from **eventplane**,
+`rt.HTTPClient(timeout)`, `rt.Recorder()`, `Recorder.StartRoot`, and
+`appkit/httpclient` (`New`/`NewTransport`/`Options`) for the two
+below-the-root fallbacks and the stub-transport tests; from **eventplane**,
 `outbox.Append`'s new leading `context.Context` and the exported
 `outbox.AddCorrelationIDSQL`. The suite's execution order builds appkit and
 eventplane before any service adopts them. Until both land, this phase cannot
-compile — that is the intended signal, not a defect. **Match whatever names
-appkit seals**; D21 and D23 record the shapes gmail was specced against and
-flag them as pending.
+compile — that is the intended signal, not a defect.
 
 ## What gets built
 
@@ -22,17 +20,17 @@ One coherent unit — the outbound path and the poll cycle — across the
 composition root and `internal/gmail`, plus one migration:
 
 - **`cmd/gmail/main.go`** — in the `Handlers` hook, alongside the existing
-  `GMAIL_*` reads: build the outbound client with `httpclient.New` (recorder
-  from the runtime, `Timeout: 100 * time.Second`) and pass it to
-  `gm.NewClient(cfg, hc)` in place of today's `nil`; pass the recorder into
-  `gm.NewEngine` through a new `EngineOptions.Recorder` field.
+  `GMAIL_*` reads: pass `rt.HTTPClient(100*time.Second)` to `gm.NewClient` in
+  place of today's `nil`, and pass `rt.Recorder()` into `gm.NewEngine` through
+  a new `EngineOptions.Recorder` field.
 - **`internal/gmail/client.go`** — the nil-`httpClient` fallback in `NewClient`
   becomes `httpclient.New(httpclient.Options{Timeout: 100 * time.Second})`
   instead of a bare `&http.Client{…}`. The `httpClient *http.Client` parameter
   and its use by both the REST `Client` and the embedded `tokenSource` are
   unchanged, so every existing offline stub-`RoundTripper` test keeps working.
 - **`internal/gmail/sync.go`** — `Engine.Poll` and `Engine.bootstrap` each start
-  a root at their head (one id per cycle, `op` `poll:gmail`) and thread the
+  a root at their head with `e.rec.StartRoot(ctx, "gmail:poll-cycle", nil)`
+  (one id per cycle; `StartRoot`, never `StartChain`) and thread the
   resulting context through the Gmail calls and the commit transaction;
   `Engine.commit` forwards it to each `AppendMailEvent`.
 - **`internal/gmail/events.go`** — `EventSink.AppendMailEvent` and
@@ -65,15 +63,17 @@ The suite is green — `cd gmail && go build ./...`, `go vet ./...`,
 and every id below is covered by a clearly-named, genuinely-asserting test:
 
 **D21 (outbound client)**
-- `R-ZUC0-6K42` — `gm.NewClient(cfg, nil)` yields a client whose `Transport`
-  is the type `appkit/httpclient` builds, and is not nil, not
-  `http.DefaultTransport`, and not `http.DefaultClient`.
-- `R-ZWRS-Y3LG` — that client and the one its embedded `tokenSource` uses are
-  the same `*http.Client` value (pointer identity).
-- `R-ZXZP-BVC5` — a non-nil injected client whose `Transport` is a test
+- `R-ZUC0-6K42` — a Gmail REST call driven through the client the composition
+  root builds (against an `httptest` server, recorder draining to a live
+  in-process sink) delivers an `outbound` record naming that method, host and
+  path to the sink. A bare `&http.Client{…}` delivers none.
+- `R-ZWRS-Y3LG` — an OAuth token refresh through that same client delivers its
+  own `outbound` record, proving the `tokenSource` shares the instrumented
+  client rather than holding its own.
+- `R-ZXZP-BVC5` — a non-nil injected client whose transport is a test
   `RoundTripper` is used for both a REST request and a token refresh; the stub
   observes both and nothing reaches the network.
-- `R-ZZ7L-PN2U` — the client built for the nil case has `Timeout` exactly
+- `R-ZZ7L-PN2U` — the client the composition root builds has `Timeout` exactly
   `100 * time.Second`.
 
 **D23 (chain root)**

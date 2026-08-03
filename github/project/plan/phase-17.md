@@ -3,10 +3,9 @@
 *Realizes design Decision 11 (instrumented outbound client).*
 
 **External dependency — build this phase after appkit.** The Decision consumes
-seams that do not exist yet: `appkit/httpclient`
-(`New`/`NewTransport`/`Options`) and the runtime accessor that yields the
-`*telemetry.Recorder` inside `Spec.Handlers`, both owned by the appkit
-workspace. The suite's execution order builds appkit before any service adopts
+seams that do not exist yet: `rt.HTTPClient(timeout)` and, for the two
+below-the-root fallbacks and the stub-transport tests, `appkit/httpclient`
+(`New`/`NewTransport`/`Options`) — both owned by the appkit workspace. The suite's execution order builds appkit before any service adopts
 it. Until it lands, this phase cannot compile — that is the intended signal,
 not a defect.
 
@@ -44,18 +43,18 @@ The suite is green — from `github/`: `GOWORK=off go build ./...` succeeds,
 `gofmt -l .` is empty, and `go vet ./...` is clean — and:
 
 - **D11's ids are covered** by clearly-named tests:
-  - `R-01NE-H6K8` — the `*http.Client` a `gh.NewClient(cfg, nil)` client
-    resolves for a REST call has a `Transport` of the type `appkit/httpclient`
-    builds, and is neither `http.DefaultClient` nor a client with a nil
-    `Transport`.
-  - `R-02VA-UYAX` — that client and the one its embedded `tokenSource`
-    resolves for the app-JWT and installation-token exchanges are the same
-    `*http.Client` value (pointer identity).
-  - `R-05B3-MHSB` — a non-nil injected client whose `Transport` is a test
+  - `R-01NE-H6K8` — a REST call driven through the client the composition root
+    builds (against an `httptest` server, recorder draining to a live
+    in-process sink) delivers an `outbound` record naming that method, host and
+    path to the sink. The `http.DefaultClient` fallback delivers none.
+  - `R-02VA-UYAX` — the installation-token exchange through that same client
+    delivers its own `outbound` record, proving the `tokenSource` shares the
+    instrumented client rather than holding its own.
+  - `R-05B3-MHSB` — a non-nil injected client whose transport is a test
     `RoundTripper` is used for both a REST request and the installation-token
     exchange; the stub observes both and nothing reaches the network.
-  - `R-06J0-09J0` — the client resolved for the nil case has `Timeout` exactly
-    `30 * time.Second`.
+  - `R-06J0-09J0` — the client the composition root builds has `Timeout`
+    exactly `30 * time.Second`.
 - `grep -rn 'http\.DefaultClient' --include='*.go' --exclude-dir=project
   github/` returns **no matches** (exit status 1).
 

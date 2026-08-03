@@ -134,20 +134,37 @@ record, the shared client, and the event envelope are the suite's.
   inbound middleware mints one — the universal read-or-mint point. An id arriving
   over loopback is trusted as-is, since loopback callers are inside the trust
   boundary.
-- **The instrumented outbound client (appkit's, handed out by the Router as `rt.HTTPClient(…)`).** An `*http.Client` whose
-  transport records each call as a telemetry record of kind `outbound`
-  (operation, elapsed, status class, response size + SHA-256 digest — never the
-  response bytes) and attaches `X-Correlation-Id` **only** when the destination
-  host is `127.0.0.1`. It reads the id off the outgoing request's `Context()`,
-  which is the channel a `RoundTripper` sees — so a caller that detaches its
-  context silently drops the chain. Recording is best-effort: telemetry being
-  down never blocks or fails a call.
+- **The instrumented outbound client (appkit's, package `appkit/httpclient`).**
+  It returns a concrete `*http.Client`, never an interface. The Router
+  convenience is the line services use —
+  `rt.HTTPClient(timeout time.Duration) *http.Client` — which wires the service's
+  own recorder and keeps `appkit/telemetry` out of the caller's imports. The
+  lower-level `httpclient.New(Options{Recorder, Timeout, Base})` and
+  `httpclient.NewTransport(Options)` exist for callers needing a custom
+  transport, redirect policy, or a client shape they must preserve; `Timeout`
+  defaults to 30s and `Base` to `http.DefaultTransport`. A nil `Recorder` still
+  yields a working client, just an unrecorded one.
+  The transport records every round trip as kind `outbound` (operation, elapsed,
+  status class, response size + SHA-256 digest — never the response bytes) and
+  reads the correlation id off the outgoing request's `Context()`, which is the
+  channel a `RoundTripper` sees — so a caller that detaches its context silently
+  drops the chain. Recording is best-effort: telemetry being down never blocks or
+  fails a call.
+- **The propagation rule keys on a loopback IP literal**, `127.0.0.0/8` or
+  `::1` — the *name* `localhost` deliberately does **not** qualify.
 - **github is a loopback peer; github.com is not.** Both repos peers resolve
-  through `registry.BaseURL("github")` to `http://127.0.0.1:<port>`, inside the
-  propagation rule. The `git` binary's pushes go to github.com — a third party,
-  which must never receive a correlation id.
+  through `registry.BaseURL("github")`, built from the literal
+  `const loopbackHost = "127.0.0.1"`, so both qualify. The `git` binary's pushes
+  go to github.com — a third party, which must never receive a correlation id.
   `net/http/httptest.NewServer` binds `127.0.0.1`, so a test server is the *real*
   substrate for the loopback rule rather than a stand-in for it.
+- **Chain roots are appkit's helper, not hand-rolled.** For self-started
+  background work with no inbound request behind it,
+  `ctx, _ := rec.StartRoot(ctx, "<op>", nil)` mints the id, installs it on the
+  context, and emits the `root` record — one call per cycle, never per item.
+  `rt.Recorder()` returns the recorder (nil when telemetry is disabled; all
+  methods nil-safe). repos has one self-started cycle, the reaper sweep, and
+  deliberately mints no root for it (D12).
 - **The event plane gains a first-class `correlation_id`.** It becomes an outbox
   column and a wire-envelope field, populated by the eventplane library from the
   context at `Append`, and handed to consumers on the handler context. The

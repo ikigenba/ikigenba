@@ -1,11 +1,9 @@
 # Phase 17 — Carry `X-Correlation-Id` across ledger's nginx trust boundary
 
-*Realizes design Decision 17 (correlation adoption), fragment slice only — no
-Verification ids: the fragment adds no ledger behavior of its own, so its
-acceptance bar is deterministic content assertions over the shipped artifact.
-No dependency on any other pending phase, and none on the appkit/eventplane
-rebuild — this phase touches one config file and no Go source, so it can run
-before those land.*
+*Realizes design Decision 17 (correlation adoption), fragment slice — its ids
+R-B98U-XGC9 and R-BAGR-B82Y. No dependency on any other pending phase, and none
+on the appkit/eventplane rebuild — this phase touches one config file and its
+test, so it can run before those land.*
 
 This phase changes exactly one shipped artifact, `ledger/etc/nginx.conf`, so
 the introspection-minted correlation id reaches the loopback service and a
@@ -41,11 +39,28 @@ header as a proxy header unless explicitly set, and the last
 auth-subrequest variable **replaces** anything the client sent.
 `location @ledger_authn_500` proxies nothing and is untouched.
 
-The change is proven by extending the existing content-assertion test that
-reads `ledger/etc/nginx.conf` from disk (`cmd/ledger`); nginx is not run by
-the suite.
+The change is proven by extending the existing id-tagged content-assertion
+tests that read `ledger/etc/nginx.conf` from disk (`cmd/ledger/main_test.go`,
+where D4's `R-NGNX-*` / `R-FLV3-9RX8` / `R-FN2Z-NJNX` tags already live); nginx
+is not run by the suite.
 
-**Done when** (deterministic exit conditions):
+**Done when** — the suite is green per design's *Conventions*
+(`cd ledger && go build ./...`, `go vet ./...`, `gofmt -l .` empty, and
+`go test ./...` all pass with zero failures), each id below is covered by a
+clearly-named test tagged with the id, and the deterministic checks hold:
+
+- R-B98U-XGC9 — a test over `ledger/etc/nginx.conf` asserts all three gated
+  locations carry both halves: `location /srv/ledger/` (bearer) has
+  `auth_request_set $ledger_correlation $upstream_http_x_correlation_id;` plus
+  `proxy_set_header X-Correlation-Id $ledger_correlation;`; `location =
+  /srv/ledger/` (session) the same pair on `$ledger_session_correlation`; and
+  `location /srv/ledger/static/` the same pair on `$ledger_static_correlation`.
+- R-BAGR-B82Y — a test asserts `location =
+  /srv/ledger/.well-known/oauth-protected-resource` carries
+  `proxy_set_header X-Correlation-Id "";`, **and** that the file carries
+  exactly four `proxy_set_header X-Correlation-Id` lines in total.
+
+Deterministic checks:
 
 - **Three gated captures present.** All three succeed from `ledger/`:
   - `grep -c 'auth_request_set \$ledger_correlation \$upstream_http_x_correlation_id;' etc/nginx.conf` prints `1`
@@ -65,11 +80,5 @@ the suite.
   each print `1`, and `grep -c 'proxy_set_header X-Owner-' etc/nginx.conf`
   prints `8` (four owner headers on each of the two identity-forwarding
   locations, unchanged).
-- **A test asserts it, not just the grep.** The `cmd/ledger` fragment test that
-  reads `etc/nginx.conf` from disk is extended with the assertions above and
-  passes.
 - **No migration, no schema, no Go source outside the test.**
   `git status --porcelain internal/db/migrations/` prints nothing.
-- The suite is green per design's *Conventions*: `cd ledger && go build ./...`,
-  `cd ledger && go vet ./...`, `cd ledger && gofmt -l .` (no output), and
-  `cd ledger && go test ./...` all succeed with zero failures.
