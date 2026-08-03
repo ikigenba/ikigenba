@@ -432,3 +432,30 @@ func TestToolTableAndAssembledHandlerExposeExactNamesAndSchemas(t *testing.T) {
 		t.Fatalf("domain tool table length = %d, want 9", len(Tools(&domain{})))
 	}
 }
+
+func TestToolInputSchemasUseCanonicalSubset(t *testing.T) {
+	// R-1WZF-FVH9
+	for _, registered := range Tools(&domain{}) {
+		walkSchema(t, registered.Name, registered.InputSchema)
+	}
+}
+
+func walkSchema(t *testing.T, path string, value any) {
+	t.Helper()
+	switch value := value.(type) {
+	case map[string]any:
+		for key, child := range value {
+			if key == "additionalProperties" {
+				t.Errorf("tool input schema contains %q at %s", key, path)
+			}
+			walkSchema(t, path+"."+key, child)
+		}
+	default:
+		reflected := reflect.ValueOf(value)
+		if reflected.IsValid() && (reflected.Kind() == reflect.Slice || reflected.Kind() == reflect.Array) {
+			for index := 0; index < reflected.Len(); index++ {
+				walkSchema(t, fmt.Sprintf("%s[%d]", path, index), reflected.Index(index).Interface())
+			}
+		}
+	}
+}

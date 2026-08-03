@@ -301,7 +301,7 @@ func domainError(err error, fallback appkitmcp.ErrorCode) map[string]any {
 func blank(value string) bool { return strings.TrimSpace(value) == "" }
 
 func obj(properties map[string]any, required ...string) map[string]any {
-	result := map[string]any{"type": "object", "properties": properties, "additionalProperties": false}
+	result := map[string]any{"type": "object", "properties": properties}
 	if len(required) != 0 {
 		result["required"] = required
 	}
