@@ -1,7 +1,7 @@
 # Phase 22 — A session carries its correlation id, so the outcome event stays on the chain
 
 *Realizes design Decision 12 (session correlation continuity). Depends on Phase
-20 only in the sense that both touch `internal/repos`; it may build before or
+21 only in the sense that both touch `internal/repos`; it may build before or
 after it. It cannot build until the suite-level `eventplane` work has landed the
 `correlation_id` outbox column and the new `Append` signature — that signature
 change is what makes this phase's event call site fail to compile until it is
