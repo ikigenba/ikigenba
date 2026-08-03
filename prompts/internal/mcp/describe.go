@@ -41,7 +41,7 @@ ADDRESSING — TWO KEYS
 - Prompt-addressed tools take a prompt_id and are BARE verbs:
   create, list, get, update, delete, set_trigger, clear_trigger, run.
 - Run-addressed tools take a run_id and live under the run_* namespace:
-  run_list, run_get, run_output, run_cancel, run_fs_list, run_fs_read.
+  run_list, run_get, run_output, run_cancel, run_delete, run_fs_list, run_fs_read.
   run_list is the bridge (a prompt's runs); the rest key by run_id and stay
   readable even after the prompt is deleted.
 
@@ -81,9 +81,10 @@ EVENT-TRIGGERED RUNS
 - This block is present ONLY on event-triggered runs; a manual run has none.
 
 DELETE
-- delete is a tombstone: it removes the prompt and its triggers
+- delete removes the prompt and its triggers without cascading
   but leaves its runs and their on-disk artifacts in place — those stay readable
   by run_id via run_get / run_output / run_fs_*.
+- run_delete {run_id} explicitly removes one run, its accounting, and its files.
 
 WORKED EXAMPLE
   create {"user_prompt":"Summarize X into report.md",

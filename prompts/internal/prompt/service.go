@@ -398,8 +398,8 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 	return p, nil
 }
 
-// Delete is a TOMBSTONE: it removes ONLY the prompt row and the prompt's
-// trigger(s). It deliberately leaves the prompt's runs, their on-disk run
+// Delete removes ONLY the prompt row and the prompt's trigger(s). It deliberately
+// leaves the prompt's runs, their on-disk run
 // directories (output.jsonl, input/, sandbox/), and any emitted outbox rows in
 // place — a run stays owner-addressable by run_id (via the run's denormalized
 // owner_email) after its prompt is gone. ALWAYS allowed (no single-flight).
@@ -643,14 +643,14 @@ func (s *Service) RunExecuted(ctx context.Context, ownerID, runID string) (Execu
 }
 
 // RunGet returns a single run by run_id, owner-scoped via the run's owner_email
-// (works after the run's prompt has been tombstoned).
+// (works after the run's prompt has been deleted).
 func (s *Service) RunGet(ctx context.Context, ownerID, runID string) (Run, error) {
 	return s.runForOwner(ctx, ownerID, runID)
 }
 
 // RunOutput returns up to limit lines of a run's output.jsonl, starting at
 // 1-based offset (same line-slice semantics as sandbox.Read). Owner-scoped via
-// the run's owner_email; survives a tombstoned prompt.
+// the run's owner_email; survives a deleted prompt.
 func (s *Service) RunOutput(ctx context.Context, ownerID, runID string, offset, limit int) (string, error) {
 	r, err := s.runForOwner(ctx, ownerID, runID)
 	if err != nil {
@@ -663,16 +663,52 @@ func (s *Service) RunOutput(ctx context.Context, ownerID, runID string, offset, 
 // owner_email. Idempotent: a run that is not in flight is not an error (the
 // foreground may race the run's own completion).
 func (s *Service) RunCancel(ctx context.Context, ownerID, runID string) error {
+	_, _, err := s.cancelRun(ctx, ownerID, runID)
+	return err
+}
+
+func (s *Service) cancelRun(ctx context.Context, ownerID, runID string) (Run, bool, error) {
 	r, err := s.runForOwner(ctx, ownerID, runID)
+	if err != nil {
+		return Run{}, false, err
+	}
+	return r, s.runner.Cancel(r.ID), nil
+}
+
+// RunDelete removes one owner-scoped run completely. Database rows are removed
+// before files; a live run is first signalled through the cancellation seam and
+// must be retried after its writer exits.
+func (s *Service) RunDelete(ctx context.Context, ownerID, runID string) error {
+	r, cancelled, err := s.cancelRun(ctx, ownerID, runID)
+	if errors.Is(err, ErrNotFound) {
+		// runForOwner deliberately makes foreign and absent runs indistinguishable.
+		// Only the truly absent case is idempotent; a foreign row remains not found.
+		_, lookupErr := s.store.GetRun(ctx, runID)
+		if errors.Is(lookupErr, ErrNotFound) {
+			return nil
+		}
+		if lookupErr != nil {
+			return lookupErr
+		}
+		return ErrNotFound
+	}
 	if err != nil {
 		return err
 	}
-	s.runner.Cancel(r.ID)
+	if cancelled {
+		return fmt.Errorf("prompt: run %q is being cancelled; retry run_delete", r.ID)
+	}
+	if err := s.store.DeleteRun(ctx, r.ID); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(filepath.Join(s.runsDir, r.ID)); err != nil {
+		return fmt.Errorf("prompt: remove run directory: %w", err)
+	}
 	return nil
 }
 
 // RunFsList lists the entries under path in a run's durable sandbox. Owner-
-// scoped via the run's owner_email; survives a tombstoned prompt.
+// scoped via the run's owner_email; survives a deleted prompt.
 func (s *Service) RunFsList(ctx context.Context, ownerID, runID, path string) ([]sandbox.Entry, error) {
 	r, err := s.runForOwner(ctx, ownerID, runID)
 	if err != nil {
@@ -687,7 +723,7 @@ func (s *Service) RunFsList(ctx context.Context, ownerID, runID, path string) ([
 
 // RunFsRead returns up to limit lines of the file at path in a run's sandbox,
 // starting at 1-based offset. Owner-scoped via the run's owner_email; survives a
-// tombstoned prompt.
+// deleted prompt.
 func (s *Service) RunFsRead(ctx context.Context, ownerID, runID, path string, offset, limit int) (string, error) {
 	r, err := s.runForOwner(ctx, ownerID, runID)
 	if err != nil {

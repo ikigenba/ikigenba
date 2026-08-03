@@ -75,7 +75,7 @@ func TestMigrate_CreatesPromptsSchema(t *testing.T) {
 		t.Fatalf("expected idx_runs_prompt: %v", err)
 	}
 
-	// Tombstone semantics (A3): there is NO FK/cascade. Deleting a prompt row
+	// Non-cascade semantics (A3): there is NO FK/cascade. Deleting a prompt row
 	// leaves its runs in place (they stay owner-addressable by run_id), and the
 	// prompt's trigger(s) must be removed EXPLICITLY, not by cascade.
 	if _, err := conn.ExecContext(ctx,
@@ -101,13 +101,13 @@ func TestMigrate_CreatesPromptsSchema(t *testing.T) {
 	}
 	var n int
 	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs WHERE prompt_id='s1'`).Scan(&n); err != nil {
-		t.Fatalf("count runs after tombstone: %v", err)
+		t.Fatalf("count runs after prompt delete: %v", err)
 	}
 	if n != 1 {
 		t.Fatalf("expected NO cascade: run should survive prompt delete, got %d", n)
 	}
 	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM prompt_triggers WHERE prompt_id='s1'`).Scan(&n); err != nil {
-		t.Fatalf("count triggers after tombstone: %v", err)
+		t.Fatalf("count triggers after prompt delete: %v", err)
 	}
 	if n != 1 {
 		t.Fatalf("expected NO cascade: trigger should survive prompt delete (removed explicitly by service), got %d", n)

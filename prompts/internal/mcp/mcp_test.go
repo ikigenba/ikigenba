@@ -227,10 +227,10 @@ func TestToolsListThroughAssembledHandlerReturnsDomainPlusChassisTools(t *testin
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(resp.Result.Tools) != 20 {
-		t.Fatalf("want 20 tools, got %d", len(resp.Result.Tools))
+	if len(resp.Result.Tools) != 21 {
+		t.Fatalf("want 21 tools, got %d", len(resp.Result.Tools))
 	}
-	got := make([]string, 0, 20)
+	got := make([]string, 0, 21)
 	for _, tl := range resp.Result.Tools {
 		got = append(got, tl.Name)
 	}
@@ -248,6 +248,7 @@ func TestToolsListThroughAssembledHandlerReturnsDomainPlusChassisTools(t *testin
 		"reflection",
 		"run",
 		"run_cancel",
+		"run_delete",
 		"run_fs_list",
 		"run_fs_read",
 		"run_get",
@@ -289,7 +290,7 @@ func TestToolsListDeclaresSchemasOnlyForStructuredTools(t *testing.T) {
 		"calls": true, "usage": true,
 		"create": true, "import": true, "list": true, "get": true, "update": true,
 		"delete": true, "set_trigger": true, "clear_trigger": true, "run": true,
-		"run_list": true, "run_get": true, "run_cancel": true, "run_fs_list": true,
+		"run_list": true, "run_get": true, "run_cancel": true, "run_delete": true, "run_fs_list": true,
 		"health": true, "reflection": true,
 	}
 	wantProse := map[string]bool{"describe": true, "run_output": true, "run_fs_read": true}
@@ -359,9 +360,10 @@ func TestStructuredToolsReturnMatchingMachineAndTextResults(t *testing.T) {
 		t.Fatal(err)
 	}
 	results["run_fs_list"] = call(t, h, "run_fs_list", map[string]any{"run_id": runID})
+	results["run_delete"] = call(t, h, "run_delete", map[string]any{"run_id": runID})
 	results["delete"] = call(t, h, "delete", map[string]any{"prompt_id": promptID})
 
-	for _, name := range []string{"create", "import", "list", "get", "update", "delete", "set_trigger", "clear_trigger", "run", "run_list", "run_get", "run_cancel", "run_fs_list"} {
+	for _, name := range []string{"create", "import", "list", "get", "update", "delete", "set_trigger", "clear_trigger", "run", "run_list", "run_get", "run_cancel", "run_delete", "run_fs_list"} {
 		res := results[name]
 		structured, ok := res["structuredContent"].(map[string]any)
 		if !ok {

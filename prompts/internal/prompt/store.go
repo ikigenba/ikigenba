@@ -223,8 +223,8 @@ func (s *Store) UpdatePrompt(ctx context.Context, owner string, p Prompt) error 
 	return requireOne(res, "update")
 }
 
-// DeletePrompt removes ONLY the owner's prompt row (tombstone): there is no FK
-// cascade, so the prompt's runs (and their on-disk directories) survive and stay
+// DeletePrompt removes ONLY the owner's prompt row: there is no FK cascade, so
+// the prompt's runs (and their on-disk directories) survive and stay
 // owner-addressable by run_id. A no-match returns ErrNotFound.
 func (s *Store) DeletePrompt(ctx context.Context, owner, id string) error {
 	res, err := s.db.ExecContext(ctx,
@@ -260,12 +260,38 @@ const runSelectCols = `id, prompt_id, owner_id, owner_email, prompt_name, status
 
 // GetRun returns a run by its run_id, or ErrNotFound when absent. It is NOT
 // owner-scoped here (the service scopes via the run's denormalized owner_email,
-// which survives a tombstone delete of the run's prompt).
+// which survives deletion of the run's prompt).
 func (s *Store) GetRun(ctx context.Context, runID string) (Run, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+runSelectCols+` FROM runs WHERE id = ?`, runID,
 	)
 	return scanRun(row)
+}
+
+// DeleteRun removes a run's accounting rows before removing the run row. Both
+// statements share one transaction so a failure cannot leave a run with only
+// part of its database history.
+func (s *Store) DeleteRun(ctx context.Context, runID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("prompt: delete run begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM calls WHERE group_id = ?`, runID); err != nil {
+		return fmt.Errorf("prompt: delete run calls: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM runs WHERE id = ?`, runID)
+	if err != nil {
+		return fmt.Errorf("prompt: delete run row: %w", err)
+	}
+	if err := requireOne(res, "delete run"); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("prompt: delete run commit: %w", err)
+	}
+	return nil
 }
 
 // ListRunsByPrompt returns every run of a prompt, newest first.

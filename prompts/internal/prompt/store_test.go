@@ -10,6 +10,7 @@ import (
 
 	appkitdb "appkit/db"
 
+	"prompts/internal/calls"
 	"prompts/internal/db"
 	"prompts/internal/ids"
 )
@@ -231,7 +232,40 @@ func TestStoreUpdateRunTerminal(t *testing.T) {
 	}
 }
 
-func TestStoreDeleteIsTombstone(t *testing.T) {
+func TestStoreDeleteRunRemovesMatchingCallsAndRunOnly(t *testing.T) {
+	store := newTestStore(t)
+	callStore := calls.NewStore(store.db)
+	p := seedPrompt(t, store, ownerA)
+	runs := []Run{
+		{ID: ids.NewULID(), PromptID: p.ID, OwnerID: ownerA, OwnerEmail: ownerA, Status: RunSucceeded, StartedAt: store.nowStr(), LogPath: "a"},
+		{ID: ids.NewULID(), PromptID: p.ID, OwnerID: ownerA, OwnerEmail: ownerA, Status: RunSucceeded, StartedAt: store.nowStr(), LogPath: "b"},
+	}
+	for _, run := range runs {
+		if err := store.InsertRun(t.Context(), run); err != nil {
+			t.Fatal(err)
+		}
+		if err := callStore.Insert(t.Context(), calls.Row{Class: calls.ClassSession, Origin: "user:" + ownerA, Name: "prompts.run", GroupID: run.ID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.DeleteRun(t.Context(), runs[0].ID); err != nil {
+		t.Fatalf("DeleteRun: %v", err)
+	}
+	if _, err := store.GetRun(t.Context(), runs[0].ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted run error = %v", err)
+	}
+	if rows, err := callStore.ListByGroup(t.Context(), runs[0].ID); err != nil || len(rows) != 0 {
+		t.Fatalf("deleted calls = %v, %v", rows, err)
+	}
+	if _, err := store.GetRun(t.Context(), runs[1].ID); err != nil {
+		t.Fatalf("surviving run: %v", err)
+	}
+	if rows, err := callStore.ListByGroup(t.Context(), runs[1].ID); err != nil || len(rows) != 1 {
+		t.Fatalf("surviving calls = %v, %v", rows, err)
+	}
+}
+
+func TestStorePromptDeleteDoesNotCascade(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 	sess := seedPrompt(t, store, ownerA)
@@ -243,24 +277,24 @@ func TestStoreDeleteIsTombstone(t *testing.T) {
 	if err := store.DeletePrompt(ctx, ownerA, sess.ID); err != nil {
 		t.Fatalf("DeletePrompt: %v", err)
 	}
-	// Tombstone (A3): the prompt is gone but its run survives — there is no
+	// Non-cascade (A3): the prompt is gone but its run survives — there is no
 	// cascade. The run is still addressable by run_id.
 	if _, err := store.GetPrompt(ctx, ownerA, sess.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("prompt should be gone, got err=%v", err)
 	}
 	got, err := store.GetRun(ctx, run.ID)
 	if err != nil {
-		t.Fatalf("GetRun after tombstone: %v", err)
+		t.Fatalf("GetRun after prompt delete: %v", err)
 	}
 	if got.ID != run.ID || got.OwnerEmail != ownerA {
-		t.Fatalf("run should survive tombstone, got %+v", got)
+		t.Fatalf("run should survive prompt delete, got %+v", got)
 	}
 	last, err := store.GetLatestRun(ctx, sess.ID)
 	if err != nil {
 		t.Fatalf("GetLatestRun: %v", err)
 	}
 	if last == nil || last.ID != run.ID {
-		t.Fatalf("latest run should survive tombstone, got %+v", last)
+		t.Fatalf("latest run should survive prompt delete, got %+v", last)
 	}
 }
 

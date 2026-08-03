@@ -433,6 +433,26 @@ func TestDescribeDescriptorDocumentsExpandedConfigAndJSONL(t *testing.T) {
 	}
 }
 
+func TestRunDeleteToolDeclaresSingleRunAndReturnsDeletedID(t *testing.T) {
+	svc, _ := phase42Service(t)
+	descriptor := findToolDescriptor(t, "run_delete")
+	input := descriptor["inputSchema"].(map[string]any)
+	if !reflect.DeepEqual(input["required"], []string{"run_id"}) {
+		t.Fatalf("required = %#v, want run_id", input["required"])
+	}
+	properties := input["properties"].(map[string]any)
+	if len(properties) != 1 || properties["run_id"].(map[string]any)["type"] != "string" {
+		t.Fatalf("properties = %#v, want only string run_id", properties)
+	}
+	res := phase42Call(t, svc, "run_delete", map[string]any{"run_id": "absent"})
+	if res["deleted"] != "absent" {
+		t.Fatalf("run_delete result = %#v", res)
+	}
+	if schema := outputSchemas()["run_delete"]; schema == nil {
+		t.Fatal("run_delete output schema missing")
+	}
+}
+
 func inputConfigSchema(t *testing.T, toolName string) map[string]any {
 	t.Helper()
 	toolDesc := findToolDescriptor(t, toolName)

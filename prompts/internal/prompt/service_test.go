@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"prompts/internal/calls"
 	"prompts/internal/sandbox"
 )
 
@@ -60,6 +61,132 @@ func newTestService(t *testing.T) (*Service, *Store, *sandbox.Manager, string) {
 	store := NewStore(conn)
 	svc := NewService(store, sb, runsDir, &fakeRunner{})
 	return svc, store, sb, runsDir
+}
+
+func finishRunWithCall(t *testing.T, store *Store, run Run) {
+	t.Helper()
+	if err := store.UpdateRunTerminal(t.Context(), run.ID, RunSucceeded, store.nowStr(), "", ""); err != nil {
+		t.Fatalf("finish run %s: %v", run.ID, err)
+	}
+	if store.Calls == nil {
+		store.Calls = calls.NewStore(store.db)
+	}
+	if err := store.Calls.Insert(t.Context(), calls.Row{
+		Class: calls.ClassSession, Origin: "user:" + run.OwnerEmail, Name: "prompts.run", GroupID: run.ID,
+		OwnerEmail: run.OwnerEmail, Provider: "anthropic", Model: testAnthropicModel,
+	}); err != nil {
+		t.Fatalf("insert call for %s: %v", run.ID, err)
+	}
+}
+
+func requireRunArtifacts(t *testing.T, store *Store, runsDir string, run Run, want bool) {
+	t.Helper()
+	_, runErr := store.GetRun(t.Context(), run.ID)
+	callRows, callsErr := store.Calls.ListByGroup(t.Context(), run.ID)
+	_, dirErr := os.Stat(filepath.Join(runsDir, run.ID))
+	if callsErr != nil {
+		t.Fatalf("list calls for %s: %v", run.ID, callsErr)
+	}
+	if want {
+		if runErr != nil || len(callRows) != 1 || dirErr != nil {
+			t.Fatalf("run %s artifacts: runErr=%v calls=%d dirErr=%v, want all present", run.ID, runErr, len(callRows), dirErr)
+		}
+		return
+	}
+	if !errors.Is(runErr, ErrNotFound) || len(callRows) != 0 || !os.IsNotExist(dirErr) {
+		t.Fatalf("run %s artifacts: runErr=%v calls=%d dirErr=%v, want all absent", run.ID, runErr, len(callRows), dirErr)
+	}
+}
+
+func TestRunDeleteRemovesExactlyOneCompletedRun(t *testing.T) {
+	// R-ZTUJ-HCV2
+	svc, store, _, runsDir := newTestService(t)
+	p := seedPrompt(t, store, ownerA)
+	deleted, err := svc.Run(t.Context(), ownerA, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	survivor, err := svc.Run(t.Context(), ownerA, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finishRunWithCall(t, store, deleted)
+	finishRunWithCall(t, store, survivor)
+
+	if err := svc.RunDelete(t.Context(), ownerA, deleted.ID); err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	requireRunArtifacts(t, store, runsDir, deleted, false)
+	requireRunArtifacts(t, store, runsDir, survivor, true)
+	if err := svc.RunDelete(t.Context(), ownerA, deleted.ID); err != nil {
+		t.Fatalf("idempotent RunDelete: %v", err)
+	}
+}
+
+func TestRunDeleteScopesThroughRunAfterPromptDeletion(t *testing.T) {
+	// R-ZV2F-V4LR
+	svc, store, _, runsDir := newTestService(t)
+	p := seedPrompt(t, store, ownerA)
+	run, err := svc.Run(t.Context(), ownerA, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finishRunWithCall(t, store, run)
+	if err := svc.Delete(t.Context(), ownerA, p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.RunDelete(t.Context(), ownerB, run.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("foreign RunDelete error = %v, want ErrNotFound", err)
+	}
+	requireRunArtifacts(t, store, runsDir, run, true)
+	if err := svc.RunDelete(t.Context(), ownerA, run.ID); err != nil {
+		t.Fatalf("owner RunDelete: %v", err)
+	}
+	requireRunArtifacts(t, store, runsDir, run, false)
+}
+
+func TestPromptDeleteDoesNotCascadeRunDelete(t *testing.T) {
+	// R-ZWAC-8WCG
+	svc, store, _, runsDir := newTestService(t)
+	p := seedPrompt(t, store, ownerA)
+	run, err := svc.Run(t.Context(), ownerA, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finishRunWithCall(t, store, run)
+	if err := svc.Delete(t.Context(), ownerA, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	requireRunArtifacts(t, store, runsDir, run, true)
+	if err := svc.RunDelete(t.Context(), ownerA, run.ID); err != nil {
+		t.Fatalf("RunDelete after prompt delete: %v", err)
+	}
+	requireRunArtifacts(t, store, runsDir, run, false)
+}
+
+func TestRunDeleteCancelsLiveRunAndRequiresRetry(t *testing.T) {
+	svc, store, _, runsDir := newTestService(t)
+	p := seedPrompt(t, store, ownerA)
+	run, err := svc.Run(t.Context(), ownerA, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := svc.runner.(*fakeRunner)
+	runner.found = true
+	if err := svc.RunDelete(t.Context(), ownerA, run.ID); err == nil || !strings.Contains(err.Error(), "being cancelled") || !strings.Contains(err.Error(), "retry") {
+		t.Fatalf("live RunDelete error = %v", err)
+	}
+	if _, err := store.GetRun(t.Context(), run.ID); err != nil {
+		t.Fatalf("live run row removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runsDir, run.ID)); err != nil {
+		t.Fatalf("live run directory removed: %v", err)
+	}
+	runner.found = false
+	if err := svc.RunDelete(t.Context(), ownerA, run.ID); err != nil {
+		t.Fatalf("retry RunDelete: %v", err)
+	}
 }
 
 func validConfig() Config {
@@ -702,7 +829,7 @@ func TestHappyCRUD(t *testing.T) {
 		t.Fatalf("no sandboxes/ tree should exist, stat err = %v", err)
 	}
 
-	// Delete is a TOMBSTONE and always allowed (no single-flight): it removes
+	// Delete is non-cascading and always allowed (no single-flight): it removes
 	// only the prompt row, leaving the run row and its on-disk directory.
 	if err := svc.Delete(ctx, ownerA, sess.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
@@ -710,18 +837,18 @@ func TestHappyCRUD(t *testing.T) {
 	if _, err := svc.Get(ctx, ownerA, sess.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get after delete: want ErrNotFound, got %v", err)
 	}
-	// The run directory (sandbox + input/ + output) SURVIVES the tombstone.
+	// The run directory (sandbox + input/ + output) survives prompt deletion.
 	if _, err := os.Stat(filepath.Join(runsDir, run.ID)); err != nil {
-		t.Fatalf("run dir should survive tombstone: %v", err)
+		t.Fatalf("run dir should survive prompt delete: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(runsDir, run.ID, "input")); err != nil {
-		t.Fatalf("run input/ dir should survive tombstone: %v", err)
+		t.Fatalf("run input/ dir should survive prompt delete: %v", err)
 	}
 	// The run is STILL readable by the owner-scoped run readers (authorized via
 	// the run's denormalized owner_email, not the now-gone prompt).
 	got, err := svc.RunGet(ctx, ownerA, run.ID)
 	if err != nil {
-		t.Fatalf("RunGet after tombstone: %v", err)
+		t.Fatalf("RunGet after prompt delete: %v", err)
 	}
 	if got.ID != run.ID {
 		t.Fatalf("RunGet: want %s, got %+v", run.ID, got)
@@ -867,7 +994,7 @@ func TestCancelIdempotent(t *testing.T) {
 // runs/<run_id>/input/ BEFORE spawn, and that on-disk record is what the run
 // executes. Mutating (Update) the prompt AFTER the run started must NOT change
 // the run's frozen input/ — the run reads from disk, not the live prompt row.
-// (Delete-survival of input/ is Phase 5's tombstone change; Phase 2's Delete
+// (Delete-survival of input/ is Phase 5's non-cascade change; Phase 2's Delete
 // still removes a prompt's run dirs, so it is not exercised here.)
 func TestRun_MaterializesFrozenInput_SurvivesMutation(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
@@ -1118,12 +1245,12 @@ func TestOwnerIDSnapshotsEmailAndScopesRunArtifacts(t *testing.T) {
 	}
 }
 
-// TestDeleteTombstoneRunStillReadable is the Phase 5 gate: create → run →
+// TestDeletePromptRunStillReadable is the Phase 5 gate: create → run →
 // delete prompt → the run is STILL readable by the owner-scoped run readers
 // (RunGet/RunList/RunOutput/RunFs*), authorized via the run's denormalized
 // owner_email (the prompt is gone), and its input/ dir survives on disk. A
 // foreign owner cannot read it.
-func TestDeleteTombstoneRunStillReadable(t *testing.T) {
+func TestDeletePromptRunStillReadable(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	svc, _, sb, runsDir := newTestService(t)
 	ctx := context.Background()
@@ -1142,7 +1269,7 @@ func TestDeleteTombstoneRunStillReadable(t *testing.T) {
 		t.Fatalf("seed sandbox file: %v", err)
 	}
 
-	// Tombstone the prompt.
+	// Delete the prompt without cascading to its run.
 	if err := svc.Delete(ctx, ownerA, sess.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -1152,13 +1279,13 @@ func TestDeleteTombstoneRunStillReadable(t *testing.T) {
 
 	// input/ dir still on disk.
 	if _, err := os.Stat(filepath.Join(runsDir, run.ID, "input", "user_prompt.txt")); err != nil {
-		t.Fatalf("run input/ should survive tombstone: %v", err)
+		t.Fatalf("run input/ should survive prompt delete: %v", err)
 	}
 
 	// RunGet — authorized via run.owner_email even though the prompt is gone.
 	got, err := svc.RunGet(ctx, ownerA, run.ID)
 	if err != nil {
-		t.Fatalf("RunGet after tombstone: %v", err)
+		t.Fatalf("RunGet after prompt delete: %v", err)
 	}
 	if got.ID != run.ID || got.PromptID != sess.ID {
 		t.Fatalf("RunGet: unexpected run %+v", got)
@@ -1167,13 +1294,13 @@ func TestDeleteTombstoneRunStillReadable(t *testing.T) {
 	// RunList scopes directly through the surviving run rows.
 	runs, err := svc.RunList(ctx, ownerA, sess.ID)
 	if err != nil || len(runs) != 1 || runs[0].ID != run.ID {
-		t.Fatalf("RunList on tombstoned prompt: runs=%+v err=%v", runs, err)
+		t.Fatalf("RunList on deleted prompt: runs=%+v err=%v", runs, err)
 	}
 
 	// RunOutput — reads the surviving output.jsonl.
 	out, err := svc.RunOutput(ctx, ownerA, run.ID, 0, 0)
 	if err != nil {
-		t.Fatalf("RunOutput after tombstone: %v", err)
+		t.Fatalf("RunOutput after prompt delete: %v", err)
 	}
 	if !strings.Contains(out, `{"line":1}`) || !strings.Contains(out, `{"line":2}`) {
 		t.Fatalf("RunOutput missing content: %q", out)
@@ -1182,7 +1309,7 @@ func TestDeleteTombstoneRunStillReadable(t *testing.T) {
 	// RunFsList / RunFsRead — read the surviving sandbox.
 	entries, err := svc.RunFsList(ctx, ownerA, run.ID, ".")
 	if err != nil {
-		t.Fatalf("RunFsList after tombstone: %v", err)
+		t.Fatalf("RunFsList after prompt delete: %v", err)
 	}
 	var found bool
 	for _, e := range entries {
@@ -1195,7 +1322,7 @@ func TestDeleteTombstoneRunStillReadable(t *testing.T) {
 	}
 	body, err := svc.RunFsRead(ctx, ownerA, run.ID, "result.txt", 0, 0)
 	if err != nil {
-		t.Fatalf("RunFsRead after tombstone: %v", err)
+		t.Fatalf("RunFsRead after prompt delete: %v", err)
 	}
 	if !strings.Contains(body, "hello") {
 		t.Fatalf("RunFsRead unexpected body: %q", body)
@@ -1211,6 +1338,6 @@ func TestDeleteTombstoneRunStillReadable(t *testing.T) {
 
 	// RunCancel is idempotent on the surviving run.
 	if err := svc.RunCancel(ctx, ownerA, run.ID); err != nil {
-		t.Fatalf("RunCancel after tombstone: %v", err)
+		t.Fatalf("RunCancel after prompt delete: %v", err)
 	}
 }

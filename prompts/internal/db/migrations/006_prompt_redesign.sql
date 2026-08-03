@@ -1,6 +1,6 @@
 -- 006_prompt_redesign.sql — forward, data-preserving migration from the original
 -- session-oriented schema (002 sessions / 003 session_triggers) to the redesigned
--- prompt model: first-class concurrent runs, the per-run on-disk unit, tombstone
+-- prompt model: first-class concurrent runs, the per-run on-disk unit, non-cascading
 -- delete (no FK / no cascade), and the multi-source trigger model.
 --
 -- Why this is a NEW migration instead of an edit to 002/003: the appkit runner
@@ -33,7 +33,7 @@ SELECT id, owner_email, name, prompt, system_prompt, config_json, created_at, up
 FROM sessions;
 
 -- 2. runs: rebuild without the FK/cascade (runs are first-class and survive a
---    tombstone-deleted prompt), denormalize owner_email/prompt_name from the
+--    deleted prompt), denormalize owner_email/prompt_name from the
 --    session, and add the trigger-context columns. Existing rows keep their
 --    log_path as-is (their output already lives at that path); pre-redesign runs
 --    have no trigger context, so the trigger_* columns are NULL — matching what

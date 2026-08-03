@@ -141,7 +141,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				return appkitmcp.StructuredResult(p)
 			}),
 
-		desc(tool("delete"), "Delete one of the caller's prompts (a tombstone: the prompt row and its triggers are removed; its runs and their on-disk artifacts survive and stay readable by run_id). Always allowed.", obj(map[string]any{
+		desc(tool("delete"), "Delete one of the caller's prompts without cascading: the prompt row and its triggers are removed; its runs and their on-disk artifacts survive and stay readable by run_id. Always allowed.", obj(map[string]any{
 			"prompt_id": typ("string"),
 		}, "prompt_id"),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
@@ -278,6 +278,22 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 					return fail(err), nil
 				}
 				return appkitmcp.StructuredResult(map[string]any{"cancelled": in.RunID})
+			}),
+
+		desc(tool("run_delete"), "Delete one completed run by run_id, including its accounting rows and on-disk artifacts. Idempotent; an in-flight run is cancelled and must be retried.", obj(map[string]any{
+			"run_id": typ("string"),
+		}, "run_id"),
+			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+				var in struct {
+					RunID string `json:"run_id"`
+				}
+				if err := parseArgs(args, &in); err != nil {
+					return nil, err
+				}
+				if err := svc.RunDelete(ctx, id.OwnerID, in.RunID); err != nil {
+					return fail(err), nil
+				}
+				return appkitmcp.StructuredResult(map[string]any{"deleted": in.RunID})
 			}),
 
 		desc(tool("run_fs_list"), "List entries under path within a run's sandbox folder by run_id (path defaults to the sandbox root). Non-directory entries include a loopback content_url for byte fetch by services (a run's Fetch tool or dropbox put(source_url)), not by the agent.", obj(map[string]any{
@@ -576,6 +592,7 @@ func outputSchemas() map[string]map[string]any {
 		tool("run_list"):   obj(map[string]any{"runs": map[string]any{"type": "array", "items": runSchema}}, "runs"),
 		tool("run_get"):    runSchema,
 		tool("run_cancel"): obj(map[string]any{"cancelled": typ("string")}, "cancelled"),
+		tool("run_delete"): obj(map[string]any{"deleted": typ("string")}, "deleted"),
 		tool("run_fs_list"): obj(map[string]any{
 			"entries": map[string]any{"type": "array", "items": obj(map[string]any{
 				"name": typ("string"), "is_dir": typ("boolean"), "size": typ("integer"), "content_url": typ("string"),

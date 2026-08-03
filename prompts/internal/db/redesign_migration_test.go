@@ -14,7 +14,7 @@ import (
 // applying version 6 upgrades the schema in place while preserving existing
 // rows: sessions->prompts, runs reshaped without FK + denormalized owner/name +
 // trigger columns, session_triggers->prompt_triggers, old tables dropped, and
-// tombstone (no-cascade) delete semantics.
+// non-cascading prompt delete semantics.
 func TestMigrate006_UpgradesOldSchemaPreservingData(t *testing.T) {
 	ctx := context.Background()
 	conn, err := appkitdb.Open(tempDB(t))
@@ -146,13 +146,13 @@ func TestMigrate006_UpgradesOldSchemaPreservingData(t *testing.T) {
 		}
 	}
 
-	// 4e. Tombstone: deleting the prompt leaves its run (no cascade).
+	// 4e. Deleting the prompt leaves its run (no cascade).
 	if _, err := conn.ExecContext(ctx, `DELETE FROM prompts WHERE id='s1'`); err != nil {
 		t.Fatalf("delete prompt: %v", err)
 	}
 	var nRuns int
 	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs WHERE prompt_id='s1'`).Scan(&nRuns); err != nil {
-		t.Fatalf("count runs after tombstone: %v", err)
+		t.Fatalf("count runs after prompt delete: %v", err)
 	}
 	if nRuns != 1 {
 		t.Fatalf("expected NO cascade: run should survive prompt delete, got %d", nRuns)
