@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"eventplane/correlation"
 	"github.com/ikigenba/agentkit"
 	"registry"
 )
@@ -22,7 +24,7 @@ func TestDiscoverMapsInventoryToPrefixedMCPServers(t *testing.T) {
 	writeManifest(t, root, "gmail")
 	writeManifest(t, root, "prompts")
 
-	servers := Discover(context.Background(), root, "owner-1", "owner@example.com", "prompt-1")
+	servers := Discover(context.Background(), root, "owner-1", "owner@example.com", "prompt-1", "")
 	if len(servers) != 2 {
 		t.Fatalf("Discover returned %d servers, want 2: %#v", len(servers), servers)
 	}
@@ -48,16 +50,48 @@ func TestDiscoverMapsInventoryToPrefixedMCPServers(t *testing.T) {
 	}
 }
 
-func TestDiscoverAttachmentQualifiesAndDispatchesBareMCPTool(t *testing.T) {
-	// R-ZF7Q-W3YQ
+func TestDiscoverCorrelationHeaderPresentExactlyOrAbsent(t *testing.T) {
+	// R-HPLU-D8WR
 	root := t.TempDir()
 	writeManifest(t, root, "crm")
-	servers := Discover(context.Background(), root, "owner-1", "owner@example.com", "prompt-1")
+	writeManifest(t, root, "gmail")
+
+	const correlationID = "chain-X"
+	withChain := Discover(context.Background(), root, "owner-1", "owner@example.com", "prompt-1", correlationID)
+	if len(withChain) != 2 {
+		t.Fatalf("Discover with chain returned %d servers, want 2", len(withChain))
+	}
+	for _, server := range withChain {
+		want := map[string]string{
+			"X-Owner-Id":       "owner-1",
+			"X-Owner-Email":    "owner@example.com",
+			"X-Client-Id":      "prompts:prompt-1",
+			correlation.Header: correlationID,
+		}
+		if !maps.Equal(server.Headers, want) {
+			t.Fatalf("headers for %q = %#v, want %#v", server.Name, server.Headers, want)
+		}
+	}
+
+	withoutChain := Discover(context.Background(), root, "owner-1", "owner@example.com", "prompt-1", "")
+	for _, server := range withoutChain {
+		if value, ok := server.Headers[correlation.Header]; ok {
+			t.Fatalf("headers for %q contain %s=%q, want key absent", server.Name, correlation.Header, value)
+		}
+	}
+}
+
+func TestDiscoverAttachmentQualifiesAndDispatchesBareMCPTool(t *testing.T) {
+	// R-ZF7Q-W3YQ
+	// R-HS1N-4SE5
+	root := t.TempDir()
+	writeManifest(t, root, "crm")
+	const correlationID = "chain-X"
+	servers := Discover(context.Background(), root, "owner-1", "owner@example.com", "prompt-1", correlationID)
 
 	var calledName string
-	var gotHeaders http.Header
+	gotHeaders := make(map[string]http.Header)
 	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotHeaders = r.Header.Clone()
 		var req struct {
 			JSONRPC string          `json:"jsonrpc"`
 			ID      json.RawMessage `json:"id"`
@@ -67,6 +101,7 @@ func TestDiscoverAttachmentQualifiesAndDispatchesBareMCPTool(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode MCP request: %v", err)
 		}
+		gotHeaders[req.Method] = r.Header.Clone()
 		w.Header().Set("Content-Type", "application/json")
 		switch req.Method {
 		case "initialize":
@@ -107,8 +142,17 @@ func TestDiscoverAttachmentQualifiesAndDispatchesBareMCPTool(t *testing.T) {
 	if calledName != "health" {
 		t.Fatalf("tools/call name = %q, want bare health", calledName)
 	}
-	if gotHeaders.Get("X-Owner-Id") != "owner-1" || gotHeaders.Get("X-Owner-Email") != "owner@example.com" || gotHeaders.Get("X-Client-Id") != "prompts:prompt-1" {
-		t.Fatalf("peer headers = %#v", gotHeaders)
+	for _, method := range []string{"tools/list", "tools/call"} {
+		headers, ok := gotHeaders[method]
+		if !ok {
+			t.Fatalf("peer did not receive %s; methods = %#v", method, gotHeaders)
+		}
+		if headers.Get("X-Owner-Id") != "owner-1" || headers.Get("X-Owner-Email") != "owner@example.com" || headers.Get("X-Client-Id") != "prompts:prompt-1" {
+			t.Fatalf("%s identity headers = %#v", method, headers)
+		}
+		if got := headers.Get(correlation.Header); got != correlationID {
+			t.Fatalf("%s %s = %q, want %q", method, correlation.Header, got, correlationID)
+		}
 	}
 }
 

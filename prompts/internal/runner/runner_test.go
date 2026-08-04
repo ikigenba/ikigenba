@@ -14,6 +14,7 @@ import (
 	"time"
 
 	appkitdb "appkit/db"
+	"eventplane/correlation"
 
 	"prompts/internal/admit"
 	"prompts/internal/calls"
@@ -524,7 +525,7 @@ func TestExecuteAttachesEagerMCPToolsWithoutLoader(t *testing.T) {
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
 	_, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string, string) []agentkit.MCPServer {
+	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer {
 		return []agentkit.MCPServer{{Name: "ikigenba_crm", URL: peer.URL}}
 	}
 
@@ -541,6 +542,48 @@ func TestExecuteAttachesEagerMCPToolsWithoutLoader(t *testing.T) {
 	}
 	if names["load_tools"] {
 		t.Fatalf("request unexpectedly exposed load_tools: %v", sortedToolNames(req.Tools))
+	}
+}
+
+func TestExecuteThreadsStoredRunCorrelationThroughDiscoveryAndContext(t *testing.T) {
+	// R-HT9J-IK4U
+	fp := &fakeProvider{}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	_, seeded := seedRunning(t, store, r.sandbox, runsDir)
+
+	correlationID := correlation.New()
+	if correlationID == seeded.ID {
+		t.Fatalf("test requires correlation id %q to differ from run id", correlationID)
+	}
+	if err := store.DeleteRun(context.Background(), seeded.ID); err != nil {
+		t.Fatalf("DeleteRun: %v", err)
+	}
+	seeded.CorrelationID = correlationID
+	if err := store.InsertRun(context.Background(), seeded); err != nil {
+		t.Fatalf("InsertRun with correlation id: %v", err)
+	}
+	run, err := store.GetRun(context.Background(), seeded.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if run.CorrelationID != correlationID {
+		t.Fatalf("stored run correlation id = %q, want %q", run.CorrelationID, correlationID)
+	}
+
+	var gotArgument, gotContext string
+	r.discover = func(ctx context.Context, _, _, _, gotCorrelationID string) []agentkit.MCPServer {
+		gotArgument = gotCorrelationID
+		gotContext = correlation.FromContext(ctx)
+		return nil
+	}
+	r.execute(run)
+
+	if gotArgument != correlationID {
+		t.Fatalf("discover correlation id = %q, want stored %q (run id %q)", gotArgument, correlationID, run.ID)
+	}
+	if gotContext != correlationID {
+		t.Fatalf("execute context correlation id = %q, want stored %q", gotContext, correlationID)
 	}
 }
 
@@ -568,7 +611,7 @@ func TestExecuteCallsAttachedSuiteToolOnFirstRoundTrip(t *testing.T) {
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
 	sess, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string, string) []agentkit.MCPServer {
+	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer {
 		return []agentkit.MCPServer{{Name: "ikigenba_crm", URL: peer.URL}}
 	}
 
@@ -594,7 +637,7 @@ func TestRunBoundaryRootsOnceAndArchivesBuiltinToolUse(t *testing.T) {
 	}}
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
-	r.discover = func(context.Context, string, string, string) []agentkit.MCPServer { return nil }
+	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer { return nil }
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	sess := prompt.Prompt{
@@ -680,7 +723,7 @@ func TestExecuteFailsWhenAnyAttachedPeerDiscoveryFails(t *testing.T) {
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
 	sess, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string, string) []agentkit.MCPServer {
+	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer {
 		return []agentkit.MCPServer{{Name: "ikigenba_crm", URL: bad.URL}, {Name: "ikigenba_gmail", URL: healthy.URL}}
 	}
 	r.execute(run)
@@ -871,7 +914,7 @@ func TestNew_DefaultDiscoverWired(t *testing.T) {
 	if r.discover == nil {
 		t.Fatalf("New left discover seam nil")
 	}
-	if groups := r.discover(ctx, "owner-id", "owner@example.com", "p_123"); groups == nil {
+	if groups := r.discover(ctx, "owner-id", "owner@example.com", "p_123", "chain-123"); groups == nil {
 		t.Fatalf("default discover returned nil group slice; want non-nil (best-effort contract)")
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"appkit/inventory"
+	"eventplane/correlation"
 	"github.com/ikigenba/agentkit"
 	"registry"
 )
@@ -17,7 +18,7 @@ const (
 
 // Discover returns one MCP attachment for every non-prompts service in the
 // inventory. It performs no network I/O; AgentKit resolves tools at Send time.
-func Discover(_ context.Context, manifestRoot, ownerID, ownerEmail, promptID string) []agentkit.MCPServer {
+func Discover(_ context.Context, manifestRoot, ownerID, ownerEmail, promptID, correlationID string) []agentkit.MCPServer {
 	services, err := inventory.Read(manifestRoot)
 	if err != nil {
 		return []agentkit.MCPServer{}
@@ -32,14 +33,18 @@ func Discover(_ context.Context, manifestRoot, ownerID, ownerEmail, promptID str
 		if !ok {
 			continue
 		}
+		headers := map[string]string{
+			"X-Owner-Id":    ownerID,
+			"X-Owner-Email": ownerEmail,
+			"X-Client-Id":   clientIDPrefix + promptID,
+		}
+		if correlationID != "" {
+			headers[correlation.Header] = correlationID
+		}
 		servers = append(servers, agentkit.MCPServer{
-			Name: "ikigenba_" + svc.Name,
-			URL:  fmt.Sprintf("http://127.0.0.1:%d/mcp", port),
-			Headers: map[string]string{
-				"X-Owner-Id":    ownerID,
-				"X-Owner-Email": ownerEmail,
-				"X-Client-Id":   clientIDPrefix + promptID,
-			},
+			Name:    "ikigenba_" + svc.Name,
+			URL:     fmt.Sprintf("http://127.0.0.1:%d/mcp", port),
+			Headers: headers,
 		})
 	}
 	return servers

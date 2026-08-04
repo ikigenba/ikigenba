@@ -27,6 +27,7 @@ import (
 	"prompts/internal/suite"
 	runtools "prompts/internal/tools"
 
+	"eventplane/correlation"
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/catalog"
 )
@@ -42,7 +43,7 @@ type Runner struct {
 	// It defaults to a closure over the configured manifestRoot calling
 	// suite.Discover, but is injectable so tests can supply fake servers and
 	// never touch the real inventory or any peer.
-	discover func(ctx context.Context, ownerID, ownerEmail, promptID string) []agentkit.MCPServer
+	discover func(ctx context.Context, ownerID, ownerEmail, promptID, correlationID string) []agentkit.MCPServer
 	// sourcePortAllowed confines Fetch to registered loopback services.
 	sourcePortAllowed func(port int) bool
 	// shareBaseURL locates the account file share for the File* tools.
@@ -67,8 +68,8 @@ func New(store *prompt.Store, sb *sandbox.Manager, gate *admit.Gate, ttl time.Du
 		gate:          gate,
 		ttl:           ttl,
 		buildProvider: provider.Build,
-		discover: func(ctx context.Context, ownerID, ownerEmail, promptID string) []agentkit.MCPServer {
-			return suite.Discover(ctx, manifestRoot, ownerID, ownerEmail, promptID)
+		discover: func(ctx context.Context, ownerID, ownerEmail, promptID, correlationID string) []agentkit.MCPServer {
+			return suite.Discover(ctx, manifestRoot, ownerID, ownerEmail, promptID, correlationID)
 		},
 		sourcePortAllowed: sourcePortAllowed,
 		shareBaseURL:      shareBaseURL,
@@ -93,7 +94,7 @@ func (r *Runner) Spawn(run prompt.Run) {
 
 // execute runs the engine and persists the terminal outcome.
 func (r *Runner) execute(run prompt.Run) {
-	ctx, cancel := context.WithTimeout(context.Background(), r.ttl)
+	ctx, cancel := context.WithTimeout(correlation.WithContext(context.Background(), run.CorrelationID), r.ttl)
 
 	r.mu.Lock()
 	r.cancels[run.ID] = cancel
@@ -203,7 +204,7 @@ func (r *Runner) execute(run prompt.Run) {
 		Gen:               genSettings(cfg),
 		Retry:             retryPolicy(cfg),
 		Tools:             runtools.All(sandboxRoot, r.sourcePortAllowed, runtools.ShareConfig{BaseURL: r.shareBaseURL, ClientID: "prompts:" + run.PromptID}),
-		MCPServers:        r.discover(ctx, run.OwnerID, run.OwnerEmail, run.PromptID),
+		MCPServers:        r.discover(ctx, run.OwnerID, run.OwnerEmail, run.PromptID, run.CorrelationID),
 		MaxToolIterations: cfg.ToolLoopLimit,
 	}
 	stream := conv.Send(ctx, buildUserText(executed.UserPrompt, eventBytes))
