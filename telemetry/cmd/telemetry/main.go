@@ -8,6 +8,7 @@ import (
 	"registry"
 	"telemetry/internal/db"
 	"telemetry/internal/ingest"
+	"telemetry/internal/retention"
 	telemetrytime "telemetry/internal/telemetry"
 )
 
@@ -33,6 +34,7 @@ func telemetrySpec() appkit.Spec {
 			}
 			store = db.NewStore(rt.DB())
 			ingest.Mount(rt, store, telemetrytime.RealClock{})
+			retention.Start(rt, store, telemetrytime.RealClock{})
 			return nil
 		},
 		Health: func(ctx context.Context) (map[string]any, error) {
