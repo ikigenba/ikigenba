@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	appkitdb "appkit/db"
 	"appkit/manifest"
 )
 
@@ -64,7 +63,7 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 }
 
 // R-4LKF-FB23
-func TestPromptsBootsWithDurableUnifiedRunDirectoryThatSurvivesRestart(t *testing.T) {
+func TestPromptsBootsWithDurableSandboxesAndRecreatedRunsCache(t *testing.T) {
 	// R-ZMJ5-6QEW
 	// R-ZNR1-KI5L
 	root := t.TempDir()
@@ -207,56 +206,33 @@ func TestPromptsBootsWithDurableUnifiedRunDirectoryThatSurvivesRestart(t *testin
 	if filepath.Dir(generationPath) != cacheDir {
 		t.Fatalf("generation sidecar path %s is not under cache dir %s", generationPath, cacheDir)
 	}
-	runsDir := filepath.Join(stateDir, "runs")
+	runsDir := filepath.Join(cacheDir, "runs")
 	if info, err := os.Stat(runsDir); err != nil {
-		t.Fatalf("prompts did not create runs under state/: %v", err)
+		t.Fatalf("prompts did not create runs under cache/: %v", err)
 	} else if !info.IsDir() {
 		t.Fatalf("runs path is not a directory")
 	}
-	if _, err := os.Stat(filepath.Join(cacheDir, "runs")); !os.IsNotExist(err) {
-		t.Fatalf("cache runs path exists or could not be checked: %v", err)
+	sandboxesDir := filepath.Join(stateDir, "sandboxes")
+	if info, err := os.Stat(sandboxesDir); err != nil {
+		t.Fatalf("prompts did not create sandboxes under state/: %v", err)
+	} else if !info.IsDir() {
+		t.Fatalf("sandboxes path is not a directory")
 	}
 
-	// Stop after the first successful startup, then put a completed run record
-	// and its full artifact tree where the composition root says they belong.
+	// Stop after the first successful startup, then leave a stale cache entry
+	// where the next boot must recreate the disposable runs tree.
 	stopProcess(cancel, done)
 	firstStopped = true
-	runID := "run-durable-smoke"
-	runDir := filepath.Join(runsDir, runID)
-	wantFiles := map[string][]byte{
-		filepath.Join("input", "config.json"):       []byte("{\"model\":\"test\"}\n"),
-		filepath.Join("input", "user_prompt.txt"):   []byte("durable user prompt\n"),
-		filepath.Join("input", "system_prompt.txt"): []byte("durable system prompt\n"),
-		"output.jsonl": []byte("{\"type\":\"assistant\",\"text\":\"durable output\"}\n"),
-		filepath.Join("sandbox", "survives-restart"): []byte("durable sandbox\n"),
+	stale := filepath.Join(runsDir, "stale-run", "output.jsonl")
+	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		t.Fatalf("mkdir stale run cache: %v", err)
 	}
-	for name, content := range wantFiles {
-		path := filepath.Join(runDir, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("mkdir artifact parent for %s: %v", name, err)
-		}
-		if err := os.WriteFile(path, content, 0o644); err != nil {
-			t.Fatalf("write artifact %s: %v", name, err)
-		}
-	}
-	conn, err := appkitdb.Open(dbPath)
-	if err != nil {
-		t.Fatalf("open migrated prompts DB: %v", err)
-	}
-	if _, err := conn.ExecContext(t.Context(), `
-		INSERT INTO runs (id, prompt_id, owner_id, owner_email, status, started_at, ended_at, log_path)
-		VALUES (?, ?, ?, ?, 'succeeded', ?, ?, ?)`,
-		runID, "prompt-durable-smoke", "client-durable-smoke", "durable@example.com",
-		"2026-08-03T00:00:00Z", "2026-08-03T00:00:01Z", filepath.Join(runDir, "output.jsonl")); err != nil {
-		conn.Close()
-		t.Fatalf("insert completed run: %v", err)
-	}
-	if err := conn.Close(); err != nil {
-		t.Fatalf("close prompts DB: %v", err)
+	if err := os.WriteFile(stale, []byte("stale\n"), 0o644); err != nil {
+		t.Fatalf("write stale run cache: %v", err)
 	}
 
-	// A second composition-root startup against the same state must preserve
-	// every byte and continue serving the persisted output through run_output.
+	// A second composition-root startup against the same state must keep durable
+	// sandbox state separate while clearing the disposable runs cache.
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	var stdout2, stderr2 bytes.Buffer
 	cmd2 := exec.CommandContext(ctx2, run, "serve")
@@ -270,20 +246,11 @@ func TestPromptsBootsWithDurableUnifiedRunDirectoryThatSurvivesRestart(t *testin
 	go func() { done2 <- cmd2.Wait() }()
 	defer stopProcess(cancel2, done2)
 	waitForHealth(t, port, done2, &stdout2, &stderr2)
-	for name, want := range wantFiles {
-		got, err := os.ReadFile(filepath.Join(runDir, name))
-		if err != nil {
-			t.Fatalf("read artifact %s after restart: %v", name, err)
-		}
-		if !bytes.Equal(got, want) {
-			t.Fatalf("artifact %s changed across restart: got %q want %q", name, got, want)
-		}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale run cache survived restart: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(cacheDir, "runs", runID)); !os.IsNotExist(err) {
-		t.Fatalf("run artifact appeared under generation cache: %v", err)
-	}
-	if got := runOutputOverMCP(t, port, runID); got != string(wantFiles["output.jsonl"]) {
-		t.Fatalf("run_output after restart = %q, want %q", got, wantFiles["output.jsonl"])
+	if _, err := os.Stat(filepath.Join(stateDir, "runs")); !os.IsNotExist(err) {
+		t.Fatalf("legacy state/runs exists or could not be checked: %v", err)
 	}
 }
 

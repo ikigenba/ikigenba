@@ -198,16 +198,23 @@ func registerRoutes(rt *appkit.Router) error {
 		return err
 	}
 
-	// PROMPTS_DB_PATH is appkit's state DB path. Every artifact for a run lives
-	// together in the durable runs tree beside it.
+	// PROMPTS_DB_PATH is appkit's state DB path. Run sandboxes are durable state;
+	// input/output artifacts are recreated cache.
 	dbPath := config.EnvOr(os.Getenv, "PROMPTS_DB_PATH", "./tmp/prompts.db")
 	// PROMPTS_MANIFEST_ROOT is the box inventory root the runner reads at run
 	// spawn to discover the suite's other loopback MCP services (Surface 2 —
 	// in-run suite tools). Defaults to /opt, the on-box layout root.
 	manifestRoot := config.EnvOr(os.Getenv, "PROMPTS_MANIFEST_ROOT", "/opt")
 	stateDir := filepath.Dir(dbPath)
-	runsDir := filepath.Join(stateDir, "runs")
-	sb, err := sandbox.New(runsDir)
+	cacheDir := filepath.Dir(config.EnvOr(os.Getenv, "PROMPTS_GENERATION_PATH", filepath.Join(stateDir, "prompts.db.generation")))
+	runsDir := filepath.Join(cacheDir, "runs")
+	if err := os.RemoveAll(runsDir); err != nil {
+		return fmt.Errorf("prompts: clear runs cache: %w", err)
+	}
+	if err := os.MkdirAll(runsDir, 0o755); err != nil {
+		return fmt.Errorf("prompts: create runs cache: %w", err)
+	}
+	sb, err := sandbox.New(filepath.Join(stateDir, "sandboxes"))
 	if err != nil {
 		return fmt.Errorf("prompts: sandbox: %w", err)
 	}
