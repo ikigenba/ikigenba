@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 
 	appdb "appkit/db"
 	"eventplane/consumer"
+	"eventplane/correlation"
 	"eventplane/outbox"
 	reposdb "repos/internal/db"
 	"repos/internal/repos"
@@ -444,6 +446,82 @@ func TestRecoverSweepsRunningAndPreservesQueuedForDispatch(t *testing.T) {
 		t.Fatalf("recovered queued instructions = %q", got)
 	}
 	waitStatus(t, fixture.store, "survivor", repos.StatusSucceeded)
+}
+
+func TestRecoverUsesStoredCorrelationIDForOutcome(t *testing.T) {
+	// R-BZD5-MJ6C
+	fixture := newFixture(t, 1, time.Minute)
+	const correlationID = "01K1C5Y7N8E9F0G1H2J3K4M5NP"
+	if err := fixture.store.InsertSession(context.Background(), repos.Session{
+		ID: "correlated-orphan", RepoName: "fixture", OwnerID: "owner-1", OwnerEmail: "owner@example.com",
+		Attempt: 1, Branch: "orphan", Status: repos.StatusRunning, CreatedAt: fixture.clock.Now(),
+		CorrelationID: correlationID, LogPath: "orphan.jsonl",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner := fixture.runner(t)
+	count, err := runner.Recover(context.Background())
+	if err != nil || count != 1 {
+		t.Fatalf("Recover = %d, %v; want 1, nil", count, err)
+	}
+	var got string
+	if err := fixture.db.QueryRow(`SELECT correlation_id FROM outbox WHERE seq = 1`).Scan(&got); err != nil || got != correlationID {
+		t.Fatalf("recovered outcome correlation id = %q, %v; want %q", got, err, correlationID)
+	}
+}
+
+func TestDetachedCompletionUsesStoredCorrelationIDForOutcome(t *testing.T) {
+	// R-BY59-8RFN
+	fixture := newFixture(t, 1, time.Minute)
+	fixture.addRepo(t, "completion")
+	fixture.config.Factory = AgentFactoryFunc(func(ConversationConfig) Agent {
+		return agentFunc(func(context.Context, string) error { return errors.New("scripted failure") })
+	})
+	runner := fixture.runner(t)
+	const correlationID = "01K1C5Y7N8E9F0G1H2J3K4M5NP"
+	ctx := correlation.WithContext(context.Background(), correlationID)
+	session, err := runner.Enqueue(ctx, SessionRequest{ID: "correlated-completion", RepoName: "completion", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Instructions: "fail"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatchCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go runner.Dispatch(dispatchCtx)
+	waitStatus(t, fixture.store, session.ID, repos.StatusFailed)
+	var got string
+	if err := fixture.db.QueryRow(`SELECT correlation_id FROM outbox WHERE seq = 1`).Scan(&got); err != nil || got != correlationID {
+		t.Fatalf("completion outcome correlation id = %q, %v; want %q", got, err, correlationID)
+	}
+}
+
+func TestDispatchedSessionUsesStoredCorrelationIDForGitHubPeerCalls(t *testing.T) {
+	// R-LM2I-ORUI
+	fixture := newFixture(t, 1, time.Minute)
+	fixture.addRepo(t, "correlated-run")
+	recorder := newGitHubRecorder(t)
+	defer recorder.Close()
+	fixture.config.Protocol = repos.NewProtocol(repos.NewGitHubPeerAt(recorder.URL, recorder.Client()))
+	fixture.config.Factory = committingFactory(filepath.Join(fixture.stateRoot, "sessions", "correlated-run", "worktree"), "correlated-run")
+	runner := fixture.runner(t)
+	const correlationID = "01K1C5Y7N8E9F0G1H2J3K4M5NP"
+	ctx := correlation.WithContext(context.Background(), correlationID)
+	session, err := runner.Enqueue(ctx, SessionRequest{ID: "correlated-run", RepoName: "correlated-run", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Instructions: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatchCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go runner.Dispatch(dispatchCtx)
+	waitStatus(t, fixture.store, session.ID, repos.StatusSucceeded)
+	requests := recorder.recordedRequests()
+	if len(requests) == 0 {
+		t.Fatal("run made no recorded GitHub peer requests")
+	}
+	for i, request := range requests {
+		if got := correlation.FromContext(request.Context()); got != correlationID {
+			t.Errorf("request %d correlation id = %q, want %q", i, got, correlationID)
+		}
+	}
 }
 
 func TestModelValidationRejectsBadBootConfigurationAndAcceptsDefaultPricing(t *testing.T) {
@@ -954,8 +1032,22 @@ func (c recordedCall) string(name string) string {
 
 type githubRecorder struct {
 	*httptest.Server
-	mu    sync.Mutex
-	calls []recordedCall
+	mu        sync.Mutex
+	calls     []recordedCall
+	requests  []*http.Request
+	transport http.RoundTripper
+}
+
+type githubRecordingTransport struct {
+	recorder *githubRecorder
+	base     http.RoundTripper
+}
+
+func (t githubRecordingTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	t.recorder.mu.Lock()
+	t.recorder.requests = append(t.recorder.requests, request)
+	t.recorder.mu.Unlock()
+	return t.base.RoundTrip(request)
 }
 
 func newGitHubRecorder(t *testing.T) *githubRecorder {
@@ -990,7 +1082,18 @@ func newGitHubRecorder(t *testing.T) *githubRecorder {
 			t.Error(err)
 		}
 	}))
+	recorder.transport = recorder.Server.Client().Transport
 	return recorder
+}
+
+func (r *githubRecorder) Client() *http.Client {
+	return &http.Client{Transport: githubRecordingTransport{recorder: r, base: r.transport}}
+}
+
+func (r *githubRecorder) recordedRequests() []*http.Request {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]*http.Request(nil), r.requests...)
 }
 
 func (r *githubRecorder) snapshot() []recordedCall {

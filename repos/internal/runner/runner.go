@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"appkit/logging"
+	"eventplane/correlation"
 	"eventplane/outbox"
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/anthropic"
@@ -290,7 +292,8 @@ func (r *Runner) Enqueue(ctx context.Context, request SessionRequest) (repos.Ses
 		ID: id, RepoName: request.RepoName, OwnerID: request.OwnerID, OwnerEmail: request.OwnerEmail,
 		IssueNumber: request.IssueNumber, Attempt: attempt, Branch: branch,
 		Instructions: request.Instructions, Status: repos.StatusQueued,
-		CreatedAt: r.clock.Now(), LogPath: filepath.Join(sessionDir, "output.jsonl"),
+		CreatedAt: r.clock.Now(), CorrelationID: logging.RequestID(ctx),
+		LogPath: filepath.Join(sessionDir, "output.jsonl"),
 	}
 	if err := r.store.InsertSession(ctx, session); err != nil {
 		return repos.Session{}, err
@@ -326,7 +329,7 @@ func (r *Runner) Cancel(sessionID string) bool {
 		r.mu.Unlock()
 		return false
 	}
-	if err := r.finish(context.Background(), sessionID, repos.StatusCancelled, nil, nil); err != nil {
+	if err := r.finish(sessionContext(context.Background(), session.CorrelationID), sessionID, repos.StatusCancelled, nil, nil); err != nil {
 		return false
 	}
 	r.ring()
@@ -345,7 +348,7 @@ func (r *Runner) Recover(ctx context.Context) (int, error) {
 		if session.Status != repos.StatusRunning {
 			continue
 		}
-		if err := r.finish(ctx, session.ID, repos.StatusFailed, &reason, nil); err != nil {
+		if err := r.finish(sessionContext(ctx, session.CorrelationID), session.ID, repos.StatusFailed, &reason, nil); err != nil {
 			return count, err
 		}
 		count++
@@ -409,6 +412,7 @@ func (r *Runner) admit(ctx context.Context) (bool, error) {
 }
 
 func (r *Runner) run(parent context.Context, session repos.Session) {
+	parent = sessionContext(parent, session.CorrelationID)
 	ctx, cancel := context.WithTimeout(parent, r.ttl)
 	r.mu.Lock()
 	r.cancels[session.ID] = cancel
@@ -443,17 +447,22 @@ func (r *Runner) run(parent context.Context, session repos.Session) {
 		text := err.Error()
 		message = &text
 	}
+	bg := sessionContext(context.Background(), session.CorrelationID)
 	if lifecycle, ok := r.protocol.(lifecycleProtocol); status != repos.StatusCancelled && ok {
-		status, message, prURL = r.complete(context.Background(), ctx, lifecycle, session, result, status, message)
+		status, message, prURL = r.complete(bg, ctx, lifecycle, session, result, status, message)
 	}
 	if status == repos.StatusSucceeded {
-		if err := r.reaper.Success(context.Background(), session); err != nil {
+		if err := r.reaper.Success(bg, session); err != nil {
 			status = repos.StatusFailed
 			text := err.Error()
 			message, prURL = &text, nil
 		}
 	}
-	_ = r.finish(context.Background(), session.ID, status, message, prURL)
+	_ = r.finish(bg, session.ID, status, message, prURL)
+}
+
+func sessionContext(ctx context.Context, correlationID string) context.Context {
+	return correlation.WithContext(ctx, correlationID)
 }
 
 type execution struct {

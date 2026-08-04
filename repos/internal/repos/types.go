@@ -22,19 +22,20 @@ type Repo struct {
 
 // Session is one durable agent run against a repository.
 type Session struct {
-	ID           string
-	RepoName     string
-	OwnerID      string
-	OwnerEmail   string
-	IssueNumber  *int
-	Attempt      int
-	Branch       string
-	Instructions string
-	Status       string
-	Error        *string
-	PRURL        *string
-	CreatedAt    time.Time
-	StartedAt    *time.Time
-	EndedAt      *time.Time
-	LogPath      string
+	ID            string
+	RepoName      string
+	OwnerID       string
+	OwnerEmail    string
+	IssueNumber   *int
+	Attempt       int
+	Branch        string
+	Instructions  string
+	Status        string
+	Error         *string
+	PRURL         *string
+	CreatedAt     time.Time
+	StartedAt     *time.Time
+	EndedAt       *time.Time
+	CorrelationID string
+	LogPath       string
 }

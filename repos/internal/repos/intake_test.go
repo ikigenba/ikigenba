@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"appkit/logging"
 	"eventplane/consumer"
+	"eventplane/correlation"
 )
 
 func TestIntakeSubscriptionsUseConfiguredHook(t *testing.T) {
@@ -45,6 +47,30 @@ func TestIntakeExecuteDeliveryProvisionsRepoAndQueuesSession(t *testing.T) {
 	got := sessions[0]
 	if got.Status != StatusQueued || got.OwnerID != "owner-1" || got.OwnerEmail != "owner@example.com" || got.IssueNumber == nil || *got.IssueNumber != 42 || got.Attempt != 1 || got.LogPath == "" {
 		t.Fatalf("queued session = %#v", got)
+	}
+}
+
+func TestIntakePassesInboundCorrelationContextToEnqueue(t *testing.T) {
+	// R-BWXC-UZOY
+	const correlationID = "01K1C5Y7N8E9F0G1H2J3K4M5NP"
+	for _, test := range []struct {
+		name string
+		ctx  context.Context
+		want string
+	}{
+		{name: "present", ctx: correlation.WithContext(context.Background(), correlationID), want: correlationID},
+		{name: "absent", ctx: context.Background(), want: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newIntakeFixture(t, "")
+			if err := fixture.intake.Handle(test.ctx, fixture.event(t, issueDelivery("alice", "open", "execute"))); err != nil {
+				t.Fatalf("Handle: %v", err)
+			}
+			sessions, err := fixture.store.ListSessions(context.Background(), "fixture", "")
+			if err != nil || len(sessions) != 1 || sessions[0].CorrelationID != test.want {
+				t.Fatalf("stored sessions = %#v, %v; want correlation id %q", sessions, err, test.want)
+			}
+		})
 	}
 }
 
@@ -202,7 +228,8 @@ func (e *intakeTestEnqueuer) Enqueue(ctx context.Context, request SessionRequest
 		OwnerID: request.OwnerID, OwnerEmail: request.OwnerEmail, IssueNumber: request.IssueNumber,
 		Attempt: attempt, Branch: branch,
 		Instructions: request.Instructions, Status: StatusQueued,
-		CreatedAt: e.clock.Now(), LogPath: fmt.Sprintf("state/sessions/intake-%d/output.jsonl", attempt),
+		CreatedAt: e.clock.Now(), CorrelationID: logging.RequestID(ctx),
+		LogPath: fmt.Sprintf("state/sessions/intake-%d/output.jsonl", attempt),
 	}
 	return session, e.store.InsertSession(ctx, session)
 }

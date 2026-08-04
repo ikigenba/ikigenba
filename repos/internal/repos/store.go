@@ -75,12 +75,12 @@ func (s *Store) DeleteRepo(ctx context.Context, name string) error {
 func (s *Store) InsertSession(ctx context.Context, session Session) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions
 		(id, repo_name, owner_id, owner_email, issue_number, attempt, branch, instructions,
-		 status, error, pr_url, created_at, started_at, ended_at, log_path)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 status, error, pr_url, created_at, started_at, ended_at, correlation_id, log_path)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		session.ID, session.RepoName, session.OwnerID, session.OwnerEmail, nullableInt(session.IssueNumber),
 		session.Attempt, session.Branch, session.Instructions, session.Status,
 		nullableString(session.Error), nullableString(session.PRURL), formatTime(session.CreatedAt),
-		nullableTime(session.StartedAt), nullableTime(session.EndedAt), session.LogPath)
+		nullableTime(session.StartedAt), nullableTime(session.EndedAt), session.CorrelationID, session.LogPath)
 	return wrap("insert session", err)
 }
 
@@ -211,7 +211,7 @@ func (s *Store) SweepRunning(ctx context.Context, endedAt time.Time, reason stri
 }
 
 const sessionSelect = `SELECT id, repo_name, owner_id, owner_email, issue_number, attempt,
-	branch, instructions, status, error, pr_url, created_at, started_at, ended_at, log_path
+	branch, instructions, status, error, pr_url, created_at, started_at, ended_at, correlation_id, log_path
 	FROM sessions`
 
 type scanner interface{ Scan(...any) error }
@@ -223,7 +223,7 @@ func scanSession(row scanner) (Session, error) {
 	var created string
 	err := row.Scan(&session.ID, &session.RepoName, &session.OwnerID, &session.OwnerEmail, &issue,
 		&session.Attempt, &session.Branch, &session.Instructions, &session.Status,
-		&sessionError, &prURL, &created, &started, &ended, &session.LogPath)
+		&sessionError, &prURL, &created, &started, &ended, &session.CorrelationID, &session.LogPath)
 	if err != nil {
 		return Session{}, err
 	}

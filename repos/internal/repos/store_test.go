@@ -117,6 +117,30 @@ func TestStoreScopesEqualEmailRowsOnlyByOwnerID(t *testing.T) {
 	}
 }
 
+func TestSessionCorrelationIDRoundTripsThroughMigratedStore(t *testing.T) {
+	// R-BVPG-H7Y9
+	store, _ := migratedStore(t)
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	const correlationID = "01K1C5Y7N8E9F0G1H2J3K4M5NP"
+	for _, session := range []Session{
+		{ID: "correlated", RepoName: "fixture", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "correlated", Status: StatusQueued, CreatedAt: now, CorrelationID: correlationID, LogPath: "correlated.jsonl"},
+		{ID: "uncorrelated", RepoName: "fixture", OwnerID: "owner-1", OwnerEmail: "owner@example.com", Attempt: 1, Branch: "uncorrelated", Status: StatusQueued, CreatedAt: now.Add(time.Second), LogPath: "uncorrelated.jsonl"},
+	} {
+		insertSession(t, store, session)
+	}
+	correlated, err := store.GetSession(context.Background(), "correlated")
+	if err != nil || correlated.CorrelationID != correlationID {
+		t.Fatalf("correlated GetSession = %q, %v; want %q", correlated.CorrelationID, err, correlationID)
+	}
+	sessions, err := store.ListSessions(context.Background(), "fixture", "")
+	if err != nil || len(sessions) != 2 {
+		t.Fatalf("ListSessions = %#v, %v", sessions, err)
+	}
+	if sessions[0].CorrelationID != correlationID || sessions[1].CorrelationID != "" {
+		t.Fatalf("listed correlation ids = %q, %q; want %q, empty", sessions[0].CorrelationID, sessions[1].CorrelationID, correlationID)
+	}
+}
+
 func TestFinishSessionRollsBackTerminalWriteAndOutcomeOnAppenderFailure(t *testing.T) {
 	// R-EOWF-ZGOG
 	store, conn := migratedStore(t)

@@ -39,7 +39,7 @@ func TestEmbeddedMigrationsCreateExactDomainAndOutboxSchemas(t *testing.T) {
 
 	want := map[string][]string{
 		"repos":    {"name", "owner_id", "owner_email", "clone_url", "default_branch", "created_at"},
-		"sessions": {"id", "repo_name", "owner_id", "owner_email", "issue_number", "attempt", "branch", "instructions", "status", "error", "pr_url", "created_at", "started_at", "ended_at", "log_path"},
+		"sessions": {"id", "repo_name", "owner_id", "owner_email", "issue_number", "attempt", "branch", "instructions", "status", "error", "pr_url", "created_at", "started_at", "ended_at", "log_path", "correlation_id"},
 		"outbox":   {"seq", "event_id", "kind", "subject", "payload", "created_at", "correlation_id"},
 	}
 	for table, expected := range want {

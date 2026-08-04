@@ -21,6 +21,7 @@ import (
 
 	appdb "appkit/db"
 	"appkit/server"
+	"eventplane/correlation"
 	"eventplane/outbox"
 
 	reposdb "repos/internal/db"
@@ -73,6 +74,7 @@ func (d *domain) Cancel(id string) bool { return d.runner.Cancel(id) }
 
 type fixture struct {
 	h         http.Handler
+	svc       Service
 	db        *sql.DB
 	store     *repos.Store
 	runner    *runner.Runner
@@ -136,7 +138,7 @@ func newFixture(t *testing.T, factory runner.AgentFactory) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{h: h, db: conn, store: store, runner: engine, stateRoot: stateRoot, remoteDir: remoteDir}
+	return &fixture{h: h, svc: domain, db: conn, store: store, runner: engine, stateRoot: stateRoot, remoteDir: remoteDir}
 }
 
 func (f *fixture) addRemote(t *testing.T, name string) {
@@ -307,6 +309,47 @@ func TestSessionStartAndCancelLifecycle(t *testing.T) {
 	terminal := callOK(t, f.h, "session_cancel", map[string]any{"id": id})
 	if terminal["cancelled"] != false || terminal["session"].(map[string]any)["status"] != "cancelled" {
 		t.Fatalf("terminal cancel = %#v", terminal)
+	}
+}
+
+func TestSessionStartPersistsInboundCorrelationID(t *testing.T) {
+	// R-BWXC-UZOY
+	f := newFixture(t, nil)
+	f.addRemote(t, "alpha")
+	callOK(t, f.h, "clone", map[string]any{"name": "alpha"})
+	const correlationID = "01K1C5Y7N8E9F0G1H2J3K4M5NP"
+	for _, test := range []struct {
+		name, correlationID string
+	}{
+		{name: "present", correlationID: correlationID},
+		{name: "absent"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := correlation.WithContext(context.Background(), test.correlationID)
+			raw, err := json.Marshal(map[string]any{"repo": "alpha", "instructions": test.name})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = (toolHandlers{svc: f.svc}).sessionStart(ctx, raw, server.Identity{OwnerID: testOwnerID, OwnerEmail: testOwner})
+			if err != nil {
+				t.Fatalf("sessionStart: %v", err)
+			}
+			sessions, err := f.store.ListSessions(context.Background(), "alpha", testOwnerID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got string
+			found := false
+			for _, stored := range sessions {
+				if stored.Instructions == test.name {
+					got = stored.CorrelationID
+					found = true
+				}
+			}
+			if !found || got != test.correlationID {
+				t.Fatalf("stored session found = %v, correlation id = %q; want true, %q", found, got, test.correlationID)
+			}
+		})
 	}
 }
 
