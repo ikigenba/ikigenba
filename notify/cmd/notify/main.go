@@ -57,7 +57,7 @@ func notifySpec() appkit.Spec {
 					if err != nil {
 						panic(err)
 					}
-					client := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, rt.Logger())
+					client := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, rt.HTTPClient(push.PushTimeout), rt.Logger())
 					return push.Handler(client, rt.Logger())
 				},
 			},
@@ -69,7 +69,7 @@ func notifySpec() appkit.Spec {
 					if err != nil {
 						panic(err)
 					}
-					client := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, rt.Logger())
+					client := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, rt.HTTPClient(push.PushTimeout), rt.Logger())
 					return push.PromptsHandler(client, rt.Logger())
 				},
 			},
@@ -86,7 +86,7 @@ func notifySpec() appkit.Spec {
 			if err != nil {
 				return err
 			}
-			pushClient := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, r.Logger())
+			pushClient := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, r.HTTPClient(push.PushTimeout), r.Logger())
 			r.Handle("GET /{$}", landingHandler(r.WWW(), r.Service(), r.Version()))
 			handler, err := mcp.NewHandler(pushClient, r)
 			if err != nil {

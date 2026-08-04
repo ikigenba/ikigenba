@@ -332,7 +332,7 @@ func TestNotifySpecEnablesChassisWWWAndKeepsMCPWiring(t *testing.T) {
 	for _, want := range []string{
 		`WWW:   true,`,
 		`r.Handle("GET /{$}", landingHandler(r.WWW(), r.Service(), r.Version()))`,
-		`pushClient := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, r.Logger())`,
+		`pushClient := push.NewClient(cfg.ntfyBase, cfg.ntfyTopic, cfg.ntfyToken, r.HTTPClient(push.PushTimeout), r.Logger())`,
 		`r.Handle("POST /mcp", r.RequireIdentity(`,
 	} {
 		if !strings.Contains(main, want) {

@@ -89,14 +89,13 @@ func PromptsHandler(c *Client, logger *slog.Logger) consumer.Handler {
 		if ev.Kind == eventRunFailed && p.Error != "" {
 			body = p.SessionName + ": " + p.Error
 		}
-		go func(title, body string) {
-			// Detached from the engine's request context (the handler has already
-			// returned) but bounded by pushTimeout via the client and this ctx, so the
-			// goroutine always terminates (decision 16).
-			ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
+		go func(hctx context.Context, title, body string) {
+			// Keep the handler context's values while allowing the push to outlive
+			// handler cancellation; the timeout still bounds the detached work.
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(hctx), PushTimeout)
 			defer cancel()
 			c.Send(ctx, title, body)
-		}(title, body)
+		}(ctx, title, body)
 		return nil
 	}
 }

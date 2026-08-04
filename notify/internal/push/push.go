@@ -30,11 +30,11 @@ import (
 	"eventplane/routing"
 )
 
-// pushTimeout bounds a single ntfy request so a fire-and-forget goroutine always
+// PushTimeout bounds a single ntfy request so a fire-and-forget goroutine always
 // terminates even against a black-holed connection (decision 16). The push is
 // async — the handler returns immediately and the engine commits the cursor
 // without waiting — so this timeout is the only thing that reaps the goroutine.
-const pushTimeout = 10 * time.Second
+const PushTimeout = 10 * time.Second
 
 // Client is a thin ntfy.sh publisher. The base URL is configuration
 // (NOTIFY_NTFY_BASE_URL, so tests can point it at a mock); the topic and token
@@ -51,7 +51,10 @@ type Client struct {
 
 // NewClient builds a push Client. baseURL defaults the scheme/host (e.g.
 // "https://ntfy.sh"); topic is the ntfy topic; token is the bearer credential.
-func NewClient(baseURL, topic, token string, logger *slog.Logger) *Client {
+func NewClient(baseURL, topic, token string, hc *http.Client, logger *slog.Logger) *Client {
+	if hc == nil {
+		panic("push: HTTP client is required")
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -59,7 +62,7 @@ func NewClient(baseURL, topic, token string, logger *slog.Logger) *Client {
 		base:  strings.TrimRight(baseURL, "/"),
 		topic: topic,
 		token: token,
-		http:  &http.Client{Timeout: pushTimeout},
+		http:  hc,
 		log:   logger,
 	}
 }
@@ -179,14 +182,13 @@ func Handler(c *Client, logger *slog.Logger) consumer.Handler {
 			// and advances the cursor past it (event-triggering decisions §1).
 			return fmt.Errorf("push: decode contact.created %s: %w: %w", ev.ID, err, consumer.ErrSkip)
 		}
-		go func(displayName string) {
-			// Detached from the engine's request context (the handler has already
-			// returned) but bounded by pushTimeout via the client and this ctx, so
-			// the goroutine always terminates (decision 16).
-			ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
+		go func(hctx context.Context, displayName string) {
+			// Keep the handler context's values while allowing the push to outlive
+			// handler cancellation; the timeout still bounds the detached work.
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(hctx), PushTimeout)
 			defer cancel()
 			c.Send(ctx, "New contact", displayName)
-		}(p.DisplayName)
+		}(ctx, p.DisplayName)
 		return nil
 	}
 }

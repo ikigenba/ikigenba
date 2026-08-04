@@ -1,12 +1,19 @@
 package mcp
 
 import (
+	"bytes"
+	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"appkit/server"
+	"eventplane/correlation"
 
 	"notify/internal/push"
 )
@@ -75,7 +82,7 @@ func (m *ntfyMock) setStatus(s int) {
 // handlerForMock builds a Handler whose push client targets the mock ntfy server.
 func handlerForMock(t testing.TB, m *ntfyMock) http.Handler {
 	t.Helper()
-	return newHandlerWithClient(t, push.NewClient(m.srv.URL, "mytopic", "secret-token", discardLogger()))
+	return newHandlerWithClient(t, push.NewClient(m.srv.URL, "mytopic", "secret-token", &http.Client{}, discardLogger()))
 }
 
 // TestSendHappyPath: a full message/title/priority/tags/click call yields exactly
@@ -125,6 +132,89 @@ func TestSendHappyPath(t *testing.T) {
 	}
 	if p.auth != "Bearer secret-token" {
 		t.Errorf("Authorization = %q, want bearer", p.auth)
+	}
+}
+
+type contextRecordingTransport struct {
+	observed chan string
+}
+
+func (rt *contextRecordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	rt.observed <- correlation.FromContext(req.Context())
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+// R-TNQN-7X20
+func TestAssembledSendCarriesInboundCorrelationToNtfyPost(t *testing.T) {
+	mock := newNtfyMock(t)
+	transport := &contextRecordingTransport{observed: make(chan string, 1)}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     logger,
+		ResourceID: "https://int.ikigenba.com/srv/notify/mcp",
+		AuthServer: "https://int.ikigenba.com",
+		Version:    testVersion,
+		Service:    testService,
+		Register: func(rt *server.Router) error {
+			client := push.NewClient(mock.srv.URL, "mytopic", "secret-token", &http.Client{Transport: transport, Timeout: push.PushTimeout}, logger)
+			h, err := NewHandler(client, rt)
+			if err != nil {
+				return err
+			}
+			rt.Handle("POST /mcp", rt.RequireIdentity(h))
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("assemble chassis handler: %v", err)
+	}
+
+	raw, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params":  map[string]any{"name": "send", "arguments": map[string]any{"message": "correlated"}},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	inbound := correlation.New()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(raw))
+	req.Header.Set(correlation.Header, inbound)
+	req.Header.Set("X-Owner-Id", testOwnerID)
+	req.Header.Set("X-Owner-Email", testOwner)
+	req.Header.Set("X-Client-Id", testClientID)
+	rec := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /mcp status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var response jsonRPCResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode JSON-RPC response: %v", err)
+	}
+	if response.Error != nil {
+		t.Fatalf("send returned JSON-RPC error: %+v", response.Error)
+	}
+	var result toolResult
+	if err := json.Unmarshal(response.Result, &result); err != nil {
+		t.Fatalf("decode tool result: %v", err)
+	}
+	if result.IsError || result.StructuredContent["ok"] != true {
+		t.Fatalf("send result = %+v, want success structuredContent", result)
+	}
+	select {
+	case got := <-transport.observed:
+		if got != inbound {
+			t.Fatalf("ntfy POST context correlation id = %q, want inbound %q", got, inbound)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("instrumented transport did not observe ntfy POST")
+	}
+	if got := mock.snapshot(); len(got) != 1 || got[0].body != "correlated" {
+		t.Fatalf("mock ntfy requests = %#v, want one completed correlated push", got)
 	}
 }
 
@@ -206,7 +296,7 @@ func TestSendUpstreamNon2xx(t *testing.T) {
 func TestSendUpstreamUnreachable(t *testing.T) {
 	// R-ADWU-I159
 	// A client pointed at a closed port: NewClient against an unroutable address.
-	h := newHandlerWithClient(t, push.NewClient("http://127.0.0.1:1", "mytopic", "secret-token", discardLogger()))
+	h := newHandlerWithClient(t, push.NewClient("http://127.0.0.1:1", "mytopic", "secret-token", &http.Client{}, discardLogger()))
 
 	e := callErr(t, h, "send", map[string]any{"message": "x"})
 	if e["code"] != "source_unavailable" {

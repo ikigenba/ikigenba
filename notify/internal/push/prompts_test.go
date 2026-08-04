@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"eventplane/consumer"
+	"eventplane/correlation"
 	"eventplane/outbox"
 
 	"notify/internal/push"
@@ -21,13 +22,55 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// R-TMIQ-U5BB
+func TestPromptsHandlerCarriesCorrelationAcrossCancelledAsyncSeam(t *testing.T) {
+	for _, tc := range []struct {
+		kind      string
+		payload   string
+		wantTitle string
+		wantBody  string
+	}{
+		{kind: "run.succeeded", payload: `{"session_name":"nightly"}`, wantTitle: "Run succeeded", wantBody: "nightly"},
+		{kind: "run.failed", payload: `{"session_name":"nightly","error":"boom"}`, wantTitle: "Run failed", wantBody: "nightly: boom"},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			ntfy := newNtfyMock(t)
+			gate := make(chan struct{})
+			transport := &recordingTransport{gate: gate, observed: make(chan string, 1)}
+			client := push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{Transport: transport}, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+			h := push.PromptsHandler(client, nil)
+			id := correlation.New()
+			hctx, cancel := context.WithCancel(correlation.WithContext(context.Background(), id))
+
+			if err := h(hctx, consumer.Event{Source: "prompts", Kind: tc.kind, Subject: "/one", Payload: json.RawMessage(tc.payload)}); err != nil {
+				t.Fatalf("PromptsHandler: %v", err)
+			}
+			cancel()
+			var observed string
+			select {
+			case observed = <-transport.observed:
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for detached POST")
+			}
+			close(gate)
+			waitFor(t, "cancel-surviving prompts push", func() bool { return len(ntfy.snapshot()) == 1 })
+			if observed != id {
+				t.Fatalf("POST context correlation id = %q, want %q", observed, id)
+			}
+			if got := ntfy.snapshot()[0]; got.title != tc.wantTitle || got.body != tc.wantBody {
+				t.Fatalf("push = %#v, want title %q body %q", got, tc.wantTitle, tc.wantBody)
+			}
+		})
+	}
+}
+
 // TestPromptsHandlerPushesOnSucceeded asserts run.succeeded fires one best-effort
 // push (Title "Run succeeded", body = session_name) and the handler returns nil so
 // the engine advances prompts's cursor.
 func TestPromptsHandlerPushesOnSucceeded(t *testing.T) {
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
+	client := push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{}, discard)
 	h := push.PromptsHandler(client, discard)
 
 	ev := consumer.Event{
@@ -55,7 +98,7 @@ func TestPromptsHandlerPushesOnSucceeded(t *testing.T) {
 func TestPromptsHandlerPushesOnFailed(t *testing.T) {
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
+	client := push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{}, discard)
 	h := push.PromptsHandler(client, discard)
 
 	ev := consumer.Event{
@@ -84,7 +127,7 @@ func TestPromptsHandlerPushesOnFailed(t *testing.T) {
 func TestPromptsHandlerMalformedPayloadSkips(t *testing.T) {
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
+	client := push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{}, discard)
 	h := push.PromptsHandler(client, discard)
 
 	ev := consumer.Event{
@@ -112,7 +155,7 @@ func TestPromptsHandlerMalformedPayloadSkips(t *testing.T) {
 func TestPromptsHandlerNonMatchingTypeAdvances(t *testing.T) {
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
+	client := push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{}, discard)
 	h := push.PromptsHandler(client, discard)
 
 	ev := consumer.Event{Kind: "run.cancelled", Subject: "/nightly-scan", ID: "01JOTHER", Source: "prompts", Payload: json.RawMessage(`{}`)}
@@ -136,7 +179,7 @@ func TestPromptsHandlerPushFailureReturnsNil(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(failing.Close)
-	client := push.NewClient(failing.URL, "topic", "tok", discard)
+	client := push.NewClient(failing.URL, "topic", "tok", &http.Client{}, discard)
 	h := push.PromptsHandler(client, discard)
 
 	ev := consumer.Event{
@@ -162,7 +205,7 @@ func TestPromptsSubscriptionsClassifyKindsRegardlessOfSubject(t *testing.T) {
 	}
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	h := push.PromptsHandler(push.NewClient(ntfy.srv.URL, "topic", "tok", discard), discard)
+	h := push.PromptsHandler(push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{}, discard), discard)
 	for _, ev := range []consumer.Event{
 		{Kind: "run.succeeded", Subject: "/named", Payload: json.RawMessage(`{"session_name":"good"}`)},
 		{Kind: "run.failed", Subject: "/named", Payload: json.RawMessage(`{"session_name":"bad","error":"boom"}`)},
@@ -232,7 +275,7 @@ func TestTwoFeedOffsetsAdvanceIndependently(t *testing.T) {
 	cdb := openDB(t, filepath.Join(dir, "notify.db"), consumer.SchemaSQL)
 
 	ntfy := newNtfyMock(t)
-	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
+	client := push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{}, discard)
 
 	// Seed one event on each feed.
 	emit(t, crmOb, crmDB, "contact.created", "/c1", `{"id":"c1","display_name":"Alice"}`)

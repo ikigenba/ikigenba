@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"eventplane/consumer"
+	"eventplane/correlation"
 	"eventplane/outbox"
 
 	"notify/internal/push"
@@ -33,7 +34,7 @@ import (
 func TestHandlerMalformedPayloadSkips(t *testing.T) {
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
+	client := push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{}, discard)
 	h := push.Handler(client, discard)
 
 	ev := consumer.Event{
@@ -62,7 +63,7 @@ func TestHandlerMalformedPayloadSkips(t *testing.T) {
 func TestHandlerNonMatchingTypeAdvances(t *testing.T) {
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
+	client := push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{}, discard)
 	h := push.Handler(client, discard)
 
 	ev := consumer.Event{Kind: "contact.updated", Subject: "/01JOTHER", ID: "01JOTHER", Source: "crm", Payload: json.RawMessage(`{}`)}
@@ -83,7 +84,7 @@ func TestSubscriptionMatchesCanonicalContactKey(t *testing.T) {
 	}
 	ntfy := newNtfyMock(t)
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	h := push.Handler(push.NewClient(ntfy.srv.URL, "topic", "tok", discard), discard)
+	h := push.Handler(push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{}, discard), discard)
 	if err := h(context.Background(), consumer.Event{Source: "crm", Kind: "contact.created", Subject: "/01JCONTACT", Payload: json.RawMessage(`{"display_name":"Ada"}`)}); err != nil {
 		t.Fatalf("contact.created returned %v", err)
 	}
@@ -144,6 +145,76 @@ func (m *ntfyMock) snapshot() []capturedPush {
 	return out
 }
 
+type recordingTransport struct {
+	gate     <-chan struct{}
+	observed chan string
+}
+
+func (rt *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	rt.observed <- correlation.FromContext(req.Context())
+	if rt.gate != nil {
+		<-rt.gate
+	}
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+// R-TK2Y-2LTX
+func TestClientUsesInjectedHTTPClientWithPushTimeout(t *testing.T) {
+	ntfy := newNtfyMock(t)
+	transport := &recordingTransport{observed: make(chan string, 1)}
+	hc := &http.Client{Transport: transport, Timeout: push.PushTimeout}
+	client := push.NewClient(ntfy.srv.URL, "topic", "tok", hc, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+
+	if hc.Timeout != push.PushTimeout {
+		t.Fatalf("injected HTTP client timeout = %v, want push.PushTimeout (%v)", hc.Timeout, push.PushTimeout)
+	}
+	if push.PushTimeout != 10*time.Second {
+		t.Fatalf("push.PushTimeout = %v, want 10s", push.PushTimeout)
+	}
+	if err := client.Publish(context.Background(), push.Notification{Title: "probe", Message: "injected"}); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	select {
+	case <-transport.observed:
+	case <-time.After(time.Second):
+		t.Fatal("injected transport did not observe the ntfy request")
+	}
+	got := ntfy.snapshot()
+	if len(got) != 1 || got[0].path != "/topic" || got[0].body != "injected" {
+		t.Fatalf("mock ntfy requests = %#v, want one injected POST to /topic", got)
+	}
+}
+
+// R-TLAU-GDKM
+func TestContactHandlerCarriesCorrelationAcrossCancelledAsyncSeam(t *testing.T) {
+	ntfy := newNtfyMock(t)
+	gate := make(chan struct{})
+	transport := &recordingTransport{gate: gate, observed: make(chan string, 1)}
+	client := push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{Transport: transport}, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	h := push.Handler(client, nil)
+	id := correlation.New()
+	hctx, cancel := context.WithCancel(correlation.WithContext(context.Background(), id))
+
+	if err := h(hctx, consumer.Event{Source: "crm", Kind: "contact.created", Subject: "/one", Payload: json.RawMessage(`{"display_name":"Ada"}`)}); err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	cancel()
+	var observed string
+	select {
+	case observed = <-transport.observed:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for detached POST")
+	}
+	close(gate)
+	waitFor(t, "cancel-surviving contact push", func() bool { return len(ntfy.snapshot()) == 1 })
+	if observed != id {
+		t.Fatalf("POST context correlation id = %q, want %q", observed, id)
+	}
+	if got := ntfy.snapshot()[0]; got.title != "New contact" || got.body != "Ada" {
+		t.Fatalf("push = %#v, want New contact/Ada", got)
+	}
+}
+
 func openDB(t *testing.T, path, ddl string) *sql.DB {
 	t.Helper()
 	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)&_pragma=busy_timeout(5000)", path)
@@ -167,7 +238,7 @@ func emit(t *testing.T, ob *outbox.Outbox, db *sql.DB, kind, subject, payload st
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if err := ob.Append(tx, outbox.Event{Kind: kind, Subject: subject, Payload: json.RawMessage(payload)}); err != nil {
+	if err := ob.Append(context.Background(), tx, outbox.Event{Kind: kind, Subject: subject, Payload: json.RawMessage(payload)}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -224,7 +295,7 @@ func TestEndToEndContactCreatedPush(t *testing.T) {
 
 	// Mock ntfy + notify's push handler.
 	ntfy := newNtfyMock(t)
-	client := push.NewClient(ntfy.srv.URL, "mytopic", "secret-token", discard)
+	client := push.NewClient(ntfy.srv.URL, "mytopic", "secret-token", &http.Client{}, discard)
 	handler := push.Handler(client, discard)
 
 	// Consumer DB.
@@ -321,7 +392,7 @@ func TestNotifyConsumerReconstructsCursorAfterProducerCacheRemint(t *testing.T) 
 	t.Cleanup(feed.Close)
 
 	ntfy := newNtfyMock(t)
-	client := push.NewClient(ntfy.srv.URL, "topic", "tok", discard)
+	client := push.NewClient(ntfy.srv.URL, "topic", "tok", &http.Client{}, discard)
 	notifyDB := filepath.Join(dir, "notify", "state", "notify.db")
 	if err := os.MkdirAll(filepath.Dir(notifyDB), 0o755); err != nil {
 		t.Fatalf("create notify state dir: %v", err)

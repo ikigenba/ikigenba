@@ -38,7 +38,7 @@ func discardLogger() *slog.Logger {
 // same push.Subscription() the consumer Handler matches against.
 func newTestHandler(t testing.TB) http.Handler {
 	t.Helper()
-	return newHandlerWithClient(t, push.NewClient("http://127.0.0.1:1", "topic", "tok", discardLogger()))
+	return newHandlerWithClient(t, push.NewClient("http://127.0.0.1:1", "topic", "tok", &http.Client{}, discardLogger()))
 }
 
 // newHandlerWithClient builds a notify Handler around a specific push client so a
