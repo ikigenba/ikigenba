@@ -46,26 +46,33 @@ func New(level slog.Level, w io.Writer) *slog.Logger {
 	return slog.New(h)
 }
 
-var enc = base32.NewEncoding("0123456789ABCDEFGHJKMNPQRSTVWXYZ").WithPadding(base32.NoPadding)
+const crockfordAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+var enc = base32.NewEncoding(crockfordAlphabet).WithPadding(base32.NoPadding)
 
 // NewULID returns a Crockford-base32 ULID (26-char): 48 bits of
 // millisecond time followed by 80 bits of cryptographic randomness, time-ordered
 // and unguessable. No external dependency is needed for that property. It is the
 // fold-in of each service's internal/ids.NewULID.
 func NewULID() string {
-	var b [16]byte
 	now := uint64(time.Now().UnixMilli())
-	b[0] = byte(now >> 40)
-	b[1] = byte(now >> 32)
-	b[2] = byte(now >> 24)
-	b[3] = byte(now >> 16)
-	b[4] = byte(now >> 8)
-	b[5] = byte(now)
-	if _, err := rand.Read(b[6:]); err != nil {
+	var randomness [10]byte
+	if _, err := rand.Read(randomness[:]); err != nil {
 		// crypto/rand failure is non-recoverable.
 		panic("crypto/rand failed: " + err.Error())
 	}
-	return enc.EncodeToString(b[:])
+
+	// A ULID is 128 bits represented by 26 base32 characters (130 bits), so
+	// the two padding bits precede the timestamp. Encoding all 16 bytes with
+	// encoding/base32 would instead append padding bits after the randomness,
+	// shifting the timestamp representation away from the ULID wire format.
+	var id [26]byte
+	id[0] = crockfordAlphabet[(now>>45)&7]
+	for i, shift := range []uint{40, 35, 30, 25, 20, 15, 10, 5, 0} {
+		id[i+1] = crockfordAlphabet[(now>>shift)&31]
+	}
+	copy(id[10:], enc.EncodeToString(randomness[:]))
+	return string(id[:])
 }
 
 // RequestID returns the correlation id on the context, or "" if none.

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"appkit/logging"
 
@@ -96,7 +97,9 @@ func TestNewULID_UsesCrockfordAlphabet(t *testing.T) {
 	const mintCount = 501
 	sawZero, sawOne := false, false
 	for range mintCount {
+		before := uint64(time.Now().UnixMilli())
 		id := logging.NewULID()
+		after := uint64(time.Now().UnixMilli())
 		if len(id) != 26 {
 			t.Fatalf("len(NewULID()) = %d for %q, want 26", len(id), id)
 		}
@@ -106,6 +109,13 @@ func TestNewULID_UsesCrockfordAlphabet(t *testing.T) {
 			}
 			sawZero = sawZero || char == '0'
 			sawOne = sawOne || char == '1'
+		}
+		var timestamp uint64
+		for _, char := range id[:10] {
+			timestamp = timestamp<<5 | uint64(strings.IndexRune(alphabet, char))
+		}
+		if timestamp < before || timestamp > after {
+			t.Fatalf("NewULID() = %q has timestamp %d, want within [%d, %d]", id, timestamp, before, after)
 		}
 	}
 	if !sawZero || !sawOne {
