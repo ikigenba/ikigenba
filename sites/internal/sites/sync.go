@@ -48,17 +48,18 @@ type MirrorClient interface {
 
 // httpMirrorClient is the production MirrorClient: it talks to the dropbox
 // service's loopback routes derived from a base URL (DROPBOX_BASE_URL, read at
-// the composition root). It carries no identity headers — /list and /content
-// are loopback-only and self-guard against any nginx-injected identity.
+// the composition root). Its injected HTTP client is supplied by the chassis
+// so outbound instrumentation and correlation propagation stay centralized.
 type httpMirrorClient struct {
 	base string
 	hc   *http.Client
 }
 
 // NewMirrorClient builds a MirrorClient against base (e.g.
-// "http://127.0.0.1:3200"); it derives <base>/list and <base>/content.
-func NewMirrorClient(base string) MirrorClient {
-	return &httpMirrorClient{base: strings.TrimRight(base, "/"), hc: http.DefaultClient}
+// "http://127.0.0.1:3200") using hc for every request; it derives <base>/list
+// and <base>/content.
+func NewMirrorClient(base string, hc *http.Client) MirrorClient {
+	return &httpMirrorClient{base: strings.TrimRight(base, "/"), hc: hc}
 }
 
 // listPage is the on-wire page shape (the route renders snake_case keys).

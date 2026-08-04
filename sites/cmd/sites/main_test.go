@@ -160,7 +160,7 @@ func TestSitesSpecEnablesChassisWWWAndKeepsMCPWiring(t *testing.T) {
 		`landingHandler(store, rt.WWW(), rt.Service(), rt.Version(), baseURL)`,
 		`CreatedAt:     s.CreatedAt.UTC().Format(time.RFC3339),`,
 		`renderer.Render(w, "landing.html", view)`,
-		`mirror := sites.NewMirrorClient(base)`,
+		`mirror := sites.NewMirrorClient(base, rt.HTTPClient(30*time.Second))`,
 		`handler, err := mcp.NewHandler(store, layout, baseURL, mirror, rt)`,
 		`if err != nil {`,
 		`rt.Handle("POST /mcp", rt.RequireIdentity(handler))`,

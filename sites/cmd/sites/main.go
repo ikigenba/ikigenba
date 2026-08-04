@@ -94,7 +94,7 @@ func sitesSpec() appkit.Spec {
 			// for its peer *_FEED_URL (ADR dropbox-import-sync; plan cross-cutting
 			// decision 2). The client derives <base>/list and <base>/content.
 			base := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", registry.BaseURL("dropbox"))
-			mirror := sites.NewMirrorClient(base)
+			mirror := sites.NewMirrorClient(base, rt.HTTPClient(30*time.Second))
 			handler, err := mcp.NewHandler(store, layout, baseURL, mirror, rt)
 			if err != nil {
 				return err

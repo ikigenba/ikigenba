@@ -3,14 +3,28 @@ package mcp
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
+	"eventplane/correlation"
+
 	"sites/internal/sites"
 )
+
+type correlationRecordingTransport struct {
+	next http.RoundTripper
+	ids  []string
+}
+
+func (r *correlationRecordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.ids = append(r.ids, correlation.FromContext(req.Context()))
+	return r.next.RoundTrip(req)
+}
 
 // fakeMirror is an in-memory sites.MirrorClient: a subtree of mirror paths →
 // bytes. List returns every entry whose path sits under the requested prefix;
@@ -122,6 +136,56 @@ func TestSyncExistingReconciles(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(h.layout.SiteDir(sites.Private, "blog"), "b.html")); !os.IsNotExist(err) {
 		t.Fatalf("b.html should be deleted, stat err = %v", err)
+	}
+}
+
+func TestSyncPreservesRequestContextThroughMirrorCalls(t *testing.T) {
+	var serverRequests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serverRequests++
+		switch r.URL.Path {
+		case "/list":
+			w.Header().Set("Content-Type", "application/json")
+			if r.URL.Query().Get("cursor") == "" {
+				_, _ = w.Write([]byte(`{"files":[],"next_cursor":"page-2"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"files":[{"path":"/source/index.html","size":5}]}`))
+		case "/content":
+			_, _ = w.Write([]byte("hello"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	recorder := &correlationRecordingTransport{next: srv.Client().Transport}
+	mirror := sites.NewMirrorClient(srv.URL, &http.Client{Transport: recorder})
+	h, _ := newTestHandler(t, mirror)
+	callOK(t, h, tool("create"), map[string]any{"name": "demo", "slug": "demo", "visibility": "private"})
+
+	correlationID := "01JZZZZZZZZZZZZZZZZZZZZZZZ"
+	withCorrelation := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := correlation.WithContext(r.Context(), correlationID)
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
+	out := callOK(t, withCorrelation, tool("sync"), map[string]any{"source_path": "/source", "slug": "demo"})
+	if out["written"] != float64(1) {
+		t.Fatalf("sync written = %v, want 1", out["written"])
+	}
+
+	// R-BPLY-KD8S — the MCP request context must remain live across both cursor
+	// pages and the content fetch for the chassis transport to read it.
+	if len(recorder.ids) != serverRequests {
+		t.Fatalf("recorded contexts = %d, server requests = %d", len(recorder.ids), serverRequests)
+	}
+	if len(recorder.ids) != 3 {
+		t.Fatalf("recorded contexts = %d, want 3", len(recorder.ids))
+	}
+	for i, got := range recorder.ids {
+		if got != correlationID {
+			t.Errorf("outgoing request %d correlation id = %q, want %q", i, got, correlationID)
+		}
 	}
 }
 

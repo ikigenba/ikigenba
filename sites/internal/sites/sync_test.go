@@ -10,6 +10,16 @@ import (
 	"testing"
 )
 
+type recordingRoundTripper struct {
+	next     http.RoundTripper
+	requests []*http.Request
+}
+
+func (r *recordingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.requests = append(r.requests, req)
+	return r.next.RoundTrip(req)
+}
+
 // readWorking walks dir and returns the set of regular files relative to dir
 // (slash-separated), mirroring how the sync verb obtains existingRel.
 func readWorking(t *testing.T, dir string) []string {
@@ -126,7 +136,13 @@ func TestHTTPMirrorClient_ListPagination(t *testing.T) {
 	// Fake /list returning two pages stitched by the cursor loop. Page 1 carries
 	// next_cursor; page 2 omits it (terminates).
 	var seenCursors []string
+	serverRequests := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serverRequests++
+		if r.URL.Path == "/content" && r.URL.Query().Get("path") == "/site/a.html" {
+			_, _ = w.Write([]byte("hello"))
+			return
+		}
 		if r.URL.Path != "/list" {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
@@ -148,7 +164,8 @@ func TestHTTPMirrorClient_ListPagination(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewMirrorClient(srv.URL)
+	recorder := &recordingRoundTripper{next: http.DefaultTransport}
+	c := NewMirrorClient(srv.URL, &http.Client{Transport: recorder})
 	files, err := c.List(context.Background(), "/site")
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -170,6 +187,28 @@ func TestHTTPMirrorClient_ListPagination(t *testing.T) {
 	if len(seenCursors) != 2 || seenCursors[0] != "" || seenCursors[1] != "/site/b.css" {
 		t.Errorf("cursor sequence = %v, want [\"\" \"/site/b.css\"]", seenCursors)
 	}
+	body, err := c.Fetch(context.Background(), "/site/a.html")
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if string(body) != "hello" {
+		t.Errorf("Fetch body = %q, want hello", body)
+	}
+
+	// R-BOE2-6LI3 — both list pages and the fetch must traverse the injected
+	// transport, so a package-default escape on any later request is detected.
+	if len(recorder.requests) != serverRequests {
+		t.Fatalf("injected transport requests = %d, server requests = %d", len(recorder.requests), serverRequests)
+	}
+	wantRequestPaths := []string{"/list", "/list", "/content"}
+	if len(recorder.requests) != len(wantRequestPaths) {
+		t.Fatalf("injected transport requests = %d, want %d", len(recorder.requests), len(wantRequestPaths))
+	}
+	for i, want := range wantRequestPaths {
+		if got := recorder.requests[i].URL.Path; got != want {
+			t.Errorf("injected request %d path = %q, want %q", i, got, want)
+		}
+	}
 }
 
 func TestHTTPMirrorClient_Fetch(t *testing.T) {
@@ -182,7 +221,7 @@ func TestHTTPMirrorClient_Fetch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewMirrorClient(srv.URL)
+	c := NewMirrorClient(srv.URL, srv.Client())
 	body, err := c.Fetch(context.Background(), "/site/a.html")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
