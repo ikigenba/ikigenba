@@ -25,6 +25,7 @@ import (
 	"net/http"
 
 	"appkit"
+	"appkit/telemetry"
 	"appkit/web"
 
 	"cron/internal/crontab"
@@ -44,6 +45,7 @@ func main() {
 func cronSpec() appkit.Spec {
 	var store *crontab.Store
 	var worker *tick.Worker
+	var recorder *telemetry.Recorder
 
 	return appkit.Spec{
 		App:        "cron",
@@ -69,6 +71,7 @@ func cronSpec() appkit.Spec {
 				return fmt.Errorf("cron: no DB handle on router")
 			}
 			store = crontab.NewStore(conn)
+			recorder = rt.Recorder()
 			rt.Handle("GET /{$}", landingHandler(rt.WWW(), rt.Service(), rt.Version()))
 			mcpHandler, err := mcp.NewHandler(store, rt)
 			if err != nil {
@@ -81,7 +84,7 @@ func cronSpec() appkit.Spec {
 			if store == nil {
 				return fmt.Errorf("cron: Producer called before Handlers built the Store")
 			}
-			worker = tick.New(store.DB(), store, ob, slog.Default())
+			worker = tick.New(store.DB(), store, ob, recorder, slog.Default())
 			return nil
 		},
 		Workers: []func(context.Context) error{

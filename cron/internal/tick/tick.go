@@ -27,6 +27,7 @@ import (
 	"cron/internal/crontab"
 	"cron/internal/event"
 
+	"appkit/telemetry"
 	"eventplane/outbox"
 )
 
@@ -41,16 +42,17 @@ type Worker struct {
 	db    *sql.DB
 	store *crontab.Store
 	ob    *outbox.Outbox
+	rec   *telemetry.Recorder
 	log   *slog.Logger
 }
 
 // New builds a tick Worker. db is the shared appkit DB handle; ob is the
 // producer outbox injected via Spec.Producer.
-func New(db *sql.DB, store *crontab.Store, ob *outbox.Outbox, logger *slog.Logger) *Worker {
+func New(db *sql.DB, store *crontab.Store, ob *outbox.Outbox, rec *telemetry.Recorder, logger *slog.Logger) *Worker {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Worker{db: db, store: store, ob: ob, log: logger}
+	return &Worker{db: db, store: store, ob: ob, rec: rec, log: logger}
 }
 
 // Slot truncates t to its minute in UTC — the canonical slot value for a given
@@ -139,6 +141,9 @@ func (w *Worker) fireOne(ctx context.Context, name string, slot, firedAt time.Ti
 	if err != nil {
 		return err
 	}
+	// A firing is the outermost cause of its chain. Start a fresh root at this
+	// one-event seam so schedules sharing a scan never share a correlation id.
+	ctx, _ = w.rec.StartRoot(ctx, "cron:"+event.Kind+event.Subject(name), nil)
 	tx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

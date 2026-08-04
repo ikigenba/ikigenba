@@ -44,7 +44,7 @@ func harness(t *testing.T) (*Worker, *crontab.Store, *sql.DB, context.Context) {
 	if err != nil {
 		t.Fatalf("outbox.New: %v", err)
 	}
-	return New(conn, store, ob, nil), store, conn, ctx
+	return New(conn, store, ob, nil, nil), store, conn, ctx
 }
 
 // outboxRows reads every outbox row's type+payload, in seq order.
