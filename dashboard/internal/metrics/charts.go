@@ -1,4 +1,4 @@
-package telemetry
+package metrics
 
 import (
 	"fmt"
@@ -58,7 +58,7 @@ type orderedSeries struct {
 	latest int64
 }
 
-// ChartView is the rendered telemetry chart set consumed by the server
+// ChartView is the rendered metrics chart set consumed by the server
 // templates. The chart builders stay in this package so their geometry and HTML
 // escaping remain tested in one place.
 type ChartView struct {
@@ -69,7 +69,7 @@ type ChartView struct {
 }
 
 // NewChartView converts a store snapshot into the four SVG charts rendered by
-// the telemetry page and refresh fragment.
+// the metrics page and refresh fragment.
 func NewChartView(snapshot Snapshot) ChartView {
 	serviceMemory, memoryOrder := serviceSeries(snapshot.Series, ".mem")
 	serviceDisk, diskOrder := serviceSeries(snapshot.Series, ".disk")
@@ -134,7 +134,7 @@ func heroChart(title string, samples []Sample, total int64) template.HTML {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, `<svg class="telemetry-chart telemetry-hero-chart" viewBox="0 0 %.0f %.0f" role="img" aria-label="%s">`, chartWidth, chartHeight, escaped(title+" chart"))
+	fmt.Fprintf(&b, `<svg class="metrics-chart metrics-hero-chart" viewBox="0 0 %.0f %.0f" role="img" aria-label="%s">`, chartWidth, chartHeight, escaped(title+" chart"))
 	fmt.Fprintf(&b, `<title>%s</title>`, escaped(title))
 	fmt.Fprintf(&b, `<text class="chart-heading" x="40" y="28">%s</text>`, escaped(title))
 	fmt.Fprintf(&b, `<text class="chart-current" x="40" y="56">%s</text>`, escaped(humanBytes(current)))
@@ -151,7 +151,7 @@ func stackedChart(title string, series map[string][]Sample, order []string) temp
 	bands := stackedBandGeometry(series, order)
 
 	var b strings.Builder
-	fmt.Fprintf(&b, `<svg class="telemetry-chart telemetry-stacked-chart" viewBox="0 0 %.0f %.0f" role="img" aria-label="%s">`, chartWidth, chartHeight, escaped(title+" chart"))
+	fmt.Fprintf(&b, `<svg class="metrics-chart metrics-stacked-chart" viewBox="0 0 %.0f %.0f" role="img" aria-label="%s">`, chartWidth, chartHeight, escaped(title+" chart"))
 	fmt.Fprintf(&b, `<title>%s</title>`, escaped(title))
 	fmt.Fprintf(&b, `<text class="chart-heading" x="40" y="20">%s</text>`, escaped(title))
 	fmt.Fprintf(&b, `<line class="chart-axis" x1="%s" y1="%s" x2="%s" y2="%s" stroke="var(--cds-border-subtle-01, #c6c6c6)" />`, coord(stackedPlotLeft), coord(stackedPlotBottom), coord(stackedPlotRight), coord(stackedPlotBottom))

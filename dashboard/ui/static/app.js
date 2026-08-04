@@ -35,17 +35,17 @@
   });
 })();
 
-// --- 2. Telemetry block poll ---------------------------------------------
-// The telemetry collector samples once per minute. Refresh the HTML fragment on
+// --- 2. Metrics block poll -----------------------------------------------
+// The metrics collector samples once per minute. Refresh the HTML fragment on
 // that cadence and keep the stale charts when a poll fails.
 (() => {
-  const block = document.getElementById("telemetry-block");
+  const block = document.getElementById("metrics-block");
   if (!block) return;
 
   const fragURL = block.dataset.fragment;
   if (!fragURL) return;
 
-  const refreshTelemetry = async () => {
+  const refreshMetrics = async () => {
     try {
       const res = await fetch(fragURL, { credentials: "same-origin" });
       if (res.ok) {
@@ -56,7 +56,7 @@
     }
   };
 
-  setInterval(refreshTelemetry, 60000);
+  setInterval(refreshMetrics, 60000);
 })();
 
 // --- 3. Copy-to-clipboard ------------------------------------------------

@@ -1,4 +1,4 @@
-package telemetry
+package metrics
 
 import (
 	"sync"
@@ -7,13 +7,13 @@ import (
 
 const MaxSamples = 1440
 
-// Sample is one telemetry reading. Value is bytes; 0 means unavailable.
+// Sample is one metrics reading. Value is bytes; 0 means unavailable.
 type Sample struct {
 	At    time.Time
 	Value int64
 }
 
-// Store holds the bounded in-memory telemetry history and chart capacities.
+// Store holds the bounded in-memory metrics history and chart capacities.
 type Store struct {
 	mu        sync.Mutex
 	series    map[string]*ring
@@ -34,7 +34,7 @@ type ring struct {
 	len  int
 }
 
-// NewStore returns an empty telemetry store.
+// NewStore returns an empty metrics store.
 func NewStore() *Store {
 	return &Store{series: make(map[string]*ring)}
 }

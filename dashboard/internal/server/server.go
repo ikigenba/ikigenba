@@ -29,12 +29,12 @@ import (
 	"dashboard/internal/googleidp"
 	"dashboard/internal/grantevents"
 	"dashboard/internal/identity"
+	"dashboard/internal/metrics"
 	"dashboard/internal/oauth"
 	"dashboard/internal/oauthstate"
 	"dashboard/internal/pat"
 	"dashboard/internal/ratelimit"
 	"dashboard/internal/session"
-	"dashboard/internal/telemetry"
 	"dashboard/ui"
 )
 
@@ -76,9 +76,9 @@ type Options struct {
 	// <name>/etc/manifest.env, read by the /services inventory endpoint.
 	// Defaults to "/opt" when empty.
 	ManifestRoot string
-	// Telemetry is the in-memory sample store populated by the collector worker.
+	// Metrics is the in-memory sample store populated by the collector worker.
 	// It is optional until the chart routes render the collected samples.
-	Telemetry *telemetry.Store
+	Metrics *metrics.Store
 }
 
 // app holds the HTTP layer's dependencies. Handlers are methods on app, so new
@@ -107,7 +107,7 @@ type app struct {
 	admins       []string
 	rateLimiter  *ratelimit.Limiter
 	manifestRoot string
-	telemetry    *telemetry.Store
+	metrics      *metrics.Store
 	grantEvents  *grantevents.Bus
 }
 
@@ -178,11 +178,11 @@ func newApp(opts Options) (*app, error) {
 		"html/index.html",
 		"html/oauth_authorize.html",
 		"html/profile.html",
-		"html/telemetry.html",
+		"html/metrics.html",
 		"html/partials/grants_block.tmpl",
 		"html/partials/pat_block.tmpl",
 		"html/partials/pat_created.tmpl",
-		"html/partials/telemetry_charts.tmpl",
+		"html/partials/metrics_charts.tmpl",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
@@ -214,7 +214,7 @@ func newApp(opts Options) (*app, error) {
 		admins:          opts.Admins,
 		rateLimiter:     opts.RateLimiter,
 		manifestRoot:    manifestRoot,
-		telemetry:       opts.Telemetry,
+		metrics:         opts.Metrics,
 		grantEvents:     opts.GrantEvents,
 	}, nil
 }

@@ -36,18 +36,18 @@ import (
 	"dashboard/internal/googleidp"
 	"dashboard/internal/grantevents"
 	"dashboard/internal/identity"
+	"dashboard/internal/metrics"
 	"dashboard/internal/oauth"
 	"dashboard/internal/oauthstate"
 	"dashboard/internal/pat"
 	"dashboard/internal/ratelimit"
 	"dashboard/internal/server"
 	"dashboard/internal/session"
-	"dashboard/internal/telemetry"
 )
 
 func main() {
 	var rt *appkit.Router
-	store := telemetry.NewStore()
+	store := metrics.NewStore()
 	manifestRoot := config.EnvOr(os.Getenv, "DASHBOARD_MANIFEST_ROOT", "/opt")
 	appkit.Main(appkit.Spec{
 		App:        "dashboard",
@@ -65,9 +65,9 @@ func main() {
 		Workers: []func(context.Context) error{
 			func(ctx context.Context) error {
 				if rt == nil {
-					return fmt.Errorf("dashboard: routes not registered before telemetry worker started")
+					return fmt.Errorf("dashboard: routes not registered before metrics worker started")
 				}
-				return telemetry.Run(ctx, store, telemetry.Config{ManifestRoot: manifestRoot}, rt.Logger())
+				return metrics.Run(ctx, store, metrics.Config{ManifestRoot: manifestRoot}, rt.Logger())
 			},
 		},
 	})
@@ -82,7 +82,7 @@ func main() {
 // A missing required secret or an empty derived resource list is a hard boot
 // failure here (an AS with no resources can mint no token) — appkit propagates
 // the returned error and exits non-zero before listening.
-func registerRoutes(rt *appkit.Router, telemetryStore *telemetry.Store, manifestRoot string) error {
+func registerRoutes(rt *appkit.Router, metricsStore *metrics.Store, manifestRoot string) error {
 	getenv := os.Getenv
 	logger := rt.Logger()
 
@@ -196,7 +196,7 @@ func registerRoutes(rt *appkit.Router, telemetryStore *telemetry.Store, manifest
 		Audit:           auditLog,
 		Resources:       resources,
 		ManifestRoot:    manifestRoot,
-		Telemetry:       telemetryStore,
+		Metrics:         metricsStore,
 		Admins:          admins,
 		RateLimiter:     ratelimit.New(authnRateLimit, authnRateWindow),
 		GrantEvents:     grantevents.New(),

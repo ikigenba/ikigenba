@@ -8,9 +8,10 @@ nginx trust boundary plus apex TLS. Small business scale (≤100 users per box):
 one box, SQLite, in-process everything, deliberately. Deployed at
 `<account>.ikigenba.com/` (first account: `int`). Module path: `dashboard`.
 
-The human web surface is three pages: a logged-out **login** page, a logged-in
-**landing/home** page (connect-your-agent install instructions plus the service
-list), and a session-gated **profile** page reached from the owner's email.
+The human web surface is four pages: a logged-out **login** page, a logged-in
+**landing/home** page (connect-your-agent install instructions plus the clickable
+service list), a session-gated **profile** page reached from the owner's email,
+and a session-gated **metrics** page graphing the box's resource health.
 Personal-access-token management and OAuth-grant management live on the profile
 page, not the landing.
 
@@ -31,7 +32,7 @@ spec contracts and `$ralph` for the unattended build workflow.
 - `cmd/dashboard/`: main entry point (appkit one-binary contract).
 - `internal/`: the app packages (`googleidp`, `oauth`, `oauthstate`,
   `session`, `identity`, `pat`, `ratelimit`, `audit`, `grantevents`, `server`,
-  `db`, `telemetry`, `ids`).
+  `db`, `metrics`, `ids`).
 - `ui/`: embedded HTML templates and static assets (login, grants).
 - `etc/`: `manifest.env`, `deploy.env`, `nginx.conf`.
 - `bin/`: box-side scripts (`start`, `stop`, `secrets`, `teardown`).
