@@ -51,13 +51,25 @@ func TestAppendObservationFailures(t *testing.T) {
 		opts.Registry = Registry{{Kind: "create"}}
 		opts.Observe = func(_ context.Context, ev observe.Event) { got = append(got, ev) }
 	})
-	for _, kind := range []string{"Invalid Kind", "delete"} {
+	type rejectedAttempt struct {
+		kind          string
+		correlationID string
+		err           error
+	}
+	attempts := []rejectedAttempt{
+		{kind: "Invalid Kind", correlationID: correlation.New()},
+		{kind: "delete", correlationID: correlation.New()},
+	}
+	for i := range attempts {
+		attempt := &attempts[i]
 		tx, err := db.Begin()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := o.Append(context.Background(), tx, Event{Kind: kind, Payload: json.RawMessage(`{}`)}); err == nil {
-			t.Fatalf("Append kind %q unexpectedly succeeded", kind)
+		ctx := correlation.WithContext(context.Background(), attempt.correlationID)
+		attempt.err = o.Append(ctx, tx, Event{Kind: attempt.kind, Payload: json.RawMessage(`{}`)})
+		if attempt.err == nil {
+			t.Fatalf("Append kind %q unexpectedly succeeded", attempt.kind)
 		}
 		_ = tx.Rollback()
 	}
@@ -66,8 +78,13 @@ func TestAppendObservationFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	// R-V0AJ-QX4O
-	if len(got) != 2 || got[0].Err == nil || got[1].Err == nil || got[0].EventID != "" || got[1].EventID != "" || rows != 0 {
+	if len(got) != len(attempts) || rows != 0 {
 		t.Fatalf("failure observations = %+v; inserted rows = %d", got, rows)
+	}
+	for i, attempt := range attempts {
+		if got[i].Kind != attempt.kind || got[i].CorrelationID != attempt.correlationID || got[i].Err != attempt.err || got[i].EventID != "" {
+			t.Fatalf("failure observation %d = %+v; want kind %q, correlation %q, exact Append error %v, and no event id", i, got[i], attempt.kind, attempt.correlationID, attempt.err)
+		}
 	}
 }
 
