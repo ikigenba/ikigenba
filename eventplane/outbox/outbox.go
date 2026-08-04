@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"eventplane/correlation"
 	"eventplane/routing"
 )
 
@@ -164,7 +165,7 @@ func (o *Outbox) Generation() string { return o.generation }
 // Append does not signal the doorbell: the row is not visible to readers until
 // the caller commits, so the caller invokes Ring AFTER a successful Commit
 // (§4.3).
-func (o *Outbox) Append(tx *sql.Tx, ev Event) error {
+func (o *Outbox) Append(ctx context.Context, tx *sql.Tx, ev Event) error {
 	if tx == nil {
 		return errors.New("outbox: Append requires a transaction")
 	}
@@ -180,9 +181,9 @@ func (o *Outbox) Append(tx *sql.Tx, ev Event) error {
 	}
 	eventID := newULID()
 	createdAt := o.now().UTC().Format(time.RFC3339Nano)
-	_, err := tx.Exec(
-		`INSERT INTO outbox (event_id, kind, subject, payload, created_at) VALUES (?, ?, ?, ?, ?)`,
-		eventID, ev.Kind, ev.Subject, string(ev.Payload), createdAt,
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO outbox (event_id, kind, subject, payload, created_at, correlation_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		eventID, ev.Kind, ev.Subject, string(ev.Payload), createdAt, correlation.FromContext(ctx),
 	)
 	if err != nil {
 		return fmt.Errorf("outbox: append %s: %w", ev.Kind, err)
@@ -212,12 +213,13 @@ func (o *Outbox) subscribe() <-chan struct{} {
 
 // eventRow is one outbox row as read for the feed.
 type eventRow struct {
-	seq       int64
-	eventID   string
-	kind      string
-	subject   string
-	payload   string
-	createdAt string
+	seq           int64
+	eventID       string
+	kind          string
+	subject       string
+	payload       string
+	createdAt     string
+	correlationID string
 }
 
 // fetch returns up to limit events strictly after afterSeq, in seq order
@@ -226,7 +228,7 @@ type eventRow struct {
 // memory bounded and the backlog on disk (§6.1).
 func (o *Outbox) fetch(ctx context.Context, afterSeq int64, limit int) ([]eventRow, int64, error) {
 	rows, err := o.db.QueryContext(ctx,
-		`SELECT seq, event_id, kind, subject, payload, created_at
+		`SELECT seq, event_id, kind, subject, payload, created_at, correlation_id
 		   FROM outbox
 		  WHERE seq > ?
 		  ORDER BY seq
@@ -240,7 +242,7 @@ func (o *Outbox) fetch(ctx context.Context, afterSeq int64, limit int) ([]eventR
 	var out []eventRow
 	for rows.Next() {
 		var r eventRow
-		if err := rows.Scan(&r.seq, &r.eventID, &r.kind, &r.subject, &r.payload, &r.createdAt); err != nil {
+		if err := rows.Scan(&r.seq, &r.eventID, &r.kind, &r.subject, &r.payload, &r.createdAt, &r.correlationID); err != nil {
 			return nil, afterSeq, fmt.Errorf("outbox: scan: %w", err)
 		}
 		out = append(out, r)

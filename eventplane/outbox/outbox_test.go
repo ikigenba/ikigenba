@@ -18,14 +18,14 @@ func TestAppendGatesDeclaredFamilyKinds(t *testing.T) {
 	// R-3O28-8XN2
 	o, db := newMemOutbox(t, func(opts *Options) { opts.Registry = Registry{{Kind: "create"}} })
 	tx, _ := db.BeginTx(context.Background(), nil)
-	if err := o.Append(tx, Event{Kind: "create", Subject: "/anything", Payload: json.RawMessage(`{}`)}); err != nil {
+	if err := o.Append(context.Background(), tx, Event{Kind: "create", Subject: "/anything", Payload: json.RawMessage(`{}`)}); err != nil {
 		t.Fatalf("declared kind rejected: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	tx, _ = db.BeginTx(context.Background(), nil)
-	err := o.Append(tx, Event{Kind: "delete", Payload: json.RawMessage(`{}`)})
+	err := o.Append(context.Background(), tx, Event{Kind: "delete", Payload: json.RawMessage(`{}`)})
 	_ = tx.Rollback()
 	if err == nil || !strings.Contains(err.Error(), "delete") || !strings.Contains(err.Error(), "create") {
 		t.Fatalf("undeclared error = %v; want rejected kind and declared kinds", err)
@@ -34,7 +34,7 @@ func TestAppendGatesDeclaredFamilyKinds(t *testing.T) {
 	ungated, db2 := newMemOutbox(t)
 	tx, _ = db2.BeginTx(context.Background(), nil)
 	defer tx.Rollback()
-	if err := ungated.Append(tx, Event{Kind: "delete", Payload: json.RawMessage(`{}`)}); err != nil {
+	if err := ungated.Append(context.Background(), tx, Event{Kind: "delete", Payload: json.RawMessage(`{}`)}); err != nil {
 		t.Fatalf("empty registry constrained Append: %v", err)
 	}
 }
@@ -71,7 +71,7 @@ func appendOne(t *testing.T, o *Outbox, db *sql.DB, typ string) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if err := o.Append(tx, Event{Kind: typ, Payload: json.RawMessage(`{"k":"v"}`)}); err != nil {
+	if err := o.Append(context.Background(), tx, Event{Kind: typ, Payload: json.RawMessage(`{"k":"v"}`)}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -84,7 +84,7 @@ func TestAppendValidatesRoutingAddress(t *testing.T) {
 	o, db := newMemOutbox(t)
 	for _, kind := range []string{"", "Create", "file created"} {
 		tx, _ := db.Begin()
-		err := o.Append(tx, Event{Kind: kind, Payload: json.RawMessage(`{}`)})
+		err := o.Append(context.Background(), tx, Event{Kind: kind, Payload: json.RawMessage(`{}`)})
 		_ = tx.Rollback()
 		// R-39FF-NOQQ
 		if err == nil || !strings.Contains(err.Error(), "kind") || !strings.Contains(err.Error(), fmt.Sprintf("%q", kind)) {
@@ -96,7 +96,7 @@ func TestAppendValidatesRoutingAddress(t *testing.T) {
 		valid   bool
 	}{{"bills/x.pdf", false}, {"", true}, {"/bills/x.pdf", true}} {
 		tx, _ := db.Begin()
-		err := o.Append(tx, Event{Kind: "run.succeeded", Subject: tc.subject, Payload: json.RawMessage(`{}`)})
+		err := o.Append(context.Background(), tx, Event{Kind: "run.succeeded", Subject: tc.subject, Payload: json.RawMessage(`{}`)})
 		_ = tx.Rollback()
 		// R-3ANC-1GHF
 		if (err == nil) != tc.valid {
@@ -125,7 +125,7 @@ func TestSchemaStoresKindAndSubjectWithoutType(t *testing.T) {
 	}
 	_ = rows.Close()
 	tx, _ := db.Begin()
-	if err := o.Append(tx, Event{Kind: "run.succeeded", Subject: "/bills/x.pdf", Payload: json.RawMessage(`{}`)}); err != nil {
+	if err := o.Append(context.Background(), tx, Event{Kind: "run.succeeded", Subject: "/bills/x.pdf", Payload: json.RawMessage(`{}`)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -223,7 +223,7 @@ func TestConcurrencyStress(t *testing.T) {
 					t.Errorf("begin: %v", err)
 					return
 				}
-				if err := o.Append(tx, Event{Kind: "contact.created", Payload: json.RawMessage(`{}`)}); err != nil {
+				if err := o.Append(context.Background(), tx, Event{Kind: "contact.created", Payload: json.RawMessage(`{}`)}); err != nil {
 					t.Errorf("append: %v", err)
 					tx.Rollback()
 					return

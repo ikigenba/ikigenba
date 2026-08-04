@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"eventplane/correlation"
 )
 
 // sseConn is a minimal test client for the SSE feed: it reads complete frames
@@ -104,12 +106,18 @@ func feedServer(t *testing.T, o *Outbox) string {
 func appendAddress(t *testing.T, o *Outbox, db interface {
 	Begin() (*sql.Tx, error)
 }, kind, subject string) {
+	appendAddressContext(t, context.Background(), o, db, kind, subject)
+}
+
+func appendAddressContext(t *testing.T, ctx context.Context, o *Outbox, db interface {
+	Begin() (*sql.Tx, error)
+}, kind, subject string) {
 	t.Helper()
 	tx, err := db.Begin()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := o.Append(tx, Event{Kind: kind, Subject: subject, Payload: json.RawMessage(`{"n":1}`)}); err != nil {
+	if err := o.Append(ctx, tx, Event{Kind: kind, Subject: subject, Payload: json.RawMessage(`{"n":1}`)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -120,7 +128,8 @@ func appendAddress(t *testing.T, o *Outbox, db interface {
 
 func TestFeedEnvelopeCanonicalKeyAndStableReplay(t *testing.T) {
 	o, db := newMemOutbox(t, func(opts *Options) { opts.Source = "dropbox" })
-	appendAddress(t, o, db, "create", "/bills/a.pdf")
+	appendAddressContext(t, correlation.WithContext(context.Background(), correlation.New()), o, db, "create", "/bills/a.pdf")
+	appendAddress(t, o, db, "create", "/bills/b.pdf")
 	url := feedServer(t, o)
 
 	firstConn := dialFeed(t, url, http.Header{})
@@ -132,7 +141,7 @@ func TestFeedEnvelopeCanonicalKeyAndStableReplay(t *testing.T) {
 	if err := json.Unmarshal([]byte(dataOf(first)), &env); err != nil {
 		t.Fatal(err)
 	}
-	wantKeys := []string{"id", "source", "time", "kind", "subject", "payload"}
+	wantKeys := []string{"id", "source", "time", "kind", "subject", "correlation_id", "payload"}
 	// R-3D34-SZYT
 	if len(env) != len(wantKeys) {
 		t.Fatalf("envelope keys = %v", env)
@@ -140,6 +149,20 @@ func TestFeedEnvelopeCanonicalKeyAndStableReplay(t *testing.T) {
 	for _, key := range wantKeys {
 		if _, ok := env[key]; !ok {
 			t.Fatalf("envelope missing %q: %v", key, env)
+		}
+	}
+	uncorrelated := firstConn.next(t)
+	var secondEnv map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(dataOf(uncorrelated)), &secondEnv); err != nil {
+		t.Fatal(err)
+	}
+	// R-3D34-SZYT
+	if len(secondEnv) != len(wantKeys) || string(secondEnv["correlation_id"]) != `""` {
+		t.Fatalf("uncorrelated envelope keys/value = %v", secondEnv)
+	}
+	for _, key := range wantKeys {
+		if _, ok := secondEnv[key]; !ok {
+			t.Fatalf("uncorrelated envelope missing %q: %v", key, secondEnv)
 		}
 	}
 	// R-3EB1-6RPI

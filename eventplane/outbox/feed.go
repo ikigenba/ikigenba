@@ -26,12 +26,13 @@ const (
 // envelope is the uniform event envelope serialized into each event frame's
 // `data:` line (§8.3). Payload is opaque to the library.
 type envelope struct {
-	ID      string          `json:"id"`
-	Source  string          `json:"source"`
-	Time    string          `json:"time"`
-	Kind    string          `json:"kind"`
-	Subject string          `json:"subject"`
-	Payload json.RawMessage `json:"payload"`
+	ID            string          `json:"id"`
+	Source        string          `json:"source"`
+	Time          string          `json:"time"`
+	Kind          string          `json:"kind"`
+	Subject       string          `json:"subject"`
+	CorrelationID string          `json:"correlation_id"`
+	Payload       json.RawMessage `json:"payload"`
 }
 
 // FeedHandler returns the GET /feed SSE handler (§7, §8, §10).
@@ -161,12 +162,13 @@ func (o *Outbox) stream(ctx context.Context, w io.Writer, rc *http.ResponseContr
 // envelope as a single compact JSON data: line.
 func (o *Outbox) eventFrame(row eventRow) string {
 	env := envelope{
-		ID:      row.eventID,
-		Source:  o.source,
-		Time:    row.createdAt,
-		Kind:    row.kind,
-		Subject: row.subject,
-		Payload: json.RawMessage(row.payload),
+		ID:            row.eventID,
+		Source:        o.source,
+		Time:          row.createdAt,
+		Kind:          row.kind,
+		Subject:       row.subject,
+		CorrelationID: row.correlationID,
+		Payload:       json.RawMessage(row.payload),
 	}
 	// json.Marshal emits compact, single-line JSON with no embedded newlines —
 	// exactly one data: line per event (§8.1).
