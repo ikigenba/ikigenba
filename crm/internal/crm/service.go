@@ -177,7 +177,7 @@ func (s *Service) Save(ctx context.Context, typ, id string, fields []byte, force
 			return Summary{}, err
 		}
 		for _, ev := range events {
-			if err := s.Outbox.Append(tx, ev); err != nil {
+			if err := s.Outbox.Append(ctx, tx, ev); err != nil {
 				return Summary{}, err
 			}
 		}

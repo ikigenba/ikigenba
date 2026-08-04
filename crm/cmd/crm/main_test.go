@@ -720,6 +720,44 @@ func TestNginxSessionLocationsOptIntoLoginBounce(t *testing.T) {
 	}
 }
 
+func TestNginxProxyLocationsForwardTrustedCorrelationID(t *testing.T) {
+	conf := readNginxConfig(t)
+
+	// R-X9B0-30E7
+	for name, location := range map[string]string{
+		"landing": "location = /srv/crm/ {",
+		"static":  "location /srv/crm/static/ {",
+		"service": "location /srv/crm/ {",
+	} {
+		t.Run(name, func(t *testing.T) {
+			block := nginxLocationBlock(t, conf, location)
+			normalized := strings.Join(strings.Fields(block), " ")
+			for _, want := range []string{
+				"auth_request_set $crm_correlation $upstream_http_x_correlation_id;",
+				"proxy_set_header X-Correlation-Id $crm_correlation;",
+			} {
+				if !strings.Contains(normalized, want) {
+					t.Fatalf("%s location missing %q:\n%s", name, want, block)
+				}
+			}
+		})
+	}
+
+	// R-XAIW-GS4W
+	prm := nginxLocationBlock(t, conf, "location = /srv/crm/.well-known/oauth-protected-resource {")
+	if !strings.Contains(prm, `proxy_set_header X-Correlation-Id "";`) {
+		t.Fatalf("ungated PRM location does not clear the client correlation id:\n%s", prm)
+	}
+
+	// R-XCYP-8BMA
+	const correlationDirective = "proxy_set_header X-Correlation-Id"
+	correlationCount := strings.Count(conf, correlationDirective)
+	proxyCount := strings.Count(conf, "proxy_pass http://127.0.0.1")
+	if correlationCount != proxyCount || correlationCount != 4 {
+		t.Fatalf("correlation header directives = %d, loopback proxy_pass directives = %d; want 4 each", correlationCount, proxyCount)
+	}
+}
+
 func freeTCPPort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

@@ -12,18 +12,17 @@ import (
 )
 
 // R-8JX3-TO9U
-// TestOutboxMigrationMatchesLibraryDDL guards Decision 3: the outbox table DDL
-// is OWNED by the eventplane library (outbox.SchemaSQL); crm's 003_outbox.sql
-// migration only applies it. If the two drift, every producer's outbox is no
-// longer identical — so this test fails loudly the moment they diverge.
-func TestOutboxMigrationMatchesLibraryDDL(t *testing.T) {
-	body, err := migrationsFS.ReadFile("migrations/20260712160534_outbox_routing.sql")
+// TestOutboxMigrationsMatchLibraryDDL guards Decision 3: the outbox table DDL
+// is owned by eventplane. The routing migration created the pre-correlation
+// shape and the later forward-only migration applies the library's upgrade SQL.
+func TestOutboxMigrationsMatchLibraryDDL(t *testing.T) {
+	body, err := migrationsFS.ReadFile("migrations/20260804114457_outbox_correlation_id.sql")
 	if err != nil {
-		t.Fatalf("read routing migration: %v", err)
+		t.Fatalf("read correlation migration: %v", err)
 	}
-	if !strings.Contains(string(body), outbox.SchemaSQL) {
-		t.Fatalf("routing migration does not contain the library DDL verbatim.\n--- outbox.SchemaSQL ---\n%s\n--- migration file ---\n%s",
-			outbox.SchemaSQL, string(body))
+	if !strings.Contains(string(body), outbox.AddCorrelationIDSQL) {
+		t.Fatalf("correlation migration does not contain the library upgrade DDL verbatim.\n--- outbox.AddCorrelationIDSQL ---\n%s\n--- migration file ---\n%s",
+			outbox.AddCorrelationIDSQL, string(body))
 	}
 }
 
@@ -60,7 +59,7 @@ func TestMigrationsCreateRoutedOutbox(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("column rows: %v", err)
 	}
-	if !columns["kind"] || !columns["subject"] || columns["type"] {
-		t.Fatalf("outbox columns = %v, want kind and subject without type", columns)
+	if !columns["kind"] || !columns["subject"] || !columns["correlation_id"] || columns["type"] {
+		t.Fatalf("outbox columns = %v, want kind, subject, and correlation_id without type", columns)
 	}
 }

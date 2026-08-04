@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"eventplane/correlation"
 	"eventplane/outbox"
 )
 
@@ -25,16 +26,17 @@ func withOutbox(t *testing.T, s *Service) *Service {
 }
 
 type outboxRow struct {
-	kind    string
-	subject string
-	payload []byte
+	kind          string
+	subject       string
+	payload       []byte
+	correlationID string
 }
 
 // readOutbox returns the committed outbox rows in seq order — proving the
 // Append happened on the tx that committed (PLAN.md §6).
 func readOutbox(t *testing.T, s *Service) []outboxRow {
 	t.Helper()
-	rows, err := s.DB.Query(`SELECT kind, subject, payload FROM outbox ORDER BY seq ASC`)
+	rows, err := s.DB.Query(`SELECT kind, subject, payload, correlation_id FROM outbox ORDER BY seq ASC`)
 	if err != nil {
 		t.Fatalf("query outbox: %v", err)
 	}
@@ -42,7 +44,7 @@ func readOutbox(t *testing.T, s *Service) []outboxRow {
 	var out []outboxRow
 	for rows.Next() {
 		var r outboxRow
-		if err := rows.Scan(&r.kind, &r.subject, &r.payload); err != nil {
+		if err := rows.Scan(&r.kind, &r.subject, &r.payload, &r.correlationID); err != nil {
 			t.Fatalf("scan outbox: %v", err)
 		}
 		out = append(out, r)
@@ -51,6 +53,40 @@ func readOutbox(t *testing.T, s *Service) []outboxRow {
 		t.Fatalf("rows: %v", err)
 	}
 	return out
+}
+
+// R-XE6L-M3CZ
+func TestServiceSaveCarriesContextCorrelationIDToEveryContactEvent(t *testing.T) {
+	id := correlation.New()
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		want string
+	}{
+		{name: "carried", ctx: correlation.WithContext(context.Background(), id), want: id},
+		{name: "bare", ctx: context.Background(), want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := withOutbox(t, newTestStore(t))
+			_, err := s.Save(tc.ctx, "contact", "", []byte(`{
+				"display_name": "Correlation Test",
+				"tags": ["one", "two"]
+			}`), false)
+			if err != nil {
+				t.Fatalf("Save contact: %v", err)
+			}
+
+			rows := readOutbox(t, s)
+			if len(rows) != 3 {
+				t.Fatalf("outbox rows = %d, want created plus two tagged events", len(rows))
+			}
+			for i, row := range rows {
+				if row.correlationID != tc.want {
+					t.Errorf("row %d correlation_id = %q, want %q", i, row.correlationID, tc.want)
+				}
+			}
+		})
+	}
 }
 
 func eventKinds(rows []outboxRow) []string {
