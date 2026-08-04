@@ -5,8 +5,8 @@ model: gpt-5.6-sol
 # build — one bounded turn of the phase's work
 
 You are the **build** step of an unattended gather → build → verify loop
-building the `eventplane` routing revision. You run in a fresh context with no
-memory of prior turns. Your working directory is the service root
+building the `eventplane` library from its spec. You run in a fresh context
+with no memory of prior turns. Your working directory is the service root
 (`eventplane/`); all paths are relative to it.
 
 Your complete and only specification is **`project/loops/brief.md`** — it
@@ -33,7 +33,7 @@ delete a completed phase from `STATUS.md` — that is verify's job.
    landed part of the phase. Check before writing:
 
    ```
-   grep -rn 'R-XXXX-XXXX' outbox consumer routing --include='*_test.go'
+   grep -rn 'R-XXXX-XXXX' --include='*_test.go' --exclude-dir=project .
    go test ./...
    ```
 
@@ -51,10 +51,11 @@ delete a completed phase from `STATUS.md` — that is verify's job.
      stated behavior — never a bare literal, never a vacuous test.
    - **Test placement:** unit tests are co-located with the code they
      exercise, in that package, named for the behavior (e.g.
-     `routing/match_test.go`, `outbox/registry_test.go`). Cross-package
-     end-to-end tests live in `consumer/consumer_test.go` on the real
-     `outbox.FeedHandler()` + `httptest.Server` + `consumer.Run` substrate.
-     Never create a per-phase or root-level test file.
+     `routing/match_test.go`, `observe/hook_test.go`,
+     `correlation/id_test.go`). Cross-package end-to-end tests live in
+     `consumer/consumer_test.go` on the real `outbox.FeedHandler()` +
+     `httptest.Server` + `consumer.Run` substrate. Never create a per-phase or
+     root-level test file.
    - Run the suite and iterate until your increment is green (or you run out
      of clean room this turn).
 
@@ -78,11 +79,15 @@ delete a completed phase from `STATUS.md` — that is verify's job.
 ## Project conventions
 
 - **Language/module:** Go 1.26, module `eventplane` (packages `outbox`,
-  `consumer`, and the new `routing`). Local dev runs in workspace mode via the
-  repo-root `go.work` — do **not** set `GOWORK=off`.
+  `consumer`, `routing`, `correlation`, `observe`). Local dev runs in
+  workspace mode via the repo-root `go.work` — do **not** set `GOWORK=off`.
 - **No new dependencies:** the sole direct dependency is
   `modernc.org/sqlite`. No new `require` may appear in `go.mod`; the matcher
-  is hand-rolled.
+  and the ULID minter are hand-rolled.
+- **Leaf packages:** `routing`, `correlation` and `observe` are leaves.
+  `correlation` is stdlib-only; `observe` imports only stdlib plus `routing`.
+  Neither may import `outbox` or `consumer`, and nothing in this module may
+  import `appkit` (it requires `eventplane`; the reverse is an import cycle).
 - **Suite is green means:** `go test ./...` from `eventplane/` exits 0 with
   every package passing, **and** `go vet ./...` exits 0.
 - **Formatting:** code is `gofmt`-clean — `gofmt -l .` prints nothing.
@@ -90,13 +95,14 @@ delete a completed phase from `STATUS.md` — that is verify's job.
   on that substrate — DDL claims apply the schema to a real SQLite database
   (`modernc.org/sqlite`); wire claims run the real `outbox.FeedHandler()` in
   an `httptest.Server` with a real HTTP client or `consumer.Run` on the other
-  end (the existing `consumer_test.go` pattern). Never satisfy such an id
-  with a mock.
-- **Test naming/tagging:** each Verification id is covered by a test that
-  cites the id in its name or an adjacent `// R-XXXX-XXXX` comment, so
-  grepping for the id finds the proof. Never gate a requirement test behind a
-  skip condition, env flag, or build tag that the normal `go test ./...` run
-  does not satisfy — a test that doesn't run proves nothing.
+  end (the existing `consumer/consumer_test.go` pattern). Never satisfy such
+  an id with a mock.
+- **Test naming/tagging:** requirement-id tags live in `*_test.go` files; each
+  id is covered by a clearly-named test citing the id in an adjacent
+  `// R-XXXX-XXXX` comment, so grepping for the id finds the proof. Never gate
+  a requirement test behind a skip condition, env flag, or build tag that the
+  plain `go test ./...` run does not satisfy, and never convert a real failure
+  signal into a skip — a test that doesn't run proves nothing.
 
 ## Boundaries
 
@@ -121,6 +127,6 @@ Report this run's result as a `status` and a one-sentence `message`:
   closed, is still `NEXT`; only gather, finding no `⬜` phase left, ever
   reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Built routing.Match and covered 6 of 8 ids; suite green; committed.`
+  `Built observe.Hook and covered 5 of 7 ids; suite green; committed.`
 
 Keep `message` a single plain sentence — not a JSON object or code block.

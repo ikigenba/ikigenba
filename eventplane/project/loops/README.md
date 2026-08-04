@@ -1,8 +1,8 @@
 # eventplane — Build loop (as installed)
 
-The unattended gather → build → verify loop that builds the routing revision
-one phase at a time from `project/design/` + `project/plan/`. Start it from
-the service root (`eventplane/`):
+The unattended gather → build → verify loop that builds `eventplane` one phase
+at a time from `project/design/` + `project/plan/`. Start it from the service
+root (`eventplane/`):
 
 ```
 project/loops/run
@@ -14,8 +14,8 @@ which is exactly:
 exec ralph project/loops/gather.md project/loops/build.md project/loops/verify.md
 ```
 
-`ralph` re-invokes each prompt with a **fresh context** and advances on the
-**final** message's status alone.
+`ralph` runs from the service root, re-invokes each prompt with a **fresh
+context**, and advances on the **final** message's status alone.
 
 ## Status contract
 
@@ -31,7 +31,7 @@ exec ralph project/loops/gather.md project/loops/build.md project/loops/verify.m
 
 | step | reads | writes | commits | deletes completed phase |
 |---|---|---|---|---|
-| gather | `STATUS.md`, one `phase-NN.md`, `INDEX.md`, realized `DNN.md`(s) | brief contract region (fresh briefs only) | never | never |
+| gather | `STATUS.md`, one `phase-NN.md`, `INDEX.md`, realized `DNN.md`(s), dependency signatures | brief contract region (fresh briefs only) | never | never |
 | build | the brief only (both regions) | source + co-located id-tagged tests | yes — the increment | never |
 | verify | the brief + the repo (re-derives truth) | brief feedback region; or deletes the brief | yes — the phase deletion on pass | pass only: removes the `STATUS.md` line + `phase-NN.md` |
 
@@ -95,9 +95,10 @@ R-XXXX-XXXX — <full requirement text verbatim, same line>
 <copied-in exported signatures, or "(none — no dependencies)">
 
 ## Done bar
-<the phase's Done-when conditions verbatim: id-tagged co-located tests,
-go test ./... + go vet ./... exit 0 from eventplane/, gofmt -l . empty,
-plus the phase's own grep/diff checks>
+<the phase's Done-when conditions verbatim: id-tagged co-located tests on the
+required substrate, no skipped/gated requirement test, go test ./... + go vet
+./... exit 0 from eventplane/, gofmt -l . empty, plus the phase's own
+grep/list/diff checks with their exact pass criteria>
 ```
 
 **Feedback region** (verify-owned; overwritten each gap cycle, written empty
