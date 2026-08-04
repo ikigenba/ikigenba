@@ -1,6 +1,7 @@
 package observe_test
 
 import (
+	"encoding/json"
 	"os/exec"
 	"strings"
 	"testing"
@@ -9,24 +10,43 @@ import (
 const observePackage = "eventplane/observe"
 
 func TestDependencyBoundary(t *testing.T) {
-	// Keep the check on the done-bar's -deps traversal. DepOnly distinguishes
-	// actual dependencies from the package explicitly named on the command line.
+	// Keep the check on the done-bar's -deps traversal. Go emits both actual
+	// dependencies and the explicitly named query root; DepOnly and Match make
+	// that distinction machine-readable.
 	output, err := exec.Command(
 		"go", "list", "-deps",
-		"-f", "{{.ImportPath}} {{.DepOnly}}",
+		"-json",
 		observePackage,
 	).CombinedOutput()
 	if err != nil {
 		t.Fatalf("list observe dependency set: %v\n%s", err, output)
 	}
 
-	var internal []string
-	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
-		if strings.HasPrefix(line, "eventplane/") {
-			internal = append(internal, line)
+	type listedPackage struct {
+		ImportPath string
+		DepOnly    bool
+		Match      []string
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(output)))
+	var dependencies []string
+	var root *listedPackage
+	for decoder.More() {
+		var pkg listedPackage
+		if err := decoder.Decode(&pkg); err != nil {
+			t.Fatalf("decode go list output: %v", err)
+		}
+		if pkg.DepOnly && strings.HasPrefix(pkg.ImportPath, "eventplane/") {
+			dependencies = append(dependencies, pkg.ImportPath)
+		}
+		if pkg.ImportPath == observePackage {
+			copy := pkg
+			root = &copy
 		}
 	}
-	if got, want := strings.Join(internal, "\n"), "eventplane/routing true\n"+observePackage+" false"; got != want {
-		t.Fatalf("internal dependency traversal:\n%s\nwant:\n%s", got, want)
+	if got, want := strings.Join(dependencies, "\n"), "eventplane/routing"; got != want {
+		t.Fatalf("internal dependency set:\n%s\nwant:\n%s", got, want)
+	}
+	if root == nil || root.DepOnly || strings.Join(root.Match, " ") != observePackage {
+		t.Fatalf("query root classification: %#v", root)
 	}
 }
