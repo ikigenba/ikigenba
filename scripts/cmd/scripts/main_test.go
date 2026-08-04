@@ -883,6 +883,54 @@ func TestNginxContainsNoPromptsNamedHeritage(t *testing.T) {
 	}
 }
 
+func TestNginxUngatedPRMStripsClientCorrelationID(t *testing.T) {
+	// R-ENOZ-F427
+	conf := readNginxConfig(t)
+	block := nginxLocationBlock(t, conf, "location = /srv/scripts/.well-known/oauth-protected-resource {")
+	strip := `proxy_set_header X-Correlation-Id "";`
+	if strings.Count(block, strip) != 1 {
+		t.Fatalf("PRM bootstrap block must contain exactly one correlation-ID strip directive:\n%s", block)
+	}
+	if strings.Contains(block, "auth_request") || strings.Contains(block, "upstream_http_x_correlation_id") {
+		t.Fatalf("ungated PRM bootstrap block must not contain correlation auth plumbing:\n%s", block)
+	}
+	if strings.Count(conf, strip) != 1 {
+		t.Fatalf("correlation-ID empty-string strip must occur only in the PRM bootstrap block; got %d occurrences", strings.Count(conf, strip))
+	}
+}
+
+func TestNginxGatedLocationsCaptureAndForwardDistinctCorrelationIDs(t *testing.T) {
+	// R-EOWV-SVSW
+	conf := readNginxConfig(t)
+	tiers := []struct {
+		opener   string
+		variable string
+	}{
+		{"location /srv/scripts/ {", "$scripts_corr"},
+		{"location = /srv/scripts/ {", "$scripts_session_corr"},
+		{"location /srv/scripts/static/ {", "$scripts_static_corr"},
+	}
+	for _, tier := range tiers {
+		block := nginxLocationBlock(t, conf, tier.opener)
+		capture := "auth_request_set " + tier.variable + " $upstream_http_x_correlation_id;"
+		forward := "proxy_set_header X-Correlation-Id " + tier.variable + ";"
+		if strings.Count(block, capture) != 1 || strings.Count(block, forward) != 1 {
+			t.Errorf("gated block %q must capture and forward %s exactly once:\n%s", tier.opener, tier.variable, block)
+		}
+		for _, other := range tiers {
+			if other.variable != tier.variable && strings.Contains(block, other.variable) {
+				t.Errorf("gated block %q crosses correlation variable %s into tier for %s:\n%s", tier.opener, other.variable, tier.variable, block)
+			}
+		}
+	}
+	if got := strings.Count(conf, "proxy_set_header X-Correlation-Id"); got != 4 {
+		t.Errorf("correlation header directive count = %d, want 4", got)
+	}
+	if got := strings.Count(conf, "upstream_http_x_correlation_id"); got != 3 {
+		t.Errorf("correlation auth capture count = %d, want 3", got)
+	}
+}
+
 func TestNginxBearerForwardsAllOwnerIdentityHeaders(t *testing.T) {
 	// R-LXR5-KN5G
 	block := nginxLocationBlock(t, readNginxConfig(t), "location /srv/scripts/ {")
