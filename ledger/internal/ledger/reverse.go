@@ -64,7 +64,7 @@ func (s *Service) Reverse(ctx context.Context, id string, date, memo *string, ex
 	if err := s.assertRefAvailable(tx, mirror.ExternalRef); err != nil {
 		return Transaction{}, err
 	}
-	if err := s.persist(tx, mirror); err != nil {
+	if err := s.persist(ctx, tx, mirror); err != nil {
 		return Transaction{}, err
 	}
 	// Stamp the original as reversed. This is the atomic double-reversal guard:

@@ -128,7 +128,7 @@ func TestRecordAndReverse_UseSubjectlessRecordedAddressAtomically(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Outbox.AppendRecorded(tx, orig); err != nil {
+	if err := s.Outbox.AppendRecorded(context.Background(), tx, orig); err != nil {
 		t.Fatalf("append in rollback tx: %v", err)
 	}
 	if err := tx.Rollback(); err != nil {

@@ -1,6 +1,7 @@
 package ledger
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -66,12 +67,12 @@ func NewOutboxProducer(ob *outbox.Outbox) EventSink {
 // exactly one such event — reversal mirrors included, because Record and Reverse
 // share the same persist helper, so a consumer rebuilding balances off the feed
 // never silently misses a correction.
-func (o *outboxProducer) AppendRecorded(tx *sql.Tx, t Transaction) error {
+func (o *outboxProducer) AppendRecorded(ctx context.Context, tx *sql.Tx, t Transaction) error {
 	ev, err := transactionRecordedEvent(t)
 	if err != nil {
 		return err
 	}
-	return o.ob.Append(tx, ev)
+	return o.ob.Append(ctx, tx, ev)
 }
 
 // Ring wakes parked feed connections after commit.

@@ -12,6 +12,17 @@ import (
 func TestOutboxRoutingMigrationMatchesSchemaAndPreservesFrozenMigration(t *testing.T) {
 	// R-G184-OOBO
 	const routingMigration = "migrations/20260712184833_outbox_routing.sql"
+	const correlationMigration = "migrations/20260804115341_add_correlation_id_to_outbox.sql"
+	const routingSchema = `CREATE TABLE outbox (
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id   TEXT    NOT NULL,
+  kind       TEXT    NOT NULL,
+  subject    TEXT    NOT NULL DEFAULT '',
+  payload    TEXT    NOT NULL,
+  created_at TEXT    NOT NULL
+);
+CREATE INDEX idx_outbox_created_at ON outbox(created_at);
+`
 	const frozen003 = `-- Event-plane outbox (event-protocol.md §4.5). The DDL is OWNED by the
 -- eventplane library (outbox.SchemaSQL); this file must stay byte-identical to
 -- that constant — internal/db/migrations_outbox_test.go asserts it. ledger's own
@@ -30,8 +41,15 @@ CREATE INDEX idx_outbox_created_at ON outbox(created_at);
 	if err != nil {
 		t.Fatalf("read %s: %v", routingMigration, err)
 	}
-	if !strings.Contains(string(routing), outbox.SchemaSQL) {
-		t.Fatalf("%s does not contain outbox.SchemaSQL verbatim:\n%s", routingMigration, routing)
+	if !strings.Contains(string(routing), routingSchema) {
+		t.Fatalf("%s does not contain the frozen pre-correlation outbox schema verbatim:\n%s", routingMigration, routing)
+	}
+	correlation, err := migrationsFS.ReadFile(correlationMigration)
+	if err != nil {
+		t.Fatalf("read %s: %v", correlationMigration, err)
+	}
+	if !strings.Contains(string(correlation), outbox.AddCorrelationIDSQL) {
+		t.Fatalf("%s does not contain outbox.AddCorrelationIDSQL verbatim:\n%s", correlationMigration, correlation)
 	}
 
 	body, err := migrationsFS.ReadFile("migrations/003_outbox.sql")
@@ -70,7 +88,7 @@ CREATE INDEX idx_outbox_created_at ON outbox(created_at);
 		}
 		columns[name] = true
 	}
-	if !columns["kind"] || !columns["subject"] || columns["type"] {
-		t.Errorf("outbox columns = %v, want kind+subject and no type", columns)
+	if !columns["kind"] || !columns["subject"] || !columns["correlation_id"] || columns["type"] {
+		t.Errorf("outbox columns = %v, want kind+subject+correlation_id and no type", columns)
 	}
 }

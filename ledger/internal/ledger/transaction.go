@@ -35,7 +35,7 @@ func (s *Service) Record(ctx context.Context, in RecordInput) (Transaction, erro
 	if err := s.assertRefAvailable(tx, t.ExternalRef); err != nil {
 		return Transaction{}, err
 	}
-	if err := s.persist(tx, t); err != nil {
+	if err := s.persist(ctx, tx, t); err != nil {
 		return Transaction{}, err
 	}
 	if err := tx.Commit(); err != nil {

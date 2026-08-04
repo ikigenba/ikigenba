@@ -34,7 +34,7 @@ type Service struct {
 type EventSink interface {
 	// AppendRecorded appends the recorded event for t on tx, atomic
 	// with the journal write.
-	AppendRecorded(tx *sql.Tx, t Transaction) error
+	AppendRecorded(ctx context.Context, tx *sql.Tx, t Transaction) error
 	// Ring wakes parked feed connections; called after a successful commit.
 	Ring()
 }
@@ -68,7 +68,7 @@ func assertBalanced(postings []Posting) error {
 // Record and Reverse, so every committed transaction emits exactly one event,
 // reversal mirrors included (PLAN.md §6). Ring happens after Commit, in the
 // caller.
-func (s *Service) persist(tx *sql.Tx, t Transaction) error {
+func (s *Service) persist(ctx context.Context, tx *sql.Tx, t Transaction) error {
 	if err := assertBalanced(t.Postings); err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (s *Service) persist(tx *sql.Tx, t Transaction) error {
 		}
 	}
 	if s.Outbox != nil {
-		if err := s.Outbox.AppendRecorded(tx, t); err != nil {
+		if err := s.Outbox.AppendRecorded(ctx, tx, t); err != nil {
 			return err
 		}
 	}
