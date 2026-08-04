@@ -1,6 +1,7 @@
 package gmail
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -128,8 +129,8 @@ func buildPayload(ev MailEvent) (outbox.Event, error) {
 // disabled (nil sink) when desired.
 type EventSink interface {
 	// AppendMailEvent appends one mail event on the caller's tx, atomic with the
-	// cursor advance.
-	AppendMailEvent(tx *sql.Tx, ev MailEvent) error
+	// cursor advance. ctx carries the poll cycle's root correlation id.
+	AppendMailEvent(ctx context.Context, tx *sql.Tx, ev MailEvent) error
 	// Ring wakes parked feed connections; called after a successful commit.
 	Ring()
 }
@@ -146,12 +147,12 @@ func NewOutboxProducer(ob *outbox.Outbox) EventSink {
 }
 
 // AppendMailEvent appends one mail event on the caller's tx (decisions §1).
-func (o *outboxProducer) AppendMailEvent(tx *sql.Tx, ev MailEvent) error {
+func (o *outboxProducer) AppendMailEvent(ctx context.Context, tx *sql.Tx, ev MailEvent) error {
 	e, err := buildPayload(ev)
 	if err != nil {
 		return err
 	}
-	return o.ob.Append(tx, e)
+	return o.ob.Append(ctx, tx, e)
 }
 
 // Ring wakes parked feed connections after commit.

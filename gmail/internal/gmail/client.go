@@ -30,6 +30,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"appkit/httpclient"
 )
 
 // Google hosts (decisions §2). Kept as vars (not consts) solely so tests can
@@ -63,7 +65,7 @@ type Client struct {
 func NewClient(cfg Config, httpClient *http.Client) *Client {
 	hc := httpClient
 	if hc == nil {
-		hc = &http.Client{Timeout: 100 * time.Second}
+		hc = httpclient.New(httpclient.Options{Timeout: 100 * time.Second})
 	}
 	c := &Client{cfg: cfg, http: hc}
 	c.token = &tokenSource{

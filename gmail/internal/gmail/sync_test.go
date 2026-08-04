@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	appkitdatabase "appkit/db"
 	"gmail/internal/db"
 
+	"eventplane/correlation"
 	"eventplane/outbox"
 )
 
@@ -195,6 +197,101 @@ func added(ids ...string) []HistoryMessageChange {
 
 func labeled(id string, labelIDs ...string) HistoryLabelChange {
 	return HistoryLabelChange{Message: MessageRef{ID: id, ThreadID: "t-" + id}, LabelIDs: labelIDs}
+}
+
+type correlationSink struct {
+	ids []string
+}
+
+func (s *correlationSink) AppendMailEvent(ctx context.Context, _ *sql.Tx, _ MailEvent) error {
+	s.ids = append(s.ids, correlation.FromContext(ctx))
+	return nil
+}
+
+func (*correlationSink) Ring() {}
+
+func TestPollRootsEachCycleAcrossAppendsAndGmailRequests(t *testing.T) {
+	// R-PJWQ-547Q
+	// R-PL4M-IVYF
+	// R-PMCI-WNP4
+	oldOAuth, oldREST := hostOAuth, hostREST
+	hostOAuth = "https://oauth.invalid/token"
+	hostREST = "https://gmail.invalid/gmail/v1/users/me"
+	t.Cleanup(func() { hostOAuth, hostREST = oldOAuth, oldREST })
+
+	messages := map[string]Message{
+		"one":   msg("one", "t-one", []string{LabelInbox}, map[string]string{"From": "one@example.com"}, "one", "1700000000000"),
+		"two":   msg("two", "t-two", []string{LabelInbox}, map[string]string{"From": "two@example.com"}, "two", "1700000001000"),
+		"three": msg("three", "t-three", []string{LabelInbox}, map[string]string{"From": "three@example.com"}, "three", "1700000002000"),
+	}
+	var requestIDs []string
+	hc := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requestIDs = append(requestIDs, correlation.FromContext(req.Context()))
+		var body []byte
+		var err error
+		switch {
+		case req.URL.Path == "/token":
+			body = []byte(`{"access_token":"access","expires_in":3600}`)
+		case req.URL.Path == "/gmail/v1/users/me/history":
+			body, err = json.Marshal(HistoryListResult{
+				History:   []History{{ID: "2000", MessagesAdded: added("one", "two", "three")}},
+				HistoryID: "2000",
+			})
+		case strings.HasPrefix(req.URL.Path, "/gmail/v1/users/me/messages/"):
+			id := strings.TrimPrefix(req.URL.Path, "/gmail/v1/users/me/messages/")
+			body, err = json.Marshal(messages[id])
+		default:
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("not found")), Header: make(http.Header), Request: req}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(string(body))), Header: make(http.Header), Request: req}, nil
+	})}
+	conn := openTestDB(t)
+	sink := &correlationSink{}
+	eng := NewEngine(EngineOptions{
+		DB:     conn,
+		Store:  NewStore(),
+		Client: NewClient(Config{ClientID: "id", ClientSecret: "secret", RefreshToken: "refresh"}, hc),
+		Sink:   sink,
+	})
+	if err := eng.setCursor(context.Background(), "1000"); err != nil {
+		t.Fatalf("seed cursor: %v", err)
+	}
+
+	if err := eng.Poll(context.Background()); err != nil {
+		t.Fatalf("first Poll: %v", err)
+	}
+	firstRequestCount := len(requestIDs)
+	if len(sink.ids) != 3 {
+		t.Fatalf("first cycle append ids = %v, want three", sink.ids)
+	}
+	firstID := sink.ids[0]
+	if !correlation.Valid(firstID) || sink.ids[1] != firstID || sink.ids[2] != firstID {
+		t.Fatalf("first cycle append ids = %v, want one valid shared id", sink.ids)
+	}
+	for _, id := range requestIDs {
+		if id != firstID {
+			t.Fatalf("first cycle request ids = %v, want %q", requestIDs, firstID)
+		}
+	}
+
+	if err := eng.Poll(context.Background()); err != nil {
+		t.Fatalf("second Poll: %v", err)
+	}
+	if len(sink.ids) != 6 {
+		t.Fatalf("two-cycle append ids = %v, want six", sink.ids)
+	}
+	secondID := sink.ids[3]
+	if !correlation.Valid(secondID) || secondID == firstID || sink.ids[4] != secondID || sink.ids[5] != secondID {
+		t.Fatalf("two-cycle append ids = %v, want distinct valid id shared by second cycle", sink.ids)
+	}
+	for _, id := range requestIDs[firstRequestCount:] {
+		if id != secondID {
+			t.Fatalf("second cycle request ids = %v, want %q", requestIDs[firstRequestCount:], secondID)
+		}
+	}
 }
 
 // ── fresh boot: seed, emit nothing ───────────────────────────────────────────
@@ -410,7 +507,7 @@ func TestProducerFeedFramesCanonicalSubjectlessKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if err := producer.AppendMailEvent(tx, MailEvent{Type: KindReceived, ID: "m1", ThreadID: "t1", From: "alice@example.com", Subject: "hello", Snippet: "hi", OccurredAt: "2026-01-01T00:00:00.000000000Z"}); err != nil {
+	if err := producer.AppendMailEvent(context.Background(), tx, MailEvent{Type: KindReceived, ID: "m1", ThreadID: "t1", From: "alice@example.com", Subject: "hello", Snippet: "hi", OccurredAt: "2026-01-01T00:00:00.000000000Z"}); err != nil {
 		t.Fatalf("append through producer: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -424,7 +521,7 @@ func TestProducerFeedFramesCanonicalSubjectlessKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new feed request: %v", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatalf("get feed: %v", err)
 	}

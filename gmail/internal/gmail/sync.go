@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"strconv"
 	"time"
+
+	"appkit/telemetry"
 )
 
 // sync.go is the producer engine (decisions §1 producer + scheduled + cursor
@@ -51,6 +53,7 @@ type Engine struct {
 	client gmailAPI
 	sink   EventSink
 	log    *slog.Logger
+	rec    *telemetry.Recorder
 
 	interval time.Duration
 }
@@ -63,6 +66,7 @@ type EngineOptions struct {
 	Sink     EventSink // nil disables emission (events still derived, just not appended)
 	Logger   *slog.Logger
 	Interval time.Duration
+	Recorder *telemetry.Recorder
 }
 
 const defaultInterval = 60 * time.Second
@@ -87,6 +91,7 @@ func NewEngine(opts EngineOptions) *Engine {
 		client:   opts.Client,
 		sink:     opts.Sink,
 		log:      log,
+		rec:      opts.Recorder,
 		interval: iv,
 	}
 }
@@ -143,6 +148,7 @@ func (e *Engine) Run(ctx context.Context) error {
 // (fresh boot), emitting nothing for pre-existing mail. When a cursor already
 // exists, it is a no-op (the poll loop resumes from it).
 func (e *Engine) bootstrap(ctx context.Context) error {
+	ctx, _ = e.rec.StartRoot(ctx, "gmail:poll-cycle", nil)
 	_, ok, err := e.readCursor(ctx)
 	if err != nil {
 		return err
@@ -178,6 +184,7 @@ func (e *Engine) seedCursor(ctx context.Context, reason string) error {
 // gap (decisions §"Stale-cursor resync"). No stored cursor (e.g. bootstrap
 // failed earlier) triggers a seed and returns — events flow from the next tick.
 func (e *Engine) Poll(ctx context.Context) error {
+	ctx, _ = e.rec.StartRoot(ctx, "gmail:poll-cycle", nil)
 	cursor, ok, err := e.readCursor(ctx)
 	if err != nil {
 		return err
@@ -375,7 +382,7 @@ func (e *Engine) commit(ctx context.Context, events []MailEvent, newHistoryID st
 
 	if e.sink != nil {
 		for _, ev := range events {
-			if err := e.sink.AppendMailEvent(tx, ev); err != nil {
+			if err := e.sink.AppendMailEvent(ctx, tx, ev); err != nil {
 				return err
 			}
 		}

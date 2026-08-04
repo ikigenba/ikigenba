@@ -85,7 +85,7 @@ func gmailSpec() appkit.Spec {
 				ClientSecret: os.Getenv("GMAIL_CLIENT_SECRET"),
 				RefreshToken: os.Getenv("GMAIL_REFRESH_TOKEN"),
 			}
-			client := gm.NewClient(cfg, nil)
+			client := gm.NewClient(cfg, rt.HTTPClient(100*time.Second))
 			port, err := config.EnvOrInt(os.Getenv, "GMAIL_PORT", registry.MustPort("gmail"))
 			if err != nil {
 				return err
@@ -104,6 +104,7 @@ func gmailSpec() appkit.Spec {
 				Client:   client,
 				Logger:   rt.Logger(),
 				Interval: interval,
+				Recorder: rt.Recorder(),
 			})
 
 			rt.HandleLoopback("GET /attachment", gm.AttachmentHandler(client))

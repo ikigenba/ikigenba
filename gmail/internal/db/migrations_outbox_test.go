@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -18,15 +20,29 @@ func TestOutboxMigrationsMatchLibrarySchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read 003_outbox.sql: %v", err)
 	}
-	if !strings.Contains(string(legacy), "type       TEXT    NOT NULL") {
-		t.Fatal("003_outbox.sql must retain the frozen legacy type column")
+	const frozen003 = `-- Event-plane outbox (event-protocol.md §4.5). The DDL is OWNED by the
+-- eventplane library (outbox.SchemaSQL); this file must stay byte-identical to
+-- that constant — internal/db/migrations_outbox_test.go asserts it. ledger's own
+-- migration runner applies it so there is a single migration authority per DB
+-- file, even though the schema's source of truth lives in the library.
+CREATE TABLE outbox (
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id   TEXT    NOT NULL,
+  type       TEXT    NOT NULL,
+  payload    TEXT    NOT NULL,
+  created_at TEXT    NOT NULL
+);
+CREATE INDEX idx_outbox_created_at ON outbox(created_at);
+`
+	if string(legacy) != frozen003 {
+		t.Fatal("003_outbox.sql differs from its frozen committed body")
 	}
-	body, err := migrationsFS.ReadFile("migrations/20260712190007_outbox_routing.sql")
+	body, err := migrationsFS.ReadFile("migrations/20260804175028_outbox_correlation_id.sql")
 	if err != nil {
-		t.Fatalf("read newest outbox migration: %v", err)
+		t.Fatalf("read correlation migration: %v", err)
 	}
-	if !strings.Contains(string(body), outbox.SchemaSQL) {
-		t.Fatal("newest outbox migration must contain outbox.SchemaSQL verbatim")
+	if !strings.Contains(string(body), outbox.AddCorrelationIDSQL) {
+		t.Fatal("correlation migration must contain outbox.AddCorrelationIDSQL")
 	}
 
 	conn, err := appkitdb.Open(":memory:")
@@ -41,6 +57,38 @@ func TestOutboxMigrationsMatchLibrarySchema(t *testing.T) {
 	if err := appkitdb.Migrate(context.Background(), conn, migs); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	columns := tableColumns(t, conn)
+
+	want, err := appkitdb.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open canonical database: %v", err)
+	}
+	t.Cleanup(func() { want.Close() })
+	if _, err := want.Exec(outbox.SchemaSQL); err != nil {
+		t.Fatalf("create canonical outbox: %v", err)
+	}
+	wantColumns := tableColumns(t, want)
+	if !reflect.DeepEqual(columns, wantColumns) {
+		t.Fatalf("migrated outbox columns = %v, want canonical %v", columns, wantColumns)
+	}
+	if columns["type"] {
+		t.Fatalf("legacy type column remains after migration: columns=%v", columns)
+	}
+	var kind, subject string
+	if err := conn.QueryRow(`INSERT INTO outbox (event_id, kind, subject, payload, created_at)
+		VALUES ('event', 'received', '', '{}', 'now')
+		RETURNING kind, subject`).Scan(&kind, &subject); err != nil {
+		t.Fatalf("insert current outbox shape: %v", err)
+	}
+	if kind != "received" || subject != "" {
+		t.Fatalf("routed row = (%q, %q), want (received, empty subject)", kind, subject)
+	}
+}
+
+func tableColumns(t *testing.T, conn interface {
+	Query(string, ...any) (*sql.Rows, error)
+}) map[string]bool {
+	t.Helper()
 	columns := map[string]bool{}
 	rows, err := conn.Query(`PRAGMA table_info(outbox)`)
 	if err != nil {
@@ -60,21 +108,5 @@ func TestOutboxMigrationsMatchLibrarySchema(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate outbox columns: %v", err)
 	}
-	for _, name := range []string{"seq", "event_id", "kind", "subject", "payload", "created_at"} {
-		if !columns[name] || !strings.Contains(outbox.SchemaSQL, name) {
-			t.Fatalf("migrated outbox and library schema must both contain %q: columns=%v", name, columns)
-		}
-	}
-	if columns["type"] {
-		t.Fatalf("legacy type column remains after migration: columns=%v", columns)
-	}
-	var kind, subject string
-	if err := conn.QueryRow(`INSERT INTO outbox (event_id, kind, subject, payload, created_at)
-		VALUES ('event', 'received', '', '{}', 'now')
-		RETURNING kind, subject`).Scan(&kind, &subject); err != nil {
-		t.Fatalf("insert current outbox shape: %v", err)
-	}
-	if kind != "received" || subject != "" {
-		t.Fatalf("routed row = (%q, %q), want (received, empty subject)", kind, subject)
-	}
+	return columns
 }
