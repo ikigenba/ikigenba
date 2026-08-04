@@ -22,14 +22,16 @@ import (
 
 // Config is the resolved universal runtime configuration for one app.
 type Config struct {
-	IP             string // listen interface — loopback in prod (env <APP>_IP)
-	Port           int    // loopback port (env <APP>_PORT, default Spec.Port)
-	LogLevel       string // debug|info|warn|error (env <APP>_LOG_LEVEL)
-	ResourceID     string // canonical resource id, composed from IKIGENBA_DOMAIN+Mount
-	AuthServer     string // dashboard AS base URL, composed from IKIGENBA_DOMAIN
-	DBPath         string // SQLite file (env <APP>_DB_PATH)
-	GenerationPath string // event-plane epoch sidecar (env <APP>_GENERATION_PATH)
-	WWWPath        string // web-asset root (env <APP>_WWW_PATH)
+	IP                 string // listen interface — loopback in prod (env <APP>_IP)
+	Port               int    // loopback port (env <APP>_PORT, default Spec.Port)
+	LogLevel           string // debug|info|warn|error (env <APP>_LOG_LEVEL)
+	ResourceID         string // canonical resource id, composed from IKIGENBA_DOMAIN+Mount
+	AuthServer         string // dashboard AS base URL, composed from IKIGENBA_DOMAIN
+	DBPath             string // SQLite file (env <APP>_DB_PATH)
+	GenerationPath     string // event-plane epoch sidecar (env <APP>_GENERATION_PATH)
+	WWWPath            string // web-asset root (env <APP>_WWW_PATH)
+	TelemetryIngestURL string // suite-wide telemetry ingest endpoint
+	TelemetryEnabled   bool   // suite-wide best-effort recording switch
 }
 
 // Resolve reads the universal env contract for the named app. mount is the app's
@@ -71,15 +73,26 @@ func Resolve(app, mount string, defaultPort int, getenv func(string) string) (Co
 	}
 
 	return Config{
-		IP:             EnvOr(getenv, up+"_IP", "127.0.0.1"),
-		Port:           port,
-		LogLevel:       EnvOr(getenv, up+"_LOG_LEVEL", "info"),
-		ResourceID:     resourceID,
-		AuthServer:     authServer,
-		DBPath:         dbPath,
-		GenerationPath: genPath,
-		WWWPath:        wwwPath,
+		IP:                 EnvOr(getenv, up+"_IP", "127.0.0.1"),
+		Port:               port,
+		LogLevel:           EnvOr(getenv, up+"_LOG_LEVEL", "info"),
+		ResourceID:         resourceID,
+		AuthServer:         authServer,
+		DBPath:             dbPath,
+		GenerationPath:     genPath,
+		WWWPath:            wwwPath,
+		TelemetryIngestURL: EnvOr(getenv, "TELEMETRY_INGEST_URL", registry.BaseURL("telemetry")+"/ingest"),
+		TelemetryEnabled:   telemetryEnabled(getenv("TELEMETRY_ENABLED")),
 	}, nil
+}
+
+func telemetryEnabled(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "0", "false", "no":
+		return false
+	default:
+		return true
+	}
 }
 
 // composeURLs derives RESOURCE_ID and AUTH_SERVER. Production composes them from

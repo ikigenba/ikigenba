@@ -48,6 +48,37 @@ func TestResolve_LocalhostDefaults(t *testing.T) {
 	}
 }
 
+func TestResolve_TelemetrySuiteWideDefaultsAndOverrides(t *testing.T) {
+	// R-1GXN-BPJP
+	defaults, err := Resolve("ledger", "/srv/ledger/", 3101, envFunc(map[string]string{}))
+	if err != nil {
+		t.Fatalf("Resolve defaults: %v", err)
+	}
+	if want := registry.BaseURL("telemetry") + "/ingest"; defaults.TelemetryIngestURL != want {
+		t.Errorf("TelemetryIngestURL = %q, want %q", defaults.TelemetryIngestURL, want)
+	}
+	if defaults.TelemetryIngestURL != "http://127.0.0.1:3008/ingest" {
+		t.Errorf("TelemetryIngestURL = %q, want registry address", defaults.TelemetryIngestURL)
+	}
+	if !defaults.TelemetryEnabled {
+		t.Error("TelemetryEnabled = false, want true by default")
+	}
+
+	overridden, err := Resolve("ledger", "/srv/ledger/", 3101, envFunc(map[string]string{
+		"TELEMETRY_INGEST_URL": "http://sink.example/ingest",
+		"TELEMETRY_ENABLED":    "FaLsE",
+	}))
+	if err != nil {
+		t.Fatalf("Resolve overrides: %v", err)
+	}
+	if overridden.TelemetryIngestURL != "http://sink.example/ingest" {
+		t.Errorf("TelemetryIngestURL override ignored: %q", overridden.TelemetryIngestURL)
+	}
+	if overridden.TelemetryEnabled {
+		t.Error("TelemetryEnabled = true, want false for case-insensitive false")
+	}
+}
+
 func TestResolve_ExplicitOverrideWins(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "var", "data", "ledger.db")
 	genPath := filepath.Join(t.TempDir(), "var", "cache", "ledger.db.generation")
