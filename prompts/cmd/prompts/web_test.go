@@ -460,6 +460,46 @@ func TestNginxSessionLandingForwardsAllOwnerIdentityHeaders(t *testing.T) {
 	}
 }
 
+func TestNginxGatedLocationsCaptureAndForwardCorrelationID(t *testing.T) {
+	// R-HWX8-NVCX
+	conf, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatalf("read nginx conf: %v", err)
+	}
+	text := string(conf)
+	for _, marker := range []string{
+		"location /srv/prompts/ {",
+		"location = /srv/prompts/ {",
+		"location /srv/prompts/ui/ {",
+		"location /srv/prompts/static/ {",
+	} {
+		block := nginxLocationBlock(t, text, marker)
+		for _, want := range []string{
+			"auth_request_set $prompts_corr $upstream_http_x_correlation_id;",
+			"proxy_set_header X-Correlation-Id $prompts_corr;",
+		} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("gated location %q missing %q:\n%s", marker, want, block)
+			}
+		}
+	}
+}
+
+func TestNginxUngatedPRMLocationStripsCorrelationID(t *testing.T) {
+	// R-HY55-1N3M
+	conf, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatalf("read nginx conf: %v", err)
+	}
+	block := nginxLocationBlock(t, string(conf), "location = /srv/prompts/.well-known/oauth-protected-resource {")
+	if want := `proxy_set_header X-Correlation-Id "";`; !strings.Contains(block, want) {
+		t.Fatalf("ungated PRM location missing %q:\n%s", want, block)
+	}
+	if strings.Contains(block, "auth_request_set $prompts_corr") {
+		t.Fatalf("ungated PRM location captures a correlation ID from an auth subrequest:\n%s", block)
+	}
+}
+
 func TestNginxLoginBounceOptInRetainsExistingLocations(t *testing.T) {
 	conf, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
 	if err != nil {
