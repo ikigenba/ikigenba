@@ -1,5 +1,5 @@
 // Package logging configures a suite app's structured logger: log/slog
-// emitting JSON records to a writer at a configured level, plus a request-id
+// emitting JSON records to a writer at a configured level, plus correlation
 // middleware that tags each request and emits begin/end debug records. It also
 // folds in ULID id generation (formerly each service's internal/ids).
 //
