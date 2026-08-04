@@ -10,9 +10,25 @@ import (
 const observePackage = "eventplane/observe"
 
 func TestDependencyBoundary(t *testing.T) {
-	// Keep the check on the done-bar's -deps traversal. Go emits both actual
-	// dependencies and the explicitly named query root; DepOnly and Match make
-	// that distinction machine-readable.
+	// Keep the check grounded in the done-bar's literal traversal. The plain
+	// output contains both the sole internal dependency and the explicitly
+	// named query root; this guards against mistaking the latter for an import.
+	plainOutput, err := exec.Command("go", "list", "-deps", observePackage).CombinedOutput()
+	if err != nil {
+		t.Fatalf("list plain observe dependency traversal: %v\n%s", err, plainOutput)
+	}
+	var internalTraversal []string
+	for _, line := range strings.Split(strings.TrimSpace(string(plainOutput)), "\n") {
+		if strings.HasPrefix(line, "eventplane/") {
+			internalTraversal = append(internalTraversal, line)
+		}
+	}
+	if got, want := strings.Join(internalTraversal, "\n"), "eventplane/routing\n"+observePackage; got != want {
+		t.Fatalf("plain internal traversal:\n%s\nwant:\n%s", got, want)
+	}
+
+	// DepOnly and Match distinguish the dependency from that query root in
+	// machine-readable output.
 	output, err := exec.Command(
 		"go", "list", "-deps",
 		"-json",
