@@ -9,8 +9,24 @@ import (
 const observePackage = "eventplane/observe"
 
 func TestDependencyBoundary(t *testing.T) {
-	// -deps also lists the explicitly queried root. DepOnly selects actual
-	// dependencies, which is the boundary the done bar intends to constrain.
+	plainOutput, err := exec.Command("go", "list", "-deps", observePackage).CombinedOutput()
+	if err != nil {
+		t.Fatalf("list observe dependency traversal: %v\n%s", err, plainOutput)
+	}
+	var traversal []string
+	for _, packagePath := range strings.Fields(string(plainOutput)) {
+		if strings.HasPrefix(packagePath, "eventplane/") {
+			traversal = append(traversal, packagePath)
+		}
+	}
+	// The literal done-bar command includes the explicitly queried root after
+	// its dependencies. Keep that behavior visible so it cannot be mistaken
+	// for an observe import.
+	if got, want := strings.Join(traversal, "\n"), "eventplane/routing\n"+observePackage; got != want {
+		t.Fatalf("internal traversal:\n%s\nwant:\n%s", got, want)
+	}
+
+	// DepOnly selects actual dependencies and excludes that query root.
 	output, err := exec.Command(
 		"go", "list", "-deps",
 		"-f", `{{if .DepOnly}}{{.ImportPath}}{{end}}`,
