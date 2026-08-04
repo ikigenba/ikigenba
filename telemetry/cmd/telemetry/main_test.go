@@ -3,20 +3,30 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	appkitdb "appkit/db"
+	appkitserver "appkit/server"
+	appkittelemetry "appkit/telemetry"
 	"registry"
+	"telemetry/internal/db"
+	"telemetry/internal/ingest"
+	"telemetry/internal/record"
 )
 
 const helperProcessEnv = "TELEMETRY_TEST_HELPER_PROCESS"
@@ -71,6 +81,120 @@ func TestSpecUsesRegistryPortWithoutGoLiteralAndServeHonorsOverride(t *testing.T
 	}
 	assertPortAbsentFromGoSources(t, registryPort)
 	assertServeHonorsPortOverride(t)
+}
+
+func TestIngestPathIsExactlyExcludedAndPostsNeverRecordThemselves(t *testing.T) {
+	spec := telemetrySpec()
+	// R-VOXX-062N
+	if !reflect.DeepEqual(spec.TelemetryExclude, []string{ingest.Path}) {
+		t.Fatalf("TelemetryExclude = %v, want exactly registered ingest path %q", spec.TelemetryExclude, ingest.Path)
+	}
+
+	database, err := appkitdb.Open(filepath.Join(t.TempDir(), "telemetry.db"))
+	if err != nil {
+		t.Fatalf("open real sqlite database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	migrations, err := appkitdb.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appkitdb.Migrate(context.Background(), database, migrations); err != nil {
+		t.Fatal(err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseURL := "http://" + listener.Addr().String()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	recorder := appkittelemetry.New(appkittelemetry.Options{
+		Service: "telemetry", IngestURL: baseURL + ingest.Path, Enabled: true,
+		Capacity: 32, BatchMax: 32, FlushEvery: time.Hour, Logger: logger,
+	})
+	httpServer, err := appkitserver.New(appkitserver.Options{
+		Addr: listener.Addr().String(), Logger: logger,
+		ResourceID: "https://example.test/srv/telemetry/", AuthServer: "https://example.test/",
+		Version: "test", Service: spec.App, Health: spec.Health, DB: database,
+		Register: spec.Handlers, Recorder: recorder, RecordExclude: spec.TelemetryExclude,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- httpServer.Serve(listener) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(ctx)
+		<-serveDone
+	})
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	posted := 0
+	for batchIndex, batchSize := range []int{1, 2, 1} {
+		records := make([]record.Record, batchSize)
+		for i := range records {
+			posted++
+			records[i] = compositionRecord(fmt.Sprintf("01H000000000000000000000%02d", posted))
+		}
+		body, err := json.Marshal(ingest.Request{Records: records, Dropped: int64(batchIndex + 1)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := client.Post(baseURL+ingest.Path, "", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusAccepted {
+			t.Fatalf("ingest POST %d status = %d", batchIndex, response.StatusCode)
+		}
+	}
+	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelClose()
+	if err := recorder.Close(closeCtx); err != nil {
+		t.Fatal(err)
+	}
+
+	store := db.NewStore(database)
+	stored, _, err := store.Search(context.Background(), db.Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// R-VOXX-062N
+	if len(stored) != posted {
+		t.Fatalf("three ingest POSTs stored %d records, want exactly %d", len(stored), posted)
+	}
+	for _, item := range stored {
+		if item.Service == "telemetry" && strings.Contains(item.Op, ingest.Path) {
+			t.Fatalf("ingest POST self-recorded as %+v", item)
+		}
+	}
+
+	health, err := client.Get(baseURL + "/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer health.Body.Close()
+	var envelope struct {
+		Details map[string]any `json:"details"`
+	}
+	if err := json.NewDecoder(health.Body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	if health.StatusCode != http.StatusOK || envelope.Details["dropped_total"] != float64(6) {
+		t.Fatalf("health status=%d details=%v, want dropped_total 6", health.StatusCode, envelope.Details)
+	}
+}
+
+func compositionRecord(id string) record.Record {
+	return record.Record{
+		ID: id, Time: "2026-08-03T04:05:06Z", CorrelationID: "chain-a",
+		Service: "service-a", Kind: record.KindRequest, Op: "widgets.read",
+		Params: json.RawMessage(`{"visible":true}`), Outcome: record.Outcome{Status: "ok"},
+	}
 }
 
 func assertPortAbsentFromGoSources(t *testing.T, port int) {
