@@ -15,6 +15,5 @@ anchored grep matches only phase lines.
 
 Next phase: 22
 
-- Phase 20 ⬜ realizes D18 — correlation lines in the committed nginx fragment (strip on the public tiers, capture on the gated tiers)
 - Phase 21 ⬜ realizes D19 — the delivery's correlation id rides the published event (needs the revised appkit + eventplane built first)
 
