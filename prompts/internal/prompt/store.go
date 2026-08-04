@@ -591,6 +591,17 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 			if err := s.Outbox.Append(appendCtx, tx, ev); err != nil {
 				return fmt.Errorf("prompt: finish run append outcome: %w", err)
 			}
+			// Keep the durable row populated when running against an eventplane
+			// build whose Append accepts correlation context but still uses its
+			// legacy INSERT column list. This is idempotent once Append writes the
+			// same value itself, and last_insert_rowid() is scoped to this tx's
+			// connection.
+			if _, err := tx.ExecContext(appendCtx,
+				`UPDATE outbox SET correlation_id = ? WHERE seq = last_insert_rowid()`,
+				correlationID,
+			); err != nil {
+				return fmt.Errorf("prompt: finish run correlate outcome: %w", err)
+			}
 			emitted = true
 		}
 	}

@@ -586,6 +586,74 @@ func TestExecuteCallsAttachedSuiteToolOnFirstRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRunBoundaryRootsOnceAndArchivesBuiltinToolUse(t *testing.T) {
+	// R-I48M-YHT3
+	fp := &fakeProvider{roundTrips: []*agentkit.RoundTrip{
+		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "toolu_boundary", Name: "Bash", Input: json.RawMessage(`{"command":"true"}`)}),
+		scriptedTextRoundTrip("done"),
+	}}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	r.discover = func(context.Context, string, string, string) []agentkit.MCPServer { return nil }
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	sess := prompt.Prompt{
+		ID:         ids.NewULID(),
+		OwnerID:    "owner-id",
+		OwnerEmail: "owner@example.com",
+		Name:       "boundary task",
+		UserPrompt: "use the sandbox",
+		Config:     prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	if err := store.InsertPrompt(context.Background(), sess); err != nil {
+		t.Fatalf("InsertPrompt: %v", err)
+	}
+	svc := prompt.NewService(store, r.sandbox, runsDir, r)
+	type rootCall struct{ rootID, op string }
+	var roots []rootCall
+	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {
+		roots = append(roots, rootCall{rootID: rootID, op: op})
+		return ctx
+	}
+
+	run, err := svc.Run(context.Background(), sess.OwnerID, sess.ID)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got := waitRun(t, store, sess.ID)
+	if got.Status != prompt.RunSucceeded {
+		t.Fatalf("run status = %q, error=%q; want succeeded", got.Status, got.Error)
+	}
+	if len(roots) != 1 || roots[0].rootID != run.ID || roots[0].op != "run:"+run.ID {
+		t.Fatalf("root boundary calls = %+v, want exactly {%q %q}", roots, run.ID, "run:"+run.ID)
+	}
+
+	callRows, err := store.Calls.List(context.Background(), calls.Filter{GroupID: run.ID})
+	if err != nil {
+		t.Fatalf("list terminal call: %v", err)
+	}
+	if len(callRows) != 1 {
+		t.Fatalf("terminal calls = %+v, want exactly one", callRows)
+	}
+	encodedBoundary, err := json.Marshal(struct {
+		Roots []rootCall
+		Calls []calls.Row
+	}{roots, callRows})
+	if err != nil {
+		t.Fatalf("marshal observed boundary: %v", err)
+	}
+	if strings.Contains(string(encodedBoundary), "Bash") || callRows[0].RequestBody != nil || callRows[0].ResponseBody != nil {
+		t.Fatalf("telemetry boundary leaked builtin tool use: %s", encodedBoundary)
+	}
+
+	records := readRunnerLogRecords(t, run.LogPath)
+	if !hasToolUse(records, "Bash") {
+		t.Fatalf("output.jsonl missing Bash tool_use: %v", logToolEvents(records))
+	}
+}
+
 func TestExecuteFailsWhenAnyAttachedPeerDiscoveryFails(t *testing.T) {
 	// R-ZGFN-9VPF
 	healthy := newRunnerMCPServer(t, "health", nil)

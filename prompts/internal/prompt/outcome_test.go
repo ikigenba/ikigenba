@@ -344,6 +344,82 @@ func TestFinishRun_CancelledEmitsNoEvent(t *testing.T) {
 	}
 }
 
+func TestFinishRunCarriesRunCorrelationIntoAtomicOutcomeAndSkipsCancelled(t *testing.T) {
+	// R-I1SU-6YBP
+	store, conn := newProducerStore(t)
+	ctx := context.Background()
+	_, succeeded := seedRunningRun(t, store, "correlated task")
+	const correlationID = "01K1PHASE53CORRELATION0001"
+	if _, err := conn.Exec(`UPDATE runs SET correlation_id = ? WHERE id = ?`, correlationID, succeeded.ID); err != nil {
+		t.Fatalf("seed succeeded correlation_id: %v", err)
+	}
+	if err := store.FinishRun(ctx, FinishRunInput{RunID: succeeded.ID, Status: RunSucceeded, EndedAt: store.nowStr()}); err != nil {
+		t.Fatalf("FinishRun succeeded: %v", err)
+	}
+
+	rows, err := conn.Query(`SELECT correlation_id, payload FROM outbox`)
+	if err != nil {
+		t.Fatalf("query correlated outbox row: %v", err)
+	}
+	defer rows.Close()
+	var gotCorrelation, payload string
+	count := 0
+	for rows.Next() {
+		count++
+		if err := rows.Scan(&gotCorrelation, &payload); err != nil {
+			t.Fatalf("scan correlated outbox row: %v", err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate correlated outbox rows: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("outbox rows = %d, want exactly one for succeeded run", count)
+	}
+	if gotCorrelation != correlationID {
+		t.Fatalf("outbox correlation_id = %q, want run chain %q", gotCorrelation, correlationID)
+	}
+	if got := decodePayload(t, payload)["run_id"]; got != succeeded.ID {
+		t.Fatalf("outbox run_id = %v, want %s", got, succeeded.ID)
+	}
+
+	_, cancelled := seedRunningRun(t, store, "cancelled correlated task")
+	if _, err := conn.Exec(`UPDATE runs SET correlation_id = ? WHERE id = ?`, "01K1PHASE53CANCELLED00001", cancelled.ID); err != nil {
+		t.Fatalf("seed cancelled correlation_id: %v", err)
+	}
+	if err := store.FinishRun(ctx, FinishRunInput{RunID: cancelled.ID, Status: RunCancelled, EndedAt: store.nowStr()}); err != nil {
+		t.Fatalf("FinishRun cancelled: %v", err)
+	}
+	var outboxCount int
+	if err := conn.QueryRow(`SELECT count(*) FROM outbox`).Scan(&outboxCount); err != nil {
+		t.Fatalf("count outbox after cancellation: %v", err)
+	}
+	if outboxCount != 1 {
+		t.Fatalf("outbox rows after cancellation = %d, want unchanged at one", outboxCount)
+	}
+	cancelledRow, err := store.GetRun(ctx, cancelled.ID)
+	if err != nil || cancelledRow.Status != RunCancelled {
+		t.Fatalf("cancelled terminal row = %+v, err=%v", cancelledRow, err)
+	}
+
+	_, rollback := seedRunningRun(t, store, "atomic correlated task")
+	bad, err := outbox.New(conn, outbox.Options{
+		Source:   "prompts",
+		Registry: outbox.Registry{{Kind: "other.thing", Description: "x", Sample: map[string]string{}}},
+	})
+	if err != nil {
+		t.Fatalf("outbox.New rejecting registry: %v", err)
+	}
+	store.Outbox = bad
+	if err := store.FinishRun(ctx, FinishRunInput{RunID: rollback.ID, Status: RunSucceeded, EndedAt: store.nowStr()}); err == nil {
+		t.Fatal("FinishRun succeeded despite rejected atomic outbox append")
+	}
+	rollbackRow, err := store.GetRun(ctx, rollback.ID)
+	if err != nil || rollbackRow.Status != RunRunning || rollbackRow.EndedAt != "" {
+		t.Fatalf("rolled-back terminal row = %+v, err=%v; want still running", rollbackRow, err)
+	}
+}
+
 // TestFinishRun_AppendFailureRollsBackTerminalWrite is the atomicity invariant:
 // if the outbox Append fails, the run's terminal-state write MUST roll back too
 // (they share one tx). We force the Append failure with a registry that does NOT

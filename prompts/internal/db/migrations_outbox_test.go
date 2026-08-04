@@ -10,17 +10,20 @@ import (
 	"eventplane/outbox"
 )
 
-// TestOutboxRoutingMigrationMatchesLibraryDDL guards the newest routing
+// TestOutboxRoutingMigrationMatchesLibraryDDL guards the newest outbox
 // migration against drift from eventplane's canonical outbox DDL. Historical
 // migrations remain immutable records of their original deployments.
 func TestOutboxRoutingMigrationMatchesLibraryDDL(t *testing.T) {
 	// R-6VKR-5LCR
-	body, err := migrationsFS.ReadFile("migrations/20260712194453_outbox_routing.sql")
+	body, err := migrationsFS.ReadFile("migrations/20260804161003_outbox_correlation.sql")
 	if err != nil {
 		t.Fatalf("read outbox routing migration: %v", err)
 	}
 	if !strings.Contains(string(body), outbox.SchemaSQL) {
-		t.Fatalf("routing migration does not contain outbox.SchemaSQL verbatim:\n%s", body)
+		t.Fatalf("newest outbox migration does not contain outbox.SchemaSQL verbatim:\n%s", body)
+	}
+	if !strings.Contains(string(body), outbox.AddCorrelationIDSQL) {
+		t.Fatalf("newest outbox migration does not contain outbox.AddCorrelationIDSQL verbatim:\n%s", body)
 	}
 
 	conn, err := appkitdb.Open(tempDB(t))
@@ -52,7 +55,7 @@ func TestOutboxRoutingMigrationMatchesLibraryDDL(t *testing.T) {
 		}
 		columns[name] = true
 	}
-	if !columns["kind"] || !columns["subject"] || columns["type"] {
-		t.Fatalf("outbox columns = %#v, want kind+subject and no type", columns)
+	if !columns["kind"] || !columns["subject"] || !columns["correlation_id"] || columns["type"] {
+		t.Fatalf("outbox columns = %#v, want kind+subject+correlation_id and no type", columns)
 	}
 }
