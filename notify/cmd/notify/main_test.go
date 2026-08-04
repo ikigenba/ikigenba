@@ -747,6 +747,46 @@ func TestNginxSessionLocationForwardsFullOwnerHeaderSet(t *testing.T) {
 	}
 }
 
+func TestNginxGatedLocationsForwardMintedCorrelationID(t *testing.T) {
+	// R-VLOW-90H2 — every gated location captures and forwards its own service-prefixed correlation ID.
+	frag := readNginxConfig(t)
+	for location, variable := range map[string]string{
+		"location = /srv/notify/ {":      "$notify_session_correlation_id",
+		"location /srv/notify/static/ {": "$notify_static_correlation_id",
+		"location /srv/notify/ {":        "$notify_correlation_id",
+	} {
+		block := nginxLocationBlock(t, frag, location)
+		assertNginxDirectiveOnce(t, block, "auth_request_set "+variable+" $upstream_http_x_correlation_id;")
+		assertNginxDirectiveOnce(t, block, "proxy_set_header X-Correlation-Id "+variable+";")
+	}
+
+	bearer := nginxLocationBlock(t, frag, "location /srv/notify/ {")
+	for _, directive := range []string{
+		"proxy_set_header X-Owner-Id $notify_owner_id;",
+		"proxy_set_header X-Owner-Email $notify_owner;",
+		"proxy_set_header X-Owner-Name $notify_owner_name;",
+		"proxy_set_header X-Owner-Picture $notify_owner_picture;",
+		"proxy_set_header X-Client-Id $notify_client;",
+	} {
+		assertNginxDirectiveOnce(t, bearer, directive)
+	}
+}
+
+func TestNginxPublicLocationClearsCorrelationID(t *testing.T) {
+	// R-VMWS-MS7R — the public PRM location clears the header and it is set once in each proxying location only.
+	frag := readNginxConfig(t)
+	public := nginxLocationBlock(t, frag, "location = /srv/notify/.well-known/oauth-protected-resource {")
+	assertNginxDirectiveOnce(t, public, `proxy_set_header X-Correlation-Id "";`)
+
+	if got := strings.Count(frag, "proxy_set_header X-Correlation-Id"); got != 4 {
+		t.Errorf("X-Correlation-Id proxy_set_header directive count = %d, want 4", got)
+	}
+	authnError := nginxLocationBlock(t, frag, "location @notify_authn_500 {")
+	if strings.Contains(authnError, "proxy_set_header X-Correlation-Id") {
+		t.Errorf("non-proxying @notify_authn_500 location must not set X-Correlation-Id:\n%s", authnError)
+	}
+}
+
 func assertNginxDirectiveOnce(t *testing.T, block, directive string) {
 	t.Helper()
 	want := strings.Fields(directive)
