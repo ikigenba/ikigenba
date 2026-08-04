@@ -15,7 +15,6 @@ anchored grep matches only phase lines.
 
 Next phase: 08
 
-- Phase 01 ⬜ realizes D1 — Module skeleton, chassis Spec, composition root, manifest and VERSION
 - Phase 02 ⬜ realizes D2 — The record type, the schema, and the append-only store
 - Phase 03 ⬜ realizes D3 — The loopback-only, never-self-recorded ingest endpoint
 - Phase 04 ⬜ realizes D4 — Retention window resolution and the pruner
