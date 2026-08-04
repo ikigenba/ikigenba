@@ -7,16 +7,20 @@ import (
 )
 
 func TestDependencyBoundary(t *testing.T) {
-	output, err := exec.Command("go", "list", "-deps", "eventplane/observe").CombinedOutput()
+	// -deps also lists the package named on the command line. DepOnly is Go's
+	// documented distinction between that package and its actual dependencies.
+	output, err := exec.Command(
+		"go", "list", "-deps",
+		"-f", "{{if .DepOnly}}{{.ImportPath}}{{end}}",
+		"eventplane/observe",
+	).CombinedOutput()
 	if err != nil {
 		t.Fatalf("list observe dependencies: %v\n%s", err, output)
 	}
 
 	var internal []string
 	for _, dependency := range strings.Fields(string(output)) {
-		// go list -deps includes the package being queried. It is not one of
-		// that package's dependencies, so exclude it from the boundary check.
-		if strings.HasPrefix(dependency, "eventplane/") && dependency != "eventplane/observe" {
+		if strings.HasPrefix(dependency, "eventplane/") {
 			internal = append(internal, dependency)
 		}
 	}
