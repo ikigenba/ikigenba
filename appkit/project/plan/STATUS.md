@@ -11,7 +11,6 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 24
 
-- Phase 22 ⬜ realizes D19 — `appkit/httpclient`, the shared instrumented outbound client
 - Phase 23 ⬜ realizes D20 — chain-root helpers and the chassis's recorder reach
 - Phase 21 ⬜ realizes D18 — lifecycle records and event-plane hop recording in `serve`
 
