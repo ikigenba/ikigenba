@@ -1,5 +1,5 @@
-// Package correlation provides correlation identifiers and request-scoped
-// context accessors shared by eventplane users.
+// Package correlation owns the suite-wide correlation identifier carried on
+// request contexts and over HTTP.
 package correlation
 
 import (
@@ -8,66 +8,72 @@ import (
 	"time"
 )
 
-// Header is the HTTP header carrying a correlation id between suite processes.
+// Header is the HTTP header used to propagate a correlation identifier.
 const Header = "X-Correlation-Id"
 
 const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 type contextKey struct{}
 
-// New mints a 26-character Crockford base32 ULID.
+// New returns a 26-character Crockford-base32 ULID.
 func New() string {
-	var data [16]byte
-	milliseconds := uint64(time.Now().UnixMilli())
-	for i := 5; i >= 0; i-- {
-		data[i] = byte(milliseconds)
-		milliseconds >>= 8
-	}
-	if _, err := rand.Read(data[6:]); err != nil {
+	now := uint64(time.Now().UnixMilli())
+	var randomness [10]byte
+	if _, err := rand.Read(randomness[:]); err != nil {
 		panic("correlation: crypto/rand failed: " + err.Error())
 	}
 
 	var id [26]byte
-	// A ULID has 128 significant bits encoded in 130 base32 bits. Treating the
-	// input as if prefixed by two zero bits makes each output character a
-	// straightforward five-bit window, most significant first.
-	for output := range id {
-		value := byte(0)
-		for offset := 0; offset < 5; offset++ {
-			bit := output*5 + offset - 2
-			value <<= 1
-			if bit >= 0 && data[bit/8]&(1<<uint(7-bit%8)) != 0 {
-				value |= 1
-			}
-		}
-		id[output] = alphabet[value]
+	id[0] = alphabet[(now>>45)&7]
+	for i, shift := range [...]uint{40, 35, 30, 25, 20, 15, 10, 5, 0} {
+		id[i+1] = alphabet[(now>>shift)&31]
 	}
+
+	var bits uint32
+	var bitCount uint
+	out := 10
+	for _, b := range randomness {
+		bits = bits<<8 | uint32(b)
+		bitCount += 8
+		for bitCount >= 5 {
+			bitCount -= 5
+			id[out] = alphabet[(bits>>bitCount)&31]
+			out++
+		}
+	}
+
 	return string(id[:])
 }
 
-// Valid reports whether s is a well-formed correlation id.
+// Valid reports whether s has the suite correlation identifier shape.
 func Valid(s string) bool {
 	if len(s) != 26 {
 		return false
 	}
 	for i := range s {
-		if !validCharacter(s[i]) {
+		if !crockfordByte(s[i]) {
 			return false
 		}
 	}
 	return true
 }
 
-func validCharacter(character byte) bool {
-	for i := range alphabet {
-		if character == alphabet[i] {
-			return true
-		}
+func crockfordByte(b byte) bool {
+	if b >= '0' && b <= '9' {
+		return true
 	}
-	return false
+	if b < 'A' || b > 'Z' {
+		return false
+	}
+	switch b {
+	case 'I', 'L', 'O', 'U':
+		return false
+	default:
+		return true
+	}
 }
 
-// WithContext returns a child of ctx carrying id. Invalid ids are ignored.
+// WithContext returns a context carrying id. Invalid identifiers are ignored.
 func WithContext(ctx context.Context, id string) context.Context {
 	if !Valid(id) {
 		return ctx
@@ -75,13 +81,13 @@ func WithContext(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, contextKey{}, id)
 }
 
-// FromContext returns the correlation id carried by ctx, or an empty string.
+// FromContext returns the correlation identifier on ctx, or an empty string.
 func FromContext(ctx context.Context) string {
 	id, _ := ctx.Value(contextKey{}).(string)
 	return id
 }
 
-// Ensure returns an existing correlation id or mints and attaches a new one.
+// Ensure returns the existing context identifier or installs a newly minted one.
 func Ensure(ctx context.Context) (context.Context, string) {
 	if id := FromContext(ctx); id != "" {
 		return ctx, id
