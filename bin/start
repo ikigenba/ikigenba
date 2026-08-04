@@ -17,7 +17,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 RUN_DIR="$repo/tmp"
 MANIFEST_ROOT="$RUN_DIR/opt"
-SERVICES=(dashboard crm ledger notify prompts wiki dropbox cron gmail github scripts sites webhooks repos)
+SERVICES=(dashboard crm ledger notify prompts wiki dropbox cron gmail github scripts sites telemetry webhooks repos)
 PORT_OFFSET="${APPKIT_PORT_OFFSET:-0}"
 mkdir -p "$RUN_DIR/bin"
 
@@ -36,7 +36,7 @@ rewrite_loopback_ports() {
 	local src="$1" dst="$2" base
 	local sed_expr=()
 
-	for base in 3000 3100 3101 3201 3002 3001 3200 3005 3202 3203 3003 3004 3006 3007 8080; do
+	for base in 3000 3100 3101 3201 3002 3001 3200 3005 3202 3203 3003 3004 3006 3007 "$(registry_port telemetry)" 8080; do
 		sed_expr+=(-e "s/127\\.0\\.0\\.1:$base/127.0.0.1:$(port "$base")/g")
 		sed_expr+=(-e "s/localhost:$base/localhost:$(port "$base")/g")
 	done
@@ -46,6 +46,10 @@ rewrite_loopback_ports() {
 
 registry_feed_url() {
 	REGISTRY_ROOT="$MANIFEST_ROOT" "$repo/bin/registry" feed-url "$1"
+}
+
+registry_port() {
+	REGISTRY_ROOT="$MANIFEST_ROOT" "$repo/bin/registry" port "$1"
 }
 
 export_feed_urls() {
@@ -246,6 +250,11 @@ launch_sites() {
 	exec "$RUN_DIR/bin/sites" serve --port "$(port 3004)"
 }
 
+launch_telemetry() {
+	export TELEMETRY_DB_PATH="$RUN_DIR/telemetry.db"
+	exec "$RUN_DIR/bin/telemetry" serve --port "$(port "$(registry_port telemetry)")"
+}
+
 launch_webhooks() {
 	# webhooks holds no secret; the public /in/ ingress self-guards on per-webhook
 	# secrets. DB under tmp/ so it's wiped with bin/stop --clean.
@@ -284,7 +293,7 @@ launch_nginx() {
 		-e "s/listen      \\[::\\]:8080;/listen      [::]:$(port 8080);/" \
 		"$prefix/nginx.conf"
 
-	for svc in crm cron dropbox gmail github ledger notify prompts repos scripts sites webhooks wiki; do
+	for svc in crm cron dropbox gmail github ledger notify prompts repos scripts sites telemetry webhooks wiki; do
 		frag="$repo/$svc/etc/nginx.conf"
 		[ -f "$frag" ] || continue
 		rewrite_loopback_ports "$frag" "$prefix/locations/${svc}.conf"
@@ -328,6 +337,7 @@ run_bg github launch_github
 run_bg prompts launch_prompts
 run_bg scripts launch_scripts
 run_bg sites launch_sites
+run_bg telemetry launch_telemetry
 run_bg webhooks launch_webhooks
 run_bg repos launch_repos
 run_bg wiki launch_wiki
@@ -335,9 +345,9 @@ run_bg notify launch_notify
 run_bg nginx launch_nginx
 
 echo ">> waiting for listeners"
-declare -A PORTS=([dashboard]="$(port 3000)" [crm]="$(port 3100)" [ledger]="$(port 3101)" [notify]="$(port 3201)" [prompts]="$(port 3002)" [dropbox]="$(port 3200)" [wiki]="$(port 3001)" [cron]="$(port 3005)" [gmail]="$(port 3202)" [github]="$(port 3203)" [scripts]="$(port 3003)" [sites]="$(port 3004)" [webhooks]="$(port 3006)" [repos]="$(port 3007)" [nginx]="$(port 8080)")
+declare -A PORTS=([dashboard]="$(port 3000)" [crm]="$(port 3100)" [ledger]="$(port 3101)" [notify]="$(port 3201)" [prompts]="$(port 3002)" [dropbox]="$(port 3200)" [wiki]="$(port 3001)" [cron]="$(port 3005)" [gmail]="$(port 3202)" [github]="$(port 3203)" [scripts]="$(port 3003)" [sites]="$(port 3004)" [telemetry]="$(port "$(registry_port telemetry)")" [webhooks]="$(port 3006)" [repos]="$(port 3007)" [nginx]="$(port 8080)")
 fail=0
-for name in dashboard crm ledger notify prompts dropbox cron gmail github scripts sites webhooks repos wiki nginx; do
+for name in dashboard crm ledger notify prompts dropbox cron gmail github scripts sites telemetry webhooks repos wiki nginx; do
 	port="${PORTS[$name]}"
 	if ! running "$name"; then
 		echo "  ✗ $name exited — see tmp/$name.log"
@@ -355,9 +365,9 @@ done
 cat <<EOF
 
 Suite up. Front door: http://localhost:$(port 8080)  (apex -> dashboard)
-  /srv/crm/  /srv/ledger/  /srv/notify/  /srv/prompts/  /srv/dropbox/  /srv/cron/  /srv/gmail/  /srv/github/  /srv/repos/  /srv/scripts/  /srv/sites/  /srv/webhooks/  /srv/wiki/
+  /srv/crm/  /srv/ledger/  /srv/notify/  /srv/prompts/  /srv/dropbox/  /srv/cron/  /srv/gmail/  /srv/github/  /srv/repos/  /srv/scripts/  /srv/sites/  /srv/telemetry/  /srv/webhooks/  /srv/wiki/
 Loopback:  dashboard :$(port 3000)  crm :$(port 3100)  ledger :$(port 3101)  notify :$(port 3201)  prompts :$(port 3002)
-           dropbox :$(port 3200)  wiki :$(port 3001)  cron :$(port 3005)  gmail :$(port 3202)  github :$(port 3203)  scripts :$(port 3003)  sites :$(port 3004)  webhooks :$(port 3006)  repos :$(port 3007)
+           dropbox :$(port 3200)  wiki :$(port 3001)  cron :$(port 3005)  gmail :$(port 3202)  github :$(port 3203)  scripts :$(port 3003)  sites :$(port 3004)  telemetry :$(port "$(registry_port telemetry)")  webhooks :$(port 3006)  repos :$(port 3007)
 Logs: tmp/<svc>.log   Stop: bin/stop   (bin/stop --clean also wipes tmp/ state)
 EOF
 

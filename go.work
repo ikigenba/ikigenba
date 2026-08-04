@@ -24,6 +24,7 @@ use (
 	./repos
 	./scripts
 	./sites
+	./telemetry
 	./webhooks
 	./wiki
 )
