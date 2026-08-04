@@ -107,6 +107,58 @@ func (s *Service) embedAndStore(ctx context.Context, attr llm.Attribution, p Pag
 	return nil
 }
 
+// DrainEmbeddingCatchUp embeds every page missing a current vector under one
+// self-originated correlation root.
+func (s *Service) DrainEmbeddingCatchUp(ctx context.Context) (int, error) {
+	if s == nil {
+		return 0, fmt.Errorf("wiki: nil service")
+	}
+	if s.pageEmbedder == nil {
+		return 0, nil
+	}
+	return s.drainEmbeddingCandidates(ctx)
+}
+
+func (s *Service) drainEmbeddingCandidates(ctx context.Context) (int, error) {
+	rows, err := s.pages.db.QueryContext(ctx, `
+		SELECT p.id, p.subject_id, p.title, p.body, e.model, e.content_hash
+		FROM pages p
+		LEFT JOIN page_embeddings e ON e.subject_id = p.subject_id
+		ORDER BY p.id`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	type candidate struct {
+		page        Page
+		model, hash *string
+	}
+	var candidates []candidate
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.page.ID, &c.page.SubjectID, &c.page.Title, &c.page.Body, &c.model, &c.hash); err != nil {
+			return 0, err
+		}
+		if c.model == nil || *c.model != s.embedModel || c.hash == nil || *c.hash != pageFingerprint(c.page) {
+			candidates = append(candidates, c)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if len(candidates) == 0 {
+		return 0, nil
+	}
+	rootCtx, groupID := s.recorder.StartRoot(ctx, "wiki.embedding-catch-up", map[string]any{"pages": len(candidates)})
+	attr := llm.Attribution{Origin: "service:wiki", GroupID: groupID}
+	for i, candidate := range candidates {
+		if err := s.embedAndStore(rootCtx, attr, candidate.page); err != nil {
+			return i, err
+		}
+	}
+	return len(candidates), nil
+}
+
 func vectorCount(result *EmbedResult) int {
 	if result == nil {
 		return 0

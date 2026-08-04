@@ -9,10 +9,11 @@ import (
 	"strings"
 
 	"wiki/internal/asksite"
-	"wiki/internal/ids"
 	"wiki/internal/llm"
 	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
+
+	"eventplane/correlation"
 )
 
 const honestEmptyText = "The wiki holds nothing on that question."
@@ -115,7 +116,7 @@ func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error)
 	if owner = strings.TrimSpace(owner); owner != "" {
 		origin = "user:" + owner
 	}
-	attr := llm.Attribution{Origin: origin, GroupID: ids.New()}
+	attr := llm.Attribution{Origin: origin, GroupID: correlation.FromContext(ctx)}
 
 	analysis, err := Analyze(ctx, a.c, a.analyzeSite, attr, question)
 	if err != nil {

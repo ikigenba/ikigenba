@@ -110,8 +110,8 @@ func TestSpecDeclaresServedMCPService(t *testing.T) {
 	if spec.Config == nil {
 		t.Fatal("Config is nil; service would not read LLM configuration")
 	}
-	if len(spec.Workers) != 1 {
-		t.Fatalf("Workers len = %d, want 1", len(spec.Workers))
+	if len(spec.Workers) != 2 {
+		t.Fatalf("Workers len = %d, want ingest and embedding catch-up workers", len(spec.Workers))
 	}
 }
 

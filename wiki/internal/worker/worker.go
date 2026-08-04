@@ -1,7 +1,10 @@
 // Package worker will run asynchronous wiki jobs.
 package worker
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Task is a unit of background work.
 type Task func(context.Context) error
@@ -14,6 +17,10 @@ type Service interface {
 
 type bootSweeper interface {
 	RequeueWorking(ctx context.Context) (int, error)
+}
+
+type embeddingCatchUpService interface {
+	DrainEmbeddingCatchUp(context.Context) (int, error)
 }
 
 // Run processes pending ingest jobs with one worker loop.
@@ -44,6 +51,29 @@ func Run(ctx context.Context, services ...Service) error {
 				return nil
 			}
 			return err
+		}
+	}
+}
+
+// RunEmbeddingCatchUp periodically drains pages whose stored embedding is stale.
+func RunEmbeddingCatchUp(ctx context.Context, svc embeddingCatchUpService) error {
+	if svc == nil {
+		<-ctx.Done()
+		return nil
+	}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		if _, err := svc.DrainEmbeddingCatchUp(ctx); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
 		}
 	}
 }

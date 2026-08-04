@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"eventplane/correlation"
+
 	"wiki/internal/compile"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
@@ -19,9 +21,10 @@ import (
 	"wiki/internal/worker"
 )
 
-func TestWorkerThreadsJobOwnerAndIDThroughExtractCompileAndEmbed(t *testing.T) {
+func TestWorkerThreadsStoredChainThroughExtractCompileAndEmbed(t *testing.T) {
 	// R-183R-9YLK
 	// R-1AJK-1I2Y
+	// R-XP5P-2118
 	ctx := context.Background()
 	conn := migratedWikiDB(t, ctx)
 	defer conn.Close()
@@ -47,7 +50,7 @@ func TestWorkerThreadsJobOwnerAndIDThroughExtractCompileAndEmbed(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL)
+	client := llm.New(server.URL, server.Client())
 	svc := wikidomain.NewService(
 		conn,
 		extract.New(client, llm.CallSite{Stage: "extract", Config: llm.Config{Model: "extract"}}),
@@ -56,9 +59,10 @@ func TestWorkerThreadsJobOwnerAndIDThroughExtractCompileAndEmbed(t *testing.T) {
 		wikidomain.WithPageEmbedder("embed", attributedClientEmbedder{client: client}),
 	)
 	owners := []string{"bob@example.com", ""}
+	chains := []string{"01KZ6V08B73Q7W1G5GR3C2E5MK", "01KZ6V08B73Q7W1G5GR3C2E5MM"}
 	jobs := make([]string, 0, len(owners))
 	for _, owner := range owners {
-		jobID, err := svc.Ingest(ctx, "owner-id", owner, "Ada wrote the note.", "Ada", nil)
+		jobID, err := svc.Ingest(correlation.WithContext(ctx, chains[len(jobs)]), "owner-id", owner, "Ada wrote the note.", "Ada", nil)
 		if err != nil {
 			t.Fatalf("Ingest owner %q: %v", owner, err)
 		}
@@ -76,7 +80,7 @@ func TestWorkerThreadsJobOwnerAndIDThroughExtractCompileAndEmbed(t *testing.T) {
 		if owners[i] != "" {
 			origin = "user:" + owners[i]
 		}
-		groupID := calls[i*3].GroupID
+		groupID := chains[i]
 		for _, call := range calls[i*3 : i*3+3] {
 			if call.Origin != origin || call.GroupID != groupID || groupID == "" || groupID == jobID {
 				t.Fatalf("job %q call = %+v, want origin %q and one non-job correlation group %q", jobID, call, origin, groupID)

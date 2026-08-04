@@ -222,7 +222,7 @@ func serve(provider Provider, embeds *EmbedCapture) (*llm.Client, func()) {
 			"usage": map[string]any{"output": result.Usage.Output + result.Usage.ReasoningOutput},
 		})
 	}))
-	return llm.New(server.URL), server.Close
+	return llm.New(server.URL, server.Client()), server.Close
 }
 
 func cloneVectors(in [][]float32) [][]float32 {

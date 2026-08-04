@@ -7,13 +7,88 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"appkit/httpclient"
+	"appkit/telemetry"
+	"eventplane/correlation"
 )
 
 type fixture struct {
 	Title string `json:"title"`
 	Count int    `json:"count"`
+}
+
+func TestClientPropagatesOnlyContextChainToLoopbackPrompts(t *testing.T) {
+	// R-XLHZ-WPT5
+	type received struct{ path, chain string }
+	var calls []received
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, received{path: r.URL.Path, chain: r.Header.Get(correlation.Header)})
+		if r.URL.Path == "/embed" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"vectors": [][]float32{{1}}})
+			return
+		}
+		writeResponse(t, w, `{"title":"ok"}`, 1)
+	}))
+	defer server.Close()
+	client := New(server.URL, httpclient.New(httpclient.Options{Recorder: &telemetry.Recorder{}, Timeout: -1}))
+	chainID := "01KZ6V08B73Q7W1G5GR3C2E5MK"
+	chainCtx := correlation.WithContext(context.Background(), chainID)
+	for _, ctx := range []context.Context{chainCtx, context.Background()} {
+		if _, err := JSON(ctx, client, CallSite{Stage: "extract"}, Attribution{}, "prompt", nilFixture); err != nil {
+			t.Fatalf("JSON: %v", err)
+		}
+		if _, err := client.Embed(ctx, EmbedSite{Name: "wiki.embed-query", Dims: 1}, Attribution{}, "query", []string{"prompt"}); err != nil {
+			t.Fatalf("Embed: %v", err)
+		}
+	}
+	want := []received{{"/complete", chainID}, {"/embed", chainID}, {"/complete", ""}, {"/embed", ""}}
+	if len(calls) != len(want) {
+		t.Fatalf("calls = %+v, want %+v", calls, want)
+	}
+	for i := range want {
+		if calls[i] != want[i] {
+			t.Fatalf("call %d = %+v, want %+v", i, calls[i], want[i])
+		}
+	}
+}
+
+func TestProductionTreeDoesNotConstructHTTPClients(t *testing.T) {
+	// R-XMPW-AHJU
+	root := filepath.Join("..", "..")
+	var offenders []string
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == "project" || entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(body), "http.Client{") {
+			offenders = append(offenders, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan production tree: %v", err)
+	}
+	if len(offenders) != 0 {
+		t.Fatalf("production constructs private HTTP clients: %v", offenders)
+	}
 }
 
 func TestExtractJSONCarvesFencedAndBareValues(t *testing.T) {
@@ -55,7 +130,7 @@ func TestJSONReturnsValidatedFencedResponse(t *testing.T) {
 	}))
 	defer server.Close()
 	validated := false
-	got, err := JSON(context.Background(), New(server.URL), CallSite{Stage: "extract"}, Attribution{Origin: "service:wiki"}, "prompt", func(v *fixture) error {
+	got, err := JSON(context.Background(), New(server.URL, server.Client()), CallSite{Stage: "extract"}, Attribution{Origin: "service:wiki"}, "prompt", func(v *fixture) error {
 		validated = true
 		if v.Title == "" {
 			return errors.New("title required")
@@ -78,7 +153,7 @@ func TestJSONRetriesBadThenGoodAndErrorsWhenAlwaysBad(t *testing.T) {
 		}
 		writeResponse(t, w, `{"title":"fixed","count":3}`, 1)
 	}))
-	got, err := JSON(context.Background(), New(server.URL), CallSite{MaxParseRetries: 1}, Attribution{}, "prompt", nilFixture)
+	got, err := JSON(context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 1}, Attribution{}, "prompt", nilFixture)
 	server.Close()
 	if err != nil || got.Title != "fixed" || calls != 2 {
 		t.Fatalf("bad then good = %#v, %v, calls=%d", got, err, calls)
@@ -88,7 +163,7 @@ func TestJSONRetriesBadThenGoodAndErrorsWhenAlwaysBad(t *testing.T) {
 		writeResponse(t, w, "still bad", 1)
 	}))
 	defer server.Close()
-	got, err = JSON(context.Background(), New(server.URL), CallSite{MaxParseRetries: 1}, Attribution{}, "prompt", nilFixture)
+	got, err = JSON(context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 1}, Attribution{}, "prompt", nilFixture)
 	if err == nil || got != (fixture{}) {
 		t.Fatalf("always bad = %#v, %v; want zero and error", got, err)
 	}
@@ -107,7 +182,7 @@ func TestJSONCarriesCompleteRequestConfiguration(t *testing.T) {
 	}))
 	defer server.Close()
 	site := CallSite{Stage: "compile", System: "system", Config: Config{Model: "model", Provider: "provider", Temperature: &temp, MaxTokens: 321, Effort: "low", Thinking: &thinking}}
-	if _, err := JSON(context.Background(), New(server.URL), site, Attribution{Origin: "user:a@example.com", GroupID: "group-1"}, "prompt", nilFixture); err != nil {
+	if _, err := JSON(context.Background(), New(server.URL, server.Client()), site, Attribution{Origin: "user:a@example.com", GroupID: "group-1"}, "prompt", nilFixture); err != nil {
 		t.Fatal(err)
 	}
 	if got.Name != "wiki.compile" || got.Origin != "user:a@example.com" || got.GroupID != "group-1" || got.Attempt != 1 || got.Model != "model" || got.Provider != "provider" || got.System != "system" {
@@ -138,7 +213,7 @@ func TestJSONMessagesUsePromptsWireSpelling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := JSON(context.Background(), New(server.URL), CallSite{MaxParseRetries: 1}, Attribution{}, "message body", nilFixture); err != nil {
+	if _, err := JSON(context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 1}, Attribution{}, "message body", nilFixture); err != nil {
 		t.Fatal(err)
 	}
 	if len(rawRequests) != 2 {
@@ -187,7 +262,7 @@ func TestJSONRetryReplaysFullStatelessHistory(t *testing.T) {
 		writeResponse(t, w, `{"title":"fixed"}`, 1)
 	}))
 	defer server.Close()
-	if _, err := JSON(context.Background(), New(server.URL), CallSite{MaxParseRetries: 1}, Attribution{}, "original", nilFixture); err != nil {
+	if _, err := JSON(context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 1}, Attribution{}, "original", nilFixture); err != nil {
 		t.Fatal(err)
 	}
 	if len(requests) != 2 || requests[0].Attempt != 1 || len(requests[0].Messages) != 1 || requests[1].Attempt != 2 || len(requests[1].Messages) != 3 {
@@ -208,7 +283,7 @@ func TestJSONReturns400BodyWithoutRetry(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":"bad model"}`))
 	}))
 	defer server.Close()
-	_, err := JSON[fixture](context.Background(), New(server.URL), CallSite{MaxParseRetries: 3}, Attribution{}, "prompt", nilFixture)
+	_, err := JSON[fixture](context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 3}, Attribution{}, "prompt", nilFixture)
 	if err == nil || !strings.Contains(err.Error(), "bad model") || calls != 1 {
 		t.Fatalf("error=%v calls=%d", err, calls)
 	}
@@ -222,12 +297,12 @@ func TestJSONReturnsProviderAndTransportFailuresWithoutRetry(t *testing.T) {
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = w.Write([]byte(`{"error":"provider unavailable"}`))
 	}))
-	_, err := JSON[fixture](context.Background(), New(server.URL), CallSite{MaxParseRetries: 2}, Attribution{}, "prompt", nilFixture)
+	_, err := JSON[fixture](context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 2}, Attribution{}, "prompt", nilFixture)
 	server.Close()
 	if err == nil || calls != 1 {
 		t.Fatalf("502 error=%v calls=%d", err, calls)
 	}
-	_, err = JSON[fixture](context.Background(), New(server.URL), CallSite{MaxParseRetries: 2}, Attribution{}, "prompt", nilFixture)
+	_, err = JSON[fixture](context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 2}, Attribution{}, "prompt", nilFixture)
 	if err == nil || !strings.Contains(err.Error(), "prompts /complete") {
 		t.Fatalf("transport error=%v", err)
 	}
@@ -242,7 +317,7 @@ func TestJSONReportsTruncationDistinctlyAndDoesNotRetry(t *testing.T) {
 		writeResponse(t, w, `{"title":"partial"`, 10)
 	}))
 	defer server.Close()
-	_, err := JSON[fixture](context.Background(), New(server.URL), CallSite{Config: Config{MaxTokens: 10}, MaxParseRetries: 3}, Attribution{}, "prompt", nilFixture)
+	_, err := JSON[fixture](context.Background(), New(server.URL, server.Client()), CallSite{Config: Config{MaxTokens: 10}, MaxParseRetries: 3}, Attribution{}, "prompt", nilFixture)
 	if !errors.Is(err, ErrTruncated) || calls != 1 {
 		t.Fatalf("error=%v calls=%d", err, calls)
 	}

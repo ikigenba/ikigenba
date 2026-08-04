@@ -72,7 +72,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			conns := wiki.Conns{Read: read, Write: write}
 			llmClient := cfg.LLM
 			if llmClient == nil {
-				llmClient = llm.New(registry.BaseURL("prompts"))
+				llmClient = llm.New(registry.BaseURL("prompts"), rt.HTTPClient(-1))
 			}
 			vectorCache := retrieve.NewVectorCache()
 			cacheEntries, err := wiki.LoadVectorCacheEntries(context.Background(), conns)
@@ -160,6 +160,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 		},
 		Workers: []func(ctx context.Context) error{
 			func(ctx context.Context) error { return worker.Run(ctx, svc) },
+			func(ctx context.Context) error { return worker.RunEmbeddingCatchUp(ctx, svc) },
 		},
 	}
 }

@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 
 	appdb "appkit/db"
+	"eventplane/correlation"
 
 	wikidb "wiki/internal/db"
 	"wiki/internal/llm"
@@ -20,9 +20,8 @@ import (
 	"wiki/internal/wiki"
 )
 
-func TestAskThreadsOwnerAndOneFreshCorrelationIDThroughEveryPromptsCall(t *testing.T) {
-	// R-16VU-W6UV
-	// R-19BN-NQC9
+func TestAskThreadsReceivedChainThroughEveryPromptsCall(t *testing.T) {
+	// R-XNXS-O9AJ
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -55,7 +54,7 @@ func TestAskThreadsOwnerAndOneFreshCorrelationIDThroughEveryPromptsCall(t *testi
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL)
+	client := llm.New(server.URL, server.Client())
 	cache := retrieve.NewVectorCache()
 	cache.Upsert(retrieve.VectorEntry{SubjectID: "subject-ada", Title: "Ada", Vec: []float32{1}})
 	vector := retrieve.NewVectorRetriever(func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error) {
@@ -68,19 +67,20 @@ func TestAskThreadsOwnerAndOneFreshCorrelationIDThroughEveryPromptsCall(t *testi
 	search := retrieve.NewHybridRetriever(nil, vector, nil, nil, retrieve.FusionConfig{})
 	asker := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), client, testExtractSite(), testSynthSite())
 
-	for i := 0; i < 2; i++ {
-		if _, err := asker.Ask(ctx, "alice@example.com", "Who wrote the note?"); err != nil {
+	chains := []string{"01KZ6V08B73Q7W1G5GR3C2E5MK", "01KZ6V08B73Q7W1G5GR3C2E5MM"}
+	for i, chainID := range chains {
+		askCtx := correlation.WithContext(ctx, chainID)
+		if _, err := asker.Ask(askCtx, "alice@example.com", "Who wrote the note?"); err != nil {
 			t.Fatalf("Ask %d: %v", i+1, err)
 		}
 	}
 	if len(calls) != 6 {
 		t.Fatalf("prompts calls = %d, want three per ask", len(calls))
 	}
-	shape := regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
 	for askIndex := 0; askIndex < 2; askIndex++ {
 		group := calls[askIndex*3].GroupID
-		if !shape.MatchString(group) {
-			t.Fatalf("ask %d group_id = %q, want Crockford ULID", askIndex+1, group)
+		if group != chains[askIndex] {
+			t.Fatalf("ask %d group_id = %q, want received chain %q", askIndex+1, group, chains[askIndex])
 		}
 		for _, call := range calls[askIndex*3 : askIndex*3+3] {
 			if call.Origin != "user:alice@example.com" || call.GroupID != group {
@@ -88,8 +88,13 @@ func TestAskThreadsOwnerAndOneFreshCorrelationIDThroughEveryPromptsCall(t *testi
 			}
 		}
 	}
-	if calls[0].GroupID == calls[3].GroupID {
-		t.Fatalf("two asks reused group_id %q", calls[0].GroupID)
+	if _, err := asker.Ask(ctx, "alice@example.com", "Who wrote the note?"); err != nil {
+		t.Fatalf("bare Ask: %v", err)
+	}
+	for _, call := range calls[6:] {
+		if call.GroupID != "" {
+			t.Fatalf("bare-context call = %+v, want no wiki-minted group_id", call)
+		}
 	}
 }
 

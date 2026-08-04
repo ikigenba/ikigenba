@@ -2,12 +2,18 @@ package wiki
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
 
 	appdb "appkit/db"
+	"appkit/httpclient"
+	"appkit/telemetry"
+	"eventplane/correlation"
 
 	wikidb "wiki/internal/db"
 	"wiki/internal/extract"
@@ -142,6 +148,7 @@ func TestProcessNextEmbedsCommittedPageAfterIngest(t *testing.T) {
 	// R-72JI-YQWG
 	// R-73RF-CIN5
 	ctx := context.Background()
+	chainID := "01KZ6V08B73Q7W1G5GR3C2E5MK"
 	conns, cleanup := migratedEmbeddingConns(t, ctx)
 	defer cleanup()
 
@@ -179,7 +186,7 @@ func TestProcessNextEmbedsCommittedPageAfterIngest(t *testing.T) {
 	)
 	svc.newID = sequenceIDs("job-1", "subject-1", "claim-1")
 
-	if _, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "source", "Source", nil); err != nil {
+	if _, err := svc.Ingest(correlation.WithContext(ctx, chainID), "owner-id", "owner@example.com", "source", "Source", nil); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
 	processed, err := svc.ProcessNext(ctx)
@@ -203,6 +210,84 @@ func TestProcessNextEmbedsCommittedPageAfterIngest(t *testing.T) {
 	if embeddings[0].UpdatedAt != time.Date(2026, 6, 25, 13, 0, 3, 0, time.UTC).Unix() {
 		t.Fatalf("updated_at = %d, want post-commit embedding time", embeddings[0].UpdatedAt)
 	}
+	if len(embedder.attrs) != 1 || embedder.attrs[0].GroupID != chainID || embedder.attrs[0].GroupID == "job-1" {
+		t.Fatalf("embed attribution = %+v, want stored chain %q and not job id", embedder.attrs, chainID)
+	}
+}
+
+func TestEmbeddingCatchUpUsesOneFreshRootPerDrainCycle(t *testing.T) {
+	// R-KIH2-R4UC
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	pages := NewPageStore(conn)
+	for _, p := range []Page{
+		{ID: "page-a", SubjectID: "subject-a", Title: "A", Body: "A body"},
+		{ID: "page-b", SubjectID: "subject-b", Title: "B", Body: "B body"},
+		{ID: "page-c", SubjectID: "subject-c", Title: "C", Body: "C body"},
+	} {
+		if err := pages.Upsert(ctx, p); err != nil {
+			t.Fatalf("seed page %s: %v", p.ID, err)
+		}
+	}
+	type promptCall struct {
+		Name    string `json:"name"`
+		GroupID string `json:"group_id"`
+		Header  string
+	}
+	var calls []promptCall
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var call promptCall
+		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		call.Header = r.Header.Get(correlation.Header)
+		calls = append(calls, call)
+		_ = json.NewEncoder(w).Encode(map[string]any{"vectors": [][]float32{{float32(len(calls))}}})
+	}))
+	defer server.Close()
+	hc := httpclient.New(httpclient.Options{Recorder: &telemetry.Recorder{}, Timeout: -1})
+	embedder := sweepPromptsEmbedder{client: llm.New(server.URL, hc)}
+	svc := NewService(conn, nil, nil, time.Now,
+		WithTelemetryRecorder(&telemetry.Recorder{}),
+		WithPageEmbedder("model-a", embedder),
+	)
+	if n, err := svc.DrainEmbeddingCatchUp(ctx); err != nil || n != 3 {
+		t.Fatalf("first drain = %d, %v; want 3, nil", n, err)
+	}
+	first := calls[0].GroupID
+	if !correlation.Valid(first) {
+		t.Fatalf("first cycle group = %q, want valid root", first)
+	}
+	for _, call := range calls[:3] {
+		if call.GroupID != first || call.Header != first || call.Name != "wiki.embed-page" {
+			t.Fatalf("first cycle calls = %+v, want one payload/header root %q", calls[:3], first)
+		}
+	}
+	svc.embedModel = "model-b"
+	if n, err := svc.DrainEmbeddingCatchUp(ctx); err != nil || n != 3 {
+		t.Fatalf("second drain = %d, %v; want 3, nil", n, err)
+	}
+	second := calls[3].GroupID
+	if !correlation.Valid(second) || second == first {
+		t.Fatalf("cycle roots = %q then %q, want distinct valid roots", first, second)
+	}
+	for _, call := range calls[3:] {
+		if call.GroupID != second || call.Header != second || call.Name != "wiki.embed-page" {
+			t.Fatalf("second cycle calls = %+v, want one payload/header root %q", calls[3:], second)
+		}
+	}
+}
+
+type sweepPromptsEmbedder struct{ client *llm.Client }
+
+func (e sweepPromptsEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, _ EmbedRole) (*EmbedResult, error) {
+	vectors, err := e.client.Embed(ctx, llm.EmbedSite{Name: "wiki.embed-page", Model: "embed", Dims: 1}, attr, "document", inputs)
+	if err != nil {
+		return nil, err
+	}
+	return &EmbedResult{Vectors: vectors}, nil
 }
 
 func TestProcessNextKeepsCommittedPageDoneWhenAfterCommitEmbedFails(t *testing.T) {
@@ -284,10 +369,12 @@ type recordingPageEmbedder struct {
 	vectors [][]float32
 	inputs  [][]string
 	roles   []EmbedRole
+	attrs   []llm.Attribution
 	onEmbed func(context.Context, []string, EmbedRole) error
 }
 
-func (e *recordingPageEmbedder) Embed(ctx context.Context, _ llm.Attribution, inputs []string, role EmbedRole) (*EmbedResult, error) {
+func (e *recordingPageEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, role EmbedRole) (*EmbedResult, error) {
+	e.attrs = append(e.attrs, attr)
 	e.inputs = append(e.inputs, append([]string(nil), inputs...))
 	e.roles = append(e.roles, role)
 	if e.onEmbed != nil {

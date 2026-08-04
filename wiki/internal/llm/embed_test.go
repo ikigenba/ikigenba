@@ -25,7 +25,7 @@ func TestEmbedCarriesCallSiteAttributionRoleAndInputs(t *testing.T) {
 	defer server.Close()
 
 	wantVectors := [][]float32{{1, 2}, {3, 4}}
-	vectors, err := New(server.URL).Embed(context.Background(), EmbedSite{
+	vectors, err := New(server.URL, server.Client()).Embed(context.Background(), EmbedSite{
 		Name: "wiki.embed-page", Model: "embed-model", Dims: 2,
 	}, Attribution{Origin: "service:wiki", GroupID: "job-123"}, "document", []string{"first", "second"})
 	if err != nil {
@@ -47,7 +47,7 @@ func TestEmbedAgainstLivePrompts(t *testing.T) {
 		t.Skip("set WIKI_LIVE_PROMPTS_URL to run the operator live /embed smoke")
 	}
 	inputs := []string{"wiki live embedding smoke one", "wiki live embedding smoke two"}
-	vectors, err := New(baseURL).Embed(context.Background(), EmbedSite{
+	vectors, err := New(baseURL, http.DefaultClient).Embed(context.Background(), EmbedSite{
 		Name: "wiki.embed-query", Model: "text-embedding-3-small", Dims: 512,
 	}, Attribution{Origin: "service:wiki", GroupID: "wiki-live-embed-smoke"}, "query", inputs)
 	if err != nil {

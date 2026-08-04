@@ -23,8 +23,8 @@ type Client struct {
 
 // New constructs a concurrency-safe prompts client. Calls carry their own
 // context deadlines, so the shared HTTP client deliberately has no timeout.
-func New(baseURL string) *Client {
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), http: &http.Client{}}
+func New(baseURL string, hc *http.Client) *Client {
+	return &Client{baseURL: strings.TrimRight(baseURL, "/"), http: hc}
 }
 
 // Config is the prompts /complete generation configuration vocabulary.
