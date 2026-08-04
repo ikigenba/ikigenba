@@ -8,6 +8,7 @@ import (
 	"registry"
 	"telemetry/internal/db"
 	"telemetry/internal/ingest"
+	telemetrymcp "telemetry/internal/mcp"
 	"telemetry/internal/retention"
 	telemetrytime "telemetry/internal/telemetry"
 )
@@ -35,6 +36,11 @@ func telemetrySpec() appkit.Spec {
 			store = db.NewStore(rt.DB())
 			ingest.Mount(rt, store, telemetrytime.RealClock{})
 			retention.Start(rt, store, telemetrytime.RealClock{})
+			mcpHandler, err := telemetrymcp.NewHandler(store, telemetrytime.RealClock{}, rt)
+			if err != nil {
+				return fmt.Errorf("telemetry: create MCP handler: %w", err)
+			}
+			rt.Handle("/mcp", rt.RequireIdentity(mcpHandler))
 			return nil
 		},
 		Health: func(ctx context.Context) (map[string]any, error) {
