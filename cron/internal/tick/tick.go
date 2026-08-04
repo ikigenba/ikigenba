@@ -159,7 +159,7 @@ func (w *Worker) fireOne(ctx context.Context, name string, slot, firedAt time.Ti
 		// Already recorded for this slot (or row gone) — do not emit a duplicate.
 		return nil
 	}
-	if err := w.ob.Append(tx, ev); err != nil {
+	if err := w.ob.Append(ctx, tx, ev); err != nil {
 		return err
 	}
 	return tx.Commit()

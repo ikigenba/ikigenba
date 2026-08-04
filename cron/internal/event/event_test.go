@@ -56,7 +56,7 @@ func TestSubjectIsSafeAndLiteralFiltersAreExact(t *testing.T) {
 		if err != nil {
 			t.Fatalf("begin: %v", err)
 		}
-		if err := ob.Append(tx, ev); err != nil {
+		if err := ob.Append(ctx, tx, ev); err != nil {
 			tx.Rollback()
 			t.Fatalf("Append(%q): %v", name, err)
 		}
