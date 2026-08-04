@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 44
-
-- Phase 43 ⬜ realizes D28 — the dropbox mirror client takes the Router-provided instrumented outbound HTTP client (needs appkit first)
