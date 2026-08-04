@@ -17,6 +17,7 @@ import (
 	"appkit/server"
 	"appkit/web"
 
+	"eventplane/correlation"
 	"eventplane/outbox"
 )
 
@@ -240,6 +241,39 @@ func TestRouter_UnauthenticatedRoute(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("/open status = %d, want 200 unauthenticated", rr.Code)
+	}
+}
+
+// R-19M9-133J
+func TestNew_CorrelationHeadersMirrorContextID(t *testing.T) {
+	var observed string
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Register: func(rt *server.Router) error {
+			rt.HandleFunc("GET /observe-correlation", func(w http.ResponseWriter, r *http.Request) {
+				observed = correlation.FromContext(r.Context())
+				w.WriteHeader(http.StatusNoContent)
+			})
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	rr := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/observe-correlation", nil))
+
+	correlationHeader := rr.Header().Get(correlation.Header)
+	requestHeader := rr.Header().Get("X-Request-ID")
+	if observed == "" || !correlation.Valid(observed) {
+		t.Fatalf("inner handler context id = %q, want valid correlation id", observed)
+	}
+	if correlationHeader != observed || requestHeader != observed {
+		t.Errorf("headers correlation=%q request=%q, want inner context id %q for both", correlationHeader, requestHeader, observed)
 	}
 }
 

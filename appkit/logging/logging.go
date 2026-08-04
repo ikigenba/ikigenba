@@ -17,6 +17,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"eventplane/correlation"
 )
 
 // ParseLevel maps a level name (debug|info|warn|error) to a slog.Level,
@@ -66,33 +68,30 @@ func NewULID() string {
 	return enc.EncodeToString(b[:])
 }
 
-type ctxKey struct{}
-
-var requestIDKey ctxKey
-
-// WithRequestID stashes a request id on the context.
-func WithRequestID(ctx context.Context, id string) context.Context {
-	return context.WithValue(ctx, requestIDKey, id)
-}
-
-// RequestID returns the request id on the context, or "" if none.
+// RequestID returns the correlation id on the context, or "" if none.
 func RequestID(ctx context.Context) string {
-	v, _ := ctx.Value(requestIDKey).(string)
-	return v
+	return correlation.FromContext(ctx)
 }
 
-// RequestIDMiddleware attaches a fresh request id to every request's context,
-// echoes it in X-Request-ID, and emits per-request begin/end debug records.
-// It logs only the presence of identity headers, never their values.
-func RequestIDMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
+// CorrelationMiddleware propagates a valid inbound correlation id or mints a
+// fresh one, echoes it under both correlation and legacy request-id headers,
+// and emits per-request begin/end debug records. It logs only the presence of
+// identity headers, never their values.
+func CorrelationMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := NewULID()
-		ctx := WithRequestID(r.Context(), id)
+		ctx := r.Context()
+		id := r.Header.Get(correlation.Header)
+		if correlation.Valid(id) {
+			ctx = correlation.WithContext(ctx, id)
+		} else {
+			ctx, id = correlation.Ensure(ctx)
+		}
+		w.Header().Set(correlation.Header, id)
 		w.Header().Set("X-Request-ID", id)
 
 		start := time.Now()
 		logger.LogAttrs(ctx, slog.LevelDebug, "request.begin",
-			slog.String("request_id", id),
+			slog.String("correlation_id", id),
 			slog.String("method", r.Method),
 			slog.String("path", r.URL.Path),
 			slog.String("remote", r.RemoteAddr),
@@ -103,7 +102,7 @@ func RequestIDMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 		next.ServeHTTP(rw, r.WithContext(ctx))
 
 		logger.LogAttrs(ctx, slog.LevelDebug, "request.end",
-			slog.String("request_id", id),
+			slog.String("correlation_id", id),
 			slog.Int("status", rw.status),
 			slog.Duration("duration", time.Since(start)),
 		)

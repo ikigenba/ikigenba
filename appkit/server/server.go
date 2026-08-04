@@ -290,7 +290,7 @@ func New(opts Options) (*http.Server, error) {
 
 	srv := &http.Server{
 		Addr:              opts.Addr,
-		Handler:           securityHeaders(logging.RequestIDMiddleware(opts.Logger, mux)),
+		Handler:           securityHeaders(logging.CorrelationMiddleware(opts.Logger, mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
