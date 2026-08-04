@@ -1052,6 +1052,66 @@ func TestNginxLoginBounceOptInPreservesExistingLocationDirectives(t *testing.T) 
 	}
 }
 
+func TestNginxGatedLocationsCaptureAndForwardCorrelationID(t *testing.T) {
+	conf := readNginxConfig(t)
+	locations := []struct {
+		opener   string
+		variable string
+	}{
+		{opener: "location = /srv/dropbox/ {", variable: "$dropbox_session_correlation_id"},
+		{opener: "location /srv/dropbox/static/ {", variable: "$dropbox_static_correlation_id"},
+		{opener: "location /srv/dropbox/ {", variable: "$dropbox_correlation_id"},
+	}
+
+	// R-VGTA-PXIA
+	for _, location := range locations {
+		t.Run(location.opener, func(t *testing.T) {
+			block := nginxLocationBlock(t, conf, location.opener)
+			capture := "auth_request_set " + location.variable + " $upstream_http_x_correlation_id;"
+			forward := "proxy_set_header X-Correlation-Id " + location.variable + ";"
+			if strings.Count(block, capture) != 1 || strings.Count(block, forward) != 1 {
+				t.Fatalf("gated location must capture and forward its correlation id exactly once; want %q and %q:\n%s", capture, forward, block)
+			}
+		})
+	}
+
+	bearer := nginxLocationBlock(t, conf, "location /srv/dropbox/ {")
+	for _, retained := range []string{
+		"proxy_set_header X-Owner-Email   $dropbox_owner;",
+		"proxy_set_header X-Owner-Id      $dropbox_owner_id;",
+		"proxy_set_header X-Owner-Name    $dropbox_owner_name;",
+		"proxy_set_header X-Owner-Picture $dropbox_owner_picture;",
+		"proxy_set_header X-Client-Id     $dropbox_client;",
+	} {
+		if !strings.Contains(bearer, retained) {
+			t.Fatalf("bearer location lost identity forward %q:\n%s", retained, bearer)
+		}
+	}
+}
+
+func TestNginxPublicLocationClearsCorrelationIDOnlyOnProxiedLocation(t *testing.T) {
+	conf := readNginxConfig(t)
+	public := nginxLocationBlock(t, conf, "location = /srv/dropbox/.well-known/oauth-protected-resource {")
+
+	// R-VI17-3P8Z
+	const directive = "proxy_set_header X-Correlation-Id"
+	if !strings.Contains(public, directive+" \"\";") {
+		t.Fatalf("public PRM location does not clear the inbound correlation id:\n%s", public)
+	}
+	if got := strings.Count(conf, directive); got != 4 {
+		t.Fatalf("nginx config has %d correlation-id proxy directives, want exactly four", got)
+	}
+	for _, opener := range []string{
+		"location = /srv/dropbox/content {",
+		"location @dropbox_authn_500 {",
+	} {
+		block := nginxLocationBlock(t, conf, opener)
+		if strings.Contains(block, directive) {
+			t.Fatalf("non-proxying location contains dead correlation-id directive:\n%s", block)
+		}
+	}
+}
+
 func testEnv(overrides map[string]string) []string {
 	env := os.Environ()
 	out := make([]string, 0, len(env)+len(overrides))
