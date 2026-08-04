@@ -14,5 +14,4 @@ phase lines.
 
 Next phase: 54
 
-- Phase 52 ⬜ realizes — — write `docs/telemetry-protocol.md` and amend `docs/correlation-ids.md` (the normative telemetry contract)
 - Phase 53 ⬜ realizes — — wire the `telemetry` service into `go.work`, `bin/start`, and `nginx/run` (after the telemetry module exists)
