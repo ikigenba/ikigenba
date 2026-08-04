@@ -19,15 +19,17 @@ func internalPackages(output []byte) string {
 }
 
 func TestDependencyBoundary(t *testing.T) {
-	// .Deps is the dependency set of the described package and, unlike the
-	// packages visited by -deps, does not include the described package itself.
+	// DepOnly distinguishes packages reached as dependencies from the package
+	// named on the command line. Filtering before printing keeps this check on
+	// the same -deps traversal as the done bar without counting the query root
+	// as one of its own dependencies.
 	output, err := exec.Command(
-		"go", "list",
-		"-f", "{{range .Deps}}{{println .}}{{end}}",
+		"go", "list", "-deps",
+		"-f", "{{if .DepOnly}}{{.ImportPath}}{{end}}",
 		observePackage,
 	).CombinedOutput()
 	if err != nil {
-		t.Fatalf("list observe dependency set: %v\n%s", err, output)
+		t.Fatalf("list dependency-only import paths: %v\n%s", err, output)
 	}
 
 	if got, want := internalPackages(output), "eventplane/routing"; got != want {
