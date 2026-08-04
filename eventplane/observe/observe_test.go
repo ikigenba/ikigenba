@@ -40,12 +40,22 @@ func TestDependencyTraversalIncludesQueryRoot(t *testing.T) {
 	// Exercise the done-bar command verbatim. The final package is the query
 	// root, not one of its own dependencies: `go list -deps` emits both the
 	// dependencies and every package explicitly named on its command line.
-	output, err := exec.Command("go", "list", "-deps", observePackage).CombinedOutput()
+	output, err := exec.Command(
+		"go", "list", "-deps",
+		"-f", "{{.ImportPath}} {{.DepOnly}}",
+		observePackage,
+	).CombinedOutput()
 	if err != nil {
 		t.Fatalf("list observe dependency traversal: %v\n%s", err, output)
 	}
 
-	if got, want := internalPackages(output), "eventplane/routing\n"+observePackage; got != want {
-		t.Fatalf("internal packages in dependency traversal:\n%s\nwant:\n%s", got, want)
+	var internal []string
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if strings.HasPrefix(line, "eventplane/") {
+			internal = append(internal, line)
+		}
+	}
+	if got, want := strings.Join(internal, "\n"), "eventplane/routing true\n"+observePackage+" false"; got != want {
+		t.Fatalf("internal packages and dependency classification:\n%s\nwant:\n%s", got, want)
 	}
 }
