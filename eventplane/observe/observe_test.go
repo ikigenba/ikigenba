@@ -1,10 +1,6 @@
 package observe_test
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
-	"io"
 	"os/exec"
 	"strings"
 	"testing"
@@ -80,32 +76,25 @@ func TestDependencyBoundary(t *testing.T) {
 		t.Fatalf("internal dependency set:\n%s\nwant:\n%s", got, want)
 	}
 
-	// Ask go list for its dependency classification as structured data. The
-	// plain -deps output cannot make this distinction because it always includes
-	// the package named on the command line.
-	output, err = exec.Command("go", "list", "-deps", "-json", queriedPackage).CombinedOutput()
+	// Ask go list for its dependency classification. The plain -deps output
+	// cannot make this distinction because it always includes the package named
+	// on the command line; DepOnly is true only for actual dependencies.
+	output, err = exec.Command(
+		"go", "list", "-deps",
+		"-f", "{{.ImportPath}}\t{{.DepOnly}}",
+		queriedPackage,
+	).CombinedOutput()
 	if err != nil {
 		t.Fatalf("classify observe dependencies: %v\n%s", err, output)
 	}
 
-	type listedPackage struct {
-		ImportPath string
-		DepOnly    bool
-	}
-	decoder := json.NewDecoder(bytes.NewReader(output))
-	internal = internal[:0]
-	for {
-		var pkg listedPackage
-		if err := decoder.Decode(&pkg); errors.Is(err, io.EOF) {
-			break
-		} else if err != nil {
-			t.Fatalf("decode go list output: %v", err)
-		}
-		if strings.HasPrefix(pkg.ImportPath, "eventplane/") && pkg.DepOnly {
-			internal = append(internal, pkg.ImportPath)
+	var classified []string
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if strings.HasPrefix(line, "eventplane/") {
+			classified = append(classified, line)
 		}
 	}
-	if got, want := strings.Join(internal, "\n"), routingPackage; got != want {
-		t.Fatalf("classified internal dependencies:\n%s\nwant:\n%s", got, want)
+	if got, want := strings.Join(classified, "\n"), routingPackage+"\ttrue\n"+queriedPackage+"\tfalse"; got != want {
+		t.Fatalf("internal dependency classification:\n%s\nwant:\n%s", got, want)
 	}
 }
