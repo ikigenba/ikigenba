@@ -11,21 +11,33 @@ func TestDependencyBoundary(t *testing.T) {
 	// documented distinction between that package and its actual dependencies.
 	output, err := exec.Command(
 		"go", "list", "-deps",
-		"-f", "{{if .DepOnly}}{{.ImportPath}}{{end}}",
+		"-f", "{{.ImportPath}}|{{.DepOnly}}",
 		"eventplane/observe",
 	).CombinedOutput()
 	if err != nil {
 		t.Fatalf("list observe dependencies: %v\n%s", err, output)
 	}
 
-	var internal []string
-	for _, dependency := range strings.Fields(string(output)) {
-		if strings.HasPrefix(dependency, "eventplane/") {
-			internal = append(internal, dependency)
+	var dependencies, roots []string
+	for _, entry := range strings.Fields(string(output)) {
+		path, depOnly, ok := strings.Cut(entry, "|")
+		if !ok {
+			t.Fatalf("malformed go list entry %q", entry)
+		}
+		if !strings.HasPrefix(path, "eventplane/") {
+			continue
+		}
+		if depOnly == "true" {
+			dependencies = append(dependencies, path)
+		} else {
+			roots = append(roots, path)
 		}
 	}
 
-	if got, want := strings.Join(internal, "\n"), "eventplane/routing"; got != want {
+	if got, want := strings.Join(dependencies, "\n"), "eventplane/routing"; got != want {
 		t.Fatalf("internal dependencies:\n%s\nwant:\n%s", got, want)
+	}
+	if got, want := strings.Join(roots, "\n"), "eventplane/observe"; got != want {
+		t.Fatalf("queried package:\n%s\nwant:\n%s", got, want)
 	}
 }
