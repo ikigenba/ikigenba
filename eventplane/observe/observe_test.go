@@ -10,31 +10,39 @@ import (
 const observePackage = "eventplane/observe"
 
 func TestDependencyBoundary(t *testing.T) {
-	metadata, err := exec.Command("go", "list", "-json", observePackage).CombinedOutput()
+	metadata, err := exec.Command("go", "list", "-deps", "-json", observePackage).CombinedOutput()
 	if err != nil {
-		t.Fatalf("list observe package metadata: %v\n%s", err, metadata)
+		t.Fatalf("list observe dependency metadata: %v\n%s", err, metadata)
 	}
-	var pkg struct {
+	type listedPackage struct {
 		ImportPath string
 		Imports    []string
-		Deps       []string
+		DepOnly    bool
+		Match      []string
 	}
-	if err := json.Unmarshal(metadata, &pkg); err != nil {
-		t.Fatalf("decode observe package metadata: %v", err)
-	}
-	if pkg.ImportPath != observePackage {
-		t.Fatalf("query root = %q, want %q", pkg.ImportPath, observePackage)
-	}
-	if got, want := strings.Join(pkg.Imports, "\n"), "context\neventplane/routing\ntime"; got != want {
-		t.Fatalf("direct imports:\n%s\nwant:\n%s", got, want)
-	}
-	var internal []string
-	for _, dependency := range pkg.Deps {
-		if strings.HasPrefix(dependency, "eventplane/") {
-			internal = append(internal, dependency)
+	decoder := json.NewDecoder(strings.NewReader(string(metadata)))
+	var dependencies []string
+	var root *listedPackage
+	for decoder.More() {
+		var pkg listedPackage
+		if err := decoder.Decode(&pkg); err != nil {
+			t.Fatalf("decode observe dependency metadata: %v", err)
+		}
+		if pkg.DepOnly && strings.HasPrefix(pkg.ImportPath, "eventplane/") {
+			dependencies = append(dependencies, pkg.ImportPath)
+		}
+		if pkg.ImportPath == observePackage {
+			copy := pkg
+			root = &copy
 		}
 	}
-	if got, want := strings.Join(internal, "\n"), "eventplane/routing"; got != want {
+	if got, want := strings.Join(dependencies, "\n"), "eventplane/routing"; got != want {
 		t.Fatalf("internal dependency set:\n%s\nwant:\n%s", got, want)
+	}
+	if root == nil || root.DepOnly || strings.Join(root.Match, " ") != observePackage {
+		t.Fatalf("query root classification: %#v", root)
+	}
+	if got, want := strings.Join(root.Imports, "\n"), "context\neventplane/routing\ntime"; got != want {
+		t.Fatalf("direct imports:\n%s\nwant:\n%s", got, want)
 	}
 }
