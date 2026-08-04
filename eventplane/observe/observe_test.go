@@ -1,6 +1,7 @@
 package observe_test
 
 import (
+	"encoding/json"
 	"os/exec"
 	"strings"
 	"testing"
@@ -9,6 +10,24 @@ import (
 const observePackage = "eventplane/observe"
 
 func TestDependencyBoundary(t *testing.T) {
+	metadata, err := exec.Command("go", "list", "-json", observePackage).CombinedOutput()
+	if err != nil {
+		t.Fatalf("list observe package metadata: %v\n%s", err, metadata)
+	}
+	var pkg struct {
+		ImportPath string
+		Imports    []string
+	}
+	if err := json.Unmarshal(metadata, &pkg); err != nil {
+		t.Fatalf("decode observe package metadata: %v", err)
+	}
+	if pkg.ImportPath != observePackage {
+		t.Fatalf("query root = %q, want %q", pkg.ImportPath, observePackage)
+	}
+	if got, want := strings.Join(pkg.Imports, "\n"), "context\neventplane/routing\ntime"; got != want {
+		t.Fatalf("direct imports:\n%s\nwant:\n%s", got, want)
+	}
+
 	plainOutput, err := exec.Command("go", "list", "-deps", observePackage).CombinedOutput()
 	if err != nil {
 		t.Fatalf("list observe dependency traversal: %v\n%s", err, plainOutput)
