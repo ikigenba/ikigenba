@@ -11,7 +11,6 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 20
 
-- Phase 18 ⬜ realizes D18 — telemetry adoption, Go side: injected instrumented ntfy client and a correlation id that survives the detached push seam (needs appkit + eventplane built first)
 - Phase 19 ⬜ realizes D19 — nginx fragment: forward the edge-minted `X-Correlation-Id` on gated locations, clear it on the public PRM location
 
 
