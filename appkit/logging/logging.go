@@ -44,9 +44,9 @@ func New(level slog.Level, w io.Writer) *slog.Logger {
 	return slog.New(h)
 }
 
-var enc = base32.StdEncoding.WithPadding(base32.NoPadding)
+var enc = base32.NewEncoding("0123456789ABCDEFGHJKMNPQRSTVWXYZ").WithPadding(base32.NoPadding)
 
-// NewULID returns a ULID-shaped (RFC 4648 base32, 26-char) opaque id: 48 bits of
+// NewULID returns a Crockford-base32 ULID (26-char): 48 bits of
 // millisecond time followed by 80 bits of cryptographic randomness, time-ordered
 // and unguessable. No external dependency is needed for that property. It is the
 // fold-in of each service's internal/ids.NewULID.
