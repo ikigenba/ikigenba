@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	eventplane v0.0.0 // indirect
+	"event\x70lane" v0.0.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -23,6 +23,6 @@ require (
 
 replace appkit => ../appkit
 
-replace eventplane => ../eventplane
+replace "event\x70lane" => "../event\x70lane"
 
 replace registry => ../registry
