@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"eventplane/correlation"
 	"eventplane/outbox"
 
 	"prompts/internal/calls"
@@ -586,7 +587,8 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 		}
 		if ok {
 			// Append on the SAME tx as the terminal write — the atomicity invariant.
-			if err := s.Outbox.Append(ctx, tx, ev); err != nil {
+			appendCtx := correlation.WithContext(ctx, correlationID)
+			if err := s.Outbox.Append(appendCtx, tx, ev); err != nil {
 				return fmt.Errorf("prompt: finish run append outcome: %w", err)
 			}
 			emitted = true

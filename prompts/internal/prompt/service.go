@@ -40,6 +40,10 @@ type Runner interface {
 	Cancel(runID string) bool
 }
 
+// RootStarter establishes the recorded origin for a run that starts its own
+// correlation chain. The composition root owns the chassis-specific work.
+type RootStarter func(ctx context.Context, rootID, op string) context.Context
+
 // Service is prompts' domain service — the only mutator of prompt/run state.
 // Runs are fully concurrent: there is no prompt status and no single-flight
 // gate. The MCP handler talks only to it.
@@ -58,8 +62,9 @@ type Service struct {
 	// It is field-injected by the composition root and defaults to unavailable.
 	SubAuthAvailable func() bool
 	// RootStarter is the chassis seam used when a run establishes a new chain.
-	// It receives a context already seeded with the durable run id.
-	RootStarter func(context.Context, string) context.Context
+	// It receives the durable run id and the run:<run-id> operation name.
+	// A nil seam leaves ctx unchanged for telemetry-disabled builds and tests.
+	RootStarter RootStarter
 }
 
 // NewService wires the store, sandbox manager, run-logs base dir, and runner.
@@ -71,13 +76,14 @@ func NewService(store *Store, sb *sandbox.Manager, runsDir string, runner Runner
 		runner:           runner,
 		now:              func() time.Time { return time.Now().UTC() },
 		SubAuthAvailable: func() bool { return false },
-		RootStarter:      func(ctx context.Context, _ string) context.Context { return ctx },
 	}
 }
 
-func (s *Service) startRoot(ctx context.Context, runID, label string) context.Context {
-	ctx = correlation.WithContext(ctx, runID)
-	return s.RootStarter(ctx, label)
+func (s *Service) startRoot(ctx context.Context, runID, op string) context.Context {
+	if s.RootStarter == nil {
+		return ctx
+	}
+	return s.RootStarter(ctx, runID, op)
 }
 
 // CallStore returns the suite-wide inference accounting store wired at the

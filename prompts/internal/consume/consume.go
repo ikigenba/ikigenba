@@ -22,6 +22,7 @@ import (
 	"log/slog"
 
 	"eventplane/consumer"
+	"eventplane/correlation"
 	"eventplane/routing"
 )
 
@@ -97,13 +98,15 @@ func Handler(fire FireFunc, lookup LookupFunc, source string, logger *slog.Logge
 		}
 
 		logger.Debug("consume: dispatching event", "source", source, "kind", ev.Kind, "event_id", ev.ID, "prompts", len(promptIDs))
+		corr := correlation.FromContext(ctx)
 		for _, promptID := range promptIDs {
 			// Each prompt's run starts on its own goroutine so one slow/failing start
 			// never blocks the rest of the fan-out and the handler returns promptly,
 			// never holding the cursor open. Detached from the engine's request context
 			// (the handler has already returned) via context.Background().
 			go func(promptID string) {
-				if err := fire(context.Background(), promptID, source, ev.Kind, ev.Subject, ev.ID, ev.Payload); err != nil {
+				fireCtx := correlation.WithContext(context.Background(), corr)
+				if err := fire(fireCtx, promptID, source, ev.Kind, ev.Subject, ev.ID, ev.Payload); err != nil {
 					logger.Error("consume: fire run failed (dropped)", "prompt", promptID, "source", source, "kind", ev.Kind, "event_id", ev.ID, "err", err)
 				}
 			}(promptID)

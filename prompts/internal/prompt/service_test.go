@@ -56,6 +56,64 @@ func TestRunPersistsRootOrInheritedCorrelationID(t *testing.T) {
 	}
 }
 
+func TestEventRunsWithoutInboundChainUseDistinctRunRoots(t *testing.T) {
+	// R-I0KX-T6L0
+	svc, store, _, _ := newTestService(t)
+	p := seedPrompt(t, store, ownerA)
+
+	first, err := svc.RunByEvent(context.Background(), p.ID, "crm", "contact.created", "/contacts/1", "event-1", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("first RunByEvent: %v", err)
+	}
+	second, err := svc.RunByEvent(context.Background(), p.ID, "crm", "contact.created", "/contacts/1", "event-1", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("second RunByEvent: %v", err)
+	}
+	if first.CorrelationID != first.ID || second.CorrelationID != second.ID {
+		t.Fatalf("correlation ids = (%q, %q), want run ids (%q, %q)", first.CorrelationID, second.CorrelationID, first.ID, second.ID)
+	}
+	if first.CorrelationID == second.CorrelationID {
+		t.Fatalf("duplicate deliveries shared chain %q, want distinct run roots", first.CorrelationID)
+	}
+	for _, run := range []Run{first, second} {
+		var stored string
+		if err := store.db.QueryRow(`SELECT correlation_id FROM runs WHERE id = ?`, run.ID).Scan(&stored); err != nil {
+			t.Fatalf("read correlation_id for %s: %v", run.ID, err)
+		}
+		if stored != run.ID {
+			t.Fatalf("stored correlation_id = %q, want run id %q", stored, run.ID)
+		}
+	}
+}
+
+func TestRunStartsRootExactlyOnceOnlyWithoutInheritedChain(t *testing.T) {
+	// R-I30Q-KQ2E
+	svc, store, _, _ := newTestService(t)
+	p := seedPrompt(t, store, ownerA)
+	type call struct{ rootID, op string }
+	var calls []call
+	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {
+		calls = append(calls, call{rootID: rootID, op: op})
+		return correlation.WithContext(ctx, rootID)
+	}
+
+	rooted, err := svc.Run(context.Background(), ownerA, p.ID)
+	if err != nil {
+		t.Fatalf("rooted Run: %v", err)
+	}
+	if len(calls) != 1 || calls[0].rootID != rooted.ID || calls[0].op != "run:"+rooted.ID {
+		t.Fatalf("RootStarter calls = %+v, want exactly ({%q %q})", calls, rooted.ID, "run:"+rooted.ID)
+	}
+
+	const inheritedID = "01JZZZZZZZZZZZZZZZZZZZZZZZ"
+	if _, err := svc.Run(correlation.WithContext(context.Background(), inheritedID), ownerA, p.ID); err != nil {
+		t.Fatalf("inherited Run: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("RootStarter calls after inherited run = %+v, want no additional call", calls)
+	}
+}
+
 func (f *fakeRunner) Spawn(run Run) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

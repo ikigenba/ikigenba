@@ -6,11 +6,19 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	appkitdb "appkit/db"
 	"eventplane/consumer"
+	"eventplane/correlation"
+
+	promptdb "prompts/internal/db"
+	"prompts/internal/prompt"
+	"prompts/internal/sandbox"
 )
 
 func discardLogger() *slog.Logger {
@@ -29,16 +37,82 @@ type fireRecorder struct {
 
 type fireCall struct {
 	promptID, source, evType, subject, eventID string
+	correlationID                              string
 	payload                                    []byte
 }
 
 func (f *fireRecorder) fn(ctx context.Context, promptID, source, evType, subject, eventID string, payload []byte) error {
 	f.mu.Lock()
-	f.calls = append(f.calls, fireCall{promptID, source, evType, subject, eventID, append([]byte(nil), payload...)})
+	f.calls = append(f.calls, fireCall{promptID, source, evType, subject, eventID, correlation.FromContext(ctx), append([]byte(nil), payload...)})
 	f.mu.Unlock()
 	f.wg.Done()
 	return f.err
 }
+
+func TestHandlerReseedsDetachedFireContext(t *testing.T) {
+	// R-HZD1-FEUB
+	const correlationID = "01JZZZZZZZZZZZZZZZZZZZZZZZ"
+	conn, err := appkitdb.Open(filepath.Join(t.TempDir(), "prompts.db"))
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer conn.Close()
+	migrations, err := appkitdb.LoadMigrations(promptdb.FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if err := appkitdb.Migrate(context.Background(), conn, migrations); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+	root := t.TempDir()
+	runsDir := filepath.Join(root, "runs")
+	if err := os.MkdirAll(runsDir, 0o755); err != nil {
+		t.Fatalf("create runs directory: %v", err)
+	}
+	sb, err := sandbox.New(filepath.Join(root, "sandboxes"))
+	if err != nil {
+		t.Fatalf("sandbox.New: %v", err)
+	}
+	store := prompt.NewStore(conn)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	p := prompt.Prompt{ID: "01JYYYYYYYYYYYYYYYYYYYYYYY", OwnerID: "owner-1", OwnerEmail: "owner@example.com", UserPrompt: "run", Config: prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"}, CreatedAt: now, UpdatedAt: now}
+	if err := store.InsertPrompt(context.Background(), p); err != nil {
+		t.Fatalf("InsertPrompt: %v", err)
+	}
+	svc := prompt.NewService(store, sb, runsDir, noopRunner{})
+	result := make(chan prompt.Run, 1)
+	fire := func(ctx context.Context, promptID, source, kind, subject, eventID string, payload []byte) error {
+		run, err := svc.RunByEvent(ctx, promptID, source, kind, subject, eventID, payload)
+		if err == nil {
+			result <- run
+		}
+		return err
+	}
+	h := Handler(fire, staticLookup([]string{p.ID}, nil), "crm", discardLogger())
+
+	ctx := correlation.WithContext(context.Background(), correlationID)
+	if err := h(ctx, consumer.Event{Kind: "contact.created", ID: "01EVENT"}); err != nil {
+		t.Fatalf("Handler returned %v, want nil", err)
+	}
+	var fired prompt.Run
+	select {
+	case fired = <-result:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for fired run")
+	}
+	stored, err := store.GetRun(context.Background(), fired.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if stored.CorrelationID != correlationID {
+		t.Fatalf("stored correlation_id = %q, want delivered chain %q", stored.CorrelationID, correlationID)
+	}
+}
+
+type noopRunner struct{}
+
+func (noopRunner) Spawn(prompt.Run)   {}
+func (noopRunner) Cancel(string) bool { return false }
 
 func (f *fireRecorder) snapshot() []fireCall {
 	f.mu.Lock()

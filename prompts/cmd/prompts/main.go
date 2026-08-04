@@ -44,6 +44,7 @@ import (
 	"appkit/config"
 
 	"eventplane/consumer"
+	"eventplane/correlation"
 	"eventplane/outbox"
 
 	"prompts/internal/admit"
@@ -222,8 +223,9 @@ func registerRoutes(rt *appkit.Router) error {
 	run := runner.New(store, sb, gate, runTTL, manifestRoot, func(port int) bool { return allowedPorts[port] }, dropboxBase)
 	run.SetProviderFactory(buildProvider)
 	svc := prompt.NewService(store, sb, runsDir, run)
-	svc.RootStarter = func(ctx context.Context, label string) context.Context {
-		ctx, _ = rt.Recorder().StartChain(ctx, label, nil)
+	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {
+		ctx = correlation.WithContext(ctx, rootID)
+		ctx, _ = rt.Recorder().StartChain(ctx, op, nil)
 		return ctx
 	}
 	svc.SubAuthAvailable = subAuth.Available
