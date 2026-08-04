@@ -15,6 +15,5 @@ anchored grep matches only phase lines.
 
 Next phase: 08
 
-- Phase 05 ⬜ realizes D5 — The forensic MCP surface: search, chain, get, guide
 - Phase 06 ⬜ realizes D6 — The shipped nginx location fragment and its drift guards
 - Phase 07 ⬜ realizes D7 — The end-to-end layer over the real composed service
