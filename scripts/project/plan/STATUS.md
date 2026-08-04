@@ -11,6 +11,5 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 31
 
-- Phase 29 ⬜ realizes D30 — the chain crosses the sandbox boundary on every `suite.*` call
 - Phase 30 ⬜ realizes D32 — rebuild to adopt: the chain across the consumer fan-out, out through `Append`, and the origin at spawn (needs the revised appkit + eventplane built first)
 
