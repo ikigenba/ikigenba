@@ -11,4 +11,3 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 56
 
-- Phase 55 ⬜ realizes D46 — nginx fragment: capture the chain id on gated locations, strip it on the ungated one
