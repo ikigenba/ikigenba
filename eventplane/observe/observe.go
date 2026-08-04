@@ -31,5 +31,8 @@ type Event struct {
 // Key returns the canonical routing key of the observed event.
 func (e Event) Key() string { return routing.Key(e.Source, e.Kind, e.Subject) }
 
-// Hook synchronously observes one completed hop. Implementations must not block.
+// Hook synchronously observes one completed hop. Implementations must not block
+// and must tolerate more than one call for an event because each re-delivery is
+// a separate consume hop. A nil Hook is not invoked. Outbox and consumer call
+// hooks through panic recovery so observation cannot affect delivery.
 type Hook func(ctx context.Context, ev Event)
