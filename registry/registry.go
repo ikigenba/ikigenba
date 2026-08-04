@@ -31,6 +31,7 @@ var Services = []Service{
 	{"cron", 3005, Core},
 	{"webhooks", 3006, Core},
 	{"repos", 3007, Core},
+	{"telemetry", 3008, Core},
 
 	// applications - 3100+, counts up
 	{"crm", 3100, Apps},

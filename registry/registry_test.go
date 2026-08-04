@@ -64,6 +64,22 @@ func TestDashboardPinnedToDefaultPort(t *testing.T) {
 	t.Fatal("dashboard is missing from Services")
 }
 
+func TestTelemetryPinnedToCorePort3008(t *testing.T) {
+	// R-ZNFW-ORR6
+	for _, service := range Services {
+		if service.Name == "telemetry" {
+			if service.Port != 3008 {
+				t.Fatalf("telemetry port = %d, want 3008", service.Port)
+			}
+			if service.Block != Core {
+				t.Fatalf("telemetry block = %d, want Core (%d)", service.Block, Core)
+			}
+			return
+		}
+	}
+	t.Fatal("telemetry is missing from Services")
+}
+
 func TestPortKnownReturnsRegisteredPort(t *testing.T) {
 	// R-B642-6EO8
 	tests := map[string]int{
