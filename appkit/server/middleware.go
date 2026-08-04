@@ -2,7 +2,17 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"hash"
 	"net/http"
+	"strconv"
+	"time"
+
+	"appkit/telemetry"
+
+	"eventplane/correlation"
 )
 
 // Identity is the authenticated caller, as told to us authoritatively by nginx.
@@ -18,9 +28,19 @@ type Identity struct {
 }
 
 type identityCtxKey struct{}
+type recordIdentityCtxKey struct{}
+
+type recordIdentity struct {
+	id Identity
+	ok bool
+}
 
 // withIdentity stashes the caller identity on the request context.
 func withIdentity(ctx context.Context, id Identity) context.Context {
+	if captured, ok := ctx.Value(recordIdentityCtxKey{}).(*recordIdentity); ok {
+		captured.id = id
+		captured.ok = true
+	}
 	return context.WithValue(ctx, identityCtxKey{}, id)
 }
 
@@ -29,6 +49,91 @@ func withIdentity(ctx context.Context, id Identity) context.Context {
 func IdentityFrom(ctx context.Context) (Identity, bool) {
 	id, ok := ctx.Value(identityCtxKey{}).(Identity)
 	return id, ok
+}
+
+type telemetryResponseWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+	hash   hash.Hash
+	wrote  bool
+}
+
+func (w *telemetryResponseWriter) WriteHeader(code int) {
+	if w.wrote {
+		return
+	}
+	w.wrote = true
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *telemetryResponseWriter) Write(p []byte) (int, error) {
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
+	n, err := w.ResponseWriter.Write(p)
+	if n > 0 {
+		w.bytes += n
+		_, _ = w.hash.Write(p[:n])
+	}
+	return n, err
+}
+
+func (w *telemetryResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w *telemetryResponseWriter) Flush() {
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
+	_ = http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+func recordMiddleware(recorder *telemetry.Recorder, service string, excluded []string, next http.Handler) http.Handler {
+	exclude := make(map[string]struct{}, len(excluded))
+	for _, path := range excluded {
+		exclude[path] = struct{}{}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if recorder == nil || (r.Method == http.MethodPost && r.URL.Path == "/mcp") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if _, skip := exclude[r.URL.Path]; skip {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		query, _ := json.Marshal(r.URL.Query())
+		captured := &recordIdentity{}
+		r = r.WithContext(context.WithValue(r.Context(), recordIdentityCtxKey{}, captured))
+		rw := &telemetryResponseWriter{ResponseWriter: w, status: http.StatusOK, hash: sha256.New()}
+		started := time.Now()
+		next.ServeHTTP(rw, r)
+
+		var actor *telemetry.Actor
+		id, ok := IdentityFrom(r.Context())
+		if !ok && captured.ok {
+			id, ok = captured.id, true
+		}
+		if ok && (id.OwnerEmail != "" || id.ClientID != "") {
+			actor = &telemetry.Actor{OwnerEmail: id.OwnerEmail, ClientID: id.ClientID}
+		}
+		recorder.Record(telemetry.Record{
+			CorrelationID: correlation.FromContext(r.Context()),
+			Service:       service,
+			Kind:          telemetry.KindRequest,
+			Actor:         actor,
+			Op:            r.Method + " " + r.URL.Path,
+			Params:        telemetry.EncodeParams(query, nil),
+			Outcome: &telemetry.Outcome{
+				Status:     strconv.Itoa(rw.status),
+				DurationMS: time.Since(started).Milliseconds(),
+				Bytes:      rw.bytes,
+				SHA256:     hex.EncodeToString(rw.hash.Sum(nil)),
+			},
+		})
+	})
 }
 
 // requireIdentityHeaders does NO token parsing, NO ValidateAccess, NO hashing —

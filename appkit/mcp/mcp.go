@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"appkit"
 	"appkit/server"
+	"appkit/telemetry"
 
 	"eventplane/consumer"
+	"eventplane/correlation"
 	"eventplane/outbox"
 )
 
@@ -26,11 +29,12 @@ var reservedToolNames = map[string]struct{}{
 
 // Tool is one declared MCP tool: its wire descriptor plus its handler.
 type Tool struct {
-	Name         string
-	Description  string
-	InputSchema  map[string]any
-	OutputSchema map[string]any
-	Handler      func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error)
+	Name            string
+	Description     string
+	InputSchema     map[string]any
+	OutputSchema    map[string]any
+	SensitiveParams []string
+	Handler         func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error)
 }
 
 // ErrorCode is the closed vocabulary for errors returned inside tool results.
@@ -55,6 +59,7 @@ type Options struct {
 	Events        outbox.Registry
 	Publishes     func() outbox.Registry
 	Subscriptions func() []consumer.Subscription
+	Recorder      *telemetry.Recorder
 }
 
 // Handler is the http.Handler for POST /mcp.
@@ -68,6 +73,7 @@ type Handler struct {
 	events        outbox.Registry
 	publishes     func() outbox.Registry
 	subscriptions func() []consumer.Subscription
+	recorder      *telemetry.Recorder
 }
 
 // New validates the tool table and returns the shared MCP transport handler.
@@ -103,6 +109,7 @@ func New(opts Options) (*Handler, error) {
 		events:        opts.Events,
 		publishes:     opts.Publishes,
 		subscriptions: opts.Subscriptions,
+		recorder:      opts.Recorder,
 	}, nil
 }
 
@@ -169,6 +176,18 @@ func (h *Handler) handleToolCall(ctx context.Context, w http.ResponseWriter, req
 var errUnknownTool = errors.New("unknown tool")
 
 func (h *Handler) dispatchTool(ctx context.Context, name string, args json.RawMessage, id server.Identity) (map[string]any, error) {
+	started := time.Now()
+	var sensitive []string
+	if tool, ok := h.toolByName[name]; ok {
+		sensitive = tool.SensitiveParams
+	}
+
+	result, err := h.callTool(ctx, name, args, id)
+	h.recordToolCall(ctx, name, args, sensitive, id, result, err, time.Since(started))
+	return result, err
+}
+
+func (h *Handler) callTool(ctx context.Context, name string, args json.RawMessage, id server.Identity) (map[string]any, error) {
 	switch name {
 	case "health":
 		return h.toolHealth(ctx, id)
@@ -183,6 +202,64 @@ func (h *Handler) dispatchTool(ctx context.Context, name string, args json.RawMe
 		return nil, fmt.Errorf("tool %s has no handler", name)
 	}
 	return tool.Handler(ctx, args, id)
+}
+
+func (h *Handler) recordToolCall(ctx context.Context, name string, args json.RawMessage, sensitive []string, id server.Identity, result map[string]any, callErr error, duration time.Duration) {
+	if h.recorder == nil {
+		return
+	}
+	outcome := &telemetry.Outcome{
+		Status:     "ok",
+		DurationMS: duration.Milliseconds(),
+	}
+	if callErr != nil {
+		outcome.Status = "error"
+		if errors.Is(callErr, errUnknownTool) {
+			outcome.Error = string(ErrValidation)
+		} else {
+			outcome.Error = string(ErrInternal)
+		}
+	} else {
+		if b, err := json.Marshal(result); err == nil {
+			outcome.Bytes, outcome.SHA256 = telemetry.Digest(b)
+		}
+		if code, ok := errorResultCode(result); ok {
+			outcome.Status = "error"
+			outcome.Error = string(code)
+		}
+	}
+
+	var actor *telemetry.Actor
+	if id.OwnerEmail != "" || id.ClientID != "" {
+		actor = &telemetry.Actor{OwnerEmail: id.OwnerEmail, ClientID: id.ClientID}
+	}
+	h.recorder.Record(telemetry.Record{
+		CorrelationID: correlation.FromContext(ctx),
+		Service:       h.service,
+		Kind:          telemetry.KindRequest,
+		Actor:         actor,
+		Op:            "mcp:" + name,
+		Params:        telemetry.EncodeParams(args, sensitive),
+		Outcome:       outcome,
+	})
+}
+
+func errorResultCode(result map[string]any) (ErrorCode, bool) {
+	if result == nil || result["isError"] != true {
+		return "", false
+	}
+	structured, ok := result["structuredContent"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	switch code := structured["code"].(type) {
+	case ErrorCode:
+		return code, true
+	case string:
+		return ErrorCode(code), true
+	default:
+		return "", false
+	}
 }
 
 func (h *Handler) toolDescriptors() []map[string]any {

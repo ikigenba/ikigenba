@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"appkit/config"
 	"appkit/db"
@@ -21,6 +22,7 @@ import (
 	"appkit/logging"
 	"appkit/manifest"
 	"appkit/server"
+	"appkit/telemetry"
 	"appkit/web"
 
 	"eventplane/consumer"
@@ -177,6 +179,12 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 		return err
 	}
 	logger := logging.New(level, stdout)
+	recorder := telemetry.New(telemetry.Options{
+		Service:   spec.App,
+		IngestURL: cfg.TelemetryIngestURL,
+		Enabled:   cfg.TelemetryEnabled,
+		Logger:    logger,
+	})
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -186,6 +194,12 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 	// (event-protocol.md decision 11) lifted from notify/wiki into the chassis.
 	ctx, cancel := context.WithCancel(sigCtx)
 	defer cancel()
+	recorder.Start(ctx)
+	defer func() {
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer closeCancel()
+		_ = recorder.Close(closeCtx)
+	}()
 
 	conn, err := db.Open(cfg.DBPath)
 	if err != nil {
@@ -261,6 +275,8 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 		FeedPath:      spec.Feed,
 		Register:      register,
 		DB:            conn,
+		Recorder:      recorder,
+		RecordExclude: spec.TelemetryExclude,
 	})
 	if err != nil {
 		return err
