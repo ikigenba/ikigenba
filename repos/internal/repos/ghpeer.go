@@ -47,9 +47,6 @@ func NewGitHubPeer(client *http.Client) *GitHubPeer {
 // NewGitHubPeerAt constructs a peer for a supplied endpoint, primarily for
 // recording local integration servers.
 func NewGitHubPeerAt(baseURL string, client *http.Client) *GitHubPeer {
-	if client == nil {
-		client = http.DefaultClient
-	}
 	return &GitHubPeer{baseURL: baseURL, http: client}
 }
 

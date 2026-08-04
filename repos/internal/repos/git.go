@@ -48,15 +48,11 @@ func (s *HTTPTokenSource) Token(ctx context.Context) (string, error) {
 	if s.token != "" && now().Add(time.Minute).Before(s.expires) {
 		return s.token, nil
 	}
-	client := s.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(s.URL, "/")+"/token", nil)
 	if err != nil {
 		return "", fmt.Errorf("github token request: %w", err)
 	}
-	response, err := client.Do(req)
+	response, err := s.Client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("github token request: %w", err)
 	}

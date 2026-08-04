@@ -97,9 +97,9 @@ func TestAssembledRoutesGateMCPAndCreateRowsFromOwnerIdentity(t *testing.T) {
 		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
 	}))
 	defer peer.Close()
-	originalClient := http.DefaultClient
-	http.DefaultClient = &http.Client{Transport: rewriteTransport{target: peer.URL, base: http.DefaultTransport}}
-	t.Cleanup(func() { http.DefaultClient = originalClient })
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = rewriteTransport{target: peer.URL, base: originalTransport}
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
 
 	site, err := appweb.Load(filepath.Join("..", "..", "share", "www"))
 	if err != nil {

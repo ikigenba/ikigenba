@@ -12,9 +12,78 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"eventplane/correlation"
 )
+
+type tokenRecordingTransport struct {
+	base http.RoundTripper
+
+	mu       sync.Mutex
+	requests []*http.Request
+}
+
+func (t *tokenRecordingTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	t.mu.Lock()
+	t.requests = append(t.requests, request)
+	t.mu.Unlock()
+	return t.base.RoundTrip(request)
+}
+
+func (t *tokenRecordingTransport) recordedRequests() []*http.Request {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]*http.Request(nil), t.requests...)
+}
+
+func TestHTTPTokenSourceRefreshUsesInjectedClientWithCallContext(t *testing.T) {
+	// R-BUHK-3G7K
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.Method != http.MethodGet || request.URL.Path != "/token" {
+			t.Errorf("request = %s %s, want GET /token", request.Method, request.URL.Path)
+		}
+		fmt.Fprintf(w, `{"token":"token-%d","expires_at":%q}`, requests, now.Add(2*time.Minute).Format(time.RFC3339))
+	}))
+	defer server.Close()
+
+	transport := &tokenRecordingTransport{base: http.DefaultTransport}
+	client := &http.Client{Transport: transport}
+	source := NewHTTPTokenSource(client, func() time.Time { return now })
+	source.URL = server.URL
+	correlationID := "01K1C5Y7N8E9F0G1H2J3K4M5NQ"
+	ctx := correlation.WithContext(context.Background(), correlationID)
+
+	first, err := source.Token(ctx)
+	if err != nil {
+		t.Fatalf("first Token: %v", err)
+	}
+	if first != "token-1" {
+		t.Fatalf("first token = %q, want token-1", first)
+	}
+	now = now.Add(2 * time.Minute)
+	second, err := source.Token(ctx)
+	if err != nil {
+		t.Fatalf("refreshed Token: %v", err)
+	}
+	if second != "token-2" {
+		t.Fatalf("refreshed token = %q, want token-2", second)
+	}
+	recorded := transport.recordedRequests()
+	if len(recorded) != 2 {
+		t.Fatalf("recorded requests = %d, want initial fetch and refresh", len(recorded))
+	}
+	for i, request := range recorded {
+		if got := correlation.FromContext(request.Context()); got != correlationID {
+			t.Errorf("request %d context correlation id = %q, want %q", i+1, got, correlationID)
+		}
+	}
+}
 
 func TestFreshenMovesDriftedCanonicalCloneToAdvancedRemoteTip(t *testing.T) {
 	// R-EZVJ-FECP

@@ -108,11 +108,11 @@ func reposSpec() appkit.Spec {
 				return err
 			}
 			store := repos.NewStore(rt.DB())
-			tokens := repos.NewHTTPTokenSource(http.DefaultClient, clock.Now)
+			tokens := repos.NewHTTPTokenSource(rt.HTTPClient(30*time.Second), clock.Now)
 			git := repos.NewGit(filepath.Join(stateRoot, "repos"), tokens)
 			lifecycle := repos.NewService(store, git, clock,
 				config.EnvOr(os.Getenv, "REPOS_GITHUB_ORG", "ikigenba"))
-			protocol := repos.NewProtocol(repos.NewGitHubPeer(http.DefaultClient))
+			protocol := repos.NewProtocol(repos.NewGitHubPeer(rt.HTTPClient(30 * time.Second)))
 			domain.lifecycle = lifecycle
 			domain.store = store
 			intake = repos.NewIntake(store, lifecycle, domain, os.Getenv("REPOS_BOT_LOGIN"), rt.Logger())
