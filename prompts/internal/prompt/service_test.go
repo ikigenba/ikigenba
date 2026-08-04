@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"eventplane/correlation"
+
 	"prompts/internal/calls"
 	"prompts/internal/sandbox"
 )
@@ -21,6 +23,37 @@ type fakeRunner struct {
 	spawned []Run
 	cancels []string
 	found   bool // value Cancel returns
+}
+
+func TestRunPersistsRootOrInheritedCorrelationID(t *testing.T) {
+	// R-HJIC-GE7A
+	// R-HKQ8-U5XZ
+	svc, store, _, _ := newTestService(t)
+	p := seedPrompt(t, store, ownerA)
+	rooted, err := svc.Run(context.Background(), ownerA, p.ID)
+	if err != nil {
+		t.Fatalf("rooted Run: %v", err)
+	}
+	var rootedCorrelation string
+	if err := store.db.QueryRow(`SELECT correlation_id FROM runs WHERE id = ?`, rooted.ID).Scan(&rootedCorrelation); err != nil {
+		t.Fatalf("read rooted correlation_id: %v", err)
+	}
+	if rootedCorrelation != rooted.ID || rootedCorrelation == "" {
+		t.Fatalf("rooted correlation_id = %q, want run id %q", rootedCorrelation, rooted.ID)
+	}
+
+	const inheritedID = "01JZZZZZZZZZZZZZZZZZZZZZZZ"
+	inherited, err := svc.Run(correlation.WithContext(context.Background(), inheritedID), ownerA, p.ID)
+	if err != nil {
+		t.Fatalf("inherited Run: %v", err)
+	}
+	var inheritedCorrelation string
+	if err := store.db.QueryRow(`SELECT correlation_id FROM runs WHERE id = ?`, inherited.ID).Scan(&inheritedCorrelation); err != nil {
+		t.Fatalf("read inherited correlation_id: %v", err)
+	}
+	if inheritedCorrelation != inheritedID || inheritedCorrelation == inherited.ID {
+		t.Fatalf("inherited correlation_id = %q for run %q, want %q", inheritedCorrelation, inherited.ID, inheritedID)
+	}
 }
 
 func (f *fakeRunner) Spawn(run Run) {

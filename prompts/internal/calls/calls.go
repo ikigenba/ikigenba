@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"eventplane/correlation"
 	"fmt"
 	"regexp"
 	"strings"
@@ -52,37 +53,39 @@ func ValidateName(name string) error {
 }
 
 type Row struct {
-	ID           string
-	Class        Class
-	Origin       string
-	Name         string
-	GroupID      string
-	Attempt      int
-	OwnerEmail   string
-	Provider     string
-	Model        string
-	InputTokens  int64
-	OutputTokens int64
-	TotalTokens  int64
-	UsageJSON    string
-	CostUSD      float64
-	Error        string
-	RequestBody  *string
-	ResponseBody *string
-	StartedAt    time.Time
-	EndedAt      time.Time
+	ID            string
+	Class         Class
+	Origin        string
+	Name          string
+	GroupID       string
+	CorrelationID string
+	Attempt       int
+	OwnerEmail    string
+	Provider      string
+	Model         string
+	InputTokens   int64
+	OutputTokens  int64
+	TotalTokens   int64
+	UsageJSON     string
+	CostUSD       float64
+	Error         string
+	RequestBody   *string
+	ResponseBody  *string
+	StartedAt     time.Time
+	EndedAt       time.Time
 }
 
 type Filter struct {
-	Class      Class
-	Origin     string
-	Name       string
-	GroupID    string
-	ErrorsOnly bool
-	Since      time.Time
-	Until      time.Time
-	Limit      int
-	Offset     int
+	Class         Class
+	Origin        string
+	Name          string
+	GroupID       string
+	CorrelationID string
+	ErrorsOnly    bool
+	Since         time.Time
+	Until         time.Time
+	Limit         int
+	Offset        int
 }
 
 type GroupBy string
@@ -149,6 +152,9 @@ func (s *Store) insert(ctx context.Context, dst execer, row Row) error {
 	if row.Attempt == 0 {
 		row.Attempt = 1
 	}
+	if row.CorrelationID == "" {
+		row.CorrelationID = correlation.FromContext(ctx)
+	}
 	now := s.now().UTC()
 	if row.StartedAt.IsZero() {
 		row.StartedAt = now
@@ -158,11 +164,11 @@ func (s *Store) insert(ctx context.Context, dst execer, row Row) error {
 	}
 	_, err := dst.ExecContext(ctx, `
 		INSERT INTO calls (
-			id, class, origin, name, group_id, attempt, owner_email, provider, model,
+			id, class, origin, name, group_id, correlation_id, attempt, owner_email, provider, model,
 			input_tokens, output_tokens, total_tokens, usage_json, cost_usd, error,
 			request_body, response_body, started_at, ended_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		row.ID, row.Class, row.Origin, row.Name, row.GroupID, row.Attempt,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		row.ID, row.Class, row.Origin, row.Name, row.GroupID, row.CorrelationID, row.Attempt,
 		row.OwnerEmail, row.Provider, row.Model, row.InputTokens, row.OutputTokens,
 		row.TotalTokens, row.UsageJSON, row.CostUSD, row.Error, row.RequestBody,
 		row.ResponseBody, formatTime(row.StartedAt), formatTime(row.EndedAt))
@@ -287,7 +293,7 @@ func (s *Store) Aggregate(ctx context.Context, group GroupBy, f Filter) ([]Bucke
 	return result, nil
 }
 
-const selectColumns = `SELECT id, class, origin, name, group_id, attempt, owner_email,
+const selectColumns = `SELECT id, class, origin, name, group_id, correlation_id, attempt, owner_email,
 	provider, model, input_tokens, output_tokens, total_tokens, usage_json, cost_usd,
 	error, request_body, response_body, started_at, ended_at FROM calls`
 
@@ -297,7 +303,7 @@ func scanRow(src scanner) (Row, error) {
 	var row Row
 	var request, response sql.NullString
 	var started, ended string
-	err := src.Scan(&row.ID, &row.Class, &row.Origin, &row.Name, &row.GroupID,
+	err := src.Scan(&row.ID, &row.Class, &row.Origin, &row.Name, &row.GroupID, &row.CorrelationID,
 		&row.Attempt, &row.OwnerEmail, &row.Provider, &row.Model, &row.InputTokens,
 		&row.OutputTokens, &row.TotalTokens, &row.UsageJSON, &row.CostUSD, &row.Error,
 		&request, &response, &started, &ended)
@@ -339,6 +345,9 @@ func filterSQL(f Filter) (string, []any) {
 	}
 	if f.GroupID != "" {
 		add("group_id = ?", f.GroupID)
+	}
+	if f.CorrelationID != "" {
+		add("correlation_id = ?", f.CorrelationID)
 	}
 	if f.ErrorsOnly {
 		clauses = append(clauses, "error <> ''")

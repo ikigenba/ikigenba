@@ -10,16 +10,16 @@ import (
 )
 
 type sessionCallRow struct {
-	class, origin, name, groupID, ownerEmail, provider, model string
-	inputTokens, outputTokens, totalTokens                    int64
-	usageJSON, errMsg                                         string
-	costUSD                                                   float64
-	requestBody, responseBody                                 sql.NullString
+	class, origin, name, groupID, correlationID, ownerEmail, provider, model string
+	inputTokens, outputTokens, totalTokens                                   int64
+	usageJSON, errMsg                                                        string
+	costUSD                                                                  float64
+	requestBody, responseBody                                                sql.NullString
 }
 
 func readSessionCalls(t *testing.T, conn *sql.DB) []sessionCallRow {
 	t.Helper()
-	rows, err := conn.Query(`SELECT class, origin, name, group_id, owner_email, provider, model,
+	rows, err := conn.Query(`SELECT class, origin, name, group_id, correlation_id, owner_email, provider, model,
 		input_tokens, output_tokens, total_tokens, usage_json, cost_usd, error,
 		request_body, response_body FROM calls ORDER BY started_at, id`)
 	if err != nil {
@@ -29,7 +29,7 @@ func readSessionCalls(t *testing.T, conn *sql.DB) []sessionCallRow {
 	var got []sessionCallRow
 	for rows.Next() {
 		var row sessionCallRow
-		if err := rows.Scan(&row.class, &row.origin, &row.name, &row.groupID,
+		if err := rows.Scan(&row.class, &row.origin, &row.name, &row.groupID, &row.correlationID,
 			&row.ownerEmail, &row.provider, &row.model, &row.inputTokens,
 			&row.outputTokens, &row.totalTokens, &row.usageJSON, &row.costUSD,
 			&row.errMsg, &row.requestBody, &row.responseBody); err != nil {
@@ -41,6 +41,37 @@ func readSessionCalls(t *testing.T, conn *sql.DB) []sessionCallRow {
 		t.Fatalf("calls rows: %v", err)
 	}
 	return got
+}
+
+func TestFinishRunCopiesRunCorrelationIDToSessionCall(t *testing.T) {
+	// R-HN61-LPFD
+	store, conn := newProducerStore(t)
+	store.Outbox = nil
+	store.Calls = calls.NewStore(conn)
+	ctx := context.Background()
+	_, rooted := seedRunningRun(t, store, "rooted")
+	rooted.CorrelationID = rooted.ID
+	if _, err := conn.Exec(`UPDATE runs SET correlation_id = ? WHERE id = ?`, rooted.CorrelationID, rooted.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, inherited := seedRunningRun(t, store, "inherited")
+	inherited.CorrelationID = "01JZZZZZZZZZZZZZZZZZZZZZZZ"
+	if _, err := conn.Exec(`UPDATE runs SET correlation_id = ? WHERE id = ?`, inherited.CorrelationID, inherited.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range []Run{rooted, inherited} {
+		if err := store.FinishRun(ctx, FinishRunInput{RunID: run.ID, Status: RunSucceeded, EndedAt: store.nowStr()}); err != nil {
+			t.Fatalf("FinishRun(%s): %v", run.ID, err)
+		}
+	}
+	rows := readSessionCalls(t, conn)
+	got := map[string]string{}
+	for _, row := range rows {
+		got[row.groupID] = row.correlationID
+	}
+	if got[rooted.ID] != rooted.ID || got[inherited.ID] != inherited.CorrelationID || got[inherited.ID] == inherited.ID {
+		t.Fatalf("session correlations = %#v, want rooted=%q inherited=%q", got, rooted.ID, inherited.CorrelationID)
+	}
 }
 
 func TestFinishRunRecordsManualAndTriggeredOrigins(t *testing.T) {

@@ -240,10 +240,10 @@ func (s *Store) DeletePrompt(ctx context.Context, owner, id string) error {
 func (s *Store) InsertRun(ctx context.Context, r Run) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO runs
-		   (id, prompt_id, owner_id, owner_email, prompt_name, status, started_at,
+		   (id, correlation_id, prompt_id, owner_id, owner_email, prompt_name, status, started_at,
 		    ended_at, usage_json, error, trigger_source, trigger_kind, trigger_subject, trigger_event_id, log_path)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.PromptID, r.OwnerID, r.OwnerEmail, nullStr(r.PromptName), r.Status, r.StartedAt,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.CorrelationID, r.PromptID, r.OwnerID, r.OwnerEmail, nullStr(r.PromptName), r.Status, r.StartedAt,
 		nullStr(r.EndedAt), nullStr(r.UsageJSON), nullStr(r.Error),
 		nullStr(r.TriggerSource), nullStr(r.TriggerKind), nullStr(r.TriggerSubject), nullStr(r.TriggerEventID), r.LogPath,
 	)
@@ -255,7 +255,7 @@ func (s *Store) InsertRun(ctx context.Context, r Run) error {
 
 // runSelectCols is the column list shared by the run-read queries, in
 // scanRun's order.
-const runSelectCols = `id, prompt_id, owner_id, owner_email, prompt_name, status, started_at,
+const runSelectCols = `id, correlation_id, prompt_id, owner_id, owner_email, prompt_name, status, started_at,
 	        ended_at, usage_json, error, trigger_source, trigger_kind, trigger_subject, trigger_event_id, log_path`
 
 // GetRun returns a run by its run_id, or ErrNotFound when absent. It is NOT
@@ -321,10 +321,16 @@ func (s *Store) ListRunsByPrompt(ctx context.Context, promptID string) ([]Run, e
 // ListRunsByPromptForOwner returns only the owner's runs for a prompt, newest
 // first. It deliberately does not consult the prompts table, so runs remain
 // listable after their prompt is deleted.
-func (s *Store) ListRunsByPromptForOwner(ctx context.Context, ownerID, promptID string) ([]Run, error) {
+func (s *Store) ListRunsByPromptForOwner(ctx context.Context, ownerID, promptID string, correlationID ...string) ([]Run, error) {
+	where := "prompt_id = ? AND owner_id = ?"
+	args := []any{promptID, ownerID}
+	if len(correlationID) > 0 && correlationID[0] != "" {
+		where += " AND correlation_id = ?"
+		args = append(args, correlationID[0])
+	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+runSelectCols+` FROM runs WHERE prompt_id = ? AND owner_id = ? ORDER BY started_at DESC, id DESC`,
-		promptID, ownerID,
+		`SELECT `+runSelectCols+` FROM runs WHERE `+where+` ORDER BY started_at DESC, id DESC`,
+		args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("prompt: list owner runs: %w", err)
@@ -501,19 +507,20 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 	// Read the run's event fields from the row itself (A5): the runner no longer
 	// threads prompt_id / prompt_name / trigger context — they live on the run.
 	var (
-		promptID    string
-		promptName  sql.NullString
-		ownerEmail  string
-		startedAt   string
-		trigSource  sql.NullString
-		trigKind    sql.NullString
-		trigSubject sql.NullString
-		trigEventID sql.NullString
+		promptID      string
+		promptName    sql.NullString
+		ownerEmail    string
+		startedAt     string
+		correlationID string
+		trigSource    sql.NullString
+		trigKind      sql.NullString
+		trigSubject   sql.NullString
+		trigEventID   sql.NullString
 	)
 	if err := tx.QueryRowContext(ctx,
-		`SELECT prompt_id, prompt_name, owner_email, started_at, trigger_source, trigger_kind, trigger_subject, trigger_event_id FROM runs WHERE id = ?`,
+		`SELECT prompt_id, prompt_name, owner_email, started_at, correlation_id, trigger_source, trigger_kind, trigger_subject, trigger_event_id FROM runs WHERE id = ?`,
 		in.RunID,
-	).Scan(&promptID, &promptName, &ownerEmail, &startedAt, &trigSource, &trigKind, &trigSubject, &trigEventID); err != nil {
+	).Scan(&promptID, &promptName, &ownerEmail, &startedAt, &correlationID, &trigSource, &trigKind, &trigSubject, &trigEventID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -549,22 +556,23 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 			name = promptID
 		}
 		if err := s.Calls.InsertTx(ctx, tx, calls.Row{
-			Class:        calls.ClassSession,
-			Origin:       origin,
-			Name:         name,
-			GroupID:      in.RunID,
-			Attempt:      1,
-			OwnerEmail:   ownerEmail,
-			Provider:     in.Provider,
-			Model:        in.Model,
-			InputTokens:  in.InputTokens,
-			OutputTokens: in.OutputTokens,
-			TotalTokens:  in.TotalTokens,
-			UsageJSON:    in.UsageJSON,
-			CostUSD:      in.CostUSD,
-			Error:        in.ErrMsg,
-			StartedAt:    start,
-			EndedAt:      end,
+			Class:         calls.ClassSession,
+			Origin:        origin,
+			Name:          name,
+			GroupID:       in.RunID,
+			CorrelationID: correlationID,
+			Attempt:       1,
+			OwnerEmail:    ownerEmail,
+			Provider:      in.Provider,
+			Model:         in.Model,
+			InputTokens:   in.InputTokens,
+			OutputTokens:  in.OutputTokens,
+			TotalTokens:   in.TotalTokens,
+			UsageJSON:     in.UsageJSON,
+			CostUSD:       in.CostUSD,
+			Error:         in.ErrMsg,
+			StartedAt:     start,
+			EndedAt:       end,
 		}); err != nil {
 			return fmt.Errorf("prompt: finish run insert call: %w", err)
 		}
@@ -578,7 +586,7 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 		}
 		if ok {
 			// Append on the SAME tx as the terminal write — the atomicity invariant.
-			if err := s.Outbox.Append(tx, ev); err != nil {
+			if err := s.Outbox.Append(ctx, tx, ev); err != nil {
 				return fmt.Errorf("prompt: finish run append outcome: %w", err)
 			}
 			emitted = true
@@ -664,7 +672,7 @@ func scanRun(sc scanner) (Run, error) {
 		trigEventID sql.NullString
 	)
 	err := sc.Scan(
-		&r.ID, &r.PromptID, &r.OwnerID, &r.OwnerEmail, &promptName, &r.Status, &r.StartedAt,
+		&r.ID, &r.CorrelationID, &r.PromptID, &r.OwnerID, &r.OwnerEmail, &promptName, &r.Status, &r.StartedAt,
 		&endedAt, &usage, &errMsg, &trigSource, &trigKind, &trigSubject, &trigEventID, &r.LogPath,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

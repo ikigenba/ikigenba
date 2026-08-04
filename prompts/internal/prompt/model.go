@@ -101,17 +101,18 @@ type Prompt struct {
 // FinishRun reads back from the run row. All three are empty for a manual
 // (MCP-initiated) run, the documented manual-run representation.
 type Run struct {
-	ID         string `json:"id"`
-	PromptID   string `json:"prompt_id"`
-	OwnerID    string `json:"owner_id"`
-	OwnerEmail string `json:"owner_email"`
-	PromptName string `json:"prompt_name,omitempty"`
-	Status     string `json:"status"`
-	StartedAt  string `json:"started_at"`
-	EndedAt    string `json:"ended_at,omitempty"`
-	UsageJSON  string `json:"usage_json,omitempty"`
-	Error      string `json:"error,omitempty"`
-	LogPath    string `json:"log_path"`
+	ID            string `json:"id"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	PromptID      string `json:"prompt_id"`
+	OwnerID       string `json:"owner_id"`
+	OwnerEmail    string `json:"owner_email"`
+	PromptName    string `json:"prompt_name,omitempty"`
+	Status        string `json:"status"`
+	StartedAt     string `json:"started_at"`
+	EndedAt       string `json:"ended_at,omitempty"`
+	UsageJSON     string `json:"usage_json,omitempty"`
+	Error         string `json:"error,omitempty"`
+	LogPath       string `json:"log_path"`
 
 	// Trigger context (persisted). Empty for a manual run.
 	TriggerSource  string `json:"trigger_source,omitempty"` // producer source id (cron|crm|ledger|dropbox|scripts|prompts)

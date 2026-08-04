@@ -273,6 +273,64 @@ func TestToolsListThroughAssembledHandlerReturnsDomainPlusChassisTools(t *testin
 	}
 }
 
+func TestRunCorrelationSurfaceThroughAssembledHandler(t *testing.T) {
+	// R-HODX-ZH62
+	h, _, _, conn := newTestHandlerWithDB(t)
+	const promptID = "prompt-correlation"
+	runs := []struct{ id, correlationID, startedAt string }{
+		{"run-chain-x", "chain-x", "2026-08-04T12:00:02Z"},
+		{"run-other", "chain-y", "2026-08-04T12:00:01Z"},
+	}
+	for _, run := range runs {
+		if _, err := conn.Exec(`INSERT INTO runs
+			(id, correlation_id, prompt_id, owner_id, owner_email, status, started_at, log_path)
+			VALUES (?, ?, ?, 'owner-id', ?, 'running', ?, ?)`,
+			run.id, run.correlationID, promptID, ownerEmail, run.startedAt, "/tmp/"+run.id); err != nil {
+			t.Fatalf("insert %s: %v", run.id, err)
+		}
+	}
+	get := call(t, h, "run_get", map[string]any{"run_id": "run-chain-x"})
+	var gotRun prompt.Run
+	if err := json.Unmarshal([]byte(resultText(t, get)), &gotRun); err != nil {
+		t.Fatalf("decode run_get: %v", err)
+	}
+	if gotRun.CorrelationID != "chain-x" {
+		t.Fatalf("run_get correlation_id = %q, want chain-x", gotRun.CorrelationID)
+	}
+	list := call(t, h, "run_list", map[string]any{"prompt_id": promptID, "correlation_id": "chain-x"})
+	var gotList struct {
+		Runs []prompt.Run `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, list)), &gotList); err != nil {
+		t.Fatalf("decode run_list: %v", err)
+	}
+	if len(gotList.Runs) != 1 || gotList.Runs[0].ID != "run-chain-x" {
+		t.Fatalf("filtered run_list = %+v, want only run-chain-x", gotList.Runs)
+	}
+
+	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	rr := do(t, h, body)
+	var descriptors struct {
+		Result struct {
+			Tools []map[string]any `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &descriptors); err != nil {
+		t.Fatalf("decode tools/list: %v", err)
+	}
+	for _, descriptor := range descriptors.Result.Tools {
+		if descriptor["name"] != "run_list" {
+			continue
+		}
+		properties := descriptor["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		if _, ok := properties["correlation_id"]; !ok {
+			t.Fatalf("run_list input schema properties = %#v, missing correlation_id", properties)
+		}
+		return
+	}
+	t.Fatal("assembled handler did not advertise run_list")
+}
+
 func TestToolsListDeclaresSchemasOnlyForStructuredTools(t *testing.T) {
 	// R-B4QM-WZGJ
 	h, _, _ := newTestHandler(t)

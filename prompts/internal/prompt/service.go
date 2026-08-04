@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"eventplane/correlation"
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/catalog"
 	"prompts/internal/calls"
@@ -56,6 +57,9 @@ type Service struct {
 	// SubAuthAvailable probes the optional OpenAI subscription credential.
 	// It is field-injected by the composition root and defaults to unavailable.
 	SubAuthAvailable func() bool
+	// RootStarter is the chassis seam used when a run establishes a new chain.
+	// It receives a context already seeded with the durable run id.
+	RootStarter func(context.Context, string) context.Context
 }
 
 // NewService wires the store, sandbox manager, run-logs base dir, and runner.
@@ -67,7 +71,13 @@ func NewService(store *Store, sb *sandbox.Manager, runsDir string, runner Runner
 		runner:           runner,
 		now:              func() time.Time { return time.Now().UTC() },
 		SubAuthAvailable: func() bool { return false },
+		RootStarter:      func(ctx context.Context, _ string) context.Context { return ctx },
 	}
+}
+
+func (s *Service) startRoot(ctx context.Context, runID, label string) context.Context {
+	ctx = correlation.WithContext(ctx, runID)
+	return s.RootStarter(ctx, label)
 }
 
 // CallStore returns the suite-wide inference accounting store wired at the
@@ -492,8 +502,14 @@ func (s *Service) startRun(ctx context.Context, p Prompt, source, kind, subject,
 		return Run{}, err
 	}
 	runID := ids.NewULID()
+	corrID := correlation.FromContext(ctx)
+	if corrID == "" {
+		corrID = runID
+		ctx = s.startRoot(ctx, runID, "run:"+runID)
+	}
 	run := Run{
 		ID:             runID,
+		CorrelationID:  corrID,
 		PromptID:       p.ID,
 		OwnerID:        p.OwnerID,
 		OwnerEmail:     p.OwnerEmail,
@@ -630,8 +646,8 @@ func (s *Service) runForOwner(ctx context.Context, ownerID, runID string) (Run, 
 // RunList returns the owner's runs for promptID, newest first. The runs rows
 // enforce ownership directly, so a deleted or unknown prompt yields its
 // surviving owned runs or an empty list without consulting the prompts table.
-func (s *Service) RunList(ctx context.Context, ownerID, promptID string) ([]Run, error) {
-	return s.store.ListRunsByPromptForOwner(ctx, ownerID, promptID)
+func (s *Service) RunList(ctx context.Context, ownerID, promptID string, correlationID ...string) ([]Run, error) {
+	return s.store.ListRunsByPromptForOwner(ctx, ownerID, promptID, correlationID...)
 }
 
 // RunExecuted returns the frozen prompt definition for an owner-scoped run.

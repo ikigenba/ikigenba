@@ -41,6 +41,32 @@ func TestInsertAndGetRoundTripEveryField(t *testing.T) {
 	}
 }
 
+func TestCorrelationIDRoundTripsAndFiltersExactly(t *testing.T) {
+	// R-HLY5-7XOO
+	store := testStore(t)
+	chains := []string{"chain-x", "chain-y", "chain-x", "", "chain-z"}
+	for i, chain := range chains {
+		row := seededRow(string(rune('a'+i)), "wiki.compile", time.Date(2026, 8, 4, 12, 0, i, 0, time.UTC))
+		row.CorrelationID = chain
+		if err := store.Insert(context.Background(), row); err != nil {
+			t.Fatalf("Insert %d: %v", i, err)
+		}
+		if i == 0 {
+			got, err := store.Get(context.Background(), row.ID)
+			if err != nil || got.CorrelationID != chain {
+				t.Fatalf("Get correlation_id = %q, err=%v, want %q", got.CorrelationID, err, chain)
+			}
+		}
+	}
+	got, err := store.List(context.Background(), Filter{CorrelationID: "chain-x"})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 2 || got[0].CorrelationID != "chain-x" || got[1].CorrelationID != "chain-x" {
+		t.Fatalf("filtered rows = %+v, want exactly two chain-x rows", got)
+	}
+}
+
 func TestPruneBodiesPreservesMetrics(t *testing.T) {
 	// R-5K9S-M33B
 	store := testStore(t)

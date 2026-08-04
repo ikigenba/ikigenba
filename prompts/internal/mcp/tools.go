@@ -210,16 +210,17 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 			}),
 
 		desc(tool("run_list"), "List the runs of one of the caller's prompts, newest first.", obj(map[string]any{
-			"prompt_id": typ("string"),
+			"prompt_id": typ("string"), "correlation_id": typ("string"),
 		}, "prompt_id"),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				var in struct {
-					PromptID string `json:"prompt_id"`
+					PromptID      string `json:"prompt_id"`
+					CorrelationID string `json:"correlation_id"`
 				}
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				runs, err := svc.RunList(ctx, id.OwnerID, in.PromptID)
+				runs, err := svc.RunList(ctx, id.OwnerID, in.PromptID, in.CorrelationID)
 				if err != nil {
 					return fail(err), nil
 				}
@@ -431,22 +432,23 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 }
 
 type callsInput struct {
-	Class      string `json:"class"`
-	Origin     string `json:"origin"`
-	Name       string `json:"name"`
-	GroupID    string `json:"group_id"`
-	ErrorsOnly bool   `json:"errors_only"`
-	Since      string `json:"since"`
-	Until      string `json:"until"`
-	Limit      int    `json:"limit"`
-	Offset     int    `json:"offset"`
-	CallID     string `json:"call_id"`
+	Class         string `json:"class"`
+	Origin        string `json:"origin"`
+	Name          string `json:"name"`
+	GroupID       string `json:"group_id"`
+	CorrelationID string `json:"correlation_id"`
+	ErrorsOnly    bool   `json:"errors_only"`
+	Since         string `json:"since"`
+	Until         string `json:"until"`
+	Limit         int    `json:"limit"`
+	Offset        int    `json:"offset"`
+	CallID        string `json:"call_id"`
 }
 
 func callsInputSchema() map[string]any {
 	return obj(map[string]any{
 		"class": classSchema(), "origin": typ("string"), "name": typ("string"),
-		"group_id": typ("string"), "errors_only": typ("boolean"), "since": typ("string"),
+		"group_id": typ("string"), "correlation_id": typ("string"), "errors_only": typ("boolean"), "since": typ("string"),
 		"until": typ("string"), "limit": typ("integer"), "offset": typ("integer"), "call_id": typ("string"),
 	})
 }
@@ -456,7 +458,7 @@ func classSchema() map[string]any {
 }
 
 func (in callsInput) filter() (calls.Filter, error) {
-	f := calls.Filter{Class: calls.Class(in.Class), Origin: in.Origin, Name: in.Name, GroupID: in.GroupID, ErrorsOnly: in.ErrorsOnly, Limit: in.Limit, Offset: in.Offset}
+	f := calls.Filter{Class: calls.Class(in.Class), Origin: in.Origin, Name: in.Name, GroupID: in.GroupID, CorrelationID: in.CorrelationID, ErrorsOnly: in.ErrorsOnly, Limit: in.Limit, Offset: in.Offset}
 	if f.Class != "" && f.Class != calls.ClassSession && f.Class != calls.ClassCompletion && f.Class != calls.ClassEmbedding {
 		return calls.Filter{}, validationError("class must be one of session, completion, embedding")
 	}
@@ -488,7 +490,7 @@ func validationError(message string) error {
 func callMetrics(row calls.Row) map[string]any {
 	return map[string]any{
 		"id": row.ID, "class": row.Class, "origin": row.Origin, "name": row.Name,
-		"group_id": row.GroupID, "attempt": row.Attempt, "owner_email": row.OwnerEmail,
+		"group_id": row.GroupID, "correlation_id": row.CorrelationID, "attempt": row.Attempt, "owner_email": row.OwnerEmail,
 		"provider": row.Provider, "model": row.Model, "input_tokens": row.InputTokens,
 		"output_tokens": row.OutputTokens, "total_tokens": row.TotalTokens,
 		"usage_json": row.UsageJSON, "cost_usd": row.CostUSD, "error": row.Error,
@@ -550,7 +552,7 @@ func outputSchemas() map[string]map[string]any {
 		"created_at": typ("string"), "updated_at": typ("string"), "source_path": typ("string"),
 	}
 	runProps := map[string]any{
-		"id": typ("string"), "prompt_id": typ("string"), "owner_id": typ("string"), "owner_email": typ("string"),
+		"id": typ("string"), "correlation_id": typ("string"), "prompt_id": typ("string"), "owner_id": typ("string"), "owner_email": typ("string"),
 		"prompt_name": typ("string"), "status": typ("string"), "started_at": typ("string"),
 		"ended_at": typ("string"), "usage_json": typ("string"), "error": typ("string"),
 		"log_path": typ("string"), "trigger_source": typ("string"), "trigger_kind": typ("string"),

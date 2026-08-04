@@ -222,6 +222,10 @@ func registerRoutes(rt *appkit.Router) error {
 	run := runner.New(store, sb, gate, runTTL, manifestRoot, func(port int) bool { return allowedPorts[port] }, dropboxBase)
 	run.SetProviderFactory(buildProvider)
 	svc := prompt.NewService(store, sb, runsDir, run)
+	svc.RootStarter = func(ctx context.Context, label string) context.Context {
+		ctx, _ = rt.Recorder().StartChain(ctx, label, nil)
+		return ctx
+	}
 	svc.SubAuthAvailable = subAuth.Available
 	// Wire the dropbox loopback content fetcher for the import verb. DROPBOX_BASE_URL
 	// is env-only (defaulting through the shared registry), the same
