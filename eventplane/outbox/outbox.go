@@ -210,8 +210,8 @@ func (o *Outbox) Append(ctx context.Context, tx *sql.Tx, ev Event) (err error) {
 	eventID = newULID()
 	createdAt := o.now().UTC().Format(time.RFC3339Nano)
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO outbox (event_id, kind, subject, payload, created_at) VALUES (?, ?, ?, ?, ?)`,
-		eventID, ev.Kind, ev.Subject, string(ev.Payload), createdAt,
+		`INSERT INTO outbox (event_id, kind, subject, payload, created_at, correlation_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		eventID, ev.Kind, ev.Subject, string(ev.Payload), createdAt, correlation.FromContext(ctx),
 	)
 	if err != nil {
 		return fmt.Errorf("outbox: append %s: %w", ev.Kind, err)
@@ -256,7 +256,7 @@ type eventRow struct {
 // memory bounded and the backlog on disk (§6.1).
 func (o *Outbox) fetch(ctx context.Context, afterSeq int64, limit int) ([]eventRow, int64, error) {
 	rows, err := o.db.QueryContext(ctx,
-		`SELECT seq, event_id, kind, subject, payload, created_at
+		`SELECT seq, event_id, kind, subject, payload, created_at, correlation_id
 		   FROM outbox
 		  WHERE seq > ?
 		  ORDER BY seq
@@ -270,7 +270,7 @@ func (o *Outbox) fetch(ctx context.Context, afterSeq int64, limit int) ([]eventR
 	var out []eventRow
 	for rows.Next() {
 		var r eventRow
-		if err := rows.Scan(&r.seq, &r.eventID, &r.kind, &r.subject, &r.payload, &r.createdAt); err != nil {
+		if err := rows.Scan(&r.seq, &r.eventID, &r.kind, &r.subject, &r.payload, &r.createdAt, &r.correlationID); err != nil {
 			return nil, afterSeq, fmt.Errorf("outbox: scan: %w", err)
 		}
 		out = append(out, r)

@@ -13,11 +13,13 @@ import (
 	"time"
 
 	appkitdb "appkit/db"
+	"appkit/telemetry"
 
 	"cron/internal/crontab"
 	"cron/internal/db"
 	"cron/internal/event"
 
+	"eventplane/correlation"
 	"eventplane/outbox"
 )
 
@@ -25,6 +27,10 @@ import (
 // tick Worker over them. DBPath is left empty so outbox.New skips the §5.3
 // concurrency probe (a single shared handle in a test).
 func harness(t *testing.T) (*Worker, *crontab.Store, *sql.DB, context.Context) {
+	return harnessWithRecorder(t, nil)
+}
+
+func harnessWithRecorder(t *testing.T, recorder *telemetry.Recorder) (*Worker, *crontab.Store, *sql.DB, context.Context) {
 	t.Helper()
 	ctx := context.Background()
 	conn, err := appkitdb.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -44,20 +50,21 @@ func harness(t *testing.T) (*Worker, *crontab.Store, *sql.DB, context.Context) {
 	if err != nil {
 		t.Fatalf("outbox.New: %v", err)
 	}
-	return New(conn, store, ob, nil, nil), store, conn, ctx
+	return New(conn, store, ob, recorder, nil), store, conn, ctx
 }
 
 // outboxRows reads every outbox row's type+payload, in seq order.
 type outboxRow struct {
-	Kind    string
-	Subject string
-	Payload event.Payload
+	Kind          string
+	Subject       string
+	Payload       event.Payload
+	CorrelationID string
 }
 
 // outboxRows reads every outbox row's routing address and payload, in seq order.
 func outboxRows(t *testing.T, conn *sql.DB) []outboxRow {
 	t.Helper()
-	rows, err := conn.Query(`SELECT kind, subject, payload FROM outbox ORDER BY seq ASC`)
+	rows, err := conn.Query(`SELECT kind, subject, payload, correlation_id FROM outbox ORDER BY seq ASC`)
 	if err != nil {
 		t.Fatalf("query outbox: %v", err)
 	}
@@ -66,7 +73,7 @@ func outboxRows(t *testing.T, conn *sql.DB) []outboxRow {
 	for rows.Next() {
 		var row outboxRow
 		var payload string
-		if err := rows.Scan(&row.Kind, &row.Subject, &payload); err != nil {
+		if err := rows.Scan(&row.Kind, &row.Subject, &payload, &row.CorrelationID); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
 		if err := json.Unmarshal([]byte(payload), &row.Payload); err != nil {
@@ -75,6 +82,111 @@ func outboxRows(t *testing.T, conn *sql.DB) []outboxRow {
 		out = append(out, row)
 	}
 	return out
+}
+
+// R-2WBI-55QU
+// R-2XJE-IXHJ
+func TestFireMintsOneValidCorrelationIDPerFiring(t *testing.T) {
+	w, store, conn, ctx := harness(t)
+	now := time.Now()
+	mustCreate(t, store, ctx, now, "nightly", "* * * * *")
+	mustCreate(t, store, ctx, now, "bill-sweep", "* * * * *")
+	slot := time.Date(2026, 6, 6, 3, 0, 0, 0, time.UTC)
+
+	if n, err := w.Fire(ctx, slot, slot); err != nil || n != 2 {
+		t.Fatalf("first Fire = (%d, %v), want (2, nil)", n, err)
+	}
+	first := outboxRows(t, conn)
+	if len(first) != 2 {
+		t.Fatalf("first Fire wrote %d rows, want 2", len(first))
+	}
+	firstIDs := make(map[string]bool, 2)
+	for _, row := range first {
+		if row.Payload.Name != "nightly" && row.Payload.Name != "bill-sweep" {
+			t.Fatalf("unexpected schedule in outbox row: %+v", row)
+		}
+		if row.CorrelationID == "" || !correlation.Valid(row.CorrelationID) {
+			t.Errorf("correlation id for %q = %q, want a non-empty valid id", row.Payload.Name, row.CorrelationID)
+		}
+		firstIDs[row.CorrelationID] = true
+	}
+	if len(firstIDs) != 2 {
+		t.Fatalf("two firings shared correlation ids: %+v", first)
+	}
+
+	laterSlot := slot.Add(time.Minute)
+	if n, err := w.Fire(ctx, laterSlot, laterSlot); err != nil || n != 2 {
+		t.Fatalf("later Fire = (%d, %v), want (2, nil)", n, err)
+	}
+	all := outboxRows(t, conn)
+	if len(all) != 4 {
+		t.Fatalf("two Fires wrote %d rows, want 4", len(all))
+	}
+	laterIDs := make(map[string]bool, 2)
+	for _, row := range all[2:] {
+		if firstIDs[row.CorrelationID] {
+			t.Errorf("later firing for %q reused earlier id %q", row.Payload.Name, row.CorrelationID)
+		}
+		if !correlation.Valid(row.CorrelationID) {
+			t.Errorf("later firing for %q has invalid id %q", row.Payload.Name, row.CorrelationID)
+		}
+		laterIDs[row.CorrelationID] = true
+	}
+	if len(laterIDs) != 2 {
+		t.Fatalf("later firings shared a correlation id: %+v", all[2:])
+	}
+}
+
+// R-2YRA-WP88
+func TestFireRecordsExactlyOneMatchingRootForARealFiring(t *testing.T) {
+	var records []telemetry.Record
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var batch struct {
+			Records []telemetry.Record `json:"records"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
+			t.Errorf("decode telemetry batch: %v", err)
+			http.Error(w, "bad batch", http.StatusBadRequest)
+			return
+		}
+		records = append(records, batch.Records...)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer sink.Close()
+	recorder := telemetry.New(telemetry.Options{Enabled: true, IngestURL: sink.URL})
+	w, store, conn, ctx := harnessWithRecorder(t, recorder)
+	mustCreate(t, store, ctx, time.Now(), "bill-sweep", "* * * * *")
+	slot := time.Date(2026, 6, 6, 3, 0, 0, 0, time.UTC)
+
+	if n, err := w.Fire(ctx, slot, slot); err != nil || n != 1 {
+		t.Fatalf("first Fire = (%d, %v), want (1, nil)", n, err)
+	}
+	if n, err := w.Fire(ctx, slot, slot); err != nil || n != 0 {
+		t.Fatalf("repeat Fire = (%d, %v), want (0, nil)", n, err)
+	}
+	rows := outboxRows(t, conn)
+	if len(rows) != 1 {
+		t.Fatalf("repeat Fire left %d outbox rows, want 1", len(rows))
+	}
+	if err := recorder.Close(ctx); err != nil {
+		t.Fatalf("close recorder: %v", err)
+	}
+	var roots []telemetry.Record
+	for _, record := range records {
+		if record.Kind == telemetry.KindRoot {
+			roots = append(roots, record)
+		}
+	}
+	if len(roots) != 1 {
+		t.Fatalf("root records = %d, want exactly 1: %+v", len(roots), records)
+	}
+	root := roots[0]
+	if root.Op != "cron:tick/bill-sweep" {
+		t.Errorf("root op = %q, want cron:tick/bill-sweep", root.Op)
+	}
+	if root.CorrelationID != rows[0].CorrelationID {
+		t.Errorf("root correlation id = %q, outbox correlation id = %q", root.CorrelationID, rows[0].CorrelationID)
+	}
 }
 
 // TestFire_AtMostOncePerSlot is the critical invariant: firing the SAME slot
