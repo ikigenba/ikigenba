@@ -309,6 +309,54 @@ func TestRunInheritsContextCorrelation(t *testing.T) {
 	}
 }
 
+func TestRootStarterRunsOnlyForNewRunChain(t *testing.T) {
+	// R-4ZV9-5ZBM
+	svc, store, _, _ := newTestService(t)
+	ctx := context.Background()
+	sc, err := svc.Create(ctx, ownerA, CreateInput{Name: "rooted", Body: "print(1)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type rootCall struct{ rootID, op string }
+	var calls []rootCall
+	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {
+		calls = append(calls, rootCall{rootID: rootID, op: op})
+		return correlation.WithContext(ctx, rootID)
+	}
+
+	rooted, err := svc.Run(ctx, ownerA, sc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0].rootID != rooted.ID || calls[0].op != "run:"+rooted.ID {
+		t.Fatalf("root calls = %+v, want one call for run %s", calls, rooted.ID)
+	}
+	var rootedCorrelation string
+	if err := store.db.QueryRow(`SELECT correlation_id FROM runs WHERE id = ?`, rooted.ID).Scan(&rootedCorrelation); err != nil {
+		t.Fatal(err)
+	}
+	if rootedCorrelation != rooted.ID {
+		t.Fatalf("rooted correlation = %q, want run id %q", rootedCorrelation, rooted.ID)
+	}
+
+	const inheritedID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	inheritedCtx := correlation.WithContext(ctx, inheritedID)
+	inherited, err := svc.Run(inheritedCtx, ownerA, sc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("inherited run added a root call: %+v", calls)
+	}
+	var inheritedCorrelation string
+	if err := store.db.QueryRow(`SELECT correlation_id FROM runs WHERE id = ?`, inherited.ID).Scan(&inheritedCorrelation); err != nil {
+		t.Fatal(err)
+	}
+	if inheritedCorrelation != inheritedID {
+		t.Fatalf("inherited correlation = %q, want %q", inheritedCorrelation, inheritedID)
+	}
+}
+
 func TestServiceRunGetElapsed(t *testing.T) {
 	svc, store, _, _ := newTestService(t)
 	ctx := context.Background()

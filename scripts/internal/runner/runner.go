@@ -115,6 +115,7 @@ func (r *Runner) execute(run script.Run, input []byte) {
 			RunID:          run.ID,
 			ScriptID:       run.ScriptID,
 			ScriptName:     scriptName,
+			CorrelationID:  run.CorrelationID,
 			Status:         status,
 			ExitCode:       exitCode,
 			EndedAt:        endedAt(),

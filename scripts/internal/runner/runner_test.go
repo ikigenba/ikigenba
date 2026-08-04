@@ -1020,6 +1020,59 @@ func TestSpawnUsesRebuildableRunsDirOutsideState(t *testing.T) {
 	}
 }
 
+func TestRunBoundaryLeavesThirdPartyHTTPAndFilesInsideRunRecord(t *testing.T) {
+	// R-5135-JR2B
+	requested := make(chan struct{}, 1)
+	external := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requested <- struct{}{}
+		_, _ = io.WriteString(w, "external-evidence")
+	}))
+	defer external.Close()
+
+	st, _ := newStore(t)
+	dataDir := t.TempDir()
+	runEngine := New(st, dataDir, 30*time.Second, nil)
+	svc := script.NewService(st, filepath.Join(dataDir, "runs"), runEngine)
+	type rootCall struct{ rootID, op string }
+	var observed []rootCall
+	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {
+		observed = append(observed, rootCall{rootID: rootID, op: op})
+		return ctx
+	}
+	body := fmt.Sprintf("import urllib.request\nvalue = urllib.request.urlopen(%q).read().decode()\nopen('inside.txt', 'w').write(value)\nprint(value)\n", external.URL)
+	sc, err := svc.Create(context.Background(), ownerID, script.CreateInput{Name: "boundary-probe", Body: body})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := svc.Run(context.Background(), ownerID, sc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := waitTerminal(t, st, run.ID)
+	if got.Status != script.RunSucceeded {
+		t.Fatalf("status = %q, want succeeded; error = %q", got.Status, got.Error)
+	}
+	select {
+	case <-requested:
+	default:
+		t.Fatal("probe did not make the external HTTP call")
+	}
+	if len(observed) != 1 || observed[0].rootID != run.ID || observed[0].op != "run:"+run.ID {
+		t.Fatalf("origin observations = %+v, want only the spawn for %s", observed, run.ID)
+	}
+	stdout, err := svc.RunOutput(context.Background(), ownerID, run.ID, "stdout", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inside, err := svc.RunFsRead(context.Background(), ownerID, run.ID, "inside.txt", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, "external-evidence") || strings.TrimSpace(inside) != "external-evidence" {
+		t.Fatalf("run evidence stdout=%q inside.txt=%q", stdout, inside)
+	}
+}
+
 func TestSpawnFailsNonZero(t *testing.T) {
 	requirePython(t)
 	st, conn := newStore(t)

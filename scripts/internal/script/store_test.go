@@ -362,6 +362,44 @@ func TestFinishRunSucceededEmits(t *testing.T) {
 	}
 }
 
+func TestFinishRunPublishesRunCorrelationAndCancelledPublishesNothing(t *testing.T) {
+	// R-4YNC-S7KX
+	s := newTestStore(t)
+	withOutbox(t, s)
+	ctx := context.Background()
+	sc := seedScript(t, s, ownerA)
+	zero := 0
+	const correlationIDWant = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	succeeded := seedRun(t, s, sc.ID, RunRunning)
+	if _, err := s.db.Exec(`UPDATE runs SET correlation_id = ? WHERE id = ?`, correlationIDWant, succeeded.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinishRun(ctx, FinishRunInput{
+		RunID: succeeded.ID, ScriptID: sc.ID, ScriptName: sc.Name,
+		CorrelationID: correlationIDWant, Status: RunSucceeded, ExitCode: &zero, EndedAt: nowStr(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var status, correlationID string
+	if err := s.db.QueryRow(`SELECT r.status, o.correlation_id FROM runs r JOIN outbox o ON 1 = 1 WHERE r.id = ?`, succeeded.ID).Scan(&status, &correlationID); err != nil {
+		t.Fatal(err)
+	}
+	if status != RunSucceeded || correlationID != correlationIDWant || outboxCount(t, s) != 1 {
+		t.Fatalf("terminal status=%q outbox correlation=%q rows=%d, want succeeded/%s/1", status, correlationID, outboxCount(t, s), correlationIDWant)
+	}
+
+	cancelled := seedRun(t, s, sc.ID, RunRunning)
+	if err := s.FinishRun(ctx, FinishRunInput{
+		RunID: cancelled.ID, ScriptID: sc.ID, ScriptName: sc.Name,
+		CorrelationID: "cancel-chain", Status: RunCancelled, EndedAt: nowStr(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := outboxCount(t, s); got != 1 {
+		t.Fatalf("cancelled run changed outbox row count to %d, want 1", got)
+	}
+}
+
 func TestFinishRunRoutesTerminalOutcomesAndOmitsCancelled(t *testing.T) {
 	// R-82AG-F74Z
 	s := newTestStore(t)

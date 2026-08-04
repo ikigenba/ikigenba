@@ -19,6 +19,7 @@ import (
 	"log/slog"
 
 	"eventplane/consumer"
+	"eventplane/correlation"
 )
 
 // FireFunc starts a run for one script in reaction to an event (the consumer
@@ -82,13 +83,15 @@ func Handler(fire FireFunc, lookup LookupFunc, source string, logger *slog.Logge
 		}
 
 		logger.Debug("consume: dispatching event", "source", source, "kind", ev.Kind, "event_id", ev.ID, "scripts", len(scriptIDs))
+		corr := correlation.FromContext(ctx)
 		for _, scriptID := range scriptIDs {
 			// Each script's run starts on its own goroutine so one slow/failing start
 			// never blocks the rest of the fan-out and the handler returns promptly,
 			// never holding the cursor open. Detached from the engine's request
 			// context (the handler has already returned) via context.Background().
 			go func(scriptID string) {
-				if err := fire(context.Background(), scriptID, source, ev.Kind, ev.Subject, ev.ID, ev.Payload); err != nil {
+				fireCtx := correlation.WithContext(context.Background(), corr)
+				if err := fire(fireCtx, scriptID, source, ev.Kind, ev.Subject, ev.ID, ev.Payload); err != nil {
 					logger.Error("consume: fire run failed (dropped)", "script", scriptID, "source", source, "kind", ev.Kind, "event_id", ev.ID, "err", err)
 				}
 			}(scriptID)

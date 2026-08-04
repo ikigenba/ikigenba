@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"eventplane/correlation"
 	"eventplane/outbox"
 	"eventplane/routing"
 
@@ -402,7 +403,8 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 		}
 		if ok {
 			// Append on the SAME tx as the terminal write — the atomicity invariant.
-			if err := s.Outbox.Append(ctx, tx, ev); err != nil {
+			actx := correlation.WithContext(ctx, in.CorrelationID)
+			if err := s.Outbox.Append(actx, tx, ev); err != nil {
 				return fmt.Errorf("script: finish run append: %w", err)
 			}
 			emitted = true
@@ -514,6 +516,7 @@ func (s *Store) ownsScript(ctx context.Context, owner, scriptID string) error {
 // manual run.
 type FinishRunInput struct {
 	RunID, ScriptID, ScriptName string
+	CorrelationID               string
 	Status                      string // succeeded|failed (NEVER cancelled — cancelled emits no event, see A7)
 	ExitCode                    *int
 	EndedAt                     string

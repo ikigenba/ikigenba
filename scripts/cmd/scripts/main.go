@@ -32,6 +32,7 @@ import (
 	"appkit/config"
 
 	"eventplane/consumer"
+	"eventplane/correlation"
 	"eventplane/outbox"
 
 	"registry"
@@ -165,6 +166,11 @@ func registerRoutes(rt *appkit.Router) error {
 	run := runner.New(store, rootDir, runTTL, suiteEnv)
 	svc := script.NewService(store, runsDir, run)
 	svc.Fetcher = script.NewHTTPFetcher(dropboxBase)
+	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {
+		ctx = correlation.WithContext(ctx, rootID)
+		ctx, _ = rt.Recorder().StartChain(ctx, op, nil)
+		return ctx
+	}
 	// Capture the service for the consumer Workers and the store for the Producer
 	// hook (both run after Handlers; the Producer injects the outbox onto store).
 	svcRef = svc

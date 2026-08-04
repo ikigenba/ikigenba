@@ -24,6 +24,10 @@ type Runner interface {
 	Cancel(runID string) bool
 }
 
+// RootStarter records the origin of a run that did not inherit a correlation
+// chain. The composition root binds this narrow seam to the chassis recorder.
+type RootStarter func(ctx context.Context, rootID, op string) context.Context
+
 // Service is scripts' domain service — the only thing the MCP handler talks to
 // and the only mutator of script/run/trigger state. It owns CRUD, the run
 // lifecycle entry points, run-instance reads, and trigger ops.
@@ -37,6 +41,9 @@ type Service struct {
 	// NewService parameter, so every existing NewService call site and test stays
 	// untouched. nil unless wired (only Import uses it).
 	Fetcher ContentFetcher
+	// RootStarter is nil when telemetry is disabled. Inherited chains already
+	// have an origin and therefore never call it.
+	RootStarter RootStarter
 }
 
 // NewService wires the store, the runs dir root, and the runner.
@@ -282,6 +289,9 @@ func (s *Service) newRun(ctx context.Context, scriptID, source, kind, subject, e
 	corrID := correlation.FromContext(ctx)
 	if corrID == "" {
 		corrID = runID
+		if s.RootStarter != nil {
+			_ = s.RootStarter(ctx, runID, "run:"+runID)
+		}
 	}
 	return Run{
 		ID:             runID,
