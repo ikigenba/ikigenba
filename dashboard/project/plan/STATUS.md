@@ -12,5 +12,3 @@ matches only phase lines.
 
 Next phase: 42
 
-- Phase 41 ⬜ realizes D31, D32 — emit an `edge` telemetry record for every gated auth decision
-
