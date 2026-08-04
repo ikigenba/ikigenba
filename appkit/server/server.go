@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"time"
 
+	"appkit/httpclient"
 	"appkit/logging"
 	"appkit/telemetry"
 	"appkit/web"
@@ -126,6 +127,7 @@ type Router struct {
 	resourceID string
 	authServer string
 	db         *sql.DB
+	recorder   *telemetry.Recorder
 }
 
 // Handle registers h for pattern on the mux verbatim (no gating). Use for
@@ -180,6 +182,16 @@ func (rt *Router) AuthServer() string { return rt.authServer }
 // so the service builds its domain over the same connection (the producer outbox
 // shares it too). It is nil only when New was given no DB (apex/test).
 func (rt *Router) DB() *sql.DB { return rt.db }
+
+// Recorder returns the telemetry recorder wired into this server. It is nil
+// when telemetry is disabled or was not configured.
+func (rt *Router) Recorder() *telemetry.Recorder { return rt.recorder }
+
+// HTTPClient returns an instrumented outbound client wired to this server's
+// recorder and configured with timeout.
+func (rt *Router) HTTPClient(timeout time.Duration) *http.Client {
+	return httpclient.New(httpclient.Options{Recorder: rt.Recorder(), Timeout: timeout})
+}
 
 // Version returns the build-stamped version string for the health envelope, so a
 // service wires its MCP health tool from the same source as the HTTP /health route.
@@ -260,7 +272,7 @@ func New(opts Options) (*http.Server, error) {
 		www:           opts.WWW,
 	}
 	mux := http.NewServeMux()
-	rt := &Router{mux: mux, app: a, logger: opts.Logger, resourceID: opts.ResourceID, authServer: opts.AuthServer, db: opts.DB}
+	rt := &Router{mux: mux, app: a, logger: opts.Logger, resourceID: opts.ResourceID, authServer: opts.AuthServer, db: opts.DB, recorder: opts.Recorder}
 
 	if !opts.Apex {
 		// Standard path-routed service route table.
