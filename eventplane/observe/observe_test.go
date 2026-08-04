@@ -48,22 +48,33 @@ func TestDependencyBoundary(t *testing.T) {
 }
 
 func TestDependencyBoundaryCommand(t *testing.T) {
-	output, err := exec.Command(
-		"go", "list", "-deps", "-f", "{{if .DepOnly}}{{.ImportPath}}{{end}}", observePackage,
-	).CombinedOutput()
+	output, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}} {{.DepOnly}}", observePackage).CombinedOutput()
 	if err != nil {
-		t.Fatalf("list observe dependencies: %v\n%s", err, output)
+		t.Fatalf("list observe dependency traversal: %v\n%s", err, output)
 	}
 
-	var internal []string
+	var dependencies []string
+	var queryRoots []string
 	for line := range strings.Lines(string(output)) {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "eventplane/") {
-			internal = append(internal, line)
+		path, depOnly, ok := strings.Cut(line, " ")
+		if !ok || !strings.HasPrefix(path, "eventplane/") {
+			continue
+		}
+		switch depOnly {
+		case "true":
+			dependencies = append(dependencies, path)
+		case "false":
+			queryRoots = append(queryRoots, path)
+		default:
+			t.Fatalf("unexpected DepOnly value in %q", line)
 		}
 	}
 
-	if got, want := strings.Join(internal, "\n"), "eventplane/routing"; got != want {
+	if got, want := strings.Join(dependencies, "\n"), "eventplane/routing"; got != want {
 		t.Fatalf("internal dependencies:\n%s\nwant:\n%s", got, want)
+	}
+	if got, want := strings.Join(queryRoots, "\n"), observePackage; got != want {
+		t.Fatalf("explicit query roots:\n%s\nwant:\n%s", got, want)
 	}
 }
