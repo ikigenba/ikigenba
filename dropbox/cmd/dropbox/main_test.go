@@ -50,6 +50,37 @@ func TestRegistrySourcePortsIncludesEveryRegisteredServiceAndNoExtras(t *testing
 	}
 }
 
+type recordingHTTPClientFactory struct {
+	timeouts []time.Duration
+}
+
+func (f *recordingHTTPClientFactory) HTTPClient(timeout time.Duration) *http.Client {
+	f.timeouts = append(f.timeouts, timeout)
+	return &http.Client{Timeout: timeout}
+}
+
+func TestOutboundClientsPreserveDistinctPolicies(t *testing.T) {
+	// R-TBJN-E7N2
+	factory := &recordingHTTPClientFactory{}
+	rpc, longpoll, source := outboundClients(factory)
+	if len(factory.timeouts) != 3 {
+		t.Fatalf("HTTPClient calls = %d, want three instrumented clients", len(factory.timeouts))
+	}
+	if rpc == longpoll || rpc == source || longpoll == source {
+		t.Fatal("outbound clients share a client value")
+	}
+	if rpc.Timeout <= 0 || rpc.Timeout > 120*time.Second {
+		t.Fatalf("rpc timeout = %v, want >0 and <=120s", rpc.Timeout)
+	}
+	if longpoll.Timeout < 600*time.Second {
+		t.Fatalf("longpoll timeout = %v, want >=600s", longpoll.Timeout)
+	}
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/next", nil)
+	if err := source.CheckRedirect(request, nil); !errors.Is(err, http.ErrUseLastResponse) {
+		t.Fatalf("source redirect policy = %v, want ErrUseLastResponse", err)
+	}
+}
+
 // R-8DF1-W89F
 func TestCommittedManifestIsPortable(t *testing.T) {
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))

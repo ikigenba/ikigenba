@@ -1,6 +1,7 @@
 package dropbox
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -139,7 +140,7 @@ func buildFilePayload(contentBase string, ev FileEvent) (outbox.Event, error) {
 type EventSink interface {
 	// AppendFileEvent appends one file lifecycle event on the caller's tx, atomic
 	// with the files-index change.
-	AppendFileEvent(tx *sql.Tx, ev FileEvent) error
+	AppendFileEvent(ctx context.Context, tx *sql.Tx, ev FileEvent) error
 	// Ring wakes parked feed connections; called after a successful commit.
 	Ring()
 }
@@ -162,12 +163,12 @@ func NewOutboxProducer(ob *outbox.Outbox, contentBase string) EventSink {
 
 // AppendFileEvent appends one file lifecycle event on the caller's tx, atomic
 // with the files-index change (PLAN.md §5).
-func (o *outboxProducer) AppendFileEvent(tx *sql.Tx, ev FileEvent) error {
+func (o *outboxProducer) AppendFileEvent(ctx context.Context, tx *sql.Tx, ev FileEvent) error {
 	e, err := buildFilePayload(o.contentBase, ev)
 	if err != nil {
 		return err
 	}
-	return o.ob.Append(tx, e)
+	return o.ob.Append(ctx, tx, e)
 }
 
 // Ring wakes parked feed connections after commit.

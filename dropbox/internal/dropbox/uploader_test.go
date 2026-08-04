@@ -7,8 +7,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
+
+	"eventplane/correlation"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -16,7 +19,7 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func uploadTestClient(rt http.RoundTripper) *Client {
-	c := NewClient(Config{}, &http.Client{Transport: rt})
+	c := NewClient(Config{}, &http.Client{Transport: rt}, &http.Client{Transport: rt, Timeout: longpollClientTimeout})
 	c.token.accessTok = "test-token"
 	c.token.expiry = time.Now().Add(time.Hour)
 	return c
@@ -107,6 +110,39 @@ func TestUploaderSuccessPersistsRevClearsQueueAndSuppressesEcho(t *testing.T) {
 	}
 	if len(sink.events) != 0 || fc.downloadCalls[foldPath("/notes/report.md")] != 0 {
 		t.Fatalf("echo caused events/downloads: events=%+v downloads=%d", sink.events, fc.downloadCalls[foldPath("/notes/report.md")])
+	}
+}
+
+func TestUploaderDrainPassesOpenDistinctRootContexts(t *testing.T) {
+	// R-TDZG-5R4G
+	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	conn := openStoreDB(t)
+	mirror, err := NewMirror(t.TempDir() + "/mirror")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requestIDs []string
+	svc := &Service{DB: conn, Store: NewStore(), Mirror: mirror, Now: func() time.Time { return now }}
+	svc.Client = uploadTestClient(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requestIDs = append(requestIDs, correlation.FromContext(r.Context()))
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}))
+	svc.StartRoot = func(ctx context.Context, _ string) context.Context {
+		return correlation.WithContext(ctx, correlation.New())
+	}
+	for _, path := range []string{"/one", "/two"} {
+		enqueueTestUpload(t, svc, UploadQueueRow{Path: path, Op: "mkdir", EnqueuedAt: now.Format(time.RFC3339Nano), NextAttemptAt: now.Format(time.RFC3339Nano)})
+		if err := svc.drainUploads(context.Background()); err != nil {
+			t.Fatalf("drain %s: %v", path, err)
+		}
+	}
+	if len(requestIDs) != 2 || requestIDs[0] == requestIDs[1] {
+		t.Fatalf("uploader request ids = %v, want two distinct drain roots", requestIDs)
+	}
+	for _, id := range requestIDs {
+		if len(id) != 26 || !correlation.Valid(id) {
+			t.Fatalf("uploader correlation id = %q, want Crockford-valid 26 characters", id)
+		}
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"eventplane/correlation"
 	"eventplane/outbox"
 	"registry"
 )
@@ -138,7 +139,7 @@ func TestFeedUsesCanonicalKindAndSubjectEnvelope(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	ev := FileEvent{Kind: KindCreate, Path: "/notes/meeting.md", Rev: "r1", ContentHash: "hash", Size: 7, OccurredAt: "2026-06-03T12:00:00.000000000Z", Origin: OriginDropbox}
-	if err := producer.AppendFileEvent(tx, ev); err != nil {
+	if err := producer.AppendFileEvent(context.Background(), tx, ev); err != nil {
 		t.Fatalf("append producer event: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -187,5 +188,56 @@ func TestFeedUsesCanonicalKindAndSubjectEnvelope(t *testing.T) {
 	}
 	if envelope["kind"] != KindCreate || envelope["subject"] != "/notes/meeting.md" || envelope["type"] != nil {
 		t.Fatalf("envelope = %v, want kind/subject and no type", envelope)
+	}
+}
+
+func TestOutboxStoresRequestAndSyncCycleCorrelationIDs(t *testing.T) {
+	// R-TF7C-JIV5
+	conn := openStoreDB(t)
+	mirror, err := NewMirror(t.TempDir() + "/mirror")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ob, err := outbox.New(conn, outbox.Options{Source: "dropbox", Registry: Events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(conn)
+	svc.Mirror = mirror
+	svc.Outbox = NewOutboxProducer(ob, "http://127.0.0.1:3200")
+	const requestID = "01J00000000000000000000000"
+	requestCtx := correlation.WithContext(context.Background(), requestID)
+	if _, err := svc.Write(requestCtx, "/request.txt", strings.NewReader("request"), "writer"); err != nil {
+		t.Fatalf("service write: %v", err)
+	}
+	fc := newFakeClient()
+	entry := fc.addFile("/sync.txt", "r1", ContentHash([]byte("sync")), []byte("sync"))
+	fc.listResult = ListResult{Entries: []DeltaEntry{entry}, Cursor: "cursor"}
+	var cycleID string
+	eng := NewEngine(svc, EngineOptions{Client: fc, StartRoot: func(ctx context.Context, _ string) context.Context {
+		cycleID = correlation.New()
+		return correlation.WithContext(ctx, cycleID)
+	}})
+	if err := eng.bootstrap(context.Background()); err != nil {
+		t.Fatalf("sync bootstrap: %v", err)
+	}
+	rows, err := conn.Query(`SELECT correlation_id FROM outbox ORDER BY seq`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, id)
+	}
+	if len(got) != 2 || got[0] != requestID || got[1] != cycleID {
+		t.Fatalf("outbox correlation ids = %v, want request %q then cycle %q", got, requestID, cycleID)
+	}
+	if len(cycleID) != 26 || !correlation.Valid(cycleID) {
+		t.Fatalf("sync cycle id = %q, want Crockford-valid 26 characters", cycleID)
 	}
 }

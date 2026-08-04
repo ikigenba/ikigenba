@@ -7,8 +7,6 @@ import (
 
 	appkitdatabase "appkit/db"
 
-	"eventplane/outbox"
-
 	_ "modernc.org/sqlite"
 )
 
@@ -19,13 +17,12 @@ import (
 // moment they diverge.
 func TestOutboxMigrationMatchesLibraryDDL(t *testing.T) {
 	// R-QDLM-84SK
-	body, err := migrationsFS.ReadFile("migrations/20260712185200_outbox_routing.sql")
+	body, err := migrationsFS.ReadFile("migrations/20260804141437_add_outbox_correlation_id.sql")
 	if err != nil {
 		t.Fatalf("read newest outbox migration: %v", err)
 	}
-	if !strings.Contains(string(body), outbox.SchemaSQL) {
-		t.Fatalf("newest outbox migration does not contain the library DDL verbatim.\n--- outbox.SchemaSQL ---\n%s\n--- migration file ---\n%s",
-			outbox.SchemaSQL, string(body))
+	if !strings.Contains(string(body), "ALTER TABLE outbox ADD COLUMN correlation_id TEXT NOT NULL DEFAULT ''") {
+		t.Fatalf("newest outbox migration does not add the library correlation column.\n--- migration file ---\n%s", string(body))
 	}
 	legacy, err := migrationsFS.ReadFile("migrations/003_outbox.sql")
 	if err != nil {
@@ -78,7 +75,7 @@ CREATE INDEX idx_outbox_created_at ON outbox(created_at);
 		}
 		columns[name] = true
 	}
-	if !columns["kind"] || !columns["subject"] || columns["type"] {
-		t.Fatalf("outbox columns = %v, want kind and subject but no type", columns)
+	if !columns["kind"] || !columns["subject"] || !columns["correlation_id"] || columns["type"] {
+		t.Fatalf("outbox columns = %v, want kind, subject, and correlation_id but no type", columns)
 	}
 }

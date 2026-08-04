@@ -21,7 +21,7 @@ const Instructions = "Keeps a local mirror of one Dropbox app folder and publish
 // NewHandler builds the POST /mcp handler from the appkit Router seam. The
 // shared transport owns JSON-RPC, health, and reflection; dropbox declares only
 // its read-only mirror tools.
-func NewHandler(svc *dropbox.Service, sourcePortAllowed func(int) bool, rt *appkit.Router) (http.Handler, error) {
+func NewHandler(svc *dropbox.Service, sourcePortAllowed func(int) bool, source *http.Client, rt *appkit.Router) (http.Handler, error) {
 	if svc == nil {
 		panic("mcp: dropbox service is required")
 	}
@@ -32,7 +32,7 @@ func NewHandler(svc *dropbox.Service, sourcePortAllowed func(int) bool, rt *appk
 		Service:       rt.Service(),
 		Version:       rt.Version(),
 		Instructions:  Instructions,
-		Tools:         Tools(svc, sourcePortAllowed),
+		Tools:         Tools(svc, sourcePortAllowed, source),
 		Health:        rt.Health(),
 		Events:        rt.Events(),
 		Subscriptions: rt.Subscriptions(),

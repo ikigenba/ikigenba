@@ -20,8 +20,8 @@ import (
 
 type failingEventSink struct{ err error }
 
-func (s failingEventSink) AppendFileEvent(*sql.Tx, FileEvent) error { return s.err }
-func (failingEventSink) Ring()                                      {}
+func (s failingEventSink) AppendFileEvent(context.Context, *sql.Tx, FileEvent) error { return s.err }
+func (failingEventSink) Ring()                                                       {}
 
 func writeRequest(t *testing.T, h http.Handler, method, path string, body []byte, clientID string) *httptest.ResponseRecorder {
 	t.Helper()

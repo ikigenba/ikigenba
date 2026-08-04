@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -22,7 +23,7 @@ func newLiveClient(t *testing.T) *Client {
 	}
 	return NewClient(Config{
 		AppKey: key, AppSecret: secret, RefreshToken: refresh, AppFolderRoot: os.Getenv("DROPBOX_APP_FOLDER_ROOT"),
-	}, nil)
+	}, &http.Client{Timeout: 100 * time.Second}, &http.Client{Timeout: longpollClientTimeout})
 }
 
 func livePath(t *testing.T, name string) string {

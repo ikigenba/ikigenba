@@ -7,12 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	appkitmcp "appkit/mcp"
 	"appkit/server"
@@ -41,9 +39,12 @@ type toolHandlers struct {
 
 // Tools returns dropbox's service-owned MCP tool declarations. The shared
 // appkit MCP transport appends the chassis health and reflection tools.
-func Tools(svc *dropbox.Service, sourcePortAllowed func(port int) bool) []appkitmcp.Tool {
+func Tools(svc *dropbox.Service, sourcePortAllowed func(port int) bool, source *http.Client) []appkitmcp.Tool {
 	if svc == nil {
 		panic("mcp: dropbox service is required")
+	}
+	if source == nil {
+		panic("mcp: source HTTP client is required")
 	}
 	if sourcePortAllowed == nil {
 		sourcePortAllowed = func(int) bool { return false }
@@ -51,15 +52,7 @@ func Tools(svc *dropbox.Service, sourcePortAllowed func(port int) bool) []appkit
 	h := &toolHandlers{
 		svc:               svc,
 		sourcePortAllowed: sourcePortAllowed,
-		sourceClient: &http.Client{
-			Transport: &http.Transport{
-				DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
-				ResponseHeaderTimeout: 5 * time.Second,
-			},
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
+		sourceClient:      source,
 	}
 	return []appkitmcp.Tool{
 		{

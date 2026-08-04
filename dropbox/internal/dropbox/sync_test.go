@@ -8,6 +8,8 @@ import (
 	"io"
 	"testing"
 	"time"
+
+	"eventplane/correlation"
 )
 
 // sync_test.go is the engine gate's backbone (PLAN.md §10): a recording
@@ -22,11 +24,13 @@ import (
 // Ring calls. It lets a test assert on the exact emitted event stream.
 type capturingSink struct {
 	events []FileEvent
+	ids    []string
 	rings  int
 }
 
-func (c *capturingSink) AppendFileEvent(tx *sql.Tx, ev FileEvent) error {
+func (c *capturingSink) AppendFileEvent(ctx context.Context, tx *sql.Tx, ev FileEvent) error {
 	c.events = append(c.events, ev)
+	c.ids = append(c.ids, correlation.FromContext(ctx))
 	return nil
 }
 
@@ -53,6 +57,7 @@ type fakeClient struct {
 
 	listCalls     int
 	continueCalls int
+	ids           []string
 }
 
 type downloadResp struct {
@@ -69,11 +74,13 @@ func newFakeClient() *fakeClient {
 }
 
 func (f *fakeClient) ListFolder(ctx context.Context) (ListResult, error) {
+	f.ids = append(f.ids, correlation.FromContext(ctx))
 	f.listCalls++
 	return f.listResult, nil
 }
 
 func (f *fakeClient) ListFolderContinue(ctx context.Context, cursor string) (ListResult, error) {
+	f.ids = append(f.ids, correlation.FromContext(ctx))
 	f.continueCalls++
 	if len(f.pages) == 0 {
 		return ListResult{Cursor: cursor, HasMore: false}, nil
@@ -84,6 +91,7 @@ func (f *fakeClient) ListFolderContinue(ctx context.Context, cursor string) (Lis
 }
 
 func (f *fakeClient) Longpoll(ctx context.Context, cursor string) (LongpollResult, error) {
+	f.ids = append(f.ids, correlation.FromContext(ctx))
 	if len(f.longpolls) == 0 {
 		return LongpollResult{Changes: false}, nil
 	}
@@ -93,6 +101,7 @@ func (f *fakeClient) Longpoll(ctx context.Context, cursor string) (LongpollResul
 }
 
 func (f *fakeClient) Download(ctx context.Context, path, rev string) ([]byte, FileMeta, error) {
+	f.ids = append(f.ids, correlation.FromContext(ctx))
 	key := foldPath(path)
 	f.downloadCalls[key]++
 	if err, ok := f.downloadErr[key]; ok {
@@ -155,6 +164,52 @@ func readContent(svc *Service, path string, rev *string) ([]byte, FileRow, error
 	defer f.Close()
 	data, err := io.ReadAll(f)
 	return data, row, err
+}
+
+func TestSyncCyclesOpenDistinctRootsSharedByCallsAndEvents(t *testing.T) {
+	// R-TDZG-5R4G
+	fc := newFakeClient()
+	eng, svc, sink := newEngineHarness(t, fc)
+	eng.startRoot = func(ctx context.Context, _ string) context.Context {
+		return correlation.WithContext(ctx, correlation.New())
+	}
+	firstA := fc.addFile("/first-a.txt", "r1", ContentHash([]byte("a")), []byte("a"))
+	firstB := fc.addFile("/first-b.txt", "r1", ContentHash([]byte("b")), []byte("b"))
+	fc.listResult = ListResult{Entries: []DeltaEntry{firstA, firstB}, Cursor: "first"}
+	if err := eng.bootstrap(context.Background()); err != nil {
+		t.Fatalf("first bootstrap: %v", err)
+	}
+	firstCalls, firstEvents := append([]string(nil), fc.ids...), append([]string(nil), sink.ids...)
+	if _, err := svc.DB.Exec(`DELETE FROM sync_state`); err != nil {
+		t.Fatalf("clear cursor: %v", err)
+	}
+	second := fc.addFile("/second.txt", "r1", ContentHash([]byte("c")), []byte("c"))
+	fc.listResult = ListResult{Entries: []DeltaEntry{second}, Cursor: "second"}
+	if err := eng.bootstrap(context.Background()); err != nil {
+		t.Fatalf("second bootstrap: %v", err)
+	}
+	secondCalls, secondEvents := fc.ids[len(firstCalls):], sink.ids[len(firstEvents):]
+	assertOneCorrelation := func(label string, ids []string) string {
+		t.Helper()
+		if len(ids) == 0 {
+			t.Fatalf("%s observed no correlation ids", label)
+		}
+		want := ids[0]
+		if len(want) != 26 || !correlation.Valid(want) {
+			t.Fatalf("%s correlation id = %q, want Crockford-valid 26 characters", label, want)
+		}
+		for _, id := range ids[1:] {
+			if id != want {
+				t.Fatalf("%s ids = %v, want one id across the cycle", label, ids)
+			}
+		}
+		return want
+	}
+	firstID := assertOneCorrelation("first calls and events", append(firstCalls, firstEvents...))
+	secondID := assertOneCorrelation("second calls and events", append(secondCalls, secondEvents...))
+	if firstID == secondID {
+		t.Fatalf("consecutive cycle ids are both %q", firstID)
+	}
 }
 
 // ── Rule 5: create / modify / rev-dedup ──────────────────────────────────────

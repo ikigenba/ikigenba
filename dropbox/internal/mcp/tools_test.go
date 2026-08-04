@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
@@ -14,13 +15,17 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	appkitdatabase "appkit/db"
+	"appkit/httpclient"
 	appkitmcp "appkit/mcp"
 	"appkit/server"
+	"appkit/telemetry"
 
 	"dropbox/internal/db"
 	"dropbox/internal/dropbox"
+	"eventplane/correlation"
 
 	_ "modernc.org/sqlite"
 )
@@ -58,6 +63,10 @@ func newHandlerWithService(t testing.TB, svc *dropbox.Service, health func(conte
 }
 
 func newHandlerWithSourceAllowed(t testing.TB, svc *dropbox.Service, health func(context.Context) (map[string]any, error), sourcePortAllowed func(int) bool) http.Handler {
+	return newHandlerWithSourceClient(t, svc, health, sourcePortAllowed, http.DefaultClient)
+}
+
+func newHandlerWithSourceClient(t testing.TB, svc *dropbox.Service, health func(context.Context) (map[string]any, error), sourcePortAllowed func(int) bool, source *http.Client) http.Handler {
 	t.Helper()
 	var handler http.Handler
 	_, err := server.New(server.Options{
@@ -71,7 +80,7 @@ func newHandlerWithSourceAllowed(t testing.TB, svc *dropbox.Service, health func
 		Events:     dropbox.Events,
 		Register: func(rt *server.Router) error {
 			var err error
-			handler, err = NewHandler(svc, sourcePortAllowed, rt)
+			handler, err = NewHandler(svc, sourcePortAllowed, source, rt)
 			return err
 		},
 	})
@@ -88,7 +97,11 @@ type recordedEventSink struct {
 	events []dropbox.FileEvent
 }
 
-func (s *recordedEventSink) AppendFileEvent(_ *sql.Tx, event dropbox.FileEvent) error {
+type sourceRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f sourceRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func (s *recordedEventSink) AppendFileEvent(_ context.Context, _ *sql.Tx, event dropbox.FileEvent) error {
 	s.events = append(s.events, event)
 	return nil
 }
@@ -117,9 +130,13 @@ func rpc(t *testing.T, h http.Handler, method, params string) map[string]any {
 
 // rpcWithOwnerEmail adds the display owner email only for tests that assert it.
 func rpcWithOwnerEmail(t *testing.T, h http.Handler, method, params, ownerEmail string) map[string]any {
+	return rpcWithContext(t, context.Background(), h, method, params, ownerEmail)
+}
+
+func rpcWithContext(t *testing.T, ctx context.Context, h http.Handler, method, params, ownerEmail string) map[string]any {
 	t.Helper()
 	body := `{"jsonrpc":"2.0","id":1,"method":"` + method + `","params":` + params + `}`
-	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body)).WithContext(ctx)
 	req.Header.Set("X-Owner-Id", "owner-123")
 	req.Header.Set("X-Client-Id", "client-123")
 	if ownerEmail != "" {
@@ -922,6 +939,50 @@ func TestPut_SourceURLFetchesServerSideWritesAndPreservesOrigin(t *testing.T) {
 	}
 	if len(sink.events) != 1 || sink.events[0].Origin != "client-123" {
 		t.Fatalf("emitted events = %+v, want one event with client origin", sink.events)
+	}
+}
+
+func TestPutSourceURLPropagatesCorrelationThroughInjectedClient(t *testing.T) {
+	// R-TCRJ-RZDR
+	const correlationID = "01J00000000000000000000000"
+	body := []byte("correlated source bytes")
+	var gotHeader string
+	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get(correlation.Header)
+		_, _ = w.Write(body)
+	}))
+	defer sourceServer.Close()
+	observed := 0
+	base := sourceRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		observed++
+		return http.DefaultTransport.RoundTrip(r)
+	})
+	sourceClient := httpclient.New(httpclient.Options{
+		Recorder: telemetry.New(telemetry.Options{Service: "dropbox", Enabled: false}),
+		Timeout:  5 * time.Second,
+		Base:     base,
+	})
+	_, svc := newMirrorHandler(t)
+	h := newHandlerWithSourceClient(t, svc, nil, func(port int) bool {
+		return port == sourcePort(t, sourceServer.URL)
+	}, sourceClient)
+	ctx := correlation.WithContext(context.Background(), correlationID)
+	res := rpcWithContext(t, ctx, h, "tools/call", `{"name":"put","arguments":{"path":"/correlated.txt","source_url":"`+sourceServer.URL+`/bytes"}}`, "")
+	put, isErr := structuredToolResult(t, "put", res)
+	if isErr {
+		t.Fatalf("put result = %v, want success", put)
+	}
+	if observed != 1 || gotHeader != correlationID {
+		t.Fatalf("source observation count/header = %d/%q, want 1/%q", observed, gotHeader, correlationID)
+	}
+	file, _, err := svc.Mirror.Open("/correlated.txt")
+	if err != nil {
+		t.Fatalf("open mirrored bytes: %v", err)
+	}
+	defer file.Close()
+	written, err := io.ReadAll(file)
+	if err != nil || !bytes.Equal(written, body) {
+		t.Fatalf("mirrored bytes = %q, %v; want %q", written, err, body)
 	}
 }
 

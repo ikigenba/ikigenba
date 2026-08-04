@@ -12,6 +12,11 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"appkit/httpclient"
+	"appkit/telemetry"
+	"eventplane/correlation"
 )
 
 // TestContentHashEmpty pins the documented empty-file case: with no blocks, the
@@ -23,6 +28,49 @@ func TestContentHashEmpty(t *testing.T) {
 	}
 	if got := ContentHash([]byte{}); got != want {
 		t.Fatalf("empty-slice content hash = %s, want %s", got, want)
+	}
+}
+
+func TestClientUsesInjectedInstrumentedSeamWithoutLeakingCorrelationHeader(t *testing.T) {
+	// R-TABR-0FWD
+	data := []byte("dropbox bytes")
+	hash := ContentHash(data)
+	var observed []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		observed = append(observed, r.URL.Path+":"+r.Header.Get(correlation.Header))
+		switch r.URL.Path {
+		case "/oauth2/token":
+			_, _ = io.WriteString(w, `{"access_token":"token","expires_in":3600}`)
+		case "/2/files/list_folder":
+			_, _ = io.WriteString(w, `{"entries":[],"cursor":"cursor","has_more":false}`)
+		case "/2/files/download":
+			w.Header().Set("Dropbox-API-Result", `{".tag":"file","path_display":"/a.txt","path_lower":"/a.txt","rev":"r1","content_hash":"`+hash+`","size":13}`)
+			_, _ = w.Write(data)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	target, _ := url.Parse(srv.URL)
+	base := &rewriteTransport{target: target, inner: http.DefaultTransport}
+	recorder := telemetry.New(telemetry.Options{Service: "dropbox", Enabled: false})
+	rpc := httpclient.New(httpclient.Options{Recorder: recorder, Timeout: 100 * time.Second, Base: base})
+	longpoll := httpclient.New(httpclient.Options{Recorder: recorder, Timeout: longpollClientTimeout, Base: base})
+	client := NewClient(Config{AppKey: "key", AppSecret: "secret", RefreshToken: "refresh"}, rpc, longpoll)
+	ctx := correlation.WithContext(context.Background(), "01J00000000000000000000000")
+	if _, err := client.ListFolder(ctx); err != nil {
+		t.Fatalf("ListFolder: %v", err)
+	}
+	if _, _, err := client.Download(ctx, "/a.txt", "r1"); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	if len(observed) != 3 {
+		t.Fatalf("observed requests = %v, want token, rpc, and content at injected seam", observed)
+	}
+	for _, request := range observed {
+		if !strings.HasSuffix(request, ":") {
+			t.Fatalf("request leaked %s: %q", correlation.Header, request)
+		}
 	}
 }
 
@@ -257,10 +305,9 @@ func newTestClient(srv *httptest.Server) *Client {
 	hc := &http.Client{Transport: rt}
 	c := NewClient(Config{
 		AppKey: "k", AppSecret: "s", RefreshToken: "r",
-	}, hc)
+	}, hc, &http.Client{Transport: rt, Timeout: longpollClientTimeout})
 	// Route the longpoll client through the same rewrite so the no-auth assertion
 	// reaches the stub.
-	c.longpoll = &http.Client{Transport: rt}
 	return c
 }
 
@@ -306,7 +353,7 @@ func TestLiveProbe(t *testing.T) {
 
 	c := NewClient(Config{
 		AppKey: key, AppSecret: secret, RefreshToken: refresh, AppFolderRoot: root,
-	}, nil)
+	}, &http.Client{Timeout: 100 * time.Second}, &http.Client{Timeout: longpollClientTimeout})
 
 	ctx := context.Background()
 	tok, err := c.token.token(ctx, false)

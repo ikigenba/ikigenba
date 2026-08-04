@@ -48,7 +48,8 @@ type Engine struct {
 
 	// backoff is the wait after a transient longpoll/continue failure (network/
 	// 5xx). Small in tests via the constructor.
-	backoff time.Duration
+	backoff   time.Duration
+	startRoot func(context.Context, string) context.Context
 }
 
 // EngineOptions configures NewEngine.
@@ -57,6 +58,7 @@ type EngineOptions struct {
 	Logger          *slog.Logger
 	MaxEntryRetries int
 	Backoff         time.Duration
+	StartRoot       func(context.Context, string) context.Context
 }
 
 const defaultMaxEntryRetries = 5
@@ -76,7 +78,11 @@ func NewEngine(svc *Service, opts EngineOptions) *Engine {
 	if bo <= 0 {
 		bo = 5 * time.Second
 	}
-	return &Engine{svc: svc, client: opts.Client, log: log, maxEntryRetries: mer, backoff: bo}
+	startRoot := opts.StartRoot
+	if startRoot == nil {
+		startRoot = func(ctx context.Context, _ string) context.Context { return ctx }
+	}
+	return &Engine{svc: svc, client: opts.Client, log: log, maxEntryRetries: mer, backoff: bo, startRoot: startRoot}
 }
 
 // Run blocks running the sync loop until ctx is cancelled, then returns nil.
@@ -103,6 +109,7 @@ func (e *Engine) Run(ctx context.Context) error {
 // existing file emits create (no silent baseline, §5). When a cursor is
 // already persisted, bootstrap is a no-op — the steady loop resumes from it.
 func (e *Engine) bootstrap(ctx context.Context) error {
+	ctx = e.startRoot(ctx, "dropbox:sync/bootstrap")
 	cursor, ok, err := e.readCursor(ctx)
 	if err != nil {
 		return err
@@ -165,8 +172,9 @@ func (e *Engine) steadyState(ctx context.Context) {
 			}
 			continue
 		}
+		cycleCtx := e.startRoot(ctx, "dropbox:sync/longpoll")
 
-		lr, err := e.client.Longpoll(ctx, cursor)
+		lr, err := e.client.Longpoll(cycleCtx, cursor)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -185,7 +193,7 @@ func (e *Engine) steadyState(ctx context.Context) {
 		if !lr.Changes {
 			continue
 		}
-		if err := e.drain(ctx, cursor); err != nil {
+		if err := e.drain(cycleCtx, cursor); err != nil {
 			if ctx.Err() != nil {
 				return
 			}

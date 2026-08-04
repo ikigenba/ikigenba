@@ -44,6 +44,10 @@ const (
 	hostContent = "https://content.dropboxapi.com"
 )
 
+// LongpollClientTimeout exposes the package-owned parked-read policy to the
+// composition root without duplicating its value there.
+func LongpollClientTimeout() time.Duration { return longpollClientTimeout }
+
 // hostNotifyVar is the longpoll host. It is a var (not a const) solely so tests
 // can redirect the longpoll call at a stub; production always uses the real
 // notify.dropboxapi.com host (the only Dropbox host that serves the
@@ -108,18 +112,17 @@ type Client struct {
 	token *tokenSource
 }
 
-// NewClient builds a Client from cfg. httpClient, if non-nil, is used as the
-// base for the rpc/content client (tests inject a stub); the longpoll client is
-// always given the long timeout. A nil httpClient yields a default rpc client.
-func NewClient(cfg Config, httpClient *http.Client) *Client {
-	rpc := httpClient
-	if rpc == nil {
-		rpc = &http.Client{Timeout: 100 * time.Second}
+// NewClient builds a Client from the required, separately configured outbound
+// clients. Keeping both dependencies explicit prevents an uninstrumented
+// fallback and preserves the longpoll client's distinct parked-read timeout.
+func NewClient(cfg Config, rpc, longpoll *http.Client) *Client {
+	if rpc == nil || longpoll == nil {
+		panic("dropbox: rpc and longpoll HTTP clients are required")
 	}
 	c := &Client{
 		cfg:      cfg,
 		rpc:      rpc,
-		longpoll: &http.Client{Timeout: longpollClientTimeout},
+		longpoll: longpoll,
 	}
 	c.token = &tokenSource{
 		appKey:       cfg.AppKey,

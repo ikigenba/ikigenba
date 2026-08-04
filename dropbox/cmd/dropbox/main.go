@@ -31,6 +31,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"appkit"
 	"appkit/config"
@@ -155,18 +156,25 @@ func main() {
 			if err != nil {
 				return err
 			}
-			client := dropbox.NewClient(cfg, nil)
+			rpcClient, longpollClient, sourceClient := outboundClients(rt)
+			client := dropbox.NewClient(cfg, rpcClient, longpollClient)
 
 			svc = dropbox.NewService(conn)
 			svc.Mirror = mirror
 			svc.Client = client
 			svc.ContentBase = contentBase
 			svc.Logger = rt.Logger()
+			startRoot := func(ctx context.Context, origin string) context.Context {
+				rootCtx, _ := rt.Recorder().StartRoot(ctx, origin, nil)
+				return rootCtx
+			}
+			svc.StartRoot = startRoot
 
 			engine = dropbox.NewEngine(svc, dropbox.EngineOptions{
 				Client:          client,
 				Logger:          rt.Logger(),
 				MaxEntryRetries: maxEntryRetries,
+				StartRoot:       startRoot,
 			})
 
 			// Landing page and assets are human web UI; nginx owns the session
@@ -187,7 +195,7 @@ func main() {
 				}
 			}))
 			allowed := registrySourcePorts()
-			handler, err := mcp.NewHandler(svc, func(port int) bool { return allowed[port] }, rt)
+			handler, err := mcp.NewHandler(svc, func(port int) bool { return allowed[port] }, sourceClient, rt)
 			if err != nil {
 				return err
 			}
@@ -227,6 +235,20 @@ func main() {
 			},
 		},
 	})
+}
+
+type outboundClientFactory interface {
+	HTTPClient(time.Duration) *http.Client
+}
+
+func outboundClients(rt outboundClientFactory) (rpc, longpoll, source *http.Client) {
+	rpc = rt.HTTPClient(100 * time.Second)
+	longpoll = rt.HTTPClient(dropbox.LongpollClientTimeout())
+	source = rt.HTTPClient(5 * time.Second)
+	source.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return rpc, longpoll, source
 }
 
 func mountLoopbackRoutes(rt *appkit.Router, svc *dropbox.Service) {

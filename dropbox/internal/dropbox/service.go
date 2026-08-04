@@ -39,6 +39,9 @@ type Service struct {
 	ContentBase string
 	Now         func() time.Time
 	Logger      *slog.Logger
+	// StartRoot opens a fresh daemon correlation chain. The composition root
+	// wires the chassis helper; nil keeps focused domain tests telemetry-free.
+	StartRoot func(context.Context, string) context.Context
 }
 
 // NewService builds a Service over db with the real clock. The store, mirror,
@@ -172,7 +175,7 @@ func (s *Service) Write(ctx context.Context, path string, src io.Reader, clientI
 		if created {
 			kind = KindCreate
 		}
-		if err := s.appendEvent(tx, FileEvent{Kind: kind, Path: path, Rev: row.Rev, ContentHash: hash, Size: size, OccurredAt: now, Origin: clientID}); err != nil {
+		if err := s.appendEvent(ctx, tx, FileEvent{Kind: kind, Path: path, Rev: row.Rev, ContentHash: hash, Size: size, OccurredAt: now, Origin: clientID}); err != nil {
 			return err
 		}
 		return s.Store.EnqueueUpload(tx, localUpload(path, "put", sql.NullString{}, clientID, now))
@@ -230,7 +233,7 @@ func (s *Service) Delete(ctx context.Context, path, clientID string) (removed in
 		}
 		changed = len(deleted) > 0 || len(dirs) > 0
 		for _, row := range deleted {
-			if err := s.appendEvent(tx, FileEvent{Kind: KindDelete, Path: row.Path, Rev: row.Rev, ContentHash: row.ContentHash, Size: row.Size, OccurredAt: now, Origin: clientID}); err != nil {
+			if err := s.appendEvent(ctx, tx, FileEvent{Kind: KindDelete, Path: row.Path, Rev: row.Rev, ContentHash: row.ContentHash, Size: row.Size, OccurredAt: now, Origin: clientID}); err != nil {
 				return err
 			}
 		}
@@ -292,11 +295,11 @@ func (s *Service) Move(ctx context.Context, from, to, clientID string) error {
 			return getErr
 		}
 		for _, file := range moved {
-			if err := s.appendEvent(tx, FileEvent{Kind: KindDelete, Path: file.Path, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
+			if err := s.appendEvent(ctx, tx, FileEvent{Kind: KindDelete, Path: file.Path, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
 				return err
 			}
 			newPath := to + file.Path[len(from):]
-			if err := s.appendEvent(tx, FileEvent{Kind: KindCreate, Path: newPath, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
+			if err := s.appendEvent(ctx, tx, FileEvent{Kind: KindCreate, Path: newPath, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
 				return err
 			}
 		}
@@ -377,7 +380,7 @@ func (s *Service) applyUpsert(ctx context.Context, path, rev, contentHash string
 		if err := s.Store.UpsertFile(tx, path, rev, contentHash, size, now); err != nil {
 			return err
 		}
-		return s.appendEvent(tx, ev)
+		return s.appendEvent(ctx, tx, ev)
 	})
 	if err != nil {
 		return "", err
@@ -427,7 +430,7 @@ func (s *Service) applyRename(ctx context.Context, oldDisplay, newDisplay, rev, 
 		if err := s.Store.UpsertFile(tx, newDisplay, rev, contentHash, size, now); err != nil {
 			return err
 		}
-		return s.appendEvent(tx, ev)
+		return s.appendEvent(ctx, tx, ev)
 	})
 	if err != nil {
 		return err
@@ -476,7 +479,7 @@ func (s *Service) applyDelete(ctx context.Context, path string) (emitted int, er
 				OccurredAt:  now,
 				Origin:      OriginDropbox,
 			}
-			if err := s.appendEvent(tx, ev); err != nil {
+			if err := s.appendEvent(ctx, tx, ev); err != nil {
 				return err
 			}
 		}
@@ -518,11 +521,11 @@ func (s *Service) inTx(ctx context.Context, fn func(*sql.Tx) error) error {
 
 // appendEvent appends one event on tx when an EventSink is wired (no-op when
 // emission is disabled).
-func (s *Service) appendEvent(tx *sql.Tx, ev FileEvent) error {
+func (s *Service) appendEvent(ctx context.Context, tx *sql.Tx, ev FileEvent) error {
 	if s.Outbox == nil {
 		return nil
 	}
-	return s.Outbox.AppendFileEvent(tx, ev)
+	return s.Outbox.AppendFileEvent(ctx, tx, ev)
 }
 
 // ring wakes parked feed connections after a successful commit (no-op when the
