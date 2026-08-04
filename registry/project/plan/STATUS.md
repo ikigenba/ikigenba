@@ -12,5 +12,3 @@ line and its `phase-NN.md` body file in the completion commit — there is no
 glyph** outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 05
-
-- Phase 04 ⬜ realizes R-ZNFW-ORR6 — append the `telemetry` row (`3008`, Core) to the service table
