@@ -14,5 +14,3 @@ deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
 Next phase: 08
-
-- Phase 07 ⬜ realizes D7 — The end-to-end layer over the real composed service
