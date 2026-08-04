@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 124
-
-- Phase 123 ⬜ realizes — — nginx fragment: forward the edge-minted correlation id on the four gated locations, strip it to empty on the ungated PRM bootstrap
