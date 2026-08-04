@@ -301,7 +301,7 @@ func TestEvents_RegistryGatesAppend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginTx: %v", err)
 	}
-	if err := ob.Append(tx, outbox.Event{Kind: "not-a-real-kind", Payload: json.RawMessage(`{}`)}); err == nil {
+	if err := ob.Append(context.Background(), tx, outbox.Event{Kind: "not-a-real-kind", Payload: json.RawMessage(`{}`)}); err == nil {
 		tx.Rollback()
 		t.Fatal("Append of an unregistered type returned nil, want error")
 	}

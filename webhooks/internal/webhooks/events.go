@@ -87,7 +87,7 @@ func (s *Service) Record(ctx context.Context, wh db.Webhook, contentType string,
 	if err != nil {
 		return err
 	}
-	if err := s.Outbox.Append(tx, outbox.Event{Kind: kindReceived, Subject: "/" + wh.Name, Payload: raw}); err != nil {
+	if err := s.Outbox.Append(ctx, tx, outbox.Event{Kind: kindReceived, Subject: "/" + wh.Name, Payload: raw}); err != nil {
 		tx.Rollback()
 		return err
 	}
