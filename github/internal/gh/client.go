@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+
+	"appkit/httpclient"
 )
 
 var (
@@ -488,7 +491,7 @@ func (c *Client) client() *http.Client {
 	if c.ts != nil {
 		return c.ts.client()
 	}
-	return http.DefaultClient
+	return httpclient.New(httpclient.Options{Timeout: 30 * time.Second})
 }
 
 func githubStatusError(resp *http.Response) error {

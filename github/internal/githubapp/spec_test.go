@@ -1,6 +1,7 @@
 package githubapp
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -10,13 +11,130 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"appkit/server"
+	"appkit/telemetry"
 
 	"github/internal/gh"
 )
+
+func TestSpecHandlersInstrumentRESTAndTokenExchangeWithThirtySecondClient(t *testing.T) {
+	// R-01NE-H6K8
+	// R-02VA-UYAX
+	// R-06J0-09J0
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPEM := string(pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}))
+	t.Setenv("IKIGENBA_APP_ID", "12345")
+	t.Setenv("IKIGENBA_GITHUB_ORG", "acme")
+	t.Setenv("IKIGENBA_APP_PRIVATE_KEY", keyPEM)
+
+	githubServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/orgs/acme/installation":
+			_, _ = io.WriteString(w, `{"id":42}`)
+		case "/app/installations/42/access_tokens":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{"token":"recorded-token","expires_at":"2099-07-04T12:10:00Z"}`)
+		case "/orgs/acme/repos":
+			_, _ = io.WriteString(w, `[{"name":"widgets"}]`)
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer githubServer.Close()
+	target, err := url.Parse(githubServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	requests := make(chan []byte, 1)
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, readErr := io.ReadAll(req.Body)
+		if readErr != nil {
+			t.Errorf("read telemetry request: %v", readErr)
+		}
+		requests <- body
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer sink.Close()
+	recorder := telemetry.New(telemetry.Options{
+		Service: "github", IngestURL: sink.URL, Enabled: true,
+		Capacity: 20, BatchMax: 20, FlushEvery: time.Hour, Client: sink.Client(),
+	})
+
+	var client *gh.Client
+	previous := newGitHubClient
+	newGitHubClient = func(cfg gh.Config, hc *http.Client) (*gh.Client, error) {
+		if hc == nil {
+			t.Fatal("Handlers passed a nil HTTP client")
+		}
+		if hc.Timeout != 30*time.Second {
+			t.Fatalf("Handlers client timeout = %v, want 30s", hc.Timeout)
+		}
+		instrumented := hc.Transport
+		hc.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = target.Scheme
+			req.URL.Host = target.Host
+			return instrumented.RoundTrip(req)
+		})
+		var buildErr error
+		client, buildErr = gh.NewClient(cfg, hc)
+		return client, buildErr
+	}
+	t.Cleanup(func() { newGitHubClient = previous })
+
+	_, err = server.New(server.Options{
+		Addr: "127.0.0.1:0", Logger: slog.Default(), Apex: true,
+		Version: "test", Service: "github", Recorder: recorder, Register: Spec().Handlers,
+	})
+	if err != nil {
+		t.Fatalf("assemble handlers: %v", err)
+	}
+	if _, err := client.ReposList(context.Background()); err != nil {
+		t.Fatalf("ReposList() error = %v", err)
+	}
+	if err := recorder.Close(context.Background()); err != nil {
+		t.Fatalf("close recorder: %v", err)
+	}
+
+	var batch struct {
+		Records []telemetry.Record `json:"records"`
+	}
+	select {
+	case body := <-requests:
+		if err := json.Unmarshal(body, &batch); err != nil {
+			t.Fatalf("decode telemetry batch %q: %v", body, err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("telemetry sink received no records")
+	}
+	wantOps := map[string]bool{
+		http.MethodPost + " " + target.Host + "/app/installations/42/access_tokens": false,
+		http.MethodGet + " " + target.Host + "/orgs/acme/repos":                     false,
+	}
+	for _, record := range batch.Records {
+		if record.Kind == telemetry.KindOutbound {
+			if _, ok := wantOps[record.Op]; ok {
+				wantOps[record.Op] = true
+			}
+		}
+	}
+	for op, found := range wantOps {
+		if !found {
+			t.Fatalf("outbound telemetry missing %q; records = %+v", op, batch.Records)
+		}
+	}
+}
 
 func TestSpecHandlersAssembleTokenRouteJSONGuardAndFailureR_GTQ4_30E7(t *testing.T) {
 	// R-GTQ4-30E7

@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"appkit/httpclient"
 )
 
 var (
@@ -262,7 +264,7 @@ func (t *tokenSource) client() *http.Client {
 	if t.httpClient != nil {
 		return t.httpClient
 	}
-	return http.DefaultClient
+	return httpclient.New(httpclient.Options{Timeout: 30 * time.Second})
 }
 
 func parseAppPrivateKey(pemText string) (*rsa.PrivateKey, error) {

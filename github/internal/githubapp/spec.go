@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"appkit"
 
@@ -45,7 +46,7 @@ func Spec() appkit.Spec {
 		Handlers: func(rt *appkit.Router) error {
 			cfg := gh.ConfigFromEnv(os.Getenv)
 			var err error
-			client, err = newGitHubClient(cfg, nil)
+			client, err = newGitHubClient(cfg, rt.HTTPClient(30*time.Second))
 			if err != nil {
 				return err
 			}
