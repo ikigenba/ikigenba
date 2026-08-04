@@ -47,7 +47,7 @@ type sessionOutcomePayload struct {
 
 // AppendOutcome returns the atomic store callback for session outcome events.
 func AppendOutcome(producer *outbox.Outbox) OutcomeAppender {
-	return func(_ context.Context, tx *sql.Tx, session Session) error {
+	return func(ctx context.Context, tx *sql.Tx, session Session) error {
 		if producer == nil {
 			return errors.New("append outcome: producer is required")
 		}
@@ -78,7 +78,7 @@ func AppendOutcome(producer *outbox.Outbox) OutcomeAppender {
 		if err != nil {
 			return fmt.Errorf("append outcome: marshal: %w", err)
 		}
-		return producer.Append(tx, outbox.Event{Kind: kind, Subject: "/" + session.RepoName, Payload: encoded})
+		return producer.Append(ctx, tx, outbox.Event{Kind: kind, Subject: "/" + session.RepoName, Payload: encoded})
 	}
 }
 

@@ -38,7 +38,7 @@ func TestEventsDeclareOnlyOutcomeFamiliesAndRejectUndeclaredKinds(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := producer.Append(tx, outbox.Event{Kind: "repo.deleted", Subject: "/fixture", Payload: json.RawMessage(`{}`)}); err == nil || !strings.Contains(err.Error(), "not in the registry") {
+	if err := producer.Append(context.Background(), tx, outbox.Event{Kind: "repo.deleted", Subject: "/fixture", Payload: json.RawMessage(`{}`)}); err == nil || !strings.Contains(err.Error(), "not in the registry") {
 		t.Fatalf("undeclared Append error = %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -141,7 +141,7 @@ func TestFeedHandlerFramesAppendedOutcomeEnvelope(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := json.RawMessage(`{"repo":"alpha","session_id":"feed","branch":"main","ended_at":"2026-07-15T12:00:00Z"}`)
-	if err := producer.Append(tx, outbox.Event{Kind: "session.succeeded", Subject: "/alpha", Payload: payload}); err != nil {
+	if err := producer.Append(context.Background(), tx, outbox.Event{Kind: "session.succeeded", Subject: "/alpha", Payload: payload}); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {

@@ -40,7 +40,7 @@ func TestEmbeddedMigrationsCreateExactDomainAndOutboxSchemas(t *testing.T) {
 	want := map[string][]string{
 		"repos":    {"name", "owner_id", "owner_email", "clone_url", "default_branch", "created_at"},
 		"sessions": {"id", "repo_name", "owner_id", "owner_email", "issue_number", "attempt", "branch", "instructions", "status", "error", "pr_url", "created_at", "started_at", "ended_at", "log_path"},
-		"outbox":   {"seq", "event_id", "kind", "subject", "payload", "created_at"},
+		"outbox":   {"seq", "event_id", "kind", "subject", "payload", "created_at", "correlation_id"},
 	}
 	for table, expected := range want {
 		if got := tableColumns(t, conn, table); !reflect.DeepEqual(got, expected) {
@@ -65,7 +65,17 @@ func TestOwnerIDMigrationRebuildsAndDropsEmailKeyedRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := appdb.Migrate(context.Background(), conn, migrations[:len(migrations)-1]); err != nil {
+	ownerMigration := 0
+	for index, migration := range migrations {
+		if strings.Contains(migration.Name, "owner_id_keying") {
+			ownerMigration = index
+			break
+		}
+	}
+	if ownerMigration == 0 {
+		t.Fatal("owner-id migration not found")
+	}
+	if err := appdb.Migrate(context.Background(), conn, migrations[:ownerMigration]); err != nil {
 		t.Fatalf("apply pre-conversion migrations: %v", err)
 	}
 	if _, err := conn.Exec(`INSERT INTO repos VALUES ('old','same@example.com','file:///old','main','2026-07-19T00:00:00Z')`); err != nil {
