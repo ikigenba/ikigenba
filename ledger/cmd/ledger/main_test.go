@@ -623,6 +623,49 @@ func TestNginxLandingLocationForwardsFullOwnerIdentity(t *testing.T) {
 	}
 }
 
+func TestNginxGatedLocationsForwardTrustedCorrelationID(t *testing.T) {
+	conf := readNginxConfig(t)
+
+	// R-B98U-XGC9
+	for opener, directives := range map[string][]string{
+		"location /srv/ledger/ {": {
+			"auth_request /_authn;",
+			"auth_request_set $ledger_correlation $upstream_http_x_correlation_id;",
+			"proxy_set_header X-Correlation-Id $ledger_correlation;",
+		},
+		"location = /srv/ledger/ {": {
+			"auth_request /_session-authn;",
+			"auth_request_set $ledger_session_correlation $upstream_http_x_correlation_id;",
+			"proxy_set_header X-Correlation-Id $ledger_session_correlation;",
+		},
+		"location /srv/ledger/static/ {": {
+			"auth_request /_session-authn;",
+			"auth_request_set $ledger_static_correlation $upstream_http_x_correlation_id;",
+			"proxy_set_header X-Correlation-Id $ledger_static_correlation;",
+		},
+	} {
+		block := nginxLocationBlock(t, conf, opener)
+		for _, directive := range directives {
+			if strings.Count(block, directive) != 1 {
+				t.Errorf("%s must contain correlation directive %q exactly once: %s", opener, directive, block)
+			}
+		}
+	}
+}
+
+func TestNginxPublicLocationStripsClientCorrelationID(t *testing.T) {
+	conf := readNginxConfig(t)
+	prm := nginxLocationBlock(t, conf, "location = /srv/ledger/.well-known/oauth-protected-resource {")
+
+	// R-BAGR-B82Y
+	if strings.Count(prm, `proxy_set_header X-Correlation-Id "";`) != 1 {
+		t.Fatalf("public PRM location must strip the inbound correlation id exactly once: %s", prm)
+	}
+	if got := strings.Count(conf, "proxy_set_header X-Correlation-Id"); got != 4 {
+		t.Fatalf("nginx fragment has %d X-Correlation-Id proxy directives, want three trusted forwards and one public strip", got)
+	}
+}
+
 func TestNginxStaticLocationIsSessionGated(t *testing.T) {
 	conf := readNginxConfig(t)
 
