@@ -11,7 +11,6 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 24
 
-- Phase 17 ⬜ realizes D14 — correlation read-or-mint at the chassis edge, on Crockford ULIDs
 - Phase 18 ⬜ realizes D16 — the telemetry record shape, digests, and the param encoder
 - Phase 19 ⬜ realizes D15 — the telemetry recorder: ring, batching, ingest client, env config
 - Phase 20 ⬜ realizes D17 — inbound instrumentation: MCP dispatch and the HTTP middleware chain
