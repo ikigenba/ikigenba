@@ -15,7 +15,6 @@ anchored grep matches only phase lines.
 
 Next phase: 08
 
-- Phase 02 ⬜ realizes D2 — The record type, the schema, and the append-only store
 - Phase 03 ⬜ realizes D3 — The loopback-only, never-self-recorded ingest endpoint
 - Phase 04 ⬜ realizes D4 — Retention window resolution and the pruner
 - Phase 05 ⬜ realizes D5 — The forensic MCP surface: search, chain, get, guide
