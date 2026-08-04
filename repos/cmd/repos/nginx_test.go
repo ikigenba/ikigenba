@@ -135,6 +135,92 @@ func TestNginxFragmentForwardsBearerOwnerAndClientIdentity(t *testing.T) {
 	}
 }
 
+func TestNginxFragmentCapturesAndForwardsGatedCorrelationIDs(t *testing.T) {
+	// R-9DUI-TUQJ
+	contents, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := string(contents)
+	if got := countNginxAuthRequestDirectives(conf); got != 3 {
+		t.Fatalf("auth_request directive count = %d, want unchanged gate count 3", got)
+	}
+
+	for name, gated := range map[string]struct {
+		block   string
+		capture string
+		forward string
+	}{
+		"session landing": {
+			block:   nginxBlock(t, conf, "location = /srv/repos/ {"),
+			capture: "auth_request_set $repos_session_correlation $upstream_http_x_correlation_id;",
+			forward: "proxy_set_header X-Correlation-Id $repos_session_correlation;",
+		},
+		"session static assets": {
+			block:   nginxBlock(t, conf, "location /srv/repos/static/ {"),
+			capture: "auth_request_set $repos_session_correlation $upstream_http_x_correlation_id;",
+			forward: "proxy_set_header X-Correlation-Id $repos_session_correlation;",
+		},
+		"bearer catch-all": {
+			block:   nginxBlock(t, conf, "location /srv/repos/ {"),
+			capture: "auth_request_set $repos_correlation $upstream_http_x_correlation_id;",
+			forward: "proxy_set_header X-Correlation-Id $repos_correlation;",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, directive := range []string{gated.capture, gated.forward} {
+				if !strings.Contains(gated.block, directive) {
+					t.Errorf("gated location missing correlation directive %q:\n%s", directive, gated.block)
+				}
+			}
+			if strings.Contains(gated.block, "$http_x_correlation_id") {
+				t.Errorf("gated location forwards client-supplied correlation id:\n%s", gated.block)
+			}
+			if strings.Contains(gated.block, "proxy_set_header X-Correlation-Id \"\";") {
+				t.Errorf("gated location strips the captured correlation id:\n%s", gated.block)
+			}
+		})
+	}
+}
+
+func TestNginxFragmentStripsUngatedPRMCorrelationID(t *testing.T) {
+	// R-9F2F-7MH8
+	contents, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := string(contents)
+	prm := nginxBlock(t, conf, "location = /srv/repos/.well-known/oauth-protected-resource {")
+	if !strings.Contains(prm, "proxy_set_header X-Correlation-Id \"\";") {
+		t.Fatalf("ungated PRM bootstrap does not strip the correlation id:\n%s", prm)
+	}
+	if strings.Contains(prm, "auth_request") {
+		t.Fatalf("ungated PRM bootstrap contains an auth request directive:\n%s", prm)
+	}
+
+	for _, header := range []string{
+		"location = /srv/repos/ {",
+		"location /srv/repos/static/ {",
+		"location /srv/repos/ {",
+	} {
+		block := nginxBlock(t, conf, header)
+		if strings.Contains(block, "proxy_set_header X-Correlation-Id \"\";") {
+			t.Errorf("gated location %q strips the correlation id:\n%s", header, block)
+		}
+	}
+}
+
+func countNginxAuthRequestDirectives(conf string) int {
+	count := 0
+	for _, line := range strings.Split(conf, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "auth_request" {
+			count++
+		}
+	}
+	return count
+}
+
 func nginxBlock(t *testing.T, conf, header string) string {
 	t.Helper()
 	start := strings.Index(conf, header)
