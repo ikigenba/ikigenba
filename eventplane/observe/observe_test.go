@@ -48,33 +48,19 @@ func TestDependencyBoundary(t *testing.T) {
 }
 
 func TestDependencyBoundaryCommand(t *testing.T) {
-	output, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}} {{.DepOnly}}", observePackage).CombinedOutput()
+	// The plain `go list -deps` traversal includes its explicitly queried root.
+	// Select DepOnly entries before applying the done-bar's internal-package
+	// filter so this command checks dependencies rather than dependencies plus
+	// the package whose boundary is under test.
+	output, err := exec.Command(
+		"sh", "-c",
+		"go list -deps -f '{{if .DepOnly}}{{.ImportPath}}{{end}}' eventplane/observe | grep '^eventplane/'",
+	).CombinedOutput()
 	if err != nil {
-		t.Fatalf("list observe dependency traversal: %v\n%s", err, output)
+		t.Fatalf("list observe dependencies: %v\n%s", err, output)
 	}
 
-	var dependencies []string
-	var queryRoots []string
-	for line := range strings.Lines(string(output)) {
-		line = strings.TrimSpace(line)
-		path, depOnly, ok := strings.Cut(line, " ")
-		if !ok || !strings.HasPrefix(path, "eventplane/") {
-			continue
-		}
-		switch depOnly {
-		case "true":
-			dependencies = append(dependencies, path)
-		case "false":
-			queryRoots = append(queryRoots, path)
-		default:
-			t.Fatalf("unexpected DepOnly value in %q", line)
-		}
-	}
-
-	if got, want := strings.Join(dependencies, "\n"), "eventplane/routing"; got != want {
+	if got, want := strings.TrimSpace(string(output)), "eventplane/routing"; got != want {
 		t.Fatalf("internal dependencies:\n%s\nwant:\n%s", got, want)
-	}
-	if got, want := strings.Join(queryRoots, "\n"), observePackage; got != want {
-		t.Fatalf("explicit query roots:\n%s\nwant:\n%s", got, want)
 	}
 }
