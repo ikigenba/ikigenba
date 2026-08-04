@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"eventplane/observe"
 	"eventplane/outbox"
 )
 
@@ -28,6 +29,7 @@ type Options struct {
 	Logger           *slog.Logger // feed/retention observability
 	RetentionDays    int          // 0 = library default (7 days)
 	RetentionMaxRows int          // 0 = library default (1,000,000 rows)
+	Observe          observe.Hook // completed publish-hop observer
 	// Registry is the producer's published event-family registry. When non-empty it
 	// is forwarded into outbox.Options so Append rejects an unregistered ev.Kind
 	// (§5.3 fail-loud); empty preserves today's unvalidated behavior.
@@ -56,6 +58,7 @@ func Start(ctx context.Context, conn *sql.DB, opts Options) (*Producer, error) {
 		RetentionDays:    opts.RetentionDays,
 		RetentionMaxRows: int64(opts.RetentionMaxRows),
 		Registry:         opts.Registry,
+		Observe:          opts.Observe,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("event plane: %w", err)

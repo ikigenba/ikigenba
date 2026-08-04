@@ -3,24 +3,31 @@ package appkit
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"appkit/internal/testmigrations"
 	"appkit/manifest"
 	"appkit/server"
+	"appkit/telemetry"
 
 	"eventplane/consumer"
+	"eventplane/correlation"
+	"eventplane/outbox"
 )
 
 // testSpec is a producer-shaped spec over the shared test migrations, used to
@@ -51,6 +58,113 @@ func run(t *testing.T, spec Spec, env map[string]string, args ...string) (code i
 	}
 	code = dispatch(spec, args, getenv, strings.NewReader(""), &out, &errb)
 	return code, out.String(), errb.String()
+}
+
+type telemetryRecordSink struct {
+	mu      sync.Mutex
+	records []telemetry.Record
+}
+
+func (s *telemetryRecordSink) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	var batch struct {
+		Records []telemetry.Record `json:"records"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	s.records = append(s.records, batch.Records...)
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *telemetryRecordSink) snapshot() []telemetry.Record {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]telemetry.Record(nil), s.records...)
+}
+
+func TestRunServeRecordsLifecycleStartAndStop(t *testing.T) {
+	sink := &telemetryRecordSink{}
+	ingest := httptest.NewServer(sink)
+	t.Cleanup(ingest.Close)
+
+	oldVersion, oldCommit := version, commit
+	version, commit = "v21.4.0", "abc1234"
+	t.Cleanup(func() { version, commit = oldVersion, oldCommit })
+
+	spec := testSpec()
+	var (
+		producer *outbox.Outbox
+		serveDB  *sql.DB
+	)
+	spec.Handlers = func(rt *Router) error {
+		serveDB = rt.DB()
+		_, err := serveDB.Exec(outbox.SchemaSQL)
+		return err
+	}
+	spec.Producer = func(ob *outbox.Outbox) error {
+		producer = ob
+		return nil
+	}
+	publishCorrelation := correlation.New()
+	spec.Workers = []func(context.Context) error{func(context.Context) error {
+		tx, err := serveDB.Begin()
+		if err != nil {
+			return err
+		}
+		ctx := correlation.WithContext(context.Background(), publishCorrelation)
+		if err := producer.Append(ctx, tx, outbox.Event{Kind: "created", Subject: "/fixture", Payload: json.RawMessage(`{}`)}); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		return nil
+	}}
+	tmp := t.TempDir()
+	env := map[string]string{
+		"WIDGET_IP":              "127.0.0.1",
+		"WIDGET_PORT":            "0",
+		"WIDGET_DB_PATH":         filepath.Join(tmp, "widget.db"),
+		"WIDGET_GENERATION_PATH": filepath.Join(tmp, "generation"),
+		"TELEMETRY_INGEST_URL":   ingest.URL,
+		"TELEMETRY_ENABLED":      "true",
+	}
+	getenv := func(key string) string { return env[key] }
+	if err := runServe(spec, nil, getenv, io.Discard, io.Discard); err != nil {
+		t.Fatalf("runServe: %v", err)
+	}
+
+	var lifecycle []telemetry.Record
+	for _, record := range sink.snapshot() {
+		if record.Kind == telemetry.KindLifecycle {
+			lifecycle = append(lifecycle, record)
+		}
+	}
+	// R-1WSC-AQ6Q
+	if len(lifecycle) < 1 || lifecycle[0].Op != "start" || lifecycle[0].CorrelationID != "" || lifecycle[0].Detail["version"] != "v21.4.0 (abc1234)" {
+		t.Fatalf("start lifecycle record = %#v, want empty correlation and stamped version", lifecycle)
+	}
+	// R-1Y08-OHXF
+	if len(lifecycle) != 2 || lifecycle[1].Op != "stop" || lifecycle[1].CorrelationID != "" {
+		t.Fatalf("lifecycle records before serve return = %#v, want ordered start and stop", lifecycle)
+	}
+	// R-1Z85-29O4
+	var publish *telemetry.Record
+	for _, record := range sink.snapshot() {
+		if record.Kind == telemetry.KindPublish {
+			record := record
+			publish = &record
+			break
+		}
+	}
+	if publish == nil || publish.Op != "widget:created/fixture" || publish.CorrelationID != publishCorrelation || publish.Outcome == nil || publish.Outcome.Status != "ok" {
+		t.Fatalf("publish record = %#v, want real outbox hop with publisher correlation %q", publish, publishCorrelation)
+	}
 }
 
 func TestDispatch_Version(t *testing.T) {

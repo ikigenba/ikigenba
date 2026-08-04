@@ -26,7 +26,10 @@ import (
 	"appkit/web"
 
 	"eventplane/consumer"
+	"eventplane/correlation"
+	"eventplane/observe"
 	"eventplane/outbox"
+	"eventplane/routing"
 )
 
 // loadMigrations reads the app's embedded migration set via the db runner.
@@ -195,6 +198,14 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 	ctx, cancel := context.WithCancel(sigCtx)
 	defer cancel()
 	recorder.Start(ctx)
+	recorder.Record(telemetry.Record{
+		Kind: telemetry.KindLifecycle,
+		Op:   "start",
+		Detail: map[string]any{
+			"version": versionString(),
+		},
+	})
+	hook := eventObserveHook(recorder)
 	defer func() {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer closeCancel()
@@ -240,6 +251,7 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 			RetentionDays:    retDays,
 			RetentionMaxRows: retRows,
 			Registry:         spec.Events,
+			Observe:          hook,
 		})
 		if err != nil {
 			return err
@@ -305,7 +317,11 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 	logger.Info("starting "+spec.App,
 		"addr", addr, "resource_id", cfg.ResourceID, "auth_server", cfg.AuthServer,
 		"db_path", cfg.DBPath, "version", versionString())
-	return runServerAndWorkers(ctx, cancel, srv, workers, logger)
+	err = runServerAndWorkers(ctx, cancel, srv, workers, logger)
+	if err == nil {
+		recorder.Record(telemetry.Record{Kind: telemetry.KindLifecycle, Op: "stop"})
+	}
+	return err
 }
 
 func validateConsumerFields(spec Spec) error {
@@ -339,6 +355,8 @@ func buildConsumerWorkers(spec Spec, rt *Router, getenv func(string) string) ([]
 		return nil, errors.New("consumer wiring: Router is required")
 	}
 
+	recorder := rt.Recorder()
+	hook := eventObserveHook(recorder)
 	workers := make([]func(context.Context) error, 0, len(spec.Consumers))
 	for _, entry := range spec.Consumers {
 		entry := entry
@@ -348,9 +366,15 @@ func buildConsumerWorkers(spec Spec, rt *Router, getenv func(string) string) ([]
 		if entry.Handler == nil {
 			return nil, fmt.Errorf("consumer wiring (%s): Handler is required", entry.Source)
 		}
-		handler := entry.Handler(rt)
-		if handler == nil {
+		inner := entry.Handler(rt)
+		if inner == nil {
 			return nil, fmt.Errorf("consumer wiring (%s): Handler returned nil", entry.Source)
+		}
+		handler := func(ctx context.Context, ev consumer.Event) error {
+			if !correlation.Valid(ev.CorrelationID) {
+				ctx, _ = recorder.StartChain(ctx, routing.Key(ev.Source, ev.Kind, ev.Subject), nil)
+			}
+			return inner(ctx, ev)
 		}
 		feedURL, from := config.ResolveConsumerFeed(spec.App, entry.Source, getenv)
 		cfg := consumer.Config{
@@ -360,6 +384,7 @@ func buildConsumerWorkers(spec Spec, rt *Router, getenv func(string) string) ([]
 			Source:     entry.Source,
 			ConsumerID: spec.App,
 			Logger:     rt.Logger(),
+			Observe:    hook,
 		}
 		workers = append(workers, func(ctx context.Context) error {
 			rt.Logger().Info("starting "+spec.App+" "+entry.Source+" consumer",
@@ -371,6 +396,32 @@ func buildConsumerWorkers(spec Spec, rt *Router, getenv func(string) string) ([]
 		})
 	}
 	return workers, nil
+}
+
+func eventObserveHook(recorder *telemetry.Recorder) observe.Hook {
+	return func(_ context.Context, ev observe.Event) {
+		status := "ok"
+		errorClass := ""
+		if ev.Err != nil {
+			status = "error"
+			errorClass = "event_plane"
+		}
+		var detail map[string]any
+		if ev.EventID != "" {
+			detail = map[string]any{"event_id": ev.EventID}
+		}
+		recorder.Record(telemetry.Record{
+			Kind:          telemetry.Kind(ev.Hop),
+			Op:            ev.Key(),
+			CorrelationID: ev.CorrelationID,
+			Outcome: &telemetry.Outcome{
+				Status:     status,
+				Error:      errorClass,
+				DurationMS: ev.Duration.Milliseconds(),
+			},
+			Detail: detail,
+		})
+	}
 }
 
 // runServerAndWorkers runs the HTTP server and every Spec.Worker concurrently on
