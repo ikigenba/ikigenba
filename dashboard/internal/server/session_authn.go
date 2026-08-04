@@ -21,6 +21,8 @@ import "net/http"
 // failure (missing/invalid cookie) it returns 401.
 func (a *app) handleSessionAuthn() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		id := a.correlationMinter.NewCorrelationID()
+
 		// (a) Loopback guard — identical to handleAuthn. nginx marks this
 		// location `internal;`; this is defense in depth. Non-loopback → 403.
 		if !remoteIsLoopback(r.RemoteAddr) {
@@ -60,6 +62,7 @@ func (a *app) handleSessionAuthn() http.HandlerFunc {
 		w.Header().Set("X-Owner-Email", owner.Email)
 		w.Header().Set("X-Owner-Name", headerEncode(owner.Name))
 		w.Header().Set("X-Owner-Picture", headerEncode(owner.Picture))
+		w.Header().Set("X-Correlation-Id", id)
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 	}

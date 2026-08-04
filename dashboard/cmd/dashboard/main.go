@@ -29,6 +29,7 @@ import (
 	"appkit"
 	"appkit/config"
 	"appkit/inventory"
+	"eventplane/correlation"
 
 	"dashboard/internal/audit"
 	"dashboard/internal/db"
@@ -44,6 +45,10 @@ import (
 	"dashboard/internal/server"
 	"dashboard/internal/session"
 )
+
+type correlationMinter struct{}
+
+func (correlationMinter) NewCorrelationID() string { return correlation.New() }
 
 func main() {
 	var rt *appkit.Router
@@ -180,26 +185,27 @@ func registerRoutes(rt *appkit.Router, metricsStore *metrics.Store, manifestRoot
 	auditLog := audit.New(conn)
 
 	regHook, err := server.Register(server.Options{
-		Logger:          logger,
-		IDPProvider:     googleidp.New(creds),
-		GithubProvider:  githubidp.New(githubCreds),
-		PublicBaseURL:   publicBaseURL,
-		Handshakes:      handshakes,
-		WorkspaceDomain: creds.WorkspaceDomain,
-		Sessions:        sessions,
-		Identity:        identities,
-		DB:              conn,
-		OAuthClients:    oauthClients,
-		OAuthCodes:      oauthCodes,
-		OAuthTokens:     oauthTokens,
-		PATs:            pats,
-		Audit:           auditLog,
-		Resources:       resources,
-		ManifestRoot:    manifestRoot,
-		Metrics:         metricsStore,
-		Admins:          admins,
-		RateLimiter:     ratelimit.New(authnRateLimit, authnRateWindow),
-		GrantEvents:     grantevents.New(),
+		Logger:            logger,
+		IDPProvider:       googleidp.New(creds),
+		GithubProvider:    githubidp.New(githubCreds),
+		PublicBaseURL:     publicBaseURL,
+		Handshakes:        handshakes,
+		WorkspaceDomain:   creds.WorkspaceDomain,
+		Sessions:          sessions,
+		Identity:          identities,
+		DB:                conn,
+		OAuthClients:      oauthClients,
+		OAuthCodes:        oauthCodes,
+		OAuthTokens:       oauthTokens,
+		PATs:              pats,
+		Audit:             auditLog,
+		Resources:         resources,
+		ManifestRoot:      manifestRoot,
+		Metrics:           metricsStore,
+		Admins:            admins,
+		RateLimiter:       ratelimit.New(authnRateLimit, authnRateWindow),
+		GrantEvents:       grantevents.New(),
+		CorrelationMinter: correlationMinter{},
 	})
 	if err != nil {
 		return err

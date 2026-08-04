@@ -22,7 +22,12 @@ import (
 	"dashboard/internal/pat"
 	"dashboard/internal/ratelimit"
 	"dashboard/internal/session"
+	"eventplane/correlation"
 )
+
+type testCorrelationMinter struct{}
+
+func (testCorrelationMinter) NewCorrelationID() string { return correlation.New() }
 
 // testWorkspaceDomain is the Workspace federation gate value used across server
 // tests — any non-empty domain satisfies New's required-domain guard.
@@ -88,23 +93,24 @@ func ensureTestIdentity(t *testing.T, d serverDeps, id, email string) {
 // returned value (e.g. nil out one dep) to probe the constructor's guards.
 func (d serverDeps) opts() Options {
 	return Options{
-		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		IDPProvider:     googleidp.NewStub(),
-		GithubProvider:  githubidp.NewStub(),
-		PublicBaseURL:   "https://int.ikigenba.com",
-		Handshakes:      d.handshakes,
-		WorkspaceDomain: testWorkspaceDomain,
-		Sessions:        d.sessions,
-		Identity:        d.identity,
-		DB:              d.db,
-		OAuthClients:    d.clients,
-		OAuthCodes:      d.codes,
-		OAuthTokens:     d.tokens,
-		PATs:            d.pats,
-		Audit:           d.audit,
-		Resources:       []string{testResource},
-		RateLimiter:     ratelimit.New(60, 10*time.Second),
-		GrantEvents:     d.grants,
+		Logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		IDPProvider:       googleidp.NewStub(),
+		GithubProvider:    githubidp.NewStub(),
+		PublicBaseURL:     "https://int.ikigenba.com",
+		Handshakes:        d.handshakes,
+		WorkspaceDomain:   testWorkspaceDomain,
+		Sessions:          d.sessions,
+		Identity:          d.identity,
+		DB:                d.db,
+		OAuthClients:      d.clients,
+		OAuthCodes:        d.codes,
+		OAuthTokens:       d.tokens,
+		PATs:              d.pats,
+		Audit:             d.audit,
+		Resources:         []string{testResource},
+		RateLimiter:       ratelimit.New(60, 10*time.Second),
+		GrantEvents:       d.grants,
+		CorrelationMinter: testCorrelationMinter{},
 	}
 }
 
@@ -180,21 +186,22 @@ func TestStaticDirListingDisabled(t *testing.T) {
 func TestNewRequiresDependencies(t *testing.T) {
 	valid := func() Options { return newServerDeps(t).opts() }
 	cases := map[string]func(*Options){
-		"Logger":          func(o *Options) { o.Logger = nil },
-		"IDPProvider":     func(o *Options) { o.IDPProvider = nil },
-		"GithubProvider":  func(o *Options) { o.GithubProvider = nil },
-		"Handshakes":      func(o *Options) { o.Handshakes = nil },
-		"WorkspaceDomain": func(o *Options) { o.WorkspaceDomain = "" },
-		"Sessions":        func(o *Options) { o.Sessions = nil },
-		"DB":              func(o *Options) { o.DB = nil },
-		"OAuthClients":    func(o *Options) { o.OAuthClients = nil },
-		"OAuthCodes":      func(o *Options) { o.OAuthCodes = nil },
-		"OAuthTokens":     func(o *Options) { o.OAuthTokens = nil },
-		"PATs":            func(o *Options) { o.PATs = nil },
-		"Audit":           func(o *Options) { o.Audit = nil },
-		"Resources":       func(o *Options) { o.Resources = nil },
-		"RateLimiter":     func(o *Options) { o.RateLimiter = nil },
-		"GrantEvents":     func(o *Options) { o.GrantEvents = nil },
+		"Logger":            func(o *Options) { o.Logger = nil },
+		"IDPProvider":       func(o *Options) { o.IDPProvider = nil },
+		"GithubProvider":    func(o *Options) { o.GithubProvider = nil },
+		"Handshakes":        func(o *Options) { o.Handshakes = nil },
+		"WorkspaceDomain":   func(o *Options) { o.WorkspaceDomain = "" },
+		"Sessions":          func(o *Options) { o.Sessions = nil },
+		"DB":                func(o *Options) { o.DB = nil },
+		"OAuthClients":      func(o *Options) { o.OAuthClients = nil },
+		"OAuthCodes":        func(o *Options) { o.OAuthCodes = nil },
+		"OAuthTokens":       func(o *Options) { o.OAuthTokens = nil },
+		"PATs":              func(o *Options) { o.PATs = nil },
+		"Audit":             func(o *Options) { o.Audit = nil },
+		"Resources":         func(o *Options) { o.Resources = nil },
+		"RateLimiter":       func(o *Options) { o.RateLimiter = nil },
+		"GrantEvents":       func(o *Options) { o.GrantEvents = nil },
+		"CorrelationMinter": func(o *Options) { o.CorrelationMinter = nil },
 	}
 	for dep, omit := range cases {
 		t.Run(dep, func(t *testing.T) {

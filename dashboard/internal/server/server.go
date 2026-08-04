@@ -38,6 +38,10 @@ import (
 	"dashboard/ui"
 )
 
+type correlationMinter interface {
+	NewCorrelationID() string
+}
+
 // Options configures the dashboard's HTTP layer.
 type Options struct {
 	Logger          *slog.Logger               // structured logger (required)
@@ -72,6 +76,10 @@ type Options struct {
 	// the SSE handler subscribes to it. Required.
 	GrantEvents *grantevents.Bus
 
+	// CorrelationMinter creates the per-decision identifier returned by successful
+	// introspection requests. Required.
+	CorrelationMinter correlationMinter
+
 	// ManifestRoot is the directory under which each service drops its
 	// <name>/etc/manifest.env, read by the /services inventory endpoint.
 	// Defaults to "/opt" when empty.
@@ -97,18 +105,19 @@ type app struct {
 	sessions        *session.SessionStore
 	identity        *identity.Store
 
-	db           *sql.DB
-	oauthClients *oauth.ClientStore
-	oauthCodes   *oauth.AuthCodeStore
-	oauthTokens  *oauth.TokenStore
-	pats         *pat.Store
-	audit        *audit.Log
-	resources    []string
-	admins       []string
-	rateLimiter  *ratelimit.Limiter
-	manifestRoot string
-	metrics      *metrics.Store
-	grantEvents  *grantevents.Bus
+	db                *sql.DB
+	oauthClients      *oauth.ClientStore
+	oauthCodes        *oauth.AuthCodeStore
+	oauthTokens       *oauth.TokenStore
+	pats              *pat.Store
+	audit             *audit.Log
+	resources         []string
+	admins            []string
+	rateLimiter       *ratelimit.Limiter
+	manifestRoot      string
+	metrics           *metrics.Store
+	grantEvents       *grantevents.Bus
+	correlationMinter correlationMinter
 }
 
 // newApp validates every required dependency at this wiring seam (so a
@@ -164,6 +173,9 @@ func newApp(opts Options) (*app, error) {
 	if opts.GrantEvents == nil {
 		return nil, errors.New("server: GrantEvents is required")
 	}
+	if opts.CorrelationMinter == nil {
+		return nil, errors.New("server: CorrelationMinter is required")
+	}
 
 	manifestRoot := opts.ManifestRoot
 	if manifestRoot == "" {
@@ -194,28 +206,29 @@ func newApp(opts Options) (*app, error) {
 	}
 
 	return &app{
-		logger:          opts.Logger,
-		tmpl:            tmpl,
-		static:          static,
-		idpProvider:     opts.IDPProvider,
-		githubProvider:  opts.GithubProvider,
-		publicBaseURL:   opts.PublicBaseURL,
-		handshakes:      opts.Handshakes,
-		workspaceDomain: opts.WorkspaceDomain,
-		sessions:        opts.Sessions,
-		identity:        opts.Identity,
-		db:              opts.DB,
-		oauthClients:    opts.OAuthClients,
-		oauthCodes:      opts.OAuthCodes,
-		oauthTokens:     opts.OAuthTokens,
-		pats:            opts.PATs,
-		audit:           opts.Audit,
-		resources:       opts.Resources,
-		admins:          opts.Admins,
-		rateLimiter:     opts.RateLimiter,
-		manifestRoot:    manifestRoot,
-		metrics:         opts.Metrics,
-		grantEvents:     opts.GrantEvents,
+		logger:            opts.Logger,
+		tmpl:              tmpl,
+		static:            static,
+		idpProvider:       opts.IDPProvider,
+		githubProvider:    opts.GithubProvider,
+		publicBaseURL:     opts.PublicBaseURL,
+		handshakes:        opts.Handshakes,
+		workspaceDomain:   opts.WorkspaceDomain,
+		sessions:          opts.Sessions,
+		identity:          opts.Identity,
+		db:                opts.DB,
+		oauthClients:      opts.OAuthClients,
+		oauthCodes:        opts.OAuthCodes,
+		oauthTokens:       opts.OAuthTokens,
+		pats:              opts.PATs,
+		audit:             opts.Audit,
+		resources:         opts.Resources,
+		admins:            opts.Admins,
+		rateLimiter:       opts.RateLimiter,
+		manifestRoot:      manifestRoot,
+		metrics:           opts.Metrics,
+		grantEvents:       opts.GrantEvents,
+		correlationMinter: opts.CorrelationMinter,
 	}, nil
 }
 

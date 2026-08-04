@@ -100,6 +100,57 @@ func committedLoginBounceBlock(t *testing.T) string {
 	return block[:end+len("\n    }")]
 }
 
+func committedNginxLocationBlock(t *testing.T, location string, last bool) string {
+	t.Helper()
+	config, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatalf("read committed nginx.conf: %v", err)
+	}
+	needle := "location " + location + " {"
+	start := strings.Index(string(config), needle)
+	if last {
+		start = strings.LastIndex(string(config), needle)
+	}
+	if start == -1 {
+		t.Fatalf("committed nginx.conf is missing %q", needle)
+	}
+	block := string(config[start:])
+	end := strings.Index(block, "\n    }")
+	if end == -1 {
+		t.Fatalf("committed nginx.conf has an unclosed %q block", needle)
+	}
+	return block[:end+len("\n    }")]
+}
+
+func requireNginxDirective(t *testing.T, block, directive string) {
+	t.Helper()
+	want := strings.Join(strings.Fields(directive), " ")
+	for _, line := range strings.Split(block, "\n") {
+		if strings.Join(strings.Fields(line), " ") == want {
+			return
+		}
+	}
+	t.Errorf("nginx block is missing %q:\n%s", directive, block)
+}
+
+// R-XOIK-KVWZ
+func TestCommittedNginxApexProxyBlanksInboundCorrelationID(t *testing.T) {
+	block := committedNginxLocationBlock(t, "/", true)
+	requireNginxDirective(t, block, `proxy_set_header X-Correlation-Id "";`)
+}
+
+// R-XPQG-YNNO
+func TestCommittedNginxIntrospectionLocationsForwardRequestContext(t *testing.T) {
+	for _, location := range []string{"= /_authn", "= /_session-authn"} {
+		t.Run(location, func(t *testing.T) {
+			block := committedNginxLocationBlock(t, location, false)
+			requireNginxDirective(t, block, `proxy_set_header X-Original-URI $request_uri;`)
+			requireNginxDirective(t, block, `proxy_set_header X-Original-Method $request_method;`)
+			requireNginxDirective(t, block, `proxy_set_header X-Correlation-Id "";`)
+		})
+	}
+}
+
 // R-XJBT-7YIF
 func TestCommittedNginxLoginBounceDefaultsToLoginRedirect(t *testing.T) {
 	block := committedLoginBounceBlock(t)

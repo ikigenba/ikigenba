@@ -29,6 +29,8 @@ import (
 // metadata URL for the service being addressed.
 func (a *app) handleAuthn() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		id := a.correlationMinter.NewCorrelationID()
+
 		// (a) Loopback guard. nginx marks this location `internal;`, so it is
 		// unreachable from outside; this is defense in depth in case that
 		// directive is ever dropped. An unparseable/empty RemoteAddr is treated
@@ -87,7 +89,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 		// below; everything else (ms_oat_ and any malformed bearer) takes the
 		// OAuth ValidateAccess path, preserving today's behavior.
 		if strings.HasPrefix(tok, pat.Prefix) {
-			a.handleAuthnPAT(w, r, tok, boundResource, prmURL)
+			a.handleAuthnPAT(w, r, tok, boundResource, prmURL, id)
 			return
 		}
 
@@ -164,6 +166,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 		w.Header().Set("X-Client-Id", vt.Chain.ClientID)
 		w.Header().Set("X-Chain-Id", vt.Chain.ID)
 		w.Header().Set("X-Token-Id", vt.Token.ID)
+		w.Header().Set("X-Correlation-Id", id)
 		w.Header().Set("Cache-Control", "no-store")
 		ip, ua := audit.FromRequest(r)
 		_ = a.audit.Write(r.Context(), audit.Event{
@@ -182,7 +185,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 // cross-service by definition and is bound to no single resource (ADR §D2) —
 // and runs (f) workspace, (g) rate limit, and (h) emit headers exactly as the
 // OAuth path does, except (h) OMITS X-Chain-Id: a PAT has no chain (ADR §D5).
-func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundResource, prmURL string) {
+func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundResource, prmURL, id string) {
 	// (d) Validate the PAT.
 	p, err := a.pats.ValidatePAT(r.Context(), tok)
 	if err != nil {
@@ -246,6 +249,7 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 	w.Header().Set("X-Owner-Picture", headerEncode(owner.Picture))
 	w.Header().Set("X-Client-Id", clientID)
 	w.Header().Set("X-Token-Id", p.ID)
+	w.Header().Set("X-Correlation-Id", id)
 	w.Header().Set("Cache-Control", "no-store")
 	ip, ua := audit.FromRequest(r)
 	_ = a.audit.Write(r.Context(), audit.Event{
