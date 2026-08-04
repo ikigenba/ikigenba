@@ -11,6 +11,5 @@ anchored grep matches only phase lines.
 
 Next phase: 10
 
-- Phase 07 ⬜ realizes D7 — correlation on the producer path: outbox column, upgrade constant, envelope field, ctx-bearing `Append`
 - Phase 08 ⬜ realizes D8 — correlation on the consumer path: the chain enters the handler's context, root minted when absent
 - Phase 09 ⬜ realizes D9 — the `observe` package and its hook on both the publish and consume paths
