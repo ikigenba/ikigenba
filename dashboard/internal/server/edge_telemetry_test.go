@@ -92,7 +92,7 @@ func TestAuthnDeliversJoinableSanitizedEdgeRecordsPerDecision(t *testing.T) {
 	allow := doAuthn(h, map[string]string{
 		"Authorization":     "Bearer " + token,
 		"Cookie":            sessionCookieName + "=" + cookieSecret,
-		"X-Original-Method": http.MethodPost,
+		"X-Original-Method": http.MethodGet,
 		"X-Original-URI":    "/srv/crm/mcp",
 	})
 	if allow.Code != http.StatusOK {
@@ -121,8 +121,8 @@ func TestAuthnDeliversJoinableSanitizedEdgeRecordsPerDecision(t *testing.T) {
 	if allowRecord.CorrelationID == "" || allowRecord.CorrelationID != allow.Header().Get("X-Correlation-Id") {
 		t.Errorf("allow correlation_id = %q, response header = %q", allowRecord.CorrelationID, allow.Header().Get("X-Correlation-Id"))
 	}
-	if allowRecord.Op != "POST /srv/crm/mcp" || allowRecord.Detail["service"] != "crm" {
-		t.Errorf("allow op/service = %q/%v, want POST /srv/crm/mcp and crm", allowRecord.Op, allowRecord.Detail["service"])
+	if allowRecord.Op != "GET /srv/crm/mcp" || allowRecord.Detail["service"] != "crm" {
+		t.Errorf("allow op/service = %q/%v, want GET /srv/crm/mcp and crm", allowRecord.Op, allowRecord.Detail["service"])
 	}
 	for i, record := range records[1:] {
 		if record.Detail["decision"] != "deny" || record.Outcome == nil || record.Outcome.Status != "401" {
