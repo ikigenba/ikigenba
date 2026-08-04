@@ -11,7 +11,6 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 56
 
-- Phase 52 ⬜ realizes D44 — the correlation id on the record: `runs.correlation_id`, `calls.correlation_id`, mint-or-inherit at spawn
 - Phase 53 ⬜ realizes D47 — rebuild to adopt: event-plane chain continuation, the spawn `root` record, the recorded boundary
 - Phase 54 ⬜ realizes D45 — chain-stamped peer calls via the `MCPServer` headers agentkit injects
 - Phase 55 ⬜ realizes D46 — nginx fragment: capture the chain id on gated locations, strip it on the ungated one
