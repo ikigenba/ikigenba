@@ -8,10 +8,71 @@ import (
 	"testing"
 	"time"
 
+	"appkit/telemetry"
+	"eventplane/correlation"
+
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	"wiki/internal/page"
 )
+
+func TestIngestStoresCarriedCorrelationIDAndLeavesBareContextEmpty(t *testing.T) {
+	// R-XGME-DMUD
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	svc := NewService(conn, nil, nil, time.Now)
+	svc.newID = sequenceIDs("job-carried", "job-bare")
+	carried := "01KZ6V08B73Q7W1G5GR3C2E5MK"
+	if _, err := svc.Ingest(correlation.WithContext(ctx, carried), "owner", "owner@example.com", "carried", "", nil); err != nil {
+		t.Fatalf("Ingest carried context: %v", err)
+	}
+	if _, err := svc.Ingest(ctx, "owner", "owner@example.com", "bare", "", nil); err != nil {
+		t.Fatalf("Ingest bare context: %v", err)
+	}
+
+	for jobID, want := range map[string]string{"job-carried": carried, "job-bare": ""} {
+		var got string
+		if err := conn.QueryRowContext(ctx, `SELECT correlation_id FROM jobs WHERE id = ?`, jobID).Scan(&got); err != nil {
+			t.Fatalf("read correlation_id for %s: %v", jobID, err)
+		}
+		if got != want {
+			t.Fatalf("job %s correlation_id = %q, want %q", jobID, got, want)
+		}
+	}
+}
+
+func TestJobContextResumesStoredChainOrStartsOneRootPerEmptyJob(t *testing.T) {
+	// R-XJ27-56BR
+	svc := &Service{recorder: &telemetry.Recorder{}}
+	ctx := context.Background()
+	storedID := "01KZ6V08B73Q7W1G5GR3C2E5MK"
+	storedCtx, storedJob := svc.jobContext(ctx, Job{ID: "job-stored", CorrelationID: storedID})
+	if got := jobAttribution(storedJob).GroupID; got != storedID || got == storedJob.ID {
+		t.Fatalf("stored job attribution group = %q, want stored correlation %q and not job id", got, storedID)
+	}
+	if got := correlation.FromContext(storedCtx); got != storedID {
+		t.Fatalf("stored job context correlation = %q, want %q", got, storedID)
+	}
+
+	firstCtx, firstJob := svc.jobContext(ctx, Job{ID: "job-empty-1"})
+	secondCtx, secondJob := svc.jobContext(ctx, Job{ID: "job-empty-2"})
+	firstID := jobAttribution(firstJob).GroupID
+	secondID := jobAttribution(secondJob).GroupID
+	if !correlation.Valid(firstID) || len(firstID) != 26 || firstID == firstJob.ID || firstID == "" {
+		t.Fatalf("first empty job group = %q, want fresh valid 26-character ULID distinct from job id", firstID)
+	}
+	if !correlation.Valid(secondID) || len(secondID) != 26 || secondID == secondJob.ID || secondID == firstID {
+		t.Fatalf("second empty job group = %q, want a distinct fresh valid ULID", secondID)
+	}
+	if got := jobAttribution(firstJob).GroupID; got != firstID {
+		t.Fatalf("same job second-stage group = %q, want first-stage group %q", got, firstID)
+	}
+	if correlation.FromContext(firstCtx) != firstID || correlation.FromContext(secondCtx) != secondID {
+		t.Fatalf("derived contexts = %q, %q; want job roots %q, %q", correlation.FromContext(firstCtx), correlation.FromContext(secondCtx), firstID, secondID)
+	}
+}
 
 func TestIngestReturnsJobIDFromPendingInsertWithoutExtraction(t *testing.T) {
 	// R-M8RN-87WV

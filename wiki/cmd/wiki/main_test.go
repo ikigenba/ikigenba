@@ -815,7 +815,7 @@ func TestBuildSpecRoutesPageEmbeddingThroughPrompts(t *testing.T) {
 	}
 
 	requests := embeds.Requests()
-	if len(requests) != 1 || requests[0].Name != "wiki.embed-page" || requests[0].Role != "document" || requests[0].GroupID != ingest.JobID || requests[0].Model != "recorded-page-embed-model" || requests[0].Dimensions != 2 {
+	if len(requests) != 1 || requests[0].Name != "wiki.embed-page" || requests[0].Role != "document" || requests[0].GroupID == "" || requests[0].GroupID == ingest.JobID || requests[0].Model != "recorded-page-embed-model" || requests[0].Dimensions != 2 {
 		t.Fatalf("prompts embedding requests = %#v, want one labeled document request from buildSpec page embedder", requests)
 	}
 }
@@ -897,7 +897,7 @@ func TestBuildSpecMergeRemovesLoserVectorFromLiveCache(t *testing.T) {
 	}
 
 	requests := embeds.Requests()
-	if len(requests) != 2 || requests[0].Name != "wiki.embed-page" || requests[0].GroupID != merge.JobID || requests[1].Name != "wiki.embed-query" {
+	if len(requests) != 2 || requests[0].Name != "wiki.embed-page" || requests[0].GroupID == "" || requests[0].GroupID == merge.JobID || requests[1].Name != "wiki.embed-query" {
 		t.Fatalf("prompts embedding requests = %+v, want merge page then ask query", requests)
 	}
 }

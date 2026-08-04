@@ -340,11 +340,13 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 	}
 
 	var jobID string
+	var groupID string
 	embedder := &mergeRecordingPageEmbedder{
 		vectors: [][]float32{{0.25, 0.75}},
 		onEmbed: func(_ context.Context, attr llm.Attribution, inputs []string, role wikidomain.EmbedRole) error {
-			if got := attr.GroupID; got != jobID {
-				t.Errorf("embed group id = %q, want merge job %q", got, jobID)
+			groupID = attr.GroupID
+			if groupID == "" || groupID == jobID {
+				t.Errorf("embed group id = %q, want a non-job root", groupID)
 			}
 			if role != wikidomain.EmbedDocument {
 				t.Errorf("embed role = %v, want document", role)
@@ -400,8 +402,8 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 		t.Fatal("ProcessNext processed = false, want true")
 	}
 	compileCalls := compiler.Calls()
-	if len(compileCalls) != 1 || compileCalls[0].Attr.GroupID != jobID {
-		t.Fatalf("merge compile calls = %+v, want group_id equal to merge job %q", compileCalls, jobID)
+	if len(compileCalls) != 1 || compileCalls[0].Attr.GroupID != groupID {
+		t.Fatalf("merge compile calls = %+v, want embed group_id %q", compileCalls, groupID)
 	}
 
 	embeddings, err := wikidomain.NewEmbeddingStore(conns.Read).LoadAll(ctx)

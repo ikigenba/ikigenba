@@ -45,18 +45,19 @@ type Page struct {
 
 // Job is a phase-1 wiki data-model job.
 type Job struct {
-	ID         string
-	OwnerID    string
-	OwnerEmail string
-	SourceText string
-	Title      string
-	Tags       []string
-	SourceHash string
-	Status     string
-	ReceivedAt time.Time
-	StartedAt  time.Time
-	FinishedAt time.Time
-	Error      string
+	ID            string
+	OwnerID       string
+	OwnerEmail    string
+	SourceText    string
+	Title         string
+	Tags          []string
+	SourceHash    string
+	Status        string
+	ReceivedAt    time.Time
+	StartedAt     time.Time
+	FinishedAt    time.Time
+	Error         string
+	CorrelationID string
 }
 
 // JobStatus is the inspectable state of an ingest job.
@@ -159,8 +160,9 @@ func (s *JobStore) InsertIngest(ctx context.Context, job Job) error {
 	}
 	_, err = s.write.ExecContext(ctx, `
 		INSERT INTO jobs (
-			id, owner_id, owner_email, source_text, title, tags, source_hash, status, received_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, owner_id, owner_email, source_text, title, tags, source_hash, status, received_at,
+			correlation_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID,
 		job.OwnerID,
 		job.OwnerEmail,
@@ -170,6 +172,7 @@ func (s *JobStore) InsertIngest(ctx context.Context, job Job) error {
 		hashText(job.SourceText),
 		job.Status,
 		formatTime(job.ReceivedAt),
+		job.CorrelationID,
 	)
 	return err
 }
@@ -191,7 +194,7 @@ func (s *JobStore) ClaimPending(ctx context.Context, startedAt time.Time) (Job, 
 
 	job, err := scanJob(tx.QueryRowContext(ctx, `
 		SELECT id, owner_id, owner_email, source_text, title, tags, source_hash, status,
-		       received_at, started_at, finished_at, error
+		       received_at, started_at, finished_at, error, correlation_id
 		FROM jobs
 		WHERE status = 'pending'
 		ORDER BY received_at, id
@@ -341,7 +344,7 @@ func (s *JobStore) Rerun(ctx context.Context, id string) (RerunResult, error) {
 func (s *JobStore) Status(ctx context.Context, id string) (JobStatus, error) {
 	job, err := scanJob(s.read.QueryRowContext(ctx, `
 		SELECT id, owner_id, owner_email, source_text, title, tags, source_hash, status,
-		       received_at, started_at, finished_at, error
+		       received_at, started_at, finished_at, error, correlation_id
 		FROM jobs
 		WHERE id = ?`, id))
 	if err != nil {
@@ -393,7 +396,7 @@ func (s *JobStore) ListJobs(ctx context.Context, f JobFilter, p page.Params) ([]
 	var args []any
 	query := `
 		SELECT id, owner_id, owner_email, source_text, title, tags, source_hash, status,
-		       received_at, started_at, finished_at, error
+		       received_at, started_at, finished_at, error, correlation_id
 		FROM jobs
 		WHERE 1 = 1`
 	query, args = appendJobFilter(query, args, f)
@@ -533,6 +536,7 @@ func scanJob(row rowScanner) (Job, error) {
 		&startedAt,
 		&finishedAt,
 		&job.Error,
+		&job.CorrelationID,
 	); err != nil {
 		return Job{}, err
 	}

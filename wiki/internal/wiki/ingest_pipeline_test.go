@@ -76,9 +76,10 @@ func TestWorkerThreadsJobOwnerAndIDThroughExtractCompileAndEmbed(t *testing.T) {
 		if owners[i] != "" {
 			origin = "user:" + owners[i]
 		}
+		groupID := calls[i*3].GroupID
 		for _, call := range calls[i*3 : i*3+3] {
-			if call.Origin != origin || call.GroupID != jobID {
-				t.Fatalf("job %q call = %+v, want origin %q and group_id equal to job id", jobID, call, origin)
+			if call.Origin != origin || call.GroupID != groupID || groupID == "" || groupID == jobID {
+				t.Fatalf("job %q call = %+v, want origin %q and one non-job correlation group %q", jobID, call, origin, groupID)
 			}
 		}
 	}

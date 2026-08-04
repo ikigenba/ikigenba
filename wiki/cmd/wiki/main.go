@@ -84,6 +84,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			extractor := extract.New(llmClient, cfg.CallSites.Extract)
 			compiler := buildCompiler(cfg, llmClient)
 			svc = wiki.NewService(conns, extractor, compiler, time.Now,
+				wiki.WithTelemetryRecorder(rt.Recorder()),
 				wiki.WithPageEmbedder(cfg.EmbedSite.Model, pageEmbedder),
 				wiki.WithVectorCacheUpdater(func(subjectID, title string, vec []float32) {
 					vectorCache.Upsert(retrieve.VectorEntry{SubjectID: subjectID, Title: title, Vec: vec})

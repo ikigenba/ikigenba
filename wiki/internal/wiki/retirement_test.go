@@ -16,7 +16,7 @@ func TestRetiredRecorderAndEvaluationSurfaceIsAbsent(t *testing.T) {
 	if strings.TrimSpace(extract.DefaultPromptInstructions) == "" {
 		t.Fatal("extract.DefaultPromptInstructions is not exported with production content")
 	}
-	retired := []string{"Recorder", "Call" + "Record", "LLM" + "CallStore", "NewRecording" + "Embedder", "WithJob" + "ID"}
+	retired := []string{"Call" + "Record", "LLM" + "CallStore", "NewRecording" + "Embedder", "WithJob" + "ID"}
 	assertGoTreeOmits(t, root, retired, false)
 }
 

@@ -55,15 +55,63 @@ func preOwnerIDDatabase(t *testing.T, ctx context.Context) (*sql.DB, []appdb.Mig
 		conn.Close()
 		t.Fatalf("LoadMigrations: %v", err)
 	}
-	if len(migrations) < 2 || !strings.Contains(migrations[len(migrations)-1].Name, "owner_id_columns") {
-		conn.Close()
-		t.Fatalf("latest migration = %#v, want owner_id_columns", migrations[len(migrations)-1])
+	ownerIndex := -1
+	for i, migration := range migrations {
+		if strings.Contains(migration.Name, "owner_id_columns") {
+			ownerIndex = i
+			break
+		}
 	}
-	if err := appdb.Migrate(ctx, conn, migrations[:len(migrations)-1]); err != nil {
+	if ownerIndex < 1 {
+		conn.Close()
+		t.Fatalf("migrations = %#v, want owner_id_columns after at least one migration", migrations)
+	}
+	if err := appdb.Migrate(ctx, conn, migrations[:ownerIndex]); err != nil {
 		conn.Close()
 		t.Fatalf("apply pre-conversion migrations: %v", err)
 	}
 	return conn, migrations
+}
+
+func TestCorrelationIDMigrationPreservesExistingJobsWithEmptyCorrelation(t *testing.T) {
+	// R-XKA3-IY2G
+	ctx := context.Background()
+	conn, err := appdb.Open(t.TempDir() + "/wiki.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer conn.Close()
+	migrations, err := appdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	if len(migrations) < 2 || !strings.Contains(migrations[len(migrations)-1].Name, "jobs_correlation_id") {
+		t.Fatalf("latest migration = %#v, want jobs_correlation_id", migrations[len(migrations)-1])
+	}
+	if err := appdb.Migrate(ctx, conn, migrations[:len(migrations)-1]); err != nil {
+		t.Fatalf("migrate to previous version: %v", err)
+	}
+	_, err = conn.ExecContext(ctx, `INSERT INTO jobs
+		(id, owner_id, owner_email, source_text, title, tags, source_hash, status, received_at, started_at, finished_at, error)
+		VALUES ('legacy-job', 'owner-1', 'owner@example.com', 'source', 'title', '["tag"]', 'hash', 'done',
+		'2026-08-04T10:00:00Z', '2026-08-04T10:01:00Z', '2026-08-04T10:02:00Z', 'none')`)
+	if err != nil {
+		t.Fatalf("seed previous-version job: %v", err)
+	}
+	if err := appdb.Migrate(ctx, conn, migrations); err != nil {
+		t.Fatalf("migrate forward: %v", err)
+	}
+	var id, ownerID, ownerEmail, source, title, tags, hash, status, received, started, finished, jobErr, correlationID string
+	if err := conn.QueryRowContext(ctx, `SELECT id, owner_id, owner_email, source_text, title, tags, source_hash,
+		status, received_at, started_at, finished_at, error, correlation_id FROM jobs WHERE id = 'legacy-job'`).
+		Scan(&id, &ownerID, &ownerEmail, &source, &title, &tags, &hash, &status, &received, &started, &finished, &jobErr, &correlationID); err != nil {
+		t.Fatalf("read migrated job: %v", err)
+	}
+	got := []string{id, ownerID, ownerEmail, source, title, tags, hash, status, received, started, finished, jobErr, correlationID}
+	want := []string{"legacy-job", "owner-1", "owner@example.com", "source", "title", `["tag"]`, "hash", "done", "2026-08-04T10:00:00Z", "2026-08-04T10:01:00Z", "2026-08-04T10:02:00Z", "none", ""}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("migrated job = %#v, want %#v", got, want)
+	}
 }
 
 func assertOwnerColumns(t *testing.T, ctx context.Context, conn *sql.DB, table string, required []string, forbidden string) {

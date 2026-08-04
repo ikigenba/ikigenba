@@ -12,6 +12,8 @@ import (
 
 	"appkit"
 	"appkit/logging"
+	"appkit/telemetry"
+	"eventplane/correlation"
 
 	"wiki/internal/extract"
 	"wiki/internal/llm"
@@ -58,6 +60,7 @@ type Service struct {
 	vectorCacheRemove func(subjectID string)
 	extractor         Extractor
 	compiler          Compiler
+	recorder          *telemetry.Recorder
 	now               func() time.Time
 	newID             func() string
 	wake              chan struct{}
@@ -88,6 +91,7 @@ func NewService(db any, extractor Extractor, compiler Compiler, now func() time.
 		merges:     NewSubjectMergeStore(c.Read),
 		extractor:  extractor,
 		compiler:   compiler,
+		recorder:   &telemetry.Recorder{},
 		now:        now,
 		newID:      logging.NewULID,
 		wake:       make(chan struct{}, 1),
@@ -108,14 +112,15 @@ func (s *Service) Ingest(ctx context.Context, ownerID, ownerEmail, text, title s
 	}
 	jobID := s.newID()
 	job := Job{
-		ID:         jobID,
-		OwnerID:    strings.TrimSpace(ownerID),
-		OwnerEmail: strings.TrimSpace(ownerEmail),
-		SourceText: text,
-		Title:      strings.TrimSpace(title),
-		Tags:       append([]string(nil), tags...),
-		Status:     JobPending,
-		ReceivedAt: s.now(),
+		ID:            jobID,
+		OwnerID:       strings.TrimSpace(ownerID),
+		OwnerEmail:    strings.TrimSpace(ownerEmail),
+		SourceText:    text,
+		Title:         strings.TrimSpace(title),
+		Tags:          append([]string(nil), tags...),
+		Status:        JobPending,
+		ReceivedAt:    s.now(),
+		CorrelationID: correlation.FromContext(ctx),
 	}
 	if err := s.jobs.InsertIngest(ctx, job); err != nil {
 		return "", err
@@ -326,12 +331,21 @@ func (s *Service) Wait(ctx context.Context) error {
 }
 
 func (s *Service) processClaimed(ctx context.Context, job Job) error {
+	ctx, job = s.jobContext(ctx, job)
 	if _, ok, err := s.mergeForJob(ctx, job.ID); err != nil {
 		return err
 	} else if ok {
 		return s.mergeSubjects(ctx, job)
 	}
 	return s.integrate(ctx, job)
+}
+
+func (s *Service) jobContext(ctx context.Context, job Job) (context.Context, Job) {
+	if job.CorrelationID != "" {
+		return correlation.WithContext(ctx, job.CorrelationID), job
+	}
+	ctx, job.CorrelationID = s.recorder.StartRoot(ctx, "wiki.job", map[string]any{"job_id": job.ID})
+	return ctx, job
 }
 
 func (s *Service) integrate(ctx context.Context, job Job) error {
@@ -625,7 +639,7 @@ func jobAttribution(job Job) llm.Attribution {
 	if owner := strings.TrimSpace(job.OwnerEmail); owner != "" {
 		origin = "user:" + owner
 	}
-	return llm.Attribution{Origin: origin, GroupID: job.ID}
+	return llm.Attribution{Origin: origin, GroupID: job.CorrelationID}
 }
 
 func (s *Service) mergeForJob(ctx context.Context, jobID string) (SubjectMerge, bool, error) {

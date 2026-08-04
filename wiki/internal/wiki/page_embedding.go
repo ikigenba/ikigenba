@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"appkit/telemetry"
+
 	"wiki/internal/llm"
 )
 
@@ -31,6 +33,15 @@ type VectorCache func(subjectID, title string, vec []float32)
 
 // ServiceOption configures optional service dependencies.
 type ServiceOption func(*Service)
+
+// WithTelemetryRecorder installs the recorder that starts self-originated job roots.
+func WithTelemetryRecorder(recorder *telemetry.Recorder) ServiceOption {
+	return func(s *Service) {
+		if s != nil && recorder != nil {
+			s.recorder = recorder
+		}
+	}
+}
 
 // WithPageEmbedder installs the embedder used to keep page vectors current.
 func WithPageEmbedder(model string, embedder PageEmbedder) ServiceOption {
