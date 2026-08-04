@@ -177,6 +177,78 @@ func TestNginxLoginBouncePreservesExistingLocationsAndSessionProxies(t *testing.
 	}
 }
 
+func TestNginxPublicProxyLocationsStripCorrelationWithoutAuthCapture(t *testing.T) {
+	conf := readNginxConfig(t)
+
+	// R-EL96-NKKT
+	for _, opener := range []string{
+		"location = /srv/webhooks/.well-known/oauth-protected-resource {",
+		"location /srv/webhooks/in/ {",
+	} {
+		block := nginxLocationBlock(t, conf, opener)
+		assertNginxLinesExactlyOnce(t, block, []string{
+			`proxy_set_header X-Correlation-Id "";`,
+		})
+		for _, line := range strings.Split(block, "\n") {
+			directive := strings.Join(strings.Fields(line), " ")
+			if strings.HasPrefix(directive, "auth_request ") {
+				t.Errorf("public location %q unexpectedly has an auth request:\n%s", opener, block)
+			}
+			if strings.HasPrefix(directive, "auth_request_set ") && strings.Contains(directive, "correlation") {
+				t.Errorf("public location %q unexpectedly captures correlation:\n%s", opener, block)
+			}
+		}
+	}
+}
+
+func TestNginxGatedLocationsCaptureAndOverwriteCorrelationPerTier(t *testing.T) {
+	conf := readNginxConfig(t)
+	tiers := []struct {
+		opener   string
+		variable string
+	}{
+		{"location = /srv/webhooks/mcp {", "$wh_corr"},
+		{"location = /srv/webhooks/ {", "$wh_session_corr"},
+		{"location /srv/webhooks/static/ {", "$wh_static_corr"},
+	}
+	seen := make(map[string]bool, len(tiers))
+
+	// R-EMH3-1CBI
+	for _, tier := range tiers {
+		if seen[tier.variable] {
+			t.Errorf("correlation variable %q is reused across gated tiers", tier.variable)
+		}
+		seen[tier.variable] = true
+
+		block := nginxLocationBlock(t, conf, tier.opener)
+		assertNginxLinesExactlyOnce(t, block, []string{
+			"auth_request_set " + tier.variable + " $upstream_http_x_correlation_id;",
+			"proxy_set_header X-Correlation-Id " + tier.variable + ";",
+		})
+		if containsNginxDirective(block, `proxy_set_header X-Correlation-Id "";`) {
+			t.Errorf("gated location %q unexpectedly strips correlation:\n%s", tier.opener, block)
+		}
+
+		correlationCaptures := 0
+		correlationHeaders := 0
+		for _, line := range strings.Split(block, "\n") {
+			directive := strings.Join(strings.Fields(line), " ")
+			if strings.HasPrefix(directive, "auth_request_set ") && strings.HasSuffix(directive, " $upstream_http_x_correlation_id;") {
+				correlationCaptures++
+			}
+			if strings.HasPrefix(directive, "proxy_set_header X-Correlation-Id ") {
+				correlationHeaders++
+			}
+		}
+		if correlationCaptures != 1 {
+			t.Errorf("gated location %q has %d correlation capture directives, want exactly one:\n%s", tier.opener, correlationCaptures, block)
+		}
+		if correlationHeaders != 1 {
+			t.Errorf("gated location %q has %d correlation forwarding directives, want exactly one:\n%s", tier.opener, correlationHeaders, block)
+		}
+	}
+}
+
 func readNginxConfig(t *testing.T) string {
 	t.Helper()
 
