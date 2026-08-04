@@ -11,7 +11,6 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 24
 
-- Phase 19 ⬜ realizes D15 — the telemetry recorder: ring, batching, ingest client, env config
 - Phase 20 ⬜ realizes D17 — inbound instrumentation: MCP dispatch and the HTTP middleware chain
 - Phase 22 ⬜ realizes D19 — `appkit/httpclient`, the shared instrumented outbound client
 - Phase 23 ⬜ realizes D20 — chain-root helpers and the chassis's recorder reach
