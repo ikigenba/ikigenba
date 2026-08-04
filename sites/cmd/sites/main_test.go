@@ -748,6 +748,49 @@ func TestNginxFragmentForwardsMCPBearerOwnerIdentity(t *testing.T) {
 	}
 }
 
+// R-BN65-STRE
+func TestNginxFragmentCapturesAndForwardsCorrelationForEveryGatedLocation(t *testing.T) {
+	conf := readNginxConfig(t)
+	gated := map[string]string{
+		"location = /srv/sites/mcp":    "$sites_correlation",
+		"location = /srv/sites/":       "$sites_session_correlation",
+		"location /srv/sites/static/":  "$sites_session_correlation",
+		"location /srv/sites/private/": "$sites_session_correlation",
+	}
+
+	for location, variable := range gated {
+		block := nginxLocationBlock(t, conf, location)
+		capture := regexp.MustCompile(`(?m)^\s*auth_request_set\s+` + regexp.QuoteMeta(variable) + `\s+\$upstream_http_x_correlation_id;\s*$`)
+		forward := "proxy_set_header X-Correlation-Id " + variable + ";"
+		if len(capture.FindAllString(block, -1)) != 1 {
+			t.Errorf("%s must capture the upstream correlation id exactly once into %s:\n%s", location, variable, block)
+		}
+		if strings.Count(block, forward) != 1 {
+			t.Errorf("%s must forward the captured correlation id exactly once with %q:\n%s", location, forward, block)
+		}
+		if strings.Contains(block, "$http_x_correlation_id") || strings.Contains(block, `proxy_set_header X-Correlation-Id "";`) {
+			t.Errorf("%s trusts or strips the client correlation id instead of forwarding the captured value:\n%s", location, block)
+		}
+	}
+}
+
+// R-9CMM-G2ZU
+func TestNginxFragmentStripsCorrelationForEveryUngatedLocation(t *testing.T) {
+	conf := readNginxConfig(t)
+	for _, location := range []string{
+		"location = /srv/sites/.well-known/oauth-protected-resource",
+		"location /srv/sites/public/",
+	} {
+		block := nginxLocationBlock(t, conf, location)
+		if strings.Count(block, `proxy_set_header X-Correlation-Id "";`) != 1 {
+			t.Errorf("%s must strip the inbound correlation id exactly once:\n%s", location, block)
+		}
+		if strings.Contains(block, "auth_request") {
+			t.Errorf("%s must not contain an authentication request or correlation capture:\n%s", location, block)
+		}
+	}
+}
+
 func TestNginxFragmentPreservesExistingLocations(t *testing.T) {
 	conf := readNginxConfig(t)
 
