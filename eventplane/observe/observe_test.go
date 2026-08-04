@@ -8,10 +8,30 @@ import (
 
 func TestDependencyBoundary(t *testing.T) {
 	const queriedPackage = "eventplane/observe"
+	const routingPackage = "eventplane/routing"
+
+	output, err := exec.Command(
+		"go", "list",
+		"-f", "{{range .Imports}}{{println .}}{{end}}",
+		queriedPackage,
+	).CombinedOutput()
+	if err != nil {
+		t.Fatalf("list observe imports: %v\n%s", err, output)
+	}
+
+	var internalImports []string
+	for _, path := range strings.Fields(string(output)) {
+		if strings.HasPrefix(path, "eventplane/") {
+			internalImports = append(internalImports, path)
+		}
+	}
+	if got, want := strings.Join(internalImports, "\n"), routingPackage; got != want {
+		t.Fatalf("direct internal imports:\n%s\nwant:\n%s", got, want)
+	}
 
 	// Exercise the done-bar command verbatim. The go command includes the
 	// queried package itself in -deps output, after all of its dependencies.
-	output, err := exec.Command("go", "list", "-deps", queriedPackage).CombinedOutput()
+	output, err = exec.Command("go", "list", "-deps", queriedPackage).CombinedOutput()
 	if err != nil {
 		t.Fatalf("list observe dependencies: %v\n%s", err, output)
 	}
@@ -27,10 +47,10 @@ func TestDependencyBoundary(t *testing.T) {
 		}
 	}
 
-	if got, want := strings.Join(internal, "\n"), "eventplane/routing\neventplane/observe"; got != want {
+	if got, want := strings.Join(internal, "\n"), routingPackage+"\n"+queriedPackage; got != want {
 		t.Fatalf("internal packages from verbatim done-bar command:\n%s\nwant:\n%s", got, want)
 	}
-	if got, want := strings.Join(dependencies, "\n"), "eventplane/routing"; got != want {
+	if got, want := strings.Join(dependencies, "\n"), routingPackage; got != want {
 		t.Fatalf("internal dependencies:\n%s\nwant:\n%s", got, want)
 	}
 
@@ -52,7 +72,7 @@ func TestDependencyBoundary(t *testing.T) {
 			internal = append(internal, path)
 		}
 	}
-	if got, want := strings.Join(internal, "\n"), "eventplane/routing"; got != want {
+	if got, want := strings.Join(internal, "\n"), routingPackage; got != want {
 		t.Fatalf("classified internal dependencies:\n%s\nwant:\n%s", got, want)
 	}
 }
