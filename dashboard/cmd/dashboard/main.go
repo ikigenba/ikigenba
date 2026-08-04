@@ -206,6 +206,7 @@ func registerRoutes(rt *appkit.Router, metricsStore *metrics.Store, manifestRoot
 		RateLimiter:       ratelimit.New(authnRateLimit, authnRateWindow),
 		GrantEvents:       grantevents.New(),
 		CorrelationMinter: correlationMinter{},
+		TelemetryRecorder: rt.Recorder(),
 	})
 	if err != nil {
 		return err

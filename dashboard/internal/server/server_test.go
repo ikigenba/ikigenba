@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"appkit/telemetry"
+
 	"dashboard/internal/audit"
 	"dashboard/internal/db"
 	"dashboard/internal/githubidp"
@@ -52,6 +54,7 @@ type serverDeps struct {
 	pats       *pat.Store
 	audit      *audit.Log
 	grants     *grantevents.Bus
+	recorder   *telemetry.Recorder
 }
 
 // newServerDeps opens one migrated SQLite db under the test's temp dir (closed
@@ -111,6 +114,7 @@ func (d serverDeps) opts() Options {
 		RateLimiter:       ratelimit.New(60, 10*time.Second),
 		GrantEvents:       d.grants,
 		CorrelationMinter: testCorrelationMinter{},
+		TelemetryRecorder: d.recorder,
 	}
 }
 

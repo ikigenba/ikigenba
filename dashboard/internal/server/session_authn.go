@@ -28,6 +28,7 @@ func (a *app) handleSessionAuthn() http.HandlerFunc {
 		if !remoteIsLoopback(r.RemoteAddr) {
 			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusForbidden)
+			a.recordEdge(r, id, "deny", http.StatusForbidden, "non_loopback", "", "")
 			return
 		}
 
@@ -36,6 +37,7 @@ func (a *app) handleSessionAuthn() http.HandlerFunc {
 		if err != nil {
 			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusUnauthorized)
+			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "missing_cookie", "", "")
 			return
 		}
 
@@ -45,6 +47,7 @@ func (a *app) handleSessionAuthn() http.HandlerFunc {
 		if err != nil {
 			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusUnauthorized)
+			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "invalid_session", "", "")
 			return
 		}
 
@@ -56,6 +59,7 @@ func (a *app) handleSessionAuthn() http.HandlerFunc {
 			a.logger.Error("session_authn.identity_lookup", "owner_id", sess.OwnerID, "err", err)
 			w.Header().Set("Cache-Control", "no-store")
 			http.Error(w, "internal server error", http.StatusInternalServerError)
+			a.recordEdge(r, id, "deny", http.StatusInternalServerError, "identity_lookup", sess.OwnerEmail, "")
 			return
 		}
 		w.Header().Set("X-Owner-Id", owner.ID)
@@ -65,5 +69,6 @@ func (a *app) handleSessionAuthn() http.HandlerFunc {
 		w.Header().Set("X-Correlation-Id", id)
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
+		a.recordEdge(r, id, "allow", http.StatusOK, "", owner.Email, "")
 	}
 }

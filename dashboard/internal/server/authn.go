@@ -40,6 +40,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 		if !remoteIsLoopback(r.RemoteAddr) {
 			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusForbidden)
+			a.recordEdge(r, id, "deny", http.StatusForbidden, "non_loopback", "", "")
 			return
 		}
 
@@ -68,6 +69,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 				description: "unknown service for original request URI",
 			})
 			a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "unknown_service"}})
+			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "unknown_service", "", "")
 			return
 		}
 		prmURL := protectedResourceMetadataURL(boundResource)
@@ -81,6 +83,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 				resourceMetadata: prmURL,
 			})
 			a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "missing_bearer"}})
+			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "missing_bearer", "", "")
 			return
 		}
 
@@ -101,6 +104,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 				resourceMetadata: prmURL,
 			})
 			a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "invalid_token", "detail": err.Error()}})
+			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "invalid_token", "", "")
 			return
 		}
 
@@ -115,6 +119,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 				OwnerEmail: vt.Chain.OwnerEmail, ClientID: vt.Chain.ClientID, ChainID: vt.Chain.ID,
 				Details: map[string]any{"reason": "resource_mismatch", "token_resource": vt.Chain.Resource, "bound_resource": boundResource},
 			})
+			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "resource_mismatch", vt.Chain.OwnerEmail, vt.Chain.ClientID)
 			return
 		}
 
@@ -129,6 +134,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 				OwnerEmail: vt.Chain.OwnerEmail, ClientID: vt.Chain.ClientID, ChainID: vt.Chain.ID,
 				Details: map[string]any{"reason": "workspace_mismatch"},
 			})
+			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "workspace_mismatch", vt.Chain.OwnerEmail, vt.Chain.ClientID)
 			return
 		}
 
@@ -146,6 +152,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 				IP: ip, UserAgent: ua,
 				Details: map[string]any{"surface": "authn", "token_id": vt.Token.ID, "window_count": dec.WindowCount},
 			})
+			a.recordEdge(r, id, "rate_limited", http.StatusTooManyRequests, "", vt.Chain.OwnerEmail, vt.Chain.ClientID)
 			return
 		}
 
@@ -157,6 +164,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 			a.logger.Error("authn.identity_lookup", "owner_id", vt.Chain.OwnerID, "err", err)
 			w.Header().Set("Cache-Control", "no-store")
 			http.Error(w, "internal server error", http.StatusInternalServerError)
+			a.recordEdge(r, id, "deny", http.StatusInternalServerError, "identity_lookup", vt.Chain.OwnerEmail, vt.Chain.ClientID)
 			return
 		}
 		w.Header().Set("X-Owner-Id", owner.ID)
@@ -176,6 +184,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 			Details: map[string]any{"resource": boundResource},
 		})
 		w.WriteHeader(http.StatusOK)
+		a.recordEdge(r, id, "allow", http.StatusOK, "", vt.Chain.OwnerEmail, vt.Chain.ClientID)
 	}
 }
 
@@ -195,6 +204,7 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 			resourceMetadata: prmURL,
 		})
 		a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "invalid_pat", "detail": err.Error()}})
+		a.recordEdge(r, id, "deny", http.StatusUnauthorized, "invalid_pat", "", "")
 		return
 	}
 
@@ -214,6 +224,7 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 			OwnerEmail: p.OwnerEmail, ClientID: clientID,
 			Details: map[string]any{"reason": "workspace_mismatch", "kind": "pat"},
 		})
+		a.recordEdge(r, id, "deny", http.StatusUnauthorized, "workspace_mismatch", p.OwnerEmail, clientID)
 		return
 	}
 
@@ -231,6 +242,7 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 			IP: ip, UserAgent: ua,
 			Details: map[string]any{"surface": "authn", "token_id": p.ID, "kind": "pat", "window_count": dec.WindowCount},
 		})
+		a.recordEdge(r, id, "rate_limited", http.StatusTooManyRequests, "", p.OwnerEmail, clientID)
 		return
 	}
 
@@ -241,6 +253,7 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 		a.logger.Error("authn.identity_lookup", "owner_id", p.OwnerID, "err", err)
 		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "internal server error", http.StatusInternalServerError)
+		a.recordEdge(r, id, "deny", http.StatusInternalServerError, "identity_lookup", p.OwnerEmail, clientID)
 		return
 	}
 	w.Header().Set("X-Owner-Id", owner.ID)
@@ -259,6 +272,7 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 		Details: map[string]any{"token_id": p.ID, "kind": "pat", "resource": boundResource},
 	})
 	w.WriteHeader(http.StatusOK)
+	a.recordEdge(r, id, "allow", http.StatusOK, "", p.OwnerEmail, clientID)
 }
 
 // resourceForOriginalURI maps a forwarded X-Original-URI (nginx's $request_uri)

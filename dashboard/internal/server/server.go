@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"appkit/server"
+	"appkit/telemetry"
 
 	"dashboard/internal/audit"
 	"dashboard/internal/githubidp"
@@ -87,6 +88,9 @@ type Options struct {
 	// Metrics is the in-memory sample store populated by the collector worker.
 	// It is optional until the chart routes render the collected samples.
 	Metrics *metrics.Store
+	// TelemetryRecorder is the chassis-owned, best-effort suite recorder. It is
+	// optional so local development and tests can run without telemetry.
+	TelemetryRecorder *telemetry.Recorder
 }
 
 // app holds the HTTP layer's dependencies. Handlers are methods on app, so new
@@ -118,6 +122,7 @@ type app struct {
 	metrics           *metrics.Store
 	grantEvents       *grantevents.Bus
 	correlationMinter correlationMinter
+	telemetryRecorder *telemetry.Recorder
 }
 
 // newApp validates every required dependency at this wiring seam (so a
@@ -229,6 +234,7 @@ func newApp(opts Options) (*app, error) {
 		metrics:           opts.Metrics,
 		grantEvents:       opts.GrantEvents,
 		correlationMinter: opts.CorrelationMinter,
+		telemetryRecorder: opts.TelemetryRecorder,
 	}, nil
 }
 
