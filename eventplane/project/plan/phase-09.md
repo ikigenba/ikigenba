@@ -47,7 +47,8 @@ a panicking hook is recovered and logged and delivery is unaffected.
     advances) and none for `caught-up`/`status`/keepalive frames; the
     observation count equals the number of events whose handler ran.
 - `observe` imports only stdlib and `eventplane/routing`:
-  `go list -deps eventplane/observe | grep '^eventplane/'` prints exactly
-  `eventplane/routing`.
+  `go list -f '{{join .Deps "\n"}}' eventplane/observe | grep '^eventplane/'`
+  prints exactly `eventplane/routing` (`.Deps` excludes the queried package
+  itself, which `go list -deps` would always include).
 - `eventplane/go.mod` gains no `require` line:
   `git diff -- go.mod | grep -c '^+.*require'` is `0`.
