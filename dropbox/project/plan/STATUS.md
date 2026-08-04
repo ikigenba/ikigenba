@@ -10,5 +10,3 @@ done marker; done is gone. This file deliberately carries **no bare status glyph
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 33
-
-- Phase 32 ⬜ realizes D27 — nginx fragment: forward the edge-minted `X-Correlation-Id` on gated locations, clear it on the public PRM location
