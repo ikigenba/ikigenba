@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"eventplane/correlation"
 	"eventplane/outbox"
 	"eventplane/routing"
 
@@ -161,12 +163,17 @@ func newProducer(t *testing.T, dbPath, genPath string) (*outbox.Outbox, *sql.DB,
 // real service performs (§4.1, §4.3).
 func emit(t *testing.T, ob *outbox.Outbox, db *sql.DB, n int) {
 	t.Helper()
+	emitContext(t, context.Background(), ob, db, n)
+}
+
+func emitContext(t *testing.T, ctx context.Context, ob *outbox.Outbox, db *sql.DB, n int) {
+	t.Helper()
 	payload := fmt.Sprintf(`{"id":"contact-%d","display_name":"Person %d","n":%d}`, n, n, n)
 	tx, err := db.Begin()
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if err := ob.Append(context.Background(), tx, outbox.Event{Kind: "contact.created", Payload: json.RawMessage(payload)}); err != nil {
+	if err := ob.Append(ctx, tx, outbox.Event{Kind: "contact.created", Payload: json.RawMessage(payload)}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -881,4 +888,166 @@ func TestEmptyKindEnvelopeIsSkippedAndNextEventDelivered(t *testing.T) {
 		return cur.Valid && cur.String == "epoch.2"
 	})
 	stop()
+}
+
+func TestCorrelationWireFactAndHandlerContext(t *testing.T) {
+	dir := t.TempDir()
+	ob, pdb, srv := newProducer(t, filepath.Join(dir, "p.db"), filepath.Join(dir, "gen"))
+	xid := correlation.New()
+	emitContext(t, correlation.WithContext(context.Background(), xid), ob, pdb, 1)
+	emit(t, ob, pdb, 2)
+	emit(t, ob, pdb, 3)
+	emit(t, ob, pdb, 4)
+	if _, err := pdb.Exec(`UPDATE outbox SET correlation_id = 'not-a-correlation-id' WHERE seq = 4`); err != nil {
+		t.Fatalf("write malformed correlation id: %v", err)
+	}
+	ob.Ring()
+
+	type delivery struct {
+		event Event
+		id    string
+	}
+	var mu sync.Mutex
+	var got []delivery
+	h := func(ctx context.Context, ev Event) error {
+		mu.Lock()
+		got = append(got, delivery{event: ev, id: correlation.FromContext(ctx)})
+		mu.Unlock()
+		return nil
+	}
+	cdb := newConsumerDB(t)
+	stop := runConsumer(t, baseConfig(cdb, srv.URL, fromEarliest, io.Discard), h)
+	waitFor(t, "four correlated deliveries", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(got) >= 4
+	})
+	stop()
+	mu.Lock()
+	deliveries := append([]delivery(nil), got...)
+	mu.Unlock()
+
+	// R-UQJC-OR74: Event.CorrelationID preserves the exact real-feed wire fact,
+	// including absence; the freshly minted handler root is not backfilled.
+	if deliveries[0].event.CorrelationID != xid || deliveries[1].event.CorrelationID != "" {
+		t.Fatalf("wire correlation ids = %q, %q; want %q, empty", deliveries[0].event.CorrelationID, deliveries[1].event.CorrelationID, xid)
+	}
+	// R-URR9-2IXT: a valid incoming chain enters the handler context verbatim.
+	if deliveries[0].id != xid {
+		t.Fatalf("propagated handler id = %q; want exactly %q", deliveries[0].id, xid)
+	}
+	// R-USZ5-GAOI: absent wire ids mint valid, distinct roots per event.
+	if !correlation.Valid(deliveries[1].id) || !correlation.Valid(deliveries[2].id) || deliveries[1].id == deliveries[2].id {
+		t.Fatalf("minted handler ids = %q, %q; want distinct valid ids", deliveries[1].id, deliveries[2].id)
+	}
+	// R-UU71-U2F7: malformed wire data remains observable but cannot name the
+	// handler's chain.
+	if deliveries[3].event.CorrelationID != "not-a-correlation-id" || !correlation.Valid(deliveries[3].id) || deliveries[3].id == "not-a-correlation-id" {
+		t.Fatalf("malformed delivery wire=%q handler=%q", deliveries[3].event.CorrelationID, deliveries[3].id)
+	}
+}
+
+func TestCorrelationSurvivesHandlerOutboxHop(t *testing.T) {
+	dir := t.TempDir()
+	a, adb, asrv := newProducer(t, filepath.Join(dir, "a.db"), filepath.Join(dir, "a.gen"))
+	b, bdb, bsrv := newProducer(t, filepath.Join(dir, "b.db"), filepath.Join(dir, "b.gen"))
+	xid := correlation.New()
+	emitContext(t, correlation.WithContext(context.Background(), xid), a, adb, 1)
+
+	secondHop := make(chan Event, 1)
+	bdbConsumer := newConsumerDB(t)
+	runConsumer(t, baseConfig(bdbConsumer, bsrv.URL, fromEarliest, io.Discard), func(_ context.Context, ev Event) error {
+		select {
+		case secondHop <- ev:
+		default:
+		}
+		return nil
+	})
+
+	appendToB := func(ctx context.Context, _ Event) error {
+		tx, err := bdb.Begin()
+		if err != nil {
+			return err
+		}
+		if err := b.Append(ctx, tx, outbox.Event{Kind: "contact.forwarded", Payload: json.RawMessage(`{"n":2}`)}); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		b.Ring()
+		return nil
+	}
+	adbConsumer := newConsumerDB(t)
+	runConsumer(t, baseConfig(adbConsumer, asrv.URL, fromEarliest, io.Discard), appendToB)
+
+	select {
+	case ev := <-secondHop:
+		// R-UVEY-7U5W: only the first handler's context carries X across the
+		// append into the second real SQLite outbox and real feed.
+		if ev.CorrelationID != xid {
+			t.Fatalf("second-hop correlation id = %q; want %q", ev.CorrelationID, xid)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for second-hop event")
+	}
+}
+
+func TestCorrelationDoesNotChangeSkipStallOrOrdering(t *testing.T) {
+	dir := t.TempDir()
+	ob, pdb, srv := newProducer(t, filepath.Join(dir, "p.db"), filepath.Join(dir, "gen"))
+	if _, err := pdb.Exec(`INSERT INTO outbox (event_id, kind, subject, payload, created_at, correlation_id)
+		VALUES ('bad-empty-kind', '', '', '{"n":1}', '2026-01-01T00:00:00Z', '')`); err != nil {
+		t.Fatalf("insert empty-kind envelope: %v", err)
+	}
+	xid := correlation.New()
+	xctx := correlation.WithContext(context.Background(), xid)
+	emitContext(t, xctx, ob, pdb, 2)
+	emitContext(t, xctx, ob, pdb, 3)
+
+	var mu sync.Mutex
+	var sequence []int
+	var contextIDs []string
+	attempts := 0
+	h := func(ctx context.Context, ev Event) error {
+		var payload struct {
+			N int `json:"n"`
+		}
+		_ = json.Unmarshal(ev.Payload, &payload)
+		mu.Lock()
+		sequence = append(sequence, payload.N)
+		contextIDs = append(contextIDs, correlation.FromContext(ctx))
+		if payload.N == 2 {
+			attempts++
+			if attempts == 1 {
+				mu.Unlock()
+				return errors.New("transient correlated failure")
+			}
+		}
+		mu.Unlock()
+		return nil
+	}
+	cdb := newConsumerDB(t)
+	stop := runConsumer(t, baseConfig(cdb, srv.URL, fromEarliest, io.Discard), h)
+	waitFor(t, "correlated replay and successor", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(sequence) >= 3
+	})
+	waitFor(t, "cursor after correlated replay", func() bool {
+		cur, _ := cursorRow(t, cdb)
+		return cur.Valid && strings.HasSuffix(cur.String, ".3")
+	})
+	stop()
+	mu.Lock()
+	gotSequence := append([]int(nil), sequence...)
+	gotIDs := append([]string(nil), contextIDs...)
+	mu.Unlock()
+
+	// R-UWMU-LLWL: the real feed's empty-kind row ran no handler but advanced;
+	// the correlated handler error replayed event 2 before event 3.
+	if !reflect.DeepEqual(gotSequence, []int{2, 2, 3}) || !reflect.DeepEqual(gotIDs, []string{xid, xid, xid}) {
+		t.Fatalf("handler sequence=%v context ids=%v; want [2 2 3] all under %q", gotSequence, gotIDs, xid)
+	}
 }

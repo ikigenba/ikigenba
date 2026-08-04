@@ -47,6 +47,7 @@ import (
 	"net/url"
 	"time"
 
+	"eventplane/correlation"
 	"eventplane/routing"
 )
 
@@ -69,12 +70,13 @@ var (
 // (§8.3). Payload is the opaque per-type body (§8.6) — the engine never inspects
 // it; the handler unmarshals the types it cares about.
 type Event struct {
-	ID      string          // envelope "id" — a ULID, the stable dedup key (§8.3)
-	Source  string          // envelope "source", e.g. "crm" (§8.3)
-	Time    string          // envelope "time", RFC 3339 (§8.3)
-	Kind    string          // envelope "kind"
-	Subject string          // envelope "subject"
-	Payload json.RawMessage // opaque domain snapshot (§8.6)
+	ID            string          // envelope "id" — a ULID, the stable dedup key (§8.3)
+	Source        string          // envelope "source", e.g. "crm" (§8.3)
+	Time          string          // envelope "time", RFC 3339 (§8.3)
+	Kind          string          // envelope "kind"
+	Subject       string          // envelope "subject"
+	CorrelationID string          // envelope "correlation_id"; empty when absent on the wire
+	Payload       json.RawMessage // opaque domain snapshot (§8.6)
 }
 
 // Key returns the canonical routing key handlers match with routing.Match.
@@ -410,23 +412,30 @@ func (e *engine) handleFrame(ctx context.Context, f sseFrame, res *attemptResult
 			// effect; commit the cursor. (This is the engine's own envelope skip,
 			// distinct from a handler's ErrSkip.)
 			e.log.Warn("consumer: unparseable envelope, skipping effect", "err", perr, "id", f.id, "source", e.cfg.Source)
-		} else if herr := e.h(ctx, ev); herr != nil {
-			// The handler's return value gates the cursor (event-triggering
-			// decisions §1).
-			switch {
-			case errors.Is(herr, ErrSkip):
-				// Explicit, deliberate loss: log loud and advance past the poison so
-				// it never stalls the consumer forever.
-				e.log.Warn("consumer: handler skipped event (advancing)", "err", herr, "key", ev.Key(), "event_id", ev.ID, "source", e.cfg.Source)
-			default:
-				// Any other error STALLS: do NOT advance. Stop scanning this
-				// connection; the run loop tears it down and replays from the last
-				// committed cursor so this event re-delivers before any later one
-				// (the §10 in-order, at-least-once stall). The default-on-unknown-
-				// error is stall — the safe at-least-once direction.
-				e.log.Warn("consumer: handler error, stalling (will replay)", "err", herr, "key", ev.Key(), "event_id", ev.ID, "source", e.cfg.Source)
-				res.stalled = true
-				return errStopHandlerStall
+		} else {
+			id := ev.CorrelationID
+			if !correlation.Valid(id) {
+				id = correlation.New()
+			}
+			hctx := correlation.WithContext(ctx, id)
+			if herr := e.h(hctx, ev); herr != nil {
+				// The handler's return value gates the cursor (event-triggering
+				// decisions §1).
+				switch {
+				case errors.Is(herr, ErrSkip):
+					// Explicit, deliberate loss: log loud and advance past the poison so
+					// it never stalls the consumer forever.
+					e.log.Warn("consumer: handler skipped event (advancing)", "err", herr, "key", ev.Key(), "event_id", ev.ID, "source", e.cfg.Source)
+				default:
+					// Any other error STALLS: do NOT advance. Stop scanning this
+					// connection; the run loop tears it down and replays from the last
+					// committed cursor so this event re-delivers before any later one
+					// (the §10 in-order, at-least-once stall). The default-on-unknown-
+					// error is stall — the safe at-least-once direction.
+					e.log.Warn("consumer: handler error, stalling (will replay)", "err", herr, "key", ev.Key(), "event_id", ev.ID, "source", e.cfg.Source)
+					res.stalled = true
+					return errStopHandlerStall
+				}
 			}
 		}
 		if err := e.st.commit(ctx, f.id); err != nil {
@@ -499,12 +508,13 @@ func jitter(d time.Duration) time.Duration {
 // parseEvent decomposes an event frame's authoritative envelope (§8.3).
 func parseEvent(f sseFrame) (Event, error) {
 	var env struct {
-		ID      string          `json:"id"`
-		Source  string          `json:"source"`
-		Time    string          `json:"time"`
-		Kind    string          `json:"kind"`
-		Subject string          `json:"subject"`
-		Payload json.RawMessage `json:"payload"`
+		ID            string          `json:"id"`
+		Source        string          `json:"source"`
+		Time          string          `json:"time"`
+		Kind          string          `json:"kind"`
+		Subject       string          `json:"subject"`
+		CorrelationID string          `json:"correlation_id"`
+		Payload       json.RawMessage `json:"payload"`
 	}
 	if err := json.Unmarshal([]byte(f.data), &env); err != nil {
 		return Event{}, fmt.Errorf("unmarshal envelope: %w", err)
@@ -513,12 +523,13 @@ func parseEvent(f sseFrame) (Event, error) {
 		return Event{}, errors.New("envelope kind is empty")
 	}
 	return Event{
-		ID:      env.ID,
-		Source:  env.Source,
-		Time:    env.Time,
-		Kind:    env.Kind,
-		Subject: env.Subject,
-		Payload: env.Payload,
+		ID:            env.ID,
+		Source:        env.Source,
+		Time:          env.Time,
+		Kind:          env.Kind,
+		Subject:       env.Subject,
+		CorrelationID: env.CorrelationID,
+		Payload:       env.Payload,
 	}, nil
 }
 
