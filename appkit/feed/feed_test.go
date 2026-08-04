@@ -37,7 +37,7 @@ func TestStartProducerAppendValidatesRegistryByKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin reject tx: %v", err)
 	}
-	err = prod.Outbox.Append(tx, outbox.Event{Kind: "delete", Subject: "/bills/a.pdf", Payload: json.RawMessage(`{}`)})
+	err = prod.Outbox.Append(ctx, tx, outbox.Event{Kind: "delete", Subject: "/bills/a.pdf", Payload: json.RawMessage(`{}`)})
 	if err == nil || !strings.Contains(err.Error(), "create") {
 		_ = tx.Rollback()
 		t.Fatalf("delete append error = %v, want rejection naming declared kind create", err)
@@ -48,7 +48,7 @@ func TestStartProducerAppendValidatesRegistryByKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin accept tx: %v", err)
 	}
-	if err := prod.Outbox.Append(tx, outbox.Event{Kind: "create", Subject: "/bills/a.pdf", Payload: json.RawMessage(`{"path":"/bills/a.pdf"}`)}); err != nil {
+	if err := prod.Outbox.Append(ctx, tx, outbox.Event{Kind: "create", Subject: "/bills/a.pdf", Payload: json.RawMessage(`{"path":"/bills/a.pdf"}`)}); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("create append: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestStartProducerAppendValidatesRegistryByKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin open tx: %v", err)
 	}
-	if err := openProd.Outbox.Append(openTx, outbox.Event{Kind: "delete", Subject: "/bills/a.pdf", Payload: json.RawMessage(`{}`)}); err != nil {
+	if err := openProd.Outbox.Append(ctx, openTx, outbox.Event{Kind: "delete", Subject: "/bills/a.pdf", Payload: json.RawMessage(`{}`)}); err != nil {
 		_ = openTx.Rollback()
 		t.Fatalf("append with empty registry: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestStartProducerHandlerFramesCanonicalKindSubjectEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	if err := prod.Outbox.Append(tx, outbox.Event{Kind: "create", Subject: "/bills/a.pdf", Payload: json.RawMessage(`{"path":"/bills/a.pdf"}`)}); err != nil {
+	if err := prod.Outbox.Append(ctx, tx, outbox.Event{Kind: "create", Subject: "/bills/a.pdf", Payload: json.RawMessage(`{"path":"/bills/a.pdf"}`)}); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("append: %v", err)
 	}
