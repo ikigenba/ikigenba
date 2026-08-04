@@ -210,6 +210,72 @@ func TestNginxLandingLocationForwardsAllOwnerHeaders(t *testing.T) {
 	}
 }
 
+func TestNginxBearerLocationForwardsEdgeCorrelationID(t *testing.T) {
+	conf := readNginxConfig(t)
+	bearer := nginxLocationBlock(t, conf, "location /srv/gmail/ {")
+
+	// R-1M1T-299W
+	for _, want := range []string{
+		"auth_request_set $gmail_correlation $upstream_http_x_correlation_id;",
+		"proxy_set_header X-Correlation-Id $gmail_correlation;",
+	} {
+		if !strings.Contains(bearer, want) {
+			t.Errorf("bearer location missing %q", want)
+		}
+	}
+	if strings.Count(conf, "auth_request_set $gmail_correlation $upstream_http_x_correlation_id;") != 1 {
+		t.Fatalf("bearer correlation capture must appear exactly once:\n%s", conf)
+	}
+	if strings.Count(conf, "proxy_set_header X-Correlation-Id $gmail_correlation;") != 1 {
+		t.Fatalf("bearer correlation forwarding must appear exactly once:\n%s", conf)
+	}
+}
+
+func TestNginxSessionLocationsForwardEdgeCorrelationID(t *testing.T) {
+	conf := readNginxConfig(t)
+
+	// R-1N9P-G10L
+	for _, opener := range []string{
+		"location = /srv/gmail/ {",
+		"location /srv/gmail/static/ {",
+	} {
+		location := nginxLocationBlock(t, conf, opener)
+		for _, want := range []string{
+			"auth_request_set $gmail_session_correlation $upstream_http_x_correlation_id;",
+			"proxy_set_header X-Correlation-Id $gmail_session_correlation;",
+		} {
+			if !strings.Contains(location, want) {
+				t.Errorf("session location %q missing %q", opener, want)
+			}
+		}
+	}
+	if strings.Count(conf, "auth_request_set $gmail_session_correlation $upstream_http_x_correlation_id;") != 2 {
+		t.Fatalf("session correlation capture must appear in exactly two locations")
+	}
+	if strings.Count(conf, "proxy_set_header X-Correlation-Id $gmail_session_correlation;") != 2 {
+		t.Fatalf("session correlation forwarding must appear in exactly two locations")
+	}
+}
+
+func TestNginxBootstrapBlanksClientCorrelationID(t *testing.T) {
+	conf := readNginxConfig(t)
+	prm := nginxLocationBlock(t, conf, "location = /srv/gmail/.well-known/oauth-protected-resource {")
+
+	// R-1OHL-TSRA
+	if !strings.Contains(prm, "proxy_set_header X-Correlation-Id \"\";") {
+		t.Fatalf("PRM bootstrap does not blank the client correlation id: %s", prm)
+	}
+	if strings.Contains(prm, "auth_request_set") {
+		t.Fatalf("ungated PRM bootstrap must not capture an auth subrequest header: %s", prm)
+	}
+	if got := strings.Count(conf, "proxy_set_header X-Correlation-Id"); got != 4 {
+		t.Fatalf("correlation header must be set in exactly four proxying locations, got %d", got)
+	}
+	if strings.Count(conf, "proxy_set_header X-Correlation-Id \"\";") != 1 {
+		t.Fatalf("correlation header must be blanked in exactly one public location")
+	}
+}
+
 func TestNginxLoginBounceIsAdditive(t *testing.T) {
 	conf := readNginxConfig(t)
 
