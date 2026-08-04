@@ -13,13 +13,12 @@ package outbox
 // The idx_outbox_created_at index supports time-horizon retention trims
 // (§11.3) without scanning the table on the background timer.
 const SchemaSQL = `CREATE TABLE outbox (
-  seq            INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id       TEXT    NOT NULL,
-  kind           TEXT    NOT NULL,
-  subject        TEXT    NOT NULL DEFAULT '',
-  payload        TEXT    NOT NULL,
-  created_at     TEXT    NOT NULL,
-  correlation_id TEXT    NOT NULL DEFAULT ''
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id   TEXT    NOT NULL,
+  kind       TEXT    NOT NULL,
+  subject    TEXT    NOT NULL DEFAULT '',
+  payload    TEXT    NOT NULL,
+  created_at TEXT    NOT NULL
 );
 CREATE INDEX idx_outbox_created_at ON outbox(created_at);
 `
