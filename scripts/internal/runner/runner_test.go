@@ -215,8 +215,9 @@ func TestSpawnInjectsSuiteEnvironment(t *testing.T) {
 		"SUITE_SERVICES=" + services,
 		"SUITE_FILES_BASE_URL=" + filesBase,
 	})
-	body := "import json, os\nprint(json.dumps([os.environ[k] for k in [\"SUITE_SERVICES\", \"SUITE_FILES_BASE_URL\", \"SUITE_SCRIPT_ID\", \"SUITE_RUN_ID\", \"SUITE_OWNER_ID\", \"SUITE_OWNER_EMAIL\"]]))\n"
+	body := "import json, os\nprint(json.dumps([os.environ[k] for k in [\"SUITE_SERVICES\", \"SUITE_FILES_BASE_URL\", \"SUITE_SCRIPT_ID\", \"SUITE_RUN_ID\", \"SUITE_CORRELATION_ID\", \"SUITE_OWNER_ID\", \"SUITE_OWNER_EMAIL\"]]))\n"
 	run := seed(t, st, body)
+	run.CorrelationID = "X"
 
 	r.Spawn(run, []byte("{}"))
 	got := waitTerminal(t, st, run.ID)
@@ -232,7 +233,7 @@ func TestSpawnInjectsSuiteEnvironment(t *testing.T) {
 	if err := json.Unmarshal(b, &values); err != nil {
 		t.Fatalf("decode environment probe %q: %v", b, err)
 	}
-	want := []string{services, filesBase, run.ScriptID, run.ID, ownerID, ownerEmail}
+	want := []string{services, filesBase, run.ScriptID, run.ID, run.CorrelationID, ownerID, ownerEmail}
 	if !reflect.DeepEqual(values, want) {
 		t.Fatalf("suite environment = %#v, want %#v", values, want)
 	}
@@ -345,6 +346,10 @@ func newMCPServer(t *testing.T, response string) (*httptest.Server, *[]recordedM
 }
 
 func runSuiteMCPProbe(t *testing.T, services, body string) (script.Run, string) {
+	return runSuiteMCPProbeWithCorrelation(t, services, body, "")
+}
+
+func runSuiteMCPProbeWithCorrelation(t *testing.T, services, body, correlationID string) (script.Run, string) {
 	t.Helper()
 	requirePython(t)
 	st, _ := newStore(t)
@@ -354,6 +359,7 @@ func runSuiteMCPProbe(t *testing.T, services, body string) (script.Run, string) 
 		"SUITE_FILES_BASE_URL=http://127.0.0.1:1",
 	})
 	run := seed(t, st, body)
+	run.CorrelationID = correlationID
 	r.Spawn(run, []byte("{}"))
 	got := waitTerminal(t, st, run.ID)
 	stdout, err := os.ReadFile(filepath.Join(dataDir, "runs", run.ID, "stdout.log"))
@@ -361,6 +367,58 @@ func runSuiteMCPProbe(t *testing.T, services, body string) (script.Run, string) 
 		t.Fatalf("read stdout.log: %v", err)
 	}
 	return got, string(stdout)
+}
+
+func TestSuiteMcpPropagatesCorrelationIDAndOmitsMissing(t *testing.T) {
+	// R-4UZN-MWCU
+	tests := []struct {
+		name          string
+		correlationID string
+		body          string
+		wantHeader    string
+	}{
+		{
+			name:          "propagated",
+			correlationID: "X",
+			body:          "import suite\nsuite.mcp('svc', 'get')\n",
+			wantHeader:    "X",
+		},
+		{
+			name:          "environment unset",
+			correlationID: "injected-then-removed",
+			body:          "import os, suite\nos.environ.pop('SUITE_CORRELATION_ID')\nsuite.mcp('svc', 'get')\n",
+		},
+		{
+			name: "empty value",
+			body: "import suite\nsuite.mcp('svc', 'get')\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, requests := newMCPServer(t, `{"jsonrpc":"2.0","id":1,"result":{"structuredContent":{"ok":true},"isError":false}}`)
+			services, _ := json.Marshal(map[string]string{"svc": server.URL})
+			got, _ := runSuiteMCPProbeWithCorrelation(t, string(services), tt.body, tt.correlationID)
+			requireSucceededProbe(t, got)
+			if len(*requests) != 1 {
+				t.Fatalf("requests = %d, want one", len(*requests))
+			}
+			request := (*requests)[0]
+			if value := request.Header.Get("X-Correlation-Id"); value != tt.wantHeader {
+				t.Fatalf("X-Correlation-Id = %q, want %q", value, tt.wantHeader)
+			}
+			if tt.wantHeader == "" {
+				if _, present := request.Header["X-Correlation-Id"]; present {
+					t.Fatal("X-Correlation-Id is present, want header omitted")
+				}
+			}
+			if value := request.Header.Get("X-Owner-Id"); value != ownerID {
+				t.Fatalf("X-Owner-Id = %q, want %q", value, ownerID)
+			}
+			if value := request.Header.Get("X-Client-Id"); value != "scripts:"+got.ScriptID {
+				t.Fatalf("X-Client-Id = %q, want scripts:%s", value, got.ScriptID)
+			}
+		})
+	}
 }
 
 func TestSuiteMcpHappyPath(t *testing.T) {
@@ -493,6 +551,10 @@ func newRecordedSuiteServer(t *testing.T, respond http.HandlerFunc) (*httptest.S
 }
 
 func runSuiteProbe(t *testing.T, services, filesBase, body string) (script.Run, string, string) {
+	return runSuiteProbeWithCorrelation(t, services, filesBase, body, "")
+}
+
+func runSuiteProbeWithCorrelation(t *testing.T, services, filesBase, body, correlationID string) (script.Run, string, string) {
 	t.Helper()
 	requirePython(t)
 	st, _ := newStore(t)
@@ -502,6 +564,7 @@ func runSuiteProbe(t *testing.T, services, filesBase, body string) (script.Run, 
 		"SUITE_FILES_BASE_URL=" + filesBase,
 	})
 	run := seed(t, st, body)
+	run.CorrelationID = correlationID
 	r.Spawn(run, []byte("{}"))
 	got := waitTerminal(t, st, run.ID)
 	runDir := filepath.Join(dataDir, "runs", run.ID)
@@ -516,6 +579,38 @@ func requireSucceededProbe(t *testing.T, got script.Run) {
 	t.Helper()
 	if got.Status != script.RunSucceeded {
 		t.Fatalf("status = %q, want succeeded; error = %q", got.Status, got.Error)
+	}
+}
+
+func TestSuiteFetchAndFilesPropagateCorrelationID(t *testing.T) {
+	// R-4W7K-0O3J
+	server, requests := newRecordedSuiteServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/object" {
+			_, _ = io.WriteString(w, "content")
+			return
+		}
+		_, _ = io.WriteString(w, `{"path":"/a","size":3,"rev":"r2"}`)
+	})
+	services, _ := json.Marshal(map[string]string{"content": server.URL})
+	body := fmt.Sprintf("import suite\nsuite.fetch(%q, 'landed')\nsuite.files.stat('/a')\n", server.URL+"/object")
+	got, _, _ := runSuiteProbeWithCorrelation(t, string(services), server.URL, body, "X")
+	requireSucceededProbe(t, got)
+
+	if len(*requests) != 2 {
+		t.Fatalf("requests = %d, want fetch and files requests", len(*requests))
+	}
+	wantPaths := []string{"/object", "/stat"}
+	for i, request := range *requests {
+		if request.Path != wantPaths[i] {
+			t.Fatalf("request %d path = %q, want %q", i, request.Path, wantPaths[i])
+		}
+		if value := request.Header.Get("X-Correlation-Id"); value != "X" {
+			t.Fatalf("request %d X-Correlation-Id = %q, want X", i, value)
+		}
+		if value := request.Header.Get("X-Client-Id"); value != "scripts:"+got.ScriptID {
+			t.Fatalf("request %d X-Client-Id = %q, want scripts:%s", i, value, got.ScriptID)
+		}
 	}
 }
 

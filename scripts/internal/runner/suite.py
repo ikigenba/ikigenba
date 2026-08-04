@@ -42,6 +42,14 @@ def event():
     return _event_value
 
 
+def _suite_headers():
+    headers = {"X-Client-Id": f"scripts:{_runtime_value('SUITE_SCRIPT_ID')}"}
+    correlation_id = os.environ.get("SUITE_CORRELATION_ID")
+    if correlation_id:
+        headers["X-Correlation-Id"] = correlation_id
+    return headers
+
+
 def mcp(service, verb, arguments=None):
     """Call a suite service's MCP tool; return its structured result or prose."""
 
@@ -61,7 +69,7 @@ def mcp(service, verb, arguments=None):
         headers={
             "X-Owner-Id": _runtime_value("SUITE_OWNER_ID"),
             "X-Owner-Email": _runtime_value("SUITE_OWNER_EMAIL"),
-            "X-Client-Id": f"scripts:{_runtime_value('SUITE_SCRIPT_ID')}",
+            **_suite_headers(),
             "Content-Type": "application/json",
         },
         method="POST",
@@ -231,7 +239,9 @@ def fetch(content_url, dest):
         raise ToolError("validation", "content URL port must be a suite service port")
 
     try:
-        connection, response = _open_http("GET", content_url)
+        connection, response = _open_http(
+            "GET", content_url, headers=_suite_headers()
+        )
         try:
             if response.status < 200 or response.status >= 300:
                 body = _read_response(response)
@@ -265,7 +275,7 @@ class _Files:
 
     @staticmethod
     def _headers():
-        return {"X-Client-Id": f"scripts:{_runtime_value('SUITE_SCRIPT_ID')}"}
+        return _suite_headers()
 
     def _json(self, method, route, params=None):
         connection, response = _open_http(
