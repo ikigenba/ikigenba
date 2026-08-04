@@ -160,6 +160,63 @@ func TestNginxSessionRootForwardsAllOwnerHeaders(t *testing.T) {
 	}
 }
 
+func TestNginxBearerLocationForwardsAuthCorrelationID(t *testing.T) {
+	// R-1S5A-Z3ZD
+	conf := readNginxFragment(t)
+	prefix := nginxLocationBlock(t, conf, `location /srv/github/ {`)
+
+	for _, want := range []string{
+		"auth_request_set $github_correlation $upstream_http_x_correlation_id;",
+		"proxy_set_header X-Correlation-Id $github_correlation;",
+	} {
+		if got := strings.Count(prefix, want); got != 1 {
+			t.Errorf("bearer location contains %d instances of %q, want 1:\n%s", got, want, prefix)
+		}
+	}
+}
+
+func TestNginxSessionLocationsForwardAuthCorrelationID(t *testing.T) {
+	// R-1TD7-CVQ2
+	conf := readNginxFragment(t)
+	wants := []string{
+		"auth_request_set $github_session_correlation $upstream_http_x_correlation_id;",
+		"proxy_set_header X-Correlation-Id $github_session_correlation;",
+	}
+
+	for _, start := range []string{
+		`location = /srv/github/ {`,
+		`location /srv/github/static/ {`,
+	} {
+		block := nginxLocationBlock(t, conf, start)
+		for _, want := range wants {
+			if got := strings.Count(block, want); got != 1 {
+				t.Errorf("session location %q contains %d instances of %q, want 1:\n%s", start, got, want, block)
+			}
+		}
+	}
+	for _, want := range wants {
+		if got := strings.Count(conf, want); got != 2 {
+			t.Errorf("nginx fragment contains %d instances of %q, want exactly 2", got, want)
+		}
+	}
+}
+
+func TestNginxPublicPRMBlanksCorrelationID(t *testing.T) {
+	// R-1UL3-QNGR
+	conf := readNginxFragment(t)
+	prm := nginxLocationBlock(t, conf, `location = /srv/github/.well-known/oauth-protected-resource {`)
+
+	if got := strings.Count(prm, `proxy_set_header X-Correlation-Id "";`); got != 1 {
+		t.Errorf("public PRM location contains %d correlation-header blanking directives, want 1:\n%s", got, prm)
+	}
+	if strings.Contains(prm, "auth_request_set") {
+		t.Errorf("public PRM location must not capture an auth correlation id:\n%s", prm)
+	}
+	if got := strings.Count(conf, "proxy_set_header X-Correlation-Id"); got != 4 {
+		t.Errorf("nginx fragment contains %d correlation proxy headers, want exactly 4", got)
+	}
+}
+
 func TestNginxLoginBounceChangePreservesLocationsAndSessionProxies(t *testing.T) {
 	// R-44XO-9KZ6
 	conf := readNginxFragment(t)
