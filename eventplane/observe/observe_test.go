@@ -47,10 +47,12 @@ func TestDependencyBoundary(t *testing.T) {
 	}
 }
 
-func TestDependencyBoundaryCommandIncludesQueryRoot(t *testing.T) {
-	output, err := exec.Command("go", "list", "-deps", observePackage).CombinedOutput()
+func TestDependencyBoundaryCommand(t *testing.T) {
+	output, err := exec.Command(
+		"go", "list", "-deps", "-f", "{{if .DepOnly}}{{.ImportPath}}{{end}}", observePackage,
+	).CombinedOutput()
 	if err != nil {
-		t.Fatalf("list observe dependency traversal: %v\n%s", err, output)
+		t.Fatalf("list observe dependencies: %v\n%s", err, output)
 	}
 
 	var internal []string
@@ -61,13 +63,7 @@ func TestDependencyBoundaryCommandIncludesQueryRoot(t *testing.T) {
 		}
 	}
 
-	// The default go list formatter emits both dependency-only packages and the
-	// explicitly queried package. DepOnly metadata in TestDependencyBoundary is
-	// therefore required to distinguish the actual dependency set from its root;
-	// the equivalent shell gate is:
-	//
-	//	go list -deps -f '{{if .DepOnly}}{{.ImportPath}}{{end}}' eventplane/observe | grep '^eventplane/'
-	if got, want := strings.Join(internal, "\n"), "eventplane/routing\neventplane/observe"; got != want {
-		t.Fatalf("default dependency traversal (which includes its query root):\n%s\nwant:\n%s", got, want)
+	if got, want := strings.Join(internal, "\n"), "eventplane/routing"; got != want {
+		t.Fatalf("internal dependencies:\n%s\nwant:\n%s", got, want)
 	}
 }
