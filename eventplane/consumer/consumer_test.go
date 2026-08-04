@@ -993,8 +993,13 @@ func TestConsumeObservationMetadataMintedRootAndDuration(t *testing.T) {
 	got, ids := append([]observe.Event(nil), observed...), append([]string(nil), handlerIDs...)
 	mu.Unlock()
 	// R-V1IG-4OVD
-	if len(got) != 2 || got[0].Hop != observe.HopConsume || got[0].Source != "crm" || got[0].Kind != "contact.created" || got[0].Subject != "" || got[0].EventID != eventIDs[0] || got[0].Err != nil || got[0].CorrelationID == "" || got[0].CorrelationID != ids[0] {
-		t.Fatalf("first consume observation = %+v; stored ids=%v handler ids=%v", got, eventIDs, ids)
+	if len(got) != 2 || len(ids) != 2 || len(eventIDs) != 2 {
+		t.Fatalf("consume observations = %+v; stored ids=%v handler ids=%v", got, eventIDs, ids)
+	}
+	for i, observation := range got {
+		if observation.Hop != observe.HopConsume || observation.Source != "crm" || observation.Kind != "contact.created" || observation.Subject != "" || observation.EventID != eventIDs[i] || observation.Err != nil || observation.CorrelationID == "" || observation.CorrelationID != ids[i] {
+			t.Fatalf("consume observation %d = %+v; stored id=%q handler id=%q", i, observation, eventIDs[i], ids[i])
+		}
 	}
 	// R-V3Y8-W8CR
 	if got[0].Duration < 50*time.Millisecond || got[1].Duration >= 50*time.Millisecond {
