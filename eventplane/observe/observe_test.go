@@ -6,117 +6,47 @@ import (
 	"testing"
 )
 
-func TestDependencyBoundary(t *testing.T) {
-	const queriedPackage = "eventplane/observe"
-	const routingPackage = "eventplane/routing"
+const observePackage = "eventplane/observe"
 
-	output, err := exec.Command(
-		"go", "list",
-		"-f", "{{range .Imports}}{{println .}}{{end}}",
-		queriedPackage,
-	).CombinedOutput()
-	if err != nil {
-		t.Fatalf("list observe imports: %v\n%s", err, output)
-	}
-
-	var internalImports []string
+func internalPackages(output []byte) string {
+	var paths []string
 	for _, path := range strings.Fields(string(output)) {
 		if strings.HasPrefix(path, "eventplane/") {
-			internalImports = append(internalImports, path)
+			paths = append(paths, path)
 		}
 	}
-	if got, want := strings.Join(internalImports, "\n"), routingPackage; got != want {
-		t.Fatalf("direct internal imports:\n%s\nwant:\n%s", got, want)
-	}
+	return strings.Join(paths, "\n")
+}
 
-	// Exercise the done-bar command verbatim. The go command includes the
-	// queried package itself in -deps output, after all of its dependencies.
-	output, err = exec.Command("go", "list", "-deps", queriedPackage).CombinedOutput()
-	if err != nil {
-		t.Fatalf("list observe dependencies: %v\n%s", err, output)
-	}
-
-	var internal, dependencies []string
-	for _, path := range strings.Fields(string(output)) {
-		if !strings.HasPrefix(path, "eventplane/") {
-			continue
-		}
-		internal = append(internal, path)
-		if path != queriedPackage {
-			dependencies = append(dependencies, path)
-		}
-	}
-
-	if got, want := strings.Join(internal, "\n"), routingPackage+"\n"+queriedPackage; got != want {
-		t.Fatalf("internal packages from verbatim done-bar command:\n%s\nwant:\n%s", got, want)
-	}
-	if got, want := strings.Join(dependencies, "\n"), routingPackage; got != want {
-		t.Fatalf("internal dependencies:\n%s\nwant:\n%s", got, want)
-	}
-
-	// Query the package's dependency set directly. Unlike `go list -deps`,
-	// .Deps excludes the package being described, so this is the literal
-	// dependency-boundary check intended by the done bar.
-	output, err = exec.Command(
+func TestDependencyBoundary(t *testing.T) {
+	// .Deps is the dependency set of the described package and, unlike the
+	// packages visited by -deps, does not include the described package itself.
+	output, err := exec.Command(
 		"go", "list",
 		"-f", "{{range .Deps}}{{println .}}{{end}}",
-		queriedPackage,
+		observePackage,
 	).CombinedOutput()
 	if err != nil {
 		t.Fatalf("list observe dependency set: %v\n%s", err, output)
 	}
 
-	internal = internal[:0]
-	for _, path := range strings.Fields(string(output)) {
-		if strings.HasPrefix(path, "eventplane/") {
-			internal = append(internal, path)
-		}
-	}
-	if got, want := strings.Join(internal, "\n"), routingPackage; got != want {
+	if got, want := internalPackages(output), "eventplane/routing"; got != want {
 		t.Fatalf("internal dependency set:\n%s\nwant:\n%s", got, want)
 	}
+}
 
-	// Ask go list for its dependency classification. The plain -deps output
-	// cannot make this distinction because it always includes the package named
-	// on the command line; DepOnly is true only for actual dependencies.
-	output, err = exec.Command(
-		"go", "list", "-deps",
-		"-f", "{{.ImportPath}}\t{{.DepOnly}}",
-		queriedPackage,
-	).CombinedOutput()
+func TestGoListDepsIncludesQueriedPackage(t *testing.T) {
+	// The done-bar command is intentionally exercised verbatim. Per `go help
+	// list`, -deps visits the named package as well as its dependencies; only
+	// packages not named on the command line have DepOnly set. Consequently the
+	// final line here is the queried package, not an additional dependency.
+	output, err := exec.Command("go", "list", "-deps", observePackage).CombinedOutput()
 	if err != nil {
-		t.Fatalf("classify observe dependencies: %v\n%s", err, output)
+		t.Fatalf("list observe and its dependencies: %v\n%s", err, output)
 	}
 
-	var classified []string
-	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
-		if strings.HasPrefix(line, "eventplane/") {
-			classified = append(classified, line)
-		}
-	}
-	if got, want := strings.Join(classified, "\n"), routingPackage+"\ttrue\n"+queriedPackage+"\tfalse"; got != want {
-		t.Fatalf("internal dependency classification:\n%s\nwant:\n%s", got, want)
-	}
-
-	// Filter on DepOnly before printing the import path. This is the direct
-	// go-list equivalent of the intended done-bar check: it still walks -deps,
-	// but cannot mistake the queried package for one of its dependencies.
-	output, err = exec.Command(
-		"go", "list", "-deps",
-		"-f", "{{if .DepOnly}}{{.ImportPath}}{{end}}",
-		queriedPackage,
-	).CombinedOutput()
-	if err != nil {
-		t.Fatalf("list dependency-only import paths: %v\n%s", err, output)
-	}
-
-	internal = internal[:0]
-	for _, path := range strings.Fields(string(output)) {
-		if strings.HasPrefix(path, "eventplane/") {
-			internal = append(internal, path)
-		}
-	}
-	if got, want := strings.Join(internal, "\n"), routingPackage; got != want {
-		t.Fatalf("dependency-only internal packages:\n%s\nwant:\n%s", got, want)
+	want := "eventplane/routing\n" + observePackage
+	if got := internalPackages(output); got != want {
+		t.Fatalf("internal packages from verbatim done-bar command:\n%s\nwant:\n%s", got, want)
 	}
 }
