@@ -52,6 +52,17 @@ type captureResponseWriter struct {
 	buf bytes.Buffer
 }
 
+// keepaliveResponseWriter puts a liveness comment onto a real feed connection
+// immediately after its response headers, avoiding a 15-second test wait.
+type keepaliveResponseWriter struct {
+	*captureResponseWriter
+}
+
+func (w *keepaliveResponseWriter) WriteHeader(status int) {
+	w.ResponseWriter.WriteHeader(status)
+	_, _ = w.captureResponseWriter.Write([]byte(": keepalive\n\n"))
+}
+
 func (w *captureResponseWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	_, _ = w.buf.Write(p)
@@ -866,16 +877,26 @@ func cursorRowForSource(t *testing.T, db *sql.DB, source string) (cursor sql.Nul
 }
 
 func TestEmptyKindEnvelopeIsSkippedAndNextEventDelivered(t *testing.T) {
-	const bad = `{"id":"bad","source":"crm","time":"2026-01-01T00:00:00Z","kind":"","subject":"","payload":{"n":1}}`
-	const good = `{"id":"good","source":"crm","time":"2026-01-01T00:00:01Z","kind":"created","subject":"/ok","payload":{"n":2}}`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, "event: caught-up\ndata: {}\n\nevent: status\ndata: {\"behind\":0}\n\n: keepalive\n\n")
-		fmt.Fprintf(w, "id: epoch.1\nevent: crm:ignored\ndata: %s\n\n", bad)
-		fmt.Fprintf(w, "id: epoch.2\nevent: deliberately:not-authoritative\ndata: %s\n\n", good)
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
+	dir := t.TempDir()
+	ob, pdb, defaultServer := newProducer(t, filepath.Join(dir, "p.db"), filepath.Join(dir, "gen"))
+	defaultServer.Close()
+	if _, err := pdb.Exec(`INSERT INTO outbox (event_id, kind, subject, payload, created_at, correlation_id) VALUES
+		('bad', '', '', '{"n":1}', '2026-01-01T00:00:00Z', ''),
+		('good', 'created', '/ok', '{"n":2}', '2026-01-01T00:00:01Z', '')`); err != nil {
+		t.Fatalf("insert real-feed envelopes: %v", err)
+	}
+
+	feed := ob.FeedHandler()
+	wireCh := make(chan *captureResponseWriter, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cw := &captureResponseWriter{ResponseWriter: w}
+		select {
+		case wireCh <- cw:
+		default:
 		}
+		// The real feed supplies status, event, and caught-up frames; the wrapper
+		// injects only a prompt liveness comment on that same feed connection.
+		feed.ServeHTTP(&keepaliveResponseWriter{captureResponseWriter: cw}, r)
 	}))
 	defer srv.Close()
 	cdb := newConsumerDB(t)
@@ -899,7 +920,14 @@ func TestEmptyKindEnvelopeIsSkippedAndNextEventDelivered(t *testing.T) {
 	}
 	waitFor(t, "cursor past empty-kind envelope", func() bool {
 		cur, _ := cursorRow(t, cdb)
-		return cur.Valid && cur.String == "epoch.2"
+		return cur.Valid && strings.HasSuffix(cur.String, ".2")
+	})
+	wire := <-wireCh
+	waitFor(t, "real feed control frames", func() bool {
+		stream := wire.String()
+		return strings.Contains(stream, ": keepalive\n\n") &&
+			strings.Contains(stream, "event: status\n") &&
+			strings.Contains(stream, "event: caught-up\n")
 	})
 	stop()
 	observedMu.Lock()
