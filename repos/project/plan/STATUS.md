@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 23
-
-- Phase 22 ⬜ realizes D12 — a session carries its correlation id in its row, so the outcome event stays on the chain across detached contexts and restarts (needs eventplane first)
