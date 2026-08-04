@@ -10,5 +10,3 @@ marker; done is gone. No bare status glyph appears outside phase lines, so the
 anchored grep matches only phase lines.
 
 Next phase: 10
-
-- Phase 09 ⬜ realizes D9 — the `observe` package and its hook on both the publish and consume paths
