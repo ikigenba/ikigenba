@@ -397,7 +397,7 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 		}
 		if ok {
 			// Append on the SAME tx as the terminal write — the atomicity invariant.
-			if err := s.Outbox.Append(tx, ev); err != nil {
+			if err := s.Outbox.Append(ctx, tx, ev); err != nil {
 				return fmt.Errorf("script: finish run append: %w", err)
 			}
 			emitted = true
