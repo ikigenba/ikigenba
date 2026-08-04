@@ -97,4 +97,26 @@ func TestDependencyBoundary(t *testing.T) {
 	if got, want := strings.Join(classified, "\n"), routingPackage+"\ttrue\n"+queriedPackage+"\tfalse"; got != want {
 		t.Fatalf("internal dependency classification:\n%s\nwant:\n%s", got, want)
 	}
+
+	// Filter on DepOnly before printing the import path. This is the direct
+	// go-list equivalent of the intended done-bar check: it still walks -deps,
+	// but cannot mistake the queried package for one of its dependencies.
+	output, err = exec.Command(
+		"go", "list", "-deps",
+		"-f", "{{if .DepOnly}}{{.ImportPath}}{{end}}",
+		queriedPackage,
+	).CombinedOutput()
+	if err != nil {
+		t.Fatalf("list dependency-only import paths: %v\n%s", err, output)
+	}
+
+	internal = internal[:0]
+	for _, path := range strings.Fields(string(output)) {
+		if strings.HasPrefix(path, "eventplane/") {
+			internal = append(internal, path)
+		}
+	}
+	if got, want := strings.Join(internal, "\n"), routingPackage; got != want {
+		t.Fatalf("dependency-only internal packages:\n%s\nwant:\n%s", got, want)
+	}
 }
