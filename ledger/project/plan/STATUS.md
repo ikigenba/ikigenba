@@ -11,6 +11,5 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 19
 
-- Phase 17 ⬜ realizes D17 (fragment slice: R-B98U-XGC9, R-BAGR-B82Y) — carry `X-Correlation-Id` across ledger's nginx trust boundary: capture on every gated location, strip on the ungated PRM bootstrap
 - Phase 18 ⬜ realizes D17 (code slice) — thread the request context to `outbox.Append` and add the `correlation_id` column by one additive migration
 
