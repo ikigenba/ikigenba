@@ -11,5 +11,4 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 33
 
-- Phase 31 ⬜ realizes D26 — telemetry adoption, Go side: injected instrumented outbound clients, sync/uploader root correlation chains, context-threaded `Append` (needs appkit + eventplane built first)
 - Phase 32 ⬜ realizes D27 — nginx fragment: forward the edge-minted `X-Correlation-Id` on gated locations, clear it on the public PRM location
