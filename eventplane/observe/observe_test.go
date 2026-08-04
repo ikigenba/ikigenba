@@ -48,13 +48,11 @@ func TestDependencyBoundary(t *testing.T) {
 }
 
 func TestDependencyBoundaryCommand(t *testing.T) {
-	// The plain `go list -deps` traversal includes its explicitly queried root.
-	// Select DepOnly entries before applying the done-bar's internal-package
-	// filter so this command checks dependencies rather than dependencies plus
-	// the package whose boundary is under test.
+	// Exercise the phase done-bar command verbatim. Package.Deps excludes the
+	// queried package itself while retaining all transitive dependencies.
 	output, err := exec.Command(
 		"sh", "-c",
-		"go list -deps -f '{{if .DepOnly}}{{.ImportPath}}{{end}}' eventplane/observe | grep '^eventplane/'",
+		"go list -f '{{join .Deps \"\\n\"}}' eventplane/observe | grep '^eventplane/'",
 	).CombinedOutput()
 	if err != nil {
 		t.Fatalf("list observe dependencies: %v\n%s", err, output)
