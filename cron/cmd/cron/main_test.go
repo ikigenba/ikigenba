@@ -662,6 +662,50 @@ func TestNginxBearerPrefixForwardsAllOwnerIdentityHeaders(t *testing.T) {
 	}
 }
 
+// R-BBON-OZTN
+func TestNginxGatedLocationsForwardAuthCorrelationID(t *testing.T) {
+	conf := readNginxConfig(t)
+	tests := []struct {
+		name     string
+		header   string
+		variable string
+	}{
+		{name: "bearer prefix", header: "location /srv/cron/ {", variable: "$cron_correlation"},
+		{name: "session landing", header: "location = /srv/cron/ {", variable: "$cron_session_correlation"},
+		{name: "session static", header: "location /srv/cron/static/ {", variable: "$cron_static_correlation"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			location := nginxLocationBlock(t, conf, tt.header)
+			for _, want := range []string{
+				"auth_request_set " + tt.variable + " $upstream_http_x_correlation_id;",
+				"proxy_set_header X-Correlation-Id " + tt.variable + ";",
+			} {
+				if !strings.Contains(location, want) {
+					t.Fatalf("%s does not contain %q:\n%s", tt.name, want, location)
+				}
+			}
+		})
+	}
+}
+
+// R-BE4G-GJB1
+func TestNginxCorrelationIDCannotPassThroughFromPublicClient(t *testing.T) {
+	conf := readNginxConfig(t)
+	public := nginxLocationBlock(t, conf, "location = /srv/cron/.well-known/oauth-protected-resource {")
+	const strip = `proxy_set_header X-Correlation-Id "";`
+	if !strings.Contains(public, strip) {
+		t.Fatalf("public PRM location does not strip the inbound correlation id:\n%s", public)
+	}
+	if got, want := strings.Count(conf, "proxy_set_header X-Correlation-Id"), 4; got != want {
+		t.Fatalf("nginx correlation proxy-header controls = %d, want %d", got, want)
+	}
+	if got, want := strings.Count(conf, strip), 1; got != want {
+		t.Fatalf("nginx correlation-id strip controls = %d, want %d", got, want)
+	}
+}
+
 func TestNginxStaticLocationIsSessionGatedAndProxiesToStaticHandler(t *testing.T) {
 	conf := readNginxConfig(t)
 	static := nginxLocationBlock(t, conf, "location /srv/cron/static/ {")
