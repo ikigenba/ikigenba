@@ -93,8 +93,9 @@ func TestCorrelationMiddleware_ReplacesMalformedInboundID(t *testing.T) {
 // R-18EC-NBCU
 func TestNewULID_UsesCrockfordAlphabet(t *testing.T) {
 	const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+	const mintCount = 501
 	sawZero, sawOne := false, false
-	for range 500 {
+	for range mintCount {
 		id := logging.NewULID()
 		if len(id) != 26 {
 			t.Fatalf("len(NewULID()) = %d for %q, want 26", len(id), id)
@@ -108,6 +109,6 @@ func TestNewULID_UsesCrockfordAlphabet(t *testing.T) {
 		}
 	}
 	if !sawZero || !sawOne {
-		t.Fatalf("500 ULIDs saw digit 0 = %t, digit 1 = %t; want both", sawZero, sawOne)
+		t.Fatalf("%d ULIDs saw digit 0 = %t, digit 1 = %t; want both", mintCount, sawZero, sawOne)
 	}
 }
