@@ -11,8 +11,89 @@ import (
 	"sync"
 	"testing"
 
+	"eventplane/correlation"
+	"eventplane/observe"
+
 	_ "modernc.org/sqlite"
 )
+
+func TestAppendObservationSuccess(t *testing.T) {
+	var got []observe.Event
+	o, db := newMemOutbox(t, func(opts *Options) {
+		opts.Source = "dropbox"
+		opts.Observe = func(_ context.Context, ev observe.Event) { got = append(got, ev) }
+	})
+	xid := correlation.New()
+	ctx := correlation.WithContext(context.Background(), xid)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Append(ctx, tx, Event{Kind: "create", Subject: "/bills/a.pdf", Payload: json.RawMessage(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var storedID string
+	if err := db.QueryRow(`SELECT event_id FROM outbox`).Scan(&storedID); err != nil {
+		t.Fatal(err)
+	}
+	// R-UXUQ-ZDNA
+	if len(got) != 1 || got[0].Hop != observe.HopPublish || got[0].Source != "dropbox" || got[0].Kind != "create" || got[0].Subject != "/bills/a.pdf" || got[0].Key() != "dropbox:create/bills/a.pdf" || got[0].EventID != storedID || got[0].CorrelationID != xid || got[0].Err != nil {
+		t.Fatalf("publish observations = %+v; stored id = %q", got, storedID)
+	}
+}
+
+func TestAppendObservationFailures(t *testing.T) {
+	var got []observe.Event
+	o, db := newMemOutbox(t, func(opts *Options) {
+		opts.Registry = Registry{{Kind: "create"}}
+		opts.Observe = func(_ context.Context, ev observe.Event) { got = append(got, ev) }
+	})
+	for _, kind := range []string{"Invalid Kind", "delete"} {
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := o.Append(context.Background(), tx, Event{Kind: kind, Payload: json.RawMessage(`{}`)}); err == nil {
+			t.Fatalf("Append kind %q unexpectedly succeeded", kind)
+		}
+		_ = tx.Rollback()
+	}
+	var rows int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM outbox`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	// R-V0AJ-QX4O
+	if len(got) != 2 || got[0].Err == nil || got[1].Err == nil || got[0].EventID != "" || got[1].EventID != "" || rows != 0 {
+		t.Fatalf("failure observations = %+v; inserted rows = %d", got, rows)
+	}
+}
+
+func TestAppendObservationPanicIsIsolated(t *testing.T) {
+	o, db := newMemOutbox(t, func(opts *Options) {
+		opts.Observe = func(context.Context, observe.Event) { panic("observer failed") }
+	})
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Append(context.Background(), tx, Event{Kind: "create", Payload: json.RawMessage(`{}`)}); err != nil {
+		t.Fatalf("panicking observer changed Append result: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var rows int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM outbox`).Scan(&rows); err != nil || rows != 1 {
+		t.Fatalf("row count = %d, err = %v; want one", rows, err)
+	}
+	// R-V565-A03G (producer half): observation panic leaves Append and storage intact.
+	if rows != 1 {
+		t.Fatal("panicking publish observer affected storage")
+	}
+}
 
 func TestAppendGatesDeclaredFamilyKinds(t *testing.T) {
 	// R-3O28-8XN2

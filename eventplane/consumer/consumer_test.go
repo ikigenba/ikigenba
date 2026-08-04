@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"eventplane/correlation"
+	"eventplane/observe"
 	"eventplane/outbox"
 	"eventplane/routing"
 
@@ -135,7 +136,7 @@ func applySchema(t *testing.T, db *sql.DB, ddl string) {
 // newProducer builds a real outbox + httptest feed server over a file DB, with a
 // generation token at genPath. Reusing the same dbPath with a fresh genPath
 // simulates a rebuild/restore that re-mints the epoch (§9.3) over the same seqs.
-func newProducer(t *testing.T, dbPath, genPath string) (*outbox.Outbox, *sql.DB, *httptest.Server) {
+func newProducer(t *testing.T, dbPath, genPath string, mut ...func(*outbox.Options)) (*outbox.Outbox, *sql.DB, *httptest.Server) {
 	t.Helper()
 	db := openDB(t, dbPath)
 	// Apply the outbox DDL only once per DB file.
@@ -144,12 +145,16 @@ func newProducer(t *testing.T, dbPath, genPath string) (*outbox.Outbox, *sql.DB,
 	if n == 0 {
 		applySchema(t, db, outbox.SchemaSQL)
 	}
-	ob, err := outbox.New(db, outbox.Options{
+	opts := outbox.Options{
 		Source:         "crm",
 		DBPath:         dbPath,
 		GenerationPath: genPath,
 		Logger:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
-	})
+	}
+	for _, change := range mut {
+		change(&opts)
+	}
+	ob, err := outbox.New(db, opts)
 	if err != nil {
 		t.Fatalf("outbox.New: %v", err)
 	}
@@ -865,6 +870,7 @@ func TestEmptyKindEnvelopeIsSkippedAndNextEventDelivered(t *testing.T) {
 	const good = `{"id":"good","source":"crm","time":"2026-01-01T00:00:01Z","kind":"created","subject":"/ok","payload":{"n":2}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: caught-up\ndata: {}\n\nevent: status\ndata: {\"behind\":0}\n\n: keepalive\n\n")
 		fmt.Fprintf(w, "id: epoch.1\nevent: crm:ignored\ndata: %s\n\n", bad)
 		fmt.Fprintf(w, "id: epoch.2\nevent: deliberately:not-authoritative\ndata: %s\n\n", good)
 		if f, ok := w.(http.Flusher); ok {
@@ -874,7 +880,15 @@ func TestEmptyKindEnvelopeIsSkippedAndNextEventDelivered(t *testing.T) {
 	defer srv.Close()
 	cdb := newConsumerDB(t)
 	c := &collector{}
-	stop := runConsumer(t, baseConfig(cdb, srv.URL, fromEarliest, io.Discard), c.handle)
+	var observedMu sync.Mutex
+	var observed []observe.Event
+	cfg := baseConfig(cdb, srv.URL, fromEarliest, io.Discard)
+	cfg.Observe = func(_ context.Context, ev observe.Event) {
+		observedMu.Lock()
+		observed = append(observed, ev)
+		observedMu.Unlock()
+	}
+	stop := runConsumer(t, cfg, c.handle)
 	waitEvents(t, c, 1)
 	// R-4098-2N20: malformed empty-kind event advanced, and only its successor ran.
 	if got := c.ns(); !reflect.DeepEqual(got, []int{2}) {
@@ -888,6 +902,192 @@ func TestEmptyKindEnvelopeIsSkippedAndNextEventDelivered(t *testing.T) {
 		return cur.Valid && cur.String == "epoch.2"
 	})
 	stop()
+	observedMu.Lock()
+	gotObserved := append([]observe.Event(nil), observed...)
+	observedMu.Unlock()
+	// R-V6E1-NRU5: malformed envelopes and control/liveness frames are not hops;
+	// exactly the one event whose handler ran was observed.
+	if len(gotObserved) != 1 || gotObserved[0].EventID != "good" {
+		t.Fatalf("consume observations = %+v; want only good event", gotObserved)
+	}
+}
+
+func TestConsumeObservationMetadataMintedRootAndDuration(t *testing.T) {
+	dir := t.TempDir()
+	ob, pdb, srv := newProducer(t, filepath.Join(dir, "p.db"), filepath.Join(dir, "gen"))
+	emit(t, ob, pdb, 1)
+	emit(t, ob, pdb, 2)
+	var eventIDs []string
+	rows, err := pdb.Query(`SELECT event_id FROM outbox ORDER BY seq`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		eventIDs = append(eventIDs, id)
+	}
+	_ = rows.Close()
+
+	var mu sync.Mutex
+	var handlerIDs []string
+	var observed []observe.Event
+	h := func(ctx context.Context, ev Event) error {
+		var payload struct {
+			N int `json:"n"`
+		}
+		_ = json.Unmarshal(ev.Payload, &payload)
+		if payload.N == 1 {
+			time.Sleep(50 * time.Millisecond)
+		}
+		mu.Lock()
+		handlerIDs = append(handlerIDs, correlation.FromContext(ctx))
+		mu.Unlock()
+		return nil
+	}
+	cdb := newConsumerDB(t)
+	cfg := baseConfig(cdb, srv.URL, fromEarliest, io.Discard)
+	cfg.Observe = func(_ context.Context, ev observe.Event) {
+		mu.Lock()
+		observed = append(observed, ev)
+		mu.Unlock()
+	}
+	stop := runConsumer(t, cfg, h)
+	waitFor(t, "two consume observations", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(observed) >= 2
+	})
+	stop()
+	mu.Lock()
+	got, ids := append([]observe.Event(nil), observed...), append([]string(nil), handlerIDs...)
+	mu.Unlock()
+	// R-V1IG-4OVD
+	if len(got) != 2 || got[0].Hop != observe.HopConsume || got[0].Source != "crm" || got[0].Kind != "contact.created" || got[0].Subject != "" || got[0].EventID != eventIDs[0] || got[0].Err != nil || got[0].CorrelationID == "" || got[0].CorrelationID != ids[0] {
+		t.Fatalf("first consume observation = %+v; stored ids=%v handler ids=%v", got, eventIDs, ids)
+	}
+	// R-V3Y8-W8CR
+	if got[0].Duration < 50*time.Millisecond || got[1].Duration >= 50*time.Millisecond {
+		t.Fatalf("handler durations = %v, %v; want slow >=50ms and immediate <50ms", got[0].Duration, got[1].Duration)
+	}
+}
+
+func TestConsumeObservationReportsSkipAndStall(t *testing.T) {
+	t.Run("wrapped skip advances", func(t *testing.T) {
+		dir := t.TempDir()
+		ob, pdb, srv := newProducer(t, filepath.Join(dir, "p.db"), filepath.Join(dir, "gen"))
+		emit(t, ob, pdb, 1)
+		cdb := newConsumerDB(t)
+		var mu sync.Mutex
+		var got []observe.Event
+		cfg := baseConfig(cdb, srv.URL, fromEarliest, io.Discard)
+		cfg.Observe = func(_ context.Context, ev observe.Event) {
+			mu.Lock()
+			got = append(got, ev)
+			mu.Unlock()
+		}
+		stop := runConsumer(t, cfg, func(context.Context, Event) error {
+			return fmt.Errorf("permanent poison: %w", ErrSkip)
+		})
+		waitFor(t, "skip cursor advance", func() bool {
+			cur, _ := cursorRow(t, cdb)
+			return cur.Valid && strings.HasSuffix(cur.String, ".1")
+		})
+		stop()
+		mu.Lock()
+		defer mu.Unlock()
+		// R-V2QC-IGM2 (skip case)
+		if len(got) != 1 || !errors.Is(got[0].Err, ErrSkip) {
+			t.Fatalf("skip observations = %+v", got)
+		}
+	})
+
+	t.Run("ordinary error stalls and is reobserved", func(t *testing.T) {
+		dir := t.TempDir()
+		ob, pdb, srv := newProducer(t, filepath.Join(dir, "p.db"), filepath.Join(dir, "gen"))
+		emit(t, ob, pdb, 1)
+		cdb := newConsumerDB(t)
+		wantErr := errors.New("temporary failure")
+		var mu sync.Mutex
+		var got []observe.Event
+		cfg := baseConfig(cdb, srv.URL, fromEarliest, io.Discard)
+		cfg.Observe = func(_ context.Context, ev observe.Event) {
+			mu.Lock()
+			got = append(got, ev)
+			mu.Unlock()
+		}
+		stop := runConsumer(t, cfg, func(context.Context, Event) error { return wantErr })
+		waitFor(t, "failed event reobserved", func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(got) >= 2
+		})
+		stop()
+		mu.Lock()
+		defer mu.Unlock()
+		cur, _ := cursorRow(t, cdb)
+		// R-V2QC-IGM2 (stall case)
+		if len(got) < 2 || got[0].Err != wantErr || got[1].Err != wantErr || got[0].EventID != got[1].EventID || cur.Valid {
+			t.Fatalf("stall observations = %+v; cursor = %v", got, cur)
+		}
+	})
+}
+
+func TestPanickingObservationLeavesThreeEventDeliveryUnchanged(t *testing.T) {
+	run := func(t *testing.T, panicHook bool) []int {
+		dir := t.TempDir()
+		var hook observe.Hook
+		if panicHook {
+			hook = func(context.Context, observe.Event) { panic("observer failed") }
+		}
+		ob, pdb, srv := newProducer(t, filepath.Join(dir, "p.db"), filepath.Join(dir, "gen"), func(opts *outbox.Options) {
+			opts.Observe = hook
+		})
+		for i := 1; i <= 3; i++ {
+			emit(t, ob, pdb, i)
+		}
+		var rows int
+		if err := pdb.QueryRow(`SELECT COUNT(*) FROM outbox`).Scan(&rows); err != nil || rows != 3 {
+			t.Fatalf("producer rows = %d, err = %v", rows, err)
+		}
+		cdb := newConsumerDB(t)
+		c := &collector{}
+		cfg := baseConfig(cdb, srv.URL, fromEarliest, io.Discard)
+		cfg.Observe = hook
+		stop := runConsumer(t, cfg, c.handle)
+		waitEvents(t, c, 3)
+		waitFor(t, "cursor past three events", func() bool {
+			cur, _ := cursorRow(t, cdb)
+			return cur.Valid && strings.HasSuffix(cur.String, ".3")
+		})
+		stop()
+
+		var replayed int
+		var replayMu sync.Mutex
+		stopReplay := runConsumer(t, cfg, func(context.Context, Event) error {
+			replayMu.Lock()
+			replayed++
+			replayMu.Unlock()
+			return nil
+		})
+		time.Sleep(30 * time.Millisecond)
+		stopReplay()
+		replayMu.Lock()
+		defer replayMu.Unlock()
+		if replayed != 0 {
+			t.Fatalf("reconnect delivered %d already-committed events", replayed)
+		}
+		return c.ns()
+	}
+
+	without := run(t, false)
+	withPanic := run(t, true)
+	// R-V565-A03G: panics on both plane paths preserve storage, ordering, and cursor progress.
+	if !reflect.DeepEqual(withPanic, []int{1, 2, 3}) || !reflect.DeepEqual(withPanic, without) {
+		t.Fatalf("nil-hook delivery = %v; panic-hook delivery = %v", without, withPanic)
+	}
 }
 
 func TestCorrelationWireFactAndHandlerContext(t *testing.T) {

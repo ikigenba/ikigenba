@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"eventplane/correlation"
+	"eventplane/observe"
 	"eventplane/routing"
 )
 
@@ -77,6 +78,8 @@ type Options struct {
 	RetentionMaxRows int64
 	// Now is the clock, injectable for tests. Defaults to time.Now.
 	Now func() time.Time
+	// Observe, when non-nil, is called after every Append attempt completes.
+	Observe observe.Hook
 }
 
 // Outbox is a producer's handle to its event plane: it owns the durable outbox
@@ -92,6 +95,7 @@ type Outbox struct {
 	retentionRows int64
 	batchLimit    int
 	registry      Registry
+	observe       observe.Hook
 
 	mu   sync.Mutex
 	bell chan struct{} // closed-and-replaced on Ring; the broadcast doorbell (§4.3)
@@ -148,6 +152,7 @@ func New(db *sql.DB, opts Options) (*Outbox, error) {
 		retentionRows: rows,
 		batchLimit:    defaultBatchLimit,
 		registry:      opts.Registry,
+		observe:       opts.Observe,
 		bell:          make(chan struct{}),
 	}, nil
 }
@@ -165,7 +170,30 @@ func (o *Outbox) Generation() string { return o.generation }
 // Append does not signal the doorbell: the row is not visible to readers until
 // the caller commits, so the caller invokes Ring AFTER a successful Commit
 // (§4.3).
-func (o *Outbox) Append(ctx context.Context, tx *sql.Tx, ev Event) error {
+func (o *Outbox) Append(ctx context.Context, tx *sql.Tx, ev Event) (err error) {
+	started := time.Now()
+	eventID := ""
+	defer func() {
+		if o.observe == nil {
+			return
+		}
+		observed := observe.Event{
+			Hop:           observe.HopPublish,
+			Source:        o.source,
+			Kind:          ev.Kind,
+			Subject:       ev.Subject,
+			EventID:       eventID,
+			CorrelationID: correlation.FromContext(ctx),
+			Err:           err,
+			Duration:      time.Since(started),
+		}
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				o.log.Error("outbox: observe hook panicked", "panic", recovered, "key", observed.Key(), "event_id", eventID)
+			}
+		}()
+		o.observe(ctx, observed)
+	}()
 	if tx == nil {
 		return errors.New("outbox: Append requires a transaction")
 	}
@@ -179,9 +207,9 @@ func (o *Outbox) Append(ctx context.Context, tx *sql.Tx, ev Event) error {
 		return fmt.Errorf("outbox: event kind %q is not in the registry; declared kinds: %s",
 			ev.Kind, strings.Join(o.registry.kinds(), ", "))
 	}
-	eventID := newULID()
+	eventID = newULID()
 	createdAt := o.now().UTC().Format(time.RFC3339Nano)
-	_, err := tx.ExecContext(ctx,
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO outbox (event_id, kind, subject, payload, created_at, correlation_id) VALUES (?, ?, ?, ?, ?, ?)`,
 		eventID, ev.Kind, ev.Subject, string(ev.Payload), createdAt, correlation.FromContext(ctx),
 	)

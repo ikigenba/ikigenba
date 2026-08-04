@@ -48,6 +48,7 @@ import (
 	"time"
 
 	"eventplane/correlation"
+	"eventplane/observe"
 	"eventplane/routing"
 )
 
@@ -129,6 +130,8 @@ type Config struct {
 	// Now is the clock for feed_offset timestamps, injectable for tests. Defaults
 	// to time.Now.
 	Now func() time.Time
+	// Observe, when non-nil, is called after every handler invocation.
+	Observe observe.Hook
 }
 
 // Run drives the consumer loop until ctx is cancelled (returns nil) or a
@@ -192,6 +195,18 @@ type engine struct {
 	client *http.Client
 	h      Handler
 	st     *store
+}
+
+func (e *engine) observe(ctx context.Context, ev observe.Event) {
+	if e.cfg.Observe == nil {
+		return
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			e.log.Error("consumer: observe hook panicked", "panic", recovered, "key", ev.Key(), "event_id", ev.EventID)
+		}
+	}()
+	e.cfg.Observe(ctx, ev)
 }
 
 // Sentinel errors that the frame callback returns to stop scanning. None
@@ -418,7 +433,19 @@ func (e *engine) handleFrame(ctx context.Context, f sseFrame, res *attemptResult
 				id = correlation.New()
 			}
 			hctx := correlation.WithContext(ctx, id)
-			if herr := e.h(hctx, ev); herr != nil {
+			started := time.Now()
+			herr := e.h(hctx, ev)
+			e.observe(hctx, observe.Event{
+				Hop:           observe.HopConsume,
+				Source:        ev.Source,
+				Kind:          ev.Kind,
+				Subject:       ev.Subject,
+				EventID:       ev.ID,
+				CorrelationID: id,
+				Err:           herr,
+				Duration:      time.Since(started),
+			})
+			if herr != nil {
 				// The handler's return value gates the cursor (event-triggering
 				// decisions §1).
 				switch {
