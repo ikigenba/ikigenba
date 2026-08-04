@@ -13,5 +13,3 @@ bare status glyph outside phase lines, so the anchored grep matches only
 phase lines.
 
 Next phase: 54
-
-- Phase 53 ⬜ realizes — — wire the `telemetry` service into `go.work`, `bin/start`, and `nginx/run` (after the telemetry module exists)
