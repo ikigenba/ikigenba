@@ -2,12 +2,75 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"reflect"
 	"strings"
 	"testing"
 
 	appkitdb "appkit/db"
 	"eventplane/outbox"
 )
+
+type outboxColumn struct {
+	Name       string
+	Type       string
+	NotNull    int
+	DefaultSQL any
+}
+
+func outboxColumns(t *testing.T, conn *sql.DB) []outboxColumn {
+	t.Helper()
+	rows, err := conn.Query(`PRAGMA table_info(outbox)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var columns []outboxColumn
+	for rows.Next() {
+		var cid, primaryKey int
+		var column outboxColumn
+		if err := rows.Scan(&cid, &column.Name, &column.Type, &column.NotNull, &column.DefaultSQL, &primaryKey); err != nil {
+			t.Fatal(err)
+		}
+		columns = append(columns, column)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return columns
+}
+
+func TestOutboxCorrelationMigrationMatchesFreshSchema(t *testing.T) {
+	// R-Y3Z7-H9BG
+	ctx := context.Background()
+	upgraded, err := appkitdb.Open(tempDB(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upgraded.Close()
+	if err := migrateLedger(ctx, upgraded); err != nil {
+		t.Fatalf("apply ledger migrations: %v", err)
+	}
+
+	fresh, err := appkitdb.Open(tempDB(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fresh.Close()
+	if _, err := fresh.ExecContext(ctx, outbox.SchemaSQL); err != nil {
+		t.Fatalf("apply outbox.SchemaSQL: %v", err)
+	}
+
+	upgradedColumns := outboxColumns(t, upgraded)
+	freshColumns := outboxColumns(t, fresh)
+	if !reflect.DeepEqual(upgradedColumns, freshColumns) {
+		t.Fatalf("migrated columns = %#v, fresh SchemaSQL columns = %#v", upgradedColumns, freshColumns)
+	}
+	last := upgradedColumns[len(upgradedColumns)-1]
+	if last.Name != "correlation_id" || last.Type != "TEXT" || last.NotNull != 1 || last.DefaultSQL != "''" {
+		t.Fatalf("correlation column = %#v, want last column TEXT NOT NULL DEFAULT ''", last)
+	}
+}
 
 func TestOutboxRoutingMigrationMatchesSchemaAndPreservesFrozenMigration(t *testing.T) {
 	// R-G184-OOBO

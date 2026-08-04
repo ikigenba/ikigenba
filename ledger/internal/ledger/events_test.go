@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"eventplane/correlation"
 	"eventplane/outbox"
 )
 
@@ -136,6 +137,79 @@ func TestRecordAndReverse_UseSubjectlessRecordedAddressAtomically(t *testing.T) 
 	}
 	if got := len(outboxRows(t, s)); got != 2 {
 		t.Errorf("outbox rows after rollback = %d, want 2", got)
+	}
+}
+
+func TestRecordAndReverse_PropagateTheirRequestCorrelationIDs(t *testing.T) {
+	// R-VOH6-HG8R
+	s := mkSvcWithOutbox(t)
+	recordID := "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	reverseID := "01ARZ3NDEKTSV4RRFFQ69G5FAW"
+	recordCtx := correlation.WithContext(context.Background(), recordID)
+	orig, err := s.Record(recordCtx, RecordInput{
+		Date:        "2026-06-01",
+		Description: "correlated transaction",
+		Postings: []PostingInput{
+			leg("Assets:Bank:Checking", i64(100)),
+			leg("Income:Hosting", i64(-100)),
+		},
+	})
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	reverseCtx := correlation.WithContext(context.Background(), reverseID)
+	if _, err := s.Reverse(reverseCtx, orig.ID, nil, nil); err != nil {
+		t.Fatalf("reverse: %v", err)
+	}
+
+	rows, err := s.DB.Query(`SELECT correlation_id FROM outbox ORDER BY seq`)
+	if err != nil {
+		t.Fatalf("query correlation ids: %v", err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != recordID || got[1] != reverseID {
+		t.Fatalf("outbox correlation ids = %q, want [%q %q]", got, recordID, reverseID)
+	}
+}
+
+func TestRecord_WithoutCorrelationStillCommitsBookkeeping(t *testing.T) {
+	// R-VPP2-V7ZG
+	s := mkSvcWithOutbox(t)
+	tx, err := s.Record(context.Background(), RecordInput{
+		Date:        "2026-06-01",
+		Description: "uncorrelated transaction",
+		Postings: []PostingInput{
+			leg("Assets:Bank:Checking", i64(250)),
+			leg("Income:Hosting", i64(-250)),
+		},
+	})
+	if err != nil {
+		t.Fatalf("record without correlation: %v", err)
+	}
+	var transactions, postings int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM transactions WHERE id = ?`, tx.ID).Scan(&transactions); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM postings WHERE txn_id = ?`, tx.ID).Scan(&postings); err != nil {
+		t.Fatal(err)
+	}
+	var correlationID string
+	if err := s.DB.QueryRow(`SELECT correlation_id FROM outbox`).Scan(&correlationID); err != nil {
+		t.Fatal(err)
+	}
+	if transactions != 1 || postings != 2 || correlationID != "" {
+		t.Fatalf("bookkeeping = transactions %d, postings %d, correlation_id %q; want 1, 2, empty", transactions, postings, correlationID)
 	}
 }
 
