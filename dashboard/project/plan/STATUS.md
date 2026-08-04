@@ -12,6 +12,5 @@ matches only phase lines.
 
 Next phase: 42
 
-- Phase 40 ⬜ realizes D30, D33 — mint the suite's correlation id at the introspection edge, and fix the apex nginx fragment
 - Phase 41 ⬜ realizes D31, D32 — emit an `edge` telemetry record for every gated auth decision
 
