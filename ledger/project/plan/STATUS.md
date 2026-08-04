@@ -11,5 +11,3 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 19
 
-- Phase 18 ⬜ realizes D17 (code slice) — thread the request context to `outbox.Append` and add the `correlation_id` column by one additive migration
-
