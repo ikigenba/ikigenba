@@ -11,5 +11,4 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 24
 
-- Phase 21 ⬜ realizes D18 — lifecycle records and event-plane hop recording in `serve`
 
