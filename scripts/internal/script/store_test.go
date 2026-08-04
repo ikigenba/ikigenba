@@ -264,11 +264,11 @@ func TestRunsInsertGetListOwnerScope(t *testing.T) {
 	}
 
 	// ListRuns owner-scoped + status filter
-	all, err := s.ListRuns(ctx, ownerA, "", "")
+	all, err := s.ListRuns(ctx, ownerA, "", "", "")
 	if err != nil || len(all) != 1 {
 		t.Fatalf("ListRuns ownerA: len=%d err=%v", len(all), err)
 	}
-	none, _ := s.ListRuns(ctx, ownerA, scA.ID, RunSucceeded)
+	none, _ := s.ListRuns(ctx, ownerA, scA.ID, RunSucceeded, "")
 	if len(none) != 0 {
 		t.Fatalf("status filter: want 0, got %d", len(none))
 	}

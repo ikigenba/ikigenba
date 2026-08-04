@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"eventplane/correlation"
 )
 
 // fakeRunner records Spawn/Cancel calls instead of execing python.
@@ -128,7 +130,7 @@ func TestServiceDeleteTombstone(t *testing.T) {
 		t.Fatalf("after delete Get: want ErrNotFound, got %v", err)
 	}
 	// Runs survive as history.
-	runs, err := store.ListRuns(ctx, ownerA, "", "")
+	runs, err := store.ListRuns(ctx, ownerA, "", "", "")
 	if err != nil {
 		t.Fatalf("ListRuns: %v", err)
 	}
@@ -261,6 +263,49 @@ func TestServiceRunForEvent(t *testing.T) {
 	}
 	if len(fr.spawns) != before {
 		t.Fatalf("RunForEvent missing script should not Spawn")
+	}
+}
+
+func TestRunUsesItsIDAsRootCorrelation(t *testing.T) {
+	// R-4Q42-3TE2
+	svc, store, _, _ := newTestService(t)
+	ctx := context.Background()
+	sc, err := svc.Create(ctx, ownerA, CreateInput{Name: "root", Body: "print(1)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := svc.Run(ctx, ownerA, sc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored string
+	if err := store.db.QueryRowContext(ctx, `SELECT correlation_id FROM runs WHERE id = ?`, run.ID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored == "" || stored != run.ID || run.CorrelationID != run.ID {
+		t.Fatalf("run id=%q returned correlation=%q stored correlation=%q, want all equal and non-empty", run.ID, run.CorrelationID, stored)
+	}
+}
+
+func TestRunInheritsContextCorrelation(t *testing.T) {
+	// R-4RBY-HL4R
+	svc, store, _, _ := newTestService(t)
+	const inbound = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	ctx := correlation.WithContext(context.Background(), inbound)
+	sc, err := svc.Create(ctx, ownerA, CreateInput{Name: "continued", Body: "print(1)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := svc.Run(ctx, ownerA, sc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored string
+	if err := store.db.QueryRowContext(ctx, `SELECT correlation_id FROM runs WHERE id = ?`, run.ID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != inbound || run.CorrelationID != inbound || run.ID == inbound {
+		t.Fatalf("run id=%q returned correlation=%q stored correlation=%q, want inherited %q distinct from run id", run.ID, run.CorrelationID, stored, inbound)
 	}
 }
 

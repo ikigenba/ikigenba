@@ -22,6 +22,7 @@ import (
 	appkitdatabase "appkit/db"
 	appkitmcp "appkit/mcp"
 	"appkit/server"
+	"eventplane/correlation"
 	"registry"
 
 	scriptdb "scripts/internal/db"
@@ -569,13 +570,14 @@ func TestRunSpawns(t *testing.T) {
 		t.Fatalf("run returned isError: %+v", runRes)
 	}
 	var runOut struct {
-		RunID  string `json:"run_id"`
-		Status string `json:"status"`
+		RunID         string `json:"run_id"`
+		Status        string `json:"status"`
+		CorrelationID string `json:"correlation_id"`
 	}
 	if err := json.Unmarshal([]byte(resultText(t, runRes)), &runOut); err != nil {
 		t.Fatalf("decode run: %v", err)
 	}
-	if runOut.RunID == "" || runOut.Status != script.RunRunning {
+	if runOut.RunID == "" || runOut.Status != script.RunRunning || runOut.CorrelationID != runOut.RunID {
 		t.Fatalf("run: %+v", runOut)
 	}
 	if fr.spawnCount() != 1 {
@@ -601,6 +603,69 @@ func TestRunSpawns(t *testing.T) {
 	}
 	if len(rl.Runs) != 1 || rl.Runs[0].ID != runOut.RunID {
 		t.Fatalf("run_list: %+v", rl.Runs)
+	}
+}
+
+func TestRunGetAndListExposeAndFilterCorrelationID(t *testing.T) {
+	// R-4SJU-VCVG
+	h := newTestHarness(t)
+	scriptID := createScript(t, h.mcpHandler)
+	const (
+		chainX = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		chainY = "01JZZZZZZZZZZZZZZZZZZZZZZZ"
+	)
+	runX, err := h.svc.Run(correlation.WithContext(t.Context(), chainX), ownerID, scriptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runY, err := h.svc.Run(correlation.WithContext(t.Context(), chainY), ownerID, scriptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := h.svc.Run(t.Context(), ownerID, scriptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.ExecContext(t.Context(), `UPDATE runs SET correlation_id = '' WHERE id = ?`, legacy.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	getResult := call(t, h.mcpHandler, tool("run_get"), map[string]any{"run_id": runX.ID})
+	var got script.Run
+	if err := json.Unmarshal([]byte(resultText(t, getResult)), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != runX.ID || got.CorrelationID != chainX {
+		t.Fatalf("run_get = %+v, want run %q on chain %q", got, runX.ID, chainX)
+	}
+
+	listResult := call(t, h.mcpHandler, tool("run_list"), map[string]any{"correlation_id": chainX})
+	var listed struct {
+		Runs []script.Run `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, listResult)), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Runs) != 1 || listed.Runs[0].ID != runX.ID || listed.Runs[0].CorrelationID != chainX {
+		t.Fatalf("run_list correlation %q = %+v; must contain only %q and omit %q and empty-chain %q", chainX, listed.Runs, runX.ID, runY.ID, legacy.ID)
+	}
+
+	var listTool appkitmcp.Tool
+	for _, candidate := range Tools(h.svc, registry.BaseURL("scripts")) {
+		if candidate.Name == tool("run_list") {
+			listTool = candidate
+			break
+		}
+	}
+	inputProps := listTool.InputSchema["properties"].(map[string]any)
+	if _, ok := inputProps["correlation_id"]; !ok {
+		t.Fatalf("run_list input schema lacks correlation_id: %#v", inputProps)
+	}
+	outputProps := listTool.OutputSchema["properties"].(map[string]any)
+	runItems := outputProps["runs"].(map[string]any)["items"].(map[string]any)
+	runProps := runItems["properties"].(map[string]any)
+	if _, ok := runProps["correlation_id"]; !ok {
+		t.Fatalf("run_list output run schema lacks correlation_id: %#v", runProps)
 	}
 }
 

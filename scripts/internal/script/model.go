@@ -47,6 +47,7 @@ type Run struct {
 	TriggerKind    string `json:"trigger_kind"`
 	TriggerSubject string `json:"trigger_subject"`
 	TriggerEventID string `json:"trigger_event_id"`
+	CorrelationID  string `json:"correlation_id,omitempty"`
 	StdoutPath     string `json:"stdout_path"`
 	StderrPath     string `json:"stderr_path"`
 	ElapsedSecs    int    `json:"elapsed_secs"` // computed in service, not stored

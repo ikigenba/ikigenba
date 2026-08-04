@@ -98,9 +98,10 @@ func Tools(svc *script.Service, contentBase string) []appkitmcp.Tool {
 			return h.dispatchTool(ctx, tool("run"), id, args)
 		}),
 
-		desc(tool("run_list"), "List runs, optionally filtered by script_id and/or status (running|succeeded|failed|cancelled). Each carries elapsed_secs.", obj(map[string]any{
-			"script_id": typ("string"),
-			"status":    typ("string"),
+		desc(tool("run_list"), "List runs, optionally filtered by script_id, status (running|succeeded|failed|cancelled), and/or correlation_id. Each carries elapsed_secs.", obj(map[string]any{
+			"script_id":      typ("string"),
+			"status":         typ("string"),
+			"correlation_id": typ("string"),
 		}), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 			return h.dispatchTool(ctx, tool("run_list"), id, args)
 		}),
@@ -167,7 +168,7 @@ func outputSchema(name string) map[string]any {
 	case tool("clear_trigger"):
 		return objSchema(map[string]any{"cleared": typ("string")}, "cleared")
 	case tool("run"):
-		return objSchema(map[string]any{"run_id": typ("string"), "status": typ("string"), "started_at": typ("string")}, "run_id", "status", "started_at")
+		return objSchema(map[string]any{"run_id": typ("string"), "status": typ("string"), "started_at": typ("string"), "correlation_id": typ("string")}, "run_id", "status", "started_at", "correlation_id")
 	case tool("run_list"):
 		return objSchema(map[string]any{"runs": arraySchema(runSchema())}, "runs")
 	case tool("run_get"):
@@ -234,12 +235,12 @@ func triggerSchema() map[string]any {
 
 func runSchema() map[string]any {
 	props := map[string]any{}
-	for _, key := range []string{"id", "script_id", "status", "started_at", "ended_at", "error", "trigger_source", "trigger_kind", "trigger_subject", "trigger_event_id", "stdout_path", "stderr_path"} {
+	for _, key := range []string{"id", "script_id", "status", "started_at", "ended_at", "error", "trigger_source", "trigger_kind", "trigger_subject", "trigger_event_id", "correlation_id", "stdout_path", "stderr_path"} {
 		props[key] = typ("string")
 	}
 	props["exit_code"] = nullable(typ("integer"))
 	props["elapsed_secs"] = typ("integer")
-	return objSchema(props, "id", "script_id", "status", "exit_code", "started_at", "ended_at", "error", "trigger_source", "trigger_kind", "trigger_subject", "trigger_event_id", "stdout_path", "stderr_path", "elapsed_secs")
+	return objSchema(props, "id", "script_id", "status", "exit_code", "started_at", "ended_at", "error", "trigger_source", "trigger_kind", "trigger_subject", "trigger_event_id", "correlation_id", "stdout_path", "stderr_path", "elapsed_secs")
 }
 
 func fileEntrySchema() map[string]any {
@@ -414,17 +415,18 @@ func (h *toolHandlers) dispatchTool(ctx context.Context, name string, id server.
 		if err != nil {
 			return structuredError(err), nil
 		}
-		return toolResultJSON(map[string]any{"run_id": run.ID, "status": run.Status, "started_at": run.StartedAt})
+		return toolResultJSON(map[string]any{"run_id": run.ID, "status": run.Status, "started_at": run.StartedAt, "correlation_id": run.CorrelationID})
 
 	case tool("run_list"):
 		var in struct {
-			ScriptID string `json:"script_id"`
-			Status   string `json:"status"`
+			ScriptID      string `json:"script_id"`
+			Status        string `json:"status"`
+			CorrelationID string `json:"correlation_id"`
 		}
 		if err := parseArgs(args, &in); err != nil {
 			return nil, err
 		}
-		runs, err := svc.RunList(ctx, owner, in.ScriptID, in.Status)
+		runs, err := svc.RunList(ctx, owner, in.ScriptID, in.Status, in.CorrelationID)
 		if err != nil {
 			return structuredError(err), nil
 		}

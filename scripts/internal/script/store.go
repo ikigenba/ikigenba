@@ -235,7 +235,7 @@ func (s *Store) RunningCount(ctx context.Context, scriptID string) (int, error) 
 func (s *Store) LastRun(ctx context.Context, scriptID string) (*Run, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, script_id, status, exit_code, started_at, ended_at, error,
-		        trigger_source, trigger_kind, trigger_subject, trigger_event_id, stdout_path, stderr_path
+		        trigger_source, trigger_kind, trigger_subject, trigger_event_id, correlation_id, stdout_path, stderr_path
 		   FROM runs WHERE script_id = ? ORDER BY started_at DESC, id DESC LIMIT 1`,
 		scriptID,
 	)
@@ -255,11 +255,12 @@ func (s *Store) InsertRun(ctx context.Context, r Run) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO runs
 		   (id, script_id, status, exit_code, started_at, ended_at, error,
-		    trigger_source, trigger_kind, trigger_subject, trigger_event_id, stdout_path, stderr_path)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		    trigger_source, trigger_kind, trigger_subject, trigger_event_id, correlation_id, stdout_path, stderr_path)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.ScriptID, r.Status, nullInt(r.ExitCode), r.StartedAt,
 		nullStr(r.EndedAt), nullStr(r.Error),
 		nullStr(r.TriggerSource), nullStr(r.TriggerKind), nullStr(r.TriggerSubject), nullStr(r.TriggerEventID),
+		r.CorrelationID,
 		r.StdoutPath, r.StderrPath,
 	)
 	if err != nil {
@@ -273,7 +274,7 @@ func (s *Store) InsertRun(ctx context.Context, r Run) error {
 func (s *Store) GetRun(ctx context.Context, owner, runID string) (Run, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT r.id, r.script_id, r.status, r.exit_code, r.started_at, r.ended_at, r.error,
-		        r.trigger_source, r.trigger_kind, r.trigger_subject, r.trigger_event_id, r.stdout_path, r.stderr_path
+		        r.trigger_source, r.trigger_kind, r.trigger_subject, r.trigger_event_id, r.correlation_id, r.stdout_path, r.stderr_path
 		   FROM runs r JOIN scripts s ON s.id = r.script_id
 		  WHERE r.id = ? AND s.owner_id = ?`,
 		runID, owner,
@@ -282,10 +283,10 @@ func (s *Store) GetRun(ctx context.Context, owner, runID string) (Run, error) {
 }
 
 // ListRuns returns the owner's runs (JOIN scripts on owner_id), newest
-// first. scriptID/status "" = no filter on that dimension.
-func (s *Store) ListRuns(ctx context.Context, owner, scriptID, status string) ([]Run, error) {
+// first. Empty filters do not constrain their corresponding dimensions.
+func (s *Store) ListRuns(ctx context.Context, owner, scriptID, status, correlationID string) ([]Run, error) {
 	q := `SELECT r.id, r.script_id, r.status, r.exit_code, r.started_at, r.ended_at, r.error,
-	             r.trigger_source, r.trigger_kind, r.trigger_subject, r.trigger_event_id, r.stdout_path, r.stderr_path
+	             r.trigger_source, r.trigger_kind, r.trigger_subject, r.trigger_event_id, r.correlation_id, r.stdout_path, r.stderr_path
 	        FROM runs r JOIN scripts s ON s.id = r.script_id
 	       WHERE s.owner_id = ?`
 	args := []any{owner}
@@ -296,6 +297,10 @@ func (s *Store) ListRuns(ctx context.Context, owner, scriptID, status string) ([
 	if status != "" {
 		q += ` AND r.status = ?`
 		args = append(args, status)
+	}
+	if correlationID != "" {
+		q += ` AND r.correlation_id = ?`
+		args = append(args, correlationID)
 	}
 	q += ` ORDER BY r.started_at DESC, r.id DESC`
 	rows, err := s.db.QueryContext(ctx, q, args...)
@@ -568,7 +573,7 @@ func scanRun(sc scanner) (Run, error) {
 	)
 	err := sc.Scan(
 		&r.ID, &r.ScriptID, &r.Status, &exitCode, &r.StartedAt, &endedAt, &errMsg,
-		&trigSource, &trigKind, &trigSubject, &trigEvent, &r.StdoutPath, &r.StderrPath,
+		&trigSource, &trigKind, &trigSubject, &trigEvent, &r.CorrelationID, &r.StdoutPath, &r.StderrPath,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Run{}, ErrNotFound

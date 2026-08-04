@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"eventplane/correlation"
+
 	"scripts/internal/ids"
 )
 
@@ -242,7 +244,7 @@ func (s *Service) Run(ctx context.Context, owner, scriptID string) (Run, error) 
 	if _, err := s.store.GetScript(ctx, owner, scriptID); err != nil {
 		return Run{}, err
 	}
-	run := s.newRun(scriptID, "", "", "", "")
+	run := s.newRun(ctx, scriptID, "", "", "", "")
 	if err := s.store.InsertRun(ctx, run); err != nil {
 		return Run{}, err
 	}
@@ -265,7 +267,7 @@ func (s *Service) RunForEvent(ctx context.Context, scriptID, source, kind, subje
 		}
 		return err
 	}
-	run := s.newRun(scriptID, source, kind, subject, eventID)
+	run := s.newRun(ctx, scriptID, source, kind, subject, eventID)
 	if err := s.store.InsertRun(ctx, run); err != nil {
 		return err
 	}
@@ -275,8 +277,12 @@ func (s *Service) RunForEvent(ctx context.Context, scriptID, source, kind, subje
 
 // newRun builds a running run row with the §A4 log paths. Empty trigger fields
 // mark a manual run.
-func (s *Service) newRun(scriptID, source, kind, subject, eventID string) Run {
+func (s *Service) newRun(ctx context.Context, scriptID, source, kind, subject, eventID string) Run {
 	runID := ids.NewULID()
+	corrID := correlation.FromContext(ctx)
+	if corrID == "" {
+		corrID = runID
+	}
 	return Run{
 		ID:             runID,
 		ScriptID:       scriptID,
@@ -286,6 +292,7 @@ func (s *Service) newRun(scriptID, source, kind, subject, eventID string) Run {
 		TriggerKind:    kind,
 		TriggerSubject: subject,
 		TriggerEventID: eventID,
+		CorrelationID:  corrID,
 		StdoutPath:     filepath.Join("runs", runID, "stdout.log"),
 		StderrPath:     filepath.Join("runs", runID, "stderr.log"),
 	}
@@ -293,10 +300,10 @@ func (s *Service) newRun(scriptID, source, kind, subject, eventID string) Run {
 
 // --- Run-instance reads ---
 
-// RunList returns the owner's runs (each with ElapsedSecs). scriptID/status "" =
-// no filter on that dimension.
-func (s *Service) RunList(ctx context.Context, owner, scriptID, status string) ([]Run, error) {
-	runs, err := s.store.ListRuns(ctx, owner, scriptID, status)
+// RunList returns the owner's runs (each with ElapsedSecs). Empty filters do
+// not constrain their corresponding dimensions.
+func (s *Service) RunList(ctx context.Context, owner, scriptID, status, correlationID string) ([]Run, error) {
+	runs, err := s.store.ListRuns(ctx, owner, scriptID, status, correlationID)
 	if err != nil {
 		return nil, err
 	}

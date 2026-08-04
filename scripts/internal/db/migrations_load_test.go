@@ -27,6 +27,56 @@ func TestLoadMigrations(t *testing.T) {
 	}
 }
 
+func TestCorrelationIDMigrationAddsIndexedRunColumnWithoutChangingFrozenMigrations(t *testing.T) {
+	// R-4OW5-Q1ND
+	database, err := appkitdb.Open(filepath.Join(t.TempDir(), "correlation.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	migrations, err := appkitdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appkitdb.Migrate(context.Background(), database, migrations); err != nil {
+		t.Fatal(err)
+	}
+
+	var columnCount int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('runs') WHERE name = 'correlation_id' AND type = 'TEXT' AND [notnull] = 1 AND dflt_value = "''"`).Scan(&columnCount); err != nil {
+		t.Fatal(err)
+	}
+	if columnCount != 1 {
+		t.Fatalf("runs.correlation_id matching required shape = %d, want 1", columnCount)
+	}
+	var indexCount int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM pragma_index_list('runs') WHERE name = 'idx_runs_correlation'`).Scan(&indexCount); err != nil {
+		t.Fatal(err)
+	}
+	if indexCount != 1 {
+		t.Fatalf("idx_runs_correlation count = %d, want 1", indexCount)
+	}
+	assertIndexColumns(t, database, "idx_runs_correlation", []string{"correlation_id"})
+
+	frozenDigests := map[string]string{
+		"002_scripts.sql":                    "b71fe8a87367ea55a253c6425fa9bbc457e56ce307442a8bf659658c9f9d07cd",
+		"004_outbox.sql":                     "76296e7ac0263423de2210e73b1968814bd70bc39d0e220ee31f11f2879e078f",
+		"20260609135007_add_source_path.sql": "f27a399bd7e3ae3d7270f6967e01b647d8a22c0db55b13c94295357d8b9b9d73",
+		"20260712190612_trigger_filters.sql": "4c1326c9a8ccd27ec230816a4a3714043ad965287c7ddc459b5189b6945b967a",
+		"20260712192242_outbox_routing.sql":  "4287b44a69dea3138d75e196661ebb25198fd1e0dee37ed0c27a1a314b7691da",
+		"20260720020257_owner_id_keying.sql": "9afb51a25be29983a341d06859ceb6a7cfeeddc58444d1d4f9c9eb50d2f9c4f0",
+	}
+	for name, want := range frozenDigests {
+		body, err := os.ReadFile(filepath.Join("migrations", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fmt.Sprintf("%x", sha256.Sum256(body)); got != want {
+			t.Errorf("%s digest = %s, want frozen %s", name, got, want)
+		}
+	}
+}
+
 func TestOwnerIDKeyingMigrationRebuildsScripts(t *testing.T) {
 	// R-Q2LM-XR9W
 	database, err := appkitdb.Open(filepath.Join(t.TempDir(), "owner-id.db"))
