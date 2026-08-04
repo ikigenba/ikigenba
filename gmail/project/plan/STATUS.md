@@ -11,5 +11,3 @@ phase line, so the anchored grep matches only phase lines.
 
 Next phase: 25
 
-- Phase 24 ⬜ realizes D22 (R-1M1T-299W, R-1N9P-G10L, R-1OHL-TSRA) — nginx fragment: forward the edge-minted correlation id
-
