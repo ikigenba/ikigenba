@@ -54,6 +54,28 @@ func TestDependencyBoundary(t *testing.T) {
 		t.Fatalf("internal dependencies:\n%s\nwant:\n%s", got, want)
 	}
 
+	// Query the package's dependency set directly. Unlike `go list -deps`,
+	// .Deps excludes the package being described, so this is the literal
+	// dependency-boundary check intended by the done bar.
+	output, err = exec.Command(
+		"go", "list",
+		"-f", "{{range .Deps}}{{println .}}{{end}}",
+		queriedPackage,
+	).CombinedOutput()
+	if err != nil {
+		t.Fatalf("list observe dependency set: %v\n%s", err, output)
+	}
+
+	internal = internal[:0]
+	for _, path := range strings.Fields(string(output)) {
+		if strings.HasPrefix(path, "eventplane/") {
+			internal = append(internal, path)
+		}
+	}
+	if got, want := strings.Join(internal, "\n"), routingPackage; got != want {
+		t.Fatalf("internal dependency set:\n%s\nwant:\n%s", got, want)
+	}
+
 	// Ask go list for its dependency classification as a separate assertion.
 	// The plain -deps output cannot make this distinction because it always
 	// includes the package named on the command line.
