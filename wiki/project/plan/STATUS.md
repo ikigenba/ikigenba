@@ -12,5 +12,4 @@ lines.
 
 Next phase: 124
 
-- Phase 122 ⬜ realizes D64 and D65's R-KIH2-R4UC — the prompts calls move onto the chassis's shared instrumented client and carry the received chain id, retiring the per-ask mint and the job-id-as-correlation rule
 - Phase 123 ⬜ realizes — — nginx fragment: forward the edge-minted correlation id on the four gated locations, strip it to empty on the ungated PRM bootstrap
