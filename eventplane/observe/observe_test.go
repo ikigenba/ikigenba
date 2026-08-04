@@ -19,12 +19,12 @@ func internalPackages(output []byte) string {
 }
 
 func TestDependencyBoundary(t *testing.T) {
-	// .Deps is the dependency set of the queried package and, unlike the output
-	// records produced by -deps, does not include the queried package itself.
-	// This directly checks that routing is observe's sole eventplane dependency.
+	// DepOnly distinguishes dependencies from the package named on the command
+	// line. Keep the check on the same -deps traversal as the done-bar command,
+	// but do not misclassify the query root as one of its own dependencies.
 	output, err := exec.Command(
-		"go", "list",
-		"-f", "{{range .Deps}}{{println .}}{{end}}",
+		"go", "list", "-deps",
+		"-f", "{{if .DepOnly}}{{.ImportPath}}{{end}}",
 		observePackage,
 	).CombinedOutput()
 	if err != nil {
