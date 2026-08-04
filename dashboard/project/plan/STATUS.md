@@ -12,7 +12,6 @@ matches only phase lines.
 
 Next phase: 42
 
-- Phase 39 ⬜ realizes D6, D14, D16 — rename the box-health surface from "telemetry" to "metrics", end to end
 - Phase 40 ⬜ realizes D30, D33 — mint the suite's correlation id at the introspection edge, and fix the apex nginx fragment
 - Phase 41 ⬜ realizes D31, D32 — emit an `edge` telemetry record for every gated auth decision
 
