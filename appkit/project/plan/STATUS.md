@@ -11,6 +11,5 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 25
 
-- Phase 24 ⬜ realizes R-PKUI-T1UT, R-PNAB-KLC7, R-POI7-YD2W — recorder-stamped record identity and time
 
 
