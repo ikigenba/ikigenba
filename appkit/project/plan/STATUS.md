@@ -9,6 +9,8 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 24
+Next phase: 25
+
+- Phase 24 ⬜ realizes R-PKUI-T1UT, R-PNAB-KLC7, R-POI7-YD2W — recorder-stamped record identity and time
 
 

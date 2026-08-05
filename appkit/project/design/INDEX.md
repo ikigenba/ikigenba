@@ -21,7 +21,7 @@ Verification ids change.
 - D12 → `project/design/D12.md` — The loopback-only route class: `LoopbackOnly` + `Router.HandleLoopback`, `/feed` mount wrapped, predicate narrowed to `X-Forwarded-Proto` — owns R-X0MQ-MNXN, R-X1UN-0FOC, R-X32J-E7F1, R-X4AF-RZ5Q
 - D13 → `project/design/D13.md` — Identity keys on `X-Owner-Id`; `server.Identity` carries the four owner headers + `ClientID`; gate hard-flipped off `X-Owner-Email` — owns R-DDVL-DPVB, R-DF3H-RHM0, R-DGBE-59CP
 - D14 → `project/design/D14.md` — Correlation context: read-or-mint at the chassis edge (consuming `eventplane/correlation`), Crockford ULIDs — owns R-14QN-I04R, R-15YJ-VRVG, R-176G-9JM5, R-18EC-NBCU, R-19M9-133J
-- D15 → `project/design/D15.md` — The `appkit/telemetry` recorder: bounded drop-oldest ring, ≤256 batches, fire-and-forget ingest POST, env config — owns R-1AU5-EUU8, R-1C21-SMKX, R-1D9Y-6EBM, R-1EHU-K62B, R-1FPQ-XXT0, R-1GXN-BPJP
+- D15 → `project/design/D15.md` — The `appkit/telemetry` recorder: bounded drop-oldest ring, ≤256 batches, fire-and-forget ingest POST, recorder-stamped id/time, env config — owns R-1AU5-EUU8, R-1C21-SMKX, R-1D9Y-6EBM, R-1EHU-K62B, R-1FPQ-XXT0, R-1GXN-BPJP, R-PKUI-T1UT, R-PNAB-KLC7, R-POI7-YD2W
 - D16 → `project/design/D16.md` — The allowlist record shape and the capture-under-threshold param encoder (1024 B/value, 8192 B/record, `$elided` + SHA-256) — owns R-1I5J-PHAE, R-1JDG-3913, R-1LT8-USIH, R-1N15-8K96, R-1O91-MBZV
 - D17 → `project/design/D17.md` — Inbound instrumentation: `dispatchTool` MCP records + plain-HTTP request records, `Tool.SensitiveParams`, the exclusion list — owns R-1PGY-03QK, R-1QOU-DVH9, R-1RWQ-RN7Y, R-1T4N-5EYN, R-1UCJ-J6PC, R-1VKF-WYG1
 - D18 → `project/design/D18.md` — Lifecycle records (`start` with version / `stop`) and event-plane publish/consume hop recording wired through `eventplane/observe` in `serve` — owns R-1WSC-AQ6Q, R-1Y08-OHXF, R-1Z85-29O4, R-20G1-G1ET, R-21NX-TT5I
@@ -102,6 +102,9 @@ Verification ids change.
 - R-MIN1-KS98 → D8 → `project/design/D08.md`
 - R-MJUX-YJZX → D8 → `project/design/D08.md`
 - R-ML2U-CBQM → D9 → `project/design/D09.md`
+- R-PKUI-T1UT → D15 → `project/design/D15.md`
+- R-PNAB-KLC7 → D15 → `project/design/D15.md`
+- R-POI7-YD2W → D15 → `project/design/D15.md`
 - R-WPNN-6Q9E → D8 → `project/design/D08.md`
 - R-WQVJ-KI03 → D8 → `project/design/D08.md`
 - R-WTBC-C1HH → D8 → `project/design/D08.md`
