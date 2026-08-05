@@ -14,5 +14,3 @@ deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
 Next phase: 09
-
-- Phase 08 ⬜ realizes R-5PIJ-TFHS — adopt the context-delivered chassis recorder and prove the producer wire contract
