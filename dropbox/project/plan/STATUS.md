@@ -11,5 +11,4 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 35
 
-- Phase 33 ⬜ realizes R-NF5W-7DOI — work-gate the uploader's root chain (no root, no records on an idle drain pass)
 - Phase 34 ⬜ realizes R-QJ8F-AXWP — tag the composition root's own-port behavior with its missing test
