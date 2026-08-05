@@ -29,7 +29,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D23 → `project/design/D23.md` — Structured MCP adoption: `StructuredResult` + declared `outputSchema` on all six domain tools, typed `ErrorResult` codes, shared chassis loopback guard — owns R-7PKS-A5KE, R-7QSO-NXB3, R-7S0L-1P1S, R-7T8H-FGSH, R-7UGD-T8J6
 - D24 → `project/design/D24.md` — Canonical absolute paths at the Service seam (`normalizePath`: leading slash + lexical clean, every external verb, reads and writes) + mutation errors logged before the 500 — owns R-54T0-VFZG, R-560X-97Q5, R-578T-MZGU, R-58GQ-0R7J
 - D25 → `project/design/D25.md` — `content_url` on loopback `/stat` and `/list` file entries (Service.ContentBase injected at the composition root; MCP surface deliberately excluded) — owns R-59OM-EIY8, R-5AWI-SAOX, R-5C4F-62FM, R-5DCB-JU6B
-- D26 → `project/design/D26.md` — Telemetry adoption, Go side: injected instrumented outbound clients (rpc/longpoll/`source_url`), root correlation chains for the sync engine and the uploader, context-threaded `Append` — owns R-TABR-0FWD, R-TBJN-E7N2, R-TCRJ-RZDR, R-TDZG-5R4G, R-TF7C-JIV5
+- D26 → `project/design/D26.md` — Telemetry adoption, Go side: injected instrumented outbound clients (rpc/longpoll/`source_url`), root correlation chains for the sync engine and the uploader, context-threaded `Append` — owns R-NF5W-7DOI, R-TABR-0FWD, R-TBJN-E7N2, R-TCRJ-RZDR, R-TDZG-5R4G, R-TF7C-JIV5
 - D27 → `project/design/D27.md` — nginx fragment: gated locations capture and forward the edge-minted `X-Correlation-Id`; the ungated public PRM location clears it — owns R-VGTA-PXIA, R-VI17-3P8Z
 
 ## Verification ids → Decision
@@ -97,6 +97,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-LTDD-RSN4 → D8 → `project/design/D08.md`
 - R-LULA-5KDT → D8 → `project/design/D08.md`
 - R-LVT6-JC4I → D8 → `project/design/D08.md`
+- R-NF5W-7DOI → D26 → `project/design/D26.md`
 - R-NGNX-2P4Q → D4 → `project/design/D04.md`
 - R-NGNX-4R6S → D4 → `project/design/D04.md`
 - R-NGNX-6T8U → D4 → `project/design/D04.md`
