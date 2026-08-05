@@ -11,4 +11,3 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 26
 
-- Phase 25 ⬜ realizes R-RI9E-W0G2, R-RKP7-NJXG — context-delivered recorder for MCP tool-call records
