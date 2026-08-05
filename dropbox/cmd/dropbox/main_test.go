@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"log/slog"
 	"net"
@@ -17,6 +20,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -120,6 +124,67 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
 	}
+}
+
+func TestCompositionRootOwnPortUsesRegistry(t *testing.T) {
+	// R-QJ8F-AXWP
+	cmd := exec.Command("go", "run", "-buildvcs=false", ".", "manifest")
+	emitted, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("run dropbox manifest: %v", err)
+	}
+	fields, _, err := manifest.Parse(bytes.NewReader(emitted))
+	if err != nil {
+		t.Fatalf("parse emitted manifest: %v", err)
+	}
+	wantPort := strconv.Itoa(registry.MustPort("dropbox"))
+	if got := fields["PORT"]; got != wantPort {
+		t.Fatalf("emitted Spec.Port = %q, want registry dropbox port %q", got, wantPort)
+	}
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse composition root: %v", err)
+	}
+	foundRegistryPort := false
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || !isSelector(call.Fun, "appkit", "Main") || len(call.Args) != 1 {
+			return true
+		}
+		spec, ok := call.Args[0].(*ast.CompositeLit)
+		if !ok || !isSelector(spec.Type, "appkit", "Spec") {
+			return true
+		}
+		for _, element := range spec.Elts {
+			field, ok := element.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, keyOK := field.Key.(*ast.Ident)
+			portCall, callOK := field.Value.(*ast.CallExpr)
+			if !keyOK || key.Name != "Port" || !callOK ||
+				!isSelector(portCall.Fun, "registry", "MustPort") || len(portCall.Args) != 1 {
+				continue
+			}
+			name, nameOK := portCall.Args[0].(*ast.BasicLit)
+			foundRegistryPort = nameOK && name.Kind == token.STRING && name.Value == `"dropbox"`
+		}
+		return true
+	})
+	if !foundRegistryPort {
+		t.Fatal(`appkit.Spec.Port must be registry.MustPort("dropbox") at the composition root`)
+	}
+}
+
+func isSelector(expr ast.Expr, packageName, name string) bool {
+	selector, ok := expr.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != name {
+		return false
+	}
+	pkg, ok := selector.X.(*ast.Ident)
+	return ok && pkg.Name == packageName
 }
 
 // R-4LKF-FB23
