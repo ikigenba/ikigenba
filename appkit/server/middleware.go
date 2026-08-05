@@ -89,6 +89,12 @@ func (w *telemetryResponseWriter) Flush() {
 	_ = http.NewResponseController(w.ResponseWriter).Flush()
 }
 
+func recorderContext(recorder *telemetry.Recorder, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(telemetry.WithRecorder(r.Context(), recorder)))
+	})
+}
+
 func recordMiddleware(recorder *telemetry.Recorder, service string, excluded []string, next http.Handler) http.Handler {
 	exclude := make(map[string]struct{}, len(excluded))
 	for _, path := range excluded {

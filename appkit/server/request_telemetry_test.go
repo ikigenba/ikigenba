@@ -80,7 +80,7 @@ func phase20Finish(t *testing.T, recorder *telemetry.Recorder, sink *phase20Sink
 
 func TestNewRecordsHealthAndSuppressesDuplicateMCPRequest(t *testing.T) {
 	recorder, sink, cancel := phase20Recorder(t)
-	mcpHandler, err := mcp.New(mcp.Options{Service: testService, Recorder: recorder, Tools: []mcp.Tool{{
+	mcpHandler, err := mcp.New(mcp.Options{Service: testService, Tools: []mcp.Tool{{
 		Name:        "probe",
 		InputSchema: map[string]any{"type": "object"},
 		Handler: func(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {

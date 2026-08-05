@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -81,17 +82,98 @@ func finishRecords(t *testing.T, recorder *telemetry.Recorder, sink *recordSink,
 	return append([]telemetry.Record(nil), sink.records...)
 }
 
-func telemetryRPC(t *testing.T, h http.Handler, body string, headers map[string]string) map[string]any {
+func telemetryRPC(t *testing.T, recorder *telemetry.Recorder, h http.Handler, body string, headers map[string]string) map[string]any {
 	t.Helper()
-	wrapped := logging.CorrelationMiddleware(slog.New(slog.NewTextHandler(io.Discard, nil)), h)
+	withRecorder := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(telemetry.WithRecorder(r.Context(), recorder)))
+	})
+	wrapped := logging.CorrelationMiddleware(slog.New(slog.NewTextHandler(io.Discard, nil)), withRecorder)
 	return rpc(t, wrapped, body, headers)
+}
+
+func TestServerChainDeliversRecorderToUnwiredMCPHandler(t *testing.T) {
+	recorder, sink, cancel := newTestRecorder(t)
+	h := newHandler(t, Options{Service: "crm", Tools: []Tool{{
+		Name:        "lookup",
+		InputSchema: map[string]any{"type": "object"},
+		Handler: func(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {
+			return TextResult("found"), nil
+		},
+	}}})
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ResourceID: "https://example.test/srv/crm",
+		AuthServer: "https://example.test",
+		Service:    "crm",
+		Recorder:   recorder,
+		MCP:        h,
+	})
+	if err != nil {
+		t.Fatalf("server.New: %v", err)
+	}
+
+	const requestID = "01KZ56WZ3FW4P31CHSVE1SG0JB"
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"lookup","arguments":{"query":"alpha"}}}`))
+	req.Header.Set("X-Owner-Id", "owner-1")
+	req.Header.Set("X-Owner-Email", "owner@example.com")
+	req.Header.Set("X-Client-Id", "desktop-client")
+	req.Header.Set(correlation.Header, requestID)
+	rr := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rr, req)
+	records := finishRecords(t, recorder, sink, cancel, 1)
+
+	// R-RI9E-W0G2
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(records) != 1 {
+		t.Fatalf("records = %#v, want exactly one MCP record", records)
+	}
+	record := records[0]
+	if record.Op != "mcp:lookup" || record.CorrelationID != requestID {
+		t.Errorf("record op/correlation = %q/%q, want mcp:lookup/%s", record.Op, record.CorrelationID, requestID)
+	}
+	if record.Actor == nil || record.Actor.OwnerEmail != "owner@example.com" || record.Actor.ClientID != "desktop-client" {
+		t.Errorf("actor = %#v, want request identity", record.Actor)
+	}
+}
+
+func TestOptionsHasNoRecorderFieldAndBareContextDegradesSafely(t *testing.T) {
+	// R-RKP7-NJXG
+	recorderType := reflect.TypeOf((*telemetry.Recorder)(nil))
+	optionsType := reflect.TypeOf(Options{})
+	for i := 0; i < optionsType.NumField(); i++ {
+		field := optionsType.Field(i)
+		if field.Type == recorderType {
+			t.Errorf("Options exposes recorder field %q", field.Name)
+		}
+	}
+
+	recorder, sink, cancel := newTestRecorder(t)
+	h := newHandler(t, Options{Service: "crm", Tools: []Tool{{
+		Name:        "lookup",
+		InputSchema: map[string]any{"type": "object"},
+		Handler: func(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {
+			return TextResult("found"), nil
+		},
+	}}})
+	result, err := h.dispatchTool(context.Background(), "lookup", json.RawMessage(`{}`), server.Identity{})
+	records := finishRecords(t, recorder, sink, cancel, 0)
+
+	if err != nil || result == nil {
+		t.Fatalf("bare-context dispatch result/error = %#v/%v, want normal result", result, err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("bare-context dispatch emitted records: %#v", records)
+	}
 }
 
 func TestDispatchToolRecordsIdentityCorrelationAndDigestedResult(t *testing.T) {
 	recorder, sink, cancel := newTestRecorder(t)
 	const marker = "response-content-must-never-enter-telemetry-93a8"
 	result := TextResult(marker)
-	h := newHandler(t, Options{Service: "crm", Recorder: recorder, Tools: []Tool{{
+	h := newHandler(t, Options{Service: "crm", Tools: []Tool{{
 		Name:        "lookup",
 		InputSchema: map[string]any{"type": "object"},
 		Handler: func(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {
@@ -99,7 +181,7 @@ func TestDispatchToolRecordsIdentityCorrelationAndDigestedResult(t *testing.T) {
 		},
 	}}})
 	requestID := "01KZ56WZ3FW4P31CHSVE1SG0JB"
-	telemetryRPC(t, h, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"lookup","arguments":{"query":"alpha"}}}`, map[string]string{
+	telemetryRPC(t, recorder, h, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"lookup","arguments":{"query":"alpha"}}}`, map[string]string{
 		"X-Owner-Email":    "owner@example.com",
 		"X-Client-Id":      "desktop-client",
 		correlation.Header: requestID,
@@ -142,7 +224,7 @@ func TestDispatchToolRecordsIdentityCorrelationAndDigestedResult(t *testing.T) {
 func TestDispatchToolRecordsClosedErrorClassesWithoutRawGoError(t *testing.T) {
 	recorder, sink, cancel := newTestRecorder(t)
 	const rawMessage = "database password leaked in handler error"
-	h := newHandler(t, Options{Service: "crm", Recorder: recorder, Tools: []Tool{
+	h := newHandler(t, Options{Service: "crm", Tools: []Tool{
 		{
 			Name:        "coded",
 			InputSchema: map[string]any{"type": "object"},
@@ -158,9 +240,9 @@ func TestDispatchToolRecordsClosedErrorClassesWithoutRawGoError(t *testing.T) {
 			},
 		},
 	}})
-	telemetryRPC(t, h, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"coded","arguments":{}}}`, nil)
-	telemetryRPC(t, h, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"broken","arguments":{}}}`, nil)
-	telemetryRPC(t, h, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"unknown","arguments":{}}}`, nil)
+	telemetryRPC(t, recorder, h, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"coded","arguments":{}}}`, nil)
+	telemetryRPC(t, recorder, h, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"broken","arguments":{}}}`, nil)
+	telemetryRPC(t, recorder, h, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"unknown","arguments":{}}}`, nil)
 	records := finishRecords(t, recorder, sink, cancel, 3)
 
 	// R-1RWQ-RN7Y
@@ -193,7 +275,7 @@ func TestDispatchToolElidesDeclaredAndOversizedArguments(t *testing.T) {
 	recorder, sink, cancel := newTestRecorder(t)
 	const secret = "distinct-sensitive-value"
 	large := strings.Repeat("z", 1025)
-	h := newHandler(t, Options{Service: "crm", Recorder: recorder, Tools: []Tool{{
+	h := newHandler(t, Options{Service: "crm", Tools: []Tool{{
 		Name:            "save",
 		InputSchema:     map[string]any{"type": "object"},
 		SensitiveParams: []string{"token"},
@@ -208,7 +290,7 @@ func TestDispatchToolElidesDeclaredAndOversizedArguments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	telemetryRPC(t, h, string(body), nil)
+	telemetryRPC(t, recorder, h, string(body), nil)
 	records := finishRecords(t, recorder, sink, cancel, 1)
 
 	// R-1T4N-5EYN

@@ -308,7 +308,7 @@ func New(opts Options) (*http.Server, error) {
 
 	srv := &http.Server{
 		Addr:              opts.Addr,
-		Handler:           securityHeaders(logging.CorrelationMiddleware(opts.Logger, recordMiddleware(opts.Recorder, opts.Service, opts.RecordExclude, mux))),
+		Handler:           securityHeaders(logging.CorrelationMiddleware(opts.Logger, recorderContext(opts.Recorder, recordMiddleware(opts.Recorder, opts.Service, opts.RecordExclude, mux)))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

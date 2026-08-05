@@ -59,7 +59,6 @@ type Options struct {
 	Events        outbox.Registry
 	Publishes     func() outbox.Registry
 	Subscriptions func() []consumer.Subscription
-	Recorder      *telemetry.Recorder
 }
 
 // Handler is the http.Handler for POST /mcp.
@@ -73,7 +72,6 @@ type Handler struct {
 	events        outbox.Registry
 	publishes     func() outbox.Registry
 	subscriptions func() []consumer.Subscription
-	recorder      *telemetry.Recorder
 }
 
 // New validates the tool table and returns the shared MCP transport handler.
@@ -109,7 +107,6 @@ func New(opts Options) (*Handler, error) {
 		events:        opts.Events,
 		publishes:     opts.Publishes,
 		subscriptions: opts.Subscriptions,
-		recorder:      opts.Recorder,
 	}, nil
 }
 
@@ -205,7 +202,8 @@ func (h *Handler) callTool(ctx context.Context, name string, args json.RawMessag
 }
 
 func (h *Handler) recordToolCall(ctx context.Context, name string, args json.RawMessage, sensitive []string, id server.Identity, result map[string]any, callErr error, duration time.Duration) {
-	if h.recorder == nil {
+	recorder := telemetry.RecorderFromContext(ctx)
+	if recorder == nil {
 		return
 	}
 	outcome := &telemetry.Outcome{
@@ -233,7 +231,7 @@ func (h *Handler) recordToolCall(ctx context.Context, name string, args json.Raw
 	if id.OwnerEmail != "" || id.ClientID != "" {
 		actor = &telemetry.Actor{OwnerEmail: id.OwnerEmail, ClientID: id.ClientID}
 	}
-	h.recorder.Record(telemetry.Record{
+	recorder.Record(telemetry.Record{
 		CorrelationID: correlation.FromContext(ctx),
 		Service:       h.service,
 		Kind:          telemetry.KindRequest,
