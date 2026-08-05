@@ -146,6 +146,62 @@ func TestUploaderDrainPassesOpenDistinctRootContexts(t *testing.T) {
 	}
 }
 
+func TestUploaderDrainRootIsGatedByDueWork(t *testing.T) {
+	// R-NF5W-7DOI
+	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	conn := openStoreDB(t)
+	rootCalls := 0
+	uploadCalls := 0
+	svc := &Service{DB: conn, Store: NewStore(), Now: func() time.Time { return now }}
+	svc.Client = uploadTestClient(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		uploadCalls++
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}))
+	svc.StartRoot = func(ctx context.Context, origin string) context.Context {
+		rootCalls++
+		if origin != "dropbox:upload/drain" {
+			t.Fatalf("root origin = %q, want dropbox:upload/drain", origin)
+		}
+		return ctx
+	}
+
+	if err := svc.drainUploads(context.Background()); err != nil {
+		t.Fatalf("empty drain: %v", err)
+	}
+	enqueueTestUpload(t, svc, UploadQueueRow{
+		Path:          "/future",
+		Op:            "mkdir",
+		EnqueuedAt:    now.Format(time.RFC3339Nano),
+		NextAttemptAt: now.Add(time.Hour).Format(time.RFC3339Nano),
+	})
+	for pass := 1; pass <= 2; pass++ {
+		if err := svc.drainUploads(context.Background()); err != nil {
+			t.Fatalf("future-gated idle drain %d: %v", pass, err)
+		}
+	}
+	if rootCalls != 0 || uploadCalls != 0 {
+		t.Fatalf("idle drains started %d roots and made %d uploads, want zero telemetry and work", rootCalls, uploadCalls)
+	}
+
+	for _, path := range []string{"/due-one", "/due-two"} {
+		enqueueTestUpload(t, svc, UploadQueueRow{
+			Path:          path,
+			Op:            "mkdir",
+			EnqueuedAt:    now.Format(time.RFC3339Nano),
+			NextAttemptAt: now.Format(time.RFC3339Nano),
+		})
+	}
+	if err := svc.drainUploads(context.Background()); err != nil {
+		t.Fatalf("working drain: %v", err)
+	}
+	if rootCalls != 1 {
+		t.Fatalf("working drain started %d roots, want exactly one", rootCalls)
+	}
+	if uploadCalls != 2 {
+		t.Fatalf("working drain made %d uploads, want two", uploadCalls)
+	}
+}
+
 func TestUploaderFailureBacksOffThenRetainsPoisonedRow(t *testing.T) {
 	// R-KLU2-LVOL
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)

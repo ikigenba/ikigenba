@@ -38,9 +38,6 @@ func (s *Service) RunUploader(ctx context.Context) error {
 // per-row API failure is recorded durably and does not prevent later rows from
 // draining; database faults remain structural errors.
 func (s *Service) drainUploads(ctx context.Context) error {
-	if s.StartRoot != nil {
-		ctx = s.StartRoot(ctx, "dropbox:upload/drain")
-	}
 	now := s.nowTime()
 	var rows []UploadQueueRow
 	if err := s.inTx(ctx, func(tx *sql.Tx) error {
@@ -49,6 +46,12 @@ func (s *Service) drainUploads(ctx context.Context) error {
 		return err
 	}); err != nil {
 		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	if s.StartRoot != nil {
+		ctx = s.StartRoot(ctx, "dropbox:upload/drain")
 	}
 	for _, row := range rows {
 		if err := s.uploadRow(ctx, row); err != nil {
