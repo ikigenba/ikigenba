@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"appkit/logging"
 	"registry"
 )
 
@@ -31,6 +32,14 @@ type Options struct {
 	FlushEvery time.Duration
 	Client     *http.Client
 	Logger     *slog.Logger
+	Now        func() time.Time
+	NewID      func() string
+}
+
+type wireRecord struct {
+	ID   string    `json:"id"`
+	Time time.Time `json:"time"`
+	Record
 }
 
 // Recorder is a bounded, asynchronous, best-effort telemetry sink.
@@ -43,9 +52,11 @@ type Recorder struct {
 	flushEvery time.Duration
 	client     *http.Client
 	logger     *slog.Logger
+	now        func() time.Time
+	newID      func() string
 
 	mu      sync.Mutex
-	ring    []Record
+	ring    []wireRecord
 	head    int
 	count   int
 	dropped uint64
@@ -82,6 +93,12 @@ func New(opts Options) *Recorder {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
+	if opts.Now == nil {
+		opts.Now = time.Now
+	}
+	if opts.NewID == nil {
+		opts.NewID = logging.NewULID
+	}
 
 	return &Recorder{
 		service:    opts.Service,
@@ -92,7 +109,9 @@ func New(opts Options) *Recorder {
 		flushEvery: opts.FlushEvery,
 		client:     opts.Client,
 		logger:     opts.Logger,
-		ring:       make([]Record, opts.Capacity),
+		now:        opts.Now,
+		newID:      opts.NewID,
+		ring:       make([]wireRecord, opts.Capacity),
 		wake:       make(chan struct{}, 1),
 		done:       make(chan struct{}),
 	}
@@ -109,13 +128,14 @@ func (r *Recorder) Record(rec Record) {
 	}
 
 	r.mu.Lock()
+	stamped := wireRecord{ID: r.newID(), Time: r.now().UTC(), Record: rec}
 	if r.count == r.capacity {
-		r.ring[r.head] = rec
+		r.ring[r.head] = stamped
 		r.head = (r.head + 1) % r.capacity
 		r.dropped++
 	} else {
 		index := (r.head + r.count) % r.capacity
-		r.ring[index] = rec
+		r.ring[index] = stamped
 		r.count++
 	}
 	ready := r.count >= r.batchMax
@@ -200,7 +220,7 @@ func (r *Recorder) flush(ctx context.Context) {
 	}
 }
 
-func (r *Recorder) takeBatch() ([]Record, uint64) {
+func (r *Recorder) takeBatch() ([]wireRecord, uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.count == 0 {
@@ -210,7 +230,7 @@ func (r *Recorder) takeBatch() ([]Record, uint64) {
 	if r.count < n {
 		n = r.count
 	}
-	batch := make([]Record, n)
+	batch := make([]wireRecord, n)
 	for i := range batch {
 		batch[i] = r.ring[(r.head+i)%r.capacity]
 	}
@@ -219,10 +239,10 @@ func (r *Recorder) takeBatch() ([]Record, uint64) {
 	return batch, r.dropped
 }
 
-func (r *Recorder) post(ctx context.Context, records []Record, dropped uint64) bool {
+func (r *Recorder) post(ctx context.Context, records []wireRecord, dropped uint64) bool {
 	body := struct {
-		Records []Record `json:"records"`
-		Dropped uint64   `json:"dropped,omitempty"`
+		Records []wireRecord `json:"records"`
+		Dropped uint64       `json:"dropped,omitempty"`
 	}{Records: records, Dropped: dropped}
 	encoded, err := json.Marshal(body)
 	if err != nil {

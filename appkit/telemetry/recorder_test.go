@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,8 +15,14 @@ import (
 )
 
 type receivedBatch struct {
-	Records []Record `json:"records"`
-	Dropped *uint64  `json:"dropped,omitempty"`
+	Records []receivedWireRecord `json:"records"`
+	Dropped *uint64              `json:"dropped,omitempty"`
+}
+
+type receivedWireRecord struct {
+	ID   string `json:"id"`
+	Time string `json:"time"`
+	Record
 }
 
 type batchSink struct {
@@ -77,7 +85,7 @@ func TestRecorderFullRingKeepsNewestRecords(t *testing.T) {
 	// R-1AU5-EUU8
 	r := New(Options{Enabled: true, Capacity: 4096, BatchMax: 256})
 	for i := 0; i < 4096+64; i++ {
-		r.Record(Record{ID: stringID(i)})
+		r.Record(Record{Op: stringID(i)})
 	}
 
 	r.mu.Lock()
@@ -88,12 +96,12 @@ func TestRecorderFullRingKeepsNewestRecords(t *testing.T) {
 	if r.dropped != 64 {
 		t.Fatalf("dropped = %d, want 64", r.dropped)
 	}
-	if got := r.ring[r.head].ID; got != stringID(64) {
-		t.Errorf("oldest retained id = %q, want %q", got, stringID(64))
+	if got := r.ring[r.head].Op; got != stringID(64) {
+		t.Errorf("oldest retained op = %q, want %q", got, stringID(64))
 	}
 	newest := (r.head + r.count - 1) % r.capacity
-	if got := r.ring[newest].ID; got != stringID(4096+63) {
-		t.Errorf("newest retained id = %q, want %q", got, stringID(4096+63))
+	if got := r.ring[newest].Op; got != stringID(4096+63) {
+		t.Errorf("newest retained op = %q, want %q", got, stringID(4096+63))
 	}
 }
 
@@ -107,7 +115,7 @@ func TestRecorderBatchesOneThousandRecordsAtMaximum256(t *testing.T) {
 	defer r.Close(context.Background())
 
 	for i := 0; i < 1000; i++ {
-		r.Record(Record{ID: stringID(i)})
+		r.Record(Record{Op: stringID(i)})
 	}
 	waitFor(t, 2*time.Second, func() bool {
 		total := 0
@@ -123,12 +131,119 @@ func TestRecorderBatchesOneThousandRecordsAtMaximum256(t *testing.T) {
 			t.Fatalf("batch has %d records, want at most 256", len(batch.Records))
 		}
 		for _, rec := range batch.Records {
-			seen[rec.ID] = true
+			seen[rec.Op] = true
 		}
 	}
 	for i := 0; i < 1000; i++ {
 		if !seen[stringID(i)] {
 			t.Fatalf("record %q did not reach sink", stringID(i))
+		}
+	}
+}
+
+// R-PKUI-T1UT
+func TestRecorderDefaultIdentityIsUniqueCrockfordULIDForEveryAcceptedRecord(t *testing.T) {
+	sink := newBatchSink()
+	server := httptest.NewServer(sink)
+	defer server.Close()
+	r := New(Options{Enabled: true, IngestURL: server.URL})
+	for i := 0; i < 1000; i++ {
+		r.Record(Record{Op: stringID(i)})
+	}
+	if err := r.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	pattern := regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
+	seen := make(map[string]struct{}, 1000)
+	for _, batch := range sink.snapshot() {
+		for _, rec := range batch.Records {
+			if !pattern.MatchString(rec.ID) {
+				t.Fatalf("record %q id = %q, want Crockford ULID", rec.Op, rec.ID)
+			}
+			if _, duplicate := seen[rec.ID]; duplicate {
+				t.Fatalf("duplicate id %q", rec.ID)
+			}
+			seen[rec.ID] = struct{}{}
+		}
+	}
+	if len(seen) != 1000 {
+		t.Fatalf("sink received %d distinct records, want 1000", len(seen))
+	}
+}
+
+// R-PNAB-KLC7
+func TestRecorderDefaultTimeIsUTCWithinAcceptanceWindow(t *testing.T) {
+	sink := newBatchSink()
+	server := httptest.NewServer(sink)
+	defer server.Close()
+	r := New(Options{Enabled: true, IngestURL: server.URL})
+	before := time.Now().UTC()
+	for i := 0; i < 32; i++ {
+		r.Record(Record{Op: stringID(i)})
+	}
+	after := time.Now().UTC()
+	if err := r.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	received := 0
+	for _, batch := range sink.snapshot() {
+		for _, rec := range batch.Records {
+			received++
+			if !strings.HasSuffix(rec.Time, "Z") {
+				t.Errorf("record %q time = %q, want Z offset", rec.Op, rec.Time)
+			}
+			stamp, err := time.Parse(time.RFC3339Nano, rec.Time)
+			if err != nil {
+				t.Errorf("record %q time %q is not RFC3339Nano: %v", rec.Op, rec.Time, err)
+				continue
+			}
+			if stamp.Before(before) || stamp.After(after) {
+				t.Errorf("record %q time %s outside acceptance window [%s, %s]", rec.Op, stamp, before, after)
+			}
+		}
+	}
+	if received != 32 {
+		t.Fatalf("sink received %d records, want 32", received)
+	}
+}
+
+// R-POI7-YD2W
+func TestRecorderInjectedStampSeamsControlIdentityAndTimeInEnqueueOrder(t *testing.T) {
+	sink := newBatchSink()
+	server := httptest.NewServer(sink)
+	defer server.Close()
+	fixed := time.Date(2026, time.August, 5, 17, 4, 3, 987654321, time.FixedZone("test", -5*60*60))
+	ids := []string{"first-id", "second-id", "third-id"}
+	next := 0
+	r := New(Options{
+		Enabled: true, IngestURL: server.URL,
+		Now: func() time.Time { return fixed },
+		NewID: func() string {
+			id := ids[next]
+			next++
+			return id
+		},
+	})
+	for _, op := range []string{"first", "second", "third"} {
+		r.Record(Record{Op: op})
+	}
+	if err := r.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	var got []receivedWireRecord
+	for _, batch := range sink.snapshot() {
+		got = append(got, batch.Records...)
+	}
+	if len(got) != len(ids) {
+		t.Fatalf("sink received %d records, want %d", len(got), len(ids))
+	}
+	wantTime := fixed.UTC().Format(time.RFC3339Nano)
+	for i, rec := range got {
+		if rec.ID != ids[i] || rec.Time != wantTime {
+			t.Errorf("record %d stamp = (%q, %q), want (%q, %q)", i, rec.ID, rec.Time, ids[i], wantTime)
 		}
 	}
 }
@@ -141,15 +256,15 @@ func TestRecorderReportsDroppedCountOnceAfterSuccess(t *testing.T) {
 	defer server.Close()
 	r := New(Options{Enabled: true, IngestURL: server.URL, Capacity: 4, BatchMax: 4, FlushEvery: time.Hour})
 	for i := 0; i < 7; i++ {
-		r.Record(Record{ID: stringID(i)})
+		r.Record(Record{Op: stringID(i)})
 	}
 	r.Start(context.Background())
 	waitFor(t, time.Second, func() bool { return len(sink.snapshot()) == 1 })
 	for i := 0; i < 4; i++ {
-		r.Record(Record{ID: "successful-" + stringID(i)})
+		r.Record(Record{Op: "successful-" + stringID(i)})
 	}
 	waitFor(t, time.Second, func() bool { return len(sink.snapshot()) == 2 })
-	r.Record(Record{ID: "after-success"})
+	r.Record(Record{Op: "after-success"})
 	if err := r.Close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -186,7 +301,7 @@ func TestRecorderRefusedSinkNeverBlocksAndLaterLiveSinkReceives(t *testing.T) {
 	r.Start(context.Background())
 	started := time.Now()
 	for i := 0; i < 5000; i++ {
-		r.Record(Record{ID: stringID(i)})
+		r.Record(Record{Op: stringID(i)})
 	}
 	if elapsed := time.Since(started); elapsed >= time.Second {
 		t.Fatalf("5000 Record calls took %v, want under one second", elapsed)
@@ -209,14 +324,14 @@ func TestRecorderRefusedSinkNeverBlocksAndLaterLiveSinkReceives(t *testing.T) {
 	httpServer := &http.Server{Handler: sink}
 	go httpServer.Serve(liveListener)
 	defer httpServer.Shutdown(context.Background())
-	r.Record(Record{ID: "live-after-refusal"})
+	r.Record(Record{Op: "live-after-refusal"})
 	if err := r.Close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	waitFor(t, time.Second, func() bool {
 		for _, batch := range sink.snapshot() {
 			for _, rec := range batch.Records {
-				if rec.ID == "live-after-refusal" {
+				if rec.Op == "live-after-refusal" {
 					return true
 				}
 			}
@@ -232,12 +347,12 @@ func TestRecorderCloseFlushesBufferedRecord(t *testing.T) {
 	defer server.Close()
 	r := New(Options{Enabled: true, IngestURL: server.URL, FlushEvery: time.Hour})
 	r.Start(context.Background())
-	r.Record(Record{ID: "immediately-before-close"})
+	r.Record(Record{Op: "immediately-before-close"})
 	if err := r.Close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	batches := sink.snapshot()
-	if len(batches) != 1 || len(batches[0].Records) != 1 || batches[0].Records[0].ID != "immediately-before-close" {
+	if len(batches) != 1 || len(batches[0].Records) != 1 || batches[0].Records[0].Op != "immediately-before-close" {
 		t.Fatalf("close batches = %#v, want buffered record", batches)
 	}
 }
@@ -253,7 +368,7 @@ func TestRecorderDisabledPerformsNoRequests(t *testing.T) {
 	r := New(Options{Enabled: false, IngestURL: server.URL, FlushEvery: time.Millisecond})
 	r.Start(context.Background())
 	for i := 0; i < 5000; i++ {
-		r.Record(Record{ID: stringID(i)})
+		r.Record(Record{Op: stringID(i)})
 	}
 	if err := r.Close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)

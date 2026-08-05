@@ -1,9 +1,12 @@
 package telemetry
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"regexp"
 	"strings"
@@ -15,8 +18,6 @@ import (
 func TestRecordJSONContainsOnlyAllowlistedFieldsAndOmitsEmptyOptionalFields(t *testing.T) {
 	stamp := time.Date(2026, time.August, 3, 12, 13, 14, 123456789, time.UTC)
 	full := Record{
-		ID:            "record-1",
-		Time:          stamp,
 		CorrelationID: "correlation-1",
 		Service:       "crm",
 		Kind:          KindRequest,
@@ -27,13 +28,39 @@ func TestRecordJSONContainsOnlyAllowlistedFieldsAndOmitsEmptyOptionalFields(t *t
 		Detail:        map[string]any{"transport": "mcp"},
 	}
 
-	var got map[string]any
-	encoded, err := json.Marshal(full)
-	if err != nil {
-		t.Fatalf("marshal populated record: %v", err)
+	recordType := reflect.TypeOf(Record{})
+	for i := 0; i < recordType.NumField(); i++ {
+		field := recordType.Field(i)
+		jsonName := strings.Split(field.Tag.Get("json"), ",")[0]
+		if field.Name == "ID" || field.Name == "Time" || jsonName == "id" || jsonName == "time" {
+			t.Fatalf("caller-facing Record exposes recorder-owned field %s (%q)", field.Name, jsonName)
+		}
 	}
-	if err := json.Unmarshal(encoded, &got); err != nil {
-		t.Fatalf("decode populated record: %v", err)
+
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	recorder := New(Options{
+		Enabled: true, IngestURL: server.URL,
+		Now: func() time.Time { return stamp }, NewID: func() string { return "record-1" },
+	})
+	recorder.Record(full)
+	if err := recorder.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	records, ok := payload["records"].([]any)
+	if !ok || len(records) != 1 {
+		t.Fatalf("wire records = %#v, want one record", payload["records"])
+	}
+	got, ok := records[0].(map[string]any)
+	if !ok {
+		t.Fatalf("wire record = %#v, want object", records[0])
 	}
 	wantKeys := []string{"actor", "correlation_id", "detail", "id", "kind", "op", "outcome", "params", "service", "time"}
 	gotKeys := make([]string, 0, len(got))
@@ -48,8 +75,8 @@ func TestRecordJSONContainsOnlyAllowlistedFieldsAndOmitsEmptyOptionalFields(t *t
 		t.Fatalf("time = %q, want RFC3339Nano UTC", got["time"])
 	}
 
-	empty := Record{ID: "record-2", Time: stamp, Service: "crm", Kind: KindLifecycle, Op: "start"}
-	encoded, err = json.Marshal(empty)
+	empty := Record{Service: "crm", Kind: KindLifecycle, Op: "start"}
+	encoded, err := json.Marshal(empty)
 	if err != nil {
 		t.Fatalf("marshal sparse record: %v", err)
 	}

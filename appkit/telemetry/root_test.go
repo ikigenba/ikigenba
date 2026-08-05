@@ -35,7 +35,9 @@ func rootTestRecords(t *testing.T, sink *batchSink, want int) []Record {
 	})
 	var records []Record
 	for _, batch := range sink.snapshot() {
-		records = append(records, batch.Records...)
+		for _, record := range batch.Records {
+			records = append(records, record.Record)
+		}
 	}
 	return records
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
-	"time"
 )
 
 const (
@@ -42,10 +41,9 @@ type Outcome struct {
 	SHA256     string `json:"sha256,omitempty"`
 }
 
-// Record is the allowlisted telemetry representation of one operation.
+// Record is the caller-facing, allowlisted telemetry representation of one
+// operation. Identity and observation time are added by Recorder.
 type Record struct {
-	ID            string         `json:"id"`
-	Time          time.Time      `json:"time"`
 	CorrelationID string         `json:"correlation_id,omitempty"`
 	Service       string         `json:"service"`
 	Kind          Kind           `json:"kind"`
