@@ -13,10 +13,11 @@ Verification ids change.
 - D4 → `project/design/D04.md` — Retention: the configured window and the pruner — R-VRDP-RPK1, R-VSLM-5HAQ, R-VTTI-J91F, R-VV1E-X0S4
 - D5 → `project/design/D05.md` — The forensic MCP surface: `search`, `chain`, `get`, `guide` — R-VW9B-ASIT, R-VXH7-OK9I, R-VYP4-2C07, R-VZX0-G3QW, R-W2CT-7N8A, R-W3KP-LEYZ, R-W4SL-Z6PO
 - D6 → `project/design/D06.md` — The nginx location fragment — R-W60I-CYGD, R-W78E-QQ72, R-W8GB-4HXR, R-W9O7-I9OG, R-WAW3-W1F5
-- D7 → `project/design/D07.md` — Test strategy and the end-to-end layer — R-WC40-9T5U, R-WDBW-NKWJ
+- D7 → `project/design/D07.md` — Test strategy and the end-to-end layer — R-5PIJ-TFHS, R-WC40-9T5U, R-WDBW-NKWJ
 
 ## Verification ids → Decision
 
+- R-5PIJ-TFHS → D7 — `project/design/D07.md`
 - R-V6NF-9LY8 → D1 — `project/design/D01.md`
 - R-V7VB-NDOX → D1 — `project/design/D01.md`
 - R-V938-15FM → D2 — `project/design/D02.md`
