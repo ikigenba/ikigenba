@@ -17,8 +17,107 @@ import (
 	"testing"
 	"time"
 
+	appkittelemetry "appkit/telemetry"
 	"telemetry/internal/record"
 )
+
+func TestChassisRecorderRoundTripsThroughComposedService(t *testing.T) {
+	binary := buildTelemetry(t)
+	process := startTelemetry(t, binary, filepath.Join(t.TempDir(), "telemetry.db"))
+	defer process.stop(t)
+
+	observer := &ingestObserver{transport: http.DefaultTransport}
+	recorder := appkittelemetry.New(appkittelemetry.Options{
+		Service:    "recorder-producer",
+		IngestURL:  process.baseURL + "/ingest",
+		Enabled:    true,
+		Capacity:   8,
+		BatchMax:   8,
+		FlushEvery: time.Hour,
+		Client:     &http.Client{Timeout: 5 * time.Second, Transport: observer},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	recorder.Start(ctx)
+	recorder.Record(appkittelemetry.Record{
+		CorrelationID: "recorder-wire-contract",
+		Service:       "recorder-producer",
+		Kind:          appkittelemetry.KindRequest,
+		Op:            "wire.roundtrip",
+		Params:        map[string]any{"source": "real-recorder"},
+		Outcome:       &appkittelemetry.Outcome{Status: "ok", DurationMS: 7},
+	})
+	closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer closeCancel()
+	if err := recorder.Close(closeCtx); err != nil {
+		t.Fatalf("close recorder: %v", err)
+	}
+	cancel()
+
+	stored, rejected, requests, observeErr := observer.result()
+	if observeErr != nil {
+		t.Fatalf("observe recorder ingest response: %v", observeErr)
+	}
+	chain := callRecords(t, process, "chain", map[string]any{"correlation_id": "recorder-wire-contract"})
+	if len(chain) != 1 {
+		t.Fatalf("chain record count = %d, want 1", len(chain))
+	}
+	emitted := chain[0]
+	got := callRecord(t, process, "get", map[string]any{"id": emitted.ID})
+
+	// R-5PIJ-TFHS
+	if requests != 1 || stored != 1 || rejected != 0 {
+		t.Fatalf("recorder ingest totals = requests:%d stored:%d rejected:%d, want 1, 1, 0", requests, stored, rejected)
+	}
+	if emitted.ID == "" || emitted.Time == "" {
+		t.Fatalf("recorder-stamped identity = id:%q time:%q, want both non-empty", emitted.ID, emitted.Time)
+	}
+	if emitted.CorrelationID != "recorder-wire-contract" || emitted.Service != "recorder-producer" || emitted.Op != "wire.roundtrip" {
+		t.Fatalf("chain returned wrong recorder record: %+v", emitted)
+	}
+	if !reflect.DeepEqual(got, emitted) {
+		t.Fatalf("get record = %#v, want chain record %#v", got, emitted)
+	}
+}
+
+type ingestObserver struct {
+	transport http.RoundTripper
+	stored    int
+	rejected  int
+	requests  int
+	err       error
+}
+
+func (o *ingestObserver) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := o.transport.RoundTrip(request)
+	if err != nil {
+		return nil, err
+	}
+	if request.URL.Path != "/ingest" {
+		return response, nil
+	}
+	body, readErr := io.ReadAll(response.Body)
+	if readErr != nil {
+		o.err = readErr
+		return response, nil
+	}
+	response.Body = io.NopCloser(bytes.NewReader(body))
+	var result struct {
+		Stored   int `json:"stored"`
+		Rejected int `json:"rejected"`
+	}
+	if decodeErr := json.Unmarshal(body, &result); decodeErr != nil {
+		o.err = decodeErr
+		return response, nil
+	}
+	o.requests++
+	o.stored += result.Stored
+	o.rejected += result.Rejected
+	return response, nil
+}
+
+func (o *ingestObserver) result() (stored, rejected, requests int, err error) {
+	return o.stored, o.rejected, o.requests, o.err
+}
 
 func TestComposedServiceRoundTripSurvivesRestart(t *testing.T) {
 	binary := buildTelemetry(t)

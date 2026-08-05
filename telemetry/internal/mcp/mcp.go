@@ -27,7 +27,6 @@ func NewHandler(store *db.Store, clock telemetry.Clock, rt *appkit.Router) (http
 		Events:        rt.Events(),
 		Publishes:     rt.Publishes(),
 		Subscriptions: rt.Subscriptions(),
-		Recorder:      rt.Recorder(),
 	})
 }
 
