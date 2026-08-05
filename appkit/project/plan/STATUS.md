@@ -9,7 +9,6 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 25
+Next phase: 26
 
-
-
+- Phase 25 ⬜ realizes R-RI9E-W0G2, R-RKP7-NJXG — context-delivered recorder for MCP tool-call records
