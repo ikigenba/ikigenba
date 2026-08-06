@@ -11,6 +11,5 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 28
 
-- Phase 27 ⬜ realizes R-K59U-9DWS, R-K6HQ-N5NH — header-fallback actor attribution in the HTTP request recorder
 
 
