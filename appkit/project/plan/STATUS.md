@@ -11,5 +11,4 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 27
 
-- Phase 26 ⬜ realizes D8 — gate the MCP transport on HTTP method before decoding, so a non-POST verb answers 405 instead of a 200 parse error
 
