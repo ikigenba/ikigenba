@@ -113,11 +113,37 @@ func TestSetupDefaultCreatesAppTreeAndEnabledUnitWithoutWorkerWebGroup(t *testin
 	}
 	wantOps := []string{
 		"ensure-user:" + app + ":" + l.AppDir(),
+		"chown:" + app + ":" + app + ":" + l.CacheDir(),
 		"daemon-reload",
 		"enable:" + app + ".service",
 	}
 	if got := sys.opSeq(); strings.Join(got, "|") != strings.Join(wantOps, "|") {
 		t.Fatalf("default setup ops = %v, want %v", got, wantOps)
+	}
+}
+
+func TestSetupMakesCacheOwnedByAppInEveryTreeBranch(t *testing.T) {
+	// R-4ZI0-4CH5
+	tests := []struct {
+		name string
+		opts SetupOptions
+	}{
+		{name: "default", opts: SetupOptions{App: "dashboard", IsDefault: true}},
+		{name: "worker", opts: SetupOptions{App: "worker"}},
+		{name: "fragment", opts: SetupOptions{App: "api", Fragment: "location /api/ { proxy_pass http://127.0.0.1:3000; }\n"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o, sys, l := newSetupTestOpsctl(t, tt.opts.App)
+			if err := o.Setup(context.Background(), tt.opts); err != nil {
+				t.Fatalf("setup %s: %v", tt.name, err)
+			}
+
+			want := "chown:" + tt.opts.App + ":" + tt.opts.App + ":" + l.CacheDir()
+			if got := countEvents(sys.opSeq(), want); got != 1 {
+				t.Fatalf("cache ownership call count = %d, want 1 for %q; ops=%v", got, want, sys.opSeq())
+			}
+		})
 	}
 }
 
@@ -276,6 +302,7 @@ func TestSetupCreatesOnlyPublicAndPrivateServedTiers(t *testing.T) {
 	}
 	wantOps := []string{
 		"ensure-user:" + app + ":" + l.AppDir(),
+		"chown:" + app + ":" + app + ":" + l.CacheDir(),
 		"chown:" + app + ":" + app + ":" + l.StateDir(),
 		"daemon-reload",
 		"enable:" + app + ".service",

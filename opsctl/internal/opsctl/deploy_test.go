@@ -844,6 +844,45 @@ func TestInstall_ChownsStateDirToAppUser(t *testing.T) {
 	}
 }
 
+func TestDeployChownsCacheAfterMigrateAndBeforeRestart(t *testing.T) {
+	// R-50PW-I47U
+	root := t.TempDir()
+	const app = "crm"
+	const version = "v1.0.0"
+	l := NewLayout(root, app)
+	sys := &stubSystem{}
+	o := newOpsctl(t, root, app, sys, fakeEnv(app, version, 2, ""))
+	cacheChown := "chown:" + app + ":" + app + ":" + l.CacheDir()
+	o.Runner = deployRecordingRunner{
+		fakeRunner: fakeRunner{baseEnv: fakeEnv(app, version, 2, "")},
+		onMigrate: func() {
+			if containsEvent(sys.opSeq(), cacheChown) {
+				t.Fatalf("cache ownership was handed back before migrate: %v", sys.opSeq())
+			}
+		},
+	}
+	sys.onRestart = func() {
+		// Restart invokes this hook while holding the stub's mutex, so inspect the
+		// protected operation slice directly rather than re-locking via opSeq.
+		if !containsEvent(sys.ops, cacheChown) {
+			t.Fatalf("restart occurred before cache ownership hand-back: %v", sys.ops)
+		}
+	}
+
+	if err := stageAndDeploy(t, o, app, version, stageArtifact(t, app+"-"+version)); err != nil {
+		t.Fatalf("ordinary deploy: %v", err)
+	}
+
+	ops := sys.opSeq()
+	if got := countEvents(ops, cacheChown); got != 1 {
+		t.Fatalf("cache ownership call count = %d, want 1 for %q; ops=%v", got, cacheChown, ops)
+	}
+	stateChown := "chown:" + app + ":" + app + ":" + l.StateDir()
+	if state, cache := eventIndex(ops, stateChown), eventIndex(ops, cacheChown); state == -1 || cache <= state {
+		t.Fatalf("state/cache ownership order wrong: %v", ops)
+	}
+}
+
 func TestDeployStateChownOwnsServedTree(t *testing.T) {
 	// R-3MPQ-A91D
 	root := t.TempDir()

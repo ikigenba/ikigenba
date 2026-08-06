@@ -328,6 +328,7 @@ func TestSetup_PathRoutedService(t *testing.T) {
 	// instance bootstrap, nginx/certbot are init-box's job).
 	wantOps := []string{
 		"ensure-user:ledger:" + l.AppDir(),
+		"chown:ledger:ledger:" + l.CacheDir(),
 		"daemon-reload",
 		"enable:ledger.service", // enable (not enable-now) — NOT started
 		"nginx-test",
@@ -385,6 +386,7 @@ func TestSetup_WWWTree(t *testing.T) {
 	// The state tree, including www/, was handed to the sites service user.
 	wantOps := []string{
 		"ensure-user:sites:" + l.AppDir(),
+		"chown:sites:sites:" + l.CacheDir(),
 		"chown:sites:sites:" + l.StateDir(),
 		"daemon-reload",
 		"enable:sites.service",
@@ -420,6 +422,7 @@ func TestSetup_InstallsPackages(t *testing.T) {
 	wantOps := []string{
 		"install-packages:python3.11",
 		"ensure-user:scripts:" + l.AppDir(),
+		"chown:scripts:scripts:" + l.CacheDir(),
 		"daemon-reload",
 		"enable:scripts.service",
 		"nginx-test",
@@ -433,7 +436,7 @@ func TestSetup_InstallsPackages(t *testing.T) {
 // TestWWWDirsFor_OnlySites asserts the www tree is derived per-app: sites gets
 // the three-dir tree, every other app gets none — so non-sites setup creates no
 // www dir (no regression). Pairs with the ledger setup test, which never sees a
-// www dir or a chown op.
+// www dir or a state-tree chown op.
 func TestWWWDirsFor_OnlySites(t *testing.T) {
 	// R-4LKF-FB23
 	if got := WWWDirsFor("/opt", "ledger"); got != nil {
@@ -451,8 +454,8 @@ func TestWWWDirsFor_OnlySites(t *testing.T) {
 }
 
 // TestSetup_NoWWWTreeForOtherApps proves the non-sites path is unchanged: with no
-// WWWDirs, setup creates no www dir and requests no chown. (The existing ledger
-// setup test asserts the full op sequence has no chown; this guards the dir side.)
+// WWWDirs, setup creates no www dir and requests no served-tree chown. The app's
+// cache ownership hand-back is independent of whether it serves static files.
 func TestSetup_NoWWWTreeForOtherApps(t *testing.T) {
 	root := t.TempDir()
 	sysRoot := t.TempDir()
@@ -474,8 +477,8 @@ func TestSetup_NoWWWTreeForOtherApps(t *testing.T) {
 		t.Errorf("setup created a www tree for ledger, want none (err=%v)", err)
 	}
 	for _, op := range sys.opSeq() {
-		if strings.HasPrefix(op, "chown:") {
-			t.Errorf("setup chowned for a non-sites app: %s", op)
+		if op == "chown:"+app+":"+app+":"+l.StateDir() || strings.HasSuffix(op, ":"+l.WWWRoot()) {
+			t.Errorf("setup chowned a served tree for a non-sites app: %s", op)
 		}
 	}
 }

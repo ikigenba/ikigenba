@@ -112,6 +112,9 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 		if err := mkdirAllMode(0o750, l.StateDir()); err != nil {
 			return fmt.Errorf("setup: create state dir: %w", err)
 		}
+		if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
+			return fmt.Errorf("setup: chown cache dir: %w", err)
+		}
 	} else if opts.Fragment == "" {
 		// Worker/no-route services use the current state/cache/libexec layout. The
 		// app-owned state dir is traverse-only for non-owners, and the DB exists
@@ -133,6 +136,9 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 		if err := o.System.ChownTree(ctx, app, app, l.DBPath()); err != nil {
 			return fmt.Errorf("setup: chown db: %w", err)
 		}
+		if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
+			return fmt.Errorf("setup: chown cache dir: %w", err)
+		}
 	} else {
 		// Path-routed services still consume the existing fragment-driven setup
 		// contract guarded by the provisioning tests.
@@ -143,6 +149,9 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 		}
 		if err := os.MkdirAll(l.StateDir(), 0o750); err != nil {
 			return fmt.Errorf("setup: create state dir: %w", err)
+		}
+		if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
+			return fmt.Errorf("setup: chown cache dir: %w", err)
 		}
 
 		// 2b. The OPTIONAL served www/ tree (sites only). Create each requested
