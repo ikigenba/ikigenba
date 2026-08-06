@@ -9,5 +9,6 @@ loop **deletes** that phase's line and its `phase-NN.md` — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 56
+Next phase: 57
 
+- Phase 56 ⬜ realizes — — take the agentkit version out of the import guards, and move the pin
