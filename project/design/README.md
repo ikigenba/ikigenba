@@ -42,7 +42,10 @@ Shared facts every Decision leans on:
   Shell tooling in `bin/` (`bump`, `ship`, `push-secrets`, …) is deliberately
   **untested** — the former `bin/test` + `bin/*.test.sh` tier was removed
   (commit `019a99ee`; nothing automated ran it) — and is instead verified once,
-  manually, outside the build loop, when created or changed. The same holds for
+  manually, outside the build loop, when created or changed. **Exception
+  (D16): the manifest readers.** `bin/registry` and `bin/start`'s staging are
+  exercised by the `bintest` module's Go tests, which exec the real scripts
+  and run under this same gate. The same holds for
   **static committed artifacts at repo root that no module owns** (`parked/`,
   D13): the gate has no faithful assertion to make about them, so their phases
   carry structural exit conditions and their real behavior is verified on the box

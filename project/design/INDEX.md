@@ -22,6 +22,7 @@ ids change.
 - **D13** → `project/design/D13.md` — The parked `default_server` front door for non-apex hosts — ids: none (two static committed files + an operator runbook; the real-CA/real-nginx claim is verified once outside the loop)
 - **D14** → `project/design/D14.md` — The telemetry contract docs: `docs/telemetry-protocol.md` + the correlation-standard amendment — ids: none (committed docs no module owns; behaviors proven by the implementing workspaces)
 - **D15** → `project/design/D15.md` — Suite wiring for the `telemetry` service (go.work, `bin/start`, `nginx/run`) — ids: none (untested `bin/`/config tier; structural checks in its phase)
+- **D16** → `project/design/D16.md` — The manifest-reader scripts are proven under the green gate (`bintest`) — ids: R-V3XG-PB8R, R-V6D9-GUQ5, R-V7L5-UMGU
 
 ## Verification ids → Decision
 
@@ -67,4 +68,7 @@ ids change.
 - R-ROS8-V2MX → D9 (`project/design/D09.md`)
 - R-TAOX-5LKS → D7 (`project/design/D07.md`)
 - R-TBWT-JDBH → D7 (`project/design/D07.md`)
+- R-V3XG-PB8R → D16 (`project/design/D16.md`)
+- R-V6D9-GUQ5 → D16 (`project/design/D16.md`)
+- R-V7L5-UMGU → D16 (`project/design/D16.md`)
 - R-VCF3-PLWD → D1 (`project/design/D01.md`)
