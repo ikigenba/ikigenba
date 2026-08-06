@@ -122,6 +122,13 @@ func recordMiddleware(recorder *telemetry.Recorder, service string, excluded []s
 		if !ok && captured.ok {
 			id, ok = captured.id, true
 		}
+		if !ok {
+			id = Identity{
+				OwnerEmail: r.Header.Get("X-Owner-Email"),
+				ClientID:   r.Header.Get("X-Client-Id"),
+			}
+			ok = id.OwnerEmail != "" || id.ClientID != ""
+		}
 		if ok && (id.OwnerEmail != "" || id.ClientID != "") {
 			actor = &telemetry.Actor{OwnerEmail: id.OwnerEmail, ClientID: id.ClientID}
 		}

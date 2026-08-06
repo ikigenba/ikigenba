@@ -171,4 +171,108 @@ func TestNewRecordExcludeSuppressesOnlyExactListedPath(t *testing.T) {
 	}
 }
 
+// R-K59U-9DWS
+func TestNewRecordsIdentityHeadersForMuxMethodMismatch(t *testing.T) {
+	recorder, sink, cancel := phase20Recorder(t)
+	mcpHandler, err := mcp.New(mcp.Options{Service: testService, Tools: []mcp.Tool{{
+		Name:        "probe",
+		InputSchema: map[string]any{"type": "object"},
+		Handler: func(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {
+			return mcp.TextResult("ready"), nil
+		},
+	}}})
+	if err != nil {
+		t.Fatalf("mcp.New: %v", err)
+	}
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Version:    testVersion,
+		Service:    testService,
+		Recorder:   recorder,
+		MCP:        mcpHandler,
+	})
+	if err != nil {
+		t.Fatalf("server.New: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	request.Header.Set("X-Owner-Email", "method-mismatch@example.com")
+	request.Header.Set("X-Client-Id", "method-mismatch-client")
+	response := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(response, request)
+	records := phase20Finish(t, recorder, sink, cancel, 1)
+
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET /mcp status = %d, want 405", response.Code)
+	}
+	if len(records) != 1 {
+		t.Fatalf("records = %#v, want exactly one GET /mcp record", records)
+	}
+	record := records[0]
+	if record.Op != "GET /mcp" || record.Outcome == nil || record.Outcome.Status != "405" {
+		t.Fatalf("record operation/outcome = %#v, want GET /mcp status 405", record)
+	}
+	if record.Actor == nil || record.Actor.OwnerEmail != "method-mismatch@example.com" || record.Actor.ClientID != "method-mismatch-client" {
+		t.Fatalf("record actor = %#v, want identity header fallback", record.Actor)
+	}
+}
+
+// R-K6HQ-N5NH
+func TestNewRecordPrefersGateEstablishedIdentityOverHeaders(t *testing.T) {
+	recorder, sink, cancel := phase20Recorder(t)
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     discardLogger(),
+		ResourceID: testResourceID,
+		AuthServer: testAuthServer,
+		Version:    testVersion,
+		Service:    testService,
+		Recorder:   recorder,
+		Register: func(rt *server.Router) error {
+			gated := rt.RequireIdentity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				id, ok := server.IdentityFrom(r.Context())
+				if !ok || id.OwnerEmail != "established@example.com" || id.ClientID != "established-client" {
+					t.Errorf("identity = %#v, %t, want gate-established identity", id, ok)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			rt.Handle("GET /captured-identity", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				rawEmail := r.Header.Get("X-Owner-Email")
+				rawClientID := r.Header.Get("X-Client-Id")
+				r.Header.Set("X-Owner-Email", "established@example.com")
+				r.Header.Set("X-Client-Id", "established-client")
+				gated.ServeHTTP(w, r)
+				r.Header.Set("X-Owner-Email", rawEmail)
+				r.Header.Set("X-Client-Id", rawClientID)
+			}))
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("server.New: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/captured-identity", nil)
+	request.Header.Set("X-Owner-Id", "owner-1")
+	request.Header.Set("X-Owner-Email", "raw@example.com")
+	request.Header.Set("X-Client-Id", "raw-client")
+	response := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(response, request)
+	records := phase20Finish(t, recorder, sink, cancel, 1)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("GET /captured-identity status = %d, want 204", response.Code)
+	}
+	if len(records) != 1 {
+		t.Fatalf("records = %#v, want exactly one route record", records)
+	}
+	record := records[0]
+	if record.Actor == nil || record.Actor.OwnerEmail != "established@example.com" || record.Actor.ClientID != "established-client" {
+		t.Fatalf("record actor = %#v, want gate-established identity rather than raw headers", record.Actor)
+	}
+}
+
 func jsonReader(s string) io.Reader { return strings.NewReader(s) }

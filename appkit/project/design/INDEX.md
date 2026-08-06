@@ -21,7 +21,7 @@ Verification ids change.
 - D14 → `project/design/D14.md` — Correlation context: read-or-mint at the chassis edge (consuming `eventplane/correlation`), Crockford ULIDs — owns R-14QN-I04R, R-15YJ-VRVG, R-176G-9JM5, R-18EC-NBCU, R-19M9-133J
 - D15 → `project/design/D15.md` — The `appkit/telemetry` recorder: bounded drop-oldest ring, ≤256 batches, fire-and-forget ingest POST, recorder-stamped id/time, env config — owns R-1AU5-EUU8, R-1C21-SMKX, R-1D9Y-6EBM, R-1EHU-K62B, R-1FPQ-XXT0, R-1GXN-BPJP, R-PKUI-T1UT, R-PNAB-KLC7, R-POI7-YD2W
 - D16 → `project/design/D16.md` — The allowlist record shape and the capture-under-threshold param encoder (1024 B/value, 8192 B/record, `$elided` + SHA-256) — owns R-1I5J-PHAE, R-1JDG-3913, R-1LT8-USIH, R-1N15-8K96, R-1O91-MBZV
-- D17 → `project/design/D17.md` — Inbound instrumentation: `dispatchTool` MCP records + plain-HTTP request records, context-delivered recorder, `Tool.SensitiveParams`, the exclusion list — owns R-1PGY-03QK, R-1QOU-DVH9, R-1RWQ-RN7Y, R-1T4N-5EYN, R-1UCJ-J6PC, R-1VKF-WYG1, R-RI9E-W0G2, R-RKP7-NJXG
+- D17 → `project/design/D17.md` — Inbound instrumentation: `dispatchTool` MCP records + plain-HTTP request records (actor from captured identity, raw-header fallback), context-delivered recorder, `Tool.SensitiveParams`, the exclusion list — owns R-1PGY-03QK, R-1QOU-DVH9, R-1RWQ-RN7Y, R-1T4N-5EYN, R-1UCJ-J6PC, R-1VKF-WYG1, R-K59U-9DWS, R-K6HQ-N5NH, R-RI9E-W0G2, R-RKP7-NJXG
 - D18 → `project/design/D18.md` — Lifecycle records (`start` with version / `stop`) and event-plane publish/consume hop recording wired through `eventplane/observe` in `serve` — owns R-1WSC-AQ6Q, R-1Y08-OHXF, R-1Z85-29O4, R-20G1-G1ET, R-21NX-TT5I
 - D19 → `project/design/D19.md` — `appkit/httpclient`: the shared instrumented outbound client, correlation propagated to loopback IP literals only — owns R-22VU-7KW7, R-25BM-Z4DL, R-26JJ-CW4A, R-27RF-QNUZ, R-28ZC-4FLO
 - D20 → `project/design/D20.md` — Chain roots: `Recorder.StartRoot`/`StartChain`, plus `Router.Recorder()` and `Router.HTTPClient(timeout)` — owns R-XP15-H34E, R-XQ91-UUV3, R-XRGY-8MLS, R-XSOU-MECH, R-XTWR-0636
@@ -81,6 +81,8 @@ Verification ids change.
 - R-EIYD-4M57 → D8 → `project/design/D08.md`
 - R-EK69-IDVW → D9 → `project/design/D09.md`
 - R-ELE5-W5ML → D8 → `project/design/D08.md`
+- R-K59U-9DWS → D17 → `project/design/D17.md`
+- R-K6HQ-N5NH → D17 → `project/design/D17.md`
 - R-LWOU-OWWQ → D5 → `project/design/D05.md`
 - R-LXWR-2ONF → D5 → `project/design/D05.md`
 - R-LZ4N-GGE4 → D5 → `project/design/D05.md`
