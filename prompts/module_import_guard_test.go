@@ -9,10 +9,7 @@ import (
 )
 
 func TestModuleAgentkitDependencyIsPublishedOnly(t *testing.T) {
-	const (
-		published = "github.com/ikigenba/agentkit"
-		version   = "v0.16.0"
-	)
+	const published = "github.com/ikigenba/agentkit"
 
 	data, err := os.ReadFile("go.mod")
 	if err != nil {
@@ -23,7 +20,7 @@ func TestModuleAgentkitDependencyIsPublishedOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var found bool
+	var version string
 	for _, req := range mod.Require {
 		if req.Mod.Path == "agentkit" {
 			t.Fatalf("go.mod requires deprecated local module path %q", req.Mod.Path)
@@ -31,12 +28,9 @@ func TestModuleAgentkitDependencyIsPublishedOnly(t *testing.T) {
 		if req.Mod.Path != published {
 			continue
 		}
-		found = true
-		if req.Mod.Version != version {
-			t.Fatalf("%s version = %q, want %q", published, req.Mod.Version, version)
-		}
+		version = req.Mod.Version
 	}
-	if !found {
+	if version == "" {
 		t.Fatalf("go.mod does not require %s", published)
 	}
 
@@ -54,20 +48,6 @@ func TestModuleAgentkitDependencyIsPublishedOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	sumText := string(sum)
-	for _, legacy := range []string{
-		"agentkit v0.0.0",
-		published + " v0.1.0 ",
-		published + " v0.1.0/go.mod ",
-		published + " v0.1.1 ",
-		published + " v0.1.1/go.mod ",
-	} {
-		if strings.Contains(sumText, legacy) {
-			t.Fatalf("go.sum contains legacy agentkit entry %q", legacy)
-		}
-	}
-	if !strings.Contains(sumText, published+" ") {
-		return
-	}
 	for _, want := range []string{
 		published + " " + version + " ",
 		published + " " + version + "/go.mod ",

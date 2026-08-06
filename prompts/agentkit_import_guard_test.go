@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
+	"golang.org/x/mod/semver"
 )
 
 func TestAgentkitDependencyUsesPublishedModule(t *testing.T) {
@@ -23,15 +25,17 @@ func TestAgentkitDependencyUsesPublishedModule(t *testing.T) {
 	}
 
 	const published = "github.com/ikigenba/agentkit"
-	const wantVersion = "v0.16.0"
 
 	var found bool
 	for _, req := range mod.Require {
 		switch req.Mod.Path {
 		case published:
 			found = true
-			if req.Mod.Version != wantVersion {
-				t.Fatalf("%s version = %q, want %q", published, req.Mod.Version, wantVersion)
+			if !semver.IsValid(req.Mod.Version) {
+				t.Fatalf("%s version %q is not valid semantic versioning", published, req.Mod.Version)
+			}
+			if module.IsPseudoVersion(req.Mod.Version) {
+				t.Fatalf("%s version %q is a pseudo-version, want an exact released tag", published, req.Mod.Version)
 			}
 		case "agentkit":
 			t.Fatalf("go.mod still requires local module path %q", req.Mod.Path)
