@@ -14,10 +14,14 @@ Verification ids change.
 - D5 → `project/design/D05.md` — The forensic MCP surface: `search`, `chain`, `get`, `guide` — R-VW9B-ASIT, R-VXH7-OK9I, R-VYP4-2C07, R-VZX0-G3QW, R-W2CT-7N8A, R-W3KP-LEYZ, R-W4SL-Z6PO
 - D6 → `project/design/D06.md` — The nginx location fragment — R-W60I-CYGD, R-W78E-QQ72, R-W8GB-4HXR, R-W9O7-I9OG, R-WAW3-W1F5
 - D7 → `project/design/D07.md` — Test strategy and the end-to-end layer — R-5PIJ-TFHS, R-WC40-9T5U, R-WDBW-NKWJ
+- D8 → `project/design/D08.md` — MCP input schemas conform to the agentkit tool-schema subset — R-D2X0-57VI, R-D44W-IZM7, R-D5CS-WRCW
 
 ## Verification ids → Decision
 
 - R-5PIJ-TFHS → D7 — `project/design/D07.md`
+- R-D2X0-57VI → D8 — `project/design/D08.md`
+- R-D44W-IZM7 → D8 — `project/design/D08.md`
+- R-D5CS-WRCW → D8 — `project/design/D08.md`
 - R-V6NF-9LY8 → D1 — `project/design/D01.md`
 - R-V7VB-NDOX → D1 — `project/design/D01.md`
 - R-V938-15FM → D2 — `project/design/D02.md`

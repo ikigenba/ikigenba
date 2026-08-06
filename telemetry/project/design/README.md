@@ -33,7 +33,12 @@ history of how it got here lives in git, not here.
   (`modernc.org/sqlite`, pure Go, no cgo). In-repo libraries are consumed via
   committed `replace` directives (`appkit => ../appkit`, `registry =>
   ../registry`). telemetry does **not** depend on `eventplane`: it is neither a
-  producer nor a consumer.
+  producer nor a consumer. One external module,
+  `github.com/ikigenba/agentkit`, is consumed as a **tagged, test-only**
+  dependency — imported from `_test.go` files alone, so no production binary
+  links it — and exists solely so D8's conformance test can drive agentkit's
+  real tool-schema gate. Its pinned version lives in `go.mod` and is not
+  restated in the spec.
 - **Build / typecheck command:** `cd telemetry && go build ./...` (and
   `go vet ./...`). The production binary is built by `bin/ship telemetry`
   (`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off`, version/commit stamped) —

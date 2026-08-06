@@ -396,3 +396,142 @@ header exactly once from the auth subrequest, an exact-match `return 404` for
 mount. Telemetry's differences from webhooks are that it has **no** public
 ingress tier reachable through nginx, **no** event-plane feed, and **no** landing
 page.
+
+---
+
+## 8. The agentkit tool-schema subset (consumed contract)
+
+`github.com/ikigenba/agentkit` is the suite's LLM agent library, consumed today
+by `prompts` and `repos`. When a conversation attaches an MCP server, agentkit
+fetches `tools/list` and turns each entry into a tool. It reads **only the
+tool's `inputSchema`**; `outputSchema` is discarded and never reaches any
+validation. Every tool schema is then checked against one canonical subset of
+JSON Schema at the `Send` boundary, before any provider call.
+
+The normative home of this contract is agentkit's own design,
+`project/design/D34.md` ("The canonical tool-schema subset, owned by root") in
+the `github.com/ikigenba/agentkit` repository. What follows is the part
+telemetry's design consumes.
+
+### 8.1 Why the subset exists
+
+The subset is **derived, not chosen**: a construct is a member exactly when
+every provider dialect agentkit supports (Anthropic, OpenAI, Google, OpenRouter,
+zai) can render it faithfully. Enforcement is therefore provider-independent —
+the same schema is accepted or rejected identically no matter which model a
+conversation is configured with.
+
+### 8.2 The subset
+
+Root must be `"type": "object"`. Within it, permitted:
+
+`type` (a single value), `description`, `title`, `properties`, `required`,
+`items`, `enum` (string values only), `const` (string value only), `anyOf`,
+`oneOf`, `$ref`/`$defs` (non-recursive), `minLength`, `maxLength`, `pattern`
+(RE2-safe: no lookahead or lookbehind), `minItems` (values 0 or 1 only),
+`default`, a two-branch nullable union, and `format` restricted to nine
+values — `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`,
+`ipv6`, `uuid`.
+
+Excluded, each because at least one dialect cannot express it: `minimum`,
+`maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `maxItems`,
+`uniqueItems`, `allOf`, `not`, `if`/`then`/`else`, `patternProperties`,
+recursive `$ref`, non-string `enum` or `const` values, **`additionalProperties`
+in any authored form**, any `format` outside the nine, `propertyNames`,
+`prefixItems`, `contains`, `dependentSchemas`, `unevaluated*`, `$schema`, `$id`,
+`$comment`.
+
+`additionalProperties` is excluded specifically because no authored value could
+be correct for all three major dialects: Anthropic and OpenAI accept the
+keyword, Google 400s on it. It is adapter-owned — each provider adapter injects
+or omits it per its own dialect — so a server that authors it is rejected
+regardless of the value.
+
+### 8.3 How a violation surfaces
+
+A schema outside the subset fails the whole `Send` with `ErrInvalidConfig`
+(matchable via `errors.Is`), leaving conversation history unchanged and issuing
+no provider call. The error text names the offending construct and its JSON
+Pointer location; for an MCP-sourced tool it attributes the failure as
+`<server>.<tool>`. Rejection is **whole-toolset**: one offending tool disables
+every tool on the conversation, so a single non-conforming server breaks an
+agent's entire tool surface, not just its own.
+
+Nothing is dropped and nothing is warned about. agentkit's `AGENTS.md` states
+the policy for the other side of the seam directly: every MCP server it connects
+to is first-party software, so "a server whose tool schemas are rejected is
+fixed at the server, never accommodated here."
+
+### 8.4 Relationship to appkit's construction-time guard
+
+appkit runs its own advertised-schema guard at `mcp.New`
+(`conformsToStrictClient`, §2.3), but its rule is derived from **strict MCP
+clients** (Claude Code), not from agentkit. It checks only two things: the root
+is `"type": "object"`, and there is no top-level `oneOf`/`anyOf`/`allOf`.
+
+The two rules are independent and **neither contains the other**: agentkit
+forbids `minimum` and authored `additionalProperties`, which appkit's guard
+permits; strict clients forbid `oneOf`/`anyOf` at any level, which agentkit's
+subset permits below the root. Passing appkit's guard is therefore **no
+evidence** of agentkit conformance, and a schema must satisfy both.
+
+Widening appkit's guard to carry the agentkit subset suite-wide is appkit's
+decision to make in appkit's own spec, outside telemetry's scope boundary.
+Until it happens, conformance is each service's own responsibility, proven by
+its own tests.
+
+### 8.5 The exported surface a test can drive
+
+agentkit exports no schema validator: the gate (`validateToolSchema`) is
+unexported and reachable only through `Send`. It is nevertheless drivable from
+outside, because the pieces `Send` needs are exported:
+
+```go
+type Provider interface {
+    RoundTrip(ctx context.Context, req *Request) *RoundTrip
+    Identity() Identity
+}
+
+type Conversation struct {
+    Provider Provider
+    Model    string
+    Pricing  *Pricing
+    Tools    []Tool
+    // ...
+}
+```
+
+`Provider` has two methods and no unexported members, so a caller outside the
+module can implement a stub that records whether it was invoked. A
+`Conversation` built over that stub, carrying tools whose `JSONSchema()` returns
+the schemas under test, exercises the real gate: `Send` returns a `Stream` whose
+`Err()` is `ErrInvalidConfig` on a violation, and the stub's `RoundTrip` is
+never called. On a conforming tool set, `Err()` is nil and `RoundTrip` runs.
+
+`Tool` is an interface but carries a **sealing method**, so it cannot be
+implemented from outside directly:
+
+```go
+type Tool interface {
+    Name() string
+    Description() string
+    JSONSchema() json.RawMessage
+    Call(ctx context.Context, input json.RawMessage) (string, error)
+    isTool() // unexported: seals the interface
+}
+```
+
+The seal is satisfied by **embedding the interface** in a struct that overrides
+the four exported methods — a nil embedded `agentkit.Tool` supplies `isTool()`,
+and nothing on the validation path ever calls it. agentkit's own external test
+package (`package agentkit_test`, `tool_schema_test.go`) does exactly this to
+feed raw schemas to the gate, which proves the technique works from outside the
+module.
+
+This matters because the exported constructor `NewTool` builds a schema by
+reflecting a Go input struct and **panics** on anything it cannot map into the
+subset. It therefore cannot carry an arbitrary hand-authored schema to the gate;
+the embedding form is the only way to submit a schema verbatim.
+
+The module is versioned by annotated git tags only (`vMAJOR.MINOR.PATCH`); the
+current release is `v0.17.0`.
