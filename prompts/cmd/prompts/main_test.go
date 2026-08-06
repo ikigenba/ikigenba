@@ -20,6 +20,62 @@ import (
 	"appkit/manifest"
 )
 
+func TestResolveStorageRootsUsesRootedStateAndCacheDefaults(t *testing.T) {
+	// R-LBH5-4LO0
+	// R-LCP1-IDEP
+	roots, err := resolveStorageRoots(func(key string) string {
+		if key == "IKIGENBA_ROOT" {
+			return "/opt"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatalf("resolve storage roots: %v", err)
+	}
+
+	if want := "/opt/prompts/state"; roots.stateDir != want {
+		t.Errorf("state directory = %q, want %q", roots.stateDir, want)
+	}
+	if want := "/opt/prompts/state/sandboxes"; filepath.Join(roots.stateDir, "sandboxes") != want {
+		t.Errorf("sandbox root = %q, want %q", filepath.Join(roots.stateDir, "sandboxes"), want)
+	}
+	if want := "/opt/prompts/cache"; roots.cacheDir != want {
+		t.Errorf("cache directory = %q, want %q", roots.cacheDir, want)
+	}
+	if want := "/opt/prompts/cache/runs"; roots.runsDir != want {
+		t.Errorf("runs directory = %q, want %q", roots.runsDir, want)
+	}
+	if roots.cacheDir == roots.stateDir {
+		t.Errorf("cache directory %q must differ from state directory", roots.cacheDir)
+	}
+}
+
+func TestResolveStorageRootsHonorsExplicitPathOverrides(t *testing.T) {
+	// R-LDWX-W55E
+	testRoot := t.TempDir()
+	dbPath := filepath.Join(testRoot, "durable", "custom", "prompts.sqlite")
+	generationPath := filepath.Join(testRoot, "reclaimable", "elsewhere", "epoch")
+	env := map[string]string{
+		"IKIGENBA_ROOT":           "/opt",
+		"PROMPTS_DB_PATH":         dbPath,
+		"PROMPTS_GENERATION_PATH": generationPath,
+	}
+	roots, err := resolveStorageRoots(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("resolve storage roots: %v", err)
+	}
+
+	if want := filepath.Dir(dbPath); roots.stateDir != want {
+		t.Errorf("state directory = %q, want override directory %q", roots.stateDir, want)
+	}
+	if want := filepath.Dir(generationPath); roots.cacheDir != want {
+		t.Errorf("cache directory = %q, want override directory %q", roots.cacheDir, want)
+	}
+	if want := filepath.Join(filepath.Dir(generationPath), "runs"); roots.runsDir != want {
+		t.Errorf("runs directory = %q, want %q", roots.runsDir, want)
+	}
+}
+
 // R-8DF1-W89F
 func TestCommittedManifestIsPortable(t *testing.T) {
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))

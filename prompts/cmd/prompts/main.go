@@ -87,6 +87,26 @@ var (
 	callsRetentionDays int
 )
 
+type storageRoots struct {
+	stateDir string
+	cacheDir string
+	runsDir  string
+}
+
+func resolveStorageRoots(getenv func(string) string) (storageRoots, error) {
+	cfg, err := config.Resolve("prompts", "/srv/prompts/", registry.MustPort("prompts"), getenv)
+	if err != nil {
+		return storageRoots{}, fmt.Errorf("prompts: resolve config: %w", err)
+	}
+	stateDir := filepath.Dir(cfg.DBPath)
+	cacheDir := filepath.Dir(cfg.GenerationPath)
+	return storageRoots{
+		stateDir: stateDir,
+		cacheDir: cacheDir,
+		runsDir:  filepath.Join(cacheDir, "runs"),
+	}, nil
+}
+
 func main() {
 	appkit.Main(promptsSpec())
 }
@@ -198,16 +218,18 @@ func registerRoutes(rt *appkit.Router) error {
 		return err
 	}
 
-	// PROMPTS_DB_PATH is appkit's state DB path. Run sandboxes are durable state;
-	// input/output artifacts are recreated cache.
-	dbPath := config.EnvOr(os.Getenv, "PROMPTS_DB_PATH", "./tmp/prompts.db")
+	// Resolve the same state/cache layout as the chassis. Run sandboxes are
+	// durable state; input/output artifacts are recreated cache.
+	storage, err := resolveStorageRoots(os.Getenv)
+	if err != nil {
+		return err
+	}
 	// PROMPTS_MANIFEST_ROOT is the box inventory root the runner reads at run
 	// spawn to discover the suite's other loopback MCP services (Surface 2 —
 	// in-run suite tools). Defaults to /opt, the on-box layout root.
 	manifestRoot := config.EnvOr(os.Getenv, "PROMPTS_MANIFEST_ROOT", "/opt")
-	stateDir := filepath.Dir(dbPath)
-	cacheDir := filepath.Dir(config.EnvOr(os.Getenv, "PROMPTS_GENERATION_PATH", filepath.Join(stateDir, "prompts.db.generation")))
-	runsDir := filepath.Join(cacheDir, "runs")
+	stateDir := storage.stateDir
+	runsDir := storage.runsDir
 	if err := os.RemoveAll(runsDir); err != nil {
 		return fmt.Errorf("prompts: clear runs cache: %w", err)
 	}
