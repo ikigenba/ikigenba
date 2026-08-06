@@ -15,10 +15,15 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
-RUN_DIR="$repo/tmp"
+RUN_DIR="${START_RUN_DIR:-$repo/tmp}"
 MANIFEST_ROOT="$RUN_DIR/opt"
 SERVICES=(dashboard crm ledger notify prompts wiki dropbox cron gmail github scripts sites telemetry webhooks repos)
 PORT_OFFSET="${APPKIT_PORT_OFFSET:-0}"
+STAGE_ONLY=0
+if [ "${1:-}" = "--stage-only" ]; then
+	STAGE_ONLY=1
+	shift
+fi
 mkdir -p "$RUN_DIR/bin"
 
 case "$PORT_OFFSET" in
@@ -318,6 +323,10 @@ wait_port() {
 
 echo ">> staging runtime manifests"
 stage_manifest_root
+
+if [ "$STAGE_ONLY" -eq 1 ]; then
+	exit 0
+fi
 
 echo ">> building services"
 for svc in "${SERVICES[@]}"; do
