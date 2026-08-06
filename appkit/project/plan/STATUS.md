@@ -9,6 +9,8 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 27
+Next phase: 28
+
+- Phase 27 ⬜ realizes R-K59U-9DWS, R-K6HQ-N5NH — header-fallback actor attribution in the HTTP request recorder
 
 
