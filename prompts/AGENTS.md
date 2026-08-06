@@ -41,5 +41,6 @@ spec contracts and `$ralph` for the unattended build workflow.
 ## Versioning
 
 The committed `prompts/VERSION` file is the single source of truth (v-prefixed
-SemVer, currently `v0.18.1`). Advance it with `bin/bump prompts <major|minor|patch>`;
-ship with `bin/ship prompts`. Git tags are not the version mechanism.
+SemVer). Read it there; it is named nowhere else. Advance it with
+`bin/bump prompts <major|minor|patch>`; ship with `bin/ship prompts`. Git tags
+are not the version mechanism.
