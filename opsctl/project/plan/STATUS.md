@@ -11,5 +11,3 @@ status glyph** outside phase lines, so the anchored grep matches only phase
 lines.
 
 Next phase: 18
-
-- Phase 17 ⬜ realizes R-4ZI0-4CH5, R-50PW-I47U — app-owned `cache/`: setup chowns it at creation, deploy re-asserts it after migrate
