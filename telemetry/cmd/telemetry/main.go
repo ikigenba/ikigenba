@@ -40,7 +40,7 @@ func telemetrySpec() appkit.Spec {
 			if err != nil {
 				return fmt.Errorf("telemetry: create MCP handler: %w", err)
 			}
-			rt.Handle("/mcp", rt.RequireIdentity(mcpHandler))
+			rt.Handle("POST /mcp", rt.RequireIdentity(mcpHandler))
 			return nil
 		},
 		Health: func(ctx context.Context) (map[string]any, error) {

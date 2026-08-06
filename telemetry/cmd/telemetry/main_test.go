@@ -83,6 +83,105 @@ func TestSpecUsesRegistryPortWithoutGoLiteralAndServeHonorsOverride(t *testing.T
 	assertServeHonorsPortOverride(t)
 }
 
+func TestMCPRouteAllowsOnlyPOSTOverComposedServer(t *testing.T) {
+	mainSource, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read composition root: %v", err)
+	}
+	if !bytes.Contains(mainSource, []byte(`rt.Handle("POST /mcp"`)) || bytes.Contains(mainSource, []byte(`rt.Handle("/mcp"`)) {
+		t.Fatal("composition root must register the MCP handler with the method-qualified POST /mcp pattern")
+	}
+
+	spec := telemetrySpec()
+	database, err := appkitdb.Open(filepath.Join(t.TempDir(), "telemetry.db"))
+	if err != nil {
+		t.Fatalf("open real sqlite database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	migrations, err := appkitdb.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if err := appkitdb.Migrate(context.Background(), database, migrations); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen on loopback: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	httpServer, err := appkitserver.New(appkitserver.Options{
+		Addr: listener.Addr().String(), Logger: logger,
+		ResourceID: "https://example.test/srv/telemetry/", AuthServer: "https://example.test/",
+		Version: "test", Service: spec.App, Health: spec.Health, DB: database,
+		Register: spec.Handlers, RecordExclude: spec.TelemetryExclude,
+	})
+	if err != nil {
+		t.Fatalf("compose server: %v", err)
+	}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- httpServer.Serve(listener) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(ctx)
+		<-serveDone
+	})
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	baseURL := "http://" + listener.Addr().String()
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		request, err := http.NewRequest(method, baseURL+"/mcp", nil)
+		if err != nil {
+			t.Fatalf("create %s request: %v", method, err)
+		}
+		request.Header.Set("X-Owner-Id", "route-test-owner")
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatalf("%s /mcp: %v", method, err)
+		}
+		_ = response.Body.Close()
+
+		// R-NTSI-XWI1
+		if response.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("%s /mcp status = %d, want exactly 405", method, response.StatusCode)
+		}
+		if response.StatusCode == http.StatusOK {
+			t.Errorf("%s /mcp status = 200, want method-restricted routing", method)
+		}
+		if allow := response.Header.Get("Allow"); allow != http.MethodPost {
+			t.Errorf("%s /mcp Allow = %q, want %q", method, allow, http.MethodPost)
+		}
+	}
+
+	requestBody := strings.NewReader(`{"jsonrpc":"2.0","id":"route-test","method":"tools/list","params":{}}`)
+	request, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", requestBody)
+	if err != nil {
+		t.Fatalf("create POST request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Owner-Id", "route-test-owner")
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("POST /mcp: %v", err)
+	}
+	defer response.Body.Close()
+	var rpcResponse struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      string          `json:"id"`
+		Result  json.RawMessage `json:"result"`
+		Error   json.RawMessage `json:"error"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&rpcResponse); err != nil {
+		t.Fatalf("decode POST /mcp JSON-RPC response: %v", err)
+	}
+	// R-NTSI-XWI1
+	if response.StatusCode != http.StatusOK || rpcResponse.JSONRPC != "2.0" || rpcResponse.ID != "route-test" || len(rpcResponse.Result) == 0 || len(rpcResponse.Error) != 0 {
+		t.Fatalf("POST /mcp status=%d response=%+v, want successful tools/list JSON-RPC response", response.StatusCode, rpcResponse)
+	}
+}
+
 func TestIngestPathIsExactlyExcludedAndPostsNeverRecordThemselves(t *testing.T) {
 	spec := telemetrySpec()
 	// R-VOXX-062N
