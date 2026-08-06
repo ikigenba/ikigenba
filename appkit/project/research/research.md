@@ -31,6 +31,18 @@ structured tool output. The facts the design uses:
   transports the client then stamps `MCP-Protocol-Version` on subsequent
   requests. Nothing obliges a minimal server to reject a client's newer
   version; replying with its own supported version is the negotiation.
+- **The streamable-HTTP transport's `GET`, and the 405 that refuses it** — on
+  an HTTP transport the endpoint carries two methods, not one: `POST` delivers
+  JSON-RPC messages, and the client additionally opens a **`GET`** on the same
+  URL to hold a server-to-client SSE stream for server-initiated messages. The
+  spec provides explicitly for servers that offer no such stream: they
+  **SHOULD** answer the `GET` with **`405 Method Not Allowed`**, which the
+  client reads as a definitive refusal and does not retry. This is the fact
+  that makes `405` the correct answer for a non-`POST` verb rather than `400`
+  or `501`. The failure mode when it is not returned is not an error the client
+  reports: a `200` whose body is not `text/event-stream` reads as a stream that
+  opened and immediately closed, so the client reconnects on its retry timer
+  (order of one second) for the life of the session, indefinitely and silently.
 - Later revisions (e.g. 2025-11-25) add capabilities (tasks, elicitation,
   richer transports) that appkit's deliberately minimal plain-POST transport
   does not implement; `2025-06-18` is the lowest revision that carries
