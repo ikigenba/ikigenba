@@ -673,6 +673,48 @@ func TestMalformedBodyReturnsParseError(t *testing.T) {
 	}
 }
 
+func TestServeHTTPRejectsNonPOSTMethodsBeforeDecoding(t *testing.T) {
+	h := newHandler(t, Options{Tools: []Tool{{
+		Name:        "example",
+		Description: "An example tool.",
+		InputSchema: map[string]any{"type": "object"},
+		Handler: func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+			return TextResult("ok"), nil
+		},
+	}}})
+
+	assertMethodNotAllowed := func(t *testing.T, method, body string) {
+		t.Helper()
+		req := httptest.NewRequest(method, "/mcp", strings.NewReader(body))
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s status = %d, want exactly 405", method, rr.Code)
+		}
+		if rr.Code == http.StatusOK {
+			t.Errorf("%s status = 200, want method failure rather than JSON-RPC success", method)
+		}
+		if got := rr.Header().Get("Allow"); got != http.MethodPost {
+			t.Errorf("%s Allow = %q, want POST", method, got)
+		}
+		body = rr.Body.String()
+		if strings.Contains(body, `"jsonrpc"`) || strings.Contains(body, "-32700") {
+			t.Errorf("%s body = %q, want transport error without JSON-RPC envelope", method, body)
+		}
+	}
+
+	// R-MSET-O79A
+	assertMethodNotAllowed(t, http.MethodGet, "")
+	assertMethodNotAllowed(t, http.MethodDelete, "")
+	assertMethodNotAllowed(t, http.MethodGet, `{"jsonrpc":"2.0","id":"get","method":"tools/list"}`)
+
+	resp := rpc(t, h, `{"jsonrpc":"2.0","id":"post","method":"tools/list"}`, nil)
+	if _, ok := toolsByName(t, resp)["example"]; !ok {
+		t.Fatalf("POST tools/list did not dispatch normally: %#v", resp)
+	}
+}
+
 func TestNewRejectsDuplicateAndReservedToolNames(t *testing.T) {
 	handler := func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 		return nil, errors.New("unused")

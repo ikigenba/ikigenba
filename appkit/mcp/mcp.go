@@ -112,6 +112,12 @@ func New(opts Options) (*Handler, error) {
 
 // ServeHTTP dispatches a single JSON-RPC 2.0 request over plain HTTP.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req jsonRPCRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONRPCError(w, nil, -32700, "parse error")
