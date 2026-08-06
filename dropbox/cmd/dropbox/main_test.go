@@ -192,7 +192,7 @@ func TestDefaultMirrorPathTracksDurableStateDB(t *testing.T) {
 	env := map[string]string{
 		"DROPBOX_DB_PATH": "/opt/dropbox/state/dropbox.db",
 	}
-	got := defaultMirrorPath(func(key string) string { return env[key] })
+	got := defaultMirrorPath(func(key string) string { return env[key] }, env["DROPBOX_DB_PATH"])
 	if want := "/opt/dropbox/state/mirror"; got != want {
 		t.Fatalf("default mirror path = %q, want %q", got, want)
 	}
@@ -201,11 +201,49 @@ func TestDefaultMirrorPathTracksDurableStateDB(t *testing.T) {
 func TestDefaultMirrorPathHonorsExplicitOverride(t *testing.T) {
 	env := map[string]string{
 		"DROPBOX_MIRROR_PATH": "/srv/private/dropbox-mirror",
-		"DROPBOX_DB_PATH":     "/opt/dropbox/state/dropbox.db",
+		"IKIGENBA_ROOT":       "/opt",
 	}
-	got := defaultMirrorPath(func(key string) string { return env[key] })
+	got := defaultMirrorPath(func(key string) string { return env[key] }, "/opt/dropbox/state/dropbox.db")
 	if want := "/srv/private/dropbox-mirror"; got != want {
 		t.Fatalf("default mirror path = %q, want explicit override %q", got, want)
+	}
+}
+
+func TestMirrorPathUsesRootedResolvedDBPath(t *testing.T) {
+	// R-L7TF-ZAFX
+	env := map[string]string{"IKIGENBA_ROOT": "/opt"}
+	got, err := resolveMirrorPath(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "/opt/dropbox/state/mirror"; got != want {
+		t.Fatalf("rooted mirror path = %q, want %q", got, want)
+	}
+}
+
+func TestMirrorPathOverrideWinsOverResolvedRoot(t *testing.T) {
+	// R-L91C-D26M
+	env := map[string]string{
+		"IKIGENBA_ROOT":       "/opt",
+		"DROPBOX_MIRROR_PATH": "/mnt/unrelated/mirror",
+	}
+	got, err := resolveMirrorPath(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "/mnt/unrelated/mirror"; got != want {
+		t.Fatalf("overridden mirror path = %q, want %q", got, want)
+	}
+}
+
+func TestMirrorPathKeepsUnrootedDevDefault(t *testing.T) {
+	// R-LA98-QTXB
+	got, err := resolveMirrorPath(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join("tmp", "mirror"); got != want {
+		t.Fatalf("unrooted mirror path = %q, want %q", got, want)
 	}
 }
 

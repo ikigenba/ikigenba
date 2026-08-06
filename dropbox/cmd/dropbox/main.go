@@ -128,12 +128,13 @@ func main() {
 
 			// The private local mirror (PLAN.md §4): a 0750 subdir beside the durable
 			// DB. An explicit DROPBOX_MIRROR_PATH always wins. Otherwise derive it
-			// from DROPBOX_DB_PATH: on the box opsctl stamps
-			// DROPBOX_DB_PATH=/opt/dropbox/state/dropbox.db, so the mirror lands at
-			// /opt/dropbox/state/mirror (owned with the service's durable state)
-			// rather than the legacy data/ tree or rebuildable cache/tmp space. Falls
-			// back to the dev default ./tmp/mirror when no DB path is set.
-			mirrorPath := defaultMirrorPath(os.Getenv)
+			// from the DB path resolved through the chassis' universal environment
+			// contract, so IKIGENBA_ROOT controls the on-box state layout while an
+			// unrooted repo launch keeps the existing dev location.
+			mirrorPath, err := resolveMirrorPath(os.Getenv)
+			if err != nil {
+				return err
+			}
 			mirror, err := dropbox.NewMirror(mirrorPath)
 			if err != nil {
 				return fmt.Errorf("mirror: %w", err)
@@ -271,12 +272,17 @@ func registrySourcePorts() map[int]bool {
 	return allowed
 }
 
-func defaultMirrorPath(getenv func(string) string) string {
+func resolveMirrorPath(getenv func(string) string) (string, error) {
+	cfg, err := config.Resolve("dropbox", "/srv/dropbox/", registry.MustPort("dropbox"), getenv)
+	if err != nil {
+		return "", fmt.Errorf("resolve dropbox config: %w", err)
+	}
+	return defaultMirrorPath(getenv, cfg.DBPath), nil
+}
+
+func defaultMirrorPath(getenv func(string) string, dbPath string) string {
 	if mirrorPath := getenv("DROPBOX_MIRROR_PATH"); mirrorPath != "" {
 		return mirrorPath
 	}
-	if dbPath := getenv("DROPBOX_DB_PATH"); dbPath != "" {
-		return filepath.Join(filepath.Dir(dbPath), "mirror")
-	}
-	return "./tmp/mirror"
+	return filepath.Join(filepath.Dir(dbPath), "mirror")
 }
