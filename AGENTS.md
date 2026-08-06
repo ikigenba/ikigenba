@@ -40,6 +40,7 @@ it. If unsure which subfolder a task belongs to, ask; do not default to the root
 | **webhooks** | `/srv/webhooks/` inbound-webhook receiver (public `POST /in/<name>` ingress). |
 | **github** | `/srv/github/` GitHub connector. |
 | **repos** | `/srv/repos/` development plane: dispatches confined agent sessions in worktrees and opens PRs. |
+| **telemetry** | `/srv/telemetry/` forensic record store: the suite-wide audit trail (MCP calls, HTTP requests, events, lifecycle). |
 | **appkit** | Shared **chassis** library: verb dispatcher, config, migrations, loopback server, `/feed`, manifest. |
 | **eventplane** | Shared **library**: event-plane producer/consumer plumbing (outbox, feed, routing). |
 | **registry** | Shared **library**: the authoritative service-name to loopback-port table. |
@@ -52,9 +53,9 @@ it. If unsure which subfolder a task belongs to, ask; do not default to the root
 | **design** | The shared Carbon design-system reference (tokens, example). |
 | **project** | The suite-level spec workspace (product/design/plan). |
 
-The **fourteen deployable apps** each carry a committed `<app>/VERSION` and ship
+The **fifteen deployable apps** each carry a committed `<app>/VERSION` and ship
 independently: **dashboard, crm, ledger, notify, dropbox, prompts, wiki, cron,
-gmail, scripts, sites, webhooks, github, repos**. `appkit`/`eventplane`/`registry`
+gmail, scripts, sites, webhooks, github, repos, telemetry**. `appkit`/`eventplane`/`registry`
 (libraries) and `opsctl` (tooling) are **not** versioned. `agentkit` is a separate
 repo (`github.com/ikigenba/agentkit`), consumed as a tagged module. The root
 `go.work` wires modules for local dev; the production build forces `GOWORK=off`.
