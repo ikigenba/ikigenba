@@ -1,10 +1,11 @@
-package mcp
+package mcp_test
 
 import (
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,9 +19,118 @@ import (
 
 	appkitdb "appkit/db"
 	appkitmcp "appkit/mcp"
+	"github.com/ikigenba/agentkit"
 	"telemetry/internal/db"
+	telemetrymcp "telemetry/internal/mcp"
 	"telemetry/internal/record"
 )
+
+type stubProvider struct{ called bool }
+
+func (p *stubProvider) RoundTrip(context.Context, *agentkit.Request) *agentkit.RoundTrip {
+	p.called = true
+	return agentkit.NewRoundTrip(
+		agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: "ok"}}},
+		agentkit.FinishStop,
+		agentkit.Usage{},
+		nil,
+		nil,
+		0,
+		false,
+	)
+}
+
+func (*stubProvider) Identity() agentkit.Identity {
+	return agentkit.Identity{Provider: agentkit.ProviderOpenAI, Auth: agentkit.AuthAPIKey}
+}
+
+type rawTool struct {
+	agentkit.Tool
+	name        string
+	description string
+	schema      json.RawMessage
+}
+
+func (t rawTool) Name() string        { return t.name }
+func (t rawTool) Description() string { return t.description }
+func (t rawTool) JSONSchema() json.RawMessage {
+	return append(json.RawMessage(nil), t.schema...)
+}
+func (rawTool) Call(context.Context, json.RawMessage) (string, error) { return "ok", nil }
+
+func TestAgentkitAcceptsWholeAdvertisedInputSurface(t *testing.T) {
+	env := newMCPEnvironment(t)
+	tools := agentkitTools(t, telemetrymcp.Tools(env.store, fixedClock{}))
+	provider := &stubProvider{}
+	conversation := &agentkit.Conversation{Provider: provider, Model: "test", Tools: tools}
+	stream := conversation.Send(context.Background(), "hi")
+	drainAgentkit(stream)
+
+	// R-D2X0-57VI
+	if err := stream.Err(); err != nil || !provider.called {
+		t.Fatalf("Send error = %v, RoundTrip called = %v; want nil and true", err, provider.called)
+	}
+}
+
+func TestAgentkitRejectsExcludedInputConstructBeforeProviderCall(t *testing.T) {
+	env := newMCPEnvironment(t)
+	tools := telemetrymcp.Tools(env.store, fixedClock{})
+	tools[0].InputSchema["minimum"] = 1
+	provider := &stubProvider{}
+	conversation := &agentkit.Conversation{Provider: provider, Model: "test", Tools: agentkitTools(t, tools)}
+	stream := conversation.Send(context.Background(), "hi")
+	drainAgentkit(stream)
+
+	// R-D2X0-57VI
+	if !errors.Is(stream.Err(), agentkit.ErrInvalidConfig) || provider.called {
+		t.Fatalf("Send error = %v, RoundTrip called = %v; want ErrInvalidConfig and false", stream.Err(), provider.called)
+	}
+}
+
+func TestAdvertisedInputSchemasConformWithoutWeakeningLimitValidation(t *testing.T) {
+	env := newMCPEnvironment(t)
+	byName := listedToolsByName(t, env)
+	// R-D44W-IZM7
+	for _, name := range []string{"search", "chain", "get", "guide"} {
+		assertNoSchemaKey(t, name+" inputSchema", byName[name]["inputSchema"], "additionalProperties")
+	}
+	properties := byName["search"]["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	limit := properties["limit"].(map[string]any)
+	_, hasMinimum := limit["minimum"]
+	_, hasMaximum := limit["maximum"]
+	description, _ := limit["description"].(string)
+	if hasMinimum || hasMaximum || limit["default"] != float64(50) || !strings.Contains(description, "1") || !strings.Contains(description, "500") {
+		t.Errorf("search limit schema = %v", limit)
+	}
+	for _, bad := range []int{0, 501} {
+		result := env.call(t, "search", map[string]any{"limit": bad})
+		content, _ := result["structuredContent"].(map[string]any)
+		_, hasRecords := content["records"]
+		if result["isError"] != true || content["code"] != "validation" || !strings.Contains(resultText(result), "limit") || hasRecords {
+			t.Errorf("limit %d result = %v, want named validation error without records", bad, result)
+		}
+	}
+}
+
+func TestAdvertisedOutputSchemasRemainClosedWithOpenRecordPayloads(t *testing.T) {
+	env := newMCPEnvironment(t) // Construction proves appkit's advertised-schema guard passes.
+	byName := listedToolsByName(t, env)
+	// R-D5CS-WRCW
+	for _, name := range []string{"search", "chain", "get"} {
+		output := byName[name]["outputSchema"].(map[string]any)
+		if output["additionalProperties"] != false {
+			t.Errorf("%s output root additionalProperties = %v, want false", name, output["additionalProperties"])
+		}
+		recordOutput := output
+		if name != "get" {
+			recordOutput = output["properties"].(map[string]any)["records"].(map[string]any)["items"].(map[string]any)
+		}
+		recordProperties := recordOutput["properties"].(map[string]any)
+		if recordProperties["params"].(map[string]any)["additionalProperties"] != true || recordProperties["detail"].(map[string]any)["additionalProperties"] != true {
+			t.Errorf("%s record params/detail are not open: %v", name, recordProperties)
+		}
+	}
+}
 
 func TestToolListIsExactReadOnlySurface(t *testing.T) {
 	env := newMCPEnvironment(t)
@@ -267,7 +377,7 @@ func newMCPEnvironment(t *testing.T) *mcpEnvironment {
 	t.Helper()
 	database := openMCPDatabase(t)
 	store := db.NewStore(database)
-	handler, err := appkitmcp.New(appkitmcp.Options{Service: "telemetry", Version: "test", Instructions: Instructions, Tools: Tools(store, fixedClock{at: time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)}), Health: func(context.Context) (map[string]any, error) { return map[string]any{"ok": true}, nil }})
+	handler, err := appkitmcp.New(appkitmcp.Options{Service: "telemetry", Version: "test", Instructions: telemetrymcp.Instructions, Tools: telemetrymcp.Tools(store, fixedClock{at: time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)}), Health: func(context.Context) (map[string]any, error) { return map[string]any{"ok": true}, nil }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,6 +522,51 @@ func assertSchemaShape(t *testing.T, name string, schema map[string]any, value a
 		field := raw.(string)
 		if _, present := object[field]; !present {
 			t.Errorf("%s structured result lacks required schema field %q", name, field)
+		}
+	}
+}
+
+func agentkitTools(t *testing.T, tools []appkitmcp.Tool) []agentkit.Tool {
+	t.Helper()
+	result := make([]agentkit.Tool, 0, len(tools))
+	for _, tool := range tools {
+		schema, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("marshal %s input schema: %v", tool.Name, err)
+		}
+		result = append(result, rawTool{name: tool.Name, description: tool.Description, schema: schema})
+	}
+	return result
+}
+
+func drainAgentkit(stream *agentkit.Stream) {
+	for range stream.Events() {
+	}
+}
+
+func listedToolsByName(t *testing.T, env *mcpEnvironment) map[string]map[string]any {
+	t.Helper()
+	result := make(map[string]map[string]any)
+	for _, raw := range env.rpc(t, "tools/list", map[string]any{})["tools"].([]any) {
+		tool := raw.(map[string]any)
+		result[tool["name"].(string)] = tool
+	}
+	return result
+}
+
+func assertNoSchemaKey(t *testing.T, path string, value any, forbidden string) {
+	t.Helper()
+	switch value := value.(type) {
+	case map[string]any:
+		for key, child := range value {
+			if key == forbidden {
+				t.Errorf("%s contains forbidden key %q", path, forbidden)
+			}
+			assertNoSchemaKey(t, path+"/"+key, child, forbidden)
+		}
+	case []any:
+		for i, child := range value {
+			assertNoSchemaKey(t, fmt.Sprintf("%s/%d", path, i), child, forbidden)
 		}
 	}
 }

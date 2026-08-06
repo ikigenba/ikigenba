@@ -41,17 +41,17 @@ func Tools(store *db.Store, clock telemetry.Clock) []appkitmcp.Tool {
 		},
 		{
 			Name: "chain", Description: "Follow one correlation id across every service in chronological order.",
-			InputSchema: objectSchema(map[string]any{"correlation_id": stringSchema()}, "correlation_id"), OutputSchema: chainOutputSchema(),
+			InputSchema: inputObjectSchema(map[string]any{"correlation_id": stringSchema()}, "correlation_id"), OutputSchema: chainOutputSchema(),
 			Handler: chainHandler(store),
 		},
 		{
 			Name: "get", Description: "Read one forensic record in full by id.",
-			InputSchema: objectSchema(map[string]any{"id": stringSchema()}, "id"), OutputSchema: recordSchema(),
+			InputSchema: inputObjectSchema(map[string]any{"id": stringSchema()}, "id"), OutputSchema: recordSchema(),
 			Handler: getHandler(store),
 		},
 		{
 			Name: "guide", Description: "Read the guide to the record model, field meanings, and worked examples.",
-			InputSchema: objectSchema(map[string]any{}), Handler: func(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {
+			InputSchema: inputObjectSchema(map[string]any{}), Handler: func(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {
 				return appkitmcp.TextResult(guideText), nil
 			},
 		},
@@ -209,24 +209,24 @@ func searchInputSchema() map[string]any {
 		properties[name] = stringSchema()
 	}
 	properties["kind"] = map[string]any{"type": "string", "enum": kindStrings()}
-	properties["limit"] = map[string]any{"type": "integer", "minimum": 1, "maximum": 500, "default": 50}
-	return objectSchema(properties)
+	properties["limit"] = map[string]any{"type": "integer", "description": "1 to 500, default 50", "default": 50}
+	return inputObjectSchema(properties)
 }
 
 func searchOutputSchema() map[string]any {
-	return objectSchema(map[string]any{"records": arraySchema(recordSchema()), "next_cursor": stringSchema(), "retention_horizon": stringSchema()}, "records", "next_cursor", "retention_horizon")
+	return outputObjectSchema(map[string]any{"records": arraySchema(recordSchema()), "next_cursor": stringSchema(), "retention_horizon": stringSchema()}, "records", "next_cursor", "retention_horizon")
 }
 func chainOutputSchema() map[string]any {
-	return objectSchema(map[string]any{"records": arraySchema(recordSchema()), "count": map[string]any{"type": "integer"}, "retention_horizon": stringSchema(), "possibly_truncated": map[string]any{"type": "boolean"}}, "records", "count", "retention_horizon", "possibly_truncated")
+	return outputObjectSchema(map[string]any{"records": arraySchema(recordSchema()), "count": map[string]any{"type": "integer"}, "retention_horizon": stringSchema(), "possibly_truncated": map[string]any{"type": "boolean"}}, "records", "count", "retention_horizon", "possibly_truncated")
 }
 func recordSchema() map[string]any {
-	actor := objectSchema(map[string]any{"owner_email": stringSchema(), "client_id": stringSchema()})
-	outcome := objectSchema(map[string]any{
+	actor := outputObjectSchema(map[string]any{"owner_email": stringSchema(), "client_id": stringSchema()})
+	outcome := outputObjectSchema(map[string]any{
 		"status": stringSchema(), "error": stringSchema(), "duration_ms": map[string]any{"type": "integer"},
 		"bytes": map[string]any{"type": "integer"}, "sha256": stringSchema(),
 	})
 	jsonObject := map[string]any{"type": "object", "additionalProperties": true}
-	return objectSchema(map[string]any{
+	return outputObjectSchema(map[string]any{
 		"id": stringSchema(), "time": stringSchema(), "correlation_id": stringSchema(), "service": stringSchema(),
 		"kind": map[string]any{"type": "string", "enum": kindStrings()}, "actor": actor, "op": stringSchema(),
 		"params": jsonObject, "outcome": outcome, "detail": jsonObject,
@@ -236,7 +236,20 @@ func stringSchema() map[string]any { return map[string]any{"type": "string"} }
 func arraySchema(items map[string]any) map[string]any {
 	return map[string]any{"type": "array", "items": items}
 }
-func objectSchema(properties map[string]any, required ...string) map[string]any {
+
+// inputObjectSchema builds an advertised input schema without the
+// additionalProperties keyword, which agentkit's tool-schema subset rejects.
+func inputObjectSchema(properties map[string]any, required ...string) map[string]any {
+	schema := map[string]any{"type": "object", "properties": properties}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return schema
+}
+
+// outputObjectSchema builds a closed advertised output schema. Agentkit does
+// not consume output schemas, while structured-content clients use this shape.
+func outputObjectSchema(properties map[string]any, required ...string) map[string]any {
 	schema := map[string]any{"type": "object", "properties": properties, "additionalProperties": false}
 	if len(required) > 0 {
 		schema["required"] = required
