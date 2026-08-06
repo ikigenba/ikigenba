@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 58
-
-- Phase 57 ⬜ realizes D48 — resolve the state and cache roots through `appkit/config`
