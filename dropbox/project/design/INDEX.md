@@ -31,6 +31,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D25 → `project/design/D25.md` — `content_url` on loopback `/stat` and `/list` file entries (Service.ContentBase injected at the composition root; MCP surface deliberately excluded) — owns R-59OM-EIY8, R-5AWI-SAOX, R-5C4F-62FM, R-5DCB-JU6B
 - D26 → `project/design/D26.md` — Telemetry adoption, Go side: injected instrumented outbound clients (rpc/longpoll/`source_url`), root correlation chains for the sync engine and the uploader, context-threaded `Append` — owns R-NF5W-7DOI, R-TABR-0FWD, R-TBJN-E7N2, R-TCRJ-RZDR, R-TDZG-5R4G, R-TF7C-JIV5
 - D27 → `project/design/D27.md` — nginx fragment: gated locations capture and forward the edge-minted `X-Correlation-Id`; the ungated public PRM location clears it — owns R-VGTA-PXIA, R-VI17-3P8Z
+- D28 → `project/design/D28.md` — State paths come from `appkit/config`, never from a hardcoded `./tmp` default — owns R-L7TF-ZAFX, R-L91C-D26M, R-LA98-QTXB
 
 ## Verification ids → Decision
 
@@ -88,6 +89,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-KUDD-A9VG → D19 → `project/design/D19.md`
 - R-KVL9-O1M5 → D20 → `project/design/D20.md`
 - R-KWT6-1TCU → D20 → `project/design/D20.md`
+- R-L7TF-ZAFX → D28 → `project/design/D28.md`
+- R-L91C-D26M → D28 → `project/design/D28.md`
+- R-LA98-QTXB → D28 → `project/design/D28.md`
 - R-LAND-3C9X → D1 → `project/design/D01.md`
 - R-LAND-5E2Y → D1 → `project/design/D01.md`
 - R-LAND-7G4Z → D1 → `project/design/D01.md`

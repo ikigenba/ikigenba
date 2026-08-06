@@ -50,6 +50,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D45 | project/design/D45.md | Chain propagation on suite peer calls: `X-Correlation-Id` in the `MCPServer` headers | R-HPLU-D8WR, R-HS1N-4SE5, R-HT9J-IK4U |
 | D46 | project/design/D46.md | nginx fragment: capture the edge-minted chain id on gated locations, strip it on the ungated one | R-HWX8-NVCX, R-HY55-1N3M |
 | D47 | project/design/D47.md | Rebuild to adopt: event-plane chain continuation, the `root` record at spawn, and the recorded boundary of a run | R-HZD1-FEUB, R-I0KX-T6L0, R-I1SU-6YBP, R-I30Q-KQ2E, R-I48M-YHT3 |
+| D48 | project/design/D48.md | State paths come from `appkit/config`, never from a hardcoded `./tmp` default | R-LBH5-4LO0, R-LCP1-IDEP, R-LDWX-W55E |
 
 ## Verification ids → Decision
 
@@ -159,6 +160,9 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-LAND-NMVR | D35 | project/design/D35.md |
 | R-LAND-ROOT | D10 | project/design/D10.md |
 | R-LAND-UNGT | D10 | project/design/D10.md |
+| R-LBH5-4LO0 | D48 | project/design/D48.md |
+| R-LCP1-IDEP | D48 | project/design/D48.md |
+| R-LDWX-W55E | D48 | project/design/D48.md |
 | R-RG01-PORT | D14 | project/design/D14.md |
 | R-RG03-DBOX | D14 | project/design/D14.md |
 | R-RG04-NLIT | D14 | project/design/D14.md |
