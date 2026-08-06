@@ -17,6 +17,7 @@ Verification ids change.
 - D9 → `project/design/D09.md` — restore reconstitutes the served tree's ownership to the service user — owns `R-3NXM-O0S2`, `R-B0E0-BRXO`
 - D10 → `project/design/D10.md` — init-box installs the box-baseline command-line tooling (poppler-utils, git, sqlite, tar, curl-minimal) — owns `R-JQGB-RYA2`, `R-JRO8-5Q0R`
 - D11 → `project/design/D11.md` — init-box installs the oauth CLI via its release installer to `/usr/local/bin` — owns `R-ML75-3NVZ`, `R-MMF1-HFMO`
+- D12 → `project/design/D12.md` — `cache/` is app-owned by construction: setup creates it owned by the service user; deploy re-asserts it alongside `state/` — owns `R-4ZI0-4CH5`, `R-50PW-I47U`
 
 ## Verification ids → Decision
 
@@ -24,6 +25,8 @@ Verification ids change.
 - R-3LHT-WHAO → D7 — `project/design/D07.md`
 - R-3MPQ-A91D → D8 — `project/design/D08.md`
 - R-3NXM-O0S2 → D9 — `project/design/D09.md`
+- R-4ZI0-4CH5 → D12 — `project/design/D12.md`
+- R-50PW-I47U → D12 — `project/design/D12.md`
 - R-65MT-7QEK → D2 — `project/design/D02.md`
 - R-66UP-LI59 → D2 — `project/design/D02.md`
 - R-6AIE-QTDC → D3 — `project/design/D03.md`
