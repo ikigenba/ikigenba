@@ -13,4 +13,6 @@ gone. A phase body file carries no marker of its own. This document
 deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
-Next phase: 10
+Next phase: 11
+
+- Phase 10 ⬜ realizes D1 — method-restrict the MCP route so a non-POST verb answers 405, never a 200 parse error

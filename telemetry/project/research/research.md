@@ -205,6 +205,33 @@ vocabulary `validation`, `not_found`, `conflict`, `too_large`,
 `source_unavailable`, `internal`. Input/output schemas must conform to the
 strict-client rules `validateToolSchemas`/`conformsToStrictClient` enforce.
 
+**The handler is POST-only in fact, and does not enforce that itself.** Its
+`ServeHTTP` decodes the request body into the JSON-RPC envelope *first* and
+dispatches on `req.Method` (the JSON-RPC method) only afterwards; it never
+inspects the HTTP method. A request with no body therefore fails the decode with
+`io.EOF` and is answered by `writeJSONRPCError(w, nil, -32700, "parse error")`,
+which sets a content type and encodes a body but **never sets a status**, so
+net/http's default applies and the response goes out as **HTTP 200** with a
+75-byte JSON body plus the encoder's trailing newline. Enforcing the method is
+therefore the *route registration's* job: a Go 1.22+ `ServeMux` pattern of the
+form `"POST /mcp"` matches the path but not the method for other verbs and
+answers `405 Method Not Allowed` with an `Allow` header itself, before the
+handler is reached. Registering the bare `"/mcp"` hands every verb to the
+handler and converts a method error into a `200`.
+
+**The client side that makes this matter: MCP streamable HTTP.** In the
+`2025-06-18` transport, `POST` carries JSON-RPC requests, and the client
+additionally issues an HTTP **`GET`** to the same endpoint to open a
+server-to-client SSE stream for server-initiated messages. The specification
+explicitly provides for servers that do not offer that stream: such a server
+SHOULD respond to the `GET` with **`405 Method Not Allowed`**, which the client
+takes as a definitive "no stream here" and stops asking. A `200` whose body is
+not `text/event-stream` is not a refusal — the client reads it as a stream that
+opened and closed, and reconnects on its retry timer (order of one second),
+indefinitely. Observed against the deployed service, that loop cost three
+records per second in this service's own store: the dashboard edge, the
+dashboard's `/internal/authn` introspection, and telemetry's own request record.
+
 ### 2.4 The telemetry/correlation seams appkit is growing (cross-workspace dependency)
 
 The appkit workspace's own spec lands **before** telemetry is built. From it,

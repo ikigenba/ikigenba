@@ -7,7 +7,7 @@ Verification ids change.
 
 ## Decisions
 
-- D1 → `project/design/D01.md` — Service skeleton, chassis Spec & composition root — R-V6NF-9LY8, R-V7VB-NDOX
+- D1 → `project/design/D01.md` — Service skeleton, chassis Spec & composition root — R-V6NF-9LY8, R-V7VB-NDOX, R-NTSI-XWI1
 - D2 → `project/design/D02.md` — The record type, the schema, and the append-only store — R-V938-15FM, R-VAB4-EX6B, R-VBJ0-SOX0, R-VCQX-6GNP, R-VDYT-K8EE, R-VF6P-Y053, R-VGEM-BRVS
 - D3 → `project/design/D03.md` — The loopback ingest endpoint — R-VIUF-3BD6, R-VK2B-H33V, R-VLA7-UUUK, R-VMI4-8ML9, R-VNQ0-MEBY, R-VOXX-062N, R-VQ5T-DXTC
 - D4 → `project/design/D04.md` — Retention: the configured window and the pruner — R-VRDP-RPK1, R-VSLM-5HAQ, R-VTTI-J91F, R-VV1E-X0S4
@@ -22,6 +22,7 @@ Verification ids change.
 - R-D2X0-57VI → D8 — `project/design/D08.md`
 - R-D44W-IZM7 → D8 — `project/design/D08.md`
 - R-D5CS-WRCW → D8 — `project/design/D08.md`
+- R-NTSI-XWI1 → D1 — `project/design/D01.md`
 - R-V6NF-9LY8 → D1 — `project/design/D01.md`
 - R-V7VB-NDOX → D1 — `project/design/D01.md`
 - R-V938-15FM → D2 — `project/design/D02.md`
