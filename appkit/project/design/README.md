@@ -123,11 +123,14 @@ Shared facts every Decision leans on:
   `IKIGENBA_ROOT` roots the `/opt/<app>/` tree. appkit *consumes* these facts
   (D5 composes paths from them); it does not define or change them.
 - **Cross-module collaborators (outside `appkit/`).** The repo-root shell
-  scripts `bin/registry` and `bin/start` are not Go and not under `appkit/`;
-  where a Decision names one (D2–D4 historically, D7's dev wiring) it is a
-  boundary-crossing collaborator of this chassis work, verified by its shell
-  test or a live `bin/start` smoke, **not** by the appkit Go suite. Phases that
-  touch them are called out explicitly in the plan.
+  scripts `bin/registry` and `bin/start` are not Go and not under `appkit/`.
+  They are governed and tested by the **suite-level workspace** (the repo-root
+  `project/`, whose `bintest` module execs the real scripts under the root
+  green gate) — no appkit Decision owns their behavior or mints ids for it.
+  Where one appears in prose here (D4's retirement end state, D7's dev
+  wiring), it is a boundary-crossing collaborator: context this chassis work
+  relies on, proven in the suite workspace or by a live `bin/start` smoke,
+  **not** by the appkit Go suite.
 - **Additivity guard (D5–D10):** none of the new Spec fields, Router accessors,
   or packages may change the behavior of a Spec that doesn't use them. The
   pre-existing appkit test suite passing unchanged is the standing proof.

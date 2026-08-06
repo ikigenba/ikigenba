@@ -8,8 +8,6 @@ Verification ids change.
 ## Decisions
 
 - D1 → `project/design/D01.md` — Manifest readers resolve *through* the per-app `current` symlink (`appkit/inventory`) — owns R-YO06-9I18, R-YP82-N9RX
-- D2 → `project/design/D02.md` — `bin/registry` resolves through `current` — owns R-YQFZ-11IM
-- D3 → `project/design/D03.md` — Local dev runtime layout mirrors the box (`bin/start` stages a prod-shaped manifest root) — owns R-YRNV-ET9B
 - D4 → `project/design/D04.md` — Retire the stable sibling path and its hand-placed artifacts — owns R-YSVR-SL00, R-YU3O-6CQP
 - D5 → `project/design/D05.md` — WWW-root resolution in `appkit/config` (`share/current/www` on box, `./share/www` dev, `<APP>_WWW_PATH` override) — owns R-LWOU-OWWQ, R-LXWR-2ONF, R-LZ4N-GGE4
 - D6 → `project/design/D06.md` — The `appkit/web` package: templates + static assets over an on-disk root — owns R-M0CJ-U84T, R-M1KG-7ZVI, R-M2SC-LRM7, R-M408-ZJCW, R-M585-DB3L
@@ -127,7 +125,5 @@ Verification ids change.
 - R-XTWR-0636 → D20 → `project/design/D20.md`
 - R-YO06-9I18 → D1 → `project/design/D01.md`
 - R-YP82-N9RX → D1 → `project/design/D01.md`
-- R-YQFZ-11IM → D2 → `project/design/D02.md`
-- R-YRNV-ET9B → D3 → `project/design/D03.md`
 - R-YSVR-SL00 → D4 → `project/design/D04.md`
 - R-YU3O-6CQP → D4 → `project/design/D04.md`

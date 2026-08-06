@@ -21,17 +21,17 @@ itself, never from a ledger or history kept here.
 for one subagent, built against the design Decision(s) it realizes (resolved
 through `STATUS.md` → `phase-NN.md` → the brief). The phases are **sequential and
 dependency-ordered**: each phase depends only on earlier ones (e.g. in the
-manifest thread the reader moved onto `current` (D1) before the local launcher
-was re-shaped to feed it (D3); in the chassis thread the `appkit/web` package
+manifest thread the reader moved onto `current` (D1) before the repo-root
+launcher was re-shaped to feed it (work since re-homed to the suite-level
+workspace); in the chassis thread the `appkit/web` package
 (D6) exists before the server integration (D7) mounts it).
 
-**Boundary note.** Only D1 is `appkit/`-package work. D2 (`bin/registry`), D3
-(`bin/start`), and D4 (source-wide cleanup + a live-box action) deliberately cross
-the `appkit/` boundary into repo-root operator scripts and one production step —
-they are part of this one layout-parity fix, not appkit-package code, and are
-verified by shell tests / live smokes rather than the appkit Go suite. A phase
-that touches the live box (D4) is an explicit operator step, not an unattended
-loop build. In the chassis thread, D7's dev wiring (a one-line
+**Boundary note.** In the layout-parity thread only D1 is `appkit/`-package
+work; the repo-root readers `bin/registry` and `bin/start` are governed and
+tested by the **suite-level workspace** (the repo-root `project/`, its
+`bintest` module), never by an appkit Decision or phase. D4's live-box action
+crosses into one production step and is an explicit operator step below, not
+an unattended loop build. In the chassis thread, D7's dev wiring (a one-line
 `<APP>_WWW_PATH` export in a converted service's `bin/start` launch function)
 crosses the same way and is verified by the live `bin/start` smoke.
 
@@ -39,9 +39,8 @@ crosses the same way and is verified by the live `bin/start` smoke.
 Decision(s) it realizes is covered by a clearly-named, genuinely-asserting test (or
 the named live check) and the relevant suite is green. For appkit "green" is
 defined in design's *Conventions*: from `appkit/`, `go build ./...`,
-`go vet ./...`, `gofmt -l .` (no output), and `go test ./...` all succeed. For the
-shell collaborators, the named script (`bin/registry.test.sh`) passes; for the
-integration/box ids, the named live check passes.
+`go vet ./...`, `gofmt -l .` (no output), and `go test ./...` all succeed. For
+the integration/box ids, the named live check passes.
 
 ## Layout
 
