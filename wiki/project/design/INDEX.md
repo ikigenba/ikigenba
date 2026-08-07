@@ -59,7 +59,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D60 → `project/design/D60.md` — the session-gated web locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 — none — structural
 - D61 → `project/design/D61.md` — Structured MCP adoption: `StructuredResult`, typed error codes, and per-tool output schemas — owns R-EMCA-BCU2, R-ENK6-P4KR, R-EPZZ-GO25, R-ER7V-UFSU, R-ESFS-87JJ, R-ETNO-LZA8, R-EW3H-DIRM, R-EXBD-RAIB
 - D62 → `project/design/D62.md` — Origin attribution on every inference call — owns R-16VU-W6UV, R-183R-9YLK
-- D63 → `project/design/D63.md` — The retirement: the recorder stack and every in-repo tuning executable stay gone — owns R-KFX6-MNEW, R-A4L4-1LCK
+- D63 → `project/design/D63.md` — The retirement: the recorder stack and every in-repo tuning executable stay gone — owns R-1BRG-F9TN, R-KFX6-MNEW, R-A4L4-1LCK
 - D64 → `project/design/D64.md` — Prompts calls ride the chassis's instrumented client, and the chain id replaces every wiki-minted correlation id — owns R-XLHZ-WPT5, R-XMPW-AHJU, R-XNXS-O9AJ, R-XP5P-2118
 - D65 → `project/design/D65.md` — Inherit the chain across the async boundary; mint a root only for genuinely self-started work — owns R-XGME-DMUD, R-XJ27-56BR, R-KIH2-R4UC, R-XKA3-IY2G
 - D66 → `project/design/D66.md` — nginx: forward the edge-minted correlation id on gated locations, strip it on the ungated one — none — structural
@@ -96,6 +96,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-183R-9YLK → D62 (`project/design/D62.md`)
 - R-18K2-9GT7 → D15 (`project/design/D15.md`)
 - R-19RY-N8JW → D15 (`project/design/D15.md`)
+- R-1BRG-F9TN → D63 (`project/design/D63.md`)
 - R-1C7R-ES1A → D15 (`project/design/D15.md`)
 - R-1DFN-SJRZ → D15 (`project/design/D15.md`)
 - R-1O8B-FNX4 → D3 (`project/design/D03.md`)
