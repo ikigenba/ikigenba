@@ -13,11 +13,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"appkit/config"
 	appdb "appkit/db"
 	"appkit/manifest"
 	"appkit/server"
@@ -27,6 +29,7 @@ import (
 
 	reposdb "repos/internal/db"
 	"repos/internal/repos"
+	"repos/internal/runner"
 )
 
 func TestInstalledLayoutBootsBuiltService(t *testing.T) {
@@ -195,6 +198,90 @@ func TestAuthoredManifestMatchesCompiledSpecDefaults(t *testing.T) {
 	}
 }
 
+func TestSessionEngineDefaultsMatchAuthoredManifest(t *testing.T) {
+	// R-L9EG-DDWC
+	for _, key := range []string{"REPOS_PROVIDER", "REPOS_MODEL", "REPOS_SESSION_TTL", "REPOS_MAX_SESSIONS"} {
+		t.Setenv(key, "")
+	}
+
+	contents, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	authored := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(string(contents)), "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if ok {
+			authored[key] = value
+		}
+	}
+
+	model := runner.DefaultModelConfig(os.Getenv("ANTHROPIC_API_KEY"))
+	model.Provider = config.EnvOr(os.Getenv, "REPOS_PROVIDER", model.Provider)
+	model.Model = config.EnvOr(os.Getenv, "REPOS_MODEL", model.Model)
+	ttl, err := config.EnvOrDuration(os.Getenv, "REPOS_SESSION_TTL", 30*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	maxRun, err := config.EnvOrInt(os.Getenv, "REPOS_MAX_SESSIONS", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manifestValue := func(key string) string {
+		t.Helper()
+		value, ok := authored[key]
+		if !ok {
+			t.Fatalf("manifest is missing %s", key)
+		}
+		return value
+	}
+	if want := manifestValue("REPOS_PROVIDER"); model.Provider != want {
+		t.Errorf("REPOS_PROVIDER resolved default = %q, manifest value = %q", model.Provider, want)
+	}
+	if want := manifestValue("REPOS_MODEL"); model.Model != want {
+		t.Errorf("REPOS_MODEL resolved default = %q, manifest value = %q", model.Model, want)
+	}
+	wantTTL, err := time.ParseDuration(manifestValue("REPOS_SESSION_TTL"))
+	if err != nil {
+		t.Fatalf("parse manifest REPOS_SESSION_TTL: %v", err)
+	}
+	if ttl != wantTTL {
+		t.Errorf("REPOS_SESSION_TTL resolved default = %s, manifest value = %s", ttl, wantTTL)
+	}
+	wantMaxRun, err := strconv.Atoi(manifestValue("REPOS_MAX_SESSIONS"))
+	if err != nil {
+		t.Fatalf("parse manifest REPOS_MAX_SESSIONS: %v", err)
+	}
+	if maxRun != wantMaxRun {
+		t.Errorf("REPOS_MAX_SESSIONS resolved default = %d, manifest value = %d", maxRun, wantMaxRun)
+	}
+}
+
+func TestProductionGoSourceContainsNoCompiledOptPath(t *testing.T) {
+	// R-VKB6-SHHV
+	root := filepath.Join("..", "..")
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(contents, []byte(`"/opt`)) {
+			t.Errorf("production Go source %s contains a compiled /opt path literal", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func copyTree(t *testing.T, source, destination string) {
 	t.Helper()
 	err := filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
@@ -259,7 +346,7 @@ func TestManifestVerbMatchesCommittedServiceContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repos manifest: %v: %s", err, output)
 	}
-	want := "APP=repos\nMOUNT=/srv/repos/\nDEFAULT=false\nPORT=3007\nMCP=true\nFEED=/feed\nCONSUMES=webhooks\n"
+	want := "APP=repos\nMOUNT=/srv/repos/\nDEFAULT=false\nPORT=3007\nMCP=true\nFEED=/feed\nCONSUMES=webhooks\nREPOS_PROVIDER=anthropic\nREPOS_MODEL=claude-opus-4-8\nREPOS_SESSION_TTL=30m\nREPOS_MAX_SESSIONS=2\n"
 	if string(output) != want {
 		t.Fatalf("manifest output:\n%s\nwant:\n%s", output, want)
 	}

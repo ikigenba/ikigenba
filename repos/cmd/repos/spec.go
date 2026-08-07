@@ -83,6 +83,12 @@ func reposSpec() appkit.Spec {
 		Migrations: reposdb.FS,
 		Events:     repos.Events,
 		Consumers:  consumers,
+		ManifestExtras: []appkit.ManifestKV{
+			{Key: "REPOS_PROVIDER", Value: "anthropic"},
+			{Key: "REPOS_MODEL", Value: "claude-opus-4-8"},
+			{Key: "REPOS_SESSION_TTL", Value: "30m"},
+			{Key: "REPOS_MAX_SESSIONS", Value: "2"},
+		},
 		Handlers: func(rt *appkit.Router) error {
 			if rt.DB() == nil {
 				return fmt.Errorf("repos: no DB handle on router")
