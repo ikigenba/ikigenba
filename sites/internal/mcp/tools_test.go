@@ -275,6 +275,7 @@ func TestToolsList(t *testing.T) {
 	got := map[string]bool{}
 	for _, tl := range result.Tools {
 		got[tl.Name] = true
+		// R-DB3A-15YZ
 		if tl.Description == "" {
 			t.Errorf("tool %q has an empty description", tl.Name)
 		}

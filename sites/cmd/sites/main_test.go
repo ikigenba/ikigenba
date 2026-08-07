@@ -311,6 +311,17 @@ func TestLandingHandlerRendersJSONIslandFromSiteRows(t *testing.T) {
 	if rows[1].URL != "https://suite.example/srv/sites/private/vault/" || rows[1].Visibility != "private" {
 		t.Fatalf("sites data = %#v, want private row URL and visibility", rows)
 	}
+
+	// R-IEWI-3MXP
+	anchors := regexp.MustCompile(`<td data-label="Name"><a href="([^"]+)">`).FindAllStringSubmatch(rec.Body.String(), -1)
+	if len(anchors) != len(rows) {
+		t.Fatalf("visible anchor count = %d, want one for each of %d island rows\n%s", len(anchors), len(rows), rec.Body.String())
+	}
+	for i := range rows {
+		if anchors[i][1] != rows[i].URL {
+			t.Errorf("row %d visible anchor href = %q, island url = %q", i, anchors[i][1], rows[i].URL)
+		}
+	}
 }
 
 func TestWWWLandingRendersProgressiveControlMarkup(t *testing.T) {
@@ -324,7 +335,6 @@ func TestWWWLandingRendersProgressiveControlMarkup(t *testing.T) {
 	}
 	body := rec.Body.String()
 
-	// R-IEWI-3MXP
 	for _, want := range []string{
 		`class="no-js"`,
 		`class="controls js-only" hidden`,
