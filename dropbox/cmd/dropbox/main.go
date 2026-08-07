@@ -70,6 +70,8 @@ func main() {
 		ManifestExtras: []appkit.ManifestKV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
+			{Key: "DROPBOX_LONGPOLL_TIMEOUT", Value: "480"},
+			{Key: "DROPBOX_MAX_ENTRY_RETRIES", Value: "5"},
 		},
 		// Health is dropbox's per-service telemetry reporter (DECISIONS §3/§7).
 		// Unlike the other five services, dropbox has real telemetry, so it

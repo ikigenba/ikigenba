@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"appkit/config"
 	appkitdatabase "appkit/db"
 	"appkit/manifest"
 	appkitserver "appkit/server"
@@ -114,6 +115,8 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		Extras: []manifest.KV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
+			{Key: "DROPBOX_LONGPOLL_TIMEOUT", Value: "480"},
+			{Key: "DROPBOX_MAX_ENTRY_RETRIES", Value: "5"},
 		},
 	})
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
@@ -123,6 +126,90 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
+	}
+}
+
+func TestSyncTuningDefaultsMatchCommittedManifest(t *testing.T) {
+	// R-M0AZ-C8H7
+	committed, err := os.Open(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("open committed manifest.env: %v", err)
+	}
+	t.Cleanup(func() { committed.Close() })
+	fields, _, err := manifest.Parse(committed)
+	if err != nil {
+		t.Fatalf("parse committed manifest.env: %v", err)
+	}
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse composition root: %v", err)
+	}
+	codeDefaults := make(map[string]int)
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || !isSelector(call.Fun, "config", "EnvOrInt") || len(call.Args) != 3 {
+			return true
+		}
+		keyLiteral, keyOK := call.Args[1].(*ast.BasicLit)
+		defaultLiteral, defaultOK := call.Args[2].(*ast.BasicLit)
+		if !keyOK || keyLiteral.Kind != token.STRING || !defaultOK || defaultLiteral.Kind != token.INT {
+			return true
+		}
+		key, err := strconv.Unquote(keyLiteral.Value)
+		if err != nil {
+			return true
+		}
+		value, err := strconv.Atoi(defaultLiteral.Value)
+		if err == nil {
+			codeDefaults[key] = value
+		}
+		return true
+	})
+
+	for _, key := range []string{"DROPBOX_LONGPOLL_TIMEOUT", "DROPBOX_MAX_ENTRY_RETRIES"} {
+		fallback, ok := codeDefaults[key]
+		if !ok {
+			t.Fatalf("composition root has no integer default for %s", key)
+		}
+		t.Setenv(key, "")
+		resolved, err := config.EnvOrInt(os.Getenv, key, fallback)
+		if err != nil {
+			t.Fatalf("resolve unset %s: %v", key, err)
+		}
+		if got, want := strconv.Itoa(resolved), fields[key]; got != want {
+			t.Errorf("unset %s resolves to %q, committed manifest states %q", key, got, want)
+		}
+	}
+}
+
+func TestNonTestGoSourceHasNoBoxPathLiteral(t *testing.T) {
+	// R-VKB6-SHHV
+	err := filepath.WalkDir(filepath.Join("..", ".."), func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" || entry.Name() == "project" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(source, []byte(`"/opt`)) {
+			t.Errorf("%s contains a box-path string literal", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan non-test Go source: %v", err)
 	}
 }
 
