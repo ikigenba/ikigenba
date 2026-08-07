@@ -9,4 +9,6 @@ loop **deletes** that phase's line and its `phase-NN.md` — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 58
+Next phase: 59
+
+- Phase 58 ⬜ realizes D21, D23, D26 (framing-prompt slices) — pin the three unproven framing-prompt claims (`R-6AUG-NHQY`, `R-6I5U-Y474`, `R-FEGC-LVD7`) against the assembled conversation `System`, and drop the retired `R-6DA9-F18C` tag
