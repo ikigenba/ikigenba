@@ -563,7 +563,6 @@ func TestServiceRunOutputAndFs(t *testing.T) {
 }
 
 func TestServiceReadsRunFilesFromRebuildableRunsDir(t *testing.T) {
-	// R-4LKF-FB23
 	svc, store, _, runsDir := newTestService(t)
 	ctx := context.Background()
 	sc, _ := svc.Create(ctx, ownerA, CreateInput{Name: "x", Body: "print(1)"})

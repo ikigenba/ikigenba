@@ -994,7 +994,6 @@ print(json.dumps(out))
 }
 
 func TestSpawnUsesRebuildableRunsDirOutsideState(t *testing.T) {
-	// R-4LKF-FB23
 	requirePython(t)
 	st, _ := newStore(t)
 	root := t.TempDir()
