@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 125
-
-- Phase 124 ⬜ realizes D62 (slice: `R-16VU-W6UV`) — prove ask-path origin attribution against a real loopback prompts peer, and clear eight stale requirement-id tags
