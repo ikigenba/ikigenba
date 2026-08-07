@@ -27,15 +27,19 @@ func TestLimiter_AllowThenReject(t *testing.T) {
 }
 
 // Window slide releases capacity.
+// R-I98E-62GS
 func TestLimiter_WindowSlide(t *testing.T) {
 	l := New(2, 10*time.Second)
 	t0 := time.Unix(1_700_000_000, 0).UTC()
 	l.now = func() time.Time { return t0 }
 	key := "k"
-	l.Decide(key)
-	l.Decide(key)
-	if d := l.Decide(key); d.Allowed {
-		t.Fatalf("expected reject")
+	for i := 0; i < 2; i++ {
+		if d := l.Decide(key); !d.Allowed {
+			t.Fatalf("request %d should be allowed; got %+v", i+1, d)
+		}
+	}
+	if d := l.Decide(key); d.Allowed || d.WindowCount != 2 {
+		t.Fatalf("third request got %+v, want rejected with WindowCount=2", d)
 	}
 	// Move clock past window.
 	l.now = func() time.Time { return t0.Add(11 * time.Second) }
