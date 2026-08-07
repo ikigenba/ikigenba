@@ -21,6 +21,7 @@ import (
 	"time"
 
 	appkitdb "appkit/db"
+	"appkit/manifest"
 	appkitserver "appkit/server"
 	appkittelemetry "appkit/telemetry"
 	"registry"
@@ -70,6 +71,202 @@ func TestManifestMatchesCommittedFile(t *testing.T) {
 			t.Errorf("manifest unexpectedly contains %q", forbidden)
 		}
 	}
+}
+
+func TestCommittedManifestUsesPortableComposedDataPaths(t *testing.T) {
+	committed := readCommittedManifest(t)
+
+	// R-8DF1-W89F
+	for _, forbidden := range []string{"/opt/", "TELEMETRY_DB_PATH=", "TELEMETRY_GENERATION_PATH="} {
+		if bytes.Contains(committed, []byte(forbidden)) {
+			t.Errorf("committed manifest contains non-portable value %q", forbidden)
+		}
+	}
+}
+
+func TestCompiledSpecManifestMatchesCommittedBytes(t *testing.T) {
+	spec := telemetrySpec()
+	extras := make([]manifest.KV, len(spec.ManifestExtras))
+	for i, extra := range spec.ManifestExtras {
+		extras[i] = manifest.KV{Key: extra.Key, Value: extra.Value}
+	}
+	got := []byte(manifest.Emit(manifest.Fields{
+		App: spec.App, Mount: spec.Mount, Default: spec.Default, Port: spec.Port,
+		MCP: spec.MCP, Feed: spec.Feed, Consumes: spec.Consumes, Extras: extras,
+	}))
+	want := readCommittedManifest(t)
+
+	// R-8IAN-FB87
+	if !bytes.Equal(got, want) {
+		t.Fatalf("compiled Spec manifest differs from committed bytes\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestServeBootsFromInstallLayout(t *testing.T) {
+	workspaceRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	versionBytes, err := os.ReadFile(filepath.Join(workspaceRoot, "VERSION"))
+	if err != nil {
+		t.Fatalf("read VERSION: %v", err)
+	}
+	version := strings.TrimSpace(string(versionBytes))
+	if version == "" {
+		t.Fatal("VERSION is empty")
+	}
+
+	temporaryRoot := t.TempDir()
+	installRoot := filepath.Join(temporaryRoot, "telemetry")
+	stateDir := filepath.Join(installRoot, "state")
+	cacheDir := filepath.Join(installRoot, "cache")
+	libexecDir := filepath.Join(installRoot, "libexec")
+	binDir := filepath.Join(installRoot, "bin")
+	versionEtcDir := filepath.Join(installRoot, "etc", version)
+	for _, dir := range []string{stateDir, cacheDir, libexecDir, binDir, versionEtcDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("create install directory %s: %v", dir, err)
+		}
+	}
+
+	binaryPath := filepath.Join(libexecDir, "telemetry-"+version)
+	build := exec.Command("go", "build", "-o", binaryPath, ".")
+	build.Dir = filepath.Join(workspaceRoot, "cmd", "telemetry")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build staged telemetry binary: %v\n%s", err, output)
+	}
+	runPath := filepath.Join(binDir, "run")
+	if err := os.Symlink(filepath.Join("..", "libexec", filepath.Base(binaryPath)), runPath); err != nil {
+		t.Fatalf("link bin/run: %v", err)
+	}
+
+	committed := readCommittedManifest(t)
+	stagedManifest := filepath.Join(versionEtcDir, "manifest.env")
+	if err := os.WriteFile(stagedManifest, committed, 0o644); err != nil {
+		t.Fatalf("stage manifest: %v", err)
+	}
+	currentPath := filepath.Join(installRoot, "etc", "current")
+	if err := os.Symlink(version, currentPath); err != nil {
+		t.Fatalf("link etc/current: %v", err)
+	}
+
+	resolvedRun, err := filepath.EvalSymlinks(runPath)
+	if err != nil {
+		t.Fatalf("resolve bin/run: %v", err)
+	}
+	resolvedCurrent, err := filepath.EvalSymlinks(currentPath)
+	if err != nil {
+		t.Fatalf("resolve etc/current: %v", err)
+	}
+	selectedManifest, err := os.ReadFile(filepath.Join(currentPath, "manifest.env"))
+	if err != nil {
+		t.Fatalf("read manifest through etc/current: %v", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("allocate ephemeral port: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		t.Fatalf("release ephemeral port: %v", err)
+	}
+	cmd := exec.Command(runPath, "serve")
+	cmd.Env = installSmokeEnv(temporaryRoot, port)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start staged telemetry binary: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	t.Cleanup(func() {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			_ = cmd.Process.Kill()
+			<-done
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	client := &http.Client{Timeout: time.Second}
+	healthURL := "http://127.0.0.1:" + strconv.Itoa(port) + "/health"
+	var response *http.Response
+	for response == nil {
+		response, err = client.Get(healthURL)
+		if err == nil {
+			break
+		}
+		select {
+		case processErr := <-done:
+			t.Fatalf("staged telemetry exited before serving: %v\n%s", processErr, stderr.String())
+		case <-ctx.Done():
+			t.Fatalf("staged telemetry did not serve: %v\n%s", ctx.Err(), stderr.String())
+		default:
+		}
+		response = nil
+	}
+	defer response.Body.Close()
+	var health struct {
+		Service string `json:"service"`
+		Status  string `json:"status"`
+		Details struct {
+			DroppedTotal int64 `json:"dropped_total"`
+		} `json:"details"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&health); err != nil {
+		t.Fatalf("decode health response: %v", err)
+	}
+
+	// R-4LKF-FB23
+	if resolvedRun != binaryPath {
+		t.Errorf("bin/run resolves to %q, want %q", resolvedRun, binaryPath)
+	}
+	if resolvedCurrent != versionEtcDir {
+		t.Errorf("etc/current resolves to %q, want %q", resolvedCurrent, versionEtcDir)
+	}
+	if !bytes.Equal(selectedManifest, committed) {
+		t.Errorf("manifest selected through etc/current differs from committed bytes")
+	}
+	if response.StatusCode != http.StatusOK || health.Service != "telemetry" || health.Status != "ok" || health.Details.DroppedTotal != 0 {
+		t.Errorf("health status=%d body=%+v, want 200 telemetry/ok with dropped_total 0", response.StatusCode, health)
+	}
+	for _, path := range []string{
+		filepath.Join(stateDir, "telemetry.db"),
+		filepath.Join(cacheDir, "telemetry.db.generation"),
+	} {
+		if info, statErr := os.Stat(path); statErr != nil || !info.Mode().IsRegular() {
+			t.Errorf("composed data file %s was not created as a regular file: %v", path, statErr)
+		}
+	}
+}
+
+func readCommittedManifest(t *testing.T) []byte {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest: %v", err)
+	}
+	return body
+}
+
+func installSmokeEnv(root string, port int) []string {
+	env := make([]string, 0, len(os.Environ())+4)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "TELEMETRY_") || strings.HasPrefix(entry, "IKIGENBA_ROOT=") || strings.HasPrefix(entry, "IKIGENBA_DOMAIN=") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	return append(env,
+		"IKIGENBA_ROOT="+root,
+		"TELEMETRY_IP=127.0.0.1",
+		"TELEMETRY_PORT="+strconv.Itoa(port),
+		"TELEMETRY_ENABLED=false",
+	)
 }
 
 func TestSpecUsesRegistryPortWithoutGoLiteralAndServeHonorsOverride(t *testing.T) {
