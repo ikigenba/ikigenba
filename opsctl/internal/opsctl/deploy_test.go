@@ -962,6 +962,7 @@ func TestInstall_IsActiveFailure(t *testing.T) {
 	}
 }
 
+// R-I80H-SAQ3
 func TestNotifySetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 	root := t.TempDir()
 	sysRoot := t.TempDir()
