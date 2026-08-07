@@ -37,6 +37,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D30 → `project/design/D30.md` — The chain crosses the sandbox boundary: `SUITE_CORRELATION_ID` and `X-Correlation-Id` on every `suite.*` call — owns R-4UZN-MWCU, R-4W7K-0O3J
 - D31 → `project/design/D31.md` — nginx fragment: capture the edge-minted chain id on the gated locations, strip it on the ungated one — owns R-ENOZ-F427, R-EOWV-SVSW
 - D32 → `project/design/D32.md` — Rebuild to adopt: chain continuation across the consumer fan-out, the ctx-bearing `Append`, the origin at spawn, and the recorded boundary of a run — owns R-4XFG-EFU8, R-4YNC-S7KX, R-4ZV9-5ZBM, R-5135-JR2B
+- D33 → `project/design/D33.md` — Env-channel conformance: the run TTL surfaces in the manifest — owns R-HDCE-C6WU; adopts R-VKB6-SHHV (root `project/design/D11.md`)
 
 ## Verification ids → Decision
 
@@ -91,6 +92,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-CDUX-2HW8 → D20 → `project/design/D20.md`
 - R-ENOZ-F427 → D31 → `project/design/D31.md`
 - R-EOWV-SVSW → D31 → `project/design/D31.md`
+- R-HDCE-C6WU → D33 → `project/design/D33.md`
 - R-HOME-8R2V → D7 → `project/design/D07.md`
 - R-HVKP-FQRD → D21 → `project/design/D21.md`
 - R-HWSL-TII2 → D21 → `project/design/D21.md`
@@ -145,6 +147,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-8U2J → D2 → `project/design/D02.md`
 - R-RUNS-BOOT → D9 → `project/design/D09.md`
 - R-RUNS-CDIR → D9 → `project/design/D09.md`
+- R-VKB6-SHHV → D33 → `project/design/D33.md` (adopted from root `project/design/D11.md`)
 - R-ZECX-40UZ → D27 → `project/design/D27.md`
 - R-ZFKT-HSLO → D27 → `project/design/D27.md`
 - R-ZGSP-VKCD → D27 → `project/design/D27.md`
