@@ -42,6 +42,7 @@ Verification ids change.
 - D33 → `project/design/D33.md` — The apex nginx fragment blanks client-supplied correlation ids and forwards the original method — owns R-XOIK-KVWZ, R-XPQG-YNNO
 - D34 → `project/design/D34.md` — Suite-contract conformance: the opsctl install layout and the authored env contract — adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`); mints none of its own
 - D35 → `project/design/D35.md` — The authn rate limiter: per-token sliding window in `internal/ratelimit` (server-side row-id keys, post-auth ordering, nil/zero disabled, in-memory per-instance) — owns R-I98E-62GS
+- D36 → `project/design/D36.md` — Env-channel conformance: composed manifest root, manifest-surfaced authn knobs, and customer-data routing — owns R-GBZ2-DNKQ, R-GD6Y-RFBF, R-GEEV-5724; adopts R-VKB6-SHHV (root `project/design/D11.md`)
 
 ## Verification ids → Decision
 
@@ -90,6 +91,9 @@ Verification ids change.
 - R-FT5B-P8H9 → D15 → `project/design/D15.md`
 - R-FUD8-307Y → D15 → `project/design/D15.md`
 - R-FVL4-GRYN → D15 → `project/design/D15.md`
+- R-GBZ2-DNKQ → D36 → `project/design/D36.md`
+- R-GD6Y-RFBF → D36 → `project/design/D36.md`
+- R-GEEV-5724 → D36 → `project/design/D36.md`
 - R-HSHQ-Y8BC → D19 → `project/design/D19.md`
 - R-HTPN-C021 → D19 → `project/design/D19.md`
 - R-HUXJ-PRSQ → D19 → `project/design/D19.md`
@@ -137,6 +141,7 @@ Verification ids change.
 - R-PAFI-UA9Q → D8 → `project/design/D08.md`
 - R-PBNF-820F → D8 → `project/design/D08.md`
 - R-VJMO-6CN9 → D17 → `project/design/D17.md`
+- R-VKB6-SHHV → D36 → `project/design/D36.md` (adopted from root `project/design/D11.md`)
 - R-VKUK-K4DY → D17 → `project/design/D17.md`
 - R-VM2G-XW4N → D17 → `project/design/D17.md`
 - R-VNAD-BNVC → D17 → `project/design/D17.md`

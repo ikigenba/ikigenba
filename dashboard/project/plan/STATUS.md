@@ -10,5 +10,7 @@ file — there is no done marker; done is gone. This file deliberately carries
 **no bare status glyph** anywhere but on a phase line, so the anchored grep
 matches only phase lines.
 
-Next phase: 44
+Next phase: 45
+
+- Phase 44 ⬜ realizes R-GBZ2-DNKQ, R-GD6Y-RFBF, R-GEEV-5724, R-VKB6-SHHV — env-channel conformance: composed manifest root, manifest-surfaced authn knobs, no box-path literals
 
