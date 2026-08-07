@@ -11,5 +11,3 @@ status glyph** outside phase lines, so the anchored grep matches only phase
 lines.
 
 Next phase: 20
-
-- Phase 19 ⬜ realizes R-I80H-SAQ3 — tag the boot-family proof of record in `internal/opsctl/deploy_test.go`
