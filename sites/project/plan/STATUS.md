@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 47
-
-- Phase 46 ⬜ realizes R-YWR7-Z1GM, R-YXZ4-CT7B, R-VKB6-SHHV — compose the served-tree root from `IKIGENBA_ROOT`; delete the compiled-in `/opt` default
