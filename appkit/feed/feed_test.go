@@ -243,11 +243,9 @@ func TestStartProducerAndLiveConsumerObserveCorrelatedHops(t *testing.T) {
 		}
 	}
 	wantKey := routing.Key("dropbox", "create", "/bills/a.pdf")
-	// R-1Z85-29O4
 	if ev := observed[observe.HopPublish]; ev.Key() != wantKey || ev.CorrelationID != correlationID || ev.Err != nil {
 		t.Fatalf("publish observation = %#v, want key %q and correlation %q", ev, wantKey, correlationID)
 	}
-	// R-20G1-G1ET
 	if ev := observed[observe.HopConsume]; ev.Key() != wantKey || ev.CorrelationID != correlationID || ev.Err != nil {
 		t.Fatalf("consume observation = %#v, want same key and publisher correlation %q", ev, correlationID)
 	}

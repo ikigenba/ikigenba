@@ -358,7 +358,7 @@ func TestRecorderCloseFlushesBufferedRecord(t *testing.T) {
 }
 
 func TestRecorderDisabledPerformsNoRequests(t *testing.T) {
-	// R-1GXN-BPJP
+	// R-PTNV-XRYV
 	var requests atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests.Add(1)
