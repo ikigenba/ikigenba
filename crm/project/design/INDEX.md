@@ -19,7 +19,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the tool table — owns R-MW1X-S9EV
 - D14 → `project/design/D14.md` — Delete the chassis shims: `internal/ids` and the `internal/db` wrappers — none (structural)
 - D15 → `project/design/D15.md` — Adopt `registry`: resolve crm's own loopback port by name at the composition root (`registry.MustPort("crm")`) — owns R-X04D-MBGE
-- D16 → `project/design/D16.md` — Prove no `127.0.0.1:30xx` literal survives (source-scan guard) and re-point the manifest/nginx tests at `registry` so a renumber fails a crm test — owns R-X1CA-0373, R-X2K6-DUXS
+- D16 → `project/design/D16.md` — Prove no `127.0.0.1:30xx` literal survives (source-scan guard) and re-point the manifest/nginx tests at `registry` so a renumber fails a crm test — owns R-X1CA-0373, R-X2K6-DUXS; adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D17 → `project/design/D17.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer tier deliberately excluded) — owns R-3BO3-336I, R-3CVZ-GUX7, R-3E3V-UMNW
 - D18 → `project/design/D18.md` — Event-routing conformance: kinds keep `contact.*`, subject = `/<contact id>`, family registry, new outbox migration — owns R-8HHB-24SG, R-8IP7-FWJ5, R-8JX3-TO9U, R-8L50-7G0J
 - D19 → `project/design/D19.md` — Structured MCP adoption: `structuredContent` + declared `outputSchema` per domain verb + typed closed-vocabulary error codes (no guard swap — crm has no loopback guard site) — owns R-5Y60-E30A, R-5ZDW-RUQZ, R-60LT-5MHO, R-61TP-JE8D, R-631L-X5Z2, R-65HE-OPGG
@@ -30,13 +30,16 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-3BO3-336I → D17 → `project/design/D17.md`
 - R-3CVZ-GUX7 → D17 → `project/design/D17.md`
 - R-3E3V-UMNW → D17 → `project/design/D17.md`
+- R-4LKF-FB23 → D16 → `project/design/D16.md` (adopted from root `project/design/D08.md`)
 - R-5Y60-E30A → D19 → `project/design/D19.md`
 - R-5ZDW-RUQZ → D19 → `project/design/D19.md`
 - R-60LT-5MHO → D19 → `project/design/D19.md`
 - R-61TP-JE8D → D19 → `project/design/D19.md`
 - R-631L-X5Z2 → D19 → `project/design/D19.md`
 - R-65HE-OPGG → D19 → `project/design/D19.md`
+- R-8DF1-W89F → D16 → `project/design/D16.md` (adopted from root `project/design/D11.md`)
 - R-8HHB-24SG → D18 → `project/design/D18.md`
+- R-8IAN-FB87 → D16 → `project/design/D16.md` (adopted from root `project/design/D11.md`)
 - R-8IP7-FWJ5 → D18 → `project/design/D18.md`
 - R-8JX3-TO9U → D18 → `project/design/D18.md`
 - R-8L50-7G0J → D18 → `project/design/D18.md`

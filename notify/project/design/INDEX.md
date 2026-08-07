@@ -13,7 +13,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-5N7S
 - D8 → `project/design/D08.md` — Self-serve the landing page's fonts and eliminate the FOUT (relative stylesheet link + `font-display: optional` + self-served `src` + `<head>` preload + session-gated nginx `/srv/notify/static/`) — owns R-8JS0-IQDX, R-8KZW-WI4M, R-8M7T-A9VB, R-8NFP-O1M0, R-8ONM-1TCP
 - D9 → `project/design/D09.md` — Adopt `registry`: resolve notify's own loopback port by name at the composition root (own port via `MustPort`; peer feed addresses are chassis-resolved per D11) — owns R-RGSP-4A1K
-- D10 → `project/design/D10.md` — Prove no loopback-port literal survives (source-scan guard) and guard the deploy artifacts (`etc/manifest.env`, `etc/nginx.conf`) against registry drift via registry-derived test expectations — owns R-RGNL-4E5P, R-RGDR-4F6Q
+- D10 → `project/design/D10.md` — Prove no loopback-port literal survives (source-scan guard) and guard the deploy artifacts (`etc/manifest.env`, `etc/nginx.conf`) against registry drift via registry-derived test expectations — owns R-RGNL-4E5P, R-RGDR-4F6Q; adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D11 → `project/design/D11.md` — Consumer loops through `Spec.Consumers` (chassis-owned): the two-upstream declaration, hand-rolled worker deletion, env-name migration to `NOTIFY_<SRC>_FEED_URL`/`NOTIFY_<SRC>_FROM` — owns R-4DG9-3Q97, R-4EO5-HHZW
 - D12 → `project/design/D12.md` — Web surface from `share/www` through the chassis (de-embed; `Spec.WWW`, delete `internal/web`) — owns R-4FW1-V9QL, R-4H3Y-91HA
 - D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the `send` tool table — owns R-4IBU-MT7Z
@@ -34,6 +34,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-4FW1-V9QL → D12 → `project/design/D12.md`
 - R-4H3Y-91HA → D12 → `project/design/D12.md`
 - R-4IBU-MT7Z → D13 → `project/design/D13.md`
+- R-4LKF-FB23 → D10 → `project/design/D10.md` (adopted from root `project/design/D08.md`)
+- R-8DF1-W89F → D10 → `project/design/D10.md` (adopted from root `project/design/D11.md`)
+- R-8IAN-FB87 → D10 → `project/design/D10.md` (adopted from root `project/design/D11.md`)
 - R-8JS0-IQDX → D8 → `project/design/D08.md`
 - R-8KZW-WI4M → D8 → `project/design/D08.md`
 - R-8M7T-A9VB → D8 → `project/design/D08.md`

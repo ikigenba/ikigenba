@@ -16,7 +16,7 @@ Verification ids change.
 - D7 → `project/design/D07.md` — nginx location fragment (tiers) — R-OD12-3CVG, R-OE8Y-H4M5, R-OFGU-UWCU, R-OGOR-8O3J, R-TTUW-5O3V, R-TV2S-JFUK, R-TWAO-X7L9, R-XK5N-0I1E, R-XLDJ-E9S3
 - D8 → `project/design/D08.md` — Test strategy, harness & dev-onboarding — R-UELV-YLA4, R-UFTS-CD0T
 - D9 → `project/design/D09.md` — Human landing page (`share/www` template & Carbon assets) — R-TMJH-V1NP, R-TNRE-8TEE, R-TOZA-ML53, R-TQ77-0CVS, R-TRF3-E4MH
-- D10 → `project/design/D10.md` — Adopt `registry` (own port by name + drift guards) — R-0D7X-9EB6, R-0EFT-N61V, R-0FNQ-0XSK
+- D10 → `project/design/D10.md` — Adopt `registry` (own port by name + drift guards) — R-0D7X-9EB6, R-0EFT-N61V, R-0FNQ-0XSK; adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D11 → `project/design/D11.md` — Web surface from `share/www` through the chassis (de-embed) — R-0GVM-EPJ9, R-0I3I-SH9Y
 - D12 → `project/design/D12.md` — MCP surface over `appkit/mcp` (`internal/mcp` becomes the tool table) — R-0JBF-690N
 - D13 → `project/design/D13.md` — Delete the `internal/db` shim, normalize the composition root, true up the doctrine — (structural; no ids)
@@ -44,6 +44,7 @@ Verification ids change.
 - R-4B16-6FON → D14 — `project/design/D14.md`
 - R-4C92-K7FC → D14 — `project/design/D14.md`
 - R-4DGY-XZ61 → D14 — `project/design/D14.md`
+- R-4LKF-FB23 → D10 — `project/design/D10.md` (adopted from root `project/design/D08.md`)
 - R-5Z8J-Y0YP → D6 — `project/design/D06.md`
 - R-60GG-BSPE → D6 — `project/design/D06.md`
 - R-61OC-PKG3 → D6 — `project/design/D06.md`
@@ -54,6 +55,8 @@ Verification ids change.
 - R-7K0N-DR34 → D4 — `project/design/D04.md`
 - R-7MGG-5AKI → D4 — `project/design/D04.md`
 - R-7NOC-J2B7 → D4 — `project/design/D04.md`
+- R-8DF1-W89F → D10 — `project/design/D10.md` (adopted from root `project/design/D11.md`)
+- R-8IAN-FB87 → D10 — `project/design/D10.md` (adopted from root `project/design/D11.md`)
 - R-A3FB-J3ZK → D15 — `project/design/D15.md`
 - R-A4N7-WVQ9 → D15 — `project/design/D15.md`
 - R-A5V4-ANGY → D15 — `project/design/D15.md`

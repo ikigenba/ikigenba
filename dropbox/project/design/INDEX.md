@@ -13,7 +13,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-6P8T
 - D8 → `project/design/D08.md` — Self-serve the landing page's fonts and eliminate the FOUT (relative stylesheet link + `font-display: optional` + self-served `src` + `<head>` preload + session-gated nginx `/srv/dropbox/static/`) — owns R-LQXL-095Q, R-LS5H-E0WF, R-LTDD-RSN4, R-LULA-5KDT, R-LVT6-JC4I
 - D9 → `project/design/D09.md` — Adopt `registry`: resolve dropbox's own loopback address by name (Spec.Port, content-base default, reflection example origin) — owns R-QJ8F-AXWP, R-QKGB-OPNE
-- D10 → `project/design/D10.md` — Source-scan guard (no `127.0.0.1:30xx` literal) + deploy-artifact drift guard (manifest + nginx agree with `registry`) — owns R-QLO8-2HE3, R-QMW4-G94S
+- D10 → `project/design/D10.md` — Source-scan guard (no `127.0.0.1:30xx` literal) + deploy-artifact drift guard (manifest + nginx agree with `registry`) — owns R-QLO8-2HE3, R-QMW4-G94S; adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D11 → `project/design/D11.md` — Web surface from `share/www` through the chassis (`Spec.WWW`, `rt.WWW()`; delete `internal/web`) — owns R-QO40-U0VH, R-QPBX-7SM6
 - D12 → `project/design/D12.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the `list`+`get` tool table; health/reflection chassis-registered — owns R-QQJT-LKCV
 - D13 → `project/design/D13.md` — Delete the `internal/db` `Open`/`Migrate` shim (embed + guards remain) and true up `dropbox/CLAUDE.md` — none (structural; shim deletion + doc truth)
@@ -38,6 +38,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-3MN6-J0UR → D21 → `project/design/D21.md`
 - R-3NV2-WSLG → D21 → `project/design/D21.md`
 - R-3P2Z-AKC5 → D21 → `project/design/D21.md`
+- R-4LKF-FB23 → D10 → `project/design/D10.md` (adopted from root `project/design/D08.md`)
 - R-54T0-VFZG → D24 → `project/design/D24.md`
 - R-560X-97Q5 → D24 → `project/design/D24.md`
 - R-578T-MZGU → D24 → `project/design/D24.md`
@@ -51,6 +52,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-7S0L-1P1S → D23 → `project/design/D23.md`
 - R-7T8H-FGSH → D23 → `project/design/D23.md`
 - R-7UGD-T8J6 → D23 → `project/design/D23.md`
+- R-8DF1-W89F → D10 → `project/design/D10.md` (adopted from root `project/design/D11.md`)
+- R-8IAN-FB87 → D10 → `project/design/D10.md` (adopted from root `project/design/D11.md`)
 - R-ASST-3H6J → D3 → `project/design/D03.md`
 - R-ASST-5K8L → D3 → `project/design/D03.md`
 - R-ASST-7M1N → D3 → `project/design/D03.md`

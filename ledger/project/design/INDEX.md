@@ -12,7 +12,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D6 → `project/design/D06.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-4M6R
 - D8 → `project/design/D08.md` — Self-serve the landing page's fonts and eliminate the FOUT (relative stylesheet link + `font-display: optional` + self-served `src` + `<head>` preload + session-gated nginx `/srv/ledger/static/`) — owns R-7AW0-4QF8, R-7DBS-W9WM, R-7EJP-A1NB, R-7FRL-NTE0, R-7GZI-1L4P
-- D9 → `project/design/D09.md` — Adopt `registry`: resolve ledger's own loopback port by name, and guard the port literals (source-scan + manifest/nginx drift) — owns R-4VDW-DRQH, R-4WLS-RJH6, R-4XTP-5B7V, R-4Z1L-J2YK
+- D9 → `project/design/D09.md` — Adopt `registry`: resolve ledger's own loopback port by name, and guard the port literals (source-scan + manifest/nginx drift) — owns R-4VDW-DRQH, R-4WLS-RJH6, R-4XTP-5B7V, R-4Z1L-J2YK; adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D10 → `project/design/D10.md` — Web surface from `share/www` through the chassis (de-embed via `Spec.WWW`) — owns R-509H-WUP9, R-51HE-AMFY
 - D11 → `project/design/D11.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the seven-domain-tool table — owns R-52PA-OE6N
 - D12 → `project/design/D12.md` — Delete the chassis shims (`internal/db` wrappers) and true up the doctrine doc — none (structural)
@@ -27,6 +27,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-3FBS-8EEL → D13 → `project/design/D13.md`
 - R-3GJO-M65A → D13 → `project/design/D13.md`
 - R-3HRK-ZXVZ → D13 → `project/design/D13.md`
+- R-4LKF-FB23 → D9 → `project/design/D09.md` (adopted from root `project/design/D08.md`)
 - R-4VDW-DRQH → D9 → `project/design/D09.md`
 - R-4WLS-RJH6 → D9 → `project/design/D09.md`
 - R-4XTP-5B7V → D9 → `project/design/D09.md`
@@ -39,6 +40,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-7EJP-A1NB → D8 → `project/design/D08.md`
 - R-7FRL-NTE0 → D8 → `project/design/D08.md`
 - R-7GZI-1L4P → D8 → `project/design/D08.md`
+- R-8DF1-W89F → D9 → `project/design/D09.md` (adopted from root `project/design/D11.md`)
+- R-8IAN-FB87 → D9 → `project/design/D09.md` (adopted from root `project/design/D11.md`)
 - R-9FRN-SGDT → D16 → `project/design/D16.md`
 - R-9GZK-684I → D16 → `project/design/D16.md`
 - R-9I7G-JZV7 → D16 → `project/design/D16.md`

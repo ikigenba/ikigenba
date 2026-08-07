@@ -12,8 +12,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D6 → `project/design/D06.md` — Conform the landing page to the cron canonical template — none (structural; markup-only)
 - D7 → `project/design/D07.md` — A top-left Home link to the dashboard landing page — owns R-HOME-8R2V
 - D8 → `project/design/D08.md` — Self-serve the landing page's fonts and eliminate the FOUT (relative stylesheet link + `font-display: optional` + self-served `src` + `<head>` preload + session-gated nginx `/srv/scripts/static/`) — owns R-M59W-5CAW, R-M6HS-J41L, R-M8XL-ANIZ, R-MA5H-OF9O, R-MBDE-270D
-- D9 → `project/design/D09.md` — Runs live under the service-owned `cache/` dir, not the root-owned AppDir (`scriptsRuntimeRoot` returns `filepath.Dir(cfg.GenerationPath)` in every layout; fixes the on-box boot crash-loop) — owns R-RUNS-CDIR, R-RUNS-BOOT
-- D10 → `project/design/D10.md` — Adopt `registry`: resolve scripts' own port and peer addresses by name at startup (own port via `MustPort`, dropbox base via `BaseURL`, `go.mod` require/replace, guardrail test that no `30xx` literal remains; peer feed defaults handed to the chassis by D11) — owns R-RGST-SELF, R-RGST-DBOX, R-RGST-NLIT, R-RGST-GMOD
+- D9 → `project/design/D09.md` — Runs live under the service-owned `cache/` dir, not the root-owned AppDir (`scriptsRuntimeRoot` returns `filepath.Dir(cfg.GenerationPath)` in every layout; fixes the on-box boot crash-loop) — owns R-RUNS-CDIR, R-RUNS-BOOT; adopts R-4LKF-FB23 (root `project/design/D08.md`)
+- D10 → `project/design/D10.md` — Adopt `registry`: resolve scripts' own port and peer addresses by name at startup (own port via `MustPort`, dropbox base via `BaseURL`, `go.mod` require/replace, guardrail test that no `30xx` literal remains; peer feed defaults handed to the chassis by D11) — owns R-RGST-SELF, R-RGST-DBOX, R-RGST-NLIT, R-RGST-GMOD; adopts R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D11 → `project/design/D11.md` — Consumer loops through `Spec.Consumers` (chassis-owned) + composition-root normalization (delete `runConsumer`/`Workers`/the `var rt` capture/the legacy `Consumes`+`Subscriptions` fields; one fully-formed Spec literal) — owns R-8WN1-0VQI, R-8XUX-ENH7
 - D12 → `project/design/D12.md` — Web surface from `share/www` through the chassis (de-embed; `Spec.WWW`, delete `internal/web`) — owns R-8Z2T-SF7W, R-90AQ-66YL
 - D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the sixteen-tool domain table; chassis `health`+`reflection` added; runtime contract moves to `Spec.Health` — owns R-91IM-JYPA, R-92QI-XQFZ
@@ -45,6 +45,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-49T9-SNXY → D15 → `project/design/D15.md`
 - R-4EOV-BQWQ → D16 → `project/design/D16.md`
 - R-4FWR-PINF → D16 → `project/design/D16.md`
+- R-4LKF-FB23 → D9 → `project/design/D09.md` (adopted from root `project/design/D08.md`)
 - R-4OW5-Q1ND → D29 → `project/design/D29.md`
 - R-4Q42-3TE2 → D29 → `project/design/D29.md`
 - R-4RBY-HL4R → D29 → `project/design/D29.md`
@@ -66,6 +67,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-83IC-SYVO → D18 → `project/design/D18.md`
 - R-84Q9-6QMD → D18 → `project/design/D18.md`
 - R-85Y5-KID2 → D18 → `project/design/D18.md`
+- R-8DF1-W89F → D10 → `project/design/D10.md` (adopted from root `project/design/D11.md`)
+- R-8IAN-FB87 → D10 → `project/design/D10.md` (adopted from root `project/design/D11.md`)
 - R-8WN1-0VQI → D11 → `project/design/D11.md`
 - R-8XUX-ENH7 → D11 → `project/design/D11.md`
 - R-8Z2T-SF7W → D12 → `project/design/D12.md`

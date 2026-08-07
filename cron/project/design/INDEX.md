@@ -11,7 +11,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D5 → `project/design/D05.md` — Docs state current truth: state the landing-page truth in cron's doctrine — none (structural; docs-only)
 - D6 → `project/design/D06.md` — A top-left Home link to the dashboard landing page — owns R-HOME-2K4P
 - D7 → `project/design/D07.md` — Self-serve the landing page's fonts and eliminate the FOUT — owns R-21DE-LOX3, R-22LA-ZGNS, R-23T7-D8EH, R-2513-R056, R-2690-4RVV
-- D8 → `project/design/D08.md` — Composition-root normalization: the `Spec` is declared inline in `cmd/cron/main.go` — none (structural)
+- D8 → `project/design/D08.md` — Composition-root normalization: the `Spec` is declared inline in `cmd/cron/main.go` — none (structural); adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D9 → `project/design/D09.md` — Web surface from `share/www` through the chassis (de-embed) — owns R-LPMQ-FKBR, R-LQUM-TC2G
 - D10 → `project/design/D10.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the tool table — owns R-LS2J-73T5
 - D11 → `project/design/D11.md` — Adopt `registry`: resolve cron's port by name and guard the deploy artifacts against drift — owns R-LTAF-KVJU, R-LUIB-YNAJ, R-LVQ8-CF18
@@ -35,6 +35,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-3V6H-7F1M → D13 → `project/design/D13.md`
 - R-3WED-L6SB → D13 → `project/design/D13.md`
 - R-3XM9-YYJ0 → D13 → `project/design/D13.md`
+- R-4LKF-FB23 → D8 → `project/design/D08.md` (adopted from root `project/design/D08.md`)
 - R-6TVE-C4AC → D15 → `project/design/D15.md`
 - R-6V3A-PW11 → D15 → `project/design/D15.md`
 - R-6WB7-3NRQ → D15 → `project/design/D15.md`
@@ -44,6 +45,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-716S-MQQI → D15 → `project/design/D15.md`
 - R-8ALX-VK6V → D4 → `project/design/D04.md`
 - R-8BTU-9BXK → D4 → `project/design/D04.md`
+- R-8DF1-W89F → D8 → `project/design/D08.md` (adopted from root `project/design/D11.md`)
+- R-8IAN-FB87 → D8 → `project/design/D08.md` (adopted from root `project/design/D11.md`)
 - R-ASST-3V7W → D3 → `project/design/D03.md`
 - R-ASST-5X9Y → D3 → `project/design/D03.md`
 - R-ASST-7Z2A → D3 → `project/design/D03.md`
