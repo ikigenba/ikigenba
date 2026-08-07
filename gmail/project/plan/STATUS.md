@@ -9,5 +9,7 @@ loop deletes the phase's line and body file — there is no done marker; done is
 gone. This file deliberately carries **no bare status glyph** anywhere but on a
 phase line, so the anchored grep matches only phase lines.
 
-Next phase: 25
+Next phase: 26
+
+- Phase 25 ⬜ realizes D12 (slice: `R-9SU9-BYHJ`) — guard every committed deploy-artifact port against registry drift, including the untested bearer-location proxy_pass
 

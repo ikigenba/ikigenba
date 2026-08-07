@@ -16,7 +16,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D10 → `project/design/D10.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the tool table — owns R-9NYN-SVIR
 - D11 → `project/design/D11.md` — Adopt `registry`: resolve gmail's own loopback port by name — owns R-9QEG-KF05
 - D12 → `project/design/D12.md` — Prove no loopback-port literal survives, and guard the deploy artifacts against registry drift — owns R-9RMC-Y6QU, R-9SU9-BYHJ
-- D13 → `project/design/D13.md` — Composition-root normalization: the `appkit.Spec` inline in `cmd/gmail/main.go` — none (structural)
+- D13 → `project/design/D13.md` — Composition-root normalization: the `appkit.Spec` inline in `cmd/gmail/main.go` — none (structural); adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D14 → `project/design/D14.md` — Delete the chassis shims (`internal/db` wrappers) and true up the doctrine doc — none (structural)
 - D15 → `project/design/D15.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer tier deliberately excluded) — owns R-3YU6-CQ9P, R-4022-QI0E, R-419Z-49R3
 - D16 → `project/design/D16.md` — Attachment content endpoint: loopback `GET /attachment` addressed by `message_id` + `part_id` (content plane holder) — owns R-WVZH-M0IY, R-3G57-009Q, R-3HD3-DS0F, R-3IKZ-RJR4, R-X22Z-IV8F
@@ -48,6 +48,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-40S0-3JKL → D8 → `project/design/D08.md`
 - R-419Z-49R3 → D15 → `project/design/D15.md`
 - R-41ZW-HBBA → D8 → `project/design/D08.md`
+- R-4LKF-FB23 → D13 → `project/design/D13.md` (adopted from root `project/design/D08.md`)
+- R-8DF1-W89F → D13 → `project/design/D13.md` (adopted from root `project/design/D11.md`)
+- R-8IAN-FB87 → D13 → `project/design/D13.md` (adopted from root `project/design/D11.md`)
 - R-8K29-UF3R → D20 → `project/design/D20.md`
 - R-8LA6-86UG → D20 → `project/design/D20.md`
 - R-8MI2-LYL5 → D20 → `project/design/D20.md`
