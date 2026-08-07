@@ -41,6 +41,7 @@ Verification ids change.
 - D32 → `project/design/D32.md` — The internal audit log stays; edge records are additive — owns R-XNAO-746A
 - D33 → `project/design/D33.md` — The apex nginx fragment blanks client-supplied correlation ids and forwards the original method — owns R-XOIK-KVWZ, R-XPQG-YNNO
 - D34 → `project/design/D34.md` — Suite-contract conformance: the opsctl install layout and the authored env contract — adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`); mints none of its own
+- D35 → `project/design/D35.md` — The authn rate limiter: per-token sliding window in `internal/ratelimit` (server-side row-id keys, post-auth ordering, nil/zero disabled, in-memory per-instance) — owns R-I98E-62GS
 
 ## Verification ids → Decision
 
@@ -102,6 +103,7 @@ Verification ids change.
 - R-I6QI-LKKG → D25 → `project/design/D25.md`
 - R-I7YE-ZCB5 → D25 → `project/design/D25.md`
 - R-I96B-D41U → D25 → `project/design/D25.md`
+- R-I98E-62GS → D35 → `project/design/D35.md`
 - R-IAE7-QVSJ → D25 → `project/design/D25.md`
 - R-IBM4-4NJ8 → D26 → `project/design/D26.md`
 - R-ICU0-IF9X → D26 → `project/design/D26.md`
