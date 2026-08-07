@@ -21,12 +21,17 @@ Verification ids change.
 - D12 → `project/design/D12.md` — A session carries its correlation id in its row (`sessions.correlation_id`, additive migration), captured once in `Runner.Enqueue` from the ambient context and re-attached both to the context a dispatched run executes under (so its GitHub peer calls stay on the chain) and to the runner's detached completion contexts (so the outcome event does), including across a restart via `Recover` — R-BVPG-H7Y9, R-BWXC-UZOY, R-LM2I-ORUI, R-BY59-8RFN, R-BZD5-MJ6C
 - D13 → `project/design/D13.md` — nginx fragment: all three gated locations capture the introspection-minted correlation id with `auth_request_set` and overwrite `X-Correlation-Id` upstream; the ungated PRM bootstrap sets it to `""` so the chassis mints — R-9DUI-TUQJ, R-9F2F-7MH8
 
+- D14 → `project/design/D14.md` — Suite-contract conformance: the opsctl install layout & the authored env contract — adopts `R-4LKF-FB23` (root `project/design/D08.md`), `R-8DF1-W89F`, `R-8IAN-FB87` (root `project/design/D11.md`); mints none of its own
+
 ## Verification ids → Decision
 
 - R-1WZF-FVH9 → D7 — `project/design/D07.md`
 - R-2U0F-NNXH → D5 — `project/design/D05.md`
 - R-2V8C-1FO6 → D6 — `project/design/D06.md`
+- R-4LKF-FB23 → D14 — `project/design/D14.md` (adopted from root `project/design/D08.md`)
 - R-894D-CUA2 → D6 — `project/design/D06.md`
+- R-8DF1-W89F → D14 — `project/design/D14.md` (adopted from root `project/design/D11.md`)
+- R-8IAN-FB87 → D14 — `project/design/D14.md` (adopted from root `project/design/D11.md`)
 - R-9DUI-TUQJ → D13 — `project/design/D13.md`
 - R-9F2F-7MH8 → D13 — `project/design/D13.md`
 - R-APSC-24AL → D6 — `project/design/D06.md`
