@@ -55,6 +55,8 @@ var (
 	storeRef *script.Store
 )
 
+const defaultRunTTL = 30 * time.Minute
+
 func main() {
 	appkit.Main(scriptsSpec())
 }
@@ -85,6 +87,7 @@ func scriptsSpec() appkit.Spec {
 		ManifestExtras: []appkit.ManifestKV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
+			{Key: "SCRIPTS_RUN_TTL", Value: "30m"},
 		},
 		Producer: func(ob *outbox.Outbox) error {
 			if storeRef == nil {
@@ -126,7 +129,7 @@ func registerRoutes(rt *appkit.Router) error {
 	}
 
 	// SCRIPTS_RUN_TTL bounds each run's wall-clock — the runaway backstop (§5.2).
-	runTTL, err := config.EnvOrDuration(os.Getenv, "SCRIPTS_RUN_TTL", 30*time.Minute)
+	runTTL, err := config.EnvOrDuration(os.Getenv, "SCRIPTS_RUN_TTL", defaultRunTTL)
 	if err != nil {
 		return err
 	}

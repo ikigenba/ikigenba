@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"log/slog"
 	"net"
@@ -17,11 +20,13 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"appkit"
+	"appkit/config"
 	appkitdatabase "appkit/db"
 	"appkit/manifest"
 	"appkit/server"
@@ -147,6 +152,76 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
+	}
+}
+
+func TestRunTTLDefaultMatchesCommittedManifest(t *testing.T) {
+	// R-HDCE-C6WU
+	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest.env: %v", err)
+	}
+	var manifestValue string
+	for _, line := range strings.Split(string(committed), "\n") {
+		if value, ok := strings.CutPrefix(line, "SCRIPTS_RUN_TTL="); ok {
+			manifestValue = value
+			break
+		}
+	}
+	if manifestValue == "" {
+		t.Fatal("committed manifest.env has no SCRIPTS_RUN_TTL value")
+	}
+	want, err := time.ParseDuration(manifestValue)
+	if err != nil {
+		t.Fatalf("parse committed SCRIPTS_RUN_TTL %q: %v", manifestValue, err)
+	}
+
+	t.Setenv("SCRIPTS_RUN_TTL", "")
+	got, err := config.EnvOrDuration(os.Getenv, "SCRIPTS_RUN_TTL", defaultRunTTL)
+	if err != nil {
+		t.Fatalf("resolve default SCRIPTS_RUN_TTL: %v", err)
+	}
+	if got != want {
+		t.Fatalf("resolved default SCRIPTS_RUN_TTL = %s, committed manifest value = %s", got, want)
+	}
+}
+
+func TestProductionGoSourceContainsNoBoxPathLiteral(t *testing.T) {
+	// R-VKB6-SHHV
+	root := filepath.Join("..", "..")
+	fset := token.NewFileSet()
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", path, err)
+		}
+		var forbidden token.Pos
+		ast.Inspect(file, func(node ast.Node) bool {
+			literal, ok := node.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				return forbidden == token.NoPos
+			}
+			value, err := strconv.Unquote(literal.Value)
+			if err == nil && strings.Contains(value, "/opt") {
+				forbidden = literal.Pos()
+				return false
+			}
+			return forbidden == token.NoPos
+		})
+		if forbidden != token.NoPos {
+			position := fset.Position(forbidden)
+			return fmt.Errorf("production Go source contains forbidden box-path literal at %s", position)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
