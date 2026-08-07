@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 45
-
-- Phase 44 ⬜ realizes — — clear fourteen stale requirement-id tags left behind by the unlisted-visibility, landing-control, and name/slug design rewrites
