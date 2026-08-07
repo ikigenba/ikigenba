@@ -61,7 +61,7 @@ func newTestHandlerWithToken(t *testing.T, newToken func() string, mirror ...sit
 	if err := sqlkit.Migrate(context.Background(), conn, migs); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	layout := sites.NewLayout(root)
+	layout := mustLayout(t, root)
 	store := sites.NewStoreWithLayout(conn, layout)
 	var mc sites.MirrorClient
 	if len(mirror) > 0 {
@@ -77,6 +77,15 @@ func newTestHandlerWithToken(t *testing.T, newToken func() string, mirror ...sit
 		t.Fatalf("new mcp handler: %v", err)
 	}
 	return &testHandler{Handler: handler, store: store, layout: layout}, root
+}
+
+func mustLayout(t *testing.T, root string) sites.Layout {
+	t.Helper()
+	layout, err := sites.NewLayout(root)
+	if err != nil {
+		t.Fatalf("new layout: %v", err)
+	}
+	return layout
 }
 
 type jsonRPCResponse struct {
@@ -418,7 +427,7 @@ func TestOnlyInstructionsAndGuideDescriptionReferenceGuide(t *testing.T) {
 		t.Fatalf("Instructions must reference guide: %q", Instructions)
 	}
 
-	tools := Tools(newTestHandlerStore(t), sites.NewLayout(t.TempDir()), testBaseURL, nil)
+	tools := Tools(newTestHandlerStore(t), mustLayout(t, t.TempDir()), testBaseURL, nil)
 	foundGuide := false
 	for _, tl := range tools {
 		if tl.Name == "guide" {
@@ -439,7 +448,7 @@ func TestOnlyInstructionsAndGuideDescriptionReferenceGuide(t *testing.T) {
 }
 
 func TestSyncDescriptionNamesDropboxWithoutPublishOrDeploy(t *testing.T) {
-	tools := Tools(newTestHandlerStore(t), sites.NewLayout(t.TempDir()), testBaseURL, nil)
+	tools := Tools(newTestHandlerStore(t), mustLayout(t, t.TempDir()), testBaseURL, nil)
 	var syncDesc string
 	for _, tl := range tools {
 		if tl.Name == "sync" {

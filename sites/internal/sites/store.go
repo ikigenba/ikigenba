@@ -94,8 +94,8 @@ type Store struct {
 	Now    func() time.Time
 }
 
-// NewStore wraps an open *sql.DB with a zero (DefaultRoot) Layout. Now defaults
-// to time.Now (UTC is applied at write time).
+// NewStore wraps an open *sql.DB without a filesystem Layout. Now defaults to
+// time.Now (UTC is applied at write time).
 func NewStore(db *sql.DB) *Store {
 	return &Store{db: db, Now: time.Now}
 }

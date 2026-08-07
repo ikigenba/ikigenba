@@ -24,6 +24,7 @@ import (
 	"html/template"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -81,7 +82,10 @@ func sitesSpec() appkit.Spec {
 		WWW:        true,
 		Migrations: db.FS,
 		Handlers: func(rt *appkit.Router) error {
-			layout := sites.NewLayout(os.Getenv("SITES_ROOT"))
+			layout, err := sites.NewLayout(resolveSitesRoot(os.Getenv))
+			if err != nil {
+				return err
+			}
 			store := sites.NewStoreWithLayout(rt.DB(), layout)
 			// The front-door base under which nginx serves published sites is the
 			// service's ResourceID minus its trailing "mcp" — RESOURCE_ID is
@@ -106,6 +110,18 @@ func sitesSpec() appkit.Spec {
 			return nil
 		},
 	}
+}
+
+// resolveSitesRoot follows the service root contract: an explicit override,
+// then composition beneath IKIGENBA_ROOT, then a checkout-local fallback.
+func resolveSitesRoot(getenv func(string) string) string {
+	if root := strings.TrimSpace(getenv("SITES_ROOT")); root != "" {
+		return root
+	}
+	if root := strings.TrimSpace(getenv("IKIGENBA_ROOT")); root != "" {
+		return filepath.Join(root, "sites", "state", "www")
+	}
+	return "./tmp/www"
 }
 
 func landingHandler(store *sites.Store, renderer landingRenderer, service, version, baseURL string) http.Handler {

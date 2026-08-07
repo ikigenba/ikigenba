@@ -9,7 +9,10 @@ import (
 )
 
 func TestLayoutSiteDirAndBaseUseVisibilitySegments(t *testing.T) {
-	layout := NewLayout(filepath.Join("tmp", "sites-root"))
+	layout, err := NewLayout(filepath.Join("tmp", "sites-root"))
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
 
 	// R-H5H4-GTWA
 	if got, want := layout.SiteBase(Public), filepath.Join(layout.root(), PublicSeg); got != want {
@@ -33,7 +36,10 @@ func TestLayoutSiteDirAndBaseUseVisibilitySegments(t *testing.T) {
 }
 
 func TestLayoutMoveRelocatesRenamesAndProtectsDestinations(t *testing.T) {
-	layout := NewLayout(t.TempDir())
+	layout, err := NewLayout(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
 	privateDir := layout.SiteDir(Private, "blog")
 	publicDir := layout.SiteDir(Unlisted, "tok")
 	if err := os.MkdirAll(privateDir, 0o755); err != nil {
@@ -90,6 +96,17 @@ func TestLayoutMoveRelocatesRenamesAndProtectsDestinations(t *testing.T) {
 	}
 	if _, err := os.Stat(destination); err != nil {
 		t.Fatalf("destination changed after collision: %v", err)
+	}
+}
+
+// R-YXZ4-CT7B
+func TestNewLayoutRejectsMissingRoot(t *testing.T) {
+	layout, err := NewLayout("")
+	if err == nil {
+		t.Fatal("NewLayout(\"\") succeeded, want an error")
+	}
+	if layout != (Layout{}) {
+		t.Fatalf("NewLayout(\"\") layout = %+v, want zero Layout", layout)
 	}
 }
 

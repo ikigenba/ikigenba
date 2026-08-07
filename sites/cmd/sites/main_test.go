@@ -32,6 +32,72 @@ import (
 	sitesdomain "sites/internal/sites"
 )
 
+// R-YWR7-Z1GM
+func TestResolveSitesRootFollowsOverrideRootAndDevelopmentFallbackLadder(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "explicit override wins",
+			env: map[string]string{
+				"SITES_ROOT":    "/x",
+				"IKIGENBA_ROOT": "/y",
+			},
+			want: "/x",
+		},
+		{
+			name: "suite root",
+			env:  map[string]string{"IKIGENBA_ROOT": "/y"},
+			want: filepath.Join("/y", "sites", "state", "www"),
+		},
+		{
+			name: "development fallback",
+			want: "./tmp/www",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveSitesRoot(func(key string) string { return tt.env[key] })
+			if got != tt.want {
+				t.Fatalf("resolveSitesRoot() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// R-VKB6-SHHV
+func TestProductionGoSourceHasNoBoxPathLiteral(t *testing.T) {
+	root := filepath.Join("..", "..")
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if path != root && (entry.Name() == ".git" || entry.Name() == "project") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(source, []byte(`"/opt`)) {
+			t.Errorf("%s contains a box-path string literal", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan production Go source: %v", err)
+	}
+}
+
 // R-8DF1-W89F
 func TestCommittedManifestIsPortable(t *testing.T) {
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))

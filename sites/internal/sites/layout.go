@@ -13,38 +13,30 @@ import (
 // The root is *injected* (a Layout value), not read from the environment here:
 // that keeps these helpers pure and testable without touching os.Getenv, and it
 // lets the single env read happen once at process wiring (cmd/sites) where the
-// rest of the config-from-env lives. DefaultRoot is the production default.
+// rest of the config-from-env lives.
 const (
-	// DefaultRoot is the production SITES_ROOT when the env var is unset.
-	DefaultRoot = "/opt/sites/state/www"
-
 	// Path segments under the root. Exported so callers and opsctl reference the
 	// same names rather than re-spelling string literals.
 	PublicSeg  = "public"  // <root>/public/<name>  — public tier
 	PrivateSeg = "private" // <root>/private/<name> — private tier
 )
 
-// Layout pins the SITES_ROOT all path helpers hang off. Construct with NewLayout;
-// a zero Layout falls back to DefaultRoot via root().
+// Layout pins the SITES_ROOT all path helpers hang off. Construct with NewLayout.
 type Layout struct {
 	Root string
 }
 
-// NewLayout returns a Layout rooted at root, falling back to DefaultRoot when
-// root is empty (e.g. SITES_ROOT unset). The caller in cmd/sites does the one
-// os.Getenv("SITES_ROOT").
-func NewLayout(root string) Layout {
+// NewLayout returns a Layout rooted at root. Root resolution belongs to the
+// composition root in cmd/sites; an empty root is a programming error here.
+func NewLayout(root string) (Layout, error) {
 	if root == "" {
-		root = DefaultRoot
+		return Layout{}, fmt.Errorf("new layout: root is empty")
 	}
-	return Layout{Root: root}
+	return Layout{Root: root}, nil
 }
 
-// root returns the effective root, tolerating a zero-value Layout.
+// root returns the injected root.
 func (l Layout) root() string {
-	if l.Root == "" {
-		return DefaultRoot
-	}
 	return l.Root
 }
 
