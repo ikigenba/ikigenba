@@ -11,5 +11,3 @@ phase line, so the anchored grep matches only phase lines.
 
 Next phase: 26
 
-- Phase 25 ⬜ realizes D12 (slice: `R-9SU9-BYHJ`) — guard every committed deploy-artifact port against registry drift, including the untested bearer-location proxy_pass
-
