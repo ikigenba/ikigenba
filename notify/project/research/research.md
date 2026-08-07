@@ -90,7 +90,7 @@ arrive from the rebuilt chassis with no notify code.
 - The `consume` hop is recorded through an injectable observation hook eventplane
   exposes and appkit installs — no notify code, and no new import.
 - The payload-field correlation convention formerly described in
-  `docs/correlation-ids.md` is superseded by the envelope field. notify's
+  `project/design/D14.md` at the repo root is superseded by the envelope field. notify's
   handlers decode no new payload field.
 - notify produces nothing, so the context-taking `Outbox.Append` change that
   compile-breaks every *producer* does not touch notify: there is no outbox, no

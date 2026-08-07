@@ -1,5 +1,5 @@
 // Package outbox is the producer half of the suite's internal SSE event plane
-// (see ../../docs/event-protocol.md — the normative wire contract). A producer
+// (see project/design/D18.md at the repo root — the normative wire contract). A producer
 // writes events into a local outbox table inside the same transaction as the
 // domain change that caused them (§4.1 atomic outbox), then serves them to
 // loopback consumers as a Server-Sent-Events feed (§7, §8).

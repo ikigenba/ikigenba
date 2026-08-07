@@ -9,7 +9,7 @@ canonical schema DDL, the `GET /feed` SSE handler, the generation/epoch sidecar
 token, and background retention. The consumer half (`package consumer`) provides
 the reconnect/backoff engine that streams a producer's feed past a durable
 per-upstream cursor and gates cursor advance on handler return. The normative
-wire contract is `../docs/event-protocol.md`; on any conflict that doc wins.
+wire contract is `project/design/D18.md` at the repo root; on any conflict that doc wins.
 
 ## How changes are made
 

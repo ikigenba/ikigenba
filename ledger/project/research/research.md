@@ -8,7 +8,7 @@ the current statement of the facts ledger's Decisions lean on, not a log.
 
 ## 1. The suite correlation standard
 
-From `docs/correlation-ids.md` and the suite telemetry capability:
+From `project/design/D14.md` at the repo root and the suite telemetry capability:
 
 - A **correlation id** is a bare **26-character Crockford base32 ULID**
   (alphabet `0123456789ABCDEFGHJKMNPQRSTVWXYZ` — no `I`, `L`, `O`, `U`):
@@ -19,7 +19,7 @@ From `docs/correlation-ids.md` and the suite telemetry capability:
 - Between processes the id travels in the header **`X-Correlation-Id`**.
 - On the event plane it travels as the **envelope field `correlation_id`**,
   populated by the library from the caller's context. The older
-  payload-field convention in `docs/correlation-ids.md` is **superseded** — a
+  payload-field convention in `project/design/D14.md` at the repo root is **superseded** — a
   producer never packs the id into its own payload.
 - **The edge strips and mints.** The dashboard's introspection endpoints mint
   the id for gated routes and return it on the auth-subrequest response as

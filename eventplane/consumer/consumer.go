@@ -1,5 +1,5 @@
 // Package consumer is the consumer half of the suite's internal SSE event plane
-// (see ../../docs/event-protocol.md — the normative wire contract; on any
+// (see project/design/D18.md at the repo root — the normative wire contract; on any
 // conflict that doc wins). It is the mirror of package outbox: where outbox is
 // the producer that serves GET /feed, consumer is the engine that connects to a
 // feed, streams events past a durable per-upstream cursor, and invokes a handler

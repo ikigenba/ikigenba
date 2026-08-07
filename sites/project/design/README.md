@@ -125,7 +125,7 @@ CHECK-constrained to exactly `public`/`private`/`unlisted` — the retired
 `X-Owner-Id`, captured at create), `owner_email` (TEXT NOT NULL — a write-once
 display snapshot of the creator email), `source_path` (TEXT, nullable —
 dropbox-sync provenance, unchanged), `created_at`, `updated_at`. Per the suite
-owner-id conversion (`docs/owner-id-design.md`) sites stores the stable
+owner-id conversion (`project/design/D17.md` at the repo root) sites stores the stable
 `owner_id` beside the display `owner_email`; sites owner-scopes no query (the
 `slug` is the global handle and `list`/the landing page show every site), so
 neither column is read for logic — they are captured and displayed only. There

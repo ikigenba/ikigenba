@@ -13,8 +13,8 @@ This is the single current statement of that ground truth, rewritten in place.
 ## 1. The suite telemetry protocol (consumed contract)
 
 The normative home of this contract is the suite-level protocol document
-(`docs/telemetry-protocol.md`, authored in the repo-root workspace) together
-with `docs/correlation-ids.md`. telemetry **implements the receiving half** of
+(`project/design/D14.md` at the repo root, authored in the repo-root workspace) together
+with `project/design/D14.md` at the repo root. telemetry **implements the receiving half** of
 that contract and owns none of it. The parts telemetry depends on, verbatim:
 
 ### 1.1 The record
@@ -317,7 +317,7 @@ fragment's literal is guarded against the registry by a test.)
 
 ## 4. On-box layout and lifecycle (consumed schema)
 
-From `docs/app-layout.md`, normative:
+From `project/design/D01.md` at the repo root, normative:
 
 - `/opt/<service>/` is a private FHS root. `state/` is the **only** thing the
   backup captures; `cache/` is transient and reset on restore; the shipped tiers
@@ -343,7 +343,7 @@ deleted.
 
 ## 5. The MCP self-description convention (consumed pattern)
 
-From `docs/mcp-discovery-convention.md`, normative pattern:
+From `project/design/D20.md` at the repo root, normative pattern:
 
 | tier | channel | guarantee | holds |
 |---|---|---|---|
@@ -357,7 +357,7 @@ input-free, returning plain text, with its document embedded in the binary so it
 always matches the running version. The guide is referenced in exactly two
 places: the `instructions` string and the `guide` tool's own description.
 
-From `docs/structured-mcp-design.md`, normative: every domain verb declares an
+From `project/design/D20.md` at the repo root, normative: every domain verb declares an
 `outputSchema` and returns `structuredContent` plus a mirrored text block, via
 `StructuredResult`. Documentation tools (`guide`, `describe`) stay plain text
 and declare no output schema. Tool errors carry a code from the closed error

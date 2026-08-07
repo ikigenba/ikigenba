@@ -128,7 +128,7 @@ residue code for faults that are no caller's fault.
 ## The suite telemetry contract (settled; appkit implements its chassis share)
 
 The suite-wide telemetry capability is fixed by the suite-level protocol
-document (`docs/telemetry-protocol.md`, written in the root workspace). appkit
+document (`project/design/D14.md` at the repo root, written in the root workspace). appkit
 consumes these values; it does not choose them and must not restate them with
 different numbers.
 
@@ -141,7 +141,7 @@ different numbers.
   added in the `registry` workspace, so `registry.BaseURL("telemetry")` is the
   address's single source.
 - **The correlation header** is `X-Correlation-Id`, carrying a **bare 26-char
-  Crockford base32 ULID** — the shape `docs/correlation-ids.md` already
+  Crockford base32 ULID** — the shape `project/design/D14.md` at the repo root already
   standardises (48 bits ms timestamp + 80 bits crypto randomness; alphabet
   `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, i.e. no `I`, `L`, `O`, `U`). appkit's
   existing `logging.NewULID` encodes with **RFC 4648** base32 (`A–Z2–7`) and is
@@ -213,7 +213,7 @@ both libraries read.
 - **`correlation_id` becomes a first-class outbox column and wire-envelope
   field**, populated by eventplane from the append context and surfaced into
   the consumer handler's context. This **supersedes** the payload-field
-  convention in `docs/correlation-ids.md`. On the consumer side the *wire*
+  convention in `project/design/D14.md` at the repo root. On the consumer side the *wire*
   value is reported verbatim on the delivered event (`""` when the event was
   uncorrelated) while the **handler's context** always carries a valid id —
   the wire id when it is valid, otherwise a fresh root eventplane mints per
@@ -260,7 +260,7 @@ both libraries read.
 
 ## The suite contract this design implements
 
-`docs/structured-mcp-design.md` (repo root) is the suite-level design this
+`project/design/D20.md` at the repo root is the suite-level contract this
 appkit work is the root dependency of: structured MCP results as the single
 verb surface for agents and machines, caller-asserted identity on loopback,
 and the loopback guard narrowed to `X-Forwarded-Proto`. The per-service

@@ -49,7 +49,7 @@ Router-provided instrumented outbound client is not a crm concern.
 `correlation_id` becomes a first-class outbox column and wire-envelope field,
 populated by the eventplane library from the calling context at append time.
 The old convention of carrying a correlation value inside the event *payload*
-(`docs/correlation-ids.md`) is superseded by the envelope field; crm never
+(`project/design/D14.md` at the repo root) is superseded by the envelope field; crm never
 carried one in a payload, so no crm payload shape changes.
 
 The consequence for crm is a **compile-caught signature change**: `Outbox.Append`

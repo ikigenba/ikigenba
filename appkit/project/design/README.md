@@ -23,7 +23,7 @@ stacked); construction history lives in git, not here.
 >    `eventplane/consumer` loops — feed-URL/`From` env resolution included.
 > 4. **Event-routing conformance** (D11 + the D9 rewrite, active): appkit
 >    compiles and plumbs the suite's routing revision
->    (`docs/event-routing-design.md`, specified in
+>    (`project/design/D18.md` at the repo root, specified in
 >    `eventplane/project/design/` D1–D4) — `Spec.Events` carries the
 >    family-based `outbox.Registry`, the chassis `reflection` tool speaks
 >    kinds (D9, rewritten in place), and every other eventplane coupling
@@ -33,7 +33,7 @@ stacked); construction history lives in git, not here.
 >    between eventplane and the services).
 > 5. **Structured MCP results + the loopback route class** (D8/D9 revised +
 >    D12, active): appkit implements the suite's structured-results contract
->    (`docs/structured-mcp-design.md`) — protocol `2025-06-18`,
+>    (`project/design/D20.md` at the repo root) — protocol `2025-06-18`,
 >    `Tool.OutputSchema`, `StructuredResult` (replacing `JSONResult`, deleted),
 >    the typed `ErrorCode` vocabulary in a re-signed `ErrorResult`, the
 >    `-32603` handler-fault mapping, structured `health`/`reflection` — and

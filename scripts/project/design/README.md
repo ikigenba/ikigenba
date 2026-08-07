@@ -26,7 +26,7 @@ in git, never in the spec.
 > `/health`); within D11–D14 the `python3`-exec runner, the script/run data model,
 > the event semantics, and the migrations are unchanged and no migration is added.
 > The design now also carries the **event-routing conformance** (**D17–D18**,
-> mirroring prompts' D23–D24 per `docs/event-routing-design.md`): triggers become
+> mirroring prompts' D23–D24 per `project/design/D18.md` at the repo root): triggers become
 > single canonical filter strings matched by the shared `eventplane/routing`
 > matcher and the consumer conforms to the kind/subject envelope (**D17**), and
 > the producer's completion events become kinds `succeeded`/`failed` with subject
@@ -38,8 +38,8 @@ in git, never in the spec.
 > external-ordering banner).
 >
 > The newest series is the **scripts runtime as the suite's first machine
-> consumer** (**D21–D26**, per `docs/structured-mcp-design.md` §"The first
-> machine consumer"): the runner-injected `suite` Python module — its embedded
+> consumer** (**D21–D26**, per `project/design/D20.md` at the repo root): the
+> runner-injected `suite` Python module — its embedded
 > chassis, env injection, `event()`, and exception model (**D21**), the generic
 > MCP verb client `suite.mcp` (**D22**), the content-plane acceptor
 > `suite.fetch` (**D23**), and the file-share filesystem client `suite.files`
@@ -65,7 +65,7 @@ in git, never in the spec.
 > **Correlation ids are a suite constant, used by value.** The header
 > `X-Correlation-Id`, the 26-character Crockford-base32 ULID shape, the
 > read-or-mint rule and the context accessors are defined by
-> `docs/telemetry-protocol.md` and the leaf package `eventplane/correlation`,
+> `project/design/D14.md` at the repo root and the leaf package `eventplane/correlation`,
 > and applied by appkit's middleware. scripts owns none of them, re-implements
 > none of them (`internal/ids` mints **run** ids only), and does not re-prove
 > chassis-owned recording.

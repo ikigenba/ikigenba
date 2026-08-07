@@ -49,6 +49,46 @@ Where product and design could overlap (behavior), product states the
 *promise*; design states the *exact, checkable proof of that promise*. This
 boundary is load-bearing — it is what keeps the three from overlapping.
 
+## The umbrella project and suite contracts
+
+The repo root's `project/` is the **umbrella project**: a spec whose "codebase"
+is the suite's **shared contracts**, and which builds no code of its own. Every
+rule in this skill applies to it unchanged; only what follows is particular to
+it.
+
+- **A contract Decision** states one suite-wide convention (an env contract, a
+  protocol, an install layout, a tool-shape rule). Its Verification ids are
+  minted normally, but each carries a **proof-location marker** telling the
+  coverage check where the tagged test lives:
+  - `[proof: <tree>]` — one named tree (e.g. `appkit`, `opsctl`) carries the
+    tagged test; the behavior is proven once, in the implementation that owns
+    it.
+  - `[proof: per-service]` — every service that adopts the contract must carry
+    its own tagged test for the id.
+  - A contract with no testable behavior of its own (pure layout/prose
+    contracts) says so explicitly and carries no ids, exactly like a
+    structural Decision.
+- **Umbrella coverage** follows the markers: an id marked `[proof: <tree>]`
+  must appear as a tag in that tree's test files; an id marked
+  `[proof: per-service]` is checked per adopting service (see adoption below),
+  not against the umbrella itself. The umbrella never uses the tree-local
+  coverage grep, since it governs no code.
+- **Cite, never restate.** A subproject spec uses a suite contract **by
+  value**: it cites the umbrella Decision by path
+  (`project/design/DNN.md` at the repo root), owns none of it, and never
+  restates its content normatively. A stale local restatement is drift by
+  construction; the citation is the whole mechanism.
+- **Citation of an id is adoption.** When a service design cites a
+  `[proof: per-service]` contract id, the ordinary coverage invariant applies
+  to it: the id must be realized by a tagged test in that service's tree or
+  assigned to a pending phase. Contracts proven in one named tree are cited by
+  Decision path only, never by id — an id in a design demands a local test.
+- **Conformance is the default; deviation is a visible Decision.** A
+  subproject conforms to every applicable suite contract unless it has an
+  identified, project-specific need. Deviating requires a local Decision that
+  names the umbrella Decision/id it departs from and the reason; silence means
+  conformance, and authoring moves should push toward it.
+
 ## Hard invariants (no writer relaxes these)
 
 - **Spec-first, direction-gated.** The spec is the only path by which the
@@ -74,7 +114,10 @@ boundary is load-bearing — it is what keeps the three from overlapping.
   it sits at the root of, never a sibling service, the repo root, or shared
   tooling. No Decision may name a seam/file outside that tree; no phase may
   build/edit/test outside it. Cross-module work is a signal the work is
-  misfiled, not a license to cross.
+  misfiled, not a license to cross. One carve-out: **citing** a suite contract
+  from the umbrella project (by Decision path, or by id when adopting a
+  per-service contract) is not a scope violation — building, editing, or
+  testing outside the tree still is.
 - **Authoring write boundary.** Spec authoring is a **docs-only mode**. During
   an `$open-spec` session's discussion, `$grill-me`, `$seal-spec`, and
   loop-prompt generator workflows, the only permitted writes are the
@@ -128,7 +171,7 @@ boundary is load-bearing — it is what keeps the three from overlapping.
   current design id is missing — the design-only difference must be empty:
 
   ```
-  comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/*.md | sort -u) \
+  comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | sort -u) \
            <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
                  <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
   ```
@@ -138,7 +181,10 @@ boundary is load-bearing — it is what keeps the three from overlapping.
   test). **Empty output is the pass condition.** No reverse bookkeeping is
   needed: when a behavior leaves design its id and tagged test are deleted
   with it (the minted-ids rule), and a *pending* phase carrying an id design
-  no longer mints is stale and must be fixed at authoring time.
+  no longer mints is stale and must be fixed at authoring time. Ids cited from
+  the umbrella's per-service contracts enter the denominator like local ids;
+  the umbrella project itself replaces this tree-local check with the
+  proof-location markers described above.
 
 ## `project/product/README.md` — the product shape
 

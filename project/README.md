@@ -1,10 +1,19 @@
 # project — workspace layout
 
-Everything this workspace needs to be **designed, planned, and built** lives
-under `project/`. This file is the only loose file here; everything else is in
-one of the folders below. Paths are written relative to the **repo root**,
-which is also the directory the build loop runs from — this workspace governs
-the suite mono-repo it sits at the root of.
+Everything this workspace needs lives under `project/`. This file is the only
+loose file here; everything else is in one of the folders below. Paths are
+written relative to the **repo root**, which is also the directory the build loop
+runs from.
+
+This is the suite's **umbrella project**. What it governs is not a codebase but
+the suite's **shared contracts** — the agreements more than one tree must meet at
+(the install tree, the release bundle, version identity, the durable/disposable
+boundary, the event epoch, per-service adoption, the env and verb-set contract,
+the secrets parameter, the telemetry protocol). It **builds no code of its own**:
+every contracted behavior is implemented and proven in the tree that owns the
+implementation, named on the behavior by a `[proof: …]` marker. Each subproject's
+own `project/` (`appkit/`, `eventplane/`, `opsctl/`, `bin/`, `nginx/`, and every
+service) **cites** these Decisions by path and restates none of them.
 
 ## The folders
 
@@ -12,7 +21,7 @@ the suite mono-repo it sits at the root of.
 |---|---|---|
 | `product/` | `README.md` — the *why*: problem, users, scope, promises, success criteria | `$seal-spec` (rewritten in place) |
 | `research/` | `research.md` — collected external ground truth design references | `$seal-spec` (rewritten in place; optional) |
-| `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
+| `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map, with proof-location markers) + `DNN.md` (one contract per Decision) | `$seal-spec` (rewritten in place) |
 | `plan/` | `README.md` (static rules) + `STATUS.md` (manifest: `Next phase` counter + `⬜` lines) + `phase-NN.md` (one per **pending** phase) | `$seal-spec` (appends); the build loop deletes completed phases |
 | `bugs/` | free-form bug diagnoses / write-ups | free-form (not spec-owned) |
 | `requests/` | free-form feature requests | free-form (not spec-owned) |

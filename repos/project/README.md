@@ -20,10 +20,10 @@ way to change them. Don't add ad-hoc documents to the spine folders; fold
 corrections and follow-ons into the existing spine docs via `$seal-spec` (and
 append a plan phase) instead.
 
-The suite-level direction this service was carved from (the two-plane
-architecture and the deferred release/materialization model) lives in
-`docs/repos-design.md` at the repo root; this `project/` tree governs only the
-`repos/` codebase and carries only the settled v1 scope.
+This `project/` tree governs only the `repos/` codebase and carries only the
+settled v1 scope; the wider suite-level direction it was carved from (the
+two-plane architecture and the deferred release/materialization model) is not
+spec'd anywhere yet and will enter this tree's own spec when it is built.
 
 See `project/loops/README.md` (once generated) for how the installed build loop
 works.

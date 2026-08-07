@@ -6,15 +6,15 @@ the code on 2026-08-03, and options deliberately evaluated and not chosen.
 
 ## The governing external contracts
 
-**`docs/event-routing-design.md`** (repo root, suite-level) is the addressing
+**`project/design/D18.md` at the repo root** (suite-level) is the addressing
 model this library realizes: the envelope, the canonical key
 `source + ":" + kind + subject`, the doublestar glob dialect,
 families-not-enumerations reflection, filter-vs-family validation, and the
 hard-cutover migration stance. Design uses its values verbatim and does not
-re-derive them. Its "Producer key map" table is direction, not a binding rename
+re-derive them. Its producer-key examples are direction, not a binding rename
 list — each service picks its kinds/subjects in its own spec.
 
-**`docs/correlation-ids.md`** (repo root, suite-level) is the correlation
+**`project/design/D14.md` at the repo root** (suite-level) is the correlation
 standard this library realizes on the event plane. The facts design consumes:
 
 - A correlation id is a **bare suite ULID**: 26 characters, **Crockford
@@ -61,11 +61,10 @@ composition root. The same direction is why the correlation-id primitives (the
 header constant, the minter, the context accessor) live here rather than in the
 chassis: everything that needs them sits downstream of this library.
 
-Note: `docs/event-protocol.md` is cited as the normative wire contract by
-`eventplane/CLAUDE.md` and by this library's code comments (the `§` references
-throughout), but **that file does not exist in the tree** (verified
-2026-08-03). The routing doc acknowledges this and says the protocol doc, when
-written, writes against the current addressing model.
+Note: the normative wire contract is `project/design/D18.md` at the repo root.
+It replaced a long-cited event-protocol document under `docs/` that never
+existed in the tree; this library's older code comments still carry that name's
+`§` section references, which resolve to nothing and are a known residue.
 
 ## As-built facts (verified in code, 2026-08-03)
 
@@ -106,7 +105,7 @@ extends, not the pre-revision ones.
   `crypto/rand`, encoded with `base32.StdEncoding.WithPadding(NoPadding)` —
   i.e. **RFC 4648**, not Crockford, despite the comment. It mints event ids and
   generation tokens, which are *not* correlation ids and are not governed by
-  `docs/correlation-ids.md`.
+  `project/design/D14.md` at the repo root.
 - **`consumer.Event`** (`consumer/consumer.go`): `{ID, Source, Time, Kind,
   Subject, Payload}` with `Key()` delegating to `routing.Key`. `Handler` is
   `func(ctx context.Context, ev Event) error` — the engine already passes a

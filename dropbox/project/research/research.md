@@ -105,7 +105,7 @@ consequence for a producer:
   observation hook eventplane exposes and appkit installs, so a producer records
   publishes without importing anything new.
 - The payload-field correlation convention formerly described in
-  `docs/correlation-ids.md` is superseded by the envelope field. dropbox's event
+  `project/design/D14.md` at the repo root is superseded by the envelope field. dropbox's event
   payload gains **no** new field.
 
 Where a context is not already in hand at the append site, the chain id is the

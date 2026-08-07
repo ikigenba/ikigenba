@@ -66,8 +66,8 @@ repos **does**, in v1:
 - Serve the canonical suite **landing page** at its mount, session-gated like
   every other service.
 
-repos does **nothing else** in v1. Deliberately excluded (they belong to the
-already-designed later direction, `docs/repos-design.md`):
+repos does **nothing else** in v1. Deliberately excluded (they belong to a
+later direction, to be spec'd here when it is built):
 
 - **No release machinery.** No release events, no content endpoint for
   execution-plane services, no `source` bindings; sites, scripts, and prompts

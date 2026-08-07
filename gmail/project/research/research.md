@@ -95,7 +95,7 @@ and re-verifies none of that behavior.
 - **`outbox.Append` gains a leading `context.Context`.** `correlation_id`
   becomes a first-class outbox column (additive migration, owned by
   eventplane) and wire-envelope field, populated from the append context. The
-  payload-field convention in `docs/correlation-ids.md` is superseded.
+  payload-field convention in `project/design/D14.md` at the repo root is superseded.
 - The change is **compile-caught** at all nine in-suite call sites (gmail's is
   `internal/gmail/events.go`); each service adopts it in its own spec.
   `Ring()`, the outbox schema gmail owns, and the routing key are unchanged.

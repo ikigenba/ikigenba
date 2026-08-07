@@ -9,7 +9,7 @@ go 1.26
 use (
 	.
 	./appkit
-	./bintest
+	./bin/bintest
 	./crm
 	./cron
 	./dashboard

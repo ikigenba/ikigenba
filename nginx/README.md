@@ -24,6 +24,9 @@ the system `/etc/nginx` is untouched.
                    crm.conf etc. regenerated here by ./run
     logs/          access.log, error.log
     tmp/           nginx scratch (temp paths)
+    parked/        committed default_server config + page for the live box's
+                   non-apex domains; installed by the deploy.md runbook
+    project/       this tree's spec (product / design / plan)
 
 ## Map
 

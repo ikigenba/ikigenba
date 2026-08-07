@@ -18,6 +18,9 @@ Verification ids change.
 - D10 → `project/design/D10.md` — init-box installs the box-baseline command-line tooling (poppler-utils, git, sqlite, tar, curl-minimal) — owns `R-JQGB-RYA2`, `R-JRO8-5Q0R`
 - D11 → `project/design/D11.md` — init-box installs the oauth CLI via its release installer to `/usr/local/bin` — owns `R-ML75-3NVZ`, `R-MMF1-HFMO`
 - D12 → `project/design/D12.md` — `cache/` is app-owned by construction: setup creates it owned by the service user; deploy re-asserts it alongside `state/` — owns `R-4ZI0-4CH5`, `R-50PW-I47U`
+- D13 → `project/design/D13.md` — opsctl-owned `backup` / `restore`, S3-only (stop·snapshot·start) — owns `R-4GOT-W83B`, `R-4HWQ-9ZU0`, `R-4J4M-NRKP`, `R-4KCJ-1JBE`, `R-82FY-GAL6`, `R-TAOX-5LKS`, `R-TBWT-JDBH`
+- D14 → `project/design/D14.md` — Scheduled nightly backup (systemd timer + box sweep) — owns `R-RNKC-HAW8`, `R-ROS8-V2MX`
+- D15 → `project/design/D15.md` — stage / deploy / rollback / prune orchestration — owns `R-84VR-7U2K`, `R-863N-LLT9`, `R-87BJ-ZDJY`, `R-88JG-D5AN`, `R-89RC-QX1C`, `R-8AZ9-4OS1`, `R-8C75-IGIQ`
 
 ## Verification ids → Decision
 
@@ -25,6 +28,10 @@ Verification ids change.
 - R-3LHT-WHAO → D7 — `project/design/D07.md`
 - R-3MPQ-A91D → D8 — `project/design/D08.md`
 - R-3NXM-O0S2 → D9 — `project/design/D09.md`
+- R-4GOT-W83B → D13 — `project/design/D13.md`
+- R-4HWQ-9ZU0 → D13 — `project/design/D13.md`
+- R-4J4M-NRKP → D13 — `project/design/D13.md`
+- R-4KCJ-1JBE → D13 — `project/design/D13.md`
 - R-4ZI0-4CH5 → D12 — `project/design/D12.md`
 - R-50PW-I47U → D12 — `project/design/D12.md`
 - R-65MT-7QEK → D2 — `project/design/D02.md`
@@ -33,6 +40,14 @@ Verification ids change.
 - R-6BQB-4L41 → D3 — `project/design/D03.md`
 - R-6CY7-ICUQ → D3 — `project/design/D03.md`
 - R-6FE0-9WC4 → D3 — `project/design/D03.md`
+- R-82FY-GAL6 → D13 — `project/design/D13.md`
+- R-84VR-7U2K → D15 — `project/design/D15.md`
+- R-863N-LLT9 → D15 — `project/design/D15.md`
+- R-87BJ-ZDJY → D15 — `project/design/D15.md`
+- R-88JG-D5AN → D15 — `project/design/D15.md`
+- R-89RC-QX1C → D15 — `project/design/D15.md`
+- R-8AZ9-4OS1 → D15 — `project/design/D15.md`
+- R-8C75-IGIQ → D15 — `project/design/D15.md`
 - R-AUAI-EX87 → D7 — `project/design/D07.md`
 - R-AXY7-K8GA → D8 — `project/design/D08.md`
 - R-B0E0-BRXO → D9 — `project/design/D09.md`
@@ -51,6 +66,10 @@ Verification ids change.
 - R-MXKA-OPC2 → D4 — `project/design/D04.md`
 - R-MYS7-2H2R → D4 — `project/design/D04.md`
 - R-QFXB-VARQ → D7 — `project/design/D07.md`
+- R-RNKC-HAW8 → D14 — `project/design/D14.md`
+- R-ROS8-V2MX → D14 — `project/design/D14.md`
+- R-TAOX-5LKS → D13 — `project/design/D13.md`
+- R-TBWT-JDBH → D13 — `project/design/D13.md`
 - R-WP3M-PO1V → D1 — `project/design/D01.md`
 - R-WQBJ-3FSK → D1 — `project/design/D01.md`
 - R-WRJF-H7J9 → D1 — `project/design/D01.md`

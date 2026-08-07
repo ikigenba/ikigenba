@@ -14,7 +14,7 @@ func repoRoot(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("get working directory: %v", err)
 	}
-	return filepath.Clean(filepath.Join(wd, ".."))
+	return filepath.Clean(filepath.Join(wd, "..", ".."))
 }
 
 func runScript(t *testing.T, env []string, name string, args ...string) (string, error) {

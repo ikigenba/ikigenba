@@ -156,8 +156,8 @@ Facts verified against the tagged agentkit source and the `oauth` CLI repo (`git
 
 ## 9. Suite telemetry — the contracts prompts adopts (external ground truth)
 
-Facts settled in the suite-wide telemetry design (`docs/telemetry-protocol.md`,
-`docs/correlation-ids.md`) and owned by other workspaces. prompts consumes them
+Facts settled in the suite-wide telemetry design (`project/design/D14.md` at the repo root,
+`project/design/D14.md` at the repo root) and owned by other workspaces. prompts consumes them
 by value and re-derives none of them.
 
 **The correlation header.** `X-Correlation-Id`, carrying a **bare 26-character
@@ -186,7 +186,7 @@ which the settled form for a run spawn is **`run:<run-id>`**.
 **Self-originated work and roots.** A run spawn is named in the suite contract
 as one of the origins that mints its own chain and records a `root` record
 (beside a cron tick, a scripts run spawn, and a consumer processing an event
-with no chain id). `docs/correlation-ids.md`'s durable-root-reuse rule says an
+with no chain id). `project/design/D14.md` at the repo root's durable-root-reuse rule says an
 entity that already owns a suite ULID *is* the chain root — no second id is
 minted.
 
@@ -196,7 +196,7 @@ library from context at `Append` (a signature change every producer sees at
 compile time), and surfaced into consumer handler contexts on delivery.
 eventplane must not import appkit, so the ctx-key ownership sits in a leaf
 package. This **supersedes** the payload-field convention
-`docs/correlation-ids.md` originally described (the wiki→prompts `group_id`
+`project/design/D14.md` at the repo root originally described (the wiki→prompts `group_id`
 linkage); a `group_id` remains a caller's reporting label, not a chain id.
 
 **The instrumented outbound client is Router-provided.** appkit publishes one

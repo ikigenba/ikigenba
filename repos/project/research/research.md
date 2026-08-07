@@ -3,9 +3,8 @@
 External ground truth the design depends on, collected so design never
 re-derives it. Non-contractual; the build loop does not read it. The prior-art
 survey that shaped the overall direction (label gates, branch namespaces,
-worktree-off-canonical-state, ephemeral scoped tokens) lives at
-`docs/repos-research.md` in the repo root; this file pins only the exact
-external contracts v1 code touches.
+worktree-off-canonical-state, ephemeral scoped tokens) is not restated here;
+this file pins only the exact external contracts v1 code touches.
 
 ## 1. GitHub webhook delivery — the fields v1 reads
 
@@ -177,7 +176,7 @@ record, the shared client, and the event envelope are the suite's.
 - **The event plane gains a first-class `correlation_id`.** It becomes an outbox
   column and a wire-envelope field, populated by the eventplane library from the
   context at `Append`, and handed to consumers on the handler context. The
-  payload-field convention in `docs/correlation-ids.md` is superseded. `Append`'s
+  payload-field convention in `project/design/D14.md` at the repo root is superseded. `Append`'s
   signature changes to carry the context, so every producer call site is
   **compile-caught** — repos has exactly one, in `AppendOutcome`.
 - **Out of scope by suite decision.** Work inside spawned subprocesses and

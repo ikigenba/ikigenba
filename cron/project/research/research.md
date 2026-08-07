@@ -8,7 +8,7 @@ current statement of the facts cron's Decisions lean on, not a log.
 
 ## 1. The suite correlation standard
 
-From `docs/correlation-ids.md` and the suite telemetry capability:
+From `project/design/D14.md` at the repo root and the suite telemetry capability:
 
 - A **correlation id** is a bare **26-character Crockford base32 ULID**
   (alphabet `0123456789ABCDEFGHJKMNPQRSTVWXYZ` — no `I`, `L`, `O`, `U`):
@@ -19,7 +19,7 @@ From `docs/correlation-ids.md` and the suite telemetry capability:
 - Between processes the id travels in the header **`X-Correlation-Id`**.
 - On the event plane it travels as the **envelope field `correlation_id`**,
   populated by the library from the caller's context. The older
-  payload-field convention in `docs/correlation-ids.md` is **superseded** — a
+  payload-field convention in `project/design/D14.md` at the repo root is **superseded** — a
   producer never packs the id into its own payload.
 - **The edge strips and mints.** The dashboard's introspection endpoints mint
   the id for gated routes and return it on the auth-subrequest response as
@@ -31,7 +31,7 @@ From `docs/correlation-ids.md` and the suite telemetry capability:
 
 ## 2. The durable-root rule — and why cron is the exception it names
 
-`docs/correlation-ids.md` says the id is **minted once, at the outermost cause
+`project/design/D14.md` at the repo root says the id is **minted once, at the outermost cause
 of a causal chain** — "the user's MCP call, web request, **or a trigger firing
 on the user's behalf**" — and adds the **durable-root reuse** rule: when a
 chain is rooted at a durable entity that already carries a suite ULID (an

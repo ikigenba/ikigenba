@@ -137,7 +137,7 @@ choose; the dashboard's design uses them by value.
 
 - **The correlation header is `X-Correlation-Id`,** carrying a **bare 26-character
   Crockford base32 ULID** — 48 bits of millisecond timestamp then 80 bits of
-  randomness, no prefix, no separators (`docs/correlation-ids.md`). Crockford's
+  randomness, no prefix, no separators (`project/design/D14.md` at the repo root). Crockford's
   alphabet is `0123456789ABCDEFGHJKMNPQRSTVWXYZ`: it deliberately omits `I`, `L`,
   `O`, and `U`, which is what distinguishes it from RFC 4648 base32 and makes the
   format checkable by inspection.

@@ -70,7 +70,7 @@ returned only after `tx.Commit()` succeeds.
   `Spec.Producer(ob)` so the service injects it into its domain.
 - `/feed` is loopback-only, unauthenticated, and never reachable through nginx.
 
-**Addressing (the event-routing revision, `docs/event-routing-design.md`).** An
+**Addressing (the event-routing revision, `project/design/D18.md` at the repo root).** An
 event is addressed by a routing key `<source>:<kind><subject>`: `kind` is the
 fact class with any redundant noun prefix dropped (`source` already names the
 domain), `subject` a `/`-rooted producer-chosen routing name. The suite key map
@@ -130,8 +130,8 @@ delivery's event name) and `X-GitHub-Delivery` (a per-delivery UUID).
 ## 4. Suite telemetry: the external contract webhooks conforms to
 
 Settled suite-wide; webhooks owns none of it and uses it by value. The normative
-statement is `docs/telemetry-protocol.md` (with `docs/correlation-ids.md`
-amended to match).
+statement is `project/design/D14.md` at the repo root, which carries both the
+record contract and the correlation standard.
 
 - **Correlation header `X-Correlation-Id`**, value a bare **26-character
   Crockford base32 ULID** (alphabet `0123456789ABCDEFGHJKMNPQRSTVWXYZ` — note

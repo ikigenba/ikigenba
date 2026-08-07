@@ -21,17 +21,17 @@ in git, not here.
 > plane** (D16 — the loopback-private `GET /attachment` holder endpoint,
 > addressed by stable `message_id` + `part_id`; D17 — durable `content_url`
 > references in the `read`/`thread` results, realizing gmail's row in
-> `docs/content-plane-design.md`; D19 — the tagged live round-trip check
+> `project/design/D19.md` at the repo root; D19 — the tagged live round-trip check
 > against the real Gmail API) and the **event
 > routing revision** (D18 — the kind/subject envelope over the revised
 > eventplane API, kinds `received`/`sent`/`deleted`, realizing gmail's row in
-> `docs/event-routing-design.md`; D18 adds gmail's one outbox schema
+> `project/design/D18.md` at the repo root; D18 adds gmail's one outbox schema
 > migration and externally depends on the eventplane revision being built
 > first) — **plus** the **structured-MCP** conformance (D20 — every domain tool
 > returns `structuredContent` alongside its mirrored text, declares an
 > `outputSchema`, and carries a typed error code from the suite vocabulary, and
 > the `GET /attachment` endpoint moves to the shared `X-Forwarded-Proto`-only
-> loopback guard; realizing gmail's row in `docs/structured-mcp-design.md`) —
+> loopback guard; realizing gmail's row in `project/design/D20.md` at the repo root) —
 > **plus** the **suite telemetry** adoption (D21 — gmail's Gmail REST and OAuth
 > token-refresh calls move onto appkit's shared instrumented outbound HTTP
 > client; D22 — the nginx fragment forwards the edge-minted `X-Correlation-Id`

@@ -38,11 +38,11 @@ here lives in git.
 >    origin-tagged events (D18), MCP write tools (D19), and a `dropbox/docs/`
 >    integrator reference (D20).
 > 5. **Suite-protocol conformance** (D19 revised + D22, active): the **content
->    plane** (`docs/content-plane-design.md`) — MCP `put` becomes
+>    plane** (`project/design/D19.md` at the repo root) — MCP `put` becomes
 >    reference-based (`source_url`, fetched server-side, confined to loopback +
 >    registry ports), with the capped base64 form kept as the inline
 >    convenience (D19); and the **event-routing revision**
->    (`docs/event-routing-design.md`) — the `file.created`/`modified`/`deleted`
+>    (`project/design/D18.md` at the repo root) — the `file.created`/`modified`/`deleted`
 >    types become kinds `create`/`modify`/`delete` with the mirror path as
 >    subject, the registry becomes `outbox.Family` entries, and the outbox
 >    converts by a new timestamped migration (D22). D22 consumes the revised
@@ -171,7 +171,7 @@ approach every Decision's Verification list assumes:
   partition (the dropbox-declared domain tools + chassis `health`/`reflection`,
   currently the eight-tool surface pinned by D19) is asserted at the same seam.
 - **Identity is id-keyed; dropbox reads no owner for logic.** Since the suite's
-  owner-id conversion (`docs/owner-id-design.md`, appkit D13), the chassis
+  owner-id conversion (`project/design/D17.md` at the repo root, appkit D13), the chassis
   identity gate on `POST /mcp` keys on `X-Owner-Id` alone; `X-Owner-Email`,
   `X-Owner-Name`, and `X-Owner-Picture` ride along as display and are never
   gated on. dropbox is single-tenant and keys **no** domain data on the owner —

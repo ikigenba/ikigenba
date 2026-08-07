@@ -29,7 +29,7 @@ lives in git, never in the spec.
 >    through the committed `replace appkit => ../appkit`.
 > 4. **Event-routing conformance, consumer side** (D16, active): notify's
 >    handlers and declared subscriptions adopt the suite's revised event
->    addressing (`docs/event-routing-design.md`) — `consumer.Event{Kind,
+>    addressing (`project/design/D18.md` at the repo root) — `consumer.Event{Kind,
 >    Subject}` + `Key()` replace the deleted `Type`, subscription filters
 >    become canonical-key globs matched by `eventplane/routing.Match`, and the
 >    reflection `subscribes` surface restates the new keys. notify produces
@@ -37,7 +37,7 @@ lives in git, never in the spec.
 >    (its design D1–D4) and the conformed appkit chassis are fixed external
 >    contracts, operator-sequenced ahead of the build.
 > 5. **Structured MCP adoption** (D17, active): the `send` tool adopts the
->    suite's structured-MCP contract (`docs/structured-mcp-design.md`) — a
+>    suite's structured-MCP contract (`project/design/D20.md` at the repo root) — a
 >    `StructuredResult` success carrying `structuredContent`, a declared
 >    `outputSchema`, and typed error codes from the closed vocabulary
 >    (`validation`, and `source_unavailable` for an ntfy rejection/unreachable —

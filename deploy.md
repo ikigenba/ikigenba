@@ -46,7 +46,7 @@ manual operator prerequisite, not something this repo's green gate can verify.
 ## Parked Front Door
 
 The parked front door is a one-time install for the live box's non-apex
-registered domains. It commits the source files in `parked/`, but does not add an
+registered domains. It commits the source files in `nginx/parked/`, but does not add an
 `opsctl` verb or app deploy step. Issue the shared parked certificate first, then
 install the config and page:
 
@@ -60,7 +60,7 @@ ssh int "sudo certbot certonly --webroot -w /var/lib/letsencrypt --cert-name par
   --non-interactive --agree-tos -m \"$CERTBOT_EMAIL\" \
   --deploy-hook \"systemctl reload nginx\""
 
-scp parked/index.html parked/nginx.conf int:/tmp/
+scp nginx/parked/index.html nginx/parked/nginx.conf int:/tmp/
 ssh int 'sudo install -d -m 0755 -o root -g root /var/www/parked && \
   sudo install -m 0644 -o root -g root /tmp/index.html /var/www/parked/index.html && \
   sudo install -m 0644 -o root -g root /tmp/nginx.conf /etc/nginx/conf.d/parked.conf && \
@@ -73,8 +73,8 @@ After reload, confirm the installed bytes match source:
 ```sh
 scp int:/etc/nginx/conf.d/parked.conf /tmp/parked.conf.live
 scp int:/var/www/parked/index.html /tmp/parked.index.live
-diff -u parked/nginx.conf /tmp/parked.conf.live
-diff -u parked/index.html /tmp/parked.index.live
+diff -u nginx/parked/nginx.conf /tmp/parked.conf.live
+diff -u nginx/parked/index.html /tmp/parked.index.live
 ```
 
 Then run the verification checklist (D13). **Never pass `curl -k` here**: these

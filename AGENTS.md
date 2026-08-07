@@ -45,13 +45,12 @@ it. If unsure which subfolder a task belongs to, ask; do not default to the root
 | **eventplane** | Shared **library**: event-plane producer/consumer plumbing (outbox, feed, routing). |
 | **registry** | Shared **library**: the authoritative service-name to loopback-port table. |
 | **opsctl** | **On-box CLI**: stage/deploy/rollback/prune/status/provision/backup. Installed to `/usr/local/bin/opsctl`. |
-| **bin** | Repo-root operator scripts: off-box build/version tooling (`ship`, `bump`, `start`, `stop`, `create-migration`). |
-| **nginx** | Local-dev front door on **:8080** mirroring prod `/srv/<svc>/` routing (`./run`). |
-| **parked** | Committed `default_server` nginx config and static parking page for live non-apex domains. |
-| **docs** | Suite-level docs: deployment ADR, versioning, runbooks, event-plane protocol. |
+| **bin** | Repo-root operator scripts: off-box build/version tooling (`ship`, `bump`, `start`, `stop`, `create-migration`), plus the `bintest/` proof tier. Spec-governed (`bin/project/`). |
+| **nginx** | Local-dev front door on **:8080** mirroring prod `/srv/<svc>/` routing (`./run`), plus the committed `parked/` default_server files for live non-apex domains. Spec-governed (`nginx/project/`). |
+| **docs** | Non-normative prose only (positioning). Suite contracts live in the root `project/design/`, never here. |
 | **sops** | Standard operating procedures for agents (e.g. seeding secrets). Check here first. |
 | **design** | The shared Carbon design-system reference (tokens, example). |
-| **project** | The suite-level spec workspace (product/design/plan). |
+| **project** | The **umbrella** spec workspace: the suite's shared contracts (install tree, release bundle, semver, env contract, identity, event plane, content plane, MCP surface, telemetry/correlation). It builds no code. |
 
 The **fifteen deployable apps** each carry a committed `<app>/VERSION` and ship
 independently: **dashboard, crm, ledger, notify, dropbox, prompts, wiki, cron,
@@ -128,11 +127,11 @@ holds for the suite-level `project/` at the root and for every subproject's.
 See the `$ikispec` skill for the `project/` spec contracts and `$ralph` for the
 unattended build workflow.
 
-## Designing and planning work
+## Suite contracts and the umbrella project
 
-Suite-level work moves through paired documents in `docs/` sharing one slug:
-**`<slug>-design.md`** (the how and the decisions) then **`<slug>-plan.md`**
-(ordered phases, each sized for one subagent), after which a coordinator reads the
-plan and `/finish`es it. Optional companions: **`<slug>-research.md`** (research
-feeding the design) and **`<slug>-verification.md`** (a post-build validation
-step).
+Suite-wide conventions are **contracts**: Decisions in the root `project/design/`
+(the umbrella project). A subproject **cites** a contract by its `DNN.md` path
+and conforms by default; it never restates one, and it deviates only via a local
+Decision naming the contract and the project-specific reason. See the `$ikispec`
+skill ("The umbrella project and suite contracts") for the mechanics, including
+proof-location markers and citation-is-adoption.

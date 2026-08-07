@@ -1,4 +1,4 @@
-# Suite operations — Plan
+# Suite contracts — Plan
 
 **Authority: construction order.** This document and the `project/plan/`
 directory own the build order of **pending** work only — nothing else (the
@@ -13,29 +13,32 @@ files recoverable there). To extend the project: update
 the `Next phase` counter and bumping it — never renumber a pending phase,
 never reuse a number.
 
+**This project builds no code**, so a phase here never produces an
+implementation. A phase amends a contract and, where the amendment changes what
+some tree must do, records the downstream assignment that follows from it — the
+work itself is then built by that tree's own plan, under its own gate.
+
 **Coverage invariant.** Every *current* design Verification id
 (`R-XXXX-XXXX`) is either already **realized** — appearing verbatim as a tag
-in a test file that runs under the suite — or assigned to **exactly one**
-pending phase: no current id unassigned, none split, none duplicated.
-Realized-ness is read from the code (the tagged tests), never from a ledger.
+in a test file of the tree its proof-location marker names (or, for a
+`[proof: per-service]` id, in each adopting service's tree) — or assigned to
+**exactly one** pending phase: no current id unassigned, none split, none
+duplicated. Realized-ness is read from the code (the tagged tests), never from
+a ledger. Because this tree holds no tests, the check follows the markers, not
+the tree-local grep; design's Conventions state the per-marker commands.
 
-**One phase = one package = one build-turn context.** Each phase is a single
-coherent unit of work — almost always one Go package or one shell tool —
-scoped to that unit's design Decisions and the *interfaces* (not internals)
-of what it depends on, and sized so the build loop can carry it in one fresh
-build-turn context. Where a single Decision is too large for one context it
-is split across phases, and each affected phase names the **slice** of that
-Decision's Verification ids it carries.
+**One phase = one coherent amendment = one build-turn context.** Each phase is
+a single coherent unit of work — here, one contract or one tight group of
+related contracts — scoped to the Decisions it touches and sized so the loop
+can carry it in one fresh build-turn context.
 
-**Done bar.** A phase is **done** when every Verification id it realizes (or
-its explicit slice) is covered by a clearly-named test and the suite is
-green — "green" is defined by design's Conventions (`go test ./...` from the
-repo root exits 0). Every phase's acceptance bar is expressed as
-**deterministic exit conditions**: mechanically-checkable predicates (a green
-suite, an exit code, an exact match count) that are reproducible and
-reachable — never a subjective prose judgment, never a self-referential or
-unsatisfiable check. A structural or tooling phase (one realizing a Decision
-that mints no ids) carries deterministic structural checks instead.
+**Done bar.** Every phase's acceptance bar is expressed as **deterministic exit
+conditions**: mechanically-checkable predicates (an exit code, an exact match
+count, a `project/`-excluded grep) that are reproducible and reachable — never
+a subjective prose judgment, never a self-referential or unsatisfiable check.
+Since phases here are docs-only, the bar is structural rather than a green
+suite; where a phase changes an id's marked proof location, the bar includes
+confirming the tag in the newly named tree.
 
 ## Layout
 

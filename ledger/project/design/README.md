@@ -33,13 +33,13 @@ lives in git, not here.
 >    column, a duplicate rejected through the shared `conflict` error (D14, wire
 >    form owned by D16); and the
 >    `transaction.recorded` event conforms to the suite's routing revision
->    (`docs/event-routing-design.md`): kind `recorded`, empty subject, canonical
+>    (`project/design/D18.md` at the repo root): kind `recorded`, empty subject, canonical
 >    key `ledger:recorded`, family-shaped registry, and a new outbox migration
 >    per the revised `outbox.SchemaSQL` (D15 — externally ordered on the
 >    eventplane revision).
 >
 > 4. **Structured MCP adoption** (D16): the domain tool results conform to the
->    suite's single verb surface (`docs/structured-mcp-design.md`) — success
+>    suite's single verb surface (`project/design/D20.md` at the repo root) — success
 >    results carry `structuredContent` via `StructuredResult` and declare an
 >    `outputSchema`; errors carry a typed code from the shared closed vocabulary;
 >    `describe` stays a prose exception. The emitted JSON is preserved verbatim;

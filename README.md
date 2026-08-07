@@ -86,8 +86,8 @@ stores, or grant screens.
 
 The east/west plane is internal. It is loopback-only, never touches nginx, and
 uses a small SSE outbox protocol described in
-[`docs/sse-outbox-protocol.md`](docs/sse-outbox-protocol.md) and
-[`docs/event-protocol.md`](docs/event-protocol.md).
+[`project/design/D18.md`](project/design/D18.md), the suite's event-plane
+contract.
 
 The split follows from the deployment model. One box means one customer.
 Services on that box are not crossing an ownership boundary when they talk to

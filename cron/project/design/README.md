@@ -5,10 +5,10 @@ directory it heads own *how* cron's web landing page is built, **how cron
 conforms to the appkit chassis reference shape** (the `share/www` web surface,
 the `appkit/mcp` tool table, `registry` ports, the inline composition root, the
 `internal/db` shim deletion), **and how cron conforms to the suite's revised
-event routing** (`docs/event-routing-design.md`: kind `tick` + subject
+event routing** (`project/design/D18.md` at the repo root: kind `tick` + subject
 `/<schedule name>` replacing the packed `cron.<name>` type — D14), **and how
 cron conforms to the suite's structured-MCP result contract**
-(`docs/structured-mcp-design.md`: `structuredContent` + mirrored text via
+(`project/design/D20.md` at the repo root: `structuredContent` + mirrored text via
 `StructuredResult`, a declared `outputSchema` per domain tool, and
 closed-vocabulary error codes — D15) — and *how each behavior is proven*. The product (`project/product/README.md`) owns the *why*,
 *for whom*, and the user-facing promises; design states the **exact, checkable

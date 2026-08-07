@@ -23,7 +23,7 @@ declaration in three places that must manually agree — and that wiring has
 already drifted between services. A fix or improvement to any of this common
 surface must be re-made twelve times, and each re-make is a chance for more
 drift.
-The suite has also decided (`docs/structured-mcp-design.md`) that MCP is its
+The suite has also decided (`project/design/D20.md` at the repo root) that MCP is its
 single verb surface for agents *and* deterministic code — but today a tool's
 result is readable only by an agent: JSON or prose inside a text block, errors
 as bare messages. A machine caller (a scripts run, any future deterministic

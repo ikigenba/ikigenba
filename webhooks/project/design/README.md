@@ -67,7 +67,7 @@ construction history of how it got here lives in git, not here.
   from the request context. webhooks **owns none of it**: the header name, the
   id shape, the strip-then-mint rule for ungated public locations, and the
   recorder are defined by the suite protocol doc
-  (`docs/telemetry-protocol.md`) and realized in `eventplane`/`appkit`.
+  (`project/design/D14.md` at the repo root) and realized in `eventplane`/`appkit`.
   webhooks' share is its nginx fragment (D18) and letting the id reach the
   event it publishes (D19); recording of requests, publishes and lifecycle is
   chassis-owned and is deliberately **not** re-proven here.

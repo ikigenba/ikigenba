@@ -1,4 +1,4 @@
-# Suite operations — Plan Status
+# Suite contracts — Plan Status
 
 This is the manifest: one line per **pending** phase in build order, and the
 **only** place a phase's status marker lives. Each phase line is a Markdown

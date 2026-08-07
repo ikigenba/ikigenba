@@ -74,8 +74,8 @@ ships only its own package surfaces and the shared schema constants.
 ## Contractual constants
 
 These come from the suite addressing model
-(`docs/event-routing-design.md`) and the suite correlation standard
-(`docs/correlation-ids.md`), and are promised verbatim:
+(`project/design/D18.md` at the repo root) and the suite correlation standard
+(`project/design/D14.md` at the repo root), and are promised verbatim:
 
 - An event is addressed by `source` (the producing service), `kind` (the fact
   class, lowercase `[a-z0-9_.-]+`), and `subject` (either empty or a
