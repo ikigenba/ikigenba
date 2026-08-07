@@ -252,7 +252,6 @@ func TestWWWLandingRendersExistingSites(t *testing.T) {
 	}
 	body := rec.Body.String()
 
-	// R-RAW6-IUN5
 	for _, want := range []string{
 		"Atlas",
 		"public",
@@ -304,7 +303,6 @@ func TestLandingHandlerRendersJSONIslandFromSiteRows(t *testing.T) {
 		t.Fatalf("unmarshal sites data island: %v\n%s", err, match[1])
 	}
 
-	// R-IDOL-PV70
 	if len(rows) != 2 || rows[0].Slug != "atlas" || rows[0].URL != "https://suite.example/srv/sites/public/atlas/" ||
 		rows[0].Visibility != "public" || rows[0].CreatedBy != "atlas@example.com" || rows[0].CreatedAt != "2026-07-08T12:00:00Z" ||
 		rows[0].CreatedAtSort != "2026-07-08T12:00:00Z" {
@@ -342,7 +340,6 @@ func TestWWWLandingRendersProgressiveControlMarkup(t *testing.T) {
 		}
 	}
 
-	// R-IG4E-HEOE
 	for _, want := range []string{
 		`<th scope="col" data-sort-key="name">Name</th>`,
 		`<th scope="col" data-sort-key="createdBy">Creator</th>`,
@@ -356,7 +353,6 @@ func TestWWWLandingRendersProgressiveControlMarkup(t *testing.T) {
 		t.Fatalf("landing HTML makes visibility sortable:\n%s", body)
 	}
 
-	// R-IHCA-V6F3
 	emptyBody := renderLanding(t, "sites", "phase24-empty").Body.String()
 	if !strings.Contains(emptyBody, `<script type="application/json" id="sites-data">[]</script>`) {
 		t.Fatalf("empty landing HTML does not expose an empty JSON data island:\n%s", emptyBody)
@@ -379,7 +375,6 @@ func TestWWWLandingPlacesEnhancementsAfterTheTable(t *testing.T) {
 	}
 	body := rec.Body.String()
 
-	// R-83NK-DUW1
 	// R-ZGWN-ZZDW
 	lead := strings.Index(body, "Hosts file-backed static websites and serves them through the suite gateway.")
 	controls := strings.Index(body, `class="controls js-only" hidden`)
@@ -479,7 +474,6 @@ func TestLandingHandlerLinksNamesToSlugVisibilityURLs(t *testing.T) {
 	landingHandler(store, loadWWW(t), "sites", "phase20", baseURL).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	body := rec.Body.String()
 
-	// R-WMWB-7EWX
 	// R-ZJCG-RIVA
 	for _, want := range []string{
 		`<td data-label="Name"><a href="https://suite.example/srv/sites/public/x-site/">X Site</a></td>`,

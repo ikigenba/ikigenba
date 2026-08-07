@@ -28,7 +28,6 @@ func TestLandingTemplateRendersVisibilityEnumsVerbatim(t *testing.T) {
 		t.Fatalf("render landing.html: %v", err)
 	}
 
-	// R-HK3X-22SM
 	// R-ZI4K-DR4L
 	body := rec.Body.String()
 	for _, want := range []string{
@@ -63,7 +62,6 @@ func TestLandingTemplateJSONIslandUsesVisibilityEnum(t *testing.T) {
 	rec := httptest.NewRecorder()
 	landingHandler(store, loadWWW(t), "sites", "phase37", "https://suite.test/").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
-	// R-HLBT-FUJB
 	// R-ZKKD-5ALZ
 	rows := parseLandingIsland(t, rec.Body.String())
 	if len(rows) != 3 {
@@ -121,7 +119,6 @@ func TestLandingHandlerMapsUnlistedSiteToPublicURL(t *testing.T) {
 	rec := httptest.NewRecorder()
 	landingHandler(store, loadWWW(t), "sites", "phase37", baseURL).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
-	// R-HMJP-TMA0
 	// R-ZLS9-J2CO
 	wantURL := baseURL + "public/" + token + "/"
 	if !strings.Contains(rec.Body.String(), `<a href="`+wantURL+`">Client Preview</a>`) {

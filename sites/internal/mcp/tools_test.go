@@ -314,7 +314,6 @@ func TestToolsList(t *testing.T) {
 			t.Errorf("unexpected tool %q: %+v", name, result.Tools)
 		}
 	}
-	// R-0UUY-N97T
 	if len(result.Tools) != len(want) {
 		t.Errorf("tools/list returned %d tools, want %d: %+v", len(result.Tools), len(want), result.Tools)
 	}
@@ -589,7 +588,6 @@ func TestCreateThreadsStableOwnerIDAndEmailSnapshot(t *testing.T) {
 func TestCreateHonorsRequestedVisibility(t *testing.T) {
 	h, _ := newTestHandler(t)
 
-	// R-554R-3MBC
 	publicSite := callOK(t, h, "create", map[string]any{"name": "public-demo", "slug": "public-demo", "visibility": "public"})
 	if publicSite["visibility"] != "public" {
 		t.Fatalf("public create returned visibility = %v, want public", publicSite["visibility"])
@@ -657,7 +655,6 @@ func TestCreateRequiresValidExplicitVisibility(t *testing.T) {
 }
 
 func TestCreateNamedVisibilityAndConditionalName(t *testing.T) {
-	// R-HACP-ZWV2
 	for _, visibility := range []sites.Visibility{sites.Public, sites.Private} {
 		t.Run(string(visibility), func(t *testing.T) {
 			h, _ := newTestHandler(t)
@@ -780,7 +777,6 @@ func TestSetVisibilityMovesBetweenPublicAndPrivate(t *testing.T) {
 		t.Fatalf("public dir should be gone after private move: %v", err)
 	}
 
-	// R-RGZO-FPCM
 }
 
 func TestSetVisibilityNamedMatrixAndIdempotence(t *testing.T) {
@@ -933,7 +929,6 @@ func TestDelete(t *testing.T) {
 	if arr, _ := listed["sites"].([]any); len(arr) != 0 {
 		t.Errorf("list should be empty after delete: %+v", listed)
 	}
-	// R-RJFH-78U0
 }
 
 // TestMkdirConfinement covers a valid nested mkdir and rejects an escape.
