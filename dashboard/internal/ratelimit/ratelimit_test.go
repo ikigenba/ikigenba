@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// R-K5RY-83NL: sliding-window limiter keyed by oauth_tokens.id.
+// Sliding-window limiter keyed by oauth_tokens.id.
 func TestLimiter_AllowThenReject(t *testing.T) {
 	l := New(3, 10*time.Second)
 	now := time.Unix(1_700_000_000, 0).UTC()
@@ -70,7 +70,7 @@ func TestLimiter_Disabled(t *testing.T) {
 	}
 }
 
-// Credential material must never appear as a key (R-K5RY-83NL). The
+// Credential material must never appear as a key. The
 // limiter does not enforce this — that contract lives at the call site
 // — but the public API only takes a string and the empty-key shortcut
 // is a defensive backstop.
