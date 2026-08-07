@@ -196,9 +196,9 @@ lightweight running record follows.
 |---|---|---|---|
 | `R-JRO8-5Q0R` (D10) | 2026-07-23 | e8567e70 | `init-box` on int: git/sqlite3/pdftotext/pdftoppm/pdfinfo/tar/curl all resolve; baseline packages present (tar, curl-minimal added). |
 | `R-MMF1-HFMO` (D11) | 2026-07-23 | e8567e70 | `init-box --skip-cert` on int installed `/usr/local/bin/oauth` (`v0.1.2`, mode 0755); `oauth -V` exit 0; unprivileged `nginx` user ran it. Apex block hash unchanged (no front-door drift). |
-| `R-WRJF-H7J9` (D1) | — | — | not yet recorded |
-| `R-66UP-LI59` (D2) | — | — | not yet recorded |
-| `R-6FE0-9WC4` (D3) | — | — | not yet recorded |
-| `R-MYS7-2H2R` (D4) | — | — | not yet recorded |
-| `R-AXY7-K8GA` (D8) | — | — | not yet recorded |
-| `R-B0E0-BRXO` (D9) | — | — | not yet recorded |
+| `R-WRJF-H7J9` (D1) | 2026-08-07 | 075afac1 | `opsctl restore notify` on int from a seconds-old snapshot (`notify-v0.20.0+823310ac.20260807T170657Z`): unit returned `active`, loopback `/health` 200, `/opt/notify/cache` owned `notify:notify` after restart. |
+| `R-66UP-LI59` (D2) | 2026-08-07 | 075afac1 | `opsctl stage sites v0.24.0+d5fd912c` on int completed with `/tmp` (tmpfs) and `/opt` (nvme) confirmed distinct devices via `df`; no `EXDEV`; version listed by `opsctl releases sites`. |
+| `R-6FE0-9WC4` (D3) | 2026-08-07 | 075afac1 | Interactive `ssh int 'sudo opsctl backup notify'` with no env sourcing resolved `IKIGENBA_BACKUP_BUCKET` and uploaded the S3 snapshot — `/etc/ikigenba/env` auto-loaded. |
+| `R-MYS7-2H2R` (D4) | 2026-08-07 | 075afac1 | Real `opsctl deploy dashboard v0.23.0+ba5a1e61`: apex block rendered to `conf.d/dashboard.conf`, `nginx -t` + reload succeeded against the real cert; apex 200 (ssl_verify 0), `/services` 200, `/srv/sites/public/...` 200, protected `/srv/{crm,ledger,wiki,telemetry}/mcp` all 401, no 502/503; authenticated MCP calls still mint. |
+| `R-AXY7-K8GA` (D8) | 2026-08-07 | 075afac1 | Real `opsctl deploy sites v0.24.0+d5fd912c`: unit `active`, loopback health 200, anonymous fetch of two published public sites (`dnd-rules`, `world-building-006`) returned 200 through nginx. |
+| `R-B0E0-BRXO` (D9) | 2026-08-07 | 075afac1 | `opsctl restore sites` on int from the pre-deploy snapshot (`sites-v0.23.0+823310ac.20260807T170926Z`): unit `active`, `state/` and `state/www` owned `sites:sites`, anonymous public-site fetch 200. |
