@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +77,41 @@ func TestResolveStorageRootsHonorsExplicitPathOverrides(t *testing.T) {
 	}
 }
 
+// R-M51H-QWOL
+func TestResolveManifestRootFollowsOverrideRootAndDevelopmentFallbackLadder(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "explicit override wins",
+			env: map[string]string{
+				"PROMPTS_MANIFEST_ROOT": "/x",
+				"IKIGENBA_ROOT":         "/y",
+			},
+			want: "/x",
+		},
+		{
+			name: "suite root",
+			env:  map[string]string{"IKIGENBA_ROOT": "/y"},
+			want: "/y",
+		},
+		{
+			name: "development fallback",
+			want: ".",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveManifestRoot(func(key string) string { return tt.env[key] }); got != tt.want {
+				t.Fatalf("resolveManifestRoot() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // R-8DF1-W89F
 func TestCommittedManifestIsPortable(t *testing.T) {
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
@@ -94,19 +130,24 @@ func TestCommittedManifestIsPortable(t *testing.T) {
 
 // R-8IAN-FB87
 func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
+	spec := promptsSpec()
+	consumes := make([]string, 0, len(spec.Consumers))
+	for _, consumer := range spec.Consumers {
+		consumes = append(consumes, consumer.Source)
+	}
+	extras := make([]manifest.KV, 0, len(spec.ManifestExtras))
+	for _, extra := range spec.ManifestExtras {
+		extras = append(extras, manifest.KV{Key: extra.Key, Value: extra.Value})
+	}
 	got := manifest.Emit(manifest.Fields{
-		App:      "prompts",
-		Mount:    "/srv/prompts/",
-		Default:  false,
-		Port:     3002,
-		MCP:      true,
-		Feed:     "/feed",
-		Consumes: []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts"},
-		Extras: []manifest.KV{
-			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
-			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
-			{Key: "PROMPTS_CALLS_BODY_RETENTION_DAYS", Value: "30"},
-		},
+		App:      spec.App,
+		Mount:    spec.Mount,
+		Default:  spec.Default,
+		Port:     spec.Port,
+		MCP:      spec.MCP,
+		Feed:     spec.Feed,
+		Consumes: consumes,
+		Extras:   extras,
 	})
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
 	if err != nil {
@@ -115,6 +156,69 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
+	}
+}
+
+// R-M69E-4OFA
+func TestTuningDefaultsMatchCommittedManifest(t *testing.T) {
+	knobs, err := resolveTuningKnobs(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("resolve tuning defaults: %v", err)
+	}
+	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest.env: %v", err)
+	}
+	values := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(string(committed)), "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if ok {
+			values[key] = value
+		}
+	}
+
+	for key, want := range map[string]int{
+		"PROMPTS_MAX_INFLIGHT_CALLS":  knobs.maxInflightCalls,
+		"PROMPTS_MAX_CONCURRENT_RUNS": knobs.maxConcurrentRuns,
+	} {
+		got, err := strconv.Atoi(values[key])
+		if err != nil || got != want {
+			t.Errorf("manifest %s = %q, resolved default is %d", key, values[key], want)
+		}
+	}
+	gotTTL, err := time.ParseDuration(values["PROMPTS_RUN_TTL"])
+	if err != nil || gotTTL != knobs.runTTL {
+		t.Errorf("manifest PROMPTS_RUN_TTL = %q, resolved default is %s", values["PROMPTS_RUN_TTL"], knobs.runTTL)
+	}
+}
+
+// R-VKB6-SHHV
+func TestProductionGoSourceHasNoBoxPathLiteral(t *testing.T) {
+	root := filepath.Join("..", "..")
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if path != root && (info.Name() == ".git" || info.Name() == "project") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(source, []byte(`"/opt`)) {
+			t.Errorf("%s contains a box-path string literal", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan production Go source: %v", err)
 	}
 }
 

@@ -93,6 +93,12 @@ type storageRoots struct {
 	runsDir  string
 }
 
+type tuningKnobs struct {
+	maxInflightCalls  int
+	maxConcurrentRuns int
+	runTTL            time.Duration
+}
+
 func resolveStorageRoots(getenv func(string) string) (storageRoots, error) {
 	cfg, err := config.Resolve("prompts", "/srv/prompts/", registry.MustPort("prompts"), getenv)
 	if err != nil {
@@ -104,6 +110,36 @@ func resolveStorageRoots(getenv func(string) string) (storageRoots, error) {
 		stateDir: stateDir,
 		cacheDir: cacheDir,
 		runsDir:  filepath.Join(cacheDir, "runs"),
+	}, nil
+}
+
+func resolveManifestRoot(getenv func(string) string) string {
+	if root := getenv("PROMPTS_MANIFEST_ROOT"); root != "" {
+		return root
+	}
+	if root := getenv("IKIGENBA_ROOT"); root != "" {
+		return root
+	}
+	return "."
+}
+
+func resolveTuningKnobs(getenv func(string) string) (tuningKnobs, error) {
+	callCap, err := config.EnvOrInt(getenv, "PROMPTS_MAX_INFLIGHT_CALLS", 8)
+	if err != nil || callCap < 1 {
+		return tuningKnobs{}, fmt.Errorf("PROMPTS_MAX_INFLIGHT_CALLS must be a positive integer")
+	}
+	runCap, err := config.EnvOrInt(getenv, "PROMPTS_MAX_CONCURRENT_RUNS", 8)
+	if err != nil || runCap < 1 {
+		return tuningKnobs{}, fmt.Errorf("PROMPTS_MAX_CONCURRENT_RUNS must be a positive integer")
+	}
+	runTTL, err := config.EnvOrDuration(getenv, "PROMPTS_RUN_TTL", 30*time.Minute)
+	if err != nil {
+		return tuningKnobs{}, err
+	}
+	return tuningKnobs{
+		maxInflightCalls:  callCap,
+		maxConcurrentRuns: runCap,
+		runTTL:            runTTL,
 	}, nil
 }
 
@@ -151,6 +187,7 @@ func promptsSpec() appkit.Spec {
 			{Key: "PROMPTS_CALLS_BODY_RETENTION_DAYS", Value: "30"},
 			{Key: "PROMPTS_MAX_INFLIGHT_CALLS", Value: "8"},
 			{Key: "PROMPTS_MAX_CONCURRENT_RUNS", Value: "8"},
+			{Key: "PROMPTS_RUN_TTL", Value: "30m"},
 		},
 		Workers: []func(context.Context) error{callsBodyRetentionWorker},
 		Producer: func(ob *outbox.Outbox) error {
@@ -196,27 +233,15 @@ func registerRoutes(rt *appkit.Router) error {
 	}
 	callsRef = callStore
 	callsRetentionDays = retentionDays
-	callCap, err := config.EnvOrInt(os.Getenv, "PROMPTS_MAX_INFLIGHT_CALLS", 8)
-	if err != nil || callCap < 1 {
-		return fmt.Errorf("PROMPTS_MAX_INFLIGHT_CALLS must be a positive integer")
+	knobs, err := resolveTuningKnobs(os.Getenv)
+	if err != nil {
+		return err
 	}
-	runCap, err := config.EnvOrInt(os.Getenv, "PROMPTS_MAX_CONCURRENT_RUNS", 8)
-	if err != nil || runCap < 1 {
-		return fmt.Errorf("PROMPTS_MAX_CONCURRENT_RUNS must be a positive integer")
-	}
-	gate := admit.New(callCap, runCap)
+	gate := admit.New(knobs.maxInflightCalls, knobs.maxConcurrentRuns)
 	subAuth := provider.NewSubAuth(provider.ResolveAuthPath(os.Getenv))
 	buildProvider := provider.NewBuilder(subAuth)
 	completion := inference.NewExecutor(callStore, gate, buildProvider, os.Getenv, subAuth.Available)
 	embedding := inference.NewEmbedExecutor(callStore, gate, provider.BuildEmbedder, os.Getenv)
-
-	// PROMPTS_RUN_TTL bounds each run's wall-clock — the runaway-goroutine backstop
-	// (§5.3). Parsed as a Go duration (e.g. "30m", "2h"). Read here at the domain
-	// boundary, reusing appkit/config's env helper.
-	runTTL, err := config.EnvOrDuration(os.Getenv, "PROMPTS_RUN_TTL", 30*time.Minute)
-	if err != nil {
-		return err
-	}
 
 	// Resolve the same state/cache layout as the chassis. Run sandboxes are
 	// durable state; input/output artifacts are recreated cache.
@@ -226,8 +251,9 @@ func registerRoutes(rt *appkit.Router) error {
 	}
 	// PROMPTS_MANIFEST_ROOT is the box inventory root the runner reads at run
 	// spawn to discover the suite's other loopback MCP services (Surface 2 —
-	// in-run suite tools). Defaults to /opt, the on-box layout root.
-	manifestRoot := config.EnvOr(os.Getenv, "PROMPTS_MANIFEST_ROOT", "/opt")
+	// in-run suite tools). The suite root composes from IKIGENBA_ROOT, with the
+	// repository root as the development fallback.
+	manifestRoot := resolveManifestRoot(os.Getenv)
 	stateDir := storage.stateDir
 	runsDir := storage.runsDir
 	if err := os.RemoveAll(runsDir); err != nil {
@@ -249,7 +275,7 @@ func registerRoutes(rt *appkit.Router) error {
 		allowedPorts[service.Port] = true
 	}
 	dropboxBase := dropboxBaseURL(os.Getenv)
-	run := runner.New(store, sb, gate, runTTL, manifestRoot, func(port int) bool { return allowedPorts[port] }, dropboxBase)
+	run := runner.New(store, sb, gate, knobs.runTTL, manifestRoot, func(port int) bool { return allowedPorts[port] }, dropboxBase)
 	run.SetProviderFactory(buildProvider)
 	svc := prompt.NewService(store, sb, runsDir, run)
 	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {
