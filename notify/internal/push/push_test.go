@@ -358,7 +358,6 @@ func TestEndToEndContactCreatedPush(t *testing.T) {
 	}
 }
 
-// R-4LKF-FB23
 func TestNotifyConsumerReconstructsCursorAfterProducerCacheRemint(t *testing.T) {
 	dir := t.TempDir()
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
