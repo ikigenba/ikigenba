@@ -50,7 +50,6 @@ func TestRunContentHandlerServesSandboxFile(t *testing.T) {
 }
 
 func TestRunContentRouteUsesChassisLoopbackGuard(t *testing.T) {
-	// R-6DA9-F18C
 	// R-BI5J-4GM6
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	svc, _, sb, _ := newTestService(t)

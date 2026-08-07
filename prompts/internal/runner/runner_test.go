@@ -599,6 +599,79 @@ func TestFramingPromptNamesNoLoaderOrIndividualService(t *testing.T) {
 	}
 }
 
+func TestSystemPromptExplainsFetchContentURLSandboxRole(t *testing.T) {
+	// R-6AUG-NHQY
+	for _, system := range []string{buildSystemPrompt(""), buildSystemPrompt("Keep the response concise.")} {
+		lower := strings.ToLower(system)
+		for _, claim := range []string{"glob, grep, fetch", "content url", "lands its bytes as a sandbox file"} {
+			if !strings.Contains(lower, claim) {
+				t.Errorf("assembled system prompt does not contain fetch claim %q: %q", claim, system)
+			}
+		}
+		if strings.Contains(system, "ikigenba_") {
+			t.Errorf("assembled system prompt names service prefix: %q", system)
+		}
+		for _, service := range []string{"crm", "gmail", "dropbox", "wiki"} {
+			if strings.Contains(lower, service) {
+				t.Errorf("assembled system prompt names individual service %q: %q", service, system)
+			}
+		}
+	}
+}
+
+func TestSystemPromptClaimsPDFCommandsAreAvailableInBash(t *testing.T) {
+	// R-6I5U-Y474
+	for _, system := range []string{buildSystemPrompt(""), buildSystemPrompt("Keep the response concise.")} {
+		lower := strings.ToLower(system)
+		if !strings.Contains(system, "PDF tooling is available in Bash") {
+			t.Errorf("assembled system prompt does not claim PDF tooling is available in Bash: %q", system)
+		}
+		for _, command := range []string{"pdftotext", "pdftoppm", "pdfinfo"} {
+			if !strings.Contains(system, command) {
+				t.Errorf("assembled system prompt does not name PDF command %q: %q", command, system)
+			}
+		}
+		if strings.Contains(system, "ikigenba_") {
+			t.Errorf("assembled system prompt names service prefix: %q", system)
+		}
+		for _, service := range []string{"crm", "gmail", "dropbox", "wiki"} {
+			if strings.Contains(lower, service) {
+				t.Errorf("assembled system prompt names individual service %q: %q", service, system)
+			}
+		}
+	}
+}
+
+func TestSystemPromptExplainsFileShareToolsAndConfinement(t *testing.T) {
+	// R-FEGC-LVD7
+	for _, system := range []string{buildSystemPrompt(""), buildSystemPrompt("Keep the response concise.")} {
+		lower := strings.ToLower(system)
+		for _, tool := range []string{"file list", "file get", "file put", "file delete", "file move", "file mkdir"} {
+			if !strings.Contains(lower, tool) {
+				t.Errorf("assembled system prompt does not name file tool %q: %q", tool, system)
+			}
+		}
+		for _, guidance := range []string{
+			"file share is its durable, shared file store",
+			"own folder stays private to this prompt",
+			"file tools as the channel between it and the file share",
+			"You have NO network access from bash",
+		} {
+			if !strings.Contains(system, guidance) {
+				t.Errorf("assembled system prompt does not contain file-share guidance %q: %q", guidance, system)
+			}
+		}
+		if strings.Contains(system, "ikigenba_") {
+			t.Errorf("assembled system prompt names service prefix: %q", system)
+		}
+		for _, service := range []string{"crm", "gmail", "dropbox", "wiki"} {
+			if strings.Contains(lower, service) {
+				t.Errorf("assembled system prompt names individual service %q: %q", service, system)
+			}
+		}
+	}
+}
+
 func TestExecuteCallsAttachedSuiteToolOnFirstRoundTrip(t *testing.T) {
 	// R-ZLB8-SYO7
 	var called string
