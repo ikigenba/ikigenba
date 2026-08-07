@@ -72,6 +72,24 @@ func TestRunReturnsNilWhenContextIsCancelled(t *testing.T) {
 	}
 }
 
+// R-GD6Y-RFBF
+func TestRunRequiresManifestRootAndDiskPath(t *testing.T) {
+	for _, field := range []string{"ManifestRoot", "DiskPath"} {
+		t.Run(field, func(t *testing.T) {
+			cfg := collectorFixture(t)
+			switch field {
+			case "ManifestRoot":
+				cfg.ManifestRoot = ""
+			case "DiskPath":
+				cfg.DiskPath = ""
+			}
+			if err := Run(context.Background(), NewStore(), cfg, discardLogger()); err == nil {
+				t.Fatalf("Run with empty %s returned nil error", field)
+			}
+		})
+	}
+}
+
 func TestCollectLogsSourceErrorAndContinuesSiblingSeries(t *testing.T) {
 	store := NewStore()
 	cfg := collectorFixture(t)

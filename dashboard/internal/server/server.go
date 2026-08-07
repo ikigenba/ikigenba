@@ -83,7 +83,6 @@ type Options struct {
 
 	// ManifestRoot is the directory under which each service drops its
 	// <name>/etc/manifest.env, read by the /services inventory endpoint.
-	// Defaults to "/opt" when empty.
 	ManifestRoot string
 	// Metrics is the in-memory sample store populated by the collector worker.
 	// It is optional until the chart routes render the collected samples.
@@ -181,10 +180,8 @@ func newApp(opts Options) (*app, error) {
 	if opts.CorrelationMinter == nil {
 		return nil, errors.New("server: CorrelationMinter is required")
 	}
-
-	manifestRoot := opts.ManifestRoot
-	if manifestRoot == "" {
-		manifestRoot = "/opt"
+	if opts.ManifestRoot == "" {
+		return nil, errors.New("server: ManifestRoot is required")
 	}
 
 	// Parse the index page together with the partials it embeds (the
@@ -230,7 +227,7 @@ func newApp(opts Options) (*app, error) {
 		resources:         opts.Resources,
 		admins:            opts.Admins,
 		rateLimiter:       opts.RateLimiter,
-		manifestRoot:      manifestRoot,
+		manifestRoot:      opts.ManifestRoot,
 		metrics:           opts.Metrics,
 		grantEvents:       opts.GrantEvents,
 		correlationMinter: opts.CorrelationMinter,

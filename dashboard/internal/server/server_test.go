@@ -111,10 +111,24 @@ func (d serverDeps) opts() Options {
 		PATs:              d.pats,
 		Audit:             d.audit,
 		Resources:         []string{testResource},
+		ManifestRoot:      ".",
 		RateLimiter:       ratelimit.New(60, 10*time.Second),
 		GrantEvents:       d.grants,
 		CorrelationMinter: testCorrelationMinter{},
 		TelemetryRecorder: d.recorder,
+	}
+}
+
+// R-GD6Y-RFBF
+func TestNewRequiresManifestRoot(t *testing.T) {
+	opts := newServerDeps(t).opts()
+	opts.ManifestRoot = ""
+	srv, err := New(opts)
+	if err == nil {
+		t.Fatal("New with empty ManifestRoot returned nil error")
+	}
+	if srv != nil {
+		t.Fatal("New with empty ManifestRoot constructed a server")
 	}
 }
 

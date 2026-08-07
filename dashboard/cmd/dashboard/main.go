@@ -50,16 +50,37 @@ type correlationMinter struct{}
 
 func (correlationMinter) NewCorrelationID() string { return correlation.New() }
 
+const (
+	defaultAuthnRateLimit  = 120
+	defaultAuthnRateWindow = 10 * time.Second
+)
+
+// resolveManifestRoot follows the configuration-channel ladder: an explicit
+// dashboard override wins, then the suite install root, then the checkout root.
+func resolveManifestRoot(getenv func(string) string) string {
+	if v := strings.TrimSpace(getenv("DASHBOARD_MANIFEST_ROOT")); v != "" {
+		return v
+	}
+	if root := strings.TrimSpace(getenv("IKIGENBA_ROOT")); root != "" {
+		return root
+	}
+	return "."
+}
+
 func main() {
 	var rt *appkit.Router
 	store := metrics.NewStore()
-	manifestRoot := config.EnvOr(os.Getenv, "DASHBOARD_MANIFEST_ROOT", "/opt")
+	manifestRoot := resolveManifestRoot(os.Getenv)
 	appkit.Main(appkit.Spec{
-		App:        "dashboard",
-		Mount:      "/",  // apex
-		Default:    true, // DEFAULT=true → Apex bypass: no PRM, no identity gate
-		Port:       3000,
-		MCP:        false, // the AS is not itself an MCP resource; it omits MCP so inventory never self-lists
+		App:     "dashboard",
+		Mount:   "/",  // apex
+		Default: true, // DEFAULT=true → Apex bypass: no PRM, no identity gate
+		Port:    3000,
+		MCP:     false, // the AS is not itself an MCP resource; it omits MCP so inventory never self-lists
+		ManifestExtras: []appkit.ManifestKV{
+			{Key: "DASHBOARD_AUTHN_RATE_LIMIT", Value: "120"},
+			{Key: "DASHBOARD_AUTHN_RATE_WINDOW", Value: "10s"},
+		},
 		Migrations: db.FS,
 		// Handlers builds the dashboard's whole apex route table over appkit's
 		// shared, migrated DB handle and mounts it via the Apex bypass.
@@ -72,7 +93,10 @@ func main() {
 				if rt == nil {
 					return fmt.Errorf("dashboard: routes not registered before metrics worker started")
 				}
-				return metrics.Run(ctx, store, metrics.Config{ManifestRoot: manifestRoot}, rt.Logger())
+				return metrics.Run(ctx, store, metrics.Config{
+					ManifestRoot: manifestRoot,
+					DiskPath:     manifestRoot,
+				}, rt.Logger())
 			},
 		},
 	})
@@ -141,16 +165,12 @@ func registerRoutes(rt *appkit.Router, metricsStore *metrics.Store, manifestRoot
 	// etc/manifest.env (/opt on the box). The AS resource list is DERIVED from these
 	// manifests at startup, so registering a new MCP service is just a dashboard
 	// restart — no env edit + redeploy footgun.
-	if manifestRoot == "" {
-		manifestRoot = config.EnvOr(getenv, "DASHBOARD_MANIFEST_ROOT", "/opt")
-	}
-
 	// Per-token introspection rate limit applied by POST /internal/authn.
-	authnRateLimit, err := config.EnvOrInt(getenv, "DASHBOARD_AUTHN_RATE_LIMIT", 120)
+	authnRateLimit, err := config.EnvOrInt(getenv, "DASHBOARD_AUTHN_RATE_LIMIT", defaultAuthnRateLimit)
 	if err != nil {
 		return err
 	}
-	authnRateWindow, err := config.EnvOrDuration(getenv, "DASHBOARD_AUTHN_RATE_WINDOW", 10*time.Second)
+	authnRateWindow, err := config.EnvOrDuration(getenv, "DASHBOARD_AUTHN_RATE_WINDOW", defaultAuthnRateWindow)
 	if err != nil {
 		return err
 	}

@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"appkit/config"
 	"appkit/manifest"
 )
 
@@ -26,6 +27,50 @@ func noEnv(string) string { return "" }
 // envMap returns a getenv backed by m.
 func envMap(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
+}
+
+// R-GBZ2-DNKQ
+func TestResolveManifestRootFollowsConfigurationLadder(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{name: "explicit override", env: map[string]string{"DASHBOARD_MANIFEST_ROOT": " /x ", "IKIGENBA_ROOT": "/y"}, want: "/x"},
+		{name: "suite root", env: map[string]string{"IKIGENBA_ROOT": " /y "}, want: "/y"},
+		{name: "development fallback", env: map[string]string{}, want: "."},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveManifestRoot(envMap(tc.env)); got != tc.want {
+				t.Fatalf("resolveManifestRoot() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// R-VKB6-SHHV
+func TestProductionGoSourceHasNoOptPathLiteral(t *testing.T) {
+	moduleRoot := filepath.Join("..", "..")
+	err := filepath.WalkDir(moduleRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(content, []byte(`"/opt`)) {
+			t.Errorf("production Go source %s contains a quoted /opt path literal", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk production Go source: %v", err)
+	}
 }
 
 // The fixed-verb dispatcher (serve/version/manifest/migrate/backup/restore) is
@@ -69,6 +114,10 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		Mount:   "/",
 		Default: true,
 		Port:    3000,
+		Extras: []manifest.KV{
+			{Key: "DASHBOARD_AUTHN_RATE_LIMIT", Value: "120"},
+			{Key: "DASHBOARD_AUTHN_RATE_WINDOW", Value: "10s"},
+		},
 	})
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
 	if err != nil {
@@ -77,6 +126,36 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
+	}
+}
+
+// R-GEEV-5724
+func TestAuthnDefaultsAgreeWithCommittedManifest(t *testing.T) {
+	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest.env: %v", err)
+	}
+	values := make(map[string]string)
+	for _, line := range strings.Split(string(committed), "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if ok {
+			values[key] = value
+		}
+	}
+
+	rate, err := config.EnvOrInt(noEnv, "DASHBOARD_AUTHN_RATE_LIMIT", defaultAuthnRateLimit)
+	if err != nil {
+		t.Fatalf("resolve authn rate default: %v", err)
+	}
+	window, err := config.EnvOrDuration(noEnv, "DASHBOARD_AUTHN_RATE_WINDOW", defaultAuthnRateWindow)
+	if err != nil {
+		t.Fatalf("resolve authn window default: %v", err)
+	}
+	if got, want := values["DASHBOARD_AUTHN_RATE_LIMIT"], fmt.Sprint(rate); got != want {
+		t.Errorf("manifest authn rate = %q, code default = %q", got, want)
+	}
+	if got, want := values["DASHBOARD_AUTHN_RATE_WINDOW"], window.String(); got != want {
+		t.Errorf("manifest authn window = %q, code default = %q", got, want)
 	}
 }
 

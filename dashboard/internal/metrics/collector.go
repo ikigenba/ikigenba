@@ -86,6 +86,12 @@ func Collect(store *Store, cfg Config, logger *slog.Logger) {
 
 // Run samples once immediately, then on each interval tick, until ctx is done.
 func Run(ctx context.Context, store *Store, cfg Config, logger *slog.Logger) error {
+	if cfg.ManifestRoot == "" {
+		return errors.New("metrics: ManifestRoot is required")
+	}
+	if cfg.DiskPath == "" {
+		return errors.New("metrics: DiskPath is required")
+	}
 	cfg = cfg.withDefaults()
 	Collect(store, cfg, logger)
 	t := time.NewTicker(cfg.Interval)
@@ -102,14 +108,8 @@ func Run(ctx context.Context, store *Store, cfg Config, logger *slog.Logger) err
 }
 
 func (cfg Config) withDefaults() Config {
-	if cfg.ManifestRoot == "" {
-		cfg.ManifestRoot = "/opt"
-	}
 	if cfg.CgroupRoot == "" {
 		cfg.CgroupRoot = "/sys/fs/cgroup"
-	}
-	if cfg.DiskPath == "" {
-		cfg.DiskPath = "/opt"
 	}
 	if cfg.MemInfoPath == "" {
 		cfg.MemInfoPath = "/proc/meminfo"

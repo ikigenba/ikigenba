@@ -48,9 +48,6 @@ func readMemInfo(r io.Reader) (avail, total int64, err error) {
 
 // readDiskFree returns free and total bytes for the filesystem backing path.
 func readDiskFree(path string) (free, total int64, err error) {
-	if path == "" {
-		path = "/opt"
-	}
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(path, &stat); err != nil {
 		if os.IsNotExist(err) {
