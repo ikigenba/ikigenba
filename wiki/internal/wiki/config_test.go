@@ -68,7 +68,6 @@ func TestNewConfigBuildsDefaultEmbeddingSite(t *testing.T) {
 
 func TestNewConfigLayersEmbeddingEnvironmentOverrides(t *testing.T) {
 	// R-Z932-H2RA
-	// R-ZAAY-UUHZ
 	cfg, err := NewConfig(fakeGetenv(map[string]string{
 		"EMBED_MODEL": "text-embedding-3-large",
 		"EMBED_DIMS":  "1024",

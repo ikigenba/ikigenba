@@ -105,6 +105,87 @@ type promptCall struct {
 	GroupID string `json:"group_id"`
 }
 
+func TestAskAttributesEveryPromptsCallToRequestIdentity(t *testing.T) {
+	// R-16VU-W6UV
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}, wiki.Page{
+		ID: "page-ada", SubjectID: "subject-ada", Title: "Ada", Body: "Ada wrote the note.",
+	})
+
+	var calls []promptCall
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var call promptCall
+		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		call.Path = r.URL.Path
+		calls = append(calls, call)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/embed":
+			_ = json.NewEncoder(w).Encode(map[string]any{"vectors": [][]float32{{1}}})
+		case "/complete":
+			text := `{"sub_queries":["Ada"],"keywords":["note"]}`
+			if call.Name == "wiki.ask-synthesis" {
+				text = `{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL, server.Client())
+	cache := retrieve.NewVectorCache()
+	cache.Upsert(retrieve.VectorEntry{SubjectID: "subject-ada", Title: "Ada", Vec: []float32{1}})
+	vector := retrieve.NewVectorRetriever(func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error) {
+		vectors, err := client.Embed(ctx, llm.EmbedSite{Name: "wiki.embed-query", Model: "embed", Dims: 1}, attr, "query", []string{text})
+		if err != nil {
+			return nil, err
+		}
+		return vectors[0], nil
+	}, cache)
+	search := retrieve.NewHybridRetriever(nil, vector, nil, nil, retrieve.FusionConfig{})
+	asker := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), client, DefaultSubjectCallSite(), DefaultSynthesisCallSite())
+
+	if _, err := asker.Ask(ctx, "alice@example.com", "Who wrote the note?"); err != nil {
+		t.Fatalf("Ask with owner: %v", err)
+	}
+	wantCalls := map[[2]string]int{
+		{"/complete", "wiki.ask-subject"}:   1,
+		{"/embed", "wiki.embed-query"}:      1,
+		{"/complete", "wiki.ask-synthesis"}: 1,
+	}
+	gotCalls := make(map[[2]string]int)
+	for i, call := range calls {
+		gotCalls[[2]string{call.Path, call.Name}]++
+		if call.Origin != "user:alice@example.com" {
+			t.Fatalf("call %d to %s origin = %q, want user:alice@example.com", i, call.Path, call.Origin)
+		}
+	}
+	if !reflect.DeepEqual(gotCalls, wantCalls) {
+		t.Fatalf("prompts call multiset = %#v, want %#v", gotCalls, wantCalls)
+	}
+
+	firstServiceCall := len(calls)
+	if _, err := asker.Ask(ctx, "", "Who wrote the note?"); err != nil {
+		t.Fatalf("Ask without owner: %v", err)
+	}
+	serviceCalls := calls[firstServiceCall:]
+	if len(serviceCalls) != 3 {
+		t.Fatalf("service prompts calls = %d, want 3", len(serviceCalls))
+	}
+	for i, call := range serviceCalls {
+		if call.Origin != "service:wiki" {
+			t.Fatalf("service call %d to %s origin = %q, want service:wiki", i, call.Path, call.Origin)
+		}
+	}
+}
+
 func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) {
 	// R-BAFW-D24P
 	// R-6A8D-0RK9

@@ -23,7 +23,6 @@ import (
 
 func TestWorkerThreadsStoredChainThroughExtractCompileAndEmbed(t *testing.T) {
 	// R-183R-9YLK
-	// R-1AJK-1I2Y
 	// R-XP5P-2118
 	ctx := context.Background()
 	conn := migratedWikiDB(t, ctx)

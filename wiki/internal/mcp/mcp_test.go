@@ -122,7 +122,6 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 	// R-JKMR-5MV1
 	// R-MUQ4-K1JS
 	// R-YF06-03HO
-	// R-1CZC-T1KC
 	// R-ENK6-P4KR
 	h := gatedHandler(t, newTestHandler(t,
 		WithIngestService(&capturingWiki{}),
@@ -1861,7 +1860,6 @@ func TestJobsRejectMalformedTimeAndCursorFilters(t *testing.T) {
 
 func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 	// R-3A3L-3BF5
-	// R-3BBH-H35U
 	// R-3CJD-UUWJ
 	// R-YINV-5EPR
 	started := time.Date(2026, 6, 22, 12, 30, 0, 0, time.UTC)

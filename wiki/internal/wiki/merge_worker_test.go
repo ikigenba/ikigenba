@@ -311,7 +311,6 @@ func TestMergeWorkerSerializesDuplicateMergeJobsIntoOneFold(t *testing.T) {
 func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) {
 	// R-MRG8-K2WP
 	// R-EV2H-6RKN
-	// R-1AJK-1I2Y
 	ctx := context.Background()
 	conns, cleanup := migratedConns(t, ctx)
 	defer cleanup()
