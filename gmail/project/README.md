@@ -29,32 +29,19 @@ via the mode commands (and append a plan phase) instead.
 
 ## The build loop
 
-`ralph` is the autonomous executor. It runs **from this service directory** and
-is handed the full paths to the three prompt files — the names and locations are
-this project's convention (documented here); `ralph` itself assumes nothing
-about them:
-
-```
-ralph project/loops/gather.md project/loops/build.md project/loops/verify.md
-```
-
-It cycles the prompts in fresh contexts — `gather → build → verify → …` — on a
-two-status contract: each prompt ends with one JSON object whose `status` is
-either `NEXT` (advance to the next prompt, wrapping `verify → gather`) or `DONE`
-(stop).
-
-- **gather** — the only prompt that reads the big docs. Greps `STATUS.md` for
-  the first `⬜` phase; if there is none it returns `DONE` (the sole exit).
-  Otherwise it resolves that phase's Decision(s) and writes a tiny, self-contained
-  `loops/brief.md`, then returns `NEXT`.
-- **build** — reads **only** `loops/brief.md`; builds the package + id-tagged
-  tests, runs the suite, commits, leaves the marker untouched. Returns `NEXT`.
-- **verify** — the independent gate and only prompt that mutates `STATUS.md`.
-  Pass → delete that phase's line from `STATUS.md` and its `phase-NN.md` body
-  file, commit, and delete `loops/brief.md`; gap → leave the `⬜` line untouched
-  and keep the brief. Returns `NEXT`.
-
-`brief.md` is the ephemeral seam between the prompts — created by `gather`,
-deleted by `verify`, never committed (it is gitignored). The loop is human-free
-and converges: an incomplete phase simply stays `⬜` and is re-attacked next
-cycle; the only stops are `gather`'s `DONE` or a `ralph` budget rail.
+`project/loops/run` is the autonomous executor's entry point — run it from this
+service directory. It wraps `ralph`, handed the three prompt files
+(`gather.md`, `build.md`, `verify.md`) under `project/loops/`; see
+`project/loops/README.md` for the full mechanics. In short: the prompts cycle
+in fresh contexts — `gather → build → verify → …` — on a three-status contract
+(`CONTINUE` non-terminal for mid-turn progress; `NEXT`/`DONE` terminal, with
+only `gather` ever reporting `DONE`, on an empty `⬜` queue or a
+`project/loops/blocked.md` file). `gather` authors the ephemeral,
+gitignored `project/loops/brief.md` seam for the active phase; `build` reads it
+and commits an increment; `verify` re-derives coverage independently and either
+retires the phase (deleting its `STATUS.md` line and `phase-NN.md`) or writes
+grounded feedback back into the brief for the next `build` turn. A phase that
+stalls three attempts running gets its brief rebuilt from spec; stalling twice
+escalates to `blocked.md`, which stops the loop for the operator. See
+`project/loops/README.md` for the full contract, the brief schema, and the
+stall/blocked ladder.
