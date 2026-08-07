@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-sonnet-5
+---
 # gather — author the phase brief
 
 You are the **gather** step of an unattended gather → build → verify loop

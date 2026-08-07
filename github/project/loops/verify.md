@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-opus-4-8
+---
 # verify — the independent gate: pass→delete phase+brief, gap→write feedback
 
 You are the **verify** step of the github build loop, invoked in a fresh,

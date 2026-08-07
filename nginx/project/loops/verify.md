@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-opus-4-8
+---
 # Verify — nginx build loop
 
 You are the **verify** step of an unattended three-prompt build loop

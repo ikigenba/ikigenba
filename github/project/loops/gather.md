@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-sonnet-5
+---
 # gather — select the next phase and write its brief (contract region only)
 
 You are the **gather** step of the github build loop, invoked in a fresh,

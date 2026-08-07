@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-opus-4-8
+---
 # verify — the independent gate
 
 You are the **verify** step of an unattended gather → build → verify loop

@@ -1,3 +1,7 @@
+---
+harness: codex
+model: gpt-5.6-sol
+---
 # Build — bin
 
 You are the **build** step of the `bin` build loop. You are invoked with a

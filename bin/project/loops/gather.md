@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-sonnet-5
+---
 # Gather — bin
 
 You are the **gather** step of the `bin` build loop. You are invoked with a

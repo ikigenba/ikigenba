@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-sonnet-5
+---
 # Gather — nginx build loop
 
 You are the **gather** step of an unattended three-prompt build loop

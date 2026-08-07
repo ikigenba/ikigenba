@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-opus-4-8
+---
 # Verify — bin
 
 You are the **verify** step of the `bin` build loop. You are invoked with a

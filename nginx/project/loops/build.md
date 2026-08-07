@@ -1,3 +1,7 @@
+---
+harness: codex
+model: gpt-5.6-sol
+---
 # Build — nginx build loop
 
 You are the **build** step of an unattended three-prompt build loop
