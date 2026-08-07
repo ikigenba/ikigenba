@@ -17,13 +17,14 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - **D5** → `project/design/D05.md` — The `state/` ÷ `cache/` backup boundary — ids: R-485J-7TWG [proof: appkit], R-49DF-LLN5 [proof: opsctl]
 - **D6** → `project/design/D06.md` — Epoch re-mint by exclusion + boot-reconstruction invariant — ids: R-4BT8-D54J [proof: eventplane], R-4D14-QWV8 [proof: eventplane], R-4E91-4OLX [proof: appkit]
 - **D8** → `project/design/D08.md` — Per-service adoption & live-box migration — ids: R-4LKF-FB23 [proof: per-service], R-4MSB-T2SS [proof: opsctl]
-- **D11** → `project/design/D11.md` — The env contract: portable authored `manifest.env` + `IKIGENBA_ROOT` path composition + reduced verb set — ids: R-8DF1-W89F [proof: per-service], R-8EMY-A004 [proof: appkit], R-8FUU-NRQT [proof: appkit], R-8H2R-1JHI [proof: appkit], R-8IAN-FB87 [proof: per-service], R-QQNU-T5M7 [proof: appkit]
-- **D12** → `project/design/D12.md` — The per-app secrets parameter contract — ids: none (an already-live external contract plus `bin/` tooling; verified once outside the loop)
+- **D11** → `project/design/D11.md` — The env contract: portable authored `manifest.env` + `IKIGENBA_ROOT` path composition + reduced verb set — ids: R-8DF1-W89F [proof: per-service], R-8EMY-A004 [proof: appkit], R-8FUU-NRQT [proof: appkit], R-8H2R-1JHI [proof: appkit], R-8IAN-FB87 [proof: per-service], R-QQNU-T5M7 [proof: appkit], R-VKB6-SHHV [proof: per-service]
+- **D12** → `project/design/D12.md` — The per-app customer-data parameter contract — ids: none (an already-live external contract plus `bin/` tooling; verified once outside the loop)
 - **D14** → `project/design/D14.md` — The telemetry and correlation contract — ids: none (a prose contract; behaviors proven by the implementing trees)
 - **D17** → `project/design/D17.md` — The owner-identity contract: `X-Owner-Id` is the scoping key — ids: none (a prose contract; behaviors proven by the implementing trees)
 - **D18** → `project/design/D18.md` — The event-plane contract: envelope, routing keys, and the SSE wire — ids: none (a prose contract; behaviors proven by the implementing trees)
 - **D19** → `project/design/D19.md` — The content plane: bytes by reference — ids: none (a prose contract; behaviors proven by the implementing trees)
 - **D20** → `project/design/D20.md` — The MCP surface contract: structured results, error vocabulary, and discovery — ids: none (a prose contract; behaviors proven by the implementing trees)
+- **D21** → `project/design/D21.md` — Configuration-channel routing: which value goes in which channel, and why — ids: none (a prose contract; enforcement is the channels' own ids and per-service adoption)
 
 ## Verification ids → Decision
 
@@ -54,3 +55,4 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - R-LHY1-6IS8 → D1 (`project/design/D01.md`) [proof: opsctl]
 - R-QQNU-T5M7 → D11 (`project/design/D11.md`) [proof: appkit]
 - R-VCF3-PLWD → D1 (`project/design/D01.md`) [proof: opsctl]
+- R-VKB6-SHHV → D11 (`project/design/D11.md`) [proof: per-service]
