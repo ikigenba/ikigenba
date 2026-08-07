@@ -11,7 +11,5 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 21
 
-- Phase 20 ⬜ realizes — — remove the stray R-4LKF-FB23 tag from `internal/push/push_test.go` (proof of record stays `cmd/notify/main_test.go`)
-
 
 
