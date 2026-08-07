@@ -9,4 +9,6 @@ build loop **deletes** the phase's line and its body file — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 24
+Next phase: 25
+
+- Phase 24 ⬜ realizes R-L9EG-DDWC, R-VKB6-SHHV — env-channel conformance: session-engine knobs in the manifest; org routed as customer data
