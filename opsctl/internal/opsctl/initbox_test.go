@@ -47,7 +47,6 @@ func TestInitBoxDoesNotCreateServedTreeGroup(t *testing.T) {
 }
 
 func TestInitBoxInstallsBaselineCommandLineToolsOnDefaultAndSkipCertPaths(t *testing.T) {
-	// R-WHC0-I9HL
 	// R-JQGB-RYA2
 	for _, tc := range []struct {
 		name     string

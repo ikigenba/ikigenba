@@ -348,7 +348,6 @@ func TestSetup_PathRoutedService(t *testing.T) {
 // the www/ root) at mode 0750. The WWWDirs are derived per-app via WWWDirsFor, so
 // `opsctl setup sites` provisions them with no operator flag.
 func TestSetup_WWWTree(t *testing.T) {
-	// R-4LKF-FB23
 	root := t.TempDir()
 	sysRoot := t.TempDir()
 	sys := &stubSystem{}
@@ -438,7 +437,6 @@ func TestSetup_InstallsPackages(t *testing.T) {
 // www dir (no regression). Pairs with the ledger setup test, which never sees a
 // www dir or a state-tree chown op.
 func TestWWWDirsFor_OnlySites(t *testing.T) {
-	// R-4LKF-FB23
 	if got := WWWDirsFor("/opt", "ledger"); got != nil {
 		t.Errorf("WWWDirsFor(ledger) = %v, want nil (non-sites apps get no www tree)", got)
 	}

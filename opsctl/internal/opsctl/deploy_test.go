@@ -962,7 +962,6 @@ func TestInstall_IsActiveFailure(t *testing.T) {
 	}
 }
 
-// R-4LKF-FB23
 func TestNotifySetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 	root := t.TempDir()
 	sysRoot := t.TempDir()
@@ -1035,7 +1034,6 @@ func TestNotifySetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 	}
 }
 
-// R-4LKF-FB23
 func TestDropboxSetupDeployBootsHealthWithStateCacheAndMirrorPaths(t *testing.T) {
 	root := t.TempDir()
 	sysRoot := t.TempDir()
@@ -1124,7 +1122,6 @@ func TestDropboxSetupDeployBootsHealthWithStateCacheAndMirrorPaths(t *testing.T)
 	}
 }
 
-// R-4LKF-FB23
 func TestPromptsSetupDeployBootsHealthWithStateSandboxesAndCacheRuns(t *testing.T) {
 	root := t.TempDir()
 	sysRoot := t.TempDir()
@@ -1230,7 +1227,6 @@ func TestPromptsSetupDeployBootsHealthWithStateSandboxesAndCacheRuns(t *testing.
 	}
 }
 
-// R-4LKF-FB23
 func TestWikiSetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 	root := t.TempDir()
 	sysRoot := t.TempDir()
@@ -1315,7 +1311,6 @@ func TestWikiSetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 	}
 }
 
-// R-4LKF-FB23
 func TestCronSetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 	root := t.TempDir()
 	sysRoot := t.TempDir()
@@ -1391,7 +1386,6 @@ func TestCronSetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 	}
 }
 
-// R-4LKF-FB23
 func TestGmailSetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 	root := t.TempDir()
 	sysRoot := t.TempDir()
@@ -1474,7 +1468,6 @@ func TestGmailSetupDeployBootsHealthWithStateAndCachePaths(t *testing.T) {
 	}
 }
 
-// R-4LKF-FB23
 func TestSitesSetupDeployBootsHealthWithStateWWWPaths(t *testing.T) {
 	root := t.TempDir()
 	sysRoot := t.TempDir()

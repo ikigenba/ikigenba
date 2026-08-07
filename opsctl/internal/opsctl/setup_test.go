@@ -288,7 +288,6 @@ func TestSetupCreatesOnlyPublicAndPrivateServedTiers(t *testing.T) {
 		t.Fatalf("setup served tree: %v", err)
 	}
 
-	// R-AT2M-15HI
 	// R-QFXB-VARQ
 	for _, dir := range []string{l.WWWRoot(), l.WWWPublicDir(), l.WWWPrivateDir()} {
 		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
@@ -344,7 +343,6 @@ func TestSetupCreatesStableNginxSymlinkToActiveConfig(t *testing.T) {
 	}
 }
 
-// R-4LKF-FB23
 func TestWebhooksSetupDeployBootsHealthWithStateCacheAndLibexecPaths(t *testing.T) {
 	root := t.TempDir()
 	sysRoot := t.TempDir()
