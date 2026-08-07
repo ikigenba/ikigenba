@@ -66,12 +66,27 @@ the loop and never advance a phase on a gap. Do one iteration, then report.
      ```
      comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | sort -u) \
               <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
-                    <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
+                    <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) \
+                    <(sed -n '/^## Operator steps/,$p' project/plan/README.md | grep -oE '^\*\*R-[A-Z0-9]{4}-[A-Z0-9]{4}' | grep -oE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}') \
+                | sort -u)
      ```
 
-     must print nothing. Any id it prints is a coverage regression — an open
-     gap, grounded in this command, noting the dropped tagged test exists in
-     git history to restore.
+     **Read this as: design ids minus (tagged-test ids ∪ pending-phase ids ∪
+     the documented live-box out-of-loop ids).** appkit's documented
+     convention (`project/plan/README.md`'s "Operator steps" section) is that
+     two ids — `R-YU3O-6CQP` and `R-ELE5-W5ML` — are real-substrate/live-box
+     checks the offline loop cannot falsify and are verified by the operator
+     on the live box instead — they are **not** loop-gating and their absence
+     from `*_test.go` is the expected, permanent state, never a regression.
+     The third `comm` input is exactly that documented set, read live off the
+     doc's own bolded `**R-id — …` operator-step headers rather than
+     hand-copied, so if the operator ever changes which ids are live-tracked
+     the ratchet follows without editing this prompt.
+
+     **Empty output is the pass condition.** Any id it prints is a genuine
+     coverage regression — an id neither covered, nor pending, nor documented
+     as an operator step — an open gap, grounded in this command, noting the
+     dropped tagged test exists in git history to restore.
 
 4. **Collect the open gaps** — the set of ids that are uncovered, failing, or
    flagged by the ratchet, each with the **exact command run and the observed
@@ -163,9 +178,13 @@ Leave the marker `⬜`. Change no source.
 - Never delete a phase's `STATUS.md` line/body file on anything short of a green
   suite **and** full coverage of the phase's ids.
 - Never read the big docs to re-derive the checklist — the brief **is** the
-  checklist. (The ratchet's mechanical id-set greps over `project/design/D*.md`
-  and `project/plan/phase-*.md` extract id tokens only; they are not "reading"
-  design prose in this sense.)
+  checklist. (The ratchet's mechanical id-set greps over `project/design/D*.md`,
+  `project/plan/phase-*.md`, and `project/plan/README.md`'s "Operator steps"
+  headers extract id tokens only; they are not "reading" design prose in this
+  sense.)
+- Never treat `R-YU3O-6CQP` or `R-ELE5-W5ML` (the two documented operator-step
+  ids in `project/plan/README.md`) as a gap for lacking a `*_test.go` tag —
+  that absence is the documented, permanent convention, not a regression.
 - When uncertain a test really asserts, or when a tagged test is statically
   unreachable / skipped, treat that id as **uncovered** — a skip is never
   acceptable green.
