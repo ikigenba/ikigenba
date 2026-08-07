@@ -12,5 +12,3 @@ matches only phase lines.
 
 Next phase: 45
 
-- Phase 44 ⬜ realizes R-GBZ2-DNKQ, R-GD6Y-RFBF, R-GEEV-5724, R-VKB6-SHHV — env-channel conformance: composed manifest root, manifest-surfaced authn knobs, no box-path literals
-
