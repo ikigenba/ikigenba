@@ -68,6 +68,7 @@ func gmailSpec() appkit.Spec {
 		ManifestExtras: []appkit.ManifestKV{
 			{Key: "OUTBOX_RETENTION_DAYS", Value: "7"},
 			{Key: "OUTBOX_RETENTION_MAX_ROWS", Value: "1000000"},
+			{Key: "GMAIL_POLL_INTERVAL", Value: "60s"},
 		},
 		// Handlers builds the Gmail client + producer Engine over appkit's shared DB
 		// handle, then mounts the normal-mailbox MCP surface behind the
@@ -93,7 +94,7 @@ func gmailSpec() appkit.Spec {
 			ip := config.EnvOr(os.Getenv, "GMAIL_IP", "127.0.0.1")
 			contentBase := "http://" + ip + ":" + strconv.Itoa(port)
 
-			interval, err := config.EnvOrDuration(os.Getenv, "GMAIL_POLL_INTERVAL", 60*time.Second)
+			interval, err := pollInterval(os.Getenv)
 			if err != nil {
 				return err
 			}
@@ -138,6 +139,10 @@ func gmailSpec() appkit.Spec {
 			},
 		},
 	}
+}
+
+func pollInterval(getenv func(string) string) (time.Duration, error) {
+	return config.EnvOrDuration(getenv, "GMAIL_POLL_INTERVAL", 60*time.Second)
 }
 
 func landingHandler(site *web.Site, service, version string) http.Handler {

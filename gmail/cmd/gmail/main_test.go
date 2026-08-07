@@ -61,6 +61,61 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	}
 }
 
+// R-JWR1-BQ0J
+func TestPollIntervalDefaultMatchesCommittedManifest(t *testing.T) {
+	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest.env: %v", err)
+	}
+
+	const key = "GMAIL_POLL_INTERVAL="
+	var manifestValue string
+	for _, line := range strings.Split(string(committed), "\n") {
+		if strings.HasPrefix(line, key) {
+			manifestValue = strings.TrimPrefix(line, key)
+			break
+		}
+	}
+	if manifestValue == "" {
+		t.Fatalf("committed manifest.env has no %s line", strings.TrimSuffix(key, "="))
+	}
+	want, err := time.ParseDuration(manifestValue)
+	if err != nil {
+		t.Fatalf("parse committed %s value %q: %v", strings.TrimSuffix(key, "="), manifestValue, err)
+	}
+	got, err := pollInterval(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("resolve poll interval with no environment: %v", err)
+	}
+	if got != want {
+		t.Fatalf("no-env poll interval = %s, want committed manifest value %s", got, want)
+	}
+}
+
+// R-VKB6-SHHV
+func TestProductionGoSourceHasNoBoxPathLiteral(t *testing.T) {
+	serviceRoot := filepath.Join("..", "..")
+	err := filepath.WalkDir(serviceRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			return nil
+		}
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(source, []byte(`"/opt`)) {
+			t.Errorf("production Go source %s contains a box-path string literal", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan production Go source: %v", err)
+	}
+}
+
 // R-9QEG-KF05
 func TestSpecPortComesFromRegistry(t *testing.T) {
 	spec := gmailSpec()
