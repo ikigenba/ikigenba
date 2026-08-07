@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 46
-
-- Phase 45 ⬜ realizes R-DB3A-15YZ, R-IEWI-3MXP — tag the tool-shape assertion in `internal/mcp/tools_test.go` and re-home R-IEWI-3MXP onto the island/anchor byte-identity assertions in `cmd/sites/main_test.go`
