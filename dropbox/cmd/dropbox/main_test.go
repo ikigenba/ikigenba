@@ -187,7 +187,6 @@ func isSelector(expr ast.Expr, packageName, name string) bool {
 	return ok && pkg.Name == packageName
 }
 
-// R-4LKF-FB23
 func TestDefaultMirrorPathTracksDurableStateDB(t *testing.T) {
 	env := map[string]string{
 		"DROPBOX_DB_PATH": "/opt/dropbox/state/dropbox.db",
