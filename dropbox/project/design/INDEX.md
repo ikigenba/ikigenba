@@ -32,6 +32,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D26 → `project/design/D26.md` — Telemetry adoption, Go side: injected instrumented outbound clients (rpc/longpoll/`source_url`), root correlation chains for the sync engine and the uploader, context-threaded `Append` — owns R-NF5W-7DOI, R-TABR-0FWD, R-TBJN-E7N2, R-TCRJ-RZDR, R-TDZG-5R4G, R-TF7C-JIV5
 - D27 → `project/design/D27.md` — nginx fragment: gated locations capture and forward the edge-minted `X-Correlation-Id`; the ungated public PRM location clears it — owns R-VGTA-PXIA, R-VI17-3P8Z
 - D28 → `project/design/D28.md` — State paths come from `appkit/config`, never from a hardcoded `./tmp` default — owns R-L7TF-ZAFX, R-L91C-D26M, R-LA98-QTXB
+- D29 → `project/design/D29.md` — Env-channel conformance: the sync tuning knobs surface in the manifest — owns R-M0AZ-C8H7; adopts R-VKB6-SHHV (root `project/design/D11.md`)
 
 ## Verification ids → Decision
 
@@ -104,6 +105,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-LTDD-RSN4 → D8 → `project/design/D08.md`
 - R-LULA-5KDT → D8 → `project/design/D08.md`
 - R-LVT6-JC4I → D8 → `project/design/D08.md`
+- R-M0AZ-C8H7 → D29 → `project/design/D29.md`
 - R-NF5W-7DOI → D26 → `project/design/D26.md`
 - R-NGNX-2P4Q → D4 → `project/design/D04.md`
 - R-NGNX-4R6S → D4 → `project/design/D04.md`
@@ -134,3 +136,4 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-TF7C-JIV5 → D26 → `project/design/D26.md`
 - R-VGTA-PXIA → D27 → `project/design/D27.md`
 - R-VI17-3P8Z → D27 → `project/design/D27.md`
+- R-VKB6-SHHV → D29 → `project/design/D29.md` (adopted from root `project/design/D11.md`)
