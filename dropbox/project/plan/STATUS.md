@@ -9,4 +9,6 @@ phase's `project/plan/phase-NN.md`, and builds it. On completion the build loop
 done marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 36
+Next phase: 37
+
+- Phase 36 ⬜ realizes — — remove the stray R-4LKF-FB23 tag from `TestDefaultMirrorPathTracksDurableStateDB` in `cmd/dropbox/main_test.go` (proof of record stays `TestDropboxBootsFromOpsctlLayoutAndServesHealth`)
