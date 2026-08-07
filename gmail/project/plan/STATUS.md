@@ -9,5 +9,7 @@ loop deletes the phase's line and body file — there is no done marker; done is
 gone. This file deliberately carries **no bare status glyph** anywhere but on a
 phase line, so the anchored grep matches only phase lines.
 
-Next phase: 26
+Next phase: 27
+
+- Phase 26 ⬜ realizes R-JWR1-BQ0J, R-VKB6-SHHV — env-channel conformance: the poll interval in the manifest
 

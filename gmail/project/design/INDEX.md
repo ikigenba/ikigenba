@@ -27,6 +27,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D21 → `project/design/D21.md` — Gmail's outbound calls move onto the shared instrumented HTTP client — owns R-ZUC0-6K42, R-ZWRS-Y3LG, R-ZXZP-BVC5, R-ZZ7L-PN2U
 - D22 → `project/design/D22.md` — nginx fragment: forward the edge-minted `X-Correlation-Id` on gated locations, blank it on ungated ones — owns R-1M1T-299W, R-1N9P-G10L, R-1OHL-TSRA
 - D23 → `project/design/D23.md` — The poll cycle is a chain root: one correlation id per cycle, threaded into every append and every outbound call — owns R-PJWQ-547Q, R-PL4M-IVYF, R-PMCI-WNP4
+- D24 → `project/design/D24.md` — Env-channel conformance: the poll interval surfaces in the manifest — owns R-JWR1-BQ0J; adopts R-VKB6-SHHV (root `project/design/D11.md`)
 
 ## Verification ids → Decision
 
@@ -68,6 +69,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ASST-5W7X → D3 → `project/design/D03.md`
 - R-ASST-7Y9Z → D3 → `project/design/D03.md`
 - R-HOME-7Q9U → D7 → `project/design/D07.md`
+- R-JWR1-BQ0J → D24 → `project/design/D24.md`
 - R-LAND-3F7K → D1 → `project/design/D01.md`
 - R-LAND-5H9M → D1 → `project/design/D01.md`
 - R-LAND-7J2N → D1 → `project/design/D01.md`
@@ -84,6 +86,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-4M6Q → D2 → `project/design/D02.md`
 - R-ROUT-6N8R → D2 → `project/design/D02.md`
 - R-ROUT-8P1S → D2 → `project/design/D02.md`
+- R-VKB6-SHHV → D24 → `project/design/D24.md` (adopted from root `project/design/D11.md`)
 - R-WVZH-M0IY → D16 → `project/design/D16.md`
 - R-X22Z-IV8F → D16 → `project/design/D16.md`
 - R-X6YL-1Y77 → D18 → `project/design/D18.md`
