@@ -10,5 +10,3 @@ done marker; done is gone. This file deliberately carries **no bare status glyph
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 38
-
-- Phase 37 ⬜ realizes R-M0AZ-C8H7, R-VKB6-SHHV — env-channel conformance: sync tuning knobs in the manifest
