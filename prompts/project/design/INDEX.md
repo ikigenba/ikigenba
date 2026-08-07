@@ -51,6 +51,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D46 | project/design/D46.md | nginx fragment: capture the edge-minted chain id on gated locations, strip it on the ungated one | R-HWX8-NVCX, R-HY55-1N3M |
 | D47 | project/design/D47.md | Rebuild to adopt: event-plane chain continuation, the `root` record at spawn, and the recorded boundary of a run | R-HZD1-FEUB, R-I0KX-T6L0, R-I1SU-6YBP, R-I30Q-KQ2E, R-I48M-YHT3 |
 | D48 | project/design/D48.md | State paths come from `appkit/config`, never from a hardcoded `./tmp` default | R-LBH5-4LO0, R-LCP1-IDEP, R-LDWX-W55E |
+| D49 | project/design/D49.md | Env-channel conformance: composed inventory root, manifest-surfaced tuning knobs, Spec-derived drift oracle | R-M51H-QWOL, R-M69E-4OFA; adopts R-VKB6-SHHV (root `project/design/D11.md`) |
 
 ## Verification ids → Decision
 
@@ -219,6 +220,8 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-LBH5-4LO0 | D48 | project/design/D48.md |
 | R-LCP1-IDEP | D48 | project/design/D48.md |
 | R-LDWX-W55E | D48 | project/design/D48.md |
+| R-M51H-QWOL | D49 | project/design/D49.md |
+| R-M69E-4OFA | D49 | project/design/D49.md |
 | R-RG01-PORT | D14 | project/design/D14.md |
 | R-RG03-DBOX | D14 | project/design/D14.md |
 | R-RG04-NLIT | D14 | project/design/D14.md |
@@ -232,6 +235,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-T496-CIE4 | D38 | project/design/D38.md |
 | R-T6OZ-41VI | D38 | project/design/D38.md |
 | R-T7WV-HTM7 | D38 | project/design/D38.md |
+| R-VKB6-SHHV | D49 | project/design/D49.md (adopted from root `project/design/D11.md`) |
 | R-ZAC5-D0ZY | D3 | project/design/D03.md |
 | R-ZBK1-QSQN | D4 | project/design/D04.md |
 | R-ZCRY-4KHC | D5 | project/design/D05.md |
