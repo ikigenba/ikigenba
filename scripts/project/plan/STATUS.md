@@ -11,5 +11,3 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 33
 
-- Phase 32 ⬜ realizes R-HDCE-C6WU, R-VKB6-SHHV — env-channel conformance: the run TTL in the manifest
-
