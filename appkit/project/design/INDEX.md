@@ -101,8 +101,8 @@ Verification ids change.
 - R-MHF5-70IJ → D8 → `project/design/D08.md`
 - R-MIN1-KS98 → D8 → `project/design/D08.md`
 - R-MJUX-YJZX → D8 → `project/design/D08.md`
-- R-MSET-O79A → D8 → `project/design/D08.md`
 - R-ML2U-CBQM → D9 → `project/design/D09.md`
+- R-MSET-O79A → D8 → `project/design/D08.md`
 - R-PKUI-T1UT → D15 → `project/design/D15.md`
 - R-PNAB-KLC7 → D15 → `project/design/D15.md`
 - R-POI7-YD2W → D15 → `project/design/D15.md`

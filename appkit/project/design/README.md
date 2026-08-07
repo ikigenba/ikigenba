@@ -149,6 +149,19 @@ Shared facts every Decision leans on:
   break is `logging.RequestIDMiddleware` / `logging.WithRequestID`, replaced by
   the read-or-mint correlation middleware; every mount of them is inside appkit,
   so no service source changes.
+- **Suite-contract proofs carried here.** Some `*_test.go` files in this module
+  are tagged with requirement ids minted by the **umbrella** project (the repo
+  root's `project/design/`) rather than by a Decision in this directory: the
+  umbrella marks those ids `[proof: appkit]`, naming appkit as the one tree that
+  carries the tagged test for a suite-wide contract it owns — appkit is the
+  chassis every service runs on, so the behavior is proven once, here. Those
+  tags are correct and expected; this design neither owns nor restates the
+  contracts behind them, so a tree-local sweep that reads only
+  `appkit/project/design/` will not find their home, and that is not a defect.
+  The converse also holds: an umbrella id marked `[proof: per-service]` does
+  **not** belong on a test here. appkit is a library, not a service, so it is
+  never itself the adopter of a per-service contract; each service carries that
+  proof in its own tree.
 - **This design touches no schema and no `opsctl` code.** appkit is a library:
   it owns no service database and no outbox table, so the routing revision's
   outbox DDL change (D11) reaches services through their own migrations, never
