@@ -53,6 +53,19 @@ the work is "done" are downstream's concern and are not specified here.
 - **Test naming:** each Verification id is covered by a test that cites the id
   in its name or an adjacent comment, so grepping for the id finds the proof.
   Requirement-id tags live in Go test files, glob `*_test.go`.
+- **Suite-contract proofs carried here.** Some `*_test.go` files in this module
+  are tagged with requirement ids minted by the **umbrella** project (the repo
+  root's `project/design/`) rather than by a Decision in this directory: the
+  umbrella marks those ids `[proof: eventplane]`, naming eventplane as the one
+  tree that carries the tagged test for a suite-wide contract it owns — the
+  event plane's own plumbing is where that behavior is observable, so it is
+  proven once, here. Those tags are correct and expected; this design neither
+  owns nor restates the contracts behind them, so a tree-local sweep that reads
+  only `eventplane/project/design/` will not find their home, and that is not a
+  defect. The converse also holds: an umbrella id marked `[proof: per-service]`
+  does **not** belong on a test here. eventplane is a library, not a service, so
+  it is never itself the adopter of a per-service contract; each service carries
+  that proof in its own tree.
 
 ## Layout
 
