@@ -44,6 +44,17 @@ Shared facts every Decision leans on.
 - **Real substrate for live claims.** The live box for end-to-end verification is
   `int.ikigenba.com` (`ssh int`); opsctl there needs the box env loaded:
   `sudo bash -c 'set -a; . /etc/ikigenba/env; opsctl <verb> …'`.
+- **Suite-contract proofs carried here.** Some tests under `internal/opsctl/`
+  are tagged with requirement ids minted by the **umbrella** project (the repo
+  root's `project/design/`) rather than by a Decision in this directory: the
+  umbrella marks those ids `[proof: opsctl]`, naming opsctl as the one tree that
+  carries the tagged test for a suite-wide contract it owns. Those tags are
+  correct and expected — this design neither owns nor restates the contracts
+  behind them, so a tree-local sweep that reads only `opsctl/project/design/`
+  will not find their home, and that is not a defect. The converse also holds:
+  an umbrella id marked `[proof: per-service]` does **not** belong on a test
+  here. opsctl is tooling, not a service, so it is never the adopter of a
+  per-service contract; each service carries that proof in its own tree.
 
 ## Layout
 

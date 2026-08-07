@@ -10,4 +10,6 @@ is no done marker; done is gone. This file deliberately carries **no bare
 status glyph** outside phase lines, so the anchored grep matches only phase
 lines.
 
-Next phase: 18
+Next phase: 19
+
+- Phase 18 ⬜ realizes — — clear one unfilled `R-XXXX-XXXX` placeholder and twelve stale requirement-id tags from `internal/opsctl/*_test.go`, changing no test
