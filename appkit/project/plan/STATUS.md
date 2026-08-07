@@ -9,7 +9,9 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 28
+Next phase: 29
+
+- Phase 28 ⬜ realizes R-PTNV-XRYV — retag `telemetry/recorder_test.go` after the D15 id split and delete the two D18 mistags in `feed/feed_test.go`
 
 
 
