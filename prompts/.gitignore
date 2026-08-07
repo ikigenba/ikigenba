@@ -18,6 +18,8 @@
 
 # Build loop ephemeral brief (created by gather, deleted by verify; never committed)
 /project/loops/brief.md
+# Build loop blocked marker (written by verify on a second stall; never committed)
+/project/loops/blocked.md
 
 # Local environment
 .env

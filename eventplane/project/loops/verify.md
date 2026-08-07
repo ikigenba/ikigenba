@@ -122,13 +122,17 @@ pass.
    ### Gap — one or more ids open
 
    Leave the marker `⬜`. Change no source. Measure progress against the
-   prior `## Verify feedback` region: read its attempt counter `N`, its
-   recorded build commit, and its prior open-gap id set. Capture the current
-   build commit with `git rev-parse HEAD`.
+   prior `## Verify feedback` region: read its attempt counter `N` and its
+   prior open-gap id set. Capture the current build commit with
+   `git rev-parse HEAD` — record it as diagnostic context only.
 
-   **No progress** means: the current open-gap id set is a subset of the
-   prior one **and** the build commit is unchanged (build committed nothing
-   new). Increment the stall streak on no progress; otherwise reset it to 0.
+   **Progress** means: the current open-gap id set is a **strict subset** of
+   the prior one — some gap that was open last attempt is now closed.
+   Anything else is **no progress**: increment the stall streak; otherwise
+   reset it to 0. **A new build commit is never progress and never resets the
+   streak** — a builder that cannot satisfy a bar will keep committing
+   plausible rewordings of the same attempt, and a detector keyed on commit
+   motion reads that churn as convergence and never trips.
 
    - **Stall (streak reaches 3)** — the same gaps unsatisfied across three
      consecutive no-progress attempts. Before resetting, check whether this

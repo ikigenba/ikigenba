@@ -171,8 +171,8 @@ Report this run's result as a `status` and a one-sentence `message`:
   feedback written, stall reset, or blocked); hand off to gather.
 - `DONE` — **terminal — never yours to report**: ending the run is never
   yours — finishing this phase completely, green suite and all open gaps
-  closed, is still `NEXT`; only gather, finding no `⬜` phase left or a
-  blocked phase awaiting the operator, ever reports `DONE`.
+  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
+  phase left or a blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Phase 13 verified green, phase deleted` or `Phase 13 left ⬜: R-3CVZ-GUX7
   test missing`.

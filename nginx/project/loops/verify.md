@@ -27,9 +27,9 @@ Work from the repo root. Every path is repo-root-relative.
 
 3. **Coverage ratchet (future-proofing — this tree currently mints no ids).**
    This tree's Decisions currently mint no Verification ids (per
-   `project/design/README.md` "Requirement ids"), so this step is normally a
-   no-op producing an empty set both sides. Run it anyway so the check keeps
-   working the moment a Decision does mint an id:
+   `nginx/project/design/README.md` "Requirement ids"), so this step is
+   normally a no-op producing an empty set both sides. Run it anyway so the
+   check keeps working the moment a Decision does mint an id:
 
    ```
    grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' nginx/project/design/D*.md | sort -u
@@ -40,7 +40,7 @@ Work from the repo root. Every path is repo-root-relative.
    treat every id it lists as an **open gap** (design has started minting
    ids but this loop has not yet been regenerated to know how to prove
    them) rather than silently passing — the design's own
-   `project/design/README.md` states ids and coverage machinery must be
+   `nginx/project/design/README.md` states ids and coverage machinery must be
    defined together, so an id with no defined proof mechanism is a defect in
    the loop, not in the code, and must block the phase (see the *Gap*
    branch, and treat it as a candidate for `blocked.md` rather than a
@@ -117,9 +117,9 @@ Work from the repo root. Every path is repo-root-relative.
 - Never write the brief's contract region.
 - Never retire a phase on anything short of every structural check holding
   and the ratchet returning empty.
-- Never read `project/product/` or the Decision `DNN.md` files to re-derive
-  the checklist — the brief's own done bar is the checklist. The id-set
-  grep in step 3 is a mechanical token extraction, not "reading" in that
+- Never read `nginx/project/product/` or the Decision `DNN.md` files to
+  re-derive the checklist — the brief's own done bar is the checklist. The
+  id-set grep in step 3 is a mechanical token extraction, not "reading" in that
   sense.
 - When uncertain whether a structural check really holds, treat it as
   failed, not passed.

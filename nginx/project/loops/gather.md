@@ -4,26 +4,27 @@ You are the **gather** step of an unattended three-prompt build loop
 (`gather → build → verify`) for the `nginx/` tree. Every invocation starts a
 **fresh context**; nothing from a prior turn is available except what is on
 disk. This prompt is the **only** one of the three that reads the big spec
-docs (`project/product/README.md`, `project/design/*.md`,
-`project/plan/*.md`), and the **only** one that can end the whole run.
+docs (`nginx/project/product/README.md`, `nginx/project/design/*.md`,
+`nginx/project/plan/*.md`), and the **only** one that can end the whole run.
 
 Work from the repo root. Every path below is repo-root-relative.
 
 ## What this tree is
 
 `nginx/` is config/static files plus one Bash script — no Go, no module, no
-test-file glob, and (per `project/design/README.md`) it currently **mints no
-Verification ids**. There is no `R-XXXX-XXXX` id space to resolve here: every
-Decision's Verification list says "ids: none" and states its structural proof
-instead. Do not go looking for ids that do not exist.
+test-file glob, and (per `nginx/project/design/README.md`) it currently mints
+**no Verification ids**. There is no `R-XXXX-XXXX` id space to resolve here:
+every Decision's Verification list says "ids: none" and states its structural
+proof instead. Do not go looking for ids that do not exist.
 
 ## Procedure
 
-1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists,
-   open no other file, change nothing, and report `DONE` — see *Reporting the
-   result* below. A blocked phase is a done bar the loop could not satisfy
-   twice in a row; it waits for the operator to fix the phase's bar in
-   `project/plan/` or `project/design/` and delete that file.
+1. **Check for a blocked phase first.** If `nginx/project/loops/blocked.md`
+   exists, open no other file, change nothing, and report `DONE` — see
+   *Reporting the result* below. A blocked phase is a done bar the loop could
+   not satisfy twice in a row; it waits for the operator to fix the phase's
+   bar in `nginx/project/plan/` or `nginx/project/design/` and delete that
+   file.
 
 2. **Otherwise, find the next pending phase.** Run:
 
@@ -50,8 +51,8 @@ instead. Do not go looking for ids that do not exist.
    - `nginx/project/plan/phase-NN.md` — the one pending phase body.
    - The Decision file(s) its `realizes` clause names, resolved through
      `nginx/project/design/INDEX.md` (e.g. `realizes D1` → `INDEX.md` line
-     `**D1** → project/design/D01.md`). Read only those `DNN.md` files, not
-     the others.
+     `**D1** → nginx/project/design/D01.md`). Read only those `DNN.md`
+     files, not the others.
 
    From those, write `nginx/project/loops/brief.md` to the schema below,
    copying prose **verbatim** from the source files (never paraphrased) so
@@ -100,9 +101,10 @@ Then report `NEXT`.
 
 ## Boundaries
 
-- Read only: `project/plan/STATUS.md`, `project/loops/blocked.md` (existence
-  check only), `project/loops/brief.md` (header check only, unless
-  authoring), the one `phase-NN.md`, and the Decision file(s) it realizes via
+- Read only: `nginx/project/plan/STATUS.md`, `nginx/project/loops/blocked.md`
+  (existence check only), `nginx/project/loops/brief.md` (header check only,
+  unless authoring), the one `phase-NN.md`, and the Decision file(s) it
+  realizes via
   `INDEX.md`. Never open a Decision file not named by this phase.
 - Never build, test, or commit anything.
 - Never write the brief's `## Verify feedback` region — leave it exactly as
@@ -117,7 +119,7 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next
   prompt.
 - `DONE` — **terminal**: the whole job is complete; the loop stops. Report
-  this only when `project/loops/blocked.md` exists (name the blocked phase
+  this only when `nginx/project/loops/blocked.md` exists (name the blocked phase
   and point at the file) or when the `⬜` grep found no pending phase (say so
   plainly).
 - `message` — one short, plain sentence describing what happened, e.g.

@@ -62,20 +62,54 @@ phase on a gap.
    grep/smoke. Any `grep`-style check must be **scoped to exclude `project/`** so it
    can never match the workspace/prompt docs that quote the pattern.
 
-4. **Run the global coverage ratchet** — the deterministic set check that catches
-   a rewrite silently dropping a previously-covered id, independent of this
-   phase's own denominator:
+   **Doc-truth ids are the one exception to "tagged test."** A handful of ids are
+   proven, by design's own testing strategy, with a deterministic **content check
+   on a doc file** rather than a Go test — currently exactly one:
+   **`R-DB16-DOCS`** (D6), proven by `AGENTS.md`'s content, never by a `*_test.go`
+   tag. When a brief's Ids-to-cover includes a doc-truth id, check it against its
+   own deterministic condition instead of hunting for a tag:
 
    ```
+   ! grep -qi 'single hybrid page' AGENTS.md \
+     && ! grep -qi 'IAM console' AGENTS.md \
+     && ! grep -qi 'telemetry' AGENTS.md \
+     && grep -qi 'metrics' AGENTS.md \
+     && grep -qi 'profile' AGENTS.md
+   ```
+
+   Exit 0 means `R-DB16-DOCS` is covered. (If design ever mints another doc-truth
+   id, its Decision's Verification text states the exact stale/current phrasing
+   to check — apply the same pattern.)
+
+4. **Run the global coverage ratchet** — the deterministic set check that catches
+   a rewrite silently dropping a previously-covered id, independent of this
+   phase's own denominator. The covered set is the union of tagged tests, ids
+   claimed by a pending phase, **and doc-truth ids whose content check currently
+   passes**:
+
+   ```
+   DOC_TRUTH_COVERED=""
+   if ! grep -qi 'single hybrid page' AGENTS.md \
+      && ! grep -qi 'IAM console' AGENTS.md \
+      && ! grep -qi 'telemetry' AGENTS.md \
+      && grep -qi 'metrics' AGENTS.md \
+      && grep -qi 'profile' AGENTS.md; then
+     DOC_TRUTH_COVERED="R-DB16-DOCS"
+   fi
+
    comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | sort -u) \
-            <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
-                  <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
+            <(printf '%s\n' \
+                  "$(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .)" \
+                  "$(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null)" \
+                  "$DOC_TRUTH_COVERED" \
+              | sed '/^$/d' | sort -u)
    ```
 
    Empty output is the pass condition. Any id in the remainder is an open gap —
-   design mints it, no pending phase claims it, and no test tags it, so a prior
-   phase's coverage regressed (the dropped tagged test exists in git history to
-   restore).
+   design mints it, no pending phase claims it, no test tags it, and (if it is
+   `R-DB16-DOCS`) its doc-truth check currently fails — so a prior phase's
+   coverage regressed (the dropped tagged test, or the doc edit, exists in git
+   history to restore).
 
 5. **Collect the open gaps** — the set of ids that are uncovered or whose test
    fails/skips (from step 3, scoped to this phase, and step 4, scoped globally),
@@ -151,6 +185,9 @@ phase on a gap.
   extracts id tokens and never reads design prose), `project/plan/phase-*.md`
   (same caveat), or `project/product/*` to re-derive the checklist — the brief is
   the checklist.
+- A **doc-truth id** (currently only `R-DB16-DOCS`) is never "uncovered" merely
+  for lacking a `*_test.go` tag — check it against its own deterministic content
+  condition (above) instead; that condition, not a tag, is its durable proof.
 - Never blindly append to the feedback region (an append duplicates on re-run and
   stacks stale gaps) — always overwrite it with only the currently-open gaps.
 - Never perform a second consecutive stall reset on the same phase — escalate to

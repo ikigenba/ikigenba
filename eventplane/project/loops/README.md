@@ -54,10 +54,11 @@ single-phase, and **phase-scoped, not per-cycle**:
 ## The stall and blocked ladder
 
 - **Slow convergence** — each gap cycle, verify overwrites the feedback region
-  with only the ids still open. A shrinking/changing gap set (or a new build
-  commit) is progress; the stall streak resets to 0.
-- **Stall (streak reaches 3)** — the same gap ids unsatisfied across three
-  consecutive attempts with no new build commit. Verify logs the stall to
+  with only the ids still open. A strictly shrinking gap set — some open gap
+  from last attempt now closed — is progress; the stall streak resets to 0. A
+  new build commit alone is never progress and never resets the streak.
+- **Stall (streak reaches 3)** — the same (or a non-shrinking) gap set across
+  three consecutive attempts. Verify logs the stall to
   `~/.ralph/verify.log`, deletes the brief, and leaves `⬜` — a **trajectory
   reset**: the next gather rebuilds the contract fresh from spec, in case a
   stale accumulated brief (not the bar itself) was the problem.
@@ -85,9 +86,10 @@ Verify can neither halt nor advance a phase on a gap, so an incomplete phase
 stays `⬜` and is re-attacked next cycle — with verify's command-grounded
 feedback in front of build, and without gather re-reading the big docs (it
 no-ops on the in-flight brief). The persisted feedback gives verify
-cross-cycle memory: a shrinking/changing gap set is slow convergence; an
-identical set with no new commit is a stall, answered by the reset-then-block
-ladder above. The only exits are gather → `DONE`: zero `⬜` markers (every
+cross-cycle memory: a strictly shrinking gap set is slow convergence; a
+non-shrinking set (a new build commit alone never counts) is a stall,
+answered by the reset-then-block ladder above. The only exits are
+gather → `DONE`: zero `⬜` markers (every
 phase verified green) or a blocked phase awaiting the operator — plus
 ralph's budget rails.
 

@@ -175,8 +175,8 @@ Report this run's result as a `status` and a one-sentence `message`:
   to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never
   yours — finishing this phase completely, green suite and all open gaps
-  closed, is still `NEXT`; only gather, finding no `⬜` phase left or a
-  blocked phase, ever reports `DONE`.
+  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
+  phase left or a blocked phase awaiting the operator.
 - `message` — one short, plain sentence on what happened, e.g.
   `Phase 19 verified green — removed from queue, brief deleted`,
   `Phase 19 left ⬜ — R-3GJO-M65A test missing, wrote feedback attempt 2`, or

@@ -147,7 +147,27 @@ Next-phase lookup: `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1`
 The global coverage ratchet verify also runs every cycle:
 
 ```
+DOC_TRUTH_COVERED=""
+if ! grep -qi 'single hybrid page' AGENTS.md \
+   && ! grep -qi 'IAM console' AGENTS.md \
+   && ! grep -qi 'telemetry' AGENTS.md \
+   && grep -qi 'metrics' AGENTS.md \
+   && grep -qi 'profile' AGENTS.md; then
+  DOC_TRUTH_COVERED="R-DB16-DOCS"
+fi
+
 comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | sort -u) \
-         <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
-               <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
+         <(printf '%s\n' \
+               "$(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .)" \
+               "$(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null)" \
+               "$DOC_TRUTH_COVERED" \
+           | sed '/^$/d' | sort -u)
 ```
+
+**Doc-truth carve-out.** One id in this design, `R-DB16-DOCS` (D6), is proven by
+design's own testing strategy with a **content check on `AGENTS.md`**, never a
+`*_test.go` tag — so the ratchet's covered set folds in any doc-truth id whose
+content condition currently holds, alongside tagged tests and pending-phase ids.
+Without this, the plain tag-based ratchet could never converge: `R-DB16-DOCS`
+would read as a permanent regression regardless of the true state of the doc,
+blocking every future phase's `verify` pass on a gap unrelated to that phase.

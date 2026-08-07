@@ -16,6 +16,9 @@
 # Ephemeral build-loop brief (gather writes, verify deletes)
 /project/loops/brief.md
 
+# Build-loop blocked marker (verify writes on a second stall — never committed)
+/project/loops/blocked.md
+
 # Disposable eval workspace
 /tmp/
 

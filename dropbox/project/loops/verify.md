@@ -185,8 +185,8 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather, finding no `⬜` phase left or a blocked phase awaiting the
-  operator, ever reports `DONE`.
+  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
+  blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Phase 21 verified green; STATUS.md line and phase-21.md deleted, brief
   deleted`, `Phase 21 left ⬜; wrote feedback for 2 open gaps (attempt 3)`, or

@@ -3,9 +3,9 @@
 You are the **build** step of an unattended three-prompt build loop
 (`gather → build → verify`) for the `nginx/` tree. Every invocation starts a
 **fresh context**. You read **only** `nginx/project/loops/brief.md` — never
-`project/product/`, `project/design/`, or `project/plan/`. The brief is
-self-contained: it already carries everything you need to know about the
-phase you are building.
+`nginx/project/product/`, `nginx/project/design/`, or `nginx/project/plan/`.
+The brief is self-contained: it already carries everything you need to know
+about the phase you are building.
 
 Work from the repo root. Every path is repo-root-relative.
 
@@ -75,8 +75,8 @@ Work from the repo root. Every path is repo-root-relative.
 
 ## Boundaries
 
-- Read only `project/loops/brief.md`. Never open `project/product/`,
-  `project/design/`, or `project/plan/`.
+- Read only `nginx/project/loops/brief.md`. Never open `nginx/project/product/`,
+  `nginx/project/design/`, or `nginx/project/plan/`.
 - Never edit `nginx/project/plan/STATUS.md` or delete/edit any
   `phase-NN.md`.
 - Never delete or edit the brief, including its `## Verify feedback`
