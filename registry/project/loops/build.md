@@ -42,6 +42,11 @@ commit it. You do **not** judge completeness and you do **not** edit
    - For a structural phase (no ids), satisfy the brief's Done-bar smoke commands
      (e.g. the module builds and `go list -deps` shows no third-party imports); no
      id-tagged tests are required.
+   - **Never drop an existing tagged test.** Before committing, check the turn's
+     own diff for a dropped tag:
+     `git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'`. Any hit means a
+     previously-committed `R-`-tagged test was removed — restore it before
+     committing; a rewrite only ever *extends* a file's tests.
 
 5. **Format and verify locally:**
    - `gofmt -w` the files you touched.
@@ -84,6 +89,8 @@ commit it. You do **not** judge completeness and you do **not** edit
 - Never edit `project/plan/STATUS.md` or delete a `phase-NN.md`.
 - Never delete or edit `project/loops/brief.md` — including its
   `## Verify feedback` region (you read it, you never write it).
+- Never remove an existing `R-`-tagged test — a rewrite preserves every tag
+  already committed.
 - Never add a third-party dependency or edit files outside `registry/`.
 
 ## Reporting the result
@@ -92,7 +99,10 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops.
+- `DONE` — **terminal — never yours to report**: ending the run is never yours —
+  finishing this phase completely, green suite and all open gaps closed, is
+  still `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or
+  a blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g. `built the
   resolution API and committed Phase 03 tests`.
 

@@ -9,25 +9,31 @@ context** with no memory of prior turns. All state lives in files under the
 **service root** (this working directory); every path below is relative to it.
 
 You are **gather**: the **only** prompt that reads the big planning docs
-(`project/design/…`, `project/plan/…`, `project/product/…`). You own the
-**contract region** of `project/loops/brief.md` for exactly one phase. You
-write no code, run no tests, and commit nothing. You **preserve an in-flight
-brief** rather than regenerating it every cycle. Default to making progress; do
-not ask questions.
+(`project/design/…`, `project/plan/…`, `project/product/…`) and the **only**
+prompt that ever ends the run. You own the **contract region** of
+`project/loops/brief.md` for exactly one phase. You write no code, run no
+tests, and commit nothing. You **preserve an in-flight brief** rather than
+regenerating it every cycle. Default to making progress; do not ask questions.
 
 ## Procedure
 
-1. **Find the next unstarted phase.** Run:
+1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists,
+   open no other file, do nothing else, and report **`DONE`**, naming the
+   blocked phase and pointing at that file (a phase whose done bar `verify`
+   could not satisfy after a rebuilt contract is waiting on the operator, who
+   fixes the bar in `project/` and deletes the file to resume).
+
+2. **Find the next unstarted phase.** Run:
 
    ```
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
    - **No match** → the queue is empty. There is nothing to gather.
-     Report **`DONE`** (the only end of the loop). Do nothing else.
+     Report **`DONE`** (the only other end of the loop). Do nothing else.
    - **A match** → note that phase's number `NN`. Continue.
 
-2. **Preserve an in-flight brief.** If `project/loops/brief.md` exists, read only
+3. **Preserve an in-flight brief.** If `project/loops/brief.md` exists, read only
    its first heading line `# Brief — Phase NN`:
 
    - If it names **this same phase `NN`**, the phase is mid-flight — its contract
@@ -35,10 +41,10 @@ not ask questions.
      (touch neither the contract region nor the `## Verify feedback` region),
      **open no big doc**, and report **`NEXT`**. You are done this turn.
    - If it names a **different** phase with **no `STATUS.md` line left** (completed,
-     hence deleted), or there is no brief, fall through to step 3 and author a
+     hence deleted), or there is no brief, fall through to step 4 and author a
      fresh brief.
 
-3. **Author a fresh brief.** Only now do you read the big docs, and only the
+4. **Author a fresh brief.** Only now do you read the big docs, and only the
    minimum:
 
    1. Read **only** `project/plan/phase-NN.md`. From its `*Realizes design
@@ -55,7 +61,7 @@ not ask questions.
       their `.go` source or the depended-on Decision's signatures). Never their
       internals.
 
-4. **Write `project/loops/brief.md`** to the schema below, with the contract
+5. **Write `project/loops/brief.md`** to the schema below, with the contract
    region filled and the **feedback region empty**. Then report **`NEXT`**.
 
 ## The brief schema (write it exactly like this)
@@ -116,6 +122,8 @@ project/-excluded grep against the named non-project file).>
 
 ## Boundaries
 
+- **First check `project/loops/blocked.md`; if it exists, open nothing else and
+  report `DONE`.**
 - Read **only** the one `project/plan/phase-NN.md`, the realized Decision file(s),
   `project/design/INDEX.md`, and the dependency packages' interface signatures.
   Nothing else from the big docs.
@@ -135,7 +143,9 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `message` — one short, plain sentence describing what happened, e.g.
   `Wrote a fresh brief for Phase 89 realizing D60.` or `Phase 89 brief already in
   flight; left it untouched.` or `The queue is empty; the plan is fully built.`
+  or `Phase 89 is blocked on an operator fix; see project/loops/blocked.md.`
 
-End the turn on **`DONE`** only when step 1's grep found no `⬜` phase line; otherwise
-end on **`NEXT`** (whether you authored a fresh brief or preserved an in-flight
-one). Keep `message` a single plain sentence — not a JSON object or code block.
+End the turn on **`DONE`** only when `project/loops/blocked.md` exists, or step 2's
+grep found no `⬜` phase line; otherwise end on **`NEXT`** (whether you authored a
+fresh brief or preserved an in-flight one). Keep `message` a single plain
+sentence — not a JSON object or code block.

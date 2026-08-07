@@ -61,7 +61,18 @@ working directory.
      content-assertion tests in `cmd/scripts/main_test.go` (nginx is not run by
      the suite).
 
-5. **Keep the suite green for what you've written** and format:
+5. **Before committing, check the turn's own diff for dropped tags.** A rewrite
+   only ever **extends** a file's tagged tests — it never drops one that already
+   existed:
+
+   ```
+   git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
+   ```
+
+   Any match outside `project/` names a removed `R-`-tagged line; restore it
+   before continuing.
+
+6. **Keep the suite green for what you've written** and format:
 
    ```
    cd scripts && gofmt -w .
@@ -72,7 +83,7 @@ working directory.
 
    Plus any phase-specific check the brief's **Done bar** names.
 
-6. **Commit this turn's increment** (never an empty commit) with a message naming
+7. **Commit this turn's increment** (never an empty commit) with a message naming
    the phase, and the repo trailer:
 
    ```
@@ -121,6 +132,8 @@ working directory.
   verify's job alone.
 - Never delete or edit `project/loops/brief.md`, including its `## Verify
   feedback` region — you read that region but never write it.
+- Never remove an existing `R-`-tagged test; a rewrite extends a file's tests,
+  it never drops an existing tag.
 
 ## Reporting the result
 
@@ -130,7 +143,8 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
+  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
+  blocked phase awaiting the operator.
 - `message` — one short, plain sentence on what this increment landed, e.g.
   `added error_page 401 = @login_bounce to the two session-gated locations + tests`.
 

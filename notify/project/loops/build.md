@@ -54,14 +54,16 @@ working directory.
      to `notify/AGENTS.md`). Edit **`AGENTS.md`**; a refusal to write through the
      symlink is expected.
 
-5. **Keep the suite green for what you've written** and format (all from the
-   notify service root, which is your cwd):
+5. **Keep the suite green for what you've written**, and **before committing,
+   check the turn's own diff for dropped tags** — a rewrite extends a file's
+   tests, it never drops an existing tagged test:
 
    ```
    gofmt -w .
    go build ./...
    go vet ./...
    go test ./...
+   git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'   # must be empty; restore any hit first
    ```
 
    Plus any phase-specific check the brief's **Done bar** names.
@@ -113,6 +115,8 @@ working directory.
   verify's job alone.
 - Never delete or edit `project/loops/brief.md`, including its `## Verify feedback`
   region — you read it but never write it.
+- Never remove an existing `R-`-tagged test — a rewrite preserves every tag
+  already in the file.
 
 ## Reporting the result
 
@@ -122,7 +126,8 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
+  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
+  blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Added the two error_page lines to nginx.conf and the tagged content tests.`
 

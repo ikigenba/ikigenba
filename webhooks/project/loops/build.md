@@ -33,9 +33,9 @@ completeness and **do not** touch `STATUS.md` — that is verify's job.
    signatures. Honor the suite conventions below. **Do as much of the brief as
    cleanly fits this turn — ideally complete the whole phase so `verify` can pass
    it next cycle — preferring fewer, fuller turns over many thin increments** (an
-   incomplete phase is simply re-attacked next cycle). For any *new* (non-bootstrap)
-   migration use `../bin/create-migration webhooks <name>` — never hand-pick a
-   migration number; the bootstrap trio (`001_schema_migrations.sql`,
+   incomplete phase is simply re-attacked next cycle). For any *new*
+   (non-bootstrap) migration use `../bin/create-migration webhooks <name>` — never
+   hand-pick a migration number; the bootstrap trio (`001_schema_migrations.sql`,
    `002_webhooks.sql`, `003_outbox.sql`) is the one fixed integer-prefixed set.
 
 5. **Write id-tagged tests and run the suite.** For each id in the brief, write a
@@ -49,13 +49,23 @@ completeness and **do not** touch `STATUS.md` — that is verify's job.
    go test ./...
    ```
 
-   "The suite is green" means **all three exit 0 with no failures**. If the brief's
-   done bar says the phase requires the running suite (the D7 e2e ids), bring it up
-   first with `../bin/start` and let the `internal/e2e` tests hit
-   `http://localhost:8080`; never convert a real failure or an unreachable `:8080`
-   into a `t.Skip` to make the suite "pass". `gofmt -w` everything you touched.
+   "The suite is green" means **all three exit 0 with no failures**. If the
+   brief's done bar says the phase requires the running suite (the D7 e2e ids),
+   bring it up first with `../bin/start` and let the `internal/e2e` tests hit
+   `http://localhost:8080`; never convert a real failure or an unreachable
+   `:8080` into a `t.Skip` to make the suite "pass". `gofmt -w` everything you
+   touched.
 
-6. **Commit this turn's increment.** Stage your changes and commit with a message
+6. **Check your own diff for dropped tags before committing.** A rewrite extends
+   a file's tests, it never drops an existing tagged test. Run:
+
+   ```
+   git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
+   ```
+
+   Any removed line matching an `R-` id must be restored before you commit.
+
+7. **Commit this turn's increment.** Stage your changes and commit with a message
    naming the phase (e.g. `webhooks build: phase NN — <objective>`). Do **not**
    create an empty commit; if nothing changed this turn, skip the commit. End the
    message with the trailer:
@@ -64,15 +74,16 @@ completeness and **do not** touch `STATUS.md` — that is verify's job.
    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
    ```
 
-7. Report `NEXT` (see *Reporting the result*).
+8. Report `NEXT` (see *Reporting the result*).
 
 ## Project conventions (the substrate — bake these in)
 
 - **Toolchain:** Go (`go 1.26`), module path `webhooks`, built on the `appkit`
   chassis over `modernc.org/sqlite` (pure-Go, no cgo); in-repo libs via committed
   `replace` (`appkit => ../appkit`, `eventplane => ../eventplane`,
-  `registry => ../registry`). Loopback port comes from `registry.MustPort("webhooks")`
-  (`3006`), never a hard-coded `127.0.0.1:30xx` literal.
+  `registry => ../registry`). Loopback port comes from
+  `registry.MustPort("webhooks")` (`3006`), never a hard-coded `127.0.0.1:30xx`
+  literal.
 - **Real substrate, no mocks for DB/outbox.** Tests run against **real temp-file
   SQLite** (`db.Open`, `t.TempDir()` — never `:memory:`) with a **deterministic
   injected `Clock`**; events run against the real `eventplane/outbox`. A mocked
@@ -93,6 +104,8 @@ completeness and **do not** touch `STATUS.md` — that is verify's job.
 - Never edit `project/plan/STATUS.md`; never delete or edit
   `project/loops/brief.md`, including its `## Verify feedback` region (you read it
   but never write it).
+- Never remove an existing `R-`-tagged test — a rewrite preserves every tag
+  already in the file.
 - You hand off **every** turn; you are never the step that ends the run.
 
 ## Reporting the result
@@ -103,9 +116,10 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
+  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
+  blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 14 nginx opt-in lines added; suite green.`
+  `Phase 22 nginx opt-in lines added; suite green.`
 
 Always end on `NEXT`. Keep `message` a single plain sentence — not a JSON object
 or code block.

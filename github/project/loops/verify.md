@@ -73,7 +73,7 @@ believe it.
        counter line, never another phase's line) and `rm project/plan/phase-NN.md`.
        There is no done marker; done is gone.
      - Commit the deletion with a message naming the phase and the trailer
-       `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+       `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
      - `rm -f project/loops/brief.md`.
      - Report **`NEXT`**.
 
@@ -83,27 +83,59 @@ believe it.
      Then measure progress and either reset or record feedback (below). Report
      **`NEXT`**.
 
-### Gap: measure progress, then reset or record
+### Gap: measure progress, then reset, escalate, or record
 
 Read the prior `## Verify feedback — attempt N` region (if any) for its attempt
 counter `N`, its recorded build commit, and its prior open-gap id set. Capture the
 current build commit: `git rev-parse HEAD`.
 
-- **No progress** this cycle = the current open-gap id set is a subset of the prior
-  one **and** the build commit is unchanged (build committed nothing new).
-  Increment the stall streak on no-progress; reset it to `0` otherwise.
+- **Progress** this cycle means the current open-gap id set is a **strict subset**
+  of the prior one — some gap that was open last attempt is now closed. Anything
+  else is **no progress**, including a repo with a fresh build commit that closed
+  no gap: **a new build commit is never progress by itself** and never resets the
+  streak — a builder that cannot satisfy a bar will keep committing plausible
+  rewordings of the same attempt, and a detector keyed on commit motion alone would
+  read that churn as convergence and never trip. Increment the stall streak on no
+  progress; reset it to `0` on progress. Record the captured build commit in the
+  feedback region purely as diagnostic context, never as a progress signal.
 
 - **Stall reset** — when the streak reaches **3** (same gaps unsatisfied across
-  three consecutive no-progress attempts): the accumulated brief is not
-  converging. Append one line to `~/.ralph/verify.log`:
+  three consecutive no-progress attempts): the accumulated brief may not be
+  converging, so discard it. **First check for a repeat stall on this same phase**:
 
-  ```
-  <YYYY-MM-DD> Phase NN STALLED after N attempts: <gap ids>
+  ```sh
+  grep "Phase NN STALLED" ~/.ralph/verify.log
   ```
 
-  then `rm -f project/loops/brief.md`, leave the marker `⬜`, and report **`NEXT`**.
-  The next `gather` rebuilds the contract fresh from spec. (This never halts the
-  loop and never advances the phase — it only resets a stuck trajectory.)
+  - **No prior STALLED line for this phase** → this is the first stall. Append one
+    line to `~/.ralph/verify.log`:
+
+    ```
+    <YYYY-MM-DD> Phase NN STALLED after N attempts: <gap ids>
+    ```
+
+    then `rm -f project/loops/brief.md`, leave the marker `⬜`, and report
+    **`NEXT`**. The next `gather` rebuilds the contract fresh from spec. (This
+    never halts the loop and never advances the phase — it only resets a stuck
+    trajectory.)
+
+  - **A prior STALLED line for this same phase already exists** → a rebuilt
+    contract has already been tried and did not help, so the bar itself — not the
+    trajectory — is the fault, and no further rebuilding can fix it. **Blocked
+    escalation**: write `project/loops/blocked.md` naming the phase, the total
+    attempt count, the still-unsatisfied ids, and the **exact command and observed
+    output** that will not go green, stating that the phase's done bar is the
+    prime suspect and only the operator can change it (`project/` is read-only to
+    the loop). Append one line to `~/.ralph/verify.log`:
+
+    ```
+    <YYYY-MM-DD> Phase NN BLOCKED after N attempts: <gap ids>
+    ```
+
+    then `rm -f project/loops/brief.md`, leave the marker `⬜`, and report
+    **`NEXT`**. The next `gather` sees `project/loops/blocked.md` and reports
+    `DONE`. This is how a defective bar costs a handful of attempts and yields a
+    written diagnosis, instead of spinning until an operator notices.
 
 - **Otherwise** — **overwrite** (never append) the `## Verify feedback` region with
   a single `## Verify feedback — attempt <N+1>` block carrying: the captured build
@@ -121,6 +153,11 @@ current build commit: `git rev-parse HEAD`.
 - Never read the big design/plan docs to re-derive the checklist — the brief **is**
   the checklist.
 - Treat a skipped or statically-unreachable id test as **uncovered**.
+- The only files you may write are: `project/plan/STATUS.md` (delete this phase's
+  line only, on pass), `project/loops/brief.md` (delete on pass/stall reset/block;
+  overwrite only the feedback region on a recorded gap), `~/.ralph/verify.log`
+  (append-only), and `project/loops/blocked.md` (write only on a second stall for
+  the same phase).
 - Always report **`NEXT`** — verify hands off every turn, on a pass and on a gap,
   and is never the step that ends the run.
 

@@ -6,11 +6,12 @@ with no memory of prior turns. Your working directory is the service root
 (`eventplane/`); all paths are relative to it.
 
 You are the independent gate: the **only** step that deletes a completed
-phase's `STATUS.md` line and body file, or deletes the brief. You never halt
-the loop and never advance a phase on a gap. You write no production code. You
-**re-derive current truth from scratch every run** — never trust build's claims
-or your own prior feedback as input; prior feedback is read only to measure
-progress, not believed.
+phase's `STATUS.md` line and body file, deletes the brief, or declares a phase
+blocked (`project/loops/blocked.md`). You never halt the loop and never
+advance a phase on a gap. You write no production code. You **re-derive
+current truth from scratch every run** — never trust build's claims or your
+own prior feedback as input; prior feedback is read only to measure progress,
+not believed.
 
 Every check below is a deterministic command with a defined pass criterion (a
 green suite, an exit code, an exact match count). Every grep-style coverage
@@ -78,13 +79,28 @@ pass.
    If the brief says `(none — structural phase)`, coverage is the green suite
    plus the brief's own named checks instead.
 
-5. **Run the brief's Done-bar checks** — the phase-specific grep/list/diff
+5. **Run the global coverage ratchet** — catches a rewrite silently dropping a
+   previously-covered id:
+
+   ```
+   comm -23 \
+     <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | sort -u) \
+     <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
+           <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
+   ```
+
+   Pass criterion: empty output. Any id it prints is a design id that is
+   neither tagged in a real test nor owned by a pending phase — a coverage
+   regression, grounded by this command; the dropped tagged test exists in
+   git history to restore.
+
+6. **Run the brief's Done-bar checks** — the phase-specific grep/list/diff
    conditions copied into the brief, each with its exact pass criterion (e.g.
    a `go list -f '{{join .Deps "\n"}}' …` import-boundary check printing
    exactly the allowed packages, or `git diff -- go.mod | grep -c
    '^+.*require'` being `0`). Run each and record its output.
 
-6. **Collect the open gaps** — every failing or uncovered id, each with the
+7. **Collect the open gaps** — every failing or uncovered id, each with the
    exact command and observed output that proves it open. Then:
 
    ### Pass — no open gaps
@@ -114,19 +130,43 @@ pass.
    prior one **and** the build commit is unchanged (build committed nothing
    new). Increment the stall streak on no progress; otherwise reset it to 0.
 
-   - **Stall reset (streak reaches 3)** — the same gaps unsatisfied across
-     three consecutive no-progress attempts: the accumulated brief is not
-     converging. Append one line to `~/.ralph/verify.log` (create the
-     directory if needed):
+   - **Stall (streak reaches 3)** — the same gaps unsatisfied across three
+     consecutive no-progress attempts. Before resetting, check whether this
+     phase has stalled before:
 
      ```
-     <date -u +%Y-%m-%dT%H:%M:%SZ> Phase NN STALLED after N attempts: <gap ids>
+     grep "Phase NN STALLED" ~/.ralph/verify.log 2>/dev/null
      ```
 
-     Then `rm -f project/loops/brief.md`, leave the marker `⬜`, and report
-     `NEXT`. The next gather rebuilds the contract fresh from spec. This
-     never halts the loop and never advances the phase — it only resets a
-     stuck trajectory; ralph's budget rails remain the sole hard stop.
+     - **No prior stall for this phase** → the accumulated brief is not
+       converging; a fresh contract may do better. Append one line to
+       `~/.ralph/verify.log` (create the directory if needed):
+
+       ```
+       <date -u +%Y-%m-%dT%H:%M:%SZ> Phase NN STALLED after N attempts: <gap ids>
+       ```
+
+       Then `rm -f project/loops/brief.md`, leave the marker `⬜`, and report
+       `NEXT`. The next gather rebuilds the contract fresh from spec. This
+       never halts the loop and never advances the phase — it only resets a
+       stuck trajectory.
+
+     - **A prior stall for this same phase already exists** → a rebuilt
+       contract was already tried and did not help; the phase's done bar
+       itself is the prime suspect, and no further rebuilding can fix that.
+       Escalate instead of resetting again. Write
+       `project/loops/blocked.md` naming the phase, the total attempts, the
+       still-unsatisfied ids, and the exact command + observed output that
+       will not go green, stating that the done bar is the prime suspect and
+       only the operator can change it (`project/` is read-only to the loop).
+       Append one line to `~/.ralph/verify.log`:
+
+       ```
+       <date -u +%Y-%m-%dT%H:%M:%SZ> Phase NN BLOCKED after N attempts: <gap ids>
+       ```
+
+       Then `rm -f project/loops/brief.md`, leave the marker `⬜`, and report
+       `NEXT`. The next gather sees `blocked.md` and reports `DONE`.
 
    - **Otherwise** — **overwrite** (never append — an append duplicates on a
      re-run and stacks stale gaps) the brief's feedback region with:
@@ -151,9 +191,10 @@ pass.
   write in the brief.
 - Never delete a phase's `STATUS.md` line and body file on anything short of a
   green suite plus full coverage of every brief id plus every Done-bar check
-  passing.
-- Never read `project/design/` or `project/plan/phase-*.md` to re-derive the
-  checklist — the brief **is** the checklist.
+  passing plus an empty coverage-ratchet result.
+- Never read `project/design/` or `project/plan/phase-*.md` for prose — the
+  brief **is** the checklist; the ratchet's id-set greps over those paths only
+  extract id tokens, never design prose.
 - When uncertain whether a tagged test really asserts its behavior, treat the
   id as **uncovered**. A skipped or statically-unreachable id test is
   uncovered — a skip is never acceptable green.
@@ -170,10 +211,11 @@ Report this run's result as a `status` and a one-sentence `message`:
   prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never
   yours — finishing this phase completely, green suite and all open gaps
-  closed, is still `NEXT`; only gather, finding no `⬜` phase left, ever
-  reports `DONE`.
+  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
+  phase left or a blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 09 passed: 7/7 ids covered, suite green; phase deleted, brief deleted.`
-  or `Phase 09 has 2 open gaps; feedback written (attempt 3).`
+  `Phase 09 passed: 7/7 ids covered, suite green; phase deleted, brief deleted.`,
+  `Phase 09 has 2 open gaps; feedback written (attempt 3).`, or
+  `Phase 09 stalled twice; wrote blocked.md for the operator.`
 
 Keep `message` a single plain sentence — not a JSON object or code block.

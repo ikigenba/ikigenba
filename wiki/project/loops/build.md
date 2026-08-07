@@ -48,7 +48,19 @@ any status marker. Default to making progress; do not ask questions.
    named for the behavior** — never in a per-phase or root-level test file;
    cross-package integration tests belong in `internal/wiki/`.
 
-6. **Green and commit.** Run the suite to green, `gofmt` your changes, then commit
+6. **Before committing, check the turn's own diff for dropped tags.** A rewrite
+   *extends* a file's tests; it never drops one already there:
+
+   ```
+   git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
+   ```
+
+   Any hit outside `project/` names a previously-existing tagged test this turn
+   removed or clobbered — restore it (and its assertion) before proceeding. A
+   removed tag is never acceptable, even if the id looks unrelated to this
+   phase's `### Ids to cover`.
+
+7. **Green and commit.** Run the suite to green, `gofmt` your changes, then commit
    this turn's increment (no empty commit) with a phase-naming message and the
    repo trailer. Leave the `⬜` marker in `STATUS.md` untouched.
 
@@ -71,10 +83,16 @@ Always report `NEXT`.
   change schema by adding a new one.
 - **Determinism seams:** the service takes its clock and any external effect (LLM
   provider, DB) as **injected dependencies** at the composition root
-  (`cmd/wiki/main.go`). The **LLM is always mocked in tests** (a capturing/scripted
-  mock provider — no test makes a live LLM call; the suite is green offline with no
-  `ANTHROPIC_API_KEY`). The **DB is a real temp SQLite** (opened on a temp path,
-  migrated by the appkit runner) for schema/constraint/concurrency tests.
+  (`cmd/wiki/main.go`). **Inference is always faked in tests** — extract, compile,
+  and ask are unit-tested against an `httptest` server playing prompts (canned
+  `/complete`/`/embed` responses, including fenced/over-cap/invalid and 400/502);
+  no test calls a live prompts service or provider, and the suite is green offline
+  with no running suite and no provider keys. The **DB is a real temp SQLite**
+  (opened on a temp path, migrated by the appkit runner) for schema/constraint/
+  concurrency tests. The env-gated live smokes (R-15NY-IF46 against prompts'
+  `/embed`; the D72 judge smokes R-AFK7-HJ0T / R-AGS3-VARI) are operator-run and
+  skip unless their environment is supplied — they sit outside the green gate and
+  are never a substitute for a brief's offline-tested ids.
 - **Test placement:** unit tests are `*_test.go` **co-located** in the package they
   exercise and named for the behavior; the few cross-package integration tests live
   in `internal/wiki/`. **Never** create a per-phase or root-level test file.
@@ -89,6 +107,8 @@ Always report `NEXT`.
 - Never edit `project/plan/STATUS.md` or flip a status marker.
 - Never delete or edit `project/loops/brief.md` — including its `## Verify feedback`
   region. You **read** the feedback; you never write it.
+- Never remove an existing `R-`-tagged test — a rewrite preserves every tag
+  already in the file; check your own diff for dropped tags before committing.
 - Always report `NEXT` — build hands off every turn; it is never the step that ends
   the run.
 
@@ -101,7 +121,8 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
+  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
+  blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Built internal/extract and its id-tagged tests; suite green, committed.`
 

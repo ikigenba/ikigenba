@@ -1,0 +1,5 @@
+# Build-loop ephemeral seam (gather writes, verify deletes; never committed)
+project/loops/brief.md
+
+# Build-loop escalation marker (verify writes on a second stall; operator deletes)
+project/loops/blocked.md

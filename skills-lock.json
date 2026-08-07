@@ -11,7 +11,7 @@
       "source": "ikigenba/skills",
       "sourceType": "github",
       "skillPath": "create-gather-build-verify-prompts/SKILL.md",
-      "computedHash": "ea7a041e86f8c179313663597002814b6d220f3ce49adc57cb50455583aaf4a7"
+      "computedHash": "c1473596f9730af1718a7dc6510345306dadcdeded85d3ab65e797a73b65c1c2"
     },
     "doctor": {
       "source": "ikigenba/skills",
@@ -29,7 +29,7 @@
       "source": "ikigenba/skills",
       "sourceType": "github",
       "skillPath": "ikispec/SKILL.md",
-      "computedHash": "98113bbbde8938c9b349eac54fea0bb5853d839562b5f531c27497df37abb46a"
+      "computedHash": "47e29997413f35aa01b9222c7ecdc762d16ca98a803ab1705c7d35fae42bc3ef"
     },
     "open-spec": {
       "source": "ikigenba/skills",

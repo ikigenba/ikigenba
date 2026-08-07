@@ -26,7 +26,9 @@ exec ralph project/loops/gather.md project/loops/build.md project/loops/verify.m
 a **fresh, isolated context** each turn, cycling `gather → build → verify → gather
 → …`. Every workspace path the prompts use is service-root-relative (`project/…`).
 The loop stops only when `gather` finds no `⬜` phase left in
-`project/plan/STATUS.md` (or a ralph budget rail trips).
+`project/plan/STATUS.md`, or when `gather` finds `project/loops/blocked.md`
+(a phase `verify` gave up on — see "Stall and blocked ladder" below), or a ralph
+budget rail trips.
 
 ## The status contract
 
@@ -42,17 +44,18 @@ contract, never a transport.
 - **`NEXT`** — **terminal**. This turn's work is done; advance to the next prompt
   (wrapping `verify → gather`). `build` and `verify` **always** end on `NEXT`.
 - **`DONE`** — **terminal**. The whole job is complete; the loop stops. **Only
-  `gather` ever reports it**, and only when its STATUS grep finds no `⬜` phase.
-  Finishing a phase — even the last one, green suite and all gaps closed — is
-  still `NEXT` for `build` and `verify`; ending the run is never theirs.
+  `gather` ever reports it**, and only on one of its two ends: its STATUS grep
+  finds no `⬜` phase, or `project/loops/blocked.md` already exists. Finishing a
+  phase — even the last one, green suite and all gaps closed — is still `NEXT`
+  for `build` and `verify`; ending the run is never theirs.
 
 ## Per-step reads / writes / commits / deletes
 
 | step | reads | writes | commits | deletes the phase on pass |
 |---|---|---|---|---|
-| **gather** | `STATUS.md`; the one `phase-NN.md`; `INDEX.md` + the realized `DNN.md`; dependency interface signatures | the brief's **contract region** (only when authoring a fresh brief) | no | no |
+| **gather** | `blocked.md` (existence check); `STATUS.md`; the one `phase-NN.md`; `INDEX.md` + the realized `DNN.md`; dependency interface signatures | the brief's **contract region** (only when authoring a fresh brief) | no | no |
 | **build** | **only** `project/loops/brief.md` (contract + feedback) | service source + package-local id-tagged tests | yes (the code increment) | no |
-| **verify** | the brief (contract + its own prior feedback); the suite; the tests | on pass: deletes the brief; on gap: **overwrites** the brief's feedback region | on pass: the phase-deletion commit | **yes** (deletes the `STATUS.md` line + `phase-NN.md`, on pass only) |
+| **verify** | the brief (contract + its own prior feedback); the suite; the tests; `~/.ralph/verify.log` (checking for a prior stall on this phase) | on pass: deletes the brief; on gap: **overwrites** the brief's feedback region; on a second stall: writes `project/loops/blocked.md` | on pass: the phase-deletion commit | **yes** (deletes the `STATUS.md` line + `phase-NN.md`, on pass only) |
 
 `gather` is the only prompt that opens the big design/plan docs. `build` and
 `verify` read **only** the brief. `verify` is the only prompt that deletes a
@@ -79,7 +82,12 @@ prompts. It is **never committed** (ignored via the repo-root `.gitignore` entry
   `⬜`, changes no source, and **overwrites** the feedback region with only the
   currently-open gaps (each tied to an `R-id` and the exact failing
   command/output). The brief therefore **persists across cycles** until the phase
-  passes or a stall reset discards it.
+  passes, a stall reset discards it, or a second stall blocks the phase (see
+  "Stall and blocked ladder" below).
+
+`project/loops/brief.md` is ignored via the repo-root `.gitignore` entry
+`*/project/loops/brief.md`; `project/loops/blocked.md` should be listed there too
+so a blocked-phase diagnosis is never committed.
 
 ## Why it converges (human-free)
 
@@ -88,12 +96,36 @@ phase simply stays `⬜` and is re-attacked next cycle, now with `verify`'s
 grounded feedback in front of `build`, and without `gather` re-reading the big
 docs (it no-ops on the in-flight brief). The persisted feedback gives `verify`
 cross-cycle memory: it distinguishes *slow convergence* (the open-gap id set
-shrinking/changing) from a *true stall* (the same gap ids unsatisfied for **3**
-consecutive attempts with **no new build commit**). On a true stall `verify` does
-a **trajectory reset** — logs it to `~/.ralph/verify.log`, deletes the brief, and
-leaves `⬜` so the next `gather` rebuilds the contract fresh from spec. The only
-exit is `gather → DONE`, which needs zero `⬜` markers, so the run ends only when
-every phase is verified green (or a ralph budget rail trips).
+**shrinking** — some gap that was open last attempt is now closed) from a
+*true stall* (the same gap ids unsatisfied across **3** consecutive attempts). A
+fresh build commit that closes no gap is **not** progress by itself — commit
+churn alone never resets the stall streak, only an actually-shrinking gap set
+does. The only exit is `gather → DONE`, which needs either zero `⬜` markers or a
+`blocked.md` on disk, so the run ends only when every phase is verified green,
+or a phase is flagged for the operator (or a ralph budget rail trips).
+
+## Stall and blocked ladder
+
+Three consecutive no-progress `verify` attempts on the same phase trigger a
+**trajectory reset**: `verify` logs `Phase NN STALLED after N attempts: <gap ids>`
+to `~/.ralph/verify.log`, deletes `project/loops/brief.md`, and leaves `⬜` — the
+next `gather` rebuilds the contract fresh from spec, in case the accumulated
+brief itself was the obstacle.
+
+If the **same phase** stalls a **second** time, a rebuilt contract has already
+been tried and did not help — the fault is the phase's done bar, not the build
+trajectory, and no amount of rebuilding fixes that. `verify` instead escalates:
+it logs `Phase NN BLOCKED after N attempts: <gap ids>` to `~/.ralph/verify.log`,
+writes `project/loops/blocked.md` naming the phase, the attempt count, the
+still-open ids, and the exact command/output that will not go green, deletes the
+brief, and leaves `⬜`. The next `gather` sees `blocked.md` and reports `DONE` —
+the run stops.
+
+**Operator recovery from a blocked phase:** read the diagnosis in
+`project/loops/blocked.md` (the recorded failing command and output), fix the
+phase's done bar in `project/` (design or plan — `project/` is read-only to the
+loop itself), delete `project/loops/blocked.md`, and restart the loop
+(`project/loops/run`).
 
 ## The `project/loops/brief.md` schema
 

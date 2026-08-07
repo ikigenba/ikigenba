@@ -36,8 +36,8 @@ message of the turn — a prompt never emits literal JSON:
 - **`NEXT`** — terminal: this turn is done; advance to the next prompt (wrapping
   `verify → gather`).
 - **`DONE`** — terminal: the whole job is complete; the loop stops. **Only
-  `gather` ever reports `DONE`**, and only when no `⬜` phase remains. `build`
-  and `verify` always report `NEXT`.
+  `gather` ever reports `DONE`**, on finding no `⬜` phase left or a blocked
+  phase awaiting the operator. `build` and `verify` always report `NEXT`.
 - **`CONTINUE`** — the **non-terminal** status a streaming model tags the
   progress messages it emits *before* its terminal message. `ralph` reads only
   the last message, so `CONTINUE` never advances the loop.
@@ -46,9 +46,9 @@ message of the turn — a prompt never emits literal JSON:
 
 | step | reads | writes | commits | completes phase |
 |---|---|---|---|---|
-| **gather** | `STATUS.md`, the one `phase-NN.md`, its realized `DNN.md` (via `INDEX.md`), dependency source | `brief.md` **contract region** (fresh phase only) | no | no |
+| **gather** | `blocked.md` (existence check), `STATUS.md`, the one `phase-NN.md`, its realized `DNN.md` (via `INDEX.md`), dependency source | `brief.md` **contract region** (fresh phase only) | no | no |
 | **build**  | `brief.md` only | service code + co-located id-tagged tests | yes (the code increment) | no |
-| **verify** | `brief.md` + runs the suite + traces coverage | `brief.md` **feedback region** (on gap), or deletes `brief.md` (on pass/stall) | yes (the `STATUS.md` line + `phase-NN.md` deletion, on pass) | yes (on pass only) |
+| **verify** | `brief.md` + runs the suite + traces coverage + the global ratchet | `brief.md` **feedback region** (on gap), or deletes `brief.md` (on pass/stall/block), or `blocked.md` (on second stall) | yes (the `STATUS.md` line + `phase-NN.md` deletion, on pass) | yes (on pass only) |
 
 Next-phase lookup (gather):
 `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1` (phase lines are
@@ -69,7 +69,8 @@ docs. It is **never committed** (gitignored at the repo root via
 - **gather** authors the brief's **contract region** once, when a phase first
   becomes the active `⬜` phase. While that phase stays `⬜`, gather **no-ops**
   on it — it leaves the in-flight brief (contract *and* feedback) untouched and
-  opens no big doc.
+  opens no big doc. If `project/loops/blocked.md` exists, gather does nothing at
+  all beyond reporting `DONE`.
 - **build** consumes the whole brief (contract + feedback), does as much of the
   phase as cleanly fits one turn, commits, and never writes the brief.
 - **verify** re-derives truth from scratch. On **pass** it deletes the
@@ -78,7 +79,33 @@ docs. It is **never committed** (gitignored at the repo root via
   the feedback region with only the currently-open gaps (each tied to an `R-id`
   and grounded in the exact failing command/output) and leaves the brief in
   place, so the next `build` sees the feedback. The brief thus **persists across
-  cycles** until the phase passes or a stall reset discards it.
+  cycles** until the phase passes or a stall reset/block discards it.
+
+## The stall-and-blocked ladder
+
+`verify` measures **progress** cycle to cycle: the current open-gap id set
+strictly shrinking from the prior attempt. A new build commit is *never* by
+itself counted as progress — only a closed gap is.
+
+1. **Three consecutive no-progress attempts** on the same phase trigger a
+   **trajectory reset**: `verify` logs `Phase NN STALLED …` to
+   `~/.ralph/verify.log`, deletes the brief, and leaves the phase `⬜`. The next
+   `gather` rebuilds the contract fresh from spec — this assumes the
+   accumulated brief, not the bar, was the problem.
+2. If the **same phase stalls a second time** (`verify` finds an earlier
+   `Phase NN STALLED` line for it in `~/.ralph/verify.log`), a rebuilt contract
+   already failed to help — the phase's **done bar** is the prime suspect, not
+   the brief. `verify` writes `project/loops/blocked.md` (the phase, total
+   attempts, unsatisfied ids, and the exact command/output that will not go
+   green), logs a `BLOCKED` line, deletes the brief, and leaves `⬜`.
+3. The next `gather` sees `blocked.md` and reports `DONE` without touching
+   anything else — the run stops.
+
+**Operator recovery from a blocked phase:** read `project/loops/blocked.md` for
+the diagnosis (the phase, the failing command, and its output), fix the
+phase's done bar or the underlying design/plan issue in `project/` (spec
+authoring only happens in an operator-invoked move — see `project/README.md`),
+delete `project/loops/blocked.md`, and restart `project/loops/run`.
 
 ## Why it converges (human-free)
 
@@ -87,13 +114,13 @@ incomplete phase just stays `⬜` and is re-attacked next cycle — now with
 verify's grounded feedback in front of `build`, and without `gather` re-reading
 the big docs (it no-ops on the in-flight brief). The persisted feedback also
 gives `verify` cross-cycle memory: it distinguishes *slow convergence* (the
-open-gap id set shrinking/changing) from a *true stall* (the **same** gap ids
-unsatisfied for **3** consecutive no-progress attempts with **no new build
-commit**). On a true stall it does a **trajectory reset** — logs to
-`~/.ralph/verify.log`, discards the brief, leaves `⬜` — so the next `gather`
-rebuilds the contract fresh from spec. The only exit is `gather → DONE`, which
-requires zero `⬜` markers, so the run ends only when every phase is verified
-green (or a ralph budget rail trips).
+open-gap id set shrinking) from a *true stall* (no gap closed for **3**
+consecutive attempts). A first stall resets the trajectory; a second stall on
+the same phase escalates to `blocked.md` instead of resetting again, so a
+defective bar costs a handful of attempts and yields a written diagnosis
+instead of spinning forever. The only exits are `gather → DONE`: zero `⬜`
+markers left (every phase verified green), or a blocked phase awaiting the
+operator — plus the ralph budget rails.
 
 ## `project/loops/brief.md` schema
 
@@ -134,7 +161,8 @@ brief):
 
 ```
 ## Verify feedback — attempt N
-<attempt counter, the build commit verify observed, the stall-streak counter,
- and a checklist of ONLY the open gaps — each line an R-id + the exact failing
- command + observed output (+ file:line when known)>
+<attempt counter, the build commit verify observed (diagnostic only, never a
+ progress signal), the stall-streak counter, and a checklist of ONLY the open
+ gaps — each line an R-id + the exact failing command + observed output
+ (+ file:line when known)>
 ```

@@ -53,7 +53,7 @@ phase's body file.
    phase, and end the commit body with:
 
    ```
-   Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+   Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
    ```
 
    Leave the `STATUS.md` marker `⬜`. Do not touch the brief. Report **`NEXT`**.

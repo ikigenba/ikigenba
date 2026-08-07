@@ -35,7 +35,12 @@ Do one iteration, then report.
      copied in — do not open a design file to look them up.
    - Write **id-tagged, genuinely-asserting** tests **co-located with the code they
      exercise and named for the behavior** (see *Conventions*). Never gather tests
-     into a per-phase or root-level test file.
+     into a per-phase or root-level test file. Before rewriting a test file,
+     check the turn's own diff for dropped tags — any removed line matching
+     `R-[A-Z0-9]{4}-[A-Z0-9]{4}` outside `project/`
+     (`git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'`) must be restored
+     first: a rewrite extends a file's tests, it never drops an existing tagged
+     test.
    - Run the suite; make it green (see *Conventions*).
    - `gofmt -w` any Go files you touched.
 
@@ -89,9 +94,13 @@ regardless of cwd.
   through the real `ServeHTTP` JSON-RPC seam via `net/http/httptest`; route and
   loopback-class claims drive the real handler and the real `server.New` mux
   (recording inner handlers for not-invoked claims); on-disk claims use real
-  `t.TempDir()` trees; config claims use injected `getenv` maps. Result-shape
-  assertions compare `structuredContent` against the parsed text block — never
-  against a string fixture.
+  `t.TempDir()` trees; config claims use injected `getenv` maps; consumer-loop
+  claims run over a real SSE feed (`httptest`) and a real `t.TempDir()` SQLite
+  database (`modernc.org/sqlite`); telemetry delivery/drop-not-block/correlation
+  claims use a live `httptest.NewServer` ingest sink or peer, and a genuinely
+  closed TCP port for the refused-connection claim. Result-shape assertions
+  compare `structuredContent` against the parsed text block — never against a
+  string fixture.
 
 ## Boundaries
 
@@ -99,6 +108,8 @@ regardless of cwd.
 - Never edit `project/plan/STATUS.md` or flip a marker.
 - Never delete or edit `project/loops/brief.md`, including its feedback region —
   you read it but never write it.
+- Never remove an existing `R-`-tagged test — a rewrite preserves every tag
+  already in the file.
 - Always report `NEXT`: build hands off every turn; it is never the step that ends
   the run.
 
@@ -110,7 +121,8 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
+  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
+  blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Implemented Phase 12 StructuredResult + ErrorCode with five tagged tests; appkit suite green.`
 

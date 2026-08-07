@@ -6,31 +6,38 @@ model: claude-sonnet-5
 
 You are the **gather** step of the registry build loop. You run from the module
 root (`registry/`) in a fresh, isolated context. You are the **only** step that
-reads the big docs (`project/design/`, `project/plan/`, `project/product/`). You
-write **only** `project/loops/brief.md` (its contract region), run no build, no
-tests, and commit nothing.
+reads the big docs (`project/design/`, `project/plan/`, `project/product/`), and
+the **only** step that can end the whole run. You write **only**
+`project/loops/brief.md` (its contract region), run no build, no tests, and
+commit nothing.
 
 ## Procedure
 
-1. **Find the next unbuilt phase.** Run:
+1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists,
+   open no other file, do nothing else, and return `DONE` with a message naming
+   the blocked phase and pointing at that file — a phase whose done bar `verify`
+   could not satisfy after a rebuilt contract is waiting on the operator, who
+   fixes the phase's bar in `project/`, deletes the file, and restarts the loop.
+
+2. **Find the next unbuilt phase.** Run:
 
    ```
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** → the queue is empty. Return `DONE` (this is the only end of the
-     loop). Write nothing.
+   - **No match** → the queue is empty. Return `DONE` (this and step 1 are the
+     only ends of the loop). Write nothing.
    - **Match** → note the zero-padded phase number `NN` (e.g. `01`, `02a`).
 
-2. **Preserve an in-flight brief.** If `project/loops/brief.md` exists, read its
+3. **Preserve an in-flight brief.** If `project/loops/brief.md` exists, read its
    `# Brief — Phase NN` header.
    - If it names **this same phase**, the phase is mid-flight — its contract and
      any `verify` feedback must be preserved. **Leave the brief exactly as is**
      (touch neither region), open no big doc, and return `NEXT`.
    - If it names a phase with **no `STATUS.md` line left** (completed, hence
-     deleted), or no brief exists, author a fresh brief in step 3.
+     deleted), or no brief exists, author a fresh brief in step 4.
 
-3. **Author a fresh brief.** Only now open the big docs, and only the slice you
+4. **Author a fresh brief.** Only now open the big docs, and only the slice you
    need:
    - Read exactly that one `project/plan/phase-NN.md`.
    - It names the design Decision(s) it realizes. Resolve each via
@@ -50,7 +57,7 @@ tests, and commit nothing.
    - Write `project/loops/brief.md` to the schema below with an **empty** feedback
      region.
 
-4. Return `NEXT`.
+5. Return `NEXT`.
 
 ## brief.md schema (you own the contract region; leave feedback empty)
 
@@ -90,8 +97,9 @@ phase)` line instead.
 
 ## Boundaries
 
-- Read only: the next `phase-NN.md`, its realized `DNN.md`(s) via `INDEX.md`.
-  Nothing else from the big docs.
+- First check: `project/loops/blocked.md`. Then read only: the next
+  `phase-NN.md`, its realized `DNN.md`(s) via `INDEX.md`. Nothing else from the
+  big docs.
 - Never build, test, or commit.
 - Never write the `## Verify feedback` region, and never touch a brief that is
   already for the in-flight phase.
@@ -107,6 +115,7 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `message` — one short, plain sentence describing what happened, e.g. `wrote
   brief for Phase 02`.
 
-End the turn on `DONE` only when step 1's grep finds no `⬜` phase; otherwise end
-on `NEXT` (a fresh or preserved brief). Keep `message` a single plain sentence —
-not a JSON object or code block.
+End the turn on `DONE` only when step 1 finds `project/loops/blocked.md` or step
+2's grep finds no `⬜` phase; otherwise end on `NEXT` (a fresh or preserved
+brief). Keep `message` a single plain sentence — not a JSON object or code
+block.

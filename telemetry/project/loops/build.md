@@ -63,6 +63,11 @@ You do not decide completeness and you do not delete a completed phase from
 5. **Format, vet, commit.**
    - `gofmt -w` everything you touched; `gofmt -l .` should print nothing.
    - `go build ./...` and `go vet ./...` must exit 0.
+   - **Before committing, check the turn's own diff for dropped tags** — any
+     removed line matching `R-[A-Z0-9]{4}-[A-Z0-9]{4}` outside `project/`
+     (`git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'`) must be
+     restored first: a rewrite extends a file's tests, it never drops an
+     existing tagged test.
    - Commit this turn's increment (never an empty commit) with a message
      naming the phase, ending with the repo trailer naming the model you are
      running as:
@@ -104,11 +109,11 @@ You do not decide completeness and you do not delete a completed phase from
   The port number appears as a literal in **no** Go source; the single literal
   lives in `etc/nginx.conf`, pinned to the registry by a guard test.
 - **Time:** time enters the domain through the `Clock` interface
-  (`Now() time.Time`); tests inject a deterministic clock and drive tickers as
-  parameters. No test sleeps and no test depends on wall-clock ordering.
-  Wall-clock is used for exactly two things — stamping `received_at` and
-  computing the retention cutoff; a record's own `time` always comes from the
-  reporter.
+  (`Now() time.Time`, `internal/telemetry.Clock`); tests inject a
+  deterministic clock and drive tickers as parameters. No test sleeps and no
+  test depends on wall-clock ordering. Wall-clock is used for exactly two
+  things — stamping `received_at` and computing the retention cutoff; a
+  record's own `time` always comes from the reporter.
 - **Timestamp normalization:** every timestamp is normalized on the way in to
   the fixed-width UTC form `2006-01-02T15:04:05.000000000Z` (Go layout
   `"2006-01-02T15:04:05.000000000Z07:00"` in UTC) before it is stored,
@@ -147,6 +152,8 @@ You do not decide completeness and you do not delete a completed phase from
 - Never edit `project/plan/STATUS.md` or delete a completed phase.
 - Never delete or edit `project/loops/brief.md` — including its
   `## Verify feedback` region, which you read but never write.
+- Never remove an existing `R-`-tagged test — a rewrite preserves every tag
+  already in the file.
 - Never create, edit, build, or test anything outside `telemetry/`. If a phase
   needs a seam that does not exist yet in `appkit` or `registry`, that is a
   blocked phase to report in your message — never a licence to reach into a
@@ -164,8 +171,8 @@ Report this run's result as a `status` and a one-sentence `message`:
   prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never
   yours — finishing this phase completely, green suite and all open gaps
-  closed, is still `NEXT`; only gather, finding no `⬜` phase left, ever
-  reports `DONE`.
+  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
+  phase left or a blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Built internal/db Store and covered 5 of 7 ids; suite green; committed.`
 

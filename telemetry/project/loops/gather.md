@@ -11,8 +11,9 @@ directory is the service root (`telemetry/`); all paths below are relative to
 it.
 
 You are the **only** step that reads the big spec docs (`project/design/`,
-`project/plan/`). You own the **contract region** of `project/loops/brief.md`
-for exactly one phase. You write no code, run no tests, and commit nothing.
+`project/plan/`), and the **only** step that can end the whole run. You own the
+**contract region** of `project/loops/brief.md` for exactly one phase. You write
+no code, run no tests, and commit nothing.
 
 The brief is **phase-scoped, not per-cycle**: you author it once when a phase
 first becomes the active pending phase, and you leave it alone for as long as
@@ -22,27 +23,35 @@ blind.
 
 ## Procedure
 
-1. **Find the next phase.** Run:
+1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists,
+   open no other file, do nothing else, and report **`DONE`** — its message
+   naming the blocked phase and pointing at `project/loops/blocked.md`. A phase
+   whose done bar `verify` could not satisfy after a rebuilt contract is
+   waiting on the operator, who reads the recorded diagnosis, fixes the
+   phase's bar in `project/`, deletes the file, and restarts the loop. This is
+   the first of the loop's two ends.
+
+2. **Find the next phase.** Run:
 
    ```
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** → the queue is empty. Report `DONE` (this is the only way
-     the loop ends). Do nothing else.
+   - **No match** → the queue is empty. Report `DONE` (this and step 1 are the
+     only ways the loop ends). Do nothing else.
    - **Match** → note the phase number `NN` from the line (zero-padded;
      sub-phase suffixes such as `03a` kept as written). Continue.
 
-2. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read
+3. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read
    its first line (`# Brief — Phase NN`):
    - **Same phase `NN`** → the phase is mid-flight. Leave the brief exactly as
      it is — contract region *and* `## Verify feedback` region untouched. Open
      no design or plan file. Report `NEXT` and stop.
    - **No brief, an empty brief, or a brief naming a phase that no longer has
      a `- Phase …` line in `STATUS.md`** (that phase completed and its line
-     was deleted) → author a fresh brief (step 3).
+     was deleted) → author a fresh brief (step 4).
 
-3. **Author `project/loops/brief.md`.** Read only what the phase needs:
+4. **Author `project/loops/brief.md`.** Read only what the phase needs:
    - Read `project/plan/phase-NN.md` (only this one phase file).
    - Resolve its Decision(s) via `project/design/INDEX.md`
      (`grep -n 'D<N>' project/design/INDEX.md`, or look up an individual id
@@ -55,11 +64,11 @@ blind.
      signatures** — from the depended-on Decision's design prose, or from the
      exported declarations in the committed source (`cmd/telemetry/`,
      `internal/record/`, `internal/db/`, `internal/ingest/`,
-     `internal/retention/`, `internal/mcp/`, `internal/telemetry/`) — plus the
-     `appkit`/`registry` entry points the phase names (`appkit.Spec`,
-     `appkit.Router`, `rt.HandleLoopback`, `rt.RequireIdentity`,
-     `registry.MustPort`), so build never has to open a design file.
-     Signatures only, never internals.
+     `internal/retention/`, `internal/mcp/`, `internal/telemetry/`,
+     `internal/e2e/`) — plus the `appkit`/`registry` entry points the phase
+     names (`appkit.Spec`, `appkit.Router`, `rt.HandleLoopback`,
+     `rt.RequireIdentity`, `registry.MustPort`), so build never has to open a
+     design file. Signatures only, never internals.
 
    Do not read `project/product/`, `project/research/`, other phase bodies, or
    unrelated Decision files.
@@ -103,12 +112,12 @@ blind.
    through the appkit runner for storage/DDL/query-plan claims; a real
    `127.0.0.1` listener on an ephemeral port spoken to with a real
    `http.Client` through the registered route for transport claims; an
-   injected deterministic `Clock` and a test-driven ticker for time —
-   never a mocked store); no requirement test skipped or gated behind a flag
-   the plain `go test ./...` run does not satisfy; `go build ./...`,
-   `go vet ./...`, and `go test ./...` from `telemetry/` all exit 0; plus the
-   phase's own grep/count checks copied verbatim with their exact pass
-   criteria.>
+   injected deterministic `Clock` (`internal/telemetry.Clock`) and a
+   test-driven ticker for time — never a mocked store); no requirement test
+   skipped or gated behind a flag the plain `go test ./...` run does not
+   satisfy; `go build ./...`, `go vet ./...`, and `go test ./...` from
+   `telemetry/` all exit 0; plus the phase's own grep/count checks copied
+   verbatim with their exact pass criteria.>
 
    ## Verify feedback — attempt 0
    (empty — no attempts yet)
@@ -130,7 +139,7 @@ blind.
    The `## Verify feedback` region must be written **empty** exactly as shown
    — it belongs to verify; you never put content in it.
 
-4. Report `NEXT`.
+5. Report `NEXT`.
 
 ## Project facts you may rely on
 
@@ -142,7 +151,7 @@ blind.
 - Packages: `cmd/telemetry` (composition root), `internal/record`,
   `internal/db` (store + embedded migrations), `internal/ingest`,
   `internal/retention`, `internal/mcp`, `internal/telemetry` (the `Clock`
-  seam), `internal/e2e`. No package imports `cmd/`.
+  seam), `internal/e2e` (end-to-end layer). No package imports `cmd/`.
 - Build/vet: `go build ./...` and `go vet ./...` from `telemetry/`.
 - Tests: `go test ./...` from `telemetry/`, workspace mode via the repo-root
   `go.work` — do **not** set `GOWORK=off` (except where a phase's Done-when
@@ -159,7 +168,8 @@ blind.
 
 ## Boundaries
 
-- Read only: `project/plan/STATUS.md`, the one `phase-NN.md`,
+- **First** check `project/loops/blocked.md`; if present, open nothing else.
+- Otherwise read only: `project/plan/STATUS.md`, the one `phase-NN.md`,
   `project/design/INDEX.md`, the realized `DNN.md` file(s), and dependency
   interfaces. Never read unrelated Decisions or other phase bodies.
 - Never build, test, or commit anything. The brief is never committed (it is
@@ -181,9 +191,11 @@ Report this run's result as a `status` and a one-sentence `message`:
   prompt.
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Authored brief for Phase 02 (D2, 7 ids).` or
-  `Phase 02 brief already in flight; left untouched.`
+  `Authored brief for Phase 11 (D9, 4 ids).` or
+  `Phase 11 brief already in flight; left untouched.`
 
-End the turn on `DONE` only when step 1's grep finds no `⬜` phase; otherwise
-end on `NEXT`. Keep `message` a single plain sentence — not a JSON object or
-code block.
+Report `DONE` when `project/loops/blocked.md` exists (name the blocked phase
+and point at the file) or step 2's grep finds no `⬜` phase; in every other
+case — a fresh brief authored, or an in-flight brief preserved — report
+`NEXT`. Keep `message` a single plain sentence — not a JSON object or code
+block.

@@ -41,6 +41,11 @@ phase's `STATUS.md` line or body file — that is verify's job.
      requirement text describes. **A tagged test that does not truly assert the
      discriminating behavior is worse than none** — verify will treat it as
      uncovered.
+   - **Never drop an existing tagged test.** Before committing, check this turn's
+     own diff for dropped tags: any removed line matching `R-[A-Z0-9]{4}-[A-Z0-9]{4}`
+     outside `project/` (`git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'`)
+     must be restored first. A rewrite extends a file's tests; it never drops one
+     already there.
 5. **Run the full green suite** (all must pass, from `dashboard/`):
 
    ```
@@ -70,17 +75,23 @@ phase's `STATUS.md` line or body file — that is verify's job.
     codes, `Location` headers, and rendered HTML (see the existing
     `index_test.go`, `grants_test.go`, `login_test.go`, `landing_composition_test.go`);
   - `internal/telemetry/*_test.go`, `internal/identity/*_test.go`,
-    `internal/googleidp/*_test.go` — package-local unit tests.
+    `internal/googleidp/*_test.go`, `internal/githubidp/*_test.go`,
+    `internal/metrics/*_test.go` — package-local unit tests.
   **Never** create a per-phase or root-level test file, and never gather multiple
   packages' tests into one file. A phase is one package; its tests live with it.
 - **Real substrate where a claim needs it.** Session/identity/store tests run
   against a **real temp `modernc.org/sqlite`** migrated by the appkit runner (as
   the existing server tests do); metric readers run against temp trees / fixtures
-  at injected roots; Google is injected (crafted id_token), never a live network.
+  at injected roots (free-disk reads a real `statfs`); Google and GitHub are
+  driven through their injectable test seams (crafted id_token / `httptest`
+  fakes), never a live network.
 - **Migrations** are created with `bin/create-migration dashboard <name>`
   (timestamped, immutable); never edit or renumber a committed migration.
 - **Doc-truth work** (if a brief's done bar is a text/grep check on `AGENTS.md`
   rather than a Go test) is satisfied by editing the doc, not by adding a test.
+- **Nginx-fragment work** (`dashboard/etc/nginx.conf`) is proven by a Go test
+  that reads the file from disk and asserts its content — nginx itself is
+  never run by the suite.
 
 ## Boundaries
 
@@ -101,7 +112,8 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to verify.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
+  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
+  blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Built internal/identity store + 5 tagged tests; suite green.`
 

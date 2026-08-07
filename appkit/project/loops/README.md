@@ -22,7 +22,8 @@ Each turn ends with a terminal status `ralph` reads from the final message:
 
 - `NEXT` — advance to the next prompt (wrapping `verify → gather`).
 - `DONE` — stop the loop. **Only `gather` ever reports it**, and only when
-  `STATUS.md` has no `⬜` phase left; `build` and `verify` always report `NEXT`.
+  either `project/loops/blocked.md` exists or `STATUS.md` has no `⬜` phase
+  left; `build` and `verify` always report `NEXT`.
 - `CONTINUE` — the non-terminal status a streaming model tags its mid-turn
   progress messages with; it never drives the loop (`ralph` reads only the
   terminal message).
@@ -31,17 +32,18 @@ Each turn ends with a terminal status `ralph` reads from the final message:
 
 | step | reads | writes | commits | deletes completed phase |
 |---|---|---|---|---|
-| **gather** | `STATUS.md`, one `phase-NN.md`, the realized `DNN.md` via `INDEX.md`, dependency signatures | `brief.md` contract region (fresh phase only; no-ops on an in-flight brief) | never | never |
+| **gather** | `blocked.md` (existence check), `STATUS.md`, one `phase-NN.md`, the realized `DNN.md` via `INDEX.md`, dependency signatures | `brief.md` contract region (fresh phase only; no-ops on an in-flight brief) | never | never |
 | **build** | `brief.md` only (both regions) | source + tests; never the brief | every turn (its increment) | never |
-| **verify** | `brief.md` (both regions), the repo, the suite | `brief.md` feedback region, or deletes the brief | deletes the phase's `STATUS.md` line + `phase-NN.md` on pass | the only one that does |
+| **verify** | `brief.md` (both regions), the repo, the suite, `~/.ralph/verify.log` | `brief.md` feedback region, or deletes the brief; `~/.ralph/verify.log` (append); `blocked.md` (write, on second stall) | deletes the phase's `STATUS.md` line + `phase-NN.md` on pass | the only one that does |
 
 `gather` is the only prompt that opens the big docs; `build` and `verify` work
 entirely from the brief.
 
 ## The brief lifecycle
 
-`project/loops/brief.md` is the ephemeral, **gitignored** seam (listed in the
-repo-root `.gitignore`). It is **phase-scoped, not per-cycle**:
+`project/loops/brief.md` is the ephemeral, **gitignored** seam (covered by the
+repo-root `.gitignore`'s `*/project/loops/brief.md` pattern). It is
+**phase-scoped, not per-cycle**:
 
 1. When a phase first becomes the active `⬜` phase, `gather` authors the brief's
    contract region and an empty feedback stub. While that phase stays `⬜`,
@@ -56,17 +58,37 @@ repo-root `.gitignore`). It is **phase-scoped, not per-cycle**:
    each gap tied to an `R-id` and a failing command); the brief persists into
    the next cycle.
 
+## The stall and blocked ladder
+
+`verify` tracks whether a gap cycle made progress (the open-gap id set shrank)
+or not. Three consecutive no-progress attempts on the same phase trip a
+**trajectory reset**: `verify` logs the stall to `~/.ralph/verify.log`, deletes
+the brief, and leaves the phase `⬜` — the next `gather` rebuilds the contract
+fresh from spec, on the theory that a stale accumulated brief, not the phase
+itself, was the obstacle.
+
+If that same phase **stalls a second time** after a rebuilt brief, the fault is
+no longer the trajectory but the phase's own done bar — no amount of rebuilding
+fixes an unsatisfiable bar. `verify` escalates instead of resetting again: it
+writes `project/loops/blocked.md` naming the phase, the attempts made, the
+still-open ids, and the exact command/output that will not go green, and logs
+the escalation. The next `gather` sees `blocked.md` on sight, reports `DONE`
+without touching anything else, and the loop stops.
+
+**Operator response to a `blocked.md`:** read the recorded command and
+output, fix the phase's done bar (or the underlying design/plan) in
+`project/`, delete `project/loops/blocked.md`, and restart `project/loops/run`.
+
 ## Why it converges
 
 `verify` can neither halt nor advance a phase on a gap, so an incomplete phase
 just stays `⬜` and is re-attacked next cycle — with `verify`'s grounded feedback
 in front of `build`. The persisted feedback gives `verify` cross-cycle memory:
-it distinguishes slow convergence (the open-gap set shrinking/changing) from a
-true stall (the same gap ids with no new build commit for 3 consecutive
-attempts). On a true stall it logs to `~/.ralph/verify.log`, deletes the brief,
-and leaves the phase's `⬜` line in place, so the next `gather` rebuilds the
-contract fresh from spec. The only exit is `gather` finding zero `⬜` phases
-(`DONE`) — or a `ralph` budget rail.
+it distinguishes slow convergence (the open-gap set shrinking) from a true
+stall (no gap closed for 3 consecutive attempts), and a second stall on the
+same phase from a genuinely defective bar. The only exits are `gather` finding
+zero `⬜` phases, `gather` finding `blocked.md` (both `DONE`) — or a `ralph`
+budget rail.
 
 ## The `project/loops/brief.md` schema
 
@@ -83,7 +105,7 @@ including it, `verify` everything below it.
   and Rejected alternatives, verbatim from its `DNN.md`, **minus** its
   Verification list.
 - `## Ids to cover` — one id per line, `R-XXXX-XXXX — <full requirement text
-  verbatim>` (id at line-start; extractable with
+  verbatim>` (id at line-start, extractable with
   `grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md`), or the single
   line `(none — structural phase)`.
 - `## Files to touch` — the paths.

@@ -7,8 +7,9 @@ working directory is the service root (`eventplane/`); all paths below are
 relative to it.
 
 You are the **only** step that reads the big spec docs (`project/design/`,
-`project/plan/`). You own the **contract region** of `project/loops/brief.md`
-for exactly one phase. You write no code, run no tests, and commit nothing.
+`project/plan/`), and the **only** step that ever ends the run. You own the
+**contract region** of `project/loops/brief.md` for exactly one phase. You
+write no code, run no tests, and commit nothing.
 
 The brief is **phase-scoped, not per-cycle**: you author it once when a phase
 first becomes the active pending phase, and you leave it alone for as long as
@@ -18,27 +19,33 @@ blind.
 
 ## Procedure
 
-1. **Find the next phase.** Run:
+1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists,
+   open no other file, do nothing else, and report `DONE` — a phase whose done
+   bar `verify` could not satisfy across a rebuilt trajectory is waiting on the
+   operator. Read the file only to name the blocked phase in your `message`;
+   the operator resolves the bar in `project/` and deletes the file to resume.
+
+2. **Find the next phase.** Run:
 
    ```
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** → the queue is empty. Report `DONE` (this is the only way
-     the loop ends). Do nothing else.
+   - **No match** → the queue is empty. Report `DONE` (this and step 1 are the
+     only ways the loop ends). Do nothing else.
    - **Match** → note the phase number `NN` from the line (zero-padded;
      sub-phase suffixes such as `07a` kept as written). Continue.
 
-2. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read
+3. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read
    its first line (`# Brief — Phase NN`):
    - **Same phase `NN`** → the phase is mid-flight. Leave the brief exactly as
      it is — contract region *and* `## Verify feedback` region untouched. Open
      no design or plan file. Report `NEXT` and stop.
    - **No brief, an empty brief, or a brief naming a phase that no longer has
      a `- Phase …` line in `STATUS.md`** (that phase completed and its line was
-     deleted) → author a fresh brief (step 3).
+     deleted) → author a fresh brief (step 4).
 
-3. **Author `project/loops/brief.md`.** Read only what the phase needs:
+4. **Author `project/loops/brief.md`.** Read only what the phase needs:
    - Read `project/plan/phase-NN.md` (only this one phase file).
    - Resolve its Decision(s) via `project/design/INDEX.md`
      (`grep -n 'D<N>' project/design/INDEX.md`, or look up an individual id
@@ -117,7 +124,7 @@ blind.
    The `## Verify feedback` region must be written **empty** exactly as shown
    — it belongs to verify; you never put content in it.
 
-4. Report `NEXT`.
+5. Report `NEXT`.
 
 ## Project facts you may rely on
 
@@ -133,14 +140,17 @@ blind.
 
 ## Boundaries
 
-- Read only: `project/plan/STATUS.md`, the one `phase-NN.md`,
-  `project/design/INDEX.md`, the realized `DNN.md` file(s), and dependency
-  interfaces. Never read unrelated Decisions or other phase bodies.
+- Read only: `project/loops/blocked.md` (existence check only),
+  `project/plan/STATUS.md`, the one `phase-NN.md`, `project/design/INDEX.md`,
+  the realized `DNN.md` file(s), and dependency interfaces. Never read
+  unrelated Decisions or other phase bodies.
 - Never build, test, or commit anything. The brief is never committed (it is
   gitignored).
 - Never write the `## Verify feedback` region's content, and never touch an
   in-flight brief for the current phase — its contract and any verify
   feedback must survive intact.
+- Never delete or edit `project/loops/blocked.md` — only the operator does
+  that, after resolving the phase's bar.
 - The contract region of a fresh brief is your only output.
 
 ## Reporting the result
@@ -153,9 +163,10 @@ Report this run's result as a `status` and a one-sentence `message`:
   prompt.
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Authored brief for Phase 09 (D9, 7 ids).` or
-  `Phase 09 brief already in flight; left untouched.`
+  `Authored brief for Phase 09 (D9, 7 ids).`,
+  `Phase 09 brief already in flight; left untouched.`, or
+  `Phase 09 is blocked (see project/loops/blocked.md); stopping.`
 
-End the turn on `DONE` only when step 1's grep finds no `⬜` phase; otherwise
-end on `NEXT`. Keep `message` a single plain sentence — not a JSON object or
-code block.
+End the turn on `DONE` when `project/loops/blocked.md` exists or step 2's
+grep finds no `⬜` phase; otherwise end on `NEXT`. Keep `message` a single
+plain sentence — not a JSON object or code block.

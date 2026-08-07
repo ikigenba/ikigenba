@@ -51,6 +51,10 @@ working directory.
    - **AGENTS.md / CLAUDE.md.** They are one file (`gmail/CLAUDE.md` is a symlink
      to `gmail/AGENTS.md`). Edit **`AGENTS.md`**; a refusal to write through the
      symlink is expected.
+   - **Never drop an existing tagged test.** A rewrite of a file **extends** its
+     tests; it never removes a `// R-XXXX-XXXX` tag that was already there. If
+     your change touches a file with existing tagged tests, keep every one of
+     them (adjust only what the phase's own work requires).
 
 5. **Keep the suite green for what you've written** and format:
 
@@ -63,7 +67,18 @@ working directory.
 
    Plus any phase-specific check the brief's **Done bar** names.
 
-6. **Commit this turn's increment** (never an empty commit) with a message naming
+6. **Before committing, check your own diff for dropped tags.** Any removed
+   line matching an `R-XXXX-XXXX` id outside `project/`:
+
+   ```
+   git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
+   ```
+
+   is a previously-covered id you are about to lose — restore that test before
+   committing. A rewrite extends a file's tests; it never drops one that was
+   already there.
+
+7. **Commit this turn's increment** (never an empty commit) with a message naming
    the phase, and the repo trailer:
 
    ```
@@ -95,12 +110,11 @@ working directory.
   `net/http/httptest` — **no test makes a network call and no test needs a running
   suite**. Shipped assets (`tokens.css`, woff2 fonts) are real bytes on disk under
   `share/www/static/`, served by the chassis static mount.
-- **Test layout:** co-locate every test with the code it exercises as a
-  `*_test.go` file named for the behavior asserted — e.g.
-  `gmail/cmd/gmail/nginx_test.go` (package main) for the nginx content assertions,
-  `gmail/cmd/gmail/landing_test.go` for the landing render. A phase is one
-  package, so its tests live in that package — never a root-level or
-  `phaseNN_test.go` file.
+- **Test layout — co-locate, never phase-name.** A phase is one package, so its
+  tests live in that package as a `*_test.go` file named for the behavior it
+  asserts — e.g. `gmail/cmd/gmail/nginx_test.go` (package main) for the nginx
+  content assertions, `gmail/cmd/gmail/landing_test.go` for the landing render.
+  Never a root-level or `phaseNN_test.go` file.
 
 ## Boundaries
 
@@ -110,6 +124,8 @@ working directory.
   verify's job alone.
 - Never delete or edit `project/loops/brief.md` — including its `## Verify
   feedback` region: you **read** it but never write it.
+- Never remove an existing `// R-XXXX-XXXX`-tagged test — a rewrite extends a
+  file's tests, it never drops one; check your own diff before committing.
 - You hand off every turn — see below.
 
 ## Reporting the result
@@ -120,7 +136,8 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
+  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
+  blocked phase awaiting the operator.
 - `message` — one short, plain sentence on what this increment landed, e.g.
   `added error_page 401 = @login_bounce to the two session-gated locations and its nginx_test assertions`.
 

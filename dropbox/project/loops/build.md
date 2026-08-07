@@ -69,9 +69,21 @@ dropbox`).
    ```
 
    Plus any phase-specific check the brief's **Done bar** names (e.g. the docs
-   purge's `grep -i "no UI" CLAUDE.md` finding nothing).
+   purge's `grep -i "no UI" CLAUDE.md` finding nothing, or a D17-phase `-tags
+   live` smoke it names).
 
-6. **Commit this turn's increment** (never an empty commit) with a message naming
+6. **Before committing, check the turn's own diff for dropped tags.** Any
+   removed line matching `R-[A-Z0-9]{4}-[A-Z0-9]{4}` outside `project/`:
+
+   ```
+   git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
+   ```
+
+   must be **restored first** — a rewrite may extend a file's tests, it never
+   drops an existing tagged test. If this finds a dropped tag, put the test
+   back (and its assertion) before proceeding to commit.
+
+7. **Commit this turn's increment** (never an empty commit) with a message naming
    the phase, and the repo trailer:
 
    ```
@@ -96,14 +108,17 @@ dropbox`).
   `go build ./...`, `go vet ./...`, `gofmt -l .` (prints nothing), and
   `go test ./...` succeed with zero failures.
 - **No schema change** unless the brief says so. Never hand-author a migration
-  version — `bin/create-migration dropbox <name>` stamps one — but the
-  landing-page / conversion work needs none.
+  version — `bin/create-migration dropbox <name>` stamps one — but most
+  phases need none.
 - **Determinism / seams:** handlers are pure over injected inputs (e.g. the
   landing handler over `service`/`version` strings from `rt.Service()` /
   `rt.Version()`; MCP tools over an injected `dropbox.Service`); tests drive them
   with `net/http/httptest` and fixed values — **no test makes a network call and
   no test needs a running suite**. Shipped `share/www` assets are exercised as
-  the real files that ship.
+  the real files that ship. The rare exception is a brief that explicitly names
+  a `-tags live` smoke against the real Dropbox app folder (D17's LIVE ids) —
+  that check is distinct from, and never required for, the hermetic green
+  suite above.
 - **Test layout:** co-locate every test with the code it exercises, `package
   <pkg>`, named for the behavior asserted — never a per-phase or root-level test
   file.
@@ -116,6 +131,8 @@ dropbox`).
   is verify's job alone.
 - Never delete or edit `project/loops/brief.md`, including its `## Verify
   feedback` region — you **read** the feedback but never write it.
+- Never remove an existing `R-`-tagged test — a rewrite preserves every tag
+  already in the file; check your own diff for dropped tags before committing.
 - You hand off every turn; ending the run is never yours.
 
 ## Reporting the result
@@ -127,7 +144,8 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
+  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
+  blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
   `added error_page @login_bounce to both session-gated locations and tagged tests for Phase 21`.
 

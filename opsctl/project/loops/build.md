@@ -41,11 +41,21 @@ commit it. You do **not** judge completeness and you do **not** mutate
      `internal/opsctl/backup_test.go` alongside the existing restore tests.
      **Never** create a per-phase or root-level test file.
 
-5. **Format and verify locally:**
+5. **Before committing, check for dropped tags.** Diff the turn's own changes:
+
+   ```
+   git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
+   ```
+
+   Any removed line matching an `R-` id outside `project/` must be restored
+   first — a rewrite extends a file's tests, it never drops an existing tagged
+   test.
+
+6. **Format and verify locally:**
    - `gofmt -w` the files you touched.
    - `GOWORK=off go build ./...` then `GOWORK=off go test ./...`.
 
-6. **Commit this turn's increment** (no empty commit) with a phase-naming message
+7. **Commit this turn's increment** (no empty commit) with a phase-naming message
    and the repo trailer:
 
    ```
@@ -54,7 +64,7 @@ commit it. You do **not** judge completeness and you do **not** mutate
    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
    ```
 
-7. Return `NEXT`.
+8. Always return `NEXT`.
 
 ## Project conventions (baked in — do not consult design)
 
@@ -62,7 +72,8 @@ commit it. You do **not** judge completeness and you do **not** mutate
   (matches the production build).
 - **Build / typecheck:** `GOWORK=off go build ./...` from `opsctl/`.
 - **Test:** `GOWORK=off go test ./...` from `opsctl/`.
-- **"Suite is green":** both commands above exit 0 with no failures.
+- **"Suite is green":** both commands above exit 0 with no failures, and no
+  `R-`-tagged test reports `SKIP`.
 - **Privilege seam:** filesystem ownership changes go through the `System` seam
   (`System.ChownTree(ctx, owner, group, path)`), faked in tests via the test
   double already used in `internal/opsctl/*_test.go`. Assert ownership intent by
@@ -72,7 +83,7 @@ commit it. You do **not** judge completeness and you do **not** mutate
   the code under test, named for the behavior. opsctl has no separate
   integration-test home; there are **no** per-phase or root-level test files.
 - **Id tagging:** one `// R-XXXX-XXXX` comment line inside the test that asserts
-  that behavior.
+  that behavior, on its own line.
 
 ## Boundaries
 
@@ -80,10 +91,20 @@ commit it. You do **not** judge completeness and you do **not** mutate
 - Never edit `project/plan/STATUS.md` and never delete a `phase-NN.md`.
 - Never delete or edit `project/loops/brief.md` — including its
   `## Verify feedback` region (you read it, you never write it).
-- Never return `DONE` or `CONTINUE`.
+- Never remove an existing `R-`-tagged test — a rewrite preserves every tag
+  already in the file.
 
-End your final message with exactly one JSON object and nothing after it:
+## Reporting the result
 
-```json
-{"status": "NEXT", "message": "<one short sentence>"}
-```
+Report this run's result as a `status` and a one-sentence `message`:
+- `CONTINUE` — **non-terminal**: any progress message you stream *before* the
+  turn's final message. You are still working; this never advances the loop.
+- `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
+- `DONE` — **terminal — never yours to report**: ending the run is never
+  yours — finishing this phase completely, green suite and all open gaps
+  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
+  phase left or a blocked phase awaiting the operator.
+- `message` — one short, plain sentence describing what happened, e.g.
+  `implemented restore's cache re-creation and tagged its test`.
+
+Keep `message` a single plain sentence — not a JSON object or code block.

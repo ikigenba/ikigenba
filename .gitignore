@@ -42,3 +42,7 @@
 */project/loops/brief.md
 # The suite-level (repo-root) loop's brief.
 /project/loops/brief.md
+
+# --- build-loop blocked marker (verify writes on a second stall; operator deletes) ---
+*/project/loops/blocked.md
+/project/loops/blocked.md

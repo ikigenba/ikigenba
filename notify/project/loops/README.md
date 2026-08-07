@@ -24,7 +24,8 @@ exec ralph project/loops/gather.md project/loops/build.md project/loops/verify.m
 `ralph` runs from the **service root** (`notify/`) as its working directory, so
 every path the prompts use is service-root-relative (`project/…`). It cycles the
 three prompts `gather → build → verify → gather → …`, each in a fresh isolated
-context, until `gather` finds no unfinished phase.
+context, until `gather` finds no unfinished phase or a blocked phase awaiting the
+operator.
 
 ## The status contract
 
@@ -34,8 +35,9 @@ reads back itself — the prompts never hard-code a transport. The terminal (las
 message of a turn drives the loop:
 
 - **`NEXT`** — terminal: advance to the next prompt, wrapping `verify → gather`.
-- **`DONE`** — terminal: stop the loop. **Only `gather` ever reports it**, when no
-  `⬜` phase remains. `build` and `verify` always report `NEXT`.
+- **`DONE`** — terminal: stop the loop. **Only `gather` ever reports it**, either
+  when no `⬜` phase remains or when `project/loops/blocked.md` exists. `build`
+  and `verify` always report `NEXT`.
 - **`CONTINUE`** — the non-terminal status a streaming model tags its mid-turn
   progress messages with; `ralph` reads only the last message, so `CONTINUE`
   never advances or ends the loop.
@@ -44,18 +46,19 @@ message of a turn drives the loop:
 
 | step | reads | writes | commits | mutates queue |
 |---|---|---|---|---|
-| **gather** | `STATUS.md`, one `phase-NN.md`, `design/INDEX.md` + realized `DNN.md`, (product for intent) | `brief.md` **contract region** (fresh phase only; no-ops on an in-flight brief) | no | no |
+| **gather** | `blocked.md` (existence only), `STATUS.md`, one `phase-NN.md`, `design/INDEX.md` + realized `DNN.md`, (product for intent) | `brief.md` **contract region** (fresh phase only; no-ops on an in-flight brief) | no | no |
 | **build** | `brief.md` only (contract + feedback) | service source + co-located id-tagged tests | yes (the code increment) | no |
-| **verify** | `brief.md` (contract + own prior feedback), the suite, the source under test | on pass: nothing; on gap: `brief.md` **feedback region** | on pass: the phase's `STATUS.md` line + `phase-NN.md` deletion | yes (pass only — deletes the phase) |
+| **verify** | `brief.md` (contract + own prior feedback), the suite, the source under test, `~/.ralph/verify.log` | on pass: nothing; on gap: `brief.md` **feedback region**, and on a second stall, `blocked.md` | on pass: the phase's `STATUS.md` line + `phase-NN.md` deletion | yes (pass only — deletes the phase) |
 
 Only `gather` reads the big docs; only `verify` deletes a completed phase from
-the queue or deletes the brief; only `build` writes service code.
+the queue, deletes the brief, or writes `blocked.md`; only `build` writes service
+code.
 
 ## The brief lifecycle
 
 `project/loops/brief.md` is the single-phase seam that keeps `build` and `verify`
 scoped to one phase without opening design or plan. It is **never committed**
-(listed in the repo-root `.gitignore` as `*/project/loops/brief.md`) and
+(covered by the repo-root `.gitignore`'s `*/project/loops/brief.md` pattern) and
 **phase-scoped, not per-cycle**:
 
 - **gather** authors the contract region **once**, when a phase first becomes the
@@ -69,6 +72,32 @@ scoped to one phase without opening design or plan. It is **never committed**
   tied to an `R-id` and the exact failing command/output) and **keeps** the brief,
   so it persists across cycles until the phase passes or a stall reset fires.
 
+## The stall and blocked ladder
+
+`verify` tracks progress cycle to cycle in the brief's feedback region (the
+open-gap id set and a stall streak). When the **same** gap set survives **3**
+consecutive attempts with no gap closed:
+
+1. **First stall on a phase** — a **trajectory reset**: `verify` discards the
+   brief (logs `Phase NN STALLED …` to `~/.ralph/verify.log`, leaves `⬜`). The
+   next `gather` rebuilds the contract fresh from spec, in case the accumulated
+   brief itself had drifted off course.
+2. **Second stall on the same phase** — `verify` finds its own earlier `STALLED`
+   line for that phase in `~/.ralph/verify.log`, concludes a rebuilt contract
+   didn't help and the phase's **done bar** is the defect, and writes
+   `project/loops/blocked.md` (the phase, total attempts, unsatisfied ids, and the
+   exact failing command/output), logs `Phase NN BLOCKED …`, deletes the brief,
+   and leaves `⬜`. The next `gather` sees `blocked.md` and reports `DONE`,
+   stopping the run.
+
+**Operator response to a `blocked.md`:** read the recorded command and output,
+fix the phase's done bar in `project/plan/phase-NN.md` (or the design Decision it
+realizes) through a proper spec-authoring move, delete `project/loops/blocked.md`,
+and restart `project/loops/run`.
+
+Both rungs stay inside the invariant that `verify` never halts and never
+advances a phase on a gap — they only ever reset or escalate a stuck trajectory.
+
 ## Why it converges (human-free)
 
 `verify` can neither halt the loop nor advance a phase on a gap, so an incomplete
@@ -76,12 +105,11 @@ phase just stays `⬜` and is re-attacked next cycle — now with `verify`'s gro
 feedback in front of `build`, and without `gather` re-reading the big docs (it
 no-ops on the in-flight brief). The persisted feedback gives `verify` cross-cycle
 memory: it distinguishes *slow convergence* (the open-gap id set shrinking) from a
-*true stall* (the **same** gap ids unsatisfied for **3** consecutive attempts with
-**no new build commit**). On a true stall it does a **trajectory reset** —
-discards the brief, logs the stall to `~/.ralph/verify.log`, leaves `⬜` — so the
-next `gather` rebuilds the contract fresh. The only exit is `gather → DONE`, which
-requires the queue to be empty, so the run ends only when every phase has been
-verified green and removed (or a ralph budget rail trips).
+*true stall* (the **same** gap ids unsatisfied for **3** consecutive attempts).
+The stall/blocked ladder above turns a first stall into a fresh contract and a
+second stall into a written diagnosis for the operator, instead of spinning
+forever. The only exits are `gather → DONE` on an empty queue, or `gather → DONE`
+on finding `blocked.md` — plus the ralph budget rails.
 
 ## The `project/loops/brief.md` schema
 

@@ -37,7 +37,7 @@ that schema out of band (codex via `--output-schema`, claude via
 |---|---|---|
 | `CONTINUE` | non-terminal | a progress message streamed *before* the turn's final message; never advances the loop. A streaming backend coerces every message into the schema, so mid-turn narration needs this value. |
 | `NEXT` | terminal | this turn is done; advance to the next prompt (wrapping `verify → gather`). |
-| `DONE` | terminal | the whole job is complete; the loop stops. **Only `gather` ever reports it**, and only when no `⬜` phase remains. |
+| `DONE` | terminal | the whole job is complete; the loop stops. **Only `gather` ever reports it** — on finding no `⬜` phase left, or on finding `project/loops/blocked.md`. |
 
 `ralph` reads only the **last** message of a turn, so the terminal status alone
 drives the loop. `build` and `verify` always end on `NEXT` — finishing a phase
@@ -47,9 +47,9 @@ completely is still `NEXT`.
 
 | step | reads | writes | commits | deletes |
 |---|---|---|---|---|
-| **gather** | `plan/STATUS.md`, one `plan/phase-NN.md`, `design/INDEX.md`, the realized `design/DNN.md`, dependency interfaces | the brief's **contract region** (fresh brief only) | nothing | nothing |
+| **gather** | `project/loops/blocked.md` (existence check), `plan/STATUS.md`, one `plan/phase-NN.md`, `design/INDEX.md`, the realized `design/DNN.md`, dependency interfaces | the brief's **contract region** (fresh brief only) | nothing | nothing |
 | **build** | `project/loops/brief.md` only | source + tests under `telemetry/` | this turn's increment | nothing |
-| **verify** | the brief (both regions), the repo, the suite | the brief's **feedback region** (gap cycles) | the phase-deletion commit (pass only) | on pass: the phase's `STATUS.md` line + `plan/phase-NN.md` + the brief; on stall reset: the brief |
+| **verify** | the brief (both regions), the repo, the suite | the brief's **feedback region** (gap cycles); `project/loops/blocked.md` (second stall) | the phase-deletion commit (pass only) | on pass: the phase's `STATUS.md` line + `plan/phase-NN.md` + the brief; on stall reset or blocked escalation: the brief |
 
 Neither `build` nor `verify` ever opens `project/design/`, `project/plan/`, or
 `project/product/` — the brief is their whole specification. Nothing in the loop
@@ -58,11 +58,12 @@ touches anything outside `telemetry/`.
 ## The brief lifecycle
 
 `project/loops/brief.md` is the seam between the three steps. It is
-**never committed** (it is covered by the repo `.gitignore` rule
+**never committed** (covered by the repo-root `.gitignore` rule
 `*/project/loops/brief.md`), **single-phase**, and **phase-scoped, not
 per-cycle**:
 
-1. `gather` finds the first `⬜` phase with
+1. `gather` checks for `project/loops/blocked.md` first (→ `DONE` if present),
+   then finds the first `⬜` phase with
    `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1`. No match →
    `DONE`.
 2. If a brief already names that same phase, the phase is mid-flight: `gather`
@@ -78,6 +79,29 @@ per-cycle**:
 
 The brief therefore persists across cycles for as long as its phase stays `⬜`.
 
+## The stall and blocked ladder
+
+`verify` tracks progress across cycles via the brief's feedback region and a
+persistent `~/.ralph/verify.log`:
+
+- **Slow convergence** — the open-gap id set shrinks cycle over cycle: `verify`
+  just overwrites the feedback region with the smaller set and hands off.
+- **Stall reset** — three consecutive cycles close no gap (same gap ids, no new
+  build commit): `verify` logs `Phase NN STALLED …` to `~/.ralph/verify.log`,
+  deletes the brief, and leaves `⬜`. The next `gather` rebuilds the contract
+  fresh from spec — a trajectory reset, not a halt.
+- **Blocked escalation** — a *second* stall on the **same** phase (verify finds
+  an earlier `Phase NN STALLED` line in `~/.ralph/verify.log`) means a rebuilt
+  contract already failed to help: the phase's done bar, not the trajectory, is
+  the fault. `verify` writes `project/loops/blocked.md` naming the phase, the
+  total attempts, the unsatisfied ids, and the exact command/output that will
+  not go green, then deletes the brief and leaves `⬜`. The next `gather` sees
+  `blocked.md` and reports `DONE`, stopping the run.
+
+**Operator response to a `blocked.md`:** read the recorded command and output,
+fix the phase's done bar in `project/` (the loop cannot — `project/` is
+read-only to it), delete `project/loops/blocked.md`, and restart the loop.
+
 ## Why it converges
 
 `verify` can neither halt the run nor advance a phase on a gap, so an incomplete
@@ -85,12 +109,12 @@ phase simply stays `⬜` and is re-attacked next cycle — now with grounded,
 command-level feedback in front of `build`, and without `gather` re-reading the
 big docs (it no-ops on an in-flight brief). The persisted feedback also gives
 `verify` cross-cycle memory: it distinguishes *slow convergence* (the open-gap
-id set shrinking or changing) from a *true stall* (the same gap ids open across
-three consecutive attempts with no new build commit). On a true stall it does a
-**trajectory reset** — log the stall to `~/.ralph/verify.log`, delete the brief,
-leave `⬜` — so the next `gather` rebuilds the contract fresh from spec. The only
-exit is `gather → DONE`, which requires zero `⬜` markers, so the run ends only
-when every phase is verified green (or a ralph budget rail trips).
+id set shrinking) from a *true stall* (the same gap ids open across three
+consecutive attempts with no new build commit). On a true stall it does a
+**trajectory reset**; on a second stall of the same phase it escalates to
+`blocked.md` instead of resetting again. The only exits are `gather → DONE` —
+zero `⬜` markers left, or a blocked phase awaiting the operator — plus ralph's
+budget rails.
 
 ## The `project/loops/brief.md` schema
 
@@ -154,14 +178,19 @@ id counts as **covered** only when all of these hold:
 - it runs on the substrate the requirement names — real temp-file SQLite with
   the real migrations for storage/DDL/ordering/query-plan claims, a real
   `127.0.0.1` listener through the registered route for transport claims, an
-  injected `Clock` and a test-driven ticker for time;
+  injected `internal/telemetry.Clock` and a test-driven ticker for time;
 - it is **co-located** with the code it exercises and named for the behavior
   (`internal/<pkg>/<behavior>_test.go`; `cmd/telemetry/` for composition-root
   and shipped-file guards; `internal/e2e/` for the cross-package end-to-end
   layer) — never a per-phase or root-level test file.
 
+Beyond a single phase's own denominator, `verify` also runs the **global
+coverage ratchet** every cycle — the design-wide id set minus the union of the
+real test-tag set and the pending-phase id set must be empty — to catch a
+rewrite silently dropping a previously-covered id.
+
 A phase is **done** when every id it owns is covered that way, every Done-bar
-check in its body passes with its stated criterion, and the suite is green:
-from `telemetry/`, `go build ./...`, `go vet ./...`, and `go test ./...` all
-exit 0. A structural phase carries no ids and is proven by the green build plus
-the deterministic checks it names.
+check in its body passes with its stated criterion, the global ratchet is
+empty, and the suite is green: from `telemetry/`, `go build ./...`,
+`go vet ./...`, and `go test ./...` all exit 0. A structural phase carries no
+ids and is proven by the green build plus the deterministic checks it names.

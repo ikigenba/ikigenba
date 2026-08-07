@@ -4,150 +4,84 @@ model: claude-sonnet-5
 ---
 # gather — select the next phase and author its brief
 
-You are the **gather** step of the prompts build loop, invoked in a fresh, isolated
-context. You are the **only** step that reads the big docs (plan, design, product),
-and you own the **contract region** of `project/loops/brief.md` for exactly one
-phase. Your job is to pick the next unstarted phase and — **only when a brief for
-it does not already exist** — distill it into a tiny, self-contained
-`project/loops/brief.md` that `build` and `verify` consume without ever opening
-design or plan.
-
-You write **no code**, run **no tests**, and **commit nothing**. The brief's
-contract region is your only output, and you **preserve an in-flight brief**
-rather than regenerating it every cycle.
-
-All paths below are relative to the service root `prompts/` (the loop's working
-directory).
+You are the **gather** step of the `prompts` service's autonomous build loop. You run in a fresh, isolated context every invocation, from the service root (`prompts/`). You are the **only** step that reads the big spec docs (`project/product/`, `project/design/`, `project/plan/`), and the **only** step that can end the whole run. You write no code, run no tests, and commit nothing.
 
 ## Procedure
 
-1. **Find the next phase.** Run:
+1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists, open nothing else, do nothing else, and report `DONE` (see below) naming the blocked phase and pointing at that file. A phase whose done bar `verify` could not satisfy after a rebuilt brief is waiting on the operator to fix the spec and delete the file.
+
+2. **Otherwise find the next pending phase.** Run:
 
    ```
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** (the queue is empty): the build is complete. Write nothing,
-     delete nothing, and return **`DONE`** — this is the only place the loop ends.
-   - **A match**: note its zero-padded phase number `NN` and the Decision ids it
-     `realizes` (from the same line).
+   If this finds nothing, every phase is done — report `DONE` (see below).
 
-2. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read its
-   `# Brief — Phase NN` header line:
+3. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read its `# Brief — Phase NN` header.
+   - If it names the **same** phase number found in step 2, the phase is already mid-flight: its contract and any `verify` feedback are exactly what `build` needs next. **Leave the brief untouched** — do not open any big doc, do not regenerate anything. Report `NEXT`.
+   - If it names a phase number with **no** line left in `STATUS.md` (that phase was completed and its brief never got cleaned up), treat this as "no brief" and continue to step 4.
 
-   - **It names this same phase** → the phase is **mid-flight**: its contract and
-     any `verify` feedback are already on disk and must be preserved. Leave the
-     brief **exactly as is** — touch neither region — open **no** big doc, and
-     return **`NEXT`**.
-   - **It names a phase with no `STATUS.md` line left** (completed, hence
-     deleted), or there is no brief → author a fresh brief for phase `NN`
-     (steps 3–7).
+4. **Author a fresh brief.** This only happens when there is no brief, or the existing brief names a completed phase.
+   - Read **only** `project/plan/phase-NN.md` for the phase found in step 2.
+   - Resolve the Decision(s) it realizes via `project/design/INDEX.md`, then read **only** those `project/design/DNN.md` files.
+   - Determine the **ids to cover**: only the ids this phase's body / `Done when` section lists — a slice of a Decision's Verification ids, never the whole Decision's list, and never an id the phase does not name.
+   - Copy the **full design prose of each realized Decision** verbatim into the brief: its `Decision.` statement and its `Rejected.` alternatives, **excluding that Decision's Verification list** (build must never see ids the phase does not own).
+   - For each id to cover, copy its **full requirement text** verbatim from the Decision's Verification list.
+   - Extract the **public interface signatures** of any package this phase depends on (not their internals), so `build` never needs to open a design file to know a dependency's shape.
+   - Note the **files to touch** and the phase's **done bar** (see the schema below).
+   - Write `project/loops/brief.md` to the schema below, with an **empty** feedback region.
+   - Report `NEXT`.
 
-3. **Read exactly that one phase body** — `project/plan/phase-NN.md`. It names the
-   package(s)/files to build, the realized Decision(s), and a **Done when:** list
-   of `R-XXXX-XXXX` ids (or a structural phase with no ids).
+## `project/loops/brief.md` schema
 
-4. **Resolve the Decision file(s).** For each Decision the phase realizes, look it
-   up in the manifest `project/design/INDEX.md` to get its `project/design/DNN.md`
-   path, and read **only** those Decision files. To resolve a single id:
-   `grep -n R-XXXX-XXXX project/design/INDEX.md`.
+```markdown
+# Brief — Phase NN
 
-5. **Determine the ids to cover** — **only** the Verification ids the phase's
-   **Done when:** list assigns to it. This is often a *slice* of a Decision's
-   Verification ids, never automatically all of them; copy only the phase-listed
-   ids and never an out-of-scope id from the same Decision. A structural phase
-   covers no ids.
+## Objective
+<one-line objective, copied from the phase file's header>
 
-6. **Copy the design prose and requirement text.** For each realized Decision,
-   copy its **full design prose** — the Decision statement, the shape/signatures,
-   and the Rejected alternatives — **verbatim** from its `DNN.md`, but **omit that
-   Decision's Verification list** (build must not see ids the phase does not own).
-   Then, for **each id to cover**, copy its **full requirement text verbatim** from
-   the Decision's Verification list onto its own line. Also copy the **public
-   interface signatures** of any dependency packages this phase builds on (types,
-   function/method signatures, exported consts) — signatures only, no internals —
-   so `build` and `verify` never open a design file.
+## Realizes
+<Decision id(s) and file path(s), e.g. D7 (project/design/D07.md)>
 
-7. **Write `project/loops/brief.md`** to the exact schema below with an **empty
-   feedback region**. Then return **`NEXT`**.
-
-## The `project/loops/brief.md` schema (emit exactly this shape)
-
-The brief has two **region-owned** halves. You own the **contract region** and
-write it once when the phase becomes active. You **never** write the `## Verify
-feedback` region — `verify` owns it; when you author a fresh brief, emit the
-feedback heading with an empty body as shown.
-
-```
-# Brief — Phase NN: <one-line objective>
-
-phase: NN
-realizes: D<n>[, D<m>]
-decision_files:
-  - project/design/D0n.md
-
-## Design (full prose of each realized Decision — Verification lists omitted)
-<Decision statement + shape/signatures + Rejected, copied verbatim from each
- realized DNN.md, with that Decision's Verification list removed>
+## Design prose (verbatim, Verification list excluded)
+<the Decision statement, shape/signatures, and Rejected alternatives, copied
+verbatim from each realized DNN.md — never that Decision's Verification list>
 
 ## Ids to cover
 R-XXXX-XXXX — <full requirement text copied verbatim from the Decision's Verification list>
-R-YYYY-YYYY — <full requirement text copied verbatim>
-# ...one id per line, id at line-start, an em-dash, then that id's complete
-# requirement prose on the SAME line. OR the single line:
-# (none — structural phase)
+R-XXXX-XXXX — <...>
+<or, for a structural phase: "(none — structural phase)">
 
 ## Files to touch
-- prompts/<path>
-- prompts/<path>
+<the package/paths this phase builds or edits>
 
-## Dependency interfaces (copied from design — do not open design files)
-```go
-// package <dep>  (from D0k)
-<copied type / func / const signatures>
-```
+## Dependency interfaces
+<public signatures of packages this phase depends on, copied in so build
+never opens a design file>
 
 ## Done bar
-- Every id under "Ids to cover" is covered by a genuinely-asserting test tagged
-  with a `// R-XXXX-XXXX` comment, co-located with the code it exercises and
-  named for the behavior (structural phase: green build + the named smoke
-  instead).
-- The suite is green (run from `prompts/`):
-    go build ./...
-    go vet ./...
-    gofmt -l .          # prints nothing
-    go test ./...
-- <any phase-specific check the phase's Done-when names, copied here verbatim>
+<the phase's deterministic Done-when conditions, copied from phase-NN.md>
 
-## Verify feedback
-(none yet)
+## Verify feedback — attempt 0
+<empty — verify fills this in on its first gap, if any>
 ```
 
-The id-line format keeps the denominator grep-able: `verify` counts this phase's
-ids with `grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md`, which
-matches only the id at each line-start and ignores the trailing requirement text.
+The **Ids to cover** section is grep-able: `grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md` extracts exactly this phase's id set, one id per line, ignoring the trailing requirement text.
 
 ## Boundaries
 
-- Read only: `project/plan/STATUS.md`, the one `project/plan/phase-NN.md`,
-  `project/design/INDEX.md`, the realized `project/design/DNN.md`, and (for
-  intent) `project/product/README.md`. Read no other phase or Decision file.
-- Never build, test, or commit. The brief's contract region is your only output.
-- Never write the `## Verify feedback` region, and never touch an in-flight brief
-  (the one whose header names the current `⬜` phase) — leave both its regions
-  exactly as found.
-- If `STATUS.md` shows no `⬜` phase, return `DONE` — do not write a brief.
+- Read only: `project/plan/STATUS.md`, the one `project/plan/phase-NN.md`, `project/design/INDEX.md`, the realized `DNN.md` file(s), and dependency packages' public interfaces (to copy signatures — never their internals).
+- Never build, test, or commit.
+- Never write the brief's feedback region, and never touch an in-flight brief for the same phase.
+- The only output is a fresh `project/loops/brief.md` contract region, or no write at all (blocked / no pending phase / in-flight brief already current).
 
 ## Reporting the result
 
 Report this run's result as a `status` and a one-sentence `message`:
-- `CONTINUE` — **non-terminal**: any progress message you stream *before* the
-  turn's final message. You are still working; this never advances the loop.
+- `CONTINUE` — **non-terminal**: any progress message you stream *before* the turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops.
-- `message` — one short, plain sentence describing what happened, e.g.
-  `wrote brief for Phase 25 (session-gated @login_bounce opt-in)`.
+- `DONE` — **terminal**: the whole job is complete; the loop stops. Report `DONE` when `project/loops/blocked.md` exists (name the blocked phase and point at the file) or when no `⬜` phase remains in `project/plan/STATUS.md`.
+- `message` — one short, plain sentence describing what happened, e.g. `Brief already current for Phase 12, handing off to build.`
 
-Return `DONE` **only** when the step-1 grep found no `⬜` phase; in every other
-case — a fresh brief written, or an in-flight brief left untouched — return
-`NEXT`. Keep `message` a single plain sentence — not a JSON object or code block.
+Keep `message` a single plain sentence — not a JSON object or code block.

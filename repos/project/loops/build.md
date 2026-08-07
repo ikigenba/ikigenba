@@ -23,8 +23,9 @@ completeness and **do not** touch `STATUS.md` — that is verify's job.
 
 3. **See what already exists** (this prompt is re-entered with a fresh context,
    so prior turns may have done part of the work):
-   - `grep -rn "R-XXXX-XXXX" --include='*_test.go' .` for each id in the brief
-     to see which are already covered;
+   - `grep -rn "R-[A-Z0-9]\{4\}-[A-Z0-9]\{4\}" --include='*_test.go' .` to list
+     which ids already have a tagged test, and cross-check that list against
+     the **ids to cover** in the brief;
    - run the suite (step 5) once to read current build/test failures.
    Do the **remaining** work only; never duplicate a file that already exists.
 
@@ -54,7 +55,17 @@ completeness and **do not** touch `STATUS.md` — that is verify's job.
    `t.Skip` to make the suite "pass" — a skipped requirement test is a gap.
    `gofmt -w` everything you touched.
 
-6. **Commit this turn's increment.** Stage your changes and commit with a
+6. **Before committing, check for dropped tags.** A rewrite extends a file's
+   tests, it never drops an existing tagged test. Run:
+
+   ```
+   git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
+   ```
+
+   If this turn's diff removed any line matching an `R-` id, restore that test
+   before committing.
+
+7. **Commit this turn's increment.** Stage your changes and commit with a
    message naming the phase (e.g. `repos build: phase NN — <objective>`). Do
    **not** create an empty commit; if nothing changed this turn, skip the
    commit. End the message with the trailer:
@@ -63,7 +74,7 @@ completeness and **do not** touch `STATUS.md` — that is verify's job.
    Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
    ```
 
-7. Report `NEXT` (see *Reporting the result*).
+8. Report `NEXT` (see *Reporting the result*).
 
 ## Project conventions (the substrate — bake these in)
 
@@ -105,6 +116,8 @@ completeness and **do not** touch `STATUS.md` — that is verify's job.
 - Never edit or delete anything in `project/plan/STATUS.md`; never delete or edit
   `project/loops/brief.md`, including its `## Verify feedback` region (you read
   it but never write it).
+- Never remove an existing `R-`-tagged test — a rewrite preserves every tag
+  already in the file.
 - You hand off **every** turn; you are never the step that ends the run.
 
 ## Reporting the result
@@ -115,7 +128,8 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is
-  still `NEXT`; only gather, finding no `⬜` phase left, ever reports `DONE`.
+  still `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or
+  a blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Phase 01 store and migrations built; suite green.`
 

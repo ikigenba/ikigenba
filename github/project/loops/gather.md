@@ -8,26 +8,32 @@ for a single phase. You write no code, run no tests, and commit nothing. You
 
 ## Procedure
 
-1. **Find the active phase.** Run:
+1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists,
+   open **no other file**, do **nothing else**, and report **`DONE`** — name the
+   blocked phase and point at `project/loops/blocked.md` in your message. A phase
+   whose done bar `verify` could not satisfy after a rebuilt brief is waiting on
+   the operator, who fixes the bar in `project/` and deletes the file to resume.
+
+2. **Find the active phase.** Run:
 
    ```sh
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
    - **No match** → the queue is empty. The job is complete. Report **`DONE`**.
-     (This is the only end of the loop.)
+     (Together with step 1, this is the only end of the loop.)
    - **A match** → note its zero-padded phase number `NN` and the ids on that line.
 
-2. **Preserve an in-flight brief.** If `project/loops/brief.md` exists, read its
+3. **Preserve an in-flight brief.** If `project/loops/brief.md` exists, read its
    first line (`# Brief — Phase NN — …`).
    - If it names **this same** phase `NN`, the phase is mid-flight: leave the brief
      **exactly as is** — do not touch the contract region and do not touch the
      `## Verify feedback` region. Open no big doc. Report **`NEXT`**.
    - If it names a **different** phase — and that phase has no `STATUS.md` line
      left (completed, hence deleted) — the brief is stale: you will overwrite it
-     in step 4.
+     in step 5.
 
-3. **Read only what this phase needs.** (Reached only when no brief exists, or the
+4. **Read only what this phase needs.** (Reached only when no brief exists, or the
    brief is for a stale phase.)
    - Read `project/plan/phase-NN.md` — its objective, the Decision(s) it realizes,
      the **ids it lists** (in its body / `Done when`), and its done bar.
@@ -37,7 +43,7 @@ for a single phase. You write no code, run no tests, and commit nothing. You
      names (only their exported signatures — not their internals).
    - Read nothing else. Do not read other phases, other Decisions, or `product.md`.
 
-4. **Author a fresh `project/loops/brief.md`** (overwrite any stale one) to the
+5. **Author a fresh `project/loops/brief.md`** (overwrite any stale one) to the
    schema below. Copy the **full design prose** of each realized Decision — its
    Decision statement, shape/signatures, and Rejected alternatives — **verbatim**
    from the `DNN.md`, but **omit that Decision's `## Verification` list**. List
@@ -90,7 +96,9 @@ begin a line elsewhere.
 
 ## Boundaries
 
-- Read only: `project/plan/STATUS.md`, the one `project/plan/phase-NN.md`,
+- Check `project/loops/blocked.md` before anything else; if present, open nothing
+  further.
+- Otherwise read only: `project/plan/STATUS.md`, the one `project/plan/phase-NN.md`,
   `project/design/INDEX.md`, the realized `DNN.md` file(s), and dependency
   interface signatures. Never `product.md`, other phases, or other Decisions.
 - Never build, test, or commit. Never write the `## Verify feedback` region and
@@ -106,7 +114,9 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Authored brief for Phase 03 (14 ids).` or `Preserved in-flight brief for Phase 04.`
+  or `Blocked: Phase 07 awaiting operator, see project/loops/blocked.md.`
 
-End the turn on **`DONE`** only when step 1's grep found no `⬜` phase; otherwise
-end on **`NEXT`** (brief authored, or in-flight brief preserved). Keep `message` a
-single plain sentence — not a JSON object or code block.
+End the turn on **`DONE`** only when `project/loops/blocked.md` exists or step 2's
+grep found no `⬜` phase; otherwise end on **`NEXT`** (brief authored, or in-flight
+brief preserved). Keep `message` a single plain sentence — not a JSON object or
+code block.
