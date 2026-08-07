@@ -20,7 +20,7 @@ Verification ids change.
 - D12 → `project/design/D12.md` — `cache/` is app-owned by construction: setup creates it owned by the service user; deploy re-asserts it alongside `state/` — owns `R-4ZI0-4CH5`, `R-50PW-I47U`
 - D13 → `project/design/D13.md` — opsctl-owned `backup` / `restore`, S3-only (stop·snapshot·start) — owns `R-4GOT-W83B`, `R-4HWQ-9ZU0`, `R-4J4M-NRKP`, `R-4KCJ-1JBE`, `R-82FY-GAL6`, `R-TAOX-5LKS`, `R-TBWT-JDBH`
 - D14 → `project/design/D14.md` — Scheduled nightly backup (systemd timer + box sweep) — owns `R-RNKC-HAW8`, `R-ROS8-V2MX`
-- D15 → `project/design/D15.md` — stage / deploy / rollback / prune orchestration — owns `R-84VR-7U2K`, `R-863N-LLT9`, `R-87BJ-ZDJY`, `R-88JG-D5AN`, `R-89RC-QX1C`, `R-8AZ9-4OS1`, `R-8C75-IGIQ`
+- D15 → `project/design/D15.md` — stage / deploy / rollback / prune orchestration — owns `R-84VR-7U2K`, `R-863N-LLT9`, `R-87BJ-ZDJY`, `R-88JG-D5AN`, `R-89RC-QX1C`, `R-8AZ9-4OS1`, `R-8C75-IGIQ`, `R-I80H-SAQ3`
 
 ## Verification ids → Decision
 
@@ -56,6 +56,7 @@ Verification ids change.
 - R-CLA5-CFNK → D5 — `project/design/D05.md`
 - R-CMI1-Q7E9 → D5 — `project/design/D05.md`
 - R-CNPY-3Z4Y → D4 — `project/design/D04.md`
+- R-I80H-SAQ3 → D15 — `project/design/D15.md`
 - R-JQGB-RYA2 → D10 — `project/design/D10.md`
 - R-JRO8-5Q0R → D10 — `project/design/D10.md`
 - R-ML75-3NVZ → D11 — `project/design/D11.md`
