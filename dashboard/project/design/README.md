@@ -37,7 +37,11 @@ suite's per-request **correlation id** and return it to nginx (D30), emit an
 `edge` telemetry record for every gated auth decision including denials and
 rate-limited attempts (D31) while the durable internal audit log stays exactly as
 it is (D32), and the dashboard's own apex nginx fragment blanks
-client-supplied correlation ids and forwards the original request method (D33).
+client-supplied correlation ids and forwards the original request method (D33);
+and (6) **suite-contract conformance** — the dashboard adopts the umbrella
+project's two `[proof: per-service]` contracts, the `/opt/<svc>/` install layout
+and the portable authored `manifest.env`, citing them by Decision path and stating
+only where its local proof lives (D34).
 It is rewritten in place to stay true (stale decisions are removed, not
 stacked); construction history lives in git, not here.
 
@@ -162,7 +166,7 @@ web-session store (`a.sessions.Lookup`, surfaced through `(*app).sessionOwner` /
 it does **not** introduce an nginx fragment, and `/_session-authn` (which other
 services consume) is untouched by this change.
 
-## The three pages and the routes that serve them
+## The four pages and the routes that serve them
 
 | Page | Route | Audience | Gate |
 |---|---|---|---|
@@ -198,9 +202,11 @@ Verification list assumes:
   "profile renders the grants block" by asserting the `GET /profile` body contains
   it. Redirect targets (`/profile` vs `/`) are proven by asserting the `Location`
   header on the 3xx response.
-- **The doc-truth phase is grep-checkable.** The AGENTS.md purge (D6) is verified
-  by asserting the stale phrase is gone and the three-page truth is present — a
-  text check, not a Go test.
+- **Doc truth is a Go test like everything else.** The `AGENTS.md` claim (D6) is a
+  fixed-substring check — the stale rules absent, the four-page truth present —
+  and it runs as an ordinary test in `cmd/dashboard/docs_test.go` reading the
+  committed file from disk, so the id has a tag site and the doc is re-checked on
+  every `go test ./...`, not once at authoring time.
 - **Metric sources are unit-tested against fixtures; the two that hinge on a
   real OS contract get a real-substrate check.** The `/proc/meminfo` parser runs
   against a fixture reader; the cgroup reader and the `du` walk run against temp

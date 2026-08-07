@@ -40,13 +40,17 @@ Verification ids change.
 - D31 → `project/design/D31.md` — Every gated auth decision emits an `edge` telemetry record — owns R-XDJH-4Y8Q, R-XERD-IPZF, R-XFZ9-WHQ4, R-XIF2-O17I, R-XJMZ-1SY7, R-XKUV-FKOW, R-XM2R-TCFL
 - D32 → `project/design/D32.md` — The internal audit log stays; edge records are additive — owns R-XNAO-746A
 - D33 → `project/design/D33.md` — The apex nginx fragment blanks client-supplied correlation ids and forwards the original method — owns R-XOIK-KVWZ, R-XPQG-YNNO
+- D34 → `project/design/D34.md` — Suite-contract conformance: the opsctl install layout and the authored env contract — adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`); mints none of its own
 
 ## Verification ids → Decision
 
+- R-4LKF-FB23 → D34 → `project/design/D34.md` (adopted from root `project/design/D08.md`)
 - R-6QJD-1MUY → D23 → `project/design/D23.md`
 - R-6RR9-FELN → D23 → `project/design/D23.md`
 - R-6SZ5-T6CC → D23 → `project/design/D23.md`
 - R-6U72-6Y31 → D23 → `project/design/D23.md`
+- R-8DF1-W89F → D34 → `project/design/D34.md` (adopted from root `project/design/D11.md`)
+- R-8IAN-FB87 → D34 → `project/design/D34.md` (adopted from root `project/design/D11.md`)
 - R-DB01-PG3A → D1 → `project/design/D01.md`
 - R-DB02-LND7 → D1 → `project/design/D01.md`
 - R-DB03-PRF9 → D1 → `project/design/D01.md`

@@ -10,5 +10,7 @@ file — there is no done marker; done is gone. This file deliberately carries
 **no bare status glyph** anywhere but on a phase line, so the anchored grep
 matches only phase lines.
 
-Next phase: 42
+Next phase: 43
+
+- Phase 42 ⬜ realizes D6 — give `R-DB16-DOCS` a real test home in `cmd/dashboard/docs_test.go` and clear the orphan `R-K5RY-83NL` tag from `internal/ratelimit/ratelimit_test.go`
 
