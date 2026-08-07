@@ -30,8 +30,8 @@ workspace); in the chassis thread the `appkit/web` package
 work; the repo-root readers `bin/registry` and `bin/start` are governed and
 tested by the **suite-level workspace** (the repo-root `project/`, its
 `bintest` module), never by an appkit Decision or phase. D4's live-box action
-crosses into one production step and is an explicit operator step below, not
-an unattended loop build. In the chassis thread, D7's dev wiring (a one-line
+crosses into one production step and is a live-box check recorded in
+`project/appkit-verification.md`, not an unattended loop build. In the chassis thread, D7's dev wiring (a one-line
 `<APP>_WWW_PATH` export in a converted service's `bin/start` launch function)
 crosses the same way and is verified by the live `bin/start` smoke.
 
@@ -51,8 +51,8 @@ The plan is physically split so the build loop reads only what it needs:
 - `project/plan/phase-NN.md` — one body file per **pending** phase
   (zero-padded). A phase body carries **no** status token — status lives only
   in `STATUS.md`.
-- `project/plan/README.md` — this file: the static rules (plus the operator
-  steps below). It never accumulates phase content.
+- `project/plan/README.md` — this file: the static rules (plus operator notes
+  below). It never accumulates phase content.
 
 Completion is deletion: the build loop's only mutations to this directory are
 removing a finished phase's `STATUS.md` line together with its `phase-NN.md`.
@@ -63,51 +63,17 @@ The `Next phase` counter is never decremented and never touched by the loop.
 Some Verification lives on the **live `int` box** and cannot be a `STATUS.md`
 phase: the unattended loop is forbidden to `ssh int` / `opsctl` / mutate the box,
 so an id whose only pass-predicate is a live-box command could never clear its
-pending `⬜` line and would make the loop non-convergent. Such ids are recorded here as explicit operator
-steps, run **only on explicit instruction to deploy**, and are deliberately **absent
-from `STATUS.md`** so `gather`/`verify` never treat them as loop work.
+pending `⬜` line and would make the loop non-convergent. Those live-box ids —
+their procedures, pass-predicates, and running record of results — live in
+**`project/appkit-verification.md`** (mirroring opsctl's
+`project/opsctl-verification.md`), run **only on explicit instruction to
+deploy/verify**, and are deliberately **absent from `STATUS.md`** so
+`gather`/`verify` never treat them as loop work. The coverage ratchet in
+`project/loops/verify.md` reads the live-tracked id set from that doc's check
+headers.
 
-**R-YU3O-6CQP — box end-state stands on `current` alone (D4, operator-verified).**
-Prerequisite: Phase 01 (the `current` reader) is merged and the dashboard rebuilt.
-Sequenced so crm never drops out mid-change:
-
-1. Deploy the Phase 01 dashboard to the box: `bin/ship dashboard` → `opsctl stage`
-   → `opsctl deploy` (dashboard last, per `deploy.md`).
-2. Enumerate stale siblings — `ssh int 'ls /opt/*/etc/manifest.env'` — then remove
-   the hand-placed bridge and leftovers, e.g.
-   `ssh int 'sudo rm -f /opt/crm/etc/manifest.env /opt/ledger/etc/manifest.env'`.
-3. Restart the dashboard so its OAuth-AS resource list re-derives with crm present
-   (`deriveResources` runs at startup): `ssh int 'sudo systemctl restart dashboard'`.
-4. Verify: `curl -s https://int.ikigenba.com/services` still lists `crm` (resolved
-   through `/opt/crm/etc/current/manifest.env`, no sibling present), and a
-   `/srv/crm/mcp` request is now token-mintable (crm is in the AS resource set).
-
-Until this runs, the mid-investigation bridge symlink `/opt/crm/etc/manifest.env`
-stays on the box on purpose — removing it before the `current` reader ships would
-re-hide crm.
-
-**R-ELE5-W5ML — a strict MCP client accepts the deployed tool list (D8,
-operator-verified).** The construction guard (R-EIYD-4M57) and the open-object
-`reflection` schema (R-EK69-IDVW) *model* the strict-client rule; only a real
-strict client proves the emitted `tools/list` is actually accepted. That proof
-is a live/deploy step, not a `STATUS.md` phase (the unattended loop cannot drive
-an external client against the deployed box), and runs **only on explicit
-instruction to deploy**. Prerequisite: Phase 15 merged. Because all twelve
-services share the appkit chassis, the fix reaches production only after each is
-rebuilt and redeployed:
-
-1. Rebuild and redeploy every service on the new chassis, per `deploy.md`
-   (`bin/ship <svc>` → `opsctl stage` → `opsctl deploy`; services first,
-   dashboard last).
-2. In Claude Code, confirm each `ikigenba_<svc>` MCP server now reports
-   `connected` with its tools listed — **not** `connected · tools fetch
-   failed`. Equivalently, a strict schema-validating client (Claude Code, or
-   MCP Inspector's strict mode) fetches the full `tools/list` from each
-   `/srv/<svc>/mcp` without a schema-validation rejection. A `curl` 200 is
-   **not** sufficient — curl does no schema validation.
-
-Until every service is redeployed, the un-fixed services keep showing
-`tools fetch failed`; the chassis change alone does not clear production.
+One operator note that is a mechanical sibling-module sweep, not a live-box
+verification id, stays here:
 
 **Registry replace mirror (D10, operator-applied).** Phase 10 makes appkit
 require the in-repo `registry` module. A dependency's `replace` directives are
