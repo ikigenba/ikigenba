@@ -12,5 +12,3 @@ matches only phase lines.
 
 Next phase: 44
 
-- Phase 43 ⬜ realizes R-I98E-62GS — tag (and window-count-strengthen) `TestLimiter_WindowSlide` in `internal/ratelimit/ratelimit_test.go`
-
