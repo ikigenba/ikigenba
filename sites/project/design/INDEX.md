@@ -14,10 +14,10 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D8 → `project/design/D08.md` — Self-serve the landing page's fonts and eliminate the FOUT (relative stylesheet link + `font-display: optional` + self-served `src` + `<head>` preload + session-gated nginx `/srv/sites/static/`) — owns R-629P-84O5, R-63HL-LWEU, R-64PH-ZO5J, R-65XE-DFW8, R-675A-R7MX
 - D9 → `project/design/D09.md` — Resolve sites's own port and the dropbox mirror address by name through the shared `registry` (import + startup resolve at the composition root + committed `go.mod` replace; behavior-preserving) — owns R-7K2P-QN4D, R-7L9F-XW3H, R-7M4C-BV8J, R-7N6R-TZ2Q
 - D10 → `project/design/D10.md` — `internal/files`: confined filesystem operations as native Go (ports the confined Read/Edit/Glob/Grep/Write/List/Mkdir + symlink-resolving ConfinePath; no agentkit, no JSON, no agent framing) — owns R-027Y-BQ1I, R-03FU-PHS7, R-04NR-39IW, R-05VN-H19L, R-073J-UT0A, R-08BG-8KQZ, R-3ZP8-T0GP, R-40X5-6S7E, R-09JC-MCHO, R-0AR9-048D, R-0D71-RNPR, R-0EEY-5FGG
-- D11 → `project/design/D11.md` — Rewire the MCP file tools onto `internal/files` and drop `agentkit` (delete the bridge, hand-write the four schemas, cleaner structured results, typed confinement envelope, remove the `go.mod` require+replace; surface-preserving) — owns R-0FMU-J775, R-0GUQ-WYXU, R-0I2N-AQOJ, R-0JAJ-OIF8, R-0KIG-2A5X
+- D11 → `project/design/D11.md` — Rewire the MCP file tools onto `internal/files` and drop `agentkit` (delete the bridge, hand-write the four schemas, cleaner structured results, typed confinement envelope, remove the `go.mod` require+replace; surface-preserving) — owns R-0FMU-J775, R-0GUQ-WYXU, R-0I2N-AQOJ, R-0JAJ-OIF8
 - D12 → `project/design/D12.md` — Web surface from `share/www` through the chassis (de-embed via `Spec.WWW`): move `landing.html` + `static/` to `sites/share/www`, render at `GET /{$}` via `rt.WWW()`, delete `internal/web` and the service-side `/static/` mount (chassis auto-mounts it); rewrites the mechanism of D1/D2/D3/D6/D7/D8 — owns R-0SF5-VPQF, R-0TN2-9HH4
 - D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the domain-tool table; delete the local JSON-RPC transport + local `health`; chassis supplies `health`/`reflection` (sites gains `reflection`, empty graph); mirror client becomes a constructor param; the 14-domain/16-total tool partition — owns R-Z8DD-BL71, R-P21E-0285
-- D14 → `project/design/D14.md` — Delete the `internal/db` `Open`/`Migrate` shim (keep only the embedded `FS` + load guard; test harnesses call `appkit/db` directly), normalize the composition root (relocate the `Handlers` closure inside `sitesSpec()`; no post-construction `.Handlers` mutation; keep the builder), and true up `AGENTS.md` if present — none (structural; shim deletion + composition-root normalization + doc truth)
+- D14 → `project/design/D14.md` — Delete the `internal/db` `Open`/`Migrate` shim (keep only the embedded `FS` + load guard; test harnesses call `appkit/db` directly), normalize the composition root (relocate the `Handlers` closure inside `sitesSpec()`; no post-construction `.Handlers` mutation; keep the builder), and true up `AGENTS.md` if present — mints none (structural; shim deletion + composition-root normalization + doc truth); adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D15 → `project/design/D15.md` — Data model: `slug` PK + free-form `name` display label, the three-value `visibility` TEXT enum (CHECK-enforced), owner id/email; `ValidateName`; the rebuild migration (no data carried — no production data); `Store.Create(slug, name, ...)`, `SetVisibility(slug, v, newSlug)` (one UPDATE, optional re-slug, name untouched), `Rename(slug, name)` — owns R-Z9L9-PCXQ, R-ZAT6-34OF, R-ZC12-GWF4, R-ZD8Y-UO5T, R-ZEGV-8FWI, R-ZFOR-M7N7
 - D16 → `project/design/D16.md` — Filesystem layout: files live at the served path under two parents; `Seg(v)` maps unlisted → the public segment (no third tree, no nginx change); `SiteDir(v, slug)`; `Move(slug, from, newSlug, to)` relocates and renames in one call — owns R-H5H4-GTWA, R-H6P0-ULMZ, R-QYP6-P587
 - D17 → `project/design/D17.md` — In-process static serving of hosted sites (`internal/serve`): index-mapping, no-listing, confined, trailing-slash redirect; mounted ungated at `GET /public/` and `GET /private/` — owns R-QZX3-2WYW, R-R14Z-GOPL, R-R2CV-UGGA, R-R3KS-886Z, R-R4SO-LZXO, R-R60K-ZROD
@@ -58,11 +58,11 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-0GUQ-WYXU → D11 → `project/design/D11.md`
 - R-0I2N-AQOJ → D11 → `project/design/D11.md`
 - R-0JAJ-OIF8 → D11 → `project/design/D11.md`
-- R-0KIG-2A5X → D11 → `project/design/D11.md`
 - R-0SF5-VPQF → D12 → `project/design/D12.md`
 - R-0TN2-9HH4 → D12 → `project/design/D12.md`
 - R-3ZP8-T0GP → D10 → `project/design/D10.md`
 - R-40X5-6S7E → D10 → `project/design/D10.md`
+- R-4LKF-FB23 → D14 → `project/design/D14.md` (adopted from root `project/design/D08.md`)
 - R-56CN-HE21 → D20 → `project/design/D20.md`
 - R-57KJ-V5SQ → D21 → `project/design/D21.md`
 - R-58SG-8XJF → D21 → `project/design/D21.md`
@@ -87,7 +87,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-87B9-J644 → D23 → `project/design/D23.md`
 - R-8AYY-OHC7 → D23 → `project/design/D23.md`
 - R-8DER-G0TL → D23 → `project/design/D23.md`
+- R-8DF1-W89F → D14 → `project/design/D14.md` (adopted from root `project/design/D11.md`)
 - R-8EMN-TSKA → D23 → `project/design/D23.md`
+- R-8IAN-FB87 → D14 → `project/design/D14.md` (adopted from root `project/design/D11.md`)
 - R-9CMM-G2ZU → D29 → `project/design/D29.md`
 - R-ASST-3H7N → D3 → `project/design/D03.md`
 - R-ASST-5K9Q → D3 → `project/design/D03.md`
