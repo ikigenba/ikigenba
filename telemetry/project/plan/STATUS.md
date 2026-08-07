@@ -14,5 +14,3 @@ deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
 Next phase: 12
-
-- Phase 11 ⬜ realizes D9 — prove the adopted suite contracts (`R-4LKF-FB23`, `R-8DF1-W89F`, `R-8IAN-FB87`) at the composition root in `cmd/telemetry/main_test.go`
