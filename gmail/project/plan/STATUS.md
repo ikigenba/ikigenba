@@ -11,5 +11,3 @@ phase line, so the anchored grep matches only phase lines.
 
 Next phase: 27
 
-- Phase 26 ⬜ realizes R-JWR1-BQ0J, R-VKB6-SHHV — env-channel conformance: the poll interval in the manifest
-
