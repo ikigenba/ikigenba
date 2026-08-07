@@ -5,7 +5,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 ## Decisions
 
 - D1 → `project/design/D01.md` — Dependency on the prompts service (unified inference; no provider dependency anywhere) — owns R-KDHD-V3XI, R-A3D7-NTLV
-- D2 → `project/design/D02.md` — Service skeleton: package layout, Spec wiring, and the config/secret composition root — owns R-6RVX-P1IG
+- D2 → `project/design/D02.md` — Service skeleton: package layout, Spec wiring, and the config/secret composition root — owns R-6RVX-P1IG; adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D3 → `project/design/D03.md` — The phase-1 data model — owns R-7SNG-0G9A, R-7TVC-E7ZZ, R-7V38-RZQO, R-7WB5-5RHD, R-RU0J-77HX, R-RV8F-KZ8M, R-RXO8-CIQ0, R-RYW4-QAGP, R-S041-427E, R-S1BX-HTY3, R-S2JT-VLOS, R-1O8B-FNX4
 - D4 → `project/design/D04.md` — The ingest pipeline and worker — owns R-M8RN-87WV, R-M9ZJ-LZNK, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MDN8-RAVN, R-MG31-IUD1
 - D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): a prompts `/complete` client + json-mode helper — owns R-J8QP-BETB, R-4BCC-0EHJ, R-J9YL-P6K0, R-JCEE-GQ1E, R-0X4N-U0XB, R-8H1B-9CCI, R-0ZKG-LKEP, R-10SC-ZC5E, R-1209-D3W3
@@ -103,10 +103,10 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-1QO4-77EI → D10 (`project/design/D10.md`)
 - R-1RW0-KZ57 → D27 (`project/design/D27.md`)
 - R-1T3W-YQVW → D16 (`project/design/D16.md`)
-- R-1Y7B-TN7Y → D10 (`project/design/D10.md`)
 - R-1VJP-QADA → D27 (`project/design/D27.md`)
 - R-1WP9-CLM9 → D12 (`project/design/D12.md`)
 - R-1XX5-QDCY → D12 (`project/design/D12.md`)
+- R-1Y7B-TN7Y → D10 (`project/design/D10.md`)
 - R-1Z52-453N → D12 (`project/design/D12.md`)
 - R-203P-F1ET → D31 (`project/design/D31.md`)
 - R-22JI-6KW7 → D31 (`project/design/D31.md`)
@@ -123,6 +123,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-3Z43-YDM4 → D32 (`project/design/D32.md`)
 - R-40C0-C5CT → D32 (`project/design/D32.md`)
 - R-4BCC-0EHJ → D5 (`project/design/D05.md`)
+- R-4LKF-FB23 → D2 (`project/design/D02.md`, adopted from root `project/design/D08.md`)
 - R-5UPD-VVNA → D9 (`project/design/D09.md`)
 - R-5VXA-9NDZ → D9 (`project/design/D09.md`)
 - R-5X56-NF4O → D9 (`project/design/D09.md`)
@@ -152,11 +153,13 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-8AV9-2YKC → D58 (`project/design/D58.md`)
 - R-8C35-GQB1 → D58 (`project/design/D58.md`)
 - R-8DB1-UI1Q → D10 (`project/design/D10.md`)
+- R-8DF1-W89F → D2 (`project/design/D02.md`, adopted from root `project/design/D11.md`)
 - R-8EIY-89SF → D10 (`project/design/D10.md`)
 - R-8FQU-M1J4 → D44 (`project/design/D44.md`)
 - R-8GYQ-ZT9T → D45 (`project/design/D45.md`)
 - R-8H1B-9CCI → D5 (`project/design/D05.md`)
 - R-8I6N-DL0I → D59 (`project/design/D59.md`)
+- R-8IAN-FB87 → D2 (`project/design/D02.md`, adopted from root `project/design/D11.md`)
 - R-8JEJ-RCR7 → D59 (`project/design/D59.md`)
 - R-9EPS-LWWY → D49 (`project/design/D49.md`)
 - R-9FXO-ZONN → D49 (`project/design/D49.md`)
