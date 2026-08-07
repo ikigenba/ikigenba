@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 60
-
-- Phase 59 ⬜ realizes R-M51H-QWOL, R-M69E-4OFA, R-VKB6-SHHV — env-channel conformance: composed inventory root, manifest-surfaced knobs, Spec-derived drift oracle
