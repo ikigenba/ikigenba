@@ -15,10 +15,14 @@ Verification ids change.
 - D6 → `project/design/D06.md` — The nginx location fragment — R-W60I-CYGD, R-W78E-QQ72, R-W8GB-4HXR, R-W9O7-I9OG, R-WAW3-W1F5
 - D7 → `project/design/D07.md` — Test strategy and the end-to-end layer — R-5PIJ-TFHS, R-WC40-9T5U, R-WDBW-NKWJ
 - D8 → `project/design/D08.md` — MCP input schemas conform to the agentkit tool-schema subset — R-D2X0-57VI, R-D44W-IZM7, R-D5CS-WRCW
+- D9 → `project/design/D09.md` — Suite-contract conformance: the opsctl install layout & the authored env contract — adopts `R-4LKF-FB23` (root `project/design/D08.md`), `R-8DF1-W89F`, `R-8IAN-FB87` (root `project/design/D11.md`); mints none of its own
 
 ## Verification ids → Decision
 
+- R-4LKF-FB23 → D9 — `project/design/D09.md` (adopted from root `project/design/D08.md`)
 - R-5PIJ-TFHS → D7 — `project/design/D07.md`
+- R-8DF1-W89F → D9 — `project/design/D09.md` (adopted from root `project/design/D11.md`)
+- R-8IAN-FB87 → D9 — `project/design/D09.md` (adopted from root `project/design/D11.md`)
 - R-D2X0-57VI → D8 — `project/design/D08.md`
 - R-D44W-IZM7 → D8 — `project/design/D08.md`
 - R-D5CS-WRCW → D8 — `project/design/D08.md`
