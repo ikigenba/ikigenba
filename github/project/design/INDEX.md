@@ -19,6 +19,7 @@ Verification ids change.
 - D10 → `project/design/D10.md` — The loopback `GET /token` twin: installation tokens for repos' git plumbing — owns `R-GSI7-P8NI`, `R-GTQ4-30E7`, `R-GUY0-GS4W`, `R-GW5W-UJVL`
 - D11 → `project/design/D11.md` — GitHub's outbound calls move onto the shared instrumented HTTP client — owns `R-01NE-H6K8`, `R-02VA-UYAX`, `R-05B3-MHSB`, `R-06J0-09J0`
 - D12 → `project/design/D12.md` — nginx fragment: forward the edge-minted `X-Correlation-Id` on gated locations, blank it on ungated ones — owns `R-1S5A-Z3ZD`, `R-1TD7-CVQ2`, `R-1UL3-QNGR`
+- D13 → `project/design/D13.md` — Suite-contract conformance: the opsctl install layout and the authored env contract — adopts `R-4LKF-FB23` (root `project/design/D08.md`), `R-8DF1-W89F`, `R-8IAN-FB87` (root `project/design/D11.md`); mints none of its own
 
 ## Verification ids → Decision
 
@@ -34,8 +35,11 @@ Verification ids change.
 - R-42HV-I1HS → D7 — `project/design/D07.md`
 - R-43PR-VT8H → D7 — `project/design/D07.md`
 - R-44XO-9KZ6 → D7 — `project/design/D07.md`
+- R-4LKF-FB23 → D13 — `project/design/D13.md` (adopted from root `project/design/D08.md`)
 - R-7NJI-UTHM → D6 — `project/design/D06.md`
 - R-7PZB-MCZ0 → D6 — `project/design/D06.md`
+- R-8DF1-W89F → D13 — `project/design/D13.md` (adopted from root `project/design/D11.md`)
+- R-8IAN-FB87 → D13 — `project/design/D13.md` (adopted from root `project/design/D11.md`)
 - R-D0IM-VQ7H → D3 — `project/design/D03.md`
 - R-DLMX-CNDL → D2 — `project/design/D02.md`
 - R-DMUT-QF4A → D2 — `project/design/D02.md`
