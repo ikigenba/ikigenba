@@ -33,6 +33,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D27 → `project/design/D27.md` — The unlisted-slug token generator: `sites.NewToken()`, 30 chars of lowercase base32 (`a-z2-7`) from `crypto/rand` (150 bits), always slug-valid; stateless, uniqueness enforced by the primary key + one create retry; consumed through an injectable seam — owns R-H7WX-8DDO
 - D28 → `project/design/D28.md` — The dropbox mirror client takes the Router-provided instrumented outbound HTTP client (`rt.HTTPClient(…)`, injected into `NewMirrorClient` from the composition root; every `/list` page and `/content` fetch goes through it, and the live request context reaches it end to end through the `sync` MCP verb; the header logic and `outbound` recording are appkit's and are not re-proven here; sites produces no events, so the `eventplane` `Append` change cannot reach it) — owns R-BOE2-6LI3, R-BPLY-KD8S
 - D29 → `project/design/D29.md` — nginx fragment: all four gated locations capture the introspection-minted correlation id with `auth_request_set` and overwrite `X-Correlation-Id` on the upstream request; both ungated proxying locations (PRM bootstrap, the public site tier) set it to `""` so the chassis mints — owns R-BN65-STRE, R-9CMM-G2ZU
+- D30 → `project/design/D30.md` — The served-tree root composes from `IKIGENBA_ROOT`; no box-path literal in sites code — owns R-YWR7-Z1GM, R-YXZ4-CT7B; adopts R-VKB6-SHHV (root `project/design/D11.md`)
 
 ## Verification ids → Decision
 
@@ -152,11 +153,14 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-8U3F → D2 → `project/design/D02.md`
 - R-VYEF-053C → D23 → `project/design/D23.md`
 - R-VZMB-DWU1 → D23 → `project/design/D23.md`
+- R-VKB6-SHHV → D30 → `project/design/D30.md` (adopted from root `project/design/D11.md`)
 - R-WKGI-FVFJ → D6 → `project/design/D06.md`
 - R-WLOE-TN68 → D6 → `project/design/D06.md`
 - R-XVIT-1NXD → D24 → `project/design/D24.md`
 - R-XWQP-FFO2 → D24 → `project/design/D24.md`
 - R-XXYL-T7ER → D24 → `project/design/D24.md`
+- R-YWR7-Z1GM → D30 → `project/design/D30.md`
+- R-YXZ4-CT7B → D30 → `project/design/D30.md`
 - R-Z8DD-BL71 → D13 → `project/design/D13.md`
 - R-Z9L9-PCXQ → D15 → `project/design/D15.md`
 - R-ZAT6-34OF → D15 → `project/design/D15.md`
