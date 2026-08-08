@@ -14,8 +14,6 @@ matches only phase lines.
 
 Next phase: 02
 
-- Phase 01 ⬜ realizes — (structural; D4) — create `nginx/AGENTS.md` carrying the tree's manual-only testing declaration
-
 The artifacts of D1, D2, and D3 already exist in the tree — this spec was written
 over working code, not ahead of it — so those Decisions queue no work. New work
 appends a `phase-NN.md` and its line here, taking its number from the counter
