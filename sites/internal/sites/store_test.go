@@ -191,6 +191,131 @@ func TestSitesSchemaNameSlugSplitConstraints(t *testing.T) {
 	}
 }
 
+func TestVersionPlaneMigrationPreservesRowsAndStoreAccessors(t *testing.T) {
+	ctx := context.Background()
+	conn, err := sqlkit.Open(filepath.Join(t.TempDir(), "version_plane_test.db"))
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	migs, err := sqlkit.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if len(migs) < 2 {
+		t.Fatalf("migration count = %d, want prior set plus additive migration", len(migs))
+	}
+	if err := sqlkit.Migrate(ctx, conn, migs[:len(migs)-1]); err != nil {
+		t.Fatalf("migrate through pre-version-plane schema: %v", err)
+	}
+
+	original := []string{
+		"middle", "Display \x00 bytes", "private", "owner-\x00id",
+		"snapshot@example.com", "/Dropbox/\x00source", "2026-08-01T01:02:03.000000000Z",
+		"2026-08-02T04:05:06.000000000Z",
+	}
+	_, err = conn.ExecContext(ctx, `INSERT INTO sites
+		(slug, name, visibility, owner_id, owner_email, source_path, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		original[0], original[1], original[2], original[3], original[4], original[5], original[6], original[7])
+	if err != nil {
+		t.Fatalf("insert pre-plane row: %v", err)
+	}
+	if err := sqlkit.Migrate(ctx, conn, migs); err != nil {
+		t.Fatalf("apply additive version-plane migration: %v", err)
+	}
+
+	type column struct {
+		typeName     string
+		notNull      int
+		defaultValue string
+	}
+	columns := map[string]column{}
+	rows, err := conn.QueryContext(ctx, `SELECT name, type, "notnull", coalesce(dflt_value, '') FROM pragma_table_info('sites')`)
+	if err != nil {
+		t.Fatalf("read sites columns: %v", err)
+	}
+	for rows.Next() {
+		var name string
+		var c column
+		if err := rows.Scan(&name, &c.typeName, &c.notNull, &c.defaultValue); err != nil {
+			rows.Close()
+			t.Fatalf("scan sites column: %v", err)
+		}
+		columns[name] = c
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatalf("close sites columns: %v", err)
+	}
+	// R-OG3H-7TUS
+	if got := columns["repo_sha"]; got.typeName != "TEXT" || got.notNull != 1 || got.defaultValue != "''" {
+		t.Fatalf("repo_sha column = %+v, want TEXT NOT NULL DEFAULT ''", got)
+	}
+	if got := columns["repo_seeded"]; got.typeName != "INTEGER" || got.notNull != 1 || got.defaultValue != "0" {
+		t.Fatalf("repo_seeded column = %+v, want INTEGER NOT NULL DEFAULT 0", got)
+	}
+
+	var preserved [8]string
+	var defaultSha string
+	var defaultSeeded bool
+	err = conn.QueryRowContext(ctx, `SELECT slug, name, visibility, owner_id, owner_email, source_path,
+		created_at, updated_at, repo_sha, repo_seeded FROM sites WHERE slug = ?`, original[0]).Scan(
+		&preserved[0], &preserved[1], &preserved[2], &preserved[3], &preserved[4], &preserved[5],
+		&preserved[6], &preserved[7], &defaultSha, &defaultSeeded)
+	if err != nil {
+		t.Fatalf("read preserved pre-plane row: %v", err)
+	}
+	for i := range original {
+		if preserved[i] != original[i] {
+			t.Fatalf("pre-plane column %d = %q, want byte-identical %q", i, preserved[i], original[i])
+		}
+	}
+	if defaultSha != "" || defaultSeeded {
+		t.Fatalf("pre-plane defaults = (%q, %t), want (empty, false)", defaultSha, defaultSeeded)
+	}
+
+	s := NewStore(conn)
+	before, err := s.Get(ctx, original[0])
+	if err != nil {
+		t.Fatalf("Get pre-plane row: %v", err)
+	}
+	if err := s.SetRepoSha(ctx, before.Slug, "abc123"); err != nil {
+		t.Fatalf("SetRepoSha: %v", err)
+	}
+	afterSha, err := s.Get(ctx, before.Slug)
+	if err != nil {
+		t.Fatalf("Get after SetRepoSha: %v", err)
+	}
+	wantAfterSha := before
+	wantAfterSha.RepoSha = "abc123"
+	if afterSha != wantAfterSha {
+		t.Fatalf("SetRepoSha changed non-sha fields: got %+v, want %+v", afterSha, wantAfterSha)
+	}
+	if err := s.MarkSeeded(ctx, before.Slug); err != nil {
+		t.Fatalf("MarkSeeded first call: %v", err)
+	}
+	if err := s.MarkSeeded(ctx, before.Slug); err != nil {
+		t.Fatalf("MarkSeeded idempotent call: %v", err)
+	}
+	seeded, err := s.Get(ctx, before.Slug)
+	if err != nil || !seeded.RepoSeeded {
+		t.Fatalf("Get after MarkSeeded = %+v, %v; want seeded", seeded, err)
+	}
+
+	for _, slug := range []string{"zeta", "alpha"} {
+		if _, err := s.Create(ctx, slug, slug+" name", "owner", "owner@example.com", Public); err != nil {
+			t.Fatalf("Create(%q): %v", slug, err)
+		}
+	}
+	unseeded, err := s.ListUnseeded(ctx)
+	if err != nil {
+		t.Fatalf("ListUnseeded: %v", err)
+	}
+	if len(unseeded) != 2 || unseeded[0].Slug != "alpha" || unseeded[1].Slug != "zeta" || unseeded[0].RepoSeeded || unseeded[1].RepoSeeded {
+		t.Fatalf("ListUnseeded = %+v, want exactly alpha then zeta", unseeded)
+	}
+}
+
 func TestValidateName(t *testing.T) {
 	// R-ZFOR-M7N7
 	got, err := ValidateName("  Q3 Launch Page ")

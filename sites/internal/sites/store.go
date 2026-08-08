@@ -81,6 +81,8 @@ type Site struct {
 	OwnerID    string
 	OwnerEmail string
 	SourcePath string
+	RepoSha    string
+	RepoSeeded bool
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
@@ -191,7 +193,7 @@ func (s *Store) Create(ctx context.Context, slug, name, ownerID, ownerEmail stri
 // Get fetches one site by slug. Returns ErrNotFound when absent.
 func (s *Store) Get(ctx context.Context, slug string) (Site, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT slug, name, visibility, owner_id, owner_email, source_path, created_at, updated_at
+		`SELECT slug, name, visibility, owner_id, owner_email, source_path, repo_sha, repo_seeded, created_at, updated_at
 		 FROM sites WHERE slug = ?`, slug)
 	site, err := scanSite(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -206,7 +208,7 @@ func (s *Store) Get(ctx context.Context, slug string) (Site, error) {
 // List returns every site ordered by slug (deterministic).
 func (s *Store) List(ctx context.Context) ([]Site, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT slug, name, visibility, owner_id, owner_email, source_path, created_at, updated_at
+		`SELECT slug, name, visibility, owner_id, owner_email, source_path, repo_sha, repo_seeded, created_at, updated_at
 		 FROM sites ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("list sites: %w", err)
@@ -311,6 +313,64 @@ func (s *Store) Rename(ctx context.Context, slug, name string) error {
 	return nil
 }
 
+// SetRepoSha records the commit materialized in the served copy without
+// changing the site's owner-visible update timestamp.
+func (s *Store) SetRepoSha(ctx context.Context, slug, sha string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE sites SET repo_sha = ? WHERE slug = ?`, sha, slug)
+	if err != nil {
+		return fmt.Errorf("set repo sha %q: %w", slug, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set repo sha %q: %w", slug, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: %q", ErrNotFound, slug)
+	}
+	return nil
+}
+
+// MarkSeeded records that a site has entered the version plane. Repeating the
+// operation leaves the row in the same state.
+func (s *Store) MarkSeeded(ctx context.Context, slug string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE sites SET repo_seeded = 1 WHERE slug = ?`, slug)
+	if err != nil {
+		return fmt.Errorf("mark seeded %q: %w", slug, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark seeded %q: %w", slug, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: %q", ErrNotFound, slug)
+	}
+	return nil
+}
+
+// ListUnseeded returns the sites that have not entered the version plane in
+// deterministic slug order.
+func (s *Store) ListUnseeded(ctx context.Context) ([]Site, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT slug, name, visibility, owner_id, owner_email, source_path, repo_sha, repo_seeded, created_at, updated_at
+		 FROM sites WHERE repo_seeded = 0 ORDER BY slug`)
+	if err != nil {
+		return nil, fmt.Errorf("list unseeded sites: %w", err)
+	}
+	defer rows.Close()
+	out := []Site{}
+	for rows.Next() {
+		site, err := scanSite(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list unseeded sites: %w", err)
+		}
+		out = append(out, site)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list unseeded sites: %w", err)
+	}
+	return out, nil
+}
+
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -322,9 +382,10 @@ func scanSite(sc rowScanner) (Site, error) {
 		slug, name, createdAt, updatedAt string
 		visibility                       string
 		sourcePath                       sql.NullString
-		ownerID, ownerEmail              string
+		ownerID, ownerEmail, repoSha     string
+		repoSeeded                       bool
 	)
-	if err := sc.Scan(&slug, &name, &visibility, &ownerID, &ownerEmail, &sourcePath, &createdAt, &updatedAt); err != nil {
+	if err := sc.Scan(&slug, &name, &visibility, &ownerID, &ownerEmail, &sourcePath, &repoSha, &repoSeeded, &createdAt, &updatedAt); err != nil {
 		return Site{}, err
 	}
 	v, err := ParseVisibility(visibility)
@@ -337,6 +398,8 @@ func scanSite(sc rowScanner) (Site, error) {
 		Visibility: v,
 		OwnerID:    ownerID,
 		OwnerEmail: ownerEmail,
+		RepoSha:    repoSha,
+		RepoSeeded: repoSeeded,
 		CreatedAt:  parseTime(createdAt),
 		UpdatedAt:  parseTime(updatedAt),
 	}
