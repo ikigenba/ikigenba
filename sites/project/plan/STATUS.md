@@ -11,7 +11,6 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 56
 
-- Phase 49 ⬜ realizes D32 (slice) — `sites.VersionClient`: the version-plane client and the conforming recording test server
 - Phase 50 ⬜ realizes D33, D32 (slice) — the write path: mutating file tools commit through repos, then apply to the copy
 - Phase 51 ⬜ realizes D34 — `sync` reconciles as one batch commit, then updates the copy
 - Phase 52 ⬜ realizes D36 — site lifecycle against the plane: create, delete (archive), slug rotation
