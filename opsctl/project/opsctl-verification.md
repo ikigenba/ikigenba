@@ -1,12 +1,13 @@
-# opsctl — Live verification (out of loop)
+# opsctl — Manual verification (out of gate)
 
 This doc owns the acceptance checks the autonomous `ralph` build loop **cannot**
 perform: opsctl's **real-substrate** Verification ids, whose correctness depends
 on the real box — a genuine cross-device filesystem topology, the real
 `/etc/ikigenba/env`, the service user actually being able to read/write a path,
 real `nginx -t` against the real cert, or a real package manager / release
-installer. These are run by a **human operator** on the live box
-(`int.ikigenba.com`), never by `ralph`.
+installer. These checks are the tree's **manual layer** and are run by a human
+operator on the live box (`int.ikigenba.com`), never by the default gate. This
+tree has no composed or live test layer and no `go test -tags live` invocation.
 
 ## Why these are out of loop
 
@@ -63,10 +64,16 @@ ssh int 'command -v git sqlite3 pdftotext pdftoppm pdfinfo tar curl \
 Pass: all resolve and each version invocation exits cleanly; a re-run of
 `init-box` succeeds with the packages already present.
 
-**Falsifiability.** The fake `System` accepts any package name; only the real
+**Negative.** Run `ssh int 'command -v definitely-not-an-opsctl-binary'` and
+require a nonzero exit with no path printed. That is the loud failure the
+positive command produces for a missing baseline binary. The fake `System`
+accepts any package name; only the real
 `dnf` proves AL2023 actually provides these binaries under the names `git`,
 `sqlite`, `poppler-utils`, `tar`, and `curl-minimal`. The proof is the runnable
 binaries, not that an install was requested.
+
+**Record.** Update this id's row in **Recording the result** with the date,
+opsctl commit, and observed versions.
 
 ### D11 — `R-MMF1-HFMO` — the oauth CLI installs to `/usr/local/bin`, usable by any user
 
@@ -82,11 +89,18 @@ Pass: `oauth` resolves to `/usr/local/bin/oauth`, mode `0755`, `oauth -V` exits
 cleanly printing a version, and an unprivileged user runs it successfully.
 Re-running `init-box` reinstalls the latest release and it still runs.
 
-**Falsifiability.** The fake `System` records the `install-script` call without
+**Negative.** Run
+`ssh int 'sudo -u nginx test -x /root/.local/bin/oauth'` and require a nonzero
+exit. This control demonstrates that the any-user positive check fails loudly
+when the installer uses a root-private default location. The fake `System`
+records the `install-script` call without
 running it; only the real installer against the real GitHub release proves a
 runnable `linux/amd64` binary is fetched, unpacked, and placed executable. A
 default-`BINDIR` implementation would land it in `~/.local/bin`, not the global
 path, and fail the any-user check.
+
+**Record.** Update this id's row in **Recording the result** with the date,
+opsctl commit, installed path/mode/version, and unprivileged result.
 
 ### D1 — `R-WRJF-H7J9` — restore reconstructs `cache/` owned by the service user
 
@@ -99,9 +113,16 @@ ssh int 'sudo systemctl is-active <app>; curl -s -m5 -o /dev/null -w "%{http_cod
 
 Pass: `active` and `200` — the service user could write `cache/` on restart.
 
-**Falsifiability.** The fake accepts any chown; only a real restore + unit
+**Negative.** During a sanctioned disposable-service check, make `cache/`
+unwritable by the service account, restart it, and require `systemctl is-active`
+or the loopback health probe to fail nonzero/non-200; restore ownership before
+continuing. This loud control proves the positive restart exercised
+service-user access. The fake accepts any chown; only a real restore + unit
 restart proves `<app>:<app>` ownership actually lets the live service write. The
 proof is the running, health-200 service.
+
+**Record.** Update this id's row in **Recording the result** with the date,
+opsctl commit, snapshot key, ownership, unit state, and health status.
 
 ### D2 — `R-66UP-LI59` — stage completes across separate filesystems (no `EXDEV`)
 
@@ -115,9 +136,16 @@ ssh int 'sudo opsctl stage <app> <version> --artifact <bundle>; df /tmp /opt'
 Pass: `stage` completes and the version appears staged, with no cross-device
 (`EXDEV`) error; `df` confirms `/tmp` and `/opt` are genuinely distinct devices.
 
-**Falsifiability.** A unit test on one temp filesystem shares a device trivially;
+**Negative.** Run `ssh int 'test "$(df --output=source /tmp | tail -1)" !=
+"$(df --output=source /opt | tail -1)"'` and require success. If it fails, the
+cross-device precondition was not exercised and the check fails loudly. A stage
+implementation that uses direct rename will instead fail with `EXDEV`. A unit
+test on one temp filesystem shares a device trivially;
 only a real box with distinct mounts exercises the rename that the pre-fix code
 broke on.
+
+**Record.** Update this id's row in **Recording the result** with the date,
+opsctl commit, artifact/version, both devices, and stage result.
 
 ### D3 — `R-6FE0-9WC4` — opsctl auto-loads `/etc/ikigenba/env`
 
@@ -131,9 +159,16 @@ ssh int 'sudo opsctl backup <app>'   # no `. /etc/ikigenba/env`
 Pass: the verb reaches its S3 step (e.g. `IKIGENBA_BACKUP_BUCKET` is resolved)
 rather than failing `IKIGENBA_BACKUP_BUCKET is required`.
 
-**Falsifiability.** A unit test hands the loader a temp path and never exercises
+**Negative.** Temporarily move `/etc/ikigenba/env` aside during the sanctioned
+check, run the same unsourced command, and require the missing required-variable
+diagnostic; restore the file immediately with a shell trap. If the command still
+reaches S3, the positive probe was contaminated by another environment source.
+A unit test hands the loader a temp path and never exercises
 the fixed box path under a non-systemd interactive launch; only the box proves
 `main` wires `LoadEnvFile` to the real `/etc/ikigenba/env`.
+
+**Record.** Update this id's row in **Recording the result** with the date,
+opsctl commit, backup key, and confirmation that no shell env was sourced.
 
 ### D4 — `R-MYS7-2H2R` — dashboard deploy renders the apex block against real nginx + cert
 
@@ -150,10 +185,17 @@ the real cert, the reload succeeds, and afterward the apex serves the dashboard
 installed `include …/locations/*.conf` (public routes 200, protected MCP routes
 401; never 502/503).
 
-**Falsifiability.** The fake `System` never runs real `nginx -t` against the real
+**Negative.** In a temporary copy of the generated nginx configuration, replace
+the certificate path with `/definitely/missing.pem` and run `nginx -t -c
+<temporary-config>`; require a nonzero exit naming the missing certificate. Do
+not install or reload the broken copy. The fake `System` never runs real
+`nginx -t` against the real
 cert nor proves the include still resolves; the loop phase for D4 covers only
 `R-MSOP-5MDA`/`R-MTWL-JE3Z`/`R-MV4H-X5UO`/`R-MXKA-OPC2` (partial-Decision split).
 The proof is apex + all service routes serving after a real deploy.
+
+**Record.** Update this id's row in **Recording the result** with the date,
+opsctl commit, dashboard version, nginx result, and HTTP statuses.
 
 ### D8 — `R-AXY7-K8GA` — deploy leaves the served tree readable through the front door
 
@@ -167,8 +209,14 @@ ssh int 'curl -s -m5 -o /dev/null -w "%{http_code}\n" https://int.ikigenba.com/s
 Pass: `200` — the deployed sites process serves the public tier through nginx;
 the state-ownership chown already owns the served tree (no separate www step).
 
-**Falsifiability.** The fake accepts any chown; only a real deploy + live HTTP
+**Negative.** Fetch a deliberately absent public-site name with the same curl
+command and require a non-200 status. This is the loud control proving that the
+positive 200 is not an unconditional nginx response. The fake accepts any
+chown; only a real deploy + live HTTP
 fetch proves the tree is still readable by nginx afterward.
+
+**Record.** Update this id's row in **Recording the result** with the date,
+opsctl commit, sites version/name, and positive and control statuses.
 
 ### D9 — `R-B0E0-BRXO` — restore reconstitutes the served tree's ownership
 
@@ -182,8 +230,42 @@ ssh int 'curl -s -m5 -o /dev/null -w "%{http_code}\n" https://int.ikigenba.com/s
 Pass: `200` — the restored tree is owned by and servable through the sites
 process regardless of the snapshot's captured metadata.
 
-**Falsifiability.** The fake accepts any chown; only a real restore + live HTTP
+**Negative.** Fetch a deliberately absent public-site name with the same curl
+command and require a non-200 status. If both names return 200, the positive
+probe is not specific enough and does not count. The fake accepts any chown;
+only a real restore + live HTTP
 fetch proves ownership was reconstituted to the service user.
+
+**Record.** Update this id's row in **Recording the result** with the date,
+opsctl commit, snapshot key, ownership, and positive and control statuses.
+
+### `web` group access — served trees readable without state disclosure
+
+**Positive.** Choose a deployed `<svc>` whose real process account is a member
+of the `web` group, then run:
+
+```sh
+ssh int "sudo -u <svc> test -r /opt/<svc>/state/www/public"
+ssh int "sudo -u <svc> test -r /opt/<svc>/state/www/private"
+```
+
+Pass: both commands exit zero, proving the real account can traverse and read
+both served trees through its real uid/gid memberships.
+
+**Negative.** The same account must be denied both the service database and a
+directory listing of `state/`:
+
+```sh
+ssh int "sudo -u <svc> test ! -r /opt/<svc>/state/<svc>.db"
+ssh int "sudo -u <svc> sh -c '! ls /opt/<svc>/state >/dev/null 2>&1'"
+```
+
+Pass: both inverted checks exit zero. Remove the `!` from either command as a
+control and require a loud nonzero exit; a readable database or successful
+listing blocks acceptance.
+
+**Record.** Update the `web` group row in **Recording the result** with the
+date, opsctl commit, selected account, both positive exits, and both denials.
 
 ## Recording the result
 
@@ -202,3 +284,4 @@ lightweight running record follows.
 | `R-MYS7-2H2R` (D4) | 2026-08-07 | 075afac1 | Real `opsctl deploy dashboard v0.23.0+ba5a1e61`: apex block rendered to `conf.d/dashboard.conf`, `nginx -t` + reload succeeded against the real cert; apex 200 (ssl_verify 0), `/services` 200, `/srv/sites/public/...` 200, protected `/srv/{crm,ledger,wiki,telemetry}/mcp` all 401, no 502/503; authenticated MCP calls still mint. |
 | `R-AXY7-K8GA` (D8) | 2026-08-07 | 075afac1 | Real `opsctl deploy sites v0.24.0+d5fd912c`: unit `active`, loopback health 200, anonymous fetch of two published public sites (`dnd-rules`, `world-building-006`) returned 200 through nginx. |
 | `R-B0E0-BRXO` (D9) | 2026-08-07 | 075afac1 | `opsctl restore sites` on int from the pre-deploy snapshot (`sites-v0.23.0+823310ac.20260807T170926Z`): unit `active`, `state/` and `state/www` owned `sites:sites`, anonymous public-site fetch 200. |
+| web group access | not yet recorded | — | Run both positive reads and both negative disclosure checks above. |
