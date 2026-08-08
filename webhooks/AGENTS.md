@@ -33,10 +33,24 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- `go test ./...` from `webhooks/` (real temp-file SQLite, injected clock). Green
-  also means clean `go build ./...` and `go vet ./...`.
-- The prod build (via `bin/ship webhooks`) forces `GOWORK=off`; a `Makefile` drives
-  local dev.
+- The default gate is `go test ./...` from `webhooks/`. Green also means clean
+  `go build ./...`, `go vet ./...`, and `gofmt -l .` (which prints nothing).
+- This tree has two test layers, both in the default gate: **hermetic** tests use
+  temp-directory filesystems, real temp-file SQLite through the real migration
+  runner, the real eventplane outbox, deterministic injected clocks, `httptest`,
+  committed-file reads, and local subprocesses; **composed** boot smokes build
+  the real `cmd/webhooks` binary, run its `serve` verb, and reach `/health` over
+  loopback. The `internal/e2e` name is an informal package alias, not a layer.
+- There is no live layer and no `//go:build live` test file. There is no
+  tree-local manual runbook; bringing the full suite up and checking health
+  through nginx on `:8080` is the suite-level manual-layer check, not this
+  tree's gate.
+- Environmental preconditions beyond the Go toolchain are the `go` binary on
+  `PATH`, with the module cache already resolving webhooks' `replace` siblings,
+  and a POSIX `bash` with `grep`. Their absence is a hard failure, never a skip.
+- Tests, builds, and vet run in workspace mode through the repo-root `go.work`.
+  The production build via `bin/ship webhooks` forces `GOWORK=off` and is not
+  part of the default gate.
 
 ## Versioning
 
