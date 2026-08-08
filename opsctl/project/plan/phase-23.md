@@ -28,16 +28,17 @@ What gets built:
 
 **Done when:**
 
-- `R-2B4O-Z98N` — a test collects from `opsctl/project/design/D*.md` every id
+- `R-2B4O-Z98N` — a test collects from `project/design/D*.md` every id
   whose Verification entry marks it real-substrate/live-box, reads
-  `opsctl/project/opsctl-verification.md`, and asserts (a) every collected id
+  `project/opsctl-verification.md`, and asserts (a) every collected id
   appears in the runbook, and (b) each such runbook entry states both a positive
   and a negative check. Adding a real-substrate id to a Decision without a
   runbook entry fails; an entry with only a positive check fails.
-- The runbook exists and covers all nine items:
-  `test -f opsctl/project/opsctl-verification.md` exits 0, and
-  `grep -c -E 'R-WRJF-H7J9|R-66UP-LI59|R-6FE0-9WC4|R-MYS7-2H2R|R-AXY7-K8GA|R-B0E0-BRXO|R-JRO8-5Q0R|R-MMF1-HFMO' opsctl/project/opsctl-verification.md`
+- The runbook exists and covers all nine items (commands run from the service
+  root `opsctl/`, where the loop runs):
+  `test -f project/opsctl-verification.md` exits 0, and
+  `grep -c -E 'R-WRJF-H7J9|R-66UP-LI59|R-6FE0-9WC4|R-MYS7-2H2R|R-AXY7-K8GA|R-B0E0-BRXO|R-JRO8-5Q0R|R-MMF1-HFMO' project/opsctl-verification.md`
   reports at least 8 matching lines, and the runbook contains a section for the
-  `web`-group check (`grep -c 'web.*group' …` ≥ 1).
+  `web`-group check (`grep -c 'web.*group' project/opsctl-verification.md` ≥ 1).
 - The suite is green: `GOWORK=off go build ./...` and `GOWORK=off go test ./...`
   from `opsctl/` both succeed.
