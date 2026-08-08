@@ -242,7 +242,7 @@ func newFlagSet(name string) *flag.FlagSet {
 func runStage(ctx context.Context, root, name string, args []string) error {
 	fs := newFlagSet(name)
 	artifact := fs.String("artifact", "", "path to the static linux/amd64 artifact (required)")
-	force := fs.Bool("force", false, "replace an already-staged release at a different commit")
+	force := fs.Bool("force", false, "replace an already-staged release with different artifact bytes")
 	if err := fs.Parse(reorderArgs(args, map[string]bool{"artifact": true})); err != nil {
 		return helpErr(err)
 	}

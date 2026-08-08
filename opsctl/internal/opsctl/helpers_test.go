@@ -196,13 +196,6 @@ func (s *stubSystem) Journalctl(ctx context.Context, args ...string) error {
 type fakeRunner struct {
 	baseEnv []string // FAKE_VERSION=…, FAKE_EMBEDDED=…, FAKE_MANIFEST=…, FAKE_APP=…
 	events  *[]string
-	// commitByPath overrides FAKE_COMMIT per binary path, so the stage collision
-	// guard can be exercised: a real binary self-reports its OWN ldflag-stamped
-	// commit regardless of env, so the already-placed release and the incoming
-	// artifact (distinct paths) can report different SHAs. A path absent here falls
-	// back to the baseEnv FAKE_COMMIT (if any). Keyed by absolute path basename via
-	// exact path match.
-	commitByPath map[string]string
 }
 
 func (r fakeRunner) Run(ctx context.Context, binary, verb string, args []string, env []string) (string, error) {
@@ -212,9 +205,6 @@ func (r fakeRunner) Run(ctx context.Context, binary, verb string, args []string,
 	full := append([]string{verb}, args...)
 	cmd := exec.CommandContext(ctx, binary, full...)
 	cmd.Env = append(append(os.Environ(), r.baseEnv...), env...)
-	if c, ok := r.commitByPath[binary]; ok {
-		cmd.Env = append(cmd.Env, "FAKE_COMMIT="+c)
-	}
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -297,7 +287,29 @@ func stageBundleArtifact(t *testing.T, app, version, name string) string {
 	return bundleArtifactFromBinary(t, app, version, name, stageArtifact(t, name+"-bin"))
 }
 
+func stageBundleArtifactWithBinarySuffix(t *testing.T, app, version, name, suffix string) string {
+	t.Helper()
+	bin := stageArtifact(t, name+"-bin")
+	f, err := os.OpenFile(bin, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open binary for controlled byte difference: %v", err)
+	}
+	if _, err := f.WriteString(suffix); err != nil {
+		f.Close()
+		t.Fatalf("append controlled binary bytes: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close controlled binary: %v", err)
+	}
+	return bundleArtifactFromBinary(t, app, version, name, bin)
+}
+
 func bundleArtifactFromBinary(t *testing.T, app, version, name, bin string, wwwRoot ...string) string {
+	t.Helper()
+	return bundleArtifactFromBinaryManifest(t, app, version, name, bin, "APP="+app+"\n", wwwRoot...)
+}
+
+func bundleArtifactFromBinaryManifest(t *testing.T, app, version, name, bin, manifest string, wwwRoot ...string) string {
 	t.Helper()
 	dst := filepath.Join(t.TempDir(), name+".tar.gz")
 	f, err := os.Create(dst)
@@ -352,7 +364,7 @@ func bundleArtifactFromBinary(t *testing.T, app, version, name, bin string, wwwR
 	addDir("share/" + version + "/assets")
 	addFile("libexec/"+app+"-"+version, bin, 0o755)
 	addBytes("etc/"+version+"/nginx.conf", []byte("location /srv/"+app+"/ {\n    proxy_pass http://127.0.0.1:3000;\n}\n"), 0o644)
-	addBytes("etc/"+version+"/manifest.env", []byte("APP="+app+"\n"), 0o644)
+	addBytes("etc/"+version+"/manifest.env", []byte(manifest), 0o644)
 	addBytes("share/"+version+"/assets/resource.txt", []byte(app+" "+version+"\n"), 0o644)
 	if len(wwwRoot) > 0 {
 		if err := filepath.Walk(wwwRoot[0], func(path string, info os.FileInfo, err error) error {

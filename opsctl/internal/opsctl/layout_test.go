@@ -77,7 +77,7 @@ type stagePathRecordingRunner struct {
 }
 
 func (r stagePathRecordingRunner) Run(ctx context.Context, binary, verb string, args []string, env []string) (string, error) {
-	if verb == "version" || verb == "manifest" {
+	if verb == "version" {
 		*r.binaries = append(*r.binaries, binary)
 	}
 	return r.fakeRunner.Run(ctx, binary, verb, args, env)

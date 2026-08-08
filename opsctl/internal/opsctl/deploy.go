@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -15,16 +16,16 @@ import (
 // It is the first half of the old monolithic install (ADR install steps 1–2):
 //
 //  1. unpack the tar.gz bundle into a temp tree and preflight its libexec binary.
-//  2. SHA collision guard against any already-placed libexec/<app>-<version>.
+//  2. byte-content collision guard against any already-placed libexec/<app>-<version>.
 //  3. place libexec/<app>-<version>, etc/<version>, and share/<version>.
 //
 // The live symlinks are NEVER touched by stage — those change only at Deploy
 // (the cutover), so a staged-but-not-deployed release is invisible to the
 // running unit and the dashboard's manifest derivation.
 //
-// On success — whether the artifact was freshly placed OR the same-SHA build was
+// On success — whether the artifact was freshly placed OR the same-byte build was
 // already present (an idempotent no-op) — stage deletes the /tmp artifact (decision
-// 2: the release is confirmed in place either way). On a refusal (different-SHA
+// 2: the release is confirmed in place either way). On a refusal (different-byte
 // collision without --force, a corrupt existing release, a failed preflight) the
 // /tmp artifact is LEFT so the operator can retry (e.g. with --force) without a
 // re-scp.
@@ -65,38 +66,25 @@ func (o *Opsctl) Stage(ctx context.Context, app, version, artifact string, force
 	relBin := l.LibexecBinary(version)
 
 	// 2. Collision guard: if a binary is already placed for this version, compare
-	//    commit SHAs. Same SHA → idempotent no-op (skip the copy). Different SHA, or
-	//    the existing binary won't exec (corrupt) → refuse unless --force. On any
+	//    the artifact bytes. Identical bytes → idempotent no-op (skip the copy).
+	//    Different bytes → refuse unless --force. On any
 	//    refusal the /tmp artifact is kept (we return before the os.Remove below).
 	if _, err := os.Stat(relBin); err == nil {
-		existing, existErr := o.Runner.Run(ctx, relBin, "version", nil, nil)
-		switch {
-		case existErr != nil:
-			if !force {
-				return fmt.Errorf("stage: existing release %s will not exec (corrupt?); re-stage with --force: %w", relBin, existErr)
-			}
-			o.logf("existing release %s will not exec — --force overrides, replacing", relBin)
-		default:
-			incoming, err := o.Runner.Run(ctx, tmpBin, "version", nil, nil)
-			if err != nil {
-				return fmt.Errorf("stage: artifact %q version: %w", app, err)
-			}
-			existSHA := commitToken(existing)
-			incomingSHA := commitToken(incoming)
-			if existSHA == incomingSHA {
-				// Same commit already staged — confirm in place, delete /tmp, done.
-				o.logf("release %s already staged at the same commit %q — idempotent no-op", version, incomingSHA)
-				if err := os.Remove(artifact); err != nil && !os.IsNotExist(err) {
-					return fmt.Errorf("stage: remove staged artifact: %w", err)
-				}
-				return nil
-			}
-			if !force {
-				return fmt.Errorf("stage: release %s already staged at commit %q, incoming is %q; re-stage with --force to replace",
-					version, existSHA, incomingSHA)
-			}
-			o.logf("release %s already staged at commit %q — --force overrides, replacing with %q", version, existSHA, incomingSHA)
+		same, err := sameFileContent(relBin, tmpBin)
+		if err != nil {
+			return fmt.Errorf("stage: compare existing and incoming release bytes: %w", err)
 		}
+		if same {
+			o.logf("release %s already staged with identical bytes — idempotent no-op", version)
+			if err := os.Remove(artifact); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("stage: remove staged artifact: %w", err)
+			}
+			return nil
+		}
+		if !force {
+			return fmt.Errorf("stage: release %s already staged with different artifact bytes; re-stage with --force to replace", version)
+		}
+		o.logf("release %s already staged with different bytes — --force overrides, replacing", version)
 	}
 
 	// 3. Place the bundled tiers.
@@ -128,6 +116,32 @@ func (o *Opsctl) Stage(ctx context.Context, app, version, artifact string, force
 
 	o.logf("staged %s %s", app, version)
 	return nil
+}
+
+func sameFileContent(a, b string) (bool, error) {
+	hash := func(path string) ([sha256.Size]byte, error) {
+		f, err := os.Open(path)
+		if err != nil {
+			return [sha256.Size]byte{}, err
+		}
+		defer f.Close()
+		h := sha256.New()
+		if _, err := io.Copy(h, f); err != nil {
+			return [sha256.Size]byte{}, err
+		}
+		var sum [sha256.Size]byte
+		copy(sum[:], h.Sum(nil))
+		return sum, nil
+	}
+	aSum, err := hash(a)
+	if err != nil {
+		return false, err
+	}
+	bSum, err := hash(b)
+	if err != nil {
+		return false, err
+	}
+	return aSum == bSum, nil
 }
 
 func unpackBundle(artifact, dst string) error {

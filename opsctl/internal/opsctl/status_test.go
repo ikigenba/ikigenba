@@ -9,7 +9,7 @@ import (
 )
 
 // TestStatus_SingleApp deploys one app and asserts `status <app>` reports its
-// version, the binary's self-reported commit SHA, and the unit's raw state. The
+// full version identity and the unit's raw state. The
 // stub's settable activeState drives the ACTIVE column (here "failed") so the raw
 // state is shown rather than collapsed to an error.
 func TestStatus_SingleApp(t *testing.T) {
@@ -17,18 +17,9 @@ func TestStatus_SingleApp(t *testing.T) {
 	app := "ledger"
 	sys := &stubSystem{activeState: "failed"}
 
-	o := newOpsctl(t, root, app, sys, fakeEnv(app, "v1.0.0", 1, ""))
-	// The live binary must self-report a commit SHA for the SHA column; give the
-	// runner a per-path commit for the deployed release binary.
-	l := NewLayout(root, app)
-	o.Runner = fakeRunner{
-		baseEnv: fakeEnv(app, "v1.0.0", 1, ""),
-		commitByPath: map[string]string{
-			l.LibexecBinary("v1.0.0"): "deadbeef",
-			l.RunLink():               "deadbeef", // status reads via the stable run symlink path
-		},
-	}
-	if err := stageAndDeploy(t, o, app, "v1.0.0", stageArtifact(t, "ledger-a")); err != nil {
+	version := "v1.0.0+deadbeef"
+	o := newOpsctl(t, root, app, sys, fakeEnv(app, version, 1, ""))
+	if err := stageAndDeploy(t, o, app, version, stageArtifact(t, "ledger-a")); err != nil {
 		t.Fatalf("deploy: %v", err)
 	}
 
@@ -38,10 +29,13 @@ func TestStatus_SingleApp(t *testing.T) {
 		t.Fatalf("status: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{app, "v1.0.0", "deadbeef", "failed"} {
+	for _, want := range []string{app, version, "failed"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("status output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "SHA") {
+		t.Fatalf("status output retained removed SHA column:\n%s", out)
 	}
 }
 

@@ -4,14 +4,16 @@ import (
 	"context"
 	"debug/elf"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
 // preflight runs the install gates that refuse a bad artifact BEFORE anything
 // live is touched (ADR install step 1): the artifact is a static linux/amd64
 // binary, its `version` self-report matches the <version> arg (the binary can't
-// lie about which version it is), and its `manifest` parses into a well-formed
-// manifest.env. Any failure aborts with the live release untouched.
+// lie about which version it is), and the authored manifest.env in the bundle
+// names the requested app. Any failure aborts with the live release untouched.
 func (o *Opsctl) preflight(ctx context.Context, artifact, app, version string) error {
 	if !validVersion(version) {
 		return fmt.Errorf("preflight: invalid version %q: want %s", version, versionShape)
@@ -34,12 +36,15 @@ func (o *Opsctl) preflight(ctx context.Context, artifact, app, version string) e
 		return fmt.Errorf("preflight: artifact self-reports version %q, want %q", got, version)
 	}
 
-	// The manifest must parse and carry at least the APP key naming this app.
-	manOut, err := o.Runner.Run(ctx, artifact, "manifest", nil, nil)
+	// The authored manifest in the unpacked bundle is the app identity of record.
+	// artifact is <scratch>/libexec/<app>-<version>, so its sibling etc tier is
+	// available before anything is placed in the live app tree.
+	manifestPath := filepath.Join(filepath.Dir(filepath.Dir(artifact)), "etc", version, "manifest.env")
+	manBody, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return fmt.Errorf("preflight: %q manifest: %w", app, err)
+		return fmt.Errorf("preflight: read authored manifest %s: %w", manifestPath, err)
 	}
-	man, err := parseManifest(manOut)
+	man, err := parseManifest(string(manBody))
 	if err != nil {
 		return fmt.Errorf("preflight: %q manifest: %w", app, err)
 	}
@@ -88,26 +93,4 @@ func versionToken(out string) string {
 		line = line[:i]
 	}
 	return strings.TrimSpace(line)
-}
-
-// commitToken extracts the commit-SHA field from `<app> version` output, which is
-// "<version>" or "<version> (<sha>[-dirty])". It returns the contents of the
-// parenthesised "(<sha>[-dirty])" field (without the parens), or "" if the
-// self-report carries no commit stamp. The stage collision guard compares these:
-// versionToken strips the SHA, so it cannot tell two builds of the same version
-// apart — only the commit token can.
-func commitToken(out string) string {
-	line := strings.TrimSpace(out)
-	if i := strings.IndexByte(line, '\n'); i >= 0 {
-		line = line[:i]
-	}
-	open := strings.IndexByte(line, '(')
-	if open < 0 {
-		return ""
-	}
-	close := strings.IndexByte(line[open:], ')')
-	if close < 0 {
-		return ""
-	}
-	return strings.TrimSpace(line[open+1 : open+close])
 }

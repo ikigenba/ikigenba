@@ -345,6 +345,51 @@ func TestPreflight_Rejections(t *testing.T) {
 	}
 }
 
+func TestStageCollisionGuardComparesArtifactBytes(t *testing.T) {
+	// R-TBF2-2SE4
+	const (
+		app     = "ledger"
+		version = "v1.0.0"
+	)
+	ctx := context.Background()
+	root := t.TempDir()
+	l := NewLayout(root, app)
+	o := newOpsctl(t, root, app, &stubSystem{}, fakeEnv(app, version, 1, ""))
+
+	first := stageBundleArtifact(t, app, version, "first")
+	if err := o.Stage(ctx, app, version, first, false); err != nil {
+		t.Fatalf("first stage: %v", err)
+	}
+	placed, err := os.ReadFile(l.LibexecBinary(version))
+	if err != nil {
+		t.Fatalf("read placed binary: %v", err)
+	}
+
+	identical := stageBundleArtifact(t, app, version, "identical")
+	if err := o.Stage(ctx, app, version, identical, false); err != nil {
+		t.Fatalf("identical-byte re-stage: %v", err)
+	}
+	if _, err := os.Stat(identical); !os.IsNotExist(err) {
+		t.Fatalf("identical-byte no-op retained bundle (stat err=%v)", err)
+	}
+
+	different := stageBundleArtifactWithBinarySuffix(t, app, version, "different", "controlled-difference")
+	err = o.Stage(ctx, app, version, different, false)
+	if err == nil || !strings.Contains(err.Error(), "different artifact bytes") {
+		t.Fatalf("different-byte re-stage err = %v, want collision refusal", err)
+	}
+	if _, err := os.Stat(different); err != nil {
+		t.Fatalf("different-byte refusal removed retry bundle: %v", err)
+	}
+	stillPlaced, err := os.ReadFile(l.LibexecBinary(version))
+	if err != nil {
+		t.Fatalf("read binary after refusal: %v", err)
+	}
+	if !bytes.Equal(stillPlaced, placed) {
+		t.Fatal("different-byte refusal changed the already-staged binary")
+	}
+}
+
 // TestInstall_ConvertsLegacyBinRunFile asserts the conversion case the D2 box
 // prototype hit: when /opt/<app>/bin/run already exists as a REGULAR FILE (the
 // old pre-redesign layout's wrapper script), install must replace it with the

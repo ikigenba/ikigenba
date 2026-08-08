@@ -173,10 +173,10 @@ func TestPrune_NewestSetUsesSemanticNumericOrdering(t *testing.T) {
 func assertReleaseSetExists(t *testing.T, l Layout, version string) {
 	t.Helper()
 	for name, path := range map[string]string{
-		"libexec binary": l.LibexecBinary(version),
-		"nginx config":   l.NginxConfFile(version),
-		"manifest":       l.ManifestFile(version),
-		"share dir":      l.ShareVersionDir(version),
+		"libexec binary":  l.LibexecBinary(version),
+		"nginx config":    l.NginxConfFile(version),
+		"authored config": l.ManifestFile(version),
+		"share dir":       l.ShareVersionDir(version),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("%s for %s missing: %v", name, version, err)
