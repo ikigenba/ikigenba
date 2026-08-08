@@ -215,18 +215,17 @@ func TestNonTestGoSourceHasNoBoxPathLiteral(t *testing.T) {
 
 func TestCompositionRootOwnPortUsesRegistry(t *testing.T) {
 	// R-QJ8F-AXWP
-	cmd := exec.Command("go", "run", "-buildvcs=false", ".", "manifest")
-	emitted, err := cmd.Output()
+	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
 	if err != nil {
-		t.Fatalf("run dropbox manifest: %v", err)
+		t.Fatalf("read committed manifest.env: %v", err)
 	}
-	fields, _, err := manifest.Parse(bytes.NewReader(emitted))
+	fields, _, err := manifest.Parse(bytes.NewReader(committed))
 	if err != nil {
-		t.Fatalf("parse emitted manifest: %v", err)
+		t.Fatalf("parse committed manifest: %v", err)
 	}
 	wantPort := strconv.Itoa(registry.MustPort("dropbox"))
 	if got := fields["PORT"]; got != wantPort {
-		t.Fatalf("emitted Spec.Port = %q, want registry dropbox port %q", got, wantPort)
+		t.Fatalf("committed PORT = %q, want registry dropbox port %q", got, wantPort)
 	}
 
 	fset := token.NewFileSet()

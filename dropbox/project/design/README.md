@@ -120,7 +120,7 @@ Shared facts every Decision leans on:
   (== `3200`; D9), `MCP:true`, `WWW:true` (D11), `Feed:"/feed"` (event-plane
   producer), plus its `Migrations`, `Events`, `ManifestExtras`, a `Health`
   reporter, a `Producer` hook, and a `Workers` hook (the background sync engine).
-  The fixed verbs (`serve`/`version`/`manifest`/`migrate`/`schema`),
+  The fixed verbs (`serve`/`version`/`migrate`/`schema`),
   config-from-env, the loopback HTTP server + PRM + identity gate, the www-site
   load + static mount, the MCP transport with the standard `health`/`reflection`
   tools, and the `/feed` mount are appkit's. main.go declares dropbox's identity

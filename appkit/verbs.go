@@ -54,6 +54,13 @@ func manifestFields(spec Spec) manifest.Fields {
 	}
 }
 
+// Manifest renders spec's portable manifest via manifest.Emit — the library
+// form of the retired manifest verb (root project/design/D11.md). Per-service
+// drift tests byte-compare it against the committed etc/manifest.env.
+func Manifest(spec Spec) string {
+	return manifest.Emit(manifestFields(spec))
+}
+
 func manifestConsumes(spec Spec) []string {
 	if len(spec.Consumers) == 0 {
 		return spec.Consumes

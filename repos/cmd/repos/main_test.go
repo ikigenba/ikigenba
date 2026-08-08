@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"appkit"
 	"appkit/config"
 	appdb "appkit/db"
 	"appkit/manifest"
@@ -335,17 +336,9 @@ func freeLoopbackPort(t *testing.T) int {
 	return port
 }
 
-func TestManifestVerbMatchesCommittedServiceContract(t *testing.T) {
+func TestManifestRenderMatchesCommittedServiceContract(t *testing.T) {
 	// R-EISY-2LYZ
-	binary := filepath.Join(t.TempDir(), "repos")
-	command := exec.Command("go", "build", "-o", binary, ".")
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("build repos binary: %v: %s", err, output)
-	}
-	output, err := exec.Command(binary, "manifest").CombinedOutput()
-	if err != nil {
-		t.Fatalf("repos manifest: %v: %s", err, output)
-	}
+	output := []byte(appkit.Manifest(reposSpec()))
 	want := "APP=repos\nMOUNT=/srv/repos/\nDEFAULT=false\nPORT=3007\nMCP=true\nFEED=/feed\nCONSUMES=webhooks\nREPOS_PROVIDER=anthropic\nREPOS_MODEL=claude-opus-4-8\nREPOS_SESSION_TTL=30m\nREPOS_MAX_SESSIONS=2\n"
 	if string(output) != want {
 		t.Fatalf("manifest output:\n%s\nwant:\n%s", output, want)
@@ -355,7 +348,7 @@ func TestManifestVerbMatchesCommittedServiceContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(output, committed) {
-		t.Fatalf("manifest verb differs from etc/manifest.env:\n%s", committed)
+		t.Fatalf("manifest render differs from etc/manifest.env:\n%s", committed)
 	}
 }
 

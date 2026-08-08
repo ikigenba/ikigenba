@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"appkit"
 	appkitdb "appkit/db"
 	"appkit/manifest"
 	appkitserver "appkit/server"
@@ -46,11 +47,7 @@ func appMain() {
 }
 
 func TestManifestMatchesCommittedFile(t *testing.T) {
-	cmd := telemetryCommand("manifest")
-	got, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("emit manifest: %v", err)
-	}
+	got := []byte(appkit.Manifest(telemetrySpec()))
 	want, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
 	if err != nil {
 		t.Fatalf("read committed manifest: %v", err)
