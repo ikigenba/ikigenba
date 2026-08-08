@@ -11,7 +11,6 @@ outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 39
 
-- Phase 32 ⬜ realizes D19 — the git smart-HTTP door
 - Phase 33 ⬜ realizes D20 — run tokens
 - Phase 34 ⬜ realizes D21 (slice) — statuses
 - Phase 35 ⬜ realizes D21 (slice) — the merge verb
