@@ -11,5 +11,4 @@ outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 39
 
-- Phase 37 ⬜ realizes D10, D13 — the nginx fragment: the git-door location and correlation capture
 - Phase 38 ⬜ realizes D1, D14, D15, D16 — composition root, suite-contract conformance, and the tree's declarations
