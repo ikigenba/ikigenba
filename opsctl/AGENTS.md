@@ -30,11 +30,21 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- `GOWORK=off go build ./...`
-- `GOWORK=off go test ./...`
+The default gate is `GOWORK=off go test ./...`, run from `opsctl/`. The production
+build and the test gate both use `GOWORK=off`; build separately with
+`GOWORK=off go build ./...`.
 
-Unit tests run against temp dirs via faked seams; claims needing the real box carry
-a live-box verification id checked out of loop.
+This tree has exactly two testing layers:
+
+- **Hermetic:** tests use temp-dir filesystems, real archives through the real
+  `tar` binary, and faked privilege seams.
+- **Manual:** privileged checks that require the real box are recorded in
+  `project/opsctl-verification.md` and run by an operator outside the gate.
+
+There is no composed layer and no live layer. In particular, this tree has no
+`//go:build live` files and no `go test -tags live` invocation. Beyond the Go
+toolchain, the hermetic gate requires a real `tar` binary on `PATH`; its absence
+is a hard failure, never a skip.
 
 ## Versioning
 
