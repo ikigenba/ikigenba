@@ -11,7 +11,6 @@ outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 39
 
-- Phase 29 ⬜ realizes D17, D23 (slice) — custody, the `Git` seam, the ref choke point, and the events registry
 - Phase 30 ⬜ realizes D18 (slice) — the loopback read API: content, list, stat, archive
 - Phase 31 ⬜ realizes D18 (slice), D23 (slice) — the loopback commit API: put, delete, batch
 - Phase 32 ⬜ realizes D19 — the git smart-HTTP door
