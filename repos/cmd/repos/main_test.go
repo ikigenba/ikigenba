@@ -75,6 +75,7 @@ func TestInstalledLayoutBootsBuiltService(t *testing.T) {
 	command.Dir = root
 	command.Env = append(os.Environ(),
 		"REPOS_STATE_DIR="+stateDir,
+		"REPOS_MAX_COMMIT_BYTES=1048576",
 		"REPOS_DB_PATH="+dbPath,
 		"REPOS_GENERATION_PATH="+generationPath,
 		"REPOS_WWW_PATH="+filepath.Join(shareCurrent, "www"),

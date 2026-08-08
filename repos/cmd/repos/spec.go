@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 
 	"appkit"
 	"appkit/web"
@@ -37,17 +38,28 @@ func reposSpec() appkit.Spec {
 			if stateDir == "" {
 				return fmt.Errorf("repos: REPOS_STATE_DIR is required")
 			}
-			var err error
+			maxCommitBytesText := os.Getenv("REPOS_MAX_COMMIT_BYTES")
+			if maxCommitBytesText == "" {
+				return fmt.Errorf("repos: REPOS_MAX_COMMIT_BYTES is required")
+			}
+			maxCommitBytes, err := strconv.ParseInt(maxCommitBytesText, 10, 64)
+			if err != nil || maxCommitBytes <= 0 {
+				return fmt.Errorf("repos: REPOS_MAX_COMMIT_BYTES must be a positive integer")
+			}
 			custody, err = repos.NewCustody(stateDir, repos.NewCommandGit(os.Getenv("REPOS_GIT_BIN"), stateDir), nil)
 			if err != nil {
 				return err
 			}
 			service = repos.NewService(repos.NewStore(rt.DB()))
 			service.SetCustody(custody)
+			service.SetMaxCommitBytes(maxCommitBytes)
 			rt.HandleLoopback("GET /content", repos.ContentHandler(service))
 			rt.HandleLoopback("GET /list", repos.ListHandler(service))
 			rt.HandleLoopback("GET /stat", repos.StatHandler(service))
 			rt.HandleLoopback("GET /archive", repos.ArchiveHandler(service))
+			rt.HandleLoopback("PUT /content", repos.PutContentHandler(service))
+			rt.HandleLoopback("DELETE /content", repos.DeleteContentHandler(service))
+			rt.HandleLoopback("POST /commit", repos.CommitHandler(service))
 			handler, err := mcp.NewHandler(service, rt)
 			if err != nil {
 				return err

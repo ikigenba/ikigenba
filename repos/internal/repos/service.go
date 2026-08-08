@@ -13,9 +13,10 @@ import (
 // Service is the single domain object assembled by the composition root.
 // The v2 behavior is introduced by later phases.
 type Service struct {
-	store    *Store
-	producer *outbox.Outbox
-	custody  *Custody
+	store          *Store
+	producer       *outbox.Outbox
+	custody        *Custody
+	maxCommitBytes int64
 }
 
 func NewService(store *Store) *Service { return &Service{store: store} }
@@ -24,6 +25,10 @@ func NewService(store *Store) *Service { return &Service{store: store} }
 func (s *Service) SetProducer(producer *outbox.Outbox) { s.producer = producer }
 
 func (s *Service) SetCustody(custody *Custody) { s.custody = custody }
+
+// SetMaxCommitBytes configures the maximum raw HTTP request body accepted by
+// the commit handlers.
+func (s *Service) SetMaxCommitBytes(limit int64) { s.maxCommitBytes = limit }
 
 // ArchiveRepository moves custody, updates metadata, and appends the archived event on tx.
 func (s *Service) ArchiveRepository(ctx context.Context, tx *sql.Tx, kind, name string) (string, error) {

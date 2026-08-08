@@ -88,6 +88,8 @@ func writeReadError(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	case errors.Is(err, ErrConflict), errors.Is(err, ErrForcePush):
 		status = http.StatusConflict
+	case errors.Is(err, ErrTooLarge):
+		status = http.StatusRequestEntityTooLarge
 	}
 	http.Error(w, err.Error(), status)
 }

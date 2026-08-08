@@ -16,6 +16,7 @@ var (
 	ErrConflict   = errors.New("repos: conflict")
 	ErrNotFound   = errors.New("repos: not found")
 	ErrForcePush  = errors.New("repos: force push rejected")
+	ErrTooLarge   = errors.New("repos: too_large")
 )
 
 var Kinds = []string{"sites", "scripts", "prompts", "code"}

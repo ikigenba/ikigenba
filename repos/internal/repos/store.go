@@ -48,6 +48,13 @@ type Store struct {
 
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
+func (s *Store) BeginTx(ctx context.Context) (*sql.Tx, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("repos store: database is not configured")
+	}
+	return s.db.BeginTx(ctx, nil)
+}
+
 func (s *Store) InsertRepository(ctx context.Context, tx *sql.Tx, repository Repository) error {
 	if err := requireTx(tx); err != nil {
 		return err
