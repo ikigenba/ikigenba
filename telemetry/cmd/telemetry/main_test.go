@@ -99,6 +99,97 @@ func TestCompiledSpecManifestMatchesCommittedBytes(t *testing.T) {
 	}
 }
 
+func TestAgentsDeclaresTestingContract(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read committed AGENTS.md: %v", err)
+	}
+	document := string(body)
+	testsHeading := "## Tests"
+	headingAt := strings.Index(document, testsHeading)
+	if headingAt < 0 {
+		t.Fatal("AGENTS.md is missing its Tests section")
+	}
+	testsSection := document[headingAt+len(testsHeading):]
+	if nextHeading := strings.Index(testsSection, "\n## "); nextHeading >= 0 {
+		testsSection = testsSection[:nextHeading]
+	}
+
+	// R-O1AD-MRKW
+	requiredDeclarations := []struct {
+		name  string
+		parts []string
+	}{
+		{name: "default gate", parts: []string{"go test ./...", "run from `telemetry/`"}},
+		{name: "hermetic layer", parts: []string{"**hermetic**"}},
+		{name: "composed layer", parts: []string{"**composed**", "`internal/e2e/`", "boot smoke", "`cmd/telemetry/main_test.go`"}},
+		{name: "absence of a live layer", parts: []string{"There is no live layer"}},
+		{name: "environmental preconditions", parts: []string{"no environmental preconditions beyond the Go toolchain"}},
+		{name: "development GOWORK mode", parts: []string{"telemetry's own `go.work`"}},
+		{name: "production GOWORK mode", parts: []string{"production build", "`GOWORK=off`"}},
+	}
+	for _, declaration := range requiredDeclarations {
+		for _, part := range declaration.parts {
+			if !strings.Contains(testsSection, part) {
+				t.Errorf("AGENTS.md Tests section is missing the %s declaration %q", declaration.name, part)
+			}
+		}
+	}
+}
+
+func TestTestFilesDoNotSkipOutsideLiveLayer(t *testing.T) {
+	treeRoot := filepath.Join("..", "..")
+	skipNeedles := []string{"t." + "Skip(", "t." + "Skipf(", "t." + "SkipNow("}
+
+	// R-O2IA-0JBL
+	err := filepath.WalkDir(treeRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		if hasLiveBuildConstraint(body) {
+			return nil
+		}
+		for lineIndex, line := range strings.Split(string(body), "\n") {
+			for _, needle := range skipNeedles {
+				if strings.Contains(line, needle) {
+					t.Errorf("skip call in %s:%d", path, lineIndex+1)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk telemetry test files: %v", err)
+	}
+}
+
+func hasLiveBuildConstraint(body []byte) bool {
+	for _, line := range strings.Split(string(body), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "package ") {
+			return false
+		}
+		if !strings.HasPrefix(trimmed, "//go:build ") && !strings.HasPrefix(trimmed, "// +build ") {
+			continue
+		}
+		for _, field := range strings.FieldsFunc(trimmed, func(r rune) bool {
+			return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '.')
+		}) {
+			if field == "live" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestServeBootsFromInstallLayout(t *testing.T) {
 	workspaceRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
