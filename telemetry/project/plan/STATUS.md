@@ -13,4 +13,6 @@ gone. A phase body file carries no marker of its own. This document
 deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
-Next phase: 13
+Next phase: 14
+
+- Phase 13 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — create the missing `telemetry/AGENTS.md` with its Tests declarations (default gate, hermetic + composed layers, no preconditions, GOWORK mode) and prove the declaration and the no-skip rule from `cmd/telemetry/main_test.go`

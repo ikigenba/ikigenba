@@ -60,9 +60,10 @@ no failures, with storage tests run against real temp-file SQLite and transport
 tests over a real loopback listener — never a mocked store — and with a
 deterministic injected clock. "Covered" means what each Decision's Verification
 list says it means: a genuine test exercising the named behavior against the
-substrate that Decision specifies. A skipped test is a **gap, not a pass**: a
+substrate that Decision specifies. Skipping in the default gate is banned by the
+suite testing-language contract (design D10, `root project/design/D23.md`), so a
 phase whose ids are only reachable when some condition holds must make that
-condition hold, not skip. Every phase's acceptance bar is a deterministic exit
+condition hold. Every phase's acceptance bar is a deterministic exit
 condition, never a subjective judgment, never a self-referential or
 unsatisfiable check.
 

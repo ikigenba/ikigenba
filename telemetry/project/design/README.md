@@ -56,6 +56,19 @@ history of how it got here lives in git, not here.
   mocked store — with a deterministic injected clock. HTTP-level behavior is
   exercised over a **real loopback listener**, not `httptest.NewServer`'s
   in-memory shortcuts where the loopback property is what is under test.
+- **Testing vocabulary:** the layer names and the rule fixing each layer by what
+  a test may touch are the suite contract's, adopted by D10 and cited at
+  `root project/design/D23.md`; this design restates none of them and uses no
+  other testing vocabulary. telemetry has two layers — **composed**:
+  `internal/e2e/`, which stands up the real composed service over a loopback port
+  (including the restart-survival check), and the boot smoke in
+  `cmd/telemetry/main_test.go`, which builds and runs the real binary against a
+  temporary install tree; **hermetic**: everything else, including the real
+  loopback listeners the transport tests bind. There is **no live layer** and no
+  tree-local manual layer. Environmental preconditions beyond the Go toolchain:
+  **none**. GOWORK mode: telemetry's own `telemetry/go.work` for development,
+  `GOWORK=off` for the production build. These facts are declared in
+  `telemetry/AGENTS.md` and re-checked by the gate (D10).
 - **Requirement-id test-file glob:** `*_test.go` — every `// R-XXXX-XXXX` tag
   lives in a Go test file matching this glob.
 - **Package layout:** `cmd/telemetry` (composition root: the `appkit.Spec` and

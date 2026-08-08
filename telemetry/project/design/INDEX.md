@@ -16,6 +16,7 @@ Verification ids change.
 - D7 → `project/design/D07.md` — Test strategy and the end-to-end layer — R-5PIJ-TFHS, R-WC40-9T5U, R-WDBW-NKWJ
 - D8 → `project/design/D08.md` — MCP input schemas conform to the agentkit tool-schema subset — R-D2X0-57VI, R-D44W-IZM7, R-D5CS-WRCW
 - D9 → `project/design/D09.md` — Suite-contract conformance: the opsctl install layout & the authored env contract — adopts `R-4LKF-FB23` (root `project/design/D08.md`), `R-8DF1-W89F`, `R-8IAN-FB87` (root `project/design/D11.md`); mints none of its own
+- D10 → `project/design/D10.md` — Adopt the suite testing-language contract — adopts `R-O1AD-MRKW`, `R-O2IA-0JBL` (root `project/design/D23.md`); mints none of its own
 
 ## Verification ids → Decision
 
@@ -27,6 +28,8 @@ Verification ids change.
 - R-D44W-IZM7 → D8 — `project/design/D08.md`
 - R-D5CS-WRCW → D8 — `project/design/D08.md`
 - R-NTSI-XWI1 → D1 — `project/design/D01.md`
+- R-O1AD-MRKW → D10 — `project/design/D10.md` (adopted from root `project/design/D23.md`)
+- R-O2IA-0JBL → D10 — `project/design/D10.md` (adopted from root `project/design/D23.md`)
 - R-V6NF-9LY8 → D1 — `project/design/D01.md`
 - R-V7VB-NDOX → D1 — `project/design/D01.md`
 - R-V938-15FM → D2 — `project/design/D02.md`
