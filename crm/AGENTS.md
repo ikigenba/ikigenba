@@ -35,7 +35,25 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- Unit: `go test ./...` (or `make test`).
+crm adopts the suite testing-language contract in `root project/design/D23.md`.
+
+- Default gate: from the repository root, run `cd crm && go build ./...`,
+  `cd crm && go vet ./...`, confirm `cd crm && gofmt -l .` prints nothing, and
+  run `cd crm && go test ./...`.
+- Layers present: **hermetic** and **composed**. There is **no live layer** and
+  **no manual layer**.
+  - Hermetic contains the in-process domain, database, MCP, web, and event-plane
+    tests, plus the shipped-file guards for `etc/nginx.conf`,
+    `etc/manifest.env`, and the loopback source scan. These tests are offline
+    and use only loopback where HTTP is involved.
+  - Composed is the boot smoke in `cmd/crm/main_test.go`; it builds crm's binary,
+    assembles an `/opt/crm/`-shaped tree in a temporary directory, runs the
+    binary on a free loopback port, and checks `/health`.
+- Environmental preconditions beyond the Go toolchain: **none**. Tests require
+  no external service, browser, credential, running suite, `git`, or `python3`.
+- GOWORK mode: **workspace**. The gate resolves `appkit`, `eventplane`, and
+  `registry` through the repository-root `go.work` and committed sibling
+  replacements; the standalone production build belongs to `bin/ship crm`.
 
 ## Versioning
 
