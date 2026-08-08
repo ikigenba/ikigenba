@@ -11,5 +11,3 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 34
 
-- Phase 33 ⬜ realizes D34 — testing-language conformance: make the `python3` precondition a hard failure instead of a skip, declare the tree's testing facts, and add the two adopted conformance tests
-
