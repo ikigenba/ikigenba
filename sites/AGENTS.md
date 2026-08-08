@@ -30,10 +30,27 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- `go test ./...` from `sites/`. Green hard-requires a `google-chrome` binary on
-  `PATH` (the browser-wiring test is never skipped).
-- Green also means clean `go build ./...`, `go vet ./...`, and `gofmt -l .`. The
-  prod build forces `GOWORK=off`.
+The full green bar, run from the repository root, is:
+
+```sh
+cd sites && go build ./...
+cd sites && go vet ./...
+cd sites && gofmt -l . # must print nothing
+cd sites && go test ./...
+```
+
+The default gate has exactly two test layers: **hermetic** and **composed**.
+There is no live layer and no manual layer in this tree.
+
+Beyond the Go toolchain, the suite has two environmental preconditions. A
+`google-chrome` binary must be on `PATH` for the hermetic browser-wiring test;
+its absence is a hard failure, never a skip. The `go` binary must also be on
+`PATH` in the test process's environment, with the module cache already
+resolving sites' `replace` siblings; its absence is likewise a hard failure,
+never a skip.
+
+The gate runs in **workspace** GOWORK mode through the repository-root
+`go.work`. The production build's `GOWORK=off` mode is not part of the gate.
 
 ## Versioning
 
