@@ -53,6 +53,7 @@ func reposSpec() appkit.Spec {
 			service = repos.NewService(repos.NewStore(rt.DB()))
 			service.SetCustody(custody)
 			service.SetMaxCommitBytes(maxCommitBytes)
+			rt.Handle("/git/", repos.GitDoorHandler(service))
 			rt.HandleLoopback("GET /content", repos.ContentHandler(service))
 			rt.HandleLoopback("GET /list", repos.ListHandler(service))
 			rt.HandleLoopback("GET /stat", repos.StatHandler(service))
