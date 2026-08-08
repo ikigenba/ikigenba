@@ -28,6 +28,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D22 → `project/design/D22.md` — nginx fragment: forward the edge-minted `X-Correlation-Id` on gated locations, blank it on ungated ones — owns R-1M1T-299W, R-1N9P-G10L, R-1OHL-TSRA
 - D23 → `project/design/D23.md` — The poll cycle is a chain root: one correlation id per cycle, threaded into every append and every outbound call — owns R-PJWQ-547Q, R-PL4M-IVYF, R-PMCI-WNP4
 - D24 → `project/design/D24.md` — Env-channel conformance: the poll interval surfaces in the manifest — owns R-JWR1-BQ0J; adopts R-VKB6-SHHV (root `project/design/D11.md`)
+- D25 → `project/design/D25.md` — Testing-language conformance: adopt the suite contract and make the live layer reachable — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 
 ## Verification ids → Decision
 
@@ -80,6 +81,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-NGNX-5D8E → D4 → `project/design/D04.md`
 - R-NGNX-7F1G → D4 → `project/design/D04.md`
 - R-NGNX-9H3J → D4 → `project/design/D04.md`
+- R-O1AD-MRKW → D25 → `project/design/D25.md` (adopted from root `project/design/D23.md`)
+- R-O2IA-0JBL → D25 → `project/design/D25.md` (adopted from root `project/design/D23.md`)
 - R-PJWQ-547Q → D23 → `project/design/D23.md`
 - R-PL4M-IVYF → D23 → `project/design/D23.md`
 - R-PMCI-WNP4 → D23 → `project/design/D23.md`

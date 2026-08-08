@@ -78,10 +78,31 @@ Shared facts every Decision leans on:
   `cd gmail && go vet ./...`. The production build adds
   `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off -buildvcs=false` (driven by
   `bin/ship gmail`).
-- **Test command:** `cd gmail && go test ./...`. **"The suite is green"** means:
-  `cd gmail && go build ./...`, `cd gmail && go vet ./...`, `cd gmail && gofmt -l .`
+- **Test command (the default gate):** `cd gmail && go test ./...`.
+  **"The suite is green"** means: `cd gmail && go build ./...`,
+  `cd gmail && go vet ./...`, `cd gmail && gofmt -l .`
   (no output), and `cd gmail && go test ./...` all
   succeed with zero failures.
+- **Testing vocabulary:** the layer names every Decision below uses —
+  **hermetic**, **composed**, **live**, **manual** — are the suite's, defined
+  once in **`root project/design/D23.md`** and never restated here. gmail has a
+  hermetic layer, a composed layer, and a live layer; it has no manual-layer
+  check of its own. The default gate above carries the hermetic and composed
+  layers only. gmail's adoption of that contract, and its declared testing
+  facts, are **D25**.
+- **Live invocation:** `cd gmail && go test -tags live ./...`. It requires
+  `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN` (from the
+  suite `.envrc` — the same OAuth triple the deployed service reads) and **fails
+  loudly** when any is absent. It compiles only under that tag: today it is
+  `internal/gmail/live_test.go`, the attachment round-trip against the real
+  Gmail API that D19's R-3NGL-AMPW owns. The operator runs it at **deploy
+  verification**, and whenever a change touches the Gmail client, the
+  attachment/multipart path, or the OAuth token exchange. This invocation is
+  what makes the tagged id reachable rather than dead; it is never part of the
+  default gate.
+- **GOWORK mode:** workspace — the default gate resolves the replace-siblings
+  through the repo-root `go.work`; only the production build forces `GOWORK=off`.
+- **Environmental preconditions:** none beyond the Go toolchain.
 - **Test-file glob:** `*_test.go` — requirement-id tags (`// R-XXXX-XXXX`) live
   only in files matching this glob.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
@@ -117,7 +138,13 @@ Shared facts every Decision leans on:
 
 ## Testing strategy
 
-Testing is part of the architecture, not an afterthought. The cross-cutting
+Testing is part of the architecture, not an afterthought. Every claim below is
+stated in the suite's layer vocabulary (`root project/design/D23.md`, adopted by
+D25): the landing-render, mux, asset, nginx-fragment, MCP, and producer claims
+are **hermetic**; `cmd/gmail`'s boot and shipped-tree wiring is **composed**; and
+the real Gmail API contract is **live** — `internal/gmail/live_test.go` behind
+`//go:build live`, run by the invocation stated in Conventions above, which
+hard-fails rather than skips when a credential is absent. The cross-cutting
 approach every Decision's Verification list assumes:
 
 - **The landing render is tested in-process with `net/http/httptest`.** The

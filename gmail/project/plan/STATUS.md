@@ -9,5 +9,7 @@ loop deletes the phase's line and body file — there is no done marker; done is
 gone. This file deliberately carries **no bare status glyph** anywhere but on a
 phase line, so the anchored grep matches only phase lines.
 
-Next phase: 27
+Next phase: 28
+
+- Phase 27 ⬜ realizes D25 — testing-language conformance: declare the tree's testing facts and the live invocation that makes R-3NGL-AMPW reachable, and add the two adopted conformance tests
 
