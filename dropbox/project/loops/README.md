@@ -1,18 +1,13 @@
-# dropbox — build loop (gather → build → verify)
+# dropbox build loop — gather → build → verify
 
-This directory holds the **three-prompt build loop** an unattended harness
-(`ralph`) re-invokes with a **fresh context** every turn to build the dropbox
-service one phase at a time, plus the operator wrapper that launches it. This
-README describes the loop **as installed here** — it lives beside the prompts so
-it can never drift from them. It carries only *loop mechanics*; the spec shapes
-(product / design / plan) live under `../design`, `../plan`, `../product` and are
-not restated here.
+The unattended build loop installed in this tree. It builds `dropbox` one pending
+phase at a time from the `project/` spec, with no human in the turn. This document
+describes the loop **as installed** and lives beside the prompts it describes;
+`project/README.md` only points here.
 
 ## Running it
 
-From the **service root** (`dropbox/`, ralph's working directory):
-
-```
+```sh
 ./project/loops/run
 ```
 
@@ -22,152 +17,191 @@ which is exactly:
 exec ralph project/loops/gather.md project/loops/build.md project/loops/verify.md
 ```
 
-`ralph` cycles the three prompts in order and wraps `verify → gather`. Each prompt
-is read in a **fresh, isolated context**; all cross-turn state lives in the
-workspace (`project/plan/STATUS.md` markers, the ephemeral `brief.md`, and — only
-on an unresolved defective bar — `blocked.md`). Toolchain commands run directly
-from the service root (`go build ./...`, not `cd dropbox && …`).
+`ralph` runs from the **service root** (`dropbox/`), so every path the prompts
+reference is service-root-relative (`project/…`), and every toolchain command runs
+bare inside the tree (design writes them as `cd dropbox && …` because design is
+read from the repo root).
 
 ## The status contract
 
-Each turn ends with a `{status, message}` the harness supplies out of band
-(`ralph` injects the schema per backend — codex `--output-schema`, claude
-`--json-schema`) and reads back itself; the prompts never hard-code a transport.
-`ralph` reads only the **terminal** (last) message of a turn and advances on it:
+`ralph` re-invokes each prompt in a **fresh context** and reads only the **final**
+message of the turn:
 
-| status | meaning |
-|---|---|
-| `CONTINUE` | **non-terminal** — a progress message streamed *before* the turn's final message (a streaming backend like codex tags every mid-turn message). Never advances the loop. |
-| `NEXT` | **terminal** — this turn is done; advance to the next prompt (wrapping `verify → gather`). |
-| `DONE` | **terminal** — the whole job is complete; the loop stops. **Only `gather` ever reports this**, and only when no `⬜` phase remains, or a `project/loops/blocked.md` is found. |
+- **`NEXT`** — terminal: advance to the next prompt, wrapping `verify → gather`.
+- **`DONE`** — terminal: stop. **Only `gather` ever reports `DONE`**, and only on
+  one of two conditions: `project/loops/blocked.md` exists, or the `⬜` grep finds
+  no pending phase.
+- **`CONTINUE`** — **non-terminal**. A streaming backend (gpt-5.6-sol under codex)
+  coerces *every* streamed message into the schema, so mid-turn progress messages
+  need a status that does not advance the loop. `CONTINUE` never terminates a turn.
 
-`build` and `verify` **always** report `NEXT` — never `DONE`. Finishing a phase
-completely (green suite, all gaps closed) is still `NEXT`; ending the run belongs
-to `gather` alone.
+`build` and `verify` **always** end on `NEXT` — finishing a phase completely, green
+suite and all, is still `NEXT`.
 
-## Per-step reads / writes / commits / deletes
+## Per-step reads, writes, commits, deletions
 
-| step | reads | writes | commits | deletes phase |
+| step | reads | writes | commits | deletes |
 |---|---|---|---|---|
-| **gather** | `blocked.md` (checked first), `STATUS.md`, one `phase-NN.md`, `INDEX.md`, the realized `DNN.md`, (product for intent) | `brief.md` **contract region** — only for a phase with no in-flight brief | no | no |
-| **build** | `brief.md` (contract **+** feedback) only | production code + co-located id-tagged tests | yes (the code increment) | no |
-| **verify** | `brief.md` (contract + its own feedback), the suite, the design/plan id-set greps (ratchet only) | deletes the phase's `STATUS.md` line + `phase-NN.md`, or writes `brief.md` feedback region, or writes `blocked.md` | the phase deletion (pass only) | **yes** (pass only) |
+| **gather** | `blocked.md`, `STATUS.md`, one `phase-NN.md`, `INDEX.md`, the realized `DNN.md`, dependency signatures | `brief.md` contract region (fresh briefs only) | nothing | nothing |
+| **build** | `brief.md` only (contract + feedback) | source and tests under `dropbox/` | this turn's increment | nothing |
+| **verify** | `brief.md`, the tree's tests/source, mechanical id greps | `brief.md` feedback region; `blocked.md` on escalation | the phase retirement | on pass: the phase's `STATUS.md` line, its `phase-NN.md`, and `brief.md`; on stall: `brief.md` |
 
-Only `gather` reads the big docs; only `verify` deletes a phase's `STATUS.md`
-line and body file, deletes the brief, or writes `blocked.md`.
+`gather` is the only step that reads the big docs. `build` never opens
+`project/design/`, `project/plan/`, or `project/product/`. `verify` never reads them
+for its checklist — the brief *is* the checklist; its mechanical id-set greps and
+documented-invocation greps extract tokens, not prose.
 
 ## The brief lifecycle
 
-`project/loops/brief.md` is the ephemeral, **git-ignored**, single-phase seam that
-keeps `build`/`verify` scoped to one phase without opening design or plan. It is
-**phase-scoped, not per-cycle**, and **region-owned** (each region has one
-writer):
+`project/loops/brief.md` is the seam that keeps `build`'s context scoped to one
+phase. It is **never committed** (`.gitignore` covers it and `blocked.md`),
+describes exactly **one** phase, and is **region-owned**:
 
-- **gather** authors the **contract region** once, when a phase first becomes the
-  active `⬜` phase. On later cycles, if a brief for that *same* phase already
-  exists, gather **no-ops** — it leaves both regions untouched and opens no big
-  doc.
-- **build** consumes the whole brief. If the `## Verify feedback` region lists
-  open gaps, it closes those first, then does as much of the remaining work as
-  cleanly fits (ideally the whole phase). It never writes the brief.
-- **verify** re-derives truth independently. **Pass** → delete the phase's
-  `STATUS.md` line and `phase-NN.md`, commit, and **delete** the brief. **Gap**
-  → leave `⬜`, change no source, and **overwrite**
-  the feedback region with only the currently-open gaps (each tied to an `R-id`
-  and grounded in the exact failing command/output) — the brief **persists** so
-  the next `build` sees the feedback.
+- `gather` authors the **contract region** once, when a phase first becomes the
+  active `⬜` phase, and **no-ops** on every later cycle while that phase stays
+  `⬜` — it leaves the file untouched and opens no big doc.
+- `build` reads the whole brief and writes none of it.
+- `verify` owns the **feedback region**: on a pass it deletes the brief; on a gap
+  it **overwrites** the feedback region with only the currently-open gaps and
+  leaves the brief in place, so the next `build` sees them.
 
-## The stall-and-blocked ladder
+## The brief schema
 
-`verify` tracks progress cycle to cycle (a shrinking open-gap id set; a new
-build commit alone is never progress):
+```markdown
+# Brief — Phase NN
 
-1. **Three consecutive no-progress attempts on a phase** → **stall reset**:
-   `verify` logs `<date> Phase NN STALLED after N attempts: <gap ids>` to
-   `~/.ralph/verify.log`, deletes `brief.md`, leaves `⬜`, and returns `NEXT`.
-   The next `gather` rebuilds the contract fresh from spec — this is a reset of
-   a stuck *trajectory*, not a halt.
-2. **A second stall on the same phase** (an earlier `STALLED` line for it
-   already in `~/.ralph/verify.log`) → **blocked escalation**: a rebuilt
-   contract was already tried and did not help, so the phase's done bar is the
-   likely fault. `verify` writes `project/loops/blocked.md` naming the phase,
-   the total attempts, the still-unsatisfied ids, and the exact command +
-   observed output that will not go green, logs `<date> Phase NN BLOCKED after
-   N attempts: <gap ids>`, deletes `brief.md`, leaves `⬜`, and returns `NEXT`.
-3. **The next `gather`** sees `blocked.md` on its first check, reports `DONE`
-   without reading anything else, and the run stops.
+## Objective
+<the phase's one-line objective>
 
-**Operator recovery from a `blocked.md`:** read the recorded failing command and
-output, fix the phase's done bar (or design/plan) in `project/` — the loop never
-edits `project/` itself — delete `project/loops/blocked.md`, and restart
-`./project/loops/run`.
+## Realizes
+D<n> — <short label>
 
-## Why it converges (and terminates)
+## Decision files
+project/design/D<n>.md
 
-`verify` can neither halt the loop nor advance a phase on a gap, so an incomplete
-phase just stays `⬜` and is re-attacked next cycle — now with grounded feedback
-in front of `build`, and without `gather` re-reading the big docs (it no-ops on
-the in-flight brief). The persisted feedback gives `verify` cross-cycle memory to
-tell *slow convergence* (shrinking gap set) from a *true stall* (identical gaps,
-no new commit) and reset the latter; a second stall on the same phase converts
-into a `blocked.md` instead of spinning forever on a defective bar. The **only**
-exits are `gather → DONE` on zero `⬜` markers, or `gather → DONE` on finding
-`blocked.md` — so the run ends only when every phase is verified green, or a
-defective phase is surfaced to the operator (or a ralph budget rail trips).
-
-## `project/loops/brief.md` schema
-
-Two regions, one writer each:
-
-```
-# Brief — Phase NN: <one-line objective>
-
-phase: NN
-realizes: D<n>[, D<m>]
-decision_files:
-  - project/design/D0n.md
+## Design prose
+<each realized Decision's statement, shape/signatures, and rejected
+alternatives, verbatim — with that Decision's Verification list OMITTED>
 
 ## Ids to cover
-R-XXXX-XXXX — <full requirement text copied verbatim from the Decision's Verification list>
-R-YYYY-YYYY — <full requirement text copied verbatim>
-# ...one id per line in that exact `R-... — text` form, OR:
-# (none — structural phase; see the Done bar's named content check)
+R-XXXX-XXXX — <full requirement text, verbatim, on the same line>
+(or: (none — structural phase))
 
-## Design prose (copied verbatim from the DNN.md — Verification lists omitted)
-### Decision <n> — <title>
-<Decision statement + shape/signatures + Rejected alternatives, verbatim,
- WITHOUT that Decision's Verification list>
+## Live-marked ids
+<the phase's ids whose Decision marks them live, or (none)>
 
 ## Files to touch
-- <path>
+<paths>
 
-## Dependency interfaces / required shapes (copied from design — do not open design files)
-```go
-// package <dep>  (from D0k)
-<copied exported type / func / const signatures>
+## Dependency interfaces
+<public signatures, copied in>
+
+## Done when
+<the phase's "Done when" bar, verbatim>
+
+## Verify feedback — attempt N
+Build commit observed: <sha>   (diagnostic only, not progress)
+Stall streak: <k>
+
+- [ ] R-XXXX-XXXX — <exact failing command>
+      observed: <exact observed output>
 ```
 
-## Done bar
-- Every "Ids to cover" id covered by a genuinely-asserting, reachable
-  `// R-XXXX-XXXX`-tagged test (structural: the named content check instead).
-- Test placement: co-located with the code exercised, named for the behavior,
-  never a per-phase or root-level test file.
-- The suite is green: go build ./... · go vet ./... · gofmt -l . (empty) ·
-  go test ./...
-- <any phase-specific content check, copied verbatim>
+The `## Ids to cover` line format is load-bearing: the id at line start, an
+em-dash, then the full requirement text on the same line, so the phase's id set
+stays grep-able with
+`grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md`.
 
-## Verify feedback
-<!-- gather leaves empty; verify overwrites with attempt N, build commit,
-     stall streak, and the current open-gap checklist -->
+## The green gate
+
+```sh
+go build ./...      # must exit 0
+go vet ./...        # must exit 0
+gofmt -l .          # must print NOTHING
+go test ./...       # must exit 0, zero failures
 ```
 
-- **gather-owned contract region** — everything from the header through the Done
-  bar. Written once per phase; `verify` never writes here.
-- **verify-owned feedback region** — the `## Verify feedback — attempt N`
-  heading with its per-attempt counter, the observed build commit, the stall
-  streak, and a checklist of **only** the open gaps. `gather` writes it empty;
-  `verify` overwrites it each gap cycle; `build` reads but never writes it.
+Green means all four succeed with zero failures and `gofmt -l .` prints nothing.
+No `R-`-tagged test may report `SKIP`.
 
-`project/loops/brief.md` and `project/loops/blocked.md` are both **git-ignored**
-(see `dropbox/.gitignore`) — neither is a spec artifact, and both are ephemeral
-loop state.
+## Coverage, reachability, and the ratchet
+
+An id counts as **covered** only when a `// R-XXXX-XXXX` comment names a test that
+genuinely asserts the behavior **and** that test actually runs under the suite's
+real invocation. Reachability is traced **statically** — the test command plus
+every build constraint, env condition, and skip guarding the test body.
+
+**dropbox has a live layer**, so `verify` applies a **narrow carve-out**: an id
+whose tag lives in a `//go:build live` file counts as covered when (a) the tag is
+in a live-constrained file, (b) design's Conventions document the invocation
+`go test -tags live ./...` with its credentials (`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and `DROPBOX_REFRESH_TOKEN` (optional `DROPBOX_APP_FOLDER_ROOT` scopes the smoke)), and (c) `go vet -tags live ./...`
+exits 0. **The loop never runs the live tests** — the documented invocation is
+what makes the tagged ids reachable, and the operator runs it at deploy
+verification. The carve-out is narrow: an env-gated skip, a live test that skips
+instead of hard-failing on a missing credential, and a tagged test in a non-live
+file gated by something nothing in the repo sets all still count as **uncovered**.
+Today's live ids are R-KEIO-B98F, R-KFQK-P0Z4, R-KGYH-2SPT (the real Dropbox write contract), in `internal/dropbox/client_live_test.go`.
+
+Every cycle `verify` also runs the **global coverage ratchet**, which catches a
+rewrite silently dropping a previously-covered id:
+
+```sh
+comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u) \
+         <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
+               <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
+```
+
+**Empty output is the pass condition.** Two parts of this command are
+load-bearing and must not be simplified away:
+
+- `grep -v 'R-XXXX-XXXX'` — the design docs quote the literal placeholder
+  `R-XXXX-XXXX` when they explain the id format. It matches the id pattern, no
+  test will ever carry it, and no phase will ever own it, so without this filter
+  it lands in the remainder on **every** run and the ratchet can never report
+  clean. It is a documentation artifact, never a real id, and never a gap.
+- `--exclude-dir=project` — an id quoted inside a spec or loop document is not a
+  test.
+
+
+The `grep -v 'R-XXXX-XXXX'` filter is not optional. The design docs quote the
+literal placeholder `R-XXXX-XXXX` when explaining the id format; it matches the id
+pattern, no test will ever carry it, and no phase will ever own it — so without the
+filter it lands in the remainder on every run and **the ratchet can never report
+clean**.
+
+## The stall and blocked ladder
+
+`verify` can neither halt the run nor advance a phase on a gap, so an incomplete
+phase simply stays `⬜` and the loop re-attacks it next cycle — now with `verify`'s
+grounded feedback in front of `build`, and without `gather` re-reading the big docs.
+The persisted feedback gives `verify` cross-cycle memory:
+
+1. **Progress** — the open-gap id set is a strict subset of last attempt's. The
+   stall streak resets to 0. (A new build commit is **never** progress: a builder
+   stuck on a bar keeps committing plausible rewordings, and a commit-keyed
+   detector reads that churn as convergence and never trips.)
+2. **Stall reset at 3** — three consecutive attempts closing no gap. The
+   accumulated brief may not be converging, so `verify` logs
+   `Phase NN STALLED …` to `~/.ralph/verify.log`, deletes the brief, leaves `⬜`,
+   and reports `NEXT`. The next `gather` rebuilds the contract fresh from spec.
+3. **Blocked on a second stall** — if `~/.ralph/verify.log` already carries a
+   `STALLED` line for this same phase, a rebuilt contract has been tried and did
+   not help, so the **bar itself** is the fault. `verify` writes
+   `project/loops/blocked.md` with the phase, the attempt count, the unsatisfied
+   ids, and the exact command and observed output that will not go green; logs
+   `Phase NN BLOCKED …`; deletes the brief; leaves `⬜`; reports `NEXT`. The next
+   `gather` sees the file and reports `DONE`.
+
+**What the operator does with a `blocked.md`:** read the recorded command and its
+observed output, decide whether the phase's *done bar* is defective (it usually
+is — a non-deterministic, self-referential, or structurally unsatisfiable check),
+fix it in `project/plan/phase-NN.md` (or the design behind it) through a spec
+authoring move, delete `project/loops/blocked.md`, and restart the loop.
+
+## Why it converges
+
+`verify` never ends the run and never advances a phase on a gap, so the only exits
+are `gather`'s two: zero `⬜` markers (every phase verified green) or a blocked
+phase awaiting the operator — plus ralph's own budget rails. Every bar the loop
+checks is a deterministic, reachable, mechanically-evaluable predicate, so a phase
+either goes green or produces a written diagnosis; it never spins silently.
