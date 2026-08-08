@@ -34,6 +34,18 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 - Package checks from this directory: `go build ./...`, `go vet ./...`,
   `gofmt -l .`, `go test ./...`.
+- Default-gate test command: `cd gmail && go test ./...`.
+- Layers present: **hermetic**, **composed**, and **live**.
+- Manual layer: absent.
+- Environmental preconditions beyond the Go toolchain: none.
+- GOWORK mode: workspace (the repo-root `go.work`); the production build forces
+  `GOWORK=off` via `bin/ship gmail`.
+- Live invocation: `cd gmail && go test -tags live ./...`. It requires all three
+  credentials: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and
+  `GMAIL_REFRESH_TOKEN`, supplied from the suite `.envrc`.
+- Run the live invocation at deploy verification for gmail, and whenever a
+  change touches the Gmail client (`internal/gmail/client.go`), the
+  attachment/multipart path, or the OAuth token exchange.
 
 ## Versioning
 
