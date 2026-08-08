@@ -86,8 +86,9 @@ excludes:
 
 ## Contractual constants
 
-- **Starting version `0.1.0`** — the service's first committed bare-SemVer
-  `VERSION`, matching the suite convention for a brand-new deployable service.
+- **Starting version `v0.1.0`** — the service's first committed `v`-prefixed
+  SemVer `VERSION` (`root project/design/D03.md`), matching the suite
+  convention for a brand-new deployable service.
 - **External mount `/srv/webhooks/`** — the path prefix under the account apex at
   which the service is reachable, by service-name convention.
 
