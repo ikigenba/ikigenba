@@ -12,5 +12,3 @@ matches only phase lines.
 
 Next phase: 47
 
-- Phase 46 ⬜ realizes D38 — accept a PAT as an HTTP Basic password on the git door
-
