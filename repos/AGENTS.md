@@ -35,7 +35,34 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- Unit: `go test ./...`
+Run the default gate from `repos/` with `go test ./...`. A green change also
+requires `go build ./...` and `go vet ./...` to succeed and `gofmt -l .` to
+print nothing.
+
+This tree has two test layers, both in the default gate:
+
+- **hermetic** tests use temp-directory filesystems, real temp-file SQLite,
+  local subprocesses and loopback peers. In particular, git custody is tested
+  with the real git implementation over local fixture remotes, never a mock.
+- **composed** testing is the install-layout boot smoke in
+  `cmd/repos/main_test.go`, which builds and runs the real service in a
+  temporary `/opt/repos/`-shaped tree.
+
+There is no live layer and no tree-local manual runbook. Tests do not contact
+non-loopback services or read real credentials.
+
+Beyond the Go toolchain, the test environment has two hard preconditions; an
+absent tool is a failure, never a skip:
+
+- The real `git` binary must be on `PATH` for the never-mocked git custody and
+  worktree tests.
+- The `go` binary must be on `PATH` in the test process's environment for the
+  composed smoke, with the module cache resolving repos' `replace` siblings and
+  the pinned `agentkit` module.
+
+Tests, builds, and vet run in workspace mode through the repo-root `go.work`.
+The production build forces `GOWORK=off`; that mode is not part of the default
+gate.
 
 ## Versioning
 
