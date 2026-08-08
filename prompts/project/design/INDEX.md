@@ -19,7 +19,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D12 | project/design/D12.md | A top-left Home link to the dashboard landing page | R-HOME-2T4X |
 | D13 | project/design/D13.md | Self-serve the pages' fonts and eliminate the FOUT | R-DFKP-IVZU, R-DGSL-WNQJ, R-DI0I-AFH8, R-DJ8E-O77X, R-DKGB-1YYM |
 | D14 | project/design/D14.md | Adopt the shared `registry` for all loopback addressing | R-RG01-PORT, R-RG03-DBOX, R-RG04-NLIT |
-| D15 | project/design/D15.md | Consumer loops through `Spec.Consumers` (chassis-owned) | R-DFV4-7W4Y, R-DH30-LNVN; adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`) |
+| D15 | project/design/D15.md | Consumer loops through `Spec.Consumers` (chassis-owned) | R-DFV4-7W4Y, R-DH30-LNVN; adopts R-4LKF-FB23, R-8DF1-W89F, R-8IAN-FB87 |
 | D16 | project/design/D16.md | Web surface from `share/www` through the chassis (de-embed) | R-DIAW-ZFMC, R-DJIT-D7D1 |
 | D17 | project/design/D17.md | MCP surface over `appkit/mcp`: `internal/mcp` becomes the tool table | R-DKQP-QZ3Q, R-DLYM-4QUF |
 | D18 | project/design/D18.md | Delete the chassis shims (`internal/db` wrappers) and true up the doctrine doc | none — structural |
@@ -43,16 +43,25 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D36 | project/design/D36.md | Owner-id keying: rebuild `prompts`/`runs`, rekey the store on `owner_id` | R-E59O-RJC7, R-E6HL-5B2W, R-E7PH-J2TL, R-E8XD-WUKA |
 | D37 | project/design/D37.md | Owner-id at the MCP tool surface: scope on `X-Owner-Id`, snapshot the email, expose both | R-EBD6-OE1O, R-ECL3-25SD, R-EDSZ-FXJ2 |
 | D38 | project/design/D38.md | OpenAI subscription authentication (`auth: "sub"`) | R-T319-YQNF, R-T496-CIE4, R-T6OZ-41VI, R-T7WV-HTM7 |
-| D39 | project/design/D39.md | The run directory is durable state, and holds the whole run | R-ZMJ5-6QEW, R-ZNR1-KI5L |
-| D40 | project/design/D40.md | Two loaders: the live prompt and the run's frozen copy | R-ZOYX-Y9WA, R-ZREQ-PTDO, R-ZSMN-3L4D |
+| D39 | project/design/D39.md | The run directory is durable state, and holds the whole run | R-ZNR1-KI5L |
+| D40 | project/design/D40.md | Two loaders: the live definition and the run's pinned commit | R-ZOYX-Y9WA, R-ZREQ-PTDO, R-ZSMN-3L4D |
 | D41 | project/design/D41.md | `run_delete`: removing a run and everything it produced | R-ZTUJ-HCV2, R-ZV2F-V4LR, R-ZWAC-8WCG |
 | D44 | project/design/D44.md | The correlation id on the record: `runs.correlation_id`, `calls.correlation_id`, mint-or-inherit at spawn | R-HIAG-2MGL, R-HJIC-GE7A, R-HKQ8-U5XZ, R-HLY5-7XOO, R-HN61-LPFD, R-HODX-ZH62 |
 | D45 | project/design/D45.md | Chain propagation on suite peer calls: `X-Correlation-Id` in the `MCPServer` headers | R-HPLU-D8WR, R-HS1N-4SE5, R-HT9J-IK4U |
 | D46 | project/design/D46.md | nginx fragment: capture the edge-minted chain id on gated locations, strip it on the ungated one | R-HWX8-NVCX, R-HY55-1N3M |
 | D47 | project/design/D47.md | Rebuild to adopt: event-plane chain continuation, the `root` record at spawn, and the recorded boundary of a run | R-HZD1-FEUB, R-I0KX-T6L0, R-I1SU-6YBP, R-I30Q-KQ2E, R-I48M-YHT3 |
 | D48 | project/design/D48.md | State paths come from `appkit/config`, never from a hardcoded `./tmp` default | R-LBH5-4LO0, R-LCP1-IDEP, R-LDWX-W55E |
-| D49 | project/design/D49.md | Env-channel conformance: composed inventory root, manifest-surfaced tuning knobs, Spec-derived drift oracle | R-M51H-QWOL, R-M69E-4OFA; adopts R-VKB6-SHHV (root `project/design/D11.md`) |
-| D50 | project/design/D50.md | Adopt the suite testing-language contract | none of its own; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`) |
+| D49 | project/design/D49.md | Env-channel conformance: composed inventory root, manifest-surfaced tuning knobs, and a Spec-derived drift oracle | R-M51H-QWOL, R-M69E-4OFA; adopts R-VKB6-SHHV |
+| D50 | project/design/D50.md | Adopt the suite testing-language contract | none of its own; adopts R-O1AD-MRKW, R-O2IA-0JBL |
+| D51 | project/design/D51.md | A prompt definition is a git tree: the fixed layout and the repo name key | R-RDFP-IOO1, R-RENL-WGEQ, R-RFVI-A85F |
+| D52 | project/design/D52.md | The version-plane client: one seam, injected at the composition root | R-RH3E-NZW4, R-RIBB-1RMT, R-RJJ7-FJDI, R-RKR3-TB47 |
+| D53 | project/design/D53.md | The write path: create, update, import, rename, and delete go through the version plane | R-RLZ0-72UW, R-ROES-YMCA, R-RPMP-CE2Z, R-RQUL-Q5TO, R-RS2I-3XKD, R-SGGH-RCE9 |
+| D54 | project/design/D54.md | Seeding: the one-time, idempotent definition backfill | R-RTAE-HPB2, R-RUIA-VH1R, R-RVQ7-98SG |
+| D55 | project/design/D55.md | A run pins a sha and executes a real clone | R-RWY3-N0J5, R-RY60-0S9U, R-S0LS-SBR8, R-S1TP-63HX, R-S31L-JV8M |
+| D56 | project/design/D56.md | The run token and the authenticated git door | R-S49H-XMZB, R-S5HE-BEQ0, R-S6PA-P6GP, R-RZDW-EK0J |
+| D57 | project/design/D57.md | The framing prompt tells the run its folder is a git clone | R-S953-GPY3, R-SACZ-UHOS |
+| D58 | project/design/D58.md | `repos` joins the trigger sources: prompts as the version plane's workflow runner | R-SBKW-89FH, R-SCSS-M166 |
+| D59 | project/design/D59.md | Retiring the content columns | R-SE0O-ZSWV, R-SF8L-DKNK |
 
 ## Verification ids → Decision
 
@@ -223,11 +232,42 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-LDWX-W55E | D48 | project/design/D48.md |
 | R-M51H-QWOL | D49 | project/design/D49.md |
 | R-M69E-4OFA | D49 | project/design/D49.md |
-| R-O1AD-MRKW | D50 | project/design/D50.md (adopted from root `project/design/D23.md`) |
-| R-O2IA-0JBL | D50 | project/design/D50.md (adopted from root `project/design/D23.md`) |
+| R-O1AD-MRKW | D50 | project/design/D50.md (adopted from `root project/design/D23.md`) |
+| R-O2IA-0JBL | D50 | project/design/D50.md (adopted from `root project/design/D23.md`) |
+| R-RDFP-IOO1 | D51 | project/design/D51.md |
+| R-RENL-WGEQ | D51 | project/design/D51.md |
+| R-RFVI-A85F | D51 | project/design/D51.md |
 | R-RG01-PORT | D14 | project/design/D14.md |
 | R-RG03-DBOX | D14 | project/design/D14.md |
 | R-RG04-NLIT | D14 | project/design/D14.md |
+| R-RH3E-NZW4 | D52 | project/design/D52.md |
+| R-RIBB-1RMT | D52 | project/design/D52.md |
+| R-RJJ7-FJDI | D52 | project/design/D52.md |
+| R-RKR3-TB47 | D52 | project/design/D52.md |
+| R-RLZ0-72UW | D53 | project/design/D53.md |
+| R-ROES-YMCA | D53 | project/design/D53.md |
+| R-RPMP-CE2Z | D53 | project/design/D53.md |
+| R-RQUL-Q5TO | D53 | project/design/D53.md |
+| R-RS2I-3XKD | D53 | project/design/D53.md |
+| R-RTAE-HPB2 | D54 | project/design/D54.md |
+| R-RUIA-VH1R | D54 | project/design/D54.md |
+| R-RVQ7-98SG | D54 | project/design/D54.md |
+| R-RWY3-N0J5 | D55 | project/design/D55.md |
+| R-RY60-0S9U | D55 | project/design/D55.md |
+| R-RZDW-EK0J | D56 | project/design/D56.md |
+| R-S0LS-SBR8 | D55 | project/design/D55.md |
+| R-S1TP-63HX | D55 | project/design/D55.md |
+| R-S31L-JV8M | D55 | project/design/D55.md |
+| R-S49H-XMZB | D56 | project/design/D56.md |
+| R-S5HE-BEQ0 | D56 | project/design/D56.md |
+| R-S6PA-P6GP | D56 | project/design/D56.md |
+| R-S953-GPY3 | D57 | project/design/D57.md |
+| R-SACZ-UHOS | D57 | project/design/D57.md |
+| R-SBKW-89FH | D58 | project/design/D58.md |
+| R-SCSS-M166 | D58 | project/design/D58.md |
+| R-SE0O-ZSWV | D59 | project/design/D59.md |
+| R-SF8L-DKNK | D59 | project/design/D59.md |
+| R-SGGH-RCE9 | D53 | project/design/D53.md |
 | R-SVPV-O479 | D3 | project/design/D03.md |
 | R-SWXS-1VXY | D3 | project/design/D03.md |
 | R-SY5O-FNON | D3 | project/design/D03.md |
@@ -249,7 +289,6 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-ZIVG-1F6T | D19 | project/design/D19.md |
 | R-ZK3C-F6XI | D19 | project/design/D19.md |
 | R-ZLB8-SYO7 | D19 | project/design/D19.md |
-| R-ZMJ5-6QEW | D39 | project/design/D39.md |
 | R-ZNR1-KI5L | D39 | project/design/D39.md |
 | R-ZOYX-Y9WA | D40 | project/design/D40.md |
 | R-ZREQ-PTDO | D40 | project/design/D40.md |
