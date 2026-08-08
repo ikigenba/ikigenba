@@ -30,11 +30,17 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- `GOWORK=off go build ./...`
-- `GOWORK=off go test ./...`
+The default gate is `GOWORK=off go test ./...`; also typecheck with
+`GOWORK=off go build ./...`. Green means both commands exit 0, with no failures
+and no SKIP.
 
-`GOWORK=off` matches the deterministic prod build and proves the module resolves
-standalone.
+Every test is hermetic. registry has no composed layer, no live layer, and no
+manual layer. There are no environmental preconditions beyond a working Go
+toolchain.
+
+Always force `GOWORK=off` when building and testing. This matches the
+deterministic production build and proves the module resolves standalone with
+zero third-party dependencies.
 
 ## Versioning
 
