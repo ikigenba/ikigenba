@@ -31,9 +31,15 @@ history of how it got here lives in git, not here.
 - **Language / toolchain:** Go (the repo targets `go 1.26`); module path
   `telemetry`, built on the shared `appkit` chassis over SQLite
   (`modernc.org/sqlite`, pure Go, no cgo). In-repo libraries are consumed via
-  committed `replace` directives (`appkit => ../appkit`, `registry =>
-  ../registry`). telemetry does **not** depend on `eventplane`: it is neither a
-  producer nor a consumer. One external module,
+  committed `replace` directives per `root project/design/D22.md` — including
+  `eventplane`, which telemetry's **own source never imports** (it is neither a
+  producer nor a consumer) but whose `require`+`replace` pair `go.mod` must
+  carry as the necessary transitive consequence of the appkit chassis; the
+  module path is written as a **plain literal**, like every module path in the
+  suite. The checkable form of the no-participation claim is source-level:
+  `grep -rn 'eventplane' --include='*.go' --exclude-dir=project .` from the
+  telemetry tree root returns empty — never a condition on `go.mod`, which a
+  conforming file cannot satisfy. One external module,
   `github.com/ikigenba/agentkit`, is consumed as a **tagged, test-only**
   dependency — imported from `_test.go` files alone, so no production binary
   links it — and exists solely so D8's conformance test can drive agentkit's
