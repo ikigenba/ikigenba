@@ -11,7 +11,6 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 31
 
-- Phase 30 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — declare appkit's testing facts in `AGENTS.md` (layers, preconditions, GOWORK mode) and prove the declaration and the skip ban with two tagged tests
 
 
 
