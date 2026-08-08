@@ -12,9 +12,14 @@ ids change.
 - **D3** → `bin/project/design/D03.md` — The local dev stack: `bin/start` / `bin/stop`, and how a service joins it — ids: none (untested orchestration; its staging half's ids belong to D5)
 - **D4** → `bin/project/design/D04.md` — `bin/create-migration`: the single mint for a migration version — ids: none (bash in the untested tier; verified once outside the loop)
 - **D5** → `bin/project/design/D05.md` — The manifest readers are proven under the green gate (`bin/bintest`) — ids: R-V3XG-PB8R, R-V6D9-GUQ5, R-V7L5-UMGU
+- **D6** → `bin/project/design/D06.md` — `bin/bintest` proves the library-dependency contract — ids: none minted here; realizes the umbrella's R-3R5W-79JK, R-3SDS-L1A9, R-3TLO-YT0Y, R-3UTL-CKRN (owned by `root project/design/D22.md`, `[proof: bin]`)
 
 ## Verification ids → Decision
 
+- R-3R5W-79JK → D6 (`bin/project/design/D06.md`; owned by `root project/design/D22.md`)
+- R-3SDS-L1A9 → D6 (`bin/project/design/D06.md`; owned by `root project/design/D22.md`)
+- R-3TLO-YT0Y → D6 (`bin/project/design/D06.md`; owned by `root project/design/D22.md`)
+- R-3UTL-CKRN → D6 (`bin/project/design/D06.md`; owned by `root project/design/D22.md`)
 - R-V3XG-PB8R → D5 (`bin/project/design/D05.md`)
 - R-V6D9-GUQ5 → D5 (`bin/project/design/D05.md`)
 - R-V7L5-UMGU → D5 (`bin/project/design/D05.md`)

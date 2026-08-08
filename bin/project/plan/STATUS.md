@@ -11,4 +11,6 @@ line here and its body file** in the completion commit — there is no done
 marker; done is deleted, and history lives in git. This file carries no bare
 status glyph outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 01
+Next phase: 02
+
+- Phase 01 ⬜ realizes R-3R5W-79JK, R-3SDS-L1A9, R-3TLO-YT0Y, R-3UTL-CKRN — the bintest library-dependency conformance checks

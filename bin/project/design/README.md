@@ -83,19 +83,26 @@ Shared facts every Decision leans on:
 ## Suite contracts this tree conforms to
 
 Cited by path, **never restated** — a local restatement is drift by
-construction. Each lives in the umbrella project at the repo root:
+construction. Citations use the exact form the umbrella mandates,
+`root project/design/DNN.md`, so a contract citation is never confusable with
+this tree's own local `DNN.md` files:
 
-- **`project/design/D01.md`** — the `/opt/<svc>/` install tree.
-- **`project/design/D02.md`** — the versioned release bundle: `libexec/` binary,
-  `etc/<v>/`, `share/<v>/`, and the symlink swap.
-- **`project/design/D03.md`** — the `v`-prefixed SemVer 2.0 version identity and
-  its ordering.
-- **`project/design/D10.md`** — the on-box `stage` / `deploy` / `rollback` /
-  `prune` orchestration this tree's artifacts are consumed by.
-- **`project/design/D11.md`** — the env contract: the portable authored
+- **`root project/design/D01.md`** — the `/opt/<svc>/` install tree.
+- **`root project/design/D02.md`** — the versioned release bundle: `libexec/`
+  binary, `etc/<v>/`, `share/<v>/`, and the symlink swap.
+- **`root project/design/D03.md`** — the `v`-prefixed SemVer 2.0 version
+  identity and its ordering, and the no-current-version-numbers-in-specs rule.
+- **`root project/design/D11.md`** — the env contract: the portable authored
   `manifest.env` and `IKIGENBA_ROOT` path composition.
-- **`project/design/D12.md`** — the per-app secrets parameter: its path, its
-  value shape, and the box-side launcher that consumes it.
+- **`root project/design/D12.md`** — the per-app secrets parameter: its path,
+  its value shape, and the box-side launcher that consumes it.
+- **`root project/design/D22.md`** — library dependency versioning. This tree is
+  additionally that contract's **designated proof tree** (`[proof: bin]`): the
+  repo-wide `go.mod`/`go.work` conformance checks live in `bin/bintest` (D6).
+
+The on-box consumer of this tree's artifacts — `stage` / `deploy` / `rollback` /
+`prune` — is not an umbrella contract but opsctl's own design
+(`opsctl/project/design/D15.md`, informational).
 
 Conformance is the default. Where this tree deviates from an umbrella contract,
 the local Decision that does so names the umbrella Decision it departs from and
