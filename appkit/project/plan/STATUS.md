@@ -11,7 +11,6 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 30
 
-- Phase 29 ⬜ realizes R-8EMY-A004 (umbrella, [proof: appkit]) — retire the manifest verb; one version channel
 
 
 
