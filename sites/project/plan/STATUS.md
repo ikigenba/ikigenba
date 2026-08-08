@@ -11,7 +11,6 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 56
 
-- Phase 52 ⬜ realizes D36 — site lifecycle against the plane: create, delete (archive), slug rotation
 - Phase 53 ⬜ realizes D35 — the `repos:push` materializer: re-materialize on `main`, ignore branches, skip unknown slugs, refuse bad exports
 - Phase 54 ⬜ realizes D37 — the additive, re-runnable seeding pass for pre-plane sites
 - Phase 55 ⬜ realizes D13 (slice), D32 (slice) — compose the plane at the root: client, `repos` consumer, background seeding, doc truth
