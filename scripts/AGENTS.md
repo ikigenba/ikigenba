@@ -32,10 +32,17 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- `go test ./...` from `scripts/`. The `suite.py` client is tested through a real
-  `python3` probe harness (no pytest).
+- The default gate test command is `cd scripts && go test ./...`.
+- The tree has hermetic and composed test layers. It has no live layer and
+  no manual layer. The `suite.py` client is tested hermetically through a real
+  `python3` probe harness (no pytest); local subprocesses and loopback HTTP are
+  part of the default gate.
+- Beyond the Go toolchain, `python3` on `PATH` is an environmental precondition
+  and its absence is a hard test failure.
+- GOWORK mode is workspace, using the repo-root `go.work`; the production build
+  forces `GOWORK=off` through `bin/ship scripts`.
 - Green also means clean `go build ./...`, `go vet ./...`, and `gofmt -l .`. The
-  prod build forces `GOWORK=off`.
+  tree declares no live invocation and requires no live credentials.
 
 ## Versioning
 

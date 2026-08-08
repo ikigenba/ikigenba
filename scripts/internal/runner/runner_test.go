@@ -135,7 +135,7 @@ func waitTerminal(t *testing.T, st *script.Store, runID string) script.Run {
 func requirePython(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not on PATH")
+		t.Fatalf("python3 is required on PATH; see AGENTS.md testing preconditions: %v", err)
 	}
 }
 
