@@ -72,7 +72,9 @@ in-flight one untouched, or stop the whole run.
    statement, the shape/signatures, and the Rejected alternatives — but **omit
    that Decision's `Verification` list** (build must not see ids the phase does
    not own). Copy **each covered id's full requirement text** verbatim from the
-   Decision's Verification list. Leave the feedback region **empty** (the stub
+   Decision's Verification list, including any `Substrate:` clause — that clause
+   names the real substrate the test must run against and, when the id is not
+   hermetic, its test layer. Leave the feedback region **empty** (the stub
    shown). Then report **`NEXT`**.
 
 ## `project/loops/brief.md` schema
@@ -98,7 +100,7 @@ Phase NN — <one-line objective copied/condensed from phase-NN.md's title>
  list>
 
 ## Ids to cover
-R-XXXX-XXXX — <full requirement text copied verbatim from the Decision's Verification list>
+R-XXXX-XXXX — <full requirement text copied verbatim from the Decision's Verification list, Substrate: clause included>
 R-YYYY-YYYY — <full requirement text copied verbatim>
 ```
 (one id per line, id at line-start, an em-dash, then that id's complete
@@ -122,7 +124,8 @@ own line. If the phase owns no ids, write the single line
    isolated-module mirror `GOWORK=off go build ./...`; and every owned id has a
    genuinely-asserting `// R-XXXX-XXXX`-tagged test co-located in the exercised
    package's own `*_test.go` (e.g. `mcp/*_test.go` for transport/tool ids,
-   `server/*_test.go` for route ids) that actually runs (no SKIP).
+   `server/*_test.go` for route ids) that actually runs under that invocation —
+   never skipped, never gated behind a build tag or env flag.
  - shell-collaborator ids (only when the phase names one; design's Conventions
    note these as boundary-crossing collaborators appkit does not mint ids for
    but a phase's Done when may still name as a smoke) → the `bin/registry`
@@ -141,6 +144,27 @@ own line. If the phase owns no ids, write the single line
 ## Verify feedback
 (none yet — first build attempt)
 ```
+
+## Test layers (the vocabulary the brief speaks — see `root project/design/D23.md`)
+
+appkit's tests span three of the suite's four layers, and the loop only ever
+runs the first two:
+
+- **hermetic** — in-process code and real *local* substrates: `t.TempDir()`
+  trees, real SQLite through the real migration runner, `net/http/httptest`,
+  loopback listeners, local subprocesses. Most appkit ids.
+- **composed** — everything hermetic may, plus building and running a real
+  chassis-based service binary (the boot smoke in `appkit_test.go`).
+- **manual** — the committed live-box runbook `project/appkit-verification.md`,
+  run by the operator against `int.ikigenba.com`. Deliberately **absent from
+  `STATUS.md`**, so it is never loop work; never write a phase brief for it.
+
+appkit has **no live layer**: no `//go:build live` file exists here and
+`go test -tags live ./...` is not part of this tree's testing story. That has a
+direct consequence you must carry into every Done bar you write: a test held out
+of the default gate by a build tag, an env flag, or a skip condition is
+**unreachable, and therefore uncovered** — there is no carve-out. State the bar
+so every owned id is proven by a test that runs under plain `go test ./...`.
 
 ## Boundaries
 
@@ -164,7 +188,7 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Authored brief for Phase 12 covering five D8 structured-result ids.`
+  `Authored brief for Phase 30 covering the two adopted testing-contract ids.`
 
 End the turn on **`DONE`** when `project/loops/blocked.md` exists (name the
 blocked phase and the file) or when the step-2 grep found no `⬜` phase;

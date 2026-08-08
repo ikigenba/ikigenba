@@ -65,7 +65,8 @@ regardless of cwd.
 
 - **appkit build / typecheck:** `go build ./...` and `go vet ./...`, plus the
   isolated-module mirror `GOWORK=off go build ./...`.
-- **appkit tests:** `go test ./...`.
+- **appkit tests (the default gate):** `go test ./...`, in workspace mode via the
+  repo-root `go.work`.
 - **"The appkit suite is green"** means, from `appkit/`: `go build ./...`,
   `go vet ./...`, `gofmt -l .` (no output), and `go test ./...` all succeed with
   zero failures, and `GOWORK=off go build ./...` succeeds.
@@ -78,6 +79,23 @@ regardless of cwd.
     `../bin/stop` after. ⚠️ Only start/stop the suite this loop started from
     **this** worktree; if a shared port (`:3000`–`:3006`, `:8080`) is held by a
     stack from another worktree, stop and surface it — do not kill it.
+- **Test layers (the suite contract, `root project/design/D23.md`).** appkit's
+  suite spans **hermetic** (in-process code plus real *local* substrates —
+  `t.TempDir()` trees, real SQLite through the real migration runner,
+  `net/http/httptest`, loopback listeners, local subprocesses) and **composed**
+  (everything hermetic may, plus building and running a real chassis-based
+  service binary — the boot smoke in `appkit_test.go`). Both run in the default
+  gate. appkit has **no live layer**: never add a `//go:build live` file, never
+  reach a non-loopback address, and never read a credential from a test. The
+  **manual** layer is the operator's live-box runbook
+  `project/appkit-verification.md` — never loop work, never yours to run.
+- **Skipping is banned.** `t.Skip`, `t.Skipf`, and `t.SkipNow` may not appear in
+  any test file in this tree (there are no live-tagged files here, so the
+  contract's one exemption does not apply). A tool a test needs — the `go`
+  binary on `PATH` at test time, a populated module cache — is an
+  **environmental precondition** declared in `AGENTS.md` and a hard failure when
+  absent. A skipped requirement test launders a gap into green and `verify`
+  scores it **uncovered**.
 - **Test placement (design's rule — enforce it):** unit tests live **beside the
   code they exercise**, named for the behavior — appkit unit tests in the
   exercised package's own `*_test.go` (e.g. `mcp/*_test.go` for the transport and
@@ -87,8 +105,7 @@ regardless of cwd.
 - **Id tagging:** each covered id is named in a comment on the test that asserts
   it — `// R-XXXX-XXXX` in Go, `# R-XXXX-XXXX` in shell — on a test that *genuinely
   asserts* the behavior (never a bare literal, never a test held out of the run by
-  a skip/build-tag/env gate nothing satisfies, never one that turns a real failure
-  into a skip).
+  a skip/build-tag/env gate, never one that turns a real failure into a skip).
 - **Determinism seams (design's testing strategy):** exercise behavior through
   the **real seams, not stand-ins** — MCP transport and standard-tool claims go
   through the real `ServeHTTP` JSON-RPC seam via `net/http/httptest`; route and
@@ -100,7 +117,8 @@ regardless of cwd.
   claims use a live `httptest.NewServer` ingest sink or peer, and a genuinely
   closed TCP port for the refused-connection claim. Result-shape assertions
   compare `structuredContent` against the parsed text block — never against a
-  string fixture.
+  string fixture. When the brief's id line carries a `Substrate:` clause, that
+  clause names the substrate the test must actually run against.
 
 ## Boundaries
 
@@ -110,6 +128,8 @@ regardless of cwd.
   you read it but never write it.
 - Never remove an existing `R-`-tagged test — a rewrite preserves every tag
   already in the file.
+- Never introduce a `t.Skip` variant, a `//go:build live` file, or any other
+  gate that holds a test out of `go test ./...`.
 - Always report `NEXT`: build hands off every turn; it is never the step that ends
   the run.
 
@@ -124,7 +144,7 @@ Report this run's result as a `status` and a one-sentence `message`:
   `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
   blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Implemented Phase 12 StructuredResult + ErrorCode with five tagged tests; appkit suite green.`
+  `Implemented Phase 30's AGENTS.md declaration and skip-ban tests; appkit suite green.`
 
 Always end the turn on **`NEXT`**. `CONTINUE` is only ever a non-terminal
 progress status. Keep `message` a single plain sentence, not a JSON object or

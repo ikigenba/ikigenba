@@ -52,40 +52,64 @@ the loop and never advance a phase on a gap. Do one iteration, then report.
        verbatim and hold it to its stated pass criterion (e.g. a
        `grep -rn "JSONResult" --include="*.go" .` from `appkit/` must print
        nothing).
+   - **Enforce the skip ban** (`root project/design/D23.md`). appkit has **no
+     live layer**, so the contract's one exemption does not exist here and the
+     scan is unconditional over the whole tree:
+
+     ```
+     grep -rn 't\.Skip\|t\.Skipf\|t\.SkipNow' --include='*_test.go' --exclude-dir=project .
+     ```
+
+     Pass criterion: **no output**. Any hit is a gap — a `t.Skip` variant in any
+     non-live test file is banned, and there are no live-tagged files in this
+     tree.
    - **For every id in the denominator**, confirm a genuinely-asserting tagged test
      (`// R-…` in Go, `# R-…` in shell, or the named live check when the brief
      says so) that **actually runs under the suite's real invocation**. Statically
      trace the run — the test command plus every skip / build-tag / env gate
-     guarding that test — and treat as **uncovered**: a test gated behind a flag
-     nothing in the repo sets, a test that converts a real failure (non-zero exit,
-     unparseable output) into a skip, or any test you are not confident genuinely
-     asserts the behavior. A skip is never acceptable green for a requirement.
+     guarding that test — and treat as **uncovered**: a test gated behind a build
+     tag or an env flag (appkit has no live layer, so **no** build-tag or
+     env-gated test is reachable here and there is no carve-out), a test that
+     converts a real failure (non-zero exit, unparseable output) into a skip, or
+     any test you are not confident genuinely asserts the behavior. A skip is
+     never acceptable green for a requirement. When the brief's id line carries a
+     `Substrate:` clause, the test must run against that substrate — an id whose
+     claim depends on a real substrate is **uncovered** if its test uses a mock
+     instead.
    - **Global coverage ratchet** — confirm this phase's build did not silently
      drop a previously-covered id anywhere in the tree:
 
      ```
-     comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | sort -u) \
+     comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u) \
               <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
                     <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) \
                     <(grep -oE '^### D[0-9]+ — `R-[A-Z0-9]{4}-[A-Z0-9]{4}`' project/appkit-verification.md 2>/dev/null | grep -oE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}') \
-                | sort -u)
+                | grep -v 'R-XXXX-XXXX' | sort -u)
      ```
 
      **Read this as: design ids minus (tagged-test ids ∪ pending-phase ids ∪
-     the documented live-box out-of-loop ids).** appkit's documented
-     convention (`project/appkit-verification.md`) is that two ids —
-     `R-YU3O-6CQP` and `R-ELE5-W5ML` — are real-substrate/live-box
-     checks the offline loop cannot falsify and are verified by the operator
-     on the live box instead — they are **not** loop-gating and their absence
-     from `*_test.go` is the expected, permanent state, never a regression.
-     The third `comm` input is exactly that documented set, read live off the
-     doc's own `### D<n> — \`R-id\`` check headers rather than
-     hand-copied, so if the operator ever changes which ids are live-tracked
-     the ratchet follows without editing this prompt.
+     the documented manual-layer out-of-loop ids).**
+
+     The `grep -v 'R-XXXX-XXXX'` filters are **load-bearing**: `R-XXXX-XXXX` is
+     the literal placeholder the design and plan docs use when describing the id
+     *shape*, and it matches the id regex. Without the filter it enters the
+     design-side set as a phantom id no test can ever carry, and the ratchet can
+     never report clean. It is not a real minted id, so filtering it can never
+     mask a real gap.
+
+     appkit's documented convention (`project/appkit-verification.md`) is that
+     two ids — `R-YU3O-6CQP` and `R-ELE5-W5ML` — are **manual-layer** live-box
+     checks the offline loop cannot falsify, verified by the operator on the
+     live box instead. They are **not** loop-gating and their absence from
+     `*_test.go` is the expected, permanent state, never a regression. The third
+     `comm` input is exactly that documented set, read live off the doc's own
+     `### D<n> — \`R-id\`` check headers rather than hand-copied, so if the
+     operator ever changes which ids are manual-tracked the ratchet follows
+     without editing this prompt.
 
      **Empty output is the pass condition.** Any id it prints is a genuine
      coverage regression — an id neither covered, nor pending, nor documented
-     as a live-box check — an open gap, grounded in this command, noting the
+     as a manual-layer check — an open gap, grounded in this command, noting the
      dropped tagged test exists in git history to restore.
 
 4. **Collect the open gaps** — the set of ids that are uncovered, failing, or
@@ -182,9 +206,11 @@ Leave the marker `⬜`. Change no source.
   `project/plan/phase-*.md`, and `project/appkit-verification.md`'s check
   headers extract id tokens only; they are not "reading" design prose in this
   sense.)
-- Never treat `R-YU3O-6CQP` or `R-ELE5-W5ML` (the two documented live-box ids
-  in `project/appkit-verification.md`) as a gap for lacking a `*_test.go` tag —
-  that absence is the documented, permanent convention, not a regression.
+- Never treat `R-YU3O-6CQP` or `R-ELE5-W5ML` (the two documented manual-layer
+  live-box ids in `project/appkit-verification.md`) as a gap for lacking a
+  `*_test.go` tag — that absence is the documented, permanent convention, not a
+  regression. This is the **only** id-level exemption; it is a manual-layer
+  carve-out, never a licence to accept a build-tag- or env-gated test as covered.
 - When uncertain a test really asserts, or when a tagged test is statically
   unreachable / skipped, treat that id as **uncovered** — a skip is never
   acceptable green.
@@ -204,10 +230,10 @@ Report this run's result as a `status` and a one-sentence `message`:
   `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
   blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 12 verified green; deleted its STATUS.md line and phase file and
+  `Phase 30 verified green; deleted its STATUS.md line and phase file and
   removed the brief.` or
-  `Phase 13 still open on R-WY6X-V4G9; wrote attempt 2 feedback.` or
-  `Phase 14 blocked after a second stall; wrote blocked.md for the operator.`
+  `Phase 30 still open on R-O2IA-0JBL; wrote attempt 2 feedback.` or
+  `Phase 30 blocked after a second stall; wrote blocked.md for the operator.`
 
 Always end the turn on **`NEXT`** — on a pass and on a gap alike. `CONTINUE` is
 only ever a non-terminal progress status. Keep `message` a single plain sentence,
