@@ -13,6 +13,8 @@ package server
 // nginx reads only the status code and the response headers — never the body.
 
 import (
+	"context"
+	"encoding/base64"
 	"net"
 	"net/http"
 	"strconv"
@@ -22,6 +24,21 @@ import (
 	"dashboard/internal/audit"
 	"dashboard/internal/pat"
 )
+
+// gitDoorPrefix is repos' git smart-HTTP mount. The trailing slash is the
+// boundary between the git door and every sibling path under /srv/repos/.
+const gitDoorPrefix = "/srv/repos/git/"
+
+type authnCredentialFormKey struct{}
+
+// isGitDoorURI reports whether a forwarded X-Original-URI addresses the git
+// door. The query string is ignored, as it is for resource resolution.
+func isGitDoorURI(originalURI string) bool {
+	if i := strings.IndexByte(originalURI, '?'); i >= 0 {
+		originalURI = originalURI[:i]
+	}
+	return strings.HasPrefix(originalURI, gitDoorPrefix)
+}
 
 // handleAuthn is the auth_request introspection endpoint. Its checks run in a
 // strict order so that an unauthenticated caller can never consume rate budget
@@ -77,6 +94,33 @@ func (a *app) handleAuthn() http.HandlerFunc {
 		// (c) Extract the bearer token.
 		tok, ok := bearerFromHeader(r)
 		if !ok {
+			if isGitDoorURI(r.Header.Get("X-Original-URI")) {
+				h := r.Header.Get("Authorization")
+				const basicPrefix = "Basic "
+				if strings.HasPrefix(h, basicPrefix) {
+					decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(h[len(basicPrefix):]))
+					if err == nil {
+						if colon := strings.IndexByte(string(decoded), ':'); colon >= 0 {
+							tok = string(decoded[colon+1:])
+							if !strings.HasPrefix(tok, pat.Prefix) {
+								w.Header().Set("WWW-Authenticate", `Basic realm="ikigenba"`)
+								w.WriteHeader(http.StatusUnauthorized)
+								a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "basic_not_pat"}})
+								a.recordEdge(r, id, "deny", http.StatusUnauthorized, "basic_not_pat", "", "")
+								return
+							}
+							r = r.WithContext(context.WithValue(r.Context(), authnCredentialFormKey{}, "basic"))
+							a.handleAuthnPAT(w, r, tok, boundResource, prmURL, id)
+							return
+						}
+					}
+				}
+				w.Header().Set("WWW-Authenticate", `Basic realm="ikigenba"`)
+				w.WriteHeader(http.StatusUnauthorized)
+				a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "missing_credential"}})
+				a.recordEdge(r, id, "deny", http.StatusUnauthorized, "missing_credential", "", "")
+				return
+			}
 			writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
 				oauthError:       "invalid_request",
 				description:      "missing or malformed Authorization header",
@@ -195,16 +239,30 @@ func (a *app) handleAuthn() http.HandlerFunc {
 // and runs (f) workspace, (g) rate limit, and (h) emit headers exactly as the
 // OAuth path does, except (h) OMITS X-Chain-Id: a PAT has no chain (ADR §D5).
 func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundResource, prmURL, id string) {
+	basic := r.Context().Value(authnCredentialFormKey{}) == "basic"
+	writePATChallenge := func(description string) {
+		if basic {
+			w.Header().Set("WWW-Authenticate", `Basic realm="ikigenba"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
+			oauthError:       "invalid_token",
+			description:      description,
+			resourceMetadata: prmURL,
+		})
+	}
+
 	// (d) Validate the PAT.
 	p, err := a.pats.ValidatePAT(r.Context(), tok)
 	if err != nil {
-		writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
-			oauthError:       "invalid_token",
-			description:      err.Error(),
-			resourceMetadata: prmURL,
-		})
-		a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "invalid_pat", "detail": err.Error()}})
-		a.recordEdge(r, id, "deny", http.StatusUnauthorized, "invalid_pat", "", "")
+		writePATChallenge(err.Error())
+		reason := "invalid_pat"
+		if basic {
+			reason = "invalid_pat_basic"
+		}
+		a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": reason, "detail": err.Error()}})
+		a.recordEdge(r, id, "deny", http.StatusUnauthorized, reason, "", "")
 		return
 	}
 
@@ -215,11 +273,7 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 
 	// (f) Workspace: the PAT owner identity must be inside the configured domain.
 	if !ownerInWorkspace(p.OwnerEmail, a.workspaceDomain) {
-		writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
-			oauthError:       "invalid_token",
-			description:      "owner identity outside configured workspace",
-			resourceMetadata: prmURL,
-		})
+		writePATChallenge("owner identity outside configured workspace")
 		a.auditAuthnDeny(r, audit.Event{
 			OwnerEmail: p.OwnerEmail, ClientID: clientID,
 			Details: map[string]any{"reason": "workspace_mismatch", "kind": "pat"},
@@ -265,11 +319,15 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 	w.Header().Set("X-Correlation-Id", id)
 	w.Header().Set("Cache-Control", "no-store")
 	ip, ua := audit.FromRequest(r)
+	details := map[string]any{"token_id": p.ID, "kind": "pat", "resource": boundResource}
+	if basic {
+		details["cred"] = "basic"
+	}
 	_ = a.audit.Write(r.Context(), audit.Event{
 		Type:       audit.EventAuthnAllow,
 		OwnerEmail: p.OwnerEmail, ClientID: clientID,
 		IP: ip, UserAgent: ua,
-		Details: map[string]any{"token_id": p.ID, "kind": "pat", "resource": boundResource},
+		Details: details,
 	})
 	w.WriteHeader(http.StatusOK)
 	a.recordEdge(r, id, "allow", http.StatusOK, "", p.OwnerEmail, clientID)
