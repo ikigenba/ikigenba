@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 26
-
-- Phase 25 ⬜ realizes — — align the agentkit pin with the suite-wide version
