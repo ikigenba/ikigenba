@@ -4,14 +4,12 @@
 # for local running.
 APP     := wiki
 BIN     := bin/$(APP)
-VERSION ?= dev
-LDFLAGS := -X main.version=$(VERSION)
 
 .PHONY: build run test vet fmt clean
 
 build:
 	@mkdir -p bin
-	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/wiki
+	go build -trimpath -o $(BIN) ./cmd/wiki
 
 run: build
 	./$(BIN)

@@ -4,14 +4,12 @@
 # for local running.
 APP     := github
 BIN     := build/$(APP).bin
-VERSION ?= $(shell cat VERSION)
-LDFLAGS := -X appkit.version=$(VERSION)
 
 .PHONY: build run test vet fmt clean
 
 build:
 	@mkdir -p $(dir $(BIN))
-	GOWORK=off go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/github
+	GOWORK=off go build -trimpath -o $(BIN) ./cmd/github
 
 run: build
 	./$(BIN)

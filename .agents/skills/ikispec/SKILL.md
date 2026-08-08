@@ -74,10 +74,13 @@ it.
   not against the umbrella itself. The umbrella never uses the tree-local
   coverage grep, since it governs no code.
 - **Cite, never restate.** A subproject spec uses a suite contract **by
-  value**: it cites the umbrella Decision by path
-  (`project/design/DNN.md` at the repo root), owns none of it, and never
-  restates its content normatively. A stale local restatement is drift by
-  construction; the citation is the whole mechanism.
+  value**: it cites the umbrella Decision by path, written in the exact form
+  **`root project/design/DNN.md`** — never the bare path, which names a *local*
+  Decision in every subproject and is ambiguous by construction. It owns none
+  of the contract and never restates its content normatively. A stale local
+  restatement is drift by construction; the citation is the whole mechanism,
+  and the fixed `root` prefix makes every contract citation findable with one
+  grep (`grep -rn 'root project/design/'`).
 - **Citation of an id is adoption.** When a service design cites a
   `[proof: per-service]` contract id, the ordinary coverage invariant applies
   to it: the id must be realized by a tagged test in that service's tree or

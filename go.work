@@ -30,4 +30,8 @@ use (
 	./wiki
 )
 
-replace github.com/ikigenba/agentkit => /home/mgreenly/projects/agentkit
+// No replace directives here — a workspace replace silently overrides every
+// module's committed pin, so dev compiles code prod never sees (root
+// project/design/D22.md). To hack on a local agentkit checkout, add a replace
+// TEMPORARILY with `go work edit -replace github.com/ikigenba/agentkit=<path>`
+// and drop it (`go work edit -dropreplace ...`) before committing.

@@ -10,7 +10,7 @@ against the dashboard, strips the prefix, and forwards it with trusted
 `X-Owner-Email` / `X-Client-Id` headers, so services run no UI and no token logic.
 The product surface is **MCP**. Every app is one static `linux/amd64` Go binary on
 the shared **appkit** chassis over SQLite (fixed verbs
-`serve`/`version`/`manifest`/`migrate`/`schema`), and services exchange facts over
+`serve`/`version`/`migrate`/`schema`), and services exchange facts over
 the **event plane** (append-only outbox, `/feed` SSE) rather than private API
 calls. The bet: tolerating short scheduled downtime buys a cheaper,
 easier-to-recover system, with no cluster and no broker. Infrastructure lives

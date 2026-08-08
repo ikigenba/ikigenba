@@ -4,14 +4,12 @@
 # for local running.
 APP     := scripts
 BIN     := build/$(APP).bin
-VERSION ?= dev
-LDFLAGS := -X main.version=$(VERSION)
 
 .PHONY: build run test vet fmt clean
 
 build:
 	@mkdir -p $(dir $(BIN))
-	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/scripts
+	go build -trimpath -o $(BIN) ./cmd/scripts
 
 run: build
 	./$(BIN)
