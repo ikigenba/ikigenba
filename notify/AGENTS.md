@@ -35,7 +35,23 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- Unit: `go test ./...`
+notify adopts the testing-language contract in `root project/design/D23.md`.
+
+- Default gate: `cd notify && go test ./...`, as part of the green bar (`go build
+  ./...`, `go vet ./...`, silent `gofmt -l .`, and `go test ./...`).
+- Layers present: **hermetic** and **composed**. There is **no live layer** and
+  **no manual layer**. Hermetic tests are in-process and loopback-only, including
+  the mock ntfy server on `127.0.0.1`, MCP and database tests, composition-root
+  web and event-chain tests, telemetry wiring tests, and committed shipped-file
+  guards. The composed layer is the offline boot smoke that builds and runs the
+  notify binary against a temporary `/opt/notify/`-shaped tree and checks its
+  loopback `/health` endpoint.
+- Environmental preconditions beyond the Go toolchain: **none**. Tests need no
+  real ntfy credential or running suite and do not read or change behavior based
+  on ambient `NTFY_TOPIC` or `NTFY_API_KEY`; push configuration is injected.
+- GOWORK mode: **workspace**. The gate resolves `appkit`, `eventplane`, and
+  `registry` through the repo-root `go.work` and committed replace-siblings;
+  notify has no separate standalone build check.
 
 ## Versioning
 
