@@ -10,5 +10,7 @@ file — there is no done marker; done is gone. This file deliberately carries
 **no bare status glyph** anywhere but on a phase line, so the anchored grep
 matches only phase lines.
 
-Next phase: 45
+Next phase: 46
+
+- Phase 45 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — declare the dashboard's testing facts in `AGENTS.md` and prove the declaration and the skip ban in `cmd/dashboard/docs_test.go`
 

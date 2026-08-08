@@ -43,6 +43,7 @@ Verification ids change.
 - D34 → `project/design/D34.md` — Suite-contract conformance: the opsctl install layout and the authored env contract — adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`); mints none of its own
 - D35 → `project/design/D35.md` — The authn rate limiter: per-token sliding window in `internal/ratelimit` (server-side row-id keys, post-auth ordering, nil/zero disabled, in-memory per-instance) — owns R-I98E-62GS
 - D36 → `project/design/D36.md` — Env-channel conformance: composed manifest root, manifest-surfaced authn knobs, and customer-data routing — owns R-GBZ2-DNKQ, R-GD6Y-RFBF, R-GEEV-5724; adopts R-VKB6-SHHV (root `project/design/D11.md`)
+- D37 → `project/design/D37.md` — Testing-language conformance: the suite's four layers, the dashboard's declared testing facts (hermetic + composed + manual, no live; no preconditions beyond the Go toolchain; workspace GOWORK), proven in `cmd/dashboard/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
 
 ## Verification ids → Decision
 
@@ -133,6 +134,8 @@ Verification ids change.
 - R-JDR7-O99I → D7 → `project/design/D07.md`
 - R-JG70-FSQW → D7 → `project/design/D07.md`
 - R-JHEW-TKHL → D7 → `project/design/D07.md`
+- R-O1AD-MRKW → D37 → `project/design/D37.md` (adopted from root `project/design/D23.md`)
+- R-O2IA-0JBL → D37 → `project/design/D37.md` (adopted from root `project/design/D23.md`)
 - R-O7K1-XEN7 → D7 → `project/design/D07.md`
 - R-OF1Q-VEDC → D5 → `project/design/D05.md`
 - R-OG9N-9641 → D5 → `project/design/D05.md`

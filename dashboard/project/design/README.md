@@ -41,7 +41,10 @@ client-supplied correlation ids and forwards the original request method (D33);
 and (6) **suite-contract conformance** — the dashboard adopts the umbrella
 project's two `[proof: per-service]` contracts, the `/opt/<svc>/` install layout
 and the portable authored `manifest.env`, citing them by Decision path and stating
-only where its local proof lives (D34).
+only where its local proof lives (D34); and (7) **testing-language conformance** —
+the dashboard adopts the suite's testing-language contract, declaring its own
+layers, preconditions, and GOWORK mode and proving that declaration in its own
+tree (D37).
 It is rewritten in place to stay true (stale decisions are removed, not
 stacked); construction history lives in git, not here.
 
@@ -91,10 +94,10 @@ Shared facts every Decision leans on:
   login-bounce primitive, D33's correlation-id blanking and original-method
   forwarding) are proven by content-assertion.** `dashboard/etc/nginx.conf` is a
   server-block fragment `opsctl init-box` installs; lines added to it are
-  verified by a Go test that **reads the file from disk** and asserts its content
-  (the same pattern the sibling `sites` service uses for its fragment) — nginx
-  itself is never run by the suite, so the live 302/401 routing and the live
-  header handling are deploy-time smokes, not unit tests. The **dev front door**
+  verified by a **hermetic** Go test that **reads the file from disk** and asserts
+  its content (the same pattern the sibling `sites` service uses for its fragment)
+  — nginx itself is never run by the gate, so the live 302/401 routing and the
+  live header handling are **manual-layer** checks at deploy time. The **dev front door**
   `nginx/nginx.conf` (repo root) carries a mirror of the login-bounce primitive
   for local testing, but it lives **outside this `project/` tree** and is
   maintained as suite infrastructure, never by this spec or its build loop.
@@ -186,7 +189,15 @@ returns just its charts block for the once-a-minute client poll (D14).
 Testing is part of the architecture. The cross-cutting approach every Decision's
 Verification list assumes:
 
-- **HTTP-level tests against the standalone server.** The in-package tests drive
+- **The layer vocabulary is the suite's, not this tree's.** Every test below
+  belongs to exactly one layer — **hermetic**, **composed**, **live**, or
+  **manual** — as defined by `root project/design/D23.md`, which owns the layer
+  definitions, the `//go:build live` mechanism, and the ban on skipping outside
+  live-tagged files. D37 records the dashboard's adoption and its declared facts.
+  In short: everything below is **hermetic** except the boot smoke in
+  `cmd/dashboard/main_test.go`, which is **composed**, and the interactive
+  provider sign-in, which is **manual**. The dashboard has **no live layer**.
+- **HTTP-level tests against the standalone server (hermetic).** The in-package tests drive
   the real route table via `(*app).routes()` (the `server` package's existing test
   harness — see `internal/server/index_test.go`, `grants_test.go`,
   `login_test.go`), issuing requests with `httptest` and asserting status codes,
@@ -202,13 +213,15 @@ Verification list assumes:
   "profile renders the grants block" by asserting the `GET /profile` body contains
   it. Redirect targets (`/profile` vs `/`) are proven by asserting the `Location`
   header on the 3xx response.
-- **Doc truth is a Go test like everything else.** The `AGENTS.md` claim (D6) is a
-  fixed-substring check — the stale rules absent, the four-page truth present —
-  and it runs as an ordinary test in `cmd/dashboard/docs_test.go` reading the
-  committed file from disk, so the id has a tag site and the doc is re-checked on
-  every `go test ./...`, not once at authoring time.
-- **Metric sources are unit-tested against fixtures; the two that hinge on a
-  real OS contract get a real-substrate check.** The `/proc/meminfo` parser runs
+- **Doc truth is a hermetic Go test like everything else.** The `AGENTS.md` claim
+  (D6) is a fixed-substring check — the stale rules absent, the four-page truth
+  present — and it runs as an ordinary test in `cmd/dashboard/docs_test.go`
+  reading the committed file from disk, so the id has a tag site and the doc is
+  re-checked on every `go test ./...`, not once at authoring time. D37's
+  testing-facts declaration and its skip-ban source scan are proven in that same
+  file, by the same read-from-disk means.
+- **Metric sources are tested hermetically against fixtures; the two that hinge on
+  a real OS contract get a real-substrate check (still hermetic).** The `/proc/meminfo` parser runs
   against a fixture reader; the cgroup reader and the `du` walk run against temp
   trees at an injected root (including the absent-path → 0 case); service discovery
   runs against a temp manifest root (asserting the dashboard, which lacks
@@ -238,10 +251,12 @@ Verification list assumes:
   membership endpoint's 404-means-none contract) through the injectable
   `webBase`/`apiBase` roots (D25); the `server`-package tests drive the GitHub
   routes/callback with the `githubidp.NewStub()` double, exactly the pattern
-  the Google pair uses. An interactive login cannot run under CI, so the real
-  GitHub contract is captured in `project/research/research.md` and exercised
-  manually at deploy time — the same precedent as Google.
-- **The telemetry edge is tested against the real handler and a live sink.** The
+  the Google pair uses. Both seams are **hermetic**. An interactive login is a
+  browser handshake automation cannot drive even with credentials, so the real
+  GitHub contract is captured in `project/research/research.md` and exercised at
+  deploy time as a **manual-layer** check — the same precedent as Google.
+- **The telemetry edge is tested against the real handler and a real in-process
+  sink — hermetic throughout, despite reaching a socket (loopback only).** The
   minting and edge-record claims (D30, D31, D32) are driven through the **real**
   introspection handlers — `httptest` requests against `(*app).routes()`, the
   same harness the rest of the `server` package uses, with a real temp DB behind
@@ -254,9 +269,10 @@ Verification list assumes:
   recorder would accept whatever it was handed and prove nothing left the
   process, so it is not the substrate for those ids; the unreachable-sink case is
   driven against a **closed** listener, which is the only way to falsify the
-  best-effort promise. The nginx-fragment claims (D33) are file-content
+  best-effort promise. Both remain hermetic: the sink is `httptest` on loopback,
+  never a real telemetry service. The nginx-fragment claims (D33) are file-content
   assertions per the Conventions above.
-- **Chart rendering is pure and unit-tested on geometry, not pixels.** The SVG
+- **Chart rendering is pure and tested hermetically on geometry, not pixels.** The SVG
   builders are pure functions of a `Store` snapshot; tests assert computed
   coordinates and structure (hero y-axis mapped `0 → total capacity`; stacked band
   height at each x equals the sum of service values; the long tail folds into one
