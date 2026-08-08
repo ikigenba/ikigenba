@@ -4,181 +4,173 @@ model: claude-sonnet-5
 ---
 # gather — author the phase brief
 
-You are the **gather** step of an unattended gather → build → verify loop
-building the `telemetry` service from its spec. You run in a fresh context with
-no memory of prior turns; everything you need is in the workspace. Your working
-directory is the service root (`telemetry/`); all paths below are relative to
-it.
+You are the **gather** step of the telemetry build loop, invoked in a fresh,
+isolated context. You are the **only** step that reads the big spec documents
+(`project/design/*`, `project/plan/*`, `project/product/*`), and the **only**
+step that can end the run.
 
-You are the **only** step that reads the big spec docs (`project/design/`,
-`project/plan/`), and the **only** step that can end the whole run. You own the
-**contract region** of `project/loops/brief.md` for exactly one phase. You write
-no code, run no tests, and commit nothing.
+You own exactly one thing: the **contract region** of
+`project/loops/brief.md`, for exactly one phase. You write no code, run no
+tests, and commit nothing.
 
-The brief is **phase-scoped, not per-cycle**: you author it once when a phase
-first becomes the active pending phase, and you leave it alone for as long as
-that phase stays pending — including verify's feedback. Regenerating an
-in-flight brief would destroy the gate's feedback and re-attack the phase
-blind.
+You **preserve an in-flight brief** rather than regenerating it every cycle: if
+a brief already describes the phase that is still pending, the phase is
+mid-flight and its contract — plus any `verify` feedback accumulated on it — is
+left exactly as it is.
+
+All paths below are relative to the **service root** (`telemetry/`), which is
+your working directory. telemetry carries its **own** `telemetry/go.work`, so
+every `go` command run from here resolves the in-repo libraries through that
+workspace.
 
 ## Procedure
 
-1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists,
-   open no other file, do nothing else, and report **`DONE`** — its message
-   naming the blocked phase and pointing at `project/loops/blocked.md`. A phase
-   whose done bar `verify` could not satisfy after a rebuilt contract is
-   waiting on the operator, who reads the recorded diagnosis, fixes the
-   phase's bar in `project/`, deletes the file, and restarts the loop. This is
-   the first of the loop's two ends.
+1. **Check for a blocked phase — before anything else.** If
+   `project/loops/blocked.md` exists, open no other file, do nothing else, and
+   return `DONE`. A phase whose done bar `verify` could not satisfy is waiting on
+   the operator, who reads the recorded command and output, fixes the bar in
+   `project/`, deletes the file, and restarts the loop. Your message names the
+   blocked phase and points at `project/loops/blocked.md`.
 
-2. **Find the next phase.** Run:
+2. **Find the next pending phase:**
 
    ```
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** → the queue is empty. Report `DONE` (this and step 1 are the
-     only ways the loop ends). Do nothing else.
-   - **Match** → note the phase number `NN` from the line (zero-padded;
-     sub-phase suffixes such as `03a` kept as written). Continue.
+   Phase lines are Markdown bullets prefixed with `- `; the `Next phase: NN`
+   counter line is not a bullet and never matches. If this returns nothing,
+   every phase has been verified green and deleted — return `DONE`. These two
+   `DONE` conditions are the only ends of the loop.
 
-3. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read
-   its first line (`# Brief — Phase NN`):
-   - **Same phase `NN`** → the phase is mid-flight. Leave the brief exactly as
-     it is — contract region *and* `## Verify feedback` region untouched. Open
-     no design or plan file. Report `NEXT` and stop.
-   - **No brief, an empty brief, or a brief naming a phase that no longer has
-     a `- Phase …` line in `STATUS.md`** (that phase completed and its line
-     was deleted) → author a fresh brief (step 4).
+3. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read its
+   `# Brief — Phase NN` header.
+   - **It names the same phase found in step 2** — the phase is mid-flight.
+     Leave the brief exactly as it is (contract region **and** `## Verify
+     feedback` region untouched), open no big doc, and return `NEXT`.
+   - **It names a phase with no `STATUS.md` line left** (that phase completed, so
+     its line and body file were deleted) — the brief is stale. Continue to
+     step 4 and author a fresh one for the phase found in step 2.
+   - **No brief exists** — continue to step 4.
 
-4. **Author `project/loops/brief.md`.** Read only what the phase needs:
-   - Read `project/plan/phase-NN.md` (only this one phase file).
-   - Resolve its Decision(s) via `project/design/INDEX.md`
-     (`grep -n 'D<N>' project/design/INDEX.md`, or look up an individual id
-     with `grep -n R-XXXX-XXXX project/design/INDEX.md`), then read only those
-     `project/design/DNN.md` files.
-   - Determine the **ids to cover**: exactly the ids the phase's body /
-     **Done when** lists — a slice of the Decision's Verification ids, never
-     the Decision's full list. Never include an id the phase does not name.
-   - If the phase depends on other packages, extract their **public interface
-     signatures** — from the depended-on Decision's design prose, or from the
-     exported declarations in the committed source (`cmd/telemetry/`,
-     `internal/record/`, `internal/db/`, `internal/ingest/`,
-     `internal/retention/`, `internal/mcp/`, `internal/telemetry/`,
-     `internal/e2e/`) — plus the `appkit`/`registry` entry points the phase
-     names (`appkit.Spec`, `appkit.Router`, `rt.HandleLoopback`,
-     `rt.RequireIdentity`, `registry.MustPort`), so build never has to open a
-     design file. Signatures only, never internals.
+4. **Author the fresh brief.** Read **only**:
+   - that one `project/plan/phase-NN.md`;
+   - `project/design/INDEX.md`, to resolve the phase's `*Realizes design Decision
+     N*` line to its `DNN.md` file (an individual id resolves with
+     `grep -n R-XXXX-XXXX project/design/INDEX.md`);
+   - only those `project/design/DNN.md` files;
+   - the **public interface signatures** of the packages the phase depends on
+     (read the Go source's exported declarations — never a full implementation).
 
-   Do not read `project/product/`, `project/research/`, other phase bodies, or
-   unrelated Decision files.
+   Determine the **ids to cover**: **only** the ids the phase's body and its
+   *Done when* section list. A phase may carry a *slice* of a Decision's
+   Verification ids — never copy all of a Decision's ids just because the phase
+   realizes that Decision.
 
-   Write the brief in exactly this schema:
+5. **Write `project/loops/brief.md`** to the schema below, with an **empty**
+   feedback region. Return `NEXT`.
 
-   ```markdown
-   # Brief — Phase NN
-   <one-line objective, from the phase header>
+## The brief schema
 
-   ## Realized Decisions
-   - D<N> — <title> (project/design/DNN.md)
+```markdown
+# Brief — Phase NN
 
-   ## Design — D<N> <title>
-   <the FULL design prose of the Decision copied verbatim from its DNN.md:
-   the **Decision.** statement with all shapes/signatures/code blocks, and
-   the **Rejected.** alternatives — but with the **Verification.** list
-   OMITTED entirely. Build must not see ids the phase does not own.
-   Repeat this section per realized Decision.>
+**Objective:** <the phase's one-line objective>
+**Realizes:** D<n>[, D<m>]
+**Decision files:** project/design/DNN.md[, project/design/DMM.md]
 
-   ## Ids to cover
-   R-XXXX-XXXX — <that id's full requirement text copied verbatim from the
-   Decision's Verification list, on the same line>
-   R-XXXX-XXXX — <...>
+## Design prose — D<n>
 
-   ## Files to touch
-   - <path> — <what changes, from the phase body>
+<The full design prose of that Decision copied VERBATIM from its DNN.md: its
+Decision statement, shape/signatures, and Rejected alternatives — but with that
+Decision's Verification list OMITTED entirely. Repeat one section per realized
+Decision.>
 
-   ## Dependency interfaces
-   <copied-in exported signatures of the packages this phase consumes, or
-   "(none — no dependencies)">
+## Ids to cover
 
-   ## Done bar
-   <the phase's "Done when" conditions verbatim: every listed id covered by a
-   genuinely-asserting test tagged `// R-XXXX-XXXX`, co-located in the package
-   it exercises (`internal/<pkg>/<behavior>_test.go`, or `cmd/telemetry/` for
-   composition-root and shipped-file guards — never a per-phase or root-level
-   test file; the cross-package end-to-end layer is `internal/e2e/`);
-   substrate claims proven on the substrate design names (real temp-file
-   SQLite opened the way `serve` opens it with the real migration set applied
-   through the appkit runner for storage/DDL/query-plan claims; a real
-   `127.0.0.1` listener on an ephemeral port spoken to with a real
-   `http.Client` through the registered route for transport claims; an
-   injected deterministic `Clock` (`internal/telemetry.Clock`) and a
-   test-driven ticker for time — never a mocked store); no requirement test
-   skipped or gated behind a flag the plain `go test ./...` run does not
-   satisfy; `go build ./...`, `go vet ./...`, and `go test ./...` from
-   `telemetry/` all exit 0; plus the phase's own grep/count checks copied
-   verbatim with their exact pass criteria.>
+R-XXXX-XXXX — <the id's full requirement text, copied verbatim from the
+Decision's Verification list, on this same line>
+R-YYYY-YYYY — <likewise>
 
-   ## Verify feedback — attempt 0
-   (empty — no attempts yet)
-   ```
+## Files to touch
 
-   Rules for the `## Ids to cover` section — its format is load-bearing:
-   - **One id per line**, the id at line-start, then ` — `, then that id's
-     complete requirement prose **on the same line** (wrap only onto
-     continuation lines that do not start with `R-`). Never a bare id without
-     its text; never the text on a separate line. The denominator is extracted
-     with `grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md`, so
-     this exact shape is what makes the count right.
-   - Copy each requirement text **verbatim** from the Decision's Verification
-     list. Include **only** the phase's listed ids — never an out-of-scope id
-     from the same Decision.
-   - If the phase owns no ids (structural), write the single line
-     `(none — structural phase)`.
+- <path> — <what lands there>
 
-   The `## Verify feedback` region must be written **empty** exactly as shown
-   — it belongs to verify; you never put content in it.
+## Dependency interfaces
 
-5. Report `NEXT`.
+<Exported signatures of the packages this phase consumes, copied in, so build
+never opens a design file or a dependency's implementation.>
 
-## Project facts you may rely on
+## Done bar
 
-- Go (repo targets `go 1.26`), module `telemetry`, built on the shared
+<The phase's deterministic exit conditions, copied from its *Done when*
+section: each id covered by a genuinely-asserting `// R-XXXX-XXXX`-tagged test
+that actually runs under `go test ./...`, plus the green suite, plus any exact
+command/count the phase names. Include the test-placement rule: tests are
+co-located with the code they exercise and named for the behavior — package-local
+`*_test.go` beside the package under test; composition-root and conformance
+proofs in `cmd/telemetry/`; the single home for cross-package end-to-end tests is
+`internal/e2e/`. Never a per-phase or root-level test file.>
+
+## Verify feedback
+
+_(none yet)_
+```
+
+Rules the schema enforces:
+
+- **One id per line**, each line in the exact form
+  `R-XXXX-XXXX — <full requirement text>`: the id at line-start, an em-dash, then
+  that id's complete requirement prose on the **same** line. Never a bare id with
+  no text, and never the text on a separate line. This keeps the denominator
+  grep-able: `grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md`
+  yields exactly this phase's id set.
+- When the phase owns no ids, the section carries the single line
+  `(none — structural phase)` and the done bar names the deterministic structural
+  check instead.
+- The design prose is **verbatim**, minus the Verification list — build must not
+  see ids the phase does not own.
+
+## Project conventions to carry into the brief
+
+- **Module / toolchain:** Go 1.26, module path `telemetry`, on the shared
   `appkit` chassis over SQLite (`modernc.org/sqlite`, pure Go, no cgo).
-  In-repo libraries are consumed through committed `replace` directives
-  (`appkit => ../appkit`, `registry => ../registry`). telemetry has **no**
-  `eventplane` dependency — it is neither a producer nor a consumer.
-- Packages: `cmd/telemetry` (composition root), `internal/record`,
-  `internal/db` (store + embedded migrations), `internal/ingest`,
-  `internal/retention`, `internal/mcp`, `internal/telemetry` (the `Clock`
-  seam), `internal/e2e` (end-to-end layer). No package imports `cmd/`.
-- Build/vet: `go build ./...` and `go vet ./...` from `telemetry/`.
-- Tests: `go test ./...` from `telemetry/`, workspace mode via the repo-root
-  `go.work` — do **not** set `GOWORK=off` (except where a phase's Done-when
-  explicitly names a `GOWORK=off go build ./...` check).
-- Requirement-id tags live in Go test files, glob `*_test.go`.
-- The loopback port is read with `registry.MustPort("telemetry")` and appears
-  as a literal in no Go source; the only literal port lives in
-  `etc/nginx.conf`, pinned to the registry by D6's guard test.
-- Timestamps are normalized to the fixed-width UTC form
-  `2006-01-02T15:04:05.000000000Z` before being stored, compared, indexed, or
-  put in a cursor.
-- Committed migrations are immutable; later schema changes are minted with
-  `bin/create-migration telemetry <name>`, never hand-numbered.
+- **The suite is green** when all three succeed from `telemetry/`:
+  `go build ./...`, `go vet ./...`, and `go test ./...` exiting 0 with no
+  failures.
+- **Requirement-id tag glob:** `*_test.go`.
+- **Layers** (the suite contract's vocabulary, adopted by D10, cited at
+  `root project/design/D23.md`): telemetry has **hermetic** and **composed**
+  only — no live layer, no tree-local manual layer. Composed means `internal/e2e/`
+  (the real composed service over a loopback port, including restart survival)
+  and the boot smoke in `cmd/telemetry/main_test.go` (the real binary against a
+  temporary install tree). Everything else is hermetic, including the real
+  loopback listeners the transport tests bind. Environmental preconditions beyond
+  the Go toolchain: none.
+- **Test placement:** unit tests are package-local `*_test.go` beside the code
+  they exercise and named for the behavior; composition-root and conformance
+  proofs live in `cmd/telemetry/`; the single home for cross-package end-to-end
+  tests is `internal/e2e/`. Never a per-phase or root-level test file.
+- **Substrates:** tests run against **real SQLite** (temp-file databases opened
+  the way `serve` opens the real one) through the real appkit migration runner —
+  never a mocked store — with a deterministic injected `Clock`. HTTP-level
+  behavior is exercised over a **real loopback listener** wherever the loopback
+  property is what is under test.
+- **GOWORK:** telemetry's own `telemetry/go.work` for development; `GOWORK=off`
+  only for the production build (`bin/ship telemetry`), which the loop never
+  invokes.
+- **Migrations:** the greenfield set is fixed; every *later* change is a new file
+  minted with `bin/create-migration telemetry <name>`. Numbers are never
+  hand-picked and committed migrations are never edited or deleted.
 
 ## Boundaries
 
-- **First** check `project/loops/blocked.md`; if present, open nothing else.
-- Otherwise read only: `project/plan/STATUS.md`, the one `phase-NN.md`,
-  `project/design/INDEX.md`, the realized `DNN.md` file(s), and dependency
-  interfaces. Never read unrelated Decisions or other phase bodies.
-- Never build, test, or commit anything. The brief is never committed (it is
-  gitignored).
-- Never write the `## Verify feedback` region's content, and never touch an
-  in-flight brief for the current phase — its contract and any verify feedback
-  must survive intact.
-- Everything you write stays inside `telemetry/`; this spec governs no sibling
-  workspace.
+- Read only the one phase file, `INDEX.md`, the realized Decision file(s), and
+  the dependency packages' exported signatures. Never read the whole plan or the
+  whole design.
+- Never build, never test, never commit, never touch `project/plan/STATUS.md`.
+- Never write the `## Verify feedback` region — it belongs to `verify`. On your
+  no-op for an in-flight phase, leave the whole brief untouched.
 - The contract region of a fresh brief is your only output.
 
 ## Reporting the result
@@ -187,15 +179,14 @@ Report this run's result as a `status` and a one-sentence `message`:
 
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
-- `NEXT` — **terminal**: this turn's work is done; hand off to the next
-  prompt.
+- `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Authored brief for Phase 11 (D9, 4 ids).` or
-  `Phase 11 brief already in flight; left untouched.`
+  `Wrote brief for Phase 13 (R-O1AD-MRKW, R-O2IA-0JBL)` or
+  `Phase 13 already in flight; left its brief untouched` or
+  `No pending phase left; the plan is empty` or
+  `Phase 13 is blocked — see project/loops/blocked.md`.
 
-Report `DONE` when `project/loops/blocked.md` exists (name the blocked phase
-and point at the file) or step 2's grep finds no `⬜` phase; in every other
-case — a fresh brief authored, or an in-flight brief preserved — report
-`NEXT`. Keep `message` a single plain sentence — not a JSON object or code
-block.
+Return `DONE` only when `project/loops/blocked.md` exists or the `⬜` grep finds
+no pending phase; otherwise return `NEXT`. Keep `message` a single plain
+sentence — not a JSON object or code block.
