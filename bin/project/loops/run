@@ -1,7 +1,3 @@
 #!/bin/bash
 
-# bin's toolchain commands (go build/test ./bin/bintest/...) are repo-root
-# relative, since bintest has no module boundary of its own — it rides the
-# root go.work. Run this wrapper from the repo root, not from bin/, and the
-# prompt paths are repo-root-relative to match.
-exec ralph bin/project/loops/gather.md bin/project/loops/build.md bin/project/loops/verify.md
+exec ralph project/loops/gather.md project/loops/build.md project/loops/verify.md
