@@ -1,192 +1,120 @@
 # repos — Research
 
-External ground truth the design depends on, collected so design never
-re-derives it. Non-contractual; the build loop does not read it. The prior-art
-survey that shaped the overall direction (label gates, branch namespaces,
-worktree-off-canonical-state, ephemeral scoped tokens) is not restated here;
-this file pins only the exact external contracts v1 code touches.
+Collected external ground truth the design leans on, so no Decision has to
+re-derive it. **Non-contractual**: nothing here is a requirement, and the build
+loop never reads it. Everything below is about the one external dependency repos
+actually has — the `git` binary — plus the two nginx directives its fragment
+relies on.
 
-## 1. GitHub webhook delivery — the fields v1 reads
+## 1. Bare repositories
 
-The GitHub App's webhook delivers JSON with the event name in the
-`X-GitHub-Event` request header (not the body) and a unique delivery id in
-`X-GitHub-Delivery`. The suite's webhooks service (its D17) forwards both
-headers inside the event payload for `github-hmac` hooks, lowercased keys
-`x-github-event` / `x-github-delivery`.
+- `git init --bare --initial-branch=main <dir>` creates a repository whose
+  working tree is the repository directory itself; `git rev-parse
+  --is-bare-repository` prints `true`. `HEAD` is written as a symbolic ref to
+  `refs/heads/main` **before that branch exists** — a valid, normal state. A
+  clone of such a repository succeeds and leaves the client on `main` with no
+  commits.
+- `git ls-remote <dir>` lists zero refs for a repository with no commits, and
+  `git rev-parse main` fails there. Code must treat "no commits yet" as a state,
+  not an error.
+- Renaming a bare repository's directory moves the entire object database and
+  ref store with it: nothing inside a bare repository stores its own path
+  (there is no `core.worktree`, no absolute path in `config` for a plain
+  `init --bare`), so a directory rename preserves history exactly.
 
-v1 consumes exactly one event name: **`issues`** with `"action": "labeled"`.
-The payload footprint used (all under the delivery body):
+## 2. Committing to a bare repository without a worktree
 
-```json
-{
-  "action": "labeled",
-  "label":  { "name": "execute" },
-  "issue":  {
-    "number": 41,
-    "title":  "…",
-    "body":   "…",
-    "state":  "open",          // "open" | "closed"
-    "labels": [ { "name": "…" } ]
-  },
-  "repository": {
-    "name":           "acme",
-    "full_name":      "ikigenba/acme",
-    "clone_url":      "https://github.com/ikigenba/acme.git",
-    "default_branch": "main"
-  },
-  "sender": { "login": "mgreenly" }
-}
+The plumbing sequence, all of it supported and stable, using a temporary index
+via the `GIT_INDEX_FILE` environment variable:
+
+```
+GIT_INDEX_FILE=<tmp>/index git read-tree <commit-ish>        # seed from the current head
+GIT_INDEX_FILE=<tmp>/index git update-index --add --cacheinfo <mode>,<blob>,<path>
+GIT_INDEX_FILE=<tmp>/index git update-index --force-remove <path>
+GIT_INDEX_FILE=<tmp>/index git write-tree                    # → tree sha
+git hash-object -w --stdin                                   # → blob sha (stdin = the bytes)
+git commit-tree <tree> [-p <parent>] -m <message>            # → commit sha
+git update-ref refs/heads/main <new> <old>                   # compare-and-swap
 ```
 
-- `sender.login` for actions performed by a GitHub App is the App slug with a
-  `[bot]` suffix — for our App, **`ikibot[bot]`**. This is the loop-suppression
-  discriminator: label changes the bot itself makes come back as deliveries
-  with that sender.
-- Label events fire per label added; adding `execute` while other labels exist
-  delivers one `labeled` action whose `label.name` is `execute`.
-- Deliveries are at-least-once; `x-github-delivery` is the dedup key if ever
-  needed (v1 relies on the one-active-session-per-issue guard instead).
+- `read-tree` is skipped when there is no parent commit; `write-tree` over an
+  empty index yields the empty tree.
+- `update-index --cacheinfo` takes `<mode>,<sha>,<path>` in a single argument in
+  modern git. Regular file modes are `100644` and `100755`.
+- `commit-tree` reads author/committer identity and dates from
+  `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_AUTHOR_DATE` and the
+  `GIT_COMMITTER_*` trio. Fixing all six makes a commit sha fully deterministic
+  given the tree and parents — which is what lets tests assert exact shas.
+- `git update-ref <ref> <new> <old>` fails if the ref is not currently `<old>`;
+  passing the 40-zero sha as `<old>` means "must not exist". This is the
+  compare-and-swap.
+- `git archive --format=tar <ref>` writes a tar of the tree to stdout with no
+  VCS metadata; it fails for a ref that does not resolve.
+- `git ls-tree -r -l -t <ref> [<path>]` lists blobs (with size) and, with `-t`,
+  the tree entries too.
+- `git merge-tree --write-tree <branch1> <branch2>` (git ≥ 2.38) performs a real
+  three-way merge **entirely in the object database**: it prints the resulting
+  tree sha on success and exits non-zero with a conflict report when the merge
+  conflicts. No index, no worktree, and nothing is written to any ref.
+- `git merge-base --is-ancestor <a> <b>` exits 0 when `a` is an ancestor of `b`
+  — the fast-forward test.
+- `git cat-file -e <sha>^{commit}` exits 0 only when the sha names a commit that
+  exists in that repository.
 
-## 2. GitHub REST endpoints the runner drives (via the github service)
+## 3. Serving the smart-HTTP protocol: `git http-backend`
 
-The runner never calls GitHub directly; it drives the github service's MCP
-verbs (and its loopback `GET /token`). The underlying REST contracts, for the
-record:
+`git http-backend` ships with git and is a **CGI program** implementing the
+whole smart-HTTP protocol (ref advertisement, upload-pack, receive-pack).
 
-- Create PR: `POST /repos/{org}/{repo}/pulls` `{title, head, base, body}`.
-  A PR body containing `Fixes #<n>` links and auto-closes the issue on merge.
-- Add labels: `POST /repos/{org}/{repo}/issues/{n}/labels` `{labels: [...]}` —
-  atomic add, does not replace the set.
-- Remove label: `DELETE /repos/{org}/{repo}/issues/{n}/labels/{name}` — atomic
-  remove; 404 when the label isn't on the issue.
-- List issue comments: `GET /repos/{org}/{repo}/issues/{n}/comments` —
-  ascending by default; each item has `body` and `user.login`.
-- Installation access tokens expire **one hour** after mint (`expires_at` in
-  the mint response); they are bearer credentials valid for every repo in the
-  installation.
+- Environment it reads: `GIT_PROJECT_ROOT` (the directory repositories live
+  under), `GIT_HTTP_EXPORT_ALL` (serve repositories without a
+  `git-daemon-export-ok` marker), `PATH_INFO` (the repository path plus the
+  service path), `REQUEST_METHOD`, `QUERY_STRING`, `CONTENT_TYPE`,
+  `CONTENT_LENGTH`, `HTTP_CONTENT_ENCODING`, and `REMOTE_USER` (used as the
+  default identity for reflog entries).
+- It reads the request body from **stdin** and writes a CGI response to
+  **stdout**: `Header: value` lines, a blank line, then the body. A caller must
+  parse those headers and copy them onto the HTTP response.
+- The two request shapes are `GET  <repo>/info/refs?service=git-upload-pack|git-receive-pack`
+  (response `Content-Type: application/x-git-<service>-advertisement`, body
+  beginning with the pkt-line `# service=<service>`) and
+  `POST <repo>/git-upload-pack|git-receive-pack`.
+- Any environment variable set for the CGI process is inherited by the hooks
+  `receive-pack` runs, which is how a per-request policy value reaches
+  `pre-receive`.
 
-## 3. git — the plumbing the service invokes
+## 4. Hooks
 
-The service shells out to the real `git` binary (present on the box; missing
-tooling fails loudly per the v1 stance). Commands relied on:
+- `pre-receive` runs **once** per push, before any ref is updated, reading lines
+  of `<old-sha> <new-sha> <ref>` on stdin. A non-zero exit **rejects the entire
+  push** — no ref is updated — and its stderr is relayed to the client's
+  terminal. The all-zeros sha means "ref does not exist" as `<old>`, or "delete
+  this ref" as `<new>`.
+- Hooks must be executable (`0755`); a non-executable hook is silently skipped,
+  which is why the design re-materializes it rather than assuming it survives a
+  copy or a restore.
+- `receive.denyNonFastForwards` is a repository-wide config that refuses any
+  non-fast-forward update on **every** ref; there is no per-ref form, which is
+  why a hook is used instead.
+- A hook inherits the CGI environment (above) and runs with the bare repository
+  as its working directory, so plain `git` commands inside it operate on the
+  right repository with no `-C`.
 
-- `git clone <url> <dir>` — canonical clone; `git -C <dir> fetch origin` +
-  `git -C <dir> reset --hard origin/<default>` (or `pull --ff-only`) to
-  freshen.
-- `git -C <canonical> worktree add -b <branch> <path> origin/<default>` —
-  creates an isolated working tree on a new branch; a branch checked out in
-  any worktree cannot be checked out in another (this is what makes
-  worktree-per-session safe). `git worktree remove --force <path>` +
-  `git worktree prune` reclaim it.
-- Worktrees share the canonical repo's object store and its config; a
-  worktree's `.git` is a file pointing back into the canonical
-  `.git/worktrees/<name>/`.
-- Credential injection without touching disk:
-  `git -c http.extraHeader="Authorization: Basic <b64(x-access-token:TOKEN)>" push origin <branch>`
-  passes the token for one invocation only; nothing lands in `.git/config`,
-  the worktree, or the process's persistent environment. (GitHub accepts an
-  installation token as the password half of basic auth with username
-  `x-access-token`.)
-- `git ls-remote --heads origin <branch>` / `git -C <dir> rev-parse --verify`
-  — existence checks used for retry branch numbering.
+## 5. Client-side facts the door tests rely on
 
-## 4. agentkit — the engine contract (as consumed by prompts today)
+- `git clone http://user:pass@host/path` sends HTTP Basic credentials; git only
+  offers them after a `401` carrying `WWW-Authenticate: Basic realm="…"`, so a
+  door that wants credentials must challenge.
+- `GIT_TERMINAL_PROMPT=0` makes a credential prompt a hard failure instead of a
+  hang — required for any test that expects an unauthenticated clone to fail.
+- `git push` reports a `pre-receive` rejection as a non-zero exit with the
+  hook's stderr prefixed `remote:`.
+- `git -c protocol.version=2` is the default in current git; `http-backend`
+  handles both v0 and v2 without the caller doing anything.
 
-Pinned module `github.com/ikigenba/agentkit` (currently v0.2.0). Consumed
-surface: `Conversation{Provider, Model, System, Log, Gen, Retry, Tools,
-MaxToolIterations}`, `Send(ctx, text) *Stream`, `Stream.Events()/Err()`,
-`Close()`, `NewTool[In]`, `GenSettings`, `RetryPolicy`, provider constructors
-`anthropic.New` / `openai.New` / `google.New` / `zai.New`, and
-`provider.Pricing(model)` for model validation. The transcript written to
-`Conversation.Log` is agentkit stream-json, one JSON object per line — the
-same shape prompts stores as `output.jsonl`.
+## 6. nginx facts the fragment relies on
 
-A separate, non-blocking suite task tracks an agentkit release adding
-`gpt-5.6-sol` to the openai pricing table; v1 defaults to
-`anthropic`/`claude-opus-4-8` and does not wait for it.
-
-## 5. Suite peers — contracts consumed
-
-- **webhooks** (after its D17): a `github-hmac` hook verifies
-  `X-Hub-Signature-256` and publishes `webhooks:received/<hook name>` whose
-  payload is `{name, owner, received_at, content_type, body, headers}` with
-  `body` base64 of the raw delivery and `headers` the two-key allowlist above.
-- **github** (after its D9/D10): MCP verbs `issue_get`, `issue_comments`,
-  `issue_comment`, `label_add`, `label_remove`, `pr_create` (bare names, POST
-  `/mcp`, identity asserted via `X-Owner-Email`/`X-Client-Id` on loopback);
-  loopback `GET /token` returning `{token, expires_at}`.
-- **registry**: `registry.MustPort("repos")` = 3007 (Core),
-  `registry.BaseURL("github")` for the peer address. The registry row is a
-  suite-level precondition appended outside this module.
-
-## 6. Suite telemetry — the external contracts repos consumes
-
-Collected for D11/D12/D13. None of it is repos' to define: the header, the
-record, the shared client, and the event envelope are the suite's.
-
-- **The header.** `X-Correlation-Id`, a bare 26-character Crockford-base32 ULID.
-  One id per causal chain, propagated verbatim on every hop — never re-minted
-  mid-chain.
-- **Who mints it.** The dashboard's introspection endpoint mints the id while
-  answering an `auth_request` subrequest for a gated route and returns it as a
-  response header. For a request arriving with no id (an ungated route), appkit's
-  inbound middleware mints one — the universal read-or-mint point. An id arriving
-  over loopback is trusted as-is, since loopback callers are inside the trust
-  boundary.
-- **The instrumented outbound client (appkit's, package `appkit/httpclient`).**
-  It returns a concrete `*http.Client`, never an interface. The Router
-  convenience is the line services use —
-  `rt.HTTPClient(timeout time.Duration) *http.Client` — which wires the service's
-  own recorder and keeps `appkit/telemetry` out of the caller's imports. The
-  lower-level `httpclient.New(Options{Recorder, Timeout, Base})` and
-  `httpclient.NewTransport(Options)` exist for callers needing a custom
-  transport, redirect policy, or a client shape they must preserve; `Timeout`
-  defaults to 30s and `Base` to `http.DefaultTransport`. A nil `Recorder` still
-  yields a working client, just an unrecorded one.
-  The transport records every round trip as kind `outbound` (operation, elapsed,
-  status class, response size + SHA-256 digest — never the response bytes) and
-  reads the correlation id off the outgoing request's `Context()`, which is the
-  channel a `RoundTripper` sees — so a caller that detaches its context silently
-  drops the chain. Recording is best-effort: telemetry being down never blocks or
-  fails a call.
-- **The propagation rule keys on a loopback IP literal**, `127.0.0.0/8` or
-  `::1` — the *name* `localhost` deliberately does **not** qualify.
-- **github is a loopback peer; github.com is not.** Both repos peers resolve
-  through `registry.BaseURL("github")`, built from the literal
-  `const loopbackHost = "127.0.0.1"`, so both qualify. The `git` binary's pushes
-  go to github.com — a third party, which must never receive a correlation id.
-  `net/http/httptest.NewServer` binds `127.0.0.1`, so a test server is the *real*
-  substrate for the loopback rule rather than a stand-in for it.
-- **Chain roots are appkit's helpers, not hand-rolled.** Two nil-safe recorder
-  methods, each returning `(ctx, id)` — they mint or adopt the id, install it on
-  the context, and emit the `root` record:
-
-  ```go
-  func (r *Recorder) StartRoot(ctx context.Context, op string, detail map[string]any) (context.Context, string)
-  func (r *Recorder) StartChain(ctx context.Context, op string, detail map[string]any) (context.Context, string)
-  ```
-
-  `StartRoot` always mints — for a cycle with no cause outside itself;
-  `StartChain` adopts an ambient id when one is present. One call per cycle,
-  never per item. The root `op` convention is `<service>:<origin>` — service
-  first (`repos:<cycle-name>`), so a service's root records group under one grep.
-  `rt.Recorder()` returns the recorder (nil when telemetry is disabled; all
-  methods nil-safe). repos has one self-started cycle, the reaper sweep, and
-  deliberately mints no root for it (D12).
-- **The event plane gains a first-class `correlation_id`.** It becomes an outbox
-  column and a wire-envelope field, populated by the eventplane library from the
-  context at `Append`, and handed to consumers on the handler context. The
-  payload-field convention in `project/design/D14.md` at the repo root is superseded. `Append`'s
-  signature changes to carry the context, so every producer call site is
-  **compile-caught** — repos has exactly one, in `AppendOutcome`.
-- **Out of scope by suite decision.** Work inside spawned subprocesses and
-  sandboxes is not recorded; the boundary (the dispatching call, the outcome) is.
-  Operator tooling (`opsctl`, `bin/`) is not recorded either.
-
-## 7. nginx facts the fragment change relies on
-
-From the `ngx_http_auth_request_module` and `ngx_http_proxy_module`
-documentation:
+From `ngx_http_auth_request_module` and `ngx_http_proxy_module`:
 
 - `auth_request_set $var $upstream_http_<header_name>;` copies a **response**
   header of the auth subrequest into a variable, the name lowercased with `-`
@@ -197,8 +125,15 @@ documentation:
   that name on the upstream request; the last directive for a name in a location
   wins.
 - `proxy_set_header <Name> "";` — an **empty value means the field is not passed
-  to the proxied server at all**. That is the strip: the upstream sees no such
-  header rather than an empty one, so the chassis takes its mint branch.
-- `auth_request` understands only 2xx (allow) and 401/403 (deny); the existing
-  `@repos_authn_500` re-emit handles the collapsed-status case and is unaffected
-  by adding header captures.
+  to the proxied server at all**, so the upstream sees no such header rather
+  than an empty one.
+- `auth_request` understands only 2xx (allow) and 401/403 (deny); every other
+  subrequest status collapses to a synthetic 500, which the `@repos_authn_500`
+  re-emit location converts back into a faithful 429.
+- nginx selects the **longest matching prefix** location regardless of order in
+  the file, so `/srv/repos/git/` wins over `/srv/repos/` without reordering.
+- By default nginx **buffers the whole request body** before proxying
+  (`proxy_request_buffering on`) and caps it at `client_max_body_size` (1m).
+  Both must be changed for a git push, which streams a pack of arbitrary size.
+  `proxy_buffering off` likewise keeps a long clone streaming rather than
+  accumulating in nginx.

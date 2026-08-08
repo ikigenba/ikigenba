@@ -20,10 +20,13 @@ way to change them. Don't add ad-hoc documents to the spine folders; fold
 corrections and follow-ons into the existing spine docs via `$seal-spec` (and
 append a plan phase) instead.
 
-This `project/` tree governs only the `repos/` codebase and carries only the
-settled v1 scope; the wider suite-level direction it was carved from (the
-two-plane architecture and the deferred release/materialization model) is not
-spec'd anywhere yet and will enter this tree's own spec when it is built.
+This `project/` tree governs only the `repos/` codebase. repos implements the
+suite's **version plane**, whose suite-wide contract is
+`root project/design/D24.md`; that contract and the other suite contracts this
+tree adopts are **cited by path, never restated** — the umbrella project at the
+repo root owns them. Everything the owning services do with what repos holds
+(their materialized copies, sha-pinned runs, seeding) is spec'd in **their**
+trees, not here.
 
 See `project/loops/README.md` (once generated) for how the installed build loop
 works.

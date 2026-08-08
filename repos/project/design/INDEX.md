@@ -5,99 +5,107 @@ Decision/file. To resolve an id, grep this index (or the Decision files
 directly). Regenerate this manifest whenever a Decision is added or its
 Verification ids change.
 
+**Retired Decision numbers — never reused:** D3 (GitHub-fact intake / the
+webhooks consumer), D4 (repo lifecycle over GitHub clones), D5 (the session
+engine), D6 (the issue protocol), D7 (the v1 MCP surface), D8 (session-outcome
+events), D9 (worktree & transcript state layout), D11 (the two direct HTTP
+peers), D12 (session correlation ids). Their behaviors left the product with the
+v2 rewrite and their ids were deleted with them.
+
 ## Decisions
 
 - D1 → `project/design/D01.md` — Composition root & chassis boot — R-EISY-2LYZ, R-EL8Q-U5GD
-- D2 → `project/design/D02.md` — Data model & migrations — R-EMGN-7X72, R-ENOJ-LOXR, R-EOWF-ZGOG, R-TY2R-GFRU, R-TZAN-U7IJ, R-ICIJ-13TA, R-IDQF-EVJZ
-- D3 → `project/design/D03.md` — GitHub-fact intake: the webhooks consumer & dispatch table — R-EQ4C-D8F5, R-ERC8-R05U, R-ESK5-4RWJ, R-ETS1-IJN8, R-EUZX-WBDX, R-EW7U-A34M, R-IG68-6F1D
-- D4 → `project/design/D04.md` — Repo lifecycle & git custody — R-EXFQ-NUVB, R-EYNN-1MM0, R-EZVJ-FECP, R-F13F-T63E, R-F3J8-KPKS, R-C9CO-ODYU
-- D5 → `project/design/D05.md` — The session engine: worktree-per-session, queue, and the confined agent — R-F4R4-YHBH, R-F5Z1-C926, R-F76X-Q0SV, R-F8EU-3SJK, R-F9MQ-HKA9, R-FAUM-VC0Y, R-FC2J-93RN, R-2U0F-NNXH
-- D6 → `project/design/D06.md` — The issue protocol: labels, the check gate, and runner-side GitHub I/O — R-FDAF-MVIC, R-FEIC-0N91, R-FFQ8-EEZQ, R-FGY4-S6QF, R-FI61-5YH4, R-FKLT-XHYI, R-FLTQ-B9P7, R-2V8C-1FO6, R-894D-CUA2, R-APSC-24AL
-- D7 → `project/design/D07.md` — The MCP tool surface — R-FN1M-P1FW, R-FO9J-2T6L, R-FPHF-GKXA, R-FQPB-UCNZ, R-FRX8-84EO, R-IEYB-SNAO, R-1WZF-FVH9
-- D8 → `project/design/D08.md` — Events: the session-outcome families — R-FT54-LW5D, R-FUD0-ZNW2, R-FVKX-DFMR
-- D9 → `project/design/D09.md` — State layout & retention — R-FWST-R7DG, R-FY0Q-4Z45, R-G0GI-WILJ
-- D10 → `project/design/D10.md` — nginx fragment & the canonical landing page — R-G1OF-AAC8, R-G2WB-O22X, R-G448-1TTM, R-UZVS-S08C, R-V13P-5RZ1
-- D11 → `project/design/D11.md` — The two direct HTTP peers (`HTTPTokenSource`, `GitHubPeer`) take the Router-provided instrumented outbound HTTP client (`rt.HTTPClient(…)` at the composition root; nil-client fallbacks deleted; each peer's requests reach the wire through it carrying the call's live context); git subprocesses and dispatched agent sessions are explicitly out of recording scope — R-BT9N-POGV, R-BUHK-3G7K
-- D12 → `project/design/D12.md` — A session carries its correlation id in its row (`sessions.correlation_id`, additive migration), captured once in `Runner.Enqueue` from the ambient context and re-attached both to the context a dispatched run executes under (so its GitHub peer calls stay on the chain) and to the runner's detached completion contexts (so the outcome event does), including across a restart via `Recover` — R-BVPG-H7Y9, R-BWXC-UZOY, R-LM2I-ORUI, R-BY59-8RFN, R-BZD5-MJ6C
-- D13 → `project/design/D13.md` — nginx fragment: all three gated locations capture the introspection-minted correlation id with `auth_request_set` and overwrite `X-Correlation-Id` upstream; the ungated PRM bootstrap sets it to `""` so the chassis mints — R-9DUI-TUQJ, R-9F2F-7MH8
-
-- D14 → `project/design/D14.md` — Suite-contract conformance: the opsctl install layout & the authored env contract — adopts `R-4LKF-FB23` (root `project/design/D08.md`), `R-8DF1-W89F`, `R-8IAN-FB87` (root `project/design/D11.md`); mints none of its own
-- D15 → `project/design/D15.md` — Env-channel conformance: session-engine knobs surface in the manifest; the org is customer data — owns R-L9EG-DDWC; adopts R-VKB6-SHHV (root `project/design/D11.md`)
-- D16 → `project/design/D16.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): hermetic + composed layers only, no live layer, no tree-local manual runbook, the real-`git` and `go`-on-`PATH` preconditions, workspace GOWORK mode; removes the never-implemented `bin/start` end-to-end claim — mints none; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
+- D2 → `project/design/D02.md` — Data model & migrations — R-IWEY-SUZH, R-IYUR-KEGV, R-J02N-Y67K, R-J1AK-BXY9, R-J2IG-PPOY
+- D10 → `project/design/D10.md` — nginx fragment & the canonical landing page — R-G1OF-AAC8, R-J3QD-3HFN, R-UZVS-S08C, R-V13P-5RZ1, R-G2WB-O22X, R-G448-1TTM
+- D13 → `project/design/D13.md` — The nginx fragment captures the minted correlation id on gated locations and strips it on the ungated one — R-9DUI-TUQJ, R-9F2F-7MH8
+- D14 → `project/design/D14.md` — Suite-contract conformance: the opsctl install layout & the authored env contract — R-4LKF-FB23 (adopted), R-8DF1-W89F (adopted), R-8IAN-FB87 (adopted)
+- D15 → `project/design/D15.md` — Env-channel conformance: repos' four knobs, and an environment with no credentials — R-L9EG-DDWC, R-VKB6-SHHV (adopted)
+- D16 → `project/design/D16.md` — Adopt the suite testing-language contract — R-O1AD-MRKW (adopted), R-O2IA-0JBL (adopted)
+- D17 → `project/design/D17.md` — Custody: the bare-repo store, the `Git` seam, and the ref choke point — R-J4Y9-H96C, R-J665-V0X1, R-J7E2-8SNQ, R-J8LY-MKEF, R-J9TV-0C54, R-JB1R-E3VT, R-JC9N-RVMI
+- D18 → `project/design/D18.md` — The loopback filesystem + commit API — R-JJL2-2I2O, R-JKSY-G9TD, R-JM0U-U1K2, R-JN8R-7TAR, R-JOGN-LL1G, R-JPOJ-ZCS5, R-JQWG-D4IU, R-JS4C-QW9J, R-JTC9-4O08, R-JUK5-IFQX, R-JVS1-W7HM, R-JY7U-NQZ0
+- D19 → `project/design/D19.md` — The git smart-HTTP door — R-JZFR-1IPP, R-K0NN-FAGE, R-K1VJ-T273, R-K33G-6TXS, R-K4BC-KLOH, R-K5J8-YDF6, R-K6R5-C55V, R-K7Z1-PWWK
+- D20 → `project/design/D20.md` — Run tokens: short-lived, repository-scoped push credentials — R-K96Y-3ON9, R-KAEU-HGDY, R-KBMQ-V84N, R-KCUN-8ZVC, R-KE2J-MRM1
+- D21 → `project/design/D21.md` — Statuses and the `merge` verb — R-KFAG-0JCQ, R-KHQ8-S2U4, R-KIY5-5UKT, R-KK61-JMBI, R-KLDX-XE27, R-KMLU-B5SW, R-KNTQ-OXJL, R-KP1N-2PAA, R-KQ9J-GH0Z, R-KRHF-U8RO
+- D22 → `project/design/D22.md` — The MCP tool surface — R-KSPC-80ID, R-KTX8-LS92, R-KV54-ZJZR, R-KWD1-DBQG, R-KXKX-R3H5, R-KYSU-4V7U, R-JFAI-W00R, R-JGIF-9RRG, R-L00Q-IMYJ, R-L2GJ-A6FX
+- D23 → `project/design/D23.md` — Events: the `push` and `archived` families — R-JDHK-5ND7, R-JFXC-X6UL, R-JH59-AYLA, R-JID5-OQBZ
 
 ## Verification ids → Decision
 
-- R-1WZF-FVH9 → D7 — `project/design/D07.md`
-- R-2U0F-NNXH → D5 — `project/design/D05.md`
-- R-2V8C-1FO6 → D6 — `project/design/D06.md`
 - R-4LKF-FB23 → D14 — `project/design/D14.md` (adopted from root `project/design/D08.md`)
-- R-894D-CUA2 → D6 — `project/design/D06.md`
 - R-8DF1-W89F → D14 — `project/design/D14.md` (adopted from root `project/design/D11.md`)
 - R-8IAN-FB87 → D14 — `project/design/D14.md` (adopted from root `project/design/D11.md`)
 - R-9DUI-TUQJ → D13 — `project/design/D13.md`
 - R-9F2F-7MH8 → D13 — `project/design/D13.md`
-- R-APSC-24AL → D6 — `project/design/D06.md`
-- R-BT9N-POGV → D11 — `project/design/D11.md`
-- R-BUHK-3G7K → D11 — `project/design/D11.md`
-- R-BVPG-H7Y9 → D12 — `project/design/D12.md`
-- R-BWXC-UZOY → D12 — `project/design/D12.md`
-- R-BY59-8RFN → D12 — `project/design/D12.md`
-- R-BZD5-MJ6C → D12 — `project/design/D12.md`
-- R-C9CO-ODYU → D4 — `project/design/D04.md`
 - R-EISY-2LYZ → D1 — `project/design/D01.md`
 - R-EL8Q-U5GD → D1 — `project/design/D01.md`
-- R-EMGN-7X72 → D2 — `project/design/D02.md`
-- R-ENOJ-LOXR → D2 — `project/design/D02.md`
-- R-EOWF-ZGOG → D2 — `project/design/D02.md`
-- R-EQ4C-D8F5 → D3 — `project/design/D03.md`
-- R-ERC8-R05U → D3 — `project/design/D03.md`
-- R-ESK5-4RWJ → D3 — `project/design/D03.md`
-- R-ETS1-IJN8 → D3 — `project/design/D03.md`
-- R-EUZX-WBDX → D3 — `project/design/D03.md`
-- R-EW7U-A34M → D3 — `project/design/D03.md`
-- R-EXFQ-NUVB → D4 — `project/design/D04.md`
-- R-EYNN-1MM0 → D4 — `project/design/D04.md`
-- R-EZVJ-FECP → D4 — `project/design/D04.md`
-- R-F13F-T63E → D4 — `project/design/D04.md`
-- R-F3J8-KPKS → D4 — `project/design/D04.md`
-- R-F4R4-YHBH → D5 — `project/design/D05.md`
-- R-F5Z1-C926 → D5 — `project/design/D05.md`
-- R-F76X-Q0SV → D5 — `project/design/D05.md`
-- R-F8EU-3SJK → D5 — `project/design/D05.md`
-- R-F9MQ-HKA9 → D5 — `project/design/D05.md`
-- R-FAUM-VC0Y → D5 — `project/design/D05.md`
-- R-FC2J-93RN → D5 — `project/design/D05.md`
-- R-FDAF-MVIC → D6 — `project/design/D06.md`
-- R-FEIC-0N91 → D6 — `project/design/D06.md`
-- R-FFQ8-EEZQ → D6 — `project/design/D06.md`
-- R-FGY4-S6QF → D6 — `project/design/D06.md`
-- R-FI61-5YH4 → D6 — `project/design/D06.md`
-- R-FKLT-XHYI → D6 — `project/design/D06.md`
-- R-FLTQ-B9P7 → D6 — `project/design/D06.md`
-- R-FN1M-P1FW → D7 — `project/design/D07.md`
-- R-FO9J-2T6L → D7 — `project/design/D07.md`
-- R-FPHF-GKXA → D7 — `project/design/D07.md`
-- R-FQPB-UCNZ → D7 — `project/design/D07.md`
-- R-FRX8-84EO → D7 — `project/design/D07.md`
-- R-FT54-LW5D → D8 — `project/design/D08.md`
-- R-FUD0-ZNW2 → D8 — `project/design/D08.md`
-- R-FVKX-DFMR → D8 — `project/design/D08.md`
-- R-FWST-R7DG → D9 — `project/design/D09.md`
-- R-FY0Q-4Z45 → D9 — `project/design/D09.md`
-- R-G0GI-WILJ → D9 — `project/design/D09.md`
 - R-G1OF-AAC8 → D10 — `project/design/D10.md`
 - R-G2WB-O22X → D10 — `project/design/D10.md`
 - R-G448-1TTM → D10 — `project/design/D10.md`
-- R-ICIJ-13TA → D2 — `project/design/D02.md`
-- R-IDQF-EVJZ → D2 — `project/design/D02.md`
-- R-IEYB-SNAO → D7 — `project/design/D07.md`
-- R-IG68-6F1D → D3 — `project/design/D03.md`
+- R-IWEY-SUZH → D2 — `project/design/D02.md`
+- R-IYUR-KEGV → D2 — `project/design/D02.md`
+- R-J02N-Y67K → D2 — `project/design/D02.md`
+- R-J1AK-BXY9 → D2 — `project/design/D02.md`
+- R-J2IG-PPOY → D2 — `project/design/D02.md`
+- R-J3QD-3HFN → D10 — `project/design/D10.md`
+- R-J4Y9-H96C → D17 — `project/design/D17.md`
+- R-J665-V0X1 → D17 — `project/design/D17.md`
+- R-J7E2-8SNQ → D17 — `project/design/D17.md`
+- R-J8LY-MKEF → D17 — `project/design/D17.md`
+- R-J9TV-0C54 → D17 — `project/design/D17.md`
+- R-JB1R-E3VT → D17 — `project/design/D17.md`
+- R-JC9N-RVMI → D17 — `project/design/D17.md`
+- R-JDHK-5ND7 → D23 — `project/design/D23.md`
+- R-JFAI-W00R → D22 — `project/design/D22.md`
+- R-JFXC-X6UL → D23 — `project/design/D23.md`
+- R-JGIF-9RRG → D22 — `project/design/D22.md`
+- R-JH59-AYLA → D23 — `project/design/D23.md`
+- R-JID5-OQBZ → D23 — `project/design/D23.md`
+- R-JJL2-2I2O → D18 — `project/design/D18.md`
+- R-JKSY-G9TD → D18 — `project/design/D18.md`
+- R-JM0U-U1K2 → D18 — `project/design/D18.md`
+- R-JN8R-7TAR → D18 — `project/design/D18.md`
+- R-JOGN-LL1G → D18 — `project/design/D18.md`
+- R-JPOJ-ZCS5 → D18 — `project/design/D18.md`
+- R-JQWG-D4IU → D18 — `project/design/D18.md`
+- R-JS4C-QW9J → D18 — `project/design/D18.md`
+- R-JTC9-4O08 → D18 — `project/design/D18.md`
+- R-JUK5-IFQX → D18 — `project/design/D18.md`
+- R-JVS1-W7HM → D18 — `project/design/D18.md`
+- R-JY7U-NQZ0 → D18 — `project/design/D18.md`
+- R-JZFR-1IPP → D19 — `project/design/D19.md`
+- R-K0NN-FAGE → D19 — `project/design/D19.md`
+- R-K1VJ-T273 → D19 — `project/design/D19.md`
+- R-K33G-6TXS → D19 — `project/design/D19.md`
+- R-K4BC-KLOH → D19 — `project/design/D19.md`
+- R-K5J8-YDF6 → D19 — `project/design/D19.md`
+- R-K6R5-C55V → D19 — `project/design/D19.md`
+- R-K7Z1-PWWK → D19 — `project/design/D19.md`
+- R-K96Y-3ON9 → D20 — `project/design/D20.md`
+- R-KAEU-HGDY → D20 — `project/design/D20.md`
+- R-KBMQ-V84N → D20 — `project/design/D20.md`
+- R-KCUN-8ZVC → D20 — `project/design/D20.md`
+- R-KE2J-MRM1 → D20 — `project/design/D20.md`
+- R-KFAG-0JCQ → D21 — `project/design/D21.md`
+- R-KHQ8-S2U4 → D21 — `project/design/D21.md`
+- R-KIY5-5UKT → D21 — `project/design/D21.md`
+- R-KK61-JMBI → D21 — `project/design/D21.md`
+- R-KLDX-XE27 → D21 — `project/design/D21.md`
+- R-KMLU-B5SW → D21 — `project/design/D21.md`
+- R-KNTQ-OXJL → D21 — `project/design/D21.md`
+- R-KP1N-2PAA → D21 — `project/design/D21.md`
+- R-KQ9J-GH0Z → D21 — `project/design/D21.md`
+- R-KRHF-U8RO → D21 — `project/design/D21.md`
+- R-KSPC-80ID → D22 — `project/design/D22.md`
+- R-KTX8-LS92 → D22 — `project/design/D22.md`
+- R-KV54-ZJZR → D22 — `project/design/D22.md`
+- R-KWD1-DBQG → D22 — `project/design/D22.md`
+- R-KXKX-R3H5 → D22 — `project/design/D22.md`
+- R-KYSU-4V7U → D22 — `project/design/D22.md`
+- R-L00Q-IMYJ → D22 — `project/design/D22.md`
+- R-L2GJ-A6FX → D22 — `project/design/D22.md`
 - R-L9EG-DDWC → D15 — `project/design/D15.md`
-- R-LM2I-ORUI → D12 — `project/design/D12.md`
 - R-O1AD-MRKW → D16 — `project/design/D16.md` (adopted from root `project/design/D23.md`)
 - R-O2IA-0JBL → D16 — `project/design/D16.md` (adopted from root `project/design/D23.md`)
-- R-TY2R-GFRU → D2 — `project/design/D02.md`
-- R-TZAN-U7IJ → D2 — `project/design/D02.md`
 - R-UZVS-S08C → D10 — `project/design/D10.md`
 - R-V13P-5RZ1 → D10 — `project/design/D10.md`
 - R-VKB6-SHHV → D15 — `project/design/D15.md` (adopted from root `project/design/D11.md`)

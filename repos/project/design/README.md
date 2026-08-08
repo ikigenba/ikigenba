@@ -3,12 +3,19 @@
 **Authority: shape and its proof.** This directory owns *how* the repos
 service is built and *how each behavior is proven* — seams, interfaces, types,
 naming, and the test plan. Product (`project/product/README.md`) owns the why
-and the promises; design states the exact, checkable form of those promises
-and never re-declares the why. Design uses the product's contractual constants
-(bot identity `@ikigenba`, label set `execute`/`executing`/`failed`/`discuss`,
-port 3007, mount `/srv/repos/`, starting version `v0.1.0`) by value but does
-not own them. This is the single current statement of the architecture,
-rewritten in place; construction history lives in git.
+and the promises; design states the exact, checkable form of those promises and
+never re-declares the why. Design uses the product's contractual constants (the
+kind set `sites`/`scripts`/`prompts`/`code`, the live branch `main`, the
+`ikigenba/` automation branch namespace, port 3007, mount `/srv/repos/`,
+starting version `v0.1.0`) by value but does not own them. This is the single
+current statement of the architecture, rewritten in place; construction history
+lives in git.
+
+repos implements the suite's **version plane** contract,
+`root project/design/D24.md`. That contract is cited, never restated: it owns
+the plane's rules (ambient versioning, `<kind>/<name>` custody, `main` is live,
+one git door, merge posture, archive-not-delete), and this design owns the
+seams, shapes, and proofs that realize them inside `repos/`.
 
 ## Requirement ids
 
@@ -25,10 +32,9 @@ ids ends at minting them — how coverage is measured and when the work is
   module at `repos/`, on the `appkit` chassis over SQLite
   (`modernc.org/sqlite`, pure-Go, no cgo). In-repo libraries via committed
   `replace` directives (`appkit => ../appkit`, `eventplane => ../eventplane`)
-  plus `require registry` (same pattern); the agent engine via the pinned
-  tagged module `github.com/ikigenba/agentkit`, at the **suite-wide agentkit
-  pin** (`root project/design/D22.md` — every consumer states the same
-  version; the number is `go.mod`'s to carry, not this spec's).
+  plus `require registry` (same pattern). **No other module dependency**: repos
+  drives no agent engine and speaks to no external API, so `go.mod` requires
+  neither `github.com/ikigenba/agentkit` nor any provider SDK.
 - **Build / typecheck:** `cd repos && go build ./...` and `go vet ./...`.
   Production binary via `bin/ship repos` (`CGO_ENABLED=0 GOOS=linux
   GOARCH=amd64 GOWORK=off`).
@@ -36,12 +42,21 @@ ids ends at minting them — how coverage is measured and when the work is
   `go build ./...`, `go vet ./...`, and `go test ./...` all exit 0 with no
   failures, and `gofmt -l .` prints nothing — all from `repos/`. Requirement-id
   tags live in the test-file glob `*_test.go`.
-- **Test substrates:** real temp-file SQLite through the embedded migration
-  set; the **real `git` binary** against local fixture remotes
-  (`git init --bare` in `t.TempDir()`, `file://` URLs) — never a mocked git;
-  suite peers (github, webhooks) as `httptest` stubs that record requests; a
+- **git is the substrate, never a mock.** repos' entire domain is what real git
+  does, so **every git claim is proven against the real `git` binary**: bare
+  repositories created with `git init --bare` under `t.TempDir()`, real
+  `git clone`/`fetch`/`push` from a temporary client working copy against the
+  service's own smart-HTTP handler mounted on an `httptest` server, and real
+  plumbing (`hash-object`, `read-tree`, `write-tree`, `commit-tree`,
+  `update-ref`, `merge-tree`, `merge-base`, `archive`) for the commit paths.
+  There is no `Git` fake in the gate: a mocked git accepts whatever it is
+  handed and can falsify nothing this service claims. `file://` remotes are used
+  only where the claim is about custody on disk rather than about the door.
+- **Other test substrates:** real temp-file SQLite through the embedded
+  migration set; the service's own HTTP handlers through `net/http/httptest`; a
   deterministic injected clock; no non-loopback network I/O anywhere in the
-  gate.
+  gate, and in particular **no request to github.com from any test or any
+  non-test source path**.
 - **Test layers.** The suite's testing vocabulary — the hermetic / composed /
   live / manual layers, what each may touch, the single `//go:build live`
   mechanism, and the ban on `t.Skip` outside live-tagged files — is the contract
@@ -57,57 +72,41 @@ ids ends at minting them — how coverage is measured and when the work is
   `bin/create-migration repos <name>`; numbers never hand-picked, committed
   migrations never edited.
 - **Config:** env only, prefix `REPOS_`, read at the composition root, never
-  below it. The set: `REPOS_PROVIDER` (default `anthropic`), `REPOS_MODEL`
-  (default `claude-opus-4-8`), `REPOS_SESSION_TTL` (default `30m`),
-  `REPOS_MAX_SESSIONS` (default `2`), `REPOS_GITHUB_HOOK` (default `github`),
-  `REPOS_BOT_LOGIN` (default `ikigenba[bot]`), `REPOS_GITHUB_ORG` (default
-  `ikigenba`), `REPOS_WORKTREE_TTL_DAYS` (default `14`), `REPOS_STATE_DIR`
-  (default `state`, resolved to an absolute path at the composition root —
-  D9/D4), plus the provider API keys (`ANTHROPIC_API_KEY` et al.) that agentkit
-  providers need.
-- **Peers by name, addresses from the registry:** the service names its peers
-  in code (`webhooks` as event source, `github` as the GitHub actor) and asks
-  `registry` where they live (`registry.MustPort("repos")`,
-  `registry.BaseURL("github")`). No `127.0.0.1:30xx` literal in source.
+  below it. The whole set: `REPOS_STATE_DIR` (default `state`, resolved to an
+  absolute path at the composition root), `REPOS_RUN_TOKEN_TTL` (default `2h`),
+  `REPOS_MAX_COMMIT_BYTES` (default `67108864`), and `REPOS_GIT_BIN` (default
+  `git`). There are no credentials in repos' environment: it authenticates
+  nobody itself and calls no external service.
+- **Peers by name, addresses from the registry:** repos has **no service
+  peers** — it makes no outbound call to another service. It asks `registry`
+  only for its own address (`registry.MustPort("repos")`,
+  `registry.BaseURL("repos")` when rendering a `content_url`). No
+  `127.0.0.1:30xx` literal in source.
 - **Time / IO:** time enters through a `Clock` seam; the DB handle is the
   appkit single-writer `*sql.DB` (`rt.DB()`), shared with the producer outbox.
-- **Correlation and telemetry are the chassis's, with two repos-owned seams.**
-  Reading-or-minting the `X-Correlation-Id` on every inbound request, recording
-  inbound MCP and plain HTTP traffic, `publish`/`consume` hops, and `lifecycle`
-  records at boot and graceful shutdown all arrive with the `appkit`/`eventplane`
-  rebuild and are proven by their ids, never re-proven here. repos owns exactly
-  three things: its two direct HTTP peers use the shared **instrumented outbound
-  HTTP client** and thread a live context to it (D11); a session carries its
-  correlation id in its row so the chain survives the runner's deliberately
-  detached contexts and a restart (D12); and its nginx fragment hands the process
-  a trustworthy id (D13). **Out of recording scope, deliberately:** anything
-  happening inside a spawned subprocess or a dispatched agent session — git
-  invocations, the agent's own tool calls and provider traffic. The boundary
-  (the MCP call or consumed event that dispatched the work, and its outcome) is
-  recorded; the inside lives in the session transcript under `state/`.
-- **Outbound HTTP is proven at the injected client, not by re-asserting the
-  chassis.** The instrumented client comes off the Router (`rt.HTTPClient(…)`)
-  and is injected into both peers at the composition root, so tests supply a
-  `*http.Client` whose `Transport` is a recording `RoundTripper` and assert the
-  two things that are repos': the request reaches the wire through that client,
-  and it carries the call's live context (the transport reads the correlation id
-  off `req.Context()`). Setting the header and emitting the `outbound` record are
-  appkit's behaviors with appkit's ids, never re-proven here — and no test needs
-  to stand up a Router.
-- **Fragment ids are scoped to what a content read shows.** `cmd/repos/nginx_test.go`
-  already pins the fragment's routing and identity shape under D10's ids; D13's
-  correlation lines extend that same test under their own. Whether a genuine
-  minted id arrives, un-injectable by an anonymous caller, is not claimable
-  there — it needs a live nginx plus dashboard introspection, outside `repos/`.
-- **Trust posture:** identity arrives as nginx-injected (or loopback-asserted)
-  owner headers — `X-Owner-Id` (the stable scoping key; the appkit gate
-  refuses on its absence), plus the `X-Owner-Email`/`X-Owner-Name`/
-  `X-Owner-Picture` display headers and `X-Client-Id`; the service accepts them
-  blindly (suite convention) and keys **all** scoping and provenance on
-  `X-Owner-Id` (appkit `Identity.OwnerID`), treating `owner_email` as a
-  write-once display snapshot. The session agent's isolation is
-  worktree-cwd + path-confined file tools, the same single-owner-box posture
-  as prompts/scripts — not a security sandbox.
+  Every git invocation goes through the `Git` seam (D17) so the binary path,
+  environment, and streaming are set in exactly one place.
+- **Identity and owner keying** follow `root project/design/D17.md`:
+  `X-Owner-Id` is the sole scoping key, `owner_email` a write-once display
+  snapshot, `X-Client-Id` the acting actor and the commit attribution source.
+  Identity arrives as nginx-injected or loopback-asserted headers and is
+  trusted blindly (suite convention).
+- **The MCP surface** conforms to `root project/design/D20.md` (structured
+  results with declared output schemas, the closed error vocabulary, the three
+  discovery tiers); **the loopback byte surface** conforms to
+  `root project/design/D19.md` (holder contract: streaming, loopback-private by
+  handler guard, `rev`-pinnable with 409/404, addressed by repos' own key);
+  **the event surface** conforms to `root project/design/D18.md`.
+- **Correlation and telemetry are the chassis's** (`root project/design/D14.md`).
+  Reading-or-minting `X-Correlation-Id` on every inbound request, recording
+  inbound MCP and plain HTTP traffic, `publish` hops, and `lifecycle` records
+  arrive with `appkit`/`eventplane` and are proven by their ids, never
+  re-proven here. repos owns exactly one correlation seam: its nginx fragment
+  hands the process a trustworthy id (D13). **Out of recording scope,
+  deliberately:** every `git` subprocess repos spawns — including
+  `git http-backend` serving a clone or a push. The boundary (the MCP call, the
+  loopback request, the door request and its outcome) is recorded; git's own
+  chatter is not.
 
 ## Layout
 
@@ -115,4 +114,5 @@ ids ends at minting them — how coverage is measured and when the work is
 (zero-padded; referenced in prose and the plan as `D<N>`); this README holds
 only the spine. Design is rewritten in place: a changed Decision is rewritten
 in its `DNN.md` and `INDEX.md` is regenerated; a new Decision adds a `DNN.md`
-and an INDEX entry.
+and an INDEX entry. Retired Decision numbers are listed in `INDEX.md` and are
+never reused.

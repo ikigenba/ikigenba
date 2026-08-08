@@ -2,154 +2,167 @@
 
 **Authority: intent.** This doc owns *why* the repos service exists, *for
 whom*, what is in and out of scope, and the user-facing promises — stated once,
-in outcome terms. It does **not** state mechanism, exact paths, formats, label
-strings' plumbing, schemas, or test assertions; those belong to
-`project/design/`. Where the two could overlap (observable behavior), product
-states the *promise* and design states the *exact, checkable proof* of that
-promise.
+in outcome terms. It does **not** state mechanism, exact routes, formats, exit
+codes, schemas, or test assertions; those belong to `project/design/`. Where the
+two could overlap (observable behavior), product states the *promise* and design
+states the *exact, checkable proof* of that promise.
 
 ## Problem
 
-The suite can talk *about* code but cannot *work on* code. A GitHub issue in
-the org describes a bug or a small feature; today a human has to open a laptop,
-clone, branch, fix, test, push, and open a PR — even when the work is exactly
-the kind of bounded task an agent finishes unattended. The suite has an agent
-runtime (prompts), a GitHub connector (github), and inbound GitHub facts
-(webhooks), but nothing that owns **git trees on disk and the agent sessions
-that modify them**. There is no development plane.
+Everything authored on the box is a file that changes over time — a hosted
+site's pages, a script's body, a prompt's text, a small codebase — and none of
+it has a history. An edit overwrites what was there. A user who wants to see
+what a page looked like last week, undo an agent's change, work on a branch, or
+open the same content on a laptop has nowhere to go: the only copy is the live
+one, and the only version is now.
+
+Meanwhile each service that authors content would otherwise have to grow its own
+history mechanism — its own storage of past revisions, its own attribution, its
+own notion of a branch. Four half-answers, none of them a place a person can
+actually clone from.
 
 ## Purpose
 
-repos is the suite's **development plane**: it keeps local clones of the org's
-GitHub repositories and runs **agent sessions** against them. A session checks
-out work in an isolated working copy, does the work, and checks it in; the
-durable product is commits, a pushed branch, and a pull request. In v1 it does
-exactly one job end to end: **detect work in a repo, fetch it, do it, push,
-and open a PR** — triggered by a human labeling a GitHub issue.
+repos is the suite's **git custodian**: it holds one git repository per
+versioned artifact on the box, and it is the only place that holds one. Other
+services author content and ask repos to record it; repos keeps the history,
+serves the content back at any point in that history, and answers a real `git`
+client so a human can clone the artifact onto a laptop, work on a branch, and
+push it back. It does exactly this one job.
 
 ## Users
 
-- **The owner** (an authenticated suite user) — labels a GitHub issue to hand
-  it to the bot, and reviews the resulting pull request on GitHub. Through MCP
-  they can also onboard a repository ahead of time, start a session directly,
-  watch sessions, read a session's transcript, and cancel one.
-- **GitHub collaborators** — anyone who can apply a label in the org's repos
-  can dispatch work; anyone who can review a PR consumes the result. They never
-  touch the suite directly; the issue and the PR are the whole interface.
-- **Other suite services** — notify (or any consumer) can observe session
-  outcomes on the event plane. They are downstream, not users.
+- **The owner** (an authenticated suite user) — clones an artifact from a
+  laptop with ordinary `git`, pushes changes back, and drives repos through MCP
+  to create a plain code repository, see what exists, rename it, archive it,
+  merge a branch, or read and record a check's verdict.
+- **Owning services** (sites, scripts, prompts) — record each edit their users
+  make as history, and materialize the current content when they need to serve
+  or run it. They are the everyday callers, and their users never learn that
+  they are.
+- **Automated actors** (scripts and prompts runs on the box) — clone a
+  repository, work on a branch, push the branch, and post the verdict of a check
+  back against the commit they tested.
 
 ## Scope
 
-repos **does**, in v1:
+repos **does**:
 
-- Watch the org's GitHub activity (arriving via the suite's inbound webhook
-  ingress) for **an issue being labeled as ready to execute**, and start an
-  agent session for it — cloning the repository on first contact, with no
-  per-repo onboarding required.
-- Report progress **on the issue itself**: acknowledge the dispatch, mark it
-  in progress, link the PR on success, and mark it failed with a reason on
-  failure. The bot's GitHub identity is **@ikigenba**; everything it does on
-  GitHub is attributed to that identity.
-- Run each session in an **isolated working copy** on its **own branch**,
-  never on the repository's default branch, and never with GitHub credentials
-  in the agent's hands.
-- Honor an **in-repo definition of done**: when the repository declares an
-  executable check, a PR is opened only if that check passes; when it declares
-  none, the PR says so.
-- Let an owner, through MCP, **clone/list/inspect/remove** tracked
-  repositories and **start/list/inspect/cancel** sessions, including reading a
-  session's full transcript.
-- Publish each session's terminal outcome as a **suite event**.
-- Keep every session's transcript **durably**, surviving restarts, repo
-  removal, and workspace cleanup.
-- Serve the canonical suite **landing page** at its mount, session-gated like
-  every other service.
+- Hold one repository per versioned artifact, named by the kind of thing it is
+  and the owning service's own name for it — so creating a site, a script, or a
+  prompt is what creates its repository, with no second naming scheme and no
+  setup step.
+- Keep the current content of every repository readable: a single file at any
+  point in history, a listing of what a repository contains, and a whole-tree
+  export the owning service uses to refresh the copy it serves or runs from.
+- Record a change as a commit — one edit or a batch of edits, attributed to
+  whoever made it — so that history accumulates as a side effect of ordinary
+  work.
+- Answer a real `git` client over the network: clone, fetch, and push, for the
+  owner from a laptop and for automated work on the box, with the on-box path
+  confined to the one repository the work concerns.
+- Protect the live line of every repository: the branch that is served or run
+  can only move forward, never be rewritten or removed, no matter which door the
+  push arrives at. Every other branch is unrestricted.
+- Merge a branch into the live line on request, refusing when the change
+  conflicts or when a recorded check against that branch is failing or still
+  outstanding.
+- Record and report **checks**: a verdict against a specific commit, posted by
+  whoever ran the check. A commit nobody has recorded a check against is
+  ungated.
+- Announce every change of a branch, and every archival, so owning services
+  refresh and automated work can be triggered by a push.
+- Archive a repository rather than delete it: it disappears from listings and
+  stops being served, and its history is still there.
+- Serve the canonical suite landing page at its mount, session-gated like every
+  other service.
 
-repos does **nothing else** in v1. Deliberately excluded (they belong to a
-later direction, to be spec'd here when it is built):
+repos does **nothing else**. Deliberately excluded:
 
-- **No release machinery.** No release events, no content endpoint for
-  execution-plane services, no `source` bindings; sites, scripts, and prompts
-  are untouched by this service.
-- **No local-only repositories.** Every v1 repository is a clone of a GitHub
-  remote; creating a fresh repo with no remote arrives with the release work.
-- **No conversational mode.** The bot does not hold a discussion on the issue
-  thread; a `discuss` label is reserved for that future mode, and v1 sessions
-  read the full issue thread so contracts written that way carry over.
-- **No delegated gating.** Only a human (or an explicit MCP call) dispatches
-  work; no classifier applies the gate.
-- **No review or merge.** The PR is reviewed and merged by humans on GitHub;
-  repos never merges and never touches the default branch.
+- **No execution of any kind.** repos runs no agent, no script, no check, no
+  workflow. Whoever wants a check run runs it elsewhere and tells repos the
+  verdict.
+- **No GitHub.** repos neither reads from nor writes to GitHub — no issues, no
+  labels, no pull requests, no mirroring. It is the whole store, not a cache of
+  someone else's.
+- **No serving or running out of repos' own copy.** Owning services keep their
+  own copy of what they serve and run; repos hands out content, never traffic.
+- **No destruction of history.** There is no verb that erases a repository's
+  commits or reclaims its disk. Archiving is as far as any caller can go;
+  reclaiming disk is a deliberate operator act outside this service.
+- **No second namespace, and no cross-service naming rules.** Each owning
+  service owns uniqueness within its own kind; repos does not arbitrate names
+  between services.
 
 ## Contractual constants
 
-- **Bot identity `@ikigenba`** — the GitHub App identity all bot activity is
-  attributed to, and the branch namespace prefix (`ikigenba/…`) session branches
-  live under.
-- **Dispatch label `execute`** — the human gate. The in-flight, failure, and
-  reserved-conversation labels are `executing`, `failed`, and `discuss`.
-- **Loopback port `3007`, mount `/srv/repos/`** — frozen in the suite
-  registry.
+- **The kinds**: `sites`, `scripts`, `prompts`, and `code`. The first three are
+  named by their owning service; `code` names plain repositories created
+  directly through repos.
+- **The live branch is `main`** in every repository, of every kind.
+- **The automation branch namespace is `ikigenba/`** — the convention automated
+  actors name their branches under. It is a convention, not a restriction.
+- **Loopback port `3007`, mount `/srv/repos/`** — frozen in the suite registry.
 - **Starting version `v0.1.0`.**
 
 ## What we promise (user-facing behavior)
 
-- **Label an issue, get a PR.** A collaborator applies the `execute` label to
-  an open issue; with no other setup, the bot acknowledges on the issue,
-  works, and — when it finishes and the repo's own check (if any) passes — a
-  pull request linked to the issue appears, closing the issue when merged.
-- **The issue tells the whole story.** Dispatch is acknowledged on the issue;
-  in-progress is visible as a label; failure leaves a labeled issue with a
-  reason comment and the work-in-progress branch still pushed for inspection;
-  success leaves a PR link. Re-applying the dispatch label after a failure
-  retries with a fresh session.
-- **First contact is enough.** Any repository in the org is eligible; the
-  first dispatched issue clones it automatically. An owner can also onboard a
-  repository explicitly ahead of time.
-- **The agent can't leak what it never had.** The session agent works only
-  inside its working copy with local tools; it holds no GitHub credentials and
-  no suite tools. All GitHub activity is performed on its behalf and appears
-  as @ikigenba, with no owner-identifying marker.
-- **The default branch is never touched.** All bot work lands on bot-namespace
-  branches and reaches the default branch only through a human-merged PR.
-- **The repo defines "done".** If the repository ships an executable check,
-  the bot opens a PR only when that check passes; a failing check is reported
-  as a failure with the check's output. If there is no check, the PR plainly
-  says none was declared.
-- **Work is bounded.** A session that exceeds its time budget fails cleanly
-  and reports; a busy service queues new dispatches and acknowledges the queue
-  position on the issue rather than silently stalling.
-- **Transcripts survive.** Every session's transcript remains readable through
-  MCP after success, failure, cancellation, restart, or repo removal.
+- **Versioning is ambient.** Nobody performs a git action to get history.
+  Creating a site, script, or prompt creates its repository; every edit made
+  through the owning service's ordinary surface becomes a commit attributed to
+  whoever made it. Git stays invisible until the day someone wants it.
+- **Clone it from a laptop.** With a token from the dashboard, ordinary
+  `git clone` against the artifact's address retrieves its full history; work on
+  a branch and `git push` puts the branch on the box, where it can be reviewed
+  and merged.
+- **`main` is the live thing, and it only moves forward.** A push that would
+  rewrite or delete `main` is refused — from the laptop, from an on-box run,
+  from any door — and the repository is left exactly as it was. Any other branch
+  can be rewritten freely.
+- **Automation proposes; a merge accepts.** Work done on the box pushes a
+  branch, never `main`. A branch reaches `main` only through an explicit merge,
+  which refuses on a conflict and refuses while any recorded check against that
+  branch's tip is failing or still outstanding. A tip nobody checked merges
+  freely.
+- **Delete means archive.** Archiving a repository removes it from listings and
+  from service, and keeps every commit — the history is still readable, and the
+  same name can be used again afterward.
+- **Renaming keeps the history.** When an owning service changes its name for
+  something, its repository follows and its history comes along whole.
+- **Every change is announced.** Any movement of any branch — an edit through a
+  service, a push from a laptop or a run, a merge — is published as an event
+  naming the repository, the branch, the new commit, and who did it, so the
+  owning service refreshes and automated work can trigger on it.
 - **A logged-in human who opens the mount sees a real page** — the canonical
-  suite landing (service name, running version) gated by the dashboard
-  session; agents and the event feed are unaffected.
+  suite landing (service name, running version) gated by the dashboard session.
 
 ## Success criteria (outcomes)
 
-- Applying `execute` to an open issue in an org repo the suite has never seen
-  results — with no other setup — in an @ikigenba acknowledgment on that issue
-  and, on completion, a pull request from an `ikigenba/…` branch that references
-  the issue.
-- The PR's repository default branch has no bot commits; all bot work is on
-  the bot's branch.
-- On a repo whose declared check fails for the produced work, no PR is opened;
-  the issue carries the failure label, a comment with the check's output, and
-  the branch is pushed and inspectable.
-- On a repo with no declared check, the opened PR states that no check was
-  declared.
-- Re-applying `execute` to a failed issue produces a fresh session and a new
-  attempt on a fresh branch.
-- An owner can, through MCP: onboard a repo before any issue exists; see it
-  listed; start a session with written instructions; watch its state; read its
-  transcript; cancel it; and remove the repo — after which that repo's past
-  session transcripts are still readable.
-- A second dispatch against a repo with a session already running waits its
-  turn (and says so on the issue) rather than corrupting or interleaving work.
-- A session that runs past its time budget ends as a clean, reported failure,
-  and the service remains healthy for subsequent sessions.
-- Each finished session is observable as one suite event carrying the repo,
-  session, and outcome.
+- Editing a site, script, or prompt through its own service leaves a commit in
+  that artifact's repository, attributed to the actor that made the edit, with
+  no separate git step by anybody.
+- The owner can `git clone` an artifact from a laptop using a dashboard-issued
+  token, see its full history, commit on a branch, and push that branch back;
+  the branch is then visible on the box.
+- `git push --force` to `main` fails against a repository, and afterward the
+  repository's `main` points at exactly the commit it pointed at before.
+- An on-box run can clone the one repository it was given and push a branch to
+  it, cannot push to `main` even fast-forward, and cannot touch any other
+  repository.
+- Merging a branch whose tip has a failing or outstanding recorded check is
+  refused and names the check; recording a passing verdict for that tip and
+  merging again succeeds and moves `main` to include the branch's work.
+- Merging a branch that conflicts with `main` is refused and leaves `main`
+  unchanged.
+- An owning service can fetch the whole current tree of its artifact as an
+  ordinary set of files with no version-control leftovers, and can fetch any
+  single file at a named point in history.
+- Archiving a repository makes it vanish from listings while its history remains
+  intact and recoverable, and the same name can be created again.
+- Renaming a repository leaves it reachable under the new name with the same
+  commits, and unreachable under the old one.
+- Every branch movement, from any door, is observable as one suite event naming
+  the repository, branch, commit, and actor.
+- Nothing repos does causes a request to github.com.
 - A logged-in dashboard user opening `/srv/repos/` sees the service name and
   running version; a browser with no session is refused.
