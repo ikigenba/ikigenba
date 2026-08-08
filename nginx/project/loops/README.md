@@ -1,117 +1,227 @@
 # nginx — build loop
 
-The unattended `gather → build → verify` loop that builds
-`nginx/project/plan/`'s pending phases one at a time. Start it (**from the
-repo root**, not from `nginx/`) with:
+The installed unattended build loop for this tree: a `gather → build → verify`
+cycle that `ralph` re-invokes with a **fresh context** every turn, building the
+plan one pending phase at a time. This file describes the loop **as installed**,
+beside the prompts it describes. The spec shapes it consumes
+(`nginx/project/product/`, `nginx/project/design/`, `nginx/project/plan/`) are
+documented in `nginx/project/README.md`; loop mechanics live only here.
+
+## Running it
 
 ```
-nginx/project/loops/run
+cd <repo root>
+./nginx/project/loops/run
 ```
 
-which wraps exactly:
+`run` is the executable operator wrapper. Its body is:
 
+```sh
+exec ralph nginx/project/loops/gather.md nginx/project/loops/build.md nginx/project/loops/verify.md
 ```
-ralph nginx/project/loops/gather.md nginx/project/loops/build.md nginx/project/loops/verify.md
-```
 
-`nginx`'s toolchain commands (`nginx -p nginx -c nginx.conf -t`, `bash -n
-nginx/run`) are repo-root relative — nginx configuration and the `run` script
-have no module boundary of their own, and design's Conventions state them
-against the repo root — so unlike a Go subproject loop, this one's working
-directory is the **repo root**, and every path the three prompts reference is
-prefixed `nginx/` accordingly.
+**Run it from the repo root, not from `nginx/`.** This tree's check commands
+(`nginx -p nginx -c nginx.conf -t`, `bash -n nginx/run`) are repo-root-relative
+per design's Conventions, so the wrapper passes the prompt paths in that same
+form and `ralph`'s working directory is the repo root throughout.
 
-## Status contract
+**Environmental precondition:** an `nginx` binary on `PATH` — no Go toolchain
+needed. Per `root project/design/D23.md` a missing precondition is a **hard
+failure**, never a skip: the loop reports a gap rather than passing. Note
+`nginx` commonly lives in `/usr/sbin`, which is not on a non-root user's default
+`PATH`; export it before starting the loop or the config check cannot run.
 
-Every turn ends with one of three statuses. `ralph` reads only the **last**
-message of the turn and advances on that.
+## The status contract
 
-| status | terminal? | meaning |
+Each turn ends by reporting a `status` and a one-sentence `message`. The harness
+supplies the schema out of band and reads back only the turn's **final**
+message.
+
+| status | terminal? | who reports it |
 |---|---|---|
-| `CONTINUE` | no | a progress message streamed before the turn's real end; never advances the loop |
-| `NEXT` | yes | this turn's work is done; hand off to the next prompt (wraps `verify → gather`) |
-| `DONE` | yes | the whole job is complete; the loop stops — **only `gather` ever reports this** |
+| `CONTINUE` | no | any prompt, on progress messages streamed *before* the final message. Never advances the loop. |
+| `NEXT` | yes | any prompt — advance to the next prompt, wrapping `verify → gather`. |
+| `DONE` | yes | **`gather` only** — the loop stops. |
 
-## Per-step reads / writes / commits
+`build` and `verify` **always** end on `NEXT`. Finishing a phase completely,
+every check green and all gaps closed, is still `NEXT`; only `gather` ever ends
+the run. `CONTINUE` exists because a streaming backend coerces every streamed
+message into the schema, so a model narrating progress needs a non-terminal
+value to tag those with.
+
+The two `DONE` conditions are the only ends of the loop (plus ralph's own budget
+rails): `nginx/project/loops/blocked.md` exists, or the `⬜` grep over
+`nginx/project/plan/STATUS.md` finds no pending phase.
+
+## What each step reads, writes, and commits
 
 | step | reads | writes | commits | deletes |
 |---|---|---|---|---|
-| `gather` | `nginx/project/plan/STATUS.md`, `nginx/project/loops/blocked.md` (existence); (fresh brief only) one `phase-NN.md`, `INDEX.md`, the realized `DNN.md`(s) | `nginx/project/loops/brief.md` (fresh brief case only; leaves an in-flight brief untouched) | — | — |
-| `build` | `nginx/project/loops/brief.md` only | the config/static/script files the brief names | this turn's increment | — |
-| `verify` | `nginx/project/loops/brief.md`; re-derives all checks itself (`bash -n`, `nginx -t`, the brief's structural checks, the id-ratchet grep) | `nginx/project/loops/brief.md` feedback region (gap case); `~/.ralph/verify.log` (stall/blocked) | the phase's `STATUS.md` line + `phase-NN.md` deletion (pass case) | pass case: `brief.md`; stall/blocked: `brief.md` |
+| **gather** | `nginx/project/plan/STATUS.md`; the one `nginx/project/plan/phase-NN.md`; `nginx/project/design/INDEX.md`; only the named `DNN.md`; dependency facts | `nginx/project/loops/brief.md` (contract region only, and only for a fresh phase) | nothing | nothing |
+| **build** | `nginx/project/loops/brief.md` only | config, `nginx/run`, static/committed files under `nginx/` | this turn's increment | nothing |
+| **verify** | `nginx/project/loops/brief.md`; the checks; the id-set grep | `nginx/project/loops/brief.md` feedback region, or `nginx/project/loops/blocked.md` | the phase-retirement deletion | the phase's `STATUS.md` line + `phase-NN.md` + the brief, on a pass |
+
+The next unit of work is found with:
+
+```
+grep -nE '^- Phase .* ⬜' nginx/project/plan/STATUS.md | head -1
+```
+
+Phase lines are Markdown bullets; the `Next phase: NN` counter line is not a
+bullet and never matches. There is no done marker — a completed phase's line and
+body file are **deleted**.
+
+## The gate: structural, because there is no test suite
+
+This tree holds nginx configuration, two static committed files, and one Bash
+script. **There is no Go module, no test suite, and no test-file glob**; the
+repo-root `go.work` does not and must not name it, and a passing repo-wide
+`go test ./...` is never evidence about it. So the loop's gate is structural.
+From the repo root:
+
+- `bash -n nginx/run` exits 0.
+- `mkdir -p nginx/tmp && nginx -p nginx -c nginx.conf -t` exits 0 and prints
+  `configuration file … test is successful`. The `mkdir` is part of the command:
+  the config declares its scratch paths under `tmp/` and nginx refuses to create
+  that parent itself.
+- Every structural check the phase names holds **with its stated expected
+  output** — exact-match greps against a concrete file outside `project/`, an
+  exact committed file present, an exact `diff`. For a `prints 1` check the
+  observed count must equal 1 exactly: `2` fails as surely as `0`, because a
+  phrase written twice is as much a defect as one written never.
+
+Those greps are `project/`-excluded by construction, so no phrase in the spec or
+in these prompts can satisfy them. A check that *could* be satisfied by text in
+`nginx/project/` is a defective, self-referential bar — `verify` records it as an
+open gap naming the self-reference rather than passing it, since only the
+operator can fix it in `project/`.
+
+Testing layers, per `root project/design/D23.md` (adopted by D4): **manual
+only** — no hermetic, no composed, no live layer, and no `//go:build live` file.
+The contract's own no-test-suite clause makes conformance here structural, so
+its `[proof: per-service]` ids are deliberately **not** cited: no file in this
+tree could carry an id tag. The `nginx -t` and `bash -n` checks are configuration
+and syntax checks, not tests, and are not a layer.
+
+The claims that actually matter — a request refused at the boundary, a real CA
+issuing for names that really resolve, a real nginx selecting a real
+`default_server` — are verified by hand against the running stack (`bin/start`,
+then the local front door) or against the live box via the runbook in the
+repo-root `deploy.md`. They are never asserted by a stub, because a stub would
+accept anything and prove nothing.
+
+## The coverage ratchet (currently a no-op, deliberately kept)
+
+`verify` runs, every cycle:
+
+```
+grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' nginx/project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u
+```
+
+**Empty output is the pass condition.** The `grep -v 'R-XXXX-XXXX'` filter is
+required: the design docs write `R-XXXX-XXXX` as the *shape* of an id in prose,
+and without the filter that placeholder would surface as a phantom uncovered id
+the check could never clear.
+
+This tree mints no ids today, so both sides are empty. The check is kept live so
+that the moment a Decision does mint one, `verify` treats every such id as an
+**open gap** rather than passing silently — there is no test-file glob and no
+`R-`-tag convention here, so an id with no defined proof mechanism is a defect in
+the loop and the spec, not in the code. No amount of building closes it, so it
+escalates straight to `blocked.md` for the operator.
 
 ## The brief lifecycle
 
-`gather` authors `nginx/project/loops/brief.md` once, the first time a phase
-becomes the active `⬜` phase — a self-contained contract carrying the
-realized Decision's design prose (Verification list excluded), the phase's
-own slice of ids (today always "none — structural phase", per
-`project/design/README.md` "Requirement ids"), files to touch, dependency
-interfaces, and the done bar. While that phase stays `⬜`, `gather` no-ops on
-every later cycle (it never re-reads `nginx/project/design/` or the phase's
-`phase-NN.md` for a phase already in flight). `build` reads the brief and does
-bounded work against it, prioritizing any open gaps in the feedback region.
-`verify` re-derives the truth from scratch every cycle: pass deletes the
-phase's `STATUS.md` line, its `phase-NN.md`, and the brief; a gap leaves `⬜`
-untouched and overwrites the feedback region with only the currently open
-gaps.
+`nginx/project/loops/brief.md` is the seam that keeps `build`'s context scoped to
+one phase. It is **never committed** (git-ignored via `nginx/.gitignore`),
+**single-phase**, and **phase-scoped rather than per-cycle**:
 
-## Stall and blocked ladder
+1. `gather` authors it when a phase first becomes the active `⬜` phase, then
+   **no-ops while that phase stays in flight** — it re-reads no big doc and
+   leaves both regions untouched.
+2. `build` consumes the whole brief, prioritizing any open gaps in the feedback
+   region, and never writes it.
+3. `verify` on a **pass** deletes the phase's line + body file and the brief; on
+   a **gap** it overwrites (never appends) the feedback region with only the
+   currently-open gaps, and the brief persists into the next cycle.
 
-`verify` tracks progress by comparing this cycle's open-gap set against the
-prior cycle's, using its own persisted feedback region — not `build`'s claims.
-Three consecutive attempts that close no gap trigger a **trajectory reset**:
-the brief is discarded (phase stays `⬜`), so the next `gather` rebuilds the
-contract fresh from spec. If the *same* phase stalls a second time after a
-reset, that is not a stuck trajectory but a defective bar — `verify` writes
-`nginx/project/loops/blocked.md` naming the phase, the attempts, the
-still-unsatisfied checks, and the exact command/output that will not go
-green, and the next `gather` reports `DONE` on sight of that file.
+Region ownership keeps the two writers from clobbering each other: the contract
+region is gather's, the feedback region is verify's.
 
-**Operator recovery from a `blocked.md`:** read the recorded command and
-output, fix the phase's done bar in `nginx/project/plan/` or
-`nginx/project/design/` (the loop treats `nginx/project/` as read-only and
-cannot fix it itself), delete `nginx/project/loops/blocked.md`, and restart
-`nginx/project/loops/run`.
+### Brief schema
 
-## Why this converges
+```markdown
+# Brief — Phase NN
 
-`verify` can neither halt the loop nor advance a phase on a gap — an
-incomplete phase just stays `⬜` and gets re-attacked next cycle, now with
-`verify`'s grounded feedback in front of `build`. The loop's only two exits
-are both `gather`-only: zero `⬜` phases left (everything verified green), or
-a blocked phase awaiting the operator — plus `ralph`'s own budget rails.
+## Objective
+<one line, from the phase file>
 
-## `nginx/project/loops/brief.md` schema
+## Realizes
+<Decision id(s), noting "structural" where the phase realizes no ids>
 
-Two regions, each owned by exactly one writer:
+## Decision file(s)
+<path(s) to the DNN.md read>
 
-- **Contract region** (`gather`-owned, written once per phase): phase id +
-  objective, realized Decision id(s) and file(s), the realized Decision's full
-  design prose (Verification list omitted), the ids to cover (today always
-  "none — structural phase"), files to touch, dependency interface signatures,
-  and the done bar.
-- **Verify feedback region** (`verify`-owned): a `## Verify feedback —
-  attempt N` heading, the build commit `verify` last observed, the stall
-  streak, and a checklist of only the currently open gaps, each grounded in
-  the exact failing command/output. Empty on a fresh brief; overwritten
-  (never appended) on every gap cycle; read but never written by `build`.
+## Design prose
+<each realized Decision's full Decision statement, shape/signatures, and
+rejected alternatives, verbatim, Verification section omitted>
 
-## This tree's specifics
+## Ids to cover
+(none — structural phase)
 
-`nginx/` mints no Verification ids today (every Decision's Verification list
-says "ids: none" — see `project/design/README.md` "Requirement ids"), so every
-phase here is **structural**: its done bar is an exact committed file, an
-exact diff/grep, or a real `nginx -t`, never a tagged-test count. The two
-checks every phase's done bar builds on, both run from the repo root:
+## Files to touch
+<paths, repo-root-relative>
 
+## Dependency facts
+<the fragment shape / run flags / committed parked paths the phase depends on>
+
+## Done bar
 - `bash -n nginx/run` exits 0.
 - `mkdir -p nginx/tmp && nginx -p nginx -c nginx.conf -t` exits 0.
+- <each of the phase's structural checks, verbatim, as an exact command with
+  its stated expected output>
 
-`verify.md` still runs a coverage-ratchet grep over `nginx/project/design/D*.md`
-so the loop keeps working unmodified the moment some future Decision does
-mint an id — see its step 3.
+## Verify feedback — attempt N
+- build commit observed: <sha>
+- stall streak: <k>
+- open gaps:
+  - <named check> — <exact failing command> → <observed output> [file:line]
+```
 
-See `nginx/project/product/README.md`, `nginx/project/design/README.md`, and
-`nginx/project/plan/README.md` for the spec shapes this loop consumes — this
-file documents only the loop mechanics, never restates those.
+If a phase ever does carry ids, each `## Ids to cover` line starts at column 0
+with the bare id, an em-dash, then the full requirement text on the same line,
+so the phase's id set is extractable with
+`grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' nginx/project/loops/brief.md`.
+
+## Why it converges, and the stall/blocked ladder
+
+`verify` can neither halt the run nor advance a phase on a gap, so an incomplete
+phase simply stays `⬜` and the loop re-attacks it next cycle — now with
+`verify`'s grounded, command-level feedback in front of `build`, and without
+`gather` re-reading the big docs. The persisted feedback also gives `verify`
+cross-cycle memory, letting it distinguish slow convergence (the open-gap set
+shrinking) from a true stall.
+
+- **Progress** = the current open-gap set is a strict subset of the previous
+  one. **A new build commit is never progress** and never resets the streak — a
+  builder that cannot satisfy a bar keeps committing plausible rewordings, and a
+  detector keyed on commit motion would read that churn as convergence.
+- **Stall reset (streak = 3):** three consecutive attempts closing no gap means
+  the accumulated brief may not be converging. `verify` logs
+  `Phase NN STALLED …` to `~/.ralph/verify.log`, deletes the brief, leaves `⬜`,
+  and returns `NEXT`; the next `gather` rebuilds the contract fresh from spec.
+- **Blocked escalation (second stall on the same phase):** a rebuilt contract
+  has already been tried, so the **done bar** is the fault and no amount of
+  rebuilding fixes it. `verify` writes `nginx/project/loops/blocked.md` with the
+  phase, the attempt count, the unsatisfied checks, and the exact command and
+  observed output that will not go green; logs `Phase NN BLOCKED …`; deletes the
+  brief; leaves `⬜`; and returns `NEXT`. The next `gather` sees the file and
+  reports `DONE`.
+
+Both branches stay inside the invariant that `verify` never halts and never
+advances on a gap.
+
+**What the operator does with a `blocked.md`:** read the recorded command and
+its observed output, fix the phase's done bar in `nginx/project/` (the loop
+cannot — `project/` is read-only to it), delete
+`nginx/project/loops/blocked.md`, and restart the loop.
