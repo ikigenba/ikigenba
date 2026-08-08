@@ -66,6 +66,10 @@ lives in git, never in the spec.
 >    as fixed external contracts
 >    (`project/research/research.md`); both must be built first.
 >
+> 7. **Testing-language conformance** (D20): notify adopts the suite's
+>    testing-language contract, declaring its own layers, preconditions, and
+>    GOWORK mode and proving that declaration in its own tree.
+>
 > The rest of the notify domain (the ntfy push mechanics —
 > `Client`/`Publish`/`Send` — and the event-plane wire contract itself) is
 > owned elsewhere (`notify/CLAUDE.md`, the event-protocol docs / the
@@ -139,7 +143,17 @@ Shared facts every Decision leans on:
 Testing is part of the architecture, not an afterthought. The cross-cutting
 approach every Decision's Verification list assumes:
 
-- **The landing page is tested over the shipped tree.** Tests in `cmd/notify`
+- **The layer vocabulary is the suite's, not this tree's.** Every test below
+  belongs to exactly one layer — **hermetic**, **composed**, **live**, or
+  **manual** — as defined by `root project/design/D23.md`, which owns the layer
+  definitions, the `//go:build live` mechanism, and the ban on skipping outside
+  live-tagged files. D20 records notify's adoption and its declared facts. In
+  short: everything below is **hermetic** — the mock ntfy server is an `httptest`
+  listener on `127.0.0.1`, never ntfy.sh — except the boot smoke in
+  `cmd/notify/main_test.go`, which is **composed**. notify has **no live layer and
+  no manual layer**.
+- **The landing page is tested over the shipped tree (hermetic).** Tests in
+  `cmd/notify`
   load the repo-real `notify/share/www` via `appkit/web` (a relative path from
   the package dir) and drive the landing handler and the chassis static mount
   with `net/http/httptest`, asserting status, body substrings (name, version,
@@ -163,15 +177,18 @@ approach every Decision's Verification list assumes:
   with real event values against a mock ntfy server (the existing push-test
   substrate). The loop engine itself (SSE, cursors, reconnect) is appkit's
   proof (appkit D10), not re-proven here.
-- **Event matching runs the real matcher and the real plane.** Routing
-  conformance claims (D16) exercise the real `eventplane/routing` matcher —
-  never a reimplementation — and the end-to-end claim chains the real revised
-  outbox + `FeedHandler` + `consumer.Run` over `httptest` to the mock ntfy
-  server (the substrate the existing e2e push test already uses).
-- **The nginx fragment is proven by content assertion.** Tests read
-  `notify/etc/nginx.conf` from disk and assert the session-gated locations and
-  registry-derived proxy targets (D4, D8, D10) — a genuine assertion over the
-  shipped artifact, runnable in the same `go test ./...`.
+- **Event matching runs the real matcher and the real plane — in-process, so
+  hermetic.** Routing conformance claims (D16) exercise the real
+  `eventplane/routing` matcher — never a reimplementation — and the whole-chain
+  claim wires the real revised outbox + `FeedHandler` + `consumer.Run` over
+  `httptest` to the mock ntfy server (the substrate the existing chain test
+  already uses). Nothing here builds a binary or leaves the process, so it is
+  hermetic rather than composed, whatever the conventional "e2e" label suggested.
+- **The nginx fragment is proven by hermetic content assertion — a shipped-file
+  guard.** Tests read `notify/etc/nginx.conf` from disk and assert the
+  session-gated locations and registry-derived proxy targets (D4, D8, D10) — a
+  genuine assertion over the shipped artifact, runnable in the same
+  `go test ./...`.
 - **Telemetry adoption is proven at notify's own seams, never by re-proving the
   chassis** (D18). The outbound claim installs a recording
   `http.RoundTripper` through the composition root's own wiring path — so what is
@@ -183,8 +200,21 @@ approach every Decision's Verification list assumes:
   context is cancelled. What appkit and eventplane prove — read-or-mint,
   `consume`/`request`/`lifecycle` recording, and the loopback-only propagation
   rule (unfalsifiable against a `127.0.0.1` mock) — is **not** re-asserted here.
+- **The install layout is proven by the one composed test.** The boot smoke in
+  `cmd/notify/main_test.go` builds notify's own binary and runs it from an
+  `/opt/notify/`-shaped `t.TempDir()` tree on a free loopback port, asserting the
+  served `/health`. Building and running the tree's real binary is what makes it
+  **composed** rather than hermetic; it stays offline, needing no ntfy credential
+  and no running suite.
+- **Doc truth is a hermetic Go test.** notify's declared testing facts (D20) are
+  asserted by reading the committed `notify/AGENTS.md` from disk in
+  `cmd/notify/docs_test.go`, beside the skip-ban source scan over the tree's
+  `*_test.go` files — so the declaration is re-checked on every `go test ./...`,
+  not once at authoring time.
 - **Determinism.** Handlers take name/version as plain strings and clients take
-  injected config; no clock, no network, no DB in the web/MCP tests.
+  injected config; no clock, no network, no DB in the web/MCP tests. Push config
+  is injected rather than read from the ambient environment, so no test changes
+  behavior based on whether `NTFY_TOPIC` or `NTFY_API_KEY` happen to be set.
 
 ## Layout
 

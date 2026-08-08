@@ -9,7 +9,9 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 21
+Next phase: 22
+
+- Phase 21 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — declare notify's testing facts in `AGENTS.md` and prove the declaration and the skip ban in `cmd/notify/docs_test.go`
 
 
 

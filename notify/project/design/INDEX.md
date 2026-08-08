@@ -23,6 +23,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D17 → `project/design/D17.md` — Structured MCP adoption: `send` returns `structuredContent`, declares an `outputSchema`, and carries typed error codes (`validation`, `source_unavailable`) from the closed vocabulary — owns R-A918-YY6H, R-AA95-CPX6, R-ACOY-49EK, R-ADWU-I159
 - D18 → `project/design/D18.md` — Telemetry adoption, Go side: the ntfy client's `http.Client` injected from the chassis's instrumented outbound client, and a correlation id that survives the detached-goroutine seam (`context.WithoutCancel`) — owns R-TK2Y-2LTX, R-TLAU-GDKM, R-TMIQ-U5BB, R-TNQN-7X20
 - D19 → `project/design/D19.md` — nginx fragment: gated locations capture and forward the edge-minted `X-Correlation-Id`; the ungated public PRM location clears it — owns R-VLOW-90H2, R-VMWS-MS7R
+- D20 → `project/design/D20.md` — Testing-language conformance: the suite's four layers, notify's declared testing facts (hermetic + composed, no live, no manual; no preconditions beyond the Go toolchain; workspace GOWORK), proven in `cmd/notify/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
 
 ## Verification ids → Decision
 
@@ -60,6 +61,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-NGNX-5P8Y → D4 → `project/design/D04.md`
 - R-NGNX-7Q1Z → D4 → `project/design/D04.md`
 - R-NGNX-9R3B → D4 → `project/design/D04.md`
+- R-O1AD-MRKW → D20 → `project/design/D20.md` (adopted from root `project/design/D23.md`)
+- R-O2IA-0JBL → D20 → `project/design/D20.md` (adopted from root `project/design/D23.md`)
 - R-RGDR-4F6Q → D10 → `project/design/D10.md`
 - R-RGNL-4E5P → D10 → `project/design/D10.md`
 - R-RGSP-4A1K → D9 → `project/design/D09.md`
