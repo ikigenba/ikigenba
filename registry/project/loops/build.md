@@ -72,16 +72,27 @@ commit it. You do **not** judge completeness and you do **not** edit
 - **Zero dependencies:** import **only** the Go standard library. `registry/go.mod`
   must never gain a `require` directive.
 - **Build / typecheck:** `GOWORK=off go build ./...` from `registry/`.
-- **Test:** `GOWORK=off go test ./...` from `registry/`.
+- **Test (the default gate):** `GOWORK=off go test ./...` from `registry/`.
 - **"Suite is green":** both commands above exit 0, with no failures and no `SKIP`.
 - **Purity:** the package is pure compile-time data and total functions — no I/O,
   env, clock, or randomness. Tests are plain in-process assertions; assert panics
   with `recover`. There is no external substrate to stub.
+- **Test layers (the suite contract, `root project/design/D23.md`).** Given that
+  purity, **every test in this tree is hermetic**. registry builds no binary, so
+  it has **no composed layer**, **no live layer**, and **no manual runbook**, and
+  **no environmental precondition beyond the Go toolchain**. Never add a
+  `//go:build live` file, never reach a network address, and never read a
+  credential or an environment variable from a test.
+- **Skipping is banned.** `t.Skip`, `t.Skipf`, and `t.SkipNow` may not appear in
+  any test file in this tree (there are no live-tagged files here, so the
+  contract's one exemption does not apply). A skipped requirement test launders a
+  gap into green and `verify` scores it **uncovered**.
 - **Test placement:** package-local `registry/*_test.go`, co-located with the code
   under test, named for the behavior. There is **no** separate integration-test
   home and **no** per-phase or root-level test files.
 - **Id tagging:** one `// R-XXXX-XXXX` comment line inside the test that asserts
-  that behavior.
+  that behavior, on a test that genuinely asserts it and actually runs under
+  `GOWORK=off go test ./...` — never behind a build tag, an env flag, or a skip.
 
 ## Boundaries
 
@@ -92,6 +103,8 @@ commit it. You do **not** judge completeness and you do **not** edit
 - Never remove an existing `R-`-tagged test — a rewrite preserves every tag
   already committed.
 - Never add a third-party dependency or edit files outside `registry/`.
+- Never introduce a `t.Skip` variant, a `//go:build live` file, or any other gate
+  that holds a test out of `GOWORK=off go test ./...`.
 
 ## Reporting the result
 
@@ -103,9 +116,9 @@ Report this run's result as a `status` and a one-sentence `message`:
   finishing this phase completely, green suite and all open gaps closed, is
   still `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or
   a blocked phase awaiting the operator.
-- `message` — one short, plain sentence describing what happened, e.g. `built the
-  resolution API and committed Phase 03 tests`.
+- `message` — one short, plain sentence describing what happened, e.g.
+  `implemented Phase 05's AGENTS.md declaration and skip-ban tests; suite green`.
 
 Always end the turn on `NEXT` — build hands off every turn and is never the step
-that ends the run. Keep `message` a single plain sentence — not a JSON object or
-code block.
+that ends the run. `CONTINUE` is only ever a non-terminal progress status. Keep
+`message` a single plain sentence — not a JSON object or code block.

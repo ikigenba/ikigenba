@@ -50,7 +50,8 @@ commit nothing.
      statement, shape/signatures, and Rejected alternatives) verbatim into the
      brief, **excluding that Decision's Verification list**.
    - Copy **each covered id's full requirement text** verbatim from the Decision's
-     Verification list (and no out-of-scope ids).
+     Verification list, including any `Substrate:` clause, and no out-of-scope
+     ids.
    - This is a single flat package with no external dependencies, so there are no
      dependency interface signatures to copy in beyond what the Decision prose
      already carries.
@@ -60,6 +61,10 @@ commit nothing.
 5. Return `NEXT`.
 
 ## brief.md schema (you own the contract region; leave feedback empty)
+
+The `<!-- VERIFY FEEDBACK BELOW … -->` marker is the hard boundary between the
+two single-writer regions: you own everything above and including it, `verify`
+owns everything below it.
 
 ```
 # Brief — Phase NN: <one-line objective>
@@ -71,7 +76,7 @@ commit nothing.
 - Design prose (verbatim, Verification lists omitted):
   <the Decision statement + shape/signatures + Rejected, copied from each DNN.md>
 - Ids to cover:
-R-XXXX-XXXX — <full requirement text copied verbatim from the Decision>
+R-XXXX-XXXX — <full requirement text copied verbatim from the Decision, Substrate: clause included>
 R-YYYY-YYYY — <full requirement text copied verbatim from the Decision>
   (or the literal line: (none — structural phase))
 - Files to touch:
@@ -82,8 +87,12 @@ R-YYYY-YYYY — <full requirement text copied verbatim from the Decision>
   - `GOWORK=off go test ./...` exits 0 (no failures, no SKIP)
   - every id above is covered by a genuinely-asserting `// R-XXXX-XXXX`-tagged
     test in package-local `registry/*_test.go`, named for the behavior, that
-    actually runs under `GOWORK=off go test ./...` (no skip)
-  - (structural phase) the phase's Done-when smoke commands pass
+    actually runs under `GOWORK=off go test ./...` — never skipped, never gated
+    behind a build tag or env flag
+  - (structural phase) the phase's Done-when smoke commands pass, each held to
+    its stated pass criterion
+
+<!-- VERIFY FEEDBACK BELOW — verify owns everything past this line; gather writes this marker once, leaves the stub, and never touches this region again. -->
 
 ## Verify feedback
 (none yet)
@@ -95,6 +104,21 @@ an em-dash, then that id's full requirement text on the same line — so
 this phase's id set. A structural phase uses the literal `(none — structural
 phase)` line instead.
 
+## Test layers (the vocabulary the brief speaks — see `root project/design/D23.md`)
+
+**Every test in this tree is hermetic.** The whole package is pure — compile-time
+data and total functions over it, standard library only, no I/O, no environment
+reads, no clock, no randomness — so registry builds no binary and has **no
+composed, live, or manual layer**, and **no environmental precondition beyond
+the Go toolchain**.
+
+That has a direct consequence you must carry into every Done bar you write:
+there is no `//go:build live` file here and `go test -tags live ./...` is not
+part of this tree's testing story, so a test held out of the default gate by a
+build tag, an env flag, or a skip condition is **unreachable, and therefore
+uncovered** — with no carve-out. State the bar so every owned id is proven by a
+test that runs under plain `GOWORK=off go test ./...`.
+
 ## Boundaries
 
 - First check: `project/loops/blocked.md`. Then read only: the next
@@ -103,6 +127,8 @@ phase)` line instead.
 - Never build, test, or commit.
 - Never write the `## Verify feedback` region, and never touch a brief that is
   already for the in-flight phase.
+- Never delete or create `project/loops/blocked.md` — only the operator (by
+  deleting it) and `verify` (by writing it) touch that file.
 - The contract region of a fresh brief is your only output.
 
 ## Reporting the result
@@ -113,7 +139,7 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
 - `message` — one short, plain sentence describing what happened, e.g. `wrote
-  brief for Phase 02`.
+  brief for Phase 05`.
 
 End the turn on `DONE` only when step 1 finds `project/loops/blocked.md` or step
 2's grep finds no `⬜` phase; otherwise end on `NEXT` (a fresh or preserved
