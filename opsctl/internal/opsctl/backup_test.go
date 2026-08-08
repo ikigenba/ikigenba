@@ -300,6 +300,47 @@ func TestBackupArchiveContainsOnlyStateDirectory(t *testing.T) {
 	}
 }
 
+// R-O3Q6-EB2A
+func TestBackupPopulatedTreeArchiveExcludesCacheAndGenerationFiles(t *testing.T) {
+	root := t.TempDir()
+	l := NewLayout(root, "ledger")
+	writeRunLink(t, l)
+	writeStateFile(t, l, "ledger.db", "durable database")
+	writeStateFile(t, l, "documents/report.txt", "durable report")
+	if err := os.MkdirAll(l.CacheDir(), 0o755); err != nil {
+		t.Fatalf("mkdir cache: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(l.CacheDir(), "cached-result.txt"), []byte("disposable cache"), 0o644); err != nil {
+		t.Fatalf("write cache file: %v", err)
+	}
+	if err := os.WriteFile(l.GenerationPath(), []byte("stale-generation-marker"), 0o644); err != nil {
+		t.Fatalf("write generation sidecar: %v", err)
+	}
+
+	store := newFakeStore()
+	if err := testOps(root, &stubSystem{}, store).Backup(context.Background(), "ledger"); err != nil {
+		t.Fatalf("Backup: %v", err)
+	}
+	_, archive := snapshotObject(t, store)
+	entries := tarList(t, archive)
+	present := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		present[strings.TrimPrefix(entry, "./")] = true
+		clean := strings.TrimPrefix(entry, "./")
+		if clean == "cache" || strings.HasPrefix(clean, "cache/") {
+			t.Fatalf("archive contains cache entry %q; listing = %v", entry, entries)
+		}
+		if strings.HasSuffix(clean, ".generation") {
+			t.Fatalf("archive contains generation entry %q; listing = %v", entry, entries)
+		}
+	}
+	for _, want := range []string{"state/ledger.db", "state/documents/report.txt"} {
+		if !present[want] {
+			t.Fatalf("archive listing = %v, want entry %q", entries, want)
+		}
+	}
+}
+
 func TestBackupSnapshotKeyEmbedsProducingVersion(t *testing.T) {
 	// R-82FY-GAL6
 	root := t.TempDir()
@@ -688,6 +729,42 @@ func TestRestoreRecreatesCacheAsEmptyDirectory(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("cache dir = %v, want empty", entries)
+	}
+}
+
+// R-O4Y2-S2SZ
+func TestRestoreClearsPopulatedCacheAndGenerationSidecar(t *testing.T) {
+	root := t.TempDir()
+	l := NewLayout(root, "ledger")
+	writeStateFile(t, l, "ledger.db", "old database")
+	if err := os.MkdirAll(l.CacheDir(), 0o755); err != nil {
+		t.Fatalf("mkdir cache: %v", err)
+	}
+	cachePath := filepath.Join(l.CacheDir(), "cached-result.txt")
+	if err := os.WriteFile(cachePath, []byte("stale cached result"), 0o644); err != nil {
+		t.Fatalf("write cache file: %v", err)
+	}
+	generationMarker := []byte("pre-restore-generation-marker-with-distinguishable-bytes")
+	if err := os.WriteFile(l.GenerationPath(), generationMarker, 0o644); err != nil {
+		t.Fatalf("write generation sidecar: %v", err)
+	}
+	if got, err := os.ReadFile(l.GenerationPath()); err != nil || !bytes.Equal(got, generationMarker) {
+		t.Fatalf("generation sidecar before restore = %q, %v; want %q", got, err, generationMarker)
+	}
+
+	store := newFakeStore()
+	snapshot := snapshotPrefix("ledger") + "snapshot.tar"
+	store.data[snapshot] = makeArchive(t, t.TempDir(), "ledger", map[string]string{
+		"ledger.db": "restored database",
+	})
+	if err := testOps(root, &stubSystem{}, store).Restore(context.Background(), "ledger", snapshot, strings.NewReader("ledger\n")); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	for _, path := range []string{cachePath, l.GenerationPath()} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("stale cache path %s remains after restore: %v", path, err)
+		}
 	}
 }
 
