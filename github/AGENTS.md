@@ -33,8 +33,23 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- Unit: `GOWORK=off go test ./...`
-- Vet and format: `GOWORK=off go vet ./...`, `gofmt -l .`
+The default gate runs from `github/` with `GOWORK=off go test ./...`. A green
+suite also requires clean `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`,
+and `gofmt -l .` runs (the formatter check prints nothing). `GOWORK=off` is the
+tree's required mode: it mirrors the production build and proves the module
+resolves standalone through its committed `replace` directives.
+
+The gate has two test layers. The hermetic layer is fully offline and covers
+package behavior, migrations, rendering, and committed-file checks. The
+composed layer is the install-layout boot smoke in `cmd/github/main_test.go`,
+which builds and runs the real binary but remains offline. The manual layer is
+the committed operator runbook at `project/github-verification.md`. This tree
+has no live layer.
+
+The only environmental precondition beyond the Go toolchain is the `go` binary
+on `PATH` in the test process's environment, with the module cache already
+resolving github's `replace` siblings. Its absence is a hard failure, never a
+skip.
 
 ## Versioning
 
