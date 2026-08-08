@@ -116,6 +116,39 @@ func TestInstalledLayoutBootsBuiltService(t *testing.T) {
 		stop()
 		t.Fatalf("service did not become healthy: %s", processOutput.String())
 	}
+	// R-JPOJ-ZCS5
+	bare := filepath.Join(stateDir, "git", "sites", "guard.git")
+	if err := os.MkdirAll(filepath.Dir(bare), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitInit := exec.Command("git", "init", "--bare", "--initial-branch=main", bare)
+	if output, err := gitInit.CombinedOutput(); err != nil {
+		t.Fatalf("initialize guard fixture: %v: %s", err, output)
+	}
+	readURL := baseURL + "/list?kind=sites&name=guard"
+	loopback, err := client.Get(readURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loopbackBody, _ := io.ReadAll(loopback.Body)
+	_ = loopback.Body.Close()
+	if loopback.StatusCode != http.StatusOK || !bytes.Contains(loopbackBody, []byte(`"entries":[]`)) {
+		t.Fatalf("loopback read status=%d body=%q", loopback.StatusCode, loopbackBody)
+	}
+	proxiedRequest, err := http.NewRequest(http.MethodGet, readURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxiedRequest.Header.Set("X-Forwarded-Proto", "https")
+	proxied, err := client.Do(proxiedRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxiedBody, _ := io.ReadAll(proxied.Body)
+	_ = proxied.Body.Close()
+	if proxied.StatusCode != http.StatusNotFound {
+		t.Fatalf("nginx-crossed read status=%d body=%q", proxied.StatusCode, proxiedBody)
+	}
 	details, _ := health["details"].(map[string]any)
 	if health["service"] != "repos" || health["status"] != "ok" || details["repositories"] != float64(0) {
 		t.Fatalf("health envelope = %#v", health)

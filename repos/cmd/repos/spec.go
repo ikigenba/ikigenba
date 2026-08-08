@@ -44,6 +44,10 @@ func reposSpec() appkit.Spec {
 			}
 			service = repos.NewService(repos.NewStore(rt.DB()))
 			service.SetCustody(custody)
+			rt.HandleLoopback("GET /content", repos.ContentHandler(service))
+			rt.HandleLoopback("GET /list", repos.ListHandler(service))
+			rt.HandleLoopback("GET /stat", repos.StatHandler(service))
+			rt.HandleLoopback("GET /archive", repos.ArchiveHandler(service))
 			handler, err := mcp.NewHandler(service, rt)
 			if err != nil {
 				return err
