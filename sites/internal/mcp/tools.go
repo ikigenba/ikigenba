@@ -97,8 +97,8 @@ func toolsWithToken(store *sites.Store, layout sites.Layout, baseURL string, mir
 		descOut(tool("sync"), "Import a static website/site from a Dropbox-mirrored folder into an existing site's live directory for its current visibility. 'source_path' is the mirror folder to sync from (e.g. \"/sites/marketing\"); 'slug' names the target site and defaults to the source_path basename when that is a valid slug, else it is required. Returns not_found if the site does not already exist. For an existing site, reconciles its current site directory to match the subtree: every upstream file is (over)written and every site file absent upstream is deleted. Visibility is unchanged. Returns {slug, written, deleted}.", obj(map[string]any{
 			"source_path": descTyp("string", "the mirror folder path to sync from"),
 			"slug":        descTyp("string", "target site slug; defaults to the source_path basename"),
-		}, "source_path"), obj(map[string]any{"slug": map[string]any{"type": "string"}, "written": map[string]any{"type": "integer"}, "deleted": map[string]any{"type": "integer"}}, "slug", "written", "deleted"), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
-			return h.toolSync(ctx, args)
+		}, "source_path"), obj(map[string]any{"slug": map[string]any{"type": "string"}, "written": map[string]any{"type": "integer"}, "deleted": map[string]any{"type": "integer"}}, "slug", "written", "deleted"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+			return h.toolSync(ctx, args, id)
 		}),
 		descOut(tool("file_write"), "Write content to file_path inside the site's live directory for its current visibility. Creates parent dirs; overwrites by default, or appends when append:true.", obj(map[string]any{
 			"site":      descTyp("string", "site slug whose current directory is the sandbox root"),

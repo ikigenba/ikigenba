@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -32,12 +33,15 @@ func (r *correlationRecordingTransport) RoundTrip(req *http.Request) (*http.Resp
 // logic is exercised against this fake (the HTTP client itself is unit-tested in
 // the sites package, Phase 6).
 type fakeMirror struct {
-	files    map[string][]byte // full mirror path → bytes
-	listErr  error
-	fetchErr error
+	files      map[string][]byte // full mirror path → bytes
+	listErr    error
+	fetchErr   error
+	listCalls  []string
+	fetchCalls []string
 }
 
 func (f *fakeMirror) List(_ context.Context, prefix string) ([]sites.MirrorFile, error) {
+	f.listCalls = append(f.listCalls, prefix)
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -54,6 +58,7 @@ func (f *fakeMirror) List(_ context.Context, prefix string) ([]sites.MirrorFile,
 }
 
 func (f *fakeMirror) Fetch(_ context.Context, path string) ([]byte, error) {
+	f.fetchCalls = append(f.fetchCalls, path)
 	if f.fetchErr != nil {
 		return nil, f.fetchErr
 	}
@@ -62,6 +67,187 @@ func (f *fakeMirror) Fetch(_ context.Context, path string) ([]byte, error) {
 		return nil, sites.ErrNotFound
 	}
 	return data, nil
+}
+
+func newSyncCommitHandler(t *testing.T, mirror sites.MirrorClient, transport *commitRecordingTransport) (*testHandler, string) {
+	t.Helper()
+	version := sites.NewVersionClient("http://repos.test", &http.Client{Transport: transport})
+	h, root := newTestHandlerWithVersionAndToken(t, version, nil, mirror)
+	createTestSite(t, h, "demo")
+	transport.reset()
+	return h, root
+}
+
+func decodedCommitChanges(t *testing.T, call recordedCommitRequest) map[string]sites.FileChange {
+	t.Helper()
+	raw, ok := call.body["changes"].([]any)
+	if !ok {
+		t.Fatalf("commit changes = %#v, want array", call.body["changes"])
+	}
+	got := make(map[string]sites.FileChange, len(raw))
+	for _, item := range raw {
+		change, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("commit change = %#v, want object", item)
+		}
+		path, _ := change["path"].(string)
+		op, _ := change["op"].(string)
+		decoded := sites.FileChange{Path: path, Delete: op == "delete"}
+		if !decoded.Delete {
+			encoded, _ := change["content_b64"].(string)
+			data, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				t.Fatalf("decode %q content: %v", path, err)
+			}
+			decoded.Data = data
+		}
+		got[path] = decoded
+	}
+	return got
+}
+
+func readTreeFiles(t *testing.T, root string) map[string]string {
+	t.Helper()
+	got := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		got[filepath.ToSlash(rel)] = string(data)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("read tree %s: %v", root, err)
+	}
+	return got
+}
+
+func TestSyncCommitsBatchThenReconcilesAndMatchingResyncIsNoOp(t *testing.T) {
+	mirror := &fakeMirror{files: map[string][]byte{
+		"/source/index.html":    []byte("new home"),
+		"/source/css/app.css":   []byte("body{}"),
+		"/source/images/logo.x": {0x00, 0x01, 0xff},
+	}}
+	transport := &commitRecordingTransport{}
+	h, root := newSyncCommitHandler(t, mirror, transport)
+	dir := filepath.Join(root, "public", "demo")
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("old home"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "stale.txt"), []byte("remove me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// R-EYKO-KH2V
+	out := callOK(t, h, "sync", map[string]any{"source_path": "/source", "slug": "demo"})
+	if out["written"] != float64(3) || out["deleted"] != float64(1) {
+		t.Fatalf("sync counts = %#v, want written 3 deleted 1", out)
+	}
+	calls := transport.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("repos calls = %d, want exactly one", len(calls))
+	}
+	if calls[0].clientID != testClientID || calls[0].body["actor"] != testClientID {
+		t.Fatalf("commit actor/header = %v/%q, want %q", calls[0].body["actor"], calls[0].clientID, testClientID)
+	}
+	if calls[0].body["message"] != "sync /source" {
+		t.Fatalf("commit message = %v, want sync /source", calls[0].body["message"])
+	}
+	changes := decodedCommitChanges(t, calls[0])
+	if len(changes) != 4 {
+		t.Fatalf("commit changes = %#v, want three writes and one delete", changes)
+	}
+	for rel, want := range map[string][]byte{"index.html": []byte("new home"), "css/app.css": []byte("body{}"), "images/logo.x": {0x00, 0x01, 0xff}} {
+		change, ok := changes[rel]
+		if !ok || change.Delete || string(change.Data) != string(want) {
+			t.Errorf("commit change %q = %#v, want write %v", rel, change, want)
+		}
+	}
+	if stale := changes["stale.txt"]; !stale.Delete {
+		t.Fatalf("stale change = %#v, want delete", stale)
+	}
+	if len(mirror.listCalls) != 1 || len(mirror.fetchCalls) != 3 {
+		t.Fatalf("mirror calls = list %#v fetch %#v, want one list and three fetches", mirror.listCalls, mirror.fetchCalls)
+	}
+
+	// R-EZSK-Y8TK
+	wantTree := map[string]string{"index.html": "new home", "css/app.css": "body{}", "images/logo.x": string([]byte{0x00, 0x01, 0xff})}
+	if got := readTreeFiles(t, dir); !mapsEqual(got, wantTree) {
+		t.Fatalf("served tree = %#v, want %#v", got, wantTree)
+	}
+	site, err := h.store.Get(context.Background(), "demo")
+	if err != nil || site.RepoSha != "write-sha" {
+		t.Fatalf("repo sha = %q, %v, want write-sha", site.RepoSha, err)
+	}
+	transport.reset()
+	out = callOK(t, h, "sync", map[string]any{"source_path": "/source", "slug": "demo"})
+	if out["written"] != float64(0) || out["deleted"] != float64(0) {
+		t.Fatalf("matching resync counts = %#v, want zeros", out)
+	}
+	if calls := transport.snapshot(); len(calls) != 0 {
+		t.Fatalf("matching resync repos calls = %d, want zero", len(calls))
+	}
+}
+
+func mapsEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for key, value := range a {
+		if b[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func TestSyncFailedBatchCommitLeavesTreeAndShaUnchanged(t *testing.T) {
+	mirror := &fakeMirror{files: map[string][]byte{
+		"/source/index.html":  []byte("after"),
+		"/source/assets/a.js": []byte("new"),
+		"/source/third.txt":   []byte("third"),
+	}}
+	transport := &commitRecordingTransport{}
+	h, root := newSyncCommitHandler(t, mirror, transport)
+	dir := filepath.Join(root, "public", "demo")
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("before"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "stale.txt"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.SetRepoSha(context.Background(), "demo", "before-sha"); err != nil {
+		t.Fatal(err)
+	}
+	before := readTreeFiles(t, dir)
+	transport.status = http.StatusBadRequest
+
+	// R-F28D-PSAY
+	result := call(t, h, "sync", map[string]any{"source_path": "/source", "slug": "demo"})
+	if !result.IsError || result.StructuredContent["code"] != "internal" {
+		t.Fatalf("sync result = %#v, want internal error envelope", result)
+	}
+	if calls := transport.snapshot(); len(calls) != 1 {
+		t.Fatalf("failed sync repos calls = %d, want one", len(calls))
+	}
+	if after := readTreeFiles(t, dir); !mapsEqual(after, before) {
+		t.Fatalf("tree after failed commit = %#v, want unchanged %#v", after, before)
+	}
+	site, err := h.store.Get(context.Background(), "demo")
+	if err != nil || site.RepoSha != "before-sha" {
+		t.Fatalf("repo sha after failed commit = %q, %v, want before-sha", site.RepoSha, err)
+	}
 }
 
 // readWorking reads a file relative to a private site's directory, failing the

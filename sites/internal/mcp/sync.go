@@ -9,15 +9,19 @@ package mcp
 // unchanged.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	appkitmcp "appkit/mcp"
+	"appkit/server"
 
 	"sites/internal/sites"
 )
@@ -29,7 +33,7 @@ import (
 // → enumerate upstream → fetch each file's bytes keyed by its path relative to
 // source_path → walk the current site directory for the existing path set →
 // Reconcile.
-func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	var a struct {
 		SourcePath string `json:"source_path"`
 		Slug       string `json:"slug"`
@@ -96,6 +100,7 @@ func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage) (map[s
 	// WalkDir + Rel/ToSlash pattern as toolFileList).
 	workingDir := h.layout.SiteDir(site.Visibility, slug)
 	var existingRel []string
+	existingData := make(map[string][]byte)
 	walkErr := filepath.WalkDir(workingDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -107,11 +112,58 @@ func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage) (map[s
 		if rerr != nil {
 			return rerr
 		}
-		existingRel = append(existingRel, filepath.ToSlash(rel))
+		rel = filepath.ToSlash(rel)
+		data, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return rerr
+		}
+		existingRel = append(existingRel, rel)
+		existingData[rel] = data
 		return nil
 	})
 	if walkErr != nil && !errors.Is(walkErr, fs.ErrNotExist) {
 		return errResultMsg(appkitmcp.ErrInternal, "walk_working: "+walkErr.Error()), nil
+	}
+
+	// A byte-identical tree is a true no-op. If anything differs, preserve sync's
+	// overwrite-all behavior by putting every desired file in the one batch.
+	matching := len(desired) == len(existingData)
+	if matching {
+		for rel, data := range desired {
+			existing, ok := existingData[rel]
+			if !ok || !bytes.Equal(data, existing) {
+				matching = false
+				break
+			}
+		}
+	}
+	if matching {
+		return appkitmcp.StructuredResult(map[string]any{"slug": slug, "written": 0, "deleted": 0})
+	}
+
+	desiredPaths := make([]string, 0, len(desired))
+	for rel := range desired {
+		desiredPaths = append(desiredPaths, rel)
+	}
+	sort.Strings(desiredPaths)
+	changes := make([]sites.FileChange, 0, len(desired)+len(existingRel))
+	for _, rel := range desiredPaths {
+		changes = append(changes, sites.FileChange{Path: rel, Data: desired[rel]})
+	}
+	sort.Strings(existingRel)
+	for _, rel := range existingRel {
+		if _, ok := desired[rel]; !ok {
+			changes = append(changes, sites.FileChange{Path: rel, Delete: true})
+		}
+	}
+
+	ctx = sites.WithVersionActor(ctx, id.ClientID)
+	commit, err := h.version.Commit(ctx, slug, "sync "+a.SourcePath, changes)
+	if err != nil {
+		return versionErrorResult(err), nil
+	}
+	if err := h.store.SetRepoSha(ctx, slug, commit.Sha); err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "record repo sha: "+err.Error()), nil
 	}
 
 	written, deleted, rerr := sites.Reconcile(workingDir, desired, existingRel)
