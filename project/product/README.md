@@ -79,6 +79,10 @@ This project owns the agreements that bind more than one tree:
 - **The telemetry contract** — what a forensic record is, which moments produce
   one, how one correlation id per causal chain is minted and carried, and how bulk
   content is referenced rather than stored.
+- **The testing language** — the shared vocabulary for how any tree proves its
+  behavior: which layers of testing exist, what a test in each layer may touch,
+  how a test is allowed to reach a real external service, and what every tree
+  must declare about its own testing.
 
 Out of scope — nothing else is promised here:
 
@@ -145,7 +149,8 @@ Each item is a result an author or reviewer can confirm against the real repo:
   tree's service is installed, what its release artifact is called, what version
   string it carries, which of its data survives a restore, what environment its
   binary receives, which verbs it exposes, where its secrets come from, and what it
-  must record — without reading another tree's spec.
+  must record, and which testing layer any of its checks belongs to — without
+  reading another tree's spec.
 - Any tree that departs from a contract says so in its own spec, naming the
   contract and the reason; no departure exists that is visible only in code.
 - The suite's parts compose end to end on the real box: a release produced by the

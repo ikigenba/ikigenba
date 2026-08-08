@@ -51,9 +51,14 @@ Shared facts every Decision leans on:
   committed prose documents mints no ids at all.
 - **The suite-wide gate, for reference.** Every Go tree in the suite is green under
   `go test ./...` and tags requirement ids in `*_test.go` files; `bin/` shell
-  tooling is proven through the `bin/bintest` Go module or verified once manually,
-  per that tree's spec. This is context for reading the markers, not a gate this
-  project runs.
+  tooling is proven through the `bin/bintest` Go module (governed by
+  `bin/project/`, not by this workspace) or verified once manually, per that
+  tree's spec. The **repo-root aggregate gate** is `suite_test.go` in the
+  repo-root module: it enumerates every `go.work` module (skipping its own) and
+  runs `go test ./...` in each, so "the repo is green" is one command from the
+  root. The testing vocabulary those gates share — the hermetic / composed /
+  live / manual layers and what each may touch — is D23's contract. All of this
+  is context for reading the markers, not a gate this project runs.
 - **Coverage is checked per marker, not by a tree-local grep.** The ordinary
   tree-local coverage grep does not apply here, since this tree holds no tests. For
   each id, check the tree its marker names:
@@ -96,7 +101,7 @@ only the one contract it concerns:
   per-Decision detail.
 
 **Decision numbers are permanent and are never reused.** The contracts are D01,
-D02, D03, D05, D06, D08, D11, D12, D14, and D17–D22; the numbers **D04, D07, D09,
+D02, D03, D05, D06, D08, D11, D12, D14, and D17–D23; the numbers **D04, D07, D09,
 D10, D13, D15, and D16 are retired** — those Decisions owned code and moved to the
 trees that build it (`bin/project/`, `nginx/project/`, `opsctl/project/`). A
 retired number is never assigned to a new Decision, and survivors keep the numbers
@@ -142,5 +147,14 @@ Questions settled during authoring, recorded so the *why* survives:
   agentkit consumers must agree with each other rather than match a named
   version, and the workspace carries no replace — so the contract's checks can
   never rot as pins advance.
+- **Test layers are named by what they may touch, not by size** (D23). The suite
+  already policed substrates ("prove the claim on the substrate that can falsify
+  it") without shared names; hermetic / composed / live / manual makes the
+  boundary a vocabulary, the `live` build tag makes it a compile-time fact, and
+  the skip ban keeps the default gate honest. The root gate stays at the repo
+  root: moving `suite_test.go` into `bin/bintest` would recurse (the fan-out
+  running the module that contains it) and would force a `bin/` phase to edit
+  repo-root files outside its tree, so the file is documented here instead of
+  moved.
 
 No open contracts remain undecided.
