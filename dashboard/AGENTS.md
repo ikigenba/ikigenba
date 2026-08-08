@@ -40,7 +40,31 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- Unit: `go test ./...`
+The dashboard adopts the suite testing-language contract in root
+`project/design/D23.md`. Its default gate is `cd dashboard && go test ./...`,
+inside the full green bar: `go build ./...`, `go vet ./...`, a silent
+`gofmt -l .`, and `go test ./...`.
+
+- **Hermetic:** the package suites, including `internal/server` HTTP tests over
+  the real route table with `httptest` and a migrated temporary SQLite database;
+  identity, OAuth, PAT, session, rate-limit, audit, grant-event, ID, database,
+  IdP-fake, metrics-fixture, and in-process edge-ingest coverage; and shipped-file guards
+  for `etc/nginx.conf` and `etc/manifest.env`.
+- **Composed:** `cmd/dashboard/main_test.go` builds the real dashboard binary,
+  assembles an `/opt/dashboard/`-shaped temporary tree, starts `bin/run serve` on
+  loopback, and checks health, database creation, and the composed cache path
+  without contacting an identity provider.
+- **Manual:** interactive Google and GitHub sign-in, live apex routing and
+  identity-header emission through nginx, and the real GitHub organization gate
+  are deploy-time operator checks because they require a browser handshake.
+- **No live layer:** the tree has no `//go:build live` test files; automatable
+  claims are hermetic or composed, while interactive claims are manual.
+
+There are no environmental preconditions beyond the Go toolchain: tests need no
+`git`, `python3`, browser, credentials, or already-running service. The gate uses
+**GOWORK mode: workspace**, resolving `appkit`, `eventplane`, and `registry`
+through the repo-root `go.work` and committed replace-siblings; `bin/ship`'s
+production `GOWORK=off` is not the test-gate mode.
 
 ## Versioning
 
