@@ -101,10 +101,26 @@ Shared facts every Decision leans on:
   `cd dropbox && go vet ./...`. The production build adds
   `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off -buildvcs=false` (driven by
   `bin/ship dropbox`).
-- **Test command:** `cd dropbox && go test ./...`. **"The suite is green"**
-  means: `cd dropbox && go build ./...`, `cd dropbox && go vet ./...`,
-  `cd dropbox && gofmt -l .` (no output), and `cd dropbox && go test ./...` all
-  succeed with zero failures.
+- **Test command (the default gate):** `cd dropbox && go test ./...`.
+  **"The suite is green"** means: `cd dropbox && go build ./...`,
+  `cd dropbox && go vet ./...`, `cd dropbox && gofmt -l .` (no output), and
+  `cd dropbox && go test ./...` all succeed with zero failures.
+- **Testing vocabulary:** the layer names every Decision below uses —
+  **hermetic**, **composed**, **live**, **manual** — are the suite's, defined
+  once in **`root project/design/D23.md`** and never restated here. dropbox has
+  a hermetic layer, a composed layer, and a live layer; it has no manual-layer
+  check of its own. The default gate above carries the hermetic and composed
+  layers only. dropbox's adoption of that contract, and its declared testing
+  facts, are **D30**.
+- **Live invocation:** `cd dropbox && go test -tags live ./...`. It requires
+  `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and `DROPBOX_REFRESH_TOKEN` (from the
+  suite `.envrc`; optional `DROPBOX_APP_FOLDER_ROOT` scopes the smoke below the
+  app-folder root) and **fails loudly** when any is absent. The operator runs it
+  at **deploy verification**, and whenever a change touches the Dropbox write
+  client or the uploader. It is never part of the default gate.
+- **GOWORK mode:** workspace — the default gate resolves the replace-siblings
+  through the repo-root `go.work`; only the production build forces `GOWORK=off`.
+- **Environmental preconditions:** none beyond the Go toolchain.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Test-file glob:** `*_test.go` — the requirement-id tags for the coverage
   check live in these files.
@@ -147,7 +163,11 @@ Shared facts every Decision leans on:
 ## Testing strategy
 
 Testing is part of the architecture, not an afterthought. The cross-cutting
-approach every Decision's Verification list assumes:
+approach every Decision's Verification list assumes. Every claim below is stated
+in the suite's layer vocabulary (`root project/design/D23.md`, adopted by D30):
+the landing/mux/MCP/nginx/filesystem/routing/telemetry claims are **hermetic**,
+`cmd/dropbox`'s boot and shipped-tree wiring is **composed**, and the real
+Dropbox write contract is **live**.
 
 - **The landing page is tested over the shipped tree.** After D11, tests in
   `cmd/dropbox` load the repo-real `dropbox/share/www` via `appkit/web` (a
@@ -205,7 +225,7 @@ approach every Decision's Verification list assumes:
   `upload_session` chunking). No hermetic test makes a network call or needs a
   running suite; the local filesystem is the real substrate for the atomicity,
   Range, and large-file round-trip claims.
-- **The real Dropbox write contract is proven by a `-tags live` smoke.** Some
+- **The real Dropbox write contract is proven by the live layer.** Some
   claims hinge on the **real external contract** — Dropbox accepting an
   `overwrite`, returning a `rev` that a later `list_folder` actually reports
   (echo suppression), reassembling an `upload_session`, applying
@@ -213,10 +233,12 @@ approach every Decision's Verification list assumes:
   **distinct LIVE ids** (D17: R-KEIO-B98F, R-KFQK-P0Z4, R-KGYH-2SPT) whose test
   runs against the **real app folder** with the suite refresh token
   (`DROPBOX_*` from `.envrc`), asserting the observable outcome via a follow-up
-  `list_folder`. The live smoke is **not** part of the hermetic green suite —
-  it is a distinct, reachable check (`go test -tags live ./...`) the D17 build
-  phases require be run once; the phases that own those ids state it in their
-  "Done when".
+  `list_folder`. Those three ids are the tree's **entire** live layer, and they
+  live in `internal/dropbox/client_live_test.go` behind `//go:build live`. The
+  live layer is **not** part of the default gate — it is the distinct, reachable
+  invocation stated in Conventions above, which hard-fails rather than skips
+  when a credential is absent (D30); the D17 phases that own those ids require
+  it be run once and say so in their "Done when".
 - **The `source_url` fetch is proven against a real local HTTP server.** The
   reference-based MCP `put` (D19) is tested with a real `httptest` server on
   loopback serving known bytes — the fetch, the 404/409/refused failure
