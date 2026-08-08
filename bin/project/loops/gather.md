@@ -29,11 +29,10 @@ described below.
    grep -nE '^- Phase .* ⬜' bin/project/plan/STATUS.md | head -1
    ```
 
-   If this finds nothing, there is no pending work: report `DONE`. (This is the
-   loop's normal terminal state today — `bin/project/plan/STATUS.md` currently
-   carries `Next phase: 01` and zero phase lines, so an ordinary run of this
-   prompt reports `DONE` immediately. That is correct; do not treat an empty
-   queue as an error.)
+   If this finds nothing, there is no pending work: report `DONE`. (An empty
+   queue is the loop's normal terminal state, not an error — completed phases
+   are deleted, so a drained `STATUS.md` carries only the `Next phase` counter
+   line.)
 
 3. **Check for an in-flight brief.** If `bin/project/loops/brief.md` exists,
    read its `# Brief — Phase NN` header.
@@ -83,17 +82,22 @@ described below.
   the script and behavior it exercises (e.g. `registry_test.go`,
   `start_test.go`). There is no per-phase or root-level test file — `bin/`
   itself carries no tests of its own; `bin/bintest` is the single, designated
-  home for all of them. A test always execs the real script under `bin/`
-  (resolved from the package directory's repo root), never a Go
-  reimplementation of the script's logic.
+  home for all of them. A test whose claim is about a script always execs the
+  real script under `bin/` (resolved from the package directory's repo root),
+  never a Go reimplementation of the script's logic; the D6 module-graph
+  checks instead read facts from `go mod edit -json` / `go work edit -json`
+  over the committed module files, never from a raw-text grep.
 - **Two tiers.** Most Decisions in this tree mint no ids (the deliberately
   untested bash-orchestration tier: `bump`, `ship`, `push-secrets`,
   `create-migration`, `stop`, and `start`'s build-and-launch half) and their
   phases carry deterministic **structural** done bars instead (an exact named
   file, a `project/`-excluded grep, a clean workspace build) plus an
-  out-of-gate manual check the Decision names. Only the layout readers
-  (`bin/registry`, and `start`'s `--stage-only` staging half) carry ids, all
-  under D5.
+  out-of-gate manual check the Decision names. Ids live only in the
+  `bin/bintest` gate: the layout readers (`bin/registry`, and `start`'s
+  `--stage-only` staging half) under D5, and the repo-wide library-dependency
+  conformance checks under D6 — whose four ids are minted by the umbrella
+  (`root project/design/D22.md`, `[proof: bin]`) but enter a phase's brief
+  exactly like local ids.
 
 ## Brief schema
 

@@ -43,7 +43,7 @@ progress, never as evidence of what is true now.
    match this workspace's own docs):
    ```
    comm -23 \
-     <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' bin/project/design/D*.md | sort -u) \
+     <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' bin/project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u) \
      <(cat \
          <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' bin/bintest/*_test.go 2>/dev/null) \
          <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' bin/project/plan/phase-*.md 2>/dev/null) \

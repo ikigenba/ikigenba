@@ -39,9 +39,12 @@ any `phase-NN.md`.
      **co-located in `bin/bintest/*_test.go`**, named for the script and
      behavior under test (e.g. `registry_test.go`, `start_test.go`). Never a
      per-phase or root-level test file — `bin/bintest` is the single
-     designated home for every test in this tree. Every test execs the real
-     script under `bin/`, resolved from the package directory's repo root —
-     never a Go reimplementation of the script's logic.
+     designated home for every test in this tree. A test whose claim is about
+     a script execs the real script under `bin/`, resolved from the package
+     directory's repo root — never a Go reimplementation of the script's
+     logic. A test whose claim is about the repo's committed module files
+     reads parsed facts (`go mod edit -json`, `go work edit -json`), never a
+     raw-text grep an escaped string could evade.
    - For a structural phase (no ids): satisfy the structural condition(s) the
      brief's done bar names (an exact file, a `project/`-excluded grep, a
      clean build) plus any out-of-gate manual step the brief names — do not
