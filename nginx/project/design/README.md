@@ -44,19 +44,19 @@ Shared facts every Decision leans on:
   `go test ./...`. The repo-root green gate is unaffected by changes in this
   tree, and a passing gate is never evidence about it.
 - **The build/typecheck command** is nginx's own configuration test, run against
-  the dev prefix from the repo root:
+  the dev prefix from the service root (`nginx/`):
 
-      mkdir -p nginx/tmp && nginx -p nginx -c nginx.conf -t
+      mkdir -p tmp && nginx -p . -c nginx.conf -t
 
-  `mkdir -p nginx/tmp` is part of the command, not an aside: the config declares
+  `mkdir -p tmp` is part of the command, not an aside: the config declares
   its scratch paths under `tmp/` and nginx refuses to create that parent itself.
   It exits 0 and prints `configuration file … test is successful` when the config
   is valid. The parked config is a fragment of a server context and is
   syntax-checked the same way only when installed on the box, where `nginx -t`
   covers it as part of the runbook (`deploy.md`).
-- **The shell check** is `bash -n nginx/run`, exiting 0.
-- **"The tree is green"** concretely means, from the repo root: `bash -n
-  nginx/run` exits 0; `mkdir -p nginx/tmp && nginx -p nginx -c nginx.conf -t`
+- **The shell check** is `bash -n run`, exiting 0.
+- **"The tree is green"** concretely means, from the service root: `bash -n
+  run` exits 0; `mkdir -p tmp && nginx -p . -c nginx.conf -t`
   exits 0; and the structural checks a phase names (exact committed files, exact
   greps) all hold. There is no test suite to run and no id coverage to compute.
 - **Testing language (suite contract).** This tree uses the suite's testing

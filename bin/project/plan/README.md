@@ -29,8 +29,8 @@ of that Decision's Verification ids it carries.
 
 **Done bar.** A phase is **done** when every Verification id it realizes (or its
 explicit slice) is covered by a clearly-named test and this tree is green —
-"green" is defined by design's Conventions (`go test ./bin/bintest/...` from the
-repo root exits 0, and the same tests run under the repo-wide `go test ./...`).
+"green" is defined by design's Conventions (`go test ./bintest/...` from the
+service root exits 0, and the same tests run under the repo-wide `go test ./...`).
 Every phase's acceptance bar is expressed as **deterministic exit conditions**:
 mechanically-checkable predicates (a green run, an exit code, an exact match
 count) that are reproducible and reachable — never a subjective prose judgment,

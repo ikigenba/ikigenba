@@ -4,26 +4,26 @@ The installed unattended build loop for this tree: a `gather → build → verif
 cycle that `ralph` re-invokes with a **fresh context** every turn, building the
 plan one pending phase at a time. This file describes the loop **as installed**,
 beside the prompts it describes. The spec shapes it consumes
-(`nginx/project/product/`, `nginx/project/design/`, `nginx/project/plan/`) are
-documented in `nginx/project/README.md`; loop mechanics live only here.
+(`project/product/`, `project/design/`, `project/plan/`) are
+documented in `project/README.md`; loop mechanics live only here.
 
 ## Running it
 
 ```
-cd <repo root>
-./nginx/project/loops/run
+cd nginx
+./project/loops/run
 ```
 
 `run` is the executable operator wrapper. Its body is:
 
 ```sh
-exec ralph nginx/project/loops/gather.md nginx/project/loops/build.md nginx/project/loops/verify.md
+exec ralph project/loops/gather.md project/loops/build.md project/loops/verify.md
 ```
 
-**Run it from the repo root, not from `nginx/`.** This tree's check commands
-(`nginx -p nginx -c nginx.conf -t`, `bash -n nginx/run`) are repo-root-relative
-per design's Conventions, so the wrapper passes the prompt paths in that same
-form and `ralph`'s working directory is the repo root throughout.
+`ralph` runs from the **service root** (`nginx/`, its working directory), and
+this tree's check commands (`mkdir -p tmp && nginx -p . -c nginx.conf -t`,
+`bash -n run`) are service-root-relative to match. Every workspace path the
+prompts reference is service-root-relative (`project/…`).
 
 **Environmental precondition:** an `nginx` binary on `PATH` — no Go toolchain
 needed. Per `root project/design/D23.md` a missing precondition is a **hard
@@ -50,21 +50,21 @@ message into the schema, so a model narrating progress needs a non-terminal
 value to tag those with.
 
 The two `DONE` conditions are the only ends of the loop (plus ralph's own budget
-rails): `nginx/project/loops/blocked.md` exists, or the `⬜` grep over
-`nginx/project/plan/STATUS.md` finds no pending phase.
+rails): `project/loops/blocked.md` exists, or the `⬜` grep over
+`project/plan/STATUS.md` finds no pending phase.
 
 ## What each step reads, writes, and commits
 
 | step | reads | writes | commits | deletes |
 |---|---|---|---|---|
-| **gather** | `nginx/project/plan/STATUS.md`; the one `nginx/project/plan/phase-NN.md`; `nginx/project/design/INDEX.md`; only the named `DNN.md`; dependency facts | `nginx/project/loops/brief.md` (contract region only, and only for a fresh phase) | nothing | nothing |
-| **build** | `nginx/project/loops/brief.md` only | config, `nginx/run`, static/committed files under `nginx/` | this turn's increment | nothing |
-| **verify** | `nginx/project/loops/brief.md`; the checks; the id-set grep | `nginx/project/loops/brief.md` feedback region, or `nginx/project/loops/blocked.md` | the phase-retirement deletion | the phase's `STATUS.md` line + `phase-NN.md` + the brief, on a pass |
+| **gather** | `project/plan/STATUS.md`; the one `project/plan/phase-NN.md`; `project/design/INDEX.md`; only the named `DNN.md`; dependency facts | `project/loops/brief.md` (contract region only, and only for a fresh phase) | nothing | nothing |
+| **build** | `project/loops/brief.md` only | config, `run`, static/committed files in this tree | this turn's increment | nothing |
+| **verify** | `project/loops/brief.md`; the checks; the id-set grep | `project/loops/brief.md` feedback region, or `project/loops/blocked.md` | the phase-retirement deletion | the phase's `STATUS.md` line + `phase-NN.md` + the brief, on a pass |
 
 The next unit of work is found with:
 
 ```
-grep -nE '^- Phase .* ⬜' nginx/project/plan/STATUS.md | head -1
+grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
 ```
 
 Phase lines are Markdown bullets; the `Next phase: NN` counter line is not a
@@ -77,10 +77,10 @@ This tree holds nginx configuration, two static committed files, and one Bash
 script. **There is no Go module, no test suite, and no test-file glob**; the
 repo-root `go.work` does not and must not name it, and a passing repo-wide
 `go test ./...` is never evidence about it. So the loop's gate is structural.
-From the repo root:
+From the service root:
 
-- `bash -n nginx/run` exits 0.
-- `mkdir -p nginx/tmp && nginx -p nginx -c nginx.conf -t` exits 0 and prints
+- `bash -n run` exits 0.
+- `mkdir -p tmp && nginx -p . -c nginx.conf -t` exits 0 and prints
   `configuration file … test is successful`. The `mkdir` is part of the command:
   the config declares its scratch paths under `tmp/` and nginx refuses to create
   that parent itself.
@@ -92,7 +92,7 @@ From the repo root:
 
 Those greps are `project/`-excluded by construction, so no phrase in the spec or
 in these prompts can satisfy them. A check that *could* be satisfied by text in
-`nginx/project/` is a defective, self-referential bar — `verify` records it as an
+`project/` is a defective, self-referential bar — `verify` records it as an
 open gap naming the self-reference rather than passing it, since only the
 operator can fix it in `project/`.
 
@@ -115,7 +115,7 @@ accept anything and prove nothing.
 `verify` runs, every cycle:
 
 ```
-grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' nginx/project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u
+grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u
 ```
 
 **Empty output is the pass condition.** The `grep -v 'R-XXXX-XXXX'` filter is
@@ -132,8 +132,8 @@ escalates straight to `blocked.md` for the operator.
 
 ## The brief lifecycle
 
-`nginx/project/loops/brief.md` is the seam that keeps `build`'s context scoped to
-one phase. It is **never committed** (git-ignored via `nginx/.gitignore`),
+`project/loops/brief.md` is the seam that keeps `build`'s context scoped to
+one phase. It is **never committed** (git-ignored via `.gitignore`),
 **single-phase**, and **phase-scoped rather than per-cycle**:
 
 1. `gather` authors it when a phase first becomes the active `⬜` phase, then
@@ -170,14 +170,14 @@ rejected alternatives, verbatim, Verification section omitted>
 (none — structural phase)
 
 ## Files to touch
-<paths, repo-root-relative>
+<paths, service-root-relative>
 
 ## Dependency facts
 <the fragment shape / run flags / committed parked paths the phase depends on>
 
 ## Done bar
-- `bash -n nginx/run` exits 0.
-- `mkdir -p nginx/tmp && nginx -p nginx -c nginx.conf -t` exits 0.
+- `bash -n run` exits 0.
+- `mkdir -p tmp && nginx -p . -c nginx.conf -t` exits 0.
 - <each of the phase's structural checks, verbatim, as an exact command with
   its stated expected output>
 
@@ -191,7 +191,7 @@ rejected alternatives, verbatim, Verification section omitted>
 If a phase ever does carry ids, each `## Ids to cover` line starts at column 0
 with the bare id, an em-dash, then the full requirement text on the same line,
 so the phase's id set is extractable with
-`grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' nginx/project/loops/brief.md`.
+`grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md`.
 
 ## Why it converges, and the stall/blocked ladder
 
@@ -212,7 +212,7 @@ shrinking) from a true stall.
   and returns `NEXT`; the next `gather` rebuilds the contract fresh from spec.
 - **Blocked escalation (second stall on the same phase):** a rebuilt contract
   has already been tried, so the **done bar** is the fault and no amount of
-  rebuilding fixes it. `verify` writes `nginx/project/loops/blocked.md` with the
+  rebuilding fixes it. `verify` writes `project/loops/blocked.md` with the
   phase, the attempt count, the unsatisfied checks, and the exact command and
   observed output that will not go green; logs `Phase NN BLOCKED …`; deletes the
   brief; leaves `⬜`; and returns `NEXT`. The next `gather` sees the file and
@@ -222,6 +222,6 @@ Both branches stay inside the invariant that `verify` never halts and never
 advances on a gap.
 
 **What the operator does with a `blocked.md`:** read the recorded command and
-its observed output, fix the phase's done bar in `nginx/project/` (the loop
+its observed output, fix the phase's done bar in `project/` (the loop
 cannot — `project/` is read-only to it), delete
-`nginx/project/loops/blocked.md`, and restart the loop.
+`project/loops/blocked.md`, and restart the loop.

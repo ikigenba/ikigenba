@@ -14,8 +14,8 @@ This tree adopts the testing-language contract at `root project/design/D23.md`
 structurally. It has no test suite and therefore no test command. Its committed
 testing declaration is:
 
-- check commands: `mkdir -p nginx/tmp && nginx -p nginx -c nginx.conf -t` and
-  `bash -n nginx/run`
+- check commands, run from this tree (`nginx/`):
+  `mkdir -p tmp && nginx -p . -c nginx.conf -t` and `bash -n run`
 - layers: manual only — no hermetic, composed, or live layer, and no
   `//go:build live` file
 - preconditions: an `nginx` binary on `PATH` for the configuration check; no Go

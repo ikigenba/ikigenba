@@ -52,15 +52,17 @@ Shared facts every Decision leans on:
   `bintest`), wired into the repo-root `go.work` so it needs no separate runner.
   The tooling itself shells out to `go`, `git`, `tar`, `scp`/`ssh`, `jq`, and
   `aws`.
-- **Build / typecheck command.** `go build ./bin/bintest/...` from the repo root
-  (workspace mode). `bin/bintest` is a test-only package, so its compile check
-  is `go test ./bin/bintest/...` succeeding.
-- **Test command — the green gate.** `go test ./bin/bintest/...` from the repo
-  root, in workspace mode. **"This tree is green" means that command exits 0.**
+- **Build / typecheck command.** `go build ./bintest/...` from the service root
+  (`bin/`, the loop's working directory), in workspace mode. `bin/bintest` is a
+  test-only package, so its compile check is `go test ./bintest/...` succeeding.
+- **Test command — the green gate.** `go test ./bintest/...` from the service
+  root, in workspace mode (equivalently `go test ./bin/bintest/...` from the
+  repo root, the AGENTS.md default gate). **"This tree is green" means that
+  command exits 0.**
   Because `bin/bintest` is a `go.work` member, the same tests also run under the
   repo-wide `go test ./...`, so the tree's green is a subset of the suite's and
   needs no additional runner.
-- **Test-file glob.** Requirement-id tags live in **`bin/bintest/*_test.go`**,
+- **Test-file glob.** Requirement-id tags live in **`bintest/*_test.go`**,
   each as a comment line immediately above the test that realizes it. That glob
   is the coverage denominator's numerator for this tree.
 - **Tests exec the real scripts.** A `bin/bintest` test always invokes the

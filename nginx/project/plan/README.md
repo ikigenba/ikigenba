@@ -38,8 +38,8 @@ license to cross.
 
 A phase is **done** when the tree is green and its own deterministic exit
 conditions hold. "Green" is defined in design's *Conventions*
-(`project/design/README.md`): from the repo root, `bash -n nginx/run` exits 0 and
-`mkdir -p nginx/tmp && nginx -p nginx -c nginx.conf -t` exits 0. Because no
+(`project/design/README.md`): from the service root, `bash -n run` exits 0 and
+`mkdir -p tmp && nginx -p . -c nginx.conf -t` exits 0. Because no
 Decision here mints ids, each phase's bar is a structural check instead of a
 tagged-test check — exact named files at exact paths, an exact `diff` or grep
 result, a real `nginx -t` — never a prose judgment, never a self-referential or
