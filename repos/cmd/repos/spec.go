@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 
 	"appkit"
 	"appkit/web"
@@ -17,6 +18,7 @@ import (
 
 func reposSpec() appkit.Spec {
 	var service *repos.Service
+	var custody *repos.Custody
 
 	return appkit.Spec{
 		App:        "repos",
@@ -31,7 +33,17 @@ func reposSpec() appkit.Spec {
 			if rt.DB() == nil {
 				return fmt.Errorf("repos: no DB handle on router")
 			}
+			stateDir := os.Getenv("REPOS_STATE_DIR")
+			if stateDir == "" {
+				return fmt.Errorf("repos: REPOS_STATE_DIR is required")
+			}
+			var err error
+			custody, err = repos.NewCustody(stateDir, repos.NewCommandGit(os.Getenv("REPOS_GIT_BIN"), stateDir), nil)
+			if err != nil {
+				return err
+			}
 			service = repos.NewService(repos.NewStore(rt.DB()))
+			service.SetCustody(custody)
 			handler, err := mcp.NewHandler(service, rt)
 			if err != nil {
 				return err
@@ -40,6 +52,16 @@ func reposSpec() appkit.Spec {
 			rt.Handle("GET /{$}", landingHandler(rt.WWW(), rt.Service(), rt.Version()))
 			return nil
 		},
+		Workers: []func(context.Context) error{func(ctx context.Context) error {
+			if custody == nil {
+				return fmt.Errorf("repos: custody worker started before handlers")
+			}
+			if err := custody.SweepHooks(ctx); err != nil {
+				return err
+			}
+			<-ctx.Done()
+			return nil
+		}},
 		Producer: func(producer *outbox.Outbox) error {
 			if service == nil {
 				return fmt.Errorf("repos: Producer called before Handlers")

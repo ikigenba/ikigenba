@@ -220,9 +220,9 @@ func TestManifestRenderMatchesCommittedServiceContract(t *testing.T) {
 	}
 }
 
-func TestReducedSpecHasNoConsumersExtrasOrWorkers(t *testing.T) {
+func TestReducedSpecHasNoConsumersOrExtrasAndHasCustodyWorker(t *testing.T) {
 	spec := reposSpec()
-	if spec.Consumers != nil || spec.ManifestExtras != nil || spec.Workers != nil {
+	if spec.Consumers != nil || spec.ManifestExtras != nil || len(spec.Workers) != 1 {
 		t.Fatalf("reduced spec consumers=%#v extras=%#v workers=%#v", spec.Consumers, spec.ManifestExtras, spec.Workers)
 	}
 	if spec.Handlers == nil || spec.Producer == nil || spec.Health == nil {
