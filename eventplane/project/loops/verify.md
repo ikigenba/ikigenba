@@ -40,15 +40,21 @@ pass.
 
    Pass criteria: both commands exit 0; `gofmt -l .` prints nothing.
 
-3. **Check for skipped requirement tests:**
+3. **Check for skipped tests, and enforce the skip ban.** eventplane's tests are
+   **all hermetic** — there is no live layer here, so
+   `root project/design/D23.md`'s ban on `t.Skip` outside live-tagged files
+   applies to every test file in this tree with no exemption:
 
    ```
    go test -v ./... 2>&1 | grep -- '--- SKIP'
+   grep -rn 't\.Skip\|t\.Skipf\|t\.SkipNow' --include='*_test.go' --exclude-dir=project .
    ```
 
-   Any skipped test that carries (or covers) an `R-` id from the brief is a
-   gap — a skip is never acceptable green for a requirement; it means that
-   requirement was not verified.
+   Pass criterion for both: **no output**. A skipped test that carries (or
+   covers) an `R-` id from the brief is a gap — a skip is never acceptable green
+   for a requirement; it means that requirement was not verified. A `t.Skip`
+   variant anywhere in a test file is itself a gap, whether or not it fired this
+   run.
 
 4. **Check coverage of every id.** Extract the denominator:
 
@@ -65,17 +71,18 @@ pass.
    A match alone is not coverage. Read the tagged test and confirm:
    - it **genuinely asserts** the id's stated behavior (from the brief's
      `## Ids to cover` line) — never a bare literal or a vacuous assertion;
-   - it **actually runs** under the real invocation — statically trace the
-     path from `go test ./...` to the test through every skip condition,
-     build tag, and env-var gate. A test held out of the run by a flag
-     nothing in the repo sets, or one that converts a real failure signal
-     (non-zero exit, unparseable output) into a skip, is **uncovered** no
-     matter how genuine its assertion reads;
+   - it **actually runs** under the real invocation — statically trace the path
+     from `go test ./...` to the test through every skip condition, build tag,
+     and env-var gate. eventplane has **no live layer**, so there is no
+     build-tag carve-out: a test held out of the run by a build tag, an env flag
+     nothing in the repo sets, or a skip condition is **uncovered**, no matter
+     how genuine its assertion reads; so is one that converts a real failure
+     signal (non-zero exit, unparseable output) into a skip;
    - it runs on the substrate the id requires: an id whose behavior depends on
      the wire runs on the real `outbox.FeedHandler()` + `httptest.Server` +
      `consumer.Run` path, and a DDL id applies the schema to a real
-     `modernc.org/sqlite` database — an id whose Done-when names a substrate
-     is **uncovered** if its test uses a mock instead;
+     `modernc.org/sqlite` database — an id whose `Substrate:` clause names a
+     substrate is **uncovered** if its test uses a mock instead;
    - it sits in a `*_test.go` file co-located with the package it exercises
      (or `consumer/consumer_test.go` for cross-package end-to-end), never a
      per-phase or root-level test file.
@@ -88,9 +95,10 @@ pass.
 
    ```
    comm -23 \
-     <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | sort -u) \
+     <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u) \
      <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
-           <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
+           <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) \
+       | grep -v 'R-XXXX-XXXX' | sort -u)
    ```
 
    Pass criterion: empty output. Any id it prints is a design id that is
@@ -98,11 +106,18 @@ pass.
    regression, grounded by this command; the dropped tagged test exists in
    git history to restore.
 
+   The `grep -v 'R-XXXX-XXXX'` filters are **load-bearing**: `R-XXXX-XXXX` is
+   the literal placeholder the design and plan docs use when describing the id
+   *shape*, and it matches the id regex. Without the filter it enters the
+   design-side set as a phantom id no test can ever carry, and the ratchet can
+   never report clean. It is not a real minted id, so filtering it can never
+   mask a real gap.
+
 6. **Run the brief's Done-bar checks** — the phase-specific grep/list/diff
    conditions copied into the brief, each with its exact pass criterion (e.g.
-   a `go list -f '{{join .Deps "\n"}}' …` import-boundary check printing
-   exactly the allowed packages, or `git diff -- go.mod | grep -c
-   '^+.*require'` being `0`). Run each and record its output.
+   an import-boundary check over `go list -f '{{join .Deps "\n"}}' …`, or
+   `git diff -- go.mod | grep -c '^+.*require'` being `0`). Run each and record
+   its output.
 
 7. **Collect the open gaps** — every failing or uncovered id, each with the
    exact command and observed output that proves it open. Then:
@@ -205,7 +220,10 @@ pass.
   extract id tokens, never design prose.
 - When uncertain whether a tagged test really asserts its behavior, treat the
   id as **uncovered**. A skipped or statically-unreachable id test is
-  uncovered — a skip is never acceptable green.
+  uncovered — a skip is never acceptable green, and this tree has no live layer
+  and therefore no build-tag carve-out.
+- Never write `project/loops/blocked.md` except via the blocked-escalation step
+  above, and never delete it — only the operator clears it.
 - Always end the turn on `NEXT` — on a pass and on a gap alike; you are never
   the step that ends the run.
 
@@ -222,8 +240,8 @@ Report this run's result as a `status` and a one-sentence `message`:
   closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
   phase left or a blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 09 passed: 7/7 ids covered, suite green; phase deleted, brief deleted.`,
-  `Phase 09 has 2 open gaps; feedback written (attempt 3).`, or
-  `Phase 09 stalled twice; wrote blocked.md for the operator.`
+  `Phase 10 passed: 2/2 ids covered, suite green; phase deleted, brief deleted.`,
+  `Phase 10 has 1 open gap; feedback written (attempt 3).`, or
+  `Phase 10 stalled twice; wrote blocked.md for the operator.`
 
 Keep `message` a single plain sentence — not a JSON object or code block.
