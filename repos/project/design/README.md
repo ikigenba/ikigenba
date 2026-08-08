@@ -40,8 +40,18 @@ ids ends at minting them — how coverage is measured and when the work is
   set; the **real `git` binary** against local fixture remotes
   (`git init --bare` in `t.TempDir()`, `file://` URLs) — never a mocked git;
   suite peers (github, webhooks) as `httptest` stubs that record requests; a
-  deterministic injected clock; no live network I/O in unit tests. The live
-  end-to-end proof runs against `bin/start`.
+  deterministic injected clock; no non-loopback network I/O anywhere in the
+  gate.
+- **Test layers.** The suite's testing vocabulary — the hermetic / composed /
+  live / manual layers, what each may touch, the single `//go:build live`
+  mechanism, and the ban on `t.Skip` outside live-tagged files — is the contract
+  `root project/design/D23.md`, cited and not restated here. repos' own layer
+  facts are recorded in D16: **hermetic** and **composed** only, both in the
+  default gate, with no live layer and no tree-local manual runbook. No gate
+  item runs against `bin/start`; the assembled-stack check is the suite's
+  manual-layer item. The two environmental preconditions beyond the Go
+  toolchain — the real `git` binary and the `go` binary, each on `PATH` at test
+  time — are hard failures when absent, never skips.
 - **DB / migrations:** ordered, immutable SQL in `internal/db/migrations/`,
   embedded, applied forward-only by the appkit runner. New migrations only via
   `bin/create-migration repos <name>`; numbers never hand-picked, committed

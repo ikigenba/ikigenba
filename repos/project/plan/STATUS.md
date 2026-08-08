@@ -9,4 +9,6 @@ build loop **deletes** the phase's line and its body file — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 26
+Next phase: 27
+
+- Phase 26 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — declare repos' testing facts in `AGENTS.md` (layers, the real-`git` and `go`-on-`PATH` preconditions, gate command, GOWORK mode) and prove the declaration plus the skip ban with two tagged tests

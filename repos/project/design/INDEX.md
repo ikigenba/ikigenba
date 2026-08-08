@@ -23,6 +23,7 @@ Verification ids change.
 
 - D14 → `project/design/D14.md` — Suite-contract conformance: the opsctl install layout & the authored env contract — adopts `R-4LKF-FB23` (root `project/design/D08.md`), `R-8DF1-W89F`, `R-8IAN-FB87` (root `project/design/D11.md`); mints none of its own
 - D15 → `project/design/D15.md` — Env-channel conformance: session-engine knobs surface in the manifest; the org is customer data — owns R-L9EG-DDWC; adopts R-VKB6-SHHV (root `project/design/D11.md`)
+- D16 → `project/design/D16.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): hermetic + composed layers only, no live layer, no tree-local manual runbook, the real-`git` and `go`-on-`PATH` preconditions, workspace GOWORK mode; removes the never-implemented `bin/start` end-to-end claim — mints none; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 
 ## Verification ids → Decision
 
@@ -93,6 +94,8 @@ Verification ids change.
 - R-IG68-6F1D → D3 — `project/design/D03.md`
 - R-L9EG-DDWC → D15 — `project/design/D15.md`
 - R-LM2I-ORUI → D12 — `project/design/D12.md`
+- R-O1AD-MRKW → D16 — `project/design/D16.md` (adopted from root `project/design/D23.md`)
+- R-O2IA-0JBL → D16 — `project/design/D16.md` (adopted from root `project/design/D23.md`)
 - R-TY2R-GFRU → D2 — `project/design/D02.md`
 - R-TZAN-U7IJ → D2 — `project/design/D02.md`
 - R-UZVS-S08C → D10 — `project/design/D10.md`
