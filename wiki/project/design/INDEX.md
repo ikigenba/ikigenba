@@ -66,6 +66,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D70 → `project/design/D70.md` — Remove the in-repo tuning machinery — none — structural
 - D71 → `project/design/D71.md` — The committed tune-folder workspace: `autotune/<step>/`, one per pipeline prompt — owns R-A5T0-FD39, R-A88T-6WKN, R-A9GP-KOBC
 - D72 → `project/design/D72.md` — The four scorers: deterministic where mechanical, sol-judged where prose — owns R-AAOL-YG21, R-ABWI-C7SQ, R-AD4E-PZJF, R-AECB-3RA4, R-AFK7-HJ0T, R-AGS3-VARI
+- D73 → `project/design/D73.md` — Testing-language conformance: adopt the suite contract and move the env-gated smokes into the live layer — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 
 ## Verification ids → Decision
 
@@ -292,6 +293,8 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-NONX-OEM8 → D45 (`project/design/D45.md`)
 - R-NPEL-A66X → D26 (`project/design/D26.md`)
 - R-NPVU-26CX → D44 (`project/design/D44.md`)
+- R-O1AD-MRKW → D73 (`project/design/D73.md`) (adopted from root `project/design/D23.md`)
+- R-O2IA-0JBL → D73 (`project/design/D73.md`) (adopted from root `project/design/D23.md`)
 - R-OMRY-L9O8 → D43 (`project/design/D43.md`)
 - R-ONZU-Z1EX → D43 (`project/design/D43.md`)
 - R-OP7R-CT5M → D43 (`project/design/D43.md`)
