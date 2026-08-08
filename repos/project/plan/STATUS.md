@@ -11,7 +11,6 @@ outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 39
 
-- Phase 34 ⬜ realizes D21 (slice) — statuses
 - Phase 35 ⬜ realizes D21 (slice) — the merge verb
 - Phase 36 ⬜ realizes D22 — the MCP tool surface (the agent and owning-service verb door)
 - Phase 37 ⬜ realizes D10, D13 — the nginx fragment: the git-door location and correlation capture
