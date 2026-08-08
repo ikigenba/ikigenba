@@ -25,15 +25,20 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - **D19** → `project/design/D19.md` — The content plane: bytes by reference — ids: none (a prose contract; behaviors proven by the implementing trees)
 - **D20** → `project/design/D20.md` — The MCP surface contract: structured results, error vocabulary, and discovery — ids: none (a prose contract; behaviors proven by the implementing trees)
 - **D21** → `project/design/D21.md` — Configuration-channel routing: which value goes in which channel, and why — ids: none (a prose contract; enforcement is the channels' own ids and per-service adoption)
+- **D22** → `project/design/D22.md` — Library dependency versioning: unversioned in-repo siblings, one suite-wide agentkit pin, a replace-free workspace — ids: R-3R5W-79JK, R-3SDS-L1A9, R-3TLO-YT0Y, R-3UTL-CKRN (all [proof: bin])
 
 ## Verification ids → Decision
 
 - R-1A79-JG03 → D2 (`project/design/D02.md`) [proof: opsctl]
 - R-1BF5-X7QS → D2 (`project/design/D02.md`) [proof: opsctl]
 - R-1CN2-AZHH → D2 (`project/design/D02.md`) [proof: opsctl]
+- R-3R5W-79JK → D22 (`project/design/D22.md`) [proof: bin]
 - R-3SAU-8T9F → D1 (`project/design/D01.md`) [proof: opsctl]
+- R-3SDS-L1A9 → D22 (`project/design/D22.md`) [proof: bin]
 - R-3TIQ-ML04 → D2 (`project/design/D02.md`) [proof: opsctl]
+- R-3TLO-YT0Y → D22 (`project/design/D22.md`) [proof: bin]
 - R-3UQN-0CQT → D2 (`project/design/D02.md`) [proof: opsctl]
+- R-3UTL-CKRN → D22 (`project/design/D22.md`) [proof: bin]
 - R-3VYJ-E4HI → D2 (`project/design/D02.md`) [proof: opsctl]
 - R-3X6F-RW87 → D3 (`project/design/D03.md`) [proof: opsctl]
 - R-3YEC-5NYW → D3 (`project/design/D03.md`) [proof: opsctl]

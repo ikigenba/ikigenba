@@ -15,10 +15,10 @@ history lives in git.
 This project is the **umbrella**: it governs the suite's shared contracts and
 **builds no code of its own**. Every Decision here is a convention that other
 trees implement — `appkit`, `eventplane`, `opsctl`, `bin`, `nginx`, and each
-deployable service. Those trees' specs **cite** these Decisions by path
-(`project/design/DNN.md` at the repo root) and never restate them normatively; a
-subproject conforms unless it carries its own Decision naming the departure and the
-reason.
+deployable service. Those trees' specs **cite** these Decisions by path, written
+in the exact form **`root project/design/DNN.md`**, and never restate them
+normatively; a subproject conforms unless it carries its own Decision naming the
+departure and the reason.
 
 ## Requirement ids
 
@@ -73,6 +73,14 @@ Shared facts every Decision leans on:
 - **Contracts are cited, never copied.** An implementing tree's spec references a
   contract by its path here and owns none of it. A local restatement is drift by
   construction.
+- **Citations carry the `root` qualifier, always.** Every subproject has its own
+  `project/design/DNN.md` files, so the bare path is ambiguous by construction —
+  it names a *local* Decision in any subproject context. A citation of a suite
+  contract is therefore written in the exact form **`root project/design/DNN.md`**,
+  never the bare path and never a prose qualifier ("at the repo root"): the fixed
+  form makes every contract citation in the repo findable with one grep
+  (`grep -rn 'root project/design/'`) and makes a bare `project/design/DNN.md`
+  string unambiguously local.
 
 ## Layout
 
@@ -88,7 +96,7 @@ only the one contract it concerns:
   per-Decision detail.
 
 **Decision numbers are permanent and are never reused.** The contracts are D01,
-D02, D03, D05, D06, D08, D11, D12, D14, and D17–D20; the numbers **D04, D07, D09,
+D02, D03, D05, D06, D08, D11, D12, D14, and D17–D22; the numbers **D04, D07, D09,
 D10, D13, D15, and D16 are retired** — those Decisions owned code and moved to the
 trees that build it (`bin/project/`, `nginx/project/`, `opsctl/project/`). A
 retired number is never assigned to a new Decision, and survivors keep the numbers
@@ -126,5 +134,13 @@ Questions settled during authoring, recorded so the *why* survives:
 - **One SSM parameter per app, not a shared blob** (D12). Per-app parameters remove
   both the size wall and the clobber risk, and make "no secrets" an explicit seeded
   state rather than an absence.
+- **Version numbers live in `VERSION` files, never in spec prose** (D03). Every
+  concrete number a spec stated as a present-tense fact had gone stale; the rule
+  is now contractual, with a narrow historical-provenance carve-out.
+- **Library pins are checked as form and agreement, never as numbers** (D22).
+  In-repo libraries are unversioned siblings (`v0.0.0` + relative replace),
+  agentkit consumers must agree with each other rather than match a named
+  version, and the workspace carries no replace — so the contract's checks can
+  never rot as pins advance.
 
 No open contracts remain undecided.
