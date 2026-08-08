@@ -11,5 +11,7 @@ in the completion commit — there is no done marker; done is gone. This file
 deliberately carries **no bare status glyph** anywhere but on a phase line, so
 the anchored grep matches only phase lines.
 
-Next phase: 19
+Next phase: 20
+
+- Phase 19 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — declare crm's testing facts in `AGENTS.md` and prove the declaration and the skip ban in `cmd/crm/docs_test.go`
 

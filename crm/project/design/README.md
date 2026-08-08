@@ -32,7 +32,10 @@ removed, not stacked); construction history lives in git, not here.
 > the verb semantics, validation, the domain migrations — is owned elsewhere
 > (`crm/CLAUDE.md`) and is **unchanged** by all five threads; the only schema
 > change this design makes is D18's outbox re-creation migration (the event
-> *addressing* changes; payload shapes do not).
+> *addressing* changes; payload shapes do not). **(7)** The **testing-language
+> conformance** — crm adopts the suite's testing-language contract, declaring its
+> own layers, preconditions, and GOWORK mode and proving that declaration in its
+> own tree (D21).
 
 ## Requirement ids
 
@@ -105,7 +108,14 @@ Shared facts every Decision leans on:
 Testing is part of the architecture, not an afterthought. The cross-cutting
 approach every Decision's Verification list assumes:
 
-- **The landing page is tested over the real `crm/share/www` tree.** The page
+- **The layer vocabulary is the suite's, not this tree's.** Every test below
+  belongs to exactly one layer — **hermetic**, **composed**, **live**, or
+  **manual** — as defined by `root project/design/D23.md`, which owns the layer
+  definitions, the `//go:build live` mechanism, and the ban on skipping outside
+  live-tagged files. D21 records crm's adoption and its declared facts. In short:
+  everything below is **hermetic** except the boot smoke in `cmd/crm/main_test.go`,
+  which is **composed**. crm has **no live layer and no manual layer**.
+- **The landing page is tested over the real `crm/share/www` tree (hermetic).** The page
   handler is a small `http.Handler` at the composition root that renders
   `landing.html` through the chassis-loaded site (`rt.WWW()`); its tests build
   an `appkit/web` Site from the repo-real `share/www` directory (a relative path
@@ -125,7 +135,8 @@ approach every Decision's Verification list assumes:
   static mount; tests drive that mount over the real directory and assert
   `tokens.css` is served with a CSS content type and that the template
   references the app's **own** asset path (not a cross-service URL).
-- **The nginx fragment is proven by content assertion.** The session-gate
+- **The nginx fragment is proven by hermetic content assertion — a shipped-file
+  guard.** The session-gate
   fragment is config, not Go, so its behavior is pinned by a test that reads
   `crm/etc/nginx.conf` from disk and asserts the exact-match `= /srv/crm/`
   location exists, uses `auth_request /_session-authn` (not `/_authn`), and
@@ -140,8 +151,8 @@ approach every Decision's Verification list assumes:
   arguments (injected at the composition root from
   `rt.Service()`/`rt.Version()`), so its output is fully determined by its
   inputs and the template file — no clock, no network, no DB.
-- **The MCP surface is tested through the real JSON-RPC seam.** The service
-  `instructions` (D9), the tool descriptors (D10), the `guide` tool (D11), and
+- **The MCP surface is tested hermetically through the real JSON-RPC seam.** The
+  service `instructions` (D9), the tool descriptors (D10), the `guide` tool (D11), and
   the tool table (D13) are proven by driving the `appkit/mcp` handler built from
   crm's declared `Options` (instructions + tool table over a real migrated DB)
   with `initialize`, `tools/list`, and `tools/call` requests — the
@@ -152,6 +163,17 @@ approach every Decision's Verification list assumes:
   `X-Owner-Id` on every request so the gate admits it, alongside `X-Owner-Email`
   (kept where a display value is asserted, e.g. the health envelope's
   `owner_email`) and `X-Client-Id`; no crm test re-proves the chassis gate itself.
+- **The install layout is proven by the one composed test.** The boot smoke in
+  `cmd/crm/main_test.go` builds crm's own binary and runs it from an
+  `/opt/crm/`-shaped `t.TempDir()` tree on a free loopback port, asserting the
+  served `/health`. Building and running the tree's real binary is what makes it
+  **composed** rather than hermetic; it stays offline, needing no credential and no
+  running suite.
+- **Doc truth is a hermetic Go test.** crm's declared testing facts (D21) are
+  asserted by reading the committed `crm/AGENTS.md` from disk in
+  `cmd/crm/docs_test.go`, beside the skip-ban source scan over the tree's
+  `*_test.go` files — so the declaration is re-checked on every `go test ./...`,
+  not once at authoring time.
 
 ## Layout
 

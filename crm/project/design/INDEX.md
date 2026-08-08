@@ -24,6 +24,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D18 → `project/design/D18.md` — Event-routing conformance: kinds keep `contact.*`, subject = `/<contact id>`, family registry, new outbox migration — owns R-8HHB-24SG, R-8IP7-FWJ5, R-8JX3-TO9U, R-8L50-7G0J
 - D19 → `project/design/D19.md` — Structured MCP adoption: `structuredContent` + declared `outputSchema` per domain verb + typed closed-vocabulary error codes (no guard swap — crm has no loopback guard site) — owns R-5Y60-E30A, R-5ZDW-RUQZ, R-60LT-5MHO, R-61TP-JE8D, R-631L-X5Z2, R-65HE-OPGG
 - D20 → `project/design/D20.md` — Correlation-id adoption: the nginx fragment forwards the chain id on gated locations and strips it on the ungated PRM bootstrap; event appends carry it from context — owns R-X9B0-30E7, R-XAIW-GS4W, R-XCYP-8BMA, R-XE6L-M3CZ
+- D21 → `project/design/D21.md` — Testing-language conformance: the suite's four layers, crm's declared testing facts (hermetic + composed, no live, no manual; no preconditions beyond the Go toolchain; workspace GOWORK), proven in `cmd/crm/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
 
 ## Verification ids → Decision
 
@@ -60,6 +61,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-NGNX-4K7L → D4 → `project/design/D04.md`
 - R-NGNX-6M9N → D4 → `project/design/D04.md`
 - R-NGNX-8P1Q → D4 → `project/design/D04.md`
+- R-O1AD-MRKW → D21 → `project/design/D21.md` (adopted from root `project/design/D23.md`)
+- R-O2IA-0JBL → D21 → `project/design/D21.md` (adopted from root `project/design/D23.md`)
 - R-PDZ7-HTAN → D9 → `project/design/D09.md`
 - R-PF73-VL1C → D9 → `project/design/D09.md`
 - R-PGF0-9CS1 → D10 → `project/design/D10.md`
