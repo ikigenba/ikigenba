@@ -11,7 +11,6 @@ outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 39
 
-- Phase 27 ⬜ realizes — — teardown: remove the v1 development plane and reduce the composition root
 - Phase 28 ⬜ realizes D2 — the v2 schema, the rebuild migration, and the store
 - Phase 29 ⬜ realizes D17, D23 (slice) — custody, the `Git` seam, the ref choke point, and the events registry
 - Phase 30 ⬜ realizes D18 (slice) — the loopback read API: content, list, stat, archive
