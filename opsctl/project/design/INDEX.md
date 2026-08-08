@@ -22,9 +22,11 @@ Verification ids change.
 - D14 → `project/design/D14.md` — Scheduled nightly backup (systemd timer + box sweep) — owns `R-RNKC-HAW8`, `R-ROS8-V2MX`
 - D15 → `project/design/D15.md` — stage / deploy / rollback / prune orchestration — owns `R-84VR-7U2K`, `R-863N-LLT9`, `R-87BJ-ZDJY`, `R-88JG-D5AN`, `R-89RC-QX1C`, `R-8AZ9-4OS1`, `R-8C75-IGIQ`, `R-I80H-SAQ3`
 - D16 → `project/design/D16.md` — Stage preflight without the retired manifest verb; one version channel — owns `R-TA75-P0NF`, `R-TBF2-2SE4`
+- D17 → `project/design/D17.md` — The testing-language contract: opsctl is hermetic + manual, and its out-of-loop ids are the manual layer — owns `R-2B4O-Z98N`; cites `R-O1AD-MRKW`, `R-O2IA-0JBL` (owned by `root project/design/D23.md`, `[proof: per-service]`)
 
 ## Verification ids → Decision
 
+- R-2B4O-Z98N → D17 — `project/design/D17.md`
 - R-3K9X-IPJZ → D7 — `project/design/D07.md`
 - R-3LHT-WHAO → D7 — `project/design/D07.md`
 - R-3MPQ-A91D → D8 — `project/design/D08.md`
@@ -67,6 +69,8 @@ Verification ids change.
 - R-MV4H-X5UO → D4 — `project/design/D04.md`
 - R-MXKA-OPC2 → D4 — `project/design/D04.md`
 - R-MYS7-2H2R → D4 — `project/design/D04.md`
+- R-O1AD-MRKW → D17 — `project/design/D17.md` (owned by `root project/design/D23.md`)
+- R-O2IA-0JBL → D17 — `project/design/D17.md` (owned by `root project/design/D23.md`)
 - R-QFXB-VARQ → D7 — `project/design/D07.md`
 - R-RNKC-HAW8 → D14 — `project/design/D14.md`
 - R-ROS8-V2MX → D14 — `project/design/D14.md`
