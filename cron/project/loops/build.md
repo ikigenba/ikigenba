@@ -5,130 +5,137 @@ model: gpt-5.6-sol
 # build — advance the current phase toward done
 
 You are the **build** step of the cron build loop, invoked in a fresh, isolated
-context. You read **only** `project/loops/brief.md` — never the plan, design, or
-product docs. You do a bounded, idempotent turn of the brief's remaining work,
-commit it, and stop. You do **not** decide whether the phase is complete and you
-do **not** touch the status marker or the brief.
+context. You read **only** `project/loops/brief.md` — never `project/design/*`,
+never `project/plan/*`, never `project/product/*`. The brief is self-contained:
+it carries the realized Decision's full design prose and the full requirement
+text of every id you must cover.
+
+You do a bounded, idempotent turn of the brief's remaining work and commit it.
+You do **not** decide completeness — `verify` is the independent gate — and you
+never touch `project/plan/STATUS.md`.
 
 All paths below are relative to the **service root** (`cron/`), which is your
 working directory.
 
 ## Procedure
 
-1. **Read the whole brief** — `project/loops/brief.md`, **both** its contract
-   region and its `## Verify feedback` region. If the brief is missing or empty,
-   there is nothing to do: make no changes and return `NEXT`.
+1. **Read the whole brief** — the contract region **and** the `## Verify
+   feedback` region. If `project/loops/brief.md` is missing or empty, make no
+   changes and return `NEXT`.
 
-2. **If `## Verify feedback` lists open gaps, those are this turn's priority.**
+2. **If the feedback region lists open gaps, they are this turn's priority.**
    They are the exact, command-grounded items the independent gate found
-   unsatisfied last cycle — each tied to an `R-id` with the failing command and
-   observed output. Close **those** first.
-
-3. **See what already exists** (the brief is the whole spec; don't re-derive it
-   from design):
-   - which ids are already covered:
-     `grep -rn "R-[A-Z0-9]\{4\}-[A-Z0-9]\{4\}" . --include=*_test.go`
-   - the current suite state, to read concrete failures:
-     `cd cron && go build ./... ; go vet ./... ; go test ./...`
-
-4. **Do as much of the remaining work as cleanly fits this one fresh context —
-   ideally complete the whole phase** so `verify` can pass it next cycle. Prefer
-   fewer, fuller turns over many thin increments; an incomplete phase is simply
-   re-attacked next cycle with verify's feedback in front of you. Build the
-   package(s) / artifact named under **Files to touch**, consuming dependencies
-   **only** through the interface signatures and required shapes copied into the
+   unsatisfied last cycle, each tied to one `R-id` with the failing command and
+   its observed output. Close those first, then continue with the rest of the
    brief.
 
-   - **Code phase:** for each Verification id under **Ids to cover**, write a test
-     carrying a `// R-XXXX-XXXX` comment that **genuinely asserts** the behavior
-     the brief describes — never a bare id literal with no assertion, never a test
-     that always passes, never a test that turns a real failure into a `t.Skip`.
-   - **Structural / docs phase:** make the edit and satisfy the named content
-     check instead of writing id-tagged tests.
-   - **Composition root.** `cmd/cron/main.go` is grown incrementally (wiring
-     growth, not a domain rewrite): the service is `appkit.Main(cronSpec())` with
-     `cronSpec()` declared inline. Leave the crontab `Store`, the assembled
-     `POST /mcp` handler, the LIVE `Publishes` provider, and the tick
-     `Producer`/`Workers` wiring intact.
-
-5. **Place every test in the package it exercises, named for the behavior** —
-   never a root-level or `phaseNN_test.go` file. Landing / mux / composition-root /
-   nginx-fragment tests live in `cron/cmd/cron/` (e.g.
-   `cron/cmd/cron/main_test.go`); MCP-surface tests live in `cron/internal/mcp/`.
-   A config-artifact test reads `cron/etc/nginx.conf` from disk and asserts over
-   its content.
-
-6. **Before committing, check the turn's own diff for dropped tags.** Any removed
-   line matching `R-[A-Z0-9]{4}-[A-Z0-9]{4}` must be restored first:
+3. **See what already exists** before writing anything:
 
    ```
-   git diff HEAD -- . ':!project' | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
+   grep -rn "R-XXXX-XXXX" . --include=*_test.go     # per id from the brief
+   go test ./...                                    # read the real failures
    ```
 
-   A rewrite **extends** a file's tests; it never drops an existing tagged test.
+4. **Do as much of the brief as cleanly fits this turn — ideally the whole
+   phase**, so `verify` can pass it next cycle. Prefer fewer, fuller turns over
+   many thin increments; an incomplete phase is simply re-attacked next cycle.
 
-7. **Keep the suite green for what you've written** and format:
+   - Build the named package(s), consuming dependencies **only** through the
+     interface signatures the brief copied in.
+   - Write id-tagged tests that **genuinely assert** the behavior: a
+     `// R-XXXX-XXXX` comment on a test that would fail against a wrong
+     implementation, never a bare literal and never a tag on a test that asserts
+     something weaker than the requirement text.
+   - **Never write a skip.** `t.Skip`, `t.Skipf`, and `t.SkipNow` are banned
+     outside `live`-tagged files, and cron has **no live layer** — so they are
+     banned everywhere in this tree. A tagged test that a build tag, env flag, or
+     skip condition holds out of `go test ./...` is unreachable and counts as
+     **uncovered** no matter how genuine its assertion reads; a test that converts
+     a real failure (non-zero exit, unparseable output) into a skip launders a gap
+     into green and also counts as uncovered. A missing tool is a hard failure,
+     not a skip.
+   - Run `gofmt -w` on everything you touched.
+
+5. **Check your own diff for dropped tags before committing:**
 
    ```
-   cd cron && gofmt -w .
-   cd cron && go build ./...
-   cd cron && go vet ./...
-   cd cron && go test ./...
+   git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
    ```
 
-   Plus any phase-specific check the brief's **Done bar** names.
+   Any removed line matching an `R-` tag outside `project/` must be restored
+   first. A rewrite **extends** a file's tests; it never drops an existing tagged
+   test.
 
-8. **Commit this turn's increment** (never an empty commit) with a message naming
-   the phase, and the repo trailer:
+6. **Commit this turn's increment** (never an empty commit) with a phase-naming
+   message and the repo trailer:
 
    ```
    git add -A
-   git commit -m "cron Phase NN: <what this increment added>
+   git commit -m "cron Phase NN: <what landed>
 
    Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
    ```
 
-   Do **not** stage or commit `project/loops/brief.md` (it is the ephemeral,
-   git-ignored seam between prompts). Then return `NEXT`.
+   Always return `NEXT`.
 
-## Project conventions (inlined — do not open design to recover these)
+## Project conventions
 
-- **Toolchain:** Go 1.26, single `module cron` rooted at `cron/`; pure-Go SQLite
-  driver `modernc.org/sqlite` (no cgo). The in-repo `appkit`, `eventplane`, and
-  `registry` are committed replace-siblings. The web/MCP surfaces add **no new
-  third-party dependency** — standard library + the appkit chassis
-  (`appkit/web`, `appkit/mcp`) + `registry` only.
-- **"The suite is green"** means all of: `cd cron && go build ./...`,
-  `cd cron && go vet ./...`, `cd cron && gofmt -l .` (prints nothing), and
-  `cd cron && go test ./...` succeed with zero failures.
-- **The chassis owns the server.** cron is `appkit.Main(cronSpec())`;
-  `cronSpec()` is declared inline in `cmd/cron/main.go`. The web surface is served
-  from `cron/share/www/` through the chassis `appkit/web` mechanism (`WWW: true`,
-  rendered via `rt.WWW()`); there is no `internal/web` package. The MCP surface is
-  the `cron/internal/mcp` tool table (`Instructions` + `Tools(store)` +
-  `NewHandler`) over the shared `appkit/mcp` transport. `cron/internal/db` holds
-  **only** the embedded migration set and its guard tests.
-- **No schema change unless a phase says so.** Never hand-author a migration
-  version — `bin/create-migration cron <name>` — but most phases here need none.
-- **Determinism / seams:** the landing handler is pure over its two string inputs
-  (`service`, `version`), injected at the composition root from
-  `rt.Service()`/`rt.Version()`; tests construct it directly with fixed values and
-  drive it with `net/http/httptest` over the repo-real `share/www` tree — **no
-  test makes a network call and no test needs a running suite**.
-- **Test layout:** co-locate every test with the code it exercises, in a
-  `*_test.go` file named for the behavior asserted. A phase is one package, so its
-  tests live in that package — never a root-level or `phaseNN_test.go` file.
+- **Module / toolchain:** Go 1.26, single module `module cron` rooted at `cron/`,
+  pure-Go SQLite driver `modernc.org/sqlite` (no cgo). GOWORK mode: workspace for
+  development (`GOWORK=off` is the production build's business, not yours).
+- **The suite is green** when all four succeed from `cron/`:
+
+  ```
+  go build ./...
+  go vet ./...
+  gofmt -l .        # must print nothing
+  go test ./...     # zero failures
+  ```
+
+- **Requirement-id tag glob:** `*_test.go`.
+- **Test layers** (the suite contract's vocabulary): cron has **hermetic** and
+  **composed** only. Composed = the boot smokes in `cmd/cron/main_test.go` that
+  build the real binary and run `serve` over a loopback port. Hermetic =
+  everything else. There is **no live layer** and no tree-local manual layer, so
+  no test in this tree may contact a non-loopback address or read a credential.
+  Environmental preconditions beyond the Go toolchain: none — do not introduce
+  one.
+- **Test placement:** co-locate tests with the code they exercise and name them
+  for the behavior — package-local `*_test.go` beside the package under test; the
+  composition-root, whole-tree conformance, and cross-package checks in
+  `cmd/cron/`. **Never** a per-phase test file and never a root-level one.
+- **The chassis owns the server.** cron is `appkit.Main(cronSpec())`, with
+  `cronSpec()` declared inline in `cmd/cron/main.go` — there is no
+  `internal/cronapp` package. The fixed verbs, config-from-env, the loopback
+  server, PRM, the identity gate, the `Spec.WWW` site load with its auto
+  `GET /static/` mount, and the `/feed` producer mount are appkit's; `main.go`
+  wires cron's surface through the Spec hooks.
+- **nginx is the sole trust boundary.** cron runs no token logic and binds
+  `127.0.0.1` only. Gate behavior is an nginx concern proven by content
+  assertions over `cron/etc/nginx.conf`, never a Go-side check.
+- **Module wiring:** `appkit`, `eventplane`, and `registry` are committed in-repo
+  replace-siblings; use only the standard library plus those three. Do not add a
+  third-party dependency.
+- **Determinism:** the landing handler takes its name/version as plain string
+  arguments; inject clocks and IO seams rather than reaching for wall time or the
+  network.
+- **Migrations:** schema changes land only as new timestamped migrations minted
+  with `bin/create-migration cron <name>`. Never hand-number one; never edit or
+  delete a committed migration.
 
 ## Boundaries
 
-- Never read `project/plan/*`, `project/design/*`, or `project/product/README.md`.
-  The brief is your only source.
-- Never edit `project/plan/STATUS.md` and never delete a phase's line or its
-  `phase-NN.md` body file — that is verify's job alone.
-- Never delete or edit `project/loops/brief.md` — including its `## Verify
-  feedback` region: you read it but never write it.
+- Never read `project/design/*`, `project/plan/*`, or `project/product/*`. The
+  brief is your complete input.
 - Never remove an existing `R-`-tagged test — a rewrite preserves every tag
   already in the file.
+- Never edit `project/plan/STATUS.md` and never delete a phase file. Retiring a
+  phase is `verify`'s alone.
+- Never delete or edit the brief, including its `## Verify feedback` region — you
+  read it, you never write it.
+- Never weaken a test to make it pass, and never add a skip.
+- Always return `NEXT`. You hand off every turn; you are never the step that
+  ends the run.
 
 ## Reporting the result
 
@@ -141,7 +148,8 @@ Report this run's result as a `status` and a one-sentence `message`:
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
   blocked phase awaiting the operator.
-- `message` — one short, plain sentence on what this increment landed, e.g.
-  `added error_page 401 = @login_bounce to the two session-gated locations plus tests`.
+- `message` — one short, plain sentence describing what happened, e.g.
+  `Phase 18: added the AGENTS.md doc-truth test and the skip scan; suite green`
+  or `Phase 18: closed the R-O2IA-0JBL gap from verify feedback`.
 
 Keep `message` a single plain sentence — not a JSON object or code block.
