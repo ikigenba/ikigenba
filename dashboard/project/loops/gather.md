@@ -33,12 +33,13 @@ only the brief's **contract region**; you never write its **feedback region**.
    ```
 
    `project/plan/STATUS.md` is the manifest and the only home of the `⬜`
-   marker; phase lines are bullets beginning `- Phase` at column 0.
+   marker; phase lines are bullets beginning `- Phase` at column 0, and the
+   `Next phase: NN` counter line is not a bullet and never matches.
    - **If it prints nothing** (the queue is empty — no pending phase line
      remains), the whole job is complete. Report **`DONE`** and stop. This is
      the loop's other end.
    - Otherwise, read the phase number `NN` from the matched line (e.g.
-     `- Phase 20 ⬜ realizes D17 — …` → `NN = 20`).
+     `- Phase 45 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — …` → `NN = 45`).
 
 3. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read only
    its first heading line `# Brief — Phase MM`:
@@ -75,10 +76,35 @@ only the brief's **contract region**; you never write its **feedback region**.
      never the text on a separate line, never an id the phase does not own. If the
      phase owns none, write the single line `(none — structural phase)`;
    - the **files to touch**, the **dependency interface signatures** copied in (so
-     build never opens a design file), and the **done bar**;
+     build never opens a design file), and the **done bar** — stated as the
+     deterministic conditions of the phase's own *Done when*, plus dashboard's
+     green bar (below);
    - a **`## Verify feedback`** region left empty.
 
    Then report **`NEXT`**.
+
+## The done bar to write into every brief
+
+dashboard's green bar, from design's Conventions — copy it into the brief's
+**Done bar** verbatim, alongside the phase's own conditions:
+
+```
+cd dashboard && go build ./...
+cd dashboard && go vet ./...
+cd dashboard && gofmt -l .     # must print nothing
+cd dashboard && go test ./...
+```
+
+All four succeed with zero failures. Requirement-id tags live in files matched
+by the glob `*_test.go`. Every id in **Ids to cover** must be covered by a
+genuinely-asserting `// R-XXXX-XXXX`-tagged test that is **co-located with the
+code it exercises and named for the behavior** — never a root-level or
+`phaseNN_test.go` file — and that **actually runs** under `go test ./...` with
+no `SKIP`. dashboard has **no live layer**: no test file carries a
+`//go:build live` constraint, so a `t.Skip`/`t.Skipf`/`t.SkipNow` anywhere in
+the tree's `*_test.go` files is a gap, and a tagged test held out of the run by
+a build tag or env gate is **unreachable, hence uncovered**. A structural phase
+(no ids) names its `project/`-excluded grep or smoke instead.
 
 ## The `project/loops/brief.md` schema (emit exactly this shape)
 
@@ -112,10 +138,10 @@ R-YYYY-YYYY — <full requirement text …>
 ```
 
 ### Done bar
-<deterministic exit conditions: the green suite (from design Conventions) AND
-each id above covered by a co-located, genuinely-asserting `// R-id` test that
-runs under `go test ./...` with no SKIP; a structural phase names its grep/smoke
-instead.>
+<the phase's own deterministic exit conditions, plus dashboard's green bar
+above; each id covered by a co-located, genuinely-asserting `// R-id` test that
+runs under `go test ./...` with no SKIP; a structural phase names its
+`project/`-excluded grep or smoke instead.>
 
 ## Verify feedback
 _(empty — no verify attempt yet)_
@@ -139,7 +165,7 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Authored brief for Phase 20 (D17, 5 ids).`
+  `Authored brief for Phase 45 (D37, 2 ids).`
 
 Report **`DONE`** when `project/loops/blocked.md` exists, or when step 2's grep
 found no `⬜` phase; in every other case (brief authored, or an in-flight brief
