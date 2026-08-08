@@ -45,10 +45,12 @@ design's *Conventions* (`project/design/README.md`): `cd webhooks` and then
 failures, with tests run against real temp-file SQLite and a deterministic
 injected clock — never a mocked store or outbox. "Covered" means what each
 Decision's Verification list says it means: a genuine test exercising the named
-behavior against the substrate that Decision specifies. For the D7 end-to-end
-ids, design's verification-gate-honesty rule applies — an all-skipped end-to-end
-layer (because `:8080` was unreachable) is a **gap, not a pass**; the gate must
-bring the suite up and run those ids for real. Every phase's acceptance bar is
+behavior against the substrate that Decision specifies. Per the testing-language
+contract (`root project/design/D23.md`, adopted by D20), no test in this tree
+drives `:8080` or a running suite — the D7 tier ids are proven by content
+assertion over the committed fragment plus the composed-service tests, a
+skipped test is a gap never a pass, and the assembled-stack check is the
+suite's manual-layer item. Every phase's acceptance bar is
 a deterministic exit condition, never a subjective judgment, never a
 self-referential/unsatisfiable check.
 
