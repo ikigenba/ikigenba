@@ -15,5 +15,3 @@ anchored grep matches only phase lines.
 
 Next phase: 23
 
-- Phase 22 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — declare webhooks' testing facts in `AGENTS.md` (layers, preconditions, gate command, GOWORK mode) and prove the declaration plus the skip ban with two tagged tests
-
