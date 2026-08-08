@@ -12,8 +12,9 @@ import (
 	"eventplane/outbox"
 )
 
-func TestEmbeddedMigrationsCreateExactDomainAndOutboxSchemas(t *testing.T) {
+func TestEmbeddedMigrationsCreateV2MetadataSchema(t *testing.T) {
 	// R-EMGN-7X72
+	// R-IWEY-SUZH
 	migrations, err := Migrations()
 	if err != nil {
 		t.Fatalf("load migrations and drift guard: %v", err)
@@ -25,9 +26,92 @@ func TestEmbeddedMigrationsCreateExactDomainAndOutboxSchemas(t *testing.T) {
 		}
 	}
 	if !strings.Contains(outboxMigration.SQL, outbox.SchemaSQL) {
-		t.Fatal("outbox migration does not contain outbox.SchemaSQL verbatim")
+		t.Fatal("newest outbox migration does not contain outbox.SchemaSQL verbatim")
 	}
 
+	conn := migratedDatabase(t, migrations)
+	want := map[string][]string{
+		"repositories": {"kind", "name", "owner_id", "owner_email", "default_branch", "archived_at", "archived_path", "created_at"},
+		"statuses":     {"kind", "name", "sha", "check_name", "state", "detail", "actor", "updated_at"},
+		"run_tokens":   {"token_sha256", "kind", "name", "expires_at", "created_at"},
+		"outbox":       {"seq", "event_id", "kind", "subject", "payload", "created_at", "correlation_id"},
+	}
+	if got := applicationTables(t, conn); !reflect.DeepEqual(got, []string{"outbox", "repositories", "run_tokens", "statuses"}) {
+		t.Fatalf("application tables = %v, want exactly the v2 tables", got)
+	}
+	for table, expected := range want {
+		if got := tableColumns(t, conn, table); !reflect.DeepEqual(got, expected) {
+			t.Errorf("%s columns = %v, want %v", table, got, expected)
+		}
+	}
+	assertPrimaryKey(t, conn, "repositories", map[string]int{"kind": 1, "name": 2})
+	assertPrimaryKey(t, conn, "statuses", map[string]int{"kind": 1, "name": 2, "sha": 3, "check_name": 4})
+	assertPrimaryKey(t, conn, "run_tokens", map[string]int{"token_sha256": 1})
+	assertNotNull(t, conn, "repositories", "owner_id")
+	assertNotNull(t, conn, "repositories", "owner_email")
+	assertIndex(t, conn, "repositories", "idx_repositories_owner")
+	for _, removed := range []string{"repos", "sessions", "feed_offset"} {
+		if tableExists(t, conn, removed) {
+			t.Errorf("legacy table %s still exists", removed)
+		}
+	}
+}
+
+func TestV2RebuildDropsSeededV1State(t *testing.T) {
+	// R-ICIJ-13TA
+	// R-IYUR-KEGV
+	migrations, err := Migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebuild := -1
+	for i, migration := range migrations {
+		if strings.Contains(migration.Name, "rebuild_v2_store") {
+			rebuild = i
+			break
+		}
+	}
+	if rebuild < 1 {
+		t.Fatal("v2 rebuild migration not found")
+	}
+	conn, err := appdb.Open(filepath.Join(t.TempDir(), "repos.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	if err := appdb.Migrate(context.Background(), conn, migrations[:rebuild]); err != nil {
+		t.Fatalf("apply frozen v1 migrations: %v", err)
+	}
+	if _, err := conn.Exec(`INSERT INTO repos (name,owner_id,owner_email,clone_url,default_branch,created_at) VALUES ('old','owner','same@example.com','file:///old','main','2026-08-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`INSERT INTO sessions (id,repo_name,owner_id,owner_email,attempt,branch,instructions,status,created_at,log_path,correlation_id) VALUES ('run','old','owner','same@example.com',1,'work','do it','done','2026-08-01T00:00:00Z','run.jsonl','corr')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`INSERT INTO feed_offset (source,cursor,subscribed,updated_at) VALUES ('github','1',1,'2026-08-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := appdb.Migrate(context.Background(), conn, migrations); err != nil {
+		t.Fatalf("apply full migration set over seeded v1 shape: %v", err)
+	}
+	for _, removed := range []string{"repos", "sessions", "feed_offset"} {
+		if tableExists(t, conn, removed) {
+			t.Errorf("legacy table %s still exists", removed)
+		}
+	}
+	for _, table := range []string{"repositories", "statuses", "run_tokens"} {
+		var count int
+		if err := conn.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Errorf("%s row count = %d, want zero", table, count)
+		}
+	}
+}
+
+func migratedDatabase(t *testing.T, migrations []appdb.Migration) *sql.DB {
+	t.Helper()
 	conn, err := appdb.Open(filepath.Join(t.TempDir(), "repos.db"))
 	if err != nil {
 		t.Fatalf("open temp database: %v", err)
@@ -36,73 +120,37 @@ func TestEmbeddedMigrationsCreateExactDomainAndOutboxSchemas(t *testing.T) {
 	if err := appdb.Migrate(context.Background(), conn, migrations); err != nil {
 		t.Fatalf("apply full embedded migration set: %v", err)
 	}
-
-	want := map[string][]string{
-		"repos":    {"name", "owner_id", "owner_email", "clone_url", "default_branch", "created_at"},
-		"sessions": {"id", "repo_name", "owner_id", "owner_email", "issue_number", "attempt", "branch", "instructions", "status", "error", "pr_url", "created_at", "started_at", "ended_at", "log_path", "correlation_id"},
-		"outbox":   {"seq", "event_id", "kind", "subject", "payload", "created_at", "correlation_id"},
-	}
-	for table, expected := range want {
-		if got := tableColumns(t, conn, table); !reflect.DeepEqual(got, expected) {
-			t.Errorf("%s columns = %v, want %v", table, got, expected)
-		}
-	}
-	for _, column := range tableColumns(t, conn, "outbox") {
-		if column == "type" {
-			t.Fatal("outbox unexpectedly has legacy type column")
-		}
-	}
+	return conn
 }
 
-func TestOwnerIDMigrationRebuildsAndDropsEmailKeyedRows(t *testing.T) {
-	// R-ICIJ-13TA
-	migrations, err := Migrations()
+func applicationTables(t *testing.T, conn *sql.DB) []string {
+	t.Helper()
+	rows, err := conn.Query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations' ORDER BY name`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := appdb.Open(filepath.Join(t.TempDir(), "repos.db"))
-	if err != nil {
+	defer rows.Close()
+	var tables []string
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			t.Fatal(err)
+		}
+		tables = append(tables, table)
+	}
+	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { conn.Close() })
-	ownerMigration := 0
-	for index, migration := range migrations {
-		if strings.Contains(migration.Name, "owner_id_keying") {
-			ownerMigration = index
-			break
-		}
-	}
-	if ownerMigration == 0 {
-		t.Fatal("owner-id migration not found")
-	}
-	if err := appdb.Migrate(context.Background(), conn, migrations[:ownerMigration]); err != nil {
-		t.Fatalf("apply pre-conversion migrations: %v", err)
-	}
-	if _, err := conn.Exec(`INSERT INTO repos VALUES ('old','same@example.com','file:///old','main','2026-07-19T00:00:00Z')`); err != nil {
+	return tables
+}
+
+func tableExists(t *testing.T, conn *sql.DB, table string) bool {
+	t.Helper()
+	var count int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := conn.Exec(`INSERT INTO sessions (id,repo_name,owner_email,attempt,branch,instructions,status,created_at,log_path) VALUES ('old','old','same@example.com',1,'old','old','queued','2026-07-19T00:00:00Z','old.jsonl')`); err != nil {
-		t.Fatal(err)
-	}
-	if err := appdb.Migrate(context.Background(), conn, migrations); err != nil {
-		t.Fatalf("apply owner-id rebuild: %v", err)
-	}
-	for _, table := range []string{"repos", "sessions"} {
-		var count int
-		if err := conn.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil || count != 0 {
-			t.Fatalf("%s rows after rebuild = %d, %v; want zero", table, count, err)
-		}
-		for _, column := range []string{"owner_id", "owner_email"} {
-			var notNull int
-			if err := conn.QueryRow(`SELECT "notnull" FROM pragma_table_info(?) WHERE name = ?`, table, column).Scan(&notNull); err != nil || notNull != 1 {
-				t.Fatalf("%s.%s NOT NULL = %d, %v", table, column, notNull, err)
-			}
-		}
-		var indexes int
-		if err := conn.QueryRow(`SELECT COUNT(*) FROM pragma_index_list(?) WHERE name = ?`, table, "idx_"+table+"_owner").Scan(&indexes); err != nil || indexes != 1 {
-			t.Fatalf("%s owner index count = %d, %v", table, indexes, err)
-		}
-	}
+	return count == 1
 }
 
 func tableColumns(t *testing.T, conn *sql.DB, table string) []string {
@@ -124,4 +172,41 @@ func tableColumns(t *testing.T, conn *sql.DB, table string) []string {
 		t.Fatalf("read %s columns: %v", table, err)
 	}
 	return columns
+}
+
+func assertPrimaryKey(t *testing.T, conn *sql.DB, table string, want map[string]int) {
+	t.Helper()
+	rows, err := conn.Query(`SELECT name, pk FROM pragma_table_info(?) WHERE pk > 0`, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	got := make(map[string]int)
+	for rows.Next() {
+		var name string
+		var position int
+		if err := rows.Scan(&name, &position); err != nil {
+			t.Fatal(err)
+		}
+		got[name] = position
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("%s primary key = %v, want %v", table, got, want)
+	}
+}
+
+func assertNotNull(t *testing.T, conn *sql.DB, table, column string) {
+	t.Helper()
+	var notNull int
+	if err := conn.QueryRow(`SELECT "notnull" FROM pragma_table_info(?) WHERE name = ?`, table, column).Scan(&notNull); err != nil || notNull != 1 {
+		t.Errorf("%s.%s NOT NULL = %d, %v", table, column, notNull, err)
+	}
+}
+
+func assertIndex(t *testing.T, conn *sql.DB, table, index string) {
+	t.Helper()
+	var count int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM pragma_index_list(?) WHERE name = ?`, table, index).Scan(&count); err != nil || count != 1 {
+		t.Errorf("%s index %s count = %d, %v", table, index, count, err)
+	}
 }
