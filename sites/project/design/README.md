@@ -18,11 +18,13 @@ removed, not stacked); construction history lives in git, not here.
 > domain (`internal/sites`), the in-process static server (`internal/serve`), the
 > confined file tools (`internal/files`), the MCP tool table (`internal/mcp`), the
 > embedded landing page (`share/www`), the migration set (`internal/db`), and the
-> nginx fragment (`sites/etc/nginx.conf`). All of these live under `sites/`;
+> nginx fragment (`sites/etc/nginx.conf`), and the version-plane client and push
+> consumer (`internal/sites`, D32–D37). All of these live under `sites/`;
 > nothing outside `sites/` is named or changed. Cross-service facts (the dashboard
 > session validator `/_session-authn`, the dashboard apex login-bounce named
-> location `@login_bounce`, the dropbox mirror, the shared `registry`) are fixed
-> external contracts this design consumes.
+> location `@login_bounce`, the dropbox mirror, the **repos loopback surface and
+> its `push` events**, the shared `registry`) are fixed external contracts this
+> design consumes.
 
 ## Requirement ids
 
@@ -67,14 +69,15 @@ Shared facts every Decision leans on:
   `sites/internal/db/migrations/`, applied forward-only by the appkit runner and
   keyed per file. A committed migration is **frozen** — a schema change is a
   **new** migration created with `bin/create-migration sites <name>` (which stamps
-  a UTC `YYYYMMDDHHMMSS_<slug>.sql` version); never hand-name or edit one. The
-  name/slug split adds one new migration that **rebuilds** `sites` with a
-  `slug` primary key and a required `name` display-label column, carrying no
-  rows across (no production data; D15); every previously committed migration
-  stays frozen.
+  a UTC `YYYYMMDDHHMMSS_<slug>.sql` version); never hand-name or edit one. Every
+  site is **live customer data**, so every new migration is **additive**: the
+  version plane's two columns arrive by `ALTER TABLE … ADD COLUMN` with defaults
+  and carry every existing row forward untouched (D15). Every previously
+  committed migration stays frozen.
 - **Module wiring:** `appkit`, `eventplane`, and `registry` are committed in-repo
-  replace-siblings. sites resolves its own port and the dropbox mirror address by
-  name through `registry` (D9). No `agentkit` dependency (D10/D11): confined
+  replace-siblings. sites resolves its own port, the dropbox mirror address, and
+  the repos base address by name through `registry` (D9/D32). No `agentkit`
+  dependency (D10/D11): confined
   file-tool logic lives in the native `internal/files` package. Two **test-only**
   dependencies (pure Go, no cgo, imported only from `*_test.go`, linked into no
   shipped binary — enforced mechanically by D23's import-graph id):
@@ -87,21 +90,26 @@ Shared facts every Decision leans on:
 - **The chassis owns the server.** sites is `appkit.Main(appkit.Spec{…})`:
   `App:"sites"`, `Mount:"/srv/sites/"`, `Port:registry.MustPort("sites")` (== 3004),
   `MCP:true`, `WWW:true` (chassis loads/serves the `share/www` landing template and
-  `/static/` assets), `Migrations:db.FS`. sites is **not** an event-plane producer
-  (no `/feed`); its MCP `reflection` reports an empty event graph (D13). The fixed
+  `/static/` assets), `Migrations:db.FS`, and one `Consumers` entry for the
+  `repos` upstream (D35). sites is **not** an event-plane producer (no `/feed`)
+  but **is** a consumer; its MCP `reflection` reports an empty `publishes` and
+  the one repos subscription (D13). The fixed
   verbs, config-from-env, the loopback server + PRM + identity gate, the
   `appkit/mcp` transport, and the `appkit/web` render/static mechanism are
   appkit's. main.go declares sites's identity (the Spec) and wires its surface
   through the `Spec.Handlers` hook: the landing route (`GET /{$}`), the site-serving
-  routes (`GET /public/`, `GET /private/`), and the `POST /mcp` mount.
+  routes (`GET /public/`, `GET /private/`), and the `POST /mcp` mount. The hook is
+  also where the two injected outbound clients (dropbox mirror, D28; version
+  plane, D32) and the background seeding pass (D37) are constructed.
 - **The chassis also owns correlation and telemetry.** Reading-or-minting the
   `X-Correlation-Id` on every inbound request, recording inbound MCP and plain
   HTTP traffic, emitting `lifecycle` records at boot and graceful shutdown, and
   the **instrumented outbound HTTP client the Router hands out** (`rt.HTTPClient(…)`)
   are all appkit's, proven by appkit's ids and never re-proven here. sites' own
-  obligations are exactly two: its one outbound client is that Router-provided
+  obligations are exactly two: **every** outbound client it holds — the dropbox
+  mirror (D28) and the version-plane client (D32) — is that Router-provided
   client, injected at the composition root and reached by the live request
-  context (D28); and its nginx fragment hands the process a trustworthy id
+  context; and its nginx fragment hands the process a trustworthy id
   (D29). Since sites is not an event-plane producer, the
   `eventplane` `Append` change that carries `correlation_id` cannot reach its
   source; adopting the new libraries is a recompile.
@@ -134,18 +142,28 @@ display snapshot of the creator email), `source_path` (TEXT, nullable —
 dropbox-sync provenance, unchanged), `created_at`, `updated_at`. Per the suite
 owner-id conversion (`project/design/D17.md` at the repo root) sites stores the stable
 `owner_id` beside the display `owner_email`; sites owner-scopes no query (the
-`slug` is the global handle and `list`/the landing page show every site), so
-neither column is read for logic — they are captured and displayed only. There
-is no lifecycle flag. The database is the single source of truth for which
-sites exist, what they are called, and their visibility; the on-disk folder
-location mirrors it in lockstep (the MCP tools are the only writer). See D15;
-the token generator is D27.
+`slug` is the global handle and `list`/the landing page show every site). The two
+owner columns are displayed in listings and, since the version plane, are the
+identity sites asserts on repos' owner-scoped verbs (D32) — the one place sites
+reads an owner for logic, and the reason the callerless seeding and consumer
+paths have a truthful owner to present. Two
+version-plane columns ride along: `repo_sha` (the commit the served copy is
+materialized at) and `repo_seeded` (whether the site has been brought into the
+plane). There is no lifecycle flag. The database is the single source of truth
+for which sites exist, what they are called, and their visibility; the on-disk
+folder location mirrors it in lockstep. What a site *contains* is the
+repository's — the database records only where the copy stands (`repo_sha`). See
+D15; the token generator is D27; the plane is D32–D37.
 
 ## Filesystem layout
 
 A site's files live **directly** at its served location — there is no working
-tree and no symlink indirection. There are exactly **two** parents (matching the
-two nginx locations); the three visibilities map onto them:
+tree and no symlink indirection. That tree is the **materialized copy** of the
+site's repository at the tip of `main` (root `project/design/D24.md`): plain
+exported files, never a checkout, so no VCS metadata is ever under a served path
+and neither the static server nor the file tools carry a `.git` deny rule. There
+are exactly **two** parents (matching the two nginx locations); the three
+visibilities map onto them:
 
 - `SITES_ROOT/public/<slug>/**` — a public **or unlisted** site's files
   (unlisted serves through the same ungated tier; its token name is the
@@ -156,6 +174,18 @@ two nginx locations); the three visibilities map onto them:
 `Seg(v)` mapping unlisted → `public`) is the single path helper. A visibility
 change renames/relocates the directory in lockstep with the row, including the
 token rename on transitions into unlisted. See D16.
+
+## The version plane
+
+Site content is git-backed: repos holds one bare repository per site, keyed
+`sites/<slug>`, and everything sites serves is a copy of that repository's `main`
+(root `project/design/D24.md`, cited and not restated). sites' half is five
+Decisions: the injected `VersionClient` seam (D32); the write path — commit
+first, then apply to the copy in the same tool call (D33); `sync` as one batch
+commit (D34); the `repos:push` consumer that re-materializes a site when `main`
+moves under it (D35); the create/delete/slug-rotation lifecycle (D36); and the
+additive, re-runnable seeding pass that brings pre-plane sites in (D37). Serving,
+visibility, nginx routing, and the MCP surface are unchanged by all of it.
 
 ## In-process static serving
 
@@ -255,6 +285,22 @@ records which layers this tree has. The cross-cutting approach:
   correlation id off `req.Context()`). Setting the header and emitting the
   `outbound` record are appkit's behaviors with appkit's ids, never re-proven
   here — and no test needs to stand up a Router.
+- **The version plane is tested against a contract-conforming, recording
+  `httptest` repos server — and the honest limit of that is stated on the ids.**
+  A fake accepts whatever it is handed, so no sites test claims that repos (or
+  real git) accepts sites' requests; root `project/design/D24.md` assigns
+  custody, the git door, and commit acceptance to **repos**' own tree, and
+  building or running repos from sites' suite would breach the scope boundary.
+  What the fake *can* falsify is everything that is sites': that the call is made
+  at all, exactly once, with exactly the right change set and bytes; that the
+  local copy is written only after the commit succeeds and not at all when it
+  fails; that a push event re-materializes, is ignored on a non-`main` branch,
+  and is skipped when the sha is sites' own; and that a malformed export is
+  refused whole. Each id names the wrong implementation it kills. One id
+  (R-ER9A-9UMP) is deliberately **composed** rather than hermetic, because the
+  claim it makes — that the real composition root wires a real instrumented
+  client — is exactly the claim a hermetic test constructing its own client
+  cannot make.
 - **Determinism.** Handlers take their inputs explicitly (name/version strings,
   the site slice, the `SITES_ROOT`), so output is determined by inputs — no clock,
   no network.
@@ -270,9 +316,11 @@ Decision it realizes:
 - `project/design/INDEX.md` — the manifest: each Decision → its file, plus a
   sorted `R-id → Decision/file` reverse map; the grep target for resolving an id.
 
-**Service packages.** `internal/sites` (slug/visibility store + `Layout.SiteDir`),
-`internal/serve` (the in-process static server, D17), `internal/files` (confined
-filesystem ops, D10), `internal/mcp` (the domain tool table over the `appkit/mcp`
+**Service packages.** `internal/sites` (slug/visibility store + `Layout.SiteDir`,
+plus the version-plane client, the push materializer, and the seeding pass —
+D32/D35/D37), `internal/serve` (the in-process static server, D17),
+`internal/files` (confined filesystem ops, D10), `internal/mcp` (the domain tool
+table over the `appkit/mcp`
 transport, D13/D20), `internal/db` (the embedded migration set + load guard). The
 landing page and Carbon assets live on disk in `sites/share/www/` served by the
 chassis, including the landing page's client script `share/www/static/landing.js`

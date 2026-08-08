@@ -16,14 +16,14 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D10 → `project/design/D10.md` — `internal/files`: confined filesystem operations as native Go (ports the confined Read/Edit/Glob/Grep/Write/List/Mkdir + symlink-resolving ConfinePath; no agentkit, no JSON, no agent framing) — owns R-027Y-BQ1I, R-03FU-PHS7, R-04NR-39IW, R-05VN-H19L, R-073J-UT0A, R-08BG-8KQZ, R-3ZP8-T0GP, R-40X5-6S7E, R-09JC-MCHO, R-0AR9-048D, R-0D71-RNPR, R-0EEY-5FGG
 - D11 → `project/design/D11.md` — Rewire the MCP file tools onto `internal/files` and drop `agentkit` (delete the bridge, hand-write the four schemas, cleaner structured results, typed confinement envelope, remove the `go.mod` require+replace; surface-preserving) — owns R-0FMU-J775, R-0GUQ-WYXU, R-0I2N-AQOJ, R-0JAJ-OIF8
 - D12 → `project/design/D12.md` — Web surface from `share/www` through the chassis (de-embed via `Spec.WWW`): move `landing.html` + `static/` to `sites/share/www`, render at `GET /{$}` via `rt.WWW()`, delete `internal/web` and the service-side `/static/` mount (chassis auto-mounts it); rewrites the mechanism of D1/D2/D3/D6/D7/D8 — owns R-0SF5-VPQF, R-0TN2-9HH4
-- D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the domain-tool table; delete the local JSON-RPC transport + local `health`; chassis supplies `health`/`reflection` (sites gains `reflection`, empty graph); mirror client becomes a constructor param; the 14-domain/16-total tool partition — owns R-Z8DD-BL71, R-DB3A-15YZ, R-P21E-0285
+- D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the domain-tool table; delete the local JSON-RPC transport + local `health`; chassis supplies `health`/`reflection`; sites is not a producer but is a consumer (the repos subscription, D35), so reflection reports empty `publishes` and that one subscription; mirror client becomes a constructor param; the 14-domain/16-total tool partition — owns R-Z8DD-BL71, R-DB3A-15YZ, R-FJAZ-2KOO
 - D14 → `project/design/D14.md` — Delete the `internal/db` `Open`/`Migrate` shim (keep only the embedded `FS` + load guard; test harnesses call `appkit/db` directly), normalize the composition root (relocate the `Handlers` closure inside `sitesSpec()`; no post-construction `.Handlers` mutation; keep the builder), and true up `AGENTS.md` if present — mints none (structural; shim deletion + composition-root normalization + doc truth); adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
-- D15 → `project/design/D15.md` — Data model: `slug` PK + free-form `name` display label, the three-value `visibility` TEXT enum (CHECK-enforced), owner id/email; `ValidateName`; the rebuild migration (no data carried — no production data); `Store.Create(slug, name, ...)`, `SetVisibility(slug, v, newSlug)` (one UPDATE, optional re-slug, name untouched), `Rename(slug, name)` — owns R-Z9L9-PCXQ, R-ZAT6-34OF, R-ZC12-GWF4, R-ZD8Y-UO5T, R-ZEGV-8FWI, R-ZFOR-M7N7
-- D16 → `project/design/D16.md` — Filesystem layout: files live at the served path under two parents; `Seg(v)` maps unlisted → the public segment (no third tree, no nginx change); `SiteDir(v, slug)`; `Move(slug, from, newSlug, to)` relocates and renames in one call — owns R-H5H4-GTWA, R-H6P0-ULMZ, R-QYP6-P587
+- D15 → `project/design/D15.md` — Data model: `slug` PK + free-form `name` display label, the three-value `visibility` TEXT enum (CHECK-enforced), owner id/email, and the version-plane columns `repo_sha` + `repo_seeded` added by an **additive** migration that carries every existing row forward; `ValidateName`; `Store.Create(slug, name, ...)`, `SetVisibility(slug, v, newSlug)` (one UPDATE, optional re-slug, name untouched), `Rename(slug, name)`, `SetRepoSha`, `MarkSeeded`, `ListUnseeded` — owns R-Z9L9-PCXQ, R-ZAT6-34OF, R-ZC12-GWF4, R-ZD8Y-UO5T, R-ZEGV-8FWI, R-OG3H-7TUS, R-ZFOR-M7N7
+- D16 → `project/design/D16.md` — Filesystem layout: the served path is the **materialized copy** of the site's repository at `main` (plain files, never a checkout, so no `.git` deny rule anywhere); files live at the served path under two parents; `Seg(v)` maps unlisted → the public segment (no third tree, no nginx change); `SiteDir(v, slug)`; `Move(slug, from, newSlug, to)` relocates and renames in one call — owns R-H5H4-GTWA, R-H6P0-ULMZ, R-QYP6-P587
 - D17 → `project/design/D17.md` — In-process static serving of hosted sites (`internal/serve`): index-mapping, no-listing, confined, trailing-slash redirect; mounted ungated at `GET /public/` and `GET /private/` — owns R-QZX3-2WYW, R-R14Z-GOPL, R-R2CV-UGGA, R-R3KS-886Z, R-R4SO-LZXO, R-R60K-ZROD
 - D18 → `project/design/D18.md` — nginx fragment proxies the public/private tiers to the process (no `alias`; private keeps `/_session-authn` and forwards all four owner identity headers; nginx reads no state off disk) — owns R-R78H-DJF2, R-R8GD-RB5R, R-R9OA-52WG, R-7NPD-3MFE
 - D19 → `project/design/D19.md` — The landing page lists the sites that exist, by name (live-rendered from `store.List`; name-as-link / verbatim visibility label / creator / created-at; no visible slug column; empty-state safe; JSON data island carries `slug` + `name` + `visibility` + `createdAtSort`; unlisted anchors carry the public segment) — owns R-ZI4K-DR4L, R-RC42-WMDU, R-ZJCG-RIVA, R-ZKKD-5ALZ, R-ZLS9-J2CO, R-IEWI-3MXP
-- D20 → `project/design/D20.md` — MCP surface: name + slug split end to end — `create(name, slug?, visibility)` with visibility and name required and the slug invariant (slug required for public/private, forbidden for unlisted with the generated token + one collision retry), `set_visibility(slug, visibility, new_slug?)` realizing the full transition matrix with the name untouched (regenerate-on-entry to unlisted = rotation; `new_slug` required when leaving unlisted), `rename(slug, name)`, owner threaded from Identity, live-folder file tools, `sync` never creates — owns R-RDBZ-AE4J, R-ZN05-WU3D, R-ZO82-ALU2, R-ZQNV-25BG, R-ZRVR-FX25, R-ZT3N-TOSU, R-ZUBK-7GJJ, R-ZVJG-L8A8, R-ZWRC-Z00X, R-ZXZ9-CRRM, R-ZZ75-QJIB, R-00F2-4B90, R-56CN-HE21, R-RI7K-TH3B
+- D20 → `project/design/D20.md` — MCP surface: name + slug split end to end — `create(name, slug?, visibility)` with visibility and name required and the slug invariant (slug required for public/private, forbidden for unlisted with the generated token + one collision retry), `set_visibility(slug, visibility, new_slug?)` realizing the full transition matrix with the name untouched (regenerate-on-entry to unlisted = rotation; `new_slug` required when leaving unlisted), `rename(slug, name)`, owner threaded from Identity, live-folder file tools, `sync` never creates; the plane half of every tool is D33/D34/D36 — owns R-RDBZ-AE4J, R-ZN05-WU3D, R-ZO82-ALU2, R-ZQNV-25BG, R-ZRVR-FX25, R-ZT3N-TOSU, R-ZUBK-7GJJ, R-ZVJG-L8A8, R-ZWRC-Z00X, R-ZXZ9-CRRM, R-ZZ75-QJIB, R-00F2-4B90, R-56CN-HE21, R-RI7K-TH3B
 - D21 → `project/design/D21.md` — MCP self-discovery convention: rewrite the Tier-0 `instructions` with routing vocabulary (three visibilities incl. the secret link) + a guide pointer, replace `describe` with a read-only embedded `guide` tool (worked examples incl. name+slug create, unlisted create/rotate with the name kept), keyword-forward the `create`/`sync` descriptions (sync avoids publish/deploy wording); reference the guide in exactly two channels — owns R-57KJ-V5SQ, R-58SG-8XJF, R-5A0C-MPA4, R-5B89-0H0T, R-5CG5-E8RI, R-01MY-I2ZP
 - D22 → `project/design/D22.md` — Client-side filter/sort/pagination of the landing listing (fuzzy search over name or slug, sortable name/created-at/created-by columns with `name` sorting the display name, page-size-10 pagination, one-click clear; pure JS functions tested in goja + a real branchless `initController` transcribing `computeView` onto the DOM via `textContent`; the controller also renders each row's copy-URL button and wires a delegated copy-to-clipboard side effect — a pure DOM effect outside the reduce cycle, its runtime proof D23's; runtime wiring proven by D23; no handler/DB/nginx change) — owns R-02UU-VUQE, R-042R-9MH3, R-HWM0-D2TA, R-HXTW-QUJZ, R-05AN-NE7S, R-I1HL-W5S2, R-I2PI-9XIR, R-I3XE-NP9G, R-I55B-1H05, R-I6D7-F8QU, R-I7L3-T0HJ, R-I8T0-6S88, R-IA0W-KJYX, R-IB8S-YBPM, R-7V8B-GA0T, R-ICGP-C3GB
 - D23 → `project/design/D23.md` — Browser wiring proof: one minimal headless-Chrome test (chromedp, test-only dep; seeded auth-free `httptest` landing page with names distinct from slugs; single session touching each control once — boot/filter/sort-by-name/clear/page/copy; copy step grants clipboard permission and reads the clipboard back to prove the row URL lands on it; Chrome hard-required by the green bar, one launch retry, no scenario retries; also asserts the copy icon renders as a real SVG element and that the `Copy`→`Copied` swap does not reflow the table; import-graph boundary check) — owns R-87B9-J644, R-06IK-15YH, R-08YC-SPFV, R-8AYY-OHC7, R-8DER-G0TL, R-NN9H-UKP3, R-VYEF-053C, R-VZMB-DWU1, R-8EMN-TSKA
@@ -31,10 +31,18 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D25 → `project/design/D25.md` — Structured MCP adoption: swap `JSONResult`→`StructuredResult` (structuredContent + mirrored text) on every domain success result, declare an `outputSchema` per structured tool incl. `rename` (`guide`/`file_read` are prose exceptions with none), and map every failure onto the closed error vocabulary (confinement→`validation`, invalid name→`validation`, mirror unavailable→`source_unavailable`, internal fs failures→`internal`) — owns R-CW5E-T20N, R-CXDB-6TRC, R-CYL7-KLI1, R-CZT3-YD8Q, R-D110-C4ZF, R-D28W-PWQ4, R-D3GT-3OGT, R-0A69-6H6K
 - D26 → `project/design/D26.md` — the bearer MCP endpoint `= /srv/sites/mcp` forwards all four owner identity headers (`X-Owner-Email`/`X-Owner-Id`/`X-Owner-Name`/`X-Owner-Picture`) plus the unchanged `X-Client-Id` — owns R-7L9K-C2Y0
 - D27 → `project/design/D27.md` — The unlisted-slug token generator: `sites.NewToken()`, 30 chars of lowercase base32 (`a-z2-7`) from `crypto/rand` (150 bits), always slug-valid; stateless, uniqueness enforced by the primary key + one create retry; consumed through an injectable seam — owns R-H7WX-8DDO
-- D28 → `project/design/D28.md` — The dropbox mirror client takes the Router-provided instrumented outbound HTTP client (`rt.HTTPClient(…)`, injected into `NewMirrorClient` from the composition root; every `/list` page and `/content` fetch goes through it, and the live request context reaches it end to end through the `sync` MCP verb; the header logic and `outbound` recording are appkit's and are not re-proven here; sites produces no events, so the `eventplane` `Append` change cannot reach it) — owns R-BOE2-6LI3, R-BPLY-KD8S
+- D28 → `project/design/D28.md` — The dropbox mirror client takes the Router-provided instrumented outbound HTTP client (`rt.HTTPClient(…)`, injected into `NewMirrorClient` from the composition root; every `/list` page and `/content` fetch goes through it, and the live request context reaches it end to end through the `sync` MCP verb; states the shared rule that **every** sites outbound client is Router-provided and injected — the version-plane client's half is D32; sites produces no events, so the `eventplane` `Append` change cannot reach it) — owns R-BOE2-6LI3, R-BPLY-KD8S
 - D29 → `project/design/D29.md` — nginx fragment: all four gated locations capture the introspection-minted correlation id with `auth_request_set` and overwrite `X-Correlation-Id` on the upstream request; both ungated proxying locations (PRM bootstrap, the public site tier) set it to `""` so the chassis mints — owns R-BN65-STRE, R-9CMM-G2ZU
 - D30 → `project/design/D30.md` — The served-tree root composes from `IKIGENBA_ROOT`; no box-path literal in sites code — owns R-YWR7-Z1GM, R-YXZ4-CT7B; adopts R-VKB6-SHHV (root `project/design/D11.md`)
-- D31 → `project/design/D31.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): hermetic + composed layers, no live layer, no manual runbook, the `google-chrome` and `go`-on-`PATH` preconditions, workspace GOWORK mode — mints none; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
+- D31 → `project/design/D31.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): hermetic + composed layers, no live layer, no manual runbook, the `google-chrome` and `go`-on-`PATH` preconditions, workspace GOWORK mode, and why no sites test drives a real repos — mints none; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
+- D32 → `project/design/D32.md` — The version-plane client seam: `sites.VersionClient` (Create/Commit/Export/Rename/Delete over the key `sites/<slug>`), one implementation over **two transports** — the domain verbs as `tools/call` on repos' loopback `/mcp` with asserted owner/client headers (`root project/design/D20.md`: one verb surface, no REST twin; precedent `repos/internal/repos/ghpeer.go`), the byte operations on repos' content routes; base resolved by name through `registry` with a `REPOS_BASE_URL` override, built on the Router-provided instrumented client at the composition root; the asserted owner is the **site's** recorded owner and attribution is the acting `X-Client-Id`; the client absorbs repos' `conflict`/`not_found` where sites needs idempotence; cites `root project/design/D24.md` and restates none of it — owns R-EOTH-IB5B, R-NF7R-V95S, R-NGFO-90WH, R-EQ1D-W2W0, R-ER9A-9UMP
+- D33 → `project/design/D33.md` — The write path: every mutating file tool commits to `main` through the plane **first** and applies to the materialized copy **second**, in the same tool call; `mkdir` commits nothing (git has no empty directories); a failed commit leaves the copy untouched; repos unavailable maps to `source_unavailable` — owns R-ESH6-NMDE, R-ETP3-1E43, R-EUWZ-F5US, R-EW4V-SXLH, R-EXCS-6PC6
+- D34 → `project/design/D34.md` — `sync` reconciles as **one** batch commit carrying every write and delete, then updates the copy; an empty reconcile commits nothing; the MCP surface and the never-creates rule are unchanged — owns R-EYKO-KH2V, R-EZSK-Y8TK, R-F28D-PSAY
+- D35 → `project/design/D35.md` — The `repos:push` consumer (sites' first and only subscription): re-materialize a site's served tree from the whole-tree export when `main` moves; non-`main` pushes ignored, unknown slugs skipped, export failures stall, self-writes suppressed by the recorded sha, VCS-metadata and escaping export paths refused whole; in-place reconcile, never build-and-swap — owns R-F3GA-3K1N, R-F4O6-HBSC, R-OEVK-U243, R-F5W2-V3J1, R-F73Z-8V9Q, R-F8BV-MN0F, R-F9JS-0ER4
+- D36 → `project/design/D36.md` — Site lifecycle against the plane: `create` makes the repository (local first, undone on plane failure), `delete` archives before removing, a slug change (every transition into unlisted, and leaving it with `new_slug`) renames the repository key, and a tier-only visibility change or a display-name `rename` makes no plane call — owns R-FARO-E6HT, R-FBZK-RY8I, R-FD7H-5PZ7, R-FEFD-JHPW
+- D37 → `project/design/D37.md` — Seeding pre-plane sites: an additive, re-runnable background pass at startup keyed on `repo_seeded = 0` that creates each site's repository and commits its current served tree as one initial commit, never moving, rewriting, or deleting anything under `SITES_ROOT` — owns R-FFN9-X9GL, R-FGV6-B17A, R-FI32-OSXZ
+
+**Retired numbers.** No Decision number has been retired; `D01`–`D37` are all live. Retired **ids** are never reused either: `R-P21E-0285` (D13's former empty-event-graph reflection pin) was deleted when sites became an event-plane consumer and is replaced by `R-FJAZ-2KOO`.
 
 ## Verification ids → Decision
 
@@ -107,6 +115,31 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-D28W-PWQ4 → D25 → `project/design/D25.md`
 - R-D3GT-3OGT → D25 → `project/design/D25.md`
 - R-DB3A-15YZ → D13 → `project/design/D13.md`
+- R-EOTH-IB5B → D32 → `project/design/D32.md`
+- R-EQ1D-W2W0 → D32 → `project/design/D32.md`
+- R-ER9A-9UMP → D32 → `project/design/D32.md`
+- R-ESH6-NMDE → D33 → `project/design/D33.md`
+- R-ETP3-1E43 → D33 → `project/design/D33.md`
+- R-EUWZ-F5US → D33 → `project/design/D33.md`
+- R-EW4V-SXLH → D33 → `project/design/D33.md`
+- R-EXCS-6PC6 → D33 → `project/design/D33.md`
+- R-EYKO-KH2V → D34 → `project/design/D34.md`
+- R-EZSK-Y8TK → D34 → `project/design/D34.md`
+- R-F28D-PSAY → D34 → `project/design/D34.md`
+- R-F3GA-3K1N → D35 → `project/design/D35.md`
+- R-F4O6-HBSC → D35 → `project/design/D35.md`
+- R-F5W2-V3J1 → D35 → `project/design/D35.md`
+- R-F73Z-8V9Q → D35 → `project/design/D35.md`
+- R-F8BV-MN0F → D35 → `project/design/D35.md`
+- R-F9JS-0ER4 → D35 → `project/design/D35.md`
+- R-FARO-E6HT → D36 → `project/design/D36.md`
+- R-FBZK-RY8I → D36 → `project/design/D36.md`
+- R-FD7H-5PZ7 → D36 → `project/design/D36.md`
+- R-FEFD-JHPW → D36 → `project/design/D36.md`
+- R-FFN9-X9GL → D37 → `project/design/D37.md`
+- R-FGV6-B17A → D37 → `project/design/D37.md`
+- R-FI32-OSXZ → D37 → `project/design/D37.md`
+- R-FJAZ-2KOO → D13 → `project/design/D13.md`
 - R-H5H4-GTWA → D16 → `project/design/D16.md`
 - R-H6P0-ULMZ → D16 → `project/design/D16.md`
 - R-H7WX-8DDO → D27 → `project/design/D27.md`
@@ -128,6 +161,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-LAND-5E2M → D1 → `project/design/D01.md`
 - R-LAND-7G4P → D1 → `project/design/D01.md`
 - R-LAND-9J6R → D1 → `project/design/D01.md`
+- R-NF7R-V95S → D32 → `project/design/D32.md`
+- R-NGFO-90WH → D32 → `project/design/D32.md`
 - R-NGNX-3P6T → D4 → `project/design/D04.md`
 - R-NGNX-5R8V → D4 → `project/design/D04.md`
 - R-NGNX-7T1X → D4 → `project/design/D04.md`
@@ -137,7 +172,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-NN9H-UKP3 → D23 → `project/design/D23.md`
 - R-O1AD-MRKW → D31 → `project/design/D31.md` (adopted from root `project/design/D23.md`)
 - R-O2IA-0JBL → D31 → `project/design/D31.md` (adopted from root `project/design/D23.md`)
-- R-P21E-0285 → D13 → `project/design/D13.md`
+- R-OEVK-U243 → D35 → `project/design/D35.md`
+- R-OG3H-7TUS → D15 → `project/design/D15.md`
 - R-QYP6-P587 → D16 → `project/design/D16.md`
 - R-QZX3-2WYW → D17 → `project/design/D17.md`
 - R-R14Z-GOPL → D17 → `project/design/D17.md`
@@ -154,9 +190,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-4Q8B → D2 → `project/design/D02.md`
 - R-ROUT-6S1D → D2 → `project/design/D02.md`
 - R-ROUT-8U3F → D2 → `project/design/D02.md`
+- R-VKB6-SHHV → D30 → `project/design/D30.md` (adopted from root `project/design/D11.md`)
 - R-VYEF-053C → D23 → `project/design/D23.md`
 - R-VZMB-DWU1 → D23 → `project/design/D23.md`
-- R-VKB6-SHHV → D30 → `project/design/D30.md` (adopted from root `project/design/D11.md`)
 - R-WKGI-FVFJ → D6 → `project/design/D06.md`
 - R-WLOE-TN68 → D6 → `project/design/D06.md`
 - R-XVIT-1NXD → D24 → `project/design/D24.md`

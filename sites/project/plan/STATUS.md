@@ -9,4 +9,13 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 48
+Next phase: 56
+
+- Phase 48 ⬜ realizes D15 (slice) — version-plane columns (`repo_sha`, `repo_seeded`) by additive migration, and their store accessors
+- Phase 49 ⬜ realizes D32 (slice) — `sites.VersionClient`: the version-plane client and the conforming recording test server
+- Phase 50 ⬜ realizes D33, D32 (slice) — the write path: mutating file tools commit through repos, then apply to the copy
+- Phase 51 ⬜ realizes D34 — `sync` reconciles as one batch commit, then updates the copy
+- Phase 52 ⬜ realizes D36 — site lifecycle against the plane: create, delete (archive), slug rotation
+- Phase 53 ⬜ realizes D35 — the `repos:push` materializer: re-materialize on `main`, ignore branches, skip unknown slugs, refuse bad exports
+- Phase 54 ⬜ realizes D37 — the additive, re-runnable seeding pass for pre-plane sites
+- Phase 55 ⬜ realizes D13 (slice), D32 (slice) — compose the plane at the root: client, `repos` consumer, background seeding, doc truth

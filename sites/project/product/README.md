@@ -8,15 +8,6 @@ proof live in `project/design/README.md`. Where the two touch observable
 behavior, product states the *promise* and design states the *exact, checkable
 form*; that boundary keeps product, design, and plan from overlapping.
 
-> **History note.** sites originally shipped a **publish/unpublish lifecycle**: a
-> site had an editable *working tree*, and "publishing" it created a symlink into
-> a per-visibility *served tree* that **nginx served straight off disk** via
-> `alias`. That machinery is being removed (it duplicated in the filesystem a
-> fact the database already held, purely so nginx — which cannot read the DB —
-> could serve it). This product doc states the **current** model; the publish
-> lifecycle, the working tree, the served symlinks, and disk-serving by nginx are
-> gone. History of the change lives in the plan.
-
 ## Problem
 
 A single-box customer wants to host a handful of small static websites — a
@@ -25,12 +16,14 @@ separate hosting, and to manage them the same way they manage everything else on
 the box: by talking to an agent over MCP. They also, occasionally, open the
 service in a browser to see what sites exist and confirm the service is up.
 
-The earlier design solved the hosting need but accreted complexity an agent
-added: a create → edit-a-working-tree → **publish-to-a-tier** lifecycle, with the
-published content represented as a **symlink tree served off disk by nginx**.
-That is more moving parts than the job needs — the database already knows which
-sites exist and whether each is public, so re-encoding that as an on-disk symlink
-tree for nginx's benefit is redundant state that can drift.
+Two things go wrong with a site an agent edits by voice. **Mistakes are
+unrecoverable**: an agent asked to "tidy up the homepage" can replace a page the
+owner liked, and there is nothing to go back to — no previous version, no record
+of what changed or who asked for it. And **the only way in is the agent**: an
+owner who wants to work in their own editor, on their laptop, with the tools they
+already use, has no way to get the files down and no way to get them back up.
+Both are solved by the same thing, and it is a thing the owner should never have
+to set up, think about, or maintain.
 
 ## Purpose
 
@@ -51,6 +44,15 @@ the **sites process itself serves the site bytes** over its loopback HTTP
 server, behind the nginx front door. A human who opens the service root in a
 browser gets a **landing page** that shows the service version and lists the
 sites that exist.
+
+Every site is **version-controlled without anyone asking for it**. Each one is
+backed by a repository the suite keeps, so every edit — by an agent, by a
+Dropbox import, by the owner's own laptop — is recorded as a point in that
+site's history. Nobody performs a version-control action to get this: there is
+nothing to initialize, nothing to commit, nothing to push, and nothing new in
+the tools. It is simply already true the day the owner wants to know what
+changed, wants a page back the way it was, or wants to check the site out on
+their laptop and work on it there.
 
 ## Users
 
@@ -127,13 +129,26 @@ sites does this and only this:
 - **Import from a Dropbox mirror.** The `sync` tool reconciles a Dropbox-mirrored
   subtree into an **already-created** site's files (the site must be created
   first; `sync` never brings a site into being). It writes directly into the
-  site's served folder and leaves the site's visibility unchanged.
+  site's served folder and leaves the site's visibility unchanged. One import is
+  recorded as one point in the site's history, not one per file.
+- **Keep every site's full history, invisibly.** Every site is backed by a
+  repository the suite maintains. Creating a site creates it; every edit through
+  any of the tools is recorded in it; deleting a site keeps it. The owner never
+  performs a version-control step and never sees one in the tool surface — the
+  history is a consequence of using sites normally.
+- **Let the owner work from their laptop.** A site can be checked out, edited,
+  and pushed back through the suite's own git door with the owner's credential,
+  and what they push to the live branch becomes what the site serves — with no
+  deploy step and no separate publish. sites does not host that door or mint
+  those credentials; it makes sure a site's served files follow what is pushed.
 
 It deliberately does **nothing else**. In particular it does not: keep any
 publish/unpublish lifecycle, working tree, or served-symlink tree; let nginx
 serve site files off disk; offer any "draft" or "offline-but-exists" state; run
-any token or session logic itself (nginx is the sole trust boundary); or host
-anything but static files.
+any token or session logic itself (nginx is the sole trust boundary); host
+anything but static files; or put any version-control verb — commit, branch,
+merge, revert, history — into its own tool surface. Reading or rewriting a
+site's history is done through the suite's development plane, not here.
 
 ## Contractual constants
 
@@ -154,6 +169,17 @@ Promised values the design must honor verbatim and never re-declare:
   state: creating a site and putting files in it makes it live; deleting it takes
   it offline. Choosing the visibility at create, and changing it thereafter, are
   the only visibility controls.
+- **Every site is version-controlled, and versioning is never a user action.**
+  A site's history exists from the moment it is created and records every edit
+  thereafter. No tool asks the owner to commit, push, initialize, or configure
+  anything, and no tool can turn versioning off for a site.
+- **What the site serves is what its live branch says.** The served files are a
+  copy of the site's repository at its live branch; a change pushed there
+  becomes what visitors get, and a change made through the tools is live at once
+  and recorded at once. The two are never separate steps.
+- **Deleting a site takes it offline but does not destroy its history.** The
+  site stops being served and disappears from the owner's list; its recorded
+  history is retained rather than erased.
 - **sites serves every byte under its mount.** For any path under
   `/srv/sites/…`, the bytes come from the sites process — nginx proxies, it does
   not serve site files off disk.
@@ -208,9 +234,27 @@ Promised values the design must honor verbatim and never re-declare:
 - **Changing a site's visibility changes who can reach it** — one tool call,
   and the site's URL and access change accordingly; it is never reachable under
   more than one visibility at once.
-- **Deleting a site takes it offline** — its files stop being served and its
-  record is gone. There is no lingering "unpublished" state; delete is how a site
-  goes away.
+- **Deleting a site takes it offline, and keeps its history.** Its files stop
+  being served and its record is gone from the owner's list; there is no
+  lingering "unpublished" state, and delete is how a site goes away. What the
+  site was, and every change it went through, is retained rather than destroyed —
+  so a deletion made in haste is not the end of the work.
+- **Every edit is recorded, and the owner does nothing to make that happen.**
+  Writing a file, editing one, or running an import records that change in the
+  site's history, attributed to whoever made it, in the same call that makes the
+  edit live. There is no commit step, no publish step, and no setting to turn on.
+  An import is recorded as the one change it was, not as a change per file.
+- **A site can be worked on from a laptop, and a push goes live.** The owner can
+  check a site out with their own credential, edit it in their own editor, and
+  push it back; the pushed version becomes what the site serves shortly
+  afterwards, with no further action here. Work pushed to a side branch is not
+  served — only the live branch is.
+- **If the history cannot be recorded, the edit does not happen.** In the rare
+  case that the service holding the histories is unreachable, a tool that would
+  change a site's files fails and says so, and the site is left exactly as it
+  was. The owner is never told an edit succeeded when nothing recorded it, and a
+  site never ends up serving content that exists in no history. Reading a site,
+  listing sites, and viewing the landing page are unaffected.
 - **The landing page lists the sites that exist** — a logged-in human opening the
   bare `/srv/sites/` sees the running version and a row per site showing its
   name, its visibility (public, private, or unlisted), who created it, and when.
@@ -282,7 +326,25 @@ service:
   a request with a valid session.
 - I change a site's visibility with one tool call and its reachability changes
   accordingly; it is never served under more than one visibility at once.
-- I delete a site and its URL stops serving its files.
+- I delete a site and its URL stops serving its files, and it leaves my list —
+  and its history is still retained afterwards rather than destroyed.
+- As the owner I create a site and write two files into it through the tools,
+  and afterwards the site's recorded history contains those changes attributed
+  to me — without my having run any version-control step, and without any such
+  step appearing among the tools I was offered.
+- As the owner I check a site out on my laptop with my own credential, change a
+  page, and push it to the live branch; shortly afterwards the site's URL serves
+  my changed page, and a file I deleted in that push is no longer served. A push
+  I make to a side branch instead changes nothing about what the site serves.
+- As the owner I run an import for a site with a hundred files and the site's
+  history shows that import as **one** recorded change, not a hundred.
+- As the owner, when the service that holds the histories is down, a `file_write`
+  fails with a clear "try again" style refusal and the site's files are exactly
+  what they were before — nothing half-applied, nothing silently unrecorded —
+  while reading the site, listing sites, and the landing page all still work.
+- As the owner of sites that existed before any of this, I find nothing about
+  them changed — same URLs, same files, same names, same visibilities — and they
+  are now version-controlled like everything else, with no action from me.
 - As a logged-in dashboard user I open `<account>.ikigenba.com/srv/sites/` and see
   a Carbon-styled page showing the running version and a row for each site with
   its name, visibility (public, private, or unlisted), creator, and creation
