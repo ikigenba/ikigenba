@@ -9,4 +9,6 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 47
+Next phase: 48
+
+- Phase 47 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — declare sites' testing facts in `AGENTS.md` (layers, preconditions, gate command, GOWORK mode) and prove the declaration plus the skip ban with two tagged tests

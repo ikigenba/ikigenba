@@ -34,6 +34,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D28 → `project/design/D28.md` — The dropbox mirror client takes the Router-provided instrumented outbound HTTP client (`rt.HTTPClient(…)`, injected into `NewMirrorClient` from the composition root; every `/list` page and `/content` fetch goes through it, and the live request context reaches it end to end through the `sync` MCP verb; the header logic and `outbound` recording are appkit's and are not re-proven here; sites produces no events, so the `eventplane` `Append` change cannot reach it) — owns R-BOE2-6LI3, R-BPLY-KD8S
 - D29 → `project/design/D29.md` — nginx fragment: all four gated locations capture the introspection-minted correlation id with `auth_request_set` and overwrite `X-Correlation-Id` on the upstream request; both ungated proxying locations (PRM bootstrap, the public site tier) set it to `""` so the chassis mints — owns R-BN65-STRE, R-9CMM-G2ZU
 - D30 → `project/design/D30.md` — The served-tree root composes from `IKIGENBA_ROOT`; no box-path literal in sites code — owns R-YWR7-Z1GM, R-YXZ4-CT7B; adopts R-VKB6-SHHV (root `project/design/D11.md`)
+- D31 → `project/design/D31.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): hermetic + composed layers, no live layer, no manual runbook, the `google-chrome` and `go`-on-`PATH` preconditions, workspace GOWORK mode — mints none; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 
 ## Verification ids → Decision
 
@@ -134,6 +135,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-NKTP-317P → D6 → `project/design/D06.md`
 - R-NM1L-GSYE → D6 → `project/design/D06.md`
 - R-NN9H-UKP3 → D23 → `project/design/D23.md`
+- R-O1AD-MRKW → D31 → `project/design/D31.md` (adopted from root `project/design/D23.md`)
+- R-O2IA-0JBL → D31 → `project/design/D31.md` (adopted from root `project/design/D23.md`)
 - R-P21E-0285 → D13 → `project/design/D13.md`
 - R-QYP6-P587 → D16 → `project/design/D16.md`
 - R-QZX3-2WYW → D17 → `project/design/D17.md`

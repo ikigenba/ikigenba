@@ -55,6 +55,13 @@ Shared facts every Decision leans on:
   `/usr/bin/google-chrome`). No Chrome → the suite is red, never skipped. The
   harness may retry the browser *launch* once; scenario assertions are never
   retried.
+- **Test layers.** The suite's testing vocabulary — the hermetic / composed /
+  live / manual layers, what each may touch, the single `//go:build live`
+  mechanism, and the ban on `t.Skip` outside live-tagged files — is the contract
+  `root project/design/D23.md`, cited and not restated here. (The `root` prefix
+  matters: this tree has its own local D23.) sites' own layer facts — hermetic
+  plus composed in the default gate, no live layer, no manual runbook, and the
+  `google-chrome` and `go`-on-`PATH` preconditions — are recorded in D31.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Migrations are timestamped and immutable.** Schema lives under
   `sites/internal/db/migrations/`, applied forward-only by the appkit runner and
@@ -164,7 +171,13 @@ D17.
 
 ## Testing strategy
 
-Testing is part of the architecture. The cross-cutting approach:
+Testing is part of the architecture. Every approach below is **hermetic** in the
+sense of `root project/design/D23.md` — temp-dir filesystems, real SQLite through
+the real migration runner, `httptest`, in-process JS evaluation, committed-file
+reads, and local subprocesses (`go list`, a headless browser on loopback) — with
+the single exception of the **composed** boot smoke in `cmd/sites/main_test.go`,
+which builds and runs sites' own binary. The layer names are the contract's; D31
+records which layers this tree has. The cross-cutting approach:
 
 - **The static server is tested over a temp `SITES_ROOT` with
   `net/http/httptest`.** Tests build a real directory tree under a `t.TempDir()`
