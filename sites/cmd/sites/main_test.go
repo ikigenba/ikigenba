@@ -227,7 +227,8 @@ func TestSitesSpecEnablesChassisWWWAndKeepsMCPWiring(t *testing.T) {
 		`CreatedAt:     s.CreatedAt.UTC().Format(time.RFC3339),`,
 		`renderer.Render(w, "landing.html", view)`,
 		`mirror := sites.NewMirrorClient(base, rt.HTTPClient(30*time.Second))`,
-		`handler, err := mcp.NewHandler(store, layout, baseURL, mirror, rt)`,
+		`version := sites.NewVersionClient(registry.BaseURL("repos"), rt.HTTPClient(30*time.Second))`,
+		`handler, err := mcp.NewHandler(store, layout, baseURL, mirror, version, rt)`,
 		`if err != nil {`,
 		`rt.Handle("POST /mcp", rt.RequireIdentity(handler))`,
 	} {

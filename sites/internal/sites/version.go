@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"appkit"
 )
 
 // Commit identifies one commit on a repository's main branch.
@@ -53,6 +55,27 @@ var ErrVersionUnavailable = errors.New("version plane unavailable")
 type versionHTTPClient struct {
 	base string
 	hc   *http.Client
+}
+
+type versionActorContextKey struct{}
+
+// WithVersionActor carries the acting client attribution without changing the
+// VersionClient interface shared by service and background callers.
+func WithVersionActor(ctx context.Context, actor string) context.Context {
+	if actor == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, versionActorContextKey{}, actor)
+}
+
+func versionActor(ctx context.Context, slug string) string {
+	if actor, ok := ctx.Value(versionActorContextKey{}).(string); ok && actor != "" {
+		return actor
+	}
+	if identity, ok := appkit.IdentityFrom(ctx); ok && identity.ClientID != "" {
+		return identity.ClientID
+	}
+	return clientID(slug)
 }
 
 // NewVersionClient constructs the sole production version-plane client.
@@ -105,7 +128,7 @@ func (c *versionHTTPClient) Commit(ctx context.Context, slug, message string, ch
 	}
 	body, err := json.Marshal(map[string]any{
 		"kind": "sites", "name": slug, "message": message,
-		"actor": clientID(slug), "changes": wireChanges,
+		"actor": versionActor(ctx, slug), "changes": wireChanges,
 	})
 	if err != nil {
 		return Commit{}, fmt.Errorf("encode version commit: %w", err)
@@ -115,6 +138,7 @@ func (c *versionHTTPClient) Commit(ctx context.Context, slug, message string, ch
 		return Commit{}, fmt.Errorf("build version commit request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Client-Id", versionActor(ctx, slug))
 	response, err := c.do(request)
 	if err != nil {
 		return Commit{}, err
@@ -175,7 +199,7 @@ func (c *versionHTTPClient) callTool(ctx context.Context, slug string, owner Own
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("X-Owner-Id", owner.ID)
 	request.Header.Set("X-Owner-Email", owner.Email)
-	request.Header.Set("X-Client-Id", clientID(slug))
+	request.Header.Set("X-Client-Id", versionActor(ctx, slug))
 	response, err := c.do(request)
 	if err != nil {
 		return err

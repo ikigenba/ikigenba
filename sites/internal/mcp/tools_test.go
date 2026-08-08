@@ -39,6 +39,18 @@ type testHandler struct {
 	layout sites.Layout
 }
 
+type testVersionClient struct{}
+
+func (testVersionClient) Create(context.Context, string, sites.Owner) error { return nil }
+func (testVersionClient) Commit(_ context.Context, _ string, _ string, _ []sites.FileChange) (sites.Commit, error) {
+	return sites.Commit{Sha: "test-commit-sha"}, nil
+}
+func (testVersionClient) Export(context.Context, string) ([]sites.TreeEntry, sites.Commit, error) {
+	return nil, sites.Commit{}, nil
+}
+func (testVersionClient) Rename(context.Context, string, string, sites.Owner) error { return nil }
+func (testVersionClient) Delete(context.Context, string, sites.Owner) error         { return nil }
+
 // newTestHandler stands up a temp DB (migrated) and a temp SITES_ROOT, returning
 // a wired appkit MCP handler plus the root for filesystem assertions.
 func newTestHandler(t *testing.T, mirror ...sites.MirrorClient) (*testHandler, string) {
@@ -46,6 +58,14 @@ func newTestHandler(t *testing.T, mirror ...sites.MirrorClient) (*testHandler, s
 }
 
 func newTestHandlerWithToken(t *testing.T, newToken func() string, mirror ...sites.MirrorClient) (*testHandler, string) {
+	return newTestHandlerWithVersionAndToken(t, testVersionClient{}, newToken, mirror...)
+}
+
+func newTestHandlerWithVersion(t *testing.T, version sites.VersionClient) (*testHandler, string) {
+	return newTestHandlerWithVersionAndToken(t, version, nil)
+}
+
+func newTestHandlerWithVersionAndToken(t *testing.T, version sites.VersionClient, newToken func() string, mirror ...sites.MirrorClient) (*testHandler, string) {
 	t.Helper()
 	root := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "sites.db")
@@ -71,7 +91,7 @@ func newTestHandlerWithToken(t *testing.T, newToken func() string, mirror ...sit
 		Service:      testService,
 		Version:      testVersion,
 		Instructions: Instructions,
-		Tools:        toolsWithToken(store, layout, testBaseURL, mc, newToken),
+		Tools:        toolsWithToken(store, layout, testBaseURL, mc, version, newToken),
 	})
 	if err != nil {
 		t.Fatalf("new mcp handler: %v", err)
@@ -427,7 +447,7 @@ func TestOnlyInstructionsAndGuideDescriptionReferenceGuide(t *testing.T) {
 		t.Fatalf("Instructions must reference guide: %q", Instructions)
 	}
 
-	tools := Tools(newTestHandlerStore(t), mustLayout(t, t.TempDir()), testBaseURL, nil)
+	tools := Tools(newTestHandlerStore(t), mustLayout(t, t.TempDir()), testBaseURL, nil, testVersionClient{})
 	foundGuide := false
 	for _, tl := range tools {
 		if tl.Name == "guide" {
@@ -448,7 +468,7 @@ func TestOnlyInstructionsAndGuideDescriptionReferenceGuide(t *testing.T) {
 }
 
 func TestSyncDescriptionNamesDropboxWithoutPublishOrDeploy(t *testing.T) {
-	tools := Tools(newTestHandlerStore(t), mustLayout(t, t.TempDir()), testBaseURL, nil)
+	tools := Tools(newTestHandlerStore(t), mustLayout(t, t.TempDir()), testBaseURL, nil, testVersionClient{})
 	var syncDesc string
 	for _, tl := range tools {
 		if tl.Name == "sync" {

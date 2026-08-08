@@ -99,7 +99,8 @@ func sitesSpec() appkit.Spec {
 			// decision 2). The client derives <base>/list and <base>/content.
 			base := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", registry.BaseURL("dropbox"))
 			mirror := sites.NewMirrorClient(base, rt.HTTPClient(30*time.Second))
-			handler, err := mcp.NewHandler(store, layout, baseURL, mirror, rt)
+			version := sites.NewVersionClient(registry.BaseURL("repos"), rt.HTTPClient(30*time.Second))
+			handler, err := mcp.NewHandler(store, layout, baseURL, mirror, version, rt)
 			if err != nil {
 				return err
 			}

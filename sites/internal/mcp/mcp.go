@@ -24,7 +24,7 @@ const Instructions = "Host small static websites on this box — web pages, " +
 // NewHandler builds the POST /mcp handler from the appkit Router seam. The
 // shared transport owns JSON-RPC, health, and reflection; sites declares only
 // its domain tools.
-func NewHandler(store *sites.Store, layout sites.Layout, baseURL string, mirror sites.MirrorClient, rt *appkit.Router) (http.Handler, error) {
+func NewHandler(store *sites.Store, layout sites.Layout, baseURL string, mirror sites.MirrorClient, version sites.VersionClient, rt *appkit.Router) (http.Handler, error) {
 	if store == nil {
 		panic("mcp: sites store is required")
 	}
@@ -35,7 +35,7 @@ func NewHandler(store *sites.Store, layout sites.Layout, baseURL string, mirror 
 		Service:       rt.Service(),
 		Version:       rt.Version(),
 		Instructions:  Instructions,
-		Tools:         Tools(store, layout, baseURL, mirror),
+		Tools:         Tools(store, layout, baseURL, mirror, version),
 		Health:        rt.Health(),
 		Events:        rt.Events(),
 		Publishes:     rt.Publishes(),

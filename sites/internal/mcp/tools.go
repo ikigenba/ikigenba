@@ -27,6 +27,7 @@ type toolHandlers struct {
 	layout   sites.Layout
 	baseURL  string
 	mirror   sites.MirrorClient
+	version  sites.VersionClient
 	newToken func() string
 }
 
@@ -35,18 +36,21 @@ var guideDoc string
 
 // Tools returns sites's service-owned MCP tool declarations. The shared appkit
 // MCP transport prepends the chassis health and reflection tools.
-func Tools(store *sites.Store, layout sites.Layout, baseURL string, mirror sites.MirrorClient) []appkitmcp.Tool {
-	return toolsWithToken(store, layout, baseURL, mirror, sites.NewToken)
+func Tools(store *sites.Store, layout sites.Layout, baseURL string, mirror sites.MirrorClient, version sites.VersionClient) []appkitmcp.Tool {
+	return toolsWithToken(store, layout, baseURL, mirror, version, sites.NewToken)
 }
 
-func toolsWithToken(store *sites.Store, layout sites.Layout, baseURL string, mirror sites.MirrorClient, newToken func() string) []appkitmcp.Tool {
+func toolsWithToken(store *sites.Store, layout sites.Layout, baseURL string, mirror sites.MirrorClient, version sites.VersionClient, newToken func() string) []appkitmcp.Tool {
 	if store == nil {
 		panic("mcp: sites store is required")
+	}
+	if version == nil {
+		panic("mcp: version client is required")
 	}
 	if newToken == nil {
 		newToken = sites.NewToken
 	}
-	h := &toolHandlers{store: store, layout: layout, baseURL: baseURL, mirror: mirror, newToken: newToken}
+	h := &toolHandlers{store: store, layout: layout, baseURL: baseURL, mirror: mirror, version: version, newToken: newToken}
 	return []appkitmcp.Tool{
 		desc(tool("guide"), "Return the sites usage guide — the site model, name/slug and "+
 			"confinement rules, and worked basic/advanced examples (create a public page in "+
@@ -101,8 +105,8 @@ func toolsWithToken(store *sites.Store, layout sites.Layout, baseURL string, mir
 			"file_path": descTyp("string", "path relative to the site's current root (confined; absolute and '..' rejected)"),
 			"content":   descTyp("string", "the bytes to write"),
 			"append":    descTyp("boolean", "append to the file instead of overwriting; creates the file if missing (default false)"),
-		}, "site", "file_path", "content"), obj(map[string]any{"written": map[string]any{"type": "string"}, "site": map[string]any{"type": "string"}, "appended": map[string]any{"type": "boolean"}}, "written", "site", "appended"), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
-			return h.toolFileWrite(ctx, args)
+		}, "site", "file_path", "content"), obj(map[string]any{"written": map[string]any{"type": "string"}, "site": map[string]any{"type": "string"}, "appended": map[string]any{"type": "boolean"}}, "written", "site", "appended"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+			return h.toolFileWrite(ctx, args, id)
 		}),
 		desc(tool("file_read"), "Read a file inside a site's live directory for its current visibility. Optional offset/limit page large files.", obj(map[string]any{
 			"site":      descTyp("string", "site slug whose current directory is the sandbox root"),
@@ -118,8 +122,8 @@ func toolsWithToken(store *sites.Store, layout sites.Layout, baseURL string, mir
 			"old_string":  descTyp("string", "existing text to replace"),
 			"new_string":  descTyp("string", "replacement text"),
 			"replace_all": descTyp("boolean", "replace every occurrence instead of only the first"),
-		}, "site", "file_path", "old_string", "new_string"), obj(map[string]any{"edited": map[string]any{"type": "string"}, "site": map[string]any{"type": "string"}, "replaced": map[string]any{"type": "integer"}}, "edited", "site", "replaced"), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
-			return h.toolFileEdit(ctx, args)
+		}, "site", "file_path", "old_string", "new_string"), obj(map[string]any{"edited": map[string]any{"type": "string"}, "site": map[string]any{"type": "string"}, "replaced": map[string]any{"type": "integer"}}, "edited", "site", "replaced"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+			return h.toolFileEdit(ctx, args, id)
 		}),
 		descOut(tool("file_glob"), "Glob for files inside a site's live directory for its current visibility.", obj(map[string]any{
 			"site":    descTyp("string", "site slug whose current directory is the sandbox root"),
