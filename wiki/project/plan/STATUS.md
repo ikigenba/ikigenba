@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 126
-
-- Phase 125 ⬜ realizes D73 — testing-language conformance: move the three env-gated smokes behind `//go:build live` with hard-fail credentials, declare the tree's testing facts, and add the two adopted conformance tests
