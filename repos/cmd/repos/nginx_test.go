@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -135,6 +136,57 @@ func TestNginxFragmentForwardsBearerOwnerAndClientIdentity(t *testing.T) {
 	}
 }
 
+func TestNginxFragmentGitDoorAuthenticatesAndStreams(t *testing.T) {
+	// R-J3QD-3HFN
+	contents, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitDoor := nginxBlock(t, string(contents), "location /srv/repos/git/ {")
+	upstream := registry.BaseURL("repos")
+	for _, directive := range []string{
+		"auth_request /_authn;",
+		"auth_request_set $repos_git_owner $upstream_http_x_owner_email;",
+		"auth_request_set $repos_git_owner_id $upstream_http_x_owner_id;",
+		"auth_request_set $repos_git_client $upstream_http_x_client_id;",
+		"auth_request_set $repos_git_correlation $upstream_http_x_correlation_id;",
+		"proxy_set_header X-Owner-Email $repos_git_owner;",
+		"proxy_set_header X-Owner-Id $repos_git_owner_id;",
+		"proxy_set_header X-Client-Id $repos_git_client;",
+		"proxy_set_header X-Correlation-Id $repos_git_correlation;",
+		"client_max_body_size 0;",
+		"proxy_request_buffering off;",
+		"proxy_buffering off;",
+		"proxy_pass " + upstream + "/git/;",
+	} {
+		if !strings.Contains(gitDoor, directive) {
+			t.Errorf("git door missing directive %q:\n%s", directive, gitDoor)
+		}
+	}
+	if strings.Contains(gitDoor, "proxy_pass "+upstream+"/;") {
+		t.Errorf("git door proxies to the service root instead of /git/:\n%s", gitDoor)
+	}
+
+	var readTimeout string
+	for _, line := range strings.Split(gitDoor, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "proxy_read_timeout" {
+			readTimeout = strings.TrimSuffix(fields[1], ";")
+			break
+		}
+	}
+	if !strings.HasSuffix(readTimeout, "s") {
+		t.Fatalf("git door proxy_read_timeout = %q, want a value in seconds", readTimeout)
+	}
+	seconds, err := strconv.Atoi(strings.TrimSuffix(readTimeout, "s"))
+	if err != nil {
+		t.Fatalf("parse git door proxy_read_timeout %q: %v", readTimeout, err)
+	}
+	if seconds < 600 {
+		t.Errorf("git door proxy_read_timeout = %ds, want at least 600s", seconds)
+	}
+}
+
 func TestNginxFragmentCapturesAndForwardsGatedCorrelationIDs(t *testing.T) {
 	// R-9DUI-TUQJ
 	contents, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
@@ -142,8 +194,8 @@ func TestNginxFragmentCapturesAndForwardsGatedCorrelationIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	conf := string(contents)
-	if got := countNginxAuthRequestDirectives(conf); got != 3 {
-		t.Fatalf("auth_request directive count = %d, want unchanged gate count 3", got)
+	if got := countNginxAuthRequestDirectives(conf); got != 4 {
+		t.Fatalf("auth_request directive count = %d, want gate count 4", got)
 	}
 
 	for name, gated := range map[string]struct {
@@ -165,6 +217,11 @@ func TestNginxFragmentCapturesAndForwardsGatedCorrelationIDs(t *testing.T) {
 			block:   nginxBlock(t, conf, "location /srv/repos/ {"),
 			capture: "auth_request_set $repos_correlation $upstream_http_x_correlation_id;",
 			forward: "proxy_set_header X-Correlation-Id $repos_correlation;",
+		},
+		"git door": {
+			block:   nginxBlock(t, conf, "location /srv/repos/git/ {"),
+			capture: "auth_request_set $repos_git_correlation $upstream_http_x_correlation_id;",
+			forward: "proxy_set_header X-Correlation-Id $repos_git_correlation;",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -201,6 +258,7 @@ func TestNginxFragmentStripsUngatedPRMCorrelationID(t *testing.T) {
 	for _, header := range []string{
 		"location = /srv/repos/ {",
 		"location /srv/repos/static/ {",
+		"location /srv/repos/git/ {",
 		"location /srv/repos/ {",
 	} {
 		block := nginxBlock(t, conf, header)
