@@ -33,7 +33,23 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- `go test ./...` from `wiki/` (also runnable via `make test`).
+- Default gate: `go test ./...` from `wiki/` (also runnable via `make test`).
+- Layers present: **hermetic**, **composed**, and **live**.
+- Environmental preconditions beyond the Go toolchain: **none**. The
+  `autotune/` scorer executables are committed in-tree and run under the same Go
+  toolchain.
+- GOWORK mode: **workspace**, using the repository-root `go.work`; production
+  builds force `GOWORK=off` through `bin/ship wiki`.
+- Live invocation: `go test -tags live ./...` from `wiki/`. It requires
+  `WIKI_LIVE_PROMPTS_URL` for a running prompts service on loopback and
+  `OPENAI_API_KEY` for the real autotune judge model.
+- Run the live layer at deploy verification, and whenever a change touches the
+  `internal/llm` prompts client, an `autotune/` judge prompt, or a scorer.
+
+The composed layer is the `cmd/wiki` boot and module-wiring coverage plus the
+`internal/db` migration run over the real binary's embedded migrations. The
+hermetic layer is everything else in the default gate, including scorer paths
+run with `SCORE_SKIP_JUDGE=1` over committed fixtures.
 
 ## Versioning
 
