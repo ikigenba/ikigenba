@@ -11,4 +11,6 @@ line and its `phase-NN.md` body file in the completion commit — there is no
 `✅` marker; done is gone. This file deliberately carries **no bare status
 glyph** outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 05
+Next phase: 06
+
+- Phase 05 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — declare registry's testing facts in `AGENTS.md` (hermetic-only layers, no preconditions, `GOWORK=off` mode) and prove the declaration and the skip ban with two tagged tests

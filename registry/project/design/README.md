@@ -49,6 +49,13 @@ Shared facts every Decision leans on.
   over it. No I/O, no environment reads, no clock, no randomness — so every claim
   below is falsifiable by a plain in-process test against the real code (there is
   no external substrate to stub, and none is needed).
+- **Test layers.** The suite's testing vocabulary — the hermetic / composed /
+  live / manual layers and what each may touch, the single `//go:build live`
+  mechanism, and the ban on `t.Skip` outside live-tagged files — is the contract
+  `root project/design/D23.md`, cited and not restated here. Given the purity
+  above, every test in this tree is **hermetic**; registry has no composed, live,
+  or manual layer. D4 records registry's full declaration, including its
+  `GOWORK=off` mode and its lack of any precondition beyond the Go toolchain.
 
 ## Layout
 
