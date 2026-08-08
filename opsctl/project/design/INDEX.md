@@ -21,6 +21,7 @@ Verification ids change.
 - D13 → `project/design/D13.md` — opsctl-owned `backup` / `restore`, S3-only (stop·snapshot·start) — owns `R-4GOT-W83B`, `R-4HWQ-9ZU0`, `R-4J4M-NRKP`, `R-4KCJ-1JBE`, `R-82FY-GAL6`, `R-TAOX-5LKS`, `R-TBWT-JDBH`
 - D14 → `project/design/D14.md` — Scheduled nightly backup (systemd timer + box sweep) — owns `R-RNKC-HAW8`, `R-ROS8-V2MX`
 - D15 → `project/design/D15.md` — stage / deploy / rollback / prune orchestration — owns `R-84VR-7U2K`, `R-863N-LLT9`, `R-87BJ-ZDJY`, `R-88JG-D5AN`, `R-89RC-QX1C`, `R-8AZ9-4OS1`, `R-8C75-IGIQ`, `R-I80H-SAQ3`
+- D16 → `project/design/D16.md` — Stage preflight without the retired manifest verb; one version channel — owns `R-TA75-P0NF`, `R-TBF2-2SE4`
 
 ## Verification ids → Decision
 
@@ -69,7 +70,9 @@ Verification ids change.
 - R-QFXB-VARQ → D7 — `project/design/D07.md`
 - R-RNKC-HAW8 → D14 — `project/design/D14.md`
 - R-ROS8-V2MX → D14 — `project/design/D14.md`
+- R-TA75-P0NF → D16 — `project/design/D16.md`
 - R-TAOX-5LKS → D13 — `project/design/D13.md`
+- R-TBF2-2SE4 → D16 — `project/design/D16.md`
 - R-TBWT-JDBH → D13 — `project/design/D13.md`
 - R-WP3M-PO1V → D1 — `project/design/D01.md`
 - R-WQBJ-3FSK → D1 — `project/design/D01.md`

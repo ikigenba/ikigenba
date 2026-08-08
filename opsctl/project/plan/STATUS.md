@@ -10,4 +10,6 @@ is no done marker; done is gone. This file deliberately carries **no bare
 status glyph** outside phase lines, so the anchored grep matches only phase
 lines.
 
-Next phase: 20
+Next phase: 21
+
+- Phase 20 ⬜ realizes R-TA75-P0NF, R-TBF2-2SE4 — stage preflight off the manifest verb; delete the dead commit channel
