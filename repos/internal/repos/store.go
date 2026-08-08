@@ -72,7 +72,23 @@ func (s *Store) InsertRepository(ctx context.Context, tx *sql.Tx, repository Rep
 func (s *Store) GetRepository(ctx context.Context, kind, name string) (Repository, error) {
 	return scanRepository(s.db.QueryRowContext(ctx, `
 		SELECT kind, name, owner_id, owner_email, default_branch, archived_at, archived_path, created_at
-		FROM repositories WHERE kind = ? AND name = ?`, kind, name))
+		FROM repositories WHERE kind = ? AND name = ?
+		ORDER BY archived_at IS NULL DESC, archived_at DESC LIMIT 1`, kind, name))
+}
+
+func (s *Store) GetLiveRepository(ctx context.Context, ownerID, kind, name string) (Repository, error) {
+	return scanRepository(s.db.QueryRowContext(ctx, `
+		SELECT kind, name, owner_id, owner_email, default_branch, archived_at, archived_path, created_at
+		FROM repositories
+		WHERE owner_id = ? AND kind = ? AND name = ? AND archived_at IS NULL`, ownerID, kind, name))
+}
+
+func (s *Store) GetArchivedRepository(ctx context.Context, ownerID, kind, name string) (Repository, error) {
+	return scanRepository(s.db.QueryRowContext(ctx, `
+		SELECT kind, name, owner_id, owner_email, default_branch, archived_at, archived_path, created_at
+		FROM repositories
+		WHERE owner_id = ? AND kind = ? AND name = ? AND archived_at IS NOT NULL
+		ORDER BY archived_at DESC LIMIT 1`, ownerID, kind, name))
 }
 
 func (s *Store) ListRepositories(ctx context.Context, ownerID string, kind *string) ([]Repository, error) {
@@ -105,7 +121,7 @@ func (s *Store) RenameRepository(ctx context.Context, tx *sql.Tx, kind, name, ne
 	if err := requireTx(tx); err != nil {
 		return err
 	}
-	_, err := tx.ExecContext(ctx, `UPDATE repositories SET name = ? WHERE kind = ? AND name = ?`, newName, kind, name)
+	_, err := tx.ExecContext(ctx, `UPDATE repositories SET name = ? WHERE kind = ? AND name = ? AND archived_at IS NULL`, newName, kind, name)
 	return err
 }
 
@@ -114,7 +130,7 @@ func (s *Store) ArchiveRepository(ctx context.Context, tx *sql.Tx, kind, name st
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
-		UPDATE repositories SET archived_at = ?, archived_path = ? WHERE kind = ? AND name = ?`,
+		UPDATE repositories SET archived_at = ?, archived_path = ? WHERE kind = ? AND name = ? AND archived_at IS NULL`,
 		formatTime(archivedAt), archivedPath, kind, name)
 	return err
 }

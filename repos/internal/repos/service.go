@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"eventplane/outbox"
@@ -34,6 +37,139 @@ func (s *Service) SetMaxCommitBytes(limit int64) { s.maxCommitBytes = limit }
 
 // SetRunTokenTTL configures the lifetime of newly minted run credentials.
 func (s *Service) SetRunTokenTTL(ttl time.Duration) { s.runTokenTTL = ttl }
+
+// RepositoryDetail combines SQLite-owned metadata with refs read from git.
+type RepositoryDetail struct {
+	Repository Repository
+	Head       string
+	Branches   []string
+}
+
+func (s *Service) CreateRepository(ctx context.Context, repository Repository) (Repository, error) {
+	if s.store == nil || s.custody == nil {
+		return Repository{}, fmt.Errorf("repos: create dependencies are not configured")
+	}
+	if !validKind(repository.Kind) || !ValidName(repository.Name) || repository.OwnerID == "" {
+		return Repository{}, fmt.Errorf("%w: invalid repository", ErrValidation)
+	}
+	if err := s.custody.Init(ctx, repository.Kind, repository.Name); err != nil {
+		return Repository{}, err
+	}
+	repository.DefaultBranch = "main"
+	repository.CreatedAt = s.custody.Now()
+	tx, err := s.store.BeginTx(ctx)
+	if err != nil {
+		return Repository{}, err
+	}
+	defer tx.Rollback()
+	if err := s.store.InsertRepository(ctx, tx, repository); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return Repository{}, fmt.Errorf("%w: repository already exists", ErrConflict)
+		}
+		return Repository{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Repository{}, err
+	}
+	return repository, nil
+}
+
+func (s *Service) ListRepositories(ctx context.Context, ownerID string, kind *string) ([]Repository, error) {
+	if s.store == nil {
+		return nil, fmt.Errorf("repos: list store is not configured")
+	}
+	if ownerID == "" || (kind != nil && !validKind(*kind)) {
+		return nil, fmt.Errorf("%w: invalid owner or kind", ErrValidation)
+	}
+	return s.store.ListRepositories(ctx, ownerID, kind)
+}
+
+func (s *Service) GetRepository(ctx context.Context, ownerID, kind, name string) (RepositoryDetail, error) {
+	if s.store == nil || s.custody == nil {
+		return RepositoryDetail{}, fmt.Errorf("repos: get dependencies are not configured")
+	}
+	if !validKind(kind) || !ValidName(name) {
+		return RepositoryDetail{}, fmt.Errorf("%w: invalid repository key", ErrValidation)
+	}
+	repository, err := s.store.GetLiveRepository(ctx, ownerID, kind, name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RepositoryDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return RepositoryDetail{}, err
+	}
+	refs, err := s.custody.Refs(ctx, kind, name)
+	if err != nil {
+		return RepositoryDetail{}, err
+	}
+	branches := make([]string, 0, len(refs))
+	for ref := range refs {
+		branches = append(branches, strings.TrimPrefix(ref, "refs/heads/"))
+	}
+	sort.Strings(branches)
+	return RepositoryDetail{Repository: repository, Head: refs["refs/heads/"+repository.DefaultBranch], Branches: branches}, nil
+}
+
+func (s *Service) RenameRepository(ctx context.Context, ownerID, kind, name, to string) (Repository, error) {
+	detail, err := s.GetRepository(ctx, ownerID, kind, name)
+	if err != nil {
+		return Repository{}, err
+	}
+	if !ValidName(to) {
+		return Repository{}, fmt.Errorf("%w: invalid destination name", ErrValidation)
+	}
+	if err := s.custody.Rename(ctx, kind, name, to); err != nil {
+		return Repository{}, err
+	}
+	tx, err := s.store.BeginTx(ctx)
+	if err != nil {
+		return Repository{}, err
+	}
+	defer tx.Rollback()
+	if err := s.store.RenameRepository(ctx, tx, kind, name, to); err != nil {
+		return Repository{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Repository{}, err
+	}
+	detail.Repository.Name = to
+	return detail.Repository, nil
+}
+
+func (s *Service) DeleteRepository(ctx context.Context, ownerID, kind, name string) (Repository, error) {
+	if s.store == nil || s.custody == nil || s.producer == nil {
+		return Repository{}, fmt.Errorf("repos: archive dependencies are not configured")
+	}
+	_, err := s.store.GetLiveRepository(ctx, ownerID, kind, name)
+	if errors.Is(err, sql.ErrNoRows) {
+		archived, archivedErr := s.store.GetArchivedRepository(ctx, ownerID, kind, name)
+		if errors.Is(archivedErr, sql.ErrNoRows) {
+			return Repository{}, ErrNotFound
+		}
+		return archived, archivedErr
+	}
+	if err != nil {
+		return Repository{}, err
+	}
+	tx, err := s.store.BeginTx(ctx)
+	if err != nil {
+		return Repository{}, err
+	}
+	defer tx.Rollback()
+	_, err = s.ArchiveRepository(ctx, tx, kind, name)
+	if err != nil {
+		return Repository{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Repository{}, err
+	}
+	s.producer.Ring()
+	archived, err := s.store.GetArchivedRepository(ctx, ownerID, kind, name)
+	if err != nil {
+		return Repository{}, err
+	}
+	return archived, nil
+}
 
 // SetStatus records the current verdict from one check for a repository commit.
 func (s *Service) SetStatus(ctx context.Context, status Status) (Status, error) {

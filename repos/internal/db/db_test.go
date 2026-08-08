@@ -31,7 +31,7 @@ func TestEmbeddedMigrationsCreateV2MetadataSchema(t *testing.T) {
 
 	conn := migratedDatabase(t, migrations)
 	want := map[string][]string{
-		"repositories": {"kind", "name", "owner_id", "owner_email", "default_branch", "archived_at", "archived_path", "created_at"},
+		"repositories": {"id", "kind", "name", "owner_id", "owner_email", "default_branch", "archived_at", "archived_path", "created_at"},
 		"statuses":     {"kind", "name", "sha", "check_name", "state", "detail", "actor", "updated_at"},
 		"run_tokens":   {"token_sha256", "kind", "name", "expires_at", "created_at"},
 		"outbox":       {"seq", "event_id", "kind", "subject", "payload", "created_at", "correlation_id"},
@@ -44,12 +44,13 @@ func TestEmbeddedMigrationsCreateV2MetadataSchema(t *testing.T) {
 			t.Errorf("%s columns = %v, want %v", table, got, expected)
 		}
 	}
-	assertPrimaryKey(t, conn, "repositories", map[string]int{"kind": 1, "name": 2})
+	assertPrimaryKey(t, conn, "repositories", map[string]int{"id": 1})
 	assertPrimaryKey(t, conn, "statuses", map[string]int{"kind": 1, "name": 2, "sha": 3, "check_name": 4})
 	assertPrimaryKey(t, conn, "run_tokens", map[string]int{"token_sha256": 1})
 	assertNotNull(t, conn, "repositories", "owner_id")
 	assertNotNull(t, conn, "repositories", "owner_email")
 	assertIndex(t, conn, "repositories", "idx_repositories_owner")
+	assertIndex(t, conn, "repositories", "idx_repositories_live_key")
 	for _, removed := range []string{"repos", "sessions", "feed_offset"} {
 		if tableExists(t, conn, removed) {
 			t.Errorf("legacy table %s still exists", removed)
