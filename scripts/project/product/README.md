@@ -9,9 +9,11 @@ product states the *promise* and design states the *exact, checkable form*; that
 boundary keeps product, design, and plan from overlapping.
 
 > **Scope note.** This product doc covers the new web-pages direction for
-> scripts — the landing page — **and the script runtime contract** (the `suite`
+> scripts — the landing page — **the script runtime contract** (the `suite`
 > module a running script imports, and the addressability of a run's product
-> files; see "The script runtime" below). The rest of scripts's existing domain
+> files; see "The script runtime" below), and **what a script now is**: a
+> version-controlled program rather than a stored file (see "Scripts are
+> version-controlled programs" below). The rest of scripts's existing domain
 > (the deterministic `python3`-exec script runner, the `ikigenba_scripts_*` MCP
 > surface, the event-plane producer of run-completion events
 > (`scripts:succeeded|failed/…`), and the multi-upstream consumer) predates this
@@ -100,6 +102,39 @@ The scripts landing page does this and only this:
   cookie validates against the dashboard's web-session store. An unauthenticated
   browser gets `401`. This is the same coarse session gate `sites` already uses
   for its private static tier.
+
+### Scripts are version-controlled programs
+
+A script is **not a single stored file**. It is a small program under version
+control: a directory of files whose `main.py` is what runs, with history,
+branches, and a checkout the owner can clone onto their laptop. None of that
+requires the owner to do anything: creating a script creates its repository,
+and every edit made through scripts is a commit. Git is invisible until the day
+someone wants it — and then it is already there. In scope:
+
+- **Multi-file scripts.** A script may carry helper modules, templates, and data
+  files beside `main.py`; they are importable and readable when it runs.
+- **Nothing is lost.** Editing a script never destroys what it said before; a
+  deleted script's history is archived, not erased.
+- **A laptop checkout.** The owner can clone a script, work on it with their own
+  tools, and push — the same definition the box runs.
+- **Exactly reproducible runs.** Every run records the exact commit it executed
+  and runs a checkout of that commit, so editing a script never changes what an
+  already-started run is doing, and "what did that run actually run?" always has
+  an answer.
+- **Scripts can be workflows.** A run stands in a real checkout with permission
+  to push branches, so a script can test the code it is standing in, publish a
+  branch, and report the result — and it merges only if its author wrote that
+  step. Nothing merges on its own.
+- **Code changes can start a script.** A script can be triggered by a push to
+  any repository on the box, which is what makes scripts the place automation
+  around code lives.
+
+Deliberately **not** in scope: no review, pipeline, or approval product of its
+own (the checks are ordinary scripts, and the decision to merge is a line the
+author wrote); no second place a script's definition lives; and no ceremony —
+an owner who only ever wants one file writes one file and never sees a
+repository.
 
 ### The script runtime
 
@@ -205,8 +240,23 @@ Promised values the design must honor verbatim and never re-declare:
   its calls to the outside world — stay the run's own record here and are not
   copied anywhere else.
 - **Agents learn the runtime from scripts itself** — an agent that asks scripts
-  to describe itself is taught the `suite` contract well enough to author a
-  working script without reading source code.
+  to describe itself is taught the `suite` contract, and the git-backed model,
+  well enough to author a working script — including a workflow — without
+  reading source code.
+- **Creating a script gives it a history, with no extra step** — the owner
+  creates and edits scripts exactly as before; each edit is recorded, the
+  previous versions remain, and the script can be cloned and pushed to from a
+  laptop whenever the owner wants.
+- **A script can be more than one file** — supporting modules and data files
+  live beside the entrypoint and are available when it runs.
+- **A run says which version it ran, and runs exactly that** — every run
+  reports the commit it executed and executes a checkout of it, so editing a
+  script never disturbs a run already under way.
+- **A deleted script's history survives** — deleting removes the script from
+  the owner's list; its recorded history is archived rather than destroyed.
+- **A script can react to code changes and act on them** — a script can be
+  triggered by a push, work in a checkout, report a result, and merge when its
+  author wrote that step; nothing merges by itself.
 
 ## Success criteria (outcomes)
 
@@ -235,6 +285,20 @@ Each is a result the viewer or operator can confirm against the running service:
   pasted through an intermediary.
 - An agent given only scripts' own self-description authors a working script
   that uses the runtime helper — without hand-rolling HTTP.
+- I create a script, edit it twice, and can still see and recover what it said
+  before each edit; the scripts I had before this change are all still there,
+  with their content intact.
+- I clone one of my scripts onto my laptop, add a second file beside the
+  entrypoint that the entrypoint imports, push it, and the next run uses both
+  files.
+- I start a long run, immediately edit the script, and the running run finishes
+  with the version it started with; asking scripts about that run tells me
+  which version that was.
+- I set a script to trigger on pushes to one of my repositories, push to it, and
+  the script runs against exactly the pushed code and reports back — and the
+  branch is merged only if I wrote that step into the script.
+- I delete a script; it disappears from my list, and its history is still
+  recoverable rather than gone.
 - Starting from a record of work another suite service did on a run's behalf,
   the owner can find that run in scripts and see what it did; a run fired by an
   event, and the completion the run itself publishes, carry the same chain

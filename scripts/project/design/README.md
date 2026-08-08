@@ -62,6 +62,24 @@ in git, never in the spec.
 > (`correlation_id`, `outbox_correlation`); every frozen migration stays
 > untouched.
 >
+> The newest series is the **version plane** (**D35–D40**, adopting
+> `root project/design/D24.md`): a script's definition stops being a `TEXT`
+> column and becomes a **git tree** held by repos under the key
+> `scripts/<name_key>`, with root `main.py` as the entrypoint (**D35**, one
+> additive migration: `scripts.name_key`, `scripts.repo_seeded_at`,
+> `runs.repo_sha`); `internal/repos` speaks to the plane behind the
+> `script.VersionPlane` seam, injected at the composition root from
+> `registry.BaseURL("repos")` (**D36**); every authoring verb becomes a commit,
+> `delete` archives, and `get` reads `main` (**D37**); a run **pins a commit at
+> spawn** and executes a real `git clone` + detached checkout with a scoped run
+> token in its environment, which is what makes a script able to be a workflow
+> (**D38**); `repos` joins the trigger sources so pushes fire checks (**D39**);
+> and existing rows reach the plane through an idempotent boot-time seeding
+> sweep before a guarded migration retires the `body` column (**D40**). The
+> series is **not** behavior-preserving and adds two timestamped migrations;
+> every frozen migration stays untouched, and **no row is ever dropped** —
+> `scripts/state/` is live customer data under `root project/design/D05.md`.
+>
 > **Correlation ids are a suite constant, used by value.** The header
 > `X-Correlation-Id`, the 26-character Crockford-base32 ULID shape, the
 > read-or-mint rule and the context accessors are defined by
@@ -108,7 +126,9 @@ Shared facts every Decision leans on:
   adoption of that contract, and its declared testing facts, are **D34**.
 - **Environmental preconditions:** **`python3` on `PATH`** — the runtime the
   service execs, and the substrate of every runner, lifecycle, and `suite.py`
-  claim below. It is a hard failure when absent, never a skip (D34).
+  claim below — and **`git` on `PATH`** — the binary that materializes every run
+  dir as a pinned checkout (D38) and the substrate of the version-plane run
+  claims. Both are hard failures when absent, never skips (D34).
 - **GOWORK mode:** workspace — the default gate resolves the replace-siblings
   through the repo-root `go.work`; only the production build forces `GOWORK=off`.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
@@ -132,8 +152,8 @@ Shared facts every Decision leans on:
   `WWW:true` (web surface from `share/www` through the chassis, **D12**),
   `Feed:"/feed"` (event-plane **producer** of the completion kinds
   `succeeded`/`failed`, keys `scripts:succeeded|failed/<script name>`, **D18**),
-  the `Consumers` table (five upstream entries — `cron`/`crm`/`ledger`/`dropbox`/
-  `prompts` — chassis-owned per **D11**, replacing the legacy `Consumes` +
+  the `Consumers` table (six upstream entries — `cron`/`crm`/`ledger`/`dropbox`/
+  `prompts`/`repos` (**D39**) — chassis-owned per **D11**, replacing the legacy `Consumes` +
   `Subscriptions` fields and the hand-rolled consumer `Workers`), `Health` (the
   static runtime-contract reporter, feeding both HTTP `/health` and the MCP `health`
   tool, **D13**), and the `Producer` outbox hook. The fixed verbs
@@ -201,6 +221,19 @@ layer. The cross-cutting approach every Decision's Verification list assumes:
   probe printed/exited. `go test ./...` stays the single green bar. `python3` is
   a **declared environmental precondition** of that bar, not an optional extra:
   its absence fails the tests that need it rather than skipping them (D34).
+- **The version plane is tested against real `git` and a recording peer.** The
+  run-materialization claims (D38) exec the **real `git` binary** against a
+  **real bare repository on disk** reached by a `file://` remote — real objects,
+  real refs, real sha resolution, real pushes — with the clone URL and run token
+  supplied by a fake `VersionPlane`; that is the substrate that can falsify
+  "pinned to a sha" and "a run can push a branch". The **client** claims (D36)
+  drive the real `internal/repos.Client` against a `net/http/httptest` server
+  that records method, path, headers, and body. What is deliberately **not**
+  proven in this tree is that those recorded shapes match repos' actual routes:
+  scripts declares no live layer (D34), the door is repos' own proof obligation
+  under `root project/design/D24.md`, and the agreement is exercised when the
+  whole suite runs. Domain-level plane behavior (D37, D40) is driven through a
+  recording fake `VersionPlane`, exactly as `Fetcher` already is.
 - **Determinism.** The handler takes its name/version as plain string arguments
   (injected at the composition root from `rt.Service()`/`rt.Version()`), so its
   output is fully determined by its inputs — no clock, no network, no DB.
@@ -222,6 +255,11 @@ Decision it realizes:
 `scripts/share/www/` — `landing.html` + `static/` (`tokens.css` + the woff2 fonts)
 — served by the chassis through `Spec.WWW` (**D12**); there is no `internal/web`
 package (D12 deleted it, and its landing/asset/nginx tests moved to `cmd/scripts`).
+The version plane adds one package, `internal/repos` (the loopback client behind
+`script.VersionPlane`, **D36**), and two files in the domain package:
+`internal/script/namekey.go` (the slug rule, **D35**) and
+`internal/script/version.go` (the seam). `internal/runner/git.go` holds the
+clone/checkout/config invocations (**D38**).
 The remaining domain packages are `internal/consume` (event-plane fan-out),
 `internal/db` (the embedded migration set only — **D14** deleted its open/migrate
 shim), `internal/ids`, `internal/mcp` (the domain tool table over `appkit/mcp` —
