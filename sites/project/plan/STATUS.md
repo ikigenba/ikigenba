@@ -11,5 +11,4 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 56
 
-- Phase 54 ⬜ realizes D37 — the additive, re-runnable seeding pass for pre-plane sites
 - Phase 55 ⬜ realizes D13 (slice), D32 (slice) — compose the plane at the root: client, `repos` consumer, background seeding, doc truth
