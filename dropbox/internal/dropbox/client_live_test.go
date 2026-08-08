@@ -15,15 +15,21 @@ import (
 
 func newLiveClient(t *testing.T) *Client {
 	t.Helper()
-	key := os.Getenv("DROPBOX_APP_KEY")
-	secret := os.Getenv("DROPBOX_APP_SECRET")
-	refresh := os.Getenv("DROPBOX_REFRESH_TOKEN")
-	if key == "" || secret == "" || refresh == "" {
-		t.Skip("DROPBOX_* secrets not present; skipping live Dropbox smoke")
-	}
 	return NewClient(Config{
-		AppKey: key, AppSecret: secret, RefreshToken: refresh, AppFolderRoot: os.Getenv("DROPBOX_APP_FOLDER_ROOT"),
+		AppKey:        requiredLiveCredential(t, "DROPBOX_APP_KEY"),
+		AppSecret:     requiredLiveCredential(t, "DROPBOX_APP_SECRET"),
+		RefreshToken:  requiredLiveCredential(t, "DROPBOX_REFRESH_TOKEN"),
+		AppFolderRoot: os.Getenv("DROPBOX_APP_FOLDER_ROOT"),
 	}, &http.Client{Timeout: 100 * time.Second}, &http.Client{Timeout: longpollClientTimeout})
+}
+
+func requiredLiveCredential(t *testing.T, name string) string {
+	t.Helper()
+	value := os.Getenv(name)
+	if value == "" {
+		t.Fatalf("live test requires %s", name)
+	}
+	return value
 }
 
 func livePath(t *testing.T, name string) string {

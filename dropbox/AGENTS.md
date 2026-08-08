@@ -35,7 +35,16 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- Unit: `go test ./...`
+- Default gate: `go test ./...`
+- Layers present: **hermetic**, **composed**, and **live**.
+- Environmental preconditions beyond the Go toolchain: none.
+- GOWORK mode: workspace, using the repo-root `go.work`; the production build
+  forces `GOWORK=off` through `bin/ship dropbox`.
+- Live invocation: `go test -tags live ./...`. It requires `DROPBOX_APP_KEY`,
+  `DROPBOX_APP_SECRET`, and `DROPBOX_REFRESH_TOKEN` from the suite `.envrc`;
+  optional `DROPBOX_APP_FOLDER_ROOT` scopes the smoke below the app-folder root.
+- Run the live invocation during deploy verification and whenever a change
+  touches `internal/dropbox/client.go` or the uploader.
 
 ## Versioning
 

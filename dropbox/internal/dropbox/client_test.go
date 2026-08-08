@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -334,43 +333,4 @@ func (c *Client) longpollAt(ctx context.Context, base, cursor string) (LongpollR
 	hostNotifyVar = base
 	defer func() { hostNotifyVar = saved }()
 	return c.Longpoll(ctx, cursor)
-}
-
-// ---- Live integration probe (skipped without credentials) ----
-
-// TestLiveProbe is the Phase 1 gate: with the DROPBOX_* secrets in the env, it
-// refreshes a token and enumerates the ikigai-onebox app folder, asserting a
-// non-empty cursor comes back (an empty listing is success). Skipped when the
-// secrets are absent. Never prints token or secret values.
-func TestLiveProbe(t *testing.T) {
-	key := os.Getenv("DROPBOX_APP_KEY")
-	secret := os.Getenv("DROPBOX_APP_SECRET")
-	refresh := os.Getenv("DROPBOX_REFRESH_TOKEN")
-	if key == "" || secret == "" || refresh == "" {
-		t.Skip("DROPBOX_* secrets not present; skipping live probe")
-	}
-	root := os.Getenv("DROPBOX_APP_FOLDER_ROOT") // "" == app-folder root
-
-	c := NewClient(Config{
-		AppKey: key, AppSecret: secret, RefreshToken: refresh, AppFolderRoot: root,
-	}, &http.Client{Timeout: 100 * time.Second}, &http.Client{Timeout: longpollClientTimeout})
-
-	ctx := context.Background()
-	tok, err := c.token.token(ctx, false)
-	if err != nil {
-		t.Fatalf("token refresh failed: %v", err)
-	}
-	if tok == "" {
-		t.Fatal("token refresh returned empty token")
-	}
-	t.Logf("token refreshed: yes (len redacted)")
-
-	res, err := c.ListFolder(ctx)
-	if err != nil {
-		t.Fatalf("list_folder failed: %v", err)
-	}
-	if strings.TrimSpace(res.Cursor) == "" {
-		t.Fatal("list_folder returned an empty cursor")
-	}
-	t.Logf("list_folder returned cursor: yes; entry_count=%d has_more=%v", len(res.Entries), res.HasMore)
 }

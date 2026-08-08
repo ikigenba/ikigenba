@@ -1,8 +1,10 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -31,6 +33,42 @@ func shippedFilesystemAPIDoc(t *testing.T) string {
 		t.Fatalf("read shipped filesystem API documentation: %v", err)
 	}
 	return string(doc)
+}
+
+func committedAgentsGuide(t *testing.T) string {
+	t.Helper()
+	guide, err := os.ReadFile(filepath.Join("..", "..", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read committed AGENTS.md: %v", err)
+	}
+	return string(guide)
+}
+
+func markdownSection(t *testing.T, document, heading string) string {
+	t.Helper()
+	startMarker := "## " + heading
+	start := strings.Index(document, startMarker)
+	if start < 0 {
+		t.Fatalf("document has no %q section", heading)
+	}
+	section := document[start+len(startMarker):]
+	if end := strings.Index(section, "\n## "); end >= 0 {
+		section = section[:end]
+	}
+	return section
+}
+
+func hasLiveBuildConstraint(source string) bool {
+	for _, line := range strings.Split(source, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "package ") {
+			return false
+		}
+		if strings.HasPrefix(line, "//go:build ") && strings.Contains(line, "live") {
+			return true
+		}
+	}
+	return false
 }
 
 func undocumentedFilesystemRoutes(doc string, routes []filesystemRoute) []filesystemRoute {
@@ -81,5 +119,68 @@ func TestFilesystemAPIDocumentationCoversRegisteredRoutesAndExcludesPlumbing(t *
 		if strings.Contains(doc, route.method+" "+route.path) {
 			t.Fatalf("plumbing route %s %s unexpectedly became a documentation requirement", route.method, route.path)
 		}
+	}
+}
+
+// R-O1AD-MRKW
+func TestAgentsGuideDeclaresTestingFacts(t *testing.T) {
+	testsSection := markdownSection(t, committedAgentsGuide(t), "Tests")
+	required := []string{
+		"`go test ./...`",
+		"**hermetic**",
+		"**composed**",
+		"**live**",
+		"Environmental preconditions beyond the Go toolchain: none.",
+		"GOWORK mode: workspace",
+		"repo-root `go.work`",
+		"forces `GOWORK=off`",
+	}
+	for _, declaration := range required {
+		if !strings.Contains(testsSection, declaration) {
+			t.Errorf("AGENTS.md Tests section does not declare %q", declaration)
+		}
+	}
+	if strings.Contains(strings.ToLower(testsSection), "manual") {
+		t.Error("AGENTS.md Tests section names the absent manual layer")
+	}
+}
+
+// R-O2IA-0JBL
+func TestDefaultGateTestsContainNoSkips(t *testing.T) {
+	serviceRoot := filepath.Join("..", "..")
+	needle := "t." + "Skip"
+	var findings []string
+	err := filepath.WalkDir(serviceRoot, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == "project" || entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), "_test.go") {
+			return nil
+		}
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if hasLiveBuildConstraint(string(source)) {
+			return nil
+		}
+		for lineNumber, line := range strings.Split(string(source), "\n") {
+			if strings.Contains(line, needle) {
+				findings = append(findings, filepath.ToSlash(path)+":"+strconv.Itoa(lineNumber+1))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan default-gate test sources: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("default-gate tests contain skip calls: %v", findings)
 	}
 }
