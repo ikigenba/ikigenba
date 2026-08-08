@@ -55,23 +55,41 @@ Shared facts every Decision leans on.
 - **Build / typecheck command.** `GOWORK=off go build ./...` from the module root
   (`github/`). Forcing `GOWORK=off` matches the deterministic production build and
   proves the module resolves standalone via its `replace` directives.
-- **Test command.** `GOWORK=off go test ./...` from the module root. Unit tests are
-  fully offline: the GitHub client is exercised against an injected
-  `http.RoundTripper` stub (the same technique `gmail`'s client tests use), and the
-  nginx fragment against a parse/grep test. No unit test performs live network I/O.
+- **Test command.** `GOWORK=off go test ./...` from the module root. Every
+  automated test is fully offline: the GitHub client is exercised against an
+  injected `http.RoundTripper` stub (the same technique `gmail`'s client tests
+  use), and the nginx fragment against a parse/grep test. No test in the gate
+  performs live network I/O.
+- **Test layers.** The suite's testing vocabulary — the hermetic / composed /
+  live / manual layers, what each may touch, the single `//go:build live`
+  mechanism, the ban on `t.Skip` outside live-tagged files, and the rule that a
+  manual-layer check lives in a committed runbook with a positive and a negative
+  check — is the contract `root project/design/D23.md`, cited and not restated
+  here. github's own layer facts are recorded in D14: **hermetic** and
+  **composed** in the default gate (the composed member being the install-layout
+  boot smoke in `cmd/github/main_test.go`), a **manual** layer whose runbook is
+  `project/github-verification.md`, and no live layer. `GOWORK=off` is this
+  tree's declared GOWORK mode; the `go` binary on `PATH` at test time is its one
+  environmental precondition beyond the Go toolchain.
 - **Test-file glob.** Requirement-id tags live in `*_test.go` files, each id as a
   `// R-XXXX-XXXX` comment on the test that asserts it.
 - **"The suite is green"** means: `GOWORK=off go build ./...` succeeds **and**
   `GOWORK=off go test ./...` passes with no failures and no `SKIP`, from `github/`,
   and `gofmt -l .` is empty and `go vet ./...` is clean.
-- **The real-substrate proof is `health`.** Correctness of the app→installation
-  authentication cannot be proven by a stub (a stub accepts any JWT). The design
-  therefore designates the `health` verb as the end-to-end proof: run against the
-  live suite (`bin/start`) it drives a *real* authenticated GitHub call and its
-  success is the observable that the credentials actually work. The id that hinges
-  on the real GitHub contract (`R-DMUT-QF4A`) names that live substrate explicitly;
-  the offline unit suite proves request *construction*, `health` proves the
-  request is *accepted*.
+- **The real-substrate proof is `health`, and it is a manual-layer check.**
+  Correctness of the app→installation authentication cannot be proven by a stub
+  (a stub accepts any JWT). The design therefore designates the `health` verb as
+  that proof: against the deployed service with real credentials it drives a
+  *real* authenticated GitHub call, and its success is the observable that the
+  credentials actually work. The id that hinges on the real GitHub contract
+  (`R-DMUT-QF4A`, D2) is a **manual-layer** id in the sense of
+  `root project/design/D23.md`: it is proven by the operator in this tree's
+  committed runbook, `project/github-verification.md` — which states the
+  positive check, the bad-key negative check that proves the positive one
+  exercised real GitHub, and where the result is recorded — and it is
+  deliberately out of gate and unscheduled by any plan phase (see
+  `project/plan/README.md`). The offline suite proves request *construction*;
+  the runbook proves the request is *accepted*. See D14.
 - **Bot-only attribution.** Write paths pass no owner-identifying author,
   committer, or body marker to GitHub; the only owner record is a structured log
   line (`X-Owner-Email` + verb) emitted at MCP dispatch. This is asserted directly
