@@ -222,6 +222,102 @@ func TestProductionGoSourceHasNoBoxPathLiteral(t *testing.T) {
 	}
 }
 
+// R-O1AD-MRKW
+func TestAgentsTestsSectionDeclaresTestingFacts(t *testing.T) {
+	doc, err := os.ReadFile(filepath.Join("..", "..", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read committed AGENTS.md: %v", err)
+	}
+
+	testsSection, found := strings.CutPrefix(string(doc), "# prompts")
+	if !found {
+		t.Fatal("AGENTS.md is missing its prompts heading")
+	}
+	_, testsSection, found = strings.Cut(testsSection, "## Tests\n")
+	if !found {
+		t.Fatal("AGENTS.md is missing its Tests section")
+	}
+	if nextSection := strings.Index(testsSection, "\n## "); nextSection >= 0 {
+		testsSection = testsSection[:nextSection]
+	}
+
+	declarations := []struct {
+		name string
+		text string
+	}{
+		{"default gate", "The default gate is `go test ./...`, run from `prompts/`."},
+		{"hermetic and composed layers", "The testing layers present are **hermetic** and **composed**."},
+		{"composed boot smokes", "The composed\n  tests are the boot smokes in `cmd/prompts/main_test.go`; every other test is\n  hermetic."},
+		{"no live layer", "There is no **live** layer"},
+		{"environmental preconditions", "There are no environmental preconditions beyond the Go toolchain."},
+		{"development GOWORK mode", "Development uses the workspace"},
+		{"production GOWORK mode", "the production build uses `GOWORK=off`"},
+	}
+	for _, declaration := range declarations {
+		if !strings.Contains(testsSection, declaration.text) {
+			t.Errorf("AGENTS.md Tests section is missing the %s declaration %q", declaration.name, declaration.text)
+		}
+	}
+}
+
+// R-O2IA-0JBL
+func TestNonLiveTestsDoNotSkip(t *testing.T) {
+	root := filepath.Join("..", "..")
+	skipCall := "t." + "Skip"
+	needles := []string{skipCall + "(", skipCall + "f(", skipCall + "Now("}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), "_test.go") {
+			return nil
+		}
+
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if hasLiveBuildConstraint(source) {
+			return nil
+		}
+		for lineNumber, line := range strings.Split(string(source), "\n") {
+			for _, needle := range needles {
+				if strings.Contains(line, needle) {
+					rel, relErr := filepath.Rel(root, path)
+					if relErr != nil {
+						return relErr
+					}
+					t.Errorf("non-live test calls %s at %s:%d", strings.TrimSuffix(needle, "("), rel, lineNumber+1)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan test sources for skips: %v", err)
+	}
+}
+
+func hasLiveBuildConstraint(source []byte) bool {
+	for _, line := range strings.Split(string(source), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "package ") {
+			return false
+		}
+		expression, found := strings.CutPrefix(line, "//go:build ")
+		if found && regexp.MustCompile(`\blive\b`).MatchString(expression) {
+			return true
+		}
+	}
+	return false
+}
+
 // R-4LKF-FB23
 func TestPromptsBootsWithDurableSandboxesAndRecreatedRunsCache(t *testing.T) {
 	// R-ZMJ5-6QEW
