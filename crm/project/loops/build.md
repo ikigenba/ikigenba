@@ -51,9 +51,20 @@ working directory.
      composition-root surfaces (the landing route, the shipped `share/www`
      assets, and the `crm/etc/nginx.conf` content-assertion) are tested in
      `cmd/crm/main_test.go`; the MCP surface in
-     `crm/internal/mcp/tools_test.go`. A config-artifact test (the nginx
-     fragment) reads `crm/etc/nginx.conf` from disk and asserts over its
-     content.
+     `crm/internal/mcp/tools_test.go`; read-from-disk assertions over
+     committed docs in `cmd/crm/docs_test.go`. A config-artifact test (the
+     nginx fragment) reads `crm/etc/nginx.conf` from disk and asserts over
+     its content.
+   - **Never write a skip.** `t.Skip`, `t.Skipf`, and `t.SkipNow` are banned
+     outright in this tree: crm has **no live layer and no manual layer**, so
+     no test file carries a `//go:build live` constraint and there is no file
+     in which a skip is legitimate. A tool a test needs (`git`, the `go`
+     toolchain, `python3`) is an environmental precondition — declare it in
+     `AGENTS.md` and let its absence be a hard failure. Likewise never gate a
+     tagged test behind a build tag or an env variable nothing in the repo
+     sets: verify treats an unreachable test as **uncovered**, however genuine
+     its assertion reads, and a test that converts a real failure signal into
+     a skip launders a gap into green.
    - **Composition root.** `cmd/crm/main.go` is grown incrementally (e.g.
      adding a route to the existing `Handlers` hook) — that is wiring growth,
      not a domain rewrite. Leave the `POST /mcp` mount and the
@@ -73,11 +84,11 @@ working directory.
    cd crm && gofmt -w .
    cd crm && go build ./...
    cd crm && go vet ./...
+   cd crm && gofmt -l .     # must print nothing
    cd crm && go test ./...
    ```
 
-   Plus any phase-specific check the brief's **Done bar** names (e.g. a docs
-   purge's `grep -i "no UI" crm/AGENTS.md` finding nothing).
+   Plus any phase-specific check the brief's **Done bar** names.
 
 6. **Commit this turn's increment** (never an empty commit) with a message
    naming the phase, and the repo trailer:
@@ -102,6 +113,15 @@ working directory.
 - **"The suite is green"** means all of: `cd crm && go build ./...`,
   `cd crm && go vet ./...`, `cd crm && gofmt -l .` (prints nothing), and
   `cd crm && go test ./...` succeed with zero failures.
+- **Test-file glob:** `*_test.go` — requirement-id tags live only in files
+  matching it.
+- **Test layers.** crm has **hermetic** and **composed** layers only — **no
+  live layer and no manual layer**. Hermetic covers the domain, db, MCP, and
+  web package suites plus the shipped-file guards (`etc/nginx.conf`,
+  `etc/manifest.env`, the loopback guard); composed is the boot smoke in
+  `cmd/crm/main_test.go`, which builds and runs crm's real binary. No test may
+  contact a non-loopback address, read a credential, or change behavior based
+  on ambient secrets.
 - **No schema change on these surfaces.** They touch no SQLite and add **no**
   migration. (Never hand-author a migration version anyway — the tool is
   `bin/create-migration crm <name>` — but this work needs none.)
@@ -113,11 +133,11 @@ working directory.
   are real bytes on disk under `crm/share/www/`; the only `//go:embed`
   surfaces left are the migrations (`internal/db`) and the MCP guide
   (`internal/mcp/guide.md`).
-- **Test layout:** co-locate every test with the code it exercises, named for
-  the behavior asserted; a phase is one package, so its tests live in that
-  package — never a root-level or `phaseNN_test.go` file. crm's
-  composition-root tests live in `cmd/crm/main_test.go`, the MCP tests in
-  `crm/internal/mcp/tools_test.go`.
+- **Doc truth is a hermetic Go test.** Claims about `AGENTS.md` are proven by
+  an ordinary test in `cmd/crm/docs_test.go` that reads the committed file
+  **from disk** and asserts over its content, so the claim is re-checked on
+  every `go test ./...`. When a phase changes such a claim, edit the doc
+  **and** keep its test true.
 
 ## Boundaries
 
@@ -129,6 +149,8 @@ working directory.
   `## Verify feedback` region — you read that region but never write it.
 - Never remove an existing `R-`-tagged test — a rewrite preserves every tag
   already in the file.
+- Never write `t.Skip`, `t.Skipf`, or `t.SkipNow` anywhere in this tree.
+- Never make an empty commit.
 - Always return `NEXT` — build hands off every turn and is never the step
   that ends the run.
 
@@ -144,8 +166,8 @@ Report this run's result as a `status` and a one-sentence `message`:
   closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
   phase left or a blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `added error_page 401 = @login_bounce to the two session-gated locations
-  plus tests`.
+  `rewrote the AGENTS.md Tests section and added 2 tagged tests in
+  cmd/crm/docs_test.go; suite green`.
 
 You always end on `NEXT` — build hands off every turn and is never the step
 that ends the run. Keep `message` a single plain sentence — not a JSON object

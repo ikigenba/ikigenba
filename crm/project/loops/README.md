@@ -1,10 +1,11 @@
 # crm — build loop (gather → build → verify)
 
-This directory holds the **installed** three-prompt build loop for crm and the
-executable wrapper that runs it. It is generated from the finished `project/`
-spec; it describes the loop **as on disk** and is kept beside the prompts so it
-can never drift from them. The workspace map (`project/README.md`) only points
-here — the loop mechanics live only in this file.
+This directory holds the **installed** three-prompt build loop for the crm
+and the executable wrapper that runs it. It is generated from the finished
+`project/` spec; it describes the loop **as on disk** and is kept beside the
+prompts so it can never drift from them. The workspace map
+(`project/README.md`) only points here — the loop mechanics live only in this
+file.
 
 ## Running it
 
@@ -29,8 +30,9 @@ prompts reference is service-root-relative (`project/…`).
 ## The status contract
 
 Each turn ends with a `{status, message}` the harness supplies out of band
-(`ralph` injects the schema per backend and reads back only the turn's
-**final** message). Three status values:
+(`ralph` injects the schema per backend — codex via `--output-schema`, claude
+via `--json-schema` — and reads back only the turn's **final** message). Three
+status values:
 
 - **`NEXT`** — *terminal*: this turn is done, advance to the next prompt
   (wrapping `verify → gather`). `build` and `verify` **always** end on `NEXT`.
@@ -64,8 +66,7 @@ Each turn ends with a `{status, message}` the harness supplies out of band
 ## The brief lifecycle
 
 `project/loops/brief.md` is the ephemeral, single-phase seam between the
-prompts. It is **git-ignored** (the repo-root `.gitignore` matches
-`*/project/loops/brief.md`) and **never committed**.
+prompts. It is **git-ignored** and **never committed**.
 
 - **gather** authors the brief's contract region **once**, when a phase first
   becomes the active `⬜` phase, with an empty feedback region. While that
@@ -122,31 +123,30 @@ Region-owned by a single writer each, so the two writers never clobber:
 **Contract region** (gather-owned; written once per phase):
 
 ```
-# Brief — Phase NN: <one-line objective>
+# Brief — Phase NN
 
-phase: NN
-realizes: D<n>[, D<m>]
-decision_files:
-  - project/design/D0n.md
+## Contract
 
-## Decision prose (copied verbatim from the DNN.md — Verification lists omitted)
-### D<n> — <title>
-<Decision statement + shape/signatures + Rejected alternatives, verbatim, minus
-that Decision's Verification list>
+**Phase:** NN — <one-line objective>
+**Realizes:** D<n>[, D<m>]
+**Decision files:** project/design/DNN.md[, project/design/DMM.md]
 
-## Ids to cover
+### Design prose
+<Decision statement + shape/signatures + Rejected alternatives, verbatim per
+realized Decision — that Decision's Verification list OMITTED>
+
+### Ids to cover
 R-XXXX-XXXX — <full requirement text, verbatim from the Decision's Verification list>
 # ...one id per line, each `R-XXXX-XXXX — <text>`, OR: (none — structural phase)
 
-## Files to touch
-- crm/<path>
+### Files to touch
+- <path> — <what changes>
 
-## Dependency interfaces / required shapes (copied from design)
-<public signatures / required config snippets, verbatim>
+### Dependency interface signatures
+<public signatures, copied so build never opens a design file>
 
-## Done bar
-- every id covered by a genuinely-asserting `// R-XXXX-XXXX`-tagged test
-  (co-located, never phase-named), the suite green, plus any named check
+### Done bar
+<the phase's deterministic exit conditions + the green bar below>
 ```
 
 **Feedback region** (verify-owned; gather writes it empty, build reads but
@@ -154,12 +154,16 @@ never writes it, verify overwrites it):
 
 ```
 ## Verify feedback — attempt N
-<build commit observed, stall-streak counter, and a checklist of ONLY the
-currently-open gaps — each an R-id + the exact failing command + observed output>
+build-commit: <sha>
+stall-streak: <count>
+
+- R-XXXX-XXXX — <exact failing command> → <observed output> (file:line)
 ```
 
 `grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md` extracts
-exactly the phase's covered-id set from the contract region.
+exactly the phase's covered-id set from the contract region — the `-o` keeps
+only the matched id, so the trailing requirement text never confuses the count,
+and the `^` anchor skips the feedback region's bulleted gap lines.
 
 ## Toolchain baked into the prompts (from design's Conventions)
 
@@ -169,8 +173,26 @@ exactly the phase's covered-id set from the contract region.
 - **"The suite is green":** `go build ./...`, `go vet ./...`, `gofmt -l .`
   (prints nothing), and `go test ./...` all succeed with zero failures
   (`cd crm` first).
+- **Test-file glob:** `*_test.go` — the only place requirement-id tags live.
 - **Test placement:** co-located `*_test.go` in the package it exercises,
   named for the behavior — never a root-level or `phaseNN_test.go` file. The
-  composition-root surfaces (landing route, `share/www` assets,
-  `crm/etc/nginx.conf` content-assertion) are tested in
-  `cmd/crm/main_test.go`; the MCP surface in `crm/internal/mcp/tools_test.go`.
+  composition-root surfaces (landing route, the shipped `share/www` assets, the
+  `crm/etc/nginx.conf` content-assertion, the boot smoke) are tested in
+  `cmd/crm/main_test.go`; the MCP surface in `internal/mcp/tools_test.go`;
+  read-from-disk assertions over committed docs in `cmd/crm/docs_test.go`.
+- **Test layers:** hermetic and composed — **no live layer and no manual
+  layer**. The gate
+  therefore permits **no `t.Skip`/`t.Skipf`/`t.SkipNow` anywhere**: `verify`
+  runs a source scan over the tree's `*_test.go` files and treats any hit as a
+  gap, and treats a build-tag- or env-gated tagged test as unreachable, hence
+  uncovered.
+
+## The coverage ratchet's placeholder filter
+
+`verify`'s global ratchet greps the design's id denominator out of
+`project/design/D*.md`. Those docs also contain the **literal placeholder**
+`R-XXXX-XXXX` where they describe the id format, and it matches the same
+pattern as a real id. The ratchet therefore pipes the denominator through
+`grep -v 'R-XXXX-XXXX'`; without that filter the placeholder enters the
+denominator as a phantom uncovered id that no test can ever tag, the ratchet
+never goes empty, and the phase spins forever. The filter is not optional.
