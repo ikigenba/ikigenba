@@ -82,6 +82,15 @@ Shared facts every Decision leans on:
   `cd cron && go build ./...`, `cd cron && go vet ./...`, `cd cron && gofmt -l .`
   (no output), and `cd cron && go test ./...` all succeed with zero failures.
   Requirement-id tags live in Go test files matched by the glob `*_test.go`.
+- **Testing vocabulary:** the layer names and the rule fixing each layer by what
+  a test may touch are the suite contract's, adopted by D17 and cited at
+  `root project/design/D23.md`; this design restates none of them and uses no
+  other testing vocabulary. cron has two layers — **composed**: the boot smokes
+  in `cmd/cron/main_test.go`, which build the real binary and run `serve` over a
+  loopback port; **hermetic**: everything else. There is **no live layer** and no
+  tree-local manual layer. Environmental preconditions beyond the Go toolchain:
+  **none**. GOWORK mode: workspace for development, `GOWORK=off` for the
+  production build.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Module wiring:** `appkit`, `eventplane`, and `registry` are committed in-repo
   replace-siblings (`replace appkit => ../appkit`,
@@ -118,8 +127,9 @@ Shared facts every Decision leans on:
 
 ## Testing strategy
 
-Testing is part of the architecture, not an afterthought. The cross-cutting
-approach every Decision's Verification list assumes:
+Testing is part of the architecture, not an afterthought. Layer names below are
+the suite contract's (D17, `root project/design/D23.md`), never cron's own. The
+cross-cutting approach every Decision's Verification list assumes:
 
 - **The landing handler is tested over the repo-real `share/www` tree.** The
   composition-root handler renders `landing.html` through an `appkit/web` Site
@@ -127,9 +137,8 @@ approach every Decision's Verification list assumes:
   so tests exercise the exact files that ship). Its tests build the Site over the
   real tree, drive the handler with `httptest.NewRequest` / `httptest.NewRecorder`
   over fixed name/version values, and assert status, body substrings (name,
-  version), and `Content-Type`. **No test makes a network call and no test needs a
-  running suite** — the handler is pure over its two string inputs and the loaded
-  on-disk site (D9's `R-LPMQ-FKBR`).
+  version), and `Content-Type`. These are **hermetic**: the handler is pure over
+  its two string inputs and the loaded on-disk site (D9's `R-LPMQ-FKBR`).
 - **The route mux is tested as wired.** The `GET /{$}` exact-root pattern is
   proven against an `http.ServeMux` configured the way the composition root
   configures it, asserting that the bare root path is served by the landing
@@ -173,6 +182,11 @@ approach every Decision's Verification list assumes:
   cron proves is that *its* migration set applies the upgrade and that *its*
   firing seam mints per firing, propagates to the row, and roots on the same
   id.
+- **The composed layer is the boot smokes.** `cmd/cron/main_test.go` builds the
+  real `cron` binary and runs `serve` against a temporary install tree on an
+  ephemeral loopback port; that is the only place a test leaves the process, and
+  it is what the layout and manifest conformance claims are proven against. Every
+  other test in the tree is hermetic.
 - **Determinism.** The landing handler takes its name/version as plain string
   arguments (injected at the composition root from `rt.Service()`/`rt.Version()`),
   so its output is fully determined by its inputs and the on-disk template — no
