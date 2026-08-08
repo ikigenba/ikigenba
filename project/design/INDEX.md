@@ -27,6 +27,7 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - **D21** → `project/design/D21.md` — Configuration-channel routing: which value goes in which channel, and why — ids: none (a prose contract; enforcement is the channels' own ids and per-service adoption)
 - **D22** → `project/design/D22.md` — Library dependency versioning: unversioned in-repo siblings, one suite-wide agentkit pin, a replace-free workspace — ids: R-3R5W-79JK, R-3SDS-L1A9, R-3TLO-YT0Y, R-3UTL-CKRN (all [proof: bin])
 - **D23** → `project/design/D23.md` — The testing-language contract: hermetic / composed / live / manual layers, the `live` build tag, the skip ban, and per-tree declarations — ids: R-O1AD-MRKW [proof: per-service], R-O2IA-0JBL [proof: per-service]
+- **D24** → `project/design/D24.md` — The version plane: repos is the suite's git custodian — ids: none (a prose contract; behaviors proven by the implementing trees)
 
 ## Verification ids → Decision
 

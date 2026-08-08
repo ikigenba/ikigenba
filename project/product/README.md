@@ -83,6 +83,10 @@ This project owns the agreements that bind more than one tree:
   behavior: which layers of testing exist, what a test in each layer may touch,
   how a test is allowed to reach a real external service, and what every tree
   must declare about its own testing.
+- **The version plane** — which service is the custodian of authored content's
+  git history, how versioning stays ambient (no user ever manages it), what
+  `main` means, the one git door and who may push what, how merges are gated,
+  and what deleting a versioned artifact preserves.
 
 Out of scope — nothing else is promised here:
 
