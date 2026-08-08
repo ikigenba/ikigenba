@@ -10,5 +10,3 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 19
-
-- Phase 18 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — declare cron's testing facts in `AGENTS.md` (default gate, hermetic + composed layers, no preconditions, GOWORK mode) and prove the declaration and the no-skip rule from `cmd/cron/main_test.go`
