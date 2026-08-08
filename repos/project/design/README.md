@@ -26,8 +26,9 @@ ids ends at minting them — how coverage is measured and when the work is
   (`modernc.org/sqlite`, pure-Go, no cgo). In-repo libraries via committed
   `replace` directives (`appkit => ../appkit`, `eventplane => ../eventplane`)
   plus `require registry` (same pattern); the agent engine via the pinned
-  tagged module `github.com/ikigenba/agentkit` (v0.2.0 line, matching
-  prompts).
+  tagged module `github.com/ikigenba/agentkit`, at the **suite-wide agentkit
+  pin** (`root project/design/D22.md` — every consumer states the same
+  version; the number is `go.mod`'s to carry, not this spec's).
 - **Build / typecheck:** `cd repos && go build ./...` and `go vet ./...`.
   Production binary via `bin/ship repos` (`CGO_ENABLED=0 GOOS=linux
   GOARCH=amd64 GOWORK=off`).
