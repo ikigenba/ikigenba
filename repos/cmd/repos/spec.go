@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"appkit"
 	"appkit/web"
@@ -20,6 +21,7 @@ import (
 func reposSpec() appkit.Spec {
 	var service *repos.Service
 	var custody *repos.Custody
+	var store *repos.Store
 
 	return appkit.Spec{
 		App:        "repos",
@@ -46,14 +48,25 @@ func reposSpec() appkit.Spec {
 			if err != nil || maxCommitBytes <= 0 {
 				return fmt.Errorf("repos: REPOS_MAX_COMMIT_BYTES must be a positive integer")
 			}
+			runTokenTTLText := os.Getenv("REPOS_RUN_TOKEN_TTL")
+			if runTokenTTLText == "" {
+				return fmt.Errorf("repos: REPOS_RUN_TOKEN_TTL is required")
+			}
+			runTokenTTL, err := time.ParseDuration(runTokenTTLText)
+			if err != nil || runTokenTTL <= 0 {
+				return fmt.Errorf("repos: REPOS_RUN_TOKEN_TTL must be a positive duration")
+			}
 			custody, err = repos.NewCustody(stateDir, repos.NewCommandGit(os.Getenv("REPOS_GIT_BIN"), stateDir), nil)
 			if err != nil {
 				return err
 			}
-			service = repos.NewService(repos.NewStore(rt.DB()))
+			store = repos.NewStore(rt.DB())
+			service = repos.NewService(store)
 			service.SetCustody(custody)
 			service.SetMaxCommitBytes(maxCommitBytes)
+			service.SetRunTokenTTL(runTokenTTL)
 			rt.Handle("/git/", repos.GitDoorHandler(service))
+			rt.HandleLoopback("POST /run-token", repos.RunTokenHandler(service))
 			rt.HandleLoopback("GET /content", repos.ContentHandler(service))
 			rt.HandleLoopback("GET /list", repos.ListHandler(service))
 			rt.HandleLoopback("GET /stat", repos.StatHandler(service))
@@ -78,6 +91,30 @@ func reposSpec() appkit.Spec {
 			}
 			<-ctx.Done()
 			return nil
+		}, func(ctx context.Context) error {
+			if store == nil || custody == nil {
+				return fmt.Errorf("repos: run token worker started before handlers")
+			}
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-ticker.C:
+					tx, err := store.BeginTx(ctx)
+					if err != nil {
+						return err
+					}
+					if _, err := store.SweepExpiredTokens(ctx, tx, custody.Now()); err != nil {
+						_ = tx.Rollback()
+						return err
+					}
+					if err := tx.Commit(); err != nil {
+						return err
+					}
+				}
+			}
 		}},
 		Producer: func(producer *outbox.Outbox) error {
 			if service == nil {

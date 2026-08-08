@@ -79,6 +79,10 @@ func (c *Custody) Exists(kind, name string) bool {
 	return err == nil && info.IsDir()
 }
 
+// Now returns the current time from the custody clock shared by repository
+// operations and credential validation.
+func (c *Custody) Now() time.Time { return c.clock.Now() }
+
 func (c *Custody) Init(ctx context.Context, kind, name string) error {
 	path, err := c.Path(kind, name)
 	if err != nil {

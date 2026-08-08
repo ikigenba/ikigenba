@@ -4,16 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 const gitDoorActor = "owner@example.test"
@@ -216,6 +219,112 @@ func TestGitDoorNeverServesAnonymousRequests(t *testing.T) {
 	if err == nil {
 		t.Fatalf("anonymous clone succeeded: %s", output)
 	}
+}
+
+type runGitDoorFixture struct {
+	service *Service
+	store   *Store
+	custody *Custody
+	clock   *sequenceClock
+	server  *httptest.Server
+	tip     string
+	token   string
+}
+
+func newRunGitDoorFixture(t *testing.T) *runGitDoorFixture {
+	t.Helper()
+	ctx := context.Background()
+	conn, store := newTestStore(t)
+	clock := &sequenceClock{now: time.Date(2026, 8, 8, 18, 0, 0, 0, time.UTC)}
+	custody := testCustodyWithClock(t, clock)
+	for _, name := range []string{"demo", "other"} {
+		if err := custody.Init(ctx, "code", name); err != nil {
+			t.Fatal(err)
+		}
+		inTx(t, conn, func(tx *sql.Tx) error {
+			return store.InsertRepository(ctx, tx, Repository{Kind: "code", Name: name, OwnerID: "owner", OwnerEmail: "owner@example.test", DefaultBranch: "main", CreatedAt: clock.now})
+		})
+	}
+	demo, _ := custody.Path("code", "demo")
+	tip := seedCommits(t, demo, 3)
+	other, _ := custody.Path("code", "other")
+	seedCommits(t, other, 1)
+	service := serviceWithOutbox(t, conn, store, custody)
+	service.SetRunTokenTTL(time.Hour)
+	minted, response := mintRunToken(t, service, "code", "demo")
+	if response.Code != http.StatusOK {
+		t.Fatalf("mint status=%d body=%q", response.Code, response.Body.String())
+	}
+	server := httptest.NewServer(GitDoorHandler(service))
+	t.Cleanup(server.Close)
+	return &runGitDoorFixture{service: service, store: store, custody: custody, clock: clock, server: server, tip: tip, token: minted.Token}
+}
+
+func (f *runGitDoorFixture) remote(t *testing.T, name string) string {
+	t.Helper()
+	parsed, err := url.Parse(f.server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.User = url.UserPassword("run", f.token)
+	parsed.Path = "/git/code/" + name + ".git"
+	return parsed.String()
+}
+
+func TestRunTokenClonesFullHistoryAndIsForbiddenFromOtherRepository(t *testing.T) {
+	// R-KAEU-HGDY
+	f := newRunGitDoorFixture(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(t, "", "clone", f.remote(t, "demo"), clone)
+	if got := strings.TrimSpace(runGit(t, clone, "rev-list", "--count", "HEAD")); got != "3" {
+		t.Fatalf("run-token clone commit count=%s, want 3", got)
+	}
+	if got := strings.TrimSpace(runGit(t, clone, "rev-parse", "HEAD")); got != f.tip {
+		t.Fatalf("run-token clone tip=%s, want %s", got, f.tip)
+	}
+
+	wrongClone := filepath.Join(t.TempDir(), "wrong-clone")
+	output, err := gitCommand("", "clone", f.remote(t, "other"), wrongClone)
+	if err == nil || !strings.Contains(output, "403") {
+		t.Fatalf("cross-repository clone error=%v output=%q, want 403", err, output)
+	}
+	if _, statErr := os.Stat(filepath.Join(wrongClone, ".git")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("cross-repository clone created a git checkout: %v", statErr)
+	}
+}
+
+func TestRunTokenExpiresAtValidationWithoutSweep(t *testing.T) {
+	// R-KBMQ-V84N
+	f := newRunGitDoorFixture(t)
+	f.clock.now = f.clock.now.Add(time.Hour + time.Nanosecond)
+	request, err := http.NewRequest(http.MethodGet, f.remote(t, "demo")+"/info/refs?service=git-upload-pack", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := f.server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized || response.Header.Get("WWW-Authenticate") != gitBasicChallenge {
+		t.Fatalf("expired token status=%d challenge=%q, want 401 Basic", response.StatusCode, response.Header.Get("WWW-Authenticate"))
+	}
+}
+
+func TestRunTokenPushesWorkBranchButCannotFastForwardMain(t *testing.T) {
+	// R-KCUN-8ZVC
+	f := newRunGitDoorFixture(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(t, "", "clone", f.remote(t, "demo"), clone)
+	sha := commitFile(t, clone, "work.txt", "work", "run work")
+	runGit(t, clone, "push", "origin", "HEAD:refs/heads/ikigenba/work")
+	assertRef(t, f.custody, "refs/heads/ikigenba/work", sha)
+
+	output, err := gitCommand(clone, "push", "origin", "HEAD:main")
+	if err == nil || !strings.Contains(output, "repos: this token may not push to main") {
+		t.Fatalf("run main push error=%v output=%q, want hook rejection", err, output)
+	}
+	assertRef(t, f.custody, "refs/heads/main", f.tip)
 }
 
 func commitFile(t *testing.T, dir, name, contents, message string) string {

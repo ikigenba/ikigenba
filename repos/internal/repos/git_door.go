@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,7 +45,11 @@ func (s *Service) serveGit(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	actor, scope, authenticated := gitDoorIdentity(request)
+	actor, scope, authenticated, forbidden := s.gitDoorIdentity(request.Context(), request, kind, name)
+	if forbidden {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	if !authenticated {
 		if request.Header.Get("X-Forwarded-Proto") == "" {
 			w.Header().Set("WWW-Authenticate", gitBasicChallenge)
@@ -96,15 +103,26 @@ func parseGitDoorPath(path string) (kind, name, rest string, ok bool) {
 	return parts[0], strings.TrimSuffix(parts[1], ".git"), parts[2], true
 }
 
-func gitDoorIdentity(request *http.Request) (actor, scope string, ok bool) {
+func (s *Service) gitDoorIdentity(ctx context.Context, request *http.Request, kind, name string) (actor, scope string, ok, forbidden bool) {
 	if request.Header.Get("X-Forwarded-Proto") == "" {
-		// Run-token authentication is introduced by the next phase.
-		return "", "", false
+		_, password, present := request.BasicAuth()
+		if !present || password == "" || s.store == nil || s.custody == nil {
+			return "", "", false, false
+		}
+		digest := sha256.Sum256([]byte(password))
+		token, err := s.store.LookupRunToken(ctx, hex.EncodeToString(digest[:]))
+		if errors.Is(err, sql.ErrNoRows) || err != nil || !token.ExpiresAt.After(s.custody.Now()) {
+			return "", "", false, false
+		}
+		if token.Kind != kind || token.Name != name {
+			return "", "", false, true
+		}
+		return "run:" + kind + "/" + name, "run", true, false
 	}
 	if request.Header.Get("X-Owner-Id") == "" {
-		return "", "", false
+		return "", "", false, false
 	}
-	return request.Header.Get("X-Owner-Email"), "owner", true
+	return request.Header.Get("X-Owner-Email"), "owner", true, false
 }
 
 func gitCGIEnvironment(request *http.Request, root, kind, name, rest, actor, scope string) []string {

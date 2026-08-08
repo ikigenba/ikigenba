@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"eventplane/outbox"
 )
@@ -17,6 +18,7 @@ type Service struct {
 	producer       *outbox.Outbox
 	custody        *Custody
 	maxCommitBytes int64
+	runTokenTTL    time.Duration
 }
 
 func NewService(store *Store) *Service { return &Service{store: store} }
@@ -29,6 +31,9 @@ func (s *Service) SetCustody(custody *Custody) { s.custody = custody }
 // SetMaxCommitBytes configures the maximum raw HTTP request body accepted by
 // the commit handlers.
 func (s *Service) SetMaxCommitBytes(limit int64) { s.maxCommitBytes = limit }
+
+// SetRunTokenTTL configures the lifetime of newly minted run credentials.
+func (s *Service) SetRunTokenTTL(ttl time.Duration) { s.runTokenTTL = ttl }
 
 // ArchiveRepository moves custody, updates metadata, and appends the archived event on tx.
 func (s *Service) ArchiveRepository(ctx context.Context, tx *sql.Tx, kind, name string) (string, error) {

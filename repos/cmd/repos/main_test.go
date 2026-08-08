@@ -76,6 +76,7 @@ func TestInstalledLayoutBootsBuiltService(t *testing.T) {
 	command.Env = append(os.Environ(),
 		"REPOS_STATE_DIR="+stateDir,
 		"REPOS_MAX_COMMIT_BYTES=1048576",
+		"REPOS_RUN_TOKEN_TTL=2h",
 		"REPOS_DB_PATH="+dbPath,
 		"REPOS_GENERATION_PATH="+generationPath,
 		"REPOS_WWW_PATH="+filepath.Join(shareCurrent, "www"),
@@ -254,9 +255,9 @@ func TestManifestRenderMatchesCommittedServiceContract(t *testing.T) {
 	}
 }
 
-func TestReducedSpecHasNoConsumersOrExtrasAndHasCustodyWorker(t *testing.T) {
+func TestReducedSpecHasNoConsumersOrExtrasAndHasWorkers(t *testing.T) {
 	spec := reposSpec()
-	if spec.Consumers != nil || spec.ManifestExtras != nil || len(spec.Workers) != 1 {
+	if spec.Consumers != nil || spec.ManifestExtras != nil || len(spec.Workers) != 2 {
 		t.Fatalf("reduced spec consumers=%#v extras=%#v workers=%#v", spec.Consumers, spec.ManifestExtras, spec.Workers)
 	}
 	if spec.Handlers == nil || spec.Producer == nil || spec.Health == nil {
