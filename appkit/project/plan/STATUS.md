@@ -9,9 +9,9 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 30
+Next phase: 31
 
-
+- Phase 30 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — declare appkit's testing facts in `AGENTS.md` (layers, preconditions, GOWORK mode) and prove the declaration and the skip ban with two tagged tests
 
 
 

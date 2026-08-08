@@ -25,6 +25,7 @@ Verification ids change.
 - D18 → `project/design/D18.md` — Lifecycle records (`start` with version / `stop`) and event-plane publish/consume hop recording wired through `eventplane/observe` in `serve` — owns R-1WSC-AQ6Q, R-1Y08-OHXF, R-1Z85-29O4, R-20G1-G1ET, R-21NX-TT5I
 - D19 → `project/design/D19.md` — `appkit/httpclient`: the shared instrumented outbound client, correlation propagated to loopback IP literals only — owns R-22VU-7KW7, R-25BM-Z4DL, R-26JJ-CW4A, R-27RF-QNUZ, R-28ZC-4FLO
 - D20 → `project/design/D20.md` — Chain roots: `Recorder.StartRoot`/`StartChain`, plus `Router.Recorder()` and `Router.HTTPClient(timeout)` — owns R-XP15-H34E, R-XQ91-UUV3, R-XRGY-8MLS, R-XSOU-MECH, R-XTWR-0636
+- D21 → `project/design/D21.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): layers, GOWORK mode, environmental preconditions — owns none locally; **cites** R-O1AD-MRKW, R-O2IA-0JBL
 
 ## Verification ids → Decision
 
@@ -103,6 +104,8 @@ Verification ids change.
 - R-MJUX-YJZX → D8 → `project/design/D08.md`
 - R-ML2U-CBQM → D9 → `project/design/D09.md`
 - R-MSET-O79A → D8 → `project/design/D08.md`
+- R-O1AD-MRKW → D21 → `project/design/D21.md` (cited from `root project/design/D23.md`, `[proof: per-service]`)
+- R-O2IA-0JBL → D21 → `project/design/D21.md` (cited from `root project/design/D23.md`, `[proof: per-service]`)
 - R-PKUI-T1UT → D15 → `project/design/D15.md`
 - R-PNAB-KLC7 → D15 → `project/design/D15.md`
 - R-POI7-YD2W → D15 → `project/design/D15.md`

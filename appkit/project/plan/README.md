@@ -27,9 +27,10 @@ workspace); in the chassis thread the `appkit/web` package
 (D6) exists before the server integration (D7) mounts it).
 
 **Boundary note.** In the layout-parity thread only D1 is `appkit/`-package
-work; the repo-root readers `bin/registry` and `bin/start` are governed and
-tested by the **suite-level workspace** (the repo-root `project/`, its
-`bintest` module), never by an appkit Decision or phase. D4's live-box action
+work; the repo-root readers `bin/registry` and `bin/start` are governed by
+**`bin/project/`** and tested by the **`bin/bintest`** module under `bin`'s own
+gate (the repo-root aggregate gate is `suite_test.go` in the repo-root module),
+never by an appkit Decision or phase. D4's live-box action
 crosses into one production step and is a live-box check recorded in
 `project/appkit-verification.md`, not an unattended loop build. In the chassis thread, D7's dev wiring (a one-line
 `<APP>_WWW_PATH` export in a converted service's `bin/start` launch function)

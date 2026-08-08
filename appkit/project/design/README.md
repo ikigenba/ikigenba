@@ -94,6 +94,12 @@ Shared facts every Decision leans on:
 - **Test command:** `cd appkit && go test ./...`. **"The suite is green"** means
   `go build ./...`, `go vet ./...`, `gofmt -l .` (no output), and `go test ./...`
   all succeed with zero failures, from `appkit/`.
+- **Test layers.** The suite's testing vocabulary — the hermetic / composed /
+  live / manual layers, what each may touch, the single `//go:build live`
+  mechanism, and the ban on `t.Skip` outside live-tagged files — is the contract
+  `root project/design/D23.md`, cited and not restated here. appkit's own layer
+  facts (hermetic + composed in the default gate, a manual live-box runbook, no
+  live layer) are recorded in D21.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Requirement-id tag location:** `R-XXXX-XXXX` ids live inline in Go test
   source, tagged verbatim in files matching `*_test.go`.
@@ -124,9 +130,12 @@ Shared facts every Decision leans on:
   (D5 composes paths from them); it does not define or change them.
 - **Cross-module collaborators (outside `appkit/`).** The repo-root shell
   scripts `bin/registry` and `bin/start` are not Go and not under `appkit/`.
-  They are governed and tested by the **suite-level workspace** (the repo-root
-  `project/`, whose `bintest` module execs the real scripts under the root
-  green gate) — no appkit Decision owns their behavior or mints ids for it.
+  They are governed by **`bin/project/`** and tested by the **`bin/bintest`**
+  Go module, which execs the real scripts under `bin/`'s own green gate; the
+  repo-root aggregate gate is `suite_test.go` in the repo-root module, which
+  fans `go test ./...` out across every `go.work` module (documented in the
+  root `project/design/README.md` *Conventions*). No appkit Decision owns
+  those scripts' behavior or mints ids for it.
   Where one appears in prose here (D4's retirement end state, D7's dev
   wiring), it is a boundary-crossing collaborator: context this chassis work
   relies on, proven in the suite workspace or by a live `bin/start` smoke,
