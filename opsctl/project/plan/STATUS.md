@@ -11,5 +11,3 @@ status glyph** outside phase lines, so the anchored grep matches only phase
 lines.
 
 Next phase: 24
-
-- Phase 23 ⬜ realizes D17 (R-2B4O-Z98N; absorbs R-WRJF-H7J9, R-66UP-LI59, R-6FE0-9WC4, R-MYS7-2H2R, R-AXY7-K8GA, R-B0E0-BRXO, R-JRO8-5Q0R, R-MMF1-HFMO) — the committed manual-layer verification runbook
