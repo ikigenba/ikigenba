@@ -32,7 +32,20 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- Unit: `go test ./...` (workspace mode via the root `go.work`).
+The default gate is `go test ./...`, run in workspace mode through the
+repository-root `go.work`; do not set `GOWORK=off`.
+
+The suite uses the testing-layer vocabulary defined by the repository-root
+`project/design/D23.md`. All eventplane tests are hermetic: they use pure
+table tests, temp-directory SQLite databases with the real schema, loopback
+`httptest` servers with real HTTP clients, and a local `go list -deps`
+subprocess. Eventplane has no composed layer, no live layer, and no manual
+layer.
+
+Beyond the Go toolchain, the `observe` import-discipline test requires the `go`
+binary on `PATH` at test time and a module cache that already resolves this
+module's dependencies. Missing either prerequisite is a hard test failure, not
+a skip; the test must not fetch dependencies from the network.
 
 ## Versioning
 
