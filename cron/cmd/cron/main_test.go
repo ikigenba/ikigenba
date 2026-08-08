@@ -97,6 +97,100 @@ func TestNoHardcodedLoopbackPortLiteralInSource(t *testing.T) {
 	}
 }
 
+// R-O1AD-MRKW
+func TestAgentsDeclaresCronTestingFacts(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read committed AGENTS.md: %v", err)
+	}
+
+	document := string(body)
+	const heading = "## Tests\n"
+	start := strings.Index(document, heading)
+	if start < 0 {
+		t.Fatal("committed AGENTS.md is missing its Tests section")
+	}
+	testsSection := document[start+len(heading):]
+	if end := strings.Index(testsSection, "\n## "); end >= 0 {
+		testsSection = testsSection[:end]
+	}
+	normalizedTestsSection := strings.Join(strings.Fields(testsSection), " ")
+
+	declarations := []struct {
+		name string
+		text string
+	}{
+		{"default gate", "Default gate: `go test ./...` from `cron/`."},
+		{"green gate commands", "Green also means clean `go build ./...`, `go vet ./...`, and `gofmt -l .`."},
+		{"layers present", "Layers present: **hermetic** and **composed**; there is no **live** layer."},
+		{"environmental preconditions", "Environmental preconditions beyond the Go toolchain: none."},
+		{"GOWORK mode", "GOWORK mode: workspace for local development; `GOWORK=off` for the production build."},
+	}
+	for _, declaration := range declarations {
+		if !strings.Contains(normalizedTestsSection, declaration.text) {
+			t.Errorf("committed AGENTS.md Tests section is missing the %s declaration %q", declaration.name, declaration.text)
+		}
+	}
+}
+
+// R-O2IA-0JBL
+func TestTestFilesDoNotSkipOutsideLiveLayer(t *testing.T) {
+	moduleRoot := filepath.Join("..", "..")
+	verbs := []string{"Skip", "Skipf", "SkipNow"}
+
+	err := filepath.Walk(moduleRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || !strings.HasSuffix(info.Name(), "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if carriesLiveBuildConstraint(body) {
+			return nil
+		}
+		for _, verb := range verbs {
+			needle := []byte("t." + verb + "(")
+			if offset := bytes.Index(body, needle); offset >= 0 {
+				line := bytes.Count(body[:offset], []byte("\n")) + 1
+				return fmt.Errorf("%s:%d contains forbidden test skip call", path, line)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan non-live test files under %s: %v", moduleRoot, err)
+	}
+}
+
+func carriesLiveBuildConstraint(body []byte) bool {
+	replacer := strings.NewReplacer("(", " ", ")", " ", "!", " ", "&&", " ", "||", " ", ",", " ")
+	for _, rawLine := range bytes.Split(body, []byte("\n")) {
+		line := strings.TrimSpace(string(rawLine))
+		if strings.HasPrefix(line, "package ") {
+			return false
+		}
+		var expression string
+		switch {
+		case strings.HasPrefix(line, "//go:build "):
+			expression = strings.TrimPrefix(line, "//go:build ")
+		case strings.HasPrefix(line, "// +build "):
+			expression = strings.TrimPrefix(line, "// +build ")
+		default:
+			continue
+		}
+		for _, tag := range strings.Fields(replacer.Replace(expression)) {
+			if tag == "live" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // R-4LKF-FB23
 func TestCronBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	root := t.TempDir()
