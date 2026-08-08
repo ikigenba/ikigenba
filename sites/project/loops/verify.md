@@ -37,12 +37,23 @@ phase on a gap.
    Any non-pass (build/vet error, `gofmt -l .` prints a file, a failing or
    **`SKIP`ped** test) is a gap. **A skipped `R-XXXX-XXXX`-tagged test is a gap,
    never green** — a skip means that requirement was not verified. Green
-   **includes** the D23 headless-Chrome browser-wiring test and hard-requires a
-   `google-chrome` binary on `PATH`; **no Chrome → red, never skipped** (the
+   **includes** the headless-Chrome browser-wiring test and **hard-requires a
+   `google-chrome` binary on `PATH`**; **no Chrome → red, never skipped** (the
    harness may retry the browser *launch* once; scenario assertions are never
    retried).
 
-3. **Check coverage of every id in the brief's `### Ids to cover`.** Extract the
+3. **Run the skip ban** — `root project/design/D23.md` bans `t.Skip` and its
+   variants outside `live`-tagged files, and **this tree has no live layer**, so
+   any occurrence anywhere is a gap:
+
+   ```
+   grep -rnE 't\.Skip(f|Now)?\(' --include='*_test.go' --exclude-dir=project .
+   ```
+
+   **Printing nothing is the pass condition.** Any hit is an open gap (report the
+   file:line); do not fix it yourself.
+
+4. **Check coverage of every id in the brief's `### Ids to cover`.** Extract the
    denominator mechanically:
 
    ```
@@ -66,35 +77,38 @@ phase on a gap.
    grep/smoke. Any `grep`-style check must be **scoped to exclude `project/`** so it
    can never match the workspace/prompt docs that quote the pattern.
 
-4. **Run the global coverage ratchet** — the deterministic set check that catches
+5. **Run the global coverage ratchet** — the deterministic set check that catches
    a rewrite silently dropping a previously-covered id, independent of this
    phase's own denominator:
 
    ```
-   comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | sort -u) \
+   comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u) \
             <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
                   <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
    ```
 
-   Empty output is the pass condition. Any id in the remainder is an open gap —
-   design mints it, no pending phase claims it, and no test tags it, so a prior
-   phase's coverage regressed (the dropped tagged test exists in git history to
-   restore).
+   The `grep -v 'R-XXXX-XXXX'` filter is load-bearing: the design docs quote
+   `R-XXXX-XXXX` as a literal *placeholder* when describing the id format, and
+   without the filter that placeholder surfaces as a phantom uncovered id that
+   can never be closed. **Empty output is the pass condition.** Any id in the
+   remainder is an open gap — design mints it, no pending phase claims it, and no
+   test tags it, so a prior phase's coverage regressed (the dropped tagged test
+   exists in git history to restore).
 
-5. **Collect the open gaps** — the set of ids that are uncovered or whose test
-   fails/skips (from step 3, scoped to this phase, and step 4, scoped globally),
-   each with the exact command run and the observed output that proves it open
-   (file:line when known). When uncertain a test really asserts, treat the id as
-   **uncovered**.
+6. **Collect the open gaps** — the set of ids that are uncovered or whose test
+   fails/skips (from step 4, scoped to this phase, and steps 3 and 5, scoped
+   globally), each with the exact command run and the observed output that proves
+   it open (file:line when known). When uncertain a test really asserts, treat the
+   id as **uncovered**.
 
-6. **Decide:**
+7. **Decide:**
 
-   - **Pass** (suite green, no open gaps in this phase's ids, and the global
-     ratchet is empty): delete **only this phase's** `- Phase NN …` line from
-     `project/plan/STATUS.md` (never the `Next phase` counter line, never another
-     phase's line) and `git rm project/plan/phase-NN.md`, commit that deletion
-     with the repo's `Co-Authored-By` trailer, and `rm -f project/loops/brief.md`.
-     Report `NEXT`.
+   - **Pass** (suite green, skip-ban grep empty, no open gaps in this phase's ids,
+     and the global ratchet empty): delete **only this phase's**
+     `- Phase NN …` line from `project/plan/STATUS.md` (never the `Next phase`
+     counter line, never another phase's line) and `git rm project/plan/phase-NN.md`,
+     commit that deletion with the repo's `Co-Authored-By` trailer, and
+     `rm -f project/loops/brief.md`. Report `NEXT`.
 
    - **Gap** (anything open): **leave the phase's `⬜` line in place, change no
      source.** Then measure progress against your prior `## Verify feedback`:
@@ -172,9 +186,9 @@ Report this run's result as a `status` and a one-sentence `message`:
   `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
   blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 44 green: 5/5 ids covered, ratchet clean, deleted.` or
-  `Phase 44 gap: R-VM2G-XW4N test skipped; recorded feedback attempt 2.` or
-  `Phase 44 blocked: second stall, wrote blocked.md.`
+  `Phase 47 green: 2/2 ids covered, skip ban clean, ratchet clean, deleted.` or
+  `Phase 47 gap: R-O2IA-0JBL has no tagged test; recorded feedback attempt 2.` or
+  `Phase 47 blocked: second stall, wrote blocked.md.`
 
 Always report **`NEXT`** — you hand off every turn, on a pass, a gap, a stall
 reset, and a blocked escalation. Keep `message` a single plain sentence — not a

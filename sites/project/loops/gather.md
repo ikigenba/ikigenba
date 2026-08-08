@@ -33,12 +33,13 @@ only the brief's **contract region**; you never write its **feedback region**.
    ```
 
    `project/plan/STATUS.md` is the manifest and the only home of the `⬜`
-   marker; phase lines are bullets beginning `- Phase` at column 0.
+   marker; phase lines are bullets beginning `- Phase` at column 0, and the
+   `Next phase: NN` counter line is not a bullet and never matches.
    - **If it prints nothing** (the queue is empty — no pending phase line
      remains), the whole job is complete. Report **`DONE`** and stop. This is
      the loop's other end.
    - Otherwise, read the phase number `NN` from the matched line (e.g.
-     `- Phase 44 ⬜ realizes D30 — …` → `NN = 44`).
+     `- Phase 47 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — …` → `NN = 47`).
 
 3. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read only
    its first heading line `# Brief — Phase MM`:
@@ -75,10 +76,21 @@ only the brief's **contract region**; you never write its **feedback region**.
      never the text on a separate line, never an id the phase does not own. If the
      phase owns none, write the single line `(none — structural phase)`;
    - the **files to touch**, the **dependency interface signatures** copied in (so
-     build never opens a design file), and the **done bar**;
+     build never opens a design file), and the **done bar** — restated from the
+     phase's *Done when* as deterministic exit conditions, including sites' green
+     suite (below) and the co-located test-placement rule;
    - a **`## Verify feedback`** region left empty.
 
    Then report **`NEXT`**.
+
+**sites' green suite** (copy into every brief's done bar, from design's
+*Conventions*): `cd sites && go build ./...`, `cd sites && go vet ./...`,
+`cd sites && gofmt -l .` (prints nothing), and `cd sites && go test ./...` all
+succeed with zero failures. **Green hard-requires a `google-chrome` binary on
+`PATH`** — the D23 browser-wiring test runs for real; no Chrome means the suite
+is **red, never skipped**. Per `root project/design/D23.md` this tree has a
+**hermetic** and a **composed** layer only — no live layer — so `t.Skip`,
+`t.Skipf`, and `t.SkipNow` may not appear in **any** `*_test.go` file here.
 
 ## The `project/loops/brief.md` schema (emit exactly this shape)
 
@@ -112,10 +124,11 @@ R-YYYY-YYYY — <full requirement text …>
 ```
 
 ### Done bar
-<deterministic exit conditions: the green suite (from design Conventions) AND
-each id above covered by a co-located, genuinely-asserting `// R-id` test that
-runs under `go test ./...` with no SKIP; a structural phase names its grep/smoke
-instead.>
+<deterministic exit conditions: sites' green suite (go build / go vet /
+gofmt -l . / go test ./... from `sites/`, with google-chrome on PATH) AND each id
+above covered by a co-located, genuinely-asserting `// R-id` test that runs under
+`go test ./...` with no SKIP; a structural phase names its `project/`-excluded
+grep or named smoke instead.>
 
 ## Verify feedback
 _(empty — no verify attempt yet)_
@@ -139,7 +152,7 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Authored brief for Phase 44 (D30, 5 ids).`
+  `Authored brief for Phase 47 (D31, 2 ids).`
 
 Report **`DONE`** when `project/loops/blocked.md` exists, or when step 2's grep
 found no `⬜` phase; in every other case (brief authored, or an in-flight brief

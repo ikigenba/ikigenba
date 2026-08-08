@@ -41,6 +41,8 @@ phase's `STATUS.md` line or body file — that is verify's job.
      requirement text describes. **A tagged test that does not truly assert the
      discriminating behavior is worse than none** — verify will treat it as
      uncovered.
+   - **Never skip.** `t.Skip`, `t.Skipf`, and `t.SkipNow` are banned in this tree
+     (see conventions); a missing tool is a hard failure, never a skip.
    - **Never drop an existing tagged test.** Before committing, check this turn's
      own diff for dropped tags: any removed line matching `R-[A-Z0-9]{4}-[A-Z0-9]{4}`
      outside `project/` (`git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'`)
@@ -55,10 +57,10 @@ phase's `STATUS.md` line or body file — that is verify's job.
    cd sites && go test ./...
    ```
 
-   Green **includes** the D23 headless-Chrome browser-wiring test and therefore
-   requires a `google-chrome` binary on `PATH`; no Chrome makes the suite **red**,
-   never skipped. One browser-*launch* retry is allowed; scenario assertions are
-   never retried.
+   Green **includes** the headless-Chrome browser-wiring test and therefore
+   **hard-requires a `google-chrome` binary on `PATH`**; no Chrome makes the suite
+   **red**, never skipped. One browser-*launch* retry is allowed; scenario
+   assertions are never retried.
 6. **Commit this turn's increment** — a non-empty commit with a phase-naming
    message and the repo's `Co-Authored-By` trailer. `project/loops/brief.md` is
    gitignored, so `git add -A` will not stage it — good; leave it untouched.
@@ -69,9 +71,21 @@ phase's `STATUS.md` line or body file — that is verify's job.
 - **Module / toolchain:** Go 1.26, single `module sites` rooted at `sites/`;
   pure-Go SQLite `modernc.org/sqlite` (no cgo); `appkit`, `eventplane`, and
   `registry` are committed in-repo replace-siblings. No `agentkit` dependency.
+  GOWORK mode is workspace (the repo-root `go.work`); the production build's
+  `GOWORK=off` is `bin/ship sites`' business, not the gate's.
 - **"The suite is green"** = the four commands in step 5 all succeed with zero
-  failures (`gofmt -l .` prints nothing), **and** the D23 browser test runs (no
-  skip) against `google-chrome` on `PATH`.
+  failures (`gofmt -l .` prints nothing), **and** the browser-wiring test runs for
+  real (no skip) against `google-chrome` on `PATH`.
+- **Test layers.** Per `root project/design/D23.md` this tree has exactly two
+  layers, both in the default gate: **hermetic** (temp-dir filesystems, real
+  SQLite through the real migration runner, `httptest`, in-process JS evaluation,
+  committed-file reads, local subprocesses such as `go list` and a headless
+  browser on loopback) and **composed** (the boot smoke in `cmd/sites/main_test.go`
+  that builds and runs the real `cmd/sites` binary). There is **no live layer** and
+  **no manual runbook** in this tree — so no `//go:build live` file exists, and
+  **`t.Skip`, `t.Skipf`, and `t.SkipNow` may not appear in any `*_test.go` file
+  here.** A tool the tests need (`google-chrome`, `go`) is an environmental
+  precondition: a hard failure when absent, never a skip.
 - **Test placement — co-located, behavior-named, never gathered.** Package-local
   unit tests live in the **same package as the code they exercise**, in
   `*_test.go` files named for the behavior asserted — e.g.
@@ -108,9 +122,9 @@ phase's `STATUS.md` line or body file — that is verify's job.
   reads the file from disk and asserts its content (locations, `proxy_pass`
   targets, `auth_request` directives, correlation-header lines) — nginx itself
   is never run by the suite.
-- **Doc-truth work** (if a brief's done bar is a text/grep check on `AGENTS.md`
-  or similar rather than a Go test) is satisfied by editing the doc, not by
-  adding a test.
+- **Doc-truth work** (a brief whose done bar asserts the content of `AGENTS.md`
+  or another committed doc) is satisfied by editing the real doc **and** by the
+  tagged test that reads that committed file from disk — never by a fixture copy.
 
 ## Boundaries
 
@@ -121,6 +135,8 @@ phase's `STATUS.md` line or body file — that is verify's job.
   verify's sole right.
 - Never delete or edit `project/loops/brief.md`, including its `## Verify feedback`
   region — you **read** the feedback but never write it.
+- Never introduce a `t.Skip` variant, an env gate, or a build tag that holds a
+  requirement test out of `go test ./...`.
 - Never make an empty commit.
 
 ## Reporting the result
@@ -134,7 +150,7 @@ Report this run's result as a `status` and a one-sentence `message`:
   `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
   blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Built internal/serve's confined static handler + 4 tagged tests; suite green.`
+  `Rewrote AGENTS.md Tests section and added 2 tagged tests; suite green.`
 
 Always report **`NEXT`** — you hand off every turn. Keep `message` a single plain
 sentence — not a JSON object or code block.
