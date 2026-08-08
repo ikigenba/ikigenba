@@ -2,27 +2,37 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"appkit"
+	appdb "appkit/db"
 	"appkit/manifest"
+	appkitserver "appkit/server"
+	"eventplane/outbox"
+
+	reposdb "repos/internal/db"
 )
 
 func TestInstalledLayoutBootsBuiltService(t *testing.T) {
 	// R-4LKF-FB23
 	const version = "phase-27-test"
-	root := t.TempDir()
+	installRoot := t.TempDir()
+	root := filepath.Join(installRoot, "repos")
 	stateDir := filepath.Join(root, "state")
 	cacheDir := filepath.Join(root, "cache")
 	libexecDir := filepath.Join(root, "libexec")
@@ -73,15 +83,13 @@ func TestInstalledLayoutBootsBuiltService(t *testing.T) {
 	generationPath := filepath.Join(cacheDir, "repos.db.generation")
 	command := exec.Command(runLink, "serve", "-port", fmt.Sprint(port))
 	command.Dir = root
-	command.Env = append(os.Environ(),
-		"REPOS_STATE_DIR="+stateDir,
-		"REPOS_MAX_COMMIT_BYTES=1048576",
-		"REPOS_RUN_TOKEN_TTL=2h",
-		"REPOS_DB_PATH="+dbPath,
-		"REPOS_GENERATION_PATH="+generationPath,
-		"REPOS_WWW_PATH="+filepath.Join(shareCurrent, "www"),
+	command.Env = []string{
+		"PATH=" + os.Getenv("PATH"),
+		"IKIGENBA_ROOT=" + installRoot,
+		"REPOS_STATE_DIR=" + stateDir,
 		"REPOS_LOG_LEVEL=error",
-	)
+		"TELEMETRY_ENABLED=0",
+	}
 	var processOutput bytes.Buffer
 	command.Stdout = &processOutput
 	command.Stderr = &processOutput
@@ -177,6 +185,97 @@ func TestInstalledLayoutBootsBuiltService(t *testing.T) {
 			t.Fatalf("service file %s mode = %s", path, info.Mode())
 		}
 	}
+	gitRoot := filepath.Join(stateDir, "git")
+	if info, err := os.Stat(gitRoot); err != nil || !info.IsDir() {
+		t.Fatalf("git root %s was not created under state: info=%v err=%v", gitRoot, info, err)
+	}
+}
+
+func TestAssembledSpecRoutesApplyTheirChassisGates(t *testing.T) {
+	// R-EL8Q-U5GD
+	t.Setenv("REPOS_STATE_DIR", t.TempDir())
+	t.Setenv("REPOS_GIT_BIN", "git")
+	t.Setenv("REPOS_RUN_TOKEN_TTL", "")
+	t.Setenv("REPOS_MAX_COMMIT_BYTES", "")
+
+	dbPath := filepath.Join(t.TempDir(), "repos.db")
+	conn, err := appdb.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	migrations, err := reposdb.Migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appdb.Migrate(context.Background(), conn, migrations); err != nil {
+		t.Fatal(err)
+	}
+	producer, err := outbox.New(conn, outbox.Options{
+		Source: "repos", Registry: reposSpec().Events,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := reposSpec()
+	server, err := appkitserver.New(appkitserver.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ResourceID: "http://localhost/srv/repos/mcp",
+		AuthServer: "http://localhost",
+		Version:    "test",
+		Service:    spec.App,
+		Feed:       producer.FeedHandler(),
+		FeedPath:   spec.Feed,
+		Register:   spec.Handlers,
+		Health:     spec.Health,
+		Events:     spec.Events,
+		WWW:        loadReposWWW(t),
+		DB:         conn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := spec.Producer(producer); err != nil {
+		t.Fatal(err)
+	}
+
+	mcpBody := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
+	unauthorized := httptest.NewRecorder()
+	server.Handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(mcpBody)))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("POST /mcp without identity status = %d, want 401", unauthorized.Code)
+	}
+	authorizedRequest := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(mcpBody))
+	authorizedRequest.Header.Set("X-Owner-Id", "owner-test")
+	authorized := httptest.NewRecorder()
+	server.Handler.ServeHTTP(authorized, authorizedRequest)
+	if authorized.Code != http.StatusOK || !strings.Contains(authorized.Body.String(), `"name":"create"`) {
+		t.Fatalf("POST /mcp with identity status=%d body=%s", authorized.Code, authorized.Body.String())
+	}
+
+	landing := httptest.NewRecorder()
+	server.Handler.ServeHTTP(landing, httptest.NewRequest(http.MethodGet, "/", nil))
+	if landing.Code != http.StatusOK || !strings.Contains(landing.Body.String(), "<title>repos · repos</title>") {
+		t.Fatalf("GET / status=%d body=%s", landing.Code, landing.Body.String())
+	}
+
+	feedContext, cancelFeed := context.WithCancel(context.Background())
+	cancelFeed()
+	feed := httptest.NewRecorder()
+	server.Handler.ServeHTTP(feed, httptest.NewRequest(http.MethodGet, "/feed", nil).WithContext(feedContext))
+	if feed.Code != http.StatusOK || feed.Header().Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("GET /feed status=%d content-type=%q body=%s", feed.Code, feed.Header().Get("Content-Type"), feed.Body.String())
+	}
+
+	proxied := httptest.NewRequest(http.MethodGet, "/content", nil)
+	proxied.Header.Set("X-Forwarded-Proto", "https")
+	guarded := httptest.NewRecorder()
+	server.Handler.ServeHTTP(guarded, proxied)
+	if guarded.Code != http.StatusNotFound {
+		t.Fatalf("proxied GET /content status=%d body=%s", guarded.Code, guarded.Body.String())
+	}
 }
 
 func TestAuthoredManifestContainsOnlyPortableInputs(t *testing.T) {
@@ -242,7 +341,7 @@ func TestProductionGoSourceContainsNoCompiledOptPath(t *testing.T) {
 func TestManifestRenderMatchesCommittedServiceContract(t *testing.T) {
 	// R-EISY-2LYZ
 	output := []byte(appkit.Manifest(reposSpec()))
-	want := "APP=repos\nMOUNT=/srv/repos/\nDEFAULT=false\nPORT=3007\nMCP=true\nFEED=/feed\n"
+	want := "APP=repos\nMOUNT=/srv/repos/\nDEFAULT=false\nPORT=3007\nMCP=true\nFEED=/feed\nREPOS_RUN_TOKEN_TTL=2h\nREPOS_MAX_COMMIT_BYTES=67108864\n"
 	if string(output) != want {
 		t.Fatalf("manifest output:\n%s\nwant:\n%s", output, want)
 	}
@@ -255,14 +354,67 @@ func TestManifestRenderMatchesCommittedServiceContract(t *testing.T) {
 	}
 }
 
-func TestReducedSpecHasNoConsumersOrExtrasAndHasWorkers(t *testing.T) {
+func TestRuntimeKnobDefaultsAgreeWithAuthoredManifest(t *testing.T) {
+	// R-L9EG-DDWC
+	manifestValues := readManifestValues(t)
+	knobs, err := resolveRuntimeKnobs(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestTTL, err := time.ParseDuration(manifestValues["REPOS_RUN_TOKEN_TTL"])
+	if err != nil {
+		t.Fatalf("parse manifest run-token TTL: %v", err)
+	}
+	if knobs.runTokenTTL != manifestTTL {
+		t.Fatalf("resolved run-token TTL = %s, manifest = %s", knobs.runTokenTTL, manifestTTL)
+	}
+	if got, want := strconv.FormatInt(knobs.maxCommitBytes, 10), manifestValues["REPOS_MAX_COMMIT_BYTES"]; got != want {
+		t.Fatalf("resolved max commit bytes = %q, manifest = %q", got, want)
+	}
+	wantKeys := []string{"APP", "MOUNT", "DEFAULT", "PORT", "MCP", "FEED", "REPOS_RUN_TOKEN_TTL", "REPOS_MAX_COMMIT_BYTES"}
+	if len(manifestValues) != len(wantKeys) {
+		t.Fatalf("manifest keys = %#v, want exactly %#v", manifestValues, wantKeys)
+	}
+	for _, key := range wantKeys {
+		if _, found := manifestValues[key]; !found {
+			t.Errorf("manifest is missing declared key %s", key)
+		}
+	}
+	for _, forbidden := range []string{"REPOS_PROVIDER", "REPOS_MODEL", "REPOS_SESSION_TTL", "REPOS_MAX_SESSIONS", "CONSUMES"} {
+		if _, found := manifestValues[forbidden]; found {
+			t.Errorf("manifest contains retired key %s", forbidden)
+		}
+	}
+}
+
+func TestSpecHasNoConsumersAndDeclaresWorkersAndManifestExtras(t *testing.T) {
 	spec := reposSpec()
-	if spec.Consumers != nil || spec.ManifestExtras != nil || len(spec.Workers) != 2 {
-		t.Fatalf("reduced spec consumers=%#v extras=%#v workers=%#v", spec.Consumers, spec.ManifestExtras, spec.Workers)
+	if spec.Consumers != nil || len(spec.ManifestExtras) != 2 || len(spec.Workers) != 2 {
+		t.Fatalf("spec consumers=%#v extras=%#v workers=%#v", spec.Consumers, spec.ManifestExtras, spec.Workers)
 	}
 	if spec.Handlers == nil || spec.Producer == nil || spec.Health == nil {
 		t.Fatal("reduced spec is missing handlers, producer, or health")
 	}
+}
+
+func readManifestValues(t *testing.T) map[string]string {
+	t.Helper()
+	contents, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(string(contents)), "\n") {
+		key, value, found := strings.Cut(line, "=")
+		if !found || key == "" {
+			t.Fatalf("malformed manifest line %q", line)
+		}
+		if _, duplicate := values[key]; duplicate {
+			t.Fatalf("duplicate manifest key %s", key)
+		}
+		values[key] = value
+	}
+	return values
 }
 
 func copyTree(t *testing.T, source, destination string) {

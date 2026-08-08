@@ -41,11 +41,13 @@ The tree has exactly two test layers, both in the default gate:
 There is no live layer and no tree-local manual runbook. Tests do not contact
 non-loopback services or depend on an assembled suite.
 
-The `go` binary must be on `PATH` in the test process's environment for the
-composed smoke, with the module cache resolving repos' `replace` siblings.
-Tests, builds, and vet run in workspace mode through the repo-root `go.work`.
-The production build forces `GOWORK=off`; that mode is not part of the default
-gate.
+The real `git` binary must be on `PATH`; its `git http-backend` and repository
+plumbing are exercised directly against temporary local fixtures and absence is
+a hard failure. The `go` binary must be on `PATH` in the test process's
+environment for the composed smoke, with the module cache resolving repos'
+`replace` siblings. Tests, builds, and vet run in workspace mode through the
+repo-root `go.work`. The production build forces `GOWORK=off`; that mode is not
+part of the default gate.
 
 ## Versioning
 

@@ -33,6 +33,8 @@ func TestAgentsMDDeclaresRepositoryTestingFacts(t *testing.T) {
 			"no tree-local manual runbook",
 		},
 		"environmental preconditions": {
+			"real `git` binary must be on `PATH`",
+			"absence is a hard failure",
 			"`go` binary must be on `PATH` in the test process's environment",
 			"module cache resolving repos' `replace` siblings",
 		},
