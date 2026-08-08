@@ -37,17 +37,6 @@ func loadMigrations(spec Spec) ([]db.Migration, error) {
 	return db.LoadMigrations(spec.Migrations, spec.migrationsDir())
 }
 
-// runManifest emits the portable service manifest from Spec alone. It is
-// intentionally independent of config.Resolve so deploy preflight can inspect a
-// staged binary before any on-box env or filesystem state exists.
-func runManifest(spec Spec, args []string, stdout, stderr io.Writer) error {
-	if err := parseSimpleFlags(spec.App+" manifest", args, stderr); err != nil {
-		return err
-	}
-	fmt.Fprint(stdout, manifest.Emit(manifestFields(spec)))
-	return nil
-}
-
 func manifestFields(spec Spec) manifest.Fields {
 	extras := make([]manifest.KV, 0, len(spec.ManifestExtras))
 	for _, kv := range spec.ManifestExtras {

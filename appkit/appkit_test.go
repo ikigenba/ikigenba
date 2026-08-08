@@ -91,9 +91,9 @@ func TestRunServeRecordsLifecycleStartAndStop(t *testing.T) {
 	ingest := httptest.NewServer(sink)
 	t.Cleanup(ingest.Close)
 
-	oldVersion, oldCommit := version, commit
-	version, commit = "v21.4.0", "abc1234"
-	t.Cleanup(func() { version, commit = oldVersion, oldCommit })
+	oldVersion := version
+	version = "v21.4.0+abc1234"
+	t.Cleanup(func() { version = oldVersion })
 
 	spec := testSpec()
 	var (
@@ -146,7 +146,7 @@ func TestRunServeRecordsLifecycleStartAndStop(t *testing.T) {
 		}
 	}
 	// R-1WSC-AQ6Q
-	if len(lifecycle) < 1 || lifecycle[0].Op != "start" || lifecycle[0].CorrelationID != "" || lifecycle[0].Detail["version"] != "v21.4.0 (abc1234)" {
+	if len(lifecycle) < 1 || lifecycle[0].Op != "start" || lifecycle[0].CorrelationID != "" || lifecycle[0].Detail["version"] != "v21.4.0+abc1234" {
 		t.Fatalf("start lifecycle record = %#v, want empty correlation and stamped version", lifecycle)
 	}
 	// R-1Y08-OHXF
@@ -172,7 +172,7 @@ func TestDispatch_Version(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("version exit = %d, want 0", code)
 	}
-	// Default un-stamped build self-reports "dev (none)" -> "dev".
+	// Default un-stamped builds self-report "dev".
 	if !strings.Contains(out, version) {
 		t.Errorf("version output %q does not contain %q", out, version)
 	}
@@ -191,7 +191,7 @@ func TestDispatch_VersionFlagAlias(t *testing.T) {
 func TestDispatch_ReducedVerbSetAndManifestLibrary(t *testing.T) {
 	// R-8EMY-A004
 	dbPath := filepath.Join(t.TempDir(), "widget.db")
-	recognized := []struct {
+	cases := []struct {
 		name       string
 		args       []string
 		env        map[string]string
@@ -200,11 +200,11 @@ func TestDispatch_ReducedVerbSetAndManifestLibrary(t *testing.T) {
 	}{
 		{name: "serve", args: []string{"serve"}, env: map[string]string{"WIDGET_DB_PATH": dbPath, "WIDGET_LOG_LEVEL": "screaming"}, wantCode: 1, wantStderr: "invalid log level"},
 		{name: "version", args: []string{"version"}, wantCode: 0},
-		{name: "manifest", args: []string{"manifest"}, wantCode: 0},
+		{name: "manifest", args: []string{"manifest"}, wantCode: 2, wantStderr: `unknown command "manifest" (want serve|version|migrate|schema)`},
 		{name: "migrate", args: []string{"migrate"}, env: map[string]string{"WIDGET_DB_PATH": dbPath}, wantCode: 0},
 		{name: "schema", args: []string{"schema"}, env: map[string]string{"WIDGET_DB_PATH": dbPath}, wantCode: 0},
 	}
-	for _, tc := range recognized {
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			code, _, errs := run(t, testSpec(), tc.env, tc.args...)
 			if code != tc.wantCode {
@@ -213,7 +213,7 @@ func TestDispatch_ReducedVerbSetAndManifestLibrary(t *testing.T) {
 			if tc.wantStderr != "" && !strings.Contains(errs, tc.wantStderr) {
 				t.Fatalf("%s stderr = %q, want %q", tc.name, errs, tc.wantStderr)
 			}
-			if strings.Contains(errs, "unknown command") {
+			if tc.name != "manifest" && strings.Contains(errs, "unknown command") {
 				t.Fatalf("%s was not accepted by dispatch: %q", tc.name, errs)
 			}
 		})
@@ -228,12 +228,9 @@ func TestDispatch_ReducedVerbSetAndManifestLibrary(t *testing.T) {
 		Extras:  []manifest.KV{{Key: "OUTBOX_RETENTION_DAYS", Value: "7"}},
 		Default: false,
 	})
-	code, out, errs := run(t, testSpec(), nil, "manifest")
-	if code != 0 {
-		t.Fatalf("manifest exit = %d, want 0; stderr=%q", code, errs)
-	}
+	out := manifest.Emit(manifestFields(testSpec()))
 	if out != want {
-		t.Fatalf("manifest dispatch\n got: %q\nwant: %q", out, want)
+		t.Fatalf("manifest library output\n got: %q\nwant: %q", out, want)
 	}
 }
 
@@ -243,10 +240,7 @@ func TestDispatch_ConsumersDeriveManifestConsumes(t *testing.T) {
 	spec.Consumes = nil
 	spec.Consumers = []Consumer{{Source: "a"}, {Source: "b"}}
 
-	code, out, errs := run(t, spec, nil, "manifest")
-	if code != 0 {
-		t.Fatalf("manifest exit = %d, want 0; stderr=%q", code, errs)
-	}
+	out := manifest.Emit(manifestFields(spec))
 	fields, _, err := manifest.Parse(strings.NewReader(out))
 	if err != nil {
 		t.Fatalf("parse manifest: %v", err)
@@ -256,10 +250,7 @@ func TestDispatch_ConsumersDeriveManifestConsumes(t *testing.T) {
 	}
 
 	spec.Consumers = nil
-	code, out, errs = run(t, spec, nil, "manifest")
-	if code != 0 {
-		t.Fatalf("manifest without consumers exit = %d, want 0; stderr=%q", code, errs)
-	}
+	out = manifest.Emit(manifestFields(spec))
 	fields, _, err = manifest.Parse(strings.NewReader(out))
 	if err != nil {
 		t.Fatalf("parse manifest without consumers: %v", err)
@@ -401,7 +392,7 @@ func TestDispatch_BackupRestoreRemovedAndSpecHasNoHooks(t *testing.T) {
 		if code != 2 {
 			t.Fatalf("%s exit = %d, want unknown-command exit 2", verb, code)
 		}
-		if !strings.Contains(errs, `unknown command "`+verb+`"`) || !strings.Contains(errs, "want serve|version|manifest|migrate|schema") {
+		if !strings.Contains(errs, `unknown command "`+verb+`"`) || !strings.Contains(errs, "want serve|version|migrate|schema") {
 			t.Fatalf("%s stderr = %q, want unknown-command message naming reduced verb set", verb, errs)
 		}
 	}
@@ -419,7 +410,7 @@ func TestDispatch_UnknownCommand(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("unknown command exit = %d, want 2", code)
 	}
-	if !strings.Contains(errs, "unknown command") || !strings.Contains(errs, "want serve|version|manifest|migrate|schema") {
+	if !strings.Contains(errs, "unknown command") || !strings.Contains(errs, "want serve|version|migrate|schema") {
 		t.Errorf("stderr = %q, want an unknown-command message with reduced verb set", errs)
 	}
 }

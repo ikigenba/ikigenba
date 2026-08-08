@@ -26,14 +26,10 @@ import (
 	"eventplane/outbox"
 )
 
-// version / commit are stamped at build time via
-// -ldflags "-X appkit.version=… -X appkit.commit=…". They are package-level VARs
-// (NOT consts) so the linker injection takes effect (PLAN §F1: -X on a const is
-// silently ignored). Defaults make an un-stamped dev build self-identify.
-var (
-	version = "dev"
-	commit  = "none"
-)
+// version is stamped at build time via -ldflags "-X appkit.version=…". It is a
+// package-level var (not a const) so linker injection takes effect. The stamped
+// version identity includes the source SHA as build metadata when appropriate.
+var version = "dev"
 
 // ManifestKV is one ordered manifest extra. A slice of these (not a map) keeps
 // the manifest emit order deterministic for the byte-compare against the
@@ -238,14 +234,12 @@ func dispatch(spec Spec, args []string, getenv func(string) string, stdin io.Rea
 		err = runServe(spec, rest, getenv, stdout, stderr)
 	case "version":
 		fmt.Fprintf(stdout, "%s\n", versionString())
-	case "manifest":
-		err = runManifest(spec, rest, stdout, stderr)
 	case "migrate":
 		err = runMigrate(spec, rest, getenv, stdout, stderr)
 	case "schema":
 		err = runSchema(spec, rest, getenv, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "%s: unknown command %q (want serve|version|manifest|migrate|schema)\n", spec.App, cmd)
+		fmt.Fprintf(stderr, "%s: unknown command %q (want serve|version|migrate|schema)\n", spec.App, cmd)
 		return 2
 	}
 	if err != nil {
@@ -258,16 +252,10 @@ func dispatch(spec Spec, args []string, getenv func(string) string, stdin io.Rea
 	return 0
 }
 
-// versionString is the self-report: "<version> (<commit>)" — the box cannot lie
-// about what is deployed (PLAN §1.6). The commit stamp is whatever bin/ship
-// injects via -ldflags -X appkit.commit=…: a short SHA for a clean tag build, or
-// "<sha>-dirty" for an ad-hoc build off a dirty source tree (the suffix is part
-// of the injected string, so it renders here verbatim — no extra logic needed).
+// versionString returns the stamped version identity verbatim. Source identity
+// already travels in the version's +<sha> build metadata.
 func versionString() string {
-	if commit == "" || commit == "none" {
-		return version
-	}
-	return fmt.Sprintf("%s (%s)", version, commit)
+	return version
 }
 
 // flagHelp is the sentinel a verb returns when the user asked for -h/-help, so
