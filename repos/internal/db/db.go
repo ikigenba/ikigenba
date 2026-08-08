@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	appdb "appkit/db"
-	"eventplane/consumer"
 	"eventplane/outbox"
 )
 
@@ -30,9 +29,6 @@ func Migrations() ([]appdb.Migration, error) {
 		return nil, fmt.Errorf("repos db: no embedded migrations")
 	}
 	if err := guardCopiedSchema(migrations, "outbox", outbox.SchemaSQL); err != nil {
-		return nil, err
-	}
-	if err := guardCopiedSchema(migrations, "feed_offset", consumer.SchemaSQL); err != nil {
 		return nil, err
 	}
 	return migrations, nil

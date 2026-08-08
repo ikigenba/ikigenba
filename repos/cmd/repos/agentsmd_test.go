@@ -33,11 +33,8 @@ func TestAgentsMDDeclaresRepositoryTestingFacts(t *testing.T) {
 			"no tree-local manual runbook",
 		},
 		"environmental preconditions": {
-			"real `git` binary must be on `PATH`",
-			"never-mocked git custody",
 			"`go` binary must be on `PATH` in the test process's environment",
 			"module cache resolving repos' `replace` siblings",
-			"pinned `agentkit` module",
 		},
 		"GOWORK mode": {
 			"workspace mode through the repo-root `go.work`",
