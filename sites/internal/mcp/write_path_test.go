@@ -46,10 +46,14 @@ func (r *commitRecordingTransport) RoundTrip(request *http.Request) (*http.Respo
 		clientID: request.Header.Get("X-Client-Id"), correlation: request.Context().Value(correlationKey{}), body: decoded,
 	})
 	r.mu.Unlock()
-	if r.err != nil {
+	_, isCommit := decoded["changes"]
+	if isCommit && r.err != nil {
 		return nil, r.err
 	}
-	status := r.status
+	status := 0
+	if isCommit {
+		status = r.status
+	}
 	if status == 0 {
 		status = http.StatusOK
 	}
@@ -97,6 +101,16 @@ func createTestSite(t *testing.T, h http.Handler, slug string) {
 	result := call(t, h, "create", map[string]any{"name": slug, "slug": slug, "visibility": "public"})
 	if result.IsError {
 		t.Fatalf("create %q: %#v", slug, result.StructuredContent)
+	}
+}
+
+func seedTestSite(t *testing.T, h *testHandler, slug string) {
+	t.Helper()
+	if _, err := h.store.Create(context.Background(), slug, slug, testOwnerID, testOwner, sites.Public); err != nil {
+		t.Fatalf("seed site %q: %v", slug, err)
+	}
+	if err := os.MkdirAll(h.layout.SiteDir(sites.Public, slug), 0o755); err != nil {
+		t.Fatalf("seed site directory %q: %v", slug, err)
 	}
 }
 
@@ -311,7 +325,7 @@ func TestCommitFailureMapsUnavailableSeparatelyFromRejection(t *testing.T) {
 			t.Fatal(err)
 		}
 		h, _ := newTestHandlerWithVersion(t, sites.NewVersionClient(base, &http.Client{}))
-		createTestSite(t, h, "demo")
+		seedTestSite(t, h, "demo")
 		result := call(t, h, "file_write", map[string]any{"site": "demo", "file_path": "index.html", "content": "x"})
 		if !result.IsError || result.StructuredContent["code"] != "source_unavailable" {
 			t.Fatalf("result = %#v, want source_unavailable", result)

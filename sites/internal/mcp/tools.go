@@ -190,8 +190,8 @@ func enumString(values ...string) map[string]any {
 	return map[string]any{"type": "string", "enum": enum}
 }
 
-// toolCreate validates the slug, inserts the row, then
-// creates the site directory at the requested visibility.
+// toolCreate validates the slug, inserts the row, creates the site directory,
+// then creates the matching repository.
 func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
 	var a struct {
 		Name       *string `json:"name"`
@@ -234,6 +234,12 @@ func (h *toolHandlers) createSite(ctx context.Context, slug, name string, visibi
 	}
 	if err := os.MkdirAll(h.layout.SiteDir(visibility, slug), 0o755); err != nil {
 		return errResultMsg(appkitmcp.ErrInternal, "create_site_dir: "+err.Error()), nil
+	}
+	owner := sites.Owner{ID: site.OwnerID, Email: site.OwnerEmail}
+	if err := h.version.Create(ctx, site.Slug, owner); err != nil {
+		_ = h.store.Delete(ctx, site.Slug)
+		_ = os.RemoveAll(h.layout.SiteDir(site.Visibility, site.Slug))
+		return errResultMsg(appkitmcp.ErrInternal, "version_create: "+err.Error()), nil
 	}
 	return appkitmcp.StructuredResult(h.renderSite(site))
 }
@@ -279,6 +285,10 @@ func (h *toolHandlers) toolDelete(ctx context.Context, raw json.RawMessage) (map
 			return appkitmcp.StructuredResult(map[string]any{"deleted": a.Slug})
 		}
 		return errResult(err), nil
+	}
+	owner := sites.Owner{ID: site.OwnerID, Email: site.OwnerEmail}
+	if err := h.version.Delete(ctx, site.Slug, owner); err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "version_delete: "+err.Error()), nil
 	}
 	if err := h.store.Delete(ctx, a.Slug); err != nil && !errors.Is(err, sites.ErrNotFound) {
 		return errResult(err), nil
@@ -389,6 +399,12 @@ func (h *toolHandlers) setUnlisted(ctx context.Context, site sites.Site) (map[st
 }
 
 func (h *toolHandlers) applyVisibility(ctx context.Context, site sites.Site, visibility sites.Visibility, newSlug string) (map[string]any, error) {
+	if site.Slug != newSlug {
+		owner := sites.Owner{ID: site.OwnerID, Email: site.OwnerEmail}
+		if err := h.version.Rename(ctx, site.Slug, newSlug, owner); err != nil {
+			return errResultMsg(appkitmcp.ErrInternal, "version_rename: "+err.Error()), nil
+		}
+	}
 	if err := h.store.SetVisibility(ctx, site.Slug, visibility, newSlug); err != nil {
 		return errResult(err), nil
 	}
