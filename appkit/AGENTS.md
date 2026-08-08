@@ -30,8 +30,28 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- Unit: `go test ./...`
-- Isolated build check (mirrors the prod build): `GOWORK=off go build ./...`
+The default test gate is `go test ./...`. The appkit suite has these layers:
+
+- **Hermetic:** package tests use injected environment maps, temporary filesystem
+  trees and SQLite databases, `net/http/httptest`, loopback listeners, and local
+  subprocesses.
+- **Composed:** the boot smoke in `appkit_test.go` builds and runs a real minimal
+  chassis-based service, then checks its health endpoint over loopback HTTP.
+- **Manual:** `project/appkit-verification.md` is the operator-run live-box
+  runbook.
+
+appkit has no live test layer: tests do not contact external services or read
+credentials, and this tree has no `//go:build live` test files.
+
+Tests and vet run in workspace mode through the repository-root `go.work`. The
+suite also runs `GOWORK=off go build ./...` as an isolated build check that
+mirrors the deterministic production build and verifies the module resolves
+standalone through its committed `replace` directives.
+
+Beyond the Go toolchain itself, the composed boot smoke requires the `go` binary
+on `PATH` at test time and a module cache that already resolves appkit's
+`replace` siblings. It performs no network fetch. A missing precondition is a
+hard test failure, never a skip.
 
 ## Versioning
 
