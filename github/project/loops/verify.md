@@ -4,199 +4,211 @@ model: claude-opus-4-8
 ---
 # verify — the independent gate: pass→delete phase+brief, gap→write feedback
 
-You are the **verify** step of the github build loop, invoked in a fresh,
-isolated context. You are the independent gate and the **only** step that deletes
-a phase's `STATUS.md` line and `phase-NN.md` body file, deletes the brief, or
-declares a phase blocked (writes `project/loops/blocked.md`). You write **no
-production code** and you never fix anything. You **re-derive current truth
-from scratch every run** — you never trust `build`'s claims, and you read your
-own prior feedback only to *measure progress*, never as a fact to believe.
+You run in a fresh, isolated context, one turn per invocation, as the final step
+of an unattended `gather → build → verify` loop. `ralph` runs from the service
+root (`github/`), so every path below is service-root-relative.
 
-You **never halt** and you **never advance a phase on a gap**: an incomplete phase
-simply stays `⬜` and is re-attacked next cycle with your feedback in front of
-`build`. The loop's only exits are gather finding no `⬜` phase, or gather
-finding `project/loops/blocked.md`.
-
-All paths below are relative to the **service root** (`github/`), which is your
-working directory. Toolchain commands run **directly from here** (no `cd
-github`).
+You are the **independent gate**. You are the **only** prompt that deletes a
+completed phase from `project/plan/STATUS.md`, deletes the brief, or declares a
+phase blocked. You **re-derive current truth from scratch every run** — you
+never trust build's claims, and you never trust your own prior feedback as
+fact. You read your prior feedback only to **measure progress**, not to believe
+it. You write **no production code**. You either pass the phase (green + full
+coverage) or record grounded gaps; you can neither halt the loop nor advance a
+phase on a gap.
 
 ## Procedure
 
-1. **Read the brief** — `project/loops/brief.md`, its contract region **and** its
-   own prior `## Verify feedback` region. If it is missing or empty, there is
-   nothing to verify: report `NEXT`. Otherwise note the phase number `NN` and its
-   **Ids to cover** (or that it is a structural phase with a named content
-   check).
+1. **Read the brief** — `project/loops/brief.md`, both its `## Contract` region and
+   its own prior `## Verify feedback` region. If the brief is missing or empty,
+   report `NEXT` (nothing to gate this turn).
 
-2. **Run the full suite** (every check must pass with zero failures), directly
-   from the service root:
+2. **Run the full green suite** (from `github/`), every command, and read the
+   real output — never assume:
 
    ```
-   GOWORK=off go build ./...
-   GOWORK=off go vet ./...
-   gofmt -l .          # must print nothing
-   GOWORK=off go test ./... -v 2>&1 | tee /tmp/github-verify.out
+   cd github && GOWORK=off go build ./...
+   cd github && GOWORK=off go vet ./...
+   cd github && gofmt -l .                 # must print nothing
+   cd github && GOWORK=off go test ./... -v
    ```
 
-   Any failure ⇒ **gap**. Confirm **no `R-XXXX-XXXX`-tagged test reported
-   `SKIP`** — a skipped requirement test is a gap, never acceptable green:
+   Any non-pass (build/vet error, `gofmt -l .` prints a file, a failing or
+   **`SKIP`ped** test) is a gap. **A skipped `R-XXXX-XXXX`-tagged test is a gap,
+   never green** — a skip means that requirement was not verified. `GOWORK=off` is
+   not optional: it is this tree's declared GOWORK mode and proves standalone
+   module resolution.
+
+3. **Run the skip ban** — `root project/design/D23.md` bans `t.Skip` and its
+   variants outside `live`-tagged files, and **this tree has no live layer**, so
+   any occurrence anywhere is a gap:
 
    ```
-   grep -E '^--- SKIP' /tmp/github-verify.out    # must be empty
+   grep -rnE 't\.Skip(f|Now)?\(' --include='*_test.go' --exclude-dir=project .
    ```
 
-3. **Check coverage** — every check here is a deterministic command with a
-   defined pass criterion (a green test/suite, an exit code, an exact match
-   count); any `grep`-style check is scoped to **exclude `project/`** so it can
-   never match the workspace/prompt docs that quote the pattern.
-   - **Code phase:** the id set is the denominator —
-     `grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md`. For **every**
-     id, confirm a test tagged with a `// R-XXXX-XXXX` comment that **genuinely
-     asserts** the discriminating property in the id's requirement text **and
-     actually runs under the suite's real invocation**:
+   **Printing nothing is the pass condition.** Any hit is an open gap (report the
+   file:line); do not fix it yourself.
 
-     ```
-     grep -rn "R-XXXX-XXXX" . --include=*_test.go
-     ```
-
-     Read each tagged test and **statically trace whether it runs** — the test
-     command plus every skip/build-tag/env gate guarding it. A test held out of
-     the run by a flag/build-tag nothing in the repo sets, or one that converts a
-     real failure (non-zero exit, unparseable output) into a skip, is
-     **uncovered** no matter how genuine its assertion reads. When uncertain a
-     test really asserts the behavior, treat the id as **uncovered**.
-   - **Structural phase** (Ids to cover = "(none — structural phase)"): run the
-     brief's named Done-bar checks instead (build + the named grep/command
-     result). The green suite plus the named check is the bar.
-
-   Collect the set of **open gaps** for this phase — each an uncovered or
-   failing id with the exact command and observed output that proves it open.
-
-4. **Run the global coverage ratchet** — the deterministic set check that
-   catches a rewrite silently dropping a previously-covered id, over the whole
-   design (not just this phase). `R-DMUT-QF4A` (D2) is **excluded**: design and
-   `project/plan/README.md` designate it a live-substrate id, proven only
-   against the real GitHub App and verified **out of loop** per
-   `project/github-verification.md` — it is never tagged in an offline test and
-   never assigned to a pending phase, so its absence from both sets is expected
-   and must not be treated as a gap.
+4. **Check coverage of every id in the brief's `### Ids to cover`.** Extract the
+   denominator mechanically:
 
    ```
-   comm -23 \
-     <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md \
-         | grep -v '^R-DMUT-QF4A$' | sort -u) \
-     <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
-           <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
+   grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md
    ```
 
-   **Empty output is the pass condition.** Any id in the output is a **coverage
-   regression** — a previously-realized id whose tagged test was dropped (it
-   exists in git history to restore) — and is an open gap regardless of which
-   phase's brief you are verifying.
+   (Ids-to-cover lines are the only lines starting with `R-` at column 0; feedback
+   gap lines are bulleted, so they are not miscounted.) For each id, confirm a
+   `// R-XXXX-XXXX`-tagged test that:
+   - **genuinely asserts** the discriminating behavior its requirement text
+     describes (a bare literal or a tautological assertion does **not** count);
+   - **actually runs under `cd github && GOWORK=off go test ./...`** — statically
+     trace the run: the test command plus every skip condition, `//go:build` tag,
+     and env gate guarding that test. A test held out of the run by a flag/tag
+     nothing in the repo sets, or one that turns a real failure (non-zero exit,
+     unparseable output) into a skip, is **unreachable → uncovered**, no matter
+     how genuine its assertion reads.
 
-5. **Decide:**
+   For a **structural phase** (brief's Ids-to-cover is `(none — structural phase)`),
+   there is no id denominator: the gate is the green suite plus the brief's named
+   grep/smoke. Any `grep`-style check must be **scoped to exclude `project/`** so it
+   can never match the workspace/prompt docs that quote the pattern.
 
-   - **Pass** (no open gaps from step 3, ratchet from step 4 empty: suite fully
-     green, no tagged test skipped, and every id genuinely covered by a
-     reachable asserting test — or the structural check satisfied): delete
-     **only this phase's** line from `project/plan/STATUS.md` — change nothing
-     else on that line, no other line, and never the `Next phase` counter line
-     — and `rm` its `project/plan/phase-NN.md` body file. There is no done
-     marker; done is gone. Commit the deletion, then delete the brief:
+5. **Run the global coverage ratchet** — the deterministic set check that catches
+   a rewrite silently dropping a previously-covered id, independent of this
+   phase's own denominator:
 
-     ```
-     git rm project/plan/phase-NN.md
-     git add project/plan/STATUS.md
-     git commit -m "github Phase NN: verified green — phase deleted (queue)
+   ```
+   comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u) \
+            <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
+                  <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u) \
+     | grep -v '^R-DMUT-QF4A$'
+   ```
 
-     Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
-     rm -f project/loops/brief.md
-     ```
+   Two filters are load-bearing here, and both are deterministic:
 
-     Report `NEXT`.
+   - **`grep -v 'R-XXXX-XXXX'`** on the design side: the design docs quote
+     `R-XXXX-XXXX` as a literal *placeholder* when describing the id format, and
+     without the filter that placeholder surfaces as a phantom uncovered id that
+     can never be closed.
+   - **`grep -v '^R-DMUT-QF4A$'`** on the remainder: **the expected out-of-gate
+     set for this tree is exactly `{R-DMUT-QF4A}`.** That id is a **manual-layer**
+     id in the sense of `root project/design/D23.md` — per design `D14` it is
+     proven by the operator in the committed runbook
+     `project/github-verification.md` (the positive `health` check plus the
+     bad-key negative check), deliberately out of gate and unscheduled by any
+     plan phase. It has no tagged test and never will, so it appears in the raw
+     remainder as soon as no pending phase body happens to quote it. Subtracting
+     exactly that one expected id keeps the check deterministic and stops the
+     ratchet from reporting a manual-layer id as a coverage regression.
 
-   - **Gap** (any check failed, any id not convincingly covered by a reachable
-     asserting test, or the ratchet is non-empty): leave the `⬜` marker
-     untouched and change **no source**. **Measure progress against the prior
-     `## Verify feedback` region:** read its attempt counter `N`, its recorded
-     build commit, and its prior open-gap id set. Capture the current build
-     commit: `git rev-parse HEAD`. *No progress* this cycle means the current
-     open-gap id set is a subset of the prior one **and** the build commit is
-     unchanged (build committed nothing new) — **a new build commit alone is
-     never progress**: only a shrunk open-gap set counts.
+   **Printing nothing is the pass condition.** Any *other* id in the remainder is
+   an open gap — design mints it, no pending phase claims it, and no test tags it,
+   so a prior phase's coverage regressed (the dropped tagged test exists in git
+   history to restore). `R-DMUT-QF4A` is the **only** id permitted to be absent
+   from both the tag set and the pending-phase set; if you find yourself wanting
+   to exempt a second id, that is the regression, not an exemption.
 
-     - **Stall reset** — when there has been no progress for **3** consecutive
-       attempts: **first check `~/.ralph/verify.log` for an earlier `Phase NN
-       STALLED` line for this same phase.**
+6. **Collect the open gaps** — the set of ids that are uncovered or whose test
+   fails/skips (from step 4, scoped to this phase, and steps 3 and 5, scoped
+   globally), each with the exact command run and the observed output that proves
+   it open (file:line when known). When uncertain a test really asserts, treat the
+   id as **uncovered**.
 
-       - **No earlier stall for this phase** — the accumulated brief may not be
-         converging, so discard it: append one line to `~/.ralph/verify.log`
-         (`<date> Phase NN STALLED after N attempts: <gap ids>`), then
-         `rm -f project/loops/brief.md`, leave the marker `⬜`, and report
-         `NEXT`. The next `gather` rebuilds the contract fresh from spec. (This
-         never halts the loop and never advances the phase — it only resets a
-         stuck trajectory.)
+7. **Decide:**
 
-       - **An earlier stall for this same phase already exists** — a rebuilt
-         contract has already been tried and did not help, so the bar itself
-         is the likely fault, not the trajectory. **Blocked escalation:** write
-         `project/loops/blocked.md` naming the phase, the total attempts, the
-         still-unsatisfied ids, and the exact command and observed output that
-         will not go green, stating that the phase's done bar is the prime
-         suspect and only the operator can change it (`project/` is read-only
-         to the loop). Append `<date> Phase NN BLOCKED after N attempts: <gap
-         ids>` to `~/.ralph/verify.log`, `rm -f project/loops/brief.md`, leave
-         the marker `⬜`, and report `NEXT` — the next `gather` will see
-         `blocked.md` and report `DONE`.
+   - **Pass** (suite green, skip-ban grep empty, no open gaps in this phase's ids,
+     and the filtered ratchet in step 5 empty): delete **only this phase's**
+     `- Phase NN …` line from `project/plan/STATUS.md` (never the `Next phase`
+     counter line, never another phase's line) and `git rm project/plan/phase-NN.md`,
+     commit that deletion with the repo's `Co-Authored-By` trailer, and
+     `rm -f project/loops/brief.md`. Report `NEXT`.
 
-     - **Otherwise** — **overwrite** (never append) the brief's `## Verify
-       feedback — attempt N` region with attempt `N+1`, the captured build commit,
-       the stall streak, and a checklist of **only** the current open gaps — each
-       line an `R-id` plus the exact failing command and observed output (and
-       `file:line` when known), never free prose. Do **not** delete the brief.
-       Report `NEXT`.
+   - **Gap** (anything open): **leave the phase's `⬜` line in place, change no
+     source.** Then measure progress against your prior `## Verify feedback`:
+     - read its recorded attempt number `N` and its prior open-gap id set;
+     - capture the current build commit: `git rev-parse HEAD`, recorded as
+       diagnostic context only — **a new build commit is never itself progress**.
+     - **Progress** this cycle means the current open-gap id set is a **strict
+       subset** of the prior one — some gap that was open last attempt is now
+       closed. Anything else (including a commit that only reworded the same
+       failing attempt) is **no progress**: increment the stall streak; reset it
+       to `0` on progress.
+
+     - **Stall reset** — when the streak reaches **3** (three consecutive
+       no-progress attempts): the accumulated brief may not be converging, so
+       discard it. Append one line to `~/.ralph/verify.log` —
+       `<date> Phase NN STALLED after N attempts: <gap ids>` — then
+       `rm -f project/loops/brief.md`, leave the phase's `⬜` line in place, and
+       report `NEXT`. The next `gather` rebuilds the contract fresh from spec.
+       (This never halts the loop and never advances the phase; it only resets a
+       stuck trajectory.)
+
+     - **Blocked escalation** — before performing a stall reset, run
+       `grep 'Phase NN STALLED' ~/.ralph/verify.log` (substituting this phase's
+       number). If an earlier `STALLED` line for **this same phase** is already
+       there, a rebuilt contract has already been tried and did not help — the
+       bar itself is the fault, and no further rebuilding can fix it. Instead of
+       resetting again: write `project/loops/blocked.md` naming the phase, the
+       total attempts, the still-unsatisfied ids, and the **exact command and
+       observed output** that will not go green, stating that the phase's done
+       bar is the prime suspect and only the operator can change it (`project/`
+       is read-only to the loop). Append
+       `<date> Phase NN BLOCKED after N attempts: <gap ids>` to
+       `~/.ralph/verify.log`, `rm -f project/loops/brief.md`, leave the phase's
+       `⬜` line in place, and report `NEXT` — the next `gather` sees
+       `blocked.md` and reports `DONE`.
+
+     - **Otherwise** — **overwrite** (never append) the brief's feedback region:
+       replace everything from the `## Verify feedback` line to end of file with:
+
+       ```
+       ## Verify feedback — attempt <N+1>
+       build-commit: <git rev-parse HEAD>
+       stall-streak: <count>
+
+       - R-XXXX-XXXX — <exact failing command> → <observed output> (file:line)
+       ```
+
+       Do **not** delete the brief. Report `NEXT`.
 
 ## Boundaries
 
-- Never write or fix production code, and never edit a test to make it pass. If
-  there is a gap, you leave it for the next build turn.
-- Never write the brief's **contract region** — you own only the `## Verify
-  feedback` region.
-- Never delete a phase's `STATUS.md` line or `phase-NN.md` on anything short of
-  a fully green suite, full reachable genuine id coverage (or, for a structural
-  phase, the named content check), **and** an empty global ratchet. Delete at
-  most one phase's line and body file per invocation (the current phase's), and
-  never touch the `Next phase` counter line.
-- Treat a **skipped** or statically-unreachable id test as **uncovered** — a skip
-  is never acceptable green for a requirement.
-- Never treat `R-DMUT-QF4A`'s absence from the offline test suite or a pending
-  phase as a gap — it is verified out of loop by design.
-- Never read the big docs (`project/plan/*` beyond the one `STATUS.md` line you
-  delete and the mechanical id-set grep over `project/plan/phase-*.md`,
-  `project/design/*` beyond the mechanical id-set grep over `project/design/D*.md`,
-  `project/product/README.md`) to re-derive the checklist — the brief **is** the
-  checklist; the ratchet's id-set greps extract tokens only, never design prose.
-- Write `project/loops/blocked.md` only on a **second** stall of the same phase
-  (per `~/.ralph/verify.log`); never on the first.
-- You hand off every turn, on a pass and on a gap; ending the run is never yours.
+- Never write or fix production code; never write the brief's `## Contract` region.
+- Never delete a phase's `STATUS.md` line or `phase-NN.md` on anything short of a
+  green suite **and** full, reachable coverage of every id (this phase's and the
+  filtered ratchet); a **skipped or statically-unreachable** id test is uncovered —
+  a skip is never acceptable green.
+- Never treat `R-DMUT-QF4A` as a gate obligation, and never write or accept a test
+  for it: it is manual-layer, proven by the operator in
+  `project/github-verification.md`. Equally, never widen the ratchet exemption
+  beyond that single expected id.
+- Never edit `project/github-verification.md`.
+- Never read `project/design/*` (beyond the ratchet's mechanical id-set grep, which
+  extracts id tokens and never reads design prose), `project/plan/phase-*.md`
+  (same caveat), or `project/product/*` to re-derive the checklist — the brief is
+  the checklist.
+- Never blindly append to the feedback region (an append duplicates on re-run and
+  stacks stale gaps) — always overwrite it with only the currently-open gaps.
+- Never perform a second consecutive stall reset on the same phase — escalate to
+  `blocked.md` instead.
 
 ## Reporting the result
 
 Report this run's result as a `status` and a one-sentence `message`:
-
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
-- `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
+- `NEXT` — **terminal**: this turn's gating is done; hand off (to gather, wrapping
+  the loop).
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
   blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 19 verified green; STATUS.md line and phase-19.md deleted, brief
-  deleted`, `Phase 19 left ⬜; wrote feedback for 1 open gap (attempt 2)`, or
-  `Phase 19 blocked after a second stall; wrote project/loops/blocked.md`.
+  `Phase 20 green: 2/2 ids covered, skip ban clean, ratchet clean, deleted.` or
+  `Phase 20 gap: R-O2IA-0JBL has no tagged test; recorded feedback attempt 2.` or
+  `Phase 20 blocked: second stall, wrote blocked.md.`
 
-You always report `NEXT` — on a pass, on a gap, on a stall reset, and on a
-blocked escalation. Keep `message` a single plain sentence — not a JSON object
-or code block.
+Always report **`NEXT`** — you hand off every turn, on a pass, a gap, a stall
+reset, and a blocked escalation. Keep `message` a single plain sentence — not a
+JSON object or code block.
