@@ -31,6 +31,9 @@ Decision is added or its Verification ids change.
 - D9 → `D09.md` — `eventplane/observe`: an injectable hook on the publish and
   consume paths — R-UXUQ-ZDNA, R-V0AJ-QX4O, R-V1IG-4OVD, R-V2QC-IGM2,
   R-V3Y8-W8CR, R-V565-A03G, R-V6E1-NRU5
+- D10 → `D10.md` — Adopt the suite testing-language contract (`root
+  project/design/D23.md`): layers, GOWORK mode, environmental preconditions —
+  owns none locally; **cites** R-O1AD-MRKW, R-O2IA-0JBL
 
 ## Verification ids → Decision
 
@@ -59,6 +62,8 @@ Decision is added or its Verification ids change.
 - R-41H4-GESP — D2 (`D02.md`)
 - R-42P0-U6JE — D1 (`D01.md`)
 - R-95KP-1QIO — D4 (`D04.md`)
+- R-O1AD-MRKW — D10 (`D10.md`) — cited from `root project/design/D23.md`, `[proof: per-service]`
+- R-O2IA-0JBL — D10 (`D10.md`) — cited from `root project/design/D23.md`, `[proof: per-service]`
 - R-UBWK-3IAS — D6 (`D06.md`)
 - R-UD4G-HA1H — D6 (`D06.md`)
 - R-UECC-V1S6 — D6 (`D06.md`)

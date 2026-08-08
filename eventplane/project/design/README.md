@@ -50,6 +50,14 @@ the work is "done" are downstream's concern and are not specified here.
   database (`modernc.org/sqlite`); wire claims run the real
   `outbox.FeedHandler()` in an `httptest.Server` with a real HTTP client or
   `consumer.Run` on the other end (the existing `consumer_test.go` pattern).
+- **Test layers.** The suite's testing vocabulary — the hermetic / composed /
+  live / manual layers and what each may touch, the single `//go:build live`
+  mechanism, and the ban on `t.Skip` outside live-tagged files — is the contract
+  `root project/design/D23.md`, cited and not restated here. Every test in this
+  tree is **hermetic**: the substrates named above are real local ones (temp-dir
+  SQLite, `httptest` loopback listeners, a local `go list` subprocess), and this
+  tree has no composed, live, or manual layer. D10 records eventplane's full
+  declaration, including its GOWORK mode and environmental preconditions.
 - **Test naming:** each Verification id is covered by a test that cites the id
   in its name or an adjacent comment, so grepping for the id finds the proof.
   Requirement-id tags live in Go test files, glob `*_test.go`.
@@ -92,3 +100,5 @@ Current Decisions:
   context, minting a root when the event carries none.
 - **D9** — `eventplane/observe`: an injectable hook on the publish and consume
   paths.
+- **D10** — Adopt the suite testing-language contract (`root
+  project/design/D23.md`): layers, GOWORK mode, environmental preconditions.
