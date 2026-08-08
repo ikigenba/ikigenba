@@ -10,5 +10,7 @@ file — there is no done marker; done is gone. This file deliberately carries
 **no bare status glyph** anywhere but on a phase line, so the anchored grep
 matches only phase lines.
 
-Next phase: 46
+Next phase: 47
+
+- Phase 46 ⬜ realizes D38 — accept a PAT as an HTTP Basic password on the git door
 

@@ -44,7 +44,11 @@ and the portable authored `manifest.env`, citing them by Decision path and stati
 only where its local proof lives (D34); and (7) **testing-language conformance** —
 the dashboard adopts the suite's testing-language contract, declaring its own
 layers, preconditions, and GOWORK mode and proving that declaration in its own
-tree (D37).
+tree (D37); and (8) the **version plane's introspection slice** — the suite's
+git door (root `project/design/D24.md`) is gated by the same introspection
+endpoint, and git clients speak HTTP Basic, so on that one resource a personal
+access token delivered as the Basic password is accepted through the existing
+PAT validation path, with a git-friendly challenge on failure (D38).
 It is rewritten in place to stay true (stale decisions are removed, not
 stacked); construction history lives in git, not here.
 

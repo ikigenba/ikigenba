@@ -117,6 +117,11 @@ This change does exactly this and only this:
   the landing page and is gated to the signed-in owner.
 - **Token management leaves the landing.** Personal access tokens and OAuth grants
   no longer appear on the logged-in home page — they live only on the profile page.
+- **One token also opens git.** The personal access token the owner already mints
+  and revokes on the profile page now additionally authenticates them to the
+  suite's repositories from an ordinary git client — pushing and pulling with
+  the token as their password. Nothing about minting or revoking changes, and
+  there is no second, git-specific token to manage.
 - **Doc truth follows the code.** The dashboard's standing "keep the apex `/` a
   single hybrid page, do not split it into a separate IAM console" rule is now
   **false** and is purged, replaced by the three-page truth.
@@ -154,8 +159,10 @@ This change does exactly this and only this:
   service, and one word cannot mean both.
 
 It deliberately does **nothing else** — in particular it does not: add new
-account-management capabilities (the PAT and grant features are **moved, not
-changed**); change how OAuth, push, or inventory work, or change login beyond
+account-management capabilities (the PAT and grant features **move**, and the
+only thing added to either is that an existing PAT now also opens git — how
+tokens are minted, listed, and revoked is untouched, and no new kind of
+credential is introduced); change how OAuth, push, or inventory work, or change login beyond
 teaching the sign-in flow to return the visitor to a remembered same-site
 destination and adding the GitHub sign-in method (the dashboard's own token
 mechanics are untouched); link, merge, or migrate identities between the two
@@ -196,6 +203,9 @@ Promised values the design must honor verbatim and never re-declare:
   session never sees profile content.
 - **Personal-access-token and OAuth-grant management live only on the profile
   page** after this change — never on the landing/home page.
+- **The personal access token is the only credential that opens git.** There is
+  no separate git token, and no other credential the box issues authenticates a
+  git client. A revoked PAT stops working at git the moment it is revoked.
 - **Each service name on the landing links to that service's own page at
   `/srv/<svc>/`** — the human landing page, not the raw MCP resource URL.
 - **Every gated admission decision is recorded** — admitted, refused, and
@@ -237,6 +247,12 @@ Promised values the design must honor verbatim and never re-declare:
   out, you are sent back to the login page rather than shown account controls.
 - **Sign-out stays on the home page** where you land, not hidden on a settings
   screen.
+- **Your token works with git.** Point an ordinary git client at one of the
+  box's repositories and it asks for a username and password; give it anything
+  for the username and your personal access token for the password, and you are
+  in — the same token you use everywhere else, from the same profile page. Any
+  other credential is refused there, and a token you have revoked stops working
+  immediately.
 - **No capability is lost in the move.** Every token and grant action that worked
   on the old hybrid page works on the profile page, identically — only its
   location changed.
@@ -291,6 +307,9 @@ Each is a result the owner can confirm against the running dashboard:
 - The profile page shows my personal access tokens and lets me create and revoke
   them, and shows my OAuth grants and lets me revoke them — the same actions that
   used to be on the home page.
+- Cloning and pushing to one of the box's repositories with a git client
+  succeeds when I supply a personal access token as the password (any
+  username), and is refused after I revoke that token on the profile page.
 - Visiting the profile route while signed out does not reveal account controls; I
   am returned to the login page.
 - Sign-out is available from the home page.
