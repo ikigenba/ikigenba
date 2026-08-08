@@ -26,6 +26,7 @@ Verification ids change.
 - D17 → `project/design/D17.md` — Per-hook verification schemes: `bearer` and `github-hmac` — R-G7RX-751P, R-G8ZT-KWSE, R-GA7P-YOJ3, R-GBFM-CG9S, R-GCNI-Q80H, R-GDVF-3ZR6, R-GF3B-HRHV
 - D18 → `project/design/D18.md` — Correlation at the front door: strip-then-mint on the public ingress and PRM, capture-and-overwrite on every gated location — R-EL96-NKKT, R-EMH3-1CBI
 - D19 → `project/design/D19.md` — One inbound delivery, one chain: the minted id rides the published event — R-L1A1-XMRN, R-L2HY-BEIC, R-L3PU-P691
+- D20 → `project/design/D20.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): hermetic + composed layers only, no live layer, no tree-local manual runbook, the `go`-on-`PATH` and `bash`/`grep` preconditions, workspace GOWORK mode; settles D7/D8's through-real-nginx claims as manual-layer — mints none; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 
 ## Verification ids → Decision
 
@@ -92,6 +93,8 @@ Verification ids change.
 - R-L8PI-T7OV → D4 — `project/design/D04.md`
 - R-L9XF-6ZFK → D5 — `project/design/D05.md`
 - R-LB5B-KR69 → D6 — `project/design/D06.md`
+- R-O1AD-MRKW → D20 — `project/design/D20.md` (adopted from root `project/design/D23.md`)
+- R-O2IA-0JBL → D20 — `project/design/D20.md` (adopted from root `project/design/D23.md`)
 - R-OD12-3CVG → D7 — `project/design/D07.md`
 - R-OE8Y-H4M5 → D7 — `project/design/D07.md`
 - R-OFGU-UWCU → D7 — `project/design/D07.md`

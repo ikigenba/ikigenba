@@ -41,6 +41,17 @@ construction history of how it got here lives in git, not here.
   injected clock.
 - **Requirement-id test-file glob:** `*_test.go` — every `// R-XXXX-XXXX` tag
   lives in a Go test file matching this glob.
+- **Test layers.** The suite's testing vocabulary — the hermetic / composed /
+  live / manual layers, what each may touch, the single `//go:build live`
+  mechanism, the ban on `t.Skip` outside live-tagged files, and the rule that a
+  manual-layer check lives in a committed runbook — is the contract
+  `root project/design/D23.md`, cited and not restated here. webhooks' own layer
+  facts are recorded in D20: **hermetic** and **composed** only, both in the
+  default gate, with no live layer and no tree-local manual runbook. The
+  `internal/e2e` package name is an informal alias, not a layer — it holds
+  hermetic committed-fragment assertions beside one composed binary smoke. No
+  test in this tree drives the `:8080` front door; the assembled-stack check is
+  the suite's manual-layer item.
 - **DB / migrations:** schema lives in `internal/db/migrations/` as ordered,
   immutable SQL applied forward-only by the appkit runner. New migrations are
   created with `bin/create-migration webhooks <name>` (timestamped); numbers are
