@@ -38,6 +38,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D31 → `project/design/D31.md` — nginx fragment: capture the edge-minted chain id on the gated locations, strip it on the ungated one — owns R-ENOZ-F427, R-EOWV-SVSW
 - D32 → `project/design/D32.md` — Rebuild to adopt: chain continuation across the consumer fan-out, the ctx-bearing `Append`, the origin at spawn, and the recorded boundary of a run — owns R-4XFG-EFU8, R-4YNC-S7KX, R-4ZV9-5ZBM, R-5135-JR2B
 - D33 → `project/design/D33.md` — Env-channel conformance: the run TTL surfaces in the manifest — owns R-HDCE-C6WU; adopts R-VKB6-SHHV (root `project/design/D11.md`)
+- D34 → `project/design/D34.md` — Testing-language conformance: adopt the suite contract and make `python3` a hard precondition — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 
 ## Verification ids → Decision
 
@@ -131,6 +132,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-NGNX-4B7R → D4 → `project/design/D04.md`
 - R-NGNX-6C9S → D4 → `project/design/D04.md`
 - R-NGNX-8D1T → D4 → `project/design/D04.md`
+- R-O1AD-MRKW → D34 → `project/design/D34.md` (adopted from root `project/design/D23.md`)
+- R-O2IA-0JBL → D34 → `project/design/D34.md` (adopted from root `project/design/D23.md`)
 - R-Q2LM-XR9W → D28 → `project/design/D28.md`
 - R-Q3TJ-BJ0L → D28 → `project/design/D28.md`
 - R-Q51F-PARA → D28 → `project/design/D28.md`

@@ -93,10 +93,24 @@ Shared facts every Decision leans on:
   `cd scripts && go vet ./...`. The production build adds
   `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off -buildvcs=false` (driven by
   `bin/ship scripts`).
-- **Test command:** `cd scripts && go test ./...`. **"The suite is green"** means:
-  `cd scripts && go build ./...`, `cd scripts && go vet ./...`,
+- **Test command (the default gate):** `cd scripts && go test ./...`.
+  **"The suite is green"** means: `cd scripts && go build ./...`,
+  `cd scripts && go vet ./...`,
   `cd scripts && gofmt -l .` (no output), and `cd scripts && go test ./...`
   all succeed with zero failures.
+- **Testing vocabulary:** the layer names every Decision below uses —
+  **hermetic**, **composed**, **live**, **manual** — are the suite's, defined
+  once in **`root project/design/D23.md`** and never restated here. scripts has
+  a hermetic layer and a composed layer and **no live or manual layer**: its one
+  external effect is spawning a local `python3` process, which the contract
+  counts as hermetic, and its neighbours are reached only over loopback. It
+  therefore declares no `-tags live` invocation and no credentials. scripts's
+  adoption of that contract, and its declared testing facts, are **D34**.
+- **Environmental preconditions:** **`python3` on `PATH`** — the runtime the
+  service execs, and the substrate of every runner, lifecycle, and `suite.py`
+  claim below. It is a hard failure when absent, never a skip (D34).
+- **GOWORK mode:** workspace — the default gate resolves the replace-siblings
+  through the repo-root `go.work`; only the production build forces `GOWORK=off`.
 - **Formatting:** `gofmt`-clean; `gofmt -l .` must print nothing.
 - **Requirement-id tag location:** `R-XXXX-XXXX` tags live as `// R-XXXX-XXXX`
   comments in `*_test.go` files — the glob the coverage check greps.
@@ -144,8 +158,13 @@ Shared facts every Decision leans on:
 
 ## Testing strategy
 
-Testing is part of the architecture, not an afterthought. The cross-cutting
-approach every Decision's Verification list assumes:
+Testing is part of the architecture, not an afterthought. Every claim below is
+stated in the suite's layer vocabulary (`root project/design/D23.md`, adopted by
+D34): the landing-render, mux, asset, nginx-fragment, MCP, consumer, and runner
+claims are **hermetic** — including the `python3` probe harness, since a local
+subprocess is hermetic under the contract — and `cmd/scripts`'s boot and
+shipped-tree wiring is **composed**. The tree has no live layer and no manual
+layer. The cross-cutting approach every Decision's Verification list assumes:
 
 - **The landing page is tested in-process with `net/http/httptest`** over the
   shipped `scripts/share/www` tree (D12): the tests live in `cmd/scripts`, load the
@@ -179,7 +198,9 @@ approach every Decision's Verification list assumes:
   env pointing at real `net/http/httptest` loopback servers that record
   method/path/query/headers/body. Assertions run on both sides: what the server
   recorded (including **zero requests** for local rejections) and what the
-  probe printed/exited. `go test ./...` stays the single green bar.
+  probe printed/exited. `go test ./...` stays the single green bar. `python3` is
+  a **declared environmental precondition** of that bar, not an optional extra:
+  its absence fails the tests that need it rather than skipping them (D34).
 - **Determinism.** The handler takes its name/version as plain string arguments
   (injected at the composition root from `rt.Service()`/`rt.Version()`), so its
   output is fully determined by its inputs — no clock, no network, no DB.
