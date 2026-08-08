@@ -59,6 +59,14 @@ Shared facts every Decision leans on:
   nginx/run` exits 0; `mkdir -p nginx/tmp && nginx -p nginx -c nginx.conf -t`
   exits 0; and the structural checks a phase names (exact committed files, exact
   greps) all hold. There is no test suite to run and no id coverage to compute.
+- **Testing language (suite contract).** This tree uses the suite's testing
+  vocabulary and rules from `root project/design/D23.md`, cited **by path only**
+  and never restated; D4 records the adoption. In this tree's terms: the layers
+  present are **manual only** — no hermetic, no composed, no live — and the
+  contract's own no-test-suite clause makes conformance here structural, so the
+  contract's `[proof: per-service]` ids are deliberately **not** cited (no file
+  in this tree could carry an id tag). The `nginx -t` and `bash -n` checks below
+  are configuration and syntax checks, not tests, and are not a layer.
 - **Verification that needs a real substrate happens outside any gate.** The
   claims that matter — a request actually being refused at the boundary, a real
   certificate authority issuing for names that really resolve to the live box, a

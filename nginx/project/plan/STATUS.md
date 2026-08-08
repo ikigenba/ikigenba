@@ -12,9 +12,11 @@ gone. A phase body file carries no marker of its own. This document deliberately
 carries **no** bare status glyph outside the phase lines, so the anchored grep
 matches only phase lines.
 
-Next phase: 01
+Next phase: 02
 
-There are no pending phases. The artifacts of D1, D2, and D3 already exist in the
-tree — this spec was written over working code, not ahead of it — so the queue is
-empty by construction, not by omission. New work appends a `phase-01.md` and its
-line here, taking its number from the counter above.
+- Phase 01 ⬜ realizes — (structural; D4) — create `nginx/AGENTS.md` carrying the tree's manual-only testing declaration
+
+The artifacts of D1, D2, and D3 already exist in the tree — this spec was written
+over working code, not ahead of it — so those Decisions queue no work. New work
+appends a `phase-NN.md` and its line here, taking its number from the counter
+above.
