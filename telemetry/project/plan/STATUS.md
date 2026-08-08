@@ -14,5 +14,3 @@ deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
 Next phase: 13
-
-- Phase 12 ⬜ realizes — — plain-literal go.mod: remove the escaped eventplane module path
