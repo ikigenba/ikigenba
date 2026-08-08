@@ -21,6 +21,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D15 → `project/design/D15.md` — Event-routing conformance: kind `recorded`, empty subject (`ledger:recorded`), family registry, new outbox migration — owns R-FXKF-JD3L, R-FYSB-X4UA, R-G184-OOBO, R-G2G1-2G2D
 - D16 → `project/design/D16.md` — Structured MCP adoption: `StructuredResult` + per-verb `outputSchema` on the six domain result verbs, typed closed-vocabulary error codes, `describe` prose exception — owns R-9FRN-SGDT, R-9GZK-684I, R-9I7G-JZV7, R-9JFC-XRLW, R-9KN9-BJCL, R-9LV5-PB3A, R-9N32-32TZ, R-9OAY-GUKO, R-9PIU-UMBD, R-9QQR-8E22, R-9RYN-M5SR, R-9T6J-ZXJG, R-9UEG-DPA5
 - D17 → `project/design/D17.md` — Correlation adoption: the nginx fragment carries the chain id across the trust boundary, the domain seam carries the context to `outbox.Append`, and the `correlation_id` column arrives by one additive migration — owns R-VOH6-HG8R, R-VPP2-V7ZG, R-Y3Z7-H9BG, R-B98U-XGC9, R-BAGR-B82Y
+- D18 → `project/design/D18.md` — Testing-language conformance: the suite's four layers, ledger's declared testing facts (hermetic + composed, no live, no manual; no preconditions beyond the Go toolchain; workspace GOWORK plus the isolated `GOWORK=off` build check), proven in `cmd/ledger/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
 
 ## Verification ids → Decision
 
@@ -82,6 +83,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-NGNX-4D6E → D4 → `project/design/D04.md`
 - R-NGNX-6F8G → D4 → `project/design/D04.md`
 - R-NGNX-8H1J → D4 → `project/design/D04.md`
+- R-O1AD-MRKW → D18 → `project/design/D18.md` (adopted from root `project/design/D23.md`)
+- R-O2IA-0JBL → D18 → `project/design/D18.md` (adopted from root `project/design/D23.md`)
 - R-ROUT-2M6N → D2 → `project/design/D02.md`
 - R-ROUT-4P8Q → D2 → `project/design/D02.md`
 - R-ROUT-6R1S → D2 → `project/design/D02.md`

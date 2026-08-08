@@ -58,6 +58,11 @@ lives in git, not here.
 >    `appkit` telemetry surfaces are fixed external contracts consumed here —
 >    see `project/research/research.md`.
 >
+> 6. **Testing-language conformance** (D18): ledger adopts the suite's
+>    testing-language contract, declaring its own layers, preconditions, and
+>    GOWORK mode — including the isolated `GOWORK=off` build check — and proving
+>    that declaration in its own tree.
+>
 > The rest of the ledger bookkeeping **domain** (the immutable journal, the
 > seven-verb contract, the report reads) stands as described in
 > `ledger/CLAUDE.md` and is touched only where D14/D15 name it. Schema changes
@@ -126,7 +131,16 @@ Shared facts every Decision leans on:
 Testing is part of the architecture, not an afterthought. The cross-cutting
 approach every Decision's Verification list assumes:
 
-- **The landing page is tested over the shipped tree.** Tests in `cmd/ledger`
+- **The layer vocabulary is the suite's, not this tree's.** Every test below
+  belongs to exactly one layer — **hermetic**, **composed**, **live**, or
+  **manual** — as defined by `root project/design/D23.md`, which owns the layer
+  definitions, the `//go:build live` mechanism, and the ban on skipping outside
+  live-tagged files. D18 records ledger's adoption and its declared facts. In
+  short: everything below is **hermetic** except the boot smoke in
+  `cmd/ledger/main_test.go`, which is **composed**. ledger has **no live layer and
+  no manual layer**.
+- **The landing page is tested over the shipped tree (hermetic).** Tests in
+  `cmd/ledger`
   load the repo-real `ledger/share/www` via `appkit/web` (a relative path from the
   package dir) and drive the landing handler and the chassis static mount with
   `net/http/httptest`, asserting status, body substrings (name, version, asset
@@ -142,7 +156,8 @@ approach every Decision's Verification list assumes:
   `appkit/mcp` `ServeHTTP` seam, keeping the pre-conversion behavioral assertions
   (the seven domain verbs' success/error envelopes, account/period normalization,
   the reflection index, the health envelope + identity) unchanged (D11).
-- **The nginx fragment is proven by content assertion.** Tests read
+- **The nginx fragment is proven by hermetic content assertion — a shipped-file
+  guard.** Tests read
   `ledger/etc/nginx.conf` from disk and assert the exact-match `= /srv/ledger/`
   session-gated location, the session-gated `/srv/ledger/static/` location, and
   **registry-derived** proxy targets (`registry.BaseURL("ledger")`, D9) — while the
@@ -151,7 +166,8 @@ approach every Decision's Verification list assumes:
   artifact, runnable in the same `go test ./...`.
 - **Determinism.** The landing handler takes name/version as plain strings and the
   MCP handler runs over an in-memory DB; no clock, no network in the web/MCP tests.
-- **Domain, schema, and event claims run over the real substrate.** Every
+- **Domain, schema, and event claims run over the real substrate — hermetic, since
+  the real substrate here is a local SQLite file and a loopback listener.** Every
   D14/D15 claim runs against a real SQLite database migrated through ledger's
   full embedded migration set (`db.FS` via the appkit runner) — uniqueness is
   proven by the real partial index (including by direct SQL that bypasses the
@@ -167,6 +183,21 @@ approach every Decision's Verification list assumes:
   behavior (read-or-mint middleware, `request`/`lifecycle`/`publish` records)
   is **not** re-tested here: it is appkit's and eventplane's denominator, and
   duplicating it would mean two homes for one behavior.
+- **The install layout is proven by the one composed test.** The boot smoke in
+  `cmd/ledger/main_test.go` builds ledger's own binary and runs it from an
+  `/opt/ledger/`-shaped `t.TempDir()` tree on a free loopback port, asserting the
+  served `/health`. Building and running the tree's real binary is what makes it
+  **composed** rather than hermetic; it stays offline, needing no credential and no
+  running suite.
+- **Doc truth is a hermetic Go test.** ledger's declared testing facts (D18) are
+  asserted by reading the committed `ledger/AGENTS.md` from disk in
+  `cmd/ledger/docs_test.go`, beside the skip-ban source scan over the tree's
+  `*_test.go` files — so the declaration is re-checked on every `go test ./...`,
+  not once at authoring time.
+- **The isolated build check is a build, not a layer.**
+  `cd ledger && GOWORK=off go build ./...` mirrors the production build's
+  resolution and runs no test; it is a declared fact of ledger's testing surface
+  (D18), not a fifth layer.
 
 ## Layout
 
