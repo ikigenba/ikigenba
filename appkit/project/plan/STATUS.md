@@ -9,7 +9,9 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 29
+Next phase: 30
+
+- Phase 29 ⬜ realizes R-8EMY-A004 (umbrella, [proof: appkit]) — retire the manifest verb; one version channel
 
 
 
