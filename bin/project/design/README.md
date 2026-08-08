@@ -74,6 +74,19 @@ Shared facts every Decision leans on:
   needs a real box, a real remote copy, or a live cloud API is verified by an
   **out-of-gate manual check**, never as a `t.Skip`-gated test — a skipped
   requirement test counts as uncovered, so it is never the in-gate proof.
+- **Testing language (suite contract).** This tree uses the suite's testing
+  vocabulary and rules from `root project/design/D23.md`, cited and never
+  restated; D7 records the mapping and the declaration. In this tree's terms:
+  every `bin/bintest` test is **hermetic**, the deliberately-untested bash tier
+  is the **manual** layer, and there is no composed and no live layer — the tree
+  commits **no** `//go:build live` file and defines no `-tags live` invocation.
+  `t.Skip` and its variants appear nowhere in it.
+- **Environmental preconditions.** None beyond the Go toolchain: the scripts a
+  test execs are committed in this repo, and the module facts D6 reads come from
+  `go mod`/`go work` subcommands of that same toolchain.
+- **GOWORK mode.** Workspace. `bin/bintest` is a `go.work` member and resolves
+  its sibling modules through it; `GOWORK=off` would break D5 and D6 by
+  construction. The suite deliberately does not unify this across trees.
 - **Uniform, name-parameterized.** Every command takes the service name as its
   only per-service input and derives everything else — the port from the
   registry, the version from `<svc>/VERSION`, the environment from
@@ -99,6 +112,11 @@ this tree's own local `DNN.md` files:
 - **`root project/design/D22.md`** — library dependency versioning. This tree is
   additionally that contract's **designated proof tree** (`[proof: bin]`): the
   repo-wide `go.mod`/`go.work` conformance checks live in `bin/bintest` (D6).
+- **`root project/design/D23.md`** — the testing-language contract: the four
+  layers, the live build tag, the ban on `t.Skip` outside live-tagged files, and
+  the per-tree testing declaration. Adopted by D7, which cites its two
+  `[proof: per-service]` ids; citing them is adoption, so they enter this tree's
+  coverage denominator like local ids.
 
 The on-box consumer of this tree's artifacts — `stage` / `deploy` / `rollback` /
 `prune` — is not an umbrella contract but opsctl's own design

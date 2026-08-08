@@ -11,4 +11,6 @@ line here and its body file** in the completion commit — there is no done
 marker; done is deleted, and history lives in git. This file carries no bare
 status glyph outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 02
+Next phase: 03
+
+- Phase 02 ⬜ realizes D7 (R-O1AD-MRKW, R-O2IA-0JBL) — create `bin/AGENTS.md` with the suite testing declaration and prove it, plus the no-skip source scan
