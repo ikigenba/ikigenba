@@ -2,4 +2,4 @@
 
 # nginx's toolchain commands (nginx -t, bash -n) are repo-root relative per
 # design's Conventions. Run this wrapper from the repo root, not from nginx/.
-exec ralph nginx/project/loops/gather.md nginx/project/loops/build.md nginx/project/loops/verify.md
+exec ralph project/loops/gather.md project/loops/build.md project/loops/verify.md
