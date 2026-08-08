@@ -52,6 +52,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D47 | project/design/D47.md | Rebuild to adopt: event-plane chain continuation, the `root` record at spawn, and the recorded boundary of a run | R-HZD1-FEUB, R-I0KX-T6L0, R-I1SU-6YBP, R-I30Q-KQ2E, R-I48M-YHT3 |
 | D48 | project/design/D48.md | State paths come from `appkit/config`, never from a hardcoded `./tmp` default | R-LBH5-4LO0, R-LCP1-IDEP, R-LDWX-W55E |
 | D49 | project/design/D49.md | Env-channel conformance: composed inventory root, manifest-surfaced tuning knobs, Spec-derived drift oracle | R-M51H-QWOL, R-M69E-4OFA; adopts R-VKB6-SHHV (root `project/design/D11.md`) |
+| D50 | project/design/D50.md | Adopt the suite testing-language contract | none of its own; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`) |
 
 ## Verification ids → Decision
 
@@ -222,6 +223,8 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-LDWX-W55E | D48 | project/design/D48.md |
 | R-M51H-QWOL | D49 | project/design/D49.md |
 | R-M69E-4OFA | D49 | project/design/D49.md |
+| R-O1AD-MRKW | D50 | project/design/D50.md (adopted from root `project/design/D23.md`) |
+| R-O2IA-0JBL | D50 | project/design/D50.md (adopted from root `project/design/D23.md`) |
 | R-RG01-PORT | D14 | project/design/D14.md |
 | R-RG03-DBOX | D14 | project/design/D14.md |
 | R-RG04-NLIT | D14 | project/design/D14.md |
