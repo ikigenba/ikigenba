@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 61
-
-- Phase 60 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — declare prompts' testing facts in `AGENTS.md` (default gate, hermetic + composed layers, no preconditions, GOWORK mode) and prove the declaration and the no-skip rule from `cmd/prompts/main_test.go`
