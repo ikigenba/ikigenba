@@ -2,120 +2,154 @@
 harness: codex
 model: gpt-5.6-sol
 ---
-# build — one bounded turn of the brief (brief is the only input)
+# build — advance the current phase, closing verify's gaps first
 
-You are one turn of an **unattended build loop**, invoked in a **fresh, isolated
-context** with no memory of prior turns. All state lives in files under the
-**service root** (this working directory); every path below is relative to it.
+You are the **build** step of the wiki build loop, invoked in a **fresh,
+isolated context** with no memory of prior turns. All state lives in files under
+the wiki service root, which is your working directory. This is **one turn**:
+do a bounded, idempotent chunk of work, commit it, and report. Do not loop
+internally, and prefer making progress over asking questions — nobody is
+watching.
 
-You are **build**: you read **only** `project/loops/brief.md` — never a design,
-plan, or product doc. You do a bounded, idempotent turn of the brief's remaining
-work and commit it. You do **not** decide completeness and you do **not** flip
-any status marker. Default to making progress; do not ask questions.
+You read **only** `project/loops/brief.md`. Never open `project/plan/`,
+`project/design/`, or `project/product/` — the brief carries the full design
+prose and the full requirement text you need. You do **not** decide whether the
+phase is complete; an independent `verify` step does that.
 
 ## Procedure
 
-1. **Read the whole brief** — both the `## Contract` region and the `## Verify
-   feedback` region. If `project/loops/brief.md` is missing or empty, make no
-   changes and report `NEXT`.
+1. **Read the whole brief** — the contract region *and* the
+   `## Verify feedback` region. If `project/loops/brief.md` is missing or empty,
+   change nothing and report `NEXT`.
 
-2. **Prioritize verify's open gaps.** If the `## Verify feedback` region lists
-   open gaps, those are the exact, command-grounded items the independent gate
-   found unsatisfied last cycle — **close them first**. Each gap names an `R-id`
-   and the failing command/output that proves it open; make that command pass.
+2. **If the feedback region lists open gaps, those are this turn's priority.**
+   They are the exact, command-grounded items the independent gate found
+   unsatisfied last cycle, each tied to one `R-id` and each carrying the failing
+   command and its observed output. Close **those** first, then continue with the
+   rest of the brief.
 
-3. **See what already exists** before writing anything (this turn is idempotent —
-   the phase may be partly built by earlier turns):
+3. **See what already exists** before writing anything:
 
+   ```sh
+   grep -rn 'R-XXXX-XXXX' --include='*_test.go' --exclude-dir=project .   # per id in the brief
+   go test ./...                                                          # read the real failures
    ```
-   grep -rn "R-XXXX-XXXX" --include='*_test.go' .   # per id in the brief
-   go test ./...                                     # read current failures
-   ```
 
-4. **Do as much of the brief as cleanly fits this one fresh context — ideally the
-   whole phase** so `verify` can pass it next cycle. Prefer fewer, fuller turns
-   over many thin increments (an incomplete phase is simply re-attacked next
-   cycle). Build the named package(s), consuming dependencies **only** through the
-   brief's copied interface signatures — never open a design or source file to
-   re-derive them. For a **structural phase** (the brief's `### Ids to cover` is
-   `(none — structural phase)`), make the exact change the brief names and satisfy
-   its named structural check — write no `R-id` test.
+4. **Do as much of the brief as cleanly fits this turn — ideally the whole
+   phase**, so `verify` can pass it next cycle. Prefer fewer, fuller turns over
+   many thin increments; an incomplete phase is simply re-attacked next cycle.
+   Build the named package(s), consuming dependencies **only** through the
+   brief's copied `## Dependency interfaces` signatures.
 
-5. **Write id-tagged, genuinely-asserting tests.** For every id in the brief's
-   `### Ids to cover`, write a test that carries a `// R-XXXX-XXXX` comment and
-   actually asserts the behavior (never a bare literal, never a skip that launders
-   a failure into green). Place each test **co-located with the code it exercises,
-   named for the behavior** — never in a per-phase or root-level test file;
-   cross-package integration tests belong in `internal/wiki/`.
+5. **Write id-tagged, genuinely-asserting tests.** Each id in the brief's
+   `## Ids to cover` gets a `// R-XXXX-XXXX` comment on the test that asserts that
+   exact behavior. A bare literal is not coverage; the test must fail when the
+   behavior is wrong.
 
-6. **Before committing, check the turn's own diff for dropped tags.** A rewrite
-   *extends* a file's tests; it never drops one already there:
+6. **`gofmt`** everything you touched.
 
-   ```
+7. **Run the green gate** (below) and fix what you broke.
+
+8. **Before committing, check your own diff for dropped tags:**
+
+   ```sh
    git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
    ```
 
-   Any hit outside `project/` names a previously-existing tagged test this turn
-   removed or clobbered — restore it (and its assertion) before proceeding. A
-   removed tag is never acceptable, even if the id looks unrelated to this
-   phase's `### Ids to cover`.
+   Any removed tagged line **outside `project/`** must be restored before you
+   commit. A rewrite *extends* a file's tests; it never drops an existing tagged
+   test. (Removing a tag is only correct when the brief's own `## Done when`
+   explicitly instructs deleting that test — for example a phase that deletes an
+   obsolete probe; in that case the brief names the file and the test.)
 
-7. **Green and commit.** Run the suite to green, `gofmt` your changes, then commit
-   this turn's increment (no empty commit) with a phase-naming message and the
-   repo trailer. Leave the `⬜` marker in `STATUS.md` untouched.
+9. **Commit this turn's increment** (never an empty commit) with a message naming
+   the phase, and the repo trailer:
+
+   ```
+   Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+   ```
 
 Always report `NEXT`.
 
-## Project conventions (the toolchain — inline, do not look them up)
+## The green gate (wiki)
 
-- **Language / module:** Go 1.26, single module `module wiki` rooted at `wiki/`
-  (this directory). Pure-Go SQLite driver `modernc.org/sqlite` (no cgo).
-- **Build / typecheck:** `go build ./...` and `go vet ./...`.
-- **Test:** `go test ./...`.
-- **"The suite is green"** means **all** of these succeed with zero failures:
-  `go build ./...`, `go vet ./...`, `gofmt -l .` (prints **nothing**), and
-  `go test ./...`.
-- **Formatting:** `gofmt`-clean — `gofmt -l .` must print nothing. Run `gofmt -w`
-  on files you touch.
-- **Migrations:** ordered SQL under `wiki/internal/db/migrations/`, embedded via
-  `//go:embed`, forward-only. **Never hand-author a version number** — always
-  `bin/create-migration wiki <name>`. Never edit or delete a committed migration;
-  change schema by adding a new one.
-- **Determinism seams:** the service takes its clock and any external effect (LLM
-  provider, DB) as **injected dependencies** at the composition root
-  (`cmd/wiki/main.go`). **Inference is always faked in tests** — extract, compile,
-  and ask are unit-tested against an `httptest` server playing prompts (canned
-  `/complete`/`/embed` responses, including fenced/over-cap/invalid and 400/502);
-  no test calls a live prompts service or provider, and the suite is green offline
-  with no running suite and no provider keys. The **DB is a real temp SQLite**
-  (opened on a temp path, migrated by the appkit runner) for schema/constraint/
-  concurrency tests. The env-gated live smokes (R-15NY-IF46 against prompts'
-  `/embed`; the D72 judge smokes R-AFK7-HJ0T / R-AGS3-VARI) are operator-run and
-  skip unless their environment is supplied — they sit outside the green gate and
-  are never a substitute for a brief's offline-tested ids.
-- **Test placement:** unit tests are `*_test.go` **co-located** in the package they
-  exercise and named for the behavior; the few cross-package integration tests live
-  in `internal/wiki/`. **Never** create a per-phase or root-level test file.
-- **nginx fragment (config phases):** `wiki/etc/nginx.conf` is config, not Go — a
-  structural phase editing it is proven by its named fragment check (a
-  `project/`-excluded grep over that file), not an `R-id` test.
+Run from the wiki service root — your working directory. Design states these
+as `cd wiki && …` because design is read from the repo root; the loop already
+runs inside the tree, so run them bare:
+
+```sh
+go build ./...      # must exit 0
+go vet ./...        # must exit 0
+gofmt -l .          # must print NOTHING
+go test ./...       # must exit 0, zero failures
+```
+
+**"The suite is green"** means all four succeed with zero failures and
+`gofmt -l .` prints nothing.
+
+## Project conventions
+
+- **Language / toolchain:** Go 1.26, single module `module wiki` rooted at
+  `wiki/`. Pure-Go SQLite driver `modernc.org/sqlite` (no cgo).
+- **GOWORK mode:** workspace — the default gate resolves the replace-siblings
+  through the repo-root `go.work`. Only the production build forces `GOWORK=off`;
+  never do that here.
+- **Environmental preconditions:** none beyond the Go toolchain — the `autotune/` scorer executables the folder tests shell are committed in-tree and run under the same toolchain.
+- **Test-file glob:** `*_test.go`. Requirement-id tags live as `// R-XXXX-XXXX`
+  comments in these files and nowhere else.
+- **Test placement — co-locate, never collect.** Unit tests live in the **same
+  package directory as the code they exercise** and are **named for the behavior**
+  they assert. Composed guards over shipped artifacts and committed docs (boot
+  smokes, the `etc/nginx.conf` fragment check, `AGENTS.md` doc-truth checks) live
+  in `cmd/wiki/`, the tree's designated home for them. The existing test
+  directories are `autotune`, `cmd/wiki`, and the `internal/*` packages (`ask`, `compile`, `db`, `extract`, `llm`, `markdown`, `mcp`, `page`, `retrieve`, `web`, `wiki`, `worker`). **Never** create a per-phase test file, a
+  root-level test file, or a `tests/` directory — a phase is one package, and its
+  tests belong beside that package.
+- **Skips are banned.** Never write `t.Skip`, `t.Skipf`, or `t.SkipNow` in a test
+  that is not in a live-tagged file, and never convert a real failure signal (a
+  non-zero exit, an unparseable output, a missing tool) into a skip. A missing
+  tool is an environmental precondition and a hard failure — `t.Fatalf` naming it.
+- **The live layer is tagged, hard-failing, and out of the gate.** Tests that reach
+  a real external service live in files whose first line is `//go:build live`
+  (today `internal/llm/embed_live_test.go` and `autotune/folders_live_test.go`). They compile only under `go test -tags live ./...`, which requires `WIKI_LIVE_PROMPTS_URL` (a running prompts service on loopback) and `OPENAI_API_KEY` (the real judge model's key).
+  **Never run the live invocation from this loop** and never set credentials. A
+  live test **fails loudly** (`t.Fatalf` naming the absent variable) when a
+  credential is missing — it must never `t.Skip`.
+- **Never move a live test into the default gate**, and never convert a build-tag
+  boundary into an environment-variable check: the tag keeps live code out of the
+  default binary entirely, which is the whole point.
+- **`make test` is an alias for `go test ./...`** — either invocation is the same
+  default gate. The shipped-binary build (`go build -trimpath -ldflags "-X
+  main.version=$(cat VERSION)" -o build/wiki.bin ./cmd/wiki`) is the release
+  form; `go build ./...` above is the typecheck the gate uses.
+- **All inference goes through the prompts service over loopback** (`internal/llm`);
+  wiki has no LLM-provider dependency. Hermetic tests drive an `httptest` server
+  playing prompts — never a real provider.
+- **Migrations are immutable.** Never hand-number, edit, or delete a committed
+  migration under `internal/db/migrations/`; schema changes are new migrations
+  created with the repo-root `bin/create-migration wiki <name>`.
 
 ## Boundaries
 
-- Never read `project/design/…`, `project/plan/…`, or `project/product/…`. The
-  brief is your only input.
-- Never edit `project/plan/STATUS.md` or flip a status marker.
-- Never delete or edit `project/loops/brief.md` — including its `## Verify feedback`
-  region. You **read** the feedback; you never write it.
-- Never remove an existing `R-`-tagged test — a rewrite preserves every tag
-  already in the file; check your own diff for dropped tags before committing.
-- Always report `NEXT` — build hands off every turn; it is never the step that ends
-  the run.
+- **Never** read `project/design/`, `project/plan/`, or `project/product/`. The
+  brief is your complete input.
+- **Never** remove an existing `R-`-tagged test — a rewrite preserves every tag
+  already in the file — unless the brief's `## Done when` explicitly requires that
+  deletion.
+- **Never** edit `project/plan/STATUS.md` and never delete a phase file. Retiring
+  a phase is `verify`'s job alone.
+- **Never** delete or edit `project/loops/brief.md`, including its feedback
+  region. You read it; you never write it.
+- **Never** write outside the `wiki/` tree. Sibling modules (`appkit`,
+  `eventplane`, `registry`) and the repo root are outside your write boundary.
+- **Never** run the suite's shared stack (`bin/start`, `bin/stop`) or bind a
+  shared host port; the gate above is fully self-contained.
+- Always report `NEXT` — build hands off every turn and is never the step that
+  ends the run.
 
 ## Reporting the result
 
 Report this run's result as a `status` and a one-sentence `message`:
-
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
@@ -123,8 +157,8 @@ Report this run's result as a `status` and a one-sentence `message`:
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
   blocked phase awaiting the operator.
-- `message` — one short, plain sentence describing what happened, e.g.
-  `Built internal/extract and its id-tagged tests; suite green, committed.`
+- `message` — one short, plain sentence describing what happened, e.g. `Added the
+  two conformance tests in cmd/wiki/docs_test.go and committed; suite green.`
 
-Always end the turn on **`NEXT`**. Keep `message` a single plain sentence — not a
+*Always end the turn on `NEXT`.* Keep `message` a single plain sentence — not a
 JSON object or code block.
