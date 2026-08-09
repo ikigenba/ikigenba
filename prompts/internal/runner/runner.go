@@ -16,7 +16,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -174,6 +176,12 @@ func (r *Runner) execute(run prompt.Run) {
 		return
 	}
 	// eventBytes == nil when the file is absent (manual run).
+	sandboxRoot := r.sandbox.Root(run.ID)
+	branch, sha, err := workspaceGitState(sandboxRoot)
+	if err != nil {
+		finish(prompt.RunFailed, "", "read run workspace git state: "+err.Error())
+		return
+	}
 
 	releaseRun, err = r.gate.AcquireRun(ctx)
 	if err != nil {
@@ -193,12 +201,11 @@ func (r *Runner) execute(run prompt.Run) {
 		return
 	}
 
-	sandboxRoot := r.sandbox.Root(run.ID)
 	conv := &agentkit.Conversation{
 		Provider:          prov,
 		Model:             res.WireModel,
 		Pricing:           res.Offering.Pricing,
-		System:            buildSystemPrompt(executed.SystemPrompt),
+		System:            buildSystemPrompt(executed.SystemPrompt, branch, sha),
 		Log:               logFile,
 		Gen:               genSettings(cfg),
 		Retry:             retryPolicy(cfg),
@@ -243,11 +250,31 @@ func knownProvider(name string) bool {
 	}
 }
 
-func buildSystemPrompt(sysPrompt string) string {
-	if sysPrompt == "" {
-		return framingPrompt
+func workspaceGitState(root string) (string, string, error) {
+	read := func(args ...string) (string, error) {
+		out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		}
+		return strings.TrimSpace(string(out)), nil
 	}
-	return framingPrompt + "\n\n" + sysPrompt
+	branch, err := read("rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", "", err
+	}
+	sha, err := read("rev-parse", "HEAD")
+	if err != nil {
+		return "", "", err
+	}
+	return branch, sha, nil
+}
+
+func buildSystemPrompt(sysPrompt, branch, sha string) string {
+	framing := framingPrompt(branch, sha)
+	if sysPrompt == "" {
+		return framing
+	}
+	return framing + "\n\n" + sysPrompt
 }
 
 func buildUserText(userPrompt string, eventJSON []byte) string {

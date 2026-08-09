@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -210,6 +211,8 @@ func seedRunningWithConfig(t *testing.T, store *prompt.Store, sb *sandbox.Manage
 	if err := sb.Create(runID); err != nil {
 		t.Fatalf("sandbox.Create: %v", err)
 	}
+	gitTestCommand(t, sb.Root(runID), "init", "-b", "ikigenba/run-"+runID)
+	gitTestCommand(t, sb.Root(runID), "-c", "user.name=runner-test", "-c", "user.email=runner-test@localhost", "commit", "--allow-empty", "-m", "run definition")
 	run := prompt.Run{
 		ID:         runID,
 		PromptID:   sess.ID,
@@ -225,6 +228,16 @@ func seedRunningWithConfig(t *testing.T, store *prompt.Store, sb *sandbox.Manage
 		t.Fatalf("InsertRun: %v", err)
 	}
 	return sess, run
+}
+
+func gitTestCommand(t *testing.T, root string, args ...string) string {
+	t.Helper()
+	cmdArgs := append([]string{"-C", root}, args...)
+	out, err := exec.Command("git", cmdArgs...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, out)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func TestExecute_UsesCatalogRouteWireModel(t *testing.T) {
@@ -589,19 +602,20 @@ func TestExecuteThreadsStoredRunCorrelationThroughDiscoveryAndContext(t *testing
 
 func TestFramingPromptNamesNoLoaderOrIndividualService(t *testing.T) {
 	// R-ZK3C-F6XI
-	if strings.Contains(framingPrompt, "load_tools") || strings.Contains(framingPrompt, "ikigenba_") {
-		t.Fatalf("framing prompt contains retired loader or service prefix: %q", framingPrompt)
+	framing := framingPrompt("ikigenba/run-example", strings.Repeat("a", 40))
+	if strings.Contains(framing, "load_tools") || strings.Contains(framing, "ikigenba_") {
+		t.Fatalf("framing prompt contains retired loader or service prefix: %q", framing)
 	}
 	for _, service := range []string{"crm", "gmail", "dropbox", "wiki"} {
-		if strings.Contains(strings.ToLower(framingPrompt), service) {
-			t.Fatalf("framing prompt names individual service %q: %q", service, framingPrompt)
+		if strings.Contains(strings.ToLower(framing), service) {
+			t.Fatalf("framing prompt names individual service %q: %q", service, framing)
 		}
 	}
 }
 
 func TestSystemPromptExplainsFetchContentURLSandboxRole(t *testing.T) {
 	// R-6AUG-NHQY
-	for _, system := range []string{buildSystemPrompt(""), buildSystemPrompt("Keep the response concise.")} {
+	for _, system := range []string{buildSystemPrompt("", "ikigenba/run-example", strings.Repeat("a", 40)), buildSystemPrompt("Keep the response concise.", "ikigenba/run-example", strings.Repeat("a", 40))} {
 		lower := strings.ToLower(system)
 		for _, claim := range []string{"glob, grep, fetch", "content url", "lands its bytes as a sandbox file"} {
 			if !strings.Contains(lower, claim) {
@@ -621,7 +635,7 @@ func TestSystemPromptExplainsFetchContentURLSandboxRole(t *testing.T) {
 
 func TestSystemPromptClaimsPDFCommandsAreAvailableInBash(t *testing.T) {
 	// R-6I5U-Y474
-	for _, system := range []string{buildSystemPrompt(""), buildSystemPrompt("Keep the response concise.")} {
+	for _, system := range []string{buildSystemPrompt("", "ikigenba/run-example", strings.Repeat("a", 40)), buildSystemPrompt("Keep the response concise.", "ikigenba/run-example", strings.Repeat("a", 40))} {
 		lower := strings.ToLower(system)
 		if !strings.Contains(system, "PDF tooling is available in Bash") {
 			t.Errorf("assembled system prompt does not claim PDF tooling is available in Bash: %q", system)
@@ -644,7 +658,7 @@ func TestSystemPromptClaimsPDFCommandsAreAvailableInBash(t *testing.T) {
 
 func TestSystemPromptExplainsFileShareToolsAndConfinement(t *testing.T) {
 	// R-FEGC-LVD7
-	for _, system := range []string{buildSystemPrompt(""), buildSystemPrompt("Keep the response concise.")} {
+	for _, system := range []string{buildSystemPrompt("", "ikigenba/run-example", strings.Repeat("a", 40)), buildSystemPrompt("Keep the response concise.", "ikigenba/run-example", strings.Repeat("a", 40))} {
 		lower := strings.ToLower(system)
 		for _, tool := range []string{"file list", "file get", "file put", "file delete", "file move", "file mkdir"} {
 			if !strings.Contains(lower, tool) {
@@ -669,6 +683,89 @@ func TestSystemPromptExplainsFileShareToolsAndConfinement(t *testing.T) {
 				t.Errorf("assembled system prompt names individual service %q: %q", service, system)
 			}
 		}
+	}
+}
+
+func TestSystemPromptExplainsRunCheckoutAndConditionalMerge(t *testing.T) {
+	// R-S953-GPY3
+	branch := "ikigenba/run-example"
+	sha := strings.Repeat("b", 40)
+	system := buildSystemPrompt("Follow the task precisely.", branch, sha)
+	for _, claim := range []string{
+		"git clone",
+		"branch `" + branch + "`",
+		"commit `" + sha + "`",
+		"`ikigenba/` namespace",
+		"`main` branch is off limits",
+		"pushes to it are refused",
+		"never be force-pushed",
+		"version-control service's merge tool",
+		"only when these instructions ask for it",
+		"no automatic merge at the end of a run",
+		"You have NO network access from bash:",
+	} {
+		if !strings.Contains(system, claim) {
+			t.Errorf("assembled system prompt does not contain checkout guidance %q: %q", claim, system)
+		}
+	}
+	lower := strings.ToLower(system)
+	for _, prohibited := range []string{"repos", "ikigenba_", "crm", "gmail", "dropbox", "wiki"} {
+		if strings.Contains(lower, prohibited) {
+			t.Errorf("assembled system prompt names prohibited service %q: %q", prohibited, system)
+		}
+	}
+}
+
+func TestSpawnedRunSystemPromptUsesRealWorkspaceBranchAndCommit(t *testing.T) {
+	// R-SACZ-UHOS
+	fp := &fakeProvider{}
+	r, store := newTestRunner(t, time.Minute, fp)
+	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer { return nil }
+	runsDir := filepath.Dir(filepath.Dir(r.sandbox.Root("probe")))
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	p := prompt.Prompt{
+		ID:         ids.NewULID(),
+		OwnerID:    "owner-id",
+		OwnerEmail: "owner@example.com",
+		Name:       "real checkout framing",
+		UserPrompt: "inspect the checkout",
+		Config:     prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	if err := store.InsertPrompt(context.Background(), p); err != nil {
+		t.Fatalf("InsertPrompt: %v", err)
+	}
+	svc := prompt.NewService(store, r.sandbox, runsDir, r)
+	run, err := svc.Run(context.Background(), p.OwnerID, p.ID)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got := waitRun(t, store, p.ID)
+	if got.Status != prompt.RunSucceeded {
+		t.Fatalf("run status = %q, error=%q; want succeeded", got.Status, got.Error)
+	}
+
+	root := r.sandbox.Root(run.ID)
+	branchBytes, err := exec.Command("git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("git rev-parse --abbrev-ref HEAD: %v", err)
+	}
+	shaBytes, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD: %v", err)
+	}
+	branch := strings.TrimSpace(string(branchBytes))
+	sha := strings.TrimSpace(string(shaBytes))
+	req := fp.lastRequest()
+	if req == nil {
+		t.Fatal("fake provider saw no request")
+	}
+	if !strings.Contains(req.System, "branch `"+branch+"`") {
+		t.Fatalf("system prompt does not contain real workspace branch %q: %q", branch, req.System)
+	}
+	if !strings.Contains(req.System, "commit `"+sha+"`") {
+		t.Fatalf("system prompt does not contain real workspace commit %q: %q", sha, req.System)
 	}
 }
 
