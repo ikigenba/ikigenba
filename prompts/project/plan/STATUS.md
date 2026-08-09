@@ -11,4 +11,3 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 70
 
-- Phase 69 ⬜ realizes D59 — retire the content columns
