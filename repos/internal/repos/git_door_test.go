@@ -250,7 +250,6 @@ func newRunGitDoorFixture(t *testing.T) *runGitDoorFixture {
 	other, _ := custody.Path("code", "other")
 	seedCommits(t, other, 1)
 	service := serviceWithOutbox(t, conn, store, custody)
-	service.SetRunTokenTTL(time.Hour)
 	minted, response := mintRunToken(t, service, "code", "demo")
 	if response.Code != http.StatusOK {
 		t.Fatalf("mint status=%d body=%q", response.Code, response.Body.String())

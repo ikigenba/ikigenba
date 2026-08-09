@@ -20,7 +20,6 @@ import (
 )
 
 type runtimeKnobs struct {
-	runTokenTTL    time.Duration
 	maxCommitBytes int64
 }
 
@@ -39,15 +38,11 @@ func resolveStateDir(getenv func(string) string) (string, error) {
 }
 
 func resolveRuntimeKnobs(getenv func(string) string) (runtimeKnobs, error) {
-	runTokenTTL, err := config.EnvOrDuration(getenv, "REPOS_RUN_TOKEN_TTL", 2*time.Hour)
-	if err != nil || runTokenTTL <= 0 {
-		return runtimeKnobs{}, fmt.Errorf("repos: REPOS_RUN_TOKEN_TTL must be a positive duration")
-	}
 	maxCommitBytes, err := config.EnvOrInt(getenv, "REPOS_MAX_COMMIT_BYTES", 67108864)
 	if err != nil || maxCommitBytes <= 0 {
 		return runtimeKnobs{}, fmt.Errorf("repos: REPOS_MAX_COMMIT_BYTES must be a positive integer")
 	}
-	return runtimeKnobs{runTokenTTL: runTokenTTL, maxCommitBytes: int64(maxCommitBytes)}, nil
+	return runtimeKnobs{maxCommitBytes: int64(maxCommitBytes)}, nil
 }
 
 func reposSpec() appkit.Spec {
@@ -63,7 +58,6 @@ func reposSpec() appkit.Spec {
 		WWW:   true,
 		Feed:  "/feed",
 		ManifestExtras: []appkit.ManifestKV{
-			{Key: "REPOS_RUN_TOKEN_TTL", Value: "2h"},
 			{Key: "REPOS_MAX_COMMIT_BYTES", Value: "67108864"},
 		},
 		Migrations: reposdb.FS,
@@ -89,7 +83,6 @@ func reposSpec() appkit.Spec {
 			service = repos.NewService(store)
 			service.SetCustody(custody)
 			service.SetMaxCommitBytes(knobs.maxCommitBytes)
-			service.SetRunTokenTTL(knobs.runTokenTTL)
 			rt.Handle("/git/", repos.GitDoorHandler(service))
 			rt.HandleLoopback("POST /run-token", repos.RunTokenHandler(service))
 			rt.HandleLoopback("GET /content", repos.ContentHandler(service))

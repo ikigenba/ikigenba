@@ -30,7 +30,7 @@ type runTokenResponse struct {
 // RunTokenHandler mints a short-lived credential scoped to one live repository.
 func RunTokenHandler(service *Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		if service == nil || service.store == nil || service.custody == nil || service.runTokenTTL <= 0 {
+		if service == nil || service.store == nil || service.custody == nil {
 			http.Error(w, "run token dependencies are not configured", http.StatusInternalServerError)
 			return
 		}
@@ -41,16 +41,10 @@ func RunTokenHandler(service *Service) http.Handler {
 			http.Error(w, fmt.Sprintf("%s: invalid run token body", ErrValidation), http.StatusBadRequest)
 			return
 		}
-		effectiveTTL := service.runTokenTTL
-		if key.TTL != "" {
-			requestedTTL, err := time.ParseDuration(key.TTL)
-			if err != nil || requestedTTL <= 0 {
-				http.Error(w, fmt.Sprintf("%s: invalid run token ttl", ErrValidation), http.StatusBadRequest)
-				return
-			}
-			if requestedTTL < effectiveTTL {
-				effectiveTTL = requestedTTL
-			}
+		requestedTTL, err := time.ParseDuration(key.TTL)
+		if err != nil || requestedTTL <= 0 {
+			http.Error(w, fmt.Sprintf("%s: invalid run token ttl", ErrValidation), http.StatusBadRequest)
+			return
 		}
 		if _, err := service.custody.Path(key.Kind, key.Name); err != nil {
 			writeReadError(w, err)
@@ -74,7 +68,7 @@ func RunTokenHandler(service *Service) http.Handler {
 		token := base64.RawURLEncoding.EncodeToString(raw)
 		digest := sha256.Sum256([]byte(token))
 		now := service.custody.Now()
-		expiresAt := now.Add(effectiveTTL)
+		expiresAt := now.Add(requestedTTL)
 		tx, err := service.store.BeginTx(request.Context())
 		if err != nil {
 			http.Error(w, "begin run token transaction", http.StatusInternalServerError)

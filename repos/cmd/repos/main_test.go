@@ -195,7 +195,6 @@ func TestAssembledSpecRoutesApplyTheirChassisGates(t *testing.T) {
 	// R-EL8Q-U5GD
 	t.Setenv("REPOS_STATE_DIR", t.TempDir())
 	t.Setenv("REPOS_GIT_BIN", "git")
-	t.Setenv("REPOS_RUN_TOKEN_TTL", "")
 	t.Setenv("REPOS_MAX_COMMIT_BYTES", "")
 
 	dbPath := filepath.Join(t.TempDir(), "repos.db")
@@ -341,7 +340,7 @@ func TestProductionGoSourceContainsNoCompiledOptPath(t *testing.T) {
 func TestManifestRenderMatchesCommittedServiceContract(t *testing.T) {
 	// R-EISY-2LYZ
 	output := []byte(appkit.Manifest(reposSpec()))
-	want := "APP=repos\nMOUNT=/srv/repos/\nDEFAULT=false\nPORT=3007\nMCP=true\nFEED=/feed\nREPOS_RUN_TOKEN_TTL=2h\nREPOS_MAX_COMMIT_BYTES=67108864\n"
+	want := "APP=repos\nMOUNT=/srv/repos/\nDEFAULT=false\nPORT=3007\nMCP=true\nFEED=/feed\nREPOS_MAX_COMMIT_BYTES=67108864\n"
 	if string(output) != want {
 		t.Fatalf("manifest output:\n%s\nwant:\n%s", output, want)
 	}
@@ -355,23 +354,16 @@ func TestManifestRenderMatchesCommittedServiceContract(t *testing.T) {
 }
 
 func TestRuntimeKnobDefaultsAgreeWithAuthoredManifest(t *testing.T) {
-	// R-L9EG-DDWC
+	// R-39AL-2CA7
 	manifestValues := readManifestValues(t)
 	knobs, err := resolveRuntimeKnobs(func(string) string { return "" })
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifestTTL, err := time.ParseDuration(manifestValues["REPOS_RUN_TOKEN_TTL"])
-	if err != nil {
-		t.Fatalf("parse manifest run-token TTL: %v", err)
-	}
-	if knobs.runTokenTTL != manifestTTL {
-		t.Fatalf("resolved run-token TTL = %s, manifest = %s", knobs.runTokenTTL, manifestTTL)
-	}
 	if got, want := strconv.FormatInt(knobs.maxCommitBytes, 10), manifestValues["REPOS_MAX_COMMIT_BYTES"]; got != want {
 		t.Fatalf("resolved max commit bytes = %q, manifest = %q", got, want)
 	}
-	wantKeys := []string{"APP", "MOUNT", "DEFAULT", "PORT", "MCP", "FEED", "REPOS_RUN_TOKEN_TTL", "REPOS_MAX_COMMIT_BYTES"}
+	wantKeys := []string{"APP", "MOUNT", "DEFAULT", "PORT", "MCP", "FEED", "REPOS_MAX_COMMIT_BYTES"}
 	if len(manifestValues) != len(wantKeys) {
 		t.Fatalf("manifest keys = %#v, want exactly %#v", manifestValues, wantKeys)
 	}
@@ -380,16 +372,36 @@ func TestRuntimeKnobDefaultsAgreeWithAuthoredManifest(t *testing.T) {
 			t.Errorf("manifest is missing declared key %s", key)
 		}
 	}
-	for _, forbidden := range []string{"REPOS_PROVIDER", "REPOS_MODEL", "REPOS_SESSION_TTL", "REPOS_MAX_SESSIONS", "CONSUMES"} {
+	for _, forbidden := range []string{"REPOS_RUN_TOKEN_TTL", "REPOS_PROVIDER", "REPOS_MODEL", "REPOS_SESSION_TTL", "REPOS_MAX_SESSIONS", "CONSUMES"} {
 		if _, found := manifestValues[forbidden]; found {
 			t.Errorf("manifest contains retired key %s", forbidden)
 		}
+	}
+	root := filepath.Join("..", "..")
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		contents, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if bytes.Contains(contents, []byte("REPOS_RUN_TOKEN_TTL")) {
+			t.Errorf("production Go source %s reads retired REPOS_RUN_TOKEN_TTL", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestSpecHasNoConsumersAndDeclaresWorkersAndManifestExtras(t *testing.T) {
 	spec := reposSpec()
-	if spec.Consumers != nil || len(spec.ManifestExtras) != 2 || len(spec.Workers) != 2 {
+	if spec.Consumers != nil || len(spec.ManifestExtras) != 1 || len(spec.Workers) != 2 {
 		t.Fatalf("spec consumers=%#v extras=%#v workers=%#v", spec.Consumers, spec.ManifestExtras, spec.Workers)
 	}
 	if spec.Handlers == nil || spec.Producer == nil || spec.Health == nil {

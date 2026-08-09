@@ -17,8 +17,8 @@ import (
 	"registry"
 )
 
-func TestRunTokenMintStoresOnlyDigestAndRejectsUnknownRepository(t *testing.T) {
-	// R-K96Y-3ON9
+func TestRunTokenMintHonorsRequestedTTLAndStoresOnlyDigest(t *testing.T) {
+	// R-36US-ASST
 	ctx := context.Background()
 	conn, store := newTestStore(t)
 	clock := &sequenceClock{now: time.Date(2026, 8, 8, 12, 0, 0, 123, time.UTC)}
@@ -32,39 +32,48 @@ func TestRunTokenMintStoresOnlyDigestAndRejectsUnknownRepository(t *testing.T) {
 	})
 	service := NewService(store)
 	service.SetCustody(custody)
-	service.SetRunTokenTTL(90 * time.Minute)
 
-	result, response := mintRunToken(t, service, "code", "demo")
+	first, response := mintRunTokenRequest(t, service, runTokenRequest{Kind: "code", Name: "demo", TTL: "40m"})
 	if response.Code != http.StatusOK {
 		t.Fatalf("mint status=%d body=%q, want 200", response.Code, response.Body.String())
 	}
-	if len(result.Token) != 43 {
-		t.Fatalf("token length=%d, want 43", len(result.Token))
+	if len(first.Token) != 43 {
+		t.Fatalf("token length=%d, want 43", len(first.Token))
 	}
-	if result.ExpiresAt != clock.now.Add(90*time.Minute).Format(time.RFC3339Nano) {
-		t.Fatalf("expires_at=%q, want %q", result.ExpiresAt, clock.now.Add(90*time.Minute).Format(time.RFC3339Nano))
+	if want := clock.now.Add(40 * time.Minute).Format(time.RFC3339Nano); first.ExpiresAt != want {
+		t.Fatalf("40m expires_at=%q, want %q", first.ExpiresAt, want)
 	}
 	wantCloneURL := registry.BaseURL("repos") + "/git/code/demo.git"
-	if result.CloneURL != wantCloneURL {
-		t.Fatalf("clone_url=%q, want %q", result.CloneURL, wantCloneURL)
+	if first.CloneURL != wantCloneURL {
+		t.Fatalf("clone_url=%q, want %q", first.CloneURL, wantCloneURL)
 	}
-	digest := sha256.Sum256([]byte(result.Token))
-	wantHash := hex.EncodeToString(digest[:])
-	var columns [5]string
-	if err := conn.QueryRow(`SELECT token_sha256, kind, name, expires_at, created_at FROM run_tokens`).Scan(
-		&columns[0], &columns[1], &columns[2], &columns[3], &columns[4]); err != nil {
-		t.Fatal(err)
+	second, response := mintRunTokenRequest(t, service, runTokenRequest{Kind: "code", Name: "demo", TTL: "3h"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("second mint status=%d body=%q, want 200", response.Code, response.Body.String())
 	}
-	if columns[0] != wantHash {
-		t.Fatalf("stored token_sha256=%q, want %q", columns[0], wantHash)
+	if want := clock.now.Add(3 * time.Hour).Format(time.RFC3339Nano); second.ExpiresAt != want {
+		t.Fatalf("3h expires_at=%q, want %q", second.ExpiresAt, want)
 	}
-	for index, value := range columns {
-		if value == result.Token {
-			t.Fatalf("raw token stored in column %d", index)
+
+	for _, result := range []runTokenResponse{first, second} {
+		digest := sha256.Sum256([]byte(result.Token))
+		wantHash := hex.EncodeToString(digest[:])
+		var columns [5]string
+		if err := conn.QueryRow(`SELECT token_sha256, kind, name, expires_at, created_at FROM run_tokens WHERE token_sha256 = ?`, wantHash).Scan(
+			&columns[0], &columns[1], &columns[2], &columns[3], &columns[4]); err != nil {
+			t.Fatal(err)
+		}
+		if columns[0] != wantHash {
+			t.Fatalf("stored token_sha256=%q, want %q", columns[0], wantHash)
+		}
+		for index, value := range columns {
+			if value == result.Token {
+				t.Fatalf("raw token stored in column %d", index)
+			}
 		}
 	}
 
-	_, missing := mintRunToken(t, service, "code", "missing")
+	_, missing := mintRunTokenRequest(t, service, runTokenRequest{Kind: "code", Name: "missing", TTL: "40m"})
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("unknown repository status=%d body=%q, want 404", missing.Code, missing.Body.String())
 	}
@@ -84,17 +93,16 @@ func TestRunTokenRouteIsLoopbackOnlyAndSweepDeletesOnlyExpiredRows(t *testing.T)
 	})
 	service := NewService(store)
 	service.SetCustody(custody)
-	service.SetRunTokenTTL(time.Hour)
 	handler := appserver.LoopbackOnly(RunTokenHandler(service))
 
-	request := httptest.NewRequest(http.MethodPost, "/run-token", bytes.NewBufferString(`{"kind":"scripts","name":"worker"}`))
+	request := httptest.NewRequest(http.MethodPost, "/run-token", bytes.NewBufferString(`{"kind":"scripts","name":"worker","ttl":"1h"}`))
 	request.Header.Set("X-Forwarded-Proto", "https")
 	crossed := httptest.NewRecorder()
 	handler.ServeHTTP(crossed, request)
 	if crossed.Code != http.StatusNotFound {
 		t.Fatalf("crossed mint status=%d body=%q, want 404", crossed.Code, crossed.Body.String())
 	}
-	request = httptest.NewRequest(http.MethodPost, "/run-token", bytes.NewBufferString(`{"kind":"scripts","name":"worker"}`))
+	request = httptest.NewRequest(http.MethodPost, "/run-token", bytes.NewBufferString(`{"kind":"scripts","name":"worker","ttl":"1h"}`))
 	loopback := httptest.NewRecorder()
 	handler.ServeHTTP(loopback, request)
 	if loopback.Code != http.StatusOK {
@@ -141,41 +149,8 @@ func TestRunTokenRouteIsLoopbackOnlyAndSweepDeletesOnlyExpiredRows(t *testing.T)
 	}
 }
 
-func TestRunTokenRequestedTTLShortensLifetimeAndCannotExceedConfiguredCap(t *testing.T) {
-	// R-II0Q-VTSI
-	ctx := context.Background()
-	conn, store := newTestStore(t)
-	clock := &sequenceClock{now: time.Date(2026, 8, 8, 16, 0, 0, 0, time.UTC)}
-	custody := testCustodyWithClock(t, clock)
-	if err := custody.Init(ctx, "code", "demo"); err != nil {
-		t.Fatal(err)
-	}
-	inTx(t, conn, func(tx *sql.Tx) error {
-		return store.InsertRepository(ctx, tx, Repository{Kind: "code", Name: "demo", OwnerID: "owner", OwnerEmail: "owner@example.test", DefaultBranch: "main", CreatedAt: clock.now})
-	})
-	service := NewService(store)
-	service.SetCustody(custody)
-	service.SetRunTokenTTL(2 * time.Hour)
-
-	shortened, response := mintRunTokenRequest(t, service, runTokenRequest{Kind: "code", Name: "demo", TTL: "35m"})
-	if response.Code != http.StatusOK {
-		t.Fatalf("shortened mint status=%d body=%q, want 200", response.Code, response.Body.String())
-	}
-	if want := clock.now.Add(35 * time.Minute).Format(time.RFC3339Nano); shortened.ExpiresAt != want {
-		t.Fatalf("shortened expires_at=%q, want %q", shortened.ExpiresAt, want)
-	}
-
-	capped, response := mintRunTokenRequest(t, service, runTokenRequest{Kind: "code", Name: "demo", TTL: "12h"})
-	if response.Code != http.StatusOK {
-		t.Fatalf("capped mint status=%d body=%q, want 200", response.Code, response.Body.String())
-	}
-	if want := clock.now.Add(2 * time.Hour).Format(time.RFC3339Nano); capped.ExpiresAt != want {
-		t.Fatalf("capped expires_at=%q, want %q", capped.ExpiresAt, want)
-	}
-}
-
-func TestRunTokenInvalidRequestedTTLDoesNotMintAndOmittedTTLUsesDefault(t *testing.T) {
-	// R-IJ8N-9LJ7
+func TestRunTokenRejectsInvalidNonPositiveAndOmittedTTLWithoutMinting(t *testing.T) {
+	// R-382O-OKJI
 	ctx := context.Background()
 	conn, store := newTestStore(t)
 	clock := &sequenceClock{now: time.Date(2026, 8, 8, 17, 0, 0, 0, time.UTC)}
@@ -188,9 +163,8 @@ func TestRunTokenInvalidRequestedTTLDoesNotMintAndOmittedTTLUsesDefault(t *testi
 	})
 	service := NewService(store)
 	service.SetCustody(custody)
-	service.SetRunTokenTTL(90 * time.Minute)
 
-	for _, ttl := range []string{"banana", "-5m"} {
+	for _, ttl := range []string{"banana", "-5m", "0s", ""} {
 		_, response := mintRunTokenRequest(t, service, runTokenRequest{Kind: "code", Name: "demo", TTL: ttl})
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("ttl %q status=%d body=%q, want 400", ttl, response.Code, response.Body.String())
@@ -202,14 +176,6 @@ func TestRunTokenInvalidRequestedTTLDoesNotMintAndOmittedTTLUsesDefault(t *testi
 		if count != 0 {
 			t.Fatalf("ttl %q inserted %d run token rows, want 0", ttl, count)
 		}
-	}
-
-	result, response := mintRunToken(t, service, "code", "demo")
-	if response.Code != http.StatusOK {
-		t.Fatalf("omitted ttl status=%d body=%q, want 200", response.Code, response.Body.String())
-	}
-	if want := clock.now.Add(90 * time.Minute).Format(time.RFC3339Nano); result.ExpiresAt != want {
-		t.Fatalf("omitted ttl expires_at=%q, want %q", result.ExpiresAt, want)
 	}
 }
 
@@ -225,7 +191,7 @@ func testCustodyWithClock(t *testing.T, clock Clock) *Custody {
 
 func mintRunToken(t *testing.T, service *Service, kind, name string) (runTokenResponse, *httptest.ResponseRecorder) {
 	t.Helper()
-	return mintRunTokenRequest(t, service, runTokenRequest{Kind: kind, Name: name})
+	return mintRunTokenRequest(t, service, runTokenRequest{Kind: kind, Name: name, TTL: "1h"})
 }
 
 func mintRunTokenRequest(t *testing.T, service *Service, key runTokenRequest) (runTokenResponse, *httptest.ResponseRecorder) {
