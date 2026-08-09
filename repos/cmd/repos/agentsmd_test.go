@@ -37,6 +37,8 @@ func TestAgentsMDDeclaresRepositoryTestingFacts(t *testing.T) {
 			"absence is a hard failure",
 			"`go` binary must be on `PATH` in the test process's environment",
 			"module cache resolving repos' `replace` siblings",
+			"real `google-chrome` binary must also be on `PATH`",
+			"failure to launch is a hard failure, never a skip",
 		},
 		"GOWORK mode": {
 			"workspace mode through the repo-root `go.work`",

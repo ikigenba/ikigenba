@@ -46,8 +46,10 @@ plumbing are exercised directly against temporary local fixtures and absence is
 a hard failure. The `go` binary must be on `PATH` in the test process's
 environment for the composed smoke, with the module cache resolving repos'
 `replace` siblings. Tests, builds, and vet run in workspace mode through the
-repo-root `go.work`. The production build forces `GOWORK=off`; that mode is not
-part of the default gate.
+repo-root `go.work`. The real `google-chrome` binary must also be on `PATH` for
+the hermetic browser wiring proof; its absence or failure to launch is a hard
+failure, never a skip. The production build forces `GOWORK=off`; that mode is
+not part of the default gate.
 
 ## Versioning
 
