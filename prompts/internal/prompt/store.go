@@ -3,7 +3,6 @@ package prompt
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -35,19 +34,6 @@ type Store struct {
 	Calls *calls.Store
 }
 
-// seedDefinition is the lossless database view used by the boot-time
-// definition backfill. ConfigJSON deliberately remains raw: parsing it into a
-// Config and marshaling it again could change the bytes committed to the
-// version plane.
-type seedDefinition struct {
-	ID           string
-	Name         string
-	NameKey      string
-	UserPrompt   string
-	SystemPrompt string
-	ConfigJSON   string
-}
-
 // NewStore wraps a migrated *sql.DB (the prompts/runs tables must exist).
 func NewStore(db *sql.DB) *Store {
 	return &Store{db: db, now: func() time.Time { return time.Now().UTC() }}
@@ -57,34 +43,14 @@ func (s *Store) nowStr() string {
 	return s.now().UTC().Format(time.RFC3339Nano)
 }
 
-func marshalConfig(c Config) (string, error) {
-	b, err := json.Marshal(c)
-	if err != nil {
-		return "", fmt.Errorf("prompt: marshal config: %w", err)
-	}
-	return string(b), nil
-}
-
-func unmarshalConfig(s string) (Config, error) {
-	var c Config
-	if err := json.Unmarshal([]byte(s), &c); err != nil {
-		return Config{}, fmt.Errorf("prompt: unmarshal config: %w", err)
-	}
-	return c, nil
-}
-
 // InsertPrompt persists a new prompt row.
 func (s *Store) InsertPrompt(ctx context.Context, p Prompt) error {
-	cfg, err := marshalConfig(p.Config)
-	if err != nil {
-		return err
-	}
-	_, err = s.db.ExecContext(ctx,
+	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO prompts
-		   (id, owner_id, owner_email, name, name_key, user_prompt, system_prompt, config_json, source_path, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.OwnerID, p.OwnerEmail, nullStr(p.Name), nullStr(p.NameKey), p.UserPrompt, nullStr(p.SystemPrompt),
-		cfg, nullStr(p.SourcePath), p.CreatedAt, p.UpdatedAt,
+		   (id, owner_id, owner_email, name, name_key, source_path, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.OwnerID, p.OwnerEmail, nullStr(p.Name), nullStr(p.NameKey),
+		nullStr(p.SourcePath), p.CreatedAt, p.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("prompt: insert: %w", err)
@@ -93,36 +59,30 @@ func (s *Store) InsertPrompt(ctx context.Context, p Prompt) error {
 }
 
 // UpsertPromptBySource inserts an import-managed prompt or, when one already
-// exists for (owner_email, source_path), updates it in place — refreshing
-// name/user_prompt/updated_at only and leaving config_json + system_prompt as-is
-// (a re-import is a body pull, not a config change). The partial unique index
+// exists for (owner_id, source_path), updates it in place. The partial unique index
 // idx_prompts_source backs the ON CONFLICT target, making idempotency a schema
 // invariant rather than a convention. SQLite requires the conflict target to
 // repeat the partial index predicate (WHERE source_path IS NOT NULL), else it
 // will not match the partial unique index. Returns the resolved prompt (its id is
 // the freshly-generated ULID on insert, or the existing row's id on update via
-// RETURNING). config is the value used only on the INSERT arm.
-func (s *Store) UpsertPromptBySource(ctx context.Context, ownerID, ownerEmail, sourcePath, name, userPrompt string, config Config, now string) (Prompt, error) {
-	cfg, err := marshalConfig(config)
-	if err != nil {
-		return Prompt{}, err
-	}
+// RETURNING).
+func (s *Store) UpsertPromptBySource(ctx context.Context, ownerID, ownerEmail, sourcePath, name, now string) (Prompt, error) {
 	id := ids.NewULID()
+	nameKey := NameKey(name, id)
 	var resolvedID string
-	err = s.db.QueryRowContext(ctx,
+	err := s.db.QueryRowContext(ctx,
 		`INSERT INTO prompts
-		   (id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   (id, owner_id, owner_email, name, name_key, source_path, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(owner_id, source_path) WHERE source_path IS NOT NULL DO UPDATE SET
-		     name = excluded.name, user_prompt = excluded.user_prompt, updated_at = excluded.updated_at
+		     name = excluded.name, updated_at = excluded.updated_at
 		 RETURNING id`,
-		id, ownerID, ownerEmail, nullStr(name), userPrompt, nullStr(""), cfg, sourcePath, now, now,
+		id, ownerID, ownerEmail, nullStr(name), nameKey, sourcePath, now, now,
 	).Scan(&resolvedID)
 	if err != nil {
 		return Prompt{}, fmt.Errorf("prompt: upsert by source: %w", err)
 	}
-	// Read the resolved row back so the caller (and its result) reflects exactly
-	// what landed (config + system_prompt are the pre-existing ones on an update).
+	// Read the resolved metadata row back so the caller reflects exactly what landed.
 	return s.GetPrompt(ctx, ownerID, resolvedID)
 }
 
@@ -154,47 +114,6 @@ func (s *Store) GetPromptByNameKey(ctx context.Context, nameKey string) (Prompt,
 		nameKey,
 	)
 	return scanPrompt(row)
-}
-
-// listSeedDefinitions returns every prompt across owners in stable id order.
-func (s *Store) listSeedDefinitions(ctx context.Context) ([]seedDefinition, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, name_key, user_prompt, system_prompt, config_json FROM prompts ORDER BY id`,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("prompt: list seed definitions: %w", err)
-	}
-	defer rows.Close()
-
-	var definitions []seedDefinition
-	for rows.Next() {
-		var d seedDefinition
-		var name, nameKey, systemPrompt sql.NullString
-		if err := rows.Scan(&d.ID, &name, &nameKey, &d.UserPrompt, &systemPrompt, &d.ConfigJSON); err != nil {
-			return nil, fmt.Errorf("prompt: scan seed definition: %w", err)
-		}
-		d.Name = name.String
-		d.NameKey = nameKey.String
-		d.SystemPrompt = systemPrompt.String
-		definitions = append(definitions, d)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("prompt: list seed definitions rows: %w", err)
-	}
-	return definitions, nil
-}
-
-// setPromptNameKey fills only the repository key, preserving every legacy
-// definition column until its later retirement migration.
-func (s *Store) setPromptNameKey(ctx context.Context, id, nameKey string) error {
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE prompts SET name_key = ? WHERE id = ? AND name_key IS NULL`,
-		nameKey, id,
-	)
-	if err != nil {
-		return fmt.Errorf("prompt: set name key: %w", err)
-	}
-	return requireOne(res, "set name key")
 }
 
 // ListPrompts returns all of the owner's prompts, newest first.
@@ -262,19 +181,14 @@ func (s *Store) BrowsePrompts(ctx context.Context, f BrowseFilter) ([]Prompt, in
 	return result, total, nil
 }
 
-// UpdatePrompt persists editable fields (name/user_prompt/system_prompt/config)
-// and bumps updated_at. It is owner-scoped; a no-match (missing or
+// UpdatePrompt persists editable metadata and bumps updated_at. It is owner-scoped; a no-match (missing or
 // foreign-owned) returns ErrNotFound.
 func (s *Store) UpdatePrompt(ctx context.Context, owner string, p Prompt) error {
-	cfg, err := marshalConfig(p.Config)
-	if err != nil {
-		return err
-	}
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE prompts
-		    SET name = ?, name_key = ?, user_prompt = ?, system_prompt = ?, config_json = ?, updated_at = ?
+		    SET name = ?, name_key = ?, updated_at = ?
 		  WHERE id = ? AND owner_id = ?`,
-		nullStr(p.Name), nullStr(p.NameKey), p.UserPrompt, nullStr(p.SystemPrompt), cfg, p.UpdatedAt,
+		nullStr(p.Name), nullStr(p.NameKey), p.UpdatedAt,
 		p.ID, owner,
 	)
 	if err != nil {
@@ -702,20 +616,17 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
-const promptSelectCols = `id, owner_id, owner_email, name, name_key, user_prompt, system_prompt, config_json, source_path, created_at, updated_at`
+const promptSelectCols = `id, owner_id, owner_email, name, name_key, source_path, created_at, updated_at`
 
 func scanPrompt(sc scanner) (Prompt, error) {
 	var (
 		p       Prompt
 		name    sql.NullString
 		nameKey sql.NullString
-		sysProm sql.NullString
-		cfgJSON string
 		srcPath sql.NullString
 	)
 	err := sc.Scan(
-		&p.ID, &p.OwnerID, &p.OwnerEmail, &name, &nameKey, &p.UserPrompt, &sysProm,
-		&cfgJSON, &srcPath, &p.CreatedAt, &p.UpdatedAt,
+		&p.ID, &p.OwnerID, &p.OwnerEmail, &name, &nameKey, &srcPath, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Prompt{}, ErrNotFound
@@ -725,13 +636,7 @@ func scanPrompt(sc scanner) (Prompt, error) {
 	}
 	p.Name = name.String
 	p.NameKey = nameKey.String
-	p.SystemPrompt = sysProm.String
 	p.SourcePath = srcPath.String
-	cfg, err := unmarshalConfig(cfgJSON)
-	if err != nil {
-		return Prompt{}, err
-	}
-	p.Config = cfg
 	return p, nil
 }
 

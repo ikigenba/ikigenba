@@ -161,7 +161,7 @@ func TestRunWorkspacePinsHeadChecksOutRunBranchAndHidesGit(t *testing.T) {
 		t.Fatalf("manual run files = %+v, %v", entries, err)
 	}
 
-	updated, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: p.Name, UserPrompt: "second", SystemPrompt: p.SystemPrompt, Config: p.Config})
+	updated, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: p.Name, UserPrompt: "second", SystemPrompt: "system", Config: validConfig()})
 	if err != nil {
 		t.Fatal(err)
 	}

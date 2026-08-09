@@ -34,9 +34,7 @@ var (
 	// no "rejected while running".
 )
 
-// Config is the normalized config blob stored as prompts.config_json. It is
-// validated at create/update time and stored verbatim as JSON so the schema
-// stays stable as the set of tunables grows.
+// Config is the validated prompt configuration stored in the version plane.
 type Config struct {
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model"`
@@ -69,19 +67,16 @@ type Executed struct {
 	Config       Config `json:"config"`
 }
 
-// Prompt mirrors the prompts table; Config is carried parsed.
+// Prompt is the metadata stored in the prompts table.
 type Prompt struct {
 	ID         string `json:"id"`
 	OwnerID    string `json:"owner_id"`
 	OwnerEmail string `json:"owner_email"`
 	Name       string `json:"name,omitempty"`
 	// NameKey is the globally unique repository key derived from Name.
-	NameKey      string `json:"name_key"`
-	UserPrompt   string `json:"user_prompt"`
-	SystemPrompt string `json:"system_prompt,omitempty"`
-	Config       Config `json:"config"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
+	NameKey   string `json:"name_key"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 	// SourcePath is the originating Dropbox mirror path for an import-managed
 	// prompt ("" ⇒ SQL NULL, a hand-authored prompt). It is the upsert key for
 	// re-import (idempotency, enforced by idx_prompts_source) and marks the row as
@@ -145,6 +140,9 @@ type TriggerSpec struct {
 // if it has never run). Returned by Get/List for the MCP last_run surface.
 type PromptDetail struct {
 	Prompt
-	RunningCount int  `json:"running_count"`
-	LastRun      *Run `json:"last_run"`
+	UserPrompt   string `json:"user_prompt"`
+	SystemPrompt string `json:"system_prompt,omitempty"`
+	Config       Config `json:"config"`
+	RunningCount int    `json:"running_count"`
+	LastRun      *Run   `json:"last_run"`
 }

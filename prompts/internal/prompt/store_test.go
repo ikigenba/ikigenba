@@ -46,8 +46,6 @@ func seedPrompt(t *testing.T, store *Store, owner string) Prompt {
 		OwnerID:    owner,
 		OwnerEmail: owner,
 		Name:       "n",
-		UserPrompt: "p",
-		Config:     Config{Provider: "anthropic", Model: "claude-haiku-4-5"},
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
@@ -74,8 +72,8 @@ func TestStoreGetNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPrompt: %v", err)
 	}
-	if got.Config.Model != "claude-haiku-4-5" {
-		t.Fatalf("config round-trip: %+v", got.Config)
+	if got.ID != sess.ID || got.Name != sess.Name {
+		t.Fatalf("metadata round-trip: %+v", got)
 	}
 }
 
@@ -123,8 +121,7 @@ func TestBrowsePromptsFiltersOrdersPaginatesAndCounts(t *testing.T) {
 	seed := func(id, owner, name, updated string) {
 		t.Helper()
 		if err := store.InsertPrompt(ctx, Prompt{
-			ID: id, OwnerEmail: owner, Name: name, UserPrompt: "body",
-			Config:    Config{Provider: "anthropic", Model: "claude-haiku-4-5"},
+			ID: id, OwnerEmail: owner, Name: name,
 			CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: updated,
 		}); err != nil {
 			t.Fatalf("InsertPrompt %s: %v", id, err)

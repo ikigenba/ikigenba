@@ -23,7 +23,9 @@ func TestNameKeyMigrationPreservesRowsAndAddsColumns(t *testing.T) {
 		t.Fatalf("load migrations: %v", err)
 	}
 	var before []appkitdb.Migration
+	var throughNameKey []appkitdb.Migration
 	for _, migration := range migrations {
+		throughNameKey = append(throughNameKey, migration)
 		if strings.Contains(migration.Name, "name_key_and_definition_sha") {
 			break
 		}
@@ -54,7 +56,7 @@ func TestNameKeyMigrationPreservesRowsAndAddsColumns(t *testing.T) {
 	beforePrompts := queryMigrationRows(t, conn, `SELECT id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at FROM prompts ORDER BY id`, 10)
 	beforeRuns := queryMigrationRows(t, conn, `SELECT id, prompt_id, owner_id, owner_email, prompt_name, status, started_at, ended_at, COALESCE(usage_json,''), COALESCE(error,''), log_path FROM runs ORDER BY id`, 11)
 
-	if err := appkitdb.Migrate(ctx, conn, migrations); err != nil {
+	if err := appkitdb.Migrate(ctx, conn, throughNameKey); err != nil {
 		t.Fatalf("apply full embedded migration set: %v", err)
 	}
 	for table, column := range map[string]string{"prompts": "name_key", "runs": "definition_sha"} {

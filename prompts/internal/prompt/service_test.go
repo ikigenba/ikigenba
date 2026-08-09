@@ -343,7 +343,7 @@ func TestCreateAndUpdateRejectGlobalNameKeyCollisions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read rejected update target: %v", err)
 	}
-	if unchanged.Name != "Weekly Digest" || unchanged.NameKey != "weekly-digest" || unchanged.UserPrompt != "body" {
+	if unchanged.Name != "Weekly Digest" || unchanged.NameKey != "weekly-digest" {
 		t.Fatalf("rejected update changed prompt: %+v", unchanged)
 	}
 
@@ -817,19 +817,17 @@ func TestServiceCreateAndUpdatePreserveValidatedProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create google config: %v", err)
 	}
-	if created.Config.Provider != "google" || created.Config.Model != testGoogleModel {
-		t.Fatalf("created config = %+v, want google/%s", created.Config, testGoogleModel)
+	createdDetail, err := svc.Get(ctx, ownerA, created.ID)
+	if err != nil || createdDetail.Config.Provider != "google" || createdDetail.Config.Model != testGoogleModel {
+		t.Fatalf("created config = %+v, err=%v, want google/%s", createdDetail.Config, err, testGoogleModel)
 	}
 
-	updated, err := svc.Update(ctx, ownerA, created.ID, UpdateInput{
+	_, err = svc.Update(ctx, ownerA, created.ID, UpdateInput{
 		UserPrompt: "p2",
 		Config:     Config{Provider: "openai", Model: testOpenAIModel},
 	})
 	if err != nil {
 		t.Fatalf("Update openai config: %v", err)
-	}
-	if updated.Config.Provider != "openai" || updated.Config.Model != testOpenAIModel {
-		t.Fatalf("updated config = %+v, want openai/%s", updated.Config, testOpenAIModel)
 	}
 	got, err := svc.Get(ctx, ownerA, created.ID)
 	if err != nil {
@@ -925,8 +923,9 @@ func TestHappyCRUD(t *testing.T) {
 	ctx := context.Background()
 
 	sess := mustCreate(t, svc, ownerA)
-	if sess.Config.Provider != "anthropic" {
-		t.Fatalf("provider not normalized: %q", sess.Config.Provider)
+	createdDetail, err := svc.Get(ctx, ownerA, sess.ID)
+	if err != nil || createdDetail.Config.Provider != "anthropic" {
+		t.Fatalf("provider not normalized: detail=%+v err=%v", createdDetail, err)
 	}
 
 	// Create makes NO sandbox (per-run now): the prompt id has no folder.
@@ -1016,7 +1015,7 @@ func TestUpdateRevalidatesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	if updated.Name != "renamed" || updated.UserPrompt != "new prompt" || updated.Config.Model != testAnthropicSonnet {
+	if updated.Name != "renamed" {
 		t.Fatalf("update not applied: %+v", updated)
 	}
 	got, err := svc.Get(ctx, ownerA, sess.ID)
@@ -1204,22 +1203,20 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 	if p.Name != "triage.md" {
 		t.Fatalf("name not derived from basename: %q", p.Name)
 	}
-	if p.UserPrompt != "summarize the inbox\n" {
-		t.Fatalf("user_prompt: %q", p.UserPrompt)
-	}
-	if p.SystemPrompt != "" {
-		t.Fatalf("system_prompt should be empty: %q", p.SystemPrompt)
-	}
 	if p.SourcePath != "/prompts/triage.md" {
 		t.Fatalf("source_path: %q", p.SourcePath)
 	}
+	detail, err := svc.Get(ctx, ownerA, p.ID)
+	if err != nil || detail.UserPrompt != "summarize the inbox\n" || detail.SystemPrompt != "" {
+		t.Fatalf("imported definition = %+v, err=%v", detail, err)
+	}
 	// The imported prompt must be runnable: its config must validate exactly as
 	// Create requires (model resolves to an Anthropic model, key present).
-	if _, err := ValidateConfig(p.Config, os.Getenv, subAuthUnavailable); err != nil {
+	if _, err := ValidateConfig(detail.Config, os.Getenv, subAuthUnavailable); err != nil {
 		t.Fatalf("imported prompt config does not validate (run would reject it): %v", err)
 	}
-	if p.Config.Provider != "anthropic" {
-		t.Fatalf("provider not normalized: %q", p.Config.Provider)
+	if detail.Config.Provider != "anthropic" {
+		t.Fatalf("provider not normalized: %q", detail.Config.Provider)
 	}
 
 	// Re-import the same path with new bytes → same id, updated user_prompt, no dup.
@@ -1231,11 +1228,12 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 	if p2.ID != p.ID {
 		t.Fatalf("re-import created a new row: %q != %q", p2.ID, p.ID)
 	}
-	if p2.UserPrompt != "summarize and label the inbox\n" {
-		t.Fatalf("re-import did not update user_prompt: %q", p2.UserPrompt)
+	detail2, err := svc.Get(ctx, ownerA, p2.ID)
+	if err != nil || detail2.UserPrompt != "summarize and label the inbox\n" {
+		t.Fatalf("re-imported definition = %+v, err=%v", detail2, err)
 	}
 	// Config survives the re-import (a re-pull is a body refresh, not a config change).
-	if _, err := ValidateConfig(p2.Config, os.Getenv, subAuthUnavailable); err != nil {
+	if _, err := ValidateConfig(detail2.Config, os.Getenv, subAuthUnavailable); err != nil {
 		t.Fatalf("re-imported prompt config does not validate: %v", err)
 	}
 	list, err := store.ListPrompts(ctx, ownerA)

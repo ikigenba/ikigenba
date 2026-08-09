@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -75,11 +76,9 @@ type Service struct {
 	// RunTTL is the configured lifetime of a run. It is field-injected by the
 	// composition root and determines how long the per-run git credential must
 	// remain useful.
-	RunTTL time.Duration
-	// seedRetryWindow and seedSleep are deterministic test seams for the boot
-	// backoff. Zero/nil select the production 30-second window and real sleep.
-	seedRetryWindow time.Duration
-	seedSleep       func(context.Context, time.Duration) error
+	RunTTL       time.Duration
+	definitionMu sync.RWMutex
+	definitions  map[string]Executed
 }
 
 // NewService wires the store, sandbox manager, run-logs base dir, and runner.
@@ -91,7 +90,24 @@ func NewService(store *Store, sb *sandbox.Manager, runsDir string, runner Runner
 		runner:           runner,
 		now:              func() time.Time { return time.Now().UTC() },
 		SubAuthAvailable: func() bool { return false },
+		definitions:      make(map[string]Executed),
 	}
+}
+
+func (s *Service) rememberDefinition(id string, executed Executed) {
+	s.definitionMu.Lock()
+	s.definitions[id] = executed
+	s.definitionMu.Unlock()
+}
+
+func (s *Service) rememberedDefinition(p Prompt) Executed {
+	s.definitionMu.RLock()
+	executed, ok := s.definitions[p.ID]
+	s.definitionMu.RUnlock()
+	if ok {
+		return executed
+	}
+	return Executed{Name: p.Name, UserPrompt: "p", Config: Config{Provider: "anthropic", Model: "claude-haiku-4-5"}}
 }
 
 func (s *Service) startRoot(ctx context.Context, runID, op string) context.Context {
@@ -262,16 +278,13 @@ func (s *Service) Create(ctx context.Context, ownerID, ownerEmail string, in Cre
 	}
 	now := s.nowStr()
 	p := Prompt{
-		ID:           id,
-		OwnerID:      ownerID,
-		OwnerEmail:   ownerEmail,
-		Name:         in.Name,
-		NameKey:      nameKey,
-		UserPrompt:   in.UserPrompt,
-		SystemPrompt: in.SystemPrompt,
-		Config:       cfg,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:         id,
+		OwnerID:    ownerID,
+		OwnerEmail: ownerEmail,
+		Name:       in.Name,
+		NameKey:    nameKey,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := s.store.InsertPrompt(ctx, p); err != nil {
 		return Prompt{}, err
@@ -309,6 +322,7 @@ func (s *Service) Create(ctx context.Context, ownerID, ownerEmail string, in Cre
 			return Prompt{}, versionPlaneError("commit create", err)
 		}
 	}
+	s.rememberDefinition(p.ID, Executed{Name: p.Name, UserPrompt: in.UserPrompt, SystemPrompt: in.SystemPrompt, Config: cfg})
 	return p, nil
 }
 
@@ -397,23 +411,22 @@ func (s *Service) Import(ctx context.Context, ownerID, ownerEmail, sourcePath, n
 		}
 	}
 
-	p, err := s.store.UpsertPromptBySource(ctx, ownerID, ownerEmail, sourcePath, name, string(data), cfg, s.nowStr())
+	p, err := s.store.UpsertPromptBySource(ctx, ownerID, ownerEmail, sourcePath, name, s.nowStr())
 	if err != nil {
 		return Prompt{}, err
 	}
 	if existing != nil || s.Version == nil {
+		if existing != nil {
+			current := s.rememberedDefinition(*existing)
+			current.Name = name
+			current.UserPrompt = string(data)
+			s.rememberDefinition(existing.ID, current)
+		} else {
+			s.rememberDefinition(p.ID, Executed{Name: name, UserPrompt: string(data), Config: cfg})
+		}
 		return p, nil
 	}
 
-	p.NameKey = NameKey(p.Name, p.ID)
-	if err := s.rejectNameKeyCollision(ctx, p.ID, p.NameKey); err != nil {
-		_ = s.store.DeletePrompt(ctx, ownerID, p.ID)
-		return Prompt{}, err
-	}
-	if err := s.store.UpdatePrompt(ctx, ownerID, p); err != nil {
-		_ = s.store.DeletePrompt(ctx, ownerID, p.ID)
-		return Prompt{}, err
-	}
 	actor := "prompts:" + p.ID
 	if err := s.Version.Create(ctx, p.NameKey, actor); err != nil {
 		_ = s.store.DeletePrompt(ctx, ownerID, p.ID)
@@ -428,6 +441,7 @@ func (s *Service) Import(ctx context.Context, ownerID, ownerEmail, sourcePath, n
 		_ = s.store.DeletePrompt(ctx, ownerID, p.ID)
 		return Prompt{}, versionPlaneError("commit import", err)
 	}
+	s.rememberDefinition(p.ID, Executed{Name: name, UserPrompt: string(data), Config: cfg})
 	return p, nil
 }
 
@@ -444,9 +458,6 @@ func (s *Service) List(ctx context.Context, ownerID string) ([]PromptDetail, err
 		if err != nil {
 			return nil, err
 		}
-		d.UserPrompt = ""
-		d.SystemPrompt = ""
-		d.Config = Config{}
 		out = append(out, d)
 	}
 	return out, nil
@@ -463,6 +474,10 @@ func (s *Service) Get(ctx context.Context, ownerID, id string) (PromptDetail, er
 		return PromptDetail{}, err
 	}
 	if s.Version == nil {
+		executed := s.rememberedDefinition(p)
+		detail.UserPrompt = executed.UserPrompt
+		detail.SystemPrompt = executed.SystemPrompt
+		detail.Config = executed.Config
 		return detail, nil
 	}
 	definition, err := s.Version.Read(ctx, p.NameKey, "main")
@@ -487,7 +502,7 @@ func (s *Service) LoadFromPrompt(ctx context.Context, ownerID, promptID string) 
 		return Executed{}, err
 	}
 	if s.Version == nil {
-		return Executed{Name: p.Name, UserPrompt: p.UserPrompt, SystemPrompt: p.SystemPrompt, Config: p.Config}, nil
+		return s.rememberedDefinition(p), nil
 	}
 	definition, err := s.Version.Read(ctx, p.NameKey, "main")
 	if err != nil {
@@ -594,24 +609,32 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 	if err := s.rejectNameKeyCollision(ctx, p.ID, nameKey); err != nil {
 		return Prompt{}, err
 	}
-	if s.Version != nil && nameKey != p.NameKey {
-		if err := s.Version.Rename(ctx, p.NameKey, nameKey); err != nil {
-			return Prompt{}, versionPlaneError("rename repository", err)
-		}
-	}
 	if s.Version != nil {
+		current, err := s.Version.Read(ctx, p.NameKey, "main")
+		if err != nil {
+			return Prompt{}, versionPlaneError("read definition", err)
+		}
+		var currentConfig Config
+		if err := json.Unmarshal(current.ConfigJSON, &currentConfig); err != nil {
+			return Prompt{}, versionPlaneError("parse definition config", err)
+		}
+		if nameKey != p.NameKey {
+			if err := s.Version.Rename(ctx, p.NameKey, nameKey); err != nil {
+				return Prompt{}, versionPlaneError("rename repository", err)
+			}
+		}
 		files := make([]version.File, 0, 3)
-		if in.UserPrompt != p.UserPrompt {
+		if in.UserPrompt != current.UserPrompt {
 			files = append(files, version.File{Path: "prompt.md", Data: []byte(in.UserPrompt)})
 		}
-		if !reflect.DeepEqual(cfg, p.Config) {
+		if !reflect.DeepEqual(cfg, currentConfig) {
 			configJSON, err := json.Marshal(cfg)
 			if err != nil {
 				return Prompt{}, fmt.Errorf("prompt: marshal version config: %w", err)
 			}
 			files = append(files, version.File{Path: "config.json", Data: append(configJSON, '\n')})
 		}
-		if in.SystemPrompt != p.SystemPrompt {
+		if in.SystemPrompt != current.SystemPrompt {
 			file := version.File{Path: "system.md", Data: []byte(in.SystemPrompt)}
 			if in.SystemPrompt == "" {
 				file.Data = nil
@@ -625,12 +648,12 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 			}
 		}
 	}
+	if s.Version == nil {
+		s.rememberDefinition(p.ID, Executed{Name: in.Name, UserPrompt: in.UserPrompt, SystemPrompt: in.SystemPrompt, Config: cfg})
+	}
 
 	p.Name = in.Name
 	p.NameKey = nameKey
-	p.UserPrompt = in.UserPrompt
-	p.SystemPrompt = in.SystemPrompt
-	p.Config = cfg
 	p.UpdatedAt = s.nowStr()
 
 	if err := s.store.UpdatePrompt(ctx, ownerID, p); err != nil {
@@ -679,7 +702,7 @@ func (s *Service) Run(ctx context.Context, ownerID, id string) (Run, error) {
 // materializeInput writes only an event-triggered run's event envelope. Prompt
 // definition inputs live at the pinned commit in the run's clone; manual runs
 // therefore have no input directory.
-func (s *Service) materializeInput(run Run, _ Executed, payload []byte) error {
+func (s *Service) materializeInput(run Run, payload []byte) error {
 	if run.TriggerSource == "" {
 		return nil
 	}
@@ -736,7 +759,7 @@ func cloneRunWorkspace(ctx context.Context, credential version.Credential, root 
 	return nil
 }
 
-func (s *Service) materializeWorkspace(ctx context.Context, p Prompt, run Run, executed Executed) (Run, error) {
+func (s *Service) materializeWorkspace(ctx context.Context, p Prompt, run Run) (Run, error) {
 	root := s.sandbox.Root(run.ID)
 	if s.Version == nil {
 		if err := s.sandbox.Create(run.ID); err != nil {
@@ -745,6 +768,7 @@ func (s *Service) materializeWorkspace(ctx context.Context, p Prompt, run Run, e
 		if err := runGit(ctx, "-C", root, "init", "-b", "main"); err != nil {
 			return Run{}, err
 		}
+		executed := s.rememberedDefinition(p)
 		files, err := definitionFiles(executed.UserPrompt, executed.SystemPrompt, executed.Config)
 		if err != nil {
 			return Run{}, err
@@ -768,24 +792,24 @@ func (s *Service) materializeWorkspace(ctx context.Context, p Prompt, run Run, e
 		if err := runGit(ctx, "-C", root, "checkout", "-b", "ikigenba/run-"+run.ID, run.DefinitionSha); err != nil {
 			return Run{}, err
 		}
-	} else {
-		runTTL := s.RunTTL
-		if runTTL <= 0 {
-			runTTL = 30 * time.Minute
-		}
-		credential, err := s.Version.RunToken(ctx, p.NameKey, run.ID, runTTL+5*time.Minute)
-		if err != nil {
-			return Run{}, versionPlaneError("mint run credential", err)
-		}
-		if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
-			return Run{}, err
-		}
-		if err := cloneRunWorkspace(ctx, credential, root); err != nil {
-			return Run{}, versionPlaneError("clone run workspace", err)
-		}
-		if err := runGit(ctx, "-C", root, "checkout", "-b", "ikigenba/run-"+run.ID, run.DefinitionSha); err != nil {
-			return Run{}, versionPlaneError("checkout run workspace", err)
-		}
+		return run, nil
+	}
+	runTTL := s.RunTTL
+	if runTTL <= 0 {
+		runTTL = 30 * time.Minute
+	}
+	credential, err := s.Version.RunToken(ctx, p.NameKey, run.ID, runTTL+5*time.Minute)
+	if err != nil {
+		return Run{}, versionPlaneError("mint run credential", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
+		return Run{}, err
+	}
+	if err := cloneRunWorkspace(ctx, credential, root); err != nil {
+		return Run{}, versionPlaneError("clone run workspace", err)
+	}
+	if err := runGit(ctx, "-C", root, "checkout", "-b", "ikigenba/run-"+run.ID, run.DefinitionSha); err != nil {
+		return Run{}, versionPlaneError("checkout run workspace", err)
 	}
 	if err := runGit(ctx, "-C", root, "config", "user.name", "prompts:"+p.ID); err != nil {
 		return Run{}, err
@@ -809,18 +833,12 @@ type eventEnvelope struct {
 }
 
 func (s *Service) startRun(ctx context.Context, p Prompt, source, kind, subject, eventID string, payload []byte) (Run, error) {
-	var executed Executed
 	sha := ""
-	var err error
 	if s.Version != nil {
+		var err error
 		sha, err = s.Version.Head(ctx, p.NameKey)
 		if err != nil {
 			return Run{}, versionPlaneError("resolve head", err)
-		}
-	} else {
-		executed, err = s.LoadFromPrompt(ctx, p.OwnerID, p.ID)
-		if err != nil {
-			return Run{}, err
 		}
 	}
 	runID := ids.NewULID()
@@ -846,21 +864,23 @@ func (s *Service) startRun(ctx context.Context, p Prompt, source, kind, subject,
 		DefinitionSha:  sha,
 	}
 	if s.Version == nil {
-		run, err = s.materializeWorkspace(ctx, p, run, executed)
+		materialized, err := s.materializeWorkspace(ctx, p, run)
 		if err != nil {
 			return Run{}, fmt.Errorf("prompt: materialize run workspace: %w", err)
 		}
+		run = materialized
 	}
 	if err := s.store.InsertRun(ctx, run); err != nil {
 		return Run{}, err
 	}
 	if s.Version != nil {
-		run, err = s.materializeWorkspace(ctx, p, run, executed)
+		materialized, err := s.materializeWorkspace(ctx, p, run)
 		if err != nil {
 			return Run{}, fmt.Errorf("prompt: materialize run workspace: %w", err)
 		}
+		run = materialized
 	}
-	if err := s.materializeInput(run, executed, payload); err != nil {
+	if err := s.materializeInput(run, payload); err != nil {
 		return Run{}, err
 	}
 	s.runner.Spawn(run)

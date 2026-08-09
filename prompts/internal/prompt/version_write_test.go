@@ -171,7 +171,7 @@ func TestUpdateCommitsOnlyChangedDefinitionAndRenamesBeforeRow(t *testing.T) {
 	plane.calls = nil
 	changedConfig := validConfig()
 	changedConfig.MaxTokens = 99
-	if _, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: p.Name, UserPrompt: p.UserPrompt, SystemPrompt: p.SystemPrompt, Config: changedConfig}); err != nil {
+	if _, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: p.Name, UserPrompt: "body", SystemPrompt: "system", Config: changedConfig}); err != nil {
 		t.Fatal(err)
 	}
 	commits := callsByOp(plane.calls, "commit")
@@ -180,7 +180,7 @@ func TestUpdateCommitsOnlyChangedDefinitionAndRenamesBeforeRow(t *testing.T) {
 	}
 
 	plane.calls = nil
-	if _, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: p.Name, UserPrompt: p.UserPrompt, Config: changedConfig}); err != nil {
+	if _, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: p.Name, UserPrompt: "body", Config: changedConfig}); err != nil {
 		t.Fatal(err)
 	}
 	commits = callsByOp(plane.calls, "commit")
@@ -194,7 +194,7 @@ func TestUpdateCommitsOnlyChangedDefinitionAndRenamesBeforeRow(t *testing.T) {
 
 	plane.calls = nil
 	plane.renameErr = version.ErrUnavailable
-	_, err = svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: "New", UserPrompt: p.UserPrompt, Config: changedConfig})
+	_, err = svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: "New", UserPrompt: "body", Config: changedConfig})
 	if err == nil {
 		t.Fatal("name-only update succeeded despite failed rename")
 	}
@@ -210,7 +210,7 @@ func TestUpdateCommitsOnlyChangedDefinitionAndRenamesBeforeRow(t *testing.T) {
 func TestImportVersionsFirstAndRefreshBatches(t *testing.T) {
 	// R-RPMP-CE2Z
 	t.Setenv("ANTHROPIC_API_KEY", "test")
-	svc, store, _, _ := newTestService(t)
+	svc, _, _, _ := newTestService(t)
 	plane := newRecordingVersion()
 	svc.Version = plane
 	svc.Fetcher = stubFetcher{data: []byte("first bytes\n")}
@@ -226,10 +226,15 @@ func TestImportVersionsFirstAndRefreshBatches(t *testing.T) {
 		t.Fatalf("first import commits = %+v", commits)
 	}
 
-	p.Config.MaxTokens = 321
-	if err := store.UpdatePrompt(t.Context(), ownerA, p); err != nil {
+	cfg := validConfig()
+	cfg.MaxTokens = 321
+	raw, err := json.Marshal(cfg)
+	if err != nil {
 		t.Fatal(err)
 	}
+	definition := plane.definitions[p.NameKey]
+	definition.ConfigJSON = raw
+	plane.definitions[p.NameKey] = definition
 	plane.calls = nil
 	svc.Fetcher = stubFetcher{data: []byte("second bytes\n")}
 	p, err = svc.Import(t.Context(), ownerA, ownerA, "/mirror/prompt.md", "")
@@ -240,8 +245,9 @@ func TestImportVersionsFirstAndRefreshBatches(t *testing.T) {
 	if len(callsByOp(plane.calls, "create")) != 0 || len(commits) != 1 || !reflect.DeepEqual(filePaths(commits[0].files), []string{"prompt.md"}) {
 		t.Fatalf("re-import calls = %+v", plane.calls)
 	}
-	if p.Config.MaxTokens != 321 || string(commits[0].files[0].Data) != "second bytes\n" {
-		t.Fatalf("re-import prompt=%+v files=%+v", p, commits[0].files)
+	detail, getErr := svc.Get(t.Context(), ownerA, p.ID)
+	if getErr != nil || detail.Config.MaxTokens != 321 || string(commits[0].files[0].Data) != "second bytes\n" {
+		t.Fatalf("re-import prompt=%+v err=%v files=%+v", detail, getErr, commits[0].files)
 	}
 }
 
@@ -315,13 +321,14 @@ func TestVersionFailureRollsBackCreateAndLeavesUpdateRowUnchanged(t *testing.T) 
 		t.Fatalf("update error = %v", err)
 	}
 	stored, err := store.GetPrompt(t.Context(), ownerA, p.ID)
-	if err != nil || stored.Name != "Original" || stored.NameKey != "original" || stored.UserPrompt != "body" {
+	if err != nil || stored.Name != "Original" || stored.NameKey != "original" {
 		t.Fatalf("stored prompt after failed update = %+v, err=%v", stored, err)
 	}
 }
 
 func TestListAvoidsDefinitionReadsWhileGetReadsExactlyOnce(t *testing.T) {
 	// R-SGGH-RCE9
+	// R-SF8L-DKNK
 	t.Setenv("ANTHROPIC_API_KEY", "test")
 	svc, _, _, _ := newTestService(t)
 	plane := newRecordingVersion()
@@ -350,9 +357,8 @@ func TestListAvoidsDefinitionReadsWhileGetReadsExactlyOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reads := callsByOp(plane.calls, "read")
-	if len(reads) != 1 || reads[0].key != listed[0].NameKey || reads[0].ref != "main" {
-		t.Fatalf("get reads = %+v", reads)
+	if len(plane.calls) != 1 || plane.calls[0].op != "read" || plane.calls[0].key != listed[0].NameKey || plane.calls[0].ref != "main" {
+		t.Fatalf("get calls = %+v, want exactly one read(%q, main)", plane.calls, listed[0].NameKey)
 	}
 	if got.UserPrompt == "" || got.SystemPrompt == "" || got.Config.Model != testAnthropicModel {
 		t.Fatalf("get definition = %+v", got)

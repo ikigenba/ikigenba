@@ -75,7 +75,7 @@ func TestHandlerReseedsDetachedFireContext(t *testing.T) {
 	}
 	store := prompt.NewStore(conn)
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	p := prompt.Prompt{ID: "01JYYYYYYYYYYYYYYYYYYYYYYY", OwnerID: "owner-1", OwnerEmail: "owner@example.com", UserPrompt: "run", Config: prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"}, CreatedAt: now, UpdatedAt: now}
+	p := prompt.Prompt{ID: "01JYYYYYYYYYYYYYYYYYYYYYYY", OwnerID: "owner-1", OwnerEmail: "owner@example.com", CreatedAt: now, UpdatedAt: now}
 	if err := store.InsertPrompt(context.Background(), p); err != nil {
 		t.Fatalf("InsertPrompt: %v", err)
 	}

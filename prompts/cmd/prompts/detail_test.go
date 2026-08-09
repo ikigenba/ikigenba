@@ -20,31 +20,31 @@ import (
 )
 
 type detailFixture struct {
-	prompts  []prompt.Prompt
-	runs     []prompt.Run
-	triggers []prompt.Trigger
-	calls    []calls.Row
+	prompts     []prompt.Prompt
+	definitions map[string]prompt.Executed
+	runs        []prompt.Run
+	triggers    []prompt.Trigger
+	calls       []calls.Row
 }
 
 func TestPromptDetailRendersFullFieldsTriggersAndRunsLink(t *testing.T) {
 	// R-0C2E-79JM
 	row := prompt.Prompt{
 		ID: "prompt-detail", OwnerEmail: "owner@example.com", Name: "Detail prompt",
-		UserPrompt: "full user prompt\nsecond line", SystemPrompt: "full system prompt",
-		Config:    prompt.Config{Provider: "anthropic", Model: "claude-test", MaxTokens: 321},
 		CreatedAt: "2026-07-01T00:00:00Z", UpdatedAt: "2026-07-02T00:00:00Z",
 	}
+	definition := prompt.Executed{UserPrompt: "full user prompt\nsecond line", SystemPrompt: "full system prompt", Config: prompt.Config{Provider: "anthropic", Model: "claude-test", MaxTokens: 321}}
 	triggers := []prompt.Trigger{
 		{PromptID: row.ID, Source: "cron", Filter: "cron:tick/nightly", CreatedAt: "2026-07-02T00:00:00Z"},
 		{PromptID: row.ID, Source: "dropbox", Filter: "dropbox:create/reports/**", CreatedAt: "2026-07-02T00:00:01Z"},
 	}
-	rec := serveUI(t, newDetailUIHandler(t, detailFixture{prompts: []prompt.Prompt{row}, triggers: triggers}), "/ui/prompts/"+row.ID)
+	rec := serveUI(t, newDetailUIHandler(t, detailFixture{prompts: []prompt.Prompt{row}, definitions: map[string]prompt.Executed{row.ID: definition}, triggers: triggers}), "/ui/prompts/"+row.ID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	body := html.UnescapeString(rec.Body.String())
 	for _, want := range []string{
-		row.UserPrompt, row.SystemPrompt, `"provider": "anthropic"`, `"max_tokens": 321`,
+		definition.UserPrompt, definition.SystemPrompt, `"provider": "anthropic"`, `"max_tokens": 321`,
 		"cron", "cron:tick/nightly", "dropbox", "dropbox:create/reports/**",
 		`href="/srv/prompts/ui/runs?prompt_id=prompt-detail"`,
 	} {
@@ -245,7 +245,9 @@ func newDetailUIHandler(t *testing.T, fixture detailFixture) http.Handler {
 		ResourceID: "https://example.test/srv/prompts/", AuthServer: "https://example.test/",
 		Version: "v46-test", Service: "prompts-test", WWW: loadPromptsSite(t), DB: conn,
 		Register: func(rt *appserver.Router) error {
-			registerUIRoutes(rt, promptStore, callStore)
+			registerUIRoutes(rt, promptStore, callStore, func(_ context.Context, p prompt.Prompt) (prompt.Executed, error) {
+				return fixture.definitions[p.ID], nil
+			})
 			return nil
 		},
 	})

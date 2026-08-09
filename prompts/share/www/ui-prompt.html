@@ -44,8 +44,8 @@
       <dl><dt>ID</dt><dd>{{.Prompt.ID}}</dd><dt>Owner email</dt><dd>{{.Prompt.OwnerEmail}}</dd><dt>Created at</dt><dd>{{.Prompt.CreatedAt}}</dd><dt>Updated at</dt><dd>{{.Prompt.UpdatedAt}}</dd></dl>
       <p><a href="/srv/prompts/ui/runs?prompt_id={{.Prompt.ID}}">Runs of this prompt</a></p>
     </section>
-    <section><h2>User prompt</h2><pre>{{.Prompt.UserPrompt}}</pre></section>
-    <section><h2>System prompt</h2><pre>{{.Prompt.SystemPrompt}}</pre></section>
+    <section><h2>User prompt</h2><pre>{{.Definition.UserPrompt}}</pre></section>
+    <section><h2>System prompt</h2><pre>{{.Definition.SystemPrompt}}</pre></section>
     <section><h2>Config</h2><pre>{{.ConfigJSON}}</pre></section>
     <section>
       <h2>Triggers</h2>

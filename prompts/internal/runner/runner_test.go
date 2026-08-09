@@ -198,8 +198,6 @@ func seedRunningWithConfig(t *testing.T, store *prompt.Store, sb *sandbox.Manage
 		OwnerID:    "owner-id",
 		OwnerEmail: "owner@example.com",
 		Name:       "n",
-		UserPrompt: "do the thing",
-		Config:     cfg,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
@@ -223,7 +221,7 @@ func seedRunningWithConfig(t *testing.T, store *prompt.Store, sb *sandbox.Manage
 		StartedAt:  now,
 		LogPath:    filepath.Join(runsDir, runID, "output.jsonl"),
 	}
-	writeRunInput(t, runsDir, runID, sess.UserPrompt, sess.SystemPrompt, sess.Config)
+	writeRunInput(t, runsDir, runID, "do the thing", "", cfg)
 	if err := store.InsertRun(ctx, run); err != nil {
 		t.Fatalf("InsertRun: %v", err)
 	}
@@ -718,25 +716,16 @@ func TestSystemPromptExplainsRunCheckoutAndConditionalMerge(t *testing.T) {
 
 func TestSpawnedRunSystemPromptUsesRealWorkspaceBranchAndCommit(t *testing.T) {
 	// R-SACZ-UHOS
+	t.Setenv("ANTHROPIC_API_KEY", "test")
 	fp := &fakeProvider{}
 	r, store := newTestRunner(t, time.Minute, fp)
 	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer { return nil }
 	runsDir := filepath.Dir(filepath.Dir(r.sandbox.Root("probe")))
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	p := prompt.Prompt{
-		ID:         ids.NewULID(),
-		OwnerID:    "owner-id",
-		OwnerEmail: "owner@example.com",
-		Name:       "real checkout framing",
-		UserPrompt: "inspect the checkout",
-		Config:     prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"},
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	if err := store.InsertPrompt(context.Background(), p); err != nil {
-		t.Fatalf("InsertPrompt: %v", err)
-	}
 	svc := prompt.NewService(store, r.sandbox, runsDir, r)
+	p, err := svc.Create(context.Background(), "owner-id", "owner@example.com", prompt.CreateInput{Name: "real checkout framing", UserPrompt: "inspect the checkout", Config: prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"}})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
 	run, err := svc.Run(context.Background(), p.OwnerID, p.ID)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -800,6 +789,7 @@ func TestExecuteCallsAttachedSuiteToolOnFirstRoundTrip(t *testing.T) {
 }
 
 func TestRunBoundaryRootsOnceAndArchivesBuiltinToolUse(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test")
 	// R-I48M-YHT3
 	fp := &fakeProvider{roundTrips: []*agentkit.RoundTrip{
 		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "toolu_boundary", Name: "Bash", Input: json.RawMessage(`{"command":"true"}`)}),
@@ -809,21 +799,11 @@ func TestRunBoundaryRootsOnceAndArchivesBuiltinToolUse(t *testing.T) {
 	runsDir := filepath.Dir(filepath.Dir(r.sandbox.Root("probe")))
 	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer { return nil }
 
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	sess := prompt.Prompt{
-		ID:         ids.NewULID(),
-		OwnerID:    "owner-id",
-		OwnerEmail: "owner@example.com",
-		Name:       "boundary task",
-		UserPrompt: "use the sandbox",
-		Config:     prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"},
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	if err := store.InsertPrompt(context.Background(), sess); err != nil {
-		t.Fatalf("InsertPrompt: %v", err)
-	}
 	svc := prompt.NewService(store, r.sandbox, runsDir, r)
+	sess, err := svc.Create(context.Background(), "owner-id", "owner@example.com", prompt.CreateInput{Name: "boundary task", UserPrompt: "use the sandbox", Config: prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"}})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
 	type rootCall struct{ rootID, op string }
 	var roots []rootCall
 	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {

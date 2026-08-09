@@ -263,7 +263,6 @@ func registerRoutes(rt *appkit.Router) error {
 
 	store := prompt.NewStore(conn)
 	store.Calls = callStore
-	registerUIRoutes(rt, store, callStore)
 	allowedPorts := make(map[int]bool, len(registry.Services))
 	for _, service := range registry.Services {
 		allowedPorts[service.Port] = true
@@ -291,6 +290,9 @@ func registerRoutes(rt *appkit.Router) error {
 		return p.ID
 	})
 	svc.RunTTL = knobs.runTTL
+	registerUIRoutes(rt, store, callStore, func(ctx context.Context, p prompt.Prompt) (prompt.Executed, error) {
+		return svc.LoadFromPrompt(ctx, p.OwnerID, p.ID)
+	})
 	// Capture the service for the consumer Worker and the store for the Producer
 	// hook (both run after Handlers; the Producer injects the outbox onto store).
 	svcRef = svc
@@ -305,12 +307,6 @@ func registerRoutes(rt *appkit.Router) error {
 	} else if swept > 0 {
 		rt.Logger().Warn("crash-recovery: swept orphaned runs", "count", swept)
 	}
-	if seeded, err := svc.SeedDefinitions(context.Background()); err != nil {
-		return fmt.Errorf("prompts: seed definitions through version plane: %w", err)
-	} else if seeded > 0 {
-		rt.Logger().Info("prompts: seeded definition repositories", "count", seeded)
-	}
-
 	contentBase := registry.BaseURL("prompts")
 	handler, err := mcp.NewHandler(svc, contentBase, rt)
 	if err != nil {
@@ -390,6 +386,7 @@ type runsPageData struct {
 type promptPageData struct {
 	uiChrome
 	Prompt     prompt.Prompt
+	Definition prompt.Executed
 	ConfigJSON string
 	Triggers   []prompt.Trigger
 }
@@ -420,19 +417,25 @@ type notFoundPageData struct {
 	Message string
 }
 
-func registerUIRoutes(rt *appkit.Router, store uiStore, callStore callBrowser) {
+type promptDefinitionReader func(context.Context, prompt.Prompt) (prompt.Executed, error)
+
+func registerUIRoutes(rt *appkit.Router, store uiStore, callStore callBrowser, readers ...promptDefinitionReader) {
+	var reader promptDefinitionReader
+	if len(readers) > 0 {
+		reader = readers[0]
+	}
 	rt.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Location", "ui/")
 		w.WriteHeader(http.StatusSeeOther)
 	})
 	rt.HandleFunc("GET /ui/{$}", promptsListHandler(rt, store))
 	rt.HandleFunc("GET /ui/runs", runsListHandler(rt, store))
-	rt.HandleFunc("GET /ui/prompts/{id}", promptDetailHandler(rt, store))
+	rt.HandleFunc("GET /ui/prompts/{id}", promptDetailHandler(rt, store, reader))
 	rt.HandleFunc("GET /ui/runs/{id}", runDetailHandler(rt, store, callStore))
 	rt.HandleFunc("GET /ui/calls/{id}/raw", rawCallBodyHandler(callStore))
 }
 
-func promptDetailHandler(rt *appkit.Router, store promptDetailBrowser) http.HandlerFunc {
+func promptDetailHandler(rt *appkit.Router, store promptDetailBrowser, reader promptDefinitionReader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		row, err := store.GetPromptByID(r.Context(), r.PathValue("id"))
 		if errors.Is(err, prompt.ErrNotFound) {
@@ -448,7 +451,15 @@ func promptDetailHandler(rt *appkit.Router, store promptDetailBrowser) http.Hand
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		config, err := json.MarshalIndent(row.Config, "", "  ")
+		var definition prompt.Executed
+		if reader != nil {
+			definition, err = reader(r.Context(), row)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		config, err := json.MarshalIndent(definition.Config, "", "  ")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -456,6 +467,7 @@ func promptDetailHandler(rt *appkit.Router, store promptDetailBrowser) http.Hand
 		data := promptPageData{
 			uiChrome:   uiChrome{Service: rt.Service(), Version: rt.Version()},
 			Prompt:     row,
+			Definition: definition,
 			ConfigJSON: string(config),
 			Triggers:   triggers,
 		}
