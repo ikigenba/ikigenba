@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"scripts/internal/script"
 )
@@ -16,8 +17,7 @@ const credentialHelper = `!f(){ echo username=run; echo "password=$SUITE_GIT_TOK
 // materializeGit clones the script repository, detaches at the recorded pin,
 // and configures credentials for git commands authored by the running script.
 func (r *Runner) materializeGit(ctx context.Context, dir, sha string, sc script.Script) (string, error) {
-	key := script.RepoKey(sc.NameKey)
-	token, cloneURL, err := r.Plane.RunToken(ctx, key)
+	token, cloneURL, err := r.Plane.RunToken(ctx, sc.NameKey, r.ttl+5*time.Minute)
 	if err != nil {
 		return "", fmt.Errorf("mint run token: %w", err)
 	}

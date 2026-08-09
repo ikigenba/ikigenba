@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"eventplane/correlation"
 )
@@ -46,7 +47,7 @@ type fakePlane struct {
 
 func newFakePlane() *fakePlane { return &fakePlane{files: make(map[string]string), headSHA: "sha"} }
 
-func (f *fakePlane) Create(_ context.Context, key, clientID string) error {
+func (f *fakePlane) Create(_ context.Context, key string, _ Owner, clientID string) error {
 	f.calls = append(f.calls, planeCall{verb: "create", key: key, clientID: clientID})
 	if err := f.createErrForKey[key]; err != nil {
 		return err
@@ -76,7 +77,7 @@ func (f *fakePlane) ReadFile(_ context.Context, key, ref, path string) ([]byte, 
 	return []byte(f.files[key+":"+path]), f.readErr
 }
 
-func (f *fakePlane) Rename(_ context.Context, oldKey, newKey, clientID string) error {
+func (f *fakePlane) Rename(_ context.Context, oldKey, newKey string, _ Owner, clientID string) error {
 	f.calls = append(f.calls, planeCall{verb: "rename", key: oldKey, other: newKey, clientID: clientID})
 	for suffix, body := range f.files {
 		if strings.HasPrefix(suffix, oldKey+":") {
@@ -87,12 +88,12 @@ func (f *fakePlane) Rename(_ context.Context, oldKey, newKey, clientID string) e
 	return f.renameErr
 }
 
-func (f *fakePlane) Delete(_ context.Context, key, clientID string) error {
+func (f *fakePlane) Delete(_ context.Context, key string, _ Owner, clientID string) error {
 	f.calls = append(f.calls, planeCall{verb: "delete", key: key, clientID: clientID})
 	return f.deleteErr
 }
 
-func (f *fakePlane) RunToken(context.Context, string) (string, string, error) {
+func (f *fakePlane) RunToken(context.Context, string, time.Duration) (string, string, error) {
 	return "token", "clone", nil
 }
 
@@ -149,7 +150,7 @@ func TestCreateStoresSeedMetadataWithoutStoredBody(t *testing.T) {
 		t.Fatalf("stored script = %+v, want seed metadata and no stored body", stored)
 	}
 	plane := svc.Plane.(*fakePlane)
-	if got := plane.files[RepoKey(stored.NameKey)+":main.py"]; got != wantBody {
+	if got := plane.files[stored.NameKey+":main.py"]; got != wantBody {
 		t.Fatalf("plane body = %q, want %q", got, wantBody)
 	}
 }
@@ -158,7 +159,7 @@ func TestCreateStoresSeedMetadataWithoutStoredBody(t *testing.T) {
 func TestCreatePlaneFailureLeavesNoUnseededRow(t *testing.T) {
 	svc, store, _, _ := newTestService(t)
 	plane := svc.Plane.(*fakePlane)
-	plane.commitErrForKey = map[string]error{"scripts/retry-repo": errors.New("repos unavailable")}
+	plane.commitErrForKey = map[string]error{"retry-repo": errors.New("repos unavailable")}
 	if _, err := svc.Create(context.Background(), ownerA, CreateInput{Name: "Retry Repo", Body: "print('retry')"}); err == nil {
 		t.Fatal("Create succeeded despite failed plane commit")
 	}
@@ -212,7 +213,7 @@ func TestCreateSeedsVersionPlaneAndStampsRow(t *testing.T) {
 	if len(plane.calls) != 2 || plane.calls[0].verb != "create" || plane.calls[1].verb != "commit" {
 		t.Fatalf("plane calls = %+v, want Create then Commit", plane.calls)
 	}
-	wantKey := "scripts/nightly-export"
+	wantKey := "nightly-export"
 	wantClient := "scripts:" + sc.ID
 	if plane.calls[0].key != wantKey || plane.calls[1].key != wantKey {
 		t.Fatalf("plane keys = %q, %q; want %q", plane.calls[0].key, plane.calls[1].key, wantKey)
@@ -312,7 +313,7 @@ func TestUpdateCommitsBodyAndRenamesOnlyWhenRequired(t *testing.T) {
 		if _, err := svc.Update(ctx, ownerA, sc.ID, UpdateInput{Name: &name}); err != nil {
 			t.Fatalf("Update: %v", err)
 		}
-		if len(plane.calls) != 2 || plane.calls[0].verb != "read" || plane.calls[1].verb != "rename" || plane.calls[1].key != "scripts/nightly-export" || plane.calls[1].other != "scripts/weekly-export" {
+		if len(plane.calls) != 2 || plane.calls[0].verb != "read" || plane.calls[1].verb != "rename" || plane.calls[1].key != "nightly-export" || plane.calls[1].other != "weekly-export" {
 			t.Fatalf("plane calls = %+v, want body Read then Rename", plane.calls)
 		}
 		stored, _ := store.GetScript(ctx, ownerA, sc.ID)
@@ -397,7 +398,7 @@ func TestDeleteArchivesRepositoryWithoutLettingPlaneFailurePinRow(t *testing.T) 
 			if err := svc.Delete(ctx, ownerA, sc.ID); err != nil {
 				t.Fatalf("Delete: %v", err)
 			}
-			if len(plane.calls) != 1 || plane.calls[0].verb != "delete" || plane.calls[0].key != "scripts/disposable" {
+			if len(plane.calls) != 1 || plane.calls[0].verb != "delete" || plane.calls[0].key != "disposable" {
 				t.Fatalf("plane calls = %+v, want one Delete", plane.calls)
 			}
 			if _, err := store.GetScript(ctx, ownerA, sc.ID); !errors.Is(err, ErrNotFound) {
@@ -454,7 +455,7 @@ func TestGetReadsMainTipFromPlaneInsteadOfStoredBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	plane := svc.Plane.(*fakePlane)
-	plane.files[RepoKey(sc.NameKey)+":main.py"] = "plane body"
+	plane.files[sc.NameKey+":main.py"] = "plane body"
 	plane.resetCalls()
 
 	detail, err := svc.Get(ctx, ownerA, sc.ID)
@@ -468,7 +469,7 @@ func TestGetReadsMainTipFromPlaneInsteadOfStoredBody(t *testing.T) {
 	if stored.Body != "" {
 		t.Fatalf("stored-row body = %q, want empty after body retirement", stored.Body)
 	}
-	if len(plane.calls) != 1 || plane.calls[0].verb != "read" || plane.calls[0].key != RepoKey(sc.NameKey) || plane.calls[0].other != "main:main.py" {
+	if len(plane.calls) != 1 || plane.calls[0].verb != "read" || plane.calls[0].key != sc.NameKey || plane.calls[0].other != "main:main.py" {
 		t.Fatalf("plane calls = %+v, want ReadFile(key, main, main.py)", plane.calls)
 	}
 }
@@ -995,7 +996,7 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 	if sc2.Body != "print('v2')\n" {
 		t.Fatalf("re-import did not update body: %q", sc2.Body)
 	}
-	if len(plane.calls) != 1 || plane.calls[0].verb != "commit" || plane.calls[0].key != RepoKey(sc.NameKey) || plane.calls[0].files["main.py"] != "print('v2')\n" {
+	if len(plane.calls) != 1 || plane.calls[0].verb != "commit" || plane.calls[0].key != sc.NameKey || plane.calls[0].files["main.py"] != "print('v2')\n" {
 		t.Fatalf("re-import plane calls = %+v, want one Commit on existing key", plane.calls)
 	}
 	list, err := store.ListScripts(ctx, ownerA)

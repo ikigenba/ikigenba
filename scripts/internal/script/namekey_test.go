@@ -9,7 +9,7 @@ import (
 	"scripts/internal/ids"
 )
 
-func TestSlugifyAndRepoKey(t *testing.T) {
+func TestSlugifyProducesBareRepositoryNameKey(t *testing.T) {
 	// R-22YE-GFY3
 	scriptID := "01JABCDEF0123456789XYZABCD"
 	tests := []struct {
@@ -25,9 +25,6 @@ func TestSlugifyAndRepoKey(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("slugify(%q) = %q, want %q", tt.name, got, tt.want)
 		}
-		if RepoKey(got) != "scripts/"+got {
-			t.Errorf("RepoKey(%q) = %q", got, RepoKey(got))
-		}
 	}
 
 	unicodeKey := slugify("Ünïcödé ✨", scriptID)
@@ -42,11 +39,6 @@ func TestSlugifyAndRepoKey(t *testing.T) {
 	longKey := slugify(strings.Repeat("a-", 100), scriptID)
 	if len(longKey) > 48 || strings.HasPrefix(longKey, "-") || strings.HasSuffix(longKey, "-") {
 		t.Errorf("long slug = %q (%d bytes), want <= 48 bytes with trimmed dashes", longKey, len(longKey))
-	}
-	for _, key := range []string{unicodeKey, longKey} {
-		if RepoKey(key) != "scripts/"+key {
-			t.Errorf("RepoKey(%q) = %q", key, RepoKey(key))
-		}
 	}
 }
 

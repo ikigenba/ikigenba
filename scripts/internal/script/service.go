@@ -145,9 +145,10 @@ func (s *Service) CreateForOwner(ctx context.Context, ownerID, ownerEmail string
 }
 
 func (s *Service) seedRepository(ctx context.Context, sc Script, message string) error {
-	key := RepoKey(sc.NameKey)
+	key := sc.NameKey
 	clientID := "scripts:" + sc.ID
-	if err := s.Plane.Create(ctx, key, clientID); err != nil {
+	owner := Owner{ID: sc.OwnerID, Email: sc.OwnerEmail}
+	if err := s.Plane.Create(ctx, key, owner, clientID); err != nil {
 		return err
 	}
 	_, err := s.Plane.Commit(ctx, key, map[string]string{"main.py": sc.Body}, message, clientID)
@@ -207,7 +208,7 @@ func (s *Service) ImportForOwner(ctx context.Context, ownerID, ownerEmail, sourc
 			return Script{}, err
 		}
 	} else {
-		if _, err := s.Plane.Commit(ctx, RepoKey(sc.NameKey), map[string]string{"main.py": string(data)}, "update "+sc.Name, "scripts:"+sc.ID); err != nil {
+		if _, err := s.Plane.Commit(ctx, sc.NameKey, map[string]string{"main.py": string(data)}, "update "+sc.Name, "scripts:"+sc.ID); err != nil {
 			return Script{}, err
 		}
 	}
@@ -225,7 +226,7 @@ func (s *Service) Update(ctx context.Context, owner, id string, in UpdateInput) 
 	}
 	oldNameKey := sc.NameKey
 	if in.Body == nil {
-		body, err := s.Plane.ReadFile(ctx, RepoKey(sc.NameKey), "main", "main.py")
+		body, err := s.Plane.ReadFile(ctx, sc.NameKey, "main", "main.py")
 		if err != nil {
 			return Script{}, err
 		}
@@ -259,13 +260,14 @@ func (s *Service) Update(ctx context.Context, owner, id string, in UpdateInput) 
 		return Script{}, err
 	}
 	clientID := "scripts:" + updated.ID
+	ownerIdentity := Owner{ID: updated.OwnerID, Email: updated.OwnerEmail}
 	if updated.NameKey != oldNameKey {
-		if err := s.Plane.Rename(ctx, RepoKey(oldNameKey), RepoKey(updated.NameKey), clientID); err != nil {
+		if err := s.Plane.Rename(ctx, oldNameKey, updated.NameKey, ownerIdentity, clientID); err != nil {
 			return Script{}, err
 		}
 	}
 	if in.Body != nil {
-		if _, err := s.Plane.Commit(ctx, RepoKey(updated.NameKey), map[string]string{"main.py": *in.Body}, "update "+updated.Name, clientID); err != nil {
+		if _, err := s.Plane.Commit(ctx, updated.NameKey, map[string]string{"main.py": *in.Body}, "update "+updated.Name, clientID); err != nil {
 			return Script{}, err
 		}
 	}
@@ -283,8 +285,8 @@ func (s *Service) Delete(ctx context.Context, owner, id string) error {
 	if err := s.store.DeleteScript(ctx, owner, id); err != nil {
 		return err
 	}
-	if err := s.Plane.Delete(ctx, RepoKey(sc.NameKey), "scripts:"+sc.ID); err != nil {
-		slog.ErrorContext(ctx, "archive deleted script repository", "script_id", sc.ID, "repo_key", RepoKey(sc.NameKey), "error", err)
+	if err := s.Plane.Delete(ctx, sc.NameKey, Owner{ID: sc.OwnerID, Email: sc.OwnerEmail}, "scripts:"+sc.ID); err != nil {
+		slog.ErrorContext(ctx, "archive deleted script repository", "script_id", sc.ID, "repo_key", sc.NameKey, "error", err)
 	}
 	return nil
 }
@@ -313,7 +315,7 @@ func (s *Service) Get(ctx context.Context, owner, id string) (ScriptDetail, erro
 	if err != nil {
 		return ScriptDetail{}, err
 	}
-	body, err := s.Plane.ReadFile(ctx, RepoKey(sc.NameKey), "main", "main.py")
+	body, err := s.Plane.ReadFile(ctx, sc.NameKey, "main", "main.py")
 	if err != nil {
 		return ScriptDetail{}, err
 	}
@@ -390,7 +392,7 @@ func (s *Service) RunForEvent(ctx context.Context, scriptID, source, kind, subje
 // newRun builds a running run row with the §A4 log paths. Empty trigger fields
 // mark a manual run.
 func (s *Service) newRun(ctx context.Context, sc Script, source, kind, subject, eventID string) (Run, error) {
-	sha, err := s.Plane.Head(ctx, RepoKey(sc.NameKey), "main")
+	sha, err := s.Plane.Head(ctx, sc.NameKey, "main")
 	if err != nil {
 		return Run{}, err
 	}

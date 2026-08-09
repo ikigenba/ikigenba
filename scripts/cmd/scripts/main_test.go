@@ -1291,7 +1291,7 @@ type consumerTestRunner struct {
 
 type consumerTestPlane struct{}
 
-func (consumerTestPlane) Create(context.Context, string, string) error { return nil }
+func (consumerTestPlane) Create(context.Context, string, script.Owner, string) error { return nil }
 func (consumerTestPlane) Commit(context.Context, string, map[string]string, string, string) (string, error) {
 	return "sha", nil
 }
@@ -1299,9 +1299,11 @@ func (consumerTestPlane) Head(context.Context, string, string) (string, error) {
 func (consumerTestPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
 	return nil, nil
 }
-func (consumerTestPlane) Rename(context.Context, string, string, string) error { return nil }
-func (consumerTestPlane) Delete(context.Context, string, string) error         { return nil }
-func (consumerTestPlane) RunToken(context.Context, string) (string, string, error) {
+func (consumerTestPlane) Rename(context.Context, string, string, script.Owner, string) error {
+	return nil
+}
+func (consumerTestPlane) Delete(context.Context, string, script.Owner, string) error { return nil }
+func (consumerTestPlane) RunToken(context.Context, string, time.Duration) (string, string, error) {
 	return "token", "clone", nil
 }
 

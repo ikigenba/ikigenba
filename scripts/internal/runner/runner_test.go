@@ -34,7 +34,7 @@ func nowStr() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 
 type boundaryTestPlane struct{}
 
-func (boundaryTestPlane) Create(context.Context, string, string) error { return nil }
+func (boundaryTestPlane) Create(context.Context, string, script.Owner, string) error { return nil }
 func (boundaryTestPlane) Commit(context.Context, string, map[string]string, string, string) (string, error) {
 	return "sha", nil
 }
@@ -42,9 +42,11 @@ func (boundaryTestPlane) Head(context.Context, string, string) (string, error) {
 func (boundaryTestPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
 	return nil, nil
 }
-func (boundaryTestPlane) Rename(context.Context, string, string, string) error { return nil }
-func (boundaryTestPlane) Delete(context.Context, string, string) error         { return nil }
-func (boundaryTestPlane) RunToken(context.Context, string) (string, string, error) {
+func (boundaryTestPlane) Rename(context.Context, string, string, script.Owner, string) error {
+	return nil
+}
+func (boundaryTestPlane) Delete(context.Context, string, script.Owner, string) error { return nil }
+func (boundaryTestPlane) RunToken(context.Context, string, time.Duration) (string, string, error) {
 	return "token", "clone", nil
 }
 
@@ -166,7 +168,7 @@ type gitTestPlane struct {
 	token, cloneURL string
 }
 
-func (p gitTestPlane) Create(context.Context, string, string) error { return nil }
+func (p gitTestPlane) Create(context.Context, string, script.Owner, string) error { return nil }
 func (p gitTestPlane) Commit(context.Context, string, map[string]string, string, string) (string, error) {
 	return "", nil
 }
@@ -174,9 +176,11 @@ func (p gitTestPlane) Head(context.Context, string, string) (string, error) { re
 func (p gitTestPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
 	return nil, nil
 }
-func (p gitTestPlane) Rename(context.Context, string, string, string) error { return nil }
-func (p gitTestPlane) Delete(context.Context, string, string) error         { return nil }
-func (p gitTestPlane) RunToken(context.Context, string) (string, string, error) {
+func (p gitTestPlane) Rename(context.Context, string, string, script.Owner, string) error {
+	return nil
+}
+func (p gitTestPlane) Delete(context.Context, string, script.Owner, string) error { return nil }
+func (p gitTestPlane) RunToken(context.Context, string, time.Duration) (string, string, error) {
 	return p.token, p.cloneURL, nil
 }
 

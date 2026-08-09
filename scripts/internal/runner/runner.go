@@ -206,7 +206,7 @@ func (r *Runner) execute(run script.Run, input []byte) {
 		"SUITE_CORRELATION_ID="+run.CorrelationID,
 		"SUITE_OWNER_ID="+sc.OwnerID,
 		"SUITE_OWNER_EMAIL="+sc.OwnerEmail,
-		"SUITE_REPO_KEY="+script.RepoKey(sc.NameKey),
+		"SUITE_REPO_KEY=scripts/"+sc.NameKey,
 		"SUITE_REPO_SHA="+run.RepoSha,
 		"SUITE_GIT_TOKEN="+token,
 	)

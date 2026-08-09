@@ -81,7 +81,7 @@ type recordingRunner struct {
 
 type testVersionPlane struct{}
 
-func (testVersionPlane) Create(context.Context, string, string) error { return nil }
+func (testVersionPlane) Create(context.Context, string, script.Owner, string) error { return nil }
 func (testVersionPlane) Commit(context.Context, string, map[string]string, string, string) (string, error) {
 	return "sha", nil
 }
@@ -89,9 +89,11 @@ func (testVersionPlane) Head(context.Context, string, string) (string, error) { 
 func (testVersionPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
 	return nil, nil
 }
-func (testVersionPlane) Rename(context.Context, string, string, string) error { return nil }
-func (testVersionPlane) Delete(context.Context, string, string) error         { return nil }
-func (testVersionPlane) RunToken(context.Context, string) (string, string, error) {
+func (testVersionPlane) Rename(context.Context, string, string, script.Owner, string) error {
+	return nil
+}
+func (testVersionPlane) Delete(context.Context, string, script.Owner, string) error { return nil }
+func (testVersionPlane) RunToken(context.Context, string, time.Duration) (string, string, error) {
 	return "token", "clone", nil
 }
 

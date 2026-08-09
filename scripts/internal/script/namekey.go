@@ -34,9 +34,6 @@ func slugify(name, scriptID string) string {
 	return key
 }
 
-// RepoKey is the sole owner of the version-plane kind prefix.
-func RepoKey(nameKey string) string { return "scripts/" + nameKey }
-
 // deriveNameKey finds the first service-wide free key. excludeID allows an
 // existing script to retain its own key while its metadata is updated.
 func (s *Store) deriveNameKey(ctx context.Context, excludeID, name string) (string, error) {
