@@ -246,6 +246,39 @@ func TestTuningDefaultsMatchCommittedManifest(t *testing.T) {
 	}
 }
 
+// R-34EZ-J9BF
+func TestRunTTLRejectsValuesBeyondSixHoursAndAllowsMaximum(t *testing.T) {
+	getenv := func(value string) func(string) string {
+		return func(key string) string {
+			if key == "PROMPTS_RUN_TTL" {
+				return value
+			}
+			return ""
+		}
+	}
+
+	if _, err := resolveTuningKnobs(getenv("7h")); err == nil {
+		t.Fatal("resolveTuningKnobs accepted PROMPTS_RUN_TTL=7h")
+	} else if message := err.Error(); !strings.Contains(message, "PROMPTS_RUN_TTL") || !strings.Contains(message, "7h") || !strings.Contains(message, "6h") {
+		t.Fatalf("resolveTuningKnobs error = %q, want PROMPTS_RUN_TTL, configured 7h, and maximum 6h", message)
+	}
+	for _, value := range []string{"0s", "-1h"} {
+		if _, err := resolveTuningKnobs(getenv(value)); err == nil {
+			t.Errorf("resolveTuningKnobs accepted PROMPTS_RUN_TTL=%s", value)
+		} else if message := err.Error(); !strings.Contains(message, "PROMPTS_RUN_TTL") || !strings.Contains(message, value) || !strings.Contains(message, "6h") {
+			t.Errorf("resolveTuningKnobs error = %q, want PROMPTS_RUN_TTL, configured %s, and maximum 6h", message, value)
+		}
+	}
+
+	knobs, err := resolveTuningKnobs(getenv("6h"))
+	if err != nil {
+		t.Fatalf("resolveTuningKnobs rejected PROMPTS_RUN_TTL=6h: %v", err)
+	}
+	if knobs.runTTL != maxRunTTL {
+		t.Fatalf("resolved run TTL = %s, want maximum %s", knobs.runTTL, maxRunTTL)
+	}
+}
+
 // R-VKB6-SHHV
 func TestProductionGoSourceHasNoBoxPathLiteral(t *testing.T) {
 	root := filepath.Join("..", "..")

@@ -802,7 +802,7 @@ func (s *Service) materializeWorkspace(ctx context.Context, p Prompt, run Run) (
 	if runTTL <= 0 {
 		runTTL = 30 * time.Minute
 	}
-	credential, err := s.Version.RunToken(ctx, p.NameKey, run.ID, runTTL+5*time.Minute)
+	credential, err := s.Version.RunToken(ctx, p.NameKey, run.ID, runTTL+10*time.Minute)
 	if err != nil {
 		return Run{}, versionPlaneError("mint run credential", err)
 	}

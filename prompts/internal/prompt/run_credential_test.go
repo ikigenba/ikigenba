@@ -121,7 +121,6 @@ func newAuthenticatedGitWorkspaceService(t *testing.T) (*Service, *sandbox.Manag
 
 func TestRunCredentialIsLocalConfigAndMintedForEveryRun(t *testing.T) {
 	// R-S49H-XMZB
-	// R-S6PA-P6GP
 	svc, sb, plane, prompt := newAuthenticatedGitWorkspaceService(t)
 	first, err := svc.Run(t.Context(), ownerA, prompt.ID)
 	if err != nil {
@@ -148,15 +147,18 @@ func TestRunCredentialIsLocalConfigAndMintedForEveryRun(t *testing.T) {
 		}
 	}
 	calls := plane.calls()
+	// R-3AIH-G40W
 	if len(calls) != 2 {
 		t.Fatalf("RunToken calls = %+v, want one per run", calls)
 	}
 	if calls[0].runID != first.ID || calls[1].runID != second.ID || calls[0].runID == calls[1].runID {
 		t.Fatalf("RunToken run ids = %q, %q; want %q, %q", calls[0].runID, calls[1].runID, first.ID, second.ID)
 	}
+	// R-35MV-X124
+	wantTTL := svc.RunTTL + 10*time.Minute
 	for _, call := range calls {
-		if call.ttl < 35*time.Minute {
-			t.Fatalf("RunToken ttl = %s, want at least 35m", call.ttl)
+		if call.ttl != wantTTL {
+			t.Fatalf("RunToken ttl = %s, want configured run TTL %s plus 10m (%s)", call.ttl, svc.RunTTL, wantTTL)
 		}
 	}
 }

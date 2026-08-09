@@ -100,6 +100,8 @@ type tuningKnobs struct {
 	runTTL            time.Duration
 }
 
+const maxRunTTL = 6 * time.Hour
+
 func resolveStorageRoots(getenv func(string) string) (storageRoots, error) {
 	cfg, err := config.Resolve("prompts", "/srv/prompts/", registry.MustPort("prompts"), getenv)
 	if err != nil {
@@ -136,6 +138,9 @@ func resolveTuningKnobs(getenv func(string) string) (tuningKnobs, error) {
 	runTTL, err := config.EnvOrDuration(getenv, "PROMPTS_RUN_TTL", 30*time.Minute)
 	if err != nil {
 		return tuningKnobs{}, err
+	}
+	if runTTL <= 0 || runTTL > maxRunTTL {
+		return tuningKnobs{}, fmt.Errorf("PROMPTS_RUN_TTL %s must be positive and no greater than maximum %s", runTTL, maxRunTTL)
 	}
 	return tuningKnobs{
 		maxInflightCalls:  callCap,
