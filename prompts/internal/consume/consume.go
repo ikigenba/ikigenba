@@ -1,6 +1,6 @@
 // Package consume is prompts' event-plane CONSUMER domain: it fans events from
-// every upstream producer (cron, crm, ledger, dropbox, scripts, and prompts'
-// own /feed for self-chaining) out to the prompts whose triggers match, firing
+// every upstream producer (cron, crm, ledger, dropbox, scripts, repos, and
+// prompts' own /feed for self-chaining) out to the prompts whose triggers match, firing
 // a run per match. It is the multi-upstream
 // mirror of notify's internal/push and scripts' internal/consume — where notify
 // reacts to a single upstream, prompts wires one Handler per upstream source and
@@ -34,7 +34,7 @@ type FireFunc func(ctx context.Context, promptID, source, kind, subject, eventID
 // wiring is prompt.Service.PromptsForEvent.
 type LookupFunc func(ctx context.Context, source, key string) ([]string, error)
 
-// Subscriptions returns one Subscription per upstream — Filter "*" (prompts
+// Subscriptions returns one Subscription per upstream — Filter "**" (prompts
 // fires on any type and decides via PromptsForEvent). Source is the producer's
 // source id. These are the LIVE in-edges the reflection tool reports. The
 // per-prompt trigger glob does the real filtering downstream, so the

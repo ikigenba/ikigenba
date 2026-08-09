@@ -3,6 +3,7 @@ package prompt
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -13,8 +14,13 @@ func TestValidateTriggerCanonicalFamilies(t *testing.T) {
 			t.Errorf("validateTrigger(%q) = %v, want ErrValidation", filter, err)
 		}
 	}
-	if source, err := validateTrigger("dropbox:create/bills/**"); err != nil || source != "dropbox" {
-		t.Fatalf("valid filter = %q, %v", source, err)
+	for filter, wantSource := range map[string]string{
+		"dropbox:create/bills/**": "dropbox",
+		"repos:push/**":           "repos",
+	} {
+		if source, err := validateTrigger(filter); err != nil || source != wantSource {
+			t.Errorf("validateTrigger(%q) = %q, %v; want source %q", filter, source, err, wantSource)
+		}
 	}
 	// R-6LTK-3FF7
 	for _, filter := range []string{"dropbox:create/bills/**/*.pdf", "dropbox:*", "cron:tick/some-schedule-nobody-declared"} {
@@ -26,6 +32,45 @@ func TestValidateTriggerCanonicalFamilies(t *testing.T) {
 		if _, err := validateTrigger(filter); !errors.Is(err, ErrValidation) {
 			t.Errorf("validateTrigger(%q) = %v, want ErrValidation", filter, err)
 		}
+	}
+}
+
+func TestReposTriggerFamilyValidationAndStorage(t *testing.T) {
+	// R-SBKW-89FH
+	ctx := context.Background()
+	store := newTestStore(t)
+	p := seedPrompt(t, store, "repos@example.com")
+	filters := []string{"repos:push/prompts/daily-digest", "repos:push/**"}
+	for _, filter := range filters {
+		source, err := validateTrigger(filter)
+		if err != nil {
+			t.Fatalf("validateTrigger(%q): %v", filter, err)
+		}
+		if source != "repos" {
+			t.Fatalf("validateTrigger(%q) source = %q, want repos", filter, source)
+		}
+		if err := store.SetTrigger(ctx, Trigger{PromptID: p.ID, Source: source, Filter: filter}); err != nil {
+			t.Fatalf("SetTrigger(%q): %v", filter, err)
+		}
+	}
+
+	got, err := store.ListTriggers(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("ListTriggers: %v", err)
+	}
+	if len(got) != len(filters) {
+		t.Fatalf("stored triggers = %+v, want %d repos triggers", got, len(filters))
+	}
+	for _, trigger := range got {
+		if trigger.Source != "repos" {
+			t.Errorf("stored trigger %+v has source %q, want repos", trigger, trigger.Source)
+		}
+	}
+	if _, err := validateTrigger("repos:nosuchkind/**"); !errors.Is(err, ErrValidation) {
+		t.Errorf("unknown repos family error = %v, want ErrValidation", err)
+	}
+	if _, err := validateTrigger("github:push/**"); !errors.Is(err, ErrValidation) || !strings.Contains(err.Error(), "repos") {
+		t.Errorf("unknown source error = %v, want ErrValidation naming repos", err)
 	}
 }
 

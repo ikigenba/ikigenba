@@ -294,14 +294,15 @@ func TestHandlerFireErrorDoesNotStall(t *testing.T) {
 	}
 }
 
-// TestSubscriptions: one Subscription per source, each Filter "*" with the
+// TestSubscriptions: one Subscription per source, each Filter "**" with the
 // source carried through.
 func TestSubscriptions(t *testing.T) {
-	subs := Subscriptions([]string{"cron", "crm", "ledger", "dropbox", "scripts"})
-	if len(subs) != 5 {
-		t.Fatalf("got %d subscriptions, want 5", len(subs))
+	// R-SCSS-M166
+	subs := Subscriptions([]string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts", "repos"})
+	if len(subs) != 7 {
+		t.Fatalf("got %d subscriptions, want 7", len(subs))
 	}
-	want := map[string]bool{"cron": true, "crm": true, "ledger": true, "dropbox": true, "scripts": true}
+	want := map[string]bool{"cron": true, "crm": true, "ledger": true, "dropbox": true, "scripts": true, "prompts": true, "repos": true}
 	for _, s := range subs {
 		if !want[s.Source] {
 			t.Errorf("unexpected source %q", s.Source)

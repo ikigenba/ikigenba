@@ -26,7 +26,7 @@ import (
 func TestPromptsSpecDeclaresPerSourceConsumers(t *testing.T) {
 	// R-DFV4-7W4Y
 	spec := promptsSpec()
-	wantSources := []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts"}
+	wantSources := []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts", "repos"}
 
 	if !reflect.DeepEqual(sources, wantSources) {
 		t.Fatalf("sources = %#v, want %#v", sources, wantSources)

@@ -63,7 +63,7 @@ func TestService_SetTrigger_ValidationAndOwnership(t *testing.T) {
 func TestService_TriggerSources(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	got := svc.TriggerSources()
-	want := map[string]bool{"cron": true, "crm": true, "ledger": true, "dropbox": true, "scripts": true, "prompts": true}
+	want := map[string]bool{"cron": true, "crm": true, "ledger": true, "dropbox": true, "scripts": true, "prompts": true, "repos": true}
 	if len(got) != len(want) {
 		t.Fatalf("TriggerSources len = %d, want %d: %v", len(got), len(want), got)
 	}

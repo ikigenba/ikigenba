@@ -89,6 +89,7 @@ func (s *Store) PromptsForEvent(ctx context.Context, source, key string) ([]stri
 var knownFamilies = map[string][]string{
 	"cron": {"tick"}, "crm": {"contact.created", "contact.updated", "contact.tagged", "contact.untagged"},
 	"ledger": {"recorded"}, "dropbox": {"create", "modify", "delete"}, "scripts": {"succeeded", "failed"}, "prompts": {"run.succeeded", "run.failed"},
+	"repos": {"push"},
 }
 
 func triggerSources() []string {

@@ -12,7 +12,7 @@ import (
 )
 
 // R-RKR3-TB47
-func TestReposServiceNameIsConfinedToVersionBoundaryAndCompositionRoot(t *testing.T) {
+func TestReposServiceNameIsConfinedToVersionTriggerBoundaryAndCompositionRoot(t *testing.T) {
 	root := filepath.Join("..", "..")
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -30,7 +30,8 @@ func TestReposServiceNameIsConfinedToVersionBoundaryAndCompositionRoot(t *testin
 			return nil
 		}
 		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") ||
-			strings.HasPrefix(rel, "internal/version/") || strings.HasPrefix(rel, "cmd/prompts/") {
+			strings.HasPrefix(rel, "internal/version/") || strings.HasPrefix(rel, "cmd/prompts/") ||
+			rel == "internal/prompt/trigger.go" {
 			return nil
 		}
 		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)

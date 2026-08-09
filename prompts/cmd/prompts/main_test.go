@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,8 @@ import (
 	"appkit/manifest"
 
 	promptdb "prompts/internal/db"
+
+	"registry"
 )
 
 func TestResolveStorageRootsUsesRootedStateAndCacheDefaults(t *testing.T) {
@@ -158,6 +161,56 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
 	}
+}
+
+func TestReposConsumerManifestAndFeedResolutionContract(t *testing.T) {
+	// R-SCSS-M166
+	spec := promptsSpec()
+	var foundRepos bool
+	for _, consumer := range spec.Consumers {
+		if consumer.Source != "repos" {
+			continue
+		}
+		foundRepos = true
+		if len(consumer.Subscriptions) != 1 || consumer.Subscriptions[0].Source != "repos" || consumer.Subscriptions[0].Filter != "**" {
+			t.Fatalf("repos consumer subscriptions = %+v, want one repos:** subscription", consumer.Subscriptions)
+		}
+	}
+	if !foundRepos {
+		t.Fatal("promptsSpec has no repos consumer")
+	}
+
+	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
+	if err != nil {
+		t.Fatalf("read committed manifest.env: %v", err)
+	}
+	var consumes []string
+	for _, line := range strings.Split(string(committed), "\n") {
+		if value, ok := strings.CutPrefix(line, "CONSUMES="); ok {
+			consumes = strings.Split(value, ",")
+			break
+		}
+	}
+	if !containsString(consumes, "repos") {
+		t.Fatalf("manifest CONSUMES = %v, want repos", consumes)
+	}
+
+	mainSource, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	if regexp.MustCompile(`repos[^\n]*:[0-9]{2,5}`).Match(mainSource) {
+		t.Fatal("main.go contains a repos port literal; feed resolution must stay registry-derived")
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 // R-M69E-4OFA
@@ -397,8 +450,13 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 
 	feedServers := make(map[string]*httptest.Server)
 	for _, source := range sources {
+		if source == "repos" {
+			continue
+		}
 		feedServers[source] = newIdleFeedServer(t)
 	}
+	reposConnected := make(chan struct{}, 1)
+	feedServers["repos"] = newIdleFeedServerAt(t, registry.BaseURL("repos"), reposConnected)
 	dropbox := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(dropbox.Close)
 
@@ -450,6 +508,12 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	if got := doc["status"]; got != "ok" {
 		t.Fatalf("health status = %v, want ok; body=%v", got, doc)
 	}
+	select {
+	case <-reposConnected:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("repos consumer did not connect to registry-derived feed %s/feed", registry.BaseURL("repos"))
+	}
+	// R-SCSS-M166
 	if _, ok := doc["details"].(map[string]any); !ok {
 		t.Fatalf("health details = %#v, want JSON object", doc["details"])
 	}
@@ -508,8 +572,10 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	// A second composition-root startup against the same state must preserve it.
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	var stdout2, stderr2 bytes.Buffer
+	overrideConnected := make(chan struct{}, 1)
+	overrideRepos := newObservedIdleFeedServer(t, overrideConnected)
 	cmd2 := exec.CommandContext(ctx2, run, "serve")
-	cmd2.Env = cmd.Env
+	cmd2.Env = append(append([]string(nil), cmd.Env...), "PROMPTS_REPOS_FEED_URL="+overrideRepos.URL+"/feed")
 	cmd2.Stdout = &stdout2
 	cmd2.Stderr = &stderr2
 	if err := cmd2.Start(); err != nil {
@@ -519,6 +585,11 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	go func() { done2 <- cmd2.Wait() }()
 	defer stopProcess(cancel2, done2)
 	waitForHealth(t, port, done2, &stdout2, &stderr2)
+	select {
+	case <-overrideConnected:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("repos consumer did not connect to PROMPTS_REPOS_FEED_URL override %s/feed", overrideRepos.URL)
+	}
 	if got, err := os.ReadFile(outputPath); err != nil || string(got) != wantOutput {
 		t.Fatalf("durable run artifact after restart = %q, %v", got, err)
 	}
@@ -758,6 +829,60 @@ func newIdleFeedServer(t *testing.T) *httptest.Server {
 		}
 		<-r.Context().Done()
 	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func newObservedIdleFeedServer(t *testing.T, connected chan<- struct{}) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/feed" {
+			http.NotFound(w, r)
+			return
+		}
+		select {
+		case connected <- struct{}{}:
+		default:
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func newIdleFeedServerAt(t *testing.T, baseURL string, connected chan<- struct{}) *httptest.Server {
+	t.Helper()
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		t.Fatalf("parse feed base URL %q: %v", baseURL, err)
+	}
+	listener, err := net.Listen("tcp", parsed.Host)
+	if err != nil {
+		t.Fatalf("listen at feed base URL %q: %v", baseURL, err)
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/feed" {
+			http.NotFound(w, r)
+			return
+		}
+		select {
+		case connected <- struct{}{}:
+		default:
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	srv.Listener = listener
+	srv.Start()
 	t.Cleanup(srv.Close)
 	return srv
 }

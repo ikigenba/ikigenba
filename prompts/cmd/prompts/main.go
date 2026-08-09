@@ -18,8 +18,8 @@
 // prompts is an LLM service: it uses agentkit (the LLM engine + tool surface) for
 // the agent loop, kept strictly separate from appkit (the deploy/serve chassis).
 // It is also an event-plane producer (Feed: "/feed", emitting run.succeeded and
-// run.failed via the outbox on the run's terminal write) and a consumer of six
-// upstreams (cron, crm, ledger, dropbox, scripts, and its own feed for
+// run.failed via the outbox on the run's terminal write) and a consumer of seven
+// upstreams (cron, crm, ledger, dropbox, scripts, repos, and its own feed for
 // self-chaining) declared as Spec.Consumers and run by the chassis. Its only
 // secret, ANTHROPIC_API_KEY, is read env-only inside the runner/prompt domain at
 // the point of use and never logged (§2.8).
@@ -67,12 +67,12 @@ import (
 const consumerID = "prompts"
 
 // sources is the resolved upstream producers prompts consumes (A11).
-// CONSUMES=cron,crm,ledger,dropbox,scripts,prompts in etc/manifest.env mirrors
+// CONSUMES=cron,crm,ledger,dropbox,scripts,prompts,repos in etc/manifest.env mirrors
 // this for the registry. The final "prompts" entry is self-chaining (A12): a
 // consumer loop pointed at prompts' OWN /feed (PROMPTS_PROMPTS_FEED_URL defaults
 // through the shared registry) so a prompt can fire on another prompt's
 // run.succeeded/run.failed.
-var sources = []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts"}
+var sources = []string{"cron", "crm", "ledger", "dropbox", "scripts", "prompts", "repos"}
 
 // svcRef carries the prompt service from the Handlers hook (where appkit has
 // opened + migrated the DB and built the domain) to the consumer handlers, which
