@@ -51,14 +51,14 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D46 | project/design/D46.md | nginx fragment: capture the edge-minted chain id on gated locations, strip it on the ungated one | R-HWX8-NVCX, R-HY55-1N3M |
 | D47 | project/design/D47.md | Rebuild to adopt: event-plane chain continuation, the `root` record at spawn, and the recorded boundary of a run | R-HZD1-FEUB, R-I0KX-T6L0, R-I1SU-6YBP, R-I30Q-KQ2E, R-I48M-YHT3 |
 | D48 | project/design/D48.md | State paths come from `appkit/config`, never from a hardcoded `./tmp` default | R-LBH5-4LO0, R-LCP1-IDEP, R-LDWX-W55E |
-| D49 | project/design/D49.md | Env-channel conformance: composed inventory root, manifest-surfaced tuning knobs, and a Spec-derived drift oracle | R-M51H-QWOL, R-M69E-4OFA; adopts R-VKB6-SHHV |
+| D49 | project/design/D49.md | Env-channel conformance: composed inventory root, manifest-surfaced tuning knobs, a Spec-derived drift oracle, and the bounded run TTL | R-M51H-QWOL, R-M69E-4OFA; adopts R-VKB6-SHHV, R-34EZ-J9BF |
 | D50 | project/design/D50.md | Adopt the suite testing-language contract | none of its own; adopts R-O1AD-MRKW, R-O2IA-0JBL |
 | D51 | project/design/D51.md | A prompt definition is a git tree: the fixed layout and the repo name key | R-RDFP-IOO1, R-RENL-WGEQ, R-RFVI-A85F |
 | D52 | project/design/D52.md | The version-plane client: one seam, injected at the composition root | R-IRRX-XZQ2, R-ISZU-BRGR, R-IU7Q-PJ7G, R-IVFN-3AY5, R-IWNJ-H2OU, R-IXVF-UUFJ, R-RIBB-1RMT, R-RJJ7-FJDI, R-RKR3-TB47 |
 | D53 | project/design/D53.md | The write path: create, update, import, rename, and delete go through the version plane | R-RLZ0-72UW, R-ROES-YMCA, R-RPMP-CE2Z, R-RQUL-Q5TO, R-RS2I-3XKD, R-SGGH-RCE9 |
 | D54 | project/design/D54.md | Seeding: the one-time, idempotent definition backfill | R-RTAE-HPB2, R-RUIA-VH1R, R-RVQ7-98SG |
 | D55 | project/design/D55.md | A run pins a sha and executes a real clone | R-RWY3-N0J5, R-RY60-0S9U, R-S0LS-SBR8, R-S1TP-63HX, R-S31L-JV8M |
-| D56 | project/design/D56.md | The run token and the authenticated git door | R-S49H-XMZB, R-S5HE-BEQ0, R-S6PA-P6GP, R-RZDW-EK0J |
+| D56 | project/design/D56.md | The run token and the authenticated git door | R-S49H-XMZB, R-S5HE-BEQ0, R-3AIH-G40W, R-RZDW-EK0J; adopts R-35MV-X124 |
 | D57 | project/design/D57.md | The framing prompt tells the run its folder is a git clone | R-S953-GPY3, R-SACZ-UHOS |
 | D58 | project/design/D58.md | `repos` joins the trigger sources: prompts as the version plane's workflow runner | R-SBKW-89FH, R-SCSS-M166 |
 | D59 | project/design/D59.md | Retiring the content columns | R-SE0O-ZSWV, R-SF8L-DKNK |
@@ -93,6 +93,9 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-1ZMQ-5N23 | D7 | project/design/D07.md |
 | R-20UM-JESS | D9 | project/design/D09.md |
 | R-222I-X6JH | D9 | project/design/D09.md |
+| R-34EZ-J9BF | D49 | project/design/D49.md (adopted from `root project/design/D26.md`) |
+| R-35MV-X124 | D56 | project/design/D56.md (adopted from `root project/design/D26.md`) |
+| R-3AIH-G40W | D56 | project/design/D56.md |
 | R-3RIS-23TJ | D20 | project/design/D20.md |
 | R-3SQO-FVK8 | D20 | project/design/D20.md |
 | R-3TYK-TNAX | D20 | project/design/D20.md |
@@ -265,7 +268,6 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-S31L-JV8M | D55 | project/design/D55.md |
 | R-S49H-XMZB | D56 | project/design/D56.md |
 | R-S5HE-BEQ0 | D56 | project/design/D56.md |
-| R-S6PA-P6GP | D56 | project/design/D56.md |
 | R-S953-GPY3 | D57 | project/design/D57.md |
 | R-SACZ-UHOS | D57 | project/design/D57.md |
 | R-SBKW-89FH | D58 | project/design/D58.md |

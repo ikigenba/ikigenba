@@ -9,5 +9,7 @@ loop **deletes** that phase's line and its `phase-NN.md` — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 71
+Next phase: 72
+
+- Phase 71 ⬜ realizes R-34EZ-J9BF, R-35MV-X124, R-3AIH-G40W — adopt the run-lifetime contract: 6h-bounded `PROMPTS_RUN_TTL`, 10-minute token margin
 
