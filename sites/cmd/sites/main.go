@@ -20,6 +20,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"html/template"
 	"net/http"
@@ -30,6 +31,7 @@ import (
 
 	"appkit"
 	"appkit/config"
+	"eventplane/consumer"
 	"registry"
 
 	"sites/internal/db"
@@ -74,6 +76,10 @@ func main() {
 }
 
 func sitesSpec() appkit.Spec {
+	var store *sites.Store
+	var layout sites.Layout
+	var version sites.VersionClient
+
 	return appkit.Spec{
 		App:        "sites",
 		Mount:      "/srv/sites/",
@@ -81,12 +87,31 @@ func sitesSpec() appkit.Spec {
 		MCP:        true,
 		WWW:        true,
 		Migrations: db.FS,
+		Consumers: []appkit.Consumer{
+			{
+				Source: "repos",
+				Subscriptions: []consumer.Subscription{{
+					Source:      "repos",
+					Filter:      "repos:push/sites/**",
+					Description: "materialize the live site tree after a repository push",
+				}},
+				Handler: func(_ *appkit.Router) consumer.Handler {
+					return sites.NewPushHandler(store, layout, version)
+				},
+			},
+		},
+		Workers: []func(context.Context) error{
+			func(ctx context.Context) error {
+				return seedSites(ctx, store, layout, version)
+			},
+		},
 		Handlers: func(rt *appkit.Router) error {
-			layout, err := sites.NewLayout(resolveSitesRoot(os.Getenv))
+			var err error
+			layout, err = sites.NewLayout(resolveSitesRoot(os.Getenv))
 			if err != nil {
 				return err
 			}
-			store := sites.NewStoreWithLayout(rt.DB(), layout)
+			store = sites.NewStoreWithLayout(rt.DB(), layout)
 			// The front-door base under which nginx serves published sites is the
 			// service's ResourceID minus its trailing "mcp" — RESOURCE_ID is
 			// "https://<domain>/srv/sites/mcp", so this yields
@@ -99,7 +124,8 @@ func sitesSpec() appkit.Spec {
 			// decision 2). The client derives <base>/list and <base>/content.
 			base := config.EnvOr(os.Getenv, "DROPBOX_BASE_URL", registry.BaseURL("dropbox"))
 			mirror := sites.NewMirrorClient(base, rt.HTTPClient(30*time.Second))
-			version := sites.NewVersionClient(registry.BaseURL("repos"), rt.HTTPClient(30*time.Second))
+			reposBase := config.EnvOr(os.Getenv, "REPOS_BASE_URL", registry.BaseURL("repos"))
+			version = sites.NewVersionClient(reposBase, rt.HTTPClient(30*time.Second))
 			handler, err := mcp.NewHandler(store, layout, baseURL, mirror, version, rt)
 			if err != nil {
 				return err
@@ -110,6 +136,41 @@ func sitesSpec() appkit.Spec {
 			rt.Handle("POST /mcp", rt.RequireIdentity(handler))
 			return nil
 		},
+	}
+}
+
+func seedSites(ctx context.Context, store *sites.Store, layout sites.Layout, version sites.VersionClient) error {
+	// Workers start concurrently with the listener. Give server.Run the first
+	// scheduling turn so repository recovery is never on the boot path.
+	if !waitForSeedRetry(ctx, 100*time.Millisecond) {
+		return nil
+	}
+	backoff := time.Second
+	for {
+		if _, err := sites.Seed(ctx, store, layout, version); err == nil {
+			<-ctx.Done()
+			return nil
+		}
+		if !waitForSeedRetry(ctx, backoff) {
+			return nil
+		}
+		if backoff < 30*time.Second {
+			backoff *= 2
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
+		}
+	}
+}
+
+func waitForSeedRetry(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 

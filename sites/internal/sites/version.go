@@ -81,7 +81,7 @@ func versionActor(ctx context.Context, slug string) string {
 // NewVersionClient constructs the sole production version-plane client.
 func NewVersionClient(base string, hc *http.Client) VersionClient {
 	if hc == nil {
-		hc = http.DefaultClient
+		panic("sites: NewVersionClient requires an HTTP client")
 	}
 	return &versionHTTPClient{base: strings.TrimRight(base, "/"), hc: hc}
 }

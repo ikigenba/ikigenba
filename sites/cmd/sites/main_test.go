@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -124,7 +125,7 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 		Port:     spec.Port,
 		MCP:      spec.MCP,
 		Feed:     spec.Feed,
-		Consumes: spec.Consumes,
+		Consumes: consumerSources(spec.Consumers),
 		Extras:   manifestExtras(spec.ManifestExtras),
 	})
 	committed, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.env"))
@@ -227,7 +228,8 @@ func TestSitesSpecEnablesChassisWWWAndKeepsMCPWiring(t *testing.T) {
 		`CreatedAt:     s.CreatedAt.UTC().Format(time.RFC3339),`,
 		`renderer.Render(w, "landing.html", view)`,
 		`mirror := sites.NewMirrorClient(base, rt.HTTPClient(30*time.Second))`,
-		`version := sites.NewVersionClient(registry.BaseURL("repos"), rt.HTTPClient(30*time.Second))`,
+		`reposBase := config.EnvOr(os.Getenv, "REPOS_BASE_URL", registry.BaseURL("repos"))`,
+		`version = sites.NewVersionClient(reposBase, rt.HTTPClient(30*time.Second))`,
 		`handler, err := mcp.NewHandler(store, layout, baseURL, mirror, version, rt)`,
 		`if err != nil {`,
 		`rt.Handle("POST /mcp", rt.RequireIdentity(handler))`,
@@ -1136,6 +1138,142 @@ func TestSitesBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	}
 }
 
+// R-ER9A-9UMP
+func TestComposedSitesBinaryUsesConfiguredReposClientForFileWrite(t *testing.T) {
+	commits := make(chan map[string]any, 8)
+	repos := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/mcp":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":"create","result":{"isError":false,"structuredContent":{},"content":[{"type":"text","text":"{}"}]}}`)
+		case "/commit":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			body["x_client_id"] = r.Header.Get("X-Client-Id")
+			commits <- body
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"rev":"composed-write-sha"}`)
+		case "/feed":
+			http.Error(w, "feed unavailable in composed stub", http.StatusServiceUnavailable)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(repos.Close)
+
+	root := t.TempDir()
+	binary := filepath.Join(root, "sites-composed")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	build.Env = os.Environ()
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build sites: %v\n%s", err, out)
+	}
+
+	port := freeTCPPort(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, binary, "serve")
+	cmd.Env = testEnv(map[string]string{
+		"IKIGENBA_DOMAIN":       "int.ikigenba.com",
+		"IKIGENBA_ROOT":         root,
+		"SITES_IP":              "127.0.0.1",
+		"SITES_PORT":            fmt.Sprintf("%d", port),
+		"SITES_ROOT":            filepath.Join(root, "www"),
+		"SITES_DB_PATH":         filepath.Join(root, "state", "sites.db"),
+		"SITES_GENERATION_PATH": filepath.Join(root, "cache", "sites.db.generation"),
+		"SITES_WWW_PATH":        wwwRoot(t),
+		"DROPBOX_BASE_URL":      repos.URL,
+		"REPOS_BASE_URL":        repos.URL,
+		"SITES_REPOS_FEED_URL":  repos.URL + "/feed",
+		"TELEMETRY_ENABLED":     "false",
+	})
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start sites: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	defer stopProcess(cancel, done)
+	waitForHealth(t, port, done, &stdout, &stderr)
+
+	call := func(name string, arguments map[string]any) {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{
+			"jsonrpc": "2.0",
+			"id":      name,
+			"method":  "tools/call",
+			"params":  map[string]any{"name": name, "arguments": arguments},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/mcp", port), bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Owner-Id", "owner-1")
+		req.Header.Set("X-Owner-Email", "owner@example.test")
+		req.Header.Set("X-Client-Id", "composed-client")
+		resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+		if err != nil {
+			t.Fatalf("call %s: %v", name, err)
+		}
+		defer resp.Body.Close()
+		responseBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("read %s response: %v", name, err)
+		}
+		var envelope struct {
+			Result struct {
+				IsError bool `json:"isError"`
+			} `json:"result"`
+			Error any `json:"error"`
+		}
+		if err := json.Unmarshal(responseBody, &envelope); err != nil {
+			t.Fatalf("decode %s response: %v; body=%s", name, err, responseBody)
+		}
+		if resp.StatusCode != http.StatusOK || envelope.Error != nil || envelope.Result.IsError {
+			t.Fatalf("%s response status=%d envelope=%+v body=%s", name, resp.StatusCode, envelope, responseBody)
+		}
+	}
+	call("create", map[string]any{"name": "Demo", "slug": "demo", "visibility": "public"})
+	call("file_write", map[string]any{"site": "demo", "file_path": "index.html", "content": "hello composed"})
+
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case commit := <-commits:
+			if commit["message"] != "write index.html" {
+				continue
+			}
+			if commit["kind"] != "sites" || commit["name"] != "demo" || commit["actor"] != "composed-client" || commit["x_client_id"] != "composed-client" {
+				t.Fatalf("commit identity = %+v", commit)
+			}
+			changes, ok := commit["changes"].([]any)
+			if !ok || len(changes) != 1 {
+				t.Fatalf("commit changes = %+v, want one", commit["changes"])
+			}
+			change, ok := changes[0].(map[string]any)
+			if !ok || change["op"] != "put" || change["path"] != "index.html" {
+				t.Fatalf("commit change = %+v", changes[0])
+			}
+			data, err := base64.StdEncoding.DecodeString(change["content_b64"].(string))
+			if err != nil || string(data) != "hello composed" {
+				t.Fatalf("commit content = %q, %v", data, err)
+			}
+			return
+		case <-deadline:
+			t.Fatalf("repos stub did not receive file_write commit\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestLandingBrowserControlsWorkThroughRealDOMEvents(t *testing.T) {
 	seeds := []landingSeed{
 		{name: "Docs", slug: "docs", public: true, createdAt: "2026-07-04T08:00:00.000000000Z"},
@@ -1553,6 +1691,14 @@ func manifestExtras(in []appkit.ManifestKV) []manifest.KV {
 	out := make([]manifest.KV, 0, len(in))
 	for _, kv := range in {
 		out = append(out, manifest.KV{Key: kv.Key, Value: kv.Value})
+	}
+	return out
+}
+
+func consumerSources(in []appkit.Consumer) []string {
+	out := make([]string, 0, len(in))
+	for _, entry := range in {
+		out = append(out, entry.Source)
 	}
 	return out
 }

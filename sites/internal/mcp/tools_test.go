@@ -19,6 +19,7 @@ import (
 
 	sqlkit "appkit/db"
 	appkitmcp "appkit/mcp"
+	"eventplane/consumer"
 
 	"sites/internal/db"
 	"sites/internal/sites"
@@ -501,10 +502,22 @@ func assertContains(t *testing.T, got, want string) {
 	}
 }
 
-func TestReflectionWithoutEventGraphReturnsEmptySets(t *testing.T) {
-	h, _ := newTestHandler(t)
+func TestReflectionReportsReposPushSubscriptionWithoutPublishing(t *testing.T) {
+	base, _ := newTestHandler(t)
+	h, err := appkitmcp.New(appkitmcp.Options{
+		Service:      testService,
+		Version:      testVersion,
+		Instructions: Instructions,
+		Tools:        Tools(base.store, base.layout, testBaseURL, nil, testVersionClient{}),
+		Subscriptions: func() []consumer.Subscription {
+			return []consumer.Subscription{{Source: "repos", Filter: "repos:push/sites/**"}}
+		},
+	})
+	if err != nil {
+		t.Fatalf("new subscribed MCP handler: %v", err)
+	}
 
-	// R-P21E-0285
+	// R-FJAZ-2KOO
 	reflected := callOK(t, h, "reflection", nil)
 	publishes, ok := reflected["publishes"].([]any)
 	if !ok {
@@ -517,8 +530,15 @@ func TestReflectionWithoutEventGraphReturnsEmptySets(t *testing.T) {
 	if !ok {
 		t.Fatalf("subscribes is not an array: %+v", reflected)
 	}
-	if len(subscribes) != 0 {
-		t.Fatalf("subscribes = %+v, want empty array", subscribes)
+	if len(subscribes) != 1 {
+		t.Fatalf("subscribes = %+v, want exactly one entry", subscribes)
+	}
+	subscription, ok := subscribes[0].(map[string]any)
+	if !ok {
+		t.Fatalf("subscription is not an object: %+v", subscribes[0])
+	}
+	if subscription["source"] != "repos" || subscription["filter"] != "repos:push/sites/**" {
+		t.Fatalf("subscription = %+v, want repos / repos:push/sites/**", subscription)
 	}
 }
 

@@ -4,8 +4,9 @@ The `sites` service for the ikigenba suite: a loopback-only static-website host
 under `/srv/sites/`. Agents create named sites and write files into them over MCP,
 and the same process serves those files back to browsers. Each site is a slug with a
 public/private visibility flag; files live on disk under a per-visibility tree. An
-appkit binary with no token logic (nginx is the sole trust boundary). It is neither
-an event-plane producer nor consumer (no `/feed`). Module path: `sites`.
+appkit binary with no token logic (nginx is the sole trust boundary). It publishes
+nothing and remains without a `/feed`, but it consumes the `repos` upstream's
+`push` family. Module path: `sites`.
 
 ## How changes are made
 
