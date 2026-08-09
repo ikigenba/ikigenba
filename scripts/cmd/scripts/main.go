@@ -15,7 +15,7 @@
 // scripts is BOTH an event-plane PRODUCER (it emits succeeded / failed on its
 // own /feed, in the SAME tx as a run's terminal write) and
 // a multi-upstream CONSUMER (one consumer.Run worker per upstream producer:
-// cron, crm, ledger, dropbox, prompts). It holds NO secret — no LLM provider,
+// cron, crm, ledger, dropbox, prompts, repos). It holds NO secret — no LLM provider,
 // open network — so bin/push-secrets seeds it as an explicit empty object.
 package main
 
@@ -74,6 +74,7 @@ func scriptsSpec() appkit.Spec {
 			scriptsConsumerEntry("ledger"),
 			scriptsConsumerEntry("dropbox"),
 			scriptsConsumerEntry("prompts"),
+			scriptsConsumerEntry("repos"),
 		},
 		// PRODUCER of two STATIC completion kinds (succeeded / failed), emitted in
 		// the SAME tx as a run's terminal write. Feed

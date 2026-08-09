@@ -16,6 +16,7 @@ var knownFamilies = map[string][]string{
 	"ledger":  {"recorded"},
 	"dropbox": {"create", "modify", "delete"},
 	"prompts": {"run.succeeded", "run.failed"},
+	"repos":   {"push"},
 }
 
 func triggerSources() []string {

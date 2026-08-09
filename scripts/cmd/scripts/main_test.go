@@ -381,7 +381,7 @@ func TestGoModRequiresRegistrySiblingModule(t *testing.T) {
 func TestScriptsSpecDeclaresConsumersWithoutLegacyFields(t *testing.T) {
 	// R-8WN1-0VQI
 	spec := scriptsSpec()
-	wantSources := []string{"cron", "crm", "ledger", "dropbox", "prompts"}
+	wantSources := []string{"cron", "crm", "ledger", "dropbox", "prompts", "repos"}
 	if got := consumesFromConsumers(spec.Consumers); !reflect.DeepEqual(got, wantSources) {
 		t.Fatalf("consumer sources = %v, want %v", got, wantSources)
 	}
@@ -399,6 +399,49 @@ func TestScriptsSpecDeclaresConsumersWithoutLegacyFields(t *testing.T) {
 	}
 	if spec.Subscriptions != nil {
 		t.Fatalf("legacy spec.Subscriptions is set, want nil")
+	}
+}
+
+func TestReposConsumerAndSubjectRouting(t *testing.T) {
+	// R-2V03-9602
+	wantSources := []string{"cron", "crm", "ledger", "dropbox", "prompts", "repos"}
+	spec := scriptsSpec()
+	if got := consumesFromConsumers(spec.Consumers); !reflect.DeepEqual(got, wantSources) {
+		t.Fatalf("consumer sources = %v, want exactly %v", got, wantSources)
+	}
+	for _, entry := range spec.Consumers {
+		if len(entry.Subscriptions) != 1 {
+			t.Fatalf("%s subscription count = %d, want 1", entry.Source, len(entry.Subscriptions))
+		}
+		sub := entry.Subscriptions[0]
+		if sub.Source != entry.Source || sub.Filter != "**" {
+			t.Fatalf("%s subscription = %#v, want source %q and filter **", entry.Source, sub, entry.Source)
+		}
+	}
+
+	ctx := context.Background()
+	svc, _ := newConsumerTestService(t)
+	sites, err := svc.Create(ctx, "owner@example.com", script.CreateInput{Name: "sites check", Body: "print(1)"})
+	if err != nil {
+		t.Fatalf("create sites script: %v", err)
+	}
+	scripts, err := svc.Create(ctx, "owner@example.com", script.CreateInput{Name: "scripts check", Body: "print(2)"})
+	if err != nil {
+		t.Fatalf("create scripts script: %v", err)
+	}
+	if _, err := svc.SetTrigger(ctx, "owner@example.com", sites.ID, "repos:push/sites/**"); err != nil {
+		t.Fatalf("set sites trigger: %v", err)
+	}
+	if _, err := svc.SetTrigger(ctx, "owner@example.com", scripts.ID, "repos:push/scripts/**"); err != nil {
+		t.Fatalf("set scripts trigger: %v", err)
+	}
+
+	got, err := svc.ScriptsForEvent(ctx, "repos", "repos:push/sites/blog")
+	if err != nil {
+		t.Fatalf("ScriptsForEvent repos push: %v", err)
+	}
+	if len(got) != 1 || got[0] != sites.ID {
+		t.Fatalf("ScriptsForEvent repos push = %v, want only [%s] and not %s", got, sites.ID, scripts.ID)
 	}
 }
 
