@@ -11,7 +11,6 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 70
 
-- Phase 64 ⬜ realizes D54 — seeding: the one-time definition backfill at boot
 - Phase 65 ⬜ realizes D55, D39, D40 — the run workspace is a clone pinned to a sha
 - Phase 66 ⬜ realizes D56 — the run token and the authenticated git door
 - Phase 67 ⬜ realizes D57 — the framing prompt tells the run about its clone
