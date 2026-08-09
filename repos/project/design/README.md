@@ -32,9 +32,13 @@ ids ends at minting them — how coverage is measured and when the work is
   module at `repos/`, on the `appkit` chassis over SQLite
   (`modernc.org/sqlite`, pure-Go, no cgo). In-repo libraries via committed
   `replace` directives (`appkit => ../appkit`, `eventplane => ../eventplane`)
-  plus `require registry` (same pattern). **No other module dependency**: repos
-  drives no agent engine and speaks to no external API, so `go.mod` requires
-  neither `github.com/ikigenba/agentkit` nor any provider SDK.
+  plus `require registry` (same pattern). **No other production module
+  dependency**: repos drives no agent engine and speaks to no external API, so
+  `go.mod` requires neither `github.com/ikigenba/agentkit` nor any provider
+  SDK. Two **test-only** dependencies exist — `github.com/dop251/goja` (D25's
+  pure-function tests) and `github.com/chromedp/chromedp` (D26's browser
+  wiring proof) — imported only from `*_test.go`; the production import graph
+  stays free of both (R-SZF6-NY1F).
 - **Build / typecheck:** `cd repos && go build ./...` and `go vet ./...`.
   Production binary via `bin/ship repos` (`CGO_ENABLED=0 GOOS=linux
   GOARCH=amd64 GOWORK=off`).
@@ -64,9 +68,10 @@ ids ends at minting them — how coverage is measured and when the work is
   facts are recorded in D16: **hermetic** and **composed** only, both in the
   default gate, with no live layer and no tree-local manual runbook. No gate
   item runs against `bin/start`; the assembled-stack check is the suite's
-  manual-layer item. The two environmental preconditions beyond the Go
-  toolchain — the real `git` binary and the `go` binary, each on `PATH` at test
-  time — are hard failures when absent, never skips.
+  manual-layer item. The three environmental preconditions beyond the Go
+  toolchain — the real `git` binary, the `go` binary, and the `google-chrome`
+  binary (D26), each on `PATH` at test time — are hard failures when absent,
+  never skips.
 - **DB / migrations:** ordered, immutable SQL in `internal/db/migrations/`,
   embedded, applied forward-only by the appkit runner. New migrations only via
   `bin/create-migration repos <name>`; numbers never hand-picked, committed

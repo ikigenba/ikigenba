@@ -9,5 +9,8 @@ build loop **deletes** the phase's line and its body file — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 42
+Next phase: 44
 
+- Phase 41 ⬜ realizes R-RP30-4NV1, R-RQAW-IFLQ, R-RRIS-W7CF, R-RSQP-9Z34, R-RTYL-NQTT, R-RV6I-1IKI, R-RWEE-FAB7, R-RXMA-T21W, R-RYU7-6TSL, R-S023-KLJA, R-S19Z-YD9Z, R-S2HW-C50O, R-S4XP-3OI2, R-S65L-HG8R — landing listing: server render + layout (D24)
+- Phase 42 ⬜ realizes R-S7DH-V7ZG, R-S8LE-8ZQ5, R-S9TA-MRGU, R-SB17-0J7J, R-SC93-EAY8, R-SDGZ-S2OX, R-SEOW-5UFM, R-SFWS-JM6B, R-SH4O-XDX0, R-SICL-B5NP, R-SJKH-OXEE, R-SKSE-2P53, R-SN86-U8MH, R-SOG3-80D6 — client-side filter/sort/pagination/copy (D25)
+- Phase 43 ⬜ realizes R-SPNZ-LS3V, R-SQVV-ZJUK, R-SS3S-DBL9, R-STBO-R3BY, R-SUJL-4V2N, R-SVRH-IMTC, R-SWZD-WEK1, R-SY7A-A6AQ, R-SZF6-NY1F — browser wiring proof via chromedp (D26)

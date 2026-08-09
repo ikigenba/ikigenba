@@ -74,8 +74,9 @@ repos **does**:
   refresh and automated work can be triggered by a push.
 - Archive a repository rather than delete it: it disappears from listings and
   stops being served, and its history is still there.
-- Serve the canonical suite landing page at its mount, session-gated like every
-  other service.
+- Serve a landing page at its mount, session-gated like every other service,
+  that lists every live repository the box holds — findable by typing part of
+  a name, orderable, and with each repository's clone address one click away.
 
 repos does **nothing else**. Deliberately excluded:
 
@@ -133,8 +134,14 @@ repos does **nothing else**. Deliberately excluded:
   service, a push from a laptop or a run, a merge — is published as an event
   naming the repository, the branch, the new commit, and who did it, so the
   owning service refreshes and automated work can trigger on it.
-- **A logged-in human who opens the mount sees a real page** — the canonical
-  suite landing (service name, running version) gated by the dashboard session.
+- **A logged-in human who opens the mount sees what the custodian holds.** The
+  landing page — gated by the dashboard session — shows the service name and
+  running version and lists every live repository with the commit its live
+  line currently points at. A long list stays usable: typing part of a name
+  narrows it, the listing can be reordered, and it pages rather than sprawls.
+  Each row offers a one-click copy of the address `git clone` accepts, so
+  going from "I see it" to "I have it on my laptop" is a paste away. Archived
+  repositories do not appear.
 
 ## Success criteria (outcomes)
 
@@ -165,4 +172,8 @@ repos does **nothing else**. Deliberately excluded:
   the repository, branch, commit, and actor.
 - Nothing repos does causes a request to github.com.
 - A logged-in dashboard user opening `/srv/repos/` sees the service name and
-  running version; a browser with no session is refused.
+  running version and a listing of every live repository with its current
+  commit; typing part of a repository's name narrows the list to matches;
+  activating a row's copy control puts that repository's clone address — the
+  same address `git clone` accepts — on the clipboard; archived repositories
+  are absent. A browser with no session is refused.

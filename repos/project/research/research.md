@@ -137,3 +137,85 @@ From `ngx_http_auth_request_module` and `ngx_http_proxy_module`:
   Both must be changed for a git push, which streams a pack of arbitrary size.
   `proxy_buffering off` likewise keeps a long clone streaming rather than
   accumulating in nginx.
+
+## 7. chromedp (browser automation from Go)
+
+`github.com/chromedp/chromedp` is a pure-Go library that drives a
+Chrome/Chromium browser over the **Chrome DevTools Protocol**. No node, no
+npm, no driver server, no cgo — a Go test talks websocket to a Chrome process
+it spawns itself.
+
+**The API footprint the design (D26) uses:**
+
+- `chromedp.NewExecAllocator(ctx, opts...)` — launches and owns a Chrome
+  process. `chromedp.DefaultExecAllocatorOptions` includes `headless` (the
+  modern `--headless=new` engine), a fresh temporary `--user-data-dir` (no
+  profile, fully isolated from any desktop Chrome), and sandbox/GPU flags for
+  unattended runs. It finds the browser by well-known names (`google-chrome`,
+  `chromium`, …) on `PATH` unless `chromedp.ExecPath` pins one.
+- `chromedp.NewContext(allocCtx)` — one browser tab; cancelling the context
+  kills the tab/browser, and `context.WithTimeout` bounds a scenario so a hung
+  page fails instead of hanging `go test`.
+- `chromedp.Run(ctx, actions...)` — sequential actions: `Navigate(url)`,
+  `WaitVisible(sel)` (poll until the element exists **and** is visible — the
+  idiomatic no-sleep wait that doubles as an assertion), `SendKeys(sel, text)`
+  (genuine trusted key events; the page's real listeners fire; the target must
+  be visible), `Click(sel)` (a real click), and `Evaluate(js, &out)` (run JS
+  in the page and marshal the result back — the DOM read-back channel).
+
+**Costs and characteristics:** the Chrome launch is the expensive step
+(~300–800 ms per allocator); actions afterward are milliseconds, so multi-step
+scenarios amortize one launch. The dominant flake mode is the launch, not the
+scenario — one launch retry distinguishes "Chrome hiccuped" from
+"Chrome broken/absent". Transitive deps (`chromedp/cdproto`, `gobwas/ws`) are
+all pure Go. The browser binary itself is an environment assumption `go.mod`
+cannot express — like a C compiler — and must be documented as part of the
+suite's green definition. Dropping the `headless` flag runs the same test
+headful for diagnosis; never the default.
+
+**Environment facts (verified on this box, 2026-08-09):**
+`/usr/bin/google-chrome` is installed. The ralph build loop runs on this box;
+the deploy box never runs the test suite; there is no CI — every environment
+that runs `go test ./...` has Chrome. `github.com/dop251/goja` (pure-Go ES
+engine) is the sibling precedent already proven in the suite for testing
+shipped browser JS's pure functions inside `go test` with no node toolchain.
+
+**Alternatives evaluated and not chosen:** Playwright (drags a node toolchain
+— `package.json`, `node_modules`, driver churn — into a pure-Go repo for
+nothing chromedp can't do over the same protocol); a goja DOM shim (a
+hand-rolled fake `document` passes whatever it is taught and cannot falsify
+real event wiring); `t.Skip` when Chrome is absent (a soft gate that silently
+un-proves the wiring and reads as green).
+
+## 8. The suite copy-button pattern (prior art to replicate)
+
+The dashboard's logged-in page ships a copy-to-clipboard button for each MCP
+service's URL, and sites replicated it for its landing listing. repos
+replicates the same pattern for its per-row clone-address control (D24/D25).
+Captured here as ground truth so the design cites the *pattern*, not a
+sibling module's files — the scope boundary forbids repos depending on
+`dashboard/` or `sites/`; repos owns its own byte-for-byte copy. The pattern:
+
+- **Markup.** `<button type="button" class="copy-btn" aria-label="Copy … URL">`
+  containing an inline copy-icon `<svg class="icon">` (two overlapping rounded
+  rectangles, `viewBox="0 0 24 24"`, `stroke="currentColor"`, `fill="none"`)
+  followed by `<span class="copy-label">Copy</span>`. The value to copy is
+  exposed on the button itself (a data attribute) since the rows are rebuilt
+  by the controller.
+- **Behaviour (JS).** On click: copy via
+  `navigator.clipboard.writeText(text)` when `navigator.clipboard` exists
+  **and** `window.isSecureContext`; otherwise a hidden `<textarea>` +
+  `document.execCommand("copy")` fallback. On success, add `is-copied` and
+  swap the label to `Copied`, reverting both after ~1600 ms. A denied
+  clipboard is swallowed.
+- **CSS.** `.copy-btn` (icon-plus-label affordance, hover / focus-visible /
+  `.is-copied` accent states) and `.copy-label`, built entirely from the
+  shared Carbon token custom properties — no bespoke values. repos rebuilds
+  these rules in its own `share/www` from its own `tokens.css`.
+- **Secure-context / clipboard-permission facts.** `navigator.clipboard` is
+  available on `http://127.0.0.1` and `http://localhost` (secure contexts by
+  spec), so the async path — not the fallback — is what an `httptest` server
+  exercises. Reading the clipboard back in headless Chrome requires granting
+  the browser context clipboard permission via the DevTools
+  `Browser.grantPermissions` (`clipboardReadWrite`) before
+  `navigator.clipboard.readText()` resolves.

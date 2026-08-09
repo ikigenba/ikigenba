@@ -16,7 +16,7 @@ v2 rewrite and their ids were deleted with them.
 
 - D1 → `project/design/D01.md` — Composition root & chassis boot — R-EISY-2LYZ, R-EL8Q-U5GD
 - D2 → `project/design/D02.md` — Data model & migrations — R-IWEY-SUZH, R-IYUR-KEGV, R-J02N-Y67K, R-J1AK-BXY9, R-J2IG-PPOY
-- D10 → `project/design/D10.md` — nginx fragment & the canonical landing page — R-G1OF-AAC8, R-J3QD-3HFN, R-UZVS-S08C, R-V13P-5RZ1, R-G2WB-O22X, R-G448-1TTM
+- D10 → `project/design/D10.md` — nginx fragment & the web locations — R-G1OF-AAC8, R-J3QD-3HFN, R-UZVS-S08C, R-V13P-5RZ1, R-G448-1TTM
 - D13 → `project/design/D13.md` — The nginx fragment captures the minted correlation id on gated locations and strips it on the ungated one — R-9DUI-TUQJ, R-9F2F-7MH8
 - D14 → `project/design/D14.md` — Suite-contract conformance: the opsctl install layout & the authored env contract — R-4LKF-FB23 (adopted), R-8DF1-W89F (adopted), R-8IAN-FB87 (adopted)
 - D15 → `project/design/D15.md` — Env-channel conformance: repos' three knobs, and an environment with no credentials — R-39AL-2CA7, R-QX3N-8GNH, R-QYBJ-M8E6, R-QZJG-004V, R-VKB6-SHHV (adopted)
@@ -28,6 +28,9 @@ v2 rewrite and their ids were deleted with them.
 - D21 → `project/design/D21.md` — Statuses and the `merge` verb — R-KFAG-0JCQ, R-KHQ8-S2U4, R-KIY5-5UKT, R-KK61-JMBI, R-KLDX-XE27, R-KMLU-B5SW, R-KNTQ-OXJL, R-KP1N-2PAA, R-KQ9J-GH0Z, R-KRHF-U8RO
 - D22 → `project/design/D22.md` — The MCP tool surface — R-KSPC-80ID, R-KTX8-LS92, R-KV54-ZJZR, R-KWD1-DBQG, R-KXKX-R3H5, R-KYSU-4V7U, R-JFAI-W00R, R-JGIF-9RRG, R-L00Q-IMYJ, R-L2GJ-A6FX
 - D23 → `project/design/D23.md` — Events: the `push` and `archived` families — R-JDHK-5ND7, R-JFXC-X6UL, R-JH59-AYLA, R-JID5-OQBZ
+- D24 → `project/design/D24.md` — The landing page lists the live repositories (server render + layout) — R-RP30-4NV1, R-RQAW-IFLQ, R-RRIS-W7CF, R-RSQP-9Z34, R-RTYL-NQTT, R-RV6I-1IKI, R-RWEE-FAB7, R-RXMA-T21W, R-RYU7-6TSL, R-S023-KLJA, R-S19Z-YD9Z, R-S2HW-C50O, R-S4XP-3OI2, R-S65L-HG8R
+- D25 → `project/design/D25.md` — Client-side filter, sort, and pagination of the landing listing — R-S7DH-V7ZG, R-S8LE-8ZQ5, R-S9TA-MRGU, R-SB17-0J7J, R-SC93-EAY8, R-SDGZ-S2OX, R-SEOW-5UFM, R-SFWS-JM6B, R-SH4O-XDX0, R-SICL-B5NP, R-SJKH-OXEE, R-SKSE-2P53, R-SN86-U8MH, R-SOG3-80D6
+- D26 → `project/design/D26.md` — Browser wiring proof: one minimal headless-Chrome test (chromedp) — R-SPNZ-LS3V, R-SQVV-ZJUK, R-SS3S-DBL9, R-STBO-R3BY, R-SUJL-4V2N, R-SVRH-IMTC, R-SWZD-WEK1, R-SY7A-A6AQ, R-SZF6-NY1F
 
 ## Verification ids → Decision
 
@@ -42,7 +45,6 @@ v2 rewrite and their ids were deleted with them.
 - R-EISY-2LYZ → D1 — `project/design/D01.md`
 - R-EL8Q-U5GD → D1 — `project/design/D01.md`
 - R-G1OF-AAC8 → D10 — `project/design/D10.md`
-- R-G2WB-O22X → D10 — `project/design/D10.md`
 - R-G448-1TTM → D10 — `project/design/D10.md`
 - R-IWEY-SUZH → D2 — `project/design/D02.md`
 - R-IYUR-KEGV → D2 — `project/design/D02.md`
@@ -110,6 +112,43 @@ v2 rewrite and their ids were deleted with them.
 - R-QX3N-8GNH → D15 — `project/design/D15.md`
 - R-QYBJ-M8E6 → D15 — `project/design/D15.md`
 - R-QZJG-004V → D15 — `project/design/D15.md`
+- R-RP30-4NV1 → D24 — `project/design/D24.md`
+- R-RQAW-IFLQ → D24 — `project/design/D24.md`
+- R-RRIS-W7CF → D24 — `project/design/D24.md`
+- R-RSQP-9Z34 → D24 — `project/design/D24.md`
+- R-RTYL-NQTT → D24 — `project/design/D24.md`
+- R-RV6I-1IKI → D24 — `project/design/D24.md`
+- R-RWEE-FAB7 → D24 — `project/design/D24.md`
+- R-RXMA-T21W → D24 — `project/design/D24.md`
+- R-RYU7-6TSL → D24 — `project/design/D24.md`
+- R-S023-KLJA → D24 — `project/design/D24.md`
+- R-S19Z-YD9Z → D24 — `project/design/D24.md`
+- R-S2HW-C50O → D24 — `project/design/D24.md`
+- R-S4XP-3OI2 → D24 — `project/design/D24.md`
+- R-S65L-HG8R → D24 — `project/design/D24.md`
+- R-S7DH-V7ZG → D25 — `project/design/D25.md`
+- R-S8LE-8ZQ5 → D25 — `project/design/D25.md`
+- R-S9TA-MRGU → D25 — `project/design/D25.md`
+- R-SB17-0J7J → D25 — `project/design/D25.md`
+- R-SC93-EAY8 → D25 — `project/design/D25.md`
+- R-SDGZ-S2OX → D25 — `project/design/D25.md`
+- R-SEOW-5UFM → D25 — `project/design/D25.md`
+- R-SFWS-JM6B → D25 — `project/design/D25.md`
+- R-SH4O-XDX0 → D25 — `project/design/D25.md`
+- R-SICL-B5NP → D25 — `project/design/D25.md`
+- R-SJKH-OXEE → D25 — `project/design/D25.md`
+- R-SKSE-2P53 → D25 — `project/design/D25.md`
+- R-SN86-U8MH → D25 — `project/design/D25.md`
+- R-SOG3-80D6 → D25 — `project/design/D25.md`
+- R-SPNZ-LS3V → D26 — `project/design/D26.md`
+- R-SQVV-ZJUK → D26 — `project/design/D26.md`
+- R-SS3S-DBL9 → D26 — `project/design/D26.md`
+- R-STBO-R3BY → D26 — `project/design/D26.md`
+- R-SUJL-4V2N → D26 — `project/design/D26.md`
+- R-SVRH-IMTC → D26 — `project/design/D26.md`
+- R-SWZD-WEK1 → D26 — `project/design/D26.md`
+- R-SY7A-A6AQ → D26 — `project/design/D26.md`
+- R-SZF6-NY1F → D26 — `project/design/D26.md`
 - R-UZVS-S08C → D10 — `project/design/D10.md`
 - R-V13P-5RZ1 → D10 — `project/design/D10.md`
 - R-VKB6-SHHV → D15 — `project/design/D15.md` (adopted from root `project/design/D11.md`)
