@@ -98,6 +98,20 @@ func (s *Service) CallStore() *calls.Store {
 
 func (s *Service) nowStr() string { return s.now().UTC().Format(time.RFC3339Nano) }
 
+func (s *Service) rejectNameKeyCollision(ctx context.Context, promptID, nameKey string) error {
+	existing, err := s.store.GetPromptByNameKey(ctx, nameKey)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if existing.ID == promptID {
+		return nil
+	}
+	return validationErrf("prompt name conflicts with existing prompt %q using key %q", existing.Name, nameKey)
+}
+
 // CreateInput is the create payload. Triggers is the optional create-time sugar:
 // each canonical filter is applied via SetTrigger after the prompt row is
 // inserted (same validation; an invalid one rejects the whole create).
@@ -226,12 +240,18 @@ func (s *Service) Create(ctx context.Context, ownerID, ownerEmail string, in Cre
 			return Prompt{}, err
 		}
 	}
+	id := ids.NewULID()
+	nameKey := NameKey(in.Name, id)
+	if err := s.rejectNameKeyCollision(ctx, id, nameKey); err != nil {
+		return Prompt{}, err
+	}
 	now := s.nowStr()
 	p := Prompt{
-		ID:           ids.NewULID(),
+		ID:           id,
 		OwnerID:      ownerID,
 		OwnerEmail:   ownerEmail,
 		Name:         in.Name,
+		NameKey:      nameKey,
 		UserPrompt:   in.UserPrompt,
 		SystemPrompt: in.SystemPrompt,
 		Config:       cfg,
@@ -401,8 +421,13 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 	if err != nil {
 		return Prompt{}, err
 	}
+	nameKey := NameKey(in.Name, p.ID)
+	if err := s.rejectNameKeyCollision(ctx, p.ID, nameKey); err != nil {
+		return Prompt{}, err
+	}
 
 	p.Name = in.Name
+	p.NameKey = nameKey
 	p.UserPrompt = in.UserPrompt
 	p.SystemPrompt = in.SystemPrompt
 	p.Config = cfg

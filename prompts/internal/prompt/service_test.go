@@ -308,6 +308,69 @@ func mustCreate(t *testing.T, svc *Service, owner string) Prompt {
 	return sess
 }
 
+func TestCreateAndUpdateRejectGlobalNameKeyCollisions(t *testing.T) {
+	// R-RENL-WGEQ
+	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
+	svc, store, _, _ := newTestService(t)
+	ctx := context.Background()
+	create := func(owner, name string) (Prompt, error) {
+		return svc.Create(ctx, owner, owner, CreateInput{
+			Name: name, UserPrompt: "body", Config: validConfig(),
+		})
+	}
+
+	existing, err := create(ownerA, "Daily Digest")
+	if err != nil {
+		t.Fatalf("create existing prompt: %v", err)
+	}
+	if existing.NameKey != "daily-digest" {
+		t.Fatalf("existing name key = %q, want daily-digest", existing.NameKey)
+	}
+
+	_, err = create(ownerA, "daily digest!")
+	requireNameKeyCollision(t, err, existing.Name, existing.NameKey)
+	requirePromptCount(t, store, 1)
+
+	third, err := create(ownerA, "Weekly Digest")
+	if err != nil {
+		t.Fatalf("create third prompt: %v", err)
+	}
+	_, err = svc.Update(ctx, ownerA, third.ID, UpdateInput{
+		Name: "daily digest!", UserPrompt: "changed", Config: validConfig(),
+	})
+	requireNameKeyCollision(t, err, existing.Name, existing.NameKey)
+	unchanged, err := store.GetPrompt(ctx, ownerA, third.ID)
+	if err != nil {
+		t.Fatalf("read rejected update target: %v", err)
+	}
+	if unchanged.Name != "Weekly Digest" || unchanged.NameKey != "weekly-digest" || unchanged.UserPrompt != "body" {
+		t.Fatalf("rejected update changed prompt: %+v", unchanged)
+	}
+
+	_, err = create(ownerB, "DAILY---DIGEST")
+	requireNameKeyCollision(t, err, existing.Name, existing.NameKey)
+	requirePromptCount(t, store, 2)
+}
+
+func requireNameKeyCollision(t *testing.T, err error, existingName, nameKey string) {
+	t.Helper()
+	ve := requireValidationError(t, err)
+	if !strings.Contains(ve.Error(), existingName) || !strings.Contains(ve.Error(), nameKey) {
+		t.Fatalf("collision error = %q, want existing name %q and key %q", ve.Error(), existingName, nameKey)
+	}
+}
+
+func requirePromptCount(t *testing.T, store *Store, want int) {
+	t.Helper()
+	var got int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM prompts`).Scan(&got); err != nil {
+		t.Fatalf("count prompts: %v", err)
+	}
+	if got != want {
+		t.Fatalf("prompt count = %d, want %d", got, want)
+	}
+}
+
 // TestConcurrentRunsIsolatedSandboxes proves full concurrency (Phase 3): two
 // runs of the SAME prompt are both accepted (no ErrBusy / single-flight) and
 // each gets its own run-scoped directory + sandbox (runs/<run_id>/sandbox), so

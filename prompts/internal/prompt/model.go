@@ -71,10 +71,12 @@ type Executed struct {
 
 // Prompt mirrors the prompts table; Config is carried parsed.
 type Prompt struct {
-	ID           string `json:"id"`
-	OwnerID      string `json:"owner_id"`
-	OwnerEmail   string `json:"owner_email"`
-	Name         string `json:"name,omitempty"`
+	ID         string `json:"id"`
+	OwnerID    string `json:"owner_id"`
+	OwnerEmail string `json:"owner_email"`
+	Name       string `json:"name,omitempty"`
+	// NameKey is the globally unique repository key derived from Name.
+	NameKey      string `json:"name_key"`
 	UserPrompt   string `json:"user_prompt"`
 	SystemPrompt string `json:"system_prompt,omitempty"`
 	Config       Config `json:"config"`

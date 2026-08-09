@@ -68,9 +68,9 @@ func (s *Store) InsertPrompt(ctx context.Context, p Prompt) error {
 	}
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO prompts
-		   (id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.OwnerID, p.OwnerEmail, nullStr(p.Name), p.UserPrompt, nullStr(p.SystemPrompt),
+		   (id, owner_id, owner_email, name, name_key, user_prompt, system_prompt, config_json, source_path, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.OwnerID, p.OwnerEmail, nullStr(p.Name), nullStr(p.NameKey), p.UserPrompt, nullStr(p.SystemPrompt),
 		cfg, nullStr(p.SourcePath), p.CreatedAt, p.UpdatedAt,
 	)
 	if err != nil {
@@ -117,8 +117,7 @@ func (s *Store) UpsertPromptBySource(ctx context.Context, ownerID, ownerEmail, s
 // owned by another caller.
 func (s *Store) GetPrompt(ctx context.Context, owner, id string) (Prompt, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
-		   FROM prompts WHERE id = ? AND owner_id = ?`,
+		`SELECT `+promptSelectCols+` FROM prompts WHERE id = ? AND owner_id = ?`,
 		id, owner,
 	)
 	return scanPrompt(row)
@@ -129,9 +128,17 @@ func (s *Store) GetPrompt(ctx context.Context, owner, id string) (Prompt, error)
 // the prompt is gone.
 func (s *Store) GetPromptByID(ctx context.Context, id string) (Prompt, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
-		   FROM prompts WHERE id = ?`,
+		`SELECT `+promptSelectCols+` FROM prompts WHERE id = ?`,
 		id,
+	)
+	return scanPrompt(row)
+}
+
+// GetPromptByNameKey returns the global holder of a repository name key.
+func (s *Store) GetPromptByNameKey(ctx context.Context, nameKey string) (Prompt, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+promptSelectCols+` FROM prompts WHERE name_key = ?`,
+		nameKey,
 	)
 	return scanPrompt(row)
 }
@@ -139,8 +146,7 @@ func (s *Store) GetPromptByID(ctx context.Context, id string) (Prompt, error) {
 // ListPrompts returns all of the owner's prompts, newest first.
 func (s *Store) ListPrompts(ctx context.Context, owner string) ([]Prompt, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
-		   FROM prompts WHERE owner_id = ? ORDER BY created_at DESC, id DESC`,
+		`SELECT `+promptSelectCols+` FROM prompts WHERE owner_id = ? ORDER BY created_at DESC, id DESC`,
 		owner,
 	)
 	if err != nil {
@@ -181,8 +187,7 @@ func (s *Store) BrowsePrompts(ctx context.Context, f BrowseFilter) ([]Prompt, in
 	limit, offset := browsePage(f.Limit, f.Offset)
 	pageArgs := append(append([]any(nil), args...), limit, offset)
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, source_path, created_at, updated_at
-		   FROM prompts`+where+` ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`,
+		`SELECT `+promptSelectCols+` FROM prompts`+where+` ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
 	if err != nil {
@@ -213,9 +218,9 @@ func (s *Store) UpdatePrompt(ctx context.Context, owner string, p Prompt) error 
 	}
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE prompts
-		    SET name = ?, user_prompt = ?, system_prompt = ?, config_json = ?, updated_at = ?
+		    SET name = ?, name_key = ?, user_prompt = ?, system_prompt = ?, config_json = ?, updated_at = ?
 		  WHERE id = ? AND owner_id = ?`,
-		nullStr(p.Name), p.UserPrompt, nullStr(p.SystemPrompt), cfg, p.UpdatedAt,
+		nullStr(p.Name), nullStr(p.NameKey), p.UserPrompt, nullStr(p.SystemPrompt), cfg, p.UpdatedAt,
 		p.ID, owner,
 	)
 	if err != nil {
@@ -643,16 +648,19 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
+const promptSelectCols = `id, owner_id, owner_email, name, name_key, user_prompt, system_prompt, config_json, source_path, created_at, updated_at`
+
 func scanPrompt(sc scanner) (Prompt, error) {
 	var (
 		p       Prompt
 		name    sql.NullString
+		nameKey sql.NullString
 		sysProm sql.NullString
 		cfgJSON string
 		srcPath sql.NullString
 	)
 	err := sc.Scan(
-		&p.ID, &p.OwnerID, &p.OwnerEmail, &name, &p.UserPrompt, &sysProm,
+		&p.ID, &p.OwnerID, &p.OwnerEmail, &name, &nameKey, &p.UserPrompt, &sysProm,
 		&cfgJSON, &srcPath, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -662,6 +670,7 @@ func scanPrompt(sc scanner) (Prompt, error) {
 		return Prompt{}, fmt.Errorf("prompt: scan: %w", err)
 	}
 	p.Name = name.String
+	p.NameKey = nameKey.String
 	p.SystemPrompt = sysProm.String
 	p.SourcePath = srcPath.String
 	cfg, err := unmarshalConfig(cfgJSON)
