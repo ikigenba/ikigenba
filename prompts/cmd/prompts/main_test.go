@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -40,14 +41,11 @@ func TestResolveStorageRootsUsesRootedStateAndCacheDefaults(t *testing.T) {
 	if want := "/opt/prompts/state"; roots.stateDir != want {
 		t.Errorf("state directory = %q, want %q", roots.stateDir, want)
 	}
-	if want := "/opt/prompts/state/sandboxes"; filepath.Join(roots.stateDir, "sandboxes") != want {
-		t.Errorf("sandbox root = %q, want %q", filepath.Join(roots.stateDir, "sandboxes"), want)
+	if want := "/opt/prompts/state/runs"; roots.runsDir != want {
+		t.Errorf("runs directory = %q, want %q", roots.runsDir, want)
 	}
 	if want := "/opt/prompts/cache"; roots.cacheDir != want {
 		t.Errorf("cache directory = %q, want %q", roots.cacheDir, want)
-	}
-	if want := "/opt/prompts/cache/runs"; roots.runsDir != want {
-		t.Errorf("runs directory = %q, want %q", roots.runsDir, want)
 	}
 	if roots.cacheDir == roots.stateDir {
 		t.Errorf("cache directory %q must differ from state directory", roots.cacheDir)
@@ -75,7 +73,7 @@ func TestResolveStorageRootsHonorsExplicitPathOverrides(t *testing.T) {
 	if want := filepath.Dir(generationPath); roots.cacheDir != want {
 		t.Errorf("cache directory = %q, want override directory %q", roots.cacheDir, want)
 	}
-	if want := filepath.Join(filepath.Dir(generationPath), "runs"); roots.runsDir != want {
+	if want := filepath.Join(filepath.Dir(dbPath), "runs"); roots.runsDir != want {
 		t.Errorf("runs directory = %q, want %q", roots.runsDir, want)
 	}
 }
@@ -252,7 +250,7 @@ func TestAgentsTestsSectionDeclaresTestingFacts(t *testing.T) {
 		{"hermetic and composed layers", "The testing layers present are **hermetic** and **composed**."},
 		{"composed boot smokes", "The composed\n  tests are the boot smokes in `cmd/prompts/main_test.go`; every other test is\n  hermetic."},
 		{"no live layer", "There is no **live** layer"},
-		{"environmental preconditions", "There are no environmental preconditions beyond the Go toolchain."},
+		{"environmental preconditions", "The `git` binary is the one environmental precondition beyond the Go toolchain."},
 		{"development GOWORK mode", "Development uses the workspace"},
 		{"production GOWORK mode", "the production build uses `GOWORK=off`"},
 	}
@@ -322,8 +320,7 @@ func hasLiveBuildConstraint(source []byte) bool {
 }
 
 // R-4LKF-FB23
-func TestPromptsBootsWithDurableSandboxesAndRecreatedRunsCache(t *testing.T) {
-	// R-ZMJ5-6QEW
+func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	// R-ZNR1-KI5L
 	root := t.TempDir()
 	appRoot := filepath.Join(root, "prompts")
@@ -465,33 +462,50 @@ func TestPromptsBootsWithDurableSandboxesAndRecreatedRunsCache(t *testing.T) {
 	if filepath.Dir(generationPath) != cacheDir {
 		t.Fatalf("generation sidecar path %s is not under cache dir %s", generationPath, cacheDir)
 	}
-	runsDir := filepath.Join(cacheDir, "runs")
+	runsDir := filepath.Join(stateDir, "runs")
 	if info, err := os.Stat(runsDir); err != nil {
-		t.Fatalf("prompts did not create runs under cache/: %v", err)
+		t.Fatalf("prompts did not create runs under state/: %v", err)
 	} else if !info.IsDir() {
 		t.Fatalf("runs path is not a directory")
 	}
-	sandboxesDir := filepath.Join(stateDir, "sandboxes")
-	if info, err := os.Stat(sandboxesDir); err != nil {
-		t.Fatalf("prompts did not create sandboxes under state/: %v", err)
-	} else if !info.IsDir() {
-		t.Fatalf("sandboxes path is not a directory")
-	}
-
-	// Stop after the first successful startup, then leave a stale cache entry
-	// where the next boot must recreate the disposable runs tree.
+	// Stop after the first successful startup, then leave a durable run artifact.
 	stopProcess(cancel, done)
 	firstStopped = true
-	stale := filepath.Join(runsDir, "stale-run", "output.jsonl")
-	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+	runID := "durable-run"
+	outputPath := filepath.Join(runsDir, runID, "output.jsonl")
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 		t.Fatalf("mkdir stale run cache: %v", err)
 	}
-	if err := os.WriteFile(stale, []byte("stale\n"), 0o644); err != nil {
+	wantOutput := "{\"message\":\"durable\"}\n"
+	if err := os.WriteFile(outputPath, []byte(wantOutput), 0o644); err != nil {
 		t.Fatalf("write stale run cache: %v", err)
 	}
+	sandboxDir := filepath.Join(runsDir, runID, "sandbox")
+	gitCommand(t, "init", "-b", "main", sandboxDir)
+	if err := os.WriteFile(filepath.Join(sandboxDir, "prompt.md"), []byte("durable definition"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sandboxDir, "config.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, "-C", sandboxDir, "add", ".")
+	gitCommand(t, "-C", sandboxDir, "-c", "user.name=test", "-c", "user.email=test@localhost", "commit", "-m", "pinned")
+	definitionSHA := gitCommand(t, "-C", sandboxDir, "rev-parse", "HEAD")
+	gitCommand(t, "-C", sandboxDir, "checkout", "-b", "ikigenba/run-"+runID)
 
-	// A second composition-root startup against the same state must keep durable
-	// sandbox state separate while clearing the disposable runs cache.
+	conn, err := appkitdb.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = conn.Exec(`INSERT INTO runs
+		(id, prompt_id, owner_id, owner_email, prompt_name, status, started_at, log_path, definition_sha)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, runID, "deleted-prompt", "client-durable-smoke", "durable@example.com", "Durable", "succeeded", "2026-08-08T00:00:00Z", outputPath, definitionSHA)
+	if closeErr := conn.Close(); err != nil || closeErr != nil {
+		t.Fatalf("seed durable run: %v, close: %v", err, closeErr)
+	}
+	before := snapshotTree(t, filepath.Join(runsDir, runID))
+
+	// A second composition-root startup against the same state must preserve it.
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	var stdout2, stderr2 bytes.Buffer
 	cmd2 := exec.CommandContext(ctx2, run, "serve")
@@ -505,12 +519,55 @@ func TestPromptsBootsWithDurableSandboxesAndRecreatedRunsCache(t *testing.T) {
 	go func() { done2 <- cmd2.Wait() }()
 	defer stopProcess(cancel2, done2)
 	waitForHealth(t, port, done2, &stdout2, &stderr2)
-	if _, err := os.Stat(stale); !os.IsNotExist(err) {
-		t.Fatalf("stale run cache survived restart: %v", err)
+	if got, err := os.ReadFile(outputPath); err != nil || string(got) != wantOutput {
+		t.Fatalf("durable run artifact after restart = %q, %v", got, err)
 	}
-	if _, err := os.Stat(filepath.Join(stateDir, "runs")); !os.IsNotExist(err) {
-		t.Fatalf("legacy state/runs exists or could not be checked: %v", err)
+	if after := snapshotTree(t, filepath.Join(runsDir, runID)); !reflect.DeepEqual(after, before) {
+		t.Fatalf("run tree changed across restart\nbefore=%v\nafter=%v", before, after)
 	}
+	if got := gitCommand(t, "-C", sandboxDir, "rev-parse", "HEAD"); got != definitionSHA {
+		t.Fatalf("HEAD after restart = %s, want %s", got, definitionSHA)
+	}
+	if got := runOutputOverMCP(t, port, runID); got != wantOutput {
+		t.Fatalf("run_output after restart = %q, want %q", got, wantOutput)
+	}
+}
+
+func gitCommand(t *testing.T, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func snapshotTree(t *testing.T, root string) map[string]string {
+	t.Helper()
+	out := make(map[string]string)
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		out[rel] = string(data)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 // R-RVQ7-98SG

@@ -255,6 +255,7 @@ func TestDeleteArchivesDefinitionAndPreservesCompletedRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	svc.Version = nil
 	run, err := svc.Run(t.Context(), ownerA, p.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -262,6 +263,7 @@ func TestDeleteArchivesDefinitionAndPreservesCompletedRun(t *testing.T) {
 	if err := store.UpdateRunTerminal(t.Context(), run.ID, RunSucceeded, store.nowStr(), "", ""); err != nil {
 		t.Fatal(err)
 	}
+	svc.Version = plane
 	plane.calls = nil
 	if err := svc.Delete(t.Context(), ownerA, p.ID); err != nil {
 		t.Fatal(err)
@@ -284,7 +286,7 @@ func requireRunArtifactsWithoutCall(t *testing.T, store *Store, runsDir string, 
 	if got, err := store.GetRun(t.Context(), run.ID); err != nil || got.Status != RunSucceeded {
 		t.Fatalf("completed run = %+v, err=%v", got, err)
 	}
-	if executed, err := LoadFromRun(runsDir, run.ID); err != nil || executed.UserPrompt != "body" {
+	if executed, err := LoadFromRun(runsDir, run.ID, run.DefinitionSha); err != nil || executed.UserPrompt != "body" {
 		t.Fatalf("read surviving run input = %+v, err=%v", executed, err)
 	}
 }

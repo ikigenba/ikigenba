@@ -140,11 +140,11 @@ func newTestService(t *testing.T) (*Service, *Store, *sandbox.Manager, string) {
 	conn := openMigratedTestDB(t, ctx)
 
 	root := t.TempDir()
-	runsDir := filepath.Join(root, "cache", "runs")
+	runsDir := filepath.Join(root, "state", "runs")
 	if err := os.MkdirAll(runsDir, 0o755); err != nil {
 		t.Fatalf("create runs dir: %v", err)
 	}
-	sb, err := sandbox.New(filepath.Join(root, "state", "sandboxes"))
+	sb, err := sandbox.New(runsDir)
 	if err != nil {
 		t.Fatalf("sandbox.New: %v", err)
 	}
@@ -433,7 +433,7 @@ func TestConcurrentRunsIsolatedSandboxes(t *testing.T) {
 	}
 }
 
-func TestRunUsesDurableSandboxAndRecreatedRunsDir(t *testing.T) {
+func TestRunUsesOneDurableRunDirectory(t *testing.T) {
 	// R-4LKF-FB23
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	ctx := context.Background()
@@ -441,34 +441,24 @@ func TestRunUsesDurableSandboxAndRecreatedRunsDir(t *testing.T) {
 	conn := openMigratedTestDB(t, ctx)
 
 	root := t.TempDir()
-	stateSandboxes := filepath.Join(root, "state", "sandboxes")
-	cacheRuns := filepath.Join(root, "cache", "runs")
-	if err := os.MkdirAll(cacheRuns, 0o755); err != nil {
-		t.Fatalf("create cache runs dir: %v", err)
-	}
-	sb, err := sandbox.New(stateSandboxes)
+	runsDir := filepath.Join(root, "state", "runs")
+	sb, err := sandbox.New(runsDir)
 	if err != nil {
 		t.Fatalf("sandbox.New: %v", err)
 	}
 
 	store := NewStore(conn)
-	svc := NewService(store, sb, cacheRuns, &fakeRunner{})
+	svc := NewService(store, sb, runsDir, &fakeRunner{})
 	p := mustCreate(t, svc, ownerA)
 	run, err := svc.Run(ctx, ownerA, p.ID)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(cacheRuns, run.ID, "input", "user_prompt.txt")); err != nil {
-		t.Fatalf("run input was not materialized under cache/runs: %v", err)
+	if _, err := os.Stat(filepath.Join(runsDir, run.ID, "sandbox", ".git")); err != nil {
+		t.Fatalf("run clone was not materialized under state/runs: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(stateSandboxes, run.ID, "sandbox")); err != nil {
-		t.Fatalf("run sandbox was not materialized under state/sandboxes: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(cacheRuns, run.ID, "sandbox")); !os.IsNotExist(err) {
-		t.Fatalf("legacy cache/runs sandbox exists or errored: %v", err)
-	}
-	if got, want := run.LogPath, filepath.Join(cacheRuns, run.ID, "output.jsonl"); got != want {
+	if got, want := run.LogPath, filepath.Join(runsDir, run.ID, "output.jsonl"); got != want {
 		t.Fatalf("LogPath = %q, want %q", got, want)
 	}
 }
@@ -991,12 +981,12 @@ func TestHappyCRUD(t *testing.T) {
 	if _, err := svc.Get(ctx, ownerA, sess.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get after delete: want ErrNotFound, got %v", err)
 	}
-	// The run directory (sandbox + input/ + output) survives prompt deletion.
+	// The run directory and clone survive prompt deletion.
 	if _, err := os.Stat(filepath.Join(runsDir, run.ID)); err != nil {
 		t.Fatalf("run dir should survive prompt delete: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(runsDir, run.ID, "input")); err != nil {
-		t.Fatalf("run input/ dir should survive prompt delete: %v", err)
+	if _, err := os.Stat(filepath.Join(runsDir, run.ID, "sandbox", ".git")); err != nil {
+		t.Fatalf("run clone should survive prompt delete: %v", err)
 	}
 	// The run is STILL readable by the owner-scoped run readers (authorized via
 	// the run's denormalized owner_email, not the now-gone prompt).
@@ -1073,8 +1063,8 @@ func TestFsAndOutputOwnerScoping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunFsList A: %v", err)
 	}
-	if len(entries) != 1 || entries[0].Name != "f.txt" {
-		t.Fatalf("RunFsList: want [f.txt], got %+v", entries)
+	if len(entries) != 3 || entries[0].Name != "config.json" || entries[1].Name != "f.txt" || entries[2].Name != "prompt.md" {
+		t.Fatalf("RunFsList entries = %+v", entries)
 	}
 	got, err := svc.RunFsRead(ctx, ownerA, run.ID, "f.txt", 2, 1)
 	if err != nil {
@@ -1143,13 +1133,8 @@ func TestCancelIdempotent(t *testing.T) {
 	}
 }
 
-// TestRun_MaterializesFrozenInput_SurvivesMutation is the Phase 4 governing
-// invariant: Run pins the prompt's changeable execution inputs to
-// runs/<run_id>/input/ BEFORE spawn, and that on-disk record is what the run
-// executes. Mutating (Update) the prompt AFTER the run started must NOT change
-// the run's frozen input/ — the run reads from disk, not the live prompt row.
-// (Delete-survival of input/ is Phase 5's non-cascade change; Phase 2's Delete
-// still removes a prompt's run dirs, so it is not exercised here.)
+// TestRun_MaterializesFrozenInput_SurvivesMutation proves the pinned commit is
+// unchanged by later live-definition updates.
 func TestRun_MaterializesFrozenInput_SurvivesMutation(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	ctx := context.Background()
@@ -1170,24 +1155,9 @@ func TestRun_MaterializesFrozenInput_SurvivesMutation(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	inputDir := filepath.Join(runsDir, run.ID, "input")
-	readInput := func(name string) string {
-		b, err := os.ReadFile(filepath.Join(inputDir, name))
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		return string(b)
-	}
-
-	// input/ was written before spawn and pins the create-time definition.
-	if got := readInput("user_prompt.txt"); got != "ORIGINAL user prompt" {
-		t.Fatalf("user_prompt.txt = %q, want ORIGINAL", got)
-	}
-	if got := readInput("system_prompt.txt"); got != "ORIGINAL system prompt" {
-		t.Fatalf("system_prompt.txt = %q, want ORIGINAL", got)
-	}
-	if got := readInput("config.json"); !strings.Contains(got, testAnthropicModel) {
-		t.Fatalf("config.json = %q, want model %s", got, testAnthropicModel)
+	executed, err := LoadFromRun(runsDir, run.ID, run.DefinitionSha)
+	if err != nil || executed.UserPrompt != "ORIGINAL user prompt" || executed.SystemPrompt != "ORIGINAL system prompt" {
+		t.Fatalf("initial pinned definition = %+v, %v", executed, err)
 	}
 
 	// Mutate the prompt mid-run.
@@ -1200,13 +1170,9 @@ func TestRun_MaterializesFrozenInput_SurvivesMutation(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 
-	// The run's frozen input/ is unchanged by the Update — the run executes
-	// what was pinned, not the mutated prompt row.
-	if got := readInput("user_prompt.txt"); got != "ORIGINAL user prompt" {
-		t.Fatalf("after mutation user_prompt.txt = %q, want still ORIGINAL", got)
-	}
-	if got := readInput("system_prompt.txt"); got != "ORIGINAL system prompt" {
-		t.Fatalf("after mutation system_prompt.txt = %q, want still ORIGINAL", got)
+	executed, err = LoadFromRun(runsDir, run.ID, run.DefinitionSha)
+	if err != nil || executed.UserPrompt != "ORIGINAL user prompt" || executed.SystemPrompt != "ORIGINAL system prompt" {
+		t.Fatalf("pinned definition after mutation = %+v, %v", executed, err)
 	}
 }
 
@@ -1402,7 +1368,7 @@ func TestOwnerIDSnapshotsEmailAndScopesRunArtifacts(t *testing.T) {
 // TestDeletePromptRunStillReadable is the Phase 5 gate: create → run →
 // delete prompt → the run is STILL readable by the owner-scoped run readers
 // (RunGet/RunList/RunOutput/RunFs*), authorized via the run's denormalized
-// owner_email (the prompt is gone), and its input/ dir survives on disk. A
+// owner_email (the prompt is gone), and its clone survives on disk. A
 // foreign owner cannot read it.
 func TestDeletePromptRunStillReadable(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
@@ -1431,9 +1397,8 @@ func TestDeletePromptRunStillReadable(t *testing.T) {
 		t.Fatalf("prompt should be gone, got %v", err)
 	}
 
-	// input/ dir still on disk.
-	if _, err := os.Stat(filepath.Join(runsDir, run.ID, "input", "user_prompt.txt")); err != nil {
-		t.Fatalf("run input/ should survive prompt delete: %v", err)
+	if _, err := os.Stat(filepath.Join(runsDir, run.ID, "sandbox", ".git")); err != nil {
+		t.Fatalf("run clone should survive prompt delete: %v", err)
 	}
 
 	// RunGet — authorized via run.owner_email even though the prompt is gone.

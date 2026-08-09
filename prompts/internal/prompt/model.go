@@ -115,6 +115,7 @@ type Run struct {
 	UsageJSON     string `json:"usage_json,omitempty"`
 	Error         string `json:"error,omitempty"`
 	LogPath       string `json:"log_path"`
+	DefinitionSha string `json:"definition_sha"`
 
 	// Trigger context (persisted). Empty for a manual run.
 	TriggerSource  string `json:"trigger_source,omitempty"` // producer source id (cron|crm|ledger|dropbox|scripts|prompts)

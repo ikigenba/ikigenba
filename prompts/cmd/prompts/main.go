@@ -110,7 +110,7 @@ func resolveStorageRoots(getenv func(string) string) (storageRoots, error) {
 	return storageRoots{
 		stateDir: stateDir,
 		cacheDir: cacheDir,
-		runsDir:  filepath.Join(cacheDir, "runs"),
+		runsDir:  filepath.Join(stateDir, "runs"),
 	}, nil
 }
 
@@ -255,15 +255,8 @@ func registerRoutes(rt *appkit.Router) error {
 	// in-run suite tools). The suite root composes from IKIGENBA_ROOT, with the
 	// repository root as the development fallback.
 	manifestRoot := resolveManifestRoot(os.Getenv)
-	stateDir := storage.stateDir
 	runsDir := storage.runsDir
-	if err := os.RemoveAll(runsDir); err != nil {
-		return fmt.Errorf("prompts: clear runs cache: %w", err)
-	}
-	if err := os.MkdirAll(runsDir, 0o755); err != nil {
-		return fmt.Errorf("prompts: create runs cache: %w", err)
-	}
-	sb, err := sandbox.New(filepath.Join(stateDir, "sandboxes"))
+	sb, err := sandbox.New(runsDir)
 	if err != nil {
 		return fmt.Errorf("prompts: sandbox: %w", err)
 	}

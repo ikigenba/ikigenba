@@ -1,7 +1,7 @@
-// Package sandbox owns the per-run sandbox folders under the durable state tree.
+// Package sandbox owns the per-run clone workspaces under the durable state tree.
 //
-// Each run gets its own workspace <sandboxesDir>/<run_id>/sandbox/ which is the
-// agent's durable workspace for that run. This package has two jobs:
+// Each run gets its own workspace <runsDir>/<run_id>/sandbox/, a git clone that
+// is the agent's durable workspace for that run. This package has two jobs:
 //
 //  1. Lifecycle + confinement root for the engine: Create/Remove a
 //     run's sandbox folder and expose its absolute path (Root) as the
@@ -12,8 +12,8 @@
 //     sandbox folder, rejecting any path that escapes it. The sandbox is
 //     read-only from the foreground — the agent writes via the engine toolset.
 //
-// The Manager is rooted at the sandboxes dir; every id it takes is a run_id, and
-// resolves to <sandboxesDir>/<run_id>/sandbox.
+// The Manager is rooted at the runs dir; every id it takes is a run_id, and
+// resolves to <runsDir>/<run_id>/sandbox.
 package sandbox
 
 import (
@@ -32,7 +32,7 @@ var (
 	ErrPathEscape = errors.New("sandbox: path escape")
 )
 
-// Manager owns the <sandboxesDir>/<run_id>/sandbox folders under a base
+// Manager owns the <runsDir>/<run_id>/sandbox folders under a base
 // directory.
 type Manager struct {
 	base string
@@ -45,8 +45,8 @@ type Entry struct {
 	Size  int64  `json:"size"`
 }
 
-// New returns a Manager rooted at baseDir (the durable sandboxes dir, e.g.
-// "<state>/sandboxes"), creating baseDir if needed.
+// New returns a Manager rooted at baseDir (the durable runs dir, e.g.
+// "<state>/runs"), creating baseDir if needed.
 func New(baseDir string) (*Manager, error) {
 	if baseDir == "" {
 		return nil, fmt.Errorf("sandbox: base dir is empty")
@@ -86,7 +86,7 @@ func (m *Manager) Remove(id string) error {
 
 // Root returns the absolute confinement root for run id — the value the
 // engine's Dispatch consumes as sandboxRoot. It resolves to
-// <sandboxesDir>/<run_id>/sandbox and need not exist yet.
+// <runsDir>/<run_id>/sandbox and need not exist yet.
 //
 // If id is invalid (empty, contains a path separator or "..") Root returns
 // the empty string; callers should Create (which validates) first.
@@ -117,6 +117,9 @@ func (m *Manager) List(id, relPath string) ([]Entry, error) {
 	}
 	entries := make([]Entry, 0, len(infos))
 	for _, de := range infos {
+		if de.Name() == ".git" {
+			continue
+		}
 		fi, err := de.Info()
 		if err != nil {
 			return nil, fmt.Errorf("sandbox: stat %q: %w", de.Name(), err)
@@ -134,6 +137,10 @@ func (m *Manager) List(id, relPath string) ([]Entry, error) {
 // id's sandbox folder, starting at 1-based line offset (offset<=0 and limit<=0
 // mean "from start" / "no limit"). Escapes and not-a-file are rejected.
 func (m *Manager) Read(id, relPath string, offset, limit int) (string, error) {
+	clean := filepath.ToSlash(filepath.Clean(relPath))
+	if clean == ".git" || strings.HasPrefix(clean, ".git/") {
+		return "", fmt.Errorf("%w: %q", ErrNotFound, relPath)
+	}
 	root, err := m.promptRoot(id)
 	if err != nil {
 		return "", err

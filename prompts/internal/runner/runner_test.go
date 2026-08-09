@@ -230,8 +230,8 @@ func seedRunningWithConfig(t *testing.T, store *prompt.Store, sb *sandbox.Manage
 func TestExecute_UsesCatalogRouteWireModel(t *testing.T) {
 	// R-1X6X-E3KP
 	fp := &fakeProvider{}
-	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
+	runsDir := filepath.Dir(filepath.Dir(r.sandbox.Root("probe")))
 	_, run := seedRunningWithConfig(t, store, r.sandbox, runsDir, prompt.Config{
 		Provider: "openrouter",
 		Model:    "deepseek-v4-flash",
@@ -708,8 +708,8 @@ func TestRunBoundaryRootsOnceAndArchivesBuiltinToolUse(t *testing.T) {
 		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "toolu_boundary", Name: "Bash", Input: json.RawMessage(`{"command":"true"}`)}),
 		scriptedTextRoundTrip("done"),
 	}}
-	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
+	runsDir := filepath.Dir(filepath.Dir(r.sandbox.Root("probe")))
 	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer { return nil }
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)

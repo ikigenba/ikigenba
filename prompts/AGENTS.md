@@ -37,7 +37,7 @@ spec contracts and `$ralph` for the unattended build workflow.
 - The testing layers present are **hermetic** and **composed**. The composed
   tests are the boot smokes in `cmd/prompts/main_test.go`; every other test is
   hermetic. There is no **live** layer and no tree-local manual layer.
-- There are no environmental preconditions beyond the Go toolchain.
+- The `git` binary is the one environmental precondition beyond the Go toolchain.
 - Development uses the workspace; the production build uses `GOWORK=off`
   (agentkit via its tagged module, appkit/eventplane/registry via committed
   `replace`). Import guards assert the service never depends on a retired local

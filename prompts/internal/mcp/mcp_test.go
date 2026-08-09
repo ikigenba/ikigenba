@@ -541,11 +541,16 @@ func TestRunFsListReturnsLiveContentURLs(t *testing.T) {
 	if err := json.Unmarshal([]byte(resultText(t, listed)), &rootOut); err != nil {
 		t.Fatalf("decode root list: %v", err)
 	}
-	if len(rootOut.Entries) != 1 || rootOut.Entries[0]["name"] != "reports" {
+	if len(rootOut.Entries) != 3 || rootOut.Entries[2]["name"] != "reports" {
 		t.Fatalf("root entries = %#v", rootOut.Entries)
 	}
-	if _, ok := rootOut.Entries[0]["content_url"]; ok {
-		t.Fatalf("directory entry has content_url: %#v", rootOut.Entries[0])
+	if _, ok := rootOut.Entries[2]["content_url"]; ok {
+		t.Fatalf("directory entry has content_url: %#v", rootOut.Entries[2])
+	}
+	for _, entry := range rootOut.Entries {
+		if entry["name"] == ".git" {
+			t.Fatal("run_fs_list exposed .git")
+		}
 	}
 
 	listed = call(t, h, "run_fs_list", map[string]any{"run_id": runOut.RunID, "path": "reports"})
@@ -924,7 +929,7 @@ func TestDispatchRoundtrip(t *testing.T) {
 		t.Fatalf("run_list: %+v", rlOut.Runs)
 	}
 
-	// run_fs_list on the now-created (empty) run sandbox returns [].
+	// run_fs_list returns the definition files from the run clone, excluding .git.
 	fsRes := call(t, h, "run_fs_list", map[string]any{"run_id": runID})
 	var fsOut struct {
 		Entries []sandbox.Entry `json:"entries"`
@@ -932,8 +937,8 @@ func TestDispatchRoundtrip(t *testing.T) {
 	if err := json.Unmarshal([]byte(resultText(t, fsRes)), &fsOut); err != nil {
 		t.Fatalf("decode run_fs_list: %v", err)
 	}
-	if len(fsOut.Entries) != 0 {
-		t.Fatalf("run_fs_list empty: got %+v", fsOut.Entries)
+	if len(fsOut.Entries) != 2 || fsOut.Entries[0].Name != "config.json" || fsOut.Entries[1].Name != "prompt.md" {
+		t.Fatalf("run_fs_list definition files: got %+v", fsOut.Entries)
 	}
 
 	// write a file into the run's sandbox dir, then run_fs_read returns it.

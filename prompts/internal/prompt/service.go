@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"reflect"
@@ -494,9 +496,44 @@ func (s *Service) LoadFromPrompt(ctx context.Context, ownerID, promptID string) 
 	return Executed{Name: p.Name, UserPrompt: definition.UserPrompt, SystemPrompt: definition.SystemPrompt, Config: cfg}, nil
 }
 
-// LoadFromRun reads a run's frozen prompt definition directly from input/.
+// LoadFromRun reads a run's frozen prompt definition from its clone's pinned commit.
 // Authorization is intentionally outside this package-level loader.
-func LoadFromRun(runsDir, runID string) (Executed, error) {
+func LoadFromRun(runsDir, runID, sha string) (Executed, error) {
+	if _, err := os.Stat(filepath.Join(runsDir, runID, "sandbox", ".git")); sha == "" || os.IsNotExist(err) {
+		return loadLegacyRunInput(runsDir, runID)
+	}
+	sandboxDir := filepath.Join(runsDir, runID, "sandbox")
+	read := func(name string, optional bool) ([]byte, error) {
+		cmd := exec.Command("git", "-C", sandboxDir, "show", sha+":"+name)
+		b, err := cmd.Output()
+		if err != nil {
+			if optional {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("prompt: read run %s at %s: %w", name, sha, err)
+		}
+		return b, nil
+	}
+	userPrompt, err := read("prompt.md", false)
+	if err != nil {
+		return Executed{}, err
+	}
+	systemPrompt, err := read("system.md", true)
+	if err != nil {
+		return Executed{}, err
+	}
+	configJSON, err := read("config.json", false)
+	if err != nil {
+		return Executed{}, err
+	}
+	var cfg Config
+	if err := json.Unmarshal(configJSON, &cfg); err != nil {
+		return Executed{}, fmt.Errorf("prompt: parse run config: %w", err)
+	}
+	return Executed{UserPrompt: string(userPrompt), SystemPrompt: string(systemPrompt), Config: cfg}, nil
+}
+
+func loadLegacyRunInput(runsDir, runID string) (Executed, error) {
 	inputDir := filepath.Join(runsDir, runID, "input")
 	read := func(name string) ([]byte, error) {
 		b, err := os.ReadFile(filepath.Join(inputDir, name))
@@ -504,10 +541,6 @@ func LoadFromRun(runsDir, runID string) (Executed, error) {
 			return nil, fmt.Errorf("prompt: read run %s: %w", name, err)
 		}
 		return b, nil
-	}
-	name, err := os.ReadFile(filepath.Join(inputDir, "name.txt"))
-	if err != nil && !os.IsNotExist(err) {
-		return Executed{}, fmt.Errorf("prompt: read run name.txt: %w", err)
 	}
 	userPrompt, err := read("user_prompt.txt")
 	if err != nil {
@@ -525,7 +558,7 @@ func LoadFromRun(runsDir, runID string) (Executed, error) {
 	if err := json.Unmarshal(configJSON, &cfg); err != nil {
 		return Executed{}, fmt.Errorf("prompt: parse run config: %w", err)
 	}
-	return Executed{Name: string(name), UserPrompt: string(userPrompt), SystemPrompt: string(systemPrompt), Config: cfg}, nil
+	return Executed{UserPrompt: string(userPrompt), SystemPrompt: string(systemPrompt), Config: cfg}, nil
 }
 
 // detail enriches a Prompt with its derived run summary (RunningCount +
@@ -639,35 +672,18 @@ func (s *Service) Run(ctx context.Context, ownerID, id string) (Run, error) {
 	return s.startRun(ctx, p, "", "", "", "", nil)
 }
 
-// materializeInput pins the prompt's changeable execution inputs to
-// runs/<run_id>/input/ BEFORE spawn: user_prompt.txt, system_prompt.txt (empty
-// file when none), and config.json (the resolved Config). Once written, this is
-// the record of exactly what the run executes — the runner reads from here, so
-// editing or deleting the prompt mid-run cannot change what the run runs. For an
-// event-triggered run it also writes event.json (the triggering event envelope);
-// that file is absent on a manual run.
-func (s *Service) materializeInput(run Run, executed Executed, payload []byte) error {
+// materializeInput writes only an event-triggered run's event envelope. Prompt
+// definition inputs live at the pinned commit in the run's clone; manual runs
+// therefore have no input directory.
+func (s *Service) materializeInput(run Run, _ Executed, payload []byte) error {
+	if run.TriggerSource == "" {
+		return nil
+	}
 	inputDir := filepath.Join(s.runsDir, run.ID, "input")
 	if err := os.MkdirAll(inputDir, 0o755); err != nil {
 		return fmt.Errorf("prompt: create run input dir: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(inputDir, "name.txt"), []byte(executed.Name), 0o644); err != nil {
-		return fmt.Errorf("prompt: write name: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(inputDir, "user_prompt.txt"), []byte(executed.UserPrompt), 0o644); err != nil {
-		return fmt.Errorf("prompt: write user_prompt: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(inputDir, "system_prompt.txt"), []byte(executed.SystemPrompt), 0o644); err != nil {
-		return fmt.Errorf("prompt: write system_prompt: %w", err)
-	}
-	cfgJSON, err := json.Marshal(executed.Config)
-	if err != nil {
-		return fmt.Errorf("prompt: marshal run config: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(inputDir, "config.json"), cfgJSON, 0o644); err != nil {
-		return fmt.Errorf("prompt: write config: %w", err)
-	}
-	if run.TriggerSource != "" {
+	{
 		env := eventEnvelope{Source: run.TriggerSource, Kind: run.TriggerKind, Subject: run.TriggerSubject, EventID: run.TriggerEventID, Payload: json.RawMessage(payload)}
 		if len(env.Payload) == 0 {
 			env.Payload = json.RawMessage("null")
@@ -683,11 +699,86 @@ func (s *Service) materializeInput(run Run, executed Executed, payload []byte) e
 	return nil
 }
 
+func runGit(ctx context.Context, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func credentialCloneURL(credential version.Credential) string {
+	if credential.Username == "" && credential.Password == "" {
+		return credential.CloneURL
+	}
+	u, err := url.Parse(credential.CloneURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return credential.CloneURL
+	}
+	u.User = url.UserPassword(credential.Username, credential.Password)
+	return u.String()
+}
+
+func (s *Service) materializeWorkspace(ctx context.Context, p Prompt, run Run, executed Executed) (Run, error) {
+	root := s.sandbox.Root(run.ID)
+	if s.Version == nil {
+		if err := s.sandbox.Create(run.ID); err != nil {
+			return Run{}, err
+		}
+		if err := runGit(ctx, "-C", root, "init", "-b", "main"); err != nil {
+			return Run{}, err
+		}
+		files, err := definitionFiles(executed.UserPrompt, executed.SystemPrompt, executed.Config)
+		if err != nil {
+			return Run{}, err
+		}
+		for _, file := range files {
+			if err := os.WriteFile(filepath.Join(root, file.Path), file.Data, 0o644); err != nil {
+				return Run{}, err
+			}
+		}
+		if err := runGit(ctx, "-C", root, "add", "."); err != nil {
+			return Run{}, err
+		}
+		if err := runGit(ctx, "-C", root, "-c", "user.name=prompts:"+p.ID, "-c", "user.email=prompts@localhost", "commit", "-m", "run definition"); err != nil {
+			return Run{}, err
+		}
+		out, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD").Output()
+		if err != nil {
+			return Run{}, err
+		}
+		run.DefinitionSha = strings.TrimSpace(string(out))
+		if err := runGit(ctx, "-C", root, "checkout", "-b", "ikigenba/run-"+run.ID, run.DefinitionSha); err != nil {
+			return Run{}, err
+		}
+	} else {
+		credential, err := s.Version.RunToken(ctx, p.NameKey, run.ID, time.Hour)
+		if err != nil {
+			return Run{}, versionPlaneError("mint run credential", err)
+		}
+		if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
+			return Run{}, err
+		}
+		if err := runGit(ctx, "clone", "--no-checkout", credentialCloneURL(credential), root); err != nil {
+			return Run{}, versionPlaneError("clone run workspace", err)
+		}
+		if err := runGit(ctx, "-C", root, "checkout", "-b", "ikigenba/run-"+run.ID, run.DefinitionSha); err != nil {
+			return Run{}, versionPlaneError("checkout run workspace", err)
+		}
+	}
+	if err := runGit(ctx, "-C", root, "config", "user.name", "prompts:"+p.ID); err != nil {
+		return Run{}, err
+	}
+	if err := runGit(ctx, "-C", root, "config", "user.email", "prompts@localhost"); err != nil {
+		return Run{}, err
+	}
+	return run, nil
+}
+
 // startRun is the shared run-start path for Run (manual) and RunByEvent (event).
-// It builds the run row (denormalizing owner_email / prompt_name and the
-// trigger context), materializes input/ from the prompt's CURRENT definition,
-// inserts the row, creates the durable run-scoped sandbox, and hands off to the
-// runner — which executes from disk, never from p.
+// It resolves and records the repository head, inserts the run row, clones and
+// checks out that exact commit on the run branch, writes event.json when needed,
+// and hands the pinned workspace to the runner.
 type eventEnvelope struct {
 	Source  string          `json:"source"`
 	Kind    string          `json:"kind"`
@@ -697,9 +788,19 @@ type eventEnvelope struct {
 }
 
 func (s *Service) startRun(ctx context.Context, p Prompt, source, kind, subject, eventID string, payload []byte) (Run, error) {
-	executed, err := s.LoadFromPrompt(ctx, p.OwnerID, p.ID)
-	if err != nil {
-		return Run{}, err
+	var executed Executed
+	sha := ""
+	var err error
+	if s.Version != nil {
+		sha, err = s.Version.Head(ctx, p.NameKey)
+		if err != nil {
+			return Run{}, versionPlaneError("resolve head", err)
+		}
+	} else {
+		executed, err = s.LoadFromPrompt(ctx, p.OwnerID, p.ID)
+		if err != nil {
+			return Run{}, err
+		}
 	}
 	runID := ids.NewULID()
 	corrID := correlation.FromContext(ctx)
@@ -721,18 +822,25 @@ func (s *Service) startRun(ctx context.Context, p Prompt, source, kind, subject,
 		TriggerKind:    kind,
 		TriggerSubject: subject,
 		TriggerEventID: eventID,
+		DefinitionSha:  sha,
 	}
-	// Pin the execution inputs to disk BEFORE the row exists / spawn happens.
-	if err := s.materializeInput(run, executed, payload); err != nil {
-		return Run{}, err
+	if s.Version == nil {
+		run, err = s.materializeWorkspace(ctx, p, run, executed)
+		if err != nil {
+			return Run{}, fmt.Errorf("prompt: materialize run workspace: %w", err)
+		}
 	}
 	if err := s.store.InsertRun(ctx, run); err != nil {
 		return Run{}, err
 	}
-	// Create the durable run-scoped sandbox (state/sandboxes/<run_id>/sandbox)
-	// before spawn.
-	if err := s.sandbox.Create(runID); err != nil {
-		return Run{}, fmt.Errorf("prompt: create run sandbox: %w", err)
+	if s.Version != nil {
+		run, err = s.materializeWorkspace(ctx, p, run, executed)
+		if err != nil {
+			return Run{}, fmt.Errorf("prompt: materialize run workspace: %w", err)
+		}
+	}
+	if err := s.materializeInput(run, executed, payload); err != nil {
+		return Run{}, err
 	}
 	s.runner.Spawn(run)
 	return run, nil
@@ -852,10 +960,15 @@ func (s *Service) RunList(ctx context.Context, ownerID, promptID string, correla
 
 // RunExecuted returns the frozen prompt definition for an owner-scoped run.
 func (s *Service) RunExecuted(ctx context.Context, ownerID, runID string) (Executed, error) {
-	if _, err := s.runForOwner(ctx, ownerID, runID); err != nil {
+	run, err := s.runForOwner(ctx, ownerID, runID)
+	if err != nil {
 		return Executed{}, err
 	}
-	return LoadFromRun(s.runsDir, runID)
+	executed, err := LoadFromRun(s.runsDir, runID, run.DefinitionSha)
+	if err == nil {
+		executed.Name = run.PromptName
+	}
+	return executed, err
 }
 
 // RunGet returns a single run by run_id, owner-scoped via the run's owner_email

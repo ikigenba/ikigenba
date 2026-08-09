@@ -156,11 +156,10 @@ func (r *Runner) execute(run prompt.Run) {
 	}
 	defer logFile.Close()
 
-	// Read the run's pinned execution inputs from runs/<run.ID>/input/ — NOT
-	// from any live Prompt. This folder was written by the service at spawn and
-	// is the immutable record of exactly what this run executes.
+	// Read the run's definition from the pinned commit in its clone — never from
+	// the mutable working tree or live prompt.
 	runsDir := filepath.Dir(filepath.Dir(run.LogPath))
-	executed, err := prompt.LoadFromRun(runsDir, run.ID)
+	executed, err := prompt.LoadFromRun(runsDir, run.ID, run.DefinitionSha)
 	if err != nil {
 		finish(prompt.RunFailed, "", "load run prompt: "+err.Error())
 		return

@@ -301,11 +301,11 @@ func (s *Store) InsertRun(ctx context.Context, r Run) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO runs
 		   (id, correlation_id, prompt_id, owner_id, owner_email, prompt_name, status, started_at,
-		    ended_at, usage_json, error, trigger_source, trigger_kind, trigger_subject, trigger_event_id, log_path)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		    ended_at, usage_json, error, trigger_source, trigger_kind, trigger_subject, trigger_event_id, log_path, definition_sha)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.CorrelationID, r.PromptID, r.OwnerID, r.OwnerEmail, nullStr(r.PromptName), r.Status, r.StartedAt,
 		nullStr(r.EndedAt), nullStr(r.UsageJSON), nullStr(r.Error),
-		nullStr(r.TriggerSource), nullStr(r.TriggerKind), nullStr(r.TriggerSubject), nullStr(r.TriggerEventID), r.LogPath,
+		nullStr(r.TriggerSource), nullStr(r.TriggerKind), nullStr(r.TriggerSubject), nullStr(r.TriggerEventID), r.LogPath, nullStr(r.DefinitionSha),
 	)
 	if err != nil {
 		return fmt.Errorf("prompt: insert run: %w", err)
@@ -316,7 +316,7 @@ func (s *Store) InsertRun(ctx context.Context, r Run) error {
 // runSelectCols is the column list shared by the run-read queries, in
 // scanRun's order.
 const runSelectCols = `id, correlation_id, prompt_id, owner_id, owner_email, prompt_name, status, started_at,
-	        ended_at, usage_json, error, trigger_source, trigger_kind, trigger_subject, trigger_event_id, log_path`
+	        ended_at, usage_json, error, trigger_source, trigger_kind, trigger_subject, trigger_event_id, log_path, definition_sha`
 
 // GetRun returns a run by its run_id, or ErrNotFound when absent. It is NOT
 // owner-scoped here (the service scopes via the run's denormalized owner_email,
@@ -746,10 +746,11 @@ func scanRun(sc scanner) (Run, error) {
 		trigKind    sql.NullString
 		trigSubject sql.NullString
 		trigEventID sql.NullString
+		definition  sql.NullString
 	)
 	err := sc.Scan(
 		&r.ID, &r.CorrelationID, &r.PromptID, &r.OwnerID, &r.OwnerEmail, &promptName, &r.Status, &r.StartedAt,
-		&endedAt, &usage, &errMsg, &trigSource, &trigKind, &trigSubject, &trigEventID, &r.LogPath,
+		&endedAt, &usage, &errMsg, &trigSource, &trigKind, &trigSubject, &trigEventID, &r.LogPath, &definition,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Run{}, ErrNotFound
@@ -765,6 +766,7 @@ func scanRun(sc scanner) (Run, error) {
 	r.TriggerKind = trigKind.String
 	r.TriggerSubject = trigSubject.String
 	r.TriggerEventID = trigEventID.String
+	r.DefinitionSha = definition.String
 	return r, nil
 }
 
