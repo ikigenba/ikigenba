@@ -11,7 +11,6 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 70
 
-- Phase 61 ⬜ realizes D52 — `internal/version`: the version-plane client
 - Phase 62 ⬜ realizes D51 — the name key: slug, schema, and uniqueness
 - Phase 63 ⬜ realizes D53 — the write path commits: create, update, import, rename, delete
 - Phase 64 ⬜ realizes D54 — seeding: the one-time definition backfill at boot
