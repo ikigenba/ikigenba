@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -25,6 +26,7 @@ import (
 	"appkit/manifest"
 	appkitserver "appkit/server"
 	appkittelemetry "appkit/telemetry"
+	appkitweb "appkit/web"
 	"registry"
 	"telemetry/internal/db"
 	"telemetry/internal/ingest"
@@ -211,6 +213,8 @@ func TestServeBootsFromInstallLayout(t *testing.T) {
 	libexecDir := filepath.Join(installRoot, "libexec")
 	binDir := filepath.Join(installRoot, "bin")
 	versionEtcDir := filepath.Join(installRoot, "etc", version)
+	shareDir := filepath.Join(installRoot, "share")
+	shareVersionDir := filepath.Join(shareDir, version)
 	for _, dir := range []string{stateDir, cacheDir, libexecDir, binDir, versionEtcDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("create install directory %s: %v", dir, err)
@@ -236,6 +240,12 @@ func TestServeBootsFromInstallLayout(t *testing.T) {
 	currentPath := filepath.Join(installRoot, "etc", "current")
 	if err := os.Symlink(version, currentPath); err != nil {
 		t.Fatalf("link etc/current: %v", err)
+	}
+	if err := os.CopyFS(shareVersionDir, os.DirFS(filepath.Join(workspaceRoot, "share"))); err != nil {
+		t.Fatalf("stage share tree: %v", err)
+	}
+	if err := os.Symlink(version, filepath.Join(shareDir, "current")); err != nil {
+		t.Fatalf("link share/current: %v", err)
 	}
 
 	resolvedRun, err := filepath.EvalSymlinks(runPath)
@@ -467,6 +477,162 @@ func TestMCPRouteAllowsOnlyPOSTOverComposedServer(t *testing.T) {
 	}
 }
 
+func TestComposedLandingRendersCanonicalTelemetryPage(t *testing.T) {
+	baseURL := startComposedWebService(t, "phase-14-test")
+	response, err := (&http.Client{Timeout: 5 * time.Second}).Get(baseURL + "/")
+	if err != nil {
+		t.Fatalf("GET composed landing page: %v", err)
+	}
+	defer response.Body.Close()
+	got, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read composed landing page: %v", err)
+	}
+
+	canonical, err := os.ReadFile(filepath.Join("..", "..", "..", "crm", "share", "www", "landing.html"))
+	if err != nil {
+		t.Fatalf("read canonical CRM landing template: %v", err)
+	}
+	wantTemplate := replaceCanonicalLandingText(t, string(canonical))
+	committed, err := os.ReadFile(filepath.Join("..", "..", "share", "www", "landing.html"))
+	if err != nil {
+		t.Fatalf("read telemetry landing template: %v", err)
+	}
+	if !bytes.Equal(committed, []byte(wantTemplate)) {
+		t.Fatal("telemetry landing template differs from canonical CRM template beyond the three approved text values")
+	}
+
+	parsed, err := template.New("landing.html").Parse(wantTemplate)
+	if err != nil {
+		t.Fatalf("parse expected landing template: %v", err)
+	}
+	var want bytes.Buffer
+	if err := parsed.Execute(&want, struct {
+		Service string
+		Version string
+	}{Service: "telemetry", Version: "phase-14-test"}); err != nil {
+		t.Fatalf("render expected landing page: %v", err)
+	}
+
+	// R-6B96-6B5S
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("GET / status = %d, want 200; body=%q", response.StatusCode, got)
+	}
+	if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/html") {
+		t.Errorf("GET / Content-Type = %q, want HTML", contentType)
+	}
+	for _, text := range []string{"<h1 id=\"page-title\">telemetry</h1>", ">phase-14-test</dd>", "Forensic record store", `<a class="home" href="/">Home</a>`} {
+		if !bytes.Contains(got, []byte(text)) {
+			t.Errorf("GET / body missing %q", text)
+		}
+	}
+	if !bytes.Equal(got, want.Bytes()) {
+		t.Fatalf("served landing bytes differ from the canonical telemetry rendering\ngot:\n%s\nwant:\n%s", got, want.Bytes())
+	}
+}
+
+func TestComposedStaticHandlerServesCommittedAssets(t *testing.T) {
+	baseURL := startComposedWebService(t, "phase-14-assets")
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// R-6CH2-K2WH
+	for _, tc := range []struct {
+		path        string
+		contentType string
+	}{
+		{path: "/static/tokens.css", contentType: "text/css"},
+		{path: "/static/fonts/space-grotesk.woff2"},
+	} {
+		response, err := client.Get(baseURL + tc.path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", tc.path, err)
+		}
+		body, readErr := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if readErr != nil {
+			t.Fatalf("read %s: %v", tc.path, readErr)
+		}
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want 200", tc.path, response.StatusCode)
+		}
+		if tc.contentType != "" && !strings.HasPrefix(response.Header.Get("Content-Type"), tc.contentType) {
+			t.Errorf("GET %s Content-Type = %q, want prefix %q", tc.path, response.Header.Get("Content-Type"), tc.contentType)
+		}
+		committed, err := os.ReadFile(filepath.Join("..", "..", "share", "www", filepath.FromSlash(strings.TrimPrefix(tc.path, "/"))))
+		if err != nil {
+			t.Fatalf("read committed asset %s: %v", tc.path, err)
+		}
+		if !bytes.Equal(body, committed) {
+			t.Errorf("GET %s bytes differ from committed asset", tc.path)
+		}
+	}
+}
+
+func replaceCanonicalLandingText(t *testing.T, canonical string) string {
+	t.Helper()
+	replacements := [][2]string{
+		{"<title>{{.Service}} · crm</title>", "<title>{{.Service}} · telemetry</title>"},
+		{`<div class="eyebrow">Contacts CRM</div>`, `<div class="eyebrow">Forensic record store</div>`},
+		{"<p>Crm keeps contacts, organizations, and deals in SQLite and publishes typed contact events to the event plane.</p>", "<p>Telemetry keeps the box's audit trail: who did what, when, and in what order across every service — MCP calls, HTTP requests, events, and lifecycle.</p>"},
+	}
+	for _, replacement := range replacements {
+		if count := strings.Count(canonical, replacement[0]); count != 1 {
+			t.Fatalf("canonical template contains source text %q %d times, want 1", replacement[0], count)
+		}
+		canonical = strings.Replace(canonical, replacement[0], replacement[1], 1)
+	}
+	return canonical
+}
+
+func startComposedWebService(t *testing.T, version string) string {
+	t.Helper()
+	spec := telemetrySpec()
+	if !spec.WWW {
+		t.Fatal("telemetry Spec.WWW = false, so a missing asset tree would not fail boot")
+	}
+	site, err := appkitweb.Load(filepath.Join("..", "..", "share", "www"))
+	if err != nil {
+		t.Fatalf("load real share/www tree: %v", err)
+	}
+	database, err := appkitdb.Open(filepath.Join(t.TempDir(), "telemetry.db"))
+	if err != nil {
+		t.Fatalf("open real sqlite database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	migrations, err := appkitdb.LoadMigrations(db.FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if err := appkitdb.Migrate(context.Background(), database, migrations); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen on loopback: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	httpServer, err := appkitserver.New(appkitserver.Options{
+		Addr: listener.Addr().String(), Logger: logger,
+		ResourceID: "https://example.test/srv/telemetry/", AuthServer: "https://example.test/",
+		Version: version, Service: spec.App, Health: spec.Health, DB: database,
+		Register: spec.Handlers, RecordExclude: spec.TelemetryExclude, WWW: site,
+	})
+	if err != nil {
+		_ = listener.Close()
+		t.Fatalf("compose web server: %v", err)
+	}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- httpServer.Serve(listener) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(ctx)
+		<-serveDone
+	})
+	return "http://" + listener.Addr().String()
+}
+
 func TestIngestPathIsExactlyExcludedAndPostsNeverRecordThemselves(t *testing.T) {
 	spec := telemetrySpec()
 	// R-VOXX-062N
@@ -614,6 +780,10 @@ func assertPortAbsentFromGoSources(t *testing.T, port int) {
 
 func assertServeHonorsPortOverride(t *testing.T) {
 	t.Helper()
+	wwwPath, err := filepath.Abs(filepath.Join("..", "..", "share", "www"))
+	if err != nil {
+		t.Fatalf("resolve share/www path: %v", err)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("allocate ephemeral port: %v", err)
@@ -630,6 +800,7 @@ func assertServeHonorsPortOverride(t *testing.T) {
 		"TELEMETRY_IP=127.0.0.1",
 		"TELEMETRY_PORT="+strconv.Itoa(port),
 		"TELEMETRY_DB_PATH="+filepath.Join(t.TempDir(), "telemetry.db"),
+		"TELEMETRY_WWW_PATH="+wwwPath,
 		"TELEMETRY_ENABLED=false",
 	)
 	var stderr bytes.Buffer

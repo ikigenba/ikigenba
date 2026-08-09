@@ -122,6 +122,79 @@ func TestNginxCorrelationIDIsOverwrittenAtBothPublicEdges(t *testing.T) {
 	}
 }
 
+func TestNginxLandingIsExactSessionGatedAndForwardsCapturedIdentity(t *testing.T) {
+	landing := requireNginxLocation(t, parseNginxLocations(t, readNginxFragment(t)), "/srv/telemetry/", true)
+
+	// R-67LH-0ZXP
+	if countDirective(landing.body, `auth_request\s+/_session-authn;`) != 1 {
+		t.Fatalf("landing session auth_request count = %d, want 1", countDirective(landing.body, `auth_request\s+/_session-authn;`))
+	}
+	if countDirective(landing.body, `auth_request\s+/_authn;`) != 0 {
+		t.Fatal("landing is bearer-gated instead of session-gated")
+	}
+	if countDirective(landing.body, `error_page\s+401\s+=\s+@login_bounce;`) != 1 {
+		t.Fatal("landing does not bounce an unauthenticated browser to login")
+	}
+	if countDirective(landing.body, `proxy_pass\s+http://127\.0\.0\.1:[0-9]+/;`) != 1 {
+		t.Fatal("landing does not proxy exactly once to the upstream root path")
+	}
+
+	sets := authRequestVariables(landing.body)
+	for _, header := range []string{"X-Owner-Email", "X-Owner-Id", "X-Owner-Name", "X-Owner-Picture"} {
+		values := proxyHeaderValues(landing.body, header)
+		if len(values) != 1 {
+			t.Errorf("proxy_set_header %s values = %v, want exactly one", header, values)
+			continue
+		}
+		if !strings.HasPrefix(values[0], "$telemetry_session_") {
+			t.Errorf("proxy_set_header %s source = %q, want a telemetry session variable", header, values[0])
+			continue
+		}
+		sources := sets[values[0]]
+		wantSource := "$upstream_http_" + strings.ToLower(strings.ReplaceAll(header, "-", "_"))
+		if len(sources) != 1 || sources[0] != wantSource {
+			t.Errorf("proxy_set_header %s source %q is populated from %v, want exactly %q", header, values[0], sources, wantSource)
+		}
+	}
+	assertCapturedCorrelationHeader(t, landing.body, "$telemetry_session_")
+}
+
+func TestNginxStaticAssetsAreSessionGatedWithoutForwardedIdentity(t *testing.T) {
+	static := requireNginxLocation(t, parseNginxLocations(t, readNginxFragment(t)), "/srv/telemetry/static/", false)
+
+	// R-68TD-EROE
+	if countDirective(static.body, `auth_request\s+/_session-authn;`) != 1 {
+		t.Fatalf("static session auth_request count = %d, want 1", countDirective(static.body, `auth_request\s+/_session-authn;`))
+	}
+	if countDirective(static.body, `auth_request\s+/_authn;`) != 0 {
+		t.Fatal("static assets are bearer-gated instead of session-gated")
+	}
+	if countDirective(static.body, `error_page\s+401\s+=\s+@login_bounce;`) != 1 {
+		t.Fatal("static assets do not bounce an unauthenticated browser to login")
+	}
+	if countDirective(static.body, `proxy_pass\s+http://127\.0\.0\.1:[0-9]+/static/;`) != 1 {
+		t.Fatal("static location does not proxy exactly once to the upstream static path")
+	}
+	for _, header := range []string{"X-Owner-Email", "X-Owner-Id", "X-Owner-Name", "X-Owner-Picture", "X-Client-Id"} {
+		if values := proxyHeaderValues(static.body, header); len(values) != 0 {
+			t.Errorf("static location forwards identity header %s from %v", header, values)
+		}
+	}
+	assertCapturedCorrelationHeader(t, static.body, "$telemetry_static_")
+}
+
+func assertCapturedCorrelationHeader(t *testing.T, body, variablePrefix string) {
+	t.Helper()
+	sets := authRequestVariables(body)
+	values := proxyHeaderValues(body, "X-Correlation-Id")
+	if len(values) != 1 || !strings.HasPrefix(values[0], variablePrefix) {
+		t.Fatalf("X-Correlation-Id values = %v, want exactly one captured %s variable", values, variablePrefix)
+	}
+	if sources := sets[values[0]]; len(sources) != 1 || sources[0] != "$upstream_http_x_correlation_id" {
+		t.Fatalf("X-Correlation-Id variable %q populated from %v, want introspection correlation header", values[0], sources)
+	}
+}
+
 func readNginxFragment(t *testing.T) string {
 	t.Helper()
 	body, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
@@ -169,11 +242,11 @@ func requireNginxLocation(t *testing.T, locations []nginxLocation, target string
 	t.Helper()
 	var found []nginxLocation
 	for _, location := range locations {
-		if location.target == target {
+		if location.target == target && location.exact == exact {
 			found = append(found, location)
 		}
 	}
-	if len(found) != 1 || found[0].exact != exact {
+	if len(found) != 1 {
 		t.Fatalf("locations for target=%q are %v, want exactly one with exact=%t", target, found, exact)
 	}
 	return found[0]

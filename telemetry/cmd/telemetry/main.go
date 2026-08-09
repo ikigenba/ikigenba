@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"appkit"
 	"registry"
@@ -24,6 +25,7 @@ func telemetrySpec() appkit.Spec {
 		Mount:            "/srv/telemetry/",
 		Port:             registry.MustPort("telemetry"),
 		MCP:              true,
+		WWW:              true,
 		Migrations:       db.FS,
 		TelemetryExclude: []string{ingest.Path},
 		ManifestExtras: []appkit.ManifestKV{
@@ -34,6 +36,18 @@ func telemetrySpec() appkit.Spec {
 				return fmt.Errorf("telemetry: no DB handle on router")
 			}
 			store = db.NewStore(rt.DB())
+			rt.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/" {
+					http.NotFound(w, r)
+					return
+				}
+				if err := rt.WWW().Render(w, "landing.html", struct {
+					Service string
+					Version string
+				}{Service: rt.Service(), Version: rt.Version()}); err != nil {
+					http.Error(w, "template error", http.StatusInternalServerError)
+				}
+			}))
 			ingest.Mount(rt, store, telemetrytime.RealClock{})
 			retention.Start(rt, store, telemetrytime.RealClock{})
 			mcpHandler, err := telemetrymcp.NewHandler(store, telemetrytime.RealClock{}, rt)
