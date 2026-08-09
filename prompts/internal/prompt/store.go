@@ -35,6 +35,19 @@ type Store struct {
 	Calls *calls.Store
 }
 
+// seedDefinition is the lossless database view used by the boot-time
+// definition backfill. ConfigJSON deliberately remains raw: parsing it into a
+// Config and marshaling it again could change the bytes committed to the
+// version plane.
+type seedDefinition struct {
+	ID           string
+	Name         string
+	NameKey      string
+	UserPrompt   string
+	SystemPrompt string
+	ConfigJSON   string
+}
+
 // NewStore wraps a migrated *sql.DB (the prompts/runs tables must exist).
 func NewStore(db *sql.DB) *Store {
 	return &Store{db: db, now: func() time.Time { return time.Now().UTC() }}
@@ -141,6 +154,47 @@ func (s *Store) GetPromptByNameKey(ctx context.Context, nameKey string) (Prompt,
 		nameKey,
 	)
 	return scanPrompt(row)
+}
+
+// listSeedDefinitions returns every prompt across owners in stable id order.
+func (s *Store) listSeedDefinitions(ctx context.Context) ([]seedDefinition, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, name_key, user_prompt, system_prompt, config_json FROM prompts ORDER BY id`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("prompt: list seed definitions: %w", err)
+	}
+	defer rows.Close()
+
+	var definitions []seedDefinition
+	for rows.Next() {
+		var d seedDefinition
+		var name, nameKey, systemPrompt sql.NullString
+		if err := rows.Scan(&d.ID, &name, &nameKey, &d.UserPrompt, &systemPrompt, &d.ConfigJSON); err != nil {
+			return nil, fmt.Errorf("prompt: scan seed definition: %w", err)
+		}
+		d.Name = name.String
+		d.NameKey = nameKey.String
+		d.SystemPrompt = systemPrompt.String
+		definitions = append(definitions, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("prompt: list seed definitions rows: %w", err)
+	}
+	return definitions, nil
+}
+
+// setPromptNameKey fills only the repository key, preserving every legacy
+// definition column until its later retirement migration.
+func (s *Store) setPromptNameKey(ctx context.Context, id, nameKey string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE prompts SET name_key = ? WHERE id = ? AND name_key IS NULL`,
+		nameKey, id,
+	)
+	if err != nil {
+		return fmt.Errorf("prompt: set name key: %w", err)
+	}
+	return requireOne(res, "set name key")
 }
 
 // ListPrompts returns all of the owner's prompts, newest first.

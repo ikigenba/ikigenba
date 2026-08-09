@@ -70,6 +70,10 @@ type Service struct {
 	// Version is the version-plane boundary for prompt definitions. It is
 	// field-injected by the composition root, like Fetcher.
 	Version version.Client
+	// seedRetryWindow and seedSleep are deterministic test seams for the boot
+	// backoff. Zero/nil select the production 30-second window and real sleep.
+	seedRetryWindow time.Duration
+	seedSleep       func(context.Context, time.Duration) error
 }
 
 // NewService wires the store, sandbox manager, run-logs base dir, and runner.

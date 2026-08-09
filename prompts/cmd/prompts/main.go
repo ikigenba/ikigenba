@@ -311,6 +311,11 @@ func registerRoutes(rt *appkit.Router) error {
 	} else if swept > 0 {
 		rt.Logger().Warn("crash-recovery: swept orphaned runs", "count", swept)
 	}
+	if seeded, err := svc.SeedDefinitions(context.Background()); err != nil {
+		return fmt.Errorf("prompts: seed definitions through version plane: %w", err)
+	} else if seeded > 0 {
+		rt.Logger().Info("prompts: seeded definition repositories", "count", seeded)
+	}
 
 	contentBase := registry.BaseURL("prompts")
 	handler, err := mcp.NewHandler(svc, contentBase, rt)
