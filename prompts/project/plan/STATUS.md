@@ -11,5 +11,4 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 70
 
-- Phase 68 ⬜ realizes D58, D24 (slice) — `repos` joins the trigger sources
 - Phase 69 ⬜ realizes D59 — retire the content columns
