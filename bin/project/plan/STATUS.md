@@ -12,5 +12,3 @@ marker; done is deleted, and history lives in git. This file carries no bare
 status glyph outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 04
-
-- Phase 03 ⬜ realizes — — every WWW service's launch function in `bin/start` exports its `<SVC>_WWW_PATH` (telemetry is the current violation)
