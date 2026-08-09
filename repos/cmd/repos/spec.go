@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -97,7 +99,7 @@ func reposSpec() appkit.Spec {
 				return err
 			}
 			rt.Handle("POST /mcp", rt.RequireIdentity(handler))
-			rt.Handle("GET /{$}", landingHandler(rt.WWW(), rt.Service(), rt.Version()))
+			rt.Handle("GET /{$}", landingHandler(rt.WWW(), store, custody, rt.Service(), rt.Version()))
 			return nil
 		},
 		Workers: []func(context.Context) error{func(ctx context.Context) error {
@@ -150,16 +152,58 @@ func reposSpec() appkit.Spec {
 	}
 }
 
-func landingHandler(site *web.Site, service, version string) http.Handler {
+type landingView struct {
+	Service   string
+	Version   string
+	Repos     []repoRow
+	ReposData template.JS
+}
+
+type repoRow struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Key       string `json:"key"`
+	Sha       string `json:"sha"`
+	ClonePath string `json:"clonePath"`
+}
+
+func landingHandler(site *web.Site, store *repos.Store, custody *repos.Custody, service, version string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/" {
 			http.NotFound(w, request)
 			return
 		}
-		if err := site.Render(w, "landing.html", struct {
-			Service string
-			Version string
-		}{Service: service, Version: version}); err != nil {
+		repositories, err := store.ListAllRepositories(request.Context())
+		if err != nil {
+			http.Error(w, "list repositories", http.StatusInternalServerError)
+			return
+		}
+		view := landingView{Service: service, Version: version, Repos: make([]repoRow, 0, len(repositories))}
+		for _, repository := range repositories {
+			refs, err := custody.Refs(request.Context(), repository.Kind, repository.Name)
+			if err != nil {
+				http.Error(w, "read repository refs", http.StatusInternalServerError)
+				return
+			}
+			sha := refs["refs/heads/"+repository.DefaultBranch]
+			if len(sha) > 7 {
+				sha = sha[:7]
+			}
+			view.Repos = append(view.Repos, repoRow{
+				Kind:      repository.Kind,
+				Name:      repository.Name,
+				Key:       repository.Kind + "/" + repository.Name,
+				Sha:       sha,
+				ClonePath: "/srv/repos/git/" + repository.Kind + "/" + repository.Name + ".git",
+			})
+		}
+		data, err := json.Marshal(view.Repos)
+		if err != nil {
+			http.Error(w, "marshal repositories", http.StatusInternalServerError)
+			return
+		}
+		view.ReposData = template.JS(data)
+		if err := site.Render(w, "landing.html", view); err != nil {
 			http.Error(w, "template error", http.StatusInternalServerError)
 		}
 	})

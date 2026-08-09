@@ -158,6 +158,36 @@ func TestListRepositoriesScopesOnlyByOwnerIDAndExcludesArchived(t *testing.T) {
 	}
 }
 
+func TestListAllRepositoriesReturnsEveryOwnersLiveRowsInKeyOrder(t *testing.T) {
+	// R-RP30-4NV1
+	ctx := context.Background()
+	conn, store := newTestStore(t)
+	created := time.Date(2026, 8, 9, 2, 0, 0, 0, time.UTC)
+	repositories := []Repository{
+		{Kind: "sites", Name: "beta", OwnerID: "owner-a", OwnerEmail: "a@example.test", DefaultBranch: "main", CreatedAt: created},
+		{Kind: "code", Name: "zed", OwnerID: "owner-a", OwnerEmail: "a@example.test", DefaultBranch: "main", CreatedAt: created.Add(time.Second)},
+		{Kind: "code", Name: "alpha", OwnerID: "owner-b", OwnerEmail: "b@example.test", DefaultBranch: "main", CreatedAt: created.Add(2 * time.Second)},
+		{Kind: "prompts", Name: "archived", OwnerID: "owner-b", OwnerEmail: "b@example.test", DefaultBranch: "main", CreatedAt: created.Add(3 * time.Second)},
+	}
+	inTx(t, conn, func(tx *sql.Tx) error {
+		for _, repository := range repositories {
+			if err := store.InsertRepository(ctx, tx, repository); err != nil {
+				return err
+			}
+		}
+		return store.ArchiveRepository(ctx, tx, "prompts", "archived", created.Add(time.Hour), "prompts/archived.git")
+	})
+
+	got, err := store.ListAllRepositories(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Repository{repositories[2], repositories[1], repositories[0]}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("all live repositories = %#v, want kind/name ordered rows from both owners %#v", got, want)
+	}
+}
+
 func newTestStore(t *testing.T) (*sql.DB, *Store) {
 	t.Helper()
 	migrations, err := servicedb.Migrations()

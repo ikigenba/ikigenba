@@ -117,6 +117,27 @@ func (s *Store) ListRepositories(ctx context.Context, ownerID string, kind *stri
 	return result, rows.Err()
 }
 
+// ListAllRepositories returns every live repository regardless of owner,
+// ordered by kind then name. Archived rows are excluded.
+func (s *Store) ListAllRepositories(ctx context.Context) ([]Repository, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT kind, name, owner_id, owner_email, default_branch, archived_at, archived_path, created_at
+		FROM repositories WHERE archived_at IS NULL ORDER BY kind, name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]Repository, 0)
+	for rows.Next() {
+		repository, err := scanRepository(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, repository)
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) RenameRepository(ctx context.Context, tx *sql.Tx, kind, name, newName string) error {
 	if err := requireTx(tx); err != nil {
 		return err
