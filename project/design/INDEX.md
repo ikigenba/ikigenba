@@ -29,12 +29,15 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - **D23** → `project/design/D23.md` — The testing-language contract: hermetic / composed / live / manual layers, the `live` build tag, the skip ban, and per-tree declarations — ids: R-O1AD-MRKW [proof: per-service], R-O2IA-0JBL [proof: per-service]
 - **D24** → `project/design/D24.md` — The version plane: repos is the suite's git custodian — ids: none (a prose contract; behaviors proven by the implementing trees)
 - **D25** → `project/design/D25.md` — The migration-immutability contract: frozen bodies, a hashed `migrations.sha256` manifest, and the mechanical guard — ids: R-NFQ1-NA7N [proof: per-service]
+- **D26** → `project/design/D26.md` — The run-lifetime contract: a bounded run TTL and the derived run-token lifetime — ids: R-34EZ-J9BF [proof: per-service], R-35MV-X124 [proof: per-service]
 
 ## Verification ids → Decision
 
 - R-1A79-JG03 → D2 (`project/design/D02.md`) [proof: opsctl]
 - R-1BF5-X7QS → D2 (`project/design/D02.md`) [proof: opsctl]
 - R-1CN2-AZHH → D2 (`project/design/D02.md`) [proof: opsctl]
+- R-34EZ-J9BF → D26 (`project/design/D26.md`) [proof: per-service]
+- R-35MV-X124 → D26 (`project/design/D26.md`) [proof: per-service]
 - R-3R5W-79JK → D22 (`project/design/D22.md`) [proof: bin]
 - R-3SAU-8T9F → D1 (`project/design/D01.md`) [proof: opsctl]
 - R-3SDS-L1A9 → D22 (`project/design/D22.md`) [proof: bin]
