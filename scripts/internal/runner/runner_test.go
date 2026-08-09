@@ -155,6 +155,165 @@ func requirePython(t *testing.T) {
 	}
 }
 
+func requireGit(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Fatalf("git is required on PATH; see AGENTS.md testing preconditions: %v", err)
+	}
+}
+
+type gitTestPlane struct {
+	token, cloneURL string
+}
+
+func (p gitTestPlane) Create(context.Context, string, string) error { return nil }
+func (p gitTestPlane) Commit(context.Context, string, map[string]string, string, string) (string, error) {
+	return "", nil
+}
+func (p gitTestPlane) Head(context.Context, string, string) (string, error) { return "", nil }
+func (p gitTestPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
+	return nil, nil
+}
+func (p gitTestPlane) Rename(context.Context, string, string, string) error { return nil }
+func (p gitTestPlane) Delete(context.Context, string, string) error         { return nil }
+func (p gitTestPlane) RunToken(context.Context, string) (string, string, error) {
+	return p.token, p.cloneURL, nil
+}
+
+func gitCommand(t *testing.T, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func TestPinnedRunClonesDetachedTreeAndCanPushWithoutAmbientMerge(t *testing.T) {
+	// R-2L8W-702I
+	// R-2MGS-KRT7
+	// R-2NOO-YJJW
+	// R-2OWL-CBAL
+	// R-2RCE-3URZ
+	requirePython(t)
+	requireGit(t)
+
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	work := filepath.Join(root, "author")
+	gitCommand(t, "init", "--bare", "--initial-branch=main", remote)
+	gitCommand(t, "clone", "--quiet", "file://"+remote, work)
+	gitCommand(t, "-C", work, "config", "user.name", "Author")
+	gitCommand(t, "-C", work, "config", "user.email", "author@example.com")
+	oldBody := "import helper, os, subprocess\nprint('OLD:'+helper.VALUE)\nprint(os.getcwd())\nprint(os.environ['SUITE_REPO_KEY'])\nprint(os.environ['SUITE_REPO_SHA'])\nprint(os.environ['SUITE_GIT_TOKEN'])\nsubprocess.run(['git','push','origin','HEAD:refs/heads/wip'], check=True)\n"
+	if err := os.WriteFile(filepath.Join(work, "main.py"), []byte(oldBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "helper.py"), []byte("VALUE='support'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, "-C", work, "add", "main.py", "helper.py")
+	gitCommand(t, "-C", work, "commit", "--quiet", "-m", "old")
+	pinned := gitCommand(t, "-C", work, "rev-parse", "HEAD")
+	gitCommand(t, "-C", work, "push", "--quiet", "origin", "main")
+	if err := os.WriteFile(filepath.Join(work, "main.py"), []byte("print('NEW')\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, "-C", work, "commit", "--quiet", "-am", "new")
+	newMain := gitCommand(t, "-C", work, "rev-parse", "HEAD")
+	gitCommand(t, "-C", work, "push", "--quiet", "origin", "main")
+
+	st, _ := newStore(t)
+	now := nowStr()
+	sc := script.Script{ID: ids.NewULID(), OwnerID: ownerID, OwnerEmail: ownerEmail, Name: "Pinned Probe", Body: "not executed", Config: script.Config{Interpreter: "python3", TimeoutSecs: 7}, CreatedAt: now, UpdatedAt: now}
+	if err := st.InsertScript(context.Background(), sc); err != nil {
+		t.Fatal(err)
+	}
+	sc, err := st.GetScript(context.Background(), ownerID, sc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := script.Run{ID: ids.NewULID(), ScriptID: sc.ID, Status: script.RunRunning, StartedAt: now, RepoSha: pinned, StdoutPath: "runs/x/stdout.log", StderrPath: "runs/x/stderr.log"}
+	if err := st.InsertRun(context.Background(), run); err != nil {
+		t.Fatal(err)
+	}
+	token := "run-token-secret"
+	r := New(st, filepath.Join(root, "runtime"), 30*time.Second, nil)
+	r.Plane = gitTestPlane{token: token, cloneURL: "file://" + remote}
+	r.Spawn(run, []byte("{}"))
+	got := waitTerminal(t, st, run.ID)
+	if got.Status != script.RunSucceeded {
+		t.Fatalf("status = %q error=%q", got.Status, got.Error)
+	}
+	dir := r.runDir(run.ID)
+	if head := gitCommand(t, "-C", dir, "rev-parse", "HEAD"); head != pinned {
+		t.Fatalf("checkout HEAD = %q, want pin %q", head, pinned)
+	}
+	cmd := exec.Command("git", "-C", dir, "symbolic-ref", "-q", "HEAD")
+	if err := cmd.Run(); err == nil {
+		t.Fatal("HEAD is attached, want detached checkout")
+	}
+	for path, want := range map[string]string{"main.py": oldBody, "helper.py": "VALUE='support'\n", "suite.py": suitePy} {
+		body, err := os.ReadFile(filepath.Join(dir, path))
+		if err != nil || string(body) != want {
+			t.Errorf("%s content = %q err=%v, want committed/injected bytes %q", path, body, err, want)
+		}
+	}
+	cfg, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil || !strings.Contains(string(cfg), `"timeout_secs":7`) {
+		t.Fatalf("config.json = %q err=%v", cfg, err)
+	}
+	stdout, err := os.ReadFile(filepath.Join(dir, "stdout.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(stdout)
+	for _, want := range []string{"OLD:support", dir, "scripts/" + sc.NameKey, pinned, token} {
+		if !strings.Contains(text, want) {
+			t.Errorf("stdout missing %q: %q", want, text)
+		}
+	}
+	if strings.Contains(text, "NEW") {
+		t.Fatalf("stdout executed later main: %q", text)
+	}
+	status := gitCommand(t, "-C", dir, "status", "--porcelain")
+	for _, injected := range []string{"suite.py", "config.json", "stdout.log", "stderr.log"} {
+		if strings.Contains(status, injected) {
+			t.Errorf("git status exposes %s: %q", injected, status)
+		}
+	}
+	helper := gitCommand(t, "-C", dir, "config", "credential.helper")
+	if !strings.Contains(helper, "SUITE_GIT_TOKEN") || strings.Contains(helper, token) {
+		t.Fatalf("credential helper = %q, want env name and no token", helper)
+	}
+	configBytes, err := os.ReadFile(filepath.Join(dir, ".git", "config"))
+	if err != nil || strings.Contains(string(configBytes), token) {
+		t.Fatalf("git config leaked token: %q err=%v", configBytes, err)
+	}
+	if err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || path == filepath.Join(dir, "stdout.log") {
+			return walkErr
+		}
+		body, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if strings.Contains(string(body), token) {
+			t.Errorf("run credential leaked into %s", path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if wip := gitCommand(t, "--git-dir="+remote, "rev-parse", "refs/heads/wip"); wip != pinned {
+		t.Fatalf("wip = %q, want %q", wip, pinned)
+	}
+	if main := gitCommand(t, "--git-dir="+remote, "rev-parse", "refs/heads/main"); main != newMain {
+		t.Fatalf("main changed ambiently: got %q want %q", main, newMain)
+	}
+}
+
 func TestSpawnSucceeds(t *testing.T) {
 	requirePython(t)
 	st, conn := newStore(t)

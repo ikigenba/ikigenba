@@ -47,6 +47,8 @@ type Runner struct {
 	dataDir  string // service root: <dataDir>/runs/<run_id>/
 	ttl      time.Duration
 	suiteEnv []string
+	// Plane mints per-run repository credentials and supplies the clone URL.
+	Plane script.VersionPlane
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
@@ -143,14 +145,25 @@ func (r *Runner) execute(run script.Run, input []byte) {
 		return
 	}
 
-	// Create the persistent run dir (0700) and materialize body + pinned config.
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		finish(sc.Name, script.RunFailed, nil, "create run dir: "+err.Error())
-		return
-	}
-	if err := os.WriteFile(filepath.Join(dir, "main.py"), []byte(sc.Body), 0o600); err != nil {
-		finish(sc.Name, script.RunFailed, nil, "write main.py: "+err.Error())
-		return
+	// New runs are real clones at their spawn-time pin. The empty-pin fallback
+	// retains compatibility with old rows recovered from before repository pins.
+	token := ""
+	if run.RepoSha != "" && r.Plane != nil {
+		var err error
+		token, err = r.materializeGit(ctx, dir, run.RepoSha, sc)
+		if err != nil {
+			finish(sc.Name, script.RunFailed, nil, err.Error())
+			return
+		}
+	} else {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			finish(sc.Name, script.RunFailed, nil, "create run dir: "+err.Error())
+			return
+		}
+		if err := os.WriteFile(filepath.Join(dir, "main.py"), []byte(sc.Body), 0o600); err != nil {
+			finish(sc.Name, script.RunFailed, nil, "write main.py: "+err.Error())
+			return
+		}
 	}
 	if err := os.WriteFile(filepath.Join(dir, "suite.py"), []byte(suitePy), 0o600); err != nil {
 		finish(sc.Name, script.RunFailed, nil, "write suite.py: "+err.Error())
@@ -193,6 +206,9 @@ func (r *Runner) execute(run script.Run, input []byte) {
 		"SUITE_CORRELATION_ID="+run.CorrelationID,
 		"SUITE_OWNER_ID="+sc.OwnerID,
 		"SUITE_OWNER_EMAIL="+sc.OwnerEmail,
+		"SUITE_REPO_KEY="+script.RepoKey(sc.NameKey),
+		"SUITE_REPO_SHA="+run.RepoSha,
+		"SUITE_GIT_TOKEN="+token,
 	)
 	cmd.Stdin = bytes.NewReader(input)
 	cmd.Stdout = stdoutFile

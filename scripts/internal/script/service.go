@@ -331,10 +331,14 @@ func (s *Service) detail(ctx context.Context, sc Script) (ScriptDetail, error) {
 // event payload, and returns the run. ALWAYS accepted (no single-flight gate;
 // scripts allows full concurrency).
 func (s *Service) Run(ctx context.Context, owner, scriptID string) (Run, error) {
-	if _, err := s.store.GetScript(ctx, owner, scriptID); err != nil {
+	sc, err := s.store.GetScript(ctx, owner, scriptID)
+	if err != nil {
 		return Run{}, err
 	}
-	run := s.newRun(ctx, scriptID, "", "", "", "")
+	run, err := s.newRun(ctx, sc, "", "", "", "")
+	if err != nil {
+		return Run{}, err
+	}
 	if err := s.store.InsertRun(ctx, run); err != nil {
 		return Run{}, err
 	}
@@ -349,7 +353,8 @@ func (s *Service) Run(ctx context.Context, owner, scriptID string) (Run, error) 
 // no-op (returns nil): the consumer is fire-and-forget and never stalls; a
 // dangling trigger that outraced a delete simply fires nothing.
 func (s *Service) RunForEvent(ctx context.Context, scriptID, source, kind, subject, eventID string, payload []byte) error {
-	if _, err := s.store.ScriptForRun(ctx, scriptID); err != nil {
+	sc, err := s.store.ScriptForRun(ctx, scriptID)
+	if err != nil {
 		// ErrNotFound (tombstoned/dangling id) → nothing to fire; consumer treats
 		// nil as handled. Any other error propagates.
 		if err == ErrNotFound {
@@ -357,7 +362,10 @@ func (s *Service) RunForEvent(ctx context.Context, scriptID, source, kind, subje
 		}
 		return err
 	}
-	run := s.newRun(ctx, scriptID, source, kind, subject, eventID)
+	run, err := s.newRun(ctx, sc, source, kind, subject, eventID)
+	if err != nil {
+		return err
+	}
 	if err := s.store.InsertRun(ctx, run); err != nil {
 		return err
 	}
@@ -367,7 +375,14 @@ func (s *Service) RunForEvent(ctx context.Context, scriptID, source, kind, subje
 
 // newRun builds a running run row with the §A4 log paths. Empty trigger fields
 // mark a manual run.
-func (s *Service) newRun(ctx context.Context, scriptID, source, kind, subject, eventID string) Run {
+func (s *Service) newRun(ctx context.Context, sc Script, source, kind, subject, eventID string) (Run, error) {
+	sha, err := s.Plane.Head(ctx, RepoKey(sc.NameKey), "main")
+	if err != nil {
+		return Run{}, err
+	}
+	if sha == "" {
+		return Run{}, fmt.Errorf("%w: repository head is empty", ErrSourceUnavailable)
+	}
 	runID := ids.NewULID()
 	corrID := correlation.FromContext(ctx)
 	if corrID == "" {
@@ -378,7 +393,7 @@ func (s *Service) newRun(ctx context.Context, scriptID, source, kind, subject, e
 	}
 	return Run{
 		ID:             runID,
-		ScriptID:       scriptID,
+		ScriptID:       sc.ID,
 		Status:         RunRunning,
 		StartedAt:      s.nowStr(),
 		TriggerSource:  source,
@@ -386,9 +401,10 @@ func (s *Service) newRun(ctx context.Context, scriptID, source, kind, subject, e
 		TriggerSubject: subject,
 		TriggerEventID: eventID,
 		CorrelationID:  corrID,
+		RepoSha:        sha,
 		StdoutPath:     filepath.Join("runs", runID, "stdout.log"),
 		StderrPath:     filepath.Join("runs", runID, "stderr.log"),
-	}
+	}, nil
 }
 
 // --- Run-instance reads ---

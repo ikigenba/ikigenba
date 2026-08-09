@@ -38,9 +38,11 @@ type fakePlane struct {
 	renameErr error
 	deleteErr error
 	readErr   error
+	headErr   error
+	headSHA   string
 }
 
-func newFakePlane() *fakePlane { return &fakePlane{files: make(map[string]string)} }
+func newFakePlane() *fakePlane { return &fakePlane{files: make(map[string]string), headSHA: "sha"} }
 
 func (f *fakePlane) Create(_ context.Context, key, clientID string) error {
 	f.calls = append(f.calls, planeCall{verb: "create", key: key, clientID: clientID})
@@ -57,7 +59,9 @@ func (f *fakePlane) Commit(_ context.Context, key string, files map[string]strin
 	return "sha", f.commitErr
 }
 
-func (f *fakePlane) Head(context.Context, string, string) (string, error) { return "sha", nil }
+func (f *fakePlane) Head(context.Context, string, string) (string, error) {
+	return f.headSHA, f.headErr
+}
 
 func (f *fakePlane) ReadFile(_ context.Context, key, ref, path string) ([]byte, error) {
 	f.calls = append(f.calls, planeCall{verb: "read", key: key, other: ref + ":" + path})
@@ -456,6 +460,7 @@ func TestListDoesNotReadPlaneAndOmitsBodies(t *testing.T) {
 }
 
 func TestServiceRunManual(t *testing.T) {
+	// R-2K0Z-T8BT
 	svc, store, fr, _ := newTestService(t)
 	ctx := context.Background()
 	sc, _ := svc.Create(ctx, ownerA, CreateInput{Name: "x", Body: "print(1)"})
@@ -478,6 +483,9 @@ func TestServiceRunManual(t *testing.T) {
 	if got.Status != RunRunning {
 		t.Fatalf("inserted run status = %q", got.Status)
 	}
+	if run.RepoSha != "sha" || got.RepoSha != "sha" {
+		t.Fatalf("spawned/persisted repo_sha = %q/%q, want resolved sha", run.RepoSha, got.RepoSha)
+	}
 	// Spawn called once with "{}".
 	if len(fr.spawns) != 1 {
 		t.Fatalf("Spawn called %d times, want 1", len(fr.spawns))
@@ -493,6 +501,31 @@ func TestServiceRunManual(t *testing.T) {
 	}
 	if len(fr.spawns) != 1 {
 		t.Fatalf("foreign Run should not Spawn; count = %d", len(fr.spawns))
+	}
+}
+
+func TestHeadFailureCreatesNoManualOrEventRun(t *testing.T) {
+	// R-2SKA-HMIO
+	svc, store, fr, _ := newTestService(t)
+	ctx := context.Background()
+	sc, err := svc.Create(ctx, ownerA, CreateInput{Name: "head-failure", Body: "print(1)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plane := svc.Plane.(*fakePlane)
+	plane.headErr = ErrSourceUnavailable
+	if _, err := svc.Run(ctx, ownerA, sc.ID); !errors.Is(err, ErrSourceUnavailable) {
+		t.Fatalf("manual Run error = %v, want ErrSourceUnavailable", err)
+	}
+	if err := svc.RunForEvent(ctx, sc.ID, "crm", "contact.created", "/x", "evt", []byte(`{}`)); !errors.Is(err, ErrSourceUnavailable) {
+		t.Fatalf("RunForEvent error = %v, want ErrSourceUnavailable", err)
+	}
+	var count int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs WHERE script_id = ?`, sc.ID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 || len(fr.spawns) != 0 {
+		t.Fatalf("head failures created %d rows and %d spawns, want none", count, len(fr.spawns))
 	}
 }
 

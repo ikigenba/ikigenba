@@ -51,6 +51,7 @@ type fakeRunner struct {
 type fakeVersionPlane struct {
 	files     map[string]string
 	createErr error
+	headErr   error
 }
 
 func newFakeVersionPlane() *fakeVersionPlane {
@@ -64,7 +65,9 @@ func (f *fakeVersionPlane) Commit(_ context.Context, key string, files map[strin
 	}
 	return "sha", nil
 }
-func (f *fakeVersionPlane) Head(context.Context, string, string) (string, error) { return "sha", nil }
+func (f *fakeVersionPlane) Head(context.Context, string, string) (string, error) {
+	return "sha", f.headErr
+}
 func (f *fakeVersionPlane) ReadFile(_ context.Context, key, _, path string) ([]byte, error) {
 	return []byte(f.files[key+":"+path]), nil
 }
@@ -618,6 +621,7 @@ func TestCreateGetList(t *testing.T) {
 // TestRunSpawns asserts a manual run inserts a run row and calls the fake
 // runner's Spawn (no python exec).
 func TestRunSpawns(t *testing.T) {
+	// R-2K0Z-T8BT
 	h, fr, _ := newTestHandler(t)
 	id := createScript(t, h)
 
@@ -646,7 +650,7 @@ func TestRunSpawns(t *testing.T) {
 	if err := json.Unmarshal([]byte(resultText(t, getRes)), &run); err != nil {
 		t.Fatalf("decode run_get: %v", err)
 	}
-	if run.ID != runOut.RunID || run.Status != script.RunRunning {
+	if run.ID != runOut.RunID || run.Status != script.RunRunning || run.RepoSha != "sha" {
 		t.Fatalf("run_get: %+v", run)
 	}
 
@@ -657,8 +661,26 @@ func TestRunSpawns(t *testing.T) {
 	if err := json.Unmarshal([]byte(resultText(t, listRes)), &rl); err != nil {
 		t.Fatalf("decode run_list: %v", err)
 	}
-	if len(rl.Runs) != 1 || rl.Runs[0].ID != runOut.RunID {
+	if len(rl.Runs) != 1 || rl.Runs[0].ID != runOut.RunID || rl.Runs[0].RepoSha != "sha" {
 		t.Fatalf("run_list: %+v", rl.Runs)
+	}
+}
+
+func TestRunHeadFailureReturnsStructuredSourceUnavailable(t *testing.T) {
+	// R-2SKA-HMIO
+	h := newTestHarness(t)
+	id := createScript(t, h.mcpHandler)
+	h.plane.headErr = script.ErrSourceUnavailable
+	result := call(t, h.mcpHandler, tool("run"), map[string]any{"script_id": id})
+	if !isError(result) {
+		t.Fatalf("run result = %#v, want structured error", result)
+	}
+	structured, ok := result["structuredContent"].(map[string]any)
+	if !ok || structured["code"] != "source_unavailable" {
+		t.Fatalf("run error = %#v, want source_unavailable", structured)
+	}
+	if h.runner.spawnCount() != 0 {
+		t.Fatalf("head failure spawned %d runs, want zero", h.runner.spawnCount())
 	}
 }
 

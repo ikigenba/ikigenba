@@ -167,10 +167,12 @@ func registerRoutes(rt *appkit.Router) error {
 	}
 
 	store := script.NewStore(conn)
+	plane := newVersionPlane()
 	run := runner.New(store, rootDir, runTTL, suiteEnv)
+	run.Plane = plane
 	svc := script.NewService(store, runsDir, run)
 	svc.Fetcher = script.NewHTTPFetcher(dropboxBase)
-	svc.Plane = newVersionPlane()
+	svc.Plane = plane
 	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {
 		ctx = correlation.WithContext(ctx, rootID)
 		ctx, _ = rt.Recorder().StartChain(ctx, op, nil)

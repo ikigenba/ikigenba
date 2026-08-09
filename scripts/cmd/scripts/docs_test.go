@@ -30,6 +30,7 @@ func TestAgentsDeclaresTestingFacts(t *testing.T) {
 		"no live layer",
 		"no manual layer",
 		"`python3` on `PATH`",
+		"`git` on `PATH`",
 		"GOWORK mode is workspace",
 		"repo-root `go.work`",
 	}
