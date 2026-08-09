@@ -37,10 +37,10 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D30 → `project/design/D30.md` — The chain crosses the sandbox boundary: `SUITE_CORRELATION_ID` and `X-Correlation-Id` on every `suite.*` call — owns R-4UZN-MWCU, R-4W7K-0O3J
 - D31 → `project/design/D31.md` — nginx fragment: capture the edge-minted chain id on the gated locations, strip it on the ungated one — owns R-ENOZ-F427, R-EOWV-SVSW
 - D32 → `project/design/D32.md` — Rebuild to adopt: chain continuation across the consumer fan-out, the ctx-bearing `Append`, the origin at spawn, and the recorded boundary of a run — owns R-4XFG-EFU8, R-4YNC-S7KX, R-4ZV9-5ZBM, R-5135-JR2B
-- D33 → `project/design/D33.md` — Env-channel conformance: the run TTL surfaces in the manifest — owns R-HDCE-C6WU; adopts R-VKB6-SHHV (root `project/design/D11.md`)
+- D33 → `project/design/D33.md` — Env-channel conformance: the run TTL surfaces in the manifest, bounded at 6h — owns R-HDCE-C6WU; adopts R-VKB6-SHHV (root `project/design/D11.md`), R-34EZ-J9BF (root `project/design/D26.md`)
 - D34 → `project/design/D34.md` — Testing-language conformance: adopt the suite contract and make `python3` (and, with D38, `git`) a hard precondition — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 - D35 → `project/design/D35.md` — Script definitions are git-backed trees: `main.py` is the entrypoint, `scripts/<name_key>` is the repo (additive migration; adopts root `project/design/D24.md`) — owns R-20IL-OWGP, R-21QI-2O7E, R-22YE-GFY3, R-246A-U7OS
-- D36 → `project/design/D36.md` — The version-plane client: `internal/repos` behind the `script.VersionPlane` seam, injected from `registry.BaseURL("repos")` — owns R-2A9S-R2E9, R-IKGJ-ND9W, R-ILOG-150L, R-IO48-SOHZ, R-IPC5-6G8O, R-IQK1-K7ZD
+- D36 → `project/design/D36.md` — The version-plane client: `internal/repos` behind the `script.VersionPlane` seam, injected from `registry.BaseURL("repos")` — owns R-2A9S-R2E9, R-IKGJ-ND9W, R-ILOG-150L, R-IO48-SOHZ, R-IPC5-6G8O, R-IQK1-K7ZD; adopts R-35MV-X124 (root `project/design/D26.md`)
 - D37 → `project/design/D37.md` — The write path: every authoring verb is a commit; `delete` archives; `get` reads `main` (no materialized copy — recorded deviation from root `project/design/D24.md`) — owns R-2BHP-4U4Y, R-2CPL-ILVN, R-2DXH-WDMC, R-2F5E-A5D1, R-2GDA-NX3Q, R-2HL7-1OUF, R-2IT3-FGL4
 - D38 → `project/design/D38.md` — A run is a real clone pinned to a sha, with a run token in its environment — owns R-2K0Z-T8BT, R-2L8W-702I, R-2MGS-KRT7, R-2NOO-YJJW, R-2OWL-CBAL, R-2RCE-3URZ, R-2SKA-HMIO
 - D39 → `project/design/D39.md` — `repos` becomes a trigger source: scripts is the suite's CI runner — owns R-2TS6-VE9D, R-2V03-9602
@@ -74,7 +74,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-2XFW-0PHG → D40 → `project/design/D40.md`
 - R-2YNS-EH85 → D40 → `project/design/D40.md`
 - R-2ZVO-S8YU → D26 → `project/design/D26.md`
-
+- R-34EZ-J9BF → D33 → `project/design/D33.md` (adopted from root `project/design/D26.md`)
+- R-35MV-X124 → D36 → `project/design/D36.md` (adopted from root `project/design/D26.md`)
 - R-465K-NCPV → D15 → `project/design/D15.md`
 - R-47DH-14GK → D15 → `project/design/D15.md`
 - R-49T9-SNXY → D15 → `project/design/D15.md`

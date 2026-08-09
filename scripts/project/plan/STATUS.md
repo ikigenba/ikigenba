@@ -9,4 +9,6 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 45
+Next phase: 46
+
+- Phase 45 ⬜ realizes R-34EZ-J9BF, R-35MV-X124 — adopt the run-lifetime contract: 6h-bounded `SCRIPTS_RUN_TTL`, 10-minute token margin
