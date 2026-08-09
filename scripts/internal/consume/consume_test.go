@@ -79,6 +79,22 @@ type recordingRunner struct {
 	spawned chan script.Run
 }
 
+type testVersionPlane struct{}
+
+func (testVersionPlane) Create(context.Context, string, string) error { return nil }
+func (testVersionPlane) Commit(context.Context, string, map[string]string, string, string) (string, error) {
+	return "sha", nil
+}
+func (testVersionPlane) Head(context.Context, string, string) (string, error) { return "sha", nil }
+func (testVersionPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
+	return nil, nil
+}
+func (testVersionPlane) Rename(context.Context, string, string, string) error { return nil }
+func (testVersionPlane) Delete(context.Context, string, string) error         { return nil }
+func (testVersionPlane) RunToken(context.Context, string) (string, string, error) {
+	return "token", "clone", nil
+}
+
 func (r *recordingRunner) Spawn(run script.Run, _ []byte) { r.spawned <- run }
 func (r *recordingRunner) Cancel(string) bool             { return false }
 
@@ -97,7 +113,9 @@ func newRealService(t *testing.T) (*script.Service, *sql.DB, *recordingRunner) {
 		t.Fatal(err)
 	}
 	runner := &recordingRunner{spawned: make(chan script.Run, 8)}
-	return script.NewService(script.NewStore(conn), t.TempDir(), runner), conn, runner
+	svc := script.NewService(script.NewStore(conn), t.TempDir(), runner)
+	svc.Plane = testVersionPlane{}
+	return svc, conn, runner
 }
 
 func TestHandlerCarriesContextCorrelationAcrossDetachedFanout(t *testing.T) {

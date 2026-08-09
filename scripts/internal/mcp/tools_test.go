@@ -46,6 +46,42 @@ type fakeRunner struct {
 	cancelOK bool
 }
 
+// fakeVersionPlane keeps handler tests hermetic while CRUD now persists every
+// authoring verb through the repository plane.
+type fakeVersionPlane struct {
+	files     map[string]string
+	createErr error
+}
+
+func newFakeVersionPlane() *fakeVersionPlane {
+	return &fakeVersionPlane{files: make(map[string]string)}
+}
+
+func (f *fakeVersionPlane) Create(context.Context, string, string) error { return f.createErr }
+func (f *fakeVersionPlane) Commit(_ context.Context, key string, files map[string]string, _, _ string) (string, error) {
+	for path, body := range files {
+		f.files[key+":"+path] = body
+	}
+	return "sha", nil
+}
+func (f *fakeVersionPlane) Head(context.Context, string, string) (string, error) { return "sha", nil }
+func (f *fakeVersionPlane) ReadFile(_ context.Context, key, _, path string) ([]byte, error) {
+	return []byte(f.files[key+":"+path]), nil
+}
+func (f *fakeVersionPlane) Rename(_ context.Context, oldKey, newKey, _ string) error {
+	for path, body := range f.files {
+		if strings.HasPrefix(path, oldKey+":") {
+			delete(f.files, path)
+			f.files[newKey+strings.TrimPrefix(path, oldKey)] = body
+		}
+	}
+	return nil
+}
+func (f *fakeVersionPlane) Delete(context.Context, string, string) error { return nil }
+func (f *fakeVersionPlane) RunToken(context.Context, string) (string, string, error) {
+	return "token", "clone", nil
+}
+
 func (f *fakeRunner) Spawn(run script.Run, input []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -72,6 +108,7 @@ type testHarness struct {
 	runsDir    string
 	svc        *script.Service
 	db         *sql.DB
+	plane      *fakeVersionPlane
 }
 
 // newTestHarness wires a real store over a temp DB + a fake recording runner,
@@ -98,6 +135,8 @@ func newTestHarness(t *testing.T) testHarness {
 	store := script.NewStore(conn)
 	fr := &fakeRunner{}
 	svc := script.NewService(store, runsDir, fr)
+	plane := newFakeVersionPlane()
+	svc.Plane = plane
 	var captured *server.Router
 	srv, err := server.New(server.Options{
 		Addr:       "127.0.0.1:0",
@@ -133,7 +172,7 @@ func newTestHarness(t *testing.T) testHarness {
 		t.Fatalf("build mcp handler: %v", err)
 	}
 	captured.HandleLoopback("GET /run-content", svc.RunContentHandler())
-	return testHarness{mcpHandler: h, server: srv.Handler, runner: fr, runsDir: runsDir, svc: svc, db: conn}
+	return testHarness{mcpHandler: h, server: srv.Handler, runner: fr, runsDir: runsDir, svc: svc, db: conn, plane: plane}
 }
 
 func newTestHandler(t *testing.T) (http.Handler, *fakeRunner, string) {
@@ -172,6 +211,7 @@ func newTestHandlerWithFetcher(t *testing.T, f script.ContentFetcher) http.Handl
 	}
 	svc := script.NewService(script.NewStore(conn), t.TempDir(), &fakeRunner{})
 	svc.Fetcher = f
+	svc.Plane = newFakeVersionPlane()
 	var captured *server.Router
 	_, err = server.New(server.Options{
 		Addr:       "127.0.0.1:0",
@@ -228,6 +268,22 @@ func TestImportDispatch(t *testing.T) {
 	}
 	if out.Name != "nightly.py" {
 		t.Fatalf("import: name not derived from basename: %q", out.Name)
+	}
+}
+
+// R-2CPL-ILVN
+func TestCreatePlaneFailureReturnsStructuredErrorAndNoRow(t *testing.T) {
+	h := newTestHarness(t)
+	h.plane.createErr = script.ErrSourceUnavailable
+
+	result := call(t, h.mcpHandler, tool("create"), map[string]any{"name": "orphan", "body": "print(1)"})
+	assertToolErrorCode(t, result, "source_unavailable")
+	var rows int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM scripts`).Scan(&rows); err != nil {
+		t.Fatalf("count scripts: %v", err)
+	}
+	if rows != 0 {
+		t.Fatalf("scripts rows = %d, want 0 after plane failure", rows)
 	}
 }
 

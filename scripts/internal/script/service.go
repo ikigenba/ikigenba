@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -120,7 +121,34 @@ func (s *Service) CreateForOwner(ctx context.Context, ownerID, ownerEmail string
 	if err := s.store.InsertScript(ctx, sc); err != nil {
 		return Script{}, err
 	}
-	return s.store.GetScript(ctx, ownerID, sc.ID)
+	inserted, err := s.store.GetScript(ctx, ownerID, sc.ID)
+	if err != nil {
+		return Script{}, err
+	}
+	if err := s.seedRepository(ctx, inserted, "create "+inserted.Name); err != nil {
+		// The database insert arbitrates the globally unique name key. If the
+		// repository cannot be made, compensate that insert so callers never
+		// observe a script that has no version history.
+		if deleteErr := s.store.DeleteScript(ctx, ownerID, inserted.ID); deleteErr != nil {
+			return Script{}, fmt.Errorf("%w (compensating delete: %v)", err, deleteErr)
+		}
+		return Script{}, err
+	}
+	inserted.RepoSeededAt = s.nowStr()
+	if err := s.store.UpdateScript(ctx, ownerID, inserted); err != nil {
+		return Script{}, err
+	}
+	return s.store.GetScript(ctx, ownerID, inserted.ID)
+}
+
+func (s *Service) seedRepository(ctx context.Context, sc Script, message string) error {
+	key := RepoKey(sc.NameKey)
+	clientID := "scripts:" + sc.ID
+	if err := s.Plane.Create(ctx, key, clientID); err != nil {
+		return err
+	}
+	_, err := s.Plane.Commit(ctx, key, map[string]string{"main.py": sc.Body}, message, clientID)
+	return err
 }
 
 // maxImportBytes caps an imported script body at 1 MiB — a source file above
@@ -159,7 +187,27 @@ func (s *Service) ImportForOwner(ctx context.Context, ownerID, ownerEmail, sourc
 	// runnable. Config is left as-is on re-import (the upsert refreshes body+name
 	// only), so this default only takes effect on the first import.
 	cfg := Config{Interpreter: "python3"}
-	return s.store.UpsertScriptBySource(ctx, ownerID, ownerEmail, sourcePath, name, string(data), cfg, s.nowStr())
+	sc, err := s.store.UpsertScriptBySource(ctx, ownerID, ownerEmail, sourcePath, name, string(data), cfg, s.nowStr())
+	if err != nil {
+		return Script{}, err
+	}
+	if sc.RepoSeededAt == "" {
+		if err := s.seedRepository(ctx, sc, "create "+sc.Name); err != nil {
+			if deleteErr := s.store.DeleteScript(ctx, ownerID, sc.ID); deleteErr != nil {
+				return Script{}, fmt.Errorf("%w (compensating delete: %v)", err, deleteErr)
+			}
+			return Script{}, err
+		}
+		sc.RepoSeededAt = s.nowStr()
+		if err := s.store.UpdateScript(ctx, ownerID, sc); err != nil {
+			return Script{}, err
+		}
+	} else {
+		if _, err := s.Plane.Commit(ctx, RepoKey(sc.NameKey), map[string]string{"main.py": string(data)}, "update "+sc.Name, "scripts:"+sc.ID); err != nil {
+			return Script{}, err
+		}
+	}
+	return s.store.GetScript(ctx, ownerID, sc.ID)
 }
 
 // Update applies the optional Name/Body/Config pointers (nil = leave as-is) and
@@ -169,6 +217,7 @@ func (s *Service) Update(ctx context.Context, owner, id string, in UpdateInput) 
 	if err != nil {
 		return Script{}, err
 	}
+	oldNameKey := sc.NameKey
 	if in.Name != nil {
 		if strings.TrimSpace(*in.Name) == "" {
 			return Script{}, fmt.Errorf("%w: name cannot be empty", ErrValidation)
@@ -192,13 +241,38 @@ func (s *Service) Update(ctx context.Context, owner, id string, in UpdateInput) 
 	if err := s.store.UpdateScript(ctx, owner, sc); err != nil {
 		return Script{}, err
 	}
-	return s.store.GetScript(ctx, owner, sc.ID)
+	updated, err := s.store.GetScript(ctx, owner, sc.ID)
+	if err != nil {
+		return Script{}, err
+	}
+	clientID := "scripts:" + updated.ID
+	if updated.NameKey != oldNameKey {
+		if err := s.Plane.Rename(ctx, RepoKey(oldNameKey), RepoKey(updated.NameKey), clientID); err != nil {
+			return Script{}, err
+		}
+	}
+	if in.Body != nil {
+		if _, err := s.Plane.Commit(ctx, RepoKey(updated.NameKey), map[string]string{"main.py": updated.Body}, "update "+updated.Name, clientID); err != nil {
+			return Script{}, err
+		}
+	}
+	return updated, nil
 }
 
 // Delete tombstones the owner's script (the store removes the row + its
 // triggers; runs and on-disk artifacts survive as history).
 func (s *Service) Delete(ctx context.Context, owner, id string) error {
-	return s.store.DeleteScript(ctx, owner, id)
+	sc, err := s.store.GetScript(ctx, owner, id)
+	if err != nil {
+		return err
+	}
+	if err := s.store.DeleteScript(ctx, owner, id); err != nil {
+		return err
+	}
+	if err := s.Plane.Delete(ctx, RepoKey(sc.NameKey), "scripts:"+sc.ID); err != nil {
+		slog.ErrorContext(ctx, "archive deleted script repository", "script_id", sc.ID, "repo_key", RepoKey(sc.NameKey), "error", err)
+	}
+	return nil
 }
 
 // List returns each script with derived RunningCount + LastRun.
@@ -209,6 +283,7 @@ func (s *Service) List(ctx context.Context, owner string) ([]ScriptDetail, error
 	}
 	out := make([]ScriptDetail, 0, len(scripts))
 	for _, sc := range scripts {
+		sc.Body = ""
 		detail, err := s.detail(ctx, sc)
 		if err != nil {
 			return nil, err
@@ -224,6 +299,11 @@ func (s *Service) Get(ctx context.Context, owner, id string) (ScriptDetail, erro
 	if err != nil {
 		return ScriptDetail{}, err
 	}
+	body, err := s.Plane.ReadFile(ctx, RepoKey(sc.NameKey), "main", "main.py")
+	if err != nil {
+		return ScriptDetail{}, err
+	}
+	sc.Body = string(body)
 	return s.detail(ctx, sc)
 }
 

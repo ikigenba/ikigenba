@@ -1246,6 +1246,22 @@ type consumerTestRunner struct {
 	spawns chan consumerTestSpawn
 }
 
+type consumerTestPlane struct{}
+
+func (consumerTestPlane) Create(context.Context, string, string) error { return nil }
+func (consumerTestPlane) Commit(context.Context, string, map[string]string, string, string) (string, error) {
+	return "sha", nil
+}
+func (consumerTestPlane) Head(context.Context, string, string) (string, error) { return "sha", nil }
+func (consumerTestPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
+	return nil, nil
+}
+func (consumerTestPlane) Rename(context.Context, string, string, string) error { return nil }
+func (consumerTestPlane) Delete(context.Context, string, string) error         { return nil }
+func (consumerTestPlane) RunToken(context.Context, string) (string, string, error) {
+	return "token", "clone", nil
+}
+
 type consumerTestSpawn struct {
 	run   script.Run
 	input []byte
@@ -1293,7 +1309,9 @@ func newConsumerTestService(t *testing.T) (*script.Service, *consumerTestRunner)
 		t.Fatalf("appkitdatabase.Migrate: %v", err)
 	}
 	runner := &consumerTestRunner{spawns: make(chan consumerTestSpawn, 2)}
-	return script.NewService(script.NewStore(conn), t.TempDir(), runner), runner
+	svc := script.NewService(script.NewStore(conn), t.TempDir(), runner)
+	svc.Plane = consumerTestPlane{}
+	return svc, runner
 }
 
 func newConsumerTestRouter(t *testing.T) *appkit.Router {

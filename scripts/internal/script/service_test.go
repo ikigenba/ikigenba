@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -23,6 +24,67 @@ type spawnCall struct {
 	run   Run
 	input []byte
 }
+
+type planeCall struct {
+	verb, key, other, message, clientID string
+	files                               map[string]string
+}
+
+type fakePlane struct {
+	calls     []planeCall
+	files     map[string]string
+	createErr error
+	commitErr error
+	renameErr error
+	deleteErr error
+	readErr   error
+}
+
+func newFakePlane() *fakePlane { return &fakePlane{files: make(map[string]string)} }
+
+func (f *fakePlane) Create(_ context.Context, key, clientID string) error {
+	f.calls = append(f.calls, planeCall{verb: "create", key: key, clientID: clientID})
+	return f.createErr
+}
+
+func (f *fakePlane) Commit(_ context.Context, key string, files map[string]string, message, clientID string) (string, error) {
+	copyFiles := make(map[string]string, len(files))
+	for name, body := range files {
+		copyFiles[name] = body
+		f.files[key+":"+name] = body
+	}
+	f.calls = append(f.calls, planeCall{verb: "commit", key: key, files: copyFiles, message: message, clientID: clientID})
+	return "sha", f.commitErr
+}
+
+func (f *fakePlane) Head(context.Context, string, string) (string, error) { return "sha", nil }
+
+func (f *fakePlane) ReadFile(_ context.Context, key, ref, path string) ([]byte, error) {
+	f.calls = append(f.calls, planeCall{verb: "read", key: key, other: ref + ":" + path})
+	return []byte(f.files[key+":"+path]), f.readErr
+}
+
+func (f *fakePlane) Rename(_ context.Context, oldKey, newKey, clientID string) error {
+	f.calls = append(f.calls, planeCall{verb: "rename", key: oldKey, other: newKey, clientID: clientID})
+	for suffix, body := range f.files {
+		if strings.HasPrefix(suffix, oldKey+":") {
+			delete(f.files, suffix)
+			f.files[newKey+strings.TrimPrefix(suffix, oldKey)] = body
+		}
+	}
+	return f.renameErr
+}
+
+func (f *fakePlane) Delete(_ context.Context, key, clientID string) error {
+	f.calls = append(f.calls, planeCall{verb: "delete", key: key, clientID: clientID})
+	return f.deleteErr
+}
+
+func (f *fakePlane) RunToken(context.Context, string) (string, string, error) {
+	return "token", "clone", nil
+}
+
+func (f *fakePlane) resetCalls() { f.calls = nil }
 
 func (f *fakeRunner) Spawn(run Run, input []byte) {
 	f.mu.Lock()
@@ -55,6 +117,7 @@ func newTestService(t *testing.T) (*Service, *Store, *fakeRunner, string) {
 	fr := &fakeRunner{}
 	runsDir := t.TempDir()
 	svc := NewService(store, runsDir, fr)
+	svc.Plane = newFakePlane()
 	return svc, store, fr, runsDir
 }
 
@@ -86,6 +149,56 @@ func TestServiceCreate(t *testing.T) {
 	}
 }
 
+// R-2BHP-4U4Y
+func TestCreateSeedsVersionPlaneAndStampsRow(t *testing.T) {
+	svc, store, _, _ := newTestService(t)
+	ctx := context.Background()
+	plane := svc.Plane.(*fakePlane)
+
+	sc, err := svc.Create(ctx, ownerA, CreateInput{Name: "Nightly Export", Body: "print('hi')"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if len(plane.calls) != 2 || plane.calls[0].verb != "create" || plane.calls[1].verb != "commit" {
+		t.Fatalf("plane calls = %+v, want Create then Commit", plane.calls)
+	}
+	wantKey := "scripts/nightly-export"
+	wantClient := "scripts:" + sc.ID
+	if plane.calls[0].key != wantKey || plane.calls[1].key != wantKey {
+		t.Fatalf("plane keys = %q, %q; want %q", plane.calls[0].key, plane.calls[1].key, wantKey)
+	}
+	commit := plane.calls[1]
+	if len(commit.files) != 1 || commit.files["main.py"] != "print('hi')" || commit.message != "create Nightly Export" || commit.clientID != wantClient || plane.calls[0].clientID != wantClient {
+		t.Fatalf("create attribution/commit = %+v, want exact main.py body and %q", plane.calls, wantClient)
+	}
+	stored, err := store.GetScript(ctx, ownerA, sc.ID)
+	if err != nil {
+		t.Fatalf("GetScript: %v", err)
+	}
+	if stored.NameKey != "nightly-export" || stored.RepoSeededAt == "" {
+		t.Fatalf("stored version metadata = name_key %q seeded_at %q", stored.NameKey, stored.RepoSeededAt)
+	}
+}
+
+// R-2CPL-ILVN
+func TestCreatePlaneFailureCompensatesInsertedRow(t *testing.T) {
+	svc, store, _, _ := newTestService(t)
+	plane := svc.Plane.(*fakePlane)
+	plane.createErr = ErrSourceUnavailable
+
+	_, err := svc.Create(context.Background(), ownerA, CreateInput{Name: "orphan", Body: "print(1)"})
+	if !errors.Is(err, ErrSourceUnavailable) {
+		t.Fatalf("Create error = %v, want ErrSourceUnavailable", err)
+	}
+	var rows int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM scripts`).Scan(&rows); err != nil {
+		t.Fatalf("count scripts: %v", err)
+	}
+	if rows != 0 {
+		t.Fatalf("scripts rows = %d, want 0 after compensating delete", rows)
+	}
+}
+
 func TestServiceUpdatePartial(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	ctx := context.Background()
@@ -114,6 +227,66 @@ func TestServiceUpdatePartial(t *testing.T) {
 	if _, err := svc.Update(ctx, ownerB, sc.ID, UpdateInput{Name: &newName}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("foreign update: want ErrNotFound, got %v", err)
 	}
+}
+
+// R-2DXH-WDMC
+func TestUpdateCommitsBodyAndRenamesOnlyWhenRequired(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("body only", func(t *testing.T) {
+		svc, _, _, _ := newTestService(t)
+		sc, err := svc.Create(ctx, ownerA, CreateInput{Name: "Nightly Export", Body: "old"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		plane := svc.Plane.(*fakePlane)
+		plane.resetCalls()
+		body := "new"
+		if _, err := svc.Update(ctx, ownerA, sc.ID, UpdateInput{Body: &body}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if len(plane.calls) != 1 || plane.calls[0].verb != "commit" || plane.calls[0].files["main.py"] != body {
+			t.Fatalf("plane calls = %+v, want one body Commit", plane.calls)
+		}
+	})
+
+	t.Run("changed slug", func(t *testing.T) {
+		svc, store, _, _ := newTestService(t)
+		sc, err := svc.Create(ctx, ownerA, CreateInput{Name: "Nightly Export", Body: "old"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		plane := svc.Plane.(*fakePlane)
+		plane.resetCalls()
+		name := "Weekly Export"
+		if _, err := svc.Update(ctx, ownerA, sc.ID, UpdateInput{Name: &name}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if len(plane.calls) != 1 || plane.calls[0].verb != "rename" || plane.calls[0].key != "scripts/nightly-export" || plane.calls[0].other != "scripts/weekly-export" {
+			t.Fatalf("plane calls = %+v, want one Rename", plane.calls)
+		}
+		stored, _ := store.GetScript(ctx, ownerA, sc.ID)
+		if stored.NameKey != "weekly-export" {
+			t.Fatalf("stored name_key = %q", stored.NameKey)
+		}
+	})
+
+	t.Run("same slug", func(t *testing.T) {
+		svc, _, _, _ := newTestService(t)
+		sc, err := svc.Create(ctx, ownerA, CreateInput{Name: "Nightly Export", Body: "old"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		plane := svc.Plane.(*fakePlane)
+		plane.resetCalls()
+		name := "nightly export"
+		if _, err := svc.Update(ctx, ownerA, sc.ID, UpdateInput{Name: &name}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if len(plane.calls) != 0 {
+			t.Fatalf("plane calls = %+v, want none", plane.calls)
+		}
+	})
 }
 
 func TestServiceDeleteTombstone(t *testing.T) {
@@ -152,6 +325,38 @@ func TestServiceDeleteTombstone(t *testing.T) {
 	}
 }
 
+// R-2GDA-NX3Q
+func TestDeleteArchivesRepositoryWithoutLettingPlaneFailurePinRow(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		deleteErr error
+	}{
+		{name: "archive succeeds"},
+		{name: "archive unavailable", deleteErr: ErrSourceUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, store, _, _ := newTestService(t)
+			ctx := context.Background()
+			sc, err := svc.Create(ctx, ownerA, CreateInput{Name: "Disposable", Body: "print(1)"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plane := svc.Plane.(*fakePlane)
+			plane.resetCalls()
+			plane.deleteErr = tc.deleteErr
+			if err := svc.Delete(ctx, ownerA, sc.ID); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			if len(plane.calls) != 1 || plane.calls[0].verb != "delete" || plane.calls[0].key != "scripts/disposable" {
+				t.Fatalf("plane calls = %+v, want one Delete", plane.calls)
+			}
+			if _, err := store.GetScript(ctx, ownerA, sc.ID); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("row after Delete = %v, want ErrNotFound", err)
+			}
+		})
+	}
+}
+
 func TestServiceListGetDerived(t *testing.T) {
 	svc, store, _, _ := newTestService(t)
 	ctx := context.Background()
@@ -187,6 +392,66 @@ func TestServiceListGetDerived(t *testing.T) {
 	}
 	if l, _ := svc.List(ctx, ownerB); len(l) != 0 {
 		t.Fatalf("foreign List len = %d, want 0", len(l))
+	}
+}
+
+// R-2HL7-1OUF
+func TestGetReadsMainTipFromPlaneInsteadOfStoredBody(t *testing.T) {
+	svc, store, _, _ := newTestService(t)
+	ctx := context.Background()
+	sc, err := svc.Create(ctx, ownerA, CreateInput{Name: "Plane Read", Body: "stored body"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plane := svc.Plane.(*fakePlane)
+	plane.files[RepoKey(sc.NameKey)+":main.py"] = "plane body"
+	plane.resetCalls()
+
+	detail, err := svc.Get(ctx, ownerA, sc.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if detail.Body != "plane body" {
+		t.Fatalf("Get body = %q, want plane body", detail.Body)
+	}
+	stored, _ := store.GetScript(ctx, ownerA, sc.ID)
+	if stored.Body != "stored body" {
+		t.Fatalf("test precondition: stored body = %q", stored.Body)
+	}
+	if len(plane.calls) != 1 || plane.calls[0].verb != "read" || plane.calls[0].key != RepoKey(sc.NameKey) || plane.calls[0].other != "main:main.py" {
+		t.Fatalf("plane calls = %+v, want ReadFile(key, main, main.py)", plane.calls)
+	}
+}
+
+// R-2IT3-FGL4
+func TestListDoesNotReadPlaneAndOmitsBodies(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	ctx := context.Background()
+	for _, name := range []string{"One", "Two", "Three"} {
+		if _, err := svc.CreateForOwner(ctx, ownerA, "owner@example.test", CreateInput{Name: name, Body: "print(1)"}); err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+	}
+	plane := svc.Plane.(*fakePlane)
+	plane.resetCalls()
+
+	list, err := svc.List(ctx, ownerA)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(plane.calls) != 0 {
+		t.Fatalf("List made plane calls: %+v", plane.calls)
+	}
+	if len(list) != 3 {
+		t.Fatalf("List len = %d, want 3", len(list))
+	}
+	for _, detail := range list {
+		if detail.Body != "" {
+			t.Errorf("%s Body = %q, want empty", detail.ID, detail.Body)
+		}
+		if detail.ID == "" || detail.Name == "" || detail.OwnerID != ownerA || detail.OwnerEmail != "owner@example.test" || detail.CreatedAt == "" || detail.UpdatedAt == "" {
+			t.Errorf("List omitted persisted fields: %+v", detail.Script)
+		}
 	}
 }
 
@@ -611,9 +876,11 @@ func (f stubFetcher) Fetch(ctx context.Context, path string) ([]byte, error) {
 // TestImportHappyAndIdempotent: a first import writes a row with the body and a
 // basename-derived name; a second import of the SAME path updates that same row
 // (same script_id, new body) with no duplicate.
+// R-2F5E-A5D1
 func TestImportHappyAndIdempotent(t *testing.T) {
 	svc, store, _, _ := newTestService(t)
 	ctx := context.Background()
+	plane := svc.Plane.(*fakePlane)
 	svc.Fetcher = stubFetcher{data: []byte("print('v1')\n")}
 
 	sc, err := svc.Import(ctx, ownerA, "/scripts/nightly.py", "")
@@ -632,8 +899,12 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 	if sc.Config.Interpreter != "python3" {
 		t.Fatalf("config not defaulted: %+v", sc.Config)
 	}
+	if len(plane.calls) != 2 || plane.calls[0].verb != "create" || plane.calls[1].verb != "commit" || plane.calls[1].files["main.py"] != "print('v1')\n" {
+		t.Fatalf("first import plane calls = %+v, want Create then fetched-byte Commit", plane.calls)
+	}
 
 	// Re-import the same path with new bytes → same id, updated body, no dup.
+	plane.resetCalls()
 	svc.Fetcher = stubFetcher{data: []byte("print('v2')\n")}
 	sc2, err := svc.Import(ctx, ownerA, "/scripts/nightly.py", "")
 	if err != nil {
@@ -644,6 +915,9 @@ func TestImportHappyAndIdempotent(t *testing.T) {
 	}
 	if sc2.Body != "print('v2')\n" {
 		t.Fatalf("re-import did not update body: %q", sc2.Body)
+	}
+	if len(plane.calls) != 1 || plane.calls[0].verb != "commit" || plane.calls[0].key != RepoKey(sc.NameKey) || plane.calls[0].files["main.py"] != "print('v2')\n" {
+		t.Fatalf("re-import plane calls = %+v, want one Commit on existing key", plane.calls)
 	}
 	list, err := store.ListScripts(ctx, ownerA)
 	if err != nil || len(list) != 1 {

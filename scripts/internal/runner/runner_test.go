@@ -32,6 +32,22 @@ const (
 
 func nowStr() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 
+type boundaryTestPlane struct{}
+
+func (boundaryTestPlane) Create(context.Context, string, string) error { return nil }
+func (boundaryTestPlane) Commit(context.Context, string, map[string]string, string, string) (string, error) {
+	return "sha", nil
+}
+func (boundaryTestPlane) Head(context.Context, string, string) (string, error) { return "sha", nil }
+func (boundaryTestPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
+	return nil, nil
+}
+func (boundaryTestPlane) Rename(context.Context, string, string, string) error { return nil }
+func (boundaryTestPlane) Delete(context.Context, string, string) error         { return nil }
+func (boundaryTestPlane) RunToken(context.Context, string) (string, string, error) {
+	return "token", "clone", nil
+}
+
 // newStore mirrors store_test's DB setup: a migrated temp SQLite DB with a real
 // producer outbox attached so completion events land in the outbox table.
 func newStore(t *testing.T) (*script.Store, *sql.DB) {
@@ -1032,6 +1048,7 @@ func TestRunBoundaryLeavesThirdPartyHTTPAndFilesInsideRunRecord(t *testing.T) {
 	dataDir := t.TempDir()
 	runEngine := New(st, dataDir, 30*time.Second, nil)
 	svc := script.NewService(st, filepath.Join(dataDir, "runs"), runEngine)
+	svc.Plane = boundaryTestPlane{}
 	type rootCall struct{ rootID, op string }
 	var observed []rootCall
 	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {
