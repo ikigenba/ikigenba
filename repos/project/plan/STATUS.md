@@ -9,4 +9,6 @@ build loop **deletes** the phase's line and its body file — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 41
+Next phase: 42
+
+- Phase 41 ⬜ realizes R-36US-ASST, R-382O-OKJI, R-39AL-2CA7 — run-token `ttl` required and honored verbatim; `REPOS_RUN_TOKEN_TTL` deleted

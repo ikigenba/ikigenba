@@ -74,10 +74,11 @@ ids ends at minting them — how coverage is measured and when the work is
 - **Config:** env only, prefix `REPOS_`, read at the composition root, never
   below it. The whole set: `REPOS_STATE_DIR` (dev-only override; unset in
   production, where the state root composes in-binary from `IKIGENBA_ROOT` —
-  resolution order in D15), `REPOS_RUN_TOKEN_TTL` (default `2h`),
-  `REPOS_MAX_COMMIT_BYTES` (default `67108864`), and `REPOS_GIT_BIN` (default
-  `git`). There are no credentials in repos' environment: it authenticates
-  nobody itself and calls no external service.
+  resolution order in D15), `REPOS_MAX_COMMIT_BYTES` (default `67108864`), and
+  `REPOS_GIT_BIN` (default `git`). There are no credentials in repos'
+  environment: it authenticates nobody itself and calls no external service.
+  Run-token lifetime is not configured here — it arrives per request (D20),
+  bounded at the source by `root project/design/D26.md`.
 - **Peers by name, addresses from the registry:** repos has **no service
   peers** — it makes no outbound call to another service. It asks `registry`
   only for its own address (`registry.MustPort("repos")`,
