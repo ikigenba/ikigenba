@@ -19,7 +19,7 @@ removed, not stacked); construction history lives in git, not here.
 > confined file tools (`internal/files`), the MCP tool table (`internal/mcp`), the
 > embedded landing page (`share/www`), the migration set (`internal/db`), and the
 > nginx fragment (`sites/etc/nginx.conf`), and the version-plane client and push
-> consumer (`internal/sites`, D32–D37). All of these live under `sites/`;
+> consumer (`internal/sites`, D32–D38). All of these live under `sites/`;
 > nothing outside `sites/` is named or changed. Cross-service facts (the dashboard
 > session validator `/_session-authn`, the dashboard apex login-bounce named
 > location `@login_bounce`, the dropbox mirror, the **repos loopback surface and
@@ -149,7 +149,9 @@ reads an owner for logic, and the reason the callerless seeding and consumer
 paths have a truthful owner to present. Two
 version-plane columns ride along: `repo_sha` (the commit the served copy is
 materialized at) and `repo_seeded` (whether the site has been brought into the
-plane). There is no lifecycle flag. The database is the single source of truth
+plane) — and a `path` column carries the site's **publish root**: the
+repository subfolder the site serves (`''` = the repository root; D38). There
+is no lifecycle flag. The database is the single source of truth
 for which sites exist, what they are called, and their visibility; the on-disk
 folder location mirrors it in lockstep. What a site *contains* is the
 repository's — the database records only where the copy stands (`repo_sha`). See
@@ -179,13 +181,15 @@ token rename on transitions into unlisted. See D16.
 
 Site content is git-backed: repos holds one bare repository per site, keyed
 `sites/<slug>`, and everything sites serves is a copy of that repository's `main`
-(root `project/design/D24.md`, cited and not restated). sites' half is five
+(root `project/design/D24.md`, cited and not restated). sites' half is seven
 Decisions: the injected `VersionClient` seam (D32); the write path — commit
 first, then apply to the copy in the same tool call (D33); `sync` as one batch
 commit (D34); the `repos:push` consumer that re-materializes a site when `main`
-moves under it (D35); the create/delete/slug-rotation lifecycle (D36); and the
-additive, re-runnable seeding pass that brings pre-plane sites in (D37). Serving,
-visibility, nginx routing, and the MCP surface are unchanged by all of it.
+moves under it (D35); the create/delete/slug-rotation lifecycle (D36); the
+additive, re-runnable seeding pass that brings pre-plane sites in (D37); and
+the **publish root** — a per-site `path` selecting the repository subfolder
+that is served, with `set_path` as its mutator (D38). Serving,
+visibility, and nginx routing are unchanged by all of it.
 
 ## In-process static serving
 

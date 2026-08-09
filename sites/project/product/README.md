@@ -141,6 +141,16 @@ sites does this and only this:
   and what they push to the live branch becomes what the site serves — with no
   deploy step and no separate publish. sites does not host that door or mint
   those credentials; it makes sure a site's served files follow what is pushed.
+- **Serve a chosen folder of the site's repository.** By default a site serves
+  everything in its repository. The owner can instead point a site at one
+  folder inside it — the shape a static-site generator produces, where sources
+  and build config live in the repository and the built output lands in a
+  folder like `public/` — and the site serves exactly that folder's contents at
+  its unchanged address. The choice is made at creation or changed later with
+  one call, takes effect immediately, and never appears in the site's URL. What
+  lies outside the chosen folder is not served and is out of reach of sites'
+  file tools; it is worked on through the development plane like any other
+  repository content.
 
 It deliberately does **nothing else**. In particular it does not: keep any
 publish/unpublish lifecycle, working tree, or served-symlink tree; let nginx
@@ -174,7 +184,8 @@ Promised values the design must honor verbatim and never re-declare:
   thereafter. No tool asks the owner to commit, push, initialize, or configure
   anything, and no tool can turn versioning off for a site.
 - **What the site serves is what its live branch says.** The served files are a
-  copy of the site's repository at its live branch; a change pushed there
+  copy of the site's repository at its live branch — all of it by default, or
+  exactly the one folder the owner pointed the site at; a change pushed there
   becomes what visitors get, and a change made through the tools is live at once
   and recorded at once. The two are never separate steps.
 - **Deleting a site takes it offline but does not destroy its history.** The
@@ -244,6 +255,15 @@ Promised values the design must honor verbatim and never re-declare:
   site's history, attributed to whoever made it, in the same call that makes the
   edit live. There is no commit step, no publish step, and no setting to turn on.
   An import is recorded as the one change it was, not as a change per file.
+- **A site can serve one folder of its repository instead of all of it.** The
+  owner points a site at a folder — say the `public/` a generator builds into —
+  and the site immediately serves exactly that folder's contents at its
+  existing address; nothing outside the folder is served or reachable through
+  sites' file tools, and pointing the site elsewhere (or back at the whole
+  repository) is one call. Choosing a folder that has no content yet is fine:
+  the site simply serves nothing until content lands there. The folder never
+  shows up in the site's URL, and every listing shows which folder a site
+  serves from.
 - **A site can be worked on from a laptop, and a push goes live.** The owner can
   check a site out with their own credential, edit it in their own editor, and
   push it back; the pushed version becomes what the site serves shortly
@@ -342,6 +362,15 @@ service:
   fails with a clear "try again" style refusal and the site's files are exactly
   what they were before — nothing half-applied, nothing silently unrecorded —
   while reading the site, listing sites, and the landing page all still work.
+- As the owner I point an existing site at a subfolder of its repository (like
+  a generator's `public/`), and its URL immediately serves that folder's
+  contents — files elsewhere in the repository are no longer served and no
+  longer appear through sites' file tools; when I later push a rebuilt output
+  folder from my laptop, the site updates. Pointing it back at the whole
+  repository is one call.
+- As the owner I point a site at a folder its repository does not contain yet,
+  and the call succeeds — the site serves nothing until my first push lands
+  content in that folder, at which point it appears with no further action.
 - As the owner of sites that existed before any of this, I find nothing about
   them changed — same URLs, same files, same names, same visibilities — and they
   are now version-controlled like everything else, with no action from me.
