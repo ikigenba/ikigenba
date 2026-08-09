@@ -14,8 +14,6 @@ matches only phase lines.
 
 Next phase: 04
 
-- Phase 03 ⬜ realizes — — silence the two nginx warnings: `variables_hash_max_size 2048` in the dev front door's `http` context (D1) and no `server_name` in the parked blocks (D3)
-
 The artifacts of D1, D2, and D3 already exist in the tree — this spec was written
 over working code, not ahead of it — so those Decisions queued no initial work.
 New work appends a `phase-NN.md` and its line here, taking its number from the
