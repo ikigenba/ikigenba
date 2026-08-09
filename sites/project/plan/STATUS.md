@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 56
-
-- Phase 55 ⬜ realizes D13 (slice), D32 (slice) — compose the plane at the root: client, `repos` consumer, background seeding, doc truth
