@@ -14,5 +14,3 @@ deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
 Next phase: 15
-
-- Phase 14 ⬜ realizes R-6B96-6B5S, R-6CH2-K2WH, R-67LH-0ZXP, R-68TD-EROE — the canonical landing page and its session-gated nginx routing
