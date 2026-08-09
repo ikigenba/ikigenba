@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 45
-
-- Phase 44 ⬜ realizes R-NKLN-6D6F — the trigger envelope: `EVENT_JSON`/stdin carry `{source, kind, subject, event_id, payload}`, one event shape suite-wide
