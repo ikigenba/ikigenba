@@ -38,7 +38,7 @@ func gitTest(t *testing.T, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func (p *gitVersionPlane) Create(_ context.Context, key, _ string) error {
+func (p *gitVersionPlane) Create(_ context.Context, key string, _ version.Owner, _ string) error {
 	gitTest(p.t, "init", "--bare", p.repo(key))
 	return nil
 }
@@ -104,8 +104,13 @@ func (p *gitVersionPlane) Read(_ context.Context, key, ref string) (version.Defi
 	return version.Definition{UserPrompt: string(user), SystemPrompt: string(system), ConfigJSON: cfg}, nil
 }
 
-func (p *gitVersionPlane) Rename(context.Context, string, string) error { return nil }
-func (p *gitVersionPlane) Archive(context.Context, string) error        { p.archived = true; return nil }
+func (p *gitVersionPlane) Rename(context.Context, string, string, version.Owner, string) error {
+	return nil
+}
+func (p *gitVersionPlane) Archive(context.Context, string, version.Owner, string) error {
+	p.archived = true
+	return nil
+}
 func (p *gitVersionPlane) RunToken(_ context.Context, key, _ string, _ time.Duration) (version.Credential, error) {
 	if p.archived {
 		return version.Credential{}, version.ErrUnavailable
@@ -246,7 +251,7 @@ func TestRunExecutedReadsPinnedCommitAfterWorkspaceAndMainChange(t *testing.T) {
 
 type unavailableVersion struct{}
 
-func (unavailableVersion) Create(context.Context, string, string) error {
+func (unavailableVersion) Create(context.Context, string, version.Owner, string) error {
 	return version.ErrUnavailable
 }
 func (unavailableVersion) Commit(context.Context, string, []version.File, string, string) (string, error) {
@@ -258,10 +263,12 @@ func (unavailableVersion) Head(context.Context, string) (string, error) {
 func (unavailableVersion) Read(context.Context, string, string) (version.Definition, error) {
 	return version.Definition{}, version.ErrUnavailable
 }
-func (unavailableVersion) Rename(context.Context, string, string) error {
+func (unavailableVersion) Rename(context.Context, string, string, version.Owner, string) error {
 	return version.ErrUnavailable
 }
-func (unavailableVersion) Archive(context.Context, string) error { return version.ErrUnavailable }
+func (unavailableVersion) Archive(context.Context, string, version.Owner, string) error {
+	return version.ErrUnavailable
+}
 func (unavailableVersion) RunToken(context.Context, string, string, time.Duration) (version.Credential, error) {
 	return version.Credential{}, version.ErrUnavailable
 }

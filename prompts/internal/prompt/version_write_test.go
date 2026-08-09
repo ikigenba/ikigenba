@@ -14,6 +14,7 @@ import (
 
 type versionCall struct {
 	op, key, to, message, actor, ref string
+	owner                            version.Owner
 	files                            []version.File
 }
 
@@ -28,8 +29,8 @@ func newRecordingVersion() *recordingVersion {
 	return &recordingVersion{definitions: make(map[string]version.Definition)}
 }
 
-func (f *recordingVersion) Create(_ context.Context, key, actor string) error {
-	f.calls = append(f.calls, versionCall{op: "create", key: key, actor: actor})
+func (f *recordingVersion) Create(_ context.Context, key string, owner version.Owner, actor string) error {
+	f.calls = append(f.calls, versionCall{op: "create", key: key, owner: owner, actor: actor})
 	return nil
 }
 
@@ -69,8 +70,8 @@ func (f *recordingVersion) Read(_ context.Context, key, ref string) (version.Def
 	return d, nil
 }
 
-func (f *recordingVersion) Rename(_ context.Context, from, to string) error {
-	f.calls = append(f.calls, versionCall{op: "rename", key: from, to: to})
+func (f *recordingVersion) Rename(_ context.Context, from, to string, owner version.Owner, actor string) error {
+	f.calls = append(f.calls, versionCall{op: "rename", key: from, to: to, owner: owner, actor: actor})
 	if f.renameErr != nil {
 		return f.renameErr
 	}
@@ -79,8 +80,8 @@ func (f *recordingVersion) Rename(_ context.Context, from, to string) error {
 	return nil
 }
 
-func (f *recordingVersion) Archive(_ context.Context, key string) error {
-	f.calls = append(f.calls, versionCall{op: "archive", key: key})
+func (f *recordingVersion) Archive(_ context.Context, key string, owner version.Owner, actor string) error {
+	f.calls = append(f.calls, versionCall{op: "archive", key: key, owner: owner, actor: actor})
 	return nil
 }
 
@@ -132,6 +133,9 @@ func TestCreateCommitsExactInitialDefinitionBatch(t *testing.T) {
 	}
 	if got := []string{plane.calls[0].op, plane.calls[1].op}; !reflect.DeepEqual(got, []string{"create", "commit"}) {
 		t.Fatalf("call order = %v, want create then commit", got)
+	}
+	if plane.calls[0].owner != (version.Owner{ID: ownerA, Email: ownerA}) || plane.calls[0].actor != "prompts:"+created.ID {
+		t.Fatalf("create identity = %+v", plane.calls[0])
 	}
 	commit := callsByOp(plane.calls, "commit")
 	if len(commit) != 1 || !reflect.DeepEqual(filePaths(commit[0].files), []string{"prompt.md", "config.json", "system.md"}) {
@@ -200,6 +204,10 @@ func TestUpdateCommitsOnlyChangedDefinitionAndRenamesBeforeRow(t *testing.T) {
 	}
 	if len(callsByOp(plane.calls, "rename")) != 1 || len(callsByOp(plane.calls, "commit")) != 0 {
 		t.Fatalf("name-only calls = %+v", plane.calls)
+	}
+	rename := callsByOp(plane.calls, "rename")[0]
+	if rename.owner != (version.Owner{ID: ownerA, Email: ownerA}) || rename.actor != "prompts:"+p.ID {
+		t.Fatalf("rename identity = %+v", rename)
 	}
 	stored, err := store.GetPrompt(t.Context(), ownerA, p.ID)
 	if err != nil || stored.Name != "Old" || stored.NameKey != "old" {
@@ -275,7 +283,7 @@ func TestDeleteArchivesDefinitionAndPreservesCompletedRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	archives := callsByOp(plane.calls, "archive")
-	if len(archives) != 1 || archives[0].key != p.NameKey {
+	if len(archives) != 1 || archives[0].key != p.NameKey || archives[0].owner != (version.Owner{ID: ownerA, Email: ownerA}) || archives[0].actor != "prompts:"+p.ID {
 		t.Fatalf("archive calls = %+v", archives)
 	}
 	if _, err := store.GetPrompt(t.Context(), ownerA, p.ID); !errors.Is(err, ErrNotFound) {

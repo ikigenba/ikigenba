@@ -3,8 +3,10 @@
 package version
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,12 +29,18 @@ var (
 	ErrUnavailable = errors.New("version: unavailable")
 )
 
+// Owner is the identity a version-plane domain verb is scoped to.
+type Owner struct {
+	ID    string
+	Email string
+}
+
 // File is one path in a batch write. Delete removes the path instead of
 // writing Data.
 type File struct {
-	Path   string `json:"path"`
-	Data   []byte `json:"data,omitempty"`
-	Delete bool   `json:"delete,omitempty"`
+	Path   string
+	Data   []byte
+	Delete bool
 }
 
 // Definition is the three addressable files of a prompt tree read at one ref.
@@ -52,17 +60,18 @@ type Credential struct {
 
 // Client is the version plane as prompts sees it.
 type Client interface {
-	Create(ctx context.Context, nameKey, actor string) error
+	Create(ctx context.Context, nameKey string, owner Owner, actor string) error
 	Commit(ctx context.Context, nameKey string, files []File, message, actor string) (sha string, err error)
 	Head(ctx context.Context, nameKey string) (sha string, err error)
 	Read(ctx context.Context, nameKey, ref string) (Definition, error)
-	Rename(ctx context.Context, fromKey, toKey string) error
-	Archive(ctx context.Context, nameKey string) error
+	Rename(ctx context.Context, fromKey, toKey string, owner Owner, actor string) error
+	Archive(ctx context.Context, nameKey string, owner Owner, actor string) error
 	RunToken(ctx context.Context, nameKey, runID string, ttl time.Duration) (Credential, error)
 }
 
 // HTTPClient implements Client over repos' loopback HTTP surface. promptID
-// resolves a repository name key to the prompt id used for attribution.
+// resolves a repository name key to the prompt id used for attribution when a
+// caller does not supply an actor.
 type HTTPClient struct {
 	base     string
 	promptID func(string) string
@@ -84,79 +93,141 @@ func New(baseURL string, promptID func(string) string) *HTTPClient {
 // BaseURL reports the injected endpoint without exposing HTTP details.
 func (c *HTTPClient) BaseURL() string { return c.base }
 
-func (c *HTTPClient) Create(ctx context.Context, nameKey, actor string) error {
-	return c.doJSON(ctx, http.MethodPost, "/repositories/create", nameKey, actor, map[string]any{
-		"key": repositoryKey(nameKey),
-	}, nil)
+func (c *HTTPClient) Create(ctx context.Context, nameKey string, owner Owner, actor string) error {
+	return c.doMCP(ctx, "create", nameKey, owner, actor, map[string]any{
+		"kind": repositoryKind,
+		"name": nameKey,
+	})
 }
 
 func (c *HTTPClient) Commit(ctx context.Context, nameKey string, files []File, message, actor string) (string, error) {
-	var response struct {
-		SHA string `json:"sha"`
+	type change struct {
+		Op         string  `json:"op"`
+		Path       string  `json:"path"`
+		ContentB64 *string `json:"content_b64,omitempty"`
 	}
-	err := c.doJSON(ctx, http.MethodPost, "/repositories/commit", nameKey, actor, map[string]any{
-		"key":     repositoryKey(nameKey),
-		"files":   files,
+	changes := make([]change, 0, len(files))
+	for _, file := range files {
+		encoded := base64.StdEncoding.EncodeToString(file.Data)
+		entry := change{Op: "put", Path: file.Path, ContentB64: &encoded}
+		if file.Delete {
+			entry.Op = "delete"
+			entry.ContentB64 = nil
+		}
+		changes = append(changes, entry)
+	}
+	var response struct {
+		Rev string `json:"rev"`
+	}
+	err := c.doJSON(ctx, http.MethodPost, "/commit", nil, map[string]any{
+		"kind":    repositoryKind,
+		"name":    nameKey,
 		"message": message,
+		"actor":   actor,
+		"changes": changes,
 	}, &response)
-	return response.SHA, err
+	return response.Rev, err
 }
 
 func (c *HTTPClient) Head(ctx context.Context, nameKey string) (string, error) {
+	query := make(url.Values)
+	query.Set("kind", repositoryKind)
+	query.Set("name", nameKey)
+	query.Set("ref", "main")
 	var response struct {
-		SHA string `json:"sha"`
+		Rev string `json:"rev"`
 	}
-	err := c.doJSON(ctx, http.MethodPost, "/repositories/head", nameKey, "", map[string]any{
-		"key":    repositoryKey(nameKey),
-		"branch": "main",
-	}, &response)
-	return response.SHA, err
+	if err := c.doJSON(ctx, http.MethodGet, "/list?"+query.Encode(), nil, nil, &response); err != nil {
+		return "", err
+	}
+	if response.Rev == "" {
+		return "", ErrNotFound
+	}
+	return response.Rev, nil
 }
 
 func (c *HTTPClient) Read(ctx context.Context, nameKey, ref string) (Definition, error) {
-	userPrompt, err := c.readFile(ctx, nameKey, ref, "prompt.md")
+	query := make(url.Values)
+	query.Set("kind", repositoryKind)
+	query.Set("name", nameKey)
+	query.Set("ref", ref)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/archive?"+query.Encode(), nil)
 	if err != nil {
-		return Definition{}, err
+		return Definition{}, unavailable(fmt.Errorf("build request: %w", err))
 	}
-	systemPrompt, err := c.readFile(ctx, nameKey, ref, "system.md")
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return Definition{}, err
-	}
-	configJSON, err := c.readFile(ctx, nameKey, ref, "config.json")
+	response, err := c.http.Do(request)
 	if err != nil {
-		return Definition{}, err
+		return Definition{}, unavailable(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		body, readErr := io.ReadAll(response.Body)
+		if readErr != nil {
+			return Definition{}, unavailable(readErr)
+		}
+		return Definition{}, statusError(response.StatusCode, body)
+	}
+
+	files := make(map[string][]byte, 3)
+	archive := tar.NewReader(response.Body)
+	for {
+		header, err := archive.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return Definition{}, unavailable(fmt.Errorf("decode archive: %w", err))
+		}
+		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+			continue
+		}
+		name := strings.TrimPrefix(header.Name, "./")
+		if name != "prompt.md" && name != "system.md" && name != "config.json" {
+			continue
+		}
+		data, err := io.ReadAll(archive)
+		if err != nil {
+			return Definition{}, unavailable(fmt.Errorf("read %s from archive: %w", name, err))
+		}
+		files[name] = data
+	}
+	for _, required := range []string{"prompt.md", "config.json"} {
+		if _, ok := files[required]; !ok {
+			return Definition{}, fmt.Errorf("version: archive missing %s", required)
+		}
 	}
 	return Definition{
-		UserPrompt:   string(userPrompt),
-		SystemPrompt: string(systemPrompt),
-		ConfigJSON:   configJSON,
+		UserPrompt:   string(files["prompt.md"]),
+		SystemPrompt: string(files["system.md"]),
+		ConfigJSON:   files["config.json"],
 	}, nil
 }
 
-func (c *HTTPClient) Rename(ctx context.Context, fromKey, toKey string) error {
-	return c.doJSON(ctx, http.MethodPost, "/repositories/rename", fromKey, "", map[string]any{
-		"old_key": repositoryKey(fromKey),
-		"new_key": repositoryKey(toKey),
-	}, nil)
+func (c *HTTPClient) Rename(ctx context.Context, fromKey, toKey string, owner Owner, actor string) error {
+	return c.doMCP(ctx, "rename", fromKey, owner, actor, map[string]any{
+		"kind": repositoryKind,
+		"name": fromKey,
+		"to":   toKey,
+	})
 }
 
-func (c *HTTPClient) Archive(ctx context.Context, nameKey string) error {
-	return c.doJSON(ctx, http.MethodPost, "/repositories/delete", nameKey, "", map[string]any{
-		"key": repositoryKey(nameKey),
-	}, nil)
+func (c *HTTPClient) Archive(ctx context.Context, nameKey string, owner Owner, actor string) error {
+	return c.doMCP(ctx, "delete", nameKey, owner, actor, map[string]any{
+		"kind": repositoryKind,
+		"name": nameKey,
+	})
 }
 
-func (c *HTTPClient) RunToken(ctx context.Context, nameKey, runID string, ttl time.Duration) (Credential, error) {
+func (c *HTTPClient) RunToken(ctx context.Context, nameKey, _ string, ttl time.Duration) (Credential, error) {
 	var response struct {
 		CloneURL  string `json:"clone_url"`
-		Username  string `json:"username"`
 		Token     string `json:"token"`
 		ExpiresAt string `json:"expires_at"`
 	}
-	err := c.doJSON(ctx, http.MethodPost, "/repositories/run-token", nameKey, "", map[string]any{
-		"key":    repositoryKey(nameKey),
-		"run_id": runID,
-		"ttl":    ttl.String(),
+	err := c.doJSON(ctx, http.MethodPost, "/run-token", nil, map[string]any{
+		"kind": repositoryKind,
+		"name": nameKey,
+		"ttl":  ttl.String(),
 	}, &response)
 	if err != nil {
 		return Credential{}, err
@@ -165,51 +236,86 @@ func (c *HTTPClient) RunToken(ctx context.Context, nameKey, runID string, ttl ti
 	if err != nil {
 		return Credential{}, unavailable(fmt.Errorf("decode expires_at: %w", err))
 	}
-	username := response.Username
-	if username == "" {
-		username = "run"
-	}
 	return Credential{
-		CloneURL: response.CloneURL, Username: username, Password: response.Token, ExpiresAt: expiresAt,
+		CloneURL: response.CloneURL, Username: "run", Password: response.Token, ExpiresAt: expiresAt,
 	}, nil
 }
 
-func (c *HTTPClient) readFile(ctx context.Context, nameKey, ref, path string) ([]byte, error) {
-	query := make(url.Values)
-	query.Set("key", repositoryKey(nameKey))
-	query.Set("ref", ref)
-	query.Set("path", path)
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/repositories/file?"+query.Encode(), nil)
-	if err != nil {
-		return nil, unavailable(err)
+func (c *HTTPClient) doMCP(ctx context.Context, tool, nameKey string, owner Owner, actor string, arguments map[string]any) error {
+	input := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      tool,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      tool,
+			"arguments": arguments,
+		},
 	}
-	c.setClientID(request, nameKey, "")
-	response, err := c.http.Do(request)
-	if err != nil {
-		return nil, unavailable(err)
+	headers := make(http.Header)
+	headers.Set("X-Owner-Id", owner.ID)
+	headers.Set("X-Owner-Email", owner.Email)
+	if actor == "" {
+		promptID := nameKey
+		if c.promptID != nil {
+			promptID = c.promptID(nameKey)
+		}
+		actor = repositoryKind + ":" + promptID
 	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, unavailable(err)
+	headers.Set("X-Client-Id", actor)
+	var response struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"structuredContent"`
+		} `json:"result"`
 	}
-	if err := statusError(response.StatusCode, body); err != nil {
-		return nil, err
+	if err := c.doJSON(ctx, http.MethodPost, "/mcp", headers, input, &response); err != nil {
+		return err
 	}
-	return body, nil
+	if !response.Result.IsError {
+		return nil
+	}
+	var sentinel error
+	switch response.Result.StructuredContent.Code {
+	case "not_found":
+		sentinel = ErrNotFound
+	case "conflict":
+		sentinel = ErrConflict
+	case "validation":
+		sentinel = ErrValidation
+	default:
+		sentinel = ErrUnavailable
+	}
+	detail := response.Result.StructuredContent.Message
+	if detail == "" {
+		detail = response.Result.StructuredContent.Code
+	}
+	return fmt.Errorf("%w: %s", sentinel, detail)
 }
 
-func (c *HTTPClient) doJSON(ctx context.Context, method, path, nameKey, actor string, input, output any) error {
-	body, err := json.Marshal(input)
-	if err != nil {
-		return unavailable(fmt.Errorf("encode request: %w", err))
+func (c *HTTPClient) doJSON(ctx context.Context, method, path string, headers http.Header, input, output any) error {
+	var body io.Reader
+	if input != nil {
+		encoded, err := json.Marshal(input)
+		if err != nil {
+			return unavailable(fmt.Errorf("encode request: %w", err))
+		}
+		body = bytes.NewReader(encoded)
 	}
-	request, err := http.NewRequestWithContext(ctx, method, c.base+path, bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
 	if err != nil {
 		return unavailable(fmt.Errorf("build request: %w", err))
 	}
-	request.Header.Set("Content-Type", "application/json")
-	c.setClientID(request, nameKey, actor)
+	if input != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	for key, values := range headers {
+		for _, value := range values {
+			request.Header.Add(key, value)
+		}
+	}
 	response, err := c.http.Do(request)
 	if err != nil {
 		return unavailable(err)
@@ -228,22 +334,6 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path, nameKey, actor st
 		}
 	}
 	return nil
-}
-
-func (c *HTTPClient) setClientID(request *http.Request, nameKey, actor string) {
-	clientID := actor
-	if clientID == "" {
-		promptID := nameKey
-		if c.promptID != nil {
-			promptID = c.promptID(nameKey)
-		}
-		clientID = repositoryKind + ":" + promptID
-	}
-	request.Header.Set("X-Client-Id", clientID)
-}
-
-func repositoryKey(nameKey string) string {
-	return repositoryKind + "/" + url.PathEscape(nameKey)
 }
 
 func statusError(status int, body []byte) error {

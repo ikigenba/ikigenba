@@ -308,7 +308,8 @@ func (s *Service) Create(ctx context.Context, ownerID, ownerEmail string, in Cre
 	}
 	if s.Version != nil {
 		actor := "prompts:" + p.ID
-		if err := s.Version.Create(ctx, p.NameKey, actor); err != nil {
+		owner := version.Owner{ID: p.OwnerID, Email: p.OwnerEmail}
+		if err := s.Version.Create(ctx, p.NameKey, owner, actor); err != nil {
 			rollback()
 			return Prompt{}, versionPlaneError("create repository", err)
 		}
@@ -428,7 +429,8 @@ func (s *Service) Import(ctx context.Context, ownerID, ownerEmail, sourcePath, n
 	}
 
 	actor := "prompts:" + p.ID
-	if err := s.Version.Create(ctx, p.NameKey, actor); err != nil {
+	owner := version.Owner{ID: p.OwnerID, Email: p.OwnerEmail}
+	if err := s.Version.Create(ctx, p.NameKey, owner, actor); err != nil {
 		_ = s.store.DeletePrompt(ctx, ownerID, p.ID)
 		return Prompt{}, versionPlaneError("create import repository", err)
 	}
@@ -619,7 +621,8 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 			return Prompt{}, versionPlaneError("parse definition config", err)
 		}
 		if nameKey != p.NameKey {
-			if err := s.Version.Rename(ctx, p.NameKey, nameKey); err != nil {
+			owner := version.Owner{ID: p.OwnerID, Email: p.OwnerEmail}
+			if err := s.Version.Rename(ctx, p.NameKey, nameKey, owner, "prompts:"+p.ID); err != nil {
 				return Prompt{}, versionPlaneError("rename repository", err)
 			}
 		}
@@ -673,7 +676,8 @@ func (s *Service) Delete(ctx context.Context, ownerID, id string) error {
 		return err
 	}
 	if s.Version != nil {
-		if err := s.Version.Archive(ctx, p.NameKey); err != nil {
+		owner := version.Owner{ID: p.OwnerID, Email: p.OwnerEmail}
+		if err := s.Version.Archive(ctx, p.NameKey, owner, "prompts:"+p.ID); err != nil {
 			return versionPlaneError("archive repository", err)
 		}
 	}
