@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"io/fs"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -13,13 +15,28 @@ import (
 // R-A5V4-ANGY — the newest outbox migration owns the revised kind/subject DDL,
 // while the frozen bootstrap migration remains untouched.
 func TestOutboxMigrationByteIdenticalToLibraryDDL(t *testing.T) {
-	body, err := migrationsFS.ReadFile("migrations/20260712201504_outbox_routing.sql")
+	entries, err := fs.ReadDir(migrationsFS, "migrations")
 	if err != nil {
-		t.Fatalf("read newest outbox routing migration: %v", err)
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	var names []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.Contains(entry.Name(), "outbox") {
+			names = append(names, entry.Name())
+		}
+	}
+	if len(names) == 0 {
+		t.Fatal("no outbox migration found")
+	}
+	sort.Strings(names)
+	newest := names[len(names)-1]
+	body, err := migrationsFS.ReadFile("migrations/" + newest)
+	if err != nil {
+		t.Fatalf("read newest outbox migration %s: %v", newest, err)
 	}
 	if !strings.Contains(string(body), outbox.SchemaSQL) {
-		t.Fatalf("outbox routing migration does not contain outbox.SchemaSQL verbatim.\n--- outbox.SchemaSQL (%d bytes) ---\n%q\n--- migration file (%d bytes) ---\n%q",
-			len(outbox.SchemaSQL), outbox.SchemaSQL, len(body), string(body))
+		t.Fatalf("newest outbox migration %s does not contain outbox.SchemaSQL verbatim.\n--- outbox.SchemaSQL (%d bytes) ---\n%q\n--- migration file (%d bytes) ---\n%q",
+			newest, len(outbox.SchemaSQL), outbox.SchemaSQL, len(body), string(body))
 	}
 }
 
