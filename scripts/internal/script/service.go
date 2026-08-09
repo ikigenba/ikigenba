@@ -117,7 +117,7 @@ func (s *Service) CreateForOwner(ctx context.Context, ownerID, ownerEmail string
 	if err := s.store.InsertScript(ctx, sc); err != nil {
 		return Script{}, err
 	}
-	return sc, nil
+	return s.store.GetScript(ctx, ownerID, sc.ID)
 }
 
 // maxImportBytes caps an imported script body at 1 MiB — a source file above
@@ -189,7 +189,7 @@ func (s *Service) Update(ctx context.Context, owner, id string, in UpdateInput) 
 	if err := s.store.UpdateScript(ctx, owner, sc); err != nil {
 		return Script{}, err
 	}
-	return sc, nil
+	return s.store.GetScript(ctx, owner, sc.ID)
 }
 
 // Delete tombstones the owner's script (the store removes the row + its

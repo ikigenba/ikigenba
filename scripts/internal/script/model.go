@@ -27,6 +27,7 @@ type Config struct {
 type Script struct {
 	ID, OwnerID, OwnerEmail, Name, Body string
 	Config                              Config
+	NameKey, RepoSeededAt               string
 	// SourcePath is the originating Dropbox mirror path for an import-managed
 	// script ("" ⇒ SQL NULL, the hand-authored case). Re-importing the same
 	// path upserts the same row (the partial unique index on
@@ -48,6 +49,7 @@ type Run struct {
 	TriggerSubject string `json:"trigger_subject"`
 	TriggerEventID string `json:"trigger_event_id"`
 	CorrelationID  string `json:"correlation_id,omitempty"`
+	RepoSha        string `json:"repo_sha"`
 	StdoutPath     string `json:"stdout_path"`
 	StderrPath     string `json:"stderr_path"`
 	ElapsedSecs    int    `json:"elapsed_secs"` // computed in service, not stored

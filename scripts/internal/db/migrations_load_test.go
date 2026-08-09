@@ -27,6 +27,109 @@ func TestLoadMigrations(t *testing.T) {
 	}
 }
 
+func TestVersionPlaneMigrationShapeAndFrozenHistory(t *testing.T) {
+	// R-20IL-OWGP
+	database, err := appkitdb.Open(filepath.Join(t.TempDir(), "version-plane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	migrations, err := appkitdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appkitdb.Migrate(context.Background(), database, migrations); err != nil {
+		t.Fatal(err)
+	}
+	for table, names := range map[string][]string{
+		"scripts": {"body", "source_path", "name_key", "repo_seeded_at"},
+		"runs":    {"repo_sha"},
+	} {
+		for _, name := range names {
+			var count int
+			if err := database.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, name).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 1 {
+				t.Errorf("%s.%s count = %d, want 1", table, name, count)
+			}
+		}
+	}
+	var unique int
+	if err := database.QueryRow(`SELECT [unique] FROM pragma_index_list('scripts') WHERE name = 'idx_scripts_name_key'`).Scan(&unique); err != nil {
+		t.Fatal(err)
+	}
+	if unique != 1 {
+		t.Fatalf("idx_scripts_name_key unique = %d, want 1", unique)
+	}
+	assertIndexColumns(t, database, "idx_scripts_name_key", []string{"name_key"})
+
+	frozenDigests := map[string]string{
+		"002_scripts.sql":                    "b71fe8a87367ea55a253c6425fa9bbc457e56ce307442a8bf659658c9f9d07cd",
+		"20260609135007_add_source_path.sql": "f27a399bd7e3ae3d7270f6967e01b647d8a22c0db55b13c94295357d8b9b9d73",
+		"20260720020257_owner_id_keying.sql": "9afb51a25be29983a341d06859ceb6a7cfeeddc58444d1d4f9c9eb50d2f9c4f0",
+	}
+	for name, want := range frozenDigests {
+		body, err := os.ReadFile(filepath.Join("migrations", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fmt.Sprintf("%x", sha256.Sum256(body)); got != want {
+			t.Errorf("%s digest = %s, want frozen %s", name, got, want)
+		}
+	}
+}
+
+func TestVersionPlaneMigrationPreservesExistingScript(t *testing.T) {
+	// R-21QI-2O7E
+	database, err := appkitdb.Open(filepath.Join(t.TempDir(), "version-plane-existing.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	migrations, err := appkitdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	versionPlane := -1
+	for i, migration := range migrations {
+		if strings.HasSuffix(migration.Name, "_version_plane.sql") {
+			versionPlane = i
+			break
+		}
+	}
+	if versionPlane < 0 {
+		t.Fatal("version_plane migration not found")
+	}
+	ctx := context.Background()
+	if err := appkitdb.Migrate(ctx, database, migrations[:versionPlane]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`INSERT INTO scripts
+		(id, owner_id, owner_email, name, body, config_json, source_path, created_at, updated_at)
+		VALUES ('script-before-plane', 'owner-before-plane', 'before@example.test', 'Before',
+		        'print("preserve me")', '{}', '/scripts/before.py', 'created', 'updated')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := appkitdb.Migrate(ctx, database, migrations); err != nil {
+		t.Fatal(err)
+	}
+	var id, ownerID, body, sourcePath string
+	var nameKey, repoSeededAt sql.NullString
+	if err := database.QueryRow(`SELECT id, owner_id, body, source_path, name_key, repo_seeded_at
+		FROM scripts WHERE id = 'script-before-plane'`).Scan(
+		&id, &ownerID, &body, &sourcePath, &nameKey, &repoSeededAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if id != "script-before-plane" || ownerID != "owner-before-plane" || body != `print("preserve me")` || sourcePath != "/scripts/before.py" {
+		t.Fatalf("preserved row = id %q owner %q body %q source %q", id, ownerID, body, sourcePath)
+	}
+	if nameKey.Valid || repoSeededAt.Valid {
+		t.Fatalf("new columns = name_key %#v repo_seeded_at %#v, want NULL", nameKey, repoSeededAt)
+	}
+}
+
 func TestCorrelationIDMigrationAddsIndexedRunColumnWithoutChangingFrozenMigrations(t *testing.T) {
 	// R-4OW5-Q1ND
 	database, err := appkitdb.Open(filepath.Join(t.TempDir(), "correlation.db"))

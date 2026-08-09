@@ -212,11 +212,11 @@ func arraySchema(items map[string]any) map[string]any {
 
 func scriptSchema() map[string]any {
 	props := map[string]any{}
-	for _, key := range []string{"ID", "OwnerID", "OwnerEmail", "Name", "Body", "SourcePath", "CreatedAt", "UpdatedAt"} {
+	for _, key := range []string{"ID", "OwnerID", "OwnerEmail", "Name", "Body", "NameKey", "RepoSeededAt", "SourcePath", "CreatedAt", "UpdatedAt"} {
 		props[key] = typ("string")
 	}
 	props["Config"] = openObjectSchema()
-	return objSchema(props, "ID", "OwnerID", "OwnerEmail", "Name", "Body", "Config", "SourcePath", "CreatedAt", "UpdatedAt")
+	return objSchema(props, "ID", "OwnerID", "OwnerEmail", "Name", "Body", "Config", "NameKey", "RepoSeededAt", "SourcePath", "CreatedAt", "UpdatedAt")
 }
 
 func scriptDetailSchema() map[string]any {
@@ -226,7 +226,7 @@ func scriptDetailSchema() map[string]any {
 	}
 	props["RunningCount"] = typ("integer")
 	props["LastRun"] = nullable(openObjectSchema())
-	return objSchema(props, "ID", "OwnerID", "OwnerEmail", "Name", "Body", "Config", "SourcePath", "CreatedAt", "UpdatedAt", "RunningCount", "LastRun")
+	return objSchema(props, "ID", "OwnerID", "OwnerEmail", "Name", "Body", "Config", "NameKey", "RepoSeededAt", "SourcePath", "CreatedAt", "UpdatedAt", "RunningCount", "LastRun")
 }
 
 func triggerSchema() map[string]any {
@@ -235,12 +235,12 @@ func triggerSchema() map[string]any {
 
 func runSchema() map[string]any {
 	props := map[string]any{}
-	for _, key := range []string{"id", "script_id", "status", "started_at", "ended_at", "error", "trigger_source", "trigger_kind", "trigger_subject", "trigger_event_id", "correlation_id", "stdout_path", "stderr_path"} {
+	for _, key := range []string{"id", "script_id", "status", "started_at", "ended_at", "error", "trigger_source", "trigger_kind", "trigger_subject", "trigger_event_id", "correlation_id", "repo_sha", "stdout_path", "stderr_path"} {
 		props[key] = typ("string")
 	}
 	props["exit_code"] = nullable(typ("integer"))
 	props["elapsed_secs"] = typ("integer")
-	return objSchema(props, "id", "script_id", "status", "exit_code", "started_at", "ended_at", "error", "trigger_source", "trigger_kind", "trigger_subject", "trigger_event_id", "correlation_id", "stdout_path", "stderr_path", "elapsed_secs")
+	return objSchema(props, "id", "script_id", "status", "exit_code", "started_at", "ended_at", "error", "trigger_source", "trigger_kind", "trigger_subject", "trigger_event_id", "correlation_id", "repo_sha", "stdout_path", "stderr_path", "elapsed_secs")
 }
 
 func fileEntrySchema() map[string]any {
