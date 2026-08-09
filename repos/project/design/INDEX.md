@@ -24,7 +24,7 @@ v2 rewrite and their ids were deleted with them.
 - D17 → `project/design/D17.md` — Custody: the bare-repo store, the `Git` seam, and the ref choke point — R-J4Y9-H96C, R-J665-V0X1, R-J7E2-8SNQ, R-J8LY-MKEF, R-J9TV-0C54, R-JB1R-E3VT, R-JC9N-RVMI
 - D18 → `project/design/D18.md` — The loopback filesystem + commit API — R-JJL2-2I2O, R-JKSY-G9TD, R-JM0U-U1K2, R-JN8R-7TAR, R-JOGN-LL1G, R-JPOJ-ZCS5, R-JQWG-D4IU, R-JS4C-QW9J, R-JTC9-4O08, R-JUK5-IFQX, R-JVS1-W7HM, R-JY7U-NQZ0
 - D19 → `project/design/D19.md` — The git smart-HTTP door — R-JZFR-1IPP, R-K0NN-FAGE, R-K1VJ-T273, R-K33G-6TXS, R-K4BC-KLOH, R-K5J8-YDF6, R-K6R5-C55V, R-K7Z1-PWWK
-- D20 → `project/design/D20.md` — Run tokens: short-lived, repository-scoped push credentials — R-K96Y-3ON9, R-KAEU-HGDY, R-KBMQ-V84N, R-KCUN-8ZVC, R-KE2J-MRM1
+- D20 → `project/design/D20.md` — Run tokens: short-lived, repository-scoped push credentials — R-II0Q-VTSI, R-IJ8N-9LJ7, R-K96Y-3ON9, R-KAEU-HGDY, R-KBMQ-V84N, R-KCUN-8ZVC, R-KE2J-MRM1
 - D21 → `project/design/D21.md` — Statuses and the `merge` verb — R-KFAG-0JCQ, R-KHQ8-S2U4, R-KIY5-5UKT, R-KK61-JMBI, R-KLDX-XE27, R-KMLU-B5SW, R-KNTQ-OXJL, R-KP1N-2PAA, R-KQ9J-GH0Z, R-KRHF-U8RO
 - D22 → `project/design/D22.md` — The MCP tool surface — R-KSPC-80ID, R-KTX8-LS92, R-KV54-ZJZR, R-KWD1-DBQG, R-KXKX-R3H5, R-KYSU-4V7U, R-JFAI-W00R, R-JGIF-9RRG, R-L00Q-IMYJ, R-L2GJ-A6FX
 - D23 → `project/design/D23.md` — Events: the `push` and `archived` families — R-JDHK-5ND7, R-JFXC-X6UL, R-JH59-AYLA, R-JID5-OQBZ
@@ -41,6 +41,8 @@ v2 rewrite and their ids were deleted with them.
 - R-G1OF-AAC8 → D10 — `project/design/D10.md`
 - R-G2WB-O22X → D10 — `project/design/D10.md`
 - R-G448-1TTM → D10 — `project/design/D10.md`
+- R-II0Q-VTSI → D20 — `project/design/D20.md`
+- R-IJ8N-9LJ7 → D20 — `project/design/D20.md`
 - R-IWEY-SUZH → D2 — `project/design/D02.md`
 - R-IYUR-KEGV → D2 — `project/design/D02.md`
 - R-J02N-Y67K → D2 — `project/design/D02.md`
