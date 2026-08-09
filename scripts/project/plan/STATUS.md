@@ -11,7 +11,6 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 42
 
-- Phase 35 ⬜ realizes D36 — the `internal/repos` version-plane client behind the `VersionPlane` seam
 - Phase 36 ⬜ realizes D37 — the authoring verbs become commits; `get` reads `main`
 - Phase 37 ⬜ realizes D38 — runs pin a commit and execute a real clone with a run token
 - Phase 38 ⬜ realizes D39 — `repos` joins the trigger sources (sixth consumer)
