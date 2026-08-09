@@ -220,7 +220,7 @@ func TestCommittedNginxVariablesHashMaxSizePrecedesServerBlocks(t *testing.T) {
 	}
 
 	contents := string(config)
-	directive := "variables_hash_max_size 2048;"
+	directive := "variables_hash_max_size 4096;"
 	directiveOffset := strings.Index(contents, directive)
 	if directiveOffset == -1 {
 		t.Fatalf("committed nginx.conf is missing %q", directive)
