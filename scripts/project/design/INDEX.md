@@ -24,7 +24,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D18 → `project/design/D18.md` — Event-routing conformance: producer kinds `succeeded`/`failed`, subject = /<script name>, family registry, outbox migration — owns R-82AG-F74Z, R-83IC-SYVO, R-84Q9-6QMD, R-85Y5-KID2
 - D19 → `project/design/D19.md` — Structured MCP adoption: `structuredContent` + `outputSchema` on the thirteen structured domain tools, prose exceptions kept text-only, typed error codes from the closed vocabulary (cites `project/design/D20.md` at the repo root) — owns R-C0G0-V0QL, R-C1NX-8SHA, R-C2VT-MK7Z, R-C43Q-0BYO, R-C5BM-E3PD, R-C6JI-RVG2, R-C7RF-5N6R, R-CA77-X6O5
 - D20 → `project/design/D20.md` — Error-taxonomy enrichment: `too_large` and `source_unavailable` become real domain sentinels (`script.ErrTooLarge`/`script.ErrSourceUnavailable` classify the import size cap and mirror-fetch failure; mirrors prompts D27) — owns R-CBF4-AYEU, R-CCN0-OQ5J, R-CDUX-2HW8
-- D21 → `project/design/D21.md` — The runner-injected `suite` Python module: embedded stdlib-only `suite.py` materialized beside `main.py`, runtime facts as `SUITE_*` env vars, `suite.event()`, the `ToolError` exception model — owns R-HVKP-FQRD, R-HWSL-TII2, R-HY0I-7A8R, R-HZ8E-L1ZG
+- D21 → `project/design/D21.md` — The runner-injected `suite` Python module: embedded stdlib-only `suite.py` materialized beside `main.py`, runtime facts as `SUITE_*` env vars, `suite.event()` (the trigger envelope), the `ToolError` exception model — owns R-HVKP-FQRD, R-HWSL-TII2, R-NKLN-6D6F, R-HZ8E-L1ZG
 - D22 → `project/design/D22.md` — `suite.mcp(service, tool, args)`: the generic MCP verb client (identity asserted by owner id, structuredContent verbatim, prose fallback, typed errors) — owns R-Q9X1-8DQ2, R-I1O7-CLGU, R-I2W3-QD7J, R-I5BW-HWOX, R-I6JS-VOFM
 - D23 → `project/design/D23.md` — `suite.fetch(content_url, dest)`: the content-plane acceptor (loopback URL confinement, streamed + hash-verified, pinned failure mapping) — owns R-I7RP-9G6B, R-I8ZL-N7X0, R-IA7I-0ZNP
 - D24 → `project/design/D24.md` — `suite.files`: the file share's filesystem API, service-agnostic (all seven verbs, streaming, `X-Client-Id: scripts:<script_id>`, status-derived failure mapping) — owns R-IBFE-EREE, R-ICNA-SJ53, R-IDV7-6AVS, R-IF33-K2MH, R-IGAZ-XUD6, R-IHIW-BM3V
@@ -45,6 +45,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D38 → `project/design/D38.md` — A run is a real clone pinned to a sha, with a run token in its environment — owns R-2K0Z-T8BT, R-2L8W-702I, R-2MGS-KRT7, R-2NOO-YJJW, R-2OWL-CBAL, R-2RCE-3URZ, R-2SKA-HMIO
 - D39 → `project/design/D39.md` — `repos` becomes a trigger source: scripts is the suite's CI runner — owns R-2TS6-VE9D, R-2V03-9602
 - D40 → `project/design/D40.md` — Seeding existing scripts into the plane, then retiring the `body` column (guarded migration) — owns R-2W7Z-MXQR, R-2XFW-0PHG, R-2YNS-EH85
+- D41 → `project/design/D41.md` — Outbox schema convergence: the `outbox_correlation` rebuild migration, the restored frozen body, and the migration-immutability guard — owns R-NGXY-11YC, R-NJDQ-SLFQ; adopts R-NFQ1-NA7N (root `project/design/D25.md`)
 
 ## Verification ids → Decision
 
@@ -129,7 +130,6 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-HOME-8R2V → D7 → `project/design/D07.md`
 - R-HVKP-FQRD → D21 → `project/design/D21.md`
 - R-HWSL-TII2 → D21 → `project/design/D21.md`
-- R-HY0I-7A8R → D21 → `project/design/D21.md`
 - R-HZ8E-L1ZG → D21 → `project/design/D21.md`
 - R-I1O7-CLGU → D22 → `project/design/D22.md`
 - R-I2W3-QD7J → D22 → `project/design/D22.md`
@@ -165,10 +165,14 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-M8XL-ANIZ → D8 → `project/design/D08.md`
 - R-MA5H-OF9O → D8 → `project/design/D08.md`
 - R-MBDE-270D → D8 → `project/design/D08.md`
+- R-NFQ1-NA7N → D41 → `project/design/D41.md` (adopted from root `project/design/D25.md`)
 - R-NGNX-2A5Q → D4 → `project/design/D04.md`
 - R-NGNX-4B7R → D4 → `project/design/D04.md`
 - R-NGNX-6C9S → D4 → `project/design/D04.md`
 - R-NGNX-8D1T → D4 → `project/design/D04.md`
+- R-NGXY-11YC → D41 → `project/design/D41.md`
+- R-NJDQ-SLFQ → D41 → `project/design/D41.md`
+- R-NKLN-6D6F → D21 → `project/design/D21.md`
 - R-O1AD-MRKW → D34 → `project/design/D34.md` (adopted from root `project/design/D23.md`)
 - R-O2IA-0JBL → D34 → `project/design/D34.md` (adopted from root `project/design/D23.md`)
 - R-Q2LM-XR9W → D28 → `project/design/D28.md`
@@ -197,3 +201,5 @@ _Retired: R-RGST-PEER (was D10) — the peer feed-URL default resolution it pinn
 _Retired: R-I0GA-YTQ5 (was D22) — the `suite.mcp` happy-path assertion pinned the identity header as `X-Owner-Email`; the owner-id conversion (D28, appkit D13) makes `X-Owner-Id` the gated/asserted header, a changed discriminating behavior now pinned by R-Q9X1-8DQ2._
 
 _Retired: R-25E7-7ZFH, R-27TZ-ZIWV, R-291W-DANK (were D36) — they pinned the first build's client against an invented `/repositories/*` REST surface repos never serves; D36's rewrite pins the real surface (MCP domain verbs + plumbing byte routes) with fresh ids R-IKGJ-ND9W, R-ILOG-150L, R-IO48-SOHZ, R-IPC5-6G8O, R-IQK1-K7ZD, and the old tagged tests are deleted with them._
+
+_Retired: R-HY0I-7A8R (was D21) — it pinned `suite.event()` returning the bare trigger payload verbatim; the suite-wide envelope alignment rewrites that contract (one `{source, kind, subject, event_id, payload}` shape across scripts and prompts), a changed discriminating behavior now pinned by R-NKLN-6D6F._

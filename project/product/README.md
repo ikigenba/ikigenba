@@ -87,6 +87,10 @@ This project owns the agreements that bind more than one tree:
   git history, how versioning stays ambient (no user ever manages it), what
   `main` means, the one git door and who may push what, how merges are gated,
   and what deleting a versioned artifact preserves.
+- **Migration immutability** — the rule that a committed schema migration is
+  frozen once committed, and the mechanical guard every schema-owning service
+  carries so an edited migration fails its suite instead of silently splitting
+  fresh databases from deployed ones.
 
 Out of scope — nothing else is promised here:
 

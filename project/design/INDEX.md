@@ -28,6 +28,7 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - **D22** → `project/design/D22.md` — Library dependency versioning: unversioned in-repo siblings, one suite-wide agentkit pin, a replace-free workspace — ids: R-3R5W-79JK, R-3SDS-L1A9, R-3TLO-YT0Y, R-3UTL-CKRN (all [proof: bin])
 - **D23** → `project/design/D23.md` — The testing-language contract: hermetic / composed / live / manual layers, the `live` build tag, the skip ban, and per-tree declarations — ids: R-O1AD-MRKW [proof: per-service], R-O2IA-0JBL [proof: per-service]
 - **D24** → `project/design/D24.md` — The version plane: repos is the suite's git custodian — ids: none (a prose contract; behaviors proven by the implementing trees)
+- **D25** → `project/design/D25.md` — The migration-immutability contract: frozen bodies, a hashed `migrations.sha256` manifest, and the mechanical guard — ids: R-NFQ1-NA7N [proof: per-service]
 
 ## Verification ids → Decision
 
@@ -60,6 +61,7 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - R-8H2R-1JHI → D11 (`project/design/D11.md`) [proof: appkit]
 - R-8IAN-FB87 → D11 (`project/design/D11.md`) [proof: per-service]
 - R-LHY1-6IS8 → D1 (`project/design/D01.md`) [proof: opsctl]
+- R-NFQ1-NA7N → D25 (`project/design/D25.md`) [proof: per-service]
 - R-O1AD-MRKW → D23 (`project/design/D23.md`) [proof: per-service]
 - R-O2IA-0JBL → D23 (`project/design/D23.md`) [proof: per-service]
 - R-O3Q6-EB2A → D5 (`project/design/D05.md`) [proof: opsctl]

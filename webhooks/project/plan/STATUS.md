@@ -13,5 +13,6 @@ gone. A phase body file carries no marker of its own. This document
 deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
-Next phase: 23
+Next phase: 24
 
+- Phase 23 ⬜ realizes R-NLTJ-K4X4, R-NN1F-XWNT, R-NFQ1-NA7N — outbox schema convergence (restore frozen body, `outbox_correlation` rebuild migration, name-order drift guard, `migrations.sha256` manifest)
