@@ -21,8 +21,9 @@ WHAT IT IS
   stderr.log, and any files the script wrote).
 - A *trigger* binds a script to a canonical upstream routing key (e.g.
   dropbox:create/bills/**/*.pdf):
-  when a matching event fires, scripts starts a run with the event payload on
-  stdin and in $EVENT_JSON.
+  when a matching event fires, scripts starts a run with the trigger envelope
+  {source, kind, subject, event_id, payload} on stdin and in $EVENT_JSON; the
+  producer payload is preserved under payload.
 
 RUNTIME CONTRACT
 - python3 >= 3.11, bash >= 5.0, and network access. The Python standard library
@@ -32,8 +33,8 @@ RUNTIME CONTRACT
   SUITE_REPO_KEY, SUITE_REPO_SHA, and a scoped SUITE_GIT_TOKEN, so ordinary git
   commands work in the checkout, including pushing a branch.
 - The suite module is importable in every run with: import suite
-- suite.event() returns the trigger payload verbatim as a dict, or {} for a
-  manual run.
+- suite.event() returns {source, kind, subject, event_id, payload} as a dict,
+  with the producer payload verbatim under payload, or {} for a manual run.
     event = suite.event()
 - suite.mcp(service, tool, args) calls any suite service's MCP tool and returns
   its structured result as a dict, or text for a prose tool.

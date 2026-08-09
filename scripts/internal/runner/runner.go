@@ -1,6 +1,6 @@
 // Package runner drives the async run lifecycle for scripts: it materializes a
 // script's body + pinned config into a persistent per-run dir, execs `python3
-// main.py` from that dir with the event payload on stdin/$EVENT_JSON, streams
+// main.py` from that dir with the trigger envelope on stdin/$EVENT_JSON, streams
 // stdout/stderr to log files, and writes the run's terminal state back to the
 // store (atomically emitting the completion event). See ARCHITECTURE.md §5.2 and
 // PLAN.md §A6.
@@ -74,6 +74,26 @@ func New(store *script.Store, dataDir string, ttl time.Duration, suiteEnv []stri
 // runDir is the rebuildable per-run execution tree: <dataDir>/runs/<run_id>/.
 func (r *Runner) runDir(runID string) string {
 	return filepath.Join(r.dataDir, "runs", runID)
+}
+
+func runInput(run script.Run, payload []byte) ([]byte, error) {
+	if run.TriggerSource == "" {
+		return payload, nil
+	}
+
+	return json.Marshal(struct {
+		Source  string          `json:"source"`
+		Kind    string          `json:"kind"`
+		Subject string          `json:"subject"`
+		EventID string          `json:"event_id"`
+		Payload json.RawMessage `json:"payload"`
+	}{
+		Source:  run.TriggerSource,
+		Kind:    run.TriggerKind,
+		Subject: run.TriggerSubject,
+		EventID: run.TriggerEventID,
+		Payload: payload,
+	})
 }
 
 // Spawn starts a goroutine and returns immediately. input is the event bytes
@@ -193,7 +213,13 @@ func (r *Runner) execute(run script.Run, input []byte) {
 	}
 	defer stderrFile.Close()
 
-	// Build the command: python3 main.py from the run dir, the event payload on
+	input, err = runInput(run, input)
+	if err != nil {
+		finish(sc.Name, script.RunFailed, nil, "marshal trigger envelope: "+err.Error())
+		return
+	}
+
+	// Build the command: python3 main.py from the run dir, the trigger envelope on
 	// $EVENT_JSON and stdin, streams to the log files. Setpgid puts the child in
 	// its own process group so a TTL/cancel kills the whole tree.
 	cmd := exec.CommandContext(ctx, python3, "main.py")

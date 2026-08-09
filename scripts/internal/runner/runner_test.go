@@ -418,14 +418,26 @@ func TestSpawnInjectsSuiteEnvironment(t *testing.T) {
 	}
 }
 
-func TestSuiteEventReturnsTriggerPayloadVerbatim(t *testing.T) {
-	// R-HY0I-7A8R
+func TestSuiteEventReturnsTriggerEnvelopeOrEmptyManualEvent(t *testing.T) {
+	// R-NKLN-6D6F
 	tests := []struct {
-		name  string
-		input string
-		want  any
+		name      string
+		input     string
+		triggered bool
+		want      any
 	}{
-		{name: "triggered", input: `{"a":{"b":[1,2]},"c":"x"}`, want: map[string]any{"a": map[string]any{"b": []any{float64(1), float64(2)}}, "c": "x"}},
+		{
+			name:      "triggered",
+			input:     `{"a":{"b":[1,2]},"c":"x"}`,
+			triggered: true,
+			want: map[string]any{
+				"source":   "dropbox",
+				"kind":     "create",
+				"subject":  "/bills/a.pdf",
+				"event_id": "E",
+				"payload":  map[string]any{"a": map[string]any{"b": []any{float64(1), float64(2)}}, "c": "x"},
+			},
+		},
 		{name: "manual", input: `{}`, want: map[string]any{}},
 	}
 	for _, tt := range tests {
@@ -434,6 +446,12 @@ func TestSuiteEventReturnsTriggerPayloadVerbatim(t *testing.T) {
 			dataDir := t.TempDir()
 			r := New(st, dataDir, 30*time.Second, nil)
 			run := seed(t, st, "import json, suite\nprint(json.dumps(suite.event()))\n")
+			if tt.triggered {
+				run.TriggerSource = "dropbox"
+				run.TriggerKind = "create"
+				run.TriggerSubject = "/bills/a.pdf"
+				run.TriggerEventID = "E"
+			}
 
 			r.Spawn(run, []byte(tt.input))
 			got := waitTerminal(t, st, run.ID)

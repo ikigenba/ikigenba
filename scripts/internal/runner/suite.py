@@ -34,7 +34,7 @@ def _runtime_value(name):
 
 
 def event():
-    """Return the trigger payload verbatim, parsing it only once."""
+    """Return {source, kind, subject, event_id, payload}, or {} for a manual run."""
 
     global _event_value
     if _event_value is _EVENT_UNSET:
