@@ -11,5 +11,3 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 42
 
-- Phase 41 ⬜ realizes D26 (slice: R-2ZVO-S8YU) — `describe` teaches the git-backed model
-
