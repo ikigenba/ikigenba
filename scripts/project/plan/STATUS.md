@@ -9,5 +9,7 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 42
+Next phase: 43
+
+- Phase 42 ⬜ realizes R-IKGJ-ND9W, R-ILOG-150L, R-IO48-SOHZ, R-IPC5-6G8O, R-IQK1-K7ZD — conform the version-plane client to repos' real surface (MCP domain verbs + plumbing byte routes)
 

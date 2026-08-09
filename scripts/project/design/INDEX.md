@@ -40,7 +40,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D33 → `project/design/D33.md` — Env-channel conformance: the run TTL surfaces in the manifest — owns R-HDCE-C6WU; adopts R-VKB6-SHHV (root `project/design/D11.md`)
 - D34 → `project/design/D34.md` — Testing-language conformance: adopt the suite contract and make `python3` (and, with D38, `git`) a hard precondition — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 - D35 → `project/design/D35.md` — Script definitions are git-backed trees: `main.py` is the entrypoint, `scripts/<name_key>` is the repo (additive migration; adopts root `project/design/D24.md`) — owns R-20IL-OWGP, R-21QI-2O7E, R-22YE-GFY3, R-246A-U7OS
-- D36 → `project/design/D36.md` — The version-plane client: `internal/repos` behind the `script.VersionPlane` seam, injected from `registry.BaseURL("repos")` — owns R-25E7-7ZFH, R-27TZ-ZIWV, R-291W-DANK, R-2A9S-R2E9
+- D36 → `project/design/D36.md` — The version-plane client: `internal/repos` behind the `script.VersionPlane` seam, injected from `registry.BaseURL("repos")` — owns R-2A9S-R2E9, R-IKGJ-ND9W, R-ILOG-150L, R-IO48-SOHZ, R-IPC5-6G8O, R-IQK1-K7ZD
 - D37 → `project/design/D37.md` — The write path: every authoring verb is a commit; `delete` archives; `get` reads `main` (no materialized copy — recorded deviation from root `project/design/D24.md`) — owns R-2BHP-4U4Y, R-2CPL-ILVN, R-2DXH-WDMC, R-2F5E-A5D1, R-2GDA-NX3Q, R-2HL7-1OUF, R-2IT3-FGL4
 - D38 → `project/design/D38.md` — A run is a real clone pinned to a sha, with a run token in its environment — owns R-2K0Z-T8BT, R-2L8W-702I, R-2MGS-KRT7, R-2NOO-YJJW, R-2OWL-CBAL, R-2RCE-3URZ, R-2SKA-HMIO
 - D39 → `project/design/D39.md` — `repos` becomes a trigger source: scripts is the suite's CI runner — owns R-2TS6-VE9D, R-2V03-9602
@@ -52,9 +52,6 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-21QI-2O7E → D35 → `project/design/D35.md`
 - R-22YE-GFY3 → D35 → `project/design/D35.md`
 - R-246A-U7OS → D35 → `project/design/D35.md`
-- R-25E7-7ZFH → D36 → `project/design/D36.md`
-- R-27TZ-ZIWV → D36 → `project/design/D36.md`
-- R-291W-DANK → D36 → `project/design/D36.md`
 - R-2A9S-R2E9 → D36 → `project/design/D36.md`
 - R-2BHP-4U4Y → D37 → `project/design/D37.md`
 - R-2CPL-ILVN → D37 → `project/design/D37.md`
@@ -149,9 +146,14 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-IHIW-BM3V → D24 → `project/design/D24.md`
 - R-IIQS-PDUK → D25 → `project/design/D25.md`
 - R-IJYP-35L9 → D25 → `project/design/D25.md`
+- R-IKGJ-ND9W → D36 → `project/design/D36.md`
+- R-ILOG-150L → D36 → `project/design/D36.md`
 - R-IMEH-UP2N → D25 → `project/design/D25.md`
 - R-INME-8GTC → D25 → `project/design/D25.md`
+- R-IO48-SOHZ → D36 → `project/design/D36.md`
 - R-IOUA-M8K1 → D26 → `project/design/D26.md`
+- R-IPC5-6G8O → D36 → `project/design/D36.md`
+- R-IQK1-K7ZD → D36 → `project/design/D36.md`
 - R-LAND-1S7G → D1 → `project/design/D01.md`
 - R-LAND-3T9H → D1 → `project/design/D01.md`
 - R-LAND-7Q3D → D1 → `project/design/D01.md`
@@ -193,3 +195,5 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 _Retired: R-RGST-PEER (was D10) — the peer feed-URL default resolution it pinned became chassis-owned when D11 moved the consumer loops to `Spec.Consumers`; the behavior is pinned by appkit's `R-464U-T3T1`/`R-47CR-6VJQ`._
 
 _Retired: R-I0GA-YTQ5 (was D22) — the `suite.mcp` happy-path assertion pinned the identity header as `X-Owner-Email`; the owner-id conversion (D28, appkit D13) makes `X-Owner-Id` the gated/asserted header, a changed discriminating behavior now pinned by R-Q9X1-8DQ2._
+
+_Retired: R-25E7-7ZFH, R-27TZ-ZIWV, R-291W-DANK (were D36) — they pinned the first build's client against an invented `/repositories/*` REST surface repos never serves; D36's rewrite pins the real surface (MCP domain verbs + plumbing byte routes) with fresh ids R-IKGJ-ND9W, R-ILOG-150L, R-IO48-SOHZ, R-IPC5-6G8O, R-IQK1-K7ZD, and the old tagged tests are deleted with them._
