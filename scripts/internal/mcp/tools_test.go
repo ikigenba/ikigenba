@@ -1194,6 +1194,14 @@ func TestUnknownDomainErrorDefaultsToInternalCode(t *testing.T) {
 	}
 }
 
+func TestConflictDomainErrorUsesConflictCode(t *testing.T) {
+	result := structuredError(script.ErrConflict)
+	structured, ok := result["structuredContent"].(map[string]any)
+	if !ok || structured["code"] != appkitmcp.ErrConflict {
+		t.Fatalf("conflict structuredContent = %#v, want conflict", structured)
+	}
+}
+
 func TestImportTooLargeReturnsStructuredTooLargeError(t *testing.T) {
 	// R-CBF4-AYEU
 	size := (1 << 20) + 1

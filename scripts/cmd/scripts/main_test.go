@@ -38,8 +38,42 @@ import (
 
 	"scripts/internal/consume"
 	scriptsdb "scripts/internal/db"
+	"scripts/internal/repos"
 	"scripts/internal/script"
 )
+
+// R-2A9S-R2E9
+func TestVersionPlaneCompositionUsesRegistryAndNoPinnedPort(t *testing.T) {
+	plane := newVersionPlane()
+	client, ok := plane.(*repos.Client)
+	if !ok {
+		t.Fatalf("version plane type = %T, want *repos.Client", plane)
+	}
+	if got, want := client.BaseURL(), registry.BaseURL("repos"); got != want {
+		t.Fatalf("version plane base = %q, want %q", got, want)
+	}
+	svc := &script.Service{Plane: plane}
+	if svc.Plane == nil {
+		t.Fatal("assembled Service.Plane is nil")
+	}
+
+	files, err := filepath.Glob("../../internal/repos/*.go")
+	if err != nil {
+		t.Fatalf("glob internal/repos: %v", err)
+	}
+	if len(files) == 0 {
+		t.Fatal("internal/repos contains no Go files")
+	}
+	for _, name := range files {
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if bytes.Contains(body, []byte("127.0.0.1:30")) {
+			t.Errorf("%s contains a pinned service port", name)
+		}
+	}
+}
 
 func TestScriptsFeedFramesRoutedCompletionEvent(t *testing.T) {
 	// R-85Y5-KID2

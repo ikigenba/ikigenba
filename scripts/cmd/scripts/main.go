@@ -40,6 +40,7 @@ import (
 	"scripts/internal/consume"
 	"scripts/internal/db"
 	"scripts/internal/mcp"
+	"scripts/internal/repos"
 	"scripts/internal/runner"
 	"scripts/internal/script"
 )
@@ -169,6 +170,7 @@ func registerRoutes(rt *appkit.Router) error {
 	run := runner.New(store, rootDir, runTTL, suiteEnv)
 	svc := script.NewService(store, runsDir, run)
 	svc.Fetcher = script.NewHTTPFetcher(dropboxBase)
+	svc.Plane = newVersionPlane()
 	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {
 		ctx = correlation.WithContext(ctx, rootID)
 		ctx, _ = rt.Recorder().StartChain(ctx, op, nil)
@@ -199,6 +201,10 @@ func registerRoutes(rt *appkit.Router) error {
 	}
 	rt.Handle("POST /mcp", rt.RequireIdentity(handler))
 	return nil
+}
+
+func newVersionPlane() script.VersionPlane {
+	return repos.New(registry.BaseURL("repos"), http.DefaultClient)
 }
 
 func scriptsHealth(ctx context.Context) (map[string]any, error) {

@@ -41,6 +41,9 @@ type Service struct {
 	// NewService parameter, so every existing NewService call site and test stays
 	// untouched. nil unless wired (only Import uses it).
 	Fetcher ContentFetcher
+	// Plane owns repository creation, commits, reads, renames, deletion, and run
+	// credentials. It is field-injected by cmd/scripts like Fetcher.
+	Plane VersionPlane
 	// RootStarter is nil when telemetry is disabled. Inherited chains already
 	// have an origin and therefore never call it.
 	RootStarter RootStarter

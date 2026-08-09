@@ -525,6 +525,8 @@ func structuredError(err error) map[string]any {
 	code := appkitmcp.ErrInternal
 	if errors.Is(err, script.ErrNotFound) {
 		code = appkitmcp.ErrNotFound
+	} else if errors.Is(err, script.ErrConflict) {
+		code = appkitmcp.ErrConflict
 	} else if errors.Is(err, script.ErrValidation) {
 		code = appkitmcp.ErrValidation
 	} else if errors.Is(err, script.ErrTooLarge) {
