@@ -48,7 +48,7 @@ func TestCreatePersistsSlugNameVisibilityAndOwner(t *testing.T) {
 		{"c-unlisted", "秘密のサイト", "owner-gamma", "gamma@example.com", Unlisted},
 	}
 	for _, tc := range cases {
-		created, err := s.Create(ctx, tc.slug, tc.name, tc.ownerID, tc.ownerEmail, tc.visibility)
+		created, err := s.Create(ctx, tc.slug, tc.name, tc.ownerID, tc.ownerEmail, tc.visibility, "")
 		if err != nil {
 			t.Fatalf("Create(%q): %v", tc.slug, err)
 		}
@@ -83,7 +83,7 @@ func TestCreatePersistsSlugNameVisibilityAndOwner(t *testing.T) {
 	if _, err := s.Get(ctx, "a-public"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get after Delete = %v, want ErrNotFound", err)
 	}
-	if _, err := s.Create(ctx, "b-private", "duplicate slug", "x", "x@example.com", Public); !errors.Is(err, ErrExists) {
+	if _, err := s.Create(ctx, "b-private", "duplicate slug", "x", "x@example.com", Public, ""); !errors.Is(err, ErrExists) {
 		t.Fatalf("duplicate Create = %v, want ErrExists", err)
 	}
 }
@@ -91,7 +91,7 @@ func TestCreatePersistsSlugNameVisibilityAndOwner(t *testing.T) {
 func TestSetVisibilityPreservesNameAndHandlesSlugCollision(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	original, err := s.Create(ctx, "old-slug", "Display Name", "owner", "owner@example.com", Private)
+	original, err := s.Create(ctx, "old-slug", "Display Name", "owner", "owner@example.com", Private, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestSetVisibilityPreservesNameAndHandlesSlugCollision(t *testing.T) {
 	if err := s.SetVisibility(ctx, "missing", Public, ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing SetVisibility = %v, want ErrNotFound", err)
 	}
-	other, err := s.Create(ctx, "occupied", "Other Name", "other", "other@example.com", Private)
+	other, err := s.Create(ctx, "occupied", "Other Name", "other", "other@example.com", Private, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestSetVisibilityPreservesNameAndHandlesSlugCollision(t *testing.T) {
 func TestRenameChangesOnlyDisplayName(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	before, err := s.Create(ctx, "rename-me", "Old Name", "owner-id", "snapshot@example.com", Private)
+	before, err := s.Create(ctx, "rename-me", "Old Name", "owner-id", "snapshot@example.com", Private, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,14 +254,18 @@ func TestVersionPlaneMigrationPreservesRowsAndStoreAccessors(t *testing.T) {
 	if got := columns["repo_seeded"]; got.typeName != "INTEGER" || got.notNull != 1 || got.defaultValue != "0" {
 		t.Fatalf("repo_seeded column = %+v, want INTEGER NOT NULL DEFAULT 0", got)
 	}
+	// R-3SOP-GMQL
+	if got := columns["path"]; got.typeName != "TEXT" || got.notNull != 1 || got.defaultValue != "''" {
+		t.Fatalf("path column = %+v, want TEXT NOT NULL DEFAULT ''", got)
+	}
 
 	var preserved [8]string
-	var defaultSha string
+	var defaultSha, defaultPath string
 	var defaultSeeded bool
 	err = conn.QueryRowContext(ctx, `SELECT slug, name, visibility, owner_id, owner_email, source_path,
-		created_at, updated_at, repo_sha, repo_seeded FROM sites WHERE slug = ?`, original[0]).Scan(
+		created_at, updated_at, repo_sha, repo_seeded, path FROM sites WHERE slug = ?`, original[0]).Scan(
 		&preserved[0], &preserved[1], &preserved[2], &preserved[3], &preserved[4], &preserved[5],
-		&preserved[6], &preserved[7], &defaultSha, &defaultSeeded)
+		&preserved[6], &preserved[7], &defaultSha, &defaultSeeded, &defaultPath)
 	if err != nil {
 		t.Fatalf("read preserved pre-plane row: %v", err)
 	}
@@ -270,8 +274,8 @@ func TestVersionPlaneMigrationPreservesRowsAndStoreAccessors(t *testing.T) {
 			t.Fatalf("pre-plane column %d = %q, want byte-identical %q", i, preserved[i], original[i])
 		}
 	}
-	if defaultSha != "" || defaultSeeded {
-		t.Fatalf("pre-plane defaults = (%q, %t), want (empty, false)", defaultSha, defaultSeeded)
+	if defaultSha != "" || defaultSeeded || defaultPath != "" {
+		t.Fatalf("pre-plane defaults = (%q, %t, %q), want (empty, false, empty)", defaultSha, defaultSeeded, defaultPath)
 	}
 
 	s := NewStore(conn)
@@ -303,7 +307,7 @@ func TestVersionPlaneMigrationPreservesRowsAndStoreAccessors(t *testing.T) {
 	}
 
 	for _, slug := range []string{"zeta", "alpha"} {
-		if _, err := s.Create(ctx, slug, slug+" name", "owner", "owner@example.com", Public); err != nil {
+		if _, err := s.Create(ctx, slug, slug+" name", "owner", "owner@example.com", Public, ""); err != nil {
 			t.Fatalf("Create(%q): %v", slug, err)
 		}
 	}
@@ -313,6 +317,62 @@ func TestVersionPlaneMigrationPreservesRowsAndStoreAccessors(t *testing.T) {
 	}
 	if len(unseeded) != 2 || unseeded[0].Slug != "alpha" || unseeded[1].Slug != "zeta" || unseeded[0].RepoSeeded || unseeded[1].RepoSeeded {
 		t.Fatalf("ListUnseeded = %+v, want exactly alpha then zeta", unseeded)
+	}
+
+	clock := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	s.Now = func() time.Time {
+		clock = clock.Add(time.Second)
+		return clock
+	}
+	rooted, err := s.Create(ctx, "rooted", "Rooted Site", "root-owner", "root@example.com", Private, "public/output")
+	if err != nil {
+		t.Fatalf("Create non-empty path: %v", err)
+	}
+	empty, err := s.Create(ctx, "empty-path", "Empty Path", "empty-owner", "empty@example.com", Public, "")
+	if err != nil {
+		t.Fatalf("Create empty path: %v", err)
+	}
+	gotRooted, err := s.Get(ctx, rooted.Slug)
+	if err != nil || gotRooted.Path != "public/output" || rooted.Path != "public/output" {
+		t.Fatalf("non-empty path Get/Create = %+v/%+v, %v", gotRooted, rooted, err)
+	}
+	gotEmpty, err := s.Get(ctx, empty.Slug)
+	if err != nil || gotEmpty.Path != "" || empty.Path != "" {
+		t.Fatalf("empty path Get/Create = %+v/%+v, %v", gotEmpty, empty, err)
+	}
+	listed, err := s.List(ctx)
+	if err != nil {
+		t.Fatalf("List paths: %v", err)
+	}
+	listedPaths := map[string]string{}
+	for _, site := range listed {
+		listedPaths[site.Slug] = site.Path
+	}
+	if listedPaths[rooted.Slug] != "public/output" || listedPaths[empty.Slug] != "" {
+		t.Fatalf("List paths = %v, want rooted and empty values", listedPaths)
+	}
+	if err := s.SetRepoSha(ctx, rooted.Slug, "keep-sha"); err != nil {
+		t.Fatalf("SetRepoSha before SetPath: %v", err)
+	}
+	beforePath, err := s.Get(ctx, rooted.Slug)
+	if err != nil {
+		t.Fatalf("Get before SetPath: %v", err)
+	}
+	if err := s.SetPath(ctx, rooted.Slug, "dist"); err != nil {
+		t.Fatalf("SetPath: %v", err)
+	}
+	afterPath, err := s.Get(ctx, rooted.Slug)
+	if err != nil {
+		t.Fatalf("Get after SetPath: %v", err)
+	}
+	wantAfterPath := beforePath
+	wantAfterPath.Path = "dist"
+	wantAfterPath.UpdatedAt = afterPath.UpdatedAt
+	if afterPath != wantAfterPath || !afterPath.UpdatedAt.After(beforePath.UpdatedAt) {
+		t.Fatalf("SetPath changed wrong fields: before=%+v after=%+v want=%+v", beforePath, afterPath, wantAfterPath)
+	}
+	if err := s.SetPath(ctx, "missing", "dist"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing SetPath = %v, want ErrNotFound", err)
 	}
 }
 

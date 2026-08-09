@@ -81,6 +81,7 @@ type Site struct {
 	OwnerID    string
 	OwnerEmail string
 	SourcePath string
+	Path       string
 	RepoSha    string
 	RepoSeeded bool
 	CreatedAt  time.Time
@@ -157,10 +158,11 @@ func parseTime(s string) time.Time {
 	return t
 }
 
-// Create inserts the caller-provided slug, display name, identity, and visibility
-// verbatim; there is no store-side default. created_at/updated_at are set to now
-// (UTC). Returns ErrExists if the slug is already taken.
-func (s *Store) Create(ctx context.Context, slug, name, ownerID, ownerEmail string, visibility Visibility) (Site, error) {
+// Create inserts the caller-provided slug, display name, identity, visibility,
+// and normalized publish root verbatim; there is no store-side default.
+// created_at/updated_at are set to now (UTC). Returns ErrExists if the slug is
+// already taken.
+func (s *Store) Create(ctx context.Context, slug, name, ownerID, ownerEmail string, visibility Visibility, path string) (Site, error) {
 	if _, err := ParseVisibility(string(visibility)); err != nil {
 		return Site{}, err
 	}
@@ -169,9 +171,9 @@ func (s *Store) Create(ctx context.Context, slug, name, ownerID, ownerEmail stri
 	// source_path is inserted NULL: a freshly created site is hand-authored until
 	// a sync stamps it via SetSourcePath.
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sites (slug, name, source_path, visibility, owner_id, owner_email, created_at, updated_at)
-		 VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
-		slug, name, visibility, ownerID, ownerEmail, ts, ts)
+		`INSERT INTO sites (slug, name, source_path, visibility, owner_id, owner_email, path, created_at, updated_at)
+		 VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+		slug, name, visibility, ownerID, ownerEmail, path, ts, ts)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") ||
 			strings.Contains(err.Error(), "PRIMARY KEY") {
@@ -185,6 +187,7 @@ func (s *Store) Create(ctx context.Context, slug, name, ownerID, ownerEmail stri
 		Visibility: visibility,
 		OwnerID:    ownerID,
 		OwnerEmail: ownerEmail,
+		Path:       path,
 		CreatedAt:  parseTime(ts),
 		UpdatedAt:  parseTime(ts),
 	}, nil
@@ -193,7 +196,7 @@ func (s *Store) Create(ctx context.Context, slug, name, ownerID, ownerEmail stri
 // Get fetches one site by slug. Returns ErrNotFound when absent.
 func (s *Store) Get(ctx context.Context, slug string) (Site, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT slug, name, visibility, owner_id, owner_email, source_path, repo_sha, repo_seeded, created_at, updated_at
+		`SELECT slug, name, visibility, owner_id, owner_email, source_path, path, repo_sha, repo_seeded, created_at, updated_at
 		 FROM sites WHERE slug = ?`, slug)
 	site, err := scanSite(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -208,7 +211,7 @@ func (s *Store) Get(ctx context.Context, slug string) (Site, error) {
 // List returns every site ordered by slug (deterministic).
 func (s *Store) List(ctx context.Context) ([]Site, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT slug, name, visibility, owner_id, owner_email, source_path, repo_sha, repo_seeded, created_at, updated_at
+		`SELECT slug, name, visibility, owner_id, owner_email, source_path, path, repo_sha, repo_seeded, created_at, updated_at
 		 FROM sites ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("list sites: %w", err)
@@ -313,6 +316,24 @@ func (s *Store) Rename(ctx context.Context, slug, name string) error {
 	return nil
 }
 
+// SetPath changes only the normalized publish root and owner-visible update
+// timestamp. Returns ErrNotFound when no such row exists.
+func (s *Store) SetPath(ctx context.Context, slug, path string) error {
+	ts := fmtTime(s.Now().UTC())
+	res, err := s.db.ExecContext(ctx, `UPDATE sites SET path = ?, updated_at = ? WHERE slug = ?`, path, ts, slug)
+	if err != nil {
+		return fmt.Errorf("set path %q: %w", slug, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set path %q: %w", slug, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: %q", ErrNotFound, slug)
+	}
+	return nil
+}
+
 // SetRepoSha records the commit materialized in the served copy without
 // changing the site's owner-visible update timestamp.
 func (s *Store) SetRepoSha(ctx context.Context, slug, sha string) error {
@@ -351,7 +372,7 @@ func (s *Store) MarkSeeded(ctx context.Context, slug string) error {
 // deterministic slug order.
 func (s *Store) ListUnseeded(ctx context.Context) ([]Site, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT slug, name, visibility, owner_id, owner_email, source_path, repo_sha, repo_seeded, created_at, updated_at
+		`SELECT slug, name, visibility, owner_id, owner_email, source_path, path, repo_sha, repo_seeded, created_at, updated_at
 		 FROM sites WHERE repo_seeded = 0 ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("list unseeded sites: %w", err)
@@ -379,13 +400,13 @@ type rowScanner interface {
 // scanSite maps a sites row into a Site, translating the nullable source_path.
 func scanSite(sc rowScanner) (Site, error) {
 	var (
-		slug, name, createdAt, updatedAt string
-		visibility                       string
-		sourcePath                       sql.NullString
-		ownerID, ownerEmail, repoSha     string
-		repoSeeded                       bool
+		slug, name, createdAt, updatedAt   string
+		visibility                         string
+		sourcePath                         sql.NullString
+		ownerID, ownerEmail, path, repoSha string
+		repoSeeded                         bool
 	)
-	if err := sc.Scan(&slug, &name, &visibility, &ownerID, &ownerEmail, &sourcePath, &repoSha, &repoSeeded, &createdAt, &updatedAt); err != nil {
+	if err := sc.Scan(&slug, &name, &visibility, &ownerID, &ownerEmail, &sourcePath, &path, &repoSha, &repoSeeded, &createdAt, &updatedAt); err != nil {
 		return Site{}, err
 	}
 	v, err := ParseVisibility(visibility)
@@ -398,6 +419,7 @@ func scanSite(sc rowScanner) (Site, error) {
 		Visibility: v,
 		OwnerID:    ownerID,
 		OwnerEmail: ownerEmail,
+		Path:       path,
 		RepoSha:    repoSha,
 		RepoSeeded: repoSeeded,
 		CreatedAt:  parseTime(createdAt),

@@ -40,6 +40,10 @@ type pushFixture struct {
 }
 
 func newPushFixture(t *testing.T, repoSHA string) pushFixture {
+	return newPushFixtureWithPath(t, repoSHA, "")
+}
+
+func newPushFixtureWithPath(t *testing.T, repoSHA, path string) pushFixture {
 	t.Helper()
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -48,7 +52,7 @@ func newPushFixture(t *testing.T, repoSHA string) pushFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	site, err := store.Create(ctx, "example", "Example", "owner", "owner@example.com", Public)
+	site, err := store.Create(ctx, "example", "Example", "owner", "owner@example.com", Public, path)
 	if err != nil {
 		t.Fatalf("create site: %v", err)
 	}
@@ -166,6 +170,51 @@ func TestMainPushReconcilesWholeTreeAndRecordsSHA(t *testing.T) {
 	}
 	if got := f.repoSHA(t); got != "new-sha" {
 		t.Fatalf("repo sha = %q, want new-sha", got)
+	}
+}
+
+func TestMainPushMaterializesOnlyMappedPublishRoot(t *testing.T) {
+	// R-42FW-ISO5
+	f := newPushFixtureWithPath(t, "old-sha", "public")
+	f.write(t, "index.html", "old bytes")
+	f.write(t, "stale.html", "remove me")
+	f.version.entries = []TreeEntry{
+		{Path: "project.txt", Data: []byte("outside")},
+		{Path: "public/index.html", Data: []byte("new bytes")},
+		{Path: "public/new.html", Data: []byte("new page")},
+	}
+	f.version.commit = Commit{Sha: "new-sha"}
+
+	if err := f.handler(f.ctx, pushEvent(t, "/sites/example", "main", "new-sha")); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	want := map[string]string{"index.html": "new bytes", "new.html": "new page"}
+	if got := f.files(t); !reflect.DeepEqual(got, want) {
+		t.Fatalf("mapped files = %#v, want %#v", got, want)
+	}
+	if got := f.repoSHA(t); got != "new-sha" {
+		t.Fatalf("repo sha = %q, want new-sha", got)
+	}
+	if matches := pathsNamedUnder(t, f.layout.Root, "project.txt"); len(matches) != 0 {
+		t.Fatalf("outside-root project.txt materialized: %v", matches)
+	}
+
+	refused := newPushFixtureWithPath(t, "old-sha", "public")
+	refused.write(t, "index.html", "old bytes")
+	refused.version.entries = append(f.version.entries, TreeEntry{Path: "public/.git/config", Data: []byte("secret")})
+	refused.version.commit = Commit{Sha: "bad-sha"}
+	err := refused.handler(refused.ctx, pushEvent(t, "/sites/example", "main", "bad-sha"))
+	if err == nil || errors.Is(err, consumer.ErrSkip) {
+		t.Fatalf("mapped .git handler error = %v, want non-skip error", err)
+	}
+	if got := refused.files(t); !reflect.DeepEqual(got, map[string]string{"index.html": "old bytes"}) {
+		t.Fatalf("refused export changed files: %#v", got)
+	}
+	if got := refused.repoSHA(t); got != "old-sha" {
+		t.Fatalf("refused export sha = %q, want old-sha", got)
+	}
+	if matches := pathsNamedUnder(t, refused.layout.Root, ".git"); len(matches) != 0 {
+		t.Fatalf("mapped .git created under sites root: %v", matches)
 	}
 }
 

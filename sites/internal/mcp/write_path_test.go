@@ -106,7 +106,7 @@ func createTestSite(t *testing.T, h http.Handler, slug string) {
 
 func seedTestSite(t *testing.T, h *testHandler, slug string) {
 	t.Helper()
-	if _, err := h.store.Create(context.Background(), slug, slug, testOwnerID, testOwner, sites.Public); err != nil {
+	if _, err := h.store.Create(context.Background(), slug, slug, testOwnerID, testOwner, sites.Public, ""); err != nil {
 		t.Fatalf("seed site %q: %v", slug, err)
 	}
 	if err := os.MkdirAll(h.layout.SiteDir(sites.Public, slug), 0o755); err != nil {

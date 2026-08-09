@@ -228,7 +228,7 @@ func (h *toolHandlers) createSite(ctx context.Context, slug, name string, visibi
 	if err := sites.ValidateSlug(slug); err != nil {
 		return errResult(err), nil
 	}
-	site, err := h.store.Create(ctx, slug, name, id.OwnerID, id.OwnerEmail, visibility)
+	site, err := h.store.Create(ctx, slug, name, id.OwnerID, id.OwnerEmail, visibility, "")
 	if err != nil {
 		return errResult(err), nil
 	}

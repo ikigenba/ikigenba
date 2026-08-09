@@ -47,6 +47,7 @@ func NewPushHandler(store *Store, layout Layout, version VersionClient) consumer
 		if err != nil {
 			return fmt.Errorf("export pushed site %q: %w", slug, err)
 		}
+		entries = Subtree(entries, site.Path)
 		workingDir := layout.SiteDir(site.Visibility, slug)
 		desired := make(map[string][]byte, len(entries))
 		for _, entry := range entries {
