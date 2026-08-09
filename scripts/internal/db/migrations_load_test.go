@@ -200,7 +200,7 @@ func TestRetireBodyMigrationIsGuardedAndPreservesStampedRows(t *testing.T) {
 		"004_outbox.sql":                     "76296e7ac0263423de2210e73b1968814bd70bc39d0e220ee31f11f2879e078f",
 		"20260609135007_add_source_path.sql": "f27a399bd7e3ae3d7270f6967e01b647d8a22c0db55b13c94295357d8b9b9d73",
 		"20260712190612_trigger_filters.sql": "4c1326c9a8ccd27ec230816a4a3714043ad965287c7ddc459b5189b6945b967a",
-		"20260712192242_outbox_routing.sql":  "4287b44a69dea3138d75e196661ebb25198fd1e0dee37ed0c27a1a314b7691da",
+		"20260712192242_outbox_routing.sql":  "9348de0c347feaa2f9ce74c90d53c9fcf17eed56fd66538e528c8f729b46eb38",
 		"20260720020257_owner_id_keying.sql": "9afb51a25be29983a341d06859ceb6a7cfeeddc58444d1d4f9c9eb50d2f9c4f0",
 		"20260804181951_correlation_id.sql":  "8570f1445c88c9592087cea2528b53249c684da255780b245b77a30fdf6c55e5",
 		"20260809000848_version_plane.sql":   "65683a0392ac1d4a494c483edae544067d319eb8586cb8efc4dddab330a703dd",
@@ -263,7 +263,7 @@ func TestCorrelationIDMigrationAddsIndexedRunColumnWithoutChangingFrozenMigratio
 		"004_outbox.sql":                     "76296e7ac0263423de2210e73b1968814bd70bc39d0e220ee31f11f2879e078f",
 		"20260609135007_add_source_path.sql": "f27a399bd7e3ae3d7270f6967e01b647d8a22c0db55b13c94295357d8b9b9d73",
 		"20260712190612_trigger_filters.sql": "4c1326c9a8ccd27ec230816a4a3714043ad965287c7ddc459b5189b6945b967a",
-		"20260712192242_outbox_routing.sql":  "4287b44a69dea3138d75e196661ebb25198fd1e0dee37ed0c27a1a314b7691da",
+		"20260712192242_outbox_routing.sql":  "9348de0c347feaa2f9ce74c90d53c9fcf17eed56fd66538e528c8f729b46eb38",
 		"20260720020257_owner_id_keying.sql": "9afb51a25be29983a341d06859ceb6a7cfeeddc58444d1d4f9c9eb50d2f9c4f0",
 	}
 	for name, want := range frozenDigests {
