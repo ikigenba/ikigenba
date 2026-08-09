@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"registry"
 )
@@ -17,6 +18,7 @@ import (
 type runTokenRequest struct {
 	Kind string `json:"kind"`
 	Name string `json:"name"`
+	TTL  string `json:"ttl,omitempty"`
 }
 
 type runTokenResponse struct {
@@ -38,6 +40,17 @@ func RunTokenHandler(service *Service) http.Handler {
 		if err := decoder.Decode(&key); err != nil {
 			http.Error(w, fmt.Sprintf("%s: invalid run token body", ErrValidation), http.StatusBadRequest)
 			return
+		}
+		effectiveTTL := service.runTokenTTL
+		if key.TTL != "" {
+			requestedTTL, err := time.ParseDuration(key.TTL)
+			if err != nil || requestedTTL <= 0 {
+				http.Error(w, fmt.Sprintf("%s: invalid run token ttl", ErrValidation), http.StatusBadRequest)
+				return
+			}
+			if requestedTTL < effectiveTTL {
+				effectiveTTL = requestedTTL
+			}
 		}
 		if _, err := service.custody.Path(key.Kind, key.Name); err != nil {
 			writeReadError(w, err)
@@ -61,7 +74,7 @@ func RunTokenHandler(service *Service) http.Handler {
 		token := base64.RawURLEncoding.EncodeToString(raw)
 		digest := sha256.Sum256([]byte(token))
 		now := service.custody.Now()
-		expiresAt := now.Add(service.runTokenTTL)
+		expiresAt := now.Add(effectiveTTL)
 		tx, err := service.store.BeginTx(request.Context())
 		if err != nil {
 			http.Error(w, "begin run token transaction", http.StatusInternalServerError)
