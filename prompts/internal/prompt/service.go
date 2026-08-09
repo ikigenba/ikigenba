@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -19,6 +20,7 @@ import (
 	"prompts/internal/calls"
 	"prompts/internal/ids"
 	"prompts/internal/sandbox"
+	"prompts/internal/version"
 )
 
 // ValidationError wraps a config-validation failure (bad model, wrong
@@ -65,6 +67,9 @@ type Service struct {
 	// It receives the durable run id and the run:<run-id> operation name.
 	// A nil seam leaves ctx unchanged for telemetry-disabled builds and tests.
 	RootStarter RootStarter
+	// Version is the version-plane boundary for prompt definitions. It is
+	// field-injected by the composition root, like Fetcher.
+	Version version.Client
 }
 
 // NewService wires the store, sandbox manager, run-logs base dir, and runner.
@@ -261,6 +266,10 @@ func (s *Service) Create(ctx context.Context, ownerID, ownerEmail string, in Cre
 	if err := s.store.InsertPrompt(ctx, p); err != nil {
 		return Prompt{}, err
 	}
+	rollback := func() {
+		_ = s.store.DeleteTriggers(ctx, p.ID)
+		_ = s.store.DeletePrompt(ctx, ownerID, p.ID)
+	}
 	// Apply the inline triggers (already validated) via the store SetTrigger.
 	for _, ts := range in.Triggers {
 		source, _ := validateTrigger(ts.Filter)
@@ -270,10 +279,47 @@ func (s *Service) Create(ctx context.Context, ownerID, ownerEmail string, in Cre
 			Filter:    ts.Filter,
 			CreatedAt: now,
 		}); err != nil {
+			rollback()
 			return Prompt{}, err
 		}
 	}
+	if s.Version != nil {
+		actor := "prompts:" + p.ID
+		if err := s.Version.Create(ctx, p.NameKey, actor); err != nil {
+			rollback()
+			return Prompt{}, versionPlaneError("create repository", err)
+		}
+		files, err := definitionFiles(in.UserPrompt, in.SystemPrompt, cfg)
+		if err != nil {
+			rollback()
+			return Prompt{}, err
+		}
+		if _, err := s.Version.Commit(ctx, p.NameKey, files, "create "+p.Name, actor); err != nil {
+			rollback()
+			return Prompt{}, versionPlaneError("commit create", err)
+		}
+	}
 	return p, nil
+}
+
+func definitionFiles(userPrompt, systemPrompt string, cfg Config) ([]version.File, error) {
+	configJSON, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("prompt: marshal version config: %w", err)
+	}
+	configJSON = append(configJSON, '\n')
+	files := []version.File{
+		{Path: "prompt.md", Data: []byte(userPrompt)},
+		{Path: "config.json", Data: configJSON},
+	}
+	if systemPrompt != "" {
+		files = append(files, version.File{Path: "system.md", Data: []byte(systemPrompt)})
+	}
+	return files, nil
+}
+
+func versionPlaneError(op string, err error) error {
+	return fmt.Errorf("prompt: version plane %s: %w", op, err)
 }
 
 // maxImportBytes caps an imported prompt body at 1 MiB — a prompt file above
@@ -322,7 +368,57 @@ func (s *Service) Import(ctx context.Context, ownerID, ownerEmail, sourcePath, n
 	if err != nil {
 		return Prompt{}, err
 	}
-	return s.store.UpsertPromptBySource(ctx, ownerID, ownerEmail, sourcePath, name, string(data), cfg, s.nowStr())
+	var existing *Prompt
+	prompts, err := s.store.ListPrompts(ctx, ownerID)
+	if err != nil {
+		return Prompt{}, err
+	}
+	for i := range prompts {
+		if prompts[i].SourcePath == sourcePath {
+			existing = &prompts[i]
+			break
+		}
+	}
+
+	if existing != nil && s.Version != nil {
+		files := []version.File{{Path: "prompt.md", Data: data}}
+		if _, err := s.Version.Commit(ctx, existing.NameKey, files, "import "+sourcePath, "prompts:"+existing.ID); err != nil {
+			return Prompt{}, versionPlaneError("commit import", err)
+		}
+	}
+
+	p, err := s.store.UpsertPromptBySource(ctx, ownerID, ownerEmail, sourcePath, name, string(data), cfg, s.nowStr())
+	if err != nil {
+		return Prompt{}, err
+	}
+	if existing != nil || s.Version == nil {
+		return p, nil
+	}
+
+	p.NameKey = NameKey(p.Name, p.ID)
+	if err := s.rejectNameKeyCollision(ctx, p.ID, p.NameKey); err != nil {
+		_ = s.store.DeletePrompt(ctx, ownerID, p.ID)
+		return Prompt{}, err
+	}
+	if err := s.store.UpdatePrompt(ctx, ownerID, p); err != nil {
+		_ = s.store.DeletePrompt(ctx, ownerID, p.ID)
+		return Prompt{}, err
+	}
+	actor := "prompts:" + p.ID
+	if err := s.Version.Create(ctx, p.NameKey, actor); err != nil {
+		_ = s.store.DeletePrompt(ctx, ownerID, p.ID)
+		return Prompt{}, versionPlaneError("create import repository", err)
+	}
+	files, err := definitionFiles(string(data), "", cfg)
+	if err != nil {
+		_ = s.store.DeletePrompt(ctx, ownerID, p.ID)
+		return Prompt{}, err
+	}
+	if _, err := s.Version.Commit(ctx, p.NameKey, files, "import "+sourcePath, actor); err != nil {
+		_ = s.store.DeletePrompt(ctx, ownerID, p.ID)
+		return Prompt{}, versionPlaneError("commit import", err)
+	}
+	return p, nil
 }
 
 // List returns the owner's prompts, each as a PromptDetail carrying its derived
@@ -338,6 +434,9 @@ func (s *Service) List(ctx context.Context, ownerID string) ([]PromptDetail, err
 		if err != nil {
 			return nil, err
 		}
+		d.UserPrompt = ""
+		d.SystemPrompt = ""
+		d.Config = Config{}
 		out = append(out, d)
 	}
 	return out, nil
@@ -349,7 +448,25 @@ func (s *Service) Get(ctx context.Context, ownerID, id string) (PromptDetail, er
 	if err != nil {
 		return PromptDetail{}, err
 	}
-	return s.detail(ctx, p)
+	detail, err := s.detail(ctx, p)
+	if err != nil {
+		return PromptDetail{}, err
+	}
+	if s.Version == nil {
+		return detail, nil
+	}
+	definition, err := s.Version.Read(ctx, p.NameKey, "main")
+	if err != nil {
+		return PromptDetail{}, versionPlaneError("read definition", err)
+	}
+	var cfg Config
+	if err := json.Unmarshal(definition.ConfigJSON, &cfg); err != nil {
+		return PromptDetail{}, versionPlaneError("parse definition config", err)
+	}
+	detail.UserPrompt = definition.UserPrompt
+	detail.SystemPrompt = definition.SystemPrompt
+	detail.Config = cfg
+	return detail, nil
 }
 
 // LoadFromPrompt reads the live, owner-scoped prompt definition. The spawn path
@@ -359,7 +476,18 @@ func (s *Service) LoadFromPrompt(ctx context.Context, ownerID, promptID string) 
 	if err != nil {
 		return Executed{}, err
 	}
-	return Executed{Name: p.Name, UserPrompt: p.UserPrompt, SystemPrompt: p.SystemPrompt, Config: p.Config}, nil
+	if s.Version == nil {
+		return Executed{Name: p.Name, UserPrompt: p.UserPrompt, SystemPrompt: p.SystemPrompt, Config: p.Config}, nil
+	}
+	definition, err := s.Version.Read(ctx, p.NameKey, "main")
+	if err != nil {
+		return Executed{}, versionPlaneError("read definition", err)
+	}
+	var cfg Config
+	if err := json.Unmarshal(definition.ConfigJSON, &cfg); err != nil {
+		return Executed{}, versionPlaneError("parse definition config", err)
+	}
+	return Executed{Name: p.Name, UserPrompt: definition.UserPrompt, SystemPrompt: definition.SystemPrompt, Config: cfg}, nil
 }
 
 // LoadFromRun reads a run's frozen prompt definition directly from input/.
@@ -425,6 +553,37 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 	if err := s.rejectNameKeyCollision(ctx, p.ID, nameKey); err != nil {
 		return Prompt{}, err
 	}
+	if s.Version != nil && nameKey != p.NameKey {
+		if err := s.Version.Rename(ctx, p.NameKey, nameKey); err != nil {
+			return Prompt{}, versionPlaneError("rename repository", err)
+		}
+	}
+	if s.Version != nil {
+		files := make([]version.File, 0, 3)
+		if in.UserPrompt != p.UserPrompt {
+			files = append(files, version.File{Path: "prompt.md", Data: []byte(in.UserPrompt)})
+		}
+		if !reflect.DeepEqual(cfg, p.Config) {
+			configJSON, err := json.Marshal(cfg)
+			if err != nil {
+				return Prompt{}, fmt.Errorf("prompt: marshal version config: %w", err)
+			}
+			files = append(files, version.File{Path: "config.json", Data: append(configJSON, '\n')})
+		}
+		if in.SystemPrompt != p.SystemPrompt {
+			file := version.File{Path: "system.md", Data: []byte(in.SystemPrompt)}
+			if in.SystemPrompt == "" {
+				file.Data = nil
+				file.Delete = true
+			}
+			files = append(files, file)
+		}
+		if len(files) > 0 {
+			if _, err := s.Version.Commit(ctx, nameKey, files, "update "+in.Name, "prompts:"+p.ID); err != nil {
+				return Prompt{}, versionPlaneError("commit update", err)
+			}
+		}
+	}
 
 	p.Name = in.Name
 	p.NameKey = nameKey
@@ -445,8 +604,14 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 // place — a run stays owner-addressable by run_id (via the run's denormalized
 // owner_email) after its prompt is gone. ALWAYS allowed (no single-flight).
 func (s *Service) Delete(ctx context.Context, ownerID, id string) error {
-	if _, err := s.store.GetPrompt(ctx, ownerID, id); err != nil {
+	p, err := s.store.GetPrompt(ctx, ownerID, id)
+	if err != nil {
 		return err
+	}
+	if s.Version != nil {
+		if err := s.Version.Archive(ctx, p.NameKey); err != nil {
+			return versionPlaneError("archive repository", err)
+		}
 	}
 	// Row first (owner-scoped): if this fails nothing else is touched.
 	if err := s.store.DeletePrompt(ctx, ownerID, id); err != nil {

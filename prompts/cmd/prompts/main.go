@@ -57,6 +57,7 @@ import (
 	"prompts/internal/provider"
 	"prompts/internal/runner"
 	"prompts/internal/sandbox"
+	"prompts/internal/version"
 
 	"registry"
 )
@@ -289,6 +290,13 @@ func registerRoutes(rt *appkit.Router) error {
 	// loopback-URL-via-env shape notify uses for its feed URLs. Field-injected so
 	// NewService stays unchanged.
 	svc.Fetcher = prompt.NewHTTPFetcher(dropboxBase)
+	svc.Version = version.New(registry.BaseURL("repos"), func(nameKey string) string {
+		p, err := store.GetPromptByNameKey(context.Background(), nameKey)
+		if err != nil {
+			return ""
+		}
+		return p.ID
+	})
 	// Capture the service for the consumer Worker and the store for the Producer
 	// hook (both run after Handlers; the Producer injects the outbox onto store).
 	svcRef = svc
