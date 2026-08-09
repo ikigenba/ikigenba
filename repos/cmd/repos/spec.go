@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"appkit"
@@ -21,6 +22,20 @@ import (
 type runtimeKnobs struct {
 	runTokenTTL    time.Duration
 	maxCommitBytes int64
+}
+
+func resolveStateDir(getenv func(string) string) (string, error) {
+	if stateDir := getenv("REPOS_STATE_DIR"); stateDir != "" {
+		resolved, err := filepath.Abs(stateDir)
+		if err != nil {
+			return "", fmt.Errorf("repos: resolve REPOS_STATE_DIR: %w", err)
+		}
+		return resolved, nil
+	}
+	if root := getenv("IKIGENBA_ROOT"); root != "" {
+		return filepath.Join(root, "repos", "state"), nil
+	}
+	return "", fmt.Errorf("repos: REPOS_STATE_DIR or IKIGENBA_ROOT is required")
 }
 
 func resolveRuntimeKnobs(getenv func(string) string) (runtimeKnobs, error) {
@@ -57,9 +72,9 @@ func reposSpec() appkit.Spec {
 			if rt.DB() == nil {
 				return fmt.Errorf("repos: no DB handle on router")
 			}
-			stateDir := os.Getenv("REPOS_STATE_DIR")
-			if stateDir == "" {
-				return fmt.Errorf("repos: REPOS_STATE_DIR is required")
+			stateDir, err := resolveStateDir(os.Getenv)
+			if err != nil {
+				return err
 			}
 			knobs, err := resolveRuntimeKnobs(os.Getenv)
 			if err != nil {

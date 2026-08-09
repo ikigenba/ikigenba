@@ -30,6 +30,7 @@ import (
 
 func TestInstalledLayoutBootsBuiltService(t *testing.T) {
 	// R-4LKF-FB23
+	// R-QYBJ-M8E6
 	const version = "phase-27-test"
 	installRoot := t.TempDir()
 	root := filepath.Join(installRoot, "repos")
@@ -86,7 +87,6 @@ func TestInstalledLayoutBootsBuiltService(t *testing.T) {
 	command.Env = []string{
 		"PATH=" + os.Getenv("PATH"),
 		"IKIGENBA_ROOT=" + installRoot,
-		"REPOS_STATE_DIR=" + stateDir,
 		"REPOS_LOG_LEVEL=error",
 		"TELEMETRY_ENABLED=0",
 	}
@@ -187,7 +187,7 @@ func TestInstalledLayoutBootsBuiltService(t *testing.T) {
 	}
 	gitRoot := filepath.Join(stateDir, "git")
 	if info, err := os.Stat(gitRoot); err != nil || !info.IsDir() {
-		t.Fatalf("git root %s was not created under state: info=%v err=%v", gitRoot, info, err)
+		t.Fatalf("git root %s was not created under composed IKIGENBA_ROOT state: info=%v err=%v", gitRoot, info, err)
 	}
 }
 
