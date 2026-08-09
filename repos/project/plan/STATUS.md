@@ -9,4 +9,5 @@ build loop **deletes** the phase's line and its body file — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 40
+Next phase: 41
+- Phase 40 ⬜ realizes R-QX3N-8GNH, R-QYBJ-M8E6, R-QZJG-004V — compose the state root from IKIGENBA_ROOT so production boots with no per-app env var

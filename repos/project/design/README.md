@@ -72,8 +72,9 @@ ids ends at minting them — how coverage is measured and when the work is
   `bin/create-migration repos <name>`; numbers never hand-picked, committed
   migrations never edited.
 - **Config:** env only, prefix `REPOS_`, read at the composition root, never
-  below it. The whole set: `REPOS_STATE_DIR` (default `state`, resolved to an
-  absolute path at the composition root), `REPOS_RUN_TOKEN_TTL` (default `2h`),
+  below it. The whole set: `REPOS_STATE_DIR` (dev-only override; unset in
+  production, where the state root composes in-binary from `IKIGENBA_ROOT` —
+  resolution order in D15), `REPOS_RUN_TOKEN_TTL` (default `2h`),
   `REPOS_MAX_COMMIT_BYTES` (default `67108864`), and `REPOS_GIT_BIN` (default
   `git`). There are no credentials in repos' environment: it authenticates
   nobody itself and calls no external service.

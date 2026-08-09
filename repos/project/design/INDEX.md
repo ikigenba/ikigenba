@@ -19,7 +19,7 @@ v2 rewrite and their ids were deleted with them.
 - D10 → `project/design/D10.md` — nginx fragment & the canonical landing page — R-G1OF-AAC8, R-J3QD-3HFN, R-UZVS-S08C, R-V13P-5RZ1, R-G2WB-O22X, R-G448-1TTM
 - D13 → `project/design/D13.md` — The nginx fragment captures the minted correlation id on gated locations and strips it on the ungated one — R-9DUI-TUQJ, R-9F2F-7MH8
 - D14 → `project/design/D14.md` — Suite-contract conformance: the opsctl install layout & the authored env contract — R-4LKF-FB23 (adopted), R-8DF1-W89F (adopted), R-8IAN-FB87 (adopted)
-- D15 → `project/design/D15.md` — Env-channel conformance: repos' four knobs, and an environment with no credentials — R-L9EG-DDWC, R-VKB6-SHHV (adopted)
+- D15 → `project/design/D15.md` — Env-channel conformance: repos' four knobs, and an environment with no credentials — R-L9EG-DDWC, R-QX3N-8GNH, R-QYBJ-M8E6, R-QZJG-004V, R-VKB6-SHHV (adopted)
 - D16 → `project/design/D16.md` — Adopt the suite testing-language contract — R-O1AD-MRKW (adopted), R-O2IA-0JBL (adopted)
 - D17 → `project/design/D17.md` — Custody: the bare-repo store, the `Git` seam, and the ref choke point — R-J4Y9-H96C, R-J665-V0X1, R-J7E2-8SNQ, R-J8LY-MKEF, R-J9TV-0C54, R-JB1R-E3VT, R-JC9N-RVMI
 - D18 → `project/design/D18.md` — The loopback filesystem + commit API — R-JJL2-2I2O, R-JKSY-G9TD, R-JM0U-U1K2, R-JN8R-7TAR, R-JOGN-LL1G, R-JPOJ-ZCS5, R-JQWG-D4IU, R-JS4C-QW9J, R-JTC9-4O08, R-JUK5-IFQX, R-JVS1-W7HM, R-JY7U-NQZ0
@@ -108,6 +108,9 @@ v2 rewrite and their ids were deleted with them.
 - R-L9EG-DDWC → D15 — `project/design/D15.md`
 - R-O1AD-MRKW → D16 — `project/design/D16.md` (adopted from root `project/design/D23.md`)
 - R-O2IA-0JBL → D16 — `project/design/D16.md` (adopted from root `project/design/D23.md`)
+- R-QX3N-8GNH → D15 — `project/design/D15.md`
+- R-QYBJ-M8E6 → D15 — `project/design/D15.md`
+- R-QZJG-004V → D15 — `project/design/D15.md`
 - R-UZVS-S08C → D10 — `project/design/D10.md`
 - R-V13P-5RZ1 → D10 — `project/design/D10.md`
 - R-VKB6-SHHV → D15 — `project/design/D15.md` (adopted from root `project/design/D11.md`)
