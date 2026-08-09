@@ -257,6 +257,7 @@ launch_sites() {
 
 launch_telemetry() {
 	export TELEMETRY_DB_PATH="$RUN_DIR/telemetry.db"
+	export TELEMETRY_WWW_PATH="$repo/telemetry/share/www"
 	exec "$RUN_DIR/bin/telemetry" serve --port "$(port "$(registry_port telemetry)")"
 }
 
