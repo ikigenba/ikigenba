@@ -54,7 +54,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D49 | project/design/D49.md | Env-channel conformance: composed inventory root, manifest-surfaced tuning knobs, and a Spec-derived drift oracle | R-M51H-QWOL, R-M69E-4OFA; adopts R-VKB6-SHHV |
 | D50 | project/design/D50.md | Adopt the suite testing-language contract | none of its own; adopts R-O1AD-MRKW, R-O2IA-0JBL |
 | D51 | project/design/D51.md | A prompt definition is a git tree: the fixed layout and the repo name key | R-RDFP-IOO1, R-RENL-WGEQ, R-RFVI-A85F |
-| D52 | project/design/D52.md | The version-plane client: one seam, injected at the composition root | R-RH3E-NZW4, R-RIBB-1RMT, R-RJJ7-FJDI, R-RKR3-TB47 |
+| D52 | project/design/D52.md | The version-plane client: one seam, injected at the composition root | R-IRRX-XZQ2, R-ISZU-BRGR, R-IU7Q-PJ7G, R-IVFN-3AY5, R-IWNJ-H2OU, R-IXVF-UUFJ, R-RIBB-1RMT, R-RJJ7-FJDI, R-RKR3-TB47 |
 | D53 | project/design/D53.md | The write path: create, update, import, rename, and delete go through the version plane | R-RLZ0-72UW, R-ROES-YMCA, R-RPMP-CE2Z, R-RQUL-Q5TO, R-RS2I-3XKD, R-SGGH-RCE9 |
 | D54 | project/design/D54.md | Seeding: the one-time, idempotent definition backfill | R-RTAE-HPB2, R-RUIA-VH1R, R-RVQ7-98SG |
 | D55 | project/design/D55.md | A run pins a sha and executes a real clone | R-RWY3-N0J5, R-RY60-0S9U, R-S0LS-SBR8, R-S1TP-63HX, R-S31L-JV8M |
@@ -209,6 +209,12 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-I1SU-6YBP | D47 | project/design/D47.md |
 | R-I30Q-KQ2E | D47 | project/design/D47.md |
 | R-I48M-YHT3 | D47 | project/design/D47.md |
+| R-IRRX-XZQ2 | D52 | project/design/D52.md |
+| R-ISZU-BRGR | D52 | project/design/D52.md |
+| R-IU7Q-PJ7G | D52 | project/design/D52.md |
+| R-IVFN-3AY5 | D52 | project/design/D52.md |
+| R-IWNJ-H2OU | D52 | project/design/D52.md |
+| R-IXVF-UUFJ | D52 | project/design/D52.md |
 | R-JTBA-4RDB | D2 | project/design/D02.md |
 | R-JUJ6-IJ40 | D2 | project/design/D02.md |
 | R-JVR2-WAUP | D3 | project/design/D03.md |
@@ -240,7 +246,6 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-RG01-PORT | D14 | project/design/D14.md |
 | R-RG03-DBOX | D14 | project/design/D14.md |
 | R-RG04-NLIT | D14 | project/design/D14.md |
-| R-RH3E-NZW4 | D52 | project/design/D52.md |
 | R-RIBB-1RMT | D52 | project/design/D52.md |
 | R-RJJ7-FJDI | D52 | project/design/D52.md |
 | R-RKR3-TB47 | D52 | project/design/D52.md |

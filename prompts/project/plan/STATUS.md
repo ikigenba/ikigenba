@@ -9,5 +9,7 @@ loop **deletes** that phase's line and its `phase-NN.md` — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 70
+Next phase: 71
+
+- Phase 70 ⬜ realizes R-IRRX-XZQ2, R-ISZU-BRGR, R-IU7Q-PJ7G, R-IVFN-3AY5, R-IWNJ-H2OU, R-IXVF-UUFJ — conform the version-plane client to repos' real surface (MCP domain verbs + plumbing byte routes)
 
