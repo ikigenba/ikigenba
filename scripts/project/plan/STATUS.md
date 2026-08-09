@@ -11,7 +11,6 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 42
 
-- Phase 38 ⬜ realizes D39 — `repos` joins the trigger sources (sixth consumer)
 - Phase 39 ⬜ realizes D40 (slice: R-2W7Z-MXQR, R-2XFW-0PHG) — seed every existing script into the plane
 - Phase 40 ⬜ realizes D40 (slice: R-2YNS-EH85) — retire the `body` column behind the seeding guard
 - Phase 41 ⬜ realizes D26 (slice: R-2ZVO-S8YU) — `describe` teaches the git-backed model
