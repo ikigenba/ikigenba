@@ -45,6 +45,7 @@ Verification ids change.
 - D36 → `project/design/D36.md` — Env-channel conformance: composed manifest root, manifest-surfaced authn knobs, and customer-data routing — owns R-GBZ2-DNKQ, R-GD6Y-RFBF, R-GEEV-5724; adopts R-VKB6-SHHV (root `project/design/D11.md`)
 - D37 → `project/design/D37.md` — Testing-language conformance: the suite's four layers, the dashboard's declared testing facts (hermetic + composed + manual, no live; no preconditions beyond the Go toolchain; workspace GOWORK), proven in `cmd/dashboard/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
 - D38 → `project/design/D38.md` — The git door accepts a PAT as an HTTP Basic password — owns R-39O6-OFFD, R-3AW3-2762, R-3C3Z-FYWR, R-3DBV-TQNG, R-3EJS-7IE5, R-3FRO-LA4U, R-3I7H-CTM8, R-3JFD-QLCX, R-3KNA-4D3M, R-3LV6-I4UB
+- D39 → `project/design/D39.md` — The apex fragment sets the http-level `variables_hash_max_size` for the whole box — owns R-6MX7-JDFX
 
 ## Verification ids → Decision
 
@@ -59,6 +60,7 @@ Verification ids change.
 - R-3KNA-4D3M → D38 → `project/design/D38.md`
 - R-3LV6-I4UB → D38 → `project/design/D38.md`
 - R-4LKF-FB23 → D34 → `project/design/D34.md` (adopted from root `project/design/D08.md`)
+- R-6MX7-JDFX → D39 → `project/design/D39.md`
 - R-6QJD-1MUY → D23 → `project/design/D23.md`
 - R-6RR9-FELN → D23 → `project/design/D23.md`
 - R-6SZ5-T6CC → D23 → `project/design/D23.md`

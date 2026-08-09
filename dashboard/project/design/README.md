@@ -48,7 +48,10 @@ tree (D37); and (8) the **version plane's introspection slice** — the suite's
 git door (root `project/design/D24.md`) is gated by the same introspection
 endpoint, and git clients speak HTTP Basic, so on that one resource a personal
 access token delivered as the Basic password is accepted through the existing
-PAT validation path, with a git-friendly challenge on failure (D38).
+PAT validation path, with a git-friendly challenge on failure (D38); and (9)
+**front-door tuning** — the apex fragment sets the box-wide http-level
+`variables_hash_max_size` so the suite's ~150 `auth_request_set` variables fit
+nginx's variables hash and reloads stop warning (D39).
 It is rewritten in place to stay true (stale decisions are removed, not
 stacked); construction history lives in git, not here.
 
@@ -96,7 +99,8 @@ Shared facts every Decision leans on:
   under the existing `(iss, sub)` key.
 - **The apex nginx `server` block is the dashboard's, and its changes (D20's
   login-bounce primitive, D33's correlation-id blanking and original-method
-  forwarding) are proven by content-assertion.** `dashboard/etc/nginx.conf` is a
+  forwarding, D39's http-level `variables_hash_max_size`) are proven by
+  content-assertion.** `dashboard/etc/nginx.conf` is a
   server-block fragment `opsctl init-box` installs; lines added to it are
   verified by a **hermetic** Go test that **reads the file from disk** and asserts
   its content (the same pattern the sibling `sites` service uses for its fragment)
