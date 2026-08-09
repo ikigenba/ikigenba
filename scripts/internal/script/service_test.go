@@ -133,128 +133,41 @@ func newTestService(t *testing.T) (*Service, *Store, *fakeRunner, string) {
 	return svc, store, fr, runsDir
 }
 
-func insertLegacyScript(t *testing.T, store *Store, sc Script) {
-	t.Helper()
-	cfg, err := marshalConfig(sc.Config)
-	if err != nil {
-		t.Fatalf("marshalConfig: %v", err)
-	}
-	if _, err := store.db.Exec(
-		`INSERT INTO scripts (id, owner_id, owner_email, name, body, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
-		sc.ID, sc.OwnerID, sc.OwnerEmail, sc.Name, sc.Body, cfg, nullStr(sc.SourcePath), sc.CreatedAt, sc.UpdatedAt,
-	); err != nil {
-		t.Fatalf("insert legacy script %s: %v", sc.ID, err)
-	}
-}
-
 // R-2W7Z-MXQR
-func TestSeedReposSeedsLegacyBodiesAndSecondSweepIsIdle(t *testing.T) {
-	store := newTestStore(t)
-	ctx := context.Background()
-	want := []Script{
-		{ID: "01", OwnerID: ownerA, OwnerEmail: "first@example.com", Name: "First Job", Body: "print('café')\x00\n", Config: Config{Interpreter: "python3", TimeoutSecs: 7}, SourcePath: "/jobs/first.py", CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-02-01T00:00:00Z"},
-		{ID: "02", OwnerID: ownerB, OwnerEmail: "second@example.com", Name: "Second Job", Body: "print('second')\r\n", Config: Config{Interpreter: "python3", TimeoutSecs: 11}, CreatedAt: "2026-01-02T00:00:00Z", UpdatedAt: "2026-02-02T00:00:00Z"},
+func TestCreateStoresSeedMetadataWithoutStoredBody(t *testing.T) {
+	svc, store, _, _ := newTestService(t)
+	wantBody := "print('café')\x00\n"
+	sc, err := svc.Create(context.Background(), ownerA, CreateInput{Name: "First Job", Body: wantBody})
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, sc := range want {
-		insertLegacyScript(t, store, sc)
+	stored, err := store.GetScript(context.Background(), ownerA, sc.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	plane := newFakePlane()
-	svc := NewService(store, t.TempDir(), &fakeRunner{})
-	svc.Plane = plane
-
-	if err := svc.SeedRepos(ctx); err != nil {
-		t.Fatalf("SeedRepos: %v", err)
+	if stored.NameKey == "" || stored.RepoSeededAt == "" || stored.Body != "" {
+		t.Fatalf("stored script = %+v, want seed metadata and no stored body", stored)
 	}
-	if len(plane.calls) != 4 {
-		t.Fatalf("plane calls = %+v, want Create+Commit for two rows", plane.calls)
-	}
-	for i, sc := range want {
-		create, commit := plane.calls[i*2], plane.calls[i*2+1]
-		if create.verb != "create" || commit.verb != "commit" {
-			t.Fatalf("row %s calls = %+v, %+v; want Create then Commit", sc.ID, create, commit)
-		}
-		if create.key != commit.key || create.clientID != "scripts:"+sc.ID || commit.clientID != "scripts:"+sc.ID {
-			t.Fatalf("row %s plane attribution = %+v, %+v", sc.ID, create, commit)
-		}
-		if len(commit.files) != 1 || commit.files["main.py"] != sc.Body || commit.message != "seed from scripts" {
-			t.Fatalf("row %s commit = %+v, want byte-identical main.py body", sc.ID, commit)
-		}
-		got, err := store.GetScript(ctx, sc.OwnerID, sc.ID)
-		if err != nil {
-			t.Fatalf("GetScript(%s): %v", sc.ID, err)
-		}
-		if got.NameKey == "" || got.RepoSeededAt == "" {
-			t.Fatalf("row %s metadata = name_key %q seeded_at %q", sc.ID, got.NameKey, got.RepoSeededAt)
-		}
-		got.NameKey, got.RepoSeededAt = "", ""
-		if got != sc {
-			t.Fatalf("row %s changed beyond seed metadata: got %+v want %+v", sc.ID, got, sc)
-		}
-	}
-	var count int
-	if err := store.db.QueryRow(`SELECT COUNT(*) FROM scripts`).Scan(&count); err != nil || count != len(want) {
-		t.Fatalf("script count = %d, err = %v; want %d", count, err, len(want))
-	}
-
-	plane.resetCalls()
-	if err := svc.SeedRepos(ctx); err != nil {
-		t.Fatalf("second SeedRepos: %v", err)
-	}
-	if len(plane.calls) != 0 {
-		t.Fatalf("second sweep plane calls = %+v, want none", plane.calls)
+	plane := svc.Plane.(*fakePlane)
+	if got := plane.files[RepoKey(stored.NameKey)+":main.py"]; got != wantBody {
+		t.Fatalf("plane body = %q, want %q", got, wantBody)
 	}
 }
 
 // R-2XFW-0PHG
-func TestSeedReposAcceptsConflictAndRetriesOnlyFailedCommit(t *testing.T) {
-	store := newTestStore(t)
-	ctx := context.Background()
-	rows := []Script{
-		{ID: "01", OwnerID: ownerA, OwnerEmail: ownerA, Name: "Existing Repo", Body: "print('existing')", Config: Config{Interpreter: "python3"}, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"},
-		{ID: "02", OwnerID: ownerB, OwnerEmail: ownerB, Name: "Retry Repo", Body: "print('retry')", Config: Config{Interpreter: "python3"}, CreatedAt: "2026-01-02T00:00:00Z", UpdatedAt: "2026-01-02T00:00:00Z"},
-	}
-	for _, sc := range rows {
-		insertLegacyScript(t, store, sc)
-	}
-	plane := newFakePlane()
-	plane.createErrForKey = map[string]error{"scripts/existing-repo": ErrConflict}
+func TestCreatePlaneFailureLeavesNoUnseededRow(t *testing.T) {
+	svc, store, _, _ := newTestService(t)
+	plane := svc.Plane.(*fakePlane)
 	plane.commitErrForKey = map[string]error{"scripts/retry-repo": errors.New("repos unavailable")}
-	svc := NewService(store, t.TempDir(), &fakeRunner{})
-	svc.Plane = plane
-
-	if err := svc.SeedRepos(ctx); err != nil {
-		t.Fatalf("SeedRepos with per-row failure = %v, want non-fatal nil", err)
+	if _, err := svc.Create(context.Background(), ownerA, CreateInput{Name: "Retry Repo", Body: "print('retry')"}); err == nil {
+		t.Fatal("Create succeeded despite failed plane commit")
 	}
-	if len(plane.calls) != 4 || plane.calls[1].verb != "commit" || plane.calls[1].key != "scripts/existing-repo" {
-		t.Fatalf("plane calls = %+v, want conflict row committed and retry row attempted", plane.calls)
+	var count int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM scripts`).Scan(&count); err != nil {
+		t.Fatal(err)
 	}
-	existing, err := store.GetScript(ctx, ownerA, "01")
-	if err != nil {
-		t.Fatalf("GetScript(existing): %v", err)
-	}
-	retry, err := store.GetScript(ctx, ownerB, "02")
-	if err != nil {
-		t.Fatalf("GetScript(retry): %v", err)
-	}
-	if existing.RepoSeededAt == "" {
-		t.Fatal("conflict row remained unstamped; existing repository should satisfy Create")
-	}
-	if retry.NameKey == "" || retry.RepoSeededAt != "" {
-		t.Fatalf("failed row metadata = name_key %q seeded_at %q; want key persisted and unstamped", retry.NameKey, retry.RepoSeededAt)
-	}
-
-	healthy := newFakePlane()
-	svc.Plane = healthy
-	if err := svc.SeedRepos(ctx); err != nil {
-		t.Fatalf("healthy retry SeedRepos: %v", err)
-	}
-	if len(healthy.calls) != 2 || healthy.calls[0].key != "scripts/retry-repo" || healthy.calls[1].key != "scripts/retry-repo" {
-		t.Fatalf("healthy retry calls = %+v, want only failed row Create+Commit", healthy.calls)
-	}
-	retry, err = store.GetScript(ctx, ownerB, "02")
-	if err != nil || retry.RepoSeededAt == "" {
-		t.Fatalf("retried row seeded_at = %q, err = %v; want stamped", retry.RepoSeededAt, err)
+	if count != 0 {
+		t.Fatalf("scripts rows = %d, want compensation to leave none", count)
 	}
 }
 
@@ -399,8 +312,8 @@ func TestUpdateCommitsBodyAndRenamesOnlyWhenRequired(t *testing.T) {
 		if _, err := svc.Update(ctx, ownerA, sc.ID, UpdateInput{Name: &name}); err != nil {
 			t.Fatalf("Update: %v", err)
 		}
-		if len(plane.calls) != 1 || plane.calls[0].verb != "rename" || plane.calls[0].key != "scripts/nightly-export" || plane.calls[0].other != "scripts/weekly-export" {
-			t.Fatalf("plane calls = %+v, want one Rename", plane.calls)
+		if len(plane.calls) != 2 || plane.calls[0].verb != "read" || plane.calls[1].verb != "rename" || plane.calls[1].key != "scripts/nightly-export" || plane.calls[1].other != "scripts/weekly-export" {
+			t.Fatalf("plane calls = %+v, want body Read then Rename", plane.calls)
 		}
 		stored, _ := store.GetScript(ctx, ownerA, sc.ID)
 		if stored.NameKey != "weekly-export" {
@@ -420,8 +333,8 @@ func TestUpdateCommitsBodyAndRenamesOnlyWhenRequired(t *testing.T) {
 		if _, err := svc.Update(ctx, ownerA, sc.ID, UpdateInput{Name: &name}); err != nil {
 			t.Fatalf("Update: %v", err)
 		}
-		if len(plane.calls) != 0 {
-			t.Fatalf("plane calls = %+v, want none", plane.calls)
+		if len(plane.calls) != 1 || plane.calls[0].verb != "read" {
+			t.Fatalf("plane calls = %+v, want one body Read", plane.calls)
 		}
 	})
 }
@@ -552,8 +465,8 @@ func TestGetReadsMainTipFromPlaneInsteadOfStoredBody(t *testing.T) {
 		t.Fatalf("Get body = %q, want plane body", detail.Body)
 	}
 	stored, _ := store.GetScript(ctx, ownerA, sc.ID)
-	if stored.Body != "stored body" {
-		t.Fatalf("test precondition: stored body = %q", stored.Body)
+	if stored.Body != "" {
+		t.Fatalf("stored-row body = %q, want empty after body retirement", stored.Body)
 	}
 	if len(plane.calls) != 1 || plane.calls[0].verb != "read" || plane.calls[0].key != RepoKey(sc.NameKey) || plane.calls[0].other != "main:main.py" {
 		t.Fatalf("plane calls = %+v, want ReadFile(key, main, main.py)", plane.calls)

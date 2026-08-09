@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
 	"eventplane/correlation"
 	"eventplane/outbox"
@@ -19,6 +20,10 @@ import (
 // absent (ErrNotFound).
 type Store struct {
 	db *sql.DB
+	// transientBodies supports the pre-pin runner fallback for scripts created
+	// in this process. Bodies are never persisted here or reconstructed from
+	// SQLite; pinned runs and all user-facing reads use the version plane.
+	transientBodies sync.Map
 	// Outbox, when set, makes scripts an event-plane producer: FinishRun appends
 	// the succeeded / failed completion event on the SAME
 	// transaction as the run's terminal-state write (at-most-once per run,
@@ -64,20 +69,21 @@ func (s *Store) InsertScript(ctx context.Context, sc Script) error {
 		}
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO scripts (id, owner_id, owner_email, name, body, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		sc.ID, sc.OwnerID, sc.OwnerEmail, nullStr(sc.Name), sc.Body, cfg, nullStr(sc.SourcePath), sc.NameKey, nullStr(sc.RepoSeededAt), sc.CreatedAt, sc.UpdatedAt,
+		`INSERT INTO scripts (id, owner_id, owner_email, name, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sc.ID, sc.OwnerID, sc.OwnerEmail, nullStr(sc.Name), cfg, nullStr(sc.SourcePath), sc.NameKey, nullStr(sc.RepoSeededAt), sc.CreatedAt, sc.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("script: insert: %w", err)
 	}
+	s.transientBodies.Store(sc.ID, sc.Body)
 	return nil
 }
 
 // UpsertScriptBySource inserts an import-managed script or, when one already
 // exists for (owner_id, source_path), updates it in place — refreshing
-// name/body/updated_at only and leaving config_json as-is (a re-import is a
-// content pull, not a config change). The partial unique index
+// name/updated_at only and leaving config_json as-is (a re-import is a content
+// pull, not a config change). The partial unique index
 // idx_scripts_source backs the ON CONFLICT target, making idempotency a schema
 // invariant rather than a convention. Returns the resolved script (its id is the
 // freshly-generated ULID on insert, or the existing row's id on update via
@@ -109,16 +115,17 @@ func (s *Store) UpsertScriptBySource(ctx context.Context, ownerID, ownerEmail, s
 	}
 	var resolvedID string
 	err = s.db.QueryRowContext(ctx,
-		`INSERT INTO scripts (id, owner_id, owner_email, name, body, config_json, source_path, name_key, created_at, updated_at)
+		`INSERT INTO scripts (id, owner_id, owner_email, name, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(owner_id, source_path) WHERE source_path IS NOT NULL DO UPDATE SET
-		     name = excluded.name, body = excluded.body, name_key = excluded.name_key, updated_at = excluded.updated_at
+		     name = excluded.name, name_key = excluded.name_key, updated_at = excluded.updated_at
 		 RETURNING id`,
-		id, ownerID, ownerEmail, nullStr(name), body, cfg, sourcePath, nameKey, now, now,
+		id, ownerID, ownerEmail, nullStr(name), cfg, sourcePath, nameKey, nil, now, now,
 	).Scan(&resolvedID)
 	if err != nil {
 		return Script{}, fmt.Errorf("script: upsert by source: %w", err)
 	}
+	s.transientBodies.Store(resolvedID, body)
 	// Read the resolved row back so the caller (and its result) reflects exactly
 	// what landed (config is the pre-existing one on an update).
 	return s.GetScript(ctx, ownerID, resolvedID)
@@ -126,7 +133,7 @@ func (s *Store) UpsertScriptBySource(ctx context.Context, ownerID, ownerEmail, s
 
 func (s *Store) GetScript(ctx context.Context, owner, id string) (Script, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, owner_id, owner_email, name, body, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at
+		`SELECT id, owner_id, owner_email, name, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at
 		   FROM scripts WHERE id = ? AND owner_id = ?`,
 		id, owner,
 	)
@@ -140,14 +147,20 @@ func (s *Store) GetScript(ctx context.Context, owner, id string) (Script, error)
 // run as failed).
 func (s *Store) ScriptForRun(ctx context.Context, scriptID string) (Script, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, owner_id, owner_email, name, body, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at
+		`SELECT id, owner_id, owner_email, name, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at
 		   FROM scripts WHERE id = ?`,
 		scriptID,
 	)
-	return scanScript(row)
+	sc, err := scanScript(row)
+	if err == nil {
+		if body, ok := s.transientBodies.Load(scriptID); ok {
+			sc.Body = body.(string)
+		}
+	}
+	return sc, err
 }
 
-// UpdateScript persists editable fields (name/body/config) and bumps
+// UpdateScript persists editable metadata (name/config) and bumps
 // updated_at. Owner-scoped; a no-match returns ErrNotFound.
 func (s *Store) UpdateScript(ctx context.Context, owner string, sc Script) error {
 	cfg, err := marshalConfig(sc.Config)
@@ -173,14 +186,18 @@ func (s *Store) UpdateScript(ctx context.Context, owner string, sc Script) error
 		}
 	}
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE scripts SET name = ?, body = ?, config_json = ?, name_key = ?, repo_seeded_at = ?, updated_at = ?
+		`UPDATE scripts SET name = ?, config_json = ?, name_key = ?, repo_seeded_at = ?, updated_at = ?
 		  WHERE id = ? AND owner_id = ?`,
-		nullStr(sc.Name), sc.Body, cfg, nameKey, nullStr(sc.RepoSeededAt), sc.UpdatedAt, sc.ID, owner,
+		nullStr(sc.Name), cfg, nameKey, nullStr(sc.RepoSeededAt), sc.UpdatedAt, sc.ID, owner,
 	)
 	if err != nil {
 		return fmt.Errorf("script: update: %w", err)
 	}
-	return requireOne(res, "update")
+	if err := requireOne(res, "update"); err != nil {
+		return err
+	}
+	s.transientBodies.Store(sc.ID, sc.Body)
+	return nil
 }
 
 // DeleteScript is a TOMBSTONE: it deletes the script row + its triggers
@@ -232,12 +249,13 @@ func (s *Store) DeleteScript(ctx context.Context, owner, id string) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("script: delete commit: %w", err)
 	}
+	s.transientBodies.Delete(id)
 	return nil
 }
 
 func (s *Store) ListScripts(ctx context.Context, owner string) ([]Script, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, owner_id, owner_email, name, body, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at
+		`SELECT id, owner_id, owner_email, name, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at
 		   FROM scripts WHERE owner_id = ? ORDER BY created_at DESC, id DESC`,
 		owner,
 	)
@@ -257,67 +275,6 @@ func (s *Store) ListScripts(ctx context.Context, owner string) ([]Script, error)
 		return nil, fmt.Errorf("script: list rows: %w", err)
 	}
 	return out, nil
-}
-
-// unseededScripts returns the legacy rows whose bodies have not yet been
-// committed to the version plane. ID ordering makes each boot's sweep stable.
-func (s *Store) unseededScripts(ctx context.Context) ([]Script, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, owner_id, owner_email, name, body, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at
-		   FROM scripts WHERE repo_seeded_at IS NULL ORDER BY id`,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("script: list unseeded: %w", err)
-	}
-	defer rows.Close()
-
-	var out []Script
-	for rows.Next() {
-		sc, err := scanScript(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, sc)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("script: list unseeded rows: %w", err)
-	}
-	return out, nil
-}
-
-// prepareRepoSeed persists a legacy row's repository key without changing any
-// other script metadata. The partial UNIQUE index remains the collision arbiter.
-func (s *Store) prepareRepoSeed(ctx context.Context, sc Script) (string, error) {
-	if sc.NameKey != "" {
-		return sc.NameKey, nil
-	}
-	nameKey, err := s.deriveNameKey(ctx, sc.ID, sc.Name)
-	if err != nil {
-		return "", err
-	}
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE scripts SET name_key = ? WHERE id = ? AND repo_seeded_at IS NULL`,
-		nameKey, sc.ID,
-	)
-	if err != nil {
-		return "", fmt.Errorf("script: prepare repo seed: %w", err)
-	}
-	if err := requireOne(res, "prepare repo seed"); err != nil {
-		return "", err
-	}
-	return nameKey, nil
-}
-
-// stampRepoSeeded records that the row's stored body reached the version plane.
-func (s *Store) stampRepoSeeded(ctx context.Context, id, seededAt string) error {
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE scripts SET repo_seeded_at = ? WHERE id = ? AND repo_seeded_at IS NULL`,
-		seededAt, id,
-	)
-	if err != nil {
-		return fmt.Errorf("script: stamp repo seeded: %w", err)
-	}
-	return requireOne(res, "stamp repo seeded")
 }
 
 // RunningCount returns COUNT(runs WHERE script_id=? AND status='running'). Not
@@ -651,7 +608,7 @@ func scanScript(sc scanner) (Script, error) {
 		seeded  sql.NullString
 	)
 	err := sc.Scan(
-		&out.ID, &out.OwnerID, &out.OwnerEmail, &name, &out.Body, &cfgJSON, &srcPath, &nameKey, &seeded, &out.CreatedAt, &out.UpdatedAt,
+		&out.ID, &out.OwnerID, &out.OwnerEmail, &name, &cfgJSON, &srcPath, &nameKey, &seeded, &out.CreatedAt, &out.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Script{}, ErrNotFound

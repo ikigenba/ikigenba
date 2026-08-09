@@ -3,7 +3,6 @@ package script
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -126,6 +125,7 @@ func (s *Service) CreateForOwner(ctx context.Context, ownerID, ownerEmail string
 	if err != nil {
 		return Script{}, err
 	}
+	inserted.Body = in.Body
 	if err := s.seedRepository(ctx, inserted, "create "+inserted.Name); err != nil {
 		// The database insert arbitrates the globally unique name key. If the
 		// repository cannot be made, compensate that insert so callers never
@@ -139,7 +139,9 @@ func (s *Service) CreateForOwner(ctx context.Context, ownerID, ownerEmail string
 	if err := s.store.UpdateScript(ctx, ownerID, inserted); err != nil {
 		return Script{}, err
 	}
-	return s.store.GetScript(ctx, ownerID, inserted.ID)
+	created, err := s.store.GetScript(ctx, ownerID, inserted.ID)
+	created.Body = in.Body
+	return created, err
 }
 
 func (s *Service) seedRepository(ctx context.Context, sc Script, message string) error {
@@ -150,37 +152,6 @@ func (s *Service) seedRepository(ctx context.Context, sc Script, message string)
 	}
 	_, err := s.Plane.Commit(ctx, key, map[string]string{"main.py": sc.Body}, message, clientID)
 	return err
-}
-
-// SeedRepos moves legacy script bodies into the version plane. Individual rows
-// are deliberately best-effort: a plane outage leaves them unstamped for the
-// next boot and never prevents the remaining rows (or the service) progressing.
-func (s *Service) SeedRepos(ctx context.Context) error {
-	scripts, err := s.store.unseededScripts(ctx)
-	if err != nil {
-		return err
-	}
-	for _, sc := range scripts {
-		nameKey, err := s.store.prepareRepoSeed(ctx, sc)
-		if err != nil {
-			slog.ErrorContext(ctx, "prepare script repository seed", "script_id", sc.ID, "error", err)
-			continue
-		}
-		key := RepoKey(nameKey)
-		clientID := "scripts:" + sc.ID
-		if err := s.Plane.Create(ctx, key, clientID); err != nil && !errors.Is(err, ErrConflict) {
-			slog.ErrorContext(ctx, "create script repository during seed", "script_id", sc.ID, "repo_key", key, "error", err)
-			continue
-		}
-		if _, err := s.Plane.Commit(ctx, key, map[string]string{"main.py": sc.Body}, "seed from scripts", clientID); err != nil {
-			slog.ErrorContext(ctx, "commit script repository seed", "script_id", sc.ID, "repo_key", key, "error", err)
-			continue
-		}
-		if err := s.store.stampRepoSeeded(ctx, sc.ID, s.nowStr()); err != nil {
-			slog.ErrorContext(ctx, "stamp script repository seed", "script_id", sc.ID, "repo_key", key, "error", err)
-		}
-	}
-	return nil
 }
 
 // maxImportBytes caps an imported script body at 1 MiB — a source file above
@@ -224,6 +195,7 @@ func (s *Service) ImportForOwner(ctx context.Context, ownerID, ownerEmail, sourc
 		return Script{}, err
 	}
 	if sc.RepoSeededAt == "" {
+		sc.Body = string(data)
 		if err := s.seedRepository(ctx, sc, "create "+sc.Name); err != nil {
 			if deleteErr := s.store.DeleteScript(ctx, ownerID, sc.ID); deleteErr != nil {
 				return Script{}, fmt.Errorf("%w (compensating delete: %v)", err, deleteErr)
@@ -239,7 +211,9 @@ func (s *Service) ImportForOwner(ctx context.Context, ownerID, ownerEmail, sourc
 			return Script{}, err
 		}
 	}
-	return s.store.GetScript(ctx, ownerID, sc.ID)
+	imported, err := s.store.GetScript(ctx, ownerID, sc.ID)
+	imported.Body = string(data)
+	return imported, err
 }
 
 // Update applies the optional Name/Body/Config pointers (nil = leave as-is) and
@@ -250,6 +224,13 @@ func (s *Service) Update(ctx context.Context, owner, id string, in UpdateInput) 
 		return Script{}, err
 	}
 	oldNameKey := sc.NameKey
+	if in.Body == nil {
+		body, err := s.Plane.ReadFile(ctx, RepoKey(sc.NameKey), "main", "main.py")
+		if err != nil {
+			return Script{}, err
+		}
+		sc.Body = string(body)
+	}
 	if in.Name != nil {
 		if strings.TrimSpace(*in.Name) == "" {
 			return Script{}, fmt.Errorf("%w: name cannot be empty", ErrValidation)
@@ -284,10 +265,11 @@ func (s *Service) Update(ctx context.Context, owner, id string, in UpdateInput) 
 		}
 	}
 	if in.Body != nil {
-		if _, err := s.Plane.Commit(ctx, RepoKey(updated.NameKey), map[string]string{"main.py": updated.Body}, "update "+updated.Name, clientID); err != nil {
+		if _, err := s.Plane.Commit(ctx, RepoKey(updated.NameKey), map[string]string{"main.py": *in.Body}, "update "+updated.Name, clientID); err != nil {
 			return Script{}, err
 		}
 	}
+	updated.Body = sc.Body
 	return updated, nil
 }
 

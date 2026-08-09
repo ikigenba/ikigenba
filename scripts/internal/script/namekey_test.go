@@ -80,9 +80,9 @@ func TestNameKeysAreUniqueAcrossOwners(t *testing.T) {
 
 	now := nowStr()
 	_, err := s.db.ExecContext(ctx, `INSERT INTO scripts
-		(id, owner_id, owner_email, name, body, config_json, name_key, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ids.NewULID(), "different-owner", "different@example.test", "Other", "print(1)", `{}`, first.NameKey, now, now)
+		(id, owner_id, owner_email, name, config_json, name_key, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		ids.NewULID(), "different-owner", "different@example.test", "Other", `{}`, first.NameKey, now, now)
 	if err == nil {
 		t.Fatal("direct SQL duplicate name_key succeeded; want UNIQUE constraint error")
 	}

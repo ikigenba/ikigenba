@@ -38,7 +38,8 @@ func TestVersionPlaneMigrationShapeAndFrozenHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := appkitdb.Migrate(context.Background(), database, migrations); err != nil {
+	versionPlane := migrationIndex(t, migrations, "_version_plane.sql")
+	if err := appkitdb.Migrate(context.Background(), database, migrations[:versionPlane+1]); err != nil {
 		t.Fatal(err)
 	}
 	for table, names := range map[string][]string{
@@ -91,16 +92,7 @@ func TestVersionPlaneMigrationPreservesExistingScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	versionPlane := -1
-	for i, migration := range migrations {
-		if strings.HasSuffix(migration.Name, "_version_plane.sql") {
-			versionPlane = i
-			break
-		}
-	}
-	if versionPlane < 0 {
-		t.Fatal("version_plane migration not found")
-	}
+	versionPlane := migrationIndex(t, migrations, "_version_plane.sql")
 	ctx := context.Background()
 	if err := appkitdb.Migrate(ctx, database, migrations[:versionPlane]); err != nil {
 		t.Fatal(err)
@@ -111,7 +103,7 @@ func TestVersionPlaneMigrationPreservesExistingScript(t *testing.T) {
 		        'print("preserve me")', '{}', '/scripts/before.py', 'created', 'updated')`); err != nil {
 		t.Fatal(err)
 	}
-	if err := appkitdb.Migrate(ctx, database, migrations); err != nil {
+	if err := appkitdb.Migrate(ctx, database, migrations[:versionPlane+1]); err != nil {
 		t.Fatal(err)
 	}
 	var id, ownerID, body, sourcePath string
@@ -128,6 +120,111 @@ func TestVersionPlaneMigrationPreservesExistingScript(t *testing.T) {
 	if nameKey.Valid || repoSeededAt.Valid {
 		t.Fatalf("new columns = name_key %#v repo_seeded_at %#v, want NULL", nameKey, repoSeededAt)
 	}
+}
+
+func TestRetireBodyMigrationIsGuardedAndPreservesStampedRows(t *testing.T) {
+	// R-2YNS-EH85
+	migrations, err := appkitdb.LoadMigrations(FS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	retireBody := migrationIndex(t, migrations, "_retire_body.sql")
+	ctx := context.Background()
+
+	t.Run("fully stamped", func(t *testing.T) {
+		database, err := appkitdb.Open(filepath.Join(t.TempDir(), "stamped.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer database.Close()
+		if err := appkitdb.Migrate(ctx, database, migrations[:retireBody]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`INSERT INTO scripts
+			(id, owner_id, owner_email, name, body, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at)
+			VALUES ('stamped-script', 'owner-1', 'owner@example.test', 'Stamped', 'print("safe")', '{}', NULL,
+			        'stamped', '2026-08-08T00:00:00Z', 'created', 'updated')`); err != nil {
+			t.Fatal(err)
+		}
+		if err := appkitdb.Migrate(ctx, database, migrations); err != nil {
+			t.Fatalf("retire stamped body: %v", err)
+		}
+		var bodyColumns int
+		if err := database.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('scripts') WHERE name = 'body'`).Scan(&bodyColumns); err != nil {
+			t.Fatal(err)
+		}
+		if bodyColumns != 0 {
+			t.Fatalf("scripts.body columns = %d, want none", bodyColumns)
+		}
+		var id, ownerID, nameKey, seededAt string
+		if err := database.QueryRow(`SELECT id, owner_id, name_key, repo_seeded_at FROM scripts`).Scan(&id, &ownerID, &nameKey, &seededAt); err != nil {
+			t.Fatal(err)
+		}
+		if id != "stamped-script" || ownerID != "owner-1" || nameKey != "stamped" || seededAt != "2026-08-08T00:00:00Z" {
+			t.Fatalf("surviving row = (%q, %q, %q, %q)", id, ownerID, nameKey, seededAt)
+		}
+	})
+
+	t.Run("unstamped", func(t *testing.T) {
+		database, err := appkitdb.Open(filepath.Join(t.TempDir(), "unstamped.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer database.Close()
+		if err := appkitdb.Migrate(ctx, database, migrations[:retireBody]); err != nil {
+			t.Fatal(err)
+		}
+		const wantBody = `print("only copy")`
+		if _, err := database.Exec(`INSERT INTO scripts
+			(id, owner_id, owner_email, name, body, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at)
+			VALUES ('unstamped-script', 'owner-2', 'owner@example.test', 'Unstamped', ?, '{}', NULL,
+			        'unstamped', NULL, 'created', 'updated')`, wantBody); err != nil {
+			t.Fatal(err)
+		}
+		if err := appkitdb.Migrate(ctx, database, migrations); err == nil {
+			t.Fatal("retire_body migration succeeded with an unstamped row")
+		}
+		var gotBody string
+		if err := database.QueryRow(`SELECT body FROM scripts WHERE id = 'unstamped-script'`).Scan(&gotBody); err != nil {
+			t.Fatalf("body column did not survive failed migration: %v", err)
+		}
+		if gotBody != wantBody {
+			t.Fatalf("body after failed migration = %q, want %q", gotBody, wantBody)
+		}
+	})
+
+	frozenDigests := map[string]string{
+		"001_schema_migrations.sql":          "7e8c6c19c828fbc74b68defef9844323d284938f7af921b397bf7c254454886b",
+		"002_scripts.sql":                    "b71fe8a87367ea55a253c6425fa9bbc457e56ce307442a8bf659658c9f9d07cd",
+		"003_feed_offset.sql":                "02430258a28ed1a7a233efb17da6d63984f2feb4a3a91655a8f4d6428c26e137",
+		"004_outbox.sql":                     "76296e7ac0263423de2210e73b1968814bd70bc39d0e220ee31f11f2879e078f",
+		"20260609135007_add_source_path.sql": "f27a399bd7e3ae3d7270f6967e01b647d8a22c0db55b13c94295357d8b9b9d73",
+		"20260712190612_trigger_filters.sql": "4c1326c9a8ccd27ec230816a4a3714043ad965287c7ddc459b5189b6945b967a",
+		"20260712192242_outbox_routing.sql":  "4287b44a69dea3138d75e196661ebb25198fd1e0dee37ed0c27a1a314b7691da",
+		"20260720020257_owner_id_keying.sql": "9afb51a25be29983a341d06859ceb6a7cfeeddc58444d1d4f9c9eb50d2f9c4f0",
+		"20260804181951_correlation_id.sql":  "8570f1445c88c9592087cea2528b53249c684da255780b245b77a30fdf6c55e5",
+		"20260809000848_version_plane.sql":   "65683a0392ac1d4a494c483edae544067d319eb8586cb8efc4dddab330a703dd",
+	}
+	for name, want := range frozenDigests {
+		body, err := os.ReadFile(filepath.Join("migrations", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fmt.Sprintf("%x", sha256.Sum256(body)); got != want {
+			t.Errorf("%s digest = %s, want frozen %s", name, got, want)
+		}
+	}
+}
+
+func migrationIndex(t *testing.T, migrations []appkitdb.Migration, suffix string) int {
+	t.Helper()
+	for i, migration := range migrations {
+		if strings.HasSuffix(migration.Name, suffix) {
+			return i
+		}
+	}
+	t.Fatalf("migration ending %q not found", suffix)
+	return -1
 }
 
 func TestCorrelationIDMigrationAddsIndexedRunColumnWithoutChangingFrozenMigrations(t *testing.T) {

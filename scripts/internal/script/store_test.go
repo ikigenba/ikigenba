@@ -123,8 +123,8 @@ func TestScriptCRUDAndOwnerScope(t *testing.T) {
 		t.Fatalf("UpdateScript: %v", err)
 	}
 	got, _ = s.GetScript(ctx, ownerA, sc.ID)
-	if got.Body != "print('bye')" {
-		t.Fatalf("body not updated: %q", got.Body)
+	if got.Body != "" {
+		t.Fatalf("stored-row body = %q, want empty after body retirement", got.Body)
 	}
 
 	// list owner-scoped
