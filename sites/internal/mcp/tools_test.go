@@ -324,6 +324,7 @@ func TestToolsList(t *testing.T) {
 		"mkdir",
 		"set_visibility",
 		"rename",
+		"set_path",
 		"sync",
 		"file_write",
 		"file_read",
@@ -432,6 +433,12 @@ func TestGuideDocDocumentsModelExamplesAndErrors(t *testing.T) {
 	assertContains(t, guideDoc, "URL is the credential")
 	assertContains(t, guideDoc, `set_visibility(slug:"<token>", visibility:"unlisted")`)
 	assertContains(t, guideDoc, `listings show "Client Preview", not the token`)
+
+	// R-44VP-AC5J
+	assertContains(t, guideDoc, "`set_path`")
+	assertContains(t, guideDoc, `set_path(slug:"blog", path:"public")`)
+	assertContains(t, guideDoc, "serves the whole repository from the repository root")
+	assertContains(t, guideDoc, "folder never appears in the URL")
 }
 
 func TestInstructionsRouteToGuideWithoutDescribe(t *testing.T) {
@@ -1009,7 +1016,7 @@ func TestCreateReturnsMirroredStructuredContent(t *testing.T) {
 	if result.IsError || result.StructuredContent == nil {
 		t.Fatalf("create result is not structured success: %+v", result)
 	}
-	wantKeys := []string{"slug", "name", "visibility", "owner_id", "owner_email", "url", "created_at", "updated_at"}
+	wantKeys := []string{"slug", "name", "visibility", "owner_id", "owner_email", "path", "url", "created_at", "updated_at"}
 	for _, key := range wantKeys {
 		if _, ok := result.StructuredContent[key]; !ok {
 			t.Errorf("create structuredContent missing %q: %+v", key, result.StructuredContent)
@@ -1044,7 +1051,7 @@ func TestStructuredToolsDeclareSchemasMatchingResults(t *testing.T) {
 	for _, descriptor := range listed.Tools {
 		schemas[descriptor.Name] = descriptor.OutputSchema
 	}
-	structured := []string{"create", "list", "delete", "mkdir", "set_visibility", "rename", "sync", "file_write", "file_edit", "file_glob", "file_grep", "file_list"}
+	structured := []string{"create", "list", "delete", "mkdir", "set_visibility", "rename", "set_path", "sync", "file_write", "file_edit", "file_glob", "file_grep", "file_list"}
 
 	// R-CXDB-6TRC
 	for _, name := range structured {
@@ -1068,6 +1075,7 @@ func TestStructuredToolsDeclareSchemasMatchingResults(t *testing.T) {
 		{"mkdir", map[string]any{"slug": "demo", "path": "assets"}},
 		{"set_visibility", map[string]any{"slug": "demo", "visibility": "public"}},
 		{"rename", map[string]any{"slug": "demo", "name": "Demo Site"}},
+		{"set_path", map[string]any{"slug": "demo", "path": ""}},
 		{"sync", map[string]any{"source_path": "/source", "slug": "syncsite"}},
 		{"file_write", map[string]any{"site": "demo", "file_path": "page.txt", "content": "needle"}},
 		{"file_edit", map[string]any{"site": "demo", "file_path": "page.txt", "old_string": "needle", "new_string": "pin"}},

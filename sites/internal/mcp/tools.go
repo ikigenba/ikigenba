@@ -5,7 +5,10 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 
 	appkitmcp "appkit/mcp"
 	"appkit/server"
@@ -62,6 +65,7 @@ func toolsWithToken(store *sites.Store, layout sites.Layout, baseURL string, mir
 			"name":       descTyp("string", "the site's display name or label"),
 			"slug":       descTyp("string", "the URL slug for a public or private site; omit for unlisted"),
 			"visibility": enumString("public", "private", "unlisted"),
+			"path":       descTyp("string", "optional repository-relative publish root; defaults to the repository root"),
 		}, "name", "visibility"), siteOutputSchema(), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 			return h.toolCreate(ctx, args, id)
 		}),
@@ -93,6 +97,12 @@ func toolsWithToken(store *sites.Store, layout sites.Layout, baseURL string, mir
 			"name": descTyp("string", "the new display name or label"),
 		}, "slug", "name"), siteOutputSchema(), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 			return h.toolRename(ctx, args)
+		}),
+		descOut(tool("set_path"), "Set a site's repository-relative publish root and immediately refresh the served copy from the repository.", obj(map[string]any{
+			"slug": descTyp("string", "the site slug or unlisted token"),
+			"path": descTyp("string", "repository-relative publish root; pass an empty string to serve the repository root"),
+		}, "slug", "path"), siteOutputSchema(), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
+			return h.toolSetPath(ctx, args)
 		}),
 		descOut(tool("sync"), "Import a static website/site from a Dropbox-mirrored folder into an existing site's live directory for its current visibility. 'source_path' is the mirror folder to sync from (e.g. \"/sites/marketing\"); 'slug' names the target site and defaults to the source_path basename when that is a valid slug, else it is required. Returns not_found if the site does not already exist. For an existing site, reconciles its current site directory to match the subtree: every upstream file is (over)written and every site file absent upstream is deleted. Visibility is unchanged. Returns {slug, written, deleted}.", obj(map[string]any{
 			"source_path": descTyp("string", "the mirror folder path to sync from"),
@@ -164,10 +174,11 @@ func siteOutputSchema() map[string]any {
 		"visibility":  enumString("public", "private", "unlisted"),
 		"owner_id":    map[string]any{"type": "string"},
 		"owner_email": map[string]any{"type": "string"},
+		"path":        map[string]any{"type": "string"},
 		"url":         map[string]any{"type": "string"},
 		"created_at":  map[string]any{"type": "string"},
 		"updated_at":  map[string]any{"type": "string"},
-	}, "slug", "name", "visibility", "owner_id", "owner_email", "url", "created_at", "updated_at")
+	}, "slug", "name", "visibility", "owner_id", "owner_email", "path", "url", "created_at", "updated_at")
 }
 
 func obj(props map[string]any, required ...string) map[string]any {
@@ -197,6 +208,7 @@ func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage, id s
 		Name       *string `json:"name"`
 		Slug       *string `json:"slug"`
 		Visibility string  `json:"visibility"`
+		Path       *string `json:"path"`
 	}
 	if err := unmarshalArgs(raw, &a); err != nil {
 		return nil, err
@@ -212,23 +224,30 @@ func (h *toolHandlers) toolCreate(ctx context.Context, raw json.RawMessage, id s
 	if err != nil {
 		return errResult(err), nil
 	}
+	path := ""
+	if a.Path != nil {
+		path, err = sites.ValidatePath(*a.Path)
+		if err != nil {
+			return errResultMsg(appkitmcp.ErrValidation, err.Error()), nil
+		}
+	}
 	if visibility == sites.Unlisted {
 		if a.Slug != nil {
 			return errResultMsg(appkitmcp.ErrValidation, "slug is forbidden for unlisted sites"), nil
 		}
-		return h.createUnlisted(ctx, name, id)
+		return h.createUnlisted(ctx, name, path, id)
 	}
 	if a.Slug == nil {
 		return errResultMsg(appkitmcp.ErrValidation, "slug is required for public and private sites"), nil
 	}
-	return h.createSite(ctx, *a.Slug, name, visibility, id)
+	return h.createSite(ctx, *a.Slug, name, visibility, path, id)
 }
 
-func (h *toolHandlers) createSite(ctx context.Context, slug, name string, visibility sites.Visibility, id server.Identity) (map[string]any, error) {
+func (h *toolHandlers) createSite(ctx context.Context, slug, name string, visibility sites.Visibility, path string, id server.Identity) (map[string]any, error) {
 	if err := sites.ValidateSlug(slug); err != nil {
 		return errResult(err), nil
 	}
-	site, err := h.store.Create(ctx, slug, name, id.OwnerID, id.OwnerEmail, visibility, "")
+	site, err := h.store.Create(ctx, slug, name, id.OwnerID, id.OwnerEmail, visibility, path)
 	if err != nil {
 		return errResult(err), nil
 	}
@@ -244,9 +263,9 @@ func (h *toolHandlers) createSite(ctx context.Context, slug, name string, visibi
 	return appkitmcp.StructuredResult(h.renderSite(site))
 }
 
-func (h *toolHandlers) createUnlisted(ctx context.Context, name string, id server.Identity) (map[string]any, error) {
+func (h *toolHandlers) createUnlisted(ctx context.Context, name, path string, id server.Identity) (map[string]any, error) {
 	for attempt := 0; attempt < 2; attempt++ {
-		result, err := h.createSite(ctx, h.newToken(), name, sites.Unlisted, id)
+		result, err := h.createSite(ctx, h.newToken(), name, sites.Unlisted, path, id)
 		if err != nil {
 			return nil, err
 		}
@@ -385,6 +404,88 @@ func (h *toolHandlers) toolRename(ctx context.Context, raw json.RawMessage) (map
 	return appkitmcp.StructuredResult(h.renderSite(site))
 }
 
+func (h *toolHandlers) toolSetPath(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+	var a struct {
+		Slug string  `json:"slug"`
+		Path *string `json:"path"`
+	}
+	if err := unmarshalArgs(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.Path == nil {
+		return errResultMsg(appkitmcp.ErrValidation, "path is required"), nil
+	}
+	path, err := sites.ValidatePath(*a.Path)
+	if err != nil {
+		return errResultMsg(appkitmcp.ErrValidation, err.Error()), nil
+	}
+	site, err := h.store.Get(ctx, a.Slug)
+	if err != nil {
+		return errResult(err), nil
+	}
+	entries, commit, err := h.version.Export(ctx, a.Slug)
+	if err != nil {
+		if errors.Is(err, sites.ErrVersionUnavailable) {
+			return errResultMsg(appkitmcp.ErrSourceUnavailable, "version export: "+err.Error()), nil
+		}
+		return errResultMsg(appkitmcp.ErrInternal, "version export: "+err.Error()), nil
+	}
+	if err := h.store.SetPath(ctx, a.Slug, path); err != nil {
+		return errResult(err), nil
+	}
+	workingDir := h.layout.SiteDir(site.Visibility, a.Slug)
+	existing, err := regularFilesUnder(workingDir)
+	if err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "walk_working: "+err.Error()), nil
+	}
+	mapped := sites.Subtree(entries, path)
+	desired := make(map[string][]byte, len(mapped))
+	for _, entry := range mapped {
+		for _, segment := range strings.Split(entry.Path, "/") {
+			if segment == ".git" {
+				return errResultMsg(appkitmcp.ErrInternal, "reconcile: forbidden .git path "+entry.Path), nil
+			}
+		}
+		if _, err := sitefiles.ConfinePath(workingDir, entry.Path); err != nil {
+			return errResultMsg(appkitmcp.ErrInternal, "reconcile: invalid path "+entry.Path+": "+err.Error()), nil
+		}
+		desired[entry.Path] = entry.Data
+	}
+	if _, _, err := sites.Reconcile(workingDir, desired, existing); err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "reconcile: "+err.Error()), nil
+	}
+	if err := h.store.SetRepoSha(ctx, a.Slug, commit.Sha); err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "record repo sha: "+err.Error()), nil
+	}
+	site, err = h.store.Get(ctx, a.Slug)
+	if err != nil {
+		return errResult(err), nil
+	}
+	return appkitmcp.StructuredResult(h.renderSite(site))
+}
+
+func regularFilesUnder(root string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !entry.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		files = append(files, filepath.ToSlash(rel))
+		return nil
+	})
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	return files, err
+}
+
 func (h *toolHandlers) setUnlisted(ctx context.Context, site sites.Site) (map[string]any, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		result, err := h.applyVisibility(ctx, site, sites.Unlisted, h.newToken())
@@ -446,6 +547,7 @@ func (h *toolHandlers) renderSite(s sites.Site) map[string]any {
 		"visibility":  string(s.Visibility),
 		"owner_id":    s.OwnerID,
 		"owner_email": s.OwnerEmail,
+		"path":        s.Path,
 		"url":         h.siteURL(tier, s.Slug),
 		"created_at":  s.CreatedAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"),
 		"updated_at":  s.UpdatedAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"),
@@ -457,7 +559,7 @@ func (h *toolHandlers) renderSite(s sites.Site) map[string]any {
 // self-correct.
 func errResult(err error) map[string]any {
 	switch {
-	case errors.Is(err, sites.ErrInvalidSlug), errors.Is(err, sites.ErrReservedName), errors.Is(err, sites.ErrInvalidName):
+	case errors.Is(err, sites.ErrInvalidSlug), errors.Is(err, sites.ErrReservedName), errors.Is(err, sites.ErrInvalidName), errors.Is(err, sites.ErrInvalidPath):
 		return errResultMsg(appkitmcp.ErrValidation, err.Error())
 	case errors.Is(err, sites.ErrExists):
 		return errResultMsg(appkitmcp.ErrConflict, err.Error())

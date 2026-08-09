@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -197,6 +198,41 @@ func TestSyncCommitsBatchThenReconcilesAndMatchingResyncIsNoOp(t *testing.T) {
 	}
 	if calls := transport.snapshot(); len(calls) != 0 {
 		t.Fatalf("matching resync repos calls = %d, want zero", len(calls))
+	}
+}
+
+func TestSyncPrefixesPublishRootWritesAndDeletesOnce(t *testing.T) {
+	// R-4180-50XG
+	mirror := &fakeMirror{files: map[string][]byte{"/source/index.html": []byte("new")}}
+	transport := &commitRecordingTransport{}
+	h, root := newSyncCommitHandler(t, mirror, transport)
+	if err := h.store.SetPath(context.Background(), "demo", "public"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "public", "demo")
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "stale.html"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	callOK(t, h, "sync", map[string]any{"source_path": "/source", "slug": "demo"})
+	calls := transport.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("sync repos calls = %d, want one", len(calls))
+	}
+	changes := decodedCommitChanges(t, calls[0])
+	if write := changes["public/index.html"]; write.Delete || string(write.Data) != "new" {
+		t.Fatalf("prefixed write = %#v", write)
+	}
+	if stale := changes["public/stale.html"]; !stale.Delete {
+		t.Fatalf("prefixed delete = %#v", stale)
+	}
+	if len(changes) != 2 {
+		t.Fatalf("changes = %#v, want exactly write and delete", changes)
+	}
+	if got := readTreeFiles(t, dir); !reflect.DeepEqual(got, map[string]string{"index.html": "new"}) {
+		t.Fatalf("served tree = %#v", got)
 	}
 }
 

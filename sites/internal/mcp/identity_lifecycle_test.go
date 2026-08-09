@@ -105,7 +105,7 @@ func TestRenameChangesOnlyDisplayNameAndIsStructured(t *testing.T) {
 	if renamed.IsError || renamed.StructuredContent["name"] != "Customer Preview" {
 		t.Fatalf("rename result = %+v", renamed)
 	}
-	for _, key := range []string{"slug", "visibility", "url", "owner_id", "owner_email", "created_at"} {
+	for _, key := range []string{"slug", "visibility", "path", "url", "owner_id", "owner_email", "created_at"} {
 		if renamed.StructuredContent[key] != before[key] {
 			t.Errorf("rename changed %s: before=%v after=%v", key, before[key], renamed.StructuredContent[key])
 		}
@@ -145,7 +145,7 @@ func TestRenameChangesOnlyDisplayNameAndIsStructured(t *testing.T) {
 	}
 	properties, _ := schema["properties"].(map[string]any)
 	required, _ := schema["required"].([]any)
-	wantKeys := []string{"slug", "name", "visibility", "owner_id", "owner_email", "url", "created_at", "updated_at"}
+	wantKeys := []string{"slug", "name", "visibility", "owner_id", "owner_email", "path", "url", "created_at", "updated_at"}
 	if schema["type"] != "object" || len(properties) != len(wantKeys) || len(required) != len(wantKeys) {
 		t.Fatalf("rename output schema = %+v", schema)
 	}

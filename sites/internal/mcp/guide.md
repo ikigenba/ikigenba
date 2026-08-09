@@ -1,7 +1,7 @@
 # Sites MCP Guide
 
 ## Model
-A site has a display **name** (the free-form label used to tell sites apart), a **slug** (its URL address), a visibility (`public`, `private`, or `unlisted`), and its creator. Files are served live at the site's URL. `create` is the only way a site comes into being; every other tool (`file_write`, `file_read`, `file_edit`, `file_glob`, `file_grep`, `file_list`, `mkdir`, `sync`, `set_visibility`, `rename`, `delete`) requires the site to already exist and returns `not_found` otherwise. Visibility is always stated explicitly; there is no default. Every site gets a name you choose. Public and private sites also get a slug you choose. An unlisted site's slug is generated as a long random string nobody can guess, so its URL is the credential: share the secret link only with people who should see it. Tools address a site by its slug; `rename` changes only its display name.
+A site has a display **name** (the free-form label used to tell sites apart), a **slug** (its URL address), a visibility (`public`, `private`, or `unlisted`), and its creator. Files are served live at the site's URL. `create` is the only way a site comes into being; every other tool (`file_write`, `file_read`, `file_edit`, `file_glob`, `file_grep`, `file_list`, `mkdir`, `sync`, `set_visibility`, `rename`, `set_path`, `delete`) requires the site to already exist and returns `not_found` otherwise. Visibility is always stated explicitly; there is no default. Every site gets a name you choose. Public and private sites also get a slug you choose. An unlisted site's slug is generated as a long random string nobody can guess, so its URL is the credential: share the secret link only with people who should see it. Tools address a site by its slug; `rename` changes only its display name.
 
 ## Slug And Name Rules
 Slugs are 1-63 characters, lowercase alphanumeric plus hyphen, and must start alphanumeric. Reserved names are rejected. Never supply a slug when creating an unlisted site. Display names are free-form text up to 100 characters and cannot be blank; spaces and capitals are allowed.
@@ -20,6 +20,9 @@ Call `create(name:"Client Preview", visibility:"unlisted")` with no slug, write 
 
 ## Advanced - Import From Dropbox
 Call `create(name:"Marketing", slug:"marketing", visibility:"private")` first because `sync` will not create it, then `sync(source_path:"/sites/marketing")`, then `set_visibility(slug:"marketing", visibility:"public")`.
+
+## Advanced - Static Site Generator (Publish Root)
+By default, a site serves the whole repository from the repository root. For a generator whose built output lands in `public/`, call `create(name:"Blog", slug:"blog", visibility:"public")`, then `set_path(slug:"blog", path:"public")`, and push the generator project through the development plane. The site serves only that folder's contents, while the folder never appears in the URL. Pass `path:""` to return to serving the whole repository.
 
 ## Error Self-Correction
 `not_found` means call `create` first. `conflict` means the slug already exists. `validation` covers an invalid or reserved slug, a missing visibility, a missing or blank name, a slug supplied for unlisted, or a missing `new_slug` when leaving unlisted.

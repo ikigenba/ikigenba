@@ -148,12 +148,12 @@ func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage, id ser
 	sort.Strings(desiredPaths)
 	changes := make([]sites.FileChange, 0, len(desired)+len(existingRel))
 	for _, rel := range desiredPaths {
-		changes = append(changes, sites.FileChange{Path: rel, Data: desired[rel]})
+		changes = append(changes, sites.FileChange{Path: repositoryPath(site.Path, rel), Data: desired[rel]})
 	}
 	sort.Strings(existingRel)
 	for _, rel := range existingRel {
 		if _, ok := desired[rel]; !ok {
-			changes = append(changes, sites.FileChange{Path: rel, Delete: true})
+			changes = append(changes, sites.FileChange{Path: repositoryPath(site.Path, rel), Delete: true})
 		}
 	}
 

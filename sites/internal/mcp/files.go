@@ -81,6 +81,10 @@ func (h *toolHandlers) toolFileWrite(ctx context.Context, raw json.RawMessage, i
 	if env != nil {
 		return env, nil
 	}
+	site, err := h.store.Get(ctx, a.Site)
+	if err != nil {
+		return errResult(err), nil
+	}
 
 	confined, path, err := confinedSitePath(root, a.FilePath)
 	if err != nil {
@@ -98,7 +102,7 @@ func (h *toolHandlers) toolFileWrite(ctx context.Context, raw json.RawMessage, i
 		data = append(existing, data...)
 	}
 	ctx = sites.WithVersionActor(ctx, id.ClientID)
-	commit, err := h.version.Commit(ctx, a.Site, "write "+path, []sites.FileChange{{Path: path, Data: data}})
+	commit, err := h.version.Commit(ctx, a.Site, "write "+path, []sites.FileChange{{Path: repositoryPath(site.Path, path), Data: data}})
 	if err != nil {
 		return versionErrorResult(err), nil
 	}
@@ -157,6 +161,10 @@ func (h *toolHandlers) toolFileEdit(ctx context.Context, raw json.RawMessage, id
 	if env != nil {
 		return env, nil
 	}
+	site, err := h.store.Get(ctx, a.Site)
+	if err != nil {
+		return errResult(err), nil
+	}
 	confined, path, err := confinedSitePath(root, a.FilePath)
 	if err != nil {
 		if errors.Is(err, sitefiles.ErrEscapes) {
@@ -183,7 +191,7 @@ func (h *toolHandlers) toolFileEdit(ctx context.Context, raw json.RawMessage, id
 	}
 	data := []byte(strings.Replace(string(content), a.OldString, a.NewString, count))
 	ctx = sites.WithVersionActor(ctx, id.ClientID)
-	commit, err := h.version.Commit(ctx, a.Site, "edit "+path, []sites.FileChange{{Path: path, Data: data}})
+	commit, err := h.version.Commit(ctx, a.Site, "edit "+path, []sites.FileChange{{Path: repositoryPath(site.Path, path), Data: data}})
 	if err != nil {
 		return versionErrorResult(err), nil
 	}
@@ -206,6 +214,13 @@ func confinedSitePath(root, raw string) (string, string, error) {
 		return "", "", err
 	}
 	return confined, filepath.ToSlash(rel), nil
+}
+
+func repositoryPath(root, rel string) string {
+	if root == "" {
+		return rel
+	}
+	return root + "/" + rel
 }
 
 func versionErrorResult(err error) map[string]any {

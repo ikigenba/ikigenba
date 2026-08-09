@@ -282,6 +282,42 @@ func TestMkdirStaysLocalAndNestedWriteCommitsFullPath(t *testing.T) {
 	}
 }
 
+func TestPublishRootPrefixesWriteAndEditCommitsButNotLocalPaths(t *testing.T) {
+	// R-4003-R96R
+	transport := &commitRecordingTransport{}
+	h, root, _ := newWritePathHandler(t, transport)
+	if err := h.store.SetPath(context.Background(), "demo", "public"); err != nil {
+		t.Fatal(err)
+	}
+	result := call(t, h, "file_write", map[string]any{"site": "demo", "file_path": "css/app.css", "content": "alpha"})
+	if result.IsError {
+		t.Fatalf("file_write: %+v", result)
+	}
+	calls := transport.snapshot()
+	path, data := commitChange(t, calls[0])
+	local := filepath.Join(root, "public", "demo", "css", "app.css")
+	if got, err := os.ReadFile(local); path != "public/css/app.css" || string(data) != "alpha" || err != nil || string(got) != "alpha" {
+		t.Fatalf("write mapping: commit=%q/%q local=%q err=%v", path, data, got, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "public", "demo", "public")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("publish root leaked into served path: %v", err)
+	}
+	transport.reset()
+	result = call(t, h, "file_edit", map[string]any{"site": "demo", "file_path": "css/app.css", "old_string": "alpha", "new_string": "beta"})
+	if result.IsError {
+		t.Fatalf("file_edit: %+v", result)
+	}
+	path, data = commitChange(t, transport.snapshot()[0])
+	if path != "public/css/app.css" || string(data) != "beta" {
+		t.Fatalf("edit commit = %q/%q", path, data)
+	}
+	transport.reset()
+	callOK(t, h, "mkdir", map[string]any{"slug": "demo", "path": "empty"})
+	if calls := transport.snapshot(); len(calls) != 0 {
+		t.Fatalf("mkdir repos calls = %d, want zero", len(calls))
+	}
+}
+
 func TestFailedCommitLeavesNewAndExistingFilesAndShaUnchanged(t *testing.T) {
 	// R-EW4V-SXLH
 	transport := &commitRecordingTransport{status: http.StatusBadRequest}
