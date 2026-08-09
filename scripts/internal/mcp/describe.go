@@ -10,11 +10,15 @@ package mcp
 const describeText = `Scripts runs Python scripts on your behalf — manually or on an event trigger.
 
 WHAT IT IS
-- A *script* is a durable object: a name, a Python body, and a minimal config.
-- A *run* is one execution of the script's body by python3. Runs are unbounded
-  (no single-flight): many runs of one script can be in flight at once. Each run
-  has its own persistent dir (main.py, config.json, stdout.log, stderr.log, and
-  any files the script wrote).
+- A *script* is a git repository whose main tip is live.
+  Its root main.py is the entrypoint, and supporting Python modules beside it
+  are importable. create and update commit main.py; add other files by git push
+  from a laptop or from a run.
+- A *run* executes a fresh clone pinned to one commit, reported as the run's
+  repo_sha, by python3. This makes each run exactly reproducible. Runs are
+  unbounded (no single-flight): many runs of one script can be in flight at once.
+  Each run has its own persistent dir (the checkout, config.json, stdout.log,
+  stderr.log, and any files the script wrote).
 - A *trigger* binds a script to a canonical upstream routing key (e.g.
   dropbox:create/bills/**/*.pdf):
   when a matching event fires, scripts starts a run with the event payload on
@@ -24,6 +28,9 @@ RUNTIME CONTRACT
 - python3 >= 3.11, bash >= 5.0, and network access. The Python standard library
   and the preinstalled suite module are available; no other third-party packages
   are installed day-one.
+- A run works in the fresh checkout pinned to its repo_sha. Its environment has
+  SUITE_REPO_KEY, SUITE_REPO_SHA, and a scoped SUITE_GIT_TOKEN, so ordinary git
+  commands work in the checkout, including pushing a branch.
 - The suite module is importable in every run with: import suite
 - suite.event() returns the trigger payload verbatim as a dict, or {} for a
   manual run.
@@ -52,18 +59,25 @@ RUNTIME CONTRACT
   onward by writing a file instead of printing its bytes.
 
 LIFECYCLE
-  1. create {name, body}        -> {script_id}
-  2. run {script_id}            -> starts a run, returns {run_id}
-  3. poll run_get {run_id}      -> status until succeeded|failed|cancelled
-  4. run_output {run_id}        -> stdout/stderr logs
-  5. run_fs_list / run_fs_read -> files the run wrote
+  1. create {name, body}        -> commits main.py, returns {script_id}
+  2. update {script_id, body}   -> commits a new main.py
+  3. git push                   -> adds or changes any repository files
+  4. run {script_id}            -> starts a run, returns {run_id, repo_sha}
+  5. poll run_get {run_id}      -> status until succeeded|failed|cancelled
+  6. run_output {run_id}        -> stdout/stderr logs
+  7. run_fs_list / run_fs_read -> files the run wrote
 
 TRIGGERS
   set_trigger {script_id, filter} binds the script to a canonical
-  source:kind<subject> glob. The source is one of cron|crm|ledger|dropbox|prompts;
-  ** matches across subject paths. On a matching event a
+  source:kind<subject> glob (for example cron, crm, ledger, dropbox, prompts, or
+  repos); ** matches across subject paths. On a matching event a
   run starts automatically. Completion emits succeeded / failed
   on this service's own /feed for other services (e.g. prompts) to consume.
+
+Scripts is also the suite's workflow runner. Trigger on a repository push with a
+filter such as repos:push/<kind>/<name>, work in the pinned checkout, and report
+with suite.mcp("repos", "status_set", args). Nothing merges automatically: merge
+only by explicitly calling suite.mcp("repos", "merge", args) yourself.
 
 health proves the auth chain and reports the runtime contract.`
 

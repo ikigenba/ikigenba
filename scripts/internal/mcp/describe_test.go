@@ -54,6 +54,47 @@ func TestDescribeTeachesSuiteRuntimeContract(t *testing.T) {
 	}
 }
 
+func TestDescribeTeachesGitBackedModel(t *testing.T) {
+	// R-2ZVO-S8YU
+	result, err := toolDescribe()
+	if err != nil {
+		t.Fatalf("toolDescribe() error = %v", err)
+	}
+	content, ok := result["content"].([]map[string]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("describe content = %#v, want one content block", result["content"])
+	}
+	text, ok := content[0]["text"].(string)
+	if !ok {
+		t.Fatalf("describe text = %#v, want string", content[0]["text"])
+	}
+
+	for _, want := range []string{
+		"root main.py is the entrypoint",
+		"fresh clone pinned to one commit",
+		"repo_sha",
+		"SUITE_GIT_TOKEN",
+		"SUITE_REPO_SHA",
+		"repos:push/<kind>/<name>",
+		`suite.mcp("repos", "merge", args)`,
+		"Nothing merges automatically",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("describe result does not contain %q", want)
+		}
+	}
+
+	for _, obsolete := range []string{
+		"a Python body",
+		"script's body",
+		"update replaces the script's body",
+	} {
+		if strings.Contains(text, obsolete) {
+			t.Errorf("describe result still teaches the one-file model with %q", obsolete)
+		}
+	}
+}
+
 func TestDescribeTeachesAbsoluteSharePaths(t *testing.T) {
 	// R-ZGSP-VKCD
 	result, err := toolDescribe()
