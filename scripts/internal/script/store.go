@@ -259,6 +259,67 @@ func (s *Store) ListScripts(ctx context.Context, owner string) ([]Script, error)
 	return out, nil
 }
 
+// unseededScripts returns the legacy rows whose bodies have not yet been
+// committed to the version plane. ID ordering makes each boot's sweep stable.
+func (s *Store) unseededScripts(ctx context.Context) ([]Script, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, owner_id, owner_email, name, body, config_json, source_path, name_key, repo_seeded_at, created_at, updated_at
+		   FROM scripts WHERE repo_seeded_at IS NULL ORDER BY id`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("script: list unseeded: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Script
+	for rows.Next() {
+		sc, err := scanScript(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("script: list unseeded rows: %w", err)
+	}
+	return out, nil
+}
+
+// prepareRepoSeed persists a legacy row's repository key without changing any
+// other script metadata. The partial UNIQUE index remains the collision arbiter.
+func (s *Store) prepareRepoSeed(ctx context.Context, sc Script) (string, error) {
+	if sc.NameKey != "" {
+		return sc.NameKey, nil
+	}
+	nameKey, err := s.deriveNameKey(ctx, sc.ID, sc.Name)
+	if err != nil {
+		return "", err
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE scripts SET name_key = ? WHERE id = ? AND repo_seeded_at IS NULL`,
+		nameKey, sc.ID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("script: prepare repo seed: %w", err)
+	}
+	if err := requireOne(res, "prepare repo seed"); err != nil {
+		return "", err
+	}
+	return nameKey, nil
+}
+
+// stampRepoSeeded records that the row's stored body reached the version plane.
+func (s *Store) stampRepoSeeded(ctx context.Context, id, seededAt string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE scripts SET repo_seeded_at = ? WHERE id = ? AND repo_seeded_at IS NULL`,
+		seededAt, id,
+	)
+	if err != nil {
+		return fmt.Errorf("script: stamp repo seeded: %w", err)
+	}
+	return requireOne(res, "stamp repo seeded")
+}
+
 // RunningCount returns COUNT(runs WHERE script_id=? AND status='running'). Not
 // owner-scoped: the count is derived state read by the service after an
 // owner-scoped GetScript.

@@ -192,6 +192,9 @@ func registerRoutes(rt *appkit.Router) error {
 	} else if swept > 0 {
 		rt.Logger().Warn("crash-recovery: swept orphaned runs", "count", swept)
 	}
+	if err := svc.SeedRepos(context.Background()); err != nil {
+		rt.Logger().Error("script repository seed sweep", "error", err)
+	}
 
 	rt.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = rt.WWW().Render(w, "landing.html", struct{ Service, Version string }{rt.Service(), rt.Version()})

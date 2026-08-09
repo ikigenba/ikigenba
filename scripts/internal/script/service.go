@@ -3,6 +3,7 @@ package script
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -149,6 +150,37 @@ func (s *Service) seedRepository(ctx context.Context, sc Script, message string)
 	}
 	_, err := s.Plane.Commit(ctx, key, map[string]string{"main.py": sc.Body}, message, clientID)
 	return err
+}
+
+// SeedRepos moves legacy script bodies into the version plane. Individual rows
+// are deliberately best-effort: a plane outage leaves them unstamped for the
+// next boot and never prevents the remaining rows (or the service) progressing.
+func (s *Service) SeedRepos(ctx context.Context) error {
+	scripts, err := s.store.unseededScripts(ctx)
+	if err != nil {
+		return err
+	}
+	for _, sc := range scripts {
+		nameKey, err := s.store.prepareRepoSeed(ctx, sc)
+		if err != nil {
+			slog.ErrorContext(ctx, "prepare script repository seed", "script_id", sc.ID, "error", err)
+			continue
+		}
+		key := RepoKey(nameKey)
+		clientID := "scripts:" + sc.ID
+		if err := s.Plane.Create(ctx, key, clientID); err != nil && !errors.Is(err, ErrConflict) {
+			slog.ErrorContext(ctx, "create script repository during seed", "script_id", sc.ID, "repo_key", key, "error", err)
+			continue
+		}
+		if _, err := s.Plane.Commit(ctx, key, map[string]string{"main.py": sc.Body}, "seed from scripts", clientID); err != nil {
+			slog.ErrorContext(ctx, "commit script repository seed", "script_id", sc.ID, "repo_key", key, "error", err)
+			continue
+		}
+		if err := s.store.stampRepoSeeded(ctx, sc.ID, s.nowStr()); err != nil {
+			slog.ErrorContext(ctx, "stamp script repository seed", "script_id", sc.ID, "repo_key", key, "error", err)
+		}
+	}
+	return nil
 }
 
 // maxImportBytes caps an imported script body at 1 MiB — a source file above
