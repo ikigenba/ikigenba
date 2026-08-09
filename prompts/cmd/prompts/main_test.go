@@ -18,7 +18,10 @@ import (
 	"testing"
 	"time"
 
+	appkitdb "appkit/db"
 	"appkit/manifest"
+
+	promptdb "prompts/internal/db"
 )
 
 func TestResolveStorageRootsUsesRootedStateAndCacheDefaults(t *testing.T) {
@@ -507,6 +510,133 @@ func TestPromptsBootsWithDurableSandboxesAndRecreatedRunsCache(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(stateDir, "runs")); !os.IsNotExist(err) {
 		t.Fatalf("legacy state/runs exists or could not be checked: %v", err)
+	}
+}
+
+// R-RVQ7-98SG
+func TestPromptsBootAbortsBeforeListenerWhenVersionPlaneSeedingFails(t *testing.T) {
+	root := t.TempDir()
+	stateDir := filepath.Join(root, "state")
+	cacheDir := filepath.Join(root, "cache")
+	for _, dir := range []string{stateDir, cacheDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	dbPath := filepath.Join(stateDir, "prompts.db")
+	seedBootPrompt(t, dbPath)
+
+	binary := filepath.Join(root, "prompts")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	build.Env = os.Environ()
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build prompts: %v\n%s", err, out)
+	}
+
+	reposListener, err := net.Listen("tcp", "127.0.0.1:3007")
+	if err != nil {
+		t.Fatalf("listen for failing version plane: %v", err)
+	}
+	reposServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "version plane rejected seed", http.StatusBadRequest)
+	})}
+	go func() { _ = reposServer.Serve(reposListener) }()
+	t.Cleanup(func() { _ = reposServer.Close() })
+
+	port := freeTCPPort(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, binary, "serve")
+	cmd.Env = testEnv(map[string]string{
+		"IKIGENBA_DOMAIN":             "",
+		"IKIGENBA_ROOT":               "",
+		"PROMPTS_IP":                  "127.0.0.1",
+		"PROMPTS_PORT":                strconv.Itoa(port),
+		"PROMPTS_DB_PATH":             dbPath,
+		"PROMPTS_GENERATION_PATH":     filepath.Join(cacheDir, "prompts.db.generation"),
+		"PROMPTS_WWW_PATH":            filepath.Join("..", "..", "share", "www"),
+		"PROMPTS_MANIFEST_ROOT":       root,
+		"PROMPTS_OUTBOX_REAPER_EVERY": "0",
+	})
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start prompts: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	listenerOpened := false
+	var exitErr error
+	exited := false
+	for !exited {
+		select {
+		case exitErr = <-done:
+			exited = true
+		default:
+			conn, dialErr := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 20*time.Millisecond)
+			if dialErr == nil {
+				listenerOpened = true
+				_ = conn.Close()
+			}
+			if ctx.Err() != nil {
+				exitErr = <-done
+				exited = true
+			} else {
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+	}
+	output := stdout.String() + stderr.String()
+	if ctx.Err() != nil {
+		t.Fatalf("prompts did not exit after version-plane failure: %v\n%s", exitErr, output)
+	}
+	if exitErr == nil {
+		t.Fatalf("prompts exited zero after version-plane failure\n%s", output)
+	}
+	if !strings.Contains(output, "version plane") {
+		t.Fatalf("startup error does not name version plane: %v\n%s", exitErr, output)
+	}
+	if listenerOpened {
+		t.Fatalf("prompts listener on port %d opened despite failed definition seeding", port)
+	}
+	probe, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		t.Fatalf("prompts listener address remains unavailable after failed startup: %v", err)
+	}
+	_ = probe.Close()
+}
+
+func seedBootPrompt(t *testing.T, path string) {
+	t.Helper()
+	ctx := context.Background()
+	conn, err := appkitdb.Open(path)
+	if err != nil {
+		t.Fatalf("open boot fixture DB: %v", err)
+	}
+	migrations, err := appkitdb.LoadMigrations(promptdb.FS, "migrations")
+	if err != nil {
+		_ = conn.Close()
+		t.Fatalf("load boot fixture migrations: %v", err)
+	}
+	if err := appkitdb.Migrate(ctx, conn, migrations); err != nil {
+		_ = conn.Close()
+		t.Fatalf("migrate boot fixture DB: %v", err)
+	}
+	now := "2026-08-08T00:00:00Z"
+	_, err = conn.ExecContext(ctx, `INSERT INTO prompts
+		(id, owner_id, owner_email, name, user_prompt, system_prompt, config_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"01SEEDBOOT0000000000000001", "boot-owner", "boot@example.com", "Boot seed", "prompt bytes", "", `{}`, now, now,
+	)
+	closeErr := conn.Close()
+	if err != nil {
+		t.Fatalf("insert boot fixture prompt: %v", err)
+	}
+	if closeErr != nil {
+		t.Fatalf("close boot fixture DB: %v", closeErr)
 	}
 }
 
