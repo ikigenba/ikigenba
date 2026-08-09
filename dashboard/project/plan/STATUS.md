@@ -10,5 +10,7 @@ file — there is no done marker; done is gone. This file deliberately carries
 **no bare status glyph** anywhere but on a phase line, so the anchored grep
 matches only phase lines.
 
-Next phase: 48
+Next phase: 49
+
+- Phase 48 ⬜ realizes R-6MX7-JDFX — raise the apex fragment's `variables_hash_max_size` to the box-verified 4096 (2048 proved insufficient on the box's nginx build) and retarget its file-content test
 
