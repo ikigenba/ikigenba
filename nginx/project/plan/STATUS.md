@@ -14,7 +14,6 @@ matches only phase lines.
 
 Next phase: 05
 
-- Phase 04 ⬜ realizes — — raise the dev front door's `variables_hash_max_size` to 4096, mirroring the box-verified production value (D1)
 
 The artifacts of D1, D2, and D3 already exist in the tree — this spec was written
 over working code, not ahead of it — so those Decisions queued no initial work.
