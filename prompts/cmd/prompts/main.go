@@ -290,6 +290,7 @@ func registerRoutes(rt *appkit.Router) error {
 		}
 		return p.ID
 	})
+	svc.RunTTL = knobs.runTTL
 	// Capture the service for the consumer Worker and the store for the Producer
 	// hook (both run after Handlers; the Producer injects the outbox onto store).
 	svcRef = svc

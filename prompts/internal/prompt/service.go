@@ -3,10 +3,10 @@ package prompt
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -72,6 +72,10 @@ type Service struct {
 	// Version is the version-plane boundary for prompt definitions. It is
 	// field-injected by the composition root, like Fetcher.
 	Version version.Client
+	// RunTTL is the configured lifetime of a run. It is field-injected by the
+	// composition root and determines how long the per-run git credential must
+	// remain useful.
+	RunTTL time.Duration
 	// seedRetryWindow and seedSleep are deterministic test seams for the boot
 	// backoff. Zero/nil select the production 30-second window and real sleep.
 	seedRetryWindow time.Duration
@@ -707,16 +711,29 @@ func runGit(ctx context.Context, args ...string) error {
 	return nil
 }
 
-func credentialCloneURL(credential version.Credential) string {
+func credentialExtraHeader(credential version.Credential) string {
 	if credential.Username == "" && credential.Password == "" {
-		return credential.CloneURL
+		return ""
 	}
-	u, err := url.Parse(credential.CloneURL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		return credential.CloneURL
+	encoded := base64.StdEncoding.EncodeToString([]byte(credential.Username + ":" + credential.Password))
+	return "Authorization: Basic " + encoded
+}
+
+func cloneRunWorkspace(ctx context.Context, credential version.Credential, root string) error {
+	args := []string{"clone", "--no-checkout"}
+	if header := credentialExtraHeader(credential); header != "" {
+		// clone --config both applies the header to the initial fetch and writes it
+		// to this clone's local config for the agent's later fetches and pushes.
+		args = append(args, "--config", "http."+credential.CloneURL+".extraHeader="+header)
 	}
-	u.User = url.UserPassword(credential.Username, credential.Password)
-	return u.String()
+	args = append(args, credential.CloneURL, root)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		// Do not include args here: an authenticated clone carries the token in
+		// its config argument, and command failures can enter the run transcript.
+		return fmt.Errorf("git clone: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func (s *Service) materializeWorkspace(ctx context.Context, p Prompt, run Run, executed Executed) (Run, error) {
@@ -752,14 +769,18 @@ func (s *Service) materializeWorkspace(ctx context.Context, p Prompt, run Run, e
 			return Run{}, err
 		}
 	} else {
-		credential, err := s.Version.RunToken(ctx, p.NameKey, run.ID, time.Hour)
+		runTTL := s.RunTTL
+		if runTTL <= 0 {
+			runTTL = 30 * time.Minute
+		}
+		credential, err := s.Version.RunToken(ctx, p.NameKey, run.ID, runTTL+5*time.Minute)
 		if err != nil {
 			return Run{}, versionPlaneError("mint run credential", err)
 		}
 		if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
 			return Run{}, err
 		}
-		if err := runGit(ctx, "clone", "--no-checkout", credentialCloneURL(credential), root); err != nil {
+		if err := cloneRunWorkspace(ctx, credential, root); err != nil {
 			return Run{}, versionPlaneError("clone run workspace", err)
 		}
 		if err := runGit(ctx, "-C", root, "checkout", "-b", "ikigenba/run-"+run.ID, run.DefinitionSha); err != nil {
