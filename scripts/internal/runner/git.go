@@ -14,10 +14,12 @@ import (
 
 const credentialHelper = `!f(){ echo username=run; echo "password=$SUITE_GIT_TOKEN"; };f`
 
+const runTokenMargin = 10 * time.Minute
+
 // materializeGit clones the script repository, detaches at the recorded pin,
 // and configures credentials for git commands authored by the running script.
 func (r *Runner) materializeGit(ctx context.Context, dir, sha string, sc script.Script) (string, error) {
-	token, cloneURL, err := r.Plane.RunToken(ctx, sc.NameKey, r.ttl+5*time.Minute)
+	token, cloneURL, err := r.Plane.RunToken(ctx, sc.NameKey, r.ttl+runTokenMargin)
 	if err != nil {
 		return "", fmt.Errorf("mint run token: %w", err)
 	}

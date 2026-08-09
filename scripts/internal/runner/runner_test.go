@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -166,6 +167,8 @@ func requireGit(t *testing.T) {
 
 type gitTestPlane struct {
 	token, cloneURL string
+	ttls            chan<- time.Duration
+	runTokenErr     error
 }
 
 func (p gitTestPlane) Create(context.Context, string, script.Owner, string) error { return nil }
@@ -180,8 +183,11 @@ func (p gitTestPlane) Rename(context.Context, string, string, script.Owner, stri
 	return nil
 }
 func (p gitTestPlane) Delete(context.Context, string, script.Owner, string) error { return nil }
-func (p gitTestPlane) RunToken(context.Context, string, time.Duration) (string, string, error) {
-	return p.token, p.cloneURL, nil
+func (p gitTestPlane) RunToken(_ context.Context, _ string, ttl time.Duration) (string, string, error) {
+	if p.ttls != nil {
+		p.ttls <- ttl
+	}
+	return p.token, p.cloneURL, p.runTokenErr
 }
 
 func gitCommand(t *testing.T, args ...string) string {
@@ -192,6 +198,33 @@ func gitCommand(t *testing.T, args ...string) string {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func TestSpawnRequestsRunTokenForTTLPlusTenMinutes(t *testing.T) {
+	// R-35MV-X124
+	st, conn := newStore(t)
+	run := seed(t, st, "print('not reached')\n")
+	run.RepoSha = "pinned-revision"
+	if _, err := conn.Exec(`UPDATE runs SET repo_sha = ? WHERE id = ?`, run.RepoSha, run.ID); err != nil {
+		t.Fatalf("set run repository pin: %v", err)
+	}
+
+	ttls := make(chan time.Duration, 1)
+	r := New(st, t.TempDir(), 30*time.Minute, nil)
+	r.Plane = gitTestPlane{ttls: ttls, runTokenErr: errors.New("recording fake stops after token request")}
+	r.Spawn(run, []byte("{}"))
+
+	select {
+	case got := <-ttls:
+		if want := 40 * time.Minute; got != want {
+			t.Fatalf("RunToken ttl = %s, want configured run TTL plus 10m (%s)", got, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runner did not request a run token")
+	}
+	if got := waitTerminal(t, st, run.ID); got.Status != script.RunFailed {
+		t.Fatalf("run status = %q, want failed after recording fake stopped the spawn", got.Status)
+	}
 }
 
 func TestPinnedRunClonesDetachedTreeAndCanPushWithoutAmbientMerge(t *testing.T) {

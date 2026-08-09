@@ -1118,6 +1118,99 @@ func TestNginxSessionForwardsAllOwnerIdentityHeadersWithoutClientID(t *testing.T
 	}
 }
 
+// R-34EZ-J9BF
+func TestServeRejectsRunTTLAboveSixHoursAndAcceptsBoundary(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "scripts")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	build.Env = os.Environ()
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build scripts: %v\n%s", err, out)
+	}
+	www, err := filepath.Abs(filepath.Join("..", "..", "share", "www"))
+	if err != nil {
+		t.Fatalf("resolve www path: %v", err)
+	}
+	dropbox := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(dropbox.Close)
+	feedServers := make(map[string]*httptest.Server)
+	baseEnv := map[string]string{
+		"IKIGENBA_DOMAIN":           "int.ikigenba.com",
+		"SCRIPTS_IP":                "127.0.0.1",
+		"SCRIPTS_WWW_PATH":          www,
+		"DROPBOX_BASE_URL":          dropbox.URL,
+		"OUTBOX_RETENTION_DAYS":     "7",
+		"OUTBOX_RETENTION_MAX_ROWS": "1000000",
+	}
+	for _, entry := range scriptsSpec().Consumers {
+		source := entry.Source
+		feedServers[source] = newIdleFeedServer(t)
+		baseEnv["SCRIPTS_"+strings.ToUpper(source)+"_FEED_URL"] = feedServers[source].URL + "/feed"
+	}
+
+	rejectedPort := freeTCPPort(t)
+	rejectedEnv := mapsClone(baseEnv)
+	rejectedEnv["IKIGENBA_ROOT"] = newServeRoot(t)
+	rejectedEnv["SCRIPTS_PORT"] = strconv.Itoa(rejectedPort)
+	rejectedEnv["SCRIPTS_RUN_TTL"] = "7h"
+	rejected := exec.Command(binary, "serve")
+	rejected.Env = testEnv(rejectedEnv)
+	output, err := rejected.CombinedOutput()
+	if err == nil {
+		t.Fatalf("serve with SCRIPTS_RUN_TTL=7h exited zero; output:\n%s", output)
+	}
+	message := string(output)
+	for _, want := range []string{"SCRIPTS_RUN_TTL", "7h", "6h"} {
+		if !strings.Contains(message, want) {
+			t.Errorf("startup error missing %q:\n%s", want, message)
+		}
+	}
+	conn, dialErr := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", rejectedPort), 100*time.Millisecond)
+	if dialErr == nil {
+		conn.Close()
+		t.Fatal("serve with rejected TTL started a listener")
+	}
+
+	acceptedPort := freeTCPPort(t)
+	acceptedEnv := mapsClone(baseEnv)
+	acceptedEnv["IKIGENBA_ROOT"] = newServeRoot(t)
+	acceptedEnv["SCRIPTS_PORT"] = strconv.Itoa(acceptedPort)
+	acceptedEnv["SCRIPTS_RUN_TTL"] = "6h"
+	ctx, cancel := context.WithCancel(context.Background())
+	var stdout, stderr bytes.Buffer
+	accepted := exec.CommandContext(ctx, binary, "serve")
+	accepted.Env = testEnv(acceptedEnv)
+	accepted.Stdout = &stdout
+	accepted.Stderr = &stderr
+	if err := accepted.Start(); err != nil {
+		cancel()
+		t.Fatalf("start scripts at 6h boundary: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- accepted.Wait() }()
+	defer stopProcess(cancel, done)
+	waitForHealth(t, acceptedPort, done, &stdout, &stderr)
+}
+
+func mapsClone(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func newServeRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, name := range []string{"state", "cache"} {
+		path := filepath.Join(root, "scripts", name)
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatalf("create serve %s directory: %v", name, err)
+		}
+	}
+	return root
+}
+
 // R-4LKF-FB23
 func TestScriptsBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	// R-RUNS-BOOT

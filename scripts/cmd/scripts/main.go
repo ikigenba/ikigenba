@@ -56,7 +56,10 @@ var (
 	storeRef *script.Store
 )
 
-const defaultRunTTL = 30 * time.Minute
+const (
+	defaultRunTTL = 30 * time.Minute
+	maxRunTTL     = 6 * time.Hour
+)
 
 func main() {
 	appkit.Main(scriptsSpec())
@@ -131,7 +134,7 @@ func registerRoutes(rt *appkit.Router) error {
 	}
 
 	// SCRIPTS_RUN_TTL bounds each run's wall-clock — the runaway backstop (§5.2).
-	runTTL, err := config.EnvOrDuration(os.Getenv, "SCRIPTS_RUN_TTL", defaultRunTTL)
+	runTTL, err := resolveRunTTL(os.Getenv)
 	if err != nil {
 		return err
 	}
@@ -203,6 +206,17 @@ func registerRoutes(rt *appkit.Router) error {
 	}
 	rt.Handle("POST /mcp", rt.RequireIdentity(handler))
 	return nil
+}
+
+func resolveRunTTL(getenv func(string) string) (time.Duration, error) {
+	runTTL, err := config.EnvOrDuration(getenv, "SCRIPTS_RUN_TTL", defaultRunTTL)
+	if err != nil {
+		return 0, err
+	}
+	if runTTL <= 0 || runTTL > maxRunTTL {
+		return 0, fmt.Errorf("SCRIPTS_RUN_TTL=%s must be greater than zero and no more than the 6h maximum", runTTL)
+	}
+	return runTTL, nil
 }
 
 func newVersionPlane() script.VersionPlane {
