@@ -212,6 +212,28 @@ func requireNginxDirective(t *testing.T, block, directive string) {
 	t.Errorf("nginx block is missing %q:\n%s", directive, block)
 }
 
+// R-6MX7-JDFX
+func TestCommittedNginxVariablesHashMaxSizePrecedesServerBlocks(t *testing.T) {
+	config, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatalf("read committed nginx.conf: %v", err)
+	}
+
+	contents := string(config)
+	directive := "variables_hash_max_size 2048;"
+	directiveOffset := strings.Index(contents, directive)
+	if directiveOffset == -1 {
+		t.Fatalf("committed nginx.conf is missing %q", directive)
+	}
+	serverOffset := strings.Index(contents, "server {")
+	if serverOffset == -1 {
+		t.Fatal("committed nginx.conf is missing its server blocks")
+	}
+	if directiveOffset >= serverOffset {
+		t.Fatalf("%q offset = %d, want before first server block at offset %d", directive, directiveOffset, serverOffset)
+	}
+}
+
 // R-XOIK-KVWZ
 func TestCommittedNginxApexProxyBlanksInboundCorrelationID(t *testing.T) {
 	block := committedNginxLocationBlock(t, "/", true)
