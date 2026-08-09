@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 40
-
-- Phase 39 ⬜ realizes R-II0Q-VTSI, R-IJ8N-9LJ7 — caller-requested, capped TTL on run-token minting
