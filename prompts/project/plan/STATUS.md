@@ -11,7 +11,6 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 70
 
-- Phase 62 ⬜ realizes D51 — the name key: slug, schema, and uniqueness
 - Phase 63 ⬜ realizes D53 — the write path commits: create, update, import, rename, delete
 - Phase 64 ⬜ realizes D54 — seeding: the one-time definition backfill at boot
 - Phase 65 ⬜ realizes D55, D39, D40 — the run workspace is a clone pinned to a sha
