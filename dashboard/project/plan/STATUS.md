@@ -12,5 +12,3 @@ matches only phase lines.
 
 Next phase: 48
 
-- Phase 47 ⬜ realizes R-6MX7-JDFX — the apex fragment sets `variables_hash_max_size 2048` at http level, proven by a file-content test
-
