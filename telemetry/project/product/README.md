@@ -86,6 +86,11 @@ telemetry **does**:
 - **Record its own agent-facing surface** like any other service's — a search or
   a chain lookup is itself a recorded step — while the private reporting path is
   never recorded, so reporting can never feed itself.
+- **Serve the suite's uniform landing page** at its mount to a signed-in
+  browser: the service's name, what it is in one line, and the running version —
+  the same page every other suite service shows, differing only in its text.
+  The working surface remains agent-only; the page identifies the service, it
+  does not operate it.
 
 telemetry **does nothing else**. In particular, it deliberately excludes:
 
@@ -105,8 +110,9 @@ telemetry **does nothing else**. In particular, it deliberately excludes:
   forensic store an agent can edit is not evidence.
 - **Alerting or reaction.** telemetry publishes nothing on the event plane,
   triggers nothing, and notifies no one. It is a store that answers questions.
-- **A human page.** This version serves no browser-facing page at its mount;
-  the surface is agent-only. A landing page is a later addition, not a gap.
+- **A human UI.** Beyond the uniform landing page, there is no browser-facing
+  surface: no record browser, no query form, no page that operates the service.
+  The working surface is agent-only.
 - **Cross-box or historical import.** It records what happens on this box from
   the moment it is running. There is no backfill and no ingestion of other
   boxes' records.
@@ -174,6 +180,11 @@ documented in `project/research/research.md`.
 - **The surface explains itself.** A connecting agent can learn the record
   model, the kinds of step, and how to drive each tool from the service itself,
   with no external skill or document installed.
+- **The mount identifies itself to a signed-in browser.** Visiting the
+  service's mount while signed in to the box shows the suite's uniform landing
+  page — the service's name, a one-line description, and the running version —
+  visually identical to every other service's page apart from its text. A
+  visitor who is not signed in is sent to sign in, not shown the page.
 
 ## Success criteria (outcomes)
 
@@ -222,3 +233,6 @@ Each item is confirmable end-to-end against the running service.
 - A connecting agent that reads only what the service itself provides can
   correctly perform a search, follow a chain, and read a record, without any
   externally installed skill or document.
+- Visiting the service's mount in a signed-in browser shows the suite's uniform
+  landing page naming the service and the running version; visiting it signed
+  out leads to sign-in instead.
