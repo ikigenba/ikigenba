@@ -11,7 +11,6 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 70
 
-- Phase 66 ⬜ realizes D56 — the run token and the authenticated git door
 - Phase 67 ⬜ realizes D57 — the framing prompt tells the run about its clone
 - Phase 68 ⬜ realizes D58, D24 (slice) — `repos` joins the trigger sources
 - Phase 69 ⬜ realizes D59 — retire the content columns
