@@ -85,10 +85,17 @@ func TestCorrelationIDMigrationPreservesExistingJobsWithEmptyCorrelation(t *test
 	if err != nil {
 		t.Fatalf("LoadMigrations: %v", err)
 	}
-	if len(migrations) < 2 || !strings.Contains(migrations[len(migrations)-1].Name, "jobs_correlation_id") {
-		t.Fatalf("latest migration = %#v, want jobs_correlation_id", migrations[len(migrations)-1])
+	correlationIndex := -1
+	for i, migration := range migrations {
+		if strings.Contains(migration.Name, "jobs_correlation_id") {
+			correlationIndex = i
+			break
+		}
 	}
-	if err := appdb.Migrate(ctx, conn, migrations[:len(migrations)-1]); err != nil {
+	if correlationIndex < 1 {
+		t.Fatalf("jobs_correlation_id migration index = %d, want after initial migrations", correlationIndex)
+	}
+	if err := appdb.Migrate(ctx, conn, migrations[:correlationIndex]); err != nil {
 		t.Fatalf("migrate to previous version: %v", err)
 	}
 	_, err = conn.ExecContext(ctx, `INSERT INTO jobs
@@ -98,7 +105,7 @@ func TestCorrelationIDMigrationPreservesExistingJobsWithEmptyCorrelation(t *test
 	if err != nil {
 		t.Fatalf("seed previous-version job: %v", err)
 	}
-	if err := appdb.Migrate(ctx, conn, migrations); err != nil {
+	if err := appdb.Migrate(ctx, conn, migrations[:correlationIndex+1]); err != nil {
 		t.Fatalf("migrate forward: %v", err)
 	}
 	var id, ownerID, ownerEmail, source, title, tags, hash, status, received, started, finished, jobErr, correlationID string
@@ -346,7 +353,13 @@ func TestMigrationsCreatePagesFTSExternalContentAndBackfill(t *testing.T) {
 		t.Fatalf("insert page before create_pages_fts: %v", err)
 	}
 
-	if err := appdb.Migrate(ctx, conn, migs); err != nil {
+	var throughCreate []appdb.Migration
+	for _, mig := range migs {
+		if mig.Version <= createVersion {
+			throughCreate = append(throughCreate, mig)
+		}
+	}
+	if err := appdb.Migrate(ctx, conn, throughCreate); err != nil {
 		t.Fatalf("Migrate through create_pages_fts: %v", err)
 	}
 

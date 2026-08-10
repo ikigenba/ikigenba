@@ -617,6 +617,17 @@ func (s *SubjectStore) GetByPath(ctx context.Context, path string) (Subject, err
 }
 
 func (s *SubjectStore) List(ctx context.Context, typ, nameContains string, p page.Params) ([]Subject, string, error) {
+	return s.ListInScope(ctx, "default", typ, nameContains, p)
+}
+
+// ListInScope lists subjects only after resolving the named scope.
+func (s *SubjectStore) ListInScope(ctx context.Context, scope, typ, nameContains string, p page.Params) ([]Subject, string, error) {
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM scopes WHERE name = ?`, scope).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+		return nil, "", fmt.Errorf("%w: %s", ErrScopeNotFound, scope)
+	} else if err != nil {
+		return nil, "", err
+	}
 	cursor, err := decodeCursor(p.Cursor, 2)
 	if err != nil {
 		return nil, "", err
@@ -624,11 +635,12 @@ func (s *SubjectStore) List(ctx context.Context, typ, nameContains string, p pag
 	limit := p.ResolvedLimit()
 	typ = strings.TrimSpace(typ)
 	nameContains = Normalize(nameContains)
-	args := []any{typ, typ, nameContains, nameContains}
+	args := []any{scope, typ, typ, nameContains, nameContains}
 	query := `
 		SELECT id, name, norm_name, type
 		FROM subjects
-		WHERE (? = '' OR type = ?)
+		WHERE scope = ?
+		  AND (? = '' OR type = ?)
 		  AND (? = '' OR norm_name LIKE '%' || ? || '%')`
 	if len(cursor) > 0 {
 		query += `

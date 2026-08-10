@@ -30,7 +30,9 @@ func TestAliasesMigrationCreatesConstrainedLookupTable(t *testing.T) {
 	}
 	compactTableSQL := strings.Join(strings.Fields(tableSQL), " ")
 	for _, want := range []string{
-		"norm_name TEXT NOT NULL UNIQUE",
+		"scope TEXT NOT NULL DEFAULT 'default'",
+		"norm_name TEXT NOT NULL",
+		"UNIQUE (scope, norm_name)",
 		"subject_id TEXT NOT NULL REFERENCES subjects(id) ON DELETE RESTRICT",
 		"name TEXT NOT NULL",
 		"owner_id TEXT NOT NULL",
