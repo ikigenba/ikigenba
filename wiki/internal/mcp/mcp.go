@@ -32,6 +32,7 @@ const (
 // Handler holds configured wiki domain tool dependencies.
 type Handler struct {
 	pageBase  string
+	pageRoot  string
 	linkify   func(context.Context, string, string, string, string) (string, error)
 	ingest    func(context.Context, string, string, string, string, string, []string) (string, error)
 	status    func(context.Context, string) (any, error)
@@ -392,9 +393,11 @@ func Tools(opts ...Option) []appkitmcp.Tool {
 // NewHandler builds the MCP handler from appkit's route-time service metadata.
 func NewHandler(rt *appkit.Router, opts ...Option) (http.Handler, error) {
 	pageBase := strings.TrimRight(rt.AuthServer(), "/") + wiki.Mount + "subject/"
+	pageRoot := strings.TrimRight(rt.AuthServer(), "/") + wiki.Mount
 	handlerOpts := append([]Option{}, opts...)
 	handlerOpts = append(handlerOpts, func(h *Handler) {
 		h.pageBase = pageBase
+		h.pageRoot = pageRoot
 	})
 	return appkitmcp.New(appkitmcp.Options{
 		Service:       rt.Service(),
@@ -641,9 +644,13 @@ func (h *Handler) handleAskCall(ctx context.Context, raw json.RawMessage, id ser
 	if err != nil {
 		return internalError(err.Error()), nil
 	}
-	result := askToolResult(answer, h.pageBase)
+	pageBase, err := h.scopedPageBase(ctx, scope)
+	if err != nil {
+		return internalError(err.Error()), nil
+	}
+	result := askToolResult(answer, pageBase)
 	if h.linkify != nil {
-		text, err := h.linkify(ctx, scope, result["answer"].(string), h.pageBase, "")
+		text, err := h.linkify(ctx, scope, result["answer"].(string), pageBase, "")
 		if err != nil {
 			return internalError(err.Error()), nil
 		}
@@ -742,7 +749,11 @@ func (h *Handler) handlePageCall(ctx context.Context, raw json.RawMessage, _ ser
 	result := publicPageResult(page, subject)
 	footer := stringField(indirect(reflect.ValueOf(page)), "Footer")
 	if h.linkify != nil {
-		body, err := h.linkify(ctx, scope, result["body"], h.pageBase, stringField(indirect(reflect.ValueOf(page)), "SubjectID"))
+		pageBase, baseErr := h.scopedPageBase(ctx, scope)
+		if baseErr != nil {
+			return internalError(baseErr.Error()), nil
+		}
+		body, err := h.linkify(ctx, scope, result["body"], pageBase, stringField(indirect(reflect.ValueOf(page)), "SubjectID"))
 		if err != nil {
 			return internalError(err.Error()), nil
 		}
@@ -750,6 +761,21 @@ func (h *Handler) handlePageCall(ctx context.Context, raw json.RawMessage, _ ser
 	}
 	result["body"] += footer
 	return appkitmcp.StructuredResult(result)
+}
+
+func (h *Handler) scopedPageBase(ctx context.Context, scope string) (string, error) {
+	if h.scopes == nil {
+		return h.pageBase, nil
+	}
+	entry, err := h.scopes.Get(ctx, scope)
+	if err != nil {
+		return "", err
+	}
+	tier := "private"
+	if entry.Visibility == "public" {
+		tier = "public"
+	}
+	return h.pageRoot + tier + "/" + scope + "/subject/", nil
 }
 
 func handleGuideCall(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {

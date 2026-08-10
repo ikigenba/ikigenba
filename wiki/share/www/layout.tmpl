@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <base href="{{.Mount}}">
+  <base href="{{.Base}}">
   <title>{{.Service}} · wiki</title>
-  <link rel="stylesheet" href="static/tokens.css">
+  <link rel="stylesheet" href="{{.Mount}}static/tokens.css">
   <style>
     * {
       box-sizing: border-box;
@@ -171,13 +171,15 @@
     }
 
     input,
+    select,
     button {
       min-height: 48px;
       border: 0;
       font: inherit;
     }
 
-    input {
+    input,
+    select {
       min-width: 0;
       flex: 1;
       padding: 0 var(--space-4);
@@ -225,6 +227,12 @@
 <body>
   <main>
     <a class="home" href="/">Home</a>
+    <form action="select" method="get" aria-label="Select scope">
+      <select name="to" aria-label="Scope">
+        {{range .Scopes}}<option value="{{.Name}}"{{if eq .Name $.Scope}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+      <button type="submit">Go</button>
+    </form>
 {{end}}
 
 {{define "foot"}}  </main>

@@ -12,6 +12,7 @@ import (
 
 	"wiki/internal/ask"
 	"wiki/internal/markdown"
+	"wiki/internal/wiki"
 )
 
 var ErrNotFound = errors.New("web: subject not found")
@@ -39,6 +40,15 @@ type Mentioner interface {
 // Linkifier projects named subject mentions into markdown links.
 type Linkifier interface {
 	LinkifyMentions(ctx context.Context, scope, text, base, excludeID string) (string, error)
+}
+
+type scopeRegistry interface {
+	Get(context.Context, string) (wiki.Scope, error)
+	List(context.Context) ([]wiki.Scope, error)
+}
+
+type scopedPageFinder interface {
+	PageByPathInScope(context.Context, string, string) (SubjectView, error)
 }
 
 // Ref is a mount-relative link target for the read surface.
@@ -97,6 +107,11 @@ func WithLinkifier(l Linkifier, base string) Option {
 	}
 }
 
+// WithScopeStore injects the scope registry used by scoped routes and selectors.
+func WithScopeStore(scopes *wiki.ScopeStore) Option {
+	return func(h *handler) { h.scopes = scopes }
+}
+
 type handler struct {
 	service string
 	version string
@@ -109,12 +124,17 @@ type handler struct {
 	mentions  Mentioner
 	linkifier Linkifier
 	linkBase  string
+	scopes    scopeRegistry
 }
 
 type pageData struct {
 	Service string
 	Version string
 	Mount   string
+	Base    string
+	Tier    string
+	Scope   string
+	Scopes  []wiki.Scope
 
 	Query       string
 	Asked       bool
@@ -135,44 +155,79 @@ func NewHandler(service, version, mount string, site *appkitweb.Site, opts ...Op
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", h.home)
-	mux.HandleFunc("GET /subject/{type}/{slug}", h.subject)
+	mux.HandleFunc("GET /{$}", h.landing)
+	for _, tier := range []string{"private", "public"} {
+		mux.HandleFunc("GET /"+tier+"/{scope}/{$}", h.home)
+		mux.HandleFunc("GET /"+tier+"/{scope}/subject/{type}/{slug}", h.subject)
+		mux.HandleFunc("GET /"+tier+"/{scope}/select", h.selectScope)
+	}
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		h.renderNotFound(w, r, routeTier(r))
+	})
 	return mux
 }
 
+func (h *handler) landing(w http.ResponseWriter, r *http.Request) {
+	scope := "default"
+	if cookie, err := r.Cookie("wiki_scope"); err == nil {
+		if _, ok := h.resolveScope(r.Context(), cookie.Value); ok {
+			scope = cookie.Value
+		}
+	}
+	http.Redirect(w, r, "/private/"+scope+"/", http.StatusSeeOther)
+}
+
+func (h *handler) selectScope(w http.ResponseWriter, r *http.Request) {
+	tier := routeTier(r)
+	if _, ok := h.resolvePageScope(w, r, tier); !ok {
+		return
+	}
+	target := strings.TrimSpace(r.URL.Query().Get("to"))
+	scope, ok := h.resolveScope(r.Context(), target)
+	if !ok || (tier == "public" && scope.Visibility != "public") {
+		h.renderNotFound(w, r, tier)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: "wiki_scope", Value: target, Path: h.mount, SameSite: http.SameSiteLaxMode})
+	http.Redirect(w, r, "/"+tier+"/"+target+"/", http.StatusSeeOther)
+}
+
 func (h *handler) home(w http.ResponseWriter, r *http.Request) {
+	tier := routeTier(r)
+	scope, ok := h.resolvePageScope(w, r, tier)
+	if !ok {
+		return
+	}
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query != "" {
-		h.ask(w, r, query)
+		h.ask(w, r, tier, scope, query)
 		return
 	}
 
 	var orphans []Ref
 	if h.orphans != nil {
-		refs, err := h.orphans.Orphans(r.Context(), "default")
+		refs, err := h.orphans.Orphans(r.Context(), scope.Name)
 		if err != nil {
 			http.Error(w, "list orphan pages", http.StatusInternalServerError)
 			return
 		}
 		orphans = refs
+		orphans = h.scopeRefs(orphans, tier, scope.Name)
 	}
 
-	if err := h.site.Render(w, "home", pageData{
-		Service: h.service,
-		Version: h.version,
-		Mount:   h.mount,
+	if err := h.site.Render(w, "home", h.pageData(r.Context(), tier, scope.Name, pageData{
 		Orphans: orphans,
-	}); err != nil {
+	})); err != nil {
 		http.Error(w, "render home page", http.StatusInternalServerError)
 	}
 }
 
-func (h *handler) ask(w http.ResponseWriter, r *http.Request, question string) {
+func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope wiki.Scope, question string) {
 	if h.asker == nil {
 		http.Error(w, "ask wiki", http.StatusNotImplemented)
 		return
 	}
-	answer, err := h.asker.Ask(r.Context(), "default", r.Header.Get("X-Owner-Email"), question)
+	answer, err := h.asker.Ask(r.Context(), scope.Name, r.Header.Get("X-Owner-Email"), question)
 	if err != nil {
 		http.Error(w, "ask wiki", http.StatusInternalServerError)
 		return
@@ -190,16 +245,18 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, question string) {
 	}
 	var mentions []Ref
 	if h.mentions != nil {
-		refs, err := h.mentions.MentionsIn(r.Context(), "default", answer.Text)
+		refs, err := h.mentions.MentionsIn(r.Context(), scope.Name, answer.Text)
 		if err != nil {
 			http.Error(w, "link answer mentions", http.StatusInternalServerError)
 			return
 		}
 		mentions = refs
+		mentions = h.scopeRefs(mentions, tier, scope.Name)
 	}
 	answerHTML := markdown.Render(answer.Text)
 	if h.linkifier != nil {
-		text, err := h.linkifier.LinkifyMentions(r.Context(), "default", answer.Text, h.linkBase, "")
+		base := h.absoluteSubjectBase(tier, scope.Name)
+		text, err := h.linkifier.LinkifyMentions(r.Context(), scope.Name, answer.Text, base, "")
 		if err != nil {
 			http.Error(w, "link answer mentions", http.StatusInternalServerError)
 			return
@@ -207,41 +264,46 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, question string) {
 		answerHTML = markdown.Render(text)
 	}
 
-	if err := h.site.Render(w, "home", pageData{
-		Service:    h.service,
-		Version:    h.version,
-		Mount:      h.mount,
+	if err := h.site.Render(w, "home", h.pageData(r.Context(), tier, scope.Name, pageData{
 		Query:      question,
 		Asked:      true,
 		Answer:     answer,
 		AnswerHTML: answerHTML,
 		Cites:      cites,
 		Mentions:   mentions,
-	}); err != nil {
+	})); err != nil {
 		http.Error(w, "render ask page", http.StatusInternalServerError)
 	}
 }
 
 func (h *handler) subject(w http.ResponseWriter, r *http.Request) {
+	tier := routeTier(r)
+	scope, ok := h.resolvePageScope(w, r, tier)
+	if !ok {
+		return
+	}
 	if h.pages == nil {
 		http.Error(w, "find subject page", http.StatusNotImplemented)
 		return
 	}
 	path := r.PathValue("type") + "/" + r.PathValue("slug")
-	subject, err := h.pages.PageByPath(r.Context(), path)
+	var subject SubjectView
+	var err error
+	if pages, ok := h.pages.(scopedPageFinder); ok {
+		subject, err = pages.PageByPathInScope(r.Context(), scope.Name, path)
+	} else {
+		subject, err = h.pages.PageByPath(r.Context(), path)
+	}
 	if errors.Is(err, ErrNotFound) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
-		if renderErr := h.site.Render(w, "subject", pageData{
-			Service: h.service,
-			Version: h.version,
-			Mount:   h.mount,
+		if renderErr := h.site.Render(w, "subject", h.pageData(r.Context(), tier, scope.Name, pageData{
 			Subject: SubjectView{
 				Title: "Subject not found",
 				Body:  "No page exists for this subject.",
 			},
 			SubjectHTML: markdown.Render("No page exists for this subject."),
-		}); renderErr != nil {
+		})); renderErr != nil {
 			http.Error(w, "render subject page", http.StatusInternalServerError)
 		}
 		return
@@ -250,16 +312,101 @@ func (h *handler) subject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "find subject page", http.StatusInternalServerError)
 		return
 	}
+	subject = h.scopeSubjectLinks(subject, tier, scope.Name)
 
-	if err := h.site.Render(w, "subject", pageData{
-		Service:     h.service,
-		Version:     h.version,
-		Mount:       h.mount,
+	if err := h.site.Render(w, "subject", h.pageData(r.Context(), tier, scope.Name, pageData{
 		Subject:     subject,
 		SubjectHTML: markdown.Render(subject.Body),
-	}); err != nil {
+	})); err != nil {
 		http.Error(w, "render subject page", http.StatusInternalServerError)
 	}
+}
+
+func routeTier(r *http.Request) string {
+	if strings.HasPrefix(r.URL.Path, "/public/") {
+		return "public"
+	}
+	return "private"
+}
+
+func (h *handler) resolveScope(ctx context.Context, name string) (wiki.Scope, bool) {
+	if h.scopes == nil {
+		if name == "default" {
+			return wiki.Scope{Name: "default", Visibility: "private"}, true
+		}
+		return wiki.Scope{}, false
+	}
+	scope, err := h.scopes.Get(ctx, name)
+	return scope, err == nil
+}
+
+func (h *handler) resolvePageScope(w http.ResponseWriter, r *http.Request, tier string) (wiki.Scope, bool) {
+	name := r.PathValue("scope")
+	scope, ok := h.resolveScope(r.Context(), name)
+	if !ok || (tier == "public" && scope.Visibility != "public") {
+		h.renderNotFound(w, r, tier)
+		return wiki.Scope{}, false
+	}
+	return scope, true
+}
+
+func (h *handler) pageData(ctx context.Context, tier, scope string, data pageData) pageData {
+	data.Service, data.Version, data.Mount = h.service, h.version, h.mount
+	data.Tier, data.Scope = tier, scope
+	data.Base = h.mount + tier + "/" + scope + "/"
+	if h.scopes == nil {
+		data.Scopes = []wiki.Scope{{Name: "default", Visibility: "private"}}
+		return data
+	}
+	all, err := h.scopes.List(ctx)
+	if err != nil {
+		return data
+	}
+	for _, candidate := range all {
+		if tier == "private" || candidate.Visibility == "public" {
+			data.Scopes = append(data.Scopes, candidate)
+		}
+	}
+	return data
+}
+
+func (h *handler) renderNotFound(w http.ResponseWriter, r *http.Request, tier string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	_ = h.site.Render(w, "subject", h.pageData(r.Context(), tier, "default", pageData{
+		Subject:     SubjectView{Title: "Subject not found", Body: "No page exists for this subject."},
+		SubjectHTML: markdown.Render("No page exists for this subject."),
+	}))
+}
+
+func (h *handler) scopeRefs(refs []Ref, tier, scope string) []Ref {
+	if h.linkBase == "" {
+		return refs
+	}
+	for i := range refs {
+		refs[i].Href = strings.ReplaceAll(refs[i].Href, h.linkBase, h.absoluteSubjectBase(tier, scope))
+	}
+	return refs
+}
+
+func (h *handler) scopeSubjectLinks(subject SubjectView, tier, scope string) SubjectView {
+	if h.linkBase == "" {
+		return subject
+	}
+	base := h.absoluteSubjectBase(tier, scope)
+	subject.Body = strings.ReplaceAll(subject.Body, h.linkBase, base)
+	subject.Footer = strings.ReplaceAll(subject.Footer, h.linkBase, base)
+	subject.Outbound = h.scopeRefs(subject.Outbound, tier, scope)
+	subject.Inbound = h.scopeRefs(subject.Inbound, tier, scope)
+	return subject
+}
+
+func (h *handler) absoluteSubjectBase(tier, scope string) string {
+	base := strings.TrimSuffix(h.linkBase, "subject/")
+	if base == h.linkBase {
+		return h.linkBase
+	}
+	return base + tier + "/" + scope + "/subject/"
 }
 
 func normalizeMount(mount string) string {

@@ -619,9 +619,9 @@ func TestSubjectHandlerWithRealPathPageServiceResolvesAliasInboundLinks(t *testi
 	}
 	handler := web.NewHandler("wiki", "v-test", "/srv/wiki/", site, web.WithPageFinder(pageService))
 	folded := httptest.NewRecorder()
-	handler.ServeHTTP(folded, httptest.NewRequest(http.MethodGet, "/subject/entity/vasari", nil))
+	handler.ServeHTTP(folded, httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/vasari", nil))
 	current := httptest.NewRecorder()
-	handler.ServeHTTP(current, httptest.NewRequest(http.MethodGet, "/subject/entity/giorgio-vasari", nil))
+	handler.ServeHTTP(current, httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/giorgio-vasari", nil))
 
 	if folded.Code != http.StatusOK {
 		t.Fatalf("folded status = %d, want 200; body=%s", folded.Code, folded.Body.String())
@@ -686,11 +686,11 @@ func TestWebSubjectLinksUseAbsoluteAuthServerBase(t *testing.T) {
 			}
 
 			rec := httptest.NewRecorder()
-			srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/private/default/", nil))
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 			}
-			want := `<a href="` + tc.authServer + `/srv/wiki/subject/entity/tsr">TSR</a>`
+			want := `<a href="` + tc.authServer + `/srv/wiki/private/default/subject/entity/tsr">TSR</a>`
 			if !strings.Contains(rec.Body.String(), want) {
 				t.Fatalf("home page missing absolute subject link %q: %s", want, rec.Body.String())
 			}
@@ -966,7 +966,7 @@ func TestBuildSpecRoutesQueryEmbeddingThroughPrompts(t *testing.T) {
 	}`)), &answer); err != nil {
 		t.Fatalf("decode ask response: %v", err)
 	}
-	if !answer.Found || answer.Answer != "[Acme Robotics](https://int.ikigenba.com/srv/wiki/subject/entity/acme-robotics) owns the scheduler." {
+	if !answer.Found || answer.Answer != "[Acme Robotics](https://int.ikigenba.com/srv/wiki/private/default/subject/entity/acme-robotics) owns the scheduler." {
 		t.Fatalf("ask response = %#v, want answer produced through composed retriever", answer)
 	}
 

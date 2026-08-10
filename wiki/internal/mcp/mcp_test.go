@@ -1485,6 +1485,47 @@ func TestAskToolCitationContainsURLAndTitleWithoutPath(t *testing.T) {
 	}
 }
 
+func TestAskCitationTierTracksCurrentScopeVisibility(t *testing.T) {
+	// R-I0JC-7NLD
+	ctx := context.Background()
+	db := migratedMCPDB(t, ctx)
+	defer db.Close()
+	store := wikidomain.NewScopeStore(db)
+	asker := &capturingAsker{answer: answer{
+		Found: true,
+		Text:  "The TSR is documented.",
+		Citations: []citation{{
+			Path:  "entity/tsr",
+			Title: "TSR",
+		}},
+	}}
+	h := gatedHandler(t, newTestHandlerWithAuthServer(t, "https://acct.ikigenba.com/", WithScopeService(store), WithAskFunc(asker.Ask)))
+	askURL := func() string {
+		t.Helper()
+		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"ask","method":"tools/call","params":{"name":"ask","arguments":{"scope":"default","question":"Where is the TSR?"}}}`, "owner@example.com")
+		var body struct {
+			Citations []struct {
+				URL string `json:"url"`
+			} `json:"citations"`
+		}
+		decodeToolText(t, rec.Body.Bytes(), &body)
+		if len(body.Citations) != 1 {
+			t.Fatalf("citations = %#v, want one", body.Citations)
+		}
+		return body.Citations[0].URL
+	}
+	if got, want := askURL(), "https://acct.ikigenba.com/srv/wiki/private/default/subject/entity/tsr"; got != want {
+		t.Fatalf("private citation URL = %q, want %q", got, want)
+	}
+	flip := callMCP(t, h, `{"jsonrpc":"2.0","id":"visibility","method":"tools/call","params":{"name":"scope_set_visibility","arguments":{"name":"default","visibility":"public"}}}`, "owner@example.com")
+	if flip.Code != http.StatusOK {
+		t.Fatalf("scope_set_visibility status = %d, want 200; body=%s", flip.Code, flip.Body.String())
+	}
+	if got, want := askURL(), "https://acct.ikigenba.com/srv/wiki/public/default/subject/entity/tsr"; got != want {
+		t.Fatalf("public citation URL = %q, want %q", got, want)
+	}
+}
+
 func TestAskToolCitationURLUsesFrontDoorSubjectRoute(t *testing.T) {
 	// R-HOJB-ZR3T
 	tests := []struct {

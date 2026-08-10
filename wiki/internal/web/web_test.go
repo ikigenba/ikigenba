@@ -32,12 +32,14 @@ func (s *stubOrphanLister) Orphans(context.Context, string) ([]Ref, error) {
 type stubAsker struct {
 	answer   ask.Answer
 	called   int
+	scope    string
 	owner    string
 	question string
 }
 
-func (s *stubAsker) Ask(_ context.Context, _ string, owner, question string) (ask.Answer, error) {
+func (s *stubAsker) Ask(_ context.Context, scope string, owner, question string) (ask.Answer, error) {
 	s.called++
+	s.scope = scope
 	s.owner = owner
 	s.question = question
 	return s.answer, nil
@@ -60,6 +62,7 @@ type stubPageFinder struct {
 	err    error
 	called int
 	paths  []string
+	scopes []string
 }
 
 type linkifiedPageFinder struct {
@@ -109,6 +112,11 @@ func (s *stubPageFinder) PageByPath(_ context.Context, path string) (SubjectView
 	return s.view, s.err
 }
 
+func (s *stubPageFinder) PageByPathInScope(_ context.Context, scope, path string) (SubjectView, error) {
+	s.scopes = append(s.scopes, scope)
+	return s.PageByPath(context.Background(), path)
+}
+
 func readAsset(t *testing.T, name string) string {
 	t.Helper()
 
@@ -140,6 +148,13 @@ func newTestHandler(t *testing.T, service, version, mount string, opts ...Option
 
 func readSurfaceBody(t *testing.T, path string, opts ...Option) string {
 	t.Helper()
+	if path == "/" {
+		path = "/private/default/"
+	} else if strings.HasPrefix(path, "/?") {
+		path = "/private/default/" + path[1:]
+	} else if strings.HasPrefix(path, "/subject/") {
+		path = "/private/default" + path
+	}
 
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	rec := httptest.NewRecorder()
@@ -152,7 +167,7 @@ func readSurfaceBody(t *testing.T, path string, opts ...Option) string {
 
 func TestHomeHandlerServesExactRootHTML(t *testing.T) {
 	// R-LAND-PG01
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
@@ -172,7 +187,7 @@ func TestHomeHandlerRendersInjectedNameAndVersionInFooter(t *testing.T) {
 	// R-LAND-NMVR
 	const service = "wiki-service"
 	const version = "v69-home-test"
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, service, version, "/srv/wiki/").ServeHTTP(rec, req)
@@ -183,9 +198,190 @@ func TestHomeHandlerRendersInjectedNameAndVersionInFooter(t *testing.T) {
 	}
 }
 
+func phase129Scopes(t *testing.T) (*sql.DB, *wikidomain.ScopeStore) {
+	t.Helper()
+	ctx := context.Background()
+	conn := migratedWebDB(t, ctx)
+	store := wikidomain.NewScopeStore(conn)
+	for _, name := range []string{"s1", "team-x", "p1"} {
+		if _, err := store.Create(ctx, name); err != nil {
+			conn.Close()
+			t.Fatalf("Create scope %q: %v", name, err)
+		}
+	}
+	if err := store.SetVisibility(ctx, "p1", "public"); err != nil {
+		conn.Close()
+		t.Fatalf("SetVisibility p1: %v", err)
+	}
+	return conn, store
+}
+
+func TestScopedRoutesDispatchOnlyExplicitTiers(t *testing.T) {
+	// R-HKON-8MYC
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	asker := &stubAsker{answer: ask.Answer{Found: true, Text: "answer"}}
+	pages := &stubPageFinder{view: SubjectView{Title: "Page", Body: "Body"}}
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithAsker(asker), WithPageFinder(pages))
+
+	for _, path := range []string{"/private/s1/?q=question", "/public/p1/?q=question"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200; body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+	if asker.scope != "p1" {
+		t.Fatalf("last Ask scope = %q, want p1", asker.scope)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/private/s1/subject/entity/acme", nil))
+	if rec.Code != http.StatusOK || len(pages.paths) != 1 || pages.paths[0] != "entity/acme" || pages.scopes[0] != "s1" {
+		t.Fatalf("subject dispatch status=%d paths=%v scopes=%v", rec.Code, pages.paths, pages.scopes)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bogus/s1/", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("bogus tier status = %d, want 404", rec.Code)
+	}
+}
+
+func TestVisibilityWallUsesIndistinguishableStyledNotFound(t *testing.T) {
+	// R-HLWJ-MEP1
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	pages := &stubPageFinder{view: SubjectView{Title: "Page", Body: "Body"}}
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithPageFinder(pages))
+	for _, path := range []string{"/private/s1/", "/private/p1/", "/public/p1/"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200", path, rec.Code)
+		}
+	}
+	for _, pair := range [][2]string{{"/public/s1/", "/public/nope/"}, {"/public/s1/subject/entity/x", "/public/nope/subject/entity/x"}} {
+		var bodies [2]string
+		for i, path := range pair {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("%s status = %d, want 404", path, rec.Code)
+			}
+			bodies[i] = rec.Body.String()
+		}
+		if bodies[0] != bodies[1] {
+			t.Fatalf("private-scope and unknown-scope 404 bodies differ")
+		}
+	}
+}
+
+func TestLandingRedirectUsesKnownCookieOrDefault(t *testing.T) {
+	// R-HN4G-06FQ
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes))
+	for _, tc := range []struct {
+		cookie, location string
+	}{{"team-x", "/private/team-x/"}, {"", "/private/default/"}, {"nope", "/private/default/"}} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if tc.cookie != "" {
+			req.AddCookie(&http.Cookie{Name: "wiki_scope", Value: tc.cookie})
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != tc.location {
+			t.Fatalf("cookie %q got status=%d location=%q, want 303 %q", tc.cookie, rec.Code, rec.Header().Get("Location"), tc.location)
+		}
+	}
+}
+
+func TestOnlySelectorSetsScopeCookieAndStaysInTier(t *testing.T) {
+	// R-HOCC-DY6F
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	pages := &stubPageFinder{view: SubjectView{Title: "Page", Body: "Body"}}
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithPageFinder(pages))
+	for _, tc := range []struct{ path, location string }{{"/private/s1/select?to=team-x", "/private/team-x/"}, {"/public/p1/select?to=p1", "/public/p1/"}} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		cookie := rec.Header().Get("Set-Cookie")
+		if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != tc.location || !strings.Contains(cookie, "wiki_scope=") || !strings.Contains(cookie, "Path=/srv/wiki/") || !strings.Contains(cookie, "SameSite=Lax") {
+			t.Fatalf("%s got status=%d location=%q cookie=%q", tc.path, rec.Code, rec.Header().Get("Location"), cookie)
+		}
+	}
+	for _, path := range []string{"/private/s1/", "/private/s1/subject/entity/x"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if got := rec.Header().Get("Set-Cookie"); got != "" {
+			t.Fatalf("%s unexpectedly set cookie %q", path, got)
+		}
+	}
+}
+
+func TestSelectorFiltersScopesAndPreselectsCurrent(t *testing.T) {
+	// R-HQS5-5HNT
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	pages := &stubPageFinder{view: SubjectView{Title: "Page", Body: "Body"}}
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithPageFinder(pages))
+	for _, path := range []string{"/private/s1/", "/private/s1/subject/entity/x"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		body := rec.Body.String()
+		for _, name := range []string{"default", "s1", "team-x", "p1"} {
+			if !strings.Contains(body, `value="`+name+`"`) {
+				t.Fatalf("private selector on %s missing %q", path, name)
+			}
+		}
+		if !strings.Contains(body, `<option value="s1" selected>`) {
+			t.Fatalf("private selector on %s did not preselect s1", path)
+		}
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/p1/", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, `<option value="p1" selected>`) || strings.Contains(body, "team-x") || strings.Contains(body, `value="s1"`) {
+		t.Fatalf("public selector leaked private scopes or missed current: %s", body)
+	}
+}
+
+func TestScopedBaseAndAbsoluteSubjectLinksCarryTierAndScope(t *testing.T) {
+	// R-HS01-J9EI
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	const oldBase = "https://acct.ikigenba.com/srv/wiki/subject/"
+	pages := &stubPageFinder{view: SubjectView{Title: "Page", Body: "[Other](https://acct.ikigenba.com/srv/wiki/subject/entity/other)", Outbound: []Ref{{Href: oldBase + "entity/other", Name: "Other"}}}}
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithPageFinder(pages), WithLinkifier(nil, oldBase))
+	for _, path := range []string{"/private/s1/", "/private/s1/subject/entity/x"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if !strings.Contains(rec.Body.String(), `<base href="/srv/wiki/private/s1/">`) {
+			t.Fatalf("%s missing scoped base", path)
+		}
+		if strings.Contains(path, "/subject/") && !strings.Contains(rec.Body.String(), "/private/s1/subject/entity/other") {
+			t.Fatalf("subject page missing scoped absolute link: %s", rec.Body.String())
+		}
+	}
+}
+
+func TestUnknownScopesRenderStyledNotFoundShell(t *testing.T) {
+	// R-HT7X-X157
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes))
+	for _, path := range []string{"/private/nope/", "/public/nope/subject/entity/x"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		body := rec.Body.String()
+		if rec.Code != http.StatusNotFound || !strings.Contains(body, "<!doctype html>") || !strings.Contains(body, "<footer>wiki v-test</footer>") {
+			t.Fatalf("%s status=%d does not have styled shell: %s", path, rec.Code, body)
+		}
+	}
+}
+
 func TestHomeHandlerRendersTopLeftHomeLink(t *testing.T) {
 	// R-HOME-3U5Y
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
@@ -198,7 +394,7 @@ func TestHomeHandlerRendersTopLeftHomeLink(t *testing.T) {
 
 func TestHomeHandlerRendersInjectedMountBase(t *testing.T) {
 	// R-WDA6-B2C8
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/zzz/").ServeHTTP(rec, req)
@@ -206,20 +402,20 @@ func TestHomeHandlerRendersInjectedMountBase(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `<base href="/srv/zzz/">`) {
+	if !strings.Contains(rec.Body.String(), `<base href="/srv/zzz/private/default/">`) {
 		t.Fatalf("body does not contain injected base href: %s", rec.Body.String())
 	}
 }
 
 func TestHomeHandlerRendersSearchFormTargetingBase(t *testing.T) {
 	// R-OMRY-L9O8
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
 
 	body := rec.Body.String()
-	if !strings.Contains(body, `<base href="/srv/wiki/">`) {
+	if !strings.Contains(body, `<base href="/srv/wiki/private/default/">`) {
 		t.Fatalf("body missing base href: %s", body)
 	}
 	if !strings.Contains(body, `<form action="" method="get" role="search">`) {
@@ -236,7 +432,7 @@ func TestAskHandlerCallsAskerWithQuestionAndOwner(t *testing.T) {
 		Found: true,
 		Text:  "Grace owns the scheduler.",
 	}}
-	req := httptest.NewRequest(http.MethodGet, "/?q=Who+owns+the+scheduler%3F", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/?q=Who+owns+the+scheduler%3F", nil)
 	req.Header.Set("X-Owner-Email", "owner@example.com")
 	rec := httptest.NewRecorder()
 
@@ -262,7 +458,7 @@ func TestAskHandlerRendersAnswerAndCitationsAsSubjectLinks(t *testing.T) {
 			{Path: "entity/grace-hopper", Title: "Grace Hopper"},
 		},
 	}}
-	req := httptest.NewRequest(http.MethodGet, "/?q=scheduler", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/?q=scheduler", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
@@ -285,7 +481,7 @@ func TestAskHandlerRendersMarkdownAnswerHTML(t *testing.T) {
 		Found: true,
 		Text:  "**Acme** makes widgets.",
 	}}
-	req := httptest.NewRequest(http.MethodGet, "/?q=widgets", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/?q=widgets", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
@@ -322,12 +518,12 @@ func TestAskHandlerLinkifiesFirstMentionInAnswerProse(t *testing.T) {
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/",
 		WithAsker(&stubAsker{answer: ask.Answer{Found: true, Text: "Acme Corp makes widgets."}}),
 		WithLinkifier(service, base),
-	).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/?q=widgets", nil))
+	).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/private/default/?q=widgets", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	want := `<a href="https://acct.ikigenba.com/srv/wiki/subject/entity/acme-corp" rel="nofollow">Acme Corp</a>`
+	want := `<a href="https://acct.ikigenba.com/srv/wiki/private/default/subject/entity/acme-corp" rel="nofollow">Acme Corp</a>`
 	if !strings.Contains(rec.Body.String(), want) {
 		t.Fatalf("answer prose missing first-mention link %q: %s", want, rec.Body.String())
 	}
@@ -343,7 +539,7 @@ func TestAskHandlerRendersMentionedSubjectsFromAnswerText(t *testing.T) {
 		{Href: "https://acct.ikigenba.com/srv/wiki/subject/entity/acme-corp", Name: "Acme Corp"},
 		{Href: "https://acct.ikigenba.com/srv/wiki/subject/concept/widget", Name: "Widget"},
 	}}
-	req := httptest.NewRequest(http.MethodGet, "/?q=tools", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/?q=tools", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithMentioner(mentioner)).ServeHTTP(rec, req)
@@ -368,7 +564,7 @@ func TestAskHandlerRendersHonestEmptyWithoutCitationNav(t *testing.T) {
 		Found: false,
 		Text:  "The wiki holds nothing on that question.",
 	}}
-	req := httptest.NewRequest(http.MethodGet, "/?q=unknown", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/?q=unknown", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
@@ -388,7 +584,7 @@ func TestAskHandlerOmitsMentionSectionWhenAnswerMentionsAreEmpty(t *testing.T) {
 		Found: true,
 		Text:  "No known subject is named here.",
 	}}
-	req := httptest.NewRequest(http.MethodGet, "/?q=unknown", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/?q=unknown", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithMentioner(&stubMentioner{})).ServeHTTP(rec, req)
@@ -405,7 +601,7 @@ func TestAskHandlerOmitsMentionSectionWhenAnswerMentionsAreEmpty(t *testing.T) {
 func TestBlankQueryKeepsHomePageOnOrphanSeam(t *testing.T) {
 	asker := &stubAsker{}
 	lister := &stubOrphanLister{refs: []Ref{{Href: "subject/entity/acme", Name: "Acme"}}}
-	req := httptest.NewRequest(http.MethodGet, "/?q=+++", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/?q=+++", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithOrphanLister(lister)).ServeHTTP(rec, req)
@@ -427,7 +623,7 @@ func TestAskAndSubjectPagesWrapRenderedBodiesInProse(t *testing.T) {
 		Found: true,
 		Text:  "Acme makes widgets.",
 	}}
-	askReq := httptest.NewRequest(http.MethodGet, "/?q=widgets", nil)
+	askReq := httptest.NewRequest(http.MethodGet, "/private/default/?q=widgets", nil)
 	askRec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(askRec, askReq)
@@ -437,7 +633,7 @@ func TestAskAndSubjectPagesWrapRenderedBodiesInProse(t *testing.T) {
 	}
 
 	finder := &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}}
-	subjectReq := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	subjectReq := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil)
 	subjectRec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(subjectRec, subjectReq)
@@ -453,7 +649,7 @@ func TestHomeHandlerRendersOrphansAsMountRelativeLinksInOrder(t *testing.T) {
 		{Href: "subject/entity/acme-corp", Name: "Acme Corp"},
 		{Href: "subject/event/tulsa-launch", Name: "Tulsa Launch"},
 	}}
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithOrphanLister(lister)).ServeHTTP(rec, req)
@@ -476,7 +672,7 @@ func TestHomeHandlerRendersOrphansAsMountRelativeLinksInOrder(t *testing.T) {
 
 func TestHomeHandlerOmitsOrphanSectionWhenEmpty(t *testing.T) {
 	// R-OP7R-CT5M
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithOrphanLister(&stubOrphanLister{})).ServeHTTP(rec, req)
@@ -492,7 +688,7 @@ func TestHomeHandlerOmitsOrphanSectionWhenEmpty(t *testing.T) {
 
 func TestLoadedSiteRendersHomeThroughHandler(t *testing.T) {
 	// R-JGZ2-0BMY
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki-surface", "v79-home", "/srv/wiki/").ServeHTTP(rec, req)
@@ -521,7 +717,7 @@ func TestLoadedSiteRendersDistinctSubjectPageThroughHandler(t *testing.T) {
 			{Href: "subject/event/deal-q3", Name: "Deal Q3"},
 		},
 	}}
-	subjectReq := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	subjectReq := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil)
 	subjectRec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(subjectRec, subjectReq)
@@ -554,11 +750,11 @@ func TestHomeHandlerUsesCarbonAssets(t *testing.T) {
 		t.Fatalf("www tokens.css missing: %v", err)
 	}
 
-	pageReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	pageReq := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	pageRec := httptest.NewRecorder()
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(pageRec, pageReq)
-	if !strings.Contains(pageRec.Body.String(), `href="static/tokens.css"`) {
-		t.Fatalf("home page does not reference tokens.css through base-relative href: %s", pageRec.Body.String())
+	if !strings.Contains(pageRec.Body.String(), `href="/srv/wiki/static/tokens.css"`) {
+		t.Fatalf("home page does not reference shared tokens.css: %s", pageRec.Body.String())
 	}
 }
 
@@ -635,7 +831,7 @@ func TestReadLayoutDoesNotEmitFontResourceHints(t *testing.T) {
 	// R-KIB8-65W2
 	body := readSurfaceBody(t, "/")
 
-	if got := strings.Count(body, `href="static/tokens.css"`); got != 1 {
+	if got := strings.Count(body, `href="/srv/wiki/static/tokens.css"`); got != 1 {
 		t.Fatalf("tokens.css link count = %d, want 1; body=%s", got, body)
 	}
 	for _, forbidden := range []string{`rel="preload"`, `rel="preconnect"`, `as="font"`, "static/fonts", ".woff2"} {
@@ -694,7 +890,7 @@ func TestHomeMuxDoesNotServeRootPageForOtherPaths(t *testing.T) {
 
 func TestHomeHandlerIsAvailableWithoutIdentityHeaders(t *testing.T) {
 	// R-LAND-UNGT
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
@@ -712,7 +908,7 @@ func TestSubjectMuxDispatchesOnlyTwoSegmentSubjectPaths(t *testing.T) {
 	finder := &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}}
 	mux := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder))
 
-	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -739,7 +935,7 @@ func TestSubjectMuxDispatchesOnlyTwoSegmentSubjectPaths(t *testing.T) {
 func TestSubjectHandlerCallsPageFinderWithPublicPathOnce(t *testing.T) {
 	// R-WGXV-GDKB
 	finder := &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}}
-	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
@@ -755,7 +951,7 @@ func TestSubjectHandlerCallsPageFinderWithPublicPathOnce(t *testing.T) {
 func TestSubjectHandlerRendersTitleAndBody(t *testing.T) {
 	// R-PH2F-47LB
 	finder := &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}}
-	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
@@ -774,7 +970,7 @@ func TestSubjectHandlerRendersMarkdownBodyHTML(t *testing.T) {
 		Title: "Acme Corp",
 		Body:  "## Overview\n\nAcme makes **widgets**.",
 	}}
-	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
@@ -824,7 +1020,7 @@ func TestSubjectHandlerLinkifiesOtherSubjectButNotOwnNameInProse(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(
-		rec, httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil),
+		rec, httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil),
 	)
 
 	if rec.Code != http.StatusOK {
@@ -841,7 +1037,7 @@ func TestSubjectHandlerLinkifiesOtherSubjectButNotOwnNameInProse(t *testing.T) {
 
 func TestSubjectHandlerRendersFoundHTMLShell(t *testing.T) {
 	// R-PH2F-47LB
-	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{
@@ -855,7 +1051,7 @@ func TestSubjectHandlerRendersFoundHTMLShell(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
 		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
 	}
-	for _, want := range []string{"<!doctype html>", `<base href="/srv/wiki/">`, "<footer>wiki v-test</footer>"} {
+	for _, want := range []string{"<!doctype html>", `<base href="/srv/wiki/private/default/">`, "<footer>wiki v-test</footer>"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("found subject page missing %q: %s", want, body)
 		}
@@ -874,7 +1070,7 @@ func TestSubjectHandlerRendersMentionsBeforeMentionedBy(t *testing.T) {
 			{Href: "https://acct.ikigenba.com/srv/wiki/subject/event/deal-q3", Name: "Deal Q3"},
 		},
 	}}
-	req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
@@ -904,7 +1100,7 @@ func TestWebNavigationStaysRelativeBesideAbsoluteSubjectLinks(t *testing.T) {
 		newTestHandler(t, "wiki", "v-test", "/srv/wiki/",
 			WithAsker(&stubAsker{answer: ask.Answer{Found: true, Text: "TSR is ready."}}),
 			WithMentioner(&stubMentioner{refs: []Ref{{Href: base + "entity/tsr", Name: "TSR"}}}),
-		).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/?q=tsr", nil))
+		).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/private/default/?q=tsr", nil))
 
 		body := rec.Body.String()
 		if !strings.Contains(body, `<a href="https://acct.ikigenba.com/srv/wiki/subject/entity/tsr">TSR</a>`) {
@@ -924,7 +1120,7 @@ func TestWebNavigationStaysRelativeBesideAbsoluteSubjectLinks(t *testing.T) {
 				Href: base + "entity/tsr",
 				Name: "TSR",
 			}},
-		}})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil))
+		}})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil))
 
 		body := rec.Body.String()
 		if !strings.Contains(body, `<a href="https://acct.ikigenba.com/srv/wiki/subject/entity/tsr">TSR</a>`) {
@@ -968,7 +1164,7 @@ func TestSubjectHandlerOmitsEmptyLinkSections(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+			req := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil)
 			rec := httptest.NewRecorder()
 
 			newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{view: tc.view})).ServeHTTP(rec, req)
@@ -1000,7 +1196,7 @@ func TestSubjectHandlerLinksAskAnotherQuestionOnFoundAndNotFound(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/subject/entity/acme-corp", nil)
+			req := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil)
 			rec := httptest.NewRecorder()
 
 			newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(tc.finder)).ServeHTTP(rec, req)
@@ -1014,7 +1210,7 @@ func TestSubjectHandlerLinksAskAnotherQuestionOnFoundAndNotFound(t *testing.T) {
 
 func TestSubjectHandlerRendersNotFoundHTMLShell(t *testing.T) {
 	// R-PLY0-NAK3
-	req := httptest.NewRequest(http.MethodGet, "/subject/entity/missing", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/missing", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{err: ErrNotFound})).ServeHTTP(rec, req)
@@ -1026,7 +1222,7 @@ func TestSubjectHandlerRendersNotFoundHTMLShell(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
 		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
 	}
-	for _, want := range []string{"<!doctype html>", `<base href="/srv/wiki/">`, "Subject not found", "<footer>wiki v-test</footer>"} {
+	for _, want := range []string{"<!doctype html>", `<base href="/srv/wiki/private/default/">`, "Subject not found", "<footer>wiki v-test</footer>"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("not-found page missing %q: %s", want, body)
 		}
@@ -1038,7 +1234,7 @@ func TestSubjectHandlerRendersNotFoundHTMLShell(t *testing.T) {
 
 func TestLayoutProseStylesMarkdownElementsWithTokens(t *testing.T) {
 	// R-9FXO-ZONN
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)

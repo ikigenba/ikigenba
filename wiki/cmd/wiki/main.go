@@ -132,6 +132,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			scopes := wiki.NewScopeStore(conns)
 			statusService := publicStatusService{service: svc}
 			rt.Handle("/", web.NewHandler(rt.Service(), rt.Version(), wiki.Mount, rt.WWW(),
+				web.WithScopeStore(scopes),
 				web.WithOrphanLister(orphanAdapter{svc: svc, webBase: webBase}),
 				web.WithAsker(asker),
 				web.WithMentioner(mentionAdapter{svc: svc, webBase: webBase}),
