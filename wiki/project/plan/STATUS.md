@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 136
-
-- Phase 135 ⬜ realizes R-VBAY-V6II, R-VCIV-8Y97, R-VDQR-MPZW — truthful submit controls: Ask/Search labels + busy feedback
