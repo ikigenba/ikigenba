@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.25.0 — 2026-08-10
+
+- The header on every page now opens with the ikigenba brand mark at the far left; following it lands on the dashboard's landing page, while Home still returns to the wiki's own landing.
+- The Ask/Search box now lives in the header on every page of both tiers — the large scope-home form and the answer page's "ask another question" link are gone, and on a results page the box keeps the question you just asked, ready to edit and resubmit.
+- The scope home body is now just the title and Suggested pages; asking always starts from the header.
+
 ## v0.24.0 — 2026-08-10
 
 - Subject pages carry the question box in the header, right beside the scope selector, so the next question starts from any page — the bottom "ask another question" link is gone.
