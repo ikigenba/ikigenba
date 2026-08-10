@@ -381,7 +381,7 @@ func TestDefaultCallSiteUsesLunaAndRetriesBadThenGoodExtraction(t *testing.T) {
 		}]}`,
 	}}
 	site := DefaultCallSite()
-	if site.Stage != "extract" || site.System != DefaultPromptInstructions || site.Config.Provider != "openai" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "low" || site.Config.MaxTokens < 16384 || site.MaxParseRetries != 2 {
+	if site.Stage != "extract" || site.System != DefaultPromptInstructions || site.Config.Provider != "openrouter" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "medium" || site.Config.MaxTokens < 16384 || site.MaxParseRetries != 2 {
 		t.Fatalf("DefaultCallSite = %#v, want production Luna extract settings", site)
 	}
 	if site.Config.Temperature != nil || site.Config.Thinking != nil {

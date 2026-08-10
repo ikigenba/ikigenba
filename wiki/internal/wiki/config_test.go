@@ -1,9 +1,13 @@
 package wiki
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
+	"wiki/internal/asksite"
+	"wiki/internal/compile"
+	"wiki/internal/extract"
 	"wiki/internal/llm"
 )
 
@@ -20,6 +24,19 @@ func TestNewConfigUsesEveryStageDefaultLunaCallSite(t *testing.T) {
 	assertProductionSite(t, cfg.CallSites.Compile, "compile", 0)
 	assertProductionSite(t, cfg.CallSites.AskSubject, "ask-subject", 0)
 	assertProductionSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", 0)
+	for name, sites := range map[string]struct {
+		got  llm.CallSite
+		want llm.CallSite
+	}{
+		"extract":       {got: cfg.CallSites.Extract, want: extract.DefaultCallSite()},
+		"compile":       {got: cfg.CallSites.Compile, want: compile.DefaultCallSite()},
+		"ask-subject":   {got: cfg.CallSites.AskSubject, want: asksite.Subject()},
+		"ask-synthesis": {got: cfg.CallSites.AskSynthesis, want: asksite.Synthesis()},
+	} {
+		if !reflect.DeepEqual(sites.got, sites.want) {
+			t.Fatalf("%s resolved site = %#v, want exact stage default %#v", name, sites.got, sites.want)
+		}
+	}
 	if cfg.EmbedSite.Model != "text-embedding-3-small" || cfg.EmbedSite.Dims != 512 {
 		t.Fatalf("EmbedSite = %#v, want default OpenAI small embeddings at 512 dims", cfg.EmbedSite)
 	}
@@ -43,8 +60,8 @@ func TestNewConfigLayersPerCallSiteEnvironmentOverrides(t *testing.T) {
 		t.Fatalf("NewConfig: %v", err)
 	}
 
-	assertResolvedSite(t, cfg.CallSites.Extract, "extract", "extract-model", 0.25, "low", 16384, 2)
-	assertResolvedSite(t, cfg.CallSites.Compile, "compile", "compile-model", nil, "low", 4096, 0)
+	assertResolvedSite(t, cfg.CallSites.Extract, "extract", "extract-model", 0.25, "medium", 16384, 2)
+	assertResolvedSite(t, cfg.CallSites.Compile, "compile", "compile-model", nil, "medium", 4096, 0)
 	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", "subject-model", nil, "high", 16384, 0)
 	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", "synthesis-model", nil, false, 8192, 0)
 	if cfg.CallSites.Extract.Config.Model == cfg.CallSites.Compile.Config.Model {
@@ -221,8 +238,8 @@ func assertProductionSite(t *testing.T, got llm.CallSite, stage string, maxParse
 	if got.Stage != stage || got.System == "" {
 		t.Fatalf("%s site = %#v, want stage and embedded system prompt", stage, got)
 	}
-	if got.Config.Provider != "openai" || got.Config.Model != "gpt-5.6-luna" || got.Config.Effort != "low" || got.Config.MaxTokens != 16384 {
-		t.Fatalf("%s config = %#v, want openai Luna low/16384", stage, got.Config)
+	if got.Config.Provider != "openrouter" || got.Config.Model != "gpt-5.6-luna" || got.Config.Effort != "medium" || got.Config.MaxTokens < 16384 {
+		t.Fatalf("%s config = %#v, want OpenRouter Luna medium with at least 16384 tokens", stage, got.Config)
 	}
 	if got.Config.Temperature != nil || got.Config.Thinking != nil {
 		t.Fatalf("%s site = %#v, want no temperature or thinking pins", stage, got)

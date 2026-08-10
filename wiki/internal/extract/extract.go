@@ -51,7 +51,7 @@ func DefaultCallSite() llm.CallSite {
 	return llm.CallSite{
 		Stage:           "extract",
 		System:          DefaultPromptInstructions,
-		Config:          llm.Config{Provider: "openai", Model: "gpt-5.6-luna", Effort: "low", MaxTokens: defaultMaxTokens},
+		Config:          llm.Config{Provider: "openrouter", Model: "gpt-5.6-luna", Effort: "medium", MaxTokens: defaultMaxTokens},
 		MaxParseRetries: 2,
 	}
 }

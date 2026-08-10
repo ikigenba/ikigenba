@@ -16,7 +16,7 @@ func Subject() llm.CallSite {
 	return llm.CallSite{
 		Stage:  "ask-subject",
 		System: AnalysisInstructions,
-		Config: llm.Config{Provider: "openai", Model: ModelID, Effort: "low", MaxTokens: defaultMaxTokens},
+		Config: llm.Config{Provider: "openrouter", Model: ModelID, Effort: "medium", MaxTokens: defaultMaxTokens},
 	}
 }
 
@@ -25,6 +25,6 @@ func Synthesis() llm.CallSite {
 	return llm.CallSite{
 		Stage:  "ask-synthesis",
 		System: SynthesisInstructions,
-		Config: llm.Config{Provider: "openai", Model: ModelID, Effort: "low", MaxTokens: defaultMaxTokens},
+		Config: llm.Config{Provider: "openrouter", Model: ModelID, Effort: "medium", MaxTokens: defaultMaxTokens},
 	}
 }

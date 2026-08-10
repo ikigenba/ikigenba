@@ -90,7 +90,7 @@ func TestCompileUsesInjectedCallSiteWithoutTools(t *testing.T) {
 func TestDefaultCallSiteUsesLunaSettings(t *testing.T) {
 	// R-9X9P-QYWE
 	site := DefaultCallSite()
-	if site.Stage != "compile" || site.System != DefaultPromptInstructions || site.Config.Provider != "openai" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "low" || site.Config.MaxTokens < 16384 {
+	if site.Stage != "compile" || site.System != DefaultPromptInstructions || site.Config.Provider != "openrouter" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "medium" || site.Config.MaxTokens < 16384 {
 		t.Fatalf("DefaultCallSite = %#v, want production Luna compile settings", site)
 	}
 	if site.Config.Temperature != nil || site.Config.Thinking != nil {

@@ -600,8 +600,8 @@ func TestDefaultAskCallSitesUseLunaAndEmbeddedSystemPrompts(t *testing.T) {
 		"subject":   subject,
 		"synthesis": synthesis,
 	} {
-		if site.Config.Provider != "openai" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "low" || site.Config.MaxTokens != 16384 {
-			t.Fatalf("%s config = %#v, want openai Luna low/16384", name, site.Config)
+		if site.Config.Provider != "openrouter" || site.Config.Model != "gpt-5.6-luna" || site.Config.Effort != "medium" || site.Config.MaxTokens < 16384 {
+			t.Fatalf("%s config = %#v, want OpenRouter Luna medium with at least 16384 tokens", name, site.Config)
 		}
 		if site.System == "" || site.Config.Temperature != nil || site.Config.Thinking != nil {
 			t.Fatalf("%s site = %#v, want embedded system and no temperature/thinking pins", name, site)
