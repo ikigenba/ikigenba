@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -17,6 +18,12 @@ import (
 const PageCharCap = 12000
 
 const defaultMaxTokens = 16384
+
+var (
+	bracketedULID          = regexp.MustCompile(`\[[0-9A-HJKMNP-TV-Z]{26}\]`)
+	repeatedSpace          = regexp.MustCompile(`[ \t]{2,}`)
+	spaceBeforePunctuation = regexp.MustCompile(`[ \t]+([,.;:!?])`)
+)
 
 // DefaultPromptInstructions is the production compile instruction preamble.
 //
@@ -70,14 +77,14 @@ func (c *Compiler) Compile(ctx context.Context, attr llm.Attribution, s model.Su
 		}
 
 		out.Title = strings.TrimSpace(out.Title)
-		out.Body = strings.TrimSpace(out.Body)
+		out.Body = sanitizeBody(out.Body)
 		last = out
 		if utf8.RuneCountInString(out.Body) <= PageCharCap {
 			return out.Title, out.Body, nil
 		}
 
 		prompt = renderPrompt(s, claims, PageCharCap, fmt.Sprintf(
-			"The previous page is %d chars; hard limit %d — compress lower-salience claims, keep the lead and all citations.",
+			"The previous page is %d chars; hard limit %d — compress lower-salience claims and keep the lead.",
 			utf8.RuneCountInString(out.Body), PageCharCap,
 		))
 	}
@@ -119,24 +126,25 @@ func renderPrompt(s model.Subject, claims []model.Claim, cap int, tighten string
 	}
 
 	b.WriteString("\nSubject identity:\n")
-	writePromptLine(&b, "id", s.ID)
 	writePromptLine(&b, "name", s.Name)
-	writePromptLine(&b, "norm_name", s.NormName)
 	writePromptLine(&b, "type", s.Type)
 
-	b.WriteString("\nComplete claims:\n")
+	b.WriteString("\nComplete claim texts:\n")
 	if len(claims) == 0 {
 		b.WriteString("- none\n")
 		return b.String()
 	}
 	for i, claim := range claims {
-		citation := claim.JobID
-		if citation == "" {
-			citation = claim.ID
-		}
-		fmt.Fprintf(&b, "%d. [%s] %s\n", i+1, citation, strings.TrimSpace(claim.Body))
+		fmt.Fprintf(&b, "%d. %s\n", i+1, strings.TrimSpace(claim.Body))
 	}
 	return b.String()
+}
+
+func sanitizeBody(body string) string {
+	body = bracketedULID.ReplaceAllString(body, "")
+	body = repeatedSpace.ReplaceAllString(body, " ")
+	body = spaceBeforePunctuation.ReplaceAllString(body, "$1")
+	return strings.TrimSpace(body)
 }
 
 func writePromptLine(b *strings.Builder, key, value string) {

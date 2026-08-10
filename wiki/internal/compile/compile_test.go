@@ -37,19 +37,17 @@ func TestCompileRendersSubjectIdentityAndCompleteClaimSet(t *testing.T) {
 	for _, want := range []string{
 		"Hard body limit: 12000 characters.",
 		"Subject identity:",
-		"Complete claims:",
+		"Complete claim texts:",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt %q does not contain compile boundary %q", prompt, want)
 		}
 	}
 	for _, want := range []string{
-		"id: subj-acme",
 		"name: Acme Robotics",
-		"norm_name: acme-robotics",
 		"type: entity",
-		"[job-001] Acme Robotics opened a research lab in Tulsa.",
-		"[job-002] Mira Patel leads Acme Robotics' Tulsa lab.",
+		"1. Acme Robotics opened a research lab in Tulsa.",
+		"2. Mira Patel leads Acme Robotics' Tulsa lab.",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt %q does not contain %q", prompt, want)
@@ -119,12 +117,20 @@ func TestDefaultCallSiteUsesLunaSettings(t *testing.T) {
 
 func TestCompileSendsEmbeddedInstructionsAsSystemOnly(t *testing.T) {
 	// R-9YHM-4QN3
-	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics is an entity. [job-001]"}`}}
+	const ulid = "01KZMQ6RHDG1G7KKH0JNT6J48P"
+	prov := &scriptedProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics is a robotics company."}`}}
 	site := DefaultCallSite()
 	site.Config.Model = "compile-model"
 	compiler := New(llmtest.NewClient(t, prov), site, nil)
+	subject := acmeSubject()
+	subject.ID = ulid
+	subject.NormName = "internal-acme-key"
+	claims := acmeClaims()[:1]
+	claims[0].ID = "01KZMQ6RHDG1G7KKH0JNT6J48Q"
+	claims[0].SubjectID = ulid
+	claims[0].JobID = "01KZMQ6RHDG1G7KKH0JNT6J48R"
 
-	if _, _, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), acmeClaims()[:1]); err != nil {
+	if _, _, err := compiler.Compile(context.Background(), llm.Attribution{}, subject, claims); err != nil {
 		t.Fatalf("Compile returned error: %v", err)
 	}
 	req := prov.requests[0]
@@ -132,8 +138,31 @@ func TestCompileSendsEmbeddedInstructionsAsSystemOnly(t *testing.T) {
 		t.Fatalf("system = %q, want embedded compile instructions", req.System)
 	}
 	user := onlyPrompt(t, prov, 0)
-	if strings.Contains(user, DefaultPromptInstructions) || !strings.Contains(user, "Subject identity:\n") || !strings.Contains(user, "[job-001]") {
-		t.Fatalf("user prompt = %q, want only rendered identity and citation-tagged claims", user)
+	if strings.Contains(user, DefaultPromptInstructions) || !strings.Contains(user, "Subject identity:\nname: Acme Robotics\ntype: entity\n") || !strings.Contains(user, claims[0].Body) {
+		t.Fatalf("user prompt = %q, want only rendered identity and plain claim text", user)
+	}
+	for _, internal := range []string{subject.ID, subject.NormName, claims[0].ID, claims[0].SubjectID, claims[0].JobID} {
+		if strings.Contains(user, internal) {
+			t.Fatalf("user prompt contains internal identifier %q: %q", internal, user)
+		}
+	}
+}
+
+func TestCompileStripsBracketedULIDMarkersAndTidiesWhitespace(t *testing.T) {
+	// R-VA32-HERT
+	prov := &scriptedProvider{responses: []string{`{"title":"Richard III","body":"Richard's final days. [01KZMQ6RHDG1G7KKH0JNT6J48P]  In his youth [sic] , he lived in York. [01KZMQ6RHDG1G7KKH0JNT6J48Q]"}`}}
+	compiler := New(llmtest.NewClient(t, prov), llm.CallSite{Config: llm.Config{Model: "compile-model"}}, nil)
+
+	_, body, err := compiler.Compile(context.Background(), llm.Attribution{}, acmeSubject(), acmeClaims())
+	if err != nil {
+		t.Fatalf("Compile returned error: %v", err)
+	}
+	if bracketedULID.MatchString(body) {
+		t.Fatalf("body contains bracketed ULID: %q", body)
+	}
+	want := "Richard's final days. In his youth [sic], he lived in York."
+	if body != want {
+		t.Fatalf("body = %q, want intact tidied prose %q", body, want)
 	}
 }
 
@@ -223,7 +252,7 @@ func TestCompileTightensOverCapBodyFromClaims(t *testing.T) {
 		t.Fatalf("requests len = %d, want initial compile plus tighten", len(prov.requests))
 	}
 	secondPrompt := onlyPrompt(t, prov, 1)
-	if !strings.Contains(secondPrompt, "previous page is 12001 chars; hard limit 12000") || !strings.Contains(secondPrompt, "[job-001]") {
+	if !strings.Contains(secondPrompt, "previous page is 12001 chars; hard limit 12000") || !strings.Contains(secondPrompt, "Acme Robotics opened a research lab in Tulsa.") {
 		t.Fatalf("tighten prompt = %q, want cap warning and original claims", secondPrompt)
 	}
 	if strings.Contains(secondPrompt, tooLong) {
