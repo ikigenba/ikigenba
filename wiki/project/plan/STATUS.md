@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 132
-
-- Phase 131 ⬜ realizes — — nginx: the two scope-tier locations (structural)
