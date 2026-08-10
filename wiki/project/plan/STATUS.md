@@ -12,5 +12,4 @@ lines.
 
 Next phase: 136
 
-- Phase 134 ⬜ realizes R-AD4E-PZJF — true the autotune compile folder to the clean-prose contract
 - Phase 135 ⬜ realizes R-VBAY-V6II, R-VCIV-8Y97, R-VDQR-MPZW — truthful submit controls: Ask/Search labels + busy feedback
