@@ -12,6 +12,5 @@ lines.
 
 Next phase: 143
 
-- Phase 141 ⬜ realizes R-4Q8B-N9SX, R-4RG8-11JM, R-4TW0-SL10 — the public tier serves ask; one Ask label on both tiers
 - Phase 142 ⬜ realizes R-HN4G-06FQ, R-HOCC-DY6F — landing and selector redirects pick the tier by scope visibility
 
