@@ -63,6 +63,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D58 | project/design/D58.md | `repos` joins the trigger sources: prompts as the version plane's workflow runner | R-SBKW-89FH, R-SCSS-M166 |
 | D59 | project/design/D59.md | Retiring the content columns | R-SE0O-ZSWV, R-SF8L-DKNK |
 | D60 | project/design/D60.md | The prompts-owned peer MCP client | R-OLVJ-TO7G, R-OOBC-L7OU, R-OPJ8-YZFJ, R-OQR5-CR68 |
+| D61 | project/design/D61.md | Patch-semantics `update`: omitted means unchanged, and no empty prompt is ever stored | R-A8EU-5VUL, R-A9MQ-JNLA, R-AAUM-XFBZ, R-AC2J-B72O, R-ADAF-OYTD, R-AEIC-2QK2 |
 
 ## Verification ids → Decision
 
@@ -157,6 +158,12 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-7P5X-8AEV | D10 | project/design/D10.md |
 | R-8DF1-W89F | D15 | project/design/D15.md (adopted from root `project/design/D11.md`) |
 | R-8IAN-FB87 | D15 | project/design/D15.md (adopted from root `project/design/D11.md`) |
+| R-A8EU-5VUL | D61 | project/design/D61.md |
+| R-A9MQ-JNLA | D61 | project/design/D61.md |
+| R-AAUM-XFBZ | D61 | project/design/D61.md |
+| R-AC2J-B72O | D61 | project/design/D61.md |
+| R-ADAF-OYTD | D61 | project/design/D61.md |
+| R-AEIC-2QK2 | D61 | project/design/D61.md |
 | R-B4QM-WZGJ | D27 | project/design/D27.md |
 | R-B5YJ-AR78 | D27 | project/design/D27.md |
 | R-B76F-OIXX | D27 | project/design/D27.md |
