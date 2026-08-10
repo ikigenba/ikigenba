@@ -12,6 +12,5 @@ lines.
 
 Next phase: 132
 
-- Phase 129 ⬜ realizes R-HKON-8MYC, R-HLWJ-MEP1, R-HN4G-06FQ, R-HOCC-DY6F, R-HQS5-5HNT, R-HS01-J9EI, R-HT7X-X157, R-I0JC-7NLD — the scoped web routes: tiers, cookie redirect, selector, per-visibility URLs
 - Phase 130 ⬜ realizes R-HUFU-ASVW, R-HVNQ-OKML, R-HWVN-2CDA, R-HY3J-G43Z, R-HZBF-TVUO — the public tier's read-only states: browse, keyword search, no inference
 - Phase 131 ⬜ realizes — — nginx: the two scope-tier locations (structural)
