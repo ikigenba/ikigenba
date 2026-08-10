@@ -31,6 +31,7 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - **D25** → `project/design/D25.md` — The migration-immutability contract: frozen bodies, a hashed `migrations.sha256` manifest, and the mechanical guard — ids: R-NFQ1-NA7N [proof: per-service]
 - **D26** → `project/design/D26.md` — The run-lifetime contract: a bounded run TTL and the derived run-token lifetime — ids: R-34EZ-J9BF [proof: per-service], R-35MV-X124 [proof: per-service]
 - **D27** → `project/design/D27.md` — The edit-tool merge contract: patch semantics, whole-value fields, and the stated merge rule — ids: none (a prose contract; behaviors proven by the implementing trees)
+- **D28** → `project/design/D28.md` — The changelog contract: per-app `CHANGELOG.md`, authored at bump time, enforced by bump — ids: R-CKLX-X89X, R-CLTU-B00M, R-CN1Q-ORRB, R-CO9N-2JI0 (all [proof: bin])
 
 ## Verification ids → Decision
 
@@ -64,6 +65,10 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - R-8FUU-NRQT → D11 (`project/design/D11.md`) [proof: appkit]
 - R-8H2R-1JHI → D11 (`project/design/D11.md`) [proof: appkit]
 - R-8IAN-FB87 → D11 (`project/design/D11.md`) [proof: per-service]
+- R-CKLX-X89X → D28 (`project/design/D28.md`) [proof: bin]
+- R-CLTU-B00M → D28 (`project/design/D28.md`) [proof: bin]
+- R-CN1Q-ORRB → D28 (`project/design/D28.md`) [proof: bin]
+- R-CO9N-2JI0 → D28 (`project/design/D28.md`) [proof: bin]
 - R-LHY1-6IS8 → D1 (`project/design/D01.md`) [proof: opsctl]
 - R-NFQ1-NA7N → D25 (`project/design/D25.md`) [proof: per-service]
 - R-O1AD-MRKW → D23 (`project/design/D23.md`) [proof: per-service]

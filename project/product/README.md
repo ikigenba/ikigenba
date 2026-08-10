@@ -95,6 +95,10 @@ This project owns the agreements that bind more than one tree:
   when editing an existing thing through any service's tools: an omitted field
   is never touched, so a partial edit can never silently destroy what it did not
   mention, and every edit tool says so where its callers read.
+- **The release changelog** — the per-release record every deployable app keeps
+  of what changed, stated for the operator in brief outcome terms, who authors
+  it and when, and the release-time gate that keeps a release from shipping
+  without its record.
 
 Out of scope — nothing else is promised here:
 
