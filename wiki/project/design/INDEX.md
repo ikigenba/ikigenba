@@ -10,7 +10,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D4 → `project/design/D04.md` — The ingest pipeline and worker — owns R-M8RN-87WV, R-M9ZJ-LZNK, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MDN8-RAVN, R-MG31-IUD1
 - D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): a prompts `/complete` client + json-mode helper — owns R-J8QP-BETB, R-4BCC-0EHJ, R-J9YL-P6K0, R-JCEE-GQ1E, R-0X4N-U0XB, R-8H1B-9CCI, R-0ZKG-LKEP, R-10SC-ZC5E, R-1209-D3W3
 - D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-9UTW-ZFF0, R-9W1T-D75P
-- D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-9X9P-QYWE, R-9YHM-4QN3
+- D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, clean article prose (no ids), 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-9X9P-QYWE, R-9YHM-4QN3, R-VA32-HERT
 - D8 → `project/design/D08.md` — Search returns: hybrid retrieval over pages, behind one seam — none — structural
 - D9 → `project/design/D09.md` — `ask` (`internal/ask`): hybrid-retrieval pipeline, grounded/cited/honest-empty — owns R-BAFW-D24P, R-BBNS-QTVE, R-BCVP-4LM3, R-5UPD-VVNA, R-5VXA-9NDZ, R-690G-MZTK, R-5X56-NF4O, R-6A8D-0RK9, R-05CG-3H6Y, R-9ZPI-IIDS
 - D10 → `project/design/D10.md` — The MCP tool surface (`internal/mcp`) + identity — owns R-MUQ4-K1JS, R-MVY0-XTAH, R-MX5X-BL16, R-MYDT-PCRV, R-MZLQ-34IK, R-1QO4-77EI, R-N4KO-2WTZ, R-01OQ-Y5YV, R-02WN-BXPK, R-044J-PPG9, R-03GW-PX5K, R-04HB-QM7T, R-8DB1-UI1Q, R-8EIY-89SF, R-1Y7B-TN7Y
@@ -72,6 +72,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D76 → `project/design/D76.md` — The scoped web surface: tier + scope in every URL, the landing cookie, the selector — owns R-HKON-8MYC, R-HLWJ-MEP1, R-HN4G-06FQ, R-HOCC-DY6F, R-HQS5-5HNT, R-HS01-J9EI, R-HT7X-X157, R-I0JC-7NLD
 - D77 → `project/design/D77.md` — nginx: the two scope tiers (public ungated, private session-gated) — none — structural
 - D78 → `project/design/D78.md` — The public tier is read-only: browse + keyword search, no inference — owns R-HUFU-ASVW, R-HVNQ-OKML, R-HWVN-2CDA, R-HY3J-G43Z, R-HZBF-TVUO
+- D79 → `project/design/D79.md` — Truthful submit controls: Ask/Search labels + script-driven pending feedback — owns R-VBAY-V6II, R-VCIV-8Y97, R-VDQR-MPZW
 
 ## Verification ids → Decision
 
@@ -371,6 +372,10 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-T0JU-ILWB → D48 (`project/design/D48.md`)
 - R-T1RQ-WDN0 → D48 (`project/design/D48.md`)
 - R-T2ZN-A5DP → D48 (`project/design/D48.md`)
+- R-VA32-HERT → D7 (`project/design/D07.md`)
+- R-VBAY-V6II → D79 (`project/design/D79.md`)
+- R-VCIV-8Y97 → D79 (`project/design/D79.md`)
+- R-VDQR-MPZW → D79 (`project/design/D79.md`)
 - R-VYU0-BPAX → D6 (`project/design/D06.md`)
 - R-W19T-38SB → D6 (`project/design/D06.md`)
 - R-WC29-XALJ → D42 (`project/design/D42.md`)
