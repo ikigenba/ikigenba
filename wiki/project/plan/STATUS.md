@@ -10,4 +10,6 @@ no done marker; done is gone. This file deliberately carries **no bare status
 glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
-Next phase: 138
+Next phase: 139
+
+- Phase 138 ⬜ realizes R-2MYX-Y4PN, R-2O6U-BWGC, R-2PEQ-PO71, R-2QMN-3FXQ — header brand mark + the question form moves into the header on every page
