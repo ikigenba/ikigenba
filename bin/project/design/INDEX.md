@@ -14,6 +14,7 @@ ids change.
 - **D5** → `bin/project/design/D05.md` — The manifest readers are proven under the green gate (`bin/bintest`) — ids: R-V3XG-PB8R, R-V6D9-GUQ5, R-V7L5-UMGU
 - **D6** → `bin/project/design/D06.md` — `bin/bintest` proves the library-dependency contract — ids: none minted here; realizes the umbrella's R-3R5W-79JK, R-3SDS-L1A9, R-3TLO-YT0Y, R-3UTL-CKRN (owned by `root project/design/D22.md`, `[proof: bin]`)
 - **D7** → `bin/project/design/D07.md` — The testing-language contract: `bin/bintest` is hermetic-only, and `bin/` gets an `AGENTS.md` — ids: none minted here; cites the umbrella's R-O1AD-MRKW, R-O2IA-0JBL (owned by `root project/design/D23.md`, `[proof: per-service]`)
+- **D8** → `bin/project/design/D08.md` — `bin/bump` enforces the changelog contract, proven in `bin/bintest` — ids: none minted here; realizes the umbrella's R-CKLX-X89X, R-CLTU-B00M, R-CN1Q-ORRB, R-CO9N-2JI0 (owned by `root project/design/D28.md`, `[proof: bin]`)
 
 ## Verification ids → Decision
 
@@ -21,6 +22,10 @@ ids change.
 - R-3SDS-L1A9 → D6 (`bin/project/design/D06.md`; owned by `root project/design/D22.md`)
 - R-3TLO-YT0Y → D6 (`bin/project/design/D06.md`; owned by `root project/design/D22.md`)
 - R-3UTL-CKRN → D6 (`bin/project/design/D06.md`; owned by `root project/design/D22.md`)
+- R-CKLX-X89X → D8 (`bin/project/design/D08.md`; owned by `root project/design/D28.md`)
+- R-CLTU-B00M → D8 (`bin/project/design/D08.md`; owned by `root project/design/D28.md`)
+- R-CN1Q-ORRB → D8 (`bin/project/design/D08.md`; owned by `root project/design/D28.md`)
+- R-CO9N-2JI0 → D8 (`bin/project/design/D08.md`; owned by `root project/design/D28.md`)
 - R-O1AD-MRKW → D7 (`bin/project/design/D07.md`; owned by `root project/design/D23.md`)
 - R-O2IA-0JBL → D7 (`bin/project/design/D07.md`; owned by `root project/design/D23.md`)
 - R-V3XG-PB8R → D5 (`bin/project/design/D05.md`)

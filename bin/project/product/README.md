@@ -67,6 +67,9 @@ In scope — the repo-root `bin/` tree:
 - **Version advancement.** One command advances any service's committed version
   by the requested field, and refuses a version file that does not already
   conform to the suite's version contract rather than coping with it silently.
+  It is also the release-time gate for the suite's changelog promise: a version
+  cannot be minted unless the service's changelog already records what the new
+  release changes.
 - **Release delivery.** One command builds a service's release from the main
   line, stamps it with the exact identity it will be known by everywhere else,
   packages every shipped tier together as one versioned artifact, and puts that
@@ -98,17 +101,23 @@ Out of scope — nothing else is promised here:
 - **No test coverage for the orchestrating scripts.** Building, `scp`-ing,
   launching processes, and calling a cloud API are verified once, by hand, when
   written or changed — not simulated in the test suite. Only the layout readers
-  are covered automatically.
+  and the version-advancement gate are covered automatically.
 - **No production build path.** Local development runs in workspace mode; the
   release build deliberately does not, and the two are not unified.
 
 ## What we promise (user-facing behavior)
 
 - **Advancing a version is one command and one commit.** The operator names a
-  service and a field; the committed version file advances and nothing else
-  changes. A version file that does not already conform to the suite's version
-  contract is rejected outright, with the operator told, rather than quietly
-  normalized.
+  service and a field; the committed version file advances together with the
+  service's changelog record of that release, and nothing else changes. A
+  version file that does not already conform to the suite's version contract is
+  rejected outright, with the operator told, rather than quietly normalized.
+- **A release cannot outrun its changelog.** Advancing a version is refused,
+  with the operator told what to add, unless the service's changelog already
+  carries the record for the version being minted — so no release ships
+  undocumented. The operator can always ask, without changing anything, what
+  the next version would be, and the answer is available even while the
+  changelog is not yet in order.
 - **A release is one artifact, complete.** One command turns a service's current
   version into a single delivered artifact carrying the built binary and
   everything shipped alongside it, named with the exact same identity the binary
@@ -141,9 +150,13 @@ Out of scope — nothing else is promised here:
 Each item is a result the maintainer can confirm end-to-end against the real
 tooling:
 
-- Advancing a service's version writes the expected next version and touches
-  nothing else; pointing the same command at a non-conforming version file
-  fails and explains why, leaving the file unchanged.
+- Advancing a service's version writes the expected next version together with
+  that release's changelog record and touches nothing else; pointing the same
+  command at a non-conforming version file fails and explains why, leaving the
+  file unchanged.
+- Advancing a version for a service whose changelog does not yet record the new
+  release fails and explains what to add, changing nothing; asking what the
+  next version would be succeeds and changes nothing even in that state.
 - Building and delivering a service's release produces exactly one artifact on
   the target box, named with the identity the built binary reports when asked
   for its version, and containing every tier that service ships — including an

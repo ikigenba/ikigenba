@@ -119,6 +119,10 @@ this tree's own local `DNN.md` files:
   the per-tree testing declaration. Adopted by D7, which cites its two
   `[proof: per-service]` ids; citing them is adoption, so they enter this tree's
   coverage denominator like local ids.
+- **`root project/design/D28.md`** — the changelog contract: per-app
+  `CHANGELOG.md`, authored at bump time, enforced by bump. This tree is that
+  contract's **designated proof tree** (`[proof: bin]`): D8 adopts its four
+  ids, `bin/bump` carries the gate, and the tagged tests live in `bin/bintest`.
 
 The on-box consumer of this tree's artifacts — `stage` / `deploy` / `rollback` /
 `prune` — is not an umbrella contract but opsctl's own design
