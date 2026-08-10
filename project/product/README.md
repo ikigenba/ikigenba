@@ -91,6 +91,10 @@ This project owns the agreements that bind more than one tree:
   frozen once committed, and the mechanical guard every schema-owning service
   carries so an edited migration fails its suite instead of silently splitting
   fresh databases from deployed ones.
+- **The edit-tool merge rule** — what it means to send, omit, or empty a field
+  when editing an existing thing through any service's tools: an omitted field
+  is never touched, so a partial edit can never silently destroy what it did not
+  mention, and every edit tool says so where its callers read.
 
 Out of scope — nothing else is promised here:
 

@@ -30,6 +30,7 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - **D24** → `project/design/D24.md` — The version plane: repos is the suite's git custodian — ids: none (a prose contract; behaviors proven by the implementing trees)
 - **D25** → `project/design/D25.md` — The migration-immutability contract: frozen bodies, a hashed `migrations.sha256` manifest, and the mechanical guard — ids: R-NFQ1-NA7N [proof: per-service]
 - **D26** → `project/design/D26.md` — The run-lifetime contract: a bounded run TTL and the derived run-token lifetime — ids: R-34EZ-J9BF [proof: per-service], R-35MV-X124 [proof: per-service]
+- **D27** → `project/design/D27.md` — The edit-tool merge contract: patch semantics, whole-value fields, and the stated merge rule — ids: none (a prose contract; behaviors proven by the implementing trees)
 
 ## Verification ids → Decision
 

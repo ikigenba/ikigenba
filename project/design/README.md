@@ -5,8 +5,8 @@ contracts are shaped — the on-box install tree, the versioned release bundle, 
 version identity, the `state/`÷`cache/` boundary, the event epoch and its boot
 obligation, per-service adoption, the env/manifest and verb-set contract, the
 secrets parameter, the telemetry and correlation standard, the owner-identity key,
-the event-plane wire, the content plane, and the MCP surface — and *how each of
-their behaviors is proven*. The product (`project/product/README.md`) owns the *why* and
+the event-plane wire, the content plane, the MCP surface, and the edit-tool
+merge rule — and *how each of their behaviors is proven*. The product (`project/product/README.md`) owns the *why* and
 the promises; design uses the product's contractual constants **by value** but does
 not own them. This is the **single, current** statement: when a contract changes,
 its `DNN.md` is rewritten in place — Decisions are never stacked. Construction
