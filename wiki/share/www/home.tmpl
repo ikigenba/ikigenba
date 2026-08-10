@@ -20,17 +20,6 @@
   {{end}}
 </article>
 {{else}}
-{{if .Searched}}
-{{if .Results}}
-<nav aria-label="Search results">
-  <ul>
-    {{range .Results}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
-  </ul>
-</nav>
-{{else}}
-<p>No matches.</p>
-{{end}}
-{{else}}
 {{if .Recent}}
 <section class="suggested" aria-labelledby="suggested-pages">
   <h2 id="suggested-pages">Suggested pages</h2>
@@ -38,7 +27,6 @@
     {{range .Recent}}<li><a href="{{.Href}}">{{.Name}}</a><span class="subject-type">{{.Type}}</span></li>{{end}}
   </ul>
 </section>
-{{end}}
 {{end}}
 {{end}}
 {{template "foot" .}}{{end}}

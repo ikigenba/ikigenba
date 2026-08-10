@@ -159,8 +159,6 @@ type pageData struct {
 	Cites       []Ref
 	Mentions    []Ref
 	Recent      []SubjectRef
-	Results     []Ref
-	Searched    bool
 	Subject     SubjectView
 	SubjectHTML template.HTML
 }
@@ -218,7 +216,7 @@ func (h *handler) privateHome(w http.ResponseWriter, r *http.Request) {
 	}
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query != "" {
-		h.ask(w, r, scope, query)
+		h.ask(w, r, "private", scope, query)
 		return
 	}
 
@@ -245,35 +243,28 @@ func (h *handler) publicHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	data := pageData{Query: query}
 	if query != "" {
-		data.Searched = true
-		if h.keywords == nil {
-			http.Error(w, "search wiki", http.StatusNotImplemented)
-			return
-		}
-		result, err := h.keywords.Search(r.Context(), scope.Name, query, retrieve.SearchLimits{})
-		if err != nil {
-			http.Error(w, "search wiki", http.StatusInternalServerError)
-			return
-		}
-		for _, hit := range result.Hits {
-			data.Results = append(data.Results, Ref{Href: h.subjectHref("public", scope.Name, hit.Path), Name: hit.Title})
-		}
-	} else if h.recent != nil {
+		h.ask(w, r, "public", scope, query)
+		return
+	}
+
+	var recent []SubjectRef
+	if h.recent != nil {
 		refs, err := h.recent.Recent(r.Context(), scope.Name, 7)
 		if err != nil {
 			http.Error(w, "list recent pages", http.StatusInternalServerError)
 			return
 		}
-		data.Recent = refs
+		recent = refs
 	}
-	if err := h.site.Render(w, "home", h.pageData(r.Context(), "public", scope.Name, data)); err != nil {
+	if err := h.site.Render(w, "home", h.pageData(r.Context(), "public", scope.Name, pageData{
+		Recent: recent,
+	})); err != nil {
 		http.Error(w, "render home page", http.StatusInternalServerError)
 	}
 }
 
-func (h *handler) ask(w http.ResponseWriter, r *http.Request, scope wiki.Scope, question string) {
+func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope wiki.Scope, question string) {
 	if h.asker == nil {
 		http.Error(w, "ask wiki", http.StatusNotImplemented)
 		return
@@ -302,11 +293,11 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, scope wiki.Scope, 
 			return
 		}
 		mentions = refs
-		mentions = h.scopeRefs(mentions, "private", scope.Name)
+		mentions = h.scopeRefs(mentions, tier, scope.Name)
 	}
 	answerHTML := markdown.Render(answer.Text)
 	if h.linkifier != nil {
-		base := h.absoluteSubjectBase("private", scope.Name)
+		base := h.absoluteSubjectBase(tier, scope.Name)
 		text, err := h.linkifier.LinkifyMentions(r.Context(), scope.Name, answer.Text, base, "")
 		if err != nil {
 			http.Error(w, "link answer mentions", http.StatusInternalServerError)
@@ -315,7 +306,7 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, scope wiki.Scope, 
 		answerHTML = markdown.Render(text)
 	}
 
-	if err := h.site.Render(w, "home", h.pageData(r.Context(), "private", scope.Name, pageData{
+	if err := h.site.Render(w, "home", h.pageData(r.Context(), tier, scope.Name, pageData{
 		Query:      question,
 		Asked:      true,
 		Answer:     answer,

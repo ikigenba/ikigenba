@@ -421,13 +421,8 @@
 		<noscript><button type="submit">Go</button></noscript>
 	  </form>
 	  <form class="header-question" action="." method="get" role="search" data-busy>
-		{{if eq .Tier "private"}}
 		<input type="text" name="q" aria-label="Ask this wiki" value="{{.Query}}">
 		<button type="submit" data-busy-label="Asking…">Ask</button>
-		{{else}}
-		<input type="text" name="q" aria-label="Search this wiki" value="{{.Query}}">
-		<button type="submit" data-busy-label="Searching…">Search</button>
-		{{end}}
 	  </form>
 	</header>
   <main>

@@ -365,59 +365,30 @@ func TestSuggestedPagesHonorScopeWall(t *testing.T) {
 	}
 }
 
-func TestPublicSearchUsesKeywordResultsAndNeverAsk(t *testing.T) {
-	// R-HVNQ-OKML
+func TestAskRunsOnBothTiers(t *testing.T) {
+	// R-4Q8B-N9SX
 	conn, scopes := phase129Scopes(t)
 	defer conn.Close()
-	keywords := &stubKeywordRetriever{result: retrieve.Result{Hits: []retrieve.Hit{
-		{Path: "entity/acme", Title: "Acme"},
-		{Path: "concept/widget", Title: "Widget"},
-	}}}
-	asker := &stubAsker{}
-	pages := &stubPageFinder{view: SubjectView{Title: "Acme", Body: "Acme body"}}
-	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/",
-		WithScopeStore(scopes), WithKeywordRetriever(keywords), WithAsker(asker), WithPageFinder(pages))
-	for _, path := range []string{"/public/p1/", "/public/p1/?q=red+widgets", "/public/p1/subject/entity/acme"} {
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s status=%d, want 200; body=%s", path, rec.Code, rec.Body.String())
-		}
-		if strings.Contains(path, "?q=") {
-			for _, want := range []string{
-				`<a href="/srv/wiki/public/p1/subject/entity/acme">Acme</a>`,
-				`<a href="/srv/wiki/public/p1/subject/concept/widget">Widget</a>`,
-			} {
-				if !strings.Contains(rec.Body.String(), want) {
-					t.Fatalf("public results missing %q: %s", want, rec.Body.String())
-				}
+	for _, tc := range []struct {
+		name, path, scope, question, answer string
+	}{
+		{name: "private", path: "/private/s1/?q=who+owns+it%3F", scope: "s1", question: "who owns it?", answer: "Private answer marker"},
+		{name: "public", path: "/public/p1/?q=what+is+public%3F", scope: "p1", question: "what is public?", answer: "Public answer marker"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asker := &stubAsker{answer: ask.Answer{Found: true, Text: tc.answer}}
+			rec := httptest.NewRecorder()
+			newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithAsker(asker)).
+				ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+
+			body := rec.Body.String()
+			if rec.Code != http.StatusOK || asker.called != 1 || asker.scope != tc.scope || asker.question != tc.question {
+				t.Fatalf("status=%d Ask calls=%d scope=%q question=%q; body=%s", rec.Code, asker.called, asker.scope, asker.question, body)
 			}
-		}
-	}
-	if keywords.called != 1 || keywords.scope != "p1" || keywords.query != "red widgets" {
-		t.Fatalf("keyword Search calls=%d scope=%q query=%q", keywords.called, keywords.scope, keywords.query)
-	}
-	if asker.called != 0 {
-		t.Fatalf("Ask calls across public routes = %d, want 0", asker.called)
-	}
-}
-
-func TestPublicSearchNoMatchesKeepsFormAndDoesNotFallbackToAsk(t *testing.T) {
-	// R-HWVN-2CDA
-	conn, scopes := phase129Scopes(t)
-	defer conn.Close()
-	asker := &stubAsker{}
-	rec := httptest.NewRecorder()
-	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes),
-		WithKeywordRetriever(&stubKeywordRetriever{}), WithAsker(asker)).
-		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/p1/?q=nothing", nil))
-
-	body := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(body, "No matches.") || !strings.Contains(body, `role="search"`) {
-		t.Fatalf("public empty search status=%d did not keep honest form: %s", rec.Code, body)
-	}
-	if asker.called != 0 || strings.Contains(body, `aria-label="Answer"`) {
-		t.Fatalf("public empty search fell back to Ask: calls=%d body=%s", asker.called, body)
+			if !strings.Contains(body, `aria-label="Answer"`) || !strings.Contains(body, tc.answer) {
+				t.Fatalf("answer page missing answer marker %q: %s", tc.answer, body)
+			}
+		})
 	}
 }
 
@@ -441,7 +412,7 @@ func TestPublicSubjectRendersSanitizedScopedLinksAndHonorsVisibility(t *testing.
 		`<a href="https://acct.ikigenba.com/srv/wiki/public/p1/subject/event/launch">Launch</a>`,
 		`aria-label="Mentions"`, `aria-label="Mentioned by"`,
 		`<form class="header-question" action="." method="get" role="search" data-busy>`,
-		`<button type="submit" data-busy-label="Searching…">Search</button>`,
+		`<button type="submit" data-busy-label="Asking…">Ask</button>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("public subject missing %q: %s", want, body)
@@ -458,29 +429,28 @@ func TestPublicSubjectRendersSanitizedScopedLinksAndHonorsVisibility(t *testing.
 	}
 }
 
-func TestPrivateTierKeepsScopedAskAndPublicNeverAsks(t *testing.T) {
-	// R-HPXQ-UTP7
+func TestAskOwnerPassesThroughAndAnonymousOwnerIsEmpty(t *testing.T) {
+	// R-4RG8-11JM
 	conn, scopes := phase129Scopes(t)
 	defer conn.Close()
-	asker := &stubAsker{answer: ask.Answer{Found: true, Text: "Answer"}}
-	recent := &stubRecentLister{refs: []SubjectRef{{Href: "subject/entity/recent", Name: "Recent", Type: "entity"}}}
-	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes),
-		WithAsker(asker), WithRecentLister(recent), WithKeywordRetriever(&stubKeywordRetriever{}))
-
-	homeRec := httptest.NewRecorder()
-	h.ServeHTTP(homeRec, httptest.NewRequest(http.MethodGet, "/private/s1/", nil))
-	if homeRec.Code != http.StatusOK || !strings.Contains(homeRec.Body.String(), "Recent") {
-		t.Fatalf("private home did not render recent list: %s", homeRec.Body.String())
-	}
-	askRec := httptest.NewRecorder()
-	h.ServeHTTP(askRec, httptest.NewRequest(http.MethodGet, "/private/s1/?q=who+owns+it", nil))
-	if askRec.Code != http.StatusOK || asker.called != 1 || asker.scope != "s1" || asker.question != "who owns it" {
-		t.Fatalf("private Ask status=%d calls=%d scope=%q question=%q", askRec.Code, asker.called, asker.scope, asker.question)
-	}
-	publicRec := httptest.NewRecorder()
-	h.ServeHTTP(publicRec, httptest.NewRequest(http.MethodGet, "/public/p1/?q=who+owns+it", nil))
-	if asker.called != 1 {
-		t.Fatalf("public search invoked Ask; total calls=%d", asker.called)
+	for _, tc := range []struct {
+		name, path, owner string
+	}{
+		{name: "private header", path: "/private/s1/?q=question", owner: "a@b.c"},
+		{name: "anonymous public", path: "/public/p1/?q=question", owner: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asker := &stubAsker{answer: ask.Answer{Found: true, Text: "Ordinary answer"}}
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			if tc.owner != "" {
+				req.Header.Set("X-Owner-Email", tc.owner)
+			}
+			rec := httptest.NewRecorder()
+			newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithAsker(asker)).ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK || asker.called != 1 || asker.owner != tc.owner || !strings.Contains(rec.Body.String(), "Ordinary answer") {
+				t.Fatalf("status=%d Ask calls=%d owner=%q, want owner=%q ordinary answer page; body=%s", rec.Code, asker.called, asker.owner, tc.owner, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -742,12 +712,8 @@ func TestQuestionFormFollowsSelectorInEveryPageHeader(t *testing.T) {
 		if got := strings.Count(header, `type="text" name="q"`); got != 1 {
 			t.Fatalf("%s header q input count = %d, want 1: %s", name, got, header)
 		}
-		label := "Ask"
-		if strings.HasPrefix(name, "public") {
-			label = "Search"
-		}
-		if !strings.Contains(header, `>`+label+`</button>`) {
-			t.Fatalf("%s header lacks %s submit label: %s", name, label, header)
+		if !strings.Contains(header, `>Ask</button>`) {
+			t.Fatalf("%s header lacks Ask submit label: %s", name, header)
 		}
 	}
 }
@@ -849,11 +815,12 @@ func TestPrivateQuestionFormSaysAskOnHomeAndResult(t *testing.T) {
 	}
 }
 
-func TestPublicQuestionFormSaysSearchOnHomeAndResults(t *testing.T) {
-	// R-VCIV-8Y97
+func TestPublicQuestionFormSaysAskOnHomeAndResult(t *testing.T) {
+	// R-4TW0-SL10
 	conn, scopes := phase129Scopes(t)
 	defer conn.Close()
-	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithKeywordRetriever(&stubKeywordRetriever{}))
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes),
+		WithAsker(&stubAsker{answer: ask.Answer{Found: true, Text: "Answer"}}))
 
 	for _, path := range []string{"/public/p1/", "/public/p1/?q=red+widgets"} {
 		rec := httptest.NewRecorder()
@@ -862,9 +829,14 @@ func TestPublicQuestionFormSaysSearchOnHomeAndResults(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s status = %d, want 200; body=%s", path, rec.Code, body)
 		}
-		for _, want := range []string{`aria-label="Search this wiki"`, `<button type="submit" data-busy-label="Searching…">Search</button>`} {
+		for _, want := range []string{`aria-label="Ask this wiki"`, `<button type="submit" data-busy-label="Asking…">Ask</button>`} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("public page %s missing %q: %s", path, want, body)
+			}
+		}
+		for _, retired := range []string{`aria-label="Search this wiki"`, `>Search</button>`} {
+			if strings.Contains(body, retired) {
+				t.Fatalf("public page %s retained %q: %s", path, retired, body)
 			}
 		}
 	}
