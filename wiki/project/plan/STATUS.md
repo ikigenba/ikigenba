@@ -12,5 +12,3 @@ lines.
 
 Next phase: 140
 
-- Phase 139 ⬜ realizes R-2MYX-Y4PN — mount-compose the brand-mark logo src so the image resolves through the front door
-
