@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"prompts/internal/admit"
+	"prompts/internal/gateway"
+	"prompts/internal/mcpclient"
 	"prompts/internal/prompt"
 	"prompts/internal/provider"
 	"prompts/internal/sandbox"
@@ -41,11 +43,12 @@ type Runner struct {
 	gate          *admit.Gate
 	ttl           time.Duration
 	buildProvider func(prompt.Config, func(string) string) (agentkit.Provider, error)
-	// discover snapshots the box's other loopback services as MCP attachments.
+	// discover snapshots the box's other loopback services as gateway peers.
 	// It defaults to a closure over the configured manifestRoot calling
 	// suite.Discover, but is injectable so tests can supply fake servers and
 	// never touch the real inventory or any peer.
-	discover func(ctx context.Context, ownerID, ownerEmail, promptID, correlationID string) []agentkit.MCPServer
+	discover func(ctx context.Context, ownerID, ownerEmail, promptID, correlationID string) []suite.Peer
+	peerDoer mcpclient.Doer
 	// sourcePortAllowed confines Fetch to registered loopback services.
 	sourcePortAllowed func(port int) bool
 	// shareBaseURL locates the account file share for the File* tools.
@@ -63,25 +66,17 @@ type Runner struct {
 // every run's wall-clock; on expiry the run ends failed with a TTL error.
 // manifestRoot is the box inventory root (PROMPTS_MANIFEST_ROOT) threaded into
 // the default suite-discovery closure.
-func New(store *prompt.Store, sb *sandbox.Manager, gate *admit.Gate, ttl time.Duration, manifestRoot string, sourcePortAllowed func(int) bool, shareBaseURL string) *Runner {
+func New(store *prompt.Store, sb *sandbox.Manager, gate *admit.Gate, ttl time.Duration, manifestRoot string, sourcePortAllowed func(int) bool, shareBaseURL string, peerDoer mcpclient.Doer) *Runner {
 	return &Runner{
 		store:         store,
 		sandbox:       sb,
 		gate:          gate,
 		ttl:           ttl,
 		buildProvider: provider.Build,
-		discover: func(ctx context.Context, ownerID, ownerEmail, promptID, correlationID string) []agentkit.MCPServer {
-			peers := suite.Discover(ctx, manifestRoot, ownerID, ownerEmail, promptID, correlationID)
-			servers := make([]agentkit.MCPServer, len(peers))
-			for i, peer := range peers {
-				servers[i] = agentkit.MCPServer{
-					Name:    "ikigenba_" + peer.Name,
-					URL:     peer.BaseURL,
-					Headers: peer.Headers,
-				}
-			}
-			return servers
+		discover: func(ctx context.Context, ownerID, ownerEmail, promptID, correlationID string) []suite.Peer {
+			return suite.Discover(ctx, manifestRoot, ownerID, ownerEmail, promptID, correlationID)
 		},
+		peerDoer:          peerDoer,
 		sourcePortAllowed: sourcePortAllowed,
 		shareBaseURL:      shareBaseURL,
 		cancels:           make(map[string]context.CancelFunc),
@@ -217,6 +212,17 @@ func (r *Runner) execute(run prompt.Run) {
 		return
 	}
 
+	peers := r.discover(ctx, run.OwnerID, run.OwnerEmail, run.PromptID, run.CorrelationID)
+	clients := func(peer suite.Peer) gateway.Client {
+		return mcpclient.New(r.peerDoer, peer.BaseURL, peer.Headers)
+	}
+	catalogEntries := func(ctx context.Context) []suite.CatalogEntry {
+		return suite.Catalog(ctx, peers, func(peer suite.Peer) suite.InstructionLister {
+			return clients(peer)
+		})
+	}
+	tools := runtools.All(sandboxRoot, r.sourcePortAllowed, runtools.ShareConfig{BaseURL: r.shareBaseURL, ClientID: "prompts:" + run.PromptID})
+	tools = append(tools, gateway.Tools(peers, catalogEntries, clients)...)
 	conv := &agentkit.Conversation{
 		Provider:          prov,
 		Model:             res.WireModel,
@@ -225,8 +231,7 @@ func (r *Runner) execute(run prompt.Run) {
 		Log:               logFile,
 		Gen:               genSettings(cfg),
 		Retry:             retryPolicy(cfg),
-		Tools:             runtools.All(sandboxRoot, r.sourcePortAllowed, runtools.ShareConfig{BaseURL: r.shareBaseURL, ClientID: "prompts:" + run.PromptID}),
-		MCPServers:        r.discover(ctx, run.OwnerID, run.OwnerEmail, run.PromptID, run.CorrelationID),
+		Tools:             tools,
 		MaxToolIterations: cfg.ToolLoopLimit,
 	}
 	stream := conv.Send(ctx, buildUserText(executed.UserPrompt, eventBytes))

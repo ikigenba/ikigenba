@@ -24,6 +24,7 @@ import (
 	"prompts/internal/prompt"
 	runprovider "prompts/internal/provider"
 	"prompts/internal/sandbox"
+	"prompts/internal/suite"
 
 	"github.com/ikigenba/agentkit"
 )
@@ -177,7 +178,7 @@ func newTestRunner(t *testing.T, ttl time.Duration, fp agentkit.Provider) (*Runn
 		t.Fatalf("sandbox.New: %v", err)
 	}
 
-	r := New(store, sb, admit.New(8, 8), ttl, t.TempDir(), func(int) bool { return false }, "")
+	r := New(store, sb, admit.New(8, 8), ttl, t.TempDir(), func(int) bool { return false }, "", http.DefaultClient)
 	r.buildProvider = func(prompt.Config, func(string) string) (agentkit.Provider, error) { return fp, nil }
 	return r, store
 }
@@ -528,16 +529,14 @@ func TestSpawn_UsesInjectedProviderFactoryWithoutLiveEnvironment(t *testing.T) {
 	}
 }
 
-func TestExecuteAttachesEagerMCPToolsWithoutLoader(t *testing.T) {
-	// R-ZIVG-1F6T
-	peer := newRunnerMCPServer(t, "health", nil)
-	defer peer.Close()
+func TestExecuteExposesOnlySandboxAndGatewayToolsWithoutResolvingPeers(t *testing.T) {
+	// R-OVMQ-VU50
 	fp := &fakeProvider{}
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
 	_, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer {
-		return []agentkit.MCPServer{{Name: "ikigenba_crm", URL: peer.URL}}
+	r.discover = func(context.Context, string, string, string, string) []suite.Peer {
+		return []suite.Peer{{Name: "crm", BaseURL: "http://127.0.0.1:1/mcp"}}
 	}
 
 	r.execute(run)
@@ -546,19 +545,32 @@ func TestExecuteAttachesEagerMCPToolsWithoutLoader(t *testing.T) {
 		t.Fatal("provider saw no request")
 	}
 	names := requestToolNames(req)
-	for _, want := range []string{"Bash", "Read", "Write", "Edit", "Glob", "Grep", "ikigenba_crm_health"} {
+	if len(req.Tools) != 16 {
+		t.Fatalf("request tool count = %d, want 13 sandbox plus 3 gateway: %v", len(req.Tools), sortedToolNames(req.Tools))
+	}
+	for _, want := range []string{
+		"Bash", "Read", "Write", "Edit", "Glob", "Grep", "Fetch",
+		"FileList", "FileGet", "FilePut", "FileDelete", "FileMove", "FileMkdir",
+		"suite_services", "suite_tools", "suite_call",
+	} {
 		if !names[want] {
 			t.Fatalf("request tools = %v, missing %q", sortedToolNames(req.Tools), want)
 		}
 	}
-	if names["load_tools"] {
-		t.Fatalf("request unexpectedly exposed load_tools: %v", sortedToolNames(req.Tools))
+	for name := range names {
+		if strings.HasPrefix(name, "ikigenba_") {
+			t.Fatalf("request unexpectedly exposed eager peer tool %q: %v", name, sortedToolNames(req.Tools))
+		}
 	}
 }
 
-func TestExecuteThreadsStoredRunCorrelationThroughDiscoveryAndContext(t *testing.T) {
-	// R-HT9J-IK4U
-	fp := &fakeProvider{}
+func TestExecuteSendsStoredCorrelationOnGatewayListAndCall(t *testing.T) {
+	// R-P7TQ-PJJY
+	fp := &fakeProvider{roundTrips: []*agentkit.RoundTrip{
+		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "tools-1", Name: "suite_tools", Input: json.RawMessage(`{"service":"crm"}`)}),
+		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "call-1", Name: "suite_call", Input: json.RawMessage(`{"service":"crm","tool":"health","args":"{}"}`)}),
+		scriptedTextRoundTrip("done"),
+	}}
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
 	_, seeded := seedRunning(t, store, r.sandbox, runsDir)
@@ -583,10 +595,35 @@ func TestExecuteThreadsStoredRunCorrelationThroughDiscoveryAndContext(t *testing
 	}
 
 	var gotArgument, gotContext string
-	r.discover = func(ctx context.Context, _, _, _, gotCorrelationID string) []agentkit.MCPServer {
+	var listHeaders, callHeaders http.Header
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		var rpc struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&rpc); err != nil {
+			t.Errorf("decode MCP request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch rpc.Method {
+		case "initialize":
+			writeRunnerRPC(t, w, rpc.ID, map[string]any{"protocolVersion": "2025-11-25", "instructions": "CRM tools."})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			listHeaders = request.Header.Clone()
+			writeRunnerRPC(t, w, rpc.ID, map[string]any{"tools": []any{map[string]any{"name": "health", "inputSchema": map[string]any{"type": "object"}}}})
+		case "tools/call":
+			callHeaders = request.Header.Clone()
+			writeRunnerRPC(t, w, rpc.ID, map[string]any{"content": []any{map[string]any{"type": "text", "text": "ok"}}})
+		}
+	}))
+	defer peer.Close()
+	r.discover = func(ctx context.Context, _, _, _, gotCorrelationID string) []suite.Peer {
 		gotArgument = gotCorrelationID
 		gotContext = correlation.FromContext(ctx)
-		return nil
+		return []suite.Peer{{Name: "crm", BaseURL: peer.URL, Headers: map[string]string{correlation.Header: gotCorrelationID}}}
 	}
 	r.execute(run)
 
@@ -596,11 +633,37 @@ func TestExecuteThreadsStoredRunCorrelationThroughDiscoveryAndContext(t *testing
 	if gotContext != correlationID {
 		t.Fatalf("execute context correlation id = %q, want stored %q", gotContext, correlationID)
 	}
+	if got := listHeaders.Get(correlation.Header); got != correlationID {
+		t.Fatalf("tools/list correlation header = %q, want stored %q (run id %q)", got, correlationID, run.ID)
+	}
+	if got := callHeaders.Get(correlation.Header); got != correlationID {
+		t.Fatalf("tools/call correlation header = %q, want stored %q (run id %q)", got, correlationID, run.ID)
+	}
 }
 
-func TestFramingPromptNamesNoLoaderOrIndividualService(t *testing.T) {
-	// R-ZK3C-F6XI
-	framing := framingPrompt("ikigenba/run-example", strings.Repeat("a", 40))
+func TestFramingPromptExplainsGatewayDiscoveryInspectInvokeFlow(t *testing.T) {
+	// R-P2Y5-6GL6
+	fp := &fakeProvider{}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	_, run := seedRunning(t, store, r.sandbox, runsDir)
+	r.execute(run)
+	req := fp.request(0)
+	if req == nil {
+		t.Fatal("provider saw no request")
+	}
+	framing := req.System
+	for _, want := range []string{"suite_services", "suite_tools", "suite_call", "Discover, inspect, then invoke", "must be inspected before first use"} {
+		if !strings.Contains(framing, want) {
+			t.Errorf("framing prompt does not contain gateway guidance %q: %q", want, framing)
+		}
+	}
+	servicesAt := strings.Index(framing, "suite_services")
+	toolsAt := strings.Index(framing, "suite_tools")
+	callAt := strings.Index(framing, "suite_call")
+	if servicesAt < 0 || servicesAt >= toolsAt || toolsAt >= callAt {
+		t.Errorf("framing prompt does not present discover-inspect-invoke tools in order: %q", framing)
+	}
 	if strings.Contains(framing, "load_tools") || strings.Contains(framing, "ikigenba_") {
 		t.Fatalf("framing prompt contains retired loader or service prefix: %q", framing)
 	}
@@ -719,7 +782,7 @@ func TestSpawnedRunSystemPromptUsesRealWorkspaceBranchAndCommit(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "test")
 	fp := &fakeProvider{}
 	r, store := newTestRunner(t, time.Minute, fp)
-	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer { return nil }
+	r.discover = func(context.Context, string, string, string, string) []suite.Peer { return nil }
 	runsDir := filepath.Dir(filepath.Dir(r.sandbox.Root("probe")))
 	svc := prompt.NewService(store, r.sandbox, runsDir, r)
 	p, err := svc.Create(context.Background(), "owner-id", "owner@example.com", prompt.CreateInput{Name: "real checkout framing", UserPrompt: "inspect the checkout", Config: prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"}})
@@ -758,20 +821,22 @@ func TestSpawnedRunSystemPromptUsesRealWorkspaceBranchAndCommit(t *testing.T) {
 	}
 }
 
-func TestExecuteCallsAttachedSuiteToolOnFirstRoundTrip(t *testing.T) {
-	// R-ZLB8-SYO7
+func TestExecuteDiscoversInspectsAndInvokesThroughGateway(t *testing.T) {
+	// R-P461-K8BV
 	var called string
 	peer := newRunnerMCPServer(t, "health", func(name string) { called = name })
 	defer peer.Close()
 	fp := &fakeProvider{roundTrips: []*agentkit.RoundTrip{
-		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "call-1", Name: "ikigenba_crm_health", Input: json.RawMessage(`{}`)}),
+		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "services-1", Name: "suite_services", Input: json.RawMessage(`{}`)}),
+		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "tools-1", Name: "suite_tools", Input: json.RawMessage(`{"service":"crm"}`)}),
+		scriptedRoundTrip(agentkit.ToolUseBlock{ID: "call-1", Name: "suite_call", Input: json.RawMessage(`{"service":"crm","tool":"health","args":"{}"}`)}),
 		scriptedTextRoundTrip("done"),
 	}}
 	runsDir := t.TempDir()
 	r, store := newTestRunner(t, time.Minute, fp)
 	sess, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer {
-		return []agentkit.MCPServer{{Name: "ikigenba_crm", URL: peer.URL}}
+	r.discover = func(context.Context, string, string, string, string) []suite.Peer {
+		return []suite.Peer{{Name: "crm", BaseURL: peer.URL}}
 	}
 
 	r.execute(run)
@@ -783,8 +848,10 @@ func TestExecuteCallsAttachedSuiteToolOnFirstRoundTrip(t *testing.T) {
 		t.Fatalf("peer tools/call name = %q, want health", called)
 	}
 	records := readRunnerLogRecords(t, run.LogPath)
-	if !hasToolUse(records, "ikigenba_crm_health") || !hasToolResult(records, "ikigenba_crm_health") {
-		t.Fatalf("log missing native suite tool events: %v", logToolEvents(records))
+	for _, name := range []string{"suite_services", "suite_tools", "suite_call"} {
+		if !hasToolUse(records, name) || !hasToolResult(records, name) {
+			t.Fatalf("log missing gateway events for %q: %v", name, logToolEvents(records))
+		}
 	}
 }
 
@@ -797,7 +864,7 @@ func TestRunBoundaryRootsOnceAndArchivesBuiltinToolUse(t *testing.T) {
 	}}
 	r, store := newTestRunner(t, time.Minute, fp)
 	runsDir := filepath.Dir(filepath.Dir(r.sandbox.Root("probe")))
-	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer { return nil }
+	r.discover = func(context.Context, string, string, string, string) []suite.Peer { return nil }
 
 	svc := prompt.NewService(store, r.sandbox, runsDir, r)
 	sess, err := svc.Create(context.Background(), "owner-id", "owner@example.com", prompt.CreateInput{Name: "boundary task", UserPrompt: "use the sandbox", Config: prompt.Config{Provider: "anthropic", Model: "claude-haiku-4-5"}})
@@ -844,45 +911,6 @@ func TestRunBoundaryRootsOnceAndArchivesBuiltinToolUse(t *testing.T) {
 	records := readRunnerLogRecords(t, run.LogPath)
 	if !hasToolUse(records, "Bash") {
 		t.Fatalf("output.jsonl missing Bash tool_use: %v", logToolEvents(records))
-	}
-}
-
-func TestExecuteFailsWhenAnyAttachedPeerDiscoveryFails(t *testing.T) {
-	// R-ZGFN-9VPF
-	healthy := newRunnerMCPServer(t, "health", nil)
-	defer healthy.Close()
-	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			ID     json.RawMessage `json:"id"`
-			Method string          `json:"method"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		w.Header().Set("Content-Type", "application/json")
-		if req.Method == "initialize" {
-			writeRunnerRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-11-25"})
-			return
-		}
-		if req.Method == "notifications/initialized" {
-			w.WriteHeader(http.StatusAccepted)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "crm unavailable"}})
-	}))
-	defer bad.Close()
-	fp := &fakeProvider{}
-	runsDir := t.TempDir()
-	r, store := newTestRunner(t, time.Minute, fp)
-	sess, run := seedRunning(t, store, r.sandbox, runsDir)
-	r.discover = func(context.Context, string, string, string, string) []agentkit.MCPServer {
-		return []agentkit.MCPServer{{Name: "ikigenba_crm", URL: bad.URL}, {Name: "ikigenba_gmail", URL: healthy.URL}}
-	}
-	r.execute(run)
-	got, err := store.GetLatestRun(context.Background(), sess.ID)
-	if err != nil || got == nil || got.Status != prompt.RunFailed || !strings.Contains(got.Error, "ikigenba_crm") {
-		t.Fatalf("run = %#v, err=%v, want failed error naming bad peer", got, err)
-	}
-	if fp.requestCount() != 0 {
-		t.Fatalf("provider round trips = %d, want none when MCP discovery fails", fp.requestCount())
 	}
 }
 
@@ -1060,7 +1088,7 @@ func TestNew_DefaultDiscoverWired(t *testing.T) {
 		t.Fatalf("sandbox.New: %v", err)
 	}
 
-	r := New(prompt.NewStore(conn), sb, admit.New(8, 8), time.Minute, t.TempDir(), func(int) bool { return false }, "")
+	r := New(prompt.NewStore(conn), sb, admit.New(8, 8), time.Minute, t.TempDir(), func(int) bool { return false }, "", http.DefaultClient)
 	if r.discover == nil {
 		t.Fatalf("New left discover seam nil")
 	}

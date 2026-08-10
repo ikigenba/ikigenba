@@ -273,7 +273,7 @@ func registerRoutes(rt *appkit.Router) error {
 		allowedPorts[service.Port] = true
 	}
 	dropboxBase := dropboxBaseURL(os.Getenv)
-	run := runner.New(store, sb, gate, knobs.runTTL, manifestRoot, func(port int) bool { return allowedPorts[port] }, dropboxBase)
+	run := runner.New(store, sb, gate, knobs.runTTL, manifestRoot, func(port int) bool { return allowedPorts[port] }, dropboxBase, rt.HTTPClient(30*time.Second))
 	run.SetProviderFactory(buildProvider)
 	svc := prompt.NewService(store, sb, runsDir, run)
 	svc.RootStarter = func(ctx context.Context, rootID, op string) context.Context {

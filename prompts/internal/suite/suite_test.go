@@ -22,8 +22,6 @@ import (
 
 func TestDiscoverMapsInventoryToBarePeers(t *testing.T) {
 	// R-ORZ1-QIWX
-	// R-ZDZU-IC81
-	// R-EF0V-TP9R
 	root := t.TempDir()
 	writeManifest(t, root, "crm")
 	writeManifest(t, root, "gmail")
@@ -62,7 +60,6 @@ func TestDiscoverMapsInventoryToBarePeers(t *testing.T) {
 
 func TestDiscoverCorrelationHeaderPresentExactlyOrAbsent(t *testing.T) {
 	// R-P5DX-Y02K
-	// R-HPLU-D8WR
 	root := t.TempDir()
 	writeManifest(t, root, "crm")
 	writeManifest(t, root, "gmail")
@@ -90,12 +87,6 @@ func TestDiscoverCorrelationHeaderPresentExactlyOrAbsent(t *testing.T) {
 			t.Fatalf("headers for %q contain %s=%q, want key absent", peer.Name, correlation.Header, value)
 		}
 	}
-}
-
-func TestPeerHeadersAreInjectedByRealClient(t *testing.T) {
-	// R-ZF7Q-W3YQ
-	// R-HS1N-4SE5
-	assertPeerHeadersInjected(t)
 }
 
 func TestCatalogUsesFirstSentenceAndPreservesPeerOrder(t *testing.T) {

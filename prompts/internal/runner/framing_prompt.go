@@ -18,7 +18,7 @@ func framingPrompt(branch, sha string) string {
 		"PDF tooling is available in Bash: pdftotext extracts text, pdftoppm renders pages to images, and pdfinfo reads metadata.\n\n"+
 		"The account's file share is its durable, shared file store: files there persist, sync, and are what the owner and other workflows see. "+
 		"Your own folder stays private to this prompt; use the file tools as the channel between it and the file share.\n\n"+
-		"Beyond the sandbox tools, this account's services are available as tools and can be called directly.\n\n"+
+		"Beyond the sandbox tools, this account's services are reachable through suite_services to list them, suite_tools to load one service's tool schemas, and suite_call to invoke one tool with JSON arguments. Discover, inspect, then invoke: a service's tools must be inspected before first use.\n\n"+
 		"You have NO network access from bash: do not attempt to fetch anything from the internet. "+
 		"Leave your deliverables as FILES in the folder. Files written by earlier runs are readable, "+
 		"and writing files is how your work persists across runs (the Ralph pattern). "+
