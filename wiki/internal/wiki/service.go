@@ -247,53 +247,12 @@ func (s *Service) Subjects(ctx context.Context, typ, nameContains string) ([]Sub
 	return listAllSubjects(ctx, s.subjects, typ, nameContains)
 }
 
-// Orphans returns subjects with no inbound mentions from any other page.
-func (s *Service) Orphans(ctx context.Context, scope string) ([]Subject, error) {
+// Recent returns the newest subjects in one scope by descending ULID order.
+func (s *Service) Recent(ctx context.Context, scope string, limit int) ([]Subject, error) {
 	if s == nil {
 		return nil, fmt.Errorf("wiki: nil service")
 	}
-	subjects, err := listAllSubjectsInScope(ctx, s.subjects, scope, "", "")
-	if err != nil {
-		return nil, err
-	}
-	aliases, err := s.aliases.ListAllInScope(ctx, scope)
-	if err != nil {
-		return nil, err
-	}
-	pages, err := listAllPagesInScope(ctx, s.pages, scope)
-	if err != nil {
-		return nil, err
-	}
-
-	subjectKeysByID := subjectKeysFor(subjects, aliases)
-	subjectKeys := make([]SubjectKeys, 0, len(subjectKeysByID))
-	for _, keys := range subjectKeysByID {
-		subjectKeys = append(subjectKeys, keys)
-	}
-	sort.Slice(subjectKeys, func(i, j int) bool {
-		return Path(subjectKeys[i].Subject) < Path(subjectKeys[j].Subject)
-	})
-
-	referenced := map[string]bool{}
-	for _, page := range pages {
-		for _, subject := range Mentions(page.Body, subjectKeys) {
-			if subject.ID == page.SubjectID {
-				continue
-			}
-			referenced[subject.ID] = true
-		}
-	}
-
-	orphans := make([]Subject, 0, len(subjects))
-	for _, subject := range subjects {
-		if !referenced[subject.ID] {
-			orphans = append(orphans, subject)
-		}
-	}
-	sort.Slice(orphans, func(i, j int) bool {
-		return Path(orphans[i]) < Path(orphans[j])
-	})
-	return orphans, nil
+	return s.subjects.Recent(ctx, scope, limit)
 }
 
 // ClaimsBySubject returns the stored claims for an existing subject.

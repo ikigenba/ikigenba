@@ -40,19 +40,13 @@
 <p>No matches.</p>
 {{end}}
 {{else}}
-{{if .Browse}}
-<nav aria-label="Browse subjects">
+{{if .Recent}}
+<section class="suggested" aria-labelledby="suggested-pages">
+  <h2 id="suggested-pages">Suggested pages</h2>
   <ul>
-    {{range .Browse}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
+    {{range .Recent}}<li><a href="{{.Href}}">{{.Name}}</a><span class="subject-type">{{.Type}}</span></li>{{end}}
   </ul>
-</nav>
-{{end}}
-{{if .Orphans}}
-<nav aria-label="Orphan pages">
-  <ul>
-    {{range .Orphans}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
-  </ul>
-</nav>
+</section>
 {{end}}
 {{end}}
 {{end}}

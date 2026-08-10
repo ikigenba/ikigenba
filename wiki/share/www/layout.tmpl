@@ -24,20 +24,35 @@
       font-family: var(--font-body, var(--read-font-body));
       font-size: var(--text-body-size);
       line-height: var(--text-body-lh);
+	  display: flex;
+	  flex-direction: column;
     }
 
+	header,
     main,
     footer {
-      width: min(100% - 32px, 960px);
-      margin: 0 auto;
+	  width: 100%;
+	  max-width: var(--layout-max-width);
+	  margin: 0 auto;
+	  padding-left: var(--layout-gutter);
+	  padding-right: var(--layout-gutter);
+	}
+
+	header {
+	  min-height: var(--space-16);
+	  display: flex;
+	  align-items: center;
+	  justify-content: space-between;
+	  gap: var(--space-6);
+	  border-bottom: var(--border-width) solid var(--color-border);
     }
 
     main {
-      position: relative;
-      min-height: calc(100vh - 96px);
-      padding: var(--space-16) 0 var(--space-10);
+	  flex: 1;
+	  padding-top: var(--space-12);
+	  padding-bottom: var(--space-16);
       display: grid;
-      align-content: center;
+	  align-content: start;
       gap: var(--space-8);
     }
 
@@ -66,9 +81,6 @@
     }
 
     .home {
-      position: absolute;
-      top: var(--space-8);
-      left: 0;
       font-family: var(--font-mono, var(--read-font-mono));
       font-size: var(--text-label-size);
       line-height: var(--text-label-lh);
@@ -191,14 +203,14 @@
     form {
       display: flex;
       max-width: 680px;
-      border: var(--border-width) solid var(--color-border);
+	  gap: var(--space-3);
     }
 
     input,
     select,
     button {
-      min-height: 48px;
-      border: 0;
+	  border: var(--border-width) solid var(--color-border-strong);
+	  border-radius: var(--radius);
       font: inherit;
     }
 
@@ -208,15 +220,63 @@
       flex: 1;
       padding: 0 var(--space-4);
       color: var(--color-text);
-      background: var(--color-bg);
+	  background: var(--color-bg);
     }
+
+	main input,
+	main button {
+	  min-height: var(--control-h-lg);
+	}
 
     button {
       padding: 0 var(--space-5);
       color: var(--color-bg);
       background: var(--color-accent);
-      cursor: pointer;
+	  cursor: pointer;
     }
+
+	.scope-selector {
+	  max-width: none;
+	  align-items: center;
+	  font-family: var(--font-mono, var(--read-font-mono));
+	  font-size: var(--text-label-size);
+	  line-height: var(--text-label-lh);
+	  font-weight: var(--text-label-weight);
+	  text-transform: uppercase;
+	}
+
+	.scope-selector select,
+	.scope-selector button {
+	  min-height: var(--control-h-sm);
+	}
+
+	.scope-selector select {
+	  flex: none;
+	  padding: 0 var(--space-3);
+	}
+
+	.suggested h2 {
+	  font-family: var(--font-mono, var(--read-font-mono));
+	  font-size: var(--text-label-size);
+	  line-height: var(--text-label-lh);
+	  font-weight: var(--text-label-weight);
+	  text-transform: uppercase;
+	}
+
+	.suggested li {
+	  display: flex;
+	  justify-content: space-between;
+	  gap: var(--space-4);
+	  padding: var(--space-3) 0;
+	  border-bottom: var(--border-width) solid var(--color-border);
+	}
+
+	.subject-type {
+	  font-family: var(--font-mono, var(--read-font-mono));
+	  font-size: var(--text-label-size);
+	  text-transform: uppercase;
+	  color: var(--color-text-muted);
+	}
 
     nav {
       max-width: 680px;
@@ -238,7 +298,9 @@
     }
 
     footer {
-      padding: 0 0 var(--space-6);
+	  padding-top: var(--space-4);
+	  padding-bottom: var(--space-6);
+	  border-top: var(--border-width) solid var(--color-border);
       font-family: var(--font-mono, var(--read-font-mono));
       font-size: var(--text-label-size);
       line-height: var(--text-label-lh);
@@ -249,19 +311,25 @@
   </style>
 </head>
 <body>
+	<header>
+	  <a class="home" href="{{.Mount}}">Home</a>
+	  <form class="scope-selector" action="select" method="get" aria-label="Select scope">
+		<label for="scope-selector">Scope</label>
+		<select id="scope-selector" name="to">
+		  {{range .Scopes}}<option value="{{.Name}}"{{if eq .Name $.Scope}} selected{{end}}>{{.Name}}</option>{{end}}
+		</select>
+		<noscript><button type="submit">Go</button></noscript>
+	  </form>
+	</header>
   <main>
-    <a class="home" href="/">Home</a>
-    <form action="select" method="get" aria-label="Select scope">
-      <select name="to" aria-label="Scope">
-        {{range .Scopes}}<option value="{{.Name}}"{{if eq .Name $.Scope}} selected{{end}}>{{.Name}}</option>{{end}}
-      </select>
-      <button type="submit">Go</button>
-    </form>
 {{end}}
 
 {{define "foot"}}  </main>
   <footer>{{.Service}} {{.Version}}</footer>
   <script type="text/javascript">
+	document.querySelector(".scope-selector select").addEventListener("change", function () {
+	  this.form.submit();
+	});
     document.querySelectorAll("form[data-busy]").forEach(function (form) {
       form.addEventListener("submit", function () {
         var button = form.querySelector('button[type="submit"]');

@@ -133,8 +133,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			statusService := publicStatusService{service: svc}
 			rt.Handle("/", web.NewHandler(rt.Service(), rt.Version(), wiki.Mount, rt.WWW(),
 				web.WithScopeStore(scopes),
-				web.WithOrphanLister(orphanAdapter{svc: svc, webBase: webBase}),
-				web.WithSubjectLister(wiki.NewSubjectStore(read)),
+				web.WithRecentLister(recentAdapter{svc: svc}),
 				web.WithKeywordRetriever(retrieve.NewKeywordRetriever(read)),
 				web.WithAsker(asker),
 				web.WithMentioner(mentionAdapter{svc: svc, webBase: webBase}),
@@ -291,21 +290,21 @@ func (r mergePathResolver) GetByPath(ctx context.Context, scope, path string) (w
 	return subject, err
 }
 
-type orphanAdapter struct {
-	svc     *wiki.Service
-	webBase string
+type recentAdapter struct {
+	svc *wiki.Service
 }
 
-func (a orphanAdapter) Orphans(ctx context.Context, scope string) ([]web.Ref, error) {
-	subjects, err := a.svc.Orphans(ctx, scope)
+func (a recentAdapter) Recent(ctx context.Context, scope string, limit int) ([]web.SubjectRef, error) {
+	subjects, err := a.svc.Recent(ctx, scope, limit)
 	if err != nil {
 		return nil, err
 	}
-	refs := make([]web.Ref, 0, len(subjects))
+	refs := make([]web.SubjectRef, 0, len(subjects))
 	for _, subject := range subjects {
-		refs = append(refs, web.Ref{
-			Href: a.webBase + wiki.Path(subject),
+		refs = append(refs, web.SubjectRef{
+			Href: "subject/" + wiki.Path(subject),
 			Name: subject.Name,
+			Type: subject.Type,
 		})
 	}
 	return refs, nil

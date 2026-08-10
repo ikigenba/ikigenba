@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,31 +17,36 @@ import (
 
 	"wiki/internal/ask"
 	wikidb "wiki/internal/db"
-	"wiki/internal/page"
 	"wiki/internal/retrieve"
 	wikidomain "wiki/internal/wiki"
 )
 
-type stubOrphanLister struct {
-	refs   []Ref
+type stubRecentLister struct {
+	refs   []SubjectRef
 	called int
 	scopes []string
 }
 
-func (s *stubOrphanLister) Orphans(_ context.Context, scope string) ([]Ref, error) {
+type recentStoreAdapter struct {
+	store *wikidomain.SubjectStore
+}
+
+func (a recentStoreAdapter) Recent(ctx context.Context, scope string, limit int) ([]SubjectRef, error) {
+	subjects, err := a.store.Recent(ctx, scope, limit)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]SubjectRef, 0, len(subjects))
+	for _, subject := range subjects {
+		refs = append(refs, SubjectRef{Href: "subject/" + wikidomain.Path(subject), Name: subject.Name, Type: subject.Type})
+	}
+	return refs, nil
+}
+
+func (s *stubRecentLister) Recent(_ context.Context, scope string, _ int) ([]SubjectRef, error) {
 	s.called++
 	s.scopes = append(s.scopes, scope)
 	return s.refs, nil
-}
-
-type stubSubjectLister struct {
-	byScope map[string][]wikidomain.Subject
-	scopes  []string
-}
-
-func (s *stubSubjectLister) ListInScope(_ context.Context, scope, _, _ string, _ page.Params) ([]wikidomain.Subject, string, error) {
-	s.scopes = append(s.scopes, scope)
-	return s.byScope[scope], "", nil
 }
 
 type stubKeywordRetriever struct {
@@ -276,32 +282,86 @@ func TestScopedRoutesDispatchOnlyExplicitTiers(t *testing.T) {
 	}
 }
 
-func TestPublicHomeBrowsesOnlySubjectsInPathScope(t *testing.T) {
-	// R-HUFU-ASVW
+func TestPublicHomeSuggestsOnlySubjectsInPathScope(t *testing.T) {
 	conn, scopes := phase129Scopes(t)
 	defer conn.Close()
-	lister := &stubSubjectLister{byScope: map[string][]wikidomain.Subject{
-		"p1": {
-			{ID: "alpha", Name: "Alpha", NormName: "alpha", Type: "entity"},
-			{ID: "zulu", Name: "Zulu", NormName: "zulu", Type: "concept"},
-		},
-		"s1": {{ID: "secret", Name: "Secret", NormName: "secret", Type: "entity"}},
+	lister := &stubRecentLister{refs: []SubjectRef{
+		{Href: "subject/entity/alpha", Name: "Alpha", Type: "entity"},
+		{Href: "subject/concept/zulu", Name: "Zulu", Type: "concept"},
 	}}
 	rec := httptest.NewRecorder()
-	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithSubjectLister(lister)).
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithRecentLister(lister)).
 		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/p1/", nil))
 
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) {
 		t.Fatalf("public home status=%d missing search form: %s", rec.Code, body)
 	}
-	alpha := `<a href="/srv/wiki/public/p1/subject/entity/alpha">Alpha</a>`
-	zulu := `<a href="/srv/wiki/public/p1/subject/concept/zulu">Zulu</a>`
+	alpha := `<a href="subject/entity/alpha">Alpha</a>`
+	zulu := `<a href="subject/concept/zulu">Zulu</a>`
 	if strings.Index(body, alpha) < 0 || strings.Index(body, zulu) < strings.Index(body, alpha) {
 		t.Fatalf("public browse links missing or out of order: %s", body)
 	}
 	if strings.Contains(body, "Secret") || len(lister.scopes) != 1 || lister.scopes[0] != "p1" {
 		t.Fatalf("public browse crossed scope: calls=%v body=%s", lister.scopes, body)
+	}
+}
+
+func TestSuggestedPagesAreSevenNewestTypedLinkedAndTierNeutral(t *testing.T) {
+	// R-HJU8-XYZQ
+	// R-HOPU-H1YI
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	store := wikidomain.NewSubjectStore(conn)
+	types := []string{"entity", "event", "concept", "entity", "event", "concept", "entity", "event"}
+	for i, typ := range types {
+		name := fmt.Sprintf("Subject %d", i)
+		if err := store.Save(context.Background(), "p1", wikidomain.Subject{ID: fmt.Sprintf("01NEWEST%02d", i), Name: name, Type: typ}); err != nil {
+			t.Fatalf("Save subject %d: %v", i, err)
+		}
+	}
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithRecentLister(recentStoreAdapter{store: store}))
+	for _, path := range []string{"/private/p1/", "/public/p1/"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		body := rec.Body.String()
+		if strings.Contains(body, "Subject 0") || strings.Count(body, `class="subject-type"`) != 7 || strings.Count(body, `<section class="suggested"`) != 1 {
+			t.Fatalf("%s did not render exactly seven newest typed suggestions: %s", path, body)
+		}
+		previous := -1
+		for i := 7; i >= 1; i-- {
+			name := fmt.Sprintf("Subject %d", i)
+			want := fmt.Sprintf(`<a href="subject/%s/subject-%d">%s</a><span class="subject-type">%s</span>`, types[i], i, name, types[i])
+			at := strings.Index(body, want)
+			if at < 0 || at < previous {
+				t.Fatalf("%s missing or misordered typed link %q: %s", path, want, body)
+			}
+			previous = at
+		}
+		tier := strings.Split(strings.Trim(path, "/"), "/")[0]
+		if !strings.Contains(body, `<base href="/srv/wiki/`+tier+`/p1/">`) {
+			t.Fatalf("%s suggestions do not resolve within their tier: %s", path, body)
+		}
+		if strings.Contains(body, "Browse subjects") {
+			t.Fatalf("%s retained browse index: %s", path, body)
+		}
+	}
+}
+
+func TestSuggestedPagesHonorScopeWall(t *testing.T) {
+	// R-HL25-BQQF
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	store := wikidomain.NewSubjectStore(conn)
+	if err := store.Save(context.Background(), "s1", wikidomain.Subject{ID: "01SCOPEA", Name: "Only Alpha", Type: "entity"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(context.Background(), "p1", wikidomain.Subject{ID: "01SCOPEB", Name: "Secret Beta", Type: "event"}); err != nil {
+		t.Fatal(err)
+	}
+	body := readSurfaceBody(t, "/private/s1/", WithScopeStore(scopes), WithRecentLister(recentStoreAdapter{store: store}))
+	if !strings.Contains(body, "Only Alpha") || strings.Contains(body, "Secret Beta") {
+		t.Fatalf("scope wall failed: %s", body)
 	}
 }
 
@@ -396,29 +456,29 @@ func TestPublicSubjectRendersSanitizedScopedLinksAndHonorsVisibility(t *testing.
 	}
 }
 
-func TestPrivateTierKeepsScopedAskAndOrphanIndex(t *testing.T) {
-	// R-HZBF-TVUO
+func TestPrivateTierKeepsScopedAskAndPublicNeverAsks(t *testing.T) {
+	// R-HPXQ-UTP7
 	conn, scopes := phase129Scopes(t)
 	defer conn.Close()
 	asker := &stubAsker{answer: ask.Answer{Found: true, Text: "Answer"}}
-	orphans := &stubOrphanLister{refs: []Ref{{Href: "subject/entity/orphan", Name: "Orphan"}}}
+	recent := &stubRecentLister{refs: []SubjectRef{{Href: "subject/entity/recent", Name: "Recent", Type: "entity"}}}
 	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes),
-		WithAsker(asker), WithOrphanLister(orphans), WithSubjectLister(&stubSubjectLister{byScope: map[string][]wikidomain.Subject{
-			"s1": {{ID: "all", Name: "All Subject", NormName: "all-subject", Type: "entity"}},
-		}}))
+		WithAsker(asker), WithRecentLister(recent), WithKeywordRetriever(&stubKeywordRetriever{}))
 
 	homeRec := httptest.NewRecorder()
 	h.ServeHTTP(homeRec, httptest.NewRequest(http.MethodGet, "/private/s1/", nil))
-	if homeRec.Code != http.StatusOK || !strings.Contains(homeRec.Body.String(), "Orphan") || strings.Contains(homeRec.Body.String(), "All Subject") {
-		t.Fatalf("private home did not keep orphan-only index: %s", homeRec.Body.String())
+	if homeRec.Code != http.StatusOK || !strings.Contains(homeRec.Body.String(), "Recent") {
+		t.Fatalf("private home did not render recent list: %s", homeRec.Body.String())
 	}
 	askRec := httptest.NewRecorder()
 	h.ServeHTTP(askRec, httptest.NewRequest(http.MethodGet, "/private/s1/?q=who+owns+it", nil))
 	if askRec.Code != http.StatusOK || asker.called != 1 || asker.scope != "s1" || asker.question != "who owns it" {
 		t.Fatalf("private Ask status=%d calls=%d scope=%q question=%q", askRec.Code, asker.called, asker.scope, asker.question)
 	}
-	if orphans.called != 1 || len(orphans.scopes) != 1 || orphans.scopes[0] != "s1" {
-		t.Fatalf("private Orphans calls=%d scopes=%v", orphans.called, orphans.scopes)
+	publicRec := httptest.NewRecorder()
+	h.ServeHTTP(publicRec, httptest.NewRequest(http.MethodGet, "/public/p1/?q=who+owns+it", nil))
+	if asker.called != 1 {
+		t.Fatalf("public search invoked Ask; total calls=%d", asker.called)
 	}
 }
 
@@ -555,16 +615,63 @@ func TestUnknownScopesRenderStyledNotFoundShell(t *testing.T) {
 	}
 }
 
-func TestHomeHandlerRendersTopLeftHomeLink(t *testing.T) {
-	// R-HOME-3U5Y
-	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
-	rec := httptest.NewRecorder()
+func TestHomeLinkUsesInjectedMountAcrossTiersAndSubjects(t *testing.T) {
+	// R-HIMC-K791
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	h := newTestHandler(t, "wiki", "v-test", "/srv/zzz/", WithScopeStore(scopes), WithPageFinder(&stubPageFinder{view: SubjectView{Title: "Page", Body: "Body"}}))
+	for _, path := range []string{"/private/s1/", "/private/s1/subject/entity/page", "/public/p1/"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		body := rec.Body.String()
+		if !strings.Contains(body, `<a class="home" href="/srv/zzz/">Home</a>`) || strings.Contains(body, `<a class="home" href="/srv/wiki/">`) {
+			t.Fatalf("%s does not use injected mount for Home: %s", path, body)
+		}
+	}
+}
 
-	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
+func TestEveryPageStateWearsHeaderContentFooterShell(t *testing.T) {
+	// R-HG6J-SNRN
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	h := newTestHandler(t, "wiki-shell", "v136", "/srv/wiki/",
+		WithScopeStore(scopes),
+		WithAsker(&stubAsker{answer: ask.Answer{Found: true, Text: "Answer"}}),
+		WithKeywordRetriever(&stubKeywordRetriever{}),
+		WithPageFinder(&stubPageFinder{view: SubjectView{Title: "Subject", Body: "Body"}}))
+	for _, path := range []string{
+		"/private/s1/",
+		"/private/s1/?q=question",
+		"/private/s1/subject/entity/item",
+		"/public/p1/",
+		"/public/p1/?q=search",
+		"/missing",
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		body := rec.Body.String()
+		header, main, footer := strings.Index(body, "<header>"), strings.Index(body, "<main>"), strings.Index(body, "<footer>")
+		if header < 0 || main <= header || footer <= main || !strings.Contains(body[header:main], `class="home"`) || !strings.Contains(body[header:main], `class="scope-selector"`) || !strings.Contains(body[footer:], "wiki-shell v136") {
+			t.Fatalf("%s lacks ordered shared shell: %s", path, body)
+		}
+	}
+}
 
-	body := rec.Body.String()
-	if !strings.Contains(body, `<a class="home" href="/">Home</a>`) {
-		t.Fatalf("body missing top-left home link to the dashboard apex: %s", body)
+func TestScopeSelectorAutoSubmitsWithNoscriptOnlyButton(t *testing.T) {
+	// R-HHEG-6FIC
+	body := readSurfaceBody(t, "/private/default/")
+	if !strings.Contains(body, `document.querySelector(".scope-selector select").addEventListener("change"`) || !strings.Contains(body, "this.form.submit()") {
+		t.Fatalf("selector lacks change-submit wiring: %s", body)
+	}
+	if !strings.Contains(body, `<noscript><button type="submit">Go</button></noscript>`) {
+		t.Fatalf("selector lacks noscript submit fallback: %s", body)
+	}
+	selectorStart := strings.Index(body, `<form class="scope-selector"`)
+	selectorEnd := strings.Index(body[selectorStart:], "</form>") + selectorStart
+	selector := body[selectorStart:selectorEnd]
+	withoutFallback := strings.Replace(selector, `<noscript><button type="submit">Go</button></noscript>`, "", 1)
+	if strings.Contains(withoutFallback, `button type="submit"`) {
+		t.Fatalf("selector has always-visible submit button: %s", selector)
 	}
 }
 
@@ -677,8 +784,8 @@ func TestQuestionFormsShipBusyWiringWithoutWiringScopeSelector(t *testing.T) {
 				t.Fatalf("question page %s missing busy hook %q: %s", path, want, body)
 			}
 		}
-		if !strings.Contains(body, `<form action="select" method="get" aria-label="Select scope">`) ||
-			strings.Contains(body, `<form action="select" method="get" aria-label="Select scope" data-busy`) {
+		if !strings.Contains(body, `<form class="scope-selector" action="select" method="get" aria-label="Select scope">`) ||
+			strings.Contains(body, `<form class="scope-selector" action="select" method="get" aria-label="Select scope" data-busy`) {
 			t.Fatalf("question page %s wired the scope selector for busy behavior: %s", path, body)
 		}
 	}
@@ -856,22 +963,22 @@ func TestAskHandlerOmitsMentionSectionWhenAnswerMentionsAreEmpty(t *testing.T) {
 	}
 }
 
-func TestBlankQueryKeepsHomePageOnOrphanSeam(t *testing.T) {
+func TestBlankQueryKeepsHomePageOnRecentSeam(t *testing.T) {
 	asker := &stubAsker{}
-	lister := &stubOrphanLister{refs: []Ref{{Href: "subject/entity/acme", Name: "Acme"}}}
+	lister := &stubRecentLister{refs: []SubjectRef{{Href: "subject/entity/acme", Name: "Acme", Type: "entity"}}}
 	req := httptest.NewRequest(http.MethodGet, "/private/default/?q=+++", nil)
 	rec := httptest.NewRecorder()
 
-	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithOrphanLister(lister)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithRecentLister(lister)).ServeHTTP(rec, req)
 
 	if asker.called != 0 {
 		t.Fatalf("Ask calls = %d, want blank q to stay on home page", asker.called)
 	}
 	if lister.called != 1 {
-		t.Fatalf("Orphans calls = %d, want home page orphan seam", lister.called)
+		t.Fatalf("Recent calls = %d, want home page recent seam", lister.called)
 	}
 	if !strings.Contains(rec.Body.String(), `<a href="subject/entity/acme">Acme</a>`) {
-		t.Fatalf("home page missing orphan link: %s", rec.Body.String())
+		t.Fatalf("home page missing recent link: %s", rec.Body.String())
 	}
 }
 
@@ -901,46 +1008,45 @@ func TestAskAndSubjectPagesWrapRenderedBodiesInProse(t *testing.T) {
 	}
 }
 
-func TestHomeHandlerRendersOrphansAsMountRelativeLinksInOrder(t *testing.T) {
-	// R-ONZU-Z1EX
-	lister := &stubOrphanLister{refs: []Ref{
-		{Href: "subject/entity/acme-corp", Name: "Acme Corp"},
-		{Href: "subject/event/tulsa-launch", Name: "Tulsa Launch"},
+func TestHomeHandlerRendersRecentAsTypedMountRelativeLinksInOrder(t *testing.T) {
+	lister := &stubRecentLister{refs: []SubjectRef{
+		{Href: "subject/entity/acme-corp", Name: "Acme Corp", Type: "entity"},
+		{Href: "subject/event/tulsa-launch", Name: "Tulsa Launch", Type: "event"},
 	}}
 	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
-	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithOrphanLister(lister)).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithRecentLister(lister)).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if lister.called != 1 {
-		t.Fatalf("Orphans called = %d, want 1", lister.called)
+		t.Fatalf("Recent called = %d, want 1", lister.called)
 	}
 	first := `<a href="subject/entity/acme-corp">Acme Corp</a>`
 	second := `<a href="subject/event/tulsa-launch">Tulsa Launch</a>`
 	firstAt := strings.Index(body, first)
 	secondAt := strings.Index(body, second)
 	if firstAt < 0 || secondAt < 0 {
-		t.Fatalf("body missing orphan links %q and %q: %s", first, second, body)
+		t.Fatalf("body missing recent links %q and %q: %s", first, second, body)
 	}
 	if firstAt > secondAt {
-		t.Fatalf("orphan links out of order: %s", body)
+		t.Fatalf("recent links out of order: %s", body)
 	}
 }
 
-func TestHomeHandlerOmitsOrphanSectionWhenEmpty(t *testing.T) {
-	// R-OP7R-CT5M
+func TestHomeHandlerOmitsSuggestedSectionWhenEmpty(t *testing.T) {
+	// R-HMA1-PIH4
 	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
 	rec := httptest.NewRecorder()
 
-	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithOrphanLister(&stubOrphanLister{})).ServeHTTP(rec, req)
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithRecentLister(&stubRecentLister{})).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) {
 		t.Fatalf("body missing search form: %s", body)
 	}
-	if strings.Contains(body, "<nav") || strings.Contains(body, "<ul") {
-		t.Fatalf("body contains orphan nav/list despite empty orphans: %s", body)
+	if strings.Contains(body, "Suggested pages") || strings.Contains(body, "<ul") {
+		t.Fatalf("body contains suggested section despite empty recent list: %s", body)
 	}
 }
 

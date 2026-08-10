@@ -690,12 +690,12 @@ func TestWebSubjectLinksUseAbsoluteAuthServerBase(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 			}
-			want := `<a href="` + tc.authServer + `/srv/wiki/private/default/subject/entity/tsr">TSR</a>`
+			want := `<base href="/srv/wiki/private/default/">`
 			if !strings.Contains(rec.Body.String(), want) {
-				t.Fatalf("home page missing absolute subject link %q: %s", want, rec.Body.String())
+				t.Fatalf("home page missing scoped base %q: %s", want, rec.Body.String())
 			}
-			if strings.Contains(rec.Body.String(), `href="subject/entity/tsr"`) || strings.Contains(rec.Body.String(), `//srv/wiki/subject/`) {
-				t.Fatalf("home page rendered malformed subject base: %s", rec.Body.String())
+			if !strings.Contains(rec.Body.String(), `href="subject/entity/tsr"`) || strings.Contains(rec.Body.String(), `//srv/wiki/subject/`) {
+				t.Fatalf("home page did not compose its subject tail through the scoped base: %s", rec.Body.String())
 			}
 		})
 	}

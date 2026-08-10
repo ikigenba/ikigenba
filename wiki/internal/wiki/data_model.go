@@ -678,6 +678,35 @@ func (s *SubjectStore) List(ctx context.Context, typ, nameContains string, p pag
 	return s.ListInScope(ctx, "default", typ, nameContains, p)
 }
 
+// Recent lists the newest subjects in one scope by descending ULID order.
+func (s *SubjectStore) Recent(ctx context.Context, scope string, limit int) ([]Subject, error) {
+	if err := requireScope(ctx, s.db, scope); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		return []Subject{}, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, name, norm_name, type
+		FROM subjects
+		WHERE scope = ?
+		ORDER BY id DESC
+		LIMIT ?`, scope, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var subjects []Subject
+	for rows.Next() {
+		var subject Subject
+		if err := rows.Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type); err != nil {
+			return nil, err
+		}
+		subjects = append(subjects, subject)
+	}
+	return subjects, rows.Err()
+}
+
 // ListInScope lists subjects only after resolving the named scope.
 func (s *SubjectStore) ListInScope(ctx context.Context, scope, typ, nameContains string, p page.Params) ([]Subject, string, error) {
 	if err := requireScope(ctx, s.db, scope); err != nil {

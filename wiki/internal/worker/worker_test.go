@@ -85,7 +85,7 @@ func TestRunIntegratesPendingJobWithRealDBAndMockProvider(t *testing.T) {
 	}
 }
 
-func TestRunRequeuesOrphanedWorkingJobOnStartup(t *testing.T) {
+func TestRunRequeuesAbandonedWorkingJobOnStartup(t *testing.T) {
 	// R-MDN8-RAVN
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)

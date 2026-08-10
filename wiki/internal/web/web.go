@@ -12,7 +12,6 @@ import (
 
 	"wiki/internal/ask"
 	"wiki/internal/markdown"
-	"wiki/internal/page"
 	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
 )
@@ -29,14 +28,9 @@ type PageFinder interface {
 	PageByPath(ctx context.Context, path string) (SubjectView, error)
 }
 
-// OrphanLister lists subjects with zero inbound mentions for the home index.
-type OrphanLister interface {
-	Orphans(ctx context.Context, scope string) ([]Ref, error)
-}
-
-// SubjectLister lists the subjects available in one scope for public browsing.
-type SubjectLister interface {
-	ListInScope(context.Context, string, string, string, page.Params) ([]wiki.Subject, string, error)
+// RecentLister lists a scope's most recently added subjects, newest first.
+type RecentLister interface {
+	Recent(ctx context.Context, scope string, limit int) ([]SubjectRef, error)
 }
 
 // Mentioner lists wiki subjects mentioned by rendered answer text.
@@ -62,6 +56,13 @@ type scopedPageFinder interface {
 type Ref struct {
 	Href string
 	Name string
+}
+
+// SubjectRef is a typed mount-relative link on the scope home.
+type SubjectRef struct {
+	Href string
+	Name string
+	Type string
 }
 
 // SubjectView is the rendered public page shape consumed by subject routes.
@@ -92,17 +93,10 @@ func WithPageFinder(p PageFinder) Option {
 	}
 }
 
-// WithOrphanLister injects the home-page orphan index seam.
-func WithOrphanLister(o OrphanLister) Option {
+// WithRecentLister injects the suggested-pages seam.
+func WithRecentLister(o RecentLister) Option {
 	return func(h *handler) {
-		h.orphans = o
-	}
-}
-
-// WithSubjectLister injects the public browse-index seam.
-func WithSubjectLister(s SubjectLister) Option {
-	return func(h *handler) {
-		h.subjects = s
+		h.recent = o
 	}
 }
 
@@ -141,8 +135,7 @@ type handler struct {
 
 	asker     Asker
 	pages     PageFinder
-	orphans   OrphanLister
-	subjects  SubjectLister
+	recent    RecentLister
 	keywords  retrieve.Retriever
 	mentions  Mentioner
 	linkifier Linkifier
@@ -165,8 +158,7 @@ type pageData struct {
 	AnswerHTML  template.HTML
 	Cites       []Ref
 	Mentions    []Ref
-	Orphans     []Ref
-	Browse      []Ref
+	Recent      []SubjectRef
 	Results     []Ref
 	Searched    bool
 	Subject     SubjectView
@@ -230,19 +222,18 @@ func (h *handler) privateHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var orphans []Ref
-	if h.orphans != nil {
-		refs, err := h.orphans.Orphans(r.Context(), scope.Name)
+	var recent []SubjectRef
+	if h.recent != nil {
+		refs, err := h.recent.Recent(r.Context(), scope.Name, 7)
 		if err != nil {
-			http.Error(w, "list orphan pages", http.StatusInternalServerError)
+			http.Error(w, "list recent pages", http.StatusInternalServerError)
 			return
 		}
-		orphans = refs
-		orphans = h.scopeRefs(orphans, "private", scope.Name)
+		recent = refs
 	}
 
 	if err := h.site.Render(w, "home", h.pageData(r.Context(), "private", scope.Name, pageData{
-		Orphans: orphans,
+		Recent: recent,
 	})); err != nil {
 		http.Error(w, "render home page", http.StatusInternalServerError)
 	}
@@ -269,22 +260,13 @@ func (h *handler) publicHome(w http.ResponseWriter, r *http.Request) {
 		for _, hit := range result.Hits {
 			data.Results = append(data.Results, Ref{Href: h.subjectHref("public", scope.Name, hit.Path), Name: hit.Title})
 		}
-	} else if h.subjects != nil {
-		cursor := ""
-		for {
-			subjects, next, err := h.subjects.ListInScope(r.Context(), scope.Name, "", "", page.Params{Limit: page.MaxLimit, Cursor: cursor})
-			if err != nil {
-				http.Error(w, "list subjects", http.StatusInternalServerError)
-				return
-			}
-			for _, subject := range subjects {
-				data.Browse = append(data.Browse, Ref{Href: h.subjectHref("public", scope.Name, wiki.Path(subject)), Name: subject.Name})
-			}
-			if next == "" {
-				break
-			}
-			cursor = next
+	} else if h.recent != nil {
+		refs, err := h.recent.Recent(r.Context(), scope.Name, 7)
+		if err != nil {
+			http.Error(w, "list recent pages", http.StatusInternalServerError)
+			return
 		}
+		data.Recent = refs
 	}
 	if err := h.site.Render(w, "home", h.pageData(r.Context(), "public", scope.Name, data)); err != nil {
 		http.Error(w, "render home page", http.StatusInternalServerError)
