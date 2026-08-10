@@ -39,7 +39,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D41 → `project/design/D41.md` — The header-bar Home link targets the wiki's own landing — owns R-HIMC-K791
 - D42 → `project/design/D42.md` — Web read surface: foundation (routes, base-href, package shape, seam injection) — owns R-WC29-XALJ, R-WDA6-B2C8, R-WFPZ-2LTM, R-WGXV-GDKB
 - D43 → `project/design/D43.md` — The home / reset page (`GET /{$}`, no `q`) — none — composition (proof via D80/D81 ids)
-- D44 → `project/design/D44.md` — The ask result page (`GET /{$}` with `?q=…`) + the `MentionsIn` seam — owns R-ARN9-5YPS, R-AU31-XI76, R-AVAY-B9XV, R-AWIU-P1OK, R-NPVU-26CX, R-AXQR-2TF9, R-8FQU-M1J4
+- D44 → `project/design/D44.md` — The ask result page (`GET /{$}` with `?q=…`) + the `MentionsIn` seam — owns R-ARN9-5YPS, R-AU31-XI76, R-AVAY-B9XV, R-AWIU-P1OK, R-NPVU-26CX, R-AXQR-2TF9, R-8FQU-M1J4, R-2L34-0E1U, R-2MB0-E5SJ
 - D45 → `project/design/D45.md` — The subject page (`GET /subject/{type}/{slug}`) — owns R-PH2F-47LB, R-PIAB-HZC0, R-PJI7-VR2P, R-PLY0-NAK3, R-NONX-OEM8, R-PODT-EU1H, R-8GYQ-ZT9T, R-Y5AQ-HXAR
 - D47 → `project/design/D47.md` — nginx: session-gate the whole human surface (root + `/subject/` + `/static/`) — none — structural
 - D48 → `project/design/D48.md` — The markdown → sanitized-HTML rendering seam (`internal/markdown`) — owns R-SS0J-U7PG, R-ST8G-7ZG5, R-SUGC-LR6U, R-SVO8-ZIXJ, R-SWW5-DAO8, R-SY41-R2EX, R-SZBY-4U5M, R-T0JU-ILWB, R-T1RQ-WDN0, R-T2ZN-A5DP
@@ -120,6 +120,8 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-22JI-6KW7 → D31 (`project/design/D31.md`)
 - R-23RE-KCMW → D31 (`project/design/D31.md`)
 - R-24ZA-Y4DL → D31 (`project/design/D31.md`)
+- R-2L34-0E1U → D44 (`project/design/D44.md`)
+- R-2MB0-E5SJ → D44 (`project/design/D44.md`)
 - R-2MYX-Y4PN → D80 (`project/design/D80.md`)
 - R-2O6U-BWGC → D80 (`project/design/D80.md`)
 - R-2PEQ-PO71 → D80 (`project/design/D80.md`)
