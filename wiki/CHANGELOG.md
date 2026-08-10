@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.23.0 — 2026-08-10
+
+- Every wiki page now wears a shared shell: a boxed, top-down layout with a header bar carrying a Home control (back to the wiki's own landing) and a compact scope selector that switches scope the moment you pick one.
+- Scope home pages show **Suggested pages** — the scope's seven most recently added pages, newest first — on both the signed-in and public surfaces, replacing the old orphan-only and browse-all lists (everything stays findable by search).
+- The question form is restyled to match the suite's design language: a proper primary Ask/Search button beside the input instead of a fused strip.
+
 ## v0.22.0 — 2026-08-10
 
 - Compiled pages are clean article prose: no inline job-id citation markers, no internal ids, and leads that describe the subject in plain language instead of database terms; a sanitizer guarantees no bracketed id survives.
