@@ -12,7 +12,6 @@ matches only phase lines.
 
 Next phase: 52
 
-- Phase 49 ⬜ realizes R-VKP5-N8HN, R-VLX2-108C, R-VS0J-XUXT — static foundation of the wiki shell: system fonts, shell CSS, logo
 - Phase 50 ⬜ realizes R-VH1G-HX9K, R-VI9C-VP09, R-VJH9-9GQY, R-VVO9-365W, R-VWW5-GXWL — shell templates, the home service directory, and the install page
 - Phase 51 ⬜ realizes R-VN4Y-ERZ1, R-VOCU-SJPQ, R-VQSN-K374, R-VT8G-BMOI, R-VUGC-PEF7 — metrics, profile, authorize, and show-once pages adopt the shell
 
