@@ -102,7 +102,7 @@ func TestAllFoldersHaveValidDisjointCases(t *testing.T) {
 }
 
 func TestCompileGateFixturesArePresent(t *testing.T) {
-	for _, name := range []string{"input.txt", "gold.json", "expected.json", "clean.json", "over-cap.json", "invented-citation.json", "malformed.json"} {
+	for _, name := range []string{"input.txt", "gold.json", "expected.json", "clean.json", "over-cap.json", "leaked-id.json", "malformed.json"} {
 		assertNonEmptyFile(t, filepath.Join("compile", "fixtures", "gates", name))
 	}
 }
@@ -113,6 +113,12 @@ func TestCompileScoreAppliesReproducibleDeterministicGates(t *testing.T) {
 	fixture := filepath.Join("compile", "fixtures", "gates")
 	var expected map[string]float64
 	readJSON(t, filepath.Join(fixture, "expected.json"), &expected)
+	expectedGates := map[string]map[string]float64{
+		"clean":     {"shape": 1, "length": 1, "leaked_id": 1},
+		"over_cap":  {"shape": 1, "length": 0, "leaked_id": 1},
+		"leaked_id": {"shape": 1, "length": 1, "leaked_id": 0},
+		"malformed": {"shape": 0, "length": 0, "leaked_id": 0},
+	}
 
 	for _, candidate := range []struct {
 		name string
@@ -120,7 +126,7 @@ func TestCompileScoreAppliesReproducibleDeterministicGates(t *testing.T) {
 	}{
 		{name: "clean", file: "clean.json"},
 		{name: "over_cap", file: "over-cap.json"},
-		{name: "invented_citation", file: "invented-citation.json"},
+		{name: "leaked_id", file: "leaked-id.json"},
 		{name: "malformed", file: "malformed.json"},
 	} {
 		t.Run(candidate.name, func(t *testing.T) {
@@ -130,8 +136,17 @@ func TestCompileScoreAppliesReproducibleDeterministicGates(t *testing.T) {
 			if !closeEnough(first.Score, want) {
 				t.Fatalf("score = %v, want hand-computed %v", first.Score, want)
 			}
+			if !reflect.DeepEqual(first.Gates, expectedGates[candidate.name]) {
+				t.Fatalf("gates = %v, want %v", first.Gates, expectedGates[candidate.name])
+			}
 			if first.Score != second.Score || first.GateScore != second.GateScore || !reflect.DeepEqual(first.Gates, second.Gates) {
 				t.Fatalf("repeated scores differ: first=%+v second=%+v", first, second)
+			}
+			if candidate.name == "clean" && first.Score != 1 {
+				t.Fatalf("clean fixture did not pass every gate: %+v", first)
+			}
+			if candidate.name != "clean" && first.Score >= 1 {
+				t.Fatalf("invalid fixture was not floored: %+v", first)
 			}
 		})
 	}

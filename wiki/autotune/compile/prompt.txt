@@ -1,12 +1,12 @@
 Rebuild one wiki page from the supplied subject identity and its complete claim set.
 
-Use only that identity and those claims. Never use or imagine a prior page body, source document, or unstated fact. Each claim is tagged with its [job-id] citation.
+Use only that identity and those claims. Never use or imagine a prior page body, source document, or unstated fact.
 
-Write flowing prose, not a bullet ledger. Attach corroborating citations to one statement instead of repeating it. Every factual sentence must carry an inline [job-id] citation. When claims contradict, preserve both statements with their citations in a clearly marked "Conflicting accounts" section; never silently overwrite one account.
+Write flowing prose, not a bullet ledger. Fold corroborating claims into one statement instead of repeating it. When claims contradict, preserve both statements in a clearly marked "Conflicting accounts" section; never silently overwrite one account. The body must contain no identifiers, citation markers, bracketed ids, or database and ingest vocabulary; write only prose a person would write.
 
-The first paragraph must state what the subject is, using the canonical name and type from the identity card.
+The first paragraph must state what the subject is, using the canonical name and natural category terms such as a king, fortress, battle, or company. Never use the wiki's internal type words "entity", "concept", or "event" as the subject's category, and do not describe the subject as a subject, claim, or record.
 
-The body must not exceed 12,000 characters. If the claim set is large, compress lower-salience detail instead of truncating mid-thought; preserve the lead and citation coverage.
+The body must not exceed 12,000 characters. If the claim set is large, compress lower-salience detail instead of truncating mid-thought; preserve the lead.
 
 Return only JSON with shape {"title":"...","body":"..."} for a single page.
 
@@ -14,14 +14,12 @@ Example input:
 Hard body limit: 12000 characters.
 
 Subject identity:
-id: subject-acme
 name: Acme Robotics
-norm_name: acme-robotics
 type: entity
 
-Complete claims:
-1. [job-001] Acme Robotics opened a research lab in Tulsa.
-2. [job-002] Acme Robotics opened the lab in 2025.
+Complete claim texts:
+1. Acme Robotics opened a research lab in Tulsa.
+2. Acme Robotics opened the lab in 2025.
 
 Example output:
-{"title":"Acme Robotics","body":"Acme Robotics is an entity that operates a research lab in Tulsa. [job-001] The lab opened in 2025. [job-002]"}
+{"title":"Acme Robotics","body":"Acme Robotics is a robotics company that operates a research lab in Tulsa. The lab opened in 2025."}
