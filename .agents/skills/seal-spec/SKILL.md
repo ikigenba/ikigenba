@@ -62,8 +62,9 @@ operator-invoked step after the spec exists.)
    references those facts instead of re-deriving them. When the codebase and
    existing docs already supply everything, omit this step entirely.
 4. **Design — decide, mint, record.** For each new/changed behavior make the
-   architectural call yourself (seams, interfaces, types, naming, test
-   strategy). **Mint ids with `idgen -n <count> -p R` before writing them.**
+   architectural call yourself (seams, interfaces, types, naming, error
+   surface — which failures return errors, which panic, and what handling each
+   means for the caller — and test strategy). **Mint ids with `idgen -n <count> -p R` before writing them.**
    (`idgen` is this repository's own id-minting CLI, built from its source:
    `-n` is how many ids to mint, `-p R` sets the `R-` prefix design ids use.)
    Write/rewrite the affected `DNN.md` (new Decision → new file; changed
