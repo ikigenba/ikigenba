@@ -71,7 +71,16 @@ func New(store *prompt.Store, sb *sandbox.Manager, gate *admit.Gate, ttl time.Du
 		ttl:           ttl,
 		buildProvider: provider.Build,
 		discover: func(ctx context.Context, ownerID, ownerEmail, promptID, correlationID string) []agentkit.MCPServer {
-			return suite.Discover(ctx, manifestRoot, ownerID, ownerEmail, promptID, correlationID)
+			peers := suite.Discover(ctx, manifestRoot, ownerID, ownerEmail, promptID, correlationID)
+			servers := make([]agentkit.MCPServer, len(peers))
+			for i, peer := range peers {
+				servers[i] = agentkit.MCPServer{
+					Name:    "ikigenba_" + peer.Name,
+					URL:     peer.BaseURL,
+					Headers: peer.Headers,
+				}
+			}
+			return servers
 		},
 		sourcePortAllowed: sourcePortAllowed,
 		shareBaseURL:      shareBaseURL,

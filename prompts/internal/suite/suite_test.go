@@ -3,20 +3,25 @@ package suite
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sync"
 	"testing"
 
 	"eventplane/correlation"
-	"github.com/ikigenba/agentkit"
+	"prompts/internal/mcpclient"
 	"registry"
 )
 
-func TestDiscoverMapsInventoryToPrefixedMCPServers(t *testing.T) {
+func TestDiscoverMapsInventoryToBarePeers(t *testing.T) {
+	// R-ORZ1-QIWX
 	// R-ZDZU-IC81
 	// R-EF0V-TP9R
 	root := t.TempDir()
@@ -24,33 +29,39 @@ func TestDiscoverMapsInventoryToPrefixedMCPServers(t *testing.T) {
 	writeManifest(t, root, "gmail")
 	writeManifest(t, root, "prompts")
 
-	servers := Discover(context.Background(), root, "owner-1", "owner@example.com", "prompt-1", "")
-	if len(servers) != 2 {
-		t.Fatalf("Discover returned %d servers, want 2: %#v", len(servers), servers)
+	peers := Discover(context.Background(), root, "owner-1", "owner@example.com", "prompt-1", "")
+	if len(peers) != 2 {
+		t.Fatalf("Discover returned %d peers, want 2: %#v", len(peers), peers)
 	}
-	byName := map[string]agentkit.MCPServer{}
-	for _, server := range servers {
-		byName[server.Name] = server
-		if server.Headers["X-Owner-Id"] != "owner-1" || server.Headers["X-Owner-Email"] != "owner@example.com" || server.Headers["X-Client-Id"] != "prompts:prompt-1" {
-			t.Fatalf("headers for %q = %#v", server.Name, server.Headers)
+	byName := make(map[string]Peer, len(peers))
+	for _, peer := range peers {
+		byName[peer.Name] = peer
+		wantHeaders := map[string]string{
+			"X-Owner-Id":    "owner-1",
+			"X-Owner-Email": "owner@example.com",
+			"X-Client-Id":   "prompts:prompt-1",
+		}
+		if !maps.Equal(peer.Headers, wantHeaders) {
+			t.Fatalf("headers for %q = %#v, want %#v", peer.Name, peer.Headers, wantHeaders)
 		}
 	}
 	for _, service := range []string{"crm", "gmail"} {
-		server, ok := byName["ikigenba_"+service]
+		peer, ok := byName[service]
 		if !ok {
-			t.Fatalf("missing prefixed server for %q: %#v", service, servers)
+			t.Fatalf("missing bare peer for %q: %#v", service, peers)
 		}
 		want := registry.BaseURL(service) + "/mcp"
-		if server.URL != want {
-			t.Fatalf("%s URL = %q, want %q", service, server.URL, want)
+		if peer.BaseURL != want {
+			t.Fatalf("%s BaseURL = %q, want %q", service, peer.BaseURL, want)
 		}
 	}
-	if _, ok := byName["ikigenba_prompts"]; ok {
-		t.Fatalf("Discover included prompts self entry: %#v", servers)
+	if _, ok := byName["prompts"]; ok {
+		t.Fatalf("Discover included prompts self entry: %#v", peers)
 	}
 }
 
 func TestDiscoverCorrelationHeaderPresentExactlyOrAbsent(t *testing.T) {
+	// R-P5DX-Y02K
 	// R-HPLU-D8WR
 	root := t.TempDir()
 	writeManifest(t, root, "crm")
@@ -59,114 +70,190 @@ func TestDiscoverCorrelationHeaderPresentExactlyOrAbsent(t *testing.T) {
 	const correlationID = "chain-X"
 	withChain := Discover(context.Background(), root, "owner-1", "owner@example.com", "prompt-1", correlationID)
 	if len(withChain) != 2 {
-		t.Fatalf("Discover with chain returned %d servers, want 2", len(withChain))
+		t.Fatalf("Discover with chain returned %d peers, want 2", len(withChain))
 	}
-	for _, server := range withChain {
+	for _, peer := range withChain {
 		want := map[string]string{
 			"X-Owner-Id":       "owner-1",
 			"X-Owner-Email":    "owner@example.com",
 			"X-Client-Id":      "prompts:prompt-1",
 			correlation.Header: correlationID,
 		}
-		if !maps.Equal(server.Headers, want) {
-			t.Fatalf("headers for %q = %#v, want %#v", server.Name, server.Headers, want)
+		if !maps.Equal(peer.Headers, want) {
+			t.Fatalf("headers for %q = %#v, want %#v", peer.Name, peer.Headers, want)
 		}
 	}
 
 	withoutChain := Discover(context.Background(), root, "owner-1", "owner@example.com", "prompt-1", "")
-	for _, server := range withoutChain {
-		if value, ok := server.Headers[correlation.Header]; ok {
-			t.Fatalf("headers for %q contain %s=%q, want key absent", server.Name, correlation.Header, value)
+	for _, peer := range withoutChain {
+		if value, ok := peer.Headers[correlation.Header]; ok {
+			t.Fatalf("headers for %q contain %s=%q, want key absent", peer.Name, correlation.Header, value)
 		}
 	}
 }
 
-func TestDiscoverAttachmentQualifiesAndDispatchesBareMCPTool(t *testing.T) {
+func TestPeerHeadersAreInjectedByRealClient(t *testing.T) {
 	// R-ZF7Q-W3YQ
 	// R-HS1N-4SE5
-	root := t.TempDir()
-	writeManifest(t, root, "crm")
-	const correlationID = "chain-X"
-	servers := Discover(context.Background(), root, "owner-1", "owner@example.com", "prompt-1", correlationID)
+	assertPeerHeadersInjected(t)
+}
 
-	var calledName string
-	gotHeaders := make(map[string]http.Header)
-	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			JSONRPC string          `json:"jsonrpc"`
-			ID      json.RawMessage `json:"id"`
-			Method  string          `json:"method"`
-			Params  json.RawMessage `json:"params"`
+func TestCatalogUsesFirstSentenceAndPreservesPeerOrder(t *testing.T) {
+	// R-OT6Y-4ANM
+	peers := []Peer{{Name: "gmail"}, {Name: "crm"}}
+	instructions := map[string]string{
+		"gmail": "Send and search email. Use exact addresses when possible.",
+		"crm":   "Manage customer records! Changes are audited.",
+	}
+
+	got := Catalog(context.Background(), peers, func(peer Peer) InstructionLister {
+		return instructionStub{instructions: instructions[peer.Name]}
+	})
+	want := []CatalogEntry{
+		{Name: "gmail", Summary: "Send and search email."},
+		{Name: "crm", Summary: "Manage customer records!"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Catalog = %#v, want %#v", got, want)
+	}
+}
+
+func TestCatalogKeepsRowWhenPeerRefusesConnection(t *testing.T) {
+	// R-OUEU-I2EB
+	healthy := newInstructionServer(t, "Healthy peer answers. More detail follows.", nil)
+	defer healthy.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadURL := "http://" + listener.Addr().String() + "/mcp"
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	peers := []Peer{
+		{Name: "dead", BaseURL: deadURL},
+		{Name: "healthy", BaseURL: healthy.URL + "/mcp"},
+	}
+	got := Catalog(context.Background(), peers, func(peer Peer) InstructionLister {
+		return mcpclient.New(healthy.Client(), peer.BaseURL, peer.Headers)
+	})
+	want := []CatalogEntry{
+		{Name: "dead", Summary: ""},
+		{Name: "healthy", Summary: "Healthy peer answers."},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Catalog = %#v, want both rows %#v", got, want)
+	}
+}
+
+func TestCatalogFetchesPeersConcurrently(t *testing.T) {
+	peers := []Peer{{Name: "crm"}, {Name: "gmail"}}
+	started := make(chan string, len(peers))
+	release := make(chan struct{})
+	done := make(chan []CatalogEntry, 1)
+	go func() {
+		done <- Catalog(context.Background(), peers, func(peer Peer) InstructionLister {
+			return instructionStub{instructions: peer.Name + " works.", started: started, release: release, name: peer.Name}
+		})
+	}()
+
+	seen := make(map[string]bool, len(peers))
+	for range peers {
+		seen[<-started] = true
+	}
+	close(release)
+	got := <-done
+	if !seen["crm"] || !seen["gmail"] || len(got) != 2 {
+		t.Fatalf("concurrent starts = %#v, entries = %#v", seen, got)
+	}
+}
+
+func assertPeerHeadersInjected(t *testing.T) {
+	t.Helper()
+	wantHeaders := map[string]string{
+		"X-Owner-Id":       "owner-1",
+		"X-Owner-Email":    "owner@example.com",
+		"X-Client-Id":      "prompts:prompt-1",
+		correlation.Header: "chain-X",
+	}
+	var mu sync.Mutex
+	seen := make([]http.Header, 0, 2)
+	peerServer := newInstructionServer(t, "Peer instructions.", func(header http.Header) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen = append(seen, header)
+	})
+	defer peerServer.Close()
+
+	peer := Peer{Name: "crm", BaseURL: peerServer.URL + "/mcp", Headers: wantHeaders}
+	instructions, err := mcpclient.New(peerServer.Client(), peer.BaseURL, peer.Headers).Instructions(context.Background())
+	if err != nil {
+		t.Fatalf("Instructions: %v", err)
+	}
+	if instructions != "Peer instructions." {
+		t.Fatalf("instructions = %q", instructions)
+	}
+	for i, header := range seen {
+		for name, value := range wantHeaders {
+			if got := header.Get(name); got != value {
+				t.Fatalf("request %d header %s = %q, want %q", i, name, got, value)
+			}
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode MCP request: %v", err)
+	}
+}
+
+type instructionStub struct {
+	instructions string
+	err          error
+	started      chan<- string
+	release      <-chan struct{}
+	name         string
+}
+
+func (s instructionStub) Instructions(context.Context) (string, error) {
+	if s.started != nil {
+		s.started <- s.name
+		<-s.release
+	}
+	return s.instructions, s.err
+}
+
+func newInstructionServer(t *testing.T, instructions string, observe func(http.Header)) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if observe != nil {
+			observe(r.Header.Clone())
 		}
-		gotHeaders[req.Method] = r.Header.Clone()
-		w.Header().Set("Content-Type", "application/json")
-		switch req.Method {
-		case "initialize":
-			writeRPCResult(t, w, req.ID, map[string]any{"protocolVersion": "2025-11-25"})
-		case "notifications/initialized":
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		if request.Method == "notifications/initialized" {
 			w.WriteHeader(http.StatusAccepted)
-		case "tools/list":
-			writeRPCResult(t, w, req.ID, map[string]any{"tools": []any{map[string]any{"name": "health", "description": "Health", "inputSchema": map[string]any{"type": "object"}}}})
-		case "tools/call":
-			var params struct {
-				Name string `json:"name"`
-			}
-			if err := json.Unmarshal(req.Params, &params); err != nil {
-				t.Fatalf("decode call params: %v", err)
-			}
-			calledName = params.Name
-			writeRPCResult(t, w, req.ID, map[string]any{"content": []any{map[string]any{"type": "text", "text": "ok"}}})
+			return
+		}
+		if request.Method != "initialize" {
+			t.Errorf("method = %q, want initialize", request.Method)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"jsonrpc": "2.0",
+			"id":      request.ID,
+			"result": map[string]any{
+				"protocolVersion": "2025-11-25",
+				"instructions":    instructions,
+			},
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
 		}
 	}))
-	defer peer.Close()
-	servers[0].URL = peer.URL
-
-	provider := &recordingProvider{}
-	provider.rounds = []*agentkit.RoundTrip{
-		agentkit.NewRoundTrip(agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.ToolUseBlock{ID: "call-1", Name: "ikigenba_crm_health", Input: json.RawMessage(`{}`)}}}, agentkit.FinishToolUse, agentkit.Usage{}, nil, nil, 0, false),
-		agentkit.NewRoundTrip(agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: "done"}}}, agentkit.FinishStop, agentkit.Usage{}, nil, nil, 0, false),
-	}
-	conv := &agentkit.Conversation{Provider: provider, Model: "test", MCPServers: servers}
-	stream := conv.Send(context.Background(), "check")
-	for range stream.Events() {
-	}
-	if err := stream.Err(); err != nil {
-		t.Fatalf("Conversation.Send: %v", err)
-	}
-	if len(provider.requests) == 0 || len(provider.requests[0].Tools) != 1 || provider.requests[0].Tools[0].Name() != "ikigenba_crm_health" {
-		t.Fatalf("provider tools = %#v, want ikigenba_crm_health", provider.requests)
-	}
-	if calledName != "health" {
-		t.Fatalf("tools/call name = %q, want bare health", calledName)
-	}
-	for _, method := range []string{"tools/list", "tools/call"} {
-		headers, ok := gotHeaders[method]
-		if !ok {
-			t.Fatalf("peer did not receive %s; methods = %#v", method, gotHeaders)
-		}
-		if headers.Get("X-Owner-Id") != "owner-1" || headers.Get("X-Owner-Email") != "owner@example.com" || headers.Get("X-Client-Id") != "prompts:prompt-1" {
-			t.Fatalf("%s identity headers = %#v", method, headers)
-		}
-		if got := headers.Get(correlation.Header); got != correlationID {
-			t.Fatalf("%s %s = %q, want %q", method, correlation.Header, got, correlationID)
-		}
-	}
-}
-
-type recordingProvider struct {
-	rounds   []*agentkit.RoundTrip
-	requests []*agentkit.Request
-}
-
-func (p *recordingProvider) Identity() agentkit.Identity { return agentkit.Identity{Provider: "fake"} }
-func (p *recordingProvider) RoundTrip(_ context.Context, req *agentkit.Request) *agentkit.RoundTrip {
-	p.requests = append(p.requests, req)
-	round := p.rounds[0]
-	p.rounds = p.rounds[1:]
-	return round
 }
 
 func writeManifest(t *testing.T, root, service string) {
@@ -182,9 +269,4 @@ func writeManifest(t *testing.T, root, service string) {
 	}
 }
 
-func writeRPCResult(t *testing.T, w http.ResponseWriter, id json.RawMessage, result any) {
-	t.Helper()
-	if err := json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result}); err != nil {
-		t.Fatal(err)
-	}
-}
+var _ InstructionLister = instructionStub{err: errors.New("unavailable")}
