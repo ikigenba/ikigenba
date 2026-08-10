@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 77
-
-- Phase 76 ⬜ realizes R-A8EU-5VUL, R-A9MQ-JNLA, R-AAUM-XFBZ, R-AC2J-B72O, R-ADAF-OYTD, R-AEIC-2QK2 — patch-semantics update and the no-empty-prompt guard
