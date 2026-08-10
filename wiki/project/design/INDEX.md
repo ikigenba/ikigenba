@@ -67,6 +67,11 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D71 → `project/design/D71.md` — The committed tune-folder workspace: `autotune/<step>/`, one per pipeline prompt — owns R-A5T0-FD39, R-A88T-6WKN, R-A9GP-KOBC
 - D72 → `project/design/D72.md` — The four scorers: deterministic where mechanical, sol-judged where prose — owns R-AAOL-YG21, R-ABWI-C7SQ, R-AD4E-PZJF, R-AECB-3RA4, R-AFK7-HJ0T, R-AGS3-VARI
 - D73 → `project/design/D73.md` — Testing-language conformance: adopt the suite contract and move the env-gated smokes into the live layer — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
+- D74 → `project/design/D74.md` — Scopes: named content partitions, the registry, and the hard wall — owns R-GSMY-FWWD, R-GTUU-TON2, R-GV2R-7GDR, R-GWAN-L84G, R-GXIJ-YZV5, R-GYQG-CRLU, R-GZYC-QJCJ, R-H169-4B38, R-H2E5-I2TX, R-H3M1-VUKM, R-H4TY-9MBB, R-H61U-NE20, R-H79R-15SP
+- D75 → `project/design/D75.md` — Scope on the MCP surface: the mandatory parameter + the four management verbs — owns R-H8HN-EXJE, R-H9PJ-SPA3, R-HAXG-6H0S, R-HC5C-K8RH, R-HDD8-Y0I6, R-HEL5-BS8V, R-HFT1-PJZK, R-HH0Y-3BQ9, R-HI8U-H3GY, R-HJGQ-UV7N
+- D76 → `project/design/D76.md` — The scoped web surface: tier + scope in every URL, the landing cookie, the selector — owns R-HKON-8MYC, R-HLWJ-MEP1, R-HN4G-06FQ, R-HOCC-DY6F, R-HQS5-5HNT, R-HS01-J9EI, R-HT7X-X157, R-I0JC-7NLD
+- D77 → `project/design/D77.md` — nginx: the two scope tiers (public ungated, private session-gated) — none — structural
+- D78 → `project/design/D78.md` — The public tier is read-only: browse + keyword search, no inference — owns R-HUFU-ASVW, R-HVNQ-OKML, R-HWVN-2CDA, R-HY3J-G43Z, R-HZBF-TVUO
 
 ## Verification ids → Decision
 
@@ -239,9 +244,45 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-GHQC-OEYL → D19 (`project/design/D19.md`)
 - R-GK65-FYFZ → D19 (`project/design/D19.md`)
 - R-GLE1-TQ6O → D19 (`project/design/D19.md`)
+- R-GSMY-FWWD → D74 (`project/design/D74.md`)
+- R-GTUU-TON2 → D74 (`project/design/D74.md`)
+- R-GV2R-7GDR → D74 (`project/design/D74.md`)
+- R-GWAN-L84G → D74 (`project/design/D74.md`)
+- R-GXIJ-YZV5 → D74 (`project/design/D74.md`)
+- R-GYQG-CRLU → D74 (`project/design/D74.md`)
+- R-GZYC-QJCJ → D74 (`project/design/D74.md`)
+- R-H169-4B38 → D74 (`project/design/D74.md`)
+- R-H2E5-I2TX → D74 (`project/design/D74.md`)
+- R-H3M1-VUKM → D74 (`project/design/D74.md`)
+- R-H4TY-9MBB → D74 (`project/design/D74.md`)
+- R-H61U-NE20 → D74 (`project/design/D74.md`)
+- R-H79R-15SP → D74 (`project/design/D74.md`)
+- R-H8HN-EXJE → D75 (`project/design/D75.md`)
+- R-H9PJ-SPA3 → D75 (`project/design/D75.md`)
+- R-HAXG-6H0S → D75 (`project/design/D75.md`)
+- R-HC5C-K8RH → D75 (`project/design/D75.md`)
+- R-HDD8-Y0I6 → D75 (`project/design/D75.md`)
+- R-HEL5-BS8V → D75 (`project/design/D75.md`)
+- R-HFT1-PJZK → D75 (`project/design/D75.md`)
+- R-HH0Y-3BQ9 → D75 (`project/design/D75.md`)
+- R-HI8U-H3GY → D75 (`project/design/D75.md`)
+- R-HJGQ-UV7N → D75 (`project/design/D75.md`)
+- R-HKON-8MYC → D76 (`project/design/D76.md`)
+- R-HLWJ-MEP1 → D76 (`project/design/D76.md`)
+- R-HN4G-06FQ → D76 (`project/design/D76.md`)
+- R-HOCC-DY6F → D76 (`project/design/D76.md`)
 - R-HOJB-ZR3T → D56 (`project/design/D56.md`)
 - R-HOME-3U5Y → D41 (`project/design/D41.md`)
+- R-HQS5-5HNT → D76 (`project/design/D76.md`)
+- R-HS01-J9EI → D76 (`project/design/D76.md`)
+- R-HT7X-X157 → D76 (`project/design/D76.md`)
 - R-HUDR-AWS9 → D26 (`project/design/D26.md`)
+- R-HUFU-ASVW → D78 (`project/design/D78.md`)
+- R-HVNQ-OKML → D78 (`project/design/D78.md`)
+- R-HWVN-2CDA → D78 (`project/design/D78.md`)
+- R-HY3J-G43Z → D78 (`project/design/D78.md`)
+- R-HZBF-TVUO → D78 (`project/design/D78.md`)
+- R-I0JC-7NLD → D76 (`project/design/D76.md`)
 - R-J8QP-BETB → D5 (`project/design/D05.md`)
 - R-J9YL-P6K0 → D5 (`project/design/D05.md`)
 - R-JCEE-GQ1E → D5 (`project/design/D05.md`)
