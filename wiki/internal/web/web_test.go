@@ -458,7 +458,7 @@ func TestLandingRedirectUsesKnownCookieOrDefault(t *testing.T) {
 	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes))
 	for _, tc := range []struct {
 		cookie, location string
-	}{{"team-x", "/private/team-x/"}, {"", "/private/default/"}, {"nope", "/private/default/"}} {
+	}{{"team-x", "/srv/wiki/private/team-x/"}, {"", "/srv/wiki/private/default/"}, {"nope", "/srv/wiki/private/default/"}} {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		if tc.cookie != "" {
 			req.AddCookie(&http.Cookie{Name: "wiki_scope", Value: tc.cookie})
@@ -477,7 +477,7 @@ func TestOnlySelectorSetsScopeCookieAndStaysInTier(t *testing.T) {
 	defer conn.Close()
 	pages := &stubPageFinder{view: SubjectView{Title: "Page", Body: "Body"}}
 	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithPageFinder(pages))
-	for _, tc := range []struct{ path, location string }{{"/private/s1/select?to=team-x", "/private/team-x/"}, {"/public/p1/select?to=p1", "/public/p1/"}} {
+	for _, tc := range []struct{ path, location string }{{"/private/s1/select?to=team-x", "/srv/wiki/private/team-x/"}, {"/public/p1/select?to=p1", "/srv/wiki/public/p1/"}} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
 		cookie := rec.Header().Get("Set-Cookie")

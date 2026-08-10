@@ -201,7 +201,7 @@ func (h *handler) landing(w http.ResponseWriter, r *http.Request) {
 			scope = cookie.Value
 		}
 	}
-	http.Redirect(w, r, "/private/"+scope+"/", http.StatusSeeOther)
+	http.Redirect(w, r, h.mount+"private/"+scope+"/", http.StatusSeeOther)
 }
 
 func (h *handler) selectScope(w http.ResponseWriter, r *http.Request) {
@@ -216,7 +216,7 @@ func (h *handler) selectScope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: "wiki_scope", Value: target, Path: h.mount, SameSite: http.SameSiteLaxMode})
-	http.Redirect(w, r, "/"+tier+"/"+target+"/", http.StatusSeeOther)
+	http.Redirect(w, r, h.mount+tier+"/"+target+"/", http.StatusSeeOther)
 }
 
 func (h *handler) privateHome(w http.ResponseWriter, r *http.Request) {
