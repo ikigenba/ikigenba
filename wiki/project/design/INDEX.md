@@ -36,13 +36,11 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D36 → `project/design/D36.md` — Preparing the question: one analysis call — owns R-QB7A-Z95U, R-QCF7-D0WJ, R-QDN3-QSN8, R-A0XE-WA4H
 - D38 → `project/design/D38.md` — Keep the meaning lane consistent across a merge (close the D35 merge gap) — owns R-MRG8-K2WP, R-LP5Q-9XTD, R-EV2H-6RKN, R-FM7A-D0SZ, R-WS3C-J4QB
 - D39 → `project/design/D39.md` — The human web surface: gating, embedded assets, and the exact-root mount — owns R-LAND-PG01, R-LAND-NMVR, R-LAND-CARB, R-LAND-ROOT, R-LAND-UNGT
-- D40 → `project/design/D40.md` — Conform the landing page to the cron canonical template — none — structural
-- D41 → `project/design/D41.md` — A top-left Home link to the dashboard landing page — owns R-HOME-3U5Y
+- D41 → `project/design/D41.md` — The header-bar Home link targets the wiki's own landing — owns R-HIMC-K791
 - D42 → `project/design/D42.md` — Web read surface: foundation (routes, base-href, package shape, seam injection) — owns R-WC29-XALJ, R-WDA6-B2C8, R-WFPZ-2LTM, R-WGXV-GDKB
-- D43 → `project/design/D43.md` — The home / reset page (`GET /{$}`, no `q`) — owns R-OMRY-L9O8, R-ONZU-Z1EX, R-OP7R-CT5M
+- D43 → `project/design/D43.md` — The home / reset page (`GET /{$}`, no `q`) — owns R-OMRY-L9O8
 - D44 → `project/design/D44.md` — The ask result page (`GET /{$}` with `?q=…`) + the `MentionsIn` seam — owns R-ARN9-5YPS, R-ASV5-JQGH, R-AU31-XI76, R-AVAY-B9XV, R-AWIU-P1OK, R-NPVU-26CX, R-AXQR-2TF9, R-8FQU-M1J4
 - D45 → `project/design/D45.md` — The subject page (`GET /subject/{type}/{slug}`) — owns R-PH2F-47LB, R-PIAB-HZC0, R-PJI7-VR2P, R-PKQ4-9ITE, R-PLY0-NAK3, R-NONX-OEM8, R-PODT-EU1H, R-8GYQ-ZT9T
-- D46 → `project/design/D46.md` — The orphan index: subjects with zero inbound mentions (read-time, single-pass) — owns R-QSR2-AFAD, R-QTYY-O712, R-QV6V-1YRR, R-QWER-FQIG
 - D47 → `project/design/D47.md` — nginx: session-gate the whole human surface (root + `/subject/` + `/static/`) — none — structural
 - D48 → `project/design/D48.md` — The markdown → sanitized-HTML rendering seam (`internal/markdown`) — owns R-SS0J-U7PG, R-ST8G-7ZG5, R-SUGC-LR6U, R-SVO8-ZIXJ, R-SWW5-DAO8, R-SY41-R2EX, R-SZBY-4U5M, R-T0JU-ILWB, R-T1RQ-WDN0, R-T2ZN-A5DP
 - D49 → `project/design/D49.md` — Token-based CSS for the rendered markdown element set — owns R-9EPS-LWWY, R-9FXO-ZONN
@@ -67,12 +65,14 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D71 → `project/design/D71.md` — The committed tune-folder workspace: `autotune/<step>/`, one per pipeline prompt — owns R-A5T0-FD39, R-A88T-6WKN, R-A9GP-KOBC
 - D72 → `project/design/D72.md` — The four scorers: deterministic where mechanical, sol-judged where prose — owns R-AAOL-YG21, R-ABWI-C7SQ, R-AD4E-PZJF, R-AECB-3RA4, R-AFK7-HJ0T, R-AGS3-VARI
 - D73 → `project/design/D73.md` — Testing-language conformance: adopt the suite contract and move the env-gated smokes into the live layer — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
-- D74 → `project/design/D74.md` — Scopes: named content partitions, the registry, and the hard wall — owns R-GSMY-FWWD, R-GTUU-TON2, R-GV2R-7GDR, R-GWAN-L84G, R-GXIJ-YZV5, R-GYQG-CRLU, R-GZYC-QJCJ, R-H169-4B38, R-H2E5-I2TX, R-H3M1-VUKM, R-H4TY-9MBB, R-H61U-NE20, R-H79R-15SP
+- D74 → `project/design/D74.md` — Scopes: named content partitions, the registry, and the hard wall — owns R-GSMY-FWWD, R-GTUU-TON2, R-GV2R-7GDR, R-GWAN-L84G, R-GXIJ-YZV5, R-GYQG-CRLU, R-GZYC-QJCJ, R-H2E5-I2TX, R-H3M1-VUKM, R-H4TY-9MBB, R-H61U-NE20, R-H79R-15SP
 - D75 → `project/design/D75.md` — Scope on the MCP surface: the mandatory parameter + the four management verbs — owns R-H8HN-EXJE, R-H9PJ-SPA3, R-HAXG-6H0S, R-HC5C-K8RH, R-HDD8-Y0I6, R-HEL5-BS8V, R-HFT1-PJZK, R-HH0Y-3BQ9, R-HI8U-H3GY, R-HJGQ-UV7N
 - D76 → `project/design/D76.md` — The scoped web surface: tier + scope in every URL, the landing cookie, the selector — owns R-HKON-8MYC, R-HLWJ-MEP1, R-HN4G-06FQ, R-HOCC-DY6F, R-HQS5-5HNT, R-HS01-J9EI, R-HT7X-X157, R-I0JC-7NLD
 - D77 → `project/design/D77.md` — nginx: the two scope tiers (public ungated, private session-gated) — none — structural
-- D78 → `project/design/D78.md` — The public tier is read-only: browse + keyword search, no inference — owns R-HUFU-ASVW, R-HVNQ-OKML, R-HWVN-2CDA, R-HY3J-G43Z, R-HZBF-TVUO
+- D78 → `project/design/D78.md` — The public tier is read-only: browse + keyword search, no inference — owns R-HVNQ-OKML, R-HWVN-2CDA, R-HY3J-G43Z, R-HPXQ-UTP7
 - D79 → `project/design/D79.md` — Truthful submit controls: Ask/Search labels + script-driven pending feedback — owns R-VBAY-V6II, R-VCIV-8Y97, R-VDQR-MPZW
+- D80 → `project/design/D80.md` — The page shell: boxed top-down layout, header bar, footer — owns R-HG6J-SNRN, R-HHEG-6FIC
+- D81 → `project/design/D81.md` — Suggested pages: the scope's seven newest subjects on every scope home — owns R-HJU8-XYZQ, R-HL25-BQQF, R-HMA1-PIH4, R-HOPU-H1YI
 
 ## Verification ids → Decision
 
@@ -252,7 +252,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-GXIJ-YZV5 → D74 (`project/design/D74.md`)
 - R-GYQG-CRLU → D74 (`project/design/D74.md`)
 - R-GZYC-QJCJ → D74 (`project/design/D74.md`)
-- R-H169-4B38 → D74 (`project/design/D74.md`)
 - R-H2E5-I2TX → D74 (`project/design/D74.md`)
 - R-H3M1-VUKM → D74 (`project/design/D74.md`)
 - R-H4TY-9MBB → D74 (`project/design/D74.md`)
@@ -265,24 +264,29 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-HDD8-Y0I6 → D75 (`project/design/D75.md`)
 - R-HEL5-BS8V → D75 (`project/design/D75.md`)
 - R-HFT1-PJZK → D75 (`project/design/D75.md`)
+- R-HG6J-SNRN → D80 (`project/design/D80.md`)
 - R-HH0Y-3BQ9 → D75 (`project/design/D75.md`)
+- R-HHEG-6FIC → D80 (`project/design/D80.md`)
 - R-HI8U-H3GY → D75 (`project/design/D75.md`)
+- R-HIMC-K791 → D41 (`project/design/D41.md`)
 - R-HJGQ-UV7N → D75 (`project/design/D75.md`)
+- R-HJU8-XYZQ → D81 (`project/design/D81.md`)
 - R-HKON-8MYC → D76 (`project/design/D76.md`)
+- R-HL25-BQQF → D81 (`project/design/D81.md`)
 - R-HLWJ-MEP1 → D76 (`project/design/D76.md`)
+- R-HMA1-PIH4 → D81 (`project/design/D81.md`)
 - R-HN4G-06FQ → D76 (`project/design/D76.md`)
 - R-HOCC-DY6F → D76 (`project/design/D76.md`)
 - R-HOJB-ZR3T → D56 (`project/design/D56.md`)
-- R-HOME-3U5Y → D41 (`project/design/D41.md`)
+- R-HOPU-H1YI → D81 (`project/design/D81.md`)
+- R-HPXQ-UTP7 → D78 (`project/design/D78.md`)
 - R-HQS5-5HNT → D76 (`project/design/D76.md`)
 - R-HS01-J9EI → D76 (`project/design/D76.md`)
 - R-HT7X-X157 → D76 (`project/design/D76.md`)
 - R-HUDR-AWS9 → D26 (`project/design/D26.md`)
-- R-HUFU-ASVW → D78 (`project/design/D78.md`)
 - R-HVNQ-OKML → D78 (`project/design/D78.md`)
 - R-HWVN-2CDA → D78 (`project/design/D78.md`)
 - R-HY3J-G43Z → D78 (`project/design/D78.md`)
-- R-HZBF-TVUO → D78 (`project/design/D78.md`)
 - R-I0JC-7NLD → D76 (`project/design/D76.md`)
 - R-J8QP-BETB → D5 (`project/design/D05.md`)
 - R-J9YL-P6K0 → D5 (`project/design/D05.md`)
@@ -338,8 +342,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-O1AD-MRKW → D73 (`project/design/D73.md`) (adopted from root `project/design/D23.md`)
 - R-O2IA-0JBL → D73 (`project/design/D73.md`) (adopted from root `project/design/D23.md`)
 - R-OMRY-L9O8 → D43 (`project/design/D43.md`)
-- R-ONZU-Z1EX → D43 (`project/design/D43.md`)
-- R-OP7R-CT5M → D43 (`project/design/D43.md`)
 - R-PH2F-47LB → D45 (`project/design/D45.md`)
 - R-PIAB-HZC0 → D45 (`project/design/D45.md`)
 - R-PJI7-VR2P → D45 (`project/design/D45.md`)
@@ -351,10 +353,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-QB7A-Z95U → D36 (`project/design/D36.md`)
 - R-QCF7-D0WJ → D36 (`project/design/D36.md`)
 - R-QDN3-QSN8 → D36 (`project/design/D36.md`)
-- R-QSR2-AFAD → D46 (`project/design/D46.md`)
-- R-QTYY-O712 → D46 (`project/design/D46.md`)
-- R-QV6V-1YRR → D46 (`project/design/D46.md`)
-- R-QWER-FQIG → D46 (`project/design/D46.md`)
 - R-RU0J-77HX → D3 (`project/design/D03.md`)
 - R-RV8F-KZ8M → D3 (`project/design/D03.md`)
 - R-RXO8-CIQ0 → D3 (`project/design/D03.md`)
