@@ -50,7 +50,7 @@ func signedOutIndexData(r *http.Request, returnTo string) indexData {
 func buildVersion() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
-		return "dev"
+		return "v0.0.0+dev"
 	}
 	return info.Main.Version
 }

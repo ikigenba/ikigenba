@@ -9,18 +9,12 @@
 
   <main class="page">
     <section class="section profile-summary">
-      <div class="section-head">
-        <h1>Profile</h1>
-        <span class="rule"></span>
-      </div>
+      <h2>Profile</h2>
       <p class="section-intro">Signed in as <strong>{{.Owner}}</strong>.</p>
     </section>
 
     <section class="section">
-      <div class="section-head">
-        <h2>Personal access tokens</h2>
-        <span class="rule"></span>
-      </div>
+      <h3>Personal access tokens</h3>
       <p class="section-intro">Mint a long-lived token to authenticate agents that connect directly.</p>
       <form method="POST" action="/pat" class="create-form">
         <input class="input" type="text" name="label" maxlength="48"
@@ -31,11 +25,7 @@
     </section>
 
     <section class="section grants">
-      <div class="section-head">
-        <h2>Connected MCP clients</h2>
-        <span class="rule"></span>
-        <span class="live-dot" id="grants-live" title="Updates in real time">live</span>
-      </div>
+      <h3>Connected MCP clients</h3>
       <div id="grants-block" data-stream="/grants/stream" data-fragment="/grants/fragment">
         {{template "grants_block" .Grants}}
       </div>

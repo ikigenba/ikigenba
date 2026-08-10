@@ -62,7 +62,13 @@ func (a *app) handlePATCreate() http.HandlerFunc {
 		// Buffer-render the dedicated show-once template so a render failure is a
 		// clean 500 rather than a half-written 200 that leaked a useless secret.
 		var buf bytes.Buffer
-		if err := a.tmpl.ExecuteTemplate(&buf, "pat_created", patCreated{Label: p.Label, Secret: plaintext}); err != nil {
+		if err := a.tmpl.ExecuteTemplate(&buf, "pat_created", patCreated{
+			Label:        p.Label,
+			Secret:       plaintext,
+			Owner:        owner,
+			OwnerInitial: ownerInitial(owner),
+			Version:      buildVersion(),
+		}); err != nil {
 			a.logger.Error("pat.created.render", "err", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
@@ -111,8 +117,12 @@ func (a *app) handlePATRevoke() http.HandlerFunc {
 
 // patCreated is the view model for the show-once confirmation template.
 type patCreated struct {
-	Label  string
-	Secret string
+	Label        string
+	Secret       string
+	Owner        string
+	OwnerInitial string
+	CurrentPage  string
+	Version      string
 }
 
 // patRow is the view model for one row in the PAT list block.

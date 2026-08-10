@@ -23,7 +23,7 @@ func TestProfileRouteRendersSignedInPage(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/html", ct)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "<h1>Profile</h1>") {
+	if !strings.Contains(body, "<h2>Profile</h2>") {
 		t.Errorf("profile page missing heading:\n%s", body)
 	}
 	if !strings.Contains(body, `href="/static/tokens.css"`) {
@@ -108,7 +108,7 @@ func TestProfileRedirectsSignedOutToIndex(t *testing.T) {
 	if loc := rec.Header().Get("Location"); loc != "/" {
 		t.Errorf("Location = %q, want /", loc)
 	}
-	if strings.Contains(rec.Body.String(), "<h1>Profile</h1>") {
+	if strings.Contains(rec.Body.String(), "<h2>Profile</h2>") {
 		t.Errorf("signed-out redirect rendered profile content:\n%s", rec.Body.String())
 	}
 }

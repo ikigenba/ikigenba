@@ -8,10 +8,10 @@
 
 {{define "shell_header"}}
 <header class="banner">
-  <a href="/" class="wordmark">ikigenba</a>
+  <a href="/" aria-label="Dashboard home"><img src="/static/logo.png" class="logo" alt=""></a>
   {{if .Owner}}
   <nav class="site-nav" aria-label="Dashboard">
-    <a href="/"{{if eq .CurrentPage "home"}} aria-current="page"{{end}}>Home</a>
+    <a href="/"{{if eq .CurrentPage "home"}} aria-current="page"{{end}}>Dashboard</a>
     <a href="/install"{{if eq .CurrentPage "install"}} aria-current="page"{{end}}>Install</a>
     <a href="/metrics"{{if eq .CurrentPage "metrics"}} aria-current="page"{{end}}>Metrics</a>
   </nav>

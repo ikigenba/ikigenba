@@ -1,21 +1,15 @@
 {{define "pat_created"}}<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {{template "shell_head" .}}
   <title>Token created · ikigenba dashboard</title>
-  <link rel="stylesheet" href="/static/tokens.css">
-  <link rel="stylesheet" href="/static/app.css">
-  <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <header class="banner">
-    <p class="wordmark">ikigenba</p>
-  </header>
+  {{template "shell_header" .}}
 
   <main class="page">
     <section class="token-reveal">
-      <h1>Token created</h1>
+      <h2>Token created</h2>
       <p class="label-line"><span class="label">Label</span> &nbsp;<strong>{{.Label}}</strong></p>
 
       <div class="alert" role="alert">
@@ -41,6 +35,6 @@
       <p class="token-done"><a href="/profile" class="btn btn-secondary">Done</a></p>
     </section>
   </main>
-
+  {{template "shell_footer" .}}
 </body>
 </html>{{end}}

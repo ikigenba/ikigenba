@@ -192,9 +192,13 @@ func (a *app) handleAuthorize() http.HandlerFunc {
 
 			var page bytes.Buffer
 			if err := a.tmpl.ExecuteTemplate(&page, "oauth_authorize.html", struct {
-				GoogleURL string
-				GitHubURL string
-			}{GoogleURL: googleURL, GitHubURL: githubURL}); err != nil {
+				GoogleURL    string
+				GitHubURL    string
+				Owner        string
+				OwnerInitial string
+				CurrentPage  string
+				Version      string
+			}{GoogleURL: googleURL, GitHubURL: githubURL, Version: buildVersion()}); err != nil {
 				a.logger.Error("authorize.render_chooser", "err", err)
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return

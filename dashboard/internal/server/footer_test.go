@@ -34,7 +34,8 @@ func TestSignedInPagesUseShellFooterWithoutLegacySiteFooter(t *testing.T) {
 			wantFooter: true,
 		},
 		{
-			name: "PAT created",
+			name:       "PAT created",
+			wantFooter: true,
 			rec: responseFromRecorder(doForm(t, srv, "https://int.ikigenba.com/pat",
 				url.Values{"label": {"Codex on laptop"}},
 				map[string]string{

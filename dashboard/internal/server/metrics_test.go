@@ -42,7 +42,7 @@ func TestMetricsPageRendersChartsForSignedInSession(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		`<title>Metrics · ikigenba dashboard</title>`,
-		`<h1>Metrics</h1>`,
+		`<h2>Metrics</h2>`,
 		`<div id="metrics-block" data-fragment="/metrics/fragment">`,
 		`<div class="metrics-charts" aria-label="Metrics charts">`,
 		`class="metrics-chart metrics-hero-chart"`,
@@ -53,6 +53,42 @@ func TestMetricsPageRendersChartsForSignedInSession(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(body), "telemetry") {
 		t.Errorf("metrics page contains retired surface name:\n%s", body)
+	}
+}
+
+func TestMetricsChartsRenderAsResponsiveBorderedPanels(t *testing.T) {
+	srv, deps := metricsTestServer(t)
+	cookie := mintSession(t, deps, "owner@int.ikigenba.com")
+	headers := map[string]string{"Cookie": cookie.Name + "=" + cookie.Value}
+	page := do(t, srv, http.MethodGet, "https://int.ikigenba.com/metrics", headers)
+	if page.Code != http.StatusOK {
+		t.Fatalf("GET /metrics status = %d, want 200", page.Code)
+	}
+	css := do(t, srv, http.MethodGet, "https://int.ikigenba.com/static/app.css", nil)
+	if css.Code != http.StatusOK {
+		t.Fatalf("GET /static/app.css status = %d, want 200", css.Code)
+	}
+
+	// R-VUGC-PEF7
+	body := page.Body.String()
+	if got := strings.Count(body, `class="metrics-chart-slot metrics-panel"`); got != 4 {
+		t.Errorf("metrics panel count = %d, want 4:\n%s", got, body)
+	}
+	gridRule := cssRule(t, css.Body.String(), ".metrics-charts")
+	for _, declaration := range []string{"display: grid;", "grid-template-columns: repeat(2, minmax(0, 1fr));"} {
+		if !strings.Contains(gridRule, declaration) {
+			t.Errorf("metrics grid rule missing %q:\n%s", declaration, gridRule)
+		}
+	}
+	panelRule := cssRule(t, css.Body.String(), ".metrics-panel")
+	for _, declaration := range []string{"border: var(--border-width) solid var(--color-border);", "background: var(--color-surface);"} {
+		if !strings.Contains(panelRule, declaration) {
+			t.Errorf("metrics panel rule missing %q:\n%s", declaration, panelRule)
+		}
+	}
+	if !strings.Contains(css.Body.String(), "@media (max-width: 767px)") ||
+		!strings.Contains(css.Body.String(), ".metrics-charts { grid-template-columns: 1fr; }") {
+		t.Errorf("metrics grid does not stack below 768px:\n%s", css.Body.String())
 	}
 }
 

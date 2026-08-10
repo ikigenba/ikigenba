@@ -369,7 +369,7 @@ func TestAuthorizeChooserPreservesRequestWithoutMintingState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read chooser: %v", err)
 	}
-	anchors := regexp.MustCompile(`<a\s+[^>]*href="([^"]+)"[^>]*>`).FindAllStringSubmatch(string(body), -1)
+	anchors := regexp.MustCompile(`<a\s+href="([^"]+)" class="btn btn-primary btn-lg btn-accent-link">`).FindAllStringSubmatch(string(body), -1)
 	if len(anchors) != 2 {
 		t.Fatalf("chooser anchors = %d, want exactly 2; body:\n%s", len(anchors), body)
 	}
