@@ -292,7 +292,7 @@ func TestPublicHomeBrowsesOnlySubjectsInPathScope(t *testing.T) {
 		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/p1/", nil))
 
 	body := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(body, `<form action="" method="get" role="search">`) {
+	if rec.Code != http.StatusOK || !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) {
 		t.Fatalf("public home status=%d missing search form: %s", rec.Code, body)
 	}
 	alpha := `<a href="/srv/wiki/public/p1/subject/entity/alpha">Alpha</a>`
@@ -594,11 +594,93 @@ func TestHomeHandlerRendersSearchFormTargetingBase(t *testing.T) {
 	if !strings.Contains(body, `<base href="/srv/wiki/private/default/">`) {
 		t.Fatalf("body missing base href: %s", body)
 	}
-	if !strings.Contains(body, `<form action="" method="get" role="search">`) {
+	if !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) {
 		t.Fatalf("body missing GET search form with empty action: %s", body)
 	}
 	if got := strings.Count(body, `type="text" name="q"`); got != 1 {
 		t.Fatalf("q text input count = %d, want 1; body=%s", got, body)
+	}
+}
+
+func TestPrivateQuestionFormSaysAskOnHomeAndResult(t *testing.T) {
+	// R-VBAY-V6II
+	asker := &stubAsker{answer: ask.Answer{Found: true, Text: "Answer"}}
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker))
+
+	for _, path := range []string{"/private/default/", "/private/default/?q=Who+owns+this%3F"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200; body=%s", path, rec.Code, body)
+		}
+		for _, want := range []string{`aria-label="Ask this wiki"`, `<button type="submit" data-busy-label="Asking…">Ask</button>`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("private page %s missing %q: %s", path, want, body)
+			}
+		}
+		if strings.Contains(body, `data-busy-label="Searching…"`) {
+			t.Fatalf("private page %s rendered public search control: %s", path, body)
+		}
+	}
+}
+
+func TestPublicQuestionFormSaysSearchOnHomeAndResults(t *testing.T) {
+	// R-VCIV-8Y97
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithKeywordRetriever(&stubKeywordRetriever{}))
+
+	for _, path := range []string{"/public/p1/", "/public/p1/?q=red+widgets"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200; body=%s", path, rec.Code, body)
+		}
+		for _, want := range []string{`aria-label="Search this wiki"`, `<button type="submit" data-busy-label="Searching…">Search</button>`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("public page %s missing %q: %s", path, want, body)
+			}
+		}
+	}
+}
+
+func TestQuestionFormsShipBusyWiringWithoutWiringScopeSelector(t *testing.T) {
+	// R-VDQR-MPZW
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/",
+		WithScopeStore(scopes),
+		WithAsker(&stubAsker{answer: ask.Answer{Found: true, Text: "Answer"}}),
+		WithKeywordRetriever(&stubKeywordRetriever{}),
+	)
+
+	for _, path := range []string{"/private/s1/", "/private/s1/?q=question", "/public/p1/", "/public/p1/?q=query"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200; body=%s", path, rec.Code, body)
+		}
+		for _, want := range []string{
+			`role="search" data-busy`,
+			`.busy main`,
+			`.busy::after`,
+			`document.querySelectorAll("form[data-busy]")`,
+			`form.addEventListener("submit"`,
+			`button.disabled = true`,
+			`button.textContent = button.dataset.busyLabel`,
+			`document.body.classList.add("busy")`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("question page %s missing busy hook %q: %s", path, want, body)
+			}
+		}
+		if !strings.Contains(body, `<form action="select" method="get" aria-label="Select scope">`) ||
+			strings.Contains(body, `<form action="select" method="get" aria-label="Select scope" data-busy`) {
+			t.Fatalf("question page %s wired the scope selector for busy behavior: %s", path, body)
+		}
 	}
 }
 
@@ -854,7 +936,7 @@ func TestHomeHandlerOmitsOrphanSectionWhenEmpty(t *testing.T) {
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithOrphanLister(&stubOrphanLister{})).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
-	if !strings.Contains(body, `<form action="" method="get" role="search">`) {
+	if !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) {
 		t.Fatalf("body missing search form: %s", body)
 	}
 	if strings.Contains(body, "<nav") || strings.Contains(body, "<ul") {
@@ -876,7 +958,7 @@ func TestLoadedSiteRendersHomeThroughHandler(t *testing.T) {
 	if !strings.Contains(body, "<footer>wiki-surface v79-home</footer>") {
 		t.Fatalf("home page missing injected service/version footer: %s", body)
 	}
-	if !strings.Contains(body, `<form action="" method="get" role="search">`) {
+	if !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) {
 		t.Fatalf("home page missing search form: %s", body)
 	}
 }
@@ -915,7 +997,7 @@ func TestLoadedSiteRendersDistinctSubjectPageThroughHandler(t *testing.T) {
 			t.Fatalf("subject page missing %q: %s", want, subject)
 		}
 	}
-	if strings.Contains(subject, `<form action="" method="get" role="search">`) || subject == home {
+	if strings.Contains(subject, `<form action="" method="get" role="search" data-busy>`) || subject == home {
 		t.Fatalf("subject page was not distinct from home:\nsubject=%s\nhome=%s", subject, home)
 	}
 }
@@ -1058,7 +1140,7 @@ func TestHomeMuxDoesNotServeRootPageForOtherPaths(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
-		if rec.Code == http.StatusOK && strings.Contains(rec.Body.String(), `<form action="" method="get" role="search">`) {
+		if rec.Code == http.StatusOK && strings.Contains(rec.Body.String(), `<form action="" method="get" role="search" data-busy>`) {
 			t.Fatalf("%s received home page unexpectedly: status=%d body=%s", path, rec.Code, rec.Body.String())
 		}
 	}
@@ -1282,7 +1364,7 @@ func TestWebNavigationStaysRelativeBesideAbsoluteSubjectLinks(t *testing.T) {
 		if !strings.Contains(body, `<a href="https://acct.ikigenba.com/srv/wiki/subject/entity/tsr">TSR</a>`) {
 			t.Fatalf("answer page missing absolute subject link: %s", body)
 		}
-		if !strings.Contains(body, `<form action="" method="get" role="search">`) || strings.Contains(body, `action="https://acct.ikigenba.com/srv/wiki/"`) {
+		if !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) || strings.Contains(body, `action="https://acct.ikigenba.com/srv/wiki/"`) {
 			t.Fatalf("answer navigation was absolutized: %s", body)
 		}
 	})
