@@ -10,7 +10,7 @@
 # <app>/VERSION — a v-prefixed SemVer number (e.g. v0.1.2), one line. Git tags
 # are NO LONGER the version mechanism. bump reads that file, increments the
 # requested field per SemVer, writes the new v-prefixed number back, and commits
-# ONLY that file straight to main, then pushes:
+# ONLY the version and changelog files straight to main, then pushes:
 #
 #   patch  vX.Y.Z -> vX.Y.(Z+1)
 #   minor  vX.Y.Z -> vX.(Y+1).0
@@ -43,8 +43,9 @@ Flags:
   -h, --help   show this help.
 
 The current version is read from the committed file <app>/VERSION (vX.Y.Z). Git
-tags are no longer the version mechanism. Unless --dry-run, bump writes the new
-v-prefixed version, commits ONLY that file to main, and pushes origin main.
+tags are no longer the version mechanism. Unless --dry-run, bump requires the
+new version in the top CHANGELOG.md section, writes VERSION, commits exactly
+those two files to main, and pushes origin main.
 
 Next step after bumping:
   bin/ship <app>       # builds current main (HEAD); version comes from <app>/VERSION
@@ -76,7 +77,7 @@ case "$PART" in
   *) echo "!! bump field must be major, minor, or patch (got: $PART)" >&2; exit 2 ;;
 esac
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="${BUMP_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO"
 
 # Guard against typos bumping a non-existent / non-versioned service. A bumpable
@@ -124,21 +125,37 @@ echo ">> ${APP}: ${CUR_VER} -> ${NEW_VER} (${PART})"
 if [ "$DRY_RUN" = "1" ]; then
   echo ">> DRY RUN — not writing/committing/pushing. Would:"
   echo "   write ${NEW_VER} to ${VERSION_FILE}"
-  echo "   git commit -m \"${COMMIT_MSG}\" -- \"${VERSION_FILE}\""
+  echo "   git commit -m \"${COMMIT_MSG}\" -- \"${VERSION_FILE}\" \"${APP}/CHANGELOG.md\""
   echo "   would push origin main"
   echo ">> next: bin/ship ${APP}"
   exit 0
+fi
+
+# --- require the new release at the top of the changelog -------------------
+CHANGELOG_FILE="${APP}/CHANGELOG.md"
+if [ ! -f "$CHANGELOG_FILE" ]; then
+  echo "!! no ${CHANGELOG_FILE} — author its new top section for ${NEW_VER} (use --dry-run to preview), then re-run bump" >&2
+  exit 1
+fi
+
+FIRST_HEADING="$(grep -m1 '^## ' "$CHANGELOG_FILE" || true)"
+HEADING_VER=""
+if [[ "$FIRST_HEADING" =~ (^|[[:space:]])(v[0-9]+\.[0-9]+\.[0-9]+)($|[[:space:]]) ]]; then
+  HEADING_VER="${BASH_REMATCH[2]}"
+fi
+if [ "$HEADING_VER" != "$NEW_VER" ]; then
+  echo "!! ${CHANGELOG_FILE} top section must be ${NEW_VER} (found: '${HEADING_VER:-no valid version}') — author the new top section, then re-run bump" >&2
+  exit 1
 fi
 
 # --- write + path-limited commit + push ------------------------------------
 # Write the new v-prefixed version, newline-terminated.
 printf '%s\n' "$NEW_VER" > "$VERSION_FILE"
 
-# Path-limited commit: `-- <pathspec>` stages+commits ONLY this file, so any
-# other unrelated edits in the working tree are never included in the version
-# commit. (No `git add` of the whole tree.)
-git commit -m "$COMMIT_MSG" -- "$VERSION_FILE"
-echo ">> committed ${VERSION_FILE} (${NEW_VER}) at $(git rev-parse --short HEAD)"
+# Path-limited commit: `-- <pathspec>` stages+commits ONLY the release pair, so
+# unrelated edits in the working tree are never included. (No whole-tree add.)
+git commit -m "$COMMIT_MSG" -- "$VERSION_FILE" "$CHANGELOG_FILE"
+echo ">> committed ${VERSION_FILE} and ${CHANGELOG_FILE} (${NEW_VER}) at $(git rev-parse --short HEAD)"
 
 echo ">> git push origin main"
 git push origin main
