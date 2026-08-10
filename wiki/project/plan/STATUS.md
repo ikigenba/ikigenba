@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 133
-
-- Phase 132 ⬜ realizes R-HN4G-06FQ, R-HOCC-DY6F — mount-prefix the landing and selector redirect targets
