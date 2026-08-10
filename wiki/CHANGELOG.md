@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.24.0 — 2026-08-10
+
+- Subject pages carry the question box in the header, right beside the scope selector, so the next question starts from any page — the bottom "ask another question" link is gone.
+- Mentions and Mentioned by are now quiet side-by-side columns below the prose: small muted headings and links divided by a hairline rule, subordinate to the article instead of competing with it.
+- Subject-page content spans the same page width as the header and footer, and the scope home's Ask bar is centered on the page.
+
 ## v0.23.0 — 2026-08-10
 
 - Every wiki page now wears a shared shell: a boxed, top-down layout with a header bar carrying a Home control (back to the wiki's own landing) and a compact scope selector that switches scope the moment you pick one.
