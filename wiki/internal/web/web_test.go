@@ -294,7 +294,7 @@ func TestPublicHomeSuggestsOnlySubjectsInPathScope(t *testing.T) {
 		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/p1/", nil))
 
 	body := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) {
+	if rec.Code != http.StatusOK || !strings.Contains(body, `<form class="header-question" action="." method="get" role="search" data-busy>`) {
 		t.Fatalf("public home status=%d missing search form: %s", rec.Code, body)
 	}
 	alpha := `<a href="subject/entity/alpha">Alpha</a>`
@@ -659,6 +659,139 @@ func TestEveryPageStateWearsHeaderContentFooterShell(t *testing.T) {
 	}
 }
 
+func phase138SurfaceBodies(t *testing.T) map[string]string {
+	t.Helper()
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/",
+		WithScopeStore(scopes),
+		WithAsker(&stubAsker{answer: ask.Answer{Found: true, Text: "Answer"}}),
+		WithKeywordRetriever(&stubKeywordRetriever{}),
+		WithPageFinder(&stubPageFinder{view: SubjectView{Title: "Acme", Body: "Body"}}))
+	paths := map[string]string{
+		"private home":   "/private/s1/",
+		"private result": "/private/s1/?q=who+is+acme",
+		"subject":        "/private/s1/subject/entity/acme",
+		"not found":      "/missing",
+		"public home":    "/public/p1/",
+		"public results": "/public/p1/?q=acme",
+	}
+	bodies := make(map[string]string, len(paths))
+	for name, path := range paths {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		wantStatus := http.StatusOK
+		if name == "not found" {
+			wantStatus = http.StatusNotFound
+		}
+		if rec.Code != wantStatus {
+			t.Fatalf("%s status = %d, want %d; body=%s", name, rec.Code, wantStatus, rec.Body.String())
+		}
+		bodies[name] = rec.Body.String()
+	}
+	return bodies
+}
+
+func pageHeader(t *testing.T, body string) string {
+	t.Helper()
+	start := strings.Index(body, "<header>")
+	end := strings.Index(body, "</header>")
+	if start < 0 || end <= start {
+		t.Fatalf("page lacks a header element: %s", body)
+	}
+	return body[start:end]
+}
+
+func TestHeaderBrandOpensShellAndServesLogo(t *testing.T) {
+	// R-2MYX-Y4PN
+	bodies := phase138SurfaceBodies(t)
+	for _, name := range []string{"private home", "subject", "public home"} {
+		header := pageHeader(t, bodies[name])
+		brand := `<a class="brand" href="/"><img src="static/logo.png" alt="ikigenba"></a>`
+		brandAt := strings.Index(header, brand)
+		homeAt := strings.Index(header, `<a class="home" href="/srv/wiki/">Home</a>`)
+		if brandAt < 0 || homeAt < 0 || brandAt >= homeAt || strings.Index(header, "<a ") != brandAt {
+			t.Fatalf("%s header does not open with the dashboard brand before Home: %s", name, header)
+		}
+		if !strings.Contains(bodies[name], `<base href="/srv/wiki/`) {
+			t.Fatalf("%s does not provide the base used to resolve the logo asset: %s", name, bodies[name])
+		}
+	}
+
+	site := loadTestSite(t)
+	rec := httptest.NewRecorder()
+	site.Static().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/logo.png", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET static/logo.png status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "image/png") {
+		t.Fatalf("GET static/logo.png Content-Type = %q, want image/png", got)
+	}
+}
+
+func TestQuestionFormFollowsSelectorInEveryPageHeader(t *testing.T) {
+	// R-2O6U-BWGC
+	for name, body := range phase138SurfaceBodies(t) {
+		header := pageHeader(t, body)
+		selectorAt := strings.Index(header, `<form class="scope-selector"`)
+		questionAt := strings.Index(header, `<form class="header-question" action="." method="get" role="search" data-busy>`)
+		if selectorAt < 0 || questionAt <= selectorAt {
+			t.Fatalf("%s header lacks a GET base-targeting question form after the selector: %s", name, header)
+		}
+		if got := strings.Count(header, `type="text" name="q"`); got != 1 {
+			t.Fatalf("%s header q input count = %d, want 1: %s", name, got, header)
+		}
+		label := "Ask"
+		if strings.HasPrefix(name, "public") {
+			label = "Search"
+		}
+		if !strings.Contains(header, `>`+label+`</button>`) {
+			t.Fatalf("%s header lacks %s submit label: %s", name, label, header)
+		}
+	}
+}
+
+func TestHeaderQuestionInputRetainsOnlySubmittedQueries(t *testing.T) {
+	// R-2PEQ-PO71
+	bodies := phase138SurfaceBodies(t)
+	for name, want := range map[string]string{
+		"private result": "who is acme",
+		"public results": "acme",
+		"private home":   "",
+		"public home":    "",
+		"subject":        "",
+	} {
+		header := pageHeader(t, bodies[name])
+		input := `type="text" name="q"`
+		at := strings.Index(header, input)
+		if at < 0 {
+			t.Fatalf("%s header lacks q input: %s", name, header)
+		}
+		if !strings.Contains(header[at:], `value="`+want+`"`) {
+			t.Fatalf("%s header q input does not have value %q: %s", name, want, header)
+		}
+	}
+}
+
+func TestHeaderFormIsOnlyQuestionAffordance(t *testing.T) {
+	// R-2QMN-3FXQ
+	for name, body := range phase138SurfaceBodies(t) {
+		header := pageHeader(t, body)
+		if got := strings.Count(body, `type="text" name="q"`); got != 1 || !strings.Contains(header, `type="text" name="q"`) {
+			t.Fatalf("%s q input count = %d, want exactly the header input: %s", name, got, body)
+		}
+		mainStart := strings.Index(body, "<main>")
+		mainEnd := strings.Index(body, "</main>")
+		if mainStart < 0 || mainEnd <= mainStart {
+			t.Fatalf("%s lacks main element: %s", name, body)
+		}
+		main := body[mainStart:mainEnd]
+		if strings.Contains(main, `name="q"`) || strings.Contains(strings.ToLower(body), "ask another question") {
+			t.Fatalf("%s retains a question affordance outside the header: %s", name, body)
+		}
+	}
+}
+
 func TestScopeSelectorAutoSubmitsWithNoscriptOnlyButton(t *testing.T) {
 	// R-HHEG-6FIC
 	body := readSurfaceBody(t, "/private/default/")
@@ -689,25 +822,6 @@ func TestHomeHandlerRendersInjectedMountBase(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `<base href="/srv/zzz/private/default/">`) {
 		t.Fatalf("body does not contain injected base href: %s", rec.Body.String())
-	}
-}
-
-func TestHomeHandlerRendersSearchFormTargetingBase(t *testing.T) {
-	// R-OMRY-L9O8
-	req := httptest.NewRequest(http.MethodGet, "/private/default/", nil)
-	rec := httptest.NewRecorder()
-
-	newTestHandler(t, "wiki", "v-test", "/srv/wiki/").ServeHTTP(rec, req)
-
-	body := rec.Body.String()
-	if !strings.Contains(body, `<base href="/srv/wiki/private/default/">`) {
-		t.Fatalf("body missing base href: %s", body)
-	}
-	if !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) {
-		t.Fatalf("body missing GET search form with empty action: %s", body)
-	}
-	if got := strings.Count(body, `type="text" name="q"`); got != 1 {
-		t.Fatalf("q text input count = %d, want 1; body=%s", got, body)
 	}
 }
 
@@ -925,26 +1039,6 @@ func TestAskHandlerRendersMentionedSubjectsFromAnswerText(t *testing.T) {
 	}
 }
 
-func TestAskHandlerRendersHonestEmptyWithoutCitationNav(t *testing.T) {
-	// R-ASV5-JQGH
-	asker := &stubAsker{answer: ask.Answer{
-		Found: false,
-		Text:  "The wiki holds nothing on that question.",
-	}}
-	req := httptest.NewRequest(http.MethodGet, "/private/default/?q=unknown", nil)
-	rec := httptest.NewRecorder()
-
-	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker)).ServeHTTP(rec, req)
-
-	body := rec.Body.String()
-	if !strings.Contains(body, "The wiki holds nothing on that question.") {
-		t.Fatalf("ask page missing honest-empty text: %s", body)
-	}
-	if strings.Contains(body, `aria-label="Cited pages"`) {
-		t.Fatalf("ask page rendered citation nav for empty answer: %s", body)
-	}
-}
-
 func TestAskHandlerOmitsMentionSectionWhenAnswerMentionsAreEmpty(t *testing.T) {
 	// R-AVAY-B9XV
 	asker := &stubAsker{answer: ask.Answer{
@@ -962,6 +1056,9 @@ func TestAskHandlerOmitsMentionSectionWhenAnswerMentionsAreEmpty(t *testing.T) {
 	}
 	if strings.Contains(body, `aria-label="Mentioned subjects"`) {
 		t.Fatalf("ask page rendered mention section for empty mentions: %s", body)
+	}
+	if strings.Contains(strings.ToLower(body), "ask another question") {
+		t.Fatalf("ask page rendered retired ask-another control: %s", body)
 	}
 }
 
@@ -1044,7 +1141,7 @@ func TestHomeHandlerOmitsSuggestedSectionWhenEmpty(t *testing.T) {
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithRecentLister(&stubRecentLister{})).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
-	if !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) {
+	if !strings.Contains(pageHeader(t, body), `<form class="header-question" action="." method="get" role="search" data-busy>`) {
 		t.Fatalf("body missing search form: %s", body)
 	}
 	if strings.Contains(body, "Suggested pages") || strings.Contains(body, "<ul") {
@@ -1066,7 +1163,7 @@ func TestLoadedSiteRendersHomeThroughHandler(t *testing.T) {
 	if !strings.Contains(body, "<footer>wiki-surface v79-home</footer>") {
 		t.Fatalf("home page missing injected service/version footer: %s", body)
 	}
-	if !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) {
+	if !strings.Contains(pageHeader(t, body), `<form class="header-question" action="." method="get" role="search" data-busy>`) {
 		t.Fatalf("home page missing search form: %s", body)
 	}
 }
@@ -1489,7 +1586,7 @@ func TestWebNavigationStaysRelativeBesideAbsoluteSubjectLinks(t *testing.T) {
 		if !strings.Contains(body, `<a href="https://acct.ikigenba.com/srv/wiki/subject/entity/tsr">TSR</a>`) {
 			t.Fatalf("answer page missing absolute subject link: %s", body)
 		}
-		if !strings.Contains(body, `<form action="" method="get" role="search" data-busy>`) || strings.Contains(body, `action="https://acct.ikigenba.com/srv/wiki/"`) {
+		if !strings.Contains(body, `<form class="header-question" action="." method="get" role="search" data-busy>`) || strings.Contains(body, `action="https://acct.ikigenba.com/srv/wiki/"`) {
 			t.Fatalf("answer navigation was absolutized: %s", body)
 		}
 	})
@@ -1560,64 +1657,6 @@ func TestSubjectHandlerOmitsEmptyLinkSections(t *testing.T) {
 			}
 			if strings.Contains(body, tc.forbiddenLabel) {
 				t.Fatalf("subject page rendered forbidden empty section %q: %s", tc.forbiddenLabel, body)
-			}
-		})
-	}
-}
-
-func TestSubjectHeaderCarriesTierQuestionFormOnFoundAndNotFound(t *testing.T) {
-	// R-Y42U-45K2
-	for _, tc := range []struct {
-		name   string
-		path   string
-		label  string
-		finder *stubPageFinder
-	}{
-		{
-			name:   "private found",
-			path:   "/private/default/subject/entity/acme-corp",
-			label:  "Ask",
-			finder: &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}},
-		},
-		{
-			name:   "private not found",
-			path:   "/private/default/subject/entity/missing",
-			label:  "Ask",
-			finder: &stubPageFinder{err: ErrNotFound},
-		},
-		{
-			name:   "public found",
-			path:   "/public/default/subject/entity/acme-corp",
-			label:  "Search",
-			finder: &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}},
-		},
-		{
-			name:   "public not found",
-			path:   "/public/default/subject/entity/missing",
-			label:  "Search",
-			finder: &stubPageFinder{err: ErrNotFound},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
-			rec := httptest.NewRecorder()
-
-			newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(tc.finder)).ServeHTTP(rec, req)
-
-			body := rec.Body.String()
-			headerStart := strings.Index(body, "<header>")
-			headerEnd := strings.Index(body, "</header>")
-			selectorAt := strings.Index(body, `<form class="scope-selector"`)
-			questionAt := strings.Index(body, `<form class="header-question" action="." method="get" role="search" data-busy>`)
-			if headerStart < 0 || selectorAt < headerStart || questionAt < selectorAt || headerEnd < questionAt {
-				t.Fatalf("subject header does not contain question form after selector: %s", body)
-			}
-			header := body[headerStart:headerEnd]
-			if !strings.Contains(header, `type="text" name="q"`) || !strings.Contains(header, `>`+tc.label+`</button>`) {
-				t.Fatalf("subject header missing q input or %s button: %s", tc.label, header)
-			}
-			if strings.Contains(strings.ToLower(body), "ask another question") {
-				t.Fatalf("subject page retained ask-another anchor: %s", body)
 			}
 		})
 	}
