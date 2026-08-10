@@ -115,16 +115,24 @@ func aliasArgs(args []any) (string, Alias, error) {
 }
 
 func (a *AliasStore) ListMerges(ctx context.Context, p page.Params) ([]Alias, string, error) {
+	return a.ListMergesInScope(ctx, "default", p)
+}
+
+// ListMergesInScope returns merge audit rows belonging to one explicit scope.
+func (a *AliasStore) ListMergesInScope(ctx context.Context, scope string, p page.Params) ([]Alias, string, error) {
+	if err := requireScope(ctx, a.db, scope); err != nil {
+		return nil, "", err
+	}
 	cursor, err := decodeCursor(p.Cursor, 2)
 	if err != nil {
 		return nil, "", err
 	}
 	limit := p.ResolvedLimit()
-	var args []any
+	args := []any{scope}
 	query := `
 		SELECT norm_name, subject_id, name, owner_id, owner_email, created_at
 		FROM aliases
-		WHERE 1 = 1`
+		WHERE scope = ?`
 	if len(cursor) > 0 {
 		query += `
 		  AND (created_at < ? OR (created_at = ? AND norm_name < ?))`

@@ -129,6 +129,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			mergeResolver := mergePathResolver{subjects: wiki.NewSubjectStore(read)}
 			jobs := wiki.NewJobStore(conns)
 			aliases := wiki.NewAliasStore(read)
+			scopes := wiki.NewScopeStore(conns)
 			statusService := publicStatusService{service: svc}
 			rt.Handle("/", web.NewHandler(rt.Service(), rt.Version(), wiki.Mount, rt.WWW(),
 				web.WithOrphanLister(orphanAdapter{svc: svc, webBase: webBase}),
@@ -151,6 +152,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 				mcp.WithPagePathService(pageService),
 				mcp.WithMentionLinkifier(svc),
 				mcp.WithAskFunc(asker.Ask),
+				mcp.WithScopeService(scopes),
 			)
 			if err != nil {
 				return err
@@ -252,8 +254,8 @@ type jobListService struct {
 	jobs *wiki.JobStore
 }
 
-func (s jobListService) ListJobs(ctx context.Context, f mcp.JobFilter, p page.Params) ([]wiki.Job, string, error) {
-	return s.jobs.ListJobs(ctx, wiki.JobFilter{
+func (s jobListService) ListJobsInScope(ctx context.Context, scope string, f mcp.JobFilter, p page.Params) ([]wiki.Job, string, error) {
+	return s.jobs.ListJobs(ctx, scope, wiki.JobFilter{
 		Statuses: f.Statuses,
 		Kinds:    f.Kinds,
 		Since:    f.Since,
@@ -265,8 +267,8 @@ type jobCountService struct {
 	jobs *wiki.JobStore
 }
 
-func (s jobCountService) CountJobs(ctx context.Context, f mcp.JobFilter) (int, error) {
-	return s.jobs.CountJobs(ctx, wiki.JobFilter{
+func (s jobCountService) CountJobsInScope(ctx context.Context, scope string, f mcp.JobFilter) (int, error) {
+	return s.jobs.CountJobs(ctx, scope, wiki.JobFilter{
 		Statuses: f.Statuses,
 		Kinds:    f.Kinds,
 		Since:    f.Since,
@@ -331,8 +333,8 @@ type publicSubjectService struct {
 	pages    *wiki.PageStore
 }
 
-func (s publicSubjectService) List(ctx context.Context, typ, nameContains string, p page.Params) ([]publicSubject, string, error) {
-	subjects, next, err := s.subjects.List(ctx, typ, nameContains, p)
+func (s publicSubjectService) ListInScope(ctx context.Context, scope, typ, nameContains string, p page.Params) ([]publicSubject, string, error) {
+	subjects, next, err := s.subjects.ListInScope(ctx, scope, typ, nameContains, p)
 	if err != nil {
 		return nil, "", err
 	}
@@ -358,7 +360,11 @@ type pathClaimService struct {
 }
 
 func (s pathClaimService) ListBySubject(ctx context.Context, path string, p page.Params) ([]publicClaim, string, error) {
-	subject, err := s.resolver.ResolveByPath(ctx, path)
+	return s.ListBySubjectInScope(ctx, "default", path, p)
+}
+
+func (s pathClaimService) ListBySubjectInScope(ctx context.Context, scope, path string, p page.Params) ([]publicClaim, string, error) {
+	subject, err := s.resolver.ResolveByPath(ctx, scope, path)
 	if errors.Is(err, wiki.ErrSubjectNotFound) {
 		return nil, "", sql.ErrNoRows
 	}
@@ -423,21 +429,25 @@ type pathPageService struct {
 }
 
 func (s pathPageService) PageByPath(ctx context.Context, path string) (web.SubjectView, error) {
-	subject, err := s.resolver.ResolveByPath(ctx, path)
+	return s.PageByPathInScope(ctx, "default", path)
+}
+
+func (s pathPageService) PageByPathInScope(ctx context.Context, scope, path string) (web.SubjectView, error) {
+	subject, err := s.resolver.ResolveByPath(ctx, scope, path)
 	if errors.Is(err, wiki.ErrSubjectNotFound) {
 		return web.SubjectView{}, s.notFoundErr()
 	}
 	if err != nil {
 		return web.SubjectView{}, err
 	}
-	page, err := s.service.PageWithLinks(ctx, "default", subject.ID)
+	page, err := s.service.PageWithLinks(ctx, scope, subject.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return web.SubjectView{}, s.notFoundErr()
 	}
 	if err != nil {
 		return web.SubjectView{}, err
 	}
-	body, err := s.service.LinkifyMentions(ctx, "default", page.Body, s.webBase, subject.ID)
+	body, err := s.service.LinkifyMentions(ctx, scope, page.Body, s.webBase, subject.ID)
 	if err != nil {
 		return web.SubjectView{}, err
 	}

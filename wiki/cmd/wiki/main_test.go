@@ -283,7 +283,7 @@ func TestBuildSpecWiresFifteenMCPTools(t *testing.T) {
 	for _, tool := range got.Result.Tools {
 		names[tool.Name] = true
 	}
-	want := []string{"ingest", "status", "abort", "rerun", "jobs", "jobs_count", "merge", "merges", "ask", "subjects", "claims", "page", "guide", "health", "reflection"}
+	want := []string{"ingest", "status", "abort", "rerun", "jobs", "jobs_count", "merge", "merges", "ask", "subjects", "claims", "page", "scopes", "scope_create", "scope_delete", "scope_set_visibility", "guide", "health", "reflection"}
 	if len(names) != len(want) {
 		t.Fatalf("tool names = %#v, want exact %v", names, want)
 	}
@@ -347,7 +347,7 @@ func TestBuildSpecPageToolReturnsRenderedFooter(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"page",
 		"method":"tools/call",
-		"params":{"name":"page","arguments":{"subject":"entity/acme-robotics"}}
+		"params":{"name":"page","arguments":{"scope":"default","subject":"entity/acme-robotics"}}
 	}`))
 	req.Header.Set("X-Owner-Id", "owner-id")
 	req.Header.Set("X-Owner-Email", "owner@example.com")
@@ -450,15 +450,15 @@ func TestBuildSpecReadToolsReturnPublicPathsWithoutSubjectIDs(t *testing.T) {
 		},
 		{
 			name:    "subjects",
-			request: `{"jsonrpc":"2.0","id":"subjects","method":"tools/call","params":{"name":"subjects","arguments":{"type":"entity","name":"acme"}}}`,
+			request: `{"jsonrpc":"2.0","id":"subjects","method":"tools/call","params":{"name":"subjects","arguments":{"scope":"default","type":"entity","name":"acme"}}}`,
 		},
 		{
 			name:    "claims",
-			request: `{"jsonrpc":"2.0","id":"claims","method":"tools/call","params":{"name":"claims","arguments":{"subject":"entity/acme-robotics"}}}`,
+			request: `{"jsonrpc":"2.0","id":"claims","method":"tools/call","params":{"name":"claims","arguments":{"scope":"default","subject":"entity/acme-robotics"}}}`,
 		},
 		{
 			name:    "page",
-			request: `{"jsonrpc":"2.0","id":"page","method":"tools/call","params":{"name":"page","arguments":{"subject":"entity/acme-robotics"}}}`,
+			request: `{"jsonrpc":"2.0","id":"page","method":"tools/call","params":{"name":"page","arguments":{"scope":"default","subject":"entity/acme-robotics"}}}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -745,6 +745,7 @@ func TestBuildSpecMatchesDirectMCPToolSurface(t *testing.T) {
 				mcp.WithSubjectListService(surfaceWiki{}),
 				mcp.WithClaimListService(surfaceWiki{}),
 				mcp.WithPagePathService(surfaceWiki{}),
+				mcp.WithScopeService(surfaceWiki{}),
 			)
 			return err
 		},
@@ -805,7 +806,7 @@ func TestBuildSpecRoutesPageEmbeddingThroughPrompts(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"ingest",
 		"method":"tools/call",
-		"params":{"name":"ingest","arguments":{"text":"Acme Robotics opened a recorded embedding lab.","title":"Recorded lab"}}
+		"params":{"name":"ingest","arguments":{"scope":"default","text":"Acme Robotics opened a recorded embedding lab.","title":"Recorded lab"}}
 	}`)), &ingest); err != nil {
 		t.Fatalf("decode ingest response: %v", err)
 	}
@@ -875,7 +876,7 @@ func TestBuildSpecMergeRemovesLoserVectorFromLiveCache(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"merge",
 		"method":"tools/call",
-		"params":{"name":"merge","arguments":{"from":"entity/loser-subject","to":"entity/winner-subject"}}
+		"params":{"name":"merge","arguments":{"scope":"default","from":"entity/loser-subject","to":"entity/winner-subject"}}
 	}`)), &merge); err != nil {
 		t.Fatalf("decode merge response: %v", err)
 	}
@@ -888,7 +889,7 @@ func TestBuildSpecMergeRemovesLoserVectorFromLiveCache(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"ask",
 		"method":"tools/call",
-		"params":{"name":"ask","arguments":{"question":"meaning lane"}}
+		"params":{"name":"ask","arguments":{"scope":"default","question":"meaning lane"}}
 	}`)), &answer); err != nil {
 		t.Fatalf("decode ask response: %v", err)
 	}
@@ -961,7 +962,7 @@ func TestBuildSpecRoutesQueryEmbeddingThroughPrompts(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"ask",
 		"method":"tools/call",
-		"params":{"name":"ask","arguments":{"question":"Who owns the scheduler?"}}
+		"params":{"name":"ask","arguments":{"scope":"default","question":"Who owns the scheduler?"}}
 	}`)), &answer); err != nil {
 		t.Fatalf("decode ask response: %v", err)
 	}
@@ -1312,11 +1313,11 @@ func (surfaceWiki) Rerun(context.Context, string) (wiki.RerunResult, error) {
 	return wiki.RerunResult{}, nil
 }
 
-func (surfaceWiki) ListJobs(context.Context, mcp.JobFilter, paging.Params) ([]wiki.Job, string, error) {
+func (surfaceWiki) ListJobsInScope(context.Context, string, mcp.JobFilter, paging.Params) ([]wiki.Job, string, error) {
 	return []wiki.Job{{ID: "job-1", Status: wiki.JobDone}}, "", nil
 }
 
-func (surfaceWiki) CountJobs(context.Context, mcp.JobFilter) (int, error) {
+func (surfaceWiki) CountJobsInScope(context.Context, string, mcp.JobFilter) (int, error) {
 	return 1, nil
 }
 
@@ -1328,7 +1329,7 @@ func (surfaceWiki) MergeSubjects(context.Context, string, string, string) (strin
 	return "job-merge", nil
 }
 
-func (surfaceWiki) ListMerges(context.Context, paging.Params) ([]wiki.Alias, string, error) {
+func (surfaceWiki) ListMergesInScope(context.Context, string, paging.Params) ([]wiki.Alias, string, error) {
 	return []wiki.Alias{{NormName: "old acme", SubjectID: "subject-1", Name: "Old Acme", OwnerID: "owner-id", OwnerEmail: "owner@example.com", CreatedAt: "2026-06-24T12:00:00Z"}}, "", nil
 }
 
@@ -1336,7 +1337,7 @@ func (surfaceWiki) Subjects(context.Context, string, string) ([]publicSubject, e
 	return []publicSubject{{Path: "entity/acme", Type: "entity", Name: "Acme", HasPage: true}}, nil
 }
 
-func (surfaceWiki) List(context.Context, string, string, paging.Params) ([]publicSubject, string, error) {
+func (surfaceWiki) ListInScope(context.Context, string, string, string, paging.Params) ([]publicSubject, string, error) {
 	return []publicSubject{{Path: "entity/acme", Type: "entity", Name: "Acme", HasPage: true}}, "", nil
 }
 
@@ -1344,13 +1345,21 @@ func (surfaceWiki) ClaimsBySubject(context.Context, string) ([]publicClaim, erro
 	return []publicClaim{{ID: "claim-1", Text: "Claim text.", Job: "job-1"}}, nil
 }
 
-func (surfaceWiki) ListBySubject(context.Context, string, paging.Params) ([]publicClaim, string, error) {
+func (surfaceWiki) ListBySubjectInScope(context.Context, string, string, paging.Params) ([]publicClaim, string, error) {
 	return []publicClaim{{ID: "claim-1", Text: "Claim text.", Job: "job-1"}}, "", nil
 }
 
-func (surfaceWiki) PageByPath(context.Context, string) (publicPage, error) {
+func (surfaceWiki) PageByPathInScope(context.Context, string, string) (publicPage, error) {
 	return publicPage{}, nil
 }
+
+func (surfaceWiki) Create(context.Context, string) (wiki.Scope, error) { return wiki.Scope{}, nil }
+func (surfaceWiki) Get(_ context.Context, name string) (wiki.Scope, error) {
+	return wiki.Scope{Name: name, Visibility: "private"}, nil
+}
+func (surfaceWiki) List(context.Context) ([]wiki.Scope, error)          { return nil, nil }
+func (surfaceWiki) SetVisibility(context.Context, string, string) error { return nil }
+func (surfaceWiki) Delete(context.Context, string) error                { return nil }
 
 func surfaceAsk(context.Context, string, string, string) (askSurfaceAnswer, error) {
 	return askSurfaceAnswer{}, nil

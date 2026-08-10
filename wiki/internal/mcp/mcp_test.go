@@ -19,6 +19,7 @@ import (
 
 	"appkit"
 	appdb "appkit/db"
+	appkitmcp "appkit/mcp"
 	"appkit/server"
 
 	"wiki/internal/ask"
@@ -136,6 +137,7 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 		WithSubjectListService(&capturingWiki{}),
 		WithClaimListService(&capturingWiki{}),
 		WithPagePathService(&capturingWiki{}),
+		WithScopeService(testScopeService{}),
 	))
 	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"list","method":"tools/list"}`, "owner@example.com")
 
@@ -169,21 +171,25 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 		}
 	}
 	want := map[string]bool{
-		"ingest":     true,
-		"status":     true,
-		"abort":      true,
-		"rerun":      true,
-		"jobs":       true,
-		"jobs_count": true,
-		"merge":      true,
-		"merges":     true,
-		"ask":        true,
-		"subjects":   true,
-		"claims":     true,
-		"page":       true,
-		"guide":      true,
-		"health":     true,
-		"reflection": true,
+		"ingest":               true,
+		"status":               true,
+		"abort":                true,
+		"rerun":                true,
+		"jobs":                 true,
+		"jobs_count":           true,
+		"merge":                true,
+		"merges":               true,
+		"ask":                  true,
+		"subjects":             true,
+		"claims":               true,
+		"page":                 true,
+		"scopes":               true,
+		"scope_create":         true,
+		"scope_delete":         true,
+		"scope_set_visibility": true,
+		"guide":                true,
+		"health":               true,
+		"reflection":           true,
 	}
 	if len(names) != len(want) {
 		t.Fatalf("tools/list names = %#v, want exact %#v", names, want)
@@ -207,8 +213,8 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 			verbs[name] = true
 		}
 	}
-	if len(verbs) != 14 {
-		t.Fatalf("non-guide verb membership = %#v, want exactly fourteen verbs", verbs)
+	if len(verbs) != 18 {
+		t.Fatalf("non-guide verb membership = %#v, want exactly eighteen verbs", verbs)
 	}
 	if strings.Contains(Instructions, "llm_calls") || strings.Contains(guideDoc, "llm_calls") {
 		t.Fatal("initialize instructions or guide advertises retired llm_calls capability")
@@ -272,6 +278,190 @@ func TestGuideIsInputFreeSuccessfulAndDoesNotCallDomainServices(t *testing.T) {
 	}
 }
 
+func TestScopedContentToolsRequireExplicitScope(t *testing.T) {
+	// R-H8HN-EXJE
+	wiki := &capturingWiki{pathSubjects: map[string]subject{"entity/from": {ID: "from"}, "entity/to": {ID: "to"}}}
+	tools := Tools(
+		WithIngestService(wiki), WithJobStatusService(wiki), WithJobAbortService(wiki),
+		WithJobRerunService(wiki), WithJobListService(wiki), WithJobsCountService(wiki),
+		WithMergeService(wiki, wiki), WithMergeListService(wiki), WithAskFunc((&capturingAsker{}).Ask),
+		WithSubjectListService(wiki), WithClaimListService(wiki), WithPagePathService(wiki),
+		WithScopeService(testScopeService{}),
+	)
+	scoped := map[string]bool{"ingest": true, "ask": true, "subjects": true, "claims": true, "page": true, "merge": true, "merges": true, "jobs": true, "jobs_count": true}
+	unscoped := map[string]bool{"status": true, "abort": true, "rerun": true, "guide": true}
+	for _, tool := range tools {
+		properties, _ := tool.InputSchema["properties"].(map[string]any)
+		if scoped[tool.Name] {
+			if _, ok := properties["scope"]; !ok || !containsString(stringValues(tool.InputSchema["required"]), "scope") {
+				t.Fatalf("%s schema = %#v, want required scope", tool.Name, tool.InputSchema)
+			}
+			result, err := tool.Handler(context.Background(), json.RawMessage(`{}`), server.Identity{})
+			if err != nil || resultCode(result) != "validation" || !strings.Contains(resultMessage(result), "scope is required") {
+				t.Fatalf("%s missing-scope result = %#v, %v", tool.Name, result, err)
+			}
+		}
+		if unscoped[tool.Name] {
+			if _, ok := properties["scope"]; ok {
+				t.Fatalf("%s unexpectedly declares scope: %#v", tool.Name, tool.InputSchema)
+			}
+		}
+	}
+}
+
+func TestUnknownScopeReturnsTypedErrorBeforeContentCall(t *testing.T) {
+	// R-H9PJ-SPA3
+	wiki := &capturingWiki{}
+	tool := namedTool(t, Tools(WithIngestService(wiki), WithScopeService(testScopeService{})), "ingest")
+	result, err := tool.Handler(context.Background(), json.RawMessage(`{"scope":"ghost","text":"must not write"}`), server.Identity{})
+	if err != nil || resultCode(result) != "scope_not_found" || !strings.Contains(resultMessage(result), "scopes") {
+		t.Fatalf("unknown-scope result = %#v, %v", result, err)
+	}
+	if wiki.ingestText != "" {
+		t.Fatalf("ingest was called with %q for an unknown scope", wiki.ingestText)
+	}
+}
+
+func TestScopeManagementLifecycle(t *testing.T) {
+	// R-HAXG-6H0S
+	// R-HC5C-K8RH
+	// R-HDD8-Y0I6
+	// R-HFT1-PJZK
+	ctx := context.Background()
+	db := migratedMCPDB(t, ctx)
+	defer db.Close()
+	store := wikidomain.NewScopeStore(db)
+	wiki := &capturingWiki{}
+	tools := Tools(WithScopeService(store), WithIngestService(wiki))
+
+	listed := structuredCall(t, namedTool(t, tools, "scopes"), `{}`)
+	scopes := mapSlice(listed["scopes"])
+	if len(scopes) != 1 || scopes[0]["name"] != "default" || scopes[0]["visibility"] != "private" || scopes[0]["created_at"] == nil {
+		t.Fatalf("fresh scopes = %#v, want default with visibility and created_at", scopes)
+	}
+
+	created := structuredCall(t, namedTool(t, tools, "scope_create"), `{"name":"team-x"}`)
+	if created["name"] != "team-x" || created["visibility"] != "private" {
+		t.Fatalf("scope_create = %#v", created)
+	}
+	structuredCall(t, namedTool(t, tools, "ingest"), `{"scope":"team-x","text":"accepted immediately"}`)
+	if wiki.ingestScope != "team-x" || wiki.ingestText != "accepted immediately" {
+		t.Fatalf("immediate ingest scope/text = %q/%q", wiki.ingestScope, wiki.ingestText)
+	}
+
+	create := namedTool(t, tools, "scope_create")
+	for _, name := range []string{"UPPER", "has space", "-leading", " team-x ", "", strings.Repeat("a", 65)} {
+		result, err := create.Handler(ctx, mustRaw(t, map[string]string{"name": name}), server.Identity{})
+		if err != nil || resultCode(result) != "validation" || !strings.Contains(resultMessage(result), "slug") {
+			t.Fatalf("scope_create %q = %#v, %v", name, result, err)
+		}
+	}
+	for _, name := range []string{"default", "team-x"} {
+		result, _ := create.Handler(ctx, mustRaw(t, map[string]string{"name": name}), server.Identity{})
+		if resultCode(result) != "scope_exists" {
+			t.Fatalf("duplicate %q code = %q", name, resultCode(result))
+		}
+	}
+
+	visibility := namedTool(t, tools, "scope_set_visibility")
+	visibilityProperty := visibility.InputSchema["properties"].(map[string]any)["visibility"].(map[string]any)
+	if got := stringValues(visibilityProperty["enum"]); !reflect.DeepEqual(got, []string{"private", "public"}) {
+		t.Fatalf("visibility enum = %#v", got)
+	}
+	for _, value := range []string{"public", "private"} {
+		got := structuredCall(t, visibility, fmt.Sprintf(`{"name":"team-x","visibility":%q}`, value))
+		if got["visibility"] != value {
+			t.Fatalf("set visibility %q = %#v", value, got)
+		}
+	}
+	listed = structuredCall(t, namedTool(t, tools, "scopes"), `{}`)
+	scopes = mapSlice(listed["scopes"])
+	if len(scopes) != 2 || scopes[0]["name"] != "default" || scopes[1]["name"] != "team-x" || scopes[1]["visibility"] != "private" {
+		t.Fatalf("ordered scopes after visibility flips = %#v", scopes)
+	}
+	bad, _ := visibility.Handler(ctx, json.RawMessage(`{"name":"team-x","visibility":"friends"}`), server.Identity{})
+	if resultCode(bad) != "validation" || !strings.Contains(resultMessage(bad), "{private, public}") {
+		t.Fatalf("bad visibility = %#v", bad)
+	}
+}
+
+func TestScopeDeleteRefusesDefaultAndRemovesOnlyNamedScopeContent(t *testing.T) {
+	// R-HEL5-BS8V
+	ctx := context.Background()
+	db := migratedMCPDB(t, ctx)
+	defer db.Close()
+	store := wikidomain.NewScopeStore(db)
+	for _, name := range []string{"s1", "s2"} {
+		if _, err := store.Create(ctx, name); err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+	}
+	for _, row := range []struct{ id, scope string }{{"job-s1", "s1"}, {"job-s2", "s2"}} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO jobs (id, scope, owner_id, owner_email, source_text, source_hash, title, tags, status, received_at) VALUES (?, ?, 'owner', 'owner@example.com', 'text', ?, '', '[]', 'pending', 1)`, row.id, row.scope, "hash-"+row.id); err != nil {
+			t.Fatalf("insert %s: %v", row.id, err)
+		}
+	}
+	tool := namedTool(t, Tools(WithScopeService(store)), "scope_delete")
+	refused, _ := tool.Handler(ctx, json.RawMessage(`{"name":"default"}`), server.Identity{})
+	if resultCode(refused) != "scope_is_default" {
+		t.Fatalf("default delete = %#v", refused)
+	}
+	deleted := structuredCall(t, tool, `{"name":"s1"}`)
+	if deleted["name"] != "s1" || deleted["deleted"] != true {
+		t.Fatalf("delete s1 = %#v", deleted)
+	}
+	for _, tc := range []struct {
+		scope string
+		want  int
+	}{{"s1", 0}, {"s2", 1}} {
+		var got int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE scope = ?`, tc.scope).Scan(&got); err != nil || got != tc.want {
+			t.Fatalf("jobs in %s = %d, %v; want %d", tc.scope, got, err, tc.want)
+		}
+	}
+	missing, _ := tool.Handler(ctx, json.RawMessage(`{"name":"ghost"}`), server.Identity{})
+	if resultCode(missing) != "not_found" {
+		t.Fatalf("unknown delete = %#v", missing)
+	}
+}
+
+func TestScopedListsPartitionJobsCountsAndMerges(t *testing.T) {
+	// R-HH0Y-3BQ9
+	// R-HI8U-H3GY
+	partition := &scopePartitionService{}
+	tools := Tools(WithJobListService(partition), WithJobsCountService(partition), WithMergeListService(partition), WithScopeService(partition))
+	jobs1 := structuredCall(t, namedTool(t, tools, "jobs"), `{"scope":"s1"}`)
+	jobs2 := structuredCall(t, namedTool(t, tools, "jobs"), `{"scope":"s2"}`)
+	count1 := structuredCall(t, namedTool(t, tools, "jobs_count"), `{"scope":"s1"}`)
+	count2 := structuredCall(t, namedTool(t, tools, "jobs_count"), `{"scope":"s2"}`)
+	if len(mapSlice(jobs1["jobs"])) != 1 || len(mapSlice(jobs2["jobs"])) != 0 || count1["count"] != float64(1) || count2["count"] != float64(0) {
+		t.Fatalf("partitioned jobs/counts = %#v %#v %#v %#v", jobs1, jobs2, count1, count2)
+	}
+	merges1 := structuredCall(t, namedTool(t, tools, "merges"), `{"scope":"s1"}`)
+	merges2 := structuredCall(t, namedTool(t, tools, "merges"), `{"scope":"s2"}`)
+	if len(mapSlice(merges1["merges"])) != 1 || len(mapSlice(merges2["merges"])) != 0 {
+		t.Fatalf("partitioned merges = %#v / %#v", merges1, merges2)
+	}
+}
+
+func TestScopeDiscoveryAppearsOnlyInInstructionsAndGuideDescription(t *testing.T) {
+	// R-HJGQ-UV7N
+	if !strings.Contains(strings.ToLower(Instructions), "scope") {
+		t.Fatalf("instructions omit scope: %q", Instructions)
+	}
+	for _, phrase := range []string{"requires a `scope`", "`scopes`", "`scope_create`", "`scope_delete`", "`scope_set_visibility`", `"scope":"robotics"`} {
+		if !strings.Contains(guideDoc, phrase) {
+			t.Fatalf("guide omits %q", phrase)
+		}
+	}
+	for _, tool := range Tools(WithScopeService(testScopeService{})) {
+		mentionsGuide := strings.Contains(strings.ToLower(tool.Description), "guide")
+		if mentionsGuide != (tool.Name == "guide") {
+			t.Fatalf("%s description guide pointer = %v", tool.Name, mentionsGuide)
+		}
+	}
+}
+
 func TestDomainOutputSchemasMirrorRepresentativeStructuredResults(t *testing.T) {
 	// R-ER7V-UFSU
 	wiki := &capturingWiki{
@@ -287,11 +477,11 @@ func TestDomainOutputSchemasMirrorRepresentativeStructuredResults(t *testing.T) 
 		WithClaimListService(wiki), WithPagePathService(wiki),
 	)
 	args := map[string]string{
-		"ingest": `{"text":"source"}`, "status": `{"job_id":"job"}`, "abort": `{"job_id":"job"}`,
-		"rerun": `{"job_id":"job"}`, "jobs": `{}`, "jobs_count": `{}`,
-		"merge": `{"from":"entity/from","to":"entity/to"}`, "merges": `{}`,
-		"ask": `{"question":"question"}`, "subjects": `{}`, "claims": `{"subject":"entity/from"}`,
-		"page": `{"subject":"entity/from"}`,
+		"ingest": `{"scope":"default","text":"source"}`, "status": `{"job_id":"job"}`, "abort": `{"job_id":"job"}`,
+		"rerun": `{"job_id":"job"}`, "jobs": `{"scope":"default"}`, "jobs_count": `{"scope":"default"}`,
+		"merge": `{"scope":"default","from":"entity/from","to":"entity/to"}`, "merges": `{"scope":"default"}`,
+		"ask": `{"scope":"default","question":"question"}`, "subjects": `{"scope":"default"}`, "claims": `{"scope":"default","subject":"entity/from"}`,
+		"page": `{"scope":"default","subject":"entity/from"}`,
 	}
 	nested := map[string]map[string][]string{
 		"jobs":     {"jobs": {"id", "owner_email", "owner_id", "title", "tags", "status", "received_at", "started_at", "finished_at", "error"}},
@@ -355,19 +545,19 @@ func TestDomainValidationErrorsCarryTypedWellFormedEnvelopes(t *testing.T) {
 	))
 	cases := map[string]string{
 		"malformed arguments": `{"name":"ingest","arguments":[]}`,
-		"ingest text":         `{"name":"ingest","arguments":{}}`,
-		"merge from":          `{"name":"merge","arguments":{"to":"entity/two"}}`,
-		"merge to":            `{"name":"merge","arguments":{"from":"entity/one"}}`,
+		"ingest text":         `{"name":"ingest","arguments":{"scope":"default"}}`,
+		"merge from":          `{"name":"merge","arguments":{"scope":"default","to":"entity/two"}}`,
+		"merge to":            `{"name":"merge","arguments":{"scope":"default","from":"entity/one"}}`,
 		"status job":          `{"name":"status","arguments":{}}`,
 		"abort job":           `{"name":"abort","arguments":{}}`,
 		"rerun job":           `{"name":"rerun","arguments":{}}`,
-		"ask question":        `{"name":"ask","arguments":{}}`,
-		"claims subject":      `{"name":"claims","arguments":{}}`,
-		"page subject":        `{"name":"page","arguments":{}}`,
-		"since":               `{"name":"jobs","arguments":{"since":"yesterday"}}`,
-		"until":               `{"name":"jobs","arguments":{"until":"tomorrow"}}`,
-		"cursor":              `{"name":"jobs","arguments":{"cursor":"invalid"}}`,
-		"same subject":        `{"name":"merge","arguments":{"from":"entity/one","to":"entity/two"}}`,
+		"ask question":        `{"name":"ask","arguments":{"scope":"default"}}`,
+		"claims subject":      `{"name":"claims","arguments":{"scope":"default"}}`,
+		"page subject":        `{"name":"page","arguments":{"scope":"default"}}`,
+		"since":               `{"name":"jobs","arguments":{"scope":"default","since":"yesterday"}}`,
+		"until":               `{"name":"jobs","arguments":{"scope":"default","until":"tomorrow"}}`,
+		"cursor":              `{"name":"jobs","arguments":{"scope":"default","cursor":"invalid"}}`,
+		"same subject":        `{"name":"merge","arguments":{"scope":"default","from":"entity/one","to":"entity/two"}}`,
 	}
 	closed := map[string]bool{"validation": true, "not_found": true, "conflict": true, "too_large": true, "source_unavailable": true, "internal": true}
 	for name, params := range cases {
@@ -460,7 +650,7 @@ func TestToolsListInputSchemasUseValidRequiredFields(t *testing.T) {
 		t.Fatal("tools/list returned no tools")
 	}
 	seenSubjects := false
-	optionalOnly := map[string]bool{"jobs": false, "jobs_count": false, "merges": false}
+	optionalOnly := map[string]bool{}
 	for _, tool := range got.Result.Tools {
 		if tool.InputSchema["type"] != "object" {
 			t.Fatalf("%s schema type = %v, want object", tool.Name, tool.InputSchema["type"])
@@ -475,10 +665,6 @@ func TestToolsListInputSchemasUseValidRequiredFields(t *testing.T) {
 		}
 		if tool.Name == "subjects" {
 			seenSubjects = true
-			if ok {
-				t.Fatalf("subjects schema required = %#v, want omitted", required)
-			}
-			continue
 		}
 		if !ok {
 			continue
@@ -632,19 +818,19 @@ func TestUnknownDomainResourcesReturnTypedNotFoundErrors(t *testing.T) {
 		},
 		{
 			name: "claims",
-			body: `{"jsonrpc":"2.0","id":"claims","method":"tools/call","params":{"name":"claims","arguments":{"subject":"entity/missing"}}}`,
+			body: `{"jsonrpc":"2.0","id":"claims","method":"tools/call","params":{"name":"claims","arguments":{"scope":"default","subject":"entity/missing"}}}`,
 			kind: "subject",
 			id:   "entity/missing",
 		},
 		{
 			name: "page",
-			body: `{"jsonrpc":"2.0","id":"page","method":"tools/call","params":{"name":"page","arguments":{"subject":"entity/missing"}}}`,
+			body: `{"jsonrpc":"2.0","id":"page","method":"tools/call","params":{"name":"page","arguments":{"scope":"default","subject":"entity/missing"}}}`,
 			kind: "subject",
 			id:   "entity/missing",
 		},
 		{
 			name: "merge",
-			body: `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/missing","to":"entity/other"}}}`,
+			body: `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"scope":"default","from":"entity/missing","to":"entity/other"}}}`,
 			kind: "subject",
 			id:   "entity/missing",
 		},
@@ -680,7 +866,7 @@ func TestIngestToolUsesAuthenticatedIdentity(t *testing.T) {
 		"method":"tools/call",
 		"params":{
 			"name":"ingest",
-			"arguments":{"text":"source text","title":"Source","tags":["one","two"]}
+			"arguments":{"scope":"default","text":"source text","title":"Source","tags":["one","two"]}
 		}
 	}`, "owner@example.com")
 
@@ -725,7 +911,7 @@ func TestIngestStoresAndJobsExposeOwnerPairKeyedOnID(t *testing.T) {
 	h := gatedHandler(t, newTestHandler(t, WithIngestService(svc), WithJobListService(mcpJobLister{store: wikidomain.NewJobStore(conn)})))
 
 	for i, email := range []string{"alice@example.com", ""} {
-		rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"ingest","method":"tools/call","params":{"name":"ingest","arguments":{"text":"source `+fmt.Sprint(i)+`"}}}`, "id-1", email)
+		rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"ingest","method":"tools/call","params":{"name":"ingest","arguments":{"scope":"default","text":"source `+fmt.Sprint(i)+`"}}}`, "id-1", email)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("ingest %d status = %d, want 200; body=%s", i, rec.Code, rec.Body.String())
 		}
@@ -742,7 +928,7 @@ func TestIngestStoresAndJobsExposeOwnerPairKeyedOnID(t *testing.T) {
 		}
 	}
 
-	rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"jobs","method":"tools/call","params":{"name":"jobs","arguments":{"limit":10}}}`, "id-1", "alice@example.com")
+	rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"jobs","method":"tools/call","params":{"name":"jobs","arguments":{"scope":"default","limit":10}}}`, "id-1", "alice@example.com")
 	var page map[string]any
 	decodeToolText(t, rec.Body.Bytes(), &page)
 	items := page["jobs"].([]any)
@@ -789,7 +975,7 @@ func TestMergeStoresAndMergesExposeOwnerPairKeyedOnID(t *testing.T) {
 	for i, email := range []string{"alice@example.com", ""} {
 		n := i + 1
 		word := []string{"one", "two"}[i]
-		rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/loser-`+word+`","to":"entity/winner-`+word+`"}}}`, "id-1", email)
+		rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"scope":"default","from":"entity/loser-`+word+`","to":"entity/winner-`+word+`"}}}`, "id-1", email)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("merge %d status = %d, want 200; body=%s", n, rec.Code, rec.Body.String())
 		}
@@ -816,7 +1002,7 @@ func TestMergeStoresAndMergesExposeOwnerPairKeyedOnID(t *testing.T) {
 		}
 	}
 
-	rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"merges","method":"tools/call","params":{"name":"merges","arguments":{"limit":2}}}`, "id-1", "alice@example.com")
+	rec := callMCPIdentity(t, h, `{"jsonrpc":"2.0","id":"merges","method":"tools/call","params":{"name":"merges","arguments":{"scope":"default","limit":2}}}`, "id-1", "alice@example.com")
 	var page map[string]any
 	decodeToolText(t, rec.Body.Bytes(), &page)
 	var item map[string]any
@@ -837,7 +1023,7 @@ func TestMergeStoresAndMergesExposeOwnerPairKeyedOnID(t *testing.T) {
 func TestOpaqueDomainFailureReturnsInternalError(t *testing.T) {
 	// R-EW3H-DIRM
 	h := gatedHandler(t, newTestHandler(t, WithIngestService(failingIngest{err: errors.New("backend unavailable")})))
-	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"ingest","method":"tools/call","params":{"name":"ingest","arguments":{"text":"source"}}}`, "owner@example.com")
+	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"ingest","method":"tools/call","params":{"name":"ingest","arguments":{"scope":"default","text":"source"}}}`, "owner@example.com")
 	result := decodeToolResult(t, rec.Body.Bytes())
 	if !result.IsError || result.StructuredContent["code"] != "internal" {
 		t.Fatalf("result = %#v, want typed internal error", result)
@@ -913,8 +1099,8 @@ func TestPageToolUsesTypeNormNamePath(t *testing.T) {
 		}
 		foundPageSchema = true
 		required, ok := tool.InputSchema["required"].([]any)
-		if !ok || len(required) != 1 || required[0] != "subject" {
-			t.Fatalf("page required = %#v, want [subject]", tool.InputSchema["required"])
+		if !ok || len(required) != 2 || required[0] != "scope" || required[1] != "subject" {
+			t.Fatalf("page required = %#v, want [scope subject]", tool.InputSchema["required"])
 		}
 		properties, ok := tool.InputSchema["properties"].(map[string]any)
 		if !ok {
@@ -938,7 +1124,7 @@ func TestPageToolUsesTypeNormNamePath(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"page",
 		"method":"tools/call",
-		"params":{"name":"page","arguments":{"subject":"entity/acme-robotics"}}
+		"params":{"name":"page","arguments":{"scope":"default","subject":"entity/acme-robotics"}}
 	}`, "owner@example.com")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("page status = %d, want 200", rec.Code)
@@ -1024,7 +1210,7 @@ func TestReadToolsSerializePublicPathsWithoutSubjectIDs(t *testing.T) {
 		{
 			name: "subjects",
 			request: `{"jsonrpc":"2.0","id":"subjects","method":"tools/call","params":{
-				"name":"subjects","arguments":{"type":"entity","name":"acme"}
+				"name":"subjects","arguments":{"scope":"default","type":"entity","name":"acme"}
 			}}`,
 			check: func(t *testing.T, text string) {
 				t.Helper()
@@ -1049,7 +1235,7 @@ func TestReadToolsSerializePublicPathsWithoutSubjectIDs(t *testing.T) {
 		{
 			name: "claims",
 			request: `{"jsonrpc":"2.0","id":"claims","method":"tools/call","params":{
-				"name":"claims","arguments":{"subject":"entity/acme-robotics"}
+				"name":"claims","arguments":{"scope":"default","subject":"entity/acme-robotics"}
 			}}`,
 			check: func(t *testing.T, text string) {
 				t.Helper()
@@ -1075,7 +1261,7 @@ func TestReadToolsSerializePublicPathsWithoutSubjectIDs(t *testing.T) {
 		{
 			name: "page",
 			request: `{"jsonrpc":"2.0","id":"page","method":"tools/call","params":{
-				"name":"page","arguments":{"subject":"entity/acme-robotics"}
+				"name":"page","arguments":{"scope":"default","subject":"entity/acme-robotics"}
 			}}`,
 			check: func(t *testing.T, text string) {
 				t.Helper()
@@ -1128,7 +1314,7 @@ func TestAskToolUsesAuthenticatedIdentity(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"ask",
 		"method":"tools/call",
-		"params":{"name":"ask","arguments":{"question":"Who wrote it?"}}
+		"params":{"name":"ask","arguments":{"scope":"default","question":"Who wrote it?"}}
 	}`, "owner@example.com")
 
 	if rec.Code != http.StatusOK {
@@ -1172,7 +1358,7 @@ func TestAskToolReturnsURLTitleCitations(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"ask",
 		"method":"tools/call",
-		"params":{"name":"ask","arguments":{"question":"Who wrote it?"}}
+		"params":{"name":"ask","arguments":{"scope":"default","question":"Who wrote it?"}}
 	}`, "owner@example.com")
 
 	if rec.Code != http.StatusOK {
@@ -1230,8 +1416,8 @@ func TestAskToolUsesPhase17InputAndResultShape(t *testing.T) {
 		}
 		foundAskSchema = true
 		required, ok := tool.InputSchema["required"].([]any)
-		if !ok || len(required) != 1 || required[0] != "question" {
-			t.Fatalf("ask required = %#v, want [question]", tool.InputSchema["required"])
+		if !ok || len(required) != 2 || required[0] != "scope" || required[1] != "question" {
+			t.Fatalf("ask required = %#v, want [scope question]", tool.InputSchema["required"])
 		}
 		properties, ok := tool.InputSchema["properties"].(map[string]any)
 		if !ok {
@@ -1250,7 +1436,7 @@ func TestAskToolUsesPhase17InputAndResultShape(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"ask",
 		"method":"tools/call",
-		"params":{"name":"ask","arguments":{"question":"Who wrote it?"}}
+		"params":{"name":"ask","arguments":{"scope":"default","question":"Who wrote it?"}}
 	}`, "owner@example.com")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("ask status = %d, want 200", rec.Code)
@@ -1321,7 +1507,7 @@ func TestAskToolCitationURLUsesFrontDoorSubjectRoute(t *testing.T) {
 				"jsonrpc":"2.0",
 				"id":"ask",
 				"method":"tools/call",
-				"params":{"name":"ask","arguments":{"question":"What is the TSR?"}}
+				"params":{"name":"ask","arguments":{"scope":"default","question":"What is the TSR?"}}
 			}`, "owner@example.com")
 			if rec.Code != http.StatusOK {
 				t.Fatalf("ask status = %d, want 200", rec.Code)
@@ -1366,7 +1552,7 @@ func TestAskToolLinkifiesFirstSubjectMentionAndKeepsCitations(t *testing.T) {
 		llm.CallSite{Config: llm.Config{Model: "ask-synthesis-test"}},
 	)
 	h := gatedHandler(t, newTestHandlerWithAuthServer(t, "https://acct.ikigenba.com", WithAskFunc(asker.Ask), WithMentionLinkifier(wikidomain.NewService(conn, nil, nil, nil))))
-	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"ask","method":"tools/call","params":{"name":"ask","arguments":{"question":"What does Acme Corp do?"}}}`, "owner@example.com")
+	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"ask","method":"tools/call","params":{"name":"ask","arguments":{"scope":"default","question":"What does Acme Corp do?"}}}`, "owner@example.com")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("ask status = %d, want 200", rec.Code)
 	}
@@ -1407,7 +1593,7 @@ func TestPageToolLinkifiesOtherSubjectBeforeFooterAndExcludesSelf(t *testing.T) 
 	}
 	svc := wikidomain.NewService(conn, nil, nil, nil)
 	h := gatedHandler(t, newTestHandlerWithAuthServer(t, "https://acct.ikigenba.com", WithPagePathService(mcpPageService{resolver: wikidomain.NewResolver(conn), service: svc}), WithMentionLinkifier(svc)))
-	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"page","method":"tools/call","params":{"name":"page","arguments":{"subject":"entity/atlas"}}}`, "owner@example.com")
+	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"page","method":"tools/call","params":{"name":"page","arguments":{"scope":"default","subject":"entity/atlas"}}}`, "owner@example.com")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("page status = %d, want 200", rec.Code)
 	}
@@ -1515,7 +1701,7 @@ func TestJobsCountUsesSameFiltersAsJobsAndReturnsOnlyCount(t *testing.T) {
 		WithJobListService(wiki),
 		WithJobsCountService(wiki),
 	))
-	args := `"arguments":{"status":["done","failed"],"since":"2026-06-22T00:00:00Z","until":"2026-06-23T00:00:00Z"}`
+	args := `"arguments":{"scope":"default","status":["done","failed"],"since":"2026-06-22T00:00:00Z","until":"2026-06-23T00:00:00Z"}`
 
 	jobsRec := callMCP(t, h, `{"jsonrpc":"2.0","id":"jobs","method":"tools/call","params":{"name":"jobs",`+args+`}}`, "owner@example.com")
 	if jobsRec.Code != http.StatusOK {
@@ -1568,7 +1754,7 @@ func TestJobsKindFilterDefaultsToIngestAndAcceptsMerge(t *testing.T) {
 		WithJobsCountService(wiki),
 	))
 
-	jobsRec := callMCP(t, h, `{"jsonrpc":"2.0","id":"jobs","method":"tools/call","params":{"name":"jobs","arguments":{}}}`, "owner@example.com")
+	jobsRec := callMCP(t, h, `{"jsonrpc":"2.0","id":"jobs","method":"tools/call","params":{"name":"jobs","arguments":{"scope":"default"}}}`, "owner@example.com")
 	if jobsRec.Code != http.StatusOK {
 		t.Fatalf("jobs status = %d, want 200", jobsRec.Code)
 	}
@@ -1576,7 +1762,7 @@ func TestJobsKindFilterDefaultsToIngestAndAcceptsMerge(t *testing.T) {
 		t.Fatalf("jobs kind filter = %#v, want default ingest", wiki.jobFilter.Kinds)
 	}
 
-	countRec := callMCP(t, h, `{"jsonrpc":"2.0","id":"count","method":"tools/call","params":{"name":"jobs_count","arguments":{"kind":["merge"]}}}`, "owner@example.com")
+	countRec := callMCP(t, h, `{"jsonrpc":"2.0","id":"count","method":"tools/call","params":{"name":"jobs_count","arguments":{"scope":"default","kind":["merge"]}}}`, "owner@example.com")
 	if countRec.Code != http.StatusOK {
 		t.Fatalf("jobs_count status = %d, want 200", countRec.Code)
 	}
@@ -1620,7 +1806,7 @@ func TestJobsKindSchemaPublishesEnumAndRejectsUnknownKind(t *testing.T) {
 	}
 
 	for _, name := range []string{"jobs", "jobs_count"} {
-		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"bad","method":"tools/call","params":{"name":"`+name+`","arguments":{"kind":["compact"]}}}`, "owner@example.com")
+		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"bad","method":"tools/call","params":{"name":"`+name+`","arguments":{"scope":"default","kind":["compact"]}}}`, "owner@example.com")
 		text := toolTextString(t, rec.Body.Bytes())
 		if !strings.Contains(text, "kind must be one of ingest, merge") {
 			t.Fatalf("%s error = %q, want valid kind set", name, text)
@@ -1640,7 +1826,7 @@ func TestMergeToolResolvesPathsOnceAndQueuesJob(t *testing.T) {
 	}
 	h := gatedHandler(t, newTestHandler(t, WithMergeService(wiki, wiki)))
 
-	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/old-name","to":"entity/new-name"}}}`, "owner@example.com")
+	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"scope":"default","from":"entity/old-name","to":"entity/new-name"}}}`, "owner@example.com")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("merge status = %d, want 200", rec.Code)
@@ -1673,7 +1859,7 @@ func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
 		}
 		h := gatedHandler(t, newTestHandler(t, WithMergeService(wiki, wiki)))
 
-		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/missing","to":"entity/new-name"}}}`, "owner@example.com")
+		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"scope":"default","from":"entity/missing","to":"entity/new-name"}}}`, "owner@example.com")
 
 		result := decodeToolResult(t, rec.Body.Bytes())
 		if !result.IsError || result.StructuredContent["code"] != "not_found" {
@@ -1696,7 +1882,7 @@ func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
 		}
 		h := gatedHandler(t, newTestHandler(t, WithMergeService(wiki, wiki)))
 
-		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/old-name","to":"entity/current-name"}}}`, "owner@example.com")
+		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"scope":"default","from":"entity/old-name","to":"entity/current-name"}}}`, "owner@example.com")
 
 		text := toolTextString(t, rec.Body.Bytes())
 		if !strings.Contains(text, "same subject") {
@@ -1720,7 +1906,7 @@ func TestMergeToolReportsResolveAndEnqueueErrors(t *testing.T) {
 		}
 		h := gatedHandler(t, newTestHandler(t, WithMergeService(wiki, wiki)))
 
-		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"from":"entity/old-name","to":"entity/new-name"}}}`, "owner@example.com")
+		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merge","method":"tools/call","params":{"name":"merge","arguments":{"scope":"default","from":"entity/old-name","to":"entity/new-name"}}}`, "owner@example.com")
 
 		text := toolTextString(t, rec.Body.Bytes())
 		if !strings.Contains(text, "merge queue unavailable") {
@@ -1752,7 +1938,7 @@ func TestMergesToolReturnsAuditPage(t *testing.T) {
 	h := gatedHandler(t, newTestHandler(t, WithMergeListService(wiki)))
 	cursor := paging.EncodeCursor("2026-06-24T12:00:00Z", "old name")
 
-	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merges","method":"tools/call","params":{"name":"merges","arguments":{"limit":1,"cursor":"`+cursor+`"}}}`, "owner@example.com")
+	rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"merges","method":"tools/call","params":{"name":"merges","arguments":{"scope":"default","limit":1,"cursor":"`+cursor+`"}}}`, "owner@example.com")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("merges status = %d, want 200", rec.Code)
@@ -1816,7 +2002,7 @@ func TestJobsStatusSchemaPublishesEnumAndRejectsUnknownStatus(t *testing.T) {
 	}
 
 	for _, name := range []string{"jobs", "jobs_count"} {
-		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"bad","method":"tools/call","params":{"name":"`+name+`","arguments":{"status":["paused"]}}}`, "owner@example.com")
+		rec := callMCP(t, h, `{"jsonrpc":"2.0","id":"bad","method":"tools/call","params":{"name":"`+name+`","arguments":{"scope":"default","status":["paused"]}}}`, "owner@example.com")
 		text := toolTextString(t, rec.Body.Bytes())
 		if !strings.Contains(text, "status must be one of pending, working, done, failed, aborted") {
 			t.Fatalf("%s error = %q, want valid status set", name, text)
@@ -1834,17 +2020,17 @@ func TestJobsRejectMalformedTimeAndCursorFilters(t *testing.T) {
 	}{
 		{
 			name: "since",
-			body: `{"jsonrpc":"2.0","id":"bad-since","method":"tools/call","params":{"name":"jobs","arguments":{"since":"yesterday"}}}`,
+			body: `{"jsonrpc":"2.0","id":"bad-since","method":"tools/call","params":{"name":"jobs","arguments":{"scope":"default","since":"yesterday"}}}`,
 			want: "since must be RFC3339",
 		},
 		{
 			name: "until",
-			body: `{"jsonrpc":"2.0","id":"bad-until","method":"tools/call","params":{"name":"jobs","arguments":{"until":"tomorrow"}}}`,
+			body: `{"jsonrpc":"2.0","id":"bad-until","method":"tools/call","params":{"name":"jobs","arguments":{"scope":"default","until":"tomorrow"}}}`,
 			want: "until must be RFC3339",
 		},
 		{
 			name: "cursor",
-			body: `{"jsonrpc":"2.0","id":"bad-cursor","method":"tools/call","params":{"name":"jobs","arguments":{"cursor":"not a cursor"}}}`,
+			body: `{"jsonrpc":"2.0","id":"bad-cursor","method":"tools/call","params":{"name":"jobs","arguments":{"scope":"default","cursor":"not a cursor"}}}`,
 			want: "cursor is invalid",
 		},
 	} {
@@ -1898,7 +2084,7 @@ func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"jobs",
 		"method":"tools/call",
-		"params":{"name":"jobs","arguments":{"status":["done"],"since":"2026-06-22T00:00:00Z","until":"2026-06-23T00:00:00Z","limit":1,"cursor":"`+jobCursor+`"}}
+		"params":{"name":"jobs","arguments":{"scope":"default","status":["done"],"since":"2026-06-22T00:00:00Z","until":"2026-06-23T00:00:00Z","limit":1,"cursor":"`+jobCursor+`"}}
 	}`, "owner@example.com")
 	var jobsBody struct {
 		Jobs []struct {
@@ -1920,7 +2106,7 @@ func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"subjects",
 		"method":"tools/call",
-		"params":{"name":"subjects","arguments":{"type":"entity","name":"robot","limit":2,"cursor":"subject-cursor"}}
+		"params":{"name":"subjects","arguments":{"scope":"default","type":"entity","name":"robot","limit":2,"cursor":"subject-cursor"}}
 	}`, "owner@example.com")
 	var subjectsBody struct {
 		Subjects []struct {
@@ -1941,7 +2127,7 @@ func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"claims",
 		"method":"tools/call",
-		"params":{"name":"claims","arguments":{"subject":"entity/acme-robotics","limit":3,"cursor":"claim-cursor"}}
+		"params":{"name":"claims","arguments":{"scope":"default","subject":"entity/acme-robotics","limit":3,"cursor":"claim-cursor"}}
 	}`, "owner@example.com")
 	var claimsBody struct {
 		Claims []struct {
@@ -1980,6 +2166,7 @@ func TestMCPToolsAreBehindRequireIdentity(t *testing.T) {
 
 type capturingWiki struct {
 	ingestID       string
+	ingestScope    string
 	ingestOwnerID  string
 	ingestOwner    string
 	ingestText     string
@@ -2023,6 +2210,64 @@ type capturingWiki struct {
 	subjectNext    string
 }
 
+type testScopeService struct{}
+
+func (testScopeService) Create(_ context.Context, name string) (wikidomain.Scope, error) {
+	if name == "default" {
+		return wikidomain.Scope{}, wikidomain.ErrScopeExists
+	}
+	return wikidomain.Scope{Name: name, Visibility: "private"}, nil
+}
+
+func (testScopeService) Get(_ context.Context, name string) (wikidomain.Scope, error) {
+	if name == "default" {
+		return wikidomain.Scope{Name: name, Visibility: "private"}, nil
+	}
+	return wikidomain.Scope{}, wikidomain.ErrScopeNotFound
+}
+
+func (testScopeService) List(context.Context) ([]wikidomain.Scope, error) {
+	return []wikidomain.Scope{{Name: "default", Visibility: "private"}}, nil
+}
+
+func (testScopeService) SetVisibility(context.Context, string, string) error { return nil }
+func (testScopeService) Delete(context.Context, string) error                { return nil }
+
+type scopePartitionService struct{}
+
+func (*scopePartitionService) Get(_ context.Context, name string) (wikidomain.Scope, error) {
+	if name == "s1" || name == "s2" {
+		return wikidomain.Scope{Name: name, Visibility: "private"}, nil
+	}
+	return wikidomain.Scope{}, wikidomain.ErrScopeNotFound
+}
+func (*scopePartitionService) Create(context.Context, string) (wikidomain.Scope, error) {
+	return wikidomain.Scope{}, nil
+}
+func (*scopePartitionService) List(context.Context) ([]wikidomain.Scope, error) { return nil, nil }
+func (*scopePartitionService) SetVisibility(context.Context, string, string) error {
+	return nil
+}
+func (*scopePartitionService) Delete(context.Context, string) error { return nil }
+func (*scopePartitionService) ListJobsInScope(_ context.Context, scope string, _ JobFilter, _ paging.Params) ([]job, string, error) {
+	if scope == "s1" {
+		return []job{{ID: "job-s1", Status: "pending"}}, "", nil
+	}
+	return nil, "", nil
+}
+func (*scopePartitionService) CountJobsInScope(_ context.Context, scope string, _ JobFilter) (int, error) {
+	if scope == "s1" {
+		return 1, nil
+	}
+	return 0, nil
+}
+func (*scopePartitionService) ListMergesInScope(_ context.Context, scope string, _ paging.Params) ([]alias, string, error) {
+	if scope == "s1" {
+		return []alias{{NormName: "folded"}}, "", nil
+	}
+	return nil, "", nil
+}
+
 type missingJobs struct{}
 
 func (missingJobs) Abort(context.Context, string) (abortResult, error) {
@@ -2037,8 +2282,8 @@ type failingIngest struct{ err error }
 
 type mcpJobLister struct{ store *wikidomain.JobStore }
 
-func (l mcpJobLister) ListJobs(ctx context.Context, f JobFilter, p paging.Params) ([]wikidomain.Job, string, error) {
-	return l.store.ListJobs(ctx, wikidomain.JobFilter{
+func (l mcpJobLister) ListJobsInScope(ctx context.Context, scope string, f JobFilter, p paging.Params) ([]wikidomain.Job, string, error) {
+	return l.store.ListJobs(ctx, scope, wikidomain.JobFilter{
 		Statuses: f.Statuses,
 		Kinds:    f.Kinds,
 		Since:    f.Since,
@@ -2048,8 +2293,8 @@ func (l mcpJobLister) ListJobs(ctx context.Context, f JobFilter, p paging.Params
 
 type mcpMergeLister struct{ store *wikidomain.AliasStore }
 
-func (l mcpMergeLister) ListMerges(ctx context.Context, p paging.Params) ([]wikidomain.Alias, string, error) {
-	return l.store.ListMerges(ctx, p)
+func (l mcpMergeLister) ListMergesInScope(ctx context.Context, scope string, p paging.Params) ([]wikidomain.Alias, string, error) {
+	return l.store.ListMergesInScope(ctx, scope, p)
 }
 
 type ownerPairCompiler struct{}
@@ -2062,7 +2307,8 @@ func (f failingIngest) Ingest(context.Context, string, string, string, string, s
 	return "", f.err
 }
 
-func (w *capturingWiki) Ingest(_ context.Context, _ string, ownerID, ownerEmail, text, title string, tags []string) (string, error) {
+func (w *capturingWiki) Ingest(_ context.Context, scope string, ownerID, ownerEmail, text, title string, tags []string) (string, error) {
+	w.ingestScope = scope
 	w.ingestOwnerID = ownerID
 	w.ingestOwner = ownerEmail
 	w.ingestText = text
@@ -2092,13 +2338,13 @@ func (w *capturingWiki) Rerun(_ context.Context, jobID string) (rerunResult, err
 	return w.rerunResult, nil
 }
 
-func (w *capturingWiki) ListJobs(_ context.Context, f JobFilter, p paging.Params) ([]job, string, error) {
+func (w *capturingWiki) ListJobsInScope(_ context.Context, _ string, f JobFilter, p paging.Params) ([]job, string, error) {
 	w.jobFilter = f
 	w.jobPage = p
 	return w.jobs, w.jobNext, nil
 }
 
-func (w *capturingWiki) CountJobs(_ context.Context, f JobFilter) (int, error) {
+func (w *capturingWiki) CountJobsInScope(_ context.Context, _ string, f JobFilter) (int, error) {
 	w.jobCountFilter = f
 	return w.jobCount, nil
 }
@@ -2132,7 +2378,7 @@ func (w *capturingWiki) MergeSubjects(ctx context.Context, _ string, fromSubject
 	return w.ingestID, nil
 }
 
-func (w *capturingWiki) ListMerges(_ context.Context, p paging.Params) ([]alias, string, error) {
+func (w *capturingWiki) ListMergesInScope(_ context.Context, _ string, p paging.Params) ([]alias, string, error) {
 	w.mergesPage = p
 	return w.merges, w.mergesNext, nil
 }
@@ -2141,7 +2387,7 @@ func (w *capturingWiki) Subjects(_ context.Context, _, _ string) ([]subject, err
 	return w.subjects, nil
 }
 
-func (w *capturingWiki) List(_ context.Context, typ, name string, p paging.Params) ([]subject, string, error) {
+func (w *capturingWiki) ListInScope(_ context.Context, _, typ, name string, p paging.Params) ([]subject, string, error) {
 	w.subjectType = typ
 	w.subjectName = name
 	w.subjectPage = p
@@ -2155,7 +2401,7 @@ func (w *capturingWiki) ClaimsBySubject(_ context.Context, _ string) ([]claim, e
 	return w.claims, nil
 }
 
-func (w *capturingWiki) ListBySubject(_ context.Context, subject string, p paging.Params) ([]claim, string, error) {
+func (w *capturingWiki) ListBySubjectInScope(_ context.Context, _, subject string, p paging.Params) ([]claim, string, error) {
 	w.claimsSubject = subject
 	w.claimsPage = p
 	if w.claimsErr != nil {
@@ -2164,7 +2410,7 @@ func (w *capturingWiki) ListBySubject(_ context.Context, subject string, p pagin
 	return w.claims, w.claimsNext, nil
 }
 
-func (w *capturingWiki) PageByPath(_ context.Context, path string) (page, error) {
+func (w *capturingWiki) PageByPathInScope(_ context.Context, _, path string) (page, error) {
 	w.pagePath = path
 	if w.pageErr != nil {
 		return page{}, w.pageErr
@@ -2242,12 +2488,12 @@ type mcpPageService struct {
 	service  *wikidomain.Service
 }
 
-func (s mcpPageService) PageByPath(ctx context.Context, path string) (page, error) {
-	subject, err := s.resolver.ResolveByPath(ctx, path)
+func (s mcpPageService) PageByPathInScope(ctx context.Context, scope, path string) (page, error) {
+	subject, err := s.resolver.ResolveByPath(ctx, scope, path)
 	if err != nil {
 		return page{}, err
 	}
-	linked, err := s.service.PageWithLinks(ctx, "default", subject.ID)
+	linked, err := s.service.PageWithLinks(ctx, scope, subject.ID)
 	if err != nil {
 		return page{}, err
 	}
@@ -2426,6 +2672,80 @@ func decodeToolResult(t *testing.T, raw []byte) toolResult {
 	}
 	decodeJSON(t, raw, &got)
 	return got.Result
+}
+
+func namedTool(t *testing.T, tools []appkitmcp.Tool, name string) appkitmcp.Tool {
+	t.Helper()
+	for _, tool := range tools {
+		if tool.Name == name {
+			return tool
+		}
+	}
+	t.Fatalf("tool %s not found", name)
+	return appkitmcp.Tool{}
+}
+
+func structuredCall(t *testing.T, tool appkitmcp.Tool, raw string) map[string]any {
+	t.Helper()
+	result, err := tool.Handler(context.Background(), json.RawMessage(raw), server.Identity{})
+	if err != nil {
+		t.Fatalf("%s handler: %v", tool.Name, err)
+	}
+	if code := resultCode(result); code != "" {
+		t.Fatalf("%s returned %s: %s", tool.Name, code, resultMessage(result))
+	}
+	rawPayload, err := json.Marshal(result["structuredContent"])
+	if err != nil {
+		t.Fatalf("%s marshal structuredContent: %v", tool.Name, err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rawPayload, &payload); err != nil {
+		t.Fatalf("%s decode structuredContent: %v", tool.Name, err)
+	}
+	return payload
+}
+
+func resultCode(result map[string]any) string {
+	payload, _ := result["structuredContent"].(map[string]any)
+	if payload["code"] == nil {
+		return ""
+	}
+	return fmt.Sprint(payload["code"])
+}
+
+func resultMessage(result map[string]any) string {
+	payload, _ := result["structuredContent"].(map[string]any)
+	message, _ := payload["message"].(string)
+	return message
+}
+
+func mustRaw(t *testing.T, value any) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal arguments: %v", err)
+	}
+	return raw
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func mapSlice(value any) []map[string]any {
+	values, _ := value.([]any)
+	out := make([]map[string]any, 0, len(values))
+	for _, value := range values {
+		if item, ok := value.(map[string]any); ok {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func toolTextString(t *testing.T, raw []byte) string {
