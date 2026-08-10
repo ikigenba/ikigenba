@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 138
-
-- Phase 137 ⬜ realizes R-Y42U-45K2, R-Y5AQ-HXAR — subject-page restyle (header question form, full-width content, quiet two-column links) + centered scope-home ask bar
