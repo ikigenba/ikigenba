@@ -166,7 +166,7 @@ func TestRunWorkspacePinsHeadChecksOutRunBranchAndHidesGit(t *testing.T) {
 		t.Fatalf("manual run files = %+v, %v", entries, err)
 	}
 
-	updated, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: p.Name, UserPrompt: "second", SystemPrompt: "system", Config: validConfig()})
+	updated, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: ptr(p.Name), UserPrompt: ptr("second"), SystemPrompt: ptr("system"), Config: ptr(validConfig())})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestRunExecutedReadsPinnedCommitAfterWorkspaceAndMainChange(t *testing.T) {
 	}
 	updatedConfig := original
 	updatedConfig.MaxTokens = 99
-	if _, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: p.Name, UserPrompt: "new main", Config: updatedConfig}); err != nil {
+	if _, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: ptr(p.Name), UserPrompt: ptr("new main"), Config: ptr(updatedConfig)}); err != nil {
 		t.Fatal(err)
 	}
 	frozen, err := svc.RunExecuted(t.Context(), ownerA, run.ID)

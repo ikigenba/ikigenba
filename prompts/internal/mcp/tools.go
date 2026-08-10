@@ -31,7 +31,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				return toolDescribe()
 			}),
 
-		desc(tool("create"), "Create a new prompt for the caller. A prompt is a reusable definition (user_prompt, config, optional name/system_prompt) that you run on demand or wire to event triggers. Returns the new prompt_id. Optionally attach event triggers inline. Event-triggered runs receive the triggering event in the prompt (see describe / set_trigger).", obj(map[string]any{
+		desc(tool("create"), "Create a new prompt for the caller. A prompt is a reusable definition (non-empty user_prompt, config, optional name/system_prompt) that you run on demand or wire to event triggers. Returns the new prompt_id. Optionally attach event triggers inline. Event-triggered runs receive the triggering event in the prompt (see describe / set_trigger).", obj(map[string]any{
 			"user_prompt":   typ("string"),
 			"config":        configSchema(),
 			"name":          typ("string"),
@@ -111,7 +111,7 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				return appkitmcp.StructuredResult(detail)
 			}),
 
-		desc(tool("update"), "Update a prompt's name, user_prompt, system_prompt, and config. Always allowed (in-flight runs read their pinned inputs from disk, so they are unaffected).", obj(map[string]any{
+		desc(tool("update"), "Update a prompt's name, user_prompt, system_prompt, and config. Any field omitted is left unchanged — send only what you want to change. config is replaced whole when sent (keys omitted from a sent config reset to defaults). An empty system_prompt or name clears it; user_prompt cannot be emptied. Always allowed (in-flight runs read their pinned inputs from disk, so they are unaffected).", obj(map[string]any{
 			"prompt_id":     typ("string"),
 			"user_prompt":   typ("string"),
 			"system_prompt": typ("string"),
@@ -120,21 +120,25 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 		}, "prompt_id"),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				var in struct {
-					PromptID     string      `json:"prompt_id"`
-					UserPrompt   string      `json:"user_prompt"`
-					SystemPrompt string      `json:"system_prompt"`
-					Config       configInput `json:"config"`
-					Name         string      `json:"name"`
+					PromptID     string       `json:"prompt_id"`
+					UserPrompt   *string      `json:"user_prompt"`
+					SystemPrompt *string      `json:"system_prompt"`
+					Config       *configInput `json:"config"`
+					Name         *string      `json:"name"`
 				}
 				if err := parseArgs(args, &in); err != nil {
 					return nil, err
 				}
-				p, err := svc.Update(ctx, id.OwnerID, in.PromptID, prompt.UpdateInput{
+				update := prompt.UpdateInput{
 					Name:         in.Name,
 					UserPrompt:   in.UserPrompt,
 					SystemPrompt: in.SystemPrompt,
-					Config:       in.Config.toConfig(),
-				})
+				}
+				if in.Config != nil {
+					cfg := in.Config.toConfig()
+					update.Config = &cfg
+				}
+				p, err := svc.Update(ctx, id.OwnerID, in.PromptID, update)
 				if err != nil {
 					return fail(err), nil
 				}

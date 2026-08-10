@@ -25,6 +25,8 @@ type fakeRunner struct {
 	found   bool // value Cancel returns
 }
 
+func ptr[T any](value T) *T { return &value }
+
 func TestRunPersistsRootOrInheritedCorrelationID(t *testing.T) {
 	// R-HJIC-GE7A
 	// R-HKQ8-U5XZ
@@ -336,7 +338,7 @@ func TestCreateAndUpdateRejectGlobalNameKeyCollisions(t *testing.T) {
 		t.Fatalf("create third prompt: %v", err)
 	}
 	_, err = svc.Update(ctx, ownerA, third.ID, UpdateInput{
-		Name: "daily digest!", UserPrompt: "changed", Config: validConfig(),
+		Name: ptr("daily digest!"), UserPrompt: ptr("changed"), Config: ptr(validConfig()),
 	})
 	requireNameKeyCollision(t, err, existing.Name, existing.NameKey)
 	unchanged, err := store.GetPrompt(ctx, ownerA, third.ID)
@@ -823,8 +825,8 @@ func TestServiceCreateAndUpdatePreserveValidatedProvider(t *testing.T) {
 	}
 
 	_, err = svc.Update(ctx, ownerA, created.ID, UpdateInput{
-		UserPrompt: "p2",
-		Config:     Config{Provider: "openai", Model: testOpenAIModel},
+		UserPrompt: ptr("p2"),
+		Config:     ptr(Config{Provider: "openai", Model: testOpenAIModel}),
 	})
 	if err != nil {
 		t.Fatalf("Update openai config: %v", err)
@@ -874,7 +876,7 @@ func TestUpdateDeleteAllowedWhileRunning(t *testing.T) {
 
 	// fakeRunner never completes the run, so it is still "in flight" — Update
 	// and Delete must both still succeed.
-	if _, err := svc.Update(ctx, ownerA, sess.ID, UpdateInput{UserPrompt: "new", Config: validConfig()}); err != nil {
+	if _, err := svc.Update(ctx, ownerA, sess.ID, UpdateInput{UserPrompt: ptr("new"), Config: ptr(validConfig())}); err != nil {
 		t.Fatalf("Update while running: want success, got %v", err)
 	}
 	if err := svc.Delete(ctx, ownerA, sess.ID); err != nil {
@@ -901,7 +903,7 @@ func TestOwnerScoping(t *testing.T) {
 	if _, err := svc.Get(ctx, ownerB, sess.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get B: want ErrNotFound, got %v", err)
 	}
-	if _, err := svc.Update(ctx, ownerB, sess.ID, UpdateInput{UserPrompt: "x", Config: validConfig()}); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.Update(ctx, ownerB, sess.ID, UpdateInput{UserPrompt: ptr("x"), Config: ptr(validConfig())}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Update B: want ErrNotFound, got %v", err)
 	}
 	if err := svc.Delete(ctx, ownerB, sess.ID); !errors.Is(err, ErrNotFound) {
@@ -1006,12 +1008,12 @@ func TestUpdateRevalidatesAndPersists(t *testing.T) {
 	sess := mustCreate(t, svc, ownerA)
 
 	// Update with a bad model is rejected.
-	if _, err := svc.Update(ctx, ownerA, sess.ID, UpdateInput{UserPrompt: "p", Config: Config{Provider: "anthropic", Model: testOpenAIModel}}); err == nil {
+	if _, err := svc.Update(ctx, ownerA, sess.ID, UpdateInput{UserPrompt: ptr("p"), Config: ptr(Config{Provider: "anthropic", Model: testOpenAIModel})}); err == nil {
 		t.Fatalf("Update with provider/model mismatch: want error, got nil")
 	}
 
 	// Valid update persists.
-	updated, err := svc.Update(ctx, ownerA, sess.ID, UpdateInput{Name: "renamed", UserPrompt: "new prompt", Config: Config{Provider: "anthropic", Model: testAnthropicSonnet}})
+	updated, err := svc.Update(ctx, ownerA, sess.ID, UpdateInput{Name: ptr("renamed"), UserPrompt: ptr("new prompt"), Config: ptr(Config{Provider: "anthropic", Model: testAnthropicSonnet})})
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -1161,10 +1163,10 @@ func TestRun_MaterializesFrozenInput_SurvivesMutation(t *testing.T) {
 
 	// Mutate the prompt mid-run.
 	if _, err := svc.Update(ctx, ownerA, sess.ID, UpdateInput{
-		Name:         "frozen",
-		UserPrompt:   "MUTATED user prompt",
-		SystemPrompt: "MUTATED system prompt",
-		Config:       validConfig(),
+		Name:         ptr("frozen"),
+		UserPrompt:   ptr("MUTATED user prompt"),
+		SystemPrompt: ptr("MUTATED system prompt"),
+		Config:       ptr(validConfig()),
 	}); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -1316,7 +1318,7 @@ func TestOwnerIDSnapshotsEmailAndScopesRunArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err := svc.Update(ctx, "idA", a.ID, UpdateInput{Name: "changed", UserPrompt: "a2", Config: validConfig()})
+	updated, err := svc.Update(ctx, "idA", a.ID, UpdateInput{Name: ptr("changed"), UserPrompt: ptr("a2"), Config: ptr(validConfig())})
 	if err != nil {
 		t.Fatal(err)
 	}

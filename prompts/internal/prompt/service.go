@@ -154,12 +154,13 @@ type CreateInput struct {
 	Triggers     []TriggerSpec
 }
 
-// UpdateInput is the update payload (all fields replace).
+// UpdateInput is the update payload. Nil fields are omitted; non-nil fields
+// intentionally replace the stored value.
 type UpdateInput struct {
-	Name         string
-	UserPrompt   string
-	SystemPrompt string
-	Config       Config
+	Name         *string
+	UserPrompt   *string
+	SystemPrompt *string
+	Config       *Config
 }
 
 var providerEnvVars = map[string]string{
@@ -260,6 +261,9 @@ func catalogProviderID(provider string) agentkit.ProviderID {
 // created here — it is per-run, created at Run time keyed by run_id.
 // Config.Provider is validated against the configured model and preserved.
 func (s *Service) Create(ctx context.Context, ownerID, ownerEmail string, in CreateInput) (Prompt, error) {
+	if strings.TrimSpace(in.UserPrompt) == "" {
+		return Prompt{}, validationErrf("user_prompt must not be empty")
+	}
 	cfg, err := ValidateConfig(in.Config, os.Getenv, s.SubAuthAvailable)
 	if err != nil {
 		return Prompt{}, err
@@ -382,6 +386,9 @@ func (s *Service) Import(ctx context.Context, ownerID, ownerEmail, sourcePath, n
 	}
 	if len(data) > maxImportBytes {
 		return Prompt{}, fmt.Errorf("%w: %q is %d bytes, over the 1 MiB import limit", ErrTooLarge, sourcePath, len(data))
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return Prompt{}, validationErrf("user_prompt imported from %q must not be empty", sourcePath)
 	}
 	if name == "" {
 		name = path.Base(sourcePath)
@@ -596,30 +603,63 @@ func (s *Service) detail(ctx context.Context, p Prompt) (PromptDetail, error) {
 	return PromptDetail{Prompt: p, RunningCount: running, LastRun: last}, nil
 }
 
-// Update edits name/user_prompt/system_prompt/config. ALWAYS allowed (no
-// single-flight); re-validates config.
+// Update merges sent name/user_prompt/system_prompt/config fields into the
+// current definition. It is ALWAYS allowed (no single-flight) and re-validates
+// the effective definition before writing anything.
 func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput) (Prompt, error) {
 	p, err := s.store.GetPrompt(ctx, ownerID, id)
 	if err != nil {
 		return Prompt{}, err
 	}
-	cfg, err := ValidateConfig(in.Config, os.Getenv, s.SubAuthAvailable)
-	if err != nil {
-		return Prompt{}, err
+	if in.UserPrompt != nil && strings.TrimSpace(*in.UserPrompt) == "" {
+		return Prompt{}, validationErrf("user_prompt must not be empty")
 	}
-	nameKey := NameKey(in.Name, p.ID)
-	if err := s.rejectNameKeyCollision(ctx, p.ID, nameKey); err != nil {
-		return Prompt{}, err
-	}
+
+	current := s.rememberedDefinition(p)
 	if s.Version != nil {
-		current, err := s.Version.Read(ctx, p.NameKey, "main")
+		definition, err := s.Version.Read(ctx, p.NameKey, "main")
 		if err != nil {
 			return Prompt{}, versionPlaneError("read definition", err)
 		}
 		var currentConfig Config
-		if err := json.Unmarshal(current.ConfigJSON, &currentConfig); err != nil {
+		if err := json.Unmarshal(definition.ConfigJSON, &currentConfig); err != nil {
 			return Prompt{}, versionPlaneError("parse definition config", err)
 		}
+		current = Executed{
+			Name:         p.Name,
+			UserPrompt:   definition.UserPrompt,
+			SystemPrompt: definition.SystemPrompt,
+			Config:       currentConfig,
+		}
+	}
+
+	effective := current
+	if in.Name != nil {
+		effective.Name = *in.Name
+	}
+	if in.UserPrompt != nil {
+		effective.UserPrompt = *in.UserPrompt
+	}
+	if in.SystemPrompt != nil {
+		effective.SystemPrompt = *in.SystemPrompt
+	}
+	if in.Config != nil {
+		effective.Config = *in.Config
+	}
+	if strings.TrimSpace(effective.UserPrompt) == "" {
+		return Prompt{}, validationErrf("user_prompt must not be empty")
+	}
+	cfg, err := ValidateConfig(effective.Config, os.Getenv, s.SubAuthAvailable)
+	if err != nil {
+		return Prompt{}, err
+	}
+	effective.Config = cfg
+	nameKey := NameKey(effective.Name, p.ID)
+	if err := s.rejectNameKeyCollision(ctx, p.ID, nameKey); err != nil {
+		return Prompt{}, err
+	}
+
+	if s.Version != nil {
 		if nameKey != p.NameKey {
 			owner := version.Owner{ID: p.OwnerID, Email: p.OwnerEmail}
 			if err := s.Version.Rename(ctx, p.NameKey, nameKey, owner, "prompts:"+p.ID); err != nil {
@@ -627,35 +667,35 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 			}
 		}
 		files := make([]version.File, 0, 3)
-		if in.UserPrompt != current.UserPrompt {
-			files = append(files, version.File{Path: "prompt.md", Data: []byte(in.UserPrompt)})
+		if effective.UserPrompt != current.UserPrompt {
+			files = append(files, version.File{Path: "prompt.md", Data: []byte(effective.UserPrompt)})
 		}
-		if !reflect.DeepEqual(cfg, currentConfig) {
+		if !reflect.DeepEqual(effective.Config, current.Config) {
 			configJSON, err := json.Marshal(cfg)
 			if err != nil {
 				return Prompt{}, fmt.Errorf("prompt: marshal version config: %w", err)
 			}
 			files = append(files, version.File{Path: "config.json", Data: append(configJSON, '\n')})
 		}
-		if in.SystemPrompt != current.SystemPrompt {
-			file := version.File{Path: "system.md", Data: []byte(in.SystemPrompt)}
-			if in.SystemPrompt == "" {
+		if effective.SystemPrompt != current.SystemPrompt {
+			file := version.File{Path: "system.md", Data: []byte(effective.SystemPrompt)}
+			if effective.SystemPrompt == "" {
 				file.Data = nil
 				file.Delete = true
 			}
 			files = append(files, file)
 		}
 		if len(files) > 0 {
-			if _, err := s.Version.Commit(ctx, nameKey, files, "update "+in.Name, "prompts:"+p.ID); err != nil {
+			if _, err := s.Version.Commit(ctx, nameKey, files, "update "+effective.Name, "prompts:"+p.ID); err != nil {
 				return Prompt{}, versionPlaneError("commit update", err)
 			}
 		}
 	}
 	if s.Version == nil {
-		s.rememberDefinition(p.ID, Executed{Name: in.Name, UserPrompt: in.UserPrompt, SystemPrompt: in.SystemPrompt, Config: cfg})
+		s.rememberDefinition(p.ID, effective)
 	}
 
-	p.Name = in.Name
+	p.Name = effective.Name
 	p.NameKey = nameKey
 	p.UpdatedAt = s.nowStr()
 

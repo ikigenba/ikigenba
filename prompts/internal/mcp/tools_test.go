@@ -291,6 +291,24 @@ func TestCreateAndUpdateConfigRequireOnlyModel(t *testing.T) {
 	}
 }
 
+func TestUpdateDescriptionExplainsMergeAndCreateKeepsRequiredInputs(t *testing.T) {
+	// R-AEIC-2QK2
+	update := findToolDescriptor(t, "update")
+	description, ok := update["description"].(string)
+	if !ok {
+		t.Fatalf("update description has type %T", update["description"])
+	}
+	lower := strings.ToLower(description)
+	if !strings.Contains(lower, "omitted") || !strings.Contains(lower, "unchanged") {
+		t.Fatalf("update description = %q, want omitted and unchanged", description)
+	}
+	create := findToolDescriptor(t, "create")
+	schema := create["inputSchema"].(map[string]any)
+	if required := schema["required"]; !reflect.DeepEqual(required, []string{"user_prompt", "config"}) {
+		t.Fatalf("create required = %#v, want user_prompt and config", required)
+	}
+}
+
 type ownerIDFetcher struct{ body []byte }
 
 func (f ownerIDFetcher) Fetch(context.Context, string) ([]byte, error) { return f.body, nil }

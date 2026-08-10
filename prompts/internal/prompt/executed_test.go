@@ -28,7 +28,7 @@ func TestExecutedSnapshotDisagreesWithUpdatedLivePrompt(t *testing.T) {
 	}
 	finishTestRun(t, store, run.ID)
 	updatedConfig := Config{Provider: "anthropic", Model: testAnthropicSonnet, MaxTokens: 321}
-	if _, err := svc.Update(ctx, ownerA, p.ID, UpdateInput{Name: "updated", UserPrompt: "updated text", Config: updatedConfig}); err != nil {
+	if _, err := svc.Update(ctx, ownerA, p.ID, UpdateInput{Name: ptr("updated"), UserPrompt: ptr("updated text"), Config: ptr(updatedConfig)}); err != nil {
 		t.Fatal(err)
 	}
 

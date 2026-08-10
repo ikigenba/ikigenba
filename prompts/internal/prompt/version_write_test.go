@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -175,7 +176,7 @@ func TestUpdateCommitsOnlyChangedDefinitionAndRenamesBeforeRow(t *testing.T) {
 	plane.calls = nil
 	changedConfig := validConfig()
 	changedConfig.MaxTokens = 99
-	if _, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: p.Name, UserPrompt: "body", SystemPrompt: "system", Config: changedConfig}); err != nil {
+	if _, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: ptr(p.Name), UserPrompt: ptr("body"), SystemPrompt: ptr("system"), Config: ptr(changedConfig)}); err != nil {
 		t.Fatal(err)
 	}
 	commits := callsByOp(plane.calls, "commit")
@@ -184,7 +185,7 @@ func TestUpdateCommitsOnlyChangedDefinitionAndRenamesBeforeRow(t *testing.T) {
 	}
 
 	plane.calls = nil
-	if _, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: p.Name, UserPrompt: "body", Config: changedConfig}); err != nil {
+	if _, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: ptr(p.Name), UserPrompt: ptr("body"), SystemPrompt: ptr(""), Config: ptr(changedConfig)}); err != nil {
 		t.Fatal(err)
 	}
 	commits = callsByOp(plane.calls, "commit")
@@ -198,7 +199,7 @@ func TestUpdateCommitsOnlyChangedDefinitionAndRenamesBeforeRow(t *testing.T) {
 
 	plane.calls = nil
 	plane.renameErr = version.ErrUnavailable
-	_, err = svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: "New", UserPrompt: "body", Config: changedConfig})
+	_, err = svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: ptr("New"), UserPrompt: ptr("body"), Config: ptr(changedConfig)})
 	if err == nil {
 		t.Fatal("name-only update succeeded despite failed rename")
 	}
@@ -212,6 +213,172 @@ func TestUpdateCommitsOnlyChangedDefinitionAndRenamesBeforeRow(t *testing.T) {
 	stored, err := store.GetPrompt(t.Context(), ownerA, p.ID)
 	if err != nil || stored.Name != "Old" || stored.NameKey != "old" {
 		t.Fatalf("stored prompt after failed rename = %+v, err=%v", stored, err)
+	}
+}
+
+func TestUpdateMergesConfigAndUserPromptFieldsIndependently(t *testing.T) {
+	// R-A8EU-5VUL
+	t.Setenv("ANTHROPIC_API_KEY", "test")
+	svc, store, _, _ := newTestService(t)
+	plane := newRecordingVersion()
+	svc.Version = plane
+	originalConfig := validConfig()
+	p, err := svc.Create(t.Context(), ownerA, ownerA, CreateInput{
+		Name: "Merge Target", UserPrompt: "original body", SystemPrompt: "keep system", Config: originalConfig,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	changedConfig := originalConfig
+	changedConfig.MaxTokens = 4321
+	plane.calls = nil
+	updated, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Config: ptr(changedConfig)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Name != p.Name || updated.NameKey != p.NameKey {
+		t.Fatalf("config-only metadata = %+v, want name=%q key=%q", updated, p.Name, p.NameKey)
+	}
+	if renames := callsByOp(plane.calls, "rename"); len(renames) != 0 {
+		t.Fatalf("config-only renames = %+v", renames)
+	}
+	commits := callsByOp(plane.calls, "commit")
+	if len(commits) != 1 || !reflect.DeepEqual(filePaths(commits[0].files), []string{"config.json"}) {
+		t.Fatalf("config-only commits = %+v", commits)
+	}
+	stored, err := store.GetPrompt(t.Context(), ownerA, p.ID)
+	if err != nil || stored.Name != p.Name || stored.NameKey != p.NameKey {
+		t.Fatalf("config-only stored row = %+v, err=%v", stored, err)
+	}
+	detail, err := svc.Get(t.Context(), ownerA, p.ID)
+	if err != nil || !reflect.DeepEqual(detail.Config, changedConfig) || detail.UserPrompt != "original body" || detail.SystemPrompt != "keep system" {
+		t.Fatalf("config-only definition = %+v, err=%v", detail, err)
+	}
+
+	plane.calls = nil
+	if _, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{UserPrompt: ptr("changed body")}); err != nil {
+		t.Fatal(err)
+	}
+	commits = callsByOp(plane.calls, "commit")
+	if len(commits) != 1 || !reflect.DeepEqual(filePaths(commits[0].files), []string{"prompt.md"}) {
+		t.Fatalf("user-prompt-only commits = %+v", commits)
+	}
+	detail, err = svc.Get(t.Context(), ownerA, p.ID)
+	if err != nil || detail.UserPrompt != "changed body" || !reflect.DeepEqual(detail.Config, changedConfig) {
+		t.Fatalf("user-prompt-only definition = %+v, err=%v", detail, err)
+	}
+}
+
+func TestUpdateRejectsEmptySentUserPromptWithoutPlaneWrites(t *testing.T) {
+	// R-A9MQ-JNLA
+	t.Setenv("ANTHROPIC_API_KEY", "test")
+	svc, _, _, _ := newTestService(t)
+	plane := newRecordingVersion()
+	svc.Version = plane
+	p, err := svc.Create(t.Context(), ownerA, ownerA, CreateInput{Name: "Guarded", UserPrompt: "keep me", Config: validConfig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDefinition := plane.definitions[p.NameKey]
+
+	for _, body := range []string{"", " \t\n "} {
+		plane.calls = nil
+		_, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{UserPrompt: ptr(body)})
+		var validationErr *ValidationError
+		if !errors.As(err, &validationErr) {
+			t.Fatalf("Update user_prompt %q error = %v, want ValidationError", body, err)
+		}
+		if len(callsByOp(plane.calls, "commit")) != 0 || len(callsByOp(plane.calls, "rename")) != 0 {
+			t.Fatalf("Update user_prompt %q plane calls = %+v", body, plane.calls)
+		}
+		if got := plane.definitions[p.NameKey]; !reflect.DeepEqual(got, wantDefinition) {
+			t.Fatalf("Update user_prompt %q changed definition to %+v", body, got)
+		}
+	}
+}
+
+func TestUpdateEmptyNameRenamesToULIDKeyWithoutCommit(t *testing.T) {
+	// R-AAUM-XFBZ
+	t.Setenv("ANTHROPIC_API_KEY", "test")
+	svc, store, _, _ := newTestService(t)
+	plane := newRecordingVersion()
+	svc.Version = plane
+	p, err := svc.Create(t.Context(), ownerA, ownerA, CreateInput{Name: "Named Prompt", UserPrompt: "body", Config: validConfig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plane.calls = nil
+	updated, err := svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantKey := NameKey("", p.ID)
+	renames := callsByOp(plane.calls, "rename")
+	if len(renames) != 1 || renames[0].key != p.NameKey || renames[0].to != wantKey {
+		t.Fatalf("renames = %+v, want %q -> %q", renames, p.NameKey, wantKey)
+	}
+	if commits := callsByOp(plane.calls, "commit"); len(commits) != 0 {
+		t.Fatalf("name-only commits = %+v", commits)
+	}
+	stored, err := store.GetPrompt(t.Context(), ownerA, p.ID)
+	if err != nil || updated.Name != "" || updated.NameKey != wantKey || stored.Name != "" || stored.NameKey != wantKey {
+		t.Fatalf("updated=%+v stored=%+v err=%v, want empty name and key %q", updated, stored, err, wantKey)
+	}
+}
+
+func TestCreateRejectsEmptyUserPromptBeforeRowOrPlaneWrites(t *testing.T) {
+	// R-AC2J-B72O
+	t.Setenv("ANTHROPIC_API_KEY", "test")
+	svc, store, _, _ := newTestService(t)
+	plane := newRecordingVersion()
+	svc.Version = plane
+
+	for _, body := range []string{"", " \t\n "} {
+		_, err := svc.Create(t.Context(), ownerA, ownerA, CreateInput{UserPrompt: body, Config: validConfig()})
+		var validationErr *ValidationError
+		if !errors.As(err, &validationErr) {
+			t.Fatalf("Create user_prompt %q error = %v, want ValidationError", body, err)
+		}
+	}
+	requirePromptCount(t, store, 0)
+	if len(callsByOp(plane.calls, "create")) != 0 || len(callsByOp(plane.calls, "commit")) != 0 {
+		t.Fatalf("rejected create plane calls = %+v", plane.calls)
+	}
+}
+
+func TestImportRejectsEmptyMirrorBodyWithoutChangingExistingDefinition(t *testing.T) {
+	// R-ADAF-OYTD
+	t.Setenv("ANTHROPIC_API_KEY", "test")
+	svc, _, _, _ := newTestService(t)
+	plane := newRecordingVersion()
+	svc.Version = plane
+	svc.Fetcher = stubFetcher{data: []byte("existing body\n")}
+	existing, err := svc.Import(t.Context(), ownerA, ownerA, "/mirror/existing.md", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDefinition := plane.definitions[existing.NameKey]
+
+	for i, body := range [][]byte{{}, []byte(" \t\n ")} {
+		plane.calls = nil
+		svc.Fetcher = stubFetcher{data: body}
+		_, err := svc.Import(t.Context(), ownerA, ownerA, fmt.Sprintf("/mirror/rejected-%d.md", i), "")
+		var validationErr *ValidationError
+		if !errors.As(err, &validationErr) {
+			t.Fatalf("Import body %q error = %v, want ValidationError", body, err)
+		}
+		if len(plane.calls) != 0 {
+			t.Fatalf("Import body %q plane calls = %+v", body, plane.calls)
+		}
+		if got := plane.definitions[existing.NameKey]; !reflect.DeepEqual(got, wantDefinition) {
+			t.Fatalf("Import body %q changed existing definition to %+v", body, got)
+		}
+	}
+	detail, err := svc.Get(t.Context(), ownerA, existing.ID)
+	if err != nil || detail.UserPrompt != "existing body\n" {
+		t.Fatalf("existing definition = %+v, err=%v", detail, err)
 	}
 }
 
@@ -324,7 +491,7 @@ func TestVersionFailureRollsBackCreateAndLeavesUpdateRowUnchanged(t *testing.T) 
 		t.Fatal(err)
 	}
 	plane.commitErr = version.ErrUnavailable
-	_, err = svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: "Renamed", UserPrompt: "changed", Config: validConfig()})
+	_, err = svc.Update(t.Context(), ownerA, p.ID, UpdateInput{Name: ptr("Renamed"), UserPrompt: ptr("changed"), Config: ptr(validConfig())})
 	if err == nil || !strings.Contains(err.Error(), "version plane") {
 		t.Fatalf("update error = %v", err)
 	}
