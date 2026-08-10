@@ -28,7 +28,7 @@ type Result struct {
 
 // Retriever searches wiki content without exposing the backing index.
 type Retriever interface {
-	Search(ctx context.Context, query string, limits SearchLimits) (Result, error)
+	Search(ctx context.Context, scope, query string, limits SearchLimits) (Result, error)
 }
 
 // SearchLimits carries caller-controlled bounds for one search request.

@@ -21,7 +21,7 @@ func TestVectorCacheReplaceHydratesEntriesAndDefensivelyCopies(t *testing.T) {
 	cache.Replace(entries)
 	entries[0].Vec[0] = 0
 
-	got := cache.nearest([]float32{1, 0}, 2)
+	got := cache.nearest("default", []float32{1, 0}, 2)
 	if len(got) != 2 {
 		t.Fatalf("nearest hits = %+v, want two hydrated entries", got)
 	}
@@ -39,7 +39,7 @@ func TestVectorCacheUpsertReplacesExistingSubject(t *testing.T) {
 	})
 	cache.Upsert(vectorEntry{SubjectID: "subject-a", Title: "New Alpha", Vec: []float32{1, 0}})
 
-	got := cache.nearest([]float32{1, 0}, 10)
+	got := cache.nearest("default", []float32{1, 0}, 10)
 	if len(got) != 2 {
 		t.Fatalf("nearest hits = %+v, want replacement without duplicate", got)
 	}
@@ -58,7 +58,7 @@ func TestVectorCacheRemoveEvictsSubjectFromNearestResults(t *testing.T) {
 
 	cache.Remove(" subject-loser ")
 
-	got := cache.nearest([]float32{1, 0}, 10)
+	got := cache.nearest("default", []float32{1, 0}, 10)
 	if len(got) != 1 {
 		t.Fatalf("nearest hits = %+v, want one remaining winner hit", got)
 	}
@@ -84,7 +84,7 @@ func TestVectorRetrieverEmbedsQueryAndReturnsCosineTopK(t *testing.T) {
 		},
 	}
 
-	got, err := retriever.Search(context.Background(), "  alpha query  ", SearchLimits{Limit: 2})
+	got, err := retriever.Search(context.Background(), "default", "  alpha query  ", SearchLimits{Limit: 2})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -111,9 +111,26 @@ func TestVectorRetrieverReturnsEmbedError(t *testing.T) {
 		},
 	}
 
-	_, err := retriever.Search(context.Background(), "alpha", SearchLimits{Limit: 1})
+	_, err := retriever.Search(context.Background(), "default", "alpha", SearchLimits{Limit: 1})
 	if !errors.Is(err, want) {
 		t.Fatalf("Search err = %v, want %v", err, want)
+	}
+}
+
+func TestVectorRetrieverSearchIsScopeBounded(t *testing.T) {
+	// R-H79R-15SP
+	cache := NewVectorCache()
+	cache.Replace([]vectorEntry{{Scope: "s2", SubjectID: "subject-s2", Title: "Only in s2", Vec: []float32{1, 0}}})
+	retriever := NewVectorRetriever(func(context.Context, llm.Attribution, string) ([]float32, error) {
+		return []float32{1, 0}, nil
+	}, cache)
+
+	got, err := retriever.Search(context.Background(), "s1", "semantic match", SearchLimits{})
+	if err != nil {
+		t.Fatalf("Search s1: %v", err)
+	}
+	if len(got.Hits) != 0 {
+		t.Fatalf("s1 hits = %+v, want no result from semantically matching s2 vector", got.Hits)
 	}
 }
 
@@ -128,7 +145,7 @@ func TestVectorCacheConcurrentReadsAndWrites(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 200; j++ {
-				hits := cache.nearest([]float32{1, 0}, 1)
+				hits := cache.nearest("default", []float32{1, 0}, 1)
 				if len(hits) != 1 {
 					t.Errorf("nearest len = %d, want 1", len(hits))
 					return
@@ -146,7 +163,7 @@ func TestVectorCacheConcurrentReadsAndWrites(t *testing.T) {
 	}()
 	wg.Wait()
 
-	got := cache.nearest([]float32{0, 1}, 1)
+	got := cache.nearest("default", []float32{0, 1}, 1)
 	if len(got) != 1 || got[0].PageID != "subject-b" || got[0].Score != 1 {
 		t.Fatalf("nearest after concurrent upserts = %+v, want Beta with cosine 1", got)
 	}

@@ -39,7 +39,7 @@ type Citation struct {
 
 // Retriever is the analyzed-query retrieval seam Ask consumes.
 type Retriever interface {
-	SearchAnalyzed(ctx context.Context, attr llm.Attribution, qa any, limits retrieve.SearchLimits) (retrieve.Result, error)
+	SearchAnalyzed(ctx context.Context, scope string, attr llm.Attribution, qa any, limits retrieve.SearchLimits) (retrieve.Result, error)
 }
 
 // Asker is the read-only question-answering service.
@@ -123,7 +123,7 @@ func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error)
 		return Answer{}, err
 	}
 
-	retrieved, err := a.search.SearchAnalyzed(ctx, attr, analysis, retrieve.SearchLimits{Limit: a.finalK})
+	retrieved, err := a.search.SearchAnalyzed(ctx, "default", attr, analysis, retrieve.SearchLimits{Limit: a.finalK})
 	if err != nil {
 		return Answer{}, err
 	}

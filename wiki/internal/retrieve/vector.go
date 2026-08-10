@@ -32,6 +32,7 @@ type vectorCache struct {
 }
 
 type vectorEntry struct {
+	Scope     string
 	SubjectID string
 	Title     string
 	Vec       []float32
@@ -86,7 +87,7 @@ func (c *vectorCache) Remove(subjectID string) {
 	}
 }
 
-func (c *vectorCache) nearest(q []float32, k int) []Hit {
+func (c *vectorCache) nearest(scope string, q []float32, k int) []Hit {
 	if c == nil || len(q) == 0 || k <= 0 {
 		return nil
 	}
@@ -95,6 +96,9 @@ func (c *vectorCache) nearest(q []float32, k int) []Hit {
 
 	scored := make([]Hit, 0, len(c.entries))
 	for _, e := range c.entries {
+		if e.Scope != scope {
+			continue
+		}
 		if len(e.Vec) != len(q) || len(e.Vec) == 0 {
 			continue
 		}
@@ -124,11 +128,11 @@ type vectorRetriever struct {
 	cache *vectorCache
 }
 
-func (r *vectorRetriever) Search(ctx context.Context, query string, limits SearchLimits) (Result, error) {
-	return r.searchAttributed(ctx, llm.Attribution{}, query, limits)
+func (r *vectorRetriever) Search(ctx context.Context, scope, query string, limits SearchLimits) (Result, error) {
+	return r.searchAttributed(ctx, scope, llm.Attribution{}, query, limits)
 }
 
-func (r *vectorRetriever) searchAttributed(ctx context.Context, attr llm.Attribution, query string, limits SearchLimits) (Result, error) {
+func (r *vectorRetriever) searchAttributed(ctx context.Context, scope string, attr llm.Attribution, query string, limits SearchLimits) (Result, error) {
 	if r == nil || r.embed == nil {
 		return Result{}, fmt.Errorf("retrieve: nil vector retriever embedder")
 	}
@@ -143,7 +147,7 @@ func (r *vectorRetriever) searchAttributed(ctx context.Context, attr llm.Attribu
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{Hits: r.cache.nearest(vec, limits.Resolve().Limit)}, nil
+	return Result{Hits: r.cache.nearest(scope, vec, limits.Resolve().Limit)}, nil
 }
 
 func cloneVectorEntries(entries []vectorEntry) []vectorEntry {
@@ -158,6 +162,9 @@ func cloneVectorEntries(entries []vectorEntry) []vectorEntry {
 }
 
 func cloneVectorEntry(e vectorEntry) vectorEntry {
+	if e.Scope == "" {
+		e.Scope = "default"
+	}
 	e.Vec = append([]float32(nil), e.Vec...)
 	return e
 }

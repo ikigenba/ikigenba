@@ -190,6 +190,7 @@ func retrieveCacheEntries(entries []wiki.VectorCacheEntry) []retrieve.VectorEntr
 	out := make([]retrieve.VectorEntry, 0, len(entries))
 	for _, entry := range entries {
 		out = append(out, retrieve.VectorEntry{
+			Scope:     entry.Scope,
 			SubjectID: entry.SubjectID,
 			Title:     entry.Title,
 			Vec:       entry.Vec,

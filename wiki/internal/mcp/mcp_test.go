@@ -2265,7 +2265,7 @@ type mcpScriptedSearch struct {
 	result retrieve.Result
 }
 
-func (s *mcpScriptedSearch) SearchAnalyzed(context.Context, llm.Attribution, any, retrieve.SearchLimits) (retrieve.Result, error) {
+func (s *mcpScriptedSearch) SearchAnalyzed(context.Context, string, llm.Attribution, any, retrieve.SearchLimits) (retrieve.Result, error) {
 	return s.result, nil
 }
 

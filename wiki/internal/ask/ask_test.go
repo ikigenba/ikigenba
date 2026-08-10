@@ -749,7 +749,7 @@ type searchCall struct {
 	limits retrieve.SearchLimits
 }
 
-func (s *scriptedSearch) SearchAnalyzed(_ context.Context, _ llm.Attribution, qa any, limits retrieve.SearchLimits) (retrieve.Result, error) {
+func (s *scriptedSearch) SearchAnalyzed(_ context.Context, _ string, _ llm.Attribution, qa any, limits retrieve.SearchLimits) (retrieve.Result, error) {
 	s.calls = append(s.calls, searchCall{qa: qa, limits: limits})
 	return s.result, s.err
 }

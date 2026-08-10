@@ -51,7 +51,7 @@ func TestKeywordRetrieverSearchReturnsRankedLimitedPageHits(t *testing.T) {
 		}
 	}
 
-	got, err := NewKeywordRetriever(conn).Search(ctx, `Tulsa OR ignored`, SearchLimits{Limit: 1})
+	got, err := NewKeywordRetriever(conn).Search(ctx, "default", `Tulsa OR ignored`, SearchLimits{Limit: 1})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -64,6 +64,43 @@ func TestKeywordRetrieverSearchReturnsRankedLimitedPageHits(t *testing.T) {
 	}
 	if hit.Snippet == "" {
 		t.Fatalf("first hit snippet is empty, want matched snippet: %+v", hit)
+	}
+}
+
+func TestKeywordRetrieverSearchIsScopeBounded(t *testing.T) {
+	// R-H61U-NE20
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	scopes := wikidomain.NewScopeStore(conn)
+	for _, name := range []string{"s1", "s2"} {
+		if _, err := scopes.Create(ctx, name); err != nil {
+			t.Fatalf("Create scope %s: %v", name, err)
+		}
+	}
+	for _, row := range []struct{ id, scope, name string }{
+		{id: "subject-s1", scope: "s1", name: "Quiet Page"},
+		{id: "subject-s2", scope: "s2", name: "Matching Page"},
+	} {
+		if _, err := conn.ExecContext(ctx, `INSERT INTO subjects (id, scope, name, norm_name, type) VALUES (?, ?, ?, ?, 'entity')`, row.id, row.scope, row.name, row.id); err != nil {
+			t.Fatalf("insert %s subject: %v", row.scope, err)
+		}
+	}
+	pages := wikidomain.NewPageStore(conn)
+	if err := pages.Upsert(ctx, wikidomain.Page{ID: "page-s1", SubjectID: "subject-s1", Title: "Quiet", Body: "No relevant words here."}); err != nil {
+		t.Fatalf("Upsert s1 page: %v", err)
+	}
+	if err := pages.Upsert(ctx, wikidomain.Page{ID: "page-s2", SubjectID: "subject-s2", Title: "Matching", Body: "scopewallneedle appears only over here"}); err != nil {
+		t.Fatalf("Upsert s2 page: %v", err)
+	}
+
+	got, err := NewKeywordRetriever(conn).Search(ctx, "s1", "scopewallneedle", SearchLimits{})
+	if err != nil {
+		t.Fatalf("Search s1: %v", err)
+	}
+	if len(got.Hits) != 0 {
+		t.Fatalf("s1 hits = %+v, want no result from matching s2 page", got.Hits)
 	}
 }
 

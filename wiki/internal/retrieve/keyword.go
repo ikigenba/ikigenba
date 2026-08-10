@@ -17,7 +17,7 @@ type keywordRetriever struct {
 	db *sql.DB
 }
 
-func (r *keywordRetriever) Search(ctx context.Context, query string, limits SearchLimits) (Result, error) {
+func (r *keywordRetriever) Search(ctx context.Context, scope, query string, limits SearchLimits) (Result, error) {
 	if r == nil || r.db == nil {
 		return Result{}, fmt.Errorf("retrieve: nil keyword retriever database")
 	}
@@ -35,9 +35,9 @@ func (r *keywordRetriever) Search(ctx context.Context, query string, limits Sear
 		FROM pages_fts
 		JOIN pages p ON p.rowid = pages_fts.rowid
 		JOIN subjects s ON s.id = p.subject_id
-		WHERE pages_fts MATCH ?
+		WHERE pages_fts MATCH ? AND s.scope = ?
 		ORDER BY rank, p.subject_id
-		LIMIT ?`, match, limit)
+		LIMIT ?`, match, scope, limit)
 	if err != nil {
 		return Result{}, err
 	}

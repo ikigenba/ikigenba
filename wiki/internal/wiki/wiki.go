@@ -19,6 +19,7 @@ const (
 
 // VectorCacheEntry is one stored page embedding prepared for an in-memory cache.
 type VectorCacheEntry struct {
+	Scope     string
 	SubjectID string
 	Title     string
 	Vec       []float32
@@ -41,7 +42,12 @@ func LoadVectorCacheEntries(ctx context.Context, db any) ([]VectorCacheEntry, er
 		if err != nil {
 			return nil, err
 		}
+		var scope string
+		if err := c.Read.QueryRowContext(ctx, `SELECT scope FROM subjects WHERE id = ?`, embedding.SubjectID).Scan(&scope); err != nil {
+			return nil, err
+		}
 		entries = append(entries, VectorCacheEntry{
+			Scope:     scope,
 			SubjectID: embedding.SubjectID,
 			Title:     page.Title,
 			Vec:       embedding.Vec,

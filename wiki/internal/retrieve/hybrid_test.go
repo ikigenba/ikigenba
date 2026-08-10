@@ -28,7 +28,7 @@ func TestHybridRetrieverFusesRRFAndDedupesOverlappingPages(t *testing.T) {
 	})
 	retriever := NewHybridRetriever(keyword, vector, nil, nil, FusionConfig{RRFk: 60, PerLane: 3, FinalK: 3})
 
-	got, err := retriever.Search(ctx, "launch", SearchLimits{})
+	got, err := retriever.Search(ctx, "default", "launch", SearchLimits{})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestHybridRetrieverPinsExactAliasSubjectOnce(t *testing.T) {
 	vector := newSpyRetriever(nil)
 	retriever := NewHybridRetriever(keyword, vector, wikidomain.NewResolver(conn), pages, FusionConfig{FinalK: 3})
 
-	got, err := retriever.Search(ctx, "The Widget", SearchLimits{})
+	got, err := retriever.Search(ctx, "default", "The Widget", SearchLimits{})
 	if err != nil {
 		t.Fatalf("Search exact alias: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestHybridRetrieverPinsExactAliasSubjectOnce(t *testing.T) {
 		t.Fatalf("hits = %+v, want pinned page not duplicated lower", got.Hits)
 	}
 
-	got, err = retriever.Search(ctx, "unknown subject", SearchLimits{})
+	got, err = retriever.Search(ctx, "default", "unknown subject", SearchLimits{})
 	if err != nil {
 		t.Fatalf("Search unknown subject: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestHybridRetrieverRequestsPerLaneAndHonorsFinalK(t *testing.T) {
 	vector := newSpyRetriever(map[string][]Hit{"query": laneHits})
 	retriever := NewHybridRetriever(keyword, vector, nil, nil, FusionConfig{PerLane: 4, FinalK: 3})
 
-	got, err := retriever.Search(ctx, "query", SearchLimits{})
+	got, err := retriever.Search(ctx, "default", "query", SearchLimits{})
 	if err != nil {
 		t.Fatalf("Search FinalK 3: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestHybridRetrieverRequestsPerLaneAndHonorsFinalK(t *testing.T) {
 	}
 
 	retriever.cfg.FinalK = 1
-	got, err = retriever.Search(ctx, "query", SearchLimits{})
+	got, err = retriever.Search(ctx, "default", "query", SearchLimits{})
 	if err != nil {
 		t.Fatalf("Search FinalK 1: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestHybridRetrieverSearchAnalyzedFansOutAndRoutesLaneQueries(t *testing.T) 
 	})
 	retriever := NewHybridRetriever(keyword, vector, nil, nil, FusionConfig{PerLane: 5, FinalK: 5})
 
-	blended, err := retriever.Search(ctx, "Compare Alpha Lab and Beta Lab", SearchLimits{})
+	blended, err := retriever.Search(ctx, "default", "Compare Alpha Lab and Beta Lab", SearchLimits{})
 	if err != nil {
 		t.Fatalf("Search blended: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestHybridRetrieverSearchAnalyzedFansOutAndRoutesLaneQueries(t *testing.T) 
 	keyword.calls = nil
 	vector.calls = nil
 
-	got, err := retriever.SearchAnalyzed(ctx, llm.Attribution{}, qa, SearchLimits{})
+	got, err := retriever.SearchAnalyzed(ctx, "default", llm.Attribution{}, qa, SearchLimits{})
 	if err != nil {
 		t.Fatalf("SearchAnalyzed: %v", err)
 	}
@@ -226,7 +226,7 @@ func newSpyRetriever(results map[string][]Hit) *spyRetriever {
 	return &spyRetriever{results: results}
 }
 
-func (s *spyRetriever) Search(_ context.Context, query string, limits SearchLimits) (Result, error) {
+func (s *spyRetriever) Search(_ context.Context, _ string, query string, limits SearchLimits) (Result, error) {
 	s.calls = append(s.calls, spyCall{query: query, limits: limits})
 	return Result{Hits: append([]Hit(nil), s.results[query]...)}, nil
 }

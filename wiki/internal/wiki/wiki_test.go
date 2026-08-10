@@ -265,6 +265,7 @@ func TestLoadVectorCacheEntriesLoadsStoredPageEmbeddings(t *testing.T) {
 	cacheEntries := make([]retrieve.VectorEntry, 0, len(entries))
 	for _, entry := range entries {
 		cacheEntries = append(cacheEntries, retrieve.VectorEntry{
+			Scope:     entry.Scope,
 			SubjectID: entry.SubjectID,
 			Title:     entry.Title,
 			Vec:       entry.Vec,
@@ -275,7 +276,7 @@ func TestLoadVectorCacheEntriesLoadsStoredPageEmbeddings(t *testing.T) {
 	retriever := retrieve.NewVectorRetriever(func(context.Context, llm.Attribution, string) ([]float32, error) {
 		return []float32{1, 0}, nil
 	}, cache)
-	got, err := retriever.Search(ctx, "alpha", retrieve.SearchLimits{Limit: 2})
+	got, err := retriever.Search(ctx, "default", "alpha", retrieve.SearchLimits{Limit: 2})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
