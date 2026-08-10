@@ -12,5 +12,3 @@ marker; done is deleted, and history lives in git. This file carries no bare
 status glyph outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 05
-
-- Phase 04 ⬜ realizes R-CKLX-X89X, R-CLTU-B00M, R-CN1Q-ORRB, R-CO9N-2JI0 — the changelog gate in bin/bump, proven in bin/bintest
