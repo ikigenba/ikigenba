@@ -11,7 +11,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D3 | project/design/D03.md | Validation | R-JVR2-WAUP, R-JWYZ-A2LE, R-1ONM-PPDU, R-1PVJ-3H4J, R-1R3F-H8V8, R-1SBB-V0LX, R-1TJ8-8SCM, R-1UR4-MK3B, R-1VZ1-0BU0, R-JY6V-NUC3, R-JZES-1M2S, R-SVPV-O479, R-SWXS-1VXY, R-SY5O-FNON, R-SZDK-TFFC, R-T0LH-7761, R-ZAC5-D0ZY |
 | D4 | project/design/D04.md | Provider factory | R-ZBK1-QSQN |
 | D5 | project/design/D05.md | Built-in sandbox tools | R-F5X1-XH6C, R-GNY2-Y47H, R-K1UK-T5K6, R-ZCRY-4KHC |
-| D6 | project/design/D06.md | Suite discovery | R-ZDZU-IC81, R-EF0V-TP9R, R-ZF7Q-W3YQ, R-ZGFN-9VPF |
+| D6 | project/design/D06.md | Suite discovery: the inventory peer set and the live catalog | R-ORZ1-QIWX, R-OT6Y-4ANM, R-OUEU-I2EB |
 | D7 | project/design/D07.md | Runner | R-K5I9-YGS9, R-1X6X-E3KP, R-1ZMQ-5N23, R-K6Q6-C8IY, R-K7Y2-Q09N, R-K95Z-3S0C, R-ZHNJ-NNG4 |
 | D8 | project/design/D08.md | DB migration | R-KBLR-VBHQ, R-KCTO-938F |
 | D9 | project/design/D09.md | MCP schema | R-KE1K-MUZ4, R-20UM-JESS, R-222I-X6JH |
@@ -23,7 +23,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D16 | project/design/D16.md | Web surface from `share/www` through the chassis (de-embed) | R-DIAW-ZFMC, R-DJIT-D7D1 |
 | D17 | project/design/D17.md | MCP surface over `appkit/mcp`: `internal/mcp` becomes the tool table | R-DKQP-QZ3Q, R-DLYM-4QUF |
 | D18 | project/design/D18.md | Delete the chassis shims (`internal/db` wrappers) and true up the doctrine doc | none — structural |
-| D19 | project/design/D19.md | Suite tools are eager, attached as MCP servers | R-ZIVG-1F6T, R-ZK3C-F6XI, R-ZLB8-SYO7 |
+| D19 | project/design/D19.md | Suite tools behind the three-tool gateway | R-OVMQ-VU50, R-OWUN-9LVP, R-OY2J-NDME, R-OZAG-15D3, R-P0IC-EX3S, R-P1Q8-SOUH, R-P2Y5-6GL6, R-P461-K8BV |
 | D20 | project/design/D20.md | the session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 | R-3RIS-23TJ, R-3SQO-FVK8, R-3TYK-TNAX |
 | D21 | project/design/D21.md | Content-plane acceptor: the `Fetch` sandbox tool | R-65YV-4ES6, R-676R-I6IV, R-68EN-VY9K, R-69MK-9Q09, R-6AUG-NHQY |
 | D22 | project/design/D22.md | Content-plane holder: run sandbox files at `GET /run-content` | R-6C2D-19HN, R-6EI5-SSZ1, R-6FQ2-6KPQ |
@@ -47,7 +47,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D40 | project/design/D40.md | Two loaders: the live definition and the run's pinned commit | R-ZOYX-Y9WA, R-ZREQ-PTDO, R-ZSMN-3L4D |
 | D41 | project/design/D41.md | `run_delete`: removing a run and everything it produced | R-ZTUJ-HCV2, R-ZV2F-V4LR, R-ZWAC-8WCG |
 | D44 | project/design/D44.md | The correlation id on the record: `runs.correlation_id`, `calls.correlation_id`, mint-or-inherit at spawn | R-HIAG-2MGL, R-HJIC-GE7A, R-HKQ8-U5XZ, R-HLY5-7XOO, R-HN61-LPFD, R-HODX-ZH62 |
-| D45 | project/design/D45.md | Chain propagation on suite peer calls: `X-Correlation-Id` in the `MCPServer` headers | R-HPLU-D8WR, R-HS1N-4SE5, R-HT9J-IK4U |
+| D45 | project/design/D45.md | Chain propagation on suite peer calls: `X-Correlation-Id` on every gateway hop | R-P5DX-Y02K, R-P7TQ-PJJY |
 | D46 | project/design/D46.md | nginx fragment: capture the edge-minted chain id on gated locations, strip it on the ungated one | R-HWX8-NVCX, R-HY55-1N3M |
 | D47 | project/design/D47.md | Rebuild to adopt: event-plane chain continuation, the `root` record at spawn, and the recorded boundary of a run | R-HZD1-FEUB, R-I0KX-T6L0, R-I1SU-6YBP, R-I30Q-KQ2E, R-I48M-YHT3 |
 | D48 | project/design/D48.md | State paths come from `appkit/config`, never from a hardcoded `./tmp` default | R-LBH5-4LO0, R-LCP1-IDEP, R-LDWX-W55E |
@@ -62,6 +62,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D57 | project/design/D57.md | The framing prompt tells the run its folder is a git clone | R-S953-GPY3, R-SACZ-UHOS |
 | D58 | project/design/D58.md | `repos` joins the trigger sources: prompts as the version plane's workflow runner | R-SBKW-89FH, R-SCSS-M166 |
 | D59 | project/design/D59.md | Retiring the content columns | R-SE0O-ZSWV, R-SF8L-DKNK |
+| D60 | project/design/D60.md | The prompts-owned peer MCP client | R-OLVJ-TO7G, R-OOBC-L7OU, R-OPJ8-YZFJ, R-OQR5-CR68 |
 
 ## Verification ids → Decision
 
@@ -185,7 +186,6 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-EBD6-OE1O | D37 | project/design/D37.md |
 | R-ECL3-25SD | D37 | project/design/D37.md |
 | R-EDSZ-FXJ2 | D37 | project/design/D37.md |
-| R-EF0V-TP9R | D6 | project/design/D06.md |
 | R-F5X1-XH6C | D5 | project/design/D05.md |
 | R-F74Y-B8X1 | D26 | project/design/D26.md |
 | R-F8CU-P0NQ | D26 | project/design/D26.md |
@@ -202,9 +202,6 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-HN61-LPFD | D44 | project/design/D44.md |
 | R-HODX-ZH62 | D44 | project/design/D44.md |
 | R-HOME-2T4X | D12 | project/design/D12.md |
-| R-HPLU-D8WR | D45 | project/design/D45.md |
-| R-HS1N-4SE5 | D45 | project/design/D45.md |
-| R-HT9J-IK4U | D45 | project/design/D45.md |
 | R-HWX8-NVCX | D46 | project/design/D46.md |
 | R-HY55-1N3M | D46 | project/design/D46.md |
 | R-HZD1-FEUB | D47 | project/design/D47.md |
@@ -243,6 +240,23 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-M69E-4OFA | D49 | project/design/D49.md |
 | R-O1AD-MRKW | D50 | project/design/D50.md (adopted from `root project/design/D23.md`) |
 | R-O2IA-0JBL | D50 | project/design/D50.md (adopted from `root project/design/D23.md`) |
+| R-OLVJ-TO7G | D60 | project/design/D60.md |
+| R-OOBC-L7OU | D60 | project/design/D60.md |
+| R-OPJ8-YZFJ | D60 | project/design/D60.md |
+| R-OQR5-CR68 | D60 | project/design/D60.md |
+| R-ORZ1-QIWX | D6 | project/design/D06.md |
+| R-OT6Y-4ANM | D6 | project/design/D06.md |
+| R-OUEU-I2EB | D6 | project/design/D06.md |
+| R-OVMQ-VU50 | D19 | project/design/D19.md |
+| R-OWUN-9LVP | D19 | project/design/D19.md |
+| R-OY2J-NDME | D19 | project/design/D19.md |
+| R-OZAG-15D3 | D19 | project/design/D19.md |
+| R-P0IC-EX3S | D19 | project/design/D19.md |
+| R-P1Q8-SOUH | D19 | project/design/D19.md |
+| R-P2Y5-6GL6 | D19 | project/design/D19.md |
+| R-P461-K8BV | D19 | project/design/D19.md |
+| R-P5DX-Y02K | D45 | project/design/D45.md |
+| R-P7TQ-PJJY | D45 | project/design/D45.md |
 | R-RDFP-IOO1 | D51 | project/design/D51.md |
 | R-RENL-WGEQ | D51 | project/design/D51.md |
 | R-RFVI-A85F | D51 | project/design/D51.md |
@@ -289,13 +303,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-ZAC5-D0ZY | D3 | project/design/D03.md |
 | R-ZBK1-QSQN | D4 | project/design/D04.md |
 | R-ZCRY-4KHC | D5 | project/design/D05.md |
-| R-ZDZU-IC81 | D6 | project/design/D06.md |
-| R-ZF7Q-W3YQ | D6 | project/design/D06.md |
-| R-ZGFN-9VPF | D6 | project/design/D06.md |
 | R-ZHNJ-NNG4 | D7 | project/design/D07.md |
-| R-ZIVG-1F6T | D19 | project/design/D19.md |
-| R-ZK3C-F6XI | D19 | project/design/D19.md |
-| R-ZLB8-SYO7 | D19 | project/design/D19.md |
 | R-ZNR1-KI5L | D39 | project/design/D39.md |
 | R-ZOYX-Y9WA | D40 | project/design/D40.md |
 | R-ZREQ-PTDO | D40 | project/design/D40.md |

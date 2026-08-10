@@ -9,5 +9,9 @@ loop **deletes** that phase's line and its `phase-NN.md` — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 72
+Next phase: 76
 
+- Phase 72 ⬜ realizes R-OLVJ-TO7G, R-OOBC-L7OU, R-OPJ8-YZFJ, R-OQR5-CR68 — the prompts-owned peer MCP client (`internal/mcpclient`)
+- Phase 73 ⬜ realizes R-ORZ1-QIWX, R-OT6Y-4ANM, R-OUEU-I2EB, R-P5DX-Y02K — suite discovery rewritten: the peer set and the live catalog
+- Phase 74 ⬜ realizes R-OWUN-9LVP, R-OY2J-NDME, R-OZAG-15D3, R-P0IC-EX3S, R-P1Q8-SOUH — the gateway tools package (`internal/gateway`)
+- Phase 75 ⬜ realizes R-OVMQ-VU50, R-P2Y5-6GL6, R-P461-K8BV, R-P7TQ-PJJY — runner cutover: gateway in, eager attachment out

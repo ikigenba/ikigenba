@@ -16,7 +16,7 @@ Design's responsibility ends at minting. How coverage is measured, what counts a
 - **Testing vocabulary**: the layer names and the rules for what each layer may touch are the suite contract's, adopted by D50 and cited at `root project/design/D23.md`; this design restates none of them and uses no other testing vocabulary. prompts has two layers. **Composed**: the boot smokes in `cmd/prompts/main_test.go`, which build the real binary and run `serve` over a loopback port. **Hermetic**: everything else — the `net/http/httptest` page/tool/runner tests, the temp-file SQLite tests through the real migration runner, the real-`git` tests over temp-directory bare repositories (including the loopback `git http-backend` door the tree starts itself), the `share/www` asset tests over the repo-real tree, the `etc/nginx.conf` string assertions, and `internal/consume/smoke_test.go`, whose name is an informal alias and not a layer. There is **no live layer** and no tree-local manual layer. Environmental precondition beyond the Go toolchain: the **`git` binary** (D50/D55). GOWORK mode: workspace for development, `GOWORK=off` for the production build.
 - **Formatting**: `gofmt -l .` emits no output.
 - **Requirement-id tag glob**: `*_test.go` — the test-file glob under which `R-XXXX-XXXX` tags must appear for an id to count as realized.
-- **Published agentkit**: `github.com/ikigenba/agentkit` — the external dependency, consumed as a published module pinned to an exact released version in `prompts/go.mod`, which is the sole authority on **which** version (D1; the number appears nowhere in this design, and moving it is operational work rather than a spec change). Both local dev and the production build (`GOWORK=off`) resolve it from the module cache. The surface prompts consumes: the offering-structured model catalog, typed-credential constructors with lazy credential resolution, typed provider `Identity`, the OpenRouter provider, consumer-owned cost resolution, `Conversation.MCPServers`, and the `toolkit` subpackage of standard coding tools (research §2, §3, §4). Three capabilities agentkit offers — `toolkit.WebSearch`, `toolkit.WebFetch`, and the `ocr` subpackage — are deliberately unconsumed (D1).
+- **Published agentkit**: `github.com/ikigenba/agentkit` — the external dependency, consumed as a published module pinned to an exact released version in `prompts/go.mod`, which is the sole authority on **which** version (D1; the number appears nowhere in this design, and moving it is operational work rather than a spec change). Both local dev and the production build (`GOWORK=off`) resolve it from the module cache. The surface prompts consumes: the offering-structured model catalog, typed-credential constructors with lazy credential resolution, typed provider `Identity`, the OpenRouter provider, consumer-owned cost resolution, `NewTool` (the gateway tools' constructor — `Conversation.MCPServers` is deliberately unconsumed since the D19 gateway rewrite), and the `toolkit` subpackage of standard coding tools (research §2, §3, §4). Three capabilities agentkit offers — `toolkit.WebSearch`, `toolkit.WebFetch`, and the `ocr` subpackage — are deliberately unconsumed (D1).
 - **Local chassis modules**: `appkit` and `eventplane` remain as committed `replace` directives in `prompts/go.mod`, consumed as fixed external contracts (never edited from here). The **revised eventplane routing API** (kind/subject envelope, `routing.Key`/`Match`, `outbox.Family`/`Registry.CouldMatch`, `consumer.Event{Kind, Subject}` + `Key()` — `eventplane/project/design/` D1–D4) and an appkit that compiles against it are **external preconditions** for the conformance Decisions D24/D25 (operator-sequenced; see the ⛔ banners there).
 - **Migrations**: schema changes land only as new timestamped migrations minted with `bin/create-migration prompts <name>`; committed migrations are immutable (the suite rule).
 - **Share filesystem API**: the file-share tools (D26) consume dropbox's loopback filesystem API (`dropbox/docs/filesystem-api.md`) as a fixed external contract, addressed through the registry-defaulted `DROPBOX_BASE_URL`. Its refined mutation error contract (dropbox design D16, error-contract slice; dropbox plan phase 25) is an **external precondition**, operator-sequenced before D26's phases (see the ⛔ banner in D26).
@@ -40,6 +40,22 @@ Deleting a prompt **does not cascade**: it removes the prompt row and its trigge
 
 The plane is also a trigger source: `repos:push/<kind>/<name>` filters make a prompt a CI check or a workflow runner over the suite's own histories (D58).
 
+## The suite gateway (how a run reaches peer services)
+
+A run's toolset is the 13 sandbox built-ins (D5/D21/D26) plus **three gateway
+tools** — `suite_services` (the live catalog), `suite_tools` (one service's
+schemas, relayed verbatim), `suite_call` (dispatch) — built with
+`agentkit.NewTool` in `internal/gateway` (D19) over the peer set
+`internal/suite.Discover` derives from the box inventory (D6) and the minimal
+MCP client `internal/mcpclient` (D60), whose transport is the chassis's
+instrumented outbound client. No peer tool schema ever enters the provider
+tools array, no peer is contacted at spawn, and a down peer costs only the
+calls addressed to it. The gateway interprets nothing it relays: peer schemas
+pass through as text, and peer-side validation (D27) is the authority on
+arguments — the gateway checks only that `suite_call`'s `args` is one JSON
+object, and frames every failure naming the service, the tool, and
+`suite_tools` as the recovery step.
+
 ## Web surface (the browse UI)
 
 prompts is no longer MCP-only: it serves a **human browse UI** — server-rendered pages under the session-gated `/ui/` namespace (Prompts and Runs tabs, detail pages, the per-run calls log; D34/D35), with the bare mount root `GET /{$}` redirecting into it — **beside** the unchanged MCP/`/health`/PRM/`/feed` surfaces. The two surfaces have two audiences gated two ways (D10): **agents** reach `/mcp` with an opaque bearer (`auth_request /_authn`, unchanged); **humans** reach the UI with the dashboard login-session cookie (`auth_request /_session-authn`, the same coarse gate `sites` uses for its private tier — any logged-in user, no owner scoping). All human routes are mounted **ungated in-process** (in `registerRoutes`, beside the existing `POST /mcp`) — nginx remains the sole trust boundary — so the page handlers read no token and no identity header. prompts ships its **own** copy of the Carbon assets (`tokens.css` + woff2 fonts) and the UI templates on disk in the release `share/www` tree, served through the chassis `Spec.WWW` (`rt.WWW().Render`; the chassis auto-mounts `GET /static/`), as diffable release artifacts (D16). The pages are proven with `net/http/httptest` over a seeded SQLite DB and the repo-real `share/www` tree loaded via `appkit/web` from the composition-root package — no LLM, no runner, no identity header. The nginx session-gates themselves are config, not Go — proven by string assertions over `etc/nginx.conf`. Details: D10 (gates + root), D34 (`ui/` namespace), D35 (pages), D13 (assets/fonts), D12 (Home link).
@@ -59,9 +75,10 @@ inbound chain, and a run with no inbound cause *is* its own root (durable-root
 reuse — the run id is the chain id) and records one `root` record at spawn
 (D47), established by seeding the run id onto the context and letting the
 chassis `correlation.StartChain` adopt it — prompts mints no chain id. Every suite peer MCP call an in-run agent makes carries that id
-(`X-Correlation-Id` in the `MCPServer` headers agentkit injects, D45); the
-hop is recorded once, by the receiving peer, since agentkit's client offers
-no instrumentation seam (D45's recorded boundary). At the edge, the fragment captures the introspection-minted id on every
+(`X-Correlation-Id` in the peer headers the D60 gateway client injects on
+every request, D45); each hop is recorded from both sides — prompts'
+`outbound` record via the chassis's instrumented client, and the receiving
+peer's `request` record. At the edge, the fragment captures the introspection-minted id on every
 gated location and strips it on the ungated PRM bootstrap (D46). Everything
 else — inbound `request` records, `lifecycle`, `publish`/`consume` — arrives by
 rebuilding against the new appkit/eventplane (D47), which also states the

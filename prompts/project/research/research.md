@@ -2,11 +2,15 @@
 
 Non-contractual external ground truth the design references so it never re-derives it. Rewritten in place; the build loop never reads this file.
 
-## 1. Suite-tool context cost — the accepted price of direct attachment
+## 1. Suite-tool context cost — measured on the live box, cross-provider
 
-At run spawn every reachable peer's tools are attached to the conversation, and their full definitions (name + description + input JSON Schema) are serialized into the provider `tools` array on **every** round-trip of the run's single `Send`. Measured against a live local suite (6 services on :3001–:3006): 79 tools, ~31 KB of serialized descriptions+schemas ≈ **8k tokens**; a full box (~11 peers, ~120 tools) lands around **15–18k tokens resident per round-trip**, plus tool-choice dilution.
+With eager attachment, every reachable peer's tools join the conversation at spawn and their full definitions (name + description + input JSON Schema) are serialized into the provider `tools` array on **every** round-trip of the run's single `Send`. Measured on the live box (2026-08-09) by an introspection prompt whose agent reported its own starting context, with token counts read from the runs' API usage:
 
-This cost was previously avoided by deferring suite tools behind agentkit's `load_tools`. That route closed at agentkit `v0.12.0` (§2) and the cost is now accepted deliberately, not by oversight.
+- A run agent receives **153 tools, all with full inline schemas**: the 13 sandbox built-ins plus **140 `ikigenba_*` tools across 13 services** (prompts itself excluded). No MCP framing is visible to the model (flat tool list, no server names, no server instructions), and no deferral mechanism of any kind is present.
+- Starting context: **~21.3k Claude tokens** (`claude-sonnet-4-6`: 1,267 uncached + 19,992 cache-write on the first call) and **~15.4k GPT tokens** for byte-identical content (`gpt-5.4-mini`: the second call's 15,360-token cached prefix is the first call's prompt). The difference is tokenizer efficiency, not content. Tool definitions are ~90% of the starting context on both providers, and the cost grows linearly with every service added to the box.
+- Evidence runs: `AGP6RYBXORIYBI7BDQ5XHK5T74` (anthropic), `AGP6R4ZIMZROYV3OD7CUD4OUYI` (openai), each with a `report.md` in its sandbox.
+
+This cost was previously avoided by deferring suite tools behind agentkit's `load_tools`; that route closed at agentkit `v0.12.0` (§2). The gateway design now removes the cost by a route that needs no agentkit deferral mechanism: three fixed-schema meta-tools (§7) over a prompts-owned MCP client (§8).
 
 ## 2. agentkit `v0.12.0` — `RawTool` removed, `Tool` sealed (why deferral closed)
 
@@ -30,9 +34,11 @@ MCPServers []MCPServer // servers attach/detach by mutating this between turns
 
 - agentkit calls `tools/list` itself per server and wraps each result in its own internal tool type. Discovered tools are named `sanitizeMCPToolName(server.Name + "_" + tool.Name)`, so passing `Name: "ikigenba_crm"` against peers registering bare verbs yields `ikigenba_crm_health` — byte-identical to the `qualify()` names prompts produces today.
 - MCP-sourced tools are appended to the **eager** base set (`resolveMCPTools` → `base`). There is no path from `MCPServers` into `DeferredTools`.
-- Resolution is **all-or-nothing**: any server whose `tools/list` fails causes `closeMCP` plus an error return, failing the whole `Send`. There is no per-server skip. This is the regression prompts accepts (design D6); fixing it is owed by agentkit.
+- Resolution is **all-or-nothing**: any server whose `tools/list` fails causes `closeMCP` plus an error return, failing the whole `Send`. There is no per-server skip. (While prompts attached peers this way, that made one dead peer fail the whole run — a cost the gateway design retired along with the attachment path itself.)
 - The tool set is cached per server-set key after first resolve, so later turns in the same conversation do not re-list. A failing tool *call* returns an error to the model rather than ending the run.
 - An MCP tool's schema is still validated against agentkit's canonical subset. That subset permits `type`, `description`, `title`, `properties`, `$defs`, `$ref`, `required`, `items`, `enum` (strings only), `const` (strings only), `anyOf`, `oneOf`; it requires an object root and rejects authored `additionalProperties`, recursive `$ref`, and non-string enum/const values.
+
+**`NewTool` reflection constraints (verified against `v0.17.0` `tool.go`) — what a meta-tool's input may look like.** The schema reflector panics on `map` kinds, `interface`/`any`, and `json.RawMessage` fields; structs, strings, numbers, bools, and slices of those are fine. Consequence: a gateway tool cannot declare a free-form JSON-object parameter — an arbitrary-arguments field must ride as a **string** the tool parses itself. Two adjacent facts: agentkit's own MCP client lives in `internal/mcp` and is **not exported**, so a prompts-side dispatcher must bring its own client (§8); and `v0.17.0` added agentkit-side validation of tool arguments against each declared tool schema before invocation, so a malformed call to a gateway tool is bounced back to the model by agentkit itself, before the tool runs.
 
 ## 3. agentkit v0.16.0 — the catalog, restructured by offering (the release this design consumes)
 
@@ -153,6 +159,27 @@ Facts verified against the tagged agentkit source and the `oauth` CLI repo (`git
 **The `oauth` CLI.** Provider-agnostic authorization-code + PKCE login: serves its own loopback callback, opens the browser, exchanges the code, and writes the token endpoint's JSON response **verbatim to stdout** (human output on stderr; failed login writes nothing, exits non-zero) — exactly the file `subscription.Load` consumes. Its own `--help` carries the OpenAI worked example: `--auth-url https://auth.openai.com/oauth/authorize --token-url https://auth.openai.com/oauth/token --client-id app_EMoamEEZ73f0CkXaXp7hrann --scope "openid profile email offline_access" --port 1455 --callback-path /auth/callback` (matching OpenAI's registered `http://localhost:1455/auth/callback`). opsctl init-box installs it to `/usr/local/bin` on every box (its D11); on a headless box the printed authorize URL plus an `ssh -L 1455:localhost:1455` forward completes the flow.
 
 **On-box home.** `/opt/prompts/state/` is the durable, service-owned tree: deploy chowns it to `prompts:prompts` and never touches its contents — the correct home for a file the service must rewrite and that must survive deploys. `/opt/prompts/etc/` is deploy-owned versioned config (root-written, 0644) and is wrong for a mutable credential. The SSM/env secret path is also wrong: it delivers static values from the workstation, and a pushed copy of a rotating lineage goes stale after the first on-box refresh.
+
+## 7. The gateway pattern — cross-model comprehension, verified by experiment
+
+The three-tool progressive-discovery gateway (`suite_services` → `suite_tools` → `suite_call`) was tested for cross-model comprehension before being designed in, because the suite routes runs to anthropic, openai, google, z-ai, and openrouter models and the mechanism must work on all of them. Five models — `gpt-5.4-mini`, `gpt-5.6-luna`, `gemini-3.5-flash`, `kimi-k2.6`, `glm-4.7` — each ran a simulation prompt (2026-08-10) that described the three tools, supplied the catalog and two real tool schemas (ledger `record`, crm `save`), posed two tasks (a residual-balanced double-entry transaction; a contact create), and required the exact call sequence as machine-checkable JSONL.
+
+Results (runs `AGP6SAHFDWCBCHDN5X6RE5GUKY`, `AGP6SAHH4QKUSGXLKGIDHUVNXU`, `AGP6SAHKUCMTCMBYE6QZSFRIAM`, `AGP6SAHNL4Y2SRN2IRHPFRXP3I`, `AGP6SAHOCTIYEFR7OJSVZJSPVI`):
+
+- **Flow: 5/5.** Every model called `suite_services` first, `suite_tools` for a service before its first `suite_call` to it, used bare tool names, and invented nothing. Both GPT models additionally obeyed the ledger instructions' "call describe first" — evidence that service-level instructions relayed through discovery steer behavior.
+- **Argument fidelity: 4/5 flawless** on the hard schema (signed minor-unit postings with one omitted-residual entry). The two deviations: `glm-4.7` inverted the debit/credit signs — a *semantic* misreading of description text that schema validation cannot catch and that typed per-tool attachment would not have prevented either (the sign convention lives in the same description string both ways); and `gpt-5.4-mini` hand-wrote one JSONL line with a missing brace — an artifact of authoring JSON as file text that native function calling does not reproduce (the provider parses arguments before the harness sees them).
+- Models authored all arguments **as JSON text**, which is exactly the fidelity mode the gateway's string-carried `args` parameter uses (§2), so the experiment covers that mode directly.
+
+The pattern is also ecosystem-standard: MCP client best-practice guidance describes progressive discovery, and the catalog→inspect→execute triple appears in fastmcp-gateway, mcpjungle, metamcp, Docker MCP Gateway, and Alpha Vantage's TOOL_LIST/TOOL_GET/TOOL_CALL.
+
+## 8. The MCP wire contract a prompts-owned client must speak
+
+What `suite_tools`/`suite_call` dispatch requires, verified against agentkit `v0.17.0` `internal/mcp/mcp.go` (the reference implementation of a suite-compatible client) and the appkit `/mcp` surface the peers serve:
+
+- **Transport**: JSON-RPC 2.0 over HTTP POST to the peer's loopback `/mcp` (streamable-HTTP style; peers answer `application/json`). Configured headers are injected on **every** request — this is where the identity trio and the correlation id ride.
+- **Methods**: `initialize` (params: `protocolVersion`, `capabilities`, `clientInfo`; result carries `serverInfo` and the server-level `instructions` string), then the `notifications/initialized` notification, then `tools/list` (result: `tools[]` of `{name, description, inputSchema}`) and `tools/call` (params: `{name, arguments}`; result: `content[]` blocks — text blocks carry the payload — plus `isError`).
+- The retired `internal/mcpclient` deleted by the D6 rewrite of 2026-06 is recoverable from git history as a reference; the build reimplements from spec, not by resurrection.
+- **MCP 2026-07-28 release candidate (checked 2026-08-09, non-blocking)**: the next protocol revision does **not** standardize progressive/deferred tool discovery — nothing there replaces or reshapes the gateway; it layers above the protocol. The RC's relevant drift when the suite eventually migrates: the `initialize` handshake is removed in favor of per-request `_meta` and a `server/discover` RPC; `tools/list` results gain required `ttlMs`/`cacheScope` fields; servers SHOULD return tools in deterministic order. None of it is adopted now — external harnesses (Claude Code, Codex) still speak the current protocol to the suite's services, and the gateway client is one module-internal seam to migrate later.
 
 ## 9. Suite telemetry — the contracts prompts adopts (external ground truth)
 
