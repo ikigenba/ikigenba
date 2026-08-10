@@ -69,8 +69,8 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D75 → `project/design/D75.md` — Scope on the MCP surface: the mandatory parameter + the four management verbs — owns R-H8HN-EXJE, R-H9PJ-SPA3, R-HAXG-6H0S, R-HC5C-K8RH, R-HDD8-Y0I6, R-HEL5-BS8V, R-HFT1-PJZK, R-HH0Y-3BQ9, R-HI8U-H3GY, R-HJGQ-UV7N
 - D76 → `project/design/D76.md` — The scoped web surface: tier + scope in every URL, the landing cookie, the selector — owns R-HKON-8MYC, R-HLWJ-MEP1, R-HN4G-06FQ, R-HOCC-DY6F, R-HQS5-5HNT, R-HS01-J9EI, R-HT7X-X157, R-I0JC-7NLD
 - D77 → `project/design/D77.md` — nginx: the two scope tiers (public ungated, private session-gated) — none — structural
-- D78 → `project/design/D78.md` — The public tier is read-only: browse + keyword search, no inference — owns R-HVNQ-OKML, R-HWVN-2CDA, R-HY3J-G43Z, R-HPXQ-UTP7
-- D79 → `project/design/D79.md` — Truthful submit controls: Ask/Search labels + script-driven pending feedback — owns R-VBAY-V6II, R-VCIV-8Y97, R-VDQR-MPZW
+- D78 → `project/design/D78.md` — Both tiers serve ask: the public tier gets the full experience — owns R-4Q8B-N9SX, R-4RG8-11JM, R-HY3J-G43Z
+- D79 → `project/design/D79.md` — Truthful submit controls: the Ask label + script-driven pending feedback — owns R-VBAY-V6II, R-4TW0-SL10, R-VDQR-MPZW
 - D80 → `project/design/D80.md` — The page shell: boxed top-down layout, header bar (brand mark + universal question form), footer — owns R-HG6J-SNRN, R-HHEG-6FIC, R-2MYX-Y4PN, R-2O6U-BWGC, R-2PEQ-PO71, R-2QMN-3FXQ
 - D81 → `project/design/D81.md` — Suggested pages: the scope's seven newest subjects on every scope home — owns R-HJU8-XYZQ, R-HL25-BQQF, R-HMA1-PIH4, R-HOPU-H1YI
 
@@ -136,6 +136,9 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-40C0-C5CT → D32 (`project/design/D32.md`)
 - R-4BCC-0EHJ → D5 (`project/design/D05.md`)
 - R-4LKF-FB23 → D2 (`project/design/D02.md`, adopted from root `project/design/D08.md`)
+- R-4Q8B-N9SX → D78 (`project/design/D78.md`)
+- R-4RG8-11JM → D78 (`project/design/D78.md`)
+- R-4TW0-SL10 → D79 (`project/design/D79.md`)
 - R-5UPD-VVNA → D9 (`project/design/D09.md`)
 - R-5VXA-9NDZ → D9 (`project/design/D09.md`)
 - R-5X56-NF4O → D9 (`project/design/D09.md`)
@@ -282,13 +285,10 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-HOCC-DY6F → D76 (`project/design/D76.md`)
 - R-HOJB-ZR3T → D56 (`project/design/D56.md`)
 - R-HOPU-H1YI → D81 (`project/design/D81.md`)
-- R-HPXQ-UTP7 → D78 (`project/design/D78.md`)
 - R-HQS5-5HNT → D76 (`project/design/D76.md`)
 - R-HS01-J9EI → D76 (`project/design/D76.md`)
 - R-HT7X-X157 → D76 (`project/design/D76.md`)
 - R-HUDR-AWS9 → D26 (`project/design/D26.md`)
-- R-HVNQ-OKML → D78 (`project/design/D78.md`)
-- R-HWVN-2CDA → D78 (`project/design/D78.md`)
 - R-HY3J-G43Z → D78 (`project/design/D78.md`)
 - R-I0JC-7NLD → D76 (`project/design/D76.md`)
 - R-J8QP-BETB → D5 (`project/design/D05.md`)
@@ -373,7 +373,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-T2ZN-A5DP → D48 (`project/design/D48.md`)
 - R-VA32-HERT → D7 (`project/design/D07.md`)
 - R-VBAY-V6II → D79 (`project/design/D79.md`)
-- R-VCIV-8Y97 → D79 (`project/design/D79.md`)
 - R-VDQR-MPZW → D79 (`project/design/D79.md`)
 - R-VYU0-BPAX → D6 (`project/design/D06.md`)
 - R-W19T-38SB → D6 (`project/design/D06.md`)
