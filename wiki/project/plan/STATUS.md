@@ -12,5 +12,4 @@ lines.
 
 Next phase: 132
 
-- Phase 130 ⬜ realizes R-HUFU-ASVW, R-HVNQ-OKML, R-HWVN-2CDA, R-HY3J-G43Z, R-HZBF-TVUO — the public tier's read-only states: browse, keyword search, no inference
 - Phase 131 ⬜ realizes — — nginx: the two scope-tier locations (structural)
