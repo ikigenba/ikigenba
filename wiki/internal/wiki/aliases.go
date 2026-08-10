@@ -2,6 +2,7 @@ package wiki
 
 import (
 	"context"
+	"fmt"
 
 	"wiki/internal/page"
 )
@@ -25,15 +26,22 @@ func NewAliasStore(db sqlStore) *AliasStore {
 	return &AliasStore{db: db}
 }
 
-func (a *AliasStore) Insert(ctx context.Context, al Alias) error {
+func (a *AliasStore) Insert(ctx context.Context, args ...any) error {
+	scope, al, err := aliasArgs(args)
+	if err != nil {
+		return err
+	}
+	if err := requireScope(ctx, a.db, scope); err != nil {
+		return err
+	}
 	normName := al.NormName
 	if normName == "" {
 		normName = al.Name
 	}
-	_, err := a.db.ExecContext(ctx, `
-		INSERT INTO aliases (norm_name, subject_id, name, owner_id, owner_email, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		Normalize(normName), al.SubjectID, al.Name, al.OwnerID, al.OwnerEmail, al.CreatedAt)
+	_, err = a.db.ExecContext(ctx, `
+		INSERT INTO aliases (scope, norm_name, subject_id, name, owner_id, owner_email, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		scope, Normalize(normName), al.SubjectID, al.Name, al.OwnerID, al.OwnerEmail, al.CreatedAt)
 	return err
 }
 
@@ -43,22 +51,37 @@ func (a *AliasStore) RepointSubject(ctx context.Context, from, to string) error 
 	return err
 }
 
-func (a *AliasStore) GetByNormName(ctx context.Context, normName string) (Alias, error) {
+func (a *AliasStore) GetByNormName(ctx context.Context, args ...string) (Alias, error) {
+	scope, normName, err := scopedStringArgs(args)
+	if err != nil {
+		return Alias{}, err
+	}
+	if err := requireScope(ctx, a.db, scope); err != nil {
+		return Alias{}, err
+	}
 	var al Alias
-	err := a.db.QueryRowContext(ctx, `
+	err = a.db.QueryRowContext(ctx, `
 		SELECT norm_name, subject_id, name, owner_id, owner_email, created_at
 		FROM aliases
-		WHERE norm_name = ?`,
-		Normalize(normName)).
+		WHERE scope = ? AND norm_name = ?`,
+		scope, Normalize(normName)).
 		Scan(&al.NormName, &al.SubjectID, &al.Name, &al.OwnerID, &al.OwnerEmail, &al.CreatedAt)
 	return al, err
 }
 
 func (a *AliasStore) ListAll(ctx context.Context) ([]Alias, error) {
+	return a.ListAllInScope(ctx, "default")
+}
+
+func (a *AliasStore) ListAllInScope(ctx context.Context, scope string) ([]Alias, error) {
+	if err := requireScope(ctx, a.db, scope); err != nil {
+		return nil, err
+	}
 	rows, err := a.db.QueryContext(ctx, `
 		SELECT norm_name, subject_id, name, owner_id, owner_email, created_at
 		FROM aliases
-		ORDER BY norm_name`)
+		WHERE scope = ?
+		ORDER BY norm_name`, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +96,22 @@ func (a *AliasStore) ListAll(ctx context.Context) ([]Alias, error) {
 		aliases = append(aliases, al)
 	}
 	return aliases, rows.Err()
+}
+
+func aliasArgs(args []any) (string, Alias, error) {
+	if len(args) == 1 {
+		if al, ok := args[0].(Alias); ok {
+			return "default", al, nil
+		}
+	}
+	if len(args) == 2 {
+		scope, scopeOK := args[0].(string)
+		al, aliasOK := args[1].(Alias)
+		if scopeOK && aliasOK {
+			return scope, al, nil
+		}
+	}
+	return "", Alias{}, fmt.Errorf("wiki: expected alias or scope and alias")
 }
 
 func (a *AliasStore) ListMerges(ctx context.Context, p page.Params) ([]Alias, string, error) {

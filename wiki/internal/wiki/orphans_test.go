@@ -24,7 +24,7 @@ func TestOrphansReturnsSubjectsWithZeroInboundMentions(t *testing.T) {
 		Body:      "Alpha Lab prepared the Beta Launch.",
 	})
 
-	got, err := svc.Orphans(ctx)
+	got, err := svc.Orphans(ctx, "default")
 	if err != nil {
 		t.Fatalf("Orphans: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestOrphansSelfMentionDoesNotRescueSubject(t *testing.T) {
 		Body:      "Solo Subject only names Solo Subject.",
 	})
 
-	got, err := svc.Orphans(ctx)
+	got, err := svc.Orphans(ctx, "default")
 	if err != nil {
 		t.Fatalf("Orphans before inbound page: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestOrphansSelfMentionDoesNotRescueSubject(t *testing.T) {
 		Body:      "Referrer names Solo Subject from another page.",
 	})
 
-	got, err = svc.Orphans(ctx)
+	got, err = svc.Orphans(ctx, "default")
 	if err != nil {
 		t.Fatalf("Orphans after inbound page: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestOrphansCountsAliasMentionsAsCanonicalInbound(t *testing.T) {
 		Body:      "The field report mentions Vasari, without naming the canonical title.",
 	})
 
-	got, err := svc.Orphans(ctx)
+	got, err := svc.Orphans(ctx, "default")
 	if err != nil {
 		t.Fatalf("Orphans before alias: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestOrphansCountsAliasMentionsAsCanonicalInbound(t *testing.T) {
 		t.Fatalf("Insert alias: %v", err)
 	}
 
-	got, err = svc.Orphans(ctx)
+	got, err = svc.Orphans(ctx, "default")
 	if err != nil {
 		t.Fatalf("Orphans after alias: %v", err)
 	}
@@ -132,11 +132,11 @@ func TestOrphansReturnsDeterministicPathOrder(t *testing.T) {
 	saveSubject(t, ctx, subjects, Subject{ID: "subject-a", Name: "Alpha Concept", Type: "concept"})
 	saveSubject(t, ctx, subjects, Subject{ID: "subject-b", Name: "Beta Event", Type: "event"})
 
-	first, err := svc.Orphans(ctx)
+	first, err := svc.Orphans(ctx, "default")
 	if err != nil {
 		t.Fatalf("first Orphans: %v", err)
 	}
-	second, err := svc.Orphans(ctx)
+	second, err := svc.Orphans(ctx, "default")
 	if err != nil {
 		t.Fatalf("second Orphans: %v", err)
 	}
@@ -146,6 +146,38 @@ func TestOrphansReturnsDeterministicPathOrder(t *testing.T) {
 	}
 	if got := orphanSubjectPaths(second); !sameStrings(got, want) {
 		t.Fatalf("second Orphans paths = %+v, want stable %+v", got, want)
+	}
+}
+
+func TestOrphansAreComputedWithinOneScope(t *testing.T) {
+	// R-H169-4B38
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	for _, scope := range []string{"s1", "s2"} {
+		if _, err := NewScopeStore(conn).Create(ctx, scope); err != nil {
+			t.Fatalf("Create scope %s: %v", scope, err)
+		}
+	}
+	subjects := NewSubjectStore(conn)
+	pages := NewPageStore(conn)
+	if err := subjects.Save(ctx, "s1", Subject{ID: "s1-source", Name: "Source Note", Type: "concept"}); err != nil {
+		t.Fatalf("Save s1 source: %v", err)
+	}
+	if err := subjects.Save(ctx, "s2", Subject{ID: "s2-target", Name: "Remote Target", Type: "entity"}); err != nil {
+		t.Fatalf("Save s2 target: %v", err)
+	}
+	if err := pages.Upsert(ctx, Page{ID: "s1-source", SubjectID: "s1-source", Title: "Source", Body: "Source Note mentions Remote Target."}); err != nil {
+		t.Fatalf("Upsert s1 page: %v", err)
+	}
+	svc := NewService(conn, nil, nil, nil)
+	s1, err := svc.Orphans(ctx, "s1")
+	if err != nil || !sameStrings(orphanSubjectIDs(s1), []string{"s1-source"}) {
+		t.Fatalf("s1 Orphans = %+v, %v; want only s1 source", orphanSubjectIDs(s1), err)
+	}
+	s2, err := svc.Orphans(ctx, "s2")
+	if err != nil || !sameStrings(orphanSubjectIDs(s2), []string{"s2-target"}) {
+		t.Fatalf("s2 Orphans = %+v, %v; want cross-scope mention to have no effect", orphanSubjectIDs(s2), err)
 	}
 }
 

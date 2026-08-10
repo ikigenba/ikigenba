@@ -278,8 +278,8 @@ type mergePathResolver struct {
 	subjects *wiki.SubjectStore
 }
 
-func (r mergePathResolver) GetByPath(ctx context.Context, path string) (wiki.Subject, error) {
-	subject, err := r.subjects.GetByPath(ctx, path)
+func (r mergePathResolver) GetByPath(ctx context.Context, scope, path string) (wiki.Subject, error) {
+	subject, err := r.subjects.GetByPath(ctx, scope, path)
 	if errors.Is(err, wiki.ErrSubjectNotFound) {
 		return wiki.Subject{}, sql.ErrNoRows
 	}
@@ -291,8 +291,8 @@ type orphanAdapter struct {
 	webBase string
 }
 
-func (a orphanAdapter) Orphans(ctx context.Context) ([]web.Ref, error) {
-	subjects, err := a.svc.Orphans(ctx)
+func (a orphanAdapter) Orphans(ctx context.Context, scope string) ([]web.Ref, error) {
+	subjects, err := a.svc.Orphans(ctx, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -311,8 +311,8 @@ type mentionAdapter struct {
 	webBase string
 }
 
-func (a mentionAdapter) MentionsIn(ctx context.Context, text string) ([]web.Ref, error) {
-	mentions, err := a.svc.MentionsIn(ctx, text)
+func (a mentionAdapter) MentionsIn(ctx context.Context, scope, text string) ([]web.Ref, error) {
+	mentions, err := a.svc.MentionsIn(ctx, scope, text)
 	if err != nil {
 		return nil, err
 	}
@@ -430,14 +430,14 @@ func (s pathPageService) PageByPath(ctx context.Context, path string) (web.Subje
 	if err != nil {
 		return web.SubjectView{}, err
 	}
-	page, err := s.service.PageWithLinks(ctx, subject.ID)
+	page, err := s.service.PageWithLinks(ctx, "default", subject.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return web.SubjectView{}, s.notFoundErr()
 	}
 	if err != nil {
 		return web.SubjectView{}, err
 	}
-	body, err := s.service.LinkifyMentions(ctx, page.Body, s.webBase, subject.ID)
+	body, err := s.service.LinkifyMentions(ctx, "default", page.Body, s.webBase, subject.ID)
 	if err != nil {
 		return web.SubjectView{}, err
 	}

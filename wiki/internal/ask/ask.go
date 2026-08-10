@@ -104,12 +104,15 @@ func DefaultSynthesisCallSite() llm.CallSite {
 
 // Ask answers a question by analyzing it, retrieving relevant pages, reading
 // only those page bodies, and synthesizing an answer grounded in that set.
-func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error) {
+func (a *Asker) Ask(ctx context.Context, scope, owner, question string) (Answer, error) {
 	if a == nil || a.search == nil || a.subjects == nil || a.pages == nil {
 		return Answer{}, fmt.Errorf("ask: nil stores")
 	}
 	if a.c == nil {
 		return Answer{}, fmt.Errorf("ask: nil llm client")
+	}
+	if err := a.subjects.RequireScope(ctx, scope); err != nil {
+		return Answer{}, err
 	}
 
 	origin := "service:wiki"
@@ -123,7 +126,7 @@ func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error)
 		return Answer{}, err
 	}
 
-	retrieved, err := a.search.SearchAnalyzed(ctx, "default", attr, analysis, retrieve.SearchLimits{Limit: a.finalK})
+	retrieved, err := a.search.SearchAnalyzed(ctx, scope, attr, analysis, retrieve.SearchLimits{Limit: a.finalK})
 	if err != nil {
 		return Answer{}, err
 	}
@@ -131,7 +134,7 @@ func (a *Asker) Ask(ctx context.Context, owner, question string) (Answer, error)
 		return honestEmpty(), nil
 	}
 
-	pages, err := a.gatherPages(ctx, retrieved.Hits)
+	pages, err := a.gatherPages(ctx, scope, retrieved.Hits)
 	if err != nil {
 		return Answer{}, err
 	}
@@ -173,7 +176,7 @@ type pageContext struct {
 	Body  string `json:"body"`
 }
 
-func (a *Asker) gatherPages(ctx context.Context, hits []retrieve.Hit) ([]pageContext, error) {
+func (a *Asker) gatherPages(ctx context.Context, scope string, hits []retrieve.Hit) ([]pageContext, error) {
 	seenSubjects := map[string]struct{}{}
 	out := make([]pageContext, 0, len(hits))
 	for _, hit := range hits {
@@ -184,7 +187,7 @@ func (a *Asker) gatherPages(ctx context.Context, hits []retrieve.Hit) ([]pageCon
 		if _, ok := seenSubjects[subjectID]; ok {
 			continue
 		}
-		subject, err := a.subjects.Get(ctx, subjectID)
+		subject, err := a.subjects.GetInScope(ctx, scope, subjectID)
 		if err != nil {
 			return nil, err
 		}

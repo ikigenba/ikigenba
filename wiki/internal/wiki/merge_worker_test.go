@@ -25,7 +25,7 @@ func TestMergeSubjectWorkItemRejectsSelfMergeBeforeQueueing(t *testing.T) {
 	defer conn.Close()
 
 	svc := wikidomain.NewService(conn, nil, &scriptedMergeCompiler{}, mergeClockAt(time.Date(2026, 6, 24, 0, 31, 0, 0, time.UTC)))
-	if _, err := svc.MergeSubjects(ctx, "subject-same", "subject-same"); err == nil {
+	if _, err := svc.MergeSubjects(ctx, "default", "subject-same", "subject-same"); err == nil {
 		t.Fatal("MergeSubjects self-merge returned nil error, want CHECK constraint failure")
 	}
 	assertTableCount(t, ctx, conn, "jobs", 0)
@@ -40,7 +40,7 @@ func TestMergeWorkerDispatchesMergeJobWithoutExtractor(t *testing.T) {
 
 	compiler := &scriptedMergeCompiler{}
 	svc := wikidomain.NewService(conn, nil, compiler, mergeClockAt(time.Date(2026, 6, 24, 0, 32, 0, 0, time.UTC)))
-	jobID, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	jobID, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestMergeWorkerFoldsLoserIntoWinnerAndCompilesCombinedClaims(t *testing.T) 
 
 	compiler := &scriptedMergeCompiler{}
 	svc := wikidomain.NewService(conn, nil, compiler, mergeClockAt(time.Date(2026, 6, 24, 0, 33, 0, 0, time.UTC)))
-	jobID, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	jobID, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestMergeWorkerRollsBackWhenCompilerFails(t *testing.T) {
 
 	compiler := &scriptedMergeCompiler{err: errors.New("compile exploded")}
 	svc := wikidomain.NewService(conn, nil, compiler, mergeClockAt(time.Date(2026, 6, 24, 0, 34, 0, 0, time.UTC)))
-	jobID, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	jobID, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestMergeWorkerRepointsClaimsBeforeDeletingLoserSubject(t *testing.T) {
 	}
 
 	svc := wikidomain.NewService(conn, nil, &scriptedMergeCompiler{}, mergeClockAt(time.Date(2026, 6, 24, 0, 35, 0, 0, time.UTC)))
-	jobID, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	jobID, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestMergeWorkerAbortDuringCompilePreservesAbortedStatusAndRows(t *testing.T
 
 	compiler := newBlockingCompiler()
 	svc := wikidomain.NewService(conns, nil, compiler, mergeClockAt(time.Date(2026, 6, 24, 0, 36, 0, 0, time.UTC)))
-	jobID, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	jobID, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestMergeWorkerRequeuesWorkingMergeOnBootAndCompletesIt(t *testing.T) {
 		time.Date(2026, 6, 24, 0, 37, 1, 0, time.UTC),
 		time.Date(2026, 6, 24, 0, 37, 2, 0, time.UTC),
 	))
-	jobID, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	jobID, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestMergeWorkerTreatsStalePairAsDoneNoop(t *testing.T) {
 
 	compiler := &scriptedMergeCompiler{}
 	svc := wikidomain.NewService(conn, nil, compiler, mergeClockAt(time.Date(2026, 6, 24, 0, 38, 0, 0, time.UTC)))
-	jobID, err := svc.MergeSubjects(ctx, "subject-missing", "subject-winner")
+	jobID, err := svc.MergeSubjects(ctx, "default", "subject-missing", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
@@ -269,11 +269,11 @@ func TestMergeWorkerSerializesDuplicateMergeJobsIntoOneFold(t *testing.T) {
 		time.Date(2026, 6, 24, 0, 39, 2, 0, time.UTC),
 		time.Date(2026, 6, 24, 0, 39, 3, 0, time.UTC),
 	))
-	firstJob, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	firstJob, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("first MergeSubjects: %v", err)
 	}
-	secondJob, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	secondJob, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("second MergeSubjects: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 		wikidomain.WithVectorCacheRemover(cache.Remove),
 	)
 	var err error
-	jobID, err = svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	jobID, err = svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
@@ -452,7 +452,7 @@ func TestMergeWorkerRollsBackLoserEmbeddingDeleteWhenTransactionFails(t *testing
 	svc := wikidomain.NewService(conn, nil, &scriptedMergeCompiler{
 		body: strings.Repeat("x", 12001),
 	}, mergeClockAt(time.Date(2026, 6, 25, 15, 5, 0, 0, time.UTC)))
-	jobID, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	jobID, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
@@ -516,7 +516,7 @@ func TestMergeWorkerKeepsDoneMergeWhenAfterCommitWinnerEmbedFails(t *testing.T) 
 		wikidomain.WithPageEmbedder("merge-model", embedder),
 		wikidomain.WithVectorCacheRemover(cache.Remove),
 	)
-	jobID, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	jobID, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
@@ -568,6 +568,63 @@ func TestMergeWorkerKeepsDoneMergeWhenAfterCommitWinnerEmbedFails(t *testing.T) 
 	}
 	if len(cache.removed) != 1 || cache.removed[0] != "subject-loser" {
 		t.Fatalf("cache removals = %#v, want loser removed before failed winner reembed", cache.removed)
+	}
+}
+
+func TestMergeAndAliasRoutingStayWithinScope(t *testing.T) {
+	// R-H2E5-I2TX
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	scopes := wikidomain.NewScopeStore(conn)
+	for _, scope := range []string{"s1", "s2"} {
+		if _, err := scopes.Create(ctx, scope); err != nil {
+			t.Fatalf("Create scope %s: %v", scope, err)
+		}
+	}
+	subjects := wikidomain.NewSubjectStore(conn)
+	for _, item := range []struct {
+		scope string
+		id    string
+		name  string
+	}{
+		{"s1", "s1-loser", "Old Name"},
+		{"s1", "s1-winner", "New Name"},
+		{"s2", "s2-old", "Old Name"},
+	} {
+		if err := subjects.Save(ctx, item.scope, wikidomain.Subject{ID: item.id, Name: item.name, Type: "entity"}); err != nil {
+			t.Fatalf("Save %s: %v", item.id, err)
+		}
+	}
+	claims := wikidomain.NewClaimStore(conn)
+	for _, claim := range []wikidomain.Claim{
+		{ID: "claim-loser", SubjectID: "s1-loser", JobID: "seed", Body: "loser fact"},
+		{ID: "claim-winner", SubjectID: "s1-winner", JobID: "seed", Body: "winner fact"},
+	} {
+		if err := claims.Save(ctx, claim); err != nil {
+			t.Fatalf("Save claim %s: %v", claim.ID, err)
+		}
+	}
+	svc := wikidomain.NewService(conn, nil, &scriptedMergeCompiler{}, mergeClockAt(time.Now()))
+	jobID, err := svc.MergeSubjects(ctx, "s1", "s1-loser", "s1-winner")
+	if err != nil {
+		t.Fatalf("MergeSubjects s1: %v", err)
+	}
+	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
+		t.Fatalf("ProcessNext = %v, %v", processed, err)
+	}
+	if status, err := svc.JobStatus(ctx, jobID); err != nil || status.Status != wikidomain.JobDone {
+		t.Fatalf("merge status = %+v, %v", status, err)
+	}
+	resolver := wikidomain.NewResolver(conn)
+	if got, err := resolver.ResolveByPath(ctx, "s1", "entity/old-name"); err != nil || got.ID != "s1-winner" {
+		t.Fatalf("s1 loser alias resolved to %+v, %v; want s1 winner", got, err)
+	}
+	if got, err := resolver.ResolveByPath(ctx, "s2", "entity/old-name"); err != nil || got.ID != "s2-old" {
+		t.Fatalf("s2 old-name resolved to %+v, %v; want independent s2 subject", got, err)
+	}
+	if _, err := svc.MergeSubjects(ctx, "s1", "s2-old", "s1-winner"); !errors.Is(err, wikidomain.ErrSubjectNotFound) {
+		t.Fatalf("cross-scope MergeSubjects error = %v, want ErrSubjectNotFound", err)
 	}
 }
 

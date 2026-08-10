@@ -106,13 +106,17 @@ func NewService(db any, extractor Extractor, compiler Compiler, now func() time.
 }
 
 // Ingest records a pending job and returns immediately with its handle.
-func (s *Service) Ingest(ctx context.Context, ownerID, ownerEmail, text, title string, tags []string) (string, error) {
+func (s *Service) Ingest(ctx context.Context, scope, ownerID, ownerEmail, text, title string, tags []string) (string, error) {
 	if s == nil {
 		return "", fmt.Errorf("wiki: nil service")
+	}
+	if err := requireScope(ctx, s.write, scope); err != nil {
+		return "", err
 	}
 	jobID := s.newID()
 	job := Job{
 		ID:            jobID,
+		Scope:         scope,
 		OwnerID:       strings.TrimSpace(ownerID),
 		OwnerEmail:    strings.TrimSpace(ownerEmail),
 		SourceText:    text,
@@ -130,9 +134,24 @@ func (s *Service) Ingest(ctx context.Context, ownerID, ownerEmail, text, title s
 }
 
 // MergeSubjects queues a background job that folds one subject into another.
-func (s *Service) MergeSubjects(ctx context.Context, fromSubjectID, toSubjectID string) (string, error) {
+func (s *Service) MergeSubjects(ctx context.Context, scope, fromSubjectID, toSubjectID string) (string, error) {
 	if s == nil {
 		return "", fmt.Errorf("wiki: nil service")
+	}
+	if err := requireScope(ctx, s.write, scope); err != nil {
+		return "", err
+	}
+	for _, id := range []string{fromSubjectID, toSubjectID} {
+		var exists int
+		if err := s.write.QueryRowContext(ctx, `SELECT 1 FROM subjects WHERE id = ? AND scope = ?`, strings.TrimSpace(id), scope).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+			if err := s.write.QueryRowContext(ctx, `SELECT 1 FROM subjects WHERE id = ?`, strings.TrimSpace(id)).Scan(&exists); err == nil {
+				return "", ErrSubjectNotFound
+			} else if !errors.Is(err, sql.ErrNoRows) {
+				return "", err
+			}
+		} else if err != nil {
+			return "", err
+		}
 	}
 	jobID := s.newID()
 	tx, err := s.write.BeginTx(ctx, nil)
@@ -149,9 +168,9 @@ func (s *Service) MergeSubjects(ctx context.Context, fromSubjectID, toSubjectID 
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO jobs (
-			id, owner_id, owner_email, source_text, title, tags, source_hash, status, received_at
-		) VALUES (?, ?, ?, '', 'subject merge', '[]', ?, ?, ?)`,
-		jobID, ownerID, ownerEmail, hashText(""), JobPending, formatTime(receivedAt))
+			id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, received_at
+		) VALUES (?, ?, ?, ?, '', 'subject merge', '[]', ?, ?, ?)`,
+		jobID, scope, ownerID, ownerEmail, hashText(""), JobPending, formatTime(receivedAt))
 	if err != nil {
 		return "", err
 	}
@@ -229,19 +248,19 @@ func (s *Service) Subjects(ctx context.Context, typ, nameContains string) ([]Sub
 }
 
 // Orphans returns subjects with no inbound mentions from any other page.
-func (s *Service) Orphans(ctx context.Context) ([]Subject, error) {
+func (s *Service) Orphans(ctx context.Context, scope string) ([]Subject, error) {
 	if s == nil {
 		return nil, fmt.Errorf("wiki: nil service")
 	}
-	subjects, err := listAllSubjects(ctx, s.subjects, "", "")
+	subjects, err := listAllSubjectsInScope(ctx, s.subjects, scope, "", "")
 	if err != nil {
 		return nil, err
 	}
-	aliases, err := s.aliases.ListAll(ctx)
+	aliases, err := s.aliases.ListAllInScope(ctx, scope)
 	if err != nil {
 		return nil, err
 	}
-	pages, err := listAllPages(ctx, s.pages)
+	pages, err := listAllPagesInScope(ctx, s.pages, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -393,7 +412,7 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 		return err
 	}
 	for _, subject := range plan.newSubjects {
-		if err := subjects.Save(ctx, subject); err != nil {
+		if err := subjects.Save(ctx, job.Scope, subject); err != nil {
 			return err
 		}
 	}
@@ -471,7 +490,7 @@ func (s *Service) planIntegration(ctx context.Context, attr llm.Attribution, job
 		if Normalize(item.Name) == "" {
 			continue
 		}
-		subject, isNew, err := s.plannedSubject(ctx, knownByNorm, item)
+		subject, isNew, err := s.plannedSubject(ctx, job.Scope, knownByNorm, item)
 		if err != nil {
 			return integrationPlan{}, err
 		}
@@ -598,8 +617,8 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	if err := aliases.RepointSubject(ctx, merge.FromSubjectID, merge.ToSubjectID); err != nil {
 		return err
 	}
-	if _, err := aliases.GetByNormName(ctx, loser.Name); errors.Is(err, sql.ErrNoRows) {
-		if err := aliases.Insert(ctx, Alias{
+	if _, err := aliases.GetByNormName(ctx, job.Scope, loser.Name); errors.Is(err, sql.ErrNoRows) {
+		if err := aliases.Insert(ctx, job.Scope, Alias{
 			NormName:   Normalize(loser.Name),
 			SubjectID:  merge.ToSubjectID,
 			Name:       loser.Name,
@@ -695,12 +714,12 @@ func finishDoneInTx(ctx context.Context, tx *sql.Tx, jobID string, finishedAt ti
 	return true, tx.Commit()
 }
 
-func (s *Service) plannedSubject(ctx context.Context, known map[string]Subject, item extract.ExtractedSubject) (Subject, bool, error) {
+func (s *Service) plannedSubject(ctx context.Context, scope string, known map[string]Subject, item extract.ExtractedSubject) (Subject, bool, error) {
 	normName := Normalize(item.Name)
 	if subject, ok := known[normName]; ok {
 		return subject, false, nil
 	}
-	subject, err := s.subjects.GetByNormName(ctx, item.Name)
+	subject, err := s.subjects.GetByNormName(ctx, scope, item.Name)
 	if err == nil {
 		known[normName] = subject
 		return subject, false, nil
@@ -708,7 +727,7 @@ func (s *Service) plannedSubject(ctx context.Context, known map[string]Subject, 
 	if err != sql.ErrNoRows {
 		return Subject{}, false, err
 	}
-	subject, err = s.resolver.ResolveByName(ctx, item.Name)
+	subject, err = s.resolver.ResolveByName(ctx, scope, item.Name)
 	if err == nil {
 		known[normName] = subject
 		return subject, false, nil
@@ -756,10 +775,14 @@ func sortedSubjects(subjects map[string]Subject) []Subject {
 }
 
 func listAllSubjects(ctx context.Context, store *SubjectStore, typ, nameContains string) ([]Subject, error) {
+	return listAllSubjectsInScope(ctx, store, "default", typ, nameContains)
+}
+
+func listAllSubjectsInScope(ctx context.Context, store *SubjectStore, scope, typ, nameContains string) ([]Subject, error) {
 	var out []Subject
 	params := page.Params{Limit: page.MaxLimit}
 	for {
-		subjects, next, err := store.List(ctx, typ, nameContains, params)
+		subjects, next, err := store.ListInScope(ctx, scope, typ, nameContains, params)
 		if err != nil {
 			return nil, err
 		}
@@ -788,10 +811,18 @@ func listAllClaims(ctx context.Context, store *ClaimStore, subjectID string) ([]
 }
 
 func listAllPages(ctx context.Context, store *PageStore) ([]Page, error) {
+	return listAllPagesInScope(ctx, store, "default")
+}
+
+func listAllPagesInScope(ctx context.Context, store *PageStore, scope string) ([]Page, error) {
+	if err := requireScope(ctx, store.db, scope); err != nil {
+		return nil, err
+	}
 	rows, err := store.db.QueryContext(ctx, `
-		SELECT id, subject_id, title, body
-		FROM pages
-		ORDER BY id`)
+		SELECT pages.id, pages.subject_id, pages.title, pages.body
+		FROM pages JOIN subjects ON subjects.id = pages.subject_id
+		WHERE subjects.scope = ?
+		ORDER BY pages.id`, scope)
 	if err != nil {
 		return nil, err
 	}

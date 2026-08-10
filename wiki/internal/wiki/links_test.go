@@ -80,7 +80,7 @@ func TestPageWithLinksProjectsOutboundMentions(t *testing.T) {
 		Body:      "Acme Robotics prepared for the Tulsa Launch.",
 	})
 
-	got, err := svc.PageWithLinks(ctx, "subject-1")
+	got, err := svc.PageWithLinks(ctx, "default", "subject-1")
 	if err != nil {
 		t.Fatalf("PageWithLinks: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestPageWithLinksOrdersOutboundMentionsByPath(t *testing.T) {
 		Body:      "Home Page mentions Alpha Entity and Zebra Concept.",
 	})
 
-	got, err := svc.PageWithLinks(ctx, "subject-1")
+	got, err := svc.PageWithLinks(ctx, "default", "subject-1")
 	if err != nil {
 		t.Fatalf("PageWithLinks: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestPageWithLinksProjectsInboundFromPagedSubjectsOnly(t *testing.T) {
 	upsertPage(t, ctx, pages, Page{ID: "page-1", SubjectID: "subject-1", Title: "Acme Robotics", Body: "Acme Robotics overview."})
 	upsertPage(t, ctx, pages, Page{ID: "page-2", SubjectID: "subject-2", Title: "Tulsa Launch", Body: "Tulsa Launch was run by Acme Robotics."})
 
-	got, err := svc.PageWithLinks(ctx, "subject-1")
+	got, err := svc.PageWithLinks(ctx, "default", "subject-1")
 	if err != nil {
 		t.Fatalf("PageWithLinks: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestPageWithLinksProjectsAliasAwareInboundAndOutbound(t *testing.T) {
 		Body:      "Current Initiative depends on Former Lab.",
 	})
 
-	got, err := svc.PageWithLinks(ctx, "subject-1")
+	got, err := svc.PageWithLinks(ctx, "default", "subject-1")
 	if err != nil {
 		t.Fatalf("PageWithLinks: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestMentionsInReturnsSubjectHrefRefsForWholeMatches(t *testing.T) {
 	saveSubject(t, ctx, subjects, Subject{ID: "subject-cat", Name: "Cat", Type: "entity"})
 	saveSubject(t, ctx, subjects, Subject{ID: "subject-category", Name: "Category Theory", Type: "concept"})
 
-	got, err := svc.MentionsIn(ctx, "Category theory mentions a cat, not concatenate.")
+	got, err := svc.MentionsIn(ctx, "default", "Category theory mentions a cat, not concatenate.")
 	if err != nil {
 		t.Fatalf("MentionsIn: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestMentionsInResolvesAliasKeysToCanonicalSubject(t *testing.T) {
 		t.Fatalf("Insert alias: %v", err)
 	}
 
-	got, err := svc.MentionsIn(ctx, "The answer names Project Lumen, never the canonical title.")
+	got, err := svc.MentionsIn(ctx, "default", "The answer names Project Lumen, never the canonical title.")
 	if err != nil {
 		t.Fatalf("MentionsIn: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestServiceLinkifyMentionsLoadsAliasesAndComposesAbsoluteBase(t *testing.T)
 	saveSubject(t, ctx, subjects, vasari)
 	base := "https://acct.ikigenba.com/srv/wiki/subject/"
 
-	withoutAlias, err := svc.LinkifyMentions(ctx, "Vasari painted it.", base, "")
+	withoutAlias, err := svc.LinkifyMentions(ctx, "default", "Vasari painted it.", base, "")
 	if err != nil {
 		t.Fatalf("LinkifyMentions without alias: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestServiceLinkifyMentionsLoadsAliasesAndComposesAbsoluteBase(t *testing.T)
 	if err := aliases.Insert(ctx, Alias{Name: "Vasari", SubjectID: "W", OwnerID: "owner-id", OwnerEmail: "owner@example.com", CreatedAt: "2026-07-10T00:00:00Z"}); err != nil {
 		t.Fatalf("Insert alias: %v", err)
 	}
-	got, err := svc.LinkifyMentions(ctx, "Vasari painted it.", base, "")
+	got, err := svc.LinkifyMentions(ctx, "default", "Vasari painted it.", base, "")
 	if err != nil {
 		t.Fatalf("LinkifyMentions with alias: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestMentionsInOrdersAndDedupesWebRefs(t *testing.T) {
 		t.Fatalf("Insert alias: %v", err)
 	}
 
-	got, err := svc.MentionsIn(ctx, "Zeta Lab discussed Alpha Plan, Project A, and Zeta Lab again.")
+	got, err := svc.MentionsIn(ctx, "default", "Zeta Lab discussed Alpha Plan, Project A, and Zeta Lab again.")
 	if err != nil {
 		t.Fatalf("MentionsIn: %v", err)
 	}
@@ -476,12 +476,60 @@ func TestPageWithLinksExcludesThePageSubjectFromOutboundMentions(t *testing.T) {
 		Body:      "Acme Robotics hired Mira Patel at Acme Robotics.",
 	})
 
-	got, err := svc.PageWithLinks(ctx, "subject-1")
+	got, err := svc.PageWithLinks(ctx, "default", "subject-1")
 	if err != nil {
 		t.Fatalf("PageWithLinks: %v", err)
 	}
 	if len(got.Mentions) != 1 || got.Mentions[0] != (Ref{Path: "entity/mira-patel", Name: "Mira Patel"}) {
 		t.Fatalf("Mentions = %+v, want only Mira Patel and no self link", got.Mentions)
+	}
+}
+
+func TestLinkProjectionAndLinkifyStayWithinScope(t *testing.T) {
+	// R-GZYC-QJCJ
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	for _, scope := range []string{"s1", "s2"} {
+		if _, err := NewScopeStore(conn).Create(ctx, scope); err != nil {
+			t.Fatalf("Create scope %s: %v", scope, err)
+		}
+	}
+	subjects := NewSubjectStore(conn)
+	pages := NewPageStore(conn)
+	if err := subjects.Save(ctx, "s1", Subject{ID: "s1-home", Name: "Home", Type: "concept"}); err != nil {
+		t.Fatalf("Save s1 home: %v", err)
+	}
+	if err := subjects.Save(ctx, "s2", Subject{ID: "s2-lumen", Name: "Project Lumen", Type: "entity"}); err != nil {
+		t.Fatalf("Save s2 Lumen: %v", err)
+	}
+	if err := pages.Upsert(ctx, Page{ID: "s1-home", SubjectID: "s1-home", Title: "Home", Body: "Home names Project Lumen."}); err != nil {
+		t.Fatalf("Upsert home: %v", err)
+	}
+	svc := NewService(conn, nil, nil, nil)
+
+	linked, err := svc.PageWithLinks(ctx, "s1", "s1-home")
+	if err != nil {
+		t.Fatalf("PageWithLinks before s1 subject: %v", err)
+	}
+	if len(linked.Mentions) != 0 {
+		t.Fatalf("cross-scope Mentions = %+v, want none", linked.Mentions)
+	}
+	plain, err := svc.LinkifyMentions(ctx, "s1", "Project Lumen", "/wiki/", "")
+	if err != nil || plain != "Project Lumen" {
+		t.Fatalf("cross-scope LinkifyMentions = %q, %v; want unchanged text", plain, err)
+	}
+
+	if err := subjects.Save(ctx, "s1", Subject{ID: "s1-lumen", Name: "Project Lumen", Type: "entity"}); err != nil {
+		t.Fatalf("Save s1 Lumen: %v", err)
+	}
+	linked, err = svc.PageWithLinks(ctx, "s1", "s1-home")
+	if err != nil || len(linked.Mentions) != 1 || linked.Mentions[0].Path != "entity/project-lumen" {
+		t.Fatalf("same-scope Mentions = %+v, %v; want Project Lumen", linked.Mentions, err)
+	}
+	linkedText, err := svc.LinkifyMentions(ctx, "s1", "Project Lumen", "/wiki/", "")
+	if err != nil || linkedText != "[Project Lumen](/wiki/entity/project-lumen)" {
+		t.Fatalf("same-scope LinkifyMentions = %q, %v", linkedText, err)
 	}
 }
 

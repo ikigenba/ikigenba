@@ -194,7 +194,7 @@ func TestMergeMintsForwardRoutingAliasForLoserName(t *testing.T) {
 		time.Date(2026, 6, 24, 10, 0, 3, 0, time.UTC),
 	))
 	svc.newID = sequenceIDs("job-merge")
-	jobID, err := svc.MergeSubjects(ctx, "subject-loser", "subject-winner")
+	jobID, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
@@ -309,7 +309,7 @@ func serviceWithExtractedSubjects(conn any, subjects []extract.ExtractedSubject)
 func ingestAndProcess(t *testing.T, ctx context.Context, svc *Service) string {
 	t.Helper()
 
-	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "source text", "Source title", nil)
+	jobID, err := svc.Ingest(ctx, "default", "owner-id", "owner@example.com", "source text", "Source title", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}

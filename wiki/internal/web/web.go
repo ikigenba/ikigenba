@@ -18,7 +18,7 @@ var ErrNotFound = errors.New("web: subject not found")
 
 // Asker answers a question for the owner supplied by the front door.
 type Asker interface {
-	Ask(ctx context.Context, owner, question string) (ask.Answer, error)
+	Ask(ctx context.Context, scope, owner, question string) (ask.Answer, error)
 }
 
 // PageFinder resolves a public type/slug path to a rendered subject view.
@@ -28,17 +28,17 @@ type PageFinder interface {
 
 // OrphanLister lists subjects with zero inbound mentions for the home index.
 type OrphanLister interface {
-	Orphans(ctx context.Context) ([]Ref, error)
+	Orphans(ctx context.Context, scope string) ([]Ref, error)
 }
 
 // Mentioner lists wiki subjects mentioned by rendered answer text.
 type Mentioner interface {
-	MentionsIn(ctx context.Context, text string) ([]Ref, error)
+	MentionsIn(ctx context.Context, scope, text string) ([]Ref, error)
 }
 
 // Linkifier projects named subject mentions into markdown links.
 type Linkifier interface {
-	LinkifyMentions(ctx context.Context, text, base, excludeID string) (string, error)
+	LinkifyMentions(ctx context.Context, scope, text, base, excludeID string) (string, error)
 }
 
 // Ref is a mount-relative link target for the read surface.
@@ -149,7 +149,7 @@ func (h *handler) home(w http.ResponseWriter, r *http.Request) {
 
 	var orphans []Ref
 	if h.orphans != nil {
-		refs, err := h.orphans.Orphans(r.Context())
+		refs, err := h.orphans.Orphans(r.Context(), "default")
 		if err != nil {
 			http.Error(w, "list orphan pages", http.StatusInternalServerError)
 			return
@@ -172,7 +172,7 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, question string) {
 		http.Error(w, "ask wiki", http.StatusNotImplemented)
 		return
 	}
-	answer, err := h.asker.Ask(r.Context(), r.Header.Get("X-Owner-Email"), question)
+	answer, err := h.asker.Ask(r.Context(), "default", r.Header.Get("X-Owner-Email"), question)
 	if err != nil {
 		http.Error(w, "ask wiki", http.StatusInternalServerError)
 		return
@@ -190,7 +190,7 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, question string) {
 	}
 	var mentions []Ref
 	if h.mentions != nil {
-		refs, err := h.mentions.MentionsIn(r.Context(), answer.Text)
+		refs, err := h.mentions.MentionsIn(r.Context(), "default", answer.Text)
 		if err != nil {
 			http.Error(w, "link answer mentions", http.StatusInternalServerError)
 			return
@@ -199,7 +199,7 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, question string) {
 	}
 	answerHTML := markdown.Render(answer.Text)
 	if h.linkifier != nil {
-		text, err := h.linkifier.LinkifyMentions(r.Context(), answer.Text, h.linkBase, "")
+		text, err := h.linkifier.LinkifyMentions(r.Context(), "default", answer.Text, h.linkBase, "")
 		if err != nil {
 			http.Error(w, "link answer mentions", http.StatusInternalServerError)
 			return

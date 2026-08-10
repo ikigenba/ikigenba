@@ -46,6 +46,7 @@ type Page struct {
 // Job is a phase-1 wiki data-model job.
 type Job struct {
 	ID            string
+	Scope         string
 	OwnerID       string
 	OwnerEmail    string
 	SourceText    string
@@ -147,23 +148,30 @@ func mustConns(db any) Conns {
 }
 
 func (s *JobStore) Save(ctx context.Context, job Job) error {
+	if job.Scope == "" {
+		job.Scope = "default"
+	}
 	_, err := s.write.ExecContext(ctx,
-		`INSERT INTO jobs (id, status, owner_id, owner_email) VALUES (?, ?, ?, ?)`,
-		job.ID, job.Status, job.OwnerID, job.OwnerEmail)
+		`INSERT INTO jobs (id, scope, status, owner_id, owner_email) VALUES (?, ?, ?, ?, ?)`,
+		job.ID, job.Scope, job.Status, job.OwnerID, job.OwnerEmail)
 	return err
 }
 
 func (s *JobStore) InsertIngest(ctx context.Context, job Job) error {
+	if job.Scope == "" {
+		job.Scope = "default"
+	}
 	tags, err := json.Marshal(job.Tags)
 	if err != nil {
 		return err
 	}
 	_, err = s.write.ExecContext(ctx, `
 		INSERT INTO jobs (
-			id, owner_id, owner_email, source_text, title, tags, source_hash, status, received_at,
+			id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, received_at,
 			correlation_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID,
+		job.Scope,
 		job.OwnerID,
 		job.OwnerEmail,
 		job.SourceText,
@@ -193,7 +201,7 @@ func (s *JobStore) ClaimPending(ctx context.Context, startedAt time.Time) (Job, 
 	defer tx.Rollback()
 
 	job, err := scanJob(tx.QueryRowContext(ctx, `
-		SELECT id, owner_id, owner_email, source_text, title, tags, source_hash, status,
+		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status,
 		       received_at, started_at, finished_at, error, correlation_id
 		FROM jobs
 		WHERE status = 'pending'
@@ -343,7 +351,7 @@ func (s *JobStore) Rerun(ctx context.Context, id string) (RerunResult, error) {
 
 func (s *JobStore) Status(ctx context.Context, id string) (JobStatus, error) {
 	job, err := scanJob(s.read.QueryRowContext(ctx, `
-		SELECT id, owner_id, owner_email, source_text, title, tags, source_hash, status,
+		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status,
 		       received_at, started_at, finished_at, error, correlation_id
 		FROM jobs
 		WHERE id = ?`, id))
@@ -387,18 +395,25 @@ type JobFilter struct {
 	Since, Until time.Time
 }
 
-func (s *JobStore) ListJobs(ctx context.Context, f JobFilter, p page.Params) ([]Job, string, error) {
+func (s *JobStore) ListJobs(ctx context.Context, raw ...any) ([]Job, string, error) {
+	scope, f, p, err := jobListArgs(raw)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := requireScope(ctx, s.read, scope); err != nil {
+		return nil, "", err
+	}
 	cursor, err := decodeCursor(p.Cursor, 2)
 	if err != nil {
 		return nil, "", err
 	}
 	limit := p.ResolvedLimit()
-	var args []any
+	args := []any{scope}
 	query := `
-		SELECT id, owner_id, owner_email, source_text, title, tags, source_hash, status,
+		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status,
 		       received_at, started_at, finished_at, error, correlation_id
 		FROM jobs
-		WHERE 1 = 1`
+		WHERE scope = ?`
 	query, args = appendJobFilter(query, args, f)
 	if len(cursor) > 0 {
 		query += `
@@ -429,9 +444,16 @@ func (s *JobStore) ListJobs(ctx context.Context, f JobFilter, p page.Params) ([]
 	return pageJobs(jobs, limit), nextJobCursor(jobs, limit), nil
 }
 
-func (s *JobStore) CountJobs(ctx context.Context, f JobFilter) (int, error) {
-	var args []any
-	query := `SELECT COUNT(*) FROM jobs WHERE 1 = 1`
+func (s *JobStore) CountJobs(ctx context.Context, raw ...any) (int, error) {
+	scope, f, err := jobCountArgs(raw)
+	if err != nil {
+		return 0, err
+	}
+	if err := requireScope(ctx, s.read, scope); err != nil {
+		return 0, err
+	}
+	args := []any{scope}
+	query := `SELECT COUNT(*) FROM jobs WHERE scope = ?`
 	query, args = appendJobFilter(query, args, f)
 
 	var n int
@@ -525,6 +547,7 @@ func scanJob(row rowScanner) (Job, error) {
 	var tagsJSON, receivedAt, startedAt, finishedAt string
 	if err := row.Scan(
 		&job.ID,
+		&job.Scope,
 		&job.OwnerID,
 		&job.OwnerEmail,
 		&job.SourceText,
@@ -560,22 +583,40 @@ func NewSubjectStore(db sqlStore) *SubjectStore {
 	return &SubjectStore{db: db}
 }
 
-func (s *SubjectStore) Save(ctx context.Context, subject Subject) error {
+func (s *SubjectStore) RequireScope(ctx context.Context, scope string) error {
+	return requireScope(ctx, s.db, scope)
+}
+
+func (s *SubjectStore) Save(ctx context.Context, args ...any) error {
+	scope, subject, err := subjectSaveArgs(args)
+	if err != nil {
+		return err
+	}
+	if err := requireScope(ctx, s.db, scope); err != nil {
+		return err
+	}
 	normName := subject.NormName
 	if normName == "" {
 		normName = Normalize(subject.Name)
 	}
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO subjects (id, name, norm_name, type) VALUES (?, ?, ?, ?)`,
-		subject.ID, subject.Name, normName, subject.Type)
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO subjects (id, scope, name, norm_name, type) VALUES (?, ?, ?, ?, ?)`,
+		subject.ID, scope, subject.Name, normName, subject.Type)
 	return err
 }
 
-func (s *SubjectStore) GetByNormName(ctx context.Context, name string) (Subject, error) {
+func (s *SubjectStore) GetByNormName(ctx context.Context, args ...string) (Subject, error) {
+	scope, name, err := scopedStringArgs(args)
+	if err != nil {
+		return Subject{}, err
+	}
+	if err := requireScope(ctx, s.db, scope); err != nil {
+		return Subject{}, err
+	}
 	var subject Subject
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, norm_name, type FROM subjects WHERE norm_name = ?`,
-		Normalize(name)).
+	err = s.db.QueryRowContext(ctx,
+		`SELECT id, name, norm_name, type FROM subjects WHERE scope = ? AND norm_name = ?`,
+		scope, Normalize(name)).
 		Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type)
 	return subject, err
 }
@@ -588,12 +629,29 @@ func (s *SubjectStore) Get(ctx context.Context, id string) (Subject, error) {
 	return subject, err
 }
 
+func (s *SubjectStore) GetInScope(ctx context.Context, scope, id string) (Subject, error) {
+	if err := requireScope(ctx, s.db, scope); err != nil {
+		return Subject{}, err
+	}
+	var subject Subject
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, name, norm_name, type FROM subjects WHERE scope = ? AND id = ?`, scope, id).
+		Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Subject{}, ErrSubjectNotFound
+	}
+	return subject, err
+}
+
 func (s *SubjectStore) Delete(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM subjects WHERE id = ?`, id)
 	return err
 }
 
-func (s *SubjectStore) GetByPath(ctx context.Context, path string) (Subject, error) {
+func (s *SubjectStore) GetByPath(ctx context.Context, scope, path string) (Subject, error) {
+	if err := requireScope(ctx, s.db, scope); err != nil {
+		return Subject{}, err
+	}
 	typ, token, ok := strings.Cut(path, "/")
 	if !ok || typ == "" || token == "" {
 		return Subject{}, ErrSubjectNotFound
@@ -601,8 +659,8 @@ func (s *SubjectStore) GetByPath(ctx context.Context, path string) (Subject, err
 
 	var subject Subject
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, norm_name, type FROM subjects WHERE norm_name = ?`,
-		token).
+		`SELECT id, name, norm_name, type FROM subjects WHERE scope = ? AND norm_name = ?`,
+		scope, token).
 		Scan(&subject.ID, &subject.Name, &subject.NormName, &subject.Type)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subject{}, ErrSubjectNotFound
@@ -622,10 +680,7 @@ func (s *SubjectStore) List(ctx context.Context, typ, nameContains string, p pag
 
 // ListInScope lists subjects only after resolving the named scope.
 func (s *SubjectStore) ListInScope(ctx context.Context, scope, typ, nameContains string, p page.Params) ([]Subject, string, error) {
-	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM scopes WHERE name = ?`, scope).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
-		return nil, "", fmt.Errorf("%w: %s", ErrScopeNotFound, scope)
-	} else if err != nil {
+	if err := requireScope(ctx, s.db, scope); err != nil {
 		return nil, "", err
 	}
 	cursor, err := decodeCursor(p.Cursor, 2)
@@ -669,6 +724,79 @@ func (s *SubjectStore) ListInScope(ctx context.Context, scope, typ, nameContains
 		return nil, "", err
 	}
 	return pageSubjects(subjects, limit), nextSubjectCursor(subjects, limit), nil
+}
+
+func requireScope(ctx context.Context, db sqlStore, scope string) error {
+	var exists int
+	if err := db.QueryRowContext(ctx, `SELECT 1 FROM scopes WHERE name = ?`, scope).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: %s", ErrScopeNotFound, scope)
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+func scopedStringArgs(args []string) (string, string, error) {
+	switch len(args) {
+	case 1:
+		return "default", args[0], nil
+	case 2:
+		return args[0], args[1], nil
+	default:
+		return "", "", fmt.Errorf("wiki: expected value or scope and value")
+	}
+}
+
+func subjectSaveArgs(args []any) (string, Subject, error) {
+	if len(args) == 1 {
+		subject, ok := args[0].(Subject)
+		if ok {
+			return "default", subject, nil
+		}
+	}
+	if len(args) == 2 {
+		scope, scopeOK := args[0].(string)
+		subject, subjectOK := args[1].(Subject)
+		if scopeOK && subjectOK {
+			return scope, subject, nil
+		}
+	}
+	return "", Subject{}, fmt.Errorf("wiki: expected subject or scope and subject")
+}
+
+func jobListArgs(args []any) (string, JobFilter, page.Params, error) {
+	if len(args) == 2 {
+		f, fOK := args[0].(JobFilter)
+		p, pOK := args[1].(page.Params)
+		if fOK && pOK {
+			return "default", f, p, nil
+		}
+	}
+	if len(args) == 3 {
+		scope, scopeOK := args[0].(string)
+		f, fOK := args[1].(JobFilter)
+		p, pOK := args[2].(page.Params)
+		if scopeOK && fOK && pOK {
+			return scope, f, p, nil
+		}
+	}
+	return "", JobFilter{}, page.Params{}, fmt.Errorf("wiki: invalid ListJobs arguments")
+}
+
+func jobCountArgs(args []any) (string, JobFilter, error) {
+	if len(args) == 1 {
+		if f, ok := args[0].(JobFilter); ok {
+			return "default", f, nil
+		}
+	}
+	if len(args) == 2 {
+		scope, scopeOK := args[0].(string)
+		f, fOK := args[1].(JobFilter)
+		if scopeOK && fOK {
+			return scope, f, nil
+		}
+	}
+	return "", JobFilter{}, fmt.Errorf("wiki: invalid CountJobs arguments")
 }
 
 // ClaimStore persists extracted claims.

@@ -24,7 +24,7 @@ type stubOrphanLister struct {
 	called int
 }
 
-func (s *stubOrphanLister) Orphans(context.Context) ([]Ref, error) {
+func (s *stubOrphanLister) Orphans(context.Context, string) ([]Ref, error) {
 	s.called++
 	return s.refs, nil
 }
@@ -36,7 +36,7 @@ type stubAsker struct {
 	question string
 }
 
-func (s *stubAsker) Ask(_ context.Context, owner, question string) (ask.Answer, error) {
+func (s *stubAsker) Ask(_ context.Context, _ string, owner, question string) (ask.Answer, error) {
 	s.called++
 	s.owner = owner
 	s.question = question
@@ -49,7 +49,7 @@ type stubMentioner struct {
 	text   string
 }
 
-func (s *stubMentioner) MentionsIn(_ context.Context, text string) ([]Ref, error) {
+func (s *stubMentioner) MentionsIn(_ context.Context, _ string, text string) ([]Ref, error) {
 	s.called++
 	s.text = text
 	return s.refs, nil
@@ -73,11 +73,11 @@ func (f linkifiedPageFinder) PageByPath(ctx context.Context, path string) (Subje
 	if err != nil {
 		return SubjectView{}, err
 	}
-	page, err := f.service.PageWithLinks(ctx, subject.ID)
+	page, err := f.service.PageWithLinks(ctx, "default", subject.ID)
 	if err != nil {
 		return SubjectView{}, err
 	}
-	body, err := f.service.LinkifyMentions(ctx, page.Body, f.base, subject.ID)
+	body, err := f.service.LinkifyMentions(ctx, "default", page.Body, f.base, subject.ID)
 	if err != nil {
 		return SubjectView{}, err
 	}

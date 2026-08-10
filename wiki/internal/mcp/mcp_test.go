@@ -2058,11 +2058,11 @@ func (ownerPairCompiler) Compile(_ context.Context, _ llm.Attribution, subject w
 	return subject.Name, "merged", nil
 }
 
-func (f failingIngest) Ingest(context.Context, string, string, string, string, []string) (string, error) {
+func (f failingIngest) Ingest(context.Context, string, string, string, string, string, []string) (string, error) {
 	return "", f.err
 }
 
-func (w *capturingWiki) Ingest(_ context.Context, ownerID, ownerEmail, text, title string, tags []string) (string, error) {
+func (w *capturingWiki) Ingest(_ context.Context, _ string, ownerID, ownerEmail, text, title string, tags []string) (string, error) {
 	w.ingestOwnerID = ownerID
 	w.ingestOwner = ownerEmail
 	w.ingestText = text
@@ -2103,7 +2103,7 @@ func (w *capturingWiki) CountJobs(_ context.Context, f JobFilter) (int, error) {
 	return w.jobCount, nil
 }
 
-func (w *capturingWiki) GetByPath(_ context.Context, path string) (subject, error) {
+func (w *capturingWiki) GetByPath(_ context.Context, _ string, path string) (subject, error) {
 	if w.pathLookups == nil {
 		w.pathLookups = map[string]int{}
 	}
@@ -2117,7 +2117,7 @@ func (w *capturingWiki) GetByPath(_ context.Context, path string) (subject, erro
 	return subject{}, sql.ErrNoRows
 }
 
-func (w *capturingWiki) MergeSubjects(ctx context.Context, fromSubjectID, toSubjectID string) (string, error) {
+func (w *capturingWiki) MergeSubjects(ctx context.Context, _ string, fromSubjectID, toSubjectID string) (string, error) {
 	w.mergeFrom = fromSubjectID
 	w.mergeTo = toSubjectID
 	if id, ok := appkit.IdentityFrom(ctx); ok {
@@ -2247,7 +2247,7 @@ func (s mcpPageService) PageByPath(ctx context.Context, path string) (page, erro
 	if err != nil {
 		return page{}, err
 	}
-	linked, err := s.service.PageWithLinks(ctx, subject.ID)
+	linked, err := s.service.PageWithLinks(ctx, "default", subject.ID)
 	if err != nil {
 		return page{}, err
 	}
@@ -2312,7 +2312,7 @@ type capturingAsker struct {
 	answer   answer
 }
 
-func (a *capturingAsker) Ask(_ context.Context, owner, question string) (answer, error) {
+func (a *capturingAsker) Ask(_ context.Context, _ string, owner, question string) (answer, error) {
 	a.owner = owner
 	a.question = question
 	return a.answer, nil

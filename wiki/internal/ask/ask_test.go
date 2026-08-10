@@ -70,7 +70,7 @@ func TestAskThreadsReceivedChainThroughEveryPromptsCall(t *testing.T) {
 	chains := []string{"01KZ6V08B73Q7W1G5GR3C2E5MK", "01KZ6V08B73Q7W1G5GR3C2E5MM"}
 	for i, chainID := range chains {
 		askCtx := correlation.WithContext(ctx, chainID)
-		if _, err := asker.Ask(askCtx, "alice@example.com", "Who wrote the note?"); err != nil {
+		if _, err := asker.Ask(askCtx, "default", "alice@example.com", "Who wrote the note?"); err != nil {
 			t.Fatalf("Ask %d: %v", i+1, err)
 		}
 	}
@@ -88,7 +88,7 @@ func TestAskThreadsReceivedChainThroughEveryPromptsCall(t *testing.T) {
 			}
 		}
 	}
-	if _, err := asker.Ask(ctx, "alice@example.com", "Who wrote the note?"); err != nil {
+	if _, err := asker.Ask(ctx, "default", "alice@example.com", "Who wrote the note?"); err != nil {
 		t.Fatalf("bare Ask: %v", err)
 	}
 	for _, call := range calls[6:] {
@@ -152,7 +152,7 @@ func TestAskAttributesEveryPromptsCallToRequestIdentity(t *testing.T) {
 	search := retrieve.NewHybridRetriever(nil, vector, nil, nil, retrieve.FusionConfig{})
 	asker := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), client, DefaultSubjectCallSite(), DefaultSynthesisCallSite())
 
-	if _, err := asker.Ask(ctx, "alice@example.com", "Who wrote the note?"); err != nil {
+	if _, err := asker.Ask(ctx, "default", "alice@example.com", "Who wrote the note?"); err != nil {
 		t.Fatalf("Ask with owner: %v", err)
 	}
 	wantCalls := map[[2]string]int{
@@ -172,7 +172,7 @@ func TestAskAttributesEveryPromptsCallToRequestIdentity(t *testing.T) {
 	}
 
 	firstServiceCall := len(calls)
-	if _, err := asker.Ask(ctx, "", "Who wrote the note?"); err != nil {
+	if _, err := asker.Ask(ctx, "default", "", "Who wrote the note?"); err != nil {
 		t.Fatalf("Ask without owner: %v", err)
 	}
 	serviceCalls := calls[firstServiceCall:]
@@ -224,7 +224,7 @@ func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) 
 	}}
 
 	got, err := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), DefaultSubjectCallSite(), DefaultSynthesisCallSite()).
-		Ask(ctx, "owner@example.com", "Who owns the scheduler?")
+		Ask(ctx, "default", "owner@example.com", "Who owns the scheduler?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
 	}
@@ -272,6 +272,46 @@ func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) 
 	}
 }
 
+func TestAskRetrievesAndCitesOnlyTheNamedScope(t *testing.T) {
+	// R-GYQG-CRLU
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	for _, scope := range []string{"s1", "s2"} {
+		if _, err := wiki.NewScopeStore(conn).Create(ctx, scope); err != nil {
+			t.Fatalf("Create scope %s: %v", scope, err)
+		}
+	}
+	if err := wiki.NewSubjectStore(conn).Save(ctx, "s2", wiki.Subject{ID: "s2-grace", Name: "Grace", Type: "entity"}); err != nil {
+		t.Fatalf("Save s2 subject: %v", err)
+	}
+	if err := wiki.NewPageStore(conn).Upsert(ctx, wiki.Page{ID: "s2-grace", SubjectID: "s2-grace", Title: "Grace", Body: "Grace owns the scheduler."}); err != nil {
+		t.Fatalf("Upsert s2 page: %v", err)
+	}
+	search := &scopeSearch{results: map[string]retrieve.Result{
+		"s1": {},
+		"s2": {Hits: []retrieve.Hit{{PageID: "s2-grace", Path: "entity/grace", Title: "Grace"}}, TopDense: 0.9},
+	}}
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
+		textRoundTrip(`{"sub_queries":["scheduler"],"keywords":["scheduler"]}`),
+		textRoundTrip(`{"sub_queries":["scheduler"],"keywords":["scheduler"]}`),
+		textRoundTrip(`{"found":true,"text":"Grace owns the scheduler.","citations":[{"path":"entity/grace","title":"Grace"}]}`),
+	}}
+	asker := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite())
+
+	s1, err := asker.Ask(ctx, "s1", "owner@example.com", "Who owns the scheduler?")
+	if err != nil || s1.Found || s1.Text != honestEmptyText || len(s1.Citations) != 0 {
+		t.Fatalf("s1 Ask = %+v, %v; want honest-empty with no cross-scope citation", s1, err)
+	}
+	s2, err := asker.Ask(ctx, "s2", "owner@example.com", "Who owns the scheduler?")
+	if err != nil || !s2.Found || len(s2.Citations) != 1 || s2.Citations[0].Path != "entity/grace" {
+		t.Fatalf("s2 Ask = %+v, %v; want Grace answer and citation", s2, err)
+	}
+	if !reflect.DeepEqual(search.scopes, []string{"s1", "s2"}) {
+		t.Fatalf("retrieval scopes = %+v, want s1 then s2", search.scopes)
+	}
+}
+
 func TestAskHonestEmptyFloorSkipsSynthesisUnlessPinnedOrDenseEnough(t *testing.T) {
 	// R-BBNS-QTVE
 	ctx := context.Background()
@@ -294,7 +334,7 @@ func TestAskHonestEmptyFloorSkipsSynthesisUnlessPinnedOrDenseEnough(t *testing.T
 		textRoundTrip(`{"found":true,"text":"should not run","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
 	got, err := New(lowSearch, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, lowProv), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "Who wrote the note?")
+		Ask(ctx, "default", "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask below floor returned error: %v", err)
 	}
@@ -315,7 +355,7 @@ func TestAskHonestEmptyFloorSkipsSynthesisUnlessPinnedOrDenseEnough(t *testing.T
 		textRoundTrip(`{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
 	got, err = New(pinnedSearch, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, pinnedProv), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "Who wrote the note?")
+		Ask(ctx, "default", "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask pinned returned error: %v", err)
 	}
@@ -348,7 +388,7 @@ func TestAskRelevanceFloorIsConfigurableThreshold(t *testing.T) {
 		textRoundTrip(`{"found":true,"text":"should not run","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
 	got, err := New(&scriptedSearch{result: result}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, highProv), testExtractSite(), testSynthSite(), WithRelevanceFloor(0.50)).
-		Ask(ctx, "owner@example.com", "Who wrote the note?")
+		Ask(ctx, "default", "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask high floor returned error: %v", err)
 	}
@@ -361,7 +401,7 @@ func TestAskRelevanceFloorIsConfigurableThreshold(t *testing.T) {
 		textRoundTrip(`{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`),
 	}}
 	got, err = New(&scriptedSearch{result: result}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, lowProv), testExtractSite(), testSynthSite(), WithRelevanceFloor(0.40)).
-		Ask(ctx, "owner@example.com", "Who wrote the note?")
+		Ask(ctx, "default", "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask low floor returned error: %v", err)
 	}
@@ -387,7 +427,7 @@ func TestAskDowngradesFoundAnswerWithoutGroundedCitations(t *testing.T) {
 	}}
 
 	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "Who wrote the note?")
+		Ask(ctx, "default", "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
 	}
@@ -412,7 +452,7 @@ func TestAskDowngradesFoundAnswerWithoutText(t *testing.T) {
 	}}
 
 	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "Who wrote the note?")
+		Ask(ctx, "default", "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
 	}
@@ -445,7 +485,7 @@ func TestAskDropsCitationsOutsideRetrievedPages(t *testing.T) {
 	}}
 
 	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "Who wrote the note?")
+		Ask(ctx, "default", "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
 	}
@@ -483,7 +523,7 @@ func TestAskSynthesisUsesOnlyRetrievedPageBodies(t *testing.T) {
 	}}
 
 	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "Who approved the release?")
+		Ask(ctx, "default", "owner@example.com", "Who approved the release?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
 	}
@@ -521,7 +561,7 @@ func TestAskDoesNotWriteOnHonestEmptyOrParseFailure(t *testing.T) {
 	before := totalChanges(t, conn)
 	emptyProv := &askProvider{responses: []*llmtest.RoundTrip{textRoundTrip(`{"sub_queries":["Ada"]}`)}}
 	got, err := New(&scriptedSearch{result: retrieve.Result{Hits: []retrieve.Hit{{PageID: "subject-ada"}}, TopDense: 0.01}}, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, emptyProv), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "Who wrote the note?")
+		Ask(ctx, "default", "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("honest-empty Ask returned error: %v", err)
 	}
@@ -537,7 +577,7 @@ func TestAskDoesNotWriteOnHonestEmptyOrParseFailure(t *testing.T) {
 		textRoundTrip(`not json`),
 	}}
 	_, err = New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, parseProv), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "Who wrote the note?")
+		Ask(ctx, "default", "owner@example.com", "Who wrote the note?")
 	if err == nil {
 		t.Fatal("parse-failure Ask error = nil, want error")
 	}
@@ -674,7 +714,7 @@ func TestAskParsesDecoratedJSONResponses(t *testing.T) {
 	}}
 
 	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
-		Ask(ctx, "owner@example.com", "Who wrote the note?")
+		Ask(ctx, "default", "owner@example.com", "Who wrote the note?")
 	if err != nil {
 		t.Fatalf("Ask returned error: %v", err)
 	}
@@ -742,6 +782,16 @@ type scriptedSearch struct {
 	result retrieve.Result
 	err    error
 	calls  []searchCall
+}
+
+type scopeSearch struct {
+	results map[string]retrieve.Result
+	scopes  []string
+}
+
+func (s *scopeSearch) SearchAnalyzed(_ context.Context, scope string, _ llm.Attribution, _ any, _ retrieve.SearchLimits) (retrieve.Result, error) {
+	s.scopes = append(s.scopes, scope)
+	return s.results[scope], nil
 }
 
 type searchCall struct {

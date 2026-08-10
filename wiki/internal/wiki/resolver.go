@@ -27,11 +27,15 @@ func NewResolverForSubjects(subjects *SubjectStore) *Resolver {
 	return NewResolver(subjects.db)
 }
 
-func (r *Resolver) ResolveByName(ctx context.Context, name string) (Subject, error) {
+func (r *Resolver) ResolveByName(ctx context.Context, args ...string) (Subject, error) {
 	if r == nil {
 		return Subject{}, ErrSubjectNotFound
 	}
-	subject, err := r.subjects.GetByNormName(ctx, name)
+	scope, name, err := scopedStringArgs(args)
+	if err != nil {
+		return Subject{}, err
+	}
+	subject, err := r.subjects.GetByNormName(ctx, scope, name)
 	if err == nil {
 		return subject, nil
 	}
@@ -39,7 +43,7 @@ func (r *Resolver) ResolveByName(ctx context.Context, name string) (Subject, err
 		return Subject{}, err
 	}
 
-	alias, err := r.aliases.GetByNormName(ctx, name)
+	alias, err := r.aliases.GetByNormName(ctx, scope, name)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subject{}, ErrSubjectNotFound
 	}
@@ -53,11 +57,15 @@ func (r *Resolver) ResolveByName(ctx context.Context, name string) (Subject, err
 	return subject, err
 }
 
-func (r *Resolver) ResolveByPath(ctx context.Context, path string) (Subject, error) {
+func (r *Resolver) ResolveByPath(ctx context.Context, args ...string) (Subject, error) {
 	if r == nil {
 		return Subject{}, ErrSubjectNotFound
 	}
-	subject, err := r.subjects.GetByPath(ctx, path)
+	scope, path, err := scopedStringArgs(args)
+	if err != nil {
+		return Subject{}, err
+	}
+	subject, err := r.subjects.GetByPath(ctx, scope, path)
 	if err == nil {
 		return subject, nil
 	}
@@ -69,7 +77,7 @@ func (r *Resolver) ResolveByPath(ctx context.Context, path string) (Subject, err
 	if !ok || token == "" {
 		return Subject{}, ErrSubjectNotFound
 	}
-	alias, err := r.aliases.GetByNormName(ctx, token)
+	alias, err := r.aliases.GetByNormName(ctx, scope, token)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subject{}, ErrSubjectNotFound
 	}

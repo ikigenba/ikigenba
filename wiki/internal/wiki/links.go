@@ -315,24 +315,34 @@ func urlStart(body string, i int) int {
 }
 
 // PageWithLinks returns a stored page plus read-time outbound and inbound links.
-func (s *Service) PageWithLinks(ctx context.Context, subjectID string) (LinkedPage, error) {
+func (s *Service) PageWithLinks(ctx context.Context, scope, subjectID string) (LinkedPage, error) {
 	if s == nil {
 		return LinkedPage{}, fmt.Errorf("wiki: nil service")
+	}
+	if err := requireScope(ctx, s.write, scope); err != nil {
+		return LinkedPage{}, err
 	}
 	subjectID = strings.TrimSpace(subjectID)
 	subject, err := s.subjects.Get(ctx, subjectID)
 	if err != nil {
 		return LinkedPage{}, err
 	}
+	var subjectScope string
+	if err := s.write.QueryRowContext(ctx, `SELECT scope FROM subjects WHERE id = ?`, subjectID).Scan(&subjectScope); err != nil {
+		return LinkedPage{}, err
+	}
+	if subjectScope != scope {
+		return LinkedPage{}, ErrSubjectNotFound
+	}
 	page, err := s.pages.GetBySubject(ctx, subjectID)
 	if err != nil {
 		return LinkedPage{}, err
 	}
-	subjects, err := listAllSubjects(ctx, s.subjects, "", "")
+	subjects, err := listAllSubjectsInScope(ctx, s.subjects, scope, "", "")
 	if err != nil {
 		return LinkedPage{}, err
 	}
-	aliases, err := s.aliases.ListAll(ctx)
+	aliases, err := s.aliases.ListAllInScope(ctx, scope)
 	if err != nil {
 		return LinkedPage{}, err
 	}
@@ -367,15 +377,15 @@ func (s *Service) PageWithLinks(ctx context.Context, subjectID string) (LinkedPa
 }
 
 // MentionsIn returns public read-surface links for subjects named in text.
-func (s *Service) MentionsIn(ctx context.Context, text string) ([]Ref, error) {
+func (s *Service) MentionsIn(ctx context.Context, scope, text string) ([]Ref, error) {
 	if s == nil {
 		return nil, fmt.Errorf("wiki: nil service")
 	}
-	subjects, err := listAllSubjects(ctx, s.subjects, "", "")
+	subjects, err := listAllSubjectsInScope(ctx, s.subjects, scope, "", "")
 	if err != nil {
 		return nil, err
 	}
-	aliases, err := s.aliases.ListAll(ctx)
+	aliases, err := s.aliases.ListAllInScope(ctx, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -390,15 +400,15 @@ func (s *Service) MentionsIn(ctx context.Context, text string) ([]Ref, error) {
 
 // LinkifyMentions loads the current canonical subjects and aliases before
 // applying the shared, read-time markdown projection.
-func (s *Service) LinkifyMentions(ctx context.Context, text, base, excludeID string) (string, error) {
+func (s *Service) LinkifyMentions(ctx context.Context, scope, text, base, excludeID string) (string, error) {
 	if s == nil {
 		return "", fmt.Errorf("wiki: nil service")
 	}
-	subjects, err := listAllSubjects(ctx, s.subjects, "", "")
+	subjects, err := listAllSubjectsInScope(ctx, s.subjects, scope, "", "")
 	if err != nil {
 		return "", err
 	}
-	aliases, err := s.aliases.ListAll(ctx)
+	aliases, err := s.aliases.ListAllInScope(ctx, scope)
 	if err != nil {
 		return "", err
 	}

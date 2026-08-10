@@ -50,7 +50,7 @@ type JobFilter struct {
 }
 
 type ingestService interface {
-	Ingest(ctx context.Context, ownerID, ownerEmail, text, title string, tags []string) (string, error)
+	Ingest(ctx context.Context, scope, ownerID, ownerEmail, text, title string, tags []string) (string, error)
 }
 
 type jobStatusFunc[T any] interface {
@@ -74,11 +74,11 @@ type jobsCountFunc interface {
 }
 
 type subjectPathFunc[T any] interface {
-	GetByPath(ctx context.Context, path string) (T, error)
+	GetByPath(ctx context.Context, scope, path string) (T, error)
 }
 
 type mergeFunc interface {
-	MergeSubjects(ctx context.Context, fromSubjectID, toSubjectID string) (string, error)
+	MergeSubjects(ctx context.Context, scope, fromSubjectID, toSubjectID string) (string, error)
 }
 
 type mergeListFunc[T any] interface {
@@ -110,7 +110,7 @@ type pageByPathFunc[T any] interface {
 }
 
 type mentionLinkifier interface {
-	LinkifyMentions(ctx context.Context, text, base, excludeID string) (string, error)
+	LinkifyMentions(ctx context.Context, scope, text, base, excludeID string) (string, error)
 }
 
 // Option configures optional MCP tools backed by wiki domain services.
@@ -120,7 +120,9 @@ type Option func(*Handler)
 func WithIngestService(s ingestService) Option {
 	return func(h *Handler) {
 		if s != nil {
-			h.ingest = s.Ingest
+			h.ingest = func(ctx context.Context, ownerID, ownerEmail, text, title string, tags []string) (string, error) {
+				return s.Ingest(ctx, "default", ownerID, ownerEmail, text, title, tags)
+			}
 		}
 	}
 }
@@ -188,11 +190,13 @@ func WithMergeService[T any](resolver subjectPathFunc[T], s mergeFunc) Option {
 	return func(h *Handler) {
 		if resolver != nil {
 			h.resolve = func(ctx context.Context, path string) (any, error) {
-				return resolver.GetByPath(ctx, path)
+				return resolver.GetByPath(ctx, "default", path)
 			}
 		}
 		if s != nil {
-			h.merge = s.MergeSubjects
+			h.merge = func(ctx context.Context, from, to string) (string, error) {
+				return s.MergeSubjects(ctx, "default", from, to)
+			}
 		}
 	}
 }
@@ -291,17 +295,19 @@ func WithPagePathService[T any](s pageByPathFunc[T]) Option {
 func WithMentionLinkifier(s mentionLinkifier) Option {
 	return func(h *Handler) {
 		if s != nil {
-			h.linkify = s.LinkifyMentions
+			h.linkify = func(ctx context.Context, text, base, excludeID string) (string, error) {
+				return s.LinkifyMentions(ctx, "default", text, base, excludeID)
+			}
 		}
 	}
 }
 
 // WithAskFunc enables the grounded ask tool.
-func WithAskFunc[T any](fn func(context.Context, string, string) (T, error)) Option {
+func WithAskFunc[T any](fn func(context.Context, string, string, string) (T, error)) Option {
 	return func(h *Handler) {
 		if fn != nil {
 			h.ask = func(ctx context.Context, owner, question string) (any, error) {
-				return fn(ctx, owner, question)
+				return fn(ctx, "default", owner, question)
 			}
 		}
 	}

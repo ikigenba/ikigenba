@@ -61,7 +61,7 @@ func TestWorkerThreadsStoredChainThroughExtractCompileAndEmbed(t *testing.T) {
 	chains := []string{"01KZ6V08B73Q7W1G5GR3C2E5MK", "01KZ6V08B73Q7W1G5GR3C2E5MM"}
 	jobs := make([]string, 0, len(owners))
 	for _, owner := range owners {
-		jobID, err := svc.Ingest(correlation.WithContext(ctx, chains[len(jobs)]), "owner-id", owner, "Ada wrote the note.", "Ada", nil)
+		jobID, err := svc.Ingest(correlation.WithContext(ctx, chains[len(jobs)]), "default", "owner-id", owner, "Ada wrote the note.", "Ada", nil)
 		if err != nil {
 			t.Fatalf("Ingest owner %q: %v", owner, err)
 		}
@@ -125,7 +125,7 @@ func TestIngestReturnsPendingThenWorkerCommitsPage(t *testing.T) {
 	}}
 	svc := scriptedService(t, conn, prov, time.Date(2026, 6, 20, 22, 0, 0, 0, time.UTC))
 
-	jobID, err := svc.Ingest(ctx, "owner-id", " owner@example.com ", "Acme Robotics opened a research lab in Tulsa.", " Tulsa lab ", []string{"robotics"})
+	jobID, err := svc.Ingest(ctx, "default", "owner-id", " owner@example.com ", "Acme Robotics opened a research lab in Tulsa.", " Tulsa lab ", []string{"robotics"})
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestWorkerStoresPageVectorAfterCommit(t *testing.T) {
 	stop := startWorker(t, ctx, svc)
 	defer stop()
 
-	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme Robotics opened a background-vector lab.", "Vector lab", nil)
+	jobID, err := svc.Ingest(ctx, "default", "owner-id", "owner@example.com", "Acme Robotics opened a background-vector lab.", "Vector lab", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestWorkerReusesSubjectAndCompilesCompleteClaims(t *testing.T) {
 	stop := startWorker(t, ctx, svc)
 	defer stop()
 
-	firstID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme Robotics opened a Tulsa lab.", "One", nil)
+	firstID, err := svc.Ingest(ctx, "default", "owner-id", "owner@example.com", "Acme Robotics opened a Tulsa lab.", "One", nil)
 	if err != nil {
 		t.Fatalf("first Ingest: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestWorkerReusesSubjectAndCompilesCompleteClaims(t *testing.T) {
 		t.Fatalf("first subjects = %#v, want one subject", first.Subjects)
 	}
 
-	secondID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "Acme Robotics hired Mira Patel.", "Two", nil)
+	secondID, err := svc.Ingest(ctx, "default", "owner-id", "owner@example.com", "Acme Robotics hired Mira Patel.", "Two", nil)
 	if err != nil {
 		t.Fatalf("second Ingest: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestWorkerRecordsFailedExtractStatus(t *testing.T) {
 	stop := startWorker(t, ctx, svc)
 	defer stop()
 
-	jobID, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "bad source", "Bad source", nil)
+	jobID, err := svc.Ingest(ctx, "default", "owner-id", "owner@example.com", "bad source", "Bad source", nil)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}

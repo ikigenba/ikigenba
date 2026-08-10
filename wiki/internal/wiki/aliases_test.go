@@ -283,7 +283,7 @@ func TestProcessNextAppliesAliasedNameToSurvivorSubject(t *testing.T) {
 	))
 	svc.newID = sequenceIDs("job-1", "claim-1")
 
-	if _, err := svc.Ingest(ctx, "owner-id", "owner@example.com", "source", "Title", nil); err != nil {
+	if _, err := svc.Ingest(ctx, "default", "owner-id", "owner@example.com", "source", "Title", nil); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
 	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {

@@ -1296,7 +1296,7 @@ type capturingProvider struct {
 
 type surfaceWiki struct{}
 
-func (surfaceWiki) Ingest(context.Context, string, string, string, string, []string) (string, error) {
+func (surfaceWiki) Ingest(context.Context, string, string, string, string, string, []string) (string, error) {
 	return "", nil
 }
 
@@ -1320,11 +1320,11 @@ func (surfaceWiki) CountJobs(context.Context, mcp.JobFilter) (int, error) {
 	return 1, nil
 }
 
-func (surfaceWiki) GetByPath(context.Context, string) (wiki.Subject, error) {
+func (surfaceWiki) GetByPath(context.Context, string, string) (wiki.Subject, error) {
 	return wiki.Subject{ID: "subject-1", Name: "Acme", NormName: "acme", Type: "entity"}, nil
 }
 
-func (surfaceWiki) MergeSubjects(context.Context, string, string) (string, error) {
+func (surfaceWiki) MergeSubjects(context.Context, string, string, string) (string, error) {
 	return "job-merge", nil
 }
 
@@ -1352,7 +1352,7 @@ func (surfaceWiki) PageByPath(context.Context, string) (publicPage, error) {
 	return publicPage{}, nil
 }
 
-func surfaceAsk(context.Context, string, string) (askSurfaceAnswer, error) {
+func surfaceAsk(context.Context, string, string, string) (askSurfaceAnswer, error) {
 	return askSurfaceAnswer{}, nil
 }
 

@@ -117,7 +117,7 @@ func TestSubjectStoreGetByPathFindsExactTypeAndNormName(t *testing.T) {
 		t.Fatalf("Save subject-2: %v", err)
 	}
 
-	got, err := subjects.GetByPath(ctx, "entity/acme-robotics")
+	got, err := subjects.GetByPath(ctx, "default", "entity/acme-robotics")
 	if err != nil {
 		t.Fatalf("GetByPath: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestSubjectStoreGetByPathFindsExactTypeAndNormName(t *testing.T) {
 		t.Fatalf("GetByPath returned %+v, want subject-1 at entity/acme-robotics", got)
 	}
 
-	if got, err := subjects.GetByPath(ctx, "entity/acme robotics"); !errors.Is(err, ErrSubjectNotFound) {
+	if got, err := subjects.GetByPath(ctx, "default", "entity/acme robotics"); !errors.Is(err, ErrSubjectNotFound) {
 		t.Fatalf("GetByPath with transformed token returned %+v, %v; want ErrSubjectNotFound", got, err)
 	}
 }
@@ -142,7 +142,7 @@ func TestSubjectStoreGetByPathRejectsEmptyMissingFuzzyAndWrongType(t *testing.T)
 	}
 
 	for _, path := range []string{"", "entity/", "/acme-robotics", "entity/acme-robot", "concept/acme-robotics", "entity/acme robotics"} {
-		if got, err := subjects.GetByPath(ctx, path); !errors.Is(err, ErrSubjectNotFound) {
+		if got, err := subjects.GetByPath(ctx, "default", path); !errors.Is(err, ErrSubjectNotFound) {
 			t.Fatalf("GetByPath(%q) = %+v, %v; want ErrSubjectNotFound", path, got, err)
 		}
 	}
@@ -161,14 +161,14 @@ func TestSubjectStoreGetByPathUsesUniqueTokenBeforeCheckingType(t *testing.T) {
 		t.Fatalf("Save subject-2: %v", err)
 	}
 
-	got, err := subjects.GetByPath(ctx, "entity/alpha-beta")
+	got, err := subjects.GetByPath(ctx, "default", "entity/alpha-beta")
 	if err != nil {
 		t.Fatalf("GetByPath entity/alpha-beta: %v", err)
 	}
 	if got.ID != "subject-1" {
 		t.Fatalf("GetByPath entity/alpha-beta = %+v, want subject-1", got)
 	}
-	if got, err := subjects.GetByPath(ctx, "entity/alpha-gamma"); !errors.Is(err, ErrSubjectNotFound) {
+	if got, err := subjects.GetByPath(ctx, "default", "entity/alpha-gamma"); !errors.Is(err, ErrSubjectNotFound) {
 		t.Fatalf("GetByPath entity/alpha-gamma = %+v, %v; want ErrSubjectNotFound", got, err)
 	}
 }
