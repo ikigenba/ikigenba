@@ -3,21 +3,22 @@
   <h1>{{.Subject.Title}}</h1>
   <div class="prose">{{.SubjectHTML}}</div>
 </article>
-{{if .Subject.Outbound}}
-<nav aria-label="Mentions">
-  <h2>Mentions</h2>
-  <ul>
-    {{range .Subject.Outbound}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
-  </ul>
-</nav>
-{{end}}
-{{if .Subject.Inbound}}
-<nav aria-label="Mentioned by">
-  <h2>Mentioned by</h2>
-  <ul>
-    {{range .Subject.Inbound}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
-  </ul>
-</nav>
-{{end}}
-{{if eq .Tier "private"}}<a href="">Ask another question</a>{{else}}<a href="">Back to search</a>{{end}}
+{{if or .Subject.Outbound .Subject.Inbound}}<div class="links">
+  {{if .Subject.Outbound}}
+  <nav aria-label="Mentions">
+    <h2>Mentions</h2>
+    <ul>
+      {{range .Subject.Outbound}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
+    </ul>
+  </nav>
+  {{end}}
+  {{if .Subject.Inbound}}
+  <nav aria-label="Mentioned by">
+    <h2>Mentioned by</h2>
+    <ul>
+      {{range .Subject.Inbound}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
+    </ul>
+  </nav>
+  {{end}}
+</div>{{end}}
 {{template "foot" .}}{{end}}

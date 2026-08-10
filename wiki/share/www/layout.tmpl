@@ -42,7 +42,6 @@
 	  min-height: var(--space-16);
 	  display: flex;
 	  align-items: center;
-	  justify-content: space-between;
 	  gap: var(--space-6);
 	  border-bottom: var(--border-width) solid var(--color-border);
     }
@@ -117,6 +116,10 @@
       max-width: 680px;
       display: grid;
       gap: var(--space-4);
+    }
+
+    article[aria-label="Subject page"] {
+      max-width: none;
     }
 
     p {
@@ -228,6 +231,11 @@
 	  min-height: var(--control-h-lg);
 	}
 
+    main > form[role="search"] {
+      width: 100%;
+      margin-inline: auto;
+    }
+
     button {
       padding: 0 var(--space-6);
       color: var(--color-bg);
@@ -237,6 +245,7 @@
 
 	.scope-selector {
 	  max-width: none;
+	  margin-left: auto;
 	  align-items: center;
 	  font-family: var(--font-mono, var(--read-font-mono));
 	  font-size: var(--text-label-size);
@@ -254,6 +263,21 @@
 	  flex: none;
 	  padding: 0 var(--space-3);
 	}
+
+    .header-question {
+      width: 360px;
+      max-width: 100%;
+      margin-inline: 0;
+    }
+
+    .header-question input,
+    .header-question button {
+      min-height: var(--control-h-sm);
+    }
+
+    .header-question input {
+      width: 100%;
+    }
 
 	.suggested h2 {
 	  font-family: var(--font-mono, var(--read-font-mono));
@@ -281,6 +305,71 @@
     nav {
       max-width: 680px;
       border-top: var(--border-width) solid var(--color-border);
+    }
+
+    .links {
+      margin-top: var(--space-8);
+      padding-top: var(--space-6);
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      border-top: var(--border-width) solid var(--color-border);
+    }
+
+    .links nav {
+      max-width: none;
+      border-top: 0;
+    }
+
+    .links nav + nav {
+      padding-left: var(--space-6);
+      border-left: var(--border-width) solid var(--color-border);
+    }
+
+    .links h2 {
+      font-family: var(--font-mono, var(--read-font-mono));
+      font-size: var(--text-label-size);
+      line-height: var(--text-label-lh);
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--color-text-muted);
+    }
+
+    .links ul {
+      font-size: var(--text-small-size);
+      color: var(--color-text-muted);
+    }
+
+    .links a {
+      color: var(--color-text-muted);
+    }
+
+    .links a:hover,
+    .links a:focus-visible {
+      color: var(--color-text);
+    }
+
+    @media (max-width: 640px) {
+      header {
+        flex-wrap: wrap;
+        padding-top: var(--space-3);
+        padding-bottom: var(--space-3);
+      }
+
+      .header-question {
+        width: 100%;
+      }
+
+      .links {
+        grid-template-columns: 1fr;
+      }
+
+      .links nav + nav {
+        margin-top: var(--space-6);
+        padding-top: var(--space-6);
+        padding-left: 0;
+        border-top: var(--border-width) solid var(--color-border);
+        border-left: 0;
+      }
     }
 
     ul {
@@ -320,6 +409,15 @@
 		</select>
 		<noscript><button type="submit">Go</button></noscript>
 	  </form>
+	  {{if .Subject.Title}}<form class="header-question" action="." method="get" role="search" data-busy>
+		{{if eq .Tier "private"}}
+		<input type="text" name="q" aria-label="Ask this wiki">
+		<button type="submit" data-busy-label="Asking…">Ask</button>
+		{{else}}
+		<input type="text" name="q" aria-label="Search this wiki">
+		<button type="submit" data-busy-label="Searching…">Search</button>
+		{{end}}
+	  </form>{{end}}
 	</header>
   <main>
 {{end}}

@@ -439,13 +439,15 @@ func TestPublicSubjectRendersSanitizedScopedLinksAndHonorsVisibility(t *testing.
 	for _, want := range []string{
 		"<h2", `<a href="https://acct.ikigenba.com/srv/wiki/public/p1/subject/concept/widget">Widget</a>`,
 		`<a href="https://acct.ikigenba.com/srv/wiki/public/p1/subject/event/launch">Launch</a>`,
-		`aria-label="Mentions"`, `aria-label="Mentioned by"`, "Back to search",
+		`aria-label="Mentions"`, `aria-label="Mentioned by"`,
+		`<form class="header-question" action="." method="get" role="search" data-busy>`,
+		`<button type="submit" data-busy-label="Searching…">Search</button>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("public subject missing %q: %s", want, body)
 		}
 	}
-	if rec.Code != http.StatusOK || strings.Contains(body, "<script>") || strings.Contains(body, "Ask another question") {
+	if rec.Code != http.StatusOK || strings.Contains(body, "<script>") || strings.Contains(body, "Ask another question") || strings.Contains(body, "Back to search") {
 		t.Fatalf("public subject status=%d was unsafe or exposed ask affordance: %s", rec.Code, body)
 	}
 
@@ -1424,6 +1426,7 @@ func TestSubjectHandlerRendersFoundHTMLShell(t *testing.T) {
 
 func TestSubjectHandlerRendersMentionsBeforeMentionedBy(t *testing.T) {
 	// R-PIAB-HZC0
+	// R-Y5AQ-HXAR
 	finder := &stubPageFinder{view: SubjectView{
 		Title: "Acme Corp",
 		Body:  "Acme makes widgets.",
@@ -1440,10 +1443,18 @@ func TestSubjectHandlerRendersMentionsBeforeMentionedBy(t *testing.T) {
 	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(finder)).ServeHTTP(rec, req)
 
 	body := rec.Body.String()
+	linksStart := strings.Index(body, `<div class="links">`)
+	linksEnd := -1
+	if linksStart >= 0 {
+		linksEnd = strings.Index(body[linksStart:], `</div>`)
+		if linksEnd >= 0 {
+			linksEnd += linksStart
+		}
+	}
 	mentionsAt := strings.Index(body, `<nav aria-label="Mentions">`)
 	mentionedByAt := strings.Index(body, `<nav aria-label="Mentioned by">`)
-	if mentionsAt < 0 || mentionedByAt < 0 || mentionsAt > mentionedByAt {
-		t.Fatalf("subject page did not render Mentions before Mentioned by: %s", body)
+	if linksStart < 0 || linksEnd < 0 || mentionsAt < linksStart || mentionedByAt < mentionsAt || linksEnd < mentionedByAt {
+		t.Fatalf("subject page did not render both ordered navs inside one links wrapper: %s", body)
 	}
 	for _, want := range []string{
 		`<a href="https://acct.ikigenba.com/srv/wiki/subject/entity/beta">Beta</a>`,
@@ -1452,6 +1463,14 @@ func TestSubjectHandlerRendersMentionsBeforeMentionedBy(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("subject page missing link %q: %s", want, body)
 		}
+	}
+
+	emptyRec := httptest.NewRecorder()
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(&stubPageFinder{
+		view: SubjectView{Title: "No Links", Body: "No links here."},
+	})).ServeHTTP(emptyRec, req)
+	if strings.Contains(emptyRec.Body.String(), `class="links"`) {
+		t.Fatalf("subject page rendered links wrapper for empty link sets: %s", emptyRec.Body.String())
 	}
 }
 
@@ -1490,7 +1509,9 @@ func TestWebNavigationStaysRelativeBesideAbsoluteSubjectLinks(t *testing.T) {
 		if !strings.Contains(body, `<a href="https://acct.ikigenba.com/srv/wiki/subject/entity/tsr">TSR</a>`) {
 			t.Fatalf("subject page missing absolute subject link: %s", body)
 		}
-		if !strings.Contains(body, `<a href="">Ask another question</a>`) || strings.Contains(body, `href="https://acct.ikigenba.com/srv/wiki/">Ask another question</a>`) {
+		if !strings.Contains(body, `<form class="header-question" action="." method="get" role="search" data-busy>`) ||
+			!strings.Contains(body, `<a class="home" href="/srv/wiki/">Home</a>`) ||
+			strings.Contains(body, `action="https://acct.ikigenba.com/srv/wiki/"`) {
 			t.Fatalf("subject navigation was absolutized: %s", body)
 		}
 	})
@@ -1544,29 +1565,59 @@ func TestSubjectHandlerOmitsEmptyLinkSections(t *testing.T) {
 	}
 }
 
-func TestSubjectHandlerLinksAskAnotherQuestionOnFoundAndNotFound(t *testing.T) {
-	// R-PKQ4-9ITE
+func TestSubjectHeaderCarriesTierQuestionFormOnFoundAndNotFound(t *testing.T) {
+	// R-Y42U-45K2
 	for _, tc := range []struct {
 		name   string
+		path   string
+		label  string
 		finder *stubPageFinder
 	}{
 		{
-			name:   "found",
+			name:   "private found",
+			path:   "/private/default/subject/entity/acme-corp",
+			label:  "Ask",
 			finder: &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}},
 		},
 		{
-			name:   "not found",
+			name:   "private not found",
+			path:   "/private/default/subject/entity/missing",
+			label:  "Ask",
+			finder: &stubPageFinder{err: ErrNotFound},
+		},
+		{
+			name:   "public found",
+			path:   "/public/default/subject/entity/acme-corp",
+			label:  "Search",
+			finder: &stubPageFinder{view: SubjectView{Title: "Acme Corp", Body: "Acme makes widgets."}},
+		},
+		{
+			name:   "public not found",
+			path:   "/public/default/subject/entity/missing",
+			label:  "Search",
 			finder: &stubPageFinder{err: ErrNotFound},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/private/default/subject/entity/acme-corp", nil)
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 			rec := httptest.NewRecorder()
 
 			newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithPageFinder(tc.finder)).ServeHTTP(rec, req)
 
-			if !strings.Contains(rec.Body.String(), `<a href="">Ask another question</a>`) {
-				t.Fatalf("subject page missing ask-another link to base: %s", rec.Body.String())
+			body := rec.Body.String()
+			headerStart := strings.Index(body, "<header>")
+			headerEnd := strings.Index(body, "</header>")
+			selectorAt := strings.Index(body, `<form class="scope-selector"`)
+			questionAt := strings.Index(body, `<form class="header-question" action="." method="get" role="search" data-busy>`)
+			if headerStart < 0 || selectorAt < headerStart || questionAt < selectorAt || headerEnd < questionAt {
+				t.Fatalf("subject header does not contain question form after selector: %s", body)
+			}
+			header := body[headerStart:headerEnd]
+			if !strings.Contains(header, `type="text" name="q"`) || !strings.Contains(header, `>`+tc.label+`</button>`) {
+				t.Fatalf("subject header missing q input or %s button: %s", tc.label, header)
+			}
+			if strings.Contains(strings.ToLower(body), "ask another question") {
+				t.Fatalf("subject page retained ask-another anchor: %s", body)
 			}
 		})
 	}
@@ -1590,6 +1641,9 @@ func TestSubjectHandlerRendersNotFoundHTMLShell(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("not-found page missing %q: %s", want, body)
 		}
+	}
+	if !strings.Contains(body, `<header>`) || !strings.Contains(body, `<form class="header-question" action="." method="get" role="search" data-busy>`) {
+		t.Fatalf("not-found page missing Carbon shell header question form: %s", body)
 	}
 	if strings.Contains(body, "404 page not found") {
 		t.Fatalf("not-found page used plaintext default body: %s", body)
