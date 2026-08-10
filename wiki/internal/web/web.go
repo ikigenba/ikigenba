@@ -185,13 +185,17 @@ func NewHandler(service, version, mount string, site *appkitweb.Site, opts ...Op
 }
 
 func (h *handler) landing(w http.ResponseWriter, r *http.Request) {
-	scope := "default"
+	scope, ok := h.resolveScope(r.Context(), "default")
+	if !ok {
+		h.renderNotFound(w, r, "private")
+		return
+	}
 	if cookie, err := r.Cookie("wiki_scope"); err == nil {
-		if _, ok := h.resolveScope(r.Context(), cookie.Value); ok {
-			scope = cookie.Value
+		if preferred, ok := h.resolveScope(r.Context(), cookie.Value); ok {
+			scope = preferred
 		}
 	}
-	http.Redirect(w, r, h.mount+"private/"+scope+"/", http.StatusSeeOther)
+	http.Redirect(w, r, h.mount+tierForVisibility(scope.Visibility)+"/"+scope.Name+"/", http.StatusSeeOther)
 }
 
 func (h *handler) selectScope(w http.ResponseWriter, r *http.Request) {
@@ -206,7 +210,14 @@ func (h *handler) selectScope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: "wiki_scope", Value: target, Path: h.mount, SameSite: http.SameSiteLaxMode})
-	http.Redirect(w, r, h.mount+tier+"/"+target+"/", http.StatusSeeOther)
+	http.Redirect(w, r, h.mount+tierForVisibility(scope.Visibility)+"/"+target+"/", http.StatusSeeOther)
+}
+
+func tierForVisibility(visibility string) string {
+	if visibility == "public" {
+		return "public"
+	}
+	return "private"
 }
 
 func (h *handler) privateHome(w http.ResponseWriter, r *http.Request) {

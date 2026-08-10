@@ -483,14 +483,14 @@ func TestVisibilityWallUsesIndistinguishableStyledNotFound(t *testing.T) {
 	}
 }
 
-func TestLandingRedirectUsesKnownCookieOrDefault(t *testing.T) {
+func TestLandingRedirectPicksTierByScopeVisibility(t *testing.T) {
 	// R-HN4G-06FQ
 	conn, scopes := phase129Scopes(t)
 	defer conn.Close()
 	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes))
 	for _, tc := range []struct {
 		cookie, location string
-	}{{"team-x", "/srv/wiki/private/team-x/"}, {"", "/srv/wiki/private/default/"}, {"nope", "/srv/wiki/private/default/"}} {
+	}{{"team-x", "/srv/wiki/private/team-x/"}, {"p1", "/srv/wiki/public/p1/"}, {"", "/srv/wiki/private/default/"}, {"nope", "/srv/wiki/private/default/"}} {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		if tc.cookie != "" {
 			req.AddCookie(&http.Cookie{Name: "wiki_scope", Value: tc.cookie})
@@ -503,17 +503,21 @@ func TestLandingRedirectUsesKnownCookieOrDefault(t *testing.T) {
 	}
 }
 
-func TestOnlySelectorSetsScopeCookieAndStaysInTier(t *testing.T) {
+func TestOnlySelectorSetsScopeCookieAndPicksTargetVisibilityTier(t *testing.T) {
 	// R-HOCC-DY6F
 	conn, scopes := phase129Scopes(t)
 	defer conn.Close()
 	pages := &stubPageFinder{view: SubjectView{Title: "Page", Body: "Body"}}
 	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithPageFinder(pages))
-	for _, tc := range []struct{ path, location string }{{"/private/s1/select?to=team-x", "/srv/wiki/private/team-x/"}, {"/public/p1/select?to=p1", "/srv/wiki/public/p1/"}} {
+	for _, tc := range []struct{ path, location, cookieValue string }{
+		{"/private/s1/select?to=team-x", "/srv/wiki/private/team-x/", "team-x"},
+		{"/private/s1/select?to=p1", "/srv/wiki/public/p1/", "p1"},
+		{"/public/p1/select?to=p1", "/srv/wiki/public/p1/", "p1"},
+	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
 		cookie := rec.Header().Get("Set-Cookie")
-		if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != tc.location || !strings.Contains(cookie, "wiki_scope=") || !strings.Contains(cookie, "Path=/srv/wiki/") || !strings.Contains(cookie, "SameSite=Lax") {
+		if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != tc.location || !strings.Contains(cookie, "wiki_scope="+tc.cookieValue+";") || !strings.Contains(cookie, "Path=/srv/wiki/") || !strings.Contains(cookie, "SameSite=Lax") {
 			t.Fatalf("%s got status=%d location=%q cookie=%q", tc.path, rec.Code, rec.Header().Get("Location"), cookie)
 		}
 	}
