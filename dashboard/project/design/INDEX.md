@@ -7,22 +7,22 @@ Verification ids change.
 
 ## Decisions
 
-- D1 → `project/design/D01.md` — Three-page topology and the route map — owns R-DB01-PG3A, R-DB02-LND7, R-DB03-PRF9
+- D1 → `project/design/D01.md` — Page topology and the route map — owns R-DB01-PG3A, R-DB03-PRF9, R-VH1G-HX9K, R-VI9C-VP09
 - D2 → `project/design/D02.md` — The profile route is session-gated in-process (redirect when signed out) — owns R-DB04-GATE, R-DB05-SESS
 - D3 → `project/design/D03.md` — Personal-access-token management moves to the profile page — owns R-DB06-PATM, R-DB07-PATR, R-DB08-PATX
 - D4 → `project/design/D04.md` — OAuth grant management moves to the profile page — owns R-DB09-GRNT, R-DB10-GRVK, R-DB11-GRNX
-- D5 → `project/design/D05.md` — Landing composition: service-name links, profile-avatar nav, sign-out — owns R-DB12-LINK, R-XO4W-LKAI, R-DB14-SOUT, R-DB15-INST, R-OF1Q-VEDC, R-OG9N-9641, R-OHHJ-MXUQ
+- D5 → `project/design/D05.md` — Home composition: the MCP service directory — owns R-DB12-LINK, R-XO4W-LKAI, R-DB14-SOUT, R-OF1Q-VEDC, R-OG9N-9641, R-OHHJ-MXUQ, R-VJH9-9GQY
 - D6 → `project/design/D06.md` — Purge the stale "single hybrid page / don't split" doc rule — owns R-DB16-DOCS
 - D7 → `project/design/D07.md` — Login composition: brand title, tagline, sign-in lede, rule, two provider CTAs, rule, then a borderless etymology table — owns R-JA3I-IY1F, R-JCJB-AHIT, R-JDR7-O99I, R-ILDB-6TGS, R-IML7-KL7H, R-JG70-FSQW, R-JHEW-TKHL, R-O7K1-XEN7, R-DB19-LAND
-- D8 → `project/design/D08.md` — Eliminate the web-font FOUT (font-display + preload) — owns R-P97M-GIJ1, R-PAFI-UA9Q, R-PBNF-820F
-- D9 → `project/design/D09.md` — No site footer: remove the `.site-footer` from every page and delete its CSS — owns R-EFJZ-FRQ1
-- D10 → `project/design/D10.md` — The banner is shared app-shell chrome: wordmark→home, monogram avatar, sign-out — owns R-VTIE-IUFA, R-VUQA-WM5Z, R-VVY7-ADWO
+- D8 → `project/design/D08.md` — System font stacks: no web fonts, no font files, no preloads — owns R-VKP5-N8HN, R-VLX2-108C
+- D9 → `project/design/D09.md` — The shell footer: service name + running version on every shell page — owns R-VN4Y-ERZ1
+- D10 → `project/design/D10.md` — The shared shell: the wiki page frame on every dashboard page — owns R-VOCU-SJPQ, R-VQSN-K374, R-VS0J-XUXT, R-VT8G-BMOI, R-VUGC-PEF7, R-VVY7-ADWO
 - D11 → `project/design/D11.md` — Metrics store: in-memory ring-buffer series + snapshot — owns R-EZVQ-IQOL, R-F13M-WIFA, R-F2BJ-AA5Z
 - D12 → `project/design/D12.md` — Metric source readers + service discovery — owns R-F4RC-1TND, R-F5Z8-FLE2, R-F774-TD4R, R-F8F1-74VG, R-F9MX-KWM5, R-FAUT-YOCU, R-FC2Q-CG3J
 - D13 → `project/design/D13.md` — Metrics collector worker: startup sample + 60s ticker on the serve context — owns R-FDAM-Q7U8, R-FEIJ-3ZKX, R-FFQF-HRBM, R-FGYB-VJ2B
 - D14 → `project/design/D14.md` — HTTP surface: `/metrics` page, `/metrics/fragment`, the 60s poll — owns R-WWGV-S5V0, R-WXOS-5XLP, R-WYWO-JPCE, R-X1CH-B8TS, R-X2KD-P0KH, R-X3SA-2SB6
 - D15 → `project/design/D15.md` — Chart rendering: hero line charts + stacked-area charts — owns R-FO9Q-65IH, R-FPHM-JX96, R-FQPI-XOZV, R-FRXF-BGQK, R-FT5B-P8H9, R-FUD8-307Y, R-FVL4-GRYN
-- D16 → `project/design/D16.md` — Landing entry: a tile linking to the metrics page — owns R-X506-GK1V, R-X682-UBSK
+- D16 → `project/design/D16.md` — Metrics entry: the shell header's nav link — owns R-X682-UBSK
 - D17 → `project/design/D17.md` — Identity model: `(iss, sub)` is the identity, an opaque handle is its durable key, in a new `identities` table — owns R-VJMO-6CN9, R-VKUK-K4DY, R-VM2G-XW4N, R-VNAD-BNVC, R-VOI9-PFM1
 - D18 → `project/design/D18.md` — Capture identity at login: decode the claims and stamp the handle onto every auth artifact — owns R-VPQ6-37CQ, R-VQY2-GZ3F, R-VS5Y-UQU4, R-VTDV-8IKT
 - D19 → `project/design/D19.md` — Introspection always emits the four identity headers from the identities row, and fails closed — owns R-VULR-MABI, R-VX1K-DTSW, R-VY9G-RLJL, R-HW5G-3JJF, R-HSHQ-Y8BC, R-HTPN-C021, R-HUXJ-PRSQ, R-VZHD-5DAA, R-HXDC-HBA4
@@ -46,6 +46,7 @@ Verification ids change.
 - D37 → `project/design/D37.md` — Testing-language conformance: the suite's four layers, the dashboard's declared testing facts (hermetic + composed + manual, no live; no preconditions beyond the Go toolchain; workspace GOWORK), proven in `cmd/dashboard/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
 - D38 → `project/design/D38.md` — The git door accepts a PAT as an HTTP Basic password — owns R-39O6-OFFD, R-3AW3-2762, R-3C3Z-FYWR, R-3DBV-TQNG, R-3EJS-7IE5, R-3FRO-LA4U, R-3I7H-CTM8, R-3JFD-QLCX, R-3KNA-4D3M, R-3LV6-I4UB
 - D39 → `project/design/D39.md` — The apex fragment sets the http-level `variables_hash_max_size` for the whole box — owns R-6MX7-JDFX
+- D40 → `project/design/D40.md` — The install page: connect-your-agent moves to `/install` — owns R-VVO9-365W, R-VWW5-GXWL
 
 ## Verification ids → Decision
 
@@ -68,7 +69,6 @@ Verification ids change.
 - R-8DF1-W89F → D34 → `project/design/D34.md` (adopted from root `project/design/D11.md`)
 - R-8IAN-FB87 → D34 → `project/design/D34.md` (adopted from root `project/design/D11.md`)
 - R-DB01-PG3A → D1 → `project/design/D01.md`
-- R-DB02-LND7 → D1 → `project/design/D01.md`
 - R-DB03-PRF9 → D1 → `project/design/D01.md`
 - R-DB04-GATE → D2 → `project/design/D02.md`
 - R-DB05-SESS → D2 → `project/design/D02.md`
@@ -80,10 +80,8 @@ Verification ids change.
 - R-DB11-GRNX → D4 → `project/design/D04.md`
 - R-DB12-LINK → D5 → `project/design/D05.md`
 - R-DB14-SOUT → D5 → `project/design/D05.md`
-- R-DB15-INST → D5 → `project/design/D05.md`
 - R-DB16-DOCS → D6 → `project/design/D06.md`
 - R-DB19-LAND → D7 → `project/design/D07.md`
-- R-EFJZ-FRQ1 → D9 → `project/design/D09.md`
 - R-EZVQ-IQOL → D11 → `project/design/D11.md`
 - R-F13M-WIFA → D11 → `project/design/D11.md`
 - R-F2BJ-AA5Z → D11 → `project/design/D11.md`
@@ -153,23 +151,31 @@ Verification ids change.
 - R-OF1Q-VEDC → D5 → `project/design/D05.md`
 - R-OG9N-9641 → D5 → `project/design/D05.md`
 - R-OHHJ-MXUQ → D5 → `project/design/D05.md`
-- R-P97M-GIJ1 → D8 → `project/design/D08.md`
-- R-PAFI-UA9Q → D8 → `project/design/D08.md`
-- R-PBNF-820F → D8 → `project/design/D08.md`
+- R-VH1G-HX9K → D1 → `project/design/D01.md`
+- R-VI9C-VP09 → D1 → `project/design/D01.md`
+- R-VJH9-9GQY → D5 → `project/design/D05.md`
 - R-VJMO-6CN9 → D17 → `project/design/D17.md`
 - R-VKB6-SHHV → D36 → `project/design/D36.md` (adopted from root `project/design/D11.md`)
+- R-VKP5-N8HN → D8 → `project/design/D08.md`
 - R-VKUK-K4DY → D17 → `project/design/D17.md`
+- R-VLX2-108C → D8 → `project/design/D08.md`
 - R-VM2G-XW4N → D17 → `project/design/D17.md`
+- R-VN4Y-ERZ1 → D9 → `project/design/D09.md`
 - R-VNAD-BNVC → D17 → `project/design/D17.md`
+- R-VOCU-SJPQ → D10 → `project/design/D10.md`
 - R-VOI9-PFM1 → D17 → `project/design/D17.md`
 - R-VPQ6-37CQ → D18 → `project/design/D18.md`
+- R-VQSN-K374 → D10 → `project/design/D10.md`
 - R-VQY2-GZ3F → D18 → `project/design/D18.md`
+- R-VS0J-XUXT → D10 → `project/design/D10.md`
 - R-VS5Y-UQU4 → D18 → `project/design/D18.md`
+- R-VT8G-BMOI → D10 → `project/design/D10.md`
 - R-VTDV-8IKT → D18 → `project/design/D18.md`
-- R-VTIE-IUFA → D10 → `project/design/D10.md`
+- R-VUGC-PEF7 → D10 → `project/design/D10.md`
 - R-VULR-MABI → D19 → `project/design/D19.md`
-- R-VUQA-WM5Z → D10 → `project/design/D10.md`
+- R-VVO9-365W → D40 → `project/design/D40.md`
 - R-VVY7-ADWO → D10 → `project/design/D10.md`
+- R-VWW5-GXWL → D40 → `project/design/D40.md`
 - R-VX1K-DTSW → D19 → `project/design/D19.md`
 - R-VY9G-RLJL → D19 → `project/design/D19.md`
 - R-VZHD-5DAA → D19 → `project/design/D19.md`
@@ -179,7 +185,6 @@ Verification ids change.
 - R-X1CH-B8TS → D14 → `project/design/D14.md`
 - R-X2KD-P0KH → D14 → `project/design/D14.md`
 - R-X3SA-2SB6 → D14 → `project/design/D14.md`
-- R-X506-GK1V → D16 → `project/design/D16.md`
 - R-X682-UBSK → D16 → `project/design/D16.md`
 - R-X7FZ-83J9 → D30 → `project/design/D30.md`
 - R-X8NV-LV9Y → D30 → `project/design/D30.md`

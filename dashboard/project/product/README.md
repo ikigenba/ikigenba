@@ -6,7 +6,9 @@ only. Mechanism, route tables, template structure, redirect codes, and test
 assertions live in `project/design/README.md`. Where the two touch observable
 behavior, product states the *promise* and design states the *exact, checkable
 proof*. This product doc scopes the dashboard's web-surface reshape and its
-sign-in surface: splitting the single hybrid apex page into purpose-built pages,
+sign-in surface: splitting the single hybrid apex page into purpose-built pages
+that all wear the suite's shared look (the same page frame, fonts, and list
+style the wiki serves),
 enriching the logged-out login page with a brief, diminished explanation of the
 **ikigenba** name, adding an owner-only **metrics** page that graphs the box's
 resource health over the last day, and offering a **second, permanently separate
@@ -49,14 +51,23 @@ have no way in at all.
 Separate **"get connected"** from **"manage my account"** by giving each its own
 page, and turn the service list into real navigation:
 
-- The **landing page** (logged-in `/`) becomes a clean **home**: who you are, how
-  to connect an agent, and a directory of the box's services you can **click into**
-  (each name links to that service's own landing page). It is the first thing a
-  returning owner sees and it stays focused on connecting and navigating.
+- The **landing page** (logged-in `/`) becomes a clean **home**: a directory of
+  the box's MCP services you can **click into** (each name links to that
+  service's own landing page). It is the first thing a returning owner sees and
+  it stays focused on navigating.
+- A new **install page** (`/install`) holds the **connect-your-agent**
+  instructions: the paste-one-line install command for each supported agent,
+  with a note that a personal access token from the profile page is required.
+  Connecting is a task you do once; it gets a page framed for that task.
 - A new **profile page** (`/profile`) becomes the **account console**: personal
   access tokens (create / revoke) and OAuth grants (view / revoke) — the security
   controls that were buried on the home page — gathered in one deliberate place
-  you go to when you mean to manage access, reached by clicking your email.
+  you go to when you mean to manage access, reached from your avatar.
+- **Every signed-in page shares one frame.** A common header — the suite logo,
+  links to the home, install, and metrics pages, sign-out, and your avatar —
+  and a footer stating the running version appear identically on every
+  signed-in page, in the same look the wiki's pages already have, so moving
+  between the box's pages feels like one product.
 - The **login page** (logged-out `/`) stays functionally just sign-in, but now
   also tells a first-time visitor what **ikigenba** means — a quiet, diminished
   colophon beneath the control-plane tagline and the sign-in button. It orients;
@@ -64,8 +75,8 @@ page, and turn the service list into real navigation:
 - A new **metrics page** (`/metrics`) becomes the owner's **at-a-glance box
   health view**: how much memory and disk the box has free, and how much memory
   and disk each service is consuming, each drawn as a graph of the **last 24
-  hours**. It is reached from a tile on the landing page and is for watching the
-  box, not managing it — it carries no controls, only graphs.
+  hours**. It is reached from the shared header on any signed-in page and is
+  for watching the box, not managing it — it carries no controls, only graphs.
 - **Sign-in gains a second door.** Alongside "Sign in with Google", the login
   page offers **"Sign in with GitHub"**, open to members of the ikigenba GitHub
   organization. The two sign-ins are **two permanently separate identities** —
@@ -86,35 +97,47 @@ v1 landing.
 
 ## Users
 
-- **The owner, in a browser.** Signs in, lands on the home page, connects an agent
-  by pasting one line, and clicks a service name to open that service's page. When
-  they mean to manage access, they click their email to reach the profile page and
-  there create or revoke a token, or revoke a client's grant. The two intents now
-  live on two pages, each framed for its job.
+- **The owner, in a browser.** Signs in, lands on the home page, and clicks a
+  service name to open that service's page. To connect an agent they open the
+  install page from the header and paste one line. When they mean to manage
+  access, they click their avatar to reach the profile page and there create or
+  revoke a token, or revoke a client's grant. Each intent now has a page framed
+  for its job.
 
 ## Scope
 
 This change does exactly this and only this:
 
-- **Four pages, two of them new.** Keep the logged-out `/` login page as the
+- **Five pages, three of them new.** Keep the logged-out `/` login page as the
   sign-in page — its only function — and add to it a **diminished name-origin
   colophon** explaining the ikigenba name, below the tagline and the sign-in
-  button. Keep the logged-in `/` as the **home/landing** page. Add a **profile**
-  page and a **metrics** page, each at its own new session-gated route.
+  button. Keep the logged-in `/` as the **home/landing** page. Add an
+  **install** page, a **profile** page, and a **metrics** page, each at its
+  own session-gated route.
+- **One shared look.** Every signed-in page wears the suite's shared frame —
+  the same page width, header (logo, home/install/metrics links, sign-out,
+  avatar), footer with the running version, fonts, and list style the wiki's
+  pages use. The login page keeps its centered sign-in wall, in the same
+  fonts.
 - **Metrics = watch the box.** The metrics page graphs, over the **last 24
   hours**, the box's **free memory** and **free disk**, and **each service's
   memory usage and disk usage**. It refreshes about once a minute while open, is
-  reached from a tile on the landing page, and is gated to the signed-in owner. It
+  reached from the shared header, and is gated to the signed-in owner. It
   shows the most recent day only and starts empty after a restart; it carries no
-  controls.
-- **Landing = connect + navigate.** The logged-in home keeps the **install
-  instructions** and the **service list**, shows the owner's email at the top, and
-  carries **sign-out**. Each service in the list is a **link** to that service's
-  own page at `/srv/<svc>/`. The owner's email is a **link** to the profile page.
+  controls. It is reached from the shared header, present on every signed-in
+  page.
+- **Home = navigate.** The logged-in home is the **MCP service directory** and
+  nothing else. Each service in the list is a **link** to that service's own
+  page at `/srv/<svc>/`, with its raw MCP address alongside, one click to
+  copy. Sign-out and the avatar sit in the shared header.
+- **Install = connect.** The install page holds the **connect-your-agent
+  instructions** — the paste-one-line command for each supported agent — and
+  states that a personal access token, created on the profile page, is
+  required. It is gated to the signed-in owner.
 - **Profile = manage access.** The profile page holds the **personal-access-token**
   management (create, list, revoke) and the **OAuth grant** management (view live,
-  revoke) that used to sit on the home page. It is reached by clicking the email on
-  the landing page and is gated to the signed-in owner.
+  revoke) that used to sit on the home page. It is reached from the avatar in
+  the shared header and is gated to the signed-in owner.
 - **Token management leaves the landing.** Personal access tokens and OAuth grants
   no longer appear on the logged-in home page — they live only on the profile page.
 - **One token also opens git.** The personal access token the owner already mints
@@ -154,7 +177,8 @@ This change does exactly this and only this:
   security log is unchanged and keeps everything it kept before — the new record
   is additional, never a replacement.
 - **The box-health page is renamed from "Telemetry" to "Metrics".** The page,
-  its address, and the tile that opens it all read *Metrics*. Nothing about what
+  its address, and the header link that opens it all read *Metrics*. Nothing
+  about what
   it shows changes. The word *telemetry* now names the suite's forensic record
   service, and one word cannot mean both.
 
@@ -180,10 +204,9 @@ dashboard a generic name+version landing card (its home page is its landing).
 
 Promised values the design must honor verbatim and never re-declare:
 
-- **The apex serves these human pages:** the **login** page (logged-out `/`), the
-  **landing/home** page (logged-in `/`), the **profile** page (session-gated
-  route), and the **metrics** page (session-gated route). The profile and
-  metrics pages are the two session-gated routes added by this change.
+- **The apex serves these human pages:** the **login** page (logged-out `/`),
+  the **landing/home** page (logged-in `/`), and the session-gated **install**,
+  **profile**, and **metrics** pages, each at its own route.
 - **The metrics page graphs the last 24 hours of box health and nothing else.**
   It shows free memory, free disk, and per-service memory and disk usage; it is
   gated to the signed-in owner, refreshes about once a minute, and carries no
@@ -235,18 +258,26 @@ Promised values the design must honor verbatim and never re-declare:
 - **Connecting an agent lets you pick the door.** When an MCP client sends you
   to authorize, you choose Google or GitHub on the spot; the resulting
   connection acts as the identity you chose.
-- **Logged in, `/` is a focused home.** It shows who you are, how to connect an
-  agent (the same paste-one-line install instructions), and the box's services —
-  and nothing about token administration.
+- **Logged in, `/` is a focused home.** It is the directory of the box's MCP
+  services — and nothing about installation or token administration.
 - **You navigate to a service by clicking its name.** Each service in the home
-  list links to that service's own page.
-- **You manage access on a page you choose to visit.** Clicking your email opens
-  the profile page; there — and only there — you create and revoke personal access
-  tokens and view and revoke the OAuth grants your connected clients hold.
+  list links to that service's own page, and its raw MCP address sits beside
+  it with a one-click copy.
+- **Every signed-in page carries the same frame.** The header — the suite
+  logo, links to the home, install, and metrics pages, sign-out, and your
+  avatar — and a footer stating the dashboard's running version look identical
+  on every signed-in page, in the same style as the wiki's pages.
+- **Connecting an agent is its own page.** The install page, one click from
+  any signed-in page, gives the paste-one-line command for each supported
+  agent and tells you a personal access token from the profile page is needed.
+- **You manage access on a page you choose to visit.** Clicking your avatar
+  opens the profile page; there — and only there — you create and revoke
+  personal access tokens and view and revoke the OAuth grants your connected
+  clients hold.
 - **The profile page is yours alone.** Reaching it requires a live session; signed
   out, you are sent back to the login page rather than shown account controls.
-- **Sign-out stays on the home page** where you land, not hidden on a settings
-  screen.
+- **Sign-out is always at hand** — in the shared header on every signed-in
+  page, not hidden on a settings screen.
 - **Your token works with git.** Point an ordinary git client at one of the
   box's repositories and it asks for a username and password; give it anything
   for the username and your personal access token for the password, and you are
@@ -267,11 +298,11 @@ Promised values the design must honor verbatim and never re-declare:
   to it. Refusals and rate-limited attempts are recorded just as fully as
   successes.
 - **Watching the box happens on a page called Metrics.** The box-health graphs
-  live at a page named *Metrics*, opened from a tile of the same name. It is the
-  same page it always was, under an unambiguous name; the old *telemetry* address
-  no longer exists.
-- **You can watch the box's health on the metrics page.** From the landing you
-  open a metrics page that graphs, over the last 24 hours, how much memory and
+  live at a page named *Metrics*, opened from the header link of the same
+  name. It is the same page it always was, under an unambiguous name; the old
+  *telemetry* address no longer exists.
+- **You can watch the box's health on the metrics page.** From any signed-in
+  page you open a metrics page that graphs, over the last 24 hours, how much memory and
   disk the box has free and how much memory and disk each service is using. The
   graphs advance about once a minute while the page is open. Like the profile
   page, it is yours alone — signed out, you are sent back to the login page. It
@@ -298,12 +329,20 @@ Each is a result the owner can confirm against the running dashboard:
   connection acting as that identity.
 - The name-origin explanation is visible only signed out; once signed in, the
   home page shows no such colophon.
-- Visiting `/` while signed in shows the home page: my email, the connect-your-agent
-  install instructions, and the list of services — with **no** token or grant
+- Visiting `/` while signed in shows the home page: the list of the box's MCP
+  services — with **no** install instructions and **no** token or grant
   controls on it.
+- Every signed-in page shows the same header — the suite logo, links named
+  Dashboard, Install, and Metrics, sign-out, and my avatar — and a footer
+  stating the dashboard's running version, in the suite's shared look.
 - Clicking a service's name in the home list opens that service's own page at
-  `/srv/<svc>/`.
-- Clicking my email on the home page opens the profile page.
+  `/srv/<svc>/`, and the copy control beside it puts that service's MCP
+  address on my clipboard.
+- Opening the install page from the header shows the paste-one-line install
+  command for each supported agent and tells me a personal access token from
+  the profile page is required; visiting it signed out sends me to the login
+  page instead.
+- Clicking my avatar opens the profile page.
 - The profile page shows my personal access tokens and lets me create and revoke
   them, and shows my OAuth grants and lets me revoke them — the same actions that
   used to be on the home page.
@@ -312,8 +351,9 @@ Each is a result the owner can confirm against the running dashboard:
   username), and is refused after I revoke that token on the profile page.
 - Visiting the profile route while signed out does not reveal account controls; I
   am returned to the login page.
-- Sign-out is available from the home page.
-- The home page shows a tile that opens the metrics page, labelled **Metrics**.
+- Sign-out is available from every signed-in page.
+- The header on every signed-in page shows a link that opens the metrics page,
+  labelled **Metrics**.
 - Visiting `/metrics` while signed in shows graphs of the box's free memory and
   free disk over the last 24 hours, and of each service's memory and disk usage
   over the last 24 hours; the graphs advance about once a minute while the page
@@ -322,7 +362,7 @@ Each is a result the owner can confirm against the running dashboard:
   returned to the login page. The old `/telemetry` address is gone rather than
   redirected — that word now names the suite's forensic record service, not this
   page.
-- The landing tile and the page it opens both read **Metrics**, and the word
+- The header link and the page it opens both read **Metrics**, and the word
   *Telemetry* appears nowhere in the signed-in web surface; visiting the old
   `/telemetry` address yields nothing rather than the page.
 - After an agent makes a call to a service, the suite's forensic record shows the
