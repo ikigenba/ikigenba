@@ -659,11 +659,11 @@ func TestEveryPageStateWearsHeaderContentFooterShell(t *testing.T) {
 	}
 }
 
-func phase138SurfaceBodies(t *testing.T) map[string]string {
+func phase138SurfaceBodies(t *testing.T, mount string) map[string]string {
 	t.Helper()
 	conn, scopes := phase129Scopes(t)
 	defer conn.Close()
-	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/",
+	h := newTestHandler(t, "wiki", "v-test", mount,
 		WithScopeStore(scopes),
 		WithAsker(&stubAsker{answer: ask.Answer{Found: true, Text: "Answer"}}),
 		WithKeywordRetriever(&stubKeywordRetriever{}),
@@ -704,16 +704,17 @@ func pageHeader(t *testing.T, body string) string {
 
 func TestHeaderBrandOpensShellAndServesLogo(t *testing.T) {
 	// R-2MYX-Y4PN
-	bodies := phase138SurfaceBodies(t)
+	const mount = "/srv/zzz/"
+	bodies := phase138SurfaceBodies(t, mount)
 	for _, name := range []string{"private home", "subject", "public home"} {
 		header := pageHeader(t, bodies[name])
-		brand := `<a class="brand" href="/"><img src="static/logo.png" alt="ikigenba"></a>`
+		brand := fmt.Sprintf(`<a class="brand" href="/"><img src="%sstatic/logo.png" alt="ikigenba"></a>`, mount)
 		brandAt := strings.Index(header, brand)
-		homeAt := strings.Index(header, `<a class="home" href="/srv/wiki/">Home</a>`)
+		homeAt := strings.Index(header, fmt.Sprintf(`<a class="home" href="%s">Home</a>`, mount))
 		if brandAt < 0 || homeAt < 0 || brandAt >= homeAt || strings.Index(header, "<a ") != brandAt {
 			t.Fatalf("%s header does not open with the dashboard brand before Home: %s", name, header)
 		}
-		if !strings.Contains(bodies[name], `<base href="/srv/wiki/`) {
+		if !strings.Contains(bodies[name], `<base href="`+mount) {
 			t.Fatalf("%s does not provide the base used to resolve the logo asset: %s", name, bodies[name])
 		}
 	}
@@ -731,7 +732,7 @@ func TestHeaderBrandOpensShellAndServesLogo(t *testing.T) {
 
 func TestQuestionFormFollowsSelectorInEveryPageHeader(t *testing.T) {
 	// R-2O6U-BWGC
-	for name, body := range phase138SurfaceBodies(t) {
+	for name, body := range phase138SurfaceBodies(t, "/srv/wiki/") {
 		header := pageHeader(t, body)
 		selectorAt := strings.Index(header, `<form class="scope-selector"`)
 		questionAt := strings.Index(header, `<form class="header-question" action="." method="get" role="search" data-busy>`)
@@ -753,7 +754,7 @@ func TestQuestionFormFollowsSelectorInEveryPageHeader(t *testing.T) {
 
 func TestHeaderQuestionInputRetainsOnlySubmittedQueries(t *testing.T) {
 	// R-2PEQ-PO71
-	bodies := phase138SurfaceBodies(t)
+	bodies := phase138SurfaceBodies(t, "/srv/wiki/")
 	for name, want := range map[string]string{
 		"private result": "who is acme",
 		"public results": "acme",
@@ -775,7 +776,7 @@ func TestHeaderQuestionInputRetainsOnlySubmittedQueries(t *testing.T) {
 
 func TestHeaderFormIsOnlyQuestionAffordance(t *testing.T) {
 	// R-2QMN-3FXQ
-	for name, body := range phase138SurfaceBodies(t) {
+	for name, body := range phase138SurfaceBodies(t, "/srv/wiki/") {
 		header := pageHeader(t, body)
 		if got := strings.Count(body, `type="text" name="q"`); got != 1 || !strings.Contains(header, `type="text" name="q"`) {
 			t.Fatalf("%s q input count = %d, want exactly the header input: %s", name, got, body)
