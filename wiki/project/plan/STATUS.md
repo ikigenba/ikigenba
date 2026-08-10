@@ -12,6 +12,5 @@ lines.
 
 Next phase: 136
 
-- Phase 133 ⬜ realizes R-VA32-HERT, R-9YHM-4QN3 — clean-prose compile: no ids in the rendered input, the prompt, or the returned body
 - Phase 134 ⬜ realizes R-AD4E-PZJF — true the autotune compile folder to the clean-prose contract
 - Phase 135 ⬜ realizes R-VBAY-V6II, R-VCIV-8Y97, R-VDQR-MPZW — truthful submit controls: Ask/Search labels + busy feedback
