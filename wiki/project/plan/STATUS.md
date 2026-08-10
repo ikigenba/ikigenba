@@ -12,5 +12,3 @@ lines.
 
 Next phase: 143
 
-- Phase 142 ⬜ realizes R-HN4G-06FQ, R-HOCC-DY6F — landing and selector redirects pick the tier by scope visibility
-
