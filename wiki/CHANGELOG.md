@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.26.0 — 2026-08-10
+
+- Public scopes now answer questions: the question box on a public scope runs the same cited ask as the signed-in surface, for anyone on the internet — the keyword-only public search page is gone.
+- The question button reads Ask everywhere; the public tier's Search label is retired.
+- Landing on the wiki and switching scopes now arrive at a public scope's public address and a private scope's signed-in address, so the address bar always holds the scope's shareable form.
+- All chat inference (extract, compile, both ask stages) now routes through OpenRouter at medium reasoning effort, same gpt-5.6-luna model; embeddings stay on direct OpenAI.
+
 ## v0.25.0 — 2026-08-10
 
 - The header on every page now opens with the ikigenba brand mark at the far left; following it lands on the dashboard's landing page, while Home still returns to the wiki's own landing.
