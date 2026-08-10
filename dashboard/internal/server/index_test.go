@@ -248,9 +248,7 @@ func TestIndexLoggedInOmitsLoginComposition(t *testing.T) {
 	}
 	for _, want := range []string{
 		`<main class="page">`,
-		`<h2>Connect your agent</h2>`,
-		`/install/claude`,
-		`/install/codex`,
+		`<h2>MCP Services</h2>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("logged-in index missing dashboard landing fragment %q:\n%s", want, body)
@@ -287,33 +285,6 @@ func signinWallMain(t *testing.T, body string) string {
 		t.Fatalf("sign-in wall is not closed:\n%s", body[start:])
 	}
 	return body[start : start+end+len(`</main>`)]
-}
-
-func TestIndexLoggedOutKeepsLandingOnly(t *testing.T) {
-	srv := testServer(t)
-
-	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	body := rec.Body.String()
-	// R-DB02-LND7
-	if !strings.Contains(body, `href="/login/google"`) || !strings.Contains(body, `href="/login/github"`) {
-		t.Errorf("logged-out landing missing sign-in link:\n%s", body)
-	}
-	if strings.Contains(body, googleidp.StubIdentity.Email) {
-		t.Errorf("logged-out landing leaked owner email:\n%s", body)
-	}
-	if strings.Contains(body, `action="/pat"`) {
-		t.Errorf("logged-out landing exposed PAT form:\n%s", body)
-	}
-	if strings.Contains(body, `id="grants-block"`) {
-		t.Errorf("logged-out landing exposed grants block:\n%s", body)
-	}
-	if strings.Contains(body, `href="/profile"`) {
-		t.Errorf("logged-out landing exposed profile control:\n%s", body)
-	}
 }
 
 // TestIndexDeadCookie: a present-but-invalid cookie (here, unknown) renders

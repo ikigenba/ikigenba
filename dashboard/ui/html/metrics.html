@@ -1,23 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {{template "shell_head" .}}
   <title>Metrics · ikigenba dashboard</title>
-  <link rel="stylesheet" href="/static/tokens.css">
-  <link rel="stylesheet" href="/static/app.css">
-  <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <header class="banner">
-    <a href="/" class="wordmark">ikigenba</a>
-    <nav class="identity">
-      <form method="POST" action="/logout">
-        <button type="submit" class="btn btn-danger-ghost btn-sm">Sign out</button>
-      </form>
-      <a href="/profile" class="avatar" aria-label="Profile — {{.Owner}}" title="{{.Owner}}">{{.OwnerInitial}}</a>
-    </nav>
-  </header>
+  {{template "shell_header" .}}
 
   <main class="page">
     <section class="section metrics" aria-label="Metrics">
@@ -30,5 +18,6 @@
       </div>
     </section>
   </main>
+  {{template "shell_footer" .}}
 </body>
 </html>

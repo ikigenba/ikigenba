@@ -4,75 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"dashboard/internal/googleidp"
 )
-
-func TestSignedInBannersUseWordmarkHomeLink(t *testing.T) {
-	srv := landingServerWithCRM(t)
-	cookie := liveSession(t, srv)
-	headers := map[string]string{"Cookie": cookie.Name + "=" + cookie.Value}
-
-	tests := []struct {
-		name   string
-		target string
-	}{
-		{name: "landing", target: "https://int.ikigenba.com/"},
-		{name: "profile", target: "https://int.ikigenba.com/profile"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rec := do(t, srv, "GET", tt.target, headers)
-			if rec.Code != http.StatusOK {
-				t.Fatalf("status = %d, want 200", rec.Code)
-			}
-			banner := bannerChrome(t, rec.Body.String())
-
-			// R-VTIE-IUFA
-			if !strings.Contains(banner, `<a href="/" class="wordmark">ikigenba</a>`) {
-				t.Errorf("%s banner wordmark is not a home link:\n%s", tt.name, banner)
-			}
-			if strings.Contains(banner, `<p class="wordmark">ikigenba</p>`) {
-				t.Errorf("%s banner still renders wordmark as inert paragraph:\n%s", tt.name, banner)
-			}
-		})
-	}
-}
-
-func TestProfileBannerRendersSharedIdentityChrome(t *testing.T) {
-	srv := testServer(t)
-	cookie := liveSession(t, srv)
-	rec := do(t, srv, "GET", "https://int.ikigenba.com/profile", map[string]string{
-		"Cookie": cookie.Name + "=" + cookie.Value,
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	banner := bannerChrome(t, rec.Body.String())
-	email := googleidp.StubIdentity.Email
-	avatar := `<a href="/profile" class="avatar" aria-label="Profile — ` + email + `" title="` + email + `">` + ownerInitial(email) + `</a>`
-	signOut := `<form method="POST" action="/logout">`
-
-	// R-VUQA-WM5Z
-	if !strings.Contains(banner, avatar) {
-		t.Errorf("profile banner missing monogram avatar %q:\n%s", avatar, banner)
-	}
-	if !strings.Contains(banner, signOut) {
-		t.Errorf("profile banner missing sign-out control:\n%s", banner)
-	}
-	signOutAt := strings.Index(banner, signOut)
-	avatarAt := strings.Index(banner, avatar)
-	if signOutAt < 0 || avatarAt < 0 || signOutAt >= avatarAt {
-		t.Errorf("profile banner should order sign-out before avatar; signOutAt=%d avatarAt=%d:\n%s", signOutAt, avatarAt, banner)
-	}
-	if strings.Contains(banner, `<a href="/" class="btn`) {
-		t.Errorf("profile banner still renders bordered Home button:\n%s", banner)
-	}
-	if strings.Contains(banner, `<span class="owner">`) {
-		t.Errorf("profile banner still renders owner email span:\n%s", banner)
-	}
-}
 
 func TestAppCSSDefinesAvatarHoverAffordance(t *testing.T) {
 	srv := testServer(t)

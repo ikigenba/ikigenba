@@ -8,27 +8,30 @@ import (
 	"testing"
 )
 
-func TestServedSurfacesOmitSiteFooter(t *testing.T) {
+func TestSignedInPagesUseShellFooterWithoutLegacySiteFooter(t *testing.T) {
 	srv, deps := patTestServer(t)
 	const owner = "owner@int.ikigenba.com"
 	cookie := mintSession(t, deps, owner)
 	signedIn := map[string]string{"Cookie": cookie.Name + "=" + cookie.Value}
 
 	responses := []struct {
-		name string
-		rec  *httptestResponse
+		name       string
+		rec        *httptestResponse
+		wantFooter bool
 	}{
 		{
 			name: "logged-out index",
 			rec:  responseFromRecorder(do(t, srv, "GET", "https://int.ikigenba.com/", nil)),
 		},
 		{
-			name: "logged-in index",
-			rec:  responseFromRecorder(do(t, srv, "GET", "https://int.ikigenba.com/", signedIn)),
+			name:       "logged-in index",
+			rec:        responseFromRecorder(do(t, srv, "GET", "https://int.ikigenba.com/", signedIn)),
+			wantFooter: true,
 		},
 		{
-			name: "profile",
-			rec:  responseFromRecorder(do(t, srv, "GET", "https://int.ikigenba.com/profile", signedIn)),
+			name:       "profile",
+			rec:        responseFromRecorder(do(t, srv, "GET", "https://int.ikigenba.com/profile", signedIn)),
+			wantFooter: true,
 		},
 		{
 			name: "PAT created",
@@ -51,8 +54,8 @@ func TestServedSurfacesOmitSiteFooter(t *testing.T) {
 			if resp.rec.code != http.StatusOK {
 				t.Fatalf("status = %d, want 200\n%s", resp.rec.code, resp.rec.body)
 			}
-			if strings.Contains(resp.rec.body, "<footer") {
-				t.Errorf("%s still renders footer markup:\n%s", resp.name, resp.rec.body)
+			if got := strings.Contains(resp.rec.body, "<footer>dashboard "); got != resp.wantFooter {
+				t.Errorf("%s shell footer presence = %t, want %t:\n%s", resp.name, got, resp.wantFooter, resp.rec.body)
 			}
 			if strings.Contains(resp.rec.body, "site-footer") {
 				t.Errorf("%s still references site-footer:\n%s", resp.name, resp.rec.body)

@@ -13,6 +13,8 @@ type metricsPageData struct {
 	Owner        string
 	OwnerInitial string
 	Charts       metrics.ChartView
+	CurrentPage  string
+	Version      string
 }
 
 // handleMetrics renders the signed-in metrics page. Anonymous and dead
@@ -34,6 +36,8 @@ func (a *app) handleMetrics() http.HandlerFunc {
 			Owner:        owner,
 			OwnerInitial: ownerInitial(owner),
 			Charts:       a.metricsChartView(),
+			CurrentPage:  "metrics",
+			Version:      buildVersion(),
 		}
 
 		var buf bytes.Buffer

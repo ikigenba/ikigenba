@@ -15,6 +15,8 @@ type profileData struct {
 	OwnerInitial string
 	Grants       []grantRow
 	PATs         []patRow
+	CurrentPage  string
+	Version      string
 }
 
 // handleProfile renders the signed-in user's account controls. Unlike the
@@ -38,6 +40,8 @@ func (a *app) handleProfile() http.HandlerFunc {
 			Scheme:       requestScheme(r),
 			Owner:        owner,
 			OwnerInitial: ownerInitial(owner),
+			CurrentPage:  "profile",
+			Version:      buildVersion(),
 		}
 
 		if chains, err := a.oauthTokens.ListChainsByOwner(r.Context(), owner); err != nil {

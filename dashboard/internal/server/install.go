@@ -7,10 +7,58 @@ package server
 // served one-paste install scripts and the table can't drift.
 
 import (
+	"bytes"
+	"errors"
 	"net/http"
 
 	"appkit/inventory"
+
+	"dashboard/internal/session"
 )
+
+type installData struct {
+	Host         string
+	Scheme       string
+	Owner        string
+	OwnerInitial string
+	CurrentPage  string
+	Version      string
+}
+
+// handleInstallPage renders the session-gated human install page. The agent
+// script endpoints remain owned by handleInstall in install_script.go.
+func (a *app) handleInstallPage() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		owner, ok := a.sessionOwner(r)
+		if !ok {
+			if c, err := r.Cookie(sessionCookieName); err == nil {
+				if _, lookupErr := a.sessions.Lookup(r.Context(), c.Value); errors.Is(lookupErr, session.ErrInvalid) {
+					clearSessionCookie(w, r)
+				}
+			}
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+
+		data := installData{
+			Host:         r.Host,
+			Scheme:       requestScheme(r),
+			Owner:        owner,
+			OwnerInitial: ownerInitial(owner),
+			CurrentPage:  "install",
+			Version:      buildVersion(),
+		}
+		var buf bytes.Buffer
+		if err := a.tmpl.ExecuteTemplate(&buf, "install.html", data); err != nil {
+			a.logger.Error("install.render", "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(buf.Bytes())
+	}
+}
 
 // requestScheme resolves the external scheme for a request behind nginx: the
 // front door terminates TLS and forwards X-Forwarded-Proto, so trust it and

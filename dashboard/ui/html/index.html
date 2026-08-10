@@ -1,78 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {{template "shell_head" .}}
   <title>ikigenba dashboard</title>
-  <link rel="stylesheet" href="/static/tokens.css">
-  <link rel="stylesheet" href="/static/app.css">
-  <script src="/static/app.js" defer></script>
 </head>
 <body>
 {{if .Owner}}
-  <header class="banner">
-    <a href="/" class="wordmark">ikigenba</a>
-    <nav class="identity">
-      <form method="POST" action="/logout">
-        <button type="submit" class="btn btn-danger-ghost btn-sm">Sign out</button>
-      </form>
-      <a href="/profile" class="avatar" aria-label="Profile — {{.Owner}}" title="{{.Owner}}">{{.OwnerInitial}}</a>
-    </nav>
-  </header>
-
+  {{template "shell_header" .}}
   <main class="page">
-    <section class="section connect-agent" aria-label="Connect your coding agent">
-      <div class="section-head">
-        <h2>Connect your agent</h2>
-        <span class="rule"></span>
-      </div>
-      <div class="connect-choice">
-        <h3>Claude Code</h3>
-        <div class="snippet">
-          <code>curl -fsSL {{.Scheme}}://{{.Host}}/install/claude | bash</code>
-          <button type="button" class="copy-btn" aria-label="Copy command">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-            <span class="copy-label">Copy</span>
-          </button>
-        </div>
-      </div>
-      <div class="connect-choice">
-        <h3>Codex</h3>
-        <div class="snippet">
-          <code>curl -fsSL {{.Scheme}}://{{.Host}}/install/codex | bash</code>
-          <button type="button" class="copy-btn" aria-label="Copy command">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-            <span class="copy-label">Copy</span>
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <section class="section metrics-entry" aria-label="Metrics">
-      <div class="section-head">
-        <h2>Metrics</h2>
-        <span class="rule"></span>
-      </div>
-      <ul class="list metrics-list">
-        <li class="row metrics-row">
-          <a class="metrics-tile" href="/metrics">Metrics</a>
-        </li>
-      </ul>
-    </section>
-
-    {{if .Services}}
     <section class="section services" aria-label="MCP services">
-      <div class="section-head">
-        <h2>All MCP services</h2>
-        <span class="rule"></span>
-      </div>
-      <ul class="list services-list">
+      <h2>MCP Services</h2>
+      <ul class="rows">
         {{range .Services}}
-        <li class="row service-row">
+        <li class="service-row">
           <a href="{{.Href}}" class="name">{{.Name}}</a>
           <code class="meta service-url">{{.URL}}</code>
           <button type="button" class="copy-btn" aria-label="Copy {{.Name}} MCP URL">
@@ -85,8 +25,8 @@
         {{end}}
       </ul>
     </section>
-    {{end}}
   </main>
+  {{template "shell_footer" .}}
 
 {{else}}
   <main class="signin-wall">

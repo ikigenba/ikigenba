@@ -6,11 +6,9 @@ import (
 	"testing"
 )
 
-// TestIndexConnectSection: the logged-in index carries the "Connect your coding
-// agent" block with the per-agent curl one-pasters and, at the bottom, the LIST
-// whose rows are the box's MCP services (local name + resource URL). All three
-// are gated on a real session.
-func TestIndexConnectSection(t *testing.T) {
+// TestIndexServiceDirectory: the logged-in index carries only the MCP service
+// directory whose rows show the local name and resource URL.
+func TestIndexServiceDirectory(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "dashboard", "APP=dashboard\nMOUNT=/\nDEFAULT=true\n")
 	writeManifest(t, root, "crm", "APP=crm\nMOUNT=/srv/crm/\nMCP=true\n")
@@ -33,15 +31,16 @@ func TestIndexConnectSection(t *testing.T) {
 	body := rec.Body.String()
 
 	for _, want := range []string{
-		"Connect your coding agent",
-		"curl -fsSL https://int.ikigenba.com/install/claude | bash",
-		"curl -fsSL https://int.ikigenba.com/install/codex | bash",
+		"MCP Services",
 		"ikigenba_crm",
 		"https://int.ikigenba.com/srv/crm/mcp",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("logged-in index missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "/install/claude") || strings.Contains(body, "/install/codex") {
+		t.Errorf("logged-in index still contains install snippets:\n%s", body)
 	}
 }
 
@@ -63,7 +62,7 @@ func TestIndexConnectSectionLoggedOut(t *testing.T) {
 	if strings.Contains(body, "Connect your coding agent") {
 		t.Errorf("connect block shown to logged-out visitor:\n%s", body)
 	}
-	if strings.Contains(body, "services-list") || strings.Contains(body, "ikigenba_crm") {
+	if strings.Contains(body, `class="rows"`) || strings.Contains(body, "ikigenba_crm") {
 		t.Errorf("services list shown to logged-out visitor:\n%s", body)
 	}
 }

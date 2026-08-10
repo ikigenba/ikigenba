@@ -1,0 +1,43 @@
+{{define "install.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {{template "shell_head" .}}
+  <title>Install · ikigenba dashboard</title>
+</head>
+<body>
+  {{template "shell_header" .}}
+  <main class="page">
+    <section class="section install" aria-label="Connect your agent">
+      <h2>Connect your agent</h2>
+      <p class="install-lede">A single command to wire your agent to every Ikigenba MCP Service. Requires a personal access token (PAT), created on the <a href="/profile">profile page</a>, assigned to the <code>IKIGENBA_TOKEN</code> environment variable.</p>
+
+      <div class="install-agent">
+        <h3>Claude Code</h3>
+        <p class="install-description">Adds each service to Claude Code's MCP configuration.</p>
+        <div class="snippet">
+          <code>curl -fsSL {{.Scheme}}://{{.Host}}/install/claude | bash</code>
+          <button type="button" class="copy-btn" aria-label="Copy Claude Code install command">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            <span class="copy-label">Copy</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="install-agent">
+        <h3>Codex</h3>
+        <p class="install-description">Adds each service to Codex's MCP configuration.</p>
+        <div class="snippet">
+          <code>curl -fsSL {{.Scheme}}://{{.Host}}/install/codex | bash</code>
+          <button type="button" class="copy-btn" aria-label="Copy Codex install command">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            <span class="copy-label">Copy</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+  {{template "shell_footer" .}}
+</body>
+</html>
+{{end}}

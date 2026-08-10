@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"unicode"
 	"unicode/utf8"
 
@@ -25,6 +26,8 @@ type indexData struct {
 	Services     []serviceRow
 	GoogleLogin  string
 	GitHubLogin  string
+	CurrentPage  string
+	Version      string
 }
 
 func signedOutIndexData(r *http.Request, returnTo string) indexData {
@@ -33,6 +36,8 @@ func signedOutIndexData(r *http.Request, returnTo string) indexData {
 		Scheme:      requestScheme(r),
 		GoogleLogin: "/login/google",
 		GitHubLogin: "/login/github",
+		CurrentPage: "home",
+		Version:     buildVersion(),
 	}
 	if returnTo != "" {
 		query := url.Values{"return_to": {returnTo}}.Encode()
@@ -40,6 +45,14 @@ func signedOutIndexData(r *http.Request, returnTo string) indexData {
 		data.GitHubLogin += "?" + query
 	}
 	return data
+}
+
+func buildVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
+		return "dev"
+	}
+	return info.Main.Version
 }
 
 // handleIndex renders the index template. It is identity-aware: a valid

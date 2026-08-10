@@ -193,6 +193,8 @@ func newApp(opts Options) (*app, error) {
 		"html/oauth_authorize.html",
 		"html/profile.html",
 		"html/metrics.html",
+		"html/install.html",
+		"html/partials/shell.tmpl",
 		"html/partials/grants_block.tmpl",
 		"html/partials/pat_block.tmpl",
 		"html/partials/pat_created.tmpl",

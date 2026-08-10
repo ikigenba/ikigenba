@@ -55,8 +55,8 @@ func TestLandingServiceListChrome(t *testing.T) {
 
 	// R-OF1Q-VEDC
 	for _, want := range []string{
-		`<ul class="list services-list">`,
-		`<li class="row service-row">`,
+		`<ul class="rows">`,
+		`<li class="service-row">`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("service list missing shared list chrome %q:\n%s", want, body)
@@ -85,6 +85,21 @@ func TestLandingServiceListChrome(t *testing.T) {
 	// R-OHHJ-MXUQ
 	if strings.Contains(body, `class="section-intro"`) {
 		t.Errorf("landing page still renders section intro copy:\n%s", body)
+	}
+}
+
+func TestHomeIsOnlyMCPServiceDirectory(t *testing.T) {
+	body := signedInLanding(t, landingServerWithCRM(t))
+	main := pageMain(t, body)
+
+	// R-VJH9-9GQY
+	if strings.Count(main, `<section `) != 1 || strings.Count(main, `<h2>MCP Services</h2>`) != 1 {
+		t.Errorf("home body is not the single MCP Services section:\n%s", main)
+	}
+	for _, forbidden := range []string{"/install/claude", "/install/codex", "Connect your agent"} {
+		if strings.Contains(main, forbidden) {
+			t.Errorf("home body contains install content %q:\n%s", forbidden, main)
+		}
 	}
 }
 
@@ -147,32 +162,6 @@ func TestLandingSignOutRemainsPostLogout(t *testing.T) {
 	}
 }
 
-func TestLandingInstallInstructionsRemain(t *testing.T) {
-	body := signedInLanding(t, landingServerWithCRM(t))
-
-	for _, want := range []string{
-		`curl -fsSL https://int.ikigenba.com/install/claude | bash`,
-		`curl -fsSL https://int.ikigenba.com/install/codex | bash`,
-	} {
-		// R-DB15-INST
-		if !strings.Contains(body, want) {
-			t.Errorf("logged-in landing missing install instruction %q:\n%s", want, body)
-		}
-	}
-}
-
-func TestLandingMetricsTileLinksToMetrics(t *testing.T) {
-	body := signedInLanding(t, landingServerWithCRM(t))
-
-	// R-X506-GK1V
-	if !strings.Contains(body, `<a class="metrics-tile" href="/metrics">Metrics</a>`) {
-		t.Errorf("logged-in landing missing metrics link:\n%s", body)
-	}
-	if strings.Contains(body, `href="/telemetry"`) || strings.Contains(body, "Telemetry") {
-		t.Errorf("logged-in landing contains retired surface name or link:\n%s", body)
-	}
-}
-
 func TestLoggedOutLandingOmitsMetricsAndRetiredTelemetryLinks(t *testing.T) {
 	srv := landingServerWithCRM(t)
 	rec := do(t, srv, "GET", "https://int.ikigenba.com/", nil)
@@ -186,4 +175,17 @@ func TestLoggedOutLandingOmitsMetricsAndRetiredTelemetryLinks(t *testing.T) {
 	if strings.Contains(body, `href="/metrics"`) || strings.Contains(body, `href="/telemetry"`) {
 		t.Errorf("logged-out landing exposes owner-only metrics link:\n%s", body)
 	}
+}
+
+func pageMain(t *testing.T, body string) string {
+	t.Helper()
+	start := strings.Index(body, `<main class="page">`)
+	if start < 0 {
+		t.Fatalf("body missing page main:\n%s", body)
+	}
+	end := strings.Index(body[start:], `</main>`)
+	if end < 0 {
+		t.Fatalf("page main is not closed:\n%s", body[start:])
+	}
+	return body[start : start+end+len(`</main>`)]
 }
