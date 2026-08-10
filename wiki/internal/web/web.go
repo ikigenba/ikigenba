@@ -12,6 +12,8 @@ import (
 
 	"wiki/internal/ask"
 	"wiki/internal/markdown"
+	"wiki/internal/page"
+	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
 )
 
@@ -30,6 +32,11 @@ type PageFinder interface {
 // OrphanLister lists subjects with zero inbound mentions for the home index.
 type OrphanLister interface {
 	Orphans(ctx context.Context, scope string) ([]Ref, error)
+}
+
+// SubjectLister lists the subjects available in one scope for public browsing.
+type SubjectLister interface {
+	ListInScope(context.Context, string, string, string, page.Params) ([]wiki.Subject, string, error)
 }
 
 // Mentioner lists wiki subjects mentioned by rendered answer text.
@@ -92,6 +99,20 @@ func WithOrphanLister(o OrphanLister) Option {
 	}
 }
 
+// WithSubjectLister injects the public browse-index seam.
+func WithSubjectLister(s SubjectLister) Option {
+	return func(h *handler) {
+		h.subjects = s
+	}
+}
+
+// WithKeywordRetriever injects the inference-free public search seam.
+func WithKeywordRetriever(r retrieve.Retriever) Option {
+	return func(h *handler) {
+		h.keywords = r
+	}
+}
+
 // WithMentioner injects the answer mention lookup seam.
 func WithMentioner(m Mentioner) Option {
 	return func(h *handler) {
@@ -121,6 +142,8 @@ type handler struct {
 	asker     Asker
 	pages     PageFinder
 	orphans   OrphanLister
+	subjects  SubjectLister
+	keywords  retrieve.Retriever
 	mentions  Mentioner
 	linkifier Linkifier
 	linkBase  string
@@ -143,6 +166,9 @@ type pageData struct {
 	Cites       []Ref
 	Mentions    []Ref
 	Orphans     []Ref
+	Browse      []Ref
+	Results     []Ref
+	Searched    bool
 	Subject     SubjectView
 	SubjectHTML template.HTML
 }
@@ -156,11 +182,12 @@ func NewHandler(service, version, mount string, site *appkitweb.Site, opts ...Op
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", h.landing)
-	for _, tier := range []string{"private", "public"} {
-		mux.HandleFunc("GET /"+tier+"/{scope}/{$}", h.home)
-		mux.HandleFunc("GET /"+tier+"/{scope}/subject/{type}/{slug}", h.subject)
-		mux.HandleFunc("GET /"+tier+"/{scope}/select", h.selectScope)
-	}
+	mux.HandleFunc("GET /private/{scope}/{$}", h.privateHome)
+	mux.HandleFunc("GET /private/{scope}/subject/{type}/{slug}", h.privateSubject)
+	mux.HandleFunc("GET /private/{scope}/select", h.selectScope)
+	mux.HandleFunc("GET /public/{scope}/{$}", h.publicHome)
+	mux.HandleFunc("GET /public/{scope}/subject/{type}/{slug}", h.publicSubject)
+	mux.HandleFunc("GET /public/{scope}/select", h.selectScope)
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		h.renderNotFound(w, r, routeTier(r))
 	})
@@ -192,15 +219,14 @@ func (h *handler) selectScope(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/"+tier+"/"+target+"/", http.StatusSeeOther)
 }
 
-func (h *handler) home(w http.ResponseWriter, r *http.Request) {
-	tier := routeTier(r)
-	scope, ok := h.resolvePageScope(w, r, tier)
+func (h *handler) privateHome(w http.ResponseWriter, r *http.Request) {
+	scope, ok := h.resolvePageScope(w, r, "private")
 	if !ok {
 		return
 	}
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query != "" {
-		h.ask(w, r, tier, scope, query)
+		h.ask(w, r, scope, query)
 		return
 	}
 
@@ -212,17 +238,60 @@ func (h *handler) home(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		orphans = refs
-		orphans = h.scopeRefs(orphans, tier, scope.Name)
+		orphans = h.scopeRefs(orphans, "private", scope.Name)
 	}
 
-	if err := h.site.Render(w, "home", h.pageData(r.Context(), tier, scope.Name, pageData{
+	if err := h.site.Render(w, "home", h.pageData(r.Context(), "private", scope.Name, pageData{
 		Orphans: orphans,
 	})); err != nil {
 		http.Error(w, "render home page", http.StatusInternalServerError)
 	}
 }
 
-func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope wiki.Scope, question string) {
+func (h *handler) publicHome(w http.ResponseWriter, r *http.Request) {
+	scope, ok := h.resolvePageScope(w, r, "public")
+	if !ok {
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	data := pageData{Query: query}
+	if query != "" {
+		data.Searched = true
+		if h.keywords == nil {
+			http.Error(w, "search wiki", http.StatusNotImplemented)
+			return
+		}
+		result, err := h.keywords.Search(r.Context(), scope.Name, query, retrieve.SearchLimits{})
+		if err != nil {
+			http.Error(w, "search wiki", http.StatusInternalServerError)
+			return
+		}
+		for _, hit := range result.Hits {
+			data.Results = append(data.Results, Ref{Href: h.subjectHref("public", scope.Name, hit.Path), Name: hit.Title})
+		}
+	} else if h.subjects != nil {
+		cursor := ""
+		for {
+			subjects, next, err := h.subjects.ListInScope(r.Context(), scope.Name, "", "", page.Params{Limit: page.MaxLimit, Cursor: cursor})
+			if err != nil {
+				http.Error(w, "list subjects", http.StatusInternalServerError)
+				return
+			}
+			for _, subject := range subjects {
+				data.Browse = append(data.Browse, Ref{Href: h.subjectHref("public", scope.Name, wiki.Path(subject)), Name: subject.Name})
+			}
+			if next == "" {
+				break
+			}
+			cursor = next
+		}
+	}
+	if err := h.site.Render(w, "home", h.pageData(r.Context(), "public", scope.Name, data)); err != nil {
+		http.Error(w, "render home page", http.StatusInternalServerError)
+	}
+}
+
+func (h *handler) ask(w http.ResponseWriter, r *http.Request, scope wiki.Scope, question string) {
 	if h.asker == nil {
 		http.Error(w, "ask wiki", http.StatusNotImplemented)
 		return
@@ -251,11 +320,11 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope
 			return
 		}
 		mentions = refs
-		mentions = h.scopeRefs(mentions, tier, scope.Name)
+		mentions = h.scopeRefs(mentions, "private", scope.Name)
 	}
 	answerHTML := markdown.Render(answer.Text)
 	if h.linkifier != nil {
-		base := h.absoluteSubjectBase(tier, scope.Name)
+		base := h.absoluteSubjectBase("private", scope.Name)
 		text, err := h.linkifier.LinkifyMentions(r.Context(), scope.Name, answer.Text, base, "")
 		if err != nil {
 			http.Error(w, "link answer mentions", http.StatusInternalServerError)
@@ -264,7 +333,7 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope
 		answerHTML = markdown.Render(text)
 	}
 
-	if err := h.site.Render(w, "home", h.pageData(r.Context(), tier, scope.Name, pageData{
+	if err := h.site.Render(w, "home", h.pageData(r.Context(), "private", scope.Name, pageData{
 		Query:      question,
 		Asked:      true,
 		Answer:     answer,
@@ -276,8 +345,15 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope
 	}
 }
 
-func (h *handler) subject(w http.ResponseWriter, r *http.Request) {
-	tier := routeTier(r)
+func (h *handler) privateSubject(w http.ResponseWriter, r *http.Request) {
+	h.subject(w, r, "private")
+}
+
+func (h *handler) publicSubject(w http.ResponseWriter, r *http.Request) {
+	h.subject(w, r, "public")
+}
+
+func (h *handler) subject(w http.ResponseWriter, r *http.Request, tier string) {
 	scope, ok := h.resolvePageScope(w, r, tier)
 	if !ok {
 		return
@@ -407,6 +483,10 @@ func (h *handler) absoluteSubjectBase(tier, scope string) string {
 		return h.linkBase
 	}
 	return base + tier + "/" + scope + "/subject/"
+}
+
+func (h *handler) subjectHref(tier, scope, path string) string {
+	return h.mount + tier + "/" + scope + "/subject/" + strings.TrimPrefix(path, "/")
 }
 
 func normalizeMount(mount string) string {

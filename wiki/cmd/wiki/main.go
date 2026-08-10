@@ -134,6 +134,8 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			rt.Handle("/", web.NewHandler(rt.Service(), rt.Version(), wiki.Mount, rt.WWW(),
 				web.WithScopeStore(scopes),
 				web.WithOrphanLister(orphanAdapter{svc: svc, webBase: webBase}),
+				web.WithSubjectLister(wiki.NewSubjectStore(read)),
+				web.WithKeywordRetriever(retrieve.NewKeywordRetriever(read)),
 				web.WithAsker(asker),
 				web.WithMentioner(mentionAdapter{svc: svc, webBase: webBase}),
 				web.WithLinkifier(svc, webBase),

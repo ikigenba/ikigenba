@@ -19,5 +19,5 @@
   </ul>
 </nav>
 {{end}}
-<a href="">Ask another question</a>
+{{if eq .Tier "private"}}<a href="">Ask another question</a>{{else}}<a href="">Back to search</a>{{end}}
 {{template "foot" .}}{{end}}

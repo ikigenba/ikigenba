@@ -24,12 +24,31 @@
   {{end}}
 </article>
 {{else}}
+{{if .Searched}}
+{{if .Results}}
+<nav aria-label="Search results">
+  <ul>
+    {{range .Results}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
+  </ul>
+</nav>
+{{else}}
+<p>No matches.</p>
+{{end}}
+{{else}}
+{{if .Browse}}
+<nav aria-label="Browse subjects">
+  <ul>
+    {{range .Browse}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
+  </ul>
+</nav>
+{{end}}
 {{if .Orphans}}
 <nav aria-label="Orphan pages">
   <ul>
     {{range .Orphans}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
   </ul>
 </nav>
+{{end}}
 {{end}}
 {{end}}
 {{template "foot" .}}{{end}}

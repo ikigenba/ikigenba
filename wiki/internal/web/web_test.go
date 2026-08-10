@@ -16,17 +16,47 @@ import (
 
 	"wiki/internal/ask"
 	wikidb "wiki/internal/db"
+	"wiki/internal/page"
+	"wiki/internal/retrieve"
 	wikidomain "wiki/internal/wiki"
 )
 
 type stubOrphanLister struct {
 	refs   []Ref
 	called int
+	scopes []string
 }
 
-func (s *stubOrphanLister) Orphans(context.Context, string) ([]Ref, error) {
+func (s *stubOrphanLister) Orphans(_ context.Context, scope string) ([]Ref, error) {
 	s.called++
+	s.scopes = append(s.scopes, scope)
 	return s.refs, nil
+}
+
+type stubSubjectLister struct {
+	byScope map[string][]wikidomain.Subject
+	scopes  []string
+}
+
+func (s *stubSubjectLister) ListInScope(_ context.Context, scope, _, _ string, _ page.Params) ([]wikidomain.Subject, string, error) {
+	s.scopes = append(s.scopes, scope)
+	return s.byScope[scope], "", nil
+}
+
+type stubKeywordRetriever struct {
+	result retrieve.Result
+	called int
+	scope  string
+	query  string
+	limits retrieve.SearchLimits
+}
+
+func (s *stubKeywordRetriever) Search(_ context.Context, scope, query string, limits retrieve.SearchLimits) (retrieve.Result, error) {
+	s.called++
+	s.scope = scope
+	s.query = query
+	s.limits = limits
+	return s.result, nil
 }
 
 type stubAsker struct {
@@ -224,15 +254,15 @@ func TestScopedRoutesDispatchOnlyExplicitTiers(t *testing.T) {
 	pages := &stubPageFinder{view: SubjectView{Title: "Page", Body: "Body"}}
 	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithAsker(asker), WithPageFinder(pages))
 
-	for _, path := range []string{"/private/s1/?q=question", "/public/p1/?q=question"} {
+	for _, path := range []string{"/private/s1/?q=question", "/public/p1/"} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s status = %d, want 200; body=%s", path, rec.Code, rec.Body.String())
 		}
 	}
-	if asker.scope != "p1" {
-		t.Fatalf("last Ask scope = %q, want p1", asker.scope)
+	if asker.scope != "s1" {
+		t.Fatalf("Ask scope = %q, want s1", asker.scope)
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/private/s1/subject/entity/acme", nil))
@@ -243,6 +273,152 @@ func TestScopedRoutesDispatchOnlyExplicitTiers(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/bogus/s1/", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("bogus tier status = %d, want 404", rec.Code)
+	}
+}
+
+func TestPublicHomeBrowsesOnlySubjectsInPathScope(t *testing.T) {
+	// R-HUFU-ASVW
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	lister := &stubSubjectLister{byScope: map[string][]wikidomain.Subject{
+		"p1": {
+			{ID: "alpha", Name: "Alpha", NormName: "alpha", Type: "entity"},
+			{ID: "zulu", Name: "Zulu", NormName: "zulu", Type: "concept"},
+		},
+		"s1": {{ID: "secret", Name: "Secret", NormName: "secret", Type: "entity"}},
+	}}
+	rec := httptest.NewRecorder()
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes), WithSubjectLister(lister)).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/p1/", nil))
+
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, `<form action="" method="get" role="search">`) {
+		t.Fatalf("public home status=%d missing search form: %s", rec.Code, body)
+	}
+	alpha := `<a href="/srv/wiki/public/p1/subject/entity/alpha">Alpha</a>`
+	zulu := `<a href="/srv/wiki/public/p1/subject/concept/zulu">Zulu</a>`
+	if strings.Index(body, alpha) < 0 || strings.Index(body, zulu) < strings.Index(body, alpha) {
+		t.Fatalf("public browse links missing or out of order: %s", body)
+	}
+	if strings.Contains(body, "Secret") || len(lister.scopes) != 1 || lister.scopes[0] != "p1" {
+		t.Fatalf("public browse crossed scope: calls=%v body=%s", lister.scopes, body)
+	}
+}
+
+func TestPublicSearchUsesKeywordResultsAndNeverAsk(t *testing.T) {
+	// R-HVNQ-OKML
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	keywords := &stubKeywordRetriever{result: retrieve.Result{Hits: []retrieve.Hit{
+		{Path: "entity/acme", Title: "Acme"},
+		{Path: "concept/widget", Title: "Widget"},
+	}}}
+	asker := &stubAsker{}
+	pages := &stubPageFinder{view: SubjectView{Title: "Acme", Body: "Acme body"}}
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/",
+		WithScopeStore(scopes), WithKeywordRetriever(keywords), WithAsker(asker), WithPageFinder(pages))
+	for _, path := range []string{"/public/p1/", "/public/p1/?q=red+widgets", "/public/p1/subject/entity/acme"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status=%d, want 200; body=%s", path, rec.Code, rec.Body.String())
+		}
+		if strings.Contains(path, "?q=") {
+			for _, want := range []string{
+				`<a href="/srv/wiki/public/p1/subject/entity/acme">Acme</a>`,
+				`<a href="/srv/wiki/public/p1/subject/concept/widget">Widget</a>`,
+			} {
+				if !strings.Contains(rec.Body.String(), want) {
+					t.Fatalf("public results missing %q: %s", want, rec.Body.String())
+				}
+			}
+		}
+	}
+	if keywords.called != 1 || keywords.scope != "p1" || keywords.query != "red widgets" {
+		t.Fatalf("keyword Search calls=%d scope=%q query=%q", keywords.called, keywords.scope, keywords.query)
+	}
+	if asker.called != 0 {
+		t.Fatalf("Ask calls across public routes = %d, want 0", asker.called)
+	}
+}
+
+func TestPublicSearchNoMatchesKeepsFormAndDoesNotFallbackToAsk(t *testing.T) {
+	// R-HWVN-2CDA
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	asker := &stubAsker{}
+	rec := httptest.NewRecorder()
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes),
+		WithKeywordRetriever(&stubKeywordRetriever{}), WithAsker(asker)).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/p1/?q=nothing", nil))
+
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, "No matches.") || !strings.Contains(body, `role="search"`) {
+		t.Fatalf("public empty search status=%d did not keep honest form: %s", rec.Code, body)
+	}
+	if asker.called != 0 || strings.Contains(body, `aria-label="Answer"`) {
+		t.Fatalf("public empty search fell back to Ask: calls=%d body=%s", asker.called, body)
+	}
+}
+
+func TestPublicSubjectRendersSanitizedScopedLinksAndHonorsVisibility(t *testing.T) {
+	// R-HY3J-G43Z
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	const oldBase = "https://acct.ikigenba.com/srv/wiki/subject/"
+	pages := &stubPageFinder{view: SubjectView{
+		Title: "Acme", Body: "## Overview\n\nSee [Widget](" + oldBase + "concept/widget).\n\n<script>alert(1)</script>",
+		Outbound: []Ref{{Href: oldBase + "concept/widget", Name: "Widget"}},
+		Inbound:  []Ref{{Href: oldBase + "event/launch", Name: "Launch"}},
+	}}
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes),
+		WithPageFinder(pages), WithLinkifier(nil, oldBase))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/public/p1/subject/entity/acme", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		"<h2", `<a href="https://acct.ikigenba.com/srv/wiki/public/p1/subject/concept/widget">Widget</a>`,
+		`<a href="https://acct.ikigenba.com/srv/wiki/public/p1/subject/event/launch">Launch</a>`,
+		`aria-label="Mentions"`, `aria-label="Mentioned by"`, "Back to search",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("public subject missing %q: %s", want, body)
+		}
+	}
+	if rec.Code != http.StatusOK || strings.Contains(body, "<script>") || strings.Contains(body, "Ask another question") {
+		t.Fatalf("public subject status=%d was unsafe or exposed ask affordance: %s", rec.Code, body)
+	}
+
+	privateRec := httptest.NewRecorder()
+	h.ServeHTTP(privateRec, httptest.NewRequest(http.MethodGet, "/public/s1/subject/entity/acme", nil))
+	if privateRec.Code != http.StatusNotFound || pages.called != 1 {
+		t.Fatalf("private scope through public tier status=%d page calls=%d, want 404 and no lookup", privateRec.Code, pages.called)
+	}
+}
+
+func TestPrivateTierKeepsScopedAskAndOrphanIndex(t *testing.T) {
+	// R-HZBF-TVUO
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	asker := &stubAsker{answer: ask.Answer{Found: true, Text: "Answer"}}
+	orphans := &stubOrphanLister{refs: []Ref{{Href: "subject/entity/orphan", Name: "Orphan"}}}
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithScopeStore(scopes),
+		WithAsker(asker), WithOrphanLister(orphans), WithSubjectLister(&stubSubjectLister{byScope: map[string][]wikidomain.Subject{
+			"s1": {{ID: "all", Name: "All Subject", NormName: "all-subject", Type: "entity"}},
+		}}))
+
+	homeRec := httptest.NewRecorder()
+	h.ServeHTTP(homeRec, httptest.NewRequest(http.MethodGet, "/private/s1/", nil))
+	if homeRec.Code != http.StatusOK || !strings.Contains(homeRec.Body.String(), "Orphan") || strings.Contains(homeRec.Body.String(), "All Subject") {
+		t.Fatalf("private home did not keep orphan-only index: %s", homeRec.Body.String())
+	}
+	askRec := httptest.NewRecorder()
+	h.ServeHTTP(askRec, httptest.NewRequest(http.MethodGet, "/private/s1/?q=who+owns+it", nil))
+	if askRec.Code != http.StatusOK || asker.called != 1 || asker.scope != "s1" || asker.question != "who owns it" {
+		t.Fatalf("private Ask status=%d calls=%d scope=%q question=%q", askRec.Code, asker.called, asker.scope, asker.question)
+	}
+	if orphans.called != 1 || len(orphans.scopes) != 1 || orphans.scopes[0] != "s1" {
+		t.Fatalf("private Orphans calls=%d scopes=%v", orphans.called, orphans.scopes)
 	}
 }
 
