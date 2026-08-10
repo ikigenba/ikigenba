@@ -194,6 +194,13 @@ func (r *Runner) execute(run prompt.Run) {
 
 	releaseRun, err = r.gate.AcquireRun(ctx)
 	if err != nil {
+		r.mu.Lock()
+		userCancelled := r.userCancelled[run.ID]
+		r.mu.Unlock()
+		if userCancelled {
+			finish(prompt.RunCancelled, "", "cancelled")
+			return
+		}
 		finish(prompt.RunFailed, "", "acquire run capacity: "+err.Error())
 		return
 	}

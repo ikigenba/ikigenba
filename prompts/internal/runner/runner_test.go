@@ -1106,6 +1106,42 @@ func TestCancel(t *testing.T) {
 	}
 }
 
+func TestCancelWhileWaitingForRunCapacity(t *testing.T) {
+	fp := &fakeProvider{block: true}
+	runsDir := t.TempDir()
+	r, store := newTestRunner(t, time.Minute, fp)
+	r.gate = admit.New(8, 1)
+	release, err := r.gate.AcquireRun(context.Background())
+	if err != nil {
+		t.Fatalf("AcquireRun: %v", err)
+	}
+	defer release()
+
+	sess, run := seedRunning(t, store, r.sandbox, runsDir)
+	r.Spawn(run)
+
+	var cancelled bool
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if r.Cancel(run.ID) {
+			cancelled = true
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if !cancelled {
+		t.Fatal("Cancel never returned true")
+	}
+
+	got := waitRun(t, store, sess.ID)
+	if got.Status != prompt.RunCancelled {
+		t.Fatalf("run status = %q, want cancelled", got.Status)
+	}
+	if got.Error != "cancelled" {
+		t.Fatalf("run error = %q, want \"cancelled\"", got.Error)
+	}
+}
+
 // R-K95Z-3S0C
 func TestTTLFires(t *testing.T) {
 	fp := &fakeProvider{block: true}
