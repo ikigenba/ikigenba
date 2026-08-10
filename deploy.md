@@ -11,7 +11,9 @@ alias `int`, that pins the right key. The commands below assume that alias.
 
 The live box model is:
 
-- `bin/bump` updates the committed service `VERSION` file.
+- `bin/bump` updates the committed service `VERSION` file, together with the
+  matching new top section of `<app>/CHANGELOG.md` — it refuses to mint a
+  version the changelog does not already record.
 - `bin/ship` builds current `main` and copies a versioned **tar.gz bundle** to
   the box `/tmp`.
 - `opsctl stage` unpacks that bundle into versioned on-box slots.
@@ -205,9 +207,17 @@ seed before first deploy; `bin/push-secrets <app>` handles that state.
 
 Run this sequence per app:
 
-1. **`bin/bump <app> <major|minor|patch>`** — advances and commits the
-   v-prefixed SemVer in `<app>/VERSION`, then pushes it. Skip only if the
-   committed version is already the one you intend to deploy.
+1. **Author the changelog entry, then `bin/bump <app> <major|minor|patch>`.**
+   First run `bin/bump <app> <part> --dry-run` to learn the next version, and
+   add a new top section to `<app>/CHANGELOG.md` for exactly that version —
+   `## vX.Y.Z — YYYY-MM-DD` plus a few short outcome-level bullets summarizing
+   what changed since the last bump (`git log` over `<app>/` since the previous
+   VERSION commit is the denominator). Then run the real bump: it advances the
+   v-prefixed SemVer in `<app>/VERSION`, verifies the changelog's top section
+   matches, commits **both files** in one path-limited commit, and pushes.
+   It refuses — changing nothing — if the changelog is missing or its top
+   section is not the version being minted. Skip only if the committed version
+   is already the one you intend to deploy.
 2. **`bin/ship <app>`** — builds current `main` as a static linux/amd64 binary,
    bundles the executable with `nginx.conf`, `manifest.env`, and optional
    `share/`, copies `/tmp/<app>-v<ver>+<sha>.tar.gz` to the box, prints the two
