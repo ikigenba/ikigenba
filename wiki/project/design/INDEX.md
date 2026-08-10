@@ -40,7 +40,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D42 → `project/design/D42.md` — Web read surface: foundation (routes, base-href, package shape, seam injection) — owns R-WC29-XALJ, R-WDA6-B2C8, R-WFPZ-2LTM, R-WGXV-GDKB
 - D43 → `project/design/D43.md` — The home / reset page (`GET /{$}`, no `q`) — owns R-OMRY-L9O8
 - D44 → `project/design/D44.md` — The ask result page (`GET /{$}` with `?q=…`) + the `MentionsIn` seam — owns R-ARN9-5YPS, R-ASV5-JQGH, R-AU31-XI76, R-AVAY-B9XV, R-AWIU-P1OK, R-NPVU-26CX, R-AXQR-2TF9, R-8FQU-M1J4
-- D45 → `project/design/D45.md` — The subject page (`GET /subject/{type}/{slug}`) — owns R-PH2F-47LB, R-PIAB-HZC0, R-PJI7-VR2P, R-PKQ4-9ITE, R-PLY0-NAK3, R-NONX-OEM8, R-PODT-EU1H, R-8GYQ-ZT9T
+- D45 → `project/design/D45.md` — The subject page (`GET /subject/{type}/{slug}`) — owns R-PH2F-47LB, R-PIAB-HZC0, R-PJI7-VR2P, R-PLY0-NAK3, R-NONX-OEM8, R-PODT-EU1H, R-8GYQ-ZT9T, R-Y42U-45K2, R-Y5AQ-HXAR
 - D47 → `project/design/D47.md` — nginx: session-gate the whole human surface (root + `/subject/` + `/static/`) — none — structural
 - D48 → `project/design/D48.md` — The markdown → sanitized-HTML rendering seam (`internal/markdown`) — owns R-SS0J-U7PG, R-ST8G-7ZG5, R-SUGC-LR6U, R-SVO8-ZIXJ, R-SWW5-DAO8, R-SY41-R2EX, R-SZBY-4U5M, R-T0JU-ILWB, R-T1RQ-WDN0, R-T2ZN-A5DP
 - D49 → `project/design/D49.md` — Token-based CSS for the rendered markdown element set — owns R-9EPS-LWWY, R-9FXO-ZONN
@@ -345,7 +345,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-PH2F-47LB → D45 (`project/design/D45.md`)
 - R-PIAB-HZC0 → D45 (`project/design/D45.md`)
 - R-PJI7-VR2P → D45 (`project/design/D45.md`)
-- R-PKQ4-9ITE → D45 (`project/design/D45.md`)
 - R-PLY0-NAK3 → D45 (`project/design/D45.md`)
 - R-PODT-EU1H → D45 (`project/design/D45.md`)
 - R-Q8RI-7POG → D33 (`project/design/D33.md`)
@@ -394,7 +393,9 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-XZIW-8SO3 → D15 (`project/design/D15.md`)
 - R-Y1YP-0C5H → D15 (`project/design/D15.md`)
 - R-Y36L-E3W6 → D16 (`project/design/D16.md`)
+- R-Y42U-45K2 → D45 (`project/design/D45.md`)
 - R-Y4EH-RVMV → D16 (`project/design/D16.md`)
+- R-Y5AQ-HXAR → D45 (`project/design/D45.md`)
 - R-Y7OR-PH1I → D56 (`project/design/D56.md`)
 - R-YA4K-H0IW → D56 (`project/design/D56.md`)
 - R-YDS9-MBQZ → D57 (`project/design/D57.md`)
