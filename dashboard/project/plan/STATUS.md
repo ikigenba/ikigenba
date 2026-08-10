@@ -12,6 +12,5 @@ matches only phase lines.
 
 Next phase: 52
 
-- Phase 51 ⬜ realizes R-VN4Y-ERZ1, R-VOCU-SJPQ, R-VQSN-K374, R-VT8G-BMOI, R-VUGC-PEF7 — metrics, profile, authorize, and show-once pages adopt the shell
 
 
