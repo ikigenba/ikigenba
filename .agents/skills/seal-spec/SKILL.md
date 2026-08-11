@@ -84,16 +84,26 @@ operator-invoked step after the spec exists.)
    runs under the suite) or assigned to exactly one pending phase (the
    design-only `comm -23` difference is empty). A pending phase carrying an id
    design no longer mints is stale — fix it now, in this pass.
-6. **Workspace map.** If the structure changed (greenfield, or a folder
+6. **Reachability gate.** Before finishing, re-check every pending phase's
+   "Done when" against the repo **as it stands right now**: could the build
+   loop, scoped to this tree alone, actually turn it green? Anything a gate
+   depends on that does not yet exist and lives **outside the tree** — a
+   registry row, a workspace `use` entry, a dev-harness registration, a
+   provisioned credential — is a **blocking precondition**, never a report
+   footnote. Stop and ask the operator to resolve it (or to direct the
+   out-of-tree edit as an ordinary, non-spec change) **before the seal
+   completes**. A sealed plan whose first pending phase cannot go green in
+   the committed repo is a defect of this run, not acceptable output.
+7. **Workspace map.** If the structure changed (greenfield, or a folder
    added/removed), write/update the thin `project/README.md` to match.
-7. **Commit.** Stage every modified/new/deleted path under `project/**` and
+8. **Commit.** Stage every modified/new/deleted path under `project/**` and
    commit them (`git add project/ && git commit -m ...`) so the spec is fully
    committed before any `ralph` run starts against it. Commit only
    `project/**` — never sweep in unrelated working-tree changes outside it.
    If there is nothing under `project/` to commit (a sealing pass that made no
    changes), skip this step. Skip it too if `project/` is not inside a git
    repository — note that in the report rather than failing the run.
-8. **Report.** List every path written, the Decisions added/changed with their
+9. **Report.** List every path written, the Decisions added/changed with their
    minted ids, the appended phase numbers, and the commit made (or why it was
    skipped). Then **stop**.
 
@@ -130,3 +140,9 @@ stop *narrowly*: resolve and complete everything the gap doesn't block, and pose
 the single specific question the run is stuck on. A choice with a reasonable
 default is **not** a gap — decide it, note the call in your report, and finish
 the run.
+
+An **unmet out-of-tree precondition is always such a gap** (the reachability
+gate, step 6): authoring is docs-only and scope-bound, so you cannot make the
+plan reachable yourself, and shipping it anyway hands the build loop a red
+gate it is forbidden to fix. Never downgrade a blocking precondition to a
+report note.
