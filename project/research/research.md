@@ -45,9 +45,9 @@ Read-only probes against the live `int` box (`16.59.0.148`), plus a read of its
   therefore impossible from logs, which is why the question was settled by
   probe (above) rather than by log analysis.
 
-## The parked domain portfolio (registrar state, 2026-07-24)
+## The parked domain portfolio (registrar state, re-verified 2026-08-11)
 
-Ten domains are registered and pointed at the int box's IP. Auto-renew and
+Eleven domains are registered and pointed at the int box's IP. Auto-renew and
 expiry drive which of them may sit inside a shared certificate:
 
 | domain | expires | auto-renew | note |
@@ -62,15 +62,20 @@ expiry drive which of them may sit inside a shared certificate:
 | `metaspot.net` | 2027-03-16 | yes | |
 | `metaspot.org` | 2026-09-22 | yes | Workspace MX + site-verification TXT; kept indefinitely |
 | `michaelgreenly.com` | 2027-08-05 | yes | previously the live static site; already dark |
+| `michaelgreenly.dev` | 2027-08-10 | yes | registered 2026-08-10, parked from day one; `.dev` is HSTS-preloaded, so it is unusable without a valid certificate |
 
 - **`ikigai-group.io` is the one domain not on auto-renew**, and it expires
   within weeks. Inside a shared SAN certificate a lapsed domain stops resolving
   to the box, HTTP-01 fails for that name, and certbot fails the **whole
-  lineage** — so one unrenewed domain would strip TLS from all the others.
+  lineage** — so one unrenewed domain would strip TLS from all the others. Its
+  `no` is deliberate: the domain is being let go. That makes auto-renew state a
+  thing to check at the moment a domain joins the lineage, not a stable
+  property. `michaelgreenly.dev` also read `no` on registration, which is the
+  Route 53 default rather than a decision, and was turned on before it joined.
 - **Certificate limits are not a constraint here.** Let's Encrypt's
   certificates-per-registered-domain limit is 50 per week, and a multi-name
   certificate counts once against each registered domain it names. One combined
-  certificate over nine registrations spends one of fifty for each.
+  certificate over ten registrations spends one of fifty for each.
 - **MX and TXT records are unaffected** by A-record targeting or by what nginx
   serves, so the Workspace mail on `logic-refinery.com` / `metaspot.org` and
   `metaspot.org`'s site-verification TXT are out of this decision's path.
