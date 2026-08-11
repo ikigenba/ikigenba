@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -197,6 +198,77 @@ func TestSpecHandlersAssembleTokenRouteJSONGuardAndFailureR_GTQ4_30E7(t *testing
 	assembledSpecHandler(t, failingHTTP).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/token", nil))
 	if rr.Code != http.StatusBadGateway || strings.Contains(rr.Body.String(), failureMaterial) || strings.Contains(rr.Body.String(), "route-token") {
 		t.Fatalf("failure response = %d %q, want generic 502 without token material", rr.Code, rr.Body.String())
+	}
+}
+
+func TestEveryServedDocumentCarriesBrandIcons(t *testing.T) {
+	// R-RYDN-YNR5
+	documents, err := filepath.Glob(filepath.Join("..", "web", "*.html"))
+	if err != nil {
+		t.Fatalf("enumerate HTML documents: %v", err)
+	}
+	if len(documents) == 0 {
+		t.Fatal("no HTML documents found")
+	}
+
+	handler := assembledSpecHandler(t, &http.Client{})
+	wantLinks := []string{
+		`<link rel="icon" sizes="any" href="static/favicon.ico">`,
+		`<link rel="icon" type="image/png" href="static/favicon-32.png">`,
+		`<link rel="apple-touch-icon" href="static/apple-touch-icon.png">`,
+	}
+	for _, document := range documents {
+		document := document
+		t.Run(filepath.Base(document), func(t *testing.T) {
+			route := "/" + strings.TrimSuffix(filepath.Base(document), ".html")
+			if filepath.Base(document) == "landing.html" {
+				route = "/"
+			}
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, route, nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("GET %s = %d, want 200", route, rr.Code)
+			}
+
+			body := rr.Body.String()
+			headStart := strings.Index(body, "<head>")
+			headEnd := strings.Index(body, "</head>")
+			if headStart < 0 || headEnd <= headStart {
+				t.Fatalf("GET %s response has no complete head", route)
+			}
+			head := body[headStart:headEnd]
+			for _, link := range wantLinks {
+				if !strings.Contains(head, link) {
+					t.Errorf("GET %s head missing %s", route, link)
+				}
+			}
+		})
+	}
+}
+
+func TestAssembledSpecServesBrandIconAssets(t *testing.T) {
+	// R-RZLK-CFHU
+	handler := assembledSpecHandler(t, &http.Client{})
+	assets := map[string]string{
+		"/static/favicon.ico":          "image/x-icon",
+		"/static/favicon-32.png":       "image/png",
+		"/static/apple-touch-icon.png": "image/png",
+	}
+	for asset, wantContentType := range assets {
+		asset, wantContentType := asset, wantContentType
+		t.Run(filepath.Base(asset), func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, asset, nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("GET %s = %d, want 200", asset, rr.Code)
+			}
+			if rr.Body.Len() == 0 {
+				t.Fatalf("GET %s returned an empty body", asset)
+			}
+			if got := rr.Header().Get("Content-Type"); got != wantContentType {
+				t.Fatalf("GET %s Content-Type = %q, want %q", asset, got, wantContentType)
+			}
+		})
 	}
 }
 

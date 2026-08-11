@@ -95,6 +95,8 @@ func staticContentType(name string, body []byte) string {
 		return "text/css; charset=utf-8"
 	case strings.HasSuffix(name, ".woff2"):
 		return "font/woff2"
+	case strings.HasSuffix(name, ".ico"):
+		return "image/x-icon"
 	default:
 		return http.DetectContentType(body)
 	}
