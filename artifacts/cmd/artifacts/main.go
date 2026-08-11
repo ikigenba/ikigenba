@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 
 	"appkit"
@@ -52,5 +53,9 @@ func artifactsSpec() appkit.Spec {
 }
 
 func main() {
+	if _, err := loadConfig(os.Getenv); err != nil {
+		fmt.Fprintf(os.Stderr, "artifacts: %v\n", err)
+		os.Exit(1)
+	}
 	appkit.Main(artifactsSpec())
 }
