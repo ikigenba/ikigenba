@@ -9,7 +9,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D3 → `project/design/D03.md` — The phase-1 data model — owns R-7SNG-0G9A, R-7TVC-E7ZZ, R-7V38-RZQO, R-7WB5-5RHD, R-RU0J-77HX, R-RV8F-KZ8M, R-RXO8-CIQ0, R-RYW4-QAGP, R-S041-427E, R-S1BX-HTY3, R-S2JT-VLOS, R-1O8B-FNX4
 - D4 → `project/design/D04.md` — The ingest pipeline and worker — owns R-M8RN-87WV, R-M9ZJ-LZNK, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MDN8-RAVN, R-MG31-IUD1
 - D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): a prompts `/complete` client + json-mode helper — owns R-J8QP-BETB, R-4BCC-0EHJ, R-J9YL-P6K0, R-JCEE-GQ1E, R-0X4N-U0XB, R-8H1B-9CCI, R-0ZKG-LKEP, R-10SC-ZC5E, R-1209-D3W3
-- D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-9UTW-ZFF0, R-9W1T-D75P
+- D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-9UTW-ZFF0, R-9W1T-D75P, R-8TAF-XBSM, R-8UIC-B3JB
 - D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, clean article prose (no ids), 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-9X9P-QYWE, R-9YHM-4QN3, R-VA32-HERT
 - D8 → `project/design/D08.md` — Search returns: hybrid retrieval over pages, behind one seam — none — structural
 - D9 → `project/design/D09.md` — `ask` (`internal/ask`): hybrid-retrieval pipeline, grounded/cited/honest-empty — owns R-BAFW-D24P, R-BBNS-QTVE, R-BCVP-4LM3, R-5UPD-VVNA, R-5VXA-9NDZ, R-690G-MZTK, R-5X56-NF4O, R-6A8D-0RK9, R-05CG-3H6Y, R-9ZPI-IIDS, R-NFXF-9QGN, R-NH5B-NI7C, R-NID8-19Y1
@@ -73,6 +73,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D79 → `project/design/D79.md` — Truthful submit controls: the Ask label + script-driven pending feedback — owns R-VBAY-V6II, R-4TW0-SL10, R-VDQR-MPZW
 - D80 → `project/design/D80.md` — The page shell: boxed top-down layout, header bar (brand mark + universal question form), footer — owns R-HG6J-SNRN, R-HHEG-6FIC, R-2MYX-Y4PN, R-2O6U-BWGC, R-2PEQ-PO71, R-2QMN-3FXQ
 - D81 → `project/design/D81.md` — Suggested pages: the scope's seven newest subjects on every scope home — owns R-HJU8-XYZQ, R-HL25-BQQF, R-HMA1-PIH4, R-HOPU-H1YI
+- D82 → `project/design/D82.md` — Scope instructions: an operator-authored preamble on every inference call — owns R-8FVJ-PUMZ, R-8H3G-3MDO, R-8JJ8-V5V2, R-8KR5-8XLR, R-8LZ1-MPCG, R-8N6Y-0H35, R-8OEU-E8TU, R-8PMQ-S0KJ, R-8QUN-5SB8, R-8S2J-JK1X
 
 ## Verification ids → Decision
 
@@ -173,11 +174,23 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-8DF1-W89F → D2 (`project/design/D02.md`, adopted from root `project/design/D11.md`)
 - R-8EIY-89SF → D10 (`project/design/D10.md`)
 - R-8FQU-M1J4 → D44 (`project/design/D44.md`)
+- R-8FVJ-PUMZ → D82 (`project/design/D82.md`)
 - R-8GYQ-ZT9T → D45 (`project/design/D45.md`)
 - R-8H1B-9CCI → D5 (`project/design/D05.md`)
+- R-8H3G-3MDO → D82 (`project/design/D82.md`)
 - R-8I6N-DL0I → D59 (`project/design/D59.md`)
 - R-8IAN-FB87 → D2 (`project/design/D02.md`, adopted from root `project/design/D11.md`)
 - R-8JEJ-RCR7 → D59 (`project/design/D59.md`)
+- R-8JJ8-V5V2 → D82 (`project/design/D82.md`)
+- R-8KR5-8XLR → D82 (`project/design/D82.md`)
+- R-8LZ1-MPCG → D82 (`project/design/D82.md`)
+- R-8N6Y-0H35 → D82 (`project/design/D82.md`)
+- R-8OEU-E8TU → D82 (`project/design/D82.md`)
+- R-8PMQ-S0KJ → D82 (`project/design/D82.md`)
+- R-8QUN-5SB8 → D82 (`project/design/D82.md`)
+- R-8S2J-JK1X → D82 (`project/design/D82.md`)
+- R-8TAF-XBSM → D6 (`project/design/D06.md`)
+- R-8UIC-B3JB → D6 (`project/design/D06.md`)
 - R-9EPS-LWWY → D49 (`project/design/D49.md`)
 - R-9FXO-ZONN → D49 (`project/design/D49.md`)
 - R-9OCK-FJK1 → D30 (`project/design/D30.md`)
