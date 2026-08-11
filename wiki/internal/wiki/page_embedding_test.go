@@ -27,6 +27,7 @@ func TestEmbedAndStoreUsesDocumentRoleAndUpdatesStoreAndCache(t *testing.T) {
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
+	seedEmbeddingSubject(t, ctx, conn, "default", "subject-1")
 
 	cache := &recordingVectorCache{}
 	embedder := &recordingPageEmbedder{vectors: [][]float32{{0.25, 0.75}}}
@@ -86,6 +87,7 @@ func TestEmbedAndStoreOverwritesExistingPageVector(t *testing.T) {
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
+	seedEmbeddingSubject(t, ctx, conn, "default", "subject-1")
 
 	store := NewEmbeddingStore(conn)
 	if err := store.Upsert(ctx, Embedding{
@@ -309,6 +311,90 @@ func TestEmbeddingCatchUpLabelsCacheEntryWithSubjectsScope(t *testing.T) {
 	}
 	if len(cache.entries) != 1 || cache.entries[0].scope != "s1" || cache.entries[0].subjectID != "subject-s1" {
 		t.Fatalf("catch-up cache entries = %+v, want subject-s1 labeled s1", cache.entries)
+	}
+}
+
+func TestEmbeddingCatchUpReapsOrphansAndPreservesLiveEntries(t *testing.T) {
+	// R-R9Y8-A1UL
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	seedEmbeddingSubject(t, ctx, conn, "default", "live-subject")
+	page := Page{ID: "live-subject", SubjectID: "live-subject", Title: "Live", Body: "Live body"}
+	if err := NewPageStore(conn).Upsert(ctx, page); err != nil {
+		t.Fatalf("Upsert live page: %v", err)
+	}
+	live := Embedding{
+		SubjectID: "live-subject", Model: "model-a", Dims: 2, Vec: []float32{0.25, 0.75},
+		ContentHash: pageFingerprint(page), UpdatedAt: 10,
+	}
+	if err := NewEmbeddingStore(conn).Upsert(ctx, live); err != nil {
+		t.Fatalf("Upsert live embedding: %v", err)
+	}
+	seedOrphanEmbedding(t, ctx, conn, "orphan-subject")
+
+	svc := NewService(conn, nil, nil, time.Now,
+		WithPageEmbedder("model-a", &recordingPageEmbedder{vectors: [][]float32{{9, 9}}}),
+	)
+	if n, err := svc.DrainEmbeddingCatchUp(ctx); err != nil || n != 0 {
+		t.Fatalf("DrainEmbeddingCatchUp = %d, %v; want 0, nil", n, err)
+	}
+	embeddings, err := NewEmbeddingStore(conn).LoadAll(ctx)
+	if err != nil {
+		t.Fatalf("LoadAll after sweep: %v", err)
+	}
+	if !reflect.DeepEqual(embeddings, []Embedding{live}) {
+		t.Fatalf("embeddings after sweep = %#v, want untouched live embedding", embeddings)
+	}
+	entries, err := LoadVectorCacheEntries(ctx, conn)
+	if err != nil {
+		t.Fatalf("LoadVectorCacheEntries after sweep: %v", err)
+	}
+	want := []VectorCacheEntry{{Scope: "default", SubjectID: "live-subject", Title: "Live", Vec: []float32{0.25, 0.75}}}
+	if !reflect.DeepEqual(entries, want) {
+		t.Fatalf("hydrated entries = %#v, want %#v", entries, want)
+	}
+}
+
+func TestEmbeddingCatchUpDeleteBetweenSelectionAndStoreLeavesNoOrphan(t *testing.T) {
+	// R-RB64-NTLA
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	if _, err := NewScopeStore(conn).Create(ctx, "doomed"); err != nil {
+		t.Fatalf("Create doomed scope: %v", err)
+	}
+	seedEmbeddingSubject(t, ctx, conn, "doomed", "doomed-subject")
+	page := Page{ID: "doomed-subject", SubjectID: "doomed-subject", Title: "Doomed", Body: "Doomed body"}
+	if err := NewPageStore(conn).Upsert(ctx, page); err != nil {
+		t.Fatalf("Upsert doomed page: %v", err)
+	}
+
+	embedder := &recordingPageEmbedder{
+		vectors: [][]float32{{1, 0}},
+		onEmbed: func(context.Context, []string, EmbedRole) error {
+			return NewScopeStore(conn).Delete(ctx, "doomed")
+		},
+	}
+	svc := NewService(conn, nil, nil, time.Now, WithPageEmbedder("model-a", embedder))
+	if n, err := svc.DrainEmbeddingCatchUp(ctx); err != nil || n != 1 {
+		t.Fatalf("DrainEmbeddingCatchUp = %d, %v; want 1, nil", n, err)
+	}
+	var rows int
+	if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM page_embeddings WHERE subject_id = ?`, page.SubjectID).Scan(&rows); err != nil {
+		t.Fatalf("count raced embedding rows: %v", err)
+	}
+	if rows != 0 {
+		t.Fatalf("raced embedding rows = %d, want 0", rows)
+	}
+	entries, err := LoadVectorCacheEntries(ctx, conn)
+	if err != nil {
+		t.Fatalf("LoadVectorCacheEntries after race: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("LoadVectorCacheEntries after race = %#v, want empty", entries)
 	}
 }
 

@@ -3,8 +3,6 @@ package wiki
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 )
 
 const (
@@ -30,30 +28,28 @@ type VectorCacheEntry struct {
 // LoadVectorCacheEntries loads stored page embeddings with their page titles.
 func LoadVectorCacheEntries(ctx context.Context, db any) ([]VectorCacheEntry, error) {
 	c := mustConns(db)
-	embeddings, err := NewEmbeddingStore(c).LoadAll(ctx)
+	rows, err := c.Read.QueryContext(ctx, `
+		SELECT e.subject_id, s.scope, p.title, e.vec
+		FROM page_embeddings e
+		JOIN subjects s ON s.id = e.subject_id
+		JOIN pages p ON p.subject_id = e.subject_id
+		ORDER BY e.subject_id`)
 	if err != nil {
 		return nil, err
 	}
-	pages := NewPageStore(c.Read)
-	entries := make([]VectorCacheEntry, 0, len(embeddings))
-	for _, embedding := range embeddings {
-		page, err := pages.GetBySubject(ctx, embedding.SubjectID)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
+	defer rows.Close()
+	var entries []VectorCacheEntry
+	for rows.Next() {
+		var entry VectorCacheEntry
+		var blob []byte
+		if err := rows.Scan(&entry.SubjectID, &entry.Scope, &entry.Title, &blob); err != nil {
+			return nil, err
 		}
+		entry.Vec, err = decodeVec(blob)
 		if err != nil {
 			return nil, err
 		}
-		var scope string
-		if err := c.Read.QueryRowContext(ctx, `SELECT scope FROM subjects WHERE id = ?`, embedding.SubjectID).Scan(&scope); err != nil {
-			return nil, err
-		}
-		entries = append(entries, VectorCacheEntry{
-			Scope:     scope,
-			SubjectID: embedding.SubjectID,
-			Title:     page.Title,
-			Vec:       embedding.Vec,
-		})
+		entries = append(entries, entry)
 	}
-	return entries, nil
+	return entries, rows.Err()
 }

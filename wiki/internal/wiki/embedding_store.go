@@ -43,7 +43,8 @@ func NewEmbeddingStore(db any) *EmbeddingStore {
 func (s *EmbeddingStore) Upsert(ctx context.Context, e Embedding) error {
 	_, err := s.write.ExecContext(ctx, `
 		INSERT INTO page_embeddings (subject_id, model, dims, vec, content_hash, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		SELECT ?, ?, ?, ?, ?, ?
+		WHERE EXISTS (SELECT 1 FROM subjects WHERE id = ?)
 		ON CONFLICT(subject_id) DO UPDATE SET
 			model = excluded.model,
 			dims = excluded.dims,
@@ -56,6 +57,7 @@ func (s *EmbeddingStore) Upsert(ctx context.Context, e Embedding) error {
 		encodeVec(e.Vec),
 		e.ContentHash,
 		e.UpdatedAt,
+		e.SubjectID,
 	)
 	return err
 }

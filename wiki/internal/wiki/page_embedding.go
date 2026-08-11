@@ -120,6 +120,11 @@ func (s *Service) DrainEmbeddingCatchUp(ctx context.Context) (int, error) {
 }
 
 func (s *Service) drainEmbeddingCandidates(ctx context.Context) (int, error) {
+	if _, err := s.write.ExecContext(ctx, `
+		DELETE FROM page_embeddings
+		WHERE subject_id NOT IN (SELECT id FROM subjects)`); err != nil {
+		return 0, err
+	}
 	rows, err := s.pages.db.QueryContext(ctx, `
 		SELECT p.id, p.subject_id, p.title, p.body, s.scope, e.model, e.content_hash
 		FROM pages p
