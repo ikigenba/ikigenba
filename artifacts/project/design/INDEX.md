@@ -9,10 +9,10 @@ Verification ids change.
 
 - D1 → `project/design/D01.md` — Service skeleton, chassis adoption & composition root — owns R-39K3-W9HR, R-3AS0-A18G, R-3BZW-NSZ5; adopts R-8DF1-W89F, R-8IAN-FB87, R-VKB6-SHHV (root `project/design/D11.md`), R-4LKF-FB23 (root `project/design/D08.md`)
 - D2 → `project/design/D02.md` — Data model, tokens & blob store — owns R-3D7T-1KPU, R-3EFP-FCGJ, R-3FNL-T478, R-3GVI-6VXX, R-3I3E-KNOM, R-3JBA-YFFB, R-3LR3-PYWP; adopts R-NFQ1-NA7N (root `project/design/D25.md`)
-- D3 → `project/design/D03.md` — Signed upload links: mint + the public upload ingress — owns R-3MZ0-3QNE, R-3O6W-HIE3, R-3PES-VA4S, R-3QMP-91VH, R-3RUL-MTM6, R-3T2I-0LCV, R-3UAE-ED3K, R-3VIA-S4U9
+- D3 → `project/design/D03.md` — Signed upload links: mint + the public upload ingress — owns R-3MZ0-3QNE, R-3O6W-HIE3, R-3PES-VA4S, R-3QMP-91VH, R-3RUL-MTM6, R-3T2I-0LCV, R-3UAE-ED3K, R-3VIA-S4U9, R-78BZ-IXSS, R-79JV-WPJH, R-7BZO-O90V
 - D4 → `project/design/D04.md` — The download surface: public and private tiers — owns R-3WQ7-5WKY, R-3XY3-JOBN, R-3Z5Z-XG2C, R-40DW-B7T1, R-41LS-OZJQ, R-42TP-2RAF
 - D5 → `project/design/D05.md` — Content-plane citizenship: holder endpoint + `import` acceptor — owns R-441L-GJ14, R-46HE-82II, R-47PA-LU97, R-48X6-ZLZW, R-4A53-DDQL, R-4BCZ-R5HA
-- D6 → `project/design/D06.md` — MCP tool surface — owns R-4CKW-4X7Z, R-4DSS-IOYO, R-4F0O-WGPD, R-4G8L-A8G2, R-4HGH-O06R, R-4IOE-1RXG, R-4JWA-FJO5, R-4L46-TBEU, R-4MC3-735J, R-P52Q-H8MG
+- D6 → `project/design/D06.md` — MCP tool surface — owns R-4CKW-4X7Z, R-4DSS-IOYO, R-4F0O-WGPD, R-4G8L-A8G2, R-4HGH-O06R, R-4IOE-1RXG, R-4JWA-FJO5, R-4L46-TBEU, R-4MC3-735J, R-7D7L-20RK, R-P52Q-H8MG
 - D7 → `project/design/D07.md` — Event production: `created` / `updated` / `deleted` — owns R-4NJZ-KUW8, R-4PZS-CEDM, R-4R7O-Q64B, R-4SFL-3XV0
 - D8 → `project/design/D08.md` — nginx location fragment (tiers) — owns R-4TNH-HPLP, R-4UVD-VHCE, R-4W3A-9933, R-4XB6-N0TS, R-4YJ3-0SKH, R-4ZQZ-EKB6, R-50YV-SC1V, R-526S-63SK
 - D9 → `project/design/D09.md` — The landing page: a sortable, filterable inventory — owns R-53EO-JVJ9, R-54MK-XN9Y, R-55UH-BF0N, R-572D-P6RC, R-59I6-GQ8Q, R-5AQ2-UHZF
@@ -78,6 +78,10 @@ Verification ids change.
 - R-572D-P6RC → D9 — `project/design/D09.md`
 - R-59I6-GQ8Q → D9 — `project/design/D09.md`
 - R-5AQ2-UHZF → D9 — `project/design/D09.md`
+- R-78BZ-IXSS → D3 — `project/design/D03.md`
+- R-79JV-WPJH → D3 — `project/design/D03.md`
+- R-7BZO-O90V → D3 — `project/design/D03.md`
+- R-7D7L-20RK → D6 — `project/design/D06.md`
 - R-8DF1-W89F → D1 — `project/design/D01.md` (adopted from root `project/design/D11.md`)
 - R-8IAN-FB87 → D1 — `project/design/D01.md` (adopted from root `project/design/D11.md`)
 - R-NFQ1-NA7N → D2 — `project/design/D02.md` (adopted from root `project/design/D25.md`)
@@ -93,8 +97,10 @@ to the id(s) whose tests prove it; the quality of each proof is the audit's
 question, the mapping's completeness is this manifest's. Regenerated with the
 rest of the index.
 
-1. Upload URL + `curl` via MCP; file uploads and appears in the list →
-   R-P52Q-H8MG, R-4CKW-4X7Z, R-3O6W-HIE3, R-4F0O-WGPD
+1. Upload URL + `curl` via MCP; file uploads and appears in the list (URLs
+   usable from any machine, on the configured public base) →
+   R-P52Q-H8MG, R-4CKW-4X7Z, R-3O6W-HIE3, R-4F0O-WGPD, R-78BZ-IXSS,
+   R-79JV-WPJH, R-7D7L-20RK
 2. Upload link single-use, 24h expiry, failed attempt leaves it usable →
    R-3PES-VA4S, R-3QMP-91VH, R-3UAE-ED3K
 3. Over-long filename rejected intact — nothing stored, nothing truncated →
