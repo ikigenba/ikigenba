@@ -70,6 +70,96 @@ func TestScopeStoreCreatesListsAndUpdatesRegistryRows(t *testing.T) {
 	}
 }
 
+func TestScopeStoreInstructionsRoundTripClearAndUnknownScope(t *testing.T) {
+	// R-8H3G-3MDO
+	ctx := context.Background()
+	db := migratedDB(t, ctx)
+	defer db.Close()
+	store := NewScopeStore(db)
+	if _, err := store.Create(ctx, "team-a"); err != nil {
+		t.Fatalf("Create(team-a): %v", err)
+	}
+	text := "  standing context\nwith trailing whitespace \n"
+	if err := store.SetInstructions(ctx, "team-a", text); err != nil {
+		t.Fatalf("SetInstructions(team-a): %v", err)
+	}
+	scope, err := store.Get(ctx, "team-a")
+	if err != nil || scope.Instructions != text {
+		t.Fatalf("Get(team-a) instructions = %q, %v; want %q", scope.Instructions, err, text)
+	}
+	scopes, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var listed string
+	for _, item := range scopes {
+		if item.Name == "team-a" {
+			listed = item.Instructions
+		}
+	}
+	if listed != text {
+		t.Fatalf("List team-a instructions = %q, want %q", listed, text)
+	}
+	if err := store.SetInstructions(ctx, "team-a", ""); err != nil {
+		t.Fatalf("clear instructions: %v", err)
+	}
+	if scope, err := store.Get(ctx, "team-a"); err != nil || scope.Instructions != "" {
+		t.Fatalf("Get(team-a) after clear = %+v, %v; want empty instructions", scope, err)
+	}
+	if err := store.SetInstructions(ctx, "missing", "do not store"); !errors.Is(err, ErrScopeNotFound) {
+		t.Fatalf("SetInstructions(missing) = %v, want ErrScopeNotFound", err)
+	}
+	if got := countRows(t, ctx, db, `SELECT COUNT(*) FROM scopes WHERE name = 'missing'`); got != 0 {
+		t.Fatalf("unknown scope row count = %d, want 0", got)
+	}
+}
+
+func TestScopeStoreInstructionsEnforcesUnicodeCharacterCapWithoutChangingValue(t *testing.T) {
+	// R-8JJ8-V5V2
+	ctx := context.Background()
+	db := migratedDB(t, ctx)
+	defer db.Close()
+	store := NewScopeStore(db)
+	if _, err := store.Create(ctx, "team-a"); err != nil {
+		t.Fatalf("Create(team-a): %v", err)
+	}
+	if err := store.SetInstructions(ctx, "team-a", "original"); err != nil {
+		t.Fatalf("set original instructions: %v", err)
+	}
+	if err := store.SetInstructions(ctx, "team-a", strings.Repeat("界", InstructionsCharCap+1)); !errors.Is(err, ErrInstructionsTooLong) {
+		t.Fatalf("SetInstructions(4001 runes) = %v, want ErrInstructionsTooLong", err)
+	}
+	if scope, err := store.Get(ctx, "team-a"); err != nil || scope.Instructions != "original" {
+		t.Fatalf("Get(team-a) after rejection = %+v, %v; want original instructions", scope, err)
+	}
+	want := strings.Repeat("界", InstructionsCharCap)
+	if err := store.SetInstructions(ctx, "team-a", want); err != nil {
+		t.Fatalf("SetInstructions(4000 runes): %v", err)
+	}
+	if scope, err := store.Get(ctx, "team-a"); err != nil || scope.Instructions != want {
+		t.Fatalf("Get(team-a) accepted instruction rune count = %d, %v; want %d", len([]rune(scope.Instructions)), err, InstructionsCharCap)
+	}
+}
+
+func TestComposeSystemPreservesEmptyBaseAndWrapsInstructionsExactly(t *testing.T) {
+	// R-8KR5-8XLR
+	base := "base system\nwith exact ending "
+	instructions := "  scope text\n"
+	tests := []struct {
+		name, instructions, want string
+	}{
+		{"empty", "", base},
+		{"non-empty", instructions, base + "\n\nScope instructions (these override the general rules above where they conflict):\n" + instructions},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ComposeSystem(base, test.instructions); got != test.want {
+				t.Fatalf("ComposeSystem() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestScopeStoreDeleteProtectsDefaultAndDeletesOnlyTargetScopeContent(t *testing.T) {
 	// R-H3M1-VUKM
 	ctx := context.Background()

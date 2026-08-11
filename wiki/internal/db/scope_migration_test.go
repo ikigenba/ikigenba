@@ -97,6 +97,73 @@ func TestScopeMigrationDropsPreScopeContentAndRebuildsColumns(t *testing.T) {
 	}
 }
 
+func TestScopeInstructionsMigrationPreservesRowsAndConstrainsInstructions(t *testing.T) {
+	// R-8FVJ-PUMZ
+	ctx := context.Background()
+	db, migrations := openScopeMigrationDB(t)
+	defer db.Close()
+	index := namedMigrationIndex(t, migrations, "scope_instructions")
+	if err := appdb.Migrate(ctx, db, migrations[:index]); err != nil {
+		t.Fatalf("migrate pre-instructions schema: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE scopes SET created_at = 67890 WHERE name = 'default'`); err != nil {
+		t.Fatalf("seed existing default scope: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO scopes (name, visibility, created_at) VALUES ('team-a', 'public', 12345)`); err != nil {
+		t.Fatalf("seed existing scope: %v", err)
+	}
+	if err := appdb.Migrate(ctx, db, migrations); err != nil {
+		t.Fatalf("apply instructions migration: %v", err)
+	}
+
+	rows, err := db.QueryContext(ctx, `SELECT name, visibility, instructions, created_at FROM scopes ORDER BY name`)
+	if err != nil {
+		t.Fatalf("read preserved scopes: %v", err)
+	}
+	defer rows.Close()
+	want := []struct {
+		name, visibility, instructions string
+		createdAt                      int64
+	}{{"default", "private", "", 67890}, {"team-a", "public", "", 12345}}
+	var got []struct {
+		name, visibility, instructions string
+		createdAt                      int64
+	}
+	for rows.Next() {
+		var row struct {
+			name, visibility, instructions string
+			createdAt                      int64
+		}
+		if err := rows.Scan(&row.name, &row.visibility, &row.instructions, &row.createdAt); err != nil {
+			t.Fatalf("scan preserved scope: %v", err)
+		}
+		got = append(got, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read preserved scopes: %v", err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("preserved scopes = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("preserved scope %d = %#v, want %#v", i, got[i], want[i])
+		}
+	}
+
+	var notNull int
+	var defaultValue string
+	if err := db.QueryRowContext(ctx, `SELECT "notnull", dflt_value FROM pragma_table_info('scopes') WHERE name = 'instructions'`).Scan(&notNull, &defaultValue); err != nil {
+		t.Fatalf("inspect instructions column: %v", err)
+	}
+	if notNull != 1 || defaultValue != "''" {
+		t.Errorf("instructions column NOT NULL = %d, default = %#v; want 1 and %q", notNull, defaultValue, "''")
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO scopes (name, instructions, created_at) VALUES ('too-long', ?, 0)`, strings.Repeat("界", 4001)); err == nil || !strings.Contains(err.Error(), "CHECK constraint failed") {
+		t.Fatalf("over-cap direct insert error = %v, want CHECK constraint failure", err)
+	}
+}
+
 func openScopeMigrationDB(t *testing.T) (*sql.DB, []appdb.Migration) {
 	t.Helper()
 	db, err := appdb.Open(t.TempDir() + "/wiki.db")
@@ -113,12 +180,17 @@ func openScopeMigrationDB(t *testing.T) (*sql.DB, []appdb.Migration) {
 
 func scopeMigrationIndex(t *testing.T, migrations []appdb.Migration) int {
 	t.Helper()
+	return namedMigrationIndex(t, migrations, "scope_registry")
+}
+
+func namedMigrationIndex(t *testing.T, migrations []appdb.Migration, name string) int {
+	t.Helper()
 	for i, migration := range migrations {
-		if strings.Contains(migration.Name, "scope_registry") {
+		if strings.Contains(migration.Name, name) {
 			return i
 		}
 	}
-	t.Fatal("scope_registry migration not found")
+	t.Fatalf("%s migration not found", name)
 	return -1
 }
 

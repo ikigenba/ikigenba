@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
+const InstructionsCharCap = 4000
+
 var (
-	ErrInvalidScopeName = errors.New("wiki: invalid scope name")
-	ErrScopeNotFound    = errors.New("wiki: scope not found")
-	ErrScopeExists      = errors.New("wiki: scope already exists")
-	ErrScopeIsDefault   = errors.New("wiki: the default scope cannot be deleted")
+	ErrInvalidScopeName    = errors.New("wiki: invalid scope name")
+	ErrScopeNotFound       = errors.New("wiki: scope not found")
+	ErrScopeExists         = errors.New("wiki: scope already exists")
+	ErrScopeIsDefault      = errors.New("wiki: the default scope cannot be deleted")
+	ErrInstructionsTooLong = errors.New("wiki: scope instructions exceed 4000 characters")
 )
 
 var scopeNamePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
@@ -28,9 +32,10 @@ func ValidateScopeName(name string) error {
 
 // Scope is an entry in the explicit scope registry.
 type Scope struct {
-	Name       string
-	Visibility string
-	CreatedAt  int64
+	Name         string
+	Visibility   string
+	Instructions string
+	CreatedAt    int64
 }
 
 // ScopeStore persists the scope registry and owns scope deletion.
@@ -63,8 +68,8 @@ func (s *ScopeStore) Create(ctx context.Context, name string) (Scope, error) {
 func (s *ScopeStore) Get(ctx context.Context, name string) (Scope, error) {
 	var scope Scope
 	err := s.read.QueryRowContext(ctx, `
-		SELECT name, visibility, created_at FROM scopes WHERE name = ?`, name).
-		Scan(&scope.Name, &scope.Visibility, &scope.CreatedAt)
+		SELECT name, visibility, instructions, created_at FROM scopes WHERE name = ?`, name).
+		Scan(&scope.Name, &scope.Visibility, &scope.Instructions, &scope.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Scope{}, fmt.Errorf("%w: %s", ErrScopeNotFound, name)
 	}
@@ -75,7 +80,7 @@ func (s *ScopeStore) Get(ctx context.Context, name string) (Scope, error) {
 }
 
 func (s *ScopeStore) List(ctx context.Context) ([]Scope, error) {
-	rows, err := s.read.QueryContext(ctx, `SELECT name, visibility, created_at FROM scopes ORDER BY name`)
+	rows, err := s.read.QueryContext(ctx, `SELECT name, visibility, instructions, created_at FROM scopes ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list scopes: %w", err)
 	}
@@ -83,7 +88,7 @@ func (s *ScopeStore) List(ctx context.Context) ([]Scope, error) {
 	var scopes []Scope
 	for rows.Next() {
 		var scope Scope
-		if err := rows.Scan(&scope.Name, &scope.Visibility, &scope.CreatedAt); err != nil {
+		if err := rows.Scan(&scope.Name, &scope.Visibility, &scope.Instructions, &scope.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan scope: %w", err)
 		}
 		scopes = append(scopes, scope)
@@ -92,6 +97,33 @@ func (s *ScopeStore) List(ctx context.Context) ([]Scope, error) {
 		return nil, fmt.Errorf("list scopes: %w", err)
 	}
 	return scopes, nil
+}
+
+// SetInstructions stores the scope's standing inference instructions byte-exact.
+func (s *ScopeStore) SetInstructions(ctx context.Context, name, text string) error {
+	if utf8.RuneCountInString(text) > InstructionsCharCap {
+		return ErrInstructionsTooLong
+	}
+	result, err := s.write.ExecContext(ctx, `UPDATE scopes SET instructions = ? WHERE name = ?`, text, name)
+	if err != nil {
+		return fmt.Errorf("set scope %q instructions: %w", name, err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set scope %q instructions: %w", name, err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: %s", ErrScopeNotFound, name)
+	}
+	return nil
+}
+
+// ComposeSystem appends scope instructions to a stage's base system prompt.
+func ComposeSystem(base, instructions string) string {
+	if instructions == "" {
+		return base
+	}
+	return base + "\n\nScope instructions (these override the general rules above where they conflict):\n" + instructions
 }
 
 func (s *ScopeStore) SetVisibility(ctx context.Context, name, visibility string) error {
