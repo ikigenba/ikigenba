@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.27.0 — 2026-08-10
+
+- The answer page's footer now matches the subject pages: the cited pages and the mentioned subjects sit side by side as quiet labeled columns beneath the answer, in the same two-column layout subject pages use.
+
 ## v0.26.0 — 2026-08-10
 
 - Public scopes now answer questions: the question box on a public scope runs the same cited ask as the signed-in surface, for anyone on the internet — the keyword-only public search page is gone.
