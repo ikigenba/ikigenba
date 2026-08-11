@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.28.0 — 2026-08-10
+
+- Ask now finds pages phrased differently than the question: the search index stems words, so asking about "kings" matches a page that says "king".
+- Keyword search no longer treats the word "or" as a search term of its own, which was letting unrelated pages crowd out relevant ones.
+- Ask reads as many relevant pages as fit its reading budget instead of stopping at a fixed eight, so list-style questions ("who are all the kings?") draw on more of the wiki.
+
 ## v0.27.0 — 2026-08-10
 
 - The answer page's footer now matches the subject pages: the cited pages and the mentioned subjects sit side by side as quiet labeled columns beneath the answer, in the same two-column layout subject pages use.
