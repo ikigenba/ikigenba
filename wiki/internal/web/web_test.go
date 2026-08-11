@@ -933,6 +933,47 @@ func TestAskHandlerRendersAnswerAndCitationsAsSubjectLinks(t *testing.T) {
 	}
 }
 
+func TestAskFooterWrapsCitationsBeforeMentions(t *testing.T) {
+	// R-2MB0-E5SJ
+	asker := &stubAsker{answer: ask.Answer{Found: true, Text: "Acme Corp makes widgets.", Citations: []ask.Citation{
+		{Path: "entity/acme-corp", Title: "Acme Corp"},
+	}}}
+	mentioner := &stubMentioner{refs: []Ref{{Href: "https://acct.ikigenba.com/srv/wiki/subject/concept/widget", Name: "Widget"}}}
+	body := readSurfaceBody(t, "/?q=widgets", WithAsker(asker), WithMentioner(mentioner))
+
+	start := strings.Index(body, `<div class="links">`)
+	if start < 0 || strings.Count(body, `<div class="links">`) != 1 {
+		t.Fatalf("ask footer links wrapper count/shape is wrong: %s", body)
+	}
+	end := strings.Index(body[start:], `</div>`)
+	if end < 0 {
+		t.Fatalf("ask footer links wrapper is not closed: %s", body)
+	}
+	footer := body[start : start+end]
+	cited := strings.Index(footer, `<nav aria-label="Cited pages">`)
+	mentions := strings.Index(footer, `<nav aria-label="Mentions">`)
+	if cited < 0 || mentions < 0 || cited >= mentions {
+		t.Fatalf("footer nav order = cited %d mentions %d, want both inside wrapper with cited first: %s", cited, mentions, footer)
+	}
+	if !strings.Contains(footer, "<h2>Cited pages</h2>") || !strings.Contains(footer, "<h2>Mentions</h2>") {
+		t.Fatalf("footer navs missing headings: %s", footer)
+	}
+}
+
+func TestAskFooterRendersLabeledAbsoluteCitationLink(t *testing.T) {
+	// R-2L34-0E1U
+	asker := &stubAsker{answer: ask.Answer{Found: true, Text: "Acme Corp makes widgets.", Citations: []ask.Citation{
+		{Path: "entity/acme-corp", Title: "Acme Corp"},
+	}}}
+	base := "https://acct.ikigenba.com/srv/wiki/subject/"
+	body := readSurfaceBody(t, "/?q=widgets", WithAsker(asker), WithLinkifier(nil, base))
+
+	want := `<a href="https://acct.ikigenba.com/srv/wiki/private/default/subject/entity/acme-corp">Acme Corp</a>`
+	if !strings.Contains(body, `<nav aria-label="Cited pages">`) || !strings.Contains(body, "<h2>Cited pages</h2>") || !strings.Contains(body, want) {
+		t.Fatalf("cited pages column missing labeled absolute citation %q: %s", want, body)
+	}
+}
+
 func TestAskHandlerRendersMarkdownAnswerHTML(t *testing.T) {
 	// R-NPVU-26CX
 	asker := &stubAsker{answer: ask.Answer{
@@ -1016,26 +1057,53 @@ func TestAskHandlerRendersMentionedSubjectsFromAnswerText(t *testing.T) {
 	}
 }
 
-func TestAskHandlerOmitsMentionSectionWhenAnswerMentionsAreEmpty(t *testing.T) {
+func TestAskHandlerOmitsEmptyFooterColumnsSymmetrically(t *testing.T) {
 	// R-AVAY-B9XV
-	asker := &stubAsker{answer: ask.Answer{
-		Found: true,
-		Text:  "No known subject is named here.",
-	}}
-	req := httptest.NewRequest(http.MethodGet, "/private/default/?q=unknown", nil)
-	rec := httptest.NewRecorder()
-
-	newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker), WithMentioner(&stubMentioner{})).ServeHTTP(rec, req)
-
-	body := rec.Body.String()
-	if !strings.Contains(body, "No known subject is named here.") {
-		t.Fatalf("ask page missing answer text: %s", body)
+	citation := ask.Citation{Path: "entity/acme-corp", Title: "Acme Corp"}
+	mention := Ref{Href: "https://acct.ikigenba.com/srv/wiki/subject/entity/acme-corp", Name: "Acme Corp"}
+	tests := []struct {
+		name         string
+		citations    []ask.Citation
+		mentions     []Ref
+		wantCited    bool
+		wantMentions bool
+		wantWrapper  bool
+	}{
+		{name: "mentions only", mentions: []Ref{mention}, wantMentions: true, wantWrapper: true},
+		{name: "citations only", citations: []ask.Citation{citation}, wantCited: true, wantWrapper: true},
+		{name: "neither"},
 	}
-	if strings.Contains(body, `aria-label="Mentioned subjects"`) {
-		t.Fatalf("ask page rendered mention section for empty mentions: %s", body)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body := readSurfaceBody(t, "/?q=unknown",
+				WithAsker(&stubAsker{answer: ask.Answer{Found: true, Text: "Ordinary answer.", Citations: tc.citations}}),
+				WithMentioner(&stubMentioner{refs: tc.mentions}),
+			)
+			for marker, want := range map[string]bool{
+				`aria-label="Cited pages"`: tc.wantCited,
+				`aria-label="Mentions"`:    tc.wantMentions,
+				`class="links"`:            tc.wantWrapper,
+			} {
+				if strings.Contains(body, marker) != want {
+					t.Fatalf("presence of %q = %v, want %v: %s", marker, !want, want, body)
+				}
+			}
+			if !tc.wantWrapper && (strings.Contains(body, "<nav") || strings.Contains(body, "<ul>")) {
+				t.Fatalf("empty footer rendered wrapper content: %s", body)
+			}
+		})
 	}
-	if strings.Contains(strings.ToLower(body), "ask another question") {
-		t.Fatalf("ask page rendered retired ask-another control: %s", body)
+}
+
+func TestAskHandlerRendersHonestEmptyAsOrdinaryPageWithoutFooter(t *testing.T) {
+	// R-AWIU-P1OK
+	const honest = "The wiki holds nothing on that question."
+	body := readSurfaceBody(t, "/?q=unknown", WithAsker(&stubAsker{answer: ask.Answer{Found: false, Text: honest}}))
+	if !strings.Contains(body, `<article aria-label="Answer">`) || !strings.Contains(body, `<p>`+honest+`</p>`) {
+		t.Fatalf("honest-empty answer did not render as ordinary prose: %s", body)
+	}
+	if strings.Contains(body, `class="links"`) {
+		t.Fatalf("honest-empty answer rendered links footer: %s", body)
 	}
 }
 

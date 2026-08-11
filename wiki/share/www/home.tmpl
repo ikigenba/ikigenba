@@ -4,20 +4,24 @@
 <article aria-label="Answer">
   <h2>{{.Query}}</h2>
   <div class="prose">{{.AnswerHTML}}</div>
-  {{if .Cites}}
-  <nav aria-label="Cited pages">
-    <ul>
-      {{range .Cites}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
-    </ul>
-  </nav>
-  {{end}}
-  {{if .Mentions}}
-  <nav aria-label="Mentioned subjects">
-    <ul>
-      {{range .Mentions}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
-    </ul>
-  </nav>
-  {{end}}
+  {{if or .Cites .Mentions}}<div class="links">
+    {{if .Cites}}
+    <nav aria-label="Cited pages">
+      <h2>Cited pages</h2>
+      <ul>
+        {{range .Cites}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
+      </ul>
+    </nav>
+    {{end}}
+    {{if .Mentions}}
+    <nav aria-label="Mentions">
+      <h2>Mentions</h2>
+      <ul>
+        {{range .Mentions}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}
+      </ul>
+    </nav>
+    {{end}}
+  </div>{{end}}
 </article>
 {{else}}
 {{if .Recent}}

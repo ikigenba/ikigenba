@@ -35,6 +35,7 @@ import (
 	"wiki/internal/llmtest"
 	"wiki/internal/mcp"
 	paging "wiki/internal/page"
+	"wiki/internal/retrieve"
 	"wiki/internal/web"
 	"wiki/internal/wiki"
 )
@@ -698,6 +699,83 @@ func TestWebSubjectLinksUseAbsoluteAuthServerBase(t *testing.T) {
 				t.Fatalf("home page did not compose its subject tail through the scoped base: %s", rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestAskPageWiresRealPipelineToAbsoluteMentionsFooter(t *testing.T) {
+	// R-AXQR-2TF9
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subject := wiki.Subject{ID: "subject-acme", Name: "Acme Corp", Type: "entity"}
+	if err := wiki.NewSubjectStore(conn).Save(ctx, subject); err != nil {
+		t.Fatalf("Save subject: %v", err)
+	}
+	if err := wiki.NewPageStore(conn).Upsert(ctx, wiki.Page{
+		ID: "page-acme", SubjectID: subject.ID, Title: "Acme Corp", Body: "Acme Corp makes widgets.",
+	}); err != nil {
+		t.Fatalf("Upsert page: %v", err)
+	}
+
+	prompts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var call struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/embed":
+			_ = json.NewEncoder(w).Encode(map[string]any{"vectors": [][]float32{{1}}})
+		case "/complete":
+			text := `{"sub_queries":["Acme Corp"],"keywords":["widgets"]}`
+			if call.Name == "wiki.ask-synthesis" {
+				text = `{"found":true,"text":"Acme Corp makes widgets.","citations":[{"path":"entity/acme-corp","title":"Acme Corp"}]}`
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer prompts.Close()
+
+	client := llm.New(prompts.URL, prompts.Client())
+	cache := retrieve.NewVectorCache()
+	cache.Upsert(retrieve.VectorEntry{Scope: "default", SubjectID: subject.ID, Title: subject.Name, Vec: []float32{1}})
+	vector := retrieve.NewVectorRetriever(func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error) {
+		vectors, err := client.Embed(ctx, llm.EmbedSite{Name: "wiki.embed-query", Model: "embed", Dims: 1}, attr, "query", []string{text})
+		if err != nil {
+			return nil, err
+		}
+		return vectors[0], nil
+	}, cache)
+	search := retrieve.NewHybridRetriever(nil, vector, nil, nil, retrieve.FusionConfig{})
+	asker := ask.New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), client,
+		ask.DefaultSubjectCallSite(), ask.DefaultSynthesisCallSite())
+	service := wiki.NewService(conn, nil, nil, time.Now)
+	webBase := "https://acct.ikigenba.com/srv/wiki/subject/"
+	site, err := appkitweb.Load(testWWWRoot(t))
+	if err != nil {
+		t.Fatalf("load test site: %v", err)
+	}
+	handler := web.NewHandler("wiki", "v-test", "/srv/wiki/", site,
+		web.WithAsker(asker),
+		web.WithMentioner(mentionAdapter{svc: service, webBase: webBase}),
+		web.WithLinkifier(service, webBase),
+	)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/private/default/?q=widgets", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	want := `<a href="https://acct.ikigenba.com/srv/wiki/private/default/subject/entity/acme-corp">Acme Corp</a>`
+	if !strings.Contains(body, "Acme Corp</a> makes widgets.") || !strings.Contains(body, `<nav aria-label="Mentions">`) || !strings.Contains(body, want) {
+		t.Fatalf("real ask pipeline missing synthesized text or absolute mentions footer link %q: %s", want, body)
 	}
 }
 

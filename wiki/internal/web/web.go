@@ -291,8 +291,12 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope
 		if citation.Path == "" || citation.Title == "" {
 			continue
 		}
+		href := "subject/" + citation.Path
+		if h.linkBase != "" {
+			href = h.absoluteSubjectBase(tier, scope.Name) + citation.Path
+		}
 		cites = append(cites, Ref{
-			Href: "subject/" + citation.Path,
+			Href: href,
 			Name: citation.Title,
 		})
 	}
