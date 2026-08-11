@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.30.0 — 2026-08-10
+
+- Asking the same question twice in a scope now answers instantly the second time: answers are cached in memory (the 500 most recently used, tunable via `ASK_CACHE_CAP`; `0` disables), and identical questions arriving at the same moment share one computation instead of running twice.
+- Cached answers never go stale against the wiki's content: any change to a scope's knowledge — new ingests, merges, changed scope instructions, or scope deletion — drops that scope's cached answers so the next ask reflects the current pages.
+- The cache is invisible apart from speed: MCP and web asks share it, a cached answer renders identically to a fresh one, and a restart starts empty.
+
 ## v0.29.0 — 2026-08-10
 
 - Each scope can now carry standing instructions ("this scope holds a fictional world; its dates are in-world") via a new `instructions` get/set tool; they are honored by every ingest, page rebuild, and question in that scope, overriding the wiki's general reading habits where they conflict.
