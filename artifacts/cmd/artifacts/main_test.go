@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -256,6 +257,138 @@ func TestInstalledBinaryServesHealthyVersionedEnvelope(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(appRoot, "state", "artifacts.db")); err != nil {
 		t.Fatalf("installed service did not create state database: %v", err)
+	}
+}
+
+// R-P52Q-H8MG
+func TestInstalledBinaryMountsIdentityProtectedMCPTools(t *testing.T) {
+	root := t.TempDir()
+	appRoot := filepath.Join(root, "artifacts")
+	for _, dir := range []string{"bin", "cache", "etc", "libexec", "share", "state"} {
+		if err := os.MkdirAll(filepath.Join(appRoot, dir), 0o755); err != nil {
+			t.Fatalf("create install directory: %v", err)
+		}
+	}
+	version := strings.TrimSpace(string(readRepoFile(t, "VERSION")))
+	binary := filepath.Join(appRoot, "libexec", "artifacts-"+version)
+	build := exec.Command("go", "build", "-ldflags", "-X appkit.version="+version, "-o", binary, ".")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build real artifacts binary: %v\n%s", err, out)
+	}
+	run := filepath.Join(appRoot, "bin", "run")
+	if err := os.Symlink(filepath.Join("..", "libexec", "artifacts-"+version), run); err != nil {
+		t.Fatalf("link installed binary: %v", err)
+	}
+
+	port := freePort(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, run, "serve")
+	cmd.Env = append(os.Environ(),
+		"IKIGENBA_DOMAIN=int.ikigenba.com",
+		"IKIGENBA_ROOT="+root,
+		"ARTIFACTS_IP=127.0.0.1",
+		fmt.Sprintf("ARTIFACTS_PORT=%d", port),
+		"ARTIFACTS_MAX_UPLOAD_BYTES=209715200",
+	)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start installed binary: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			_ = cmd.Process.Kill()
+		}
+	}()
+	waitForHealth(t, port, done, &stdout, &stderr)
+
+	type rpcResponse struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      string          `json:"id"`
+		Result  json.RawMessage `json:"result"`
+		Error   json.RawMessage `json:"error"`
+	}
+	post := func(id, method string) rpcResponse {
+		t.Helper()
+		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":%q,"method":%q,"params":{}}`, id, method)
+		request, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/mcp", port), strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("create %s request: %v", method, err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("X-Owner-Id", "composed-smoke-owner")
+		response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+		if err != nil {
+			t.Fatalf("POST /mcp %s: %v", method, err)
+		}
+		defer response.Body.Close()
+		var decoded rpcResponse
+		if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
+			t.Fatalf("decode %s response: %v", method, err)
+		}
+		if response.StatusCode != http.StatusOK || decoded.JSONRPC != "2.0" || decoded.ID != id || len(decoded.Result) == 0 || len(decoded.Error) != 0 {
+			t.Fatalf("%s status=%d response=%+v, want successful JSON-RPC result", method, response.StatusCode, decoded)
+		}
+		return decoded
+	}
+
+	post("initialize", "initialize")
+	listed := post("tools", "tools/list")
+	var discovery struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(listed.Result, &discovery); err != nil {
+		t.Fatalf("decode tools/list result: %v", err)
+	}
+	want := map[string]bool{
+		"upload": true, "import": true, "list": true, "get": true,
+		"update": true, "set_visibility": true, "delete": true, "guide": true,
+	}
+	foundDomain := 0
+	for _, tool := range discovery.Tools {
+		if tool.Name == "health" || tool.Name == "reflection" {
+			continue
+		}
+		if !want[tool.Name] {
+			t.Fatalf("tools/list returned unexpected or duplicate tool %q: %+v", tool.Name, discovery.Tools)
+		}
+		delete(want, tool.Name)
+		foundDomain++
+	}
+	if foundDomain != 8 || len(want) != 0 {
+		t.Fatalf("tools/list domain set is incomplete: found=%d omitted=%v tools=%+v", foundDomain, want, discovery.Tools)
+	}
+
+	unauthorizedBody := `{"jsonrpc":"2.0","id":"unauthorized","method":"tools/list","params":{}}`
+	request, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/mcp", port), strings.NewReader(unauthorizedBody))
+	if err != nil {
+		t.Fatalf("create unidentified tools/list request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("POST unidentified /mcp tools/list: %v", err)
+	}
+	body, err := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if err != nil {
+		t.Fatalf("read unidentified tools/list response: %v", err)
+	}
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unidentified tools/list status=%d body=%s, want 401", response.StatusCode, body)
+	}
+	var unauthorized map[string]json.RawMessage
+	if json.Unmarshal(body, &unauthorized) == nil && len(unauthorized["result"]) != 0 {
+		t.Fatalf("unidentified tools/list executed a tool: %s", body)
 	}
 }
 

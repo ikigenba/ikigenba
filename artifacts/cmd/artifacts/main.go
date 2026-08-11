@@ -11,6 +11,7 @@ import (
 	"appkit"
 	artifactdata "artifacts/internal/artifacts"
 	"artifacts/internal/db"
+	"artifacts/internal/mcp"
 	artifactweb "artifacts/internal/web"
 	"eventplane/outbox"
 	"registry"
@@ -71,6 +72,11 @@ func artifactsSpec() appkit.Spec {
 				time.Now,
 				loaded.(config).MaxUploadBytes,
 			)
+			handler, err := mcp.New(svc, rt.Version())
+			if err != nil {
+				return err
+			}
+			rt.Handle("POST /mcp", rt.RequireIdentity(handler))
 			rt.Handle("/u/", svc.UploadHandler())
 			svc.MountDownloads(rt)
 			svc.MountContent(rt)
