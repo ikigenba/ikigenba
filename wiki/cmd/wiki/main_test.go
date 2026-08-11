@@ -902,10 +902,16 @@ func TestBuildSpecMatchesDirectMCPToolSurface(t *testing.T) {
 	}
 }
 
-func TestBuildSpecRoutesPageEmbeddingThroughPrompts(t *testing.T) {
+func TestBuildSpecScopesRuntimeEmbeddingAndDeleteCache(t *testing.T) {
+	// R-R1EX-LNNQ
+	// R-R3UQ-D754
+	// R-R6AJ-4QMI
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
+	if _, err := wiki.NewScopeStore(conn).Create(ctx, "s1"); err != nil {
+		t.Fatalf("Create(s1): %v", err)
+	}
 
 	prov := &capturingProvider{responses: []string{
 		`{"subjects":[{
@@ -916,6 +922,10 @@ func TestBuildSpecRoutesPageEmbeddingThroughPrompts(t *testing.T) {
 			"claims":["Acme Robotics opened a recorded embedding lab."]
 		}]}`,
 		`{"title":"Acme Robotics","body":"Acme Robotics opened a recorded embedding lab."}`,
+		`{"sub_queries":["recorded embedding lab"],"keywords":[],"aliases":[]}`,
+		`{"found":true,"text":"Acme Robotics opened the lab.","citations":[{"path":"entity/acme-robotics","title":"Acme Robotics"}]}`,
+		`{"sub_queries":["recorded embedding lab"],"keywords":[],"aliases":[]}`,
+		`{"sub_queries":["recorded embedding lab"],"keywords":[],"aliases":[]}`,
 	}}
 	client, embeds := llmtest.NewClientWithEmbeddings(t, prov, [][]float32{{0.6, 0.8}})
 	extractSite := extract.DefaultCallSite()
@@ -924,8 +934,10 @@ func TestBuildSpecRoutesPageEmbeddingThroughPrompts(t *testing.T) {
 	compileSite.Config.Model = "compile-model"
 	spec := newSpec(staticConfig(wiki.Config{
 		CallSites: wiki.CallSites{
-			Extract: extractSite,
-			Compile: compileSite,
+			Extract:      extractSite,
+			Compile:      compileSite,
+			AskSubject:   ask.DefaultSubjectCallSite(),
+			AskSynthesis: ask.DefaultSynthesisCallSite(),
 		},
 		EmbedSite: wiki.EmbedSite{
 			Model: "recorded-page-embed-model",
@@ -944,7 +956,7 @@ func TestBuildSpecRoutesPageEmbeddingThroughPrompts(t *testing.T) {
 		"jsonrpc":"2.0",
 		"id":"ingest",
 		"method":"tools/call",
-		"params":{"name":"ingest","arguments":{"scope":"default","text":"Acme Robotics opened a recorded embedding lab.","title":"Recorded lab"}}
+		"params":{"name":"ingest","arguments":{"scope":"s1","text":"Acme Robotics opened a recorded embedding lab.","title":"Recorded lab"}}
 	}`)), &ingest); err != nil {
 		t.Fatalf("decode ingest response: %v", err)
 	}
@@ -953,9 +965,47 @@ func TestBuildSpecRoutesPageEmbeddingThroughPrompts(t *testing.T) {
 		t.Fatalf("job subjects = %#v, want one embedded subject", status.Subjects)
 	}
 
+	var ownScope struct {
+		Found bool `json:"found"`
+	}
+	ownScopeText := mcpToolCallText(t, h, `{
+		"jsonrpc":"2.0","id":"ask-s1","method":"tools/call",
+		"params":{"name":"ask","arguments":{"scope":"s1","question":"Where is the recorded embedding lab?"}}
+	}`)
+	if err := json.Unmarshal([]byte(ownScopeText), &ownScope); err != nil || !ownScope.Found {
+		t.Fatalf("s1 meaning ask text = %q decoded %+v, %v; want runtime-upserted subject", ownScopeText, ownScope, err)
+	}
+	var defaultScope struct {
+		Found bool `json:"found"`
+	}
+	if err := json.Unmarshal([]byte(mcpToolCallText(t, h, `{
+		"jsonrpc":"2.0","id":"ask-default","method":"tools/call",
+		"params":{"name":"ask","arguments":{"scope":"default","question":"Where is the recorded embedding lab?"}}
+	}`)), &defaultScope); err != nil || defaultScope.Found {
+		t.Fatalf("default meaning ask = %+v, %v; want no leaked s1 subject", defaultScope, err)
+	}
+
+	mcpToolCallText(t, h, `{
+		"jsonrpc":"2.0","id":"delete-s1","method":"tools/call",
+		"params":{"name":"scope_delete","arguments":{"name":"s1"}}
+	}`)
+	mcpToolCallText(t, h, `{
+		"jsonrpc":"2.0","id":"recreate-s1","method":"tools/call",
+		"params":{"name":"scope_create","arguments":{"name":"s1"}}
+	}`)
+	var afterDelete struct {
+		Found bool `json:"found"`
+	}
+	if err := json.Unmarshal([]byte(mcpToolCallText(t, h, `{
+		"jsonrpc":"2.0","id":"ask-after-delete","method":"tools/call",
+		"params":{"name":"ask","arguments":{"scope":"s1","question":"Where is the recorded embedding lab?"}}
+	}`)), &afterDelete); err != nil || afterDelete.Found {
+		t.Fatalf("recreated s1 meaning ask = %+v, %v; want deleted generation evicted without restart", afterDelete, err)
+	}
+
 	requests := embeds.Requests()
-	if len(requests) != 1 || requests[0].Name != "wiki.embed-page" || requests[0].Role != "document" || requests[0].GroupID == "" || requests[0].GroupID == ingest.JobID || requests[0].Model != "recorded-page-embed-model" || requests[0].Dimensions != 2 {
-		t.Fatalf("prompts embedding requests = %#v, want one labeled document request from buildSpec page embedder", requests)
+	if len(requests) != 4 || requests[0].Name != "wiki.embed-page" || requests[0].Role != "document" || requests[0].GroupID == "" || requests[0].GroupID == ingest.JobID || requests[0].Model != "recorded-page-embed-model" || requests[0].Dimensions != 2 {
+		t.Fatalf("prompts embedding requests = %#v, want one page embedding and three scoped query embeddings", requests)
 	}
 }
 

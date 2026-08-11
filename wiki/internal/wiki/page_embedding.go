@@ -29,7 +29,7 @@ type PageEmbedder interface {
 }
 
 // VectorCache updates the in-memory vector search cache for one subject.
-type VectorCache func(subjectID, title string, vec []float32)
+type VectorCache func(scope, subjectID, title string, vec []float32)
 
 // ServiceOption configures optional service dependencies.
 type ServiceOption func(*Service)
@@ -55,7 +55,7 @@ func WithPageEmbedder(model string, embedder PageEmbedder) ServiceOption {
 }
 
 // WithVectorCacheUpdater installs the in-memory vector cache update hook.
-func WithVectorCacheUpdater(update func(subjectID, title string, vec []float32)) ServiceOption {
+func WithVectorCacheUpdater(update func(scope, subjectID, title string, vec []float32)) ServiceOption {
 	return func(s *Service) {
 		if s == nil {
 			return
@@ -75,7 +75,7 @@ func WithVectorCacheRemover(remove func(subjectID string)) ServiceOption {
 }
 
 // embedAndStore computes and stores the current vector for a compiled page.
-func (s *Service) embedAndStore(ctx context.Context, attr llm.Attribution, p Page) error {
+func (s *Service) embedAndStore(ctx context.Context, attr llm.Attribution, scope string, p Page) error {
 	if s == nil {
 		return fmt.Errorf("wiki: nil service")
 	}
@@ -102,7 +102,7 @@ func (s *Service) embedAndStore(ctx context.Context, attr llm.Attribution, p Pag
 		return err
 	}
 	if s.vectorCache != nil {
-		s.vectorCache(p.SubjectID, p.Title, vec)
+		s.vectorCache(scope, p.SubjectID, p.Title, vec)
 	}
 	return nil
 }
@@ -121,8 +121,9 @@ func (s *Service) DrainEmbeddingCatchUp(ctx context.Context) (int, error) {
 
 func (s *Service) drainEmbeddingCandidates(ctx context.Context) (int, error) {
 	rows, err := s.pages.db.QueryContext(ctx, `
-		SELECT p.id, p.subject_id, p.title, p.body, e.model, e.content_hash
+		SELECT p.id, p.subject_id, p.title, p.body, s.scope, e.model, e.content_hash
 		FROM pages p
+		JOIN subjects s ON s.id = p.subject_id
 		LEFT JOIN page_embeddings e ON e.subject_id = p.subject_id
 		ORDER BY p.id`)
 	if err != nil {
@@ -131,12 +132,13 @@ func (s *Service) drainEmbeddingCandidates(ctx context.Context) (int, error) {
 	defer rows.Close()
 	type candidate struct {
 		page        Page
+		scope       string
 		model, hash *string
 	}
 	var candidates []candidate
 	for rows.Next() {
 		var c candidate
-		if err := rows.Scan(&c.page.ID, &c.page.SubjectID, &c.page.Title, &c.page.Body, &c.model, &c.hash); err != nil {
+		if err := rows.Scan(&c.page.ID, &c.page.SubjectID, &c.page.Title, &c.page.Body, &c.scope, &c.model, &c.hash); err != nil {
 			return 0, err
 		}
 		if c.model == nil || *c.model != s.embedModel || c.hash == nil || *c.hash != pageFingerprint(c.page) {
@@ -152,7 +154,7 @@ func (s *Service) drainEmbeddingCandidates(ctx context.Context) (int, error) {
 	rootCtx, groupID := s.recorder.StartRoot(ctx, "wiki.embedding-catch-up", map[string]any{"pages": len(candidates)})
 	attr := llm.Attribution{Origin: "service:wiki", GroupID: groupID}
 	for i, candidate := range candidates {
-		if err := s.embedAndStore(rootCtx, attr, candidate.page); err != nil {
+		if err := s.embedAndStore(rootCtx, attr, candidate.scope, candidate.page); err != nil {
 			return i, err
 		}
 	}

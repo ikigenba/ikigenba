@@ -15,8 +15,8 @@ func TestVectorCacheReplaceHydratesEntriesAndDefensivelyCopies(t *testing.T) {
 	// R-3WOB-6U4Q
 	cache := NewVectorCache()
 	entries := []vectorEntry{
-		{SubjectID: "subject-a", Title: "Alpha", Vec: []float32{1, 0}},
-		{SubjectID: "subject-b", Title: "Beta", Vec: []float32{0, 1}},
+		{Scope: "default", SubjectID: "subject-a", Title: "Alpha", Vec: []float32{1, 0}},
+		{Scope: "default", SubjectID: "subject-b", Title: "Beta", Vec: []float32{0, 1}},
 	}
 	cache.Replace(entries)
 	entries[0].Vec[0] = 0
@@ -34,10 +34,10 @@ func TestVectorCacheUpsertReplacesExistingSubject(t *testing.T) {
 	// R-3XW7-KLVF
 	cache := NewVectorCache()
 	cache.Replace([]vectorEntry{
-		{SubjectID: "subject-a", Title: "Old Alpha", Vec: []float32{0, 1}},
-		{SubjectID: "subject-b", Title: "Beta", Vec: []float32{0.5, 0.5}},
+		{Scope: "default", SubjectID: "subject-a", Title: "Old Alpha", Vec: []float32{0, 1}},
+		{Scope: "default", SubjectID: "subject-b", Title: "Beta", Vec: []float32{0.5, 0.5}},
 	})
-	cache.Upsert(vectorEntry{SubjectID: "subject-a", Title: "New Alpha", Vec: []float32{1, 0}})
+	cache.Upsert(vectorEntry{Scope: "default", SubjectID: "subject-a", Title: "New Alpha", Vec: []float32{1, 0}})
 
 	got := cache.nearest("default", []float32{1, 0}, 10)
 	if len(got) != 2 {
@@ -52,8 +52,8 @@ func TestVectorCacheRemoveEvictsSubjectFromNearestResults(t *testing.T) {
 	// R-EV2H-6RKN
 	cache := NewVectorCache()
 	cache.Replace([]vectorEntry{
-		{SubjectID: "subject-loser", Title: "Loser", Vec: []float32{1, 0}},
-		{SubjectID: "subject-winner", Title: "Winner", Vec: []float32{0.5, 0.5}},
+		{Scope: "default", SubjectID: "subject-loser", Title: "Loser", Vec: []float32{1, 0}},
+		{Scope: "default", SubjectID: "subject-winner", Title: "Winner", Vec: []float32{0.5, 0.5}},
 	})
 
 	cache.Remove(" subject-loser ")
@@ -71,9 +71,9 @@ func TestVectorRetrieverEmbedsQueryAndReturnsCosineTopK(t *testing.T) {
 	// R-3Z43-YDM4
 	cache := NewVectorCache()
 	cache.Replace([]vectorEntry{
-		{SubjectID: "subject-a", Title: "Alpha", Vec: []float32{1, 0}},
-		{SubjectID: "subject-b", Title: "Beta", Vec: []float32{0.8, 0.6}},
-		{SubjectID: "subject-c", Title: "Gamma", Vec: []float32{0, 1}},
+		{Scope: "default", SubjectID: "subject-a", Title: "Alpha", Vec: []float32{1, 0}},
+		{Scope: "default", SubjectID: "subject-b", Title: "Beta", Vec: []float32{0.8, 0.6}},
+		{Scope: "default", SubjectID: "subject-c", Title: "Gamma", Vec: []float32{0, 1}},
 	})
 	var embedded []string
 	retriever := &vectorRetriever{
@@ -137,7 +137,7 @@ func TestVectorRetrieverSearchIsScopeBounded(t *testing.T) {
 func TestVectorCacheConcurrentReadsAndWrites(t *testing.T) {
 	// R-40C0-C5CT
 	cache := NewVectorCache()
-	cache.Replace([]vectorEntry{{SubjectID: "subject-a", Title: "Alpha", Vec: []float32{1, 0}}})
+	cache.Replace([]vectorEntry{{Scope: "default", SubjectID: "subject-a", Title: "Alpha", Vec: []float32{1, 0}}})
 
 	var wg sync.WaitGroup
 	for i := 0; i < 16; i++ {
@@ -157,8 +157,8 @@ func TestVectorCacheConcurrentReadsAndWrites(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for j := 0; j < 200; j++ {
-			cache.Upsert(vectorEntry{SubjectID: "subject-a", Title: "Alpha", Vec: []float32{1, 0}})
-			cache.Upsert(vectorEntry{SubjectID: "subject-b", Title: "Beta", Vec: []float32{0, 1}})
+			cache.Upsert(vectorEntry{Scope: "default", SubjectID: "subject-a", Title: "Alpha", Vec: []float32{1, 0}})
+			cache.Upsert(vectorEntry{Scope: "default", SubjectID: "subject-b", Title: "Beta", Vec: []float32{0, 1}})
 		}
 	}()
 	wg.Wait()
@@ -166,5 +166,43 @@ func TestVectorCacheConcurrentReadsAndWrites(t *testing.T) {
 	got := cache.nearest("default", []float32{0, 1}, 1)
 	if len(got) != 1 || got[0].PageID != "subject-b" || got[0].Score != 1 {
 		t.Fatalf("nearest after concurrent upserts = %+v, want Beta with cosine 1", got)
+	}
+}
+
+func TestVectorCacheRejectsEntriesWithoutScope(t *testing.T) {
+	// R-R2MT-ZFEF
+	for _, test := range []struct {
+		name string
+		call func()
+	}{
+		{name: "upsert", call: func() { NewVectorCache().Upsert(vectorEntry{SubjectID: "subject-a"}) }},
+		{name: "replace", call: func() { NewVectorCache().Replace([]vectorEntry{{SubjectID: "subject-a"}}) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("cache mutation did not panic for an empty scope")
+				}
+			}()
+			test.call()
+		})
+	}
+}
+
+func TestVectorCacheRemoveScopeEvictsOnlyMatchingEntries(t *testing.T) {
+	// R-R3UQ-D754
+	cache := NewVectorCache()
+	cache.Replace([]vectorEntry{
+		{Scope: "s1", SubjectID: "subject-s1", Title: "S1", Vec: []float32{1}},
+		{Scope: "s2", SubjectID: "subject-s2", Title: "S2", Vec: []float32{1}},
+	})
+
+	cache.RemoveScope("s1")
+
+	if got := cache.nearest("s1", []float32{1}, 10); len(got) != 0 {
+		t.Fatalf("s1 hits after removal = %+v, want none", got)
+	}
+	if got := cache.nearest("s2", []float32{1}, 10); len(got) != 1 || got[0].PageID != "subject-s2" {
+		t.Fatalf("s2 hits after s1 removal = %+v, want subject-s2", got)
 	}
 }

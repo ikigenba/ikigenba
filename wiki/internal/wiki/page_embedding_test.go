@@ -45,7 +45,7 @@ func TestEmbedAndStoreUsesDocumentRoleAndUpdatesStoreAndCache(t *testing.T) {
 		Body:      "Acme Robotics opened a Tulsa lab.",
 	}
 
-	if err := svc.embedAndStore(ctx, llm.Attribution{}, page); err != nil {
+	if err := svc.embedAndStore(ctx, llm.Attribution{}, "s1", page); err != nil {
 		t.Fatalf("embedAndStore: %v", err)
 	}
 	if len(embedder.inputs) != 1 || !reflect.DeepEqual(embedder.inputs[0], []string{page.Body}) {
@@ -72,6 +72,7 @@ func TestEmbedAndStoreUsesDocumentRoleAndUpdatesStoreAndCache(t *testing.T) {
 	}
 
 	if len(cache.entries) != 1 ||
+		cache.entries[0].scope != "s1" ||
 		cache.entries[0].subjectID != page.SubjectID ||
 		cache.entries[0].title != page.Title ||
 		!reflect.DeepEqual(cache.entries[0].vec, []float32{0.25, 0.75}) {
@@ -115,7 +116,7 @@ func TestEmbedAndStoreOverwritesExistingPageVector(t *testing.T) {
 		Body:      "Acme Robotics opened a refreshed Tulsa lab.",
 	}
 
-	if err := svc.embedAndStore(ctx, llm.Attribution{}, page); err != nil {
+	if err := svc.embedAndStore(ctx, llm.Attribution{}, "s1", page); err != nil {
 		t.Fatalf("embedAndStore: %v", err)
 	}
 
@@ -136,6 +137,7 @@ func TestEmbedAndStoreOverwritesExistingPageVector(t *testing.T) {
 		t.Fatalf("embedding = %+v, want overwritten current page vector", got)
 	}
 	if len(cache.entries) != 1 ||
+		cache.entries[0].scope != "s1" ||
 		cache.entries[0].subjectID != page.SubjectID ||
 		cache.entries[0].title != page.Title ||
 		!reflect.DeepEqual(cache.entries[0].vec, []float32{0.5, 0.25}) {
@@ -226,6 +228,9 @@ func TestEmbeddingCatchUpUsesOneFreshRootPerDrainCycle(t *testing.T) {
 		{ID: "page-b", SubjectID: "subject-b", Title: "B", Body: "B body"},
 		{ID: "page-c", SubjectID: "subject-c", Title: "C", Body: "C body"},
 	} {
+		if err := NewSubjectStore(conn).Save(ctx, Subject{ID: p.SubjectID, Name: p.Title, Type: "entity"}); err != nil {
+			t.Fatalf("seed subject %s: %v", p.SubjectID, err)
+		}
 		if err := pages.Upsert(ctx, p); err != nil {
 			t.Fatalf("seed page %s: %v", p.ID, err)
 		}
@@ -277,6 +282,33 @@ func TestEmbeddingCatchUpUsesOneFreshRootPerDrainCycle(t *testing.T) {
 		if call.GroupID != second || call.Header != second || call.Name != "wiki.embed-page" {
 			t.Fatalf("second cycle calls = %+v, want one payload/header root %q", calls[3:], second)
 		}
+	}
+}
+
+func TestEmbeddingCatchUpLabelsCacheEntryWithSubjectsScope(t *testing.T) {
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	if _, err := NewScopeStore(conn).Create(ctx, "s1"); err != nil {
+		t.Fatalf("Create(s1): %v", err)
+	}
+	if err := NewSubjectStore(conn).Save(ctx, "s1", Subject{ID: "subject-s1", Name: "S1", Type: "entity"}); err != nil {
+		t.Fatalf("seed s1 subject: %v", err)
+	}
+	if err := NewPageStore(conn).Upsert(ctx, Page{ID: "subject-s1", SubjectID: "subject-s1", Title: "S1", Body: "Scoped body"}); err != nil {
+		t.Fatalf("seed s1 page: %v", err)
+	}
+	cache := &recordingVectorCache{}
+	svc := NewService(conn, nil, nil, time.Now,
+		WithPageEmbedder("model-a", &recordingPageEmbedder{vectors: [][]float32{{1}}}),
+		WithVectorCacheUpdater(cache.Upsert),
+	)
+
+	if n, err := svc.DrainEmbeddingCatchUp(ctx); err != nil || n != 1 {
+		t.Fatalf("DrainEmbeddingCatchUp = %d, %v; want 1, nil", n, err)
+	}
+	if len(cache.entries) != 1 || cache.entries[0].scope != "s1" || cache.entries[0].subjectID != "subject-s1" {
+		t.Fatalf("catch-up cache entries = %+v, want subject-s1 labeled s1", cache.entries)
 	}
 }
 
@@ -423,13 +455,15 @@ type recordingVectorCache struct {
 }
 
 type recordingVectorEntry struct {
+	scope     string
 	subjectID string
 	title     string
 	vec       []float32
 }
 
-func (c *recordingVectorCache) Upsert(subjectID, title string, vec []float32) {
+func (c *recordingVectorCache) Upsert(scope, subjectID, title string, vec []float32) {
 	c.entries = append(c.entries, recordingVectorEntry{
+		scope:     scope,
 		subjectID: subjectID,
 		title:     title,
 		vec:       append([]float32(nil), vec...),

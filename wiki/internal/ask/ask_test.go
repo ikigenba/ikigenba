@@ -57,7 +57,7 @@ func TestAskThreadsReceivedChainThroughEveryPromptsCall(t *testing.T) {
 
 	client := llm.New(server.URL, server.Client())
 	cache := retrieve.NewVectorCache()
-	cache.Upsert(retrieve.VectorEntry{SubjectID: "subject-ada", Title: "Ada", Vec: []float32{1}})
+	cache.Upsert(retrieve.VectorEntry{Scope: "default", SubjectID: "subject-ada", Title: "Ada", Vec: []float32{1}})
 	vector := retrieve.NewVectorRetriever(func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error) {
 		vectors, err := client.Embed(ctx, llm.EmbedSite{Name: "wiki.embed-query", Model: "embed", Dims: 1}, attr, "query", []string{text})
 		if err != nil {
@@ -228,7 +228,7 @@ func TestAskAttributesEveryPromptsCallToRequestIdentity(t *testing.T) {
 
 	client := llm.New(server.URL, server.Client())
 	cache := retrieve.NewVectorCache()
-	cache.Upsert(retrieve.VectorEntry{SubjectID: "subject-ada", Title: "Ada", Vec: []float32{1}})
+	cache.Upsert(retrieve.VectorEntry{Scope: "default", SubjectID: "subject-ada", Title: "Ada", Vec: []float32{1}})
 	vector := retrieve.NewVectorRetriever(func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error) {
 		vectors, err := client.Embed(ctx, llm.EmbedSite{Name: "wiki.embed-query", Model: "embed", Dims: 1}, attr, "query", []string{text})
 		if err != nil {

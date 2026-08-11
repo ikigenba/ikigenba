@@ -42,6 +42,7 @@ func (c *vectorCache) Replace(all []vectorEntry) {
 	if c == nil {
 		return
 	}
+	validateVectorEntries(all)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -52,6 +53,7 @@ func (c *vectorCache) Upsert(e vectorEntry) {
 	if c == nil {
 		return
 	}
+	validateVectorEntry(e)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -63,6 +65,24 @@ func (c *vectorCache) Upsert(e vectorEntry) {
 		}
 	}
 	c.entries = append(c.entries, e)
+}
+
+// RemoveScope evicts every vector labeled with scope.
+func (c *vectorCache) RemoveScope(scope string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	kept := c.entries[:0]
+	for _, entry := range c.entries {
+		if entry.Scope != scope {
+			kept = append(kept, entry)
+		}
+	}
+	clear(c.entries[len(kept):])
+	c.entries = kept
 }
 
 func (c *vectorCache) Remove(subjectID string) {
@@ -162,11 +182,20 @@ func cloneVectorEntries(entries []vectorEntry) []vectorEntry {
 }
 
 func cloneVectorEntry(e vectorEntry) vectorEntry {
-	if e.Scope == "" {
-		e.Scope = "default"
-	}
 	e.Vec = append([]float32(nil), e.Vec...)
 	return e
+}
+
+func validateVectorEntries(entries []vectorEntry) {
+	for _, entry := range entries {
+		validateVectorEntry(entry)
+	}
+}
+
+func validateVectorEntry(entry vectorEntry) {
+	if entry.Scope == "" {
+		panic("retrieve: vector entry scope is empty")
+	}
 }
 
 func dot(a, b []float32) float64 {

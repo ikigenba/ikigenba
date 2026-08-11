@@ -428,7 +428,7 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 		s.AskInvalidate(job.Scope)
 	}
 	for _, page := range pagesToEmbed {
-		if err := s.embedAndStore(ctx, attr, page); err != nil {
+		if err := s.embedAndStore(ctx, attr, job.Scope, page); err != nil {
 			return err
 		}
 	}
@@ -625,7 +625,7 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	if s.AskInvalidate != nil {
 		s.AskInvalidate(job.Scope)
 	}
-	return s.embedAndStore(ctx, attr, winnerPage)
+	return s.embedAndStore(ctx, attr, job.Scope, winnerPage)
 }
 
 func jobAttribution(job Job) llm.Attribution {

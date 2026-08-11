@@ -88,8 +88,8 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			svc = wiki.NewService(conns, extractor, compiler, time.Now,
 				wiki.WithTelemetryRecorder(rt.Recorder()),
 				wiki.WithPageEmbedder(cfg.EmbedSite.Model, pageEmbedder),
-				wiki.WithVectorCacheUpdater(func(subjectID, title string, vec []float32) {
-					vectorCache.Upsert(retrieve.VectorEntry{SubjectID: subjectID, Title: title, Vec: vec})
+				wiki.WithVectorCacheUpdater(func(scope, subjectID, title string, vec []float32) {
+					vectorCache.Upsert(retrieve.VectorEntry{Scope: scope, SubjectID: subjectID, Title: title, Vec: vec})
 				}),
 				wiki.WithVectorCacheRemover(vectorCache.Remove),
 			)
@@ -136,6 +136,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			aliases := wiki.NewAliasStore(read)
 			scopes := wiki.NewScopeStore(conns)
 			scopes.AskInvalidate = askCache.Invalidate
+			scopes.VectorInvalidate = vectorCache.RemoveScope
 			statusService := publicStatusService{service: svc}
 			rt.Handle("/", web.NewHandler(rt.Service(), rt.Version(), wiki.Mount, rt.WWW(),
 				web.WithScopeStore(scopes),

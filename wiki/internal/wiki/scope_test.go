@@ -245,6 +245,79 @@ func TestDeleteInvalidatesCachedAnswerBeforeSameNamedScopeCanReturn(t *testing.T
 	}
 }
 
+func TestScopeStoreDeleteInvalidatesScopeVectorsAfterCommit(t *testing.T) {
+	// R-R3UQ-D754
+	// R-R52M-QYVT
+	ctx := context.Background()
+	db := migratedDB(t, ctx)
+	defer db.Close()
+	store := NewScopeStore(db)
+	for _, scope := range []string{"s1", "s2"} {
+		if _, err := store.Create(ctx, scope); err != nil {
+			t.Fatalf("Create(%s): %v", scope, err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO subjects (id, scope, name, norm_name, type) VALUES (?, ?, ?, ?, 'entity')`, "subject-"+scope, scope, scope, scope); err != nil {
+			t.Fatalf("seed %s subject: %v", scope, err)
+		}
+	}
+	vectors := map[string][]string{"s1": {"subject-s1"}, "s2": {"subject-s2"}}
+	store.VectorInvalidate = func(scope string) {
+		if got := countRows(t, ctx, db, `SELECT COUNT(*) FROM subjects WHERE scope = '`+scope+`'`); got != 0 {
+			t.Errorf("vector invalidation saw %d uncommitted subjects in %s", got, scope)
+		}
+		delete(vectors, scope)
+	}
+
+	if err := store.Delete(ctx, "s1"); err != nil {
+		t.Fatalf("Delete(s1): %v", err)
+	}
+	if hits := vectors["s1"]; len(hits) != 0 {
+		t.Fatalf("s1 meaning hits after delete = %#v, want none", hits)
+	}
+	if hits := vectors["s2"]; len(hits) != 1 || hits[0] != "subject-s2" {
+		t.Fatalf("s2 meaning hits after s1 delete = %#v, want subject-s2", hits)
+	}
+}
+
+func TestScopeStoreDeleteFailureDoesNotInvalidateScopeVectors(t *testing.T) {
+	// R-R52M-QYVT
+	ctx := context.Background()
+	db := migratedDB(t, ctx)
+	defer db.Close()
+	store := NewScopeStore(db)
+	if _, err := store.Create(ctx, "s1"); err != nil {
+		t.Fatalf("Create(s1): %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE force_commit_parent (id TEXT PRIMARY KEY)`); err != nil {
+		t.Fatalf("create commit parent: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE force_commit_child (parent_id TEXT REFERENCES force_commit_parent(id) DEFERRABLE INITIALLY DEFERRED)`); err != nil {
+		t.Fatalf("create commit child: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TRIGGER force_scope_commit_failure BEFORE DELETE ON scopes WHEN OLD.name = 's1' BEGIN INSERT INTO force_commit_child(parent_id) VALUES ('missing'); END`); err != nil {
+		t.Fatalf("create commit failure trigger: %v", err)
+	}
+	vectors := map[string][]string{"s1": {"subject-s1"}}
+	fired := false
+	store.VectorInvalidate = func(scope string) {
+		fired = true
+		delete(vectors, scope)
+	}
+
+	if err := store.Delete(ctx, "s1"); err == nil {
+		t.Fatal("Delete(s1) error = nil, want forced transaction failure")
+	}
+	if fired {
+		t.Fatal("VectorInvalidate fired for a failed delete transaction")
+	}
+	if hits := vectors["s1"]; len(hits) != 1 || hits[0] != "subject-s1" {
+		t.Fatalf("s1 meaning hits after failed delete = %#v, want cached subject-s1", hits)
+	}
+	if got := countRows(t, ctx, db, `SELECT COUNT(*) FROM scopes WHERE name = 's1'`); got != 1 {
+		t.Fatalf("s1 rows after failed delete = %d, want rollback preserved scope", got)
+	}
+}
+
 func TestScopeStoreDeleteProtectsDefaultAndDeletesOnlyTargetScopeContent(t *testing.T) {
 	// R-H3M1-VUKM
 	ctx := context.Background()

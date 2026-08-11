@@ -784,13 +784,15 @@ type mergeVectorCacheRecorder struct {
 }
 
 type mergeVectorCacheUpsert struct {
+	scope     string
 	subjectID string
 	title     string
 	vec       []float32
 }
 
-func (c *mergeVectorCacheRecorder) Upsert(subjectID, title string, vec []float32) {
+func (c *mergeVectorCacheRecorder) Upsert(scope, subjectID, title string, vec []float32) {
 	c.upserts = append(c.upserts, mergeVectorCacheUpsert{
+		scope:     scope,
 		subjectID: subjectID,
 		title:     title,
 		vec:       append([]float32(nil), vec...),
