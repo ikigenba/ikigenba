@@ -1,0 +1,8 @@
+Document header:
+source: mcp:ingest_text
+title: The Chronicle of Svenhold
+tags: fiction, chronicle
+received on: 2026-07-18
+
+Source text:
+In the chronicle's own timeline, Svenhold was founded 130 years before the story's present.

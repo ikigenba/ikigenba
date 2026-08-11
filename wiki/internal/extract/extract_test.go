@@ -21,6 +21,25 @@ func TestDefaultPromptInstructionsMatchesPromptFile(t *testing.T) {
 	}
 }
 
+func TestDefaultPromptInstructionsConditionallyAnchorsRelativeTime(t *testing.T) {
+	// R-8TAF-XBSM
+	for _, phrase := range []string{
+		"only when the document speaks from the real-world present",
+		"When in doubt, keep it relative",
+	} {
+		if !strings.Contains(DefaultPromptInstructions, phrase) {
+			t.Fatalf("DefaultPromptInstructions does not contain %q", phrase)
+		}
+	}
+	if strings.Contains(DefaultPromptInstructions, "Resolve relative time against the header's") {
+		t.Fatal("DefaultPromptInstructions contains retired unconditional relative-time rule")
+	}
+	if !strings.Contains(DefaultPromptInstructions, "Svenhold was founded 130 years before the story's present") ||
+		!strings.Contains(DefaultPromptInstructions, `use occurred_at ""; do not infer 1896`) {
+		t.Fatal("DefaultPromptInstructions does not contain the narrative relative-time counter-example")
+	}
+}
+
 func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 	prov := &scriptedProvider{responses: []string{`{
 		"subjects": [

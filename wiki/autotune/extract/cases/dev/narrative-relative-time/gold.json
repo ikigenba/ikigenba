@@ -1,0 +1,21 @@
+{
+  "difficulty": "hard",
+  "header": {
+    "source": "mcp:ingest_text",
+    "title": "The Chronicle of Svenhold",
+    "tags": ["fiction", "chronicle"],
+    "received_at": "2026-07-18T16:00:00Z"
+  },
+  "gold": [
+    {
+      "type": "entity",
+      "kind": "fictional place",
+      "name": "Svenhold",
+      "aliases": [],
+      "occurred_at": "",
+      "claims": [
+        "Svenhold was founded 130 years before the story's present."
+      ]
+    }
+  ]
+}

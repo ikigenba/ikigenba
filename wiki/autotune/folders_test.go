@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -98,6 +99,38 @@ func TestAllFoldersHaveValidDisjointCases(t *testing.T) {
 		if gold.ExpectedFound {
 			t.Fatalf("expected-empty seed %s has expected_found=true", path)
 		}
+	}
+}
+
+func TestExtractNarrativeRelativeTimeDevCasePreservesRelativeExpression(t *testing.T) {
+	// R-8UIC-B3JB
+	caseDir := filepath.Join("extract", "cases", "dev", "narrative-relative-time")
+	input, err := os.ReadFile(filepath.Join(caseDir, "input.txt"))
+	if err != nil {
+		t.Fatalf("read narrative relative-time input: %v", err)
+	}
+	const relativeExpression = "130 years before the story's present"
+	if !bytes.Contains(input, []byte(relativeExpression)) || !bytes.Contains(input, []byte("Source text:\nIn the chronicle's own timeline")) {
+		t.Fatalf("input = %q, want a relative-time expression inside explicit narrative text", input)
+	}
+
+	var fixture struct {
+		Gold []struct {
+			Name       string   `json:"name"`
+			OccurredAt string   `json:"occurred_at"`
+			Claims     []string `json:"claims"`
+		} `json:"gold"`
+	}
+	readJSON(t, filepath.Join(caseDir, "gold.json"), &fixture)
+	if len(fixture.Gold) != 1 {
+		t.Fatalf("gold subjects = %d, want 1 affected narrative subject", len(fixture.Gold))
+	}
+	subject := fixture.Gold[0]
+	if subject.Name != "Svenhold" || subject.OccurredAt != "" {
+		t.Fatalf("gold subject = %#v, want Svenhold with empty occurred_at", subject)
+	}
+	if len(subject.Claims) != 1 || !strings.Contains(subject.Claims[0], relativeExpression) || strings.Contains(subject.Claims[0], "1896") {
+		t.Fatalf("gold claims = %#v, want the relative expression preserved without an inferred absolute year", subject.Claims)
 	}
 }
 

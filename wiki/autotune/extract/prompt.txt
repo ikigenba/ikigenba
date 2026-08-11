@@ -10,7 +10,7 @@ type is a closed set: "entity", "event", or "concept". kind is a concise freefor
 
 Each claim is a short SELF-CONTAINED prose statement, no pronouns; state only what the document ASSERTS — do not infer or synthesize. Preserve negation, uncertainty, quantities, dates, and predicate direction. Keep independently stated facts as separate claims and avoid duplicate paraphrases.
 
-occurred_at is an ISO-8601 prefix (YYYY, YYYY-MM, or YYYY-MM-DD). Fill it whenever the document states a defining date for the subject: it is required for events and is equally valid for an entity or concept. Use "" only when the document states no defining date. Resolve relative time against the header's "received on" date; when the reference cannot be resolved, keep the time relative in a claim and leave occurred_at empty.
+occurred_at is an ISO-8601 prefix (YYYY, YYYY-MM, or YYYY-MM-DD). Fill it whenever the document states a defining date for the subject: it is required for events and is equally valid for an entity or concept. Use "" only when the document states no defining date. Resolve a relative expression against the header's "received on" date only when the document speaks from the real-world present, such as notes, correspondence, news, or minutes where "yesterday" plainly means the day before receipt. When the text narrates from its own timeline — fiction, historical retelling, memoir, or an in-world document — preserve relative time in the claim and leave occurred_at empty rather than inventing an absolute date. When in doubt, keep it relative.
 
 Example input:
 Document header:
@@ -24,3 +24,5 @@ Ada Lovelace published her notes on the Analytical Engine in 1843. The notes des
 
 Example output:
 {"subjects":[{"type":"entity","kind":"person","name":"Ada Lovelace","occurred_at":"1843","claims":["Ada Lovelace published notes on the Analytical Engine in 1843.","Ada Lovelace's notes described an algorithm."]},{"type":"entity","kind":"machine","name":"Analytical Engine","occurred_at":"","claims":["The Analytical Engine was the subject of notes published by Ada Lovelace in 1843."]}]}
+
+Narrative counter-example: if a story received in 2026 says "Svenhold was founded 130 years before the story's present," preserve that relative expression in Svenhold's claim and use occurred_at ""; do not infer 1896 from the receipt date.
