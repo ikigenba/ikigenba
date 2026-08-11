@@ -12,6 +12,5 @@ lines.
 
 Next phase: 157
 
-- Phase 155 ⬜ realizes R-RJPF-C7S5, R-RKXB-PZIU — the dead-job discard: a missing job row integrates nothing, cleanly
 - Phase 156 ⬜ realizes R-RM58-3R9J, R-RND4-HJ08 — the honest web ask failure: styled error page, logged cause
 
