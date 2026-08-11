@@ -12,5 +12,3 @@ lines.
 
 Next phase: 144
 
-- Phase 143 ⬜ realizes R-2L34-0E1U, R-2MB0-E5SJ — ask page links footer matches the subject page's two-column block
-
