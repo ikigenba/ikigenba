@@ -48,6 +48,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			{Key: "SEARCH_DEFAULT", Value: strconv.Itoa(wiki.SearchDefault)},
 			{Key: "SEARCH_CAP", Value: strconv.Itoa(wiki.SearchCap)},
 			{Key: "ASK_BODY_BUDGET", Value: strconv.Itoa(wiki.AskBodyBudget)},
+			{Key: "ASK_CACHE_CAP", Value: strconv.Itoa(wiki.AskCacheCapDefault)},
 		},
 		Migrations: db.FS,
 		Config: func(getenv func(string) string) (any, error) {
@@ -108,6 +109,8 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 				cfg.CallSites.AskSynthesis,
 				ask.WithBodyBudget(cfg.AskBodyBudget),
 			)
+			askCache := ask.NewCache(asker, cfg.AskCacheCap)
+			svc.AskInvalidate = askCache.Invalidate
 			webBase := strings.TrimRight(rt.AuthServer(), "/") + wiki.Mount + "subject/"
 			webPageService := pathPageService{
 				resolver: wiki.NewResolver(read),
@@ -132,12 +135,13 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			jobs := wiki.NewJobStore(conns)
 			aliases := wiki.NewAliasStore(read)
 			scopes := wiki.NewScopeStore(conns)
+			scopes.AskInvalidate = askCache.Invalidate
 			statusService := publicStatusService{service: svc}
 			rt.Handle("/", web.NewHandler(rt.Service(), rt.Version(), wiki.Mount, rt.WWW(),
 				web.WithScopeStore(scopes),
 				web.WithRecentLister(recentAdapter{svc: svc}),
 				web.WithKeywordRetriever(retrieve.NewKeywordRetriever(read)),
-				web.WithAsker(asker),
+				web.WithAsker(askCache),
 				web.WithMentioner(mentionAdapter{svc: svc, webBase: webBase}),
 				web.WithLinkifier(svc, webBase),
 				web.WithPageFinder(webPageService),
@@ -155,7 +159,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 				mcp.WithClaimListService(claimService),
 				mcp.WithPagePathService(pageService),
 				mcp.WithMentionLinkifier(svc),
-				mcp.WithAskFunc(asker.Ask),
+				mcp.WithAskFunc(askCache.Ask),
 				mcp.WithScopeService(scopes),
 			)
 			if err != nil {

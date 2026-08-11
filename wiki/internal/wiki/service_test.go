@@ -1023,6 +1023,54 @@ func TestIngestIntegratesOnlyIntoNamedScope(t *testing.T) {
 	}
 }
 
+func TestSuccessfulIntegrateInvalidatesOnlyTheJobsScope(t *testing.T) {
+	// R-0DQI-XKD5
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	for _, scope := range []string{"s1", "s2"} {
+		if _, err := NewScopeStore(conn).Create(ctx, scope); err != nil {
+			t.Fatalf("Create(%s): %v", scope, err)
+		}
+	}
+
+	cache := map[string]string{"s1": "old s1 answer", "s2": "old s2 answer"}
+	computes := map[string]int{}
+	extractor := &recordingExtractor{batches: [][]extract.ExtractedSubject{{{
+		Name: "Acme Robotics", Type: "entity", Claims: []string{"new s1 content"},
+	}}}}
+	svc := NewService(conn, extractor, &recordingCompiler{}, time.Now)
+	svc.AskInvalidate = func(scope string) { delete(cache, scope) }
+	if _, err := svc.Ingest(ctx, "s1", "owner", "owner@example.com", "source", "title", nil); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
+		t.Fatalf("ProcessNext = %v, %v; want true, nil", processed, err)
+	}
+	ask := func(scope string) string {
+		if answer, ok := cache[scope]; ok {
+			return answer
+		}
+		computes[scope]++
+		subject, err := NewSubjectStore(conn).GetByNormName(ctx, scope, "Acme Robotics")
+		if err != nil {
+			t.Fatalf("GetByNormName(%s): %v", scope, err)
+		}
+		page, err := NewPageStore(conn).GetBySubject(ctx, subject.ID)
+		if err != nil {
+			t.Fatalf("GetBySubject(%s): %v", scope, err)
+		}
+		cache[scope] = page.Body
+		return page.Body
+	}
+	if got := ask("s1"); got != "new s1 content" || computes["s1"] != 1 {
+		t.Fatalf("next s1 ask = %q with %d computes, want new content from one recomputation", got, computes["s1"])
+	}
+	if got := ask("s2"); got != "old s2 answer" || computes["s2"] != 0 {
+		t.Fatalf("s2 cached answer = %q, want untouched hit", got)
+	}
+}
+
 func assertTableCount(t *testing.T, ctx context.Context, conn interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, table string, want int) {

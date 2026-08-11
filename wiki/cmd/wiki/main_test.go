@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -103,6 +104,50 @@ func TestManifestDeclaresAskBodyBudget(t *testing.T) {
 		}
 	}
 	t.Fatal("manifest extras do not declare ASK_BODY_BUDGET")
+}
+
+func TestAskCacheCapacityParsesFailLoudAndIsDeclared(t *testing.T) {
+	// R-0IM4-GNBX
+	tests := []struct {
+		name    string
+		raw     string
+		want    int
+		wantErr bool
+	}{
+		{name: "unset default", want: wiki.AskCacheCapDefault},
+		{name: "positive", raw: "37", want: 37},
+		{name: "disabled", raw: "0", want: 0},
+		{name: "negative", raw: "-1", wantErr: true},
+		{name: "non numeric", raw: "many", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := wiki.NewConfig(func(key string) string {
+				if key == "ASK_CACHE_CAP" {
+					return tt.raw
+				}
+				return ""
+			})
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "ASK_CACHE_CAP") {
+					t.Fatalf("NewConfig error = %v, want fail-loud ASK_CACHE_CAP error", err)
+				}
+				return
+			}
+			if err != nil || cfg.AskCacheCap != tt.want {
+				t.Fatalf("NewConfig AskCacheCap = %d, %v; want %d, nil", cfg.AskCacheCap, err, tt.want)
+			}
+		})
+	}
+	for _, extra := range manifestExtras(newSpec(wiki.NewConfig).ManifestExtras) {
+		if extra.Key == "ASK_CACHE_CAP" {
+			if extra.Value != "500" || extra.Value != strconv.Itoa(wiki.AskCacheCapDefault) {
+				t.Fatalf("manifest ASK_CACHE_CAP = %q, want 500", extra.Value)
+			}
+			return
+		}
+	}
+	t.Fatal("manifest extras do not declare ASK_CACHE_CAP")
 }
 
 func TestSpecDeclaresServedMCPService(t *testing.T) {
@@ -1069,6 +1114,69 @@ func TestBuildSpecRoutesQueryEmbeddingThroughPrompts(t *testing.T) {
 	}
 }
 
+func TestBuildSpecSharesOneAskCacheAcrossMCPAndWeb(t *testing.T) {
+	// R-0L1X-86TB
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subject := wiki.Subject{ID: "subject-shared", Name: "Shared Scheduler", Type: "entity"}
+	if err := wiki.NewSubjectStore(conn).Save(ctx, subject); err != nil {
+		t.Fatalf("Save subject: %v", err)
+	}
+	if err := wiki.NewPageStore(conn).Upsert(ctx, wiki.Page{
+		ID: subject.ID, SubjectID: subject.ID, Title: subject.Name, Body: "Shared Scheduler owns the queue.",
+	}); err != nil {
+		t.Fatalf("Upsert page: %v", err)
+	}
+	if err := wiki.NewEmbeddingStore(conn).Upsert(ctx, wiki.Embedding{
+		SubjectID: subject.ID, Model: "shared-model", Dims: 1, Vec: []float32{1}, ContentHash: "seed", UpdatedAt: 1,
+	}); err != nil {
+		t.Fatalf("Upsert embedding: %v", err)
+	}
+
+	provider := &capturingProvider{responses: []string{
+		`{"sub_queries":["queue owner"],"keywords":["queue"],"aliases":[]}`,
+		`{"found":true,"text":"Shared Scheduler owns the queue.","citations":[{"path":"entity/shared-scheduler","title":"Shared Scheduler"}]}`,
+	}}
+	client, _ := llmtest.NewClientWithEmbeddings(t, provider, [][]float32{{1}})
+	spec := newSpec(staticConfig(wiki.Config{
+		CallSites: wiki.CallSites{
+			AskSubject:   ask.DefaultSubjectCallSite(),
+			AskSynthesis: ask.DefaultSynthesisCallSite(),
+		},
+		EmbedSite:     wiki.EmbedSite{Model: "shared-model", Dims: 1},
+		SearchDefault: 8,
+		AskCacheCap:   10,
+		LLM:           client,
+	}))
+	handler := buildSpecTestHandler(t, conn, spec)
+	question := "Who owns the queue?"
+	answer := mcpToolCallText(t, handler, `{
+		"jsonrpc":"2.0","id":"ask","method":"tools/call",
+		"params":{"name":"ask","arguments":{"scope":"default","question":"Who owns the queue?"}}
+	}`)
+	if !strings.Contains(answer, "owns the queue") {
+		t.Fatalf("MCP answer = %q, want synthesized answer", answer)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/private/default/?q="+url.QueryEscape(question), nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Shared Scheduler") {
+		t.Fatalf("web ask status/body = %d/%s, want cached answer", rec.Code, rec.Body.String())
+	}
+	synthesisCalls := 0
+	for _, request := range provider.requests {
+		if request.System == ask.DefaultSynthesisCallSite().System {
+			synthesisCalls++
+		}
+	}
+	if synthesisCalls != 1 {
+		t.Fatalf("synthesis calls after MCP then web = %d, want one shared computation", synthesisCalls)
+	}
+}
+
 func TestBuildCompilerUsesDefaultCompileCallSite(t *testing.T) {
 	prov := &capturingProvider{responses: []string{`{"title":"Acme Robotics","body":"Acme Robotics runs a Tulsa lab."}`}}
 	wantSite := compile.DefaultCallSite()
@@ -1237,6 +1345,10 @@ func saveBuildSpecMergeFixture(t *testing.T, ctx context.Context, conn *sql.DB) 
 
 func buildSpecTestHandler(t *testing.T, conn *sql.DB, spec appkit.Spec) http.Handler {
 	t.Helper()
+	site, err := appkitweb.Load(testWWWRoot(t))
+	if err != nil {
+		t.Fatalf("load test site: %v", err)
+	}
 	srv, err := server.New(server.Options{
 		Addr:       "127.0.0.1:0",
 		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
@@ -1246,6 +1358,7 @@ func buildSpecTestHandler(t *testing.T, conn *sql.DB, spec appkit.Spec) http.Han
 		Service:    "wiki",
 		Register:   spec.Handlers,
 		DB:         conn,
+		WWW:        site,
 	})
 	if err != nil {
 		t.Fatalf("server.New: %v", err)

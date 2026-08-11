@@ -11,11 +11,12 @@ const (
 	App   = "wiki"
 	Mount = "/srv/wiki/"
 
-	ModelID           = "gpt-5.6-luna"
-	WorkerConcurrency = 1
-	SearchDefault     = 8
-	SearchCap         = 32
-	AskBodyBudget     = 98304
+	ModelID            = "gpt-5.6-luna"
+	WorkerConcurrency  = 1
+	SearchDefault      = 8
+	SearchCap          = 32
+	AskBodyBudget      = 98304
+	AskCacheCapDefault = 500
 )
 
 // VectorCacheEntry is one stored page embedding prepared for an in-memory cache.

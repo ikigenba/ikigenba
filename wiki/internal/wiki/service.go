@@ -45,6 +45,7 @@ type Compiler interface {
 
 // Service coordinates ingest jobs and the single background integration worker.
 type Service struct {
+	AskInvalidate     func(scope string)
 	write             *sql.DB
 	jobs              *JobStore
 	scopes            *ScopeStore
@@ -423,6 +424,9 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	if s.AskInvalidate != nil {
+		s.AskInvalidate(job.Scope)
+	}
 	for _, page := range pagesToEmbed {
 		if err := s.embedAndStore(ctx, attr, page); err != nil {
 			return err
@@ -617,6 +621,9 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	}
 	if s.vectorCacheRemove != nil {
 		s.vectorCacheRemove(merge.FromSubjectID)
+	}
+	if s.AskInvalidate != nil {
+		s.AskInvalidate(job.Scope)
 	}
 	return s.embedAndStore(ctx, attr, winnerPage)
 }

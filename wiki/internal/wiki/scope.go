@@ -40,8 +40,9 @@ type Scope struct {
 
 // ScopeStore persists the scope registry and owns scope deletion.
 type ScopeStore struct {
-	read  *sql.DB
-	write *sql.DB
+	read          *sql.DB
+	write         *sql.DB
+	AskInvalidate func(scope string)
 }
 
 func NewScopeStore(db any) *ScopeStore {
@@ -115,6 +116,9 @@ func (s *ScopeStore) SetInstructions(ctx context.Context, name, text string) err
 	if rows == 0 {
 		return fmt.Errorf("%w: %s", ErrScopeNotFound, name)
 	}
+	if s.AskInvalidate != nil {
+		s.AskInvalidate(name)
+	}
 	return nil
 }
 
@@ -176,6 +180,9 @@ func (s *ScopeStore) Delete(ctx context.Context, name string) error {
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("delete scope %q: commit: %w", name, err)
+	}
+	if s.AskInvalidate != nil {
+		s.AskInvalidate(name)
 	}
 	return nil
 }

@@ -38,6 +38,7 @@ type Config struct {
 	SearchDefault     int
 	SearchCap         int
 	AskBodyBudget     int
+	AskCacheCap       int
 }
 
 // NewConfig reads service configuration. Chat inference is supplied by prompts.
@@ -50,6 +51,10 @@ func NewConfig(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	askCacheCap, err := resolveAskCacheCap(getenv)
+	if err != nil {
+		return Config{}, err
+	}
 	return Config{
 		CallSites:         callSites,
 		EmbedSite:         embedSite,
@@ -57,7 +62,23 @@ func NewConfig(getenv func(string) string) (Config, error) {
 		SearchDefault:     SearchDefault,
 		SearchCap:         SearchCap,
 		AskBodyBudget:     AskBodyBudget,
+		AskCacheCap:       askCacheCap,
 	}, nil
+}
+
+func resolveAskCacheCap(getenv func(string) string) (int, error) {
+	raw := strings.TrimSpace(getenv("ASK_CACHE_CAP"))
+	if raw == "" {
+		return AskCacheCapDefault, nil
+	}
+	capacity, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("ASK_CACHE_CAP: %w", err)
+	}
+	if capacity < 0 {
+		return 0, fmt.Errorf("ASK_CACHE_CAP: must not be negative")
+	}
+	return capacity, nil
 }
 
 func resolveEmbedSite(getenv func(string) string) (EmbedSite, error) {

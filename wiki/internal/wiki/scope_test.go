@@ -160,6 +160,91 @@ func TestComposeSystemPreservesEmptyBaseAndWrapsInstructionsExactly(t *testing.T
 	}
 }
 
+func TestSetInstructionsInvalidatesOnlyChangedScopesCachedSystem(t *testing.T) {
+	// R-0EYF-BC3U
+	ctx := context.Background()
+	db := migratedDB(t, ctx)
+	defer db.Close()
+	store := NewScopeStore(db)
+	for _, name := range []string{"s1", "s2"} {
+		if _, err := store.Create(ctx, name); err != nil {
+			t.Fatalf("Create(%s): %v", name, err)
+		}
+	}
+	cache := map[string]string{}
+	computes := map[string]int{}
+	ask := func(scope string) string {
+		if answer, ok := cache[scope]; ok {
+			return answer
+		}
+		registered, err := store.Get(ctx, scope)
+		if err != nil {
+			t.Fatalf("Get(%s): %v", scope, err)
+		}
+		computes[scope]++
+		cache[scope] = ComposeSystem("base synthesis system", registered.Instructions)
+		return cache[scope]
+	}
+	store.AskInvalidate = func(scope string) { delete(cache, scope) }
+	if got := ask("s1"); got != "base synthesis system" {
+		t.Fatalf("initial s1 system = %q", got)
+	}
+	_ = ask("s2")
+	if err := store.SetInstructions(ctx, "s1", "prefer current runbooks"); err != nil {
+		t.Fatalf("SetInstructions: %v", err)
+	}
+	want := ComposeSystem("base synthesis system", "prefer current runbooks")
+	if got := ask("s1"); got != want || computes["s1"] != 2 {
+		t.Fatalf("s1 recomputation = %q with %d computes, want %q with 2", got, computes["s1"], want)
+	}
+	if got := ask("s2"); got != "base synthesis system" || computes["s2"] != 1 {
+		t.Fatalf("s2 cache = %q with %d computes, want unchanged hit", got, computes["s2"])
+	}
+}
+
+func TestDeleteInvalidatesCachedAnswerBeforeSameNamedScopeCanReturn(t *testing.T) {
+	// R-0G6B-P3UJ
+	ctx := context.Background()
+	db := migratedDB(t, ctx)
+	defer db.Close()
+	store := NewScopeStore(db)
+	if _, err := store.Create(ctx, "s1"); err != nil {
+		t.Fatalf("Create(s1): %v", err)
+	}
+	cache := map[string]string{"s1": "answer from deleted corpus"}
+	computes := 0
+	ask := func() (string, error) {
+		if answer, ok := cache["s1"]; ok {
+			return answer, nil
+		}
+		registered, err := store.Get(ctx, "s1")
+		if err != nil {
+			return "", err
+		}
+		computes++
+		answer := "empty scope answer: " + registered.Instructions
+		cache["s1"] = answer
+		return answer, nil
+	}
+	store.AskInvalidate = func(scope string) { delete(cache, scope) }
+	if err := store.Delete(ctx, "s1"); err != nil {
+		t.Fatalf("Delete(s1): %v", err)
+	}
+	if got, ok := cache["s1"]; ok {
+		t.Fatalf("post-delete ask could serve cached %q", got)
+	}
+	if _, err := ask(); !errors.Is(err, ErrScopeNotFound) {
+		t.Fatalf("fresh post-delete ask = %v, want ErrScopeNotFound", err)
+	}
+	if _, err := store.Create(ctx, "s1"); err != nil {
+		t.Fatalf("recreate s1: %v", err)
+	}
+	answer, err := ask()
+	if err != nil || answer != "empty scope answer: " || computes != 1 {
+		t.Fatalf("ask after recreate = %q, %v with %d computes; want freshly computed empty answer", answer, err, computes)
+	}
+}
+
 func TestScopeStoreDeleteProtectsDefaultAndDeletesOnlyTargetScopeContent(t *testing.T) {
 	// R-H3M1-VUKM
 	ctx := context.Background()
