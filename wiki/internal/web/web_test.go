@@ -1,9 +1,12 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -67,6 +70,7 @@ func (s *stubKeywordRetriever) Search(_ context.Context, scope, query string, li
 
 type stubAsker struct {
 	answer   ask.Answer
+	err      error
 	called   int
 	scope    string
 	owner    string
@@ -78,7 +82,7 @@ func (s *stubAsker) Ask(_ context.Context, scope string, owner, question string)
 	s.scope = scope
 	s.owner = owner
 	s.question = question
-	return s.answer, nil
+	return s.answer, s.err
 }
 
 type stubMentioner struct {
@@ -389,6 +393,84 @@ func TestAskRunsOnBothTiers(t *testing.T) {
 				t.Fatalf("answer page missing answer marker %q: %s", tc.answer, body)
 			}
 		})
+	}
+}
+
+func TestFailingAskRendersStyledErrorPageOnBothTiers(t *testing.T) {
+	// R-RM58-3R9J
+	conn, scopes := phase129Scopes(t)
+	defer conn.Close()
+	const question = "Why did it fail?"
+	const internalCause = "database subject index exploded"
+
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{name: "private", path: "/private/s1/?q=Why+did+it+fail%3F"},
+		{name: "public", path: "/public/p1/?q=Why+did+it+fail%3F"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			rec := httptest.NewRecorder()
+			newTestHandler(t, "wiki", "v-test", "/srv/wiki/",
+				WithScopeStore(scopes),
+				WithAsker(&stubAsker{err: fmt.Errorf("%s", internalCause)}),
+				WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))),
+			).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+
+			body := rec.Body.String()
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500; body=%s", rec.Code, body)
+			}
+			for _, want := range []string{
+				"<!doctype html>",
+				"<header>",
+				`class="brand"`,
+				`class="scope-selector"`,
+				`value="` + question + `"`,
+				`href="/srv/wiki/static/tokens.css"`,
+				"The question could not be answered right now. Please try again.",
+				"<footer>wiki v-test</footer>",
+			} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("styled error page missing %q: %s", want, body)
+				}
+			}
+			if strings.Contains(body, internalCause) || strings.TrimSpace(body) == "ask wiki" {
+				t.Fatalf("error page leaked the internal cause or collapsed to the old bare body: %s", body)
+			}
+		})
+	}
+}
+
+func TestFailingAskLogsOneStructuredErrorWithCauseScopeAndQuestion(t *testing.T) {
+	// R-RND4-HJ08
+	const cause = "subject lookup transaction failed"
+	const question = "Who owns deploys?"
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	rec := httptest.NewRecorder()
+
+	newTestHandler(t, "wiki", "v-test", "/srv/wiki/",
+		WithAsker(&stubAsker{err: fmt.Errorf("%s", cause)}),
+		WithLogger(logger),
+	).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/private/default/?q=Who+owns+deploys%3F", nil))
+
+	lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("log records = %d, want exactly 1: %s", len(lines), logs.String())
+	}
+	var record map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &record); err != nil {
+		t.Fatalf("decode log record: %v; record=%s", err, lines[0])
+	}
+	if record["level"] != "ERROR" || record["msg"] != "web ask failed" || record["scope"] != "default" || record["question"] != question {
+		t.Fatalf("log record missing error level or ask context: %#v", record)
+	}
+	errText, ok := record["err"].(string)
+	if !ok || !strings.Contains(errText, cause) {
+		t.Fatalf("logged err = %#v, want wrapped cause %q", record["err"], cause)
 	}
 }
 

@@ -2,9 +2,12 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -127,11 +130,21 @@ func WithScopeStore(scopes *wiki.ScopeStore) Option {
 	return func(h *handler) { h.scopes = scopes }
 }
 
+// WithLogger injects the structured service logger.
+func WithLogger(log *slog.Logger) Option {
+	return func(h *handler) {
+		if log != nil {
+			h.log = log
+		}
+	}
+}
+
 type handler struct {
 	service string
 	version string
 	mount   string
 	site    *appkitweb.Site
+	log     *slog.Logger
 
 	asker     Asker
 	pages     PageFinder
@@ -165,7 +178,7 @@ type pageData struct {
 
 // NewHandler builds the read-surface mux.
 func NewHandler(service, version, mount string, site *appkitweb.Site, opts ...Option) http.Handler {
-	h := &handler{service: service, version: version, mount: normalizeMount(mount), site: site}
+	h := &handler{service: service, version: version, mount: normalizeMount(mount), site: site, log: slog.Default()}
 	for _, opt := range opts {
 		opt(h)
 	}
@@ -277,12 +290,12 @@ func (h *handler) publicHome(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope wiki.Scope, question string) {
 	if h.asker == nil {
-		http.Error(w, "ask wiki", http.StatusNotImplemented)
+		h.renderAskError(w, r, tier, scope.Name, question, http.StatusNotImplemented, errors.New("web: no asker configured"))
 		return
 	}
 	answer, err := h.asker.Ask(r.Context(), scope.Name, r.Header.Get("X-Owner-Email"), question)
 	if err != nil {
-		http.Error(w, "ask wiki", http.StatusInternalServerError)
+		h.renderAskError(w, r, tier, scope.Name, question, http.StatusInternalServerError, fmt.Errorf("ask wiki: %w", err))
 		return
 	}
 
@@ -304,7 +317,7 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope
 	if h.mentions != nil {
 		refs, err := h.mentions.MentionsIn(r.Context(), scope.Name, answer.Text)
 		if err != nil {
-			http.Error(w, "link answer mentions", http.StatusInternalServerError)
+			h.renderAskError(w, r, tier, scope.Name, question, http.StatusInternalServerError, fmt.Errorf("list answer mentions: %w", err))
 			return
 		}
 		mentions = refs
@@ -315,13 +328,14 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope
 		base := h.absoluteSubjectBase(tier, scope.Name)
 		text, err := h.linkifier.LinkifyMentions(r.Context(), scope.Name, answer.Text, base, "")
 		if err != nil {
-			http.Error(w, "link answer mentions", http.StatusInternalServerError)
+			h.renderAskError(w, r, tier, scope.Name, question, http.StatusInternalServerError, fmt.Errorf("link answer mentions: %w", err))
 			return
 		}
 		answerHTML = markdown.Render(text)
 	}
 
-	if err := h.site.Render(w, "home", h.pageData(r.Context(), tier, scope.Name, pageData{
+	buffer := newBufferedResponse()
+	if err := h.site.Render(buffer, "home", h.pageData(r.Context(), tier, scope.Name, pageData{
 		Query:      question,
 		Asked:      true,
 		Answer:     answer,
@@ -329,8 +343,56 @@ func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope
 		Cites:      cites,
 		Mentions:   mentions,
 	})); err != nil {
-		http.Error(w, "render ask page", http.StatusInternalServerError)
+		h.renderAskError(w, r, tier, scope.Name, question, http.StatusInternalServerError, fmt.Errorf("render ask page: %w", err))
+		return
 	}
+	buffer.flush(w)
+}
+
+func (h *handler) renderAskError(w http.ResponseWriter, r *http.Request, tier, scope, question string, status int, cause error) {
+	h.log.ErrorContext(r.Context(), "web ask failed", "err", cause, "scope", scope, "question", question)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	if err := h.site.Render(w, "error", h.pageData(r.Context(), tier, scope, pageData{Query: question})); err != nil {
+		http.Error(w, "ask wiki", status)
+	}
+}
+
+type bufferedResponse struct {
+	header http.Header
+	body   bytes.Buffer
+	status int
+}
+
+func newBufferedResponse() *bufferedResponse {
+	return &bufferedResponse{header: make(http.Header)}
+}
+
+func (w *bufferedResponse) Header() http.Header { return w.header }
+
+func (w *bufferedResponse) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+}
+
+func (w *bufferedResponse) Write(p []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.body.Write(p)
+}
+
+func (w *bufferedResponse) flush(dst http.ResponseWriter) {
+	for key, values := range w.header {
+		dst.Header()[key] = append([]string(nil), values...)
+	}
+	status := w.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	dst.WriteHeader(status)
+	_, _ = dst.Write(w.body.Bytes())
 }
 
 func (h *handler) privateSubject(w http.ResponseWriter, r *http.Request) {

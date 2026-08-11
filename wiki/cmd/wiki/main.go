@@ -139,6 +139,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			scopes.VectorInvalidate = vectorCache.RemoveScope
 			statusService := publicStatusService{service: svc}
 			rt.Handle("/", web.NewHandler(rt.Service(), rt.Version(), wiki.Mount, rt.WWW(),
+				web.WithLogger(rt.Logger()),
 				web.WithScopeStore(scopes),
 				web.WithRecentLister(recentAdapter{svc: svc}),
 				web.WithKeywordRetriever(retrieve.NewKeywordRetriever(read)),
