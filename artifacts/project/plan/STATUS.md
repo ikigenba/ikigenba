@@ -14,5 +14,3 @@ deliberately carries **no** bare status glyph outside the phase lines, so
 the anchored grep matches only phase lines.
 
 Next phase: 12
-
-- Phase 11 ⬜ realizes R-78BZ-IXSS, R-79JV-WPJH, R-7BZO-O90V, R-7D7L-20RK — client-facing URLs compose from the configured base, never the request
