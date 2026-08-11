@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"appkit"
@@ -66,11 +67,13 @@ func artifactsSpec() appkit.Spec {
 			if root == "" {
 				root = "."
 			}
+			baseURL := strings.TrimSuffix(rt.ResourceID(), "mcp")
 			svc = artifactdata.NewService(
 				db.NewStore(rt.DB(), artifactdata.NewToken),
 				&artifactdata.BlobStore{Root: filepath.Join(root, "artifacts", "state")},
 				time.Now,
 				loaded.(config).MaxUploadBytes,
+				baseURL,
 			)
 			handler, err := mcp.New(svc, rt.Version())
 			if err != nil {

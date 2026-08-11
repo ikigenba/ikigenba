@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,6 +87,85 @@ func TestMintUploadValidatesAndReturnsTwentyFourHourLink(t *testing.T) {
 	}
 	if got := rowCount(t, fx.conn, "uploads"); got != before {
 		t.Fatalf("invalid mints changed upload rows from %d to %d", before, got)
+	}
+}
+
+// R-78BZ-IXSS
+func TestMintUploadUsesConfiguredBaseURL(t *testing.T) {
+	fx := newUploadFixture(t, 64)
+	upload, err := fx.service.MintUpload(context.Background(), testIdentity(), "report.txt", "private", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://example.test/srv/artifacts/u/" + upload.Token
+	if upload.URL != want {
+		t.Fatalf("upload URL = %q, want %q", upload.URL, want)
+	}
+	if !strings.Contains(upload.Curl, want) {
+		t.Fatalf("curl = %q, want configured URL %q", upload.Curl, want)
+	}
+}
+
+// R-79JV-WPJH
+func TestUploadResponseURLIgnoresRequestOrigin(t *testing.T) {
+	tests := []struct {
+		name, visibility, forwardedProto, tier string
+	}{
+		{name: "without forwarded proto", visibility: "public", tier: "f"},
+		{name: "with forwarded proto", visibility: "private", forwardedProto: "https", tier: "p"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fx := newUploadFixture(t, 64)
+			pending := fx.mint(t, "origin proof.txt", tt.visibility)
+			request := httptest.NewRequest(http.MethodPut, "/u/"+pending.Token, strings.NewReader("body"))
+			request.Host = "127.0.0.1:3009"
+			if tt.forwardedProto != "" {
+				request.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
+			}
+			response := httptest.NewRecorder()
+			fx.service.UploadHandler().ServeHTTP(response, request)
+			if response.Code != http.StatusCreated {
+				t.Fatalf("PUT status = %d: %s", response.Code, response.Body.String())
+			}
+			var got uploadResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			want := "https://example.test/srv/artifacts/" + tt.tier + "/" + url.PathEscape(got.ID) + "/origin%20proof.txt"
+			if got.URL != want || strings.Contains(got.URL, request.Host) {
+				t.Fatalf("response URL = %q, want %q without request host", got.URL, want)
+			}
+		})
+	}
+}
+
+// R-7BZO-O90V
+func TestNewServiceRequiresAndUsesBaseURL(t *testing.T) {
+	fx := newUploadFixture(t, 64)
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("NewService with empty base URL did not panic")
+			}
+		}()
+		NewService(fx.store, fx.blobs, func() time.Time { return fx.now }, 64, "")
+	}()
+
+	const base = "https://front-door.example/srv/artifacts/"
+	service := NewService(fx.store, fx.blobs, func() time.Time { return fx.now }, 64, base)
+	upload, err := service.MintUpload(context.Background(), testIdentity(), "base.txt", "public", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, rendered := range map[string]string{
+		"upload":  upload.URL,
+		"public":  service.DownloadURL("artifact", "base.txt", "public"),
+		"private": service.DownloadURL("artifact", "base.txt", "private"),
+	} {
+		if !strings.HasPrefix(rendered, base) {
+			t.Errorf("%s URL = %q, want prefix %q", name, rendered, base)
+		}
 	}
 }
 
@@ -306,8 +386,7 @@ func newUploadFixture(t *testing.T, capBytes int64) *uploadFixture {
 		return fmt.Sprintf("generated-%d", n)
 	})
 	fx := &uploadFixture{conn: conn, store: store, blobs: &BlobStore{Root: t.TempDir()}, now: time.Date(2026, 8, 10, 12, 0, 0, 123, time.UTC)}
-	fx.service = NewService(store, fx.blobs, func() time.Time { return fx.now }, capBytes)
-	fx.service.UploadOrigin = "https://files.example.test"
+	fx.service = NewService(store, fx.blobs, func() time.Time { return fx.now }, capBytes, "https://example.test/srv/artifacts/")
 	return fx
 }
 

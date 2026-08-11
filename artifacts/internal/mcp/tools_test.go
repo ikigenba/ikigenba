@@ -314,6 +314,71 @@ func TestInstructionsAndGuideProvideTierTwoDiscovery(t *testing.T) {
 	}
 }
 
+// R-7D7L-20RK
+func TestChassisMCPToolsUseConfiguredBaseURL(t *testing.T) {
+	fx := newFixture(t)
+	fx.service.BaseURL = "https://example.test/srv/artifacts/"
+	public := fx.store(t, "public file.txt", "public", []byte("public"), identity("one"))
+	private := fx.store(t, "private.txt", "private", []byte("private"), identity("two"))
+	handler, err := New(fx.service, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		encoded, err := json.Marshal(args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":%q,"arguments":%s}}`, name, encoded)
+		response := rpc(t, handler, body)
+		return response["result"].(map[string]any)["structuredContent"].(map[string]any)
+	}
+	assertRecord := func(label string, record map[string]any, wantURL string) {
+		t.Helper()
+		gotURL := record["url"].(string)
+		if gotURL != wantURL || strings.Contains(gotURL, "localhost") || strings.Contains(gotURL, "127.0.0.1") {
+			t.Errorf("%s URL = %q, want %q on configured base", label, gotURL, wantURL)
+		}
+		contentURL := record["content_url"].(string)
+		if !strings.HasPrefix(contentURL, registry.BaseURL("artifacts")+"/content?id=") {
+			t.Errorf("%s content_url = %q, want artifacts loopback content URL", label, contentURL)
+		}
+	}
+	frontDoorURL := func(artifact db.Artifact, visibility string) string {
+		tier := "p"
+		if visibility == "public" {
+			tier = "f"
+		}
+		return "https://example.test/srv/artifacts/" + tier + "/" + url.PathEscape(artifact.ID) + "/" + url.PathEscape(artifact.Filename)
+	}
+
+	listed := call("list", map[string]any{})["artifacts"].([]any)
+	if len(listed) != 2 {
+		t.Fatalf("list returned %d artifacts, want 2", len(listed))
+	}
+	for _, item := range listed {
+		record := item.(map[string]any)
+		id := record["id"].(string)
+		if id == public.ID {
+			assertRecord("list public", record, frontDoorURL(public, "public"))
+		} else if id == private.ID {
+			assertRecord("list private", record, frontDoorURL(private, "private"))
+		} else {
+			t.Errorf("list returned unexpected id %q", id)
+		}
+	}
+	got := call("get", map[string]any{"id": public.ID})
+	assertRecord("get", got, frontDoorURL(public, "public"))
+	changed := call("set_visibility", map[string]any{"id": public.ID, "visibility": "private"})
+	assertRecord("set_visibility", changed, frontDoorURL(public, "private"))
+	upload := call("upload", map[string]any{"filename": "new.txt", "visibility": "public"})
+	uploadURL := upload["upload_url"].(string)
+	if !strings.HasPrefix(uploadURL, "https://example.test/srv/artifacts/u/") || strings.Contains(uploadURL, "localhost") || strings.Contains(uploadURL, "127.0.0.1") {
+		t.Fatalf("upload_url = %q, want configured base", uploadURL)
+	}
+}
+
 type fixture struct {
 	conn    *sql.DB
 	storeDB *db.Store
@@ -339,8 +404,7 @@ func newFixture(t *testing.T) *fixture {
 	fx := &fixture{now: time.Date(2026, 8, 10, 12, 0, 0, 123, time.UTC)}
 	fx.conn = conn
 	fx.storeDB = db.NewStore(conn, func() string { fx.next++; return fmt.Sprintf("%030d", fx.next) })
-	fx.service = domain.NewService(fx.storeDB, &domain.BlobStore{Root: t.TempDir()}, func() time.Time { return fx.now }, 1024)
-	fx.service.UploadOrigin = registry.BaseURL("artifacts")
+	fx.service = domain.NewService(fx.storeDB, &domain.BlobStore{Root: t.TempDir()}, func() time.Time { return fx.now }, 1024, registry.BaseURL("artifacts")+"/srv/artifacts/")
 	return fx
 }
 
@@ -394,11 +458,7 @@ func (fx *fixture) storeDescription(t *testing.T, filename, visibility string, b
 }
 
 func (fx *fixture) recordURL(artifact db.Artifact) string {
-	tier := "p"
-	if artifact.Visibility == "public" {
-		tier = "f"
-	}
-	return fx.service.UploadOrigin + "/srv/artifacts/" + tier + "/" + url.PathEscape(artifact.ID) + "/" + url.PathEscape(artifact.Filename)
+	return fx.service.DownloadURL(artifact.ID, artifact.Filename, artifact.Visibility)
 }
 
 func structured(t *testing.T, result map[string]any) map[string]any {

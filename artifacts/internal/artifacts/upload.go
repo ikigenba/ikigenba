@@ -40,11 +40,14 @@ type Service struct {
 	Outbox         EventSink
 	Clock          func() time.Time
 	MaxUploadBytes int64
-	UploadOrigin   string
+	BaseURL        string
 }
 
 // NewService builds the upload service with its real database and filesystem substrates.
-func NewService(store *db.Store, blobs *BlobStore, clock func() time.Time, maxUploadBytes int64) *Service {
+func NewService(store *db.Store, blobs *BlobStore, clock func() time.Time, maxUploadBytes int64, baseURL string) *Service {
+	if baseURL == "" {
+		panic("artifacts: empty base URL")
+	}
 	if clock == nil {
 		clock = time.Now
 	}
@@ -53,7 +56,7 @@ func NewService(store *db.Store, blobs *BlobStore, clock func() time.Time, maxUp
 		Blobs:          blobs,
 		Clock:          clock,
 		MaxUploadBytes: maxUploadBytes,
-		UploadOrigin:   "https://localhost",
+		BaseURL:        baseURL,
 	}
 }
 
@@ -77,9 +80,17 @@ func (s *Service) MintUpload(ctx context.Context, id appkit.Identity, filename, 
 	if err != nil {
 		return Upload{}, err
 	}
-	origin := strings.TrimRight(s.UploadOrigin, "/")
-	link := origin + "/srv/artifacts/u/" + pending.Token
+	link := s.BaseURL + "u/" + pending.Token
 	return Upload{Upload: pending, URL: link, Curl: "curl -T " + shellQuote(filename) + " " + shellQuote(link)}, nil
+}
+
+// DownloadURL renders the configured front-door URL for an artifact's visibility tier.
+func (s *Service) DownloadURL(id, filename, visibility string) string {
+	tier := "p"
+	if visibility == "public" {
+		tier = "f"
+	}
+	return s.BaseURL + tier + "/" + url.PathEscape(id) + "/" + url.PathEscape(filename)
 }
 
 // UploadHandler returns the bare, token-authenticated PUT ingress.
@@ -141,7 +152,7 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Size        int64  `json:"size"`
 		ContentHash string `json:"content_hash"`
 		URL         string `json:"url"`
-	}{artifact.ID, pending.Filename, written, digest, s.downloadURL(r, artifact.ID, pending.Filename, pending.Visibility)}
+	}{artifact.ID, pending.Filename, written, digest, s.DownloadURL(artifact.ID, pending.Filename, pending.Visibility)}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(response)
@@ -175,23 +186,6 @@ func (s *Service) storeBody(w http.ResponseWriter, r *http.Request, artifactID s
 		return 0, "", http.StatusInternalServerError
 	}
 	return written, hex.EncodeToString(hasher.Sum(nil)), 0
-}
-
-func (s *Service) downloadURL(r *http.Request, id, filename, visibility string) string {
-	tier := "p"
-	if visibility == "public" {
-		tier = "f"
-	}
-	path := "/srv/artifacts/" + tier + "/" + url.PathEscape(id) + "/" + url.PathEscape(filename)
-	origin := strings.TrimRight(s.UploadOrigin, "/")
-	if r.Host != "" {
-		scheme := r.Header.Get("X-Forwarded-Proto")
-		if scheme == "" {
-			scheme = "https"
-		}
-		origin = scheme + "://" + r.Host
-	}
-	return origin + path
 }
 
 func (s *Service) now() time.Time { return s.Clock().UTC() }

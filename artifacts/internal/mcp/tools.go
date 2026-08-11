@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -239,14 +238,9 @@ type record struct {
 }
 
 func (t *toolset) record(a db.Artifact) record {
-	tier := "p"
-	if a.Visibility == "public" {
-		tier = "f"
-	}
-	origin := strings.TrimRight(t.service.UploadOrigin, "/")
 	reference := t.service.Reference(a)
 	return record{a.ID, a.Filename, a.Description, a.Visibility, a.Size, a.ContentHash, a.DownloadCount,
-		origin + "/srv/artifacts/" + tier + "/" + url.PathEscape(a.ID) + "/" + url.PathEscape(a.Filename), reference.ContentURL,
+		t.service.DownloadURL(a.ID, a.Filename, a.Visibility), reference.ContentURL,
 		a.CreatedAt, a.UpdatedAt, a.OwnerID, a.OwnerEmail}
 }
 
