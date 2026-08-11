@@ -84,7 +84,7 @@ func TestHybridRetrieverPinsExactAliasSubjectOnce(t *testing.T) {
 	keyword := newSpyRetriever(map[string][]Hit{
 		"The Widget": {
 			{PageID: "other", Title: "Other"},
-			{PageID: "page-acme", Title: "Acme from lane"},
+			{PageID: "subject-acme", Title: "Acme from lane"},
 		},
 		"unknown subject": {
 			{PageID: "other", Title: "Other"},
@@ -100,10 +100,10 @@ func TestHybridRetrieverPinsExactAliasSubjectOnce(t *testing.T) {
 	if !got.Pinned {
 		t.Fatalf("Pinned = false, want exact alias pin")
 	}
-	if len(got.Hits) == 0 || got.Hits[0].PageID != "page-acme" || got.Hits[0].Path != "entity/acme-robotics" {
+	if len(got.Hits) == 0 || got.Hits[0].PageID != "subject-acme" || got.Hits[0].Path != "entity/acme-robotics" {
 		t.Fatalf("first hit = %+v, want pinned Acme page at rank 1", got.Hits)
 	}
-	if countPage(got.Hits, "page-acme") != 1 {
+	if countPage(got.Hits, "subject-acme") != 1 {
 		t.Fatalf("hits = %+v, want pinned page not duplicated lower", got.Hits)
 	}
 
@@ -116,6 +116,87 @@ func TestHybridRetrieverPinsExactAliasSubjectOnce(t *testing.T) {
 	}
 	if len(got.Hits) != 1 || got.Hits[0].PageID != "other" {
 		t.Fatalf("unknown hits = %+v, want unpinned fused list", got.Hits)
+	}
+}
+
+func TestHybridRetrieverPinsExactNameWithinAskedScope(t *testing.T) {
+	// R-RG1Q-6WK2
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	if _, err := wikidomain.NewScopeStore(conn).Create(ctx, "team"); err != nil {
+		t.Fatalf("Create team scope: %v", err)
+	}
+	subjects := wikidomain.NewSubjectStore(conn)
+	if err := subjects.Save(ctx, "team", wikidomain.Subject{ID: "team-lumen", Name: "Project Lumen", Type: "entity"}); err != nil {
+		t.Fatalf("Save team subject: %v", err)
+	}
+	pages := wikidomain.NewPageStore(conn)
+	if err := pages.Upsert(ctx, wikidomain.Page{ID: "page-team-lumen", SubjectID: "team-lumen", Title: "Project Lumen", Body: "Team Lumen body."}); err != nil {
+		t.Fatalf("Upsert team page: %v", err)
+	}
+	retriever := NewHybridRetriever(nil, nil, wikidomain.NewResolver(conn), pages, FusionConfig{})
+
+	got, err := retriever.Search(ctx, "team", "Project Lumen", SearchLimits{})
+	if err != nil {
+		t.Fatalf("Search team: %v", err)
+	}
+	if !got.Pinned || len(got.Hits) != 1 || got.Hits[0].PageID != "team-lumen" {
+		t.Fatalf("Search team = %+v, want team subject pinned first by subject id", got)
+	}
+}
+
+func TestHybridRetrieverExactNamePinCannotCrossScopeWall(t *testing.T) {
+	// R-RH9M-KOAR
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	scopes := wikidomain.NewScopeStore(conn)
+	for _, scope := range []string{"team-a", "team-b"} {
+		if _, err := scopes.Create(ctx, scope); err != nil {
+			t.Fatalf("Create %s: %v", scope, err)
+		}
+	}
+	subjects := wikidomain.NewSubjectStore(conn)
+	pages := wikidomain.NewPageStore(conn)
+	for _, item := range []struct {
+		scope string
+		id    string
+		name  string
+	}{
+		{scope: "default", id: "default-only", name: "Default Secret"},
+		{scope: "team-a", id: "team-a-lumen", name: "Project Lumen"},
+		{scope: "team-b", id: "team-b-lumen", name: "Project Lumen"},
+	} {
+		if err := subjects.Save(ctx, item.scope, wikidomain.Subject{ID: item.id, Name: item.name, Type: "entity"}); err != nil {
+			t.Fatalf("Save %s subject: %v", item.scope, err)
+		}
+		if err := pages.Upsert(ctx, wikidomain.Page{ID: "page-" + item.id, SubjectID: item.id, Title: item.name, Body: item.scope + " body"}); err != nil {
+			t.Fatalf("Upsert %s page: %v", item.scope, err)
+		}
+	}
+	retriever := NewHybridRetriever(nil, nil, wikidomain.NewResolver(conn), pages, FusionConfig{})
+
+	foreign, err := retriever.Search(ctx, "team-a", "Default Secret", SearchLimits{})
+	if err != nil {
+		t.Fatalf("Search foreign-only name: %v", err)
+	}
+	if foreign.Pinned || len(foreign.Hits) != 0 {
+		t.Fatalf("foreign-only Search = %+v, want no cross-scope pin", foreign)
+	}
+	for _, tc := range []struct {
+		scope string
+		want  string
+	}{{scope: "team-a", want: "team-a-lumen"}, {scope: "team-b", want: "team-b-lumen"}} {
+		got, err := retriever.Search(ctx, tc.scope, "Project Lumen", SearchLimits{})
+		if err != nil {
+			t.Fatalf("Search %s same-name subject: %v", tc.scope, err)
+		}
+		if !got.Pinned || len(got.Hits) != 1 || got.Hits[0].PageID != tc.want {
+			t.Fatalf("Search %s = %+v, want only %s pinned", tc.scope, got, tc.want)
+		}
 	}
 }
 

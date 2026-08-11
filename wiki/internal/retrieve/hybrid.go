@@ -112,7 +112,7 @@ func (r *hybridRetriever) search(ctx context.Context, scope string, attr llm.Att
 		hits = hits[:cfg.FinalK]
 	}
 
-	pinned, ok, err := r.pinnedHit(ctx, pinCandidates)
+	pinned, ok, err := r.pinnedHit(ctx, scope, pinCandidates)
 	if err != nil {
 		return Result{}, err
 	}
@@ -233,7 +233,7 @@ func pinFirst(hits []Hit, pinned Hit, limit int) []Hit {
 	return out
 }
 
-func (r *hybridRetriever) pinnedHit(ctx context.Context, candidates []string) (Hit, bool, error) {
+func (r *hybridRetriever) pinnedHit(ctx context.Context, scope string, candidates []string) (Hit, bool, error) {
 	if r == nil || r.resolver == nil || r.pages == nil {
 		return Hit{}, false, nil
 	}
@@ -249,7 +249,7 @@ func (r *hybridRetriever) pinnedHit(ctx context.Context, candidates []string) (H
 		}
 		seen[key] = struct{}{}
 
-		subject, ok, err := callResolveByName(ctx, r.resolver, candidate)
+		subject, ok, err := callResolveByName(ctx, r.resolver, scope, candidate)
 		if err != nil {
 			return Hit{}, false, err
 		}
@@ -267,12 +267,8 @@ func (r *hybridRetriever) pinnedHit(ctx context.Context, candidates []string) (H
 		if title == "" {
 			title = subject.name
 		}
-		pageID := page.id
-		if pageID == "" {
-			pageID = subject.id
-		}
 		return Hit{
-			PageID:  pageID,
+			PageID:  subject.id,
 			Path:    subject.path(),
 			Title:   title,
 			Snippet: page.body,
@@ -302,8 +298,8 @@ type reflectedPage struct {
 	body  string
 }
 
-func callResolveByName(ctx context.Context, resolver any, name string) (reflectedSubject, bool, error) {
-	out, ok, err := callStoreMethod(ctx, resolver, "ResolveByName", name)
+func callResolveByName(ctx context.Context, resolver any, scope, name string) (reflectedSubject, bool, error) {
+	out, ok, err := callStoreMethod(ctx, resolver, "ResolveByName", scope, name)
 	if err != nil || !ok {
 		return reflectedSubject{}, false, err
 	}
@@ -331,7 +327,7 @@ func callGetBySubject(ctx context.Context, pages any, subjectID string) (reflect
 	}, true, nil
 }
 
-func callStoreMethod(ctx context.Context, receiver any, name string, arg string) (reflect.Value, bool, error) {
+func callStoreMethod(ctx context.Context, receiver any, name string, args ...string) (reflect.Value, bool, error) {
 	v := reflect.ValueOf(receiver)
 	if !v.IsValid() {
 		return reflect.Value{}, false, nil
@@ -340,7 +336,12 @@ func callStoreMethod(ctx context.Context, receiver any, name string, arg string)
 	if !method.IsValid() {
 		return reflect.Value{}, false, fmt.Errorf("retrieve: %T has no %s method", receiver, name)
 	}
-	out := method.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(arg)})
+	callArgs := make([]reflect.Value, 1, len(args)+1)
+	callArgs[0] = reflect.ValueOf(ctx)
+	for _, arg := range args {
+		callArgs = append(callArgs, reflect.ValueOf(arg))
+	}
+	out := method.Call(callArgs)
 	if len(out) != 2 {
 		return reflect.Value{}, false, fmt.Errorf("retrieve: %T.%s returned %d values, want 2", receiver, name, len(out))
 	}

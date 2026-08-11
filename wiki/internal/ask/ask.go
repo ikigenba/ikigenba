@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -192,6 +193,9 @@ func (a *Asker) gatherPages(ctx context.Context, scope string, hits []retrieve.H
 			continue
 		}
 		subject, err := a.subjects.GetInScope(ctx, scope, subjectID)
+		if errors.Is(err, wiki.ErrSubjectNotFound) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

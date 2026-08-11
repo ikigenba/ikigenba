@@ -385,6 +385,105 @@ func TestAskRequestsRetrievalCeiling(t *testing.T) {
 	}
 }
 
+func TestAskDropsStaleHitAndAnswersFromLivePages(t *testing.T) {
+	// R-RDLX-FD2O
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	savePage(t, ctx, conn, wiki.Subject{ID: "subject-live", Name: "Grace", Type: "entity"}, wiki.Page{
+		ID: "page-live", SubjectID: "subject-live", Title: "Grace", Body: "Grace owns the scheduler.",
+	})
+	search := &scriptedSearch{result: retrieve.Result{
+		Hits: []retrieve.Hit{
+			{PageID: "subject-stale", Title: "Deleted subject"},
+			{PageID: "subject-live", Title: "Grace"},
+		},
+		TopDense: 0.9,
+	}}
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
+		textRoundTrip(`{"sub_queries":["scheduler"]}`),
+		textRoundTrip(`{"found":true,"text":"Grace owns the scheduler.","citations":[{"path":"entity/grace","title":"Grace"}]}`),
+	}}
+
+	got, err := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
+		Ask(ctx, "default", "owner@example.com", "Who owns the scheduler?")
+	if err != nil {
+		t.Fatalf("Ask with mixed live and stale hits: %v", err)
+	}
+	want := Answer{Found: true, Text: "Grace owns the scheduler.", Citations: []Citation{{Path: "entity/grace", Title: "Grace"}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Ask = %+v, want answer grounded only in live page %+v", got, want)
+	}
+	if len(prov.requests) != 2 {
+		t.Fatalf("provider requests = %d, want analysis and synthesis", len(prov.requests))
+	}
+	synth := requestText(prov.requests[1])
+	if !strings.Contains(synth, "Grace owns the scheduler.") || strings.Contains(synth, "subject-stale") || strings.Contains(synth, "Deleted subject") {
+		t.Fatalf("synthesis prompt = %q, want only the live page", synth)
+	}
+}
+
+func TestAskReturnsHonestEmptyWhenEveryHitIsStale(t *testing.T) {
+	// R-RETT-T4TD
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	search := &scriptedSearch{result: retrieve.Result{
+		Hits:     []retrieve.Hit{{PageID: "subject-stale-a"}, {PageID: "subject-stale-b"}},
+		TopDense: 0.9,
+	}}
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
+		textRoundTrip(`{"sub_queries":["missing"]}`),
+	}}
+
+	got, err := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
+		Ask(ctx, "default", "owner@example.com", "What is missing?")
+	if err != nil {
+		t.Fatalf("Ask with all stale hits: %v", err)
+	}
+	if got.Found || got.Text != honestEmptyText || len(got.Citations) != 0 {
+		t.Fatalf("Ask = %+v, want exact honest-empty answer with no citations", got)
+	}
+	if len(prov.requests) != 1 {
+		t.Fatalf("provider requests = %d, want analysis only and no fabricated synthesis", len(prov.requests))
+	}
+}
+
+func TestAskPinnedHitUsesSubjectIDAndSurvivesToCitation(t *testing.T) {
+	// R-RIHI-YG1G
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	if _, err := wiki.NewScopeStore(conn).Create(ctx, "team"); err != nil {
+		t.Fatalf("Create team scope: %v", err)
+	}
+	if err := wiki.NewSubjectStore(conn).Save(ctx, "team", wiki.Subject{ID: "subject-lumen", Name: "Project Lumen", Type: "entity"}); err != nil {
+		t.Fatalf("Save team subject: %v", err)
+	}
+	pages := wiki.NewPageStore(conn)
+	if err := pages.Upsert(ctx, wiki.Page{ID: "page-lumen", SubjectID: "subject-lumen", Title: "Project Lumen", Body: "Project Lumen launches Tuesday."}); err != nil {
+		t.Fatalf("Upsert team page: %v", err)
+	}
+	search := retrieve.NewHybridRetriever(nil, nil, wiki.NewResolver(conn), pages, retrieve.FusionConfig{})
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
+		textRoundTrip(`{"sub_queries":["Project Lumen"]}`),
+		textRoundTrip(`{"found":true,"text":"Project Lumen launches Tuesday.","citations":[{"path":"entity/project-lumen","title":"Project Lumen"}]}`),
+	}}
+
+	got, err := New(search, wiki.NewSubjectStore(conn), pages, llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
+		Ask(ctx, "team", "owner@example.com", "When does Project Lumen launch?")
+	if err != nil {
+		t.Fatalf("Ask pinned subject: %v", err)
+	}
+	want := Answer{Found: true, Text: "Project Lumen launches Tuesday.", Citations: []Citation{{Path: "entity/project-lumen", Title: "Project Lumen"}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Ask = %+v, want pinned page gathered and cited %+v", got, want)
+	}
+	if len(prov.requests) != 2 || !strings.Contains(requestText(prov.requests[1]), "Project Lumen launches Tuesday.") {
+		t.Fatalf("provider requests = %+v, want synthesis grounded in pinned page", prov.requests)
+	}
+}
+
 func TestGatherPagesUsesBodyBudgetAndSkipsOverflowWhole(t *testing.T) {
 	// R-NH5B-NI7C
 	ctx := context.Background()
