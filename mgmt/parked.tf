@@ -22,6 +22,7 @@ locals {
     "metaspot.org"       = aws_route53_zone.metaspot_org.zone_id
     "metaspot.net"       = aws_route53_zone.metaspot_net.zone_id
     "michaelgreenly.com" = aws_route53_zone.michaelgreenly_com.zone_id
+    "michaelgreenly.dev" = aws_route53_zone.michaelgreenly_dev.zone_id
     "ikigenba.com"       = aws_route53_zone.ikigenba_com.zone_id
     "ikigenba.dev"       = aws_route53_zone.ikigenba_dev.zone_id
     "logic-refinery.com" = aws_route53_zone.logic_refinery_com.zone_id

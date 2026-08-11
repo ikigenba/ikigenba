@@ -14,6 +14,10 @@ output "michaelgreenly_com_name_servers" {
   value = aws_route53_zone.michaelgreenly_com.name_servers
 }
 
+output "michaelgreenly_dev_name_servers" {
+  value = aws_route53_zone.michaelgreenly_dev.name_servers
+}
+
 # Nameservers for the migrated logic-refinery.* zones. After these zones are
 # created and verified, set each domain's registrar nameservers to its set
 # (route53domains update-domain-nameservers, once registration is in mgmt).
