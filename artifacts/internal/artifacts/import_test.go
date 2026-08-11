@@ -3,6 +3,7 @@ package artifacts
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,44 @@ import (
 
 	"registry"
 )
+
+// R-4PZS-CEDM
+func TestImportCreatedEventExistsOnlyForCommittedArtifact(t *testing.T) {
+	fx := newUploadFixture(t, 8)
+	fx.enableOutbox(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /ok", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("GET /missing", func(w http.ResponseWriter, _ *http.Request) { http.NotFound(w, nil) })
+	mux.HandleFunc("GET /large", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(bytes.Repeat([]byte("x"), 9)) })
+	server := startArtifactPortServer(t, mux)
+	defer server.Close()
+
+	artifact, err := fx.service.Import(context.Background(), testIdentity(), registry.BaseURL("artifacts")+"/ok", "import.txt", "private", "imported")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := artifactOutboxRows(t, fx.conn)
+	if len(rows) != 1 || rows[0].Kind != "created" || rows[0].Subject != "/"+artifact.ID {
+		t.Fatalf("successful import outbox = %#v", rows)
+	}
+	var payload createdPayload
+	if err := json.Unmarshal([]byte(rows[0].Payload), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ID != artifact.ID || payload.Filename != "import.txt" || payload.Description != "imported" || payload.Visibility != "private" || payload.OwnerID != testIdentity().OwnerID || payload.OwnerEmail != testIdentity().OwnerEmail || payload.Size != 2 || len(payload.ContentHash) != 64 || payload.ContentURL != fx.service.Reference(artifact).ContentURL {
+		t.Fatalf("import created payload = %#v", payload)
+	}
+	for _, attempt := range []struct{ source, filename string }{
+		{"not-a-url", "invalid.txt"},
+		{registry.BaseURL("artifacts") + "/missing", "missing.txt"},
+		{registry.BaseURL("artifacts") + "/large", "large.txt"},
+	} {
+		_, _ = fx.service.Import(context.Background(), testIdentity(), attempt.source, attempt.filename, "private", "")
+	}
+	if got := len(artifactOutboxRows(t, fx.conn)); got != 1 {
+		t.Fatalf("refused imports left %d outbox rows, want 1", got)
+	}
+}
 
 // R-48X6-ZLZW
 func TestImportStoresExactLoopbackBytesAndServesPublicDownload(t *testing.T) {

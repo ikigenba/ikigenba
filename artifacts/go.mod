@@ -4,11 +4,11 @@ go 1.26
 
 require (
 	appkit v0.0.0
+	eventplane v0.0.0
 	registry v0.0.0
 )
 
 require (
-	eventplane v0.0.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

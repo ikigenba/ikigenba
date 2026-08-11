@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -120,7 +121,15 @@ type CreateArtifactParams struct {
 	CreatedAt   time.Time
 }
 
+// ArtifactEvent appends the event caused by a mutation on that mutation's transaction.
+type ArtifactEvent func(context.Context, *sql.Tx, Artifact) error
+
 func (s *Store) CreateArtifact(ctx context.Context, p CreateArtifactParams) (Artifact, error) {
+	return s.CreateArtifactWithEvent(ctx, p, nil)
+}
+
+// CreateArtifactWithEvent atomically creates an artifact and appends its event.
+func (s *Store) CreateArtifactWithEvent(ctx context.Context, p CreateArtifactParams, event ArtifactEvent) (Artifact, error) {
 	var lastErr error
 	for range 2 {
 		artifactID := p.ID
@@ -128,12 +137,23 @@ func (s *Store) CreateArtifact(ctx context.Context, p CreateArtifactParams) (Art
 			artifactID = s.newToken()
 		}
 		a := Artifact{ID: artifactID, OwnerID: p.OwnerID, OwnerEmail: p.OwnerEmail, Filename: p.Filename, Description: p.Description, Visibility: p.Visibility, Size: p.Size, ContentHash: p.ContentHash, CreatedAt: p.CreatedAt.UTC(), UpdatedAt: p.CreatedAt.UTC()}
-		_, err := s.db.ExecContext(ctx, `INSERT INTO artifacts
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return Artifact{}, fmt.Errorf("begin create artifact: %w", err)
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO artifacts
 			(id, owner_id, owner_email, filename, description, visibility, size, content_hash, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, a.ID, a.OwnerID, a.OwnerEmail, a.Filename, a.Description, a.Visibility, a.Size, a.ContentHash, formatTime(a.CreatedAt), formatTime(a.UpdatedAt))
+		if err == nil && event != nil {
+			err = event(ctx, tx, a)
+		}
+		if err == nil {
+			err = tx.Commit()
+		}
 		if err == nil {
 			return a, nil
 		}
+		_ = tx.Rollback()
 		lastErr = err
 		if p.ID != "" {
 			break
@@ -150,6 +170,11 @@ func (s *Store) GetArtifact(ctx context.Context, id string) (Artifact, error) {
 // CommitUpload atomically creates an artifact and consumes its pending upload.
 // A false result means another request consumed (or time expired) first.
 func (s *Store) CommitUpload(ctx context.Context, token, artifactID string, p CreateArtifactParams, now time.Time) (Artifact, bool, error) {
+	return s.CommitUploadWithEvent(ctx, token, artifactID, p, now, nil)
+}
+
+// CommitUploadWithEvent atomically creates an artifact, consumes its upload, and appends its event.
+func (s *Store) CommitUploadWithEvent(ctx context.Context, token, artifactID string, p CreateArtifactParams, now time.Time, event ArtifactEvent) (Artifact, bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Artifact{}, false, fmt.Errorf("begin upload commit: %w", err)
@@ -183,6 +208,11 @@ func (s *Store) CommitUpload(ctx context.Context, token, artifactID string, p Cr
 	if err != nil {
 		return Artifact{}, false, fmt.Errorf("create uploaded artifact: %w", err)
 	}
+	if event != nil {
+		if err := event(ctx, tx, artifact); err != nil {
+			return Artifact{}, false, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return Artifact{}, false, fmt.Errorf("commit upload: %w", err)
 	}
@@ -214,21 +244,76 @@ type UpdateArtifactParams struct {
 }
 
 func (s *Store) UpdateArtifact(ctx context.Context, id string, p UpdateArtifactParams) (bool, error) {
-	result, err := s.db.ExecContext(ctx, `UPDATE artifacts SET filename = ?, description = ?, visibility = ?, updated_at = ? WHERE id = ?`, p.Filename, p.Description, p.Visibility, formatTime(p.UpdatedAt), id)
+	_, changed, err := s.UpdateArtifactWithEvent(ctx, id, p, nil)
+	return changed, err
+}
+
+// UpdateArtifactWithEvent atomically updates an artifact and appends its post-change event.
+func (s *Store) UpdateArtifactWithEvent(ctx context.Context, id string, p UpdateArtifactParams, event ArtifactEvent) (Artifact, bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, fmt.Errorf("update artifact: %w", err)
+		return Artifact{}, false, fmt.Errorf("begin update artifact: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `UPDATE artifacts SET filename = ?, description = ?, visibility = ?, updated_at = ? WHERE id = ?`, p.Filename, p.Description, p.Visibility, formatTime(p.UpdatedAt), id)
+	if err != nil {
+		return Artifact{}, false, fmt.Errorf("update artifact: %w", err)
 	}
 	count, err := result.RowsAffected()
-	return count == 1, err
+	if err != nil || count != 1 {
+		return Artifact{}, false, err
+	}
+	artifact, err := scanArtifact(tx.QueryRowContext(ctx, artifactSelect+` WHERE id = ?`, id))
+	if err != nil {
+		return Artifact{}, false, fmt.Errorf("read updated artifact: %w", err)
+	}
+	if event != nil {
+		if err := event(ctx, tx, artifact); err != nil {
+			return Artifact{}, false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return Artifact{}, false, fmt.Errorf("commit update artifact: %w", err)
+	}
+	return artifact, true, nil
 }
 
 func (s *Store) DeleteArtifact(ctx context.Context, id string) (bool, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM artifacts WHERE id = ?`, id)
+	_, deleted, err := s.DeleteArtifactWithEvent(ctx, id, nil)
+	return deleted, err
+}
+
+// DeleteArtifactWithEvent atomically deletes an artifact and appends its last-state event.
+func (s *Store) DeleteArtifactWithEvent(ctx context.Context, id string, event ArtifactEvent) (Artifact, bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, fmt.Errorf("delete artifact: %w", err)
+		return Artifact{}, false, fmt.Errorf("begin delete artifact: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	artifact, err := scanArtifact(tx.QueryRowContext(ctx, artifactSelect+` WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Artifact{}, false, nil
+	}
+	if err != nil {
+		return Artifact{}, false, fmt.Errorf("read artifact for delete: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM artifacts WHERE id = ?`, id)
+	if err != nil {
+		return Artifact{}, false, fmt.Errorf("delete artifact: %w", err)
 	}
 	count, err := result.RowsAffected()
-	return count == 1, err
+	if err != nil || count != 1 {
+		return Artifact{}, false, err
+	}
+	if event != nil {
+		if err := event(ctx, tx, artifact); err != nil {
+			return Artifact{}, false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return Artifact{}, false, fmt.Errorf("commit delete artifact: %w", err)
+	}
+	return artifact, true, nil
 }
 
 func (s *Store) IncrementDownloadCount(ctx context.Context, id string) (bool, error) {

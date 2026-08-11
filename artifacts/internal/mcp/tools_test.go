@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -23,8 +24,64 @@ import (
 	appkitmcp "appkit/mcp"
 	domain "artifacts/internal/artifacts"
 	"artifacts/internal/db"
+	"eventplane/outbox"
 	"registry"
 )
+
+// R-4R7O-Q64B
+func TestMutationToolsEmitPostChangeAndDeletedFacts(t *testing.T) {
+	fx := newFixture(t)
+	artifact := fx.storeDescription(t, "facts.txt", "private", []byte("body"), identity("owner"), "before")
+	ob, err := outbox.New(fx.conn, outbox.Options{Source: "artifacts", Registry: domain.Events, Now: func() time.Time { return fx.now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx.service.Outbox = domain.NewOutboxProducer(ob)
+
+	fx.now = fx.now.Add(time.Minute)
+	structured(t, fx.call(t, "update", map[string]any{"id": artifact.ID, "description": "after"}, identity("other")))
+	fx.now = fx.now.Add(time.Minute)
+	structured(t, fx.call(t, "set_visibility", map[string]any{"id": artifact.ID, "visibility": "public"}, identity("other")))
+	structured(t, fx.call(t, "delete", map[string]any{"id": artifact.ID}, identity("other")))
+
+	rows, err := fx.conn.Query(`SELECT kind, subject, payload FROM outbox ORDER BY seq`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var events []struct {
+		Kind, Subject string
+		Payload       map[string]any
+	}
+	for rows.Next() {
+		var kind, subject, raw string
+		if err := rows.Scan(&kind, &subject, &raw); err != nil {
+			t.Fatal(err)
+		}
+		payload := map[string]any{}
+		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+			t.Fatal(err)
+		}
+		events = append(events, struct {
+			Kind, Subject string
+			Payload       map[string]any
+		}{kind, subject, payload})
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 || events[0].Kind != "updated" || events[1].Kind != "updated" || events[2].Kind != "deleted" {
+		t.Fatalf("mutation events = %#v", events)
+	}
+	for i, event := range events {
+		if event.Subject != "/"+artifact.ID || event.Payload["id"] != artifact.ID || event.Payload["owner_id"] != artifact.OwnerID || event.Payload["owner_email"] != artifact.OwnerEmail {
+			t.Errorf("event %d address/payload = %#v", i, event)
+		}
+	}
+	if events[0].Payload["description"] != "after" || events[0].Payload["visibility"] != "private" || events[1].Payload["description"] != "after" || events[1].Payload["visibility"] != "public" || events[2].Payload["filename"] != artifact.Filename || events[2].Payload["visibility"] != "public" {
+		t.Fatalf("post-change/deleted payloads = %#v", events)
+	}
+}
 
 // R-4CKW-4X7Z
 func TestUploadReturnsExpiringCommandReadyLinkAndValidatesFilename(t *testing.T) {
@@ -257,6 +314,7 @@ func TestInstructionsAndGuideProvideTierTwoDiscovery(t *testing.T) {
 }
 
 type fixture struct {
+	conn    *sql.DB
 	storeDB *db.Store
 	service *domain.Service
 	now     time.Time
@@ -278,6 +336,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	fx := &fixture{now: time.Date(2026, 8, 10, 12, 0, 0, 123, time.UTC)}
+	fx.conn = conn
 	fx.storeDB = db.NewStore(conn, func() string { fx.next++; return fmt.Sprintf("%030d", fx.next) })
 	fx.service = domain.NewService(fx.storeDB, &domain.BlobStore{Root: t.TempDir()}, func() time.Time { return fx.now }, 1024)
 	fx.service.UploadOrigin = registry.BaseURL("artifacts")

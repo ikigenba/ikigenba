@@ -155,17 +155,13 @@ func (t *toolset) update(ctx context.Context, raw json.RawMessage, _ appkit.Iden
 	if args.Description != nil {
 		description = *args.Description
 	}
-	changed, err := t.service.Store.UpdateArtifact(ctx, artifact.ID, db.UpdateArtifactParams{
+	updated, changed, err := t.service.UpdateArtifact(ctx, artifact.ID, db.UpdateArtifactParams{
 		Filename: artifact.Filename, Description: description, Visibility: artifact.Visibility, UpdatedAt: t.service.Clock().UTC(),
 	})
 	if err != nil || !changed {
 		if err == nil {
 			err = sql.ErrNoRows
 		}
-		return nil, resultError(err)
-	}
-	updated, err := t.service.Store.GetArtifact(ctx, artifact.ID)
-	if err != nil {
 		return nil, resultError(err)
 	}
 	return t.record(updated), nil
@@ -189,17 +185,13 @@ func (t *toolset) setVisibility(ctx context.Context, raw json.RawMessage, _ appk
 	if err != nil {
 		return nil, resultError(err)
 	}
-	changed, err := t.service.Store.UpdateArtifact(ctx, artifact.ID, db.UpdateArtifactParams{
+	updated, changed, err := t.service.UpdateArtifact(ctx, artifact.ID, db.UpdateArtifactParams{
 		Filename: artifact.Filename, Description: artifact.Description, Visibility: args.Visibility, UpdatedAt: t.service.Clock().UTC(),
 	})
 	if err != nil || !changed {
 		if err == nil {
 			err = sql.ErrNoRows
 		}
-		return nil, resultError(err)
-	}
-	updated, err := t.service.Store.GetArtifact(ctx, artifact.ID)
-	if err != nil {
 		return nil, resultError(err)
 	}
 	return t.record(updated), nil
@@ -216,7 +208,7 @@ func (t *toolset) delete(ctx context.Context, raw json.RawMessage, _ appkit.Iden
 	if err := t.service.Blobs.Remove(id); err != nil {
 		return nil, resultError(err)
 	}
-	deleted, err := t.service.Store.DeleteArtifact(ctx, id)
+	_, deleted, err := t.service.DeleteArtifact(ctx, id)
 	if err != nil || !deleted {
 		if err == nil {
 			err = sql.ErrNoRows

@@ -12,6 +12,7 @@ import (
 	"appkit"
 	artifactdata "artifacts/internal/artifacts"
 	"artifacts/internal/db"
+	"eventplane/outbox"
 	"registry"
 )
 
@@ -35,15 +36,25 @@ func loadConfig(getenv func(string) string) (any, error) {
 }
 
 func artifactsSpec() appkit.Spec {
+	var svc *artifactdata.Service
 	return appkit.Spec{
 		App:        "artifacts",
 		Mount:      "/srv/artifacts/",
 		Port:       registry.MustPort("artifacts"),
 		MCP:        true,
+		Feed:       "/feed",
 		Migrations: db.FS,
+		Events:     artifactdata.Events,
 		Config:     loadConfig,
 		ManifestExtras: []appkit.ManifestKV{
 			{Key: "ARTIFACTS_MAX_UPLOAD_BYTES", Value: "209715200"},
+		},
+		Producer: func(ob *outbox.Outbox) error {
+			if svc == nil {
+				return fmt.Errorf("artifacts: Producer called before service available")
+			}
+			svc.Outbox = artifactdata.NewOutboxProducer(ob)
+			return nil
 		},
 		Handlers: func(rt *appkit.Router) error {
 			loaded, err := loadConfig(os.Getenv)
@@ -54,15 +65,15 @@ func artifactsSpec() appkit.Spec {
 			if root == "" {
 				root = "."
 			}
-			uploads := artifactdata.NewService(
+			svc = artifactdata.NewService(
 				db.NewStore(rt.DB(), artifactdata.NewToken),
 				&artifactdata.BlobStore{Root: filepath.Join(root, "artifacts", "state")},
 				time.Now,
 				loaded.(config).MaxUploadBytes,
 			)
-			rt.Handle("/u/", uploads.UploadHandler())
-			uploads.MountDownloads(rt)
-			uploads.MountContent(rt)
+			rt.Handle("/u/", svc.UploadHandler())
+			svc.MountDownloads(rt)
+			svc.MountContent(rt)
 			rt.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				_, _ = w.Write([]byte("artifacts\n"))

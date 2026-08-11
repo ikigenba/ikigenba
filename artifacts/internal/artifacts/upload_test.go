@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,7 +22,42 @@ import (
 	"appkit"
 	appkitdb "appkit/db"
 	domainDB "artifacts/internal/db"
+	"eventplane/outbox"
+	"registry"
 )
+
+// R-4NJZ-KUW8
+func TestUploadCreatedEventIsAtomicAndCarriesFullContentFact(t *testing.T) {
+	fx := newUploadFixture(t, 8)
+	fx.enableOutbox(t)
+	pending := fx.mint(t, "event.bin", "public")
+	response := fx.put(t, pending.Token, []byte("content"), nil)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("PUT status = %d: %s", response.Code, response.Body.String())
+	}
+	rows := artifactOutboxRows(t, fx.conn)
+	if len(rows) != 1 || rows[0].Kind != "created" {
+		t.Fatalf("outbox rows = %#v, want one created", rows)
+	}
+	var payload createdPayload
+	if err := json.Unmarshal([]byte(rows[0].Payload), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if rows[0].Subject != "/"+payload.ID || payload.OwnerID != "owner-1" || payload.OwnerEmail != "owner@example.com" || payload.Filename != "event.bin" || payload.Visibility != "public" || payload.Size != 7 || len(payload.ContentHash) != 64 || !strings.HasPrefix(payload.ContentURL, registry.BaseURL("artifacts")+"/content?id=") {
+		t.Fatalf("created address/payload = %q %#v", rows[0].Subject, payload)
+	}
+	before := len(rows)
+	if got := fx.put(t, "bad-token", []byte("x"), nil); got.Code != http.StatusNotFound {
+		t.Fatalf("bad-token status = %d", got.Code)
+	}
+	tooLarge := fx.mint(t, "large.bin", "private")
+	if got := fx.put(t, tooLarge.Token, bytes.Repeat([]byte("x"), 9), nil); got.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversize status = %d", got.Code)
+	}
+	if got := len(artifactOutboxRows(t, fx.conn)); got != before {
+		t.Fatalf("failed uploads changed outbox rows from %d to %d", before, got)
+	}
+}
 
 // R-3MZ0-3QNE
 func TestMintUploadValidatesAndReturnsTwentyFourHourLink(t *testing.T) {
@@ -293,6 +329,40 @@ func (fx *uploadFixture) put(t *testing.T, token string, body []byte, headers ma
 	response := httptest.NewRecorder()
 	fx.service.UploadHandler().ServeHTTP(response, request)
 	return response
+}
+
+func (fx *uploadFixture) enableOutbox(t *testing.T) {
+	t.Helper()
+	ob, err := outbox.New(fx.conn, outbox.Options{Source: "artifacts", Registry: Events, Now: func() time.Time { return fx.now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx.service.Outbox = NewOutboxProducer(ob)
+}
+
+type artifactOutboxRow struct {
+	Kind, Subject, Payload string
+}
+
+func artifactOutboxRows(t *testing.T, conn *sql.DB) []artifactOutboxRow {
+	t.Helper()
+	rows, err := conn.Query(`SELECT kind, subject, payload FROM outbox ORDER BY seq`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var result []artifactOutboxRow
+	for rows.Next() {
+		var row artifactOutboxRow
+		if err := rows.Scan(&row.Kind, &row.Subject, &row.Payload); err != nil {
+			t.Fatal(err)
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
 func rowCount(t *testing.T, conn *sql.DB, table string) int {

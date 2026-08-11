@@ -39,6 +39,7 @@ func TestEmittedManifestByteAgreesWithCommittedFile(t *testing.T) {
 		Mount:   "/srv/artifacts/",
 		Port:    registry.MustPort("artifacts"),
 		MCP:     true,
+		Feed:    "/feed",
 		Extras:  []manifest.KV{{Key: "ARTIFACTS_MAX_UPLOAD_BYTES", Value: "209715200"}},
 		Default: false,
 	})

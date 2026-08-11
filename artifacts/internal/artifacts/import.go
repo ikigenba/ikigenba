@@ -73,14 +73,17 @@ func (s *Service) Import(ctx context.Context, identity appkit.Identity, sourceUR
 	if err != nil {
 		return Artifact{}, err
 	}
-	artifact, err := s.Store.CreateArtifact(ctx, db.CreateArtifactParams{
+	artifact, err := s.Store.CreateArtifactWithEvent(ctx, db.CreateArtifactParams{
 		ID: artifactID, OwnerID: identity.OwnerID, OwnerEmail: identity.OwnerEmail,
 		Filename: filename, Description: description, Visibility: visibility,
 		Size: written, ContentHash: digest, CreatedAt: s.now(),
-	})
+	}, s.createdEvent)
 	if err != nil {
 		_ = s.Blobs.Remove(artifactID)
 		return Artifact{}, err
+	}
+	if s.Outbox != nil {
+		s.Outbox.Ring()
 	}
 	return artifact, nil
 }

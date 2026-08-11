@@ -37,6 +37,7 @@ type Upload struct {
 type Service struct {
 	Store          *db.Store
 	Blobs          *BlobStore
+	Outbox         EventSink
 	Clock          func() time.Time
 	MaxUploadBytes int64
 	UploadOrigin   string
@@ -116,11 +117,11 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(status)
 		return
 	}
-	artifact, won, err := s.Store.CommitUpload(r.Context(), token, artifactID, db.CreateArtifactParams{
+	artifact, won, err := s.Store.CommitUploadWithEvent(r.Context(), token, artifactID, db.CreateArtifactParams{
 		OwnerID: pending.OwnerID, OwnerEmail: pending.OwnerEmail, Filename: pending.Filename,
 		Description: pending.Description, Visibility: pending.Visibility, Size: written,
 		ContentHash: digest, CreatedAt: now,
-	}, now)
+	}, now, s.createdEvent)
 	if err != nil || !won {
 		_ = s.Blobs.Remove(artifactID)
 		if err != nil {
@@ -129,6 +130,9 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 		}
 		return
+	}
+	if s.Outbox != nil {
+		s.Outbox.Ring()
 	}
 
 	response := struct {
