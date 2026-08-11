@@ -14,5 +14,3 @@ deliberately carries **no** bare status glyph outside the phase lines, so
 the anchored grep matches only phase lines.
 
 Next phase: 11
-
-- Phase 10 ⬜ realizes D6 (slice: R-P52Q-H8MG) — mount the MCP surface in the composition root and prove it on the assembled binary
