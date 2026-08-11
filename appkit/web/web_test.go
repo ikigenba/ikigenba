@@ -138,6 +138,36 @@ func TestStaticServesWoff2WithFontContentType(t *testing.T) {
 	}
 }
 
+// R-S0TG-Q78J
+func TestStaticServesIcoWithRegisteredIconContentType(t *testing.T) {
+	root := t.TempDir()
+	contents := "deliberately plain text, not ICO magic"
+	if detected := http.DetectContentType([]byte(contents)); detected == "image/x-icon" {
+		t.Fatalf("DetectContentType(non-ICO bytes) = %q, want a type other than image/x-icon", detected)
+	}
+	writeFile(t, filepath.Join(root, "static", "favicon.ico"), contents)
+
+	site, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	site.Static().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/favicon.ico", nil))
+
+	res := rec.Result()
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("StatusCode = %d, want 200", res.StatusCode)
+	}
+	if got := res.Header.Get("Content-Type"); got != "image/x-icon" {
+		t.Fatalf("Content-Type = %q, want image/x-icon", got)
+	}
+	if got := rec.Body.String(); got != contents {
+		t.Fatalf("body = %q, want non-ICO file bytes", got)
+	}
+}
+
 // R-M585-DB3L
 func TestStaticDirectoryRequestsReturnNotFound(t *testing.T) {
 	root := t.TempDir()

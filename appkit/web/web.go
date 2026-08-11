@@ -12,6 +12,7 @@ import (
 
 func init() {
 	_ = mime.AddExtensionType(".woff2", "font/woff2")
+	_ = mime.AddExtensionType(".ico", "image/x-icon")
 }
 
 // Site is a service's loaded web surface rooted at one on-disk directory.
