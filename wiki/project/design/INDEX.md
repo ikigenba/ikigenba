@@ -75,6 +75,12 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D81 → `project/design/D81.md` — Suggested pages: the scope's seven newest subjects on every scope home — owns R-HJU8-XYZQ, R-HL25-BQQF, R-HMA1-PIH4, R-HOPU-H1YI
 - D82 → `project/design/D82.md` — Scope instructions: an operator-authored preamble on every inference call — owns R-8FVJ-PUMZ, R-8H3G-3MDO, R-8JJ8-V5V2, R-8KR5-8XLR, R-8LZ1-MPCG, R-8N6Y-0H35, R-8OEU-E8TU, R-8PMQ-S0KJ, R-8QUN-5SB8, R-8S2J-JK1X
 - D83 → `project/design/D83.md` — The ask response cache: in-memory, LRU, shared by both surfaces — owns R-02RF-HMOW, R-03ZB-VEFL, R-0578-966A, R-06F4-MXWZ, R-07N1-0PNO, R-08UX-EHED, R-0A2T-S952, R-0BAQ-60VR, R-0CIM-JSMG, R-0DQI-XKD5, R-0EYF-BC3U, R-0G6B-P3UJ, R-0IM4-GNBX, R-0JU0-UF2M, R-0L1X-86TB
+- D84 → `project/design/D84.md` — Scope-labeled vector cache: the scope-carrying update seam + scope-wide eviction on scope delete — owns R-R1EX-LNNQ, R-R2MT-ZFEF, R-R3UQ-D754, R-R52M-QYVT, R-R6AJ-4QMI
+- D85 → `project/design/D85.md` — Orphan-free page embeddings: guarded writes, subject-joined hydration, sweep reaping — owns R-R7IF-IID7, R-R8QB-WA3W, R-R9Y8-A1UL, R-RB64-NTLA
+- D86 → `project/design/D86.md` — `ask` tolerates a stale retrieval hit: drop-and-continue — owns R-RDLX-FD2O, R-RETT-T4TD
+- D87 → `project/design/D87.md` — The exact-name pin inside the scope wall: scoped resolution, subject-id hits — owns R-RG1Q-6WK2, R-RH9M-KOAR, R-RIHI-YG1G
+- D88 → `project/design/D88.md` — A job whose row is gone integrates nothing: the dead-job discard — owns R-RJPF-C7S5, R-RKXB-PZIU
+- D89 → `project/design/D89.md` — An honest ask failure on the web: a styled error page and a logged cause — owns R-RM58-3R9J, R-RND4-HJ08
 
 ## Verification ids → Decision
 
@@ -390,6 +396,24 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-QB7A-Z95U → D36 (`project/design/D36.md`)
 - R-QCF7-D0WJ → D36 (`project/design/D36.md`)
 - R-QDN3-QSN8 → D36 (`project/design/D36.md`)
+- R-R1EX-LNNQ → D84 (`project/design/D84.md`)
+- R-R2MT-ZFEF → D84 (`project/design/D84.md`)
+- R-R3UQ-D754 → D84 (`project/design/D84.md`)
+- R-R52M-QYVT → D84 (`project/design/D84.md`)
+- R-R6AJ-4QMI → D84 (`project/design/D84.md`)
+- R-R7IF-IID7 → D85 (`project/design/D85.md`)
+- R-R8QB-WA3W → D85 (`project/design/D85.md`)
+- R-R9Y8-A1UL → D85 (`project/design/D85.md`)
+- R-RB64-NTLA → D85 (`project/design/D85.md`)
+- R-RDLX-FD2O → D86 (`project/design/D86.md`)
+- R-RETT-T4TD → D86 (`project/design/D86.md`)
+- R-RG1Q-6WK2 → D87 (`project/design/D87.md`)
+- R-RH9M-KOAR → D87 (`project/design/D87.md`)
+- R-RIHI-YG1G → D87 (`project/design/D87.md`)
+- R-RJPF-C7S5 → D88 (`project/design/D88.md`)
+- R-RKXB-PZIU → D88 (`project/design/D88.md`)
+- R-RM58-3R9J → D89 (`project/design/D89.md`)
+- R-RND4-HJ08 → D89 (`project/design/D89.md`)
 - R-RU0J-77HX → D3 (`project/design/D03.md`)
 - R-RV8F-KZ8M → D3 (`project/design/D03.md`)
 - R-RXO8-CIQ0 → D3 (`project/design/D03.md`)
