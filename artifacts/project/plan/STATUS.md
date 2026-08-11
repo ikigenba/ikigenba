@@ -15,7 +15,6 @@ the anchored grep matches only phase lines.
 
 Next phase: 10
 
-- Phase 04 ⬜ realizes R-3WQ7-5WKY, R-3XY3-JOBN, R-3Z5Z-XG2C, R-40DW-B7T1, R-41LS-OZJQ, R-42TP-2RAF — download surface: public and private tiers
 - Phase 05 ⬜ realizes R-441L-GJ14, R-46HE-82II, R-47PA-LU97, R-48X6-ZLZW, R-4A53-DDQL, R-4BCZ-R5HA — content-plane holder endpoint + import acceptor
 - Phase 06 ⬜ realizes R-4CKW-4X7Z, R-4DSS-IOYO, R-4F0O-WGPD, R-4G8L-A8G2, R-4HGH-O06R, R-4IOE-1RXG, R-4JWA-FJO5, R-4L46-TBEU, R-4MC3-735J — MCP tool surface
 - Phase 07 ⬜ realizes R-4NJZ-KUW8, R-4PZS-CEDM, R-4R7O-Q64B, R-4SFL-3XV0 — event production wired into every domain mutation
