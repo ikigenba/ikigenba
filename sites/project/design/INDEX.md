@@ -42,6 +42,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D36 → `project/design/D36.md` — Site lifecycle against the plane: `create` makes the repository (local first, undone on plane failure), `delete` archives before removing, a slug change (every transition into unlisted, and leaving it with `new_slug`) renames the repository key, and a tier-only visibility change or a display-name `rename` makes no plane call — owns R-FARO-E6HT, R-FBZK-RY8I, R-FD7H-5PZ7, R-FEFD-JHPW
 - D37 → `project/design/D37.md` — Seeding pre-plane sites: an additive, re-runnable background pass at startup keyed on `repo_seeded = 0` that creates each site's repository and commits its current served tree as one initial commit, never moving, rewriting, or deleting anything under `SITES_ROOT` — owns R-FFN9-X9GL, R-FGV6-B17A, R-FI32-OSXZ
 - D38 → `project/design/D38.md` — The publish root: a per-site `path` (row fact only, never in a URL or on-disk path) selecting the repository subfolder that is served; `ValidatePath` + `Subtree` mapping; `create(path?)` and the `set_path` mutator (export-first re-materialization, `source_unavailable` on repos failure); the commit-boundary prefix on the write path and `sync`; the materializer filter; an absent subtree serves empty — owns R-3TWL-UEHA, R-3V4I-867Z, R-3WCE-LXYO, R-3XKA-ZPPD, R-3YS7-DHG2, R-4003-R96R, R-4180-50XG, R-42FW-ISO5, R-43NS-WKEU
+- D39 → `project/design/D39.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 **Retired numbers.** No Decision number has been retired; `D01`–`D38` are all live. Retired **ids** are never reused either: `R-P21E-0285` (D13's former empty-event-graph reflection pin) was deleted when sites became an event-plane consumer and is replaced by `R-FJAZ-2KOO`.
 
@@ -202,6 +203,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-4Q8B → D2 → `project/design/D02.md`
 - R-ROUT-6S1D → D2 → `project/design/D02.md`
 - R-ROUT-8U3F → D2 → `project/design/D02.md`
+- R-RYDN-YNR5 → D39 → `project/design/D39.md` (adopted from root `project/design/D29.md`)
+- R-RZLK-CFHU → D39 → `project/design/D39.md` (adopted from root `project/design/D29.md`)
 - R-VKB6-SHHV → D30 → `project/design/D30.md` (adopted from root `project/design/D11.md`)
 - R-VYEF-053C → D23 → `project/design/D23.md`
 - R-VZMB-DWU1 → D23 → `project/design/D23.md`

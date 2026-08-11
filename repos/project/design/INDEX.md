@@ -31,6 +31,7 @@ v2 rewrite and their ids were deleted with them.
 - D24 → `project/design/D24.md` — The landing page lists the live repositories (server render + layout) — R-RP30-4NV1, R-RQAW-IFLQ, R-RRIS-W7CF, R-RSQP-9Z34, R-RTYL-NQTT, R-RV6I-1IKI, R-RWEE-FAB7, R-RXMA-T21W, R-RYU7-6TSL, R-S023-KLJA, R-S19Z-YD9Z, R-S2HW-C50O, R-S4XP-3OI2, R-S65L-HG8R
 - D25 → `project/design/D25.md` — Client-side filter, sort, and pagination of the landing listing — R-S7DH-V7ZG, R-S8LE-8ZQ5, R-S9TA-MRGU, R-SB17-0J7J, R-SC93-EAY8, R-SDGZ-S2OX, R-SEOW-5UFM, R-SFWS-JM6B, R-SH4O-XDX0, R-SICL-B5NP, R-SJKH-OXEE, R-SKSE-2P53, R-SN86-U8MH, R-SOG3-80D6
 - D26 → `project/design/D26.md` — Browser wiring proof: one minimal headless-Chrome test (chromedp) — R-SPNZ-LS3V, R-SQVV-ZJUK, R-SS3S-DBL9, R-STBO-R3BY, R-SUJL-4V2N, R-SVRH-IMTC, R-SWZD-WEK1, R-SY7A-A6AQ, R-SZF6-NY1F
+- D27 → `project/design/D27.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -120,7 +121,9 @@ v2 rewrite and their ids were deleted with them.
 - R-RV6I-1IKI → D24 — `project/design/D24.md`
 - R-RWEE-FAB7 → D24 — `project/design/D24.md`
 - R-RXMA-T21W → D24 — `project/design/D24.md`
+- R-RYDN-YNR5 → D27 — `project/design/D27.md` (adopted from root `project/design/D29.md`)
 - R-RYU7-6TSL → D24 — `project/design/D24.md`
+- R-RZLK-CFHU → D27 — `project/design/D27.md` (adopted from root `project/design/D29.md`)
 - R-S023-KLJA → D24 — `project/design/D24.md`
 - R-S19Z-YD9Z → D24 — `project/design/D24.md`
 - R-S2HW-C50O → D24 — `project/design/D24.md`

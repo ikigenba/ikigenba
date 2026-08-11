@@ -28,6 +28,7 @@ Verification ids change.
 - D19 → `project/design/D19.md` — One inbound delivery, one chain: the minted id rides the published event — R-L1A1-XMRN, R-L2HY-BEIC, R-L3PU-P691
 - D20 → `project/design/D20.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): hermetic + composed layers only, no live layer, no tree-local manual runbook, the `go`-on-`PATH` and `bash`/`grep` preconditions, workspace GOWORK mode; settles D7/D8's through-real-nginx claims as manual-layer — mints none; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 - D21 → `project/design/D21.md` — Outbox schema convergence: the `outbox_correlation` rebuild migration, the restored frozen body, and the migration-immutability guard — owns R-NLTJ-K4X4, R-NN1F-XWNT; adopts R-NFQ1-NA7N (root `project/design/D25.md`)
+- D22 → `project/design/D22.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -103,6 +104,8 @@ Verification ids change.
 - R-OE8Y-H4M5 → D7 — `project/design/D07.md`
 - R-OFGU-UWCU → D7 — `project/design/D07.md`
 - R-OGOR-8O3J → D7 — `project/design/D07.md`
+- R-RYDN-YNR5 → D22 — `project/design/D22.md` (adopted from root `project/design/D29.md`)
+- R-RZLK-CFHU → D22 — `project/design/D22.md` (adopted from root `project/design/D29.md`)
 - R-SZ8I-R4EY → D2 — `project/design/D02.md`
 - R-TMJH-V1NP → D9 — `project/design/D09.md`
 - R-TNRE-8TEE → D9 — `project/design/D09.md`

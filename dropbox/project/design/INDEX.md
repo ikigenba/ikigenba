@@ -34,6 +34,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D28 → `project/design/D28.md` — State paths come from `appkit/config`, never from a hardcoded `./tmp` default — owns R-L7TF-ZAFX, R-L91C-D26M, R-LA98-QTXB
 - D29 → `project/design/D29.md` — Env-channel conformance: the sync tuning knobs surface in the manifest — owns R-M0AZ-C8H7; adopts R-VKB6-SHHV (root `project/design/D11.md`)
 - D30 → `project/design/D30.md` — Testing-language conformance: adopt the suite contract and normalize the live layer — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
+- D31 → `project/design/D31.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -132,6 +133,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-2B5C → D2 → `project/design/D02.md`
 - R-ROUT-4D7E → D2 → `project/design/D02.md`
 - R-ROUT-6F9G → D2 → `project/design/D02.md`
+- R-RYDN-YNR5 → D31 → `project/design/D31.md` (adopted from root `project/design/D29.md`)
+- R-RZLK-CFHU → D31 → `project/design/D31.md` (adopted from root `project/design/D29.md`)
 - R-TABR-0FWD → D26 → `project/design/D26.md`
 - R-TBJN-E7N2 → D26 → `project/design/D26.md`
 - R-TCRJ-RZDR → D26 → `project/design/D26.md`

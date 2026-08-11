@@ -21,6 +21,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D15 → `project/design/D15.md` — Structured MCP adoption: `StructuredResult` + mirrored text, per-tool `outputSchema`, closed-vocabulary error codes — owns R-6TVE-C4AC, R-6V3A-PW11, R-6WB7-3NRQ, R-6XJ3-HFIF, R-6YQZ-V794, R-6ZYW-8YZT, R-716S-MQQI
 - D16 → `project/design/D16.md` — Correlation adoption and the tick root: the nginx fragment carries the chain id across the trust boundary, every firing mints a fresh root id via the chassis `StartRoot` and records a `root` record with op `cron:tick/<name>`, and the `correlation_id` column arrives by one additive migration — owns R-2V3L-RE05, R-2WBI-55QU, R-2XJE-IXHJ, R-2YRA-WP88, R-BBON-OZTN, R-BE4G-GJB1
 - D17 → `project/design/D17.md` — Adopt the suite testing-language contract — none of its own; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
+- D18 → `project/design/D18.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -78,3 +79,5 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-2P8Q → D2 → `project/design/D02.md`
 - R-ROUT-4R1S → D2 → `project/design/D02.md`
 - R-ROUT-6T3U → D2 → `project/design/D02.md`
+- R-RYDN-YNR5 → D18 → `project/design/D18.md` (adopted from root `project/design/D29.md`)
+- R-RZLK-CFHU → D18 → `project/design/D18.md` (adopted from root `project/design/D29.md`)

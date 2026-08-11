@@ -47,6 +47,7 @@ Verification ids change.
 - D38 → `project/design/D38.md` — The git door accepts a PAT as an HTTP Basic password — owns R-39O6-OFFD, R-3AW3-2762, R-3C3Z-FYWR, R-3DBV-TQNG, R-3EJS-7IE5, R-3FRO-LA4U, R-3I7H-CTM8, R-3JFD-QLCX, R-3KNA-4D3M, R-3LV6-I4UB
 - D39 → `project/design/D39.md` — The apex fragment sets the http-level `variables_hash_max_size` for the whole box — owns R-6MX7-JDFX
 - D40 → `project/design/D40.md` — The install page: connect-your-agent moves to `/install` — owns R-VVO9-365W, R-VWW5-GXWL
+- D41 → `project/design/D41.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -151,6 +152,8 @@ Verification ids change.
 - R-OF1Q-VEDC → D5 → `project/design/D05.md`
 - R-OG9N-9641 → D5 → `project/design/D05.md`
 - R-OHHJ-MXUQ → D5 → `project/design/D05.md`
+- R-RYDN-YNR5 → D41 → `project/design/D41.md` (adopted from root `project/design/D29.md`)
+- R-RZLK-CFHU → D41 → `project/design/D41.md` (adopted from root `project/design/D29.md`)
 - R-VH1G-HX9K → D1 → `project/design/D01.md`
 - R-VI9C-VP09 → D1 → `project/design/D01.md`
 - R-VJH9-9GQY → D5 → `project/design/D05.md`

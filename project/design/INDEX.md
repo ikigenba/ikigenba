@@ -32,6 +32,7 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - **D26** → `project/design/D26.md` — The run-lifetime contract: a bounded run TTL and the derived run-token lifetime — ids: R-34EZ-J9BF [proof: per-service], R-35MV-X124 [proof: per-service]
 - **D27** → `project/design/D27.md` — The edit-tool merge contract: patch semantics, whole-value fields, and the stated merge rule — ids: none (a prose contract; behaviors proven by the implementing trees)
 - **D28** → `project/design/D28.md` — The changelog contract: per-app `CHANGELOG.md`, authored at bump time, enforced by bump — ids: R-CKLX-X89X, R-CLTU-B00M, R-CN1Q-ORRB, R-CO9N-2JI0 (all [proof: bin])
+- **D29** → `project/design/D29.md` — The brand icon contract: the shipped set, its static location, and the link markup — ids: R-RYDN-YNR5, R-RZLK-CFHU (both [proof: per-service])
 
 ## Verification ids → Decision
 
@@ -76,5 +77,7 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - R-O3Q6-EB2A → D5 (`project/design/D05.md`) [proof: opsctl]
 - R-O4Y2-S2SZ → D5 (`project/design/D05.md`) [proof: opsctl]
 - R-QQNU-T5M7 → D11 (`project/design/D11.md`) [proof: appkit]
+- R-RYDN-YNR5 → D29 (`project/design/D29.md`) [proof: per-service]
+- R-RZLK-CFHU → D29 (`project/design/D29.md`) [proof: per-service]
 - R-VCF3-PLWD → D1 (`project/design/D01.md`) [proof: opsctl]
 - R-VKB6-SHHV → D11 (`project/design/D11.md`) [proof: per-service]

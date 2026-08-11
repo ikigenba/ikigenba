@@ -11,9 +11,9 @@ restating each other.
 
 ## Problem
 
-The suite is one mono-repo of many independently deployable parts: fifteen service
+The suite is one mono-repo of many independently deployable parts: sixteen service
 applications, three shared libraries, the on-box CLI, the off-box build tooling,
-and the front door. Most of what makes them a *suite* rather than fifteen unrelated
+and the front door. Most of what makes them a *suite* rather than sixteen unrelated
 programs is agreement — where a service is installed, what a release artifact is
 called and contains, what a version string looks like, which of a service's data
 survives a restore, what environment a binary is handed, where its secrets come
@@ -44,8 +44,8 @@ in its own spec, visibly, with its reason.
 The **spec authors and build loops of every tree in the suite**. When a service
 spec needs to say where its database lives, what its binary's verbs are, or what
 its release artifact is called, it cites a contract here instead of deciding again.
-They are trying to build a tree that composes correctly with fourteen others
-without reading fourteen other specs.
+They are trying to build a tree that composes correctly with fifteen others
+without reading fifteen other specs.
 
 Behind them, the **box operator** — the person shipping, deploying, backing up, and
 recovering the suite — is who the contracts are ultimately *for*: uniformity across
@@ -95,6 +95,10 @@ This project owns the agreements that bind more than one tree:
   when editing an existing thing through any service's tools: an omitted field
   is never touched, so a partial edit can never silently destroy what it did not
   mention, and every edit tool says so where its callers read.
+- **The brand icon set** — the one browser-chrome identity every service that
+  serves HTML presents: which icon files ship, where in a service's own bundle
+  they live, and what markup carries them, so a user moving between the apex
+  and any service page sees one product rather than sixteen unrelated ones.
 - **The release changelog** — the per-release record every deployable app keeps
   of what changed, stated for the operator in brief outcome terms, who authors
   it and when, and the release-time gate that keeps a release from shipping

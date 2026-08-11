@@ -46,6 +46,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D39 → `project/design/D39.md` — `repos` becomes a trigger source: scripts is the suite's CI runner — owns R-2TS6-VE9D, R-2V03-9602
 - D40 → `project/design/D40.md` — Seeding existing scripts into the plane, then retiring the `body` column (guarded migration) — owns R-2W7Z-MXQR, R-2XFW-0PHG, R-2YNS-EH85
 - D41 → `project/design/D41.md` — Outbox schema convergence: the `outbox_correlation` rebuild migration, the restored frozen body, and the migration-immutability guard — owns R-NGXY-11YC, R-NJDQ-SLFQ; adopts R-NFQ1-NA7N (root `project/design/D25.md`)
+- D42 → `project/design/D42.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -192,6 +193,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-8U2J → D2 → `project/design/D02.md`
 - R-RUNS-BOOT → D9 → `project/design/D09.md`
 - R-RUNS-CDIR → D9 → `project/design/D09.md`
+- R-RYDN-YNR5 → D42 → `project/design/D42.md` (adopted from root `project/design/D29.md`)
+- R-RZLK-CFHU → D42 → `project/design/D42.md` (adopted from root `project/design/D29.md`)
 - R-VKB6-SHHV → D33 → `project/design/D33.md` (adopted from root `project/design/D11.md`)
 - R-ZECX-40UZ → D27 → `project/design/D27.md`
 - R-ZFKT-HSLO → D27 → `project/design/D27.md`

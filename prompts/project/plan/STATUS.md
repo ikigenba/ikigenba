@@ -9,4 +9,6 @@ loop **deletes** that phase's line and its `phase-NN.md` — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 77
+Next phase: 78
+
+- Phase 77 ⬜ realizes R-RYDN-YNR5, R-RZLK-CFHU — adopt the suite brand icon set

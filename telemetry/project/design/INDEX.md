@@ -18,6 +18,7 @@ Verification ids change.
 - D9 → `project/design/D09.md` — Suite-contract conformance: the opsctl install layout & the authored env contract — adopts `R-4LKF-FB23` (root `project/design/D08.md`), `R-8DF1-W89F`, `R-8IAN-FB87` (root `project/design/D11.md`); mints none of its own
 - D10 → `project/design/D10.md` — Adopt the suite testing-language contract — adopts `R-O1AD-MRKW`, `R-O2IA-0JBL` (root `project/design/D23.md`); mints none of its own
 - D11 → `project/design/D11.md` — The canonical landing page (byte-for-byte suite template, telemetry text only) — R-6B96-6B5S, R-6CH2-K2WH
+- D12 → `project/design/D12.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -35,6 +36,8 @@ Verification ids change.
 - R-NTSI-XWI1 → D1 — `project/design/D01.md`
 - R-O1AD-MRKW → D10 — `project/design/D10.md` (adopted from root `project/design/D23.md`)
 - R-O2IA-0JBL → D10 — `project/design/D10.md` (adopted from root `project/design/D23.md`)
+- R-RYDN-YNR5 → D12 — `project/design/D12.md` (adopted from root `project/design/D29.md`)
+- R-RZLK-CFHU → D12 — `project/design/D12.md` (adopted from root `project/design/D29.md`)
 - R-V6NF-9LY8 → D1 — `project/design/D01.md`
 - R-V7VB-NDOX → D1 — `project/design/D01.md`
 - R-V938-15FM → D2 — `project/design/D02.md`

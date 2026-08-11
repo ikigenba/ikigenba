@@ -9,5 +9,7 @@ loop deletes the phase's line and body file — there is no done marker; done is
 gone. This file deliberately carries **no bare status glyph** anywhere but on a
 phase line, so the anchored grep matches only phase lines.
 
-Next phase: 28
+Next phase: 29
+
+- Phase 28 ⬜ realizes R-RYDN-YNR5, R-RZLK-CFHU — adopt the suite brand icon set
 

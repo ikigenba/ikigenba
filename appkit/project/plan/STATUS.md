@@ -9,7 +9,9 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 31
+Next phase: 32
+
+- Phase 31 ⬜ realizes R-S0TG-Q78J — pin the `.ico` content type in `appkit/web`
 
 
 

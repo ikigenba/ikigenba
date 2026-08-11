@@ -81,6 +81,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D87 → `project/design/D87.md` — The exact-name pin inside the scope wall: scoped resolution, subject-id hits — owns R-RG1Q-6WK2, R-RH9M-KOAR, R-RIHI-YG1G
 - D88 → `project/design/D88.md` — A job whose row is gone integrates nothing: the dead-job discard — owns R-RJPF-C7S5, R-RKXB-PZIU
 - D89 → `project/design/D89.md` — An honest ask failure on the web: a styled error page and a logged cause — owns R-RM58-3R9J, R-RND4-HJ08
+- D90 → `project/design/D90.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -417,7 +418,9 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-RU0J-77HX → D3 (`project/design/D03.md`)
 - R-RV8F-KZ8M → D3 (`project/design/D03.md`)
 - R-RXO8-CIQ0 → D3 (`project/design/D03.md`)
+- R-RYDN-YNR5 → D90 — `project/design/D90.md` (adopted from root `project/design/D29.md`)
 - R-RYW4-QAGP → D3 (`project/design/D03.md`)
+- R-RZLK-CFHU → D90 — `project/design/D90.md` (adopted from root `project/design/D29.md`)
 - R-S041-427E → D3 (`project/design/D03.md`)
 - R-S1BX-HTY3 → D3 (`project/design/D03.md`)
 - R-S2JT-VLOS → D3 (`project/design/D03.md`)

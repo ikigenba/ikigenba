@@ -10,7 +10,7 @@ Verification ids change.
 - D1 → `project/design/D01.md` — Manifest readers resolve *through* the per-app `current` symlink (`appkit/inventory`) — owns R-YO06-9I18, R-YP82-N9RX
 - D4 → `project/design/D04.md` — Retire the stable sibling path and its hand-placed artifacts — owns R-YSVR-SL00, R-YU3O-6CQP
 - D5 → `project/design/D05.md` — WWW-root resolution in `appkit/config` (`share/current/www` on box, `./share/www` dev, `<APP>_WWW_PATH` override) — owns R-LWOU-OWWQ, R-LXWR-2ONF, R-LZ4N-GGE4
-- D6 → `project/design/D06.md` — The `appkit/web` package: templates + static assets over an on-disk root — owns R-M0CJ-U84T, R-M1KG-7ZVI, R-M2SC-LRM7, R-M408-ZJCW, R-M585-DB3L
+- D6 → `project/design/D06.md` — The `appkit/web` package: templates + static assets over an on-disk root — owns R-M0CJ-U84T, R-M1KG-7ZVI, R-M2SC-LRM7, R-M408-ZJCW, R-M585-DB3L, R-S0TG-Q78J
 - D7 → `project/design/D07.md` — Chassis integration: `Spec.WWW`, the auto-mounted static route, `Router.WWW()` — owns R-M7NY-4UKZ, R-M8VU-IMBO, R-MA3Q-WE2D, R-MBBN-A5T2
 - D8 → `project/design/D08.md` — The `appkit/mcp` JSON-RPC transport over a declared tool table, with structured results (protocol `2025-06-18`, `OutputSchema`, `StructuredResult`, typed `ErrorCode`, `-32603` handler faults) + `New` advertised-schema conformance guard (strict-client-verified) — owns R-MCJJ-NXJR, R-MDRG-1PAG, R-MEZC-FH15, R-DHJA-J13E, R-MHF5-70IJ, R-MIN1-KS98, R-MJUX-YJZX, R-WPNN-6Q9E, R-WQVJ-KI03, R-WTBC-C1HH, R-WUJ8-PT86, R-WVR5-3KYV, R-EIYD-4M57, R-ELE5-W5ML, R-MSET-O79A
 - D9 → `project/design/D09.md` — Chassis-owned standard tools: `health` and `reflection`, structured (declared `outputSchema`s, `structuredContent` results, coded unknown-kind error; `reflection` advertises a strict-conforming open-object `outputSchema`, not a top-level `oneOf`) — owns R-ML2U-CBQM, R-7EK6-8030, R-7FS2-LRTP, R-7GZY-ZJKE, R-7I7V-DBB3, R-DIR6-WSU3, R-WWZ1-HCPK, R-WY6X-V4G9, R-WZEU-8W6Y, R-EK69-IDVW
@@ -112,6 +112,7 @@ Verification ids change.
 - R-PTNV-XRYV → D15 → `project/design/D15.md`
 - R-RI9E-W0G2 → D17 → `project/design/D17.md`
 - R-RKP7-NJXG → D17 → `project/design/D17.md`
+- R-S0TG-Q78J → D6 → `project/design/D06.md`
 - R-WPNN-6Q9E → D8 → `project/design/D08.md`
 - R-WQVJ-KI03 → D8 → `project/design/D08.md`
 - R-WTBC-C1HH → D8 → `project/design/D08.md`

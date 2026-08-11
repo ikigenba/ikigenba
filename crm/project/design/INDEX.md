@@ -25,6 +25,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D19 → `project/design/D19.md` — Structured MCP adoption: `structuredContent` + declared `outputSchema` per domain verb + typed closed-vocabulary error codes (no guard swap — crm has no loopback guard site) — owns R-5Y60-E30A, R-5ZDW-RUQZ, R-60LT-5MHO, R-61TP-JE8D, R-631L-X5Z2, R-65HE-OPGG
 - D20 → `project/design/D20.md` — Correlation-id adoption: the nginx fragment forwards the chain id on gated locations and strips it on the ungated PRM bootstrap; event appends carry it from context — owns R-X9B0-30E7, R-XAIW-GS4W, R-XCYP-8BMA, R-XE6L-M3CZ
 - D21 → `project/design/D21.md` — Testing-language conformance: the suite's four layers, crm's declared testing facts (hermetic + composed, no live, no manual; no preconditions beyond the Go toolchain; workspace GOWORK), proven in `cmd/crm/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
+- D22 → `project/design/D22.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -73,6 +74,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-3T2V → D2 → `project/design/D02.md`
 - R-ROUT-5W4X → D2 → `project/design/D02.md`
 - R-ROUT-7Y6Z → D2 → `project/design/D02.md`
+- R-RYDN-YNR5 → D22 → `project/design/D22.md` (adopted from root `project/design/D29.md`)
+- R-RZLK-CFHU → D22 → `project/design/D22.md` (adopted from root `project/design/D29.md`)
 - R-SRS9-B2RI → D8 → `project/design/D08.md`
 - R-ST05-OUI7 → D8 → `project/design/D08.md`
 - R-SU82-2M8W → D8 → `project/design/D08.md`

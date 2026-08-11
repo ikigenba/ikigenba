@@ -64,6 +64,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D59 | project/design/D59.md | Retiring the content columns | R-SE0O-ZSWV, R-SF8L-DKNK |
 | D60 | project/design/D60.md | The prompts-owned peer MCP client | R-OLVJ-TO7G, R-OOBC-L7OU, R-OPJ8-YZFJ, R-OQR5-CR68 |
 | D61 | project/design/D61.md | Patch-semantics `update`: omitted means unchanged, and no empty prompt is ever stored | R-A8EU-5VUL, R-A9MQ-JNLA, R-AAUM-XFBZ, R-AC2J-B72O, R-ADAF-OYTD, R-AEIC-2QK2 |
+| D62 | project/design/D62.md | Adopt the suite brand icon contract: the shipped icon set and its link markup | adopts R-RYDN-YNR5, R-RZLK-CFHU (root project/design/D29.md) |
 
 ## Verification ids → Decision
 
@@ -283,7 +284,9 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-RVQ7-98SG | D54 | project/design/D54.md |
 | R-RWY3-N0J5 | D55 | project/design/D55.md |
 | R-RY60-0S9U | D55 | project/design/D55.md |
+| R-RYDN-YNR5 | D62 | project/design/D62.md |
 | R-RZDW-EK0J | D56 | project/design/D56.md |
+| R-RZLK-CFHU | D62 | project/design/D62.md |
 | R-S0LS-SBR8 | D55 | project/design/D55.md |
 | R-S1TP-63HX | D55 | project/design/D55.md |
 | R-S31L-JV8M | D55 | project/design/D55.md |

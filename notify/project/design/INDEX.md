@@ -24,6 +24,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D18 → `project/design/D18.md` — Telemetry adoption, Go side: the ntfy client's `http.Client` injected from the chassis's instrumented outbound client, and a correlation id that survives the detached-goroutine seam (`context.WithoutCancel`) — owns R-TK2Y-2LTX, R-TLAU-GDKM, R-TMIQ-U5BB, R-TNQN-7X20
 - D19 → `project/design/D19.md` — nginx fragment: gated locations capture and forward the edge-minted `X-Correlation-Id`; the ungated public PRM location clears it — owns R-VLOW-90H2, R-VMWS-MS7R
 - D20 → `project/design/D20.md` — Testing-language conformance: the suite's four layers, notify's declared testing facts (hermetic + composed, no live, no manual; no preconditions beyond the Go toolchain; workspace GOWORK), proven in `cmd/notify/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
+- D21 → `project/design/D21.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -69,6 +70,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-4G2Q → D2 → `project/design/D02.md`
 - R-ROUT-6H5R → D2 → `project/design/D02.md`
 - R-ROUT-8J7S → D2 → `project/design/D02.md`
+- R-RYDN-YNR5 → D21 → `project/design/D21.md` (adopted from root `project/design/D29.md`)
+- R-RZLK-CFHU → D21 → `project/design/D21.md` (adopted from root `project/design/D29.md`)
 - R-TK2Y-2LTX → D18 → `project/design/D18.md`
 - R-TLAU-GDKM → D18 → `project/design/D18.md`
 - R-TMIQ-U5BB → D18 → `project/design/D18.md`
