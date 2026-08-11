@@ -11,7 +11,6 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 32
 
-- Phase 31 ⬜ realizes R-S0TG-Q78J — pin the `.ico` content type in `appkit/web`
 
 
 
