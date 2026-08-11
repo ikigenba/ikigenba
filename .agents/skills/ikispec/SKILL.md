@@ -189,6 +189,12 @@ it.
   the umbrella's per-service contracts enter the denominator like local ids;
   the umbrella project itself replaces this tree-local check with the
   proof-location markers described above.
+- **Every promise is proven.** Each product success criterion maps in design's
+  `INDEX.md` criteria trace to at least one minted id whose test exercises the
+  assembled artifact end-to-end. A criterion with no mapped id is an unproven
+  promise and blocks sealing; a mapped id that design no longer mints is stale
+  and fixed at authoring time. The trace is mechanically checkable: every
+  criterion line carries ≥1 id, and each such id appears in the design id set.
 
 ## `project/product/README.md` — the product shape
 
@@ -222,9 +228,10 @@ Sections, in order:
   codes, no internal formats.
 - **## Success criteria (outcomes)** — a bullet list of user-observable
   outcomes, each phrased as a *result* the user could confirm, never as a test
-  assertion or mechanism. The verification gate runs the built artifact against
-  exactly this list, so every item must be outcome-shaped and checkable
-  end-to-end against the real thing.
+  assertion or mechanism. Every item must be outcome-shaped and checkable
+  end-to-end against the real thing: design proves each criterion via the
+  criteria trace in its `INDEX.md` (below), so a criterion no test could
+  confirm against the assembled artifact is malformed at authoring time.
 
 ## `project/research/research.md` — the evidence base
 
@@ -335,6 +342,17 @@ realizes, never the whole architecture:
     architecture is shaped so an entire capability is only ever driven against
     mocks, that is itself the smell: at least one id must drive it end-to-end
     against the real thing.
+  - **A declared exposure is a claim about the assembled service.** Every
+    surface a Decision declares externally reachable — an HTTP route, an MCP
+    endpoint, a CLI verb, an event subscription — mints at least one id whose
+    test reaches it **through the composition root**: the same assembly path
+    production uses (the real spec/router/dispatcher, the mounted path), never
+    a component the test constructs and drives directly. Direct construction
+    is the same proxy pattern as a mock — it proves the component works, never
+    that the system serves it — so a capability proven only by direct
+    construction is unwired by default. The wiring id's behavior statement
+    names the externally observable route/verb/subscription and the observable
+    outcome proving the assembled artifact answered on it.
 
 ### `project/design/INDEX.md` — the manifest
 
@@ -346,6 +364,11 @@ realizes, never the whole architecture:
   its title, and the ids it owns (or "none — structural").
 - **## Verification ids → Decision** — every minted id, **sorted**, each mapped
   to its Decision and file.
+- **## Success criteria → ids** — the criteria trace: one line per product
+  success criterion (quoted or tightly paraphrased, in product order), each
+  mapped to the id(s) whose tests prove it end-to-end against the assembled
+  artifact. Every criterion maps to at least one minted id; every mapped id
+  exists in the id sections above. Regenerate alongside the rest of the index.
 
 (The construction order that realizes the design lives in the plan — design
 carries no `## Status` section.)
