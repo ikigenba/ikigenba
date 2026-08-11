@@ -392,19 +392,28 @@ embedding a page is a read-only projection, not a re-ingest.
 
 ## 12. The prompts service inference API (the unified-inference dependency)
 
-Facts verified against the prompts spec (its D28–D33) and its deployed v0.21.0
-service, which this conversion consumes. Base URL: `registry.BaseURL("prompts")`
-(loopback :3002); both endpoints are loopback-only plumbing (unauthenticated —
-nginx never routes them; only loopback processes can reach them).
+Facts verified against the prompts spec (its D28–D31 and the rewritten D29:
+the completion queue). Base URL: `registry.BaseURL("prompts")` (loopback
+:3002); every surface below is loopback-only plumbing (unauthenticated — nginx
+never routes it; only loopback processes can reach it).
 
-**`POST /complete`** — stateless, synchronous, tool-less chat completion:
+**Completions are a durable queue, not a call.** The prior synchronous
+`POST /complete` is expunged (it raced the chassis's 15 s write deadline: the
+server logged 200 while the client read EOF on every completion slower than
+~15 s — the 2026-08-11 ingest failures). A consumer *submits* work and later
+*collects* the result; no verb waits on inference.
+
+**`POST /completions`** — Ensure (idempotent enqueue):
 
 ```json
 {
-  "origin":   "user:a@b.com | trigger:<source> | service:wiki",   // required
+  "consumer": "service:wiki",           // required: the collecting service (partition + idempotency space)
+  "origin":   "user:a@b.com | trigger:<source> | service:wiki",   // required: attribution (who caused it)
+  "key":      "…",                      // required: consumer-constructed idempotency key, opaque, ≤256 B
+  "context":  { "…": "…" },             // optional: opaque envelope, echoed back verbatim, ≤64 KiB
   "name":     "wiki.<stage>",           // required: ^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9._-]*$
-  "group_id": "…",                      // optional correlation id
-  "attempt":  2,                        // optional, default 1
+  "group_id": "…",                      // optional grouping label
+  "attempt":  2,                        // optional, default 1 (the consumer's attempt number)
   "model":    "claude-sonnet-4-6",      // required, catalog name
   "provider": "anthropic",              // optional, catalog default
   "config":   { "temperature": 0, "max_tokens": 16384, "effort": "low", "thinking": false },
@@ -413,18 +422,49 @@ nginx never routes them; only loopback processes can reach them).
 }
 ```
 
-`200` → `{"call_id", "text", "usage": {"InputUncached", "CacheReadInput", …,
-"Output", "Total"}, "cost_usd"}`. Status taxonomy: `400` envelope/validation
-(catalog membership, provider routability, reasoning vocabulary, origin/name
-grammar, final-role rule; body `{"error": "…"}` naming the problem, nothing
-executed or recorded), `405` non-POST, `500` internal/recording failure, `502`
-provider failure. The `config` keys are the prompts config vocabulary
-(`temperature`, `top_p`, `max_tokens`, `effort`, `thinking_budget`,
-`thinking_level`, `thinking`, retry keys, `base_url`); `effort` maps to a
-reasoning level, `thinking:false` disables reasoning explicitly. Verified live:
-a haiku one-shot returned `text:"pong"`, usage, and catalog-priced `cost_usd`.
+`202 {"id","status":"queued"}` on first submission; `200` with the existing
+item's full read shape when `(consumer, key)` already exists — whatever its
+state, result included when terminal, nothing re-executed. Resubmitting is
+always safe: same key ⇒ same item, never duplicate spend. `400` with
+`{"error":"…"}` on validation failure (catalog membership, provider
+routability, reasoning vocabulary, consumer/origin/name grammar, empty key,
+final-role rule) — nothing stored, nothing executed.
 
-**`POST /embed`** — batch embeddings:
+**`GET /completions/{id}`** — one item:
+`{"id","consumer","origin","key","context","status","result"?,"error"?,"usage"?,"cost_usd"?}`.
+`status` ∈ `queued|running|done|failed`; `result` (a JSON value) only when
+`done`; `error` only when `failed`; `404` for unknown/acked/expired ids (a
+consumer treats 404 as terminal).
+
+**`GET /completions?consumer=service:wiki`** — the inbox: the terminal,
+**unacknowledged** items for that consumer, oldest-first, full read shape,
+capped at 100 per response (drain by repeating). Queued/running items never
+appear.
+
+**`DELETE /completions/{id}`** — Ack: the consumer has durably applied the
+result; prompts deletes the item (`204`; `404` when already gone — idempotent
+to the caller). A later Ensure with the same key is new work.
+
+**Semantics.** Durable until processed: an item survives prompts restarts
+(running items requeue and re-execute on boot) and is retained until acked
+(plus a 7-day safety TTL after terminal, for consumers that died forever).
+Delivery is at-least-once — a consumer that crashes between apply and ack sees
+the item again, so applying must be idempotent. Runtime bound: 4 h per item;
+exceeding it fails the item. No cross-item ordering.
+
+**JSON-in, JSON-out, always.** prompts instructs the model to answer in a
+fixed envelope `{"status":"ok"|"error","result":<any JSON>,"message":"…"}`,
+validates it, and internally re-prompts (≤3 corrective round trips) until it
+holds; prompts then **unwraps** it: `ok` → item `done` with `result` = the
+envelope's result value (guaranteed syntactically valid JSON); `error` → item
+`failed` with the model's `message` as the error (the model's honest "cannot
+comply" channel). The consumer never sees the envelope — only `result` or
+`error`. Shape/semantic validation of `result` stays the consumer's job; a
+semantically bad result is retried by *ensuring a new item* (corrective
+conversation, attempt+1) — never by re-asking the same item.
+
+**`POST /embed`** — unchanged, still synchronous (sub-second; no unbounded
+inference to decouple from):
 
 ```json
 {
@@ -437,27 +477,27 @@ a haiku one-shot returned `text:"pong"`, usage, and catalog-priced `cost_usd`.
 ```
 
 `200` → `{"call_id", "vectors": [[…]], "usage", "cost_usd"}`, vectors in input
-order, one per input. Same `400`/`502` taxonomy; a chat model, an out-of-range
-`dimensions`, an embedder-less provider, or a bad `role` each `400` with no row.
+order, one per input. `400`/`502` taxonomy as before.
 
-**Accounting.** Every executed call lands one durable row in prompts' `calls`
-table (class `completion`/`embedding`/`session`) carrying origin, name,
-group_id, attempt, model, tokens, cost, error; request/response bodies are
-retained ~30 days then pruned (metrics forever). Inspection: prompts' MCP
-`calls` (filter by class/origin/name/group_id, detail by `call_id`) and `usage`
-(aggregate by name|origin|model|day). This is what replaces wiki's `llm_calls`.
+**Accounting.** Every executed provider round trip (including prompts'
+internal envelope re-prompts) lands one durable row in prompts' `calls` table
+(class `completion`/`embedding`/`session`) carrying origin, name, group_id,
+attempt, model, tokens, cost, error; request/response bodies are retained ~30
+days then pruned (metrics forever). Inspection: prompts' MCP `calls` and
+`usage` tools.
 
-**Admission.** prompts gates concurrent synchronous calls per provider
-(default 8 in-flight); a call may therefore block briefly before executing —
-another reason wiki's client carries no fixed HTTP timeout.
+**Admission.** prompts gates concurrent provider round trips per provider
+(default 8 in-flight); queue items wait their turn server-side — the consumer
+never blocks on it.
 
-**Correlation ids.** The suite standard is now the header-carried chain id of
-§14, not a value each service invents. `group_id` remains prompts' own
-call-grouping field on both endpoints — prompts stores it on the `calls` row
-and filters on it — so wiki keeps sending it, but its **value** is the chain id
-wiki received, never one wiki minted. The durable-root-reuse rule (an ingest
-job's own ULID *is* the correlation id) is retired: reusing the job id would
-sever the chain from the edge-minted id of the request that enqueued it.
+**Telemetry.** The two read verbs (item Get and the inbox) are in prompts'
+`RecordExclude`, so poll loops do not flood the forensic record; Ensure and
+Ack are recorded.
+
+**Correlation ids.** Unchanged from §14: `group_id` is prompts' grouping
+field; its value is the chain id wiki received, never one wiki minted. The
+submission's chain id is captured on the item and stamped on every `calls`
+row it produces, so the chain survives the asynchronous gap.
 
 ## 13. The external tuning toolchain: the `autotune` CLI, its tune-folder contract, and the `embed` CLI
 

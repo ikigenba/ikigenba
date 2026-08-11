@@ -9,5 +9,7 @@ loop **deletes** that phase's line and its `phase-NN.md` — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 78
+Next phase: 79
 
+- Phase 77 ⬜ realizes R-JBE5-L2M1, R-JCM1-YUCQ, R-JDTY-CM3F, R-JF1U-QDU4, R-JG9R-45KT, R-JHHN-HXBI, R-JIPJ-VP27, R-JOT1-SJRO — completion queue core: table, store, executor, envelope enforcement, retention
+- Phase 78 ⬜ realizes R-J7QG-FRDY, R-J8YC-TJ4N, R-JA69-7AVC, R-JJXG-9GSW, R-JL5C-N8JL, R-JMD9-10AA, R-JQ0Y-6BID, R-JR8U-K392, R-JSGQ-XUZR — completion-queue HTTP surface; synchronous /complete expunged

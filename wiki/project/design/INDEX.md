@@ -7,8 +7,8 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D1 → `project/design/D01.md` — Dependency on the prompts service (unified inference; no provider dependency anywhere) — owns R-KDHD-V3XI, R-A3D7-NTLV
 - D2 → `project/design/D02.md` — Service skeleton: package layout, Spec wiring, and the config/secret composition root — owns R-6RVX-P1IG; adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D3 → `project/design/D03.md` — The phase-1 data model — owns R-7SNG-0G9A, R-7TVC-E7ZZ, R-7V38-RZQO, R-7WB5-5RHD, R-RU0J-77HX, R-RV8F-KZ8M, R-RXO8-CIQ0, R-RYW4-QAGP, R-S041-427E, R-S1BX-HTY3, R-S2JT-VLOS, R-1O8B-FNX4
-- D4 → `project/design/D04.md` — The ingest pipeline and worker — owns R-M8RN-87WV, R-M9ZJ-LZNK, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MDN8-RAVN, R-MG31-IUD1
-- D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): a prompts `/complete` client + json-mode helper — owns R-J8QP-BETB, R-4BCC-0EHJ, R-J9YL-P6K0, R-JCEE-GQ1E, R-0X4N-U0XB, R-8H1B-9CCI, R-0ZKG-LKEP, R-10SC-ZC5E, R-1209-D3W3
+- D4 → `project/design/D04.md` — The ingest pipeline: handoff and apply over the completion queue — owns R-M8RN-87WV, R-K73J-J3W3, R-K8BF-WVMS, R-K9JC-ANDH, R-KAR8-OF46, R-KBZ5-26UV, R-KEEX-TQC9, R-KFMU-7I2Y, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MG31-IUD1
+- D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): the prompts completion-queue client — owns R-JW4G-367U, R-JXCC-GXYJ, R-JYK8-UPP8, R-JZS5-8HFX, R-K101-M96M, R-K27Y-00XB, R-K3FU-DSO0, R-K4NQ-RKEP
 - D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-9UTW-ZFF0, R-9W1T-D75P, R-8TAF-XBSM, R-8UIC-B3JB
 - D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, clean article prose (no ids), 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-9X9P-QYWE, R-9YHM-4QN3, R-VA32-HERT
 - D8 → `project/design/D08.md` — Search returns: hybrid retrieval over pages, behind one seam — none — structural
@@ -16,7 +16,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D10 → `project/design/D10.md` — The MCP tool surface (`internal/mcp`) + identity — owns R-MUQ4-K1JS, R-MVY0-XTAH, R-MX5X-BL16, R-MYDT-PCRV, R-MZLQ-34IK, R-1QO4-77EI, R-N4KO-2WTZ, R-01OQ-Y5YV, R-02WN-BXPK, R-044J-PPG9, R-03GW-PX5K, R-04HB-QM7T, R-8DB1-UI1Q, R-8EIY-89SF, R-1Y7B-TN7Y
 - D11 → `project/design/D11.md` — Subject addressing: the public path == identity (`type/norm_name`) — owns R-DRX6-PWSW, R-DT53-3OJL, R-DUCZ-HGAA
 - D12 → `project/design/D12.md` — Page links: read-time mention detection + markdown footer — owns R-ZUDC-NJIP, R-ZVL9-1B9E, R-ZWT5-F303, R-ZY11-SUQS, R-ZZ8Y-6MHH, R-00GU-KE86, R-1WP9-CLM9, R-1XX5-QDCY, R-1Z52-453N
-- D14 → `project/design/D14.md` — Job lifecycle & control: `aborted`, abort, re-run, and atomic integrate — owns R-0SCX-95OZ, R-0TKT-MXFO, R-0USQ-0P6D, R-0W0M-EGX2, R-0X8I-S8NR, R-0YGF-60EG, R-0ZOB-JS55, R-10W7-XJVU
+- D14 → `project/design/D14.md` — Job lifecycle & control: `aborted`, abort, re-run, and atomic integrate — owns R-0SCX-95OZ, R-0TKT-MXFO, R-0USQ-0P6D, R-0W0M-EGX2, R-0X8I-S8NR, R-0YGF-60EG, R-0ZOB-JS55, R-10W7-XJVU, R-KGUQ-L9TN, R-KI2M-Z1KC
 - D15 → `project/design/D15.md` — Cursor pagination: the contract + the list seams — owns R-17C5-VP2I, R-18K2-9GT7, R-XYAZ-V0XE, R-XZIW-8SO3, R-Y1YP-0C5H, R-19RY-N8JW, R-1C7R-ES1A, R-1DFN-SJRZ
 - D16 → `project/design/D16.md` — MCP surface expansion: control & footprint verbs + paginated lists — owns R-37NS-BRXR, R-Y36L-E3W6, R-Y4EH-RVMV, R-38VO-PJOG, R-3A3L-3BF5, R-3CJD-UUWJ, R-3EZ6-MEDX, R-3G73-064M, R-E4WX-G9H2, R-1T3W-YQVW
 - D17 → `project/design/D17.md` — DB concurrency: a single-writer handle + a concurrent read pool (reads never blocked) — owns R-FUCC-IT4M, R-FVK8-WKVB, R-FWS5-ACM0, R-FY01-O4CP
@@ -82,6 +82,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D88 → `project/design/D88.md` — A job whose row is gone integrates nothing: the dead-job discard — owns R-RJPF-C7S5, R-RKXB-PZIU
 - D89 → `project/design/D89.md` — An honest ask failure on the web: a styled error page and a logged cause — owns R-RM58-3R9J, R-RND4-HJ08
 - D90 → `project/design/D90.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
+- D92 → `project/design/D92.md` — Ask-serving routes clear the chassis write deadline — owns R-KJAJ-CTB1, R-KKIF-QL1Q
 
 ## Verification ids → Decision
 
@@ -111,14 +112,10 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-0TKT-MXFO → D14 (`project/design/D14.md`)
 - R-0USQ-0P6D → D14 (`project/design/D14.md`)
 - R-0W0M-EGX2 → D14 (`project/design/D14.md`)
-- R-0X4N-U0XB → D5 (`project/design/D05.md`)
 - R-0X8I-S8NR → D14 (`project/design/D14.md`)
 - R-0YGF-60EG → D14 (`project/design/D14.md`)
-- R-0ZKG-LKEP → D5 (`project/design/D05.md`)
 - R-0ZOB-JS55 → D14 (`project/design/D14.md`)
-- R-10SC-ZC5E → D5 (`project/design/D05.md`)
 - R-10W7-XJVU → D14 (`project/design/D14.md`)
-- R-1209-D3W3 → D5 (`project/design/D05.md`)
 - R-1385-QVMS → D34 (`project/design/D34.md`)
 - R-14G2-4NDH → D34 (`project/design/D34.md`)
 - R-15NY-IF46 → D34 (`project/design/D34.md`)
@@ -160,7 +157,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-3XW7-KLVF → D32 (`project/design/D32.md`)
 - R-3Z43-YDM4 → D32 (`project/design/D32.md`)
 - R-40C0-C5CT → D32 (`project/design/D32.md`)
-- R-4BCC-0EHJ → D5 (`project/design/D05.md`)
 - R-4LKF-FB23 → D2 (`project/design/D02.md`, adopted from root `project/design/D08.md`)
 - R-4Q8B-N9SX → D78 (`project/design/D78.md`)
 - R-4RG8-11JM → D78 (`project/design/D78.md`)
@@ -199,7 +195,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-8FQU-M1J4 → D44 (`project/design/D44.md`)
 - R-8FVJ-PUMZ → D82 (`project/design/D82.md`)
 - R-8GYQ-ZT9T → D45 (`project/design/D45.md`)
-- R-8H1B-9CCI → D5 (`project/design/D05.md`)
 - R-8H3G-3MDO → D82 (`project/design/D82.md`)
 - R-8I6N-DL0I → D59 (`project/design/D59.md`)
 - R-8IAN-FB87 → D2 (`project/design/D02.md`, adopted from root `project/design/D11.md`)
@@ -329,9 +324,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-HUDR-AWS9 → D26 (`project/design/D26.md`)
 - R-HY3J-G43Z → D78 (`project/design/D78.md`)
 - R-I0JC-7NLD → D76 (`project/design/D76.md`)
-- R-J8QP-BETB → D5 (`project/design/D05.md`)
-- R-J9YL-P6K0 → D5 (`project/design/D05.md`)
-- R-JCEE-GQ1E → D5 (`project/design/D05.md`)
 - R-JDBC-V0EV → D51 (`project/design/D51.md`)
 - R-JEJ9-8S5K → D51 (`project/design/D51.md`)
 - R-JFR5-MJW9 → D51 (`project/design/D51.md`)
@@ -339,13 +331,32 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-JI6Y-E3DN → D52 (`project/design/D52.md`)
 - R-JJEU-RV4C → D52 (`project/design/D52.md`)
 - R-JKMR-5MV1 → D53 (`project/design/D53.md`)
+- R-JW4G-367U → D5 (`project/design/D05.md`)
+- R-JXCC-GXYJ → D5 (`project/design/D05.md`)
+- R-JYK8-UPP8 → D5 (`project/design/D05.md`)
+- R-JZS5-8HFX → D5 (`project/design/D05.md`)
+- R-K101-M96M → D5 (`project/design/D05.md`)
+- R-K27Y-00XB → D5 (`project/design/D05.md`)
+- R-K3FU-DSO0 → D5 (`project/design/D05.md`)
+- R-K4NQ-RKEP → D5 (`project/design/D05.md`)
+- R-K73J-J3W3 → D4 (`project/design/D04.md`)
+- R-K8BF-WVMS → D4 (`project/design/D04.md`)
+- R-K9JC-ANDH → D4 (`project/design/D04.md`)
+- R-KAR8-OF46 → D4 (`project/design/D04.md`)
+- R-KBZ5-26UV → D4 (`project/design/D04.md`)
 - R-KDHD-V3XI → D1 (`project/design/D01.md`)
+- R-KEEX-TQC9 → D4 (`project/design/D04.md`)
+- R-KFMU-7I2Y → D4 (`project/design/D04.md`)
 - R-KFVF-EMEO → D50 (`project/design/D50.md`)
 - R-KFX6-MNEW → D63 (`project/design/D63.md`)
+- R-KGUQ-L9TN → D14 (`project/design/D14.md`)
 - R-KH3B-SE5D → D50 (`project/design/D50.md`)
+- R-KI2M-Z1KC → D14 (`project/design/D14.md`)
 - R-KIB8-65W2 → D50 (`project/design/D50.md`)
 - R-KIH2-R4UC → D65 (`project/design/D65.md`)
+- R-KJAJ-CTB1 → D92 (`project/design/D92.md`)
 - R-KJJ4-JXMR → D50 (`project/design/D50.md`)
+- R-KKIF-QL1Q → D92 (`project/design/D92.md`)
 - R-LAND-CARB → D39 (`project/design/D39.md`)
 - R-LAND-NMVR → D39 (`project/design/D39.md`)
 - R-LAND-PG01 → D39 (`project/design/D39.md`)
@@ -353,10 +364,8 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-LAND-UNGT → D39 (`project/design/D39.md`)
 - R-LP5Q-9XTD → D38 (`project/design/D38.md`)
 - R-M8RN-87WV → D4 (`project/design/D04.md`)
-- R-M9ZJ-LZNK → D4 (`project/design/D04.md`)
 - R-MB7F-ZRE9 → D4 (`project/design/D04.md`)
 - R-MCFC-DJ4Y → D4 (`project/design/D04.md`)
-- R-MDN8-RAVN → D4 (`project/design/D04.md`)
 - R-MG31-IUD1 → D4 (`project/design/D04.md`)
 - R-MRG8-K2WP → D38 (`project/design/D38.md`)
 - R-MSKH-GPX5 → D18 (`project/design/D18.md`)
