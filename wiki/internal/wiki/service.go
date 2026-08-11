@@ -367,6 +367,9 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 
 	var status string
 	if err := tx.QueryRowContext(ctx, `SELECT status FROM jobs WHERE id = ?`, job.ID).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
 		return err
 	}
 	if status != JobWorking {
@@ -553,6 +556,9 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 
 	var status string
 	if err := tx.QueryRowContext(ctx, `SELECT status FROM jobs WHERE id = ?`, job.ID).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
 		return err
 	}
 	if status != JobWorking {

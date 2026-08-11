@@ -2,7 +2,9 @@ package wiki
 
 import (
 	"context"
+	"database/sql"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -229,6 +231,188 @@ func TestMergeMintsForwardRoutingAliasForLoserName(t *testing.T) {
 	}
 	if aliasSubject != "subject-winner" {
 		t.Fatalf("alias subject = %q, want subject-winner", aliasSubject)
+	}
+}
+
+func TestIngestClaimedBeforeScopeDeletionDiscardsDeadGeneration(t *testing.T) {
+	// R-RJPF-C7S5
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	scopes := NewScopeStore(conn)
+	if _, err := scopes.Create(ctx, "zombie-scope"); err != nil {
+		t.Fatalf("Create zombie scope: %v", err)
+	}
+	compiler := newZombieBlockingCompiler()
+	svc := NewService(
+		conn,
+		&recordingExtractor{batches: [][]extract.ExtractedSubject{{{
+			Type:   "entity",
+			Kind:   "company",
+			Name:   "Dead Generation Labs",
+			Claims: []string{"This claim belongs only to the deleted generation."},
+		}}}},
+		compiler,
+		time.Now,
+	)
+	svc.newID = sequenceIDs("job-zombie", "subject-zombie", "claim-zombie")
+	jobID, err := svc.Ingest(ctx, "zombie-scope", "owner-id", "owner@example.com", "dead source", "Dead source", nil)
+	if err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	job, ok, err := svc.jobs.ClaimPending(ctx, time.Now())
+	if err != nil || !ok {
+		t.Fatalf("ClaimPending = %+v, %v, %v; want claimed job", job, ok, err)
+	}
+
+	result := make(chan error, 1)
+	go func() { result <- svc.processClaimed(ctx, job) }()
+	select {
+	case <-compiler.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker path did not reach compile")
+	}
+	if err := scopes.Delete(ctx, "zombie-scope"); err != nil {
+		t.Fatalf("Delete zombie scope: %v", err)
+	}
+	if _, err := scopes.Create(ctx, "zombie-scope"); err != nil {
+		t.Fatalf("Recreate zombie scope: %v", err)
+	}
+	close(compiler.release)
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("processClaimed after job deletion = %v, want clean nil discard", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker path did not return after compile release")
+	}
+
+	assertQueryCount(t, ctx, conn, `SELECT COUNT(*) FROM subjects WHERE scope = ?`, 0, "zombie-scope")
+	assertQueryCount(t, ctx, conn, `SELECT COUNT(*) FROM claims WHERE job_id = ?`, 0, jobID)
+	assertQueryCount(t, ctx, conn, `SELECT COUNT(*) FROM pages WHERE subject_id = ?`, 0, "subject-zombie")
+	assertQueryCount(t, ctx, conn, `SELECT COUNT(*) FROM jobs WHERE id = ?`, 0, jobID)
+}
+
+func TestMergeWithDeletedJobRowDiscardsWithoutRewritingSubjects(t *testing.T) {
+	// R-RKXB-PZIU
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subjects := NewSubjectStore(conn)
+	for _, subject := range []Subject{
+		{ID: "merge-winner", Name: "Merge Winner", Type: "entity"},
+		{ID: "merge-loser", Name: "Merge Loser", Type: "entity"},
+	} {
+		if err := subjects.Save(ctx, subject); err != nil {
+			t.Fatalf("Save subject %s: %v", subject.ID, err)
+		}
+	}
+	claims := NewClaimStore(conn)
+	for _, claim := range []Claim{
+		{ID: "winner-claim", SubjectID: "merge-winner", JobID: "job-existing", Body: "Winner fact."},
+		{ID: "loser-claim", SubjectID: "merge-loser", JobID: "job-existing", Body: "Loser fact."},
+	} {
+		if err := claims.Save(ctx, claim); err != nil {
+			t.Fatalf("Save claim %s: %v", claim.ID, err)
+		}
+	}
+	pages := NewPageStore(conn)
+	for _, page := range []Page{
+		{ID: "merge-winner", SubjectID: "merge-winner", Title: "Winner Before", Body: "winner before"},
+		{ID: "merge-loser", SubjectID: "merge-loser", Title: "Loser Before", Body: "loser before"},
+	} {
+		if err := pages.Upsert(ctx, page); err != nil {
+			t.Fatalf("Upsert page %s: %v", page.ID, err)
+		}
+	}
+
+	compiler := newZombieBlockingCompiler()
+	svc := NewService(conn, nil, compiler, time.Now)
+	svc.newID = sequenceIDs("job-merge-zombie")
+	jobID, err := svc.MergeSubjects(ctx, "default", "merge-loser", "merge-winner")
+	if err != nil {
+		t.Fatalf("MergeSubjects: %v", err)
+	}
+	job, ok, err := svc.jobs.ClaimPending(ctx, time.Now())
+	if err != nil || !ok {
+		t.Fatalf("ClaimPending = %+v, %v, %v; want claimed merge job", job, ok, err)
+	}
+
+	result := make(chan error, 1)
+	go func() { result <- svc.processClaimed(ctx, job) }()
+	select {
+	case <-compiler.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("merge worker path did not reach compile")
+	}
+	if _, err := conn.ExecContext(ctx, `DELETE FROM jobs WHERE id = ?`, jobID); err != nil {
+		t.Fatalf("Delete merge job: %v", err)
+	}
+	close(compiler.release)
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("processClaimed merge after job deletion = %v, want clean nil discard", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("merge worker path did not return after compile release")
+	}
+
+	assertQueryCount(t, ctx, conn, `SELECT COUNT(*) FROM jobs WHERE id = ?`, 0, jobID)
+	assertQueryCount(t, ctx, conn, `SELECT COUNT(*) FROM aliases`, 0)
+	if _, err := subjects.Get(ctx, "merge-loser"); err != nil {
+		t.Fatalf("loser subject after discard: %v", err)
+	}
+	assertQueryCount(t, ctx, conn, `SELECT COUNT(*) FROM claims WHERE subject_id = ?`, 1, "merge-loser")
+	for subjectID, wantBody := range map[string]string{
+		"merge-winner": "winner before",
+		"merge-loser":  "loser before",
+	} {
+		page, err := pages.GetBySubject(ctx, subjectID)
+		if err != nil {
+			t.Fatalf("GetBySubject %s: %v", subjectID, err)
+		}
+		if page.Body != wantBody {
+			t.Fatalf("page %s body = %q, want unchanged %q", subjectID, page.Body, wantBody)
+		}
+	}
+}
+
+type zombieBlockingCompiler struct {
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func newZombieBlockingCompiler() *zombieBlockingCompiler {
+	return &zombieBlockingCompiler{entered: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (c *zombieBlockingCompiler) Compile(ctx context.Context, _ llm.Attribution, subject Subject, claims []Claim) (string, string, error) {
+	c.once.Do(func() { close(c.entered) })
+	select {
+	case <-ctx.Done():
+		return "", "", ctx.Err()
+	case <-c.release:
+		var bodies []string
+		for _, claim := range claims {
+			bodies = append(bodies, claim.Body)
+		}
+		return subject.Name, strings.Join(bodies, "\n"), nil
+	}
+}
+
+func assertQueryCount(t *testing.T, ctx context.Context, db *sql.DB, query string, want int, args ...any) {
+	t.Helper()
+	var got int
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&got); err != nil {
+		t.Fatalf("query count: %v", err)
+	}
+	if got != want {
+		t.Fatalf("query count = %d, want %d for %s", got, want, query)
 	}
 }
 
