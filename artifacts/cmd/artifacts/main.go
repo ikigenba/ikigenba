@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
+	"time"
 
 	"appkit"
+	artifactdata "artifacts/internal/artifacts"
 	"artifacts/internal/db"
 	"registry"
 )
@@ -43,6 +46,21 @@ func artifactsSpec() appkit.Spec {
 			{Key: "ARTIFACTS_MAX_UPLOAD_BYTES", Value: "209715200"},
 		},
 		Handlers: func(rt *appkit.Router) error {
+			loaded, err := loadConfig(os.Getenv)
+			if err != nil {
+				return err
+			}
+			root := os.Getenv("IKIGENBA_ROOT")
+			if root == "" {
+				root = "."
+			}
+			uploads := artifactdata.NewService(
+				db.NewStore(rt.DB(), artifactdata.NewToken),
+				&artifactdata.BlobStore{Root: filepath.Join(root, "artifacts", "state")},
+				time.Now,
+				loaded.(config).MaxUploadBytes,
+			)
+			rt.Handle("/u/", uploads.UploadHandler())
 			rt.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				_, _ = w.Write([]byte("artifacts\n"))

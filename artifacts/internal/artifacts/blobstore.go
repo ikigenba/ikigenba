@@ -62,6 +62,15 @@ type blobWriter struct {
 	closed     bool
 }
 
+func (w *blobWriter) abort() {
+	if w.closed {
+		return
+	}
+	w.closed = true
+	_ = w.file.Close()
+	_ = os.Remove(w.temp)
+}
+
 func (w *blobWriter) Write(p []byte) (int, error) {
 	n, err := w.file.Write(p)
 	if err != nil {

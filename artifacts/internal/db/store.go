@@ -2,11 +2,12 @@ package db
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base32"
 	"fmt"
+	"strings"
 	"time"
-
-	artifactdata "artifacts/internal/artifacts"
 )
 
 const timestampLayout = "2006-01-02T15:04:05.000000000Z"
@@ -18,9 +19,17 @@ type Store struct {
 
 func NewStore(conn *sql.DB, newToken func() string) *Store {
 	if newToken == nil {
-		newToken = artifactdata.NewToken
+		newToken = randomToken
 	}
 	return &Store{db: conn, newToken: newToken}
+}
+
+func randomToken() string {
+	var entropy [19]byte
+	if _, err := rand.Read(entropy[:]); err != nil {
+		panic(fmt.Sprintf("generate token: %v", err))
+	}
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(entropy[:]))
 }
 
 type Upload struct {
@@ -128,6 +137,48 @@ func (s *Store) CreateArtifact(ctx context.Context, p CreateArtifactParams) (Art
 func (s *Store) GetArtifact(ctx context.Context, id string) (Artifact, error) {
 	row := s.db.QueryRowContext(ctx, artifactSelect+` WHERE id = ?`, id)
 	return scanArtifact(row)
+}
+
+// CommitUpload atomically creates an artifact and consumes its pending upload.
+// A false result means another request consumed (or time expired) first.
+func (s *Store) CommitUpload(ctx context.Context, token, artifactID string, p CreateArtifactParams, now time.Time) (Artifact, bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Artifact{}, false, fmt.Errorf("begin upload commit: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.ExecContext(ctx, `UPDATE uploads SET consumed_at = ?, artifact_id = ?
+		WHERE token = ? AND consumed_at IS NULL AND expires_at > ?`, formatTime(now), artifactID, token, formatTime(now))
+	if err != nil {
+		return Artifact{}, false, fmt.Errorf("claim upload: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return Artifact{}, false, fmt.Errorf("count claimed uploads: %w", err)
+	}
+	if count != 1 {
+		return Artifact{}, false, nil
+	}
+
+	created := p.CreatedAt.UTC()
+	artifact := Artifact{
+		ID: artifactID, OwnerID: p.OwnerID, OwnerEmail: p.OwnerEmail,
+		Filename: p.Filename, Description: p.Description, Visibility: p.Visibility,
+		Size: p.Size, ContentHash: p.ContentHash, CreatedAt: created, UpdatedAt: created,
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO artifacts
+		(id, owner_id, owner_email, filename, description, visibility, size, content_hash, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, artifact.ID, artifact.OwnerID, artifact.OwnerEmail,
+		artifact.Filename, artifact.Description, artifact.Visibility, artifact.Size, artifact.ContentHash,
+		formatTime(artifact.CreatedAt), formatTime(artifact.UpdatedAt))
+	if err != nil {
+		return Artifact{}, false, fmt.Errorf("create uploaded artifact: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Artifact{}, false, fmt.Errorf("commit upload: %w", err)
+	}
+	return artifact, true, nil
 }
 
 func (s *Store) ListArtifacts(ctx context.Context) ([]Artifact, error) {
