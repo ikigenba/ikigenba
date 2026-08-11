@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 
 	"wiki/internal/llm"
@@ -153,7 +155,7 @@ func TestHybridRetrieverRequestsPerLaneAndHonorsFinalK(t *testing.T) {
 
 func TestHybridRetrieverSearchAnalyzedFansOutAndRoutesLaneQueries(t *testing.T) {
 	// R-Q8RI-7POG
-	// R-Q9ZE-LHF5
+	// R-NDHM-I6Z9
 	ctx := context.Background()
 	qa := wikidomain.QueryAnalysis{
 		SubQueries: []string{
@@ -163,7 +165,7 @@ func TestHybridRetrieverSearchAnalyzedFansOutAndRoutesLaneQueries(t *testing.T) 
 		Keywords: []string{"launch", "cost"},
 		Aliases:  []string{"Alpha Lab", "Beta Lab"},
 	}
-	keywordQuery := "launch OR cost OR Alpha Lab OR Beta Lab"
+	keywordQuery := "launch cost Alpha Lab Beta Lab"
 	keyword := newSpyRetriever(map[string][]Hit{
 		keywordQuery: {
 			{PageID: "shared-launch", Title: "Shared Launch"},
@@ -206,6 +208,67 @@ func TestHybridRetrieverSearchAnalyzedFansOutAndRoutesLaneQueries(t *testing.T) 
 	wantKeyword := []string{keywordQuery, keywordQuery}
 	if gotKeyword := callQueries(keyword.calls); !reflect.DeepEqual(gotKeyword, wantKeyword) {
 		t.Fatalf("keyword lane queries = %#v, want %#v", gotKeyword, wantKeyword)
+	}
+	for _, term := range strings.Fields(keywordQuery) {
+		if term == "OR" {
+			t.Fatalf("keyword lane query %q contains injected OR operator", keywordQuery)
+		}
+	}
+}
+
+func TestPorterStemmedFTSMatchesMorphologicalVariant(t *testing.T) {
+	// R-NC9Q-4F8K
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, `INSERT INTO subjects (id, scope, name, norm_name, type) VALUES ('subject-king', 'default', 'King', 'king', 'concept')`); err != nil {
+		t.Fatalf("insert subject: %v", err)
+	}
+	if err := wikidomain.NewPageStore(conn).Upsert(ctx, wikidomain.Page{
+		ID: "page-king", SubjectID: "subject-king", Title: "King", Body: "A king rules the realm.",
+	}); err != nil {
+		t.Fatalf("Upsert page: %v", err)
+	}
+
+	var title string
+	if err := conn.QueryRowContext(ctx, `
+		SELECT p.title
+		FROM pages_fts
+		JOIN pages p ON p.rowid = pages_fts.rowid
+		WHERE pages_fts MATCH '"kings"'`).Scan(&title); err != nil {
+		t.Fatalf("MATCH morphological variant kings: %v", err)
+	}
+	if title != "King" {
+		t.Fatalf("MATCH kings title = %q, want base-form King page", title)
+	}
+}
+
+func TestHybridRetrieverExplicitLimitOverridesConfiguredDefaultAndClamps(t *testing.T) {
+	// R-NEPI-VYPY
+	ctx := context.Background()
+	laneHits := make([]Hit, 25)
+	for i := range laneHits {
+		laneHits[i] = Hit{PageID: "page-" + strconv.Itoa(i), Title: "Page " + strconv.Itoa(i)}
+	}
+	qa := wikidomain.QueryAnalysis{SubQueries: []string{"full natural language question"}, Keywords: []string{"keyword"}}
+	keyword := newSpyRetriever(map[string][]Hit{"keyword": laneHits})
+	retriever := NewHybridRetriever(keyword, nil, nil, nil, FusionConfig{FinalK: 8, PerLane: 25})
+
+	got, err := retriever.SearchAnalyzed(ctx, "default", llm.Attribution{}, qa, SearchLimits{Limit: 20})
+	if err != nil {
+		t.Fatalf("SearchAnalyzed limit 20: %v", err)
+	}
+	if len(got.Hits) != 20 {
+		t.Fatalf("limit 20 returned %d hits, want 20 (more than configured FinalK 8)", len(got.Hits))
+	}
+
+	got, err = retriever.SearchAnalyzed(ctx, "default", llm.Attribution{}, qa, SearchLimits{Limit: LimitCap + 10})
+	if err != nil {
+		t.Fatalf("SearchAnalyzed above cap: %v", err)
+	}
+	if len(got.Hits) != LimitCap {
+		t.Fatalf("limit above cap returned %d hits, want LimitCap %d", len(got.Hits), LimitCap)
 	}
 }
 

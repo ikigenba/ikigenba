@@ -146,7 +146,7 @@ func (c FusionConfig) resolve(limits SearchLimits) resolvedFusionConfig {
 	if out.FinalK <= 0 {
 		out.FinalK = defaultFinalK
 	}
-	if limits.Limit > 0 && limits.Resolve().Limit < out.FinalK {
+	if limits.Limit != 0 {
 		out.FinalK = limits.Resolve().Limit
 	}
 	if out.FinalK < 1 {
@@ -421,5 +421,5 @@ func joinAnalyzedTerms(keywords, aliases []string) string {
 		seen[key] = struct{}{}
 		terms = append(terms, term)
 	}
-	return strings.Join(terms, " OR ")
+	return strings.Join(terms, " ")
 }
