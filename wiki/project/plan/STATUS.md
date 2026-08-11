@@ -12,7 +12,6 @@ lines.
 
 Next phase: 157
 
-- Phase 154 ⬜ realizes R-RDLX-FD2O, R-RETT-T4TD, R-RG1Q-6WK2, R-RH9M-KOAR, R-RIHI-YG1G — ask retrieval honesty: drop stale hits, pin inside the scope wall
 - Phase 155 ⬜ realizes R-RJPF-C7S5, R-RKXB-PZIU — the dead-job discard: a missing job row integrates nothing, cleanly
 - Phase 156 ⬜ realizes R-RM58-3R9J, R-RND4-HJ08 — the honest web ask failure: styled error page, logged cause
 
