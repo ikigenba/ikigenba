@@ -12,6 +12,5 @@ lines.
 
 Next phase: 152
 
-- Phase 150 ⬜ realizes R-02RF-HMOW, R-03ZB-VEFL, R-0578-966A, R-06F4-MXWZ, R-07N1-0PNO, R-08UX-EHED, R-0A2T-S952, R-0BAQ-60VR, R-0CIM-JSMG, R-0JU0-UF2M — the `internal/ask` response-cache seam (key, LRU, coalescing, detached compute, invalidate)
 - Phase 151 ⬜ realizes R-0DQI-XKD5, R-0EYF-BC3U, R-0G6B-P3UJ, R-0IM4-GNBX, R-0L1X-86TB — wire the ask cache: `ASK_CACHE_CAP` knob, composition root, invalidation hooks
 
