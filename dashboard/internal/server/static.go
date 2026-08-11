@@ -2,8 +2,15 @@ package server
 
 import (
 	"io/fs"
+	"mime"
 	"net/http"
 )
+
+func init() {
+	if err := mime.AddExtensionType(".ico", "image/x-icon"); err != nil {
+		panic("register .ico content type: " + err.Error())
+	}
+}
 
 // staticHandler serves the embedded assets under /static/. Directory listings
 // are disabled: a request for a directory 404s rather than exposing the asset
