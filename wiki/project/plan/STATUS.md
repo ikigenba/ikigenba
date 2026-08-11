@@ -12,5 +12,3 @@ lines.
 
 Next phase: 150
 
-- Phase 149 ⬜ realizes R-8PMQ-S0KJ, R-8QUN-5SB8, R-8S2J-JK1X — the `instructions` MCP verb, guide, and count supersessions
-
