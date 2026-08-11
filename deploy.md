@@ -59,6 +59,7 @@ ssh int "sudo certbot certonly --webroot -w /var/lib/letsencrypt --cert-name par
   -d ikigenba.com -d ikigenba.dev -d logic-refinery.com \
   -d logic-refinery.io -d logic-refinery.net -d logic-refinery.tv \
   -d metaspot.net -d metaspot.org -d michaelgreenly.com \
+  -d michaelgreenly.dev \
   --non-interactive --agree-tos -m \"$CERTBOT_EMAIL\" \
   --deploy-hook \"systemctl reload nginx\""
 
@@ -82,7 +83,7 @@ diff -u nginx/parked/index.html /tmp/parked.index.live
 Then run the verification checklist (D13). **Never pass `curl -k` here**: these
 checks exist to prove the certificate is valid, and `-k` would report success
 while the wrong certificate is served — the exact failure this work fixes. All
-nine certificate names resolve to the box in public DNS, so no `--resolve` is
+ten certificate names resolve to the box in public DNS, so no `--resolve` is
 needed either.
 
 ```sh
@@ -112,7 +113,7 @@ curl -sS -o /dev/null -w 'apex     %{http_code} %{ssl_verify_result}\n' \
 curl -sS -o /dev/null -w 'srv/crm  %{http_code} %{ssl_verify_result}\n' \
   https://int.ikigenba.com/srv/crm/    # 401/403 is fine — it must not be 200 droids
 
-# 5. Exactly two lineages, and the parked one names exactly the nine domains.
+# 5. Exactly two lineages, and the parked one names exactly the ten domains.
 ssh int 'sudo certbot certificates'
 ```
 
