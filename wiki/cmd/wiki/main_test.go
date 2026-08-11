@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -88,6 +89,20 @@ func TestManifestLibraryByteEqualsCommittedFile(t *testing.T) {
 	if got != string(committed) {
 		t.Fatalf("manifest.Emit output != committed etc/manifest.env\n--- emit ---\n%s\n--- committed ---\n%s", got, committed)
 	}
+}
+
+func TestManifestDeclaresAskBodyBudget(t *testing.T) {
+	// R-NID8-19Y1
+	extras := manifestExtras(newSpec(wiki.NewConfig).ManifestExtras)
+	for _, extra := range extras {
+		if extra.Key == "ASK_BODY_BUDGET" {
+			if extra.Value != strconv.Itoa(wiki.AskBodyBudget) || extra.Value != "98304" {
+				t.Fatalf("ASK_BODY_BUDGET = %q, want wiki.AskBodyBudget 98304", extra.Value)
+			}
+			return
+		}
+	}
+	t.Fatal("manifest extras do not declare ASK_BODY_BUDGET")
 }
 
 func TestSpecDeclaresServedMCPService(t *testing.T) {

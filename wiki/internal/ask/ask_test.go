@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -247,8 +248,8 @@ func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) 
 	if want := (wiki.QueryAnalysis{SubQueries: []string{"Ada"}, Keywords: []string{"scheduler"}, Aliases: []string{"Amazing Grace"}}); !reflect.DeepEqual(search.calls[0].qa, want) {
 		t.Fatalf("SearchAnalyzed qa = %+v, want %+v", search.calls[0].qa, want)
 	}
-	if search.calls[0].limits.Limit != defaultFinalK {
-		t.Fatalf("SearchAnalyzed limit = %d, want default finalK %d", search.calls[0].limits.Limit, defaultFinalK)
+	if search.calls[0].limits.Limit != retrieve.LimitCap {
+		t.Fatalf("SearchAnalyzed limit = %d, want retrieval cap %d", search.calls[0].limits.Limit, retrieve.LimitCap)
 	}
 	if len(prov.requests) != 2 {
 		t.Fatalf("provider requests = %d, want analysis then synthesis", len(prov.requests))
@@ -269,6 +270,79 @@ func TestAskRetrievesAnalyzedQuestionAndSynthesizesRetrievedPages(t *testing.T) 
 	}
 	if strings.Contains(synthText, DefaultSynthesisInstructions) || strings.Contains(synthText, "Ada body should not be sent") || strings.Contains(synthText, "subject-grace") {
 		t.Fatalf("synth prompt = %q, want retrieved public page context without exact-name or internal-id grounding", synthText)
+	}
+}
+
+func TestAskRequestsRetrievalCeiling(t *testing.T) {
+	// R-NFXF-9QGN
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	search := &scriptedSearch{result: retrieve.Result{TopDense: 0}}
+	prov := &askProvider{responses: []*llmtest.RoundTrip{
+		textRoundTrip(`{"sub_queries":["scheduler"]}`),
+	}}
+
+	got, err := New(search, wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
+		Ask(ctx, "default", "owner@example.com", "Who owns the scheduler?")
+	if err != nil {
+		t.Fatalf("Ask returned error: %v", err)
+	}
+	if got.Found {
+		t.Fatalf("Ask = %+v, want honest-empty below the relevance floor", got)
+	}
+	if len(search.calls) != 1 {
+		t.Fatalf("SearchAnalyzed calls = %d, want 1", len(search.calls))
+	}
+	if got := search.calls[0].limits.Limit; got != retrieve.LimitCap {
+		t.Fatalf("SearchAnalyzed limit = %d, want retrieve.LimitCap %d", got, retrieve.LimitCap)
+	}
+}
+
+func TestGatherPagesUsesBodyBudgetAndSkipsOverflowWhole(t *testing.T) {
+	// R-NH5B-NI7C
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	bodies := []string{"111", "2222", "333333", "44"}
+	hits := make([]retrieve.Hit, 0, len(bodies))
+	for i, body := range bodies {
+		id := fmt.Sprintf("subject-%d", i+1)
+		title := fmt.Sprintf("Page %d", i+1)
+		savePage(t, ctx, conn, wiki.Subject{ID: id, Name: title, Type: "entity"}, wiki.Page{
+			ID: id + "-page", SubjectID: id, Title: title, Body: body,
+		})
+		hits = append(hits, retrieve.Hit{PageID: id})
+	}
+
+	stores := struct {
+		subjects *wiki.SubjectStore
+		pages    *wiki.PageStore
+	}{wiki.NewSubjectStore(conn), wiki.NewPageStore(conn)}
+	asker := New(nil, stores.subjects, stores.pages, nil, llm.CallSite{}, llm.CallSite{}, WithBodyBudget(10))
+	got, err := asker.gatherPages(ctx, "default", hits)
+	if err != nil {
+		t.Fatalf("gatherPages budget 10: %v", err)
+	}
+	if want := []pageContext{
+		{Path: "entity/page-1", Title: "Page 1", Body: "111"},
+		{Path: "entity/page-2", Title: "Page 2", Body: "2222"},
+		{Path: "entity/page-4", Title: "Page 4", Body: "44"},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("gatherPages budget 10 = %#v, want whole pages 1, 2, and 4 %#v", got, want)
+	}
+
+	asker = New(nil, stores.subjects, stores.pages, nil, llm.CallSite{}, llm.CallSite{}, WithBodyBudget(13))
+	got, err = asker.gatherPages(ctx, "default", hits)
+	if err != nil {
+		t.Fatalf("gatherPages budget 13: %v", err)
+	}
+	if want := []pageContext{
+		{Path: "entity/page-1", Title: "Page 1", Body: "111"},
+		{Path: "entity/page-2", Title: "Page 2", Body: "2222"},
+		{Path: "entity/page-3", Title: "Page 3", Body: "333333"},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("gatherPages budget 13 = %#v, want threshold-selected whole pages 1, 2, and 3 %#v", got, want)
 	}
 }
 

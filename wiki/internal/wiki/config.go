@@ -37,6 +37,7 @@ type Config struct {
 	WorkerConcurrency int
 	SearchDefault     int
 	SearchCap         int
+	AskBodyBudget     int
 }
 
 // NewConfig reads service configuration. Chat inference is supplied by prompts.
@@ -55,6 +56,7 @@ func NewConfig(getenv func(string) string) (Config, error) {
 		WorkerConcurrency: WorkerConcurrency,
 		SearchDefault:     SearchDefault,
 		SearchCap:         SearchCap,
+		AskBodyBudget:     AskBodyBudget,
 	}, nil
 }
 

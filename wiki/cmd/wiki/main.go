@@ -47,6 +47,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			{Key: "WORKER_CONCURRENCY", Value: strconv.Itoa(wiki.WorkerConcurrency)},
 			{Key: "SEARCH_DEFAULT", Value: strconv.Itoa(wiki.SearchDefault)},
 			{Key: "SEARCH_CAP", Value: strconv.Itoa(wiki.SearchCap)},
+			{Key: "ASK_BODY_BUDGET", Value: strconv.Itoa(wiki.AskBodyBudget)},
 		},
 		Migrations: db.FS,
 		Config: func(getenv func(string) string) (any, error) {
@@ -105,6 +106,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 				llmClient,
 				cfg.CallSites.AskSubject,
 				cfg.CallSites.AskSynthesis,
+				ask.WithBodyBudget(cfg.AskBodyBudget),
 			)
 			webBase := strings.TrimRight(rt.AuthServer(), "/") + wiki.Mount + "subject/"
 			webPageService := pathPageService{

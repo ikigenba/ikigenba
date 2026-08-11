@@ -15,6 +15,7 @@ const (
 	WorkerConcurrency = 1
 	SearchDefault     = 8
 	SearchCap         = 32
+	AskBodyBudget     = 98304
 )
 
 // VectorCacheEntry is one stored page embedding prepared for an in-memory cache.

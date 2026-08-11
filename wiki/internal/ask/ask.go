@@ -21,7 +21,6 @@ const honestEmptyText = "The wiki holds nothing on that question."
 const (
 	defaultMaxTokens      = 16384
 	defaultRelevanceFloor = 0.30
-	defaultFinalK         = 8
 )
 
 // Answer is a generated answer and the wiki pages it cites.
@@ -51,7 +50,7 @@ type Asker struct {
 	analyzeSite llm.CallSite
 	synthSite   llm.CallSite
 	floor       float64
-	finalK      int
+	bodyBudget  int
 }
 
 // Option configures an Asker.
@@ -64,10 +63,10 @@ func WithRelevanceFloor(floor float64) Option {
 	}
 }
 
-// WithFinalK sets the number of retrieved pages Ask requests for synthesis.
-func WithFinalK(k int) Option {
+// WithBodyBudget sets the maximum total bytes of whole page bodies gathered for synthesis.
+func WithBodyBudget(bytes int) Option {
 	return func(a *Asker) {
-		a.finalK = k
+		a.bodyBudget = bytes
 	}
 }
 
@@ -81,13 +80,13 @@ func New(search Retriever, subjects *wiki.SubjectStore, pages *wiki.PageStore, c
 		analyzeSite: analyzeSite,
 		synthSite:   synthSite,
 		floor:       defaultRelevanceFloor,
-		finalK:      defaultFinalK,
+		bodyBudget:  wiki.AskBodyBudget,
 	}
 	for _, opt := range opts {
 		opt(a)
 	}
-	if a.finalK <= 0 {
-		a.finalK = defaultFinalK
+	if a.bodyBudget <= 0 {
+		a.bodyBudget = wiki.AskBodyBudget
 	}
 	return a
 }
@@ -126,7 +125,7 @@ func (a *Asker) Ask(ctx context.Context, scope, owner, question string) (Answer,
 		return Answer{}, err
 	}
 
-	retrieved, err := a.search.SearchAnalyzed(ctx, scope, attr, analysis, retrieve.SearchLimits{Limit: a.finalK})
+	retrieved, err := a.search.SearchAnalyzed(ctx, scope, attr, analysis, retrieve.SearchLimits{Limit: retrieve.LimitCap})
 	if err != nil {
 		return Answer{}, err
 	}
@@ -179,6 +178,7 @@ type pageContext struct {
 func (a *Asker) gatherPages(ctx context.Context, scope string, hits []retrieve.Hit) ([]pageContext, error) {
 	seenSubjects := map[string]struct{}{}
 	out := make([]pageContext, 0, len(hits))
+	remaining := a.bodyBudget
 	for _, hit := range hits {
 		subjectID := strings.TrimSpace(hit.PageID)
 		if subjectID == "" {
@@ -199,6 +199,11 @@ func (a *Asker) gatherPages(ctx context.Context, scope string, hits []retrieve.H
 			return nil, err
 		}
 		seenSubjects[subjectID] = struct{}{}
+		bodyBytes := len(page.Body)
+		if bodyBytes > remaining {
+			continue
+		}
+		remaining -= bodyBytes
 		out = append(out, pageContext{
 			Path:  wiki.Path(subject),
 			Title: page.Title,
