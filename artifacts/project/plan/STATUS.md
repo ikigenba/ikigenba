@@ -15,7 +15,6 @@ the anchored grep matches only phase lines.
 
 Next phase: 10
 
-- Phase 01 ⬜ realizes R-39K3-W9HR, R-3AS0-A18G, R-3BZW-NSZ5, R-8DF1-W89F, R-8IAN-FB87, R-VKB6-SHHV, R-4LKF-FB23, R-O1AD-MRKW, R-O2IA-0JBL — module scaffold, composition root, chassis + registry adoption, manifest/VERSION/AGENTS.md, boot smoke
 - Phase 02 ⬜ realizes R-3D7T-1KPU, R-3EFP-FCGJ, R-3FNL-T478, R-3GVI-6VXX, R-3I3E-KNOM, R-3JBA-YFFB, R-3LR3-PYWP, R-NFQ1-NA7N — data model, tokens & blob store
 - Phase 03 ⬜ realizes R-3MZ0-3QNE, R-3O6W-HIE3, R-3PES-VA4S, R-3QMP-91VH, R-3RUL-MTM6, R-3T2I-0LCV, R-3UAE-ED3K, R-3VIA-S4U9 — signed upload links: mint + public upload ingress
 - Phase 04 ⬜ realizes R-3WQ7-5WKY, R-3XY3-JOBN, R-3Z5Z-XG2C, R-40DW-B7T1, R-41LS-OZJQ, R-42TP-2RAF — download surface: public and private tiers
