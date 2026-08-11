@@ -10,5 +10,8 @@ no done marker; done is gone. This file deliberately carries **no bare status
 glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
-Next phase: 144
+Next phase: 146
+
+- Phase 144 ⬜ realizes R-NC9Q-4F8K, R-NDHM-I6Z9, R-NEPI-VYPY — retrieval recall fixes: porter-stemmed FTS index, space-joined keyword routing, caller-limit honor
+- Phase 145 ⬜ realizes R-NFXF-9QGN, R-NH5B-NI7C, R-NID8-19Y1 — ask gathers under a body-byte budget instead of a fixed page count
 

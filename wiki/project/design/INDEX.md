@@ -12,7 +12,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-9UTW-ZFF0, R-9W1T-D75P
 - D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, clean article prose (no ids), 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-9X9P-QYWE, R-9YHM-4QN3, R-VA32-HERT
 - D8 → `project/design/D08.md` — Search returns: hybrid retrieval over pages, behind one seam — none — structural
-- D9 → `project/design/D09.md` — `ask` (`internal/ask`): hybrid-retrieval pipeline, grounded/cited/honest-empty — owns R-BAFW-D24P, R-BBNS-QTVE, R-BCVP-4LM3, R-5UPD-VVNA, R-5VXA-9NDZ, R-690G-MZTK, R-5X56-NF4O, R-6A8D-0RK9, R-05CG-3H6Y, R-9ZPI-IIDS
+- D9 → `project/design/D09.md` — `ask` (`internal/ask`): hybrid-retrieval pipeline, grounded/cited/honest-empty — owns R-BAFW-D24P, R-BBNS-QTVE, R-BCVP-4LM3, R-5UPD-VVNA, R-5VXA-9NDZ, R-690G-MZTK, R-5X56-NF4O, R-6A8D-0RK9, R-05CG-3H6Y, R-9ZPI-IIDS, R-NFXF-9QGN, R-NH5B-NI7C, R-NID8-19Y1
 - D10 → `project/design/D10.md` — The MCP tool surface (`internal/mcp`) + identity — owns R-MUQ4-K1JS, R-MVY0-XTAH, R-MX5X-BL16, R-MYDT-PCRV, R-MZLQ-34IK, R-1QO4-77EI, R-N4KO-2WTZ, R-01OQ-Y5YV, R-02WN-BXPK, R-044J-PPG9, R-03GW-PX5K, R-04HB-QM7T, R-8DB1-UI1Q, R-8EIY-89SF, R-1Y7B-TN7Y
 - D11 → `project/design/D11.md` — Subject addressing: the public path == identity (`type/norm_name`) — owns R-DRX6-PWSW, R-DT53-3OJL, R-DUCZ-HGAA
 - D12 → `project/design/D12.md` — Page links: read-time mention detection + markdown footer — owns R-ZUDC-NJIP, R-ZVL9-1B9E, R-ZWT5-F303, R-ZY11-SUQS, R-ZZ8Y-6MHH, R-00GU-KE86, R-1WP9-CLM9, R-1XX5-QDCY, R-1Z52-453N
@@ -28,9 +28,9 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D28 → `project/design/D28.md` — Blackhole empty-normalization content — owns R-Z5JL-2IBS, R-Z6RH-GA2H, R-Z7ZD-U1T6
 - D29 → `project/design/D29.md` — Alias-aware path entry for the read lookups (`page` / `claims`) — owns R-AF1X-PG7K, R-AG2Y-PH8L, R-AH3Z-PJ9M, R-AL5R-PL1P
 - D30 → `project/design/D30.md` — Where page embeddings are stored — owns R-9OCK-FJK1, R-9PKG-TBAQ, R-9QSD-731F, R-9S09-KUS4
-- D31 → `project/design/D31.md` — The keyword lane: full-text search returns — owns R-203P-F1ET, R-22JI-6KW7, R-23RE-KCMW, R-24ZA-Y4DL
+- D31 → `project/design/D31.md` — The keyword lane: full-text search returns — owns R-203P-F1ET, R-22JI-6KW7, R-23RE-KCMW, R-24ZA-Y4DL, R-NC9Q-4F8K
 - D32 → `project/design/D32.md` — The meaning lane: in-memory vector search — owns R-3WOB-6U4Q, R-3XW7-KLVF, R-3Z43-YDM4, R-40C0-C5CT
-- D33 → `project/design/D33.md` — Merging the two lanes: rank fusion + exact-name pin — owns R-79KD-1622, R-7AS9-EXSR, R-7C05-SPJG, R-7D82-6HA5, R-Q8RI-7POG, R-Q9ZE-LHF5
+- D33 → `project/design/D33.md` — Merging the two lanes: rank fusion + exact-name pin — owns R-79KD-1622, R-7AS9-EXSR, R-7C05-SPJG, R-7D82-6HA5, R-Q8RI-7POG, R-NDHM-I6Z9, R-NEPI-VYPY
 - D34 → `project/design/D34.md` — The embedding call site: prompts `/embed`, one model for both sides — owns R-Z932-H2RA, R-1385-QVMS, R-14G2-4NDH, R-15NY-IF46
 - D35 → `project/design/D35.md` — Keeping page vectors current, in the background — owns R-6XNX-FNXO, R-6YVT-TFOD, R-703Q-77F2, R-71BM-KZ5R, R-72JI-YQWG, R-73RF-CIN5
 - D36 → `project/design/D36.md` — Preparing the question: one analysis call — owns R-QB7A-Z95U, R-QCF7-D0WJ, R-QDN3-QSN8, R-A0XE-WA4H
@@ -333,10 +333,16 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-MYDT-PCRV → D10 (`project/design/D10.md`)
 - R-MZLQ-34IK → D10 (`project/design/D10.md`)
 - R-N4KO-2WTZ → D10 (`project/design/D10.md`)
+- R-NC9Q-4F8K → D31 (`project/design/D31.md`)
+- R-NDHM-I6Z9 → D33 (`project/design/D33.md`)
 - R-NEFH-U8IO → D26 (`project/design/D26.md`)
+- R-NEPI-VYPY → D33 (`project/design/D33.md`)
 - R-NFNE-809D → D26 (`project/design/D26.md`)
+- R-NFXF-9QGN → D9 (`project/design/D09.md`)
 - R-NGVA-LS02 → D26 (`project/design/D26.md`)
+- R-NH5B-NI7C → D9 (`project/design/D09.md`)
 - R-NI36-ZJQR → D26 (`project/design/D26.md`)
+- R-NID8-19Y1 → D9 (`project/design/D09.md`)
 - R-NJB3-DBHG → D26 (`project/design/D26.md`)
 - R-NKIZ-R385 → D26 (`project/design/D26.md`)
 - R-NLQW-4UYU → D26 (`project/design/D26.md`)
@@ -352,7 +358,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-PLY0-NAK3 → D45 (`project/design/D45.md`)
 - R-PODT-EU1H → D45 (`project/design/D45.md`)
 - R-Q8RI-7POG → D33 (`project/design/D33.md`)
-- R-Q9ZE-LHF5 → D33 (`project/design/D33.md`)
 - R-QB7A-Z95U → D36 (`project/design/D36.md`)
 - R-QCF7-D0WJ → D36 (`project/design/D36.md`)
 - R-QDN3-QSN8 → D36 (`project/design/D36.md`)
