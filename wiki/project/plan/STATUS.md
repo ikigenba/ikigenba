@@ -12,5 +12,3 @@ lines.
 
 Next phase: 152
 
-- Phase 151 ⬜ realizes R-0DQI-XKD5, R-0EYF-BC3U, R-0G6B-P3UJ, R-0IM4-GNBX, R-0L1X-86TB — wire the ask cache: `ASK_CACHE_CAP` knob, composition root, invalidation hooks
-
