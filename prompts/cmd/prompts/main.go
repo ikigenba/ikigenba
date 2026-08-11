@@ -49,6 +49,7 @@ import (
 
 	"prompts/internal/admit"
 	"prompts/internal/calls"
+	"prompts/internal/completion"
 	"prompts/internal/consume"
 	"prompts/internal/db"
 	"prompts/internal/inference"
@@ -85,6 +86,9 @@ var (
 	svcRef             *prompt.Service
 	storeRef           *prompt.Store
 	callsRef           *calls.Store
+	completionRef      *completion.Executor
+	completionStoreRef *completion.Store
+	completionWorkers  int
 	callsRetentionDays int
 )
 
@@ -195,7 +199,11 @@ func promptsSpec() appkit.Spec {
 			{Key: "PROMPTS_MAX_CONCURRENT_RUNS", Value: "8"},
 			{Key: "PROMPTS_RUN_TTL", Value: "30m"},
 		},
-		Workers: []func(context.Context) error{callsBodyRetentionWorker},
+		Workers: []func(context.Context) error{callsBodyRetentionWorker, completionExecutionWorker, completionRetentionWorker},
+		TelemetryExclude: []string{
+			"GET /completions",
+			"GET /completions/{id}",
+		},
 		Producer: func(ob *outbox.Outbox) error {
 			if storeRef == nil {
 				return fmt.Errorf("prompts: Producer called before Handlers built the Store")
@@ -246,7 +254,17 @@ func registerRoutes(rt *appkit.Router) error {
 	gate := admit.New(knobs.maxInflightCalls, knobs.maxConcurrentRuns)
 	subAuth := provider.NewSubAuth(provider.ResolveAuthPath(os.Getenv))
 	buildProvider := provider.NewBuilder(subAuth)
-	completion := inference.NewExecutor(callStore, gate, buildProvider, os.Getenv, subAuth.Available)
+	completionStore := completion.NewStore(conn, time.Now)
+	completionHTTP := completion.NewHTTP(completionStore, os.Getenv, subAuth.Available)
+	completionExecutor := completion.NewExecutor(completionStore, callStore, gate, buildProvider, os.Getenv, subAuth.Available, completion.DefaultRuntimeBound)
+	if swept, err := completionStore.Sweep(context.Background()); err != nil {
+		return fmt.Errorf("prompts: completion retention boot sweep: %w", err)
+	} else if swept > 0 {
+		rt.Logger().Info("completions: swept expired terminal items", "count", swept)
+	}
+	completionRef = completionExecutor
+	completionStoreRef = completionStore
+	completionWorkers = knobs.maxInflightCalls
 	embedding := inference.NewEmbedExecutor(callStore, gate, provider.BuildEmbedder, os.Getenv)
 
 	// Resolve the same state/cache layout as the chassis. Run sandboxes are
@@ -318,7 +336,10 @@ func registerRoutes(rt *appkit.Router) error {
 		return err
 	}
 	rt.Handle("POST /mcp", rt.RequireIdentity(handler))
-	rt.HandleLoopback("POST /complete", completion.CompleteHandler())
+	rt.HandleLoopback("POST /completions", completionHTTP.EnsureHandler())
+	rt.HandleLoopback("GET /completions", completionHTTP.InboxHandler())
+	rt.HandleLoopback("GET /completions/{id}", completionHTTP.GetHandler())
+	rt.HandleLoopback("DELETE /completions/{id}", completionHTTP.AckHandler())
 	rt.HandleLoopback("POST /embed", embedding.EmbedHandler())
 	rt.HandleLoopback("GET /run-content", svc.RunContentHandler())
 	return nil
@@ -729,6 +750,35 @@ func callsBodyRetentionWorker(ctx context.Context) error {
 		case now := <-ticker.C:
 			if _, err := callsRef.PruneBodies(ctx, callsBodyCutoff(now, callsRetentionDays)); err != nil {
 				return fmt.Errorf("prompts: calls body-retention sweep: %w", err)
+			}
+		}
+	}
+}
+
+func completionExecutionWorker(ctx context.Context) error {
+	if completionRef == nil {
+		return fmt.Errorf("prompts: completion executor started before Handlers built the Store")
+	}
+	err := completionRef.Run(ctx, completionWorkers)
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
+}
+
+func completionRetentionWorker(ctx context.Context) error {
+	if completionStoreRef == nil {
+		return fmt.Errorf("prompts: completion retention worker started before Handlers built the Store")
+	}
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if _, err := completionStoreRef.Sweep(ctx); err != nil {
+				return fmt.Errorf("prompts: completion retention sweep: %w", err)
 			}
 		}
 	}

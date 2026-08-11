@@ -105,7 +105,7 @@ func recordMiddleware(recorder *telemetry.Recorder, service string, excluded []s
 			next.ServeHTTP(w, r)
 			return
 		}
-		if _, skip := exclude[r.URL.Path]; skip {
+		if excludedRequest(exclude, r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -116,6 +116,12 @@ func recordMiddleware(recorder *telemetry.Recorder, service string, excluded []s
 		rw := &telemetryResponseWriter{ResponseWriter: w, status: http.StatusOK, hash: sha256.New()}
 		started := time.Now()
 		next.ServeHTTP(rw, r)
+		// ServeMux assigns Request.Pattern while dispatching. Checking again after
+		// the handler lets callers exclude method-aware route templates such as
+		// "GET /completions/{id}" without also suppressing POST on a sibling route.
+		if excludedRequest(exclude, r) {
+			return
+		}
 
 		var actor *telemetry.Actor
 		id, ok := IdentityFrom(r.Context())
@@ -147,6 +153,18 @@ func recordMiddleware(recorder *telemetry.Recorder, service string, excluded []s
 			},
 		})
 	})
+}
+
+func excludedRequest(excluded map[string]struct{}, r *http.Request) bool {
+	for _, candidate := range []string{r.URL.Path, r.Method + " " + r.URL.Path, r.Pattern} {
+		if candidate == "" {
+			continue
+		}
+		if _, ok := excluded[candidate]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // requireIdentityHeaders does NO token parsing, NO ValidateAccess, NO hashing —

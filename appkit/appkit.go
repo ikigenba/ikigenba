@@ -187,7 +187,8 @@ type Spec struct {
 	// consumer.Run workers from this single declaration. It must not be combined
 	// with the legacy Consumes or Subscriptions fields.
 	Consumers []Consumer
-	// TelemetryExclude lists exact request paths which emit no HTTP request record.
+	// TelemetryExclude lists exact request paths or method-aware ServeMux patterns
+	// which emit no HTTP request record.
 	TelemetryExclude []string
 }
 

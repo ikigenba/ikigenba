@@ -112,7 +112,8 @@ type Options struct {
 
 	// Recorder receives one request record for every non-excluded HTTP request.
 	Recorder *telemetry.Recorder
-	// RecordExclude lists exact paths which must not produce request records.
+	// RecordExclude lists exact paths or method-aware ServeMux patterns which
+	// must not produce request records.
 	RecordExclude []string
 }
 

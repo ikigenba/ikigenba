@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -15,6 +16,12 @@ import (
 	"prompts/internal/calls"
 	"prompts/internal/ids"
 )
+
+const maxCompleteBody = 10 << 20
+
+type CallStore interface {
+	Insert(context.Context, calls.Row) error
+}
 
 // EmbedRequest is the envelope accepted by POST /embed.
 type EmbedRequest struct {
@@ -185,4 +192,35 @@ func validateEmbedRequest(req EmbedRequest) (agentkit.InputType, error) {
 	default:
 		return agentkit.InputUnspecified, errors.New("role must be document or query")
 	}
+}
+
+func decodeError(err error) string {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return "request body exceeds 10 MiB"
+	}
+	return "invalid JSON body: " + err.Error()
+}
+
+func requireEOF(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("invalid JSON body: multiple values")
+		}
+		return errors.New(decodeError(err))
+	}
+	return nil
+}
+
+func stringPointer(value string) *string { return &value }
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
 }

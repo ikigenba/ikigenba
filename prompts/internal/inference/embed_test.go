@@ -8,18 +8,22 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	appkitdb "appkit/db"
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/catalog"
 
 	"prompts/internal/admit"
 	"prompts/internal/calls"
+	promptsdb "prompts/internal/db"
 )
 
 const testEmbedModel = "text-embedding-3-small"
+const testModel = "claude-sonnet-4-6"
 
 func TestEmbedReturnsVectorsUsageCostAndRecordsOneEmbeddingCall(t *testing.T) {
 	// R-604H-L3QC
@@ -192,4 +196,50 @@ func postEmbed(t *testing.T, handler http.Handler, req EmbedRequest) *httptest.R
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/embed", bytes.NewReader(body)))
 	return recorder
+}
+
+type failingStore struct{ err error }
+
+func (s failingStore) Insert(context.Context, calls.Row) error { return s.err }
+
+func newTestStore(t *testing.T) *calls.Store {
+	t.Helper()
+	conn, err := appkitdb.Open(filepath.Join(t.TempDir(), "inference.db"))
+	if err != nil {
+		t.Fatalf("open DB: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	migrations, err := appkitdb.LoadMigrations(promptsdb.FS, "migrations")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if err := appkitdb.Migrate(context.Background(), conn, migrations); err != nil {
+		t.Fatalf("migrate DB: %v", err)
+	}
+	return calls.NewStore(conn)
+}
+
+func decodeResponse(t *testing.T, recorder *httptest.ResponseRecorder, target any) {
+	t.Helper()
+	if err := json.NewDecoder(recorder.Body).Decode(target); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, recorder.Body.String())
+	}
+}
+
+func assertErrorContains(t *testing.T, recorder *httptest.ResponseRecorder, status int, want string) {
+	t.Helper()
+	if recorder.Code != status || !strings.Contains(recorder.Body.String(), want) {
+		t.Fatalf("response = %d %s, want %d containing %q", recorder.Code, recorder.Body.String(), status, want)
+	}
+}
+
+func assertNoCalls(t *testing.T, store *calls.Store) {
+	t.Helper()
+	rows, err := store.List(context.Background(), calls.Filter{})
+	if err != nil {
+		t.Fatalf("List calls: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("calls rows = %d, want none", len(rows))
+	}
 }
