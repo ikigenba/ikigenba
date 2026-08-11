@@ -333,6 +333,115 @@ func TestWWWSiteRendersLandingWithInjectedServiceVersion(t *testing.T) {
 	}
 }
 
+func TestEveryWWWDocumentCarriesBrandIconLinks(t *testing.T) {
+	// R-RYDN-YNR5
+	root := wwwRoot(t)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read share/www: %v", err)
+	}
+
+	site := loadWWW(t)
+	documents := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := filepath.Ext(entry.Name())
+		if ext != ".html" && ext != ".tmpl" {
+			continue
+		}
+		documents++
+		t.Run(entry.Name(), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			if err := site.Render(rec, entry.Name(), landingData("cron", "dev")); err != nil {
+				t.Fatalf("render %s: %v", entry.Name(), err)
+			}
+			if rec.Code != http.StatusOK {
+				t.Fatalf("render %s status = %d, want %d", entry.Name(), rec.Code, http.StatusOK)
+			}
+			head := headMarkup(t, rec.Body.String())
+			for _, link := range []string{
+				`<link rel="icon" sizes="any" href="static/favicon.ico">`,
+				`<link rel="icon" type="image/png" href="static/favicon-32.png">`,
+				`<link rel="apple-touch-icon" href="static/apple-touch-icon.png">`,
+			} {
+				if !strings.Contains(head, link) {
+					t.Fatalf("rendered %s head missing %q:\n%s", entry.Name(), link, head)
+				}
+			}
+		})
+	}
+	if documents == 0 {
+		t.Fatal("share/www contains no HTML documents")
+	}
+}
+
+func TestAssembledCronServesBrandIcons(t *testing.T) {
+	// R-RZLK-CFHU
+	root := t.TempDir()
+	binary := filepath.Join(root, "cron")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	build.Env = os.Environ()
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build cron: %v\n%s", err, out)
+	}
+
+	port := freeTCPPort(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, binary, "serve")
+	cmd.Env = testEnv(map[string]string{
+		"CRON_IP":              "127.0.0.1",
+		"CRON_PORT":            fmt.Sprintf("%d", port),
+		"CRON_DB_PATH":         filepath.Join(root, "cron.db"),
+		"CRON_GENERATION_PATH": filepath.Join(root, "cron.db.generation"),
+		"CRON_WWW_PATH":        wwwRoot(t),
+	})
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start cron: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	defer stopProcess(cancel, done)
+	waitForHealth(t, port, done, &stdout, &stderr)
+
+	client := http.Client{Timeout: time.Second}
+	for _, tc := range []struct {
+		name        string
+		contentType string
+	}{
+		{name: "favicon.ico", contentType: "image/x-icon"},
+		{name: "favicon-32.png", contentType: "image/png"},
+		{name: "apple-touch-icon.png", contentType: "image/png"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url := fmt.Sprintf("http://127.0.0.1:%d/static/%s", port, tc.name)
+			resp, err := client.Get(url)
+			if err != nil {
+				t.Fatalf("GET %s: %v", url, err)
+			}
+			body, readErr := io.ReadAll(resp.Body)
+			closeErr := resp.Body.Close()
+			if readErr != nil || closeErr != nil {
+				t.Fatalf("read GET %s: read=%v close=%v", url, readErr, closeErr)
+			}
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want %d; body=%q", url, resp.StatusCode, http.StatusOK, body)
+			}
+			if len(body) == 0 {
+				t.Fatalf("GET %s returned an empty body", url)
+			}
+			if got := resp.Header.Get("Content-Type"); got != tc.contentType {
+				t.Fatalf("GET %s Content-Type = %q, want %q", url, got, tc.contentType)
+			}
+		})
+	}
+}
+
 func TestWWWStaticServesThroughChassisMountAndNoCronStaticHandler(t *testing.T) {
 	// R-LQUM-TC2G
 	css := readWWWStaticResponse(t, "/static/tokens.css")
