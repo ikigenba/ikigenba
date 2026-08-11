@@ -15,7 +15,6 @@ the anchored grep matches only phase lines.
 
 Next phase: 10
 
-- Phase 05 ⬜ realizes R-441L-GJ14, R-46HE-82II, R-47PA-LU97, R-48X6-ZLZW, R-4A53-DDQL, R-4BCZ-R5HA — content-plane holder endpoint + import acceptor
 - Phase 06 ⬜ realizes R-4CKW-4X7Z, R-4DSS-IOYO, R-4F0O-WGPD, R-4G8L-A8G2, R-4HGH-O06R, R-4IOE-1RXG, R-4JWA-FJO5, R-4L46-TBEU, R-4MC3-735J — MCP tool surface
 - Phase 07 ⬜ realizes R-4NJZ-KUW8, R-4PZS-CEDM, R-4R7O-Q64B, R-4SFL-3XV0 — event production wired into every domain mutation
 - Phase 08 ⬜ realizes R-4TNH-HPLP, R-4UVD-VHCE, R-4W3A-9933, R-4XB6-N0TS, R-4YJ3-0SKH, R-4ZQZ-EKB6, R-50YV-SC1V, R-526S-63SK — nginx location fragment
