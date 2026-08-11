@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.29.0 — 2026-08-10
+
+- Each scope can now carry standing instructions ("this scope holds a fictional world; its dates are in-world") via a new `instructions` get/set tool; they are honored by every ingest, page rebuild, and question in that scope, overriding the wiki's general reading habits where they conflict.
+- The wiki now respects a document's own timeline: a story's "130 years ago" stays relative instead of being converted into a real-world date computed from the ingest day; only material speaking from the real-world present (notes, correspondence, news) gets relative dates resolved against when it was received.
+- Instruction changes apply to future work only; re-run earlier ingests to re-read them under new instructions.
+
 ## v0.28.0 — 2026-08-10
 
 - Ask now finds pages phrased differently than the question: the search index stems words, so asking about "kings" matches a page that says "king".
