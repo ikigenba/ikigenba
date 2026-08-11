@@ -174,10 +174,11 @@ func (s *Service) storeBody(w http.ResponseWriter, r *http.Request, artifactID s
 }
 
 func (s *Service) downloadURL(r *http.Request, id, filename, visibility string) string {
-	path := "/srv/artifacts/a/" + url.PathEscape(id)
+	tier := "p"
 	if visibility == "public" {
-		path += "/" + url.PathEscape(filename)
+		tier = "f"
 	}
+	path := "/srv/artifacts/" + tier + "/" + url.PathEscape(id) + "/" + url.PathEscape(filename)
 	origin := strings.TrimRight(s.UploadOrigin, "/")
 	if r.Host != "" {
 		scheme := r.Header.Get("X-Forwarded-Proto")

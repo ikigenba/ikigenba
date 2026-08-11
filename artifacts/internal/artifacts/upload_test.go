@@ -239,6 +239,7 @@ type uploadFixture struct {
 	blobs   *BlobStore
 	service *Service
 	now     time.Time
+	router  *downloadRouter
 }
 
 type uploadResponse struct {
