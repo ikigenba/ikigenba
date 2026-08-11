@@ -10,5 +10,3 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 20
-
-- Phase 19 ⬜ realizes R-RYDN-YNR5, R-RZLK-CFHU — adopt the suite brand icon set
