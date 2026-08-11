@@ -109,6 +109,7 @@ type Artifact struct {
 }
 
 type CreateArtifactParams struct {
+	ID          string
 	OwnerID     string
 	OwnerEmail  string
 	Filename    string
@@ -122,7 +123,11 @@ type CreateArtifactParams struct {
 func (s *Store) CreateArtifact(ctx context.Context, p CreateArtifactParams) (Artifact, error) {
 	var lastErr error
 	for range 2 {
-		a := Artifact{ID: s.newToken(), OwnerID: p.OwnerID, OwnerEmail: p.OwnerEmail, Filename: p.Filename, Description: p.Description, Visibility: p.Visibility, Size: p.Size, ContentHash: p.ContentHash, CreatedAt: p.CreatedAt.UTC(), UpdatedAt: p.CreatedAt.UTC()}
+		artifactID := p.ID
+		if artifactID == "" {
+			artifactID = s.newToken()
+		}
+		a := Artifact{ID: artifactID, OwnerID: p.OwnerID, OwnerEmail: p.OwnerEmail, Filename: p.Filename, Description: p.Description, Visibility: p.Visibility, Size: p.Size, ContentHash: p.ContentHash, CreatedAt: p.CreatedAt.UTC(), UpdatedAt: p.CreatedAt.UTC()}
 		_, err := s.db.ExecContext(ctx, `INSERT INTO artifacts
 			(id, owner_id, owner_email, filename, description, visibility, size, content_hash, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, a.ID, a.OwnerID, a.OwnerEmail, a.Filename, a.Description, a.Visibility, a.Size, a.ContentHash, formatTime(a.CreatedAt), formatTime(a.UpdatedAt))
@@ -130,6 +135,9 @@ func (s *Store) CreateArtifact(ctx context.Context, p CreateArtifactParams) (Art
 			return a, nil
 		}
 		lastErr = err
+		if p.ID != "" {
+			break
+		}
 	}
 	return Artifact{}, fmt.Errorf("create artifact after token retry: %w", lastErr)
 }

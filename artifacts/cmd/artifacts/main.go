@@ -62,6 +62,7 @@ func artifactsSpec() appkit.Spec {
 			)
 			rt.Handle("/u/", uploads.UploadHandler())
 			uploads.MountDownloads(rt)
+			uploads.MountContent(rt)
 			rt.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				_, _ = w.Write([]byte("artifacts\n"))
