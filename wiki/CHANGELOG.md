@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.31.0 — 2026-08-11
+
+- Deleting a scope now takes effect immediately and completely: search and ask reflect the deletion at once with no restart, and recreating the same scope name starts a genuinely empty scope — the deleted generation's content can never resurface, even from ingests that were still running at the delete. This fixes asks failing with a bare "ask wiki" page after a scope was deleted and re-ingested.
+- Re-ingested and re-embedded pages are now searchable by meaning in their own scope right away, and never bleed into another scope's answers (a runtime mislabeling hid them from their scope and leaked them into `default`).
+- Ask no longer fails when its search index is momentarily ahead of a deletion: a hit that no longer resolves is skipped and the answer comes from the pages that exist — or an honest "nothing here" when none do.
+- Exact-name questions pin their subject again, and only within the scope being asked: the pin previously looked names up in the wrong scope and built hits that could never resolve, so any ask that pinned failed outright.
+- When answering genuinely fails, the web now shows a styled error page with the question kept in the box ready to retry — never a bare one-line error body — and logs the underlying cause for diagnosis.
+- No embedding row can outlive its subject anymore: writes are guarded, startup tolerates a stray orphan instead of refusing to boot, and the background sweep cleans any up on its own.
+
 ## v0.30.0 — 2026-08-10
 
 - Asking the same question twice in a scope now answers instantly the second time: answers are cached in memory (the 500 most recently used, tunable via `ASK_CACHE_CAP`; `0` disables), and identical questions arriving at the same moment share one computation instead of running twice.
