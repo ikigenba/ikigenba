@@ -74,16 +74,32 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D80 → `project/design/D80.md` — The page shell: boxed top-down layout, header bar (brand mark + universal question form), footer — owns R-HG6J-SNRN, R-HHEG-6FIC, R-2MYX-Y4PN, R-2O6U-BWGC, R-2PEQ-PO71, R-2QMN-3FXQ
 - D81 → `project/design/D81.md` — Suggested pages: the scope's seven newest subjects on every scope home — owns R-HJU8-XYZQ, R-HL25-BQQF, R-HMA1-PIH4, R-HOPU-H1YI
 - D82 → `project/design/D82.md` — Scope instructions: an operator-authored preamble on every inference call — owns R-8FVJ-PUMZ, R-8H3G-3MDO, R-8JJ8-V5V2, R-8KR5-8XLR, R-8LZ1-MPCG, R-8N6Y-0H35, R-8OEU-E8TU, R-8PMQ-S0KJ, R-8QUN-5SB8, R-8S2J-JK1X
+- D83 → `project/design/D83.md` — The ask response cache: in-memory, LRU, shared by both surfaces — owns R-02RF-HMOW, R-03ZB-VEFL, R-0578-966A, R-06F4-MXWZ, R-07N1-0PNO, R-08UX-EHED, R-0A2T-S952, R-0BAQ-60VR, R-0CIM-JSMG, R-0DQI-XKD5, R-0EYF-BC3U, R-0G6B-P3UJ, R-0IM4-GNBX, R-0JU0-UF2M, R-0L1X-86TB
 
 ## Verification ids → Decision
 
 - R-00GU-KE86 → D12 (`project/design/D12.md`)
 - R-01OQ-Y5YV → D10 (`project/design/D10.md`)
+- R-02RF-HMOW → D83 (`project/design/D83.md`)
 - R-02WN-BXPK → D10 (`project/design/D10.md`)
 - R-03GW-PX5K → D10 (`project/design/D10.md`)
+- R-03ZB-VEFL → D83 (`project/design/D83.md`)
 - R-044J-PPG9 → D10 (`project/design/D10.md`)
 - R-04HB-QM7T → D10 (`project/design/D10.md`)
+- R-0578-966A → D83 (`project/design/D83.md`)
 - R-05CG-3H6Y → D9 (`project/design/D09.md`)
+- R-06F4-MXWZ → D83 (`project/design/D83.md`)
+- R-07N1-0PNO → D83 (`project/design/D83.md`)
+- R-08UX-EHED → D83 (`project/design/D83.md`)
+- R-0A2T-S952 → D83 (`project/design/D83.md`)
+- R-0BAQ-60VR → D83 (`project/design/D83.md`)
+- R-0CIM-JSMG → D83 (`project/design/D83.md`)
+- R-0DQI-XKD5 → D83 (`project/design/D83.md`)
+- R-0EYF-BC3U → D83 (`project/design/D83.md`)
+- R-0G6B-P3UJ → D83 (`project/design/D83.md`)
+- R-0IM4-GNBX → D83 (`project/design/D83.md`)
+- R-0JU0-UF2M → D83 (`project/design/D83.md`)
+- R-0L1X-86TB → D83 (`project/design/D83.md`)
 - R-0SCX-95OZ → D14 (`project/design/D14.md`)
 - R-0TKT-MXFO → D14 (`project/design/D14.md`)
 - R-0USQ-0P6D → D14 (`project/design/D14.md`)
