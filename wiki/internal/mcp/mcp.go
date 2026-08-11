@@ -21,12 +21,13 @@ import (
 	"wiki/internal/wiki"
 )
 
-const Instructions = "wiki is a scoped knowledge base (notes, a second brain) built from source text you ingest. Choose or create a scope first; every content call requires it. Ingest queues text; a background pipeline distills entities, events, concepts, and their claims into cited pages. Ask for grounded answers; read knowledge by type/slug path; track jobs; merge duplicates; and steer work with abort and rerun. Call guide for scope management, field catalogs, paths, and worked examples before your first ingest or merge."
+const Instructions = "wiki is a scoped knowledge base (notes, a second brain) built from source text you ingest. Choose or create a scope first; every content call requires it. Scope instructions provide operator-authored context that overrides conflicting base inference rules. Ingest queues text; a background pipeline distills entities, events, concepts, and their claims into cited pages. Ask for grounded answers; read knowledge by type/slug path; track jobs; merge duplicates; and steer work with abort and rerun. Call guide for scope management, field catalogs, paths, and worked examples before your first ingest or merge."
 
 const (
-	errScopeNotFound appkitmcp.ErrorCode = "scope_not_found"
-	errScopeExists   appkitmcp.ErrorCode = "scope_exists"
-	errScopeDefault  appkitmcp.ErrorCode = "scope_is_default"
+	errScopeNotFound       appkitmcp.ErrorCode = "scope_not_found"
+	errScopeExists         appkitmcp.ErrorCode = "scope_exists"
+	errScopeDefault        appkitmcp.ErrorCode = "scope_is_default"
+	errInstructionsTooLong appkitmcp.ErrorCode = "instructions_too_long"
 )
 
 // Handler holds configured wiki domain tool dependencies.
@@ -126,6 +127,7 @@ type scopeService interface {
 	Get(context.Context, string) (wiki.Scope, error)
 	List(context.Context) ([]wiki.Scope, error)
 	SetVisibility(context.Context, string, string) error
+	SetInstructions(context.Context, string, string) error
 	Delete(context.Context, string) error
 }
 
@@ -329,7 +331,7 @@ func WithAskFunc[T any](fn func(context.Context, string, string, string) (T, err
 	}
 }
 
-// WithScopeService enables scope validation and the four scope-management tools.
+// WithScopeService enables scope validation and the scope-management tools.
 func WithScopeService(s scopeService) Option {
 	return func(h *Handler) { h.scopes = s }
 }
@@ -384,6 +386,7 @@ func Tools(opts ...Option) []appkitmcp.Tool {
 			domainTool(scopeCreateTool(), h.handleScopeCreateCall),
 			domainTool(scopeDeleteTool(), h.handleScopeDeleteCall),
 			domainTool(scopeSetVisibilityTool(), h.handleScopeSetVisibilityCall),
+			domainTool(instructionsTool(), h.handleInstructionsCall),
 		)
 	}
 	tools = append(tools, domainTool(guideTool(), handleGuideCall))
@@ -876,6 +879,45 @@ func (h *Handler) handleScopeSetVisibilityCall(ctx context.Context, raw json.Raw
 	return appkitmcp.StructuredResult(map[string]string{"name": args.Name, "visibility": args.Visibility})
 }
 
+func (h *Handler) handleInstructionsCall(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
+	var args struct {
+		Scope  string  `json:"scope"`
+		Action string  `json:"action"`
+		Text   *string `json:"text"`
+	}
+	if err := decodeArgs(raw, &args); err != nil {
+		return validationError(err.Error()), nil
+	}
+	args.Scope = strings.TrimSpace(args.Scope)
+	if args.Scope == "" {
+		return validationError("scope is required; use scopes to list available scopes"), nil
+	}
+	if args.Action != "get" && args.Action != "set" {
+		return validationError("action must be one of {get, set}"), nil
+	}
+	scope, err := h.scopes.Get(ctx, args.Scope)
+	if errors.Is(err, wiki.ErrScopeNotFound) {
+		return appkitmcp.ErrorResult(errScopeNotFound, fmt.Sprintf("scope %q not found; use scopes to list available scopes", args.Scope)), nil
+	}
+	if err != nil {
+		return internalError(err.Error()), nil
+	}
+	if args.Action == "get" {
+		return appkitmcp.StructuredResult(map[string]string{"scope": scope.Name, "instructions": scope.Instructions})
+	}
+	if args.Text == nil {
+		return validationError("text is required when action is set"), nil
+	}
+	if err := h.scopes.SetInstructions(ctx, args.Scope, *args.Text); errors.Is(err, wiki.ErrInstructionsTooLong) {
+		return appkitmcp.ErrorResult(errInstructionsTooLong, fmt.Sprintf("scope instructions exceed the %d-character limit", wiki.InstructionsCharCap)), nil
+	} else if errors.Is(err, wiki.ErrScopeNotFound) {
+		return appkitmcp.ErrorResult(errScopeNotFound, fmt.Sprintf("scope %q not found; use scopes to list available scopes", args.Scope)), nil
+	} else if err != nil {
+		return internalError(err.Error()), nil
+	}
+	return appkitmcp.StructuredResult(map[string]string{"scope": args.Scope, "instructions": *args.Text})
+}
+
 func decodeScopeName(raw json.RawMessage) (string, map[string]any) {
 	var args struct {
 		Name string `json:"name"`
@@ -1168,6 +1210,19 @@ func scopeSetVisibilityTool() map[string]any {
 			"visibility": map[string]any{"type": "string", "enum": []string{"private", "public"}},
 		}, []string{"name", "visibility"}),
 		"outputSchema": objectSchema(map[string]any{"name": stringSchema(), "visibility": stringSchema()}, []string{"name", "visibility"}),
+	}
+}
+
+func instructionsTool() map[string]any {
+	return map[string]any{
+		"name":        "instructions",
+		"description": "Get or set operator-authored scope instructions that override conflicting base inference rules. Changes apply to future inference only; rerun existing content's jobs to reinterpret it.",
+		"inputSchema": objectSchema(map[string]any{
+			"scope":  stringSchema(),
+			"action": map[string]any{"type": "string", "enum": []string{"get", "set"}},
+			"text":   stringSchema(),
+		}, []string{"scope", "action"}),
+		"outputSchema": objectSchema(map[string]any{"scope": stringSchema(), "instructions": stringSchema()}, []string{"scope", "instructions"}),
 	}
 }
 

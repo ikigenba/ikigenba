@@ -187,6 +187,7 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 		"scope_create":         true,
 		"scope_delete":         true,
 		"scope_set_visibility": true,
+		"instructions":         true,
 		"guide":                true,
 		"health":               true,
 		"reflection":           true,
@@ -213,8 +214,8 @@ func TestToolsListAdvertisesConfiguredWikiSurface(t *testing.T) {
 			verbs[name] = true
 		}
 	}
-	if len(verbs) != 18 {
-		t.Fatalf("non-guide verb membership = %#v, want exactly eighteen verbs", verbs)
+	if len(verbs) != 19 {
+		t.Fatalf("non-guide verb membership = %#v, want exactly nineteen verbs", verbs)
 	}
 	if strings.Contains(Instructions, "llm_calls") || strings.Contains(guideDoc, "llm_calls") {
 		t.Fatal("initialize instructions or guide advertises retired llm_calls capability")
@@ -453,6 +454,101 @@ func TestScopeDiscoveryAppearsOnlyInInstructionsAndGuideDescription(t *testing.T
 		if !strings.Contains(guideDoc, phrase) {
 			t.Fatalf("guide omits %q", phrase)
 		}
+	}
+	for _, tool := range Tools(WithScopeService(testScopeService{})) {
+		mentionsGuide := strings.Contains(strings.ToLower(tool.Description), "guide")
+		if mentionsGuide != (tool.Name == "guide") {
+			t.Fatalf("%s description guide pointer = %v", tool.Name, mentionsGuide)
+		}
+	}
+}
+
+func TestInstructionsSchemaAndGetSetClearThroughHandler(t *testing.T) {
+	// R-8PMQ-S0KJ
+	ctx := context.Background()
+	db := migratedMCPDB(t, ctx)
+	defer db.Close()
+	store := wikidomain.NewScopeStore(db)
+	h := gatedHandler(t, newTestHandler(t, WithScopeService(store)))
+
+	list := callMCP(t, h, `{"jsonrpc":"2.0","id":"list","method":"tools/list"}`, "owner@example.com")
+	var listed struct {
+		Result struct {
+			Tools []struct {
+				Name        string         `json:"name"`
+				InputSchema map[string]any `json:"inputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	decodeJSON(t, list.Body.Bytes(), &listed)
+	schema := toolSchema(t, listed.Result.Tools, "instructions")
+	if got := stringValues(schema["required"]); !reflect.DeepEqual(got, []string{"scope", "action"}) {
+		t.Fatalf("instructions required = %#v", got)
+	}
+	action := schema["properties"].(map[string]any)["action"].(map[string]any)
+	if got := stringValues(action["enum"]); !reflect.DeepEqual(got, []string{"get", "set"}) {
+		t.Fatalf("instructions action enum = %#v", got)
+	}
+
+	call := func(id, args string) toolResult {
+		rec := callMCP(t, h, fmt.Sprintf(`{"jsonrpc":"2.0","id":%q,"method":"tools/call","params":{"name":"instructions","arguments":%s}}`, id, args), "owner@example.com")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d; body=%s", id, rec.Code, rec.Body.String())
+		}
+		return decodeToolResult(t, rec.Body.Bytes())
+	}
+	assertValue := func(id, args, want string) {
+		got := call(id, args)
+		if got.IsError || got.StructuredContent["scope"] != "default" || got.StructuredContent["instructions"] != want {
+			t.Fatalf("%s result = %#v, want instructions %q", id, got, want)
+		}
+	}
+	assertValue("get-empty", `{"scope":"default","action":"get"}`, "")
+	assertValue("set", `{"scope":"default","action":"set","text":"  fictional α  "}`, "  fictional α  ")
+	assertValue("get-set", `{"scope":"default","action":"get"}`, "  fictional α  ")
+	assertValue("clear", `{"scope":"default","action":"set","text":""}`, "")
+	assertValue("get-cleared", `{"scope":"default","action":"get"}`, "")
+}
+
+func TestInstructionsErrorsAreTypedAndPreserveStoredValue(t *testing.T) {
+	// R-8QUN-5SB8
+	ctx := context.Background()
+	db := migratedMCPDB(t, ctx)
+	defer db.Close()
+	store := wikidomain.NewScopeStore(db)
+	h := gatedHandler(t, newTestHandler(t, WithScopeService(store)))
+	call := func(id, args string) toolResult {
+		rec := callMCP(t, h, fmt.Sprintf(`{"jsonrpc":"2.0","id":%q,"method":"tools/call","params":{"name":"instructions","arguments":%s}}`, id, args), "owner@example.com")
+		return decodeToolResult(t, rec.Body.Bytes())
+	}
+	call("seed", `{"scope":"default","action":"set","text":"keep me"}`)
+	for _, tc := range []struct {
+		id, args, code, message string
+	}{
+		{"missing-text", `{"scope":"default","action":"set"}`, "validation", "text is required"},
+		{"missing-scope", `{"scope":"ghost","action":"get"}`, "scope_not_found", "scopes"},
+		{"too-long", fmt.Sprintf(`{"scope":"default","action":"set","text":%q}`, strings.Repeat("界", wikidomain.InstructionsCharCap+1)), "instructions_too_long", "4000"},
+	} {
+		got := call(tc.id, tc.args)
+		if !got.IsError || got.StructuredContent["code"] != tc.code || !strings.Contains(fmt.Sprint(got.StructuredContent["message"]), tc.message) {
+			t.Fatalf("%s result = %#v, want %s mentioning %q", tc.id, got, tc.code, tc.message)
+		}
+	}
+	got := call("unchanged", `{"scope":"default","action":"get"}`)
+	if got.IsError || got.StructuredContent["instructions"] != "keep me" {
+		t.Fatalf("value after rejected set = %#v", got)
+	}
+}
+
+func TestGuideAndInitializeDescribeScopeInstructionsWithoutExtraPointers(t *testing.T) {
+	// R-8S2J-JK1X
+	for _, phrase := range []string{"`instructions`", "override the base inference rules", "future inference", "`rerun`"} {
+		if !strings.Contains(guideDoc, phrase) {
+			t.Fatalf("guide omits %q", phrase)
+		}
+	}
+	if !strings.Contains(strings.ToLower(Instructions), "scope instructions") {
+		t.Fatalf("initialize instructions omit scope instructions: %q", Instructions)
 	}
 	for _, tool := range Tools(WithScopeService(testScopeService{})) {
 		mentionsGuide := strings.Contains(strings.ToLower(tool.Description), "guide")
@@ -2272,7 +2368,10 @@ func (testScopeService) List(context.Context) ([]wikidomain.Scope, error) {
 }
 
 func (testScopeService) SetVisibility(context.Context, string, string) error { return nil }
-func (testScopeService) Delete(context.Context, string) error                { return nil }
+func (testScopeService) SetInstructions(context.Context, string, string) error {
+	return nil
+}
+func (testScopeService) Delete(context.Context, string) error { return nil }
 
 type scopePartitionService struct{}
 
@@ -2289,7 +2388,8 @@ func (*scopePartitionService) List(context.Context) ([]wikidomain.Scope, error) 
 func (*scopePartitionService) SetVisibility(context.Context, string, string) error {
 	return nil
 }
-func (*scopePartitionService) Delete(context.Context, string) error { return nil }
+func (*scopePartitionService) SetInstructions(context.Context, string, string) error { return nil }
+func (*scopePartitionService) Delete(context.Context, string) error                  { return nil }
 func (*scopePartitionService) ListJobsInScope(_ context.Context, scope string, _ JobFilter, _ paging.Params) ([]job, string, error) {
 	if scope == "s1" {
 		return []job{{ID: "job-s1", Status: "pending"}}, "", nil

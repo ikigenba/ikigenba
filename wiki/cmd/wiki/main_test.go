@@ -250,7 +250,7 @@ func TestWikiBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	}
 }
 
-func TestBuildSpecWiresFifteenMCPTools(t *testing.T) {
+func TestBuildSpecWiresTwentyMCPTools(t *testing.T) {
 	// R-MUQ4-K1JS
 	// R-3G73-064M
 	ctx := context.Background()
@@ -299,7 +299,7 @@ func TestBuildSpecWiresFifteenMCPTools(t *testing.T) {
 	for _, tool := range got.Result.Tools {
 		names[tool.Name] = true
 	}
-	want := []string{"ingest", "status", "abort", "rerun", "jobs", "jobs_count", "merge", "merges", "ask", "subjects", "claims", "page", "scopes", "scope_create", "scope_delete", "scope_set_visibility", "guide", "health", "reflection"}
+	want := []string{"ingest", "status", "abort", "rerun", "jobs", "jobs_count", "merge", "merges", "ask", "subjects", "claims", "page", "scopes", "scope_create", "scope_delete", "scope_set_visibility", "instructions", "guide", "health", "reflection"}
 	if len(names) != len(want) {
 		t.Fatalf("tool names = %#v, want exact %v", names, want)
 	}
@@ -1450,9 +1450,10 @@ func (surfaceWiki) Create(context.Context, string) (wiki.Scope, error) { return 
 func (surfaceWiki) Get(_ context.Context, name string) (wiki.Scope, error) {
 	return wiki.Scope{Name: name, Visibility: "private"}, nil
 }
-func (surfaceWiki) List(context.Context) ([]wiki.Scope, error)          { return nil, nil }
-func (surfaceWiki) SetVisibility(context.Context, string, string) error { return nil }
-func (surfaceWiki) Delete(context.Context, string) error                { return nil }
+func (surfaceWiki) List(context.Context) ([]wiki.Scope, error)            { return nil, nil }
+func (surfaceWiki) SetVisibility(context.Context, string, string) error   { return nil }
+func (surfaceWiki) SetInstructions(context.Context, string, string) error { return nil }
+func (surfaceWiki) Delete(context.Context, string) error                  { return nil }
 
 func surfaceAsk(context.Context, string, string, string) (askSurfaceAnswer, error) {
 	return askSurfaceAnswer{}, nil

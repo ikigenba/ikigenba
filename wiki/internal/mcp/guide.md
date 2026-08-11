@@ -6,6 +6,8 @@ Wiki turns source text into a cited knowledge base. Its subjects have exactly th
 
 Wiki content is partitioned into explicit scopes. Every content verb — `ingest`, `ask`, `subjects`, `claims`, `page`, `merge`, `merges`, `jobs`, and `jobs_count` — requires a `scope` argument; there is no assumed scope. Use `scopes` to list them, `scope_create` to create a private scope, `scope_set_visibility` to switch its human-web visibility between `private` and `public`, and `scope_delete` to irreversibly delete a non-default scope and all its content. MCP remains bearer-gated regardless of visibility.
 
+Use `instructions` with `{"scope":"robotics","action":"get"}` to read a scope's operator-authored standing context, or `{"scope":"robotics","action":"set","text":"..."}` to replace it byte-exact; set an empty text to clear it. Non-empty scope instructions override the base inference rules where they conflict and apply to future inference calls only. To reinterpret already-ingested content after changing instructions, use `rerun` on its jobs.
+
 ## Subject paths
 
 Tools that identify one subject use a `type/norm_name` path, such as `entity/acme-robotics`, not a display name or internal ID. The first segment is one of the three subject types. The second is the normalized name (slug): lowercase the name, replace punctuation and whitespace runs with `-`, and trim surrounding `-` characters. For example, `Acme Robotics, Inc.` becomes `acme-robotics-inc`.
