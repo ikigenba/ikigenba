@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Service}} · artifacts</title>
+  <link rel="stylesheet" href="static/tokens.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="static/fonts/space-grotesk.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="static/fonts/ibm-plex-sans.woff2">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--color-text);
+      background: var(--color-bg);
+      font-family: var(--font-body);
+      font-size: var(--text-body-size);
+      line-height: var(--text-body-lh);
+    }
+
+    main {
+      position: relative;
+      width: min(100% - 32px, 960px);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: var(--space-16) 0;
+      display: grid;
+      align-content: center;
+      gap: var(--space-12);
+    }
+
+    .eyebrow,
+    .version,
+    dt {
+      font-family: var(--font-mono);
+      font-size: var(--text-label-size);
+      line-height: var(--text-label-lh);
+      font-weight: var(--text-label-weight);
+      text-transform: uppercase;
+      color: var(--color-text-muted);
+    }
+
+    .home {
+      position: absolute;
+      top: var(--space-8);
+      left: 0;
+      font-family: var(--font-mono);
+      font-size: var(--text-label-size);
+      line-height: var(--text-label-lh);
+      font-weight: var(--text-label-weight);
+      text-transform: uppercase;
+      color: var(--color-text-muted);
+      text-decoration: none;
+    }
+
+    .home:hover,
+    .home:focus-visible {
+      color: var(--color-text);
+    }
+
+    h1 {
+      margin: var(--space-3) 0 0;
+      font-family: var(--font-display);
+      font-size: clamp(40px, 8vw, var(--text-display-size));
+      line-height: var(--text-display-lh);
+      font-weight: var(--text-display-weight);
+      letter-spacing: 0;
+    }
+
+    p {
+      max-width: 680px;
+      margin: var(--space-6) 0 0;
+      color: var(--color-text-muted);
+      font-size: var(--text-body-lg-size);
+      line-height: var(--text-body-lg-lh);
+    }
+
+    dl {
+      margin: 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: var(--border-width) solid var(--color-border);
+      border-bottom: var(--border-width) solid var(--color-border);
+    }
+
+    dl > div {
+      min-width: 0;
+      padding: var(--space-6) var(--space-4);
+      border-left: var(--border-width) solid var(--color-border);
+    }
+
+    dl > div:first-child {
+      border-left: 0;
+    }
+
+    dd {
+      margin: var(--space-2) 0 0;
+      overflow-wrap: anywhere;
+      font-size: var(--text-body-lg-size);
+      line-height: var(--text-body-lg-lh);
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.95em;
+    }
+
+    @media (max-width: 720px) {
+      main {
+        padding: var(--space-12) 0;
+      }
+
+      dl {
+        grid-template-columns: 1fr;
+      }
+
+      dl > div {
+        border-left: 0;
+        border-top: var(--border-width) solid var(--color-border);
+      }
+
+      dl > div:first-child {
+        border-top: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="home" href="/">Home</a>
+    <section aria-labelledby="page-title">
+      <div class="eyebrow">Artifact inventory</div>
+      <h1 id="page-title">{{.Service}}</h1>
+      <p>Artifacts stores owner-managed files and provides tier-correct download links.</p>
+      <div class="version">{{.Version}}</div>
+    </section>
+
+    <!-- inventory:start -->
+    <style>
+      .controls { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+      .controls label { display: grid; gap: var(--space-2); color: var(--color-text-muted); }
+      input, select, button { font: inherit; color: inherit; background: var(--color-bg); border: var(--border-width) solid var(--color-border); padding: var(--space-3); }
+      .inventory-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: var(--space-3); text-align: left; border-bottom: var(--border-width) solid var(--color-border); vertical-align: top; }
+      th button { width: 100%; border: 0; padding: 0; text-align: left; font-weight: bold; cursor: pointer; }
+      .empty-state, .no-match { padding: var(--space-6); border: var(--border-width) solid var(--color-border); }
+      [hidden] { display: none !important; }
+      @media (max-width: 720px) { main { align-content: start; } }
+    </style>
+    <div class="controls"{{if not .Artifacts}} hidden{{end}}>
+      <label for="artifact-filter">Filter <input id="artifact-filter" type="search" autocomplete="off"></label>
+      <label for="visibility-filter">Visibility
+        <select id="visibility-filter">
+          <option value="all">All</option>
+          <option value="public">Public</option>
+          <option value="private">Private</option>
+        </select>
+      </label>
+    </div>
+    <div class="inventory-wrap">
+      <table class="artifact-table">
+        <thead><tr>
+          <th><button type="button" data-sort-key="filename">Filename</button></th>
+          <th>Description</th>
+          <th>Visibility</th>
+          <th><button type="button" data-sort-key="size">Size</button></th>
+          <th><button type="button" data-sort-key="created">Created</button></th>
+          <th>Creator</th>
+          <th><button type="button" data-sort-key="downloads">Downloads</button></th>
+        </tr></thead>
+        <tbody>{{range .Artifacts}}
+          <tr data-artifact-id="{{.ID}}">
+            <td data-label="Filename"><a href="{{.URL}}">{{.Filename}}</a></td>
+            <td data-label="Description">{{.Description}}</td>
+            <td data-label="Visibility">{{.Visibility}}</td>
+            <td data-label="Size">{{.Size}}</td>
+            <td data-label="Created">{{.CreatedAt}}</td>
+            <td data-label="Creator">{{.CreatedBy}}</td>
+            <td data-label="Downloads">{{.Downloads}}</td>
+          </tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+    <div class="empty-state"{{if .Artifacts}} hidden{{end}}>No artifacts stored.</div>
+    <div class="no-match" hidden>No artifacts match the current filters.</div>
+    <script type="application/json" id="artifacts-data">{{.Artifacts}}</script>
+    <script src="static/landing.js" defer></script>
+    <!-- inventory:end -->
+  </main>
+</body>
+</html>

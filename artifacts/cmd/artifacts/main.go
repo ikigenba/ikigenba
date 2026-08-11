@@ -3,7 +3,6 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 	"appkit"
 	artifactdata "artifacts/internal/artifacts"
 	"artifacts/internal/db"
+	artifactweb "artifacts/internal/web"
 	"eventplane/outbox"
 	"registry"
 )
@@ -74,10 +74,8 @@ func artifactsSpec() appkit.Spec {
 			rt.Handle("/u/", svc.UploadHandler())
 			svc.MountDownloads(rt)
 			svc.MountContent(rt)
-			rt.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-				_, _ = w.Write([]byte("artifacts\n"))
-			}))
+			rt.Handle("GET /{$}", artifactweb.LandingHandler(svc, rt.Service(), rt.Version()))
+			rt.Handle("GET /static/", artifactweb.StaticHandler())
 			return nil
 		},
 	}
