@@ -24,6 +24,7 @@ import (
 	appkitmcp "appkit/mcp"
 	domain "artifacts/internal/artifacts"
 	"artifacts/internal/db"
+	"artifacts/internal/testutil"
 	"eventplane/outbox"
 	"registry"
 )
@@ -434,6 +435,16 @@ func startRegistryServer(t *testing.T, handler http.Handler) *http.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	port := registry.MustPort("artifacts")
+	unlock, err := testutil.LockRegistryPort(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := unlock(); err != nil {
+			t.Errorf("release artifacts registry port lock: %v", err)
+		}
+	})
 	listener, err := net.Listen("tcp", parsed.Host)
 	if err != nil {
 		t.Fatalf("listen on artifacts registry port: %v", err)

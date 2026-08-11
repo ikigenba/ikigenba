@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"appkit/server"
+	"artifacts/internal/testutil"
 	"registry"
 )
 
@@ -138,6 +139,15 @@ func listenOnArtifactPort(t *testing.T) net.Listener {
 	if !ok {
 		t.Fatal("artifacts port is absent from registry")
 	}
+	unlock, err := testutil.LockRegistryPort(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := unlock(); err != nil {
+			t.Errorf("release artifacts registry port lock: %v", err)
+		}
+	})
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		t.Fatalf("listen on artifacts registry port: %v", err)
