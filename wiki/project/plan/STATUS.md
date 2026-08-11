@@ -12,5 +12,3 @@ lines.
 
 Next phase: 146
 
-- Phase 145 ⬜ realizes R-NFXF-9QGN, R-NH5B-NI7C, R-NID8-19Y1 — ask gathers under a body-byte budget instead of a fixed page count
-
