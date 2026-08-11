@@ -21,7 +21,9 @@ An open session means:
   committed while the session is open, and direct implementation is not
   offered as a next step.
 - **The operator describes desired outcomes.** Listen, ask what's needed to
-  follow, and hold the goal at outcome altitude. Track what's settled and
+  follow, and hold the goal at outcome altitude. Failure is part of the
+  outcome: what the operator wants to happen when things go wrong belongs in
+  the discussion at the same altitude as success. Track what's settled and
   what's still open, but do not start writing spec documents — discussion is
   not authoring.
 - **Every existing Decision is open.** An extension session inherits a

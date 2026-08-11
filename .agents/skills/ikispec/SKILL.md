@@ -40,7 +40,8 @@ fact lives in exactly one place:
   codes, or test assertions.
 - **Research owns *external evidence*** — non-contractual facts design cites.
 - **Design owns *shape + its checkable proof*** — seams, interfaces, types, the
-  test strategy, and the minted `R-XXXX-XXXX` requirement-id denominator.
+  error surface of every seam, the test strategy, and the minted `R-XXXX-XXXX`
+  requirement-id denominator.
 - **Plan owns *construction order*** — a work queue of dependency-ordered
   **pending** phases only; completed phases are deleted. Construction history
   lives in git, never in the spec.
@@ -261,6 +262,15 @@ Design docs carry interfaces, types, seams, naming, and the test plan.
 Illustrative signatures, struct definitions, and interface declarations belong
 in the doc; full implementations do not.
 
+A seam's **error surface is part of its exported shape**. A Decision that
+declares a seam declares its failure contract: which failures each operation
+can produce, as named errors the caller can distinguish; which conditions are
+panics — broken invariants and programming errors, never expected runtime
+failures; and what handling each error means for the caller — the observable
+outcome (retry, propagate, surface, degrade), not the code that implements it.
+A seam declared without its errors is as incomplete as one declared without
+its return types.
+
 Split for **addressability** — a build phase reads only the one Decision it
 realizes, never the whole architecture:
 
@@ -296,15 +306,20 @@ realizes, never the whole architecture:
 ### `project/design/DNN.md` — one self-contained file per Decision
 
 - A header `# Decision N — <title>`.
-- **Decision.** — the seams/interfaces/types/naming, with illustrative
-  signatures and struct/interface declarations (never full implementations).
+- **Decision.** — the seams/interfaces/types/naming and each operation's error
+  surface (returned errors, panic conditions, and what handling each error
+  observably means for the caller), with illustrative signatures and
+  struct/interface declarations (never full implementations).
 - **Rejected.** — the alternatives considered and why each lost.
 - **Verification.** — a bullet list, each line
   `R-XXXX-XXXX — <the behavior a test must assert>`. State each behavior so it
   is *falsifiable*: a wrong implementation must fail it. Pin the discriminating
   property, not a weaker one a degenerate implementation also satisfies — when
   the Decision moves off a specific bad value or state, name the value or
-  threshold the behavior excludes (e.g. "≥ 16384", not "non-zero"). A pure
+  threshold the behavior excludes (e.g. "≥ 16384", not "non-zero"). Failure
+  behaviors are behaviors: an error contract's discriminating cases (this
+  condition → this named error; this violated invariant → panic) carry ids and
+  falsifiable statements like any other behavior. A pure
   seam/structure decision with no behavior of its own says so explicitly and
   carries no ids (its proof is the behavioral ids of the decisions it enables).
   - **Verify the claim against a substrate that can falsify it — not a proxy a
