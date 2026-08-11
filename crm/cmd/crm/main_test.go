@@ -281,6 +281,131 @@ func TestWWWSiteLinksOnlyAppLocalStaticAssets(t *testing.T) {
 	}
 }
 
+func TestEveryWWWDocumentCarriesBrandIconLinks(t *testing.T) {
+	// R-RYDN-YNR5
+	root := wwwRoot(t)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read share/www: %v", err)
+	}
+
+	site := loadWWW(t)
+	documents := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := filepath.Ext(entry.Name())
+		if ext != ".html" && ext != ".tmpl" {
+			continue
+		}
+		documents++
+		t.Run(entry.Name(), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			if err := site.Render(rec, entry.Name(), landingData("crm", "dev")); err != nil {
+				t.Fatalf("render %s: %v", entry.Name(), err)
+			}
+			if rec.Code != http.StatusOK {
+				t.Fatalf("render %s status = %d, want %d", entry.Name(), rec.Code, http.StatusOK)
+			}
+			head := htmlHead(t, rec.Body.String())
+			for _, link := range []string{
+				`<link rel="icon" sizes="any" href="static/favicon.ico">`,
+				`<link rel="icon" type="image/png" href="static/favicon-32.png">`,
+				`<link rel="apple-touch-icon" href="static/apple-touch-icon.png">`,
+			} {
+				if !strings.Contains(head, link) {
+					t.Fatalf("rendered %s head missing %q:\n%s", entry.Name(), link, head)
+				}
+			}
+		})
+	}
+	if documents == 0 {
+		t.Fatal("share/www contains no HTML documents")
+	}
+}
+
+func TestAssembledCRMServesBrandIcons(t *testing.T) {
+	// R-RZLK-CFHU
+	root := t.TempDir()
+	binary := filepath.Join(root, "crm")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	build.Env = os.Environ()
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build crm: %v\n%s", err, out)
+	}
+
+	port := freeTCPPort(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, binary, "serve")
+	cmd.Env = append(os.Environ(),
+		"CRM_IP=127.0.0.1",
+		fmt.Sprintf("CRM_PORT=%d", port),
+		"CRM_DB_PATH="+filepath.Join(root, "crm.db"),
+		"CRM_GENERATION_PATH="+filepath.Join(root, "crm.db.generation"),
+		"CRM_WWW_PATH="+wwwRoot(t),
+	)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start crm: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	defer stopProcess(cancel, done)
+	waitForHealth(t, port, done, &stdout, &stderr)
+
+	client := http.Client{Timeout: time.Second}
+	for _, tc := range []struct {
+		name        string
+		contentType string
+	}{
+		{name: "favicon.ico", contentType: "image/x-icon"},
+		{name: "favicon-32.png", contentType: "image/png"},
+		{name: "apple-touch-icon.png", contentType: "image/png"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url := fmt.Sprintf("http://127.0.0.1:%d/static/%s", port, tc.name)
+			resp, err := client.Get(url)
+			if err != nil {
+				t.Fatalf("GET %s: %v", url, err)
+			}
+			body, readErr := io.ReadAll(resp.Body)
+			closeErr := resp.Body.Close()
+			if readErr != nil || closeErr != nil {
+				t.Fatalf("read GET %s: read=%v close=%v", url, readErr, closeErr)
+			}
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want %d; body=%q", url, resp.StatusCode, http.StatusOK, body)
+			}
+			if len(body) == 0 {
+				t.Fatalf("GET %s returned an empty body", url)
+			}
+			if got := resp.Header.Get("Content-Type"); got != tc.contentType {
+				t.Fatalf("GET %s Content-Type = %q, want %q", url, got, tc.contentType)
+			}
+		})
+	}
+}
+
+func TestWWWBrandIconsMatchSuiteReference(t *testing.T) {
+	for _, name := range []string{"favicon.ico", "favicon-32.png", "apple-touch-icon.png"} {
+		got, err := os.ReadFile(filepath.Join(wwwRoot(t), "static", name))
+		if err != nil {
+			t.Fatalf("read shipped %s: %v", name, err)
+		}
+		want, err := os.ReadFile(filepath.Join("..", "..", "..", "design", "brand", name))
+		if err != nil {
+			t.Fatalf("read suite reference %s: %v", name, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("shipped static/%s differs from design/brand/%s", name, name)
+		}
+	}
+}
+
 func TestWWWSitePreloadsSelfServedFontFiles(t *testing.T) {
 	// R-SVFY-GDZL
 	rec := renderLanding(t, "crm", "dev")
