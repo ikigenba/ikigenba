@@ -12,6 +12,5 @@ lines.
 
 Next phase: 150
 
-- Phase 148 ⬜ realizes R-8LZ1-MPCG, R-8N6Y-0H35, R-8OEU-E8TU — inject scope instructions into the four inference stages
 - Phase 149 ⬜ realizes R-8PMQ-S0KJ, R-8QUN-5SB8, R-8S2J-JK1X — the `instructions` MCP verb, guide, and count supersessions
 
