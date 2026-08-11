@@ -92,6 +92,78 @@ type workerPromptCall struct {
 	Origin  string `json:"origin"`
 	Name    string `json:"name"`
 	GroupID string `json:"group_id"`
+	System  string `json:"system"`
+}
+
+func TestWorkerComposesScopeInstructionsIntoExtractAndCompileSystems(t *testing.T) {
+	// R-8LZ1-MPCG
+	// R-8N6Y-0H35
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+
+	const instructions = "Treat dates as in-world chronology."
+	scopes := wikidomain.NewScopeStore(conn)
+	if _, err := scopes.Create(ctx, "guided"); err != nil {
+		t.Fatalf("Create guided scope: %v", err)
+	}
+	if err := scopes.SetInstructions(ctx, "guided", instructions); err != nil {
+		t.Fatalf("SetInstructions: %v", err)
+	}
+
+	var calls []workerPromptCall
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var call workerPromptCall
+		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		calls = append(calls, call)
+		w.Header().Set("Content-Type", "application/json")
+		text := `{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote the note."]}]}`
+		if call.Name == "wiki.compile" {
+			text = `{"title":"Ada","body":"Ada wrote the note."}`
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL, server.Client())
+	const extractBase = "extract base sentinel"
+	const compileBase = "compile base sentinel"
+	svc := wikidomain.NewService(
+		conn,
+		extract.New(client, llm.CallSite{Stage: "extract", System: extractBase, Config: llm.Config{Model: "extract"}}),
+		compile.New(client, llm.CallSite{Stage: "compile", System: compileBase, Config: llm.Config{Model: "compile"}}, nil),
+		time.Now,
+	)
+	for _, scope := range []string{"guided", "default"} {
+		if _, err := svc.Ingest(ctx, scope, "owner", "owner@example.com", "Ada wrote the note.", "Ada", nil); err != nil {
+			t.Fatalf("Ingest %s: %v", scope, err)
+		}
+		if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
+			t.Fatalf("ProcessNext %s = %v, %v", scope, processed, err)
+		}
+	}
+
+	if len(calls) != 4 {
+		t.Fatalf("complete calls = %d, want extract and compile for each scope", len(calls))
+	}
+	wantGuided := map[string]string{
+		"wiki.extract": wikidomain.ComposeSystem(extractBase, instructions),
+		"wiki.compile": wikidomain.ComposeSystem(compileBase, instructions),
+	}
+	for _, call := range calls[:2] {
+		if want := wantGuided[call.Name]; call.System != want {
+			t.Fatalf("guided %s system = %q, want %q", call.Name, call.System, want)
+		}
+	}
+	wantBare := map[string]string{"wiki.extract": extractBase, "wiki.compile": compileBase}
+	for _, call := range calls[2:] {
+		if want := wantBare[call.Name]; call.System != want {
+			t.Fatalf("default %s system = %q, want byte-identical %q", call.Name, call.System, want)
+		}
+	}
 }
 
 type attributedClientEmbedder struct{ client *llm.Client }

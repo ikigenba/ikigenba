@@ -104,6 +104,92 @@ type promptCall struct {
 	Origin  string `json:"origin"`
 	Name    string `json:"name"`
 	GroupID string `json:"group_id"`
+	System  string `json:"system"`
+}
+
+func TestAskComposesScopeInstructionsIntoBothStageSystems(t *testing.T) {
+	// R-8OEU-E8TU
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	const instructions = "The timeline is fictional and entirely in-world."
+	scopes := wiki.NewScopeStore(conn)
+	if _, err := scopes.Create(ctx, "guided"); err != nil {
+		t.Fatalf("Create guided scope: %v", err)
+	}
+	if err := scopes.SetInstructions(ctx, "guided", instructions); err != nil {
+		t.Fatalf("SetInstructions: %v", err)
+	}
+	for _, item := range []struct {
+		scope, id string
+	}{
+		{scope: "guided", id: "guided-ada"},
+		{scope: "default", id: "default-ada"},
+	} {
+		if err := wiki.NewSubjectStore(conn).Save(ctx, item.scope, wiki.Subject{ID: item.id, Name: "Ada", Type: "entity"}); err != nil {
+			t.Fatalf("Save %s subject: %v", item.scope, err)
+		}
+		if err := wiki.NewPageStore(conn).Upsert(ctx, wiki.Page{ID: item.id, SubjectID: item.id, Title: "Ada", Body: "Ada wrote the note."}); err != nil {
+			t.Fatalf("Upsert %s page: %v", item.scope, err)
+		}
+	}
+
+	var calls []promptCall
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var call promptCall
+		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		calls = append(calls, call)
+		w.Header().Set("Content-Type", "application/json")
+		text := `{"sub_queries":["Ada"],"keywords":["note"]}`
+		if call.Name == "wiki.ask-synthesis" {
+			text = `{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+	}))
+	defer server.Close()
+
+	search := &scopeSearch{results: map[string]retrieve.Result{
+		"guided":  {Hits: []retrieve.Hit{{PageID: "guided-ada"}}, TopDense: 0.9},
+		"default": {Hits: []retrieve.Hit{{PageID: "default-ada"}}, TopDense: 0.9},
+	}}
+	const subjectBase = "ask subject base sentinel"
+	const synthesisBase = "ask synthesis base sentinel"
+	asker := New(
+		search,
+		wiki.NewSubjectStore(conn),
+		wiki.NewPageStore(conn),
+		llm.New(server.URL, server.Client()),
+		llm.CallSite{Stage: "ask-subject", System: subjectBase, Config: llm.Config{Model: "subject"}},
+		llm.CallSite{Stage: "ask-synthesis", System: synthesisBase, Config: llm.Config{Model: "synthesis"}},
+	)
+	for _, scope := range []string{"guided", "default"} {
+		if _, err := asker.Ask(ctx, scope, "owner@example.com", "Who wrote the note?"); err != nil {
+			t.Fatalf("Ask %s: %v", scope, err)
+		}
+	}
+
+	if len(calls) != 4 {
+		t.Fatalf("complete calls = %d, want two stages for each ask", len(calls))
+	}
+	wantGuided := map[string]string{
+		"wiki.ask-subject":   wiki.ComposeSystem(subjectBase, instructions),
+		"wiki.ask-synthesis": wiki.ComposeSystem(synthesisBase, instructions),
+	}
+	for _, call := range calls[:2] {
+		if want := wantGuided[call.Name]; call.System != want {
+			t.Fatalf("guided %s system = %q, want %q", call.Name, call.System, want)
+		}
+	}
+	wantBare := map[string]string{"wiki.ask-subject": subjectBase, "wiki.ask-synthesis": synthesisBase}
+	for _, call := range calls[2:] {
+		if want := wantBare[call.Name]; call.System != want {
+			t.Fatalf("default %s system = %q, want byte-identical %q", call.Name, call.System, want)
+		}
+	}
 }
 
 func TestAskAttributesEveryPromptsCallToRequestIdentity(t *testing.T) {

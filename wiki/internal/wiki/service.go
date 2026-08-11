@@ -47,6 +47,7 @@ type Compiler interface {
 type Service struct {
 	write             *sql.DB
 	jobs              *JobStore
+	scopes            *ScopeStore
 	subjects          *SubjectStore
 	aliases           *AliasStore
 	resolver          *Resolver
@@ -82,6 +83,7 @@ func NewService(db any, extractor Extractor, compiler Compiler, now func() time.
 	s := &Service{
 		write:      c.Write,
 		jobs:       NewJobStore(c),
+		scopes:     NewScopeStore(c),
 		subjects:   NewSubjectStore(c.Read),
 		aliases:    NewAliasStore(c.Read),
 		resolver:   NewResolver(c.Read),
@@ -310,6 +312,13 @@ func (s *Service) Wait(ctx context.Context) error {
 
 func (s *Service) processClaimed(ctx context.Context, job Job) error {
 	ctx, job = s.jobContext(ctx, job)
+	scope, err := s.scopes.Get(ctx, job.Scope)
+	if err != nil {
+		return err
+	}
+	ctx = llm.WithSystemComposer(ctx, func(base string) string {
+		return ComposeSystem(base, scope.Instructions)
+	})
 	if _, ok, err := s.mergeForJob(ctx, job.ID); err != nil {
 		return err
 	} else if ok {

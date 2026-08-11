@@ -587,6 +587,21 @@ func (s *SubjectStore) RequireScope(ctx context.Context, scope string) error {
 	return requireScope(ctx, s.db, scope)
 }
 
+// GetScope returns the registry row used by read paths that already own a SubjectStore.
+func (s *SubjectStore) GetScope(ctx context.Context, name string) (Scope, error) {
+	var scope Scope
+	err := s.db.QueryRowContext(ctx, `
+		SELECT name, visibility, instructions, created_at FROM scopes WHERE name = ?`, name).
+		Scan(&scope.Name, &scope.Visibility, &scope.Instructions, &scope.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Scope{}, fmt.Errorf("%w: %s", ErrScopeNotFound, name)
+	}
+	if err != nil {
+		return Scope{}, fmt.Errorf("get scope %q: %w", name, err)
+	}
+	return scope, nil
+}
+
 func (s *SubjectStore) Save(ctx context.Context, args ...any) error {
 	scope, subject, err := subjectSaveArgs(args)
 	if err != nil {

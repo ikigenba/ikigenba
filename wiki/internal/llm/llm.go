@@ -51,6 +51,18 @@ type Attribution struct {
 	GroupID string
 }
 
+type systemComposerKey struct{}
+
+// WithSystemComposer attaches call-time System composition to one unit of work.
+func WithSystemComposer(ctx context.Context, compose func(string) string) context.Context {
+	return context.WithValue(ctx, systemComposerKey{}, compose)
+}
+
+func systemComposer(ctx context.Context) func(string) string {
+	compose, _ := ctx.Value(systemComposerKey{}).(func(string) string)
+	return compose
+}
+
 type message struct {
 	Role string `json:"role"`
 	Text string `json:"text"`
@@ -87,6 +99,9 @@ func JSON[T any](ctx context.Context, c *Client, site CallSite, attr Attribution
 	var zero T
 	if c == nil || c.http == nil || c.baseURL == "" {
 		return zero, fmt.Errorf("llm JSON: invalid prompts client")
+	}
+	if compose := systemComposer(ctx); compose != nil {
+		site.System = compose(site.System)
 	}
 
 	messages := []message{{Role: "user", Text: userText}}

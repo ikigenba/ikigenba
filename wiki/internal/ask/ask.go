@@ -110,9 +110,13 @@ func (a *Asker) Ask(ctx context.Context, scope, owner, question string) (Answer,
 	if a.c == nil {
 		return Answer{}, fmt.Errorf("ask: nil llm client")
 	}
-	if err := a.subjects.RequireScope(ctx, scope); err != nil {
+	registryScope, err := a.subjects.GetScope(ctx, scope)
+	if err != nil {
 		return Answer{}, err
 	}
+	ctx = llm.WithSystemComposer(ctx, func(base string) string {
+		return wiki.ComposeSystem(base, registryScope.Instructions)
+	})
 
 	origin := "service:wiki"
 	if owner = strings.TrimSpace(owner); owner != "" {
