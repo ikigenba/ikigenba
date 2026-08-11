@@ -12,7 +12,6 @@ lines.
 
 Next phase: 150
 
-- Phase 147 ⬜ realizes R-8FVJ-PUMZ, R-8H3G-3MDO, R-8JJ8-V5V2, R-8KR5-8XLR — scope instructions storage, cap, and the system composer
 - Phase 148 ⬜ realizes R-8LZ1-MPCG, R-8N6Y-0H35, R-8OEU-E8TU — inject scope instructions into the four inference stages
 - Phase 149 ⬜ realizes R-8PMQ-S0KJ, R-8QUN-5SB8, R-8S2J-JK1X — the `instructions` MCP verb, guide, and count supersessions
 
