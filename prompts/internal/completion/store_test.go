@@ -81,7 +81,7 @@ func TestStoreSecondExpiredLeaseFailsAsAbandonedAndEnqueuesResult(t *testing.T) 
 		t.Fatalf("Claim at reclaim bound = %v", err)
 	}
 	got, err := c.Get(t.Context(), item.ID, item.Consumer)
-	if err != nil || got.Status != StatusFailed || got.Reclaims != 2 || !strings.Contains(got.Error, "abandon") || got.FinishedAt.IsZero() {
+	if err != nil || got.Status != StatusFailed || got.Reclaims != 2 || !strings.Contains(got.Error, "abandon") || got.ErrorCode != "abandoned" || got.FinishedAt.IsZero() {
 		t.Fatalf("abandoned item = %#v, %v", got, err)
 	}
 	inbox, err := c.Inbox(t.Context(), item.Consumer)
