@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.30.1 — 2026-08-12
+
+- A browser's unprompted request for the site icon at the account root now
+  returns the ikigenba mark instead of "not found". The previous release
+  described this as already working; it was not, so any client that asks for the
+  icon by its root path rather than by reading a page's markup got nothing back.
+- Nothing else changed. Tabs, bookmarks, and the iOS home screen already showed
+  the mark from the page markup and are unaffected; the icon is served without
+  requiring a login, as it must be for clients that cannot sign in.
+
 ## v0.30.0 — 2026-08-11
 
 - The service's web pages now carry the suite's brand icon: browsers show the ikigenba mark on the tab, in bookmarks and history, and as the icon if the page is saved to an iOS home screen. Nothing else about the pages changed.
