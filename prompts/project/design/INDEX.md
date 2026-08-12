@@ -33,7 +33,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D26 | project/design/D26.md | File-share sandbox tools: `File*` over the share's loopback filesystem API | R-F74Y-B8X1, R-F8CU-P0NQ, R-F9KR-2SEF, R-FASN-GK54, R-FC0J-UBVT, R-FD8G-83MI, R-FEGC-LVD7 |
 | D27 | project/design/D27.md | Structured MCP adoption: `StructuredResult`, typed error codes, output schemas, shared loopback guard | R-B4QM-WZGJ, R-B5YJ-AR78, R-B76F-OIXX, R-B8EC-2AOM, R-B9M8-G2FB, R-BGXM-QOVH, R-BI5J-4GM6, R-BC21-7LWP, R-BD9X-LDNE, R-BEHT-Z5E3, R-BFPQ-CX4S |
 | D28 | project/design/D28.md | The `calls` table: one durable row per inference unit | R-5J1W-8BCM, R-5K9S-M33B, R-5LHO-ZUU0, R-5MPL-DMKP, R-5NXH-REBE |
-| D29 | project/design/D29.md | The completion queue: durable handoff for sibling-service inference | R-J7QG-FRDY, R-J8YC-TJ4N, R-JA69-7AVC, R-JBE5-L2M1, R-JCM1-YUCQ, R-JDTY-CM3F, R-JF1U-QDU4, R-JG9R-45KT, R-JHHN-HXBI, R-JIPJ-VP27, R-JJXG-9GSW, R-JL5C-N8JL, R-JMD9-10AA, R-JOT1-SJRO, R-JQ0Y-6BID, R-JR8U-K392, R-JSGQ-XUZR |
+| D29 | project/design/D29.md | The completion queue: durable handoff for sibling-service inference | R-J7QG-FRDY, R-J8YC-TJ4N, R-JA69-7AVC, R-JBE5-L2M1, R-JCM1-YUCQ, R-JDTY-CM3F, R-JF1U-QDU4, R-JG9R-45KT, R-JHHN-HXBI, R-JIPJ-VP27, R-JJXG-9GSW, R-JL5C-N8JL, R-JMD9-10AA, R-JOT1-SJRO, R-JQ0Y-6BID, R-JR8U-K392, R-JSGQ-XUZR, R-U7PZ-0AIV, R-U8XV-E29K |
 | D30 | project/design/D30.md | `POST /embed`: the synchronous embedding endpoint | R-604H-L3QC, R-61CD-YVH1, R-62KA-CN7Q, R-63S6-QEYF, R-6503-46P4, R-667Z-HYFT |
 | D31 | project/design/D31.md | Admission control: bounded inference concurrency | R-67FV-VQ6I, R-68NS-9HX7, R-6CBH-ET5A, R-6B3L-11EL |
 | D32 | project/design/D32.md | `calls` and `usage`: the inspection and reporting MCP tools | R-6DJD-SKVZ, R-6ERA-6CMO, R-6FZ6-K4DD, R-6H72-XW42, R-6IEZ-BNUR |
@@ -317,6 +317,8 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-T496-CIE4 | D38 | project/design/D38.md |
 | R-T6OZ-41VI | D38 | project/design/D38.md |
 | R-T7WV-HTM7 | D38 | project/design/D38.md |
+| R-U7PZ-0AIV | D29 | project/design/D29.md |
+| R-U8XV-E29K | D29 | project/design/D29.md |
 | R-VKB6-SHHV | D49 | project/design/D49.md (adopted from root `project/design/D11.md`) |
 | R-ZAC5-D0ZY | D3 | project/design/D03.md |
 | R-ZBK1-QSQN | D4 | project/design/D04.md |

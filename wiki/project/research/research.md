@@ -410,7 +410,7 @@ server logged 200 while the client read EOF on every completion slower than
   "consumer": "service:wiki",           // required: the collecting service (partition + idempotency space)
   "origin":   "user:a@b.com | trigger:<source> | service:wiki",   // required: attribution (who caused it)
   "key":      "…",                      // required: consumer-constructed idempotency key, opaque, ≤256 B
-  "context":  { "…": "…" },             // optional: opaque envelope, echoed back verbatim, ≤64 KiB
+  "context":  { "…": "…" },             // optional: any JSON value (object/array/string/…), echoed back byte-verbatim, ≤64 KiB; malformed JSON → 400; omitted → reads back null
   "name":     "wiki.<stage>",           // required: ^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9._-]*$
   "group_id": "…",                      // optional grouping label
   "attempt":  2,                        // optional, default 1 (the consumer's attempt number)

@@ -8,7 +8,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D2 → `project/design/D02.md` — Service skeleton: package layout, Spec wiring, and the config/secret composition root — owns R-6RVX-P1IG; adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D3 → `project/design/D03.md` — The phase-1 data model — owns R-7SNG-0G9A, R-7TVC-E7ZZ, R-7V38-RZQO, R-7WB5-5RHD, R-RU0J-77HX, R-RV8F-KZ8M, R-RXO8-CIQ0, R-RYW4-QAGP, R-S041-427E, R-S1BX-HTY3, R-S2JT-VLOS, R-1O8B-FNX4
 - D4 → `project/design/D04.md` — The ingest pipeline: handoff and apply over the completion queue — owns R-M8RN-87WV, R-K73J-J3W3, R-K8BF-WVMS, R-K9JC-ANDH, R-KAR8-OF46, R-KBZ5-26UV, R-KEEX-TQC9, R-KFMU-7I2Y, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MG31-IUD1
-- D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): the prompts completion-queue client — owns R-JW4G-367U, R-JXCC-GXYJ, R-JYK8-UPP8, R-JZS5-8HFX, R-K101-M96M, R-K27Y-00XB, R-K3FU-DSO0, R-K4NQ-RKEP
+- D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): the prompts completion-queue client — owns R-JW4G-367U, R-JXCC-GXYJ, R-JYK8-UPP8, R-JZS5-8HFX, R-K101-M96M, R-K27Y-00XB, R-K3FU-DSO0, R-K4NQ-RKEP, R-UCLK-JDHN, R-UDTG-X58C
 - D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-9UTW-ZFF0, R-9W1T-D75P, R-8TAF-XBSM, R-8UIC-B3JB
 - D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, clean article prose (no ids), 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-9X9P-QYWE, R-9YHM-4QN3, R-VA32-HERT
 - D8 → `project/design/D08.md` — Search returns: hybrid retrieval over pages, behind one seam — none — structural
@@ -82,6 +82,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D88 → `project/design/D88.md` — A job whose row is gone integrates nothing: the dead-job discard — owns R-RJPF-C7S5, R-RKXB-PZIU
 - D89 → `project/design/D89.md` — An honest ask failure on the web: a styled error page and a logged cause — owns R-RM58-3R9J, R-RND4-HJ08
 - D90 → `project/design/D90.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
+- D91 → `project/design/D91.md` — The prompts seam proven against the real binary (composed) — owns R-UF1D-AWZ1, R-UG99-OOPQ
 - D92 → `project/design/D92.md` — Ask-serving routes clear the chassis write deadline — owns R-KJAJ-CTB1, R-KKIF-QL1Q
 
 ## Verification ids → Decision
@@ -443,6 +444,10 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-T0JU-ILWB → D48 (`project/design/D48.md`)
 - R-T1RQ-WDN0 → D48 (`project/design/D48.md`)
 - R-T2ZN-A5DP → D48 (`project/design/D48.md`)
+- R-UCLK-JDHN → D5 (`project/design/D05.md`)
+- R-UDTG-X58C → D5 (`project/design/D05.md`)
+- R-UF1D-AWZ1 → D91 (`project/design/D91.md`)
+- R-UG99-OOPQ → D91 (`project/design/D91.md`)
 - R-VA32-HERT → D7 (`project/design/D07.md`)
 - R-VBAY-V6II → D79 (`project/design/D79.md`)
 - R-VDQR-MPZW → D79 (`project/design/D79.md`)
