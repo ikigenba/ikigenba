@@ -132,6 +132,9 @@ func TestClaimHandoffUsesDerivedStableExtractKeyAndSourceText(t *testing.T) {
 	if err := json.Unmarshal(first.Context, &envelope); err != nil || envelope["job_id"] != jobID || envelope["stage"] != "extract" {
 		t.Fatalf("extract envelope = %s, %v", first.Context, err)
 	}
+	if _, err := conn.ExecContext(ctx, `DELETE FROM ingest_lease WHERE job_id = ?`, jobID); err != nil {
+		t.Fatalf("simulate sweep lease release: %v", err)
+	}
 	if _, err := conn.ExecContext(ctx, `UPDATE jobs SET status = 'pending' WHERE id = ?`, jobID); err != nil {
 		t.Fatalf("simulate claim crash: %v", err)
 	}

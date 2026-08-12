@@ -63,7 +63,7 @@ func (s *Service) handoffExtract(ctx context.Context, job Job) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.jobs.Wait(ctx, job.ID)
+	_, err = s.jobs.MarkPhase(ctx, job.ID)
 	return err
 }
 
@@ -125,8 +125,10 @@ func (s *Service) applyCompletion(ctx context.Context, item llm.Item) error {
 		return s.queue.Ack(ctx, item.ID)
 	}
 	if item.Status == "failed" {
-		if _, err := s.jobs.FailWaiting(ctx, job.ID, s.now(), item.Error); err != nil {
+		if finished, err := s.jobs.FailWaiting(ctx, job.ID, s.now(), item.Error); err != nil {
 			return err
+		} else if finished {
+			s.notify()
 		}
 		return s.queue.Ack(ctx, item.ID)
 	}
@@ -336,8 +338,10 @@ func (s *Service) correctOrFail(ctx context.Context, job Job, item llm.Item, sta
 		original = renderCompile(page.Subject, page.Claims)
 	}
 	if attempt >= site.MaxParseRetries+1 {
-		if _, err := s.jobs.FailWaiting(ctx, job.ID, s.now(), semanticErr.Error()); err != nil {
+		if finished, err := s.jobs.FailWaiting(ctx, job.ID, s.now(), semanticErr.Error()); err != nil {
 			return err
+		} else if finished {
+			s.notify()
 		}
 		return s.queue.Ack(ctx, item.ID)
 	}
@@ -474,9 +478,13 @@ func (s *Service) integrateStaged(ctx context.Context, job Job, plan stagedInteg
 	if _, err := tx.ExecContext(ctx, `DELETE FROM job_staging WHERE job_id = ?`, job.ID); err != nil {
 		return err
 	}
+	if err := s.jobs.ReleaseLease(ctx, tx, job.ID); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	s.notify()
 	if s.AskInvalidate != nil {
 		s.AskInvalidate(job.Scope)
 	}

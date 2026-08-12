@@ -12,7 +12,7 @@ type Task func(context.Context) error
 // Service is the ingest queue surface consumed by the single worker.
 type Service interface {
 	ProcessNext(ctx context.Context) (bool, error)
-	Wait(ctx context.Context) error
+	WaitForWork(ctx context.Context) error
 }
 
 type bootSweeper interface {
@@ -68,7 +68,7 @@ func runClaims(ctx context.Context, svc Service) error {
 		if processed {
 			continue
 		}
-		if err := svc.Wait(ctx); err != nil {
+		if err := svc.WaitForWork(ctx); err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}

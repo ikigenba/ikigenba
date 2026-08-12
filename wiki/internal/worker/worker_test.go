@@ -111,7 +111,7 @@ func TestRunRequeuesAbandonedWorkingJobOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
-	if _, ok, err := wikidomain.NewJobStore(conn).ClaimPending(ctx, time.Date(2026, 6, 22, 21, 59, 0, 0, time.UTC)); err != nil || !ok {
+	if _, ok, err := wikidomain.NewJobStore(conn).ClaimPending(ctx, time.Date(2026, 6, 22, 21, 59, 0, 0, time.UTC), time.Hour); err != nil || !ok {
 		t.Fatalf("ClaimPending = %v/%v, want working orphan", ok, err)
 	}
 	orphaned, err := svc.JobStatus(ctx, jobID)
@@ -155,6 +155,86 @@ func TestRunRequeuesAbandonedWorkingJobOnStartup(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run did not stop after context cancellation")
 	}
+}
+
+func TestLeaseReleaseWakesRefusedClaimWithoutAnotherIngest(t *testing.T) {
+	// R-P3YV-RK8U
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+	prov := &scriptedProvider{responses: []string{
+		`{"subjects":[{"type":"entity","kind":"company","name":"Next Job","occurred_at":"","claims":["The next job ran."]}]}`,
+		`{"title":"Next Job","body":"The next job ran."}`,
+	}}
+	client := llmtest.NewClient(t, prov)
+	svc := wikidomain.NewService(
+		conn,
+		extract.New(client, llm.CallSite{Config: llm.Config{Model: "extract-model"}}),
+		compile.New(client, llm.CallSite{Config: llm.Config{Model: "compile-model"}}, nil),
+		time.Now,
+	)
+	firstID, err := svc.Ingest(ctx, "default", "owner", "owner@example.com", "held", "", nil)
+	if err != nil {
+		t.Fatalf("Ingest first: %v", err)
+	}
+	secondID, err := svc.Ingest(ctx, "default", "owner", "owner@example.com", "next", "", nil)
+	if err != nil {
+		t.Fatalf("Ingest second: %v", err)
+	}
+	if job, ok, err := wikidomain.NewJobStore(conn).ClaimPending(ctx, time.Now(), time.Hour); err != nil || !ok || job.ID != firstID {
+		t.Fatalf("ClaimPending = %+v/%v/%v, want first job", job, ok, err)
+	}
+	if err := svc.WaitForWork(ctx); err != nil {
+		t.Fatalf("drain ingest wake: %v", err)
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	loop := &claimLoopService{svc: svc, refused: make(chan struct{})}
+	go func() { done <- worker.Run(runCtx, loop) }()
+	select {
+	case <-loop.refused:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("claim loop did not refuse the held scope")
+	}
+	if _, err := svc.Abort(ctx, firstID); err != nil {
+		t.Fatalf("Abort held job: %v", err)
+	}
+	deadline := time.Now().Add(700 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		status, err := svc.JobStatus(ctx, secondID)
+		if err != nil {
+			t.Fatalf("JobStatus second: %v", err)
+		}
+		if status.Status == wikidomain.JobDone {
+			cancel()
+			if err := <-done; err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("next job was not admitted by release notification before periodic retry")
+}
+
+type claimLoopService struct {
+	svc         *wikidomain.Service
+	refused     chan struct{}
+	refusedOnce sync.Once
+}
+
+func (s *claimLoopService) ProcessNext(ctx context.Context) (bool, error) {
+	processed, err := s.svc.ProcessNext(ctx)
+	if err == nil && !processed {
+		s.refusedOnce.Do(func() { close(s.refused) })
+	}
+	return processed, err
+}
+
+func (s *claimLoopService) WaitForWork(ctx context.Context) error {
+	return s.svc.WaitForWork(ctx)
 }
 
 func TestRunAbortWorkingJobCancelsProviderAndPreservesAbortedStatus(t *testing.T) {

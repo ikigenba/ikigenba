@@ -27,6 +27,8 @@ const (
 	JobDone    = "done"
 	JobFailed  = "failed"
 	JobAborted = "aborted"
+
+	ingestLeaseTTL = 30 * time.Minute
 )
 
 type AbortResult struct {
@@ -72,7 +74,6 @@ type Service struct {
 	wake              chan struct{}
 	mu                sync.Mutex
 	cancels           map[string]*jobCancel
-	mergeMu           sync.Mutex
 }
 
 // WithCompletionQueue enables the durable handoff/apply ingest pipeline.
@@ -295,7 +296,7 @@ func (s *Service) ProcessNext(ctx context.Context) (bool, error) {
 	if s == nil {
 		return false, fmt.Errorf("wiki: nil service")
 	}
-	job, ok, err := s.jobs.ClaimPending(ctx, s.now())
+	job, ok, err := s.jobs.ClaimPending(ctx, s.now(), ingestLeaseTTL)
 	if err != nil || !ok {
 		return ok, err
 	}
@@ -310,20 +311,24 @@ func (s *Service) ProcessNext(ctx context.Context) (bool, error) {
 		err = s.processClaimed(jobCtx, job)
 	}
 	if err != nil {
-		_, _ = s.jobs.FinishWorking(ctx, job.ID, JobFailed, s.now(), err.Error())
+		if finished, _ := s.jobs.FinishWorking(ctx, job.ID, JobFailed, s.now(), err.Error()); finished {
+			s.notify()
+		}
 		return true, nil
 	}
 	return true, nil
 }
 
-// Wait blocks until Ingest nudges the worker or the context is canceled.
-func (s *Service) Wait(ctx context.Context) error {
+// WaitForWork blocks until work is nudged, the retry floor elapses, or the context is canceled.
+func (s *Service) WaitForWork(ctx context.Context) error {
 	if s == nil {
 		<-ctx.Done()
 		return ctx.Err()
 	}
 	select {
 	case <-s.wake:
+		return nil
+	case <-time.After(time.Second):
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -443,9 +448,13 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 	if n == 0 {
 		return nil
 	}
+	if err := s.jobs.ReleaseLease(ctx, tx, job.ID); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	s.notify()
 	if s.AskInvalidate != nil {
 		s.AskInvalidate(job.Scope)
 	}
@@ -541,9 +550,6 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 		return fmt.Errorf("wiki: missing merge payload for job %s", job.ID)
 	}
 
-	s.mergeMu.Lock()
-	defer s.mergeMu.Unlock()
-
 	winner, err := s.subjects.Get(ctx, merge.ToSubjectID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s.finishStaleMerge(ctx, job.ID)
@@ -590,14 +596,20 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	aliases := NewAliasStore(tx)
 	embeddings := NewEmbeddingStore(tx)
 	if _, err := subjects.Get(ctx, merge.ToSubjectID); errors.Is(err, sql.ErrNoRows) {
-		_, err := finishDoneInTx(ctx, tx, job.ID, s.now())
+		committed, err := finishDoneInTx(ctx, tx, job.ID, s.now())
+		if committed {
+			s.notify()
+		}
 		return err
 	} else if err != nil {
 		return err
 	}
 	loser, err = subjects.Get(ctx, merge.FromSubjectID)
 	if errors.Is(err, sql.ErrNoRows) {
-		_, err := finishDoneInTx(ctx, tx, job.ID, s.now())
+		committed, err := finishDoneInTx(ctx, tx, job.ID, s.now())
+		if committed {
+			s.notify()
+		}
 		return err
 	} else if err != nil {
 		return err
@@ -644,6 +656,7 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	if err != nil || !committed {
 		return err
 	}
+	s.notify()
 	if s.vectorCacheRemove != nil {
 		s.vectorCacheRemove(merge.FromSubjectID)
 	}
@@ -693,7 +706,10 @@ func (s *Service) mergeClaims(ctx context.Context, fromSubjectID, toSubjectID st
 }
 
 func (s *Service) finishStaleMerge(ctx context.Context, jobID string) error {
-	_, err := s.jobs.FinishWorking(ctx, jobID, JobDone, s.now(), "")
+	finished, err := s.jobs.FinishWorking(ctx, jobID, JobDone, s.now(), "")
+	if finished {
+		s.notify()
+	}
 	return err
 }
 
@@ -710,6 +726,9 @@ func finishDoneInTx(ctx context.Context, tx *sql.Tx, jobID string, finishedAt ti
 	}
 	if n == 0 {
 		return false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ingest_lease WHERE job_id = ?`, jobID); err != nil {
+		return false, err
 	}
 	return true, tx.Commit()
 }

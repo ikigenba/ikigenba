@@ -201,7 +201,7 @@ func (s *JobStore) Get(ctx context.Context, id string) (Job, error) {
 		FROM jobs WHERE id = ?`, id))
 }
 
-func (s *JobStore) ClaimPending(ctx context.Context, startedAt time.Time) (Job, bool, error) {
+func (s *JobStore) ClaimPending(ctx context.Context, startedAt time.Time, ttl time.Duration) (Job, bool, error) {
 	tx, err := s.write.BeginTx(ctx, nil)
 	if err != nil {
 		return Job{}, false, err
@@ -211,8 +211,9 @@ func (s *JobStore) ClaimPending(ctx context.Context, startedAt time.Time) (Job, 
 	job, err := scanJob(tx.QueryRowContext(ctx, `
 		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status,
 		       received_at, started_at, finished_at, error, correlation_id
-		FROM jobs
+		FROM jobs AS candidate
 		WHERE status = 'pending'
+		  AND NOT EXISTS (SELECT 1 FROM ingest_lease WHERE scope = candidate.scope)
 		ORDER BY received_at, id
 		LIMIT 1`))
 	if err == sql.ErrNoRows {
@@ -234,12 +235,24 @@ func (s *JobStore) ClaimPending(ctx context.Context, startedAt time.Time) (Job, 
 	if n == 0 {
 		return Job{}, false, tx.Commit()
 	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO ingest_lease (scope, job_id, acquired_at, expires_at)
+		VALUES (?, ?, ?, ?)`,
+		job.Scope, job.ID, formatTime(startedAt), formatTime(startedAt.Add(ttl))); err != nil {
+		return Job{}, false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return Job{}, false, err
 	}
 	job.Status = "working"
 	job.StartedAt = startedAt
 	return job, true, nil
+}
+
+// ReleaseLease removes jobID's scope lease inside the caller's transaction.
+func (s *JobStore) ReleaseLease(ctx context.Context, tx *sql.Tx, jobID string) error {
+	_, err := tx.ExecContext(ctx, `DELETE FROM ingest_lease WHERE job_id = ?`, jobID)
+	return err
 }
 
 func (s *JobStore) Finish(ctx context.Context, id, status string, finishedAt time.Time, jobErr string) error {
@@ -250,7 +263,12 @@ func (s *JobStore) Finish(ctx context.Context, id, status string, finishedAt tim
 }
 
 func (s *JobStore) FinishWorking(ctx context.Context, id, status string, finishedAt time.Time, jobErr string) (bool, error) {
-	res, err := s.write.ExecContext(ctx,
+	tx, err := s.write.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx,
 		`UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = ?`,
 		status, formatTime(finishedAt), jobErr, id, JobWorking)
 	if err != nil {
@@ -260,10 +278,15 @@ func (s *JobStore) FinishWorking(ctx context.Context, id, status string, finishe
 	if err != nil {
 		return false, err
 	}
-	return n > 0, nil
+	if n > 0 {
+		if err := s.ReleaseLease(ctx, tx, id); err != nil {
+			return false, err
+		}
+	}
+	return n > 0, tx.Commit()
 }
 
-func (s *JobStore) Wait(ctx context.Context, id string) (bool, error) {
+func (s *JobStore) MarkPhase(ctx context.Context, id string) (bool, error) {
 	res, err := s.write.ExecContext(ctx,
 		`UPDATE jobs SET status = ? WHERE id = ? AND status = ?`, JobWaiting, id, JobWorking)
 	if err != nil {
@@ -293,12 +316,25 @@ func (s *JobStore) FailWaiting(ctx context.Context, id string, finishedAt time.T
 		if _, err := tx.ExecContext(ctx, `DELETE FROM job_staging WHERE job_id = ?`, id); err != nil {
 			return false, err
 		}
+		if err := s.ReleaseLease(ctx, tx, id); err != nil {
+			return false, err
+		}
 	}
 	return n > 0, tx.Commit()
 }
 
 func (s *JobStore) RequeueWorking(ctx context.Context) (int, error) {
-	res, err := s.write.ExecContext(ctx, `
+	tx, err := s.write.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM ingest_lease
+		WHERE job_id IN (SELECT id FROM jobs WHERE status = ?)`, JobWorking); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `
 		UPDATE jobs
 		SET status = ?, started_at = '', finished_at = '', error = ''
 		WHERE status = ?`,
@@ -310,7 +346,7 @@ func (s *JobStore) RequeueWorking(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return int(n), nil
+	return int(n), tx.Commit()
 }
 
 func (s *JobStore) Abort(ctx context.Context, id string, finishedAt time.Time) (AbortResult, error) {
@@ -348,6 +384,9 @@ func (s *JobStore) Abort(ctx context.Context, id string, finishedAt time.Time) (
 		return AbortResult{Status: status}, nil
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM job_staging WHERE job_id = ?`, id); err != nil {
+		return AbortResult{}, err
+	}
+	if err := s.ReleaseLease(ctx, tx, id); err != nil {
 		return AbortResult{}, err
 	}
 	if err := tx.Commit(); err != nil {

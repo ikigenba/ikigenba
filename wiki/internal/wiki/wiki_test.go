@@ -261,7 +261,7 @@ func TestIngestClaimedBeforeScopeDeletionDiscardsDeadGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
-	job, ok, err := svc.jobs.ClaimPending(ctx, time.Now())
+	job, ok, err := svc.jobs.ClaimPending(ctx, time.Now(), time.Hour)
 	if err != nil || !ok {
 		t.Fatalf("ClaimPending = %+v, %v, %v; want claimed job", job, ok, err)
 	}
@@ -336,7 +336,7 @@ func TestMergeWithDeletedJobRowDiscardsWithoutRewritingSubjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
-	job, ok, err := svc.jobs.ClaimPending(ctx, time.Now())
+	job, ok, err := svc.jobs.ClaimPending(ctx, time.Now(), time.Hour)
 	if err != nil || !ok {
 		t.Fatalf("ClaimPending = %+v, %v, %v; want claimed merge job", job, ok, err)
 	}

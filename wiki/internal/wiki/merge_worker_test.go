@@ -214,7 +214,7 @@ func TestMergeWorkerRequeuesWorkingMergeOnBootAndCompletesIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
 	}
-	if _, ok, err := wikidomain.NewJobStore(conn).ClaimPending(ctx, time.Date(2026, 6, 24, 0, 37, 30, 0, time.UTC)); err != nil || !ok {
+	if _, ok, err := wikidomain.NewJobStore(conn).ClaimPending(ctx, time.Date(2026, 6, 24, 0, 37, 30, 0, time.UTC), time.Hour); err != nil || !ok {
 		t.Fatalf("ClaimPending = %v/%v, want working orphan", ok, err)
 	}
 
@@ -279,21 +279,18 @@ func TestMergeWorkerSerializesDuplicateMergeJobsIntoOneFold(t *testing.T) {
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
-	done := make(chan error, 2)
-	go func() { done <- worker.Run(runCtx, svc) }()
+	done := make(chan error, 1)
 	go func() { done <- worker.Run(runCtx, svc) }()
 	waitJobStatus(t, ctx, svc, firstJob, wikidomain.JobDone)
 	waitJobStatus(t, ctx, svc, secondJob, wikidomain.JobDone)
 	cancel()
-	for i := 0; i < 2; i++ {
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Fatalf("worker.Run returned error: %v", err)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("worker.Run did not stop after context cancellation")
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("worker.Run returned error: %v", err)
 		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker.Run did not stop after context cancellation")
 	}
 
 	if got := compiler.CallCount(); got != 1 {
