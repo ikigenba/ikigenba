@@ -20,7 +20,6 @@ import (
 )
 
 func TestRunIntegratesPendingJobWithRealDBAndMockProvider(t *testing.T) {
-	// R-M9ZJ-LZNK
 	// R-MB7F-ZRE9
 	// R-MCFC-DJ4Y
 	ctx := context.Background()
@@ -86,7 +85,6 @@ func TestRunIntegratesPendingJobWithRealDBAndMockProvider(t *testing.T) {
 }
 
 func TestRunRequeuesAbandonedWorkingJobOnStartup(t *testing.T) {
-	// R-MDN8-RAVN
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()

@@ -23,6 +23,7 @@ import (
 const (
 	JobPending = "pending"
 	JobWorking = "working"
+	JobWaiting = "waiting"
 	JobDone    = "done"
 	JobFailed  = "failed"
 	JobAborted = "aborted"
@@ -62,6 +63,9 @@ type Service struct {
 	vectorCacheRemove func(subjectID string)
 	extractor         Extractor
 	compiler          Compiler
+	queue             *llm.Client
+	extractSite       llm.CallSite
+	compileSite       llm.CallSite
 	recorder          *telemetry.Recorder
 	now               func() time.Time
 	newID             func() string
@@ -69,6 +73,15 @@ type Service struct {
 	mu                sync.Mutex
 	cancels           map[string]*jobCancel
 	mergeMu           sync.Mutex
+}
+
+// WithCompletionQueue enables the durable handoff/apply ingest pipeline.
+func WithCompletionQueue(client *llm.Client, extractSite, compileSite llm.CallSite) ServiceOption {
+	return func(s *Service) {
+		s.queue = client
+		s.extractSite = extractSite
+		s.compileSite = compileSite
+	}
 }
 
 type jobCancel struct {
@@ -289,7 +302,13 @@ func (s *Service) ProcessNext(ctx context.Context) (bool, error) {
 	jobCtx, cancel := context.WithCancel(ctx)
 	registeredCancel := s.registerJobCancel(job.ID, cancel)
 	defer s.unregisterJobCancel(job.ID, registeredCancel)
-	err = s.processClaimed(jobCtx, job)
+	if _, merge, mergeErr := s.mergeForJob(jobCtx, job.ID); mergeErr != nil {
+		err = mergeErr
+	} else if s.queue != nil && !merge {
+		err = s.handoffExtract(jobCtx, job)
+	} else {
+		err = s.processClaimed(jobCtx, job)
+	}
 	if err != nil {
 		_, _ = s.jobs.FinishWorking(ctx, job.ID, JobFailed, s.now(), err.Error())
 		return true, nil

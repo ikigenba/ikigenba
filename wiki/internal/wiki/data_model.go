@@ -77,6 +77,15 @@ type RerunResult struct {
 	Status   string
 }
 
+// JobStaging is durable scratch state between queue handoff and integration.
+type JobStaging struct {
+	JobID   string
+	Stage   string
+	Unit    string
+	Payload string
+	Units   int
+}
+
 // Normalize returns the public path-safe subject-name form.
 func Normalize(name string) string {
 	s := stripDiacritics(strings.ToLower(norm.NFKC.String(name)))
@@ -186,11 +195,10 @@ func (s *JobStore) InsertIngest(ctx context.Context, job Job) error {
 }
 
 func (s *JobStore) Get(ctx context.Context, id string) (Job, error) {
-	var job Job
-	err := s.read.QueryRowContext(ctx,
-		`SELECT id, status FROM jobs WHERE id = ?`, id).
-		Scan(&job.ID, &job.Status)
-	return job, err
+	return scanJob(s.read.QueryRowContext(ctx, `
+		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status,
+		       received_at, started_at, finished_at, error, correlation_id
+		FROM jobs WHERE id = ?`, id))
 }
 
 func (s *JobStore) ClaimPending(ctx context.Context, startedAt time.Time) (Job, bool, error) {
@@ -255,6 +263,40 @@ func (s *JobStore) FinishWorking(ctx context.Context, id, status string, finishe
 	return n > 0, nil
 }
 
+func (s *JobStore) Wait(ctx context.Context, id string) (bool, error) {
+	res, err := s.write.ExecContext(ctx,
+		`UPDATE jobs SET status = ? WHERE id = ? AND status = ?`, JobWaiting, id, JobWorking)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+func (s *JobStore) FailWaiting(ctx context.Context, id string, finishedAt time.Time, jobErr string) (bool, error) {
+	tx, err := s.write.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx,
+		`UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = ?`,
+		JobFailed, formatTime(finishedAt), jobErr, id, JobWaiting)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if n > 0 {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM job_staging WHERE job_id = ?`, id); err != nil {
+			return false, err
+		}
+	}
+	return n > 0, tx.Commit()
+}
+
 func (s *JobStore) RequeueWorking(ctx context.Context) (int, error) {
 	res, err := s.write.ExecContext(ctx, `
 		UPDATE jobs
@@ -282,7 +324,7 @@ func (s *JobStore) Abort(ctx context.Context, id string, finishedAt time.Time) (
 	if err := tx.QueryRowContext(ctx, `SELECT status FROM jobs WHERE id = ?`, id).Scan(&status); err != nil {
 		return AbortResult{}, err
 	}
-	if status != JobPending && status != JobWorking {
+	if status != JobPending && status != JobWorking && status != JobWaiting {
 		if err := tx.Commit(); err != nil {
 			return AbortResult{}, err
 		}
@@ -299,11 +341,17 @@ func (s *JobStore) Abort(ctx context.Context, id string, finishedAt time.Time) (
 	if err != nil {
 		return AbortResult{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if n == 0 {
+		if err := tx.Commit(); err != nil {
+			return AbortResult{}, err
+		}
+		return AbortResult{Status: status}, nil
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM job_staging WHERE job_id = ?`, id); err != nil {
 		return AbortResult{}, err
 	}
-	if n == 0 {
-		return AbortResult{Status: status}, nil
+	if err := tx.Commit(); err != nil {
+		return AbortResult{}, err
 	}
 	return AbortResult{Aborted: true, Status: JobAborted}, nil
 }

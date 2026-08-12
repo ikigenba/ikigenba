@@ -188,7 +188,6 @@ func (e attributedClientEmbedder) Embed(ctx context.Context, attr llm.Attributio
 
 func TestIngestReturnsPendingThenWorkerCommitsPage(t *testing.T) {
 	// R-M8RN-87WV
-	// R-M9ZJ-LZNK
 	// R-MB7F-ZRE9
 	// R-MCFC-DJ4Y
 	ctx := context.Background()
@@ -310,7 +309,6 @@ func TestWorkerStoresPageVectorAfterCommit(t *testing.T) {
 }
 
 func TestWorkerReusesSubjectAndCompilesCompleteClaims(t *testing.T) {
-	// R-MDN8-RAVN
 	ctx := context.Background()
 	conn := migratedWikiDB(t, ctx)
 	defer conn.Close()

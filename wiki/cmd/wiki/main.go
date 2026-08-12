@@ -73,6 +73,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			}
 			conns := wiki.Conns{Read: read, Write: write}
 			llmClient := cfg.LLM
+			queueEnabled := llmClient == nil
 			if llmClient == nil {
 				llmClient = llm.New(registry.BaseURL("prompts"))
 			}
@@ -85,14 +86,18 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			pageEmbedder, queryEmbedding := embeddingPaths(llmClient, cfg.EmbedSite)
 			extractor := extract.New(llmClient, cfg.CallSites.Extract)
 			compiler := buildCompiler(cfg, llmClient)
-			svc = wiki.NewService(conns, extractor, compiler, time.Now,
+			serviceOptions := []wiki.ServiceOption{
 				wiki.WithTelemetryRecorder(rt.Recorder()),
 				wiki.WithPageEmbedder(cfg.EmbedSite.Model, pageEmbedder),
 				wiki.WithVectorCacheUpdater(func(scope, subjectID, title string, vec []float32) {
 					vectorCache.Upsert(retrieve.VectorEntry{Scope: scope, SubjectID: subjectID, Title: title, Vec: vec})
 				}),
 				wiki.WithVectorCacheRemover(vectorCache.Remove),
-			)
+			}
+			if queueEnabled {
+				serviceOptions = append(serviceOptions, wiki.WithCompletionQueue(llmClient, cfg.CallSites.Extract, cfg.CallSites.Compile))
+			}
+			svc = wiki.NewService(conns, extractor, compiler, time.Now, serviceOptions...)
 			search := retrieve.NewHybridRetriever(
 				retrieve.NewKeywordRetriever(read),
 				retrieve.NewVectorRetriever(queryEmbedder(queryEmbedding), vectorCache),

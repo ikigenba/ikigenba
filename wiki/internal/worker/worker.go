@@ -19,6 +19,10 @@ type bootSweeper interface {
 	RequeueWorking(ctx context.Context) (int, error)
 }
 
+type inboxProcessor interface {
+	ProcessInbox(context.Context) (int, error)
+}
+
 type embeddingCatchUpService interface {
 	DrainEmbeddingCatchUp(context.Context) (int, error)
 }
@@ -38,6 +42,24 @@ func Run(ctx context.Context, services ...Service) error {
 			return err
 		}
 	}
+	if inbox, ok := svc.(inboxProcessor); ok {
+		runCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		errs := make(chan error, 2)
+		go func() { errs <- runClaims(runCtx, svc) }()
+		go func() { errs <- runInbox(runCtx, inbox) }()
+		err := <-errs
+		cancel()
+		<-errs
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
+	return runClaims(ctx, svc)
+}
+
+func runClaims(ctx context.Context, svc Service) error {
 	for {
 		processed, err := svc.ProcessNext(ctx)
 		if err != nil {
@@ -51,6 +73,23 @@ func Run(ctx context.Context, services ...Service) error {
 				return nil
 			}
 			return err
+		}
+	}
+}
+
+func runInbox(ctx context.Context, svc inboxProcessor) error {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		if _, err := svc.ProcessInbox(ctx); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
 		}
 	}
 }

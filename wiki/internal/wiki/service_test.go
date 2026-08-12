@@ -156,7 +156,6 @@ func TestProcessNextMarksFailedJobStatusOnExtractError(t *testing.T) {
 }
 
 func TestProcessNextReusesSubjectAndRecompilesFromCompleteClaims(t *testing.T) {
-	// R-MDN8-RAVN
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
