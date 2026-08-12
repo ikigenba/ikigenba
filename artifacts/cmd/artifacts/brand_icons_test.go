@@ -1,12 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"testing"
+	"time"
 
 	appkitdb "appkit/db"
 	artifactdata "artifacts/internal/artifacts"
@@ -76,6 +82,80 @@ func TestBrandIconAssetsThroughAssembledRouter(t *testing.T) {
 				t.Fatalf("Content-Type = %q, want %q", got, contentType)
 			}
 		})
+	}
+}
+
+// R-8MFA-HUNC
+func TestRootFaviconMatchesStaticPathThroughCompositionRoot(t *testing.T) {
+	root := t.TempDir()
+	for _, directory := range []string{"cache", "state"} {
+		if err := os.MkdirAll(filepath.Join(root, "artifacts", directory), 0o755); err != nil {
+			t.Fatalf("create artifacts %s directory: %v", directory, err)
+		}
+	}
+	binary := filepath.Join(root, "artifacts-bin")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build artifacts: %v\n%s", err, output)
+	}
+
+	port := freePort(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	command := exec.CommandContext(ctx, binary, "serve")
+	command.Env = append(os.Environ(),
+		"IKIGENBA_DOMAIN=int.ikigenba.com",
+		"IKIGENBA_ROOT="+root,
+		"ARTIFACTS_IP=127.0.0.1",
+		fmt.Sprintf("ARTIFACTS_PORT=%d", port),
+		"ARTIFACTS_MAX_UPLOAD_BYTES=209715200",
+	)
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Start(); err != nil {
+		t.Fatalf("start artifacts: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			_ = command.Process.Kill()
+		}
+	}()
+	waitForHealth(t, port, done, &stdout, &stderr)
+
+	request := func(path string) (int, string, []byte) {
+		t.Helper()
+		url := fmt.Sprintf("http://127.0.0.1:%d%s", port, path)
+		response, err := (&http.Client{Timeout: 5 * time.Second}).Get(url)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		body, readErr := io.ReadAll(response.Body)
+		closeErr := response.Body.Close()
+		if readErr != nil || closeErr != nil {
+			t.Fatalf("read GET %s: read=%v close=%v", path, readErr, closeErr)
+		}
+		return response.StatusCode, response.Header.Get("Content-Type"), body
+	}
+
+	rootStatus, rootContentType, rootBody := request("/favicon.ico")
+	if rootStatus != http.StatusOK {
+		t.Fatalf("GET /favicon.ico status = %d, want 200", rootStatus)
+	}
+	if rootContentType != "image/x-icon" {
+		t.Fatalf("GET /favicon.ico Content-Type = %q, want %q", rootContentType, "image/x-icon")
+	}
+	staticStatus, _, staticBody := request("/static/favicon.ico")
+	if staticStatus != http.StatusOK {
+		t.Fatalf("GET /static/favicon.ico status = %d, want 200", staticStatus)
+	}
+	if !bytes.Equal(rootBody, staticBody) {
+		t.Fatalf("GET /favicon.ico body differs from GET /static/favicon.ico: root=%d bytes static=%d bytes", len(rootBody), len(staticBody))
 	}
 }
 

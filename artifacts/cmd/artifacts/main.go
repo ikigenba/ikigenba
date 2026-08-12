@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -84,7 +85,17 @@ func artifactsSpec() appkit.Spec {
 			svc.MountDownloads(rt)
 			svc.MountContent(rt)
 			rt.Handle("GET /{$}", artifactweb.LandingHandler(svc, rt.Service(), rt.Version()))
-			rt.Handle("GET /static/", artifactweb.StaticHandler())
+			static := artifactweb.StaticHandler()
+			rt.Handle("GET /static/", static)
+			rt.Handle("GET /favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				faviconRequest := new(http.Request)
+				*faviconRequest = *r
+				faviconURL := *r.URL
+				faviconURL.Path = "/static/favicon.ico"
+				faviconURL.RawPath = ""
+				faviconRequest.URL = &faviconURL
+				static.ServeHTTP(w, faviconRequest)
+			}))
 			return nil
 		},
 	}

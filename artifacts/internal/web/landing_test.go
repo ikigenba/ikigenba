@@ -220,7 +220,6 @@ func normalizeCronTemplate(value string) string {
 
 func normalizeArtifactsTemplate(value string) string {
 	value = regexp.MustCompile(`<title>.*</title>`).ReplaceAllString(value, `<title>[[title]]</title>`)
-	value = regexp.MustCompile(`\n  <link rel="(?:icon|apple-touch-icon)"[^>]*>`).ReplaceAllString(value, ``)
 	value = regexp.MustCompile(`      <div class="eyebrow">.*</div>`).ReplaceAllString(value, `      <div class="eyebrow">[[eyebrow]]</div>`)
 	value = regexp.MustCompile(`      <p>.*</p>`).ReplaceAllString(value, `      <p>[[description]]</p>`)
 	value = regexp.MustCompile(`\n      <div class="version">.*</div>`).ReplaceAllString(value, ``)
