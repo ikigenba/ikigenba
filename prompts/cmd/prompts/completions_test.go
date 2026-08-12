@@ -53,7 +53,7 @@ func TestCompletionQueueVerbsAreHeaderlessLoopbackRoutes(t *testing.T) {
 	if err := appkitdb.Migrate(t.Context(), database, migrations); err != nil {
 		t.Fatal(err)
 	}
-	httpQueue := completion.NewHTTP(completion.NewStore(database, time.Now), func(string) string { return "test-key" }, func() bool { return false })
+	httpQueue := completion.NewHTTP(completion.NewStore(database, "owner-a", time.Now), func(string) string { return "test-key" }, func() bool { return false })
 	srv, err := appkitserver.New(appkitserver.Options{
 		Addr: "127.0.0.1:0", Logger: completionDiscardLogger(), ResourceID: "https://example.test/srv/prompts/mcp",
 		AuthServer: "https://example.test", Version: "test", Service: "prompts",
@@ -79,8 +79,8 @@ func TestCompletionQueueVerbsAreHeaderlessLoopbackRoutes(t *testing.T) {
 	}{
 		{http.MethodPost, "/completions", ensureBody, http.StatusBadRequest, "unknown prompt model"},
 		{http.MethodGet, "/completions?consumer=service:wiki", "", http.StatusOK, "[]"},
-		{http.MethodGet, "/completions/missing", "", http.StatusNotFound, completion.ErrNotFound.Error()},
-		{http.MethodDelete, "/completions/missing", "", http.StatusNotFound, completion.ErrNotFound.Error()},
+		{http.MethodGet, "/completions/missing?consumer=service:wiki", "", http.StatusNotFound, completion.ErrNotFound.Error()},
+		{http.MethodDelete, "/completions/missing?consumer=service:wiki", "", http.StatusNotFound, completion.ErrNotFound.Error()},
 	}
 	for _, test := range tests {
 		request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))

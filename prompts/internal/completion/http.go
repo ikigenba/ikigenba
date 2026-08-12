@@ -164,7 +164,12 @@ func (h *HTTP) get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method must be GET")
 		return
 	}
-	item, err := h.store.Get(r.Context(), r.PathValue("id"))
+	consumer := r.URL.Query().Get("consumer")
+	if !consumerPattern.MatchString(consumer) {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid consumer %q: must match ^service:[a-z0-9._-]+$", consumer))
+		return
+	}
+	item, err := h.store.Get(r.Context(), r.PathValue("id"), consumer)
 	if errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -203,7 +208,12 @@ func (h *HTTP) ack(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method must be DELETE")
 		return
 	}
-	err := h.store.Ack(r.Context(), r.PathValue("id"))
+	consumer := r.URL.Query().Get("consumer")
+	if !consumerPattern.MatchString(consumer) {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid consumer %q: must match ^service:[a-z0-9._-]+$", consumer))
+		return
+	}
+	err := h.store.Ack(r.Context(), r.PathValue("id"), consumer)
 	if errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return

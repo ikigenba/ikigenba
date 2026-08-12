@@ -52,6 +52,7 @@ import (
 	"prompts/internal/completion"
 	"prompts/internal/consume"
 	"prompts/internal/db"
+	"prompts/internal/ids"
 	"prompts/internal/inference"
 	"prompts/internal/mcp"
 	"prompts/internal/prompt"
@@ -254,7 +255,7 @@ func registerRoutes(rt *appkit.Router) error {
 	gate := admit.New(knobs.maxInflightCalls, knobs.maxConcurrentRuns)
 	subAuth := provider.NewSubAuth(provider.ResolveAuthPath(os.Getenv))
 	buildProvider := provider.NewBuilder(subAuth)
-	completionStore := completion.NewStore(conn, time.Now)
+	completionStore := completion.NewStore(conn, ids.NewULID(), time.Now)
 	completionHTTP := completion.NewHTTP(completionStore, os.Getenv, subAuth.Available)
 	completionExecutor := completion.NewExecutor(completionStore, callStore, gate, buildProvider, os.Getenv, subAuth.Available, completion.DefaultRuntimeBound)
 	if swept, err := completionStore.Sweep(context.Background()); err != nil {

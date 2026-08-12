@@ -21,7 +21,7 @@ import (
 // R-J7QG-FRDY
 func TestHTTPEnsurePersistsQueuedItemWithoutExecutingIt(t *testing.T) {
 	database := openCompletionTestDB(t)
-	store := NewStore(database, time.Now)
+	store := NewStore(database, "owner-a", time.Now)
 	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
 
 	response := postEnsure(t, handler, validEnsureRequest("service:wiki", "job-1"))
@@ -30,7 +30,7 @@ func TestHTTPEnsurePersistsQueuedItemWithoutExecutingIt(t *testing.T) {
 	}
 	var accepted ensureResponse
 	decodeHTTPResponse(t, response, &accepted)
-	item, err := store.Get(t.Context(), accepted.ID)
+	item, err := store.Get(t.Context(), accepted.ID, "service:wiki")
 	if err != nil || accepted.Status != StatusQueued || item.Status != StatusQueued || item.StartedAt.IsZero() == false {
 		t.Fatalf("accepted/item = %#v/%#v, err=%v", accepted, item, err)
 	}
@@ -45,7 +45,7 @@ func TestHTTPEnsurePersistsQueuedItemWithoutExecutingIt(t *testing.T) {
 // R-J8YC-TJ4N
 func TestHTTPEnsureIsIdempotentWithinConsumerAndDistinctAcrossConsumers(t *testing.T) {
 	database := openCompletionTestDB(t)
-	store := NewStore(database, time.Now)
+	store := NewStore(database, "owner-a", time.Now)
 	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
 
 	first := postEnsure(t, handler, validEnsureRequest("service:wiki", "same-key"))
@@ -102,7 +102,7 @@ func TestHTTPEnsureRejectsInvalidEnvelopeWithoutDurableSideEffects(t *testing.T)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			database := openCompletionTestDB(t)
-			handler := completionMux(NewHTTP(NewStore(database, time.Now), func(string) string { return "test-key" }, func() bool { return false }))
+			handler := completionMux(NewHTTP(NewStore(database, "owner-a", time.Now), func(string) string { return "test-key" }, func() bool { return false }))
 			request := validEnsureRequest("service:wiki", "job-1")
 			test.edit(&request)
 			response := postEnsure(t, handler, request)
@@ -122,7 +122,7 @@ func TestHTTPEnsureRejectsInvalidEnvelopeWithoutDurableSideEffects(t *testing.T)
 // R-JJXG-9GSW
 func TestHTTPGetReturnsStageSpecificReadShapesAndNotFound(t *testing.T) {
 	database := openCompletionTestDB(t)
-	store := NewStore(database, time.Now)
+	store := NewStore(database, "owner-a", time.Now)
 	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
 	response := postEnsure(t, handler, validEnsureRequest("service:wiki", "stages"))
 	var accepted ensureResponse
@@ -159,7 +159,7 @@ func TestHTTPGetReturnsStageSpecificReadShapesAndNotFound(t *testing.T) {
 	}
 
 	missing := httptest.NewRecorder()
-	handler.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/completions/unknown", nil))
+	handler.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/completions/unknown?consumer=service:wiki", nil))
 	if missing.Code != http.StatusNotFound || !strings.Contains(missing.Body.String(), ErrNotFound.Error()) {
 		t.Fatalf("missing response = %d %s", missing.Code, missing.Body.String())
 	}
@@ -168,7 +168,7 @@ func TestHTTPGetReturnsStageSpecificReadShapesAndNotFound(t *testing.T) {
 // R-JL5C-N8JL
 func TestHTTPInboxReturnsOnlyConsumerTerminalItemsOldestFirst(t *testing.T) {
 	database := openCompletionTestDB(t)
-	store := NewStore(database, time.Now)
+	store := NewStore(database, "owner-a", time.Now)
 	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
 	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
 	seedHTTPItem(t, database, "newer-failed", "service:wiki", StatusFailed, now.Add(time.Minute), "key-b", `["context-b"]`, "", "bad input")
@@ -198,7 +198,7 @@ func TestHTTPInboxReturnsOnlyConsumerTerminalItemsOldestFirst(t *testing.T) {
 func TestHTTPContextAcceptsJSONValuesAndEchoesStoredBytesAtEveryRead(t *testing.T) {
 	database := openCompletionTestDB(t)
 	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
-	store := NewStore(database, func() time.Time {
+	store := NewStore(database, "owner-a", func() time.Time {
 		now = now.Add(time.Second)
 		return now
 	})
@@ -288,7 +288,7 @@ func TestHTTPContextAcceptsJSONValuesAndEchoesStoredBytesAtEveryRead(t *testing.
 // R-U8XV-E29K
 func TestHTTPEnsureRejectsMalformedJSONContextWithoutDurableSideEffects(t *testing.T) {
 	database := openCompletionTestDB(t)
-	handler := completionMux(NewHTTP(NewStore(database, time.Now), func(string) string { return "test-key" }, func() bool { return false }))
+	handler := completionMux(NewHTTP(NewStore(database, "owner-a", time.Now), func(string) string { return "test-key" }, func() bool { return false }))
 	body := `{"consumer":"service:wiki","origin":"trigger:dropbox","key":"bad-context","context":{"truncated":,"name":"wiki.extract"}`
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/completions", strings.NewReader(body)))
@@ -306,7 +306,7 @@ func TestHTTPEnsureRejectsMalformedJSONContextWithoutDurableSideEffects(t *testi
 // R-JMD9-10AA
 func TestHTTPAckRemovesItemAndAllowsKeyToCreateNewWork(t *testing.T) {
 	database := openCompletionTestDB(t)
-	store := NewStore(database, time.Now)
+	store := NewStore(database, "owner-a", time.Now)
 	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
 	first := postEnsure(t, handler, validEnsureRequest("service:wiki", "repeatable"))
 	var accepted ensureResponse
@@ -344,7 +344,7 @@ func TestHTTPAckRemovesItemAndAllowsKeyToCreateNewWork(t *testing.T) {
 	if didWork, err := executor.ExecuteNext(t.Context()); err != nil || !didWork {
 		t.Fatalf("replacement execution = %v, %v", didWork, err)
 	}
-	recomputed, err := store.Get(t.Context(), secondAccepted.ID)
+	recomputed, err := store.Get(t.Context(), secondAccepted.ID, "service:wiki")
 	if err != nil || recomputed.Status != StatusDone || recomputed.Result != `"recomputed"` || len(provider.Requests()) != 1 {
 		t.Fatalf("replacement item/provider calls = %#v/%d, err=%v", recomputed, len(provider.Requests()), err)
 	}
@@ -405,7 +405,7 @@ func postEnsureWithRawContext(t *testing.T, handler http.Handler, request ensure
 func rawGetCompletion(t *testing.T, handler http.Handler, id string) *httptest.ResponseRecorder {
 	t.Helper()
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/completions/"+id, nil))
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/completions/"+id+"?consumer=service:wiki", nil))
 	return recorder
 }
 
@@ -423,7 +423,7 @@ func getCompletion(t *testing.T, handler http.Handler, id string) map[string]any
 func deleteCompletion(t *testing.T, handler http.Handler, id string) *httptest.ResponseRecorder {
 	t.Helper()
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodDelete, "/completions/"+id, nil))
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodDelete, "/completions/"+id+"?consumer=service:wiki", nil))
 	return recorder
 }
 

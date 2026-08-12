@@ -66,12 +66,8 @@ func NewExecutor(queue *Store, callStore CallStore, gate *admit.Gate, build Prov
 		subAuthAvailable: subAuthAvailable, runtimeBound: runtimeBound}
 }
 
-// Run requeues abandoned work, then executes items with a fixed-size pool until
-// ctx is cancelled.
+// Run executes items with a fixed-size pool until ctx is cancelled.
 func (e *Executor) Run(ctx context.Context, workers int) error {
-	if _, err := e.queue.RequeueRunning(ctx); err != nil {
-		return err
-	}
 	if workers < 1 {
 		workers = 1
 	}

@@ -157,7 +157,7 @@ func newExecutorFixture(t *testing.T, bound time.Duration) *executorFixture {
 	t.Helper()
 	database := openCompletionTestDB(t)
 	now := func() time.Time { return time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC) }
-	queue := NewStore(database, now)
+	queue := NewStore(database, "owner-a", now)
 	callStore := calls.NewStore(database)
 	provider := &scriptedProvider{}
 	build := func(prompt.Config, func(string) string) (agentkit.Provider, error) { return provider, nil }
@@ -190,7 +190,7 @@ func (f *executorFixture) execute(t *testing.T) {
 
 func (f *executorFixture) get(t *testing.T, id string) Item {
 	t.Helper()
-	item, err := f.queue.Get(t.Context(), id)
+	item, err := f.queue.Get(t.Context(), id, "service:wiki")
 	if err != nil {
 		t.Fatal(err)
 	}

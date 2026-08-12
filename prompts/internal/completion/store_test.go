@@ -1,142 +1,325 @@
 package completion
 
 import (
-	"encoding/json"
+	"bytes"
 	"errors"
-	"fmt"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
-
-	"github.com/ikigenba/agentkit"
-
-	"prompts/internal/admit"
-	"prompts/internal/calls"
-	"prompts/internal/prompt"
 )
 
-func TestStoreEnsureInboxAndAckLifecycle(t *testing.T) {
-	database := openCompletionTestDB(t)
-	now := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
-	store := NewStore(database, func() time.Time { return now })
-	first, created, err := store.Ensure(t.Context(), Item{Consumer: "service:wiki", Key: "same", Origin: "service:wiki", Name: "wiki.extract", Request: `{}`})
+func testQueueItem(t *testing.T, store *Store, consumer, key string) Item {
+	t.Helper()
+	item, created, err := store.Ensure(t.Context(), Item{Consumer: consumer, Key: key, Origin: consumer, Name: "wiki.extract", Request: `{}`})
 	if err != nil || !created {
-		t.Fatalf("first Ensure = %#v, %v, %v", first, created, err)
+		t.Fatalf("Ensure = %#v, %v, %v", item, created, err)
 	}
-	existing, created, err := store.Ensure(t.Context(), Item{Consumer: "service:wiki", Key: "same", Origin: "service:other", Name: "other.work", Request: `{"different":true}`})
-	if err != nil || created || existing.ID != first.ID || existing.Origin != first.Origin {
-		t.Fatalf("idempotent Ensure = %#v, %v, %v", existing, created, err)
-	}
-	claimed, err := store.Claim(t.Context())
-	if err != nil || claimed.ID != first.ID || claimed.Status != StatusRunning {
-		t.Fatalf("Claim = %#v, %v", claimed, err)
-	}
-	if err := store.Complete(t.Context(), first.ID, `{"ok":true}`, `{}`, 0.5); err != nil {
+	return item
+}
+
+// R-ZJKL-8UQY
+func TestStoreClaimReclaimsExpiredLeaseUnderNewOwner(t *testing.T) {
+	database := openCompletionTestDB(t)
+	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
+	first := NewStore(database, "owner-a", func() time.Time { return now })
+	item := testQueueItem(t, first, "service:wiki", "expired")
+	if _, err := first.Claim(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	inbox, err := store.Inbox(t.Context(), "service:wiki")
-	if err != nil || len(inbox) != 1 || inbox[0].Result != `{"ok":true}` {
-		t.Fatalf("Inbox = %#v, %v", inbox, err)
-	}
-	if err := store.Ack(t.Context(), first.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.Get(t.Context(), first.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("Get after Ack = %v, want not found", err)
+	now = now.Add(LeaseTTL + time.Second)
+	second := NewStore(database, "owner-b", func() time.Time { return now })
+	reclaimed, err := second.Claim(t.Context())
+	if err != nil || reclaimed.ID != item.ID || reclaimed.Owner != "owner-b" || reclaimed.Reclaims != 1 || reclaimed.Status != StatusRunning {
+		t.Fatalf("reclaimed = %#v, %v", reclaimed, err)
 	}
 }
 
-// R-JIPJ-VP27
-func TestStoreBootRequeuesRunningItemForReexecution(t *testing.T) {
+// R-ZM0E-0E8C
+func TestStoreRenewedLeaseIsNotClaimable(t *testing.T) {
 	database := openCompletionTestDB(t)
-	now := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
-	store := NewStore(database, func() time.Time { return now })
-	request, _ := json.Marshal(Request{Model: completionTestModel, Messages: []Message{{Role: "user", Text: "work"}}})
-	item, _, err := store.Ensure(t.Context(), Item{Consumer: "service:wiki", Key: "restart", Origin: "service:wiki", Name: "wiki.extract", Request: string(request)})
-	if err != nil {
+	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
+	owner := NewStore(database, "owner-a", func() time.Time { return now })
+	item := testQueueItem(t, owner, "service:wiki", "renewed")
+	if _, err := owner.Claim(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+	now = now.Add(LeaseTTL - time.Minute)
+	if renewed, err := owner.Renew(t.Context(), item.ID); err != nil || !renewed {
+		t.Fatalf("Renew = %v, %v", renewed, err)
+	}
+	now = now.Add(2 * time.Minute)
+	other := NewStore(database, "owner-b", func() time.Time { return now })
+	if _, err := other.Claim(t.Context()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second Claim = %v, want no work", err)
+	}
+	got, err := owner.Get(t.Context(), item.ID, item.Consumer)
+	if err != nil || got.Owner != "owner-a" || got.Reclaims != 0 || !got.LeaseExpiresAt.After(now) {
+		t.Fatalf("renewed row = %#v, %v", got, err)
+	}
+}
+
+// R-ZKSH-MMHN
+func TestStoreSecondExpiredLeaseFailsAsAbandonedAndEnqueuesResult(t *testing.T) {
+	database := openCompletionTestDB(t)
+	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
+	a := NewStore(database, "owner-a", func() time.Time { return now })
+	item := testQueueItem(t, a, "service:wiki", "poison")
+	_, _ = a.Claim(t.Context())
+	now = now.Add(LeaseTTL + time.Second)
+	b := NewStore(database, "owner-b", func() time.Time { return now })
+	_, _ = b.Claim(t.Context())
+	now = now.Add(LeaseTTL + time.Second)
+	c := NewStore(database, "owner-c", func() time.Time { return now })
+	if _, err := c.Claim(t.Context()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Claim at reclaim bound = %v", err)
+	}
+	got, err := c.Get(t.Context(), item.ID, item.Consumer)
+	if err != nil || got.Status != StatusFailed || got.Reclaims != 2 || !strings.Contains(got.Error, "abandon") || got.FinishedAt.IsZero() {
+		t.Fatalf("abandoned item = %#v, %v", got, err)
+	}
+	inbox, err := c.Inbox(t.Context(), item.Consumer)
+	if err != nil || len(inbox) != 1 || inbox[0].ID != item.ID {
+		t.Fatalf("Inbox = %#v, %v", inbox, err)
+	}
+}
+
+// R-ZN8A-E5Z1
+func TestStoreReleaseIsFreeAcrossRepeatedClaimCycles(t *testing.T) {
+	database := openCompletionTestDB(t)
+	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
+	store := NewStore(database, "owner-a", func() time.Time { return now })
+	item := testQueueItem(t, store, "service:wiki", "deploys")
+	for range 3 {
+		if _, err := store.Claim(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if released, err := store.Release(t.Context(), item.ID); err != nil || !released {
+			t.Fatalf("Release = %v, %v", released, err)
+		}
+	}
+	got, _ := store.Get(t.Context(), item.ID, item.Consumer)
+	if got.Status != StatusQueued || got.Owner != "" || !got.LeaseExpiresAt.IsZero() || got.Reclaims != 0 {
+		t.Fatalf("released item = %#v", got)
+	}
+}
+
+// R-06QO-IHU5
+func TestStoreReleaseRequiresCurrentOwnerAndRunningStatus(t *testing.T) {
+	database := openCompletionTestDB(t)
+	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
+	a := NewStore(database, "owner-a", func() time.Time { return now })
+	item := testQueueItem(t, a, "service:wiki", "guards")
+	_, _ = a.Claim(t.Context())
+	now = now.Add(LeaseTTL + time.Second)
+	b := NewStore(database, "owner-b", func() time.Time { return now })
+	reclaimed, _ := b.Claim(t.Context())
+	if released, err := a.Release(t.Context(), item.ID); err != nil || released {
+		t.Fatalf("stale Release = %v, %v", released, err)
+	}
+	stillRunning, _ := b.Get(t.Context(), item.ID, item.Consumer)
+	if stillRunning.Status != StatusRunning || stillRunning.Owner != reclaimed.Owner || !stillRunning.LeaseExpiresAt.Equal(reclaimed.LeaseExpiresAt) {
+		t.Fatalf("stale release changed row: %#v", stillRunning)
+	}
+	if err := b.Complete(t.Context(), item.ID, `true`, `{}`, 1); err != nil {
+		t.Fatal(err)
+	}
+	done, _ := b.Get(t.Context(), item.ID, item.Consumer)
+	if released, err := b.Release(t.Context(), item.ID); err != nil || released {
+		t.Fatalf("done Release = %v, %v", released, err)
+	}
+	after, _ := b.Get(t.Context(), item.ID, item.Consumer)
+	if after.Status != StatusDone || after.Owner != done.Owner || !after.LeaseExpiresAt.Equal(done.LeaseExpiresAt) {
+		t.Fatalf("release changed done row: before=%#v after=%#v", done, after)
+	}
+}
+
+// R-032Z-D6M2
+func TestStoreCompleteAcceptsStaleSuccessButNeverOverwritesDone(t *testing.T) {
+	database := openCompletionTestDB(t)
+	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
+	a := NewStore(database, "owner-a", func() time.Time { return now })
+	item := testQueueItem(t, a, "service:wiki", "success-wins")
+	_, _ = a.Claim(t.Context())
+	now = now.Add(LeaseTTL + time.Second)
+	b := NewStore(database, "owner-b", func() time.Time { return now })
+	_, _ = b.Claim(t.Context())
+	if err := a.Complete(t.Context(), item.ID, `{"winner":"a"}`, `{"total":7}`, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Complete(t.Context(), item.ID, `{"winner":"b"}`, `{"total":9}`, 3); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := a.Get(t.Context(), item.ID, item.Consumer)
+	if got.Status != StatusDone || got.Result != `{"winner":"a"}` || got.UsageJSON != `{"total":7}` || got.CostUSD != 2 {
+		t.Fatalf("done item = %#v", got)
+	}
+}
+
+// R-04AV-QYCR
+func TestStoreFailRequiresCurrentOwnerAndNeverOverwritesDone(t *testing.T) {
+	database := openCompletionTestDB(t)
+	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
+	a := NewStore(database, "owner-a", func() time.Time { return now })
+	item := testQueueItem(t, a, "service:wiki", "failure-guards")
+	_, _ = a.Claim(t.Context())
+	now = now.Add(LeaseTTL + time.Second)
+	b := NewStore(database, "owner-b", func() time.Time { return now })
+	_, _ = b.Claim(t.Context())
+	if err := a.Fail(t.Context(), item.ID, "stale", `{}`, 1); err != nil {
+		t.Fatal(err)
+	}
+	running, _ := b.Get(t.Context(), item.ID, item.Consumer)
+	if running.Status != StatusRunning || running.Error != "" {
+		t.Fatalf("stale failure landed: %#v", running)
+	}
+	_ = b.Complete(t.Context(), item.ID, `true`, `{}`, 2)
+	_ = b.Fail(t.Context(), item.ID, "late", `{}`, 3)
+	done, _ := b.Get(t.Context(), item.ID, item.Consumer)
+	if done.Status != StatusDone || done.Error != "" || done.Result != `true` || done.CostUSD != 2 {
+		t.Fatalf("failure overwrote success: %#v", done)
+	}
+}
+
+// R-ZPO3-5PGF
+func TestStoreTerminalWriteAfterAckIsLoggedNoOp(t *testing.T) {
+	database := openCompletionTestDB(t)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	store := NewStore(database, "owner-a", time.Now, logger)
+	item := testQueueItem(t, store, "service:wiki", "acked-running")
+	_, _ = store.Claim(t.Context())
+	if err := store.Ack(t.Context(), item.ID, item.Consumer); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Complete(t.Context(), item.ID, `true`, `{}`, 1); err != nil {
+		t.Fatalf("Complete deleted row = %v", err)
+	}
+	if _, err := store.Get(t.Context(), item.ID, item.Consumer); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted row resurrected: %v", err)
+	}
+	if !strings.Contains(logs.String(), item.ID) || !strings.Contains(logs.String(), "terminal write lost") {
+		t.Fatalf("log = %q, want lost write and id", logs.String())
+	}
+}
+
+// R-00N6-LN4O
+func TestStoreAckHTTPIsConsumerPartitioned(t *testing.T) {
+	database := openCompletionTestDB(t)
+	store := NewStore(database, "owner-a", time.Now)
+	item := testQueueItem(t, store, "service:wiki", "partition-ack")
 	if _, err := store.Claim(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	count, err := store.RequeueRunning(t.Context())
-	if err != nil || count != 1 {
-		t.Fatalf("RequeueRunning = %d, %v", count, err)
+	if err := store.Complete(t.Context(), item.ID, `true`, `{}`, 0); err != nil {
+		t.Fatal(err)
 	}
-	requeued, err := store.Get(t.Context(), item.ID)
-	if err != nil || requeued.Status != StatusQueued || requeued.Error != "" {
-		t.Fatalf("requeued item = %#v, %v", requeued, err)
+	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
+	wrong := httptest.NewRecorder()
+	handler.ServeHTTP(wrong, httptest.NewRequest(http.MethodDelete, "/completions/"+item.ID+"?consumer=service:other", nil))
+	if wrong.Code != http.StatusNotFound {
+		t.Fatalf("wrong consumer Ack = %d", wrong.Code)
 	}
+	if inbox, _ := store.Inbox(t.Context(), item.Consumer); len(inbox) != 1 || inbox[0].ID != item.ID {
+		t.Fatalf("owning inbox lost row: %#v", inbox)
+	}
+	if _, err := store.Get(t.Context(), item.ID, item.Consumer); err != nil {
+		t.Fatalf("wrong Ack deleted row: %v", err)
+	}
+	right := httptest.NewRecorder()
+	handler.ServeHTTP(right, httptest.NewRequest(http.MethodDelete, "/completions/"+item.ID+"?consumer="+item.Consumer, nil))
+	if right.Code != http.StatusNoContent {
+		t.Fatalf("own Ack = %d: %s", right.Code, right.Body.String())
+	}
+}
 
-	provider := &scriptedProvider{results: []*agentkit.RoundTrip{testRoundTrip(`{"status":"ok","result":"recovered"}`, agentkit.Usage{Total: 1}, nil)}}
-	build := func(prompt.Config, func(string) string) (agentkit.Provider, error) { return provider, nil }
-	executor := NewExecutor(store, calls.NewStore(database), admit.New(2, 1), build, func(string) string { return "test-key" }, func() bool { return false }, time.Hour)
-	didWork, err := executor.ExecuteNext(t.Context())
-	if err != nil || !didWork {
-		t.Fatalf("ExecuteNext = %v, %v", didWork, err)
+// R-01V2-ZEVD
+func TestStoreGetHTTPIsConsumerPartitioned(t *testing.T) {
+	database := openCompletionTestDB(t)
+	store := NewStore(database, "owner-a", time.Now)
+	item := testQueueItem(t, store, "service:wiki", "partition-get")
+	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
+	for consumer, want := range map[string]int{"service:other": http.StatusNotFound, item.Consumer: http.StatusOK} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/completions/"+item.ID+"?consumer="+consumer, nil))
+		if recorder.Code != want {
+			t.Errorf("Get as %s = %d, want %d: %s", consumer, recorder.Code, want, recorder.Body.String())
+		}
 	}
-	terminal, err := store.Get(t.Context(), item.ID)
-	if err != nil || terminal.Status != StatusDone || terminal.Result != `"recovered"` {
-		t.Fatalf("re-executed item = %#v, %v", terminal, err)
+}
+
+// R-096H-A1BJ
+func TestStoreClaimPrefersConsumerWithoutRunningWork(t *testing.T) {
+	database := openCompletionTestDB(t)
+	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
+	store := NewStore(database, "owner-a", func() time.Time { return now })
+	testQueueItem(t, store, "service:first", "first-running")
+	backlog := testQueueItem(t, store, "service:first", "first-backlog")
+	claimed, _ := store.Claim(t.Context())
+	if claimed.Consumer != "service:first" {
+		t.Fatalf("first Claim = %#v", claimed)
+	}
+	now = now.Add(time.Second)
+	preferred := testQueueItem(t, store, "service:second", "second-new")
+	next, err := store.Claim(t.Context())
+	if err != nil || next.ID != preferred.ID {
+		t.Fatalf("preferred Claim = %#v, %v; backlog=%q", next, err, backlog.ID)
+	}
+	third := testQueueItem(t, store, "service:third", "third-new")
+	after, err := store.Claim(t.Context())
+	if err != nil || after.ID != third.ID {
+		t.Fatalf("consumer with running/no queued blocked Claim = %#v, %v", after, err)
 	}
 }
 
 // R-JOT1-SJRO
-func TestStoreSweepDeletesOnlyExpiredTerminalItems(t *testing.T) {
+func TestStoreSweepDeletesExpiredTerminalAndReclaimBoundItemsOnly(t *testing.T) {
 	database := openCompletionTestDB(t)
-	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
-	store := NewStore(database, func() time.Time { return now })
-	seed := func(id, status string, finished time.Time) {
+	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	store := NewStore(database, "owner-a", func() time.Time { return now })
+	abandoned := testQueueItem(t, store, "service:wiki", "reclaim-bound")
+	_, _ = store.Claim(t.Context())
+	now = now.Add(LeaseTTL + time.Second)
+	_, _ = NewStore(database, "owner-b", func() time.Time { return now }).Claim(t.Context())
+	now = now.Add(LeaseTTL + time.Second)
+	if _, err := NewStore(database, "owner-c", func() time.Time { return now }).Claim(t.Context()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("reclaim-bound Claim = %v", err)
+	}
+	reaped, err := store.Get(t.Context(), abandoned.ID, abandoned.Consumer)
+	if err != nil || reaped.Status != StatusFailed || reaped.FinishedAt.IsZero() {
+		t.Fatalf("reclaim-bound item = %#v, %v", reaped, err)
+	}
+	now = now.Add(RetentionTTL + time.Second)
+	seed := func(id, status string, created, finished time.Time, reclaims int) {
 		t.Helper()
 		finishedAt := ""
 		if !finished.IsZero() {
 			finishedAt = formatTime(finished)
 		}
 		_, err := database.ExecContext(t.Context(), `INSERT INTO completions
-			(id,consumer,origin,key,name,request,status,created_at,started_at,finished_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?)`, id, "service:wiki", "service:wiki", id, "wiki.extract", `{}`, status,
-			formatTime(now.Add(-10*24*time.Hour)), formatTime(now.Add(-9*24*time.Hour)), finishedAt)
+			(id,consumer,origin,key,name,request,status,reclaims,created_at,finished_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?)`, id, "service:wiki", "service:wiki", id, "wiki.extract", `{}`, status, reclaims, formatTime(created), finishedAt)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	seed("expired-done", StatusDone, now.Add(-RetentionTTL-time.Second))
-	seed("young-failed", StatusFailed, now.Add(-RetentionTTL+time.Second))
-	seed("old-queued", StatusQueued, time.Time{})
-	seed("old-running", StatusRunning, time.Time{})
-
+	seed("expired-done", StatusDone, now.Add(-10*24*time.Hour), now.Add(-RetentionTTL-time.Second), 0)
+	seed("young-failed", StatusFailed, now.Add(-10*24*time.Hour), now.Add(-RetentionTTL+time.Second), 0)
+	seed("old-queued", StatusQueued, now.Add(-20*24*time.Hour), time.Time{}, 0)
 	deleted, err := store.Sweep(t.Context())
-	if err != nil || deleted != 1 {
+	if err != nil || deleted != 2 {
 		t.Fatalf("Sweep = %d, %v", deleted, err)
 	}
-	for _, id := range []string{"young-failed", "old-queued", "old-running"} {
-		if _, err := store.Get(t.Context(), id); err != nil {
+	for _, id := range []string{"young-failed", "old-queued"} {
+		if _, err := store.Get(t.Context(), id, "service:wiki"); err != nil {
 			t.Errorf("%s was swept: %v", id, err)
 		}
 	}
-	if _, err := store.Get(t.Context(), "expired-done"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expired terminal survived: %v", err)
-	}
-}
-
-func TestStoreInboxIsPartitionedTerminalOldestFirstAndCapped(t *testing.T) {
-	database := openCompletionTestDB(t)
-	store := NewStore(database, time.Now)
-	for i := range 102 {
-		id := fmt.Sprintf("item-%03d", i)
-		consumer := "service:wiki"
-		if i == 101 {
-			consumer = "service:other"
+	for _, id := range []string{"expired-done", abandoned.ID} {
+		if _, err := store.Get(t.Context(), id, "service:wiki"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s survived: %v", id, err)
 		}
-		_, err := database.ExecContext(t.Context(), `INSERT INTO completions
-			(id,consumer,origin,key,name,request,status,created_at,finished_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-			id, consumer, "service:wiki", id, "wiki.extract", `{}`, StatusDone,
-			formatTime(time.Date(2026, 1, 1, 0, 0, i, 0, time.UTC)), formatTime(time.Now()))
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	inbox, err := store.Inbox(t.Context(), "service:wiki")
-	if err != nil || len(inbox) != 100 || inbox[0].ID != "item-000" || inbox[99].ID != "item-099" {
-		t.Fatalf("Inbox = len %d, %v", len(inbox), err)
 	}
 }
