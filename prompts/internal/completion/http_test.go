@@ -53,7 +53,8 @@ func TestHTTPEnsureIsIdempotentWithinConsumerAndDistinctAcrossConsumers(t *testi
 	decodeHTTPResponse(t, first, &accepted)
 	provider := &scriptedProvider{results: []*agentkit.RoundTrip{testRoundTrip(`{"status":"ok","result":{"answer":42}}`, agentkit.Usage{Total: 3}, nil)}}
 	build := func(prompt.Config, func(string) string) (agentkit.Provider, error) { return provider, nil }
-	executor := NewExecutor(store, calls.NewStore(database), admit.New(2, 1), build, func(string) string { return "test-key" }, func() bool { return false }, time.Hour)
+	executor := NewExecutor(store, calls.NewStore(database), admit.New(2, 1), build, func(string) string { return "test-key" }, func() bool { return false },
+		time.Hour, LeaseTTL, DefaultRenewalInterval, NewSystemClock(), nil)
 	if didWork, err := executor.ExecuteNext(t.Context()); err != nil || !didWork {
 		t.Fatalf("initial execution = %v, %v", didWork, err)
 	}
@@ -340,7 +341,8 @@ func TestHTTPAckRemovesItemAndAllowsKeyToCreateNewWork(t *testing.T) {
 	}
 	provider := &scriptedProvider{results: []*agentkit.RoundTrip{testRoundTrip(`{"status":"ok","result":"recomputed"}`, agentkit.Usage{Total: 1}, nil)}}
 	build := func(prompt.Config, func(string) string) (agentkit.Provider, error) { return provider, nil }
-	executor := NewExecutor(store, calls.NewStore(database), admit.New(2, 1), build, func(string) string { return "test-key" }, func() bool { return false }, time.Hour)
+	executor := NewExecutor(store, calls.NewStore(database), admit.New(2, 1), build, func(string) string { return "test-key" }, func() bool { return false },
+		time.Hour, LeaseTTL, DefaultRenewalInterval, NewSystemClock(), nil)
 	if didWork, err := executor.ExecuteNext(t.Context()); err != nil || !didWork {
 		t.Fatalf("replacement execution = %v, %v", didWork, err)
 	}

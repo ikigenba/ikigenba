@@ -257,7 +257,8 @@ func registerRoutes(rt *appkit.Router) error {
 	buildProvider := provider.NewBuilder(subAuth)
 	completionStore := completion.NewStore(conn, ids.NewULID(), time.Now)
 	completionHTTP := completion.NewHTTP(completionStore, os.Getenv, subAuth.Available)
-	completionExecutor := completion.NewExecutor(completionStore, callStore, gate, buildProvider, os.Getenv, subAuth.Available, completion.DefaultRuntimeBound)
+	completionExecutor := completion.NewExecutor(completionStore, callStore, gate, buildProvider, os.Getenv, subAuth.Available,
+		completion.DefaultRuntimeBound, completion.LeaseTTL, completion.DefaultRenewalInterval, completion.NewSystemClock(), rt.Logger())
 	if swept, err := completionStore.Sweep(context.Background()); err != nil {
 		return fmt.Errorf("prompts: completion retention boot sweep: %w", err)
 	} else if swept > 0 {

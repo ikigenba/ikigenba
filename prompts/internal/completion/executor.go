@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -21,8 +22,10 @@ import (
 )
 
 const (
-	DefaultRuntimeBound = 4 * time.Hour
-	maxCorrections      = 3
+	DefaultRuntimeBound    = 4 * time.Hour
+	DefaultRenewalInterval = LeaseTTL / 5
+	maxCorrections         = 3
+	maxTerminalAttempts    = 3
 )
 
 const envelopeInstruction = `Reply with only this JSON envelope: {"status":"ok"|"error","result":<any JSON value>,"message":"<why, when error>"}. For status ok, result is required. For status error, a non-empty message is required.`
@@ -48,6 +51,26 @@ type CallStore interface {
 	Insert(context.Context, calls.Row) error
 }
 
+// Clock and Ticker make executor waits and lease heartbeats deterministic in tests.
+type Clock interface {
+	NewTicker(time.Duration) Ticker
+	After(time.Duration) <-chan time.Time
+}
+
+type Ticker interface {
+	C() <-chan time.Time
+	Stop()
+}
+
+type systemClock struct{}
+type systemTicker struct{ ticker *time.Ticker }
+
+func NewSystemClock() Clock                                { return systemClock{} }
+func (systemClock) NewTicker(d time.Duration) Ticker       { return systemTicker{ticker: time.NewTicker(d)} }
+func (systemClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
+func (t systemTicker) C() <-chan time.Time                 { return t.ticker.C }
+func (t systemTicker) Stop()                               { t.ticker.Stop() }
+
 type Executor struct {
 	queue            *Store
 	calls            CallStore
@@ -55,15 +78,32 @@ type Executor struct {
 	buildProvider    ProviderFactory
 	getenv           func(string) string
 	runtimeBound     time.Duration
+	leaseDuration    time.Duration
+	renewalInterval  time.Duration
+	clock            Clock
+	logger           *slog.Logger
 	subAuthAvailable func() bool
 }
 
-func NewExecutor(queue *Store, callStore CallStore, gate *admit.Gate, build ProviderFactory, getenv func(string) string, subAuthAvailable func() bool, runtimeBound time.Duration) *Executor {
+func NewExecutor(queue *Store, callStore CallStore, gate *admit.Gate, build ProviderFactory, getenv func(string) string, subAuthAvailable func() bool, runtimeBound, leaseDuration, renewalInterval time.Duration, clock Clock, logger *slog.Logger) *Executor {
 	if runtimeBound <= 0 {
 		runtimeBound = DefaultRuntimeBound
 	}
+	if leaseDuration <= 0 {
+		leaseDuration = LeaseTTL
+	}
+	if renewalInterval <= 0 || leaseDuration < 5*renewalInterval {
+		renewalInterval = leaseDuration / 5
+	}
+	if clock == nil {
+		clock = NewSystemClock()
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Executor{queue: queue, calls: callStore, gate: gate, buildProvider: build, getenv: getenv,
-		subAuthAvailable: subAuthAvailable, runtimeBound: runtimeBound}
+		subAuthAvailable: subAuthAvailable, runtimeBound: runtimeBound, leaseDuration: leaseDuration,
+		renewalInterval: renewalInterval, clock: clock, logger: logger}
 }
 
 // Run executes items with a fixed-size pool until ctx is cancelled.
@@ -78,13 +118,16 @@ func (e *Executor) Run(ctx context.Context, workers int) error {
 			defer wg.Done()
 			for ctx.Err() == nil {
 				didWork, err := e.ExecuteNext(ctx)
-				if err != nil && !errors.Is(err, context.Canceled) {
-					return
+				if err != nil {
+					if ctx.Err() != nil {
+						return
+					}
+					e.logger.Error("completion claim failed", "error", err)
 				}
-				if !didWork {
+				if err != nil || !didWork {
 					select {
 					case <-ctx.Done():
-					case <-time.After(100 * time.Millisecond):
+					case <-e.clock.After(100 * time.Millisecond):
 					}
 				}
 			}
@@ -104,14 +147,29 @@ func (e *Executor) ExecuteNext(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	e.execute(ctx, item)
+	e.executeClaimed(ctx, item)
 	return true, nil
 }
 
+func (e *Executor) executeClaimed(parent context.Context, item Item) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			e.writeTerminal(item, StatusFailed, "", fmt.Sprintf("panic executing completion: %v", recovered), "", 0)
+		}
+		if parent.Err() != nil {
+			releaseCtx, cancel := context.WithTimeout(context.Background(), e.renewalInterval)
+			defer cancel()
+			if _, err := e.queue.Release(releaseCtx, item.ID); err != nil {
+				e.logger.Error("completion lease release failed", "id", item.ID, "error", err)
+			}
+		}
+	}()
+	e.execute(parent, item)
+}
+
 func (e *Executor) execute(parent context.Context, item Item) {
-	finishCtx := context.WithoutCancel(parent)
 	fail := func(reason, usageJSON string, cost float64) {
-		_ = e.queue.Fail(finishCtx, item.ID, reason, usageJSON, cost)
+		e.writeTerminal(item, StatusFailed, "", reason, usageJSON, cost)
 	}
 	var req Request
 	if err := json.Unmarshal([]byte(item.Request), &req); err != nil {
@@ -142,18 +200,26 @@ func (e *Executor) execute(parent context.Context, item Item) {
 
 	execCtx, cancel := context.WithTimeout(parent, e.runtimeBound)
 	defer cancel()
+	lease := e.renewLease(execCtx, cancel, item.ID)
+	defer lease.stop()
 	history := makeHistory(req.Messages[:len(req.Messages)-1])
 	userText := req.Messages[len(req.Messages)-1].Text
 	var aggregate agentkit.Usage
 	var totalCost float64
 	for round := 0; round <= maxCorrections; round++ {
+		if round > 0 && !lease.checkOwnership() {
+			return
+		}
 		text, usage, cost, callErr := e.roundTrip(execCtx, provider, resolution, validated, req.System, history, userText)
 		aggregate = addUsage(aggregate, usage)
 		totalCost += cost
+		if parent.Err() != nil || lease.abandoned() {
+			return
+		}
 		if errors.Is(execCtx.Err(), context.DeadlineExceeded) {
 			callErr = fmt.Errorf("runtime bound %s exceeded: %w", e.runtimeBound, execCtx.Err())
 		}
-		if err := e.recordCall(finishCtx, item, req, resolution, text, usage, cost, callErr); err != nil {
+		if err := e.recordCall(context.WithoutCancel(parent), item, req, resolution, text, usage, cost, callErr); err != nil {
 			fail("record completion call: "+err.Error(), marshalUsage(aggregate), totalCost)
 			return
 		}
@@ -167,7 +233,7 @@ func (e *Executor) execute(parent context.Context, item Item) {
 				fail(envelope.Message, marshalUsage(aggregate), totalCost)
 				return
 			}
-			_ = e.queue.Complete(finishCtx, item.ID, string(envelope.Result), marshalUsage(aggregate), totalCost)
+			e.writeTerminal(item, StatusDone, string(envelope.Result), "", marshalUsage(aggregate), totalCost)
 			return
 		}
 		if round == maxCorrections {
@@ -179,6 +245,108 @@ func (e *Executor) execute(parent context.Context, item Item) {
 			agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: text}}})
 		userText = correctiveInstruction
 	}
+}
+
+type leaseWatch struct {
+	executor *Executor
+	id       string
+	state    chan error
+	done     chan struct{}
+	stopOnce sync.Once
+	cancel   context.CancelFunc
+	ticker   Ticker
+}
+
+var errLeaseLost = errors.New("completion lease lost")
+
+func (e *Executor) renewLease(ctx context.Context, cancel context.CancelFunc, id string) *leaseWatch {
+	w := &leaseWatch{executor: e, id: id, state: make(chan error, 1), done: make(chan struct{}), cancel: cancel, ticker: e.clock.NewTicker(e.renewalInterval)}
+	go func() {
+		defer close(w.done)
+		select {
+		case <-ctx.Done():
+			return
+		case <-w.ticker.C():
+			for {
+				if !w.renew() {
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-w.ticker.C():
+				}
+			}
+		}
+	}()
+	return w
+}
+
+func (w *leaseWatch) renew() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), w.executor.renewalInterval)
+	owned, err := w.executor.queue.Renew(ctx, w.id)
+	cancel()
+	if err != nil {
+		w.executor.logger.Warn("completion lease renewal failed; abandoning item", "id", w.id, "error", err)
+		w.mark(err)
+		return false
+	}
+	if !owned {
+		w.executor.logger.Warn("completion lease lost; cancelling execution", "id", w.id)
+		w.mark(errLeaseLost)
+		return false
+	}
+	return true
+}
+
+func (w *leaseWatch) mark(err error) {
+	select {
+	case w.state <- err:
+	default:
+	}
+	w.cancel()
+}
+
+func (w *leaseWatch) abandoned() bool {
+	select {
+	case err := <-w.state:
+		w.state <- err
+		return true
+	default:
+		return false
+	}
+}
+
+func (w *leaseWatch) checkOwnership() bool {
+	if w.abandoned() {
+		return false
+	}
+	return w.renew()
+}
+
+func (w *leaseWatch) stop() {
+	w.stopOnce.Do(func() {
+		w.ticker.Stop()
+		w.cancel()
+		<-w.done
+	})
+}
+
+func (e *Executor) writeTerminal(item Item, status, result, reason, usageJSON string, cost float64) {
+	var err error
+	for range maxTerminalAttempts {
+		ctx, cancel := context.WithTimeout(context.Background(), e.renewalInterval)
+		if status == StatusDone {
+			err = e.queue.Complete(ctx, item.ID, result, usageJSON, cost)
+		} else {
+			err = e.queue.Fail(ctx, item.ID, reason, usageJSON, cost)
+		}
+		cancel()
+		if err == nil {
+			return
+		}
+	}
+	e.logger.Error("completion terminal write failed after retries", "id", item.ID, "status", status, "attempts", maxTerminalAttempts, "error", err)
 }
 
 func (e *Executor) roundTrip(ctx context.Context, provider agentkit.Provider, resolution catalog.Resolution, cfg prompt.Config, system string, history []agentkit.Message, userText string) (string, agentkit.Usage, float64, error) {
