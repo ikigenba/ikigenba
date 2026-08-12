@@ -17,7 +17,7 @@ Verification ids change.
 - D8 → `project/design/D08.md` — nginx location fragment (tiers) — owns R-4TNH-HPLP, R-4UVD-VHCE, R-4W3A-9933, R-4XB6-N0TS, R-4YJ3-0SKH, R-4ZQZ-EKB6, R-50YV-SC1V, R-526S-63SK
 - D9 → `project/design/D09.md` — The landing page: a sortable, filterable inventory — owns R-53EO-JVJ9, R-54MK-XN9Y, R-55UH-BF0N, R-572D-P6RC, R-59I6-GQ8Q, R-5AQ2-UHZF
 - D10 → `project/design/D10.md` — Test strategy: adopt the suite testing-language contract — mints none; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
-- D11 → `project/design/D11.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
+- D11 → `project/design/D11.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-8MFA-HUNC, R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -85,6 +85,7 @@ Verification ids change.
 - R-7D7L-20RK → D6 — `project/design/D06.md`
 - R-8DF1-W89F → D1 — `project/design/D01.md` (adopted from root `project/design/D11.md`)
 - R-8IAN-FB87 → D1 — `project/design/D01.md` (adopted from root `project/design/D11.md`)
+- R-8MFA-HUNC → D11 — `project/design/D11.md` (adopted from root `project/design/D29.md`)
 - R-NFQ1-NA7N → D2 — `project/design/D02.md` (adopted from root `project/design/D25.md`)
 - R-O1AD-MRKW → D10 — `project/design/D10.md` (adopted from root `project/design/D23.md`)
 - R-O2IA-0JBL → D10 — `project/design/D10.md` (adopted from root `project/design/D23.md`)

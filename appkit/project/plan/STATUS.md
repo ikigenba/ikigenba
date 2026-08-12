@@ -9,9 +9,6 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 32
+Next phase: 33
 
-
-
-
-
+- Phase 32 ⬜ realizes D7 — the chassis root-path favicon route

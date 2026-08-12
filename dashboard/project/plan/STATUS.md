@@ -10,7 +10,6 @@ file — there is no done marker; done is gone. This file deliberately carries
 **no bare status glyph** anywhere but on a phase line, so the anchored grep
 matches only phase lines.
 
-Next phase: 53
+Next phase: 54
 
-
-
+- Phase 53 ⬜ realizes D41 — the bare `/favicon.ico` root route

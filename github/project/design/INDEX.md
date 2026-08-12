@@ -21,7 +21,7 @@ Verification ids change.
 - D12 → `project/design/D12.md` — nginx fragment: forward the edge-minted `X-Correlation-Id` on gated locations, blank it on ungated ones — owns `R-1S5A-Z3ZD`, `R-1TD7-CVQ2`, `R-1UL3-QNGR`
 - D13 → `project/design/D13.md` — Suite-contract conformance: the opsctl install layout and the authored env contract — adopts `R-4LKF-FB23` (root `project/design/D08.md`), `R-8DF1-W89F`, `R-8IAN-FB87` (root `project/design/D11.md`); mints none of its own
 - D14 → `project/design/D14.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): hermetic + composed in the gate, a manual layer whose runbook is `project/github-verification.md` (where D2's `R-DMUT-QF4A` is proven, out of gate), no live layer, the `go`-on-`PATH` precondition, `GOWORK=off` mode — mints none; adopts `R-O1AD-MRKW`, `R-O2IA-0JBL` (root `project/design/D23.md`)
-- D15 → `project/design/D15.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
+- D15 → `project/design/D15.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-8MFA-HUNC, R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
 ## Verification ids → Decision
 
@@ -42,6 +42,7 @@ Verification ids change.
 - R-7PZB-MCZ0 → D6 — `project/design/D06.md`
 - R-8DF1-W89F → D13 — `project/design/D13.md` (adopted from root `project/design/D11.md`)
 - R-8IAN-FB87 → D13 — `project/design/D13.md` (adopted from root `project/design/D11.md`)
+- R-8MFA-HUNC → D15 — `project/design/D15.md` (adopted from root `project/design/D29.md`)
 - R-D0IM-VQ7H → D3 — `project/design/D03.md`
 - R-DLMX-CNDL → D2 — `project/design/D02.md`
 - R-DMUT-QF4A → D2 — `project/design/D02.md`

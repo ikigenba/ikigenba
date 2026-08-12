@@ -32,7 +32,7 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - **D26** → `project/design/D26.md` — The run-lifetime contract: a bounded run TTL and the derived run-token lifetime — ids: R-34EZ-J9BF [proof: per-service], R-35MV-X124 [proof: per-service]
 - **D27** → `project/design/D27.md` — The edit-tool merge contract: patch semantics, whole-value fields, and the stated merge rule — ids: none (a prose contract; behaviors proven by the implementing trees)
 - **D28** → `project/design/D28.md` — The changelog contract: per-app `CHANGELOG.md`, authored at bump time, enforced by bump — ids: R-CKLX-X89X, R-CLTU-B00M, R-CN1Q-ORRB, R-CO9N-2JI0 (all [proof: bin])
-- **D29** → `project/design/D29.md` — The brand icon contract: the shipped set, its static location, and the link markup — ids: R-RYDN-YNR5, R-RZLK-CFHU (both [proof: per-service])
+- **D29** → `project/design/D29.md` — The brand icon contract: the shipped set, its static location, and the link markup — ids: R-8MFA-HUNC, R-RYDN-YNR5, R-RZLK-CFHU (all [proof: per-service])
 
 ## Verification ids → Decision
 
@@ -66,6 +66,7 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - R-8FUU-NRQT → D11 (`project/design/D11.md`) [proof: appkit]
 - R-8H2R-1JHI → D11 (`project/design/D11.md`) [proof: appkit]
 - R-8IAN-FB87 → D11 (`project/design/D11.md`) [proof: per-service]
+- R-8MFA-HUNC → D29 (`project/design/D29.md`) [proof: per-service]
 - R-CKLX-X89X → D28 (`project/design/D28.md`) [proof: bin]
 - R-CLTU-B00M → D28 (`project/design/D28.md`) [proof: bin]
 - R-CN1Q-ORRB → D28 (`project/design/D28.md`) [proof: bin]

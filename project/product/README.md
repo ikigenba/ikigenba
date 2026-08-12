@@ -97,8 +97,10 @@ This project owns the agreements that bind more than one tree:
   mention, and every edit tool says so where its callers read.
 - **The brand icon set** — the one browser-chrome identity every service that
   serves HTML presents: which icon files ship, where in a service's own bundle
-  they live, and what markup carries them, so a user moving between the apex
-  and any service page sees one product rather than sixteen unrelated ones.
+  they live, what markup carries them, and which requests they answer —
+  including the bare root-path request a client makes without reading any
+  markup — so a user moving between the apex and any service page sees one
+  product rather than sixteen unrelated ones.
 - **The release changelog** — the per-release record every deployable app keeps
   of what changed, stated for the operator in brief outcome terms, who authors
   it and when, and the release-time gate that keeps a release from shipping
