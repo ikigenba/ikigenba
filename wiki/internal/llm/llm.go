@@ -9,25 +9,34 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 )
 
-// ErrTruncated reports a completion that reached its configured output ceiling.
-var ErrTruncated = errors.New("llm: response truncated")
+const Consumer = "service:wiki"
 
-// Client posts completions to the prompts service.
+var (
+	ErrGone      = errors.New("llm: completion gone")
+	ErrTruncated = errors.New("llm: response truncated")
+)
+
 type Client struct {
-	baseURL string
-	http    *http.Client
+	baseURL      string
+	http         *http.Client
+	pollInterval time.Duration
 }
 
-// New constructs a concurrency-safe prompts client. Calls carry their own
-// context deadlines, so the shared HTTP client deliberately has no timeout.
-func New(baseURL string, hc *http.Client) *Client {
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), http: hc}
+// New constructs a concurrency-safe prompts client. The optional client is
+// retained for callers which need a transport carrying request instrumentation.
+func New(baseURL string, clients ...*http.Client) *Client {
+	hc := http.DefaultClient
+	if len(clients) != 0 && clients[0] != nil {
+		hc = clients[0]
+	}
+	return &Client{baseURL: strings.TrimRight(baseURL, "/"), http: hc, pollInterval: 500 * time.Millisecond}
 }
 
-// Config is the prompts /complete generation configuration vocabulary.
 type Config struct {
 	Model       string   `json:"model"`
 	Provider    string   `json:"provider,omitempty"`
@@ -37,7 +46,6 @@ type Config struct {
 	Thinking    *bool    `json:"thinking,omitempty"`
 }
 
-// CallSite configures one wiki generation stage.
 type CallSite struct {
 	Stage           string
 	System          string
@@ -45,15 +53,38 @@ type CallSite struct {
 	MaxParseRetries int
 }
 
-// Attribution identifies the origin and correlation group recorded by prompts.
 type Attribution struct {
 	Origin  string
 	GroupID string
 }
 
+type Message struct {
+	Role string `json:"role"`
+	Text string `json:"text"`
+}
+
+type Request struct {
+	Key      string
+	Context  []byte
+	Site     CallSite
+	Attr     Attribution
+	Attempt  int
+	Messages []Message
+}
+
+type Item struct {
+	ID      string
+	Key     string
+	Status  string
+	Context []byte
+	Result  json.RawMessage
+	Error   string
+	Usage   json.RawMessage
+	CostUSD float64
+}
+
 type systemComposerKey struct{}
 
-// WithSystemComposer attaches call-time System composition to one unit of work.
 func WithSystemComposer(ctx context.Context, compose func(string) string) context.Context {
 	return context.WithValue(ctx, systemComposerKey{}, compose)
 }
@@ -63,61 +94,195 @@ func systemComposer(ctx context.Context) func(string) string {
 	return compose
 }
 
-type message struct {
-	Role string `json:"role"`
-	Text string `json:"text"`
+type ensureRequest struct {
+	Consumer string          `json:"consumer"`
+	Key      string          `json:"key"`
+	Context  json.RawMessage `json:"context,omitempty"`
+	Origin   string          `json:"origin"`
+	GroupID  string          `json:"group_id,omitempty"`
+	Attempt  int             `json:"attempt"`
+	Name     string          `json:"name"`
+	Model    string          `json:"model"`
+	Provider string          `json:"provider,omitempty"`
+	Config   ensureConfig    `json:"config"`
+	System   string          `json:"system,omitempty"`
+	Messages []Message       `json:"messages"`
 }
 
-type completeRequest struct {
-	Origin   string         `json:"origin"`
-	Name     string         `json:"name"`
-	GroupID  string         `json:"group_id,omitempty"`
-	Attempt  int            `json:"attempt"`
-	Model    string         `json:"model"`
-	Provider string         `json:"provider,omitempty"`
-	Config   completeConfig `json:"config"`
-	System   string         `json:"system,omitempty"`
-	Messages []message      `json:"messages"`
-}
-
-type completeConfig struct {
+type ensureConfig struct {
 	Temperature *float64 `json:"temperature,omitempty"`
 	MaxTokens   int      `json:"max_tokens,omitempty"`
 	Effort      string   `json:"effort,omitempty"`
 	Thinking    *bool    `json:"thinking,omitempty"`
 }
 
-type completeResponse struct {
-	Text     string          `json:"text"`
-	Response string          `json:"response"`
-	Content  string          `json:"content"`
-	Usage    json.RawMessage `json:"usage"`
+type wireItem struct {
+	ID      string          `json:"id"`
+	Key     string          `json:"key"`
+	Status  string          `json:"status"`
+	Context json.RawMessage `json:"context"`
+	Result  json.RawMessage `json:"result"`
+	Error   string          `json:"error"`
+	Usage   json.RawMessage `json:"usage"`
+	CostUSD float64         `json:"cost_usd"`
 }
 
-// JSON runs one structured generation and validates the decoded value.
-func JSON[T any](ctx context.Context, c *Client, site CallSite, attr Attribution, userText string, validate func(*T) error) (T, error) {
-	var zero T
-	if c == nil || c.http == nil || c.baseURL == "" {
-		return zero, fmt.Errorf("llm JSON: invalid prompts client")
+func (w wireItem) item() Item {
+	contextRaw := append([]byte(nil), w.Context...)
+	result := append(json.RawMessage(nil), w.Result...)
+	usage := append(json.RawMessage(nil), w.Usage...)
+	if string(contextRaw) == "null" {
+		contextRaw = nil
 	}
+	if string(result) == "null" {
+		result = nil
+	}
+	if string(usage) == "null" {
+		usage = nil
+	}
+	return Item{ID: w.ID, Key: w.Key, Status: w.Status, Context: contextRaw, Result: result, Error: w.Error, Usage: usage, CostUSD: w.CostUSD}
+}
+
+func (c *Client) Ensure(ctx context.Context, r Request) (Item, error) {
+	if err := c.valid("Ensure"); err != nil {
+		return Item{}, err
+	}
+	site := r.Site
 	if compose := systemComposer(ctx); compose != nil {
 		site.System = compose(site.System)
 	}
+	body := ensureRequest{
+		Consumer: Consumer, Key: r.Key, Context: json.RawMessage(r.Context), Origin: r.Attr.Origin,
+		GroupID: r.Attr.GroupID, Attempt: r.Attempt, Name: "wiki." + site.Stage,
+		Model: site.Config.Model, Provider: site.Config.Provider,
+		Config: ensureConfig{Temperature: site.Config.Temperature, MaxTokens: site.Config.MaxTokens, Effort: site.Config.Effort, Thinking: site.Config.Thinking},
+		System: site.System, Messages: append([]Message(nil), r.Messages...),
+	}
+	var out wireItem
+	if err := c.doJSON(ctx, http.MethodPost, "/completions", body, &out, http.StatusOK, http.StatusAccepted); err != nil {
+		return Item{}, err
+	}
+	return out.item(), nil
+}
 
-	messages := []message{{Role: "user", Text: userText}}
+func (c *Client) Get(ctx context.Context, id string) (Item, error) {
+	if err := c.valid("Get"); err != nil {
+		return Item{}, err
+	}
+	var out wireItem
+	err := c.doJSON(ctx, http.MethodGet, "/completions/"+url.PathEscape(id), nil, &out, http.StatusOK)
+	if errors.Is(err, errNotFound) {
+		return Item{}, ErrGone
+	}
+	if err != nil {
+		return Item{}, err
+	}
+	return out.item(), nil
+}
+
+func (c *Client) Inbox(ctx context.Context) ([]Item, error) {
+	if err := c.valid("Inbox"); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/completions?consumer="+url.QueryEscape(Consumer), nil)
+	if err != nil {
+		return nil, fmt.Errorf("llm Inbox: %w", err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("llm: prompts inbox: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("llm: read prompts inbox: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, promptsEndpointStatusError("/completions", resp.StatusCode, raw)
+	}
+	var wire []wireItem
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		var envelope struct {
+			Items []wireItem `json:"items"`
+		}
+		if envelopeErr := json.Unmarshal(raw, &envelope); envelopeErr != nil {
+			return nil, fmt.Errorf("llm: decode prompts inbox: %w", err)
+		}
+		wire = envelope.Items
+	}
+	items := make([]Item, len(wire))
+	for i := range wire {
+		items[i] = wire[i].item()
+	}
+	return items, nil
+}
+
+func (c *Client) Ack(ctx context.Context, id string) error {
+	if err := c.valid("Ack"); err != nil {
+		return err
+	}
+	err := c.doJSON(ctx, http.MethodDelete, "/completions/"+url.PathEscape(id), nil, nil, http.StatusOK, http.StatusNoContent)
+	if errors.Is(err, errNotFound) {
+		return nil
+	}
+	return err
+}
+
+func (c *Client) Do(ctx context.Context, r Request) (Item, error) {
+	item, err := c.Ensure(ctx, r)
+	if err != nil {
+		return Item{}, err
+	}
+	for item.Status != "done" && item.Status != "failed" {
+		interval := c.pollInterval
+		if interval <= 0 {
+			interval = 500 * time.Millisecond
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return Item{}, ctx.Err()
+		case <-timer.C:
+		}
+		item, err = c.Get(ctx, item.ID)
+		if err != nil {
+			if errors.Is(err, ErrGone) {
+				return Item{}, fmt.Errorf("llm Do: %w while polling %s", ErrGone, item.ID)
+			}
+			return Item{}, err
+		}
+	}
+	if item.Status == "failed" {
+		_ = c.Ack(ctx, item.ID)
+		return Item{}, fmt.Errorf("llm: completion %s failed: %s", item.ID, item.Error)
+	}
+	if err := c.Ack(ctx, item.ID); err != nil {
+		return Item{}, fmt.Errorf("llm: ack completion %s: %w", item.ID, err)
+	}
+	return item, nil
+}
+
+func JSON[T any](ctx context.Context, c *Client, site CallSite, attr Attribution, baseKey, userText string, validate func(*T) error) (T, error) {
+	var zero T
+	messages := []Message{{Role: "user", Text: userText}}
 	attempts := site.MaxParseRetries + 1
 	if attempts < 1 {
 		attempts = 1
 	}
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
-		text, err := c.complete(ctx, site, attr, attempt, messages)
+		item, err := c.Do(ctx, Request{Key: fmt.Sprintf("%s/a%d", baseKey, attempt), Site: site, Attr: attr, Attempt: attempt, Messages: messages})
 		if err != nil {
 			return zero, err
 		}
-
+		if output, ok := outputUsage(item.Usage); ok && site.Config.MaxTokens > 0 && output >= int64(site.Config.MaxTokens) {
+			return zero, fmt.Errorf("%w: stage %s output usage %d reached max_tokens %d", ErrTruncated, site.Stage, output, site.Config.MaxTokens)
+		}
 		var out T
-		if err := json.Unmarshal([]byte(ExtractJSON(text)), &out); err != nil {
+		if err := json.Unmarshal(item.Result, &out); err != nil {
 			lastErr = err
 		} else if validate != nil {
 			lastErr = validate(&out)
@@ -127,75 +292,60 @@ func JSON[T any](ctx context.Context, c *Client, site CallSite, attr Attribution
 		if lastErr == nil {
 			return out, nil
 		}
-		if attempt < attempts {
-			messages = []message{
-				{Role: "user", Text: userText},
-				{Role: "assistant", Text: text},
-				{Role: "user", Text: correctivePrompt(userText, lastErr)},
-			}
-		}
+		messages = []Message{{Role: "user", Text: userText}, {Role: "assistant", Text: string(item.Result)}, {Role: "user", Text: correctivePrompt(userText, lastErr)}}
 	}
 	return zero, fmt.Errorf("llm JSON: parse or validation failed after %d attempt(s): %w", attempts, lastErr)
 }
 
-func (c *Client) complete(ctx context.Context, site CallSite, attr Attribution, attempt int, messages []message) (string, error) {
-	config := site.Config
-	reqBody := completeRequest{
-		Origin:   attr.Origin,
-		Name:     "wiki." + site.Stage,
-		GroupID:  attr.GroupID,
-		Attempt:  attempt,
-		Model:    config.Model,
-		Provider: config.Provider,
-		Config: completeConfig{
-			Temperature: config.Temperature,
-			MaxTokens:   config.MaxTokens,
-			Effort:      config.Effort,
-			Thinking:    config.Thinking,
-		},
-		System:   site.System,
-		Messages: messages,
+var errNotFound = errors.New("llm: HTTP 404")
+
+func (c *Client) valid(method string) error {
+	if c == nil || c.http == nil || c.baseURL == "" {
+		return fmt.Errorf("llm %s: invalid prompts client", method)
 	}
-	raw, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("llm: encode /complete request: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/complete", bytes.NewReader(raw))
-	if err != nil {
-		return "", fmt.Errorf("llm: build /complete request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("llm: prompts /complete: %w", err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("llm: read prompts /complete response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", promptsStatusError(resp.StatusCode, body)
-	}
-	var out completeResponse
-	if err := json.Unmarshal(body, &out); err != nil {
-		return "", fmt.Errorf("llm: decode prompts /complete response: %w", err)
-	}
-	text := out.Text
-	if text == "" {
-		text = out.Response
-	}
-	if text == "" {
-		text = out.Content
-	}
-	if output, ok := outputUsage(out.Usage); ok && config.MaxTokens > 0 && output >= int64(config.MaxTokens) {
-		return "", fmt.Errorf("%w: stage %s output usage %d reached max_tokens %d", ErrTruncated, site.Stage, output, config.MaxTokens)
-	}
-	return text, nil
+	return nil
 }
 
-func promptsStatusError(status int, body []byte) error {
-	return promptsEndpointStatusError("/complete", status, body)
+func (c *Client) doJSON(ctx context.Context, method, path string, input, output any, accepted ...int) error {
+	var body io.Reader
+	if input != nil {
+		raw, err := json.Marshal(input)
+		if err != nil {
+			return fmt.Errorf("llm: encode prompts %s: %w", path, err)
+		}
+		body = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return fmt.Errorf("llm: build prompts %s: %w", path, err)
+	}
+	if input != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("llm: prompts %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("llm: read prompts %s: %w", path, err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return errNotFound
+	}
+	for _, status := range accepted {
+		if resp.StatusCode == status {
+			if output == nil || len(bytes.TrimSpace(raw)) == 0 {
+				return nil
+			}
+			if err := json.Unmarshal(raw, output); err != nil {
+				return fmt.Errorf("llm: decode prompts %s: %w", path, err)
+			}
+			return nil
+		}
+	}
+	return promptsEndpointStatusError(path, resp.StatusCode, raw)
 }
 
 func promptsEndpointStatusError(endpoint string, status int, body []byte) error {
@@ -224,7 +374,7 @@ func outputUsage(raw json.RawMessage) (int64, bool) {
 	if json.Unmarshal(raw, &usage) != nil {
 		return 0, false
 	}
-	for _, key := range []string{"output", "output_tokens"} {
+	for _, key := range []string{"output", "output_tokens", "completion_tokens"} {
 		if value, ok := usage[key]; ok {
 			var n int64
 			if json.Unmarshal(value, &n) == nil {
@@ -235,28 +385,6 @@ func outputUsage(raw json.RawMessage) (int64, bool) {
 	return 0, false
 }
 
-// ExtractJSON carves the first JSON object or array from a decorated reply.
-func ExtractJSON(text string) string {
-	s := strings.TrimSpace(text)
-	firstObject := strings.IndexByte(s, '{')
-	firstArray := strings.IndexByte(s, '[')
-	start := firstObject
-	close := byte('}')
-	if firstArray >= 0 && (start < 0 || firstArray < start) {
-		start = firstArray
-		close = ']'
-	}
-	if start < 0 {
-		return s
-	}
-	end := strings.LastIndexByte(s, close)
-	if end < start {
-		return s
-	}
-	return strings.TrimSpace(s[start : end+1])
-}
-
 func correctivePrompt(original string, err error) string {
-	return original + "\n\nThe previous response could not be parsed and validated as the requested JSON: " +
-		err.Error() + "\nReturn only valid JSON for the original request."
+	return original + "\n\nThe previous response could not be decoded and validated as the requested JSON: " + err.Error() + "\nReturn valid JSON for the original request."
 }

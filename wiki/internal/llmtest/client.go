@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -140,7 +141,7 @@ func (c *EmbedCapture) Requests() []EmbedRequest {
 	return append([]EmbedRequest(nil), c.requests...)
 }
 
-// NewClient serves /complete through provider for tests and closes with t.
+// NewClient serves the completion queue through provider for tests and closes with t.
 func NewClient(t testing.TB, provider Provider) *llm.Client {
 	t.Helper()
 	client, closeServer := ServeProvider(provider)
@@ -148,7 +149,7 @@ func NewClient(t testing.TB, provider Provider) *llm.Client {
 	return client
 }
 
-// NewClientWithEmbeddings serves both /complete and /embed and closes with t.
+// NewClientWithEmbeddings serves both the completion queue and /embed and closes with t.
 func NewClientWithEmbeddings(t testing.TB, provider Provider, vectors [][]float32) (*llm.Client, *EmbedCapture) {
 	t.Helper()
 	capture := &EmbedCapture{vectors: cloneVectors(vectors)}
@@ -179,6 +180,14 @@ func serve(provider Provider, embeds *EmbedCapture) (*llm.Client, func()) {
 			vectors := cloneVectors(embeds.vectors)
 			embeds.mu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]any{"vectors": vectors})
+			return
+		}
+		if r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/completions/") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/completions" {
+			http.NotFound(w, r)
 			return
 		}
 		var req completeRequest
@@ -217,12 +226,17 @@ func serve(provider Provider, embeds *EmbedCapture) (*llm.Client, func()) {
 				text += value.Text
 			}
 		}
+		rawResult := json.RawMessage(text)
+		if !json.Valid(rawResult) {
+			rawResult, _ = json.Marshal(text)
+		}
+		w.WriteHeader(http.StatusAccepted)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"text":  text,
+			"id": "scripted", "status": "done", "result": rawResult,
 			"usage": map[string]any{"output": result.Usage.Output + result.Usage.ReasoningOutput},
 		})
 	}))
-	return llm.New(server.URL, server.Client()), server.Close
+	return llm.New(server.URL), server.Close
 }
 
 func cloneVectors(in [][]float32) [][]float32 {

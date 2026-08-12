@@ -13,7 +13,7 @@ const maxAnalysisSubQueries = 4
 
 // Analyze runs one ask-subject call and returns the parsed, capped analysis.
 func Analyze(ctx context.Context, c *llm.Client, site llm.CallSite, attr llm.Attribution, question string) (wiki.QueryAnalysis, error) {
-	out, err := llm.JSON[wiki.QueryAnalysis](ctx, c, site, attr, RenderAnalysis(DefaultAnalysisInstructions, question), func(out *wiki.QueryAnalysis) error {
+	out, err := llm.JSON[wiki.QueryAnalysis](ctx, c, site, attr, attr.GroupID+"/"+site.Stage, RenderAnalysis(DefaultAnalysisInstructions, question), func(out *wiki.QueryAnalysis) error {
 		if out == nil {
 			return fmt.Errorf("analysis required")
 		}

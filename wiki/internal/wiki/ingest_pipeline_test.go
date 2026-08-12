@@ -30,6 +30,10 @@ func TestWorkerThreadsStoredChainThroughExtractCompileAndEmbed(t *testing.T) {
 
 	var calls []workerPromptCall
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		var call workerPromptCall
 		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -45,11 +49,12 @@ func TestWorkerThreadsStoredChainThroughExtractCompileAndEmbed(t *testing.T) {
 		if call.Name == "wiki.compile" {
 			text = `{"title":"Ada","body":"Ada wrote the note."}`
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "test-item", "status": "done", "result": json.RawMessage(text)})
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, server.Client())
+	client := llm.New(server.URL)
 	svc := wikidomain.NewService(
 		conn,
 		extract.New(client, llm.CallSite{Stage: "extract", Config: llm.Config{Model: "extract"}}),
@@ -113,6 +118,10 @@ func TestWorkerComposesScopeInstructionsIntoExtractAndCompileSystems(t *testing.
 
 	var calls []workerPromptCall
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		var call workerPromptCall
 		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -124,11 +133,12 @@ func TestWorkerComposesScopeInstructionsIntoExtractAndCompileSystems(t *testing.
 		if call.Name == "wiki.compile" {
 			text = `{"title":"Ada","body":"Ada wrote the note."}`
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "test-item", "status": "done", "result": json.RawMessage(text)})
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, server.Client())
+	client := llm.New(server.URL)
 	const extractBase = "extract base sentinel"
 	const compileBase = "compile base sentinel"
 	svc := wikidomain.NewService(

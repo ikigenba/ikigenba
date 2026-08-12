@@ -9,8 +9,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"appkit/httpclient"
 	"appkit/telemetry"
@@ -32,28 +34,22 @@ func TestClientPropagatesOnlyContextChainToLoopbackPrompts(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"vectors": [][]float32{{1}}})
 			return
 		}
-		writeResponse(t, w, `{"title":"ok"}`, 1)
+		writeItem(t, w, http.StatusAccepted, Item{ID: "q1", Status: "queued"})
 	}))
 	defer server.Close()
 	client := New(server.URL, httpclient.New(httpclient.Options{Recorder: &telemetry.Recorder{}, Timeout: -1}))
 	chainID := "01KZ6V08B73Q7W1G5GR3C2E5MK"
-	chainCtx := correlation.WithContext(context.Background(), chainID)
-	for _, ctx := range []context.Context{chainCtx, context.Background()} {
-		if _, err := JSON(ctx, client, CallSite{Stage: "extract"}, Attribution{}, "prompt", nilFixture); err != nil {
-			t.Fatalf("JSON: %v", err)
+	for _, ctx := range []context.Context{correlation.WithContext(context.Background(), chainID), context.Background()} {
+		if _, err := client.Ensure(ctx, Request{Key: "key", Site: CallSite{Stage: "extract"}, Attempt: 1, Messages: []Message{{Role: "user", Text: "prompt"}}}); err != nil {
+			t.Fatalf("Ensure: %v", err)
 		}
 		if _, err := client.Embed(ctx, EmbedSite{Name: "wiki.embed-query", Dims: 1}, Attribution{}, "query", []string{"prompt"}); err != nil {
 			t.Fatalf("Embed: %v", err)
 		}
 	}
-	want := []received{{"/complete", chainID}, {"/embed", chainID}, {"/complete", ""}, {"/embed", ""}}
-	if len(calls) != len(want) {
+	want := []received{{"/completions", chainID}, {"/embed", chainID}, {"/completions", ""}, {"/embed", ""}}
+	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("calls = %+v, want %+v", calls, want)
-	}
-	for i := range want {
-		if calls[i] != want[i] {
-			t.Fatalf("call %d = %+v, want %+v", i, calls[i], want[i])
-		}
 	}
 }
 
@@ -91,244 +87,336 @@ func TestProductionTreeDoesNotConstructHTTPClients(t *testing.T) {
 	}
 }
 
-func TestExtractJSONCarvesFencedAndBareValues(t *testing.T) {
-	// R-J8QP-BETB
-	for name, input := range map[string]string{
-		"json fence": "```json\n{\"title\":\"ok\",\"count\":1}\n```",
-		"bare fence": "```\n[{\"title\":\"ok\",\"count\":1}]\n```",
-		"bare JSON":  " {\"title\":\"ok\",\"count\":1} ",
-	} {
-		t.Run(name, func(t *testing.T) {
-			got := ExtractJSON(input)
-			var value any
-			if err := json.Unmarshal([]byte(got), &value); err != nil {
-				t.Fatalf("ExtractJSON(%q) = %q: %v", input, got, err)
-			}
-		})
-	}
-}
-
-func TestExtractJSONCarvesDecoratedValues(t *testing.T) {
-	// R-4BCC-0EHJ
-	for name, input := range map[string]string{
-		"prose":       "Here it is: {\"title\":\"ok\"} thanks",
-		"extra ticks": "````json\n{\"title\":\"ok\"}\n````",
-		"stray tick":  "`{\"title\":\"ok\"}",
-	} {
-		t.Run(name, func(t *testing.T) {
-			if got := ExtractJSON(input); got != `{"title":"ok"}` {
-				t.Fatalf("ExtractJSON() = %q", got)
-			}
-		})
-	}
-}
-
-func TestJSONReturnsValidatedFencedResponse(t *testing.T) {
-	// R-J9YL-P6K0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeResponse(t, w, "```json\n{\"title\":\"ok\",\"count\":2}\n```", 1)
+func TestEnsureCarriesFullQueueWireContract(t *testing.T) {
+	// R-JW4G-367U
+	// R-MSKH-GPX5
+	temp, thinking := 0.25, false
+	var raw []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/completions" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.String())
+		}
+		var err error
+		raw, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeItem(t, w, http.StatusAccepted, Item{ID: "item-1", Key: "base/a2", Status: "queued", Context: []byte(`{"job":"j1"}`)})
 	}))
 	defer server.Close()
+	site := CallSite{Stage: "compile", System: "base system", Config: Config{Model: "m", Provider: "p", Temperature: &temp, MaxTokens: 321, Effort: "low", Thinking: &thinking}}
+	ctx := WithSystemComposer(context.Background(), func(system string) string { return system + " + scope" })
+	_, err := New(server.URL).Ensure(ctx, Request{Key: "base/a2", Context: []byte(`{"job":"j1"}`), Site: site, Attr: Attribution{Origin: "user:a", GroupID: "chain-1"}, Attempt: 2, Messages: []Message{{Role: "user", Text: "original"}, {Role: "assistant", Text: `{"bad":true}`}, {Role: "user", Text: "correct it"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]any{"consumer": Consumer, "key": "base/a2", "origin": "user:a", "group_id": "chain-1", "attempt": float64(2), "name": "wiki.compile", "model": "m", "provider": "p", "system": "base system + scope"} {
+		if got[key] != want {
+			t.Errorf("%s = %#v, want %#v", key, got[key], want)
+		}
+	}
+	if !reflect.DeepEqual(got["context"], map[string]any{"job": "j1"}) {
+		t.Errorf("context = %#v", got["context"])
+	}
+	config := got["config"].(map[string]any)
+	if !reflect.DeepEqual(config, map[string]any{"temperature": 0.25, "max_tokens": float64(321), "effort": "low", "thinking": false}) {
+		t.Errorf("config = %#v", config)
+	}
+	messages := got["messages"].([]any)
+	if len(messages) != 3 {
+		t.Fatalf("messages = %#v", messages)
+	}
+	for i, message := range messages {
+		fields := message.(map[string]any)
+		if len(fields) != 2 || fields["role"] == nil || fields["text"] == nil {
+			t.Errorf("message %d = %#v; want exactly role and text", i, fields)
+		}
+	}
+	if messages[2].(map[string]any)["role"] != "user" {
+		t.Errorf("final message = %#v", messages[2])
+	}
+}
+
+func TestQueueGetInboxAndAckVerbs(t *testing.T) {
+	// R-JXCC-GXYJ
+	var inboxQuery string
+	var deletes []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/completions/queued":
+			writeItem(t, w, http.StatusOK, Item{ID: "queued", Status: "queued"})
+		case r.Method == http.MethodGet && r.URL.Path == "/completions/running":
+			writeItem(t, w, http.StatusOK, Item{ID: "running", Status: "running"})
+		case r.Method == http.MethodGet && r.URL.Path == "/completions/done":
+			writeItem(t, w, http.StatusOK, Item{ID: "done", Key: "key", Status: "done", Context: []byte(`{"x":1}`), Result: json.RawMessage(`{"title":"ok"}`), Usage: json.RawMessage(`{"output":7}`), CostUSD: 0.12})
+		case r.Method == http.MethodGet && r.URL.Path == "/completions/failed":
+			writeItem(t, w, http.StatusOK, Item{ID: "failed", Status: "failed", Error: "provider broke"})
+		case r.Method == http.MethodGet && r.URL.Path == "/completions/gone":
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodGet && r.URL.Path == "/completions":
+			inboxQuery = r.URL.RawQuery
+			_ = json.NewEncoder(w).Encode([]wireItem{{ID: "i1", Status: "done", Result: json.RawMessage(`{"ok":true}`)}})
+		case r.Method == http.MethodDelete:
+			deletes = append(deletes, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+	c := New(server.URL)
+	for _, status := range []string{"queued", "running", "done", "failed"} {
+		item, err := c.Get(context.Background(), status)
+		if err != nil || item.Status != status {
+			t.Fatalf("Get(%s) = %+v, %v", status, item, err)
+		}
+		if (status == "queued" || status == "running") && len(item.Result) != 0 {
+			t.Errorf("Get(%s) result = %s", status, item.Result)
+		}
+		if status == "done" && (string(item.Context) != `{"x":1}` || string(item.Result) != `{"title":"ok"}` || string(item.Usage) != `{"output":7}` || item.CostUSD != 0.12) {
+			t.Errorf("done item = %+v", item)
+		}
+		if status == "failed" && item.Error != "provider broke" {
+			t.Errorf("failed item = %+v", item)
+		}
+	}
+	if _, err := c.Get(context.Background(), "gone"); !errors.Is(err, ErrGone) {
+		t.Fatalf("gone error = %v", err)
+	}
+	items, err := c.Inbox(context.Background())
+	if err != nil || len(items) != 1 || items[0].ID != "i1" || inboxQuery != "consumer=service%3Awiki" {
+		t.Fatalf("Inbox = %+v, %v, query %q", items, err, inboxQuery)
+	}
+	if err := c.Ack(context.Background(), "gone"); err != nil || !reflect.DeepEqual(deletes, []string{"/completions/gone"}) {
+		t.Fatalf("Ack = %v, deletes=%v", err, deletes)
+	}
+}
+
+func TestDoPollsUntilDoneAndHonorsCancellation(t *testing.T) {
+	// R-JYK8-UPP8
+	var gets, deletes int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			writeItem(t, w, http.StatusAccepted, Item{ID: "q1", Status: "queued"})
+		case http.MethodGet:
+			gets++
+			status := "running"
+			if gets == 2 {
+				status = "done"
+			}
+			writeItem(t, w, http.StatusOK, Item{ID: "q1", Status: status, Result: json.RawMessage(`{"title":"ok"}`)})
+		case http.MethodDelete:
+			deletes++
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	c := New(server.URL)
+	c.pollInterval = time.Millisecond
+	item, err := c.Do(context.Background(), Request{Key: "base/a1", Attempt: 1})
+	server.Close()
+	if err != nil || item.Status != "done" || gets != 2 || deletes != 1 {
+		t.Fatalf("Do = %+v, %v; gets=%d deletes=%d", item, err, gets, deletes)
+	}
+
+	gets = 0
+	ctx, cancel := context.WithCancel(context.Background())
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			writeItem(t, w, http.StatusAccepted, Item{ID: "q2", Status: "queued"})
+			return
+		}
+		gets++
+		cancel()
+		writeItem(t, w, http.StatusOK, Item{ID: "q2", Status: "running"})
+	}))
+	defer server.Close()
+	c = New(server.URL)
+	c.pollInterval = time.Millisecond
+	_, err = c.Do(ctx, Request{Key: "base/a1", Attempt: 1})
+	if !errors.Is(err, context.Canceled) || gets != 1 {
+		t.Fatalf("cancel Do error=%v gets=%d", err, gets)
+	}
+	time.Sleep(3 * time.Millisecond)
+	if gets != 1 {
+		t.Fatalf("polls continued after cancellation: %d", gets)
+	}
+}
+
+func TestDoFailedAndGoneAreTerminal(t *testing.T) {
+	// R-JZS5-8HFX
+	for name, getStatus := range map[string]int{"failed": http.StatusOK, "gone": http.StatusNotFound} {
+		t.Run(name, func(t *testing.T) {
+			var ensures, gets, acks int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method {
+				case http.MethodPost:
+					ensures++
+					writeItem(t, w, http.StatusAccepted, Item{ID: "q", Status: "queued"})
+				case http.MethodGet:
+					gets++
+					if getStatus == http.StatusNotFound {
+						w.WriteHeader(http.StatusNotFound)
+					} else {
+						writeItem(t, w, http.StatusOK, Item{ID: "q", Status: "failed", Error: "model exploded"})
+					}
+				case http.MethodDelete:
+					acks++
+					w.WriteHeader(http.StatusBadGateway) // failure ack remains tolerant
+				}
+			}))
+			defer server.Close()
+			c := New(server.URL)
+			c.pollInterval = time.Millisecond
+			_, err := c.Do(context.Background(), Request{Key: "base/a1", Attempt: 1})
+			if err == nil || ensures != 1 || gets != 1 {
+				t.Fatalf("Do error=%v ensures=%d gets=%d", err, ensures, gets)
+			}
+			if name == "failed" && (!strings.Contains(err.Error(), "model exploded") || acks != 1) {
+				t.Fatalf("failed error=%v acks=%d", err, acks)
+			}
+			if name == "gone" && (!errors.Is(err, ErrGone) || acks != 0) {
+				t.Fatalf("gone error=%v acks=%d", err, acks)
+			}
+		})
+	}
+}
+
+func TestJSONReturnsValidatedDoneResult(t *testing.T) {
+	// R-K101-M96M
+	server := terminalServer(t, []json.RawMessage{json.RawMessage(`{"title":"ok","count":2}`)}, nil)
+	defer server.Close()
 	validated := false
-	got, err := JSON(context.Background(), New(server.URL, server.Client()), CallSite{Stage: "extract"}, Attribution{Origin: "service:wiki"}, "prompt", func(v *fixture) error {
+	got, err := JSON(context.Background(), New(server.URL), CallSite{}, Attribution{}, "base", "prompt", func(v *fixture) error {
 		validated = true
 		if v.Title == "" {
 			return errors.New("title required")
 		}
 		return nil
 	})
-	if err != nil || got.Title != "ok" || got.Count != 2 || !validated {
-		t.Fatalf("JSON() = %#v, %v, validated=%v", got, err, validated)
+	if err != nil || got != (fixture{Title: "ok", Count: 2}) || !validated {
+		t.Fatalf("JSON = %#v, %v, validated=%v", got, err, validated)
 	}
 }
 
-func TestJSONRetriesBadThenGoodAndErrorsWhenAlwaysBad(t *testing.T) {
-	// R-JCEE-GQ1E
-	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls++
-		if calls == 1 {
-			writeResponse(t, w, "not json", 1)
+func TestJSONSemanticFailureEnsuresCorrectiveReplay(t *testing.T) {
+	// R-K27Y-00XB
+	var requests []ensureRequest
+	results := []json.RawMessage{json.RawMessage(`{"title":""}`), json.RawMessage(`{"title":"fixed"}`)}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		writeResponse(t, w, `{"title":"fixed","count":3}`, 1)
-	}))
-	got, err := JSON(context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 1}, Attribution{}, "prompt", nilFixture)
-	server.Close()
-	if err != nil || got.Title != "fixed" || calls != 2 {
-		t.Fatalf("bad then good = %#v, %v, calls=%d", got, err, calls)
-	}
-
-	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeResponse(t, w, "still bad", 1)
-	}))
-	defer server.Close()
-	got, err = JSON(context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 1}, Attribution{}, "prompt", nilFixture)
-	if err == nil || got != (fixture{}) {
-		t.Fatalf("always bad = %#v, %v; want zero and error", got, err)
-	}
-}
-
-func TestJSONCarriesCompleteRequestConfiguration(t *testing.T) {
-	// R-0X4N-U0XB
-	// R-MSKH-GPX5
-	temp, thinking := 0.25, false
-	var got completeRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
-			t.Fatal(err)
-		}
-		writeResponse(t, w, `{"title":"ok"}`, 1)
-	}))
-	defer server.Close()
-	site := CallSite{Stage: "compile", System: "system", Config: Config{Model: "model", Provider: "provider", Temperature: &temp, MaxTokens: 321, Effort: "low", Thinking: &thinking}}
-	if _, err := JSON(context.Background(), New(server.URL, server.Client()), site, Attribution{Origin: "user:a@example.com", GroupID: "group-1"}, "prompt", nilFixture); err != nil {
-		t.Fatal(err)
-	}
-	if got.Name != "wiki.compile" || got.Origin != "user:a@example.com" || got.GroupID != "group-1" || got.Attempt != 1 || got.Model != "model" || got.Provider != "provider" || got.System != "system" {
-		t.Fatalf("request envelope = %+v", got)
-	}
-	if got.Config.Temperature == nil || *got.Config.Temperature != temp || got.Config.MaxTokens != 321 || got.Config.Effort != "low" || got.Config.Thinking == nil || *got.Config.Thinking {
-		t.Fatalf("request config = %+v", got.Config)
-	}
-	if len(got.Messages) != 1 || got.Messages[0].Role != "user" || got.Messages[0].Text != "prompt" {
-		t.Fatalf("messages = %+v", got.Messages)
-	}
-}
-
-func TestJSONMessagesUsePromptsWireSpelling(t *testing.T) {
-	// R-8H1B-9CCI
-	var rawRequests [][]byte
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rawRequest, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		rawRequests = append(rawRequests, rawRequest)
-		if len(rawRequests) == 1 {
-			writeResponse(t, w, "bad reply", 1)
-			return
-		}
-		writeResponse(t, w, `{"title":"ok"}`, 1)
-	}))
-	defer server.Close()
-
-	if _, err := JSON(context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 1}, Attribution{}, "message body", nilFixture); err != nil {
-		t.Fatal(err)
-	}
-	if len(rawRequests) != 2 {
-		t.Fatalf("captured %d requests; want retry request", len(rawRequests))
-	}
-	var request struct {
-		Messages []map[string]any `json:"messages"`
-	}
-	if err := json.Unmarshal(rawRequests[1], &request); err != nil {
-		t.Fatalf("decode raw request: %v", err)
-	}
-	expected := []struct {
-		role string
-		text string
-	}{
-		{role: "user", text: "message body"},
-		{role: "assistant", text: "bad reply"},
-		{role: "user", text: correctivePrompt("message body", errors.New("invalid character 'b' looking for beginning of value"))},
-	}
-	if len(request.Messages) != len(expected) {
-		t.Fatalf("messages = %#v; want %d messages", request.Messages, len(expected))
-	}
-	for i, message := range request.Messages {
-		if len(message) != 2 || message["role"] != expected[i].role || message["text"] != expected[i].text {
-			t.Fatalf("message %d keys and values = %#v; want exactly role=%q and text=%q", i, message, expected[i].role, expected[i].text)
-		}
-		if _, present := message["content"]; present {
-			t.Fatalf("message %d contains forbidden content key: %#v", i, message)
-		}
-	}
-}
-
-func TestJSONRetryReplaysFullStatelessHistory(t *testing.T) {
-	// R-0ZKG-LKEP
-	var requests []completeRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req completeRequest
+		var req ensureRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatal(err)
 		}
 		requests = append(requests, req)
-		if len(requests) == 1 {
-			writeResponse(t, w, "bad reply", 1)
-			return
-		}
-		writeResponse(t, w, `{"title":"fixed"}`, 1)
+		writeItem(t, w, http.StatusAccepted, Item{ID: "q", Status: "done", Result: results[len(requests)-1]})
 	}))
 	defer server.Close()
-	if _, err := JSON(context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 1}, Attribution{}, "original", nilFixture); err != nil {
-		t.Fatal(err)
+	got, err := JSON(context.Background(), New(server.URL), CallSite{MaxParseRetries: 1}, Attribution{}, "base", "original", func(v *fixture) error {
+		if v.Title == "" {
+			return errors.New("title required")
+		}
+		return nil
+	})
+	if err != nil || got.Title != "fixed" || len(requests) != 2 {
+		t.Fatalf("JSON = %#v, %v, requests=%+v", got, err, requests)
 	}
-	if len(requests) != 2 || requests[0].Attempt != 1 || len(requests[0].Messages) != 1 || requests[1].Attempt != 2 || len(requests[1].Messages) != 3 {
-		t.Fatalf("requests = %+v", requests)
+	if requests[0].Key != "base/a1" || requests[0].Attempt != 1 || len(requests[0].Messages) != 1 || requests[1].Key != "base/a2" || requests[1].Attempt != 2 {
+		t.Fatalf("attempts = %+v", requests)
 	}
-	roles := []string{requests[1].Messages[0].Role, requests[1].Messages[1].Role, requests[1].Messages[2].Role}
-	if strings.Join(roles, ",") != "user,assistant,user" || requests[1].Messages[0].Text != "original" || requests[1].Messages[1].Text != "bad reply" {
-		t.Fatalf("retry messages = %+v", requests[1].Messages)
+	wantRoles := []string{"user", "assistant", "user"}
+	var roles []string
+	for _, message := range requests[1].Messages {
+		roles = append(roles, message.Role)
+	}
+	if !reflect.DeepEqual(roles, wantRoles) || requests[1].Messages[0].Text != "original" || requests[1].Messages[1].Text != `{"title":""}` {
+		t.Fatalf("corrective replay = %+v", requests[1].Messages)
 	}
 }
 
-func TestJSONReturns400BodyWithoutRetry(t *testing.T) {
-	// R-10SC-ZC5E
-	calls := 0
+func TestJSONExhaustsExactlyConfiguredCorrectiveAttempts(t *testing.T) {
+	// R-K3FU-DSO0
+	var ensures int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		ensures++
+		writeItem(t, w, http.StatusAccepted, Item{ID: "q", Status: "done", Result: json.RawMessage(`"not-json"`)})
+	}))
+	defer server.Close()
+	got, err := JSON[fixture](context.Background(), New(server.URL), CallSite{MaxParseRetries: 2}, Attribution{}, "base", "prompt", nil)
+	if err == nil || got != (fixture{}) || ensures != 3 || !strings.Contains(err.Error(), "after 3 attempt") {
+		t.Fatalf("JSON = %#v, %v, ensures=%d", got, err, ensures)
+	}
+}
+
+func TestJSONEnsure400FailsImmediatelyWithPromptsError(t *testing.T) {
+	// R-K4NQ-RKEP
+	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"error":"bad model"}`))
 	}))
 	defer server.Close()
-	_, err := JSON[fixture](context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 3}, Attribution{}, "prompt", nilFixture)
+	_, err := JSON[fixture](context.Background(), New(server.URL), CallSite{MaxParseRetries: 3}, Attribution{}, "base", "prompt", nil)
 	if err == nil || !strings.Contains(err.Error(), "bad model") || calls != 1 {
 		t.Fatalf("error=%v calls=%d", err, calls)
 	}
 }
 
-func TestJSONReturnsProviderAndTransportFailuresWithoutRetry(t *testing.T) {
-	// R-1209-D3W3
-	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls++
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte(`{"error":"provider unavailable"}`))
-	}))
-	_, err := JSON[fixture](context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 2}, Attribution{}, "prompt", nilFixture)
-	server.Close()
-	if err == nil || calls != 1 {
-		t.Fatalf("502 error=%v calls=%d", err, calls)
-	}
-	_, err = JSON[fixture](context.Background(), New(server.URL, server.Client()), CallSite{MaxParseRetries: 2}, Attribution{}, "prompt", nilFixture)
-	if err == nil || !strings.Contains(err.Error(), "prompts /complete") {
-		t.Fatalf("transport error=%v", err)
-	}
-}
-
-func TestJSONReportsTruncationDistinctlyAndDoesNotRetry(t *testing.T) {
+func TestJSONTruncationIsDistinctAndTerminal(t *testing.T) {
 	// R-MTSD-UHNU
 	// R-MV0A-89EJ
-	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls++
-		writeResponse(t, w, `{"title":"partial"`, 10)
+	var ensures, acks int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			acks++
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		ensures++
+		writeItem(t, w, http.StatusAccepted, Item{ID: "q", Status: "done", Result: json.RawMessage(`{"title":"partial"}`), Usage: json.RawMessage(`{"output_tokens":10}`)})
 	}))
 	defer server.Close()
-	_, err := JSON[fixture](context.Background(), New(server.URL, server.Client()), CallSite{Config: Config{MaxTokens: 10}, MaxParseRetries: 3}, Attribution{}, "prompt", nilFixture)
-	if !errors.Is(err, ErrTruncated) || calls != 1 {
-		t.Fatalf("error=%v calls=%d", err, calls)
+	_, err := JSON[fixture](context.Background(), New(server.URL), CallSite{Config: Config{MaxTokens: 10}, MaxParseRetries: 3}, Attribution{}, "base", "prompt", nil)
+	if !errors.Is(err, ErrTruncated) || ensures != 1 || acks != 1 {
+		t.Fatalf("error=%v ensures=%d acks=%d", err, ensures, acks)
 	}
 }
 
-func writeResponse(t *testing.T, w http.ResponseWriter, text string, output int) {
+func terminalServer(t *testing.T, results []json.RawMessage, usages []json.RawMessage) *httptest.Server {
+	t.Helper()
+	var ensures int
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		usage := json.RawMessage(nil)
+		if len(usages) > ensures {
+			usage = usages[ensures]
+		}
+		writeItem(t, w, http.StatusAccepted, Item{ID: "q", Status: "done", Result: results[ensures], Usage: usage})
+		ensures++
+	}))
+}
+
+func writeItem(t *testing.T, w http.ResponseWriter, status int, item Item) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{"text": text, "usage": map[string]any{"output": output}}); err != nil {
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(wireItem{ID: item.ID, Key: item.Key, Status: item.Status, Context: json.RawMessage(item.Context), Result: item.Result, Error: item.Error, Usage: item.Usage, CostUSD: item.CostUSD}); err != nil {
 		t.Fatal(err)
 	}
 }
-
-func nilFixture(*fixture) error { return nil }

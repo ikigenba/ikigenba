@@ -74,7 +74,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			conns := wiki.Conns{Read: read, Write: write}
 			llmClient := cfg.LLM
 			if llmClient == nil {
-				llmClient = llm.New(registry.BaseURL("prompts"), rt.HTTPClient(-1))
+				llmClient = llm.New(registry.BaseURL("prompts"))
 			}
 			vectorCache := retrieve.NewVectorCache()
 			cacheEntries, err := wiki.LoadVectorCacheEntries(context.Background(), conns)

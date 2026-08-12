@@ -32,6 +32,10 @@ func TestAskThreadsReceivedChainThroughEveryPromptsCall(t *testing.T) {
 
 	var calls []promptCall
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		var call promptCall
 		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -43,19 +47,19 @@ func TestAskThreadsReceivedChainThroughEveryPromptsCall(t *testing.T) {
 		switch r.URL.Path {
 		case "/embed":
 			_ = json.NewEncoder(w).Encode(map[string]any{"vectors": [][]float32{{1}}})
-		case "/complete":
+		case "/completions":
 			text := `{"sub_queries":["Ada"],"keywords":["note"]}`
 			if call.Name == "wiki.ask-synthesis" {
 				text = `{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+			writeQueueCompletion(t, w, text)
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, server.Client())
+	client := llm.New(server.URL)
 	cache := retrieve.NewVectorCache()
 	cache.Upsert(retrieve.VectorEntry{Scope: "default", SubjectID: "subject-ada", Title: "Ada", Vec: []float32{1}})
 	vector := retrieve.NewVectorRetriever(func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error) {
@@ -107,6 +111,14 @@ type promptCall struct {
 	System  string `json:"system"`
 }
 
+func writeQueueCompletion(t *testing.T, w http.ResponseWriter, result string) {
+	t.Helper()
+	w.WriteHeader(http.StatusAccepted)
+	if err := json.NewEncoder(w).Encode(map[string]any{"id": "test-item", "status": "done", "result": json.RawMessage(result)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAskComposesScopeInstructionsIntoBothStageSystems(t *testing.T) {
 	// R-8OEU-E8TU
 	ctx := context.Background()
@@ -137,6 +149,10 @@ func TestAskComposesScopeInstructionsIntoBothStageSystems(t *testing.T) {
 
 	var calls []promptCall
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		var call promptCall
 		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -148,7 +164,7 @@ func TestAskComposesScopeInstructionsIntoBothStageSystems(t *testing.T) {
 		if call.Name == "wiki.ask-synthesis" {
 			text = `{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+		writeQueueCompletion(t, w, text)
 	}))
 	defer server.Close()
 
@@ -162,7 +178,7 @@ func TestAskComposesScopeInstructionsIntoBothStageSystems(t *testing.T) {
 		search,
 		wiki.NewSubjectStore(conn),
 		wiki.NewPageStore(conn),
-		llm.New(server.URL, server.Client()),
+		llm.New(server.URL),
 		llm.CallSite{Stage: "ask-subject", System: subjectBase, Config: llm.Config{Model: "subject"}},
 		llm.CallSite{Stage: "ask-synthesis", System: synthesisBase, Config: llm.Config{Model: "synthesis"}},
 	)
@@ -203,6 +219,10 @@ func TestAskAttributesEveryPromptsCallToRequestIdentity(t *testing.T) {
 
 	var calls []promptCall
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		var call promptCall
 		if err := json.NewDecoder(r.Body).Decode(&call); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -214,19 +234,19 @@ func TestAskAttributesEveryPromptsCallToRequestIdentity(t *testing.T) {
 		switch r.URL.Path {
 		case "/embed":
 			_ = json.NewEncoder(w).Encode(map[string]any{"vectors": [][]float32{{1}}})
-		case "/complete":
+		case "/completions":
 			text := `{"sub_queries":["Ada"],"keywords":["note"]}`
 			if call.Name == "wiki.ask-synthesis" {
 				text = `{"found":true,"text":"Ada wrote the note.","citations":[{"path":"entity/ada","title":"Ada"}]}`
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+			writeQueueCompletion(t, w, text)
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, server.Client())
+	client := llm.New(server.URL)
 	cache := retrieve.NewVectorCache()
 	cache.Upsert(retrieve.VectorEntry{Scope: "default", SubjectID: "subject-ada", Title: "Ada", Vec: []float32{1}})
 	vector := retrieve.NewVectorRetriever(func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error) {
@@ -243,9 +263,9 @@ func TestAskAttributesEveryPromptsCallToRequestIdentity(t *testing.T) {
 		t.Fatalf("Ask with owner: %v", err)
 	}
 	wantCalls := map[[2]string]int{
-		{"/complete", "wiki.ask-subject"}:   1,
-		{"/embed", "wiki.embed-query"}:      1,
-		{"/complete", "wiki.ask-synthesis"}: 1,
+		{"/completions", "wiki.ask-subject"}:   1,
+		{"/embed", "wiki.embed-query"}:         1,
+		{"/completions", "wiki.ask-synthesis"}: 1,
 	}
 	gotCalls := make(map[[2]string]int)
 	for i, call := range calls {
@@ -952,7 +972,7 @@ func TestAnalyzeFallsBackToWholeQuestionWhenNoSubQueries(t *testing.T) {
 	}
 }
 
-func TestAskParsesDecoratedJSONResponses(t *testing.T) {
+func TestAskParsesQueueJSONResults(t *testing.T) {
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -968,8 +988,8 @@ func TestAskParsesDecoratedJSONResponses(t *testing.T) {
 		Citations: []Citation{{Path: "entity/ada", Title: "Ada"}},
 	})
 	prov := &askProvider{responses: []*llmtest.RoundTrip{
-		textRoundTrip("```json\n{\"sub_queries\":[\"Ada\"]}\n```"),
-		textRoundTrip("Here is the answer:\n" + string(answer)),
+		textRoundTrip(`{"sub_queries":["Ada"]}`),
+		textRoundTrip(string(answer)),
 	}}
 
 	got, err := New(oneHitSearch("subject-ada", 0.8), wiki.NewSubjectStore(conn), wiki.NewPageStore(conn), llmtest.NewClient(t, prov), testExtractSite(), testSynthSite()).
@@ -978,7 +998,7 @@ func TestAskParsesDecoratedJSONResponses(t *testing.T) {
 		t.Fatalf("Ask returned error: %v", err)
 	}
 	if !got.Found || got.Text != "Ada wrote the note." {
-		t.Fatalf("Ask = %+v, want found answer from decorated JSON", got)
+		t.Fatalf("Ask = %+v, want found answer from queue JSON", got)
 	}
 }
 

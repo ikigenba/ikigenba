@@ -146,7 +146,7 @@ func (a *Asker) Ask(ctx context.Context, scope, owner, question string) (Answer,
 		return honestEmpty(), nil
 	}
 
-	result, err := llm.JSON[answerResult](ctx, a.c, a.synthSite, attr, synthPrompt(question, pages), func(out *answerResult) error {
+	result, err := llm.JSON[answerResult](ctx, a.c, a.synthSite, attr, attr.GroupID+"/"+a.synthSite.Stage, synthPrompt(question, pages), func(out *answerResult) error {
 		normalizeAnswer(out)
 		return nil
 	})

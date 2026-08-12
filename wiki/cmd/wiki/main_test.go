@@ -779,6 +779,10 @@ func TestAskPageWiresRealPipelineToAbsoluteMentionsFooter(t *testing.T) {
 	}
 
 	prompts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		var call struct {
 			Name string `json:"name"`
 		}
@@ -790,19 +794,20 @@ func TestAskPageWiresRealPipelineToAbsoluteMentionsFooter(t *testing.T) {
 		switch r.URL.Path {
 		case "/embed":
 			_ = json.NewEncoder(w).Encode(map[string]any{"vectors": [][]float32{{1}}})
-		case "/complete":
+		case "/completions":
 			text := `{"sub_queries":["Acme Corp"],"keywords":["widgets"]}`
 			if call.Name == "wiki.ask-synthesis" {
 				text = `{"found":true,"text":"Acme Corp makes widgets.","citations":[{"path":"entity/acme-corp","title":"Acme Corp"}]}`
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"text": text})
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "test-item", "status": "done", "result": json.RawMessage(text)})
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer prompts.Close()
 
-	client := llm.New(prompts.URL, prompts.Client())
+	client := llm.New(prompts.URL)
 	cache := retrieve.NewVectorCache()
 	cache.Upsert(retrieve.VectorEntry{Scope: "default", SubjectID: subject.ID, Title: subject.Name, Vec: []float32{1}})
 	vector := retrieve.NewVectorRetriever(func(ctx context.Context, attr llm.Attribution, text string) ([]float32, error) {

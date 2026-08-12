@@ -71,7 +71,7 @@ func (c *Compiler) Compile(ctx context.Context, attr llm.Attribution, s model.Su
 	prompt := renderPrompt(s, claims, PageCharCap, "")
 	var last compileResponse
 	for attempt := 0; attempt <= maxTighten; attempt++ {
-		out, err := llm.JSON[compileResponse](ctx, c.c, c.site, attr, prompt, validateResponse)
+		out, err := llm.JSON[compileResponse](ctx, c.c, c.site, attr, attr.GroupID+"/"+c.site.Stage, prompt, validateResponse)
 		if err != nil {
 			return "", "", err
 		}

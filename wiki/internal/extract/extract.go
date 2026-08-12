@@ -61,7 +61,7 @@ func (e *Extractor) Extract(ctx context.Context, attr llm.Attribution, h Documen
 	if e == nil {
 		return nil, fmt.Errorf("extract: nil extractor")
 	}
-	out, err := llm.JSON[extractResponse](ctx, e.c, e.site, attr, Render(h, text), func(response *extractResponse) error {
+	out, err := llm.JSON[extractResponse](ctx, e.c, e.site, attr, attr.GroupID+"/"+e.site.Stage, Render(h, text), func(response *extractResponse) error {
 		if response == nil {
 			return validateResponse(nil)
 		}
