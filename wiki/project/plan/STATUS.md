@@ -12,5 +12,3 @@ lines.
 
 Next phase: 158
 
-- Phase 157 ⬜ realizes R-RYDN-YNR5, R-RZLK-CFHU — adopt the suite brand icon set
-
