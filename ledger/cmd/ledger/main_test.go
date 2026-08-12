@@ -302,6 +302,44 @@ func TestWWWSiteReferencesOnlyDocumentRelativeLocalStaticAssets(t *testing.T) {
 	}
 }
 
+func TestEveryServedHTMLDocumentCarriesBrandIconLinks(t *testing.T) {
+	documents, err := filepath.Glob(filepath.Join(wwwRoot(t), "*.html"))
+	if err != nil {
+		t.Fatalf("enumerate served HTML documents: %v", err)
+	}
+	if len(documents) == 0 {
+		t.Fatal("share/www contains no served HTML documents")
+	}
+
+	for _, document := range documents {
+		document := document
+		t.Run(filepath.Base(document), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			if err := loadWWW(t).Render(rec, filepath.Base(document), landingData("ledger", "1.2.3")); err != nil {
+				t.Fatalf("render %s: %v", filepath.Base(document), err)
+			}
+			if rec.Code != http.StatusOK {
+				t.Fatalf("render %s status = %d, want %d", filepath.Base(document), rec.Code, http.StatusOK)
+			}
+
+			head := htmlHead(t, rec.Body.String())
+			// R-RYDN-YNR5
+			for href, attributes := range map[string][]string{
+				`href="static/favicon.ico"`:          {`rel="icon"`, `sizes="any"`},
+				`href="static/favicon-32.png"`:       {`rel="icon"`, `type="image/png"`},
+				`href="static/apple-touch-icon.png"`: {`rel="apple-touch-icon"`},
+			} {
+				tag := linkTagContaining(t, head, href)
+				for _, attribute := range attributes {
+					if !strings.Contains(tag, attribute) {
+						t.Fatalf("%s brand icon link %q missing %q: %s", filepath.Base(document), href, attribute, tag)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestWWWSitePreloadsSelfServedFontFiles(t *testing.T) {
 	rec := renderLanding(t, "ledger", "1.2.3")
 	head := htmlHead(t, rec.Body.String())
@@ -427,6 +465,27 @@ func TestWWWStaticServesTokensCSSWithContentType(t *testing.T) {
 	}
 	if got := rec.Header().Get("Content-Type"); got != "text/css; charset=utf-8" {
 		t.Fatalf("tokens.css content-type = %q, want text/css; charset=utf-8", got)
+	}
+}
+
+func TestWWWStaticServesBrandIconsWithPinnedContentTypes(t *testing.T) {
+	for path, contentType := range map[string]string{
+		"/static/favicon.ico":          "image/x-icon",
+		"/static/favicon-32.png":       "image/png",
+		"/static/apple-touch-icon.png": "image/png",
+	} {
+		rec := readWWWStaticResponse(t, path)
+
+		// R-RZLK-CFHU
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want %d", path, rec.Code, http.StatusOK)
+		}
+		if got := rec.Header().Get("Content-Type"); got != contentType {
+			t.Fatalf("GET %s content-type = %q, want %q", path, got, contentType)
+		}
+		if rec.Body.Len() == 0 {
+			t.Fatalf("GET %s returned an empty body", path)
+		}
 	}
 }
 
