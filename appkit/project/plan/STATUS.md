@@ -11,4 +11,3 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 33
 
-- Phase 32 ⬜ realizes D7 — the chassis root-path favicon route
