@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	appkitweb "appkit/web"
 
@@ -289,6 +290,7 @@ func (h *handler) publicHome(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) ask(w http.ResponseWriter, r *http.Request, tier string, scope wiki.Scope, question string) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	if h.asker == nil {
 		h.renderAskError(w, r, tier, scope.Name, question, http.StatusNotImplemented, errors.New("web: no asker configured"))
 		return

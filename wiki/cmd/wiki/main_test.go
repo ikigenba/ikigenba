@@ -355,6 +355,57 @@ func TestBuildSpecWiresTwentyMCPTools(t *testing.T) {
 	}
 }
 
+func TestCompositionRootMCPMountClearsWriteDeadlineBeforeDelegating(t *testing.T) {
+	// R-KKIF-QL1Q
+	deadlineWriter := &deadlineRecordingResponseWriter{ResponseRecorder: httptest.NewRecorder()}
+	outerWriter := &unwrappingMainResponseWriter{ResponseWriter: deadlineWriter}
+	req := httptest.NewRequest(http.MethodPost, "/mcp?trace=kept", strings.NewReader("request body"))
+	req.Header.Set("X-Test-Header", "kept")
+	var gotRequest *http.Request
+	var gotBody string
+	inner := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if len(deadlineWriter.deadlines) != 1 || !deadlineWriter.deadlines[0].IsZero() {
+			t.Fatalf("write deadlines before MCP handler = %v, want one cleared deadline", deadlineWriter.deadlines)
+		}
+		gotRequest = r
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read delegated request body: %v", err)
+		}
+		gotBody = string(body)
+	})
+
+	clearWriteDeadline(inner).ServeHTTP(outerWriter, req)
+
+	if gotRequest != req {
+		t.Fatalf("delegated request = %p, want original %p", gotRequest, req)
+	}
+	if gotRequest.Method != http.MethodPost || gotRequest.URL.RequestURI() != "/mcp?trace=kept" || gotRequest.Header.Get("X-Test-Header") != "kept" || gotBody != "request body" {
+		t.Fatalf("delegated request changed: method=%q uri=%q header=%q body=%q", gotRequest.Method, gotRequest.URL.RequestURI(), gotRequest.Header.Get("X-Test-Header"), gotBody)
+	}
+	if len(deadlineWriter.deadlines) != 1 || !deadlineWriter.deadlines[0].IsZero() {
+		t.Fatalf("MCP write deadlines = %v, want exactly time.Time{}", deadlineWriter.deadlines)
+	}
+}
+
+type deadlineRecordingResponseWriter struct {
+	*httptest.ResponseRecorder
+	deadlines []time.Time
+}
+
+func (w *deadlineRecordingResponseWriter) SetWriteDeadline(deadline time.Time) error {
+	w.deadlines = append(w.deadlines, deadline)
+	return nil
+}
+
+type unwrappingMainResponseWriter struct {
+	http.ResponseWriter
+}
+
+func (w *unwrappingMainResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 func TestBuildSpecPageToolReturnsRenderedFooter(t *testing.T) {
 	// R-02WN-BXPK
 	ctx := context.Background()

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -172,7 +173,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			if err != nil {
 				return err
 			}
-			rt.Handle("POST /mcp", rt.RequireIdentity(mcpHandler))
+			rt.Handle("POST /mcp", clearWriteDeadline(rt.RequireIdentity(mcpHandler)))
 			return nil
 		},
 		Workers: []func(ctx context.Context) error{
@@ -180,6 +181,13 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			func(ctx context.Context) error { return worker.RunEmbeddingCatchUp(ctx, svc) },
 		},
 	}
+}
+
+func clearWriteDeadline(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+		next.ServeHTTP(w, r)
+	})
 }
 
 type promptsEmbedder struct {

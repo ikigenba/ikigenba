@@ -71,6 +71,7 @@ func (s *stubKeywordRetriever) Search(_ context.Context, scope, query string, li
 type stubAsker struct {
 	answer   ask.Answer
 	err      error
+	onCall   func()
 	called   int
 	scope    string
 	owner    string
@@ -78,11 +79,32 @@ type stubAsker struct {
 }
 
 func (s *stubAsker) Ask(_ context.Context, scope string, owner, question string) (ask.Answer, error) {
+	if s.onCall != nil {
+		s.onCall()
+	}
 	s.called++
 	s.scope = scope
 	s.owner = owner
 	s.question = question
 	return s.answer, s.err
+}
+
+type deadlineRecordingWriter struct {
+	*httptest.ResponseRecorder
+	deadlines []time.Time
+}
+
+func (w *deadlineRecordingWriter) SetWriteDeadline(deadline time.Time) error {
+	w.deadlines = append(w.deadlines, deadline)
+	return nil
+}
+
+type unwrappingResponseWriter struct {
+	http.ResponseWriter
+}
+
+func (w *unwrappingResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 type stubMentioner struct {
@@ -220,6 +242,35 @@ func TestHomeHandlerServesExactRootHTML(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "<!doctype html>") {
 		t.Fatalf("body does not look like HTML: %s", rec.Body.String())
+	}
+}
+
+func TestAskBranchClearsWriteDeadlineBeforeCallingAskerButHomeDoesNot(t *testing.T) {
+	// R-KJAJ-CTB1
+	askWriter := &deadlineRecordingWriter{ResponseRecorder: httptest.NewRecorder()}
+	outerAskWriter := &unwrappingResponseWriter{ResponseWriter: askWriter}
+	asker := &stubAsker{
+		answer: ask.Answer{Found: true, Text: "answer"},
+		onCall: func() {
+			if len(askWriter.deadlines) != 1 || !askWriter.deadlines[0].IsZero() {
+				t.Fatalf("write deadlines before Ask = %v, want one cleared deadline", askWriter.deadlines)
+			}
+		},
+	}
+	h := newTestHandler(t, "wiki", "v-test", "/srv/wiki/", WithAsker(asker))
+	h.ServeHTTP(outerAskWriter, httptest.NewRequest(http.MethodGet, "/private/default/?q=question", nil))
+
+	if asker.called != 1 {
+		t.Fatalf("Ask calls = %d, want 1", asker.called)
+	}
+	if len(askWriter.deadlines) != 1 || !askWriter.deadlines[0].IsZero() {
+		t.Fatalf("ask write deadlines = %v, want exactly time.Time{}", askWriter.deadlines)
+	}
+
+	homeWriter := &deadlineRecordingWriter{ResponseRecorder: httptest.NewRecorder()}
+	h.ServeHTTP(&unwrappingResponseWriter{ResponseWriter: homeWriter}, httptest.NewRequest(http.MethodGet, "/private/default/", nil))
+	if len(homeWriter.deadlines) != 0 {
+		t.Fatalf("bare home write deadlines = %v, want none", homeWriter.deadlines)
 	}
 }
 
