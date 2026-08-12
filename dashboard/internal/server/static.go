@@ -19,6 +19,21 @@ func (a *app) staticHandler() http.Handler {
 	return http.StripPrefix("/static/", http.FileServerFS(noDirFS{a.static}))
 }
 
+// handleRootFavicon serves the apex favicon through the same embedded static
+// handler as /static/favicon.ico, without redirecting or requiring a session.
+func (a *app) handleRootFavicon() http.Handler {
+	static := a.staticHandler()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		request := new(http.Request)
+		*request = *r
+		requestURL := *r.URL
+		request.URL = &requestURL
+		request.URL.Path = "/static/favicon.ico"
+		request.URL.RawPath = ""
+		static.ServeHTTP(w, request)
+	})
+}
+
 // noDirFS wraps an fs.FS and hides directories: opening one returns
 // fs.ErrNotExist, so http.FileServerFS returns 404 instead of an autoindex
 // listing. Files are served unchanged.

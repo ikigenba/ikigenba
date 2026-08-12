@@ -33,6 +33,7 @@ func (a *app) register(mux muxer) {
 	mux.Handle("GET /metrics", a.handleMetrics())
 	mux.Handle("GET /metrics/fragment", a.handleMetricsFragment())
 	mux.Handle("GET /static/", a.staticHandler())
+	mux.Handle("GET /favicon.ico", a.handleRootFavicon())
 
 	// Live-grants block on the logged-in index: session-authenticated (not
 	// bearer / not auth_request / not loopback). SSE stream, the HTML fragment

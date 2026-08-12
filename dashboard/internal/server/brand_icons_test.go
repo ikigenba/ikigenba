@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"io"
 	"io/fs"
 	"net/http"
@@ -108,5 +109,26 @@ func TestAssembledStaticRoutesServeBrandIcons(t *testing.T) {
 				t.Errorf("Content-Type = %q, want %q", got, asset.contentType)
 			}
 		})
+	}
+}
+
+func TestRootFaviconMatchesAssembledStaticRoute(t *testing.T) {
+	srv := testServer(t)
+
+	// R-8MFA-HUNC
+	root := do(t, srv, http.MethodGet, "https://int.ikigenba.com/favicon.ico", nil)
+	if root.Code != http.StatusOK {
+		t.Fatalf("GET /favicon.ico status = %d, want 200", root.Code)
+	}
+	if got := root.Header().Get("Content-Type"); got != "image/x-icon" {
+		t.Errorf("GET /favicon.ico Content-Type = %q, want %q", got, "image/x-icon")
+	}
+
+	static := do(t, srv, http.MethodGet, "https://int.ikigenba.com/static/favicon.ico", nil)
+	if static.Code != http.StatusOK {
+		t.Fatalf("GET /static/favicon.ico status = %d, want 200", static.Code)
+	}
+	if !bytes.Equal(root.Body.Bytes(), static.Body.Bytes()) {
+		t.Error("GET /favicon.ico body differs from GET /static/favicon.ico")
 	}
 }
