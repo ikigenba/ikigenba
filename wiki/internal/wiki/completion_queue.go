@@ -140,7 +140,10 @@ func (s *Service) applyCompletion(ctx context.Context, item llm.Item) error {
 	if err != nil {
 		return err
 	}
-	if job.Status != JobWaiting {
+	if job.Status != JobWorking {
+		return s.queue.Ack(ctx, item.ID)
+	}
+	if envelope.Stage != job.Phase && !(item.Status == "done" && envelope.Stage == "extract" && job.Phase == "compile") {
 		return s.queue.Ack(ctx, item.ID)
 	}
 	ctx, job = s.jobContext(ctx, job)
@@ -207,6 +210,13 @@ func (s *Service) applyExtract(ctx context.Context, job Job, item llm.Item) erro
 		if page.Delete {
 			continue
 		}
+		staged, err := s.compileUnitStaged(ctx, job.ID, page.Subject.NormName)
+		if err != nil {
+			return err
+		}
+		if staged {
+			continue
+		}
 		envelope, err := json.Marshal(pipelineEnvelope{JobID: job.ID, Stage: "compile", Subject: page.Subject.NormName, Units: compileUnits(plan)})
 		if err != nil {
 			return err
@@ -239,6 +249,16 @@ func compileUnits(plan stagedIntegration) int {
 		}
 	}
 	return n
+}
+
+func (s *Service) compileUnitStaged(ctx context.Context, jobID, unit string) (bool, error) {
+	var found int
+	err := s.write.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM job_staging
+			WHERE job_id = ? AND stage = 'compile' AND unit = ?
+		)`, jobID, unit).Scan(&found)
+	return found != 0, err
 }
 
 func (s *Service) stageExtractPlan(ctx context.Context, job Job, extracted []extract.ExtractedSubject) (stagedIntegration, error) {
@@ -307,11 +327,32 @@ func (s *Service) stageExtractPlan(ctx context.Context, job Job, extracted []ext
 	if err != nil {
 		return stagedIntegration{}, err
 	}
-	_, err = s.write.ExecContext(ctx, `
+	tx, err := s.write.BeginTx(ctx, nil)
+	if err != nil {
+		return stagedIntegration{}, err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `
 		INSERT INTO job_staging (job_id, stage, unit, payload, units) VALUES (?, 'extract', '', ?, ?)
 		ON CONFLICT(job_id, stage, unit) DO UPDATE SET payload = excluded.payload, units = excluded.units`,
-		job.ID, string(raw), compileUnits(plan))
-	return plan, err
+		job.ID, string(raw), compileUnits(plan)); err != nil {
+		return stagedIntegration{}, err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE jobs SET phase = 'compile' WHERE id = ? AND status = ? AND phase = 'extract'`, job.ID, JobWorking)
+	if err != nil {
+		return stagedIntegration{}, err
+	}
+	changed, err := res.RowsAffected()
+	if err != nil {
+		return stagedIntegration{}, err
+	}
+	if changed == 0 {
+		return stagedIntegration{}, fmt.Errorf("wiki: extract phase changed before staging job %s", job.ID)
+	}
+	if err := tx.Commit(); err != nil {
+		return stagedIntegration{}, err
+	}
+	return plan, nil
 }
 
 func (s *Service) loadStagedIntegration(ctx context.Context, jobID string) (stagedIntegration, bool, error) {
@@ -347,7 +388,12 @@ func (s *Service) applyCompile(ctx context.Context, job Job, envelope pipelineEn
 	if err != nil {
 		return err
 	}
-	_, err = s.write.ExecContext(ctx, `
+	tx, err := s.write.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO job_staging (job_id, stage, unit, payload, units) VALUES (?, 'compile', ?, ?, ?)
 		ON CONFLICT(job_id, stage, unit) DO UPDATE SET payload = excluded.payload, units = excluded.units`,
 		job.ID, envelope.Subject, string(payload), envelope.Units)
@@ -355,13 +401,21 @@ func (s *Service) applyCompile(ctx context.Context, job Job, envelope pipelineEn
 		return err
 	}
 	var count int
-	if err := s.write.QueryRowContext(ctx, `SELECT COUNT(*) FROM job_staging WHERE job_id = ? AND stage = 'compile'`, job.ID).Scan(&count); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM job_staging WHERE job_id = ? AND stage = 'compile'`, job.ID).Scan(&count); err != nil {
 		return err
 	}
+	var committed stagedCommit
 	if count == envelope.Units {
-		if err := s.integrateStaged(ctx, job, plan); err != nil {
+		committed, err = s.integrateStagedTx(ctx, tx, job, plan)
+		if err != nil {
 			return err
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if err := s.afterStagedCommit(ctx, job, committed); err != nil {
+		return err
 	}
 	return s.queue.Ack(ctx, item.ID)
 }
@@ -472,18 +526,35 @@ func keyAttempt(key string) int {
 	return attempt
 }
 
+type stagedCommit struct {
+	changed bool
+	done    bool
+	pages   []Page
+}
+
 func (s *Service) integrateStaged(ctx context.Context, job Job, plan stagedIntegration) error {
 	tx, err := s.write.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	var status string
-	if err := tx.QueryRowContext(ctx, `SELECT status FROM jobs WHERE id = ?`, job.ID).Scan(&status); err != nil {
+	committed, err := s.integrateStagedTx(ctx, tx, job, plan)
+	if err != nil {
 		return err
 	}
-	if status != JobWaiting {
-		return nil
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return s.afterStagedCommit(ctx, job, committed)
+}
+
+func (s *Service) integrateStagedTx(ctx context.Context, tx *sql.Tx, job Job, plan stagedIntegration) (stagedCommit, error) {
+	var status, phase string
+	if err := tx.QueryRowContext(ctx, `SELECT status, phase FROM jobs WHERE id = ?`, job.ID).Scan(&status, &phase); err != nil {
+		return stagedCommit{}, err
+	}
+	if status != JobWorking || phase != "compile" {
+		return stagedCommit{}, nil
 	}
 	subjects := NewSubjectStore(tx)
 	resolver := NewResolver(tx)
@@ -508,14 +579,14 @@ func (s *Service) integrateStaged(ctx context.Context, job Job, plan stagedInteg
 			continue
 		}
 		if !errors.Is(resolveErr, ErrSubjectNotFound) {
-			return resolveErr
+			return stagedCommit{}, resolveErr
 		}
 		if _, allowed := newByNorm[normName]; !allowed {
-			return s.failStaleIntegration(ctx, tx, job, normName)
+			return s.failStaleIntegrationTx(ctx, tx, job, normName)
 		}
 	}
 	if err := claims.DeleteByJob(ctx, job.ID); err != nil {
-		return err
+		return stagedCommit{}, err
 	}
 	for _, staged := range plan.NewSubjects {
 		normName := staged.NormName
@@ -523,11 +594,11 @@ func (s *Service) integrateStaged(ctx context.Context, job Job, plan stagedInteg
 			continue
 		}
 		if err := subjects.Save(ctx, job.Scope, staged.subject(s.newID())); err != nil {
-			return err
+			return stagedCommit{}, err
 		}
 		subject, err := resolver.ResolveByName(ctx, job.Scope, normName)
 		if err != nil {
-			return err
+			return stagedCommit{}, err
 		}
 		resolved[normName] = subject
 	}
@@ -535,7 +606,7 @@ func (s *Service) integrateStaged(ctx context.Context, job Job, plan stagedInteg
 		subject := resolved[staged.NormName]
 		claim := Claim{ID: staged.ID, SubjectID: subject.ID, JobID: staged.JobID, Body: staged.Body}
 		if err := claims.Save(ctx, claim); err != nil {
-			return err
+			return stagedCommit{}, err
 		}
 	}
 	var pagesToEmbed []Page
@@ -543,46 +614,50 @@ func (s *Service) integrateStaged(ctx context.Context, job Job, plan stagedInteg
 		subject := resolved[planned.Subject.NormName]
 		if planned.Delete {
 			if err := pages.DeleteBySubject(ctx, subject.ID); err != nil {
-				return err
+				return stagedCommit{}, err
 			}
 			continue
 		}
 		var raw string
 		if err := tx.QueryRowContext(ctx, `SELECT payload FROM job_staging WHERE job_id = ? AND stage = 'compile' AND unit = ?`, job.ID, planned.Subject.NormName).Scan(&raw); err != nil {
-			return err
+			return stagedCommit{}, err
 		}
 		var compiled stagedCompiledPage
 		if err := json.Unmarshal([]byte(raw), &compiled); err != nil {
-			return err
+			return stagedCommit{}, err
 		}
 		page := Page{ID: subject.ID, SubjectID: subject.ID, Title: compiled.Title, Body: compiled.Body}
 		if err := pages.Upsert(ctx, page); err != nil {
-			return err
+			return stagedCommit{}, err
 		}
 		pagesToEmbed = append(pagesToEmbed, page)
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE jobs SET status = ?, finished_at = ?, error = '' WHERE id = ? AND status = ?`, JobDone, formatTime(s.now()), job.ID, JobWaiting)
+	res, err := tx.ExecContext(ctx, `UPDATE jobs SET status = ?, finished_at = ?, error = '' WHERE id = ? AND status = ? AND phase = 'compile'`, JobDone, formatTime(s.now()), job.ID, JobWorking)
 	if err != nil {
-		return err
+		return stagedCommit{}, err
 	}
 	n, err := res.RowsAffected()
 	if err != nil || n == 0 {
-		return err
+		return stagedCommit{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM job_staging WHERE job_id = ?`, job.ID); err != nil {
-		return err
+		return stagedCommit{}, err
 	}
 	if err := s.jobs.ReleaseLease(ctx, tx, job.ID); err != nil {
-		return err
+		return stagedCommit{}, err
 	}
-	if err := tx.Commit(); err != nil {
-		return err
+	return stagedCommit{changed: true, done: true, pages: pagesToEmbed}, nil
+}
+
+func (s *Service) afterStagedCommit(ctx context.Context, job Job, committed stagedCommit) error {
+	if !committed.changed {
+		return nil
 	}
 	s.notify()
-	if s.AskInvalidate != nil {
+	if committed.done && s.AskInvalidate != nil {
 		s.AskInvalidate(job.Scope)
 	}
-	for _, page := range pagesToEmbed {
+	for _, page := range committed.pages {
 		if err := s.embedAndStore(ctx, jobAttribution(job), job.Scope, page); err != nil {
 			return err
 		}
@@ -590,29 +665,25 @@ func (s *Service) integrateStaged(ctx context.Context, job Job, plan stagedInteg
 	return nil
 }
 
-func (s *Service) failStaleIntegration(ctx context.Context, tx *sql.Tx, job Job, normName string) error {
+func (s *Service) failStaleIntegrationTx(ctx context.Context, tx *sql.Tx, job Job, normName string) (stagedCommit, error) {
 	reason := fmt.Sprintf("stale staged plan: subject %q no longer resolves", normName)
-	res, err := tx.ExecContext(ctx, `UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = ?`,
-		JobFailed, formatTime(s.now()), reason, job.ID, JobWaiting)
+	res, err := tx.ExecContext(ctx, `UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = ? AND phase = 'compile'`,
+		JobFailed, formatTime(s.now()), reason, job.ID, JobWorking)
 	if err != nil {
-		return err
+		return stagedCommit{}, err
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return err
+		return stagedCommit{}, err
 	}
 	if n == 0 {
-		return nil
+		return stagedCommit{}, nil
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM job_staging WHERE job_id = ?`, job.ID); err != nil {
-		return err
+		return stagedCommit{}, err
 	}
 	if err := s.jobs.ReleaseLease(ctx, tx, job.ID); err != nil {
-		return err
+		return stagedCommit{}, err
 	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	s.notify()
-	return nil
+	return stagedCommit{changed: true}, nil
 }

@@ -54,6 +54,7 @@ type Job struct {
 	Tags          []string
 	SourceHash    string
 	Status        string
+	Phase         string
 	ReceivedAt    time.Time
 	StartedAt     time.Time
 	FinishedAt    time.Time
@@ -161,8 +162,8 @@ func (s *JobStore) Save(ctx context.Context, job Job) error {
 		job.Scope = "default"
 	}
 	_, err := s.write.ExecContext(ctx,
-		`INSERT INTO jobs (id, scope, status, owner_id, owner_email) VALUES (?, ?, ?, ?, ?)`,
-		job.ID, job.Scope, job.Status, job.OwnerID, job.OwnerEmail)
+		`INSERT INTO jobs (id, scope, status, phase, owner_id, owner_email) VALUES (?, ?, ?, ?, ?, ?)`,
+		job.ID, job.Scope, job.Status, job.Phase, job.OwnerID, job.OwnerEmail)
 	return err
 }
 
@@ -196,7 +197,7 @@ func (s *JobStore) InsertIngest(ctx context.Context, job Job) error {
 
 func (s *JobStore) Get(ctx context.Context, id string) (Job, error) {
 	return scanJob(s.read.QueryRowContext(ctx, `
-		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status,
+		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, phase,
 		       received_at, started_at, finished_at, error, correlation_id
 		FROM jobs WHERE id = ?`, id))
 }
@@ -209,7 +210,7 @@ func (s *JobStore) ClaimPending(ctx context.Context, startedAt time.Time, ttl ti
 	defer tx.Rollback()
 
 	job, err := scanJob(tx.QueryRowContext(ctx, `
-		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status,
+		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, phase,
 		       received_at, started_at, finished_at, error, correlation_id
 		FROM jobs AS candidate
 		WHERE status = 'pending'
@@ -288,7 +289,7 @@ func (s *JobStore) FinishWorking(ctx context.Context, id, status string, finishe
 
 func (s *JobStore) MarkPhase(ctx context.Context, id string) (bool, error) {
 	res, err := s.write.ExecContext(ctx,
-		`UPDATE jobs SET status = ? WHERE id = ? AND status = ?`, JobWaiting, id, JobWorking)
+		`UPDATE jobs SET phase = 'extract' WHERE id = ? AND status = ? AND phase = ''`, id, JobWorking)
 	if err != nil {
 		return false, err
 	}
@@ -303,8 +304,8 @@ func (s *JobStore) FailWaiting(ctx context.Context, id string, finishedAt time.T
 	}
 	defer tx.Rollback()
 	res, err := tx.ExecContext(ctx,
-		`UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = ?`,
-		JobFailed, formatTime(finishedAt), jobErr, id, JobWaiting)
+		`UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = ? AND phase IN ('extract', 'compile')`,
+		JobFailed, formatTime(finishedAt), jobErr, id, JobWorking)
 	if err != nil {
 		return false, err
 	}
@@ -331,13 +332,13 @@ func (s *JobStore) RequeueWorking(ctx context.Context) (int, error) {
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM ingest_lease
-		WHERE job_id IN (SELECT id FROM jobs WHERE status = ?)`, JobWorking); err != nil {
+		WHERE job_id IN (SELECT id FROM jobs WHERE status = ? AND phase = '')`, JobWorking); err != nil {
 		return 0, err
 	}
 	res, err := tx.ExecContext(ctx, `
 		UPDATE jobs
 		SET status = ?, started_at = '', finished_at = '', error = ''
-		WHERE status = ?`,
+		WHERE status = ? AND phase = ''`,
 		JobPending, JobWorking)
 	if err != nil {
 		return 0, err
@@ -360,7 +361,7 @@ func (s *JobStore) Abort(ctx context.Context, id string, finishedAt time.Time) (
 	if err := tx.QueryRowContext(ctx, `SELECT status FROM jobs WHERE id = ?`, id).Scan(&status); err != nil {
 		return AbortResult{}, err
 	}
-	if status != JobPending && status != JobWorking && status != JobWaiting {
+	if status != JobPending && status != JobWorking {
 		if err := tx.Commit(); err != nil {
 			return AbortResult{}, err
 		}
@@ -417,7 +418,7 @@ func (s *JobStore) Rerun(ctx context.Context, id string) (RerunResult, error) {
 
 	res, err := tx.ExecContext(ctx, `
 		UPDATE jobs
-		SET status = ?, started_at = '', finished_at = '', error = ''
+		SET status = ?, phase = '', started_at = '', finished_at = '', error = ''
 		WHERE id = ? AND status = ?`,
 		JobPending, id, status)
 	if err != nil {
@@ -438,7 +439,7 @@ func (s *JobStore) Rerun(ctx context.Context, id string) (RerunResult, error) {
 
 func (s *JobStore) Status(ctx context.Context, id string) (JobStatus, error) {
 	job, err := scanJob(s.read.QueryRowContext(ctx, `
-		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status,
+		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, phase,
 		       received_at, started_at, finished_at, error, correlation_id
 		FROM jobs
 		WHERE id = ?`, id))
@@ -497,7 +498,7 @@ func (s *JobStore) ListJobs(ctx context.Context, raw ...any) ([]Job, string, err
 	limit := p.ResolvedLimit()
 	args := []any{scope}
 	query := `
-		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status,
+		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, phase,
 		       received_at, started_at, finished_at, error, correlation_id
 		FROM jobs
 		WHERE scope = ?`
@@ -642,6 +643,7 @@ func scanJob(row rowScanner) (Job, error) {
 		&tagsJSON,
 		&job.SourceHash,
 		&job.Status,
+		&job.Phase,
 		&receivedAt,
 		&startedAt,
 		&finishedAt,

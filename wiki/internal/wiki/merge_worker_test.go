@@ -341,8 +341,8 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 		vectors: [][]float32{{0.25, 0.75}},
 		onEmbed: func(_ context.Context, attr llm.Attribution, inputs []string, role wikidomain.EmbedRole) error {
 			groupID = attr.GroupID
-			if groupID == "" || groupID == jobID {
-				t.Errorf("embed group id = %q, want a non-job root", groupID)
+			if groupID != jobID {
+				t.Errorf("embed group id = %q, want job id %q", groupID, jobID)
 			}
 			if role != wikidomain.EmbedDocument {
 				t.Errorf("embed role = %v, want document", role)

@@ -18,6 +18,7 @@ import (
 type queueRequest struct {
 	Key      string          `json:"key"`
 	Context  json.RawMessage `json:"context"`
+	GroupID  string          `json:"group_id"`
 	Attempt  int             `json:"attempt"`
 	Messages []llm.Message   `json:"messages"`
 }
@@ -122,8 +123,12 @@ func TestClaimHandoffUsesDerivedStableExtractKeyAndSourceText(t *testing.T) {
 
 	jobID, first := ingestAndHandoff(t, ctx, svc, q)
 	status, err := svc.JobStatus(ctx, jobID)
-	if err != nil || status.Status != wikidomain.JobWaiting {
+	if err != nil || status.Status != wikidomain.JobWorking {
 		t.Fatalf("status after handoff = %+v, %v", status, err)
+	}
+	var phase string
+	if err := conn.QueryRowContext(ctx, `SELECT phase FROM jobs WHERE id = ?`, jobID).Scan(&phase); err != nil || phase != "extract" {
+		t.Fatalf("phase after handoff = %q, %v", phase, err)
 	}
 	if first.Key != jobID+"/extract/a1" || !strings.Contains(first.Messages[0].Text, "Ada and Grace wrote compilers.") {
 		t.Fatalf("extract request = %+v", first)
@@ -149,6 +154,7 @@ func TestClaimHandoffUsesDerivedStableExtractKeyAndSourceText(t *testing.T) {
 
 func TestExtractReplayStagesOnceFansOutAndAcksAfterConsequences(t *testing.T) {
 	// R-K8BF-WVMS
+	// R-OQJZ-K337
 	ctx := context.Background()
 	conn := migratedWikiDB(t, ctx)
 	defer conn.Close()
@@ -180,19 +186,92 @@ func TestExtractReplayStagesOnceFansOutAndAcksAfterConsequences(t *testing.T) {
 	if len(compileKeys) != 2 || len(acked) != 1 {
 		t.Fatalf("compile keys/acks = %#v/%#v", compileKeys, acked)
 	}
+	if _, err := conn.ExecContext(ctx, `
+		INSERT INTO job_staging(job_id, stage, unit, payload, units)
+		VALUES (?, 'compile', 'ada', '{}', 2)`, jobID); err != nil {
+		t.Fatalf("stage applied Ada unit: %v", err)
+	}
+	before := len(requests)
 	q.add(item)
 	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("replay extract: %v", err)
+		t.Fatalf("replay extract after one unit: %v", err)
 	}
 	requests, _, _ = q.snapshot()
-	replayedKeys := map[string]bool{}
+	if got := requests[before:]; len(got) != 1 || got[0].Key != jobID+"/compile/grace/a1" {
+		t.Fatalf("ensures after one staged unit = %#v, want only Grace", got)
+	}
+	if _, err := conn.ExecContext(ctx, `
+		INSERT INTO job_staging(job_id, stage, unit, payload, units)
+		VALUES (?, 'compile', 'grace', '{}', 2)`, jobID); err != nil {
+		t.Fatalf("stage applied Grace unit: %v", err)
+	}
+	before = len(requests)
+	q.add(item)
+	if _, err := svc.ProcessInbox(ctx); err != nil {
+		t.Fatalf("replay extract after all units: %v", err)
+	}
+	requests, _, _ = q.snapshot()
+	if got := requests[before:]; len(got) != 0 {
+		t.Fatalf("ensures after all units staged = %#v, want none", got)
+	}
+}
+
+func TestCompileApplyRollsBackStagedUnitWhenTerminalWriteFails(t *testing.T) {
+	// R-OVFL-361Z
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	q := newTestQueue(t)
+	svc := queueService(conn, q)
+	jobID, extractRequest := ingestAndHandoff(t, ctx, svc, q)
+	q.add(queueItem{ID: "extract", Key: extractRequest.Key, Status: "done", Context: extractRequest.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote a compiler."]}]}`)})
+	if _, err := svc.ProcessInbox(ctx); err != nil {
+		t.Fatalf("apply extract: %v", err)
+	}
+	requests, _, _ := q.snapshot()
+	compileRequest := requests[len(requests)-1]
+	if _, err := conn.ExecContext(ctx, `
+		CREATE TRIGGER inject_done_failure
+		BEFORE UPDATE OF status ON jobs
+		WHEN NEW.status = 'done'
+		BEGIN SELECT RAISE(ABORT, 'injected terminal failure'); END`); err != nil {
+		t.Fatalf("install failure injection: %v", err)
+	}
+	q.add(queueItem{ID: "compile", Key: compileRequest.Key, Status: "done", Context: compileRequest.Context, Result: json.RawMessage(`{"title":"Ada","body":"Ada wrote a compiler."}`)})
+	if _, err := svc.ProcessInbox(ctx); err == nil || !strings.Contains(err.Error(), "injected terminal failure") {
+		t.Fatalf("compile apply error = %v, want injected terminal failure", err)
+	}
+	var staged int
+	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM job_staging WHERE job_id = ? AND stage = 'compile'`, jobID).Scan(&staged); err != nil || staged != 0 {
+		t.Fatalf("compile staging rows after rollback = %d, %v; want zero", staged, err)
+	}
+	status, err := svc.JobStatus(ctx, jobID)
+	if err != nil || status.Status != wikidomain.JobWorking {
+		t.Fatalf("job after rollback = %+v, %v; want non-terminal working", status, err)
+	}
+}
+
+func TestQueueCallsForIngestAreGroupedByReturnedJobID(t *testing.T) {
+	// R-OWNH-GXSO
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	q := newTestQueue(t)
+	svc := queueService(conn, q)
+	jobID, extractRequest := ingestAndHandoff(t, ctx, svc, q)
+	q.add(queueItem{ID: "extract", Key: extractRequest.Key, Status: "done", Context: extractRequest.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote a compiler."]}]}`)})
+	if _, err := svc.ProcessInbox(ctx); err != nil {
+		t.Fatalf("apply extract: %v", err)
+	}
+	requests, _, _ := q.snapshot()
+	var grouped []queueRequest
 	for _, request := range requests {
-		if strings.Contains(request.Key, "/compile/") {
-			replayedKeys[request.Key] = true
+		if request.GroupID == jobID {
+			grouped = append(grouped, request)
 		}
 	}
-	if len(replayedKeys) != 2 {
-		t.Fatalf("replayed ensured set = %#v", replayedKeys)
+	if len(grouped) != 2 || !strings.Contains(grouped[0].Key, "/extract/") || !strings.Contains(grouped[1].Key, "/compile/") {
+		t.Fatalf("calls grouped under returned job %q = %#v, want extract and compile", jobID, grouped)
 	}
 }
 
@@ -228,7 +307,7 @@ func TestLastCompileAtomicallyIntegratesAndRedeliveryIsStray(t *testing.T) {
 			t.Fatalf("apply compile %d: %v", i, err)
 		}
 		status, _ := svc.JobStatus(ctx, jobID)
-		want := wikidomain.JobWaiting
+		want := wikidomain.JobWorking
 		if i == len(compileRequests)-1 {
 			want = wikidomain.JobDone
 		}
@@ -267,7 +346,7 @@ func TestSemanticFailuresCorrectThenExhaustWithoutPartialWrites(t *testing.T) {
 		t.Fatalf("corrective request = %+v", corrective)
 	}
 	status, _ := svc.JobStatus(ctx, jobID)
-	if status.Status != wikidomain.JobWaiting {
+	if status.Status != wikidomain.JobWorking {
 		t.Fatalf("status after correction = %q", status.Status)
 	}
 	q.add(queueItem{ID: "bad-a2", Key: corrective.Key, Status: "done", Context: corrective.Context, Result: bad})
@@ -317,17 +396,17 @@ func TestFailedAndStrayItemsDrainWithoutPartialState(t *testing.T) {
 		t.Fatalf("failed status = %+v", status)
 	}
 	assertTableCount(t, ctx, conn, "job_staging", 0)
-	if _, err := conn.ExecContext(ctx, `INSERT INTO jobs(id, scope, status, owner_id, owner_email) VALUES ('working-job','default','working','',''), ('waiting-job','default','waiting','','')`); err != nil {
+	if _, err := conn.ExecContext(ctx, `INSERT INTO jobs(id, scope, status, phase, owner_id, owner_email) VALUES ('working-job','default','working','','',''), ('phased-job','default','working','extract','','')`); err != nil {
 		t.Fatalf("seed sweep jobs: %v", err)
 	}
 	if n, err := svc.RequeueWorking(ctx); err != nil || n != 1 {
 		t.Fatalf("RequeueWorking = %d, %v", n, err)
 	}
-	for id, want := range map[string]string{"working-job": wikidomain.JobPending, "waiting-job": wikidomain.JobWaiting} {
-		var got string
-		_ = conn.QueryRowContext(ctx, `SELECT status FROM jobs WHERE id = ?`, id).Scan(&got)
-		if got != want {
-			t.Fatalf("%s status = %q, want %q", id, got, want)
+	for id, want := range map[string][2]string{"working-job": {wikidomain.JobPending, ""}, "phased-job": {wikidomain.JobWorking, "extract"}} {
+		var status, phase string
+		_ = conn.QueryRowContext(ctx, `SELECT status, phase FROM jobs WHERE id = ?`, id).Scan(&status, &phase)
+		if got := [2]string{status, phase}; got != want {
+			t.Fatalf("%s status/phase = %q, want %q", id, got, want)
 		}
 	}
 }

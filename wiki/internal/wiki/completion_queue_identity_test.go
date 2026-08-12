@@ -19,7 +19,7 @@ func TestStagedPlansMintSharedSubjectIdentityOnlyDuringIntegration(t *testing.T)
 
 	jobs := NewJobStore(conn)
 	for _, id := range []string{"job-a", "job-b"} {
-		if err := jobs.Save(ctx, Job{ID: id, Scope: "default", Status: JobWaiting}); err != nil {
+		if err := jobs.Save(ctx, Job{ID: id, Scope: "default", Status: JobWorking, Phase: "extract"}); err != nil {
 			t.Fatalf("Save %s: %v", id, err)
 		}
 	}
@@ -92,8 +92,8 @@ func TestStagedIntegrationResolvesMergedAliasAndFailsStaleNameAtomically(t *test
 		t.Fatalf("Save survivor: %v", err)
 	}
 	jobs := NewJobStore(conn)
-	for _, id := range []string{"job-alias", "job-stale"} {
-		if err := jobs.Save(ctx, Job{ID: id, Scope: "default", Status: JobWaiting}); err != nil {
+	for id, phase := range map[string]string{"job-alias": "extract", "job-stale": "compile"} {
+		if err := jobs.Save(ctx, Job{ID: id, Scope: "default", Status: JobWorking, Phase: phase}); err != nil {
 			t.Fatalf("Save %s: %v", id, err)
 		}
 	}

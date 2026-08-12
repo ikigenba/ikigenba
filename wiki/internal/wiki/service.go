@@ -23,7 +23,6 @@ import (
 const (
 	JobPending = "pending"
 	JobWorking = "working"
-	JobWaiting = "waiting"
 	JobDone    = "done"
 	JobFailed  = "failed"
 	JobAborted = "aborted"
@@ -675,7 +674,7 @@ func jobAttribution(job Job) llm.Attribution {
 	if owner := strings.TrimSpace(job.OwnerEmail); owner != "" {
 		origin = "user:" + owner
 	}
-	return llm.Attribution{Origin: origin, GroupID: job.CorrelationID}
+	return llm.Attribution{Origin: origin, GroupID: job.ID}
 }
 
 func (s *Service) mergeForJob(ctx context.Context, jobID string) (SubjectMerge, bool, error) {

@@ -214,8 +214,8 @@ func TestProcessNextEmbedsCommittedPageAfterIngest(t *testing.T) {
 	if embeddings[0].UpdatedAt != time.Date(2026, 6, 25, 13, 0, 3, 0, time.UTC).Unix() {
 		t.Fatalf("updated_at = %d, want post-commit embedding time", embeddings[0].UpdatedAt)
 	}
-	if len(embedder.attrs) != 1 || embedder.attrs[0].GroupID != chainID || embedder.attrs[0].GroupID == "job-1" {
-		t.Fatalf("embed attribution = %+v, want stored chain %q and not job id", embedder.attrs, chainID)
+	if len(embedder.attrs) != 1 || embedder.attrs[0].GroupID != "job-1" {
+		t.Fatalf("embed attribution = %+v, want job id %q", embedder.attrs, "job-1")
 	}
 }
 
