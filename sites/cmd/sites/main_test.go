@@ -650,6 +650,66 @@ func TestWWWStaticServesTokensCSS(t *testing.T) {
 	}
 }
 
+// R-RYDN-YNR5
+func TestEveryServedDocumentCarriesBrandIconLinks(t *testing.T) {
+	entries, err := os.ReadDir(wwwRoot(t))
+	if err != nil {
+		t.Fatalf("enumerate share/www documents: %v", err)
+	}
+
+	wants := []string{
+		`<link rel="icon" sizes="any" href="static/favicon.ico">`,
+		`<link rel="icon" type="image/png" href="static/favicon-32.png">`,
+		`<link rel="apple-touch-icon" href="static/apple-touch-icon.png">`,
+	}
+	documents := 0
+	www := loadWWW(t)
+	for _, entry := range entries {
+		if entry.IsDir() || (filepath.Ext(entry.Name()) != ".html" && filepath.Ext(entry.Name()) != ".tmpl") {
+			continue
+		}
+		documents++
+		rec := httptest.NewRecorder()
+		if err := www.Render(rec, entry.Name(), landingData("sites", "1.2.3")); err != nil {
+			t.Fatalf("render %s: %v", entry.Name(), err)
+		}
+		head := htmlHead(t, rec.Body.String())
+		for _, want := range wants {
+			if !strings.Contains(head, want) {
+				t.Errorf("rendered %s head missing %q: %s", entry.Name(), want, head)
+			}
+		}
+	}
+	if documents == 0 {
+		t.Fatal("share/www contains no served documents")
+	}
+}
+
+// R-RZLK-CFHU
+func TestAssembledRouterServesBrandIconsWithPinnedContentTypes(t *testing.T) {
+	mux := composedMux(t, http.NotFoundHandler())
+	for _, asset := range []struct {
+		path        string
+		contentType string
+	}{
+		{path: "/static/favicon.ico", contentType: "image/x-icon"},
+		{path: "/static/favicon-32.png", contentType: "image/png"},
+		{path: "/static/apple-touch-icon.png", contentType: "image/png"},
+	} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, asset.path, nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s status = %d, want %d", asset.path, rec.Code, http.StatusOK)
+		}
+		if rec.Body.Len() == 0 {
+			t.Errorf("GET %s returned an empty body", asset.path)
+		}
+		if got := rec.Header().Get("Content-Type"); got != asset.contentType {
+			t.Errorf("GET %s Content-Type = %q, want %q", asset.path, got, asset.contentType)
+		}
+	}
+}
+
 func TestWWWLandingReferencesOwnStaticPath(t *testing.T) {
 	rec := renderLanding(t, "sites", "asset-test")
 	body := rec.Body.String()
@@ -1561,12 +1621,14 @@ func newLandingTestStore(t *testing.T, seeds ...landingSeed) *sitesdomain.Store 
 func composedMux(t *testing.T, mcp http.Handler) *http.ServeMux {
 	t.Helper()
 	mux := http.NewServeMux()
+	www := loadWWW(t)
+	mux.Handle("GET /static/", www.Static())
 	mux.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
-		_ = loadWWW(t).Render(w, "landing.html", landingData("sites", "1.2.3"))
+		_ = www.Render(w, "landing.html", landingData("sites", "1.2.3"))
 	}))
 	mux.Handle("POST /mcp", mcp)
 	return mux
