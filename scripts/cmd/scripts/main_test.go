@@ -584,6 +584,48 @@ func TestWWWSiteLinksOnlyAppLocalStaticAssets(t *testing.T) {
 	}
 }
 
+// R-RYDN-YNR5
+func TestEveryServedHTMLDocumentCarriesBrandIconLinks(t *testing.T) {
+	documents, err := filepath.Glob(filepath.Join(wwwRoot(t), "*.html"))
+	if err != nil {
+		t.Fatalf("enumerate served HTML documents: %v", err)
+	}
+	if len(documents) == 0 {
+		t.Fatal("share/www contains no served HTML documents")
+	}
+
+	site := loadWWW(t)
+	links := []struct {
+		href       string
+		attributes []string
+	}{
+		{href: "static/favicon.ico", attributes: []string{`rel="icon"`, `sizes="any"`}},
+		{href: "static/favicon-32.png", attributes: []string{`rel="icon"`, `type="image/png"`}},
+		{href: "static/apple-touch-icon.png", attributes: []string{`rel="apple-touch-icon"`}},
+	}
+	for _, document := range documents {
+		name := filepath.Base(document)
+		t.Run(name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			if err := site.Render(rec, name, landingData("scripts", "test")); err != nil {
+				t.Fatalf("render %s: %v", name, err)
+			}
+			if rec.Code != http.StatusOK {
+				t.Fatalf("render %s status = %d, want %d", name, rec.Code, http.StatusOK)
+			}
+			body := rec.Body.String()
+			for _, want := range links {
+				link := linkMarkupWithHref(t, body, want.href)
+				for _, attribute := range want.attributes {
+					if !strings.Contains(link, attribute) {
+						t.Fatalf("%s link for %s missing %s: %s", name, want.href, attribute, link)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestWWWSiteRendersHomeLinkToDashboardApex(t *testing.T) {
 	// R-HOME-8R2V
 	rec := renderLanding(t, "scripts", "dev")
@@ -670,6 +712,35 @@ func TestWWWStaticServesTokensAndFonts(t *testing.T) {
 			}
 			if rec.Body.Len() == 0 {
 				t.Fatal("body is empty")
+			}
+		})
+	}
+}
+
+// R-RZLK-CFHU
+func TestAssembledRouterServesBrandIconsWithPinnedContentTypes(t *testing.T) {
+	handler := newWWWTestHandler(t)
+	cases := []struct {
+		path        string
+		contentType string
+	}{
+		{path: "/static/favicon.ico", contentType: "image/x-icon"},
+		{path: "/static/favicon-32.png", contentType: "image/png"},
+		{path: "/static/apple-touch-icon.png", contentType: "image/png"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want %d\n%s", tc.path, rec.Code, http.StatusOK, rec.Body.String())
+			}
+			if got := rec.Header().Get("Content-Type"); got != tc.contentType {
+				t.Fatalf("GET %s Content-Type = %q, want %q", tc.path, got, tc.contentType)
+			}
+			if rec.Body.Len() == 0 {
+				t.Fatalf("GET %s returned an empty body", tc.path)
 			}
 		})
 	}
@@ -1474,6 +1545,39 @@ func newConsumerTestRouter(t *testing.T) *appkit.Router {
 		t.Fatal("server.New did not call Register")
 	}
 	return rt
+}
+
+func newWWWTestHandler(t *testing.T) http.Handler {
+	t.Helper()
+	var rt *appkit.Router
+	srv, err := server.New(server.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		ResourceID: "https://int.ikigenba.com/srv/scripts/",
+		AuthServer: "https://int.ikigenba.com/",
+		Version:    "test",
+		Service:    "scripts",
+		WWW:        loadWWW(t),
+		Register: func(r *appkit.Router) error {
+			rt = r
+			r.Handle("GET /{$}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if err := r.WWW().Render(w, "landing.html", landingData(r.Service(), r.Version())); err != nil {
+					return
+				}
+			}))
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("server.New with WWW: %v", err)
+	}
+	if rt == nil {
+		t.Fatal("server.New with WWW did not call Register")
+	}
+	if srv.Handler == nil {
+		t.Fatal("server.New with WWW returned a nil handler")
+	}
+	return srv.Handler
 }
 
 func newIdleFeedServer(t *testing.T) *httptest.Server {
