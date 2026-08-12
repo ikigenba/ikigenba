@@ -12,6 +12,5 @@ lines.
 
 Next phase: 167
 
-- Phase 164 ⬜ realizes D4 (apply slice) — ensure only unstaged units, one transaction, job-handle attribution
 - Phase 165 ⬜ realizes D94 — the inbox drain contract: no item may stop the drain
 - Phase 166 ⬜ realizes D95 — liveness, the five-status surface, and wedge visibility
