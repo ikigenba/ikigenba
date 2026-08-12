@@ -43,37 +43,32 @@ func TestIngestStoresCarriedCorrelationIDAndLeavesBareContextEmpty(t *testing.T)
 	}
 }
 
-func TestJobContextResumesStoredChainWhileAttributionUsesJobID(t *testing.T) {
+func TestJobContextAndAttributionUseStoredChainOrDurableJobRoot(t *testing.T) {
 	// R-XJ27-56BR
 	svc := &Service{recorder: &telemetry.Recorder{}}
 	ctx := context.Background()
 	storedID := "01KZ6V08B73Q7W1G5GR3C2E5MK"
 	storedCtx, storedJob := svc.jobContext(ctx, Job{ID: "job-stored", CorrelationID: storedID})
-	if got := jobAttribution(storedJob).GroupID; got != storedJob.ID {
-		t.Fatalf("stored job attribution group = %q, want job id %q", got, storedJob.ID)
+	if got := jobAttribution(storedJob).GroupID; got != storedID {
+		t.Fatalf("stored job attribution group = %q, want stored chain %q (not job id %q)", got, storedID, storedJob.ID)
 	}
 	if got := correlation.FromContext(storedCtx); got != storedID {
 		t.Fatalf("stored job context correlation = %q, want %q", got, storedID)
 	}
 
-	firstCtx, firstJob := svc.jobContext(ctx, Job{ID: "job-empty-1"})
-	secondCtx, secondJob := svc.jobContext(ctx, Job{ID: "job-empty-2"})
-	firstID := correlation.FromContext(firstCtx)
-	secondID := correlation.FromContext(secondCtx)
-	if !correlation.Valid(firstID) || len(firstID) != 26 || firstID == "" {
-		t.Fatalf("first empty job correlation = %q, want fresh valid 26-character ULID", firstID)
-	}
-	if !correlation.Valid(secondID) || len(secondID) != 26 || secondID == firstID {
-		t.Fatalf("second empty job correlation = %q, want a distinct fresh valid ULID", secondID)
+	firstCtx, firstJob := svc.jobContext(ctx, Job{ID: "01KZ6V08B73Q7W1G5GR3C2E5MM"})
+	secondCtx, secondJob := svc.jobContext(ctx, Job{ID: "01KZ6V08B73Q7W1G5GR3C2E5MN"})
+	if firstJob.CorrelationID != firstJob.ID || secondJob.CorrelationID != secondJob.ID {
+		t.Fatalf("empty jobs resolved correlations = %q, %q; want durable roots %q, %q", firstJob.CorrelationID, secondJob.CorrelationID, firstJob.ID, secondJob.ID)
 	}
 	if got := jobAttribution(firstJob).GroupID; got != firstJob.ID {
-		t.Fatalf("first job attribution group = %q, want job id %q", got, firstJob.ID)
+		t.Fatalf("first job attribution group = %q, want durable job root %q", got, firstJob.ID)
 	}
 	if got := jobAttribution(secondJob).GroupID; got != secondJob.ID {
-		t.Fatalf("second job attribution group = %q, want job id %q", got, secondJob.ID)
+		t.Fatalf("second job attribution group = %q, want durable job root %q", got, secondJob.ID)
 	}
-	if correlation.FromContext(firstCtx) != firstID || correlation.FromContext(secondCtx) != secondID {
-		t.Fatalf("derived contexts = %q, %q; want job roots %q, %q", correlation.FromContext(firstCtx), correlation.FromContext(secondCtx), firstID, secondID)
+	if correlation.FromContext(firstCtx) != firstJob.ID || correlation.FromContext(secondCtx) != secondJob.ID {
+		t.Fatalf("derived contexts = %q, %q; want durable job roots %q, %q", correlation.FromContext(firstCtx), correlation.FromContext(secondCtx), firstJob.ID, secondJob.ID)
 	}
 }
 

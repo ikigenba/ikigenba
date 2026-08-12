@@ -333,30 +333,6 @@ func TestCompileApplyRollsBackStagedUnitWhenTerminalWriteFails(t *testing.T) {
 	}
 }
 
-func TestQueueCallsForIngestAreGroupedByReturnedJobID(t *testing.T) {
-	// R-OWNH-GXSO
-	ctx := context.Background()
-	conn := migratedWikiDB(t, ctx)
-	defer conn.Close()
-	q := newTestQueue(t)
-	svc := queueService(conn, q)
-	jobID, extractRequest := ingestAndHandoff(t, ctx, svc, q)
-	q.add(queueItem{ID: "extract", Key: extractRequest.Key, Status: "done", Context: extractRequest.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote a compiler."]}]}`)})
-	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
-		t.Fatalf("apply extract: %v", drain.Errs)
-	}
-	requests, _, _ := q.snapshot()
-	var grouped []queueRequest
-	for _, request := range requests {
-		if request.GroupID == jobID {
-			grouped = append(grouped, request)
-		}
-	}
-	if len(grouped) != 2 || !strings.Contains(grouped[0].Key, "/extract/") || !strings.Contains(grouped[1].Key, "/compile/") {
-		t.Fatalf("calls grouped under returned job %q = %#v, want extract and compile", jobID, grouped)
-	}
-}
-
 func TestLastCompileAtomicallyIntegratesAndRedeliveryIsStray(t *testing.T) {
 	// R-K9JC-ANDH
 	// R-M8RN-87WV

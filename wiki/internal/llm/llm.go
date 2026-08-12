@@ -173,11 +173,15 @@ func (c *Client) ensure(ctx context.Context, r Request, consumer string) (Item, 
 }
 
 func (c *Client) Get(ctx context.Context, id string) (Item, error) {
+	return c.get(ctx, id, Consumer)
+}
+
+func (c *Client) get(ctx context.Context, id, consumer string) (Item, error) {
 	if err := c.valid("Get"); err != nil {
 		return Item{}, err
 	}
 	var out wireItem
-	err := c.doJSON(ctx, http.MethodGet, "/completions/"+url.PathEscape(id), nil, &out, http.StatusOK)
+	err := c.doJSON(ctx, http.MethodGet, "/completions/"+url.PathEscape(id)+"?consumer="+url.QueryEscape(consumer), nil, &out, http.StatusOK)
 	if errors.Is(err, errNotFound) {
 		return Item{}, ErrGone
 	}
@@ -225,10 +229,14 @@ func (c *Client) Inbox(ctx context.Context) ([]Item, error) {
 }
 
 func (c *Client) Ack(ctx context.Context, id string) error {
+	return c.ack(ctx, id, Consumer)
+}
+
+func (c *Client) ack(ctx context.Context, id, consumer string) error {
 	if err := c.valid("Ack"); err != nil {
 		return err
 	}
-	err := c.doJSON(ctx, http.MethodDelete, "/completions/"+url.PathEscape(id), nil, nil, http.StatusOK, http.StatusNoContent)
+	err := c.doJSON(ctx, http.MethodDelete, "/completions/"+url.PathEscape(id)+"?consumer="+url.QueryEscape(consumer), nil, nil, http.StatusOK, http.StatusNoContent)
 	if errors.Is(err, errNotFound) {
 		return nil
 	}
@@ -255,7 +263,7 @@ func (c *Client) Do(ctx context.Context, r Request) (Item, error) {
 		case <-timer.C:
 		}
 		id := item.ID
-		item, err = c.Get(ctx, id)
+		item, err = c.get(ctx, id, ConsumerAsk)
 		if err != nil {
 			if errors.Is(err, ErrGone) {
 				return Item{}, fmt.Errorf("llm Do: %w while polling %s", ErrGone, id)
@@ -264,10 +272,10 @@ func (c *Client) Do(ctx context.Context, r Request) (Item, error) {
 		}
 	}
 	if item.Status == "failed" {
-		_ = c.Ack(ctx, item.ID)
+		_ = c.ack(ctx, item.ID, ConsumerAsk)
 		return Item{}, fmt.Errorf("llm: completion %s failed: %s", item.ID, item.Error)
 	}
-	if err := c.Ack(ctx, item.ID); err != nil {
+	if err := c.ack(ctx, item.ID, ConsumerAsk); err != nil {
 		return Item{}, fmt.Errorf("llm: ack completion %s: %w", item.ID, err)
 	}
 	return item, nil

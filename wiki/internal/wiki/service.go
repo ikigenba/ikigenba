@@ -194,9 +194,9 @@ func (s *Service) MergeSubjects(ctx context.Context, scope, fromSubjectID, toSub
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO jobs (
-			id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, received_at
-		) VALUES (?, ?, ?, ?, '', 'subject merge', '[]', ?, ?, ?)`,
-		jobID, scope, ownerID, ownerEmail, hashText(""), JobPending, formatTime(receivedAt))
+			id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, received_at, correlation_id
+		) VALUES (?, ?, ?, ?, '', 'subject merge', '[]', ?, ?, ?, ?)`,
+		jobID, scope, ownerID, ownerEmail, hashText(""), JobPending, formatTime(receivedAt), correlation.FromContext(ctx))
 	if err != nil {
 		return "", err
 	}
@@ -397,11 +397,10 @@ func (s *Service) processClaimed(ctx context.Context, job Job) error {
 }
 
 func (s *Service) jobContext(ctx context.Context, job Job) (context.Context, Job) {
-	if job.CorrelationID != "" {
-		return correlation.WithContext(ctx, job.CorrelationID), job
+	if job.CorrelationID == "" {
+		job.CorrelationID = job.ID
 	}
-	ctx, job.CorrelationID = s.recorder.StartRoot(ctx, "wiki.job", map[string]any{"job_id": job.ID})
-	return ctx, job
+	return correlation.WithContext(ctx, job.CorrelationID), job
 }
 
 func (s *Service) integrate(ctx context.Context, job Job) error {
@@ -719,7 +718,7 @@ func jobAttribution(job Job) llm.Attribution {
 	if owner := strings.TrimSpace(job.OwnerEmail); owner != "" {
 		origin = "user:" + owner
 	}
-	return llm.Attribution{Origin: origin, GroupID: job.ID}
+	return llm.Attribution{Origin: origin, GroupID: job.CorrelationID}
 }
 
 func (s *Service) mergeForJob(ctx context.Context, jobID string) (SubjectMerge, bool, error) {

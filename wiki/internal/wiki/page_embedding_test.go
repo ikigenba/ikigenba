@@ -22,7 +22,6 @@ import (
 
 func TestEmbedAndStoreUsesDocumentRoleAndUpdatesStoreAndCache(t *testing.T) {
 	// R-6XNX-FNXO
-	// R-6YVT-TFOD
 	// R-703Q-77F2
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
@@ -82,7 +81,6 @@ func TestEmbedAndStoreUsesDocumentRoleAndUpdatesStoreAndCache(t *testing.T) {
 }
 
 func TestEmbedAndStoreOverwritesExistingPageVector(t *testing.T) {
-	// R-6YVT-TFOD
 	// R-703Q-77F2
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
@@ -148,6 +146,7 @@ func TestEmbedAndStoreOverwritesExistingPageVector(t *testing.T) {
 }
 
 func TestProcessNextEmbedsCommittedPageAfterIngest(t *testing.T) {
+	// R-6YVT-TFOD
 	// R-71BM-KZ5R
 	// R-72JI-YQWG
 	// R-73RF-CIN5
@@ -214,8 +213,8 @@ func TestProcessNextEmbedsCommittedPageAfterIngest(t *testing.T) {
 	if embeddings[0].UpdatedAt != time.Date(2026, 6, 25, 13, 0, 3, 0, time.UTC).Unix() {
 		t.Fatalf("updated_at = %d, want post-commit embedding time", embeddings[0].UpdatedAt)
 	}
-	if len(embedder.attrs) != 1 || embedder.attrs[0].GroupID != "job-1" {
-		t.Fatalf("embed attribution = %+v, want job id %q", embedder.attrs, "job-1")
+	if len(embedder.attrs) != 1 || embedder.attrs[0].GroupID != chainID {
+		t.Fatalf("embed attribution = %+v, want stored chain %q (not job id %q)", embedder.attrs, chainID, "job-1")
 	}
 }
 

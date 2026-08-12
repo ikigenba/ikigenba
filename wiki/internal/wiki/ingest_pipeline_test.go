@@ -80,13 +80,16 @@ func TestWorkerThreadsStoredChainThroughExtractCompileAndEmbed(t *testing.T) {
 		t.Fatalf("prompts calls = %d, want extract, compile, and embed for two jobs", len(calls))
 	}
 	for i, jobID := range jobs {
+		if jobID == chains[i] {
+			t.Fatalf("job id %q unexpectedly equals stored chain %q", jobID, chains[i])
+		}
 		origin := "service:wiki"
 		if owners[i] != "" {
 			origin = "user:" + owners[i]
 		}
 		for _, call := range calls[i*3 : i*3+3] {
-			if call.Origin != origin || call.GroupID != jobID {
-				t.Fatalf("job %q call = %+v, want origin %q and job group %q", jobID, call, origin, jobID)
+			if call.Origin != origin || call.GroupID != chains[i] {
+				t.Fatalf("job %q call = %+v, want origin %q and stored chain group %q", jobID, call, origin, chains[i])
 			}
 		}
 	}

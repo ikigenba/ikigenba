@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"eventplane/correlation"
+
 	"wiki/internal/llm"
 	"wiki/internal/page"
 	wikidomain "wiki/internal/wiki"
@@ -335,14 +337,15 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 		t.Fatalf("seed loser embedding: %v", err)
 	}
 
+	const chainID = "01KZ6V08B73Q7W1G5GR3C2E5MK"
 	var jobID string
 	var groupID string
 	embedder := &mergeRecordingPageEmbedder{
 		vectors: [][]float32{{0.25, 0.75}},
 		onEmbed: func(_ context.Context, attr llm.Attribution, inputs []string, role wikidomain.EmbedRole) error {
 			groupID = attr.GroupID
-			if groupID != jobID {
-				t.Errorf("embed group id = %q, want job id %q", groupID, jobID)
+			if groupID != chainID {
+				t.Errorf("embed group id = %q, want stored chain %q (not job id %q)", groupID, chainID, jobID)
 			}
 			if role != wikidomain.EmbedDocument {
 				t.Errorf("embed role = %v, want document", role)
@@ -386,9 +389,12 @@ func TestMergeWorkerReembedsWinnerAfterCommitAndEvictsLoserVector(t *testing.T) 
 		wikidomain.WithVectorCacheRemover(cache.Remove),
 	)
 	var err error
-	jobID, err = svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
+	jobID, err = svc.MergeSubjects(correlation.WithContext(ctx, chainID), "default", "subject-loser", "subject-winner")
 	if err != nil {
 		t.Fatalf("MergeSubjects: %v", err)
+	}
+	if jobID == chainID {
+		t.Fatalf("merge job id %q unexpectedly equals stored chain", jobID)
 	}
 	processed, err := svc.ProcessNext(ctx)
 	if err != nil {
