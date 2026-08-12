@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"wiki/internal/extract"
@@ -39,6 +41,7 @@ type Outcome struct {
 type Drain struct {
 	Seen, Applied, Discarded, JobsFailed, Deferred int
 	Errs                                           []error
+	NoProgress                                     bool
 }
 
 const maxConsecutiveDeferrals = 3
@@ -119,7 +122,7 @@ func (s *Service) handoffExtract(ctx context.Context, job Job) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.jobs.MarkPhase(ctx, job.ID)
+	_, err = s.jobs.MarkPhase(ctx, job.ID, s.now().Add(jobProgressDeadline))
 	return err
 }
 
@@ -135,11 +138,11 @@ func (s *Service) contextForScope(ctx context.Context, scopeName string) (contex
 
 // ProcessInbox classifies every visible terminal completion unless ctx is
 // canceled. Individual completion failures never stop the drain.
-func (s *Service) ProcessInbox(ctx context.Context) Drain {
-	var drain Drain
+func (s *Service) ProcessInbox(ctx context.Context) (drain Drain) {
 	if s == nil || s.queue == nil {
 		return drain
 	}
+	defer func() { s.finalizeDrain(ctx, &drain) }()
 	items, err := s.queue.Inbox(ctx)
 	if err != nil {
 		drain.Errs = append(drain.Errs, err)
@@ -153,6 +156,7 @@ func (s *Service) ProcessInbox(ctx context.Context) Drain {
 			continue
 		}
 		drain.Seen++
+		started := time.Now()
 		outcome := s.applyCompletion(ctx, item)
 		if outcome.Class == Deferred {
 			outcome = s.boundDeferral(ctx, item, outcome)
@@ -167,8 +171,30 @@ func (s *Service) ProcessInbox(ctx context.Context) Drain {
 			}
 		}
 		drain.record(outcome)
+		var envelope pipelineEnvelope
+		_ = json.Unmarshal(item.Context, &envelope)
+		if s.logger != nil {
+			s.logger.LogAttrs(ctx, slog.LevelInfo, "wiki completion decision", slog.String("job_id", envelope.JobID), slog.String("stage", envelope.Stage), slog.String("unit", envelope.Subject), slog.String("outcome", string(outcome.Class)), slog.String("reason", outcome.Reason), slog.Duration("duration", time.Since(started)))
+		}
 	}
 	return drain
+}
+
+func (s *Service) finalizeDrain(ctx context.Context, drain *Drain) {
+	s.mu.Lock()
+	s.deferredItems = drain.Deferred
+	if drain.Seen > 0 && drain.Applied == 0 && drain.Discarded == 0 && drain.JobsFailed == 0 {
+		s.noProgressStreak++
+		drain.NoProgress = true
+		drain.Errs = append(drain.Errs, fmt.Errorf("wiki: drain saw %d items but made no progress", drain.Seen))
+	} else {
+		s.noProgressStreak = 0
+	}
+	streak := s.noProgressStreak
+	s.mu.Unlock()
+	if s.logger != nil {
+		s.logger.LogAttrs(ctx, slog.LevelInfo, "wiki completion drain", slog.Int("seen", drain.Seen), slog.Int("applied", drain.Applied), slog.Int("discarded", drain.Discarded), slog.Int("jobs_failed", drain.JobsFailed), slog.Int("deferred", drain.Deferred), slog.Int("no_progress_streak", streak))
+	}
 }
 
 func (d *Drain) record(outcome Outcome) {
@@ -476,7 +502,7 @@ func (s *Service) stageExtractPlan(ctx context.Context, job Job, extracted []ext
 		job.ID, string(raw), compileUnits(plan)); err != nil {
 		return stagedIntegration{}, err
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE jobs SET phase = 'compile' WHERE id = ? AND status = ? AND phase = 'extract'`, job.ID, JobWorking)
+	res, err := tx.ExecContext(ctx, `UPDATE jobs SET phase = 'compile', deadline_at = ? WHERE id = ? AND status = ? AND phase = 'extract'`, formatTime(s.now().Add(jobProgressDeadline)), job.ID, JobWorking)
 	if err != nil {
 		return stagedIntegration{}, err
 	}
@@ -541,6 +567,10 @@ func (s *Service) applyCompile(ctx context.Context, job Job, envelope pipelineEn
 	if err != nil {
 		_ = tx.Rollback()
 		return s.applyError(ctx, job, "stage_compile", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE jobs SET deadline_at = ? WHERE id = ? AND status = ?`, formatTime(s.now().Add(jobProgressDeadline)), job.ID, JobWorking); err != nil {
+		_ = tx.Rollback()
+		return s.applyError(ctx, job, "extend_deadline", err)
 	}
 	var count int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM job_staging WHERE job_id = ? AND stage = 'compile'`, job.ID).Scan(&count); err != nil {

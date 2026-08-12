@@ -25,6 +25,10 @@ type inboxProcessor interface {
 	ProcessInbox(context.Context) wikidomain.Drain
 }
 
+type expiredReaper interface {
+	ReapExpired(context.Context, time.Time) (int, error)
+}
+
 type embeddingCatchUpService interface {
 	DrainEmbeddingCatchUp(context.Context) (int, error)
 }
@@ -84,6 +88,11 @@ func runInbox(ctx context.Context, svc inboxProcessor) error {
 	defer ticker.Stop()
 	for {
 		svc.ProcessInbox(ctx)
+		if reaper, ok := svc.(expiredReaper); ok {
+			if _, err := reaper.ReapExpired(ctx, time.Now()); err != nil && ctx.Err() == nil {
+				return err
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return nil

@@ -58,19 +58,22 @@ type Job struct {
 	ReceivedAt    time.Time
 	StartedAt     time.Time
 	FinishedAt    time.Time
+	DeadlineAt    time.Time
 	Error         string
 	CorrelationID string
 }
 
 // JobStatus is the inspectable state of an ingest job.
 type JobStatus struct {
-	ID         string
-	Status     string
-	ReceivedAt time.Time
-	StartedAt  *time.Time
-	FinishedAt *time.Time
-	Error      string
-	Subjects   []string
+	ID            string
+	Status        string
+	ReceivedAt    time.Time
+	StartedAt     *time.Time
+	FinishedAt    *time.Time
+	Error         string
+	Subjects      []string
+	UnitsComplete int
+	UnitsTotal    int
 }
 
 type RerunResult struct {
@@ -198,7 +201,7 @@ func (s *JobStore) InsertIngest(ctx context.Context, job Job) error {
 func (s *JobStore) Get(ctx context.Context, id string) (Job, error) {
 	return scanJob(s.read.QueryRowContext(ctx, `
 		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, phase,
-		       received_at, started_at, finished_at, error, correlation_id
+		       received_at, started_at, finished_at, deadline_at, error, correlation_id
 		FROM jobs WHERE id = ?`, id))
 }
 
@@ -208,10 +211,13 @@ func (s *JobStore) ClaimPending(ctx context.Context, startedAt time.Time, ttl ti
 		return Job{}, false, err
 	}
 	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ingest_lease WHERE expires_at <= ?`, formatTime(startedAt)); err != nil {
+		return Job{}, false, err
+	}
 
 	job, err := scanJob(tx.QueryRowContext(ctx, `
 		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, phase,
-		       received_at, started_at, finished_at, error, correlation_id
+		       received_at, started_at, finished_at, deadline_at, error, correlation_id
 		FROM jobs AS candidate
 		WHERE status = 'pending'
 		  AND NOT EXISTS (SELECT 1 FROM ingest_lease WHERE scope = candidate.scope)
@@ -287,14 +293,59 @@ func (s *JobStore) FinishWorking(ctx context.Context, id, status string, finishe
 	return n > 0, tx.Commit()
 }
 
-func (s *JobStore) MarkPhase(ctx context.Context, id string) (bool, error) {
+func (s *JobStore) MarkPhase(ctx context.Context, id string, deadline ...time.Time) (bool, error) {
+	deadlineAt := time.Time{}
+	if len(deadline) > 0 {
+		deadlineAt = deadline[0]
+	}
 	res, err := s.write.ExecContext(ctx,
-		`UPDATE jobs SET phase = 'extract' WHERE id = ? AND status = ? AND phase = ''`, id, JobWorking)
+		`UPDATE jobs SET phase = 'extract', deadline_at = ? WHERE id = ? AND status = ? AND phase = ''`, formatTime(deadlineAt), id, JobWorking)
 	if err != nil {
 		return false, err
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
+}
+
+func (s *JobStore) ExtendDeadline(ctx context.Context, id string, deadlineAt time.Time) error {
+	_, err := s.write.ExecContext(ctx, `UPDATE jobs SET deadline_at = ? WHERE id = ? AND status = ?`, formatTime(deadlineAt), id, JobWorking)
+	return err
+}
+
+func (s *JobStore) ReapExpired(ctx context.Context, now time.Time, lifetime time.Duration, message string) (int, error) {
+	tx, err := s.write.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM jobs WHERE status = ? AND phase != '' AND ((deadline_at != '' AND deadline_at <= ?) OR received_at <= ?)`, JobWorking, formatTime(now), formatTime(now.Add(-lifetime)))
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if _, err := tx.ExecContext(ctx, `UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = ?`, JobFailed, formatTime(now), message, id, JobWorking); err != nil {
+			return 0, err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM job_staging WHERE job_id = ?`, id); err != nil {
+			return 0, err
+		}
+		if err := s.ReleaseLease(ctx, tx, id); err != nil {
+			return 0, err
+		}
+	}
+	return len(ids), tx.Commit()
 }
 
 func (s *JobStore) FailWaiting(ctx context.Context, id string, finishedAt time.Time, jobErr string) (bool, error) {
@@ -440,7 +491,7 @@ func (s *JobStore) Rerun(ctx context.Context, id string) (RerunResult, error) {
 func (s *JobStore) Status(ctx context.Context, id string) (JobStatus, error) {
 	job, err := scanJob(s.read.QueryRowContext(ctx, `
 		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, phase,
-		       received_at, started_at, finished_at, error, correlation_id
+		       received_at, started_at, finished_at, deadline_at, error, correlation_id
 		FROM jobs
 		WHERE id = ?`, id))
 	if err != nil {
@@ -465,15 +516,24 @@ func (s *JobStore) Status(ctx context.Context, id string) (JobStatus, error) {
 	if err := rows.Err(); err != nil {
 		return JobStatus{}, err
 	}
+	var unitsComplete, unitsTotal int
+	if err := s.read.QueryRowContext(ctx, `
+		SELECT
+			(SELECT COUNT(*) FROM job_staging WHERE job_id = ? AND stage = 'compile'),
+			COALESCE((SELECT units FROM job_staging WHERE job_id = ? AND stage = 'extract' AND unit = ''), 0)`, id, id).Scan(&unitsComplete, &unitsTotal); err != nil {
+		return JobStatus{}, err
+	}
 
 	return JobStatus{
-		ID:         job.ID,
-		Status:     job.Status,
-		ReceivedAt: job.ReceivedAt,
-		StartedAt:  timePtr(job.StartedAt),
-		FinishedAt: timePtr(job.FinishedAt),
-		Error:      job.Error,
-		Subjects:   subjects,
+		ID:            job.ID,
+		Status:        job.Status,
+		ReceivedAt:    job.ReceivedAt,
+		StartedAt:     timePtr(job.StartedAt),
+		FinishedAt:    timePtr(job.FinishedAt),
+		Error:         job.Error,
+		Subjects:      subjects,
+		UnitsComplete: unitsComplete,
+		UnitsTotal:    unitsTotal,
 	}, nil
 }
 
@@ -499,7 +559,7 @@ func (s *JobStore) ListJobs(ctx context.Context, raw ...any) ([]Job, string, err
 	args := []any{scope}
 	query := `
 		SELECT id, scope, owner_id, owner_email, source_text, title, tags, source_hash, status, phase,
-		       received_at, started_at, finished_at, error, correlation_id
+		       received_at, started_at, finished_at, deadline_at, error, correlation_id
 		FROM jobs
 		WHERE scope = ?`
 	query, args = appendJobFilter(query, args, f)
@@ -632,7 +692,7 @@ type sqlStore interface {
 
 func scanJob(row rowScanner) (Job, error) {
 	var job Job
-	var tagsJSON, receivedAt, startedAt, finishedAt string
+	var tagsJSON, receivedAt, startedAt, finishedAt, deadlineAt string
 	if err := row.Scan(
 		&job.ID,
 		&job.Scope,
@@ -647,6 +707,7 @@ func scanJob(row rowScanner) (Job, error) {
 		&receivedAt,
 		&startedAt,
 		&finishedAt,
+		&deadlineAt,
 		&job.Error,
 		&job.CorrelationID,
 	); err != nil {
@@ -660,6 +721,7 @@ func scanJob(row rowScanner) (Job, error) {
 	job.ReceivedAt = parseStoredTime(receivedAt)
 	job.StartedAt = parseStoredTime(startedAt)
 	job.FinishedAt = parseStoredTime(finishedAt)
+	job.DeadlineAt = parseStoredTime(deadlineAt)
 	return job, nil
 }
 

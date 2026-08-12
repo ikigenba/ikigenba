@@ -52,6 +52,12 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			{Key: "ASK_CACHE_CAP", Value: strconv.Itoa(wiki.AskCacheCapDefault)},
 		},
 		Migrations: db.FS,
+		Health: func(ctx context.Context) (map[string]any, error) {
+			if svc == nil {
+				return nil, fmt.Errorf("wiki: Health reporter ran before Handlers built the Service")
+			}
+			return svc.Health(ctx)
+		},
 		Config: func(getenv func(string) string) (any, error) {
 			return loadConfig(getenv)
 		},
@@ -89,6 +95,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			compiler := buildCompiler(cfg, llmClient)
 			serviceOptions := []wiki.ServiceOption{
 				wiki.WithTelemetryRecorder(rt.Recorder()),
+				wiki.WithLogger(rt.Logger()),
 				wiki.WithPageEmbedder(cfg.EmbedSite.Model, pageEmbedder),
 				wiki.WithVectorCacheUpdater(func(scope, subjectID, title string, vec []float32) {
 					vectorCache.Upsert(retrieve.VectorEntry{Scope: scope, SubjectID: subjectID, Title: title, Vec: vec})
@@ -264,13 +271,15 @@ type publicPage struct {
 }
 
 type publicJobStatus struct {
-	ID         string
-	Status     string
-	ReceivedAt time.Time
-	StartedAt  *time.Time
-	FinishedAt *time.Time
-	Error      string
-	Subjects   []string
+	ID            string
+	Status        string
+	ReceivedAt    time.Time
+	StartedAt     *time.Time
+	FinishedAt    *time.Time
+	Error         string
+	Subjects      []string
+	UnitsComplete int
+	UnitsTotal    int
 }
 
 type jobListService struct {
@@ -433,13 +442,15 @@ func (s publicStatusService) JobStatus(ctx context.Context, jobID string) (publi
 		}
 	}
 	return publicJobStatus{
-		ID:         status.ID,
-		Status:     status.Status,
-		ReceivedAt: status.ReceivedAt,
-		StartedAt:  status.StartedAt,
-		FinishedAt: status.FinishedAt,
-		Error:      status.Error,
-		Subjects:   publicSubjects,
+		ID:            status.ID,
+		Status:        status.Status,
+		ReceivedAt:    status.ReceivedAt,
+		StartedAt:     status.StartedAt,
+		FinishedAt:    status.FinishedAt,
+		Error:         status.Error,
+		Subjects:      publicSubjects,
+		UnitsComplete: status.UnitsComplete,
+		UnitsTotal:    status.UnitsTotal,
 	}, nil
 }
 

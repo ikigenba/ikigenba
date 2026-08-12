@@ -1,9 +1,11 @@
 package wiki_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +16,61 @@ import (
 	"wiki/internal/llm"
 	wikidomain "wiki/internal/wiki"
 )
+
+func TestEveryDecisionIsLoggedAndDeferredOnlyDrainReportsNoProgress(t *testing.T) {
+	// R-PG5V-L9NS
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	q := newTestQueue(t)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	svc := wikidomain.NewService(conn, nil, nil, time.Now, wikidomain.WithCompletionQueue(q.client(), llm.CallSite{}, llm.CallSite{}), wikidomain.WithLogger(logger))
+	q.add(queueItem{ID: "deferred-decision", Status: "done", Context: json.RawMessage(`{"job_id":"missing","stage":"extract"}`), Result: json.RawMessage(`{}`)})
+	q.failDeletes(2)
+	first := svc.ProcessInbox(ctx)
+	drain := svc.ProcessInbox(ctx)
+	if !first.NoProgress || !drain.NoProgress || drain.Deferred != 1 || len(drain.Errs) == 0 {
+		t.Fatalf("drain = %+v, want explicit no progress", drain)
+	}
+	text := logs.String()
+	for _, field := range []string{`"job_id":"missing"`, `"stage":"extract"`, `"outcome":"deferred"`, `"reason":"ack_unreachable"`, `"duration"`, `"seen":1`, `"no_progress_streak":2`} {
+		if !strings.Contains(text, field) {
+			t.Fatalf("logs missing %s: %s", field, text)
+		}
+	}
+}
+
+func TestLandingUnitExtendsDeadlineButAbsoluteLifetimeStillReaps(t *testing.T) {
+	// R-PBAA-26P0
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	q := newTestQueue(t)
+	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	svc := wikidomain.NewService(conn, nil, nil, func() time.Time { return now }, wikidomain.WithCompletionQueue(q.client(), llm.CallSite{}, llm.CallSite{}))
+	jobID, request := ingestAndHandoff(t, ctx, svc, q)
+	var firstDeadline string
+	if err := conn.QueryRowContext(ctx, `SELECT deadline_at FROM jobs WHERE id = ?`, jobID).Scan(&firstDeadline); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(10 * time.Minute)
+	q.add(queueItem{ID: "landed-extract", Status: "done", Context: request.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote code."]}]}`)})
+	if drain := svc.ProcessInbox(ctx); drain.Applied != 1 {
+		t.Fatalf("land extract = %+v", drain)
+	}
+	var extended string
+	if err := conn.QueryRowContext(ctx, `SELECT deadline_at FROM jobs WHERE id = ?`, jobID).Scan(&extended); err != nil {
+		t.Fatal(err)
+	}
+	if extended <= firstDeadline {
+		t.Fatalf("deadline did not extend: before %q after %q", firstDeadline, extended)
+	}
+	now = now.Add(24*time.Hour - 10*time.Minute + time.Second)
+	if n, err := svc.ReapExpired(ctx, now); err != nil || n != 1 {
+		t.Fatalf("absolute lifetime reap = %d/%v", n, err)
+	}
+}
 
 type queueRequest struct {
 	Key      string          `json:"key"`

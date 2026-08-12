@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -27,7 +28,10 @@ const (
 	JobFailed  = "failed"
 	JobAborted = "aborted"
 
-	ingestLeaseTTL = 30 * time.Minute
+	ingestLeaseTTL            = 30 * time.Minute
+	jobProgressDeadline       = time.Hour
+	jobAbsoluteLifetime       = 24 * time.Hour
+	noProgressHealthThreshold = 2
 )
 
 type AbortResult struct {
@@ -74,6 +78,9 @@ type Service struct {
 	mu                sync.Mutex
 	cancels           map[string]*jobCancel
 	deferrals         map[string]int
+	noProgressStreak  int
+	deferredItems     int
+	logger            *slog.Logger
 }
 
 // WithCompletionQueue enables the durable handoff/apply ingest pipeline.
@@ -114,6 +121,7 @@ func NewService(db any, extractor Extractor, compiler Compiler, now func() time.
 		wake:       make(chan struct{}, 1),
 		cancels:    map[string]*jobCancel{},
 		deferrals:  map[string]int{},
+		logger:     slog.Default(),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -255,6 +263,41 @@ func (s *Service) RequeueWorking(ctx context.Context) (int, error) {
 		s.notify()
 	}
 	return n, nil
+}
+
+func (s *Service) ReapExpired(ctx context.Context, now time.Time) (int, error) {
+	if s == nil {
+		return 0, fmt.Errorf("wiki: nil service")
+	}
+	n, err := s.jobs.ReapExpired(ctx, now, jobAbsoluteLifetime, "completion never arrived before the job deadline")
+	if n > 0 {
+		s.notify()
+	}
+	return n, err
+}
+
+func (s *Service) Health(ctx context.Context) (map[string]any, error) {
+	if s == nil {
+		return nil, fmt.Errorf("wiki: nil service")
+	}
+	var running int
+	var oldest string
+	if err := s.write.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MIN(started_at), '') FROM jobs WHERE status = ?`, JobWorking).Scan(&running, &oldest); err != nil {
+		return nil, err
+	}
+	age := int64(0)
+	if at := parseStoredTime(oldest); !at.IsZero() {
+		age = max(0, int64(s.now().Sub(at).Seconds()))
+	}
+	s.mu.Lock()
+	streak := s.noProgressStreak
+	s.mu.Unlock()
+	details := map[string]any{"running_jobs": running, "oldest_running_age_seconds": age, "no_progress_streak": streak}
+	s.mu.Lock()
+	details["deferred_items"] = s.deferredItems
+	s.mu.Unlock()
+	details["degraded"] = streak >= noProgressHealthThreshold
+	return details, nil
 }
 
 // Subjects lists registry subjects, optionally filtered by type and name substring.

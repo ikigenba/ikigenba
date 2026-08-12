@@ -955,6 +955,7 @@ func jobStatusTool() map[string]any {
 		"outputSchema": objectSchema(map[string]any{
 			"status": stringSchema(), "received_at": nullableStringSchema(), "started_at": nullableStringSchema(),
 			"finished_at": nullableStringSchema(), "error": stringSchema(), "subjects": stringArraySchema(),
+			"units_complete": map[string]any{"type": "integer"}, "units_total": map[string]any{"type": "integer"},
 		}, []string{"status"}),
 	}
 }
@@ -1453,12 +1454,14 @@ func publicStatusResult(status any) map[string]any {
 		return map[string]any{}
 	}
 	return map[string]any{
-		"status":      stringField(v, "Status"),
-		"received_at": interfaceField(v, "ReceivedAt"),
-		"started_at":  interfaceField(v, "StartedAt"),
-		"finished_at": interfaceField(v, "FinishedAt"),
-		"error":       stringField(v, "Error"),
-		"subjects":    stringSliceField(v, "Subjects"),
+		"status":         stringField(v, "Status"),
+		"received_at":    interfaceField(v, "ReceivedAt"),
+		"started_at":     interfaceField(v, "StartedAt"),
+		"finished_at":    interfaceField(v, "FinishedAt"),
+		"error":          stringField(v, "Error"),
+		"subjects":       stringSliceField(v, "Subjects"),
+		"units_complete": intField(v, "UnitsComplete"),
+		"units_total":    intField(v, "UnitsTotal"),
 	}
 }
 

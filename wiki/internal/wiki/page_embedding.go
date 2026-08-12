@@ -3,6 +3,7 @@ package wiki
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"appkit/telemetry"
@@ -21,6 +22,14 @@ const (
 // EmbedResult is the wiki-owned embedding result shape.
 type EmbedResult struct {
 	Vectors [][]float32
+}
+
+func WithLogger(logger *slog.Logger) ServiceOption {
+	return func(s *Service) {
+		if s != nil && logger != nil {
+			s.logger = logger
+		}
+	}
 }
 
 // PageEmbedder embeds compiled wiki page bodies.
