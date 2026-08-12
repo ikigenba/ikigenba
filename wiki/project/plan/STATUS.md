@@ -10,4 +10,10 @@ no done marker; done is gone. This file deliberately carries **no bare status
 glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
-Next phase: 162
+Next phase: 167
+
+- Phase 162 ⬜ realizes D93 — serialize ingest admission behind a durable per-scope lease
+- Phase 163 ⬜ realizes D4 (identity slice) — stage plans by name; mint subject ids inside the integrate commit
+- Phase 164 ⬜ realizes D4 (apply slice) — ensure only unstaged units, one transaction, job-handle attribution
+- Phase 165 ⬜ realizes D94 — the inbox drain contract: no item may stop the drain
+- Phase 166 ⬜ realizes D95 — liveness, the five-status surface, and wedge visibility

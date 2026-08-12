@@ -7,7 +7,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D1 → `project/design/D01.md` — Dependency on the prompts service (unified inference; no provider dependency anywhere) — owns R-KDHD-V3XI, R-A3D7-NTLV
 - D2 → `project/design/D02.md` — Service skeleton: package layout, Spec wiring, and the config/secret composition root — owns R-6RVX-P1IG; adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D3 → `project/design/D03.md` — The phase-1 data model — owns R-7SNG-0G9A, R-7TVC-E7ZZ, R-7V38-RZQO, R-7WB5-5RHD, R-RU0J-77HX, R-RV8F-KZ8M, R-RXO8-CIQ0, R-RYW4-QAGP, R-S041-427E, R-S1BX-HTY3, R-S2JT-VLOS, R-1O8B-FNX4
-- D4 → `project/design/D04.md` — The ingest pipeline: handoff and apply over the completion queue — owns R-M8RN-87WV, R-K73J-J3W3, R-K8BF-WVMS, R-K9JC-ANDH, R-KAR8-OF46, R-KBZ5-26UV, R-KEEX-TQC9, R-KFMU-7I2Y, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MG31-IUD1
+- D4 → `project/design/D04.md` — The ingest pipeline: handoff and apply over the completion queue — owns R-M8RN-87WV, R-K73J-J3W3, R-K8BF-WVMS, R-K9JC-ANDH, R-KAR8-OF46, R-KBZ5-26UV, R-KEEX-TQC9, R-KFMU-7I2Y, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MG31-IUD1, R-OQJZ-K337, R-ORRV-XUTW, R-OSZS-BMKL, R-OU7O-PEBA, R-OVFL-361Z, R-OWNH-GXSO
 - D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): the prompts completion-queue client — owns R-JW4G-367U, R-JXCC-GXYJ, R-JYK8-UPP8, R-JZS5-8HFX, R-K101-M96M, R-K27Y-00XB, R-K3FU-DSO0, R-K4NQ-RKEP, R-UCLK-JDHN, R-UDTG-X58C
 - D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-9UTW-ZFF0, R-9W1T-D75P, R-8TAF-XBSM, R-8UIC-B3JB
 - D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, clean article prose (no ids), 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-9X9P-QYWE, R-9YHM-4QN3, R-VA32-HERT
@@ -84,6 +84,9 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D90 → `project/design/D90.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 - D91 → `project/design/D91.md` — The prompts seam proven against the real binary (composed) — owns R-UF1D-AWZ1, R-UG99-OOPQ
 - D92 → `project/design/D92.md` — Ask-serving routes clear the chassis write deadline — owns R-KJAJ-CTB1, R-KKIF-QL1Q
+- D93 → `project/design/D93.md` — Serialized ingest admission: the durable per-scope lease — owns R-OXVD-UPJD, R-P2QZ-DSI5, R-OZ3A-8HA2, R-P1J3-00RG, R-P3YV-RK8U
+- D94 → `project/design/D94.md` — The inbox drain contract: no item may stop the drain — owns R-P56S-5BZJ, R-P6EO-J3Q8, R-P7MK-WVGX, R-P8UH-AN7M
+- D95 → `project/design/D95.md` — Job liveness and the honest job surface — owns R-PA2D-OEYB, R-PBAA-26P0, R-PCI6-FYFP, R-PEXZ-7HX3, R-PDQ2-TQ6E, R-PG5V-L9NS, R-PHDR-Z1EH
 
 ## Verification ids → Decision
 
@@ -398,7 +401,29 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-NPVU-26CX → D44 (`project/design/D44.md`)
 - R-O1AD-MRKW → D73 (`project/design/D73.md`) (adopted from root `project/design/D23.md`)
 - R-O2IA-0JBL → D73 (`project/design/D73.md`) (adopted from root `project/design/D23.md`)
+- R-OQJZ-K337 → D4 (`project/design/D04.md`)
+- R-ORRV-XUTW → D4 (`project/design/D04.md`)
+- R-OSZS-BMKL → D4 (`project/design/D04.md`)
+- R-OU7O-PEBA → D4 (`project/design/D04.md`)
+- R-OVFL-361Z → D4 (`project/design/D04.md`)
+- R-OWNH-GXSO → D4 (`project/design/D04.md`)
+- R-OXVD-UPJD → D93 (`project/design/D93.md`)
+- R-OZ3A-8HA2 → D93 (`project/design/D93.md`)
+- R-P1J3-00RG → D93 (`project/design/D93.md`)
+- R-P2QZ-DSI5 → D93 (`project/design/D93.md`)
+- R-P3YV-RK8U → D93 (`project/design/D93.md`)
+- R-P56S-5BZJ → D94 (`project/design/D94.md`)
+- R-P6EO-J3Q8 → D94 (`project/design/D94.md`)
+- R-P7MK-WVGX → D94 (`project/design/D94.md`)
+- R-P8UH-AN7M → D94 (`project/design/D94.md`)
+- R-PA2D-OEYB → D95 (`project/design/D95.md`)
+- R-PBAA-26P0 → D95 (`project/design/D95.md`)
+- R-PCI6-FYFP → D95 (`project/design/D95.md`)
+- R-PDQ2-TQ6E → D95 (`project/design/D95.md`)
+- R-PEXZ-7HX3 → D95 (`project/design/D95.md`)
+- R-PG5V-L9NS → D95 (`project/design/D95.md`)
 - R-PH2F-47LB → D45 (`project/design/D45.md`)
+- R-PHDR-Z1EH → D95 (`project/design/D95.md`)
 - R-PIAB-HZC0 → D45 (`project/design/D45.md`)
 - R-PJI7-VR2P → D45 (`project/design/D45.md`)
 - R-PLY0-NAK3 → D45 (`project/design/D45.md`)
