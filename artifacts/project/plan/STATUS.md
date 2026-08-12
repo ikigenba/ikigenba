@@ -14,5 +14,3 @@ deliberately carries **no** bare status glyph outside the phase lines, so
 the anchored grep matches only phase lines.
 
 Next phase: 14
-
-- Phase 13 ⬜ realizes D11 — the bare `/favicon.ico` root route
