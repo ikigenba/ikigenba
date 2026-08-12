@@ -205,7 +205,7 @@ func newCompletionTelemetryRecorder(t *testing.T) (*telemetry.Recorder, *complet
 
 func finishCompletionTelemetry(t *testing.T, recorder *telemetry.Recorder, sink *completionTelemetrySink, cancel context.CancelFunc, want int) []telemetry.Record {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		sink.mu.Lock()
 		got := len(sink.records)

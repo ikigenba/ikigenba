@@ -571,7 +571,7 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	completionIDs := []string{postComposedCompletion(t, port, providerBlocker.URL, "health-running")}
 	select {
 	case <-providerStarted:
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("completion worker did not claim the first composed item")
 	}
 	for _, key := range []string{"health-oldest", "health-middle", "health-newest", "health-terminal"} {
@@ -603,7 +603,7 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	providerRelease <- struct{}{}
 	select {
 	case <-reposConnected:
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatalf("repos consumer did not connect to registry-derived feed %s/feed", registry.BaseURL("repos"))
 	}
 	// R-SCSS-M166
@@ -691,7 +691,7 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	waitForHealth(t, port, done2, &stdout2, &stderr2)
 	select {
 	case <-providerStarted:
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("restarted completion worker did not reclaim the expired lease")
 	}
 	reclaimedHealth := completionHealth(t, getHealth(t, port))
@@ -701,7 +701,7 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	providerRelease <- struct{}{}
 	select {
 	case <-overrideConnected:
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatalf("repos consumer did not connect to PROMPTS_REPOS_FEED_URL override %s/feed", overrideRepos.URL)
 	}
 	if got, err := os.ReadFile(outputPath); err != nil || string(got) != wantOutput {

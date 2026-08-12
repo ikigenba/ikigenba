@@ -97,7 +97,7 @@ func TestHandlerReseedsDetachedFireContext(t *testing.T) {
 	var fired prompt.Run
 	select {
 	case fired = <-result:
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timed out waiting for fired run")
 	}
 	stored, err := store.GetRun(context.Background(), fired.ID)
@@ -130,7 +130,7 @@ func (f *fireRecorder) await(t *testing.T) {
 	go func() { f.wg.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timed out waiting for fire goroutines")
 	}
 }

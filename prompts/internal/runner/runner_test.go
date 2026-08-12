@@ -1108,7 +1108,7 @@ func TestCancel(t *testing.T) {
 	// Wait until the run goroutine has registered its cancel func, then cancel
 	// by run_id.
 	var cancelled bool
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		if r.Cancel(run.ID) {
 			cancelled = true
@@ -1149,7 +1149,7 @@ func TestCancelWhileWaitingForRunCapacity(t *testing.T) {
 	r.Spawn(run)
 
 	var cancelled bool
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		if r.Cancel(run.ID) {
 			cancelled = true

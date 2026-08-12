@@ -196,7 +196,11 @@ func consumerEntry(t *testing.T, spec appkit.Spec, source string) appkit.Consume
 
 func waitForSpawnCount(t *testing.T, runner *countingRunner, want int) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	// Generous because the spawn is asynchronous and this package runs alongside
+	// every other package under `go test ./...`: a 2s budget went red under that
+	// load while passing whenever the package ran alone. A satisfied wait returns
+	// on the next poll, so the ceiling only costs time on a genuine failure.
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		if runner.count() == want {
 			return
