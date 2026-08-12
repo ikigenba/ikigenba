@@ -205,6 +205,61 @@ func TestLiveAndHandoffQueueShapesUseSeparateConsumerPartitions(t *testing.T) {
 	}
 }
 
+func TestPerItemQueueVerbsPinOwningConsumerPartition(t *testing.T) {
+	// R-9S84-C6J2
+	type call struct {
+		method   string
+		path     string
+		consumer string
+	}
+	var calls []call
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/completions":
+			writeItem(t, w, http.StatusAccepted, Item{ID: "ask-item", Status: "queued"})
+		case r.URL.Path == "/completions/pipeline-item":
+			calls = append(calls, call{method: r.Method, path: r.URL.Path, consumer: r.URL.Query().Get("consumer")})
+			if r.Method == http.MethodGet {
+				writeItem(t, w, http.StatusOK, Item{ID: "pipeline-item", Status: "done"})
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/completions/ask-item":
+			calls = append(calls, call{method: r.Method, path: r.URL.Path, consumer: r.URL.Query().Get("consumer")})
+			if r.Method == http.MethodGet {
+				writeItem(t, w, http.StatusOK, Item{ID: "ask-item", Status: "done"})
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	c := New(server.URL)
+	c.pollInterval = time.Millisecond
+	if _, err := c.Get(context.Background(), "pipeline-item"); err != nil {
+		t.Fatalf("handoff Get: %v", err)
+	}
+	if err := c.Ack(context.Background(), "pipeline-item"); err != nil {
+		t.Fatalf("handoff Ack: %v", err)
+	}
+	if _, err := c.Do(context.Background(), Request{Key: "ask/a1"}); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+
+	want := []call{
+		{method: http.MethodGet, path: "/completions/pipeline-item", consumer: Consumer},
+		{method: http.MethodDelete, path: "/completions/pipeline-item", consumer: Consumer},
+		{method: http.MethodGet, path: "/completions/ask-item", consumer: ConsumerAsk},
+		{method: http.MethodDelete, path: "/completions/ask-item", consumer: ConsumerAsk},
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("per-item calls = %#v, want %#v", calls, want)
+	}
+}
+
 func TestQueueGetInboxAndAckVerbs(t *testing.T) {
 	// R-JXCC-GXYJ
 	var inboxQuery string
