@@ -449,6 +449,67 @@ func TestNew_WWWMountsStaticWithoutServiceRegistration(t *testing.T) {
 	}
 }
 
+// R-8NN6-VME1
+func TestNew_WWWMountsRootFaviconAsStaticAlias(t *testing.T) {
+	root := t.TempDir()
+	wantBody := "not ico magic; content type must come from the registered extension\n"
+	writeWWWFile(t, filepath.Join(root, "static", "favicon.ico"), wantBody)
+	site, err := web.Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	newServer := func(www *web.Site) *http.Server {
+		t.Helper()
+		srv, err := server.New(server.Options{
+			Addr:       "127.0.0.1:0",
+			Logger:     discardLogger(),
+			ResourceID: testResourceID,
+			AuthServer: testAuthServer,
+			Version:    testVersion,
+			Service:    testService,
+			WWW:        www,
+		})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		return srv
+	}
+
+	srv := newServer(site)
+	request := func(path string) *httptest.ResponseRecorder {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		return rr
+	}
+
+	rootFavicon := request("/favicon.ico")
+	if rootFavicon.Code != http.StatusOK {
+		t.Fatalf("GET /favicon.ico status = %d, want 200; body=%q", rootFavicon.Code, rootFavicon.Body.String())
+	}
+	if got := rootFavicon.Header().Get("Content-Type"); got != "image/x-icon" {
+		t.Fatalf("GET /favicon.ico Content-Type = %q, want image/x-icon", got)
+	}
+	staticFavicon := request("/static/favicon.ico")
+	if staticFavicon.Code != http.StatusOK {
+		t.Fatalf("GET /static/favicon.ico status = %d, want 200; body=%q", staticFavicon.Code, staticFavicon.Body.String())
+	}
+	if got, want := rootFavicon.Body.String(), staticFavicon.Body.String(); got != want {
+		t.Fatalf("GET /favicon.ico body = %q, want static response body %q", got, want)
+	}
+	if got := rootFavicon.Body.String(); got != wantBody {
+		t.Fatalf("GET /favicon.ico body = %q, want file bytes %q", got, wantBody)
+	}
+
+	withoutWWW := newServer(nil)
+	rr := httptest.NewRecorder()
+	withoutWWW.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("GET /favicon.ico without WWW status = %d, want 404", rr.Code)
+	}
+}
+
 // R-MA3Q-WE2D
 func TestRouter_WWWRendersServiceOwnedPageRoute(t *testing.T) {
 	root := t.TempDir()

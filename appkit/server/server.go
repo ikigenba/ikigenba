@@ -297,7 +297,9 @@ func New(opts Options) (*http.Server, error) {
 			mux.Handle("GET "+fp, LoopbackOnly(opts.Feed))
 		}
 		if opts.WWW != nil {
-			mux.Handle("GET /static/", opts.WWW.Static())
+			static := opts.WWW.Static()
+			mux.Handle("GET /static/", static)
+			mux.Handle("GET /favicon.ico", faviconAlias(static))
 		}
 	}
 
@@ -316,6 +318,20 @@ func New(opts Options) (*http.Server, error) {
 		IdleTimeout:       60 * time.Second,
 	}
 	return srv, nil
+}
+
+// faviconAlias answers the bare GET /favicon.ico by re-dispatching the
+// request at /static/favicon.ico, so both routes use the site's static handler.
+func faviconAlias(static http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		aliasRequest := new(http.Request)
+		*aliasRequest = *r
+		aliasURL := *r.URL
+		aliasURL.Path = "/static/favicon.ico"
+		aliasURL.RawPath = ""
+		aliasRequest.URL = &aliasURL
+		static.ServeHTTP(w, aliasRequest)
+	})
 }
 
 // Run starts srv and blocks until ctx is cancelled, then shuts it down
