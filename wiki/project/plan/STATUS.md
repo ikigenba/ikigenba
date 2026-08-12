@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 169
-
-- Phase 168 ⬜ realizes R-N729-RY1I — `status` reports the job's chain handle
