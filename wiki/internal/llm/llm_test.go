@@ -141,6 +141,70 @@ func TestEnsureCarriesFullQueueWireContract(t *testing.T) {
 	}
 }
 
+func TestLiveAndHandoffQueueShapesUseSeparateConsumerPartitions(t *testing.T) {
+	// R-UCLK-JDHN
+	var doEnsure, handoffEnsure []byte
+	var inboxQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/completions":
+			raw, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var body ensureRequest
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Fatalf("decode Ensure body: %v", err)
+			}
+			if body.Key == "ask/a1" {
+				doEnsure = raw
+				writeItem(t, w, http.StatusAccepted, Item{ID: "ask-item", Status: "done"})
+				return
+			}
+			handoffEnsure = raw
+			writeItem(t, w, http.StatusAccepted, Item{ID: "pipeline-item", Status: "queued"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/completions/ask-item":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/completions":
+			inboxQuery = r.URL.RawQuery
+			_ = json.NewEncoder(w).Encode([]wireItem{})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	c := New(server.URL)
+	if _, err := c.Do(context.Background(), Request{Key: "ask/a1"}); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	if _, err := c.Ensure(context.Background(), Request{Key: "job/extract/unit/a1"}); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if _, err := c.Inbox(context.Background()); err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+
+	consumer := func(raw []byte) string {
+		t.Helper()
+		var body map[string]any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("decode captured raw body: %v", err)
+		}
+		value, _ := body["consumer"].(string)
+		return value
+	}
+	if got := consumer(doEnsure); got != ConsumerAsk {
+		t.Errorf("Do Ensure consumer = %q, want %q; raw=%s", got, ConsumerAsk, doEnsure)
+	}
+	if got := consumer(handoffEnsure); got != Consumer {
+		t.Errorf("handoff Ensure consumer = %q, want %q; raw=%s", got, Consumer, handoffEnsure)
+	}
+	if inboxQuery != "consumer=service%3Awiki" {
+		t.Errorf("Inbox query = %q, want only pipeline consumer", inboxQuery)
+	}
+}
+
 func TestQueueGetInboxAndAckVerbs(t *testing.T) {
 	// R-JXCC-GXYJ
 	var inboxQuery string
@@ -283,6 +347,29 @@ func TestDoFailedAndGoneAreTerminal(t *testing.T) {
 				t.Fatalf("gone error=%v acks=%d", err, acks)
 			}
 		})
+	}
+}
+
+func TestDoGoneErrorNamesThePolledItem(t *testing.T) {
+	// R-UDTG-X58C
+	const vanishedID = "completion-that-vanished"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			writeItem(t, w, http.StatusAccepted, Item{ID: vanishedID, Status: "queued"})
+		case http.MethodGet:
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+	c := New(server.URL)
+	c.pollInterval = time.Millisecond
+
+	_, err := c.Do(context.Background(), Request{Key: "ask/a1"})
+	if !errors.Is(err, ErrGone) || !strings.Contains(err.Error(), vanishedID) {
+		t.Fatalf("Do error = %v, want ErrGone naming %q", err, vanishedID)
 	}
 }
 

@@ -14,7 +14,10 @@ import (
 	"time"
 )
 
-const Consumer = "service:wiki"
+const (
+	Consumer    = "service:wiki"
+	ConsumerAsk = "service:wiki.ask"
+)
 
 var (
 	ErrGone      = errors.New("llm: completion gone")
@@ -144,6 +147,10 @@ func (w wireItem) item() Item {
 }
 
 func (c *Client) Ensure(ctx context.Context, r Request) (Item, error) {
+	return c.ensure(ctx, r, Consumer)
+}
+
+func (c *Client) ensure(ctx context.Context, r Request, consumer string) (Item, error) {
 	if err := c.valid("Ensure"); err != nil {
 		return Item{}, err
 	}
@@ -152,7 +159,7 @@ func (c *Client) Ensure(ctx context.Context, r Request) (Item, error) {
 		site.System = compose(site.System)
 	}
 	body := ensureRequest{
-		Consumer: Consumer, Key: r.Key, Context: json.RawMessage(r.Context), Origin: r.Attr.Origin,
+		Consumer: consumer, Key: r.Key, Context: json.RawMessage(r.Context), Origin: r.Attr.Origin,
 		GroupID: r.Attr.GroupID, Attempt: r.Attempt, Name: "wiki." + site.Stage,
 		Model: site.Config.Model, Provider: site.Config.Provider,
 		Config: ensureConfig{Temperature: site.Config.Temperature, MaxTokens: site.Config.MaxTokens, Effort: site.Config.Effort, Thinking: site.Config.Thinking},
@@ -229,7 +236,7 @@ func (c *Client) Ack(ctx context.Context, id string) error {
 }
 
 func (c *Client) Do(ctx context.Context, r Request) (Item, error) {
-	item, err := c.Ensure(ctx, r)
+	item, err := c.ensure(ctx, r, ConsumerAsk)
 	if err != nil {
 		return Item{}, err
 	}
@@ -247,10 +254,11 @@ func (c *Client) Do(ctx context.Context, r Request) (Item, error) {
 			return Item{}, ctx.Err()
 		case <-timer.C:
 		}
-		item, err = c.Get(ctx, item.ID)
+		id := item.ID
+		item, err = c.Get(ctx, id)
 		if err != nil {
 			if errors.Is(err, ErrGone) {
-				return Item{}, fmt.Errorf("llm Do: %w while polling %s", ErrGone, item.ID)
+				return Item{}, fmt.Errorf("llm Do: %w while polling %s", ErrGone, id)
 			}
 			return Item{}, err
 		}
