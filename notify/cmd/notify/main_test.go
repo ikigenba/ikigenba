@@ -509,6 +509,69 @@ func TestWWWSiteReferencesOnlyDocumentRelativeLocalStaticAssets(t *testing.T) {
 	}
 }
 
+func TestEveryWWWDocumentCarriesBrandIconLinks(t *testing.T) {
+	// R-RYDN-YNR5 — every committed document is rendered through the real site and carries the suite icon links.
+	var documents []string
+	for _, pattern := range []string{"*.html", "*.tmpl"} {
+		matches, err := filepath.Glob(filepath.Join(wwwRoot(t), pattern))
+		if err != nil {
+			t.Fatalf("glob committed WWW documents with %q: %v", pattern, err)
+		}
+		documents = append(documents, matches...)
+	}
+	if len(documents) == 0 {
+		t.Fatal("share/www contains no HTML documents")
+	}
+
+	site := loadWWW(t)
+	for _, document := range documents {
+		name := filepath.Base(document)
+		t.Run(name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			if err := site.Render(rec, name, landingData("notify", "v1.2.3")); err != nil {
+				t.Fatalf("render %s: %v", name, err)
+			}
+			head := htmlHead(t, rec.Body.String())
+			for _, want := range []string{
+				`<link rel="icon" sizes="any" href="static/favicon.ico">`,
+				`<link rel="icon" type="image/png" href="static/favicon-32.png">`,
+				`<link rel="apple-touch-icon" href="static/apple-touch-icon.png">`,
+			} {
+				if !strings.Contains(head, want) {
+					t.Errorf("rendered head missing %q:\n%s", want, head)
+				}
+			}
+		})
+	}
+}
+
+func TestComposedRouterServesBrandIconsWithPinnedContentTypes(t *testing.T) {
+	// R-RZLK-CFHU — the composition root serves every suite icon with its pinned content type.
+	handler := newTestServerHandler(t)
+	for _, tc := range []struct {
+		path        string
+		contentType string
+	}{
+		{path: "/static/favicon.ico", contentType: "image/x-icon"},
+		{path: "/static/favicon-32.png", contentType: "image/png"},
+		{path: "/static/apple-touch-icon.png", contentType: "image/png"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want %d", tc.path, rec.Code, http.StatusOK)
+			}
+			if rec.Body.Len() == 0 {
+				t.Fatalf("GET %s returned an empty body", tc.path)
+			}
+			if got := rec.Header().Get("Content-Type"); got != tc.contentType {
+				t.Fatalf("GET %s Content-Type = %q, want %q", tc.path, got, tc.contentType)
+			}
+		})
+	}
+}
+
 func TestWWWSitePreloadsSelfServedFontFiles(t *testing.T) {
 	// R-8NFP-O1M0 — GET / preloads above-the-fold fonts with document-relative hrefs matching @font-face src targets.
 	rec := renderLanding(t, "notify", "v1.2.3")
@@ -879,6 +942,18 @@ func findConsumer(consumers []appkit.Consumer, source string) (appkit.Consumer, 
 
 func newTestRouter(t *testing.T) *appkit.Router {
 	t.Helper()
+	rt, _ := newTestServer(t)
+	return rt
+}
+
+func newTestServerHandler(t *testing.T) http.Handler {
+	t.Helper()
+	_, handler := newTestServer(t)
+	return handler
+}
+
+func newTestServer(t *testing.T) (*appkit.Router, http.Handler) {
+	t.Helper()
 	var rt *appkit.Router
 	srv, err := server.New(server.Options{
 		Addr:       "127.0.0.1:0",
@@ -887,6 +962,7 @@ func newTestRouter(t *testing.T) *appkit.Router {
 		AuthServer: "http://dashboard.test/",
 		Version:    "v0.0.0",
 		Service:    "notify",
+		WWW:        loadWWW(t),
 		Register: func(r *appkit.Router) error {
 			rt = r
 			return nil
@@ -899,7 +975,7 @@ func newTestRouter(t *testing.T) *appkit.Router {
 	if rt == nil {
 		t.Fatal("server.New did not call Register")
 	}
-	return rt
+	return rt, srv.Handler
 }
 
 func TestSpecPortComesFromRegistryNotifyPort(t *testing.T) {
