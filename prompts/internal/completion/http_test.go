@@ -42,6 +42,82 @@ func TestHTTPEnsurePersistsQueuedItemWithoutExecutingIt(t *testing.T) {
 	}
 }
 
+// R-ZVRL-2K5W
+func TestHTTPEnsureAcceptsA1024ByteKeyAndRejectsA1025ByteKeyWithoutStoringIt(t *testing.T) {
+	database := openCompletionTestDB(t)
+	handler := completionMux(NewHTTP(NewStore(database, "owner-a", time.Now), func(string) string { return "test-key" }, func() bool { return false }))
+
+	accepted := postEnsure(t, handler, validEnsureRequest("service:wiki", strings.Repeat("a", 1024)))
+	if accepted.Code != http.StatusAccepted {
+		t.Fatalf("1024-byte key status = %d, want 202: %s", accepted.Code, accepted.Body.String())
+	}
+	rejected := postEnsure(t, handler, validEnsureRequest("service:wiki", strings.Repeat("b", 1025)))
+	if rejected.Code != http.StatusBadRequest || !strings.Contains(rejected.Body.String(), "1024 bytes") {
+		t.Fatalf("1025-byte key response = %d %s, want 400 naming 1024-byte limit", rejected.Code, rejected.Body.String())
+	}
+	if got := countRows(t, database, "completions"); got != 1 {
+		t.Fatalf("completion rows = %d, want only the accepted item", got)
+	}
+}
+
+// R-ZY7D-U3NA
+func TestHTTPRejectedEnsureCarriesStableMachineReadableCodeBesideError(t *testing.T) {
+	database := openCompletionTestDB(t)
+	handler := completionMux(NewHTTP(NewStore(database, "owner-a", time.Now), func(string) string { return "test-key" }, func() bool { return false }))
+	request := validEnsureRequest("invalid-consumer", "stable-code")
+
+	var firstCode string
+	for attempt := range 2 {
+		response := postEnsure(t, handler, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("attempt %d status = %d: %s", attempt, response.Code, response.Body.String())
+		}
+		var failure map[string]string
+		decodeHTTPResponse(t, response, &failure)
+		if failure["error"] == "" || failure["code"] != "bad_consumer" {
+			t.Fatalf("attempt %d failure = %#v, want error beside bad_consumer", attempt, failure)
+		}
+		if attempt == 0 {
+			firstCode = failure["code"]
+		} else if failure["code"] != firstCode {
+			t.Fatalf("repeated rejection code = %q, first was %q", failure["code"], firstCode)
+		}
+	}
+}
+
+// R-ZZFA-7VDZ
+func TestHTTPStoreFailureIsUnavailableAndIsNotRetried(t *testing.T) {
+	database := openCompletionTestDB(t)
+	if _, err := database.Exec(`CREATE TABLE completion_attempts (count INTEGER NOT NULL); INSERT INTO completion_attempts VALUES (0);
+		CREATE TRIGGER fail_completion_insert BEFORE INSERT ON completions BEGIN
+			UPDATE completion_attempts SET count=count+1;
+			SELECT RAISE(FAIL, 'forced store failure');
+		END;`); err != nil {
+		t.Fatal(err)
+	}
+	handler := completionMux(NewHTTP(NewStore(database, "owner-a", time.Now), func(string) string { return "test-key" }, func() bool { return false }))
+
+	bad := postEnsure(t, handler, validEnsureRequest("invalid-consumer", "permanent"))
+	var permanent map[string]string
+	decodeHTTPResponse(t, bad, &permanent)
+	failed := postEnsure(t, handler, validEnsureRequest("service:wiki", "transient"))
+	var transient map[string]string
+	decodeHTTPResponse(t, failed, &transient)
+	if failed.Code < 500 || transient["error"] == "" || transient["code"] != "unavailable" {
+		t.Fatalf("store failure = %d %#v, want 5xx error with unavailable", failed.Code, transient)
+	}
+	if transient["code"] == permanent["code"] {
+		t.Fatalf("transient code %q equals 4xx code %q", transient["code"], permanent["code"])
+	}
+	var attempts int
+	if err := database.QueryRow(`SELECT count FROM completion_attempts`).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 {
+		t.Fatalf("store insert attempts = %d, want exactly one without internal retry", attempts)
+	}
+}
+
 // R-J8YC-TJ4N
 func TestHTTPEnsureIsIdempotentWithinConsumerAndDistinctAcrossConsumers(t *testing.T) {
 	database := openCompletionTestDB(t)
@@ -192,6 +268,37 @@ func TestHTTPInboxReturnsOnlyConsumerTerminalItemsOldestFirst(t *testing.T) {
 	}
 	if items[1]["key"] != "key-b" || items[1]["context"].([]any)[0] != "context-b" || items[1]["error"] != "bad input" {
 		t.Fatalf("failed item = %#v", items[1])
+	}
+}
+
+// R-ZWZH-GBWL
+func TestHTTPInboxIsABareArrayForPresentAndEmptyPartitions(t *testing.T) {
+	database := openCompletionTestDB(t)
+	handler := completionMux(NewHTTP(NewStore(database, "owner-a", time.Now), func(string) string { return "test-key" }, func() bool { return false }))
+	seedHTTPItem(t, database, "done", "service:wiki", StatusDone, time.Now(), "done-key", `null`, `true`, "")
+
+	for _, consumer := range []string{"service:wiki", "service:empty"} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/completions?consumer="+consumer, nil))
+		body := recorder.Body.Bytes()
+		var items []json.RawMessage
+		if err := json.Unmarshal(body, &items); err != nil {
+			t.Fatalf("%s inbox did not decode as bare array: %v; body=%s", consumer, err, body)
+		}
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(body, &object); err == nil {
+			t.Fatalf("%s inbox also decoded as object: %#v", consumer, object)
+		}
+		want := 1
+		if consumer == "service:empty" {
+			want = 0
+			if string(bytes.TrimSpace(body)) != "[]" {
+				t.Fatalf("empty inbox body = %s, want [] rather than null or wrapper", body)
+			}
+		}
+		if len(items) != want {
+			t.Fatalf("%s inbox item count = %d, want %d", consumer, len(items), want)
+		}
 	}
 }
 

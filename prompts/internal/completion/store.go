@@ -56,6 +56,14 @@ type Store struct {
 	logger *slog.Logger
 }
 
+type Snapshot struct {
+	Queued                 int64
+	Running                int64
+	Terminal               int64
+	OldestQueuedAgeSeconds int64
+	ReclaimedItems         int64
+}
+
 func NewStore(db *sql.DB, owner string, now func() time.Time, loggers ...*slog.Logger) *Store {
 	if now == nil {
 		now = time.Now
@@ -232,6 +240,29 @@ func (s *Store) Sweep(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("completion: sweep: %w", err)
 	}
 	return r.RowsAffected()
+}
+
+// Snapshot derives the queue's current health directly from its durable rows.
+func (s *Store) Snapshot(ctx context.Context) (Snapshot, error) {
+	var snapshot Snapshot
+	var oldestQueued string
+	err := s.db.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM completions WHERE status='queued'),
+		(SELECT COUNT(*) FROM completions WHERE status='running'),
+		(SELECT COUNT(*) FROM completions WHERE status IN ('done','failed')),
+		COALESCE((SELECT MIN(created_at) FROM completions WHERE status='queued'), ''),
+		(SELECT COUNT(*) FROM completions WHERE reclaims <> 0)`).Scan(
+		&snapshot.Queued, &snapshot.Running, &snapshot.Terminal, &oldestQueued, &snapshot.ReclaimedItems)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("completion: snapshot: %w", err)
+	}
+	if created := parseTime(oldestQueued); !created.IsZero() {
+		snapshot.OldestQueuedAgeSeconds = int64(s.now().UTC().Sub(created) / time.Second)
+		if snapshot.OldestQueuedAgeSeconds < 0 {
+			snapshot.OldestQueuedAgeSeconds = 0
+		}
+	}
+	return snapshot, nil
 }
 
 const itemColumns = `id,consumer,origin,key,context,name,group_id,correlation_id,attempt,request,status,

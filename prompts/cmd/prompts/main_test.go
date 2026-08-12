@@ -408,6 +408,8 @@ func hasLiveBuildConstraint(source []byte) bool {
 // R-4LKF-FB23
 func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	// R-ZNR1-KI5L
+	// R-07YK-W9KU
+	// R-15VT-PVYT
 	root := t.TempDir()
 	appRoot := filepath.Join(root, "prompts")
 	stateDir := filepath.Join(appRoot, "state")
@@ -492,6 +494,25 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	feedServers["repos"] = newIdleFeedServerAt(t, registry.BaseURL("repos"), reposConnected)
 	dropbox := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(dropbox.Close)
+	providerStarted := make(chan struct{}, 4)
+	providerRelease := make(chan struct{}, 4)
+	providerBlocker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case providerStarted <- struct{}{}:
+		default:
+		}
+		select {
+		case <-r.Context().Done():
+		case <-providerRelease:
+		}
+	}))
+	t.Cleanup(providerBlocker.Close)
+	t.Cleanup(func() {
+		select {
+		case providerRelease <- struct{}{}:
+		default:
+		}
+	})
 
 	port := freeTCPPort(t)
 	dbPath := filepath.Join(stateDir, "prompts.db")
@@ -516,7 +537,8 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 		"PROMPTS_SCRIPTS_FEED_URL":    feedServers["scripts"].URL + "/feed",
 		"PROMPTS_PROMPTS_FEED_URL":    feedServers["prompts"].URL + "/feed",
 		"DROPBOX_BASE_URL":            dropbox.URL,
-		"ANTHROPIC_API_KEY":           "",
+		"ANTHROPIC_API_KEY":           "test-key",
+		"PROMPTS_MAX_INFLIGHT_CALLS":  "1",
 		"PROMPTS_MANIFEST_ROOT":       root,
 		"PROMPTS_OUTBOX_REAPER_EVERY": "0",
 	})
@@ -541,6 +563,44 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	if got := doc["status"]; got != "ok" {
 		t.Fatalf("health status = %v, want ok; body=%v", got, doc)
 	}
+	initialCompletionHealth := completionHealth(t, doc)
+	if initialCompletionHealth["queued"] != float64(0) || initialCompletionHealth["running"] != float64(0) || initialCompletionHealth["terminal"] != float64(0) || initialCompletionHealth["reclaimed_items"] != float64(0) {
+		t.Fatalf("initial completion health = %#v, want empty queue", initialCompletionHealth)
+	}
+
+	completionIDs := []string{postComposedCompletion(t, port, providerBlocker.URL, "health-running")}
+	select {
+	case <-providerStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("completion worker did not claim the first composed item")
+	}
+	for _, key := range []string{"health-oldest", "health-middle", "health-newest", "health-terminal"} {
+		completionIDs = append(completionIDs, postComposedCompletion(t, port, providerBlocker.URL, key))
+	}
+	healthDB, err := appkitdb.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for i, age := range []time.Duration{41 * time.Second, 20 * time.Second, 5 * time.Second} {
+		if _, err := healthDB.Exec(`UPDATE completions SET created_at=? WHERE id=?`, now.Add(-age).Format(time.RFC3339Nano), completionIDs[i+1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := healthDB.Exec(`UPDATE completions SET status='done',result='true',finished_at=? WHERE id=?`, now.Format(time.RFC3339Nano), completionIDs[4]); err != nil {
+		t.Fatal(err)
+	}
+	if err := healthDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	queueHealth := completionHealth(t, getHealth(t, port))
+	if queueHealth["queued"] != float64(3) || queueHealth["running"] != float64(1) || queueHealth["terminal"] != float64(1) {
+		t.Fatalf("completion health after real submissions = %#v, want queued/running/terminal 3/1/1", queueHealth)
+	}
+	if age := queueHealth["oldest_queued_age_seconds"].(float64); age < 41 || age > 43 {
+		t.Fatalf("oldest queued age = %v, want oldest item's approximately 41 seconds rather than newer items", age)
+	}
+	providerRelease <- struct{}{}
 	select {
 	case <-reposConnected:
 	case <-time.After(2 * time.Second):
@@ -597,6 +657,17 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	_, err = conn.Exec(`INSERT INTO runs
 		(id, prompt_id, owner_id, owner_email, prompt_name, status, started_at, log_path, definition_sha)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, runID, "deleted-prompt", "client-durable-smoke", "durable@example.com", "Durable", "succeeded", "2026-08-08T00:00:00Z", outputPath, definitionSHA)
+	if err == nil {
+		var reclaims int
+		err = conn.QueryRow(`SELECT reclaims FROM completions WHERE id=?`, completionIDs[0]).Scan(&reclaims)
+		if err == nil && reclaims != 0 {
+			err = fmt.Errorf("unreclaimed item reclaims = %d, want 0", reclaims)
+		}
+	}
+	if err == nil {
+		_, err = conn.Exec(`UPDATE completions SET status='running',owner='stopped-owner',lease_expires_at=?,reclaims=0,created_at=? WHERE id=?`,
+			time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano), time.Now().UTC().Add(-2*time.Minute).Format(time.RFC3339Nano), completionIDs[0])
+	}
 	if closeErr := conn.Close(); err != nil || closeErr != nil {
 		t.Fatalf("seed durable run: %v, close: %v", err, closeErr)
 	}
@@ -618,6 +689,16 @@ func TestPromptsBootsWithDurableRunStorage(t *testing.T) {
 	go func() { done2 <- cmd2.Wait() }()
 	defer stopProcess(cancel2, done2)
 	waitForHealth(t, port, done2, &stdout2, &stderr2)
+	select {
+	case <-providerStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("restarted completion worker did not reclaim the expired lease")
+	}
+	reclaimedHealth := completionHealth(t, getHealth(t, port))
+	if reclaimedHealth["reclaimed_items"] != float64(1) {
+		t.Fatalf("restarted completion health = %#v, want exactly one row-derived reclaimed item", reclaimedHealth)
+	}
+	providerRelease <- struct{}{}
 	select {
 	case <-overrideConnected:
 	case <-time.After(2 * time.Second):
@@ -864,6 +945,71 @@ func freeTCPPort(t *testing.T) int {
 	}
 	defer ln.Close()
 	return ln.Addr().(*net.TCPAddr).Port
+}
+
+func postComposedCompletion(t *testing.T, port int, baseURL, key string) string {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{
+		"consumer": "service:wiki",
+		"origin":   "trigger:dropbox",
+		"key":      key,
+		"name":     "wiki.extract",
+		"model":    "claude-sonnet-4-6",
+		"provider": "anthropic",
+		"config":   map[string]any{"base_url": baseURL},
+		"messages": []map[string]string{{"role": "user", "text": "hold this request"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/completions", port), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("post composed completion: %v", err)
+	}
+	defer response.Body.Close()
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil || response.StatusCode != http.StatusAccepted {
+		t.Fatalf("post composed completion = %d, %v: %s", response.StatusCode, err, responseBody)
+	}
+	var accepted struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(responseBody, &accepted); err != nil || accepted.ID == "" {
+		t.Fatalf("decode composed completion = %#v, %v; body=%s", accepted, err, responseBody)
+	}
+	return accepted.ID
+}
+
+func getHealth(t *testing.T, port int) map[string]any {
+	t.Helper()
+	response, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
+	if err != nil {
+		t.Fatalf("get health: %v", err)
+	}
+	defer response.Body.Close()
+	var doc map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&doc); err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("health = %d %#v, %v", response.StatusCode, doc, err)
+	}
+	return doc
+}
+
+func completionHealth(t *testing.T, doc map[string]any) map[string]any {
+	t.Helper()
+	details, ok := doc["details"].(map[string]any)
+	if !ok {
+		t.Fatalf("health details = %#v, want object", doc["details"])
+	}
+	completions, ok := details["completions"].(map[string]any)
+	if !ok {
+		t.Fatalf("health completions = %#v, want object", details["completions"])
+	}
+	for _, field := range []string{"queued", "running", "terminal", "oldest_queued_age_seconds", "reclaimed_items"} {
+		if _, ok := completions[field].(float64); !ok {
+			t.Fatalf("health completions field %s = %#v, want number", field, completions[field])
+		}
+	}
+	return completions
 }
 
 func waitForHealth(t *testing.T, port int, done <-chan error, stdout, stderr *bytes.Buffer) map[string]any {

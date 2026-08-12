@@ -20,6 +20,42 @@ func testQueueItem(t *testing.T, store *Store, consumer, key string) Item {
 	return item
 }
 
+// R-15VT-PVYT
+func TestStoreSnapshotDerivesCountsOldestAgeAndReclaimsFromRows(t *testing.T) {
+	database := openCompletionTestDB(t)
+	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	store := NewStore(database, "owner-a", func() time.Time { return now })
+	seed := func(id, status string, age time.Duration, reclaims int) {
+		t.Helper()
+		_, err := database.ExecContext(t.Context(), `INSERT INTO completions
+			(id,consumer,origin,key,name,request,status,reclaims,created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+			id, "service:wiki", "service:wiki", id, "wiki.extract", `{}`, status, reclaims, formatTime(now.Add(-age)))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed("queued-new", StatusQueued, 10*time.Second, 0)
+	seed("queued-old", StatusQueued, 41*time.Second, 0)
+	seed("running", StatusRunning, time.Minute, 1)
+	seed("done", StatusDone, time.Hour, 0)
+	seed("failed", StatusFailed, time.Hour, 2)
+
+	snapshot, err := store.Snapshot(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Queued != 2 || snapshot.Running != 1 || snapshot.Terminal != 2 || snapshot.OldestQueuedAgeSeconds != 41 || snapshot.ReclaimedItems != 2 {
+		t.Fatalf("Snapshot = %#v", snapshot)
+	}
+	if _, err := database.Exec(`DELETE FROM completions WHERE status='queued'; UPDATE completions SET reclaims=0`); err != nil {
+		t.Fatal(err)
+	}
+	recomputed, err := NewStore(database, "owner-after-restart", func() time.Time { return now }).Snapshot(t.Context())
+	if err != nil || recomputed.Queued != 0 || recomputed.OldestQueuedAgeSeconds != 0 || recomputed.ReclaimedItems != 0 {
+		t.Fatalf("recomputed Snapshot = %#v, %v", recomputed, err)
+	}
+}
+
 // R-ZJKL-8UQY
 func TestStoreClaimReclaimsExpiredLeaseUnderNewOwner(t *testing.T) {
 	database := openCompletionTestDB(t)
@@ -91,6 +127,7 @@ func TestStoreSecondExpiredLeaseFailsAsAbandonedAndEnqueuesResult(t *testing.T) 
 }
 
 // R-ZN8A-E5Z1
+// R-15VT-PVYT
 func TestStoreReleaseIsFreeAcrossRepeatedClaimCycles(t *testing.T) {
 	database := openCompletionTestDB(t)
 	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)

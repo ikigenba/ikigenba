@@ -201,6 +201,22 @@ func promptsSpec() appkit.Spec {
 			{Key: "PROMPTS_RUN_TTL", Value: "30m"},
 		},
 		Workers: []func(context.Context) error{callsBodyRetentionWorker, completionExecutionWorker, completionRetentionWorker},
+		Health: func(ctx context.Context) (map[string]any, error) {
+			if completionStoreRef == nil {
+				return nil, errors.New("prompts: health called before completion store was built")
+			}
+			snapshot, err := completionStoreRef.Snapshot(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"completions": map[string]any{
+				"queued":                    snapshot.Queued,
+				"running":                   snapshot.Running,
+				"terminal":                  snapshot.Terminal,
+				"oldest_queued_age_seconds": snapshot.OldestQueuedAgeSeconds,
+				"reclaimed_items":           snapshot.ReclaimedItems,
+			}}, nil
+		},
 		TelemetryExclude: []string{
 			"GET /completions",
 			"GET /completions/{id}",
