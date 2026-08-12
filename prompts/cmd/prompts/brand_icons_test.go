@@ -1,13 +1,31 @@
 package main
 
 import (
+	"bytes"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"prompts/internal/prompt"
 )
+
+func TestBrandIconAssetsMatchSuiteReference(t *testing.T) {
+	for _, name := range []string{"favicon.ico", "favicon-32.png", "apple-touch-icon.png"} {
+		got, err := os.ReadFile(filepath.Join(promptsWWWPath(), "static", name))
+		if err != nil {
+			t.Fatalf("read shipped brand icon %s: %v", name, err)
+		}
+		want, err := os.ReadFile(filepath.Join("..", "..", "..", "design", "brand", name))
+		if err != nil {
+			t.Fatalf("read suite brand icon %s: %v", name, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("shipped brand icon %s differs from design/brand reference", name)
+		}
+	}
+}
 
 func TestEveryServedDocumentCarriesBrandIconLinks(t *testing.T) {
 	// R-RYDN-YNR5
