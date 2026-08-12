@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 160
-
-- Phase 159 ⬜ realizes R-KJAJ-CTB1, R-KKIF-QL1Q — ask on the live queue path; write-deadline clearing
