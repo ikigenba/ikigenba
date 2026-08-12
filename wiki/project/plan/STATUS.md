@@ -10,4 +10,7 @@ no done marker; done is gone. This file deliberately carries **no bare status
 glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
-Next phase: 167
+Next phase: 169
+
+- Phase 167 ⬜ realizes R-XJ27-56BR, R-XP5P-2118, R-6YVT-TFOD, R-MRG8-K2WP — the worker's prompts calls carry the job's chain id, not its job id
+- Phase 168 ⬜ realizes R-N729-RY1I — `status` reports the job's chain handle

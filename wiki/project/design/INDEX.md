@@ -7,13 +7,13 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D1 → `project/design/D01.md` — Dependency on the prompts service (unified inference; no provider dependency anywhere) — owns R-KDHD-V3XI, R-A3D7-NTLV
 - D2 → `project/design/D02.md` — Service skeleton: package layout, Spec wiring, and the config/secret composition root — owns R-6RVX-P1IG; adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D3 → `project/design/D03.md` — The phase-1 data model — owns R-7SNG-0G9A, R-7TVC-E7ZZ, R-7V38-RZQO, R-7WB5-5RHD, R-RU0J-77HX, R-RV8F-KZ8M, R-RXO8-CIQ0, R-RYW4-QAGP, R-S041-427E, R-S1BX-HTY3, R-S2JT-VLOS, R-1O8B-FNX4
-- D4 → `project/design/D04.md` — The ingest pipeline: handoff and apply over the completion queue — owns R-M8RN-87WV, R-K73J-J3W3, R-K8BF-WVMS, R-K9JC-ANDH, R-KAR8-OF46, R-KBZ5-26UV, R-KEEX-TQC9, R-KFMU-7I2Y, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MG31-IUD1, R-OQJZ-K337, R-ORRV-XUTW, R-OSZS-BMKL, R-OU7O-PEBA, R-OVFL-361Z, R-OWNH-GXSO
+- D4 → `project/design/D04.md` — The ingest pipeline: handoff and apply over the completion queue — owns R-M8RN-87WV, R-K73J-J3W3, R-K8BF-WVMS, R-K9JC-ANDH, R-KAR8-OF46, R-KBZ5-26UV, R-KEEX-TQC9, R-KFMU-7I2Y, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MG31-IUD1, R-OQJZ-K337, R-ORRV-XUTW, R-OSZS-BMKL, R-OU7O-PEBA, R-OVFL-361Z
 - D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): the prompts completion-queue client — owns R-JW4G-367U, R-JXCC-GXYJ, R-JYK8-UPP8, R-JZS5-8HFX, R-K101-M96M, R-K27Y-00XB, R-K3FU-DSO0, R-K4NQ-RKEP, R-UCLK-JDHN, R-UDTG-X58C
 - D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-9UTW-ZFF0, R-9W1T-D75P, R-8TAF-XBSM, R-8UIC-B3JB
 - D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, clean article prose (no ids), 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-9X9P-QYWE, R-9YHM-4QN3, R-VA32-HERT
 - D8 → `project/design/D08.md` — Search returns: hybrid retrieval over pages, behind one seam — none — structural
 - D9 → `project/design/D09.md` — `ask` (`internal/ask`): hybrid-retrieval pipeline, grounded/cited/honest-empty — owns R-BAFW-D24P, R-BBNS-QTVE, R-BCVP-4LM3, R-5UPD-VVNA, R-5VXA-9NDZ, R-690G-MZTK, R-5X56-NF4O, R-6A8D-0RK9, R-05CG-3H6Y, R-9ZPI-IIDS, R-NFXF-9QGN, R-NH5B-NI7C, R-NID8-19Y1
-- D10 → `project/design/D10.md` — The MCP tool surface (`internal/mcp`) + identity — owns R-MUQ4-K1JS, R-MVY0-XTAH, R-MX5X-BL16, R-MYDT-PCRV, R-MZLQ-34IK, R-1QO4-77EI, R-N4KO-2WTZ, R-01OQ-Y5YV, R-02WN-BXPK, R-044J-PPG9, R-03GW-PX5K, R-04HB-QM7T, R-8DB1-UI1Q, R-8EIY-89SF, R-1Y7B-TN7Y
+- D10 → `project/design/D10.md` — The MCP tool surface (`internal/mcp`) + identity — owns R-MUQ4-K1JS, R-MVY0-XTAH, R-MX5X-BL16, R-MYDT-PCRV, R-MZLQ-34IK, R-1QO4-77EI, R-N4KO-2WTZ, R-01OQ-Y5YV, R-02WN-BXPK, R-044J-PPG9, R-03GW-PX5K, R-04HB-QM7T, R-8DB1-UI1Q, R-8EIY-89SF, R-1Y7B-TN7Y, R-N729-RY1I
 - D11 → `project/design/D11.md` — Subject addressing: the public path == identity (`type/norm_name`) — owns R-DRX6-PWSW, R-DT53-3OJL, R-DUCZ-HGAA
 - D12 → `project/design/D12.md` — Page links: read-time mention detection + markdown footer — owns R-ZUDC-NJIP, R-ZVL9-1B9E, R-ZWT5-F303, R-ZY11-SUQS, R-ZZ8Y-6MHH, R-00GU-KE86, R-1WP9-CLM9, R-1XX5-QDCY, R-1Z52-453N
 - D14 → `project/design/D14.md` — Job lifecycle & control: `aborted`, abort, re-run, and atomic integrate — owns R-0SCX-95OZ, R-0TKT-MXFO, R-0USQ-0P6D, R-0W0M-EGX2, R-0X8I-S8NR, R-0YGF-60EG, R-0ZOB-JS55, R-10W7-XJVU, R-KGUQ-L9TN, R-KI2M-Z1KC
@@ -382,6 +382,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-MYDT-PCRV → D10 (`project/design/D10.md`)
 - R-MZLQ-34IK → D10 (`project/design/D10.md`)
 - R-N4KO-2WTZ → D10 (`project/design/D10.md`)
+- R-N729-RY1I → D10 (`project/design/D10.md`)
 - R-NC9Q-4F8K → D31 (`project/design/D31.md`)
 - R-NDHM-I6Z9 → D33 (`project/design/D33.md`)
 - R-NEFH-U8IO → D26 (`project/design/D26.md`)
@@ -406,7 +407,6 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-OSZS-BMKL → D4 (`project/design/D04.md`)
 - R-OU7O-PEBA → D4 (`project/design/D04.md`)
 - R-OVFL-361Z → D4 (`project/design/D04.md`)
-- R-OWNH-GXSO → D4 (`project/design/D04.md`)
 - R-OXVD-UPJD → D93 (`project/design/D93.md`)
 - R-OZ3A-8HA2 → D93 (`project/design/D93.md`)
 - R-P1J3-00RG → D93 (`project/design/D93.md`)

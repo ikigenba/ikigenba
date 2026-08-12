@@ -122,7 +122,7 @@ Each is a result the user can confirm against the running service:
 - I abort a pending or working job; it leaves nothing partial and shows as `aborted`, distinct from `failed`.
 - I re-run a finished/failed/aborted job; it reprocesses from original text and **replaces** that attempt's claims; re-running a pending/working job is refused with a clear reason.
 - Text too large to digest in one pass fails with a clear reason recorded on the job, leaving no partial subjects, claims, or pages.
-- On the suite's central inference service I find every call wiki made — extract, compile, ask, and the page/query embeddings, each retry its own entry — labeled with its wiki stage; an ingest's calls all share that job's handle, one question's calls all share one correlation handle, and a call caused by my action is attributed to me.
+- On the suite's central inference service I find every call wiki made — extract, compile, ask, and the page/query embeddings, each retry its own entry — labeled with its wiki stage; an ingest's calls all share one handle, which the wiki reports back to me when I ask that job's status, one question's calls all share one handle, and a call caused by my action is attributed to me.
 - I page through jobs, subjects, and a subject's claims via cursor, with any filter applied before paging.
 - After an ingest I list the subjects it produced, and for any subject view its claims and its page, referring to it by readable `type/slug` name.
 - Every subject shown in a listing, page, or link is named by `type/slug`, and an `ask` citation comes back as a fully-qualified link to that subject's page (built from its `type/slug` and resolving through the front door in production or a local deployment); I never see an internal id.
