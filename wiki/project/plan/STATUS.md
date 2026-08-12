@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 162
-
-- Phase 161 ⬜ realizes R-UF1D-AWZ1, R-UG99-OOPQ — composed seam proof: wiki's client driven against the real prompts binary
