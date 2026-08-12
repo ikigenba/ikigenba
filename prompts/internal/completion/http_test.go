@@ -205,14 +205,13 @@ func TestHTTPContextAcceptsJSONValuesAndEchoesStoredBytesAtEveryRead(t *testing.
 	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
 
 	contexts := []json.RawMessage{
-		json.RawMessage(`{"document":"abc","cursor":7}`),
-		json.RawMessage(`["document",{"cursor":7}]`),
+		json.RawMessage(`{"document": "abc", "cursor": 7}`),
+		json.RawMessage(`["document", {"cursor": 7}]`),
 	}
 	ids := make([]string, 0, len(contexts))
 	for i, contextValue := range contexts {
 		request := validEnsureRequest("service:wiki", fmt.Sprintf("raw-context-%d", i))
-		request.Context = contextValue
-		response := postEnsure(t, handler, request)
+		response := postEnsureWithRawContext(t, handler, request, contextValue)
 		if response.Code != http.StatusAccepted {
 			t.Fatalf("Ensure context %s = %d, want 202: %s", contextValue, response.Code, response.Body.String())
 		}
@@ -356,6 +355,20 @@ func postEnsure(t *testing.T, handler http.Handler, request ensureRequest) *http
 	if err != nil {
 		t.Fatal(err)
 	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/completions", bytes.NewReader(body)))
+	return recorder
+}
+
+func postEnsureWithRawContext(t *testing.T, handler http.Handler, request ensureRequest, contextValue json.RawMessage) *httptest.ResponseRecorder {
+	t.Helper()
+	const marker = `"__raw_context_marker__"`
+	request.Context = json.RawMessage(marker)
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = bytes.Replace(body, []byte(marker), contextValue, 1)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/completions", bytes.NewReader(body)))
 	return recorder

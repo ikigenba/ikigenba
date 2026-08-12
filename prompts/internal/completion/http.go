@@ -1,6 +1,7 @@
 package completion
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -262,7 +263,46 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
+	encoded, err := marshalHTTPJSON(value)
+	if err != nil {
+		http.Error(w, "encode JSON response", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	_, _ = w.Write(append(encoded, '\n'))
+}
+
+func marshalHTTPJSON(value any) ([]byte, error) {
+	switch typed := value.(type) {
+	case readResponse:
+		return marshalReadResponse(typed)
+	case []readResponse:
+		var encoded bytes.Buffer
+		encoded.WriteByte('[')
+		for i, response := range typed {
+			if i > 0 {
+				encoded.WriteByte(',')
+			}
+			item, err := marshalReadResponse(response)
+			if err != nil {
+				return nil, err
+			}
+			encoded.Write(item)
+		}
+		encoded.WriteByte(']')
+		return encoded.Bytes(), nil
+	default:
+		return json.Marshal(value)
+	}
+}
+
+func marshalReadResponse(response readResponse) ([]byte, error) {
+	contextValue := response.Context
+	response.Context = nil
+	encoded, err := json.Marshal(response)
+	if err != nil || len(contextValue) == 0 {
+		return encoded, err
+	}
+	return bytes.Replace(encoded, []byte(`"context":null`), append([]byte(`"context":`), contextValue...), 1), nil
 }
