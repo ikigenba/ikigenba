@@ -953,10 +953,10 @@ func jobStatusTool() map[string]any {
 			"job_id": map[string]any{"type": "string"},
 		}, []string{"job_id"}),
 		"outputSchema": objectSchema(map[string]any{
-			"status": stringSchema(), "received_at": nullableStringSchema(), "started_at": nullableStringSchema(),
+			"status": stringSchema(), "correlation_id": stringSchema(), "received_at": nullableStringSchema(), "started_at": nullableStringSchema(),
 			"finished_at": nullableStringSchema(), "error": stringSchema(), "subjects": stringArraySchema(),
 			"units_complete": map[string]any{"type": "integer"}, "units_total": map[string]any{"type": "integer"},
-		}, []string{"status"}),
+		}, []string{"status", "correlation_id"}),
 	}
 }
 
@@ -1455,6 +1455,7 @@ func publicStatusResult(status any) map[string]any {
 	}
 	return map[string]any{
 		"status":         stringField(v, "Status"),
+		"correlation_id": stringField(v, "CorrelationID"),
 		"received_at":    interfaceField(v, "ReceivedAt"),
 		"started_at":     interfaceField(v, "StartedAt"),
 		"finished_at":    interfaceField(v, "FinishedAt"),

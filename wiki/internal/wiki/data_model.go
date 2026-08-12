@@ -66,6 +66,7 @@ type Job struct {
 // JobStatus is the inspectable state of an ingest job.
 type JobStatus struct {
 	ID            string
+	CorrelationID string
 	Status        string
 	ReceivedAt    time.Time
 	StartedAt     *time.Time
@@ -523,9 +524,14 @@ func (s *JobStore) Status(ctx context.Context, id string) (JobStatus, error) {
 			COALESCE((SELECT units FROM job_staging WHERE job_id = ? AND stage = 'extract' AND unit = ''), 0)`, id, id).Scan(&unitsComplete, &unitsTotal); err != nil {
 		return JobStatus{}, err
 	}
+	correlationID := job.CorrelationID
+	if correlationID == "" {
+		correlationID = job.ID
+	}
 
 	return JobStatus{
 		ID:            job.ID,
+		CorrelationID: correlationID,
 		Status:        job.Status,
 		ReceivedAt:    job.ReceivedAt,
 		StartedAt:     timePtr(job.StartedAt),

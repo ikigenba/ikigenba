@@ -272,6 +272,7 @@ type publicPage struct {
 
 type publicJobStatus struct {
 	ID            string
+	CorrelationID string
 	Status        string
 	ReceivedAt    time.Time
 	StartedAt     *time.Time
@@ -443,6 +444,7 @@ func (s publicStatusService) JobStatus(ctx context.Context, jobID string) (publi
 	}
 	return publicJobStatus{
 		ID:            status.ID,
+		CorrelationID: status.CorrelationID,
 		Status:        status.Status,
 		ReceivedAt:    status.ReceivedAt,
 		StartedAt:     status.StartedAt,

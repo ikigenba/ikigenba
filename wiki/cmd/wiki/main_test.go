@@ -27,6 +27,7 @@ import (
 	"appkit/manifest"
 	"appkit/server"
 	appkitweb "appkit/web"
+	"eventplane/correlation"
 	"registry"
 
 	"wiki/internal/ask"
@@ -352,6 +353,50 @@ func TestBuildSpecWiresTwentyMCPTools(t *testing.T) {
 		if !names[name] {
 			t.Fatalf("tool names = %#v, missing %s", names, name)
 		}
+	}
+}
+
+func TestBuildSpecStatusReportsStoredChainAndJobFallback(t *testing.T) {
+	// R-N729-RY1I
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	svc := wiki.NewService(conn, nil, nil, time.Now)
+	chainID := "01KZ6V08B73Q7W1G5GR3C2E5MK"
+	storedChainJobID, err := svc.Ingest(correlation.WithContext(ctx, chainID), "default", "owner-id", "owner@example.com", "stored chain", "", nil)
+	if err != nil {
+		t.Fatalf("Ingest stored-chain job: %v", err)
+	}
+	fallbackJobID, err := svc.Ingest(ctx, "default", "owner-id", "owner@example.com", "job fallback", "", nil)
+	if err != nil {
+		t.Fatalf("Ingest fallback job: %v", err)
+	}
+
+	h := buildSpecTestHandler(t, conn, newSpec(staticConfig(wiki.Config{
+		SearchDefault: 8,
+		SearchCap:     32,
+	})))
+	statusCorrelation := func(jobID string) string {
+		t.Helper()
+		text := mcpToolCallText(t, h, fmt.Sprintf(`{
+			"jsonrpc":"2.0","id":"status","method":"tools/call",
+			"params":{"name":"status","arguments":{"job_id":%q}}
+		}`, jobID))
+		var result struct {
+			CorrelationID string `json:"correlation_id"`
+		}
+		if err := json.Unmarshal([]byte(text), &result); err != nil {
+			t.Fatalf("decode status response for %s: %v; text=%s", jobID, err, text)
+		}
+		return result.CorrelationID
+	}
+
+	if got := statusCorrelation(storedChainJobID); got != chainID {
+		t.Fatalf("stored-chain job correlation_id = %q, want %q (not job id %q)", got, chainID, storedChainJobID)
+	}
+	if got := statusCorrelation(fallbackJobID); got != fallbackJobID {
+		t.Fatalf("empty-chain job correlation_id = %q, want job id %q", got, fallbackJobID)
 	}
 }
 
