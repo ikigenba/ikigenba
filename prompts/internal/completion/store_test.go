@@ -67,10 +67,14 @@ func TestStoreSecondExpiredLeaseFailsAsAbandonedAndEnqueuesResult(t *testing.T) 
 	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
 	a := NewStore(database, "owner-a", func() time.Time { return now })
 	item := testQueueItem(t, a, "service:wiki", "poison")
-	_, _ = a.Claim(t.Context())
+	if _, err := a.Claim(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	now = now.Add(LeaseTTL + time.Second)
 	b := NewStore(database, "owner-b", func() time.Time { return now })
-	_, _ = b.Claim(t.Context())
+	if _, err := b.Claim(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	now = now.Add(LeaseTTL + time.Second)
 	c := NewStore(database, "owner-c", func() time.Time { return now })
 	if _, err := c.Claim(t.Context()); !errors.Is(err, ErrNotFound) {
@@ -112,25 +116,39 @@ func TestStoreReleaseRequiresCurrentOwnerAndRunningStatus(t *testing.T) {
 	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
 	a := NewStore(database, "owner-a", func() time.Time { return now })
 	item := testQueueItem(t, a, "service:wiki", "guards")
-	_, _ = a.Claim(t.Context())
+	if _, err := a.Claim(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	now = now.Add(LeaseTTL + time.Second)
 	b := NewStore(database, "owner-b", func() time.Time { return now })
-	reclaimed, _ := b.Claim(t.Context())
+	reclaimed, err := b.Claim(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if released, err := a.Release(t.Context(), item.ID); err != nil || released {
 		t.Fatalf("stale Release = %v, %v", released, err)
 	}
-	stillRunning, _ := b.Get(t.Context(), item.ID, item.Consumer)
+	stillRunning, err := b.Get(t.Context(), item.ID, item.Consumer)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if stillRunning.Status != StatusRunning || stillRunning.Owner != reclaimed.Owner || !stillRunning.LeaseExpiresAt.Equal(reclaimed.LeaseExpiresAt) {
 		t.Fatalf("stale release changed row: %#v", stillRunning)
 	}
 	if err := b.Complete(t.Context(), item.ID, `true`, `{}`, 1); err != nil {
 		t.Fatal(err)
 	}
-	done, _ := b.Get(t.Context(), item.ID, item.Consumer)
+	done, err := b.Get(t.Context(), item.ID, item.Consumer)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if released, err := b.Release(t.Context(), item.ID); err != nil || released {
 		t.Fatalf("done Release = %v, %v", released, err)
 	}
-	after, _ := b.Get(t.Context(), item.ID, item.Consumer)
+	after, err := b.Get(t.Context(), item.ID, item.Consumer)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if after.Status != StatusDone || after.Owner != done.Owner || !after.LeaseExpiresAt.Equal(done.LeaseExpiresAt) {
 		t.Fatalf("release changed done row: before=%#v after=%#v", done, after)
 	}
@@ -142,17 +160,24 @@ func TestStoreCompleteAcceptsStaleSuccessButNeverOverwritesDone(t *testing.T) {
 	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
 	a := NewStore(database, "owner-a", func() time.Time { return now })
 	item := testQueueItem(t, a, "service:wiki", "success-wins")
-	_, _ = a.Claim(t.Context())
+	if _, err := a.Claim(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	now = now.Add(LeaseTTL + time.Second)
 	b := NewStore(database, "owner-b", func() time.Time { return now })
-	_, _ = b.Claim(t.Context())
+	if _, err := b.Claim(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if err := a.Complete(t.Context(), item.ID, `{"winner":"a"}`, `{"total":7}`, 2); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.Complete(t.Context(), item.ID, `{"winner":"b"}`, `{"total":9}`, 3); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := a.Get(t.Context(), item.ID, item.Consumer)
+	got, err := a.Get(t.Context(), item.ID, item.Consumer)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got.Status != StatusDone || got.Result != `{"winner":"a"}` || got.UsageJSON != `{"total":7}` || got.CostUSD != 2 {
 		t.Fatalf("done item = %#v", got)
 	}
@@ -164,20 +189,34 @@ func TestStoreFailRequiresCurrentOwnerAndNeverOverwritesDone(t *testing.T) {
 	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
 	a := NewStore(database, "owner-a", func() time.Time { return now })
 	item := testQueueItem(t, a, "service:wiki", "failure-guards")
-	_, _ = a.Claim(t.Context())
+	if _, err := a.Claim(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	now = now.Add(LeaseTTL + time.Second)
 	b := NewStore(database, "owner-b", func() time.Time { return now })
-	_, _ = b.Claim(t.Context())
+	if _, err := b.Claim(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if err := a.Fail(t.Context(), item.ID, "stale", `{}`, 1); err != nil {
 		t.Fatal(err)
 	}
-	running, _ := b.Get(t.Context(), item.ID, item.Consumer)
+	running, err := b.Get(t.Context(), item.ID, item.Consumer)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if running.Status != StatusRunning || running.Error != "" {
 		t.Fatalf("stale failure landed: %#v", running)
 	}
-	_ = b.Complete(t.Context(), item.ID, `true`, `{}`, 2)
-	_ = b.Fail(t.Context(), item.ID, "late", `{}`, 3)
-	done, _ := b.Get(t.Context(), item.ID, item.Consumer)
+	if err := b.Complete(t.Context(), item.ID, `true`, `{}`, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Fail(t.Context(), item.ID, "late", `{}`, 3); err != nil {
+		t.Fatal(err)
+	}
+	done, err := b.Get(t.Context(), item.ID, item.Consumer)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if done.Status != StatusDone || done.Error != "" || done.Result != `true` || done.CostUSD != 2 {
 		t.Fatalf("failure overwrote success: %#v", done)
 	}
@@ -190,7 +229,9 @@ func TestStoreTerminalWriteAfterAckIsLoggedNoOp(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
 	store := NewStore(database, "owner-a", time.Now, logger)
 	item := testQueueItem(t, store, "service:wiki", "acked-running")
-	_, _ = store.Claim(t.Context())
+	if _, err := store.Claim(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.Ack(t.Context(), item.ID, item.Consumer); err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +298,10 @@ func TestStoreClaimPrefersConsumerWithoutRunningWork(t *testing.T) {
 	store := NewStore(database, "owner-a", func() time.Time { return now })
 	testQueueItem(t, store, "service:first", "first-running")
 	backlog := testQueueItem(t, store, "service:first", "first-backlog")
-	claimed, _ := store.Claim(t.Context())
+	claimed, err := store.Claim(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if claimed.Consumer != "service:first" {
 		t.Fatalf("first Claim = %#v", claimed)
 	}
@@ -280,9 +324,13 @@ func TestStoreSweepDeletesExpiredTerminalAndReclaimBoundItemsOnly(t *testing.T) 
 	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
 	store := NewStore(database, "owner-a", func() time.Time { return now })
 	abandoned := testQueueItem(t, store, "service:wiki", "reclaim-bound")
-	_, _ = store.Claim(t.Context())
+	if _, err := store.Claim(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	now = now.Add(LeaseTTL + time.Second)
-	_, _ = NewStore(database, "owner-b", func() time.Time { return now }).Claim(t.Context())
+	if _, err := NewStore(database, "owner-b", func() time.Time { return now }).Claim(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	now = now.Add(LeaseTTL + time.Second)
 	if _, err := NewStore(database, "owner-c", func() time.Time { return now }).Claim(t.Context()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("reclaim-bound Claim = %v", err)
