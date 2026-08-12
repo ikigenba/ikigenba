@@ -11,5 +11,3 @@ phase line, so the anchored grep matches only phase lines.
 
 Next phase: 29
 
-- Phase 28 ⬜ realizes R-RYDN-YNR5, R-RZLK-CFHU — adopt the suite brand icon set
-
