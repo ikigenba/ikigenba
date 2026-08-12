@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 167
-
-- Phase 166 ⬜ realizes D95 — liveness, the five-status surface, and wedge visibility
