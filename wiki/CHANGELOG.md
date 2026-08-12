@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.32.0 — 2026-08-11
+
+- The service's web pages now carry the suite's brand icon: browsers show the ikigenba mark on the tab, in bookmarks and history, and as the icon if the page is saved to an iOS home screen. Nothing else about the pages changed.
+
 ## v0.31.0 — 2026-08-11
 
 - Deleting a scope now takes effect immediately and completely: search and ask reflect the deletion at once with no restart, and recreating the same scope name starts a genuinely empty scope — the deleted generation's content can never resurface, even from ingests that were still running at the delete. This fixes asks failing with a bare "ask wiki" page after a scope was deleted and re-ingested.
