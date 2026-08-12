@@ -50,8 +50,17 @@ func Spec() appkit.Spec {
 			if err != nil {
 				return err
 			}
+			staticHandler := web.StaticHandler()
 			rt.Handle("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
-			rt.Handle("GET /static/", http.StripPrefix("/static/", web.StaticHandler()))
+			rt.Handle("GET /static/", http.StripPrefix("/static/", staticHandler))
+			rt.Handle("GET /favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				staticRequest := *r
+				staticURL := *r.URL
+				staticURL.Path = "/static/favicon.ico"
+				staticRequest.URL = &staticURL
+				staticRequest.RequestURI = ""
+				staticHandler.ServeHTTP(w, &staticRequest)
+			}))
 			rt.HandleLoopback("GET /pr", client.PRHandler())
 			rt.HandleLoopback("GET /token", client.TokenHandler())
 			handler, err := mcp.NewHandler(client, rt)

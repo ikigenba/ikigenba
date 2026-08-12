@@ -1,6 +1,7 @@
 package githubapp
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -291,6 +292,33 @@ func TestAssembledSpecServesBrandIconAssets(t *testing.T) {
 				t.Fatalf("GET %s Content-Type = %q, want %q", asset, got, wantContentType)
 			}
 		})
+	}
+}
+
+func TestAssembledSpecServesRootFaviconIdenticallyToStaticAsset(t *testing.T) {
+	// R-8MFA-HUNC
+	setAppAuthEnv(t)
+
+	handler := assembledSpecHandler(t, &http.Client{})
+	root := httptest.NewRecorder()
+	handler.ServeHTTP(root, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
+	if root.Code >= http.StatusMultipleChoices && root.Code < http.StatusBadRequest {
+		t.Fatalf("GET /favicon.ico redirected with status %d, want 200", root.Code)
+	}
+	if root.Code != http.StatusOK {
+		t.Fatalf("GET /favicon.ico = %d, want 200", root.Code)
+	}
+	if got := root.Header().Get("Content-Type"); got != "image/x-icon" {
+		t.Fatalf("GET /favicon.ico Content-Type = %q, want %q", got, "image/x-icon")
+	}
+
+	static := httptest.NewRecorder()
+	handler.ServeHTTP(static, httptest.NewRequest(http.MethodGet, "/static/favicon.ico", nil))
+	if static.Code != http.StatusOK {
+		t.Fatalf("GET /static/favicon.ico = %d, want 200", static.Code)
+	}
+	if !bytes.Equal(root.Body.Bytes(), static.Body.Bytes()) {
+		t.Fatal("GET /favicon.ico body differs from GET /static/favicon.ico")
 	}
 }
 
