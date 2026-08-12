@@ -242,6 +242,32 @@ func TestSubjectStoreRejectsTypeOutsideClosedSet(t *testing.T) {
 	}
 }
 
+func TestSubjectStoreSaveAdoptsExistingNormalizedName(t *testing.T) {
+	// R-OU7O-PEBA
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	subjects := NewSubjectStore(conn)
+	if err := subjects.Save(ctx, Subject{ID: "subject-first", Name: "Shared Name", Type: "entity"}); err != nil {
+		t.Fatalf("Save first subject: %v", err)
+	}
+	if err := subjects.Save(ctx, Subject{ID: "subject-rejected", Name: " shared name ", Type: "concept"}); err != nil {
+		t.Fatalf("Save conflicting normalized name: %v", err)
+	}
+	got, err := subjects.GetByNormName(ctx, "shared-name")
+	if err != nil {
+		t.Fatalf("GetByNormName: %v", err)
+	}
+	if got.ID != "subject-first" || got.Type != "entity" {
+		t.Fatalf("surviving subject = %+v, want original subject-first", got)
+	}
+	var count int
+	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM subjects WHERE scope = 'default' AND norm_name = 'shared-name'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("normalized-name row count = %d, %v; want 1", count, err)
+	}
+}
+
 func TestSubjectStoreCursorPaginationWalksRowsExactlyOnceInKeyOrder(t *testing.T) {
 	// R-17C5-VP2I
 	ctx := context.Background()

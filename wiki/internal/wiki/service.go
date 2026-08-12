@@ -497,6 +497,10 @@ func (s *Service) planIntegration(ctx context.Context, attr llm.Attribution, job
 		if err != nil {
 			return integrationPlan{}, err
 		}
+		if isNew {
+			subject.ID = s.newID()
+			knownByNorm[subject.NormName] = subject
+		}
 		if isNew && !newByNorm[subject.NormName] {
 			plan.newSubjects = append(plan.newSubjects, subject)
 			newByNorm[subject.NormName] = true
@@ -755,7 +759,6 @@ func (s *Service) plannedSubject(ctx context.Context, scope string, known map[st
 		return Subject{}, false, err
 	}
 	subject = Subject{
-		ID:       s.newID(),
 		Name:     strings.TrimSpace(item.Name),
 		NormName: normName,
 		Type:     item.Type,

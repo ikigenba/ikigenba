@@ -702,9 +702,16 @@ func (s *SubjectStore) Save(ctx context.Context, args ...any) error {
 		normName = Normalize(subject.Name)
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO subjects (id, scope, name, norm_name, type) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO subjects (id, scope, name, norm_name, type) VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(scope, norm_name) DO NOTHING`,
 		subject.ID, scope, subject.Name, normName, subject.Type)
-	return err
+	if err != nil {
+		return err
+	}
+	var survivingID string
+	return s.db.QueryRowContext(ctx,
+		`SELECT id FROM subjects WHERE scope = ? AND norm_name = ?`, scope, normName).
+		Scan(&survivingID)
 }
 
 func (s *SubjectStore) GetByNormName(ctx context.Context, args ...string) (Subject, error) {

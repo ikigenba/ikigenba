@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -23,21 +24,49 @@ type pipelineEnvelope struct {
 }
 
 type stagedIntegration struct {
-	NewSubjects []Subject    `json:"new_subjects"`
-	Claims      []Claim      `json:"claims"`
-	Pages       []stagedPage `json:"pages"`
+	NewSubjects []stagedSubject `json:"new_subjects"`
+	Claims      []stagedClaim   `json:"claims"`
+	Pages       []stagedPage    `json:"pages"`
+}
+
+type stagedSubject struct {
+	NormName string `json:"norm_name"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+}
+
+type stagedClaim struct {
+	ID       string `json:"id"`
+	NormName string `json:"norm_name"`
+	JobID    string `json:"job_id"`
+	Body     string `json:"body"`
 }
 
 type stagedPage struct {
-	Subject Subject `json:"subject"`
-	Claims  []Claim `json:"claims,omitempty"`
-	Delete  bool    `json:"delete,omitempty"`
+	Subject stagedSubject `json:"subject"`
+	Claims  []stagedClaim `json:"claims,omitempty"`
+	Delete  bool          `json:"delete,omitempty"`
 }
 
 type stagedCompiledPage struct {
-	SubjectID string `json:"subject_id"`
-	Title     string `json:"title"`
-	Body      string `json:"body"`
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+func stageSubject(subject Subject) stagedSubject {
+	return stagedSubject{NormName: subject.NormName, Name: subject.Name, Type: subject.Type}
+}
+
+func (s stagedSubject) subject(id string) Subject {
+	return Subject{ID: id, NormName: s.NormName, Name: s.Name, Type: s.Type}
+}
+
+func modelClaims(claims []stagedClaim, subjectID string) []Claim {
+	out := make([]Claim, 0, len(claims))
+	for _, claim := range claims {
+		out = append(out, Claim{ID: claim.ID, SubjectID: subjectID, JobID: claim.JobID, Body: claim.Body})
+	}
+	return out
 }
 
 func (s *Service) handoffExtract(ctx context.Context, job Job) error {
@@ -188,7 +217,7 @@ func (s *Service) applyExtract(ctx context.Context, job Job, item llm.Item) erro
 			Site:     s.compileSite,
 			Attr:     jobAttribution(job),
 			Attempt:  1,
-			Messages: []llm.Message{{Role: "user", Text: renderCompile(page.Subject, page.Claims)}},
+			Messages: []llm.Message{{Role: "user", Text: renderCompile(page.Subject.subject(""), modelClaims(page.Claims, ""))}},
 		})
 		if err != nil {
 			return err
@@ -219,33 +248,60 @@ func (s *Service) stageExtractPlan(ctx context.Context, job Job, extracted []ext
 	}
 	knownByNorm := map[string]Subject{}
 	newByNorm := map[string]bool{}
-	claimsBySubject := map[string][]Claim{}
+	claimsByNorm := map[string][]stagedClaim{}
+	pageByNorm := map[string]stagedSubject{}
 	plan := stagedIntegration{}
+	for _, subject := range affected {
+		knownByNorm[subject.NormName] = subject
+		pageByNorm[subject.NormName] = stageSubject(subject)
+	}
 	for _, item := range extracted {
-		if Normalize(item.Name) == "" {
+		normName := Normalize(item.Name)
+		if normName == "" {
 			continue
 		}
-		subject, isNew, err := s.plannedSubject(ctx, job.Scope, knownByNorm, item)
-		if err != nil {
-			return stagedIntegration{}, err
+		subject, ok := knownByNorm[normName]
+		if !ok {
+			var err error
+			subject, err = s.resolver.ResolveByName(ctx, job.Scope, item.Name)
+			if err != nil && !errors.Is(err, ErrSubjectNotFound) {
+				return stagedIntegration{}, err
+			}
+			if errors.Is(err, ErrSubjectNotFound) {
+				subject = Subject{Name: strings.TrimSpace(item.Name), NormName: normName, Type: item.Type}
+				if !newByNorm[normName] {
+					plan.NewSubjects = append(plan.NewSubjects, stageSubject(subject))
+					newByNorm[normName] = true
+				}
+			}
+			knownByNorm[normName] = subject
 		}
-		if isNew && !newByNorm[subject.NormName] {
-			plan.NewSubjects = append(plan.NewSubjects, subject)
-			newByNorm[subject.NormName] = true
-		}
-		affected[subject.ID] = subject
+		pageByNorm[subject.NormName] = stageSubject(subject)
 		for _, body := range item.Claims {
-			claim := Claim{ID: s.newID(), SubjectID: subject.ID, JobID: job.ID, Body: strings.TrimSpace(body)}
+			claim := stagedClaim{ID: s.newID(), NormName: subject.NormName, JobID: job.ID, Body: strings.TrimSpace(body)}
 			plan.Claims = append(plan.Claims, claim)
-			claimsBySubject[subject.ID] = append(claimsBySubject[subject.ID], claim)
+			claimsByNorm[subject.NormName] = append(claimsByNorm[subject.NormName], claim)
 		}
 	}
-	for _, subject := range sortedSubjects(affected) {
-		claims, err := s.plannedClaims(ctx, job.ID, subject.ID, claimsBySubject[subject.ID])
-		if err != nil {
-			return stagedIntegration{}, err
+	normNames := make([]string, 0, len(pageByNorm))
+	for normName := range pageByNorm {
+		normNames = append(normNames, normName)
+	}
+	sort.Strings(normNames)
+	for _, normName := range normNames {
+		subject := knownByNorm[normName]
+		claims := claimsByNorm[normName]
+		if subject.ID != "" {
+			existing, err := s.plannedClaims(ctx, job.ID, subject.ID, nil)
+			if err != nil {
+				return stagedIntegration{}, err
+			}
+			for _, claim := range existing {
+				claims = append(claims, stagedClaim{ID: claim.ID, NormName: normName, JobID: claim.JobID, Body: claim.Body})
+			}
 		}
-		plan.Pages = append(plan.Pages, stagedPage{Subject: subject, Claims: claims, Delete: len(claims) == 0})
+		sort.Slice(claims, func(i, j int) bool { return claims[i].ID < claims[j].ID })
+		plan.Pages = append(plan.Pages, stagedPage{Subject: pageByNorm[normName], Claims: claims, Delete: len(claims) == 0})
 	}
 	raw, err := json.Marshal(plan)
 	if err != nil {
@@ -279,7 +335,7 @@ func (s *Service) applyCompile(ctx context.Context, job Job, envelope pipelineEn
 	if err != nil {
 		return err
 	}
-	page, ok := compilePage(plan, envelope.Subject)
+	_, ok := compilePage(plan, envelope.Subject)
 	if !found || !ok || envelope.Units != compileUnits(plan) {
 		return s.queue.Ack(ctx, item.ID)
 	}
@@ -287,7 +343,7 @@ func (s *Service) applyCompile(ctx context.Context, job Job, envelope pipelineEn
 	if err != nil {
 		return s.correctOrFail(ctx, job, item, "compile", envelope.Subject, envelope.Units, err)
 	}
-	payload, err := json.Marshal(stagedCompiledPage{SubjectID: page.Subject.ID, Title: title, Body: body})
+	payload, err := json.Marshal(stagedCompiledPage{Title: title, Body: body})
 	if err != nil {
 		return err
 	}
@@ -335,7 +391,7 @@ func (s *Service) correctOrFail(ctx context.Context, job Job, item llm.Item, sta
 		if !found || !ok {
 			return s.queue.Ack(ctx, item.ID)
 		}
-		original = renderCompile(page.Subject, page.Claims)
+		original = renderCompile(page.Subject.subject(""), modelClaims(page.Claims, ""))
 	}
 	if attempt >= site.MaxParseRetries+1 {
 		if finished, err := s.jobs.FailWaiting(ctx, job.ID, s.now(), semanticErr.Error()); err != nil {
@@ -430,25 +486,63 @@ func (s *Service) integrateStaged(ctx context.Context, job Job, plan stagedInteg
 		return nil
 	}
 	subjects := NewSubjectStore(tx)
+	resolver := NewResolver(tx)
 	claims := NewClaimStore(tx)
 	pages := NewPageStore(tx)
+	newByNorm := make(map[string]stagedSubject, len(plan.NewSubjects))
+	for _, subject := range plan.NewSubjects {
+		newByNorm[subject.NormName] = subject
+	}
+	required := make(map[string]bool)
+	for _, claim := range plan.Claims {
+		required[claim.NormName] = true
+	}
+	for _, page := range plan.Pages {
+		required[page.Subject.NormName] = true
+	}
+	resolved := make(map[string]Subject, len(required))
+	for normName := range required {
+		subject, resolveErr := resolver.ResolveByName(ctx, job.Scope, normName)
+		if resolveErr == nil {
+			resolved[normName] = subject
+			continue
+		}
+		if !errors.Is(resolveErr, ErrSubjectNotFound) {
+			return resolveErr
+		}
+		if _, allowed := newByNorm[normName]; !allowed {
+			return s.failStaleIntegration(ctx, tx, job, normName)
+		}
+	}
 	if err := claims.DeleteByJob(ctx, job.ID); err != nil {
 		return err
 	}
-	for _, subject := range plan.NewSubjects {
-		if err := subjects.Save(ctx, job.Scope, subject); err != nil {
+	for _, staged := range plan.NewSubjects {
+		normName := staged.NormName
+		if _, ok := resolved[normName]; ok {
+			continue
+		}
+		if err := subjects.Save(ctx, job.Scope, staged.subject(s.newID())); err != nil {
 			return err
 		}
+		subject, err := resolver.ResolveByName(ctx, job.Scope, normName)
+		if err != nil {
+			return err
+		}
+		resolved[normName] = subject
 	}
-	for _, claim := range plan.Claims {
+	for _, staged := range plan.Claims {
+		subject := resolved[staged.NormName]
+		claim := Claim{ID: staged.ID, SubjectID: subject.ID, JobID: staged.JobID, Body: staged.Body}
 		if err := claims.Save(ctx, claim); err != nil {
 			return err
 		}
 	}
 	var pagesToEmbed []Page
 	for _, planned := range plan.Pages {
+		subject := resolved[planned.Subject.NormName]
 		if planned.Delete {
-			if err := pages.DeleteBySubject(ctx, planned.Subject.ID); err != nil {
+			if err := pages.DeleteBySubject(ctx, subject.ID); err != nil {
 				return err
 			}
 			continue
@@ -461,7 +555,7 @@ func (s *Service) integrateStaged(ctx context.Context, job Job, plan stagedInteg
 		if err := json.Unmarshal([]byte(raw), &compiled); err != nil {
 			return err
 		}
-		page := Page{ID: planned.Subject.ID, SubjectID: planned.Subject.ID, Title: compiled.Title, Body: compiled.Body}
+		page := Page{ID: subject.ID, SubjectID: subject.ID, Title: compiled.Title, Body: compiled.Body}
 		if err := pages.Upsert(ctx, page); err != nil {
 			return err
 		}
@@ -493,5 +587,32 @@ func (s *Service) integrateStaged(ctx context.Context, job Job, plan stagedInteg
 			return err
 		}
 	}
+	return nil
+}
+
+func (s *Service) failStaleIntegration(ctx context.Context, tx *sql.Tx, job Job, normName string) error {
+	reason := fmt.Sprintf("stale staged plan: subject %q no longer resolves", normName)
+	res, err := tx.ExecContext(ctx, `UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = ?`,
+		JobFailed, formatTime(s.now()), reason, job.ID, JobWaiting)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM job_staging WHERE job_id = ?`, job.ID); err != nil {
+		return err
+	}
+	if err := s.jobs.ReleaseLease(ctx, tx, job.ID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.notify()
 	return nil
 }
