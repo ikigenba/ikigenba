@@ -201,8 +201,28 @@ func TestSpecHandlersAssembleTokenRouteJSONGuardAndFailureR_GTQ4_30E7(t *testing
 	}
 }
 
+// setAppAuthEnv supplies the app-auth environment Spec() reads when it registers
+// routes. Route registration mints an installation token, so the assembled
+// handler cannot be built without it; the key is generated per test, so the
+// fixture stays offline and needs no credential on the machine.
+func setAppAuthEnv(t *testing.T) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("IKIGENBA_APP_ID", "12345")
+	t.Setenv("IKIGENBA_GITHUB_ORG", "acme")
+	t.Setenv("IKIGENBA_APP_PRIVATE_KEY", string(pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})))
+}
+
 func TestEveryServedDocumentCarriesBrandIcons(t *testing.T) {
 	// R-RYDN-YNR5
+	setAppAuthEnv(t)
+
 	documents, err := filepath.Glob(filepath.Join("..", "web", "*.html"))
 	if err != nil {
 		t.Fatalf("enumerate HTML documents: %v", err)
@@ -248,6 +268,8 @@ func TestEveryServedDocumentCarriesBrandIcons(t *testing.T) {
 
 func TestAssembledSpecServesBrandIconAssets(t *testing.T) {
 	// R-RZLK-CFHU
+	setAppAuthEnv(t)
+
 	handler := assembledSpecHandler(t, &http.Client{})
 	assets := map[string]string{
 		"/static/favicon.ico":          "image/x-icon",
