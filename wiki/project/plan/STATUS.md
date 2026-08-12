@@ -12,5 +12,4 @@ lines.
 
 Next phase: 162
 
-- Phase 160 ⬜ realizes R-UCLK-JDHN, R-UDTG-X58C — the live path's own queue partition (`service:wiki.ask`) + `Do`'s ErrGone names its id
 - Phase 161 ⬜ realizes R-UF1D-AWZ1, R-UG99-OOPQ — composed seam proof: wiki's client driven against the real prompts binary
