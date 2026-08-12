@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 80
-
-- Phase 79 ⬜ realizes R-U7PZ-0AIV, R-U8XV-E29K — the queue's `context` field is a raw JSON value, validated at Ensure and echoed byte-verbatim
