@@ -33,7 +33,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D26 | project/design/D26.md | File-share sandbox tools: `File*` over the share's loopback filesystem API | R-F74Y-B8X1, R-F8CU-P0NQ, R-F9KR-2SEF, R-FASN-GK54, R-FC0J-UBVT, R-FD8G-83MI, R-FEGC-LVD7 |
 | D27 | project/design/D27.md | Structured MCP adoption: `StructuredResult`, typed error codes, output schemas, shared loopback guard | R-B4QM-WZGJ, R-B5YJ-AR78, R-B76F-OIXX, R-B8EC-2AOM, R-B9M8-G2FB, R-BGXM-QOVH, R-BI5J-4GM6, R-BC21-7LWP, R-BD9X-LDNE, R-BEHT-Z5E3, R-BFPQ-CX4S |
 | D28 | project/design/D28.md | The `calls` table: one durable row per inference unit | R-5J1W-8BCM, R-5K9S-M33B, R-5LHO-ZUU0, R-5MPL-DMKP, R-5NXH-REBE |
-| D29 | project/design/D29.md | The completion queue: durable handoff for sibling-service inference | R-J7QG-FRDY, R-J8YC-TJ4N, R-JA69-7AVC, R-JBE5-L2M1, R-JCM1-YUCQ, R-JDTY-CM3F, R-JF1U-QDU4, R-JG9R-45KT, R-JHHN-HXBI, R-JIPJ-VP27, R-JJXG-9GSW, R-JL5C-N8JL, R-JMD9-10AA, R-JOT1-SJRO, R-JQ0Y-6BID, R-JR8U-K392, R-JSGQ-XUZR, R-U7PZ-0AIV, R-U8XV-E29K |
+| D29 | project/design/D29.md | The completion queue: durable handoff for sibling-service inference | R-J7QG-FRDY, R-J8YC-TJ4N, R-JA69-7AVC, R-JBE5-L2M1, R-JCM1-YUCQ, R-JDTY-CM3F, R-JF1U-QDU4, R-JG9R-45KT, R-JHHN-HXBI, R-JJXG-9GSW, R-JL5C-N8JL, R-JMD9-10AA, R-JOT1-SJRO, R-JQ0Y-6BID, R-JR8U-K392, R-JSGQ-XUZR, R-U7PZ-0AIV, R-U8XV-E29K, R-ZJKL-8UQY, R-ZM0E-0E8C, R-ZKSH-MMHN, R-ZN8A-E5Z1, R-06QO-IHU5, R-032Z-D6M2, R-04AV-QYCR, R-ZPO3-5PGF, R-00N6-LN4O, R-01V2-ZEVD, R-05IS-4Q3G, R-ZOG6-RXPQ, R-ZQVZ-JH74, R-ZTBS-B0OI, R-ZUJO-OSF7, R-ZVRL-2K5W, R-ZWZH-GBWL, R-ZY7D-U3NA, R-ZZFA-7VDZ, R-096H-A1BJ |
 | D30 | project/design/D30.md | `POST /embed`: the synchronous embedding endpoint | R-604H-L3QC, R-61CD-YVH1, R-62KA-CN7Q, R-63S6-QEYF, R-6503-46P4, R-667Z-HYFT |
 | D31 | project/design/D31.md | Admission control: bounded inference concurrency | R-67FV-VQ6I, R-68NS-9HX7, R-6CBH-ET5A, R-6B3L-11EL |
 | D32 | project/design/D32.md | `calls` and `usage`: the inspection and reporting MCP tools | R-6DJD-SKVZ, R-6ERA-6CMO, R-6FZ6-K4DD, R-6H72-XW42, R-6IEZ-BNUR |
@@ -65,17 +65,26 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D60 | project/design/D60.md | The prompts-owned peer MCP client | R-OLVJ-TO7G, R-OOBC-L7OU, R-OPJ8-YZFJ, R-OQR5-CR68 |
 | D61 | project/design/D61.md | Patch-semantics `update`: omitted means unchanged, and no empty prompt is ever stored | R-A8EU-5VUL, R-A9MQ-JNLA, R-AAUM-XFBZ, R-AC2J-B72O, R-ADAF-OYTD, R-AEIC-2QK2 |
 | D62 | project/design/D62.md | Adopt the suite brand icon contract: the shipped icon set and its link markup | adopts R-RYDN-YNR5, R-RZLK-CFHU (root project/design/D29.md) |
+| D63 | project/design/D63.md | Queue observability: the completion queue's state is visible without opening the database | R-07YK-W9KU, R-15VT-PVYT |
 
 ## Verification ids → Decision
 
 | id | Decision | File |
 |----|----------|------|
+| R-00N6-LN4O | D29 | project/design/D29.md |
 | R-013A-RBVD | D35 | project/design/D35.md |
+| R-01V2-ZEVD | D29 | project/design/D29.md |
+| R-032Z-D6M2 | D29 | project/design/D29.md |
 | R-03J3-IVCR | D35 | project/design/D35.md |
+| R-04AV-QYCR | D29 | project/design/D29.md |
 | R-04QZ-WN3G | D35 | project/design/D35.md |
+| R-05IS-4Q3G | D29 | project/design/D29.md |
 | R-05YW-AEU5 | D35 | project/design/D35.md |
+| R-06QO-IHU5 | D29 | project/design/D29.md |
 | R-076S-O6KU | D35 | project/design/D35.md |
+| R-07YK-W9KU | D63 | project/design/D63.md |
 | R-08EP-1YBJ | D35 | project/design/D35.md |
+| R-096H-A1BJ | D29 | project/design/D29.md |
 | R-09ML-FQ28 | D35 | project/design/D35.md |
 | R-0AUH-THSX | D35 | project/design/D35.md |
 | R-0C2E-79JM | D35 | project/design/D35.md |
@@ -85,6 +94,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-0GXZ-QCIE | D35 | project/design/D35.md |
 | R-0I5W-4493 | D35 | project/design/D35.md |
 | R-0JDS-HVZS | D35 | project/design/D35.md |
+| R-15VT-PVYT | D63 | project/design/D63.md |
 | R-1ONM-PPDU | D3 | project/design/D03.md |
 | R-1PVJ-3H4J | D3 | project/design/D03.md |
 | R-1R3F-H8V8 | D3 | project/design/D03.md |
@@ -224,7 +234,6 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-JF1U-QDU4 | D29 | project/design/D29.md |
 | R-JG9R-45KT | D29 | project/design/D29.md |
 | R-JHHN-HXBI | D29 | project/design/D29.md |
-| R-JIPJ-VP27 | D29 | project/design/D29.md |
 | R-JJXG-9GSW | D29 | project/design/D29.md |
 | R-JL5C-N8JL | D29 | project/design/D29.md |
 | R-JMD9-10AA | D29 | project/design/D29.md |
@@ -320,19 +329,94 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | R-U7PZ-0AIV | D29 | project/design/D29.md |
 | R-U8XV-E29K | D29 | project/design/D29.md |
 | R-VKB6-SHHV | D49 | project/design/D49.md (adopted from root `project/design/D11.md`) |
+| R-XXXX-XXXX | D18 | project/design/D18.md |
 | R-ZAC5-D0ZY | D3 | project/design/D03.md |
 | R-ZBK1-QSQN | D4 | project/design/D04.md |
 | R-ZCRY-4KHC | D5 | project/design/D05.md |
 | R-ZHNJ-NNG4 | D7 | project/design/D07.md |
+| R-ZJKL-8UQY | D29 | project/design/D29.md |
+| R-ZKSH-MMHN | D29 | project/design/D29.md |
+| R-ZM0E-0E8C | D29 | project/design/D29.md |
+| R-ZN8A-E5Z1 | D29 | project/design/D29.md |
 | R-ZNR1-KI5L | D39 | project/design/D39.md |
+| R-ZOG6-RXPQ | D29 | project/design/D29.md |
 | R-ZOYX-Y9WA | D40 | project/design/D40.md |
+| R-ZPO3-5PGF | D29 | project/design/D29.md |
+| R-ZQVZ-JH74 | D29 | project/design/D29.md |
 | R-ZREQ-PTDO | D40 | project/design/D40.md |
 | R-ZS8A-TVOF | D25 | project/design/D25.md |
 | R-ZSMN-3L4D | D40 | project/design/D40.md |
+| R-ZTBS-B0OI | D29 | project/design/D29.md |
 | R-ZTUJ-HCV2 | D41 | project/design/D41.md |
+| R-ZUJO-OSF7 | D29 | project/design/D29.md |
 | R-ZV2F-V4LR | D41 | project/design/D41.md |
+| R-ZVRL-2K5W | D29 | project/design/D29.md |
 | R-ZW7P-88WL | D34 | project/design/D34.md |
 | R-ZWAC-8WCG | D41 | project/design/D41.md |
+| R-ZWZH-GBWL | D29 | project/design/D29.md |
 | R-ZXFL-M0NA | D34 | project/design/D34.md |
+| R-ZY7D-U3NA | D29 | project/design/D29.md |
 | R-ZYNH-ZSDZ | D34 | project/design/D34.md |
+| R-ZZFA-7VDZ | D29 | project/design/D29.md |
 | R-ZZVE-DK4O | D35 | project/design/D35.md |
+
+## Success criteria → ids
+
+One line per product success criterion, in product order, mapped to the id(s) whose tests prove it end to end against the assembled artifact.
+
+| # | Success criterion (product order) | Proving ids |
+|---|-----------------------------------|-------------|
+| 1 | An `openai` prompt on a catalog model runs against the real API | R-JZES-1M2S, R-K5I9-YGS9 |
+| 2 | A model-only prompt stores and runs on that model's default provider, OpenRouter included | R-1ONM-PPDU, R-1X6X-E3KP |
+| 3 | An unknown provider is rejected at create; no row | R-JVR2-WAUP |
+| 4 | An out-of-catalog model, or a provider that cannot serve it, is rejected at create | R-JWYZ-A2LE, R-1PVJ-3H4J |
+| 5 | A reasoning setting the model does not accept is rejected, naming the accepted options | R-1R3F-H8V8, R-1SBB-V0LX, R-1TJ8-8SCM |
+| 6 | `describe` lists every catalog model; a listed model is accepted and an unlisted one rejected | R-222I-X6JH, R-KE1K-MUZ4 |
+| 7 | Config values apply to the run; an omitted key reverts to the default on the next run | R-JTBA-4RDB, R-JUJ6-IJ40 |
+| 8 | An update sending only config leaves instructions, system prompt, and name untouched | R-A8EU-5VUL |
+| 9 | No create or update may leave a prompt with empty instructions | R-AC2J-B72O, R-ADAF-OYTD, R-A9MQ-JNLA |
+| 10 | A pre-migration prompt with no provider still runs after the migration | R-KBLR-VBHQ, R-KCTO-938F |
+| 11 | A `zai` prompt with `base_url` targets that URL | R-JTBA-4RDB, R-1X6X-E3KP |
+| 12 | A config value the model ignores does not fail the run | R-1UR4-MK3B |
+| 13 | Editing a prompt mid-run does not affect that run | R-ZOYX-Y9WA |
+| 14 | A logged-in user lands in the styled browse surface; a logged-out one is sent to sign in | R-ZW7P-88WL, R-04QZ-WN3G, R-LAND-NMVR, R-ZYNH-ZSDZ |
+| 15 | The runs tab narrows by status or prompt and pages, server-side | R-08EP-1YBJ, R-09ML-FQ28, R-0AUH-THSX, R-076S-O6KU |
+| 16 | A run's log shows every call in order, notes aged-out bodies, and keeps oversized text retrievable | R-0EI6-YT10, R-0FQ3-CKRP, R-0GXZ-QCIE, R-0I5W-4493 |
+| 17 | A link to a deleted prompt gives a clear page, not a bare error | R-0DAA-L1AB, R-0JDS-HVZS |
+| 18 | Every loopback address comes from the registry; no port literal in production source | R-RG01-PORT, R-RG03-DBOX, R-RG04-NLIT |
+| 19 | A run discovers a suite service, loads its tools, and completes the task | R-P461-K8BV, R-OWUN-9LVP, R-OZAG-15D3 |
+| 20 | A dead suite service errors only its own calls; the run still completes | R-P1Q8-SOUH, R-OUEU-I2EB |
+| 21 | A run finished before a restart is still fully readable after it | R-ZNR1-KI5L |
+| 22 | Deleting a prompt leaves its runs intact and readable | R-ZWAC-8WCG, R-ZREQ-PTDO |
+| 23 | A run opened after its prompt was edited shows the text it actually executed | R-ZOYX-Y9WA, R-S0LS-SBR8 |
+| 24 | A prompt created through an agent is already under version control at its first revision | R-RLZ0-72UW, R-RTAE-HPB2 |
+| 25 | A file pushed beside a prompt's instructions appears in the next run's working folder | R-S5HE-BEQ0, R-S31L-JV8M |
+| 26 | A name differing only in punctuation is refused, naming the holder | R-RDFP-IOO1, R-RENL-WGEQ |
+| 27 | Two runs either side of an edit name different revisions, each re-readable | R-RWY3-N0J5, R-S0LS-SBR8 |
+| 28 | A run's proposed change waits under its own name, authoritative version untouched | R-RZDW-EK0J, R-S49H-XMZB |
+| 29 | A run told nothing about folding work in folds nothing in | R-SACZ-UHOS, R-S953-GPY3 |
+| 30 | Deleting a prompt archives its folder rather than destroying it | R-RQUL-Q5TO, R-IRRX-XZQ2 |
+| 31 | A change landing in a watched version-controlled folder runs its prompt | R-SBKW-89FH, R-SCSS-M166 |
+| 32 | A deleted run is gone completely, and every other run is untouched | R-ZTUJ-HCV2, R-ZV2F-V4LR |
+| 33 | A run pulls a shared file in and its report lands back in the share | R-F8CU-P0NQ, R-F9KR-2SEF, R-6QP5-MIDZ |
+| 34 | A shared file far larger than any message round-trips and the run completes | R-F8CU-P0NQ, R-FD8G-83MI |
+| 35 | A file a run saves into a watched folder triggers the workflows watching it | R-6O9C-UYWL, R-6PH9-8QNA |
+| 36 | A sibling submits a completion, is accepted immediately, and later collects the JSON reply; a bad submission is refused with no record | R-J7QG-FRDY, R-JBE5-L2M1, R-JA69-7AVC |
+| 37 | A completion continuing a prior exchange answers against that full history | R-JCM1-YUCQ |
+| 38 | A completion slower than any request could tolerate is still there to collect | R-JHHN-HXBI, R-JJXG-9GSW |
+| 39 | Prompts restarts with completions in flight and none are lost to the restart | R-ZJKL-8UQY, R-ZN8A-E5Z1 |
+| 40 | A returning consumer finds its finished results waiting, and acknowledging removes them | R-JL5C-N8JL, R-JMD9-10AA |
+| 41 | The same consumer and key twice executes once | R-J8YC-TJ4N |
+| 42 | Every failure cause — model, provider, runtime bound, repeated abandonment — is reported explicitly with its reason | R-JF1U-QDU4, R-JG9R-45KT, R-JHHN-HXBI, R-JDTY-CM3F, R-ZKSH-MMHN |
+| 43 | A completion whose execution is lost is carried to an answer anyway; none is left stranded | R-ZJKL-8UQY, R-ZKSH-MMHN, R-ZOG6-RXPQ, R-ZTBS-B0OI, R-ZUJO-OSF7 |
+| 44 | Refusals and failures carry a stable code saying whether a retry could help | R-ZY7D-U3NA, R-ZZFA-7VDZ |
+| 45 | Ordinary restarts do not consume an item's tolerance for abandonment | R-ZN8A-E5Z1 |
+| 46 | The owner sees queue depth, oldest waiting item, and abandoned work from the running service | R-07YK-W9KU, R-15VT-PVYT |
+| 47 | An embedding batch returns one vector per text, in order, with usage and cost | R-604H-L3QC |
+| 48 | A run, a completion, and an embedding are all listable with class, cause, name, model, tokens, cost, timing | R-5J1W-8BCM, R-6DJD-SKVZ, R-6JMV-PFLG |
+| 49 | Totals grouped by workload name add up to the individual records | R-5NXH-REBE, R-6FZ6-K4DD |
+| 50 | Bodies are readable within the retention window and reported as pruned after it | R-5K9S-M33B, R-6ERA-6CMO |
+| 51 | Concurrency caps hold, every run completes, and service work still progresses while sessions saturate | R-67FV-VQ6I, R-68NS-9HX7, R-6B3L-11EL |
+| 52 | `auth: "sub"` runs on the subscription when provisioned and is rejected naming the credential when not | R-T319-YQNF, R-SZDK-TFFC, R-T496-CIE4 |
+| 53 | `auth: "sub"` with a non-OpenAI provider, an unknown value, or a custom `base_url` is rejected | R-SVPV-O479, R-SWXS-1VXY, R-SY5O-FNON |
+| 54 | A record of another service's work leads back to the causing run and its conversation, sharing one chain id | R-HKQ8-U5XZ, R-HN61-LPFD, R-HODX-ZH62, R-HZD1-FEUB |

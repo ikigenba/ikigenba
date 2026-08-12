@@ -9,4 +9,8 @@ loop **deletes** that phase's line and its `phase-NN.md` — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 80
+Next phase: 83
+
+- Phase 80 ⬜ realizes D29 (store slice) — the completion queue's ownership lease, reclaim bound, asymmetric terminal writes, and per-consumer partition enforcement
+- Phase 81 ⬜ realizes D29 (executor slice) — lease renewal and graceful release, a pool that survives errors and panics, and terminal writes that are never lost quietly
+- Phase 82 ⬜ realizes D29 (http slice) and D63 — machine-readable error codes, the raised key cap, the pinned inbox shape, and the queue's depth on health
