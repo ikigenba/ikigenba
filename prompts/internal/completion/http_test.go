@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -137,11 +138,11 @@ func TestHTTPGetReturnsStageSpecificReadShapesAndNotFound(t *testing.T) {
 	}
 	done := getCompletion(t, handler, accepted.ID)
 	assertReadShape(t, done, StatusDone, true, false)
-	if done["context"] != `{"document":"abc"}` || done["cost_usd"] != 1.5 || done["usage"].(map[string]any)["total"] != float64(9) {
+	if done["context"].(map[string]any)["document"] != "abc" || done["cost_usd"] != 1.5 || done["usage"].(map[string]any)["total"] != float64(9) {
 		t.Fatalf("done response = %#v", done)
 	}
 
-	failedItem, _, err := store.Ensure(t.Context(), Item{Consumer: "service:wiki", Origin: "service:wiki", Key: "failed", Context: "opaque", Name: "wiki.extract", Request: `{}`})
+	failedItem, _, err := store.Ensure(t.Context(), Item{Consumer: "service:wiki", Origin: "service:wiki", Key: "failed", Context: `"opaque"`, Name: "wiki.extract", Request: `{}`})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,10 +171,10 @@ func TestHTTPInboxReturnsOnlyConsumerTerminalItemsOldestFirst(t *testing.T) {
 	store := NewStore(database, time.Now)
 	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
 	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
-	seedHTTPItem(t, database, "newer-failed", "service:wiki", StatusFailed, now.Add(time.Minute), "key-b", "context-b", "", "bad input")
-	seedHTTPItem(t, database, "older-done", "service:wiki", StatusDone, now, "key-a", "context-a", `{"ok":true}`, "")
-	seedHTTPItem(t, database, "queued", "service:wiki", StatusQueued, now.Add(-time.Hour), "key-q", "context-q", "", "")
-	seedHTTPItem(t, database, "other", "service:other", StatusDone, now.Add(-time.Hour), "key-o", "context-o", `false`, "")
+	seedHTTPItem(t, database, "newer-failed", "service:wiki", StatusFailed, now.Add(time.Minute), "key-b", `["context-b"]`, "", "bad input")
+	seedHTTPItem(t, database, "older-done", "service:wiki", StatusDone, now, "key-a", `{"context":"a"}`, `{"ok":true}`, "")
+	seedHTTPItem(t, database, "queued", "service:wiki", StatusQueued, now.Add(-time.Hour), "key-q", `{"context":"q"}`, "", "")
+	seedHTTPItem(t, database, "other", "service:other", StatusDone, now.Add(-time.Hour), "key-o", `{"context":"o"}`, `false`, "")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/completions?consumer=service:wiki", nil))
@@ -185,11 +186,93 @@ func TestHTTPInboxReturnsOnlyConsumerTerminalItemsOldestFirst(t *testing.T) {
 	if len(items) != 2 || items[0]["id"] != "older-done" || items[1]["id"] != "newer-failed" {
 		t.Fatalf("inbox = %#v", items)
 	}
-	if items[0]["key"] != "key-a" || items[0]["context"] != "context-a" || items[0]["result"].(map[string]any)["ok"] != true {
+	if items[0]["key"] != "key-a" || items[0]["context"].(map[string]any)["context"] != "a" || items[0]["result"].(map[string]any)["ok"] != true {
 		t.Fatalf("done item = %#v", items[0])
 	}
-	if items[1]["key"] != "key-b" || items[1]["context"] != "context-b" || items[1]["error"] != "bad input" {
+	if items[1]["key"] != "key-b" || items[1]["context"].([]any)[0] != "context-b" || items[1]["error"] != "bad input" {
 		t.Fatalf("failed item = %#v", items[1])
+	}
+}
+
+// R-U7PZ-0AIV
+func TestHTTPContextAcceptsJSONValuesAndEchoesStoredBytesAtEveryRead(t *testing.T) {
+	database := openCompletionTestDB(t)
+	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
+	store := NewStore(database, func() time.Time {
+		now = now.Add(time.Second)
+		return now
+	})
+	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
+
+	contexts := []json.RawMessage{
+		json.RawMessage(`{"document":"abc","cursor":7}`),
+		json.RawMessage(`["document",{"cursor":7}]`),
+	}
+	ids := make([]string, 0, len(contexts))
+	for i, contextValue := range contexts {
+		request := validEnsureRequest("service:wiki", fmt.Sprintf("raw-context-%d", i))
+		request.Context = contextValue
+		response := postEnsure(t, handler, request)
+		if response.Code != http.StatusAccepted {
+			t.Fatalf("Ensure context %s = %d, want 202: %s", contextValue, response.Code, response.Body.String())
+		}
+		var accepted ensureResponse
+		decodeHTTPResponse(t, response, &accepted)
+		ids = append(ids, accepted.ID)
+		assertRawContext(t, rawGetCompletion(t, handler, accepted.ID), contextValue)
+
+		claimed, err := store.Claim(t.Context())
+		if err != nil || claimed.ID != accepted.ID {
+			t.Fatalf("Claim = %#v, %v; want %q", claimed, err, accepted.ID)
+		}
+		if err := store.Complete(t.Context(), accepted.ID, `true`, `{}`, 0); err != nil {
+			t.Fatal(err)
+		}
+		assertRawContext(t, rawGetCompletion(t, handler, accepted.ID), contextValue)
+	}
+
+	inbox := httptest.NewRecorder()
+	handler.ServeHTTP(inbox, httptest.NewRequest(http.MethodGet, "/completions?consumer=service:wiki", nil))
+	if inbox.Code != http.StatusOK {
+		t.Fatalf("Inbox = %d: %s", inbox.Code, inbox.Body.String())
+	}
+	var items []readResponse
+	decodeHTTPResponse(t, inbox, &items)
+	if len(items) != len(contexts) {
+		t.Fatalf("Inbox items = %#v, want %d", items, len(contexts))
+	}
+	for i := range contexts {
+		if items[i].ID != ids[i] || !bytes.Equal(items[i].Context, contexts[i]) {
+			t.Fatalf("Inbox item %d = id %q context %s, want id %q context %s", i, items[i].ID, items[i].Context, ids[i], contexts[i])
+		}
+	}
+
+	omitted := validEnsureRequest("service:wiki", "omitted-context")
+	omitted.Context = nil
+	omittedResponse := postEnsure(t, handler, omitted)
+	if omittedResponse.Code != http.StatusAccepted {
+		t.Fatalf("Ensure omitted context = %d, want 202: %s", omittedResponse.Code, omittedResponse.Body.String())
+	}
+	var omittedAccepted ensureResponse
+	decodeHTTPResponse(t, omittedResponse, &omittedAccepted)
+	assertRawContext(t, rawGetCompletion(t, handler, omittedAccepted.ID), json.RawMessage("null"))
+}
+
+// R-U8XV-E29K
+func TestHTTPEnsureRejectsMalformedJSONContextWithoutDurableSideEffects(t *testing.T) {
+	database := openCompletionTestDB(t)
+	handler := completionMux(NewHTTP(NewStore(database, time.Now), func(string) string { return "test-key" }, func() bool { return false }))
+	body := `{"consumer":"service:wiki","origin":"trigger:dropbox","key":"bad-context","context":{"truncated":,"name":"wiki.extract"}`
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/completions", strings.NewReader(body)))
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "invalid JSON body") {
+		t.Fatalf("response = %d %s, want 400 naming invalid JSON body", response.Code, response.Body.String())
+	}
+	if got := countRows(t, database, "completions"); got != 0 {
+		t.Fatalf("completion rows = %d, want 0", got)
+	}
+	if got := countRows(t, database, "calls"); got != 0 {
+		t.Fatalf("call rows = %d, want 0", got)
 	}
 }
 
@@ -250,9 +333,21 @@ func completionMux(handler *HTTP) http.Handler {
 }
 
 func validEnsureRequest(consumer, key string) ensureRequest {
-	return ensureRequest{Consumer: consumer, Origin: "trigger:dropbox", Key: key, Context: `{"document":"abc"}`,
+	return ensureRequest{Consumer: consumer, Origin: "trigger:dropbox", Key: key, Context: json.RawMessage(`{"document":"abc"}`),
 		Name: "wiki.extract", GroupID: "batch-1", Attempt: 2, Model: completionTestModel,
 		System: "extract facts", Messages: []Message{{Role: "user", Text: "extract this"}}}
+}
+
+func assertRawContext(t *testing.T, recorder *httptest.ResponseRecorder, want json.RawMessage) {
+	t.Helper()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("Get = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response readResponse
+	decodeHTTPResponse(t, recorder, &response)
+	if !bytes.Equal(response.Context, want) {
+		t.Fatalf("context = %s, want byte-identical %s", response.Context, want)
+	}
 }
 
 func postEnsure(t *testing.T, handler http.Handler, request ensureRequest) *httptest.ResponseRecorder {

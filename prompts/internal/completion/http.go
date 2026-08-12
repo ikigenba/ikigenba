@@ -37,18 +37,18 @@ func NewHTTP(store *Store, getenv func(string) string, subAuthAvailable func() b
 }
 
 type ensureRequest struct {
-	Consumer string        `json:"consumer"`
-	Origin   string        `json:"origin"`
-	Key      string        `json:"key"`
-	Context  string        `json:"context,omitempty"`
-	Name     string        `json:"name"`
-	GroupID  string        `json:"group_id,omitempty"`
-	Attempt  int           `json:"attempt,omitempty"`
-	Model    string        `json:"model"`
-	Provider string        `json:"provider,omitempty"`
-	Config   prompt.Config `json:"config,omitempty"`
-	System   string        `json:"system,omitempty"`
-	Messages []Message     `json:"messages"`
+	Consumer string          `json:"consumer"`
+	Origin   string          `json:"origin"`
+	Key      string          `json:"key"`
+	Context  json.RawMessage `json:"context,omitempty"`
+	Name     string          `json:"name"`
+	GroupID  string          `json:"group_id,omitempty"`
+	Attempt  int             `json:"attempt,omitempty"`
+	Model    string          `json:"model"`
+	Provider string          `json:"provider,omitempty"`
+	Config   prompt.Config   `json:"config,omitempty"`
+	System   string          `json:"system,omitempty"`
+	Messages []Message       `json:"messages"`
 }
 
 type ensureResponse struct {
@@ -61,7 +61,7 @@ type readResponse struct {
 	Consumer string           `json:"consumer"`
 	Origin   string           `json:"origin"`
 	Key      string           `json:"key"`
-	Context  string           `json:"context"`
+	Context  json.RawMessage  `json:"context"`
 	Status   string           `json:"status"`
 	Result   *json.RawMessage `json:"result,omitempty"`
 	Error    string           `json:"error,omitempty"`
@@ -100,7 +100,7 @@ func (h *HTTP) ensure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, inserted, err := h.store.Ensure(r.Context(), Item{
-		Consumer: in.Consumer, Origin: in.Origin, Key: in.Key, Context: in.Context,
+		Consumer: in.Consumer, Origin: in.Origin, Key: in.Key, Context: string(in.Context),
 		Name: in.Name, GroupID: in.GroupID, CorrelationID: correlation.FromContext(r.Context()),
 		Attempt: in.Attempt, Request: string(encoded),
 	})
@@ -215,7 +215,11 @@ func (h *HTTP) ack(w http.ResponseWriter, r *http.Request) {
 }
 
 func itemReadResponse(item Item) readResponse {
-	response := readResponse{ID: item.ID, Consumer: item.Consumer, Origin: item.Origin, Key: item.Key, Context: item.Context, Status: item.Status}
+	var contextValue json.RawMessage
+	if item.Context != "" {
+		contextValue = json.RawMessage(item.Context)
+	}
+	response := readResponse{ID: item.ID, Consumer: item.Consumer, Origin: item.Origin, Key: item.Key, Context: contextValue, Status: item.Status}
 	if item.Status == StatusDone {
 		result := json.RawMessage(item.Result)
 		response.Result = &result
