@@ -10,4 +10,6 @@ no done marker; done is gone. This file deliberately carries **no bare status
 glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
-Next phase: 169
+Next phase: 170
+
+- Phase 169 ⬜ realizes R-9S84-C6J2 — pin the consumer partition on the per-item queue verbs
