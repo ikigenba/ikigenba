@@ -11,4 +11,3 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 83
 
-- Phase 82 ⬜ realizes D29 (http slice) and D63 — machine-readable error codes, the raised key cap, the pinned inbox shape, and the queue's depth on health
