@@ -531,6 +531,96 @@ func TestComposedLandingRendersCanonicalTelemetryPage(t *testing.T) {
 	}
 }
 
+func TestEveryServedDocumentCarriesBrandIconLinks(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("..", "..", "share", "www"))
+	if err != nil {
+		t.Fatalf("enumerate committed web documents: %v", err)
+	}
+	baseURL := startComposedWebService(t, "phase-15-icons")
+	client := &http.Client{Timeout: 5 * time.Second}
+	servedRoutes := map[string]string{"landing.html": "/"}
+	documentCount := 0
+
+	// R-RYDN-YNR5
+	for _, entry := range entries {
+		if entry.IsDir() || (filepath.Ext(entry.Name()) != ".html" && filepath.Ext(entry.Name()) != ".tmpl") {
+			continue
+		}
+		documentCount++
+		route, ok := servedRoutes[entry.Name()]
+		if !ok {
+			t.Errorf("committed web document %s has no composed-service route", entry.Name())
+			continue
+		}
+		response, err := client.Get(baseURL + route)
+		if err != nil {
+			t.Fatalf("GET route for %s: %v", entry.Name(), err)
+		}
+		body, readErr := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if readErr != nil {
+			t.Fatalf("read rendered %s: %v", entry.Name(), readErr)
+		}
+		if response.StatusCode != http.StatusOK {
+			t.Errorf("GET route for %s status = %d, want 200", entry.Name(), response.StatusCode)
+			continue
+		}
+		headStart := bytes.Index(body, []byte("<head>"))
+		headEnd := bytes.Index(body, []byte("</head>"))
+		if headStart < 0 || headEnd < headStart {
+			t.Errorf("rendered %s has no complete head", entry.Name())
+			continue
+		}
+		head := body[headStart:headEnd]
+		for _, link := range []string{
+			`<link rel="icon" sizes="any" href="static/favicon.ico">`,
+			`<link rel="icon" type="image/png" href="static/favicon-32.png">`,
+			`<link rel="apple-touch-icon" href="static/apple-touch-icon.png">`,
+		} {
+			if !bytes.Contains(head, []byte(link)) {
+				t.Errorf("rendered %s head missing %s", entry.Name(), link)
+			}
+		}
+	}
+	if documentCount == 0 {
+		t.Fatal("committed web tree contains no documents")
+	}
+}
+
+func TestComposedStaticHandlerServesBrandIconsWithPinnedContentTypes(t *testing.T) {
+	baseURL := startComposedWebService(t, "phase-15-icon-assets")
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// R-RZLK-CFHU
+	for _, tc := range []struct {
+		path        string
+		contentType string
+	}{
+		{path: "/static/favicon.ico", contentType: "image/x-icon"},
+		{path: "/static/favicon-32.png", contentType: "image/png"},
+		{path: "/static/apple-touch-icon.png", contentType: "image/png"},
+	} {
+		response, err := client.Get(baseURL + tc.path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", tc.path, err)
+		}
+		body, readErr := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if readErr != nil {
+			t.Fatalf("read %s: %v", tc.path, readErr)
+		}
+		if response.StatusCode != http.StatusOK {
+			t.Errorf("GET %s status = %d, want 200", tc.path, response.StatusCode)
+		}
+		if len(body) == 0 {
+			t.Errorf("GET %s returned an empty body", tc.path)
+		}
+		if contentType := response.Header.Get("Content-Type"); contentType != tc.contentType {
+			t.Errorf("GET %s Content-Type = %q, want exactly %q", tc.path, contentType, tc.contentType)
+		}
+	}
+}
+
 func TestComposedStaticHandlerServesCommittedAssets(t *testing.T) {
 	baseURL := startComposedWebService(t, "phase-14-assets")
 	client := &http.Client{Timeout: 5 * time.Second}

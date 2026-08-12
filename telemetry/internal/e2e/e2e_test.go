@@ -197,6 +197,7 @@ func startTelemetry(t *testing.T, binary, databasePath string) *serviceProcess {
 	t.Helper()
 	port := ephemeralPort(t)
 	command := exec.Command(binary, "serve")
+	command.Dir = filepath.Join("..", "..")
 	command.Env = append(os.Environ(),
 		"TELEMETRY_IP=127.0.0.1",
 		"TELEMETRY_PORT="+strconv.Itoa(port),
