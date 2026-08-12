@@ -257,6 +257,12 @@ func TestStoreAckHTTPIsConsumerPartitioned(t *testing.T) {
 	if err := store.Complete(t.Context(), item.ID, `true`, `{}`, 0); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.Ack(t.Context(), item.ID, "service:other"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("store Ack as wrong consumer = %v, want ErrNotFound", err)
+	}
+	if _, err := store.Get(t.Context(), item.ID, item.Consumer); err != nil {
+		t.Fatalf("store Ack as wrong consumer deleted row: %v", err)
+	}
 	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
 	wrong := httptest.NewRecorder()
 	handler.ServeHTTP(wrong, httptest.NewRequest(http.MethodDelete, "/completions/"+item.ID+"?consumer=service:other", nil))
@@ -281,6 +287,12 @@ func TestStoreGetHTTPIsConsumerPartitioned(t *testing.T) {
 	database := openCompletionTestDB(t)
 	store := NewStore(database, "owner-a", time.Now)
 	item := testQueueItem(t, store, "service:wiki", "partition-get")
+	if _, err := store.Get(t.Context(), item.ID, "service:other"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("store Get as wrong consumer = %v, want ErrNotFound", err)
+	}
+	if got, err := store.Get(t.Context(), item.ID, item.Consumer); err != nil || got.ID != item.ID {
+		t.Fatalf("store Get as owning consumer = %#v, %v", got, err)
+	}
 	handler := completionMux(NewHTTP(store, func(string) string { return "test-key" }, func() bool { return false }))
 	for consumer, want := range map[string]int{"service:other": http.StatusNotFound, item.Consumer: http.StatusOK} {
 		recorder := httptest.NewRecorder()
