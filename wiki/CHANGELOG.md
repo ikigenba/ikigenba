@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.33.0 — 2026-08-11
+
+- Ingest is now restart-proof: extract and compile work is handed off to prompts' durable completion queue and applied from its inbox, with jobs resting in a new `waiting` state — no in-flight work is lost to a restart, and long generations no longer die at the 15 s write deadline (the cause of the production ingest failures).
+- Ask runs on the live queue path under its own queue partition, so background ingest processing can never discard an in-progress answer; ask-serving routes clear the chassis write deadline.
+- The prompts wire contract is proven in the default test gate against the real prompts binary, not a mock.
+
 ## v0.32.0 — 2026-08-11
 
 - The service's web pages now carry the suite's brand icon: browsers show the ikigenba mark on the tab, in bookmarks and history, and as the icon if the page is saved to an iOS home screen. Nothing else about the pages changed.
