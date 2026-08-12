@@ -255,6 +255,34 @@ func TestHTTPContextAcceptsJSONValuesAndEchoesStoredBytesAtEveryRead(t *testing.
 	var omittedAccepted ensureResponse
 	decodeHTTPResponse(t, omittedResponse, &omittedAccepted)
 	assertRawContext(t, rawGetCompletion(t, handler, omittedAccepted.ID), json.RawMessage("null"))
+	claimed, err := store.Claim(t.Context())
+	if err != nil || claimed.ID != omittedAccepted.ID {
+		t.Fatalf("Claim omitted context = %#v, %v; want %q", claimed, err, omittedAccepted.ID)
+	}
+	if err := store.Complete(t.Context(), omittedAccepted.ID, `true`, `{}`, 0); err != nil {
+		t.Fatal(err)
+	}
+	assertRawContext(t, rawGetCompletion(t, handler, omittedAccepted.ID), json.RawMessage("null"))
+
+	omittedInbox := httptest.NewRecorder()
+	handler.ServeHTTP(omittedInbox, httptest.NewRequest(http.MethodGet, "/completions?consumer=service:wiki", nil))
+	if omittedInbox.Code != http.StatusOK {
+		t.Fatalf("Inbox with omitted context = %d: %s", omittedInbox.Code, omittedInbox.Body.String())
+	}
+	var terminalItems []readResponse
+	decodeHTTPResponse(t, omittedInbox, &terminalItems)
+	foundOmitted := false
+	for _, item := range terminalItems {
+		if item.ID == omittedAccepted.ID {
+			foundOmitted = true
+			if !bytes.Equal(item.Context, json.RawMessage("null")) {
+				t.Fatalf("Inbox omitted context = %s, want null", item.Context)
+			}
+		}
+	}
+	if !foundOmitted {
+		t.Fatalf("Inbox items = %#v, missing omitted-context item %q", terminalItems, omittedAccepted.ID)
+	}
 }
 
 // R-U8XV-E29K
