@@ -12,5 +12,4 @@ lines.
 
 Next phase: 167
 
-- Phase 165 ⬜ realizes D94 — the inbox drain contract: no item may stop the drain
 - Phase 166 ⬜ realizes D95 — liveness, the five-status surface, and wedge visibility
