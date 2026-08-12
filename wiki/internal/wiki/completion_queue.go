@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
 	"sort"
 	"strconv"
@@ -15,6 +16,32 @@ import (
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 )
+
+// OutcomeClass describes the durable disposition of one terminal completion.
+type OutcomeClass string
+
+const (
+	Applied          OutcomeClass = "applied"
+	Discarded        OutcomeClass = "discarded"
+	JobFailedOutcome OutcomeClass = "job_failed"
+	Deferred         OutcomeClass = "deferred"
+)
+
+// Outcome is the disposition of one completion. Err is reporting data, never
+// an instruction to stop draining the inbox.
+type Outcome struct {
+	Class  OutcomeClass
+	Reason string
+	Err    error
+}
+
+// Drain summarizes one inbox tick.
+type Drain struct {
+	Seen, Applied, Discarded, JobsFailed, Deferred int
+	Errs                                           []error
+}
+
+const maxConsecutiveDeferrals = 3
 
 type pipelineEnvelope struct {
 	JobID   string `json:"job_id"`
@@ -106,63 +133,99 @@ func (s *Service) contextForScope(ctx context.Context, scopeName string) (contex
 	}), nil
 }
 
-// ProcessInbox drains all terminal completion items currently visible.
-func (s *Service) ProcessInbox(ctx context.Context) (int, error) {
+// ProcessInbox classifies every visible terminal completion unless ctx is
+// canceled. Individual completion failures never stop the drain.
+func (s *Service) ProcessInbox(ctx context.Context) Drain {
+	var drain Drain
 	if s == nil || s.queue == nil {
-		return 0, nil
+		return drain
 	}
 	items, err := s.queue.Inbox(ctx)
 	if err != nil {
-		return 0, err
+		drain.Errs = append(drain.Errs, err)
+		return drain
 	}
-	processed := 0
 	for _, item := range items {
+		if ctx.Err() != nil {
+			break
+		}
 		if item.Status != "done" && item.Status != "failed" {
 			continue
 		}
-		if err := s.applyCompletion(ctx, item); err != nil {
-			return processed, err
+		drain.Seen++
+		outcome := s.applyCompletion(ctx, item)
+		if outcome.Class == Deferred {
+			outcome = s.boundDeferral(ctx, item, outcome)
+		} else {
+			s.clearDeferral(item.ID)
 		}
-		processed++
+		if outcome.Class != Deferred {
+			if err := s.queue.Ack(ctx, item.ID); err != nil {
+				outcome = Outcome{Class: Deferred, Reason: "ack_unreachable", Err: err}
+			} else {
+				s.clearDeferral(item.ID)
+			}
+		}
+		drain.record(outcome)
 	}
-	return processed, nil
+	return drain
 }
 
-func (s *Service) applyCompletion(ctx context.Context, item llm.Item) error {
+func (d *Drain) record(outcome Outcome) {
+	switch outcome.Class {
+	case Applied:
+		d.Applied++
+	case Discarded:
+		d.Discarded++
+	case JobFailedOutcome:
+		d.JobsFailed++
+	case Deferred:
+		d.Deferred++
+	}
+	if outcome.Err != nil {
+		d.Errs = append(d.Errs, outcome.Err)
+	}
+}
+
+func (s *Service) applyCompletion(ctx context.Context, item llm.Item) Outcome {
 	var envelope pipelineEnvelope
 	if err := json.Unmarshal(item.Context, &envelope); err != nil || envelope.JobID == "" || (envelope.Stage != "extract" && envelope.Stage != "compile") {
-		return s.queue.Ack(ctx, item.ID)
+		return Outcome{Class: Discarded, Reason: "non_pipeline"}
 	}
 	job, err := s.jobs.Get(ctx, envelope.JobID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return s.queue.Ack(ctx, item.ID)
+		return Outcome{Class: Discarded, Reason: "unknown_job"}
 	}
 	if err != nil {
-		return err
+		return s.applyError(ctx, Job{ID: envelope.JobID}, "load_job", err)
 	}
 	if job.Status != JobWorking {
-		return s.queue.Ack(ctx, item.ID)
+		return Outcome{Class: Discarded, Reason: "terminal_job"}
 	}
 	if envelope.Stage != job.Phase && !(item.Status == "done" && envelope.Stage == "extract" && job.Phase == "compile") {
-		return s.queue.Ack(ctx, item.ID)
+		return Outcome{Class: Discarded, Reason: "stale_stage"}
 	}
 	ctx, job = s.jobContext(ctx, job)
 	ctx, err = s.contextForScope(ctx, job.Scope)
 	if err != nil {
-		return err
+		return s.applyError(ctx, job, "load_scope", err)
 	}
 	if valid, err := s.pipelineStageMatches(ctx, job.ID, envelope); err != nil {
-		return err
+		return s.applyError(ctx, job, "staged_payload", err)
 	} else if !valid {
-		return s.queue.Ack(ctx, item.ID)
+		if envelope.Stage == "compile" {
+			_, found, loadErr := s.loadStagedIntegration(ctx, job.ID)
+			if loadErr != nil {
+				return s.applyError(ctx, job, "corrupt_staged_payload", loadErr)
+			}
+			if !found {
+				return s.failCompletion(ctx, job, "missing_staging", errors.New("extract staging row is missing"))
+			}
+		}
+		return Outcome{Class: Discarded, Reason: "stale_units"}
 	}
 	if item.Status == "failed" {
-		if finished, err := s.jobs.FailWaiting(ctx, job.ID, s.now(), item.Error); err != nil {
-			return err
-		} else if finished {
-			s.notify()
-		}
-		return s.queue.Ack(ctx, item.ID)
+		return s.failCompletion(ctx, job, "model_failure", errors.New(item.Error))
 	}
 	switch envelope.Stage {
 	case "extract":
@@ -170,8 +233,83 @@ func (s *Service) applyCompletion(ctx context.Context, item llm.Item) error {
 	case "compile":
 		return s.applyCompile(ctx, job, envelope, item)
 	default:
-		return s.queue.Ack(ctx, item.ID)
+		return Outcome{Class: Discarded, Reason: "non_pipeline"}
 	}
+}
+
+func (s *Service) applyError(ctx context.Context, job Job, reason string, err error) Outcome {
+	if isTransientCompletionError(err) {
+		return Outcome{Class: Deferred, Reason: reason, Err: err}
+	}
+	return s.failCompletion(ctx, job, reason, err)
+}
+
+func (s *Service) failCompletion(ctx context.Context, job Job, reason string, cause error) Outcome {
+	if job.ID == "" {
+		return Outcome{Class: JobFailedOutcome, Reason: reason, Err: cause}
+	}
+	message := fmt.Sprintf("%s: %v; rerun the job after correcting the cause", strings.ReplaceAll(reason, "_", " "), cause)
+	finished, err := s.jobs.FailWaiting(ctx, job.ID, s.now(), message)
+	if err != nil {
+		// The item cannot be acked until the failed state and its cleanup are
+		// durable, regardless of whether the write error itself looks transient.
+		return Outcome{Class: Deferred, Reason: "fail_job", Err: errors.Join(cause, err)}
+	}
+	if finished {
+		s.notify()
+	}
+	return Outcome{Class: JobFailedOutcome, Reason: reason, Err: cause}
+}
+
+func isTransientCompletionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var networkErr net.Error
+	if errors.As(err, &networkErr) {
+		return true
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "database is locked") || strings.Contains(text, "database is busy") ||
+		(strings.Contains(text, "llm: prompts") && (strings.Contains(text, "returned 5") || strings.Contains(text, "connection")))
+}
+
+func (s *Service) boundDeferral(ctx context.Context, item llm.Item, outcome Outcome) Outcome {
+	s.mu.Lock()
+	if s.deferrals == nil {
+		s.deferrals = make(map[string]int)
+	}
+	s.deferrals[item.ID]++
+	count := s.deferrals[item.ID]
+	s.mu.Unlock()
+	if count < maxConsecutiveDeferrals || ctx.Err() != nil {
+		return outcome
+	}
+	var envelope pipelineEnvelope
+	if json.Unmarshal(item.Context, &envelope) != nil || envelope.JobID == "" {
+		return Outcome{Class: JobFailedOutcome, Reason: "deferral_exhausted", Err: outcome.Err}
+	}
+	job, err := s.jobs.Get(ctx, envelope.JobID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && job.Status != JobWorking) {
+		return Outcome{Class: Discarded, Reason: "deferral_exhausted", Err: outcome.Err}
+	}
+	if err != nil {
+		return outcome
+	}
+	failed := s.failCompletion(ctx, job, "deferral_exhausted", outcome.Err)
+	if failed.Class != Deferred {
+		s.clearDeferral(item.ID)
+	}
+	return failed
+}
+
+func (s *Service) clearDeferral(id string) {
+	s.mu.Lock()
+	delete(s.deferrals, id)
+	s.mu.Unlock()
 }
 
 func (s *Service) pipelineStageMatches(ctx context.Context, jobID string, envelope pipelineEnvelope) (bool, error) {
@@ -186,10 +324,10 @@ func (s *Service) pipelineStageMatches(ctx context.Context, jobID string, envelo
 	return found && envelope.Units == compileUnits(plan), nil
 }
 
-func (s *Service) applyExtract(ctx context.Context, job Job, item llm.Item) error {
+func (s *Service) applyExtract(ctx context.Context, job Job, item llm.Item) Outcome {
 	plan, found, err := s.loadStagedIntegration(ctx, job.ID)
 	if err != nil {
-		return err
+		return s.applyError(ctx, job, "corrupt_staged_payload", err)
 	}
 	if !found {
 		var response struct {
@@ -203,7 +341,7 @@ func (s *Service) applyExtract(ctx context.Context, job Job, item llm.Item) erro
 		}
 		plan, err = s.stageExtractPlan(ctx, job, response.Subjects)
 		if err != nil {
-			return err
+			return s.applyError(ctx, job, "stage_extract", err)
 		}
 	}
 	for _, page := range plan.Pages {
@@ -212,14 +350,14 @@ func (s *Service) applyExtract(ctx context.Context, job Job, item llm.Item) erro
 		}
 		staged, err := s.compileUnitStaged(ctx, job.ID, page.Subject.NormName)
 		if err != nil {
-			return err
+			return s.applyError(ctx, job, "read_staging", err)
 		}
 		if staged {
 			continue
 		}
 		envelope, err := json.Marshal(pipelineEnvelope{JobID: job.ID, Stage: "compile", Subject: page.Subject.NormName, Units: compileUnits(plan)})
 		if err != nil {
-			return err
+			return s.applyError(ctx, job, "compile_envelope", err)
 		}
 		_, err = s.queue.Ensure(ctx, llm.Request{
 			Key:      job.ID + "/compile/" + page.Subject.NormName + "/a1",
@@ -230,15 +368,15 @@ func (s *Service) applyExtract(ctx context.Context, job Job, item llm.Item) erro
 			Messages: []llm.Message{{Role: "user", Text: renderCompile(page.Subject.subject(""), modelClaims(page.Claims, ""))}},
 		})
 		if err != nil {
-			return err
+			return s.applyError(ctx, job, "ensure_compile", err)
 		}
 	}
 	if compileUnits(plan) == 0 {
 		if err := s.integrateStaged(ctx, job, plan); err != nil {
-			return err
+			return s.applyError(ctx, job, "integrate", err)
 		}
 	}
-	return s.queue.Ack(ctx, item.ID)
+	return Outcome{Class: Applied, Reason: "extract_applied"}
 }
 
 func compileUnits(plan stagedIntegration) int {
@@ -371,14 +509,17 @@ func (s *Service) loadStagedIntegration(ctx context.Context, jobID string) (stag
 	return plan, true, nil
 }
 
-func (s *Service) applyCompile(ctx context.Context, job Job, envelope pipelineEnvelope, item llm.Item) error {
+func (s *Service) applyCompile(ctx context.Context, job Job, envelope pipelineEnvelope, item llm.Item) Outcome {
 	plan, found, err := s.loadStagedIntegration(ctx, job.ID)
 	if err != nil {
-		return err
+		return s.applyError(ctx, job, "corrupt_staged_payload", err)
 	}
 	_, ok := compilePage(plan, envelope.Subject)
 	if !found || !ok || envelope.Units != compileUnits(plan) {
-		return s.queue.Ack(ctx, item.ID)
+		if !found {
+			return s.failCompletion(ctx, job, "missing_staging", errors.New("extract staging row is missing"))
+		}
+		return Outcome{Class: Discarded, Reason: "stale_units"}
 	}
 	title, body, err := parseCompile(item.Result)
 	if err != nil {
@@ -386,11 +527,11 @@ func (s *Service) applyCompile(ctx context.Context, job Job, envelope pipelineEn
 	}
 	payload, err := json.Marshal(stagedCompiledPage{Title: title, Body: body})
 	if err != nil {
-		return err
+		return s.applyError(ctx, job, "compile_payload", err)
 	}
 	tx, err := s.write.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return s.applyError(ctx, job, "begin_compile", err)
 	}
 	defer tx.Rollback()
 	_, err = tx.ExecContext(ctx, `
@@ -398,26 +539,32 @@ func (s *Service) applyCompile(ctx context.Context, job Job, envelope pipelineEn
 		ON CONFLICT(job_id, stage, unit) DO UPDATE SET payload = excluded.payload, units = excluded.units`,
 		job.ID, envelope.Subject, string(payload), envelope.Units)
 	if err != nil {
-		return err
+		_ = tx.Rollback()
+		return s.applyError(ctx, job, "stage_compile", err)
 	}
 	var count int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM job_staging WHERE job_id = ? AND stage = 'compile'`, job.ID).Scan(&count); err != nil {
-		return err
+		_ = tx.Rollback()
+		return s.applyError(ctx, job, "count_compile", err)
 	}
 	var committed stagedCommit
 	if count == envelope.Units {
 		committed, err = s.integrateStagedTx(ctx, tx, job, plan)
 		if err != nil {
-			return err
+			_ = tx.Rollback()
+			return s.applyError(ctx, job, "integrate", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return err
+		return s.applyError(ctx, job, "commit_compile", err)
 	}
 	if err := s.afterStagedCommit(ctx, job, committed); err != nil {
-		return err
+		return Outcome{Class: Applied, Reason: "compile_applied", Err: err}
 	}
-	return s.queue.Ack(ctx, item.ID)
+	if committed.failed {
+		return Outcome{Class: JobFailedOutcome, Reason: "stale_plan"}
+	}
+	return Outcome{Class: Applied, Reason: "compile_applied"}
 }
 
 func compilePage(plan stagedIntegration, normName string) (stagedPage, bool) {
@@ -429,7 +576,7 @@ func compilePage(plan stagedIntegration, normName string) (stagedPage, bool) {
 	return stagedPage{}, false
 }
 
-func (s *Service) correctOrFail(ctx context.Context, job Job, item llm.Item, stage, subject string, units int, semanticErr error) error {
+func (s *Service) correctOrFail(ctx context.Context, job Job, item llm.Item, stage, subject string, units int, semanticErr error) Outcome {
 	attempt := keyAttempt(item.Key)
 	site := s.extractSite
 	var original string
@@ -439,26 +586,24 @@ func (s *Service) correctOrFail(ctx context.Context, job Job, item llm.Item, sta
 		site = s.compileSite
 		plan, found, err := s.loadStagedIntegration(ctx, job.ID)
 		if err != nil {
-			return err
+			return s.applyError(ctx, job, "corrupt_staged_payload", err)
 		}
 		page, ok := compilePage(plan, subject)
 		if !found || !ok {
-			return s.queue.Ack(ctx, item.ID)
+			if !found {
+				return s.failCompletion(ctx, job, "missing_staging", errors.New("extract staging row is missing"))
+			}
+			return Outcome{Class: Discarded, Reason: "stale_units"}
 		}
 		original = renderCompile(page.Subject.subject(""), modelClaims(page.Claims, ""))
 	}
 	if attempt >= site.MaxParseRetries+1 {
-		if finished, err := s.jobs.FailWaiting(ctx, job.ID, s.now(), semanticErr.Error()); err != nil {
-			return err
-		} else if finished {
-			s.notify()
-		}
-		return s.queue.Ack(ctx, item.ID)
+		return s.failCompletion(ctx, job, "semantic_retries_exhausted", semanticErr)
 	}
 	next := attempt + 1
 	envelope, err := json.Marshal(pipelineEnvelope{JobID: job.ID, Stage: stage, Subject: subject, Units: units})
 	if err != nil {
-		return err
+		return s.applyError(ctx, job, "corrective_envelope", err)
 	}
 	base := strings.TrimSuffix(item.Key, "/a"+strconv.Itoa(attempt))
 	_, err = s.queue.Ensure(ctx, llm.Request{
@@ -471,9 +616,9 @@ func (s *Service) correctOrFail(ctx context.Context, job Job, item llm.Item, sta
 		},
 	})
 	if err != nil {
-		return err
+		return s.applyError(ctx, job, "ensure_correction", err)
 	}
-	return s.queue.Ack(ctx, item.ID)
+	return Outcome{Class: Applied, Reason: "correction_ensured"}
 }
 
 var compileBracketedID = regexp.MustCompile(`\[[0-9A-HJKMNP-TV-Z]{26}\]`)
@@ -529,6 +674,7 @@ func keyAttempt(key string) int {
 type stagedCommit struct {
 	changed bool
 	done    bool
+	failed  bool
 	pages   []Page
 }
 
@@ -685,5 +831,5 @@ func (s *Service) failStaleIntegrationTx(ctx context.Context, tx *sql.Tx, job Jo
 	if err := s.jobs.ReleaseLease(ctx, tx, job.ID); err != nil {
 		return stagedCommit{}, err
 	}
-	return stagedCommit{changed: true}, nil
+	return stagedCommit{changed: true, failed: true}, nil
 }

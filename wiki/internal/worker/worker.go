@@ -4,6 +4,8 @@ package worker
 import (
 	"context"
 	"time"
+
+	wikidomain "wiki/internal/wiki"
 )
 
 // Task is a unit of background work.
@@ -20,7 +22,7 @@ type bootSweeper interface {
 }
 
 type inboxProcessor interface {
-	ProcessInbox(context.Context) (int, error)
+	ProcessInbox(context.Context) wikidomain.Drain
 }
 
 type embeddingCatchUpService interface {
@@ -81,11 +83,7 @@ func runInbox(ctx context.Context, svc inboxProcessor) error {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
-		if _, err := svc.ProcessInbox(ctx); err != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-		}
+		svc.ProcessInbox(ctx)
 		select {
 		case <-ctx.Done():
 			return nil

@@ -73,6 +73,7 @@ type Service struct {
 	wake              chan struct{}
 	mu                sync.Mutex
 	cancels           map[string]*jobCancel
+	deferrals         map[string]int
 }
 
 // WithCompletionQueue enables the durable handoff/apply ingest pipeline.
@@ -112,6 +113,7 @@ func NewService(db any, extractor Extractor, compiler Compiler, now func() time.
 		newID:      logging.NewULID,
 		wake:       make(chan struct{}, 1),
 		cancels:    map[string]*jobCancel{},
+		deferrals:  map[string]int{},
 	}
 	for _, opt := range opts {
 		if opt != nil {

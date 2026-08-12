@@ -33,12 +33,14 @@ type queueItem struct {
 }
 
 type testQueue struct {
-	mu       sync.Mutex
-	requests []queueRequest
-	inbox    []queueItem
-	acked    []string
-	nextID   int
-	server   *httptest.Server
+	mu             sync.Mutex
+	requests       []queueRequest
+	inbox          []queueItem
+	acked          []string
+	nextID         int
+	postFailures   int
+	deleteFailures int
+	server         *httptest.Server
 }
 
 func newTestQueue(t *testing.T) *testQueue {
@@ -50,6 +52,11 @@ func newTestQueue(t *testing.T) *testQueue {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodPost:
+			if q.postFailures > 0 {
+				q.postFailures--
+				http.Error(w, "prompts temporarily unavailable", http.StatusServiceUnavailable)
+				return
+			}
 			var request queueRequest
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -62,6 +69,11 @@ func newTestQueue(t *testing.T) *testQueue {
 		case http.MethodGet:
 			_ = json.NewEncoder(w).Encode(q.inbox)
 		case http.MethodDelete:
+			if q.deleteFailures > 0 {
+				q.deleteFailures--
+				http.Error(w, "prompts temporarily unavailable", http.StatusServiceUnavailable)
+				return
+			}
 			id := strings.TrimPrefix(r.URL.Path, "/completions/")
 			q.acked = append(q.acked, id)
 			kept := q.inbox[:0]
@@ -86,6 +98,18 @@ func (q *testQueue) add(items ...queueItem) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.inbox = append(q.inbox, items...)
+}
+
+func (q *testQueue) failPosts(n int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.postFailures = n
+}
+
+func (q *testQueue) failDeletes(n int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.deleteFailures = n
 }
 
 func (q *testQueue) snapshot() ([]queueRequest, []string, int) {
@@ -164,8 +188,8 @@ func TestExtractReplayStagesOnceFansOutAndAcksAfterConsequences(t *testing.T) {
 	result := json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote a compiler."]},{"type":"entity","kind":"person","name":"Grace","claims":["Grace wrote a compiler."]}]}`)
 	item := queueItem{ID: "extract-done", Key: extractRequest.Key, Status: "done", Context: extractRequest.Context, Result: result}
 	q.add(item)
-	if n, err := svc.ProcessInbox(ctx); err != nil || n != 1 {
-		t.Fatalf("ProcessInbox = %d, %v", n, err)
+	if drain := svc.ProcessInbox(ctx); drain.Seen != 1 || len(drain.Errs) != 0 {
+		t.Fatalf("ProcessInbox = %+v", drain)
 	}
 	var staged int
 	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM job_staging WHERE job_id = ?`, jobID).Scan(&staged); err != nil || staged != 1 {
@@ -193,8 +217,8 @@ func TestExtractReplayStagesOnceFansOutAndAcksAfterConsequences(t *testing.T) {
 	}
 	before := len(requests)
 	q.add(item)
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("replay extract after one unit: %v", err)
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("replay extract after one unit: %v", drain.Errs)
 	}
 	requests, _, _ = q.snapshot()
 	if got := requests[before:]; len(got) != 1 || got[0].Key != jobID+"/compile/grace/a1" {
@@ -207,8 +231,8 @@ func TestExtractReplayStagesOnceFansOutAndAcksAfterConsequences(t *testing.T) {
 	}
 	before = len(requests)
 	q.add(item)
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("replay extract after all units: %v", err)
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("replay extract after all units: %v", drain.Errs)
 	}
 	requests, _, _ = q.snapshot()
 	if got := requests[before:]; len(got) != 0 {
@@ -225,8 +249,8 @@ func TestCompileApplyRollsBackStagedUnitWhenTerminalWriteFails(t *testing.T) {
 	svc := queueService(conn, q)
 	jobID, extractRequest := ingestAndHandoff(t, ctx, svc, q)
 	q.add(queueItem{ID: "extract", Key: extractRequest.Key, Status: "done", Context: extractRequest.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote a compiler."]}]}`)})
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("apply extract: %v", err)
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("apply extract: %v", drain.Errs)
 	}
 	requests, _, _ := q.snapshot()
 	compileRequest := requests[len(requests)-1]
@@ -238,16 +262,17 @@ func TestCompileApplyRollsBackStagedUnitWhenTerminalWriteFails(t *testing.T) {
 		t.Fatalf("install failure injection: %v", err)
 	}
 	q.add(queueItem{ID: "compile", Key: compileRequest.Key, Status: "done", Context: compileRequest.Context, Result: json.RawMessage(`{"title":"Ada","body":"Ada wrote a compiler."}`)})
-	if _, err := svc.ProcessInbox(ctx); err == nil || !strings.Contains(err.Error(), "injected terminal failure") {
-		t.Fatalf("compile apply error = %v, want injected terminal failure", err)
+	drain := svc.ProcessInbox(ctx)
+	if drain.JobsFailed != 1 || len(drain.Errs) == 0 || !strings.Contains(drain.Errs[0].Error(), "injected terminal failure") {
+		t.Fatalf("compile apply = %+v, want permanent injected terminal failure", drain)
 	}
 	var staged int
 	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM job_staging WHERE job_id = ? AND stage = 'compile'`, jobID).Scan(&staged); err != nil || staged != 0 {
 		t.Fatalf("compile staging rows after rollback = %d, %v; want zero", staged, err)
 	}
 	status, err := svc.JobStatus(ctx, jobID)
-	if err != nil || status.Status != wikidomain.JobWorking {
-		t.Fatalf("job after rollback = %+v, %v; want non-terminal working", status, err)
+	if err != nil || status.Status != wikidomain.JobFailed {
+		t.Fatalf("job after rollback = %+v, %v; want failed", status, err)
 	}
 }
 
@@ -260,8 +285,8 @@ func TestQueueCallsForIngestAreGroupedByReturnedJobID(t *testing.T) {
 	svc := queueService(conn, q)
 	jobID, extractRequest := ingestAndHandoff(t, ctx, svc, q)
 	q.add(queueItem{ID: "extract", Key: extractRequest.Key, Status: "done", Context: extractRequest.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote a compiler."]}]}`)})
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("apply extract: %v", err)
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("apply extract: %v", drain.Errs)
 	}
 	requests, _, _ := q.snapshot()
 	var grouped []queueRequest
@@ -287,8 +312,8 @@ func TestLastCompileAtomicallyIntegratesAndRedeliveryIsStray(t *testing.T) {
 	svc := queueService(conn, q)
 	jobID, extractRequest := ingestAndHandoff(t, ctx, svc, q)
 	q.add(queueItem{ID: "extract", Key: extractRequest.Key, Status: "done", Context: extractRequest.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote a compiler."]},{"type":"entity","kind":"person","name":"Grace","claims":["Grace wrote a compiler."]}]}`)})
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("apply extract: %v", err)
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("apply extract: %v", drain.Errs)
 	}
 	requests, _, _ := q.snapshot()
 	var compileRequests []queueRequest
@@ -303,8 +328,8 @@ func TestLastCompileAtomicallyIntegratesAndRedeliveryIsStray(t *testing.T) {
 			name = "Grace"
 		}
 		q.add(queueItem{ID: "compile-" + name, Key: request.Key, Status: "done", Context: request.Context, Result: json.RawMessage(`{"title":"` + name + `","body":"` + name + ` wrote a compiler."}`)})
-		if _, err := svc.ProcessInbox(ctx); err != nil {
-			t.Fatalf("apply compile %d: %v", i, err)
+		if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+			t.Fatalf("apply compile %d: %v", i, drain.Errs)
 		}
 		status, _ := svc.JobStatus(ctx, jobID)
 		want := wikidomain.JobWorking
@@ -320,8 +345,8 @@ func TestLastCompileAtomicallyIntegratesAndRedeliveryIsStray(t *testing.T) {
 	assertTableCount(t, ctx, conn, "job_staging", 0)
 	last := compileRequests[len(compileRequests)-1]
 	q.add(queueItem{ID: "redelivery", Key: last.Key, Status: "done", Context: last.Context, Result: json.RawMessage(`{"title":"Corrupt","body":"Corrupt"}`)})
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("redelivery: %v", err)
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("redelivery: %v", drain.Errs)
 	}
 	assertTableCount(t, ctx, conn, "claims", 2)
 	assertTableCount(t, ctx, conn, "pages", 2)
@@ -337,8 +362,8 @@ func TestSemanticFailuresCorrectThenExhaustWithoutPartialWrites(t *testing.T) {
 	jobID, request := ingestAndHandoff(t, ctx, svc, q)
 	bad := json.RawMessage(`{"subjects":[{"type":"wrong"}]}`)
 	q.add(queueItem{ID: "bad-a1", Key: request.Key, Status: "done", Context: request.Context, Result: bad})
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("first bad result: %v", err)
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("first bad result: %v", drain.Errs)
 	}
 	requests, _, _ := q.snapshot()
 	corrective := requests[len(requests)-1]
@@ -350,8 +375,9 @@ func TestSemanticFailuresCorrectThenExhaustWithoutPartialWrites(t *testing.T) {
 		t.Fatalf("status after correction = %q", status.Status)
 	}
 	q.add(queueItem{ID: "bad-a2", Key: corrective.Key, Status: "done", Context: corrective.Context, Result: bad})
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("exhausted result: %v", err)
+	drain := svc.ProcessInbox(ctx)
+	if drain.JobsFailed != 1 {
+		t.Fatalf("exhausted result = %+v", drain)
 	}
 	status, _ = svc.JobStatus(ctx, jobID)
 	if status.Status != wikidomain.JobFailed || status.Error == "" {
@@ -384,15 +410,15 @@ func TestFailedAndStrayItemsDrainWithoutPartialState(t *testing.T) {
 		queueItem{ID: "mismatched", Key: "z", Status: "done", Context: mismatched, Result: json.RawMessage(`{}`)},
 		queueItem{ID: "failed", Key: request.Key, Status: "failed", Context: request.Context, Error: "provider exploded"},
 	)
-	if n, err := svc.ProcessInbox(ctx); err != nil || n != 4 {
-		t.Fatalf("mixed inbox drain = %d, %v", n, err)
+	if drain := svc.ProcessInbox(ctx); drain.Seen != 4 || drain.JobsFailed != 1 {
+		t.Fatalf("mixed inbox drain = %+v", drain)
 	}
 	_, acked, remaining := q.snapshot()
 	if len(acked) != 4 || remaining != 0 {
 		t.Fatalf("acked/remaining = %#v/%d", acked, remaining)
 	}
 	status, _ := svc.JobStatus(ctx, jobID)
-	if status.Status != wikidomain.JobFailed || status.Error != "provider exploded" {
+	if status.Status != wikidomain.JobFailed || !strings.Contains(status.Error, "provider exploded") {
 		t.Fatalf("failed status = %+v", status)
 	}
 	assertTableCount(t, ctx, conn, "job_staging", 0)
@@ -428,8 +454,8 @@ func TestAbortWaitingClearsStagingAndLateResultIsDiscarded(t *testing.T) {
 	}
 	assertTableCount(t, ctx, conn, "job_staging", 0)
 	q.add(queueItem{ID: "late", Key: request.Key, Status: "done", Context: request.Context, Result: json.RawMessage(`{"subjects":[]}`)})
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("late result: %v", err)
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("late result: %v", drain.Errs)
 	}
 	for _, table := range []string{"subjects", "claims", "pages"} {
 		assertTableCount(t, ctx, conn, table, 0)
@@ -459,23 +485,150 @@ func TestRerunAbortedJobCompletesQueuePipelineOnce(t *testing.T) {
 		t.Fatalf("rerun extract key = %q, want deduped %q", current.Key, oldRequest.Key)
 	}
 	q.add(queueItem{ID: "rerun-extract", Key: current.Key, Status: "done", Context: current.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote a compiler."]}]}`)})
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("rerun extract apply: %v", err)
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("rerun extract apply: %v", drain.Errs)
 	}
 	requests, _, _ = q.snapshot()
 	compileRequest := requests[len(requests)-1]
 	q.add(queueItem{ID: "rerun-compile", Key: compileRequest.Key, Status: "done", Context: compileRequest.Context, Result: json.RawMessage(`{"title":"Ada","body":"Ada wrote a compiler."}`)})
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("rerun compile apply: %v", err)
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("rerun compile apply: %v", drain.Errs)
 	}
 	status, _ := svc.JobStatus(ctx, jobID)
 	if status.Status != wikidomain.JobDone || len(status.Subjects) != 1 {
 		t.Fatalf("rerun status = %+v", status)
 	}
 	q.add(queueItem{ID: "stale", Key: oldRequest.Key, Status: "done", Context: oldRequest.Context, Result: json.RawMessage(`{"subjects":[]}`)})
-	if _, err := svc.ProcessInbox(ctx); err != nil {
-		t.Fatalf("stale delivery: %v", err)
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("stale delivery: %v", drain.Errs)
 	}
 	assertTableCount(t, ctx, conn, "claims", 1)
 	assertTableCount(t, ctx, conn, "pages", 1)
+}
+
+func TestInboxDrainContinuesAfterFirstItemPermanentlyFails(t *testing.T) {
+	// R-P56S-5BZJ
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	q := newTestQueue(t)
+	svc := queueService(conn, q)
+	for _, scope := range []string{"first", "later"} {
+		if _, err := wikidomain.NewScopeStore(conn).Create(ctx, scope); err != nil {
+			t.Fatalf("create scope %s: %v", scope, err)
+		}
+		if _, err := svc.Ingest(ctx, scope, "owner", "owner@example.com", scope+" document", scope, nil); err != nil {
+			t.Fatalf("ingest %s: %v", scope, err)
+		}
+		if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
+			t.Fatalf("handoff %s = %v, %v", scope, processed, err)
+		}
+	}
+	requests, _, _ := q.snapshot()
+	firstJob := requests[len(requests)-2].GroupID
+	laterJob := requests[len(requests)-1].GroupID
+	q.add(
+		queueItem{ID: "poison", Key: requests[len(requests)-2].Key, Status: "failed", Context: requests[len(requests)-2].Context, Error: "provider rejected the document"},
+		queueItem{ID: "applicable", Key: requests[len(requests)-1].Key, Status: "done", Context: requests[len(requests)-1].Context, Result: json.RawMessage(`{"subjects":[]}`)},
+	)
+	drain := svc.ProcessInbox(ctx)
+	if drain.Seen != 2 || drain.JobsFailed != 1 || drain.Applied != 1 {
+		t.Fatalf("drain = %+v, want failed first item and applied later item", drain)
+	}
+	firstStatus, _ := svc.JobStatus(ctx, firstJob)
+	laterStatus, _ := svc.JobStatus(ctx, laterJob)
+	if firstStatus.Status != wikidomain.JobFailed || laterStatus.Status != wikidomain.JobDone {
+		t.Fatalf("statuses after one tick = first %q, later %q", firstStatus.Status, laterStatus.Status)
+	}
+	if next := svc.ProcessInbox(ctx); next.Seen != 0 {
+		t.Fatalf("next drain = %+v, want poison item gone", next)
+	}
+}
+
+func TestPermanentCompletionFailureCleansJobAndAcks(t *testing.T) {
+	// R-P6EO-J3Q8
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	q := newTestQueue(t)
+	svc := queueService(conn, q)
+	jobID, request := ingestAndHandoff(t, ctx, svc, q)
+	if _, err := conn.ExecContext(ctx, `INSERT INTO job_staging(job_id, stage, unit, payload, units) VALUES (?, 'extract', '', '{}', 1)`, jobID); err != nil {
+		t.Fatalf("seed staging: %v", err)
+	}
+	q.add(queueItem{ID: "permanent", Key: request.Key, Status: "failed", Context: request.Context, Error: "model rejected payload"})
+	drain := svc.ProcessInbox(ctx)
+	status, err := svc.JobStatus(ctx, jobID)
+	if err != nil || drain.JobsFailed != 1 || status.Status != wikidomain.JobFailed || !strings.Contains(status.Error, "model rejected payload") {
+		t.Fatalf("drain/status = %+v/%+v, %v", drain, status, err)
+	}
+	assertTableCount(t, ctx, conn, "job_staging", 0)
+	assertTableCount(t, ctx, conn, "ingest_lease", 0)
+	_, acked, remaining := q.snapshot()
+	if len(acked) != 1 || remaining != 0 || svc.ProcessInbox(ctx).Seen != 0 {
+		t.Fatalf("queue after permanent failure = acked %#v, remaining %d", acked, remaining)
+	}
+}
+
+func TestTransientCompletionDefersThenFailsAtBound(t *testing.T) {
+	// R-P7MK-WVGX
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	q := newTestQueue(t)
+	svc := queueService(conn, q)
+	jobID, request := ingestAndHandoff(t, ctx, svc, q)
+	q.add(queueItem{ID: "transient", Key: request.Key, Status: "done", Context: request.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote a compiler."]}]}`)})
+	q.failPosts(maxTestDeferrals)
+	for attempt := 1; attempt < maxTestDeferrals; attempt++ {
+		drain := svc.ProcessInbox(ctx)
+		_, _, remaining := q.snapshot()
+		if drain.Deferred != 1 || drain.JobsFailed != 0 || remaining != 1 {
+			t.Fatalf("deferral %d = %+v, remaining %d", attempt, drain, remaining)
+		}
+	}
+	drain := svc.ProcessInbox(ctx)
+	status, _ := svc.JobStatus(ctx, jobID)
+	_, acked, remaining := q.snapshot()
+	if drain.JobsFailed != 1 || drain.Deferred != 0 || status.Status != wikidomain.JobFailed || !strings.Contains(status.Error, "temporarily unavailable") || len(acked) != 1 || remaining != 0 {
+		t.Fatalf("bounded deferral = %+v, status %+v, acked %#v, remaining %d", drain, status, acked, remaining)
+	}
+}
+
+const maxTestDeferrals = 3
+
+func TestAckFailureAfterCommitRedeliversAsDiscarded(t *testing.T) {
+	// R-P8UH-AN7M
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	q := newTestQueue(t)
+	svc := queueService(conn, q)
+	jobID, extractRequest := ingestAndHandoff(t, ctx, svc, q)
+	q.add(queueItem{ID: "extract-for-ack-test", Key: extractRequest.Key, Status: "done", Context: extractRequest.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada wrote a compiler."]}]}`)})
+	if drain := svc.ProcessInbox(ctx); len(drain.Errs) != 0 {
+		t.Fatalf("apply extract: %v", drain.Errs)
+	}
+	requests, _, _ := q.snapshot()
+	compileRequest := requests[len(requests)-1]
+	q.add(queueItem{ID: "commit-before-ack", Key: compileRequest.Key, Status: "done", Context: compileRequest.Context, Result: json.RawMessage(`{"title":"Ada","body":"Committed body."}`)})
+	q.failDeletes(1)
+	first := svc.ProcessInbox(ctx)
+	status, _ := svc.JobStatus(ctx, jobID)
+	_, _, remaining := q.snapshot()
+	if first.Deferred != 1 || status.Status != wikidomain.JobDone || remaining != 1 {
+		t.Fatalf("post-commit ack failure = %+v, status %+v, remaining %d", first, status, remaining)
+	}
+	assertTableCount(t, ctx, conn, "claims", 1)
+	assertTableCount(t, ctx, conn, "pages", 1)
+	second := svc.ProcessInbox(ctx)
+	if second.Discarded != 1 {
+		t.Fatalf("redelivery = %+v, want discarded", second)
+	}
+	assertTableCount(t, ctx, conn, "claims", 1)
+	assertTableCount(t, ctx, conn, "pages", 1)
+	_, _, remaining = q.snapshot()
+	if remaining != 0 {
+		t.Fatalf("remaining after redelivery = %d", remaining)
+	}
 }
