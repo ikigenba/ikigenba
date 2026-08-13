@@ -14,8 +14,6 @@ matches only phase lines.
 
 Next phase: 06
 
-- Phase 05 ⬜ realizes — — add `artifacts` to `run`'s fragment list so the dev front door routes `/srv/artifacts/`, restoring agreement with `bin/start`
-
 
 The artifacts of D1, D2, and D3 already exist in the tree — this spec was written
 over working code, not ahead of it — so those Decisions queued no initial work.
