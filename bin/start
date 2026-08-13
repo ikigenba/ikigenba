@@ -233,6 +233,7 @@ launch_github() {
 	# chassis DB only, no event plane.
 	source "$repo/github/.envrc"
 	export GITHUB_DB_PATH="$RUN_DIR/github.db"
+	export GITHUB_WWW_PATH="$repo/github/share/www"
 	exec "$RUN_DIR/bin/github" serve --port "$(port 3203)"
 }
 
