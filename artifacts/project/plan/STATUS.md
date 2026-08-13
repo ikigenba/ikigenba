@@ -14,5 +14,3 @@ deliberately carries **no** bare status glyph outside the phase lines, so
 the anchored grep matches only phase lines.
 
 Next phase: 15
-
-- Phase 14 ⬜ realizes R-OSZJ-I2D8, R-OU7F-VU3X (D9), retargets D9/D11's kept ids — move the landing + brand assets to disk-served `share/www` via the chassis `WWW` mount; delete `internal/web`
