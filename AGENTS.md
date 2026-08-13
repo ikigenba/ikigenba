@@ -63,23 +63,56 @@ Loopback port assignments live in **`registry/`**.
 ## Working locally
 
 You almost always work in one subfolder; read its `AGENTS.md` first. Testing
-usually needs the whole suite up, driven from the root:
+usually needs the whole suite up, and the suite runs **inside a netns
+instance** — an unprivileged namespace with a private loopback, private `/tmp`,
+and private process table (harness: `~/projects/netns`, installed on PATH as
+`start`/`stop`/`enter`). Each worktree gets its own instance, so parallel
+worktrees can all bind the suite's real ports without colliding, and nothing
+you run can touch another worktree's stack.
 
-- **`bin/start`** builds every service, launches each on its loopback port, and
-  brings up the nginx front door on **:8080** for the full path-routed auth chain.
-  Logs land in `tmp/<svc>.log`.
-- **`bin/stop`** tears the stack down; **`bin/stop --clean`** also wipes `tmp/`
-  dev state.
+Bring up the suite for the current worktree (run from the worktree root):
 
-With the suite up you should have the `ikigenba_<svc>` MCP tools reachable. If
-they are missing or a `health` check fails, complain prominently rather than
-proceeding as if testing passed (usually the suite just is not up).
+1. Pick an instance name (this worktree's directory name, e.g. `wip-testing`)
+   and any free host port (`ss -ltn` to check; convention is 18080 and up).
+2. `start -i <name> -p <port> "$PWD/nginx/tmp"` — the `nginx/tmp` shadow dir is
+   required; without it nginx's `chown` of its scratch dirs fails.
+3. `enter -i <name> bash -c 'export GOFLAGS=-buildvcs=false GIT_TERMINAL_PROMPT=0 START_RUN_DIR=/tmp/suite-run; bin/start'`
 
-> ⚠️ **Only stop the stack this worktree started.** The suite binds shared host
-> ports, so another worktree or clone may own a running stack. `bin/stop`,
-> `kill`/`pkill`, or freeing a port is permitted only for the stack your own
-> `bin/start` launched. Anything holding a port you did not start (for example a
-> stale nginx on :8080) is a question for the operator: identify the owner
+Inside the instance, **`bin/start`** builds every service, launches each on its
+loopback port, and brings up the nginx front door on **:8080** for the full
+path-routed auth chain (logs in `$START_RUN_DIR/tmp`, on the instance's private
+`/tmp`).
+
+- Run all suite-facing commands (tests, curl against service ports, log reads)
+  through **`enter -i <name> …`**; `enter` keeps your current directory.
+- From the host, only the bridged port is visible: the front door answers at
+  `http://localhost:<port>`, and the service loopback ports do not exist
+  host-side. Browser-driven Google login through the bridge does not work
+  out of the box: the redirect URI derives from `DASHBOARD_PUBLIC_BASE_URL`
+  (`:8080` inside the instance), so the browser lands back on the host's
+  `:8080`, not your instance. Test auth in-namespace, or ask the operator
+  before wiring up bridge-port OAuth.
+- Tear down with **`stop -i <name>`**: it kills the instance and everything in
+  it atomically, and run state on the private `/tmp` vanishes with it. No
+  `bin/stop` bookkeeping is needed; `./stop && ./start …` is also the reset.
+
+Don't confuse the two `start`s: bare `start`/`stop`/`enter` are the netns
+harness on PATH; `bin/start`/`bin/stop` are the suite's own scripts and run
+inside the instance.
+
+The `ikigenba_<svc>` MCP tools available in an agent session point at the
+hosted box, never at this local suite, so they cannot test it. Test the local
+MCP surface directly: HTTP requests against the service's MCP endpoint, made
+from inside the instance (`enter -i <name> curl …`).
+
+If a `health` check fails or a service is unreachable, complain prominently
+rather than proceeding as if testing passed (usually the suite just is not up,
+or you are checking a loopback port from the host instead of via `enter`).
+
+> ⚠️ **Never touch host processes or host ports.** Your instance's process
+> table contains only your own stack, so `pkill`/`bin/stop` inside it are safe.
+> Anything listening on the *host* (for example another worktree's bridge port,
+> or a stale nginx on :8080) is a question for the operator: identify the owner
 > (`ss -ltnp`), stop, and surface it. A port conflict is never permission to kill.
 
 ## Deploying
