@@ -12,7 +12,9 @@ gone. A phase body file carries no marker of its own. This document deliberately
 carries **no** bare status glyph outside the phase lines, so the anchored grep
 matches only phase lines.
 
-Next phase: 05
+Next phase: 06
+
+- Phase 05 ⬜ realizes — — add `artifacts` to `run`'s fragment list so the dev front door routes `/srv/artifacts/`, restoring agreement with `bin/start`
 
 
 The artifacts of D1, D2, and D3 already exist in the tree — this spec was written
