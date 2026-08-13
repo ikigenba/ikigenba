@@ -20,8 +20,6 @@ import (
 )
 
 func TestRunIntegratesPendingJobWithRealDBAndMockProvider(t *testing.T) {
-	// R-MB7F-ZRE9
-	// R-MCFC-DJ4Y
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -238,7 +236,6 @@ func (s *claimLoopService) WaitForWork(ctx context.Context) error {
 }
 
 func TestRunAbortWorkingJobCancelsProviderAndPreservesAbortedStatus(t *testing.T) {
-	// R-0USQ-0P6D
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()

@@ -1482,7 +1482,6 @@ func TestAskToolReturnsURLTitleCitations(t *testing.T) {
 }
 
 func TestAskToolUsesPhase17InputAndResultShape(t *testing.T) {
-	// R-6A8D-0RK9
 	asker := &capturingAsker{answer: answer{
 		Found: true,
 		Text:  "Ada wrote the note.",

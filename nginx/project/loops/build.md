@@ -18,6 +18,14 @@ touch `project/plan/STATUS.md`.
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md`. It
+   must print exactly `# nginx — Plan Status`. If the file is missing or the
+   line differs:
+   - If `./nginx/project/plan/STATUS.md` passes the same check, your cwd is one
+     level above the service root — `cd nginx` and continue.
+   - Otherwise, change nothing and report `NEXT` with a message naming the
+     expected title and what you actually observed.
+
 1. **Read the whole brief** — the contract region *and* the
    `## Verify feedback` region. If `project/loops/brief.md` is missing or
    empty, change nothing and report `NEXT`.
@@ -121,10 +129,9 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal — never yours to report**: ending the run is never
-  yours — finishing this phase completely, green suite and all open gaps
-  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
-  phase left or a blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Phase 01: wrote AGENTS.md with the manual-only declaration; all
   structural greps print 1.`

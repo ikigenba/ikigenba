@@ -13,6 +13,22 @@ complete and you do **not** touch `project/plan/STATUS.md` or delete the brief.
 All paths below are relative to the **service root** (`notify/`), which is your
 working directory.
 
+## Step zero — workspace identity guard
+
+Run `head -n 1 project/plan/STATUS.md`. It must print exactly:
+
+```
+# notify — Plan Status
+```
+
+- **If it matches**, continue.
+- **If it does not match** (wrong title, or the file is missing): check
+  `./notify/project/plan/STATUS.md` with the same test. If *that* passes,
+  your cwd drifted one level up — `cd notify` and continue. Otherwise the cwd
+  has drifted into an unrelated workspace. Make no changes and report `NEXT`
+  with a message naming the expected title (`# notify — Plan Status`) and the
+  title you actually observed.
+
 ## Procedure
 
 1. **Read the whole brief** — `project/loops/brief.md`, **both** the contract
@@ -53,8 +69,10 @@ working directory.
      feed-offset guards in `internal/db/*_test.go`; the composition-root
      surfaces (the landing route over the shipped `share/www` tree, the
      `notify/etc/nginx.conf` content-assertion, the consumer declaration, the
-     boot smoke) in `cmd/notify/main_test.go`, and read-from-disk assertions
-     over committed docs in `cmd/notify/docs_test.go`.
+     boot smoke) and read-from-disk assertions over committed docs live in
+     `cmd/notify/*_test.go` (`main_test.go`, `docs_test.go`, etc.) — the
+     composition root is notify's single home for cross-package integration
+     tests. Never a root-level or `phaseNN_test.go` file.
    - **Never write a skip.** `t.Skip`, `t.Skipf`, and `t.SkipNow` are banned
      outright in this tree: notify has **no live layer and no manual layer**,
      so no test file carries a `//go:build live` constraint and there is no
@@ -112,9 +130,9 @@ working directory.
 
 - **Toolchain:** Go 1.26, single `module notify` rooted at `notify/`; pure-Go
   SQLite driver `modernc.org/sqlite` (no cgo). The in-repo `appkit`,
-  `eventplane`, and `registry` are replace-siblings — the `correlation` leaf
-  package arrives through `replace eventplane => ../eventplane`, adding no new
-  module dependency. Standard library plus the appkit chassis only.
+  `eventplane`, and `registry` are replace-siblings, wired through the
+  repo-root `go.work` for the dev/test gate; the production build forces
+  `GOWORK=off` (`bin/ship notify`'s concern, not the test gate's).
 - **"The suite is green"** means all of: `cd notify && go build ./...`,
   `cd notify && go vet ./...`, `cd notify && gofmt -l .` (prints nothing), and
   `cd notify && go test ./...` succeed with zero failures.
@@ -167,12 +185,10 @@ working directory.
 Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
-- `NEXT` — **terminal**: this turn's increment is committed; hand off to
-  verify.
-- `DONE` — **terminal — never yours to report**: ending the run is never
-  yours — finishing this phase completely, green suite and all open gaps
-  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
-  phase left or a blocked phase awaiting the operator.
+- `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `rewrote the AGENTS.md Tests section and added 2 tagged tests in
   cmd/notify/docs_test.go; suite green`.

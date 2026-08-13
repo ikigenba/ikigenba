@@ -119,7 +119,6 @@ func TestMCPEnvelopeErrorsMapToDomainSentinels(t *testing.T) {
 	}
 }
 
-// R-25E7-7ZFH
 // R-IO48-SOHZ
 func TestCommitPreservesFilesMessageAttributionAndSHA(t *testing.T) {
 	source := string([]byte{'a', 0, 0xff, '\n'})
@@ -166,7 +165,6 @@ func TestCommitPreservesFilesMessageAttributionAndSHA(t *testing.T) {
 	}
 }
 
-// R-27TZ-ZIWV
 // R-IPC5-6G8O
 func TestHeadReadFileAndPlumbingFailures(t *testing.T) {
 	binary := []byte{'a', 0, 0xff, '\n'}
@@ -209,11 +207,6 @@ func TestHeadReadFileAndPlumbingFailures(t *testing.T) {
 	if _, err := New(empty.URL, empty.Client()).Head(context.Background(), "nightly", "main"); !errors.Is(err, script.ErrNotFound) {
 		t.Fatalf("empty head error = %v", err)
 	}
-	testPlumbingFailures(t)
-}
-
-// R-291W-DANK
-func TestStatusAndTransportFailuresMapToDomainErrors(t *testing.T) {
 	testPlumbingFailures(t)
 }
 

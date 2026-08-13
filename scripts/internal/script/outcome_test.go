@@ -155,7 +155,6 @@ func TestCompletionEvent(t *testing.T) {
 }
 
 func TestCompletionEventNormalizesRoutingSubject(t *testing.T) {
-	// R-82AG-F74Z
 	zero := 0
 	for _, tc := range []struct{ name, scriptName, want string }{
 		{"empty", "", ""},

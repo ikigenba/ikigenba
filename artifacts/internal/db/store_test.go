@@ -52,7 +52,6 @@ func TestMigrationsCreateDeclaredSchemaAndVisibilityChecks(t *testing.T) {
 	}
 }
 
-// R-3EFP-FCGJ
 func TestCreateUploadRetriesOneInjectedTokenCollision(t *testing.T) {
 	conn := migratedDB(t)
 	tokens := []string{"collision", "collision", "success"}

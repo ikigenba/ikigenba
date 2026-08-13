@@ -16,6 +16,15 @@ the **only** step that can end the run. You write **no code and no config**, run
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md`. It
+   must print exactly `# nginx — Plan Status`. If the file is missing or the
+   line differs, do not proceed and never report `DONE`:
+   - If `./nginx/project/plan/STATUS.md` passes the same check, your cwd is one
+     level above the service root — `cd nginx` and continue.
+   - Otherwise, report `NEXT` with a message naming the expected title
+     (`# nginx — Plan Status`) and what you actually observed, so the drift is
+     visible instead of silently ending or misdirecting the run.
+
 1. **Check for a block first.** If `project/loops/blocked.md` exists, open
    nothing else, change nothing, and report `DONE` — the message names the
    blocked phase and points at that file. A blocked phase is waiting on the
@@ -174,10 +183,10 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops. Report this
-  when `project/loops/blocked.md` exists (name the blocked phase and point
-  at the file) or when the `⬜` grep over `project/plan/STATUS.md` finds no
-  pending phase.
+- `DONE` — **terminal**: tells `ralph` to stop the loop. It carries no other
+  meaning; say *why* in the message. Report this when `project/loops/blocked.md`
+  exists (name the blocked phase and point at the file) or when the `⬜` grep
+  over `project/plan/STATUS.md` finds no pending phase.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Wrote a fresh brief for phase 01 (structural, no ids).` or `No pending phases
   remain in project/plan/STATUS.md; nothing to build.`

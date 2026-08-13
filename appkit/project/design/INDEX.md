@@ -135,3 +135,45 @@ Verification ids change.
 - R-YP82-N9RX → D1 → `project/design/D01.md`
 - R-YSVR-SL00 → D4 → `project/design/D04.md`
 - R-YU3O-6CQP → D4 → `project/design/D04.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped to
+the id(s) whose Verification most directly proves it; the strength of each proof
+is the audit's question, the mapping's completeness is this manifest's.
+Regenerated with the rest of the index.
+
+1. A converted service serves the same pages and assets from the on-disk web root, in dev and deployed, and its bundle carries the asset files →
+   R-LWOU-OWWQ, R-LXWR-2ONF, R-M0CJ-U84T, R-M2SC-LRM7, R-M7NY-4UKZ
+2. A page edit in the source tree is visible on the next request, with no rebuild →
+   R-M0CJ-U84T, R-M7NY-4UKZ, R-LXWR-2ONF
+3. A missing web root exits at startup with an error naming the path →
+   R-M8VU-IMBO, R-M1KG-7ZVI
+4. The chassis MCP transport presents the same tool list and behaviors, including `health`/`reflection` →
+   R-MDRG-1PAG, R-MEZC-FH15, R-ML2U-CBQM
+5. A declared consumer consumes the same events from the same upstreams, resuming after a restart →
+   R-49SJ-YF14, R-48KN-KNAF, R-464U-T3T1
+6. A service unconverted on the opt-in surfaces still builds and behaves identically →
+   R-MBBN-A5T2
+7. A deterministic caller acts on the structured result and its error code without string-matching, shape known from the listing →
+   R-WQVJ-KI03, R-WTBC-C1HH, R-WUJ8-PT86
+8. The agent-visible behavior of every converted tool is unchanged →
+   R-WTBC-C1HH, R-WWZ1-HCPK
+9. A strict client loads the whole tool list; a non-conforming tool fails startup →
+   R-EIYD-4M57, R-ELE5-W5ML, R-7I7V-DBB3
+10. A front-door request to a loopback-only surface is refused while an on-box caller asserting its own identity gets through →
+    R-X0MQ-MNXN, R-X1UN-0FOC, R-X4AF-RZ5Q
+11. A tool call shows up in the forensic record — caller, arguments, timing, outcome — with no reporting code →
+    R-1PGY-03QK, R-1QOU-DVH9, R-RI9E-W0G2
+12. One user action across two services yields records sharing a single chain identity →
+    R-14QN-I04R, R-1Z85-29O4, R-20G1-G1ET
+13. An outbound call to an outside provider carries no chain id while a call to a suite peer does →
+    R-25BM-Z4DL, R-26JJ-CW4A
+14. A sensitive argument and any response content never appear — only size and a fingerprint →
+    R-1N15-8K96, R-1T4N-5EYN, R-1O91-MBZV
+15. With the store down, requests answer normally; records resume and the skipped amount is reported →
+    R-1EHU-K62B, R-1D9Y-6EBM, R-PTNV-XRYV
+16. A clean start/stop leaves a matching version-named pair; a kill leaves only the start →
+    R-1WSC-AQ6Q, R-1Y08-OHXF
+17. A background cycle produces one chain covering the whole cycle →
+    R-XP15-H34E, R-XSOU-MECH, R-21NX-TT5I

@@ -13,6 +13,24 @@ scratch every run** — never trust `build`'s claims, and never trust your own
 prior feedback as fact (you read it only to measure progress). You never halt
 the loop and never advance a phase on a gap. Do one iteration, then report.
 
+## Step 0 — workspace identity guard
+
+Before anything else, confirm you are in the `appkit` spec workspace:
+
+```
+head -n 1 project/plan/STATUS.md
+```
+
+This must print exactly `# appkit — Plan Status`. If it does not (including a
+missing file):
+- Check `./appkit/project/plan/STATUS.md` with the same command. If **that**
+  prints `# appkit — Plan Status`, your cwd is one level above the service
+  root — `cd appkit` and continue from step 1 below.
+- Otherwise, change nothing and report `NEXT` with a message naming the
+  expected title (`# appkit — Plan Status`) and what you actually observed.
+  Never report `DONE` — ending the run is never verify's job (see *Reporting
+  the result*).
+
 ## Procedure
 
 1. **Read the brief** — the contract region and your own prior `## Verify
@@ -225,10 +243,9 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal — never yours to report**: ending the run is never yours —
-  finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
-  blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is never
+  your job. Even a fully finished phase (green suite, every gap closed) is still
+  `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Phase 30 verified green; deleted its STATUS.md line and phase file and
   removed the brief.` or

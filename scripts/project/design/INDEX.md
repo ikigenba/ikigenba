@@ -207,3 +207,58 @@ _Retired: R-I0GA-YTQ5 (was D22) — the `suite.mcp` happy-path assertion pinned 
 _Retired: R-25E7-7ZFH, R-27TZ-ZIWV, R-291W-DANK (were D36) — they pinned the first build's client against an invented `/repositories/*` REST surface repos never serves; D36's rewrite pins the real surface (MCP domain verbs + plumbing byte routes) with fresh ids R-IKGJ-ND9W, R-ILOG-150L, R-IO48-SOHZ, R-IPC5-6G8O, R-IQK1-K7ZD, and the old tagged tests are deleted with them._
 
 _Retired: R-HY0I-7A8R (was D21) — it pinned `suite.event()` returning the bare trigger payload verbatim; the suite-wide envelope alignment rewrites that contract (one `{source, kind, subject, event_id, payload}` shape across scripts and prompts), a changed discriminating behavior now pinned by R-NKLN-6D6F._
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped
+to the id(s) whose tests prove it; the quality of each proof is the audit's
+question, the mapping's completeness is this manifest's. Regenerated with the
+rest of the index.
+
+1. A logged-in dashboard user opening `/srv/scripts/` sees a Carbon-styled page
+   showing the service name and running version →
+   R-LAND-7Q3D, R-LAND-9R5F, R-LAND-1S7G
+2. A browser with no dashboard session is refused with `401` →
+   R-NGNX-4B7R
+3. The version shown matches the version the deployed binary reports →
+   R-LAND-1S7G
+4. The page's fonts and colors match Carbon and it loads its own embedded
+   `tokens.css` and fonts →
+   R-ASST-5X8M, R-ASST-9Z3P, R-M8XL-ANIZ
+5. An MCP client still discovers the AS via the PRM well-known and calls the
+   bearer `/mcp` unchanged; the landing page changed nothing →
+   R-ROUT-1V4K, R-ROUT-3W6L
+6. `/srv/scripts/feed` still returns `404` and `/health` still responds — the
+   landing page shadowed neither →
+   R-NGNX-8D1T
+7. A script that imports `suite` and calls another service's tool runs to success
+   with the effect visible in the target →
+   R-Q9X1-8DQ2, R-HVKP-FQRD
+8. A script triggered by a file-share event fetches the referenced bytes to disk
+   and writes a result file back to the share →
+   R-7ZUN-NNNL, R-I7RP-9G6B, R-IDV7-6AVS
+9. A file a run wrote is fetched byte-identical afterward by another service using
+   only what scripts reported →
+   R-IIQS-PDUK, R-INME-8GTC
+10. An agent given only scripts' self-description authors a working script using
+    the runtime helper without hand-rolling HTTP →
+    R-IOUA-M8K1, R-2ZVO-S8YU
+11. Creating a script and editing it twice keeps every prior version recoverable,
+    and the scripts that existed before stay intact →
+    R-2DXH-WDMC, R-2HL7-1OUF, R-2W7Z-MXQR
+12. A script cloned to a laptop with a second file the entrypoint imports, pushed
+    back, is used whole by the next run →
+    R-2L8W-702I
+13. A run started long, then edited, finishes on the version it started, and
+    scripts reports which version that was →
+    R-2MGS-KRT7, R-2K0Z-T8BT
+14. A script triggered by a push runs against exactly the pushed code and reports
+    back, merging only if its author wrote that step →
+    R-2TS6-VE9D, R-2RCE-3URZ
+15. Deleting a script removes it from the list while its history stays
+    recoverable →
+    R-2GDA-NX3Q
+16. A run is findable from any record of work it caused; a run and the completion
+    it publishes carry the causing action's chain id, and asking scripts for that
+    id returns exactly those runs →
+    R-4RBY-HL4R, R-4SJU-VCVG, R-4XFG-EFU8

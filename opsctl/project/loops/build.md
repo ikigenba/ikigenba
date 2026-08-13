@@ -10,137 +10,135 @@ path below is service-root-relative.
 
 You read **only** `project/loops/brief.md` — never `project/design/`, never
 `project/plan/`, never `project/product/`. The brief is self-contained: it
-carries the realized Decision's full design prose and the full requirement text
-of every id you must cover. You do a bounded, idempotent turn of the brief's
-remaining work and commit it. You do **not** decide completeness — `verify` is
-the independent gate — and you never touch `project/plan/STATUS.md`.
+carries the realized Decision's full design prose and the full requirement
+text of every id you must cover. You do a bounded, idempotent turn of the
+brief's remaining work and commit it. You do **not** decide completeness —
+`verify` is the independent gate for that. You never touch `project/plan/STATUS.md`.
 
-## Procedure
+## Step 0 — workspace identity guard
 
-1. **Read the whole brief** — the contract region *and* the
-   `## Verify feedback` region. If `project/loops/brief.md` is missing or empty,
-   change nothing and report `NEXT`.
+Run:
 
-2. **If `## Verify feedback` lists open gaps, those are this turn's priority.**
-   They are the exact, command-grounded items the independent gate found
-   unsatisfied last cycle, each tied to one `R-` id with the failing command and
-   its observed output. Close those first, then continue with the rest of the
-   brief.
+```sh
+head -n 1 project/plan/STATUS.md
+```
 
-3. **See what already exists** before writing anything:
+It must print exactly `# opsctl — Plan Status`.
 
-   ```
-   grep -rn 'R-XXXX-XXXX' --include='*_test.go' --exclude-dir=project .
-   GOWORK=off go test ./...
-   ```
+- If it matches, continue.
+- If it does not match, check `./opsctl/project/plan/STATUS.md` with the same
+  command. If that one matches, your cwd drifted one level up: `cd opsctl` and
+  continue.
+- If neither matches, make no changes and report `NEXT` with a message naming
+  the expected and observed titles.
 
-   (substituting each real id from the brief). Read the failures; do not guess
-   at the current state.
+## Step 1 — read the brief
 
-4. **Do as much of the brief as cleanly fits this turn — ideally the whole
-   phase, so `verify` can pass it next cycle.** Prefer fewer, fuller turns over
-   many thin increments; an incomplete phase is simply re-attacked next cycle.
-   Build the named files, consuming dependencies only through the interface
-   signatures the brief copied in.
+Read `project/loops/brief.md` in full — both the contract region (objective,
+realized Decisions, design prose, ids to cover, files to touch, dependency
+interfaces, done bar) and the feedback region (`## Verify feedback — attempt
+N`).
 
-5. **Write the tests.** For every id in the brief's `## Ids to cover`, write a
-   genuinely-asserting test tagged with a `// R-XXXX-XXXX` comment immediately
-   above it. A bare literal, a comment with no assertion, or a test that cannot
-   fail is not coverage.
+If the file is missing or empty, make no changes and report `NEXT` with a
+message saying there is no brief to work from.
 
-6. **Format and check:**
+## Step 2 — prioritize open gaps
 
-   ```
-   gofmt -l .
-   GOWORK=off go build ./...
-   GOWORK=off go test ./...
-   ```
+If the feedback region lists open gaps under a `## Verify feedback — attempt
+N` heading, **close those first** — they are the exact, command-grounded items
+the gate found unsatisfied last cycle. Reproduce each named failing command
+before touching code, so you know the gap firsthand.
 
-7. **Before committing, check your own diff for dropped tags:**
+## Step 3 — do the phase's remaining work
 
-   ```
-   git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
-   ```
+Do as much of the brief's "Ids to cover" and "Files to touch" as cleanly fits
+this turn — ideally the whole phase. Prefer fewer, fuller turns over many thin
+increments; an incomplete phase is simply re-attacked next cycle with fresh
+feedback.
 
-   Any removed line carrying an id tag outside `project/` must be **restored
-   first**. A rewrite extends a file's tests; it never drops an existing tagged
-   test.
+Orient before writing:
 
-8. **Commit this turn's increment** (never an empty commit) with a message
-   naming the phase and the trailer:
+```sh
+grep -rn 'R-XXXX-XXXX' --include='*_test.go' --exclude-dir=project .
+GOWORK=off go build ./...
+GOWORK=off go test ./...
+```
 
-   ```
-   git add -A && git commit -m "opsctl phase NN: <what this turn built>
+(substitute each real id you're working from `project/loops/brief.md` for
+`R-XXXX-XXXX` in the first command — that literal string never appears in this
+repo's tests, it is only the id *shape*).
 
-   Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
-   ```
+Build the named package(s) under `internal/opsctl/` or `cmd/opsctl/`,
+consuming any dependency only through the interface signatures copied into the
+brief — never by reading a dependency's own source.
 
-   Leave the phase's `⬜` marker alone. Report `NEXT`.
+## Step 4 — write tests
 
-## Project conventions
+Every id you close needs a genuinely-asserting test tagged with a
+`// R-XXXX-XXXX` comment immediately above it, **unless** the brief's done bar
+marks that id `Real-substrate (live box`. Ids marked that way are proven by an
+entry in the committed runbook `project/opsctl-verification.md` (which is
+itself checked by the hermetic `R-2B4O-Z98N` test) and take **no** test of
+your own in `*_test.go` — do not fabricate one, and do not skip one with
+`t.Skip` (this tree defines zero `t.Skip`/`t.Skipf`/`t.SkipNow`, per
+`project/design/D17.md`; `R-O2IA-0JBL` fails the gate the moment one appears).
 
-- **Language / module.** Go 1.26, module path `opsctl`. Not release-versioned.
-- **Build / typecheck:** `GOWORK=off go build ./...` from the service root.
-- **Test / green gate:** `GOWORK=off go test ./...` from the service root.
-  **The suite is green when both exit 0 with no failures.** The production build
-  forces `GOWORK=off`; so do you, so behavior matches the deployed binary.
-- **Formatting:** `gofmt -l .` prints nothing.
-- **Test placement — not negotiable.** Tests are **co-located with the code they
-  exercise and named for the behavior**: the engine's tests live beside the
-  engine in `internal/opsctl/*_test.go` (`backup_test.go`, `deploy_test.go`,
-  `testing_contract_test.go`, …). **Never create a per-phase test file and never
-  create a root-level test file.** A new behavior's test goes in the
-  package-local file named for that behavior's concern; extend an existing file
-  when one already owns that concern.
-- **Privilege / IO seam.** opsctl runs as root on the box and performs
-  privileged filesystem and unit operations through the `System` seam (e.g.
-  `System.ChownTree(ctx, owner, group, path)`), faked in tests and real on the
-  box. Drive tests through the fake against a real `t.TempDir()` filesystem;
-  never require a real box.
-- **Testing layers (suite contract `root project/design/D23.md`, adopted by
-  D17).** This tree has exactly two layers: **hermetic** (temp-dir filesystems,
-  real archives through the real `tar` binary, faked privilege seams) and
-  **manual** (the live-box checks in the committed runbook
-  `project/opsctl-verification.md`, run by the operator outside any gate). There
-  is **no composed and no live layer**: never add a `//go:build live` file,
-  never define a `-tags live` invocation.
-- **Skipping is banned.** `t.Skip`, `t.Skipf`, and `t.SkipNow` must appear
-  **nowhere** in this tree. A skipped requirement test launders a gap into green
-  and counts as **uncovered**. A missing tool (`tar`, the Go toolchain) is an
-  environmental precondition and a **hard failure**, never a skip.
-- **Environmental precondition:** a real `tar` binary on `PATH` — the
-  archive-boundary ids assert on a real archive listing.
-- **Claims a fake cannot falsify.** If a claim's correctness depends on the real
-  box (real uid/gid switching, a real systemd unit, real nginx), it is a
-  **manual-layer** id proven by the committed runbook, not by a test here.
-  Never invent a fake-backed test to "cover" such an id, and never add a test
-  that passes because the fake accepts whatever it is handed.
+Tests are **co-located with the code they exercise**, in the package-local
+`*_test.go` file for that package (`internal/opsctl/<area>_test.go` or
+`cmd/opsctl/main_test.go`) — never a per-phase file, never a root-level test
+file, never a separate integration-test tree (opsctl has no composed layer).
+
+## Step 5 — make the suite green
+
+```sh
+GOWORK=off go build ./...
+GOWORK=off go test ./...
+```
+
+Both must succeed with no failures. `gofmt -l` the changed files and fix any
+formatting drift before committing.
+
+## Step 6 — protect existing tagged tests
+
+Before committing, check this turn's own diff for dropped tags:
+
+```sh
+git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
+```
+
+Any removed line matching an id outside `project/` means an existing
+`R-`-tagged test was weakened or deleted — restore it first. A rewrite
+*extends* a file's tests; it never drops a tagged one.
+
+## Step 7 — commit
+
+Commit this turn's increment (no empty commit) with a message naming the
+phase, e.g. `opsctl: phase NN — <what closed>`, and the repo trailer:
+
+```
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+```
 
 ## Boundaries
 
-- Never read `project/design/`, `project/plan/`, or `project/product/` — the
-  brief is your complete input.
-- Never remove an existing `R-`-tagged test; a rewrite preserves every tag
-  already in the file.
-- Never edit `project/plan/STATUS.md` and never delete a `phase-NN.md`.
-- Never delete or edit `project/loops/brief.md`, including its
-  `## Verify feedback` region — you read it, you never write it.
-- Never write `project/loops/blocked.md`.
-- Always report `NEXT`. Build hands off every turn; it is never the step that
-  ends the run.
+- Read only `project/loops/brief.md`. Never open `project/design/`,
+  `project/plan/`, or `project/product/`.
+- Never remove an existing `R-`-tagged test.
+- Never edit `project/plan/STATUS.md` and never delete a phase file.
+- Never write `project/loops/brief.md` (contract region or feedback region).
+- Always end on `NEXT`.
 
 ## Reporting the result
 
 Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
-- `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal — never yours to report**: ending the run is never
-  yours — finishing this phase completely, green suite and all open gaps
-  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
-  phase left or a blocked phase awaiting the operator.
+- `NEXT` — **terminal**: this turn's work is done; hand off to the next
+  prompt.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 21: wrote the AGENTS.md Tests declaration and both tagged tests; suite
-  green.`
+  "closed R-CIUC-KW66 and R-CK28-YNWV, suite green, committed."
 
-Keep `message` a single plain sentence — not a JSON object or code block.
+Keep `message` a single plain sentence, not a JSON object or code block.

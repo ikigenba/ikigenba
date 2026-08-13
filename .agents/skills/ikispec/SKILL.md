@@ -21,12 +21,12 @@ one writer:
 |---|---|---|
 | `product/` | `README.md` — the *why*: problem, users, scope, promises, success criteria | `$seal-spec` (rewritten in place) |
 | `research/` | `research.md` — collected external ground truth that design references | `$seal-spec` (rewritten in place; optional) |
-| `design/` | `README.md` (spine) + `INDEX.md` (manifest) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
-| `plan/` | `README.md` (rules) + `STATUS.md` (manifest: `Next phase` counter + `⬜` lines) + `phase-NN.md` (one per **pending** phase) | `$seal-spec` (appends); the build loop deletes completed phases |
-| `loops/` | the generated build-loop prompts + `README.md` describing the installed loop | a prompt-generator workflow |
-| `README.md` | the workspace map: this folder table and pointers — thin and static | `$seal-spec` |
+| `design/` | `CONVENTIONS.md` (project toolchain) + `INDEX.md` (manifest) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
+| `plan/` | `STATUS.md` (manifest: `Next phase` counter + `⬜` lines) + `phase-NN.md` (one per **pending** phase) | `$seal-spec` (appends); the build loop deletes completed phases |
+| `loops/` | the generated build-loop prompts + the `run` wrapper | a prompt-generator workflow |
+| `README.md` | the ikispec-pointer stub: names the project and declares it abides by ikispec | `$seal-spec` |
 
-The loop prompts and `loops/README.md` are **not** spec artifacts — they are
+The loop prompts and the `run` wrapper are **not** spec artifacts — they are
 generated from the finished spec by a generator workflow and describe whichever
 loop topology is installed. This skill owns the spec shapes; the generator owns
 the loop shapes.
@@ -180,7 +180,7 @@ it.
                  <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
   ```
 
-  (substitute the project's real test-file glob from design's Conventions;
+  (substitute the project's real test-file glob from design's CONVENTIONS.md;
   the `--exclude-dir=project` matters — an id quoted in the spec is not a
   test). **Empty output is the pass condition.** No reverse bookkeeping is
   needed: when a behavior leaves design its id and tagged test are deleted
@@ -250,65 +250,58 @@ of the current research, never a running log.
 
 ## `project/design/` — the design shape
 
-Owns **shape and its proof** — *how* the thing is built and *how each behavior
-is proven*. Product owns the why and the promises; design states the exact,
-checkable form of those promises and never re-declares the why. It *uses* the
-product's contractual constants by value but does not own them. It is the
-single, current statement of the architecture: a changed Decision is rewritten
-in place; stale decisions are removed, not stacked.
+Owns **shape and its proof**: *how* the thing is built and *how each behavior is
+proven*. It is the single, current statement of the architecture, rewritten in
+place; a changed Decision is replaced, a stale one removed, never stacked. It
+*uses* product's contractual constants by value but does not own them, and never
+re-declares the why.
 
-Design defines **how the software is tested** as part of the architecture —
-seams exist so behavior can be exercised in isolation, and every component is
-shaped so its correctness can be verified. Part of that responsibility is
-identifying which claims **cannot** be proven in isolation — claims that hinge
-on a real external contract (a provider/API accepting what it's sent, a real
-DB/filesystem/network enforcing a constraint) — so the test plan exercises
-those for real, not only the mockable ones.
+**Design owns the public surface; the build loop owns everything below it.**
+Design fixes what other modules and later phases compile against: the module
+graph, exported symbols, signatures, types, and each operation's error contract,
+plus the proof (the minted `R-XXXX-XXXX` ids and what each asserts). The loop
+owns what no other module sees: function bodies, unexported types and helpers,
+algorithms, file layout, and the tests that discharge design's ids until the
+suite is green. Rule of thumb: if changing it changes what another module
+compiles against, it is design's; otherwise it is the loop's. The ids are the
+seam between them, so design states the claim and the loop writes the code and
+test that make it true. Hence design carries interfaces, types, and illustrative
+signatures, never full implementations, and it shapes the architecture for
+testing: seams exist so every behavior can be verified, and design also names the
+claims that **cannot** be verified in isolation (those hinging on a real external
+contract) so the test plan exercises those for real.
 
-Design docs carry interfaces, types, seams, naming, and the test plan.
-Illustrative signatures, struct definitions, and interface declarations belong
-in the doc; full implementations do not.
-
-A seam's **error surface is part of its exported shape**. A Decision that
+A seam's **error surface is part of its exported shape.** A Decision that
 declares a seam declares its failure contract: which failures each operation
-can produce, as named errors the caller can distinguish; which conditions are
-panics — broken invariants and programming errors, never expected runtime
-failures; and what handling each error means for the caller — the observable
-outcome (retry, propagate, surface, degrade), not the code that implements it.
-A seam declared without its errors is as incomplete as one declared without
-its return types.
+returns as named errors the caller can distinguish; which conditions panic
+(broken invariants and programming errors, never expected runtime failures); and
+what handling each error observably means for the caller (retry, propagate,
+surface, degrade), not the code that implements it. A seam declared without its
+errors is as incomplete as one declared without its return types.
 
-Split for **addressability** — a build phase reads only the one Decision it
+Split for **addressability**, a build phase reads only the one Decision it
 realizes, never the whole architecture:
 
-### `project/design/README.md` — the spine (cross-cutting facts only)
+### `project/design/CONVENTIONS.md` — the project toolchain
 
-- **Title** — `# <name> — Design`.
-- **Authority header** — a short paragraph beginning
-  `**Authority: shape and its proof.**` stating what design owns (how + proof),
-  that product owns the why and the promises, and that design uses the
-  product's contractual constants by value but does not own them. Note this is
-  the single current statement, rewritten in place, with construction history
-  living in git.
-- **## Requirement ids** — states plainly that: each Decision ends with a
-  **Verification** list (the concrete behaviors that decision requires); every
-  item carries a minted `R-XXXX-XXXX` id — a stable, unique handle for that one
-  behavior; the ids live inline in these lists and nowhere else (**no separate
-  requirements document**); and **design's responsibility for ids ends at
-  minting them** — how coverage is measured and when the work is "done" are
-  downstream's concern and must not be specified here.
-- **## Conventions** — shared facts every Decision leans on. **Required, and
-  must state the project's toolchain so downstream phases need not guess it:
-  the exact build/typecheck command, the exact test command, what "the
-  suite is green" concretely means, and the test-file glob (e.g. `*_test.go`)
-  where requirement-id tags live.** Also any other cross-cutting facts
-  (language/version, module path, exit-code taxonomy, formatting rules, a
-  shared time/IO source). State the commands, not the coverage rule.
-- **## Layout** — describes the split: `INDEX.md` is the manifest; `DNN.md` is
-  one self-contained file per Decision (zero-padded; referenced in prose and
-  the plan as `D<N>`); this README holds only the spine. Restate that design is
-  rewritten in place: a changed Decision is rewritten in its `DNN.md` and
-  `INDEX.md` is regenerated; a new Decision adds a `DNN.md` and an INDEX entry.
+The one in-tree design file that is project-specific rather than ikispec
+boilerplate. It is a title line (`# <name> — Design Conventions`) plus a single
+section of shared facts every Decision leans on:
+
+- **Required** (downstream phases would otherwise have to guess these): the exact
+  build/typecheck command, the exact test command, what "the suite is green"
+  concretely means, and the test-file glob (e.g. `*_test.go`) where
+  requirement-id tags live.
+- **Cross-cutting facts, as applicable** (an open-ended list): language/version,
+  module path, exit-code taxonomy, formatting rules, a shared time/IO source, and
+  anything else every Decision leans on. State the commands, not the coverage
+  rule.
+
+Design carries no authority header, no requirement-id explainer, and no layout
+section. Those are identical across every project, so ikispec owns them (the
+authority boundary above, the requirement-id rules below) and the tree does not
+restate them. The `INDEX.md` / `DNN.md` split is described below; `idgen` and the
+minting rules are generic and live in ikispec, never in a project's Conventions.
 
 ### `project/design/DNN.md` — one self-contained file per Decision
 
@@ -329,6 +322,17 @@ realizes, never the whole architecture:
   falsifiable statements like any other behavior. A pure
   seam/structure decision with no behavior of its own says so explicitly and
   carries no ids (its proof is the behavioral ids of the decisions it enables).
+  - **Express the proof as a bounded, writable test — never as a universal or
+    negative.** A claim phrased "never / no path / all / any / cannot" cannot be
+    tested: a test samples, it can't visit the whole space. Worse, it traps the
+    build loop, which grinds forever against a gate that was impossible from the
+    start and which it has no authority to rewrite. Reshape it into something a
+    real test discharges: a positive assertion at an architectural chokepoint
+    (design creates the chokepoint so the negative collapses to one check); a
+    bounded enumeration (these N inputs each yield this named error); or a
+    mechanism check ("the query is parameterized", not "no injection is
+    possible"). A behavior that cannot be reshaped into a bounded test is a
+    **design defect to fix now**, never an id handed to the loop.
   - **Verify the claim against a substrate that can falsify it — not a proxy a
     stub also passes.** Ask *what would have to be true for this test to fail,
     and can the chosen substrate make it fail?* A claim whose correctness
@@ -338,21 +342,20 @@ realizes, never the whole architecture:
     mint a **distinct id whose test exercises the real dependency** — a
     live/integration/smoke check — name that substrate on the id, and name the
     observable outcome that proves it actually ran (a completed call, a
-    returned result), not merely that a value was configured. If the
-    architecture is shaped so an entire capability is only ever driven against
-    mocks, that is itself the smell: at least one id must drive it end-to-end
-    against the real thing.
-  - **A declared exposure is a claim about the assembled service.** Every
-    surface a Decision declares externally reachable — an HTTP route, an MCP
-    endpoint, a CLI verb, an event subscription — mints at least one id whose
-    test reaches it **through the composition root**: the same assembly path
-    production uses (the real spec/router/dispatcher, the mounted path), never
-    a component the test constructs and drives directly. Direct construction
-    is the same proxy pattern as a mock — it proves the component works, never
-    that the system serves it — so a capability proven only by direct
-    construction is unwired by default. The wiring id's behavior statement
-    names the externally observable route/verb/subscription and the observable
-    outcome proving the assembled artifact answered on it.
+    returned result), not merely that a value was configured.
+  - **Wiring is proven live: a module counts only when the assembled program
+    runs it.** A package green in its own unit tests but never reached by the
+    running program is dead code a green suite hides. So every capability the
+    assembled program is meant to run, an external surface (HTTP route, MCP
+    endpoint, CLI verb, event subscription) and the internal modules behind it,
+    has at least one id whose test drives it **through the composition root**,
+    the real assembly production uses against the real dependencies, never a
+    component the test constructs directly; proven only in isolation, it is
+    **unwired by default**. This id's job is narrow: prove the seam is connected
+    and the real substrate works, not re-test behavior the fake-adapter unit
+    tests already cover. So one path per module through the real thing (an
+    actual SQLite write and read-back, say) is typically all it takes. The id
+    names the observable outcome proving the assembled artifact ran it.
 
 ### `project/design/INDEX.md` — the manifest
 
@@ -388,6 +391,11 @@ design in place, do **not** renumber or regenerate existing ids — mint a fresh
 id for each newly added behavior; when a behavior is removed, delete its id
 with it (its test goes too).
 
+The ids live inline in these Verification lists and nowhere else: there is **no
+separate requirements document**. Design's responsibility for ids ends at
+minting them — how coverage is measured and when work is "done" are downstream's
+concern, owned by the plan and the build loop, not stated here.
+
 ## `project/plan/` — the plan shape
 
 Owns **construction order** — a work queue of **pending** phases only. Phases
@@ -411,35 +419,6 @@ one context it is split across phases, and each affected phase names the
 Split for addressability — the loop greps a manifest for the next unit of work
 and reads exactly one phase file, never the whole queue:
 
-### `project/plan/README.md` — the invariant rules (static; never grows)
-
-- **Title** — `# <name> — Plan`.
-- **Authority header** — a paragraph beginning
-  `**Authority: construction order.**` stating that this document and the
-  `project/plan/` directory own the build order of **pending** work only,
-  that completion is deletion (the build loop removes the finished phase's
-  `STATUS.md` line and its `phase-NN.md` in the completion commit; history
-  lives in git), and how to extend it (update product and design in place,
-  then append a new `phase-NN.md` + `STATUS.md` line, numbered from the
-  counter — never renumber, never reuse a number). State the **coverage
-  invariant** here too (every *current* design id either already realized by
-  a tagged test in the codebase or assigned to exactly one pending phase).
-- **One phase = one package = one build-turn context** — the sizing paragraph
-  above.
-- **Done bar** — a phase is **done** when every Verification id it realizes (or
-  its explicit slice) is covered by a clearly-named test and the suite is
-  green; point at design's Conventions for what "green" concretely means; state
-  that every phase's acceptance bar is deterministic exit conditions, never a
-  subjective judgment, never a self-referential/unsatisfiable check.
-- **## Layout** — `STATUS.md` is the manifest: the `Next phase` counter plus
-  the **only** home of the pending markers; `phase-NN.md` is one body file per
-  pending phase (zero-padded; sub-phases keep their suffix, e.g.
-  `phase-07a.md`); this README is the static rules. Restate
-  completion-is-deletion for the layout: the build loop's only mutations are
-  removing a finished phase's `STATUS.md` line together with its
-  `phase-NN.md`; the counter is never decremented and never touched by the
-  loop.
-
 ### `project/plan/STATUS.md` — the manifest (the only home of status markers)
 
 - **Title** — `# <name> — Plan Status`.
@@ -462,6 +441,9 @@ and reads exactly one phase file, never the whole queue:
 
 ### `project/plan/phase-NN.md` — one body file per phase
 
+One body file per pending phase, zero-padded; a split sub-phase keeps a letter
+suffix (e.g. `phase-07a.md`).
+
 - A header `# Phase N — <one cohesive objective>` — **no status token**.
 - A `*Realizes design Decision <n> (<short label>)[ and <m> (...)][. Depends
   on Phase <k>].*` line — exactly which Decisions this phase builds, and which
@@ -474,12 +456,17 @@ and reads exactly one phase file, never the whole queue:
   and the suite green; a structural phase gets a deterministic check instead (a
   clean build, exact named files/targets, a `project/`-excluded grep).
 
-## `project/README.md` — the workspace map (thin and static)
+## `project/README.md` — the ikispec-pointer stub
 
-The top-level README is a **map, not a manual**: the folder table (as at the
-top of this skill, adapted to the project), who writes each artifact, where the
-codebase root is, and a pointer to `project/loops/README.md` for how the
-installed build loop works. It carries **no** loop mechanics, no brief schema,
-and no restatement of the shapes above. `$seal-spec` writes it and keeps it true
-when the structure changes; the loop overview belongs to the generator workflow
-that installed the loop.
+The top-level README exists for one reason: so a reader who lands in the tree
+cannot miss that it is governed by ikispec. It is a stub, not a manual, roughly:
+
+> `# <name> — Project`
+>
+> This tree abides by the **ikispec** skill: ikispec defines its structure,
+> document shapes, and authoring rules. Read ikispec before reading or writing
+> anything here.
+
+It carries no folder table, no writer list, no loop mechanics, and no
+restatement of the shapes above. All of that is ikispec's, one hop away.
+`$seal-spec` writes the stub and keeps the project name current.

@@ -24,6 +24,15 @@ be run for real and compared against the expected value the brief states.
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md`. It
+   must print exactly `# nginx — Plan Status`. If the file is missing or the
+   line differs:
+   - If `./nginx/project/plan/STATUS.md` passes the same check, your cwd is one
+     level above the service root — `cd nginx` and continue.
+   - Otherwise, change nothing and report `NEXT` with a message naming the
+     expected title and what you actually observed. Never report `DONE` on a
+     mismatch — ending the run is never yours to report in any case.
+
 1. **Read the brief** — its contract region (objective, files to touch, done
    bar) and its own prior `## Verify feedback` region (for progress measurement
    only). If `project/loops/brief.md` is missing or empty, change nothing
@@ -58,17 +67,20 @@ be run for real and compared against the expected value the brief states.
    it in `project/`.
 
 4. **Coverage ratchet.** This tree currently mints **no** Verification ids (see
-   `project/design/README.md`, *Requirement ids*), so this is normally a
-   no-op with both sides empty. Run it anyway so the check keeps working the
-   moment a Decision does mint one:
+   `project/design/INDEX.md`'s empty reverse map and every `DNN.md`'s
+   Verification section), so this is normally a no-op with both sides empty.
+   Run it anyway so the check keeps working the moment a Decision does mint one:
 
    ```
-   grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u
+   grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v '^R-XXXX-XXXX$' | sort -u
    ```
 
-   The `grep -v 'R-XXXX-XXXX'` filter is required: the design docs write
-   `R-XXXX-XXXX` as the *shape* of an id in prose, and without the filter that
-   placeholder surfaces as a phantom uncovered id the check could never clear.
+   The `grep -v '^R-XXXX-XXXX$'` filter is required: `project/design/INDEX.md`
+   writes `R-XXXX-XXXX` as the *shape* of an id in prose (it is excluded from
+   this specific glob already, since the glob is `D*.md` and does not match
+   `INDEX.md`, but the filter is kept as a standing guard in case that shape
+   token is ever copied into a `DNN.md`), and without it that placeholder would
+   surface as a phantom uncovered id the check could never clear.
 
    **Empty output is the pass condition.** There is no test-file glob in this
    tree and no `R-`-tag convention to search for a covering test, so if that grep
@@ -177,10 +189,9 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal — never yours to report**: ending the run is never
-  yours — finishing this phase completely, green suite and all open gaps
-  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
-  phase left or a blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Phase 01 passed all structural checks; retired it and deleted the brief.` or
   `Phase 01 still fails the layers-declaration grep; left feedback for the next

@@ -23,6 +23,20 @@ spec or loop documents that quote the pattern.
 
 ## Procedure
 
+### 0. Workspace identity guard — do this first, every turn
+
+```sh
+head -n 1 project/plan/STATUS.md
+```
+
+This must print **exactly** `# scripts — Plan Status`. If it does not:
+
+- Check `./scripts/project/plan/STATUS.md` for the same exact title. If it
+  matches, the cwd is one level above the service root — `cd scripts` and
+  continue from step 1.
+- Otherwise, change nothing and report **`NEXT`** with a message naming the
+  expected title (`# scripts — Plan Status`) and what you actually observed.
+
 Read `project/loops/brief.md` — the contract region *and* your own prior
 `## Verify feedback` region. If it is missing or empty, change nothing and report
 `NEXT`.
@@ -47,17 +61,18 @@ not a pass.
 
 ### 2. Run the skip ban
 
-`t.Skip` and its variants may not appear in a non-live test file (root
-`project/design/D23.md`):
+`t.Skip` and its variants may not appear anywhere in this tree — scripts has no
+live layer to exempt (root `project/design/D34.md`):
 
 ```sh
 grep -rn 't\.Skip' --include='*_test.go' --exclude-dir=project .
 ```
 
 **Printing nothing is the pass condition.** A `t.Skip`, `t.Skipf`, or
-`t.SkipNow` in any non-live test file is a **gap**, never acceptable green: a
+`t.SkipNow` anywhere in the tree is a **gap**, never acceptable green: a
 skipped requirement test launders an unverified requirement into a passing
-suite. This tree has no live files at all, so the scan is tree-wide with no exclusion. If a phase's own done bar states this check in another form, run that form as well.
+suite. If a phase's own done bar states this check in another form, run that
+form as well.
 
 ### 3. Check every id in the brief
 
@@ -93,9 +108,10 @@ default gate above, with no exceptions and no carve-out:
 - A tagged test that converts a real failure signal (a non-zero exit, an
   unparseable output, a missing tool) into a skip launders a gap into green and
   is **UNCOVERED**.
-- `scripts` declares `python3` on `PATH` as an **environmental precondition**.
-  Its absence is a hard failure of the gate. A test that skips because `python3`
-  is missing is **UNCOVERED**; a test that fails loudly is correct.
+- `scripts` declares `python3` on `PATH` and `git` on `PATH` as **environmental
+  preconditions**. Their absence is a hard failure of the gate. A test that
+  skips because either is missing is **UNCOVERED**; a test that fails loudly is
+  correct.
 - There is no `-tags live` invocation to check and none may be introduced by the
   loop. If a phase's brief ever asks for a live-tagged test in this tree, that is
   a gap to report, not something to build.
@@ -130,7 +146,6 @@ load-bearing and must not be simplified away:
   clean. It is a documentation artifact, never a real id, and never a gap.
 - `--exclude-dir=project` — an id quoted inside a spec or loop document is not a
   test.
-
 
 Because the plan is a work **queue**, any minted id not owned by a pending phase
 was already retired and must stay covered. Each id in the remainder is an open
@@ -167,25 +182,17 @@ attempt, and a detector keyed on commit motion reads that churn as convergence a
 never trips. Capture the current commit (`git rev-parse HEAD`) and record it in the
 feedback region as **diagnostic context only**, never as a progress signal.
 
-- **Blocked escalation — check this first.** Before performing a stall reset, grep
-  `~/.ralph/verify.log` for an earlier `Phase NN STALLED` line for **this same
-  phase**. If one is there, a rebuilt contract has already been tried and did not
-  help, so the **bar itself** is the fault and no further rebuilding can fix it.
-  Instead of resetting again, write `project/loops/blocked.md` naming the phase,
-  the total attempts, the still-unsatisfied ids, and the **exact command and
-  observed output** that will not go green, stating that the phase's done bar is
-  the prime suspect and only the operator can change it (`project/` is read-only to
-  this loop). Append `<date> Phase NN BLOCKED after N attempts: <gap ids>` to
-  `~/.ralph/verify.log`, `rm -f project/loops/brief.md`, leave the marker `⬜`, and
-  report `NEXT`. The next `gather` sees `blocked.md` and reports `DONE`.
-
-- **Stall reset — when the streak reaches 3** (three consecutive attempts closing
-  no gap) and no earlier `STALLED` line exists for this phase: the accumulated
-  brief may not be converging, so discard it. Append one line to
-  `~/.ralph/verify.log` (`<date> Phase NN STALLED after N attempts: <gap ids>`),
-  then `rm -f project/loops/brief.md`, leave the marker `⬜`, and report `NEXT`.
-  The next `gather` rebuilds the contract fresh from spec. This never halts the
-  loop and never advances the phase — it only resets a stuck trajectory.
+- **Block — when the streak reaches 3** (three consecutive attempts closing no
+  gap), the phase is not converging and only the operator can change its bar
+  (`project/` is read-only to this loop). Write `project/loops/blocked.md`
+  naming the phase, the total attempts, the still-unsatisfied ids, and the
+  **exact command and observed output** that will not go green, plus the
+  unblock recipe: *fix the phase's done bar in `project/plan/phase-NN.md`; if
+  the bar is a prove-a-negative or otherwise untestable claim, reshape it per
+  ikispec's bounded-test rule (a chokepoint positive, a bounded enumeration, or
+  a mechanism check); then re-run.* Leave the marker `⬜`, **do not delete the
+  brief**, and report `NEXT` — the next `gather` sees `blocked.md` and reports
+  `DONE`.
 
 - **Otherwise** — **overwrite** (never append) the brief's feedback region with:
 

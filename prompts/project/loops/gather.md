@@ -23,6 +23,15 @@ working directory.
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md`. It
+   must print exactly `# prompts — Plan Status`. If it does not — the file is
+   missing, or the title differs — do not proceed and do not report `DONE`.
+   Check whether `./prompts/project/plan/STATUS.md` passes the same check: if
+   it does, your shell drifted one directory up — `cd prompts` and continue.
+   Otherwise return `NEXT` with a message naming the expected title
+   (`# prompts — Plan Status`) and what was actually observed, so the drift is
+   visible instead of silently ending or misdirecting the run.
+
 1. **Check for a blocked phase — before anything else.** If
    `project/loops/blocked.md` exists, open no other file, do nothing else, and
    return `DONE`. A phase whose done bar `verify` could not satisfy is waiting on
@@ -135,14 +144,20 @@ Rules the schema enforces:
   `prompts/`.
 - **The suite is green** when all four succeed from `prompts/`:
   `go build ./...`, `go vet ./...`, `gofmt -l .` (prints nothing), and
-  `go test ./...` with zero failures.
+  `go test ./...` with zero failures (`-race` is implicit).
 - **Requirement-id tag glob:** `*_test.go`.
 - **Layers** (the suite contract's vocabulary, adopted by D50, cited at
   `root project/design/D23.md`): prompts has **hermetic** and **composed** only —
   no live layer, no tree-local manual layer. Composed means the boot smokes in
   `cmd/prompts/main_test.go` that build the real binary and run `serve` over a
-  loopback port; everything else is hermetic. Environmental preconditions beyond
-  the Go toolchain: none.
+  loopback port. Hermetic is everything else: `net/http/httptest` page/tool/
+  runner tests, temp-file SQLite through the real migration runner, the
+  real-`git` tests over temp-directory bare repositories (including the
+  loopback `git http-backend` door the tree starts itself), the `share/www`
+  asset tests over the repo-real tree, the `etc/nginx.conf` string assertions,
+  and `internal/consume/smoke_test.go` (an informal name, not a layer).
+  Environmental precondition beyond the Go toolchain: the **`git` binary**
+  (D50/D55).
 - **Test placement:** unit tests are package-local `*_test.go` beside the code
   they exercise and named for the behavior; composition-root and whole-tree
   conformance proofs live in `cmd/prompts/`; cross-package suite checks live in
@@ -167,7 +182,8 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops.
+- `DONE` — **terminal**: tells `ralph` to stop the loop. It carries no other
+  meaning; say *why* in the message.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Wrote brief for Phase 60 (R-O1AD-MRKW, R-O2IA-0JBL)` or
   `Phase 60 already in flight; left its brief untouched` or

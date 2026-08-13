@@ -230,7 +230,6 @@ func TestMentionsInReturnsSubjectHrefRefsForWholeMatches(t *testing.T) {
 }
 
 func TestMentionsInResolvesAliasKeysToCanonicalSubject(t *testing.T) {
-	// R-AWIU-P1OK
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -389,7 +388,6 @@ func TestServiceLinkifyMentionsLoadsAliasesAndComposesAbsoluteBase(t *testing.T)
 }
 
 func TestMentionsInOrdersAndDedupesWebRefs(t *testing.T) {
-	// R-AXQR-2TF9
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()

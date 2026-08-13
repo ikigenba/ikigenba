@@ -46,3 +46,9 @@
 # --- build-loop blocked marker (verify writes on a second stall; operator deletes) ---
 */project/loops/blocked.md
 /project/loops/blocked.md
+
+# --- audit-loop transient state (init writes STATUS/REPORT; never committed) ---
+# Every app's ralph audit loop writes its own project/audit/ snapshot.
+*/project/audit/
+# The suite-level (repo-root) audit loop's state.
+/project/audit/

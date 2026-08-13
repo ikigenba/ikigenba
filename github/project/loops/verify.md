@@ -17,6 +17,21 @@ it. You write **no production code**. You either pass the phase (green + full
 coverage) or record grounded gaps; you can neither halt the loop nor advance a
 phase on a gap.
 
+## Step zero — workspace identity guard
+
+Run `head -n 1 project/plan/STATUS.md` and confirm it prints **exactly**:
+
+```
+# github — Plan Status
+```
+
+- **Match** → continue to step 1.
+- **Mismatch or file missing** → the shell cwd has drifted. Check whether
+  `./github/project/plan/STATUS.md` passes the same check: if so, `cd github`
+  and retry step zero; otherwise make no changes and report `NEXT` with a
+  message naming the expected title (`# github — Plan Status`) and what you
+  actually observed. Never report `DONE` — that is not yours to report.
+
 ## Procedure
 
 1. **Read the brief** — `project/loops/brief.md`, both its `## Contract` region and
@@ -126,38 +141,27 @@ phase on a gap.
 
    - **Gap** (anything open): **leave the phase's `⬜` line in place, change no
      source.** Then measure progress against your prior `## Verify feedback`:
-     - read its recorded attempt number `N` and its prior open-gap id set;
+     - read its recorded attempt number `N`, its recorded no-progress streak, and
+       its prior open-gap id set;
      - capture the current build commit: `git rev-parse HEAD`, recorded as
        diagnostic context only — **a new build commit is never itself progress**.
      - **Progress** this cycle means the current open-gap id set is a **strict
        subset** of the prior one — some gap that was open last attempt is now
-       closed. Anything else (including a commit that only reworded the same
-       failing attempt) is **no progress**: increment the stall streak; reset it
-       to `0` on progress.
+       closed. On progress, **reset the streak to 0**. Anything else (including a
+       commit that only reworded the same failing attempt) is **no progress**:
+       increment the streak.
 
-     - **Stall reset** — when the streak reaches **3** (three consecutive
-       no-progress attempts): the accumulated brief may not be converging, so
-       discard it. Append one line to `~/.ralph/verify.log` —
-       `<date> Phase NN STALLED after N attempts: <gap ids>` — then
-       `rm -f project/loops/brief.md`, leave the phase's `⬜` line in place, and
-       report `NEXT`. The next `gather` rebuilds the contract fresh from spec.
-       (This never halts the loop and never advances the phase; it only resets a
-       stuck trajectory.)
-
-     - **Blocked escalation** — before performing a stall reset, run
-       `grep 'Phase NN STALLED' ~/.ralph/verify.log` (substituting this phase's
-       number). If an earlier `STALLED` line for **this same phase** is already
-       there, a rebuilt contract has already been tried and did not help — the
-       bar itself is the fault, and no further rebuilding can fix it. Instead of
-       resetting again: write `project/loops/blocked.md` naming the phase, the
-       total attempts, the still-unsatisfied ids, and the **exact command and
-       observed output** that will not go green, stating that the phase's done
-       bar is the prime suspect and only the operator can change it (`project/`
-       is read-only to the loop). Append
-       `<date> Phase NN BLOCKED after N attempts: <gap ids>` to
-       `~/.ralph/verify.log`, `rm -f project/loops/brief.md`, leave the phase's
-       `⬜` line in place, and report `NEXT` — the next `gather` sees
-       `blocked.md` and reports `DONE`.
+     - **Block** — when the streak reaches **3** (three consecutive attempts
+       closing no gap), the phase is not converging and only the operator can
+       change its bar (`project/` is read-only to the loop). Write
+       `project/loops/blocked.md` naming the phase, the total attempts, the
+       still-unsatisfied ids, and the **exact command and observed output** that
+       will not go green, plus the unblock recipe: *fix the phase's done bar in
+       `project/plan/phase-NN.md`; if the bar is a prove-a-negative or otherwise
+       untestable claim, reshape it per `ikispec`'s bounded-test rule (a
+       chokepoint positive, a bounded enumeration, or a mechanism check); then
+       re-run.* Leave the `⬜` marker in place, **do not delete the brief**, and
+       report `NEXT` — the next `gather` sees `blocked.md` and reports `DONE`.
 
      - **Otherwise** — **overwrite** (never append) the brief's feedback region:
        replace everything from the `## Verify feedback` line to end of file with:
@@ -165,7 +169,7 @@ phase on a gap.
        ```
        ## Verify feedback — attempt <N+1>
        build-commit: <git rev-parse HEAD>
-       stall-streak: <count>
+       no-progress-streak: <count>
 
        - R-XXXX-XXXX — <exact failing command> → <observed output> (file:line)
        ```
@@ -190,8 +194,9 @@ phase on a gap.
   the checklist.
 - Never blindly append to the feedback region (an append duplicates on re-run and
   stacks stale gaps) — always overwrite it with only the currently-open gaps.
-- Never perform a second consecutive stall reset on the same phase — escalate to
-  `blocked.md` instead.
+- Never block a phase before the no-progress streak reaches 3 consecutive
+  attempts, and never reset the streak on a new commit alone — only a strictly
+  smaller open-gap set counts as progress.
 
 ## Reporting the result
 
@@ -200,15 +205,14 @@ Report this run's result as a `status` and a one-sentence `message`:
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's gating is done; hand off (to gather, wrapping
   the loop).
-- `DONE` — **terminal — never yours to report**: ending the run is never yours —
-  finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
-  blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 20 green: 2/2 ids covered, skip ban clean, ratchet clean, deleted.` or
-  `Phase 20 gap: R-O2IA-0JBL has no tagged test; recorded feedback attempt 2.` or
-  `Phase 20 blocked: second stall, wrote blocked.md.`
+  `Phase 23 green: 2/2 ids covered, skip ban clean, ratchet clean, deleted.` or
+  `Phase 23 gap: R-O2IA-0JBL has no tagged test; recorded feedback attempt 2.` or
+  `Phase 23 blocked: 3 consecutive attempts closed no gap, wrote blocked.md.`
 
-Always report **`NEXT`** — you hand off every turn, on a pass, a gap, a stall
-reset, and a blocked escalation. Keep `message` a single plain sentence — not a
-JSON object or code block.
+Always report **`NEXT`** — you hand off every turn, on a pass, a gap, or a
+blocked escalation. Keep `message` a single plain sentence — not a JSON object
+or code block.

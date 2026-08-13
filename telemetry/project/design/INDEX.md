@@ -72,3 +72,60 @@ Verification ids change.
 - R-WAW3-W1F5 → D6 — `project/design/D06.md`
 - R-WC40-9T5U → D7 — `project/design/D07.md`
 - R-WDBW-NKWJ → D7 — `project/design/D07.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped
+to the id(s) whose tests most directly prove it; the mapping's completeness is
+this manifest's concern, each proof's quality the audit's. Regenerated with the
+rest of the index.
+
+1. With telemetry stopped, every other service keeps working — no error, no
+   hang →
+   R-5PIJ-TFHS
+2. A submitted batch is acknowledged and every record afterwards findable via
+   search, including after a restart →
+   R-VIUF-3BD6, R-WDBW-NKWJ, R-WC40-9T5U
+3. A mixed batch stores the well-formed records and reports the rejected count;
+   a submission that is not a well-formed batch is refused whole →
+   R-VK2B-H33V, R-VLA7-UUUK
+4. A submission from outside the box (through the front door) is refused and
+   stores nothing →
+   R-VMI4-8ML9
+5. A chain spanning several services returns all its records in order and states
+   the retention boundary →
+   R-VZX0-G3QW, R-VCQX-6GNP
+6. A chain id with no records returns an empty answer, not an error →
+   R-VZX0-G3QW
+7. Search on any combination of axes returns exactly the matches, and the
+   continuation pages with no record repeated or skipped →
+   R-VXH7-OK9I, R-VYP4-2C07, R-VDYT-K8EE
+8. Two records from different services sharing a body digest are both returned by
+   a digest search →
+   R-VF6P-Y053, R-VXH7-OK9I
+9. Any record read back in full by its id; an unrecognized id reports not-found →
+   R-W2CT-7N8A
+10. No record carries a body, raw header dump, or conversation; oversized and
+    sensitive arguments appear as size and digest →
+    R-W4SL-Z6PO, R-W2CT-7N8A
+11. The surface offers only search, chain, get, guide plus chassis tools —
+    nothing that deletes, edits, redacts, annotates, or aggregates →
+    R-VW9B-ASIT
+12. Calling a telemetry tool is itself recorded; a submission on the private
+    reporting path produces no record about itself →
+    R-VOXX-062N
+13. A graceful start and stop are both findable; a killed service leaves a start
+    and no stop →
+    R-5PIJ-TFHS
+14. A reporting service's discarded-record count is reported, attributed to that
+    service →
+    R-VNQ0-MEBY
+15. A record past the retention window is gone with no operator action, one
+    inside remains; default 90 days →
+    R-VRDP-RPK1, R-VTTI-J91F, R-VGEM-BRVS
+16. An agent using only the service's own guide can search, follow a chain, and
+    read a record →
+    R-W4SL-Z6PO
+17. A signed-in mount shows the uniform landing page naming the service and
+    version; signed out leads to sign-in →
+    R-6B96-6B5S, R-67LH-0ZXP

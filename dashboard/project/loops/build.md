@@ -13,143 +13,125 @@ You read **only** `project/loops/brief.md` — never the plan, design, or produc
 docs. The brief is the complete and only contract for the one phase in flight: it
 carries the realized Decision's full design prose, the exact ids to cover with
 their requirement text, the files to touch, the dependency interface signatures,
-and the done bar. Do a bounded, idempotent turn of the phase's remaining work and
-commit it. You do **not** decide completeness and you do **not** delete a
-phase's `STATUS.md` line or body file — that is verify's job.
+and the done bar. You never decide whether the phase is finished — that is
+verify's job — and you never touch `project/plan/STATUS.md` or delete a phase
+file.
 
-## Procedure
+## Step 0 — workspace identity guard
 
-1. **Read the whole brief** — `project/loops/brief.md`, **both** its `## Contract`
-   region and its `## Verify feedback` region. If the brief is missing or empty,
-   make no changes and report `NEXT`.
-2. **If the `## Verify feedback` region lists open gaps, those are this turn's
-   priority.** They are the exact, command-grounded items the independent gate
-   found unsatisfied last cycle (each tied to an `R-id` with the failing command
-   and observed output). Close **those** first.
-3. **See what already exists** so this turn is idempotent (never rebuild what is
-   already there):
-   - `grep -rn "R-XXXX-XXXX" --include=*_test.go .` — which ids already have tagged
-     tests (substitute each real id from the brief's **Ids to cover**);
-   - run the suite (below) and read the actual failures.
-4. **Do as much of the brief as cleanly fits this one fresh context — ideally the
-   whole phase**, so verify can pass it next cycle. Prefer fewer, fuller turns over
-   many thin increments; an incomplete phase is simply re-attacked next cycle.
-   - Build the named package(s) / edit the named files, consuming dependencies
-     **only** through the brief's copied interface signatures.
-   - For every id in the brief's **Ids to cover**, write a genuinely-asserting test
-     tagged with a `// R-XXXX-XXXX` comment, exercising the behavior its
-     requirement text describes. **A tagged test that does not truly assert the
-     discriminating behavior is worse than none** — verify will treat it as
-     uncovered.
-   - **Never write a skip.** `t.Skip`, `t.Skipf`, and `t.SkipNow` are banned
-     outright in this tree: dashboard has **no live layer**, so no test file
-     carries a `//go:build live` constraint and there is no file in which a skip
-     is legitimate. A tool a test needs (`git`, the `go` toolchain, `python3`) is
-     an environmental precondition — declare it in `AGENTS.md` and let its absence
-     be a hard failure. Likewise never gate a tagged test behind a build tag or an
-     env variable nothing in the repo sets: verify treats an unreachable test as
-     **uncovered**, however genuine its assertion reads, and a test that converts a
-     real failure signal into a skip launders a gap into green.
-   - **Never drop an existing tagged test.** Before committing, check this turn's
-     own diff for dropped tags: any removed line matching `R-[A-Z0-9]{4}-[A-Z0-9]{4}`
-     outside `project/` (`git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'`)
-     must be restored first. A rewrite extends a file's tests; it never drops one
-     already there.
-5. **Run the full green suite** (all must pass, from `dashboard/`):
+Run `head -n 1 project/plan/STATUS.md`. It must print exactly:
+
+```
+# dashboard — Plan Status (web surface & sign-in)
+```
+
+If the file is missing or the line differs: check whether
+`./dashboard/project/plan/STATUS.md` passes the same check — if so, `cd
+dashboard` and retry in this same turn. Otherwise make no changes and report
+`NEXT` with a message naming the expected and observed titles.
+
+## Step 1 — read the brief
+
+Read `project/loops/brief.md` in full — the `## Contract` region and the
+`## Verify feedback` region both.
+
+- **Missing or empty** — make no changes, report `NEXT` with a message saying
+  there is no brief to work from.
+
+## Step 2 — close open gaps first
+
+If the `## Verify feedback` region lists open gaps (a checklist of
+`R-XXXX-XXXX` ids each tied to an exact failing command/output), fix those
+first — they are the gate's exact findings from the last cycle. Only after
+addressing every listed gap move on to any remaining, not-yet-attempted work
+in the contract region's "Ids to cover" list.
+
+## Step 3 — do the work
+
+Do as much of the brief as cleanly fits this turn — ideally the whole phase in
+one turn. An incomplete phase is simply re-attacked next cycle, so prefer one
+fuller turn over many thin increments.
+
+1. See what already exists: `grep -rn "R-XXXX-XXXX" **/*_test.go` for each id
+   in the brief's "Ids to cover" list (substitute the real id), and run
+   `cd dashboard && go test ./...` to read current failures.
+2. Build/modify the named package(s) under "Files to touch", consuming any
+   dependency **only** through the interface signatures copied into the
+   brief's "Dependency interfaces" section — never by reading that
+   dependency's source directly.
+3. Write tests that genuinely assert the behavior (never a bare literal),
+   each tagged `// R-XXXX-XXXX` on the asserting line, **co-located with the
+   code they exercise**: a `*_test.go` file in the same package directory as
+   the code under test, named for the behavior under test. Never create a
+   per-phase or root-level test file. The one exception is a cross-package,
+   composed check, which belongs only in `cmd/dashboard/main_test.go` — the
+   suite's single named composed-test home — never invented elsewhere.
+4. Run `gofmt -w .` (from `dashboard/`) to format everything you touched.
+5. **Before committing, check this turn's own diff for dropped tags**:
 
    ```
-   gofmt -w .
-   go build ./...
-   go vet ./...
-   gofmt -l .            # must print nothing
-   go test ./...
+   git diff HEAD | grep -E '^-.*R-[A-Z0-9]{4}-[A-Z0-9]{4}'
    ```
 
-   Plus any phase-specific check the brief's **Done bar** names.
+   Any removed line matching an `R-XXXX-XXXX` tag must be restored first — a
+   rewrite extends a file's tests, it never drops a tagged one.
+6. Run the full gate: `cd dashboard && go build ./...`, `go vet ./...`,
+   `gofmt -l .` (must print nothing), `go test ./...`.
+7. Commit this turn's increment (never an empty commit) with a phase-naming
+   message, e.g. `dashboard: Phase 54 — <short summary>`, and this trailer:
 
-6. **Commit this turn's increment** — a non-empty commit with a phase-naming
-   message and the repo's `Co-Authored-By` trailer. `project/loops/brief.md` is
-   gitignored, so `git add -A` will not stage it — good; leave it untouched.
-7. Report **`NEXT`**.
+   ```
+   Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+   ```
 
-## Project conventions (dashboard)
+## Project conventions (from `project/design/CONVENTIONS.md`)
 
-- **Module / toolchain:** Go 1.26, single `module dashboard` rooted at
-  `dashboard/`; pure-Go SQLite `modernc.org/sqlite` (no cgo); `appkit` and
-  `eventplane` are in-repo replace-siblings.
-- **"The suite is green"** = `go build ./...`, `go vet ./...`, `gofmt -l .`
-  (prints nothing), and `go test ./...` all succeed with zero failures, run from
-  `dashboard/`.
-- **Test-file glob:** `*_test.go` — requirement-id tags live only in files matching
-  it.
-- **Test placement — co-located, behavior-named, never gathered.** Unit and
-  HTTP-level tests live in the **same package as the code they exercise**, in
-  `*_test.go` files named for the behavior asserted:
-  - `internal/server/*_test.go` (`package server`) — HTTP-level tests drive the
-    real route table via `(*app).routes()` with `httptest`, asserting status
-    codes, `Location` headers, and rendered HTML (see the existing
-    `index_test.go`, `grants_test.go`, `login_test.go`, `landing_composition_test.go`);
-  - `internal/telemetry/*_test.go`, `internal/identity/*_test.go`,
-    `internal/googleidp/*_test.go`, `internal/githubidp/*_test.go`,
-    `internal/metrics/*_test.go` — package-local unit tests;
-  - `cmd/dashboard/docs_test.go` — the read-from-disk assertions over committed
-    docs; `cmd/dashboard/main_test.go` — the composed boot smoke.
-  **Never** create a per-phase or root-level test file, and never gather multiple
-  packages' tests into one file. A phase is one package; its tests live with it.
-- **Test layers.** dashboard has **hermetic**, **composed**, and **manual**
-  layers, and **no live layer**. Hermetic covers the package suites and the
-  shipped-file guards (`etc/nginx.conf`, `etc/manifest.env`); composed is the boot
-  smoke in `cmd/dashboard/main_test.go`, which builds and runs the real binary;
-  manual is the interactive Google/GitHub sign-in and live apex routing, exercised
-  by the operator at deploy time and never by the gate. No test outside the (absent)
-  live layer may contact a non-loopback address, read a credential, or change
-  behavior based on ambient secrets.
-- **Real substrate where a claim needs it.** Session/identity/store tests run
-  against a **real temp `modernc.org/sqlite`** migrated by the appkit runner (as
-  the existing server tests do); metric readers run against temp trees / fixtures
-  at injected roots (free-disk reads a real `statfs`); Google and GitHub are
-  driven through their injectable test seams (crafted id_token / `httptest`
-  fakes), never a live network.
-- **Migrations** are created with `bin/create-migration dashboard <name>`
-  (timestamped, immutable); never edit or renumber a committed migration.
-- **Doc truth is a Go test, not a grep in a runbook.** Claims about `AGENTS.md`
-  are proven by an ordinary hermetic test in `cmd/dashboard/docs_test.go` that
-  reads the committed file **from disk** and asserts over its content, so the
-  claim is re-checked on every `go test ./...`. When a phase changes such a
-  claim, edit the doc **and** keep its test true.
-- **`AGENTS.md` / `CLAUDE.md` are one file** (`dashboard/CLAUDE.md` is a symlink
-  to `dashboard/AGENTS.md`). Edit **`AGENTS.md`**; a refusal to write through the
-  symlink is expected.
-- **Nginx-fragment work** (`dashboard/etc/nginx.conf`) is proven by a Go test
-  that reads the file from disk and asserts its content — nginx itself is
-  never run by the suite.
+- Language: Go 1.26, module `dashboard`, pure-Go SQLite (`modernc.org/sqlite`,
+  no cgo). `appkit`/`eventplane` are in-repo replace-siblings.
+- Build/typecheck: `cd dashboard && go build ./...` and `go vet ./...`.
+- Test: `cd dashboard && go test ./...`. **The suite is green** means: build,
+  vet, a silent `gofmt -l .`, and `go test ./...` all succeed with zero
+  failures.
+- Requirement-id tags live in Go test files matched by the glob `*_test.go`.
+- Formatting: `gofmt`-clean; `gofmt -l .` must print nothing.
+- Route table: the whole apex route table lives in
+  `dashboard/internal/server/routes.go` (`(*app).register`), built over
+  `*app` (fields in `server.go`). Templates parse once at startup via
+  `template.ParseFS(ui.Files, …)`; a broken template must fail startup, not a
+  request.
+- The metrics collector runs on the appkit `Workers` seam
+  (`appkit.Spec.Workers`); `cmd/dashboard/main.go` follows the established
+  capture idiom (`var rt *appkit.Router`; `Handlers` hook sets it, `Workers`
+  closures capture it and run after `Handlers`).
+- Linux metric sources are read through injected roots/paths (never a bare
+  literal `/proc/meminfo` etc.) so tests can point them at fixtures.
+- Test placement: unit tests are package-local `*_test.go` files named for the
+  behavior; the one cross-package composed-test home is
+  `cmd/dashboard/main_test.go`. Never invent another root-level or per-phase
+  test file.
 
 ## Boundaries
 
-- Never read `project/design/*`, `project/plan/*`, or `project/product/*` — the
-  brief is your only input. If it seems insufficient, do what it does support and
-  report `NEXT`; gather will re-author it if the phase resets.
-- Never edit `project/plan/STATUS.md` or delete a phase's line/body file — that is
-  verify's sole right.
-- Never delete or edit `project/loops/brief.md`, including its `## Verify feedback`
-  region — you **read** the feedback but never write it.
-- Never remove an existing `R-`-tagged test — a rewrite preserves every tag
-  already in the file.
-- Never write `t.Skip`, `t.Skipf`, or `t.SkipNow` anywhere in this tree.
-- Never make an empty commit.
+- Never read `project/design/*.md`, `project/plan/*.md`, or
+  `project/product/README.md` — the brief is complete on its own.
+- Never remove an existing `R-`-tagged test.
+- Never edit `project/plan/STATUS.md` or delete a `phase-NN.md` file.
+- Never write `project/loops/brief.md` (contract or feedback region) — that is
+  gather's and verify's alone.
+- Always end on `NEXT`, even when you believe the phase is fully done.
 
 ## Reporting the result
 
 Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
-- `NEXT` — **terminal**: this turn's work is done; hand off to verify.
-- `DONE` — **terminal — never yours to report**: ending the run is never yours —
-  finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
-  blocked phase awaiting the operator.
+- `NEXT` — **terminal**: this turn's work is done; hand off to the next
+  prompt.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Rewrote the AGENTS.md Tests section and added 2 tagged tests in cmd/dashboard/docs_test.go; suite green.`
+  `Closed 2 open gaps and implemented R-XXXX-XXXX for Phase 54; suite green.`
 
-Always report **`NEXT`** — you hand off every turn. Keep `message` a single plain
-sentence — not a JSON object or code block.
+Always end this turn on `NEXT`. Keep `message` a single plain sentence, not a
+JSON object or code block.

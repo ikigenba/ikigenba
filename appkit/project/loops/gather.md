@@ -11,6 +11,24 @@ You are the **only** prompt that reads the big design/plan docs, and the
 `project/loops/brief.md` for exactly one phase. You write no code, run no
 tests, and commit nothing. Do one iteration, then report.
 
+## Step 0 — workspace identity guard
+
+Before anything else, confirm you are in the `appkit` spec workspace:
+
+```
+head -n 1 project/plan/STATUS.md
+```
+
+This must print exactly `# appkit — Plan Status`. If it does not (including a
+missing file):
+- Check `./appkit/project/plan/STATUS.md` with the same command. If **that**
+  prints `# appkit — Plan Status`, your cwd is one level above the service
+  root — `cd appkit` and continue from step 1 below.
+- Otherwise, do not proceed and **never** report `DONE`. Report `NEXT` with a
+  message naming the expected title (`# appkit — Plan Status`) and what you
+  actually observed, so the drift is visible instead of silently ending or
+  misdirecting the run.
+
 ## What you produce
 
 A self-contained `project/loops/brief.md` that is the **complete and only**
@@ -186,13 +204,16 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops.
+- `DONE` — **terminal**: tells `ralph` to stop the loop. It carries no other
+  meaning; say *why* in the message (no `⬜` phase remains, a phase is blocked,
+  or the workspace identity guard failed to confirm this cwd another way — see
+  step 0, which never reports `DONE`).
 - `message` — one short, plain sentence describing what happened, e.g.
   `Authored brief for Phase 30 covering the two adopted testing-contract ids.`
 
 End the turn on **`DONE`** when `project/loops/blocked.md` exists (name the
 blocked phase and the file) or when the step-2 grep found no `⬜` phase;
-otherwise end it on **`NEXT`** (whether you authored a fresh brief or left an
-in-flight one untouched). `CONTINUE` is only ever a non-terminal progress status,
-never a turn's final value. Keep `message` a single plain sentence, not a JSON
-object or code block.
+otherwise end it on **`NEXT`** (whether you authored a fresh brief, left an
+in-flight one untouched, or bailed out of a failed identity guard). `CONTINUE`
+is only ever a non-terminal progress status, never a turn's final value. Keep
+`message` a single plain sentence, not a JSON object or code block.

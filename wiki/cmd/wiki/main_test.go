@@ -297,8 +297,6 @@ func TestWikiBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 }
 
 func TestBuildSpecWiresTwentyMCPTools(t *testing.T) {
-	// R-MUQ4-K1JS
-	// R-3G73-064M
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -542,7 +540,6 @@ func TestBuildSpecPageToolReturnsRenderedFooter(t *testing.T) {
 }
 
 func TestBuildSpecReadToolsReturnPublicPathsWithoutSubjectIDs(t *testing.T) {
-	// R-03GW-PX5K
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -1005,7 +1002,6 @@ func TestBuildSpecMatchesDirectMCPToolSurface(t *testing.T) {
 
 func TestBuildSpecScopesRuntimeEmbeddingAndDeleteCache(t *testing.T) {
 	// R-R1EX-LNNQ
-	// R-R3UQ-D754
 	// R-R6AJ-4QMI
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)

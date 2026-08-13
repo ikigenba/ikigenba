@@ -88,3 +88,36 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-XAIW-GS4W → D20 → `project/design/D20.md`
 - R-XCYP-8BMA → D20 → `project/design/D20.md`
 - R-XE6L-M3CZ → D20 → `project/design/D20.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped to
+the id(s) whose tests most directly prove it. The mapping's completeness is this
+manifest's concern; the quality of each proof is the audit's. Regenerated with
+the rest of the index.
+
+1. Logged-in user opens `/srv/crm/` and sees a Carbon-styled page with service
+   name `crm` and the running version →
+   R-LAND-2K7P, R-LAND-4M9Q, R-LAND-6N3R
+2. A browser with no dashboard session is refused with `401` →
+   R-NGNX-2H5J, R-NGNX-4K7L
+3. The version shown matches the version the deployed binary reports →
+   R-LAND-6N3R
+4. The page loads its own `tokens.css` and fonts, matching the suite design →
+   R-SU82-2M8W, R-ST05-OUI7, R-ASST-2B8C
+5. With only crm connected and no external skill, an agent routes contacts /
+   companies / deals work to crm and completes a create → find → log flow →
+   R-PDZ7-HTAN, R-PF73-VL1C
+6. An agent uses crm's guide to construct a `save` for each entity, including the
+   set-valued-field and derived-deal-status gotchas →
+   R-PK2P-EO04, R-PLAL-SFQT, R-65HE-OPGG
+7. The everyday tool listing is materially leaner (no per-type field catalog) yet
+   each tool still conveys when to use it →
+   R-PGF0-9CS1, R-PIUT-0W9F
+8. Every existing crm tool call still produces the same result — discovery
+   altered no behavior →
+   R-MW1X-S9EV, R-5ZDW-RUQZ
+9. An MCP client still discovers the AS via the PRM well-known and calls the
+   bearer-gated `/mcp` as before; `/srv/crm/feed` still `404`s and `/health` still
+   responds →
+   R-NGNX-8P1Q

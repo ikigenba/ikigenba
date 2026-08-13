@@ -103,3 +103,27 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ZWRS-Y3LG → D21 → `project/design/D21.md`
 - R-ZXZP-BVC5 → D21 → `project/design/D21.md`
 - R-ZZ7L-PN2U → D21 → `project/design/D21.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped to
+the id(s) whose tests most directly prove it. The mapping's completeness is this
+manifest's concern; the quality of each proof is the audit's. Regenerated with
+the rest of the index.
+
+1. Logged-in user opens `/srv/gmail/` and sees a Carbon-styled page with service
+   name `gmail` and the running version →
+   R-LAND-3F7K, R-LAND-5H9M, R-LAND-7J2N
+2. A browser with no dashboard session is refused with `401` →
+   R-NGNX-5D8E
+3. The version shown matches the version the deployed binary reports →
+   R-LAND-7J2N
+4. The page's fonts and colors match the suite, loading its own embedded
+   `tokens.css` and fonts, not the dashboard's →
+   R-3ZK3-PRTW, R-3YC7-C037, R-ASST-3T5V
+5. An MCP client still discovers the AS via the PRM well-known and calls the
+   bearer-gated `/mcp` exactly as before →
+   R-NGNX-9H3J, R-MTLH-R7Z9
+6. Opening `/srv/gmail/feed` from nginx still returns `404` and `/health` still
+   responds →
+   R-NGNX-9H3J

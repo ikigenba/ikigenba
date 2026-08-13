@@ -81,3 +81,23 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-6T3U → D2 → `project/design/D02.md`
 - R-RYDN-YNR5 → D18 → `project/design/D18.md` (adopted from root `project/design/D29.md`)
 - R-RZLK-CFHU → D18 → `project/design/D18.md` (adopted from root `project/design/D29.md`)
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped to
+the id(s) whose Verification most directly proves it; the strength of each proof
+is the audit's question, the mapping's completeness is this manifest's.
+Regenerated with the rest of the index.
+
+1. A logged-in user opens `/srv/cron/` and sees a Carbon page showing service name `cron` and the running version →
+   R-LAND-5E2L, R-LAND-7G4M, R-LAND-3C9K
+2. A browser with no dashboard session is refused with `401` →
+   R-NGNX-5D8E, R-8ALX-VK6V, R-3V6H-7F1M
+3. The version shown on the page matches the version the deployed binary reports →
+   R-LAND-7G4M
+4. The fonts and colors are Carbon, and the page loads cron's own `tokens.css` and fonts, not the dashboard's →
+   R-ASST-3V7W, R-ASST-5X9Y, R-ASST-7Z2A, R-23T7-D8EH
+5. An MCP client still discovers the AS via the PRM well-known and calls the bearer-gated `/mcp` exactly as before →
+   R-8BTU-9BXK, R-NGNX-9H3J, R-3WED-L6SB
+6. `/srv/cron/feed` from nginx still returns `404` and `/health` still responds — the landing page shadowed neither →
+   R-ROUT-4R1S, R-ROUT-6T3U, R-NGNX-9H3J

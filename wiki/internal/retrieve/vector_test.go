@@ -49,7 +49,6 @@ func TestVectorCacheUpsertReplacesExistingSubject(t *testing.T) {
 }
 
 func TestVectorCacheRemoveEvictsSubjectFromNearestResults(t *testing.T) {
-	// R-EV2H-6RKN
 	cache := NewVectorCache()
 	cache.Replace([]vectorEntry{
 		{Scope: "default", SubjectID: "subject-loser", Title: "Loser", Vec: []float32{1, 0}},
@@ -190,7 +189,6 @@ func TestVectorCacheRejectsEntriesWithoutScope(t *testing.T) {
 }
 
 func TestVectorCacheRemoveScopeEvictsOnlyMatchingEntries(t *testing.T) {
-	// R-R3UQ-D754
 	cache := NewVectorCache()
 	cache.Replace([]vectorEntry{
 		{Scope: "s1", SubjectID: "subject-s1", Title: "S1", Vec: []float32{1}},

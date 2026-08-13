@@ -1,0 +1,58 @@
+# webhooks — Design Conventions
+
+- **Language / toolchain:** Go (the repo targets `go 1.26`); module path
+  `webhooks`, built on the shared `appkit` chassis over SQLite
+  (`modernc.org/sqlite`, pure-Go, no cgo). In-repo libraries are consumed via
+  committed `replace` directives (`appkit => ../appkit`,
+  `eventplane => ../eventplane`).
+- **Build / typecheck command:** `cd webhooks && go build ./...` (and
+  `go vet ./...`). The production binary is built by `bin/ship webhooks`
+  (`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off`, version/commit stamped) —
+  not invoked during normal development.
+- **Test command:** `cd webhooks && go test ./...`. "The suite is green" means
+  this command exits 0 with no failures, alongside a clean `go build ./...` and
+  `go vet ./...`. Tests run against **real SQLite** (temp-file DBs via
+  `db.Open`, the suite convention) — never a mocked store — with a deterministic
+  injected clock.
+- **Requirement-id test-file glob:** `*_test.go` — every `// R-XXXX-XXXX` tag
+  lives in a Go test file matching this glob.
+- **Test layers.** The suite's testing vocabulary — the hermetic / composed /
+  live / manual layers, what each may touch, the single `//go:build live`
+  mechanism, the ban on `t.Skip` outside live-tagged files, and the rule that a
+  manual-layer check lives in a committed runbook — is the contract
+  `root project/design/D23.md`, cited and not restated here. webhooks' own layer
+  facts are recorded in D20: **hermetic** and **composed** only, both in the
+  default gate, with no live layer and no tree-local manual runbook. The
+  `internal/e2e` package name is an informal alias, not a layer — it holds
+  hermetic committed-fragment assertions beside one composed binary smoke. No
+  test in this tree drives the `:8080` front door; the assembled-stack check is
+  the suite's manual-layer item.
+- **DB / migrations:** schema lives in `internal/db/migrations/` as ordered,
+  immutable SQL applied forward-only by the appkit runner. New migrations are
+  created with `bin/create-migration webhooks <name>` (timestamped); numbers are
+  never hand-picked and committed migrations are never edited.
+- **Loopback port:** `3006` (first free port; verified against all
+  `*/etc/manifest.env`).
+- **Time / IO:** time enters the domain through a `Clock` seam; tests inject a
+  deterministic clock. The DB handle is the appkit-owned single-writer
+  `*sql.DB` (`rt.DB()`); the producer outbox shares it.
+- **Human landing page:** the mount root serves one minimal HTML landing page
+  (service name + version) on the suite **Carbon** design system, byte-conformed
+  to the **cron canonical** template (`cron/internal/web/landing.html` +
+  `static/tokens.css` + woff2 fonts). webhooks embeds its **own** copy of the
+  template and assets under `internal/web/` — no shared handler, no runtime
+  dependency on the dashboard's assets. Only per-service data (eyebrow,
+  description line, `{{.Service}}`/`{{.Version}}`) differs from the canonical.
+  The page is served ungated in-process; the browser-session gate lives in the
+  nginx fragment (D7).
+- **Correlation ids are a suite constant, used by value.** Every request the
+  chassis serves carries a chain id under the header `X-Correlation-Id` — a
+  bare 26-character Crockford-base32 ULID defined by the leaf package
+  `eventplane/correlation`, read-or-minted by appkit's middleware and readable
+  from the request context. webhooks **owns none of it**: the header name, the
+  id shape, the strip-then-mint rule for ungated public locations, and the
+  recorder are defined by the suite protocol doc
+  (`project/design/D14.md` at the repo root) and realized in `eventplane`/`appkit`.
+  webhooks' share is its nginx fragment (D18) and letting the id reach the
+  event it publishes (D19); recording of requests, publishes and lifecycle is
+  chassis-owned and is deliberately **not** re-proven here.

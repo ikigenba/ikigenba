@@ -155,3 +155,46 @@ v2 rewrite and their ids were deleted with them.
 - R-UZVS-S08C → D10 — `project/design/D10.md`
 - R-V13P-5RZ1 → D10 — `project/design/D10.md`
 - R-VKB6-SHHV → D15 — `project/design/D15.md` (adopted from root `project/design/D11.md`)
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped
+to the id(s) whose tests prove it; the quality of each proof is the audit's
+question, the mapping's completeness is this manifest's. Regenerated with the
+rest of the index.
+
+1. Editing a site/script/prompt through its service leaves an attributed commit,
+   no separate git step →
+   R-JQWG-D4IU, R-JUK5-IFQX
+2. Owner clones from a laptop with a dashboard token, sees full history, commits
+   on a branch, and pushes it back visibly →
+   R-JZFR-1IPP, R-K0NN-FAGE
+3. `git push --force` to `main` fails and leaves `main` at the prior commit →
+   R-K1VJ-T273, R-JB1R-E3VT
+4. An on-box run clones only its one repository, pushes a branch, cannot push
+   `main` even fast-forward, and cannot touch any other repository →
+   R-KAEU-HGDY, R-KCUN-8ZVC
+5. Merging a branch with a failing/outstanding check is refused naming the check;
+   recording a pass then merging succeeds and moves `main` →
+   R-KMLU-B5SW, R-KNTQ-OXJL, R-KIY5-5UKT
+6. Merging a branch that conflicts with `main` is refused and leaves `main`
+   unchanged →
+   R-KLDX-XE27
+7. An owning service fetches the whole current tree with no version-control
+   leftovers, and any single file at a named point in history →
+   R-JOGN-LL1G, R-JKSY-G9TD
+8. Archiving makes a repository vanish from listings while its history stays
+   intact and its name is reusable →
+   R-KYSU-4V7U, R-J8LY-MKEF
+9. Renaming leaves the repository reachable under the new name with the same
+   commits and unreachable under the old →
+   R-KXKX-R3H5
+10. Every branch movement, from any door, is observable as one suite event naming
+    the repository, branch, commit, and actor →
+    R-K4BC-KLOH, R-JID5-OQBZ
+11. Nothing repos does causes a request to github.com →
+    R-SZF6-NY1F
+12. A logged-in user opening `/srv/repos/` sees the name, version, and live-repo
+    listing; typing narrows it; a row's copy control yields the clone address;
+    archived repos are absent; a sessionless browser is refused →
+    R-RXMA-T21W, R-SQVV-ZJUK, R-SVRH-IMTC, R-UZVS-S08C

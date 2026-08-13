@@ -485,7 +485,6 @@ func TestMergeWorkerRollsBackLoserEmbeddingDeleteWhenTransactionFails(t *testing
 
 func TestMergeWorkerKeepsDoneMergeWhenAfterCommitWinnerEmbedFails(t *testing.T) {
 	// R-FM7A-D0SZ
-	// R-WS3C-J4QB
 	ctx := context.Background()
 	conn := migratedWikiDB(t, ctx)
 	defer conn.Close()

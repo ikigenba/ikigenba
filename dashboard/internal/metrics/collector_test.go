@@ -72,7 +72,6 @@ func TestRunReturnsNilWhenContextIsCancelled(t *testing.T) {
 	}
 }
 
-// R-GD6Y-RFBF
 func TestRunRequiresManifestRootAndDiskPath(t *testing.T) {
 	for _, field := range []string{"ManifestRoot", "DiskPath"} {
 		t.Run(field, func(t *testing.T) {

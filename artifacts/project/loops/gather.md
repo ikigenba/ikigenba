@@ -164,7 +164,8 @@ Report this run's result as a `status` and a one-sentence `message`:
   loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next
   prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops.
+- `DONE` — **terminal**: tells `ralph` to stop the loop. It carries no other
+  meaning; say *why* in the message.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Authored brief for Phase 09 (landing page)` or
   `Brief for Phase 09 already in flight; left untouched`.

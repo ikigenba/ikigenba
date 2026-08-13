@@ -14,49 +14,42 @@ import (
 )
 
 func TestNormalizeAppliesPathSafePipeline(t *testing.T) {
-	// R-RU0J-77HX
 	if got, want := Normalize("  Ｓalaì!!!Apollo  11?? "), "salai-apollo-11"; got != want {
 		t.Fatalf("Normalize(...) = %q, want %q", got, want)
 	}
 }
 
 func TestNormalizeLongTitleUsesHyphenSeparatedLowercaseWords(t *testing.T) {
-	// R-RV8F-KZ8M
 	if got, want := Normalize("Lives of the Most Excellent Painters, Sculptors, and Architects"), "lives-of-the-most-excellent-painters-sculptors-and-architects"; got != want {
 		t.Fatalf("Normalize(...) = %q, want %q", got, want)
 	}
 }
 
 func TestNormalizeStripsDiacriticsFromSalai(t *testing.T) {
-	// R-RXO8-CIQ0
 	if got, want := Normalize("Salaì"), "salai"; got != want {
 		t.Fatalf("Normalize(...) = %q, want %q", got, want)
 	}
 }
 
 func TestNormalizeMapsApostropheToSeparator(t *testing.T) {
-	// R-RYW4-QAGP
 	if got, want := Normalize("Lorenzo de' Medici"), "lorenzo-de-medici"; got != want {
 		t.Fatalf("Normalize(...) = %q, want %q", got, want)
 	}
 }
 
 func TestNormalizeTrimsAndCollapsesPunctuation(t *testing.T) {
-	// R-S041-427E
 	if got, want := Normalize("!!!Hello, World!!!"), "hello-world"; got != want {
 		t.Fatalf("Normalize(...) = %q, want %q", got, want)
 	}
 }
 
 func TestNormalizeKeepsDigitsInWords(t *testing.T) {
-	// R-S1BX-HTY3
 	if got, want := Normalize("Apollo 11"), "apollo-11"; got != want {
 		t.Fatalf("Normalize(...) = %q, want %q", got, want)
 	}
 }
 
 func TestNormalizeIsIdempotentAndReturnsEmptyForSeparatorOnlyInputs(t *testing.T) {
-	// R-S2JT-VLOS
 	inputs := []string{
 		"Lives of the Most Excellent Painters, Sculptors, and Architects",
 		"Salaì",

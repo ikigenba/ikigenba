@@ -82,3 +82,27 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ZEWN-6ZQZ → D16 → `project/design/D16.md`
 - R-ZG4J-KRHO → D16 → `project/design/D16.md`
 - R-ZHCF-YJ8D → D16 → `project/design/D16.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped to
+the id(s) whose tests most directly prove it; the quality of each proof is the
+audit's question, the mapping's completeness is this manifest's. Regenerated with
+the rest of the index.
+
+1. A logged-in dashboard user opens `/srv/notify/` and sees a Carbon-styled page
+   showing the service name `notify` and the running version →
+   R-LAND-3C8K, R-LAND-5D1M, R-LAND-7E4N
+2. A browser with no dashboard session is refused with `401`, not shown the page →
+   R-NGNX-5P8Y
+3. The version shown on the page matches the version the deployed binary reports →
+   R-LAND-7E4N
+4. The page's fonts and colors match Carbon, and it loads its own `tokens.css`
+   and fonts, not the dashboard's →
+   R-ASST-3K9T, R-ASST-5L2V, R-ASST-7M4W, R-8KZW-WI4M
+5. An MCP client still discovers the AS via the PRM well-known and calls the
+   bearer-gated `/mcp` exactly as before →
+   R-M9EO-BQGX, R-NGNX-9R3B
+6. The bearer-gated `/srv/notify/mcp` still requires a token and `/health` still
+   responds — the landing page shadowed neither →
+   R-MAMK-PI7M, R-M9EO-BQGX, R-ROUT-6H5R

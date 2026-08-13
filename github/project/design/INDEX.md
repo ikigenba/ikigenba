@@ -108,3 +108,27 @@ Verification ids change.
 - R-XWCJ-YT6H → D6 — `project/design/D06.md`
 - R-XXKG-CKX6 → D6 — `project/design/D06.md`
 - R-XYSC-QCNV → D6 — `project/design/D06.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped to
+the id(s) whose Verification most directly proves it; the quality of each proof
+is the audit's question, the mapping's completeness is this manifest's.
+Regenerated with the rest of the index.
+
+1. A `prompts` agent lists its tools, finds the `github` verbs, and reads a real `@ikigenba` pull request through them →
+   R-EEWI-J569, R-DZ1T-K4J8
+2. An agent comments on an issue and it appears authored by the App with no owner email or marker →
+   R-E7L4-8IQ3, R-EJS4-2851
+3. A `scripts` job fetches a PR over the loopback route and gets its data; the public front door is refused →
+   R-EPVL-Z2UI, R-ETJB-4E2L, R-FT0R-PBSD
+4. `health` succeeds only on real `@ikigenba` auth and fails loudly on a bad key or app id →
+   R-EL00-FZVQ, R-DMUT-QF4A
+5. The connector works across the installation token's expiry — requests an hour apart see no token-expiry failure →
+   R-DPAM-HYLO, R-DQII-VQCD
+6. A logged-in user opens `/srv/github/` and sees the service name and version; a sessionless browser gets 401 →
+   R-EVZ3-VXJZ, R-1HWG-U1T4
+7. A caller opens a PR from a branch (authored by the App, no marker), adds then removes one label leaving others untouched, and reads an issue's full comment thread in order →
+   R-GJYX-0UGN, R-GL6T-EM7C, R-GMEP-SDY1, R-F70H-NRU9
+8. A sibling service gets a working short-lived credential over the loopback route and does a real git op; the public front door is refused and the credential appears in no log →
+   R-GTQ4-30E7, R-GUY0-GS4W, R-GW5W-UJVL

@@ -49,7 +49,8 @@ workspace. On a mismatch or a missing file, do **not** proceed:
 brief is missing or empty, return `NEXT` saying so. Note the phase number
 `NN`, the id list from the `### Ids to cover` section
 (`grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md`), the prior
-attempt counter `N`, the prior open-gap id set, and the prior stall streak.
+attempt counter `N`, the prior open-gap id set, and the prior no-progress
+streak.
 
 **Step 2 — run the full gate.** From the service root:
 
@@ -131,9 +132,9 @@ Leave the `⬜` marker untouched and change **no source**. Then measure
 progress against the prior feedback region:
 
 - **Progress** means the current open-gap id set is a **strict subset** of
-  the prior one — some gap open last attempt is now closed. Reset the stall
-  streak to 0.
-- Anything else is **no progress**: increment the stall streak.
+  the prior one — some gap open last attempt is now closed. Reset the
+  no-progress streak to 0.
+- Anything else is **no progress**: increment the streak.
 - **A new build commit is never progress and never resets the streak** — a
   builder that cannot satisfy a bar will keep committing plausible
   rewordings of the same attempt; churn is not convergence. Capture the
@@ -142,28 +143,17 @@ progress against the prior feedback region:
 
 Then, by streak:
 
-- **Stall reset (streak reaches 3).** Three consecutive attempts closed no
-  gap: the accumulated brief may not be converging. First check for a prior
-  stall of this same phase: `grep "Phase NN STALLED" ~/.ralph/verify.log`.
-  - **No prior stall:** append one line to `~/.ralph/verify.log`
-    (`mkdir -p ~/.ralph` first):
-    `<date -u +%F> Phase NN STALLED after <attempts> attempts: <gap ids>`.
-    Then `rm -f project/loops/brief.md`, leave the marker `⬜`, and return
-    `NEXT` — the next `gather` rebuilds the contract fresh from spec. (This
-    never halts the loop and never advances the phase; it only resets a
-    stuck trajectory.)
-  - **Blocked escalation (a prior `Phase NN STALLED` line exists):** a
-    rebuilt contract has already been tried and did not help, so the phase's
-    done bar itself is the prime suspect and no amount of rebuilding fixes
-    a defective bar. Write `project/loops/blocked.md` naming: the phase,
-    the total attempts, the still-unsatisfied ids, and the **exact command
-    and observed output** that will not go green — stating that the done
-    bar is the prime suspect and only the operator can change it
-    (`project/` is read-only to the loop). Append
-    `<date -u +%F> Phase NN BLOCKED after <attempts> attempts: <gap ids>`
-    to `~/.ralph/verify.log`, `rm -f project/loops/brief.md`, leave the
-    marker `⬜`, and return `NEXT` — the next `gather` sees `blocked.md`
-    and reports `DONE`.
+- **Block (streak reaches 3).** Three consecutive attempts closed no gap:
+  the phase is not converging and only the operator can change its done
+  bar (`project/` is read-only to the loop). Write
+  `project/loops/blocked.md` naming: the phase, the total attempts, the
+  still-unsatisfied ids, and the **exact command and observed output** that
+  will not go green, plus the unblock recipe — fix the phase's done bar in
+  `project/plan/phase-NN.md`; if the bar is a prove-a-negative or otherwise
+  untestable claim, reshape it per `ikispec`'s bounded-test rule (a
+  chokepoint positive, a bounded enumeration, or a mechanism check); then
+  re-run. Leave the marker `⬜`, **do not delete the brief**, and return
+  `NEXT` — the next `gather` sees `blocked.md` and reports `DONE`.
 - **Otherwise (streak < 3):** **overwrite** — never append — the brief's
   feedback region as:
 
@@ -171,7 +161,7 @@ Then, by streak:
   ## Verify feedback — attempt <N+1>
 
   - Build commit observed: <sha> (diagnostic only)
-  - Stall streak: <k> (attempts closing no gap)
+  - No-progress streak: <k> (attempts closing no gap)
 
   Open gaps:
   - [ ] R-XXXX-XXXX — <exact failing command> → <observed output>
@@ -206,10 +196,9 @@ Report this run's result as a `status` and a one-sentence `message`:
   loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next
   prompt.
-- `DONE` — **terminal — never yours to report**: ending the run is never
-  yours — finishing this phase completely, green suite and all open gaps
-  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no
-  `⬜` phase left or a blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap
+  closed) is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Phase 09 passed: gate green, all 6 ids covered, ratchet clean; retired`
   or `Phase 09 gap: 2 ids uncovered; feedback written (attempt 3)`.

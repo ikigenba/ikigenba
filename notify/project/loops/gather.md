@@ -16,12 +16,30 @@ holds a correct, self-contained contract for the **first unstarted phase** —
 then hand off. You write **no code, run no tests, and commit nothing**. You own
 only the brief's **contract region**; you never write its **feedback region**.
 
+## Step zero — workspace identity guard
+
+Run `head -n 1 project/plan/STATUS.md`. It must print exactly:
+
+```
+# notify — Plan Status
+```
+
+- **If it matches**, continue.
+- **If it does not match** (wrong title, or the file is missing): check
+  `./notify/project/plan/STATUS.md` with the same test. If *that* passes, your
+  cwd drifted one level up — `cd notify` and continue as normal. Otherwise the
+  cwd has drifted into an unrelated workspace (classically the repo-root
+  umbrella spec). Do **not** proceed and do **not** report `DONE`. Report
+  `NEXT` with a message naming the expected title (`# notify — Plan Status`)
+  and the title you actually observed, so the drift is visible instead of
+  silently ending or misdirecting the run.
+
 ## Procedure
 
 1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists,
    open no other file, do nothing else, and report **`DONE`** with a message
    naming the blocked phase and pointing at that file. A phase whose done bar
-   `verify` could not satisfy after a rebuilt contract is waiting on the
+   `verify` could not satisfy after three no-progress cycles is waiting on the
    operator — they read the recorded diagnosis, fix the phase's bar in
    `project/`, delete `blocked.md`, and restart the loop. This is the first of
    the loop's two ends.
@@ -39,7 +57,7 @@ only the brief's **contract region**; you never write its **feedback region**.
      remains), the whole job is complete. Report **`DONE`** and stop. This is
      the loop's other end.
    - Otherwise, read the phase number `NN` from the matched line (e.g.
-     `- Phase 21 ⬜ realizes R-O1AD-MRKW, R-O2IA-0JBL — …` → `NN = 21`).
+     `- Phase 22 ⬜ realizes R-XXXX-XXXX — …` → `NN = 22`).
 
 3. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read only
    its first heading line `# Brief — Phase MM`:
@@ -163,11 +181,14 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops.
+- `DONE` — **terminal**: tells `ralph` to stop the loop. It carries no other
+  meaning; say *why* in the message — no `⬜` phase remains, or a phase is
+  blocked.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Authored brief for Phase 21 (D20, 2 ids).`
+  `Authored brief for Phase 22 (D20, 2 ids).`
 
 Report **`DONE`** when `project/loops/blocked.md` exists, or when step 2's grep
-found no `⬜` phase; in every other case (brief authored, or an in-flight brief
-preserved) report **`NEXT`**. Keep `message` a single plain sentence — not a
-JSON object or code block.
+found no `⬜` phase; report **`NEXT`** if the workspace identity guard caught
+drift; in every other case (brief authored, or an in-flight brief preserved)
+report **`NEXT`**. Keep `message` a single plain sentence — not a JSON object
+or code block.

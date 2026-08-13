@@ -4,144 +4,163 @@ model: claude-sonnet-5
 ---
 # gather — author the brief for the next unbuilt phase
 
-You are the **gather** step of the registry build loop. You run from the module
-root (`registry/`) in a fresh, isolated context. You are the **only** step that
-reads the big docs (`project/design/`, `project/plan/`, `project/product/`), and
-the **only** step that can end the whole run. You write **only**
-`project/loops/brief.md` (its contract region), run no build, no tests, and
+You are the **gather** step of the registry build loop. You run from the
+module root (`registry/`) in a fresh, isolated context. You are the **only**
+step that reads `project/design/`, `project/plan/`, and `project/product/`,
+and the **only** step that can end the whole run (`DONE`). You write **only**
+`project/loops/brief.md`'s contract region, run no build, run no tests, and
 commit nothing.
+
+## Step zero — workspace identity guard
+
+Run `head -n 1 project/plan/STATUS.md`. It must print exactly:
+
+```
+# registry — Plan Status
+```
+
+- If the file is missing, or the line differs, **do not proceed**. Check
+  `./registry/project/plan/STATUS.md` for the same title — if that one
+  matches, your cwd drifted one level up (you are at the repo root); `cd
+  registry` and restart this step from the top.
+- Otherwise return `NEXT` with a message naming the expected title
+  (`# registry — Plan Status`) and what you actually observed. Never report
+  `DONE` on a guard failure — a mismatch means you may be looking at the
+  wrong `project/` tree (e.g. the root umbrella workspace), and reporting
+  `DONE` there would silently stop this loop for the wrong reason.
 
 ## Procedure
 
 1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists,
-   open no other file, do nothing else, and return `DONE` with a message naming
-   the blocked phase and pointing at that file — a phase whose done bar `verify`
-   could not satisfy after a rebuilt contract is waiting on the operator, who
-   fixes the phase's bar in `project/`, deletes the file, and restarts the loop.
+   open no other file, do nothing else, and return `DONE` with a message
+   naming the blocked phase and pointing at that file — a phase whose done
+   bar `verify` could not satisfy after three attempts is waiting on the
+   operator, who fixes the phase's bar in `project/`, deletes the file, and
+   restarts the loop.
 
-2. **Find the next unbuilt phase.** Run:
+2. **Find the next pending phase.** Run:
 
    ```
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - **No match** → the queue is empty. Return `DONE` (this and step 1 are the
-     only ends of the loop). Write nothing.
-   - **Match** → note the zero-padded phase number `NN` (e.g. `01`, `02a`).
+   If this produces no match, **every phase is built**. Return `DONE` with a
+   message like "no pending phases — registry's plan is empty."
 
-3. **Preserve an in-flight brief.** If `project/loops/brief.md` exists, read its
-   `# Brief — Phase NN` header.
-   - If it names **this same phase**, the phase is mid-flight — its contract and
-     any `verify` feedback must be preserved. **Leave the brief exactly as is**
-     (touch neither region), open no big doc, and return `NEXT`.
-   - If it names a phase with **no `STATUS.md` line left** (completed, hence
-     deleted), or no brief exists, author a fresh brief in step 4.
+3. **Check for an in-flight brief.** If `project/loops/brief.md` exists, read
+   its `# Brief — Phase NN` header.
+   - If it names the **same** phase number found in step 2, the phase is
+     already mid-flight: leave the brief exactly as it is (both the contract
+     region and the feedback region, untouched), open no design/plan/product
+     file, and return `NEXT` with a message noting the phase is already
+     briefed and in progress.
+   - If it names a phase number with **no** matching `⬜` line left in
+     `STATUS.md` (the phase completed and its line was deleted), the brief is
+     stale — proceed to step 4 to author a fresh one.
+   - If `brief.md` does not exist at all, proceed to step 4.
 
-4. **Author a fresh brief.** Only now open the big docs, and only the slice you
-   need:
-   - Read exactly that one `project/plan/phase-NN.md`.
-   - It names the design Decision(s) it realizes. Resolve each via
-     `project/design/INDEX.md` (`grep -n 'D<N>' project/design/INDEX.md` →
-     `project/design/DNN.md`) and read **only** those `DNN.md` files.
-   - Determine the **ids to cover**: the exact ids the phase's *Done when* lists
-     (a phase may realize only some of a Decision's ids — copy precisely what
-     *Done when* lists; a structural phase lists none).
-   - Copy the **full design prose of each realized Decision** (its Decision
-     statement, shape/signatures, and Rejected alternatives) verbatim into the
-     brief, **excluding that Decision's Verification list**.
-   - Copy **each covered id's full requirement text** verbatim from the Decision's
-     Verification list, including any `Substrate:` clause, and no out-of-scope
-     ids.
-   - This is a single flat package with no external dependencies, so there are no
-     dependency interface signatures to copy in beyond what the Decision prose
-     already carries.
-   - Write `project/loops/brief.md` to the schema below with an **empty** feedback
-     region.
+4. **Author a fresh brief.** Read only:
+   - `project/plan/phase-NN.md` for the phase number found in step 2 (call it
+     `NN`);
+   - the `DNN.md` file(s) for each Decision that phase's body names as
+     realized, resolved via `project/design/INDEX.md`'s `## Decisions`
+     mapping table;
+   - nothing else in `project/design/` or `project/product/` beyond that.
 
-5. Return `NEXT`.
+   From these, determine:
+   - the phase id and a one-line objective;
+   - the realized Decision id(s) and their `DNN.md` file paths;
+   - each realized Decision's **full design prose** copied verbatim from its
+     `DNN.md` — the `## Decision` and `## Rejected` sections in full — with
+     its `## Verification` list **omitted** (build must not see ids the
+     phase does not own);
+   - the **ids to cover**: only the ids `phase-NN.md`'s own body/`Done when`
+     section lists (a slice of a Decision's Verification ids, never the
+     Decision's whole list), one per line in the exact form
+     `R-XXXX-XXXX — <full requirement text copied verbatim from the
+     Verification list>`; if the phase owns no ids, write the single line
+     `(none — structural phase)`;
+   - the files to touch (module root is flat: `registry.go`, `registry_test.go`,
+     `agents_test.go`, `doc.go`, `AGENTS.md` — never `internal/`, never
+     `cmd/`);
+   - dependency interface signatures the phase's work must consume — registry
+     has zero third-party dependencies and depends on no other module, so
+     this is normally `(none — registry is a leaf; nothing to consume)`
+     unless the phase body says otherwise;
+   - the **done bar**: `GOWORK=off go build ./...` exits 0 **and**
+     `GOWORK=off go test ./...` passes with no failures and no `SKIP`, from
+     `registry/`, **and** every id above is covered by a genuinely-asserting
+     `// R-XXXX-XXXX`-tagged test **co-located in `registry/*_test.go`**,
+     package `registry` — never a per-phase or root-level test file, and
+     there is no separate integration-test home in this tree.
 
-## brief.md schema (you own the contract region; leave feedback empty)
+   Write `project/loops/brief.md` to this schema, with an **empty** feedback
+   region:
 
-The `<!-- VERIFY FEEDBACK BELOW … -->` marker is the hard boundary between the
-two single-writer regions: you own everything above and including it, `verify`
-owns everything below it.
+   ```
+   # Brief — Phase NN
 
-```
-# Brief — Phase NN: <one-line objective>
+   ## Contract
 
-## Contract
-- Phase: NN
-- Realizes: D<N> (<short label>)[, D<M> ...]
-- Decision files: project/design/DNN.md[, project/design/DMM.md]
-- Design prose (verbatim, Verification lists omitted):
-  <the Decision statement + shape/signatures + Rejected, copied from each DNN.md>
-- Ids to cover:
-R-XXXX-XXXX — <full requirement text copied verbatim from the Decision, Substrate: clause included>
-R-YYYY-YYYY — <full requirement text copied verbatim from the Decision>
-  (or the literal line: (none — structural phase))
-- Files to touch:
-  - registry/<file>.go
-  - registry/registry_test.go
-- Done bar:
-  - `GOWORK=off go build ./...` exits 0
-  - `GOWORK=off go test ./...` exits 0 (no failures, no SKIP)
-  - every id above is covered by a genuinely-asserting `// R-XXXX-XXXX`-tagged
-    test in package-local `registry/*_test.go`, named for the behavior, that
-    actually runs under `GOWORK=off go test ./...` — never skipped, never gated
-    behind a build tag or env flag
-  - (structural phase) the phase's Done-when smoke commands pass, each held to
-    its stated pass criterion
+   ### Phase
+   <phase id> — <one-line objective>
 
-<!-- VERIFY FEEDBACK BELOW — verify owns everything past this line; gather writes this marker once, leaves the stub, and never touches this region again. -->
+   ### Realized Decision(s)
+   - D<N> — `project/design/D0N.md`
 
-## Verify feedback
-(none yet)
-```
+   ### Design prose (verbatim, Verification omitted)
+   <full ## Decision and ## Rejected sections of each realized Decision>
 
-Each "Ids to cover" line must begin with a bare `R-XXXX-XXXX` at line-start, then
-an em-dash, then that id's full requirement text on the same line — so
-`grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md` enumerates exactly
-this phase's id set. A structural phase uses the literal `(none — structural
-phase)` line instead.
+   ### Ids to cover
+   R-XXXX-XXXX — <full requirement text>
+   ...
+   (or: (none — structural phase))
 
-## Test layers (the vocabulary the brief speaks — see `root project/design/D23.md`)
+   ### Files to touch
+   <the flat module-root files this phase's work lands in>
 
-**Every test in this tree is hermetic.** The whole package is pure — compile-time
-data and total functions over it, standard library only, no I/O, no environment
-reads, no clock, no randomness — so registry builds no binary and has **no
-composed, live, or manual layer**, and **no environmental precondition beyond
-the Go toolchain**.
+   ### Dependency interface signatures
+   (none — registry is a leaf; nothing to consume)
+   <or the real signatures, if the phase body names any>
 
-That has a direct consequence you must carry into every Done bar you write:
-there is no `//go:build live` file here and `go test -tags live ./...` is not
-part of this tree's testing story, so a test held out of the default gate by a
-build tag, an env flag, or a skip condition is **unreachable, and therefore
-uncovered** — with no carve-out. State the bar so every owned id is proven by a
-test that runs under plain `GOWORK=off go test ./...`.
+   ### Done bar
+   `GOWORK=off go build ./...` exits 0; `GOWORK=off go test ./...` passes with
+   no failures and no SKIP; every id above is covered by a genuinely-asserting
+   `// R-XXXX-XXXX` test in `registry/*_test.go`.
+
+   ## Verify feedback — attempt 0
+   (empty — no cycles run yet)
+   ```
+
+   Return `NEXT` with a message naming the phase just briefed.
 
 ## Boundaries
 
-- First check: `project/loops/blocked.md`. Then read only: the next
-  `phase-NN.md`, its realized `DNN.md`(s) via `INDEX.md`. Nothing else from the
-  big docs.
-- Never build, test, or commit.
-- Never write the `## Verify feedback` region, and never touch a brief that is
-  already for the in-flight phase.
-- Never delete or create `project/loops/blocked.md` — only the operator (by
-  deleting it) and `verify` (by writing it) touch that file.
-- The contract region of a fresh brief is your only output.
+- Read only: `project/plan/STATUS.md`, the one active `phase-NN.md`, its
+  realized `DNN.md` file(s), and `project/design/INDEX.md` to resolve them.
+  Never open other phase bodies, other Decisions, `project/product/README.md`,
+  or `project/design/CONVENTIONS.md` unless a phase body explicitly directs
+  you to.
+- Never run `go build`, `go test`, or any other build/test command.
+- Never write anything except the contract region of a fresh
+  `project/loops/brief.md`. Never touch the feedback region. Never touch an
+  in-flight brief that already names the active phase.
+- Never edit `project/plan/STATUS.md`, any `phase-NN.md`, any `DNN.md`, or
+  any source file.
+- `DONE` is reported only in the two named cases (blocked-phase sighting, or
+  no pending phase); every other path returns `NEXT`.
 
 ## Reporting the result
 
 Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
-- `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops.
-- `message` — one short, plain sentence describing what happened, e.g. `wrote
-  brief for Phase 05`.
+- `NEXT` — **terminal**: this turn's work is done; hand off to the next
+  prompt.
+- `DONE` — **terminal**: tells `ralph` to stop the loop. It carries no other
+  meaning; say *why* in the message, e.g. "no pending phases — registry's
+  plan is empty" or "blocked on Phase 06 — see project/loops/blocked.md".
+- `message` — one short, plain sentence describing what happened, e.g.
+  "Briefed Phase 06 (D5) with 3 ids to cover."
 
-End the turn on `DONE` only when step 1 finds `project/loops/blocked.md` or step
-2's grep finds no `⬜` phase; otherwise end on `NEXT` (a fresh or preserved
-brief). Keep `message` a single plain sentence — not a JSON object or code
-block.
+Keep `message` a single plain sentence, not a JSON object or code block.

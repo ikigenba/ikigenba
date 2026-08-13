@@ -137,10 +137,9 @@ Report this run's result as a `status` and a one-sentence `message`:
   loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next
   prompt.
-- `DONE` — **terminal — never yours to report**: ending the run is never
-  yours — finishing this phase completely, green suite and all open gaps
-  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no
-  `⬜` phase left or a blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap
+  closed) is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Implemented the landing handler and tagged tests for 4 of 6 ids; gate
   green`.

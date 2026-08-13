@@ -1168,7 +1168,7 @@ func TestDropboxSetupDeployBootsHealthWithStateCacheAndMirrorPaths(t *testing.T)
 	}
 }
 
-func TestPromptsSetupDeployBootsHealthWithStateSandboxesAndCacheRuns(t *testing.T) {
+func TestPromptsSetupDeployBootsHealthWithDurableRunsState(t *testing.T) {
 	root := t.TempDir()
 	sysRoot := t.TempDir()
 	const app = "prompts"
@@ -1176,11 +1176,6 @@ func TestPromptsSetupDeployBootsHealthWithStateSandboxesAndCacheRuns(t *testing.
 	l := NewLayoutSys(root, sysRoot, app)
 	if err := os.MkdirAll(l.LocationsDir(), 0o755); err != nil {
 		t.Fatalf("create locations dir: %v", err)
-	}
-
-	staleRunsDir := filepath.Join(l.CacheDir(), "runs")
-	if err := os.MkdirAll(filepath.Join(staleRunsDir, "stale-run"), 0o755); err != nil {
-		t.Fatalf("create stale runs dir: %v", err)
 	}
 
 	sys := &promptsBootSystem{
@@ -1215,9 +1210,11 @@ func TestPromptsSetupDeployBootsHealthWithStateSandboxesAndCacheRuns(t *testing.
 	if _, err := os.Stat(l.DBPath()); err != nil {
 		t.Fatalf("prompts DB was not created under state/: %v", err)
 	}
-	sandboxesDir := filepath.Join(l.StateDir(), "sandboxes")
-	if fi, err := os.Stat(sandboxesDir); err != nil || !fi.IsDir() {
-		t.Fatalf("prompts sandboxes dir was not created under state/: %v", err)
+	// D39: run workspaces are durable state under state/runs (one dir per run,
+	// sandbox lives inside it); the composition root creates the base at boot.
+	runsDir := filepath.Join(l.StateDir(), "runs")
+	if fi, err := os.Stat(runsDir); err != nil || !fi.IsDir() {
+		t.Fatalf("prompts runs dir was not created under durable state/: %v", err)
 	}
 	if got := filepath.Dir(l.GenerationPath()); got != l.CacheDir() {
 		t.Fatalf("generation sidecar parent = %q, want cache dir %q", got, l.CacheDir())
@@ -1244,17 +1241,6 @@ func TestPromptsSetupDeployBootsHealthWithStateSandboxesAndCacheRuns(t *testing.
 		} else if !os.IsNotExist(err) {
 			t.Fatalf("stat retired per-service script %s: %v", retired, err)
 		}
-	}
-
-	if fi, err := os.Stat(staleRunsDir); err != nil || !fi.IsDir() {
-		t.Fatalf("prompts runs dir was not recreated under cache/: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(staleRunsDir, "stale-run")); !os.IsNotExist(err) {
-		t.Fatalf("stale non-state run survived boot recreation: %v", err)
-	}
-	forbidden := filepath.Join(l.StateDir(), "runs")
-	if _, err := os.Stat(forbidden); !os.IsNotExist(err) {
-		t.Fatalf("prompts runs unexpectedly created under durable state: %v", err)
 	}
 
 	manifest, err := os.ReadFile(l.ActiveManifest())

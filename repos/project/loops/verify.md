@@ -19,6 +19,15 @@ phase on a gap.
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md`. It must
+   print exactly `# repos — Plan Status`. If it does not:
+   - Check `./repos/project/plan/STATUS.md` with the same command. If **that**
+     one prints the expected title, your cwd drifted one directory shallow —
+     `cd repos` and continue the procedure below.
+   - Otherwise, do not proceed and **never report `DONE`** (that is never your
+     status to report regardless): change no source and report `NEXT` with a
+     message naming the expected and observed titles.
+
 1. **Read the brief** — `project/loops/brief.md`, both its `## Contract` region and
    its own prior `## Verify feedback` region. If the brief is missing or empty,
    report `NEXT` (nothing to gate this turn).
@@ -41,17 +50,17 @@ phase on a gap.
    part of this gate; a test that needs a running suite is itself a gap, not a
    reason to start one.
 
-3. **Run the skip ban** — `root project/design/D23.md` bans `t.Skip` and its
-   variants outside `live`-tagged files, and **this tree has no live layer**, so
-   any occurrence anywhere is a gap:
+3. **Run the skip ban** — `root project/design/D23.md` (adopted locally as D16)
+   bans `t.Skip` and its variants outside `live`-tagged files, and **this tree
+   has no live layer**, so any occurrence anywhere is a gap:
 
    ```
    grep -rnE 't\.Skip(f|Now)?\(' --include='*_test.go' --exclude-dir=project .
    ```
 
    **Printing nothing is the pass condition.** Any hit is an open gap (report the
-   file:line); do not fix it yourself. A missing `git` or `go` binary is a hard
-   failure, never a skip.
+   file:line); do not fix it yourself. A missing `git`, `go`, or `google-chrome`
+   binary is a hard failure, never a skip.
 
 4. **Check coverage of every id in the brief's `### Ids to cover`.** Extract the
    denominator mechanically:
@@ -82,14 +91,15 @@ phase on a gap.
    phase's own denominator:
 
    ```
-   comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u) \
+   comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v '^R-XXXX-XXXX$' | sort -u) \
             <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
                   <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
    ```
 
-   The `grep -v 'R-XXXX-XXXX'` filter is load-bearing: the design docs quote
-   `R-XXXX-XXXX` as a literal *placeholder* when describing the id format, and
-   without the filter that placeholder surfaces as a phantom uncovered id that
+   The `grep -v '^R-XXXX-XXXX$'` filter is load-bearing: `project/design/INDEX.md`
+   is excluded by the `D*.md` glob already, but the id-format placeholder
+   `R-XXXX-XXXX` also appears quoted in design prose, and without the anchored
+   filter that literal placeholder would surface as a phantom uncovered id that
    can never be closed. **Empty output is the pass condition.** Any id in the
    remainder is an open gap — design mints it, no pending phase claims it, and no
    test tags it, so a prior phase's coverage regressed (the dropped tagged test
@@ -121,29 +131,18 @@ phase on a gap.
        failing attempt) is **no progress**: increment the stall streak; reset it
        to `0` on progress.
 
-     - **Stall reset** — when the streak reaches **3** (three consecutive
-       no-progress attempts): the accumulated brief may not be converging, so
-       discard it. Append one line to `~/.ralph/verify.log` —
-       `<date> Phase NN STALLED after N attempts: <gap ids>` — then
-       `rm -f project/loops/brief.md`, leave the phase's `⬜` line in place, and
-       report `NEXT`. The next `gather` rebuilds the contract fresh from spec.
-       (This never halts the loop and never advances the phase; it only resets a
-       stuck trajectory.)
-
-     - **Blocked escalation** — before performing a stall reset, run
-       `grep 'Phase NN STALLED' ~/.ralph/verify.log` (substituting this phase's
-       number). If an earlier `STALLED` line for **this same phase** is already
-       there, a rebuilt contract has already been tried and did not help — the
-       bar itself is the fault, and no further rebuilding can fix it. Instead of
-       resetting again: write `project/loops/blocked.md` naming the phase, the
-       total attempts, the still-unsatisfied ids, and the **exact command and
-       observed output** that will not go green, stating that the phase's done
-       bar is the prime suspect and only the operator can change it (`project/`
-       is read-only to the loop). Append
-       `<date> Phase NN BLOCKED after N attempts: <gap ids>` to
-       `~/.ralph/verify.log`, `rm -f project/loops/brief.md`, leave the phase's
-       `⬜` line in place, and report `NEXT` — the next `gather` sees
-       `blocked.md` and reports `DONE`.
+     - **Block** — when the streak reaches **3** (three consecutive no-progress
+       attempts): the phase is not converging and only the operator can change
+       its bar (`project/` is read-only to the loop). Write
+       `project/loops/blocked.md` naming the phase, the total attempts, the
+       still-unsatisfied ids, and the **exact command and observed output**
+       that will not go green, plus the unblock recipe: fix the phase's done
+       bar in `project/plan/phase-NN.md`; if the bar is a prove-a-negative or
+       otherwise untestable claim, reshape it per `ikispec`'s bounded-test rule
+       (a chokepoint positive, a bounded enumeration, or a mechanism check);
+       then re-run. Leave the phase's `⬜` line in place, **do not delete the
+       brief**, and report `NEXT` — the next `gather` sees `blocked.md` and
+       reports `DONE`.
 
      - **Otherwise** — **overwrite** (never append) the brief's feedback region:
        replace everything from the `## Verify feedback` line to end of file with:
@@ -173,8 +172,7 @@ phase on a gap.
   the checklist.
 - Never blindly append to the feedback region (an append duplicates on re-run and
   stacks stale gaps) — always overwrite it with only the currently-open gaps.
-- Never perform a second consecutive stall reset on the same phase — escalate to
-  `blocked.md` instead.
+- Never write `blocked.md` before the streak actually reaches 3.
 
 ## Reporting the result
 
@@ -183,15 +181,14 @@ Report this run's result as a `status` and a one-sentence `message`:
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's gating is done; hand off (to gather, wrapping
   the loop).
-- `DONE` — **terminal — never yours to report**: ending the run is never yours —
-  finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
-  blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Phase 26 green: 2/2 ids covered, skip ban clean, ratchet clean, deleted.` or
   `Phase 26 gap: R-O1AD-MRKW has no tagged test; recorded feedback attempt 2.` or
-  `Phase 26 blocked: second stall, wrote blocked.md.`
+  `Phase 26 blocked: third stall, wrote blocked.md.`
 
-Always report **`NEXT`** — you hand off every turn, on a pass, a gap, a stall
-reset, and a blocked escalation. Keep `message` a single plain sentence — not a
-JSON object or code block.
+Always report **`NEXT`** — you hand off every turn, on a pass, a gap, and a
+blocked escalation. Keep `message` a single plain sentence — not a JSON object
+or code block.

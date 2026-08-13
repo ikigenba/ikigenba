@@ -515,3 +515,160 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-ZWT5-F303 → D12 (`project/design/D12.md`)
 - R-ZY11-SUQS → D12 (`project/design/D12.md`)
 - R-ZZ8Y-6MHH → D12 (`project/design/D12.md`)
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped
+to the id(s) whose tests most directly prove it; the quality of each proof is
+the audit's question, the mapping's completeness is this manifest's. One id may
+serve several criteria, and one criterion may draw on several ids. Regenerated
+with the rest of the index.
+
+1. A scope isolates its content; the same subject name in another scope keeps its own page →
+   R-GV2R-7GDR, R-GXIJ-YZV5, R-GYQG-CRLU
+2. A multi-minute job still finishes, and a job in flight across a wiki/inference restart still reaches done or explicit failure without resubmitting →
+   R-PA2D-OEYB, R-P1J3-00RG, R-NLQW-4UYU
+3. An uncreated scope name fails clearly and creates nothing; omitting the scope is an error, never a guess →
+   R-H4TY-9MBB, R-H9PJ-SPA3, R-H8HN-EXJE
+4. An illegal or already-taken scope name is refused with a reason; `default` exists uncreated →
+   R-GTUU-TON2, R-HDD8-Y0I6, R-GSMY-FWWD
+5. Deleting a scope removes all its content and leaves others untouched; deleting `default` is refused →
+   R-H3M1-VUKM, R-HEL5-BS8V
+6. Immediately after deletion the scope finds nothing, and recreating the name yields an empty scope free of the deleted generation's content →
+   R-H3M1-VUKM, R-R6AJ-4QMI, R-RJPF-C7S5
+7. A failed answer returns a styled page in plain words with the question retained, never a bare or internal error →
+   R-RM58-3R9J, R-RND4-HJ08
+8. Listing scopes shows each name and whether it is private or public →
+   R-HAXG-6H0S
+9. Flipping a scope public lets a logged-out browser open its pages and ask it questions with the same cited answers; flipping back closes access →
+   R-HFT1-PJZK, R-HLWJ-MEP1, R-4Q8B-N9SX
+10. A private scope's pages are indistinguishable from nonexistent to a logged-out browser, and no page reveals private scope names →
+    R-HLWJ-MEP1, R-HQS5-5HNT
+11. The bare address lands on the last-picked scope (or `default`); a link to another scope shows that content without changing where I land next →
+    R-HN4G-06FQ, R-HOCC-DY6F
+12. A copied page link opens the same page for the recipient regardless of their own scope choice →
+    R-HS01-J9EI, R-8I6N-DL0I
+13. Instructions set, read back verbatim, and clear; a nonexistent scope fails, and over-cap text is refused naming the limit with the old value intact →
+    R-8H3G-3MDO, R-8JJ8-V5V2, R-8QUN-5SB8
+14. With instructions set, a subsequent ingest and ask in that scope are interpreted under them; another scope is unaffected →
+    R-8LZ1-MPCG, R-8OEU-E8TU
+15. A story's "130 years ago" gets no real founding year; asking answers in the story's own terms, not from the ingest date →
+    R-8TAF-XBSM, R-XJBY-H8JZ, R-8UIC-B3JB
+16. After changing instructions, re-running an earlier ingest re-digests its text under the new instructions, replacing that ingest's claims →
+    R-0X8I-S8NR, R-0YGF-60EG
+17. Ingesting text returns a handle without waiting for processing →
+    R-M8RN-87WV
+18. During an ingest's multi-minute phase, status/jobs/subjects/claims/pages/ask all return promptly and another submission is accepted immediately →
+    R-FUCC-IT4M, R-FVK8-WKVB, R-P2QZ-DSI5
+19. A hung or long job blocks no read and no submission, stays abortable, and the service stays responsive →
+    R-FUCC-IT4M, R-0TKT-MXFO
+20. A completed ingest's subjects and pages become visible all at once, never partially applied →
+    R-K9JC-ANDH, R-OVFL-361Z
+21. Watch a job go pending/working → terminal by handle; list newest-first filtered by states and/or a time window, paged, several states in one query →
+    R-XYAZ-V0XE, R-37NS-BRXR, R-XZIW-8SO3
+22. Get the count of jobs matching a state/time filter without retrieving them, correct across many jobs →
+    R-Y36L-E3W6, R-Y1YP-0C5H
+23. An invalid state yields a clear error naming the valid five, which are discoverable from the jobs surface →
+    R-Y4EH-RVMV
+24. Aborting a pending or working job leaves nothing partial and shows as `aborted`, distinct from `failed` →
+    R-0SCX-95OZ, R-0USQ-0P6D, R-38VO-PJOG
+25. Re-running a terminal job reprocesses from original text and replaces its claims; re-running a pending/working job is refused →
+    R-0X8I-S8NR, R-0YGF-60EG, R-3A3L-3BF5
+26. Text too large to digest in one pass fails with a reason recorded on the job, leaving no partial subjects/claims/pages →
+    R-MTSD-UHNU, R-KBZ5-26UV
+27. Every inference call wiki made is visible per-stage on the central service, an ingest's calls share the handle wiki reports on status, and a call is attributed to me →
+    R-XLHZ-WPT5, R-N729-RY1I, R-16VU-W6UV
+28. Page through jobs, subjects, and a subject's claims by cursor, with any filter applied before paging →
+    R-17C5-VP2I, R-18K2-9GT7, R-3CJD-UUWJ
+29. After an ingest, list the subjects it produced and view any subject's claims and page by readable `type/slug` →
+    R-01OQ-Y5YV, R-02WN-BXPK, R-PDQ2-TQ6E
+30. Every subject is named `type/slug`, an `ask` citation is a fully-qualified front-door link, and no internal id is shown →
+    R-05CG-3H6Y, R-Y7OR-PH1I, R-HOJB-ZR3T
+31. A compiled page carries no bracketed id or citation marker, and its opening sentence describes the subject in plain words, not as an internal term →
+    R-VA32-HERT, R-FQLB-QWS6
+32. On every web page the question button reads **Ask**, and after a click the page visibly shows it is working until the answer appears →
+    R-VBAY-V6II, R-4TW0-SL10, R-VDQR-MPZW
+33. A page shows the subjects it points to and those pointing to it, and a link exists exactly when the subject's (or a merged) name appears, never a variant →
+    R-ZUDC-NJIP, R-ZVL9-1B9E, R-ZY11-SUQS
+34. Ingesting more text about the same subject updates its page, not a duplicate →
+    R-MCFC-DJ4Y, R-OU7O-PEBA
+35. Merging survivor and folded yields one page holding both subjects' claims; the folded subject and page are gone and its claims persist relabelled →
+    R-NGVA-LS02, R-HUDR-AWS9
+36. After a merge, asking the folded name, ingesting under it, following a link to it, and looking up its old `type/slug` all return the survivor →
+    R-HUDR-AWS9, R-AF1X-PG7K, R-BLL1-6YSM
+37. A merge returns a handle promptly and completes in the background; nothing merges unless requested →
+    R-DYTF-JERL, R-NFNE-809D
+38. I cannot un-merge in this release — the fold is one-directional, the folded subject and page removed →
+    R-NGVA-LS02
+39. List merges performed, newest-first and paged: what folded into what, and when →
+    R-E2H4-OPZO, R-HI8U-H3GY
+40. Original raw text and extracted claims remain retrievable after the page is built →
+    R-04HB-QM7T, R-0X8I-S8NR
+41. Asking about a subject without naming it exactly, in different words, returns a cited answer drawn only from ingested content →
+    R-BAFW-D24P, R-690G-MZTK, R-GYQG-CRLU
+42. A question spanning several subjects answers from those it has and does not fail because one was never ingested →
+    R-Q8RI-7POG, R-BBNS-QTVE
+43. Asking something the wiki holds nothing on returns an explicit "nothing here," not a fabrication →
+    R-BBNS-QTVE, R-RETT-T4TD
+44. Nothing done through `ask` changes any subject, claim, or page →
+    R-5X56-NF4O
+45. No page exceeds 12,000 characters →
+    R-FT14-IG9K, R-7V38-RZQO
+46. Health reports the service up; reflection reports no published or subscribed events →
+    R-MX5X-BL16, R-MVY0-XTAH
+47. A logged-in user opens the mount root and gets a styled page with a search box and a service/version footer, without disturbing the MCP surface →
+    R-LAND-PG01, R-LAND-NMVR
+48. A scope home shows its seven most recently added pages, newest first, each opening its page; older pages still turn up by search and links →
+    R-HJU8-XYZQ, R-HL25-BQQF
+49. Every page carries a Home control back to the wiki landing and the suite brand mark to the dashboard landing →
+    R-HIMC-K791, R-2MYX-Y4PN
+50. Typing a question turns the page into a cited answer from compiled pages — the same answer `ask` gives — and a plain "nothing here" when empty →
+    R-ARN9-5YPS, R-AWIU-P1OK, R-AXQR-2TF9
+51. The answer page footer lists each subject whose name or alias appears, each opening that subject's page →
+    R-AU31-XI76, R-2MB0-E5SJ
+52. In an `ask` answer, on MCP and web, the first naming of a subject is an inline link and later namings are plain text →
+    R-8DB1-UI1Q, R-82BY-EKDH, R-8FQU-M1J4
+53. On a subject page the first prose naming of another subject is an inline link, and the subject's own name is never linked →
+    R-8GYQ-ZT9T, R-89NC-P6TN
+54. Every subject link the web shows is a fully-qualified front-door URL, while brand/header/Home controls stay in-app →
+    R-8I6N-DL0I, R-8JEJ-RCR7
+55. The header on every page carries the question box ready for the next question; the answer page holds the question just asked, editable →
+    R-2O6U-BWGC, R-2PEQ-PO71
+56. A subject page shows the compiled prose and a footer of subjects it points to and that point to it; following any lands on that page →
+    R-PH2F-47LB, R-PIAB-HZC0, R-PODT-EU1H
+57. Markdown prose renders as styled HTML — heading, bold, list, code, quote, table — never the literal markers →
+    R-SS0J-U7PG, R-ST8G-7ZG5, R-SY41-R2EX
+58. The rendered web prose is styled with the suite's shared design tokens, visually consistent, no separate styling system →
+    R-9FXO-ZONN, R-9EPS-LWWY
+59. An inline link in prose renders as a working link; prose with no link renders no inline links →
+    R-SZBY-4U5M, R-T2ZN-A5DP
+60. Raw HTML or script in compiled-page or answer prose is neutralized in the rendered page →
+    R-T0JU-ILWB, R-T1RQ-WDN0
+61. A subject named by an alias merged into it links to the surviving subject's page by exact normalized name, never a similar one →
+    R-84RR-63UV, R-8C35-GQB1, R-1XX5-QDCY
+62. Nothing done on the web changes any subject/claim/page/job; ingest, merge, and job control are not reachable from the web →
+    R-2QMN-3FXQ, R-5X56-NF4O
+63. `extract`, `compile`, `ask`, and `embed` models configure independently, and which model runs behind each is confirmable →
+    R-GGIG-AN7W, R-GHQC-OEYL, R-GLE1-TQ6O
+64. Wiki holds no model-provider credential; with only the central inference service reachable, every model-needing capability works →
+    R-KDHD-V3XI, R-A3D7-NTLV
+65. One committed tune folder per step lets the standalone tuning tool run end to end on a plain checkout with no suite up, producing a baseline scorecard →
+    R-A5T0-FD39, R-A9GP-KOBC, R-AAOL-YG21
+66. Each folder's starting prompt is byte-for-byte the service's current prompt for that step, folder and code decoupled →
+    R-A5T0-FD39, R-A88T-6WKN
+67. Each folder's config measures the prompt under the step's serving model (`gpt-5.6-luna`) with `gpt-5.6-sol` proposing revisions, both confirmable →
+    R-A88T-6WKN
+68. The four case sets share one fictional universe with held-out/tuning placement aligned across steps →
+    R-A9GP-KOBC
+69. Scoring an extract or analysis candidate twice against the same cases gives the same score, no model consulted →
+    R-AAOL-YG21, R-ABWI-C7SQ
+70. A compile or synthesis output breaking the mechanical contract is punished the same way every time, regardless of judge opinion →
+    R-AD4E-PZJF, R-AECB-3RA4
+71. The wiki repo builds and its whole suite passes with no tuning executable; the tuning loop and its records belong to the external tool →
+    R-1BRG-F9TN, R-KFX6-MNEW, R-A4L4-1LCK
+72. A tuning run leaves the committed tree clean — writes land in the ignored run workspace, and no run edits the folder's prompt/cases/config/scorer →
+    R-A88T-6WKN, R-A5T0-FD39
+73. The deployed service is unchanged by the tune folders — no new tool, endpoint, credential, or behavior attributable to them →
+    R-A4L4-1LCK, R-KFX6-MNEW
+74. Every chat call — extract, compile, and both ask stages — serves on `gpt-5.6-luna` in an unconfigured environment, confirmable per site →
+    R-A25B-A1V6, R-9UTW-ZFF0, R-9X9P-QYWE

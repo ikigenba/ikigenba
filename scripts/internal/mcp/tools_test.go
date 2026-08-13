@@ -277,7 +277,6 @@ func TestImportDispatch(t *testing.T) {
 	}
 }
 
-// R-2CPL-ILVN
 func TestCreatePlaneFailureReturnsStructuredErrorAndNoRow(t *testing.T) {
 	h := newTestHarness(t)
 	h.plane.createErr = script.ErrSourceUnavailable
@@ -670,7 +669,6 @@ func TestRunSpawns(t *testing.T) {
 }
 
 func TestRunHeadFailureReturnsStructuredSourceUnavailable(t *testing.T) {
-	// R-2SKA-HMIO
 	h := newTestHarness(t)
 	id := createScript(t, h.mcpHandler)
 	h.plane.headErr = script.ErrSourceUnavailable

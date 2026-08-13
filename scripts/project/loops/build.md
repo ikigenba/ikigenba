@@ -18,6 +18,20 @@ phase is complete; an independent `verify` step does that.
 
 ## Procedure
 
+### 0. Workspace identity guard — do this first, every turn
+
+```sh
+head -n 1 project/plan/STATUS.md
+```
+
+This must print **exactly** `# scripts — Plan Status`. If it does not:
+
+- Check `./scripts/project/plan/STATUS.md` for the same exact title. If it
+  matches, the cwd is one level above the service root — `cd scripts` and
+  continue from step 1.
+- Otherwise, change nothing and report **`NEXT`** with a message naming the
+  expected title (`# scripts — Plan Status`) and what you actually observed.
+
 1. **Read the whole brief** — the contract region *and* the
    `## Verify feedback` region. If `project/loops/brief.md` is missing or empty,
    change nothing and report `NEXT`.
@@ -41,10 +55,18 @@ phase is complete; an independent `verify` step does that.
    Build the named package(s), consuming dependencies **only** through the
    brief's copied `## Dependency interfaces` signatures.
 
-5. **Write id-tagged, genuinely-asserting tests.** Each id in the brief's
-   `## Ids to cover` gets a `// R-XXXX-XXXX` comment on the test that asserts that
-   exact behavior. A bare literal is not coverage; the test must fail when the
-   behavior is wrong.
+5. **Write id-tagged, genuinely-asserting tests, co-located with the code they
+   exercise, never gathered into a per-phase or root-level test file.** Each id
+   in the brief's `## Ids to cover` gets a `// R-XXXX-XXXX` comment on a test in
+   the **same package directory as the code it exercises**, named for the
+   behavior it asserts. A composed guard over a shipped artifact or a committed
+   doc belongs in `cmd/scripts/`, this tree's designated home for those. The
+   existing test directories are `cmd/scripts`, `internal/consume`,
+   `internal/db`, `internal/mcp`, `internal/repos`, `internal/runner`,
+   `internal/script` — a phase's tests join one of these (or a new package
+   directory the phase itself creates), never a new `tests/` directory and never
+   a file gathering more than one package's tests. A bare literal is not
+   coverage; the test must fail when the behavior is wrong.
 
 6. **`gofmt`** everything you touched.
 
@@ -94,7 +116,11 @@ go test ./...       # must exit 0, zero failures
 - **GOWORK mode:** workspace — the default gate resolves the replace-siblings
   through the repo-root `go.work`. Only the production build forces `GOWORK=off`;
   never do that here.
-- **Environmental preconditions:** **`python3` on `PATH`** — the runtime the service execs and the substrate of every runner, lifecycle, and `suite.py` claim. Its absence is a hard failure of the gate, never a skip.
+- **Environmental preconditions:** **`python3` on `PATH`** — the runtime the
+  service execs and the substrate of every runner, lifecycle, and `suite.py`
+  claim — and **`git` on `PATH`** — the binary that materializes every run dir as
+  a pinned checkout and the substrate of the version-plane run claims. Both are
+  hard failures when absent, never skips.
 - **Test-file glob:** `*_test.go`. Requirement-id tags live as `// R-XXXX-XXXX`
   comments in these files and nowhere else.
 - **Test placement — co-locate, never collect.** Unit tests live in the **same
@@ -102,19 +128,21 @@ go test ./...       # must exit 0, zero failures
   they assert. Composed guards over shipped artifacts and committed docs (boot
   smokes, the `etc/nginx.conf` fragment check, `AGENTS.md` doc-truth checks) live
   in `cmd/scripts/`, the tree's designated home for them. The existing test
-  directories are `cmd/scripts`, `internal/consume`, `internal/db`, `internal/mcp`, `internal/runner`, `internal/script`. **Never** create a per-phase test file, a
-  root-level test file, or a `tests/` directory — a phase is one package, and its
-  tests belong beside that package.
-- **Skips are banned.** Never write `t.Skip`, `t.Skipf`, or `t.SkipNow` in a test
-  that is not in a live-tagged file, and never convert a real failure signal (a
-  non-zero exit, an unparseable output, a missing tool) into a skip. A missing
-  tool is an environmental precondition and a hard failure — `t.Fatalf` naming it.
+  directories are `cmd/scripts`, `internal/consume`, `internal/db`,
+  `internal/mcp`, `internal/repos`, `internal/runner`, `internal/script`.
+  **Never** create a per-phase test file, a root-level test file, or a `tests/`
+  directory — a phase is one package, and its tests belong beside that package.
+- **Skips are banned.** Never write `t.Skip`, `t.Skipf`, or `t.SkipNow` anywhere
+  in this tree, and never convert a real failure signal (a non-zero exit, an
+  unparseable output, a missing tool) into a skip. A missing tool is an
+  environmental precondition and a hard failure — `t.Fatalf` naming it.
 - **There is no live layer here.** scripts has a hermetic layer and a composed
   layer and **no live or manual layer**. Never add a `//go:build live` file, never
   add an env-gated test, and never introduce a `-tags live` invocation. Every test
   you write must run in the default gate above.
 - **`python3` is a declared environmental precondition**, not an optional extra:
   a test that needs it fails loudly when it is absent (`t.Fatalf`), never skips.
+  Same for `git`.
 - **The chassis owns the server.** scripts is `appkit.Main(scriptsSpec())`;
   `appkit`, `eventplane`, and `registry` are in-repo replace-siblings resolved
   through the repo-root `go.work`. Never edit a sibling module from this loop —
@@ -124,6 +152,10 @@ go test ./...       # must exit 0, zero failures
   real `python3` is exec'd on probe scripts against `httptest` loopback servers.
   A local subprocess is hermetic under the contract; `go test ./...` stays the
   single green bar.
+- **The version-plane client is tested through `internal/repos`**: a
+  `script.VersionPlane` seam injected from `registry.BaseURL("repos")`. Wiring
+  ids (D36) proving the seam is reached through the real composition root belong
+  in `cmd/scripts/` or `internal/repos`, per the brief's `## Files to touch`.
 - **Migrations are immutable.** Never hand-number, edit, or delete a committed
   migration under `internal/db/migrations/`; schema changes are new migrations
   created with the repo-root `bin/create-migration scripts <name>`.
@@ -152,10 +184,9 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal — never yours to report**: ending the run is never yours —
-  finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
-  blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed) is
+  still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g. `Added the
   two conformance tests in cmd/scripts/docs_test.go and committed; suite green.`
 

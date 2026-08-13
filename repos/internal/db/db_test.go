@@ -13,7 +13,6 @@ import (
 )
 
 func TestEmbeddedMigrationsCreateV2MetadataSchema(t *testing.T) {
-	// R-EMGN-7X72
 	// R-IWEY-SUZH
 	migrations, err := Migrations()
 	if err != nil {
@@ -59,7 +58,6 @@ func TestEmbeddedMigrationsCreateV2MetadataSchema(t *testing.T) {
 }
 
 func TestV2RebuildDropsSeededV1State(t *testing.T) {
-	// R-ICIJ-13TA
 	// R-IYUR-KEGV
 	migrations, err := Migrations()
 	if err != nil {

@@ -30,15 +30,15 @@ deterministic exit conditions, and total coverage of the id denominator.
 state" is simply nothing, "align" means "write from scratch", and the appended
 phases start at 01 with `STATUS.md`'s `Next phase` counter set just past
 them — create the full structure from the shapes in `ikispec`,
-including the thin `project/README.md` workspace map. (`project/loops/` is not
+including the `project/README.md` ikispec-pointer stub. (`project/loops/` is not
 yours: a prompt-generator workflow writes it, as a separate,
 operator-invoked step after the spec exists.)
 
 ## Procedure
 
 1. **Read the current state.** The existing `project/product/README.md`,
-   `project/research/research.md` if present, the design spine + `INDEX.md` +
-   the `DNN.md` files it lists, and `project/plan/STATUS.md` + the pending
+   `project/research/research.md` if present, `project/design/CONVENTIONS.md` +
+   `INDEX.md` + the `DNN.md` files it lists, and `project/plan/STATUS.md` + the pending
    phase files (the plan is a queue — it holds only unbuilt work).
    Know what already exists before changing it. Settled Decisions are settled —
    don't reopen them. (Greenfield: note there is nothing, and build the
@@ -94,8 +94,10 @@ operator-invoked step after the spec exists.)
    out-of-tree edit as an ordinary, non-spec change) **before the seal
    completes**. A sealed plan whose first pending phase cannot go green in
    the committed repo is a defect of this run, not acceptable output.
-7. **Workspace map.** If the structure changed (greenfield, or a folder
-   added/removed), write/update the thin `project/README.md` to match.
+7. **Root stub.** On greenfield, write the thin `project/README.md`
+   ikispec-pointer stub (the project name plus the declaration that the tree
+   abides by `ikispec`). Otherwise touch it only if the project name changed;
+   it carries no folder table to keep in sync.
 8. **Commit.** Stage every modified/new/deleted path under `project/**` and
    commit them (`git add project/ && git commit -m ...`) so the spec is fully
    committed before any `ralph` run starts against it. Commit only
@@ -112,8 +114,8 @@ operator-invoked step after the spec exists.)
 - **Do NOT run the executor.** Authoring `project/` is always fine. Launching
   the `ralph` binary on the loop prompts is a separate, explicit, operator-only
   action — never start it on your own initiative.
-- **Do NOT write, regenerate, or edit `project/loops/`.** The loop prompts and
-  `loops/README.md` belong to the prompt-generator workflows. There
+- **Do NOT write, regenerate, or edit `project/loops/`.** The loop prompts
+  belong to the prompt-generator workflows. There
   is no step in a seal-spec run that touches a loop file.
 - **Do NOT recommend regenerating `project/loops/` after an append/extension.**
   The installed loop prompts are **reusable across phases** — they resolve the

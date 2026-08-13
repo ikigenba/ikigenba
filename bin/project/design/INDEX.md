@@ -31,3 +31,29 @@ ids change.
 - R-V3XG-PB8R → D5 (`bin/project/design/D05.md`)
 - R-V6D9-GUQ5 → D5 (`bin/project/design/D05.md`)
 - R-V7L5-UMGU → D5 (`bin/project/design/D05.md`)
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped to
+the id(s) whose Verification most directly proves it. Much of this tooling is
+deliberately untested orchestration (D1–D4); those criteria are traced to the
+nearest id-backed proof — the production dependency contract, the changelog gate,
+the manifest-reader tests, or the manual-layer testing contract. The strength of
+each proof is the audit's question, the mapping's completeness is this manifest's.
+
+1. Advancing a version writes the next version with its changelog record and rejects a non-conforming version file →
+   R-CN1Q-ORRB
+2. A version whose changelog omits the release fails with what to add, while `--dry-run` still reports the next version →
+   R-CKLX-X89X, R-CLTU-B00M, R-CO9N-2JI0
+3. Release delivery is exactly one artifact named by the binary's own identity, every tier present →
+   R-3R5W-79JK, R-3TLO-YT0Y, R-3UTL-CKRN
+4. The produced artifact stages on-box with no manual rearrangement →
+   R-V6D9-GUQ5, R-V3XG-PB8R
+5. The local stack answers each service on its own port behind one front door, and teardown leaves nothing running →
+   R-V6D9-GUQ5, R-V7L5-UMGU
+6. Two same-day migrations for one service get distinct, unambiguously ordered names →
+   R-O1AD-MRKW, R-O2IA-0JBL
+7. Secrets seeding previews and performs exactly the env's declared keys, masked, with a multi-line value intact →
+   R-O1AD-MRKW, R-O2IA-0JBL
+8. The ordinary test run exercises the layout readers on the real scripts and fails on drift from the box layout →
+   R-V3XG-PB8R, R-V6D9-GUQ5, R-V7L5-UMGU, R-3R5W-79JK

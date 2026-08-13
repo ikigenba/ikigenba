@@ -19,6 +19,13 @@ working directory.
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md`. It
+   must print exactly `# prompts — Plan Status`. If it does not, do not proceed
+   and do not report `DONE` (you never report `DONE` anyway — see below). Check
+   whether `./prompts/project/plan/STATUS.md` passes the same check: if it
+   does, `cd prompts` and continue. Otherwise make no changes and return `NEXT`
+   with a message naming the expected title and what was actually observed.
+
 1. **Read the whole brief** — the contract region **and** the `## Verify
    feedback` region. If `project/loops/brief.md` is missing or empty, make no
    changes and return `NEXT`.
@@ -52,8 +59,8 @@ working directory.
      skip condition holds out of `go test ./...` is unreachable and counts as
      **uncovered** no matter how genuine its assertion reads; a test that converts
      a real failure (non-zero exit, unparseable output) into a skip launders a gap
-     into green and also counts as uncovered. A missing tool is a hard failure,
-     not a skip.
+     into green and also counts as uncovered. A missing tool (including the `git`
+     binary the tree's own real-git tests need) is a hard failure, not a skip.
    - Run `gofmt -w` on everything you touched.
 
 5. **Check your own diff for dropped tags before committing:**
@@ -89,7 +96,7 @@ working directory.
   go build ./...
   go vet ./...
   gofmt -l .        # must print nothing
-  go test ./...     # zero failures
+  go test ./...     # zero failures (-race implicit)
   ```
 
 - **Requirement-id tag glob:** `*_test.go`.
@@ -97,11 +104,13 @@ working directory.
   **composed** only. Composed = the boot smokes in `cmd/prompts/main_test.go`
   that build the real binary and run `serve` over a loopback port. Hermetic =
   everything else: `net/http/httptest` page/tool/runner tests, temp-file SQLite
-  through the real migration runner, `share/www` asset tests over the repo-real
-  tree, and `etc/nginx.conf` string assertions. There is **no live layer** and no
+  through the real migration runner, real-`git` tests over temp-directory bare
+  repositories (including the loopback `git http-backend` door the tree starts
+  itself), `share/www` asset tests over the repo-real tree, and
+  `etc/nginx.conf` string assertions. There is **no live layer** and no
   tree-local manual layer, so no test in this tree may contact a non-loopback
-  address or read a credential. Environmental preconditions beyond the Go
-  toolchain: none — do not introduce one.
+  address or read a credential. Environmental precondition beyond the Go
+  toolchain: the **`git` binary** (D50/D55) — do not introduce any other.
 - **Test placement:** co-locate tests with the code they exercise and name them
   for the behavior — package-local `*_test.go` beside the package under test;
   composition-root and whole-tree conformance proofs in `cmd/prompts/`;
@@ -135,10 +144,9 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal — never yours to report**: ending the run is never yours —
-  finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
-  blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Phase 60: added the AGENTS.md doc-truth test and the skip scan; suite green`
   or `Phase 60: closed the R-O2IA-0JBL gap from verify feedback`.

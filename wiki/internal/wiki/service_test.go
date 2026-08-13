@@ -218,7 +218,6 @@ func TestProcessNextReusesSubjectAndRecompilesFromCompleteClaims(t *testing.T) {
 }
 
 func TestProcessNextCompilesFromSubjectIdentityAndClaimsOnly(t *testing.T) {
-	// R-MB7F-ZRE9
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()
@@ -395,7 +394,6 @@ func TestAbortPendingJobMarksAbortedAndPreventsProcessing(t *testing.T) {
 }
 
 func TestAbortTerminalJobLeavesStatusUnchanged(t *testing.T) {
-	// R-0TKT-MXFO
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()

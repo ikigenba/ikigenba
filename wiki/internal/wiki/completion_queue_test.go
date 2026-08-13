@@ -335,7 +335,6 @@ func TestCompileApplyRollsBackStagedUnitWhenTerminalWriteFails(t *testing.T) {
 
 func TestLastCompileAtomicallyIntegratesAndRedeliveryIsStray(t *testing.T) {
 	// R-K9JC-ANDH
-	// R-M8RN-87WV
 	// R-MB7F-ZRE9
 	// R-MCFC-DJ4Y
 	ctx := context.Background()

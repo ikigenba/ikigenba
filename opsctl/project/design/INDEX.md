@@ -81,3 +81,25 @@ Verification ids change.
 - R-WP3M-PO1V → D1 — `project/design/D01.md`
 - R-WQBJ-3FSK → D1 — `project/design/D01.md`
 - R-WRJF-H7J9 → D1 — `project/design/D01.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped to
+the id(s) whose Verification most directly proves it; the quality of each proof
+is the audit's question, the mapping's completeness is this manifest's.
+Regenerated with the rest of the index.
+
+1. Cross-device `opsctl stage <app> <version>` completes, release staged, no cross-device failure →
+   R-65MT-7QEK, R-66UP-LI59
+2. `sudo opsctl <verb>` needing the box env finds it already loaded, no manual load →
+   R-6AIE-QTDC, R-6FE0-9WC4
+3. Box env genuinely absent — the affected verb fails naming the missing value →
+   R-MTWL-JE3Z, R-CNPY-3Z4Y
+4. Deploying the apex/`DEFAULT` app updates front-door routing, effective only after it validates; a bad or value-missing routing aborts untouched with a naming message →
+   R-MSOP-5MDA, R-MV4H-X5UO, R-MTWL-JE3Z, R-MXKA-OPC2, R-CNPY-3Z4Y
+5. A served-file page reachable before a box op stays reachable after — provisioning grants front-door read; deploy/restore leaves it intact →
+   R-3K9X-IPJZ, R-3MPQ-A91D, R-3NXM-O0S2
+6. After fresh-box provisioning the shared CLI tooling works (PDF→text, `git` clone, `sqlite3`); re-running provisioning still works →
+   R-JQGB-RYA2, R-JRO8-5Q0R
+7. After fresh-box provisioning the shared OAuth login CLI is installed for any service user and reports its version; re-running reinstalls and it still works →
+   R-ML75-3NVZ, R-MMF1-HFMO

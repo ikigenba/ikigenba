@@ -237,3 +237,98 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ZWRC-Z00X → D20 → `project/design/D20.md`
 - R-ZXZ9-CRRM → D20 → `project/design/D20.md`
 - R-ZZ75-QJIB → D20 → `project/design/D20.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order — the
+outcomes list followed by the registry-adoption addendum) mapped to the id(s)
+whose tests most directly prove it; the quality of each proof is the audit's
+question, the mapping's completeness is this manifest's. Regenerated with the
+rest of the index.
+
+1. Create a site, write an `index.html`, and immediately fetch its URL to get
+   that page — no publish step →
+   R-ESH6-NMDE, R-R14Z-GOPL, R-QZX3-2WYW
+2. Create public in one call served to a session-less request; private refused to
+   it; a `create` with no visibility refused →
+   R-ZN05-WU3D, R-ZQNV-25BG, R-R78H-DJF2, R-R8GD-RB5R
+3. Create unlisted by name with no address, get a long random URL served without a
+   session, and the site appears in the list under its name →
+   R-ZRVR-FX25, R-H7WX-8DDO, R-H5H4-GTWA, R-ZKKD-5ALZ
+4. Set an unlisted site unlisted again: new URL serves, old URL stops, name
+   unchanged →
+   R-ZWRC-Z00X
+5. Take a site out of unlisted by giving a real address; a call omitting the new
+   address is refused →
+   R-ZXZ9-CRRM
+6. Rename a site (listing shows the new name, URL/visibility/files unchanged); a
+   create or rename with a blank name is refused →
+   R-ZZ75-QJIB, R-ZC12-GWF4, R-ZO82-ALU2
+7. `sync` for a site that does not exist yet returns a "create it first" refusal →
+   R-56CN-HE21
+8. A connecting agent can tell what sites is for and, via `guide`, gets worked
+   examples to create and publish →
+   R-57KJ-V5SQ, R-58SG-8XJF, R-5A0C-MPA4
+9. A public site served without a session; a private site refused without a
+   session (navigation→sign-in, scripted/bearer→`401`) and served with one →
+   R-R78H-DJF2, R-R8GD-RB5R, R-XVIT-1NXD
+10. One visibility-change call changes reachability; a site is never served under
+    more than one visibility at once →
+    R-ZVJG-L8A8, R-ZAT6-34OF
+11. Delete a site: its URL stops serving, it leaves the list, its history is
+    retained →
+    R-00F2-4B90, R-FBZK-RY8I
+12. Two files written through the tools are recorded in history attributed to me,
+    with no version-control step and none in the tool surface →
+    R-ESH6-NMDE, R-NF7R-V95S, R-RDBZ-AE4J
+13. A laptop checkout, edit, and push to the live branch changes what the site
+    serves; a push to a side branch changes nothing →
+    R-F3GA-3K1N, R-F4O6-HBSC
+14. A hundred-file import is recorded as one change, not a hundred →
+    R-EYKO-KH2V
+15. When the history service is down a `file_write` fails and leaves files
+    unchanged, while reading/listing/landing still work →
+    R-EW4V-SXLH, R-EXCS-6PC6
+16. Point a site at a subfolder and its URL serves that folder; files elsewhere
+    stop serving and leave the file tools; pointing back is one call →
+    R-3WCE-LXYO, R-42FW-ISO5
+17. Point a site at a folder the repo lacks yet: the call succeeds and it serves
+    nothing until content lands there →
+    R-43NS-WKEU
+18. Pre-existing sites are unchanged and now version-controlled with no action →
+    R-FFN9-X9GL, R-FI32-OSXZ
+19. The landing page shows the version and a row per site (name, visibility,
+    creator, created-at); the name links to the site; an unlisted row shows its
+    name →
+    R-WKGI-FVFJ, R-ZI4K-DR4L, R-ZKKD-5ALZ
+20. A session-less browser navigation to the landing (or a private site) is sent
+    to sign-in and returned; a non-navigation session-less request still gets
+    `401` →
+    R-XVIT-1NXD, R-NGNX-5R8V
+21. Typing part of a name or address (non-adjacent letters) narrows the list live
+    with no reload →
+    R-02UU-VUQE, R-06IK-15YH
+22. Clicking a Name/Created/Creator header reorders the list, clicking again
+    reverses; default is newest-first →
+    R-05AN-NE7S, R-I55B-1H05, R-08YC-SPFV
+23. With more than ten sites a Prev/Next pager with "Page X of Y" appears and
+    pages ten at a time; with ten or fewer, none →
+    R-I7L3-T0HJ, R-I8T0-6S88, R-8DER-G0TL
+24. Clear empties the search, returns ordering to newest-first, and returns to the
+    first page →
+    R-IB8S-YBPM, R-8AYY-OHC7
+25. A row's copy control places that site's full URL on the clipboard with a brief
+    "Copied" confirmation →
+    R-NN9H-UKP3, R-NM1L-GSYE
+26. With JavaScript disabled the complete list still shows (controls absent) and
+    the name links still open each site →
+    R-84VG-RMMQ, R-ZI4K-DR4L
+27. Every path under `/srv/sites/…` is served by the sites process — nginx holds
+    no `alias` →
+    R-R9OA-52WG, R-NGNX-7T1X
+28. An MCP client still discovers the AS via the PRM well-known and calls the
+    bearer-gated `/mcp`; `/health` still responds →
+    R-NGNX-9W4Z, R-7L9K-C2Y0
+29. sites's loopback addresses cannot silently drift — its own port and the
+    dropbox address resolve by name through the shared registry →
+    R-7K2P-QN4D, R-7L9F-XW3H, R-7M4C-BV8J

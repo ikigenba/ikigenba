@@ -34,6 +34,8 @@ Decision is added or its Verification ids change.
 - D10 → `D10.md` — Adopt the suite testing-language contract (`root
   project/design/D23.md`): layers, GOWORK mode, environmental preconditions —
   owns none locally; **cites** R-O1AD-MRKW, R-O2IA-0JBL
+- D11 → `D11.md` — Generation epochs: a restore mints a fresh epoch and stale
+  cursors resync — R-4BT8-D54J, R-4D14-QWV8
 
 ## Verification ids → Decision
 
@@ -61,6 +63,8 @@ Decision is added or its Verification ids change.
 - R-4098-2N20 — D4 (`D04.md`)
 - R-41H4-GESP — D2 (`D02.md`)
 - R-42P0-U6JE — D1 (`D01.md`)
+- R-4BT8-D54J — D11 (`D11.md`)
+- R-4D14-QWV8 — D11 (`D11.md`)
 - R-95KP-1QIO — D4 (`D04.md`)
 - R-O1AD-MRKW — D10 (`D10.md`) — cited from `root project/design/D23.md`, `[proof: per-service]`
 - R-O2IA-0JBL — D10 (`D10.md`) — cited from `root project/design/D23.md`, `[proof: per-service]`
@@ -90,3 +94,42 @@ Decision is added or its Verification ids change.
 - R-V565-A03G — D9 (`D09.md`)
 - R-V6E1-NRU5 — D9 (`D09.md`)
 - R-Z8Y5-5R0C — D5 (`D05.md`)
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped
+to the id(s) whose tests most directly prove it; the quality of each proof is
+the audit's question, the mapping's completeness is this manifest's.
+Regenerated with the rest of the index.
+
+1. Address `dropbox:create/bills/aws/2026-06.pdf` observable end to end, from
+   producer append to consumer delivery →
+   R-3EB1-6RPI, R-3D34-SZYT, R-3VDM-JK38, R-3WLI-XBTX
+2. A consumer filtering `dropbox:create/bills/**/*.pdf` gets the match and not
+   `notes.txt` or the `delete` →
+   R-3Z1B-OVBB, R-95KP-1QIO
+3. A subjectless event (`ledger:recorded`) selectable by its literal key →
+   R-3MUB-V5WD
+4. Reflection describes each family with a schema and worked example that agree →
+   R-3QI1-0H4G, R-3RPX-E8V5
+5. Filter validation: `dropbox:delete/**` cannot match a create-only producer,
+   `dropbox:create/**` can →
+   R-3O28-8XN2, R-3SXT-S0LU, R-3U5Q-5SCJ
+6. An uppercase kind or a non-`/`-rooted subject is refused with an explanation →
+   R-39FF-NOQQ, R-3ANC-1GHF
+7. An event from correlated work arrives reporting the same correlation id →
+   R-UO3J-X7PQ, R-UQJC-OR74, R-URR9-2IXT
+8. A handler that republishes carries the original id — the chain survives each
+   hop →
+   R-UVEY-7U5W
+9. A no-correlation event gives its handler a fresh well-formed chain, and two
+   give two different ones →
+   R-USZ5-GAOI
+10. A listener sees one publish and one consume record per event, each with
+    address, chain id, outcome, and duration — failures included →
+    R-UXUQ-ZDNA, R-V1IG-4OVD, R-V0AJ-QX4O, R-V2QC-IGM2, R-V3Y8-W8CR
+11. A hook that panics on every call changes nothing a consumer sees, across a
+    reconnect →
+    R-V565-A03G
+12. Delivery otherwise unchanged: in order, at least once, same recovery →
+    R-UWMU-LLWL, R-42P0-U6JE

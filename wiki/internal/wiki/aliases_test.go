@@ -159,7 +159,6 @@ func TestAliasStoreListAllReturnsEveryAliasForProjection(t *testing.T) {
 }
 
 func TestAliasStoreListMergesReturnsNewestAuditPage(t *testing.T) {
-	// R-E4WX-G9H2
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()

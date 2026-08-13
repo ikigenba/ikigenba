@@ -101,7 +101,6 @@ func TestEmbeddingStoreLoadAllReturnsEveryEmbedding(t *testing.T) {
 }
 
 func TestEmbeddingStoreDeleteRemovesOnlyRequestedSubject(t *testing.T) {
-	// R-LP5Q-9XTD
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()

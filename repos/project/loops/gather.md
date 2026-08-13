@@ -17,6 +17,16 @@ only the brief's **contract region**; you never write its **feedback region**.
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md`. It must
+   print exactly `# repos — Plan Status`. If it does not:
+   - Check `./repos/project/plan/STATUS.md` with the same command. If **that**
+     one prints the expected title, your cwd drifted one directory shallow —
+     `cd repos` and continue the procedure below.
+   - Otherwise, do not proceed and **never report `DONE`** in this state: report
+     `NEXT` with a message naming the title you expected
+     (`# repos — Plan Status`) and the one you actually saw (or "file missing"),
+     so the drift is visible instead of silently ending or misdirecting the run.
+
 1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists,
    open no other file, do nothing else, and report **`DONE`** with a message
    naming the blocked phase and pointing at that file. A phase whose done bar
@@ -87,18 +97,23 @@ only the brief's **contract region**; you never write its **feedback region**.
 `cd repos && go test ./...` all exit 0 with no failures, and
 `cd repos && gofmt -l .` prints nothing. Substrates: real temp-file SQLite
 through the embedded migration set, the **real `git` binary** against local
-fixture remotes (`git init --bare` in `t.TempDir()`, `file://` URLs) — never a
-mocked git — suite peers as `httptest` stubs, a deterministic injected clock, and
-no non-loopback network I/O anywhere in the gate.
+fixture remotes (`git init --bare` in `t.TempDir()`, real `git clone`/`fetch`/
+`push` from a temp client working copy against the shipped smart-HTTP handler
+mounted on `httptest`) — never a mocked git — a deterministic injected clock,
+and no non-loopback network I/O anywhere in the gate. repos has **no service
+peers** and no outbound call to another service, so no test fixture stubs a
+peer HTTP client.
 
-Per `root project/design/D23.md` this tree has a **hermetic** and a **composed**
-layer only, both in the default gate — no live layer, no tree-local manual
-runbook — so `t.Skip`, `t.Skipf`, and `t.SkipNow` may not appear in **any**
-`*_test.go` file here. The two environmental preconditions beyond the Go
-toolchain (the real `git` binary and the `go` binary, each on `PATH`) are **hard
-failures when absent, never skips**. No gate item runs against `bin/start`; the
-assembled-stack check is the suite's manual-layer item, so a done bar must never
-require the suite to be up.
+Per `root project/design/D23.md` (adopted locally as D16) this tree has a
+**hermetic** and a **composed** layer only, both in the default gate — no live
+layer, no tree-local manual runbook — so `t.Skip`, `t.Skipf`, and `t.SkipNow`
+may not appear in **any** `*_test.go` file here. The three environmental
+preconditions beyond the Go toolchain — the real **`git`** binary, the real
+**`go`** binary (with the module cache resolving repos' `replace` siblings),
+and the real **`google-chrome`** binary (D26's headless-Chrome wiring proof) —
+are **hard failures when absent, never skips**. No gate item runs against
+`bin/start`; the assembled-stack check is the suite's manual-layer item, so a
+done bar must never require the suite to be up.
 
 ## The `project/loops/brief.md` schema (emit exactly this shape)
 
@@ -163,6 +178,7 @@ Report this run's result as a `status` and a one-sentence `message`:
   `Authored brief for Phase 26 (D16, 2 ids).`
 
 Report **`DONE`** when `project/loops/blocked.md` exists, or when step 2's grep
-found no `⬜` phase; in every other case (brief authored, or an in-flight brief
-preserved) report **`NEXT`**. Keep `message` a single plain sentence — not a
-JSON object or code block.
+found no `⬜` phase; report **`NEXT`** on a workspace-identity mismatch you fixed
+by `cd repos`, or on a mismatch you could not resolve; in every other case
+(brief authored, or an in-flight brief preserved) report **`NEXT`**. Keep
+`message` a single plain sentence — not a JSON object or code block.

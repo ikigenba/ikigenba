@@ -16,7 +16,6 @@ import (
 
 func TestAbortDuringCompileLeavesWriterIdleAndCommitsNoRows(t *testing.T) {
 	// R-0TKT-MXFO
-	// R-FWS5-ACM0
 	ctx := context.Background()
 	conns, closeConns := migratedConns(t, ctx)
 	defer closeConns()

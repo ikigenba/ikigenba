@@ -18,6 +18,18 @@ only the brief's **contract region**; you never write its **feedback region**.
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md` and
+   confirm it prints exactly `# ledger — Plan Status`. This is a mono-repo of
+   nested spec workspaces, so a cwd that drifted (harness reset, a stray `cd` to
+   the repo root) can land in a *different but valid* `project/` tree — the
+   umbrella workspace's own plan, for instance, legitimately shows zero `⬜`
+   lines, which would misread as "job complete." On mismatch or a missing file:
+   check whether `./ledger/project/plan/STATUS.md` passes the same check — if
+   so the cwd is one level up, `cd ledger` and continue; otherwise report
+   **`NEXT`** with a message naming the expected title (`# ledger — Plan
+   Status`) and what was actually observed. Never report `DONE` on a failed
+   guard.
+
 1. **Check for a blocked phase first.** If `project/loops/blocked.md` exists,
    open no other file, do nothing else, and report **`DONE`** with a message
    naming the blocked phase and pointing at that file. A phase whose done bar
@@ -152,8 +164,9 @@ _(empty — no verify attempt yet)_
 
 ## Boundaries
 
-- Read only: `project/loops/blocked.md` (existence check only), `project/plan/STATUS.md`,
-  the one `project/plan/phase-NN.md`, `project/design/INDEX.md`, the realized
+- Read only: `project/plan/STATUS.md` (identity guard + phase lookup),
+  `project/loops/blocked.md` (existence check only), the one
+  `project/plan/phase-NN.md`, `project/design/INDEX.md`, the realized
   `project/design/DNN.md`, and (if needed for intent) `project/product/README.md`.
   Read no other phase or Decision file.
 - Never build, test, or commit; never edit `STATUS.md`; never write the
@@ -166,11 +179,14 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops.
+- `DONE` — **terminal**: tells `ralph` to stop the loop. It carries no other
+  meaning; say *why* in the message (the workspace identity guard failed, the
+  job is complete, or a phase is blocked).
 - `message` — one short, plain sentence describing what happened, e.g.
   `Authored brief for Phase 19 (D18, 2 ids).`
 
 Report **`DONE`** when `project/loops/blocked.md` exists, or when step 2's grep
-found no `⬜` phase; in every other case (brief authored, or an in-flight brief
-preserved) report **`NEXT`**. Keep `message` a single plain sentence — not a
-JSON object or code block.
+found no `⬜` phase; report **`NEXT`** (never `DONE`) on a failed identity guard;
+in every other case (brief authored, or an in-flight brief preserved) report
+**`NEXT`**. Keep `message` a single plain sentence — not a JSON object or code
+block.

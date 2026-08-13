@@ -14,6 +14,45 @@ ids change.
 
 ## Verification ids → Decision
 
-None. This tree mints no requirement ids; see *Requirement ids* in
-`project/design/README.md` for why, and each Decision's **Verification** section
-for the check that stands in its place.
+None. This tree mints no requirement ids; see the "no test-file glob and no id
+tags" convention in `project/design/CONVENTIONS.md` for why, and each Decision's
+**Verification** section for the check that stands in its place.
+
+## Success criteria → ids
+
+`nginx/` mints **no requirement ids** (D1–D4): it is one config tree no Go module
+owns, with no test file an id could tag. Each product success criterion
+(`project/product/README.md`, in order) therefore maps to the **structural or
+manual proof mechanism** that stands in for an id here — the `nginx -t` /
+`bash -n` structural gates and the once-only live-stack checks named in each
+Decision's **Verification**. The mapping's completeness is this manifest's; the
+proofs themselves live in the Decisions.
+
+1. Local front door root returns the dashboard → D1 behavioural check (`bin/start`
+   up, the root address serves the dashboard), atop the D1 structural gate
+   `nginx -p . -c nginx.conf -t` exiting 0.
+2. Service path with no credentials is refused at the front door → D1 behavioural
+   check (a `/srv/<svc>/` request with no credentials is refused at nginx via
+   `auth_request`, before the service).
+3. Service path with valid credentials reaches the service, prefix stripped,
+   identity headers present → D1 behavioural check (real `auth_request` against
+   the real dashboard; prefix stripped; `X-Owner-Email`/`X-Client-Id` injected).
+4. Starting the front door where it has never run before succeeds → D2 structural
+   `bash -n run` exiting 0, plus the D2 manual check that a `run` brings the front
+   door up cleanly on a fresh checkout.
+5. A never-before-seen service route is reachable through the front door → D2
+   byte-identical fragment check (`locations/<svc>.conf` regenerated, one per
+   service shipping `etc/nginx.conf`, `diff`-clean) plus the D2 manual per-service
+   `/srv/<svc>/` reachability check.
+6. Live-box HTTPS to a kept non-apex domain returns the parked page → D3 live-box
+   manual check (a cert-validating request to at least two of the certificate's
+   names returns 200 with the page text).
+7. Live-box request to the box's bare address returns the parked page → D3
+   live-box manual check (the `default_server` parked page answers the bare
+   address with a success status).
+8. Parked answer live, the account's apex still returns the dashboard → D3 live-box
+   manual check (the apex is unaffected; the excluded domain still fails HTTPS
+   validation, proving the exclusion is in force).
+9. Parked files installed on the box are byte-identical to the committed ones → D3
+   byte-identical check of the installed parked files against their committed
+   sources.

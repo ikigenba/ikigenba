@@ -15,6 +15,15 @@ working directory.
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md` and
+   confirm it prints exactly `# ledger — Plan Status`. This is a mono-repo of
+   nested spec workspaces, so a cwd that drifted (harness reset, a stray `cd`
+   to the repo root) can land in a different `project/` tree entirely. On
+   mismatch or a missing file: if `./ledger/project/plan/STATUS.md` passes the
+   same check, the cwd is one level up — `cd ledger` and continue; otherwise
+   make no changes and return `NEXT` with a message naming the expected and
+   observed titles.
+
 1. **Read the whole brief** — `project/loops/brief.md`, **both** the contract
    region and the `## Verify feedback` region. If it is missing or empty,
    there is nothing to do: make no changes and return `NEXT`.
@@ -40,9 +49,9 @@ working directory.
    signatures and required shapes copied into the brief. For a **code**
    phase, write id-tagged, genuinely-asserting tests: each Verification id
    under **Ids to cover** gets a test carrying a `// R-XXXX-XXXX` comment
-   that actually exercises the behavior the brief describes (never a bare id
-   literal with no assertion). For a **docs/structural** phase, make the doc
-   edit and satisfy the named content check instead of writing id-tagged
+   that actually exercises the behavior the brief describes (never a bare
+   id literal with no assertion). For a **docs/structural** phase, make the
+   doc edit and satisfy the named content check instead of writing id-tagged
    tests.
 
    - **Test placement — co-locate, never phase-name.** A phase is one
@@ -151,7 +160,9 @@ working directory.
 ## Boundaries
 
 - Never read `project/plan/*`, `project/design/*`, or
-  `project/product/README.md`. The brief is your only source.
+  `project/product/README.md`. The brief is your only source (the identity
+  guard's read of `STATUS.md`'s first line is a title check only, not spec
+  reading).
 - Never edit `project/plan/STATUS.md` or delete a phase's line/body file —
   that is verify's job alone.
 - Never delete or edit `project/loops/brief.md`, including its
@@ -160,8 +171,7 @@ working directory.
   already in the file.
 - Never write `t.Skip`, `t.Skipf`, or `t.SkipNow` anywhere in this tree.
 - Never make an empty commit.
-- Always return `NEXT` — build hands off every turn and is never the step
-  that ends the run.
+- `DONE` is **never yours to report** — see below.
 
 ## Reporting the result
 
@@ -170,10 +180,9 @@ Report this run's result as a `status` and a one-sentence `message`:
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's increment is committed; hand off to
   verify.
-- `DONE` — **terminal — never yours to report**: ending the run is never
-  yours — finishing this phase completely, green suite and all open gaps
-  closed, is still `NEXT`; only gather ever reports `DONE`, on finding no `⬜`
-  phase left or a blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `rewrote the AGENTS.md Tests section and added 2 tagged tests in
   cmd/ledger/docs_test.go; suite green`.

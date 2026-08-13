@@ -119,3 +119,43 @@ Verification ids change.
 - R-UFTS-CD0T → D8 — `project/design/D08.md`
 - R-XK5N-0I1E → D7 — `project/design/D07.md`
 - R-XLDJ-E9S3 → D7 — `project/design/D07.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped
+to the id(s) whose tests prove it; the quality of each proof is the audit's
+question, the mapping's completeness is this manifest's. Regenerated with the
+rest of the index.
+
+1. An owner creates a webhook through MCP and gets back a callable URL and a
+   one-time secret →
+   R-5Z8J-Y0YP, R-37GT-C05G
+2. An outside call with the correct secret returns success, and a matching event
+   naming the webhook, owner, and payload is observable →
+   R-7ISQ-ZZCF, R-GTUZ-AIGW, R-L9XF-6ZFK, R-A3FB-J3ZK
+3. An acknowledged call's event survives a service restart (durable before ack) →
+   R-GWAS-21YA
+4. An outside call with a wrong secret is rejected and produces no event →
+   R-7K0N-DR34
+5. A call to a non-existent name is rejected indistinguishably from a wrong
+   secret →
+   R-7K0N-DR34
+6. An over-size payload is rejected and produces no event →
+   R-7MGG-5AKI
+7. After rotation, a call with the new secret succeeds and the old is rejected,
+   using the unchanged URL →
+   R-39WM-3JMU, R-62W9-3C6S
+8. After deletion, a call to the former URL is rejected and produces no event →
+   R-61OC-PKG3
+9. Listing returns exactly the calling owner's webhooks and none from others →
+   R-60GG-BSPE
+10. One accepted delivery and every downstream action form one ordered chain; two
+    deliveries never share a chain; a caller-declared chain is ignored →
+    R-L1A1-XMRN, R-L2HY-BEIC, R-L3PU-P691
+11. A GitHub-signed webhook accepts a correctly signed call and publishes an event
+    carrying the delivery's event name; unsigned/wrong is rejected
+    indistinguishably; direct-secret webhooks are unchanged →
+    R-G8ZT-KWSE, R-GBFM-CG9S, R-GCNI-Q80H, R-GF3B-HRHV
+12. A logged-in user opening `/srv/webhooks/` sees the name and version; a
+    sessionless browser is refused; and `/in/`, `/mcp`, `/feed` behave as before →
+    R-TMJH-V1NP, R-4B16-6FON, R-OGOR-8O3J

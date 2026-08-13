@@ -20,6 +20,15 @@ phase on a gap.
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md` and
+   confirm it prints exactly `# ledger — Plan Status`. This is a mono-repo of
+   nested spec workspaces, so a cwd that drifted (harness reset, a stray `cd`
+   to the repo root) can land in a different `project/` tree entirely. On
+   mismatch or a missing file: if `./ledger/project/plan/STATUS.md` passes the
+   same check, the cwd is one level up — `cd ledger` and continue; otherwise
+   change nothing and return `NEXT` with a message naming the expected and
+   observed titles.
+
 1. **Read the brief** — `project/loops/brief.md`, both its `## Contract` region and
    its own prior `## Verify feedback` region. If the brief is missing or empty,
    report `NEXT` (nothing to gate this turn).
@@ -189,6 +198,7 @@ phase on a gap.
   stacks stale gaps) — always overwrite it with only the currently-open gaps.
 - Never perform a second consecutive stall reset on the same phase — escalate to
   `blocked.md` instead.
+- `DONE` is **never yours to report** — see below.
 
 ## Reporting the result
 
@@ -197,10 +207,9 @@ Report this run's result as a `status` and a one-sentence `message`:
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's gating is done; hand off (to gather, wrapping
   the loop).
-- `DONE` — **terminal — never yours to report**: ending the run is never yours —
-  finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
-  blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Phase 19 green: 2/2 ids covered, ratchet clean, deleted.` or
   `Phase 19 gap: R-O2IA-0JBL scan missing; recorded feedback attempt 2.` or

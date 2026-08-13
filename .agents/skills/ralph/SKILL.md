@@ -33,9 +33,9 @@ mechanical execution.
 | `$open-spec` skill | opens the spec-authoring session: scopes work to `project/*`, docs-only, discussion of desired outcomes | `.agents/skills/open-spec/SKILL.md` |
 | `$grill-me` skill | generic one-question-at-a-time interrogation, used to sharpen the goal before writing | `.agents/skills/grill-me/SKILL.md` |
 | `$seal-spec` skill | the "go do the work" step: one automated pass writing product/research/design/plan per `ikispec` | `.agents/skills/seal-spec/SKILL.md` |
-| prompt-generator skills | loop generators; each emits one loop topology (e.g. `$create-gather-build-verify-prompts`) + `project/loops/README.md` describing the installed loop | `.agents/skills/create-*/SKILL.md` |
-| `project/` | the spec itself — the single source of truth the loop builds from | `project/README.md` (the workspace map) |
-| `project/loops/` | the generated prompts + the installed loop's overview | `project/loops/README.md` |
+| prompt-generator skills | loop generators; each emits one loop topology (e.g. `$create-gather-build-verify-prompts`), the loop mechanics living in the generator skill, not restated per project | `.agents/skills/create-*/SKILL.md` |
+| `project/` | the spec itself — the single source of truth the loop builds from | `.agents/skills/ikispec/SKILL.md` |
+| `project/loops/` | the generated prompts (and the operator `run` wrapper) | the emitting generator skill |
 | `ralph` binary | the executor | `~/projects/ralph/README.md` |
 
 The spec shapes and the loop topologies are **independent**: generators consume

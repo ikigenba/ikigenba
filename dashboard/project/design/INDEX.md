@@ -15,7 +15,7 @@ Verification ids change.
 - D6 → `project/design/D06.md` — Purge the stale "single hybrid page / don't split" doc rule — owns R-DB16-DOCS
 - D7 → `project/design/D07.md` — Login composition: brand title, tagline, sign-in lede, rule, two provider CTAs, rule, then a borderless etymology table — owns R-JA3I-IY1F, R-JCJB-AHIT, R-JDR7-O99I, R-ILDB-6TGS, R-IML7-KL7H, R-JG70-FSQW, R-JHEW-TKHL, R-O7K1-XEN7, R-DB19-LAND
 - D8 → `project/design/D08.md` — System font stacks: no web fonts, no font files, no preloads — owns R-VKP5-N8HN, R-VLX2-108C
-- D9 → `project/design/D09.md` — The shell footer: service name + running version on every shell page — owns R-VN4Y-ERZ1
+- D9 → `project/design/D09.md` — The shell footer: service name + running version on every shell page — owns R-VN4Y-ERZ1, R-EFJZ-FRQ1
 - D10 → `project/design/D10.md` — The shared shell: the wiki page frame on every dashboard page — owns R-VOCU-SJPQ, R-VQSN-K374, R-VS0J-XUXT, R-VT8G-BMOI, R-VUGC-PEF7, R-VVY7-ADWO
 - D11 → `project/design/D11.md` — Metrics store: in-memory ring-buffer series + snapshot — owns R-EZVQ-IQOL, R-F13M-WIFA, R-F2BJ-AA5Z
 - D12 → `project/design/D12.md` — Metric source readers + service discovery — owns R-F4RC-1TND, R-F5Z8-FLE2, R-F774-TD4R, R-F8F1-74VG, R-F9MX-KWM5, R-FAUT-YOCU, R-FC2Q-CG3J
@@ -84,6 +84,7 @@ Verification ids change.
 - R-DB14-SOUT → D5 → `project/design/D05.md`
 - R-DB16-DOCS → D6 → `project/design/D06.md`
 - R-DB19-LAND → D7 → `project/design/D07.md`
+- R-EFJZ-FRQ1 → D9 → `project/design/D09.md`
 - R-EZVQ-IQOL → D11 → `project/design/D11.md`
 - R-F13M-WIFA → D11 → `project/design/D11.md`
 - R-F2BJ-AA5Z → D11 → `project/design/D11.md`
@@ -213,3 +214,57 @@ Verification ids change.
 - R-XPQG-YNNO → D33 → `project/design/D33.md`
 - R-XQN7-IKYL → D22 → `project/design/D22.md`
 - R-XRV3-WCPA → D22 → `project/design/D22.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped to
+the id(s) whose Verification most directly proves it; the quality of each proof
+is the audit's question, the mapping's completeness is this manifest's.
+Regenerated with the rest of the index.
+
+1. Signed out, `/` shows the sign-in page — tagline, two provider CTAs, name-origin block beneath, no account controls →
+   R-JA3I-IY1F, R-JCJB-AHIT, R-ILDB-6TGS, R-JG70-FSQW
+2. GitHub sign-in as an active ikigenba-org member signs me in and lands me on home (or where I was headed) →
+   R-INT3-YCY6
+3. GitHub sign-in from outside the ikigenba org is refused and yields no session →
+   R-IQ8W-PWFK
+4. Google and GitHub — even same email — produce two distinct identities, each with its own tokens, grants, and data →
+   R-VJMO-6CN9, R-VM2G-XW4N
+5. Connecting an MCP client offers a Google-or-GitHub choice, and either completes to a working connection as that identity →
+   R-IWCE-MR51, R-IYS7-EAMF
+6. The name-origin explanation shows only signed out; the signed-in home has no colophon →
+   R-DB19-LAND, R-OHHJ-MXUQ
+7. Signed in, `/` shows the home page — the MCP service list, with no install instructions and no token or grant controls →
+   R-OF1Q-VEDC, R-VJH9-9GQY
+8. Every signed-in page shows the same shell header and a footer stating the running version →
+   R-VOCU-SJPQ, R-VQSN-K374, R-VN4Y-ERZ1, R-EFJZ-FRQ1
+9. Clicking a service's name opens `/srv/<svc>/`, and the copy control puts its MCP address on my clipboard →
+   R-DB12-LINK, R-OG9N-9641
+10. The install page shows the paste-one-line command per agent and says a PAT is required; signed out it sends me to login →
+    R-VVO9-365W, R-VWW5-GXWL, R-VI9C-VP09
+11. Clicking my avatar opens the profile page →
+    R-XO4W-LKAI
+12. The profile page shows my PATs (create/revoke) and OAuth grants (revoke) — the actions moved off the home page →
+    R-DB06-PATM, R-DB07-PATR, R-DB09-GRNT, R-DB10-GRVK
+13. Cloning/pushing a box repo with a PAT as the password (any username) succeeds, and is refused after I revoke that token →
+    R-39O6-OFFD, R-3AW3-2762, R-3FRO-LA4U
+14. Visiting the profile route signed out reveals no controls and returns me to login →
+    R-DB04-GATE, R-DB05-SESS
+15. Sign-out is available from every signed-in page →
+    R-DB14-SOUT
+16. The header on every signed-in page shows a **Metrics** link that opens the metrics page →
+    R-X682-UBSK
+17. Signed in, `/metrics` shows 24h graphs of box free memory/disk and each service's memory/disk, advancing about once a minute →
+    R-WWGV-S5V0, R-VUGC-PEF7, R-X2KD-P0KH, R-FO9Q-65IH
+18. Visiting the metrics route signed out reveals no graphs and returns me to login; the old `/telemetry` is gone, not redirected →
+    R-WXOS-5XLP, R-X3SA-2SB6
+19. The link and page both read **Metrics**, *Telemetry* appears nowhere in the signed-in surface, and old `/telemetry` yields nothing →
+    R-X682-UBSK, R-X3SA-2SB6
+20. After an agent call, the forensic record shows the dashboard's admit decision and the caused work follows back to it as one connected sequence →
+    R-X7FZ-83J9, R-XDJH-4Y8Q
+21. After a refusal, the forensic record shows it with the reason, and repeated failures appear as separate attempts →
+    R-XERD-IPZF, R-XFZ9-WHQ4, R-I98E-62GS
+22. The docs describe the login, landing, profile, and metrics pages and no longer claim a single hybrid apex page →
+    R-DB16-DOCS
+23. Signed out, following a gated link then signing in lands me on that page; signing in from the login page directly lands me on home — never off this box →
+    R-XLRL-ZHZT, R-XO7E-R1H7, R-XQN7-IKYL, R-XRV3-WCPA

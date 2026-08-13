@@ -1,32 +1,5 @@
-# repos/project — workspace layout
+# repos — Project
 
-Everything the repos service needs to be **designed, planned, and built** lives
-under `project/`. This file is the map. Paths are written relative to the
-**service root** (`repos/`), which is also the directory the build loop runs
-from.
-
-## The folders
-
-| folder | what's in it | written by |
-|---|---|---|
-| `product/` | `README.md` — the *why*, for whom, scope, user-facing promises | `$seal-spec` (rewritten in place) |
-| `research/` | `research.md` — collected external ground truth design references | `$seal-spec` (rewritten in place) |
-| `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
-| `plan/` | `README.md` (rules) + `STATUS.md` (the manifest — the `Next phase` counter and the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per **pending** phase; completed phases are deleted by the build loop) | `$seal-spec` (appends new phases) |
-| `loops/` | the generated build-loop prompts + `loops/README.md` describing the installed loop | a prompt-generator workflow |
-
-The spine documents are singular and written by `$seal-spec` — the sanctioned
-way to change them. Don't add ad-hoc documents to the spine folders; fold
-corrections and follow-ons into the existing spine docs via `$seal-spec` (and
-append a plan phase) instead.
-
-This `project/` tree governs only the `repos/` codebase. repos implements the
-suite's **version plane**, whose suite-wide contract is
-`root project/design/D24.md`; that contract and the other suite contracts this
-tree adopts are **cited by path, never restated** — the umbrella project at the
-repo root owns them. Everything the owning services do with what repos holds
-(their materialized copies, sha-pinned runs, seeding) is spec'd in **their**
-trees, not here.
-
-See `project/loops/README.md` (once generated) for how the installed build loop
-works.
+This tree abides by the **ikispec** skill: ikispec defines its structure,
+document shapes, and authoring rules. Read ikispec before reading or writing
+anything here.

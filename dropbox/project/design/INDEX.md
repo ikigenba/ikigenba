@@ -143,3 +143,46 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-VGTA-PXIA → D27 → `project/design/D27.md`
 - R-VI17-3P8Z → D27 → `project/design/D27.md`
 - R-VKB6-SHHV → D29 → `project/design/D29.md` (adopted from root `project/design/D11.md`)
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped to
+the id(s) whose tests most directly prove it. The mapping's completeness is this
+manifest's concern; the quality of each proof is the audit's. Regenerated with
+the rest of the index.
+
+1. A service creates a file through dropbox and it appears in the owner's Dropbox
+   with the same contents →
+   R-K4RH-93AV, R-KEIO-B98F
+2. A service overwrites a file and the Dropbox copy converges (suite wins), not
+   conflicted →
+   R-KJE9-UC77, R-KAUZ-5Y0C
+3. A service creates an empty directory that `list`/`stat` shows, and deleting it
+   removes the whole subtree →
+   R-JZVV-Q0C3, R-K13S-3S2S
+4. A service moves a large file (relocated in Dropbox without re-uploading) and
+   large files transfer in/out without exhausting memory →
+   R-K8F6-EEIY, R-KGYH-2SPT, R-JXG2-YGUP
+5. A write returns success while Dropbox is unreachable, appears once it is back,
+   and a push that cannot complete is a visible health backlog, not lost →
+   R-KLU2-LVOL, R-KN1Y-ZNFA
+6. A consumer can tell, per change, whether a specific service or Dropbox wrote
+   it →
+   R-KO9V-DF5Z, R-KPHR-R6WO
+7. An off-box agent uses the MCP `put`/`mkdir`/`delete`/`move` tools; a
+   reference-based `put` lands exact bytes without them crossing the agent, an
+   out-of-suite reference is refused, and an oversized inline `put` is refused →
+   R-Q52B-JQLP, R-Q6A7-XICE, R-KUDD-A9VG
+8. A consumer subscribed to one folder pattern receives the matching file's event
+   and nothing for a file created elsewhere →
+   R-QCDP-UD1V, R-QB5T-GLB6
+9. `dropbox/docs/` documents every filesystem-interaction endpoint, and adding one
+   without documenting it fails a check →
+   R-KVL9-O1M5, R-KWT6-1TCU
+10. Logged-in user opens `/srv/dropbox/` and sees a Carbon page with name
+    `dropbox` and version; no session yields `401` →
+    R-LAND-5E2Y, R-NGNX-4R6S
+11. The bearer-gated `/mcp`, PRM well-known, `/health`, and `/feed` behave as
+    before, and the download direction still pulls Dropbox changes into the mirror
+    →
+    R-NGNX-8V1W, R-QB5T-GLB6

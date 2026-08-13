@@ -11,6 +11,24 @@ plan docs. You do a bounded, idempotent turn of the phase's remaining work and
 commit it. You do **not** decide completeness and you do **not** flip any marker.
 Do one iteration, then report.
 
+## Step 0 — workspace identity guard
+
+Before anything else, confirm you are in the `appkit` spec workspace:
+
+```
+head -n 1 project/plan/STATUS.md
+```
+
+This must print exactly `# appkit — Plan Status`. If it does not (including a
+missing file):
+- Check `./appkit/project/plan/STATUS.md` with the same command. If **that**
+  prints `# appkit — Plan Status`, your cwd is one level above the service
+  root — `cd appkit` and continue from step 1 below.
+- Otherwise, make no changes and report `NEXT` with a message naming the
+  expected title (`# appkit — Plan Status`) and what you actually observed.
+  Never report `DONE` — ending the run is never build's job (see *Reporting
+  the result*).
+
 ## Procedure
 
 1. **Read the whole brief** — both the contract region and the
@@ -139,10 +157,9 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal — never yours to report**: ending the run is never yours —
-  finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
-  blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is never
+  your job. Even a fully finished phase (green suite, every gap closed) is still
+  `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Implemented Phase 30's AGENTS.md declaration and skip-ban tests; appkit suite green.`
 

@@ -507,7 +507,6 @@ func TestListDoesNotReadPlaneAndOmitsBodies(t *testing.T) {
 }
 
 func TestServiceRunManual(t *testing.T) {
-	// R-2K0Z-T8BT
 	svc, store, fr, _ := newTestService(t)
 	ctx := context.Background()
 	sc, _ := svc.Create(ctx, ownerA, CreateInput{Name: "x", Body: "print(1)"})

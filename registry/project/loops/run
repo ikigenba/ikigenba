@@ -1,5 +1,13 @@
 #!/bin/bash
 
+if [ -f project/loops/blocked.md ]; then
+  echo "⚠  BLOCKED — the previous run stopped on a phase it could not satisfy:"
+  echo
+  cat project/loops/blocked.md
+  echo
+  echo "Fix the phase's done bar in project/, then re-run to continue."
+  rm -f project/loops/brief.md
+fi
 rm -f project/loops/blocked.md
 
 exec ralph project/loops/gather.md project/loops/build.md project/loops/verify.md

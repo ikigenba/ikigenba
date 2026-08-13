@@ -94,3 +94,27 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-VOH6-HG8R → D17 → `project/design/D17.md`
 - R-VPP2-V7ZG → D17 → `project/design/D17.md`
 - R-Y3Z7-H9BG → D17 → `project/design/D17.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped to
+the id(s) whose tests most directly prove it; the quality of each proof is the
+audit's question, the mapping's completeness is this manifest's. Regenerated with
+the rest of the index.
+
+1. A logged-in dashboard user opens `/srv/ledger/` and sees a Carbon-styled page
+   showing the service name `ledger` and the running version →
+   R-LAND-3C9D, R-LAND-5E1F, R-LAND-7G2H
+2. A browser with no dashboard session is refused with `401`, not shown the page →
+   R-NGNX-4D6E
+3. The version shown on the page matches the version the deployed binary reports →
+   R-LAND-7G2H
+4. The page's fonts and colors match Carbon, and it loads its own embedded
+   `tokens.css` and fonts, not the dashboard's →
+   R-ASST-3T7V, R-ASST-5W9X, R-ASST-7Y2Z, R-7DBS-W9WM
+5. An MCP client still discovers the AS via the PRM well-known and calls the
+   bearer-gated `/mcp` exactly as before →
+   R-FLV3-9RX8, R-NGNX-8H1J
+6. `/srv/ledger/feed` still routes through the bearer-gated prefix and `/health`
+   still responds — the exact-match landing root captured neither →
+   R-FN2Z-NJNX, R-ROUT-4P8Q

@@ -476,7 +476,6 @@ func TestListJobsStatusesMatchAnyAndEmptyMeansAll(t *testing.T) {
 }
 
 func TestListAndCountJobsFilterByKind(t *testing.T) {
-	// R-E198-AY8Z
 	ctx := context.Background()
 	conn := migratedDB(t, ctx)
 	defer conn.Close()

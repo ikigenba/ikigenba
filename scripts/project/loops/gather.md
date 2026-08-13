@@ -21,7 +21,26 @@ contract plus any `verify` feedback must survive untouched.
 
 ## Procedure
 
-### 1. Check for a blocked phase — first, before anything else
+### 0. Workspace identity guard — do this first, every turn
+
+```sh
+head -n 1 project/plan/STATUS.md
+```
+
+This must print **exactly** `# scripts — Plan Status`. If it does not (missing
+file, wrong title — the cwd drifted, classically up to the repo-root umbrella
+project, whose plan legitimately has zero pending phases and would otherwise
+look like a false "all done"):
+
+- Check `./scripts/project/plan/STATUS.md` for the same exact title. If it
+  matches, the cwd is one level above the service root — `cd scripts` and
+  continue the procedure from step 1.
+- Otherwise, report **`NEXT`** (never `DONE`) with a message naming the exact
+  title you expected (`# scripts — Plan Status`) and the one you observed (or
+  that the file is missing), so the drift is visible instead of silently ending
+  the run or misdirecting it.
+
+### 1. Check for a blocked phase — before anything else
 
 ```sh
 ls project/loops/blocked.md
@@ -47,7 +66,8 @@ a completed phase's line and body file are deleted.
 
 If the grep prints **nothing**, every phase is verified green: report **`DONE`**.
 
-These two are the **only** ends of the loop.
+These two (a blocked phase, or no pending phase) are the **only** ends of the
+loop.
 
 ### 3. If a brief for this same phase already exists, leave it alone
 
@@ -111,7 +131,7 @@ R-XXXX-XXXX — <…>
 (or the single line: (none — structural phase))
 
 ## Live-marked ids
-<see below>
+(none — scripts has no live layer)
 
 ## Files to touch
 <the exact paths the phase names>
@@ -167,10 +187,12 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal**: the whole job is complete; the loop stops.
+- `DONE` — **terminal**: tells `ralph` to stop the loop. It carries no other
+  meaning; say *why* in the message.
 - `message` — one short, plain sentence describing what happened, e.g. `Wrote the
   brief for Phase 33 (realizes D34) with 2 ids to cover.`
 
 *End the turn on `DONE` when `project/loops/blocked.md` exists or the `⬜` grep
-finds no pending phase; otherwise end on `NEXT`.* Keep `message` a single plain
-sentence — not a JSON object or code block.
+finds no pending phase; otherwise end on `NEXT`* (including the identity-guard
+drift case in step 0, which is always `NEXT`, never `DONE`). Keep `message` a
+single plain sentence — not a JSON object or code block.

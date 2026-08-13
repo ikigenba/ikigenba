@@ -18,6 +18,15 @@ phase's `STATUS.md` line or body file — that is verify's job.
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md`. It must
+   print exactly `# repos — Plan Status`. If it does not:
+   - Check `./repos/project/plan/STATUS.md` with the same command. If **that**
+     one prints the expected title, your cwd drifted one directory shallow —
+     `cd repos` and continue the procedure below.
+   - Otherwise, do not proceed and **never report `DONE`** (that is never your
+     status to report regardless): make no changes and report `NEXT` with a
+     message naming the expected and observed titles.
+
 1. **Read the whole brief** — `project/loops/brief.md`, **both** its `## Contract`
    region and its `## Verify feedback` region. If the brief is missing or empty,
    make no changes and report `NEXT`.
@@ -68,53 +77,64 @@ phase's `STATUS.md` line or body file — that is verify's job.
 - **Module / toolchain:** Go 1.26, module path `repos`, a standalone module at
   `repos/` on the `appkit` chassis over `modernc.org/sqlite` (pure-Go, no cgo);
   in-repo libs via committed `replace` (`appkit => ../appkit`,
-  `eventplane => ../eventplane`) plus `require registry`; the agent engine via the
-  pinned tagged module `github.com/ikigenba/agentkit` at the suite-wide pin.
-  GOWORK mode is workspace (the repo-root `go.work`); the production build's
-  `GOWORK=off` is `bin/ship repos`' business, not the gate's.
+  `eventplane => ../eventplane`) plus `require registry`. **No other production
+  module dependency**: repos drives no agent engine and speaks to no external
+  API, so `go.mod` requires neither `github.com/ikigenba/agentkit` nor any
+  provider SDK. Two **test-only** dependencies exist —
+  `github.com/dop251/goja` (D25's pure-function landing-filter tests) and
+  `github.com/chromedp/chromedp` (D26's browser wiring proof) — imported only
+  from `*_test.go`; never add either to a non-test source file. GOWORK mode is
+  workspace (the repo-root `go.work`); the production build's `GOWORK=off` is
+  `bin/ship repos`' business, not the gate's.
 - **"The suite is green"** = the four commands in step 5 all succeed with zero
   failures (`gofmt -l .` prints nothing).
-- **Test layers.** Per `root project/design/D23.md` this tree has exactly two
-  layers, both in the default gate: **hermetic** (temp-dir filesystems, real
-  SQLite through the real migration runner, `httptest`, local subprocesses
-  including the real `git` binary against `file://` fixture remotes) and
-  **composed** (the install-layout boot smoke in `cmd/repos/main_test.go`, which
-  builds and runs the real `cmd/repos` binary). There is **no live layer** and
-  **no tree-local manual runbook** — so no `//go:build live` file exists, and
-  **`t.Skip`, `t.Skipf`, and `t.SkipNow` may not appear in any `*_test.go` file
-  here.** The two environmental preconditions beyond the Go toolchain — the real
-  **`git`** binary and the **`go`** binary, each on `PATH` at test time — are hard
-  failures when absent, never skips.
+- **Test layers.** Per `root project/design/D23.md` (adopted locally as D16)
+  this tree has exactly two layers, both in the default gate: **hermetic**
+  (temp-dir filesystems, real SQLite through the real migration runner,
+  `httptest`, local subprocesses including the real `git` binary against
+  `t.TempDir()` bare repos and `file://`/`httptest` remotes, and the single
+  headless-Chrome wiring proof) and **composed** (the install-layout boot smoke
+  in `cmd/repos/main_test.go`, which builds and runs the real `cmd/repos`
+  binary). There is **no live layer** and **no tree-local manual runbook** — so
+  no `//go:build live` file exists, and **`t.Skip`, `t.Skipf`, and `t.SkipNow`
+  may not appear in any `*_test.go` file here.** The three environmental
+  preconditions beyond the Go toolchain — the real **`git`** binary, the real
+  **`go`** binary, and the real **`google-chrome`** binary, each on `PATH` at
+  test time — are hard failures when absent, never skips.
 - **The assembled stack is out of gate.** Bringing the suite up and checking every
   service's health through nginx is the suite's **manual-layer** item, not this
   tree's. No test here runs `bin/start` or depends on a running suite, and no done
   bar may require one.
 - **Real substrates, never mocked.** Git custody is exercised against the **real
-  `git` binary** over local bare fixture remotes (`git init --bare` in
-  `t.TempDir()`, `file://` URLs) — a mocked git cannot falsify ref/worktree
-  behavior. The store runs against real temp-file SQLite through the embedded
-  migration set. Suite peers (github, webhooks) are `httptest` stubs that record
-  requests. Time enters through a `Clock` seam with a deterministic injected
-  clock. No non-loopback network I/O anywhere in the gate.
+  `git` binary** — bare repositories under `t.TempDir()`, real `git clone`/
+  `fetch`/`push` from a temporary client working copy against the shipped
+  smart-HTTP handler mounted on `httptest`, and real plumbing (`hash-object`,
+  `read-tree`, `write-tree`, `commit-tree`, `update-ref`, `merge-tree`,
+  `merge-base`, `archive`) for the commit paths — a mocked git cannot falsify
+  ref/worktree behavior. The store runs against real temp-file SQLite through
+  the embedded migration set. Time enters through a `Clock` seam with a
+  deterministic injected clock. repos has **no service peers** — it calls no
+  other service — so no test stubs a peer HTTP client, and no source path may
+  make a request to github.com. No non-loopback network I/O anywhere in the
+  gate.
 - **Test placement — co-located, behavior-named, never gathered.** Package-local
   tests live in the **same package as the code they exercise**, in `*_test.go`
-  files named for the behavior asserted (`internal/repos/*_test.go`,
-  `internal/db/*_test.go`, `internal/mcp/tools_test.go`,
-  `internal/runner/runner_test.go`, `internal/tools/tools_test.go`,
-  `cmd/repos/*_test.go`). The composed boot smoke is `cmd/repos/main_test.go` and
-  the nginx content assertion `cmd/repos/nginx_test.go`. **Never** create a
-  per-phase or root-level catch-all test file.
-- **Peers by name, addresses from the registry:** name peers in code and ask
-  `registry` where they live (`registry.MustPort("repos")`,
-  `registry.BaseURL("github")`). No `127.0.0.1:30xx` literal in source.
-- **Outbound HTTP is proven at the injected client**, not by re-asserting the
-  chassis: tests supply a `*http.Client` whose `Transport` is a recording
-  `RoundTripper` and assert the two repos-owned facts — the request reaches the
-  wire through that client, and it carries the call's live context. Setting the
-  header and emitting the `outbound` record are appkit's behaviors with appkit's
-  ids; never re-prove them here.
+  files named for the behavior asserted: `internal/repos/*_test.go` (custody,
+  events, the git door, merge, reads, ref updates, run tokens, the service,
+  the store, writes), `internal/db/db_test.go`, `internal/mcp/mcp_test.go`,
+  and `cmd/repos/*_test.go` (the AGENTS.md doc-truth check, brand icons, the
+  landing page and its browser/deps/logic slices, the loopback guard, the
+  nginx content assertion, and the skip-ban scan). The composed boot smoke is
+  `cmd/repos/main_test.go`. **Never** create a per-phase or root-level
+  catch-all test file.
+- **Peers by name, addresses from the registry:** repos has no service peers,
+  but when it needs its own address it asks `registry`
+  (`registry.MustPort("repos")`, `registry.BaseURL("repos")` when rendering a
+  `content_url`). No `127.0.0.1:30xx` literal in source.
 - **Config:** env only, prefix `REPOS_`, read at the composition root, never
-  below it.
+  below it. The whole set: `REPOS_STATE_DIR` (dev-only override),
+  `REPOS_MAX_COMMIT_BYTES` (default `67108864`), and `REPOS_GIT_BIN` (default
+  `git`). No credentials live in repos' environment.
 - **Migrations** are created with `bin/create-migration repos <name>`
   (timestamped, immutable); never edit or renumber a committed migration. No
   production data may be dropped.
@@ -133,7 +153,7 @@ phase's `STATUS.md` line or body file — that is verify's job.
   region — you **read** the feedback but never write it.
 - Never introduce a `t.Skip` variant, an env gate, or a build tag that holds a
   requirement test out of `go test ./...`; never mock `git`; never add a test that
-  needs the suite up.
+  needs the suite up or reaches github.com.
 - Never make an empty commit.
 
 ## Reporting the result
@@ -142,10 +162,9 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to verify.
-- `DONE` — **terminal — never yours to report**: ending the run is never yours —
-  finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
-  blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Rewrote AGENTS.md Tests section and added 2 tagged tests; suite green.`
 

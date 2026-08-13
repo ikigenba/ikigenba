@@ -84,7 +84,6 @@ func TestLandingIslandMatchesRowsAndUsesMachineValues(t *testing.T) {
 	}
 }
 
-// R-572D-P6RC
 func TestLandingEscapesUserMarkupAndKeepsIslandValid(t *testing.T) {
 	svc := testService(t)
 	filename := `<script id="injected">alert(1)</script>.txt`

@@ -9,7 +9,6 @@ import (
 )
 
 func TestNoHardcodedReposLoopbackPortInGoSource(t *testing.T) {
-	// R-EISY-2LYZ
 	repoRoot := filepath.Clean(filepath.Join("..", ".."))
 	barePort := regexp.MustCompile(`(^|[^0-9])3007([^0-9]|$)`)
 	err := filepath.WalkDir(repoRoot, func(path string, entry os.DirEntry, err error) error {

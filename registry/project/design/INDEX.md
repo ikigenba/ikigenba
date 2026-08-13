@@ -25,3 +25,22 @@ Verification ids change.
 - R-O1AD-MRKW → D4 — `project/design/D04.md` (cited from `root project/design/D23.md`, `[proof: per-service]`)
 - R-O2IA-0JBL → D4 — `project/design/D04.md` (cited from `root project/design/D23.md`, `[proof: per-service]`)
 - R-ZNFW-ORR6 → D2 — `project/design/D02.md`
+
+## Success criteria → ids
+
+Each product success criterion (`project/product/README.md`, in order) mapped
+to the id(s) whose tests most directly prove it; the mapping's completeness is
+this manifest's concern, each proof's quality the audit's. Regenerated with the
+rest of the index.
+
+1. Any known name resolves to the correct port and to `http://127.0.0.1:<port>`,
+   with `dashboard` at `3000` →
+   R-B642-6EO8, R-B9RR-BPWB, R-B3O9-EV6U
+2. An unknown name never returns a usable-looking wrong answer — failed lookup,
+   loud strict/URL forms →
+   R-B7BY-K6EX, R-B8JU-XY5M
+3. Guardrails hold (no duplicate names or ports, every port in its block); a
+   deliberate violation fails the tests →
+   R-B00K-9JYR, R-B18G-NBPG, R-B2GD-13G5
+4. Builds and tests green in isolation with no third-party dependencies →
+   R-O1AD-MRKW, R-O2IA-0JBL

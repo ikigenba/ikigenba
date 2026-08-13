@@ -189,9 +189,6 @@ func (e attributedClientEmbedder) Embed(ctx context.Context, attr llm.Attributio
 }
 
 func TestIngestReturnsPendingThenWorkerCommitsPage(t *testing.T) {
-	// R-M8RN-87WV
-	// R-MB7F-ZRE9
-	// R-MCFC-DJ4Y
 	ctx := context.Background()
 	conn := migratedWikiDB(t, ctx)
 	defer conn.Close()
@@ -250,9 +247,6 @@ func TestIngestReturnsPendingThenWorkerCommitsPage(t *testing.T) {
 }
 
 func TestWorkerStoresPageVectorAfterCommit(t *testing.T) {
-	// R-71BM-KZ5R
-	// R-72JI-YQWG
-	// R-73RF-CIN5
 	ctx := context.Background()
 	conn := migratedWikiDB(t, ctx)
 	defer conn.Close()
@@ -378,7 +372,6 @@ func TestWorkerReusesSubjectAndCompilesCompleteClaims(t *testing.T) {
 }
 
 func TestWorkerRecordsFailedExtractStatus(t *testing.T) {
-	// R-MG31-IUD1
 	ctx := context.Background()
 	conn := migratedWikiDB(t, ctx)
 	defer conn.Close()

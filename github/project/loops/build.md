@@ -13,8 +13,23 @@ docs. The brief is the complete and only contract for the one phase in flight: i
 carries the realized Decision's full design prose, the exact ids to cover with
 their requirement text, the files to touch, the dependency interface signatures,
 and the done bar. Do a bounded, idempotent turn of the phase's remaining work and
-commit it. You do **not** decide completeness and you do **not** delete a
-phase's `STATUS.md` line or body file — that is verify's job.
+commit it. You do **not** decide completeness and you do **not** touch
+`STATUS.md` — that is verify's job.
+
+## Step zero — workspace identity guard
+
+Run `head -n 1 project/plan/STATUS.md` and confirm it prints **exactly**:
+
+```
+# github — Plan Status
+```
+
+- **Match** → continue to step 1.
+- **Mismatch or file missing** → the shell cwd has drifted. Check whether
+  `./github/project/plan/STATUS.md` passes the same check: if so, `cd github`
+  and retry step zero; otherwise make no changes and report `NEXT` with a
+  message naming the expected title (`# github — Plan Status`) and what you
+  actually observed. Never report `DONE` — that is not yours to report.
 
 ## Procedure
 
@@ -37,9 +52,10 @@ phase's `STATUS.md` line or body file — that is verify's job.
      **only** through the brief's copied interface signatures.
    - For every id in the brief's **Ids to cover**, write a genuinely-asserting test
      tagged with a `// R-XXXX-XXXX` comment, exercising the behavior its
-     requirement text describes. **A tagged test that does not truly assert the
-     discriminating behavior is worse than none** — verify will treat it as
-     uncovered.
+     requirement text describes, **co-located with the code it exercises and
+     named for the behavior** (never a per-phase or root-level catch-all test
+     file). **A tagged test that does not truly assert the discriminating
+     behavior is worse than none** — verify will treat it as uncovered.
    - **Never skip.** `t.Skip`, `t.Skipf`, and `t.SkipNow` are banned in this tree
      (see conventions); a missing tool is a hard failure, never a skip.
    - **Never drop an existing tagged test.** Before committing, check this turn's
@@ -144,11 +160,10 @@ phase's `STATUS.md` line or body file — that is verify's job.
 Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
-- `NEXT` — **terminal**: this turn's work is done; hand off to verify.
-- `DONE` — **terminal — never yours to report**: ending the run is never yours —
-  finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
-  blocked phase awaiting the operator.
+- `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Rewrote AGENTS.md Tests section and added 2 tagged tests; suite green.`
 

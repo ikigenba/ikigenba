@@ -2,202 +2,210 @@
 harness: claude
 model: claude-opus-4-8
 ---
-# verify — the independent gate: complete the phase only on green + full coverage
 
-You are the **verify** step of the cron build loop, invoked in a fresh, isolated
-context. You are the independent gate and the **only** step that completes a
-phase (deletes its `STATUS.md` line and body file), deletes the brief, or
-declares a phase **blocked**. You write **no production code** and you never fix
-anything.
+# verify — the independent gate: delete the phase only on green + full coverage
 
-You **re-derive current truth from scratch every run** — you never trust build's
-claims or your own prior feedback as input; your prior feedback is read only to
-measure progress, not believed.
+You run in a fresh, isolated context, one turn per invocation, as the final step
+of an unattended `gather → build → verify` loop. `ralph` runs from the service
+root (`cron/`), so every path below is service-root-relative.
 
-You **never halt** and you **never advance a phase on a gap**: an incomplete
-phase simply stays `⬜` and gets re-attacked next cycle. The loop's only exits
-are gather finding no `⬜` phase, or gather finding `project/loops/blocked.md`.
+You are the **independent gate**. You are the **only** prompt that deletes a
+completed phase from `project/plan/STATUS.md`, deletes the brief, or declares a
+phase blocked. You **re-derive current truth from scratch every run** — you
+never trust build's claims, and you never trust your own prior feedback as
+fact. You read your prior feedback only to **measure progress**, not to believe
+it. You write **no production code**. You either pass the phase (green + full
+coverage) or record grounded gaps; you can neither halt the loop nor advance a
+phase on a gap.
 
-All paths below are relative to the **service root** (`cron/`), which is your
-working directory.
+## Step zero — workspace identity guard
+
+Run `head -n 1 project/plan/STATUS.md`. It must print exactly:
+
+```
+# cron — Plan Status
+```
+
+- **If it matches**, continue.
+- **If it does not match** (wrong title, or the file is missing): check
+  `./cron/project/plan/STATUS.md` with the same test. If *that* passes,
+  your cwd drifted one level up — `cd cron` and continue. Otherwise the cwd
+  has drifted into an unrelated workspace. Make no changes and report `NEXT`
+  with a message naming the expected title (`# cron — Plan Status`) and the
+  title you actually observed.
 
 ## Procedure
 
-1. **Read the brief** — `project/loops/brief.md`, both its contract region and
-   its own prior `## Verify feedback` region. If it is missing or empty, there is
-   nothing to verify: return `NEXT`. Note the phase number `NN` and its **Ids to
-   cover** (or that it is a structural phase with a named deterministic check).
+1. **Read the brief** — `project/loops/brief.md`, both its `## Contract` region and
+   its own prior `## Verify feedback` region. If the brief is missing or empty,
+   report `NEXT` (nothing to gate this turn).
 
-2. **Run the full suite** — all four must succeed from `cron/`:
+2. **Run the full green suite** (from `cron/`), every command, and read the
+   real output — never assume:
 
    ```
    go build ./...
    go vet ./...
-   gofmt -l .        # must print nothing
-   go test ./...     # zero failures
+   gofmt -l .            # must print nothing
+   go test ./...
    ```
 
-   Plus any phase-specific command the brief's **Done bar** names. Any failure is
-   a **gap**. Also confirm **no `R-XXXX-XXXX`-tagged test reported `SKIP`** — a
-   skipped requirement test is a gap, never acceptable green.
+   Any non-pass (build/vet error, `gofmt -l .` prints a file, a failing or
+   **`SKIP`ped** test) is a gap. **A skipped `R-XXXX-XXXX`-tagged test is a gap,
+   never green** — a skip means that requirement was not verified.
 
-3. **Check coverage.** Every check below is a deterministic command with a
-   defined pass criterion (a green test/suite, an exit code, an exact match
-   count), and every `grep`-style check is scoped to **exclude `project/`** so it
-   can never match the workspace or prompt docs that quote the pattern.
+3. **Confirm the tree is skip-free.** cron has **no live layer and no manual layer**, so no test
+   file legitimately carries a `//go:build live` constraint and no skip anywhere
+   in the tree is acceptable. Run:
 
-   - **Code phase** — for **every** id under **Ids to cover**, confirm a
-     `// R-XXXX-XXXX`-tagged test that genuinely asserts the behavior the brief's
-     requirement text states **and that actually runs under `go test ./...`**:
+   ```
+   grep -rn -e 't\.Skip' -e 't\.Skipf' -e 't\.SkipNow' --include='*_test.go' --exclude-dir=project .
+   ```
 
-     ```
-     grep -rn "R-XXXX-XXXX" . --include=*_test.go --exclude-dir=project   # per id
-     ```
+   **Empty output is the pass condition.** Any hit is a gap, tied to the id of the
+   test that carries it (or reported against the phase when it is an untagged
+   test). Do not carve out an exception for a build tag or an env gate: a
+   build-tag/env-gated test is **unreachable, hence uncovered**, which is the same
+   verdict.
 
-     Read each tagged test and judge whether a wrong implementation would fail
-     it — e.g. an nginx-fragment id must be proven by a test that reads
-     `cron/etc/nginx.conf` from disk and distinguishes the exact-match
-     `= /srv/cron/` location from the prefix `/srv/cron/`. **Statically trace the
-     run**: cron has **no live layer**, so *any* build tag, env flag, or skip
-     condition standing between `go test ./...` and a tagged test makes it
-     unreachable and therefore **uncovered**, however genuine its assertion reads.
-     A test that converts a real failure signal (non-zero exit, unparseable
-     output) into a skip launders a gap into green and is likewise uncovered.
-     **When uncertain a test really asserts, treat the id as uncovered.**
+4. **Check coverage of every id in the brief's `### Ids to cover`.** Extract the
+   denominator mechanically:
 
-     Confirm placement too: tests live co-located with the code they exercise and
-     named for the behavior — package-local `*_test.go`, with the
-     composition-root, whole-tree conformance, and cross-package checks in
-     `cmd/cron/`. A per-phase or root-level test file is a gap.
+   ```
+   grep -oE '^R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md
+   ```
 
-   - **Structural phase** (Ids to cover = `(none — structural phase)`) — run the
-     deterministic check the brief names instead. The green suite plus that check
-     is the bar.
+   (Ids-to-cover lines are the only lines starting with `R-` at column 0; feedback
+   gap lines are bulleted, so they are not miscounted.) For each id, confirm a
+   `// R-XXXX-XXXX`-tagged test that:
+   - **genuinely asserts** the discriminating behavior its requirement text
+     describes (a bare literal or a tautological assertion does **not** count);
+   - is **co-located** with the code it exercises and named for the behavior —
+     never a root-level or `phaseNN_test.go` file;
+   - **actually runs under `go test ./...`** — statically trace the run: the test
+     command plus every skip condition, `//go:build` tag, and env gate guarding
+     that test. A test held out of the run by a flag/tag nothing in the repo sets,
+     or one that turns a real failure (non-zero exit, unparseable output) into a
+     skip, is **unreachable → uncovered**, no matter how genuine its assertion
+     reads.
 
-   - **Global coverage ratchet** — the set check that catches a rewrite silently
-     dropping a previously-covered id:
+   For a **structural phase** (brief's Ids-to-cover is `(none — structural phase)`),
+   there is no id denominator: the gate is the green suite plus the brief's named
+   grep/smoke. Any `grep`-style check must be **scoped to exclude `project/`** so it
+   can never match the workspace/prompt docs that quote the pattern.
 
-     ```
-     comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u) \
-              <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
-                    <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
-     ```
+5. **Run the global coverage ratchet** — the deterministic set check that catches
+   a rewrite silently dropping a previously-covered id, independent of this
+   phase's own denominator:
 
-     **Empty output is the pass condition.** The `grep -v 'R-XXXX-XXXX'` filter is
-     load-bearing: cron's design docs use `R-XXXX-XXXX` as a literal placeholder
-     when describing the id format, and without the filter that placeholder
-     surfaces as a phantom uncovered id that can never be closed. Because the plan
-     is a work queue, any id in the remainder was already retired by a completed
-     phase yet is now untagged and unassigned — a **coverage regression**. Add
-     each one to the open gaps, grounded in these set commands, noting that the
-     dropped tagged test exists in git history to restore.
+   ```
+   comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u) \
+            <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
+                  <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
+   ```
 
-   Collect the set of **open gaps** — each an uncovered or failing id (from this
-   phase's brief or from the ratchet) with the exact command and observed output
-   that proves it open.
+   **Empty output is the pass condition.** Two details are load-bearing:
+   - the `grep -v 'R-XXXX-XXXX'` filter removes the **literal placeholder** the
+     design docs use when describing the id format (it appears in D05.md,
+     D08.md, and D12.md's Verification prose for structural Decisions). Without
+     it that placeholder enters the denominator as a phantom uncovered id that
+     no test can ever tag, and the ratchet never goes empty — the phase stays
+     `⬜` forever. Never drop this filter.
+   - `--exclude-dir=project` matters on the test-tag grep: an id quoted in the
+     spec is not a test.
 
-4. **Decide.**
+   Any id in the remainder is an open gap — design mints it, no pending phase
+   claims it, and no test tags it, so a prior phase's coverage regressed. The
+   dropped tagged test exists in git history to restore.
 
-   - **Pass** — no open gaps: the suite is fully green **and** every id is
-     genuinely covered and reachable (or the structural check is satisfied).
-     Delete **only this phase's** `- Phase NN …` line from
-     `project/plan/STATUS.md` — never the `Next phase` counter line, never
-     another phase's line — and remove its body file. Commit the deletion, then
-     delete the brief:
+6. **Collect the open gaps** — the set of ids that are uncovered or whose test
+   fails/skips (from steps 3 and 4, scoped to this phase, and step 5, scoped
+   globally), each with the exact command run and the observed output that proves
+   it open (file:line when known). When uncertain a test really asserts, treat the
+   id as **uncovered**.
 
-     ```
-     git rm project/plan/phase-NN.md
-     git add project/plan/STATUS.md
-     git commit -m "cron Phase NN: verified green — complete phase
+7. **Decide:**
 
-     Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
-     rm -f project/loops/brief.md
-     ```
+   - **Pass** (suite green, tree skip-free, no open gaps in this phase's ids, and
+     the global ratchet is empty): delete **only this phase's** `- Phase NN …` line
+     from `project/plan/STATUS.md` (never the `Next phase` counter line, never
+     another phase's line) and `git rm project/plan/phase-NN.md`, commit that
+     deletion with the repo's `Co-Authored-By` trailer, and
+     `rm -f project/loops/brief.md`. Report `NEXT`.
 
-     Return `NEXT`.
+   - **Gap** (anything open): **leave the phase's `⬜` line in place, change no
+     source.** Then measure progress against your prior `## Verify feedback`:
+     - read its recorded attempt number `N`, its recorded no-progress streak, and
+       its prior open-gap id set;
+     - capture the current build commit: `git rev-parse HEAD`, recorded as
+       diagnostic context only — **a new build commit is never itself progress**.
+     - **Progress** this cycle means the current open-gap id set is a **strict
+       subset** of the prior one — some gap that was open last attempt is now
+       closed → set the streak to `0`. Anything else (including a commit that
+       only reworded the same failing attempt) is **no progress** → increment
+       the streak.
 
-   - **Gap** — any check failed or any id is not convincingly covered. Leave the
-     `⬜` marker untouched and change no source. **Do not delete the brief**
-     (unless a reset or escalation below removes it). Then measure progress and
-     either persist feedback, reset, or escalate.
+     - **Block** — when the streak reaches **3** (three consecutive attempts
+       closing no gap), the phase is not converging and only the operator can
+       change its bar (`project/` is read-only to the loop). Write
+       `project/loops/blocked.md` naming the phase, the total attempts, the
+       still-unsatisfied ids, and the **exact command and observed output**
+       that will not go green, plus the unblock recipe: *fix the phase's done
+       bar in `project/plan/phase-NN.md`; if the bar is a prove-a-negative or
+       otherwise untestable claim, reshape it per `ikispec`'s bounded-test
+       rule (a chokepoint positive, a bounded enumeration, or a mechanism
+       check); then re-run.* Leave the marker `⬜`, **do not delete the
+       brief**, and report `NEXT` — the next `gather` sees `blocked.md` and
+       reports `DONE`.
 
-     **Measure progress against the prior `## Verify feedback` region.** Read its
-     attempt counter `N` and its prior open-gap id set. *Progress* means the
-     current open-gap id set is a **strict subset** of the prior one — some gap
-     that was open last attempt is now closed. Anything else is *no progress*:
-     increment the stall streak; on progress, reset it to 0. Capture the current
-     build commit (`git rev-parse HEAD`) and record it as diagnostic context
-     only. **A new build commit is never progress and never resets the streak** —
-     a builder that cannot satisfy a bar keeps committing plausible rewordings of
-     the same attempt, and a detector keyed on commit motion reads that churn as
-     convergence and never trips.
+     - **Otherwise** — **overwrite** (never append) the brief's feedback region:
+       replace everything from the `## Verify feedback` line to end of file with:
 
-     - **Stall reset** — when the streak reaches **3** (three consecutive attempts
-       closing no gap): first `grep ~/.ralph/verify.log` for an earlier
-       `Phase NN STALLED` line for **this same phase**.
+       ```
+       ## Verify feedback — attempt <N+1>
+       build-commit: <git rev-parse HEAD>
+       no-progress-streak: <count>
 
-       - **No earlier stall for this phase** — a rebuilt contract has not been
-         tried, so the accumulated brief may simply not be converging. Append one
-         line to `~/.ralph/verify.log`
-         (`<date> Phase NN STALLED after N attempts: <gap ids>`), then
-         `rm -f project/loops/brief.md`, leave the marker `⬜`, and return `NEXT`.
-         The next `gather` rebuilds the contract fresh from spec. This never halts
-         the loop and never advances the phase.
-       - **An earlier stall for this same phase exists** — a rebuilt contract was
-         tried and did not help, so the bar itself is the fault and no further
-         rebuilding can fix it. Write `project/loops/blocked.md` naming the phase,
-         the total attempts across both cycles, the still-unsatisfied ids, and the
-         **exact command and observed output** that will not go green, stating
-         that the phase's done bar is the prime suspect and only the operator can
-         change it (`project/` is read-only to the loop). Append
-         `<date> Phase NN BLOCKED after N attempts: <gap ids>` to
-         `~/.ralph/verify.log`, `rm -f project/loops/brief.md`, leave the marker
-         `⬜`, and return `NEXT` — the next `gather` sees `blocked.md` and reports
-         `DONE`.
+       - R-XXXX-XXXX — <exact failing command> → <observed output> (file:line)
+       ```
 
-     - **Otherwise** — **overwrite** (never append) the brief's `## Verify
-       feedback` region with a `## Verify feedback — attempt N+1` heading carrying
-       the attempt counter, the captured build commit, the stall-streak counter,
-       and a checklist of **only** the currently-open gaps — each line tied to one
-       `R-id` with the exact failing command and its observed output (plus
-       `file:line` when known), never free prose. Do **not** delete the brief.
-       Return `NEXT`.
+       Do **not** delete the brief. Report `NEXT`.
 
 ## Boundaries
 
-- Never write or fix production code, and never edit a test to make it pass. A
-  gap is left for the next build turn.
-- Never write the brief's **contract region** — you own only the `## Verify
-  feedback` region, and you overwrite it rather than appending.
-- Never complete a phase on anything short of a fully green suite **and** full,
-  genuine, reachable id coverage (or, for a structural phase, the named
-  deterministic check).
-- **Treat a skipped or statically-unreachable id test as uncovered — a skip is
-  never acceptable green.** cron has no live layer, so there is no carve-out.
-- Never read the big docs to re-derive the checklist — the brief **is** the
-  checklist. The ratchet's mechanical id-set greps over `project/design/D*.md`
-  and `project/plan/phase-*.md` are not reading in this sense: they extract id
-  tokens, never design prose.
-- Complete at most one phase per invocation (the current phase's).
-- A stall reset and a blocked escalation are the only ways you delete a brief
-  short of a pass — both leave the marker `⬜`.
-- Always return `NEXT`, on a pass and on a gap alike.
+- Never write or fix production code; never write the brief's `## Contract` region.
+- Never delete a phase's `STATUS.md` line or `phase-NN.md` on anything short of a
+  green suite **and** full, reachable coverage of every id (this phase's and the
+  global ratchet); a **skipped or statically-unreachable** id test is uncovered —
+  a skip is never acceptable green, and cron has no live layer, so there is
+  no file in which a skip is permitted.
+- Never read `project/design/*` (beyond the ratchet's mechanical id-set grep, which
+  extracts id tokens and never reads design prose), `project/plan/phase-*.md`
+  (same caveat), or `project/product/*` to re-derive the checklist — the brief is
+  the checklist.
+- Never drop the ratchet's `grep -v 'R-XXXX-XXXX'` placeholder filter or its
+  `--exclude-dir=project` scoping — either omission makes the gate unsatisfiable.
+- Never blindly append to the feedback region (an append duplicates on re-run and
+  stacks stale gaps) — always overwrite it with only the currently-open gaps.
+- Never advance the phase on a gap, and never write `blocked.md` before the
+  streak actually reaches 3.
 
 ## Reporting the result
 
 Report this run's result as a `status` and a one-sentence `message`:
-
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
-- `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
+- `NEXT` — **terminal**: this turn's gating is done; hand off (to gather, wrapping
+  the loop).
 - `DONE` — **terminal — never yours to report**: ending the run is never yours —
   finishing this phase completely, green suite and all open gaps closed, is still
   `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
   blocked phase awaiting the operator.
 - `message` — one short, plain sentence describing what happened, e.g.
-  `Phase 18 verified green — completed and deleted brief` or
-  `Phase 18 left ⬜ (gap: R-O2IA-0JBL skip scan not asserting); wrote feedback` or
-  `Phase 18 stalled 3x; reset brief for a fresh contract` or
-  `Phase 18 stalled twice; wrote project/loops/blocked.md for the operator`.
+  `Phase 20 green: 2/2 ids covered, ratchet clean, deleted.` or
+  `Phase 20 gap: R-XXXX-XXXX scan missing; recorded feedback attempt 2.` or
+  `Phase 20 blocked: streak reached 3, wrote blocked.md.`
 
-Keep `message` a single plain sentence — not a JSON object or code block.
+Always report **`NEXT`** — you hand off every turn, on a pass, a gap, and a
+blocked escalation. Keep `message` a single plain sentence — not a JSON object
+or code block.

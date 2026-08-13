@@ -23,6 +23,13 @@ working directory.
 
 ## Procedure
 
+0. **Workspace identity guard.** Run `head -n 1 project/plan/STATUS.md`. It
+   must print exactly `# prompts — Plan Status`. If it does not, do not proceed
+   and do not report `DONE` (you never report `DONE` anyway — see below). Check
+   whether `./prompts/project/plan/STATUS.md` passes the same check: if it
+   does, `cd prompts` and continue. Otherwise change nothing and return `NEXT`
+   with a message naming the expected title and what was actually observed.
+
 1. **Read the brief** — `project/loops/brief.md`, both its contract region and
    its own prior `## Verify feedback` region. If it is missing or empty, there is
    nothing to verify: return `NEXT`. Note the phase number `NN` and its **Ids to
@@ -34,7 +41,7 @@ working directory.
    go build ./...
    go vet ./...
    gofmt -l .        # must print nothing
-   go test ./...     # zero failures
+   go test ./...     # zero failures (-race implicit)
    ```
 
    Plus any phase-specific command the brief's **Done bar** names. Any failure is
@@ -76,19 +83,20 @@ working directory.
      dropping a previously-covered id:
 
      ```
-     comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v 'R-XXXX-XXXX' | sort -u) \
+     comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | grep -v '^R-XXXX-XXXX$' | sort -u) \
               <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
                     <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
      ```
 
-     **Empty output is the pass condition.** The `grep -v 'R-XXXX-XXXX'` filter is
-     load-bearing: the design docs use `R-XXXX-XXXX` as a literal placeholder when
-     describing the id format, and without the filter that placeholder surfaces as
-     a phantom uncovered id that can never be closed. Because the plan is a work
-     queue, any id in the remainder was already retired by a completed phase yet
-     is now untagged and unassigned — a **coverage regression**. Add each one to
-     the open gaps, grounded in these set commands, noting that the dropped tagged
-     test exists in git history to restore.
+     **Empty output is the pass condition.** The `grep -v '^R-XXXX-XXXX$'` filter
+     is load-bearing here: `project/design/D18.md` uses the literal string
+     `R-XXXX-XXXX` in its Verification prose ("Structural — no `R-XXXX-XXXX`
+     ids"), and without the anchored filter that placeholder surfaces as a
+     phantom uncovered id that can never be closed. Because the plan is a work
+     queue, any real id in the remainder was already retired by a completed phase
+     yet is now untagged and unassigned — a **coverage regression**. Add each one
+     to the open gaps, grounded in these set commands, noting that the dropped
+     tagged test exists in git history to restore.
 
    Collect the set of **open gaps** — each an uncovered or failing id (from this
    phase's brief or from the ratchet) with the exact command and observed output
@@ -188,10 +196,9 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the
   turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
-- `DONE` — **terminal — never yours to report**: ending the run is never yours —
-  finishing this phase completely, green suite and all open gaps closed, is still
-  `NEXT`; only gather ever reports `DONE`, on finding no `⬜` phase left or a
-  blocked phase awaiting the operator.
+- `DONE` — **terminal — never yours to report**: telling `ralph` to stop is
+  never your job. Even a fully finished phase (green suite, every gap closed)
+  is still `NEXT`; only gather ever reports `DONE`.
 - `message` — one short, plain sentence describing what happened, e.g.
   `Phase 60 verified green — completed and deleted brief` or
   `Phase 60 left ⬜ (gap: R-O2IA-0JBL skip scan not asserting); wrote feedback` or
