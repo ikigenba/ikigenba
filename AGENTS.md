@@ -135,6 +135,31 @@ or you are checking a loopback port from the host instead of via `enter`).
 The full `bump → ship → stage → deploy` runbook, rollback, and inspection commands
 live in **`deploy.md`**.
 
+### "Do a release" / "deploy" is one instruction — run the whole sequence
+
+A request to **release** or **deploy** (the ask names the services and a
+`major`/`minor`/`patch` bump) is an explicit instruction to carry out this full
+sequence autonomously, not a request to do the first step and check in:
+
+1. **Land on `main`, fast-forward only.** If on a feature branch: rebase it onto
+   the current `main` first — other worktrees are working in parallel and may
+   have merged into `main` since this branch forked, so the rebase picks up
+   their changes and replays this branch on top. Then merge back with a
+   **fast-forward only** (`git merge --ff-only`, never a merge commit): the
+   preceding rebase is what makes that ff possible, and history stays linear. If
+   already on `main`, this step is not needed — skip it.
+2. **Bump each service being deployed** to the requested `major`/`minor`/`patch`
+   version.
+3. **Update each service's `CHANGELOG.md`** for the new version. `bin/bump`
+   refuses a version the changelog does not already record, so this is part of
+   the release, not a separate ask — do it without pausing to surface it.
+4. **Run the actual release** (`deploy.md`).
+
+Do not stop between these steps for confirmation. **Bring the operator in
+interactively only for a genuine blocker** — a bug, a failing gate, or anything
+that would make the deploy unsafe or unlikely to succeed. A missing changelog
+entry is not a blocker; it is step 3.
+
 ## Migrations, timestamped and immutable
 
 Each service owns its schema under `<svc>/internal/db/migrations/`, applied
