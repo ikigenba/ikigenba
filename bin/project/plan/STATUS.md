@@ -11,4 +11,6 @@ line here and its body file** in the completion commit — there is no done
 marker; done is deleted, and history lives in git. This file carries no bare
 status glyph outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 06
+Next phase: 07
+
+- Phase 06 ⬜ realizes — — join `artifacts` to the local dev stack (`bin/start` build/launch/nginx/summary lists + `bin/stop`), so the suite comes up with artifacts on :3009 behind the front door
