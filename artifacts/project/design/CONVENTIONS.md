@@ -46,11 +46,12 @@
   the product's contractual lifetime), not a variable.
 - **Human landing page:** the mount root serves the owner-facing index on the
   suite **Carbon** design system, conformed to the **cron canonical** template
-  (`cron/internal/web/landing.html` + `static/tokens.css` + woff2 fonts).
-  artifacts embeds its **own** copy of the template and assets under
-  `internal/web/` — no shared handler, no runtime dependency on another
-  service's assets. The page is served ungated in-process; the browser-session
-  gate lives in the nginx fragment (D8). Page content is D9.
+  (`cron/share/www/landing.html` + `static/tokens.css` + woff2 fonts).
+  artifacts serves its **own** copy of the template and assets from disk under
+  `share/www/`, loaded and mounted by the chassis `WWW` mount — no shared
+  handler, no runtime dependency on another service's assets. The page is served
+  ungated in-process; the browser-session gate lives in the nginx fragment (D8).
+  Page content is D9.
 - **Correlation ids are a suite constant, used by value** — the header, id
   shape, strip-then-mint rule for ungated public locations, and the recorder
   are `root project/design/D14.md`, realized in `eventplane`/`appkit`.

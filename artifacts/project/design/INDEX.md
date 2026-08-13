@@ -15,7 +15,7 @@ Verification ids change.
 - D6 → `project/design/D06.md` — MCP tool surface — owns R-4CKW-4X7Z, R-4DSS-IOYO, R-4F0O-WGPD, R-4G8L-A8G2, R-4HGH-O06R, R-4IOE-1RXG, R-4JWA-FJO5, R-4L46-TBEU, R-4MC3-735J, R-7D7L-20RK, R-P52Q-H8MG
 - D7 → `project/design/D07.md` — Event production: `created` / `updated` / `deleted` — owns R-4NJZ-KUW8, R-4PZS-CEDM, R-4R7O-Q64B, R-4SFL-3XV0
 - D8 → `project/design/D08.md` — nginx location fragment (tiers) — owns R-4TNH-HPLP, R-4UVD-VHCE, R-4W3A-9933, R-4XB6-N0TS, R-4YJ3-0SKH, R-4ZQZ-EKB6, R-50YV-SC1V, R-526S-63SK
-- D9 → `project/design/D09.md` — The landing page: a sortable, filterable inventory — owns R-53EO-JVJ9, R-54MK-XN9Y, R-55UH-BF0N, R-572D-P6RC, R-59I6-GQ8Q, R-5AQ2-UHZF
+- D9 → `project/design/D09.md` — The landing page: a sortable, filterable inventory — owns R-53EO-JVJ9, R-54MK-XN9Y, R-55UH-BF0N, R-572D-P6RC, R-5AQ2-UHZF, R-OSZJ-I2D8, R-OU7F-VU3X
 - D10 → `project/design/D10.md` — Test strategy: adopt the suite testing-language contract — mints none; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 - D11 → `project/design/D11.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-8MFA-HUNC, R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 
@@ -77,7 +77,6 @@ Verification ids change.
 - R-54MK-XN9Y → D9 — `project/design/D09.md`
 - R-55UH-BF0N → D9 — `project/design/D09.md`
 - R-572D-P6RC → D9 — `project/design/D09.md`
-- R-59I6-GQ8Q → D9 — `project/design/D09.md`
 - R-5AQ2-UHZF → D9 — `project/design/D09.md`
 - R-78BZ-IXSS → D3 — `project/design/D03.md`
 - R-79JV-WPJH → D3 — `project/design/D03.md`
@@ -89,6 +88,8 @@ Verification ids change.
 - R-NFQ1-NA7N → D2 — `project/design/D02.md` (adopted from root `project/design/D25.md`)
 - R-O1AD-MRKW → D10 — `project/design/D10.md` (adopted from root `project/design/D23.md`)
 - R-O2IA-0JBL → D10 — `project/design/D10.md` (adopted from root `project/design/D23.md`)
+- R-OSZJ-I2D8 → D9 — `project/design/D09.md`
+- R-OU7F-VU3X → D9 — `project/design/D09.md`
 - R-P52Q-H8MG → D6 — `project/design/D06.md`
 - R-RYDN-YNR5 → D11 — `project/design/D11.md` (adopted from root `project/design/D29.md`)
 - R-RZLK-CFHU → D11 — `project/design/D11.md` (adopted from root `project/design/D29.md`)
@@ -125,6 +126,6 @@ rest of the index.
 11. Delete kills the link and removes the entry → R-4JWA-FJO5
 12. Each download raises the count by one → R-42TP-2RAF
 13. Landing page sorts, filters, downloads; sessionless browser refused →
-    R-53EO-JVJ9, R-55UH-BF0N, R-4XB6-N0TS
+    R-53EO-JVJ9, R-55UH-BF0N, R-OU7F-VU3X, R-4XB6-N0TS
 14. Created/updated/deleted events observable by a consumer →
     R-4NJZ-KUW8, R-4R7O-Q64B, R-4SFL-3XV0
