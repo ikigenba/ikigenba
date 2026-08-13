@@ -11,4 +11,6 @@ line here and its body file** in the completion commit — there is no done
 marker; done is deleted, and history lives in git. This file carries no bare
 status glyph outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 05
+Next phase: 06
+
+- Phase 05 ⬜ realizes — — `launch_github` exports `GITHUB_WWW_PATH` so the WWW-path membership rule (D3) holds for github
