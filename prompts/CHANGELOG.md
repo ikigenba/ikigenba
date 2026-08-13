@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.40.0 — 2026-08-12
+
+- The completion queue now enforces per-consumer ownership leases and partitions: a consumer only ever sees and acknowledges its own items, abandonment surfaces a distinct error code, and store partition guards are proven in the gate.
+- The executor's leases and worker pool are hardened for resilience, so an interrupted or slow completion recovers cleanly instead of stranding the pool.
+- The queue HTTP contract and health check gained depth coverage against the real binary.
+- Flaky 2 s async waits no longer destabilize the test gate.
+
 ## v0.39.0 — 2026-08-11
 
 - Completions for sibling services are now a durable per-consumer work queue (`POST/GET/DELETE /completions`): submit returns immediately, results wait until acknowledged (plus a 7-day safety TTL), and interrupted items requeue and re-execute on boot.
