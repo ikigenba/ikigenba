@@ -210,6 +210,7 @@ func TestInstalledBinaryServesHealthyVersionedEnvelope(t *testing.T) {
 			t.Fatalf("create install directory: %v", err)
 		}
 	}
+	installTestWWW(t, appRoot)
 	version := strings.TrimSpace(string(readRepoFile(t, "VERSION")))
 	binary := filepath.Join(appRoot, "libexec", "artifacts-"+version)
 	build := exec.Command("go", "build", "-ldflags", "-X appkit.version="+version, "-o", binary, ".")
@@ -269,6 +270,7 @@ func TestInstalledBinaryMountsIdentityProtectedMCPTools(t *testing.T) {
 			t.Fatalf("create install directory: %v", err)
 		}
 	}
+	installTestWWW(t, appRoot)
 	version := strings.TrimSpace(string(readRepoFile(t, "VERSION")))
 	binary := filepath.Join(appRoot, "libexec", "artifacts-"+version)
 	build := exec.Command("go", "build", "-ldflags", "-X appkit.version="+version, "-o", binary, ".")
@@ -400,6 +402,21 @@ func readRepoFile(t *testing.T, elements ...string) []byte {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return body
+}
+
+func installTestWWW(t *testing.T, appRoot string) {
+	t.Helper()
+	current := filepath.Join(appRoot, "share", "current")
+	if err := os.MkdirAll(current, 0o755); err != nil {
+		t.Fatalf("create installed share/current: %v", err)
+	}
+	committed, err := filepath.Abs(filepath.Join("..", "..", "share", "www"))
+	if err != nil {
+		t.Fatalf("resolve committed share/www: %v", err)
+	}
+	if err := os.Symlink(committed, filepath.Join(current, "www")); err != nil {
+		t.Fatalf("install share/current/www: %v", err)
+	}
 }
 
 func freePort(t *testing.T) int {

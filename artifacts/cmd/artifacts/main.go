@@ -2,8 +2,10 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,8 +16,8 @@ import (
 	artifactdata "artifacts/internal/artifacts"
 	"artifacts/internal/db"
 	"artifacts/internal/mcp"
-	artifactweb "artifacts/internal/web"
 	"eventplane/outbox"
+	"github.com/dustin/go-humanize"
 	"registry"
 )
 
@@ -23,6 +25,32 @@ const defaultMaxUploadBytes int64 = 209715200
 
 type config struct {
 	MaxUploadBytes int64
+}
+
+const downloadMount = "/srv/artifacts/"
+
+type landingRenderer interface {
+	Render(w http.ResponseWriter, name string, data any) error
+}
+
+type landingView struct {
+	Service   string
+	Version   string
+	Artifacts []artifactRow
+}
+
+type artifactRow struct {
+	ID            string `json:"id"`
+	Filename      string `json:"filename"`
+	Description   string `json:"description"`
+	URL           string `json:"url"`
+	Visibility    string `json:"visibility"`
+	Size          string `json:"size"`
+	SizeBytes     int64  `json:"sizeBytes"`
+	CreatedBy     string `json:"createdBy"`
+	CreatedAt     string `json:"createdAt"`
+	CreatedAtSort string `json:"createdAtSort"`
+	Downloads     int64  `json:"downloads"`
 }
 
 func loadConfig(getenv func(string) string) (any, error) {
@@ -45,6 +73,7 @@ func artifactsSpec() appkit.Spec {
 		Mount:      "/srv/artifacts/",
 		Port:       registry.MustPort("artifacts"),
 		MCP:        true,
+		WWW:        true,
 		Feed:       "/feed",
 		Migrations: db.FS,
 		Events:     artifactdata.Events,
@@ -84,21 +113,82 @@ func artifactsSpec() appkit.Spec {
 			rt.Handle("/u/", svc.UploadHandler())
 			svc.MountDownloads(rt)
 			svc.MountContent(rt)
-			rt.Handle("GET /{$}", artifactweb.LandingHandler(svc, rt.Service(), rt.Version()))
-			static := artifactweb.StaticHandler()
-			rt.Handle("GET /static/", static)
-			rt.Handle("GET /favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				faviconRequest := new(http.Request)
-				*faviconRequest = *r
-				faviconURL := *r.URL
-				faviconURL.Path = "/static/favicon.ico"
-				faviconURL.RawPath = ""
-				faviconRequest.URL = &faviconURL
-				static.ServeHTTP(w, faviconRequest)
-			}))
+			rt.Handle("GET /{$}", landingHandler(svc.Store, rt.WWW(), rt.Service(), rt.Version()))
 			return nil
 		},
 	}
+}
+
+// landingHandler renders the current inventory through the chassis-loaded site.
+func landingHandler(store *db.Store, renderer landingRenderer, service, version string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stored, err := store.ListArtifacts(r.Context())
+		if err != nil {
+			http.Error(w, "load artifact inventory", http.StatusInternalServerError)
+			return
+		}
+		rows := make([]artifactRow, 0, len(stored))
+		for _, item := range stored {
+			prefix := "p"
+			if item.Visibility == "public" {
+				prefix = "f"
+			}
+			created := item.CreatedAt.UTC()
+			rows = append(rows, artifactRow{
+				ID:            item.ID,
+				Filename:      item.Filename,
+				Description:   item.Description,
+				URL:           downloadMount + prefix + "/" + url.PathEscape(item.ID) + "/" + url.PathEscape(item.Filename),
+				Visibility:    item.Visibility,
+				Size:          humanize.Bytes(uint64(item.Size)),
+				SizeBytes:     item.Size,
+				CreatedBy:     item.OwnerEmail,
+				CreatedAt:     created.Format("2 Jan 2006, 15:04 UTC"),
+				CreatedAtSort: created.Format(time.RFC3339),
+				Downloads:     item.DownloadCount,
+			})
+		}
+
+		buffered := newBufferedResponse()
+		if err := renderer.Render(buffered, "landing.html", landingView{Service: service, Version: version, Artifacts: rows}); err != nil {
+			http.Error(w, "render landing page", http.StatusInternalServerError)
+			return
+		}
+		for name, values := range buffered.header {
+			w.Header()[name] = append([]string(nil), values...)
+		}
+		status := buffered.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		w.WriteHeader(status)
+		_, _ = buffered.body.WriteTo(w)
+	})
+}
+
+type bufferedResponse struct {
+	header http.Header
+	body   bytes.Buffer
+	status int
+}
+
+func newBufferedResponse() *bufferedResponse {
+	return &bufferedResponse{header: make(http.Header)}
+}
+
+func (w *bufferedResponse) Header() http.Header { return w.header }
+
+func (w *bufferedResponse) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+}
+
+func (w *bufferedResponse) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.body.Write(body)
 }
 
 func main() {

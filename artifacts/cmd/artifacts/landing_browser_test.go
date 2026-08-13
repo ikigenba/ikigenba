@@ -3,18 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/http/httptest"
 	"os/exec"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	appkitdb "appkit/db"
-	artifactdata "artifacts/internal/artifacts"
 	"artifacts/internal/db"
-	artifactweb "artifacts/internal/web"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
@@ -30,19 +25,7 @@ func TestLandingControllerFiltersAndSortsInRealBrowserWithoutInjection(t *testin
 		t.Fatal("headless Chrome is a hard test precondition: google-chrome and chromium are not on PATH")
 	}
 
-	conn, err := appkitdb.Open(filepath.Join(t.TempDir(), "artifacts.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	migrations, err := appkitdb.LoadMigrations(db.FS, "migrations")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := appkitdb.Migrate(context.Background(), conn, migrations); err != nil {
-		t.Fatal(err)
-	}
-	store := db.NewStore(conn, nil)
+	router, store := assembledWebRouter(t)
 	created := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	fixtures := []db.CreateArtifactParams{
 		{ID: "small", OwnerID: "owner", OwnerEmail: "small@example.com", Filename: "alpha.txt", Description: "ordinary", Visibility: "private", Size: 10, ContentHash: "one", CreatedAt: created},
@@ -62,11 +45,7 @@ func TestLandingControllerFiltersAndSortsInRealBrowserWithoutInjection(t *testin
 		}
 	}
 
-	svc := &artifactdata.Service{Store: store}
-	mux := http.NewServeMux()
-	mux.Handle("GET /srv/artifacts/{$}", artifactweb.LandingHandler(svc, "artifacts", "v0.1.0"))
-	mux.Handle("GET /srv/artifacts/static/", http.StripPrefix("/srv/artifacts/", artifactweb.StaticHandler()))
-	server := httptest.NewServer(mux)
+	server := httptest.NewServer(router)
 	defer server.Close()
 
 	options := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.ExecPath(chrome))
@@ -91,7 +70,7 @@ func TestLandingControllerFiltersAndSortsInRealBrowserWithoutInjection(t *testin
 	}
 	var injected bool
 	if err := chromedp.Run(browser,
-		chromedp.Navigate(server.URL+"/srv/artifacts/"),
+		chromedp.Navigate(server.URL+"/"),
 		chromedp.WaitVisible("#artifact-filter"),
 		visibleCount(3),
 		chromedp.SendKeys("#artifact-filter", "needle"),

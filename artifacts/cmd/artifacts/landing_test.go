@@ -1,4 +1,4 @@
-package web
+package main
 
 import (
 	"bytes"
@@ -14,23 +14,21 @@ import (
 	"testing"
 	"time"
 
-	appkitdb "appkit/db"
-	"artifacts/internal/artifacts"
 	"artifacts/internal/db"
 )
 
 // R-53EO-JVJ9
 func TestLandingRendersEveryArtifactAndExplicitEmptyState(t *testing.T) {
-	svc := testService(t)
-	seedArtifact(t, svc.Store, db.CreateArtifactParams{ID: "private-id", OwnerID: "hidden-owner", OwnerEmail: "private@example.com", Filename: "private notes.txt", Description: "notes", Visibility: "private", Size: 1200, ContentHash: "private-hash", CreatedAt: testTime})
-	seedArtifact(t, svc.Store, db.CreateArtifactParams{ID: "public-id", OwnerID: "hidden-owner", OwnerEmail: "public@example.com", Filename: "public.pdf", Description: "report", Visibility: "public", Size: 2048, ContentHash: "public-hash", CreatedAt: testTime.Add(time.Hour)})
+	router, store := assembledWebRouter(t)
+	seedArtifact(t, store, db.CreateArtifactParams{ID: "private-id", OwnerID: "hidden-owner", OwnerEmail: "private@example.com", Filename: "private notes.txt", Description: "notes", Visibility: "private", Size: 1200, ContentHash: "private-hash", CreatedAt: testTime})
+	seedArtifact(t, store, db.CreateArtifactParams{ID: "public-id", OwnerID: "hidden-owner", OwnerEmail: "public@example.com", Filename: "public.pdf", Description: "report", Visibility: "public", Size: 2048, ContentHash: "public-hash", CreatedAt: testTime.Add(time.Hour)})
 	for range 3 {
-		if changed, err := svc.Store.IncrementDownloadCount(context.Background(), "private-id"); err != nil || !changed {
+		if changed, err := store.IncrementDownloadCount(context.Background(), "private-id"); err != nil || !changed {
 			t.Fatalf("increment private download count = %v, %v", changed, err)
 		}
 	}
 
-	body := renderLanding(t, svc, nil)
+	body := renderLanding(t, router, nil)
 	if rows := bytes.Count(body, []byte(`<tr data-artifact-id=`)); rows != 2 {
 		t.Fatalf("rendered rows = %d, want 2\n%s", rows, body)
 	}
@@ -48,7 +46,8 @@ func TestLandingRendersEveryArtifactAndExplicitEmptyState(t *testing.T) {
 		t.Fatalf("landing page exposed owner_id:\n%s", body)
 	}
 
-	empty := renderLanding(t, testService(t), nil)
+	emptyRouter, _ := assembledWebRouter(t)
+	empty := renderLanding(t, emptyRouter, nil)
 	if bytes.Count(empty, []byte(`<tr data-artifact-id=`)) != 0 || !bytes.Contains(empty, []byte(`<div class="empty-state">No artifacts stored.</div>`)) {
 		t.Fatalf("empty inventory lacks explicit empty state or contains rows:\n%s", empty)
 	}
@@ -56,9 +55,9 @@ func TestLandingRendersEveryArtifactAndExplicitEmptyState(t *testing.T) {
 
 // R-54MK-XN9Y
 func TestLandingIslandMatchesRowsAndUsesMachineValues(t *testing.T) {
-	svc := testService(t)
-	seedArtifact(t, svc.Store, db.CreateArtifactParams{ID: "artifact-one", OwnerID: "owner", OwnerEmail: "owner@example.com", Filename: "one.bin", Description: "first", Visibility: "public", Size: 1234567, ContentHash: "hash", CreatedAt: testTime})
-	body := renderLanding(t, svc, nil)
+	router, store := assembledWebRouter(t)
+	seedArtifact(t, store, db.CreateArtifactParams{ID: "artifact-one", OwnerID: "owner", OwnerEmail: "owner@example.com", Filename: "one.bin", Description: "first", Visibility: "public", Size: 1234567, ContentHash: "hash", CreatedAt: testTime})
+	body := renderLanding(t, router, nil)
 	rows := decodeIsland(t, body)
 	if len(rows) != 1 {
 		t.Fatalf("island rows = %#v, want one", rows)
@@ -79,17 +78,18 @@ func TestLandingIslandMatchesRowsAndUsesMachineValues(t *testing.T) {
 	if len(href) != 2 || html.UnescapeString(string(href[1])) != row["url"] {
 		t.Fatalf("row href = %q, island URL = %v", href, row["url"])
 	}
-	if empty := decodeIsland(t, renderLanding(t, testService(t), nil)); len(empty) != 0 {
+	emptyRouter, _ := assembledWebRouter(t)
+	if empty := decodeIsland(t, renderLanding(t, emptyRouter, nil)); len(empty) != 0 {
 		t.Fatalf("empty island = %#v, want []", empty)
 	}
 }
 
 func TestLandingEscapesUserMarkupAndKeepsIslandValid(t *testing.T) {
-	svc := testService(t)
+	router, store := assembledWebRouter(t)
 	filename := `<script id="injected">alert(1)</script>.txt`
 	description := `<script>alert("description")</script>`
-	seedArtifact(t, svc.Store, db.CreateArtifactParams{ID: "hostile", OwnerID: "owner", OwnerEmail: "owner@example.com", Filename: filename, Description: description, Visibility: "private", Size: 1, ContentHash: "hash", CreatedAt: testTime})
-	body := renderLanding(t, svc, nil)
+	seedArtifact(t, store, db.CreateArtifactParams{ID: "hostile", OwnerID: "owner", OwnerEmail: "owner@example.com", Filename: filename, Description: description, Visibility: "private", Size: 1, ContentHash: "hash", CreatedAt: testTime})
+	body := renderLanding(t, router, nil)
 	if bytes.Contains(body, []byte(filename)) || bytes.Contains(body, []byte(description)) {
 		t.Fatalf("page contains executable user markup:\n%s", body)
 	}
@@ -104,13 +104,13 @@ func TestLandingEscapesUserMarkupAndKeepsIslandValid(t *testing.T) {
 	}
 }
 
-// R-59I6-GQ8Q
-func TestLandingConformsToCanonicalShellAndServesVerbatimAssets(t *testing.T) {
+// R-OSZJ-I2D8
+func TestLandingConformsToCanonicalShellAndChassisServesAssets(t *testing.T) {
 	canonical, err := os.ReadFile(filepath.Join("..", "..", "..", "cron", "share", "www", "landing.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	committed, err := os.ReadFile("landing.html")
+	committed, err := os.ReadFile(filepath.Join(wwwRoot(t), "landing.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,17 +118,31 @@ func TestLandingConformsToCanonicalShellAndServesVerbatimAssets(t *testing.T) {
 		t.Fatalf("landing template differs from cron outside named slots\n--- artifacts ---\n%s\n--- cron ---\n%s", got, want)
 	}
 
-	for _, name := range []string{"tokens.css", "fonts/space-grotesk.woff2", "fonts/ibm-plex-sans.woff2", "fonts/ibm-plex-mono-400.woff2", "fonts/ibm-plex-mono-500.woff2"} {
-		want, err := os.ReadFile(filepath.Join("..", "..", "..", "github", "internal", "web", "static", filepath.FromSlash(name)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		request := httptest.NewRequest(http.MethodGet, "/static/"+name, nil)
+	router, _ := assembledWebRouter(t)
+	for _, asset := range []struct{ name, contentType string }{
+		{name: "tokens.css", contentType: "text/css; charset=utf-8"},
+		{name: "fonts/space-grotesk.woff2", contentType: "font/woff2"},
+		{name: "fonts/ibm-plex-sans.woff2", contentType: "font/woff2"},
+		{name: "fonts/ibm-plex-mono-400.woff2", contentType: "font/woff2"},
+		{name: "fonts/ibm-plex-mono-500.woff2", contentType: "font/woff2"},
+	} {
+		request := httptest.NewRequest(http.MethodGet, "/static/"+asset.name, nil)
 		response := httptest.NewRecorder()
-		StaticHandler().ServeHTTP(response, request)
-		if response.Code != http.StatusOK || !bytes.Equal(response.Body.Bytes(), want) {
-			t.Errorf("embedded asset %s status=%d equal=%v", name, response.Code, bytes.Equal(response.Body.Bytes(), want))
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != asset.contentType || response.Body.Len() == 0 {
+			t.Errorf("chassis asset %s status=%d content-type=%q bytes=%d", asset.name, response.Code, response.Header().Get("Content-Type"), response.Body.Len())
 		}
+	}
+}
+
+// R-OU7F-VU3X
+func TestAssembledRouterRendersSeededArtifactFromDiskSite(t *testing.T) {
+	router, store := assembledWebRouter(t)
+	seedArtifact(t, store, db.CreateArtifactParams{ID: "wired", OwnerID: "owner", OwnerEmail: "owner@example.com", Filename: "composition-proof.txt", Description: "assembled route", Visibility: "private", Size: 42, ContentHash: "hash", CreatedAt: testTime})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`>composition-proof.txt</a>`)) {
+		t.Fatalf("assembled GET / status=%d lacks seeded row:\n%s", response.Code, response.Body.String())
 	}
 }
 
@@ -140,30 +154,14 @@ func TestLandingNeedsNoIdentityHeadersAndShowsCommittedVersion(t *testing.T) {
 	}
 	version := strings.TrimSpace(string(versionBody))
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	body := renderLanding(t, testService(t), request)
+	router, _ := assembledWebRouter(t)
+	body := renderLanding(t, router, request)
 	if !bytes.Contains(body, []byte(version)) {
 		t.Fatalf("landing page does not contain committed version %q:\n%s", version, body)
 	}
 }
 
 var testTime = time.Date(2026, 8, 10, 12, 34, 56, 0, time.UTC)
-
-func testService(t *testing.T) *artifacts.Service {
-	t.Helper()
-	conn, err := appkitdb.Open(filepath.Join(t.TempDir(), "artifacts.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	migrations, err := appkitdb.LoadMigrations(db.FS, "migrations")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := appkitdb.Migrate(context.Background(), conn, migrations); err != nil {
-		t.Fatal(err)
-	}
-	return &artifacts.Service{Store: db.NewStore(conn, func() string { return "generated" })}
-}
 
 func seedArtifact(t *testing.T, store *db.Store, params db.CreateArtifactParams) {
 	t.Helper()
@@ -172,13 +170,13 @@ func seedArtifact(t *testing.T, store *db.Store, params db.CreateArtifactParams)
 	}
 }
 
-func renderLanding(t *testing.T, svc *artifacts.Service, request *http.Request) []byte {
+func renderLanding(t *testing.T, router http.Handler, request *http.Request) []byte {
 	t.Helper()
 	if request == nil {
 		request = httptest.NewRequest(http.MethodGet, "/", nil)
 	}
 	response := httptest.NewRecorder()
-	LandingHandler(svc, "artifacts", strings.TrimSpace(string(mustRead(t, filepath.Join("..", "..", "VERSION"))))).ServeHTTP(response, request)
+	router.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("landing status = %d: %s", response.Code, response.Body.String())
 	}
