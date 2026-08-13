@@ -11,9 +11,10 @@ Shared facts every Decision leans on.
   over the Spec); domain packages live under `internal/`:
   `internal/githubapp` (the appkit Spec), `internal/gh` (the GitHub auth + REST
   client), `internal/mcp` (the domain tool registrations over the shared
-  `appkit/mcp` transport — D8), `internal/db` (the embedded migration set),
-  `internal/web` (the landing page + embedded assets). The loopback PR route lives
-  in `internal/gh`.
+  `appkit/mcp` transport — D8), `internal/db` (the embedded migration set).
+  The landing page and static assets are served from disk under `share/www` via
+  appkit's WWW loader (D6) — there is no `internal/web` package. The loopback PR
+  route lives in `internal/gh`.
 - **Non-secret config, read at the composition root.** `internal/githubapp.Spec`'s
   `Handlers` hook reads `IKIGENBA_APP_ID`, `IKIGENBA_GITHUB_ORG`, and
   `IKIGENBA_APP_PRIVATE_KEY` from the environment once, at the boundary, and passes

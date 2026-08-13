@@ -12,7 +12,7 @@ Verification ids change.
 - D3 → `project/design/D03.md` — The typed GitHub REST v3 client — owns `R-DVE4-ETB5`, `R-DWM0-SL1U`, `R-DXTX-6CSJ`, `R-DZ1T-K4J8`, `R-E09P-XW9X`, `R-E1HM-BO0M`, `R-E2PI-PFRB`, `R-E3XF-37I0`, `R-E55B-GZ8P`, `R-E6D7-UQZE`, `R-E7L4-8IQ3`, `R-EA0X-027H`, `R-EB8T-DTY6`, `R-ECGP-RLOV`, `R-D0IM-VQ7H`
 - D4 → `project/design/D04.md` — The MCP tool surface — owns `R-EEWI-J569`, `R-EHCB-AONN`, `R-EIK7-OGEC`, `R-EJS4-2851`, `R-EL00-FZVQ`, `R-EM7W-TRMF`, `R-ENFT-7JD4`, `R-X3XX-6BNN`
 - D5 → `project/design/D05.md` — The loopback `GET /pr` twin for scripts — owns `R-EPVL-Z2UI`, `R-ETJB-4E2L`
-- D6 → `project/design/D06.md` — The landing page and nginx fragment — owns `R-EVZ3-VXJZ`, `R-XSOU-THYE`, `R-XTWR-79P3`, `R-7NJI-UTHM`, `R-7PZB-MCZ0`, `R-EX70-9PAO`, `R-XV4N-L1FS`, `R-XWCJ-YT6H`, `R-XXKG-CKX6`, `R-XYSC-QCNV`, `R-EYEW-NH1D`, `R-1GOK-GA2F`, `R-1HWG-U1T4`
+- D6 → `project/design/D06.md` — The landing page and nginx fragment — owns `R-WI06-793Q`, `R-WJ82-L0UF`, `R-WKFY-YSL4`, `R-WLNV-CKBT`, `R-WMVR-QC2I`, `R-WO3O-43T7`, `R-WPBK-HVJW`, `R-WQJG-VNAL`, `R-WRRD-9F1A`, `R-WSZ9-N6RZ`, `R-WU76-0YIO`, `R-EYEW-NH1D`, `R-1GOK-GA2F`, `R-1HWG-U1T4`
 - D7 → `project/design/D07.md` — The session-gated locations opt into the apex `@login_bounce`: a logged-out human navigation goes to sign-in, not a bare 401 (bearer tier deliberately excluded) — owns `R-42HV-I1HS`, `R-43PR-VT8H`, `R-44XO-9KZ6`
 - D8 → `project/design/D08.md` — Structured MCP adoption — owns `R-FI1O-9E44`, `R-FJ9K-N5UT`, `R-FKHH-0XLI`, `R-FLPD-EPC7`, `R-FMX9-SH2W`, `R-FO56-68TL`, `R-FPD2-K0KA`, `R-FQKY-XSAZ`, `R-FT0R-PBSD`
 - D9 → `project/design/D09.md` — Issue-execution support verbs: `pr_create`, `issue_comments`, `label_add`, `label_remove` — owns `R-GJYX-0UGN`, `R-F70H-NRU9`, `R-GL6T-EM7C`, `R-GMEP-SDY1`, `R-GNMM-65OQ`, `R-F88E-1JKY`, `R-GOUI-JXFF`, `R-GQ2E-XP64`
@@ -38,8 +38,6 @@ Verification ids change.
 - R-43PR-VT8H → D7 — `project/design/D07.md`
 - R-44XO-9KZ6 → D7 — `project/design/D07.md`
 - R-4LKF-FB23 → D13 — `project/design/D13.md` (adopted from root `project/design/D08.md`)
-- R-7NJI-UTHM → D6 — `project/design/D06.md`
-- R-7PZB-MCZ0 → D6 — `project/design/D06.md`
 - R-8DF1-W89F → D13 — `project/design/D13.md` (adopted from root `project/design/D11.md`)
 - R-8IAN-FB87 → D13 — `project/design/D13.md` (adopted from root `project/design/D11.md`)
 - R-8MFA-HUNC → D15 — `project/design/D15.md` (adopted from root `project/design/D29.md`)
@@ -73,8 +71,6 @@ Verification ids change.
 - R-ENFT-7JD4 → D4 — `project/design/D04.md`
 - R-EPVL-Z2UI → D5 — `project/design/D05.md`
 - R-ETJB-4E2L → D5 — `project/design/D05.md`
-- R-EVZ3-VXJZ → D6 — `project/design/D06.md`
-- R-EX70-9PAO → D6 — `project/design/D06.md`
 - R-EYEW-NH1D → D6 — `project/design/D06.md`
 - R-F70H-NRU9 → D9 — `project/design/D09.md`
 - R-F88E-1JKY → D9 — `project/design/D09.md`
@@ -101,13 +97,18 @@ Verification ids change.
 - R-O2IA-0JBL → D14 — `project/design/D14.md` (adopted from root `project/design/D23.md`)
 - R-RYDN-YNR5 → D15 — `project/design/D15.md` (adopted from root `project/design/D29.md`)
 - R-RZLK-CFHU → D15 — `project/design/D15.md` (adopted from root `project/design/D29.md`)
+- R-WI06-793Q → D6 — `project/design/D06.md`
+- R-WJ82-L0UF → D6 — `project/design/D06.md`
+- R-WKFY-YSL4 → D6 — `project/design/D06.md`
+- R-WLNV-CKBT → D6 — `project/design/D06.md`
+- R-WMVR-QC2I → D6 — `project/design/D06.md`
+- R-WO3O-43T7 → D6 — `project/design/D06.md`
+- R-WPBK-HVJW → D6 — `project/design/D06.md`
+- R-WQJG-VNAL → D6 — `project/design/D06.md`
+- R-WRRD-9F1A → D6 — `project/design/D06.md`
+- R-WSZ9-N6RZ → D6 — `project/design/D06.md`
+- R-WU76-0YIO → D6 — `project/design/D06.md`
 - R-X3XX-6BNN → D4 — `project/design/D04.md`
-- R-XSOU-THYE → D6 — `project/design/D06.md`
-- R-XTWR-79P3 → D6 — `project/design/D06.md`
-- R-XV4N-L1FS → D6 — `project/design/D06.md`
-- R-XWCJ-YT6H → D6 — `project/design/D06.md`
-- R-XXKG-CKX6 → D6 — `project/design/D06.md`
-- R-XYSC-QCNV → D6 — `project/design/D06.md`
 
 ## Success criteria → ids
 
@@ -127,7 +128,7 @@ Regenerated with the rest of the index.
 5. The connector works across the installation token's expiry — requests an hour apart see no token-expiry failure →
    R-DPAM-HYLO, R-DQII-VQCD
 6. A logged-in user opens `/srv/github/` and sees the service name and version; a sessionless browser gets 401 →
-   R-EVZ3-VXJZ, R-1HWG-U1T4
+   R-WI06-793Q, R-1HWG-U1T4
 7. A caller opens a PR from a branch (authored by the App, no marker), adds then removes one label leaving others untouched, and reads an issue's full comment thread in order →
    R-GJYX-0UGN, R-GL6T-EM7C, R-GMEP-SDY1, R-F70H-NRU9
 8. A sibling service gets a working short-lived credential over the loopback route and does a real git op; the public front door is refused and the credential appears in no log →
