@@ -5,16 +5,14 @@ package llm
 import (
 	"context"
 	"net/http"
-	"os"
 	"testing"
+
+	"registry"
 )
 
 func TestEmbedAgainstLivePrompts(t *testing.T) {
 	// R-15NY-IF46
-	baseURL := os.Getenv("WIKI_LIVE_PROMPTS_URL")
-	if baseURL == "" {
-		t.Fatal("WIKI_LIVE_PROMPTS_URL is required for the live /embed smoke")
-	}
+	baseURL := registry.BaseURL("prompts")
 	inputs := []string{"wiki live embedding smoke one", "wiki live embedding smoke two"}
 	vectors, err := New(baseURL, http.DefaultClient).Embed(context.Background(), EmbedSite{
 		Name: "wiki.embed-query", Model: "text-embedding-3-small", Dims: 512,

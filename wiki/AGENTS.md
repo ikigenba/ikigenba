@@ -40,8 +40,8 @@ spec contracts and `$ralph` for the unattended build workflow.
   toolchain.
 - GOWORK mode: **workspace**, using the repository-root `go.work`; production
   builds force `GOWORK=off` through `bin/ship wiki`.
-- Live invocation: `go test -tags live ./...` from `wiki/`. It requires
-  `WIKI_LIVE_PROMPTS_URL` for a running prompts service on loopback and
+- Live invocation: `go test -tags live ./...` from `wiki/`. It discovers the
+  running loopback prompts service through the registry and requires
   `OPENAI_API_KEY` for the real autotune judge model.
 - Run the live layer at deploy verification, and whenever a change touches the
   `internal/llm` prompts client, an `autotune/` judge prompt, or a scorer.
