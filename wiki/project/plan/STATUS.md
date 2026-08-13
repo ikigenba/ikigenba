@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 171
-
-- Phase 170 ⬜ realizes R-15NY-IF46 — the live `/embed` smoke discovers prompts through the registry, and `WIKI_LIVE_PROMPTS_URL` leaves the tree
