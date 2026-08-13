@@ -52,9 +52,9 @@ it. If unsure which subfolder a task belongs to, ask; do not default to the root
 | **design** | The shared Carbon design-system reference (tokens, example). |
 | **project** | The **umbrella** spec workspace: the suite's shared contracts (install tree, release bundle, semver, env contract, identity, event plane, content plane, MCP surface, telemetry/correlation). It builds no code. |
 
-The **fifteen deployable apps** each carry a committed `<app>/VERSION` and ship
+The **sixteen deployable apps** each carry a committed `<app>/VERSION` and ship
 independently: **dashboard, crm, ledger, notify, dropbox, prompts, wiki, cron,
-gmail, scripts, sites, webhooks, github, repos, telemetry**. `appkit`/`eventplane`/`registry`
+gmail, scripts, sites, webhooks, github, repos, telemetry, artifacts**. `appkit`/`eventplane`/`registry`
 (libraries) and `opsctl` (tooling) are **not** versioned. `agentkit` is a separate
 repo (`github.com/ikigenba/agentkit`), consumed as a tagged module. The root
 `go.work` wires modules for local dev; the production build forces `GOWORK=off`.
