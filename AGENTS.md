@@ -92,9 +92,14 @@ path-routed auth chain (logs in `$START_RUN_DIR/tmp`, on the instance's private
   (`:8080` inside the instance), so the browser lands back on the host's
   `:8080`, not your instance. Test auth in-namespace, or ask the operator
   before wiring up bridge-port OAuth.
-- Tear down with **`stop -i <name>`**: it kills the instance and everything in
-  it atomically, and run state on the private `/tmp` vanishes with it. No
-  `bin/stop` bookkeeping is needed; `./stop && ./start …` is also the reset.
+- **Tear the instance down when you are done testing.** `stop -i <name>` kills
+  the instance and everything in it atomically, and run state on the private
+  `/tmp` vanishes with it. No `bin/stop` bookkeeping is needed;
+  `./stop && ./start …` is also the reset. Run it at the end of every testing
+  session, including when the tests failed or you are abandoning the work: an
+  instance left up holds its host bridge port and keeps its whole stack
+  running. If you deliberately leave one up (say the operator asked to inspect
+  a failure), say so and give its name.
 
 Don't confuse the two `start`s: bare `start`/`stop`/`enter` are the netns
 harness on PATH; `bin/start`/`bin/stop` are the suite's own scripts and run
