@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.12.0 — 2026-08-13
+
+- The connector landing page and its assets (styles, fonts, and icons) are now
+  served from files on disk through the shared web mount, instead of being
+  compiled into the service binary. The page looks and behaves exactly as
+  before; this is an internal consistency change that brings github in line with
+  how the other services serve their web assets.
+
 ## v0.11.1 — 2026-08-12
 
 - A browser's unprompted request for the site icon at the service root now
