@@ -9,8 +9,11 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +23,8 @@ import (
 	"time"
 
 	"appkit/manifest"
+	"appkit/server"
+	appweb "appkit/web"
 
 	"github/internal/githubapp"
 )
@@ -50,7 +55,8 @@ func TestTemporaryInstallLayoutBootsAndServesHealth(t *testing.T) {
 	libexecDir := filepath.Join(installRoot, "libexec")
 	binDir := filepath.Join(installRoot, "bin")
 	versionEtcDir := filepath.Join(installRoot, "etc", version)
-	for _, dir := range []string{stateDir, cacheDir, libexecDir, binDir, versionEtcDir} {
+	versionShareDir := filepath.Join(installRoot, "share", version)
+	for _, dir := range []string{stateDir, cacheDir, libexecDir, binDir, versionEtcDir, versionShareDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("create install directory %s: %v", dir, err)
 		}
@@ -76,9 +82,15 @@ func TestTemporaryInstallLayoutBootsAndServesHealth(t *testing.T) {
 	if err := os.Symlink(version, current); err != nil {
 		t.Fatalf("create etc/current symlink: %v", err)
 	}
+	copyTree(t, filepath.Join(moduleRoot, "share", "www"), filepath.Join(versionShareDir, "www"))
+	shareCurrent := filepath.Join(installRoot, "share", "current")
+	if err := os.Symlink(version, shareCurrent); err != nil {
+		t.Fatalf("create share/current symlink: %v", err)
+	}
 
 	assertSymlinkResolvesTo(t, run, binary)
 	assertSymlinkResolvesTo(t, current, versionEtcDir)
+	assertSymlinkResolvesTo(t, shareCurrent, versionShareDir)
 	installedBytes, err := os.ReadFile(filepath.Join(current, "manifest.env"))
 	if err != nil {
 		t.Fatalf("read installed current manifest: %v", err)
@@ -191,6 +203,406 @@ func TestAuthoredManifestMatchesSpecEmission(t *testing.T) {
 	})
 	if !bytes.Equal(contents, []byte(want)) {
 		t.Fatalf("authored manifest differs from Spec emission\ngot:\n%s\nwant:\n%s", contents, want)
+	}
+}
+
+func TestAssembledRouterRendersDiskLanding(t *testing.T) {
+	// R-WI06-793Q
+	// R-EVZ3-VXJZ
+	handler := assembledGithubHandler(t, "github-distinct", "v9.8.7")
+	rec := get(t, handler, "/")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
+	}
+	if count := strings.Count(rec.Body.String(), "github-distinct"); count != 3 {
+		t.Fatalf("service count = %d, want 3\n%s", count, rec.Body.String())
+	}
+	if count := strings.Count(rec.Body.String(), "v9.8.7"); count != 1 {
+		t.Fatalf("version count = %d, want 1\n%s", count, rec.Body.String())
+	}
+}
+
+func TestCompositionUsesRealShareWWWTree(t *testing.T) {
+	// R-WJ82-L0UF
+	if !githubapp.Spec().WWW {
+		t.Fatal("github Spec.WWW is false")
+	}
+	handler := assembledGithubHandler(t, "github", "test")
+	if landing := get(t, handler, "/"); landing.Code != http.StatusOK || !strings.Contains(landing.Body.String(), "GitHub connector") {
+		t.Fatalf("assembled landing = %d %q", landing.Code, landing.Body.String())
+	}
+	if asset := get(t, handler, "/static/tokens.css"); asset.Code != http.StatusOK || asset.Body.Len() == 0 {
+		t.Fatalf("assembled static asset = %d, %d bytes", asset.Code, asset.Body.Len())
+	}
+	if _, err := appweb.Load(filepath.Join(t.TempDir(), "missing-www")); err == nil {
+		t.Fatal("loading a missing share/www root succeeded")
+	}
+	if _, err := os.Stat(filepath.Join("..", "..", "internal", "web")); !os.IsNotExist(err) {
+		t.Fatalf("legacy embedded web package still exists or cannot be checked: %v", err)
+	}
+}
+
+func TestRenderedLandingUsesOnlyLocalStaticAssets(t *testing.T) {
+	// R-WKFY-YSL4
+	// R-XSOU-THYE
+	body := get(t, assembledGithubHandler(t, "github", "test"), "/").Body.String()
+	if !strings.Contains(body, `href="static/tokens.css"`) {
+		t.Fatalf("landing does not link mount-relative tokens.css:\n%s", body)
+	}
+	for _, forbidden := range []string{`href="/static/tokens.css"`, "dashboard", "/srv/dashboard", "http://", "https://"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("landing contains forbidden asset reference %q", forbidden)
+		}
+	}
+}
+
+func TestRenderedLandingPreloadsServedFonts(t *testing.T) {
+	// R-WLNV-CKBT
+	// R-XTWR-79P3
+	handler := assembledGithubHandler(t, "github", "test")
+	head := htmlHead(t, get(t, handler, "/").Body.String())
+	css := get(t, handler, "/static/tokens.css").Body.String()
+	for _, font := range []string{"space-grotesk.woff2", "ibm-plex-sans.woff2"} {
+		preload := `<link rel="preload" as="font" type="font/woff2" crossorigin href="static/fonts/` + font + `">`
+		if !strings.Contains(head, preload) || !strings.Contains(css, `url('fonts/`+font+`')`) {
+			t.Fatalf("landing/CSS do not pair preload and source for %s", font)
+		}
+	}
+}
+
+func TestRenderedLandingUsesCanonicalGithubLayout(t *testing.T) {
+	// R-WMVR-QC2I
+	// R-7NJI-UTHM
+	body := get(t, assembledGithubHandler(t, "github", "test"), "/").Body.String()
+	for _, want := range []string{
+		`<div class="eyebrow">GitHub connector</div>`,
+		`<section aria-labelledby="page-title">`,
+		`<h1 id="page-title">github</h1>`,
+		`Github connects the suite to GitHub through one shared GitHub App and exposes repository, pull request, and issue actions as MCP tools.`,
+		`<dl aria-label="Service details">`, `<dt>Service</dt>`, `<dt>Version</dt>`, `<dt>API</dt>`,
+		`<dd class="version">test</dd>`, `<dd><code>POST /mcp</code></dd>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestRenderedLandingHomeLinkUsesCanonicalAnchoring(t *testing.T) {
+	// R-WO3O-43T7
+	// R-7PZB-MCZ0
+	body := get(t, assembledGithubHandler(t, "github", "test"), "/").Body.String()
+	for _, want := range []string{`<main>`, `<a class="home" href="/">Home</a>`, `main {`, `position: relative;`, `.home {`, `position: absolute;`, `top: var(--space-8);`, `.home:hover,`, `.home:focus-visible {`, `color: var(--color-text);`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("landing missing canonical Home styling %q", want)
+		}
+	}
+}
+
+func TestAssembledRouterServesTokensAndAllFonts(t *testing.T) {
+	// R-WPBK-HVJW
+	// R-EX70-9PAO
+	handler := assembledGithubHandler(t, "github", "test")
+	cases := map[string]string{
+		"/static/tokens.css":                    "text/css; charset=utf-8",
+		"/static/fonts/space-grotesk.woff2":     "font/woff2",
+		"/static/fonts/ibm-plex-sans.woff2":     "font/woff2",
+		"/static/fonts/ibm-plex-mono-400.woff2": "font/woff2",
+		"/static/fonts/ibm-plex-mono-500.woff2": "font/woff2",
+	}
+	for path, contentType := range cases {
+		rec := get(t, handler, path)
+		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != contentType || rec.Body.Len() == 0 {
+			t.Errorf("GET %s = %d, type %q, bytes %d; want 200, %q, non-empty", path, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len(), contentType)
+		}
+	}
+}
+
+func TestServedTokensDeclareSelfServedFontFaces(t *testing.T) {
+	// R-WQJG-VNAL
+	// R-XV4N-L1FS
+	css := get(t, assembledGithubHandler(t, "github", "test"), "/static/tokens.css").Body.String()
+	for _, want := range []string{`url('fonts/space-grotesk.woff2')`, `url('fonts/ibm-plex-sans.woff2')`, `url('fonts/ibm-plex-mono-400.woff2')`, `url('fonts/ibm-plex-mono-500.woff2')`, `font-family: 'Space Grotesk'`, `font-family: 'IBM Plex Mono'`} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("tokens.css missing %q", want)
+		}
+	}
+	if strings.Count(css, "@font-face") != 4 || strings.Contains(css, `url('/static/fonts/`) {
+		t.Fatalf("tokens.css font-face set is not wholly self-served")
+	}
+}
+
+func TestServedTokensUseOptionalFontDisplay(t *testing.T) {
+	// R-WRRD-9F1A
+	// R-XWCJ-YT6H
+	css := get(t, assembledGithubHandler(t, "github", "test"), "/static/tokens.css").Body.String()
+	faces, optional := strings.Count(css, "@font-face"), strings.Count(css, "font-display: optional")
+	if faces == 0 || optional != faces || strings.Contains(css, "font-display: swap") {
+		t.Fatalf("font-display optional count = %d for %d faces, swap=%v", optional, faces, strings.Contains(css, "font-display: swap"))
+	}
+}
+
+func TestExactRootOnAssembledRouterDoesNotShadowRoutes(t *testing.T) {
+	// R-WSZ9-N6RZ
+	// R-XXKG-CKX6
+	handler := assembledGithubHandler(t, "github", "test")
+	root := get(t, handler, "/")
+	if root.Code != http.StatusOK || !strings.Contains(root.Body.String(), `<h1 id="page-title">github</h1>`) {
+		t.Fatalf("root did not reach landing: %d %q", root.Code, root.Body.String())
+	}
+	cases := []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodPost, "/mcp", http.StatusUnauthorized},
+		{http.MethodGet, "/health", http.StatusOK},
+		{http.MethodGet, "/.well-known/oauth-protected-resource", http.StatusOK},
+		{http.MethodGet, "/unknown", http.StatusNotFound},
+	}
+	for _, tc := range cases {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+		if strings.Contains(rec.Body.String(), `<h1 id="page-title">github</h1>`) {
+			t.Errorf("%s %s returned landing", tc.method, tc.path)
+		}
+		if rec.Code != tc.status {
+			t.Errorf("%s %s = %d, want %d", tc.method, tc.path, rec.Code, tc.status)
+		}
+	}
+}
+
+func TestCompositionRootOptsIntoWWWWithoutHandMountingAssets(t *testing.T) {
+	// R-WU76-0YIO
+	// R-XYSC-QCNV
+	src, err := os.ReadFile(filepath.Join("..", "..", "internal", "githubapp", "spec.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	for _, want := range []string{`WWW:        true,`, `rt.Handle("GET /{$}", landingHandler(rt.WWW(), rt.Service(), rt.Version()))`, `rt.Handle("POST /mcp", rt.RequireIdentity(handler))`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("spec.go missing %q", want)
+		}
+	}
+	landingLine := lineContaining(t, text, `rt.Handle("GET /{$}"`)
+	if strings.Contains(landingLine, "RequireIdentity") {
+		t.Fatalf("landing is identity gated: %s", landingLine)
+	}
+	for _, forbidden := range []string{"github/internal/" + "web", `rt.Handle("GET /static/"`, `rt.Handle("GET /favicon.ico"`} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("spec.go contains forbidden hand-wiring %q", forbidden)
+		}
+	}
+}
+
+func TestAssembledRouterServesBrandContract(t *testing.T) {
+	// R-RYDN-YNR5
+	// R-RZLK-CFHU
+	// R-8MFA-HUNC
+	handler := assembledGithubHandler(t, "github", "test")
+	landing := get(t, handler, "/")
+	head := htmlHead(t, landing.Body.String())
+	for _, link := range []string{
+		`<link rel="icon" sizes="any" href="static/favicon.ico">`,
+		`<link rel="icon" type="image/png" href="static/favicon-32.png">`,
+		`<link rel="apple-touch-icon" href="static/apple-touch-icon.png">`,
+	} {
+		if !strings.Contains(head, link) {
+			t.Errorf("rendered landing head missing %q", link)
+		}
+	}
+	assets := map[string]string{
+		"/static/favicon.ico":          "image/x-icon",
+		"/static/favicon-32.png":       "image/png",
+		"/static/apple-touch-icon.png": "image/png",
+	}
+	for path, contentType := range assets {
+		rec := get(t, handler, path)
+		if rec.Code != http.StatusOK || rec.Body.Len() == 0 || rec.Header().Get("Content-Type") != contentType {
+			t.Errorf("GET %s = %d, %d bytes, %q; want 200, non-empty, %q", path, rec.Code, rec.Body.Len(), rec.Header().Get("Content-Type"), contentType)
+		}
+	}
+	root := get(t, handler, "/favicon.ico")
+	static := get(t, handler, "/static/favicon.ico")
+	if root.Code != http.StatusOK || root.Header().Get("Content-Type") != "image/x-icon" || !bytes.Equal(root.Body.Bytes(), static.Body.Bytes()) {
+		t.Fatalf("root favicon does not match static favicon: root=%d %q bytesEqual=%v", root.Code, root.Header().Get("Content-Type"), bytes.Equal(root.Body.Bytes(), static.Body.Bytes()))
+	}
+}
+
+func TestCommittedNginxFragmentPreservesGithubRouting(t *testing.T) {
+	// R-EYEW-NH1D
+	// R-1GOK-GA2F
+	// R-1HWG-U1T4
+	// R-42HV-I1HS
+	// R-43PR-VT8H
+	// R-44XO-9KZ6
+	// R-1S5A-Z3ZD
+	// R-1TD7-CVQ2
+	// R-1UL3-QNGR
+	// R-GW5W-UJVL
+	confBytes, err := os.ReadFile(filepath.Join("..", "..", "etc", "nginx.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := string(confBytes)
+	root := nginxLocationBlock(t, conf, `location = /srv/github/ {`)
+	static := nginxLocationBlock(t, conf, `location /srv/github/static/ {`)
+	bearer := nginxLocationBlock(t, conf, `location /srv/github/ {`)
+	prm := nginxLocationBlock(t, conf, `location = /srv/github/.well-known/oauth-protected-resource {`)
+	for name, block := range map[string]string{"root": root, "static": static} {
+		for _, want := range []string{"auth_request /_session-authn;", "error_page 401 = @login_bounce;"} {
+			if !strings.Contains(block, want) {
+				t.Errorf("%s location missing %q", name, want)
+			}
+		}
+	}
+	for _, want := range []string{
+		"auth_request /_authn;",
+		"auth_request_set $github_owner  $upstream_http_x_owner_email;",
+		"auth_request_set $github_owner_id $upstream_http_x_owner_id;",
+		"auth_request_set $github_owner_name $upstream_http_x_owner_name;",
+		"auth_request_set $github_owner_picture $upstream_http_x_owner_picture;",
+		"auth_request_set $github_client $upstream_http_x_client_id;",
+		"auth_request_set $github_correlation $upstream_http_x_correlation_id;",
+		"proxy_set_header X-Owner-Id $github_owner_id;",
+		"proxy_set_header X-Owner-Email $github_owner;",
+		"proxy_set_header X-Owner-Name $github_owner_name;",
+		"proxy_set_header X-Owner-Picture $github_owner_picture;",
+		"proxy_set_header X-Client-Id  $github_client;",
+		"proxy_set_header X-Correlation-Id $github_correlation;",
+	} {
+		if !strings.Contains(bearer, want) {
+			t.Errorf("bearer location missing %q", want)
+		}
+	}
+	if strings.Contains(bearer, "error_page 401 = @login_bounce;") {
+		t.Error("bearer location uses login bounce")
+	}
+	for _, want := range []string{
+		"auth_request_set $github_session_owner $upstream_http_x_owner_email;",
+		"auth_request_set $github_session_owner_id $upstream_http_x_owner_id;",
+		"auth_request_set $github_session_owner_name $upstream_http_x_owner_name;",
+		"auth_request_set $github_session_owner_picture $upstream_http_x_owner_picture;",
+		"proxy_set_header X-Owner-Id $github_session_owner_id;",
+		"proxy_set_header X-Owner-Email $github_session_owner;",
+		"proxy_set_header X-Owner-Name $github_session_owner_name;",
+		"proxy_set_header X-Owner-Picture $github_session_owner_picture;",
+		"auth_request_set $github_session_correlation $upstream_http_x_correlation_id;",
+		"proxy_set_header X-Correlation-Id $github_session_correlation;",
+	} {
+		if !strings.Contains(root, want) {
+			t.Errorf("root location missing %q", want)
+		}
+	}
+	if strings.Contains(prm, "auth_request") || !strings.Contains(prm, `proxy_set_header X-Correlation-Id "";`) {
+		t.Errorf("public PRM has incorrect auth/correlation wiring:\n%s", prm)
+	}
+	for _, want := range []string{"location = /srv/github/pr { return 404; }", "location = /srv/github/token { return 404; }", "location @github_authn_500 {"} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("nginx fragment missing %q", want)
+		}
+	}
+	if strings.Contains(conf, "/srv/github/feed") {
+		t.Error("nginx fragment contains a github feed route")
+	}
+}
+
+func assembledGithubHandler(t *testing.T, service, version string) http.Handler {
+	t.Helper()
+	t.Setenv("IKIGENBA_APP_ID", "12345")
+	t.Setenv("IKIGENBA_GITHUB_ORG", "acme")
+	t.Setenv("IKIGENBA_APP_PRIVATE_KEY", throwawayPrivateKeyPEM(t))
+	site, err := appweb.Load(filepath.Join("..", "..", "share", "www"))
+	if err != nil {
+		t.Fatalf("load share/www: %v", err)
+	}
+	spec := githubapp.Spec()
+	srv, err := server.New(server.Options{
+		Addr: "127.0.0.1:0", Logger: slog.Default(), Service: service, Version: version,
+		ResourceID: "https://example.test/srv/github/", AuthServer: "https://example.test/",
+		WWW: site, Register: spec.Handlers,
+	})
+	if err != nil {
+		t.Fatalf("assemble github router: %v", err)
+	}
+	return srv.Handler
+}
+
+func get(t *testing.T, handler http.Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec
+}
+
+func htmlHead(t *testing.T, body string) string {
+	t.Helper()
+	start, end := strings.Index(body, "<head>"), strings.Index(body, "</head>")
+	if start < 0 || end <= start {
+		t.Fatalf("response has no complete head:\n%s", body)
+	}
+	return body[start : end+len("</head>")]
+}
+
+func lineContaining(t *testing.T, text, needle string) string {
+	t.Helper()
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, needle) {
+			return line
+		}
+	}
+	t.Fatalf("no line contains %q", needle)
+	return ""
+}
+
+func nginxLocationBlock(t *testing.T, conf, start string) string {
+	t.Helper()
+	offset := strings.Index(conf, start)
+	if offset < 0 {
+		t.Fatalf("nginx fragment missing location %q", start)
+	}
+	remaining := conf[offset:]
+	end := strings.Index(remaining, "\n}")
+	if end < 0 {
+		t.Fatalf("nginx location %q is not closed", start)
+	}
+	return remaining[:end+2]
+}
+
+func copyTree(t *testing.T, source, destination string) {
+	t.Helper()
+	if err := os.MkdirAll(destination, 0o755); err != nil {
+		t.Fatalf("create copy destination %s: %v", destination, err)
+	}
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		t.Fatalf("read copy source %s: %v", source, err)
+	}
+	for _, entry := range entries {
+		sourcePath := filepath.Join(source, entry.Name())
+		destinationPath := filepath.Join(destination, entry.Name())
+		if entry.IsDir() {
+			copyTree(t, sourcePath, destinationPath)
+			continue
+		}
+		input, err := os.Open(sourcePath)
+		if err != nil {
+			t.Fatalf("open %s: %v", sourcePath, err)
+		}
+		output, err := os.Create(destinationPath)
+		if err != nil {
+			_ = input.Close()
+			t.Fatalf("create %s: %v", destinationPath, err)
+		}
+		_, copyErr := io.Copy(output, input)
+		closeOutputErr := output.Close()
+		closeInputErr := input.Close()
+		if copyErr != nil || closeOutputErr != nil || closeInputErr != nil {
+			t.Fatalf("copy %s: copy=%v close-output=%v close-input=%v", sourcePath, copyErr, closeOutputErr, closeInputErr)
+		}
 	}
 }
 

@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"appkit"
+	appweb "appkit/web"
 
 	"github/internal/db"
 	gh "github/internal/gh"
 	"github/internal/mcp"
-	"github/internal/web"
 )
 
 var newGitHubClient = gh.NewClient
@@ -36,6 +36,7 @@ func Spec() appkit.Spec {
 		Mount:      "/srv/github/",
 		Port:       3203,
 		MCP:        true,
+		WWW:        true,
 		Migrations: db.FS,
 		Health:     health,
 		Config: func(getenv func(string) string) (any, error) {
@@ -50,17 +51,7 @@ func Spec() appkit.Spec {
 			if err != nil {
 				return err
 			}
-			staticHandler := web.StaticHandler()
-			rt.Handle("GET /{$}", web.LandingHandler(rt.Service(), rt.Version()))
-			rt.Handle("GET /static/", http.StripPrefix("/static/", staticHandler))
-			rt.Handle("GET /favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				staticRequest := *r
-				staticURL := *r.URL
-				staticURL.Path = "/static/favicon.ico"
-				staticRequest.URL = &staticURL
-				staticRequest.RequestURI = ""
-				staticHandler.ServeHTTP(w, &staticRequest)
-			}))
+			rt.Handle("GET /{$}", landingHandler(rt.WWW(), rt.Service(), rt.Version()))
 			rt.HandleLoopback("GET /pr", client.PRHandler())
 			rt.HandleLoopback("GET /token", client.TokenHandler())
 			handler, err := mcp.NewHandler(client, rt)
@@ -71,4 +62,10 @@ func Spec() appkit.Spec {
 			return nil
 		},
 	}
+}
+
+func landingHandler(site *appweb.Site, service, version string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = site.Render(w, "landing.html", struct{ Service, Version string }{service, version})
+	})
 }

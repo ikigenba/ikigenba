@@ -20,6 +20,7 @@ import (
 
 	"appkit/server"
 	"appkit/telemetry"
+	appweb "appkit/web"
 
 	"github/internal/gh"
 )
@@ -224,7 +225,7 @@ func TestEveryServedDocumentCarriesBrandIcons(t *testing.T) {
 	// R-RYDN-YNR5
 	setAppAuthEnv(t)
 
-	documents, err := filepath.Glob(filepath.Join("..", "web", "*.html"))
+	documents, err := filepath.Glob(filepath.Join("..", "..", "share", "www", "*.html"))
 	if err != nil {
 		t.Fatalf("enumerate HTML documents: %v", err)
 	}
@@ -331,9 +332,14 @@ func assembledSpecHandler(t *testing.T, httpClient *http.Client) http.Handler {
 	t.Cleanup(func() { newGitHubClient = previous })
 
 	spec := Spec()
+	site, err := appweb.Load(filepath.Join("..", "..", "share", "www"))
+	if err != nil {
+		t.Fatalf("load share/www: %v", err)
+	}
 	srv, err := server.New(server.Options{
-		Addr: "127.0.0.1:0", Logger: slog.Default(), Apex: true, Version: "test", Service: "github",
-		Register: spec.Handlers,
+		Addr: "127.0.0.1:0", Logger: slog.Default(), Version: "test", Service: "github",
+		ResourceID: "https://example.test/srv/github/", AuthServer: "https://example.test/",
+		Register: spec.Handlers, WWW: site,
 	})
 	if err != nil {
 		t.Fatal(err)
