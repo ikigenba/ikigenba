@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.34.0 — 2026-08-12
+
+- Ingest admission is now serialized behind a durable per-scope lease, so concurrent ingests into one scope no longer race; the drain path no longer wedges, and a new five-status job surface makes a stuck job visible instead of silently stalled.
+- Completion apply is replay-safe: re-applying an already-integrated completion is a no-op, staged subject identities are minted at integration time (plans stage by name), and the inbox drains under an explicit contract.
+- Worker calls to prompts carry the job chain id end to end, and `status` reports the job's chain handle for cross-service tracing.
+- The completion queue verbs pin the consumer partition per item on Get and Ack, so one consumer can never draw another's work.
+- The live `/embed` smoke now discovers the running prompts service through the registry instead of a hardcoded address.
+
 ## v0.33.0 — 2026-08-11
 
 - Ingest is now restart-proof: extract and compile work is handed off to prompts' durable completion queue and applied from its inbox, with jobs resting in a new `waiting` state — no in-flight work is lost to a restart, and long generations no longer die at the 15 s write deadline (the cause of the production ingest failures).
