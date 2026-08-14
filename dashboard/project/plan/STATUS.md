@@ -10,4 +10,6 @@ file — there is no done marker; done is gone. This file deliberately carries
 **no bare status glyph** anywhere but on a phase line, so the anchored grep
 matches only phase lines.
 
-Next phase: 56
+Next phase: 57
+
+- Phase 56 ⬜ realizes R-VN4Y-ERZ1 — source the shell footer version from the chassis runtime version (kill the `v0.0.0+dev` page-local source) and prove it renders what it's passed
