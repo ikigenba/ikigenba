@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.33.0 — 2026-08-14
+
+- The version shown in every page footer is now the real running version of the
+  deployed dashboard. It previously always displayed the placeholder
+  `v0.0.0+dev`, because the footer read its version from a source that is empty
+  in production builds; it now reads the same build-stamped version the box and
+  the `version` command already report.
+- Nothing else about the pages changed.
+
 ## v0.32.0 — 2026-08-13
 
 - The install page now offers a fourth one-paste command, for Antigravity,
