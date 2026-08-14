@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.31.0 — 2026-08-13
+
+- The install page now offers a third one-paste command, for Grok, alongside
+  Claude Code and Codex. One curl line registers every MCP service on the box
+  in Grok's config, using the same personal access token as the other agents.
+- Nothing else about connecting an agent changed: the token still comes from
+  the profile page via `IKIGENBA_TOKEN`, and the home page is still just the
+  service directory.
+
 ## v0.30.1 — 2026-08-12
 
 - A browser's unprompted request for the site icon at the account root now
