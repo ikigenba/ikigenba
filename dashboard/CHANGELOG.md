@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.32.0 — 2026-08-13
+
+- The install page now offers a fourth one-paste command, for Antigravity,
+  alongside Claude Code, Codex, and Grok. One curl line registers every MCP
+  service on the box in Antigravity's configuration, using the same personal
+  access token as the other agents.
+- Nothing else about connecting an agent changed: the token still comes from
+  the profile page via `IKIGENBA_TOKEN`, and the home page is still just the
+  service directory.
+
 ## v0.31.0 — 2026-08-13
 
 - The install page now offers a third one-paste command, for Grok, alongside
