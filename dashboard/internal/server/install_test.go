@@ -82,13 +82,16 @@ func TestInstallPageOrdersAgentSnippetsAndCopyControls(t *testing.T) {
 		`<h3>Codex</h3>`,
 		`/install/codex | bash</code>`,
 		`aria-label="Copy Codex install command"`,
+		`<h3>Grok</h3>`,
+		`/install/grok | bash</code>`,
+		`aria-label="Copy Grok install command"`,
 	}
 
 	// R-VVO9-365W
 	previous := -1
 	for _, want := range wants {
 		at := strings.Index(main, want)
-		if at < 0 {
+		if at < 0 { // R-Y4GE-ZIS2
 			t.Fatalf("install page missing %q:\n%s", want, main)
 		}
 		if at <= previous {

@@ -39,7 +39,7 @@ func TestIndexServiceDirectory(t *testing.T) {
 			t.Errorf("logged-in index missing %q:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "/install/claude") || strings.Contains(body, "/install/codex") {
+	if strings.Contains(body, "/install/claude") || strings.Contains(body, "/install/codex") || strings.Contains(body, "/install/grok") { // R-Y5OB-DAIR
 		t.Errorf("logged-in index still contains install snippets:\n%s", body)
 	}
 }

@@ -30,6 +30,7 @@ func (a *app) register(mux muxer) {
 	mux.Handle("GET /services", a.handleInventory())
 	mux.Handle("GET /install/claude", a.handleInstall(claudeAgent))
 	mux.Handle("GET /install/codex", a.handleInstall(codexAgent))
+	mux.Handle("GET /install/grok", a.handleInstall(grokAgent))
 	mux.Handle("GET /metrics", a.handleMetrics())
 	mux.Handle("GET /metrics/fragment", a.handleMetricsFragment())
 	mux.Handle("GET /static/", a.staticHandler())

@@ -16,7 +16,7 @@ const installTokenEnvVar = "IKIGENBA_TOKEN"
 
 // agent is one coding-agent target the /install/<agent> route can wire up: a
 // display label (for the restart message) and the CLI command shapes it uses to
-// (re)register an MCP server. Two literal instances back the two routes — a
+// (re)register an MCP server. Three literal instances back the three routes — a
 // fixed list, not a registry.
 type agent struct {
 	label      string
@@ -39,6 +39,16 @@ var codexAgent = agent{
 	removeLine: func(name string) string { return fmt.Sprintf("codex mcp remove %s >/dev/null 2>&1 || true", name) },
 	addLine: func(name, resource string) string {
 		return fmt.Sprintf("codex mcp add %s --url %s --bearer-token-env-var %s", name, resource, installTokenEnvVar)
+	},
+}
+
+var grokAgent = agent{
+	label: "Grok",
+	removeLine: func(name string) string {
+		return fmt.Sprintf("grok mcp remove --scope user %s >/dev/null 2>&1 || true", name)
+	},
+	addLine: func(name, resource string) string {
+		return fmt.Sprintf("grok mcp add --scope user --transport http %s %s --header 'Authorization: Bearer ${%s}'", name, resource, installTokenEnvVar)
 	},
 }
 

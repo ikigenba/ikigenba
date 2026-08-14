@@ -124,3 +124,53 @@ func TestInstallScriptCodex(t *testing.T) {
 		t.Errorf("dashboard (no MCP) leaked into install script:\n%s", body)
 	}
 }
+
+// TestInstallScriptGrok drives the public Grok route through New's registered
+// route table and checks the native Grok CLI command shape for every MCP service.
+func TestInstallScriptGrok(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, "dashboard", "APP=dashboard\nMOUNT=/\nDEFAULT=true\n")
+	writeManifest(t, root, "crm", "APP=crm\nMOUNT=/srv/crm/\nMCP=true\n")
+	writeManifest(t, root, "ledger", "APP=ledger\nMOUNT=/srv/ledger/\nMCP=true\n")
+
+	opts := newServerDeps(t).opts()
+	opts.ManifestRoot = root
+	srv, err := New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	rec := do(t, srv, "GET", "https://int.ikigenba.com/install/grok",
+		map[string]string{"X-Forwarded-Proto": "https"})
+	if rec.Code != http.StatusOK { // R-Y6W7-R29G
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("Content-Type = %q, want text/plain", ct)
+	}
+	body := rec.Body.String()
+	if !strings.HasPrefix(body, "#!/usr/bin/env bash") {
+		t.Errorf("script does not start with bash shebang:\n%s", body)
+	}
+
+	wantLines := []string{
+		`if [ -z "${IKIGENBA_TOKEN:-}" ]; then`,
+		`echo "Installing 2 MCP"`,
+		"grok mcp remove --scope user ikigenba_crm >/dev/null 2>&1 || true",
+		"grok mcp add --scope user --transport http ikigenba_crm https://int.ikigenba.com/srv/crm/mcp --header 'Authorization: Bearer ${IKIGENBA_TOKEN}'",
+		"grok mcp remove --scope user ikigenba_ledger >/dev/null 2>&1 || true",
+		"grok mcp add --scope user --transport http ikigenba_ledger https://int.ikigenba.com/srv/ledger/mcp --header 'Authorization: Bearer ${IKIGENBA_TOKEN}'",
+		`echo "${ok} of 2 successfully installed."`,
+		"Restart Grok",
+	}
+	for _, want := range wantLines {
+		if !strings.Contains(body, want) { // R-Y844-4U05
+			t.Errorf("Grok script missing %q:\n%s", want, body)
+		}
+	}
+	for _, forbidden := range []string{"claude mcp", "codex mcp", "--bearer-token-env-var"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("Grok script contains forbidden command shape %q:\n%s", forbidden, body)
+		}
+	}
+}
