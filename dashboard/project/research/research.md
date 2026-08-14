@@ -277,3 +277,45 @@ touched):
   that is set in the environment appears in that output. The human `grok mcp
   list` line for an HTTP server shows the URL only. The served installer
   must not dump `--json`.
+
+## Antigravity (`agy`) plugin-install MCP CLI — the facts the install script uses
+
+Antigravity (the `agy` coding-agent CLI) does not register MCP servers one at a
+time. It installs a **plugin**: a directory holding a `plugin.json` manifest and
+an `mcp_config.json` server map, imported in a single `agy plugin install <dir>`.
+These facts are sourced from the operator-provided `install-agy.sh`, the working
+customer installer this Decision reproduces (D43); the served script templates
+its host and service list but preserves its shape.
+
+- **No per-service add/remove.** `agy` exposes no `agy mcp add` / `agy mcp remove`
+  the way `claude`, `codex`, and `grok` do. Registration is whole-plugin:
+  `agy plugin install <dir>` imports every server named in the dir's
+  `mcp_config.json` at once, and exits non-zero on failure. There is no
+  per-server success signal, so the installer reports one plugin-install result
+  across all services (all 🟢 or all 🔴).
+- **`plugin.json`.** A minimal manifest identifies the plugin:
+
+      { "name": "ikigenba", "description": "Ikigenba MCP tools" }
+
+- **`mcp_config.json`.** An `"mcpServers"` object, one entry per server, each an
+  HTTP remote with an `Authorization` header:
+
+      {
+        "mcpServers": {
+          "ikigenba_<svc>": {
+            "serverUrl": "<scheme>://<host>/srv/<svc>/mcp",
+            "headers": { "Authorization": "Bearer <token>" }
+          }
+        }
+      }
+
+  `serverUrl` (not `url`) names the remote; `headers` carries the PAT.
+- **The token is materialized, not referenced.** `install-agy.sh` writes the
+  config with an unquoted heredoc, so the customer's bash expands
+  `${IKIGENBA_TOKEN}` into `mcp_config.json` at run time — the actual token value
+  lands in the plugin config that `agy plugin install` imports. The installer
+  builds this in a `mktemp -d` dir removed by an `EXIT` trap, so the cleartext
+  token is transient. This differs from Grok, whose TOML expands `${VAR}` at load
+  and so keeps the header a reference; `agy`'s installer expands it at write time.
+- **Restart to load.** New servers appear after the agent restarts; the installer
+  closes with `Restart agy for the new MCP servers to load.`
