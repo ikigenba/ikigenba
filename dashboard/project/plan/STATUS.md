@@ -11,5 +11,3 @@ file — there is no done marker; done is gone. This file deliberately carries
 matches only phase lines.
 
 Next phase: 56
-
-- Phase 55 ⬜ realizes R-QFNA-KYOH, R-QGV6-YQF6, R-QEFE-76XS — Antigravity install-script agent + install-page subsection
