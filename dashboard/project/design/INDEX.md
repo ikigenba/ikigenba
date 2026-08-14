@@ -11,7 +11,7 @@ Verification ids change.
 - D2 → `project/design/D02.md` — The profile route is session-gated in-process (redirect when signed out) — owns R-DB04-GATE, R-DB05-SESS
 - D3 → `project/design/D03.md` — Personal-access-token management moves to the profile page — owns R-DB06-PATM, R-DB07-PATR, R-DB08-PATX
 - D4 → `project/design/D04.md` — OAuth grant management moves to the profile page — owns R-DB09-GRNT, R-DB10-GRVK, R-DB11-GRNX
-- D5 → `project/design/D05.md` — Home composition: the MCP service directory — owns R-DB12-LINK, R-XO4W-LKAI, R-DB14-SOUT, R-OF1Q-VEDC, R-OG9N-9641, R-OHHJ-MXUQ, R-VJH9-9GQY
+- D5 → `project/design/D05.md` — Home composition: the MCP service directory — owns R-DB12-LINK, R-XO4W-LKAI, R-DB14-SOUT, R-OF1Q-VEDC, R-OG9N-9641, R-OHHJ-MXUQ, R-VJH9-9GQY, R-Y5OB-DAIR
 - D6 → `project/design/D06.md` — Purge the stale "single hybrid page / don't split" doc rule — owns R-DB16-DOCS
 - D7 → `project/design/D07.md` — Login composition: brand title, tagline, sign-in lede, rule, two provider CTAs, rule, then a borderless etymology table — owns R-JA3I-IY1F, R-JCJB-AHIT, R-JDR7-O99I, R-ILDB-6TGS, R-IML7-KL7H, R-JG70-FSQW, R-JHEW-TKHL, R-O7K1-XEN7, R-DB19-LAND
 - D8 → `project/design/D08.md` — System font stacks: no web fonts, no font files, no preloads — owns R-VKP5-N8HN, R-VLX2-108C
@@ -46,8 +46,9 @@ Verification ids change.
 - D37 → `project/design/D37.md` — Testing-language conformance: the suite's four layers, the dashboard's declared testing facts (hermetic + composed + manual, no live; no preconditions beyond the Go toolchain; workspace GOWORK), proven in `cmd/dashboard/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
 - D38 → `project/design/D38.md` — The git door accepts a PAT as an HTTP Basic password — owns R-39O6-OFFD, R-3AW3-2762, R-3C3Z-FYWR, R-3DBV-TQNG, R-3EJS-7IE5, R-3FRO-LA4U, R-3I7H-CTM8, R-3JFD-QLCX, R-3KNA-4D3M, R-3LV6-I4UB
 - D39 → `project/design/D39.md` — The apex fragment sets the http-level `variables_hash_max_size` for the whole box — owns R-6MX7-JDFX
-- D40 → `project/design/D40.md` — The install page: connect-your-agent moves to `/install` — owns R-VVO9-365W, R-VWW5-GXWL
+- D40 → `project/design/D40.md` — The install page: connect-your-agent moves to `/install` — owns R-VVO9-365W, R-Y4GE-ZIS2, R-VWW5-GXWL
 - D41 → `project/design/D41.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-8MFA-HUNC, R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
+- D42 → `project/design/D42.md` — Grok is a third install-script agent — owns R-Y6W7-R29G, R-Y844-4U05
 
 ## Verification ids → Decision
 
@@ -214,6 +215,10 @@ Verification ids change.
 - R-XPQG-YNNO → D33 → `project/design/D33.md`
 - R-XQN7-IKYL → D22 → `project/design/D22.md`
 - R-XRV3-WCPA → D22 → `project/design/D22.md`
+- R-Y4GE-ZIS2 → D40 → `project/design/D40.md`
+- R-Y5OB-DAIR → D5 → `project/design/D05.md`
+- R-Y6W7-R29G → D42 → `project/design/D42.md`
+- R-Y844-4U05 → D42 → `project/design/D42.md`
 
 ## Success criteria → ids
 
@@ -241,7 +246,7 @@ Regenerated with the rest of the index.
 9. Clicking a service's name opens `/srv/<svc>/`, and the copy control puts its MCP address on my clipboard →
    R-DB12-LINK, R-OG9N-9641
 10. The install page shows the paste-one-line command per agent and says a PAT is required; signed out it sends me to login →
-    R-VVO9-365W, R-VWW5-GXWL, R-VI9C-VP09
+    R-VVO9-365W, R-Y4GE-ZIS2, R-VWW5-GXWL, R-VI9C-VP09
 11. Clicking my avatar opens the profile page →
     R-XO4W-LKAI
 12. The profile page shows my PATs (create/revoke) and OAuth grants (revoke) — the actions moved off the home page →

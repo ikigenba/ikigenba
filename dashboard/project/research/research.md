@@ -222,3 +222,58 @@ handle wants (opaque, collision-free without coordination, URL-safe, leaks
 neither user count nor provider), so the identity handle reuses it rather than
 introducing a ULID/UUID dependency. The only ULID property forgone is lexical
 time-sortability, which an identity handle does not need.
+
+## Grok MCP CLI — the facts the install script uses
+
+Grok (the `grok` coding-agent CLI) configures MCP servers in
+`~/.grok/config.toml` under `[mcp_servers.<name>]`. The customer installer
+talks to it only through `grok mcp add` / `grok mcp remove`. Facts verified
+against Grok 1.0.3 in an isolated `GROK_HOME` (so a live user config was not
+touched):
+
+- **HTTP remote add.** `grok mcp add --scope user --transport http <name> <url>
+  --header 'Authorization: Bearer ${IKIGENBA_TOKEN}'` writes:
+
+      [mcp_servers.<name>]
+      url = "<url>"
+      enabled = true
+
+      [mcp_servers.<name>.headers]
+      Authorization = "Bearer ${IKIGENBA_TOKEN}"
+
+  The header value is stored **verbatim**. Grok expands `${VAR}` (and
+  `${VAR:-default}`) in `[mcp_servers.*]` string fields (`url`, `command`,
+  `args`, `env` values, `headers` values) at **load** time, not at add time.
+  Nothing secret is written into the TOML when the add line passes the
+  `${IKIGENBA_TOKEN}` reference single-quoted.
+- **No Codex-style flag.** There is no `--bearer-token-env-var` and no
+  `--url` flag. Transport is `--transport http` (or `sse`); the URL is a
+  positional argument. `--header` / `-H` takes `NAME: VALUE`.
+- **Scope.** `--scope user` writes `~/.grok/config.toml` (the default).
+  `--scope project` writes `./.grok/config.toml`. The installer uses user
+  scope so a curl-piped script does not depend on the caller's cwd.
+- **Add is an upsert.** A second `grok mcp add` of the same name overwrites
+  the entry and exits 0. `grok mcp add` alone therefore does not fail on a
+  duplicate the way `claude mcp add` does. The installer still
+  remove-then-adds, matching the Claude/Codex scripts' idempotency shape.
+- **Remove.** `grok mcp remove --scope user <name>` deletes that TOML table
+  and exits 0; it exits 1 when the name is not in that scope. Unscoped
+  `grok mcp remove <name>` searches user then project and exits 1 when the
+  name is missing or present in both. `grok mcp remove` edits only Grok's
+  own TOML — it does not remove a server that Grok is only seeing via
+  Claude/Cursor compatibility import.
+- **Names.** Server names may contain letters, numbers, hyphens, and
+  underscores. `ikigenba_<svc>` is valid.
+- **OAuth is a different path.** A headerless HTTP server can trigger Grok's
+  MCP OAuth flow, which writes `~/.grok/mcp_credentials.json` (0600). The
+  installer does not use that path: it always sets the Authorization header
+  so Grok authenticates with the PAT.
+- **Compat import (not used by the installer).** Grok scans `~/.claude.json`
+  for MCP servers by default (`[compat.claude] mcps`, overridable by
+  `GROK_CLAUDE_MCPS_ENABLED`). Native `config.toml` entries win on name
+  conflict. The customer installer writes native entries and does not change
+  the customer's compat settings.
+- **`grok mcp list --json` expands `${VAR}`** in the printed JSON, so a PAT
+  that is set in the environment appears in that output. The human `grok mcp
+  list` line for an HTTP server shows the URL only. The served installer
+  must not dump `--json`.
