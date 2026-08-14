@@ -44,4 +44,9 @@ An open session means:
 
 When the session opens, confirm briefly that the spec is open and scoped to
 `project/*`, note whether `project/` already exists (greenfield or extension),
-and let the operator talk.
+and **check the findings tray**: list `project/issues/` in this tree (and the
+root umbrella's, when opening a subproject) and surface any unresolved issues
+before the discussion starts, asking whether any belong in this session's
+scope. An issue the session absorbs is deleted by the move that specs its fix
+(`ikispec`: resolution is deletion); one it does not touch stays filed. Then
+let the operator talk.

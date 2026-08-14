@@ -98,6 +98,18 @@ In `build.md` and `verify.md`, replace the `DONE` line above with this verbatim:
 
 This wording is load-bearing: the observed failure mode is a build model that closes the last gap with a green suite and reaches for `DONE` because the work "feels finished." The annotation preempts exactly that inference. `CONTINUE` is available to every prompt as the non-terminal progress status but is never a terminal value.
 
+**Unrelated findings are filed, never fixed — every prompt carries this rule.**
+A defect, stale doc, or gap a turn notices that is outside its brief (or, for
+gather, outside its phase lookup) is recorded as a short prose note in
+`project/issues/<slug>.md` — what was observed, where, and why it is out of
+scope — and the turn then continues its own work unchanged. `project/issues/`
+is the gate-exempt findings tray, the one `project/` path the loop may write
+beyond its named mutations (per `ikispec`); filing never widens the turn,
+never fixes the finding, and never changes the turn's status. build stages any
+new issue files with its increment commit and verify with its retirement
+commit; a file written by gather waits, untracked, for the next committing
+turn.
+
 **The workspace identity guard — every prompt's step zero.** The suite is a mono-repo of **nested** spec workspaces, so a step whose shell cwd drifts (a harness cwd reset, a stray `cd` to the repo root) lands in a *different but valid* `project/` tree, classically the umbrella workspace at the repo root, whose plan legitimately holds zero `⬜` lines. That turns cwd drift into a false `DONE`. Each prompt must therefore open with an identity assertion baked to the concrete service: `head -n 1 project/plan/STATUS.md` must print exactly `# <name> — Plan Status` (the real name substituted at generation time). On mismatch or a missing file the step must **not** proceed and must **never** report `DONE`: if `./<name>/project/plan/STATUS.md` passes the same check, the cwd drifted one level up — `cd <name>` and continue; otherwise return `NEXT` with a message naming the expected and observed titles, so the drift is visible instead of silently ending or misdirecting the run.
 
 ### `project/loops/gather.md`

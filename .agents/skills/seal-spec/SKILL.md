@@ -41,7 +41,10 @@ operator-invoked step after the spec exists.)
    `INDEX.md` + the `DNN.md` files it lists, and `project/plan/STATUS.md` + the pending
    phase files (the plan is a queue — it holds only unbuilt work).
    Know what already exists before changing it. Settled Decisions are settled —
-   don't reopen them. (Greenfield: note there is nothing, and build the
+   don't reopen them. Read `project/issues/` too: an issue the settled goal
+   absorbs is resolved by this pass — delete its file alongside the docs you
+   write (`ikispec`: resolution is deletion); one the goal does not touch
+   stays filed. (Greenfield: note there is nothing, and build the
    structure from scratch as you go.)
 2. **Product — align in place, only if the user would notice.** Product owns
    *user-facing* intent, so touch it **only when the discussed goal changes

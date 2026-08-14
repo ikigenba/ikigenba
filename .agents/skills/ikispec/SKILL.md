@@ -24,12 +24,41 @@ one writer:
 | `design/` | `CONVENTIONS.md` (project toolchain) + `INDEX.md` (manifest) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
 | `plan/` | `STATUS.md` (manifest: `Next phase` counter + `⬜` lines) + `phase-NN.md` (one per **pending** phase) | `$seal-spec` (appends); the build loop deletes completed phases |
 | `loops/` | the generated build-loop prompts + the `run` wrapper | a prompt-generator workflow |
+| `issues/` | `<slug>.md` — one freeform file per unrelated finding noticed while doing other work | **any session, any time** (the one gate-exempt path); deleted when resolved |
 | `README.md` | the ikispec-pointer stub: names the project and declares it abides by ikispec | `$seal-spec` |
 
 The loop prompts and the `run` wrapper are **not** spec artifacts — they are
 generated from the finished spec by a generator workflow and describe whichever
 loop topology is installed. This skill owns the spec shapes; the generator owns
 the loop shapes.
+
+### `project/issues/` — the durable findings tray
+
+`issues/` is the sink for the "finding to report, never a license to edit"
+rule: a durable, non-contractual record of anything noticed while doing
+*other* work — a defect in the code, a stale or wrong spec statement, a gap —
+that the current session or loop turn has no authority or scope to fix.
+
+- **Writable by any session, any time — the one gate-exempt path.** Unlike the
+  rest of `project/**`, creating `project/issues/<slug>.md` requires no
+  operator-invoked move: an interactive session, an authoring move, and an
+  unattended build/verify/audit turn may all file one the moment they notice
+  something. The exemption covers *filing only* — it is never a license to fix
+  the finding, widen the current work, or write any other `project/` artifact.
+- **Scope-bound like everything else.** File in the tree where you are
+  working: a subproject finding goes in that subproject's `project/issues/`, a
+  suite-level finding in the root umbrella's. A confined loop that notices a
+  cross-tree problem files locally, naming the tree the fix belongs to; triage
+  moves it, the loop never does.
+- **One file, freeform prose.** The floor is: what was observed, where, and
+  why it is out of scope for the work at hand. Optional filename prefixes
+  (`bug-…`, `request-…`) may classify; there are no status fields, no minted
+  ids, no index, and nothing downstream consumes the folder mechanically. Its
+  reader is `$open-spec`, which surfaces unresolved issues when a session
+  opens.
+- **Resolution is deletion.** When an authoring move absorbs an issue (its fix
+  enters design and the plan) or judges it stale, that move deletes the file —
+  the plan's philosophy: done is deleted, history is git's.
 
 ## Authority boundaries
 
@@ -102,7 +131,9 @@ it.
   inside an operator-invoked move (`$seal-spec` for authoring; the build loop's
   completion mutations). In any other session `project/` is read-only
   reference. Noticing the spec is stale, wrong, or incomplete is a finding to
-  report, never a license to edit it — and discussion is not direction:
+  report, never a license to edit it — record it durably as
+  `project/issues/<slug>.md` (the one gate-exempt path; see the findings tray
+  above) so it survives the session — and discussion is not direction:
   however settled a conversation feels, reaching a conclusion is not an
   instruction to act on it. Say what should change and wait for the operator
   to invoke the move.
@@ -126,7 +157,9 @@ it.
   an `$open-spec` session's discussion, `$grill-me`, `$seal-spec`, and
   loop-prompt generator workflows, the only permitted writes are the
   `project/` artifacts named in
-  the workspace table above, by their listed writers. Authors may describe
+  the workspace table above, by their listed writers — plus
+  `project/issues/<slug>.md` files, which any session may create (the
+  gate-exempt findings tray). Authors may describe
   future implementation paths such as `cmd/`, `internal/`, `go.mod`, `Makefile`,
   tests, `bin/`, or generated source, but **must not create, edit, format,
   scaffold, test, or commit them**. If an authoring run is about to touch an
