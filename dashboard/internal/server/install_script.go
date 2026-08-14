@@ -129,3 +129,73 @@ func (a *app) handleInstall(ag agent) http.HandlerFunc {
 		_, _ = w.Write([]byte(script))
 	}
 }
+
+// agyInstallScript builds the plugin-shaped installer served at GET
+// /install/agy. Antigravity imports all MCP servers in one operation, so this
+// intentionally does not use the per-service remove/add agent skeleton above.
+func agyInstallScript(scheme, host string, svcs []inventory.Service) string {
+	var b strings.Builder
+	b.WriteString("#!/usr/bin/env bash\n")
+	b.WriteString("set -euo pipefail\n\n")
+
+	fmt.Fprintf(&b, "if [ -z \"${%s:-}\" ]; then\n", installTokenEnvVar)
+	fmt.Fprintf(&b, "  echo \"Error: %s is not set — this installer needs a token to authenticate.\" >&2\n", installTokenEnvVar)
+	b.WriteString("  echo >&2\n")
+	fmt.Fprintf(&b, "  echo \"  1. Sign in at %s://%s/ and, under \\\"Personal access tokens\\\", create a token.\" >&2\n", scheme, host)
+	fmt.Fprintf(&b, "  echo \"  2. Add this to your ~/.bashrc:  export %s=\\\"<your token>\\\"\" >&2\n", installTokenEnvVar)
+	b.WriteString("  echo \"  3. Open a new terminal (or: source ~/.bashrc), then re-run this installer.\" >&2\n")
+	b.WriteString("  exit 1\n")
+	b.WriteString("fi\n\n")
+
+	fmt.Fprintf(&b, "echo \"Installing %d MCP\"\n\n", len(svcs))
+	b.WriteString("TMP_DIR=$(mktemp -d)\n")
+	b.WriteString("trap 'rm -rf \"${TMP_DIR}\"' EXIT\n\n")
+	b.WriteString("cat > \"${TMP_DIR}/plugin.json\" <<'EOF'\n")
+	b.WriteString("{\n  \"name\": \"ikigenba\",\n  \"description\": \"Ikigenba MCP tools\"\n}\n")
+	b.WriteString("EOF\n\n")
+	b.WriteString("cat > \"${TMP_DIR}/mcp_config.json\" <<EOF\n")
+	b.WriteString("{\n  \"mcpServers\": {\n")
+	for i, s := range svcs {
+		name := mcpLocalName(s.Name)
+		resource := mcpResourceURL(scheme, host, s.Mount)
+		fmt.Fprintf(&b, "    \"%s\": {\n", name)
+		fmt.Fprintf(&b, "      \"serverUrl\": \"%s\",\n", resource)
+		b.WriteString("      \"headers\": {\n")
+		fmt.Fprintf(&b, "        \"Authorization\": \"Bearer ${%s}\"\n", installTokenEnvVar)
+		b.WriteString("      }\n    }")
+		if i < len(svcs)-1 {
+			b.WriteString(",")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("  }\n}\nEOF\n\n")
+
+	b.WriteString("ok=0\n")
+	b.WriteString("if agy plugin install \"${TMP_DIR}\"; then\n")
+	for _, s := range svcs {
+		fmt.Fprintf(&b, "  echo \"🟢 %s\"\n", mcpLocalName(s.Name))
+		b.WriteString("  ok=$((ok + 1))\n")
+	}
+	b.WriteString("else\n")
+	for _, s := range svcs {
+		fmt.Fprintf(&b, "  echo \"🔴 %s\"\n", mcpLocalName(s.Name))
+	}
+	b.WriteString("fi\n\n")
+	fmt.Fprintf(&b, "echo \"${ok} of %d successfully installed.\"\n", len(svcs))
+	b.WriteString("echo \"Done. Restart agy for the new MCP servers to load.\"\n")
+	return b.String()
+}
+
+func (a *app) handleAgyInstall() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		svcs, err := inventory.Read(a.manifestRoot)
+		if err != nil {
+			a.logger.Error("install.read_inventory", "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(agyInstallScript(requestScheme(r), r.Host, svcs)))
+	}
+}

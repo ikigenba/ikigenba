@@ -85,6 +85,9 @@ func TestInstallPageOrdersAgentSnippetsAndCopyControls(t *testing.T) {
 		`<h3>Grok</h3>`,
 		`/install/grok | bash</code>`,
 		`aria-label="Copy Grok install command"`,
+		`<h3>Antigravity</h3>`,
+		`/install/agy | bash</code>`,
+		`aria-label="Copy Antigravity install command"`,
 	}
 
 	// R-VVO9-365W
@@ -94,7 +97,7 @@ func TestInstallPageOrdersAgentSnippetsAndCopyControls(t *testing.T) {
 		if at < 0 { // R-Y4GE-ZIS2
 			t.Fatalf("install page missing %q:\n%s", want, main)
 		}
-		if at <= previous {
+		if at <= previous { // R-QEFE-76XS
 			t.Fatalf("install composition out of order at %q:\n%s", want, main)
 		}
 		previous = at
