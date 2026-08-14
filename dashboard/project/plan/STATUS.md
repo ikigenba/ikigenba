@@ -11,5 +11,3 @@ file — there is no done marker; done is gone. This file deliberately carries
 matches only phase lines.
 
 Next phase: 55
-
-- Phase 54 ⬜ realizes D40, D5, D42 — Add Grok as a third install agent
