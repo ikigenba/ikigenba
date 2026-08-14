@@ -41,7 +41,7 @@ func (a *app) handleProfile() http.HandlerFunc {
 			Owner:        owner,
 			OwnerInitial: ownerInitial(owner),
 			CurrentPage:  "profile",
-			Version:      buildVersion(),
+			Version:      a.version,
 		}
 
 		if chains, err := a.oauthTokens.ListChainsByOwner(r.Context(), owner); err != nil {

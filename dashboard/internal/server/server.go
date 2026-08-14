@@ -45,6 +45,10 @@ type correlationMinter interface {
 
 // Options configures the dashboard's HTTP layer.
 type Options struct {
+	// Version is the build-stamped runtime version the shell footer renders
+	// verbatim. It is sourced from appkit Router.Version at the composition root.
+	// Required.
+	Version         string
 	Logger          *slog.Logger               // structured logger (required)
 	IDPProvider     googleidp.Provider         // Google identity-provider seam (required for login)
 	GithubProvider  githubidp.Provider         // GitHub identity-provider seam (required for login)
@@ -97,6 +101,7 @@ type Options struct {
 // ever-longer handler parameter lists. It is unexported: the package's public
 // surface is New/Register, not the struct.
 type app struct {
+	version         string
 	logger          *slog.Logger
 	tmpl            *template.Template
 	static          fs.FS
@@ -129,6 +134,9 @@ type app struct {
 // the templates once (a broken template fails startup, not a request). It builds
 // the app but does not stand up a server — Register/New mount its routes.
 func newApp(opts Options) (*app, error) {
+	if opts.Version == "" {
+		return nil, errors.New("server: Version is required")
+	}
 	if opts.Logger == nil {
 		return nil, errors.New("server: Logger is required")
 	}
@@ -210,6 +218,7 @@ func newApp(opts Options) (*app, error) {
 	}
 
 	return &app{
+		version:           opts.Version,
 		logger:            opts.Logger,
 		tmpl:              tmpl,
 		static:            static,

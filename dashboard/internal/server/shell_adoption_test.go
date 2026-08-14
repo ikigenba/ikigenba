@@ -1,6 +1,7 @@
 package server
 
 import (
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,9 +16,17 @@ type renderedShellPage struct {
 	body string
 }
 
+const shellTestVersion = "v9.9.9+seal"
+
 func renderedSignedInShellPages(t *testing.T) (*http.Server, serverDeps, *http.Cookie, []renderedShellPage) {
 	t.Helper()
-	srv, deps := patTestServer(t)
+	deps := newServerDeps(t)
+	opts := deps.opts()
+	opts.Version = shellTestVersion
+	srv, err := New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	cookie := mintSession(t, deps, "owner@int.ikigenba.com")
 	headers := map[string]string{"Cookie": cookie.Name + "=" + cookie.Value}
 	pages := make([]renderedShellPage, 0, 4)
@@ -41,15 +50,15 @@ func renderedSignedInShellPages(t *testing.T) (*http.Server, serverDeps, *http.C
 
 func TestShellFooterReportsVersionOnSignedInPagesOnly(t *testing.T) {
 	srv, _, _, pages := renderedSignedInShellPages(t)
-	versionFooter := regexp.MustCompile(`<footer>dashboard v\d+\.\d+\.\d+[^<]*</footer>`)
+	wantFooter := "<footer>dashboard " + shellTestVersion + "</footer>"
 
 	// R-VN4Y-ERZ1
 	for _, page := range pages {
 		if got := strings.Count(page.body, "<footer>"); got != 1 {
 			t.Errorf("GET %s footer count = %d, want 1:\n%s", page.path, got, page.body)
 		}
-		if !versionFooter.MatchString(page.body) {
-			t.Errorf("GET %s footer does not report a semantic dashboard version:\n%s", page.path, page.body)
+		if got := strings.Count(html.UnescapeString(page.body), wantFooter); got != 1 { // R-VN4Y-ERZ1
+			t.Errorf("GET %s exact footer count = %d, want 1 for %q:\n%s", page.path, got, wantFooter, page.body)
 		}
 	}
 	loggedOut := do(t, srv, http.MethodGet, "https://int.ikigenba.com/", nil)
@@ -153,6 +162,9 @@ func TestShowOnceAndAuthorizePagesUseTheirSessionAppropriateShells(t *testing.T)
 	if strings.Count(created.Body.String(), "<footer>") != 1 {
 		t.Errorf("PAT show-once page does not have exactly one footer:\n%s", created.Body.String())
 	}
+	if !strings.Contains(html.UnescapeString(created.Body.String()), "<footer>dashboard "+shellTestVersion+"</footer>") {
+		t.Errorf("PAT show-once page does not render the injected version:\n%s", created.Body.String())
+	}
 	if !strings.Contains(chooserHeader, `src="/static/logo.png"`) {
 		t.Errorf("authorize chooser header missing logo:\n%s", chooserHeader)
 	}
@@ -163,6 +175,9 @@ func TestShowOnceAndAuthorizePagesUseTheirSessionAppropriateShells(t *testing.T)
 	}
 	if strings.Count(chooser, "<footer>") != 1 {
 		t.Errorf("authorize chooser does not have exactly one footer:\n%s", chooser)
+	}
+	if !strings.Contains(html.UnescapeString(chooser), "<footer>dashboard "+testVersion+"</footer>") {
+		t.Errorf("authorize chooser does not render the injected version:\n%s", chooser)
 	}
 }
 

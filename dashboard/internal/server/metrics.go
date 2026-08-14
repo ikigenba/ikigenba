@@ -37,7 +37,7 @@ func (a *app) handleMetrics() http.HandlerFunc {
 			OwnerInitial: ownerInitial(owner),
 			Charts:       a.metricsChartView(),
 			CurrentPage:  "metrics",
-			Version:      buildVersion(),
+			Version:      a.version,
 		}
 
 		var buf bytes.Buffer

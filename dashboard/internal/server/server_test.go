@@ -35,6 +35,9 @@ func (testCorrelationMinter) NewCorrelationID() string { return correlation.New(
 // tests — any non-empty domain satisfies New's required-domain guard.
 const testWorkspaceDomain = "int.ikigenba.com"
 
+// testVersion is the known chassis version injected into servers in tests.
+const testVersion = "v1.2.3+test"
+
 // testResource is a configured resource identifier the authorize/token endpoints
 // accept; it is the sole member of Options.Resources in tests.
 const testResource = "https://int.ikigenba.com/srv/crm/mcp"
@@ -96,6 +99,7 @@ func ensureTestIdentity(t *testing.T, d serverDeps, id, email string) {
 // returned value (e.g. nil out one dep) to probe the constructor's guards.
 func (d serverDeps) opts() Options {
 	return Options{
+		Version:           testVersion,
 		Logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 		IDPProvider:       googleidp.NewStub(),
 		GithubProvider:    githubidp.NewStub(),
@@ -116,6 +120,18 @@ func (d serverDeps) opts() Options {
 		GrantEvents:       d.grants,
 		CorrelationMinter: testCorrelationMinter{},
 		TelemetryRecorder: d.recorder,
+	}
+}
+
+func TestNewRequiresVersion(t *testing.T) {
+	opts := newServerDeps(t).opts()
+	opts.Version = ""
+	srv, err := New(opts)
+	if err == nil {
+		t.Fatal("New with empty Version returned nil error")
+	}
+	if srv != nil {
+		t.Fatal("New with empty Version constructed a server")
 	}
 }
 

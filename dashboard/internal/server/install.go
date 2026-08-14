@@ -46,7 +46,7 @@ func (a *app) handleInstallPage() http.HandlerFunc {
 			Owner:        owner,
 			OwnerInitial: ownerInitial(owner),
 			CurrentPage:  "install",
-			Version:      buildVersion(),
+			Version:      a.version,
 		}
 		var buf bytes.Buffer
 		if err := a.tmpl.ExecuteTemplate(&buf, "install.html", data); err != nil {

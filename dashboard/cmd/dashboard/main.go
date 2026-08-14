@@ -205,6 +205,7 @@ func registerRoutes(rt *appkit.Router, metricsStore *metrics.Store, manifestRoot
 	auditLog := audit.New(conn)
 
 	regHook, err := server.Register(server.Options{
+		Version:           rt.Version(),
 		Logger:            logger,
 		IDPProvider:       googleidp.New(creds),
 		GithubProvider:    githubidp.New(githubCreds),

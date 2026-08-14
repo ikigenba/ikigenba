@@ -67,7 +67,7 @@ func (a *app) handlePATCreate() http.HandlerFunc {
 			Secret:       plaintext,
 			Owner:        owner,
 			OwnerInitial: ownerInitial(owner),
-			Version:      buildVersion(),
+			Version:      a.version,
 		}); err != nil {
 			a.logger.Error("pat.created.render", "err", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)

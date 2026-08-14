@@ -13,7 +13,7 @@ import (
 // a handshake. A validated return destination is threaded into both start URLs.
 func (a *app) handleLoginChooser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data := signedOutIndexData(r, safeReturnTo(r.URL.Query().Get("return_to")))
+		data := a.signedOutIndexData(r, safeReturnTo(r.URL.Query().Get("return_to")))
 		var buf bytes.Buffer
 		if err := a.tmpl.Execute(&buf, data); err != nil {
 			a.logger.Error("login.render_chooser", "err", err)

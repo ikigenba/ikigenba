@@ -198,7 +198,7 @@ func (a *app) handleAuthorize() http.HandlerFunc {
 				OwnerInitial string
 				CurrentPage  string
 				Version      string
-			}{GoogleURL: googleURL, GitHubURL: githubURL, Version: buildVersion()}); err != nil {
+			}{GoogleURL: googleURL, GitHubURL: githubURL, Version: a.version}); err != nil {
 				a.logger.Error("authorize.render_chooser", "err", err)
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return

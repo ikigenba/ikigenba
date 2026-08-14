@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"runtime/debug"
 	"unicode"
 	"unicode/utf8"
 
@@ -30,14 +29,14 @@ type indexData struct {
 	Version      string
 }
 
-func signedOutIndexData(r *http.Request, returnTo string) indexData {
+func (a *app) signedOutIndexData(r *http.Request, returnTo string) indexData {
 	data := indexData{
 		Host:        r.Host,
 		Scheme:      requestScheme(r),
 		GoogleLogin: "/login/google",
 		GitHubLogin: "/login/github",
 		CurrentPage: "home",
-		Version:     buildVersion(),
+		Version:     a.version,
 	}
 	if returnTo != "" {
 		query := url.Values{"return_to": {returnTo}}.Encode()
@@ -47,21 +46,13 @@ func signedOutIndexData(r *http.Request, returnTo string) indexData {
 	return data
 }
 
-func buildVersion() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
-		return "v0.0.0+dev"
-	}
-	return info.Main.Version
-}
-
 // handleIndex renders the index template. It is identity-aware: a valid
 // dashboard_session cookie makes the page show the owner and a sign-out control;
 // otherwise it shows the logged-out landing. It renders into a buffer first so a
 // template-execution failure becomes a clean 500 instead of a half-written 200.
 func (a *app) handleIndex() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data := signedOutIndexData(r, "")
+		data := a.signedOutIndexData(r, "")
 		if c, err := r.Cookie(sessionCookieName); err == nil {
 			sess, lerr := a.sessions.Lookup(r.Context(), c.Value)
 			switch {
