@@ -40,6 +40,115 @@ func TestDefaultPromptInstructionsConditionallyAnchorsRelativeTime(t *testing.T)
 	}
 }
 
+func TestDefaultPromptInstructionsClassifiesCorrections(t *testing.T) {
+	// R-7CW0-XEEY
+	for _, phrase := range []string{
+		"only when the document itself rules a fact false",
+		"a plain assertion is always a claim",
+	} {
+		if !strings.Contains(DefaultPromptInstructions, phrase) {
+			t.Fatalf("DefaultPromptInstructions does not contain %q", phrase)
+		}
+	}
+	if !strings.Contains(DefaultPromptInstructions, `corrections ["Ada Lovelace did not publish the notes in 1842."]`) ||
+		!strings.Contains(DefaultPromptInstructions, `claims ["Ada Lovelace published the notes in 1843."]`) {
+		t.Fatal("DefaultPromptInstructions does not contain the worked denial-plus-truth example")
+	}
+}
+
+func TestValidateAcceptsClaimsAndCorrectionsAsStatements(t *testing.T) {
+	// R-7BO4-JMO9
+	tests := []struct {
+		name    string
+		subject ExtractedSubject
+		wantErr string
+	}{
+		{
+			name: "correction without claim",
+			subject: ExtractedSubject{Type: "entity", Kind: "person", Name: "Ada Lovelace",
+				Corrections: []string{"Ada Lovelace did not publish the notes in 1842."}},
+		},
+		{
+			name: "correction with claim",
+			subject: ExtractedSubject{Type: "entity", Kind: "person", Name: "Ada Lovelace",
+				Claims: []string{"Ada Lovelace published the notes in 1843."}, Corrections: []string{"Ada Lovelace did not publish the notes in 1842."}},
+		},
+		{
+			name: "claim with corrections absent",
+			subject: ExtractedSubject{Type: "entity", Kind: "person", Name: "Ada Lovelace",
+				Claims: []string{"Ada Lovelace published the notes in 1843."}},
+		},
+		{
+			name: "empty correction",
+			subject: ExtractedSubject{Type: "entity", Kind: "person", Name: "Ada Lovelace",
+				Claims: []string{"Ada Lovelace published the notes in 1843."}, Corrections: []string{" \t"}},
+			wantErr: "corrections[0] required",
+		},
+		{
+			name:    "no statements",
+			subject: ExtractedSubject{Type: "entity", Kind: "person", Name: "Ada Lovelace"},
+			wantErr: "at least one claim or correction",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate([]ExtractedSubject{tt.subject})
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("Validate returned error: %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("Validate error = %v, want error containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestExtractRepromptsAfterStatementValidationFailure(t *testing.T) {
+	// R-7BO4-JMO9
+	invalidResponses := []struct {
+		name     string
+		response string
+		wantErr  string
+	}{
+		{
+			name:     "empty correction",
+			response: `{"subjects":[{"type":"entity","kind":"person","name":"Ada Lovelace","occurred_at":"","claims":[],"corrections":[" "]}]}`,
+			wantErr:  "corrections[0] required",
+		},
+		{
+			name:     "no statements",
+			response: `{"subjects":[{"type":"entity","kind":"person","name":"Ada Lovelace","occurred_at":"","claims":[],"corrections":[]}]}`,
+			wantErr:  "at least one claim or correction",
+		},
+	}
+
+	for _, tt := range invalidResponses {
+		t.Run(tt.name, func(t *testing.T) {
+			prov := &scriptedProvider{responses: []string{
+				tt.response,
+				`{"subjects":[{"type":"entity","kind":"person","name":"Ada Lovelace","occurred_at":"","claims":[],"corrections":["Ada Lovelace did not publish the notes in 1842."]}]}`,
+			}}
+			extractor := New(llmtest.NewClient(t, prov), llm.CallSite{Config: llm.Config{Model: "extract-model"}, MaxParseRetries: 1})
+
+			got, err := extractor.Extract(context.Background(), llm.Attribution{}, validHeader(), "source text")
+			if err != nil {
+				t.Fatalf("Extract returned error after retry: %v", err)
+			}
+			if len(got) != 1 || len(got[0].Corrections) != 1 {
+				t.Fatalf("subjects = %#v, want correction-only subject from retry", got)
+			}
+			if len(prov.requests) != 2 {
+				t.Fatalf("requests len = %d, want validation failure to trigger one re-prompt", len(prov.requests))
+			}
+			corrective := strings.Join(requestTexts(prov.requests[1]), "\n")
+			if !strings.Contains(corrective, "previous response") || !strings.Contains(corrective, tt.wantErr) {
+				t.Fatalf("corrective prompt = %q, want validation error containing %q", corrective, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestExtractRendersDocumentHeaderAndReturnsSubjects(t *testing.T) {
 	prov := &scriptedProvider{responses: []string{`{
 		"subjects": [
@@ -143,7 +252,7 @@ func TestExtractRejectsInvalidSubjectTypesAndEmptyClaims(t *testing.T) {
 				"occurred_at":"",
 				"claims":[]
 			}]}`,
-			wantErr: "claims required",
+			wantErr: "at least one claim or correction",
 		},
 	}
 

@@ -11,13 +11,14 @@ import (
 	"wiki/internal/llm"
 )
 
-// ExtractedSubject is one subject with short, self-contained claims from source text.
+// ExtractedSubject is one subject with short, self-contained statements from source text.
 type ExtractedSubject struct {
-	Type       string   `json:"type"`
-	Kind       string   `json:"kind"`
-	Name       string   `json:"name"`
-	OccurredAt string   `json:"occurred_at"`
-	Claims     []string `json:"claims"`
+	Type        string   `json:"type"`
+	Kind        string   `json:"kind"`
+	Name        string   `json:"name"`
+	OccurredAt  string   `json:"occurred_at"`
+	Claims      []string `json:"claims"`
+	Corrections []string `json:"corrections"`
 }
 
 // DocumentHeader anchors model extraction to explicit source metadata.
@@ -137,12 +138,17 @@ func validateSubject(i int, s ExtractedSubject) error {
 	} else if !isISOPrefix(s.OccurredAt) {
 		return fmt.Errorf("subjects[%d].occurred_at must be an ISO-8601 prefix", i)
 	}
-	if len(s.Claims) == 0 {
-		return fmt.Errorf("subjects[%d].claims required", i)
+	if len(s.Claims) == 0 && len(s.Corrections) == 0 {
+		return fmt.Errorf("subjects[%d] requires at least one claim or correction", i)
 	}
 	for j, claim := range s.Claims {
 		if strings.TrimSpace(claim) == "" {
 			return fmt.Errorf("subjects[%d].claims[%d] required", i, j)
+		}
+	}
+	for j, correction := range s.Corrections {
+		if strings.TrimSpace(correction) == "" {
+			return fmt.Errorf("subjects[%d].corrections[%d] required", i, j)
 		}
 	}
 	return nil
