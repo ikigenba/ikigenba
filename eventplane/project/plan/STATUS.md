@@ -11,5 +11,3 @@ anchored grep matches only phase lines.
 
 Next phase: 13
 
-- Phase 12 ⬜ realizes — — promote lint tier to `strict` (D12; fix 6 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint eventplane` exits 0)
-
