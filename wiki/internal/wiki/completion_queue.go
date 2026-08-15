@@ -94,7 +94,7 @@ func (s stagedSubject) subject(id string) Subject {
 func modelClaims(claims []stagedClaim, subjectID string) []Claim {
 	out := make([]Claim, 0, len(claims))
 	for _, claim := range claims {
-		out = append(out, Claim{ID: claim.ID, SubjectID: subjectID, JobID: claim.JobID, Body: claim.Body})
+		out = append(out, Claim{ID: claim.ID, SubjectID: subjectID, JobID: claim.JobID, Body: claim.Body, Kind: ClaimKind})
 	}
 	return out
 }
@@ -780,7 +780,7 @@ func (s *Service) integrateStagedTx(ctx context.Context, tx *sql.Tx, job Job, pl
 	}
 	for _, staged := range plan.Claims {
 		subject := resolved[staged.NormName]
-		claim := Claim{ID: staged.ID, SubjectID: subject.ID, JobID: staged.JobID, Body: staged.Body}
+		claim := Claim{ID: staged.ID, SubjectID: subject.ID, JobID: staged.JobID, Body: staged.Body, Kind: ClaimKind}
 		if err := claims.Save(ctx, claim); err != nil {
 			return stagedCommit{}, err
 		}

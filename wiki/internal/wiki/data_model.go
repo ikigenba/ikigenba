@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -22,9 +23,10 @@ import (
 type Subject = model.Subject
 
 var (
-	ErrSubjectNotFound = errors.New("wiki: subject not found")
-	ErrJobNotTerminal  = errors.New("wiki: job is not terminal")
-	ErrInvalidCursor   = errors.New("wiki: invalid cursor")
+	ErrSubjectNotFound    = errors.New("wiki: subject not found")
+	ErrJobNotTerminal     = errors.New("wiki: job is not terminal")
+	ErrInvalidCursor      = errors.New("wiki: invalid cursor")
+	ErrInvalidSuppression = errors.New("wiki: invalid suppression edge")
 )
 
 // Path is the public type/norm_name identifier for a subject.
@@ -34,6 +36,48 @@ func Path(s Subject) string {
 
 // Claim is an extracted statement about a subject.
 type Claim = model.Claim
+
+const (
+	ClaimKind      = "claim"
+	CorrectionKind = "correction"
+)
+
+// Suppression records that a correction rules another claim row false.
+type Suppression struct {
+	Correction string
+	Suppressed string
+	CreatedAt  int64
+}
+
+// Effective partitions one subject's rows into effective claims and rows
+// suppressed by live corrections. Claim IDs are ULIDs, so descending ID order
+// is assertion order and also breaks ties within an integration commit.
+func Effective(rows []Claim, edges []Suppression) ([]Claim, map[string][]string) {
+	byCorrection := make(map[string][]string)
+	for _, edge := range edges {
+		byCorrection[edge.Correction] = append(byCorrection[edge.Correction], edge.Suppressed)
+	}
+
+	ordered := append([]Claim(nil), rows...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID > ordered[j].ID })
+	suppressedBy := make(map[string][]string)
+	for _, row := range ordered {
+		if row.Kind != CorrectionKind || len(suppressedBy[row.ID]) != 0 {
+			continue
+		}
+		for _, target := range byCorrection[row.ID] {
+			suppressedBy[target] = append(suppressedBy[target], row.ID)
+		}
+	}
+
+	claims := make([]Claim, 0, len(rows))
+	for _, row := range rows {
+		if row.Kind == ClaimKind && len(suppressedBy[row.ID]) == 0 {
+			claims = append(claims, row)
+		}
+	}
+	return claims, suppressedBy
+}
 
 // Page is a generated wiki page for a subject.
 type Page struct {
@@ -1018,8 +1062,8 @@ func NewClaimStore(db sqlStore) *ClaimStore {
 
 func (s *ClaimStore) Save(ctx context.Context, claim Claim) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO claims (id, subject_id, job_id, body) VALUES (?, ?, ?, ?)`,
-		claim.ID, claim.SubjectID, claim.JobID, claim.Body)
+		`INSERT INTO claims (id, subject_id, job_id, body, kind) VALUES (?, ?, ?, ?, ?)`,
+		claim.ID, claim.SubjectID, claim.JobID, claim.Body, claim.Kind)
 	return err
 }
 
@@ -1044,7 +1088,29 @@ func (s *ClaimStore) SubjectIDsByJob(ctx context.Context, jobID string) ([]strin
 }
 
 func (s *ClaimStore) DeleteByJob(ctx context.Context, jobID string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM claims WHERE job_id = ?`, jobID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM claims WHERE job_id = ?`, jobID)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := NewSuppressionStore(s.db).DeleteForClaims(ctx, ids); err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `DELETE FROM claims WHERE job_id = ?`, jobID)
 	return err
 }
 
@@ -1090,7 +1156,7 @@ func (s *ClaimStore) ListBySubject(ctx context.Context, subjectID string, p page
 	}
 	limit := p.ResolvedLimit()
 	args := []any{subjectID}
-	query := `SELECT id, subject_id, job_id, body FROM claims WHERE subject_id = ?`
+	query := `SELECT id, subject_id, job_id, body, kind FROM claims WHERE subject_id = ?`
 	if len(cursor) > 0 {
 		query += ` AND id > ?`
 		args = append(args, cursor[0])
@@ -1106,7 +1172,7 @@ func (s *ClaimStore) ListBySubject(ctx context.Context, subjectID string, p page
 	var claims []Claim
 	for rows.Next() {
 		var claim Claim
-		if err := rows.Scan(&claim.ID, &claim.SubjectID, &claim.JobID, &claim.Body); err != nil {
+		if err := rows.Scan(&claim.ID, &claim.SubjectID, &claim.JobID, &claim.Body, &claim.Kind); err != nil {
 			return nil, "", err
 		}
 		claims = append(claims, claim)
@@ -1115,6 +1181,90 @@ func (s *ClaimStore) ListBySubject(ctx context.Context, subjectID string, p page
 		return nil, "", err
 	}
 	return pageClaims(claims, limit), nextClaimCursor(claims, limit), nil
+}
+
+// SuppressionStore persists correction edges.
+type SuppressionStore struct {
+	db sqlStore
+}
+
+func NewSuppressionStore(db sqlStore) *SuppressionStore {
+	return &SuppressionStore{db: db}
+}
+
+func (s *SuppressionStore) Insert(ctx context.Context, edge Suppression) error {
+	type endpoint struct {
+		kind string
+		job  string
+		id   string
+	}
+	load := func(id string) (endpoint, error) {
+		var got endpoint
+		err := s.db.QueryRowContext(ctx, `SELECT kind, job_id, id FROM claims WHERE id = ?`, id).
+			Scan(&got.kind, &got.job, &got.id)
+		return got, err
+	}
+	source, err := load(edge.Correction)
+	if err != nil {
+		return fmt.Errorf("%w: correction %q does not name a claim row", ErrInvalidSuppression, edge.Correction)
+	}
+	target, err := load(edge.Suppressed)
+	if err != nil {
+		return fmt.Errorf("%w: suppressed %q does not name a claim row", ErrInvalidSuppression, edge.Suppressed)
+	}
+	if source.kind != CorrectionKind {
+		return fmt.Errorf("%w: source %q is kind %q", ErrInvalidSuppression, source.id, source.kind)
+	}
+	if target.kind == CorrectionKind && (source.job == target.job || source.id <= target.id) {
+		return fmt.Errorf("%w: correction %q does not strictly outrank correction %q from another job", ErrInvalidSuppression, source.id, target.id)
+	}
+	if target.kind != ClaimKind && target.kind != CorrectionKind {
+		return fmt.Errorf("%w: target %q is kind %q", ErrInvalidSuppression, target.id, target.kind)
+	}
+	_, err = s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO suppressions (correction, suppressed, created_at) VALUES (?, ?, ?)`,
+		edge.Correction, edge.Suppressed, edge.CreatedAt)
+	return err
+}
+
+func (s *SuppressionStore) ListBySubject(ctx context.Context, subjectID string) ([]Suppression, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT s.correction, s.suppressed, s.created_at
+		FROM suppressions s
+		JOIN claims c ON c.id = s.correction
+		WHERE c.subject_id = ?
+		ORDER BY s.created_at, s.correction, s.suppressed`, subjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var edges []Suppression
+	for rows.Next() {
+		var edge Suppression
+		if err := rows.Scan(&edge.Correction, &edge.Suppressed, &edge.CreatedAt); err != nil {
+			return nil, err
+		}
+		edges = append(edges, edge)
+	}
+	return edges, rows.Err()
+}
+
+func (s *SuppressionStore) DeleteForClaims(ctx context.Context, claimIDs []string) error {
+	if len(claimIDs) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(claimIDs)), ",")
+	args := make([]any, 0, len(claimIDs)*2)
+	for _, id := range claimIDs {
+		args = append(args, id)
+	}
+	for _, id := range claimIDs {
+		args = append(args, id)
+	}
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM suppressions WHERE correction IN (`+placeholders+`) OR suppressed IN (`+placeholders+`)`,
+		args...)
+	return err
 }
 
 // PageStore persists pages.

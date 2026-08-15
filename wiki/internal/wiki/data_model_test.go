@@ -190,7 +190,7 @@ func TestDomainStoresPersistPhaseOneModel(t *testing.T) {
 	if err := subjects.Save(ctx, Subject{ID: "subject-1", Name: " Café Noir ", Type: "entity"}); err != nil {
 		t.Fatalf("Save subject: %v", err)
 	}
-	if err := claims.Save(ctx, Claim{ID: "claim-1", SubjectID: "subject-1", JobID: "job-1", Body: "Café Noir is a test subject."}); err != nil {
+	if err := claims.Save(ctx, Claim{ID: "claim-1", SubjectID: "subject-1", JobID: "job-1", Body: "Café Noir is a test subject.", Kind: ClaimKind}); err != nil {
 		t.Fatalf("Save claim: %v", err)
 	}
 	if err := pages.Upsert(ctx, Page{ID: "page-1", SubjectID: "subject-1", Title: "Café Noir", Body: "A generated page."}); err != nil {
@@ -373,9 +373,9 @@ func TestListFiltersApplyBeforePaging(t *testing.T) {
 
 	claims := NewClaimStore(conn)
 	for _, claim := range []Claim{
-		{ID: "claim-1", SubjectID: "subject-robot", JobID: "job-done-1", Body: "Robot lab opened."},
-		{ID: "claim-2", SubjectID: "subject-event", JobID: "job-done-1", Body: "Robot launch happened."},
-		{ID: "claim-3", SubjectID: "subject-robot", JobID: "job-done-2", Body: "Robot lab expanded."},
+		{ID: "claim-1", SubjectID: "subject-robot", JobID: "job-done-1", Body: "Robot lab opened.", Kind: ClaimKind},
+		{ID: "claim-2", SubjectID: "subject-event", JobID: "job-done-1", Body: "Robot launch happened.", Kind: ClaimKind},
+		{ID: "claim-3", SubjectID: "subject-robot", JobID: "job-done-2", Body: "Robot lab expanded.", Kind: ClaimKind},
 	} {
 		if err := claims.Save(ctx, claim); err != nil {
 			t.Fatalf("Save claim %s: %v", claim.ID, err)

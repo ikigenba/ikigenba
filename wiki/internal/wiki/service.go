@@ -555,6 +555,7 @@ func (s *Service) planIntegration(ctx context.Context, attr llm.Attribution, job
 				SubjectID: subject.ID,
 				JobID:     job.ID,
 				Body:      strings.TrimSpace(body),
+				Kind:      ClaimKind,
 			}
 			plan.claims = append(plan.claims, claim)
 			claimsBySubject[subject.ID] = append(claimsBySubject[subject.ID], claim)

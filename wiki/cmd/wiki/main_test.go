@@ -567,6 +567,7 @@ func TestBuildSpecReadToolsReturnPublicPathsWithoutSubjectIDs(t *testing.T) {
 		SubjectID: internalSubjectID,
 		JobID:     "job-123",
 		Body:      "Acme Robotics runs a Tulsa lab.",
+		Kind:      wiki.ClaimKind,
 	}); err != nil {
 		t.Fatalf("Save claim: %v", err)
 	}
@@ -665,6 +666,7 @@ func TestPathReadServicesResolveFoldedAndSurvivorPathsIdentically(t *testing.T) 
 		SubjectID: survivor.ID,
 		JobID:     "job-1",
 		Body:      "Winner Widget shipped the release.",
+		Kind:      wiki.ClaimKind,
 	}); err != nil {
 		t.Fatalf("Save claim: %v", err)
 	}
@@ -1472,8 +1474,8 @@ func saveBuildSpecMergeFixture(t *testing.T, ctx context.Context, conn *sql.DB) 
 	}
 	claims := wiki.NewClaimStore(conn)
 	for _, claim := range []wiki.Claim{
-		{ID: "claim-loser", SubjectID: "subject-loser", JobID: "job-existing", Body: "Loser fact."},
-		{ID: "claim-winner", SubjectID: "subject-winner", JobID: "job-existing", Body: "Winner fact."},
+		{ID: "claim-loser", SubjectID: "subject-loser", JobID: "job-existing", Body: "Loser fact.", Kind: wiki.ClaimKind},
+		{ID: "claim-winner", SubjectID: "subject-winner", JobID: "job-existing", Body: "Winner fact.", Kind: wiki.ClaimKind},
 	} {
 		if err := claims.Save(ctx, claim); err != nil {
 			t.Fatalf("Save claim %s: %v", claim.ID, err)

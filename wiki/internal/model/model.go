@@ -15,4 +15,5 @@ type Claim struct {
 	SubjectID string
 	JobID     string
 	Body      string
+	Kind      string
 }

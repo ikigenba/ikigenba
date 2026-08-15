@@ -305,8 +305,8 @@ func TestMergeWithDeletedJobRowDiscardsWithoutRewritingSubjects(t *testing.T) {
 	}
 	claims := NewClaimStore(conn)
 	for _, claim := range []Claim{
-		{ID: "winner-claim", SubjectID: "merge-winner", JobID: "job-existing", Body: "Winner fact."},
-		{ID: "loser-claim", SubjectID: "merge-loser", JobID: "job-existing", Body: "Loser fact."},
+		{ID: "winner-claim", SubjectID: "merge-winner", JobID: "job-existing", Body: "Winner fact.", Kind: ClaimKind},
+		{ID: "loser-claim", SubjectID: "merge-loser", JobID: "job-existing", Body: "Loser fact.", Kind: ClaimKind},
 	} {
 		if err := claims.Save(ctx, claim); err != nil {
 			t.Fatalf("Save claim %s: %v", claim.ID, err)

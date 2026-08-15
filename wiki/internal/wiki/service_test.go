@@ -236,6 +236,7 @@ func TestProcessNextCompilesFromSubjectIdentityAndClaimsOnly(t *testing.T) {
 		SubjectID: "subject-1",
 		JobID:     "job-old",
 		Body:      "older retained claim",
+		Kind:      ClaimKind,
 	}); err != nil {
 		t.Fatalf("Save old claim: %v", err)
 	}
@@ -819,7 +820,7 @@ func TestServiceListsSubjectsAndReadsClaimsAndPagesBySubject(t *testing.T) {
 	if err := subjects.Save(ctx, Subject{ID: "subject-2", Name: "Acme Launch", Type: "event"}); err != nil {
 		t.Fatalf("Save subject-2: %v", err)
 	}
-	if err := claims.Save(ctx, Claim{ID: "claim-1", SubjectID: "subject-1", JobID: "job-1", Body: "Acme Robotics opened a lab."}); err != nil {
+	if err := claims.Save(ctx, Claim{ID: "claim-1", SubjectID: "subject-1", JobID: "job-1", Body: "Acme Robotics opened a lab.", Kind: ClaimKind}); err != nil {
 		t.Fatalf("Save claim: %v", err)
 	}
 	if err := pages.Upsert(ctx, Page{ID: "page-1", SubjectID: "subject-1", Title: "Acme Robotics", Body: "Acme Robotics opened a lab."}); err != nil {
@@ -973,7 +974,7 @@ func TestIngestIntegratesOnlyIntoNamedScope(t *testing.T) {
 	if err := pages.Upsert(ctx, Page{ID: "s2-acme", SubjectID: "s2-acme", Title: "S2 original", Body: "s2 page sentinel"}); err != nil {
 		t.Fatalf("Upsert s2 page: %v", err)
 	}
-	if err := NewClaimStore(conn).Save(ctx, Claim{ID: "s2-old-claim", SubjectID: "s2-acme", JobID: "seed", Body: "s2 old claim"}); err != nil {
+	if err := NewClaimStore(conn).Save(ctx, Claim{ID: "s2-old-claim", SubjectID: "s2-acme", JobID: "seed", Body: "s2 old claim", Kind: ClaimKind}); err != nil {
 		t.Fatalf("Save s2 claim: %v", err)
 	}
 

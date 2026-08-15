@@ -789,6 +789,7 @@ func TestAskSynthesisUsesOnlyRetrievedPageBodies(t *testing.T) {
 		SubjectID: "subject-ada",
 		JobID:     "job-secret",
 		Body:      "RAW CLAIM TEXT SHOULD NOT REACH SYNTHESIS",
+		Kind:      wiki.ClaimKind,
 	}); err != nil {
 		t.Fatalf("Save claim: %v", err)
 	}

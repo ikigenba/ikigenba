@@ -600,8 +600,8 @@ func TestMergeAndAliasRoutingStayWithinScope(t *testing.T) {
 	}
 	claims := wikidomain.NewClaimStore(conn)
 	for _, claim := range []wikidomain.Claim{
-		{ID: "claim-loser", SubjectID: "s1-loser", JobID: "seed", Body: "loser fact"},
-		{ID: "claim-winner", SubjectID: "s1-winner", JobID: "seed", Body: "winner fact"},
+		{ID: "claim-loser", SubjectID: "s1-loser", JobID: "seed", Body: "loser fact", Kind: wikidomain.ClaimKind},
+		{ID: "claim-winner", SubjectID: "s1-winner", JobID: "seed", Body: "winner fact", Kind: wikidomain.ClaimKind},
 	} {
 		if err := claims.Save(ctx, claim); err != nil {
 			t.Fatalf("Save claim %s: %v", claim.ID, err)
@@ -685,8 +685,8 @@ func saveMergeFixture(t *testing.T, ctx context.Context, conn *sql.DB) {
 	}
 	claims := wikidomain.NewClaimStore(conn)
 	for _, claim := range []wikidomain.Claim{
-		{ID: "claim-winner", SubjectID: "subject-winner", JobID: "job-existing", Body: "Winner fact."},
-		{ID: "claim-loser", SubjectID: "subject-loser", JobID: "job-existing", Body: "Loser fact."},
+		{ID: "claim-winner", SubjectID: "subject-winner", JobID: "job-existing", Body: "Winner fact.", Kind: wikidomain.ClaimKind},
+		{ID: "claim-loser", SubjectID: "subject-loser", JobID: "job-existing", Body: "Loser fact.", Kind: wikidomain.ClaimKind},
 	} {
 		if err := claims.Save(ctx, claim); err != nil {
 			t.Fatalf("Save claim %s: %v", claim.ID, err)
