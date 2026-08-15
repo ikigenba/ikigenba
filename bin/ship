@@ -122,7 +122,8 @@ done
 
 [ -n "$APP" ] || { echo "!! missing <app>" >&2; usage >&2; exit 2; }
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="${SHIP_REPO_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 cd "$REPO"
 
 [ -d "$APP" ] || { echo "!! no such service dir: ${APP}/" >&2; exit 1; }
@@ -169,6 +170,11 @@ rm -rf "$WORKTREE"
 # EXCLUDING any uncommitted edits in the operator's working tree. That guarantee
 # (artifact == committed main) is the whole point of the file-on-main model.
 git worktree add --detach "$WORKTREE" HEAD >/dev/null
+
+# Judge exactly the detached source that will be built. Keep the lint executable
+# and its governed configs anchored beside this script even when a hermetic test
+# retargets ship's source repository with SHIP_REPO_ROOT.
+LINT_REPO_ROOT="$WORKTREE" "${SCRIPT_DIR}/lint" "$APP"
 
 # --- read the version FROM THE WORKTREE's <app>/VERSION ---------------------
 # Read the v-prefixed version core from the actual build source (the worktree),
@@ -231,10 +237,11 @@ fi
 # the worktree removal.
 LDFLAGS="-s -w -X appkit.version=${FULL_VERSION} -X appkit.commit="
 echo ">> build ${APP} -> ${ARTIFACT}"
+SHIP_GO="${SHIP_GO:-go}"
 (
   cd "${WORKTREE}/${APP}"
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOWORK=off \
-    go build -trimpath -buildvcs=false \
+    "$SHIP_GO" build -trimpath -buildvcs=false \
       -ldflags "${LDFLAGS}" \
       -o "${ARTIFACT}" "./cmd/${APP}"
 )
