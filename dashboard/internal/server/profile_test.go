@@ -1,11 +1,10 @@
 package server
 
 import (
+	"dashboard/internal/googleidp"
 	"net/http"
 	"strings"
 	"testing"
-
-	"dashboard/internal/googleidp"
 )
 
 func TestProfileRouteRendersSignedInPage(t *testing.T) {

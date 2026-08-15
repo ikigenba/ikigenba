@@ -3,6 +3,8 @@ package server
 import (
 	"bytes"
 	"context"
+	"dashboard/internal/audit"
+	"dashboard/internal/oauth"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -10,9 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"dashboard/internal/audit"
-	"dashboard/internal/oauth"
 )
 
 const (

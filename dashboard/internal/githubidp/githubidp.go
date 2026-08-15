@@ -252,7 +252,7 @@ func (g *github) fetchMembership(ctx context.Context, token string) (string, err
 
 func (g *github) apiGet(ctx context.Context, token, path string) (*http.Response, error) {
 	return g.doWithRetry(func() (*http.Request, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(g.apiBase, "/")+path, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(g.apiBase, "/")+path, http.NoBody)
 		if err != nil {
 			return nil, err
 		}

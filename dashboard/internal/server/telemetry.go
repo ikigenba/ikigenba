@@ -1,12 +1,11 @@
 package server
 
 import (
+	"appkit/telemetry"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-
-	"appkit/telemetry"
 )
 
 // recordEdge builds the deliberately small, allowlisted forensic record for an

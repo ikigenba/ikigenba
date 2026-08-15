@@ -1,18 +1,7 @@
 package server
 
 import (
-	"database/sql"
-	"io"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
-	"path/filepath"
-	"strings"
-	"testing"
-	"time"
-
 	"appkit/telemetry"
-
 	"dashboard/internal/audit"
 	"dashboard/internal/db"
 	"dashboard/internal/githubidp"
@@ -24,7 +13,16 @@ import (
 	"dashboard/internal/pat"
 	"dashboard/internal/ratelimit"
 	"dashboard/internal/session"
+	"database/sql"
 	"eventplane/correlation"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
 )
 
 type testCorrelationMinter struct{}

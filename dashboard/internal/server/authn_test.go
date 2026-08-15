@@ -2,6 +2,11 @@ package server
 
 import (
 	"context"
+	"dashboard/internal/db"
+	"dashboard/internal/identity"
+	"dashboard/internal/oauth"
+	"dashboard/internal/pat"
+	"dashboard/internal/ratelimit"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,12 +14,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"dashboard/internal/db"
-	"dashboard/internal/identity"
-	"dashboard/internal/oauth"
-	"dashboard/internal/pat"
-	"dashboard/internal/ratelimit"
 )
 
 // mintAccessToken issues a fresh chain + token pair directly through the token

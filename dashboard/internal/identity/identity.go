@@ -3,11 +3,10 @@ package identity
 
 import (
 	"context"
+	"dashboard/internal/ids"
 	"database/sql"
 	"fmt"
 	"time"
-
-	"dashboard/internal/ids"
 )
 
 // Claims are the identity-bearing id_token fields captured at login.

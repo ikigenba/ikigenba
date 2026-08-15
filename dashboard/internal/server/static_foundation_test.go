@@ -1,13 +1,12 @@
 package server
 
 import (
+	"dashboard/ui"
 	"io/fs"
 	"net/http"
 	"path"
 	"strings"
 	"testing"
-
-	"dashboard/ui"
 )
 
 func TestServedTokensCSSUsesWikiSystemFontStacks(t *testing.T) {

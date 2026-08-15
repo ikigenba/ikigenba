@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"dashboard/internal/googleidp"
+	"dashboard/internal/oauthstate"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -10,9 +12,6 @@ import (
 	"net/url"
 	"testing"
 	"time"
-
-	"dashboard/internal/googleidp"
-	"dashboard/internal/oauthstate"
 )
 
 // startLogin runs the GET /login/google leg and returns the state the handler sent to

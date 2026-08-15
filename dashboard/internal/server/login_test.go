@@ -2,6 +2,8 @@ package server
 
 import (
 	"crypto/sha256"
+	"dashboard/internal/githubidp"
+	"dashboard/internal/googleidp"
 	"database/sql"
 	"encoding/hex"
 	"net/http"
@@ -9,9 +11,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"dashboard/internal/githubidp"
-	"dashboard/internal/googleidp"
 )
 
 // loginServer builds a server backed by one shared temp SQLite file, returning

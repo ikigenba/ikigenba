@@ -1,8 +1,12 @@
 package server
 
 import (
+	"appkit/telemetry"
 	"bytes"
 	"context"
+	"dashboard/internal/audit"
+	"dashboard/internal/oauth"
+	"dashboard/internal/ratelimit"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -13,12 +17,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"appkit/telemetry"
-
-	"dashboard/internal/audit"
-	"dashboard/internal/oauth"
-	"dashboard/internal/ratelimit"
 )
 
 type edgeSink struct {

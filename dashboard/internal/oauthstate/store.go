@@ -8,13 +8,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"dashboard/internal/ids"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
-
-	"dashboard/internal/ids"
 )
 
 // Origin identifies where a login round-trip began. A web handshake is the

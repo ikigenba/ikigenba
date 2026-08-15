@@ -1,11 +1,10 @@
 package server
 
 import (
+	"appkit/inventory"
 	"fmt"
 	"net/http"
 	"strings"
-
-	"appkit/inventory"
 )
 
 // installTokenEnvVar is the environment variable the served install scripts

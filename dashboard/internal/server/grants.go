@@ -15,15 +15,14 @@ package server
 // the state-changing revoke route.
 
 import (
+	"dashboard/internal/audit"
+	"dashboard/internal/oauth"
+	"dashboard/internal/session"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
-
-	"dashboard/internal/audit"
-	"dashboard/internal/oauth"
-	"dashboard/internal/session"
 )
 
 // sessionOwner resolves the signed-in owner from the request's session cookie.

@@ -14,15 +14,14 @@ package server
 
 import (
 	"context"
+	"dashboard/internal/audit"
+	"dashboard/internal/pat"
 	"encoding/base64"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-
-	"dashboard/internal/audit"
-	"dashboard/internal/pat"
 )
 
 // gitDoorPrefix is repos' git smart-HTTP mount. The trailing slash is the
@@ -81,7 +80,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 		boundResource, ok := a.resourceForOriginalURI(r.Header.Get("X-Original-URI"))
 		if !ok {
 			// Unknown service: we cannot name a resource_metadata URL.
-			writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
+			writeBearerChallenge(w, bearerChallenge{
 				oauthError:  "invalid_request",
 				description: "unknown service for original request URI",
 			})
@@ -121,7 +120,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 				a.recordEdge(r, id, "deny", http.StatusUnauthorized, "missing_credential", "", "")
 				return
 			}
-			writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
+			writeBearerChallenge(w, bearerChallenge{
 				oauthError:       "invalid_request",
 				description:      "missing or malformed Authorization header",
 				resourceMetadata: prmURL,
@@ -142,7 +141,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 
 		vt, err := a.oauthTokens.ValidateAccess(r.Context(), tok)
 		if err != nil {
-			writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
+			writeBearerChallenge(w, bearerChallenge{
 				oauthError:       "invalid_token",
 				description:      err.Error(),
 				resourceMetadata: prmURL,
@@ -154,7 +153,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 
 		// (e) Resource binding: the token must be bound to exactly this service.
 		if vt.Chain.Resource != boundResource {
-			writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
+			writeBearerChallenge(w, bearerChallenge{
 				oauthError:       "invalid_token",
 				description:      "token resource binding does not match this service",
 				resourceMetadata: prmURL,
@@ -169,7 +168,7 @@ func (a *app) handleAuthn() http.HandlerFunc {
 
 		// (f) Workspace: the owner identity must be inside the configured domain.
 		if !ownerInWorkspace(vt.Chain.OwnerEmail, a.workspaceDomain) {
-			writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
+			writeBearerChallenge(w, bearerChallenge{
 				oauthError:       "invalid_token",
 				description:      "owner identity outside configured workspace",
 				resourceMetadata: prmURL,
@@ -246,7 +245,7 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		writeBearerChallenge(w, http.StatusUnauthorized, bearerChallenge{
+		writeBearerChallenge(w, bearerChallenge{
 			oauthError:       "invalid_token",
 			description:      description,
 			resourceMetadata: prmURL,
@@ -420,7 +419,7 @@ type bearerChallenge struct {
 // incrementally from the supplied fields, sets Cache-Control: no-store, and
 // writes status with an empty body. nginx reads only the status and headers;
 // the body is intentionally empty.
-func writeBearerChallenge(w http.ResponseWriter, status int, c bearerChallenge) {
+func writeBearerChallenge(w http.ResponseWriter, c bearerChallenge) {
 	hdr := "Bearer"
 	if c.oauthError != "" {
 		hdr += ` error="` + c.oauthError + `"`
@@ -443,7 +442,7 @@ func writeBearerChallenge(w http.ResponseWriter, status int, c bearerChallenge) 
 	}
 	w.Header().Set("WWW-Authenticate", hdr)
 	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusUnauthorized)
 }
 
 // remoteIsLoopback reports whether remoteAddr (host:port form) has a loopback

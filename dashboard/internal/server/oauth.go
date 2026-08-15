@@ -20,6 +20,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"dashboard/internal/audit"
+	"dashboard/internal/oauth"
+	"dashboard/internal/oauthstate"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -29,10 +32,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"dashboard/internal/audit"
-	"dashboard/internal/oauth"
-	"dashboard/internal/oauthstate"
 )
 
 // ── metadata document ──────────────────────────────────────────────────────
@@ -81,30 +80,30 @@ func (a *app) handleDCRRegister() http.HandlerFunc {
 		var body dcrRequest
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "malformed request body")
-			a.writeAuditRejection(r, audit.EventDCRReject, "", "", map[string]any{"reason": "malformed_body"})
+			a.writeAuditRejection(r, map[string]any{"reason": "malformed_body"})
 			return
 		}
 		if body.TokenEndpointAuthMethod != "" && body.TokenEndpointAuthMethod != "none" {
 			writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "token_endpoint_auth_method must be 'none'")
-			a.writeAuditRejection(r, audit.EventDCRReject, "", "", map[string]any{"reason": "auth_method"})
+			a.writeAuditRejection(r, map[string]any{"reason": "auth_method"})
 			return
 		}
 		if len(body.RedirectURIs) == 0 {
 			writeOAuthError(w, http.StatusBadRequest, "invalid_redirect_uri", "redirect_uris must contain at least one entry")
-			a.writeAuditRejection(r, audit.EventDCRReject, "", "", map[string]any{"reason": "no_redirect_uris"})
+			a.writeAuditRejection(r, map[string]any{"reason": "no_redirect_uris"})
 			return
 		}
 		for _, u := range body.RedirectURIs {
 			if !isValidRedirectURI(u) {
 				writeOAuthError(w, http.StatusBadRequest, "invalid_redirect_uri", "redirect_uri "+u+" is not an absolute http(s) URL with non-empty host and no fragment")
-				a.writeAuditRejection(r, audit.EventDCRReject, "", "", map[string]any{"reason": "bad_redirect_uri", "uri": u})
+				a.writeAuditRejection(r, map[string]any{"reason": "bad_redirect_uri", "uri": u})
 				return
 			}
 		}
 		name := strings.TrimSpace(body.ClientName)
 		if !validClientName(name) {
 			writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "client_name invalid")
-			a.writeAuditRejection(r, audit.EventDCRReject, "", "", map[string]any{"reason": "bad_client_name"})
+			a.writeAuditRejection(r, map[string]any{"reason": "bad_client_name"})
 			return
 		}
 		c, err := a.oauthClients.Register(r.Context(), name, body.RedirectURIs)
@@ -683,13 +682,13 @@ func (a *app) auditAfterRollback(ctx context.Context, tx *sql.Tx, e audit.Event)
 
 // writeAuditRejection writes a rejection audit event with the request's IP and
 // User-Agent attached.
-func (a *app) writeAuditRejection(r *http.Request, t audit.EventType, owner, client string, details map[string]any) {
+func (a *app) writeAuditRejection(r *http.Request, details map[string]any) {
 	if a.audit == nil {
 		return
 	}
 	_ = a.audit.Write(r.Context(), audit.Event{
-		Type: t, OwnerEmail: owner, ClientID: client,
-		IP: r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"),
+		Type: audit.EventDCRReject,
+		IP:   r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"),
 		Details: details,
 	})
 }

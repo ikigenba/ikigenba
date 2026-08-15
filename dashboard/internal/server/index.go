@@ -1,16 +1,14 @@
 package server
 
 import (
+	"appkit/inventory"
 	"bytes"
+	"dashboard/internal/session"
 	"errors"
 	"net/http"
 	"net/url"
 	"unicode"
 	"unicode/utf8"
-
-	"appkit/inventory"
-
-	"dashboard/internal/session"
 )
 
 // indexData is the data passed to the index template. Host self-templates the

@@ -17,20 +17,10 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/url"
-	"os"
-	"strings"
-	"time"
-
 	"appkit"
 	"appkit/config"
 	"appkit/inventory"
-	"eventplane/correlation"
-
+	"context"
 	"dashboard/internal/audit"
 	"dashboard/internal/db"
 	"dashboard/internal/githubidp"
@@ -44,6 +34,14 @@ import (
 	"dashboard/internal/ratelimit"
 	"dashboard/internal/server"
 	"dashboard/internal/session"
+	"encoding/json"
+	"eventplane/correlation"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"time"
 )
 
 type correlationMinter struct{}

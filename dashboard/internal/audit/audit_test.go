@@ -2,12 +2,11 @@ package audit_test
 
 import (
 	"context"
+	"dashboard/internal/audit"
+	"dashboard/internal/db"
 	"database/sql"
 	"path/filepath"
 	"testing"
-
-	"dashboard/internal/audit"
-	"dashboard/internal/db"
 )
 
 func openDB(t *testing.T) *sql.DB {

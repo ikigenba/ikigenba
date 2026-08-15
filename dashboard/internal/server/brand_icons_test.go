@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"dashboard/ui"
 	"io"
 	"io/fs"
 	"net/http"
@@ -9,8 +10,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-
-	"dashboard/ui"
 )
 
 func TestEveryServedDocumentCarriesBrandIcons(t *testing.T) {

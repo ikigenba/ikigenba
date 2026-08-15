@@ -7,13 +7,11 @@ package server
 // served one-paste install scripts and the table can't drift.
 
 import (
+	"appkit/inventory"
 	"bytes"
+	"dashboard/internal/session"
 	"errors"
 	"net/http"
-
-	"appkit/inventory"
-
-	"dashboard/internal/session"
 )
 
 type installData struct {

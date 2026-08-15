@@ -8,13 +8,12 @@ package session
 import (
 	"context"
 	"crypto/sha256"
+	"dashboard/internal/ids"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
-
-	"dashboard/internal/ids"
 )
 
 // idleTimeout and absoluteTimeout are the two session ceilings. They are policy,

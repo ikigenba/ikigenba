@@ -1,14 +1,13 @@
 package server
 
 import (
+	"dashboard/internal/ratelimit"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
-
-	"dashboard/internal/ratelimit"
 )
 
 var correlationIDPattern = regexp.MustCompile(`^[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{26}$`)

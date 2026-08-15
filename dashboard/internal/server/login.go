@@ -2,11 +2,10 @@ package server
 
 import (
 	"bytes"
+	"dashboard/internal/oauthstate"
 	"net/http"
 	"net/url"
 	"strings"
-
-	"dashboard/internal/oauthstate"
 )
 
 // handleLoginChooser renders the shared signed-out composition without minting

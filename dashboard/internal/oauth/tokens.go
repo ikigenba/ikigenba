@@ -2,13 +2,12 @@ package oauth
 
 import (
 	"context"
+	"dashboard/internal/ids"
 	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
-
-	"dashboard/internal/ids"
 )
 
 // TokenStore mints and validates chains, access tokens, and refresh tokens.

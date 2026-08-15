@@ -16,12 +16,11 @@ package server
 
 import (
 	"bytes"
+	"dashboard/internal/audit"
+	"dashboard/internal/pat"
 	"net/http"
 	"strings"
 	"time"
-
-	"dashboard/internal/audit"
-	"dashboard/internal/pat"
 )
 
 // maxPATLabelLen bounds the required, user-supplied PAT label (ADR §D8).

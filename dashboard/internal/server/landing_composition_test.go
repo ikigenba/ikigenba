@@ -1,13 +1,12 @@
 package server
 
 import (
+	"dashboard/internal/googleidp"
 	"net/http"
 	"strings"
 	"testing"
 	"unicode"
 	"unicode/utf8"
-
-	"dashboard/internal/googleidp"
 )
 
 func landingServerWithCRM(t *testing.T) *http.Server {

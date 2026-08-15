@@ -7,13 +7,12 @@ package audit
 
 import (
 	"context"
+	"dashboard/internal/ids"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
-
-	"dashboard/internal/ids"
 )
 
 // EventType is the closed enumeration of audit event kinds.

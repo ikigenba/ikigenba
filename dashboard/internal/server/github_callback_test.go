@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"dashboard/internal/githubidp"
+	"dashboard/internal/googleidp"
+	"dashboard/internal/oauthstate"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -9,10 +12,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
-
-	"dashboard/internal/githubidp"
-	"dashboard/internal/googleidp"
-	"dashboard/internal/oauthstate"
 )
 
 func newGitHubCallbackServer(t *testing.T, githubIdentity githubidp.Identity) (*http.Server, serverDeps) {

@@ -3,13 +3,12 @@ package oauth
 import (
 	"context"
 	"crypto/sha256"
+	"dashboard/internal/ids"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
-
-	"dashboard/internal/ids"
 )
 
 // AuthCodeStore persists short-lived authorization codes.

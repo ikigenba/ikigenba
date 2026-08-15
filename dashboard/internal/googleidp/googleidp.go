@@ -329,7 +329,7 @@ func (g *google) fetchKey(kid string) (*rsa.PublicKey, error) {
 // loadJWKS fetches Google's JWK set and builds an RSA public key per kid,
 // decoding each key's base64url modulus and exponent.
 func (g *google) loadJWKS() (map[string]*rsa.PublicKey, error) {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, g.jwksEndpoint, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, g.jwksEndpoint, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

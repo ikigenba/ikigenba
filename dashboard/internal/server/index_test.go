@@ -1,11 +1,10 @@
 package server
 
 import (
+	"dashboard/internal/googleidp"
 	"net/http"
 	"strings"
 	"testing"
-
-	"dashboard/internal/googleidp"
 )
 
 // TestIndexLoggedIn: a request carrying a live session cookie renders the

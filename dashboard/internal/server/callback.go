@@ -1,13 +1,12 @@
 package server
 
 import (
-	"net/http"
-	"net/url"
-
 	"dashboard/internal/audit"
 	"dashboard/internal/identity"
 	"dashboard/internal/oauth"
 	"dashboard/internal/oauthstate"
+	"net/http"
+	"net/url"
 )
 
 // sessionCookieName carries the plaintext web-session value to the browser. The

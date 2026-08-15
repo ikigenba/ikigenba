@@ -2,13 +2,12 @@ package oauth
 
 import (
 	"context"
+	"dashboard/internal/ids"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
-
-	"dashboard/internal/ids"
 )
 
 // ClientStore persists DCR client registrations.

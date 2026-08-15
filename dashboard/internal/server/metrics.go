@@ -2,11 +2,10 @@ package server
 
 import (
 	"bytes"
-	"errors"
-	"net/http"
-
 	"dashboard/internal/metrics"
 	"dashboard/internal/session"
+	"errors"
+	"net/http"
 )
 
 type metricsPageData struct {

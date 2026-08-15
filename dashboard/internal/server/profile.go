@@ -2,10 +2,9 @@ package server
 
 import (
 	"bytes"
+	"dashboard/internal/session"
 	"errors"
 	"net/http"
-
-	"dashboard/internal/session"
 )
 
 type profileData struct {

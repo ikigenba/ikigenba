@@ -2,14 +2,13 @@ package identity
 
 import (
 	"context"
+	"dashboard/internal/db"
 	"database/sql"
 	"errors"
 	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
-
-	"dashboard/internal/db"
 )
 
 func newTestStore(t *testing.T) (*Store, *time.Time) {

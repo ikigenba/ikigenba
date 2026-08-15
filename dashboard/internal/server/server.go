@@ -13,18 +13,8 @@
 package server
 
 import (
-	"database/sql"
-	"errors"
-	"fmt"
-	"html/template"
-	"io/fs"
-	"log/slog"
-	"net/http"
-	"time"
-
 	"appkit/server"
 	"appkit/telemetry"
-
 	"dashboard/internal/audit"
 	"dashboard/internal/githubidp"
 	"dashboard/internal/googleidp"
@@ -37,6 +27,14 @@ import (
 	"dashboard/internal/ratelimit"
 	"dashboard/internal/session"
 	"dashboard/ui"
+	"database/sql"
+	"errors"
+	"fmt"
+	"html/template"
+	"io/fs"
+	"log/slog"
+	"net/http"
+	"time"
 )
 
 type correlationMinter interface {

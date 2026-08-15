@@ -1,12 +1,11 @@
 package server
 
 import (
+	"dashboard/internal/metrics"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
-
-	"dashboard/internal/metrics"
 )
 
 func metricsTestServer(t *testing.T) (*http.Server, serverDeps) {

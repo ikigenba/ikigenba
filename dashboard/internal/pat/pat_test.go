@@ -2,13 +2,12 @@ package pat
 
 import (
 	"context"
+	"dashboard/internal/db"
 	"database/sql"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"dashboard/internal/db"
 )
 
 // openTestDB opens a fresh migrated SQLite database in a temp dir.

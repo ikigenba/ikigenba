@@ -1,11 +1,10 @@
 package server
 
 import (
+	"appkit/inventory"
 	"net/http"
 	"net/url"
 	"strings"
-
-	"appkit/inventory"
 )
 
 // Href is the landing-page service link target. serviceRow already carries the

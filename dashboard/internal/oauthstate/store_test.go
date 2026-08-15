@@ -3,13 +3,12 @@ package oauthstate
 import (
 	"context"
 	"crypto/sha256"
+	"dashboard/internal/db"
 	"encoding/hex"
 	"errors"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"dashboard/internal/db"
 )
 
 func testStore(t *testing.T, ttl time.Duration) *HandshakeStore {

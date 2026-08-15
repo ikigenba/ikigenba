@@ -10,14 +10,13 @@ package pat
 import (
 	"context"
 	"crypto/sha256"
+	"dashboard/internal/ids"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
-
-	"dashboard/internal/ids"
 )
 
 // Prefix is the plaintext prefix for a PAT, alongside ms_oat_ (access) and

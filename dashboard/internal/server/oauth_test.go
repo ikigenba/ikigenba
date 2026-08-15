@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"dashboard/internal/oauth"
+	"dashboard/internal/oauthstate"
 	"encoding/base64"
 	"encoding/json"
 	"html"
@@ -16,9 +18,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"dashboard/internal/oauth"
-	"dashboard/internal/oauthstate"
 )
 
 // ── harness ─────────────────────────────────────────────────────────────────

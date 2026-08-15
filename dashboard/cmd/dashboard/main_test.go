@@ -1,6 +1,8 @@
 package main
 
 import (
+	"appkit/config"
+	"appkit/manifest"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,9 +18,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"appkit/config"
-	"appkit/manifest"
 )
 
 // noEnv is a getenv that reports every variable as unset.
