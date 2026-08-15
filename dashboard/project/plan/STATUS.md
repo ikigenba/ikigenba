@@ -11,5 +11,3 @@ file — there is no done marker; done is gone. This file deliberately carries
 matches only phase lines.
 
 Next phase: 59
-
-- Phase 58 ⬜ realizes — — promote lint tier to `strict` (D44; fix 13 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint dashboard` exits 0)
