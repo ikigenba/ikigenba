@@ -4,9 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-
 	"eventplane/outbox"
+	"fmt"
 )
 
 // eventTimeFormat matches the read API's timestamp rendering (internal/mcp

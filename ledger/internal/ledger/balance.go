@@ -51,7 +51,7 @@ func rollUp(sums []AccountSum, depth int) BalanceReport {
 	if depth <= 0 {
 		rep.Lines = make([]BalanceLine, 0, len(sums))
 		for _, a := range sums {
-			rep.Lines = append(rep.Lines, BalanceLine{Account: a.Account, Sum: a.Sum})
+			rep.Lines = append(rep.Lines, BalanceLine(a))
 			rep.Total += a.Sum
 		}
 		return rep

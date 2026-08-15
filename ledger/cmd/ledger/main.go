@@ -14,17 +14,14 @@
 package main
 
 import (
-	"fmt"
-	"net/http"
-
 	"appkit"
 	"appkit/web"
-
+	"eventplane/outbox"
+	"fmt"
 	"ledger/internal/db"
 	"ledger/internal/ledger"
 	"ledger/internal/mcp"
-
-	"eventplane/outbox"
+	"net/http"
 	"registry"
 )
 

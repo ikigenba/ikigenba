@@ -4,13 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"ledger/internal/db"
 	"strings"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
-
-	"ledger/internal/db"
 
 	_ "modernc.org/sqlite"
 )
@@ -97,7 +96,8 @@ func TestCanonicalizeAccount(t *testing.T) {
 
 func TestRecord_ElisionResolvesResidual(t *testing.T) {
 	s := mkSvc(t)
-	out := record(t, s, "2026-06-01", "Acme — June hosting",
+	out := record(
+		t, s, "2026-06-01", "Acme — June hosting",
 		leg("Assets:Receivable:Acme", i64(5000)),
 		leg("Income:Hosting", nil), // elided → -5000
 	)
@@ -128,7 +128,8 @@ func TestRecord_ElisionResolvesResidual(t *testing.T) {
 
 func TestRecord_ExplicitBalanced_OK(t *testing.T) {
 	s := mkSvc(t)
-	out := record(t, s, "2026-06-09", "Acme payment",
+	out := record(
+		t, s, "2026-06-09", "Acme payment",
 		leg("Assets:Bank:Checking", i64(5000)),
 		leg("Assets:Receivable:Acme", i64(-5000)),
 	)
@@ -235,7 +236,8 @@ func TestReverse_ExternalRefIsItsOwnPermanentClaim(t *testing.T) {
 
 func TestReverse_MirrorsAndLinks(t *testing.T) {
 	s := mkSvc(t)
-	orig := record(t, s, "2026-06-01", "Acme — June hosting",
+	orig := record(
+		t, s, "2026-06-01", "Acme — June hosting",
 		leg("Assets:Receivable:Acme", i64(5000)),
 		leg("Income:Hosting", i64(-5000)),
 	)
@@ -267,7 +269,8 @@ func TestReverse_MirrorsAndLinks(t *testing.T) {
 
 func TestReverse_DoubleReverseBlocked_ReverseOfReverseAllowed(t *testing.T) {
 	s := mkSvc(t)
-	orig := record(t, s, "2026-06-01", "x",
+	orig := record(
+		t, s, "2026-06-01", "x",
 		leg("Assets:Bank:Checking", i64(100)),
 		leg("Income:Hosting", i64(-100)),
 	)
@@ -469,7 +472,8 @@ func TestDescribe_RootsAndLiveTree(t *testing.T) {
 func TestReconcile_ClearedVsLedgerBalanceDiffer(t *testing.T) {
 	s := mkSvc(t)
 	// A bank deposit recorded pending (both legs default pending).
-	dep := record(t, s, "2026-06-02", "deposit",
+	dep := record(
+		t, s, "2026-06-02", "deposit",
 		leg("Assets:Bank:Checking", i64(7000)),
 		leg("Income:Hosting", i64(-7000)),
 	)
@@ -515,7 +519,8 @@ func TestReconcile_ClearedVsLedgerBalanceDiffer(t *testing.T) {
 
 func TestReconcile_FreeTransitionsAndIdempotent(t *testing.T) {
 	s := mkSvc(t)
-	tx := record(t, s, "2026-06-02", "x",
+	tx := record(
+		t, s, "2026-06-02", "x",
 		leg("Assets:Bank:Checking", i64(100)),
 		leg("Income:Hosting", i64(-100)),
 	)
@@ -539,7 +544,8 @@ func TestReconcile_FreeTransitionsAndIdempotent(t *testing.T) {
 
 func TestReconcile_UnknownIDFailsWholeBatch(t *testing.T) {
 	s := mkSvc(t)
-	tx := record(t, s, "2026-06-02", "x",
+	tx := record(
+		t, s, "2026-06-02", "x",
 		leg("Assets:Bank:Checking", i64(100)),
 		leg("Income:Hosting", i64(-100)),
 	)
@@ -557,7 +563,8 @@ func TestReconcile_UnknownIDFailsWholeBatch(t *testing.T) {
 
 func TestReconcile_BadStatus(t *testing.T) {
 	s := mkSvc(t)
-	tx := record(t, s, "2026-06-02", "x",
+	tx := record(
+		t, s, "2026-06-02", "x",
 		leg("Assets:Bank:Checking", i64(100)),
 		leg("Income:Hosting", i64(-100)),
 	)

@@ -3,12 +3,12 @@ package db
 import (
 	"context"
 	"database/sql"
+	"eventplane/outbox"
 	"reflect"
 	"strings"
 	"testing"
 
 	appkitdb "appkit/db"
-	"eventplane/outbox"
 )
 
 type outboxColumn struct {

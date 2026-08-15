@@ -1,15 +1,14 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"fmt"
+	"ledger/internal/ledger"
 	"time"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-
-	"ledger/internal/ledger"
 )
 
 // timeFormat renders RFC3339Nano with fixed fractional width, matching crm's

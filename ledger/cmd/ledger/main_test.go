@@ -1,6 +1,7 @@
 package main
 
 import (
+	"appkit/manifest"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,13 +14,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"registry"
 	"strings"
 	"testing"
 	"time"
 
-	"appkit/manifest"
 	appweb "appkit/web"
-	"registry"
 )
 
 // R-8DF1-W89F
@@ -149,7 +149,8 @@ func TestLedgerBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, run, "serve")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(
+		os.Environ(),
 		"LEDGER_IP=127.0.0.1",
 		fmt.Sprintf("LEDGER_PORT=%d", port),
 		"LEDGER_DB_PATH="+dbPath,

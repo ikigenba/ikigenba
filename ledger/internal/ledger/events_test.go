@@ -4,13 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"eventplane/correlation"
+	"eventplane/outbox"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"eventplane/correlation"
-	"eventplane/outbox"
 )
 
 // mkSvcWithOutbox wires a real event-plane producer over the test DB. DBPath is
@@ -60,7 +59,8 @@ func outboxRows(t *testing.T, s *Service) []struct {
 
 func TestRecord_EmitsRecorded(t *testing.T) {
 	s := mkSvcWithOutbox(t)
-	tx := record(t, s, "2026-06-01", "Acme — June hosting",
+	tx := record(
+		t, s, "2026-06-01", "Acme — June hosting",
 		leg("Assets:Receivable:Acme", i64(5000)),
 		leg("Income:Hosting", nil),
 	)
@@ -93,7 +93,8 @@ func TestRecord_EmitsRecorded(t *testing.T) {
 func TestRecordAndReverse_UseSubjectlessRecordedAddressAtomically(t *testing.T) {
 	// R-FXKF-JD3L
 	s := mkSvcWithOutbox(t)
-	orig := record(t, s, "2026-06-01", "x",
+	orig := record(
+		t, s, "2026-06-01", "x",
 		leg("Assets:Bank:Checking", i64(100)),
 		leg("Income:Hosting", i64(-100)),
 	)
@@ -246,7 +247,8 @@ func TestRecordedEventsCarryExternalRef(t *testing.T) {
 func TestFeedHandlerFramesSubjectlessRecordedEnvelope(t *testing.T) {
 	// R-G2G1-2G2D
 	s := mkSvcWithOutbox(t)
-	record(t, s, "2026-06-01", "Acme — June hosting",
+	record(
+		t, s, "2026-06-01", "Acme — June hosting",
 		leg("Assets:Receivable:Acme", i64(5000)),
 		leg("Income:Hosting", nil),
 	)

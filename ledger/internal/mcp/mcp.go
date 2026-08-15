@@ -3,15 +3,14 @@
 package mcp
 
 import (
+	"appkit"
 	"errors"
 	"fmt"
+	"ledger/internal/ledger"
 	"net/http"
 	"strings"
 
-	"appkit"
 	appkitmcp "appkit/mcp"
-
-	"ledger/internal/ledger"
 )
 
 const Instructions = "Double-entry bookkeeping over an immutable journal. Call " +

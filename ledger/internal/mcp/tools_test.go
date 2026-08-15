@@ -1,10 +1,13 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"ledger/internal/db"
+	"ledger/internal/ledger"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -14,10 +17,6 @@ import (
 	"testing"
 
 	appkitdb "appkit/db"
-	"appkit/server"
-
-	"ledger/internal/db"
-	"ledger/internal/ledger"
 )
 
 const (
