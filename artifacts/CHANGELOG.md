@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.0 — 2026-08-15
+
+- Internal code-quality hardening: the service now conforms to the suite's strict mechanical lint tier (formatting, complexity, and style rules enforced by the shared lint gate). No user-facing behavior, API, or data changes.
+
 ## v0.5.0 — 2026-08-13
 
 - The landing page and its assets (styles, fonts, icons, and the inventory
