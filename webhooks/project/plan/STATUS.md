@@ -15,5 +15,3 @@ anchored grep matches only phase lines.
 
 Next phase: 26
 
-- Phase 25 ⬜ realizes — — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint webhooks` exits 0)
-
