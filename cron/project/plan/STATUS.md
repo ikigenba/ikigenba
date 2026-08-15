@@ -10,5 +10,3 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 21
-
-- Phase 20 ⬜ realizes — — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint cron` exits 0)
