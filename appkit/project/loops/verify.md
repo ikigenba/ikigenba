@@ -70,6 +70,15 @@ missing file):
        verbatim and hold it to its stated pass criterion (e.g. a
        `grep -rn "JSONResult" --include="*.go" .` from `appkit/` must print
        nothing).
+   - **Run the tiered lint gate:**
+
+     ```
+     ../bin/lint appkit
+     ```
+
+     It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+     (absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+     lint finding at the registered tier is an open gap, not a pass.
    - **Enforce the skip ban** (`root project/design/D23.md`). appkit has **no
      live layer**, so the contract's one exemption does not exist here and the
      scan is unconditional over the whole tree:
@@ -218,7 +227,8 @@ Leave the marker `⬜`. Change no source.
 
 - Never write or fix production code. Never write the contract region.
 - Never delete a phase's `STATUS.md` line/body file on anything short of a green
-  suite **and** full coverage of the phase's ids.
+  suite **and** clean lint (at the registered tier) **and** full coverage of the
+  phase's ids.
 - Never read the big docs to re-derive the checklist — the brief **is** the
   checklist. (The ratchet's mechanical id-set greps over `project/design/D*.md`,
   `project/plan/phase-*.md`, and `project/appkit-verification.md`'s check
