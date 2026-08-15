@@ -11,5 +11,3 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 84
 
-- Phase 83 ⬜ realizes D64 — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint prompts` exits 0)
-
