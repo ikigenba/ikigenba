@@ -18,6 +18,7 @@ Verification ids change.
 - D9 → `project/design/D09.md` — The landing page: a sortable, filterable inventory — owns R-53EO-JVJ9, R-54MK-XN9Y, R-55UH-BF0N, R-572D-P6RC, R-5AQ2-UHZF, R-OSZJ-I2D8, R-OU7F-VU3X
 - D10 → `project/design/D10.md` — Test strategy: adopt the suite testing-language contract — mints none; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 - D11 → `project/design/D11.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-8MFA-HUNC, R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
+- D12 → `project/design/D12.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 

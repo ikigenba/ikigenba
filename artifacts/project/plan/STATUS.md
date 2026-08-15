@@ -13,4 +13,6 @@ done is gone. A phase body file carries no marker of its own. This document
 deliberately carries **no** bare status glyph outside the phase lines, so
 the anchored grep matches only phase lines.
 
-Next phase: 15
+Next phase: 16
+
+- Phase 15 ⬜ realizes — — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint artifacts` exits 0)
