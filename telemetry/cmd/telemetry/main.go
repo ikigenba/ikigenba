@@ -1,16 +1,17 @@
 package main
 
 import (
+	"appkit"
 	"context"
 	"fmt"
 	"net/http"
-
-	"appkit"
 	"registry"
 	"telemetry/internal/db"
 	"telemetry/internal/ingest"
-	telemetrymcp "telemetry/internal/mcp"
 	"telemetry/internal/retention"
+
+	telemetrymcp "telemetry/internal/mcp"
+
 	telemetrytime "telemetry/internal/telemetry"
 )
 

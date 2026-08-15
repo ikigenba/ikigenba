@@ -14,11 +14,11 @@ import (
 	"reflect"
 	"strconv"
 	"syscall"
+	"telemetry/internal/record"
 	"testing"
 	"time"
 
 	appkittelemetry "appkit/telemetry"
-	"telemetry/internal/record"
 )
 
 func TestChassisRecorderRoundTripsThroughComposedService(t *testing.T) {

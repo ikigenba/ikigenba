@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"appkit/server"
 	"bytes"
 	"context"
 	"database/sql"
@@ -13,13 +14,13 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"telemetry/internal/db"
+	"telemetry/internal/record"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
-	"appkit/server"
-	"telemetry/internal/db"
-	"telemetry/internal/record"
+
 	telemetrytime "telemetry/internal/telemetry"
 )
 

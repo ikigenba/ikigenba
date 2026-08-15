@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"telemetry/internal/db"
+	"telemetry/internal/record"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
-	"telemetry/internal/db"
-	"telemetry/internal/record"
 )
 
 func TestDefaultWindowKeeps89DaysAndRemoves91Days(t *testing.T) {

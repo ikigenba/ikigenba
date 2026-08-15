@@ -4,11 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"registry"
 	"strconv"
 	"strings"
 	"testing"
-
-	"registry"
 )
 
 type nginxLocation struct {

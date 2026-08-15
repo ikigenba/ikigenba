@@ -14,15 +14,16 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"telemetry/internal/db"
+	"telemetry/internal/record"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
 	appkitmcp "appkit/mcp"
 	"github.com/ikigenba/agentkit"
-	"telemetry/internal/db"
+
 	telemetrymcp "telemetry/internal/mcp"
-	"telemetry/internal/record"
 )
 
 type stubProvider struct{ called bool }
@@ -420,6 +421,7 @@ func (e *mcpEnvironment) call(t *testing.T, name string, args map[string]any) ma
 	t.Helper()
 	return e.rpc(t, "tools/call", map[string]any{"name": name, "arguments": args})
 }
+
 func (e *mcpEnvironment) insert(t *testing.T, items ...record.Record) {
 	t.Helper()
 	tx, err := e.database.BeginTx(context.Background(), nil)
@@ -487,6 +489,7 @@ func structuredRecords(t *testing.T, result map[string]any) []map[string]any {
 	}
 	return records
 }
+
 func mapIDs(records []map[string]any) []any {
 	result := make([]any, len(records))
 	for i, item := range records {
@@ -494,6 +497,7 @@ func mapIDs(records []map[string]any) []any {
 	}
 	return result
 }
+
 func resultText(result map[string]any) string {
 	content, _ := result["content"].([]any)
 	if len(content) == 0 {
@@ -501,6 +505,7 @@ func resultText(result map[string]any) string {
 	}
 	return content[0].(map[string]any)["text"].(string)
 }
+
 func normalized(t *testing.T, value string) string {
 	t.Helper()
 	got, err := record.NormalizeTime(value)

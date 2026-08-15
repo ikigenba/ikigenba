@@ -2,14 +2,14 @@
 package retention
 
 import (
+	"appkit"
 	"context"
 	"log/slog"
 	"os"
 	"strconv"
+	"telemetry/internal/db"
 	"time"
 
-	"appkit"
-	"telemetry/internal/db"
 	telemetrytime "telemetry/internal/telemetry"
 )
 

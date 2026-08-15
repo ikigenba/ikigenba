@@ -8,9 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
-
 	"telemetry/internal/record"
+	"time"
 )
 
 // Store persists and queries telemetry records.
@@ -118,7 +117,7 @@ func (s *Store) InsertRecords(ctx context.Context, records []record.Record, rece
 		}
 		stored += int(rows)
 	}
-	if err = tx.Commit(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return stored, nil
@@ -213,7 +212,7 @@ func (s *Store) PruneBefore(ctx context.Context, cutoff time.Time) (removed int,
 	if _, err = tx.ExecContext(ctx, `DELETE FROM ingest_drops WHERE time < ?`, normalized); err != nil {
 		return 0, err
 	}
-	if err = tx.Commit(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return int(rows), nil
@@ -278,9 +277,13 @@ func searchStatement(query Query) (string, []any, error) {
 		value, predicate string
 	}{
 		{query.CorrelationID, "correlation_id = ?"},
-		{query.Service, "service = ?"}, {query.Kind, "kind = ?"},
-		{query.OwnerEmail, "owner_email = ?"}, {query.ClientID, "client_id = ?"},
-		{query.SHA256, "sha256 = ?"}, {query.Status, "status = ?"}, {query.Error, "error = ?"},
+		{query.Service, "service = ?"},
+		{query.Kind, "kind = ?"},
+		{query.OwnerEmail, "owner_email = ?"},
+		{query.ClientID, "client_id = ?"},
+		{query.SHA256, "sha256 = ?"},
+		{query.Status, "status = ?"},
+		{query.Error, "error = ?"},
 	} {
 		if filter.value != "" {
 			add(filter.predicate, filter.value)

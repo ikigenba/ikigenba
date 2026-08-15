@@ -8,11 +8,12 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"telemetry/internal/record"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
-	"telemetry/internal/record"
+
 	telemetrytime "telemetry/internal/telemetry"
 )
 

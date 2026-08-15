@@ -1,6 +1,8 @@
 package main
 
 import (
+	"appkit"
+	"appkit/manifest"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -15,22 +17,21 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"registry"
 	"strconv"
 	"strings"
 	"syscall"
-	"testing"
-	"time"
-
-	"appkit"
-	appkitdb "appkit/db"
-	"appkit/manifest"
-	appkitserver "appkit/server"
-	appkittelemetry "appkit/telemetry"
-	appkitweb "appkit/web"
-	"registry"
 	"telemetry/internal/db"
 	"telemetry/internal/ingest"
 	"telemetry/internal/record"
+	"testing"
+	"time"
+
+	appkitdb "appkit/db"
+
+	appkitserver "appkit/server"
+	appkittelemetry "appkit/telemetry"
+	appkitweb "appkit/web"
 )
 
 const helperProcessEnv = "TELEMETRY_TEST_HELPER_PROCESS"

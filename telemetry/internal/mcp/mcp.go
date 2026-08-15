@@ -1,17 +1,17 @@
 package mcp
 
 import (
+	"appkit"
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-
-	"appkit"
-	appkitmcp "appkit/mcp"
-	"appkit/server"
 	"telemetry/internal/db"
 	"telemetry/internal/record"
 	"telemetry/internal/telemetry"
+
+	appkitmcp "appkit/mcp"
 )
 
 const Instructions = "Forensic record store for this box: the audit trail of who did what, when, and in what order across every service — MCP calls, HTTP requests, outbound calls, event publishes and consumes, and service starts and stops. Use `search` to find records (by time, service, kind, actor, operation, outcome, or content digest), `chain` to follow one correlation id through every service it touched, and `get` to read one record in full; call `guide` for the record model and worked examples."
@@ -216,9 +216,11 @@ func searchInputSchema() map[string]any {
 func searchOutputSchema() map[string]any {
 	return outputObjectSchema(map[string]any{"records": arraySchema(recordSchema()), "next_cursor": stringSchema(), "retention_horizon": stringSchema()}, "records", "next_cursor", "retention_horizon")
 }
+
 func chainOutputSchema() map[string]any {
 	return outputObjectSchema(map[string]any{"records": arraySchema(recordSchema()), "count": map[string]any{"type": "integer"}, "retention_horizon": stringSchema(), "possibly_truncated": map[string]any{"type": "boolean"}}, "records", "count", "retention_horizon", "possibly_truncated")
 }
+
 func recordSchema() map[string]any {
 	actor := outputObjectSchema(map[string]any{"owner_email": stringSchema(), "client_id": stringSchema()})
 	outcome := outputObjectSchema(map[string]any{
@@ -256,9 +258,11 @@ func outputObjectSchema(properties map[string]any, required ...string) map[strin
 	}
 	return schema
 }
+
 func kindStrings() []string {
 	return []string{string(record.KindEdge), string(record.KindRequest), string(record.KindOutbound), string(record.KindPublish), string(record.KindConsume), string(record.KindRoot), string(record.KindLifecycle)}
 }
+
 func validKind(value string) bool {
 	for _, kind := range kindStrings() {
 		if value == kind {

@@ -2,16 +2,16 @@
 package ingest
 
 import (
+	"appkit"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
-
-	"appkit"
 	"telemetry/internal/db"
 	"telemetry/internal/record"
+
 	telemetrytime "telemetry/internal/telemetry"
 )
 
