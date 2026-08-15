@@ -54,55 +54,78 @@ type token struct {
 	ranges [][2]rune
 }
 
+type matchState struct{ pattern, key int }
+
+type matcher struct {
+	tokens []token
+	chars  []rune
+	memo   map[matchState]bool
+	seen   map[matchState]bool
+}
+
 // Match reports whether pattern matches the whole key.
 func Match(pattern, key string) (bool, error) {
 	tokens, err := compile(pattern)
 	if err != nil {
 		return false, err
 	}
-	chars := []rune(key)
-	type state struct{ pattern, key int }
-	memo := make(map[state]bool)
-	seen := make(map[state]bool)
-	var match func(int, int) bool
-	match = func(pi, ki int) bool {
-		s := state{pi, ki}
-		if seen[s] {
-			return memo[s]
-		}
-		seen[s] = true
-		var ok bool
-		if pi == len(tokens) {
-			ok = ki == len(chars)
-		} else {
-			t := tokens[pi]
-			switch t.kind {
-			case literal:
-				ok = ki < len(chars) && chars[ki] == t.char && match(pi+1, ki+1)
-			case question:
-				ok = ki < len(chars) && chars[ki] != '/' && match(pi+1, ki+1)
-			case star:
-				ok = match(pi+1, ki) || ki < len(chars) && chars[ki] != '/' && match(pi, ki+1)
-			case doubleStar:
-				// In **/ the slash belongs to the zero-segment form too.
-				if pi+1 < len(tokens) && tokens[pi+1].kind == literal && tokens[pi+1].char == '/' {
-					ok = match(pi+2, ki)
-				}
-				ok = ok || match(pi+1, ki) || ki < len(chars) && match(pi, ki+1)
-			case class:
-				if ki < len(chars) && chars[ki] != '/' {
-					inside := false
-					for _, pair := range t.ranges {
-						inside = inside || pair[0] <= chars[ki] && chars[ki] <= pair[1]
-					}
-					ok = inside != t.negate && match(pi+1, ki+1)
-				}
-			}
-		}
-		memo[s] = ok
-		return ok
+	m := matcher{tokens: tokens, chars: []rune(key), memo: map[matchState]bool{}, seen: map[matchState]bool{}}
+	return m.match(0, 0), nil
+}
+
+func (m *matcher) match(pi, ki int) bool {
+	state := matchState{pi, ki}
+	if m.seen[state] {
+		return m.memo[state]
 	}
-	return match(0, 0), nil
+	m.seen[state] = true
+	ok := ki == len(m.chars)
+	if pi < len(m.tokens) {
+		ok = m.matchToken(pi, ki)
+	}
+	m.memo[state] = ok
+	return ok
+}
+
+func (m *matcher) matchToken(pi, ki int) bool {
+	t := m.tokens[pi]
+	switch t.kind {
+	case literal:
+		return m.matchLiteral(pi, ki, t.char)
+	case question:
+		return m.matchQuestion(pi, ki)
+	case star:
+		return m.matchStar(pi, ki)
+	case doubleStar:
+		return m.matchDoubleStar(pi, ki)
+	case class:
+		return m.matchClass(pi, ki, t)
+	default:
+		return false
+	}
+}
+
+func (m *matcher) matchLiteral(pi, ki int, char rune) bool {
+	return ki < len(m.chars) && m.chars[ki] == char && m.match(pi+1, ki+1)
+}
+
+func (m *matcher) matchQuestion(pi, ki int) bool {
+	return ki < len(m.chars) && m.chars[ki] != '/' && m.match(pi+1, ki+1)
+}
+
+func (m *matcher) matchStar(pi, ki int) bool {
+	return m.match(pi+1, ki) || ki < len(m.chars) && m.chars[ki] != '/' && m.match(pi, ki+1)
+}
+
+func (m *matcher) matchDoubleStar(pi, ki int) bool {
+	if pi+1 < len(m.tokens) && m.tokens[pi+1].kind == literal && m.tokens[pi+1].char == '/' && m.match(pi+2, ki) {
+		return true
+	}
+	return m.match(pi+1, ki) || ki < len(m.chars) && m.match(pi, ki+1)
+}
+
+func (m *matcher) matchClass(pi, ki int, t token) bool {
+	return ki < len(m.chars) && m.chars[ki] != '/' && inClass(t, m.chars[ki]) && m.match(pi+1, ki+1)
 }
 
 // CouldMatchSubject reports whether pattern matches prefix followed by either
@@ -112,14 +135,22 @@ func CouldMatchSubject(pattern, prefix string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	return couldReachSubject(tokens, prefix), nil
+}
+
+func couldReachSubject(tokens []token, prefix string) bool {
 	states := epsilonClosure(tokens, map[int]bool{0: true})
 	for _, ch := range prefix {
 		states = epsilonClosure(tokens, advance(tokens, states, ch))
 	}
 	if states[len(tokens)] {
-		return true, nil
+		return true
 	}
 	states = epsilonClosure(tokens, advance(tokens, states, '/'))
+	return reachableAccept(tokens, states)
+}
+
+func reachableAccept(tokens []token, states map[int]bool) bool {
 	seen := map[int]bool{}
 	queue := make([]int, 0, len(states))
 	for state := range states {
@@ -143,7 +174,7 @@ func CouldMatchSubject(pattern, prefix string) (bool, error) {
 		seen[state] = true
 		closure := epsilonClosure(tokens, map[int]bool{state: true})
 		if closure[len(tokens)] {
-			return true, nil
+			return true
 		}
 		for _, ch := range alphabet {
 			if ch == '\n' || ch == '\r' {
@@ -156,7 +187,7 @@ func CouldMatchSubject(pattern, prefix string) (bool, error) {
 			}
 		}
 	}
-	return false, nil
+	return false
 }
 
 func epsilonClosure(tokens []token, states map[int]bool) map[int]bool {
@@ -186,15 +217,7 @@ func advance(tokens []token, states map[int]bool, ch rune) map[int]bool {
 			continue
 		}
 		t := tokens[i]
-		matches := t.kind == literal && t.char == ch || t.kind == question && ch != '/' || t.kind == star && ch != '/' || t.kind == doubleStar
-		if t.kind == class && ch != '/' {
-			inside := false
-			for _, pair := range t.ranges {
-				inside = inside || pair[0] <= ch && ch <= pair[1]
-			}
-			matches = inside != t.negate
-		}
-		if matches {
+		if tokenMatches(t, ch) {
 			if t.kind == star || t.kind == doubleStar {
 				out[i] = true
 			} else {
@@ -203,6 +226,29 @@ func advance(tokens []token, states map[int]bool, ch rune) map[int]bool {
 		}
 	}
 	return out
+}
+
+func tokenMatches(t token, ch rune) bool {
+	switch t.kind {
+	case literal:
+		return t.char == ch
+	case question, star:
+		return ch != '/'
+	case doubleStar:
+		return true
+	case class:
+		return ch != '/' && inClass(t, ch)
+	default:
+		return false
+	}
+}
+
+func inClass(t token, ch rune) bool {
+	inside := false
+	for _, pair := range t.ranges {
+		inside = inside || pair[0] <= ch && ch <= pair[1]
+	}
+	return inside != t.negate
 }
 
 func compile(pattern string) ([]token, error) {

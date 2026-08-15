@@ -88,10 +88,10 @@ func FromContext(ctx context.Context) string {
 }
 
 // Ensure returns the existing context identifier or installs a newly minted one.
-func Ensure(ctx context.Context) (context.Context, string) {
-	if id := FromContext(ctx); id != "" {
+func Ensure(ctx context.Context) (ensured context.Context, id string) {
+	if id = FromContext(ctx); id != "" {
 		return ctx, id
 	}
-	id := New()
+	id = New()
 	return WithContext(ctx, id), id
 }

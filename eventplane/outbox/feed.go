@@ -61,34 +61,9 @@ func (o *Outbox) FeedHandler() http.Handler {
 		// Resolve the start position. The connect-time check can fail after the
 		// 200 + text/event-stream are already on the wire (§7.2), so any resync
 		// is itself an SSE frame.
-		var startSeq int64
-		if lid := r.Header.Get("Last-Event-ID"); lid != "" {
-			reason, seq, err := o.checkCursor(ctx, lid)
-			if err != nil {
-				o.log.Error("feed: connect-time check failed", "err", err, "consumer", consumerID)
-				return
-			}
-			if reason != "" {
-				// Flush the resync frame before closing so it reaches the socket
-				// (§10.1) — otherwise a permanent reason loops forever.
-				_ = o.writeFrame(w, rc, "event: resync\ndata: "+resyncData(reason)+"\n\n")
-				if reason == reasonPastHorizon {
-					// The only reason denoting real, unrecovered loss (§11.1) —
-					// SHOULD be surfaced beyond a single log line.
-					o.log.Error("feed: resync — DATA LOSS", "reason", reason, "consumer", consumerID)
-				} else {
-					o.log.Warn("feed: resync", "reason", reason, "consumer", consumerID)
-				}
-				return
-			}
-			startSeq = seq
-		} else if r.URL.Query().Get("from") == "tail" {
-			seq, err := o.headSeq(ctx)
-			if err != nil {
-				o.log.Error("feed: head seq failed", "err", err, "consumer", consumerID)
-				return
-			}
-			startSeq = seq
+		startSeq, ok := o.resolveStart(ctx, r, w, rc, consumerID)
+		if !ok {
+			return
 		}
 
 		o.log.Info("feed: connected", "consumer", consumerID, "start_seq", startSeq)
@@ -101,6 +76,43 @@ func (o *Outbox) FeedHandler() http.Handler {
 
 		o.stream(ctx, w, rc, startSeq)
 	})
+}
+
+func (o *Outbox) resolveStart(ctx context.Context, r *http.Request, w http.ResponseWriter, rc *http.ResponseController, consumerID string) (int64, bool) {
+	if lid := r.Header.Get("Last-Event-ID"); lid != "" {
+		return o.resumeStart(ctx, lid, w, rc, consumerID)
+	}
+	if r.URL.Query().Get("from") != "tail" {
+		return 0, true
+	}
+	seq, err := o.headSeq(ctx)
+	if err != nil {
+		o.log.Error("feed: head seq failed", "err", err, "consumer", consumerID)
+		return 0, false
+	}
+	return seq, true
+}
+
+func (o *Outbox) resumeStart(ctx context.Context, cursor string, w http.ResponseWriter, rc *http.ResponseController, consumerID string) (int64, bool) {
+	reason, seq, err := o.checkCursor(ctx, cursor)
+	if err != nil {
+		o.log.Error("feed: connect-time check failed", "err", err, "consumer", consumerID)
+		return 0, false
+	}
+	if reason == "" {
+		return seq, true
+	}
+	_ = o.writeFrame(w, rc, "event: resync\ndata: "+resyncData(reason)+"\n\n")
+	o.logFeedResync(reason, consumerID)
+	return 0, false
+}
+
+func (o *Outbox) logFeedResync(reason, consumerID string) {
+	if reason == reasonPastHorizon {
+		o.log.Error("feed: resync — DATA LOSS", "reason", reason, "consumer", consumerID)
+		return
+	}
+	o.log.Warn("feed: resync", "reason", reason, "consumer", consumerID)
 }
 
 // stream is the drain-then-park loop: it streams every event after startSeq,

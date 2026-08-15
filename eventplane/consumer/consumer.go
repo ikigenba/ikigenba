@@ -238,107 +238,87 @@ type attemptResult struct {
 	committedAny bool   // at least one event committed on this connection (progress)
 }
 
+type runState struct {
+	backoff       time.Duration
+	needBootstrap bool
+	connectedOnce bool
+	bootstrapTail bool
+}
+
 // run is the bootstrap-then-reconnect loop. It (re)establishes the
 // first-subscription marker, then repeatedly connects-and-streams, mapping each
 // attempt's outcome to: crash (structural), re-bootstrap (resync), reset backoff
 // (connected then dropped), or backoff-and-retry (transport).
 func (e *engine) run(ctx context.Context) error {
-	backoff := baseBackoff
-	needBootstrap := true
-	connectedOnce := false
-	bootstrapTail := false
-
-	for {
-		if ctx.Err() != nil {
-			return nil
+	state := runState{backoff: baseBackoff, needBootstrap: true}
+	for ctx.Err() == nil {
+		if err := e.bootstrap(ctx, &state); err != nil {
+			return err
 		}
-
-		if needBootstrap {
-			state, err := e.st.load(ctx)
-			if err != nil {
-				return structural(ctx, err) // crash unless shutting down
-			}
-			// A genuinely fresh subscription: never marked, never committed. Only
-			// then does the configured `tail` choice apply (§7.1).
-			fresh := !state.subscribed && !state.cursor.Valid
-			bootstrapTail = fresh && e.from == fromTail
-			connectedOnce = false
-			// Record the first-subscription choice durably BEFORE the first
-			// connect (§7.1, §10): once subscribed=1, a cursor-less reconnect
-			// resolves to "from the beginning" (over-delivery the best-effort hop
-			// tolerates), never a fresh `tail` that would silently drop the gap.
-			if !state.subscribed {
-				if err := e.st.markSubscribed(ctx); err != nil {
-					return structural(ctx, err) // crash unless shutting down
-				}
-			}
-			needBootstrap = false
-			e.log.Info("consumer: subscribing", "source", e.cfg.Source, "from", e.from, "tail_bootstrap", bootstrapTail)
-		}
-
-		state, err := e.st.load(ctx)
+		offset, err := e.st.load(ctx)
 		if err != nil {
 			return structural(ctx, err) // crash unless shutting down
 		}
-
-		res := e.connectAndStream(ctx, state, bootstrapTail && !connectedOnce)
-		if res.structErr != nil {
-			return structural(ctx, res.structErr) // crash (decision 11) unless shutting down
+		res := e.connectAndStream(ctx, offset, state.bootstrapTail && !state.connectedOnce)
+		if err := e.finishAttempt(ctx, res, &state); err != nil {
+			return err
 		}
-		if res.connected {
-			connectedOnce = true
-		}
-		// Backoff resets on PROGRESS — a connection that committed at least one
-		// event — not on a bare 200 (event-triggering decisions §1). So a transient
-		// blip after a long healthy run retries fast, while a genuinely stuck
-		// handler (a stall that commits nothing, re-failing the same event) climbs
-		// to the cap.
-		if res.committedAny {
-			backoff = baseBackoff
-		}
-		if res.resync != "" {
-			e.logResync(res.resync)
-			if err := e.st.clearForResync(ctx); err != nil {
-				return structural(ctx, err) // crash unless shutting down
-			}
-			// Reconnect fresh, honoring the configured bootstrap choice (decision
-			// 9). No backoff: a resync is a clean reposition, not a failure.
-			needBootstrap = true
-			backoff = baseBackoff
-			continue
-		}
-
-		if res.stalled {
-			// A handler returned a non-skip error (event-triggering decisions §1):
-			// the cursor did NOT advance past the failing event. Tear down and
-			// reconnect from the last committed cursor so the same event re-delivers
-			// before any later one (the §10 in-order, at-least-once stall). A stall
-			// that made progress first (committedAny) already reset the backoff above
-			// and reconnects immediately; a no-progress stall falls through to the
-			// backoff so a persistently-failing handler does not hot-loop.
-			if ctx.Err() != nil {
-				return nil
-			}
-			if res.committedAny {
-				continue
-			}
-			if !e.sleep(ctx, jitter(backoff)) {
-				return nil
-			}
-			backoff = nextBackoff(backoff)
-			continue
-		}
-
-		// Transport failure (or a clean ctx cancellation): retry indefinitely
-		// with the committed cursor, backing off (§10.1).
-		if ctx.Err() != nil {
-			return nil
-		}
-		if !e.sleep(ctx, jitter(backoff)) {
-			return nil
-		}
-		backoff = nextBackoff(backoff)
 	}
+	return nil
+}
+
+func (e *engine) bootstrap(ctx context.Context, run *runState) error {
+	if !run.needBootstrap {
+		return nil
+	}
+	state, err := e.st.load(ctx)
+	if err != nil {
+		return structural(ctx, err)
+	}
+	fresh := !state.subscribed && !state.cursor.Valid
+	run.bootstrapTail = fresh && e.from == fromTail
+	run.connectedOnce = false
+	if !state.subscribed {
+		if err := e.st.markSubscribed(ctx); err != nil {
+			return structural(ctx, err)
+		}
+	}
+	run.needBootstrap = false
+	e.log.Info("consumer: subscribing", "source", e.cfg.Source, "from", e.from, "tail_bootstrap", run.bootstrapTail)
+	return nil
+}
+
+func (e *engine) finishAttempt(ctx context.Context, res attemptResult, run *runState) error {
+	if res.structErr != nil {
+		return structural(ctx, res.structErr)
+	}
+	if res.connected {
+		run.connectedOnce = true
+	}
+	if res.committedAny {
+		run.backoff = baseBackoff
+	}
+	if res.resync != "" {
+		return e.prepareResync(ctx, res.resync, run)
+	}
+	if res.stalled && res.committedAny {
+		return nil
+	}
+	if ctx.Err() != nil || !e.sleep(ctx, jitter(run.backoff)) {
+		return nil
+	}
+	run.backoff = nextBackoff(run.backoff)
+	return nil
+}
+
+func (e *engine) prepareResync(ctx context.Context, reason string, run *runState) error {
+	e.logResync(reason)
+	if err := e.st.clearForResync(ctx); err != nil {
+		return structural(ctx, err)
+	}
+	run.needBootstrap = true
+	run.backoff = baseBackoff
+	return nil
 }
 
 // connectAndStream opens one feed connection from the given durable position and
