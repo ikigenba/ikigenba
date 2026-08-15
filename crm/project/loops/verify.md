@@ -38,6 +38,16 @@ phase on a gap.
    Confirm no `R-XXXX-XXXX`-tagged test reported `SKIP` in the `go test -v`
    output — a skipped requirement test is a gap, never acceptable green.
 
+   Then run the tiered lint gate:
+
+   ```
+   ../bin/lint crm
+   ```
+
+   It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+   (absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+   lint finding at the registered tier is an open gap, not a pass.
+
 3. **For every id in the brief's "Ids to cover" list**, confirm a genuinely
    asserting `// R-XXXX-XXXX`-tagged test exists and actually runs under
    `go test ./...`:
@@ -102,9 +112,12 @@ phase on a gap.
 ## crm project conventions
 
 - **Toolchain:** Go 1.26, single module `crm` rooted at `crm/`.
+- **Lint:** `../bin/lint crm` from `crm/`; enforces the tree's registered
+  `.lint-tier` (absent/`off` vacuous, `cheap`/`strict` enforced).
 - **The suite is green** means: `cd crm && go build ./...`,
-  `cd crm && go vet ./...`, `cd crm && gofmt -l .` (no output), and
-  `cd crm && go test ./...` all succeed with zero failures.
+  `cd crm && go vet ./...`, `cd crm && gofmt -l .` (no output),
+  `cd crm && go test ./...` all succeed with zero failures, and
+  `../bin/lint crm` exits 0 with no lint findings at the registered tier.
 - **Test-file glob:** `*_test.go`, excluding `project/`.
 - **Test placement:** package-local unit tests; cross-package integration
   tests live only under `cmd/crm/`.
@@ -131,7 +144,8 @@ brief.
 
 - Never write or fix production code.
 - Never write the brief's contract region.
-- Never retire a phase on anything short of green + full coverage.
+- Never retire a phase on anything short of green + clean lint (at the
+  registered tier) + full coverage.
 - The ratchet's id-set greps over `project/design/D*.md` and
   `project/plan/phase-*.md` extract id tokens; they are not "reading the big
   docs" in the forbidden sense.
