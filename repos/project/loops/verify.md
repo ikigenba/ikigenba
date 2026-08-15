@@ -50,6 +50,16 @@ phase on a gap.
    part of this gate; a test that needs a running suite is itself a gap, not a
    reason to start one.
 
+   Then run the tiered lint gate:
+
+   ```
+   ../bin/lint repos
+   ```
+
+   It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+   (absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+   lint finding at the registered tier is an open gap, not a pass.
+
 3. **Run the skip ban** — `root project/design/D23.md` (adopted locally as D16)
    bans `t.Skip` and its variants outside `live`-tagged files, and **this tree
    has no live layer**, so any occurrence anywhere is a gap:
@@ -162,8 +172,9 @@ phase on a gap.
 - Never write or fix production code; never write the brief's `## Contract` region.
 - Never delete a phase's `STATUS.md` line or `phase-NN.md` on anything short of a
   green suite **and** full, reachable coverage of every id (this phase's and the
-  global ratchet); a **skipped or statically-unreachable** id test is uncovered —
-  a skip is never acceptable green.
+  global ratchet) **and** clean lint (at the registered tier); a **skipped or
+  statically-unreachable** id test is uncovered — a skip is never acceptable
+  green.
 - Never start the suite or run `bin/start` — the gate is `go test ./...` and
   nothing more.
 - Never read `project/design/*` (beyond the ratchet's mechanical id-set grep, which
