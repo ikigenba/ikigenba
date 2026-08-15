@@ -85,6 +85,12 @@ In scope — the repo-root `bin/` tree:
   secrets from the declarations its own local development environment already
   carries, one service at a time or sweeping them all, with a preview mode that
   shows what would be pushed without pushing it.
+- **The style gate.** One command answers whether any tree in the suite meets
+  the code-style bar that tree has declared for itself, and the same command
+  with no argument answers it for the whole suite at a glance. The bar itself —
+  which style tiers exist and what each requires — is the umbrella's lint
+  contract; this tooling enforces it, and release delivery refuses a service
+  whose tree does not meet its own declared bar.
 - **Proof for the layout readers.** The parts of this tooling that read the
   suite's on-disk layout are exercised by automated tests that run the real
   scripts under the repo's ordinary green gate.
@@ -100,8 +106,8 @@ Out of scope — nothing else is promised here:
   them, and a change to any of them is a change there.
 - **No test coverage for the orchestrating scripts.** Building, `scp`-ing,
   launching processes, and calling a cloud API are verified once, by hand, when
-  written or changed — not simulated in the test suite. Only the layout readers
-  and the version-advancement gate are covered automatically.
+  written or changed — not simulated in the test suite. Only the layout readers,
+  the version-advancement gate, and the style gate are covered automatically.
 - **No production build path.** Local development runs in workspace mode; the
   release build deliberately does not, and the two are not unified.
 
@@ -140,6 +146,14 @@ Out of scope — nothing else is promised here:
 - **Secret values never appear.** Preview and result output name keys and show
   values only in masked form; a full secret value never reaches the terminal, a
   command line, or a log.
+- **A tree's declared style bar is enforced, not advisory.** Asking about one
+  tree answers pass or fail at the bar that tree declares, with the findings
+  named; a tree that has declared no bar is reported on but never failed.
+  Asking about the suite answers for every tree at once. Delivering a release
+  is refused, before any artifact exists, while the service's tree fails its
+  own declared bar — and the answer never varies by machine: if the style
+  tool installed is not the exact one the suite has pinned, the command says
+  so and refuses to judge at all.
 - **The layout readers are proven, not trusted.** The tooling that reads the
   suite's on-disk layout is exercised automatically by the repo's ordinary test
   run, against the real scripts — so a drift between how dev stages a service
@@ -175,3 +189,8 @@ tooling:
 - The repo's ordinary test run exercises the layout-reading tooling by executing
   the real scripts, and fails if a reader stops agreeing with the layout the box
   uses.
+- A tree violating its own declared style bar fails the style check with the
+  findings named, and delivering that service's release is refused with no
+  artifact produced; the same tree with no declared bar is reported on without
+  failing, and the same check run with an unpinned style tool refuses to judge,
+  naming the version the suite expects.

@@ -11,4 +11,7 @@ line here and its body file** in the completion commit — there is no done
 marker; done is deleted, and history lives in git. This file carries no bare
 status glyph outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 07
+Next phase: 09
+
+- Phase 07 ⬜ realizes R-WW5B-L155, R-WXD7-YSVU, R-WYL4-CKMJ, R-WZT0-QCD8, R-X10X-443X, R-X28T-HVUM, R-X3GP-VNLB, R-X4OM-9FC0 — `bin/lint` runner + `bin/lint.d/` tier configs, proven in `bin/bintest`
+- Phase 08 ⬜ realizes R-X5WI-N72P — `bin/ship` refuses a tree red at its registered tier

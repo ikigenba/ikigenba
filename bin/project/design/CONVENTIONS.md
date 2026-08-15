@@ -15,8 +15,11 @@ Shared facts every Decision leans on:
 - **Language / toolchain.** Bash (`#!/usr/bin/env bash`, `set -euo pipefail`)
   for every script; Go 1.26 for the one test module, `bin/bintest` (module path
   `bintest`), wired into the repo-root `go.work` so it needs no separate runner.
-  The tooling itself shells out to `go`, `git`, `tar`, `scp`/`ssh`, `jq`, and
-  `aws`.
+  The tooling itself shells out to `go`, `git`, `tar`, `scp`/`ssh`, `jq`,
+  `aws`, and — for the lint gate only — **golangci-lint at exactly the pinned
+  version the suite lint contract names** (`root project/design/D30.md`,
+  currently v2.12.2). The pin is the contract's; this tree re-declares no
+  version of its own, and `bin/lint` refuses any other installed version.
 - **Build / typecheck command.** `go build ./bintest/...` from the service root
   (`bin/`, the loop's working directory), in workspace mode. `bin/bintest` is a
   test-only package, so its compile check is `go test ./bintest/...` succeeding.
@@ -48,9 +51,14 @@ Shared facts every Decision leans on:
   is the **manual** layer, and there is no composed and no live layer — the tree
   commits **no** `//go:build live` file and defines no `-tags live` invocation.
   `t.Skip` and its variants appear nowhere in it.
-- **Environmental preconditions.** None beyond the Go toolchain: the scripts a
-  test execs are committed in this repo, and the module facts D6 reads come from
-  `go mod`/`go work` subcommands of that same toolchain.
+- **Environmental preconditions.** The Go toolchain, plus — for the lint-gate
+  tests only (D9) — golangci-lint at the contract's pinned version on `PATH`.
+  A missing or wrong-version binary makes those tests **fail loudly naming the
+  pin**, never skip (the skip ban holds): the gate's whole point is that the
+  pinned tool is present wherever the suite is verified, and `doctor`-style
+  setup is the operator's, out of gate. Everything else a test execs is
+  committed in this repo, and the module facts D6 reads come from
+  `go mod`/`go work` subcommands of the Go toolchain.
 - **GOWORK mode.** Workspace. `bin/bintest` is a `go.work` member and resolves
   its sibling modules through it; `GOWORK=off` would break D5 and D6 by
   construction. The suite deliberately does not unify this across trees.
