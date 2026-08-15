@@ -1,15 +1,14 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
+	"crm/internal/crm"
 	_ "embed"
 	"encoding/json"
 	"errors"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-
-	"crm/internal/crm"
 )
 
 // toolPrefix brands every MCP tool name. It is currently empty: HTTP route

@@ -1,12 +1,11 @@
 package crm
 
 import (
+	"appkit/logging"
 	"database/sql"
 	"fmt"
 	"strings"
 	"time"
-
-	"appkit/logging"
 )
 
 // contactStore is the SQL-only data layer for contacts and their owned children
@@ -301,8 +300,10 @@ func contactSummary(tx *sql.Tx, id string) (Summary, error) {
 	if err != nil {
 		return Summary{}, fmt.Errorf("contact summary: %w", err)
 	}
-	s := Summary{ID: id, Type: "contact", Label: display, UpdatedAt: updated, sortKey: parseTime(updated),
-		Fields: map[string]any{"lifecycle": lifecycle}}
+	s := Summary{
+		ID: id, Type: "contact", Label: display, UpdatedAt: updated, sortKey: parseTime(updated),
+		Fields: map[string]any{"lifecycle": lifecycle},
+	}
 	if email, ok := primaryEmail(tx, id); ok {
 		s.Fields["primary_email"] = email
 	}
@@ -334,8 +335,10 @@ func (contactStore) Get(tx *sql.Tx, id string) (Card, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get contact: %w", err)
 	}
-	card := Card{"id": id, "type": "contact", "display_name": display, "lifecycle": lifecycle,
-		"created_at": created, "updated_at": updated}
+	card := Card{
+		"id": id, "type": "contact", "display_name": display, "lifecycle": lifecycle,
+		"created_at": created, "updated_at": updated,
+	}
 	if given.Valid {
 		card["given_name"] = given.String
 	}
@@ -504,8 +507,10 @@ func (contactStore) Search(tx *sql.Tx, p SearchParams) ([]Summary, error) {
 		if err := rows.Scan(&id, &display, &lifecycle, &updated); err != nil {
 			return nil, err
 		}
-		out = append(out, Summary{ID: id, Type: "contact", Label: display, UpdatedAt: updated,
-			sortKey: parseTime(updated), Fields: map[string]any{"lifecycle": lifecycle}})
+		out = append(out, Summary{
+			ID: id, Type: "contact", Label: display, UpdatedAt: updated,
+			sortKey: parseTime(updated), Fields: map[string]any{"lifecycle": lifecycle},
+		})
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {

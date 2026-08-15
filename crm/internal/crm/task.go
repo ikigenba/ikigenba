@@ -1,12 +1,11 @@
 package crm
 
 import (
+	"appkit/logging"
 	"database/sql"
 	"fmt"
 	"strings"
 	"time"
-
-	"appkit/logging"
 )
 
 // taskStore is the SQL-only data layer for the tasks table. A task is a simple
@@ -134,8 +133,10 @@ func taskSummary(tx *sql.Tx, id string) (Summary, error) {
 	if err != nil {
 		return Summary{}, fmt.Errorf("task summary: %w", err)
 	}
-	s := Summary{ID: id, Type: "task", Label: title, UpdatedAt: updated, sortKey: parseTime(updated),
-		Fields: map[string]any{"status": status}}
+	s := Summary{
+		ID: id, Type: "task", Label: title, UpdatedAt: updated, sortKey: parseTime(updated),
+		Fields: map[string]any{"status": status},
+	}
 	if due.Valid {
 		s.Fields["due_at"] = due.String
 	}
@@ -158,8 +159,10 @@ func (taskStore) Get(tx *sql.Tx, id string) (Card, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get task: %w", err)
 	}
-	card := Card{"id": id, "type": "task", "title": title, "status": status,
-		"created_at": created, "updated_at": updated}
+	card := Card{
+		"id": id, "type": "task", "title": title, "status": status,
+		"created_at": created, "updated_at": updated,
+	}
 	if due.Valid {
 		card["due_at"] = due.String
 	}
@@ -256,8 +259,10 @@ func (taskStore) Search(tx *sql.Tx, p SearchParams) ([]Summary, error) {
 		if err := rows.Scan(&id, &title, &status, &due, &updated); err != nil {
 			return nil, err
 		}
-		s := Summary{ID: id, Type: "task", Label: title, UpdatedAt: updated, sortKey: parseTime(updated),
-			Fields: map[string]any{"status": status}}
+		s := Summary{
+			ID: id, Type: "task", Label: title, UpdatedAt: updated, sortKey: parseTime(updated),
+			Fields: map[string]any{"status": status},
+		}
 		if due.Valid {
 			s.Fields["due_at"] = due.String
 		}

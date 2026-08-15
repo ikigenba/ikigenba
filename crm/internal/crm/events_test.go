@@ -3,10 +3,9 @@ package crm
 import (
 	"context"
 	"encoding/json"
-	"testing"
-
 	"eventplane/correlation"
 	"eventplane/outbox"
+	"testing"
 )
 
 // withOutbox wires a real outbox.Outbox over the service's own SQLite handle —

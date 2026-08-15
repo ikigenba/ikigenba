@@ -1,12 +1,11 @@
 package crm
 
 import (
+	"appkit/logging"
 	"database/sql"
 	"fmt"
 	"strings"
 	"time"
-
-	"appkit/logging"
 )
 
 // interactionStore is the SQL-only data layer for the append-only interactions
@@ -33,9 +32,11 @@ func (interactionStore) Insert(tx *sql.Tx, kind, body string, occurredAt time.Ti
 	if err != nil {
 		return Summary{}, mapUniqueErr(err, "interaction")
 	}
-	s := Summary{ID: id, Type: "interaction", Label: interactionLabel(kind, body),
+	s := Summary{
+		ID: id, Type: "interaction", Label: interactionLabel(kind, body),
 		UpdatedAt: occurred, sortKey: occurredAt,
-		Fields: map[string]any{"kind": kind, "occurred_at": occurred}}
+		Fields: map[string]any{"kind": kind, "occurred_at": occurred},
+	}
 	s.isCreate = true
 	return s, nil
 }
@@ -48,9 +49,9 @@ func interactionLabel(kind, body string) string {
 	if i := strings.IndexByte(snippet, '\n'); i >= 0 {
 		snippet = strings.TrimSpace(snippet[:i])
 	}
-	const max = 80
-	if len(snippet) > max {
-		snippet = snippet[:max]
+	const maxLength = 80
+	if len(snippet) > maxLength {
+		snippet = snippet[:maxLength]
 	}
 	if snippet == "" {
 		return kind
@@ -77,8 +78,10 @@ func (interactionStore) Get(tx *sql.Tx, id string) (Card, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get interaction: %w", err)
 	}
-	card := Card{"id": id, "type": "interaction", "kind": kind, "body": body,
-		"occurred_at": occurred, "created_at": created, "updated_at": updated}
+	card := Card{
+		"id": id, "type": "interaction", "kind": kind, "body": body,
+		"occurred_at": occurred, "created_at": created, "updated_at": updated,
+	}
 	if contactID.Valid {
 		card["contact_id"] = contactID.String
 	}
@@ -138,9 +141,11 @@ func (interactionStore) Search(tx *sql.Tx, p SearchParams) ([]Summary, error) {
 		if err := rows.Scan(&iid, &kind, &body, &occurred); err != nil {
 			return nil, err
 		}
-		out = append(out, Summary{ID: iid, Type: "interaction", Label: interactionLabel(kind, body),
+		out = append(out, Summary{
+			ID: iid, Type: "interaction", Label: interactionLabel(kind, body),
 			UpdatedAt: occurred, sortKey: parseTime(occurred),
-			Fields: map[string]any{"kind": kind, "occurred_at": occurred}})
+			Fields: map[string]any{"kind": kind, "occurred_at": occurred},
+		})
 	}
 	return out, rows.Err()
 }

@@ -3,10 +3,9 @@ package crm
 import (
 	"database/sql"
 	"encoding/json"
+	"eventplane/outbox"
 	"fmt"
 	"time"
-
-	"eventplane/outbox"
 )
 
 // First-wave domain events (PLAN.md §6). Only contacts are wired in code:

@@ -13,16 +13,13 @@
 package main
 
 import (
-	"fmt"
-	"net/http"
-
 	"appkit"
-
 	"crm/internal/crm"
 	"crm/internal/db"
 	"crm/internal/mcp"
-
 	"eventplane/outbox"
+	"fmt"
+	"net/http"
 	"registry"
 )
 

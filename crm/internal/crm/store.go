@@ -7,11 +7,6 @@ import (
 	"time"
 )
 
-// rowScanner is satisfied by both *sql.Row and *sql.Rows.
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
 // ── time helpers ─────────────────────────────────────────────────────────────
 
 func fmtTime(t time.Time) string { return t.UTC().Format(timeFormat) }
@@ -51,13 +46,6 @@ func nullInt64(p *int64) any {
 	return *p
 }
 
-func boolInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
 // ptr returns a pointer from a NullString (nil when not valid).
 func strPtr(ns sql.NullString) *string {
 	if !ns.Valid {
@@ -65,15 +53,6 @@ func strPtr(ns sql.NullString) *string {
 	}
 	v := ns.String
 	return &v
-}
-
-// timePtr maps a NullString timestamp to *time.Time.
-func timePtr(ns sql.NullString) *time.Time {
-	if !ns.Valid {
-		return nil
-	}
-	t := parseTime(ns.String)
-	return &t
 }
 
 // mapUniqueErr translates a SQLite UNIQUE/CHECK constraint violation into the

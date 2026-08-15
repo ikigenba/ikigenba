@@ -5,14 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/outbox"
 	"fmt"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/nyaruka/phonenumbers"
-
-	"eventplane/outbox"
 )
 
 // Service is the dispatcher seam (PLAN.md §4, §8): it owns the single *sql.Tx and
@@ -208,8 +207,10 @@ func (s *Service) saveOrganization(tx *sql.Tx, id string, fields []byte, force b
 			return Summary{}, err
 		}
 		if existing != "" && !force {
-			return Summary{}, &DuplicateError{ExistingID: existing,
-				Message: "an organization with this domain/name already exists (existing_id=" + existing + "); update it, or retry with force:true to create a duplicate"}
+			return Summary{}, &DuplicateError{
+				ExistingID: existing,
+				Message:    "an organization with this domain/name already exists (existing_id=" + existing + "); update it, or retry with force:true to create a duplicate",
+			}
 		}
 	}
 	return s.orgs.Save(tx, id, in, now)
@@ -235,8 +236,10 @@ func (s *Service) saveContact(tx *sql.Tx, id string, fields []byte, force bool, 
 			return Summary{}, err
 		}
 		if existing != "" && !force {
-			return Summary{}, &DuplicateError{ExistingID: existing,
-				Message: "a contact with primary email " + primaryEmail + " already exists (existing_id=" + existing + "); update it, or retry with force:true to create a duplicate"}
+			return Summary{}, &DuplicateError{
+				ExistingID: existing,
+				Message:    "a contact with primary email " + primaryEmail + " already exists (existing_id=" + existing + "); update it, or retry with force:true to create a duplicate",
+			}
 		}
 	}
 	return s.contacts.Save(tx, id, in, now)

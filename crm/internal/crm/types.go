@@ -177,8 +177,10 @@ type SearchParams struct {
 	AfterID string
 }
 
-const defaultSearchLimit = 50
-const maxSearchLimit = 200
+const (
+	defaultSearchLimit = 50
+	maxSearchLimit     = 200
+)
 
 func (p SearchParams) limit() int {
 	switch {

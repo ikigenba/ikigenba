@@ -1,10 +1,14 @@
 package main
 
 import (
+	"appkit/manifest"
 	"bufio"
 	"bytes"
 	"context"
+	"crm/internal/crm"
+	"crm/internal/db"
 	"encoding/json"
+	"eventplane/outbox"
 	"fmt"
 	"io"
 	"net"
@@ -13,17 +17,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"registry"
 	"strings"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
-	"appkit/manifest"
+
 	appweb "appkit/web"
-	"crm/internal/crm"
-	"crm/internal/db"
-	"eventplane/outbox"
-	"registry"
 )
 
 // R-8L50-7G0J

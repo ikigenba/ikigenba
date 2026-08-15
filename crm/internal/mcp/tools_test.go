@@ -1,8 +1,11 @@
 package mcp
 
 import (
+	"appkit/server"
 	"bytes"
 	"context"
+	"crm/internal/crm"
+	"crm/internal/db"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -15,10 +18,6 @@ import (
 	"time"
 
 	appkitdb "appkit/db"
-	"appkit/server"
-
-	"crm/internal/crm"
-	"crm/internal/db"
 )
 
 // newTestHandler builds a Handler over a real crm.Service backed by a fresh,

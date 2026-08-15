@@ -3,13 +3,12 @@
 package mcp
 
 import (
+	"appkit"
+	"crm/internal/crm"
 	"fmt"
 	"net/http"
 
-	"appkit"
 	appkitmcp "appkit/mcp"
-
-	"crm/internal/crm"
 )
 
 const instructions = "Sales CRM over organizations (companies), contacts (people), deals " +

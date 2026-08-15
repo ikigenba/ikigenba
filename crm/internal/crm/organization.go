@@ -1,12 +1,11 @@
 package crm
 
 import (
+	"appkit/logging"
 	"database/sql"
 	"fmt"
 	"strings"
 	"time"
-
-	"appkit/logging"
 )
 
 // organizationStore is the SQL-only data layer for the organizations table.

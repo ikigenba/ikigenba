@@ -1,12 +1,11 @@
 package crm
 
 import (
+	"appkit/logging"
 	"database/sql"
 	"fmt"
 	"strings"
 	"time"
-
-	"appkit/logging"
 )
 
 // dealStore is the SQL-only data layer for deals and their participants
@@ -186,8 +185,10 @@ func dealSummary(tx *sql.Tx, id string) (Summary, error) {
 	if err != nil {
 		return Summary{}, fmt.Errorf("deal summary: %w", err)
 	}
-	s := Summary{ID: id, Type: "deal", Label: name, UpdatedAt: updated, sortKey: parseTime(updated),
-		Fields: map[string]any{"stage": stage, "status": dealStatus(stage), "currency": currency}}
+	s := Summary{
+		ID: id, Type: "deal", Label: name, UpdatedAt: updated, sortKey: parseTime(updated),
+		Fields: map[string]any{"stage": stage, "status": dealStatus(stage), "currency": currency},
+	}
 	if amount.Valid {
 		s.Fields["amount_cents"] = amount.Int64
 	}
@@ -211,8 +212,10 @@ func (dealStore) Get(tx *sql.Tx, id string) (Card, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get deal: %w", err)
 	}
-	card := Card{"id": id, "type": "deal", "name": name, "stage": stage, "status": dealStatus(stage),
-		"currency": currency, "created_at": created, "updated_at": updated}
+	card := Card{
+		"id": id, "type": "deal", "name": name, "stage": stage, "status": dealStatus(stage),
+		"currency": currency, "created_at": created, "updated_at": updated,
+	}
 	if amount.Valid {
 		card["amount_cents"] = amount.Int64
 	}
@@ -296,8 +299,10 @@ func (dealStore) Search(tx *sql.Tx, p SearchParams) ([]Summary, error) {
 		if err := rows.Scan(&id, &name, &stage, &amount, &currency, &updated); err != nil {
 			return nil, err
 		}
-		s := Summary{ID: id, Type: "deal", Label: name, UpdatedAt: updated, sortKey: parseTime(updated),
-			Fields: map[string]any{"stage": stage, "status": dealStatus(stage), "currency": currency}}
+		s := Summary{
+			ID: id, Type: "deal", Label: name, UpdatedAt: updated, sortKey: parseTime(updated),
+			Fields: map[string]any{"stage": stage, "status": dealStatus(stage), "currency": currency},
+		}
 		if amount.Valid {
 			s.Fields["amount_cents"] = amount.Int64
 		}

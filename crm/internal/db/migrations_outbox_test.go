@@ -3,11 +3,12 @@ package db
 import (
 	"context"
 	"database/sql"
+	"eventplane/outbox"
 	"strings"
 	"testing"
 
 	appkitdb "appkit/db"
-	"eventplane/outbox"
+
 	_ "modernc.org/sqlite"
 )
 

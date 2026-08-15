@@ -2,14 +2,13 @@ package crm
 
 import (
 	"context"
+	"crm/internal/db"
 	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
-
-	"crm/internal/db"
 )
 
 // txAlias lets entity test files reference *sql.Tx without each importing
