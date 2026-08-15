@@ -66,6 +66,7 @@ Each Decision maps to its `DNN.md` file. Every `R-XXXX-XXXX` id maps to its Deci
 | D61 | project/design/D61.md | Patch-semantics `update`: omitted means unchanged, and no empty prompt is ever stored | R-A8EU-5VUL, R-A9MQ-JNLA, R-AAUM-XFBZ, R-AC2J-B72O, R-ADAF-OYTD, R-AEIC-2QK2 |
 | D62 | project/design/D62.md | Adopt the suite brand icon contract: the shipped icon set and its link markup | adopts R-RYDN-YNR5, R-RZLK-CFHU (root project/design/D29.md) |
 | D63 | project/design/D63.md | Queue observability: the completion queue's state is visible without opening the database | R-07YK-W9KU, R-15VT-PVYT |
+| D64 | project/design/D64.md | Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` | none — structural |
 
 ## Verification ids → Decision
 
