@@ -62,6 +62,16 @@ A build failure or a test failure is an **open gap**: capture the exact
 command and the observed output (the failing test name + its output) as the
 gap's grounding.
 
+Then run the tiered lint gate:
+
+```sh
+../bin/lint opsctl
+```
+
+It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+(absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+lint finding at the registered tier is an open gap, not a pass.
+
 ## Step 3 — check per-id coverage for this phase
 
 For every id listed under the brief's "Ids to cover":
@@ -208,7 +218,7 @@ Do **not** delete the brief. Report `NEXT`.
 - Never write or fix production code.
 - Never write the brief's contract region.
 - Never retire a phase on anything short of a green suite plus full coverage
-  (steps 2–4 all clean).
+  plus clean lint at the registered tier (steps 2–4 all clean).
 - The id-set greps in step 4 extract id tokens from `project/design/D*.md` and
   `project/plan/phase-*.md`; this is not "reading the big docs" in the
   forbidden sense.
