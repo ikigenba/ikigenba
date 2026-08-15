@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.35.0 — 2026-08-14
+
+- A false fact can now be retired by ingesting plain prose that says it is false — no new tools and no editing. Each ingested document's statements are classified as either claims (assertions) or corrections (rulings that a stated fact is wrong); a new match stage judges which claims a correction covers, and subject pages are rebuilt from only the claims that survive.
+- Corrections win over claims regardless of ingest order, so a retraction ingested before or after the original document has the same effect; when two corrections disagree, the most recent ruling prevails and an earlier claim can be revived by a later correction.
+- Suppression is auditable but invisible in the reading surface: the `claims` tool now labels each statement's `kind` and shows whether it is `suppressed` and by which correction, while the compiled page prose simply omits the retired fact with no strike-through or trace.
+
 ## v0.34.0 — 2026-08-12
 
 - Ingest admission is now serialized behind a durable per-scope lease, so concurrent ingests into one scope no longer race; the drain path no longer wedges, and a new five-status job surface makes a stuck job visible instead of silently stalled.
