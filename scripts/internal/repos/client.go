@@ -172,12 +172,12 @@ func (c *Client) ReadFile(ctx context.Context, nameKey, ref, path string) ([]byt
 	return c.send(req)
 }
 
-func (c *Client) RunToken(ctx context.Context, nameKey string, ttl time.Duration) (string, string, error) {
+func (c *Client) RunToken(ctx context.Context, nameKey string, ttl time.Duration) (token, cloneURL string, err error) {
 	var out struct {
 		Token    string `json:"token"`
 		CloneURL string `json:"clone_url"`
 	}
-	err := c.plumbingJSON(ctx, http.MethodPost, "/run-token", map[string]string{
+	err = c.plumbingJSON(ctx, http.MethodPost, "/run-token", map[string]string{
 		"kind": repositoryKind, "name": nameKey, "ttl": ttl.String(),
 	}, &out)
 	return out.Token, out.CloneURL, err

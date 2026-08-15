@@ -17,6 +17,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,52 +106,10 @@ func (r *Runner) Spawn(run script.Run, input []byte) {
 // execs python3 under a TTL/cancel context with its own process group, then
 // writes the terminal state (and completion event) via store.FinishRun.
 func (r *Runner) execute(run script.Run, input []byte) {
-	ctx, cancel := context.WithTimeout(context.Background(), r.ttl)
-
-	// Register the cancel func keyed by run_id so Cancel can find it; deregister
-	// (and clear the user-cancelled flag) on completion.
-	r.mu.Lock()
-	r.cancels[run.ID] = cancel
-	r.mu.Unlock()
-	defer func() {
-		cancel()
-		r.mu.Lock()
-		delete(r.cancels, run.ID)
-		delete(r.userCancelled, run.ID)
-		r.mu.Unlock()
-	}()
-
-	// Persistence uses a fresh background context: the run ctx may be
-	// cancelled/expired by the time we write the terminal state.
-	bg := context.Background()
-	endedAt := func() string { return time.Now().UTC().Format(time.RFC3339Nano) }
-
-	// finish writes the terminal state and (for succeeded|failed) emits the
-	// completion event atomically. ScriptName + flat trigger ctx ride along for
-	// the payload; tails/trunc are read from the on-disk logs.
+	ctx, cleanup := r.executionContext(run.ID)
+	defer cleanup()
+	finish := r.runFinisher(run)
 	dir := r.runDir(run.ID)
-	finish := func(scriptName, status string, exitCode *int, errMsg string) {
-		stdoutTail, stdoutTrunc := readTail(filepath.Join(dir, "stdout.log"))
-		stderrTail, stderrTrunc := readTail(filepath.Join(dir, "stderr.log"))
-		_ = r.store.FinishRun(bg, script.FinishRunInput{
-			RunID:          run.ID,
-			ScriptID:       run.ScriptID,
-			ScriptName:     scriptName,
-			CorrelationID:  run.CorrelationID,
-			Status:         status,
-			ExitCode:       exitCode,
-			EndedAt:        endedAt(),
-			ErrMsg:         errMsg,
-			TriggerSource:  run.TriggerSource,
-			TriggerKind:    run.TriggerKind,
-			TriggerSubject: run.TriggerSubject,
-			TriggerEventID: run.TriggerEventID,
-			StdoutTail:     stdoutTail,
-			StderrTail:     stderrTail,
-			StdoutTrunc:    stdoutTrunc,
-			StderrTrunc:    stderrTrunc,
-		})
-	}
 
 	// Fetch the executed source/config/name. A tombstoned or missing script
 	// (run_id may dangle, §7A) fails the run without materializing.
@@ -199,18 +158,13 @@ func (r *Runner) execute(run script.Run, input []byte) {
 	}
 
 	// Open the captured streams in the run dir.
-	stdoutFile, err := os.OpenFile(filepath.Join(dir, "stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	logs, err := openRunLogs(dir)
 	if err != nil {
-		finish(sc.Name, script.RunFailed, nil, "open stdout.log: "+err.Error())
+		finish(sc.Name, script.RunFailed, nil, err.Error())
 		return
 	}
-	defer stdoutFile.Close()
-	stderrFile, err := os.OpenFile(filepath.Join(dir, "stderr.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		finish(sc.Name, script.RunFailed, nil, "open stderr.log: "+err.Error())
-		return
-	}
-	defer stderrFile.Close()
+	defer logs.stdout.Close()
+	defer logs.stderr.Close()
 
 	input, err = runInput(run, input)
 	if err != nil {
@@ -218,11 +172,15 @@ func (r *Runner) execute(run script.Run, input []byte) {
 		return
 	}
 
-	// Build the command: python3 main.py from the run dir, the trigger envelope on
-	// $EVENT_JSON and stdin, streams to the log files. Setpgid puts the child in
-	// its own process group so a TTL/cancel kills the whole tree.
+	cmd := r.runCommand(ctx, run, sc, input, token, logs)
+	r.finishExecution(ctx, run, sc.Name, cmd.Run(), finish)
+}
+
+// runCommand sends the trigger envelope over stdin and the environment. Its
+// process group lets timeout and cancellation kill the script's whole tree.
+func (r *Runner) runCommand(ctx context.Context, run script.Run, sc script.Script, input []byte, token string, logs runLogs) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, python3, "main.py")
-	cmd.Dir = dir
+	cmd.Dir = r.runDir(run.ID)
 	cmd.Env = append(os.Environ(), r.suiteEnv...)
 	cmd.Env = append(cmd.Env,
 		"EVENT_JSON="+string(input),
@@ -236,22 +194,81 @@ func (r *Runner) execute(run script.Run, input []byte) {
 		"SUITE_GIT_TOKEN="+token,
 	)
 	cmd.Stdin = bytes.NewReader(input)
-	cmd.Stdout = stdoutFile
-	cmd.Stderr = stderrFile
+	cmd.Stdout = logs.stdout
+	cmd.Stderr = logs.stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	// On ctx cancel/timeout, kill the whole process group (negative pgid), not
-	// just the parent, so child processes the script spawned die too.
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
 		}
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
+	return cmd
+}
 
-	runErr := cmd.Run()
+type runLogs struct {
+	stdout *os.File
+	stderr *os.File
+}
 
-	// Classify the terminal status: explicit user cancel wins over TTL, TTL over
-	// a non-zero/spawn error, and a clean return is success.
+func openRunLogs(dir string) (runLogs, error) {
+	stdout, err := os.OpenFile(filepath.Join(dir, "stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return runLogs{}, fmt.Errorf("open stdout.log: %w", err)
+	}
+	stderr, err := os.OpenFile(filepath.Join(dir, "stderr.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		_ = stdout.Close()
+		return runLogs{}, fmt.Errorf("open stderr.log: %w", err)
+	}
+	return runLogs{stdout: stdout, stderr: stderr}, nil
+}
+
+func (r *Runner) executionContext(runID string) (ctx context.Context, cleanup func()) {
+	ctx, cancel := context.WithTimeout(context.Background(), r.ttl)
+	r.mu.Lock()
+	r.cancels[runID] = cancel
+	r.mu.Unlock()
+	return ctx, func() {
+		cancel()
+		r.mu.Lock()
+		delete(r.cancels, runID)
+		delete(r.userCancelled, runID)
+		r.mu.Unlock()
+	}
+}
+
+// runFinisher persists with a fresh context because the execution context may
+// be cancelled or expired by the time the terminal state is written.
+func (r *Runner) runFinisher(run script.Run) func(string, string, *int, string) {
+	dir := r.runDir(run.ID)
+	return func(scriptName, status string, exitCode *int, errMsg string) {
+		stdoutTail, stdoutTrunc := readTail(filepath.Join(dir, "stdout.log"))
+		stderrTail, stderrTrunc := readTail(filepath.Join(dir, "stderr.log"))
+		_ = r.store.FinishRun(context.Background(), script.FinishRunInput{
+			RunID:          run.ID,
+			ScriptID:       run.ScriptID,
+			ScriptName:     scriptName,
+			CorrelationID:  run.CorrelationID,
+			Status:         status,
+			ExitCode:       exitCode,
+			EndedAt:        time.Now().UTC().Format(time.RFC3339Nano),
+			ErrMsg:         errMsg,
+			TriggerSource:  run.TriggerSource,
+			TriggerKind:    run.TriggerKind,
+			TriggerSubject: run.TriggerSubject,
+			TriggerEventID: run.TriggerEventID,
+			StdoutTail:     stdoutTail,
+			StderrTail:     stderrTail,
+			StdoutTrunc:    stdoutTrunc,
+			StderrTrunc:    stderrTrunc,
+		})
+	}
+}
+
+// finishExecution classifies the terminal status: explicit user cancel wins
+// over TTL, TTL over a non-zero/spawn error, and a clean return is success.
+func (r *Runner) finishExecution(ctx context.Context, run script.Run, scriptName string, runErr error, finish func(string, string, *int, string)) {
 	r.mu.Lock()
 	userCancelled := r.userCancelled[run.ID]
 	r.mu.Unlock()
@@ -259,20 +276,20 @@ func (r *Runner) execute(run script.Run, input []byte) {
 	switch {
 	case userCancelled:
 		// Operator abort: terminal cancelled, store emits NO event.
-		finish(sc.Name, script.RunCancelled, nil, "cancelled")
+		finish(scriptName, script.RunCancelled, nil, "cancelled")
 	case ctx.Err() == context.DeadlineExceeded:
-		finish(sc.Name, script.RunFailed, nil, "run TTL exceeded")
+		finish(scriptName, script.RunFailed, nil, "run TTL exceeded")
 	case runErr == nil:
 		code := 0
-		finish(sc.Name, script.RunSucceeded, &code, "")
+		finish(scriptName, script.RunSucceeded, &code, "")
 	default:
 		// Non-zero exit carries the exit code; a spawn error (no ExitCode) does not.
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
 			code := exitErr.ExitCode()
-			finish(sc.Name, script.RunFailed, &code, runErr.Error())
+			finish(scriptName, script.RunFailed, &code, runErr.Error())
 		} else {
-			finish(sc.Name, script.RunFailed, nil, runErr.Error())
+			finish(scriptName, script.RunFailed, nil, runErr.Error())
 		}
 	}
 }

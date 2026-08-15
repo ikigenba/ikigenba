@@ -193,26 +193,36 @@ func (s *Service) ImportForOwner(ctx context.Context, ownerID, ownerEmail, sourc
 	if err != nil {
 		return Script{}, err
 	}
-	if sc.RepoSeededAt == "" {
-		sc.Body = string(data)
-		if err := s.seedRepository(ctx, sc, "create "+sc.Name); err != nil {
-			if deleteErr := s.store.DeleteScript(ctx, ownerID, sc.ID); deleteErr != nil {
-				return Script{}, fmt.Errorf("%w (compensating delete: %v)", err, deleteErr)
-			}
-			return Script{}, err
-		}
-		sc.RepoSeededAt = s.nowStr()
-		if err := s.store.UpdateScript(ctx, ownerID, sc); err != nil {
-			return Script{}, err
-		}
-	} else {
-		if _, err := s.Plane.Commit(ctx, sc.NameKey, map[string]string{"main.py": string(data)}, "update "+sc.Name, "scripts:"+sc.ID); err != nil {
-			return Script{}, err
-		}
+	if err := s.syncImportedRepository(ctx, ownerID, &sc, data); err != nil {
+		return Script{}, err
 	}
 	imported, err := s.store.GetScript(ctx, ownerID, sc.ID)
 	imported.Body = string(data)
 	return imported, err
+}
+
+func (s *Service) syncImportedRepository(ctx context.Context, ownerID string, sc *Script, data []byte) error {
+	if sc.RepoSeededAt == "" {
+		return s.seedImportedRepository(ctx, ownerID, sc, data)
+	}
+	_, err := s.Plane.Commit(ctx, sc.NameKey, map[string]string{"main.py": string(data)}, "update "+sc.Name, "scripts:"+sc.ID)
+	return err
+}
+
+func (s *Service) seedImportedRepository(ctx context.Context, ownerID string, sc *Script, data []byte) error {
+	sc.Body = string(data)
+	if err := s.seedRepository(ctx, *sc, "create "+sc.Name); err != nil {
+		return s.compensateImport(ctx, ownerID, sc.ID, err)
+	}
+	sc.RepoSeededAt = s.nowStr()
+	return s.store.UpdateScript(ctx, ownerID, *sc)
+}
+
+func (s *Service) compensateImport(ctx context.Context, ownerID, scriptID string, importErr error) error {
+	if err := s.store.DeleteScript(ctx, ownerID, scriptID); err != nil {
+		return fmt.Errorf("%w (compensating delete: %v)", importErr, err)
+	}
+	return importErr
 }
 
 // Update applies the optional Name/Body/Config pointers (nil = leave as-is) and
@@ -223,31 +233,8 @@ func (s *Service) Update(ctx context.Context, owner, id string, in UpdateInput) 
 		return Script{}, err
 	}
 	oldNameKey := sc.NameKey
-	if in.Body == nil {
-		body, err := s.Plane.ReadFile(ctx, sc.NameKey, "main", "main.py")
-		if err != nil {
-			return Script{}, err
-		}
-		sc.Body = string(body)
-	}
-	if in.Name != nil {
-		if strings.TrimSpace(*in.Name) == "" {
-			return Script{}, fmt.Errorf("%w: name cannot be empty", ErrValidation)
-		}
-		sc.Name = *in.Name
-	}
-	if in.Body != nil {
-		if strings.TrimSpace(*in.Body) == "" {
-			return Script{}, fmt.Errorf("%w: body cannot be empty", ErrValidation)
-		}
-		sc.Body = *in.Body
-	}
-	if in.Config != nil {
-		cfg := *in.Config
-		if cfg.Interpreter == "" {
-			cfg.Interpreter = "python3"
-		}
-		sc.Config = cfg
+	if err := s.applyUpdate(ctx, &sc, in); err != nil {
+		return Script{}, err
 	}
 	sc.UpdatedAt = s.nowStr()
 	if err := s.store.UpdateScript(ctx, owner, sc); err != nil {
@@ -271,6 +258,36 @@ func (s *Service) Update(ctx context.Context, owner, id string, in UpdateInput) 
 	}
 	updated.Body = sc.Body
 	return updated, nil
+}
+
+func (s *Service) applyUpdate(ctx context.Context, sc *Script, in UpdateInput) error {
+	if in.Body == nil {
+		body, err := s.Plane.ReadFile(ctx, sc.NameKey, "main", "main.py")
+		if err != nil {
+			return err
+		}
+		sc.Body = string(body)
+	}
+	if in.Name != nil {
+		if strings.TrimSpace(*in.Name) == "" {
+			return fmt.Errorf("%w: name cannot be empty", ErrValidation)
+		}
+		sc.Name = *in.Name
+	}
+	if in.Body != nil {
+		if strings.TrimSpace(*in.Body) == "" {
+			return fmt.Errorf("%w: body cannot be empty", ErrValidation)
+		}
+		sc.Body = *in.Body
+	}
+	if in.Config != nil {
+		cfg := *in.Config
+		if cfg.Interpreter == "" {
+			cfg.Interpreter = "python3"
+		}
+		sc.Config = cfg
+	}
+	return nil
 }
 
 // Delete tombstones the owner's script (the store removes the row + its

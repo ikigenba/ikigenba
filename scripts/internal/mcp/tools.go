@@ -28,119 +28,97 @@ type toolHandlers struct {
 // Tools returns scripts' service-owned MCP tool declarations. The shared appkit
 // MCP transport appends the chassis health and reflection tools.
 func Tools(svc *script.Service, contentBase string) []appkitmcp.Tool {
-	if svc == nil {
-		panic("mcp: script service is required")
-	}
-	h := &toolHandlers{svc: svc, contentBase: strings.TrimRight(contentBase, "/")}
+	h := newToolHandlers(svc, contentBase)
 	return []appkitmcp.Tool{
-		desc(tool("describe"), "Return a detailed overview of scripts: what a script is, the create→run→poll→read lifecycle, triggers, and the runtime contract. Call this first if you're unfamiliar with scripts. Takes no inputs.", obj(map[string]any{}), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("describe"), id, args)
-		}),
+		desc(tool("describe"), "Return a detailed overview of scripts: what a script is, the create→run→poll→read lifecycle, triggers, and the runtime contract. Call this first if you're unfamiliar with scripts. Takes no inputs.", obj(map[string]any{}), h.toolHandler("describe")),
 
 		desc(tool("create"), "Create a new script for the caller. body is the Python source. Returns the new script_id.", obj(map[string]any{
 			"name":   typ("string"),
 			"body":   typ("string"),
 			"config": configSchema(),
-		}, "name", "body"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("create"), id, args)
-		}),
+		}, "name", "body"), h.toolHandler("create")),
 
 		desc(tool("import"), "Import a Dropbox-mirrored file as a script. 'source_path' is the file's path in the dropbox mirror (e.g. \"/scripts/nightly.py\"). Fetches the current mirror bytes over loopback, requires valid UTF-8 text under 1 MiB, and upserts on source_path: re-importing the same path updates the same script instead of creating a duplicate. 'name' defaults to the file's basename. Returns {script_id, name}.", obj(map[string]any{
 			"source_path": typ("string"),
 			"name":        typ("string"),
-		}, "source_path"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("import"), id, args)
-		}),
+		}, "source_path"), h.toolHandler("import")),
 
-		desc(tool("list"), "List the caller's scripts, each with its derived running_count and last_run.", obj(map[string]any{}), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("list"), id, args)
-		}),
+		desc(tool("list"), "List the caller's scripts, each with its derived running_count and last_run.", obj(map[string]any{}), h.toolHandler("list")),
 
 		desc(tool("get"), "Get one of the caller's scripts, including running_count and last_run.", obj(map[string]any{
 			"script_id": typ("string"),
-		}, "script_id"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("get"), id, args)
-		}),
+		}, "script_id"), h.toolHandler("get")),
 
 		desc(tool("update"), "Update a script's name, body, and/or config. Any field may be omitted to leave it unchanged.", obj(map[string]any{
 			"script_id": typ("string"),
 			"name":      typ("string"),
 			"body":      typ("string"),
 			"config":    configSchema(),
-		}, "script_id"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("update"), id, args)
-		}),
+		}, "script_id"), h.toolHandler("update")),
 
 		desc(tool("delete"), "Delete one of the caller's scripts (tombstone): the script row and its triggers are removed, but its run history and on-disk artifacts survive.", obj(map[string]any{
 			"script_id": typ("string"),
-		}, "script_id"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("delete"), id, args)
-		}),
+		}, "script_id"), h.toolHandler("delete")),
 
 		desc(tool("set_trigger"), "Bind a script to an upstream canonical routing-key filter (for example \"dropbox:create/bills/**/*.pdf\"). The source segment is literal and ** matches across subject paths. When a matching event fires, scripts starts a run.", obj(map[string]any{
 			"script_id": typ("string"),
 			"filter":    typ("string"),
-		}, "script_id", "filter"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("set_trigger"), id, args)
-		}),
+		}, "script_id", "filter"), h.toolHandler("set_trigger")),
 
 		desc(tool("clear_trigger"), "Remove an event trigger from a script.", obj(map[string]any{
 			"script_id": typ("string"),
 			"filter":    typ("string"),
-		}, "script_id", "filter"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("clear_trigger"), id, args)
-		}),
+		}, "script_id", "filter"), h.toolHandler("clear_trigger")),
 
 		desc(tool("run"), "Start a manual run of one of the caller's scripts. Always allowed — runs are fully concurrent. Returns the run_id and start time.", obj(map[string]any{
 			"script_id": typ("string"),
-		}, "script_id"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("run"), id, args)
-		}),
+		}, "script_id"), h.toolHandler("run")),
 
 		desc(tool("run_list"), "List runs, optionally filtered by script_id, status (running|succeeded|failed|cancelled), and/or correlation_id. Each carries elapsed_secs.", obj(map[string]any{
 			"script_id":      typ("string"),
 			"status":         typ("string"),
 			"correlation_id": typ("string"),
-		}), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("run_list"), id, args)
-		}),
+		}), h.toolHandler("run_list")),
 
 		desc(tool("run_get"), "Get one run by run_id, including status, exit_code, and elapsed_secs.", obj(map[string]any{
 			"run_id": typ("string"),
-		}, "run_id"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("run_get"), id, args)
-		}),
+		}, "run_id"), h.toolHandler("run_get")),
 
 		desc(tool("run_output"), "Read a run's captured output. stream is stdout|stderr|both (default both). offset is 1-based; limit caps lines (<=0 means from start / no limit).", obj(map[string]any{
 			"run_id": typ("string"),
 			"stream": typ("string"),
 			"offset": typ("integer"),
 			"limit":  typ("integer"),
-		}, "run_id"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("run_output"), id, args)
-		}),
+		}, "run_id"), h.toolHandler("run_output")),
 
 		desc(tool("run_cancel"), "Cancel an in-flight run by run_id (kills the process group). Idempotent.", obj(map[string]any{
 			"run_id": typ("string"),
-		}, "run_id"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("run_cancel"), id, args)
-		}),
+		}, "run_id"), h.toolHandler("run_cancel")),
 
 		desc(tool("run_fs_list"), "List entries under path within a run's persisted dir tree (path defaults to the run root). Non-directory entries carry a loopback content_url for byte fetch by services, such as a run's suite.fetch or share put(source_url), not by the agent.", obj(map[string]any{
 			"run_id": typ("string"),
 			"path":   typ("string"),
-		}, "run_id"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("run_fs_list"), id, args)
-		}),
+		}, "run_id"), h.toolHandler("run_fs_list")),
 
 		desc(tool("run_fs_read"), "Read a file within a run's persisted dir. offset is 1-based; limit caps lines (<=0 means from start / no limit).", obj(map[string]any{
 			"run_id": typ("string"),
 			"path":   typ("string"),
 			"offset": typ("integer"),
 			"limit":  typ("integer"),
-		}, "run_id", "path"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
-			return h.dispatchTool(ctx, tool("run_fs_read"), id, args)
-		}),
+		}, "run_id", "path"), h.toolHandler("run_fs_read")),
+	}
+}
+
+func newToolHandlers(svc *script.Service, contentBase string) *toolHandlers {
+	if svc == nil {
+		panic("mcp: script service is required")
+	}
+	return &toolHandlers{svc: svc, contentBase: strings.TrimRight(contentBase, "/")}
+}
+
+func (h *toolHandlers) toolHandler(verb string) func(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {
+	return func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+		return h.dispatchTool(ctx, tool(verb), id, args)
 	}
 }
 
@@ -284,234 +262,263 @@ func (c configInput) toConfig() script.Config {
 }
 
 func (h *toolHandlers) dispatchTool(ctx context.Context, name string, id server.Identity, args json.RawMessage) (map[string]any, error) {
-	svc := h.svc
-	owner := id.OwnerID
-	switch name {
-	case tool("describe"):
-		return toolDescribe()
-
-	case tool("create"):
-		var in struct {
-			Name   string      `json:"name"`
-			Body   string      `json:"body"`
-			Config configInput `json:"config"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		sc, err := svc.CreateForOwner(ctx, owner, id.OwnerEmail, script.CreateInput{
-			Name:   in.Name,
-			Body:   in.Body,
-			Config: in.Config.toConfig(),
-		})
-		if err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(map[string]any{"script_id": sc.ID})
-
-	case tool("import"):
-		var in struct {
-			SourcePath string `json:"source_path"`
-			Name       string `json:"name"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		sc, err := svc.ImportForOwner(ctx, owner, id.OwnerEmail, in.SourcePath, in.Name)
-		if err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(map[string]any{"script_id": sc.ID, "name": sc.Name})
-
-	case tool("list"):
-		scripts, err := svc.List(ctx, owner)
-		if err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(map[string]any{"scripts": scripts})
-
-	case tool("get"):
-		var in struct {
-			ScriptID string `json:"script_id"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		detail, err := svc.Get(ctx, owner, in.ScriptID)
-		if err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(detail)
-
-	case tool("update"):
-		var in struct {
-			ScriptID string       `json:"script_id"`
-			Name     *string      `json:"name"`
-			Body     *string      `json:"body"`
-			Config   *configInput `json:"config"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		upd := script.UpdateInput{Name: in.Name, Body: in.Body}
-		if in.Config != nil {
-			c := in.Config.toConfig()
-			upd.Config = &c
-		}
-		sc, err := svc.Update(ctx, owner, in.ScriptID, upd)
-		if err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(sc)
-
-	case tool("delete"):
-		var in struct {
-			ScriptID string `json:"script_id"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		if err := svc.Delete(ctx, owner, in.ScriptID); err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(map[string]any{"deleted": in.ScriptID})
-
-	case tool("set_trigger"):
-		var in struct {
-			ScriptID string `json:"script_id"`
-			Filter   string `json:"filter"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		trig, err := svc.SetTrigger(ctx, owner, in.ScriptID, in.Filter)
-		if err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(trig)
-
-	case tool("clear_trigger"):
-		var in struct {
-			ScriptID string `json:"script_id"`
-			Filter   string `json:"filter"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		if err := svc.ClearTrigger(ctx, owner, in.ScriptID, in.Filter); err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(map[string]any{"cleared": in.ScriptID})
-
-	case tool("run"):
-		var in struct {
-			ScriptID string `json:"script_id"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		run, err := svc.Run(ctx, owner, in.ScriptID)
-		if err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(map[string]any{"run_id": run.ID, "status": run.Status, "started_at": run.StartedAt, "correlation_id": run.CorrelationID})
-
-	case tool("run_list"):
-		var in struct {
-			ScriptID      string `json:"script_id"`
-			Status        string `json:"status"`
-			CorrelationID string `json:"correlation_id"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		runs, err := svc.RunList(ctx, owner, in.ScriptID, in.Status, in.CorrelationID)
-		if err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(map[string]any{"runs": runs})
-
-	case tool("run_get"):
-		var in struct {
-			RunID string `json:"run_id"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		run, err := svc.RunGet(ctx, owner, in.RunID)
-		if err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(run)
-
-	case tool("run_output"):
-		var in struct {
-			RunID  string `json:"run_id"`
-			Stream string `json:"stream"`
-			Offset int    `json:"offset"`
-			Limit  int    `json:"limit"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		out, err := svc.RunOutput(ctx, owner, in.RunID, in.Stream, in.Offset, in.Limit)
-		if err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultText(out), nil
-
-	case tool("run_cancel"):
-		var in struct {
-			RunID string `json:"run_id"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		if err := svc.RunCancel(ctx, owner, in.RunID); err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultJSON(map[string]any{"cancelled": in.RunID})
-
-	case tool("run_fs_list"):
-		var in struct {
-			RunID string `json:"run_id"`
-			Path  string `json:"path"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		entries, err := svc.RunFsList(ctx, owner, in.RunID, in.Path)
-		if err != nil {
-			return structuredError(err), nil
-		}
-		for i := range entries {
-			if entries[i].IsDir {
-				continue
-			}
-			query := url.Values{"run_id": {in.RunID}, "path": {entries[i].Path}}
-			entries[i].ContentURL = h.contentBase + "/run-content?" + query.Encode()
-		}
-		return toolResultJSON(map[string]any{"entries": entries})
-
-	case tool("run_fs_read"):
-		var in struct {
-			RunID  string `json:"run_id"`
-			Path   string `json:"path"`
-			Offset int    `json:"offset"`
-			Limit  int    `json:"limit"`
-		}
-		if err := parseArgs(args, &in); err != nil {
-			return nil, err
-		}
-		out, err := svc.RunFsRead(ctx, owner, in.RunID, in.Path, in.Offset, in.Limit)
-		if err != nil {
-			return structuredError(err), nil
-		}
-		return toolResultText(out), nil
-
-	default:
+	handlers := map[string]func(context.Context, server.Identity, json.RawMessage) (map[string]any, error){
+		tool("describe"):      h.describe,
+		tool("create"):        h.create,
+		tool("import"):        h.importScript,
+		tool("list"):          h.list,
+		tool("get"):           h.get,
+		tool("update"):        h.update,
+		tool("delete"):        h.delete,
+		tool("set_trigger"):   h.setTrigger,
+		tool("clear_trigger"): h.clearTrigger,
+		tool("run"):           h.run,
+		tool("run_list"):      h.runList,
+		tool("run_get"):       h.runGet,
+		tool("run_output"):    h.runOutput,
+		tool("run_cancel"):    h.runCancel,
+		tool("run_fs_list"):   h.runFSList,
+		tool("run_fs_read"):   h.runFSRead,
+	}
+	handler, ok := handlers[name]
+	if !ok {
 		return nil, errors.New("unknown tool: " + name)
 	}
+	return handler(ctx, id, args)
+}
+
+func (h *toolHandlers) describe(_ context.Context, _ server.Identity, _ json.RawMessage) (map[string]any, error) {
+	return toolDescribe()
+}
+
+func (h *toolHandlers) create(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		Name   string      `json:"name"`
+		Body   string      `json:"body"`
+		Config configInput `json:"config"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	sc, err := h.svc.CreateForOwner(ctx, id.OwnerID, id.OwnerEmail, script.CreateInput{Name: in.Name, Body: in.Body, Config: in.Config.toConfig()})
+	if err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(map[string]any{"script_id": sc.ID})
+}
+
+func (h *toolHandlers) importScript(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		SourcePath string `json:"source_path"`
+		Name       string `json:"name"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	sc, err := h.svc.ImportForOwner(ctx, id.OwnerID, id.OwnerEmail, in.SourcePath, in.Name)
+	if err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(map[string]any{"script_id": sc.ID, "name": sc.Name})
+}
+
+func (h *toolHandlers) list(ctx context.Context, id server.Identity, _ json.RawMessage) (map[string]any, error) {
+	scripts, err := h.svc.List(ctx, id.OwnerID)
+	if err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(map[string]any{"scripts": scripts})
+}
+
+func (h *toolHandlers) get(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		ScriptID string `json:"script_id"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	detail, err := h.svc.Get(ctx, id.OwnerID, in.ScriptID)
+	if err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(detail)
+}
+
+func (h *toolHandlers) update(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		ScriptID string       `json:"script_id"`
+		Name     *string      `json:"name"`
+		Body     *string      `json:"body"`
+		Config   *configInput `json:"config"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	update := script.UpdateInput{Name: in.Name, Body: in.Body}
+	if in.Config != nil {
+		config := in.Config.toConfig()
+		update.Config = &config
+	}
+	sc, err := h.svc.Update(ctx, id.OwnerID, in.ScriptID, update)
+	if err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(sc)
+}
+
+func (h *toolHandlers) delete(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		ScriptID string `json:"script_id"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	if err := h.svc.Delete(ctx, id.OwnerID, in.ScriptID); err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(map[string]any{"deleted": in.ScriptID})
+}
+
+func (h *toolHandlers) setTrigger(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		ScriptID string `json:"script_id"`
+		Filter   string `json:"filter"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	trigger, err := h.svc.SetTrigger(ctx, id.OwnerID, in.ScriptID, in.Filter)
+	if err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(trigger)
+}
+
+func (h *toolHandlers) clearTrigger(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		ScriptID string `json:"script_id"`
+		Filter   string `json:"filter"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	if err := h.svc.ClearTrigger(ctx, id.OwnerID, in.ScriptID, in.Filter); err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(map[string]any{"cleared": in.ScriptID})
+}
+
+func (h *toolHandlers) run(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		ScriptID string `json:"script_id"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	run, err := h.svc.Run(ctx, id.OwnerID, in.ScriptID)
+	if err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(map[string]any{"run_id": run.ID, "status": run.Status, "started_at": run.StartedAt, "correlation_id": run.CorrelationID})
+}
+
+func (h *toolHandlers) runList(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		ScriptID      string `json:"script_id"`
+		Status        string `json:"status"`
+		CorrelationID string `json:"correlation_id"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	runs, err := h.svc.RunList(ctx, id.OwnerID, in.ScriptID, in.Status, in.CorrelationID)
+	if err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(map[string]any{"runs": runs})
+}
+
+func (h *toolHandlers) runGet(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		RunID string `json:"run_id"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	run, err := h.svc.RunGet(ctx, id.OwnerID, in.RunID)
+	if err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(run)
+}
+
+func (h *toolHandlers) runOutput(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		RunID  string `json:"run_id"`
+		Stream string `json:"stream"`
+		Offset int    `json:"offset"`
+		Limit  int    `json:"limit"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	out, err := h.svc.RunOutput(ctx, id.OwnerID, in.RunID, in.Stream, in.Offset, in.Limit)
+	if err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultText(out), nil
+}
+
+func (h *toolHandlers) runCancel(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		RunID string `json:"run_id"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	if err := h.svc.RunCancel(ctx, id.OwnerID, in.RunID); err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultJSON(map[string]any{"cancelled": in.RunID})
+}
+
+func (h *toolHandlers) runFSList(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		RunID string `json:"run_id"`
+		Path  string `json:"path"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	entries, err := h.svc.RunFsList(ctx, id.OwnerID, in.RunID, in.Path)
+	if err != nil {
+		return structuredError(err), nil
+	}
+	for i := range entries {
+		if entries[i].IsDir {
+			continue
+		}
+		query := url.Values{"run_id": {in.RunID}, "path": {entries[i].Path}}
+		entries[i].ContentURL = h.contentBase + "/run-content?" + query.Encode()
+	}
+	return toolResultJSON(map[string]any{"entries": entries})
+}
+
+func (h *toolHandlers) runFSRead(ctx context.Context, id server.Identity, args json.RawMessage) (map[string]any, error) {
+	var in struct {
+		RunID  string `json:"run_id"`
+		Path   string `json:"path"`
+		Offset int    `json:"offset"`
+		Limit  int    `json:"limit"`
+	}
+	if err := parseArgs(args, &in); err != nil {
+		return nil, err
+	}
+	out, err := h.svc.RunFsRead(ctx, id.OwnerID, in.RunID, in.Path, in.Offset, in.Limit)
+	if err != nil {
+		return structuredError(err), nil
+	}
+	return toolResultText(out), nil
 }
 
 // ── shared helpers ──────────────────────────────────────────────────────
