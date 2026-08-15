@@ -54,6 +54,16 @@ phase on a gap.
    **`SKIP`ped** test, a non-zero `GOWORK=off go build ./...`) is a gap. **A skipped `R-XXXX-XXXX`-tagged test is a gap,
    never green** — a skip means that requirement was not verified.
 
+   Then run the tiered lint gate:
+
+   ```
+   ../bin/lint ledger
+   ```
+
+   It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+   (absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+   lint finding at the registered tier is an open gap, not a pass.
+
 3. **Confirm the tree is skip-free.** ledger has **no live layer and no manual layer**, so no test
    file legitimately carries a `//go:build live` constraint and no skip anywhere
    in the tree is acceptable. Run:
@@ -184,10 +194,11 @@ phase on a gap.
 
 - Never write or fix production code; never write the brief's `## Contract` region.
 - Never delete a phase's `STATUS.md` line or `phase-NN.md` on anything short of a
-  green suite **and** full, reachable coverage of every id (this phase's and the
-  global ratchet); a **skipped or statically-unreachable** id test is uncovered —
-  a skip is never acceptable green, and ledger has no live layer, so there is
-  no file in which a skip is permitted.
+  green suite **and** clean lint (at the registered tier) **and** full, reachable
+  coverage of every id (this phase's and the global ratchet); a **skipped or
+  statically-unreachable** id test is uncovered — a skip is never acceptable
+  green, and ledger has no live layer, so there is no file in which a skip is
+  permitted.
 - Never read `project/design/*` (beyond the ratchet's mechanical id-set grep, which
   extracts id tokens and never reads design prose), `project/plan/phase-*.md`
   (same caveat), or `project/product/*` to re-derive the checklist — the brief is
