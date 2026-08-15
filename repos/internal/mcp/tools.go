@@ -1,15 +1,15 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"repos/internal/repos"
 	"strings"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-	"repos/internal/repos"
 )
 
 func object(properties map[string]any, required ...string) map[string]any {

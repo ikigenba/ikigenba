@@ -13,11 +13,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"registry"
 	"sort"
 	"strings"
 	"testing"
-
-	"registry"
 )
 
 func TestContentReturnsCommittedBytesAndDistinctMissingDetails(t *testing.T) {

@@ -3,13 +3,13 @@ package db
 import (
 	"context"
 	"database/sql"
+	"eventplane/outbox"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	appdb "appkit/db"
-	"eventplane/outbox"
 )
 
 func TestEmbeddedMigrationsCreateV2MetadataSchema(t *testing.T) {

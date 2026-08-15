@@ -1,6 +1,7 @@
 package main
 
 import (
+	"eventplane/outbox"
 	"io"
 	"log/slog"
 	"net/http"
@@ -11,7 +12,6 @@ import (
 	"testing"
 
 	appkitserver "appkit/server"
-	"eventplane/outbox"
 )
 
 func TestEveryServedDocumentCarriesBrandIconLinks(t *testing.T) {

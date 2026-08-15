@@ -7,10 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"registry"
 	"strconv"
 	"strings"
-
-	"registry"
 )
 
 type ReadEntry struct {

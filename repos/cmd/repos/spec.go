@@ -1,24 +1,23 @@
 package main
 
 import (
+	"appkit"
+	"appkit/config"
+	"appkit/web"
 	"context"
 	"encoding/json"
+	"eventplane/outbox"
 	"fmt"
 	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
-
-	"appkit"
-	"appkit/config"
-	"appkit/web"
-	"eventplane/outbox"
 	"registry"
-
-	reposdb "repos/internal/db"
 	"repos/internal/mcp"
 	"repos/internal/repos"
+	"time"
+
+	reposdb "repos/internal/db"
 )
 
 type runtimeKnobs struct {

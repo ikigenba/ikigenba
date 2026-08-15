@@ -4,10 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/outbox"
 	"fmt"
 	"strings"
-
-	"eventplane/outbox"
 )
 
 const zeroSHA = "0000000000000000000000000000000000000000"

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"eventplane/outbox"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,8 +17,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"eventplane/outbox"
 )
 
 const gitBasicChallenge = `Basic realm="repos"`

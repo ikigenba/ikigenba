@@ -3,13 +3,13 @@
 package mcp
 
 import (
+	"appkit"
 	"context"
 	"fmt"
 	"net/http"
-
-	"appkit"
-	appkitmcp "appkit/mcp"
 	"repos/internal/repos"
+
+	appkitmcp "appkit/mcp"
 )
 
 const Instructions = "Repos manages git repositories, version history, branches, commits, clones, and merges. Create a repository, work through its clone door, then merge a ready branch; call guide for conventions and examples."

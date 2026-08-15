@@ -132,7 +132,9 @@ func (s *Service) commitChanges(ctx context.Context, kind, name, message, actor,
 		return CommitResult{}, nil
 	}
 
-	commitEnv := append(env,
+	commitEnv := make([]string, 0, len(env)+6)
+	commitEnv = append(commitEnv, env...)
+	commitEnv = append(commitEnv,
 		"GIT_AUTHOR_NAME="+actor,
 		"GIT_AUTHOR_EMAIL="+actor+"@ikigenba.local",
 		"GIT_COMMITTER_NAME=ikigenba",

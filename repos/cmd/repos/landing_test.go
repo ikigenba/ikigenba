@@ -10,13 +10,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"repos/internal/repos"
 	"strings"
 	"testing"
 	"time"
 
 	appdb "appkit/db"
 	reposdb "repos/internal/db"
-	"repos/internal/repos"
 )
 
 func TestLandingHeadingAndCopyExplainTheGitCustodian(t *testing.T) {

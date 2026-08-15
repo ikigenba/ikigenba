@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"eventplane/correlation"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,8 +16,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"eventplane/correlation"
 )
 
 func TestPutContentCreatesOneAttributedCommitAndRoundTripsBytes(t *testing.T) {

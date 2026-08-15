@@ -1,9 +1,12 @@
 package main
 
 import (
+	"appkit"
+	"appkit/manifest"
 	"bytes"
 	"context"
 	"encoding/json"
+	"eventplane/outbox"
 	"fmt"
 	"io"
 	"log/slog"
@@ -19,11 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"appkit"
 	appdb "appkit/db"
-	"appkit/manifest"
+
 	appkitserver "appkit/server"
-	"eventplane/outbox"
 
 	reposdb "repos/internal/db"
 )

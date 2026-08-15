@@ -60,8 +60,14 @@ func TestPathRejectsEveryUnsafeKeyWithoutWriting(t *testing.T) {
 	custody, root := newTestCustody(t)
 	parent := filepath.Dir(root)
 	for _, key := range []struct{ kind, name string }{
-		{"nope", "safe"}, {"code", ""}, {"code", "."}, {"code", ".."},
-		{"code", "../escape"}, {"code", "a/b"}, {"code", "Upper"}, {"code", strings.Repeat("a", 65)},
+		{"nope", "safe"},
+		{"code", ""},
+		{"code", "."},
+		{"code", ".."},
+		{"code", "../escape"},
+		{"code", "a/b"},
+		{"code", "Upper"},
+		{"code", strings.Repeat("a", 65)},
 	} {
 		if _, err := custody.Path(key.kind, key.name); !errors.Is(err, ErrValidation) {
 			t.Errorf("Path(%q, %q) error = %v, want ErrValidation", key.kind, key.name, err)

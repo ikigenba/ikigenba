@@ -1,15 +1,18 @@
 package mcp
 
 import (
+	"appkit/server"
 	"bytes"
 	"context"
 	"encoding/json"
+	"eventplane/outbox"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"repos/internal/repos"
 	"sort"
 	"strings"
 	"testing"
@@ -17,10 +20,8 @@ import (
 
 	appdb "appkit/db"
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-	"eventplane/outbox"
+
 	reposdb "repos/internal/db"
-	"repos/internal/repos"
 )
 
 type testService struct {

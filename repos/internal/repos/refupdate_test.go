@@ -5,13 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/outbox"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"eventplane/outbox"
 )
 
 type commitGraph struct {

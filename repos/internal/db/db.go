@@ -3,11 +3,11 @@ package db
 
 import (
 	"embed"
+	"eventplane/outbox"
 	"fmt"
 	"strings"
 
 	appdb "appkit/db"
-	"eventplane/outbox"
 )
 
 // migrationsFS is the service's complete, forward-only migration set.

@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"registry"
 	"testing"
 	"time"
 
 	appserver "appkit/server"
-	"registry"
 )
 
 func TestRunTokenMintHonorsRequestedTTLAndStoresOnlyDigest(t *testing.T) {

@@ -3,11 +3,10 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"registry"
 	"strconv"
 	"strings"
 	"testing"
-
-	"registry"
 )
 
 func TestNginxFragmentEnforcesPublicRouteTiers(t *testing.T) {

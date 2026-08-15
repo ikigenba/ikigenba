@@ -5,12 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/outbox"
 	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"eventplane/outbox"
 )
 
 // Service is the single domain object assembled by the composition root.

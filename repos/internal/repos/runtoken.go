@@ -10,9 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
-
 	"registry"
+	"time"
 )
 
 type runTokenRequest struct {
