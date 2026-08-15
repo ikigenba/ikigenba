@@ -29,7 +29,7 @@ Verification ids change.
 - D20 → `project/design/D20.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): hermetic + composed layers only, no live layer, no tree-local manual runbook, the `go`-on-`PATH` and `bash`/`grep` preconditions, workspace GOWORK mode; settles D7/D8's through-real-nginx claims as manual-layer — mints none; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 - D21 → `project/design/D21.md` — Outbox schema convergence: the `outbox_correlation` rebuild migration, the restored frozen body, and the migration-immutability guard — owns R-NLTJ-K4X4, R-NN1F-XWNT; adopts R-NFQ1-NA7N (root `project/design/D25.md`)
 - D22 → `project/design/D22.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
-- D23 → `project/design/D23.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
+- D23 → `project/design/D23.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 

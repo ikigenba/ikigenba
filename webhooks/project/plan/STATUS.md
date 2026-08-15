@@ -13,5 +13,7 @@ gone. A phase body file carries no marker of its own. This document
 deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
-Next phase: 26
+Next phase: 27
+
+- Phase 26 ⬜ realizes — — promote lint tier to `strict` (D23; fix 2 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint webhooks` exits 0)
 
