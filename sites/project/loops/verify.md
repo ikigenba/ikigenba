@@ -45,6 +45,16 @@ phase on a gap.
      any package that also carries an `R-` tag) — a skipped requirement test
      is a gap, never a pass.
 
+   Then run the tiered lint gate:
+
+   ```
+   ../bin/lint sites
+   ```
+
+   It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+   (absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+   lint finding at the registered tier is an open gap, not a pass.
+
 3. **Check id coverage for this phase.** For every `R-XXXX-XXXX` line in the
    brief's "Ids to cover" section (skip this step entirely if it reads
    `(none — structural phase)`):
@@ -127,7 +137,7 @@ phase on a gap.
 - Never write or fix production code.
 - Never write the brief's contract region.
 - Never retire a phase on anything short of green + full coverage (including
-  the global ratchet).
+  the global ratchet) + clean lint (at the registered tier).
 - The id-set greps in step 4 exclude `project/` and the literal
   `R-XXXX-XXXX` placeholder so they never match the workspace docs that quote
   those patterns — that scoping is not "reading the big docs" in the forbidden
