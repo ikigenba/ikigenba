@@ -132,62 +132,8 @@ type app struct {
 // the templates once (a broken template fails startup, not a request). It builds
 // the app but does not stand up a server — Register/New mount its routes.
 func newApp(opts Options) (*app, error) {
-	if opts.Version == "" {
-		return nil, errors.New("server: Version is required")
-	}
-	if opts.Logger == nil {
-		return nil, errors.New("server: Logger is required")
-	}
-	if opts.IDPProvider == nil {
-		return nil, errors.New("server: IDPProvider is required")
-	}
-	if opts.GithubProvider == nil {
-		return nil, errors.New("server: GithubProvider is required")
-	}
-	if opts.Handshakes == nil {
-		return nil, errors.New("server: Handshakes is required")
-	}
-	if opts.WorkspaceDomain == "" {
-		return nil, errors.New("server: WorkspaceDomain is required")
-	}
-	if opts.Sessions == nil {
-		return nil, errors.New("server: Sessions is required")
-	}
-	if opts.Identity == nil {
-		return nil, errors.New("server: Identity is required")
-	}
-	if opts.DB == nil {
-		return nil, errors.New("server: DB is required")
-	}
-	if opts.OAuthClients == nil {
-		return nil, errors.New("server: OAuthClients is required")
-	}
-	if opts.OAuthCodes == nil {
-		return nil, errors.New("server: OAuthCodes is required")
-	}
-	if opts.OAuthTokens == nil {
-		return nil, errors.New("server: OAuthTokens is required")
-	}
-	if opts.PATs == nil {
-		return nil, errors.New("server: PATs is required")
-	}
-	if opts.Audit == nil {
-		return nil, errors.New("server: Audit is required")
-	}
-	if len(opts.Resources) == 0 {
-		return nil, errors.New("server: at least one Resource is required")
-	}
-	if opts.RateLimiter == nil {
-		return nil, errors.New("server: RateLimiter is required")
-	}
-	if opts.GrantEvents == nil {
-		return nil, errors.New("server: GrantEvents is required")
-	}
-	if opts.CorrelationMinter == nil {
-		return nil, errors.New("server: CorrelationMinter is required")
-	}
-	if opts.ManifestRoot == "" {
-		return nil, errors.New("server: ManifestRoot is required")
+	if err := validateOptions(opts); err != nil {
+		return nil, err
 	}
 
 	// Parse the index page together with the partials it embeds (the
@@ -242,6 +188,39 @@ func newApp(opts Options) (*app, error) {
 		correlationMinter: opts.CorrelationMinter,
 		telemetryRecorder: opts.TelemetryRecorder,
 	}, nil
+}
+
+func validateOptions(opts Options) error {
+	checks := []struct {
+		invalid bool
+		message string
+	}{
+		{opts.Version == "", "server: Version is required"},
+		{opts.Logger == nil, "server: Logger is required"},
+		{opts.IDPProvider == nil, "server: IDPProvider is required"},
+		{opts.GithubProvider == nil, "server: GithubProvider is required"},
+		{opts.Handshakes == nil, "server: Handshakes is required"},
+		{opts.WorkspaceDomain == "", "server: WorkspaceDomain is required"},
+		{opts.Sessions == nil, "server: Sessions is required"},
+		{opts.Identity == nil, "server: Identity is required"},
+		{opts.DB == nil, "server: DB is required"},
+		{opts.OAuthClients == nil, "server: OAuthClients is required"},
+		{opts.OAuthCodes == nil, "server: OAuthCodes is required"},
+		{opts.OAuthTokens == nil, "server: OAuthTokens is required"},
+		{opts.PATs == nil, "server: PATs is required"},
+		{opts.Audit == nil, "server: Audit is required"},
+		{len(opts.Resources) == 0, "server: at least one Resource is required"},
+		{opts.RateLimiter == nil, "server: RateLimiter is required"},
+		{opts.GrantEvents == nil, "server: GrantEvents is required"},
+		{opts.CorrelationMinter == nil, "server: CorrelationMinter is required"},
+		{opts.ManifestRoot == "", "server: ManifestRoot is required"},
+	}
+	for _, check := range checks {
+		if check.invalid {
+			return errors.New(check.message)
+		}
+	}
+	return nil
 }
 
 // Register builds the dashboard's HTTP layer from opts and returns an

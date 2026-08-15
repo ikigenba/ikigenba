@@ -110,27 +110,61 @@ func main() {
 // failure here (an AS with no resources can mint no token) — appkit propagates
 // the returned error and exits non-zero before listening.
 func registerRoutes(rt *appkit.Router, metricsStore *metrics.Store, manifestRoot string) error {
-	getenv := os.Getenv
 	logger := rt.Logger()
-
 	registerHealth(rt)
-
 	conn := rt.DB()
 	if conn == nil {
 		return fmt.Errorf("dashboard: no DB handle on router")
 	}
-
-	// Google credentials are env-only, never flags: a client secret on a --flag
-	// would be visible in ps output and shell history. Required at the boundary so
-	// a missing secret fails loudly here rather than as a downstream Google 400.
-	// CLIENT_SECRET isn't consumed until the code exchange, but login can't work
-	// without it, so its presence is required now too. Presence-checked only — the
-	// value is never read into a log (PLAN §2.8).
-	if err := requireEnv(getenv, "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_WORKSPACE_DOMAIN"); err != nil {
+	routeCfg, err := loadRouteConfig(manifestRoot, os.Getenv)
+	if err != nil {
 		return err
 	}
-	if err := requireEnv(getenv, "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GITHUB_ORG"); err != nil {
+	logger.Info("derived AS resources from manifests", "manifest_root", manifestRoot, "count", len(routeCfg.resources))
+
+	// Build the login + OAuth authorization-server collaborators over appkit's one
+	// shared, migrated DB handle.
+	handshakes := oauthstate.NewHandshakeStore(conn, 5*time.Minute)
+	sessions := session.NewSessionStore(conn)
+	identities := identity.NewStore(conn)
+	oauthClients := oauth.NewClientStore(conn)
+	oauthCodes := oauth.NewAuthCodeStore(conn, 2*time.Minute)
+	oauthTokens := oauth.NewTokenStore(conn, 30*time.Minute, 30*24*time.Hour)
+	pats := pat.NewStore(conn)
+	auditLog := audit.New(conn)
+
+	regHook, err := server.Register(server.Options{
+		Version: rt.Version(), Logger: logger,
+		IDPProvider: googleidp.New(routeCfg.google), GithubProvider: githubidp.New(routeCfg.github),
+		PublicBaseURL: routeCfg.publicBaseURL, Handshakes: handshakes,
+		WorkspaceDomain: routeCfg.google.WorkspaceDomain, Sessions: sessions, Identity: identities, DB: conn,
+		OAuthClients: oauthClients, OAuthCodes: oauthCodes, OAuthTokens: oauthTokens, PATs: pats, Audit: auditLog,
+		Resources: routeCfg.resources, ManifestRoot: manifestRoot, Metrics: metricsStore, Admins: routeCfg.admins,
+		RateLimiter: ratelimit.New(routeCfg.authnRateLimit, routeCfg.authnRateWindow), GrantEvents: grantevents.New(),
+		CorrelationMinter: correlationMinter{}, TelemetryRecorder: rt.Recorder(),
+	})
+	if err != nil {
 		return err
+	}
+	return regHook(rt)
+}
+
+type routeConfig struct {
+	google          googleidp.Credentials
+	github          githubidp.Credentials
+	publicBaseURL   string
+	admins          []string
+	authnRateLimit  int
+	authnRateWindow time.Duration
+	resources       []string
+}
+
+func loadRouteConfig(manifestRoot string, getenv func(string) string) (routeConfig, error) {
+	if err := requireEnv(getenv, "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_WORKSPACE_DOMAIN"); err != nil {
+		return routeConfig{}, err
+	}
+	if err := requireEnv(getenv, "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GITHUB_ORG"); err != nil {
+		return routeConfig{}, err
 	}
 	creds := googleidp.Credentials{
 		ClientID:        getenv("GOOGLE_CLIENT_ID"),
@@ -151,7 +185,7 @@ func registerRoutes(rt *appkit.Router, metricsStore *metrics.Store, manifestRoot
 	// override for local dev.
 	cfg, err := config.Resolve("dashboard", "/", 3000, getenv)
 	if err != nil {
-		return err
+		return routeConfig{}, err
 	}
 	publicBaseURL := config.EnvOr(getenv, "DASHBOARD_PUBLIC_BASE_URL", cfg.AuthServer)
 
@@ -166,11 +200,11 @@ func registerRoutes(rt *appkit.Router, metricsStore *metrics.Store, manifestRoot
 	// Per-token introspection rate limit applied by POST /internal/authn.
 	authnRateLimit, err := config.EnvOrInt(getenv, "DASHBOARD_AUTHN_RATE_LIMIT", defaultAuthnRateLimit)
 	if err != nil {
-		return err
+		return routeConfig{}, err
 	}
 	authnRateWindow, err := config.EnvOrDuration(getenv, "DASHBOARD_AUTHN_RATE_WINDOW", defaultAuthnRateWindow)
 	if err != nil {
-		return err
+		return routeConfig{}, err
 	}
 
 	// Derive the AS resource list from the on-box service manifests at startup, via
@@ -179,58 +213,15 @@ func registerRoutes(rt *appkit.Router, metricsStore *metrics.Store, manifestRoot
 	// base URL's origin so it is byte-identical to the IDs nginx fronts.
 	resources, err := deriveResources(manifestRoot, publicBaseURL)
 	if err != nil {
-		return err
+		return routeConfig{}, err
 	}
 	if len(resources) == 0 {
 		// An authorization server with no resources can bind no token to any
 		// service — a hard misconfiguration, not a degraded mode. Fail loudly here
 		// rather than start an AS that rejects every authorize.
-		return fmt.Errorf("no MCP services found under manifest root %q: the authorization server has no resources to mint tokens for", manifestRoot)
+		return routeConfig{}, fmt.Errorf("no MCP services found under manifest root %q: the authorization server has no resources to mint tokens for", manifestRoot)
 	}
-	logger.Info("derived AS resources from manifests", "manifest_root", manifestRoot, "count", len(resources))
-
-	// Build the login + OAuth authorization-server collaborators over appkit's one
-	// shared, migrated DB handle. Token lifetimes follow the prior crm.bak
-	// deployment: short-lived access tokens, long-lived rotating refresh tokens,
-	// briefly-valid authorization codes.
-	handshakes := oauthstate.NewHandshakeStore(conn, 5*time.Minute)
-	sessions := session.NewSessionStore(conn)
-	identities := identity.NewStore(conn)
-	oauthClients := oauth.NewClientStore(conn)
-	oauthCodes := oauth.NewAuthCodeStore(conn, 2*time.Minute)
-	oauthTokens := oauth.NewTokenStore(conn, 30*time.Minute, 30*24*time.Hour)
-	pats := pat.NewStore(conn)
-	auditLog := audit.New(conn)
-
-	regHook, err := server.Register(server.Options{
-		Version:           rt.Version(),
-		Logger:            logger,
-		IDPProvider:       googleidp.New(creds),
-		GithubProvider:    githubidp.New(githubCreds),
-		PublicBaseURL:     publicBaseURL,
-		Handshakes:        handshakes,
-		WorkspaceDomain:   creds.WorkspaceDomain,
-		Sessions:          sessions,
-		Identity:          identities,
-		DB:                conn,
-		OAuthClients:      oauthClients,
-		OAuthCodes:        oauthCodes,
-		OAuthTokens:       oauthTokens,
-		PATs:              pats,
-		Audit:             auditLog,
-		Resources:         resources,
-		ManifestRoot:      manifestRoot,
-		Metrics:           metricsStore,
-		Admins:            admins,
-		RateLimiter:       ratelimit.New(authnRateLimit, authnRateWindow),
-		GrantEvents:       grantevents.New(),
-		CorrelationMinter: correlationMinter{},
-		TelemetryRecorder: rt.Recorder(),
-	})
-	if err != nil {
-		return err
-	}
-	return regHook(rt)
+	return routeConfig{creds, githubCreds, publicBaseURL, admins, authnRateLimit, authnRateWindow, resources}, nil
 }
 
 // registerHealth preserves appkit's standard /health surface for dashboard's

@@ -15,6 +15,7 @@ package server
 import (
 	"context"
 	"dashboard/internal/audit"
+	"dashboard/internal/oauth"
 	"dashboard/internal/pat"
 	"encoding/base64"
 	"net"
@@ -44,191 +45,210 @@ func isGitDoorURI(originalURI string) bool {
 // and so the 401 challenge can always advertise the right protected-resource
 // metadata URL for the service being addressed.
 func (a *app) handleAuthn() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := a.correlationMinter.NewCorrelationID()
+	return a.handleAuthnRequest
+}
 
-		// (a) Loopback guard. nginx marks this location `internal;`, so it is
-		// unreachable from outside; this is defense in depth in case that
-		// directive is ever dropped. An unparseable/empty RemoteAddr is treated
-		// as not-loopback and rejected — every legitimate caller (nginx, and
-		// httptest, which sets 127.0.0.1:port) presents a parseable loopback
-		// host:port.
-		if !remoteIsLoopback(r.RemoteAddr) {
-			w.Header().Set("Cache-Control", "no-store")
-			w.WriteHeader(http.StatusForbidden)
-			a.recordEdge(r, id, "deny", http.StatusForbidden, "non_loopback", "", "")
-			return
-		}
+func (a *app) handleAuthnRequest(w http.ResponseWriter, r *http.Request) {
+	id := a.correlationMinter.NewCorrelationID()
 
-		// (b) Resolve the addressed service's bound resource and PRM URL from
-		// the forwarded original request URI, BEFORE any token check, so a 401
-		// can carry the correct resource_metadata.
-		//
-		// Derivation rule (an inference, not spelled out in the platform doc):
-		//   - nginx forwards $request_uri as X-Original-URI, e.g.
-		//     "/srv/crm/mcp" (possibly with a "?query"). Strip the query.
-		//   - The service mount is "/srv/<svc>/". We find the configured
-		//     resource (a full URL such as
-		//     "https://int.ikigenba.com/srv/crm/mcp") whose URL path begins with
-		//     that mount; that full URL is the boundResource.
-		//   - The protected-resource-metadata (PRM) URL is boundResource with
-		//     its final path segment ("mcp") replaced by
-		//     ".well-known/oauth-protected-resource", i.e.
-		//     "https://int.ikigenba.com/srv/crm/.well-known/oauth-protected-resource".
-		//     It is derived from boundResource (NOT publicBaseURL) so its host
-		//     matches the token's resource host in every environment.
-		boundResource, ok := a.resourceForOriginalURI(r.Header.Get("X-Original-URI"))
-		if !ok {
-			// Unknown service: we cannot name a resource_metadata URL.
-			writeBearerChallenge(w, bearerChallenge{
-				oauthError:  "invalid_request",
-				description: "unknown service for original request URI",
-			})
-			a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "unknown_service"}})
-			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "unknown_service", "", "")
-			return
-		}
-		prmURL := protectedResourceMetadataURL(boundResource)
-
-		// (c) Extract the bearer token.
-		tok, ok := bearerFromHeader(r)
-		if !ok {
-			if isGitDoorURI(r.Header.Get("X-Original-URI")) {
-				h := r.Header.Get("Authorization")
-				const basicPrefix = "Basic "
-				if strings.HasPrefix(h, basicPrefix) {
-					decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(h[len(basicPrefix):]))
-					if err == nil {
-						if colon := strings.IndexByte(string(decoded), ':'); colon >= 0 {
-							tok = string(decoded[colon+1:])
-							if !strings.HasPrefix(tok, pat.Prefix) {
-								w.Header().Set("WWW-Authenticate", `Basic realm="ikigenba"`)
-								w.WriteHeader(http.StatusUnauthorized)
-								a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "basic_not_pat"}})
-								a.recordEdge(r, id, "deny", http.StatusUnauthorized, "basic_not_pat", "", "")
-								return
-							}
-							r = r.WithContext(context.WithValue(r.Context(), authnCredentialFormKey{}, "basic"))
-							a.handleAuthnPAT(w, r, tok, boundResource, prmURL, id)
-							return
-						}
-					}
-				}
-				w.Header().Set("WWW-Authenticate", `Basic realm="ikigenba"`)
-				w.WriteHeader(http.StatusUnauthorized)
-				a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "missing_credential"}})
-				a.recordEdge(r, id, "deny", http.StatusUnauthorized, "missing_credential", "", "")
-				return
-			}
-			writeBearerChallenge(w, bearerChallenge{
-				oauthError:       "invalid_request",
-				description:      "missing or malformed Authorization header",
-				resourceMetadata: prmURL,
-			})
-			a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "missing_bearer"}})
-			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "missing_bearer", "", "")
-			return
-		}
-
-		// (d) Validate the bearer. The prefix forks the path: ms_pat_ tokens are
-		// personal access tokens (cross-service, no chain), handled separately
-		// below; everything else (ms_oat_ and any malformed bearer) takes the
-		// OAuth ValidateAccess path, preserving today's behavior.
-		if strings.HasPrefix(tok, pat.Prefix) {
-			a.handleAuthnPAT(w, r, tok, boundResource, prmURL, id)
-			return
-		}
-
-		vt, err := a.oauthTokens.ValidateAccess(r.Context(), tok)
-		if err != nil {
-			writeBearerChallenge(w, bearerChallenge{
-				oauthError:       "invalid_token",
-				description:      err.Error(),
-				resourceMetadata: prmURL,
-			})
-			a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "invalid_token", "detail": err.Error()}})
-			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "invalid_token", "", "")
-			return
-		}
-
-		// (e) Resource binding: the token must be bound to exactly this service.
-		if vt.Chain.Resource != boundResource {
-			writeBearerChallenge(w, bearerChallenge{
-				oauthError:       "invalid_token",
-				description:      "token resource binding does not match this service",
-				resourceMetadata: prmURL,
-			})
-			a.auditAuthnDeny(r, audit.Event{
-				OwnerEmail: vt.Chain.OwnerEmail, ClientID: vt.Chain.ClientID, ChainID: vt.Chain.ID,
-				Details: map[string]any{"reason": "resource_mismatch", "token_resource": vt.Chain.Resource, "bound_resource": boundResource},
-			})
-			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "resource_mismatch", vt.Chain.OwnerEmail, vt.Chain.ClientID)
-			return
-		}
-
-		// (f) Workspace: the owner identity must be inside the configured domain.
-		if !ownerInWorkspace(vt.Chain.OwnerEmail, a.workspaceDomain) {
-			writeBearerChallenge(w, bearerChallenge{
-				oauthError:       "invalid_token",
-				description:      "owner identity outside configured workspace",
-				resourceMetadata: prmURL,
-			})
-			a.auditAuthnDeny(r, audit.Event{
-				OwnerEmail: vt.Chain.OwnerEmail, ClientID: vt.Chain.ClientID, ChainID: vt.Chain.ID,
-				Details: map[string]any{"reason": "workspace_mismatch"},
-			})
-			a.recordEdge(r, id, "deny", http.StatusUnauthorized, "workspace_mismatch", vt.Chain.OwnerEmail, vt.Chain.ClientID)
-			return
-		}
-
-		// (g) Rate limit — only after auth fully passes, keyed on the
-		// server-side token id so unauthenticated calls never consume budget.
-		dec := a.rateLimiter.Decide(vt.Token.ID)
-		if !dec.Allowed {
-			w.Header().Set("Cache-Control", "no-store")
-			w.Header().Set("Retry-After", retryAfterSeconds(a.rateLimiter.Window()))
-			w.WriteHeader(http.StatusTooManyRequests)
-			ip, ua := audit.FromRequest(r)
-			_ = a.audit.Write(r.Context(), audit.Event{
-				Type:       audit.EventRateLimitHit,
-				OwnerEmail: vt.Chain.OwnerEmail, ClientID: vt.Chain.ClientID, ChainID: vt.Chain.ID,
-				IP: ip, UserAgent: ua,
-				Details: map[string]any{"surface": "authn", "token_id": vt.Token.ID, "window_count": dec.WindowCount},
-			})
-			a.recordEdge(r, id, "rate_limited", http.StatusTooManyRequests, "", vt.Chain.OwnerEmail, vt.Chain.ClientID)
-			return
-		}
-
-		// (h) Allow: resolve the stamped owner before emitting any identity
-		// headers. A missing identity means the stored ownership graph is broken,
-		// so fail closed rather than forwarding a partial identity downstream.
-		owner, err := a.identity.Lookup(r.Context(), vt.Chain.OwnerID)
-		if err != nil {
-			a.logger.Error("authn.identity_lookup", "owner_id", vt.Chain.OwnerID, "err", err)
-			w.Header().Set("Cache-Control", "no-store")
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			a.recordEdge(r, id, "deny", http.StatusInternalServerError, "identity_lookup", vt.Chain.OwnerEmail, vt.Chain.ClientID)
-			return
-		}
-		w.Header().Set("X-Owner-Id", owner.ID)
-		w.Header().Set("X-Owner-Email", owner.Email)
-		w.Header().Set("X-Owner-Name", headerEncode(owner.Name))
-		w.Header().Set("X-Owner-Picture", headerEncode(owner.Picture))
-		w.Header().Set("X-Client-Id", vt.Chain.ClientID)
-		w.Header().Set("X-Chain-Id", vt.Chain.ID)
-		w.Header().Set("X-Token-Id", vt.Token.ID)
-		w.Header().Set("X-Correlation-Id", id)
+	// (a) Loopback guard. nginx marks this location `internal;`, so it is
+	// unreachable from outside; this is defense in depth in case that
+	// directive is ever dropped. An unparseable/empty RemoteAddr is treated
+	// as not-loopback and rejected — every legitimate caller (nginx, and
+	// httptest, which sets 127.0.0.1:port) presents a parseable loopback
+	// host:port.
+	if !remoteIsLoopback(r.RemoteAddr) {
 		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusForbidden)
+		a.recordEdge(r, id, "deny", http.StatusForbidden, "non_loopback", "", "")
+		return
+	}
+
+	// (b) Resolve the addressed service's bound resource and PRM URL from
+	// the forwarded original request URI, BEFORE any token check, so a 401
+	// can carry the correct resource_metadata.
+	//
+	// Derivation rule (an inference, not spelled out in the platform doc):
+	//   - nginx forwards $request_uri as X-Original-URI, e.g.
+	//     "/srv/crm/mcp" (possibly with a "?query"). Strip the query.
+	//   - The service mount is "/srv/<svc>/". We find the configured
+	//     resource (a full URL such as
+	//     "https://int.ikigenba.com/srv/crm/mcp") whose URL path begins with
+	//     that mount; that full URL is the boundResource.
+	//   - The protected-resource-metadata (PRM) URL is boundResource with
+	//     its final path segment ("mcp") replaced by
+	//     ".well-known/oauth-protected-resource", i.e.
+	//     "https://int.ikigenba.com/srv/crm/.well-known/oauth-protected-resource".
+	//     It is derived from boundResource (NOT publicBaseURL) so its host
+	//     matches the token's resource host in every environment.
+	boundResource, ok := a.resourceForOriginalURI(r.Header.Get("X-Original-URI"))
+	if !ok {
+		// Unknown service: we cannot name a resource_metadata URL.
+		writeBearerChallenge(w, bearerChallenge{
+			oauthError:  "invalid_request",
+			description: "unknown service for original request URI",
+		})
+		a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "unknown_service"}})
+		a.recordEdge(r, id, "deny", http.StatusUnauthorized, "unknown_service", "", "")
+		return
+	}
+	prmURL := protectedResourceMetadataURL(boundResource)
+
+	// (c) Extract the bearer token.
+	var tok string
+	r, tok, ok = a.authnCredential(w, r, prmURL, id)
+	if !ok {
+		return
+	}
+
+	// (d) Validate the bearer. The prefix forks the path: ms_pat_ tokens are
+	// personal access tokens (cross-service, no chain), handled separately
+	// below; everything else (ms_oat_ and any malformed bearer) takes the
+	// OAuth ValidateAccess path, preserving today's behavior.
+	if strings.HasPrefix(tok, pat.Prefix) {
+		a.handleAuthnPAT(w, r, tok, boundResource, prmURL, id)
+		return
+	}
+
+	vt, err := a.oauthTokens.ValidateAccess(r.Context(), tok)
+	if err != nil {
+		writeBearerChallenge(w, bearerChallenge{
+			oauthError:       "invalid_token",
+			description:      err.Error(),
+			resourceMetadata: prmURL,
+		})
+		a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "invalid_token", "detail": err.Error()}})
+		a.recordEdge(r, id, "deny", http.StatusUnauthorized, "invalid_token", "", "")
+		return
+	}
+
+	a.completeOAuthAuthn(w, r, vt, boundResource, prmURL, id)
+}
+
+func (a *app) completeOAuthAuthn(w http.ResponseWriter, r *http.Request, vt oauth.ValidatedToken, boundResource, prmURL, id string) {
+	// (e) Resource binding: the token must be bound to exactly this service.
+	if vt.Chain.Resource != boundResource {
+		writeBearerChallenge(w, bearerChallenge{
+			oauthError:       "invalid_token",
+			description:      "token resource binding does not match this service",
+			resourceMetadata: prmURL,
+		})
+		a.auditAuthnDeny(r, audit.Event{
+			OwnerEmail: vt.Chain.OwnerEmail, ClientID: vt.Chain.ClientID, ChainID: vt.Chain.ID,
+			Details: map[string]any{"reason": "resource_mismatch", "token_resource": vt.Chain.Resource, "bound_resource": boundResource},
+		})
+		a.recordEdge(r, id, "deny", http.StatusUnauthorized, "resource_mismatch", vt.Chain.OwnerEmail, vt.Chain.ClientID)
+		return
+	}
+
+	// (f) Workspace: the owner identity must be inside the configured domain.
+	if !ownerInWorkspace(vt.Chain.OwnerEmail, a.workspaceDomain) {
+		writeBearerChallenge(w, bearerChallenge{
+			oauthError:       "invalid_token",
+			description:      "owner identity outside configured workspace",
+			resourceMetadata: prmURL,
+		})
+		a.auditAuthnDeny(r, audit.Event{
+			OwnerEmail: vt.Chain.OwnerEmail, ClientID: vt.Chain.ClientID, ChainID: vt.Chain.ID,
+			Details: map[string]any{"reason": "workspace_mismatch"},
+		})
+		a.recordEdge(r, id, "deny", http.StatusUnauthorized, "workspace_mismatch", vt.Chain.OwnerEmail, vt.Chain.ClientID)
+		return
+	}
+
+	// (g) Rate limit — only after auth fully passes, keyed on the
+	// server-side token id so unauthenticated calls never consume budget.
+	dec := a.rateLimiter.Decide(vt.Token.ID)
+	if !dec.Allowed {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Retry-After", retryAfterSeconds(a.rateLimiter.Window()))
+		w.WriteHeader(http.StatusTooManyRequests)
 		ip, ua := audit.FromRequest(r)
 		_ = a.audit.Write(r.Context(), audit.Event{
-			Type:       audit.EventAuthnAllow,
+			Type:       audit.EventRateLimitHit,
 			OwnerEmail: vt.Chain.OwnerEmail, ClientID: vt.Chain.ClientID, ChainID: vt.Chain.ID,
 			IP: ip, UserAgent: ua,
-			Details: map[string]any{"resource": boundResource},
+			Details: map[string]any{"surface": "authn", "token_id": vt.Token.ID, "window_count": dec.WindowCount},
 		})
-		w.WriteHeader(http.StatusOK)
-		a.recordEdge(r, id, "allow", http.StatusOK, "", vt.Chain.OwnerEmail, vt.Chain.ClientID)
+		a.recordEdge(r, id, "rate_limited", http.StatusTooManyRequests, "", vt.Chain.OwnerEmail, vt.Chain.ClientID)
+		return
 	}
+
+	// (h) Allow: resolve the stamped owner before emitting any identity
+	// headers. A missing identity means the stored ownership graph is broken,
+	// so fail closed rather than forwarding a partial identity downstream.
+	owner, err := a.identity.Lookup(r.Context(), vt.Chain.OwnerID)
+	if err != nil {
+		a.logger.Error("authn.identity_lookup", "owner_id", vt.Chain.OwnerID, "err", err)
+		w.Header().Set("Cache-Control", "no-store")
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		a.recordEdge(r, id, "deny", http.StatusInternalServerError, "identity_lookup", vt.Chain.OwnerEmail, vt.Chain.ClientID)
+		return
+	}
+	w.Header().Set("X-Owner-Id", owner.ID)
+	w.Header().Set("X-Owner-Email", owner.Email)
+	w.Header().Set("X-Owner-Name", headerEncode(owner.Name))
+	w.Header().Set("X-Owner-Picture", headerEncode(owner.Picture))
+	w.Header().Set("X-Client-Id", vt.Chain.ClientID)
+	w.Header().Set("X-Chain-Id", vt.Chain.ID)
+	w.Header().Set("X-Token-Id", vt.Token.ID)
+	w.Header().Set("X-Correlation-Id", id)
+	w.Header().Set("Cache-Control", "no-store")
+	ip, ua := audit.FromRequest(r)
+	_ = a.audit.Write(r.Context(), audit.Event{
+		Type:       audit.EventAuthnAllow,
+		OwnerEmail: vt.Chain.OwnerEmail, ClientID: vt.Chain.ClientID, ChainID: vt.Chain.ID,
+		IP: ip, UserAgent: ua,
+		Details: map[string]any{"resource": boundResource},
+	})
+	w.WriteHeader(http.StatusOK)
+	a.recordEdge(r, id, "allow", http.StatusOK, "", vt.Chain.OwnerEmail, vt.Chain.ClientID)
+}
+
+func (a *app) authnCredential(w http.ResponseWriter, r *http.Request, prmURL, id string) (*http.Request, string, bool) {
+	if tok, ok := bearerFromHeader(r); ok {
+		return r, tok, true
+	}
+	if !isGitDoorURI(r.Header.Get("X-Original-URI")) {
+		writeBearerChallenge(w, bearerChallenge{oauthError: "invalid_request", description: "missing or malformed Authorization header", resourceMetadata: prmURL})
+		a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": "missing_bearer"}})
+		a.recordEdge(r, id, "deny", http.StatusUnauthorized, "missing_bearer", "", "")
+		return r, "", false
+	}
+	tok, present, isPAT := basicCredential(r.Header.Get("Authorization"))
+	if !present {
+		a.rejectBasicAuthn(w, r, id, "missing_credential")
+		return r, "", false
+	}
+	if !isPAT {
+		a.rejectBasicAuthn(w, r, id, "basic_not_pat")
+		return r, "", false
+	}
+	return r.WithContext(context.WithValue(r.Context(), authnCredentialFormKey{}, "basic")), tok, true
+}
+
+func basicCredential(header string) (token string, present, isPAT bool) {
+	const prefix = "Basic "
+	if !strings.HasPrefix(header, prefix) {
+		return "", false, false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(header[len(prefix):]))
+	if err != nil {
+		return "", false, false
+	}
+	colon := strings.IndexByte(string(decoded), ':')
+	if colon < 0 {
+		return "", false, false
+	}
+	token = string(decoded[colon+1:])
+	return token, true, strings.HasPrefix(token, pat.Prefix)
+}
+
+func (a *app) rejectBasicAuthn(w http.ResponseWriter, r *http.Request, id, reason string) {
+	w.Header().Set("WWW-Authenticate", `Basic realm="ikigenba"`)
+	w.WriteHeader(http.StatusUnauthorized)
+	a.auditAuthnDeny(r, audit.Event{Details: map[string]any{"reason": reason}})
+	a.recordEdge(r, id, "deny", http.StatusUnauthorized, reason, "", "")
 }
 
 // handleAuthnPAT runs the PAT branch of the introspection pipeline, picking up
@@ -239,23 +259,11 @@ func (a *app) handleAuthn() http.HandlerFunc {
 // OAuth path does, except (h) OMITS X-Chain-Id: a PAT has no chain (ADR §D5).
 func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundResource, prmURL, id string) {
 	basic := r.Context().Value(authnCredentialFormKey{}) == "basic"
-	writePATChallenge := func(description string) {
-		if basic {
-			w.Header().Set("WWW-Authenticate", `Basic realm="ikigenba"`)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		writeBearerChallenge(w, bearerChallenge{
-			oauthError:       "invalid_token",
-			description:      description,
-			resourceMetadata: prmURL,
-		})
-	}
 
 	// (d) Validate the PAT.
 	p, err := a.pats.ValidatePAT(r.Context(), tok)
 	if err != nil {
-		writePATChallenge(err.Error())
+		writePATChallenge(w, basic, prmURL, err.Error())
 		reason := "invalid_pat"
 		if basic {
 			reason = "invalid_pat_basic"
@@ -272,7 +280,7 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 
 	// (f) Workspace: the PAT owner identity must be inside the configured domain.
 	if !ownerInWorkspace(p.OwnerEmail, a.workspaceDomain) {
-		writePATChallenge("owner identity outside configured workspace")
+		writePATChallenge(w, basic, prmURL, "owner identity outside configured workspace")
 		a.auditAuthnDeny(r, audit.Event{
 			OwnerEmail: p.OwnerEmail, ClientID: clientID,
 			Details: map[string]any{"reason": "workspace_mismatch", "kind": "pat"},
@@ -330,6 +338,17 @@ func (a *app) handleAuthnPAT(w http.ResponseWriter, r *http.Request, tok, boundR
 	})
 	w.WriteHeader(http.StatusOK)
 	a.recordEdge(r, id, "allow", http.StatusOK, "", p.OwnerEmail, clientID)
+}
+
+func writePATChallenge(w http.ResponseWriter, basic bool, prmURL, description string) {
+	if basic {
+		w.Header().Set("WWW-Authenticate", `Basic realm="ikigenba"`)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	writeBearerChallenge(w, bearerChallenge{
+		oauthError: "invalid_token", description: description, resourceMetadata: prmURL,
+	})
 }
 
 // resourceForOriginalURI maps a forwarded X-Original-URI (nginx's $request_uri)

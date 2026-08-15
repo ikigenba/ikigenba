@@ -59,7 +59,7 @@ func (a *app) requireSession(w http.ResponseWriter, r *http.Request) (string, bo
 // requireSessionIdentity returns the signed-in session's email and durable
 // identity handle. PAT creation carries this already-resolved handle forward
 // rather than looking the identity up again.
-func (a *app) requireSessionIdentity(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+func (a *app) requireSessionIdentity(w http.ResponseWriter, r *http.Request) (email, ownerID string, ok bool) {
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		http.Error(w, "sign-in required", http.StatusUnauthorized)

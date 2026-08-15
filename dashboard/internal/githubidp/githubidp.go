@@ -203,7 +203,7 @@ func (g *github) fetchProfile(ctx context.Context, token string) (profile, error
 	return value, nil
 }
 
-func (g *github) fetchPrimaryEmail(ctx context.Context, token string) (string, bool, error) {
+func (g *github) fetchPrimaryEmail(ctx context.Context, token string) (email string, verified bool, err error) {
 	resp, err := g.apiGet(ctx, token, "/user/emails")
 	if err != nil {
 		return "", false, fmt.Errorf("email endpoint: %w", err)

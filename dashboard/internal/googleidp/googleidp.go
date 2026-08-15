@@ -256,7 +256,7 @@ func (g *google) verifyIDToken(jwt string) (Identity, error) {
 	if err := json.Unmarshal(payloadJSON, &claims); err != nil {
 		return Identity{}, fmt.Errorf("parse claims: %w", err)
 	}
-	if claims.Iss != g.issuer && claims.Iss != "accounts.google.com" {
+	if !validGoogleIssuer(claims.Iss, g.issuer) {
 		return Identity{}, fmt.Errorf("issuer %q not Google", claims.Iss)
 	}
 	if !audienceMatches(claims.Aud, g.clientID) {
@@ -266,22 +266,30 @@ func (g *google) verifyIDToken(jwt string) (Identity, error) {
 		return Identity{}, errors.New("id token expired")
 	}
 
-	verified := false
-	switch v := claims.EmailVerified.(type) {
-	case bool:
-		verified = v
-	case string:
-		verified = v == "true"
-	}
 	return Identity{
 		Sub:           claims.Sub,
 		Email:         claims.Email,
 		HostedDomain:  claims.HostedDomain,
-		EmailVerified: verified,
+		EmailVerified: emailVerified(claims.EmailVerified),
 		Iss:           claims.Iss,
 		Name:          claims.Name,
 		Picture:       claims.Picture,
 	}, nil
+}
+
+func validGoogleIssuer(got, configured string) bool {
+	return got == configured || got == "accounts.google.com"
+}
+
+func emailVerified(value any) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		return v == "true"
+	default:
+		return false
+	}
 }
 
 // audienceMatches reports whether the id_token's aud claim contains clientID,

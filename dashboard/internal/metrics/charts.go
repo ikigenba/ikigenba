@@ -81,7 +81,7 @@ func NewChartView(snapshot Snapshot) ChartView {
 	}
 }
 
-func serviceSeries(series map[string][]Sample, suffix string) (map[string][]Sample, []string) {
+func serviceSeries(series map[string][]Sample, suffix string) (filtered map[string][]Sample, order []string) {
 	out := make(map[string][]Sample)
 	for key, samples := range series {
 		if !strings.HasPrefix(key, "service.") || !strings.HasSuffix(key, suffix) {
@@ -93,7 +93,7 @@ func serviceSeries(series map[string][]Sample, suffix string) (map[string][]Samp
 		}
 		out[name] = samples
 	}
-	order := make([]string, 0, len(out))
+	order = make([]string, 0, len(out))
 	for name := range out {
 		order = append(order, name)
 	}

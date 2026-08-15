@@ -146,26 +146,7 @@ func (a *app) handleAuthorize() http.HandlerFunc {
 		clientState := q.Get("state")
 		resource := q.Get("resource")
 
-		if responseType != "code" {
-			writeOAuthError(w, http.StatusBadRequest, "unsupported_response_type", "response_type must be 'code'")
-			return
-		}
-		if codeChallenge == "" {
-			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "code_challenge required")
-			return
-		}
-		if codeChallengeMethod != "S256" {
-			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "code_challenge_method must be 'S256'")
-			return
-		}
-		// Multi-resource: resource is required and must be one of the configured
-		// set. The bound code carries it forward onto the issued chain.
-		if resource == "" {
-			writeOAuthError(w, http.StatusBadRequest, "invalid_target", "resource is required")
-			return
-		}
-		if !containsString(a.resources, resource) {
-			writeOAuthError(w, http.StatusBadRequest, "invalid_target", "unknown resource")
+		if !a.validateAuthorizeQuery(w, responseType, codeChallenge, codeChallengeMethod, resource) {
 			return
 		}
 		client, err := a.oauthClients.Get(r.Context(), clientID)
@@ -180,31 +161,7 @@ func (a *app) handleAuthorize() http.HandlerFunc {
 
 		provider := q.Get("provider")
 		if provider == "" {
-			chooserQuery := make(url.Values, len(q)+1)
-			for key, values := range q {
-				chooserQuery[key] = append([]string(nil), values...)
-			}
-			chooserQuery.Set("provider", oauthstate.ProviderGoogle)
-			googleURL := "/oauth/authorize?" + chooserQuery.Encode()
-			chooserQuery.Set("provider", oauthstate.ProviderGitHub)
-			githubURL := "/oauth/authorize?" + chooserQuery.Encode()
-
-			var page bytes.Buffer
-			if err := a.tmpl.ExecuteTemplate(&page, "oauth_authorize.html", struct {
-				GoogleURL    string
-				GitHubURL    string
-				Owner        string
-				OwnerInitial string
-				CurrentPage  string
-				Version      string
-			}{GoogleURL: googleURL, GitHubURL: githubURL, Version: a.version}); err != nil {
-				a.logger.Error("authorize.render_chooser", "err", err)
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(page.Bytes())
+			a.renderProviderChooser(w, q)
 			return
 		}
 
@@ -238,6 +195,49 @@ func (a *app) handleAuthorize() http.HandlerFunc {
 		setBindingCookie(w, r, cookie)
 		http.Redirect(w, r, authorizeURL(handshake.ID, callbackURI), http.StatusSeeOther)
 	}
+}
+
+func (a *app) validateAuthorizeQuery(w http.ResponseWriter, responseType, challenge, method, resource string) bool {
+	checks := []struct {
+		invalid       bool
+		code, message string
+	}{
+		{responseType != "code", "unsupported_response_type", "response_type must be 'code'"},
+		{challenge == "", "invalid_request", "code_challenge required"},
+		{method != "S256", "invalid_request", "code_challenge_method must be 'S256'"},
+		{resource == "", "invalid_target", "resource is required"},
+		{resource != "" && !containsString(a.resources, resource), "invalid_target", "unknown resource"},
+	}
+	for _, check := range checks {
+		if check.invalid {
+			writeOAuthError(w, http.StatusBadRequest, check.code, check.message)
+			return false
+		}
+	}
+	return true
+}
+
+func (a *app) renderProviderChooser(w http.ResponseWriter, q url.Values) {
+	chooserQuery := make(url.Values, len(q)+1)
+	for key, values := range q {
+		chooserQuery[key] = append([]string(nil), values...)
+	}
+	chooserQuery.Set("provider", oauthstate.ProviderGoogle)
+	googleURL := "/oauth/authorize?" + chooserQuery.Encode()
+	chooserQuery.Set("provider", oauthstate.ProviderGitHub)
+	githubURL := "/oauth/authorize?" + chooserQuery.Encode()
+	var page bytes.Buffer
+	data := struct {
+		GoogleURL, GitHubURL, Owner, OwnerInitial, CurrentPage, Version string
+	}{GoogleURL: googleURL, GitHubURL: githubURL, Version: a.version}
+	if err := a.tmpl.ExecuteTemplate(&page, "oauth_authorize.html", data); err != nil {
+		a.logger.Error("authorize.render_chooser", "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(page.Bytes())
 }
 
 // ── token endpoint ─────────────────────────────────────────────────────────
@@ -299,43 +299,10 @@ func (a *app) handleTokenAuthCode(w http.ResponseWriter, r *http.Request) {
 		a.auditAfterRollback(r.Context(), tx, audit.Event{Type: audit.EventTokenReject, ClientID: clientID, IP: r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"), Details: map[string]any{"reason": "code_not_found"}})
 		return
 	}
-	// A second presentation of a redeemed code cascade-revokes its chain.
-	if ac.UsedAt != nil {
-		if ac.ChainID != nil {
-			_ = a.oauthTokens.RevokeChainTx(r.Context(), tx, *ac.ChainID)
-			_ = a.audit.WriteTx(r.Context(), tx, audit.Event{
-				Type:     audit.EventReuseDetected,
-				ClientID: clientID, ChainID: *ac.ChainID, IP: r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"),
-				Details: map[string]any{"reason": "authcode_reuse"},
-			})
-			_ = tx.Commit()
-		}
-		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "authorization code already used")
+	if a.rejectUsedAuthCode(w, r, tx, ac, clientID) {
 		return
 	}
-	now := time.Now().UTC()
-	if !now.Before(ac.ExpiresAt) {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "authorization code expired")
-		return
-	}
-	if ac.ClientID != clientID {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "client_id does not match bound code")
-		a.auditAfterRollback(r.Context(), tx, audit.Event{Type: audit.EventTokenReject, ClientID: clientID, IP: r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"), Details: map[string]any{"reason": "client_mismatch"}})
-		return
-	}
-	if ac.RedirectURI != redirectURI {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "redirect_uri does not match bound code")
-		a.auditAfterRollback(r.Context(), tx, audit.Event{Type: audit.EventTokenReject, ClientID: clientID, IP: r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"), Details: map[string]any{"reason": "redirect_mismatch"}})
-		return
-	}
-	if resource != "" && resource != ac.Resource {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_target", "resource does not match bound code")
-		a.auditAfterRollback(r.Context(), tx, audit.Event{Type: audit.EventTokenReject, ClientID: clientID, IP: r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"), Details: map[string]any{"reason": "resource_mismatch"}})
-		return
-	}
-	if !pkceS256Matches(verifier, ac.CodeChallenge) {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "PKCE verifier does not match challenge")
-		a.auditAfterRollback(r.Context(), tx, audit.Event{Type: audit.EventTokenReject, ClientID: clientID, IP: r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"), Details: map[string]any{"reason": "pkce_mismatch"}})
+	if a.rejectInvalidAuthCode(w, r, tx, ac, clientID, redirectURI, resource, verifier) {
 		return
 	}
 	pair, err := a.oauthTokens.IssueChainAndTokens(r.Context(), tx, ac.ClientID, ac.OwnerEmail, ac.OwnerID, ac.Resource)
@@ -370,6 +337,44 @@ func (a *app) handleTokenAuthCode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *app) rejectUsedAuthCode(w http.ResponseWriter, r *http.Request, tx *sql.Tx, ac oauth.AuthCode, clientID string) bool {
+	if ac.UsedAt == nil {
+		return false
+	}
+	if ac.ChainID != nil {
+		_ = a.oauthTokens.RevokeChainTx(r.Context(), tx, *ac.ChainID)
+		_ = a.audit.WriteTx(r.Context(), tx, audit.Event{Type: audit.EventReuseDetected, ClientID: clientID, ChainID: *ac.ChainID, IP: r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"), Details: map[string]any{"reason": "authcode_reuse"}})
+		_ = tx.Commit()
+	}
+	writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "authorization code already used")
+	return true
+}
+
+func (a *app) rejectInvalidAuthCode(w http.ResponseWriter, r *http.Request, tx *sql.Tx, ac oauth.AuthCode, clientID, redirectURI, resource, verifier string) bool {
+	type rejection struct {
+		invalid               bool
+		code, message, reason string
+	}
+	rejections := []rejection{
+		{!time.Now().UTC().Before(ac.ExpiresAt), "invalid_grant", "authorization code expired", ""},
+		{ac.ClientID != clientID, "invalid_grant", "client_id does not match bound code", "client_mismatch"},
+		{ac.RedirectURI != redirectURI, "invalid_grant", "redirect_uri does not match bound code", "redirect_mismatch"},
+		{resource != "" && resource != ac.Resource, "invalid_target", "resource does not match bound code", "resource_mismatch"},
+		{!pkceS256Matches(verifier, ac.CodeChallenge), "invalid_grant", "PKCE verifier does not match challenge", "pkce_mismatch"},
+	}
+	for _, rejection := range rejections {
+		if !rejection.invalid {
+			continue
+		}
+		writeOAuthError(w, http.StatusBadRequest, rejection.code, rejection.message)
+		if rejection.reason != "" {
+			a.auditAfterRollback(r.Context(), tx, audit.Event{Type: audit.EventTokenReject, ClientID: clientID, IP: r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"), Details: map[string]any{"reason": rejection.reason}})
+		}
+		return true
+	}
+	return false
+}
+
 // handleTokenRefresh rotates a refresh token. Reuse of an already-used (or a
 // revoked) refresh token cascade-revokes the whole chain. The owner's workspace
 // membership is rechecked on every rotation.
@@ -388,7 +393,7 @@ func (a *app) handleTokenRefresh(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	tok, chain, err := a.oauthTokens.LookupRefreshTx(r.Context(), tx, refresh)
-	if errors.Is(err, oauth.ErrBadPrefix) || errors.Is(err, oauth.ErrNotFound) {
+	if refreshNotFound(err) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "refresh token not found")
 		a.auditAfterRollback(r.Context(), tx, audit.Event{Type: audit.EventTokenReject, ClientID: clientID, IP: r.RemoteAddr, UserAgent: r.Header.Get("User-Agent"), Details: map[string]any{"reason": "refresh_not_found"}})
 		return
@@ -403,7 +408,7 @@ func (a *app) handleTokenRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Reuse cascade: an already-used or revoked token revokes the whole chain.
-	if tok.UsedAt != nil || tok.RevokedAt != nil || chain.RevokedAt != nil {
+	if refreshWasReused(tok, chain) {
 		_ = a.oauthTokens.RevokeChainTx(r.Context(), tx, chain.ID)
 		_ = a.audit.WriteTx(r.Context(), tx, audit.Event{
 			Type: audit.EventReuseDetected, OwnerEmail: chain.OwnerEmail, ClientID: chain.ClientID, ChainID: chain.ID,
@@ -450,6 +455,14 @@ func (a *app) handleTokenRefresh(w http.ResponseWriter, r *http.Request) {
 		ExpiresIn:    int(a.oauthTokens.AccessTTL.Seconds()),
 		RefreshToken: pair.RefreshToken,
 	})
+}
+
+func refreshNotFound(err error) bool {
+	return errors.Is(err, oauth.ErrBadPrefix) || errors.Is(err, oauth.ErrNotFound)
+}
+
+func refreshWasReused(tok oauth.Token, chain oauth.Chain) bool {
+	return tok.UsedAt != nil || tok.RevokedAt != nil || chain.RevokedAt != nil
 }
 
 // ── introspect / revoke ────────────────────────────────────────────────────

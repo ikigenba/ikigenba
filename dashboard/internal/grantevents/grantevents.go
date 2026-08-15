@@ -24,7 +24,7 @@ func New() *Bus {
 
 // Subscribe registers a subscriber for owner. The returned cancel removes the
 // subscription; callers must call it when done.
-func (b *Bus) Subscribe(owner string) (<-chan struct{}, func()) {
+func (b *Bus) Subscribe(owner string) (events <-chan struct{}, cancel func()) {
 	ch := make(chan struct{}, 1)
 	b.mu.Lock()
 	id := b.next
@@ -34,7 +34,7 @@ func (b *Bus) Subscribe(owner string) (<-chan struct{}, func()) {
 	}
 	b.subs[owner][id] = ch
 	b.mu.Unlock()
-	cancel := func() {
+	cancel = func() {
 		b.mu.Lock()
 		defer b.mu.Unlock()
 		if m, ok := b.subs[owner]; ok {

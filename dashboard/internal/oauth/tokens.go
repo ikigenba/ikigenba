@@ -283,29 +283,16 @@ func (s *TokenStore) ListChainsByOwner(ctx context.Context, ownerEmail string) (
 // Callers compare owner_email to enforce per-visitor scope.
 func (s *TokenStore) GetChainByPublicID(ctx context.Context, publicID string) (Chain, error) {
 	row := s.DB.QueryRowContext(ctx, `SELECT id, public_id, client_id, owner_email, owner_id, resource, created_at, revoked_at FROM oauth_chains WHERE public_id = ?`, publicID)
-	var (
-		c       Chain
-		created string
-		revoked sql.NullString
-	)
-	err := row.Scan(&c.ID, &c.PublicID, &c.ClientID, &c.OwnerEmail, &c.OwnerID, &c.Resource, &created, &revoked)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Chain{}, ErrNotFound
-	}
-	if err != nil {
-		return Chain{}, fmt.Errorf("select chain: %w", err)
-	}
-	c.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
-	if revoked.Valid {
-		t, _ := time.Parse(time.RFC3339Nano, revoked.String)
-		c.RevokedAt = &t
-	}
-	return c, nil
+	return scanChain(row)
 }
 
 // GetChain returns a chain row by id.
 func (s *TokenStore) GetChain(ctx context.Context, chainID string) (Chain, error) {
 	row := s.DB.QueryRowContext(ctx, `SELECT id, public_id, client_id, owner_email, owner_id, resource, created_at, revoked_at FROM oauth_chains WHERE id = ?`, chainID)
+	return scanChain(row)
+}
+
+func scanChain(row *sql.Row) (Chain, error) {
 	var (
 		c       Chain
 		created string
