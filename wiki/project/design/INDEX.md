@@ -90,6 +90,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D96 → `project/design/D96.md` — Statements: claims and corrections, the suppression record, and the effective claim set — owns R-74CQ-9083, R-76SJ-0JPH, R-780F-EBG6, R-798B-S36V, R-7AG8-5UXK
 - D97 → `project/design/D97.md` — The match stage (`internal/match`): judging what a correction covers, in the pipeline and in merge — owns R-7FBT-OXWC, R-7GJQ-2PN1, R-7HRM-GHDQ, R-7IZI-U94F, R-7K7F-80V4, R-7LFB-LSLT, R-7MN7-ZKCI, R-7NV4-DC37, R-7QAX-4VKL, R-7RIT-INBA, R-7SQP-WF1Z, R-7TYM-A6SO, R-7V6I-NYJD
 - D98 → `project/design/D98.md` — The corrections read surface: labeled kinds and visible suppression on `claims`, and the guide — owns R-7WEF-1QA2, R-7XMB-FI0R
+- D99 → `project/design/D99.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 
