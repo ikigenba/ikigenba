@@ -49,6 +49,16 @@ what you actually observed.
    ```
    (empty output expected.)
 
+   Then run the tiered lint gate:
+
+   ```
+   ../bin/lint eventplane
+   ```
+
+   It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+   (absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+   lint finding at the registered tier is an open gap, not a pass.
+
 3. **For every id in the brief's `### Ids to cover` list**, confirm a
    genuinely-asserting `// R-XXXX-XXXX`-tagged test exists and actually runs
    under `go test ./...`:
@@ -121,8 +131,8 @@ Then:
 
 - Never write or fix production code.
 - Never write the `## Contract` region of the brief.
-- Never retire a phase on anything short of green suite + full coverage of its
-  ids.
+- Never retire a phase on anything short of green suite + clean lint (at the
+  registered tier) + full coverage of its ids.
 - The ratchet's id-set greps over `project/design/D*.md` and
   `project/plan/phase-*.md` extract id tokens only and are not "reading the
   big docs" in the forbidden sense.
