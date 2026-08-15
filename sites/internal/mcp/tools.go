@@ -54,6 +54,10 @@ func toolsWithToken(store *sites.Store, layout sites.Layout, baseURL string, mir
 		newToken = sites.NewToken
 	}
 	h := &toolHandlers{store: store, layout: layout, baseURL: baseURL, mirror: mirror, version: version, newToken: newToken}
+	return append(siteTools(h), fileTools(h)...)
+}
+
+func siteTools(h *toolHandlers) []appkitmcp.Tool {
 	return []appkitmcp.Tool{
 		desc(tool("guide"), "Return the sites usage guide — the site model, name/slug and "+
 			"confinement rules, and worked basic/advanced examples (create a public page in "+
@@ -110,6 +114,11 @@ func toolsWithToken(store *sites.Store, layout sites.Layout, baseURL string, mir
 		}, "source_path"), obj(map[string]any{"slug": map[string]any{"type": "string"}, "written": map[string]any{"type": "integer"}, "deleted": map[string]any{"type": "integer"}}, "slug", "written", "deleted"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 			return h.toolSync(ctx, args, id)
 		}),
+	}
+}
+
+func fileTools(h *toolHandlers) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		descOut(tool("file_write"), "Write content to file_path inside the site's live directory for its current visibility. Creates parent dirs; overwrites by default, or appends when append:true.", obj(map[string]any{
 			"site":      descTyp("string", "site slug whose current directory is the sandbox root"),
 			"file_path": descTyp("string", "path relative to the site's current root (confined; absolute and '..' rejected)"),
@@ -441,13 +450,8 @@ func (h *toolHandlers) toolSetPath(ctx context.Context, raw json.RawMessage) (ma
 	mapped := sites.Subtree(entries, path)
 	desired := make(map[string][]byte, len(mapped))
 	for _, entry := range mapped {
-		for _, segment := range strings.Split(entry.Path, "/") {
-			if segment == ".git" {
-				return errResultMsg(appkitmcp.ErrInternal, "reconcile: forbidden .git path "+entry.Path), nil
-			}
-		}
-		if _, err := sitefiles.ConfinePath(workingDir, entry.Path); err != nil {
-			return errResultMsg(appkitmcp.ErrInternal, "reconcile: invalid path "+entry.Path+": "+err.Error()), nil
+		if err := validateReconcilePath(workingDir, entry.Path); err != nil {
+			return errResultMsg(appkitmcp.ErrInternal, "reconcile: "+err.Error()), nil
 		}
 		desired[entry.Path] = entry.Data
 	}
@@ -462,6 +466,18 @@ func (h *toolHandlers) toolSetPath(ctx context.Context, raw json.RawMessage) (ma
 		return errResult(err), nil
 	}
 	return appkitmcp.StructuredResult(h.renderSite(site))
+}
+
+func validateReconcilePath(workingDir, entryPath string) error {
+	for _, segment := range strings.Split(entryPath, "/") {
+		if segment == ".git" {
+			return errors.New("forbidden .git path " + entryPath)
+		}
+	}
+	if _, err := sitefiles.ConfinePath(workingDir, entryPath); err != nil {
+		return errors.New("invalid path " + entryPath + ": " + err.Error())
+	}
+	return nil
 }
 
 func regularFilesUnder(root string) ([]string, error) {

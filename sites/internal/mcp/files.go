@@ -204,7 +204,7 @@ func (h *toolHandlers) toolFileEdit(ctx context.Context, raw json.RawMessage, id
 	return appkitmcp.StructuredResult(map[string]any{"edited": a.FilePath, "site": a.Site, "replaced": replaced})
 }
 
-func confinedSitePath(root, raw string) (string, string, error) {
+func confinedSitePath(root, raw string) (confined, relative string, resultErr error) {
 	confined, err := sitefiles.ConfinePath(root, raw)
 	if err != nil {
 		return "", "", err
@@ -287,7 +287,7 @@ func (h *toolHandlers) toolFileGrep(ctx context.Context, raw json.RawMessage) (m
 	return appkitmcp.StructuredResult(map[string]any{"site": a.Site, "matches": out})
 }
 
-func (h *toolHandlers) siteRoot(ctx context.Context, slug string) (string, map[string]any) {
+func (h *toolHandlers) siteRoot(ctx context.Context, slug string) (root string, result map[string]any) {
 	site, err := h.store.Get(ctx, slug)
 	if err != nil {
 		return "", errResult(err)

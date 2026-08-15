@@ -33,37 +33,12 @@ import (
 // source_path → walk the current site directory for the existing path set →
 // Reconcile.
 func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
-	var a struct {
-		SourcePath string `json:"source_path"`
-		Slug       string `json:"slug"`
-	}
-	if err := unmarshalArgs(raw, &a); err != nil {
+	a, slug, result, err := h.syncTarget(raw)
+	if err != nil {
 		return nil, err
 	}
-	if h.mirror == nil {
-		return errResultMsg(appkitmcp.ErrSourceUnavailable, "sync_unconfigured: sync is not wired: no dropbox mirror client (DROPBOX_BASE_URL)"), nil
-	}
-	if a.SourcePath == "" {
-		return errResultMsg(appkitmcp.ErrValidation, "missing required \"source_path\" argument"), nil
-	}
-
-	// Derive the slug from the source-path basename when none was given, then
-	// pre-check it against the slug grammar. Store.Create enforces the same
-	// grammar, but a pre-check turns a bad auto-derived slug into a clean
-	// validation error that tells the caller to pass slug explicitly rather than
-	// surfacing a raw create failure.
-	slug := a.Slug
-	derived := false
-	if slug == "" {
-		slug = path.Base(a.SourcePath)
-		derived = true
-	}
-	if err := sites.ValidateSlug(slug); err != nil {
-		if derived {
-			return errResultMsg(appkitmcp.ErrValidation,
-				"derived slug "+jsonQuote(slug)+" from source_path is not a valid slug; pass \"slug\" explicitly"), nil
-		}
-		return errResult(err), nil
+	if result != nil {
+		return result, nil
 	}
 
 	site, err := h.store.Get(ctx, slug)
@@ -77,87 +52,23 @@ func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage, id ser
 		return errResult(err), nil
 	}
 
-	// Enumerate the subtree upstream and fetch each file's current bytes, keyed by
-	// its path RELATIVE to source_path (that relative key is the in-working-tree
-	// path Reconcile writes to). The client follows /list's cursor to completion.
-	files, err := h.mirror.List(ctx, a.SourcePath)
-	if err != nil {
-		return errResultMsg(appkitmcp.ErrSourceUnavailable, "list_upstream: "+err.Error()), nil
-	}
-	desired := make(map[string][]byte, len(files))
-	for _, f := range files {
-		rel := relUnder(a.SourcePath, f.Path)
-		data, ferr := h.mirror.Fetch(ctx, f.Path)
-		if ferr != nil {
-			return errResultMsg(appkitmcp.ErrSourceUnavailable, "fetch_upstream: "+ferr.Error()), nil
-		}
-		desired[rel] = data
+	desired, result := h.syncDesired(ctx, a.SourcePath)
+	if result != nil {
+		return result, nil
 	}
 
-	// Walk the site directory for its current relative file set (the path set is all
-	// Reconcile needs for delete-absent — overwrite-all means no md5 compare; same
-	// WalkDir + Rel/ToSlash pattern as toolFileList).
 	workingDir := h.layout.SiteDir(site.Visibility, slug)
-	var existingRel []string
-	existingData := make(map[string][]byte)
-	walkErr := filepath.WalkDir(workingDir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !d.Type().IsRegular() {
-			return nil
-		}
-		rel, rerr := filepath.Rel(workingDir, p)
-		if rerr != nil {
-			return rerr
-		}
-		rel = filepath.ToSlash(rel)
-		data, rerr := os.ReadFile(p)
-		if rerr != nil {
-			return rerr
-		}
-		existingRel = append(existingRel, rel)
-		existingData[rel] = data
-		return nil
-	})
-	if walkErr != nil && !errors.Is(walkErr, fs.ErrNotExist) {
-		return errResultMsg(appkitmcp.ErrInternal, "walk_working: "+walkErr.Error()), nil
+	existingRel, existingData, err := syncExisting(workingDir)
+	if err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "walk_working: "+err.Error()), nil
 	}
 
-	// A byte-identical tree is a true no-op. If anything differs, preserve sync's
-	// overwrite-all behavior by putting every desired file in the one batch.
-	matching := len(desired) == len(existingData)
-	if matching {
-		for rel, data := range desired {
-			existing, ok := existingData[rel]
-			if !ok || !bytes.Equal(data, existing) {
-				matching = false
-				break
-			}
-		}
-	}
-	if matching {
+	if syncTreesMatch(desired, existingData) {
 		return appkitmcp.StructuredResult(map[string]any{"slug": slug, "written": 0, "deleted": 0})
 	}
 
-	desiredPaths := make([]string, 0, len(desired))
-	for rel := range desired {
-		desiredPaths = append(desiredPaths, rel)
-	}
-	sort.Strings(desiredPaths)
-	changes := make([]sites.FileChange, 0, len(desired)+len(existingRel))
-	for _, rel := range desiredPaths {
-		changes = append(changes, sites.FileChange{Path: repositoryPath(site.Path, rel), Data: desired[rel]})
-	}
-	sort.Strings(existingRel)
-	for _, rel := range existingRel {
-		if _, ok := desired[rel]; !ok {
-			changes = append(changes, sites.FileChange{Path: repositoryPath(site.Path, rel), Delete: true})
-		}
-	}
-
 	ctx = sites.WithVersionActor(ctx, id.ClientID)
-	commit, err := h.version.Commit(ctx, slug, "sync "+a.SourcePath, changes)
+	commit, err := h.version.Commit(ctx, slug, "sync "+a.SourcePath, syncChanges(site.Path, desired, existingRel))
 	if err != nil {
 		return versionErrorResult(err), nil
 	}
@@ -171,6 +82,113 @@ func (h *toolHandlers) toolSync(ctx context.Context, raw json.RawMessage, id ser
 	}
 
 	return appkitmcp.StructuredResult(map[string]any{"slug": slug, "written": written, "deleted": deleted})
+}
+
+type syncArgs struct {
+	SourcePath string `json:"source_path"`
+	Slug       string `json:"slug"`
+}
+
+func (h *toolHandlers) syncTarget(raw json.RawMessage) (args syncArgs, slugResult string, result map[string]any, resultErr error) {
+	var a syncArgs
+	if err := unmarshalArgs(raw, &a); err != nil {
+		return a, "", nil, err
+	}
+	if h.mirror == nil {
+		return a, "", errResultMsg(appkitmcp.ErrSourceUnavailable, "sync_unconfigured: sync is not wired: no dropbox mirror client (DROPBOX_BASE_URL)"), nil
+	}
+	if a.SourcePath == "" {
+		return a, "", errResultMsg(appkitmcp.ErrValidation, "missing required \"source_path\" argument"), nil
+	}
+	slug := a.Slug
+	derived := slug == ""
+	if derived {
+		slug = path.Base(a.SourcePath)
+	}
+	if err := sites.ValidateSlug(slug); err != nil {
+		if derived {
+			message := "derived slug " + jsonQuote(slug) + " from source_path is not a valid slug; pass \"slug\" explicitly"
+			return a, "", errResultMsg(appkitmcp.ErrValidation, message), nil
+		}
+		return a, "", errResult(err), nil
+	}
+	return a, slug, nil, nil
+}
+
+func (h *toolHandlers) syncDesired(ctx context.Context, sourcePath string) (filesByPath map[string][]byte, result map[string]any) {
+	files, err := h.mirror.List(ctx, sourcePath)
+	if err != nil {
+		return nil, errResultMsg(appkitmcp.ErrSourceUnavailable, "list_upstream: "+err.Error())
+	}
+	desired := make(map[string][]byte, len(files))
+	for _, file := range files {
+		data, err := h.mirror.Fetch(ctx, file.Path)
+		if err != nil {
+			return nil, errResultMsg(appkitmcp.ErrSourceUnavailable, "fetch_upstream: "+err.Error())
+		}
+		desired[relUnder(sourcePath, file.Path)] = data
+	}
+	return desired, nil
+}
+
+func syncExisting(workingDir string) (existingPaths []string, existingData map[string][]byte, resultErr error) {
+	var paths []string
+	dataByPath := make(map[string][]byte)
+	err := filepath.WalkDir(workingDir, func(filePath string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !entry.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(workingDir, filePath)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		paths = append(paths, rel)
+		dataByPath[rel] = data
+		return nil
+	})
+	if errors.Is(err, fs.ErrNotExist) {
+		return paths, dataByPath, nil
+	}
+	return paths, dataByPath, err
+}
+
+func syncTreesMatch(desired, existing map[string][]byte) bool {
+	if len(desired) != len(existing) {
+		return false
+	}
+	for rel, data := range desired {
+		if current, ok := existing[rel]; !ok || !bytes.Equal(data, current) {
+			return false
+		}
+	}
+	return true
+}
+
+func syncChanges(root string, desired map[string][]byte, existing []string) []sites.FileChange {
+	desiredPaths := make([]string, 0, len(desired))
+	for rel := range desired {
+		desiredPaths = append(desiredPaths, rel)
+	}
+	sort.Strings(desiredPaths)
+	changes := make([]sites.FileChange, 0, len(desired)+len(existing))
+	for _, rel := range desiredPaths {
+		changes = append(changes, sites.FileChange{Path: repositoryPath(root, rel), Data: desired[rel]})
+	}
+	sort.Strings(existing)
+	for _, rel := range existing {
+		if _, ok := desired[rel]; !ok {
+			changes = append(changes, sites.FileChange{Path: repositoryPath(root, rel), Delete: true})
+		}
+	}
+	return changes
 }
 
 // relUnder returns child's path relative to prefix (both mirror paths, slash-

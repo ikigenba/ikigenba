@@ -301,69 +301,74 @@ func Grep(root, pattern, path, glob string) ([]Match, error) {
 	if err != nil {
 		return nil, err
 	}
-	var matches []Match
-	addMatches := func(path string) error {
-		if glob != "" {
-			ok, err := filepath.Match(glob, filepath.Base(path))
-			if err != nil {
-				return err
-			}
-			if !ok {
-				return nil
-			}
-		}
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		rel, err := filepath.Rel(rootBase, path)
-		if err != nil {
-			rel = path
-		}
-		rel = filepath.ToSlash(rel)
-		scanner := bufio.NewScanner(file)
-		for line := 1; scanner.Scan(); line++ {
-			text := scanner.Text()
-			if re.MatchString(text) {
-				matches = append(matches, Match{Path: rel, Line: line, Text: text})
-			}
-		}
-		return scanner.Err()
-	}
 	info, err := os.Stat(base)
 	if err != nil {
 		return nil, err
 	}
-	if !info.IsDir() {
-		if err := addMatches(base); err != nil {
-			return nil, err
+	collector := grepCollector{rootBase: rootBase, pattern: re, glob: glob}
+	if err := collectGrepMatches(root, base, info, collector.add); err != nil {
+		return nil, err
+	}
+	sort.Slice(collector.matches, func(i, j int) bool {
+		if collector.matches[i].Path != collector.matches[j].Path {
+			return collector.matches[i].Path < collector.matches[j].Path
 		}
-	} else {
-		err = filepath.WalkDir(base, func(path string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if d.IsDir() || !d.Type().IsRegular() {
-				return nil
-			}
-			confined, err := ConfinePath(root, path)
-			if err != nil {
-				return nil
-			}
-			return addMatches(confined)
-		})
-		if err != nil {
-			return nil, err
+		return collector.matches[i].Line < collector.matches[j].Line
+	})
+	return collector.matches, nil
+}
+
+type grepCollector struct {
+	rootBase string
+	pattern  *regexp.Regexp
+	glob     string
+	matches  []Match
+}
+
+func (c *grepCollector) add(path string) error {
+	if c.glob != "" {
+		ok, err := filepath.Match(c.glob, filepath.Base(path))
+		if err != nil || !ok {
+			return err
 		}
 	}
-	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].Path != matches[j].Path {
-			return matches[i].Path < matches[j].Path
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	rel, err := filepath.Rel(c.rootBase, path)
+	if err != nil {
+		rel = path
+	}
+	rel = filepath.ToSlash(rel)
+	scanner := bufio.NewScanner(file)
+	for line := 1; scanner.Scan(); line++ {
+		text := scanner.Text()
+		if c.pattern.MatchString(text) {
+			c.matches = append(c.matches, Match{Path: rel, Line: line, Text: text})
 		}
-		return matches[i].Line < matches[j].Line
+	}
+	return scanner.Err()
+}
+
+func collectGrepMatches(root, base string, info fs.FileInfo, add func(string) error) error {
+	if !info.IsDir() {
+		return add(base)
+	}
+	return filepath.WalkDir(base, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !entry.Type().IsRegular() {
+			return nil
+		}
+		confined, err := ConfinePath(root, path)
+		if err != nil {
+			return nil
+		}
+		return add(confined)
 	})
-	return matches, nil
 }
 
 func List(root, scope string) ([]FileInfo, error) {
@@ -508,14 +513,14 @@ func sliceLines(content string, offset, limit int) string {
 	return strings.Join(lines[start:end], "")
 }
 
-func hashFile(path string) (string, int64, error) {
+func hashFile(path string) (digest string, size int64, resultErr error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", 0, err
 	}
 	defer file.Close()
 	hash := md5.New()
-	size, err := io.Copy(hash, file)
+	size, err = io.Copy(hash, file)
 	if err != nil {
 		return "", 0, err
 	}
