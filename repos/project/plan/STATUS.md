@@ -9,5 +9,7 @@ build loop **deletes** the phase's line and its body file — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 46
+Next phase: 47
+
+- Phase 46 ⬜ realizes — — promote lint tier to `strict` (D28; fix 5 strict gocyclo findings, rewrite `.lint-tier` to `strict`, `bin/lint repos` exits 0)
 
