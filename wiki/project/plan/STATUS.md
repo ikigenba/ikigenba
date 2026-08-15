@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 179
-
-- Phase 178 ⬜ realizes D99 (structural; no ids) — promote the lint tier to `strict`: bring the tree clean at strict and create `wiki/.lint-tier` = `strict`
