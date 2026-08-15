@@ -353,7 +353,7 @@ func (s *Store) BrowseRuns(ctx context.Context, f BrowseFilter) ([]Run, int, err
 	return result, total, nil
 }
 
-func browsePromptWhere(q string) (string, []any) {
+func browsePromptWhere(q string) (where string, args []any) {
 	if q == "" {
 		return "", nil
 	}
@@ -361,9 +361,8 @@ func browsePromptWhere(q string) (string, []any) {
 		OR instr(lower(owner_email), lower(?)) > 0`, []any{q, q}
 }
 
-func browseRunWhere(f BrowseFilter) (string, []any) {
+func browseRunWhere(f BrowseFilter) (where string, args []any) {
 	var clauses []string
-	var args []any
 	if f.Q != "" {
 		clauses = append(clauses, `(instr(lower(COALESCE(prompt_name, '')), lower(?)) > 0 OR instr(lower(owner_email), lower(?)) > 0)`)
 		args = append(args, f.Q, f.Q)
@@ -382,7 +381,7 @@ func browseRunWhere(f BrowseFilter) (string, []any) {
 	return " WHERE " + strings.Join(clauses, " AND "), args
 }
 
-func browsePage(limit, offset int) (int, int) {
+func browsePage(limit, offset int) (pageLimit, pageOffset int) {
 	if limit <= 0 {
 		limit = 50
 	}

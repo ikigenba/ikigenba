@@ -167,9 +167,12 @@ func (c *HTTPClient) Read(ctx context.Context, nameKey, ref string) (Definition,
 		}
 		return Definition{}, statusError(response.StatusCode, body)
 	}
+	return readDefinitionArchive(response.Body)
+}
 
+func readDefinitionArchive(source io.Reader) (Definition, error) {
 	files := make(map[string][]byte, 3)
-	archive := tar.NewReader(response.Body)
+	archive := tar.NewReader(source)
 	for {
 		header, err := archive.Next()
 		if errors.Is(err, io.EOF) {

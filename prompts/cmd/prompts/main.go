@@ -679,7 +679,7 @@ func pageCount(total int) int {
 	return pages
 }
 
-func pagerURLs(path string, query url.Values, page, pages int) (string, string) {
+func pagerURLs(path string, query url.Values, page, pages int) (previousURL, nextURL string) {
 	pageURL := func(n int) string {
 		q := url.Values{}
 		for key, values := range query {

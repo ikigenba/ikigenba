@@ -271,7 +271,7 @@ func knownProvider(name string) bool {
 	}
 }
 
-func workspaceGitState(root string) (string, string, error) {
+func workspaceGitState(root string) (branch, revision string, resultErr error) {
 	read := func(args ...string) (string, error) {
 		out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput()
 		if err != nil {

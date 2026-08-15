@@ -334,14 +334,8 @@ func fetchFile(ctx context.Context, root string, sourcePortAllowed func(int) boo
 		return "", fmt.Errorf("source_unavailable: fetch content URL: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return "", fmt.Errorf("not_found: the reference is stale or absent — re-derive it from the holder")
-	}
-	if resp.StatusCode == http.StatusConflict {
-		return "", fmt.Errorf("conflict: the reference revision moved — re-derive it from the holder")
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return "", fmt.Errorf("source_unavailable: source returned HTTP %d", resp.StatusCode)
+	if err := fetchStatusError(resp.StatusCode); err != nil {
+		return "", err
 	}
 
 	hash := sha256.New()
@@ -364,6 +358,19 @@ func fetchFile(ctx context.Context, root string, sourcePortAllowed func(int) boo
 		return "", err
 	}
 	return string(result), nil
+}
+
+func fetchStatusError(status int) error {
+	switch {
+	case status == http.StatusNotFound:
+		return fmt.Errorf("not_found: the reference is stale or absent — re-derive it from the holder")
+	case status == http.StatusConflict:
+		return fmt.Errorf("conflict: the reference revision moved — re-derive it from the holder")
+	case status < http.StatusOK || status >= http.StatusMultipleChoices:
+		return fmt.Errorf("source_unavailable: source returned HTTP %d", status)
+	default:
+		return nil
+	}
 }
 
 func validateContentURL(raw string, sourcePortAllowed func(int) bool) (*url.URL, error) {

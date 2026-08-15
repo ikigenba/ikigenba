@@ -354,7 +354,7 @@ func (e *Executor) writeTerminal(item Item, status, result, reason, usageJSON st
 	e.logger.Error("completion terminal write failed after retries", "id", item.ID, "status", status, "attempts", maxTerminalAttempts, "error", err)
 }
 
-func (e *Executor) roundTrip(ctx context.Context, provider agentkit.Provider, resolution catalog.Resolution, cfg prompt.Config, system string, history []agentkit.Message, userText string) (string, agentkit.Usage, float64, error) {
+func (e *Executor) roundTrip(ctx context.Context, provider agentkit.Provider, resolution catalog.Resolution, cfg prompt.Config, system string, history []agentkit.Message, userText string) (responseText string, responseUsage agentkit.Usage, responseCost float64, responseErr error) {
 	release, err := e.gate.AcquireCall(ctx, string(resolution.Provider))
 	if err != nil {
 		return "", agentkit.Usage{}, 0, err

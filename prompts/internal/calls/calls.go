@@ -326,7 +326,7 @@ func scanRow(src scanner) (Row, error) {
 	return row, nil
 }
 
-func filterSQL(f Filter) (string, []any) {
+func filterSQL(f Filter) (where string, values []any) {
 	var clauses []string
 	var args []any
 	add := func(clause string, value any) {
