@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.36.0 — 2026-08-15
+
+- Internal code-quality hardening: the service now conforms to the suite's strict mechanical lint tier (formatting, complexity, and style rules enforced by the shared lint gate). No user-facing behavior, API, or data changes.
+
 ## v0.35.0 — 2026-08-14
 
 - A false fact can now be retired by ingesting plain prose that says it is false — no new tools and no editing. Each ingested document's statements are classified as either claims (assertions) or corrections (rulings that a stated fact is wrong); a new match stage judges which claims a correction covers, and subject pages are rebuilt from only the claims that survive.
