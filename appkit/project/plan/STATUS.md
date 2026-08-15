@@ -9,6 +9,8 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 34
+Next phase: 35
+
+- Phase 34 ⬜ realizes — — promote lint tier to `strict` (D22; fix 9 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint appkit` exits 0)
 
 
