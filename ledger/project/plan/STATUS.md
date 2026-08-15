@@ -11,5 +11,3 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 23
 
-- Phase 22 ⬜ realizes — — promote lint tier to `strict` (D20; fix 2 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint ledger` exits 0)
-
