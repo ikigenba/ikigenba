@@ -272,37 +272,13 @@ func (s *Service) Move(ctx context.Context, from, to, clientID string) error {
 	now := s.now()
 	var moved []FileRow
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
-		if file, getErr := s.Store.GetFile(tx, from); getErr == nil {
-			moved = []FileRow{file}
-			if err := s.Store.DeleteFile(tx, from); err != nil {
-				return err
-			}
-			if err := s.upsertDirParents(tx, to); err != nil {
-				return err
-			}
-			if err := s.Store.UpsertFile(tx, to, file.Rev, file.ContentHash, file.Size, now); err != nil {
-				return err
-			}
-		} else if errors.Is(getErr, ErrNotFound) {
-			files, listErr := s.Store.ListFiles(tx, foldPath(from), "", int(^uint(0)>>1))
-			if listErr != nil {
-				return listErr
-			}
-			if err := s.Store.RenameDirSubtree(tx, from, to); err != nil {
-				return err
-			}
-			moved = files
-		} else {
-			return getErr
+		var moveErr error
+		moved, moveErr = s.moveIndex(tx, from, to, now)
+		if moveErr != nil {
+			return moveErr
 		}
-		for _, file := range moved {
-			if err := s.appendEvent(ctx, tx, FileEvent{Kind: KindDelete, Path: file.Path, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
-				return err
-			}
-			newPath := to + file.Path[len(from):]
-			if err := s.appendEvent(ctx, tx, FileEvent{Kind: KindCreate, Path: newPath, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
-				return err
-			}
+		if err := s.appendMoveEvents(ctx, tx, moved, from, to, clientID, now); err != nil {
+			return err
 		}
 		return s.Store.EnqueueUpload(tx, localUpload(from, "move", sql.NullString{String: to, Valid: true}, clientID, now))
 	})
@@ -311,6 +287,46 @@ func (s *Service) Move(ctx context.Context, from, to, clientID string) error {
 	}
 	if len(moved) > 0 {
 		s.ring()
+	}
+	return nil
+}
+
+func (s *Service) moveIndex(tx *sql.Tx, from, to, now string) ([]FileRow, error) {
+	file, err := s.Store.GetFile(tx, from)
+	if err == nil {
+		if err := s.Store.DeleteFile(tx, from); err != nil {
+			return nil, err
+		}
+		if err := s.upsertDirParents(tx, to); err != nil {
+			return nil, err
+		}
+		if err := s.Store.UpsertFile(tx, to, file.Rev, file.ContentHash, file.Size, now); err != nil {
+			return nil, err
+		}
+		return []FileRow{file}, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	files, err := s.Store.ListFiles(tx, foldPath(from), "", int(^uint(0)>>1))
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Store.RenameDirSubtree(tx, from, to); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+func (s *Service) appendMoveEvents(ctx context.Context, tx *sql.Tx, moved []FileRow, from, to, clientID, now string) error {
+	for _, file := range moved {
+		if err := s.appendEvent(ctx, tx, FileEvent{Kind: KindDelete, Path: file.Path, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
+			return err
+		}
+		newPath := to + file.Path[len(from):]
+		if err := s.appendEvent(ctx, tx, FileEvent{Kind: KindCreate, Path: newPath, Rev: file.Rev, ContentHash: file.ContentHash, Size: file.Size, OccurredAt: now, Origin: clientID}); err != nil {
+			return err
+		}
 	}
 	return nil
 }

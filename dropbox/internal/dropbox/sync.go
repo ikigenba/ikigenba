@@ -147,10 +147,7 @@ func (e *Engine) bootstrap(ctx context.Context) error {
 // (PLAN.md §2). Longpoll parks on the cursor; on changes it drains continue
 // pages, persisting the cursor per page.
 func (e *Engine) steadyState(ctx context.Context) {
-	for {
-		if ctx.Err() != nil {
-			return
-		}
+	for ctx.Err() == nil {
 		cursor, ok, err := e.readCursor(ctx)
 		if err != nil {
 			e.log.Warn("dropbox sync read cursor failed", "err", err.Error())
@@ -160,49 +157,53 @@ func (e *Engine) steadyState(ctx context.Context) {
 			continue
 		}
 		if !ok || cursor == "" {
-			// No cursor yet (bootstrap failed earlier). Retry the bootstrap.
-			if err := e.bootstrap(ctx); err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				e.log.Warn("dropbox sync bootstrap retry failed", "err", err.Error())
-				if !e.sleep(ctx, e.backoff) {
-					return
-				}
-			}
-			continue
-		}
-		cycleCtx := e.startRoot(ctx, "dropbox:sync/longpoll")
-
-		lr, err := e.client.Longpoll(cycleCtx, cursor)
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			e.log.Warn("dropbox sync longpoll failed", "err", err.Error())
-			if !e.sleep(ctx, e.backoff) {
+			if !e.retryBootstrap(ctx) {
 				return
 			}
 			continue
 		}
-		if lr.Backoff > 0 {
-			if !e.sleep(ctx, time.Duration(lr.Backoff)*time.Second) {
-				return
-			}
-		}
-		if !lr.Changes {
-			continue
-		}
-		if err := e.drain(cycleCtx, cursor); err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			e.log.Warn("dropbox sync drain failed", "err", err.Error())
-			if !e.sleep(ctx, e.backoff) {
-				return
-			}
+		if !e.pollAndDrain(ctx, cursor) {
+			return
 		}
 	}
+}
+
+func (e *Engine) retryBootstrap(ctx context.Context) bool {
+	err := e.bootstrap(ctx)
+	if err == nil {
+		return true
+	}
+	if ctx.Err() != nil {
+		return false
+	}
+	e.log.Warn("dropbox sync bootstrap retry failed", "err", err.Error())
+	return e.sleep(ctx, e.backoff)
+}
+
+func (e *Engine) pollAndDrain(ctx context.Context, cursor string) bool {
+	cycleCtx := e.startRoot(ctx, "dropbox:sync/longpoll")
+	lr, err := e.client.Longpoll(cycleCtx, cursor)
+	if err != nil {
+		if ctx.Err() != nil {
+			return false
+		}
+		e.log.Warn("dropbox sync longpoll failed", "err", err.Error())
+		return e.sleep(ctx, e.backoff)
+	}
+	if lr.Backoff > 0 && !e.sleep(ctx, time.Duration(lr.Backoff)*time.Second) {
+		return false
+	}
+	if !lr.Changes {
+		return true
+	}
+	if err := e.drain(cycleCtx, cursor); err != nil {
+		if ctx.Err() != nil {
+			return false
+		}
+		e.log.Warn("dropbox sync drain failed", "err", err.Error())
+		return e.sleep(ctx, e.backoff)
+	}
+	return true
 }
 
 // drain loops ListFolderContinue from cursor while HasMore, applying each page
@@ -347,7 +348,7 @@ func (e *Engine) applyFile(ctx context.Context, entry DeltaEntry) error {
 
 // ── small tx-scoped store helpers (engine-owned reads/cursor writes) ─────────
 
-func (e *Engine) readCursor(ctx context.Context) (string, bool, error) {
+func (e *Engine) readCursor(ctx context.Context) (cursor string, found bool, err error) {
 	tx, err := e.svc.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return "", false, err

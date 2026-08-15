@@ -53,6 +53,10 @@ func Tools(svc *dropbox.Service, sourcePortAllowed func(port int) bool, source *
 		sourcePortAllowed: sourcePortAllowed,
 		sourceClient:      source,
 	}
+	return append(readTools(h), writeTools(h)...)
+}
+
+func readTools(h *toolHandlers) []appkitmcp.Tool {
 	return []appkitmcp.Tool{
 		{
 			Name:        tool("list"),
@@ -114,6 +118,11 @@ func Tools(svc *dropbox.Service, sourcePortAllowed func(port int) bool, source *
 				return h.toolPut(ctx, args, id.ClientID)
 			},
 		},
+	}
+}
+
+func writeTools(h *toolHandlers) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		{
 			Name:        tool("mkdir"),
 			Description: "Create a directory in the local Dropbox mirror.",
@@ -312,16 +321,8 @@ func (h *toolHandlers) toolPut(ctx context.Context, raw json.RawMessage, clientI
 }
 
 func (h *toolHandlers) putSourceURL(ctx context.Context, path, sourceURL, clientID string) (map[string]any, error) {
-	u, err := url.Parse(sourceURL)
-	if err != nil || u.Scheme != "http" || u.User != nil || u.Hostname() == "" {
-		return toolErr(dropbox.ErrValidation), nil
-	}
-	if host := u.Hostname(); host != "127.0.0.1" && host != "::1" {
-		return toolErr(dropbox.ErrValidation), nil
-	}
-	portText := u.Port()
-	port, err := strconv.Atoi(portText)
-	if portText == "" || err != nil || port < 1 || port > 65535 || !h.sourcePortAllowed(port) {
+	u, valid := h.validSourceURL(sourceURL)
+	if !valid {
 		return toolErr(dropbox.ErrValidation), nil
 	}
 
@@ -334,14 +335,8 @@ func (h *toolHandlers) putSourceURL(ctx context.Context, path, sourceURL, client
 		return sourceUnavailable(sourceURL), nil
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return toolErr(dropbox.ErrNotFound), nil
-	}
-	if resp.StatusCode == http.StatusConflict {
-		return toolErr(dropbox.ErrRevMismatch), nil
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return sourceUnavailable(sourceURL), nil
+	if result := sourceResponseError(resp.StatusCode, sourceURL); result != nil {
+		return result, nil
 	}
 	row, err := h.svc.Write(ctx, path, resp.Body, clientID)
 	if err != nil {
@@ -356,6 +351,33 @@ func (h *toolHandlers) putSourceURL(ctx context.Context, path, sourceURL, client
 		"content_hash": row.ContentHash,
 		"rev":          row.Rev,
 	})
+}
+
+func (h *toolHandlers) validSourceURL(sourceURL string) (*url.URL, bool) {
+	u, err := url.Parse(sourceURL)
+	if err != nil || u.Scheme != "http" || u.User != nil || u.Hostname() == "" {
+		return nil, false
+	}
+	host := u.Hostname()
+	if host != "127.0.0.1" && host != "::1" {
+		return nil, false
+	}
+	portText := u.Port()
+	port, err := strconv.Atoi(portText)
+	return u, portText != "" && err == nil && port >= 1 && port <= 65535 && h.sourcePortAllowed(port)
+}
+
+func sourceResponseError(status int, sourceURL string) map[string]any {
+	switch {
+	case status == http.StatusNotFound:
+		return toolErr(dropbox.ErrNotFound)
+	case status == http.StatusConflict:
+		return toolErr(dropbox.ErrRevMismatch)
+	case status < http.StatusOK || status >= http.StatusMultipleChoices:
+		return sourceUnavailable(sourceURL)
+	default:
+		return nil
+	}
 }
 
 func sourceUnavailable(sourceURL string) map[string]any {

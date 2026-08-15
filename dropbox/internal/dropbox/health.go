@@ -22,31 +22,7 @@ import (
 // scope domain data (PLAN.md §6 — no owner column).
 func (s *Service) Health(ownerEmail, clientID string) (HealthInfo, error) {
 	info := HealthInfo{OwnerEmail: ownerEmail, ClientID: clientID}
-
-	if s.DB != nil && s.Store != nil {
-		if tx, err := s.DB.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true}); err == nil {
-			if total, e := s.Store.TotalSize(tx); e == nil {
-				info.MirrorBytes = total
-			}
-			if n, e := s.Store.FailedFiles(tx); e == nil {
-				info.FailedFiles = n
-			}
-			if backlog, e := s.Store.UploadBacklog(tx); e == nil {
-				info.PendingUploads = backlog.Pending
-				info.FailedUploads = backlog.Failed
-				if backlog.OldestPendingAt.Valid {
-					if oldest, parseErr := time.Parse(time.RFC3339Nano, backlog.OldestPendingAt.String); parseErr == nil {
-						age := s.nowTime().Sub(oldest)
-						if age > 0 {
-							info.OldestPendingAgeSeconds = int64(age.Seconds())
-						}
-					}
-				}
-			}
-			_ = tx.Rollback()
-		}
-	}
-
+	s.readHealthDB(&info)
 	if s.Mirror != nil {
 		if free, total, err := s.Mirror.StatFS(); err == nil {
 			info.DiskFreeBytes = free
@@ -55,6 +31,36 @@ func (s *Service) Health(ownerEmail, clientID string) (HealthInfo, error) {
 	}
 
 	return info, nil
+}
+
+func (s *Service) readHealthDB(info *HealthInfo) {
+	if s.DB == nil || s.Store == nil {
+		return
+	}
+	tx, err := s.DB.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+	if total, err := s.Store.TotalSize(tx); err == nil {
+		info.MirrorBytes = total
+	}
+	if failed, err := s.Store.FailedFiles(tx); err == nil {
+		info.FailedFiles = failed
+	}
+	backlog, err := s.Store.UploadBacklog(tx)
+	if err != nil {
+		return
+	}
+	info.PendingUploads = backlog.Pending
+	info.FailedUploads = backlog.Failed
+	if !backlog.OldestPendingAt.Valid {
+		return
+	}
+	oldest, err := time.Parse(time.RFC3339Nano, backlog.OldestPendingAt.String)
+	if err == nil && s.nowTime().After(oldest) {
+		info.OldestPendingAgeSeconds = int64(s.nowTime().Sub(oldest).Seconds())
+	}
 }
 
 func (s *Service) nowTime() time.Time {
