@@ -627,7 +627,7 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 		return err
 	}
 
-	combined, err := s.mergeClaims(ctx, merge.FromSubjectID, merge.ToSubjectID)
+	combined, crossEdges, err := s.mergeEffectiveClaims(ctx, attr, loser, winner)
 	if err != nil {
 		return err
 	}
@@ -658,6 +658,7 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	pages := NewPageStore(tx)
 	aliases := NewAliasStore(tx)
 	embeddings := NewEmbeddingStore(tx)
+	suppressions := NewSuppressionStore(tx)
 	if _, err := subjects.Get(ctx, merge.ToSubjectID); errors.Is(err, sql.ErrNoRows) {
 		committed, err := finishDoneInTx(ctx, tx, job.ID, s.now())
 		if committed {
@@ -685,6 +686,11 @@ func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	}
 	if err := claims.RepointSubject(ctx, merge.FromSubjectID, merge.ToSubjectID); err != nil {
 		return err
+	}
+	for _, edge := range crossEdges {
+		if err := suppressions.Insert(ctx, edge); err != nil {
+			return err
+		}
 	}
 	if err := aliases.RepointSubject(ctx, merge.FromSubjectID, merge.ToSubjectID); err != nil {
 		return err
@@ -766,6 +772,82 @@ func (s *Service) mergeClaims(ctx context.Context, fromSubjectID, toSubjectID st
 		return combined[i].ID < combined[j].ID
 	})
 	return combined, nil
+}
+
+func (s *Service) mergeEffectiveClaims(ctx context.Context, attr llm.Attribution, loser, winner Subject) ([]Claim, []Suppression, error) {
+	combined, err := s.mergeClaims(ctx, loser.ID, winner.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	winnerRows, err := listAllClaims(ctx, s.claims, winner.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	loserRows, err := listAllClaims(ctx, s.claims, loser.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var corrections []match.Statement
+	var claims []match.Statement
+	subjectByRow := make(map[string]string, len(winnerRows)+len(loserRows))
+	appendRows := func(rows []Claim, isLoser bool) {
+		for _, row := range rows {
+			subjectByRow[row.ID] = row.SubjectID
+			statement := match.Statement{Claim: row, New: isLoser}
+			if row.Kind == CorrectionKind {
+				corrections = append(corrections, statement)
+			} else if row.Kind == ClaimKind {
+				claims = append(claims, statement)
+			}
+		}
+	}
+	appendRows(winnerRows, false)
+	appendRows(loserRows, true)
+
+	hasCrossPairs := hasCorrections(loserRows) && len(winnerRows) > 0 || hasCorrections(winnerRows) && len(loserRows) > 0
+	var crossEdges []Suppression
+	if hasCrossPairs {
+		if s.matcher == nil {
+			return nil, nil, fmt.Errorf("wiki: nil matcher")
+		}
+		judged, err := s.matcher.Match(ctx, attr, match.Unit{Subject: winner, Corrections: corrections, Claims: claims})
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, edge := range judged {
+			if subjectByRow[edge.Correction] == subjectByRow[edge.Suppressed] {
+				continue
+			}
+			crossEdges = append(crossEdges, Suppression{
+				Correction: edge.Correction,
+				Suppressed: edge.Suppressed,
+				CreatedAt:  s.now().Unix(),
+			})
+		}
+	}
+
+	edges, err := NewSuppressionStore(s.write).ListBySubject(ctx, winner.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	loserEdges, err := NewSuppressionStore(s.write).ListBySubject(ctx, loser.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	edges = append(edges, loserEdges...)
+	edges = append(edges, crossEdges...)
+	effective, _ := Effective(combined, edges)
+	return effective, crossEdges, nil
+}
+
+func hasCorrections(rows []Claim) bool {
+	for _, row := range rows {
+		if row.Kind == CorrectionKind {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) finishStaleMerge(ctx context.Context, jobID string) error {

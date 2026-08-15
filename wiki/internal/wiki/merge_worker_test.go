@@ -15,6 +15,8 @@ import (
 	"eventplane/correlation"
 
 	"wiki/internal/llm"
+	"wiki/internal/llmtest"
+	matchstage "wiki/internal/match"
 	"wiki/internal/page"
 	wikidomain "wiki/internal/wiki"
 	"wiki/internal/worker"
@@ -627,6 +629,101 @@ func TestMergeAndAliasRoutingStayWithinScope(t *testing.T) {
 	}
 	if _, err := svc.MergeSubjects(ctx, "s1", "s2-old", "s1-winner"); !errors.Is(err, wikidomain.ErrSubjectNotFound) {
 		t.Fatalf("cross-scope MergeSubjects error = %v, want ErrSubjectNotFound", err)
+	}
+}
+
+func TestMergeWorkerCrossMatchesAndCompilesEffectiveClaims(t *testing.T) {
+	// R-7V6I-NYJD
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+
+	subjects := wikidomain.NewSubjectStore(conn)
+	for _, subject := range []wikidomain.Subject{
+		{ID: "subject-winner", Name: "Winner Subject", Type: "entity"},
+		{ID: "subject-loser", Name: "Loser Subject", Type: "entity"},
+	} {
+		if err := subjects.Save(ctx, subject); err != nil {
+			t.Fatalf("Save subject: %v", err)
+		}
+	}
+	claims := wikidomain.NewClaimStore(conn)
+	rows := []wikidomain.Claim{
+		{ID: "050-winner-old", SubjectID: "subject-winner", JobID: "winner-job", Body: "Winner settled fact.", Kind: wikidomain.ClaimKind},
+		{ID: "100-winner-false", SubjectID: "subject-winner", JobID: "winner-job", Body: "The refuted fact.", Kind: wikidomain.ClaimKind},
+		{ID: "300-winner-correction", SubjectID: "subject-winner", JobID: "winner-job", Body: "Winner settled fact is false.", Kind: wikidomain.CorrectionKind},
+		{ID: "200-loser-old", SubjectID: "subject-loser", JobID: "loser-job", Body: "Loser settled fact.", Kind: wikidomain.ClaimKind},
+		{ID: "400-loser-correction", SubjectID: "subject-loser", JobID: "loser-job", Body: "The refuted fact is false.", Kind: wikidomain.CorrectionKind},
+	}
+	for _, row := range rows {
+		if err := claims.Save(ctx, row); err != nil {
+			t.Fatalf("Save claim %s: %v", row.ID, err)
+		}
+	}
+	suppressions := wikidomain.NewSuppressionStore(conn)
+	for _, edge := range []wikidomain.Suppression{
+		{Correction: "300-winner-correction", Suppressed: "050-winner-old", CreatedAt: 1},
+		{Correction: "400-loser-correction", Suppressed: "200-loser-old", CreatedAt: 2},
+	} {
+		if err := suppressions.Insert(ctx, edge); err != nil {
+			t.Fatalf("Insert existing edge: %v", err)
+		}
+	}
+
+	provider := &scriptedProvider{responses: []string{`{"judgments":[{"correction":1,"refutes":[1]}]}`}}
+	matcher := matchstage.New(llmtest.NewClient(t, provider), llm.CallSite{Stage: "match", Config: llm.Config{Model: "match-model"}})
+	compiler := &scriptedMergeCompiler{}
+	svc := wikidomain.NewService(conn, nil, compiler, mergeClockAt(time.Date(2026, 8, 15, 1, 0, 0, 0, time.UTC)), wikidomain.WithMatcher(matcher))
+	jobID, err := svc.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
+	if err != nil {
+		t.Fatalf("MergeSubjects: %v", err)
+	}
+	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
+		t.Fatalf("ProcessNext = %v, %v", processed, err)
+	}
+	if status, err := svc.JobStatus(ctx, jobID); err != nil || status.Status != wikidomain.JobDone {
+		t.Fatalf("status = %+v, %v", status, err)
+	}
+
+	edges, err := suppressions.ListBySubject(ctx, "subject-winner")
+	if err != nil {
+		t.Fatalf("ListBySubject edges: %v", err)
+	}
+	wantEdges := map[string]bool{
+		"300-winner-correction/050-winner-old":  true,
+		"400-loser-correction/200-loser-old":    true,
+		"400-loser-correction/100-winner-false": true,
+	}
+	if len(edges) != len(wantEdges) {
+		t.Fatalf("edges = %+v, want two preserved and one cross edge", edges)
+	}
+	for _, edge := range edges {
+		if !wantEdges[edge.Correction+"/"+edge.Suppressed] {
+			t.Fatalf("unexpected edge %+v", edge)
+		}
+	}
+	if calls := compiler.Calls(); len(calls) != 1 || len(calls[0].Claims) != 0 {
+		t.Fatalf("compile calls = %+v, want merged effective set with all claims suppressed", calls)
+	}
+	if requests := provider.Requests(); len(requests) != 1 || !strings.Contains(requestText(requests[0]), "[new] The refuted fact is false.") {
+		t.Fatalf("match requests = %+v, want one cross-pair call with loser rows marked new", requests)
+	}
+
+	conn2 := migratedWikiDB(t, ctx)
+	defer conn2.Close()
+	saveMergeFixture(t, ctx, conn2)
+	noCallProvider := &scriptedProvider{}
+	noCallMatcher := matchstage.New(llmtest.NewClient(t, noCallProvider), llm.CallSite{Stage: "match", Config: llm.Config{Model: "match-model"}})
+	svc2 := wikidomain.NewService(conn2, nil, &scriptedMergeCompiler{}, mergeClockAt(time.Now()), wikidomain.WithMatcher(noCallMatcher))
+	noCallJob, err := svc2.MergeSubjects(ctx, "default", "subject-loser", "subject-winner")
+	if err != nil {
+		t.Fatalf("no-cross MergeSubjects: %v", err)
+	}
+	if processed, err := svc2.ProcessNext(ctx); err != nil || !processed {
+		t.Fatalf("no-cross ProcessNext = %v, %v", processed, err)
+	}
+	if status, _ := svc2.JobStatus(ctx, noCallJob); status.Status != wikidomain.JobDone || len(noCallProvider.Requests()) != 0 {
+		t.Fatalf("no-cross status/requests = %+v/%d, want done with no match call", status, len(noCallProvider.Requests()))
 	}
 }
 

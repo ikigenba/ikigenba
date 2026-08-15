@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -236,4 +237,170 @@ func TestIntegrateResolvesEdgesAndDeletesFullySuppressedPage(t *testing.T) {
 	if corrections != 1 || edges != 1 || subjects != 1 || pages != 0 {
 		t.Fatalf("corrections/edges/subjects/pages = %d/%d/%d/%d", corrections, edges, subjects, pages)
 	}
+}
+
+func TestStandingCorrectionSuppressesLaterReassertion(t *testing.T) {
+	// R-7RIT-INBA
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	seedCorrectedAda(t, ctx, conn, "old-claim-job")
+
+	q := newTestQueue(t)
+	svc := matchQueueService(conn, q)
+	jobID, extractRequest := ingestAndHandoff(t, ctx, svc, q)
+	q.add(queueItem{ID: "reassert-extract", Key: extractRequest.Key, Status: "done", Context: extractRequest.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada was born in 1900."]}]}`)})
+	if drain := svc.ProcessInbox(ctx); drain.Applied != 1 || len(drain.Errs) != 0 {
+		t.Fatalf("extract drain = %+v", drain)
+	}
+	matchRequest := latestQueueRequest(t, q, "/match/ada/")
+	q.add(queueItem{ID: "reassert-match", Key: matchRequest.Key, Status: "done", Context: matchRequest.Context, Result: json.RawMessage(`{"judgments":[{"correction":0,"refutes":[1]}]}`)})
+	if drain := svc.ProcessInbox(ctx); drain.Applied != 1 || len(drain.Errs) != 0 {
+		t.Fatalf("match drain = %+v", drain)
+	}
+	status, _ := svc.JobStatus(ctx, jobID)
+	if status.Status != wikidomain.JobDone {
+		t.Fatalf("job = %+v, want done", status)
+	}
+	var newClaimID string
+	if err := conn.QueryRowContext(ctx, `SELECT id FROM claims WHERE job_id=? AND body='Ada was born in 1900.'`, jobID).Scan(&newClaimID); err != nil || newClaimID == "0001-old-claim" {
+		t.Fatalf("new claim id = %q, %v", newClaimID, err)
+	}
+	var edgeCount int
+	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM suppressions WHERE correction='0002-standing-correction' AND suppressed IN ('0001-old-claim', ?)`, newClaimID).Scan(&edgeCount); err != nil || edgeCount != 2 {
+		t.Fatalf("standing correction edge count = %d, %v; want old and reasserted claims suppressed", edgeCount, err)
+	}
+	if _, err := wikidomain.NewPageStore(conn).GetBySubject(ctx, "subject-ada"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("page lookup = %v, want no page containing the reasserted falsehood", err)
+	}
+}
+
+func TestNewCorrectionRevivesClaimsSuppressedByOlderCorrection(t *testing.T) {
+	// R-7SQP-WF1Z
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	seedCorrectedAda(t, ctx, conn, "old-claim-job")
+
+	q := newTestQueue(t)
+	svc := matchQueueService(conn, q)
+	jobID, extractRequest := ingestAndHandoff(t, ctx, svc, q)
+	q.add(queueItem{ID: "revive-extract", Key: extractRequest.Key, Status: "done", Context: extractRequest.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada was born in 1900, not 1901."],"corrections":["The earlier correction was wrong."]}]}`)})
+	if drain := svc.ProcessInbox(ctx); drain.Applied != 1 || len(drain.Errs) != 0 {
+		t.Fatalf("extract drain = %+v", drain)
+	}
+	matchRequest := latestQueueRequest(t, q, "/match/ada/")
+	q.add(queueItem{ID: "revive-match", Key: matchRequest.Key, Status: "done", Context: matchRequest.Context, Result: json.RawMessage(`{"judgments":[{"correction":1,"contradicts":[0]}]}`)})
+	if drain := svc.ProcessInbox(ctx); drain.Applied != 1 || len(drain.Errs) != 0 {
+		t.Fatalf("match drain = %+v", drain)
+	}
+	compileRequest := latestQueueRequest(t, q, "/compile/ada/")
+	for _, want := range []string{"Ada was born in 1900.", "Ada was born in 1900, not 1901."} {
+		if !strings.Contains(compileRequest.Messages[0].Text, want) {
+			t.Fatalf("effective compile prompt missing revived/carried claim %q: %s", want, compileRequest.Messages[0].Text)
+		}
+	}
+	q.add(queueItem{ID: "revive-compile", Key: compileRequest.Key, Status: "done", Context: compileRequest.Context, Result: json.RawMessage(`{"title":"Ada","body":"Ada was born in 1900. Ada was born in 1900, not 1901."}`)})
+	if drain := svc.ProcessInbox(ctx); drain.Applied != 1 || len(drain.Errs) != 0 {
+		t.Fatalf("compile drain = %+v", drain)
+	}
+	status, _ := svc.JobStatus(ctx, jobID)
+	if status.Status != wikidomain.JobDone {
+		t.Fatalf("job = %+v, want done", status)
+	}
+	var newerCorrection string
+	if err := conn.QueryRowContext(ctx, `SELECT id FROM claims WHERE job_id=? AND kind='correction'`, jobID).Scan(&newerCorrection); err != nil {
+		t.Fatalf("new correction: %v", err)
+	}
+	var overrule int
+	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM suppressions WHERE correction=? AND suppressed='0002-standing-correction'`, newerCorrection).Scan(&overrule); err != nil || overrule != 1 {
+		t.Fatalf("new-to-old correction edge = %d, %v", overrule, err)
+	}
+	page, err := wikidomain.NewPageStore(conn).GetBySubject(ctx, "subject-ada")
+	if err != nil || !strings.Contains(page.Body, "Ada was born in 1900.") || !strings.Contains(page.Body, "not 1901") {
+		t.Fatalf("revived page = %+v, %v", page, err)
+	}
+}
+
+func TestRerunReplacesAndRematchesSuppressedClaim(t *testing.T) {
+	// R-7TYM-A6SO
+	ctx := context.Background()
+	conn := migratedWikiDB(t, ctx)
+	defer conn.Close()
+	q := newTestQueue(t)
+	svc := matchQueueService(conn, q)
+	jobID, _ := ingestAndHandoff(t, ctx, svc, q)
+	if _, err := svc.Abort(ctx, jobID); err != nil {
+		t.Fatalf("Abort: %v", err)
+	}
+	seedCorrectedAda(t, ctx, conn, jobID)
+
+	if result, err := svc.Rerun(ctx, jobID); err != nil || !result.Requeued {
+		t.Fatalf("Rerun = %+v, %v", result, err)
+	}
+	if processed, err := svc.ProcessNext(ctx); err != nil || !processed {
+		t.Fatalf("rerun handoff = %v, %v", processed, err)
+	}
+	extractRequest := latestQueueRequest(t, q, "/extract/")
+	q.add(queueItem{ID: "rerun-rematch-extract", Key: extractRequest.Key, Status: "done", Context: extractRequest.Context, Result: json.RawMessage(`{"subjects":[{"type":"entity","kind":"person","name":"Ada","claims":["Ada was born in 1900."]}]}`)})
+	if drain := svc.ProcessInbox(ctx); drain.Applied != 1 || len(drain.Errs) != 0 {
+		t.Fatalf("extract drain = %+v", drain)
+	}
+	matchRequest := latestQueueRequest(t, q, "/match/ada/")
+	q.add(queueItem{ID: "rerun-rematch", Key: matchRequest.Key, Status: "done", Context: matchRequest.Context, Result: json.RawMessage(`{"judgments":[{"correction":0,"refutes":[0]}]}`)})
+	if drain := svc.ProcessInbox(ctx); drain.Applied != 1 || len(drain.Errs) != 0 {
+		t.Fatalf("match drain = %+v", drain)
+	}
+	status, _ := svc.JobStatus(ctx, jobID)
+	if status.Status != wikidomain.JobDone {
+		t.Fatalf("job = %+v, want done", status)
+	}
+	var freshID string
+	if err := conn.QueryRowContext(ctx, `SELECT id FROM claims WHERE job_id=? AND kind='claim'`, jobID).Scan(&freshID); err != nil || freshID == "0001-old-claim" {
+		t.Fatalf("fresh replacement id = %q, %v", freshID, err)
+	}
+	var oldRows, oldEdges, freshEdges int
+	_ = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM claims WHERE id='0001-old-claim'`).Scan(&oldRows)
+	_ = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM suppressions WHERE suppressed='0001-old-claim'`).Scan(&oldEdges)
+	_ = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM suppressions WHERE correction='0002-standing-correction' AND suppressed=?`, freshID).Scan(&freshEdges)
+	if oldRows != 0 || oldEdges != 0 || freshEdges != 1 {
+		t.Fatalf("old rows/edges and fresh edge = %d/%d/%d, want 0/0/1", oldRows, oldEdges, freshEdges)
+	}
+	if _, err := wikidomain.NewPageStore(conn).GetBySubject(ctx, "subject-ada"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("page lookup = %v, want rerun page still free of falsehood", err)
+	}
+}
+
+func seedCorrectedAda(t *testing.T, ctx context.Context, conn *sql.DB, claimJobID string) {
+	t.Helper()
+	if err := wikidomain.NewSubjectStore(conn).Save(ctx, wikidomain.Subject{ID: "subject-ada", Name: "Ada", Type: "entity"}); err != nil {
+		t.Fatalf("Save Ada: %v", err)
+	}
+	claims := wikidomain.NewClaimStore(conn)
+	for _, claim := range []wikidomain.Claim{
+		{ID: "0001-old-claim", SubjectID: "subject-ada", JobID: claimJobID, Body: "Ada was born in 1900.", Kind: wikidomain.ClaimKind},
+		{ID: "0002-standing-correction", SubjectID: "subject-ada", JobID: "standing-correction-job", Body: "Ada was not born in 1900.", Kind: wikidomain.CorrectionKind},
+	} {
+		if err := claims.Save(ctx, claim); err != nil {
+			t.Fatalf("Save seed claim: %v", err)
+		}
+	}
+	if err := wikidomain.NewSuppressionStore(conn).Insert(ctx, wikidomain.Suppression{Correction: "0002-standing-correction", Suppressed: "0001-old-claim", CreatedAt: 1}); err != nil {
+		t.Fatalf("Insert standing edge: %v", err)
+	}
+	if err := wikidomain.NewPageStore(conn).Upsert(ctx, wikidomain.Page{ID: "subject-ada", SubjectID: "subject-ada", Title: "Ada", Body: "No falsehood."}); err != nil {
+		t.Fatalf("Upsert seed page: %v", err)
+	}
+}
+
+func latestQueueRequest(t *testing.T, q *testQueue, keyContains string) queueRequest {
+	t.Helper()
+	requests, _, _ := q.snapshot()
+	for i := len(requests) - 1; i >= 0; i-- {
+		if strings.Contains(requests[i].Key, keyContains) {
+			return requests[i]
+		}
+	}
+	t.Fatalf("no queue request containing %q in %+v", keyContains, requests)
+	return queueRequest{}
 }
