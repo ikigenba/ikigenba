@@ -19,7 +19,7 @@ Verification ids change.
 - D10 → `project/design/D10.md` — Adopt the suite testing-language contract — adopts `R-O1AD-MRKW`, `R-O2IA-0JBL` (root `project/design/D23.md`); mints none of its own
 - D11 → `project/design/D11.md` — The canonical landing page (byte-for-byte suite template, telemetry text only) — R-6B96-6B5S, R-6CH2-K2WH
 - D12 → `project/design/D12.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
-- D13 → `project/design/D13.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
+- D13 → `project/design/D13.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 
