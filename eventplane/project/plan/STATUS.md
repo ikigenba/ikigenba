@@ -9,4 +9,6 @@ and its `phase-NN.md` body file in the completion commit — there is no `✅`
 marker; done is gone. No bare status glyph appears outside phase lines, so the
 anchored grep matches only phase lines.
 
-Next phase: 11
+Next phase: 12
+
+- Phase 11 ⬜ realizes D12 — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint eventplane` exits 0)
