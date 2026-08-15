@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 178
-
-- Phase 177 ⬜ realizes R-7E3X-B65N, R-7YU7-T9RG, R-8024-71I5, R-81A0-KT8U — autotune: match folder, scorer, extract corrections cases
