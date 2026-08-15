@@ -3,13 +3,11 @@ package dropbox
 import (
 	"context"
 	"database/sql"
+	"dropbox/internal/db"
 	"errors"
 	"testing"
 
 	appkitdatabase "appkit/db"
-
-	"dropbox/internal/db"
-
 	_ "modernc.org/sqlite"
 )
 

@@ -25,23 +25,20 @@
 package main
 
 import (
+	"appkit"
+	"appkit/config"
 	"context"
+	"dropbox/internal/db"
+	"dropbox/internal/dropbox"
+	"dropbox/internal/mcp"
+	"eventplane/outbox"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"registry"
 	"strconv"
 	"time"
-
-	"appkit"
-	"appkit/config"
-
-	"dropbox/internal/db"
-	"dropbox/internal/dropbox"
-	"dropbox/internal/mcp"
-
-	"eventplane/outbox"
-	"registry"
 )
 
 func main() {

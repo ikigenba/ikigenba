@@ -236,7 +236,7 @@ type apiError struct {
 // rpcCall posts reqBody (JSON-marshaled) to host+path with the bearer and
 // decodes the response into out. On a 401 it forces one token refresh and
 // retries once.
-func (c *Client) rpcCall(ctx context.Context, host, path string, reqBody, out any) error {
+func (c *Client) rpcCall(ctx context.Context, path string, reqBody, out any) error {
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
 		return err
@@ -246,7 +246,7 @@ func (c *Client) rpcCall(ctx context.Context, host, path string, reqBody, out an
 		if terr != nil {
 			return nil, terr
 		}
-		req, rerr := http.NewRequestWithContext(ctx, http.MethodPost, host+path, bytes.NewReader(payload))
+		req, rerr := http.NewRequestWithContext(ctx, http.MethodPost, hostRPC+path, bytes.NewReader(payload))
 		if rerr != nil {
 			return nil, rerr
 		}
@@ -390,17 +390,17 @@ func (c *Client) Upload(ctx context.Context, path string, src io.Reader, size in
 
 // CreateFolder creates path in the app folder.
 func (c *Client) CreateFolder(ctx context.Context, path string) error {
-	return c.rpcCall(ctx, hostRPC, "/2/files/create_folder_v2", map[string]any{"path": path, "autorename": false}, nil)
+	return c.rpcCall(ctx, "/2/files/create_folder_v2", map[string]any{"path": path, "autorename": false}, nil)
 }
 
 // DeletePath removes path from the app folder.
 func (c *Client) DeletePath(ctx context.Context, path string) error {
-	return c.rpcCall(ctx, hostRPC, "/2/files/delete_v2", map[string]string{"path": path}, nil)
+	return c.rpcCall(ctx, "/2/files/delete_v2", map[string]string{"path": path}, nil)
 }
 
 // Move relocates from to in the app folder without creating a conflict copy.
 func (c *Client) Move(ctx context.Context, from, to string) error {
-	return c.rpcCall(ctx, hostRPC, "/2/files/move_v2", map[string]any{"from_path": from, "to_path": to, "autorename": false}, nil)
+	return c.rpcCall(ctx, "/2/files/move_v2", map[string]any{"from_path": from, "to_path": to, "autorename": false}, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -457,7 +457,7 @@ func (c *Client) ListFolder(ctx context.Context) (ListResult, error) {
 		"recursive": true,
 	}
 	var r listResp
-	if err := c.rpcCall(ctx, hostRPC, "/2/files/list_folder", reqBody, &r); err != nil {
+	if err := c.rpcCall(ctx, "/2/files/list_folder", reqBody, &r); err != nil {
 		return ListResult{}, err
 	}
 	return toListResult(r), nil
@@ -468,7 +468,7 @@ func (c *Client) ListFolder(ctx context.Context) (ListResult, error) {
 func (c *Client) ListFolderContinue(ctx context.Context, cursor string) (ListResult, error) {
 	reqBody := map[string]any{"cursor": cursor}
 	var r listResp
-	if err := c.rpcCall(ctx, hostRPC, "/2/files/list_folder/continue", reqBody, &r); err != nil {
+	if err := c.rpcCall(ctx, "/2/files/list_folder/continue", reqBody, &r); err != nil {
 		return ListResult{}, err
 	}
 	return toListResult(r), nil
@@ -561,7 +561,7 @@ func (c *Client) Download(ctx context.Context, path, rev string) ([]byte, FileMe
 		if terr != nil {
 			return nil, terr
 		}
-		req, rerr := http.NewRequestWithContext(ctx, http.MethodPost, hostContent+"/2/files/download", nil)
+		req, rerr := http.NewRequestWithContext(ctx, http.MethodPost, hostContent+"/2/files/download", http.NoBody)
 		if rerr != nil {
 			return nil, rerr
 		}

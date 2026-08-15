@@ -136,7 +136,7 @@ func (Store) ClearUpload(tx *sql.Tx, path string) error {
 
 // FailUpload retains a failed request, increments its retry count, and moves its
 // backoff gate. Poisoned requests remain in the queue but stop being due.
-func (Store) FailUpload(tx *sql.Tx, path string, errMsg string, nextAttemptAt string, poisoned bool) error {
+func (Store) FailUpload(tx *sql.Tx, path, errMsg, nextAttemptAt string, poisoned bool) error {
 	state := "pending"
 	if poisoned {
 		state = "failed"
@@ -310,7 +310,7 @@ func (Store) DeleteDirSubtree(tx *sql.Tx, path string) (files, dirs []string, er
 }
 
 // RenameDirSubtree reparents a directory and all indexed descendants.
-func (Store) RenameDirSubtree(tx *sql.Tx, old, new string) error {
+func (Store) RenameDirSubtree(tx *sql.Tx, old, newPath string) error {
 	prefix, like := foldPath(old), escapeLike(foldPath(old))+"/%"
 	type renameRow struct{ path, lower string }
 	var rows []renameRow
@@ -334,7 +334,7 @@ func (Store) RenameDirSubtree(tx *sql.Tx, old, new string) error {
 	if len(rows) == 0 {
 		return ErrNotFound
 	}
-	replace := func(p string) string { return new + p[len(old):] }
+	replace := func(p string) string { return newPath + p[len(old):] }
 	for _, table := range []string{"directories", "files"} {
 		var updates []renameRow
 		r, err := tx.Query(`SELECT path, path_lower FROM `+table+` WHERE path_lower = ? OR path_lower LIKE ? ESCAPE '\' ORDER BY LENGTH(path_lower) DESC`, prefix, like)

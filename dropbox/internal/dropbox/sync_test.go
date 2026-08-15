@@ -4,12 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"eventplane/correlation"
 	"fmt"
 	"io"
 	"testing"
 	"time"
-
-	"eventplane/correlation"
 )
 
 // sync_test.go is the engine gate's backbone (PLAN.md §10): a recording

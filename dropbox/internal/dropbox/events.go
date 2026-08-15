@@ -4,10 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/outbox"
 	"fmt"
 	"net/url"
-
-	"eventplane/outbox"
 	"registry"
 )
 

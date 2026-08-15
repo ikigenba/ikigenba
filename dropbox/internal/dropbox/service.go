@@ -8,7 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"path"
+	pathpkg "path"
 	"strings"
 	"time"
 )
@@ -57,7 +57,7 @@ func normalizePath(p string) string {
 	if p == "" {
 		return ""
 	}
-	return path.Clean("/" + p)
+	return pathpkg.Clean("/" + p)
 }
 
 // ── identity probes (MCP) ─────────────────────────────────────────────────
@@ -157,11 +157,12 @@ func (s *Service) Write(ctx context.Context, path string, src io.Reader, clientI
 	now := s.now()
 	err = s.inTx(ctx, func(tx *sql.Tx) error {
 		current, getErr := s.Store.GetFile(tx, path)
-		if errors.Is(getErr, ErrNotFound) {
+		switch {
+		case errors.Is(getErr, ErrNotFound):
 			created = true
-		} else if getErr != nil {
+		case getErr != nil:
 			return getErr
-		} else {
+		default:
 			row.Rev = current.Rev
 		}
 		if err := s.upsertDirParents(tx, path); err != nil {

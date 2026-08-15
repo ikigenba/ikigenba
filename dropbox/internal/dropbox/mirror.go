@@ -65,11 +65,11 @@ func NewMirror(mirrorPath string) (*Mirror, error) {
 	}
 	// EvalSymlinks resolves the root once so confinement compares real paths;
 	// the root now exists so this cannot fail on a missing component.
-	real, err := filepath.EvalSymlinks(abs)
+	realPath, err := filepath.EvalSymlinks(abs)
 	if err != nil {
 		return nil, fmt.Errorf("resolve mirror root symlinks: %w", err)
 	}
-	return &Mirror{root: real}, nil
+	return &Mirror{root: realPath}, nil
 }
 
 // Root returns the absolute, symlink-resolved mirror root.

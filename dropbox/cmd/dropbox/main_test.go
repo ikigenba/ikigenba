@@ -1,11 +1,15 @@
 package main
 
 import (
+	"appkit/config"
+	"appkit/manifest"
 	"bytes"
 	"context"
 	"database/sql"
+	"dropbox/internal/db"
 	"encoding/json"
 	"errors"
+	"eventplane/outbox"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -20,24 +24,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"registry"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"appkit/config"
 	appkitdatabase "appkit/db"
-	"appkit/manifest"
+
 	appkitserver "appkit/server"
 	appweb "appkit/web"
 
-	"dropbox/internal/db"
-	dropboxservice "dropbox/internal/dropbox"
-
-	"eventplane/outbox"
-	"registry"
-
 	_ "modernc.org/sqlite"
+
+	dropboxservice "dropbox/internal/dropbox"
 )
 
 func TestRegistrySourcePortsIncludesEveryRegisteredServiceAndNoExtras(t *testing.T) {

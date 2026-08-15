@@ -1,12 +1,18 @@
 package mcp
 
 import (
+	"appkit/httpclient"
+	"appkit/server"
+	"appkit/telemetry"
 	"bytes"
 	"context"
 	"database/sql"
+	"dropbox/internal/db"
+	"dropbox/internal/dropbox"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
 	"io"
 	"log/slog"
 	"net/http"
@@ -18,14 +24,8 @@ import (
 	"time"
 
 	appkitdatabase "appkit/db"
-	"appkit/httpclient"
-	appkitmcp "appkit/mcp"
-	"appkit/server"
-	"appkit/telemetry"
 
-	"dropbox/internal/db"
-	"dropbox/internal/dropbox"
-	"eventplane/correlation"
+	appkitmcp "appkit/mcp"
 
 	_ "modernc.org/sqlite"
 )

@@ -5,13 +5,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"eventplane/correlation"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
-
-	"eventplane/correlation"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

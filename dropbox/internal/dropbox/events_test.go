@@ -5,15 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"eventplane/correlation"
+	"eventplane/outbox"
 	"net/http"
 	"net/http/httptest"
+	"registry"
 	"strings"
 	"testing"
 	"time"
-
-	"eventplane/correlation"
-	"eventplane/outbox"
-	"registry"
 )
 
 func TestEventsSamplesUseRegistryDropBoxContentOrigin(t *testing.T) {

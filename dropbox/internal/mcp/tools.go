@@ -1,8 +1,10 @@
 package mcp
 
 import (
+	"appkit/server"
 	"bytes"
 	"context"
+	"dropbox/internal/dropbox"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -13,9 +15,6 @@ import (
 	"strings"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-
-	"dropbox/internal/dropbox"
 )
 
 // maxGetBytes caps the file size the `get` tool will return (DECISIONS §5):
@@ -184,7 +183,7 @@ func arrayOf(items map[string]any) map[string]any {
 // full page was returned (len==limit) so a caller knows to fetch again. Each
 // entry carries the abbreviated 8-char hash under `hash`; the full content_hash
 // lives on `get`.
-func (h *toolHandlers) toolList(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+func (h *toolHandlers) toolList(_ context.Context, raw json.RawMessage) (map[string]any, error) {
 	var a struct {
 		Path   string `json:"path"`
 		Cursor string `json:"cursor"`
@@ -230,7 +229,7 @@ func (h *toolHandlers) toolList(ctx context.Context, raw json.RawMessage) (map[s
 // resolution + the optional rev-pin (ErrRevMismatch → conflict). The bytes are
 // returned standard-base64 under content_base64; the full content_hash and the
 // index's updated_at accompany them.
-func (h *toolHandlers) toolGet(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+func (h *toolHandlers) toolGet(_ context.Context, raw json.RawMessage) (map[string]any, error) {
 	var a struct {
 		Path string  `json:"path"`
 		Rev  *string `json:"rev"`
@@ -326,7 +325,7 @@ func (h *toolHandlers) putSourceURL(ctx context.Context, path, sourceURL, client
 		return toolErr(dropbox.ErrValidation), nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 	if err != nil {
 		return toolErr(dropbox.ErrValidation), nil
 	}

@@ -1,10 +1,13 @@
 package dropbox
 
 import (
+	"appkit/httpclient"
+	"appkit/telemetry"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"eventplane/correlation"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,10 +15,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"appkit/httpclient"
-	"appkit/telemetry"
-	"eventplane/correlation"
 )
 
 // TestContentHashEmpty pins the documented empty-file case: with no blocks, the
@@ -238,8 +237,10 @@ func TestTokenRefreshAndListFolder(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{
 				"cursor": "CURSOR-1", "has_more": false,
 				"entries": []map[string]any{
-					{".tag": "file", "name": "a.txt", "path_lower": "/a.txt",
-						"path_display": "/A.txt", "rev": "01ab", "size": 3, "content_hash": "hh"},
+					{
+						".tag": "file", "name": "a.txt", "path_lower": "/a.txt",
+						"path_display": "/A.txt", "rev": "01ab", "size": 3, "content_hash": "hh",
+					},
 					{".tag": "deleted", "name": "g", "path_lower": "/g", "path_display": "/G"},
 				},
 			})

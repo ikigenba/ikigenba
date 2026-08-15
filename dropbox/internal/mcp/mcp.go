@@ -3,13 +3,12 @@
 package mcp
 
 import (
+	"appkit"
+	"dropbox/internal/dropbox"
 	"fmt"
 	"net/http"
 
-	"appkit"
 	appkitmcp "appkit/mcp"
-
-	"dropbox/internal/dropbox"
 )
 
 // Instructions describes dropbox's MCP surface to clients during initialize.

@@ -106,7 +106,7 @@ func (s *Service) uploadRow(ctx context.Context, row UploadQueueRow) error {
 
 func (s *Service) recordUploadFailure(ctx context.Context, row UploadQueueRow, cause error) error {
 	attempts := row.Attempts + 1
-	backoff := uploaderBackoffBase << min(attempts-1, 6)
+	backoff := uploaderBackoffBase << minInt(attempts-1, 6)
 	if backoff > uploaderBackoffMax {
 		backoff = uploaderBackoffMax
 	}
@@ -116,7 +116,7 @@ func (s *Service) recordUploadFailure(ctx context.Context, row UploadQueueRow, c
 	})
 }
 
-func min(a, b int) int {
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
