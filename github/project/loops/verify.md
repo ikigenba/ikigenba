@@ -54,6 +54,16 @@ Run `head -n 1 project/plan/STATUS.md` and confirm it prints **exactly**:
    not optional: it is this tree's declared GOWORK mode and proves standalone
    module resolution.
 
+   Then run the tiered lint gate:
+
+   ```
+   ../bin/lint github
+   ```
+
+   It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+   (absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+   lint finding at the registered tier is an open gap, not a pass.
+
 3. **Run the skip ban** — `root project/design/D23.md` bans `t.Skip` and its
    variants outside `live`-tagged files, and **this tree has no live layer**, so
    any occurrence anywhere is a gap:
@@ -180,9 +190,9 @@ Run `head -n 1 project/plan/STATUS.md` and confirm it prints **exactly**:
 
 - Never write or fix production code; never write the brief's `## Contract` region.
 - Never delete a phase's `STATUS.md` line or `phase-NN.md` on anything short of a
-  green suite **and** full, reachable coverage of every id (this phase's and the
-  filtered ratchet); a **skipped or statically-unreachable** id test is uncovered —
-  a skip is never acceptable green.
+  green suite **and** clean lint (at the registered tier) **and** full, reachable
+  coverage of every id (this phase's and the filtered ratchet); a **skipped or
+  statically-unreachable** id test is uncovered — a skip is never acceptable green.
 - Never treat `R-DMUT-QF4A` as a gate obligation, and never write or accept a test
   for it: it is manual-layer, proven by the operator in
   `project/github-verification.md`. Equally, never widen the ratchet exemption
