@@ -1,6 +1,8 @@
 package gmail
 
 import (
+	"appkit/server"
+	"appkit/telemetry"
 	"context"
 	"encoding/json"
 	"io"
@@ -11,9 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"appkit/server"
-	"appkit/telemetry"
 )
 
 type recordSink struct {

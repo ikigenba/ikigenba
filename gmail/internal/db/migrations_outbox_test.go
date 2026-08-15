@@ -3,12 +3,12 @@ package db
 import (
 	"context"
 	"database/sql"
+	"eventplane/outbox"
 	"reflect"
 	"strings"
 	"testing"
 
 	appkitdb "appkit/db"
-	"eventplane/outbox"
 )
 
 // TestOutboxMigrationsMatchLibrarySchema guards the forward migration from the
@@ -87,7 +87,8 @@ CREATE INDEX idx_outbox_created_at ON outbox(created_at);
 
 func tableColumns(t *testing.T, conn interface {
 	Query(string, ...any) (*sql.Rows, error)
-}) map[string]bool {
+},
+) map[string]bool {
 	t.Helper()
 	columns := map[string]bool{}
 	rows, err := conn.Query(`PRAGMA table_info(outbox)`)

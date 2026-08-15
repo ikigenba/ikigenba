@@ -4,10 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"registry"
 	"strings"
 	"testing"
-
-	"registry"
 )
 
 func TestNginxLandingLocationIsExactSessionGatedRoot(t *testing.T) {

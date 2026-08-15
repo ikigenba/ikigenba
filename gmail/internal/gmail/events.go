@@ -4,9 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-
 	"eventplane/outbox"
+	"fmt"
 )
 
 // events.go holds the producer's event payload builders and the EventSink seam.

@@ -1,21 +1,20 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"eventplane/outbox"
 	"fmt"
 	"mime"
 	"net/url"
 	"strings"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
 
 	gm "gmail/internal/gmail"
-
-	"eventplane/outbox"
 )
 
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name
@@ -131,8 +130,8 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			Name:        tool("list"),
 			Description: "List or SEARCH messages (one call either way). Returns bare message pointers {id, thread_id} plus a next_page_token for pagination and a result_size_estimate. Use read to fetch a pointer's headers/body.",
 			InputSchema: obj(map[string]any{
-				"q":          descTyp("string", "optional Gmail search query (e.g. 'from:alice@example.com', 'subject:invoice', 'is:unread', 'after:2026/01/01'); empty lists recent messages"),
-				"page_token": descTyp("string", "optional pagination cursor from a prior call's next_page_token"),
+				"q":          descString("optional Gmail search query (e.g. 'from:alice@example.com', 'subject:invoice', 'is:unread', 'after:2026/01/01'); empty lists recent messages"),
+				"page_token": descString("optional pagination cursor from a prior call's next_page_token"),
 			}),
 			OutputSchema: obj(map[string]any{
 				"messages": map[string]any{"type": "array", "items": obj(map[string]any{
@@ -150,7 +149,7 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			Name:        tool("read"),
 			Description: "Read a full message by id: its headers, snippet, label ids, and attachment entries (filename, size, mime_type, content_url). content_url is a durable loopback reference for services to fetch bytes; agents pass it rather than fetching it.",
 			InputSchema: obj(map[string]any{
-				"id": descTyp("string", "the message id (from list/search or an event payload)"),
+				"id": descString("the message id (from list/search or an event payload)"),
 			}, "id"),
 			OutputSchema: messageSchema(),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
@@ -161,7 +160,7 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			Name:        tool("thread"),
 			Description: "Read a whole thread by id: the thread's messages in order, each with headers, snippet, label ids, and attachment entries (filename, size, mime_type, content_url). content_url is a durable loopback reference for services to fetch bytes; agents pass it rather than fetching it.",
 			InputSchema: obj(map[string]any{
-				"id": descTyp("string", "the thread id (thread_id from a message or event payload)"),
+				"id": descString("the thread id (thread_id from a message or event payload)"),
 			}, "id"),
 			OutputSchema: obj(map[string]any{
 				"id":       map[string]any{"type": "string"},
@@ -191,9 +190,9 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			Name:        tool("send"),
 			Description: "Send an email. Composes an RFC-2822 message from the structured fields and sends it via Gmail. The send shows up as a sent event on the next poll. Returns the created message {id, thread_id, label_ids}.",
 			InputSchema: obj(map[string]any{
-				"to":      descTyp("string", "recipient email address (To: header)"),
-				"subject": descTyp("string", "the Subject: header"),
-				"body":    descTyp("string", "the plain-text message body"),
+				"to":      descString("recipient email address (To: header)"),
+				"subject": descString("the Subject: header"),
+				"body":    descString("the plain-text message body"),
 			}, "to", "subject", "body"),
 			OutputSchema: obj(map[string]any{
 				"id":        map[string]any{"type": "string"},
@@ -208,9 +207,9 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			Name:        tool("draft"),
 			Description: "Create a draft (does NOT send). Composes an RFC-2822 message from the structured fields and saves it as a Gmail draft. Returns the created draft {id, message:{id, thread_id}}.",
 			InputSchema: obj(map[string]any{
-				"to":      descTyp("string", "recipient email address (To: header)"),
-				"subject": descTyp("string", "the Subject: header"),
-				"body":    descTyp("string", "the plain-text message body"),
+				"to":      descString("recipient email address (To: header)"),
+				"subject": descString("the Subject: header"),
+				"body":    descString("the plain-text message body"),
 			}, "to", "subject", "body"),
 			OutputSchema: obj(map[string]any{
 				"id": map[string]any{"type": "string"},
@@ -227,8 +226,8 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			Name:        tool("label"),
 			Description: "Apply a label to a message (adds the label id). Returns the updated message {id, label_ids}.",
 			InputSchema: obj(map[string]any{
-				"id":       descTyp("string", "the message id"),
-				"label_id": descTyp("string", "the label id to add (a system id like INBOX/UNREAD or a user label id from the labels tool)"),
+				"id":       descString("the message id"),
+				"label_id": descString("the label id to add (a system id like INBOX/UNREAD or a user label id from the labels tool)"),
 			}, "id", "label_id"),
 			OutputSchema: obj(map[string]any{
 				"id":        map[string]any{"type": "string"},
@@ -242,8 +241,8 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			Name:        tool("unlabel"),
 			Description: "Remove a label from a message (removes the label id). Remove INBOX to archive; remove UNREAD to mark read. Returns the updated message {id, label_ids}.",
 			InputSchema: obj(map[string]any{
-				"id":       descTyp("string", "the message id"),
-				"label_id": descTyp("string", "the label id to remove (e.g. INBOX to archive, UNREAD to mark read)"),
+				"id":       descString("the message id"),
+				"label_id": descString("the label id to remove (e.g. INBOX to archive, UNREAD to mark read)"),
 			}, "id", "label_id"),
 			OutputSchema: obj(map[string]any{
 				"id":        map[string]any{"type": "string"},
@@ -257,7 +256,7 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			Name:        tool("trash"),
 			Description: "Move a message to Trash (RECOVERABLE). Emits a deleted event on the next poll. Returns the updated message {id, label_ids}.",
 			InputSchema: obj(map[string]any{
-				"id": descTyp("string", "the message id to trash"),
+				"id": descString("the message id to trash"),
 			}, "id"),
 			OutputSchema: obj(map[string]any{
 				"id":        map[string]any{"type": "string"},
@@ -271,7 +270,7 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 			Name:        tool("delete"),
 			Description: "PERMANENTLY delete a message (NOT recoverable — bypasses Trash). This is the full-scope destructive operation; prefer trash unless permanent removal is intended. Returns {id, deleted:true}.",
 			InputSchema: obj(map[string]any{
-				"id": descTyp("string", "the message id to permanently delete"),
+				"id": descString("the message id to permanently delete"),
 			}, "id"),
 			OutputSchema: obj(map[string]any{
 				"id":      map[string]any{"type": "string"},
@@ -294,8 +293,8 @@ func obj(props map[string]any, required ...string) map[string]any {
 	return o
 }
 
-func descTyp(t, description string) map[string]any {
-	return map[string]any{"type": t, "description": description}
+func descString(description string) map[string]any {
+	return map[string]any{"type": "string", "description": description}
 }
 
 func messageSchema() map[string]any {

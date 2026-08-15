@@ -1,6 +1,7 @@
 package gmail
 
 import (
+	"appkit/telemetry"
 	"context"
 	"database/sql"
 	"errors"
@@ -8,8 +9,6 @@ import (
 	"log/slog"
 	"strconv"
 	"time"
-
-	"appkit/telemetry"
 )
 
 // sync.go is the producer engine (decisions §1 producer + scheduled + cursor

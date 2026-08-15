@@ -21,23 +21,21 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"net/http"
-	"os"
-	"strconv"
-	"time"
-
 	"appkit"
 	"appkit/config"
 	"appkit/web"
-
-	"gmail/internal/db"
-	gm "gmail/internal/gmail"
-	"gmail/internal/mcp"
-
+	"context"
 	"eventplane/outbox"
+	"fmt"
+	"gmail/internal/db"
+	"gmail/internal/mcp"
+	"net/http"
+	"os"
 	"registry"
+	"strconv"
+	"time"
+
+	gm "gmail/internal/gmail"
 )
 
 func main() {

@@ -5,6 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/correlation"
+	"eventplane/outbox"
+	"gmail/internal/db"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,10 +15,6 @@ import (
 	"testing"
 
 	appkitdatabase "appkit/db"
-	"gmail/internal/db"
-
-	"eventplane/correlation"
-	"eventplane/outbox"
 )
 
 // ── test harness ─────────────────────────────────────────────────────────────

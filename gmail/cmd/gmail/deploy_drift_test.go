@@ -3,11 +3,10 @@ package main
 import (
 	"os"
 	"regexp"
+	"registry"
 	"strconv"
 	"strings"
 	"testing"
-
-	"registry"
 )
 
 func TestCommittedDeployArtifactPortsAgreeWithRegistry(t *testing.T) {

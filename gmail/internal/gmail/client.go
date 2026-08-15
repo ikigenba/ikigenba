@@ -18,6 +18,7 @@ package gmail
 // refresh call itself: the client FAILS LOUDLY (ErrInvalidGrant) — it does NOT
 // spin/retry, because the token needs human re-consent (decisions §2).
 import (
+	"appkit/httpclient"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -30,8 +31,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"appkit/httpclient"
 )
 
 // Google hosts (decisions §2). Kept as vars (not consts) solely so tests can
@@ -308,7 +307,7 @@ func (c *Client) HistoryList(ctx context.Context, startHistoryID, pageToken stri
 	}
 	var r HistoryListResult
 	if err := c.rpcCall(ctx, http.MethodGet, "/history", q, nil, &r); err != nil {
-		if isStatus(err, http.StatusNotFound) {
+		if isNotFound(err) {
 			return HistoryListResult{}, fmt.Errorf("%w: history cursor %s expired", ErrNotFound, startHistoryID)
 		}
 		return HistoryListResult{}, err
@@ -331,7 +330,7 @@ func (c *Client) MessageGet(ctx context.Context, id, format string) (Message, er
 	q.Set("format", format)
 	var m Message
 	if err := c.rpcCall(ctx, http.MethodGet, "/messages/"+url.PathEscape(id), q, nil, &m); err != nil {
-		if isStatus(err, http.StatusNotFound) {
+		if isNotFound(err) {
 			return Message{}, fmt.Errorf("%w: message %s", ErrNotFound, id)
 		}
 		return Message{}, err
@@ -347,7 +346,7 @@ func (c *Client) AttachmentGet(ctx context.Context, messageID, attachmentID stri
 	var body Body
 	path := "/messages/" + url.PathEscape(messageID) + "/attachments/" + url.PathEscape(attachmentID)
 	if err := c.rpcCall(ctx, http.MethodGet, path, nil, nil, &body); err != nil {
-		if isStatus(err, http.StatusNotFound) {
+		if isNotFound(err) {
 			return nil, fmt.Errorf("%w: attachment %s", ErrNotFound, attachmentID)
 		}
 		return nil, err
@@ -391,7 +390,7 @@ func (c *Client) ThreadGet(ctx context.Context, id string) (Thread, error) {
 	}
 	var t Thread
 	if err := c.rpcCall(ctx, http.MethodGet, "/threads/"+url.PathEscape(id), nil, nil, &t); err != nil {
-		if isStatus(err, http.StatusNotFound) {
+		if isNotFound(err) {
 			return Thread{}, fmt.Errorf("%w: thread %s", ErrNotFound, id)
 		}
 		return Thread{}, err
@@ -455,7 +454,7 @@ func (c *Client) MessageModify(ctx context.Context, id string, add, remove []str
 	}
 	var m Message
 	if err := c.rpcCall(ctx, http.MethodPost, "/messages/"+url.PathEscape(id)+"/modify", nil, reqBody, &m); err != nil {
-		if isStatus(err, http.StatusNotFound) {
+		if isNotFound(err) {
 			return Message{}, fmt.Errorf("%w: message %s", ErrNotFound, id)
 		}
 		return Message{}, err
@@ -471,7 +470,7 @@ func (c *Client) MessageTrash(ctx context.Context, id string) (Message, error) {
 	}
 	var m Message
 	if err := c.rpcCall(ctx, http.MethodPost, "/messages/"+url.PathEscape(id)+"/trash", nil, nil, &m); err != nil {
-		if isStatus(err, http.StatusNotFound) {
+		if isNotFound(err) {
 			return Message{}, fmt.Errorf("%w: message %s", ErrNotFound, id)
 		}
 		return Message{}, err
@@ -486,7 +485,7 @@ func (c *Client) MessageDelete(ctx context.Context, id string) error {
 		return fmt.Errorf("%w: message id required", ErrValidation)
 	}
 	if err := c.rpcCall(ctx, http.MethodDelete, "/messages/"+url.PathEscape(id), nil, nil, nil); err != nil {
-		if isStatus(err, http.StatusNotFound) {
+		if isNotFound(err) {
 			return fmt.Errorf("%w: message %s", ErrNotFound, id)
 		}
 		return err
@@ -494,9 +493,9 @@ func (c *Client) MessageDelete(ctx context.Context, id string) error {
 	return nil
 }
 
-// isStatus reports whether err is a statusError carrying the given HTTP status.
+// isNotFound reports whether err is a statusError carrying HTTP 404.
 // (statusError stringifies as "gmail: status N: ..." — checked by prefix.)
-func isStatus(err error, status int) bool {
+func isNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -504,5 +503,5 @@ func isStatus(err error, status int) bool {
 	if errors.Is(err, ErrInvalidGrant) {
 		return false
 	}
-	return strings.HasPrefix(err.Error(), fmt.Sprintf("gmail: status %d:", status))
+	return strings.HasPrefix(err.Error(), "gmail: status 404:")
 }

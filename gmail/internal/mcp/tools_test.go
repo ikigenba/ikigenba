@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"registry"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,8 +19,6 @@ import (
 	appkitmcp "appkit/mcp"
 
 	gm "gmail/internal/gmail"
-
-	"registry"
 )
 
 // fakeClient is an in-memory stand-in for the P2 Gmail client. Each method
@@ -804,8 +803,10 @@ func TestSend_BuildsRawMessage(t *testing.T) {
 		t.Errorf("send result = %v", p)
 	}
 	msg := decodeRaw(t, fc.sendRaw)
-	for _, want := range []string{"To: bob@example.com", "Subject: P4 test",
-		"Content-Type: text/plain", "hello body"} {
+	for _, want := range []string{
+		"To: bob@example.com", "Subject: P4 test",
+		"Content-Type: text/plain", "hello body",
+	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("raw message missing %q:\n%s", want, msg)
 		}

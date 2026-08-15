@@ -18,11 +18,11 @@
 package mcp
 
 import (
+	"appkit"
 	"context"
 	"fmt"
 	"net/http"
 
-	"appkit"
 	appkitmcp "appkit/mcp"
 
 	gm "gmail/internal/gmail"
