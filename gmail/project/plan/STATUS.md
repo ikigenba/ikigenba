@@ -9,5 +9,7 @@ loop deletes the phase's line and body file — there is no done marker; done is
 gone. This file deliberately carries **no bare status glyph** anywhere but on a
 phase line, so the anchored grep matches only phase lines.
 
-Next phase: 29
+Next phase: 30
+
+- Phase 29 ⬜ realizes — — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint gmail` exits 0)
 
