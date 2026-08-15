@@ -2,18 +2,18 @@
 package githubapp
 
 import (
+	"appkit"
 	"context"
 	"fmt"
+	"github/internal/db"
+	"github/internal/mcp"
 	"net/http"
 	"os"
 	"time"
 
-	"appkit"
 	appweb "appkit/web"
 
-	"github/internal/db"
 	gh "github/internal/gh"
-	"github/internal/mcp"
 )
 
 var newGitHubClient = gh.NewClient

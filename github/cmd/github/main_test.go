@@ -1,6 +1,8 @@
 package main
 
 import (
+	"appkit/manifest"
+	"appkit/server"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -9,6 +11,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"github/internal/githubapp"
 	"io"
 	"log/slog"
 	"net"
@@ -22,11 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"appkit/manifest"
-	"appkit/server"
 	appweb "appkit/web"
-
-	"github/internal/githubapp"
 )
 
 func TestTemporaryInstallLayoutBootsAndServesHealth(t *testing.T) {

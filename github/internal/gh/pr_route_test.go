@@ -1,6 +1,7 @@
 package gh
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -9,8 +10,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"appkit/server"
 )
 
 func TestPRHandlerLoopbackReturnsPRDetailR_EPVL_Z2UI(t *testing.T) {

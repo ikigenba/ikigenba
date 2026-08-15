@@ -3,7 +3,6 @@ package main
 
 import (
 	"appkit"
-
 	"github/internal/githubapp"
 )
 

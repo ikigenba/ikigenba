@@ -2,10 +2,10 @@
 package mcp
 
 import (
+	"appkit"
 	"context"
 	"net/http"
 
-	"appkit"
 	appkitmcp "appkit/mcp"
 
 	gh "github/internal/gh"

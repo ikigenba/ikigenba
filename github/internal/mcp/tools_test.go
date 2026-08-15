@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,8 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"appkit/server"
 
 	gh "github/internal/gh"
 )

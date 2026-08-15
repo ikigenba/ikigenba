@@ -3,11 +3,10 @@
 package db
 
 import (
+	"appkit/db"
 	"context"
 	"database/sql"
 	"embed"
-
-	"appkit/db"
 
 	_ "modernc.org/sqlite"
 )

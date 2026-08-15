@@ -2,6 +2,7 @@
 package gh
 
 import (
+	"appkit/httpclient"
 	"bytes"
 	"context"
 	"crypto"
@@ -17,12 +18,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
-
-	"appkit/httpclient"
 )
 
 var (
@@ -135,7 +133,7 @@ func (t *tokenSource) resolveInstallationLocked(ctx context.Context, now time.Ti
 	if err != nil {
 		return "", fmt.Errorf("%w: installation URL: %v", ErrAppAuth, err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return "", fmt.Errorf("%w: installation request: %v", ErrAppAuth, err)
 	}
@@ -179,7 +177,7 @@ func (t *tokenSource) mintTokenLocked(ctx context.Context, now time.Time) (strin
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("%w: token URL: %v", ErrAppAuth, err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, http.NoBody)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("%w: token request: %v", ErrAppAuth, err)
 	}
@@ -284,10 +282,6 @@ func parseAppPrivateKey(pemText string) (*rsa.PrivateKey, error) {
 		return nil, fmt.Errorf("%w: private key is not RSA", ErrAppAuth)
 	}
 	return key, nil
-}
-
-func privateKeyFromEnv() (*rsa.PrivateKey, error) {
-	return parseAppPrivateKey(os.Getenv("IKIGENBA_APP_PRIVATE_KEY"))
 }
 
 func appAuthStatusError(resp *http.Response) error {

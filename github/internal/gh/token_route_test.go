@@ -1,6 +1,7 @@
 package gh
 
 import (
+	"appkit/server"
 	"context"
 	"crypto/rsa"
 	"encoding/json"
@@ -11,8 +12,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"appkit/server"
 )
 
 func TestTokenHandlerAssembledRouterJSONGuardAndFailureR_GTQ4_30E7(t *testing.T) {

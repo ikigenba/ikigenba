@@ -1,6 +1,7 @@
 package gh
 
 import (
+	"appkit/httpclient"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -12,8 +13,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"appkit/httpclient"
 )
 
 var (

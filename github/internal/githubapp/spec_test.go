@@ -1,6 +1,8 @@
 package githubapp
 
 import (
+	"appkit/server"
+	"appkit/telemetry"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -8,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"github/internal/gh"
 	"io"
 	"log/slog"
 	"net/http"
@@ -18,11 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"appkit/server"
-	"appkit/telemetry"
 	appweb "appkit/web"
-
-	"github/internal/gh"
 )
 
 func TestSpecHandlersInstrumentRESTAndTokenExchangeWithThirtySecondClient(t *testing.T) {

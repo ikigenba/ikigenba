@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,7 +9,6 @@ import (
 	"log/slog"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
 
 	gh "github/internal/gh"
 )
@@ -67,7 +67,7 @@ func Tools(client GitHubClient, logger *slog.Logger) []appkitmcp.Tool {
 			InputSchema: obj(map[string]any{"repo": descTyp("string", "repository name"), "number": descTyp("integer", "pull request number")}, "repo", "number"), OutputSchema: prDetailOutput(),
 			Handler: func(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 				var a repoNumberArgs
-				if err := decodeAndValidate(raw, &a, func() error { return a.validate("number") }); err != nil {
+				if err := decodeAndValidate(raw, &a, func() error { return validateRepoNumber(a) }); err != nil {
 					return validationResult(err), nil
 				}
 				v, err := client.PRGet(ctx, a.Repo, a.Number)
@@ -129,7 +129,7 @@ func Tools(client GitHubClient, logger *slog.Logger) []appkitmcp.Tool {
 					Body   string `json:"body"`
 				}
 				validate := func() error {
-					if err := (repoNumberArgs{a.Repo, a.Number}).validate("number"); err != nil {
+					if err := validateRepoNumber(repoNumberArgs{a.Repo, a.Number}); err != nil {
 						return err
 					}
 					return requireString("event", a.Event)
@@ -151,7 +151,7 @@ func Tools(client GitHubClient, logger *slog.Logger) []appkitmcp.Tool {
 					Number int    `json:"number"`
 					Method string `json:"method"`
 				}
-				if err := decodeAndValidate(raw, &a, func() error { return (repoNumberArgs{a.Repo, a.Number}).validate("number") }); err != nil {
+				if err := decodeAndValidate(raw, &a, func() error { return validateRepoNumber(repoNumberArgs{a.Repo, a.Number}) }); err != nil {
 					return validationResult(err), nil
 				}
 				logWrite(ctx, logger, id, "pr_merge", a.Repo, a.Number, "")
@@ -176,7 +176,7 @@ func Tools(client GitHubClient, logger *slog.Logger) []appkitmcp.Tool {
 			InputSchema: obj(map[string]any{"repo": descTyp("string", "repository name"), "number": descTyp("integer", "issue number")}, "repo", "number"), OutputSchema: issueOutput(),
 			Handler: func(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 				var a repoNumberArgs
-				if err := decodeAndValidate(raw, &a, func() error { return a.validate("number") }); err != nil {
+				if err := decodeAndValidate(raw, &a, func() error { return validateRepoNumber(a) }); err != nil {
 					return validationResult(err), nil
 				}
 				v, err := client.IssueGet(ctx, a.Repo, a.Number)
@@ -234,7 +234,7 @@ func Tools(client GitHubClient, logger *slog.Logger) []appkitmcp.Tool {
 					Labels    []string `json:"labels"`
 					Assignees []string `json:"assignees"`
 				}
-				if err := decodeAndValidate(raw, &a, func() error { return (repoNumberArgs{a.Repo, a.Number}).validate("number") }); err != nil {
+				if err := decodeAndValidate(raw, &a, func() error { return validateRepoNumber(repoNumberArgs{a.Repo, a.Number}) }); err != nil {
 					return validationResult(err), nil
 				}
 				logWrite(ctx, logger, id, "issue_update", a.Repo, a.Number, "")
@@ -247,7 +247,7 @@ func Tools(client GitHubClient, logger *slog.Logger) []appkitmcp.Tool {
 			InputSchema: obj(map[string]any{"repo": descTyp("string", "repository name"), "number": descTyp("integer", "issue number")}, "repo", "number"), OutputSchema: listOutput(commentOutput()),
 			Handler: func(ctx context.Context, raw json.RawMessage, _ server.Identity) (map[string]any, error) {
 				var a repoNumberArgs
-				if err := decodeAndValidate(raw, &a, func() error { return a.validate("number") }); err != nil {
+				if err := decodeAndValidate(raw, &a, func() error { return validateRepoNumber(a) }); err != nil {
 					return validationResult(err), nil
 				}
 				v, err := client.IssueComments(ctx, a.Repo, a.Number)
@@ -264,7 +264,7 @@ func Tools(client GitHubClient, logger *slog.Logger) []appkitmcp.Tool {
 					Labels []string `json:"labels"`
 				}
 				validate := func() error {
-					if err := (repoNumberArgs{a.Repo, a.Number}).validate("number"); err != nil {
+					if err := validateRepoNumber(repoNumberArgs{a.Repo, a.Number}); err != nil {
 						return err
 					}
 					if len(a.Labels) == 0 {
@@ -295,7 +295,7 @@ func Tools(client GitHubClient, logger *slog.Logger) []appkitmcp.Tool {
 					Label  string `json:"label"`
 				}
 				validate := func() error {
-					if err := (repoNumberArgs{a.Repo, a.Number}).validate("number"); err != nil {
+					if err := validateRepoNumber(repoNumberArgs{a.Repo, a.Number}); err != nil {
 						return err
 					}
 					return requireString("label", a.Label)
@@ -371,9 +371,11 @@ func obj(props map[string]any, required ...string) map[string]any {
 func descTyp(t, description string) map[string]any {
 	return map[string]any{"type": t, "description": description}
 }
+
 func arrayTyp(itemType, description string) map[string]any {
 	return map[string]any{"type": "array", "items": map[string]any{"type": itemType}, "description": description}
 }
+
 func strProps(names ...string) map[string]any {
 	p := map[string]any{}
 	for _, name := range names {
@@ -381,9 +383,11 @@ func strProps(names ...string) map[string]any {
 	}
 	return p
 }
+
 func objectOutput(props map[string]any, required ...string) map[string]any {
 	return obj(props, required...)
 }
+
 func listOutput(element map[string]any) map[string]any {
 	return obj(map[string]any{"items": map[string]any{"type": "array", "items": element}}, "items")
 }
@@ -393,11 +397,13 @@ func repoOutput() map[string]any {
 	p["private"] = map[string]any{"type": "boolean"}
 	return objectOutput(p, "name", "full_name", "private", "default_branch")
 }
+
 func prOutput() map[string]any {
 	p := strProps("title", "state", "body", "html_url")
 	p["number"] = map[string]any{"type": "integer"}
 	return objectOutput(p, "number", "title", "state", "body", "html_url")
 }
+
 func prFileOutput() map[string]any {
 	p := strProps("filename", "status", "patch")
 	for _, n := range []string{"additions", "deletions", "changes"} {
@@ -405,29 +411,35 @@ func prFileOutput() map[string]any {
 	}
 	return objectOutput(p, "filename", "status", "additions", "deletions", "changes", "patch")
 }
+
 func prDetailOutput() map[string]any {
 	p := prOutput()["properties"].(map[string]any)
 	p["Files"] = map[string]any{"type": "array", "items": prFileOutput()}
 	return objectOutput(p, "number", "title", "state", "body", "html_url", "Files")
 }
+
 func commentOutput() map[string]any {
 	p := strProps("body", "html_url")
 	p["id"] = map[string]any{"type": "integer"}
 	return objectOutput(p, "id", "body", "html_url")
 }
+
 func labelOutput() map[string]any {
 	return objectOutput(strProps("name", "color"), "name", "color")
 }
+
 func reviewOutput() map[string]any {
 	p := strProps("state", "body", "html_url")
 	p["id"] = map[string]any{"type": "integer"}
 	return objectOutput(p, "id", "state", "body", "html_url")
 }
+
 func mergeOutput() map[string]any {
 	p := strProps("sha", "message")
 	p["merged"] = map[string]any{"type": "boolean"}
 	return objectOutput(p, "sha", "merged", "message")
 }
+
 func issueOutput() map[string]any {
 	p := strProps("title", "state", "body", "html_url")
 	p["number"] = map[string]any{"type": "integer"}
@@ -436,9 +448,11 @@ func issueOutput() map[string]any {
 	p["assignees"] = map[string]any{"type": "array", "items": objectOutput(strProps("login"), "login")}
 	return objectOutput(p, "number", "title", "state", "body", "html_url")
 }
+
 func fileContentOutput() map[string]any {
 	return objectOutput(strProps("path", "sha", "encoding"), "path", "sha", "encoding")
 }
+
 func fileCommitOutput() map[string]any {
 	return objectOutput(map[string]any{"content": fileContentOutput(), "commit": objectOutput(strProps("sha", "message"), "sha", "message")}, "content", "commit")
 }
@@ -448,27 +462,30 @@ type repoNumberArgs struct {
 	Number int    `json:"number"`
 }
 
-func (a repoNumberArgs) validate(numberName string) error {
+func validateRepoNumber(a repoNumberArgs) error {
 	if err := requireString("repo", a.Repo); err != nil {
 		return err
 	}
 	if a.Number <= 0 {
-		return fmt.Errorf("%s is required", numberName)
+		return errors.New("number is required")
 	}
 	return nil
 }
+
 func validateRepoNumberBody(repo string, number int, bodyName, body string) error {
-	if err := (repoNumberArgs{repo, number}).validate("number"); err != nil {
+	if err := validateRepoNumber(repoNumberArgs{repo, number}); err != nil {
 		return err
 	}
 	return requireString(bodyName, body)
 }
+
 func requireString(name, value string) error {
 	if value == "" {
 		return fmt.Errorf("%s is required", name)
 	}
 	return nil
 }
+
 func decodeAndValidate(raw json.RawMessage, v any, validate func() error) error {
 	if len(raw) != 0 {
 		if err := json.Unmarshal(raw, v); err != nil {
@@ -477,6 +494,7 @@ func decodeAndValidate(raw json.RawMessage, v any, validate func() error) error 
 	}
 	return validate()
 }
+
 func validationResult(err error) map[string]any {
 	return appkitmcp.ErrorResult(appkitmcp.ErrValidation, err.Error())
 }
