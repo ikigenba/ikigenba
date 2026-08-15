@@ -11,11 +11,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"scripts/internal/script"
 	"strings"
 	"testing"
 	"time"
-
-	"scripts/internal/script"
 )
 
 // R-IKGJ-ND9W

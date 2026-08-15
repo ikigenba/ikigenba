@@ -1,11 +1,10 @@
 package script
 
 import (
+	"eventplane/outbox"
 	"fmt"
 	"sort"
 	"strings"
-
-	"eventplane/outbox"
 )
 
 // knownFamilies is the static catalogue of event kinds scripts consumes. Event
@@ -33,7 +32,7 @@ func triggerSources() []string {
 func validateTrigger(filter string) (string, error) {
 	i := strings.IndexByte(filter, ':')
 	if i < 1 {
-		return "", fmt.Errorf("%w: trigger filter must begin with a literal source followed by :", ErrValidation)
+		return "", fmt.Errorf("%w: trigger filter must begin with a literal source followed by a colon", ErrValidation)
 	}
 	source := filter[:i]
 	if strings.ContainsAny(source, "*?[") {

@@ -20,29 +20,25 @@
 package main
 
 import (
+	"appkit"
+	"appkit/config"
 	"context"
 	"encoding/json"
+	"eventplane/consumer"
+	"eventplane/correlation"
+	"eventplane/outbox"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
-
-	"appkit"
-	"appkit/config"
-
-	"eventplane/consumer"
-	"eventplane/correlation"
-	"eventplane/outbox"
-
 	"registry"
-
 	"scripts/internal/consume"
 	"scripts/internal/db"
 	"scripts/internal/mcp"
 	"scripts/internal/repos"
 	"scripts/internal/runner"
 	"scripts/internal/script"
+	"time"
 )
 
 // svcRef carries the script service from the Handlers hook (where appkit has

@@ -3,10 +3,9 @@ package script
 import (
 	"context"
 	"regexp"
+	"scripts/internal/ids"
 	"strings"
 	"testing"
-
-	"scripts/internal/ids"
 )
 
 func TestSlugifyProducesBareRepositoryNameKey(t *testing.T) {

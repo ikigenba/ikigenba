@@ -20,11 +20,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"scripts/internal/script"
 	"sync"
 	"syscall"
 	"time"
-
-	"scripts/internal/script"
 )
 
 // python3 is the interpreter binary name (constant day-one; config.interpreter

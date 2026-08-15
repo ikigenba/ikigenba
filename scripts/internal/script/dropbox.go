@@ -40,7 +40,7 @@ func NewHTTPFetcher(base string) ContentFetcher {
 // so dropbox's self-guard treats it as the loopback caller it is.
 func (f *httpFetcher) Fetch(ctx context.Context, path string) ([]byte, error) {
 	u := f.base + "/content?path=" + url.QueryEscape(path)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("script: fetch %q: %w", path, err)
 	}

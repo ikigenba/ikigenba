@@ -385,7 +385,8 @@ func TestOwnerIDKeyingMigrationRebuildsScripts(t *testing.T) {
 
 func assertIndexColumns(t *testing.T, database interface {
 	Query(string, ...any) (*sql.Rows, error)
-}, index string, want []string) {
+}, index string, want []string,
+) {
 	t.Helper()
 	rows, err := database.Query(`SELECT name FROM pragma_index_info(?) ORDER BY seqno`, index)
 	if err != nil {

@@ -5,15 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/outbox"
 	"path/filepath"
+	"scripts/internal/db"
+	"scripts/internal/ids"
 	"testing"
 	"time"
 
 	appkitdatabase "appkit/db"
-	"eventplane/outbox"
-
-	"scripts/internal/db"
-	"scripts/internal/ids"
 )
 
 const (

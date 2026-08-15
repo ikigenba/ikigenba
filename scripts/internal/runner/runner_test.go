@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/outbox"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,16 +15,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"scripts/internal/db"
+	"scripts/internal/ids"
+	"scripts/internal/script"
 	"strings"
 	"testing"
 	"time"
 
 	appkitdatabase "appkit/db"
-	"eventplane/outbox"
-
-	"scripts/internal/db"
-	"scripts/internal/ids"
-	"scripts/internal/script"
 )
 
 const (
@@ -43,6 +42,7 @@ func (boundaryTestPlane) Head(context.Context, string, string) (string, error) {
 func (boundaryTestPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
 	return nil, nil
 }
+
 func (boundaryTestPlane) Rename(context.Context, string, string, script.Owner, string) error {
 	return nil
 }
@@ -179,6 +179,7 @@ func (p gitTestPlane) Head(context.Context, string, string) (string, error) { re
 func (p gitTestPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
 	return nil, nil
 }
+
 func (p gitTestPlane) Rename(context.Context, string, string, script.Owner, string) error {
 	return nil
 }

@@ -3,13 +3,12 @@
 package mcp
 
 import (
+	"appkit"
 	"fmt"
 	"net/http"
-
-	"appkit"
-	appkitmcp "appkit/mcp"
-
 	"scripts/internal/script"
+
+	appkitmcp "appkit/mcp"
 )
 
 // Instructions are kept deliberately short because they ride on every client

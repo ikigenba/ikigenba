@@ -1,16 +1,15 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/url"
+	"scripts/internal/script"
 	"strings"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-
-	"scripts/internal/script"
 )
 
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name
@@ -523,15 +522,16 @@ func toolResultText(text string) map[string]any {
 
 func structuredError(err error) map[string]any {
 	code := appkitmcp.ErrInternal
-	if errors.Is(err, script.ErrNotFound) {
+	switch {
+	case errors.Is(err, script.ErrNotFound):
 		code = appkitmcp.ErrNotFound
-	} else if errors.Is(err, script.ErrConflict) {
+	case errors.Is(err, script.ErrConflict):
 		code = appkitmcp.ErrConflict
-	} else if errors.Is(err, script.ErrValidation) {
+	case errors.Is(err, script.ErrValidation):
 		code = appkitmcp.ErrValidation
-	} else if errors.Is(err, script.ErrTooLarge) {
+	case errors.Is(err, script.ErrTooLarge):
 		code = appkitmcp.ErrTooLarge
-	} else if errors.Is(err, script.ErrSourceUnavailable) {
+	case errors.Is(err, script.ErrSourceUnavailable):
 		code = appkitmcp.ErrSourceUnavailable
 	}
 	return appkitmcp.ErrorResult(code, err.Error())

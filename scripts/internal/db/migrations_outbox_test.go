@@ -5,13 +5,13 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"eventplane/outbox"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	appkitdb "appkit/db"
-	"eventplane/outbox"
 )
 
 func TestOutboxMigrationsMatchLibrarySchema(t *testing.T) {
@@ -152,7 +152,8 @@ func TestOutboxMigrationConvergesDeployedLineage(t *testing.T) {
 
 func outboxColumns(t *testing.T, conn interface {
 	Query(string, ...any) (*sql.Rows, error)
-}) []string {
+},
+) []string {
 	t.Helper()
 	rows, err := conn.Query(`PRAGMA table_info(outbox)`)
 	if err != nil {

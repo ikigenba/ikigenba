@@ -1,11 +1,17 @@
 package main
 
 import (
+	"appkit"
+	"appkit/config"
+	"appkit/manifest"
+	"appkit/server"
 	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/consumer"
+	"eventplane/outbox"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -20,26 +26,20 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"registry"
+	"scripts/internal/consume"
+	"scripts/internal/repos"
+	"scripts/internal/script"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"appkit"
-	"appkit/config"
 	appkitdatabase "appkit/db"
-	"appkit/manifest"
-	"appkit/server"
+
 	appweb "appkit/web"
 
-	"eventplane/consumer"
-	"eventplane/outbox"
-	"registry"
-
-	"scripts/internal/consume"
 	scriptsdb "scripts/internal/db"
-	"scripts/internal/repos"
-	"scripts/internal/script"
 )
 
 // R-2A9S-R2E9
@@ -1463,6 +1463,7 @@ func (consumerTestPlane) Head(context.Context, string, string) (string, error) {
 func (consumerTestPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
 	return nil, nil
 }
+
 func (consumerTestPlane) Rename(context.Context, string, string, script.Owner, string) error {
 	return nil
 }

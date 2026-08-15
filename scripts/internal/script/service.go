@@ -3,18 +3,16 @@ package script
 import (
 	"bufio"
 	"context"
+	"eventplane/correlation"
 	"fmt"
 	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
+	"scripts/internal/ids"
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"eventplane/correlation"
-
-	"scripts/internal/ids"
 )
 
 // Runner is the run-lifecycle surface the Service depends on (runner.Runner
@@ -544,12 +542,12 @@ func (s *Service) RunFsList(ctx context.Context, owner, runID, subpath string) (
 // RunFsRead returns a line-slice of one file inside the run dir (owner-verified,
 // path-traversal guarded to the run root). offset/limit are in LINES (offset<=0
 // → from start, limit<=0 → no limit) — consistent with RunOutput.
-func (s *Service) RunFsRead(ctx context.Context, owner, runID, path string, offset, limit int) (string, error) {
+func (s *Service) RunFsRead(ctx context.Context, owner, runID, filePath string, offset, limit int) (string, error) {
 	if _, err := s.store.GetRun(ctx, owner, runID); err != nil {
 		return "", err
 	}
 	root := s.runDir(runID)
-	target, err := resolveWithin(root, path)
+	target, err := resolveWithin(root, filePath)
 	if err != nil {
 		return "", err
 	}
@@ -653,13 +651,13 @@ func resolveWithin(root, rel string) (string, error) {
 // readLines reads up to limit lines of the file at path starting at 1-based
 // offset (offset<=0 → from start, limit<=0 → no limit). A missing file reads as
 // empty (a run dir may not yet hold a log).
-func readLines(path string, offset, limit int) (string, error) {
-	f, err := os.Open(path)
+func readLines(filePath string, offset, limit int) (string, error) {
+	f, err := os.Open(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
 		}
-		return "", fmt.Errorf("script: open %s: %w", filepath.Base(path), err)
+		return "", fmt.Errorf("script: open %s: %w", filepath.Base(filePath), err)
 	}
 	defer f.Close()
 
@@ -684,7 +682,7 @@ func readLines(path string, offset, limit int) (string, error) {
 		written++
 	}
 	if err := sc.Err(); err != nil {
-		return "", fmt.Errorf("script: read %s: %w", filepath.Base(path), err)
+		return "", fmt.Errorf("script: read %s: %w", filepath.Base(filePath), err)
 	}
 	return b.String(), nil
 }

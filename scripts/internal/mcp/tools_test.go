@@ -1,11 +1,13 @@
 package mcp
 
 import (
+	"appkit/server"
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +16,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"registry"
+	"scripts/internal/script"
 	"sort"
 	"strings"
 	"sync"
@@ -22,12 +26,8 @@ import (
 
 	appkitdatabase "appkit/db"
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-	"eventplane/correlation"
-	"registry"
 
 	scriptdb "scripts/internal/db"
-	"scripts/internal/script"
 )
 
 const (
@@ -62,18 +62,22 @@ func newFakeVersionPlane() *fakeVersionPlane {
 func (f *fakeVersionPlane) Create(context.Context, string, script.Owner, string) error {
 	return f.createErr
 }
+
 func (f *fakeVersionPlane) Commit(_ context.Context, key string, files map[string]string, _, _ string) (string, error) {
 	for path, body := range files {
 		f.files[key+":"+path] = body
 	}
 	return "sha", nil
 }
+
 func (f *fakeVersionPlane) Head(context.Context, string, string) (string, error) {
 	return "sha", f.headErr
 }
+
 func (f *fakeVersionPlane) ReadFile(_ context.Context, key, _, path string) ([]byte, error) {
 	return []byte(f.files[key+":"+path]), nil
 }
+
 func (f *fakeVersionPlane) Rename(_ context.Context, oldKey, newKey string, _ script.Owner, _ string) error {
 	for path, body := range f.files {
 		if strings.HasPrefix(path, oldKey+":") {
@@ -1030,7 +1034,8 @@ func assertRuntimeContract(t *testing.T, details struct {
 	BashVersion   string `json:"bash_version"`
 	Network       bool   `json:"network"`
 	Packages      string `json:"packages"`
-}) {
+},
+) {
 	t.Helper()
 	if details.PythonVersion != ">=3.11" || details.BashVersion != ">=5.0" ||
 		details.Network != true || details.Packages != "stdlib" {

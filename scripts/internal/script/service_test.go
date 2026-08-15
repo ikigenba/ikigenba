@@ -3,14 +3,13 @@ package script
 import (
 	"context"
 	"errors"
+	"eventplane/correlation"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"eventplane/correlation"
 )
 
 // fakeRunner records Spawn/Cancel calls instead of execing python.

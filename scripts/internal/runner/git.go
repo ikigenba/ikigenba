@@ -6,10 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"scripts/internal/script"
 	"strings"
 	"time"
-
-	"scripts/internal/script"
 )
 
 const credentialHelper = `!f(){ echo username=run; echo "password=$SUITE_GIT_TOKEN"; };f`

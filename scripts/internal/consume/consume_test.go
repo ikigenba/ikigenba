@@ -5,21 +5,20 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/consumer"
+	"eventplane/correlation"
 	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
+	"scripts/internal/consume"
+	"scripts/internal/db"
+	"scripts/internal/script"
 	"sync"
 	"testing"
 	"time"
 
 	appkitdatabase "appkit/db"
-	"eventplane/consumer"
-	"eventplane/correlation"
-
-	"scripts/internal/consume"
-	"scripts/internal/db"
-	"scripts/internal/script"
 )
 
 type call struct{ source, kind, subject, key, eventID string }
@@ -89,6 +88,7 @@ func (testVersionPlane) Head(context.Context, string, string) (string, error) { 
 func (testVersionPlane) ReadFile(context.Context, string, string, string) ([]byte, error) {
 	return nil, nil
 }
+
 func (testVersionPlane) Rename(context.Context, string, string, script.Owner, string) error {
 	return nil
 }

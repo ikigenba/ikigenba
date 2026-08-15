@@ -15,11 +15,10 @@ package consume
 
 import (
 	"context"
-	"fmt"
-	"log/slog"
-
 	"eventplane/consumer"
 	"eventplane/correlation"
+	"fmt"
+	"log/slog"
 )
 
 // FireFunc starts a run for one script in reaction to an event (the consumer

@@ -11,11 +11,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"scripts/internal/script"
 	"sort"
 	"strings"
 	"time"
-
-	"scripts/internal/script"
 )
 
 const (
@@ -166,7 +165,7 @@ func (c *Client) ReadFile(ctx context.Context, nameKey, ref, path string) ([]byt
 	query.Set("name", nameKey)
 	query.Set("ref", ref)
 	query.Set("path", path)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/content?"+query.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/content?"+query.Encode(), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("repos: build read-file request: %w", err)
 	}

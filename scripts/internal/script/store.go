@@ -5,14 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"sync"
-
 	"eventplane/correlation"
 	"eventplane/outbox"
 	"eventplane/routing"
-
+	"fmt"
 	"scripts/internal/ids"
+	"sync"
 )
 
 // Store is the SQLite persistence for scripts, runs, and triggers. All reads
@@ -388,7 +386,7 @@ func (s *Store) ListRuns(ctx context.Context, owner, scriptID, status, correlati
 // 'failed' (with an interrupted error). It returns the ids of the runs that
 // were swept (Recover uses them). The run dirs are left untouched
 // (forward-only on disk).
-func (s *Store) SweepRunning(ctx context.Context) (ids []string, err error) {
+func (s *Store) SweepRunning(ctx context.Context) (runIDs []string, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("script: sweep begin: %w", err)
@@ -407,7 +405,7 @@ func (s *Store) SweepRunning(ctx context.Context) (ids []string, err error) {
 			rows.Close()
 			return nil, fmt.Errorf("script: sweep scan: %w", err)
 		}
-		ids = append(ids, id)
+		runIDs = append(runIDs, id)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -415,7 +413,7 @@ func (s *Store) SweepRunning(ctx context.Context) (ids []string, err error) {
 	}
 	rows.Close()
 
-	if len(ids) > 0 {
+	if len(runIDs) > 0 {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE runs SET status = ?, error = ? WHERE status = ?`,
 			RunFailed, "interrupted by restart", RunRunning,
@@ -426,7 +424,7 @@ func (s *Store) SweepRunning(ctx context.Context) (ids []string, err error) {
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("script: sweep commit: %w", err)
 	}
-	return ids, nil
+	return runIDs, nil
 }
 
 // FinishRun is the ATOMIC terminal write + completion-event emit (A5/A7): in one

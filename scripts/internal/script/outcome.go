@@ -2,10 +2,9 @@ package script
 
 import (
 	"encoding/json"
+	"eventplane/outbox"
 	"fmt"
 	"strings"
-
-	"eventplane/outbox"
 )
 
 // Completion event kinds. scripts emits exactly two terminal, static,
