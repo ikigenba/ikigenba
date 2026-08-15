@@ -55,7 +55,7 @@ type Record struct {
 }
 
 // Digest returns the byte length and lowercase hexadecimal SHA-256 of b.
-func Digest(b []byte) (int, string) {
+func Digest(b []byte) (byteCount int, digest string) {
 	sum := sha256.Sum256(b)
 	return len(b), hex.EncodeToString(sum[:])
 }

@@ -81,9 +81,8 @@ func Emit(f Fields) string {
 // on the first '=', trim surrounding whitespace from key and value, and strip a
 // single matching surrounding quote pair from the value. Order of first
 // appearance is preserved in Keys.
-func Parse(r io.Reader) (map[string]string, []string, error) {
-	out := map[string]string{}
-	var keys []string
+func Parse(r io.Reader) (values map[string]string, keys []string, err error) {
+	values = map[string]string{}
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
@@ -100,15 +99,15 @@ func Parse(r io.Reader) (map[string]string, []string, error) {
 		if key == "" {
 			continue
 		}
-		if _, seen := out[key]; !seen {
+		if _, seen := values[key]; !seen {
 			keys = append(keys, key)
 		}
-		out[key] = val
+		values[key] = val
 	}
 	if err := sc.Err(); err != nil {
 		return nil, nil, err
 	}
-	return out, keys, nil
+	return values, keys, nil
 }
 
 // stripQuotes removes one matching pair of surrounding single or double quotes,

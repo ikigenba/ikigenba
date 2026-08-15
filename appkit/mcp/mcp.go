@@ -210,26 +210,7 @@ func (h *Handler) recordToolCall(ctx context.Context, name string, args json.Raw
 	if recorder == nil {
 		return
 	}
-	outcome := &telemetry.Outcome{
-		Status:     "ok",
-		DurationMS: duration.Milliseconds(),
-	}
-	if callErr != nil {
-		outcome.Status = "error"
-		if errors.Is(callErr, errUnknownTool) {
-			outcome.Error = string(ErrValidation)
-		} else {
-			outcome.Error = string(ErrInternal)
-		}
-	} else {
-		if b, err := json.Marshal(result); err == nil {
-			outcome.Bytes, outcome.SHA256 = telemetry.Digest(b)
-		}
-		if code, ok := errorResultCode(result); ok {
-			outcome.Status = "error"
-			outcome.Error = string(code)
-		}
-	}
+	outcome := toolCallOutcome(result, callErr, duration)
 
 	var actor *telemetry.Actor
 	if id.OwnerEmail != "" || id.ClientID != "" {
@@ -244,6 +225,26 @@ func (h *Handler) recordToolCall(ctx context.Context, name string, args json.Raw
 		Params:        telemetry.EncodeParams(args, sensitive),
 		Outcome:       outcome,
 	})
+}
+
+func toolCallOutcome(result map[string]any, callErr error, duration time.Duration) *telemetry.Outcome {
+	outcome := &telemetry.Outcome{Status: "ok", DurationMS: duration.Milliseconds()}
+	if callErr != nil {
+		outcome.Status = "error"
+		outcome.Error = string(ErrInternal)
+		if errors.Is(callErr, errUnknownTool) {
+			outcome.Error = string(ErrValidation)
+		}
+		return outcome
+	}
+	if b, err := json.Marshal(result); err == nil {
+		outcome.Bytes, outcome.SHA256 = telemetry.Digest(b)
+	}
+	if code, ok := errorResultCode(result); ok {
+		outcome.Status = "error"
+		outcome.Error = string(code)
+	}
+	return outcome
 }
 
 func errorResultCode(result map[string]any) (ErrorCode, bool) {

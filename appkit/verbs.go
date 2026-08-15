@@ -10,6 +10,7 @@ import (
 	"appkit/telemetry"
 	"appkit/web"
 	"context"
+	"database/sql"
 	"errors"
 	"eventplane/consumer"
 	"eventplane/correlation"
@@ -153,35 +154,16 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 	if err != nil {
 		return err
 	}
-	var site *web.Site
-	if spec.WWW {
-		site, err = web.Load(cfg.WWWPath)
-		if err != nil {
-			return fmt.Errorf("load www %s: %w", cfg.WWWPath, err)
-		}
+	site, err := loadServeSite(spec, cfg)
+	if err != nil {
+		return err
 	}
 
-	// serve flags override env (env already applied as the default in Resolve).
-	fs := flag.NewFlagSet(spec.App+" serve", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	ip := fs.String("ip", cfg.IP, "listen address — keep loopback (env: "+envKey(spec.App, "IP")+")")
-	port := fs.Int("port", cfg.Port, "listen port (env: "+envKey(spec.App, "PORT")+")")
-	logLevel := fs.String("log-level", cfg.LogLevel, "log level: debug|info|warn|error (env: "+envKey(spec.App, "LOG_LEVEL")+")")
-	if err := fs.Parse(args); err != nil {
-		return helpOrErr(err)
-	}
-
-	level, err := logging.ParseLevel(*logLevel)
+	addr, level, err := resolveServeRuntime(spec, cfg, args, stderr)
 	if err != nil {
 		return err
 	}
 	logger := logging.New(level, stdout)
-	recorder := telemetry.New(telemetry.Options{
-		Service:   spec.App,
-		IngestURL: cfg.TelemetryIngestURL,
-		Enabled:   cfg.TelemetryEnabled,
-		Logger:    logger,
-	})
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -191,67 +173,23 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 	// (event-protocol.md decision 11) lifted from notify/wiki into the chassis.
 	ctx, cancel := context.WithCancel(sigCtx)
 	defer cancel()
-	recorder.Start(ctx)
-	recorder.Record(telemetry.Record{
-		Kind: telemetry.KindLifecycle,
-		Op:   "start",
-		Detail: map[string]any{
-			"version": versionString(),
-		},
-	})
+	recorder, closeRecorder := startServeRecorder(ctx, spec, cfg, logger)
+	defer closeRecorder()
 	hook := eventObserveHook(recorder)
-	defer func() {
-		closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer closeCancel()
-		_ = recorder.Close(closeCtx)
-	}()
 
-	conn, err := db.Open(cfg.DBPath)
+	conn, err := openServeDB(ctx, spec, cfg)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	migs, err := loadMigrations(spec)
-	if err != nil {
-		return err
-	}
-	if err := db.Migrate(ctx, conn, migs); err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
-	if _, err := outbox.EnsureGeneration(cfg.GenerationPath); err != nil {
-		return fmt.Errorf("generation sidecar: %w", err)
-	}
 
 	// Producer: construct the outbox + mount the unauthenticated feed handler. The
 	// outbox is built here (its FeedHandler must be ready for server.New to mount),
 	// but the producer-injection hook is called AFTER server.New so the service's
 	// Handlers hook has already built its domain Service over the shared DB handle.
-	var feedH http.Handler
-	var producerOutbox *outbox.Outbox
-	if spec.Feed != "" {
-		retDays, err := config.EnvOrInt(getenv, "OUTBOX_RETENTION_DAYS", 0)
-		if err != nil {
-			return err
-		}
-		retRows, err := config.EnvOrInt(getenv, "OUTBOX_RETENTION_MAX_ROWS", 0)
-		if err != nil {
-			return err
-		}
-		prod, err := feed.Start(ctx, conn, feed.Options{
-			Source:           spec.App,
-			DBPath:           cfg.DBPath,
-			GenerationPath:   cfg.GenerationPath,
-			Logger:           logger,
-			RetentionDays:    retDays,
-			RetentionMaxRows: retRows,
-			Registry:         spec.Events,
-			Observe:          hook,
-		})
-		if err != nil {
-			return err
-		}
-		feedH = prod.Handler
-		producerOutbox = prod.Outbox
+	feedH, producerOutbox, err := startProducer(ctx, spec, cfg, getenv, conn, logger, hook)
+	if err != nil {
+		return err
 	}
 
 	var rt *Router
@@ -263,8 +201,81 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 		return spec.Handlers(router)
 	}
 
-	addr := net.JoinHostPort(*ip, strconv.Itoa(*port))
-	srv, err := server.New(server.Options{
+	srv, err := buildServeServer(spec, cfg, addr, logger, site, feedH, register, conn, recorder)
+	if err != nil {
+		return err
+	}
+
+	// Close the producer-outbox seam (C1): hand the constructed *outbox.Outbox to
+	// the service's injection hook now that Handlers has built its domain Service
+	// over the shared DB handle. The service attaches the outbox so its domain
+	// writes Append events on the same transaction; the payload builders stay
+	// app-side (PLAN §B1 map: appkit/feed is orchestration only).
+	if err := wireProducer(spec, producerOutbox); err != nil {
+		return err
+	}
+
+	workers, err := serveWorkers(spec, rt, getenv)
+	if err != nil {
+		return err
+	}
+
+	logger.Info("starting "+spec.App,
+		"addr", addr, "resource_id", cfg.ResourceID, "auth_server", cfg.AuthServer,
+		"db_path", cfg.DBPath, "version", versionString())
+	err = runServerAndWorkers(ctx, cancel, srv, workers, logger)
+	if err == nil {
+		recorder.Record(telemetry.Record{Kind: telemetry.KindLifecycle, Op: "stop"})
+	}
+	return err
+}
+
+func startServeRecorder(ctx context.Context, spec Spec, cfg config.Config, logger *slog.Logger) (recorder *telemetry.Recorder, closeRecorder func()) {
+	recorder = telemetry.New(telemetry.Options{
+		Service:   spec.App,
+		IngestURL: cfg.TelemetryIngestURL,
+		Enabled:   cfg.TelemetryEnabled,
+		Logger:    logger,
+	})
+	recorder.Start(ctx)
+	recorder.Record(telemetry.Record{
+		Kind: telemetry.KindLifecycle,
+		Op:   "start",
+		Detail: map[string]any{
+			"version": versionString(),
+		},
+	})
+	closeRecorder = func() {
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer closeCancel()
+		_ = recorder.Close(closeCtx)
+	}
+	return recorder, closeRecorder
+}
+
+func openServeDB(ctx context.Context, spec Spec, cfg config.Config) (*sql.DB, error) {
+	conn, err := db.Open(cfg.DBPath)
+	if err != nil {
+		return nil, err
+	}
+	migrations, err := loadMigrations(spec)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if err := db.Migrate(ctx, conn, migrations); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	if _, err := outbox.EnsureGeneration(cfg.GenerationPath); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("generation sidecar: %w", err)
+	}
+	return conn, nil
+}
+
+func buildServeServer(spec Spec, cfg config.Config, addr string, logger *slog.Logger, site *web.Site, feedHandler http.Handler, register func(*Router) error, conn *sql.DB, recorder *telemetry.Recorder) (*http.Server, error) {
+	return server.New(server.Options{
 		Addr:          addr,
 		Logger:        logger,
 		ResourceID:    cfg.ResourceID,
@@ -277,45 +288,91 @@ func runServe(spec Spec, args []string, getenv func(string) string, stdout, stde
 		Subscriptions: specSubscriptions(spec),
 		Publishes:     spec.Publishes,
 		WWW:           site,
-		Feed:          feedH,
+		Feed:          feedHandler,
 		FeedPath:      spec.Feed,
 		Register:      register,
 		DB:            conn,
 		Recorder:      recorder,
 		RecordExclude: spec.TelemetryExclude,
 	})
+}
+
+func loadServeSite(spec Spec, cfg config.Config) (*web.Site, error) {
+	if !spec.WWW {
+		return nil, nil
+	}
+	site, err := web.Load(cfg.WWWPath)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("load www %s: %w", cfg.WWWPath, err)
 	}
+	return site, nil
+}
 
-	// Close the producer-outbox seam (C1): hand the constructed *outbox.Outbox to
-	// the service's injection hook now that Handlers has built its domain Service
-	// over the shared DB handle. The service attaches the outbox so its domain
-	// writes Append events on the same transaction; the payload builders stay
-	// app-side (PLAN §B1 map: appkit/feed is orchestration only).
-	if producerOutbox != nil && spec.Producer != nil {
-		if err := spec.Producer(producerOutbox); err != nil {
-			return fmt.Errorf("producer wiring: %w", err)
-		}
+func resolveServeRuntime(spec Spec, cfg config.Config, args []string, stderr io.Writer) (addr string, level slog.Level, err error) {
+	// serve flags override env (env already applied as the default in Resolve).
+	fs := flag.NewFlagSet(spec.App+" serve", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	ip := fs.String("ip", cfg.IP, "listen address — keep loopback (env: "+envKey(spec.App, "IP")+")")
+	port := fs.Int("port", cfg.Port, "listen port (env: "+envKey(spec.App, "PORT")+")")
+	logLevel := fs.String("log-level", cfg.LogLevel, "log level: debug|info|warn|error (env: "+envKey(spec.App, "LOG_LEVEL")+")")
+	if err := fs.Parse(args); err != nil {
+		return "", 0, helpOrErr(err)
 	}
+	level, err = logging.ParseLevel(*logLevel)
+	if err != nil {
+		return "", 0, err
+	}
+	return net.JoinHostPort(*ip, strconv.Itoa(*port)), level, nil
+}
 
-	workers := spec.Workers
-	if len(spec.Consumers) > 0 {
-		consumerWorkers, err := buildConsumerWorkers(spec, rt, getenv)
-		if err != nil {
-			return err
-		}
-		workers = append(append([]func(context.Context) error{}, workers...), consumerWorkers...)
+func startProducer(ctx context.Context, spec Spec, cfg config.Config, getenv func(string) string, conn *sql.DB, logger *slog.Logger, hook observe.Hook) (handler http.Handler, producerOutbox *outbox.Outbox, err error) {
+	if spec.Feed == "" {
+		return nil, nil, nil
 	}
+	retDays, err := config.EnvOrInt(getenv, "OUTBOX_RETENTION_DAYS", 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	retRows, err := config.EnvOrInt(getenv, "OUTBOX_RETENTION_MAX_ROWS", 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	producer, err := feed.Start(ctx, conn, feed.Options{
+		Source:           spec.App,
+		DBPath:           cfg.DBPath,
+		GenerationPath:   cfg.GenerationPath,
+		Logger:           logger,
+		RetentionDays:    retDays,
+		RetentionMaxRows: retRows,
+		Registry:         spec.Events,
+		Observe:          hook,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return producer.Handler, producer.Outbox, nil
+}
 
-	logger.Info("starting "+spec.App,
-		"addr", addr, "resource_id", cfg.ResourceID, "auth_server", cfg.AuthServer,
-		"db_path", cfg.DBPath, "version", versionString())
-	err = runServerAndWorkers(ctx, cancel, srv, workers, logger)
-	if err == nil {
-		recorder.Record(telemetry.Record{Kind: telemetry.KindLifecycle, Op: "stop"})
+func wireProducer(spec Spec, producerOutbox *outbox.Outbox) error {
+	if producerOutbox == nil || spec.Producer == nil {
+		return nil
 	}
-	return err
+	if err := spec.Producer(producerOutbox); err != nil {
+		return fmt.Errorf("producer wiring: %w", err)
+	}
+	return nil
+}
+
+func serveWorkers(spec Spec, rt *Router, getenv func(string) string) ([]func(context.Context) error, error) {
+	if len(spec.Consumers) == 0 {
+		return spec.Workers, nil
+	}
+	consumerWorkers, err := buildConsumerWorkers(spec, rt, getenv)
+	if err != nil {
+		return nil, err
+	}
+	workers := append([]func(context.Context) error{}, spec.Workers...)
+	return append(workers, consumerWorkers...), nil
 }
 
 func validateConsumerFields(spec Spec) error {

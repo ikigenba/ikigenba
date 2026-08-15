@@ -219,7 +219,7 @@ func (r *Recorder) flush(ctx context.Context) {
 	}
 }
 
-func (r *Recorder) takeBatch() ([]wireRecord, uint64) {
+func (r *Recorder) takeBatch() (batch []wireRecord, dropped uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.count == 0 {
@@ -229,7 +229,7 @@ func (r *Recorder) takeBatch() ([]wireRecord, uint64) {
 	if r.count < n {
 		n = r.count
 	}
-	batch := make([]wireRecord, n)
+	batch = make([]wireRecord, n)
 	for i := range batch {
 		batch[i] = r.ring[(r.head+i)%r.capacity]
 	}

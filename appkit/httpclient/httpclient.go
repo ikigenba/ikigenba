@@ -153,7 +153,7 @@ func (r *digestReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (r *digestReader) sum() (int, string) {
+func (r *digestReader) sum() (byteCount int, digest string) {
 	return r.bytes, hex.EncodeToString(r.hash.Sum(nil))
 }
 

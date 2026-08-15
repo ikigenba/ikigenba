@@ -273,33 +273,7 @@ func New(opts Options) (*http.Server, error) {
 	mux := http.NewServeMux()
 	rt := &Router{mux: mux, app: a, logger: opts.Logger, resourceID: opts.ResourceID, authServer: opts.AuthServer, db: opts.DB, recorder: opts.Recorder}
 
-	if !opts.Apex {
-		// Standard path-routed service route table.
-		// Unauthenticated: RFC 9728 protected-resource metadata — the only route
-		// NOT behind the identity gate, so a client can discover the AS.
-		mux.Handle("GET /.well-known/oauth-protected-resource", a.handlePRMetadata())
-		// Ungated: the liveness health route (DECISIONS §5) — joins PRM and /feed
-		// as an unauthenticated route, so it survives an auth outage.
-		mux.Handle("GET /health", a.handleHealth())
-		// Authenticated: the JSON-RPC MCP endpoint (when the service exposes one).
-		if opts.MCP != nil {
-			mux.Handle("POST /mcp", a.requireIdentityHeaders(opts.MCP))
-		}
-		// Event plane: the SSE feed is unauthenticated and loopback-only,
-		// deliberately not behind the identity gate or reachable via nginx.
-		if opts.Feed != nil {
-			fp := opts.FeedPath
-			if fp == "" {
-				fp = "/feed"
-			}
-			mux.Handle("GET "+fp, LoopbackOnly(opts.Feed))
-		}
-		if opts.WWW != nil {
-			static := opts.WWW.Static()
-			mux.Handle("GET /static/", static)
-			mux.Handle("GET /favicon.ico", faviconAlias(static))
-		}
-	}
+	registerStandardRoutes(opts, a, mux)
 
 	if opts.Register != nil {
 		if err := opts.Register(rt); err != nil {
@@ -316,6 +290,37 @@ func New(opts Options) (*http.Server, error) {
 		IdleTimeout:       60 * time.Second,
 	}
 	return srv, nil
+}
+
+func registerStandardRoutes(opts Options, a *appHandler, mux *http.ServeMux) {
+	if opts.Apex {
+		return
+	}
+	// Standard path-routed service route table.
+	// Unauthenticated: RFC 9728 protected-resource metadata — the only route
+	// NOT behind the identity gate, so a client can discover the AS.
+	mux.Handle("GET /.well-known/oauth-protected-resource", a.handlePRMetadata())
+	// Ungated: the liveness health route (DECISIONS §5) — joins PRM and /feed
+	// as an unauthenticated route, so it survives an auth outage.
+	mux.Handle("GET /health", a.handleHealth())
+	// Authenticated: the JSON-RPC MCP endpoint (when the service exposes one).
+	if opts.MCP != nil {
+		mux.Handle("POST /mcp", a.requireIdentityHeaders(opts.MCP))
+	}
+	// Event plane: the SSE feed is unauthenticated and loopback-only,
+	// deliberately not behind the identity gate or reachable via nginx.
+	if opts.Feed != nil {
+		fp := opts.FeedPath
+		if fp == "" {
+			fp = "/feed"
+		}
+		mux.Handle("GET "+fp, LoopbackOnly(opts.Feed))
+	}
+	if opts.WWW != nil {
+		static := opts.WWW.Static()
+		mux.Handle("GET /static/", static)
+		mux.Handle("GET /favicon.ico", faviconAlias(static))
+	}
 }
 
 // faviconAlias answers the bare GET /favicon.ico by re-dispatching the
