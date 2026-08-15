@@ -11,5 +11,3 @@ status glyph** outside phase lines, so the anchored grep matches only phase
 lines.
 
 Next phase: 25
-
-- Phase 24 ⬜ realizes D18 — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint opsctl` exits 0)
