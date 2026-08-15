@@ -367,15 +367,15 @@ func (c *Client) get(ctx context.Context, parts []string, query url.Values, out 
 	return c.doJSON(ctx, http.MethodGet, parts, query, nil, out)
 }
 
-func (c *Client) post(ctx context.Context, parts []string, in any, out any) error {
+func (c *Client) post(ctx context.Context, parts []string, in, out any) error {
 	return c.doJSON(ctx, http.MethodPost, parts, nil, in, out)
 }
 
-func (c *Client) put(ctx context.Context, parts []string, in any, out any) error {
+func (c *Client) put(ctx context.Context, parts []string, in, out any) error {
 	return c.doJSON(ctx, http.MethodPut, parts, nil, in, out)
 }
 
-func (c *Client) patch(ctx context.Context, parts []string, in any, out any) error {
+func (c *Client) patch(ctx context.Context, parts []string, in, out any) error {
 	return c.doJSON(ctx, http.MethodPatch, parts, nil, in, out)
 }
 
@@ -383,7 +383,7 @@ func (c *Client) delete(ctx context.Context, parts []string, out any) error {
 	return c.doJSON(ctx, http.MethodDelete, parts, nil, nil, out)
 }
 
-func (c *Client) doJSON(ctx context.Context, method string, parts []string, query url.Values, in any, out any) error {
+func (c *Client) doJSON(ctx context.Context, method string, parts []string, query url.Values, in, out any) error {
 	req, err := c.request(ctx, method, parts, query, in)
 	if err != nil {
 		return err
