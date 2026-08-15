@@ -54,6 +54,16 @@ It must print exactly `# dropbox — Plan Status`. If it does not:
    with tagged test names; a skipped requirement test is an open gap for its
    id, even if the overall suite exit code is 0.
 
+   Then run the tiered lint gate:
+
+   ```
+   ../bin/lint dropbox
+   ```
+
+   It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+   (absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+   lint finding at the registered tier is an open gap, not a pass.
+
 3. **For every id in the brief's "Ids to cover" list**, confirm a genuinely
    asserting `// R-XXXX-XXXX` tagged test that actually runs under
    `cd dropbox && go test ./...`:
@@ -168,8 +178,9 @@ Then:
 
 - Never write or fix production code.
 - Never write the brief's contract region.
-- Never retire a phase on anything short of green + full coverage of its own
-  ids (and no new coverage regression elsewhere).
+- Never retire a phase on anything short of green + clean lint (at the
+  registered tier) + full coverage of its own ids (and no new coverage
+  regression elsewhere).
 - The id-set greps over `project/design/D*.md` and `project/plan/phase-*.md`
   extract id tokens only — this is not "reading the big docs" in the forbidden
   sense.
