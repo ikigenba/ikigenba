@@ -14,5 +14,3 @@ deliberately carries **no** bare status glyph outside the phase lines, so
 the anchored grep matches only phase lines.
 
 Next phase: 17
-
-- Phase 16 ⬜ realizes — — promote lint tier to `strict` (D12; fix 11 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint artifacts` exits 0)
