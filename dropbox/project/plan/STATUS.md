@@ -10,5 +10,3 @@ done marker; done is gone. This file deliberately carries **no bare status glyph
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 42
-
-- Phase 41 ⬜ realizes — — promote lint tier to `strict` (D32; fix 9 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint dropbox` exits 0)
