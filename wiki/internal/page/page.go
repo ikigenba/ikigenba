@@ -53,7 +53,7 @@ func DecodeCursor(token string) (parts []string, ok bool) {
 		return nil, false
 	}
 	s := string(raw)
-	for len(s) > 0 {
+	for s != "" {
 		i := strings.IndexByte(s, ':')
 		if i <= 0 {
 			return nil, false

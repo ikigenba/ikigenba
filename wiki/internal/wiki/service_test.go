@@ -1,16 +1,14 @@
 package wiki
 
 import (
+	"appkit/telemetry"
 	"context"
 	"database/sql"
 	"errors"
+	"eventplane/correlation"
 	"strings"
 	"testing"
 	"time"
-
-	"appkit/telemetry"
-	"eventplane/correlation"
-
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	"wiki/internal/page"
@@ -942,7 +940,8 @@ func clockAt(t time.Time) func() time.Time {
 
 func assertPagesFTSMatchCount(t *testing.T, ctx context.Context, conn interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, match string, want int) {
+}, match string, want int,
+) {
 	t.Helper()
 
 	var got int
@@ -1069,7 +1068,8 @@ func TestSuccessfulIntegrateInvalidatesOnlyTheJobsScope(t *testing.T) {
 
 func assertTableCount(t *testing.T, ctx context.Context, conn interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, table string, want int) {
+}, table string, want int,
+) {
 	t.Helper()
 
 	var got int

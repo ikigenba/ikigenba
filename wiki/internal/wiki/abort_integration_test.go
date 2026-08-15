@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 	"time"
-
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+
 	wikidomain "wiki/internal/wiki"
 )
 

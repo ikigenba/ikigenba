@@ -11,13 +11,12 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	appkitweb "appkit/web"
-
 	"wiki/internal/ask"
 	"wiki/internal/markdown"
 	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
+
+	appkitweb "appkit/web"
 )
 
 var ErrNotFound = errors.New("web: subject not found")
@@ -235,41 +234,21 @@ func tierForVisibility(visibility string) string {
 }
 
 func (h *handler) privateHome(w http.ResponseWriter, r *http.Request) {
-	scope, ok := h.resolvePageScope(w, r, "private")
-	if !ok {
-		return
-	}
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	if query != "" {
-		h.ask(w, r, "private", scope, query)
-		return
-	}
-
-	var recent []SubjectRef
-	if h.recent != nil {
-		refs, err := h.recent.Recent(r.Context(), scope.Name, 7)
-		if err != nil {
-			http.Error(w, "list recent pages", http.StatusInternalServerError)
-			return
-		}
-		recent = refs
-	}
-
-	if err := h.site.Render(w, "home", h.pageData(r.Context(), "private", scope.Name, pageData{
-		Recent: recent,
-	})); err != nil {
-		http.Error(w, "render home page", http.StatusInternalServerError)
-	}
+	h.home(w, r, "private")
 }
 
 func (h *handler) publicHome(w http.ResponseWriter, r *http.Request) {
-	scope, ok := h.resolvePageScope(w, r, "public")
+	h.home(w, r, "public")
+}
+
+func (h *handler) home(w http.ResponseWriter, r *http.Request, tier string) {
+	scope, ok := h.resolvePageScope(w, r, tier)
 	if !ok {
 		return
 	}
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query != "" {
-		h.ask(w, r, "public", scope, query)
+		h.ask(w, r, tier, scope, query)
 		return
 	}
 
@@ -282,7 +261,7 @@ func (h *handler) publicHome(w http.ResponseWriter, r *http.Request) {
 		}
 		recent = refs
 	}
-	if err := h.site.Render(w, "home", h.pageData(r.Context(), "public", scope.Name, pageData{
+	if err := h.site.Render(w, "home", h.pageData(r.Context(), tier, scope.Name, pageData{
 		Recent: recent,
 	})); err != nil {
 		http.Error(w, "render home page", http.StatusInternalServerError)
@@ -535,10 +514,6 @@ func (h *handler) absoluteSubjectBase(tier, scope string) string {
 		return h.linkBase
 	}
 	return base + tier + "/" + scope + "/subject/"
-}
-
-func (h *handler) subjectHref(tier, scope, path string) string {
-	return h.mount + tier + "/" + scope + "/subject/" + strings.TrimPrefix(path, "/")
 }
 
 func normalizeMount(mount string) string {

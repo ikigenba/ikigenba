@@ -2,19 +2,17 @@
 package main
 
 import (
+	"appkit"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"registry"
 	"strconv"
 	"strings"
 	"time"
-
-	"appkit"
-	"registry"
-
 	"wiki/internal/ask"
 	"wiki/internal/compile"
 	"wiki/internal/db"
@@ -35,6 +33,7 @@ func main() {
 
 type configLoader func(func(string) string) (wiki.Config, error)
 
+//nolint:funlen // The application specification keeps all wiring visible in one declarative value.
 func newSpec(loadConfig configLoader) appkit.Spec {
 	var svc *wiki.Service
 
@@ -207,11 +206,11 @@ type promptsEmbedder struct {
 	role   string
 }
 
-func embeddingPaths(client *llm.Client, site wiki.EmbedSite) (page, query wiki.PageEmbedder) {
+func embeddingPaths(client *llm.Client, site wiki.EmbedSite) (pageEmbedder, query wiki.PageEmbedder) {
 	base := llm.EmbedSite{Model: site.Model, Dims: site.Dims}
-	page = promptsEmbedder{client: client, site: llm.EmbedSite{Name: "wiki.embed-page", Model: base.Model, Dims: base.Dims}, role: "document"}
+	pageEmbedder = promptsEmbedder{client: client, site: llm.EmbedSite{Name: "wiki.embed-page", Model: base.Model, Dims: base.Dims}, role: "document"}
 	query = promptsEmbedder{client: client, site: llm.EmbedSite{Name: "wiki.embed-query", Model: base.Model, Dims: base.Dims}, role: "query"}
-	return page, query
+	return pageEmbedder, query
 }
 
 func (e promptsEmbedder) Embed(ctx context.Context, attr llm.Attribution, inputs []string, _ wiki.EmbedRole) (*wiki.EmbedResult, error) {
@@ -513,29 +512,29 @@ func (s pathPageService) PageByPathInScope(ctx context.Context, scope, path stri
 	if err != nil {
 		return web.SubjectView{}, err
 	}
-	page, err := s.service.PageWithLinks(ctx, scope, subject.ID)
+	pageView, err := s.service.PageWithLinks(ctx, scope, subject.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return web.SubjectView{}, s.notFoundErr()
 	}
 	if err != nil {
 		return web.SubjectView{}, err
 	}
-	body, err := s.service.LinkifyMentions(ctx, scope, page.Body, s.webBase, subject.ID)
+	body, err := s.service.LinkifyMentions(ctx, scope, pageView.Body, s.webBase, subject.ID)
 	if err != nil {
 		return web.SubjectView{}, err
 	}
 	footer := ""
 	if s.renderFooter {
-		footer = strings.TrimPrefix(wiki.RenderFooter(body, page.Mentions, page.MentionedBy), body)
+		footer = strings.TrimPrefix(wiki.RenderFooter(body, pageView.Mentions, pageView.MentionedBy), body)
 	}
 	return web.SubjectView{
 		SubjectID: subject.ID,
 		Path:      wiki.Path(subject),
-		Title:     page.Title,
+		Title:     pageView.Title,
 		Body:      body,
 		Footer:    footer,
-		Outbound:  webRefs(s.webBase, page.Mentions),
-		Inbound:   webRefs(s.webBase, page.MentionedBy),
+		Outbound:  webRefs(s.webBase, pageView.Mentions),
+		Inbound:   webRefs(s.webBase, pageView.MentionedBy),
 	}, nil
 }
 

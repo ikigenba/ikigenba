@@ -7,7 +7,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	"wiki/internal/retrieve"

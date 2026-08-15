@@ -4,21 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/correlation"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
-
-	appdb "appkit/db"
-	"eventplane/correlation"
-
-	wikidb "wiki/internal/db"
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
 	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
+
+	appdb "appkit/db"
+
+	wikidb "wiki/internal/db"
 )
 
 func TestAskThreadsReceivedChainThroughEveryPromptsCall(t *testing.T) {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
 	"wiki/internal/page"
 )
 
@@ -403,7 +402,8 @@ func TestSubjectListInUnknownScopeReturnsNotFoundWithoutCreatingIt(t *testing.T)
 
 func countRows(t *testing.T, ctx context.Context, db interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, query string) int {
+}, query string,
+) int {
 	t.Helper()
 	var count int
 	if err := db.QueryRowContext(ctx, query).Scan(&count); err != nil {

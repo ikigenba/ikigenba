@@ -1,21 +1,19 @@
 package wiki
 
 import (
+	"appkit"
+	"appkit/logging"
+	"appkit/telemetry"
 	"context"
 	"database/sql"
 	"errors"
+	"eventplane/correlation"
 	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	"appkit"
-	"appkit/logging"
-	"appkit/telemetry"
-	"eventplane/correlation"
-
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	"wiki/internal/match"
@@ -418,6 +416,7 @@ func (s *Service) jobContext(ctx context.Context, job Job) (context.Context, Job
 	return correlation.WithContext(ctx, job.CorrelationID), job
 }
 
+//nolint:funlen,gocyclo // Integration is an auditable transaction pipeline with explicit rollback guards.
 func (s *Service) integrate(ctx context.Context, job Job) error {
 	if s.extractor == nil {
 		return fmt.Errorf("wiki: nil extractor")
@@ -475,23 +474,23 @@ func (s *Service) integrate(ctx context.Context, job Job) error {
 			return err
 		}
 	}
-	for _, page := range plan.pages {
-		if page.delete {
-			if err := pages.DeleteBySubject(ctx, page.subjectID); err != nil {
+	for _, stagedPage := range plan.pages {
+		if stagedPage.delete {
+			if err := pages.DeleteBySubject(ctx, stagedPage.subjectID); err != nil {
 				return err
 			}
 			continue
 		}
-		page := Page{
-			ID:        page.subjectID,
-			SubjectID: page.subjectID,
-			Title:     page.title,
-			Body:      page.body,
+		pageRow := Page{
+			ID:        stagedPage.subjectID,
+			SubjectID: stagedPage.subjectID,
+			Title:     stagedPage.title,
+			Body:      stagedPage.body,
 		}
-		if err := pages.Upsert(ctx, page); err != nil {
+		if err := pages.Upsert(ctx, pageRow); err != nil {
 			return err
 		}
-		pagesToEmbed = append(pagesToEmbed, page)
+		pagesToEmbed = append(pagesToEmbed, pageRow)
 	}
 	res, err := tx.ExecContext(ctx,
 		`UPDATE jobs SET status = ?, finished_at = ?, error = '' WHERE id = ? AND status = ?`,
@@ -600,6 +599,7 @@ func (s *Service) planIntegration(ctx context.Context, attr llm.Attribution, job
 	return plan, nil
 }
 
+//nolint:funlen,gocyclo // Subject merging keeps all atomic migration and cleanup guards in one transaction.
 func (s *Service) mergeSubjects(ctx context.Context, job Job) error {
 	if s.compiler == nil {
 		return fmt.Errorf("wiki: nil compiler")
@@ -774,6 +774,7 @@ func (s *Service) mergeClaims(ctx context.Context, fromSubjectID, toSubjectID st
 	return combined, nil
 }
 
+//nolint:gocyclo // Claim reconciliation enumerates the required correction and suppression cases explicitly.
 func (s *Service) mergeEffectiveClaims(ctx context.Context, attr llm.Attribution, loser, winner Subject) ([]Claim, []Suppression, error) {
 	combined, err := s.mergeClaims(ctx, loser.ID, winner.ID)
 	if err != nil {
@@ -795,9 +796,10 @@ func (s *Service) mergeEffectiveClaims(ctx context.Context, attr llm.Attribution
 		for _, row := range rows {
 			subjectByRow[row.ID] = row.SubjectID
 			statement := match.Statement{Claim: row, New: isLoser}
-			if row.Kind == CorrectionKind {
+			switch row.Kind {
+			case CorrectionKind:
 				corrections = append(corrections, statement)
-			} else if row.Kind == ClaimKind {
+			case ClaimKind:
 				claims = append(claims, statement)
 			}
 		}
@@ -878,6 +880,7 @@ func finishDoneInTx(ctx context.Context, tx *sql.Tx, jobID string, finishedAt ti
 	return true, tx.Commit()
 }
 
+//nolint:gocritic // Explicit returns keep subject resolution, creation status, and errors distinct.
 func (s *Service) plannedSubject(ctx context.Context, scope string, known map[string]Subject, item extract.ExtractedSubject) (Subject, bool, error) {
 	normName := Normalize(item.Name)
 	if subject, ok := known[normName]; ok {
@@ -971,35 +974,6 @@ func listAllClaims(ctx context.Context, store *ClaimStore, subjectID string) ([]
 		}
 		params.Cursor = next
 	}
-}
-
-func listAllPages(ctx context.Context, store *PageStore) ([]Page, error) {
-	return listAllPagesInScope(ctx, store, "default")
-}
-
-func listAllPagesInScope(ctx context.Context, store *PageStore, scope string) ([]Page, error) {
-	if err := requireScope(ctx, store.db, scope); err != nil {
-		return nil, err
-	}
-	rows, err := store.db.QueryContext(ctx, `
-		SELECT pages.id, pages.subject_id, pages.title, pages.body
-		FROM pages JOIN subjects ON subjects.id = pages.subject_id
-		WHERE subjects.scope = ?
-		ORDER BY pages.id`, scope)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var pages []Page
-	for rows.Next() {
-		var page Page
-		if err := rows.Scan(&page.ID, &page.SubjectID, &page.Title, &page.Body); err != nil {
-			return nil, err
-		}
-		pages = append(pages, page)
-	}
-	return pages, rows.Err()
 }
 
 func (s *Service) affectedSubjects(ctx context.Context, subjects *SubjectStore, claims *ClaimStore, jobID string) (map[string]Subject, error) {

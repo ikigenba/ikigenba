@@ -230,6 +230,7 @@ func overlapsAny(mention FirstMention, regions []FirstMention) bool {
 	return false
 }
 
+//nolint:gocyclo,nestif // The scanner deliberately handles each Markdown skip syntax in one byte-oriented pass.
 func markdownSkipRegions(body string) []FirstMention {
 	var regions []FirstMention
 	for lineStart := 0; lineStart < len(body); {

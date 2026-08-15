@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"appkit"
+	"appkit/server"
 	"bytes"
 	"context"
 	"database/sql"
@@ -16,18 +18,18 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"appkit"
-	appdb "appkit/db"
-	appkitmcp "appkit/mcp"
-	"appkit/server"
-
 	"wiki/internal/ask"
-	wikidb "wiki/internal/db"
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
-	paging "wiki/internal/page"
 	"wiki/internal/retrieve"
+
+	appdb "appkit/db"
+	appkitmcp "appkit/mcp"
+
+	wikidb "wiki/internal/db"
+
+	paging "wiki/internal/page"
+
 	wikidomain "wiki/internal/wiki"
 )
 
@@ -1084,8 +1086,10 @@ func TestMergeStoresAndMergesExposeOwnerPairKeyedOnID(t *testing.T) {
 	defer conn.Close()
 	subjects := wikidomain.NewSubjectStore(conn)
 	for _, subject := range []wikidomain.Subject{
-		{ID: "winner-1", Name: "Winner One", Type: "entity"}, {ID: "loser-1", Name: "Loser One", Type: "entity"},
-		{ID: "winner-2", Name: "Winner Two", Type: "entity"}, {ID: "loser-2", Name: "Loser Two", Type: "entity"},
+		{ID: "winner-1", Name: "Winner One", Type: "entity"},
+		{ID: "loser-1", Name: "Loser One", Type: "entity"},
+		{ID: "winner-2", Name: "Winner Two", Type: "entity"},
+		{ID: "loser-2", Name: "Loser Two", Type: "entity"},
 	} {
 		if err := subjects.Save(ctx, subject); err != nil {
 			t.Fatalf("save subject %s: %v", subject.ID, err)
@@ -2308,7 +2312,6 @@ func TestPaginatedListToolsForwardFiltersAndReturnNextCursors(t *testing.T) {
 	if len(claimsBody.Claims) != 1 || claimsBody.Claims[0].ID != "claim-1" || claimsBody.Claims[0].Text == "" || claimsBody.Next != "claim-next" {
 		t.Fatalf("claims body = %#v, want paginated claims result", claimsBody)
 	}
-
 }
 
 func TestMCPToolsAreBehindRequireIdentity(t *testing.T) {
@@ -2409,6 +2412,7 @@ func (*scopePartitionService) Get(_ context.Context, name string) (wikidomain.Sc
 	}
 	return wikidomain.Scope{}, wikidomain.ErrScopeNotFound
 }
+
 func (*scopePartitionService) Create(context.Context, string) (wikidomain.Scope, error) {
 	return wikidomain.Scope{}, nil
 }
@@ -2424,12 +2428,14 @@ func (*scopePartitionService) ListJobsInScope(_ context.Context, scope string, _
 	}
 	return nil, "", nil
 }
+
 func (*scopePartitionService) CountJobsInScope(_ context.Context, scope string, _ JobFilter) (int, error) {
 	if scope == "s1" {
 		return 1, nil
 	}
 	return 0, nil
 }
+
 func (*scopePartitionService) ListMergesInScope(_ context.Context, scope string, _ paging.Params) ([]alias, string, error) {
 	if scope == "s1" {
 		return []alias{{NormName: "folded"}}, "", nil
@@ -2943,7 +2949,8 @@ func decodeJSON(t *testing.T, raw []byte, dst any) {
 func toolSchema(t *testing.T, tools []struct {
 	Name        string         `json:"name"`
 	InputSchema map[string]any `json:"inputSchema"`
-}, name string) map[string]any {
+}, name string,
+) map[string]any {
 	t.Helper()
 	for _, tool := range tools {
 		if tool.Name == name {

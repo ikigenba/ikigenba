@@ -1,9 +1,12 @@
 package llm
 
 import (
+	"appkit/httpclient"
+	"appkit/telemetry"
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,10 +16,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"appkit/httpclient"
-	"appkit/telemetry"
-	"eventplane/correlation"
 )
 
 type fixture struct {

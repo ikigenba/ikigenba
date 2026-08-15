@@ -5,9 +5,8 @@ package llm
 import (
 	"context"
 	"net/http"
-	"testing"
-
 	"registry"
+	"testing"
 )
 
 func TestEmbedAgainstLivePrompts(t *testing.T) {

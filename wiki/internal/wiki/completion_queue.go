@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+
 	matchstage "wiki/internal/match"
 )
 
@@ -233,6 +233,7 @@ func (d *Drain) record(outcome Outcome) {
 	}
 }
 
+//nolint:gocyclo,nestif // Completion routing is a guarded state-machine transition kept together for auditability.
 func (s *Service) applyCompletion(ctx context.Context, item llm.Item) Outcome {
 	var envelope pipelineEnvelope
 	if err := json.Unmarshal(item.Context, &envelope); err != nil || envelope.JobID == "" || (envelope.Stage != "extract" && envelope.Stage != "match" && envelope.Stage != "compile") {
@@ -248,7 +249,7 @@ func (s *Service) applyCompletion(ctx context.Context, item llm.Item) Outcome {
 	if job.Status != JobWorking {
 		return Outcome{Class: Discarded, Reason: "terminal_job"}
 	}
-	if envelope.Stage != job.Phase && !(item.Status == "done" && envelope.Stage == "extract" && (job.Phase == "match" || job.Phase == "compile")) && !(item.Status == "done" && envelope.Stage == "match" && job.Phase == "compile") && !(envelope.Stage == "compile" && job.Phase == "match") {
+	if !completionStageAllowed(envelope.Stage, job.Phase, item.Status) {
 		return Outcome{Class: Discarded, Reason: "stale_stage"}
 	}
 	ctx, job = s.jobContext(ctx, job)
@@ -384,6 +385,18 @@ func containsString(values []string, value string) bool {
 	return false
 }
 
+func completionStageAllowed(completionStage, jobPhase, itemStatus string) bool {
+	if completionStage == jobPhase || completionStage == "compile" && jobPhase == "match" {
+		return true
+	}
+	if itemStatus != "done" {
+		return false
+	}
+	return completionStage == "extract" && (jobPhase == "match" || jobPhase == "compile") ||
+		completionStage == "match" && jobPhase == "compile"
+}
+
+//nolint:gocyclo // Extraction handling is a linear set of protocol and persistence guards.
 func (s *Service) applyExtract(ctx context.Context, job Job, item llm.Item) Outcome {
 	plan, found, err := s.loadStagedIntegration(ctx, job.ID)
 	if err != nil {
@@ -495,6 +508,7 @@ func (s *Service) matchUnitStaged(ctx context.Context, jobID, unit string) (bool
 	return found != 0, err
 }
 
+//nolint:funlen,gocyclo // Plan staging validates and normalizes one atomic extraction transaction.
 func (s *Service) stageExtractPlan(ctx context.Context, job Job, extracted []extract.ExtractedSubject) (stagedIntegration, error) {
 	affected, err := s.affectedSubjects(ctx, s.subjects, s.claims, job.ID)
 	if err != nil {
@@ -673,6 +687,9 @@ func (s *Service) matchUnit(ctx context.Context, job Job, plan stagedIntegration
 	if err == nil {
 		subject.ID = resolved.ID
 		rows, err = s.plannedClaims(ctx, job.ID, resolved.ID, nil)
+		if err != nil {
+			return matchstage.Unit{}, err
+		}
 	} else if !errors.Is(err, ErrSubjectNotFound) {
 		return matchstage.Unit{}, err
 	}
@@ -694,6 +711,7 @@ func (s *Service) matchUnit(ctx context.Context, job Job, plan stagedIntegration
 	return unit, nil
 }
 
+//nolint:funlen,gocyclo // Match handling is a guarded state-machine transition kept together for auditability.
 func (s *Service) applyMatch(ctx context.Context, job Job, envelope pipelineEnvelope, item llm.Item) Outcome {
 	plan, found, err := s.loadStagedIntegration(ctx, job.ID)
 	if err != nil {
@@ -853,6 +871,7 @@ func (s *Service) stageDeletedCompile(ctx context.Context, jobID, unit string, u
 	return err
 }
 
+//nolint:gocyclo // Compile handling is a linear set of protocol and persistence guards.
 func (s *Service) applyCompile(ctx context.Context, job Job, envelope pipelineEnvelope, item llm.Item) Outcome {
 	plan, found, err := s.loadStagedIntegration(ctx, job.ID)
 	if err != nil {
@@ -928,9 +947,10 @@ func (s *Service) correctOrFail(ctx context.Context, job Job, item llm.Item, sta
 	attempt := keyAttempt(item.Key)
 	site := s.extractSite
 	var original string
-	if stage == "extract" {
+	switch stage {
+	case "extract":
 		original = extract.Render(extract.DocumentHeader{Source: "mcp:ingest_text", Title: job.Title, Tags: job.Tags, ReceivedAt: job.ReceivedAt}, job.SourceText)
-	} else if stage == "match" {
+	case "match":
 		site = s.matchSite
 		plan, found, err := s.loadStagedIntegration(ctx, job.ID)
 		if err != nil {
@@ -944,7 +964,7 @@ func (s *Service) correctOrFail(ctx context.Context, job Job, item llm.Item, sta
 			return s.applyError(ctx, job, "load_match_unit", err)
 		}
 		original = matchstage.Render(unit)
-	} else {
+	default:
 		site = s.compileSite
 		plan, found, err := s.loadStagedIntegration(ctx, job.ID)
 		if err != nil {
@@ -999,6 +1019,7 @@ func renderCompile(subject Subject, claims []Claim) string {
 	return b.String()
 }
 
+//nolint:gocritic // Explicit returns keep the title, body, and decode error cases local.
 func parseCompile(raw json.RawMessage) (string, string, error) {
 	var out struct {
 		Title string `json:"title"`
@@ -1056,6 +1077,7 @@ func (s *Service) integrateStaged(ctx context.Context, job Job, plan stagedInteg
 	return s.afterStagedCommit(ctx, job, committed)
 }
 
+//nolint:funlen,gocyclo // This function is the single auditable transaction boundary for staged integration.
 func (s *Service) integrateStagedTx(ctx context.Context, tx *sql.Tx, job Job, plan stagedIntegration) (stagedCommit, error) {
 	var status, phase string
 	if err := tx.QueryRowContext(ctx, `SELECT status, phase FROM jobs WHERE id = ?`, job.ID).Scan(&status, &phase); err != nil {

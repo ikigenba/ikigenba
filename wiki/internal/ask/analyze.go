@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
 	"wiki/internal/llm"
 	"wiki/internal/wiki"
 )
@@ -40,7 +39,7 @@ func NormalizeAnalysis(out *wiki.QueryAnalysis) {
 	out.Aliases = cleanAnalysisStrings(out.Aliases, 0)
 }
 
-func cleanAnalysisStrings(in []string, cap int) []string {
+func cleanAnalysisStrings(in []string, limit int) []string {
 	out := make([]string, 0, len(in))
 	seen := map[string]struct{}{}
 	for _, raw := range in {
@@ -54,7 +53,7 @@ func cleanAnalysisStrings(in []string, cap int) []string {
 		}
 		seen[key] = struct{}{}
 		out = append(out, v)
-		if cap > 0 && len(out) == cap {
+		if limit > 0 && len(out) == limit {
 			break
 		}
 	}

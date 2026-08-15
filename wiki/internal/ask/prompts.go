@@ -15,6 +15,6 @@ var DefaultAnalysisInstructions string
 var DefaultSynthesisInstructions string
 
 // RenderAnalysis returns the question-only user turn used by production analysis.
-func RenderAnalysis(_ string, question string) string {
+func RenderAnalysis(_, question string) string {
 	return question
 }

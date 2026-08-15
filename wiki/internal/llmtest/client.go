@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
 	"wiki/internal/llm"
 )
 
@@ -95,8 +94,10 @@ func NewRoundTrip(message Message, _ FinishReason, usage Usage, rest ...any) *Ro
 	return &RoundTrip{Message: message, Usage: usage, Err: err}
 }
 
-type Pricing struct{ Tiers []RateTier }
-type RateTier struct{ MinInputTokens int }
+type (
+	Pricing  struct{ Tiers []RateTier }
+	RateTier struct{ MinInputTokens int }
+)
 
 type Provider interface {
 	RoundTrip(context.Context, *Request) *RoundTrip
@@ -159,10 +160,13 @@ func NewClientWithEmbeddings(t testing.TB, provider Provider, vectors [][]float3
 }
 
 // ServeProvider returns a prompts-compatible loopback around a provider.
+//
+//nolint:gocritic // Explicit unnamed results make the client and cleanup roles clearest at call sites.
 func ServeProvider(provider Provider) (*llm.Client, func()) {
 	return serve(provider, nil)
 }
 
+//nolint:gocritic,gocyclo // This test protocol adapter intentionally mirrors the small prompts HTTP surface in one handler.
 func serve(provider Provider, embeds *EmbedCapture) (*llm.Client, func()) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/embed" {

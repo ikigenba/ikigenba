@@ -4,21 +4,20 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/correlation"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"eventplane/correlation"
-
 	"wiki/internal/compile"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
-	wikidomain "wiki/internal/wiki"
 	"wiki/internal/worker"
+
+	wikidomain "wiki/internal/wiki"
 )
 
 func TestWorkerThreadsStoredChainThroughExtractCompileAndEmbed(t *testing.T) {

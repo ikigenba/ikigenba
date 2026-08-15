@@ -12,11 +12,10 @@ import (
 	"strings"
 	"time"
 	"unicode"
-
-	"golang.org/x/text/unicode/norm"
-
 	"wiki/internal/model"
 	"wiki/internal/page"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Subject is a canonical entity, event, or concept in the wiki.
@@ -52,6 +51,8 @@ type Suppression struct {
 // Effective partitions one subject's rows into effective claims and rows
 // suppressed by live corrections. Claim IDs are ULIDs, so descending ID order
 // is assertion order and also breaks ties within an integration commit.
+//
+//nolint:gocritic // Explicit returns distinguish effective claims from suppression provenance.
 func Effective(rows []Claim, edges []Suppression) ([]Claim, map[string][]string) {
 	byCorrection := make(map[string][]string)
 	for _, edge := range edges {
@@ -661,6 +662,7 @@ func (s *JobStore) CountJobs(ctx context.Context, raw ...any) (int, error) {
 	return n, nil
 }
 
+//nolint:gocritic // Explicit returns avoid mutable named query-builder results.
 func appendJobFilter(query string, args []any, f JobFilter) (string, []any) {
 	statuses := normalizedStatuses(f.Statuses)
 	if len(statuses) > 0 {
@@ -897,6 +899,7 @@ func (s *SubjectStore) GetByPath(ctx context.Context, scope, path string) (Subje
 	return subject, nil
 }
 
+//nolint:gocritic // Explicit returns preserve the conventional rows, cursor, error API.
 func (s *SubjectStore) List(ctx context.Context, typ, nameContains string, p page.Params) ([]Subject, string, error) {
 	return s.ListInScope(ctx, "default", typ, nameContains, p)
 }
@@ -931,6 +934,8 @@ func (s *SubjectStore) Recent(ctx context.Context, scope string, limit int) ([]S
 }
 
 // ListInScope lists subjects only after resolving the named scope.
+//
+//nolint:gocritic // Explicit returns preserve the conventional rows, cursor, error API.
 func (s *SubjectStore) ListInScope(ctx context.Context, scope, typ, nameContains string, p page.Params) ([]Subject, string, error) {
 	if err := requireScope(ctx, s.db, scope); err != nil {
 		return nil, "", err
@@ -988,6 +993,7 @@ func requireScope(ctx context.Context, db sqlStore, scope string) error {
 	return nil
 }
 
+//nolint:gocritic // Explicit returns keep the arity cases self-contained.
 func scopedStringArgs(args []string) (string, string, error) {
 	switch len(args) {
 	case 1:
@@ -999,6 +1005,7 @@ func scopedStringArgs(args []string) (string, string, error) {
 	}
 }
 
+//nolint:gocritic // Explicit returns keep dynamic argument validation self-contained.
 func subjectSaveArgs(args []any) (string, Subject, error) {
 	if len(args) == 1 {
 		subject, ok := args[0].(Subject)
@@ -1149,6 +1156,7 @@ func timePtr(t time.Time) *time.Time {
 	return &t
 }
 
+//nolint:gocritic // Explicit returns preserve the conventional rows, cursor, error API.
 func (s *ClaimStore) ListBySubject(ctx context.Context, subjectID string, p page.Params) ([]Claim, string, error) {
 	cursor, err := decodeCursor(p.Cursor, 1)
 	if err != nil {
@@ -1276,23 +1284,23 @@ func NewPageStore(db sqlStore) *PageStore {
 	return &PageStore{db: db}
 }
 
-func (s *PageStore) Upsert(ctx context.Context, page Page) error {
+func (s *PageStore) Upsert(ctx context.Context, pageRow Page) error {
 	if db, ok := s.db.(*sql.DB); ok {
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
 		defer tx.Rollback()
-		if err := NewPageStore(tx).upsert(ctx, page); err != nil {
+		if err := NewPageStore(tx).upsert(ctx, pageRow); err != nil {
 			return err
 		}
 		return tx.Commit()
 	}
-	return s.upsert(ctx, page)
+	return s.upsert(ctx, pageRow)
 }
 
-func (s *PageStore) upsert(ctx context.Context, page Page) error {
-	previous, found, err := s.pageFTSByID(ctx, page.ID)
+func (s *PageStore) upsert(ctx context.Context, pageRow Page) error {
+	previous, found, err := s.pageFTSByID(ctx, pageRow.ID)
 	if err != nil {
 		return err
 	}
@@ -1308,38 +1316,38 @@ func (s *PageStore) upsert(ctx context.Context, page Page) error {
 			subject_id = excluded.subject_id,
 			title = excluded.title,
 			body = excluded.body`,
-		page.ID, page.SubjectID, page.Title, page.Body)
+		pageRow.ID, pageRow.SubjectID, pageRow.Title, pageRow.Body)
 	if err != nil {
 		return err
 	}
-	current, found, err := s.pageFTSByID(ctx, page.ID)
+	current, found, err := s.pageFTSByID(ctx, pageRow.ID)
 	if err != nil {
 		return err
 	}
 	if !found {
-		return fmt.Errorf("wiki: page %s missing after upsert", page.ID)
+		return fmt.Errorf("wiki: page %s missing after upsert", pageRow.ID)
 	}
 	return s.insertPageFTS(ctx, current)
 }
 
 func (s *PageStore) Get(ctx context.Context, id string) (Page, error) {
-	var page Page
+	var pageRow Page
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, subject_id, title, body FROM pages WHERE id = ?`, id).
-		Scan(&page.ID, &page.SubjectID, &page.Title, &page.Body)
-	return page, err
+		Scan(&pageRow.ID, &pageRow.SubjectID, &pageRow.Title, &pageRow.Body)
+	return pageRow, err
 }
 
 func (s *PageStore) GetBySubject(ctx context.Context, subjectID string) (Page, error) {
-	var page Page
+	var pageRow Page
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, subject_id, title, body
 		FROM pages
 		WHERE subject_id = ?
 		ORDER BY id
 		LIMIT 1`, subjectID).
-		Scan(&page.ID, &page.SubjectID, &page.Title, &page.Body)
-	return page, err
+		Scan(&pageRow.ID, &pageRow.SubjectID, &pageRow.Title, &pageRow.Body)
+	return pageRow, err
 }
 
 func (s *PageStore) DeleteBySubject(ctx context.Context, subjectID string) error {

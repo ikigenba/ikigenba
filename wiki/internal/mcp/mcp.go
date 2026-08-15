@@ -2,6 +2,8 @@
 package mcp
 
 import (
+	"appkit"
+	"appkit/server"
 	"context"
 	"database/sql"
 	_ "embed"
@@ -10,15 +12,14 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
+	"wiki/internal/wiki"
 
-	"appkit"
 	appkitmcp "appkit/mcp"
-	"appkit/server"
 
 	paging "wiki/internal/page"
-	"wiki/internal/wiki"
 )
 
 const Instructions = "wiki is a scoped knowledge base (notes, a second brain) built from source text you ingest. Choose or create a scope first; every content call requires it. Scope instructions provide operator-authored context that overrides conflicting base inference rules. Ingest queues text; a background pipeline distills entities, events, concepts, and their claims into cited pages. State corrections in prose as explicit rulings; claims exposes which rows they suppress. Ask for grounded answers; read knowledge by type/slug path; track jobs; merge duplicates; and steer work with abort and rerun. Call guide for scope management, corrections, field catalogs, paths, and worked examples before your first ingest or merge."
@@ -338,6 +339,8 @@ func WithScopeService(s scopeService) Option {
 
 // Tools returns wiki's configured domain MCP tools. Chassis health and
 // reflection are supplied by appkit/mcp and are not declared here.
+//
+//nolint:gocyclo // Each independent branch conditionally registers one injected domain tool.
 func Tools(opts ...Option) []appkitmcp.Tool {
 	h := &Handler{}
 	for _, opt := range opts {
@@ -785,6 +788,7 @@ func handleGuideCall(context.Context, json.RawMessage, server.Identity) (map[str
 	return appkitmcp.TextResult(guideDoc), nil
 }
 
+//nolint:gocritic // Explicit returns keep transport errors adjacent to their validation branches.
 func (h *Handler) requireScope(ctx context.Context, raw json.RawMessage) (string, map[string]any) {
 	var args struct {
 		Scope string `json:"scope"`
@@ -918,6 +922,7 @@ func (h *Handler) handleInstructionsCall(ctx context.Context, raw json.RawMessag
 	return appkitmcp.StructuredResult(map[string]string{"scope": args.Scope, "instructions": *args.Text})
 }
 
+//nolint:gocritic // Explicit returns keep decoded values and structured errors visually distinct.
 func decodeScopeName(raw json.RawMessage) (string, map[string]any) {
 	var args struct {
 		Name string `json:"name"`
@@ -1079,6 +1084,7 @@ func askToolResult(answer any, pageBase string) map[string]any {
 	}
 }
 
+//nolint:gocritic // The heterogeneous reflection result is clearer without mutable named returns.
 func answerFields(answer any) (bool, string, reflect.Value) {
 	v := indirect(reflect.ValueOf(answer))
 	if !v.IsValid() || v.Kind() != reflect.Struct {
@@ -1239,12 +1245,6 @@ func guideTool() map[string]any {
 	}
 }
 
-func listSchema(properties map[string]any) map[string]any {
-	properties["limit"] = map[string]any{"type": "integer"}
-	properties["cursor"] = map[string]any{"type": "string"}
-	return objectSchema(properties, nil)
-}
-
 func scopedListSchema(properties map[string]any) map[string]any {
 	properties["limit"] = map[string]any{"type": "integer"}
 	properties["cursor"] = map[string]any{"type": "string"}
@@ -1317,40 +1317,12 @@ var validJobStatuses = []string{"pending", "working", "done", "failed", "aborted
 type jobStatusArgs []string
 
 func (s *jobStatusArgs) UnmarshalJSON(raw []byte) error {
-	if string(raw) == "null" {
-		*s = nil
-		return nil
-	}
-	var values []string
-	if err := json.Unmarshal(raw, &values); err != nil {
-		var value string
-		if err := json.Unmarshal(raw, &value); err != nil {
-			return fmt.Errorf("status must be an array of strings")
-		}
-		values = []string{value}
-	}
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if !validJobStatus(value) {
-			return fmt.Errorf("status must be one of %s", strings.Join(validJobStatuses, ", "))
-		}
-		out = append(out, value)
+	out, err := decodeStringList(raw, "status", validJobStatuses)
+	if err != nil {
+		return err
 	}
 	*s = out
 	return nil
-}
-
-func validJobStatus(value string) bool {
-	for _, valid := range validJobStatuses {
-		if value == valid {
-			return true
-		}
-	}
-	return false
 }
 
 var validJobKinds = []string{"ingest", "merge"}
@@ -1358,15 +1330,23 @@ var validJobKinds = []string{"ingest", "merge"}
 type jobKindArgs []string
 
 func (k *jobKindArgs) UnmarshalJSON(raw []byte) error {
+	out, err := decodeStringList(raw, "kind", validJobKinds)
+	if err != nil {
+		return err
+	}
+	*k = out
+	return nil
+}
+
+func decodeStringList(raw []byte, label string, validValues []string) ([]string, error) {
 	if string(raw) == "null" {
-		*k = nil
-		return nil
+		return nil, nil
 	}
 	var values []string
 	if err := json.Unmarshal(raw, &values); err != nil {
 		var value string
 		if err := json.Unmarshal(raw, &value); err != nil {
-			return fmt.Errorf("kind must be an array of strings")
+			return nil, fmt.Errorf("%s must be an array of strings", label)
 		}
 		values = []string{value}
 	}
@@ -1376,22 +1356,12 @@ func (k *jobKindArgs) UnmarshalJSON(raw []byte) error {
 		if value == "" {
 			continue
 		}
-		if !validJobKind(value) {
-			return fmt.Errorf("kind must be one of %s", strings.Join(validJobKinds, ", "))
+		if !slices.Contains(validValues, value) {
+			return nil, fmt.Errorf("%s must be one of %s", label, strings.Join(validValues, ", "))
 		}
 		out = append(out, value)
 	}
-	*k = out
-	return nil
-}
-
-func validJobKind(value string) bool {
-	for _, valid := range validJobKinds {
-		if value == valid {
-			return true
-		}
-	}
-	return false
+	return out, nil
 }
 
 func jobKindArraySchema() map[string]any {
@@ -1404,6 +1374,7 @@ func jobKindArraySchema() map[string]any {
 	}
 }
 
+//nolint:gocritic // Explicit returns keep the filter, limit, cursor, and validation error construction local.
 func decodeJobsArgs(raw json.RawMessage, withPaging bool) (JobFilter, int, string, error) {
 	var args struct {
 		Status jobStatusArgs `json:"status"`

@@ -8,10 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"wiki/internal/wiki"
 
 	appkitweb "appkit/web"
-
-	"wiki/internal/wiki"
 )
 
 // R-RYDN-YNR5

@@ -7,16 +7,17 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	appdb "appkit/db"
-
 	"wiki/internal/compile"
-	wikidb "wiki/internal/db"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
-	wikidomain "wiki/internal/wiki"
 	"wiki/internal/worker"
+
+	appdb "appkit/db"
+
+	wikidb "wiki/internal/db"
+
+	wikidomain "wiki/internal/wiki"
 )
 
 func TestRunIntegratesPendingJobWithRealDBAndMockProvider(t *testing.T) {

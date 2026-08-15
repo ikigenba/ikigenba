@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
-
 	"wiki/internal/llm"
 	"wiki/internal/model"
 )
@@ -117,9 +116,9 @@ func validateResponse(r *compileResponse) error {
 	return nil
 }
 
-func renderPrompt(s model.Subject, claims []model.Claim, cap int, tighten string) string {
+func renderPrompt(s model.Subject, claims []model.Claim, limit int, tighten string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Hard body limit: %d characters.\n", cap)
+	fmt.Fprintf(&b, "Hard body limit: %d characters.\n", limit)
 	if strings.TrimSpace(tighten) != "" {
 		b.WriteString(tighten)
 		b.WriteByte('\n')
@@ -154,13 +153,13 @@ func writePromptLine(b *strings.Builder, key, value string) {
 	b.WriteByte('\n')
 }
 
-func truncateRunes(s string, cap int) string {
-	if cap < 0 {
-		cap = 0
+func truncateRunes(s string, limit int) string {
+	if limit < 0 {
+		limit = 0
 	}
-	if utf8.RuneCountInString(s) <= cap {
+	if utf8.RuneCountInString(s) <= limit {
 		return s
 	}
 	runes := []rune(s)
-	return string(runes[:cap])
+	return string(runes[:limit])
 }

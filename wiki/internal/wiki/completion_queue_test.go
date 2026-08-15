@@ -12,8 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
-
 	"wiki/internal/llm"
+
 	wikidomain "wiki/internal/wiki"
 )
 

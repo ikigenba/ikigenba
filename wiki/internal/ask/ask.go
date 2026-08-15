@@ -6,15 +6,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
 	"fmt"
 	"strings"
-
 	"wiki/internal/asksite"
 	"wiki/internal/llm"
 	"wiki/internal/retrieve"
 	"wiki/internal/wiki"
-
-	"eventplane/correlation"
 )
 
 const honestEmptyText = "The wiki holds nothing on that question."
@@ -104,6 +102,8 @@ func DefaultSynthesisCallSite() llm.CallSite {
 
 // Ask answers a question by analyzing it, retrieving relevant pages, reading
 // only those page bodies, and synthesizing an answer grounded in that set.
+//
+//nolint:gocyclo // The branches are a linear sequence of validation and honest-empty gates.
 func (a *Asker) Ask(ctx context.Context, scope, owner, question string) (Answer, error) {
 	if a == nil || a.search == nil || a.subjects == nil || a.pages == nil {
 		return Answer{}, fmt.Errorf("ask: nil stores")

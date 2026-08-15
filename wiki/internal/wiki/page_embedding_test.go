@@ -1,23 +1,23 @@
 package wiki
 
 import (
+	"appkit/httpclient"
+	"appkit/telemetry"
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
-
-	appdb "appkit/db"
-	"appkit/httpclient"
-	"appkit/telemetry"
-	"eventplane/correlation"
-
-	wikidb "wiki/internal/db"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+
+	appdb "appkit/db"
+
+	wikidb "wiki/internal/db"
 )
 
 func TestEmbedAndStoreUsesDocumentRoleAndUpdatesStoreAndCache(t *testing.T) {

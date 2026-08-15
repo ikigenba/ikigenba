@@ -1,10 +1,14 @@
 package main
 
 import (
+	"appkit"
+	"appkit/manifest"
+	"appkit/server"
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/correlation"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,31 +21,29 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"registry"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"appkit"
-	appdb "appkit/db"
-	"appkit/manifest"
-	"appkit/server"
-	appkitweb "appkit/web"
-	"eventplane/correlation"
-	"registry"
-
 	"wiki/internal/ask"
 	"wiki/internal/compile"
-	wikidb "wiki/internal/db"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
 	"wiki/internal/match"
 	"wiki/internal/mcp"
-	paging "wiki/internal/page"
 	"wiki/internal/retrieve"
 	"wiki/internal/web"
 	"wiki/internal/wiki"
+
+	appdb "appkit/db"
+
+	appkitweb "appkit/web"
+
+	wikidb "wiki/internal/db"
+
+	paging "wiki/internal/page"
 )
 
 func testWWWRoot(t *testing.T) string {

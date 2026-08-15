@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
 	"wiki/internal/asksite"
 	"wiki/internal/compile"
 	"wiki/internal/extract"

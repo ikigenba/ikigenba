@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
 )
@@ -65,23 +64,31 @@ func TestValidateAcceptsClaimsAndCorrectionsAsStatements(t *testing.T) {
 	}{
 		{
 			name: "correction without claim",
-			subject: ExtractedSubject{Type: "entity", Kind: "person", Name: "Ada Lovelace",
-				Corrections: []string{"Ada Lovelace did not publish the notes in 1842."}},
+			subject: ExtractedSubject{
+				Type: "entity", Kind: "person", Name: "Ada Lovelace",
+				Corrections: []string{"Ada Lovelace did not publish the notes in 1842."},
+			},
 		},
 		{
 			name: "correction with claim",
-			subject: ExtractedSubject{Type: "entity", Kind: "person", Name: "Ada Lovelace",
-				Claims: []string{"Ada Lovelace published the notes in 1843."}, Corrections: []string{"Ada Lovelace did not publish the notes in 1842."}},
+			subject: ExtractedSubject{
+				Type: "entity", Kind: "person", Name: "Ada Lovelace",
+				Claims: []string{"Ada Lovelace published the notes in 1843."}, Corrections: []string{"Ada Lovelace did not publish the notes in 1842."},
+			},
 		},
 		{
 			name: "claim with corrections absent",
-			subject: ExtractedSubject{Type: "entity", Kind: "person", Name: "Ada Lovelace",
-				Claims: []string{"Ada Lovelace published the notes in 1843."}},
+			subject: ExtractedSubject{
+				Type: "entity", Kind: "person", Name: "Ada Lovelace",
+				Claims: []string{"Ada Lovelace published the notes in 1843."},
+			},
 		},
 		{
 			name: "empty correction",
-			subject: ExtractedSubject{Type: "entity", Kind: "person", Name: "Ada Lovelace",
-				Claims: []string{"Ada Lovelace published the notes in 1843."}, Corrections: []string{" \t"}},
+			subject: ExtractedSubject{
+				Type: "entity", Kind: "person", Name: "Ada Lovelace",
+				Claims: []string{"Ada Lovelace published the notes in 1843."}, Corrections: []string{" \t"},
+			},
 			wantErr: "corrections[0] required",
 		},
 		{

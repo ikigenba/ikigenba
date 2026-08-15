@@ -6,20 +6,20 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"eventplane/correlation"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"eventplane/correlation"
-
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
-	matchstage "wiki/internal/match"
 	"wiki/internal/page"
-	wikidomain "wiki/internal/wiki"
 	"wiki/internal/worker"
+
+	matchstage "wiki/internal/match"
+
+	wikidomain "wiki/internal/wiki"
 )
 
 func TestMergeSubjectWorkItemRejectsSelfMergeBeforeQueueing(t *testing.T) {

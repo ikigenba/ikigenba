@@ -4,11 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"wiki/internal/llmtest"
 
 	appdb "appkit/db"
 
 	wikidb "wiki/internal/db"
-	"wiki/internal/llmtest"
+
 	wikidomain "wiki/internal/wiki"
 )
 

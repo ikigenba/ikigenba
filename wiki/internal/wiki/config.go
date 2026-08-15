@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
 	"wiki/internal/asksite"
 	"wiki/internal/compile"
 	"wiki/internal/extract"
@@ -12,9 +11,10 @@ import (
 	"wiki/internal/match"
 )
 
-const defaultMaxTokens = 16384
-const defaultEmbedModel = "text-embedding-3-small"
-const defaultEmbedDims = 512
+const (
+	defaultEmbedModel = "text-embedding-3-small"
+	defaultEmbedDims  = 512
+)
 
 // CallSites carries wiki's per-stage generation settings.
 type CallSites struct {
@@ -168,6 +168,7 @@ func resolveCallSite(getenv func(string) string, prefix string, base llm.CallSit
 	return site, nil
 }
 
+//nolint:gocritic // Explicit returns make the mutually exclusive effort and disable flag states clear.
 func parseReasoning(raw string) (string, *bool, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "disabled", "off":

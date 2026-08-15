@@ -6,10 +6,10 @@ import (
 	"errors"
 	"testing"
 	"time"
+	"wiki/internal/page"
 
 	appdb "appkit/db"
 	wikidb "wiki/internal/db"
-	"wiki/internal/page"
 )
 
 func TestNormalizePipeline(t *testing.T) {
@@ -399,7 +399,6 @@ func TestListFiltersApplyBeforePaging(t *testing.T) {
 	if len(gotClaimIDs) != 2 || gotClaimIDs[0] != "claim-1" || gotClaimIDs[1] != "claim-3" {
 		t.Fatalf("ListBySubject walked %v, want only subject-robot claims", gotClaimIDs)
 	}
-
 }
 
 func TestListJobsOrdersNewestFirstFilteredOrAll(t *testing.T) {

@@ -195,7 +195,7 @@ func (c *Client) Inbox(ctx context.Context) ([]Item, error) {
 	if err := c.valid("Inbox"); err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/completions?consumer="+url.QueryEscape(Consumer), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/completions?consumer="+url.QueryEscape(Consumer), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("llm Inbox: %w", err)
 	}

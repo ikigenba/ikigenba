@@ -1,13 +1,11 @@
 package wiki
 
 import (
+	"appkit/telemetry"
 	"context"
 	"fmt"
 	"log/slog"
 	"strings"
-
-	"appkit/telemetry"
-
 	"wiki/internal/llm"
 )
 

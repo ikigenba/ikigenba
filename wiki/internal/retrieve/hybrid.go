@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-
 	"wiki/internal/llm"
 )
 
@@ -136,7 +135,7 @@ type resolvedFusionConfig struct {
 }
 
 func (c FusionConfig) resolve(limits SearchLimits) resolvedFusionConfig {
-	out := resolvedFusionConfig{RRFk: c.RRFk, PerLane: c.PerLane, FinalK: c.FinalK}
+	out := resolvedFusionConfig(c)
 	if out.RRFk <= 0 {
 		out.RRFk = defaultRRFK
 	}
@@ -161,7 +160,7 @@ type fusedHit struct {
 	order int
 }
 
-func addFused(acc map[string]*fusedHit, hits []Hit, rrfK int, nextOrder int) int {
+func addFused(acc map[string]*fusedHit, hits []Hit, rrfK, nextOrder int) int {
 	for i, hit := range hits {
 		if strings.TrimSpace(hit.PageID) == "" {
 			continue

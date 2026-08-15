@@ -36,13 +36,13 @@ type cacheEntry struct {
 }
 
 // NewCache fronts next with a response cache of at most cap answers.
-func NewCache(next Provider, cap int) *Cache {
-	if cap < 0 {
+func NewCache(next Provider, capacity int) *Cache {
+	if capacity < 0 {
 		panic("ask: negative cache capacity")
 	}
 	return &Cache{
 		next:    next,
-		cap:     cap,
+		cap:     capacity,
 		entries: make(map[[sha256.Size]byte]*cacheEntry),
 	}
 }

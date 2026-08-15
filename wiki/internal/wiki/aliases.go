@@ -3,7 +3,6 @@ package wiki
 import (
 	"context"
 	"fmt"
-
 	"wiki/internal/page"
 )
 

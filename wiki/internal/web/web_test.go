@@ -14,13 +14,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"wiki/internal/ask"
+	"wiki/internal/retrieve"
 
 	appdb "appkit/db"
 	appkitweb "appkit/web"
 
-	"wiki/internal/ask"
 	wikidb "wiki/internal/db"
-	"wiki/internal/retrieve"
+
 	wikidomain "wiki/internal/wiki"
 )
 
