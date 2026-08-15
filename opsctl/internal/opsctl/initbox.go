@@ -40,14 +40,8 @@ type InitBoxOptions struct {
 // install, nginx validate/reload, certbot, timer enable) go through the System
 // seam. It is idempotent and per-box, not per-app.
 func (o *Opsctl) InitBox(ctx context.Context, opts InitBoxOptions) error {
-	if opts.DefaultApp == "" {
-		return fmt.Errorf("init-box: default app name is required")
-	}
-	if opts.Domain == "" {
-		return fmt.Errorf("init-box: domain is required")
-	}
-	if opts.ApexBlock == "" {
-		return fmt.Errorf("init-box: apex nginx block source is required")
+	if err := validateInitBoxOptions(opts); err != nil {
+		return err
 	}
 	l := o.layout(opts.DefaultApp)
 
@@ -92,71 +86,87 @@ func (o *Opsctl) InitBox(ctx context.Context, opts InitBoxOptions) error {
 	// --skip-cert stages the block WITHOUT validating/starting nginx or issuing a
 	// cert (the block + locations dir are still written above); used to defer the
 	// whole cert/nginx bring-up.
-	if !opts.SkipCert {
-		if opts.Email == "" {
-			return fmt.Errorf("init-box: certbot email is required (set --email or --skip-cert)")
-		}
-		// 4. Bootstrap the FIRST apex cert via standalone (no nginx) if it does
-		//    not exist yet — this lets the apex :443 block validate below.
-		if !o.System.CertExists(opts.Domain) {
-			o.logf("bootstrap first apex cert for %s (certbot --standalone, nginx not yet up)", opts.Domain)
-			if err := o.System.ObtainCertStandalone(ctx, opts.Domain, opts.Email); err != nil {
-				return fmt.Errorf("init-box: bootstrap apex cert: %w", err)
-			}
-		} else {
-			o.logf("apex cert for %s already present — skipping standalone bootstrap", opts.Domain)
-		}
-		// 5. With the cert on disk, validate + bring nginx up.
-		if err := o.System.NginxTest(ctx); err != nil {
-			return fmt.Errorf("init-box: nginx -t: %w", err)
-		}
-		if err := o.System.EnableUnit(ctx, "nginx", true); err != nil {
-			return fmt.Errorf("init-box: enable nginx: %w", err)
-		}
-		if err := o.System.NginxReload(ctx); err != nil {
-			return fmt.Errorf("init-box: nginx reload: %w", err)
-		}
-		// 6. Reconcile the renewal method to HTTP-01 webroot now that nginx serves
-		//    :80 (the ACME-challenge location). The first cert was bootstrapped via
-		//    --standalone, which would otherwise pin renewals to :80-binding
-		//    standalone and collide with the running nginx. certbot sees the live
-		//    cert and does NOT re-issue; it just rewrites the renewal config to
-		//    webroot. Idempotent on reruns.
-		o.logf("reconcile apex cert renewal to webroot for %s", opts.Domain)
-		if err := o.System.ObtainCert(ctx, opts.Domain, opts.Email, l.LetsEncryptWebroot()); err != nil {
-			return fmt.Errorf("init-box: reconcile cert renewal: %w", err)
-		}
-	} else {
-		o.logf("skip-cert: staging apex block only (nginx not validated/started; cert issued later)")
+	if err := o.configureApexCert(ctx, opts, l); err != nil {
+		return err
 	}
 
 	// 6. The suite-owned timers, enabled now: certbot renewal and the nightly
 	//    backup sweep.
-	o.logf("write + enable renewal timer %s", l.RenewTimerPath())
-	if err := writeFileAtomic(l.RenewServicePath(), []byte(renewService)); err != nil {
-		return fmt.Errorf("init-box: write renew service: %w", err)
+	if err := o.installBoxTimers(ctx, l); err != nil {
+		return err
 	}
-	if err := writeFileAtomic(l.RenewTimerPath(), []byte(renewTimer)); err != nil {
-		return fmt.Errorf("init-box: write renew timer: %w", err)
+
+	o.logf("init-box complete — next: opsctl setup <app> per service")
+	return nil
+}
+
+func validateInitBoxOptions(opts InitBoxOptions) error {
+	if opts.DefaultApp == "" {
+		return fmt.Errorf("init-box: default app name is required")
 	}
-	o.logf("write + enable backup timer %s", l.BackupTimerPath())
-	if err := writeFileAtomic(l.BackupServicePath(), []byte(backupService)); err != nil {
-		return fmt.Errorf("init-box: write backup service: %w", err)
+	if opts.Domain == "" {
+		return fmt.Errorf("init-box: domain is required")
 	}
-	if err := writeFileAtomic(l.BackupTimerPath(), []byte(backupTimer)); err != nil {
-		return fmt.Errorf("init-box: write backup timer: %w", err)
+	if opts.ApexBlock == "" {
+		return fmt.Errorf("init-box: apex nginx block source is required")
+	}
+	return nil
+}
+
+func (o *Opsctl) configureApexCert(ctx context.Context, opts InitBoxOptions, l Layout) error {
+	if opts.SkipCert {
+		o.logf("skip-cert: staging apex block only (nginx not validated/started; cert issued later)")
+		return nil
+	}
+	if opts.Email == "" {
+		return fmt.Errorf("init-box: certbot email is required (set --email or --skip-cert)")
+	}
+	if !o.System.CertExists(opts.Domain) {
+		o.logf("bootstrap first apex cert for %s (certbot --standalone, nginx not yet up)", opts.Domain)
+		if err := o.System.ObtainCertStandalone(ctx, opts.Domain, opts.Email); err != nil {
+			return fmt.Errorf("init-box: bootstrap apex cert: %w", err)
+		}
+	} else {
+		o.logf("apex cert for %s already present — skipping standalone bootstrap", opts.Domain)
+	}
+	if err := o.System.NginxTest(ctx); err != nil {
+		return fmt.Errorf("init-box: nginx -t: %w", err)
+	}
+	if err := o.System.EnableUnit(ctx, "nginx", true); err != nil {
+		return fmt.Errorf("init-box: enable nginx: %w", err)
+	}
+	if err := o.System.NginxReload(ctx); err != nil {
+		return fmt.Errorf("init-box: nginx reload: %w", err)
+	}
+	o.logf("reconcile apex cert renewal to webroot for %s", opts.Domain)
+	if err := o.System.ObtainCert(ctx, opts.Domain, opts.Email, l.LetsEncryptWebroot()); err != nil {
+		return fmt.Errorf("init-box: reconcile cert renewal: %w", err)
+	}
+	return nil
+}
+
+func (o *Opsctl) installBoxTimers(ctx context.Context, l Layout) error {
+	files := []struct {
+		name, path, body string
+	}{
+		{"renew service", l.RenewServicePath(), renewService},
+		{"renew timer", l.RenewTimerPath(), renewTimer},
+		{"backup service", l.BackupServicePath(), backupService},
+		{"backup timer", l.BackupTimerPath(), backupTimer},
+	}
+	for _, file := range files {
+		if err := writeFileAtomic(file.path, []byte(file.body)); err != nil {
+			return fmt.Errorf("init-box: write %s: %w", file.name, err)
+		}
 	}
 	if err := o.System.DaemonReload(ctx); err != nil {
 		return fmt.Errorf("init-box: daemon-reload: %w", err)
 	}
-	if err := o.System.EnableUnit(ctx, "ikigenba-certbot-renew.timer", true); err != nil {
-		return fmt.Errorf("init-box: enable renew timer: %w", err)
+	for _, unit := range []string{"ikigenba-certbot-renew.timer", "ikigenba-backup.timer"} {
+		if err := o.System.EnableUnit(ctx, unit, true); err != nil {
+			return fmt.Errorf("init-box: enable %s: %w", unit, err)
+		}
 	}
-	if err := o.System.EnableUnit(ctx, "ikigenba-backup.timer", true); err != nil {
-		return fmt.Errorf("init-box: enable backup timer: %w", err)
-	}
-
-	o.logf("init-box complete — next: opsctl setup <app> per service")
 	return nil
 }
 

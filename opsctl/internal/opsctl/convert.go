@@ -24,52 +24,14 @@ func (o *Opsctl) ConvertOldLayout(ctx context.Context, app string) error {
 
 	l := o.layout(app)
 	oldData := filepath.Join(l.AppDir(), "data")
-	if err := os.MkdirAll(l.StateDir(), 0o755); err != nil {
-		return fmt.Errorf("convert: mkdir state: %w", err)
-	}
-	if err := os.MkdirAll(l.CacheDir(), 0o755); err != nil {
-		return fmt.Errorf("convert: mkdir cache: %w", err)
-	}
-	if err := os.MkdirAll(l.LibexecDir(), 0o755); err != nil {
-		return fmt.Errorf("convert: mkdir libexec: %w", err)
-	}
-
-	for _, name := range []string{app + ".db", app + ".db-wal", app + ".db-shm"} {
-		if err := moveIfPresent(filepath.Join(oldData, name), filepath.Join(l.StateDir(), name)); err != nil {
-			return fmt.Errorf("convert: move %s: %w", name, err)
-		}
-	}
-	if err := moveIfPresent(filepath.Join(oldData, app+".db.generation"), l.GenerationPath()); err != nil {
-		return fmt.Errorf("convert: move generation: %w", err)
-	}
-
-	version, oldBinary, err := legacyLiveBinary(l)
-	if err != nil {
+	if err := prepareConvertedLayout(l); err != nil {
 		return err
 	}
-	if version != "" {
-		newBinary := l.LibexecBinary(version)
-		if err := moveIfPresent(oldBinary, newBinary); err != nil {
-			return fmt.Errorf("convert: move live binary: %w", err)
-		}
-		if err := atomicSwap(l.RunLink(), filepath.Join("..", "libexec", app+"-"+version)); err != nil {
-			return fmt.Errorf("convert: point bin/run: %w", err)
-		}
-		if err := moveLegacyManifestIfPresent(legacyManifestPath(l), l.ManifestFile(version)); err != nil {
-			return fmt.Errorf("convert: move manifest: %w", err)
-		}
-		if err := moveIfPresent(filepath.Join(l.EtcDir(), "nginx.conf"), l.NginxConfFile(version)); err != nil {
-			return fmt.Errorf("convert: move nginx config: %w", err)
-		}
-		if err := ensureSymlink(l.EtcCurrentLink(), version); err != nil {
-			return fmt.Errorf("convert: point etc/current: %w", err)
-		}
-		if err := os.MkdirAll(l.ShareVersionDir(version), 0o755); err != nil {
-			return fmt.Errorf("convert: mkdir share version: %w", err)
-		}
-		if err := ensureSymlink(l.ShareCurrentLink(), version); err != nil {
-			return fmt.Errorf("convert: point share/current: %w", err)
-		}
+	if err := moveLegacyState(l, oldData, app); err != nil {
+		return err
+	}
+	if err := convertLiveRelease(l, app); err != nil {
+		return err
 	}
 
 	if err := removeEmptyDirIfPresent(oldData); err != nil {
@@ -80,6 +42,52 @@ func (o *Opsctl) ConvertOldLayout(ctx context.Context, app string) error {
 	}
 
 	return ctx.Err()
+}
+
+func prepareConvertedLayout(l Layout) error {
+	for name, dir := range map[string]string{"state": l.StateDir(), "cache": l.CacheDir(), "libexec": l.LibexecDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("convert: mkdir %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func moveLegacyState(l Layout, oldData, app string) error {
+	for _, name := range []string{app + ".db", app + ".db-wal", app + ".db-shm"} {
+		if err := moveIfPresent(filepath.Join(oldData, name), filepath.Join(l.StateDir(), name)); err != nil {
+			return fmt.Errorf("convert: move %s: %w", name, err)
+		}
+	}
+	if err := moveIfPresent(filepath.Join(oldData, app+".db.generation"), l.GenerationPath()); err != nil {
+		return fmt.Errorf("convert: move generation: %w", err)
+	}
+	return nil
+}
+
+func convertLiveRelease(l Layout, app string) error {
+	version, oldBinary, err := legacyLiveBinary(l)
+	if err != nil || version == "" {
+		return err
+	}
+	steps := []struct {
+		name string
+		do   func() error
+	}{
+		{"move live binary", func() error { return moveIfPresent(oldBinary, l.LibexecBinary(version)) }},
+		{"point bin/run", func() error { return atomicSwap(l.RunLink(), filepath.Join("..", "libexec", app+"-"+version)) }},
+		{"move manifest", func() error { return moveLegacyManifestIfPresent(legacyManifestPath(l), l.ManifestFile(version)) }},
+		{"move nginx config", func() error { return moveIfPresent(filepath.Join(l.EtcDir(), "nginx.conf"), l.NginxConfFile(version)) }},
+		{"point etc/current", func() error { return ensureSymlink(l.EtcCurrentLink(), version) }},
+		{"mkdir share version", func() error { return os.MkdirAll(l.ShareVersionDir(version), 0o755) }},
+		{"point share/current", func() error { return ensureSymlink(l.ShareCurrentLink(), version) }},
+	}
+	for _, step := range steps {
+		if err := step.do(); err != nil {
+			return fmt.Errorf("convert: %s: %w", step.name, err)
+		}
+	}
+	return nil
 }
 
 func legacyManifestPath(l Layout) string {

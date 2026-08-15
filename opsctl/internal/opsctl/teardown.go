@@ -79,21 +79,8 @@ func (o *Opsctl) Teardown(ctx context.Context, opts TeardownOptions) error {
 	// 3. Remove the nginx location fragment, then validate + reload (inverse of
 	//    setup step 4). If no fragment was ever dropped (worker/batch service), the
 	//    removal is a no-op and nginx is left untouched.
-	if _, err := os.Stat(l.FragmentPath()); err == nil {
-		o.logf("remove nginx fragment %s", l.FragmentPath())
-		if err := os.Remove(l.FragmentPath()); err != nil {
-			return fmt.Errorf("teardown: remove fragment: %w", err)
-		}
-		if err := o.System.NginxTest(ctx); err != nil {
-			return fmt.Errorf("teardown: nginx -t: %w", err)
-		}
-		if err := o.System.NginxReload(ctx); err != nil {
-			return fmt.Errorf("teardown: nginx reload: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("teardown: stat fragment: %w", err)
-	} else {
-		o.logf("no nginx fragment for %s (worker/batch service)", app)
+	if err := o.removeTeardownFragment(ctx, app, l); err != nil {
+		return err
 	}
 
 	// 4. Remove the /opt/<app> tree (inverse of setup step 2). The DB lives under
@@ -116,5 +103,26 @@ func (o *Opsctl) Teardown(ctx context.Context, opts TeardownOptions) error {
 	}
 
 	o.logf("teardown complete for %s — unit, nginx fragment, /opt/%s, and the app user removed", app, app)
+	return nil
+}
+
+func (o *Opsctl) removeTeardownFragment(ctx context.Context, app string, l Layout) error {
+	if _, err := os.Stat(l.FragmentPath()); err != nil {
+		if os.IsNotExist(err) {
+			o.logf("no nginx fragment for %s (worker/batch service)", app)
+			return nil
+		}
+		return fmt.Errorf("teardown: stat fragment: %w", err)
+	}
+	o.logf("remove nginx fragment %s", l.FragmentPath())
+	if err := os.Remove(l.FragmentPath()); err != nil {
+		return fmt.Errorf("teardown: remove fragment: %w", err)
+	}
+	if err := o.System.NginxTest(ctx); err != nil {
+		return fmt.Errorf("teardown: nginx -t: %w", err)
+	}
+	if err := o.System.NginxReload(ctx); err != nil {
+		return fmt.Errorf("teardown: nginx reload: %w", err)
+	}
 	return nil
 }

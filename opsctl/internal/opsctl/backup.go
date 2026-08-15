@@ -130,15 +130,9 @@ func (o *Opsctl) backupCert(ctx context.Context, app string) error {
 func (o *Opsctl) Restore(ctx context.Context, app, key string, confirm io.Reader) (err error) {
 	l := o.layout(app)
 	store := o.objectStore()
-	if key == "" {
-		var latest strings.Builder
-		if err := store.Get(ctx, latestKey(app), &latest); err != nil {
-			return fmt.Errorf("restore: read latest: %w", err)
-		}
-		key = strings.TrimSpace(latest.String())
-		if key == "" {
-			return fmt.Errorf("restore: latest is empty")
-		}
+	key, err = restoreKey(ctx, store, app, key)
+	if err != nil {
+		return err
 	}
 	if err := confirmRestore(app, key, confirm); err != nil {
 		return err
@@ -158,17 +152,9 @@ func (o *Opsctl) Restore(ctx context.Context, app, key string, confirm io.Reader
 	}
 	defer os.RemoveAll(work)
 
-	archive := filepath.Join(work, "restore.tar")
-	out, err := os.Create(archive)
+	archive, err := downloadRestoreArchive(ctx, store, key, work)
 	if err != nil {
-		return fmt.Errorf("restore: create archive: %w", err)
-	}
-	if err := store.Get(ctx, key, out); err != nil {
-		out.Close()
 		return err
-	}
-	if err := out.Close(); err != nil {
-		return fmt.Errorf("restore: close archive: %w", err)
 	}
 	if err := replaceStateFromArchive(ctx, l, archive); err != nil {
 		return err
@@ -179,12 +165,8 @@ func (o *Opsctl) Restore(ctx context.Context, app, key string, confirm io.Reader
 	if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
 		return fmt.Errorf("restore: chown cache: %w", err)
 	}
-	if _, err := os.Stat(l.WWWDir()); err == nil {
-		if err := o.System.ChownTree(ctx, app, app, l.WWWDir()); err != nil {
-			return fmt.Errorf("restore: chown served tree: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("restore: stat served tree: %w", err)
+	if err := o.chownRestoredWWW(ctx, app, l); err != nil {
+		return err
 	}
 	if app == "dashboard" {
 		if err := restoreLatestCert(ctx, store, l, work); err != nil {
@@ -192,6 +174,50 @@ func (o *Opsctl) Restore(ctx context.Context, app, key string, confirm io.Reader
 		}
 	}
 	o.logf("restored %s from %s", app, key)
+	return nil
+}
+
+func restoreKey(ctx context.Context, store ObjectStore, app, key string) (string, error) {
+	if key != "" {
+		return key, nil
+	}
+	var latest strings.Builder
+	if err := store.Get(ctx, latestKey(app), &latest); err != nil {
+		return "", fmt.Errorf("restore: read latest: %w", err)
+	}
+	key = strings.TrimSpace(latest.String())
+	if key == "" {
+		return "", fmt.Errorf("restore: latest is empty")
+	}
+	return key, nil
+}
+
+func downloadRestoreArchive(ctx context.Context, store ObjectStore, key, work string) (string, error) {
+	archive := filepath.Join(work, "restore.tar")
+	out, err := os.Create(archive)
+	if err != nil {
+		return "", fmt.Errorf("restore: create archive: %w", err)
+	}
+	if err := store.Get(ctx, key, out); err != nil {
+		out.Close()
+		return "", err
+	}
+	if err := out.Close(); err != nil {
+		return "", fmt.Errorf("restore: close archive: %w", err)
+	}
+	return archive, nil
+}
+
+func (o *Opsctl) chownRestoredWWW(ctx context.Context, app string, l Layout) error {
+	if _, err := os.Stat(l.WWWDir()); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("restore: stat served tree: %w", err)
+	}
+	if err := o.System.ChownTree(ctx, app, app, l.WWWDir()); err != nil {
+		return fmt.Errorf("restore: chown served tree: %w", err)
+	}
 	return nil
 }
 

@@ -42,24 +42,7 @@ func (o *Opsctl) Rollback(ctx context.Context, app, target string) error {
 		return fmt.Errorf("rollback: target release %q does not exist under %s: %w", snap.version, l.LibexecDir(), err)
 	}
 
-	archive, err := o.downloadRollbackSnapshot(ctx, snap.key)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(archive)
-
-	o.logf("restore %s state from %s", app, snap.key)
-	if err := replaceStateFromArchive(ctx, l, archive); err != nil {
-		return fmt.Errorf("rollback: restore state: %w", err)
-	}
-	if err := os.MkdirAll(l.CacheDir(), 0o755); err != nil {
-		return fmt.Errorf("rollback: mkdir cache: %w", err)
-	}
-	if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
-		return fmt.Errorf("rollback: chown cache: %w", err)
-	}
-
-	if err := o.checkRollbackSchema(ctx, l, targetBin); err != nil {
+	if err := o.restoreRollbackSnapshot(ctx, app, l, snap, targetBin); err != nil {
 		return err
 	}
 
@@ -84,6 +67,25 @@ func (o *Opsctl) Rollback(ctx context.Context, app, target string) error {
 
 	o.logf("rolled back %s: %s -> %s", app, from, snap.version)
 	return nil
+}
+
+func (o *Opsctl) restoreRollbackSnapshot(ctx context.Context, app string, l Layout, snap rollbackSnapshot, targetBin string) error {
+	archive, err := o.downloadRollbackSnapshot(ctx, snap.key)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(archive)
+	o.logf("restore %s state from %s", app, snap.key)
+	if err := replaceStateFromArchive(ctx, l, archive); err != nil {
+		return fmt.Errorf("rollback: restore state: %w", err)
+	}
+	if err := os.MkdirAll(l.CacheDir(), 0o755); err != nil {
+		return fmt.Errorf("rollback: mkdir cache: %w", err)
+	}
+	if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
+		return fmt.Errorf("rollback: chown cache: %w", err)
+	}
+	return o.checkRollbackSchema(ctx, l, targetBin)
 }
 
 type rollbackSnapshot struct {
@@ -183,7 +185,7 @@ func (o *Opsctl) checkRollbackSchema(ctx context.Context, l Layout, targetBin st
 	return nil
 }
 
-func parseSchemaReport(out string) (int, int, error) {
+func parseSchemaReport(out string) (applied, embedded int, err error) {
 	fields := strings.Fields(out)
 	values := map[string]int{}
 	for _, field := range fields {

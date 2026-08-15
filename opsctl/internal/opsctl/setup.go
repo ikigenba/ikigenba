@@ -100,73 +100,8 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 
 	// 2. The /opt/<app> tree.
 	o.logf("create /opt/%s tree", app)
-	switch {
-	case opts.IsDefault:
-		// The DEFAULT app owns the apex route through init-box/deploy, not a
-		// per-app location fragment. It gets the normal service tree and unit but
-		// no worker state/www tree and no nginx web group.
-		if err := mkdirAll755(
-			l.AppDir(), l.BinDir(), l.EtcDir(), l.LibexecDir(), l.CacheDir(), l.BackupsDir(),
-		); err != nil {
-			return fmt.Errorf("setup: create app tree: %w", err)
-		}
-		if err := mkdirAllMode(0o750, l.StateDir()); err != nil {
-			return fmt.Errorf("setup: create state dir: %w", err)
-		}
-		if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
-			return fmt.Errorf("setup: chown cache dir: %w", err)
-		}
-	case opts.Fragment == "":
-		// Worker/no-route services use the current state/cache/libexec layout. The
-		// app-owned state dir is traverse-only for non-owners, and the DB exists
-		// with service-private group-readable bits. Workers have no served tree.
-		if err := mkdirAll755(
-			l.AppDir(), l.BinDir(), l.EtcDir(), l.LibexecDir(), l.CacheDir(), l.shareDir(),
-		); err != nil {
-			return fmt.Errorf("setup: create app tree: %w", err)
-		}
-		if err := mkdirAllMode(0o711, l.StateDir()); err != nil {
-			return fmt.Errorf("setup: create state dir: %w", err)
-		}
-		if err := ensureFileMode(l.DBPath(), 0o640); err != nil {
-			return fmt.Errorf("setup: create db: %w", err)
-		}
-		if err := o.System.ChownTree(ctx, app, app, l.StateDir()); err != nil {
-			return fmt.Errorf("setup: chown state dir: %w", err)
-		}
-		if err := o.System.ChownTree(ctx, app, app, l.DBPath()); err != nil {
-			return fmt.Errorf("setup: chown db: %w", err)
-		}
-		if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
-			return fmt.Errorf("setup: chown cache dir: %w", err)
-		}
-	default:
-		// Path-routed services still consume the existing fragment-driven setup
-		// contract guarded by the provisioning tests.
-		if err := mkdirAll755(
-			l.AppDir(), l.BinDir(), l.EtcDir(), l.LibexecDir(), l.CacheDir(), l.BackupsDir(),
-		); err != nil {
-			return fmt.Errorf("setup: create app tree: %w", err)
-		}
-		if err := os.MkdirAll(l.StateDir(), 0o750); err != nil {
-			return fmt.Errorf("setup: create state dir: %w", err)
-		}
-		if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
-			return fmt.Errorf("setup: chown cache dir: %w", err)
-		}
-
-		// 2b. The OPTIONAL served www/ tree (sites only). Create each requested
-		//     dir at 0750, then hand state/ (including www/) to the service user.
-		//     Apps that request none skip this entirely — behavior unchanged.
-		if len(opts.WWWDirs) > 0 {
-			o.logf("create served www tree for %s", app)
-			if err := mkdirAllMode(0o750, opts.WWWDirs...); err != nil {
-				return fmt.Errorf("setup: create www tree: %w", err)
-			}
-			if err := o.System.ChownTree(ctx, app, app, l.StateDir()); err != nil {
-				return fmt.Errorf("setup: chown state dir: %w", err)
-			}
-		}
+	if err := o.setupAppTree(ctx, opts, l); err != nil {
+		return err
 	}
 
 	// 3. systemd unit — written to the SysRoot path, then enabled-not-started.
@@ -185,26 +120,86 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 	// rendered fragment file. The D01 no-fragment setup installs a stable system
 	// symlink to the active release's nginx.conf; the target is intentionally
 	// dangling until the first deploy creates etc/current.
-	switch {
-	case opts.IsDefault:
+	if err := o.setupNginx(ctx, opts, l); err != nil {
+		return err
+	}
+
+	o.logf("setup complete for %s — next: opsctl stage %s <version> --artifact …, then opsctl deploy %s <version>", app, app, app)
+	return nil
+}
+
+func (o *Opsctl) setupAppTree(ctx context.Context, opts SetupOptions, l Layout) error {
+	if opts.IsDefault {
+		return o.setupDefaultTree(ctx, opts.App, l)
+	}
+	if opts.Fragment == "" {
+		return o.setupWorkerTree(ctx, opts.App, l)
+	}
+	return o.setupRoutedTree(ctx, opts, l)
+}
+
+func (o *Opsctl) setupDefaultTree(ctx context.Context, app string, l Layout) error {
+	if err := mkdirAll755(l.AppDir(), l.BinDir(), l.EtcDir(), l.LibexecDir(), l.CacheDir(), l.BackupsDir()); err != nil {
+		return fmt.Errorf("setup: create app tree: %w", err)
+	}
+	if err := mkdirAllMode(0o750, l.StateDir()); err != nil {
+		return fmt.Errorf("setup: create state dir: %w", err)
+	}
+	if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
+		return fmt.Errorf("setup: chown cache dir: %w", err)
+	}
+	return nil
+}
+
+func (o *Opsctl) setupWorkerTree(ctx context.Context, app string, l Layout) error {
+	if err := mkdirAll755(l.AppDir(), l.BinDir(), l.EtcDir(), l.LibexecDir(), l.CacheDir(), l.shareDir()); err != nil {
+		return fmt.Errorf("setup: create app tree: %w", err)
+	}
+	if err := mkdirAllMode(0o711, l.StateDir()); err != nil {
+		return fmt.Errorf("setup: create state dir: %w", err)
+	}
+	if err := ensureFileMode(l.DBPath(), 0o640); err != nil {
+		return fmt.Errorf("setup: create db: %w", err)
+	}
+	for _, item := range []struct{ name, path string }{
+		{"state dir", l.StateDir()}, {"db", l.DBPath()}, {"cache dir", l.CacheDir()},
+	} {
+		if err := o.System.ChownTree(ctx, app, app, item.path); err != nil {
+			return fmt.Errorf("setup: chown %s: %w", item.name, err)
+		}
+	}
+	return nil
+}
+
+func (o *Opsctl) setupRoutedTree(ctx context.Context, opts SetupOptions, l Layout) error {
+	if err := mkdirAll755(l.AppDir(), l.BinDir(), l.EtcDir(), l.LibexecDir(), l.CacheDir(), l.BackupsDir()); err != nil {
+		return fmt.Errorf("setup: create app tree: %w", err)
+	}
+	if err := os.MkdirAll(l.StateDir(), 0o750); err != nil {
+		return fmt.Errorf("setup: create state dir: %w", err)
+	}
+	if err := o.System.ChownTree(ctx, opts.App, opts.App, l.CacheDir()); err != nil {
+		return fmt.Errorf("setup: chown cache dir: %w", err)
+	}
+	if len(opts.WWWDirs) == 0 {
+		return nil
+	}
+	o.logf("create served www tree for %s", opts.App)
+	if err := mkdirAllMode(0o750, opts.WWWDirs...); err != nil {
+		return fmt.Errorf("setup: create www tree: %w", err)
+	}
+	if err := o.System.ChownTree(ctx, opts.App, opts.App, l.StateDir()); err != nil {
+		return fmt.Errorf("setup: chown state dir: %w", err)
+	}
+	return nil
+}
+
+func (o *Opsctl) setupNginx(ctx context.Context, opts SetupOptions, l Layout) error {
+	if opts.IsDefault {
 		o.logf("default app: apex block is owned by init-box/deploy; no nginx conf.d artifact written")
-	case opts.Fragment != "":
-		frag := renderFragment(opts.Fragment)
-		o.logf("write nginx fragment %s", l.FragmentPath())
-		if err := writeFileAtomic(l.FragmentPath(), []byte(frag)); err != nil {
-			return fmt.Errorf("setup: write fragment: %w", err)
-		}
-		if opts.DeferNginx {
-			o.logf("defer-nginx: fragment staged; not validating/reloading nginx (cert issued later)")
-		} else {
-			if err := o.System.NginxTest(ctx); err != nil {
-				return fmt.Errorf("setup: nginx -t: %w", err)
-			}
-			if err := o.System.NginxReload(ctx); err != nil {
-				return fmt.Errorf("setup: nginx reload: %w", err)
-			}
-		}
-	default:
+		return nil
+	}
+	if opts.Fragment == "" {
 		o.logf("link nginx fragment %s -> %s", l.FragmentPath(), l.ActiveNginxConf())
 		if err := os.Remove(l.FragmentPath()); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("setup: replace fragment link: %w", err)
@@ -212,9 +207,22 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 		if err := os.Symlink(l.ActiveNginxConf(), l.FragmentPath()); err != nil {
 			return fmt.Errorf("setup: link fragment: %w", err)
 		}
+		return nil
 	}
-
-	o.logf("setup complete for %s — next: opsctl stage %s <version> --artifact …, then opsctl deploy %s <version>", app, app, app)
+	o.logf("write nginx fragment %s", l.FragmentPath())
+	if err := writeFileAtomic(l.FragmentPath(), []byte(renderFragment(opts.Fragment))); err != nil {
+		return fmt.Errorf("setup: write fragment: %w", err)
+	}
+	if opts.DeferNginx {
+		o.logf("defer-nginx: fragment staged; not validating/reloading nginx (cert issued later)")
+		return nil
+	}
+	if err := o.System.NginxTest(ctx); err != nil {
+		return fmt.Errorf("setup: nginx -t: %w", err)
+	}
+	if err := o.System.NginxReload(ctx); err != nil {
+		return fmt.Errorf("setup: nginx reload: %w", err)
+	}
 	return nil
 }
 

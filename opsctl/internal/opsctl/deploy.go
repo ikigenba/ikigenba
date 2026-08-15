@@ -65,47 +65,13 @@ func (o *Opsctl) Stage(ctx context.Context, app, version, artifact string, force
 
 	relBin := l.LibexecBinary(version)
 
-	// 2. Collision guard: if a binary is already placed for this version, compare
-	//    the artifact bytes. Identical bytes → idempotent no-op (skip the copy).
-	//    Different bytes → refuse unless --force. On any
-	//    refusal the /tmp artifact is kept (we return before the os.Remove below).
-	if _, err := os.Stat(relBin); err == nil {
-		same, err := sameFileContent(relBin, tmpBin)
-		if err != nil {
-			return fmt.Errorf("stage: compare existing and incoming release bytes: %w", err)
-		}
-		if same {
-			o.logf("release %s already staged with identical bytes — idempotent no-op", version)
-			if err := os.Remove(artifact); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("stage: remove staged artifact: %w", err)
-			}
-			return nil
-		}
-		if !force {
-			return fmt.Errorf("stage: release %s already staged with different artifact bytes; re-stage with --force to replace", version)
-		}
-		o.logf("release %s already staged with different bytes — --force overrides, replacing", version)
+	alreadyDone, err := o.checkStageCollision(relBin, tmpBin, artifact, version, force)
+	if err != nil || alreadyDone {
+		return err
 	}
 
-	// 3. Place the bundled tiers.
-	o.logf("place bundle tiers -> %s", l.AppDir())
-	if err := os.MkdirAll(l.LibexecDir(), 0o755); err != nil {
-		return fmt.Errorf("stage: mkdir libexec dir: %w", err)
-	}
-	if err := os.MkdirAll(l.EtcDir(), 0o755); err != nil {
-		return fmt.Errorf("stage: mkdir etc dir: %w", err)
-	}
-	if err := os.MkdirAll(l.shareDir(), 0o755); err != nil {
-		return fmt.Errorf("stage: mkdir share dir: %w", err)
-	}
-	if err := replacePath(tmpBin, relBin); err != nil {
-		return fmt.Errorf("stage: place libexec binary: %w", err)
-	}
-	if err := replacePath(tmpEtc, l.EtcVersionDir(version)); err != nil {
-		return fmt.Errorf("stage: place etc version dir: %w", err)
-	}
-	if err := replacePath(tmpShare, l.ShareVersionDir(version)); err != nil {
-		return fmt.Errorf("stage: place share version dir: %w", err)
+	if err := o.placeBundle(l, version, tmpBin, tmpEtc, tmpShare); err != nil {
+		return err
 	}
 
 	// On success: delete the /tmp artifact (decision 2). Leave it only on the
@@ -115,6 +81,49 @@ func (o *Opsctl) Stage(ctx context.Context, app, version, artifact string, force
 	}
 
 	o.logf("staged %s %s", app, version)
+	return nil
+}
+
+func (o *Opsctl) checkStageCollision(relBin, tmpBin, artifact, version string, force bool) (bool, error) {
+	if _, err := os.Stat(relBin); err != nil {
+		return false, nil
+	}
+	same, err := sameFileContent(relBin, tmpBin)
+	if err != nil {
+		return false, fmt.Errorf("stage: compare existing and incoming release bytes: %w", err)
+	}
+	if same {
+		o.logf("release %s already staged with identical bytes — idempotent no-op", version)
+		if err := os.Remove(artifact); err != nil && !os.IsNotExist(err) {
+			return false, fmt.Errorf("stage: remove staged artifact: %w", err)
+		}
+		return true, nil
+	}
+	if !force {
+		return false, fmt.Errorf("stage: release %s already staged with different artifact bytes; re-stage with --force to replace", version)
+	}
+	o.logf("release %s already staged with different bytes — --force overrides, replacing", version)
+	return false, nil
+}
+
+func (o *Opsctl) placeBundle(l Layout, version, tmpBin, tmpEtc, tmpShare string) error {
+	o.logf("place bundle tiers -> %s", l.AppDir())
+	steps := []struct {
+		name string
+		do   func() error
+	}{
+		{"mkdir libexec dir", func() error { return os.MkdirAll(l.LibexecDir(), 0o755) }},
+		{"mkdir etc dir", func() error { return os.MkdirAll(l.EtcDir(), 0o755) }},
+		{"mkdir share dir", func() error { return os.MkdirAll(l.shareDir(), 0o755) }},
+		{"place libexec binary", func() error { return replacePath(tmpBin, l.LibexecBinary(version)) }},
+		{"place etc version dir", func() error { return replacePath(tmpEtc, l.EtcVersionDir(version)) }},
+		{"place share version dir", func() error { return replacePath(tmpShare, l.ShareVersionDir(version)) }},
+	}
+	for _, step := range steps {
+		if err := step.do(); err != nil {
+			return fmt.Errorf("stage: %s: %w", step.name, err)
+		}
+	}
 	return nil
 }
 
@@ -169,36 +178,42 @@ func unpackBundle(artifact, dst string) error {
 		if name == "." || filepath.IsAbs(name) || strings.HasPrefix(name, ".."+string(filepath.Separator)) || name == ".." {
 			return fmt.Errorf("stage: unsafe bundle path %q", hdr.Name)
 		}
-		target := filepath.Join(dst, name)
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, fileMode(hdr.FileInfo().Mode(), 0o755)); err != nil {
-				return fmt.Errorf("stage: create bundle dir %s: %w", hdr.Name, err)
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return fmt.Errorf("stage: create parent for %s: %w", hdr.Name, err)
-			}
-			mode := fileMode(hdr.FileInfo().Mode(), 0o644)
-			w, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
-			if err != nil {
-				return fmt.Errorf("stage: create bundle file %s: %w", hdr.Name, err)
-			}
-			_, copyErr := io.Copy(w, tr)
-			closeErr := w.Close()
-			if copyErr != nil {
-				return fmt.Errorf("stage: extract bundle file %s: %w", hdr.Name, copyErr)
-			}
-			if closeErr != nil {
-				return fmt.Errorf("stage: close bundle file %s: %w", hdr.Name, closeErr)
-			}
-			if err := os.Chmod(target, mode); err != nil {
-				return fmt.Errorf("stage: chmod bundle file %s: %w", hdr.Name, err)
-			}
-		default:
-			return fmt.Errorf("stage: unsupported bundle entry %s type %c", hdr.Name, hdr.Typeflag)
+		if err := extractBundleEntry(tr, hdr, filepath.Join(dst, name)); err != nil {
+			return err
 		}
 	}
+}
+
+func extractBundleEntry(tr io.Reader, hdr *tar.Header, target string) error {
+	if hdr.Typeflag == tar.TypeDir {
+		if err := os.MkdirAll(target, fileMode(hdr.FileInfo().Mode(), 0o755)); err != nil {
+			return fmt.Errorf("stage: create bundle dir %s: %w", hdr.Name, err)
+		}
+		return nil
+	}
+	if hdr.Typeflag != tar.TypeReg {
+		return fmt.Errorf("stage: unsupported bundle entry %s type %c", hdr.Name, hdr.Typeflag)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return fmt.Errorf("stage: create parent for %s: %w", hdr.Name, err)
+	}
+	mode := fileMode(hdr.FileInfo().Mode(), 0o644)
+	w, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		return fmt.Errorf("stage: create bundle file %s: %w", hdr.Name, err)
+	}
+	_, copyErr := io.Copy(w, tr)
+	closeErr := w.Close()
+	if copyErr != nil {
+		return fmt.Errorf("stage: extract bundle file %s: %w", hdr.Name, copyErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("stage: close bundle file %s: %w", hdr.Name, closeErr)
+	}
+	if err := os.Chmod(target, mode); err != nil {
+		return fmt.Errorf("stage: chmod bundle file %s: %w", hdr.Name, err)
+	}
+	return nil
 }
 
 func requireBundlePaths(bin, etc, share string) error {
@@ -266,16 +281,9 @@ func (o *Opsctl) Deploy(ctx context.Context, app, version string) error {
 		return fmt.Errorf("deploy: release %s is not staged (run: opsctl stage %s %s --artifact …): %w", version, app, version, err)
 	}
 
-	current := ""
-	if fi, err := os.Lstat(l.RunLink()); err == nil {
-		if fi.Mode()&os.ModeSymlink != 0 {
-			current, err = o.currentVersion(l)
-			if err != nil {
-				return fmt.Errorf("deploy: read current: %w", err)
-			}
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("deploy: read current: %w", err)
+	current, err := o.deployCurrentVersion(l)
+	if err != nil {
+		return err
 	}
 	if current != "" {
 		o.logf("backup %s before deploy", app)
@@ -288,12 +296,8 @@ func (o *Opsctl) Deploy(ctx context.Context, app, version string) error {
 	//    Ensure state/ exists so the app can create state/<app>.db on first migrate
 	//    (setup creates this tree on the box; deploy self-heals it). Creating the
 	//    directory never touches an existing DB file (PLAN §2.7).
-	if err := os.MkdirAll(l.StateDir(), 0o755); err != nil {
-		return fmt.Errorf("deploy: mkdir state dir: %w", err)
-	}
-	o.logf("migrate %s", app)
-	if _, err := o.Runner.Run(ctx, relBin, "migrate", nil, o.dbEnv(l)); err != nil {
-		return fmt.Errorf("deploy: migrate: %w", err)
+	if err := o.migrateAndOwnState(ctx, app, relBin, l); err != nil {
+		return err
 	}
 
 	// opsctl runs privileged (sudo opsctl …), so the root-run migrate above creates
@@ -306,29 +310,11 @@ func (o *Opsctl) Deploy(ctx context.Context, app, version string) error {
 	// before the swap/restart. Unconditional + idempotent on every deploy: it also
 	// reclaims root-owned -wal/-shm files migrate may create against an EXISTING DB.
 	// The user/group is the bare app name to match setup exactly (EnsureSystemUser).
-	o.logf("chown %s -> %s:%s", l.StateDir(), app, app)
-	if err := o.System.ChownTree(ctx, app, app, l.StateDir()); err != nil {
-		return fmt.Errorf("deploy: chown state dir: %w", err)
-	}
-	o.logf("chown %s -> %s:%s", l.CacheDir(), app, app)
-	if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
-		return fmt.Errorf("deploy: chown cache dir: %w", err)
-	}
-
 	// 4. Atomic swap: all live-facing symlinks repoint to the same staged version.
 	//    Each symlink only ever points at a complete target: the temp symlink is
 	//    fully formed before rename(2) moves it into place.
-	o.logf("atomic swap bin/run -> libexec/%s-%s", app, version)
-	if err := atomicSwap(l.RunLink(), l.runTarget(version)); err != nil {
-		return fmt.Errorf("deploy: swap bin/run: %w", err)
-	}
-	o.logf("atomic swap etc/current -> %s", version)
-	if err := atomicSwap(l.EtcCurrentLink(), version); err != nil {
-		return fmt.Errorf("deploy: swap etc/current: %w", err)
-	}
-	o.logf("atomic swap share/current -> %s", version)
-	if err := atomicSwap(l.ShareCurrentLink(), version); err != nil {
-		return fmt.Errorf("deploy: swap share/current: %w", err)
+	if err := o.swapDeployLinks(l, version); err != nil {
+		return err
 	}
 
 	if err := o.installApexBlockIfDefault(ctx, l); err != nil {
@@ -358,6 +344,58 @@ func (o *Opsctl) Deploy(ctx context.Context, app, version string) error {
 	}
 
 	o.logf("deployed %s %s", app, version)
+	return nil
+}
+
+func (o *Opsctl) deployCurrentVersion(l Layout) (string, error) {
+	fi, err := os.Lstat(l.RunLink())
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("deploy: read current: %w", err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		return "", nil
+	}
+	current, err := o.currentVersion(l)
+	if err != nil {
+		return "", fmt.Errorf("deploy: read current: %w", err)
+	}
+	return current, nil
+}
+
+func (o *Opsctl) migrateAndOwnState(ctx context.Context, app, relBin string, l Layout) error {
+	if err := os.MkdirAll(l.StateDir(), 0o755); err != nil {
+		return fmt.Errorf("deploy: mkdir state dir: %w", err)
+	}
+	o.logf("migrate %s", app)
+	if _, err := o.Runner.Run(ctx, relBin, "migrate", nil, o.dbEnv(l)); err != nil {
+		return fmt.Errorf("deploy: migrate: %w", err)
+	}
+	for _, item := range []struct{ name, dir string }{{"state", l.StateDir()}, {"cache", l.CacheDir()}} {
+		o.logf("chown %s -> %s:%s", item.dir, app, app)
+		if err := o.System.ChownTree(ctx, app, app, item.dir); err != nil {
+			return fmt.Errorf("deploy: chown %s dir: %w", item.name, err)
+		}
+	}
+	return nil
+}
+
+func (o *Opsctl) swapDeployLinks(l Layout, version string) error {
+	links := []struct {
+		name, link, target string
+	}{
+		{"bin/run", l.RunLink(), l.runTarget(version)},
+		{"etc/current", l.EtcCurrentLink(), version},
+		{"share/current", l.ShareCurrentLink(), version},
+	}
+	for _, item := range links {
+		o.logf("atomic swap %s -> %s", item.name, item.target)
+		if err := atomicSwap(item.link, item.target); err != nil {
+			return fmt.Errorf("deploy: swap %s: %w", item.name, err)
+		}
+	}
 	return nil
 }
 

@@ -284,7 +284,7 @@ func (s RealSystem) CertExists(domain string) bool {
 // environment (PLAN §1.1), so the env slice carries <APP>_DB_PATH etc.
 type RealRunner struct{}
 
-func (RealRunner) Run(ctx context.Context, binary, verb string, args []string, env []string) (string, error) {
+func (RealRunner) Run(ctx context.Context, binary, verb string, args, env []string) (string, error) {
 	full := append([]string{verb}, args...)
 	cmd := exec.CommandContext(ctx, binary, full...)
 	if len(env) > 0 {
