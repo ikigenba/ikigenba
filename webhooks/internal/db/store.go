@@ -145,10 +145,8 @@ type rowScanner interface {
 
 // scanWebhook decodes one webhooks row, parsing the TEXT timestamps back into
 // time.Time and leaving LastTriggeredAt nil when the column is NULL.
-func scanWebhook(sc rowScanner) (Webhook, string, string, error) {
+func scanWebhook(sc rowScanner) (w Webhook, secretHash, retainedSecret string, err error) {
 	var (
-		w             Webhook
-		secretHash    string
 		createdAt     string
 		lastTriggered sql.NullString
 		secret        sql.NullString
