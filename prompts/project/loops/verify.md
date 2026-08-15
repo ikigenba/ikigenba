@@ -35,18 +35,22 @@ working directory.
    nothing to verify: return `NEXT`. Note the phase number `NN` and its **Ids to
    cover** (or that it is a structural phase with a named deterministic check).
 
-2. **Run the full suite** — all four must succeed from `prompts/`:
+2. **Run the full suite** — all five must succeed from `prompts/`:
 
    ```
    go build ./...
    go vet ./...
    gofmt -l .        # must print nothing
    go test ./...     # zero failures (-race implicit)
+   ../bin/lint prompts
    ```
 
    Plus any phase-specific command the brief's **Done bar** names. Any failure is
    a **gap**. Also confirm **no `R-XXXX-XXXX`-tagged test reported `SKIP`** — a
-   skipped requirement test is a gap, never acceptable green.
+   skipped requirement test is a gap, never acceptable green. `bin/lint`
+   enforces this tree's registered `.lint-tier` (absent or `off` passes
+   vacuously; `cheap`/`strict` enforce that tier), so a lint finding at the
+   registered tier is an open gap, not a pass.
 
 3. **Check coverage.** Every check below is a deterministic command with a
    defined pass criterion (a green test/suite, an exit code, an exact match
@@ -177,7 +181,7 @@ working directory.
   feedback` region, and you overwrite it rather than appending.
 - Never complete a phase on anything short of a fully green suite **and** full,
   genuine, reachable id coverage (or, for a structural phase, the named
-  deterministic check).
+  deterministic check) **and** clean lint (at the registered tier).
 - **Treat a skipped or statically-unreachable id test as uncovered — a skip is
   never acceptable green.** prompts has no live layer, so there is no carve-out.
 - Never read the big docs to re-derive the checklist — the brief **is** the
