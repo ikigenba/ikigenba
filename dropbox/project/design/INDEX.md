@@ -35,6 +35,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D29 → `project/design/D29.md` — Env-channel conformance: the sync tuning knobs surface in the manifest — owns R-M0AZ-C8H7; adopts R-VKB6-SHHV (root `project/design/D11.md`)
 - D30 → `project/design/D30.md` — Testing-language conformance: adopt the suite contract and normalize the live layer — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 - D31 → `project/design/D31.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
+- D32 → `project/design/D32.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 
