@@ -9,5 +9,7 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 48
+Next phase: 49
+
+- Phase 48 ⬜ realizes — — promote lint tier to `strict` (D43; fix 6 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint scripts` exits 0)
 
