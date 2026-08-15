@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.41.0 — 2026-08-15
+
+- Internal code-quality hardening: the service now conforms to the suite's strict mechanical lint tier (formatting, complexity, and style rules enforced by the shared lint gate). No user-facing behavior, API, or data changes.
+
 ## v0.40.0 — 2026-08-12
 
 - The completion queue now enforces per-consumer ownership leases and partitions: a consumer only ever sees and acknowledges its own items, abandonment surfaces a distinct error code, and store partition guards are proven in the gate.
