@@ -11,5 +11,3 @@ file — there is no done marker; done is gone. This file deliberately carries
 matches only phase lines.
 
 Next phase: 58
-
-- Phase 57 ⬜ realizes — — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint dashboard` exits 0)
