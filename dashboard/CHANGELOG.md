@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.34.0 — 2026-08-15
+
+- Internal code-quality hardening: the service now conforms to the suite's strict mechanical lint tier (formatting, complexity, and style rules enforced by the shared lint gate). No user-facing behavior, API, or data changes.
+
 ## v0.33.0 — 2026-08-14
 
 - The version shown in every page footer is now the real running version of the
