@@ -18,6 +18,7 @@ import (
 
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/match"
 	"wiki/internal/page"
 )
 
@@ -68,9 +69,11 @@ type Service struct {
 	vectorCacheRemove func(subjectID string)
 	extractor         Extractor
 	compiler          Compiler
+	matcher           *match.Matcher
 	queue             *llm.Client
 	extractSite       llm.CallSite
 	compileSite       llm.CallSite
+	matchSite         llm.CallSite
 	recorder          *telemetry.Recorder
 	now               func() time.Time
 	newID             func() string
@@ -83,12 +86,24 @@ type Service struct {
 	logger            *slog.Logger
 }
 
+// WithMatcher wires the live matcher used by composed operations such as merge.
+func WithMatcher(matcher *match.Matcher) ServiceOption {
+	return func(s *Service) { s.matcher = matcher }
+}
+
 // WithCompletionQueue enables the durable handoff/apply ingest pipeline.
-func WithCompletionQueue(client *llm.Client, extractSite, compileSite llm.CallSite) ServiceOption {
+func WithCompletionQueue(client *llm.Client, extractSite llm.CallSite, sites ...llm.CallSite) ServiceOption {
 	return func(s *Service) {
 		s.queue = client
 		s.extractSite = extractSite
-		s.compileSite = compileSite
+		s.matchSite = match.DefaultCallSite()
+		if len(sites) == 1 {
+			s.compileSite = sites[0]
+		}
+		if len(sites) >= 2 {
+			s.matchSite = sites[0]
+			s.compileSite = sites[1]
+		}
 	}
 }
 

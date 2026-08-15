@@ -400,7 +400,7 @@ func (s *JobStore) FailWaiting(ctx context.Context, id string, finishedAt time.T
 	}
 	defer tx.Rollback()
 	res, err := tx.ExecContext(ctx,
-		`UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = ? AND phase IN ('extract', 'compile')`,
+		`UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = ? AND phase IN ('extract', 'match', 'compile')`,
 		JobFailed, formatTime(finishedAt), jobErr, id, JobWorking)
 	if err != nil {
 		return false, err

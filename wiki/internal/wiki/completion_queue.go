@@ -17,6 +17,7 @@ import (
 
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	matchstage "wiki/internal/match"
 )
 
 // OutcomeClass describes the durable disposition of one terminal completion.
@@ -54,9 +55,11 @@ type pipelineEnvelope struct {
 }
 
 type stagedIntegration struct {
-	NewSubjects []stagedSubject `json:"new_subjects"`
-	Claims      []stagedClaim   `json:"claims"`
-	Pages       []stagedPage    `json:"pages"`
+	NewSubjects  []stagedSubject `json:"new_subjects"`
+	Claims       []stagedClaim   `json:"claims"`
+	Pages        []stagedPage    `json:"pages"`
+	MatchUnits   []string        `json:"match_units,omitempty"`
+	CompileTotal int             `json:"compile_total,omitempty"`
 }
 
 type stagedSubject struct {
@@ -70,6 +73,13 @@ type stagedClaim struct {
 	NormName string `json:"norm_name"`
 	JobID    string `json:"job_id"`
 	Body     string `json:"body"`
+	Kind     string `json:"kind,omitempty"`
+	Ordinal  int    `json:"ordinal,omitempty"`
+}
+
+type stagedEdge struct {
+	Correction string `json:"correction"`
+	Suppressed string `json:"suppressed"`
 }
 
 type stagedPage struct {
@@ -94,10 +104,20 @@ func (s stagedSubject) subject(id string) Subject {
 func modelClaims(claims []stagedClaim, subjectID string) []Claim {
 	out := make([]Claim, 0, len(claims))
 	for _, claim := range claims {
-		out = append(out, Claim{ID: claim.ID, SubjectID: subjectID, JobID: claim.JobID, Body: claim.Body, Kind: ClaimKind})
+		kind := claim.Kind
+		if kind == "" {
+			kind = ClaimKind
+		}
+		id := claim.ID
+		if id == "" {
+			id = ordinalRef(claim.Ordinal)
+		}
+		out = append(out, Claim{ID: id, SubjectID: subjectID, JobID: claim.JobID, Body: claim.Body, Kind: kind})
 	}
 	return out
 }
+
+func ordinalRef(ordinal int) string { return fmt.Sprintf("~ordinal:%d", ordinal) }
 
 func (s *Service) handoffExtract(ctx context.Context, job Job) error {
 	ctx, job = s.jobContext(ctx, job)
@@ -215,7 +235,7 @@ func (d *Drain) record(outcome Outcome) {
 
 func (s *Service) applyCompletion(ctx context.Context, item llm.Item) Outcome {
 	var envelope pipelineEnvelope
-	if err := json.Unmarshal(item.Context, &envelope); err != nil || envelope.JobID == "" || (envelope.Stage != "extract" && envelope.Stage != "compile") {
+	if err := json.Unmarshal(item.Context, &envelope); err != nil || envelope.JobID == "" || (envelope.Stage != "extract" && envelope.Stage != "match" && envelope.Stage != "compile") {
 		return Outcome{Class: Discarded, Reason: "non_pipeline"}
 	}
 	job, err := s.jobs.Get(ctx, envelope.JobID)
@@ -228,7 +248,7 @@ func (s *Service) applyCompletion(ctx context.Context, item llm.Item) Outcome {
 	if job.Status != JobWorking {
 		return Outcome{Class: Discarded, Reason: "terminal_job"}
 	}
-	if envelope.Stage != job.Phase && !(item.Status == "done" && envelope.Stage == "extract" && job.Phase == "compile") {
+	if envelope.Stage != job.Phase && !(item.Status == "done" && envelope.Stage == "extract" && (job.Phase == "match" || job.Phase == "compile")) && !(item.Status == "done" && envelope.Stage == "match" && job.Phase == "compile") && !(envelope.Stage == "compile" && job.Phase == "match") {
 		return Outcome{Class: Discarded, Reason: "stale_stage"}
 	}
 	ctx, job = s.jobContext(ctx, job)
@@ -256,6 +276,8 @@ func (s *Service) applyCompletion(ctx context.Context, item llm.Item) Outcome {
 	switch envelope.Stage {
 	case "extract":
 		return s.applyExtract(ctx, job, item)
+	case "match":
+		return s.applyMatch(ctx, job, envelope, item)
 	case "compile":
 		return s.applyCompile(ctx, job, envelope, item)
 	default:
@@ -346,8 +368,20 @@ func (s *Service) pipelineStageMatches(ctx context.Context, jobID string, envelo
 	if err != nil || !found {
 		return false, err
 	}
+	if envelope.Stage == "match" {
+		return containsString(plan.MatchUnits, envelope.Subject) && envelope.Units == len(plan.MatchUnits), nil
+	}
 	_, found = compilePage(plan, envelope.Subject)
 	return found && envelope.Units == compileUnits(plan), nil
+}
+
+func containsString(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) applyExtract(ctx context.Context, job Job, item llm.Item) Outcome {
@@ -370,34 +404,27 @@ func (s *Service) applyExtract(ctx context.Context, job Job, item llm.Item) Outc
 			return s.applyError(ctx, job, "stage_extract", err)
 		}
 	}
-	for _, page := range plan.Pages {
-		if page.Delete {
-			continue
-		}
-		staged, err := s.compileUnitStaged(ctx, job.ID, page.Subject.NormName)
+	for _, normName := range plan.MatchUnits {
+		staged, err := s.matchUnitStaged(ctx, job.ID, normName)
 		if err != nil {
-			return s.applyError(ctx, job, "read_staging", err)
+			return s.applyError(ctx, job, "read_match_staging", err)
 		}
 		if staged {
 			continue
 		}
-		envelope, err := json.Marshal(pipelineEnvelope{JobID: job.ID, Stage: "compile", Subject: page.Subject.NormName, Units: compileUnits(plan)})
-		if err != nil {
-			return s.applyError(ctx, job, "compile_envelope", err)
+		if err := s.ensureMatch(ctx, job, plan, normName); err != nil {
+			return s.applyError(ctx, job, "ensure_match", err)
 		}
-		_, err = s.queue.Ensure(ctx, llm.Request{
-			Key:      job.ID + "/compile/" + page.Subject.NormName + "/a1",
-			Context:  envelope,
-			Site:     s.compileSite,
-			Attr:     jobAttribution(job),
-			Attempt:  1,
-			Messages: []llm.Message{{Role: "user", Text: renderCompile(page.Subject.subject(""), modelClaims(page.Claims, ""))}},
-		})
-		if err != nil {
+	}
+	for _, page := range plan.Pages {
+		if page.Delete || containsString(plan.MatchUnits, page.Subject.NormName) {
+			continue
+		}
+		if err := s.ensureCompile(ctx, job, plan, page); err != nil {
 			return s.applyError(ctx, job, "ensure_compile", err)
 		}
 	}
-	if compileUnits(plan) == 0 {
+	if len(plan.MatchUnits) == 0 && compileUnits(plan) == 0 {
 		if err := s.integrateStaged(ctx, job, plan); err != nil {
 			return s.applyError(ctx, job, "integrate", err)
 		}
@@ -405,7 +432,44 @@ func (s *Service) applyExtract(ctx context.Context, job Job, item llm.Item) Outc
 	return Outcome{Class: Applied, Reason: "extract_applied"}
 }
 
+func (s *Service) ensureMatch(ctx context.Context, job Job, plan stagedIntegration, normName string) error {
+	unit, err := s.matchUnit(ctx, job, plan, normName)
+	if err != nil {
+		return err
+	}
+	envelope, err := json.Marshal(pipelineEnvelope{JobID: job.ID, Stage: "match", Subject: normName, Units: len(plan.MatchUnits)})
+	if err != nil {
+		return err
+	}
+	_, err = s.queue.Ensure(ctx, llm.Request{
+		Key: job.ID + "/match/" + normName + "/a1", Context: envelope, Site: s.matchSite,
+		Attr: jobAttribution(job), Attempt: 1,
+		Messages: []llm.Message{{Role: "user", Text: matchstage.Render(unit)}},
+	})
+	return err
+}
+
+func (s *Service) ensureCompile(ctx context.Context, job Job, plan stagedIntegration, page stagedPage) error {
+	staged, err := s.compileUnitStaged(ctx, job.ID, page.Subject.NormName)
+	if err != nil || staged {
+		return err
+	}
+	envelope, err := json.Marshal(pipelineEnvelope{JobID: job.ID, Stage: "compile", Subject: page.Subject.NormName, Units: compileUnits(plan)})
+	if err != nil {
+		return err
+	}
+	_, err = s.queue.Ensure(ctx, llm.Request{
+		Key: job.ID + "/compile/" + page.Subject.NormName + "/a1", Context: envelope, Site: s.compileSite,
+		Attr: jobAttribution(job), Attempt: 1,
+		Messages: []llm.Message{{Role: "user", Text: renderCompile(page.Subject.subject(""), modelClaims(page.Claims, ""))}},
+	})
+	return err
+}
+
 func compileUnits(plan stagedIntegration) int {
+	if plan.CompileTotal > 0 {
+		return plan.CompileTotal
+	}
 	n := 0
 	for _, page := range plan.Pages {
 		if !page.Delete {
@@ -425,6 +489,12 @@ func (s *Service) compileUnitStaged(ctx context.Context, jobID, unit string) (bo
 	return found != 0, err
 }
 
+func (s *Service) matchUnitStaged(ctx context.Context, jobID, unit string) (bool, error) {
+	var found int
+	err := s.write.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM job_staging WHERE job_id = ? AND stage = 'match' AND unit = ?)`, jobID, unit).Scan(&found)
+	return found != 0, err
+}
+
 func (s *Service) stageExtractPlan(ctx context.Context, job Job, extracted []extract.ExtractedSubject) (stagedIntegration, error) {
 	affected, err := s.affectedSubjects(ctx, s.subjects, s.claims, job.ID)
 	if err != nil {
@@ -433,8 +503,11 @@ func (s *Service) stageExtractPlan(ctx context.Context, job Job, extracted []ext
 	knownByNorm := map[string]Subject{}
 	newByNorm := map[string]bool{}
 	claimsByNorm := map[string][]stagedClaim{}
+	newClaimsByNorm := map[string]bool{}
+	newCorrectionsByNorm := map[string]bool{}
 	pageByNorm := map[string]stagedSubject{}
 	plan := stagedIntegration{}
+	nextOrdinal := 1
 	for _, subject := range affected {
 		knownByNorm[subject.NormName] = subject
 		pageByNorm[subject.NormName] = stageSubject(subject)
@@ -462,9 +535,18 @@ func (s *Service) stageExtractPlan(ctx context.Context, job Job, extracted []ext
 		}
 		pageByNorm[subject.NormName] = stageSubject(subject)
 		for _, body := range item.Claims {
-			claim := stagedClaim{ID: s.newID(), NormName: subject.NormName, JobID: job.ID, Body: strings.TrimSpace(body)}
+			claim := stagedClaim{NormName: subject.NormName, JobID: job.ID, Body: strings.TrimSpace(body), Kind: ClaimKind, Ordinal: nextOrdinal}
+			nextOrdinal++
 			plan.Claims = append(plan.Claims, claim)
 			claimsByNorm[subject.NormName] = append(claimsByNorm[subject.NormName], claim)
+			newClaimsByNorm[subject.NormName] = true
+		}
+		for _, body := range item.Corrections {
+			claim := stagedClaim{NormName: subject.NormName, JobID: job.ID, Body: strings.TrimSpace(body), Kind: CorrectionKind, Ordinal: nextOrdinal}
+			nextOrdinal++
+			plan.Claims = append(plan.Claims, claim)
+			claimsByNorm[subject.NormName] = append(claimsByNorm[subject.NormName], claim)
+			newCorrectionsByNorm[subject.NormName] = true
 		}
 	}
 	normNames := make([]string, 0, len(pageByNorm))
@@ -475,18 +557,34 @@ func (s *Service) stageExtractPlan(ctx context.Context, job Job, extracted []ext
 	for _, normName := range normNames {
 		subject := knownByNorm[normName]
 		claims := claimsByNorm[normName]
+		var persistedEdges []Suppression
+		standingCorrection := false
 		if subject.ID != "" {
 			existing, err := s.plannedClaims(ctx, job.ID, subject.ID, nil)
 			if err != nil {
 				return stagedIntegration{}, err
 			}
 			for _, claim := range existing {
-				claims = append(claims, stagedClaim{ID: claim.ID, NormName: normName, JobID: claim.JobID, Body: claim.Body})
+				claims = append(claims, stagedClaim{ID: claim.ID, NormName: normName, JobID: claim.JobID, Body: claim.Body, Kind: claim.Kind})
+				standingCorrection = standingCorrection || claim.Kind == CorrectionKind
+			}
+			persistedEdges, err = NewSuppressionStore(s.write).ListBySubject(ctx, subject.ID)
+			if err != nil {
+				return stagedIntegration{}, err
 			}
 		}
-		sort.Slice(claims, func(i, j int) bool { return claims[i].ID < claims[j].ID })
-		plan.Pages = append(plan.Pages, stagedPage{Subject: pageByNorm[normName], Claims: claims, Delete: len(claims) == 0})
+		sort.Slice(claims, func(i, j int) bool {
+			return modelClaims(claims[i:i+1], "")[0].ID < modelClaims(claims[j:j+1], "")[0].ID
+		})
+		if newCorrectionsByNorm[normName] || (newClaimsByNorm[normName] && standingCorrection) {
+			plan.MatchUnits = append(plan.MatchUnits, normName)
+		}
+		effective, _ := Effective(modelClaims(claims, subject.ID), persistedEdges)
+		effectiveStaged := stagedClaims(effective, claims)
+		plan.Pages = append(plan.Pages, stagedPage{Subject: pageByNorm[normName], Claims: effectiveStaged, Delete: len(effectiveStaged) == 0})
 	}
+	sort.Strings(plan.MatchUnits)
+	plan.CompileTotal = compileUnits(plan)
 	raw, err := json.Marshal(plan)
 	if err != nil {
 		return stagedIntegration{}, err
@@ -502,7 +600,11 @@ func (s *Service) stageExtractPlan(ctx context.Context, job Job, extracted []ext
 		job.ID, string(raw), compileUnits(plan)); err != nil {
 		return stagedIntegration{}, err
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE jobs SET phase = 'compile', deadline_at = ? WHERE id = ? AND status = ? AND phase = 'extract'`, formatTime(s.now().Add(jobProgressDeadline)), job.ID, JobWorking)
+	nextPhase := "compile"
+	if len(plan.MatchUnits) > 0 {
+		nextPhase = "match"
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE jobs SET phase = ?, deadline_at = ? WHERE id = ? AND status = ? AND phase = 'extract'`, nextPhase, formatTime(s.now().Add(jobProgressDeadline)), job.ID, JobWorking)
 	if err != nil {
 		return stagedIntegration{}, err
 	}
@@ -519,6 +621,24 @@ func (s *Service) stageExtractPlan(ctx context.Context, job Job, extracted []ext
 	return plan, nil
 }
 
+func stagedClaims(rows []Claim, candidates []stagedClaim) []stagedClaim {
+	byRef := make(map[string]stagedClaim, len(candidates))
+	for _, candidate := range candidates {
+		ref := candidate.ID
+		if ref == "" {
+			ref = ordinalRef(candidate.Ordinal)
+		}
+		byRef[ref] = candidate
+	}
+	out := make([]stagedClaim, 0, len(rows))
+	for _, row := range rows {
+		if candidate, ok := byRef[row.ID]; ok {
+			out = append(out, candidate)
+		}
+	}
+	return out
+}
+
 func (s *Service) loadStagedIntegration(ctx context.Context, jobID string) (stagedIntegration, bool, error) {
 	var raw string
 	err := s.write.QueryRowContext(ctx, `SELECT payload FROM job_staging WHERE job_id = ? AND stage = 'extract' AND unit = ''`, jobID).Scan(&raw)
@@ -533,6 +653,204 @@ func (s *Service) loadStagedIntegration(ctx context.Context, jobID string) (stag
 		return stagedIntegration{}, false, err
 	}
 	return plan, true, nil
+}
+
+func (s *Service) matchUnit(ctx context.Context, job Job, plan stagedIntegration, normName string) (matchstage.Unit, error) {
+	var page stagedPage
+	found := false
+	for _, candidate := range plan.Pages {
+		if candidate.Subject.NormName == normName {
+			page, found = candidate, true
+			break
+		}
+	}
+	if !found {
+		return matchstage.Unit{}, fmt.Errorf("wiki: match subject %q missing from staged plan", normName)
+	}
+	subject := page.Subject.subject("")
+	var rows []Claim
+	resolved, err := s.resolver.ResolveByName(ctx, job.Scope, normName)
+	if err == nil {
+		subject.ID = resolved.ID
+		rows, err = s.plannedClaims(ctx, job.ID, resolved.ID, nil)
+	} else if !errors.Is(err, ErrSubjectNotFound) {
+		return matchstage.Unit{}, err
+	}
+	for _, staged := range plan.Claims {
+		if staged.NormName == normName {
+			rows = append(rows, modelClaims([]stagedClaim{staged}, subject.ID)[0])
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
+	unit := matchstage.Unit{Subject: subject}
+	for _, row := range rows {
+		statement := matchstage.Statement{Claim: row, New: row.JobID == job.ID}
+		if row.Kind == CorrectionKind {
+			unit.Corrections = append(unit.Corrections, statement)
+		} else {
+			unit.Claims = append(unit.Claims, statement)
+		}
+	}
+	return unit, nil
+}
+
+func (s *Service) applyMatch(ctx context.Context, job Job, envelope pipelineEnvelope, item llm.Item) Outcome {
+	plan, found, err := s.loadStagedIntegration(ctx, job.ID)
+	if err != nil {
+		return s.applyError(ctx, job, "corrupt_staged_payload", err)
+	}
+	if !found || !containsString(plan.MatchUnits, envelope.Subject) || envelope.Units != len(plan.MatchUnits) {
+		return Outcome{Class: Discarded, Reason: "stale_units"}
+	}
+	unit, err := s.matchUnit(ctx, job, plan, envelope.Subject)
+	if err != nil {
+		return s.applyError(ctx, job, "load_match_unit", err)
+	}
+	var result matchstage.Result
+	if err := json.Unmarshal(item.Result, &result); err != nil {
+		return s.correctOrFail(ctx, job, item, "match", envelope.Subject, envelope.Units, err)
+	}
+	if err := matchstage.Validate(result, len(unit.Corrections), len(unit.Claims)); err != nil {
+		return s.correctOrFail(ctx, job, item, "match", envelope.Subject, envelope.Units, err)
+	}
+	edges := matchstage.Filter(unit, result)
+	payload := make([]stagedEdge, 0, len(edges))
+	for _, edge := range edges {
+		payload = append(payload, stagedEdge{Correction: edge.Correction, Suppressed: edge.Suppressed})
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return s.applyError(ctx, job, "match_payload", err)
+	}
+	tx, err := s.write.BeginTx(ctx, nil)
+	if err != nil {
+		return s.applyError(ctx, job, "begin_match", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO job_staging(job_id, stage, unit, payload, units) VALUES (?, 'match', ?, ?, ?) ON CONFLICT(job_id, stage, unit) DO UPDATE SET payload=excluded.payload, units=excluded.units`, job.ID, envelope.Subject, string(raw), envelope.Units); err != nil {
+		return s.applyError(ctx, job, "stage_match", err)
+	}
+	var matched int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM job_staging WHERE job_id = ? AND stage = 'match'`, job.ID).Scan(&matched); err != nil {
+		return s.applyError(ctx, job, "count_match", err)
+	}
+	if matched == len(plan.MatchUnits) {
+		if _, err := tx.ExecContext(ctx, `UPDATE jobs SET phase='compile', deadline_at=? WHERE id=? AND status=? AND phase='match'`, formatTime(s.now().Add(jobProgressDeadline)), job.ID, JobWorking); err != nil {
+			return s.applyError(ctx, job, "finish_match", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return s.applyError(ctx, job, "commit_match", err)
+	}
+	page, err := s.effectiveStagedPage(ctx, job, plan, envelope.Subject)
+	if err != nil {
+		return s.applyError(ctx, job, "effective_match", err)
+	}
+	plan, err = s.replaceStagedPage(ctx, job.ID, plan, page)
+	if err != nil {
+		return s.applyError(ctx, job, "stage_effective_page", err)
+	}
+	if page.Delete {
+		if err := s.stageDeletedCompile(ctx, job.ID, page.Subject.NormName, compileUnits(plan)); err != nil {
+			return s.applyError(ctx, job, "stage_empty_compile", err)
+		}
+	} else if err := s.ensureCompile(ctx, job, plan, page); err != nil {
+		return s.applyError(ctx, job, "ensure_compile", err)
+	}
+	if matched == len(plan.MatchUnits) {
+		var compiled int
+		if err := s.write.QueryRowContext(ctx, `SELECT COUNT(*) FROM job_staging WHERE job_id=? AND stage='compile'`, job.ID).Scan(&compiled); err != nil {
+			return s.applyError(ctx, job, "count_compile", err)
+		}
+		if compiled == compileUnits(plan) {
+			if err := s.integrateStaged(ctx, job, plan); err != nil {
+				return s.applyError(ctx, job, "integrate", err)
+			}
+		}
+	}
+	return Outcome{Class: Applied, Reason: "match_applied"}
+}
+
+func (s *Service) replaceStagedPage(ctx context.Context, jobID string, plan stagedIntegration, page stagedPage) (stagedIntegration, error) {
+	for i := range plan.Pages {
+		if plan.Pages[i].Subject.NormName == page.Subject.NormName {
+			plan.Pages[i] = page
+			break
+		}
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		return stagedIntegration{}, err
+	}
+	_, err = s.write.ExecContext(ctx, `UPDATE job_staging SET payload=? WHERE job_id=? AND stage='extract' AND unit=''`, string(raw), jobID)
+	return plan, err
+}
+
+func (s *Service) stagedMatchEdges(ctx context.Context, jobID string) ([]Suppression, error) {
+	rows, err := s.write.QueryContext(ctx, `SELECT payload FROM job_staging WHERE job_id=? AND stage='match' ORDER BY unit`, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Suppression
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var edges []stagedEdge
+		if err := json.Unmarshal([]byte(raw), &edges); err != nil {
+			return nil, err
+		}
+		for _, edge := range edges {
+			out = append(out, Suppression{Correction: edge.Correction, Suppressed: edge.Suppressed})
+		}
+	}
+	return out, rows.Err()
+}
+
+func (s *Service) effectiveStagedPage(ctx context.Context, job Job, plan stagedIntegration, normName string) (stagedPage, error) {
+	unit, err := s.matchUnit(ctx, job, plan, normName)
+	if err != nil {
+		return stagedPage{}, err
+	}
+	rows := make([]Claim, 0, len(unit.Claims)+len(unit.Corrections))
+	for _, statement := range unit.Claims {
+		rows = append(rows, statement.Claim)
+	}
+	for _, statement := range unit.Corrections {
+		rows = append(rows, statement.Claim)
+	}
+	var edges []Suppression
+	if unit.Subject.ID != "" {
+		edges, err = NewSuppressionStore(s.write).ListBySubject(ctx, unit.Subject.ID)
+		if err != nil {
+			return stagedPage{}, err
+		}
+	}
+	staged, err := s.stagedMatchEdges(ctx, job.ID)
+	if err != nil {
+		return stagedPage{}, err
+	}
+	edges = append(edges, staged...)
+	effective, _ := Effective(rows, edges)
+	var subject stagedSubject
+	for _, candidate := range plan.Pages {
+		if candidate.Subject.NormName == normName {
+			subject = candidate.Subject
+			break
+		}
+	}
+	claims := make([]stagedClaim, 0, len(effective))
+	for _, row := range effective {
+		claims = append(claims, stagedClaim{ID: row.ID, NormName: normName, JobID: row.JobID, Body: row.Body, Kind: row.Kind})
+	}
+	return stagedPage{Subject: subject, Claims: claims, Delete: len(claims) == 0}, nil
+}
+
+func (s *Service) stageDeletedCompile(ctx context.Context, jobID, unit string, units int) error {
+	_, err := s.write.ExecContext(ctx, `INSERT INTO job_staging(job_id, stage, unit, payload, units) VALUES (?, 'compile', ?, '{}', ?) ON CONFLICT(job_id, stage, unit) DO NOTHING`, jobID, unit, units)
+	return err
 }
 
 func (s *Service) applyCompile(ctx context.Context, job Job, envelope pipelineEnvelope, item llm.Item) Outcome {
@@ -612,6 +930,20 @@ func (s *Service) correctOrFail(ctx context.Context, job Job, item llm.Item, sta
 	var original string
 	if stage == "extract" {
 		original = extract.Render(extract.DocumentHeader{Source: "mcp:ingest_text", Title: job.Title, Tags: job.Tags, ReceivedAt: job.ReceivedAt}, job.SourceText)
+	} else if stage == "match" {
+		site = s.matchSite
+		plan, found, err := s.loadStagedIntegration(ctx, job.ID)
+		if err != nil {
+			return s.applyError(ctx, job, "corrupt_staged_payload", err)
+		}
+		if !found || !containsString(plan.MatchUnits, subject) {
+			return Outcome{Class: Discarded, Reason: "stale_units"}
+		}
+		unit, err := s.matchUnit(ctx, job, plan, subject)
+		if err != nil {
+			return s.applyError(ctx, job, "load_match_unit", err)
+		}
+		original = matchstage.Render(unit)
 	} else {
 		site = s.compileSite
 		plan, found, err := s.loadStagedIntegration(ctx, job.ID)
@@ -778,10 +1110,38 @@ func (s *Service) integrateStagedTx(ctx context.Context, tx *sql.Tx, job Job, pl
 		}
 		resolved[normName] = subject
 	}
+	resolvedRefs := make(map[string]string, len(plan.Claims))
 	for _, staged := range plan.Claims {
 		subject := resolved[staged.NormName]
-		claim := Claim{ID: staged.ID, SubjectID: subject.ID, JobID: staged.JobID, Body: staged.Body, Kind: ClaimKind}
+		id := staged.ID
+		if id == "" {
+			id = s.newID()
+			resolvedRefs[ordinalRef(staged.Ordinal)] = id
+		}
+		kind := staged.Kind
+		if kind == "" {
+			kind = ClaimKind
+		}
+		claim := Claim{ID: id, SubjectID: subject.ID, JobID: staged.JobID, Body: staged.Body, Kind: kind}
 		if err := claims.Save(ctx, claim); err != nil {
+			return stagedCommit{}, err
+		}
+	}
+	matchEdges, err := loadStagedMatchEdgesTx(ctx, tx, job.ID)
+	if err != nil {
+		return stagedCommit{}, err
+	}
+	suppressions := NewSuppressionStore(tx)
+	for _, edge := range matchEdges {
+		correction := edge.Correction
+		if resolved := resolvedRefs[correction]; resolved != "" {
+			correction = resolved
+		}
+		suppressed := edge.Suppressed
+		if resolved := resolvedRefs[suppressed]; resolved != "" {
+			suppressed = resolved
+		}
+		if err := suppressions.Insert(ctx, Suppression{Correction: correction, Suppressed: suppressed, CreatedAt: s.now().Unix()}); err != nil {
 			return stagedCommit{}, err
 		}
 	}
@@ -823,6 +1183,27 @@ func (s *Service) integrateStagedTx(ctx context.Context, tx *sql.Tx, job Job, pl
 		return stagedCommit{}, err
 	}
 	return stagedCommit{changed: true, done: true, pages: pagesToEmbed}, nil
+}
+
+func loadStagedMatchEdgesTx(ctx context.Context, tx *sql.Tx, jobID string) ([]stagedEdge, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT payload FROM job_staging WHERE job_id=? AND stage='match' ORDER BY unit`, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []stagedEdge
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var edges []stagedEdge
+		if err := json.Unmarshal([]byte(raw), &edges); err != nil {
+			return nil, err
+		}
+		out = append(out, edges...)
+	}
+	return out, rows.Err()
 }
 
 func (s *Service) afterStagedCommit(ctx context.Context, job Job, committed stagedCommit) error {

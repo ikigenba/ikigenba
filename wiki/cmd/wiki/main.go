@@ -94,9 +94,9 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			pageEmbedder, queryEmbedding := embeddingPaths(llmClient, cfg.EmbedSite)
 			extractor := extract.New(llmClient, cfg.CallSites.Extract)
 			matcher := buildMatcher(cfg, llmClient)
-			_ = matcher
 			compiler := buildCompiler(cfg, llmClient)
 			serviceOptions := []wiki.ServiceOption{
+				wiki.WithMatcher(matcher),
 				wiki.WithTelemetryRecorder(rt.Recorder()),
 				wiki.WithLogger(rt.Logger()),
 				wiki.WithPageEmbedder(cfg.EmbedSite.Model, pageEmbedder),
@@ -106,7 +106,7 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 				wiki.WithVectorCacheRemover(vectorCache.Remove),
 			}
 			if queueEnabled {
-				serviceOptions = append(serviceOptions, wiki.WithCompletionQueue(llmClient, cfg.CallSites.Extract, cfg.CallSites.Compile))
+				serviceOptions = append(serviceOptions, wiki.WithCompletionQueue(llmClient, cfg.CallSites.Extract, cfg.CallSites.Match, cfg.CallSites.Compile))
 			}
 			svc = wiki.NewService(conns, extractor, compiler, time.Now, serviceOptions...)
 			search := retrieve.NewHybridRetriever(

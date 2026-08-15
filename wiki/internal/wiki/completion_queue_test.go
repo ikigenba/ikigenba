@@ -77,6 +77,7 @@ type queueRequest struct {
 	Context  json.RawMessage `json:"context"`
 	GroupID  string          `json:"group_id"`
 	Attempt  int             `json:"attempt"`
+	System   string          `json:"system"`
 	Messages []llm.Message   `json:"messages"`
 }
 
