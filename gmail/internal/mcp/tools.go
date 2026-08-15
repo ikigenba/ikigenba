@@ -125,6 +125,12 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 		panic("mcp: gmail client is required")
 	}
 	h := &toolHandlers{client: client, contentBase: contentBase}
+	tools := readTools(h)
+	tools = append(tools, writeTools(h)...)
+	return append(tools, destructiveTools(h)...)
+}
+
+func readTools(h *toolHandlers) []appkitmcp.Tool {
 	return []appkitmcp.Tool{
 		{
 			Name:        tool("list"),
@@ -186,6 +192,11 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 				return h.toolLabels(ctx)
 			},
 		},
+	}
+}
+
+func writeTools(h *toolHandlers) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		{
 			Name:        tool("send"),
 			Description: "Send an email. Composes an RFC-2822 message from the structured fields and sends it via Gmail. The send shows up as a sent event on the next poll. Returns the created message {id, thread_id, label_ids}.",
@@ -252,6 +263,11 @@ func Tools(client Client, contentBase string) []appkitmcp.Tool {
 				return h.toolUnlabel(ctx, args)
 			},
 		},
+	}
+}
+
+func destructiveTools(h *toolHandlers) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		{
 			Name:        tool("trash"),
 			Description: "Move a message to Trash (RECOVERABLE). Emits a deleted event on the next poll. Returns the updated message {id, label_ids}.",

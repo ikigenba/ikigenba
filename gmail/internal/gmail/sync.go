@@ -229,70 +229,25 @@ func (e *Engine) Poll(ctx context.Context) error {
 // can repeat a message across overlapping records). Derivation order: a
 // send-to-self yields both a SENT copy and an INBOX copy → both sent and
 // received events (decisions §1).
-func (e *Engine) drain(ctx context.Context, cursor string) ([]MailEvent, string, error) {
-	var events []MailEvent
-	// Dedup added/trashed message ids across the whole drain so overlapping
-	// history records don't emit the same event twice.
-	seenAdded := map[string]bool{}
-	seenTrashed := map[string]bool{}
-	// Cache MessageGet results within a drain (a message may recur across records).
-	msgCache := map[string]*Message{}
-
-	newHistoryID := cursor
+func (e *Engine) drain(ctx context.Context, cursor string) (events []MailEvent, newHistoryID string, err error) {
+	state := &drainState{
+		engine:       e,
+		seenAdded:    map[string]bool{},
+		seenTrashed:  map[string]bool{},
+		messageCache: map[string]*Message{},
+	}
+	newHistoryID = cursor
 	pageToken := ""
 	for {
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
 		}
-		res, err := e.client.HistoryList(ctx, cursor, pageToken)
-		if err != nil {
-			return nil, "", err
+		res, listErr := e.client.HistoryList(ctx, cursor, pageToken)
+		if listErr != nil {
+			return nil, "", listErr
 		}
-		for _, h := range res.History {
-			// messagesAdded → received (INBOX) and/or sent (SENT, not INBOX).
-			for _, ma := range h.MessagesAdded {
-				id := ma.Message.ID
-				if id == "" || seenAdded[id] {
-					continue
-				}
-				msg, err := e.getMessage(ctx, id, msgCache)
-				if err != nil {
-					// A message added then quickly deleted may 404 on get; skip it
-					// (best-effort, decisions philosophy) rather than wedge the drain.
-					if errors.Is(err, ErrNotFound) {
-						e.log.Warn("gmail skipping added message that is no longer fetchable", "id", id)
-						seenAdded[id] = true
-						continue
-					}
-					return nil, "", err
-				}
-				derived := deriveAddedEvents(msg)
-				if len(derived) > 0 {
-					seenAdded[id] = true
-					events = append(events, derived...)
-				}
-			}
-			// labelsAdded: TRASH → deleted.
-			for _, la := range h.LabelsAdded {
-				if !containsLabel(la.LabelIDs, LabelTrash) {
-					continue
-				}
-				id := la.Message.ID
-				if id == "" || seenTrashed[id] {
-					continue
-				}
-				msg, err := e.getMessage(ctx, id, msgCache)
-				if err != nil {
-					if errors.Is(err, ErrNotFound) {
-						e.log.Warn("gmail skipping trashed message that is no longer fetchable", "id", id)
-						seenTrashed[id] = true
-						continue
-					}
-					return nil, "", err
-				}
-				seenTrashed[id] = true
-				events = append(events, deriveDeletedEvent(msg))
-			}
+		if processErr := state.addHistory(ctx, res.History); processErr != nil {
+			return nil, "", processErr
 		}
 		if res.HistoryID != "" {
 			newHistoryID = res.HistoryID
@@ -302,12 +257,79 @@ func (e *Engine) drain(ctx context.Context, cursor string) ([]MailEvent, string,
 		}
 		pageToken = res.NextPageToken
 	}
-	return events, newHistoryID, nil
+	return state.events, newHistoryID, nil
+}
+
+type drainState struct {
+	engine       *Engine
+	events       []MailEvent
+	seenAdded    map[string]bool
+	seenTrashed  map[string]bool
+	messageCache map[string]*Message
+}
+
+func (s *drainState) addHistory(ctx context.Context, history []History) error {
+	for _, item := range history {
+		for _, added := range item.MessagesAdded {
+			if err := s.addMessage(ctx, added.Message.ID); err != nil {
+				return err
+			}
+		}
+		for _, labels := range item.LabelsAdded {
+			if err := s.addTrash(ctx, labels); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *drainState) addMessage(ctx context.Context, id string) error {
+	if id == "" || s.seenAdded[id] {
+		return nil
+	}
+	message, err := s.engine.getMessage(ctx, id, s.messageCache)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			s.engine.log.Warn("gmail skipping added message that is no longer fetchable", "id", id)
+			s.seenAdded[id] = true
+			return nil
+		}
+		return err
+	}
+	derived := deriveAddedEvents(message)
+	if len(derived) > 0 {
+		s.seenAdded[id] = true
+		s.events = append(s.events, derived...)
+	}
+	return nil
+}
+
+func (s *drainState) addTrash(ctx context.Context, labels HistoryLabelChange) error {
+	if !containsLabel(labels.LabelIDs, LabelTrash) {
+		return nil
+	}
+	id := labels.Message.ID
+	if id == "" || s.seenTrashed[id] {
+		return nil
+	}
+	message, err := s.engine.getMessage(ctx, id, s.messageCache)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			s.engine.log.Warn("gmail skipping trashed message that is no longer fetchable", "id", id)
+			s.seenTrashed[id] = true
+			return nil
+		}
+		return err
+	}
+	s.seenTrashed[id] = true
+	s.events = append(s.events, deriveDeletedEvent(message))
+	return nil
 }
 
 // getMessage fetches a message (format=metadata is enough for headers/labels/
 // snippet) using a per-drain cache so a recurring id is fetched once.
-func (e *Engine) getMessage(ctx context.Context, id string, cache map[string]*Message) (*Message, error) {
+func (e *Engine) getMessage(ctx context.Context, id string, cache map[string]*Message) (message *Message, err error) {
 	if m, ok := cache[id]; ok {
 		return m, nil
 	}
@@ -394,7 +416,7 @@ func (e *Engine) commit(ctx context.Context, events []MailEvent, newHistoryID st
 
 // ── small tx-scoped cursor helpers ───────────────────────────────────────────
 
-func (e *Engine) readCursor(ctx context.Context) (string, bool, error) {
+func (e *Engine) readCursor(ctx context.Context) (historyID string, ok bool, err error) {
 	tx, err := e.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return "", false, err

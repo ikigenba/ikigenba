@@ -59,63 +59,18 @@ func run() error {
 		return fmt.Errorf("GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET must be set in the environment (see the bootstrap sitting runbook)")
 	}
 
-	// Bind an ephemeral loopback port for the redirect target. The desktop OAuth
-	// client accepts any 127.0.0.1 redirect implicitly, so we pick a free port at
-	// runtime and tell Google about it via the redirect_uri.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return fmt.Errorf("bind loopback listener: %w", err)
-	}
-	defer ln.Close()
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", ln.Addr().(*net.TCPAddr).Port)
-
 	// A random state value to bind the callback to this request (CSRF guard).
 	state, err := randomState()
 	if err != nil {
 		return fmt.Errorf("generate state: %w", err)
 	}
-
-	authURL := buildAuthURL(clientID, redirectURI, state)
-
-	// The callback delivers the authorization code (or an error) over this channel.
-	type result struct {
-		code string
-		err  error
+	callback, err := startCallbackServer(state)
+	if err != nil {
+		return err
 	}
-	resCh := make(chan result, 1)
+	defer callback.close()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		if gotState := q.Get("state"); gotState != state {
-			http.Error(w, "state mismatch", http.StatusBadRequest)
-			resCh <- result{err: fmt.Errorf("state mismatch on callback")}
-			return
-		}
-		if e := q.Get("error"); e != "" {
-			http.Error(w, "authorization denied: "+e, http.StatusBadRequest)
-			resCh <- result{err: fmt.Errorf("authorization denied: %s", e)}
-			return
-		}
-		code := q.Get("code")
-		if code == "" {
-			http.Error(w, "missing code", http.StatusBadRequest)
-			resCh <- result{err: fmt.Errorf("callback missing authorization code")}
-			return
-		}
-		// The browser tab can close; the code never reaches the agent transcript.
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprintln(w, "Authorization received. You can close this tab and return to the terminal.")
-		resCh <- result{code: code}
-	})
-
-	srv := &http.Server{Handler: mux}
-	go func() { _ = srv.Serve(ln) }()
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-	}()
+	authURL := buildAuthURL(clientID, callback.redirectURI, state)
 
 	fmt.Println("Opening your browser to authorize gmail (full mailbox scope).")
 	fmt.Println("If it does not open automatically, visit:")
@@ -124,18 +79,12 @@ func run() error {
 
 	// Wait for the callback (with a generous timeout for the manual click-through,
 	// including the one-time "unverified app" warning).
-	var code string
-	select {
-	case r := <-resCh:
-		if r.err != nil {
-			return r.err
-		}
-		code = r.code
-	case <-time.After(5 * time.Minute):
-		return fmt.Errorf("timed out waiting for authorization callback (5m)")
+	code, err := callback.wait()
+	if err != nil {
+		return err
 	}
 
-	refreshToken, err := exchangeCode(clientID, clientSecret, code, redirectURI)
+	refreshToken, err := exchangeCode(clientID, clientSecret, code, callback.redirectURI)
 	if err != nil {
 		return err
 	}
@@ -150,6 +99,77 @@ func run() error {
 	// Masked confirmation only — NEVER the token value.
 	fmt.Printf("wrote GMAIL_REFRESH_TOKEN (%s)\n", mask(refreshToken))
 	return nil
+}
+
+type callbackResult struct {
+	code string
+	err  error
+}
+
+type callbackServer struct {
+	listener    net.Listener
+	server      *http.Server
+	results     <-chan callbackResult
+	redirectURI string
+}
+
+func startCallbackServer(state string) (*callbackServer, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("bind loopback listener: %w", err)
+	}
+	results := make(chan callbackResult, 1)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/callback", callbackHandler(state, results))
+	server := &http.Server{Handler: mux}
+	go func() { _ = server.Serve(listener) }()
+	return &callbackServer{
+		listener:    listener,
+		server:      server,
+		results:     results,
+		redirectURI: fmt.Sprintf("http://127.0.0.1:%d/callback", listener.Addr().(*net.TCPAddr).Port),
+	}, nil
+}
+
+func callbackHandler(state string, results chan<- callbackResult) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if gotState := q.Get("state"); gotState != state {
+			http.Error(w, "state mismatch", http.StatusBadRequest)
+			results <- callbackResult{err: fmt.Errorf("state mismatch on callback")}
+			return
+		}
+		if authError := q.Get("error"); authError != "" {
+			http.Error(w, "authorization denied: "+authError, http.StatusBadRequest)
+			results <- callbackResult{err: fmt.Errorf("authorization denied: %s", authError)}
+			return
+		}
+		code := q.Get("code")
+		if code == "" {
+			http.Error(w, "missing code", http.StatusBadRequest)
+			results <- callbackResult{err: fmt.Errorf("callback missing authorization code")}
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintln(w, "Authorization received. You can close this tab and return to the terminal.")
+		results <- callbackResult{code: code}
+	}
+}
+
+func (s *callbackServer) wait() (code string, err error) {
+	select {
+	case result := <-s.results:
+		return result.code, result.err
+	case <-time.After(5 * time.Minute):
+		return "", fmt.Errorf("timed out waiting for authorization callback (5m)")
+	}
+}
+
+func (s *callbackServer) close() {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = s.server.Shutdown(ctx)
+	_ = s.listener.Close()
 }
 
 // buildAuthURL builds the Google authorization URL for the offline-access

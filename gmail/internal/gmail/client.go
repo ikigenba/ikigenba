@@ -193,13 +193,9 @@ func (t *tokenSource) refreshLocked(ctx context.Context) error {
 // body snippet. ErrInvalidGrant from the refresh propagates unwrapped so callers
 // can detect the dead-token case.
 func (c *Client) rpcCall(ctx context.Context, method, path string, query url.Values, reqBody, out any) error {
-	var payload []byte
-	if reqBody != nil {
-		var err error
-		payload, err = json.Marshal(reqBody)
-		if err != nil {
-			return err
-		}
+	payload, err := marshalRequestBody(reqBody)
+	if err != nil {
+		return err
 	}
 	target := hostREST + path
 	if len(query) > 0 {
@@ -246,13 +242,25 @@ func (c *Client) rpcCall(ctx context.Context, method, path string, query url.Val
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return c.statusError(resp.StatusCode, body)
+	return c.decodeRPCResponse(path, resp.StatusCode, body, out)
+}
+
+func marshalRequestBody(reqBody any) (payload []byte, err error) {
+	if reqBody == nil {
+		return nil, nil
 	}
-	if out != nil {
-		if err := json.Unmarshal(body, out); err != nil {
-			return fmt.Errorf("gmail: decode %s: %w", path, err)
-		}
+	return json.Marshal(reqBody)
+}
+
+func (c *Client) decodeRPCResponse(path string, status int, body []byte, out any) error {
+	if status < 200 || status >= 300 {
+		return c.statusError(status, body)
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("gmail: decode %s: %w", path, err)
 	}
 	return nil
 }
