@@ -11,5 +11,3 @@ phase line, so the anchored grep matches only phase lines.
 
 Next phase: 31
 
-- Phase 30 ⬜ realizes — — promote lint tier to `strict` (D27; fix 5 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint gmail` exits 0)
-
