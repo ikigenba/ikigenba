@@ -1,0 +1,10 @@
+Subject identity:
+name: Northgate Lisbon Office
+type: entity
+
+Corrections:
+0. [new] Northgate Lisbon Office did not begin in 2023.
+
+Claims:
+0. [existing] Northgate Lisbon Office began in 2023.
+1. [existing] Northgate Lisbon Office remains active.

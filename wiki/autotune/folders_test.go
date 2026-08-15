@@ -22,7 +22,7 @@ var pinnedConfig = map[string]any{
 	},
 }
 
-var tuneFolders = []string{"extract", "analysis", "compile", "synthesis"}
+var tuneFolders = []string{"extract", "analysis", "match", "compile", "synthesis"}
 
 // R-A5T0-FD39
 func TestAllFoldersHaveRequiredTuneFiles(t *testing.T) {
@@ -131,6 +131,144 @@ func TestExtractNarrativeRelativeTimeDevCasePreservesRelativeExpression(t *testi
 	}
 	if len(subject.Claims) != 1 || !strings.Contains(subject.Claims[0], relativeExpression) || strings.Contains(subject.Claims[0], "1896") {
 		t.Fatalf("gold claims = %#v, want the relative expression preserved without an inferred absolute year", subject.Claims)
+	}
+}
+
+// R-7E3X-B65N
+func TestExtractCorrectionRulingDevCaseClassifiesDenialTruthAndPlainAssertion(t *testing.T) {
+	caseDir := filepath.Join("extract", "cases", "dev", "correction-ruling")
+	input, err := os.ReadFile(filepath.Join(caseDir, "input.txt"))
+	if err != nil {
+		t.Fatalf("read correction ruling input: %v", err)
+	}
+	for _, phrase := range []string{"Contrary to earlier records", "did not open in 2023", "opened in 2024", "definitely employs 40 researchers"} {
+		if !bytes.Contains(input, []byte(phrase)) {
+			t.Fatalf("input lacks explicit denial/truth/plain-assertion phrase %q: %s", phrase, input)
+		}
+	}
+
+	var fixture struct {
+		Gold []struct {
+			Name        string   `json:"name"`
+			Claims      []string `json:"claims"`
+			Corrections []string `json:"corrections"`
+		} `json:"gold"`
+	}
+	readJSON(t, filepath.Join(caseDir, "gold.json"), &fixture)
+	if len(fixture.Gold) != 1 || fixture.Gold[0].Name != "Northstar Lab" {
+		t.Fatalf("gold subjects = %#v, want Northstar Lab only", fixture.Gold)
+	}
+	wantClaims := []string{"Northstar Lab opened in 2024.", "Northstar Lab employs 40 researchers."}
+	wantCorrections := []string{"Northstar Lab did not open in 2023."}
+	if !reflect.DeepEqual(fixture.Gold[0].Claims, wantClaims) || !reflect.DeepEqual(fixture.Gold[0].Corrections, wantCorrections) {
+		t.Fatalf("claims/corrections = %#v/%#v, want %#v/%#v", fixture.Gold[0].Claims, fixture.Gold[0].Corrections, wantClaims, wantCorrections)
+	}
+}
+
+type matchGold struct {
+	CorrectionCount int `json:"correction_count"`
+	ClaimCount      int `json:"claim_count"`
+	Edges           []struct {
+		Correction int    `json:"correction"`
+		Relation   string `json:"relation"`
+		Target     int    `json:"target"`
+	} `json:"edges"`
+}
+
+// R-7YU7-T9RG
+func TestMatchFolderConformsWithAlignedEdgeSetCases(t *testing.T) {
+	if !contains(tuneFolders, "match") {
+		t.Fatal("match is absent from the tune-folder integrity walk")
+	}
+	for _, name := range []string{"prompt.txt", "improve.md", "config.json", "score", "README.md", ".gitignore"} {
+		assertNonEmptyFile(t, filepath.Join("match", name))
+	}
+	info, err := os.Stat(filepath.Join("match", "score"))
+	if err != nil || info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("match score must exist and be executable: info=%v err=%v", info, err)
+	}
+	for split, wantCount := range map[string]int{"dev": 14, "holdout": 7} {
+		root := filepath.Join("match", "cases", split)
+		cases := validateCases(t, root)
+		if len(cases) != wantCount {
+			t.Fatalf("match %s cases = %d, want %d", split, len(cases), wantCount)
+		}
+		if split == "holdout" {
+			want := []string{"arden-mills-h1", "ferro-nordwind-deal", "forward-deployment", "glasswing-standup", "osei-danquah-profile", "solstice-regatta-2026", "tulsa-lab-opening"}
+			if !reflect.DeepEqual(cases, want) {
+				t.Fatalf("match holdout cases = %v, want aligned universe cases %v", cases, want)
+			}
+		}
+		for _, name := range cases {
+			var gold matchGold
+			readJSON(t, filepath.Join(root, name, "gold.json"), &gold)
+			if gold.CorrectionCount < 1 || gold.ClaimCount < 1 || len(gold.Edges) == 0 {
+				t.Fatalf("%s/%s has empty edge-set contract: %+v", split, name, gold)
+			}
+			for _, edge := range gold.Edges {
+				limit := gold.ClaimCount
+				if edge.Relation == "contradicts" {
+					limit = gold.CorrectionCount
+				} else if edge.Relation != "refutes" {
+					t.Fatalf("%s/%s has unknown edge relation %q", split, name, edge.Relation)
+				}
+				if edge.Correction < 0 || edge.Correction >= gold.CorrectionCount || edge.Target < 0 || edge.Target >= limit {
+					t.Fatalf("%s/%s has out-of-range edge %+v", split, name, edge)
+				}
+			}
+		}
+	}
+}
+
+// R-8024-71I5
+func TestMatchScoreReproducesEdgeSetF1AndDeterministicFloors(t *testing.T) {
+	fixture := filepath.Join("match", "fixtures", "edges")
+	var expected map[string]float64
+	readJSON(t, filepath.Join(fixture, "expected.json"), &expected)
+	candidates := map[string]string{
+		"agree":        "agree.json",
+		"partial":      "partial.json",
+		"disjoint":     "disjoint.json",
+		"malformed":    "malformed.txt",
+		"out_of_range": "out-of-range.json",
+	}
+	for name, file := range candidates {
+		t.Run(name, func(t *testing.T) {
+			first := runScorer(t, "match", fixture, file, "")
+			second := runScorer(t, "match", fixture, file, "")
+			if !closeEnough(first.Score, expected[name]) {
+				t.Fatalf("score = %v, want hand-computed %v", first.Score, expected[name])
+			}
+			if first.Score != second.Score || first.Feedback != second.Feedback {
+				t.Fatalf("repeated results differ: first=%+v second=%+v", first, second)
+			}
+		})
+	}
+}
+
+// R-81A0-KT8U
+func TestExtractScorePenalizesClaimsAndCorrectionsMisclassification(t *testing.T) {
+	fixture := filepath.Join("extract", "fixtures", "corrections")
+	var expected map[string]float64
+	readJSON(t, filepath.Join(fixture, "expected.json"), &expected)
+	embedPath, err := filepath.Abs(filepath.Join(fixture, "embed"))
+	if err != nil {
+		t.Fatalf("absolute fixture embed path: %v", err)
+	}
+	results := make(map[string]scoreResult)
+	for name, file := range map[string]string{"correct": "correct.json", "misclassified": "misclassified.json"} {
+		first := runScorer(t, "extract", fixture, file, embedPath)
+		second := runScorer(t, "extract", fixture, file, embedPath)
+		if !closeEnough(first.Score, expected[name]) {
+			t.Fatalf("%s score = %v, want hand-computed %v", name, first.Score, expected[name])
+		}
+		if first.Score != second.Score || first.Feedback != second.Feedback {
+			t.Fatalf("%s repeated results differ: first=%+v second=%+v", name, first, second)
+		}
+		results[name] = first
+	}
+	if results["misclassified"].Score >= results["correct"].Score {
+		t.Fatalf("misclassified score %v did not fall below correct score %v", results["misclassified"].Score, results["correct"].Score)
 	}
 }
 

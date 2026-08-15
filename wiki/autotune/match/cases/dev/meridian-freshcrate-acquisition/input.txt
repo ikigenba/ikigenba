@@ -1,0 +1,10 @@
+Subject identity:
+name: Meridian Freshcrate Acquisition
+type: entity
+
+Corrections:
+0. [new] Meridian Freshcrate Acquisition did not begin in 2023.
+
+Claims:
+0. [existing] Meridian Freshcrate Acquisition began in 2023.
+1. [existing] Meridian Freshcrate Acquisition remains active.

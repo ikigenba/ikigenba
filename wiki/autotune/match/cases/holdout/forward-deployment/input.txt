@@ -1,0 +1,10 @@
+Subject identity:
+name: Forward Deployment
+type: entity
+
+Corrections:
+0. [new] Forward Deployment did not begin in 2023.
+
+Claims:
+0. [existing] Forward Deployment began in 2023.
+1. [existing] Forward Deployment remains active.

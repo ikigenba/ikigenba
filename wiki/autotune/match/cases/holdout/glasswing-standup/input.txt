@@ -1,0 +1,10 @@
+Subject identity:
+name: Glasswing Standup
+type: entity
+
+Corrections:
+0. [new] Glasswing Standup did not begin in 2023.
+
+Claims:
+0. [existing] Glasswing Standup began in 2023.
+1. [existing] Glasswing Standup remains active.

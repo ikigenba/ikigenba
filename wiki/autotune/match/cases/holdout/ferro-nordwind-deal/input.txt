@@ -1,0 +1,10 @@
+Subject identity:
+name: Ferro Nordwind Deal
+type: entity
+
+Corrections:
+0. [new] Ferro Nordwind Deal did not begin in 2023.
+
+Claims:
+0. [existing] Ferro Nordwind Deal began in 2023.
+1. [existing] Ferro Nordwind Deal remains active.

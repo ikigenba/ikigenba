@@ -1,0 +1,3 @@
+Improve the correction-matching system prompt while preserving its JSON contract and zero-based index semantics. Focus on false positive suppression, missed direct refutations, correction-versus-correction contradictions, and ambiguous topical overlap. Prefer precise general rules over case-specific wording.
+
+Your response must contain exactly one fenced code block holding the complete revised prompt and exactly one separate line in the form `SUMMARY: <non-empty description of the changes>`. The summary must be outside the fenced block. Do not omit either item or include any other fenced blocks.

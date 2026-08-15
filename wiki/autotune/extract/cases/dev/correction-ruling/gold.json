@@ -1,0 +1,9 @@
+{
+  "difficulty": "hard",
+  "header": {"source":"mcp:ingest_text","title":"Northstar Lab opening record","tags":["research","correction"],"received_at":"2026-08-14T00:00:00Z"},
+  "gold": [{
+    "type":"entity","kind":"organization","name":"Northstar Lab","aliases":[],"occurred_at":"2024",
+    "claims":["Northstar Lab opened in 2024.","Northstar Lab employs 40 researchers."],
+    "corrections":["Northstar Lab did not open in 2023."]
+  }]
+}

@@ -1,0 +1,10 @@
+Subject identity:
+name: Riverbend Open 2025
+type: entity
+
+Corrections:
+0. [new] Riverbend Open 2025 did not begin in 2023.
+
+Claims:
+0. [existing] Riverbend Open 2025 began in 2023.
+1. [existing] Riverbend Open 2025 remains active.

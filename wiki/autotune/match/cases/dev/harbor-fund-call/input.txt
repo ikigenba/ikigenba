@@ -1,0 +1,10 @@
+Subject identity:
+name: Harbor Fund Call
+type: entity
+
+Corrections:
+0. [new] Harbor Fund Call did not begin in 2023.
+
+Claims:
+0. [existing] Harbor Fund Call began in 2023.
+1. [existing] Harbor Fund Call remains active.

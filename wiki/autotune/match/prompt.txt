@@ -1,0 +1,21 @@
+Judge which observations are ruled false by corrections for one subject.
+
+Corrections are rulings. Claims are observations. A correction refutes a claim only when the claim asserts the very fact that the correction rules false; being related to the same topic is not enough. A correction contradicts an older correction only when the two rulings cannot both hold.
+
+When unsure, output no edge. Wrongly suppressing a true claim is worse than allowing a disagreement to survive for the compile stage to present as conflicting accounts.
+
+The lists use zero-based indices. Return JSON only, with this schema:
+{"judgments":[{"correction":0,"refutes":[1],"contradicts":[2]}]}
+
+Worked example:
+Corrections:
+0. [new] The observatory did not open in 1920.
+1. [existing] The observatory was not built by Ada Cole.
+Claims:
+0. [existing] The observatory opened in 1920.
+1. [existing] Ada Cole visited the observatory.
+
+Output:
+{"judgments":[{"correction":0,"refutes":[0],"contradicts":[]}]}
+
+The opening-date correction refutes the opening-date observation. It does not refute the merely related observation about Ada Cole, and it does not contradict the unrelated older correction.

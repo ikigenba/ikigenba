@@ -1,0 +1,10 @@
+Subject identity:
+name: Tulsa Lab Opening
+type: entity
+
+Corrections:
+0. [new] Tulsa Lab Opening did not begin in 2023.
+
+Claims:
+0. [existing] Tulsa Lab Opening began in 2023.
+1. [existing] Tulsa Lab Opening remains active.

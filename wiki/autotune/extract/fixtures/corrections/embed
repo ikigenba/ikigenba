@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+import json
+import sys
+
+texts = json.load(sys.stdin)
+unique = list(dict.fromkeys(texts))
+vectors = []
+for text in texts:
+    vector = [0.0] * len(unique)
+    vector[unique.index(text)] = 1.0
+    vectors.append(vector)
+print(json.dumps({"embeddings": vectors}))

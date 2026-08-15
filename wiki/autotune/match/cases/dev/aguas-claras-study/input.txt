@@ -1,0 +1,10 @@
+Subject identity:
+name: Aguas Claras Study
+type: entity
+
+Corrections:
+0. [new] Aguas Claras Study did not begin in 2023.
+
+Claims:
+0. [existing] Aguas Claras Study began in 2023.
+1. [existing] Aguas Claras Study remains active.

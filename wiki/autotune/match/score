@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Deterministic edge-set scorer for correction matching."""
+
+import json
+import os
+import re
+import sys
+
+FLOOR = 0.0
+SCORE_PRECISION = 6
+
+
+def parse_candidate(text):
+    body = text.strip()
+    fence = re.search(r"```(?:json)?\s*\n(.*?)```", body, re.DOTALL)
+    if fence:
+        body = fence.group(1).strip()
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError(f"invalid JSON: {exc}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("judgments"), list):
+        raise ValueError('output must contain a "judgments" array')
+    return data["judgments"]
+
+
+def candidate_edges(judgments, correction_count, claim_count):
+    edges = set()
+    for position, judgment in enumerate(judgments):
+        if not isinstance(judgment, dict):
+            raise ValueError(f"judgments[{position}] is not an object")
+        correction = judgment.get("correction")
+        refutes = judgment.get("refutes")
+        contradicts = judgment.get("contradicts")
+        if (not isinstance(correction, int) or isinstance(correction, bool)
+                or not 0 <= correction < correction_count):
+            raise ValueError(f"judgments[{position}].correction is out of range")
+        if not isinstance(refutes, list) or not isinstance(contradicts, list):
+            raise ValueError(f"judgments[{position}] needs refutes and contradicts arrays")
+        for target in refutes:
+            if not isinstance(target, int) or isinstance(target, bool) or not 0 <= target < claim_count:
+                raise ValueError(f"judgments[{position}].refutes index is out of range")
+            edges.add((correction, "refutes", target))
+        for target in contradicts:
+            if not isinstance(target, int) or isinstance(target, bool) or not 0 <= target < correction_count:
+                raise ValueError(f"judgments[{position}].contradicts index is out of range")
+            edges.add((correction, "contradicts", target))
+    return edges
+
+
+def gold_edges(gold):
+    result = set()
+    for edge in gold["edges"]:
+        result.add((edge["correction"], edge["relation"], edge["target"]))
+    return result
+
+
+def f1(expected, actual):
+    if not expected and not actual:
+        return 1.0
+    matched = len(expected & actual)
+    precision = matched / len(actual) if actual else 0.0
+    recall = matched / len(expected) if expected else 0.0
+    return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+
+
+def main():
+    if len(sys.argv) != 2:
+        print("usage: score <case-dir>", file=sys.stderr)
+        return 2
+    with open(os.path.join(sys.argv[1], "gold.json"), encoding="utf-8") as handle:
+        gold = json.load(handle)
+    try:
+        judgments = parse_candidate(sys.stdin.read())
+        actual = candidate_edges(judgments, gold["correction_count"], gold["claim_count"])
+        expected = gold_edges(gold)
+    except (ValueError, KeyError, TypeError) as exc:
+        print(json.dumps({"score": FLOOR, "feedback": f"unscorable output: {exc}"}))
+        return 0
+    score = round(f1(expected, actual), SCORE_PRECISION)
+    matched = len(expected & actual)
+    print(json.dumps({
+        "score": score,
+        "feedback": (f"edge F1 {score:.3f}: {matched} matched, "
+                     f"{len(expected - actual)} missed, {len(actual - expected)} spurious"),
+    }))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

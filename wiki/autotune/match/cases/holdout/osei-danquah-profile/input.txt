@@ -1,0 +1,10 @@
+Subject identity:
+name: Osei Danquah Profile
+type: entity
+
+Corrections:
+0. [new] Osei Danquah Profile did not begin in 2023.
+
+Claims:
+0. [existing] Osei Danquah Profile began in 2023.
+1. [existing] Osei Danquah Profile remains active.

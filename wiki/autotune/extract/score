@@ -5,10 +5,10 @@ Usage (the autotune contract): score <case-dir>, model output on stdin,
 JSON {"score": float, "feedback": str} on stdout.
 
 Faithful port of the wiki workbench's deterministic extract scorer:
-subjects paired by type + normalized name/alias equality; claims aligned by
+subjects paired by type + normalized name/alias equality; claims and corrections aligned by
 embedding cosine similarity (threshold 0.80, margin 0.03 both ways, digit
 compatibility guard); kind/occurred_at exact fields; composite =
-0.35*subject_F1 + 0.50*claim_F1 + 0.15*field_accuracy.
+0.30*subject_F1 + 0.35*claim_F1 + 0.20*correction_F1 + 0.15*field_accuracy.
 
 Embeddings come from the `embed` CLI (see ~/projects/embed): texts in as a
 JSON array on stdin, vectors out as {"embeddings": [[...], ...]}. Override
@@ -30,7 +30,7 @@ import unicodedata
 
 THRESHOLD = 0.80
 MARGIN = 0.03
-W_SUBJECT, W_CLAIM, W_FIELD = 0.35, 0.50, 0.15
+W_SUBJECT, W_CLAIM, W_CORRECTION, W_FIELD = 0.30, 0.35, 0.20, 0.15
 FEEDBACK_MAX_ITEMS = 8
 
 # ---------------------------------------------------------------------------
@@ -141,8 +141,9 @@ def parse_output(text):
     if not isinstance(subjects, list):
         return None, 'output JSON has no "subjects" array'
     for i, s in enumerate(subjects):
-        if not isinstance(s, dict) or not isinstance(s.get("claims"), list):
-            return None, f"subjects[{i}] is malformed (needs an object with a claims array)"
+        if (not isinstance(s, dict) or not isinstance(s.get("claims"), list)
+                or not isinstance(s.get("corrections"), list)):
+            return None, f"subjects[{i}] is malformed (needs claims and corrections arrays)"
     return subjects, None
 
 
@@ -174,6 +175,7 @@ def score_case(gold_subjects, got):
 
     field_correct, field_total = 0, 2 * len(pairs)
     claim_matched = claim_missed = claim_spurious = 0
+    correction_matched = correction_missed = correction_spurious = 0
     feedback = []
 
     for name in (gold_subjects[gi]["name"] for gi in range(len(gold_subjects)) if gi not in gold_paired):
@@ -206,23 +208,42 @@ def score_case(gold_subjects, got):
         if spurious:
             feedback.append(f"{g['name']}: unmatched extracted claims: " + " | ".join(spurious))
 
+        g_corrections = [c for c in g.get("corrections", [])]
+        e_corrections = [str(c) for c in e.get("corrections", [])]
+        matched, g_used, e_used = align(g_corrections, e_corrections)
+        correction_matched += matched
+        correction_missed += len(g_corrections) - matched
+        correction_spurious += len(e_corrections) - matched
+        missed = clip([g_corrections[i] for i in range(len(g_corrections)) if i not in g_used])
+        spurious = clip([e_corrections[i] for i in range(len(e_corrections)) if i not in e_used])
+        if missed:
+            feedback.append(f"{g['name']}: missed corrections: " + " | ".join(missed))
+        if spurious:
+            feedback.append(f"{g['name']}: unmatched extracted corrections: " + " | ".join(spurious))
+
     for gi in range(len(gold_subjects)):
         if gi not in gold_paired:
             claim_missed += len(gold_subjects[gi].get("claims", []))
+            correction_missed += len(gold_subjects[gi].get("corrections", []))
     for ei in range(len(got)):
         if ei not in got_paired:
             claim_spurious += len(got[ei].get("claims", []))
+            correction_spurious += len(got[ei].get("corrections", []))
 
     claims = metrics(claim_matched, claim_missed, claim_spurious)
+    corrections = metrics(correction_matched, correction_missed, correction_spurious)
     if field_total:
         field_accuracy = field_correct / field_total
     else:
         field_accuracy = 1.0 if not gold_subjects else 0.0
 
-    composite = W_SUBJECT * subj["f1"] + W_CLAIM * claims["f1"] + W_FIELD * field_accuracy
+    composite = (W_SUBJECT * subj["f1"] + W_CLAIM * claims["f1"]
+                 + W_CORRECTION * corrections["f1"] + W_FIELD * field_accuracy)
     summary = (
         f"subjects F1 {subj['f1']:.3f}, claims F1 {claims['f1']:.3f} "
         f"({claim_matched} matched / {claim_missed} missed / {claim_spurious} spurious), "
+        f"corrections F1 {corrections['f1']:.3f} "
+        f"({correction_matched} matched / {correction_missed} missed / {correction_spurious} spurious), "
         f"fields {field_correct}/{field_total}"
     )
     return composite, "; ".join([summary, *feedback])

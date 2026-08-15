@@ -1,0 +1,8 @@
+Document header:
+source: mcp:ingest_text
+title: Northstar Lab opening record
+tags: research, correction
+received on: 2026-08-14
+
+Source text:
+Contrary to earlier records, Northstar Lab did not open in 2023; it opened in 2024. Northstar Lab definitely employs 40 researchers.
