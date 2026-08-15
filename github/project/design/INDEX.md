@@ -22,7 +22,7 @@ Verification ids change.
 - D13 → `project/design/D13.md` — Suite-contract conformance: the opsctl install layout and the authored env contract — adopts `R-4LKF-FB23` (root `project/design/D08.md`), `R-8DF1-W89F`, `R-8IAN-FB87` (root `project/design/D11.md`); mints none of its own
 - D14 → `project/design/D14.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): hermetic + composed in the gate, a manual layer whose runbook is `project/github-verification.md` (where D2's `R-DMUT-QF4A` is proven, out of gate), no live layer, the `go`-on-`PATH` precondition, `GOWORK=off` mode — mints none; adopts `R-O1AD-MRKW`, `R-O2IA-0JBL` (root `project/design/D23.md`)
 - D15 → `project/design/D15.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-8MFA-HUNC, R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
-- D16 → `project/design/D16.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
+- D16 → `project/design/D16.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 

@@ -9,4 +9,6 @@ that phase's line and its body file — there is no done marker; done is gone.
 This file deliberately carries **no bare status glyph** outside phase lines, so
 the anchored grep matches only phase lines.
 
-Next phase: 25
+Next phase: 26
+
+- Phase 25 ⬜ realizes — — promote lint tier to `strict` (D16; fix 5 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint github` exits 0)
