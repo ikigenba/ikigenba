@@ -3,10 +3,9 @@ package push
 import (
 	"context"
 	"encoding/json"
+	"eventplane/consumer"
 	"fmt"
 	"log/slog"
-
-	"eventplane/consumer"
 )
 
 // promptsSource is the upstream source prompts presents on its outbox envelopes (§8.3) and
@@ -64,10 +63,7 @@ func PromptsSubscriptions() []consumer.Subscription {
 // waiting; a slow or dead ntfy therefore never stalls prompts's feed (best-effort —
 // a push failure is logged and dropped, never surfaced). A malformed payload is
 // semantic poison → ErrSkip (log loud + advance), never a stalling error.
-func PromptsHandler(c *Client, logger *slog.Logger) consumer.Handler {
-	if logger == nil {
-		logger = slog.Default()
-	}
+func PromptsHandler(c *Client, _ *slog.Logger) consumer.Handler {
 	return func(ctx context.Context, ev consumer.Event) error {
 		var title string
 		switch ev.Kind {

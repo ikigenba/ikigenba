@@ -1,21 +1,19 @@
 package mcp
 
 import (
+	"appkit/server"
 	"bytes"
 	"encoding/json"
+	"eventplane/correlation"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"notify/internal/push"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"appkit/server"
-	"eventplane/correlation"
-
-	"notify/internal/push"
 )
 
 // capturedSend is one request the mock ntfy server received for a send test.

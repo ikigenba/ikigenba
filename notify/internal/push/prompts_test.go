@@ -5,19 +5,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/consumer"
+	"eventplane/correlation"
+	"eventplane/outbox"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"notify/internal/push"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"eventplane/consumer"
-	"eventplane/correlation"
-	"eventplane/outbox"
-
-	"notify/internal/push"
 
 	_ "modernc.org/sqlite"
 )

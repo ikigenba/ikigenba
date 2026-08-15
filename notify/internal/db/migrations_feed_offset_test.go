@@ -1,11 +1,10 @@
 package db
 
 import (
+	"eventplane/consumer"
 	"slices"
 	"strings"
 	"testing"
-
-	"eventplane/consumer"
 )
 
 // TestFeedOffsetMigrationMatchesLibraryDDL guards decision 3: the feed_offset

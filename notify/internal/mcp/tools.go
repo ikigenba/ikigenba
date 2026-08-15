@@ -1,16 +1,15 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"notify/internal/push"
 	"strings"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-
-	"notify/internal/push"
 )
 
 // toolPrefix brands every MCP tool name. It is currently empty: HTTP route

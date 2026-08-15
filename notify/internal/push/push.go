@@ -18,6 +18,8 @@ package push
 import (
 	"context"
 	"encoding/json"
+	"eventplane/consumer"
+	"eventplane/routing"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,9 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"eventplane/consumer"
-	"eventplane/routing"
 )
 
 // PushTimeout bounds a single ntfy request so a fire-and-forget goroutine always
@@ -165,10 +164,7 @@ func Subscription() consumer.Subscription {
 // context so the handler returns immediately and the engine commits the cursor
 // without waiting. A push therefore never blocks the cursor advance, and a slow
 // or dead ntfy never stalls the feed.
-func Handler(c *Client, logger *slog.Logger) consumer.Handler {
-	if logger == nil {
-		logger = slog.Default()
-	}
+func Handler(c *Client, _ *slog.Logger) consumer.Handler {
 	sub := Subscription() // the SAME declared in-edge reflection reports (decision 10)
 	return func(ctx context.Context, ev consumer.Event) error {
 		ok, err := routing.Match(sub.Filter, ev.Key())

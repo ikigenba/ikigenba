@@ -3,13 +3,12 @@
 package mcp
 
 import (
+	"appkit"
 	"fmt"
 	"net/http"
-
-	"appkit"
-	appkitmcp "appkit/mcp"
-
 	"notify/internal/push"
+
+	appkitmcp "appkit/mcp"
 )
 
 // Instructions describes notify's MCP surface to clients during initialize.

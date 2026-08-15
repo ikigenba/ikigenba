@@ -1,32 +1,32 @@
 package main
 
 import (
+	"appkit"
+	"appkit/manifest"
+	"appkit/server"
 	"bytes"
 	"context"
 	"encoding/json"
+	"eventplane/consumer"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"notify/internal/push"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"registry"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"appkit"
-	"appkit/manifest"
-	"appkit/server"
 	appweb "appkit/web"
-	"eventplane/consumer"
-	"notify/internal/push"
-	"registry"
 )
 
 // R-8DF1-W89F

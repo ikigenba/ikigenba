@@ -1,20 +1,17 @@
 package mcp
 
 import (
+	"appkit/server"
 	"bytes"
 	"encoding/json"
+	"eventplane/consumer"
+	"eventplane/outbox"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"testing"
-
-	"appkit/server"
-
-	"eventplane/consumer"
-	"eventplane/outbox"
-
 	"notify/internal/push"
+	"testing"
 )
 
 const (
@@ -295,5 +292,4 @@ func TestToolsCallReflection(t *testing.T) {
 			t.Errorf("subscribes entry leaked %q key: %+v", k, sub)
 		}
 	}
-
 }

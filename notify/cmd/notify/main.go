@@ -21,19 +21,15 @@
 package main
 
 import (
-	"errors"
-	"net/http"
-	"os"
-
 	"appkit"
 	"appkit/web"
-
+	"errors"
 	"eventplane/consumer"
-
+	"net/http"
 	"notify/internal/db"
 	"notify/internal/mcp"
 	"notify/internal/push"
-
+	"os"
 	"registry"
 )
 
