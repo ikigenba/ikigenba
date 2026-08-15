@@ -47,6 +47,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D40 → `project/design/D40.md` — Seeding existing scripts into the plane, then retiring the `body` column (guarded migration) — owns R-2W7Z-MXQR, R-2XFW-0PHG, R-2YNS-EH85
 - D41 → `project/design/D41.md` — Outbox schema convergence: the `outbox_correlation` rebuild migration, the restored frozen body, and the migration-immutability guard — owns R-NGXY-11YC, R-NJDQ-SLFQ; adopts R-NFQ1-NA7N (root `project/design/D25.md`)
 - D42 → `project/design/D42.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
+- D43 → `project/design/D43.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 
