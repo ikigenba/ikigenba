@@ -12,7 +12,6 @@ lines.
 
 Next phase: 178
 
-- Phase 171 ⬜ realizes R-74CQ-9083, R-76SJ-0JPH, R-780F-EBG6, R-798B-S36V, R-7AG8-5UXK — corrections data model: kind column, suppressions table, effective claim set
 - Phase 172 ⬜ realizes R-7BO4-JMO9, R-7CW0-XEEY — extract classifies statements into claims and corrections
 - Phase 173 ⬜ realizes R-7FBT-OXWC, R-7K7F-80V4 — the internal/match package and its call site
 - Phase 174 ⬜ realizes R-7GJQ-2PN1, R-7HRM-GHDQ, R-7IZI-U94F, R-7LFB-LSLT, R-7MN7-ZKCI, R-7NV4-DC37, R-7QAX-4VKL — the pipeline's match phase and effective-set integrate
