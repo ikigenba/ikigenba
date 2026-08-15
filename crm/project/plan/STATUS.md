@@ -13,5 +13,3 @@ the anchored grep matches only phase lines.
 
 Next phase: 22
 
-- Phase 21 ⬜ realizes — — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint crm` exits 0)
-
