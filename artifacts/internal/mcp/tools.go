@@ -2,19 +2,19 @@
 package mcp
 
 import (
+	"appkit"
+	"artifacts/internal/artifacts"
+	"artifacts/internal/db"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"registry"
 	"strings"
 	"time"
 
-	"appkit"
 	appkitmcp "appkit/mcp"
-	"artifacts/internal/artifacts"
-	"artifacts/internal/db"
-	"registry"
 )
 
 const Instructions = "Manage files with upload links and public/private download links. Call guide for examples and the complete artifacts vocabulary."
@@ -63,7 +63,8 @@ func New(service *artifacts.Service, version string) (*appkitmcp.Handler, error)
 }
 
 func (t *toolset) structuredTool(name, description string, input, output map[string]any, handler func(context.Context, json.RawMessage, appkit.Identity) (any, map[string]any)) appkitmcp.Tool {
-	return appkitmcp.Tool{Name: name, Description: description, InputSchema: input, OutputSchema: output,
+	return appkitmcp.Tool{
+		Name: name, Description: description, InputSchema: input, OutputSchema: output,
 		Handler: func(ctx context.Context, raw json.RawMessage, identity appkit.Identity) (map[string]any, error) {
 			value, failure := handler(ctx, raw, identity)
 			if failure != nil {
@@ -239,9 +240,11 @@ type record struct {
 
 func (t *toolset) record(a db.Artifact) record {
 	reference := t.service.Reference(a)
-	return record{a.ID, a.Filename, a.Description, a.Visibility, a.Size, a.ContentHash, a.DownloadCount,
+	return record{
+		a.ID, a.Filename, a.Description, a.Visibility, a.Size, a.ContentHash, a.DownloadCount,
 		t.service.DownloadURL(a.ID, a.Filename, a.Visibility), reference.ContentURL,
-		a.CreatedAt, a.UpdatedAt, a.OwnerID, a.OwnerEmail}
+		a.CreatedAt, a.UpdatedAt, a.OwnerID, a.OwnerEmail,
+	}
 }
 
 func decode(raw json.RawMessage, destination any) map[string]any {
@@ -297,6 +300,7 @@ func stringSchema() map[string]any { return map[string]any{"type": "string"} }
 func visibilitySchema() map[string]any {
 	return map[string]any{"type": "string", "enum": []string{"public", "private"}}
 }
+
 func objectSchema(properties map[string]any, required ...string) map[string]any {
 	if properties == nil {
 		properties = map[string]any{}
@@ -311,6 +315,7 @@ func idSchema() map[string]any { return objectSchema(map[string]any{"id": string
 func uploadSchema() map[string]any {
 	return objectSchema(map[string]any{"upload_url": stringSchema(), "expires_at": stringSchema(), "curl": stringSchema()}, "upload_url", "expires_at", "curl")
 }
+
 func recordSchema() map[string]any {
 	properties := map[string]any{}
 	for _, name := range []string{"id", "filename", "description", "visibility", "content_hash", "url", "content_url", "created_at", "updated_at", "owner_id", "owner_email"} {

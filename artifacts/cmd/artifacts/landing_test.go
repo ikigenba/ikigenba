@@ -1,6 +1,7 @@
 package main
 
 import (
+	"artifacts/internal/db"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,8 +14,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"artifacts/internal/db"
 )
 
 // R-53EO-JVJ9

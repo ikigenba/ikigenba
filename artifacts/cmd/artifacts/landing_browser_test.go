@@ -1,6 +1,7 @@
 package main
 
 import (
+	"artifacts/internal/db"
 	"context"
 	"fmt"
 	"net/http/httptest"
@@ -9,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"artifacts/internal/db"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )

@@ -108,7 +108,7 @@ func attachmentDisposition(filename string) string {
 }
 
 func isASCII(value string) bool {
-	for len(value) > 0 {
+	for value != "" {
 		r, size := utf8.DecodeRuneInString(value)
 		if r > 127 {
 			return false

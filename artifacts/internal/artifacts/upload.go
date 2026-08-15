@@ -1,6 +1,8 @@
 package artifacts
 
 import (
+	"appkit"
+	"artifacts/internal/db"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,9 +14,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"appkit"
-	"artifacts/internal/db"
 )
 
 const uploadTTL = 24 * time.Hour

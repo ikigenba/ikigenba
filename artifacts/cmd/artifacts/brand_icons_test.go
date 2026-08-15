@@ -1,6 +1,7 @@
 package main
 
 import (
+	"artifacts/internal/db"
 	"bytes"
 	"context"
 	"io"
@@ -15,7 +16,6 @@ import (
 	appkitdb "appkit/db"
 	appserver "appkit/server"
 	appweb "appkit/web"
-	"artifacts/internal/db"
 )
 
 // R-RYDN-YNR5

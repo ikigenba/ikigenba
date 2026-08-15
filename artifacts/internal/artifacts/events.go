@@ -1,13 +1,12 @@
 package artifacts
 
 import (
+	"artifacts/internal/db"
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-
-	"artifacts/internal/db"
 	"eventplane/outbox"
+	"fmt"
 	"registry"
 )
 

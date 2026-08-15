@@ -1,6 +1,8 @@
 package artifacts
 
 import (
+	"appkit"
+	"artifacts/internal/db"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,12 +12,9 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"registry"
 	"strconv"
 	"time"
-
-	"appkit"
-	"artifacts/internal/db"
-	"registry"
 )
 
 const (
@@ -55,7 +54,7 @@ func (s *Service) Import(ctx context.Context, identity appkit.Identity, sourceUR
 			return err
 		},
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), http.NoBody)
 	if err != nil {
 		return Artifact{}, &ImportError{Code: ImportSourceUnavailable, Err: err}
 	}

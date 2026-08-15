@@ -1,12 +1,16 @@
 package mcp
 
 import (
+	"appkit"
+	"artifacts/internal/db"
+	"artifacts/internal/testutil"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"eventplane/outbox"
 	"fmt"
 	"io"
 	"net"
@@ -15,18 +19,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"registry"
 	"strings"
 	"testing"
 	"time"
 
-	"appkit"
 	appkitdb "appkit/db"
 	appkitmcp "appkit/mcp"
 	domain "artifacts/internal/artifacts"
-	"artifacts/internal/db"
-	"artifacts/internal/testutil"
-	"eventplane/outbox"
-	"registry"
 )
 
 // R-4R7O-Q64B
@@ -469,6 +469,7 @@ func structured(t *testing.T, result map[string]any) map[string]any {
 	}
 	return structuredBytes(t, encoded)
 }
+
 func structuredBytes(t *testing.T, encoded []byte) map[string]any {
 	t.Helper()
 	var decoded map[string]any
@@ -481,6 +482,7 @@ func structuredBytes(t *testing.T, encoded []byte) map[string]any {
 	}
 	return value
 }
+
 func assertToolError(t *testing.T, result map[string]any, code string) {
 	t.Helper()
 	encoded, _ := json.Marshal(result)

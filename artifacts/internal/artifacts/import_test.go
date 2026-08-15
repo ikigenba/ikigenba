@@ -12,10 +12,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"registry"
 	"sync/atomic"
 	"testing"
-
-	"registry"
 )
 
 // R-4PZS-CEDM

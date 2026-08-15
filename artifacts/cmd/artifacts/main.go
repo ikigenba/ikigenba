@@ -2,23 +2,24 @@
 package main
 
 import (
+	"appkit"
+	"artifacts/internal/db"
+	"artifacts/internal/mcp"
 	"bytes"
+	"eventplane/outbox"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"registry"
 	"strconv"
 	"strings"
 	"time"
 
-	"appkit"
 	artifactdata "artifacts/internal/artifacts"
-	"artifacts/internal/db"
-	"artifacts/internal/mcp"
-	"eventplane/outbox"
+
 	"github.com/dustin/go-humanize"
-	"registry"
 )
 
 const defaultMaxUploadBytes int64 = 209715200

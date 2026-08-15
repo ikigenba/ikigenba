@@ -1,6 +1,8 @@
 package artifacts
 
 import (
+	"appkit/server"
+	"artifacts/internal/testutil"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -9,11 +11,8 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"testing"
-
-	"appkit/server"
-	"artifacts/internal/testutil"
 	"registry"
+	"testing"
 )
 
 // R-441L-GJ14
