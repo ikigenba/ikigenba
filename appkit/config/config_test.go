@@ -2,10 +2,9 @@ package config
 
 import (
 	"path/filepath"
+	"registry"
 	"testing"
 	"time"
-
-	"registry"
 )
 
 // envFunc returns a getenv backed by a map.

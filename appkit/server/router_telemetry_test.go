@@ -1,15 +1,14 @@
 package server_test
 
 import (
+	"appkit/server"
+	"appkit/telemetry"
 	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"appkit/server"
-	"appkit/telemetry"
 )
 
 func TestRouterRecorderReturnsServeWiredRecorder(t *testing.T) {

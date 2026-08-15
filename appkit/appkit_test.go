@@ -1,10 +1,17 @@
 package appkit
 
 import (
+	"appkit/internal/testmigrations"
+	"appkit/manifest"
+	"appkit/server"
+	"appkit/telemetry"
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/consumer"
+	"eventplane/correlation"
+	"eventplane/outbox"
 	"fmt"
 	"io"
 	"net"
@@ -19,15 +26,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"appkit/internal/testmigrations"
-	"appkit/manifest"
-	"appkit/server"
-	"appkit/telemetry"
-
-	"eventplane/consumer"
-	"eventplane/correlation"
-	"eventplane/outbox"
 )
 
 // testSpec is a producer-shaped spec over the shared test migrations, used to
@@ -56,7 +54,7 @@ func run(t *testing.T, spec Spec, env map[string]string, args ...string) (code i
 		}
 		return env[k]
 	}
-	code = dispatch(spec, args, getenv, strings.NewReader(""), &out, &errb)
+	code = dispatch(spec, args, getenv, &out, &errb)
 	return code, out.String(), errb.String()
 }
 

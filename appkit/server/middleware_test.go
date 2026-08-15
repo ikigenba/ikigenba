@@ -1,14 +1,13 @@
 package server_test
 
 import (
+	"appkit/server"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
-
-	"appkit/server"
 )
 
 func newIdentityGateServer(t *testing.T, inner http.Handler) http.Handler {

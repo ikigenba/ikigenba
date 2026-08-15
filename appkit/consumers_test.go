@@ -1,9 +1,15 @@
 package appkit
 
 import (
+	"appkit/db"
+	"appkit/server"
+	"appkit/telemetry"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/consumer"
+	"eventplane/correlation"
+	"eventplane/routing"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,14 +18,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"appkit/db"
-	"appkit/server"
-	"appkit/telemetry"
-
-	"eventplane/consumer"
-	"eventplane/correlation"
-	"eventplane/routing"
 )
 
 func TestConsumers_RunTwoFeedsWithIndependentOffsets(t *testing.T) {
@@ -311,7 +309,8 @@ func TestConsumerWorkerRecordsRootsOnlyForUnusableWireCorrelations(t *testing.T)
 
 func newEventBatchFeed(t *testing.T, source, kind string, fixtures []struct {
 	id, subject, wireID string
-}) *httptest.Server {
+},
+) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

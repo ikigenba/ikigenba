@@ -20,22 +20,20 @@
 package server
 
 import (
+	"appkit/httpclient"
+	"appkit/logging"
+	"appkit/telemetry"
+	"appkit/web"
 	"context"
 	"database/sql"
 	"errors"
+	"eventplane/consumer"
+	"eventplane/outbox"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"time"
-
-	"appkit/httpclient"
-	"appkit/logging"
-	"appkit/telemetry"
-	"appkit/web"
-
-	"eventplane/consumer"
-	"eventplane/outbox"
 )
 
 // shutdownTimeout bounds how long Run waits for in-flight requests to finish

@@ -1,8 +1,12 @@
 package server_test
 
 import (
+	"appkit/server"
+	"appkit/web"
 	"context"
 	"encoding/json"
+	"eventplane/correlation"
+	"eventplane/outbox"
 	"io"
 	"log/slog"
 	"net"
@@ -13,12 +17,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"appkit/server"
-	"appkit/web"
-
-	"eventplane/correlation"
-	"eventplane/outbox"
 )
 
 const (

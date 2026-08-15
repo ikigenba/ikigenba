@@ -3,21 +3,19 @@
 package mcp
 
 import (
+	"appkit"
+	"appkit/server"
+	"appkit/telemetry"
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/consumer"
+	"eventplane/correlation"
+	"eventplane/outbox"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
-
-	"appkit"
-	"appkit/server"
-	"appkit/telemetry"
-
-	"eventplane/consumer"
-	"eventplane/correlation"
-	"eventplane/outbox"
 )
 
 const protocolVersion = "2025-06-18"
@@ -466,13 +464,6 @@ func StructuredResult(v any) (map[string]any, error) {
 	result := TextResult(string(b))
 	result["structuredContent"] = v
 	return result, nil
-}
-
-func structuredResultFrom(v map[string]any, err error) (map[string]any, error) {
-	if err != nil {
-		return nil, err
-	}
-	return StructuredResult(v)
 }
 
 // ErrorResult returns an MCP tool error envelope.

@@ -1,14 +1,13 @@
 package db_test
 
 import (
+	"appkit/db"
+	"appkit/internal/testmigrations"
 	"context"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
-
-	"appkit/db"
-	"appkit/internal/testmigrations"
 )
 
 func tempDB(t *testing.T) string {

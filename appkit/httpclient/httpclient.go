@@ -2,9 +2,11 @@
 package httpclient
 
 import (
+	"appkit/telemetry"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"eventplane/correlation"
 	"hash"
 	"io"
 	"net"
@@ -15,9 +17,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"appkit/telemetry"
-	"eventplane/correlation"
 )
 
 const defaultTimeout = 30 * time.Second

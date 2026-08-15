@@ -13,17 +13,15 @@
 package appkit
 
 import (
+	"appkit/server"
 	"context"
 	"embed"
 	"errors"
+	"eventplane/consumer"
+	"eventplane/outbox"
 	"fmt"
 	"io"
 	"os"
-
-	"appkit/server"
-
-	"eventplane/consumer"
-	"eventplane/outbox"
 )
 
 // version is stamped at build time via -ldflags "-X appkit.version=…". It is a
@@ -203,14 +201,14 @@ func (s Spec) migrationsDir() string {
 // dispatches the fixed verb (default = serve), and exits with the verb's status.
 // It never returns to the caller.
 func Main(spec Spec) {
-	code := dispatch(spec, os.Args[1:], os.Getenv, os.Stdin, os.Stdout, os.Stderr)
+	code := dispatch(spec, os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
 	os.Exit(code)
 }
 
 // dispatch is Main's testable core: it routes args to the right verb and returns
 // a process exit code (0 = ok). It does not call os.Exit, so tests drive it
 // directly.
-func dispatch(spec Spec, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) int {
+func dispatch(spec Spec, args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	if spec.App == "" {
 		fmt.Fprintln(stderr, "appkit: Spec.App is required")
 		return 1
@@ -244,7 +242,7 @@ func dispatch(spec Spec, args []string, getenv func(string) string, stdin io.Rea
 		return 2
 	}
 	if err != nil {
-		if errors.Is(err, flagHelp) {
+		if errors.Is(err, errFlagHelp) {
 			return 0
 		}
 		fmt.Fprintf(stderr, "%s: %v\n", spec.App, err)
@@ -259,6 +257,6 @@ func versionString() string {
 	return version
 }
 
-// flagHelp is the sentinel a verb returns when the user asked for -h/-help, so
+// errFlagHelp is the sentinel a verb returns when the user asked for -h/-help, so
 // dispatch exits 0 rather than printing it as an error.
-var flagHelp = errors.New("flag: help requested")
+var errFlagHelp = errors.New("flag: help requested")

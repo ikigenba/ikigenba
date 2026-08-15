@@ -1,17 +1,16 @@
 package telemetry
 
 import (
+	"appkit/logging"
 	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
+	"registry"
 	"sync"
 	"time"
-
-	"appkit/logging"
-	"registry"
 )
 
 const (

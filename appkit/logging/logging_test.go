@@ -1,6 +1,8 @@
 package logging_test
 
 import (
+	"appkit/logging"
+	"eventplane/correlation"
 	"io"
 	"log/slog"
 	"net/http"
@@ -8,10 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"appkit/logging"
-
-	"eventplane/correlation"
 )
 
 func testLogger() *slog.Logger {

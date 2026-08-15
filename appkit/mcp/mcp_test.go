@@ -1,21 +1,19 @@
 package mcp
 
 import (
+	"appkit"
+	"appkit/server"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/consumer"
+	"eventplane/outbox"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
-
-	"appkit"
-	"appkit/server"
-
-	"eventplane/consumer"
-	"eventplane/outbox"
 )
 
 func newHandler(t *testing.T, opts Options) *Handler {

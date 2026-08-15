@@ -1,6 +1,9 @@
 package server_test
 
 import (
+	"appkit/mcp"
+	"appkit/server"
+	"appkit/telemetry"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,10 +16,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"appkit/mcp"
-	"appkit/server"
-	"appkit/telemetry"
 )
 
 type phase20Sink struct {

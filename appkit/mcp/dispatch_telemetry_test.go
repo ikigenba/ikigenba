@@ -1,11 +1,15 @@
 package mcp
 
 import (
+	"appkit/logging"
+	"appkit/server"
+	"appkit/telemetry"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,12 +19,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"appkit/logging"
-	"appkit/server"
-	"appkit/telemetry"
-
-	"eventplane/correlation"
 )
 
 type recordSink struct {

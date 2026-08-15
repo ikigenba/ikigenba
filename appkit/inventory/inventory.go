@@ -12,11 +12,10 @@
 package inventory
 
 import (
+	"appkit/manifest"
 	"os"
 	"path/filepath"
 	"sort"
-
-	"appkit/manifest"
 )
 
 // Service is one MCP-exposing service discovered on the box. The MCP resource URL

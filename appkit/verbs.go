@@ -1,8 +1,21 @@
 package appkit
 
 import (
+	"appkit/config"
+	"appkit/db"
+	"appkit/feed"
+	"appkit/logging"
+	"appkit/manifest"
+	"appkit/server"
+	"appkit/telemetry"
+	"appkit/web"
 	"context"
 	"errors"
+	"eventplane/consumer"
+	"eventplane/correlation"
+	"eventplane/observe"
+	"eventplane/outbox"
+	"eventplane/routing"
 	"flag"
 	"fmt"
 	"io"
@@ -15,21 +28,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"appkit/config"
-	"appkit/db"
-	"appkit/feed"
-	"appkit/logging"
-	"appkit/manifest"
-	"appkit/server"
-	"appkit/telemetry"
-	"appkit/web"
-
-	"eventplane/consumer"
-	"eventplane/correlation"
-	"eventplane/observe"
-	"eventplane/outbox"
-	"eventplane/routing"
 )
 
 // loadMigrations reads the app's embedded migration set via the db runner.
@@ -464,7 +462,7 @@ func envKey(app, suffix string) string {
 // other errors through.
 func helpOrErr(err error) error {
 	if errors.Is(err, flag.ErrHelp) {
-		return flagHelp
+		return errFlagHelp
 	}
 	return err
 }

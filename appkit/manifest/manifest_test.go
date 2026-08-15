@@ -1,11 +1,10 @@
 package manifest_test
 
 import (
+	"appkit/manifest"
 	"reflect"
 	"strings"
 	"testing"
-
-	"appkit/manifest"
 )
 
 func TestEmit_ServiceWithFeedAndExtras(t *testing.T) {

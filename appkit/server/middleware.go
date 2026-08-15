@@ -1,18 +1,16 @@
 package server
 
 import (
+	"appkit/telemetry"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"eventplane/correlation"
 	"hash"
 	"net/http"
 	"strconv"
 	"time"
-
-	"appkit/telemetry"
-
-	"eventplane/correlation"
 )
 
 // Identity is the authenticated caller, as told to us authoritatively by nginx.
@@ -27,8 +25,10 @@ type Identity struct {
 	ClientID     string
 }
 
-type identityCtxKey struct{}
-type recordIdentityCtxKey struct{}
+type (
+	identityCtxKey       struct{}
+	recordIdentityCtxKey struct{}
+)
 
 type recordIdentity struct {
 	id Identity

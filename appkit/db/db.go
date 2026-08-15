@@ -180,13 +180,13 @@ func AppliedVersion(ctx context.Context, conn *sql.DB) (int, error) {
 
 // MaxEmbedded returns the highest version present in migs (0 for an empty set).
 func MaxEmbedded(migs []Migration) int {
-	max := 0
+	maxVersion := 0
 	for _, m := range migs {
-		if m.Version > max {
-			max = m.Version
+		if m.Version > maxVersion {
+			maxVersion = m.Version
 		}
 	}
-	return max
+	return maxVersion
 }
 
 func applyOne(ctx context.Context, conn *sql.DB, m Migration) error {

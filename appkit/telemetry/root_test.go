@@ -2,11 +2,10 @@ package telemetry
 
 import (
 	"context"
+	"eventplane/correlation"
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"eventplane/correlation"
 )
 
 func rootTestRecorder(t *testing.T) (*Recorder, *batchSink) {

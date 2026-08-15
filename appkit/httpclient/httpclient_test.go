@@ -1,8 +1,10 @@
 package httpclient
 
 import (
+	"appkit/telemetry"
 	"context"
 	"encoding/json"
+	"eventplane/correlation"
 	"io"
 	"log/slog"
 	"net"
@@ -13,9 +15,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"appkit/telemetry"
-	"eventplane/correlation"
 )
 
 type recordSink struct {

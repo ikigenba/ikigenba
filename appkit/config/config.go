@@ -13,11 +13,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"registry"
 	"strconv"
 	"strings"
 	"time"
-
-	"registry"
 )
 
 // Config is the resolved universal runtime configuration for one app.

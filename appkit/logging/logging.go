@@ -11,14 +11,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base32"
+	"eventplane/correlation"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
-
-	"eventplane/correlation"
 )
 
 // ParseLevel maps a level name (debug|info|warn|error) to a slog.Level,

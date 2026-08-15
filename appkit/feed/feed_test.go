@@ -1,10 +1,16 @@
 package feed_test
 
 import (
+	"appkit/feed"
 	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/consumer"
+	"eventplane/correlation"
+	"eventplane/observe"
+	"eventplane/outbox"
+	"eventplane/routing"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,13 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"appkit/feed"
-
-	"eventplane/consumer"
-	"eventplane/correlation"
-	"eventplane/observe"
-	"eventplane/outbox"
-	"eventplane/routing"
 	_ "modernc.org/sqlite"
 )
 

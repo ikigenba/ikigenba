@@ -13,12 +13,11 @@ package feed
 import (
 	"context"
 	"database/sql"
+	"eventplane/observe"
+	"eventplane/outbox"
 	"fmt"
 	"log/slog"
 	"net/http"
-
-	"eventplane/observe"
-	"eventplane/outbox"
 )
 
 // Options configures Start.
