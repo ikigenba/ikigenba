@@ -47,6 +47,16 @@ If it does not match:
    test reported `SKIP`** in the `go test -v` output — a skipped
    requirement test is an open gap, never a pass.
 
+   Then run the tiered lint gate:
+
+   ```
+   ../bin/lint telemetry
+   ```
+
+   It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+   (absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+   lint finding at the registered tier is an open gap, not a pass.
+
 3. **For every id in the brief's "Ids to cover" list**, confirm a
    genuinely-asserting `// R-XXXX-XXXX` tagged test exists and actually runs
    under the suite's real invocation:
@@ -125,7 +135,7 @@ If it does not match:
 - Never write or fix production code or tests.
 - Never write the brief's contract region.
 - Never retire a phase on anything short of green build + vet + test +
-  full coverage of its ids.
+  full coverage of its ids + clean lint (at the registered tier).
 - The ratchet's id-set greps over `project/design/D*.md` and
   `project/plan/phase-*.md` extract id tokens only — this is not "reading
   the big docs" in the forbidden sense.
