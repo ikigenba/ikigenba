@@ -9,6 +9,7 @@ import (
 	"wiki/internal/compile"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/match"
 )
 
 func TestNewConfigUsesEveryStageDefaultLunaCallSite(t *testing.T) {
@@ -22,6 +23,7 @@ func TestNewConfigUsesEveryStageDefaultLunaCallSite(t *testing.T) {
 	}
 	assertProductionSite(t, cfg.CallSites.Extract, "extract", 2)
 	assertProductionSite(t, cfg.CallSites.Compile, "compile", 0)
+	assertProductionSite(t, cfg.CallSites.Match, "match", 2)
 	assertProductionSite(t, cfg.CallSites.AskSubject, "ask-subject", 0)
 	assertProductionSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", 0)
 	for name, sites := range map[string]struct {
@@ -30,6 +32,7 @@ func TestNewConfigUsesEveryStageDefaultLunaCallSite(t *testing.T) {
 	}{
 		"extract":       {got: cfg.CallSites.Extract, want: extract.DefaultCallSite()},
 		"compile":       {got: cfg.CallSites.Compile, want: compile.DefaultCallSite()},
+		"match":         {got: cfg.CallSites.Match, want: match.DefaultCallSite()},
 		"ask-subject":   {got: cfg.CallSites.AskSubject, want: asksite.Subject()},
 		"ask-synthesis": {got: cfg.CallSites.AskSynthesis, want: asksite.Synthesis()},
 	} {
@@ -50,6 +53,10 @@ func TestNewConfigLayersPerCallSiteEnvironmentOverrides(t *testing.T) {
 		"EXTRACT_TEMPERATURE":      "0.25",
 		"COMPILE_MODEL":            "compile-model",
 		"COMPILE_MAX_TOKENS":       "4096",
+		"MATCH_MODEL":              "match-model",
+		"MATCH_REASONING":          "high",
+		"MATCH_TEMPERATURE":        "0.1",
+		"MATCH_MAX_TOKENS":         "12288",
 		"ASK_SUBJECT_MODEL":        "subject-model",
 		"ASK_SUBJECT_REASONING":    "high",
 		"ASK_SYNTHESIS_MODEL":      "synthesis-model",
@@ -62,6 +69,8 @@ func TestNewConfigLayersPerCallSiteEnvironmentOverrides(t *testing.T) {
 
 	assertResolvedSite(t, cfg.CallSites.Extract, "extract", "extract-model", 0.25, "medium", 16384, 2)
 	assertResolvedSite(t, cfg.CallSites.Compile, "compile", "compile-model", nil, "medium", 4096, 0)
+	// R-7FBT-OXWC
+	assertResolvedSite(t, cfg.CallSites.Match, "match", "match-model", 0.1, "high", 12288, 2)
 	assertResolvedSite(t, cfg.CallSites.AskSubject, "ask-subject", "subject-model", nil, "high", 16384, 0)
 	assertResolvedSite(t, cfg.CallSites.AskSynthesis, "ask-synthesis", "synthesis-model", nil, false, 8192, 0)
 	if cfg.CallSites.Extract.Config.Model == cfg.CallSites.Compile.Config.Model {

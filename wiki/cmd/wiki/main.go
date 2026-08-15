@@ -20,6 +20,7 @@ import (
 	"wiki/internal/db"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/match"
 	"wiki/internal/mcp"
 	"wiki/internal/page"
 	"wiki/internal/retrieve"
@@ -92,6 +93,8 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 			vectorCache.Replace(retrieveCacheEntries(cacheEntries))
 			pageEmbedder, queryEmbedding := embeddingPaths(llmClient, cfg.EmbedSite)
 			extractor := extract.New(llmClient, cfg.CallSites.Extract)
+			matcher := buildMatcher(cfg, llmClient)
+			_ = matcher
 			compiler := buildCompiler(cfg, llmClient)
 			serviceOptions := []wiki.ServiceOption{
 				wiki.WithTelemetryRecorder(rt.Recorder()),
@@ -522,4 +525,8 @@ func webRefs(webBase string, refs []wiki.Ref) []web.Ref {
 
 func buildCompiler(cfg wiki.Config, c *llm.Client) *compile.Compiler {
 	return compile.New(c, cfg.CallSites.Compile, nil)
+}
+
+func buildMatcher(cfg wiki.Config, c *llm.Client) *match.Matcher {
+	return match.New(c, cfg.CallSites.Match)
 }

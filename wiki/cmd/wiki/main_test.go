@@ -36,6 +36,7 @@ import (
 	"wiki/internal/extract"
 	"wiki/internal/llm"
 	"wiki/internal/llmtest"
+	"wiki/internal/match"
 	"wiki/internal/mcp"
 	paging "wiki/internal/page"
 	"wiki/internal/retrieve"
@@ -1365,6 +1366,35 @@ func TestBuildCompilerUsesDefaultCompileCallSite(t *testing.T) {
 	}
 	if wantSite.Config.Temperature != nil || wantSite.Config.Thinking != nil || req.Gen.Temperature != nil || req.Gen.Reasoning.Disabled() {
 		t.Fatalf("site/request generation settings = %#v/%#v, want no temperature or thinking pin", wantSite.Config, req.Gen)
+	}
+}
+
+func TestBuildMatcherUsesConfiguredMatchCallSite(t *testing.T) {
+	// R-7FBT-OXWC
+	provider := &capturingProvider{responses: []string{`{"judgments":[]}`}}
+	wantSite := match.DefaultCallSite()
+	wantSite.Config.Model = "match-model"
+	cfg := wiki.Config{
+		CallSites: wiki.CallSites{Match: wantSite},
+		LLM:       llmtest.NewClient(t, provider),
+	}
+	matcher := buildMatcher(cfg, cfg.LLM)
+
+	edges, err := matcher.Match(context.Background(), llm.Attribution{GroupID: "job"}, match.Unit{
+		Subject: wiki.Subject{ID: "subject-acme", Name: "Acme Robotics", Type: "entity"},
+	})
+	if err != nil {
+		t.Fatalf("Match returned error: %v", err)
+	}
+	if len(edges) != 0 {
+		t.Fatalf("edges = %+v, want valid empty judgment", edges)
+	}
+	if len(provider.requests) != 1 {
+		t.Fatalf("requests len = %d, want 1", len(provider.requests))
+	}
+	request := provider.requests[0]
+	if request.Model != wantSite.Config.Model || request.System != match.DefaultPromptInstructions {
+		t.Fatalf("request model/system = %q/%q, want configured match default", request.Model, request.System)
 	}
 }
 

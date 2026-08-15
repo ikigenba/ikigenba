@@ -9,6 +9,7 @@ import (
 	"wiki/internal/compile"
 	"wiki/internal/extract"
 	"wiki/internal/llm"
+	"wiki/internal/match"
 )
 
 const defaultMaxTokens = 16384
@@ -19,6 +20,7 @@ const defaultEmbedDims = 512
 type CallSites struct {
 	Extract      llm.CallSite
 	Compile      llm.CallSite
+	Match        llm.CallSite
 	AskSubject   llm.CallSite
 	AskSynthesis llm.CallSite
 }
@@ -111,6 +113,10 @@ func resolveCallSites(getenv func(string) string) (CallSites, error) {
 	if err != nil {
 		return CallSites{}, err
 	}
+	matchSite, err := resolveCallSite(getenv, "MATCH", match.DefaultCallSite())
+	if err != nil {
+		return CallSites{}, err
+	}
 	askSubject, err := resolveCallSite(getenv, "ASK_SUBJECT", asksite.Subject())
 	if err != nil {
 		return CallSites{}, err
@@ -122,6 +128,7 @@ func resolveCallSites(getenv func(string) string) (CallSites, error) {
 	return CallSites{
 		Extract:      extractSite,
 		Compile:      compileSite,
+		Match:        matchSite,
 		AskSubject:   askSubject,
 		AskSynthesis: askSynthesis,
 	}, nil
