@@ -176,33 +176,40 @@ func (e *Executor) execute(parent context.Context, item Item) {
 	fail := func(reason, usageJSON string, cost float64) {
 		e.writeTerminal(item, StatusFailed, "", reason, usageJSON, cost)
 	}
-	var req Request
-	if err := json.Unmarshal([]byte(item.Request), &req); err != nil {
-		fail("decode stored request: "+err.Error(), "", 0)
+	req, validated, resolution, provider, err := e.prepareExecution(item)
+	if err != nil {
+		fail(err.Error(), "", 0)
 		return
 	}
+	e.executeRounds(parent, item, req, validated, resolution, provider, fail)
+}
+
+func (e *Executor) prepareExecution(item Item) (Request, prompt.Config, catalog.Resolution, agentkit.Provider, error) {
+	var req Request
+	if err := json.Unmarshal([]byte(item.Request), &req); err != nil {
+		return Request{}, prompt.Config{}, catalog.Resolution{}, nil, fmt.Errorf("decode stored request: %w", err)
+	}
 	if len(req.Messages) == 0 {
-		fail("decode stored request: messages must be non-empty", "", 0)
-		return
+		return Request{}, prompt.Config{}, catalog.Resolution{}, nil, errors.New("decode stored request: messages must be non-empty")
 	}
 	cfg := req.Config
 	cfg.Provider, cfg.Model = req.Provider, req.Model
 	validated, err := prompt.ValidateConfig(cfg, e.getenv, e.subAuthAvailable)
 	if err != nil {
-		fail("validate stored request: "+err.Error(), "", 0)
-		return
+		return Request{}, prompt.Config{}, catalog.Resolution{}, nil, fmt.Errorf("validate stored request: %w", err)
 	}
 	resolution := catalog.Resolve(prompt.CatalogProviderID(validated.Provider), validated.Model)
 	if resolution.Coverage == catalog.Unrouted {
-		fail(fmt.Sprintf("provider %q does not route model %q", validated.Provider, validated.Model), "", 0)
-		return
+		return Request{}, prompt.Config{}, catalog.Resolution{}, nil, fmt.Errorf("provider %q does not route model %q", validated.Provider, validated.Model)
 	}
 	provider, err := e.buildProvider(validated, e.getenv)
 	if err != nil {
-		fail("create provider: "+err.Error(), "", 0)
-		return
+		return Request{}, prompt.Config{}, catalog.Resolution{}, nil, fmt.Errorf("create provider: %w", err)
 	}
+	return req, validated, resolution, provider, nil
+}
 
+func (e *Executor) executeRounds(parent context.Context, item Item, req Request, validated prompt.Config, resolution catalog.Resolution, provider agentkit.Provider, fail func(string, string, float64)) {
 	execCtx, cancel := context.WithTimeout(parent, e.runtimeBound)
 	defer cancel()
 	lease := e.renewLease(execCtx, cancel, item.ID)

@@ -114,80 +114,20 @@ func (r *Runner) execute(run prompt.Run) {
 		r.mu.Unlock()
 	}()
 
-	// Persistence uses a fresh background context: the run ctx may be
-	// cancelled/expired by the time we write the terminal state.
-	bg := context.Background()
 	endedAt := func() string { return time.Now().UTC().Format(time.RFC3339Nano) }
+	metrics := &runMetrics{}
+	finish := r.finisher(run, endedAt, metrics)
 
-	// finish writes the run's terminal state AND (when the store is a producer)
-	// emits the run.succeeded / run.failed outcome event in ONE transaction
-	// (event-triggering decisions §3 — at-most-once per run, atomic). The outcome
-	// fields (prompt_id, prompt_name, trigger context) are sourced from the run
-	// row by FinishRun itself, so the runner threads only the terminal state.
-	var (
-		providerName string
-		modelName    string
-		usage        agentkit.Usage
-		cost         agentkit.Cost
-		releaseRun   func()
-	)
-	finish := func(status, usageJSON, errMsg string) {
-		_ = r.store.FinishRun(bg, prompt.FinishRunInput{
-			RunID:        run.ID,
-			Status:       status,
-			EndedAt:      endedAt(),
-			UsageJSON:    usageJSON,
-			ErrMsg:       errMsg,
-			Provider:     providerName,
-			Model:        modelName,
-			InputTokens:  usage.InputUncached + usage.CacheReadInput + usage.CacheWriteInput,
-			OutputTokens: usage.Output + usage.ReasoningOutput,
-			TotalTokens:  usage.Total,
-			CostUSD:      cost.USD(),
-		})
-		if releaseRun != nil {
-			releaseRun()
-		}
-	}
-
-	// Open the run log for create/write/truncate.
-	if err := os.MkdirAll(filepath.Dir(run.LogPath), 0o755); err != nil {
-		finish(prompt.RunFailed, "", "open run log dir: "+err.Error())
-		return
-	}
-	logFile, err := os.OpenFile(run.LogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	setup, err := r.prepareRun(run)
 	if err != nil {
-		finish(prompt.RunFailed, "", "open run log: "+err.Error())
+		finish(prompt.RunFailed, "", err.Error())
 		return
 	}
-	defer logFile.Close()
+	defer setup.logFile.Close()
+	cfg := setup.executed.Config
+	metrics.providerName, metrics.modelName = cfg.Provider, cfg.Model
 
-	// Read the run's definition from the pinned commit in its clone — never from
-	// the mutable working tree or live prompt.
-	runsDir := filepath.Dir(filepath.Dir(run.LogPath))
-	executed, err := prompt.LoadFromRun(runsDir, run.ID, run.DefinitionSha)
-	if err != nil {
-		finish(prompt.RunFailed, "", "load run prompt: "+err.Error())
-		return
-	}
-	cfg := executed.Config
-	providerName = cfg.Provider
-	modelName = cfg.Model
-	inputDir := filepath.Join(runsDir, run.ID, "input")
-	eventBytes, err := os.ReadFile(filepath.Join(inputDir, "event.json"))
-	if err != nil && !os.IsNotExist(err) {
-		finish(prompt.RunFailed, "", "read run event: "+err.Error())
-		return
-	}
-	// eventBytes == nil when the file is absent (manual run).
-	sandboxRoot := r.sandbox.Root(run.ID)
-	branch, sha, err := workspaceGitState(sandboxRoot)
-	if err != nil {
-		finish(prompt.RunFailed, "", "read run workspace git state: "+err.Error())
-		return
-	}
-
-	releaseRun, err = r.gate.AcquireRun(ctx)
+	metrics.releaseRun, err = r.gate.AcquireRun(ctx)
 	if err != nil {
 		r.mu.Lock()
 		userCancelled := r.userCancelled[run.ID]
@@ -212,6 +152,83 @@ func (r *Runner) execute(run prompt.Run) {
 		return
 	}
 
+	usage, cost, runErr := r.runConversation(ctx, run, setup.executed, cfg, prov, res, setup.logFile, setup.sandboxRoot, setup.branch, setup.sha, setup.eventBytes)
+	metrics.usage, metrics.cost = usage, cost
+
+	// Classify the terminal status: explicit user cancel wins over TTL, TTL
+	// over an engine error, and a clean return is success.
+	r.mu.Lock()
+	userCancelled := r.userCancelled[run.ID]
+	r.mu.Unlock()
+
+	usageJSON := serializeUsage(usage, cost)
+
+	finishRun(finish, ctx, userCancelled, runErr, usageJSON)
+}
+
+type runMetrics struct {
+	providerName string
+	modelName    string
+	usage        agentkit.Usage
+	cost         agentkit.Cost
+	releaseRun   func()
+}
+
+// finisher persists the terminal state and atomically emits any outcome event.
+func (r *Runner) finisher(run prompt.Run, endedAt func() string, metrics *runMetrics) func(string, string, string) {
+	return func(status, usageJSON, errMsg string) {
+		usage := metrics.usage
+		_ = r.store.FinishRun(context.Background(), prompt.FinishRunInput{
+			RunID: run.ID, Status: status, EndedAt: endedAt(), UsageJSON: usageJSON, ErrMsg: errMsg,
+			Provider: metrics.providerName, Model: metrics.modelName,
+			InputTokens:  usage.InputUncached + usage.CacheReadInput + usage.CacheWriteInput,
+			OutputTokens: usage.Output + usage.ReasoningOutput, TotalTokens: usage.Total,
+			CostUSD: metrics.cost.USD(),
+		})
+		if metrics.releaseRun != nil {
+			metrics.releaseRun()
+		}
+	}
+}
+
+type runSetup struct {
+	logFile     *os.File
+	executed    prompt.Executed
+	eventBytes  []byte
+	sandboxRoot string
+	branch      string
+	sha         string
+}
+
+func (r *Runner) prepareRun(run prompt.Run) (runSetup, error) {
+	if err := os.MkdirAll(filepath.Dir(run.LogPath), 0o755); err != nil {
+		return runSetup{}, fmt.Errorf("open run log dir: %w", err)
+	}
+	logFile, err := os.OpenFile(run.LogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return runSetup{}, fmt.Errorf("open run log: %w", err)
+	}
+	runsDir := filepath.Dir(filepath.Dir(run.LogPath))
+	executed, err := prompt.LoadFromRun(runsDir, run.ID, run.DefinitionSha)
+	if err != nil {
+		_ = logFile.Close()
+		return runSetup{}, fmt.Errorf("load run prompt: %w", err)
+	}
+	eventBytes, err := os.ReadFile(filepath.Join(runsDir, run.ID, "input", "event.json"))
+	if err != nil && !os.IsNotExist(err) {
+		_ = logFile.Close()
+		return runSetup{}, fmt.Errorf("read run event: %w", err)
+	}
+	sandboxRoot := r.sandbox.Root(run.ID)
+	branch, sha, err := workspaceGitState(sandboxRoot)
+	if err != nil {
+		_ = logFile.Close()
+		return runSetup{}, fmt.Errorf("read run workspace git state: %w", err)
+	}
+	return runSetup{logFile: logFile, executed: executed, eventBytes: eventBytes, sandboxRoot: sandboxRoot, branch: branch, sha: sha}, nil
+}
+
+func (r *Runner) runConversation(ctx context.Context, run prompt.Run, executed prompt.Executed, cfg prompt.Config, prov agentkit.Provider, res catalog.Resolution, logFile *os.File, sandboxRoot, branch, sha string, eventBytes []byte) (agentkit.Usage, agentkit.Cost, error) {
 	peers := r.discover(ctx, run.OwnerID, run.OwnerEmail, run.PromptID, run.CorrelationID)
 	clients := func(peer suite.Peer) gateway.Client {
 		return mcpclient.New(r.peerDoer, peer.BaseURL, peer.Headers)
@@ -224,32 +241,22 @@ func (r *Runner) execute(run prompt.Run) {
 	tools := runtools.All(sandboxRoot, r.sourcePortAllowed, runtools.ShareConfig{BaseURL: r.shareBaseURL, ClientID: "prompts:" + run.PromptID})
 	tools = append(tools, gateway.Tools(peers, catalogEntries, clients)...)
 	conv := &agentkit.Conversation{
-		Provider:          prov,
-		Model:             res.WireModel,
-		Pricing:           res.Offering.Pricing,
-		System:            buildSystemPrompt(executed.SystemPrompt, branch, sha),
-		Log:               logFile,
-		Gen:               genSettings(cfg),
-		Retry:             retryPolicy(cfg),
-		Tools:             tools,
+		Provider: prov, Model: res.WireModel, Pricing: res.Offering.Pricing,
+		System: buildSystemPrompt(executed.SystemPrompt, branch, sha), Log: logFile,
+		Gen: genSettings(cfg), Retry: retryPolicy(cfg), Tools: tools,
 		MaxToolIterations: cfg.ToolLoopLimit,
 	}
 	stream := conv.Send(ctx, buildUserText(executed.UserPrompt, eventBytes))
 	for range stream.Events() {
 	}
 	runErr := stream.Err()
-	usage = stream.Usage()
-	cost = stream.Cost()
+	usage := stream.Usage()
+	cost := stream.Cost()
 	_ = conv.Close()
+	return usage, cost, runErr
+}
 
-	// Classify the terminal status: explicit user cancel wins over TTL, TTL
-	// over an engine error, and a clean return is success.
-	r.mu.Lock()
-	userCancelled := r.userCancelled[run.ID]
-	r.mu.Unlock()
-
-	usageJSON := serializeUsage(usage, cost)
-
+func finishRun(finish func(string, string, string), ctx context.Context, userCancelled bool, runErr error, usageJSON string) {
 	switch {
 	case userCancelled:
 		finish(prompt.RunCancelled, usageJSON, "cancelled")

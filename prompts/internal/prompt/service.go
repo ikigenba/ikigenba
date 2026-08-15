@@ -203,36 +203,12 @@ func ValidateConfig(c Config, getenv func(string) string, subAuthAvailable func(
 	case c.Thinking != nil && !*c.Thinking:
 		reasoning = agentkit.DisableReasoning()
 	}
-	if !reasoning.IsUnset() {
-		accepted, spec, _ := catalog.Check(c.Model, catalogProviderID(c.Provider), reasoning)
-		if !accepted {
-			if spec == nil {
-				return Config{}, validationErrf("invalid config: model %q through provider %q accepts no reasoning control", c.Model, c.Provider)
-			}
-			if reasoning.Disabled() && !spec.CanDisable {
-				return Config{}, validationErrf("invalid config: reasoning cannot be disabled for model %q through provider %q", c.Model, c.Provider)
-			}
-			if len(spec.Levels) > 0 {
-				return Config{}, validationErrf("invalid config: model %q through provider %q accepts reasoning levels %q", c.Model, c.Provider, spec.Levels)
-			}
-			return Config{}, validationErrf("invalid config: model %q through provider %q accepts reasoning budgets %d..%d and sentinels %v", c.Model, c.Provider, spec.Min, spec.Max, spec.Sentinels)
-		}
+	if err := validateReasoning(c, reasoning); err != nil {
+		return Config{}, err
 	}
 
-	switch c.Auth {
-	case "", "key":
-	case "sub":
-		if c.Provider != "openai" {
-			return Config{}, validationErrf("invalid config: auth %q requires provider %q, got %q", c.Auth, "openai", c.Provider)
-		}
-		if c.BaseURL != "" {
-			return Config{}, validationErrf("invalid config: auth %q cannot be combined with base_url", c.Auth)
-		}
-		if subAuthAvailable == nil || !subAuthAvailable() {
-			return Config{}, validationErrf("invalid config: auth %q requires PROMPTS_OPENAI_AUTH_PATH or the state-dir default auth.json", c.Auth)
-		}
-	default:
-		return Config{}, validationErrf("invalid config: auth must be one of %q, %q, or %q", "", "key", "sub")
+	if err := validateAuth(c, subAuthAvailable); err != nil {
+		return Config{}, err
 	}
 
 	if c.Auth == "sub" {
@@ -242,6 +218,46 @@ func ValidateConfig(c Config, getenv func(string) string, subAuthAvailable func(
 		return Config{}, validationErrf("invalid config: %s is not set", envVar)
 	}
 	return c, nil
+}
+
+func validateReasoning(c Config, reasoning agentkit.ReasoningValue) error {
+	if reasoning.IsUnset() {
+		return nil
+	}
+	accepted, spec, _ := catalog.Check(c.Model, catalogProviderID(c.Provider), reasoning)
+	if accepted {
+		return nil
+	}
+	if spec == nil {
+		return validationErrf("invalid config: model %q through provider %q accepts no reasoning control", c.Model, c.Provider)
+	}
+	if reasoning.Disabled() && !spec.CanDisable {
+		return validationErrf("invalid config: reasoning cannot be disabled for model %q through provider %q", c.Model, c.Provider)
+	}
+	if len(spec.Levels) > 0 {
+		return validationErrf("invalid config: model %q through provider %q accepts reasoning levels %q", c.Model, c.Provider, spec.Levels)
+	}
+	return validationErrf("invalid config: model %q through provider %q accepts reasoning budgets %d..%d and sentinels %v", c.Model, c.Provider, spec.Min, spec.Max, spec.Sentinels)
+}
+
+func validateAuth(c Config, subAuthAvailable func() bool) error {
+	switch c.Auth {
+	case "", "key":
+		return nil
+	case "sub":
+		if c.Provider != "openai" {
+			return validationErrf("invalid config: auth %q requires provider %q, got %q", c.Auth, "openai", c.Provider)
+		}
+		if c.BaseURL != "" {
+			return validationErrf("invalid config: auth %q cannot be combined with base_url", c.Auth)
+		}
+		if subAuthAvailable == nil || !subAuthAvailable() {
+			return validationErrf("invalid config: auth %q requires PROMPTS_OPENAI_AUTH_PATH or the state-dir default auth.json", c.Auth)
+		}
+		return nil
+	default:
+		return validationErrf("invalid config: auth must be one of %q, %q, or %q", "", "key", "sub")
+	}
 }
 
 // CatalogProviderID translates prompts' stable config spelling for Z.ai to
@@ -381,17 +397,9 @@ func (s *Service) Import(ctx context.Context, ownerID, ownerEmail, sourcePath, n
 	if err != nil {
 		return Prompt{}, err
 	}
-	if !utf8.Valid(data) {
-		return Prompt{}, fmt.Errorf("%w: %q is not valid UTF-8 text (a prompt body must be text)", ErrValidation, sourcePath)
-	}
-	if len(data) > maxImportBytes {
-		return Prompt{}, fmt.Errorf("%w: %q is %d bytes, over the 1 MiB import limit", ErrTooLarge, sourcePath, len(data))
-	}
-	if strings.TrimSpace(string(data)) == "" {
-		return Prompt{}, validationErrf("user_prompt imported from %q must not be empty", sourcePath)
-	}
-	if name == "" {
-		name = path.Base(sourcePath)
+	name, err = validateImportData(sourcePath, name, data)
+	if err != nil {
+		return Prompt{}, err
 	}
 	// Seed a valid default config so the imported prompt is runnable. Config is
 	// left as-is on a re-import (the upsert refreshes name + user_prompt only), so
@@ -400,23 +408,12 @@ func (s *Service) Import(ctx context.Context, ownerID, ownerEmail, sourcePath, n
 	if err != nil {
 		return Prompt{}, err
 	}
-	var existing *Prompt
-	prompts, err := s.store.ListPrompts(ctx, ownerID)
+	existing, err := s.importedPrompt(ctx, ownerID, sourcePath)
 	if err != nil {
 		return Prompt{}, err
 	}
-	for i := range prompts {
-		if prompts[i].SourcePath == sourcePath {
-			existing = &prompts[i]
-			break
-		}
-	}
-
-	if existing != nil && s.Version != nil {
-		files := []version.File{{Path: "prompt.md", Data: data}}
-		if _, err := s.Version.Commit(ctx, existing.NameKey, files, "import "+sourcePath, "prompts:"+existing.ID); err != nil {
-			return Prompt{}, versionPlaneError("commit import", err)
-		}
+	if err := s.commitExistingImport(ctx, existing, sourcePath, data); err != nil {
+		return Prompt{}, err
 	}
 
 	p, err := s.store.UpsertPromptBySource(ctx, ownerID, ownerEmail, sourcePath, name, s.nowStr())
@@ -452,6 +449,46 @@ func (s *Service) Import(ctx context.Context, ownerID, ownerEmail, sourcePath, n
 	}
 	s.rememberDefinition(p.ID, Executed{Name: name, UserPrompt: string(data), Config: cfg})
 	return p, nil
+}
+
+func validateImportData(sourcePath, name string, data []byte) (string, error) {
+	if !utf8.Valid(data) {
+		return "", fmt.Errorf("%w: %q is not valid UTF-8 text (a prompt body must be text)", ErrValidation, sourcePath)
+	}
+	if len(data) > maxImportBytes {
+		return "", fmt.Errorf("%w: %q is %d bytes, over the 1 MiB import limit", ErrTooLarge, sourcePath, len(data))
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return "", validationErrf("user_prompt imported from %q must not be empty", sourcePath)
+	}
+	if name == "" {
+		name = path.Base(sourcePath)
+	}
+	return name, nil
+}
+
+func (s *Service) importedPrompt(ctx context.Context, ownerID, sourcePath string) (*Prompt, error) {
+	prompts, err := s.store.ListPrompts(ctx, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range prompts {
+		if prompts[i].SourcePath == sourcePath {
+			return &prompts[i], nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *Service) commitExistingImport(ctx context.Context, existing *Prompt, sourcePath string, data []byte) error {
+	if existing == nil || s.Version == nil {
+		return nil
+	}
+	files := []version.File{{Path: "prompt.md", Data: data}}
+	if _, err := s.Version.Commit(ctx, existing.NameKey, files, "import "+sourcePath, "prompts:"+existing.ID); err != nil {
+		return versionPlaneError("commit import", err)
+	}
+	return nil
 }
 
 // List returns the owner's prompts, each as a PromptDetail carrying its derived
@@ -615,37 +652,12 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 		return Prompt{}, validationErrf("user_prompt must not be empty")
 	}
 
-	current := s.rememberedDefinition(p)
-	if s.Version != nil {
-		definition, err := s.Version.Read(ctx, p.NameKey, "main")
-		if err != nil {
-			return Prompt{}, versionPlaneError("read definition", err)
-		}
-		var currentConfig Config
-		if err := json.Unmarshal(definition.ConfigJSON, &currentConfig); err != nil {
-			return Prompt{}, versionPlaneError("parse definition config", err)
-		}
-		current = Executed{
-			Name:         p.Name,
-			UserPrompt:   definition.UserPrompt,
-			SystemPrompt: definition.SystemPrompt,
-			Config:       currentConfig,
-		}
+	current, err := s.currentDefinition(ctx, p)
+	if err != nil {
+		return Prompt{}, err
 	}
 
-	effective := current
-	if in.Name != nil {
-		effective.Name = *in.Name
-	}
-	if in.UserPrompt != nil {
-		effective.UserPrompt = *in.UserPrompt
-	}
-	if in.SystemPrompt != nil {
-		effective.SystemPrompt = *in.SystemPrompt
-	}
-	if in.Config != nil {
-		effective.Config = *in.Config
-	}
+	effective := mergeUpdate(current, in)
 	if strings.TrimSpace(effective.UserPrompt) == "" {
 		return Prompt{}, validationErrf("user_prompt must not be empty")
 	}
@@ -659,37 +671,8 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 		return Prompt{}, err
 	}
 
-	if s.Version != nil {
-		if nameKey != p.NameKey {
-			owner := version.Owner{ID: p.OwnerID, Email: p.OwnerEmail}
-			if err := s.Version.Rename(ctx, p.NameKey, nameKey, owner, "prompts:"+p.ID); err != nil {
-				return Prompt{}, versionPlaneError("rename repository", err)
-			}
-		}
-		files := make([]version.File, 0, 3)
-		if effective.UserPrompt != current.UserPrompt {
-			files = append(files, version.File{Path: "prompt.md", Data: []byte(effective.UserPrompt)})
-		}
-		if !reflect.DeepEqual(effective.Config, current.Config) {
-			configJSON, err := json.Marshal(cfg)
-			if err != nil {
-				return Prompt{}, fmt.Errorf("prompt: marshal version config: %w", err)
-			}
-			files = append(files, version.File{Path: "config.json", Data: append(configJSON, '\n')})
-		}
-		if effective.SystemPrompt != current.SystemPrompt {
-			file := version.File{Path: "system.md", Data: []byte(effective.SystemPrompt)}
-			if effective.SystemPrompt == "" {
-				file.Data = nil
-				file.Delete = true
-			}
-			files = append(files, file)
-		}
-		if len(files) > 0 {
-			if _, err := s.Version.Commit(ctx, nameKey, files, "update "+effective.Name, "prompts:"+p.ID); err != nil {
-				return Prompt{}, versionPlaneError("commit update", err)
-			}
-		}
+	if err := s.updateVersionDefinition(ctx, p, current, effective, cfg, nameKey); err != nil {
+		return Prompt{}, err
 	}
 	if s.Version == nil {
 		s.rememberDefinition(p.ID, effective)
@@ -703,6 +686,75 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, in UpdateInput
 		return Prompt{}, err
 	}
 	return p, nil
+}
+
+func (s *Service) currentDefinition(ctx context.Context, p Prompt) (Executed, error) {
+	if s.Version == nil {
+		return s.rememberedDefinition(p), nil
+	}
+	definition, err := s.Version.Read(ctx, p.NameKey, "main")
+	if err != nil {
+		return Executed{}, versionPlaneError("read definition", err)
+	}
+	var cfg Config
+	if err := json.Unmarshal(definition.ConfigJSON, &cfg); err != nil {
+		return Executed{}, versionPlaneError("parse definition config", err)
+	}
+	return Executed{Name: p.Name, UserPrompt: definition.UserPrompt, SystemPrompt: definition.SystemPrompt, Config: cfg}, nil
+}
+
+func mergeUpdate(current Executed, in UpdateInput) Executed {
+	if in.Name != nil {
+		current.Name = *in.Name
+	}
+	if in.UserPrompt != nil {
+		current.UserPrompt = *in.UserPrompt
+	}
+	if in.SystemPrompt != nil {
+		current.SystemPrompt = *in.SystemPrompt
+	}
+	if in.Config != nil {
+		current.Config = *in.Config
+	}
+	return current
+}
+
+func (s *Service) updateVersionDefinition(ctx context.Context, p Prompt, current, effective Executed, cfg Config, nameKey string) error {
+	if s.Version == nil {
+		return nil
+	}
+	if nameKey != p.NameKey {
+		owner := version.Owner{ID: p.OwnerID, Email: p.OwnerEmail}
+		if err := s.Version.Rename(ctx, p.NameKey, nameKey, owner, "prompts:"+p.ID); err != nil {
+			return versionPlaneError("rename repository", err)
+		}
+	}
+	files := make([]version.File, 0, 3)
+	if effective.UserPrompt != current.UserPrompt {
+		files = append(files, version.File{Path: "prompt.md", Data: []byte(effective.UserPrompt)})
+	}
+	if !reflect.DeepEqual(effective.Config, current.Config) {
+		configJSON, err := json.Marshal(cfg)
+		if err != nil {
+			return fmt.Errorf("prompt: marshal version config: %w", err)
+		}
+		files = append(files, version.File{Path: "config.json", Data: append(configJSON, '\n')})
+	}
+	if effective.SystemPrompt != current.SystemPrompt {
+		file := version.File{Path: "system.md", Data: []byte(effective.SystemPrompt)}
+		if effective.SystemPrompt == "" {
+			file.Data = nil
+			file.Delete = true
+		}
+		files = append(files, file)
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	if _, err := s.Version.Commit(ctx, nameKey, files, "update "+effective.Name, "prompts:"+p.ID); err != nil {
+		return versionPlaneError("commit update", err)
+	}
+	return nil
 }
 
 // Delete removes ONLY the prompt row and the prompt's trigger(s). It deliberately
@@ -806,37 +858,7 @@ func cloneRunWorkspace(ctx context.Context, credential version.Credential, root 
 func (s *Service) materializeWorkspace(ctx context.Context, p Prompt, run Run) (Run, error) {
 	root := s.sandbox.Root(run.ID)
 	if s.Version == nil {
-		if err := s.sandbox.Create(run.ID); err != nil {
-			return Run{}, err
-		}
-		if err := runGit(ctx, "-C", root, "init", "-b", "main"); err != nil {
-			return Run{}, err
-		}
-		executed := s.rememberedDefinition(p)
-		files, err := definitionFiles(executed.UserPrompt, executed.SystemPrompt, executed.Config)
-		if err != nil {
-			return Run{}, err
-		}
-		for _, file := range files {
-			if err := os.WriteFile(filepath.Join(root, file.Path), file.Data, 0o644); err != nil {
-				return Run{}, err
-			}
-		}
-		if err := runGit(ctx, "-C", root, "add", "."); err != nil {
-			return Run{}, err
-		}
-		if err := runGit(ctx, "-C", root, "-c", "user.name=prompts:"+p.ID, "-c", "user.email=prompts@localhost", "commit", "-m", "run definition"); err != nil {
-			return Run{}, err
-		}
-		out, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD").Output()
-		if err != nil {
-			return Run{}, err
-		}
-		run.DefinitionSha = strings.TrimSpace(string(out))
-		if err := runGit(ctx, "-C", root, "checkout", "-b", "ikigenba/run-"+run.ID, run.DefinitionSha); err != nil {
-			return Run{}, err
-		}
-		return run, nil
+		return s.materializeLegacyWorkspace(ctx, p, run, root)
 	}
 	runTTL := s.RunTTL
 	if runTTL <= 0 {
@@ -859,6 +881,40 @@ func (s *Service) materializeWorkspace(ctx context.Context, p Prompt, run Run) (
 		return Run{}, err
 	}
 	if err := runGit(ctx, "-C", root, "config", "user.email", "prompts@localhost"); err != nil {
+		return Run{}, err
+	}
+	return run, nil
+}
+
+func (s *Service) materializeLegacyWorkspace(ctx context.Context, p Prompt, run Run, root string) (Run, error) {
+	if err := s.sandbox.Create(run.ID); err != nil {
+		return Run{}, err
+	}
+	if err := runGit(ctx, "-C", root, "init", "-b", "main"); err != nil {
+		return Run{}, err
+	}
+	executed := s.rememberedDefinition(p)
+	files, err := definitionFiles(executed.UserPrompt, executed.SystemPrompt, executed.Config)
+	if err != nil {
+		return Run{}, err
+	}
+	for _, file := range files {
+		if err := os.WriteFile(filepath.Join(root, file.Path), file.Data, 0o644); err != nil {
+			return Run{}, err
+		}
+	}
+	if err := runGit(ctx, "-C", root, "add", "."); err != nil {
+		return Run{}, err
+	}
+	if err := runGit(ctx, "-C", root, "-c", "user.name=prompts:"+p.ID, "-c", "user.email=prompts@localhost", "commit", "-m", "run definition"); err != nil {
+		return Run{}, err
+	}
+	out, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return Run{}, err
+	}
+	run.DefinitionSha = strings.TrimSpace(string(out))
+	if err := runGit(ctx, "-C", root, "checkout", "-b", "ikigenba/run-"+run.ID, run.DefinitionSha); err != nil {
 		return Run{}, err
 	}
 	return run, nil

@@ -118,34 +118,11 @@ func (h *HTTP) ensure(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTP) validate(in ensureRequest) (Request, string, error) {
-	if !consumerPattern.MatchString(in.Consumer) {
-		return Request{}, "bad_consumer", fmt.Errorf("invalid consumer %q: must match ^service:[a-z0-9._-]+$", in.Consumer)
+	if code, err := validateEnsureEnvelope(in); err != nil {
+		return Request{}, code, err
 	}
-	if err := calls.ValidateOrigin(in.Origin); err != nil {
-		return Request{}, "bad_origin", err
-	}
-	if err := calls.ValidateName(in.Name); err != nil {
-		return Request{}, "bad_name", err
-	}
-	if in.Key == "" {
-		return Request{}, "bad_key", errors.New("key must be non-empty")
-	}
-	if len(in.Key) > maxKeyBytes {
-		return Request{}, "bad_key", errors.New("key exceeds 1024 bytes")
-	}
-	if len(in.Context) > maxContext {
-		return Request{}, "bad_context", errors.New("context exceeds 64 KiB")
-	}
-	if len(in.Messages) == 0 {
-		return Request{}, "bad_config", errors.New("messages must be non-empty")
-	}
-	for i, message := range in.Messages {
-		if message.Role != string(agentkit.RoleUser) && message.Role != string(agentkit.RoleAssistant) {
-			return Request{}, "bad_config", fmt.Errorf("messages[%d].role must be user or assistant", i)
-		}
-	}
-	if in.Messages[len(in.Messages)-1].Role != string(agentkit.RoleUser) {
-		return Request{}, "bad_config", errors.New("final message role must be user")
+	if err := validateMessages(in.Messages); err != nil {
+		return Request{}, "bad_config", err
 	}
 	cfg := in.Config
 	cfg.Provider, cfg.Model = in.Provider, in.Model
@@ -162,6 +139,43 @@ func (h *HTTP) validate(in ensureRequest) (Request, string, error) {
 		return Request{}, "bad_model", fmt.Errorf("provider %q does not route model %q", validated.Provider, validated.Model)
 	}
 	return Request{Model: validated.Model, Provider: validated.Provider, Config: in.Config, System: in.System, Messages: in.Messages}, "", nil
+}
+
+func validateEnsureEnvelope(in ensureRequest) (string, error) {
+	if !consumerPattern.MatchString(in.Consumer) {
+		return "bad_consumer", fmt.Errorf("invalid consumer %q: must match ^service:[a-z0-9._-]+$", in.Consumer)
+	}
+	if err := calls.ValidateOrigin(in.Origin); err != nil {
+		return "bad_origin", err
+	}
+	if err := calls.ValidateName(in.Name); err != nil {
+		return "bad_name", err
+	}
+	if in.Key == "" {
+		return "bad_key", errors.New("key must be non-empty")
+	}
+	if len(in.Key) > maxKeyBytes {
+		return "bad_key", errors.New("key exceeds 1024 bytes")
+	}
+	if len(in.Context) > maxContext {
+		return "bad_context", errors.New("context exceeds 64 KiB")
+	}
+	return "", nil
+}
+
+func validateMessages(messages []Message) error {
+	if len(messages) == 0 {
+		return errors.New("messages must be non-empty")
+	}
+	for i, message := range messages {
+		if message.Role != string(agentkit.RoleUser) && message.Role != string(agentkit.RoleAssistant) {
+			return fmt.Errorf("messages[%d].role must be user or assistant", i)
+		}
+	}
+	if messages[len(messages)-1].Role != string(agentkit.RoleUser) {
+		return errors.New("final message role must be user")
+	}
+	return nil
 }
 
 func (h *HTTP) get(w http.ResponseWriter, r *http.Request) {

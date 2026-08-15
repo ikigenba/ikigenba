@@ -509,71 +509,13 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 		return err
 	}
 
-	if s.Calls != nil {
-		start, err := time.Parse(time.RFC3339Nano, startedAt)
-		if err != nil {
-			return fmt.Errorf("prompt: finish run parse started_at: %w", err)
-		}
-		end, err := time.Parse(time.RFC3339Nano, in.EndedAt)
-		if err != nil {
-			return fmt.Errorf("prompt: finish run parse ended_at: %w", err)
-		}
-		origin := "user:" + ownerEmail
-		if trigSource.String != "" {
-			origin = "trigger:" + trigSource.String
-		}
-		name := promptName.String
-		if name == "" {
-			name = promptID
-		}
-		if err := s.Calls.InsertTx(ctx, tx, calls.Row{
-			Class:         calls.ClassSession,
-			Origin:        origin,
-			Name:          name,
-			GroupID:       in.RunID,
-			CorrelationID: correlationID,
-			Attempt:       1,
-			OwnerEmail:    ownerEmail,
-			Provider:      in.Provider,
-			Model:         in.Model,
-			InputTokens:   in.InputTokens,
-			OutputTokens:  in.OutputTokens,
-			TotalTokens:   in.TotalTokens,
-			UsageJSON:     in.UsageJSON,
-			CostUSD:       in.CostUSD,
-			Error:         in.ErrMsg,
-			StartedAt:     start,
-			EndedAt:       end,
-		}); err != nil {
-			return fmt.Errorf("prompt: finish run insert call: %w", err)
-		}
+	if err := s.insertRunCall(ctx, tx, in, promptID, promptName.String, ownerEmail, startedAt, correlationID, trigSource.String); err != nil {
+		return err
 	}
 
-	emitted := false
-	if s.Outbox != nil {
-		ev, ok, err := outcomeEvent(in.Status, promptID, promptName.String, in.RunID, trigSource.String, trigKind.String, trigSubject.String, trigEventID.String, in.ErrMsg)
-		if err != nil {
-			return err
-		}
-		if ok {
-			// Append on the SAME tx as the terminal write — the atomicity invariant.
-			appendCtx := correlation.WithContext(ctx, correlationID)
-			if err := s.Outbox.Append(appendCtx, tx, ev); err != nil {
-				return fmt.Errorf("prompt: finish run append outcome: %w", err)
-			}
-			// Keep the durable row populated when running against an eventplane
-			// build whose Append accepts correlation context but still uses its
-			// legacy INSERT column list. This is idempotent once Append writes the
-			// same value itself, and last_insert_rowid() is scoped to this tx's
-			// connection.
-			if _, err := tx.ExecContext(appendCtx,
-				`UPDATE outbox SET correlation_id = ? WHERE seq = last_insert_rowid()`,
-				correlationID,
-			); err != nil {
-				return fmt.Errorf("prompt: finish run correlate outcome: %w", err)
-			}
-			emitted = true
-		}
+	emitted, err := s.appendRunOutcome(ctx, tx, in, promptID, promptName.String, correlationID, trigSource.String, trigKind.String, trigSubject.String, trigEventID.String)
+	if err != nil {
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -584,6 +526,58 @@ func (s *Store) FinishRun(ctx context.Context, in FinishRunInput) error {
 		s.Outbox.Ring()
 	}
 	return nil
+}
+
+func (s *Store) insertRunCall(ctx context.Context, tx *sql.Tx, in FinishRunInput, promptID, promptName, ownerEmail, startedAt, correlationID, triggerSource string) error {
+	if s.Calls == nil {
+		return nil
+	}
+	start, err := time.Parse(time.RFC3339Nano, startedAt)
+	if err != nil {
+		return fmt.Errorf("prompt: finish run parse started_at: %w", err)
+	}
+	end, err := time.Parse(time.RFC3339Nano, in.EndedAt)
+	if err != nil {
+		return fmt.Errorf("prompt: finish run parse ended_at: %w", err)
+	}
+	origin := "user:" + ownerEmail
+	if triggerSource != "" {
+		origin = "trigger:" + triggerSource
+	}
+	if promptName == "" {
+		promptName = promptID
+	}
+	if err := s.Calls.InsertTx(ctx, tx, calls.Row{
+		Class: calls.ClassSession, Origin: origin, Name: promptName, GroupID: in.RunID,
+		CorrelationID: correlationID, Attempt: 1, OwnerEmail: ownerEmail,
+		Provider: in.Provider, Model: in.Model, InputTokens: in.InputTokens,
+		OutputTokens: in.OutputTokens, TotalTokens: in.TotalTokens, UsageJSON: in.UsageJSON,
+		CostUSD: in.CostUSD, Error: in.ErrMsg, StartedAt: start, EndedAt: end,
+	}); err != nil {
+		return fmt.Errorf("prompt: finish run insert call: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) appendRunOutcome(ctx context.Context, tx *sql.Tx, in FinishRunInput, promptID, promptName, correlationID, triggerSource, triggerKind, triggerSubject, triggerEventID string) (bool, error) {
+	if s.Outbox == nil {
+		return false, nil
+	}
+	ev, ok, err := outcomeEvent(in.Status, promptID, promptName, in.RunID, triggerSource, triggerKind, triggerSubject, triggerEventID, in.ErrMsg)
+	if err != nil || !ok {
+		return false, err
+	}
+	// Append on the SAME tx as the terminal write — the atomicity invariant.
+	appendCtx := correlation.WithContext(ctx, correlationID)
+	if err := s.Outbox.Append(appendCtx, tx, ev); err != nil {
+		return false, fmt.Errorf("prompt: finish run append outcome: %w", err)
+	}
+	// Keep the durable row populated when running against an eventplane build
+	// whose Append still uses its legacy INSERT column list.
+	if _, err := tx.ExecContext(appendCtx, `UPDATE outbox SET correlation_id = ? WHERE seq = last_insert_rowid()`, correlationID); err != nil {
+		return false, fmt.Errorf("prompt: finish run correlate outcome: %w", err)
+	}
+	return true, nil
 }
 
 // SweepRunning is crash recovery: every run left 'running' by a crash is

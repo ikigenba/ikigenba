@@ -233,14 +233,9 @@ func promptsSpec() appkit.Spec {
 // the chassis (appkit) hands off to the domain: appkit has already resolved
 // config, opened, and migrated the shared single-writer DB before calling this.
 func registerRoutes(rt *appkit.Router) error {
-	site := rt.WWW()
-	if site == nil {
-		return fmt.Errorf("prompts: no WWW site on router")
-	}
-
-	conn := rt.DB()
-	if conn == nil {
-		return fmt.Errorf("prompts: no DB handle on router")
+	conn, err := routerDB(rt)
+	if err != nil {
+		return err
 	}
 	retentionDays, err := callsBodyRetentionConfig(os.Getenv)
 	if err != nil {
@@ -252,8 +247,6 @@ func registerRoutes(rt *appkit.Router) error {
 	} else if swept > 0 {
 		rt.Logger().Info("calls: pruned retained bodies", "count", swept)
 	}
-	callsRef = callStore
-	callsRetentionDays = retentionDays
 	knobs, err := resolveTuningKnobs(os.Getenv)
 	if err != nil {
 		return err
@@ -270,9 +263,6 @@ func registerRoutes(rt *appkit.Router) error {
 	} else if swept > 0 {
 		rt.Logger().Info("completions: swept expired terminal items", "count", swept)
 	}
-	completionRef = completionExecutor
-	completionStoreRef = completionStore
-	completionWorkers = knobs.maxInflightCalls
 	embedding := inference.NewEmbedExecutor(callStore, gate, provider.BuildEmbedder, os.Getenv)
 
 	// Resolve the same state/cache layout as the chassis. Run sandboxes are
@@ -326,9 +316,21 @@ func registerRoutes(rt *appkit.Router) error {
 	})
 	// Capture the service for the consumer Worker and the store for the Producer
 	// hook (both run after Handlers; the Producer injects the outbox onto store).
+	setRuntimeRefs(callStore, retentionDays, completionExecutor, completionStore, knobs.maxInflightCalls, svc, store)
+	return finishRouteRegistration(rt, run, svc, completionHTTP, embedding)
+}
+
+func setRuntimeRefs(callStore *calls.Store, retentionDays int, executor *completion.Executor, completionStore *completion.Store, workers int, svc *prompt.Service, store *prompt.Store) {
+	callsRef = callStore
+	callsRetentionDays = retentionDays
+	completionRef = executor
+	completionStoreRef = completionStore
+	completionWorkers = workers
 	svcRef = svc
 	storeRef = store
+}
 
+func finishRouteRegistration(rt *appkit.Router, run *runner.Runner, svc *prompt.Service, completionHTTP *completion.HTTP, embedding *inference.EmbedExecutor) error {
 	// Crash-recovery sweep: runs left 'running' by a previous process are
 	// orphaned — mark them failed before serving (touches RUNS only; prompts
 	// have no status). Runs after migrate (appkit migrated the shared conn
@@ -351,6 +353,17 @@ func registerRoutes(rt *appkit.Router) error {
 	rt.HandleLoopback("POST /embed", embedding.EmbedHandler())
 	rt.HandleLoopback("GET /run-content", svc.RunContentHandler())
 	return nil
+}
+
+func routerDB(rt *appkit.Router) (*sql.DB, error) {
+	if rt.WWW() == nil {
+		return nil, fmt.Errorf("prompts: no WWW site on router")
+	}
+	conn := rt.DB()
+	if conn == nil {
+		return nil, fmt.Errorf("prompts: no DB handle on router")
+	}
+	return conn, nil
 }
 
 const (

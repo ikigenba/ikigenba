@@ -24,7 +24,23 @@ func tool(verb string) string { return toolPrefix + verb }
 // Tools returns prompts' domain tool table. Chassis-owned tools such as health
 // and reflection are supplied by appkit/mcp and must not be declared here.
 func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
-	tools := []appkitmcp.Tool{
+	tools := promptTools(svc)
+	tools = append(tools, promptReadTools(svc)...)
+	tools = append(tools, promptAdminTools(svc)...)
+	tools = append(tools, runTools(svc)...)
+	tools = append(tools, runControlTools(svc)...)
+	tools = append(tools, runFilesystemTools(svc, contentBase)...)
+	tools = append(tools, callsTools(svc)...)
+	tools = append(tools, usageTools(svc)...)
+	schemas := outputSchemas()
+	for i := range tools {
+		tools[i].OutputSchema = schemas[tools[i].Name]
+	}
+	return tools
+}
+
+func promptTools(svc *prompt.Service) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		desc(tool("describe"), "Return a detailed overview of prompts: what a prompt vs a run is, the create→run→poll→read lifecycle, full concurrency, the per-run sandbox, and LogRecord JSONL run output. Config requires model; provider is optional and defaults from the model catalog, or may select an alternate anthropic, openai, google, zai, or openrouter route. Optional keys tune sampling (temperature, top_p), output size (max_tokens), reasoning (effort, thinking_budget, thinking_level, thinking), retry/backoff behavior (max_attempts, base_delay, max_delay, max_elapsed, ignore_retry_after), tool loops (tool_loop_limit), provider endpoint override (base_url), and credential mode (auth). Call this first if you're unfamiliar with prompts. Takes no inputs.", obj(map[string]any{}),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				return toolDescribe()
@@ -83,7 +99,11 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				return appkitmcp.StructuredResult(map[string]any{"prompt_id": p.ID, "name": p.Name})
 			}),
+	}
+}
 
+func promptReadTools(svc *prompt.Service) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		desc(tool("list"), "List the caller's prompts, each with its running run count and latest run (last_run).", obj(map[string]any{}),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				prompts, err := svc.List(ctx, id.OwnerID)
@@ -143,7 +163,11 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				return appkitmcp.StructuredResult(p)
 			}),
+	}
+}
 
+func promptAdminTools(svc *prompt.Service) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		desc(tool("delete"), "Delete one of the caller's prompts without cascading: the prompt row and its triggers are removed; its runs and their on-disk artifacts survive and stay readable by run_id. Always allowed.", obj(map[string]any{
 			"prompt_id": typ("string"),
 		}, "prompt_id"),
@@ -194,7 +218,11 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				return appkitmcp.StructuredResult(map[string]any{"cleared": in.PromptID})
 			}),
+	}
+}
 
+func runTools(svc *prompt.Service) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		desc(tool("run"), "Start a run for one of the caller's prompts. Always allowed — runs are fully concurrent, each in its own per-run sandbox. Returns the new run_id, status (\"running\"), and start time.", obj(map[string]any{
 			"prompt_id": typ("string"),
 		}, "prompt_id"),
@@ -246,7 +274,11 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				return appkitmcp.StructuredResult(run)
 			}),
+	}
+}
 
+func runControlTools(svc *prompt.Service) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		desc(tool("run_output"), "Read a run's output log by run_id (append-only stream-json, one event per line). offset is 1-based; limit caps the number of lines (<=0 means from start / no limit).", obj(map[string]any{
 			"run_id": typ("string"),
 			"offset": typ("integer"),
@@ -299,7 +331,11 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				return appkitmcp.StructuredResult(map[string]any{"deleted": in.RunID})
 			}),
+	}
+}
 
+func runFilesystemTools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		desc(tool("run_fs_list"), "List entries under path within a run's sandbox folder by run_id (path defaults to the sandbox root). Non-directory entries include a loopback content_url for byte fetch by services (a run's Fetch tool or dropbox put(source_url)), not by the agent.", obj(map[string]any{
 			"run_id": typ("string"),
 			"path":   typ("string"),
@@ -354,7 +390,11 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				return appkitmcp.TextResult(out), nil
 			}),
+	}
+}
 
+func callsTools(svc *prompt.Service) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		desc(tool("calls"), "Inspect inference calls. Without call_id, returns filtered and paginated metric rows without request/response bodies. With call_id, returns one detail row including retained bodies; pruned details carry bodies_pruned=true.", callsInputSchema(),
 			func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
 				var in callsInput
@@ -389,7 +429,11 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				}
 				return appkitmcp.StructuredResult(map[string]any{"calls": out})
 			}),
+	}
+}
 
+func usageTools(svc *prompt.Service) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		desc(tool("usage"), "Aggregate inference usage by name, origin, model, or UTC day, optionally filtered by class and time window.", obj(map[string]any{
 			"group_by": map[string]any{"type": "string", "enum": []string{"name", "origin", "model", "day"}},
 			"class":    classSchema(), "since": typ("string"), "until": typ("string"),
@@ -427,11 +471,6 @@ func Tools(svc *prompt.Service, contentBase string) []appkitmcp.Tool {
 				return appkitmcp.StructuredResult(map[string]any{"buckets": out})
 			}),
 	}
-	schemas := outputSchemas()
-	for i := range tools {
-		tools[i].OutputSchema = schemas[tools[i].Name]
-	}
-	return tools
 }
 
 type callsInput struct {

@@ -66,46 +66,14 @@ func (e *EmbedExecutor) embed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req EmbedRequest
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxCompleteBody))
-	if err := decoder.Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, decodeError(err))
-		return
-	}
-	if err := requireEOF(decoder); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	role, err := validateEmbedRequest(req)
+	req, role, err := decodeEmbedRequest(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	entry, ok := catalog.Lookup(req.Model)
-	if !ok || entry.Embedding == nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("model %q is not a catalog embedding model", req.Model))
-		return
-	}
-	providerName := req.Provider
-	if providerName == "" {
-		if len(entry.Offerings) == 0 {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("model %q has no provider offering", req.Model))
-			return
-		}
-		providerName = string(entry.Offerings[0].Provider)
-	}
-	if providerName != "openai" && providerName != "google" {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("provider %q does not support embeddings", providerName))
-		return
-	}
-	if req.Dimensions != 0 && (req.Dimensions < entry.Embedding.MinDimension || req.Dimensions > entry.Embedding.MaxDimension) {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("dimensions must be between %d and %d for model %q", entry.Embedding.MinDimension, entry.Embedding.MaxDimension, req.Model))
-		return
-	}
-	res := catalog.Resolve(agentkit.ProviderID(providerName), req.Model)
-	if res.Coverage != catalog.Curated {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("provider %q does not route embedding model %q", providerName, req.Model))
+	entry, res, err := resolveEmbedding(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	embedProvider, err := e.buildEmbedder(string(res.Provider), e.getenv)
@@ -131,15 +99,66 @@ func (e *EmbedExecutor) embed(w http.ResponseWriter, r *http.Request) {
 		embedErr = fmt.Errorf("provider returned %d vectors for %d inputs", len(result.Vectors), len(req.Inputs))
 	}
 
+	callID, err := e.recordEmbedding(context.WithoutCancel(r.Context()), req, res, usage, cost, embedErr)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "record embedding: "+err.Error())
+		return
+	}
+	if embedErr != nil {
+		writeError(w, http.StatusBadGateway, embedErr.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, embedResponse{
+		CallID: callID, Vectors: result.Vectors, Usage: result.Usage(), CostUSD: result.Cost().USD(),
+	})
+}
+
+func decodeEmbedRequest(w http.ResponseWriter, r *http.Request) (EmbedRequest, agentkit.InputType, error) {
+	var req EmbedRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxCompleteBody))
+	if err := decoder.Decode(&req); err != nil {
+		return EmbedRequest{}, agentkit.InputUnspecified, errors.New(decodeError(err))
+	}
+	if err := requireEOF(decoder); err != nil {
+		return EmbedRequest{}, agentkit.InputUnspecified, err
+	}
+	role, err := validateEmbedRequest(req)
+	return req, role, err
+}
+
+func resolveEmbedding(req EmbedRequest) (catalog.Entry, catalog.Resolution, error) {
+	entry, ok := catalog.Lookup(req.Model)
+	if !ok || entry.Embedding == nil {
+		return catalog.Entry{}, catalog.Resolution{}, fmt.Errorf("model %q is not a catalog embedding model", req.Model)
+	}
+	providerName := req.Provider
+	if providerName == "" {
+		if len(entry.Offerings) == 0 {
+			return catalog.Entry{}, catalog.Resolution{}, fmt.Errorf("model %q has no provider offering", req.Model)
+		}
+		providerName = string(entry.Offerings[0].Provider)
+	}
+	if providerName != "openai" && providerName != "google" {
+		return catalog.Entry{}, catalog.Resolution{}, fmt.Errorf("provider %q does not support embeddings", providerName)
+	}
+	if req.Dimensions != 0 && (req.Dimensions < entry.Embedding.MinDimension || req.Dimensions > entry.Embedding.MaxDimension) {
+		return catalog.Entry{}, catalog.Resolution{}, fmt.Errorf("dimensions must be between %d and %d for model %q", entry.Embedding.MinDimension, entry.Embedding.MaxDimension, req.Model)
+	}
+	res := catalog.Resolve(agentkit.ProviderID(providerName), req.Model)
+	if res.Coverage != catalog.Curated {
+		return catalog.Entry{}, catalog.Resolution{}, fmt.Errorf("provider %q does not route embedding model %q", providerName, req.Model)
+	}
+	return entry, res, nil
+}
+
+func (e *EmbedExecutor) recordEmbedding(ctx context.Context, req EmbedRequest, res catalog.Resolution, usage agentkit.EmbeddingUsage, cost agentkit.Cost, embedErr error) (string, error) {
 	requestJSON, err := json.Marshal(req.Inputs)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "marshal embedding inputs: "+err.Error())
-		return
+		return "", fmt.Errorf("marshal embedding inputs: %w", err)
 	}
 	usageJSON, err := json.Marshal(usage)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "marshal usage: "+err.Error())
-		return
+		return "", fmt.Errorf("marshal usage: %w", err)
 	}
 	callID := ids.NewULID()
 	attempt := req.Attempt
@@ -155,17 +174,7 @@ func (e *EmbedExecutor) embed(w http.ResponseWriter, r *http.Request) {
 	if embedErr != nil {
 		row.Error = embedErr.Error()
 	}
-	if err := e.store.Insert(context.WithoutCancel(r.Context()), row); err != nil {
-		writeError(w, http.StatusInternalServerError, "record embedding: "+err.Error())
-		return
-	}
-	if embedErr != nil {
-		writeError(w, http.StatusBadGateway, embedErr.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, embedResponse{
-		CallID: callID, Vectors: result.Vectors, Usage: result.Usage(), CostUSD: result.Cost().USD(),
-	})
+	return callID, e.store.Insert(ctx, row)
 }
 
 func validateEmbedRequest(req EmbedRequest) (agentkit.InputType, error) {
