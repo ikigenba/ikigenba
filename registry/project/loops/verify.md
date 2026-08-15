@@ -47,6 +47,16 @@ Run `head -n 1 project/plan/STATUS.md`. It must print exactly:
    Both must exit 0, with **no** test failures and **no** `SKIP`. A skipped
    `R-`-tagged test is a gap, not a pass.
 
+   Then run the tiered lint gate:
+
+   ```
+   ../bin/lint registry
+   ```
+
+   It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+   (absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+   lint finding at the registered tier is an open gap, not a pass.
+
 3. **For every id in the brief's "Ids to cover"**, confirm a
    genuinely-asserting test tagged with that exact `// R-XXXX-XXXX` comment
    exists in `registry/*_test.go` and actually runs under
@@ -119,8 +129,10 @@ Run `head -n 1 project/plan/STATUS.md`. It must print exactly:
 
 - **Build/typecheck:** `GOWORK=off go build ./...` from `registry/`.
 - **Test:** `GOWORK=off go test ./...` from `registry/`.
-- **Green** means both commands above exit 0, with no test failures and no
-  `SKIP`.
+- **Lint:** `../bin/lint registry` from `registry/`; enforces the tree's
+  registered `.lint-tier` (absent/`off` vacuous, `cheap`/`strict` enforced).
+- **Green** means all three commands above exit 0, with no test failures, no
+  `SKIP`, and no lint findings at the registered tier.
 - **Test placement/glob:** `registry/*_test.go`, package `registry`; the
   ratchet's test-tag grep scopes to that glob only, never `project/`.
 
@@ -128,8 +140,8 @@ Run `head -n 1 project/plan/STATUS.md`. It must print exactly:
 
 - Never write or fix production code.
 - Never write the brief's contract region.
-- Never retire a phase on anything short of green build + green test + full
-  id coverage + a clean coverage ratchet.
+- Never retire a phase on anything short of green build + green test + clean
+  lint (at the registered tier) + full id coverage + a clean coverage ratchet.
 - Treat any test you are not confident genuinely asserts the id's
   discriminating property as uncovered.
 - Treat a skipped or statically-unreachable `R-`-tagged test as uncovered,
