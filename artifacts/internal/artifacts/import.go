@@ -87,7 +87,7 @@ func (s *Service) Import(ctx context.Context, identity appkit.Identity, sourceUR
 	return artifact, nil
 }
 
-func (s *Service) storeImportBody(body io.Reader, artifactID string) (int64, string, error) {
+func (s *Service) storeImportBody(body io.Reader, artifactID string) (written int64, digest string, err error) {
 	writer, err := s.Blobs.Create(artifactID)
 	if err != nil {
 		return 0, "", err

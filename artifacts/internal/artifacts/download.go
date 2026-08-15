@@ -79,7 +79,7 @@ func (s *Service) serveArtifact(w http.ResponseWriter, r *http.Request, wantVisi
 	_, _ = s.Store.IncrementDownloadCount(r.Context(), id)
 }
 
-func downloadPath(r *http.Request, prefix string) (string, string, bool) {
+func downloadPath(r *http.Request, prefix string) (artifactID, filename string, valid bool) {
 	escaped := r.URL.EscapedPath()
 	if !strings.HasPrefix(escaped, prefix) {
 		return "", "", false
@@ -92,7 +92,7 @@ func downloadPath(r *http.Request, prefix string) (string, string, bool) {
 	if err != nil || id == "" || strings.ContainsAny(id, `/\`) {
 		return "", "", false
 	}
-	filename, err := url.PathUnescape(parts[1])
+	filename, err = url.PathUnescape(parts[1])
 	if err != nil || filename == "" || strings.Contains(filename, "/") {
 		return "", "", false
 	}

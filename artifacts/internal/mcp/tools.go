@@ -75,7 +75,7 @@ func (t *toolset) structuredTool(name, description string, input, output map[str
 	}
 }
 
-func (t *toolset) upload(ctx context.Context, raw json.RawMessage, identity appkit.Identity) (any, map[string]any) {
+func (t *toolset) upload(ctx context.Context, raw json.RawMessage, identity appkit.Identity) (result any, failure map[string]any) {
 	var args struct {
 		Filename    string `json:"filename"`
 		Visibility  string `json:"visibility"`
@@ -91,7 +91,7 @@ func (t *toolset) upload(ctx context.Context, raw json.RawMessage, identity appk
 	return map[string]any{"upload_url": upload.URL, "expires_at": upload.ExpiresAt, "curl": upload.Curl}, nil
 }
 
-func (t *toolset) importArtifact(ctx context.Context, raw json.RawMessage, identity appkit.Identity) (any, map[string]any) {
+func (t *toolset) importArtifact(ctx context.Context, raw json.RawMessage, identity appkit.Identity) (result any, failure map[string]any) {
 	var args struct {
 		SourceURL   string `json:"source_url"`
 		Filename    string `json:"filename"`
@@ -108,7 +108,7 @@ func (t *toolset) importArtifact(ctx context.Context, raw json.RawMessage, ident
 	return t.record(artifact), nil
 }
 
-func (t *toolset) list(ctx context.Context, raw json.RawMessage, _ appkit.Identity) (any, map[string]any) {
+func (t *toolset) list(ctx context.Context, raw json.RawMessage, _ appkit.Identity) (result any, failure map[string]any) {
 	var args struct{}
 	if failure := decode(raw, &args); failure != nil {
 		return nil, failure
@@ -124,7 +124,7 @@ func (t *toolset) list(ctx context.Context, raw json.RawMessage, _ appkit.Identi
 	return map[string]any{"artifacts": records}, nil
 }
 
-func (t *toolset) get(ctx context.Context, raw json.RawMessage, _ appkit.Identity) (any, map[string]any) {
+func (t *toolset) get(ctx context.Context, raw json.RawMessage, _ appkit.Identity) (result any, failure map[string]any) {
 	id, failure := decodeID(raw)
 	if failure != nil {
 		return nil, failure
@@ -136,7 +136,7 @@ func (t *toolset) get(ctx context.Context, raw json.RawMessage, _ appkit.Identit
 	return t.record(artifact), nil
 }
 
-func (t *toolset) update(ctx context.Context, raw json.RawMessage, _ appkit.Identity) (any, map[string]any) {
+func (t *toolset) update(ctx context.Context, raw json.RawMessage, _ appkit.Identity) (result any, failure map[string]any) {
 	var args struct {
 		ID          string  `json:"id"`
 		Description *string `json:"description"`
@@ -167,7 +167,7 @@ func (t *toolset) update(ctx context.Context, raw json.RawMessage, _ appkit.Iden
 	return t.record(updated), nil
 }
 
-func (t *toolset) setVisibility(ctx context.Context, raw json.RawMessage, _ appkit.Identity) (any, map[string]any) {
+func (t *toolset) setVisibility(ctx context.Context, raw json.RawMessage, _ appkit.Identity) (result any, failure map[string]any) {
 	var args struct {
 		ID         string `json:"id"`
 		Visibility string `json:"visibility"`
@@ -197,7 +197,7 @@ func (t *toolset) setVisibility(ctx context.Context, raw json.RawMessage, _ appk
 	return t.record(updated), nil
 }
 
-func (t *toolset) delete(ctx context.Context, raw json.RawMessage, _ appkit.Identity) (any, map[string]any) {
+func (t *toolset) delete(ctx context.Context, raw json.RawMessage, _ appkit.Identity) (result any, failure map[string]any) {
 	id, failure := decodeID(raw)
 	if failure != nil {
 		return nil, failure
@@ -259,7 +259,7 @@ func decode(raw json.RawMessage, destination any) map[string]any {
 	return nil
 }
 
-func decodeID(raw json.RawMessage) (string, map[string]any) {
+func decodeID(raw json.RawMessage) (id string, failure map[string]any) {
 	var args struct {
 		ID string `json:"id"`
 	}

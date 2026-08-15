@@ -157,7 +157,7 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-func (s *Service) storeBody(w http.ResponseWriter, r *http.Request, artifactID string) (int64, string, int) {
+func (s *Service) storeBody(w http.ResponseWriter, r *http.Request, artifactID string) (written int64, digest string, status int) {
 	writer, err := s.Blobs.Create(artifactID)
 	if err != nil {
 		return 0, "", http.StatusInternalServerError
@@ -172,7 +172,7 @@ func (s *Service) storeBody(w http.ResponseWriter, r *http.Request, artifactID s
 	}
 	hasher := sha256.New()
 	limited := http.MaxBytesReader(w, r.Body, s.MaxUploadBytes)
-	written, err := io.Copy(io.MultiWriter(writer, hasher), limited)
+	written, err = io.Copy(io.MultiWriter(writer, hasher), limited)
 	if err != nil {
 		abort()
 		var tooLarge *http.MaxBytesError
