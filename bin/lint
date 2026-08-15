@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+
+set -uo pipefail
+
+PINNED_VERSION="2.12.2"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="${LINT_REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+version_output="$(golangci-lint version 2>&1)"
+version_status=$?
+found_version="$(sed -nE 's/.*[Vv]ersion v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' <<<"$version_output" | head -n 1)"
+if (( version_status != 0 )) || [[ "$found_version" != "$PINNED_VERSION" ]]; then
+	if [[ -z "$found_version" ]]; then
+		found_version="missing or unrecognized (${version_output:-no output})"
+	fi
+	printf 'lint: golangci-lint version mismatch: pinned v%s, found %s; install golangci-lint v%s and retry\n' \
+		"$PINNED_VERSION" "$found_version" "$PINNED_VERSION" >&2
+	exit 2
+fi
+
+if (( $# > 1 )); then
+	printf 'lint: usage: %s [tree]\n' "${0##*/}" >&2
+	exit 2
+fi
+
+work_file="$REPO/go.work"
+if [[ ! -f "$work_file" ]]; then
+	printf 'lint: target root %s has no go.work\n' "$REPO" >&2
+	exit 2
+fi
+
+work_json="$(cd "$REPO" && go work edit -json 2>&1)"
+work_status=$?
+if (( work_status != 0 )); then
+	printf 'lint: cannot read %s: %s\n' "$work_file" "$work_json" >&2
+	exit 2
+fi
+
+mapfile -t module_paths < <(sed -nE 's/^[[:space:]]*"DiskPath": "(.*)"[,]?$/\1/p' <<<"$work_json")
+if (( ${#module_paths[@]} == 0 )); then
+	printf 'lint: %s contains no modules\n' "$work_file" >&2
+	exit 2
+fi
+
+module_names=()
+module_dirs=()
+for module_path in "${module_paths[@]}"; do
+	if [[ "$module_path" = /* ]]; then
+		module_dir="$module_path"
+	else
+		module_dir="$REPO/$module_path"
+	fi
+	module_dir="$(cd "$module_dir" 2>/dev/null && pwd)" || {
+		printf 'lint: go.work module path does not exist: %s\n' "$module_path" >&2
+		exit 2
+	}
+	module_names+=("${module_dir##*/}")
+	module_dirs+=("$module_dir")
+done
+
+valid_trees="$(IFS=', '; printf '%s' "${module_names[*]}")"
+
+lint_module() {
+	local index="$1"
+	local tree="${module_names[$index]}"
+	local module_dir="${module_dirs[$index]}"
+	local marker="$module_dir/.lint-tier"
+	local tier="off"
+	local config_tier="cheap"
+	local marker_content output status count
+
+	if [[ -f "$marker" ]]; then
+		marker_content="$(cat "$marker"; printf x)"
+		marker_content="${marker_content%x}"
+		case "$marker_content" in
+		cheap | $'cheap\n') tier="cheap" ;;
+		strict | $'strict\n') tier="strict" ;;
+		*)
+			printf 'lint: tree %s has invalid .lint-tier content %q; valid values are cheap and strict\n' \
+				"$tree" "$marker_content" >&2
+			return 2
+			;;
+		esac
+		config_tier="$tier"
+	fi
+
+	output="$(cd "$module_dir" && golangci-lint run --color never --config "$SCRIPT_DIR/lint.d/$config_tier.yml" ./... 2>&1)"
+	status=$?
+	count="$(grep -Ec ':[0-9]+:[0-9]+: ' <<<"$output" || true)"
+	if [[ -n "$output" ]]; then
+		printf '%s\n' "$output"
+	fi
+	printf '%s: tier=%s findings=%s\n' "$tree" "$tier" "$count"
+
+	if (( status != 0 && count == 0 )); then
+		printf 'lint: golangci-lint failed for tree %s with exit status %s\n' "$tree" "$status" >&2
+		return 2
+	fi
+	if [[ "$tier" != "off" ]] && (( count > 0 )); then
+		return 1
+	fi
+	return 0
+}
+
+if (( $# == 1 )); then
+	target="$1"
+	target_index=-1
+	for index in "${!module_names[@]}"; do
+		if [[ "${module_names[$index]}" == "$target" ]]; then
+			target_index="$index"
+			break
+		fi
+	done
+	if (( target_index < 0 )); then
+		printf 'lint: unknown tree %s; valid trees: %s\n' "$target" "$valid_trees" >&2
+		exit 2
+	fi
+	lint_module "$target_index"
+	exit $?
+fi
+
+overall=0
+for index in "${!module_names[@]}"; do
+	if ! lint_module "$index"; then
+		overall=1
+	fi
+done
+exit "$overall"

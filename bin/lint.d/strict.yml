@@ -1,0 +1,51 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - unused
+    - unparam
+    - gocritic
+    - dupl
+    - gocyclo
+    - funlen
+    - nestif
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+      disabled-checks:
+        - whyNoLint
+    dupl:
+      threshold: 120
+    gocyclo:
+      min-complexity: 15
+    funlen:
+      lines: 80
+      statements: 50
+    nestif:
+      min-complexity: 5
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - govet
+          - staticcheck
+          - unused
+          - unparam
+          - gocritic
+          - dupl
+          - gocyclo
+          - funlen
+          - nestif
+
+formatters:
+  enable:
+    - gofumpt
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

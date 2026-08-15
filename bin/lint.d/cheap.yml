@@ -1,0 +1,36 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - unused
+    - unparam
+    - gocritic
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+      disabled-checks:
+        - unnamedResult
+        - paramTypeCombine
+        - whyNoLint
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - govet
+          - staticcheck
+          - unused
+          - unparam
+          - gocritic
+
+formatters:
+  enable:
+    - gofumpt
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
