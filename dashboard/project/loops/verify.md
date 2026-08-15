@@ -51,6 +51,16 @@ go test ./...       # must be all green
 Confirm no `R-XXXX-XXXX`-tagged test reported `SKIP` in the test output — a
 skipped requirement test is an open gap, never a pass.
 
+Then run the tiered lint gate:
+
+```
+../bin/lint dashboard
+```
+
+It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+(absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+lint finding at the registered tier is an open gap, not a pass.
+
 For every id listed in the brief's "Ids to cover" (skip this whole step if it
 reads `(none — structural phase)` and instead just confirm the phase body's
 named structural check):
@@ -149,7 +159,8 @@ Then:
 
 - Never write or fix production code.
 - Never write the brief's `## Contract` region.
-- Never retire a phase on anything short of green + full coverage.
+- Never retire a phase on anything short of green + clean lint (at the
+  registered tier) + full coverage.
 - The ratchet's id-set greps over `project/design/D*.md` and
   `project/plan/phase-*.md` extract id tokens only — this is not "reading the
   big docs" in gather's forbidden sense.
