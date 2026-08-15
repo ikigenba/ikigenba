@@ -211,7 +211,7 @@ func confirmRestore(app, key string, in io.Reader) error {
 		return fmt.Errorf("restore: confirmation required; type %s to restore %s", app, key)
 	}
 	line, err := bufio.NewReader(in).ReadString('\n')
-	if err != nil && len(line) == 0 {
+	if err != nil && line == "" {
 		return fmt.Errorf("restore: confirmation required; type %s to restore %s", app, key)
 	}
 	if strings.TrimSpace(line) != app {
@@ -224,7 +224,7 @@ func createStateArchive(ctx context.Context, l Layout, dst string) error {
 	if _, err := os.Stat(l.StateDir()); err != nil {
 		return fmt.Errorf("backup: state dir %s: %w", l.StateDir(), err)
 	}
-	if err := execTar(ctx, "tar", "-cf", dst, "-C", l.AppDir(), "state"); err != nil {
+	if err := execTar(ctx, "-cf", dst, "-C", l.AppDir(), "state"); err != nil {
 		return fmt.Errorf("backup: tar state: %w", err)
 	}
 	return nil
@@ -238,7 +238,7 @@ func createCertArchive(ctx context.Context, l Layout, dst string) error {
 			return fmt.Errorf("backup: cert %s: %w", path, err)
 		}
 	}
-	if err := execTar(ctx, "tar", "-cf", dst, "-C", l.SysRoot,
+	if err := execTar(ctx, "-cf", dst, "-C", l.SysRoot,
 		"etc/letsencrypt/archive", "etc/letsencrypt/renewal", "etc/letsencrypt/live"); err != nil {
 		return fmt.Errorf("backup: tar cert: %w", err)
 	}
@@ -285,7 +285,7 @@ func replaceStateFromArchive(ctx context.Context, l Layout, archive string) erro
 	if err := os.MkdirAll(l.AppDir(), 0o755); err != nil {
 		return fmt.Errorf("restore: mkdir app dir: %w", err)
 	}
-	if err := execTar(ctx, "tar", "-xf", archive, "-C", l.AppDir()); err != nil {
+	if err := execTar(ctx, "-xf", archive, "-C", l.AppDir()); err != nil {
 		return fmt.Errorf("restore: untar state: %w", err)
 	}
 	if _, err := os.Stat(l.StateDir()); err != nil {
@@ -304,7 +304,7 @@ func replaceCertFromArchive(ctx context.Context, l Layout, archive string) error
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return fmt.Errorf("restore: mkdir cert root: %w", err)
 	}
-	if err := execTar(ctx, "tar", "-xf", archive, "-C", l.SysRoot); err != nil {
+	if err := execTar(ctx, "-xf", archive, "-C", l.SysRoot); err != nil {
 		return fmt.Errorf("restore: untar cert: %w", err)
 	}
 	for _, name := range []string{"archive", "renewal", "live"} {
@@ -375,10 +375,10 @@ func certSnapshotKey(app string, t time.Time) string {
 	return certPrefix(app) + t.Format("20060102T150405.000000000Z") + ".tar"
 }
 
-func execTar(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+func execTar(ctx context.Context, args ...string) error {
+	cmd := exec.CommandContext(ctx, "tar", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("tar %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

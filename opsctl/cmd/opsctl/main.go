@@ -13,10 +13,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"opsctl/internal/opsctl"
 	"os"
 	"strings"
-
-	"opsctl/internal/opsctl"
 )
 
 // reorderArgs moves flag tokens ahead of positional tokens so the standard

@@ -73,7 +73,7 @@ func (o *Opsctl) InitBox(ctx context.Context, opts InitBoxOptions) error {
 	// 3. The apex server block (carries /_authn + the locations include).
 	o.logf("write apex nginx block %s", l.ApexBlockPath())
 	block := renderApexBlock(opts.ApexBlock, opts.Domain)
-	if err := writeFileAtomic(l.ApexBlockPath(), []byte(block), 0o644); err != nil {
+	if err := writeFileAtomic(l.ApexBlockPath(), []byte(block)); err != nil {
 		return fmt.Errorf("init-box: write apex block: %w", err)
 	}
 
@@ -133,17 +133,17 @@ func (o *Opsctl) InitBox(ctx context.Context, opts InitBoxOptions) error {
 	// 6. The suite-owned timers, enabled now: certbot renewal and the nightly
 	//    backup sweep.
 	o.logf("write + enable renewal timer %s", l.RenewTimerPath())
-	if err := writeFileAtomic(l.RenewServicePath(), []byte(renewService), 0o644); err != nil {
+	if err := writeFileAtomic(l.RenewServicePath(), []byte(renewService)); err != nil {
 		return fmt.Errorf("init-box: write renew service: %w", err)
 	}
-	if err := writeFileAtomic(l.RenewTimerPath(), []byte(renewTimer), 0o644); err != nil {
+	if err := writeFileAtomic(l.RenewTimerPath(), []byte(renewTimer)); err != nil {
 		return fmt.Errorf("init-box: write renew timer: %w", err)
 	}
 	o.logf("write + enable backup timer %s", l.BackupTimerPath())
-	if err := writeFileAtomic(l.BackupServicePath(), []byte(backupService), 0o644); err != nil {
+	if err := writeFileAtomic(l.BackupServicePath(), []byte(backupService)); err != nil {
 		return fmt.Errorf("init-box: write backup service: %w", err)
 	}
-	if err := writeFileAtomic(l.BackupTimerPath(), []byte(backupTimer), 0o644); err != nil {
+	if err := writeFileAtomic(l.BackupTimerPath(), []byte(backupTimer)); err != nil {
 		return fmt.Errorf("init-box: write backup timer: %w", err)
 	}
 	if err := o.System.DaemonReload(ctx); err != nil {

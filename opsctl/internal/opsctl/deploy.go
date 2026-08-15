@@ -175,7 +175,7 @@ func unpackBundle(artifact, dst string) error {
 			if err := os.MkdirAll(target, fileMode(hdr.FileInfo().Mode(), 0o755)); err != nil {
 				return fmt.Errorf("stage: create bundle dir %s: %w", hdr.Name, err)
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return fmt.Errorf("stage: create parent for %s: %w", hdr.Name, err)
 			}
@@ -384,7 +384,7 @@ func (o *Opsctl) installApexBlockIfDefault(ctx context.Context, l Layout) error 
 	}
 	block := renderApexBlock(string(src), domain)
 	o.logf("write apex nginx block %s", l.ApexBlockPath())
-	if err := writeFileAtomic(l.ApexBlockPath(), []byte(block), 0o644); err != nil {
+	if err := writeFileAtomic(l.ApexBlockPath(), []byte(block)); err != nil {
 		return fmt.Errorf("deploy: write apex nginx block: %w", err)
 	}
 	if err := o.System.NginxTest(ctx); err != nil {
@@ -393,55 +393,14 @@ func (o *Opsctl) installApexBlockIfDefault(ctx context.Context, l Layout) error 
 	return nil
 }
 
-// copyExecutable copies src to dst (0755) via temp+rename so the destination is
-// never a partial binary, then makes it executable. It refuses to clobber the DB
-// path by construction (callers only ever pass a release-binary dst).
-func copyExecutable(src, dst string) error {
-	return copyFileMode(src, dst, 0o755)
-}
-
-func copyFileMode(src, dst string, mode os.FileMode) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	tmp := dst + ".tmp"
-	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := out.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	if err := os.Chmod(tmp, mode); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, dst); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return nil
-}
-
 // writeFileAtomic writes data to path via temp+rename, so a reader (the dashboard
 // derivation, bin/registry) never observes a partial manifest.env mid-write.
-func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+func writeFileAtomic(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, mode); err != nil {
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {

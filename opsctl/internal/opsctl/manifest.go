@@ -2,7 +2,6 @@ package opsctl
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 )
 
@@ -45,31 +44,4 @@ func stripQuotes(v string) string {
 		}
 	}
 	return v
-}
-
-// schemaVersions parses the `applied=<N> embedded=<M>` line emitted by the
-// appkit `schema` verb. It is install's seam for detecting whether a deploy
-// advances the schema (embedded > applied ⇒ back up the DB before migrate).
-func schemaVersions(out string) (applied, embedded int, err error) {
-	fields := strings.Fields(strings.TrimSpace(out))
-	for _, f := range fields {
-		k, v, ok := strings.Cut(f, "=")
-		if !ok {
-			continue
-		}
-		n, perr := strconv.Atoi(v)
-		if perr != nil {
-			return 0, 0, fmt.Errorf("schema: bad %s value %q", k, v)
-		}
-		switch k {
-		case "applied":
-			applied = n
-		case "embedded":
-			embedded = n
-		}
-	}
-	if !strings.Contains(out, "applied=") || !strings.Contains(out, "embedded=") {
-		return 0, 0, fmt.Errorf("schema: unexpected output %q (want 'applied=N embedded=M')", strings.TrimSpace(out))
-	}
-	return applied, embedded, nil
 }

@@ -100,7 +100,8 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 
 	// 2. The /opt/<app> tree.
 	o.logf("create /opt/%s tree", app)
-	if opts.IsDefault {
+	switch {
+	case opts.IsDefault:
 		// The DEFAULT app owns the apex route through init-box/deploy, not a
 		// per-app location fragment. It gets the normal service tree and unit but
 		// no worker state/www tree and no nginx web group.
@@ -115,7 +116,7 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 		if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
 			return fmt.Errorf("setup: chown cache dir: %w", err)
 		}
-	} else if opts.Fragment == "" {
+	case opts.Fragment == "":
 		// Worker/no-route services use the current state/cache/libexec layout. The
 		// app-owned state dir is traverse-only for non-owners, and the DB exists
 		// with service-private group-readable bits. Workers have no served tree.
@@ -139,7 +140,7 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 		if err := o.System.ChownTree(ctx, app, app, l.CacheDir()); err != nil {
 			return fmt.Errorf("setup: chown cache dir: %w", err)
 		}
-	} else {
+	default:
 		// Path-routed services still consume the existing fragment-driven setup
 		// contract guarded by the provisioning tests.
 		if err := mkdirAll755(
@@ -170,7 +171,7 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 
 	// 3. systemd unit — written to the SysRoot path, then enabled-not-started.
 	o.logf("write systemd unit %s", l.UnitPath())
-	if err := writeFileAtomic(l.UnitPath(), []byte(unitFile(app)), 0o644); err != nil {
+	if err := writeFileAtomic(l.UnitPath(), []byte(unitFile(app))); err != nil {
 		return fmt.Errorf("setup: write unit: %w", err)
 	}
 	if err := o.System.DaemonReload(ctx); err != nil {
@@ -184,12 +185,13 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 	// rendered fragment file. The D01 no-fragment setup installs a stable system
 	// symlink to the active release's nginx.conf; the target is intentionally
 	// dangling until the first deploy creates etc/current.
-	if opts.IsDefault {
+	switch {
+	case opts.IsDefault:
 		o.logf("default app: apex block is owned by init-box/deploy; no nginx conf.d artifact written")
-	} else if opts.Fragment != "" {
+	case opts.Fragment != "":
 		frag := renderFragment(opts.Fragment)
 		o.logf("write nginx fragment %s", l.FragmentPath())
-		if err := writeFileAtomic(l.FragmentPath(), []byte(frag), 0o644); err != nil {
+		if err := writeFileAtomic(l.FragmentPath(), []byte(frag)); err != nil {
 			return fmt.Errorf("setup: write fragment: %w", err)
 		}
 		if opts.DeferNginx {
@@ -202,7 +204,7 @@ func (o *Opsctl) Setup(ctx context.Context, opts SetupOptions) error {
 				return fmt.Errorf("setup: nginx reload: %w", err)
 			}
 		}
-	} else {
+	default:
 		o.logf("link nginx fragment %s -> %s", l.FragmentPath(), l.ActiveNginxConf())
 		if err := os.Remove(l.FragmentPath()); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("setup: replace fragment link: %w", err)

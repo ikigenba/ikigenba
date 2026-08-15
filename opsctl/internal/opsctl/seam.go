@@ -276,7 +276,7 @@ func (s RealSystem) ObtainCertStandalone(ctx context.Context, domain, email stri
 }
 
 func (s RealSystem) CertExists(domain string) bool {
-	_, err := os.Stat(filepath.Join("/etc/letsencrypt/live", domain, "fullchain.pem"))
+	_, err := os.Stat(filepath.Join(string(filepath.Separator), "etc", "letsencrypt", "live", domain, "fullchain.pem"))
 	return err == nil
 }
 
@@ -290,7 +290,8 @@ func (RealRunner) Run(ctx context.Context, binary, verb string, args []string, e
 	if len(env) > 0 {
 		// Inherit the process env and layer the caller's overrides on top.
 		base := append([]string{}, currentEnv()...)
-		cmd.Env = append(base, env...)
+		base = append(base, env...)
+		cmd.Env = base
 	}
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
