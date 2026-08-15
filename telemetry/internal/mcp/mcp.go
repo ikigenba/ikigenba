@@ -184,7 +184,7 @@ func getHandler(store *db.Store) func(context.Context, json.RawMessage, server.I
 	}
 }
 
-func normalizedArgument(name, value string) (string, map[string]any) {
+func normalizedArgument(name, value string) (normalizedTime string, failureResult map[string]any) {
 	if value == "" {
 		return "", nil
 	}
@@ -195,7 +195,7 @@ func normalizedArgument(name, value string) (string, map[string]any) {
 	return normalized, nil
 }
 
-func retentionHorizon(ctx context.Context, store *db.Store) (string, map[string]any) {
+func retentionHorizon(ctx context.Context, store *db.Store) (oldest string, failureResult map[string]any) {
 	horizon, _, err := store.Oldest(ctx)
 	if err != nil {
 		return "", appkitmcp.ErrorResult(appkitmcp.ErrInternal, "retention horizon failed")

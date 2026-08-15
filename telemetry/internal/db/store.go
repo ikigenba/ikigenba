@@ -181,7 +181,7 @@ func (s *Store) Search(ctx context.Context, query Query) ([]record.Record, Curso
 }
 
 // Oldest returns the earliest stored record timestamp.
-func (s *Store) Oldest(ctx context.Context) (string, bool, error) {
+func (s *Store) Oldest(ctx context.Context) (timestamp string, found bool, err error) {
 	var oldest sql.NullString
 	if err := s.db.QueryRowContext(ctx, `SELECT MIN(time) FROM records`).Scan(&oldest); err != nil {
 		return "", false, err
@@ -252,7 +252,7 @@ func scanRecords(rows *sql.Rows) ([]record.Record, error) {
 	return records, rows.Err()
 }
 
-func searchStatement(query Query) (string, []any, error) {
+func searchStatement(query Query) (queryText string, arguments []any, err error) {
 	conditions := make([]string, 0, 10)
 	args := make([]any, 0, 12)
 	add := func(condition string, value any) {
