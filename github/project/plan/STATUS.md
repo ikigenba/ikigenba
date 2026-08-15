@@ -10,5 +10,3 @@ This file deliberately carries **no bare status glyph** outside phase lines, so
 the anchored grep matches only phase lines.
 
 Next phase: 25
-
-- Phase 24 ⬜ realizes — — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint github` exits 0)
