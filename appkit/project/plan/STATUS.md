@@ -11,5 +11,4 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 34
 
-- Phase 33 ⬜ realizes — — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint appkit` exits 0)
 
