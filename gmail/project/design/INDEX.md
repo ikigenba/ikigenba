@@ -30,7 +30,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D24 → `project/design/D24.md` — Env-channel conformance: the poll interval surfaces in the manifest — owns R-JWR1-BQ0J; adopts R-VKB6-SHHV (root `project/design/D11.md`)
 - D25 → `project/design/D25.md` — Testing-language conformance: adopt the suite contract and make the live layer reachable — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 - D26 → `project/design/D26.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
-- D27 → `project/design/D27.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
+- D27 → `project/design/D27.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 
