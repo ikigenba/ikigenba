@@ -38,6 +38,16 @@ phase on a gap.
    Confirm no `R-XXXX-XXXX`-tagged test reported `SKIP` in the `go test -v`
    output — a skipped requirement test is a gap, never acceptable green.
 
+   Then run the tiered lint gate:
+
+   ```
+   ../bin/lint webhooks
+   ```
+
+   It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+   (absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+   lint finding at the registered tier is an open gap, not a pass.
+
 3. **For every id in the brief's "Ids to cover" list**, confirm a genuinely
    asserting `// R-XXXX-XXXX`-tagged test exists and actually runs under
    `go test ./...`:
@@ -103,9 +113,12 @@ phase on a gap.
 
 - **Toolchain:** Go (`go 1.26`), single module `webhooks` rooted at
   `webhooks/`.
+- **Lint:** `../bin/lint webhooks` from `webhooks/`; enforces the tree's
+  registered `.lint-tier` (absent/`off` vacuous, `cheap`/`strict` enforced).
 - **The suite is green** means: `cd webhooks && go build ./...`,
-  `cd webhooks && go vet ./...`, `cd webhooks && gofmt -l .` (no output), and
-  `cd webhooks && go test ./...` all succeed with zero failures.
+  `cd webhooks && go vet ./...`, `cd webhooks && gofmt -l .` (no output),
+  `cd webhooks && go test ./...` all succeed with zero failures, and
+  `../bin/lint webhooks` exits 0 with no lint findings at the registered tier.
 - **Test-file glob:** `*_test.go`, excluding `project/`.
 - **Test placement:** package-local unit tests; cross-package/composed tests
   live only in `internal/e2e/` or `cmd/webhooks/`.
@@ -132,7 +145,8 @@ currently in the brief.
 
 - Never write or fix production code.
 - Never write the brief's contract region.
-- Never retire a phase on anything short of green + full coverage.
+- Never retire a phase on anything short of green + full coverage + clean
+  lint (at the registered tier).
 - The ratchet's id-set greps over `project/design/D*.md` and
   `project/plan/phase-*.md` extract id tokens; they are not "reading the big
   docs" in the forbidden sense.
