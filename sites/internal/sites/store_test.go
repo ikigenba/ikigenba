@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sites/internal/db"
 	"strings"
 	"testing"
 	"time"
 
 	sqlkit "appkit/db"
-
-	"sites/internal/db"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -265,7 +264,8 @@ func TestVersionPlaneMigrationPreservesRowsAndStoreAccessors(t *testing.T) {
 	err = conn.QueryRowContext(ctx, `SELECT slug, name, visibility, owner_id, owner_email, source_path,
 		created_at, updated_at, repo_sha, repo_seeded, path FROM sites WHERE slug = ?`, original[0]).Scan(
 		&preserved[0], &preserved[1], &preserved[2], &preserved[3], &preserved[4], &preserved[5],
-		&preserved[6], &preserved[7], &defaultSha, &defaultSeeded, &defaultPath)
+		&preserved[6], &preserved[7], &defaultSha, &defaultSeeded, &defaultPath,
+	)
 	if err != nil {
 		t.Fatalf("read preserved pre-plane row: %v", err)
 	}

@@ -6,9 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"testing"
-
 	"sites/internal/sites"
+	"testing"
 )
 
 type recordedVersionCall struct {
@@ -38,7 +37,7 @@ func (c *recordingVersionClient) Create(_ context.Context, slug string, owner si
 	return c.record(recordedVersionCall{operation: "create", slug: slug, owner: owner})
 }
 
-func (*recordingVersionClient) Commit(_ context.Context, _ string, _ string, _ []sites.FileChange) (sites.Commit, error) {
+func (*recordingVersionClient) Commit(_ context.Context, _, _ string, _ []sites.FileChange) (sites.Commit, error) {
 	return sites.Commit{Sha: "recording-commit"}, nil
 }
 

@@ -85,7 +85,7 @@ func (c *httpMirrorClient) List(ctx context.Context, prefix string) ([]MirrorFil
 		if cursor != "" {
 			u += "&cursor=" + url.QueryEscape(cursor)
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, http.NoBody)
 		if err != nil {
 			return nil, fmt.Errorf("list %q: %w", prefix, err)
 		}
@@ -126,7 +126,7 @@ func (c *httpMirrorClient) List(ctx context.Context, prefix string) ([]MirrorFil
 // what landed, so mirror-lag is visible and a re-run is cheap (ADR defaults).
 func (c *httpMirrorClient) Fetch(ctx context.Context, path string) ([]byte, error) {
 	u := c.base + "/content?path=" + url.QueryEscape(path)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("fetch %q: %w", path, err)
 	}

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -8,13 +9,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sites/internal/sites"
 	"strings"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
 
 	sitefiles "sites/internal/files"
-	"sites/internal/sites"
 )
 
 // toolPrefix brands every MCP tool name (DECISIONS §1). It is the suite name

@@ -7,10 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sites/internal/sites"
 	"strings"
 	"testing"
-
-	"sites/internal/sites"
 )
 
 func assertEmptyRegistryAndTrees(t *testing.T, h *testHandler) {

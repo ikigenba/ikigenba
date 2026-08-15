@@ -6,9 +6,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
-
 	"sites/internal/files"
+	"strings"
 )
 
 // Handler serves files under a single visibility root. The request path must be

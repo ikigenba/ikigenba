@@ -4,18 +4,16 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"eventplane/correlation"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sites/internal/sites"
 	"sort"
 	"strings"
 	"testing"
-
-	"eventplane/correlation"
-
-	"sites/internal/sites"
 )
 
 type correlationRecordingTransport struct {

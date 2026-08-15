@@ -1,18 +1,18 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"sites/internal/sites"
 	"strings"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
 
 	sitefiles "sites/internal/files"
-	"sites/internal/sites"
 )
 
 // toolFileList walks a site's current public/private directory and returns every

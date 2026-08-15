@@ -53,8 +53,11 @@ func TestVersionClientUsesInjectedHTTPClientAcrossBothTransports(t *testing.T) {
 		t.Fatalf("requests escaping to http.DefaultClient = %d, want 0", got)
 	}
 	want := []struct{ method, path string }{
-		{http.MethodPost, "/mcp"}, {http.MethodPost, "/commit"}, {http.MethodGet, "/archive"},
-		{http.MethodPost, "/mcp"}, {http.MethodPost, "/mcp"},
+		{http.MethodPost, "/mcp"},
+		{http.MethodPost, "/commit"},
+		{http.MethodGet, "/archive"},
+		{http.MethodPost, "/mcp"},
+		{http.MethodPost, "/mcp"},
 	}
 	for i, request := range requests {
 		if !strings.HasPrefix(request.URL.String(), server.server.URL) || request.Method != want[i].method || request.URL.Path != want[i].path {

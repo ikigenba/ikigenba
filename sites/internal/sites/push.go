@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/consumer"
 	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strings"
-
-	"eventplane/consumer"
 
 	sitefiles "sites/internal/files"
 )

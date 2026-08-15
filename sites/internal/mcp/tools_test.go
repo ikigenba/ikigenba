@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/consumer"
 	"go/parser"
 	"go/token"
 	"net/http"
@@ -13,16 +14,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sites/internal/db"
+	"sites/internal/sites"
 	"strconv"
 	"strings"
 	"testing"
 
 	sqlkit "appkit/db"
 	appkitmcp "appkit/mcp"
-	"eventplane/consumer"
-
-	"sites/internal/db"
-	"sites/internal/sites"
 )
 
 const (
@@ -43,9 +42,10 @@ type testHandler struct {
 type testVersionClient struct{}
 
 func (testVersionClient) Create(context.Context, string, sites.Owner) error { return nil }
-func (testVersionClient) Commit(_ context.Context, _ string, _ string, _ []sites.FileChange) (sites.Commit, error) {
+func (testVersionClient) Commit(_ context.Context, _, _ string, _ []sites.FileChange) (sites.Commit, error) {
 	return sites.Commit{Sha: "test-commit-sha"}, nil
 }
+
 func (testVersionClient) Export(context.Context, string) ([]sites.TreeEntry, sites.Commit, error) {
 	return nil, sites.Commit{}, nil
 }
@@ -833,7 +833,6 @@ func TestSetVisibilityMovesBetweenPublicAndPrivate(t *testing.T) {
 	if _, err := os.Stat(h.layout.SiteDir(sites.Public, "demo")); !os.IsNotExist(err) {
 		t.Fatalf("public dir should be gone after private move: %v", err)
 	}
-
 }
 
 func TestSetVisibilityNamedMatrixAndIdempotence(t *testing.T) {

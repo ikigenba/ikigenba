@@ -9,6 +9,7 @@ package mcp
 // unchanged.
 
 import (
+	"appkit/server"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -17,13 +18,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sites/internal/sites"
 	"sort"
 	"strings"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-
-	"sites/internal/sites"
 )
 
 // toolSync reconciles a dropbox mirror subtree into a site's current directory. It

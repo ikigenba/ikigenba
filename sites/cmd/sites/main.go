@@ -20,24 +20,22 @@
 package main
 
 import (
+	"appkit"
+	"appkit/config"
 	"context"
 	"encoding/json"
+	"eventplane/consumer"
 	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
-
-	"appkit"
-	"appkit/config"
-	"eventplane/consumer"
 	"registry"
-
 	"sites/internal/db"
 	"sites/internal/mcp"
 	"sites/internal/serve"
 	"sites/internal/sites"
+	"strings"
+	"time"
 )
 
 type landingView struct {
@@ -215,15 +213,7 @@ func landingHandler(store *sites.Store, renderer landingRenderer, service, versi
 				CreatedAtSort: s.CreatedAt.UTC().Format(time.RFC3339),
 			}
 			view.Sites = append(view.Sites, row)
-			sitesData = append(sitesData, landingSiteData{
-				Slug:          row.Slug,
-				Name:          row.Name,
-				URL:           row.URL,
-				Visibility:    row.Visibility,
-				CreatedBy:     row.CreatedBy,
-				CreatedAt:     row.CreatedAt,
-				CreatedAtSort: row.CreatedAtSort,
-			})
+			sitesData = append(sitesData, landingSiteData(row))
 		}
 		data, err := json.Marshal(sitesData)
 		if err != nil {

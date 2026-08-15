@@ -3,13 +3,12 @@
 package mcp
 
 import (
+	"appkit"
 	"fmt"
 	"net/http"
-
-	"appkit"
-	appkitmcp "appkit/mcp"
-
 	"sites/internal/sites"
+
+	appkitmcp "appkit/mcp"
 )
 
 // Instructions describes sites's MCP surface to clients during initialize.

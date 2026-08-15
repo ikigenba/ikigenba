@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/consumer"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
-
-	"eventplane/consumer"
 )
 
 type stubPushVersionClient struct {
@@ -23,6 +22,7 @@ func (s *stubPushVersionClient) Create(context.Context, string, Owner) error { r
 func (s *stubPushVersionClient) Commit(context.Context, string, string, []FileChange) (Commit, error) {
 	return Commit{}, nil
 }
+
 func (s *stubPushVersionClient) Export(context.Context, string) ([]TreeEntry, Commit, error) {
 	s.exports++
 	return s.entries, s.commit, s.err

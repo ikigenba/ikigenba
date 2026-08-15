@@ -5,18 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/consumer"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sites/internal/sites"
 	"sync"
 	"testing"
-
-	"eventplane/consumer"
-
-	"sites/internal/sites"
 )
 
 type publishRootRepos struct {

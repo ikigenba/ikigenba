@@ -1,6 +1,8 @@
 package main
 
 import (
+	"appkit"
+	"appkit/manifest"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -16,18 +18,18 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"registry"
 	"strings"
 	"testing"
 	"time"
 
-	"appkit"
 	sqlkit "appkit/db"
-	"appkit/manifest"
+
 	appweb "appkit/web"
+
 	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
-	"registry"
 
 	sitedb "sites/internal/db"
 	sitesdomain "sites/internal/sites"

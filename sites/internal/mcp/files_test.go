@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sites/internal/sites"
 	"strings"
 	"testing"
-
-	"sites/internal/sites"
 )
 
 // fileToolsHandler stands up a Handler and creates a site "demo" so its working

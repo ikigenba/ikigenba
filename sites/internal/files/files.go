@@ -450,11 +450,11 @@ func sandboxRoot(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	real, err := filepath.EvalSymlinks(abs)
+	resolved, err := filepath.EvalSymlinks(abs)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Clean(real), nil
+	return filepath.Clean(resolved), nil
 }
 
 func resolveExisting(path string) string {

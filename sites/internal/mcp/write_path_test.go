@@ -11,10 +11,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sites/internal/sites"
 	"sync"
 	"testing"
-
-	"sites/internal/sites"
 )
 
 type correlationKey struct{}

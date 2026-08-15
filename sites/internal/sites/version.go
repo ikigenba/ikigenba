@@ -1,6 +1,7 @@
 package sites
 
 import (
+	"appkit"
 	"archive/tar"
 	"bytes"
 	"context"
@@ -12,8 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"appkit"
 )
 
 // Commit identifies one commit on a repository's main branch.
@@ -158,7 +157,7 @@ func (c *versionHTTPClient) Commit(ctx context.Context, slug, message string, ch
 
 func (c *versionHTTPClient) Export(ctx context.Context, slug string) ([]TreeEntry, Commit, error) {
 	query := url.Values{"kind": {"sites"}, "name": {slug}, "ref": {"main"}}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/archive?"+query.Encode(), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/archive?"+query.Encode(), http.NoBody)
 	if err != nil {
 		return nil, Commit{}, fmt.Errorf("build version export request: %w", err)
 	}
@@ -269,7 +268,7 @@ func readTree(reader io.Reader) ([]TreeEntry, error) {
 		if err != nil {
 			return nil, err
 		}
-		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+		if header.Typeflag != tar.TypeReg {
 			continue
 		}
 		data, err := io.ReadAll(tarReader)
