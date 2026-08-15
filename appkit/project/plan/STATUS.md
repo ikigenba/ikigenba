@@ -9,5 +9,7 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 33
+Next phase: 34
+
+- Phase 33 ⬜ realizes — — register at lint tier `cheap` (adopt `root project/design/D30.md`; commit `.lint-tier`, `bin/lint appkit` exits 0)
 

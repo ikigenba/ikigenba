@@ -26,6 +26,7 @@ Verification ids change.
 - D19 → `project/design/D19.md` — `appkit/httpclient`: the shared instrumented outbound client, correlation propagated to loopback IP literals only — owns R-22VU-7KW7, R-25BM-Z4DL, R-26JJ-CW4A, R-27RF-QNUZ, R-28ZC-4FLO
 - D20 → `project/design/D20.md` — Chain roots: `Recorder.StartRoot`/`StartChain`, plus `Router.Recorder()` and `Router.HTTPClient(timeout)` — owns R-XP15-H34E, R-XQ91-UUV3, R-XRGY-8MLS, R-XSOU-MECH, R-XTWR-0636
 - D21 → `project/design/D21.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): layers, GOWORK mode, environmental preconditions — owns none locally; **cites** R-O1AD-MRKW, R-O2IA-0JBL
+- D22 → `project/design/D22.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 
