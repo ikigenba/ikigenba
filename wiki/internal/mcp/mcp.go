@@ -21,7 +21,7 @@ import (
 	"wiki/internal/wiki"
 )
 
-const Instructions = "wiki is a scoped knowledge base (notes, a second brain) built from source text you ingest. Choose or create a scope first; every content call requires it. Scope instructions provide operator-authored context that overrides conflicting base inference rules. Ingest queues text; a background pipeline distills entities, events, concepts, and their claims into cited pages. Ask for grounded answers; read knowledge by type/slug path; track jobs; merge duplicates; and steer work with abort and rerun. Call guide for scope management, field catalogs, paths, and worked examples before your first ingest or merge."
+const Instructions = "wiki is a scoped knowledge base (notes, a second brain) built from source text you ingest. Choose or create a scope first; every content call requires it. Scope instructions provide operator-authored context that overrides conflicting base inference rules. Ingest queues text; a background pipeline distills entities, events, concepts, and their claims into cited pages. State corrections in prose as explicit rulings; claims exposes which rows they suppress. Ask for grounded answers; read knowledge by type/slug path; track jobs; merge duplicates; and steer work with abort and rerun. Call guide for scope management, corrections, field catalogs, paths, and worked examples before your first ingest or merge."
 
 const (
 	errScopeNotFound       appkitmcp.ErrorCode = "scope_not_found"
@@ -1154,9 +1154,13 @@ func claimsTool() map[string]any {
 			"limit":   map[string]any{"type": "integer"},
 			"cursor":  map[string]any{"type": "string"},
 		}, []string{"subject"}),
-		"outputSchema": pagedOutputSchema("claims", objectArraySchema(map[string]any{
-			"id": stringSchema(), "text": stringSchema(), "job": stringSchema(),
-		})),
+		"outputSchema": pagedOutputSchema("claims", map[string]any{
+			"type": "array",
+			"items": objectSchema(map[string]any{
+				"id": stringSchema(), "kind": stringSchema(), "text": stringSchema(), "job": stringSchema(),
+				"suppressed": boolSchema(), "suppressed_by": stringArraySchema(),
+			}, []string{"id", "kind", "text", "job", "suppressed"}),
+		}),
 	}
 }
 
@@ -1550,9 +1554,9 @@ func publicSubjectsResult(subjects any) []map[string]any {
 	return out
 }
 
-func publicClaimsResult(claims any) []map[string]string {
+func publicClaimsResult(claims any) []map[string]any {
 	values := sliceValue(reflect.ValueOf(claims))
-	out := make([]map[string]string, 0, values.Len())
+	out := make([]map[string]any, 0, values.Len())
 	for i := 0; i < values.Len(); i++ {
 		claim := indirect(values.Index(i))
 		if !claim.IsValid() || claim.Kind() != reflect.Struct {
@@ -1566,11 +1570,22 @@ func publicClaimsResult(claims any) []map[string]string {
 		if job == "" {
 			job = stringField(claim, "JobID")
 		}
-		out = append(out, map[string]string{
-			"id":   stringField(claim, "ID"),
-			"text": text,
-			"job":  job,
-		})
+		kind := stringField(claim, "Kind")
+		if kind == "" {
+			kind = "claim"
+		}
+		suppressed := boolField(claim, "Suppressed")
+		item := map[string]any{
+			"id":         stringField(claim, "ID"),
+			"kind":       kind,
+			"text":       text,
+			"job":        job,
+			"suppressed": suppressed,
+		}
+		if suppressed {
+			item["suppressed_by"] = stringSliceField(claim, "SuppressedBy")
+		}
+		out = append(out, item)
 	}
 	return out
 }

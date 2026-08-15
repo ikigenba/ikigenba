@@ -713,8 +713,9 @@ func TestPathReadServicesResolveFoldedAndSurvivorPathsIdentically(t *testing.T) 
 	}
 
 	claimService := pathClaimService{
-		resolver: resolver,
-		claims:   wiki.NewClaimStore(conn),
+		resolver:     resolver,
+		claims:       wiki.NewClaimStore(conn),
+		suppressions: wiki.NewSuppressionStore(conn),
 	}
 	foldedClaims, foldedNext, err := claimService.ListBySubject(ctx, "entity/folded-widget", paging.Params{})
 	if err != nil {
@@ -730,6 +731,131 @@ func TestPathReadServicesResolveFoldedAndSurvivorPathsIdentically(t *testing.T) 
 	if len(foldedClaims) != 1 || foldedClaims[0].ID != "claim-1" || foldedClaims[0].Text != "Winner Widget shipped the release." {
 		t.Fatalf("folded claims = %#v, want survivor claim projection", foldedClaims)
 	}
+}
+
+func TestClaimsThroughAssembledHandlerExposeCorrectionsLedger(t *testing.T) {
+	// R-7WEF-1QA2
+	ctx := context.Background()
+	conn := migratedDB(t, ctx)
+	defer conn.Close()
+
+	const (
+		subjectID      = "01KZ6V08B73Q7W1G5GR3SUBJCT"
+		claimID        = "01KZ6V08B73Q7W1G5GR3CLAIM1"
+		oldCorrection  = "01KZ6V08B73Q7W1G5GR3CORR02"
+		liveCorrection = "01KZ6V08B73Q7W1G5GR3CORR03"
+	)
+	if err := wiki.NewSubjectStore(conn).Save(ctx, wiki.Subject{ID: subjectID, Name: "Corrected Record", Type: "entity"}); err != nil {
+		t.Fatalf("Save subject: %v", err)
+	}
+	claims := wiki.NewClaimStore(conn)
+	for _, claim := range []wiki.Claim{
+		{ID: claimID, SubjectID: subjectID, JobID: "job-claim", Body: "The launch happened in 2024.", Kind: wiki.ClaimKind},
+		{ID: oldCorrection, SubjectID: subjectID, JobID: "job-old-correction", Body: "The launch did not happen in 2024.", Kind: wiki.CorrectionKind},
+		{ID: liveCorrection, SubjectID: subjectID, JobID: "job-live-correction", Body: "The launch happened in 2025.", Kind: wiki.CorrectionKind},
+	} {
+		if err := claims.Save(ctx, claim); err != nil {
+			t.Fatalf("Save claim %s: %v", claim.ID, err)
+		}
+	}
+	suppressions := wiki.NewSuppressionStore(conn)
+	for _, edge := range []wiki.Suppression{
+		{Correction: oldCorrection, Suppressed: claimID, CreatedAt: 1},
+		{Correction: liveCorrection, Suppressed: claimID, CreatedAt: 2},
+		{Correction: liveCorrection, Suppressed: oldCorrection, CreatedAt: 3},
+	} {
+		if err := suppressions.Insert(ctx, edge); err != nil {
+			t.Fatalf("Insert suppression %+v: %v", edge, err)
+		}
+	}
+
+	h := buildSpecTestHandler(t, conn, newSpec(staticConfig(wiki.Config{})))
+	text := mcpToolCallText(t, h, `{
+		"jsonrpc":"2.0","id":"claims","method":"tools/call",
+		"params":{"name":"claims","arguments":{"scope":"default","subject":"entity/corrected-record"}}
+	}`)
+	var body struct {
+		Claims []map[string]any `json:"claims"`
+	}
+	if err := json.Unmarshal([]byte(text), &body); err != nil {
+		t.Fatalf("decode claims result: %v", err)
+	}
+	if len(body.Claims) != 3 {
+		t.Fatalf("claims = %#v, want all three rows", body.Claims)
+	}
+	byID := make(map[string]map[string]any, len(body.Claims))
+	for _, item := range body.Claims {
+		id, _ := item["id"].(string)
+		byID[id] = item
+		if strings.Contains(fmt.Sprint(item), subjectID) {
+			t.Fatalf("claim item leaks internal subject id: %#v", item)
+		}
+	}
+	assertKeys := func(id string, want ...string) {
+		t.Helper()
+		got := make(map[string]bool, len(byID[id]))
+		for key := range byID[id] {
+			got[key] = true
+		}
+		wantKeys := make(map[string]bool, len(want))
+		for _, key := range want {
+			wantKeys[key] = true
+		}
+		if !reflect.DeepEqual(got, wantKeys) {
+			t.Fatalf("claim %s keys = %#v, want %#v", id, got, wantKeys)
+		}
+	}
+	assertSuppressedBy := func(id, suppressor string) {
+		t.Helper()
+		item := byID[id]
+		if item["suppressed"] != true || !reflect.DeepEqual(item["suppressed_by"], []any{suppressor}) {
+			t.Fatalf("claim %s suppression = %#v/%#v, want true/%s", id, item["suppressed"], item["suppressed_by"], suppressor)
+		}
+	}
+	assertKeys(claimID, "id", "kind", "text", "job", "suppressed", "suppressed_by")
+	assertKeys(oldCorrection, "id", "kind", "text", "job", "suppressed", "suppressed_by")
+	assertKeys(liveCorrection, "id", "kind", "text", "job", "suppressed")
+	assertSuppressedBy(claimID, liveCorrection)
+	assertSuppressedBy(oldCorrection, liveCorrection)
+	if byID[claimID]["kind"] != wiki.ClaimKind || byID[oldCorrection]["kind"] != wiki.CorrectionKind || byID[liveCorrection]["kind"] != wiki.CorrectionKind {
+		t.Fatalf("claim kinds = %#v/%#v/%#v", byID[claimID]["kind"], byID[oldCorrection]["kind"], byID[liveCorrection]["kind"])
+	}
+	if byID[liveCorrection]["suppressed"] != false {
+		t.Fatalf("live correction = %#v, want unsuppressed without suppressed_by", byID[liveCorrection])
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":"list","method":"tools/list"}`))
+	req.Header.Set("X-Owner-Id", "owner-id")
+	req.Header.Set("X-Owner-Email", "owner@example.com")
+	req.Header.Set("X-Client-Id", "client-1")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var listed struct {
+		Result struct {
+			Tools []struct {
+				Name         string         `json:"name"`
+				OutputSchema map[string]any `json:"outputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode tools/list: %v", err)
+	}
+	for _, tool := range listed.Result.Tools {
+		if tool.Name != "claims" {
+			continue
+		}
+		claimsSchema := tool.OutputSchema["properties"].(map[string]any)["claims"].(map[string]any)
+		itemSchema := claimsSchema["items"].(map[string]any)
+		properties := itemSchema["properties"].(map[string]any)
+		for _, field := range []string{"kind", "suppressed", "suppressed_by"} {
+			if _, ok := properties[field]; !ok {
+				t.Fatalf("claims output schema properties = %#v, missing %s", properties, field)
+			}
+		}
+		return
+	}
+	t.Fatal("tools/list omitted claims schema")
 }
 
 func TestSubjectHandlerWithRealPathPageServiceResolvesAliasInboundLinks(t *testing.T) {

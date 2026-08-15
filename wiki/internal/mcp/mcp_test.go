@@ -558,6 +558,35 @@ func TestGuideAndInitializeDescribeScopeInstructionsWithoutExtraPointers(t *test
 	}
 }
 
+func TestGuideAndInitializeDescribeCorrectionsWithoutExtraPointers(t *testing.T) {
+	// R-7XMB-FI0R
+	guide := strings.ToLower(guideDoc)
+	for _, phrase := range []string{
+		"state facts by ingesting prose",
+		"explicit ruling",
+		"plain assertions",
+		"whether those claims were ingested before or after",
+		"latest ruling wins",
+		"newer statement of the fact",
+		"suppression ledger",
+		"suppressed_by",
+		"re-digest a document under the current standing corrections",
+	} {
+		if !strings.Contains(guide, phrase) {
+			t.Fatalf("guide omits corrections phrase %q", phrase)
+		}
+	}
+	if !strings.Contains(strings.ToLower(Instructions), "corrections") {
+		t.Fatalf("initialize instructions omit corrections: %q", Instructions)
+	}
+	for _, tool := range Tools() {
+		mentionsGuide := strings.Contains(strings.ToLower(tool.Description), "guide")
+		if mentionsGuide != (tool.Name == "guide") {
+			t.Fatalf("%s description guide pointer = %v", tool.Name, mentionsGuide)
+		}
+	}
+}
+
 func TestDomainOutputSchemasMirrorRepresentativeStructuredResults(t *testing.T) {
 	// R-ER7V-UFSU
 	wiki := &capturingWiki{
@@ -583,7 +612,7 @@ func TestDomainOutputSchemasMirrorRepresentativeStructuredResults(t *testing.T) 
 		"jobs":     {"jobs": {"id", "owner_email", "owner_id", "title", "tags", "status", "received_at", "started_at", "finished_at", "error"}},
 		"merges":   {"merges": {"norm_name", "subject_id", "name", "owner_email", "owner_id", "created_at"}},
 		"subjects": {"subjects": {"path", "type", "name", "has_page"}},
-		"claims":   {"claims": {"id", "text", "job"}},
+		"claims":   {"claims": {"id", "kind", "text", "job", "suppressed"}},
 		"ask":      {"citations": {"url", "title"}},
 	}
 	identity := server.Identity{OwnerEmail: "owner@example.com"}

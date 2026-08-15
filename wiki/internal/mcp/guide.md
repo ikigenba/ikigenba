@@ -30,7 +30,9 @@ All five values can filter `jobs` and `jobs_count`. `abort` accepts only pending
 
 ## Claims and pages
 
-A claim is returned as an object with `id`, `text`, and `job`. The text is the extracted factual statement, and job identifies the source-processing job that supports it. A compiled page has `subject`, `title`, and a cited Markdown `body`.
+State facts by ingesting prose. Phrase a correction as an explicit ruling, such as "X is false" or "contrary to earlier records, X." Plain assertions do not retract one another; they coexist as conflicting accounts. A correction suppresses matching claims whether those claims were ingested before or after it. When corrections conflict with corrections, ingest order decides: the latest ruling wins, so fix a wrong correction by ingesting a newer statement of the fact.
+
+`claims` is the suppression ledger. Every returned object has `id`, `kind` (`claim` or `correction`), `text`, `job`, and `suppressed`; a suppressed row also has `suppressed_by` naming the live correction row IDs. The text is the extracted factual statement, and job identifies the source-processing job that supports it. Use `rerun` to re-digest a document under the current standing corrections. A compiled page has `subject`, `title`, and a cited Markdown `body`.
 
 ## Pagination
 

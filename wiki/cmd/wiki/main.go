@@ -144,8 +144,9 @@ func newSpec(loadConfig configLoader) appkit.Spec {
 				pages:    wiki.NewPageStore(read),
 			}
 			claimService := pathClaimService{
-				resolver: wiki.NewResolver(read),
-				claims:   wiki.NewClaimStore(read),
+				resolver:     wiki.NewResolver(read),
+				claims:       wiki.NewClaimStore(read),
+				suppressions: wiki.NewSuppressionStore(read),
 			}
 			mergeResolver := mergePathResolver{subjects: wiki.NewSubjectStore(read)}
 			jobs := wiki.NewJobStore(conns)
@@ -262,9 +263,12 @@ type publicSubject struct {
 }
 
 type publicClaim struct {
-	ID   string
-	Text string
-	Job  string
+	ID           string
+	Kind         string
+	Text         string
+	Job          string
+	Suppressed   bool
+	SuppressedBy []string
 }
 
 type publicPage struct {
@@ -391,8 +395,9 @@ func (s publicSubjectService) ListInScope(ctx context.Context, scope, typ, nameC
 }
 
 type pathClaimService struct {
-	resolver *wiki.Resolver
-	claims   *wiki.ClaimStore
+	resolver     *wiki.Resolver
+	claims       *wiki.ClaimStore
+	suppressions *wiki.SuppressionStore
 }
 
 func (s pathClaimService) ListBySubject(ctx context.Context, path string, p page.Params) ([]publicClaim, string, error) {
@@ -411,15 +416,44 @@ func (s pathClaimService) ListBySubjectInScope(ctx context.Context, scope, path 
 	if err != nil {
 		return nil, "", err
 	}
+	edges, err := s.suppressions.ListBySubject(ctx, subject.ID)
+	if err != nil {
+		return nil, "", err
+	}
+	allClaims, err := s.listAllClaims(ctx, subject.ID)
+	if err != nil {
+		return nil, "", err
+	}
+	_, suppressedBy := wiki.Effective(allClaims, edges)
 	out := make([]publicClaim, 0, len(claims))
 	for _, claim := range claims {
+		suppressors := suppressedBy[claim.ID]
 		out = append(out, publicClaim{
-			ID:   claim.ID,
-			Text: claim.Body,
-			Job:  claim.JobID,
+			ID:           claim.ID,
+			Kind:         claim.Kind,
+			Text:         claim.Body,
+			Job:          claim.JobID,
+			Suppressed:   len(suppressors) > 0,
+			SuppressedBy: suppressors,
 		})
 	}
 	return out, next, nil
+}
+
+func (s pathClaimService) listAllClaims(ctx context.Context, subjectID string) ([]wiki.Claim, error) {
+	var out []wiki.Claim
+	p := page.Params{}
+	for {
+		claims, next, err := s.claims.ListBySubject(ctx, subjectID, p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, claims...)
+		if next == "" {
+			return out, nil
+		}
+		p.Cursor = next
+	}
 }
 
 type publicStatusService struct {
