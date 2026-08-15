@@ -34,39 +34,19 @@ func (s *Service) serveGit(w http.ResponseWriter, request *http.Request) {
 		http.NotFound(w, request)
 		return
 	}
-	repository, err := s.repositoryPath(kind, name)
-	if err != nil {
-		if errors.Is(err, ErrValidation) || errors.Is(err, ErrNotFound) {
-			http.NotFound(w, request)
-			return
-		}
-		http.Error(w, "git repository unavailable", http.StatusInternalServerError)
+	repository, ok := s.gitDoorRepository(w, request, kind, name)
+	if !ok {
 		return
 	}
-
-	actor, scope, authenticated, forbidden := s.gitDoorIdentity(request.Context(), request, kind, name)
-	if forbidden {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	if !authenticated {
-		if request.Header.Get("X-Forwarded-Proto") == "" {
-			w.Header().Set("WWW-Authenticate", gitBasicChallenge)
-		} else {
-			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata=""`)
-		}
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	actor, scope, ok := s.authorizeGitDoor(w, request, kind, name)
+	if !ok {
 		return
 	}
 
 	isReceivePack := request.Method == http.MethodPost && rest == "git-receive-pack"
-	var before map[string]string
-	if isReceivePack {
-		before, err = s.custody.Refs(request.Context(), kind, name)
-		if err != nil {
-			http.Error(w, "git repository unavailable", http.StatusInternalServerError)
-			return
-		}
+	before, ok := s.refsBeforePush(w, request, kind, name, isReceivePack)
+	if !ok {
+		return
 	}
 
 	var cgi bytes.Buffer
@@ -75,20 +55,71 @@ func (s *Service) serveGit(w http.ResponseWriter, request *http.Request) {
 		http.Error(w, "git backend failed", http.StatusInternalServerError)
 		return
 	}
-	if isReceivePack {
-		after, refsErr := s.custody.Refs(request.Context(), kind, name)
-		if refsErr != nil {
-			http.Error(w, "git repository unavailable", http.StatusInternalServerError)
-			return
-		}
-		if err := s.appendGitPushEvents(request.Context(), kind, name, actor, before, after); err != nil {
-			http.Error(w, "record push events", http.StatusInternalServerError)
-			return
-		}
+	if !s.recordPush(w, request, kind, name, actor, before, isReceivePack) {
+		return
 	}
 	if err := writeCGIResponse(w, &cgi); err != nil {
 		http.Error(w, "invalid git backend response", http.StatusInternalServerError)
 	}
+}
+
+func (s *Service) gitDoorRepository(w http.ResponseWriter, request *http.Request, kind, name string) (string, bool) {
+	repository, err := s.repositoryPath(kind, name)
+	if err == nil {
+		return repository, true
+	}
+	if errors.Is(err, ErrValidation) || errors.Is(err, ErrNotFound) {
+		http.NotFound(w, request)
+	} else {
+		http.Error(w, "git repository unavailable", http.StatusInternalServerError)
+	}
+	return "", false
+}
+
+func (s *Service) authorizeGitDoor(w http.ResponseWriter, request *http.Request, kind, name string) (actor, scope string, ok bool) {
+	actor, scope, authenticated, forbidden := s.gitDoorIdentity(request.Context(), request, kind, name)
+	if forbidden {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return "", "", false
+	}
+	if authenticated {
+		return actor, scope, true
+	}
+	if request.Header.Get("X-Forwarded-Proto") == "" {
+		w.Header().Set("WWW-Authenticate", gitBasicChallenge)
+	} else {
+		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata=""`)
+	}
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	return "", "", false
+}
+
+func (s *Service) refsBeforePush(w http.ResponseWriter, request *http.Request, kind, name string, receive bool) (map[string]string, bool) {
+	if !receive {
+		return nil, true
+	}
+	refs, err := s.custody.Refs(request.Context(), kind, name)
+	if err != nil {
+		http.Error(w, "git repository unavailable", http.StatusInternalServerError)
+		return nil, false
+	}
+	return refs, true
+}
+
+func (s *Service) recordPush(w http.ResponseWriter, request *http.Request, kind, name, actor string, before map[string]string, receive bool) bool {
+	if !receive {
+		return true
+	}
+	after, err := s.custody.Refs(request.Context(), kind, name)
+	if err != nil {
+		http.Error(w, "git repository unavailable", http.StatusInternalServerError)
+		return false
+	}
+	if err := s.appendGitPushEvents(request.Context(), kind, name, actor, before, after); err != nil {
+		http.Error(w, "record push events", http.StatusInternalServerError)
+		return false
+	}
+	return true
 }
 
 func parseGitDoorPath(path string) (kind, name, rest string, ok bool) {
