@@ -17,18 +17,16 @@
 package tick
 
 import (
+	"appkit/telemetry"
 	"context"
-	"database/sql"
-	"fmt"
-	"log/slog"
-	"time"
-
 	"cron/internal/cron"
 	"cron/internal/crontab"
 	"cron/internal/event"
-
-	"appkit/telemetry"
+	"database/sql"
 	"eventplane/outbox"
+	"fmt"
+	"log/slog"
+	"time"
 )
 
 // slotFormat is how a slot is stored in crontab.last_slot: minute-truncated UTC

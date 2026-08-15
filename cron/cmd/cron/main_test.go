@@ -1,6 +1,8 @@
 package main
 
 import (
+	"appkit"
+	"appkit/manifest"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,14 +15,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"registry"
 	"strings"
 	"testing"
 	"time"
 
-	"appkit"
-	"appkit/manifest"
 	appweb "appkit/web"
-	"registry"
 )
 
 // R-8DF1-W89F

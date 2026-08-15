@@ -1,8 +1,12 @@
 package mcp
 
 import (
+	"appkit/server"
 	"bytes"
 	"context"
+	"cron/internal/crontab"
+	"cron/internal/db"
+	"cron/internal/event"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -15,11 +19,6 @@ import (
 	"testing"
 
 	appkitdb "appkit/db"
-	"appkit/server"
-
-	"cron/internal/crontab"
-	"cron/internal/db"
-	"cron/internal/event"
 )
 
 func newHandler(t *testing.T) (http.Handler, *crontab.Store) {

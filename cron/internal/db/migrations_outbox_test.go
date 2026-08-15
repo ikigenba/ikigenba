@@ -3,13 +3,12 @@ package db
 import (
 	"context"
 	"database/sql"
+	"eventplane/outbox"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	appkitdb "appkit/db"
-
-	"eventplane/outbox"
 )
 
 // TestOutboxMigrationMatchesLibraryDDL guards the routing cutover's frozen base

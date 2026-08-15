@@ -1,10 +1,16 @@
 package tick
 
 import (
+	"appkit/telemetry"
 	"bufio"
 	"context"
+	"cron/internal/crontab"
+	"cron/internal/db"
+	"cron/internal/event"
 	"database/sql"
 	"encoding/json"
+	"eventplane/correlation"
+	"eventplane/outbox"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -13,14 +19,6 @@ import (
 	"time"
 
 	appkitdb "appkit/db"
-	"appkit/telemetry"
-
-	"cron/internal/crontab"
-	"cron/internal/db"
-	"cron/internal/event"
-
-	"eventplane/correlation"
-	"eventplane/outbox"
 )
 
 // harness stands up a real crontab store + outbox over a temp SQLite DB and the

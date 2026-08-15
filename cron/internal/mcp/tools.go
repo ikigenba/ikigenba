@@ -1,15 +1,14 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
+	"cron/internal/cron"
+	"cron/internal/crontab"
 	"encoding/json"
 	"time"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-
-	"cron/internal/cron"
-	"cron/internal/crontab"
 )
 
 // toolPrefix brands every MCP tool name (DECISIONS §1): the suite name ikigenba
@@ -54,8 +53,8 @@ func Tools(store *crontab.Store) []appkitmcp.Tool {
 		desc(tool("create"),
 			"Create a named schedule. 'name' is the identity and the suffix of the emitted event cron:tick/<name> — lowercase letters, digits and hyphens only. 'expr' is a 5-field cron expression evaluated in UTC. The expression is validated here (fails loudly naming the bad field) and rejected if 'name' already exists.",
 			obj(map[string]any{
-				"name": descTyp("string", "schedule identity / cron:tick/<name> suffix; [a-z0-9-]"),
-				"expr": descTyp("string", "5-field cron (min hour dom mon dow), UTC. Operators: *, n, lists a,b, ranges a-b, steps */n and a-b/n; dow 0 or 7 = Sunday. e.g. \"0 3 * * *\" = daily 03:00 UTC"),
+				"name": descTyp("schedule identity / cron:tick/<name> suffix; [a-z0-9-]"),
+				"expr": descTyp("5-field cron (min hour dom mon dow), UTC. Operators: *, n, lists a,b, ranges a-b, steps */n and a-b/n; dow 0 or 7 = Sunday. e.g. \"0 3 * * *\" = daily 03:00 UTC"),
 			}, "name", "expr"), entrySchema(),
 			func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolCreate(ctx, args)
@@ -70,22 +69,22 @@ func Tools(store *crontab.Store) []appkitmcp.Tool {
 			}),
 		desc(tool("get"),
 			"Fetch one schedule by name: {name, expr, created_at, updated_at, last_slot}. 'last_slot' is the last minute (RFC3339 UTC) the schedule fired, or null if it never has.",
-			obj(map[string]any{"name": descTyp("string", "schedule name")}, "name"), entrySchema(),
+			obj(map[string]any{"name": descTyp("schedule name")}, "name"), entrySchema(),
 			func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolGet(ctx, args)
 			}),
 		desc(tool("update"),
 			"Change an existing schedule's cron expression. 'expr' is validated here exactly as on create. 'name' is immutable (the event cron:tick/<name> depends on it) — to rename, delete and create. The double-emit guard (last_slot) is deliberately NOT reset on an expr change.",
 			obj(map[string]any{
-				"name": descTyp("string", "schedule name"),
-				"expr": descTyp("string", "new 5-field cron expression, UTC"),
+				"name": descTyp("schedule name"),
+				"expr": descTyp("new 5-field cron expression, UTC"),
 			}, "name", "expr"), entrySchema(),
 			func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolUpdate(ctx, args)
 			}),
 		desc(tool("delete"),
 			"Delete a schedule by name. The cron:tick/<name> event stops being published. Consumers subscribed to it simply stop receiving (cron is subscriber-blind).",
-			obj(map[string]any{"name": descTyp("string", "schedule name")}, "name"),
+			obj(map[string]any{"name": descTyp("schedule name")}, "name"),
 			obj(map[string]any{"ok": typ("boolean")}, "ok"),
 			func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolDelete(ctx, args)
@@ -117,8 +116,8 @@ func entrySchema() map[string]any {
 	}, "name", "expr", "created_at", "updated_at", "last_slot")
 }
 
-func descTyp(t, description string) map[string]any {
-	return map[string]any{"type": t, "description": description}
+func descTyp(description string) map[string]any {
+	return map[string]any{"type": "string", "description": description}
 }
 
 // ── tool implementations ─────────────────────────────────────────────────

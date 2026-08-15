@@ -3,14 +3,13 @@
 package mcp
 
 import (
+	"appkit"
+	"cron/internal/crontab"
 	"errors"
 	"fmt"
 	"net/http"
 
-	"appkit"
 	appkitmcp "appkit/mcp"
-
-	"cron/internal/crontab"
 )
 
 // Instructions describes cron's MCP surface to clients during initialize.

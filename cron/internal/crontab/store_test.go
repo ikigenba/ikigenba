@@ -2,14 +2,13 @@ package crontab
 
 import (
 	"context"
+	"cron/internal/db"
 	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
-
-	"cron/internal/db"
 )
 
 func newStore(t *testing.T) (*Store, context.Context) {
