@@ -230,11 +230,8 @@ func (Store) DistinctAccounts(tx *sql.Tx) ([]string, error) {
 // buildWhere renders the shared WHERE fragment for the balance/register reads.
 // Query is a case-insensitive substring on the full account path; From/To bound
 // the txn date inclusively; Status filters the posting state.
-func buildWhere(f Filter) (string, []any) {
-	var (
-		clauses []string
-		args    []any
-	)
+func buildWhere(f Filter) (where string, args []any) {
+	var clauses []string
 	if f.Query != "" {
 		clauses = append(clauses, "p.account LIKE '%' || ? || '%' COLLATE NOCASE")
 		args = append(args, f.Query)

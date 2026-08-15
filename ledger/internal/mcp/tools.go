@@ -29,6 +29,11 @@ func Tools(svc *ledger.Service) []appkitmcp.Tool {
 	if svc == nil {
 		panic("mcp: ledger service is required")
 	}
+	tools := mutationTools(svc)
+	return append(tools, reportTools(svc)...)
+}
+
+func mutationTools(svc *ledger.Service) []appkitmcp.Tool {
 	return []appkitmcp.Tool{
 		{
 			Name:        tool("record"),
@@ -77,6 +82,11 @@ func Tools(svc *ledger.Service) []appkitmcp.Tool {
 				return toolReconcile(ctx, svc, args)
 			},
 		},
+	}
+}
+
+func reportTools(svc *ledger.Service) []appkitmcp.Tool {
+	return []appkitmcp.Tool{
 		{
 			Name:        tool("balance"),
 			Description: "The `bal` report and the live chart of accounts. With no arguments returns the whole emergent account tree with raw signed balances (Assets/Expenses positive, Liabilities/Equity/Income negative; the whole-ledger total is 0). Filter by account substring, period, depth, and reconciliation status.",
