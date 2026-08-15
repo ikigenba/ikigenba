@@ -9,7 +9,7 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D3 → `project/design/D03.md` — The phase-1 data model — owns R-7SNG-0G9A, R-7TVC-E7ZZ, R-7V38-RZQO, R-7WB5-5RHD, R-RU0J-77HX, R-RV8F-KZ8M, R-RXO8-CIQ0, R-RYW4-QAGP, R-S041-427E, R-S1BX-HTY3, R-S2JT-VLOS, R-1O8B-FNX4
 - D4 → `project/design/D04.md` — The ingest pipeline: handoff and apply over the completion queue — owns R-M8RN-87WV, R-K73J-J3W3, R-K8BF-WVMS, R-K9JC-ANDH, R-KAR8-OF46, R-KBZ5-26UV, R-KEEX-TQC9, R-KFMU-7I2Y, R-MB7F-ZRE9, R-MCFC-DJ4Y, R-MG31-IUD1, R-OQJZ-K337, R-ORRV-XUTW, R-OSZS-BMKL, R-OU7O-PEBA, R-OVFL-361Z
 - D5 → `project/design/D05.md` — The LLM seam (`internal/llm`): the prompts completion-queue client — owns R-JW4G-367U, R-JXCC-GXYJ, R-JYK8-UPP8, R-JZS5-8HFX, R-K101-M96M, R-K27Y-00XB, R-K3FU-DSO0, R-K4NQ-RKEP, R-UCLK-JDHN, R-UDTG-X58C, R-9S84-C6J2
-- D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-9UTW-ZFF0, R-9W1T-D75P, R-8TAF-XBSM, R-8UIC-B3JB
+- D6 → `project/design/D06.md` — The extract stage (`internal/extract`) — owns R-VYU0-BPAX, R-XJBY-H8JZ, R-XKJU-V0AO, R-W19T-38SB, R-9UTW-ZFF0, R-9W1T-D75P, R-8TAF-XBSM, R-8UIC-B3JB, R-7BO4-JMO9, R-7CW0-XEEY, R-7E3X-B65N
 - D7 → `project/design/D07.md` — The compile stage (`internal/compile`): full recompile from claims, clean article prose (no ids), 12k cap enforced — owns R-FQLB-QWS6, R-FT14-IG9K, R-FU90-W809, R-FVGX-9ZQY, R-9X9P-QYWE, R-9YHM-4QN3, R-VA32-HERT
 - D8 → `project/design/D08.md` — Search returns: hybrid retrieval over pages, behind one seam — none — structural
 - D9 → `project/design/D09.md` — `ask` (`internal/ask`): hybrid-retrieval pipeline, grounded/cited/honest-empty — owns R-BAFW-D24P, R-BBNS-QTVE, R-BCVP-4LM3, R-5UPD-VVNA, R-5VXA-9NDZ, R-690G-MZTK, R-5X56-NF4O, R-6A8D-0RK9, R-05CG-3H6Y, R-9ZPI-IIDS, R-NFXF-9QGN, R-NH5B-NI7C, R-NID8-19Y1
@@ -62,8 +62,8 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D65 → `project/design/D65.md` — Inherit the chain across the async boundary; mint a root only for genuinely self-started work — owns R-XGME-DMUD, R-XJ27-56BR, R-KIH2-R4UC, R-XKA3-IY2G
 - D66 → `project/design/D66.md` — nginx: forward the edge-minted correlation id on gated locations, strip it on the ungated one — none — structural
 - D70 → `project/design/D70.md` — Remove the in-repo tuning machinery — none — structural
-- D71 → `project/design/D71.md` — The committed tune-folder workspace: `autotune/<step>/`, one per pipeline prompt — owns R-A5T0-FD39, R-A88T-6WKN, R-A9GP-KOBC
-- D72 → `project/design/D72.md` — The four scorers: deterministic where mechanical, sol-judged where prose — owns R-AAOL-YG21, R-ABWI-C7SQ, R-AD4E-PZJF, R-AECB-3RA4, R-AFK7-HJ0T, R-AGS3-VARI
+- D71 → `project/design/D71.md` — The committed tune-folder workspace: `autotune/<step>/`, one per pipeline prompt — owns R-A5T0-FD39, R-A88T-6WKN, R-A9GP-KOBC, R-7YU7-T9RG
+- D72 → `project/design/D72.md` — The five scorers: deterministic where mechanical, sol-judged where prose — owns R-AAOL-YG21, R-ABWI-C7SQ, R-AD4E-PZJF, R-AECB-3RA4, R-AFK7-HJ0T, R-AGS3-VARI, R-8024-71I5, R-81A0-KT8U
 - D73 → `project/design/D73.md` — Testing-language conformance: adopt the suite contract and move the env-gated smokes into the live layer — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 - D74 → `project/design/D74.md` — Scopes: named content partitions, the registry, and the hard wall — owns R-GSMY-FWWD, R-GTUU-TON2, R-GV2R-7GDR, R-GWAN-L84G, R-GXIJ-YZV5, R-GYQG-CRLU, R-GZYC-QJCJ, R-H2E5-I2TX, R-H3M1-VUKM, R-H4TY-9MBB, R-H61U-NE20, R-H79R-15SP
 - D75 → `project/design/D75.md` — Scope on the MCP surface: the mandatory parameter + the four management verbs — owns R-H8HN-EXJE, R-H9PJ-SPA3, R-HAXG-6H0S, R-HC5C-K8RH, R-HDD8-Y0I6, R-HEL5-BS8V, R-HFT1-PJZK, R-HH0Y-3BQ9, R-HI8U-H3GY, R-HJGQ-UV7N
@@ -87,6 +87,9 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - D93 → `project/design/D93.md` — Serialized ingest admission: the durable per-scope lease — owns R-OXVD-UPJD, R-P2QZ-DSI5, R-OZ3A-8HA2, R-P1J3-00RG, R-P3YV-RK8U
 - D94 → `project/design/D94.md` — The inbox drain contract: no item may stop the drain — owns R-P56S-5BZJ, R-P6EO-J3Q8, R-P7MK-WVGX, R-P8UH-AN7M
 - D95 → `project/design/D95.md` — Job liveness and the honest job surface — owns R-PA2D-OEYB, R-PBAA-26P0, R-PCI6-FYFP, R-PEXZ-7HX3, R-PDQ2-TQ6E, R-PG5V-L9NS, R-PHDR-Z1EH
+- D96 → `project/design/D96.md` — Statements: claims and corrections, the suppression record, and the effective claim set — owns R-74CQ-9083, R-76SJ-0JPH, R-780F-EBG6, R-798B-S36V, R-7AG8-5UXK
+- D97 → `project/design/D97.md` — The match stage (`internal/match`): judging what a correction covers, in the pipeline and in merge — owns R-7FBT-OXWC, R-7GJQ-2PN1, R-7HRM-GHDQ, R-7IZI-U94F, R-7K7F-80V4, R-7LFB-LSLT, R-7MN7-ZKCI, R-7NV4-DC37, R-7QAX-4VKL, R-7RIT-INBA, R-7SQP-WF1Z, R-7TYM-A6SO, R-7V6I-NYJD
+- D98 → `project/design/D98.md` — The corrections read surface: labeled kinds and visible suppression on `claims`, and the guide — owns R-7WEF-1QA2, R-7XMB-FI0R
 
 ## Verification ids → Decision
 
@@ -177,14 +180,40 @@ Each Decision maps to its `DNN.md` file; every Verification id maps to the Decis
 - R-71BM-KZ5R → D35 (`project/design/D35.md`)
 - R-72JI-YQWG → D35 (`project/design/D35.md`)
 - R-73RF-CIN5 → D35 (`project/design/D35.md`)
+- R-74CQ-9083 → D96 (`project/design/D96.md`)
+- R-76SJ-0JPH → D96 (`project/design/D96.md`)
+- R-780F-EBG6 → D96 (`project/design/D96.md`)
+- R-798B-S36V → D96 (`project/design/D96.md`)
 - R-79KD-1622 → D33 (`project/design/D33.md`)
+- R-7AG8-5UXK → D96 (`project/design/D96.md`)
 - R-7AS9-EXSR → D33 (`project/design/D33.md`)
+- R-7BO4-JMO9 → D6 (`project/design/D06.md`)
 - R-7C05-SPJG → D33 (`project/design/D33.md`)
+- R-7CW0-XEEY → D6 (`project/design/D06.md`)
 - R-7D82-6HA5 → D33 (`project/design/D33.md`)
+- R-7E3X-B65N → D6 (`project/design/D06.md`)
+- R-7FBT-OXWC → D97 (`project/design/D97.md`)
+- R-7GJQ-2PN1 → D97 (`project/design/D97.md`)
+- R-7HRM-GHDQ → D97 (`project/design/D97.md`)
+- R-7IZI-U94F → D97 (`project/design/D97.md`)
+- R-7K7F-80V4 → D97 (`project/design/D97.md`)
+- R-7LFB-LSLT → D97 (`project/design/D97.md`)
+- R-7MN7-ZKCI → D97 (`project/design/D97.md`)
+- R-7NV4-DC37 → D97 (`project/design/D97.md`)
+- R-7QAX-4VKL → D97 (`project/design/D97.md`)
+- R-7RIT-INBA → D97 (`project/design/D97.md`)
 - R-7SNG-0G9A → D3 (`project/design/D03.md`)
+- R-7SQP-WF1Z → D97 (`project/design/D97.md`)
 - R-7TVC-E7ZZ → D3 (`project/design/D03.md`)
+- R-7TYM-A6SO → D97 (`project/design/D97.md`)
 - R-7V38-RZQO → D3 (`project/design/D03.md`)
+- R-7V6I-NYJD → D97 (`project/design/D97.md`)
 - R-7WB5-5RHD → D3 (`project/design/D03.md`)
+- R-7WEF-1QA2 → D98 (`project/design/D98.md`)
+- R-7XMB-FI0R → D98 (`project/design/D98.md`)
+- R-7YU7-T9RG → D71 (`project/design/D71.md`)
+- R-8024-71I5 → D72 (`project/design/D72.md`)
+- R-81A0-KT8U → D72 (`project/design/D72.md`)
 - R-82BY-EKDH → D58 (`project/design/D58.md`)
 - R-83JU-SC46 → D58 (`project/design/D58.md`)
 - R-84RR-63UV → D58 (`project/design/D58.md`)
@@ -592,83 +621,95 @@ with the rest of the index.
     R-ZUDC-NJIP, R-ZVL9-1B9E, R-ZY11-SUQS
 34. Ingesting more text about the same subject updates its page, not a duplicate →
     R-MCFC-DJ4Y, R-OU7O-PEBA
-35. Merging survivor and folded yields one page holding both subjects' claims; the folded subject and page are gone and its claims persist relabelled →
+35. A document ruling an earlier fact false stops the page stating it, with no trace of falsehood or correction in the prose, everything else intact; a carried truth lands →
+    R-7NV4-DC37, R-7QAX-4VKL, R-7BO4-JMO9
+36. Two merely-disagreeing documents (plain assertions, no ruling) keep both accounts on the page — nothing is retired →
+    R-7CW0-XEEY, R-7LFB-LSLT
+37. After a correction stands, a later document reasserting the retired fact does not bring it back →
+    R-7RIT-INBA
+38. A wrong correction is reversed by a newer explicit statement; what it held down returns to the page →
+    R-7SQP-WF1Z, R-780F-EBG6
+39. Listing a subject's claims shows every statement labeled claim/correction, what is retired, and which correction retired each — nothing deleted →
+    R-7WEF-1QA2
+40. Corrections retiring every claim leave the subject pageless (record inspectable); new material brings a page back →
+    R-7QAX-4VKL, R-7AG8-5UXK
+41. Merging survivor and folded yields one page holding both subjects' claims; the folded subject and page are gone and its claims persist relabelled →
     R-NGVA-LS02, R-HUDR-AWS9
-36. After a merge, asking the folded name, ingesting under it, following a link to it, and looking up its old `type/slug` all return the survivor →
+42. After a merge, asking the folded name, ingesting under it, following a link to it, and looking up its old `type/slug` all return the survivor →
     R-HUDR-AWS9, R-AF1X-PG7K, R-BLL1-6YSM
-37. A merge returns a handle promptly and completes in the background; nothing merges unless requested →
+43. A merge returns a handle promptly and completes in the background; nothing merges unless requested →
     R-DYTF-JERL, R-NFNE-809D
-38. I cannot un-merge in this release — the fold is one-directional, the folded subject and page removed →
+44. I cannot un-merge in this release — the fold is one-directional, the folded subject and page removed →
     R-NGVA-LS02
-39. List merges performed, newest-first and paged: what folded into what, and when →
+45. List merges performed, newest-first and paged: what folded into what, and when →
     R-E2H4-OPZO, R-HI8U-H3GY
-40. Original raw text and extracted claims remain retrievable after the page is built →
+46. Original raw text and extracted claims remain retrievable after the page is built →
     R-04HB-QM7T, R-0X8I-S8NR
-41. Asking about a subject without naming it exactly, in different words, returns a cited answer drawn only from ingested content →
+47. Asking about a subject without naming it exactly, in different words, returns a cited answer drawn only from ingested content →
     R-BAFW-D24P, R-690G-MZTK, R-GYQG-CRLU
-42. A question spanning several subjects answers from those it has and does not fail because one was never ingested →
+48. A question spanning several subjects answers from those it has and does not fail because one was never ingested →
     R-Q8RI-7POG, R-BBNS-QTVE
-43. Asking something the wiki holds nothing on returns an explicit "nothing here," not a fabrication →
+49. Asking something the wiki holds nothing on returns an explicit "nothing here," not a fabrication →
     R-BBNS-QTVE, R-RETT-T4TD
-44. Nothing done through `ask` changes any subject, claim, or page →
+50. Nothing done through `ask` changes any subject, claim, or page →
     R-5X56-NF4O
-45. No page exceeds 12,000 characters →
+51. No page exceeds 12,000 characters →
     R-FT14-IG9K, R-7V38-RZQO
-46. Health reports the service up; reflection reports no published or subscribed events →
+52. Health reports the service up; reflection reports no published or subscribed events →
     R-MX5X-BL16, R-MVY0-XTAH
-47. A logged-in user opens the mount root and gets a styled page with a search box and a service/version footer, without disturbing the MCP surface →
+53. A logged-in user opens the mount root and gets a styled page with a search box and a service/version footer, without disturbing the MCP surface →
     R-LAND-PG01, R-LAND-NMVR
-48. A scope home shows its seven most recently added pages, newest first, each opening its page; older pages still turn up by search and links →
+54. A scope home shows its seven most recently added pages, newest first, each opening its page; older pages still turn up by search and links →
     R-HJU8-XYZQ, R-HL25-BQQF
-49. Every page carries a Home control back to the wiki landing and the suite brand mark to the dashboard landing →
+55. Every page carries a Home control back to the wiki landing and the suite brand mark to the dashboard landing →
     R-HIMC-K791, R-2MYX-Y4PN
-50. Typing a question turns the page into a cited answer from compiled pages — the same answer `ask` gives — and a plain "nothing here" when empty →
+56. Typing a question turns the page into a cited answer from compiled pages — the same answer `ask` gives — and a plain "nothing here" when empty →
     R-ARN9-5YPS, R-AWIU-P1OK, R-AXQR-2TF9
-51. The answer page footer lists each subject whose name or alias appears, each opening that subject's page →
+57. The answer page footer lists each subject whose name or alias appears, each opening that subject's page →
     R-AU31-XI76, R-2MB0-E5SJ
-52. In an `ask` answer, on MCP and web, the first naming of a subject is an inline link and later namings are plain text →
+58. In an `ask` answer, on MCP and web, the first naming of a subject is an inline link and later namings are plain text →
     R-8DB1-UI1Q, R-82BY-EKDH, R-8FQU-M1J4
-53. On a subject page the first prose naming of another subject is an inline link, and the subject's own name is never linked →
+59. On a subject page the first prose naming of another subject is an inline link, and the subject's own name is never linked →
     R-8GYQ-ZT9T, R-89NC-P6TN
-54. Every subject link the web shows is a fully-qualified front-door URL, while brand/header/Home controls stay in-app →
+60. Every subject link the web shows is a fully-qualified front-door URL, while brand/header/Home controls stay in-app →
     R-8I6N-DL0I, R-8JEJ-RCR7
-55. The header on every page carries the question box ready for the next question; the answer page holds the question just asked, editable →
+61. The header on every page carries the question box ready for the next question; the answer page holds the question just asked, editable →
     R-2O6U-BWGC, R-2PEQ-PO71
-56. A subject page shows the compiled prose and a footer of subjects it points to and that point to it; following any lands on that page →
+62. A subject page shows the compiled prose and a footer of subjects it points to and that point to it; following any lands on that page →
     R-PH2F-47LB, R-PIAB-HZC0, R-PODT-EU1H
-57. Markdown prose renders as styled HTML — heading, bold, list, code, quote, table — never the literal markers →
+63. Markdown prose renders as styled HTML — heading, bold, list, code, quote, table — never the literal markers →
     R-SS0J-U7PG, R-ST8G-7ZG5, R-SY41-R2EX
-58. The rendered web prose is styled with the suite's shared design tokens, visually consistent, no separate styling system →
+64. The rendered web prose is styled with the suite's shared design tokens, visually consistent, no separate styling system →
     R-9FXO-ZONN, R-9EPS-LWWY
-59. An inline link in prose renders as a working link; prose with no link renders no inline links →
+65. An inline link in prose renders as a working link; prose with no link renders no inline links →
     R-SZBY-4U5M, R-T2ZN-A5DP
-60. Raw HTML or script in compiled-page or answer prose is neutralized in the rendered page →
+66. Raw HTML or script in compiled-page or answer prose is neutralized in the rendered page →
     R-T0JU-ILWB, R-T1RQ-WDN0
-61. A subject named by an alias merged into it links to the surviving subject's page by exact normalized name, never a similar one →
+67. A subject named by an alias merged into it links to the surviving subject's page by exact normalized name, never a similar one →
     R-84RR-63UV, R-8C35-GQB1, R-1XX5-QDCY
-62. Nothing done on the web changes any subject/claim/page/job; ingest, merge, and job control are not reachable from the web →
+68. Nothing done on the web changes any subject/claim/page/job; ingest, merge, and job control are not reachable from the web →
     R-2QMN-3FXQ, R-5X56-NF4O
-63. `extract`, `compile`, `ask`, and `embed` models configure independently, and which model runs behind each is confirmable →
-    R-GGIG-AN7W, R-GHQC-OEYL, R-GLE1-TQ6O
-64. Wiki holds no model-provider credential; with only the central inference service reachable, every model-needing capability works →
+69. `extract`, `match`, `compile`, `ask`, and `embed` models configure independently, and which model runs behind each is confirmable →
+    R-GGIG-AN7W, R-GHQC-OEYL, R-GLE1-TQ6O, R-7FBT-OXWC
+70. Wiki holds no model-provider credential; with only the central inference service reachable, every model-needing capability works →
     R-KDHD-V3XI, R-A3D7-NTLV
-65. One committed tune folder per step lets the standalone tuning tool run end to end on a plain checkout with no suite up, producing a baseline scorecard →
-    R-A5T0-FD39, R-A9GP-KOBC, R-AAOL-YG21
-66. Each folder's starting prompt is byte-for-byte the service's current prompt for that step, folder and code decoupled →
+71. One committed tune folder per step lets the standalone tuning tool run end to end on a plain checkout with no suite up, producing a baseline scorecard →
+    R-A5T0-FD39, R-A9GP-KOBC, R-AAOL-YG21, R-7YU7-T9RG
+72. Each folder's starting prompt is byte-for-byte the service's current prompt for that step, folder and code decoupled →
     R-A5T0-FD39, R-A88T-6WKN
-67. Each folder's config measures the prompt under the step's serving model (`gpt-5.6-luna`) with `gpt-5.6-sol` proposing revisions, both confirmable →
+73. Each folder's config measures the prompt under the step's serving model (`gpt-5.6-luna`) with `gpt-5.6-sol` proposing revisions, both confirmable →
     R-A88T-6WKN
-68. The four case sets share one fictional universe with held-out/tuning placement aligned across steps →
-    R-A9GP-KOBC
-69. Scoring an extract or analysis candidate twice against the same cases gives the same score, no model consulted →
-    R-AAOL-YG21, R-ABWI-C7SQ
-70. A compile or synthesis output breaking the mechanical contract is punished the same way every time, regardless of judge opinion →
+74. The five case sets share one fictional universe with held-out/tuning placement aligned across steps →
+    R-A9GP-KOBC, R-7YU7-T9RG
+75. Scoring an extract, analysis, or correction-matching candidate twice against the same cases gives the same score, no model consulted →
+    R-AAOL-YG21, R-ABWI-C7SQ, R-8024-71I5
+76. A compile or synthesis output breaking the mechanical contract is punished the same way every time, regardless of judge opinion →
     R-AD4E-PZJF, R-AECB-3RA4
-71. The wiki repo builds and its whole suite passes with no tuning executable; the tuning loop and its records belong to the external tool →
+77. The wiki repo builds and its whole suite passes with no tuning executable; the tuning loop and its records belong to the external tool →
     R-1BRG-F9TN, R-KFX6-MNEW, R-A4L4-1LCK
-72. A tuning run leaves the committed tree clean — writes land in the ignored run workspace, and no run edits the folder's prompt/cases/config/scorer →
+78. A tuning run leaves the committed tree clean — writes land in the ignored run workspace, and no run edits the folder's prompt/cases/config/scorer →
     R-A88T-6WKN, R-A5T0-FD39
-73. The deployed service is unchanged by the tune folders — no new tool, endpoint, credential, or behavior attributable to them →
+79. The deployed service is unchanged by the tune folders — no new tool, endpoint, credential, or behavior attributable to them →
     R-A4L4-1LCK, R-KFX6-MNEW
-74. Every chat call — extract, compile, and both ask stages — serves on `gpt-5.6-luna` in an unconfigured environment, confirmable per site →
-    R-A25B-A1V6, R-9UTW-ZFF0, R-9X9P-QYWE
+80. Every chat call — extract, match, compile, and both ask stages — serves on `gpt-5.6-luna` in an unconfigured environment, confirmable per site →
+    R-A25B-A1V6, R-9UTW-ZFF0, R-9X9P-QYWE, R-7FBT-OXWC
