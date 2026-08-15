@@ -50,7 +50,7 @@ Verification ids change.
 - D41 → `project/design/D41.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-8MFA-HUNC, R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 - D42 → `project/design/D42.md` — Grok is a third install-script agent — owns R-Y6W7-R29G, R-Y844-4U05
 - D43 → `project/design/D43.md` — Antigravity is a fourth install-script agent — owns R-QFNA-KYOH, R-QGV6-YQF6
-- D44 → `project/design/D44.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — mints none; the contract carries no per-service ids
+- D44 → `project/design/D44.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — mints none; the contract carries no per-service ids
 
 ## Verification ids → Decision
 

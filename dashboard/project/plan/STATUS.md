@@ -10,4 +10,6 @@ file — there is no done marker; done is gone. This file deliberately carries
 **no bare status glyph** anywhere but on a phase line, so the anchored grep
 matches only phase lines.
 
-Next phase: 58
+Next phase: 59
+
+- Phase 58 ⬜ realizes — — promote lint tier to `strict` (D44; fix 13 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint dashboard` exits 0)
