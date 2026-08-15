@@ -59,6 +59,16 @@ go test ./...       # must exit 0, zero failures
 reported `SKIP`** in the `go test` output — a skipped requirement test is a gap,
 not a pass.
 
+Then run the tiered lint gate:
+
+```sh
+../bin/lint scripts
+```
+
+It must exit 0. `bin/lint` enforces this tree's registered `.lint-tier`
+(absent or `off` passes vacuously; `cheap`/`strict` enforce that tier), so a
+lint finding at the registered tier is an open gap, not a pass.
+
 ### 2. Run the skip ban
 
 `t.Skip` and its variants may not appear anywhere in this tree — scripts has no
@@ -214,7 +224,8 @@ feedback region as **diagnostic context only**, never as a progress signal.
   gate, not a builder. A gap is written into the feedback region, never patched.
 - **Never** write the brief's contract region.
 - **Never** retire a phase on anything short of a green gate plus full coverage
-  plus every `## Done when` bullet holding.
+  plus every `## Done when` bullet holding plus clean lint (at the registered
+  tier).
 - **Never** read the big docs to re-derive the checklist — the brief **is** the
   checklist. The mechanical id-set greps over `project/design/D*.md` and
   `project/plan/phase-*.md`, and the documented-invocation greps in step 4, are not
