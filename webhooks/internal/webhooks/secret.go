@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"regexp"
-
 	"webhooks/internal/db"
 	"webhooks/internal/ids"
 )

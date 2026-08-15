@@ -12,10 +12,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"webhooks/internal/db"
 
 	chassis "appkit/db"
-
-	"webhooks/internal/db"
 )
 
 // fixedClock is a deterministic Clock for reproducible created_at values.

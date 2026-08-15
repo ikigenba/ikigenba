@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"eventplane/outbox"
 	"io/fs"
 	"path/filepath"
 	"sort"
@@ -9,7 +10,6 @@ import (
 	"testing"
 
 	chassis "appkit/db"
-	"eventplane/outbox"
 )
 
 // R-A5V4-ANGY — the newest outbox migration owns the revised kind/subject DDL,

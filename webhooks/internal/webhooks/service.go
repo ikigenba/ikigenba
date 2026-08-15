@@ -8,10 +8,8 @@ package webhooks
 import (
 	"context"
 	"database/sql"
-	"time"
-
 	"eventplane/outbox"
-
+	"time"
 	"webhooks/internal/db"
 )
 

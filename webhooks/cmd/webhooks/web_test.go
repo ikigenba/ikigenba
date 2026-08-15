@@ -1,6 +1,7 @@
 package main
 
 import (
+	"appkit/web"
 	"bytes"
 	"io"
 	"net/http"
@@ -10,8 +11,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-
-	"appkit/web"
 )
 
 const webhooksDescription = "Webhooks receives inbound HTTP from third parties on per-webhook secret-guarded endpoints and publishes each delivery as a typed event to the event plane."

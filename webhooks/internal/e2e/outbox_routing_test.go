@@ -4,18 +4,17 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"eventplane/outbox"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	chassis "appkit/db"
-	"eventplane/outbox"
-
 	"webhooks/internal/db"
 	"webhooks/internal/webhooks"
+
+	chassis "appkit/db"
 )
 
 type routingClock struct{ now time.Time }

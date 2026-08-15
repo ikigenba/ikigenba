@@ -1,10 +1,12 @@
 package e2e
 
 import (
+	"appkit/logging"
 	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/outbox"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,9 +14,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"appkit/logging"
-	"eventplane/outbox"
 	"webhooks/internal/webhooks"
 )
 

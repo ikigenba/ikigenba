@@ -1,6 +1,8 @@
 package main
 
 import (
+	"appkit"
+	"appkit/manifest"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,9 +18,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"appkit"
-	"appkit/manifest"
 )
 
 // buildBinary compiles the real cmd/webhooks binary to a temp path and returns it.

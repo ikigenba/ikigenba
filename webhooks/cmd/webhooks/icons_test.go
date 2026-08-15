@@ -1,6 +1,7 @@
 package main
 
 import (
+	"appkit/web"
 	"bytes"
 	"context"
 	"fmt"
@@ -14,8 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"appkit/web"
 )
 
 var (

@@ -18,18 +18,15 @@
 package main
 
 import (
-	"fmt"
-	"net/http"
-
 	"appkit"
 	"appkit/web"
+	"eventplane/outbox"
+	"fmt"
+	"net/http"
 	"registry"
-
 	"webhooks/internal/db"
 	"webhooks/internal/mcp"
 	"webhooks/internal/webhooks"
-
-	"eventplane/outbox"
 )
 
 func main() { appkit.Main(webhooksSpec()) }

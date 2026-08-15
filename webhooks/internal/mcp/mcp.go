@@ -3,14 +3,13 @@
 package mcp
 
 import (
+	"appkit"
 	"fmt"
 	"net/http"
 	"strings"
-
-	"appkit"
-	appkitmcp "appkit/mcp"
-
 	"webhooks/internal/webhooks"
+
+	appkitmcp "appkit/mcp"
 )
 
 // Instructions is shown to clients during MCP initialize.

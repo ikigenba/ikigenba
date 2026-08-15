@@ -1,16 +1,15 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"errors"
 	"time"
-
-	appkitmcp "appkit/mcp"
-	"appkit/server"
-
 	"webhooks/internal/db"
 	"webhooks/internal/webhooks"
+
+	appkitmcp "appkit/mcp"
 )
 
 // toolPrefix brands every MCP tool name. The webhooks surface uses bare verbs

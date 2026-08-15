@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"eventplane/outbox"
 	"fmt"
 	"time"
-
-	"eventplane/outbox"
-
 	"webhooks/internal/db"
 )
 

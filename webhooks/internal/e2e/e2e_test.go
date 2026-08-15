@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"eventplane/outbox"
 	"fmt"
 	"io"
 	"log/slog"
@@ -22,11 +23,10 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	chassis "appkit/db"
-	"eventplane/outbox"
 	"webhooks/internal/db"
 	"webhooks/internal/webhooks"
+
+	chassis "appkit/db"
 )
 
 const frontDoorMount = "/srv/webhooks"

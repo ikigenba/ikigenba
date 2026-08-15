@@ -2,10 +2,9 @@ package main
 
 import (
 	"os"
+	"registry"
 	"strings"
 	"testing"
-
-	"registry"
 )
 
 func TestNginxLandingLocationIsSessionGatedExactMatch(t *testing.T) {

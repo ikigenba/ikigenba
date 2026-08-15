@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"eventplane/outbox"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,11 +17,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"webhooks/internal/db"
 
 	chassis "appkit/db"
-	"eventplane/outbox"
-
-	"webhooks/internal/db"
 )
 
 // newIngressFixture stands up a real temp-file SQLite (never :memory:), migrates

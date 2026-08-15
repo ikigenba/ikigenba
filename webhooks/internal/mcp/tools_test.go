@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"appkit/server"
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/outbox"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,14 +17,10 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	chassis "appkit/db"
-	"appkit/server"
-
-	"eventplane/outbox"
-
 	"webhooks/internal/db"
 	"webhooks/internal/webhooks"
+
+	chassis "appkit/db"
 )
 
 const (
