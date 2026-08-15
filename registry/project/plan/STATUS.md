@@ -11,4 +11,6 @@ line and its `phase-NN.md` body file in the completion commit — there is no
 `✅` marker; done is gone. This file deliberately carries **no bare status
 glyph** outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 07
+Next phase: 08
+
+- Phase 07 ⬜ realizes — — promote lint tier to `strict` (D5; rewrite `.lint-tier` to `strict`, `bin/lint registry` exits 0)
