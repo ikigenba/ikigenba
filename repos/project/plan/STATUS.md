@@ -11,5 +11,3 @@ outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 47
 
-- Phase 46 ⬜ realizes — — promote lint tier to `strict` (D28; fix 5 strict gocyclo findings, rewrite `.lint-tier` to `strict`, `bin/lint repos` exits 0)
-
