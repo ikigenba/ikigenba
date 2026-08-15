@@ -12,5 +12,3 @@ marker; done is deleted, and history lives in git. This file carries no bare
 status glyph outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 09
-
-- Phase 08 ⬜ realizes R-X5WI-N72P — `bin/ship` refuses a tree red at its registered tier
