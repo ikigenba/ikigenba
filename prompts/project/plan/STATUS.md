@@ -11,5 +11,3 @@ outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 85
 
-- Phase 84 ⬜ realizes — — promote lint tier to `strict` (D64; fix 25 strict findings, rewrite `.lint-tier` to `strict`, `bin/lint prompts` exits 0)
-
