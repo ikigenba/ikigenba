@@ -12,7 +12,6 @@ lines.
 
 Next phase: 178
 
-- Phase 174 ⬜ realizes R-7GJQ-2PN1, R-7HRM-GHDQ, R-7IZI-U94F, R-7LFB-LSLT, R-7MN7-ZKCI, R-7NV4-DC37, R-7QAX-4VKL — the pipeline's match phase and effective-set integrate
 - Phase 175 ⬜ realizes R-7RIT-INBA, R-7SQP-WF1Z, R-7TYM-A6SO, R-7V6I-NYJD — corrections end to end: reassertion, recency, re-run, merge cross-match
 - Phase 176 ⬜ realizes R-7WEF-1QA2, R-7XMB-FI0R — the corrections read surface: claims labels and the guide
 - Phase 177 ⬜ realizes R-7E3X-B65N, R-7YU7-T9RG, R-8024-71I5, R-81A0-KT8U — autotune: match folder, scorer, extract corrections cases
