@@ -123,3 +123,40 @@ services restarted healthy, with `github` proving end-to-end secret flow
 rollback path until the repo-side cleanup (the pending plan phases) lands.
 The blob-era launcher is preserved on-box as
 `/usr/local/bin/ikigenba-launch.blob-era`.
+
+## golangci-lint and the suite lint survey (surveyed 2026-08-14)
+
+Ground truth behind the lint contract (D30), gathered by running candidate
+configs over the whole suite with **golangci-lint v2.12.2** (the pinned
+version):
+
+- **v2 config format**: `version: "2"`; analyzers under `linters.enable` with
+  `linters.settings`, formatters (gofumpt) under a separate `formatters`
+  section. There is **no config inheritance or `extends`** across files, which
+  is why the contract's tiers are two complete committed configs rather than a
+  base plus overlay.
+- **Default report caps hide findings**: `issues.max-issues-per-linter`
+  defaults to 50 and `max-same-issues` to 3. Survey runs with defaults
+  visibly truncated (every module reported exactly 3 gofumpt findings); the
+  enforcing configs must set both to 0.
+- **A global `run.tests: false` silences formatters on test files too**, so
+  the analyzers-only test exclusion must be expressed as per-linter path rules
+  against `_test.go`.
+- **gofumpt runs inside golangci-lint**; no second binary or pin is needed.
+- **Concurrent invocations contend on a lock** (`/tmp/golangci-lint.lock`,
+  "parallel golangci-lint is running"); a stale lock survives its process.
+  The runner should lint modules sequentially.
+- **Survey result** (prod-only, uncapped, tests excluded, cheap+strict rules
+  at the contract thresholds): 454 findings suite-wide — ~345 cheap-tier
+  (gofumpt 165, gocritic 136, unused 18, unparam 12, staticcheck 12, govet 2)
+  and ~109 strict-only (gocyclo 61, nestif 21, dupl 14, funlen 13). Three
+  modules are already clean at both tiers (`registry`, the repo-root module,
+  `bin/bintest`); four more are strict-clean (`artifacts`, `cron`, `notify`,
+  `telemetry`); the heaviest catch-ups are `wiki` (54/18), `prompts` (37/18),
+  `dashboard` (32/11), and `opsctl` (14/13). These numbers size the per-tree
+  adoption moves; they are evidence, not contract.
+- **gocritic checks observed to demand judgment edits** (hence strict, not
+  cheap): `unnamedResult` (wants named returns), `paramTypeCombine`
+  (signature rewrites). The remaining diagnostic/style checks observed
+  (httpNoBody, regexpSimplify, importShadow, builtinShadow, sloppyReassign,
+  filepathJoin, unlambda, commentedOutCode, …) have one obvious fix each.

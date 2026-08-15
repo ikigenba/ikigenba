@@ -105,6 +105,11 @@ This project owns the agreements that bind more than one tree:
   of what changed, stated for the operator in brief outcome terms, who authors
   it and when, and the release-time gate that keeps a release from shipping
   without its record.
+- **The lint contract** — the one mechanical code-style gate every Go tree is
+  held to: which style tiers exist, how a tree declares and only ever raises
+  its tier, which shared tooling enforces the gate, and where in the build and
+  release flow it binds — so style holds by system across sixteen trees rather
+  than by review discipline in each.
 
 Out of scope — nothing else is promised here:
 

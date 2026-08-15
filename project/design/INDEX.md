@@ -33,6 +33,7 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - **D27** → `project/design/D27.md` — The edit-tool merge contract: patch semantics, whole-value fields, and the stated merge rule — ids: none (a prose contract; behaviors proven by the implementing trees)
 - **D28** → `project/design/D28.md` — The changelog contract: per-app `CHANGELOG.md`, authored at bump time, enforced by bump — ids: R-CKLX-X89X, R-CLTU-B00M, R-CN1Q-ORRB, R-CO9N-2JI0 (all [proof: bin])
 - **D29** → `project/design/D29.md` — The brand icon contract: the shipped set, its static location, and the link markup — ids: R-8MFA-HUNC, R-RYDN-YNR5, R-RZLK-CFHU (all [proof: per-service])
+- **D30** → `project/design/D30.md` — The lint contract: tiered mechanical style gate, per-tree ratchet, enforced by `bin/lint` — ids: R-WW5B-L155, R-WXD7-YSVU, R-WYL4-CKMJ, R-WZT0-QCD8, R-X10X-443X, R-X28T-HVUM, R-X3GP-VNLB, R-X4OM-9FC0, R-X5WI-N72P (all [proof: bin])
 
 ## Verification ids → Decision
 
@@ -82,3 +83,12 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - R-RZLK-CFHU → D29 (`project/design/D29.md`) [proof: per-service]
 - R-VCF3-PLWD → D1 (`project/design/D01.md`) [proof: opsctl]
 - R-VKB6-SHHV → D11 (`project/design/D11.md`) [proof: per-service]
+- R-WW5B-L155 → D30 (`project/design/D30.md`) [proof: bin]
+- R-WXD7-YSVU → D30 (`project/design/D30.md`) [proof: bin]
+- R-WYL4-CKMJ → D30 (`project/design/D30.md`) [proof: bin]
+- R-WZT0-QCD8 → D30 (`project/design/D30.md`) [proof: bin]
+- R-X10X-443X → D30 (`project/design/D30.md`) [proof: bin]
+- R-X28T-HVUM → D30 (`project/design/D30.md`) [proof: bin]
+- R-X3GP-VNLB → D30 (`project/design/D30.md`) [proof: bin]
+- R-X4OM-9FC0 → D30 (`project/design/D30.md`) [proof: bin]
+- R-X5WI-N72P → D30 (`project/design/D30.md`) [proof: bin]
