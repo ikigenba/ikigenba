@@ -32,6 +32,7 @@ v2 rewrite and their ids were deleted with them.
 - D25 → `project/design/D25.md` — Client-side filter, sort, and pagination of the landing listing — R-S7DH-V7ZG, R-S8LE-8ZQ5, R-S9TA-MRGU, R-SB17-0J7J, R-SC93-EAY8, R-SDGZ-S2OX, R-SEOW-5UFM, R-SFWS-JM6B, R-SH4O-XDX0, R-SICL-B5NP, R-SJKH-OXEE, R-SKSE-2P53, R-SN86-U8MH, R-SOG3-80D6
 - D26 → `project/design/D26.md` — Browser wiring proof: one minimal headless-Chrome test (chromedp) — R-SPNZ-LS3V, R-SQVV-ZJUK, R-SS3S-DBL9, R-STBO-R3BY, R-SUJL-4V2N, R-SVRH-IMTC, R-SWZD-WEK1, R-SY7A-A6AQ, R-SZF6-NY1F
 - D27 → `project/design/D27.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
+- D28 → `project/design/D28.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 
