@@ -26,6 +26,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D20 → `project/design/D20.md` — Correlation-id adoption: the nginx fragment forwards the chain id on gated locations and strips it on the ungated PRM bootstrap; event appends carry it from context — owns R-X9B0-30E7, R-XAIW-GS4W, R-XCYP-8BMA, R-XE6L-M3CZ
 - D21 → `project/design/D21.md` — Testing-language conformance: the suite's four layers, crm's declared testing facts (hermetic + composed, no live, no manual; no preconditions beyond the Go toolchain; workspace GOWORK), proven in `cmd/crm/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
 - D22 → `project/design/D22.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
+- D23 → `project/design/D23.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 
